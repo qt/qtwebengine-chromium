@@ -12,6 +12,7 @@
 <translation id="2159915644201199628">Δεν ήταν δυνατή η αποκωδικοποίηση της εικόνας: "<ph name="IMAGE_NAME" />"</translation>
 <translation id="2350172092385603347">Χρησιμοποιήθηκε τοπική προσαρμογή, όμως δεν καθορίστηκε η τιμή "default_locale" στη δήλωση.</translation>
 <translation id="2576842806987913196">Υπάρχει ήδη ένα αρχείο CRX με αυτό το όνομα.</translation>
+<translation id="2743583586211388067">Η πρόσβαση σε αυτή την επέκταση έχει αποκλειστεί σύμφωνα με την πολιτική κινδύνου του οργανισμού σας για τις επεκτάσεις.</translation>
 <translation id="2785530881066938471">Δεν ήταν δυνατή η φόρτωση του αρχείου "<ph name="RELATIVE_PATH" />" για το σενάριο περιεχομένου. Δεν έχει κωδικοποίηση UTF-8.</translation>
 <translation id="2903070246402204397">Η επέκταση <ph name="EXTENSION_NAME" /> (αναγνωριστικό επέκτασης "<ph name="EXTENSION_ID" />") έχει αποκλειστεί από τον διαχειριστή. <ph name="ADMIN_INFO" /></translation>
 <translation id="2988488679308982380">Δεν ήταν δυνατή η εγκατάσταση του πακέτου: '<ph name="ERROR_CODE" />'</translation>
@@ -33,9 +34,11 @@
 <translation id="5356315618422219272">Appview: <ph name="APPVIEW_TAG_NAME" /></translation>
 <translation id="5456409301717116725">Αυτή η επέκταση περιλαμβάνει το αρχείο κλειδιού "<ph name="KEY_PATH" />". Πιθανότατα δεν θέλετε να προβείτε σε αυτή την ενέργεια.</translation>
 <translation id="5486326529110362464">Η τιμή εισόδου για το ιδιωτικό κλειδί πρέπει να υπάρχει.</translation>
+<translation id="5707185214361380026">Αποτυχία φόρτωσης επέκτασης από:</translation>
 <translation id="5972529113578162692">Ο διαχειριστής αυτού του υπολογιστή απαιτεί την εγκατάσταση της επέκτασης <ph name="EXTENSION_NAME" />. Η εγκατάσταση δεν μπορεί να καταργηθεί.</translation>
 <translation id="6027032947578871493">Άγνωστο προϊόν <ph name="PRODUCT_ID" /> από <ph name="VENDOR_NAME" /> (σειριακός αριθμός <ph name="SERIAL_NUMBER" />)</translation>
 <translation id="6068932090455285721"><ph name="PRODUCT_NAME" /> από τον πάροχο υπηρεσιών <ph name="VENDOR_ID" /></translation>
+<translation id="6220413761270491930">Σφάλμα κατά τη φόρτωση της επέκτασης</translation>
 <translation id="6322279351188361895">Αποτυχία ανάγνωσης ιδιωτικού κλειδιού.</translation>
 <translation id="6391538222494443604">Ο κατάλογος εισόδου πρέπει να υπάρχει.</translation>
 <translation id="641087317769093025">Δεν ήταν δυνατή η αποσυμπίεση της επέκτασης</translation>

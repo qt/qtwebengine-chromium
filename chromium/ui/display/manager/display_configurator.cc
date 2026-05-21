@@ -4,11 +4,11 @@
 
 #include "ui/display/manager/display_configurator.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <utility>
 
 #include "base/command_line.h"
-#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/logging.h"
@@ -54,7 +54,8 @@ struct DisplayState {
 bool IsDisplayIdInDisplayStateList(
     int64_t display_id,
     const DisplayConfigurator::DisplayStateList& display_list) {
-  return base::Contains(display_list, display_id, &DisplaySnapshot::display_id);
+  return std::ranges::contains(display_list, display_id,
+                               &DisplaySnapshot::display_id);
 }
 
 // Returns true if a platform native |mode| is equal to a |managed_mode|.
@@ -368,17 +369,10 @@ DisplayConfigurator::DisplayLayoutManagerImpl::GetUserSelectedMode(
     ManagedDisplayMode mode;
     const bool mode_found = state_controller->GetSelectedModeForDisplayId(
         display.display_id(), &mode);
-    if (display::features::IsListAllDisplayModesEnabled()) {
-      // When selecting any arbitrary display mode is enabled, we don't try to
-      // be smart about finding the best mode matching the user-selected display
-      // size, rather we find an exact match to the selected display mode.
-      selected_mode =
-          mode_found ? FindExactMatchingMode(display, mode) : nullptr;
-    } else {
-      selected_mode = mode_found
-                          ? FindDisplayModeMatchingSize(display, mode.size())
-                          : nullptr;
-    }
+    // When selecting any arbitrary display mode is enabled, we don't try to
+    // be smart about finding the best mode matching the user-selected display
+    // size, rather we find an exact match to the selected display mode.
+    selected_mode = mode_found ? FindExactMatchingMode(display, mode) : nullptr;
   }
 
   // Fall back to native mode.

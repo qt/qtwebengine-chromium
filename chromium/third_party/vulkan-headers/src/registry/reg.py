@@ -1,6 +1,6 @@
 #!/usr/bin/env python3 -i
 #
-# Copyright 2013-2025 The Khronos Group Inc.
+# Copyright 2013-2026 The Khronos Group Inc.
 #
 # SPDX-License-Identifier: Apache-2.0
 
@@ -657,6 +657,7 @@ class Registry:
 
         - fname - name of type / enum / command
         - dictionary - self.{type|enum|cmd}dict"""
+
         key = (fname, self.genOpts.apiname)
         if key in dictionary:
             # self.gen.logMsg('diag', 'Found API-specific element for feature', fname)
@@ -727,10 +728,14 @@ class Registry:
         self.typedict = {}
         for type_elem in self.reg.findall('types/type'):
             # If the <type> does not already have a 'name' attribute, set
-            # it from contents of its <name> tag.
+            # it from contents of its <name> tag, or from the contents of
+            # its <proto><name> tag for funcpointer types.
             name = type_elem.get('name')
             if name is None:
-                name_elem = type_elem.find('name')
+                if type_elem.get('category') == 'funcpointer':
+                    name_elem = type_elem.find('proto/name')
+                else:
+                    name_elem = type_elem.find('name')
                 if name_elem is None or not name_elem.text:
                     raise RuntimeError("Type without a name!")
                 name = name_elem.text
@@ -791,7 +796,8 @@ class Registry:
                 name_elem = cmd.find('proto/name')
                 if name_elem is None or not name_elem.text:
                     raise RuntimeError("Command without a name!")
-                name = cmd.set('name', name_elem.text)
+                name = name_elem.text
+                cmd.set('name', name)
             ci = CmdInfo(cmd)
             self.addElementInfo(cmd, ci, 'command', self.cmddict)
             alias = cmd.get('alias')
@@ -834,6 +840,18 @@ class Registry:
         #   from toplevel <api> and <extension> tags.
         self.apidict = {}
         format_condition = dict()
+
+        def addFormatCondition(format_name, feature_name):
+            """Helper to add or append a feature/extension to a format's condition list.
+               Avoids adding duplicates."""
+            if format_name in format_condition:
+                # Check if this feature is already in the condition list
+                existing_conditions = format_condition[format_name].split(',')
+                if feature_name not in existing_conditions:
+                    format_condition[format_name] += f",{feature_name}"
+            else:
+                format_condition[format_name] = feature_name
+
         for feature in self.reg.findall('feature'):
             featureInfo = FeatureInfo(feature)
             self.addElementInfo(feature, featureInfo, 'feature', self.apidict)
@@ -874,7 +892,7 @@ class Registry:
                             format_name = enum.get('name')
                             if enum.get('alias'):
                                 format_name = enum.get('alias')
-                            format_condition[format_name] = featureInfo.name
+                            addFormatCondition(format_name, featureInfo.name)
                         addEnumInfo = True
                     elif enum.get('value') or enum.get('bitpos') or enum.get('alias'):
                         # self.gen.logMsg('diag', 'Adding extension constant "enum"',
@@ -931,10 +949,7 @@ class Registry:
                             format_name = enum.get('name')
                             if enum.get('alias'):
                                 format_name = enum.get('alias')
-                            if format_name in format_condition:
-                                format_condition[format_name] += f",{featureInfo.name}"
-                            else:
-                                format_condition[format_name] = featureInfo.name
+                            addFormatCondition(format_name, featureInfo.name)
                         elif groupName == "VkPipelineStageFlagBits2":
                             stage_flag = enum.get('name')
                             if enum.get('alias'):
@@ -1829,7 +1844,7 @@ class Registry:
                                 'name =', fi.name,
                                 '(does not match requested API)')
         if not apiMatch:
-            self.gen.logMsg('warn', 'No matching API versions found!')
+            self.gen.logMsg('diag', 'No matching API versions found! (ignore if building codec headers from video.xml)')
 
         # Get all matching extensions, in order by their extension number,
         # and add to the features list.

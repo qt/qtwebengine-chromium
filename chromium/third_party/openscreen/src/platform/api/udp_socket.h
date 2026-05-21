@@ -53,19 +53,35 @@ class UdpSocket {
     virtual ~Client();
   };
 
-  // Constants used to specify how we want packets sent from this socket.
+  // Common, modern code points for use with DSCP. This list is non-inclusive,
+  // callers are encouraged to check validity of an integer code point by
+  // ensuring it is in the bounds of [kBestEffort, kMaxValue] inclusive.
+  // https://www.rfc-editor.org/rfc/rfc2474.html
   enum class DscpMode : uint8_t {
-    // Default value set by the system on creation of a new socket.
-    kUnspecified = 0x0,
+    // Best-effort, no differentiated treatment.
+    kBestEffort = 0,
 
-    // Mode for Audio only.
-    kAudioOnly = 0xb8,
+    // Assured Forwarding code points.
+    // https://datatracker.ietf.org/doc/html/rfc2597#section-6
+    kAF11 = 10,
+    kAF12 = 12,
+    kAF13 = 14,
+    kAF21 = 18,
+    kAF22 = 20,
+    kAF23 = 22,
+    kAF31 = 26,
+    kAF32 = 28,
+    kAF33 = 30,
+    kAF41 = 34,
+    kAF42 = 36,
+    kAF43 = 38,
 
-    // Mode for Audio + Video.
-    kAudioVideo = 0x88,
+    // Expedited Forwarding (EF) code point.
+    // https://www.rfc-editor.org/rfc/rfc3246.html
+    kEF = 46,
 
-    // Mode for low priority operations such as trace log data.
-    kLowPriority = 0x20
+    // As a 6-bit value, DSCP ranges from [0, 63] inclusive.
+    kMaxValue = 63,
   };
 
   using Version = IPAddress::Version;
@@ -113,7 +129,7 @@ class UdpSocket {
   virtual void SendMessage(ByteView data, const IPEndpoint& dest) = 0;
 
   // Sets the DSCP value to use for all messages sent from this socket.
-  virtual void SetDscp(DscpMode state) = 0;
+  virtual void SetDscp(DscpMode mode) = 0;
 
  protected:
   UdpSocket();

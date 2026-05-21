@@ -1,6 +1,6 @@
-/* Copyright (c) 2015-2025 The Khronos Group Inc.
- * Copyright (c) 2015-2025 Valve Corporation
- * Copyright (c) 2015-2025 LunarG, Inc.
+/* Copyright (c) 2015-2026 The Khronos Group Inc.
+ * Copyright (c) 2015-2026 Valve Corporation
+ * Copyright (c) 2015-2026 LunarG, Inc.
  * Copyright (C) 2015-2025 Google Inc.
  * Modifications Copyright (C) 2020 Advanced Micro Devices, Inc. All rights reserved.
  * Modifications Copyright (C) 2022 RasterGrid Kft.
@@ -24,6 +24,7 @@
 #include "containers/span.h"
 #include <vulkan/utility/vk_safe_struct.hpp>
 #include <optional>
+#include <deque>
 
 namespace vvl {
 class DeviceState;
@@ -103,10 +104,27 @@ class Swapchain : public StateObject, public SubStateManager<SwapchainSubState> 
     DeviceState &dev_data;
     uint32_t acquired_images = 0;
 
-    // Image acquire history
-    static constexpr uint32_t acquire_history_max_length = 16;
-    std::array<uint32_t, acquire_history_max_length> acquire_history;  // ring buffer contains the last acquired images
-    uint32_t acquire_count = 0;                                        // total number of image acquire requests
+    // Image acquire history ring buffer (most recently acquired image indices)
+    static constexpr uint32_t acquire_history_ring_buffer_size = 16;
+    std::array<uint32_t, acquire_history_ring_buffer_size> acquire_history_ring_buffer;
+    uint32_t acquire_request_count = 0;
+    uint32_t GetAcquireHistoryLength() const;
+    uint32_t GetAcquiredImageIndexFromHistory(uint32_t acquire_history_index) const;
+
+    // Present ids and associated information ring buffer.
+    // It is not reasonable to keep all present id, instead, track the fixed
+    // number of the most recent present ids. This works well in practice
+    // since synchronization often involves only the last few frames.
+    // The storage for the ring buffer is allocated on the first usage.
+    static constexpr uint32_t present_id_ring_buffer_size = 24;
+    struct PresentIdInfo {
+        uint64_t present_id;
+        SubmissionReference present_submission_ref;
+    };
+    std::vector<PresentIdInfo> present_id_ring_buffer;
+    uint32_t present_id_request_count = 0;
+    uint32_t GetPresentIdInfoCount() const;
+    PresentIdInfo GetPresentIdInfo(uint32_t present_id_info_index);
 
     // Old swapchain state:
     // The new swapchain is a swapchain for which *this* swapchain is the oldSwapchain.
@@ -118,6 +136,15 @@ class Swapchain : public StateObject, public SubStateManager<SwapchainSubState> 
     // New swapchain state:
     // Present wait semaphores from the the old swapchain presentations.
     std::vector<std::shared_ptr<vvl::Semaphore>> old_swapchain_present_wait_semaphores;
+
+    // Number of bits set in VkPresentTimingInfoEXT::presentStageQueries for each present that hasn't been completed
+    std::deque<std::pair<uint64_t, uint32_t>> present_timing_stage_queries;
+    // Present timing queue size for the swapchain set by vkSetSwapchainPresentTimingQueueSizeEXT
+    uint32_t present_timing_queue_size = 0;
+    // Present timing id to domain map
+    std::unordered_map<uint64_t, VkTimeDomainKHR> time_domains;
+    bool present_at_absolute_time_supported;
+    bool present_at_relative_time_supported;
 
     Swapchain(DeviceState &dev_data, const VkSwapchainCreateInfoKHR *pCreateInfo, VkSwapchainKHR handle);
 
@@ -142,9 +169,6 @@ class Swapchain : public StateObject, public SubStateManager<SwapchainSubState> 
     SwapchainImage GetSwapChainImage(uint32_t index) const;
 
     std::shared_ptr<const vvl::Image> GetSwapChainImageShared(uint32_t index) const;
-
-    uint32_t GetAcquireHistoryLength() const;
-    uint32_t GetAcquiredImageIndexFromHistory(uint32_t acquire_history_index) const;
 
     std::shared_ptr<const Swapchain> shared_from_this() const { return SharedFromThisImpl(this); }
     std::shared_ptr<Swapchain> shared_from_this() { return SharedFromThisImpl(this); }

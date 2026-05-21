@@ -17,6 +17,9 @@
 #include "openssl/sha.h"
 
 namespace openscreen {
+
+using testing::ElementsAreArray;
+
 TEST(SecureHashTest, TestUpdate) {
   // Example B.3 from FIPS 180-2: long message.
   std::string input3(500000, 'a');  // 'a' repeated half a million times
@@ -30,7 +33,7 @@ TEST(SecureHashTest, TestUpdate) {
   ctx.Update(input3);
   ctx.Update(input3);
   ctx.Finish(output3.data());
-  EXPECT_THAT(output3, testing::ElementsAreArray(kExpectedHashOfInput3));
+  EXPECT_THAT(output3, ElementsAreArray(kExpectedHashOfInput3));
 }
 
 TEST(SecureHashTest, TestCopyable) {
@@ -66,12 +69,12 @@ TEST(SecureHashTest, TestCopyable) {
   ctx2.Update(input2);
   ctx2.Finish(output2.data());
 
-  EXPECT_THAT(output1, testing::ElementsAreArray(output2));
-  EXPECT_THAT(output1, testing::ElementsAreArray(kExpectedHashOfInput1And2));
+  EXPECT_THAT(output1, ElementsAreArray(output2));
+  EXPECT_THAT(output1, ElementsAreArray(kExpectedHashOfInput1And2));
 
   // Finish() ctx3, which should produce the hash of input1.
   ctx3.Finish(output3.data());
-  EXPECT_THAT(output3, testing::ElementsAreArray(kExpectedHashOfInput1));
+  EXPECT_THAT(output3, ElementsAreArray(kExpectedHashOfInput1));
 }
 
 TEST(SecureHashTest, TestLength) {
@@ -98,6 +101,6 @@ TEST(SecureHashTest, Equality) {
   ctx2.Finish(output2.data());
 
   // The hash should be the same.
-  EXPECT_THAT(output1, testing::ElementsAreArray(output2));
+  EXPECT_THAT(output1, ElementsAreArray(output2));
 }
 }  // namespace openscreen

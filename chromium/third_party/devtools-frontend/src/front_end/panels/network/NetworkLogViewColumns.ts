@@ -6,6 +6,7 @@
 import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import type * as NetworkTimeCalculator from '../../models/network_time_calculator/network_time_calculator.js';
+import * as StackTrace from '../../models/stack_trace/stack_trace.js';
 import {Icon} from '../../ui/kit/kit.js';
 import * as DataGrid from '../../ui/legacy/components/data_grid/data_grid.js';
 import * as Components from '../../ui/legacy/components/utils/utils.js';
@@ -31,11 +32,11 @@ const UIStrings = {
   /**
    * @description A context menu item in the Network Log View Columns of the Network panel
    */
-  responseHeaders: 'Response Headers',
+  responseHeaders: 'Response headers',
   /**
    * @description A context menu item in the Network Log View Columns of the Network panel
    */
-  requestHeaders: 'Request Headers',
+  requestHeaders: 'Request headers',
   /**
    * @description Text in Network Log View Columns of the Network panel
    */
@@ -43,19 +44,19 @@ const UIStrings = {
   /**
    * @description Text for the start time of an activity
    */
-  startTime: 'Start Time',
+  startTime: 'Start time',
   /**
    * @description Text in Network Log View Columns of the Network panel
    */
-  responseTime: 'Response Time',
+  responseTime: 'Response time',
   /**
    * @description Text in Network Log View Columns of the Network panel
    */
-  endTime: 'End Time',
+  endTime: 'End time',
   /**
    * @description Text in Network Log View Columns of the Network panel
    */
-  totalDuration: 'Total Duration',
+  totalDuration: 'Total duration',
   /**
    * @description Text for the latency of a task
    */
@@ -99,7 +100,7 @@ const UIStrings = {
   /**
    * @description Text in Network Log View Columns of the Network panel
    */
-  remoteAddress: 'Remote Address',
+  remoteAddress: 'Remote address',
   /**
    * @description Text that refers to some types
    */
@@ -115,7 +116,7 @@ const UIStrings = {
   /**
    * @description Column header in the Network log view of the Network panel
    */
-  initiatorAddressSpace: 'Initiator Address Space',
+  initiatorAddressSpace: 'Initiator address space',
   /**
    * @description Text for web cookies
    */
@@ -147,11 +148,15 @@ const UIStrings = {
   /**
    * @description Text in Network Log View Columns of the Network panel
    */
-  remoteAddressSpace: 'Remote Address Space',
+  remoteAddressSpace: 'Remote address space',
   /**
    * @description Text to show whether a request is ad-related
    */
   isAdRelated: 'Is Ad-Related',
+  /**
+   * @description Text in Network Log View Columns of the Network panel
+   */
+  renderBlocking: 'Render Blocking',
 } as const;
 const str_ = i18n.i18n.registerUIStrings('panels/network/NetworkLogViewColumns.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -876,20 +881,30 @@ export class NetworkLogViewColumns {
     if (!request) {
       return null;
     }
+    let descriptor: Common.EventTarget.EventDescriptor|undefined = undefined;
     return {
       box: anchor.boxInWindow(),
       show: async (popover: UI.GlassPane.GlassPane) => {
-        this.popupLinkifier.addEventListener(Components.Linkifier.Events.LIVE_LOCATION_UPDATED, () => {
-          popover.setSizeBehavior(UI.GlassPane.SizeBehavior.MEASURE_CONTENT);
-        });
-        const content = RequestInitiatorView.createStackTracePreview((request), this.popupLinkifier, false);
+        const content = await RequestInitiatorView.createStackTracePreview((request), this.popupLinkifier, false);
         if (!content) {
           return false;
         }
-        content.show(popover.contentElement);
+        descriptor = content.stackTrace?.addEventListener(StackTrace.StackTrace.Events.UPDATED, async () => {
+          await content.preview.updateComplete;
+          popover.setSizeBehavior(UI.GlassPane.SizeBehavior.MEASURE_CONTENT);
+        });
+        content.preview.show(popover.contentElement);
+        await content.preview.updateComplete.then(() => {
+          popover.setSizeBehavior(UI.GlassPane.SizeBehavior.MEASURE_CONTENT);
+        });
         return true;
       },
-      hide: this.popupLinkifier.reset.bind(this.popupLinkifier),
+      hide: () => {
+        this.popupLinkifier.reset();
+        if (descriptor) {
+          Common.EventTarget.removeEventListeners([descriptor]);
+        }
+      },
     };
   }
 
@@ -1191,6 +1206,11 @@ const DEFAULT_COLUMNS = [
     id: 'is-ad-related',
     title: i18nLazyString(UIStrings.isAdRelated),
     sortingFunction: NetworkRequestNode.IsAdRelatedComparator,
+  },
+  {
+    id: 'render-blocking',
+    title: i18nLazyString(UIStrings.renderBlocking),
+    sortingFunction: NetworkRequestNode.RenderBlockingComparator,
   },
   // This header is a placeholder to let datagrid know that it can be sorted by this column, but never shown.
   {

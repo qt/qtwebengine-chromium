@@ -12,7 +12,6 @@
 #include "chrome/grit/generated_resources.h"
 #include "services/accessibility/android/android_accessibility_util.h"
 #include "services/accessibility/android/ax_tree_source_android.h"
-#include "ui/accessibility/ax_enums.mojom-shared.h"
 #include "ui/accessibility/ax_enums.mojom.h"
 #include "ui/accessibility/ax_node.h"
 #include "ui/accessibility/ax_role_properties.h"
@@ -696,8 +695,10 @@ void AccessibilityNodeInfoDataWrapper::GetChildren(
   }
   for (const int32_t id : it->second) {
     auto* child = tree_source_->GetFromId(id);
-    if (child != nullptr) {
+    if (child != nullptr && child->IsNode()) {
       children->push_back(child);
+    } else if (child) {
+      LOG(WARNING) << "Unexpected non-node found while GetChildren";
     } else {
       LOG(WARNING) << "Unexpected nullptr found while GetChildren";
     }
@@ -845,8 +846,10 @@ void AccessibilityNodeInfoDataWrapper::ComputeNameFromContents(
       children;
   GetChildren(&children);
   for (AccessibilityInfoDataWrapper* child : children) {
-    static_cast<AccessibilityNodeInfoDataWrapper*>(child)
-        ->ComputeNameFromContentsInternal(names);
+    if (child->IsNode()) {
+      static_cast<AccessibilityNodeInfoDataWrapper*>(child)
+          ->ComputeNameFromContentsInternal(names);
+    }
   }
 }
 
@@ -884,8 +887,10 @@ void AccessibilityNodeInfoDataWrapper::ComputeNameFromContentsInternal(
       children;
   GetChildren(&children);
   for (AccessibilityInfoDataWrapper* child : children) {
-    static_cast<AccessibilityNodeInfoDataWrapper*>(child)
-        ->ComputeNameFromContentsInternal(names);
+    if (child->IsNode()) {
+      static_cast<AccessibilityNodeInfoDataWrapper*>(child)
+          ->ComputeNameFromContentsInternal(names);
+    }
   }
 }
 
@@ -973,8 +978,8 @@ bool AccessibilityNodeInfoDataWrapper::HasImportantPropertyInternal() const {
       children;
   GetChildren(&children);
   for (AccessibilityInfoDataWrapper* child : children) {
-    if (static_cast<AccessibilityNodeInfoDataWrapper*>(child)
-            ->HasImportantProperty()) {
+    if (child->IsNode() && static_cast<AccessibilityNodeInfoDataWrapper*>(child)
+                               ->HasImportantProperty()) {
       return true;
     }
   }

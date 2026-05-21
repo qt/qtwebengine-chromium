@@ -164,6 +164,8 @@ fn codec_choice_parser(s: &str) -> Result<CodecChoice, String> {
         "mediacodec" => Ok(CodecChoice::MediaCodec),
         "dav1d" => Ok(CodecChoice::Dav1d),
         "gav1" | "libgav1" => Ok(CodecChoice::Libgav1),
+        #[cfg(feature = "jpegxl")]
+        "hxl" | "jxl" | "jpegxl" | "libjxl" => Ok(CodecChoice::Libjxl),
         _ => Err(format!("Invalid codec choice: {s}")),
     }
 }
@@ -677,10 +679,10 @@ fn read_file(filepath: &String) -> io::Result<Vec<u8>> {
 }
 
 #[cfg(feature = "encoder")]
-fn encode(args: &CommandLineArgs, input_file: &str) -> AvifResult<()> {
+fn encode(args: &CommandLineArgs, input_file: &str, output_file: &str) -> AvifResult<()> {
     const DEFAULT_ENCODE_QUALITY: f32 = 90.0;
-    let extension = get_extension(input_file);
-    let mut reader: Box<dyn Reader> = match extension.as_str() {
+    let input_extension = get_extension(input_file);
+    let mut reader: Box<dyn Reader> = match input_extension.as_str() {
         "y4m" => Box::new(Y4MReader::create(input_file)?),
         #[cfg(feature = "jpeg")]
         "jpg" | "jpeg" => Box::new(JpegReader::create(input_file)?),
@@ -690,7 +692,7 @@ fn encode(args: &CommandLineArgs, input_file: &str) -> AvifResult<()> {
         "gif" => Box::new(GifReader::create(input_file)?),
         _ => {
             return Err(AvifError::UnknownError(format!(
-                "Unknown input file extension ({extension})"
+                "Unknown input file extension ({input_extension})"
             )));
         }
     };
@@ -729,9 +731,18 @@ fn encode(args: &CommandLineArgs, input_file: &str) -> AvifResult<()> {
     if let Some(xmp) = &args.xmp {
         image.xmp = read_file(xmp).expect("failed to read xmp file");
     }
+    let codec_choice = match args.codec {
+        CodecChoice::Auto => match get_extension(output_file).as_str() {
+            "avif" => CodecChoice::Auto, // CodecChoice::Auto maps to AV1 only. Keep it.
+            #[cfg(feature = "jpegxl")]
+            "hxl" => CodecChoice::Libjxl,
+            _ => unreachable!(), // See can_encode().
+        },
+        explicit_codec_choice => explicit_codec_choice,
+    };
     let mut settings = encoder::Settings {
         extra_layer_count: if args.progressive { 1 } else { 0 },
-        codec_choice: args.codec,
+        codec_choice,
         speed: args.speed,
         header_format: args.header,
         force_write_extended_pixi: args.force_write_extended_pixi,
@@ -792,7 +803,7 @@ fn encode(args: &CommandLineArgs, input_file: &str) -> AvifResult<()> {
 }
 
 #[cfg(not(feature = "encoder"))]
-fn encode(_args: &CommandLineArgs, _input_file: &str) -> AvifResult<()> {
+fn encode(_args: &CommandLineArgs, _input_file: &str, _output_file: &str) -> AvifResult<()> {
     Err(AvifError::InvalidArgument)
 }
 
@@ -801,12 +812,19 @@ fn can_decode(filename: &str) -> bool {
         "avif" => true,
         #[cfg(feature = "heic")]
         "heic" | "heif" => true,
+        #[cfg(feature = "jpegxl")]
+        "hxl" => true,
         _ => false,
     }
 }
 
 fn can_encode(filename: &str) -> bool {
-    get_extension(filename) == "avif"
+    match get_extension(filename).as_str() {
+        "avif" => true,
+        #[cfg(feature = "jpegxl")]
+        "hxl" => true,
+        _ => false,
+    }
 }
 
 fn validate_args(args: &CommandLineArgs) -> AvifResult<()> {
@@ -900,7 +918,7 @@ fn main() {
             }
         } else if let Some(output_file) = &args.output_file {
             if can_encode(output_file) {
-                encode(&args, input_file)
+                encode(&args, input_file, output_file)
             } else {
                 eprintln!("Input/output file extensions not supported");
                 std::process::exit(1);

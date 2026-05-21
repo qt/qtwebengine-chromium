@@ -30,6 +30,18 @@ const base::Feature* GetFeatureOfRegexFeature(RegexFeature feature) {
       return &features::kAutofillSupportSplitZipCode;
     case RegexFeature::kAutofillDisallowMoreHyphenLikeLabels:
       return &features::kAutofillDisallowMoreHyphenLikeLabels;
+    case RegexFeature::kAutofillFixStateCountryMisclassification:
+      return &features::kAutofillFixStateCountryMisclassification;
+    case RegexFeature::kAutofillFixCivilStateMisclassificationForESPT:
+      return &features::kAutofillFixCivilStateMisclassificationForESPT;
+    case RegexFeature::kAutofillAddressImproveBuildingNumberRegex:
+      return &features::kAutofillAddressImproveBuildingNumberRegex;
+    case RegexFeature::kAutofillNewRegexForPhoneCountryCode:
+      return &features::kAutofillNewRegexForPhoneCountryCode;
+    case RegexFeature::kAutofillSupportCombinedZipAndCityFR:
+      return &features::kAutofillSupportCombinedZipAndCityFR;
+    case RegexFeature::kAutofillImprovePhoneFieldParser:
+      return &features::kAutofillImprovePhoneFieldParser;
   }
   NOTREACHED();
 }

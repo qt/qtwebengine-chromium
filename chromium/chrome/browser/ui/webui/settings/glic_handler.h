@@ -6,6 +6,7 @@
 #define CHROME_BROWSER_UI_WEBUI_SETTINGS_GLIC_HANDLER_H_
 
 #include "base/callback_list.h"
+#include "base/gtest_prod_util.h"
 #include "chrome/browser/ui/webui/settings/settings_page_ui_handler.h"
 #include "content/public/browser/web_ui.h"
 
@@ -32,27 +33,27 @@ class GlicHandler : public SettingsPageUIHandler {
   FRIEND_TEST_ALL_PREFIXES(GlicHandlerBrowserTest, UpdateGlicShortcut);
 
   // Updates settings based on the OS launcher enabled state.
-  void HandleSetGlicOsLauncherEnabled(const base::Value::List& args);
+  void HandleSetGlicOsLauncherEnabled(const base::ListValue& args);
 
   // Sends to the settings page the last saved shortcut.
-  void HandleGetGlicShortcut(const base::Value::List& args);
+  void HandleGetGlicShortcut(const base::ListValue& args);
 
   // Updates the registered glic hotkey with the one provided in `args`.
-  void HandleSetGlicShortcut(const base::Value::List& args);
+  void HandleSetGlicShortcut(const base::ListValue& args);
 
   // Updates the GlobalAcceleratorListener to suspend/unsuspend listening for
   // accelerator input based on `args`.
-  void HandleSetShortcutSuspensionState(const base::Value::List& args);
+  void HandleSetShortcutSuspensionState(const base::ListValue& args);
 
   // Sends the last saved glic focus toggle shortcut to the settings page.
-  void HandleGetGlicFocusToggleShortcut(const base::Value::List& args);
+  void HandleGetGlicFocusToggleShortcut(const base::ListValue& args);
 
   // Updates the glic focus toggle hotkey with the one provided in
   // `args`.
-  void HandleSetGlicFocusToggleShortcut(const base::Value::List& args);
+  void HandleSetGlicFocusToggleShortcut(const base::ListValue& args);
 
   // Sends the client whether glic is disallowed by the admin or not.
-  void HandleGetGlicDisallowedByAdmin(const base::Value::List& args);
+  void HandleGetGlicDisallowedByAdmin(const base::ListValue& args);
 
   // Notifies the client whether glic is disallowed by their administrator,
   // either on request or because it changed.
@@ -65,7 +66,7 @@ class GlicHandler : public SettingsPageUIHandler {
   base::CallbackListSubscription web_actuation_subscription_;
 
   // Used to listen to changes in glic enabling status.
-  std::unique_ptr<base::CallbackListSubscription> glic_enabling_subscription_;
+  base::CallbackListSubscription glic_enabling_subscription_;
 };
 
 }  // namespace settings

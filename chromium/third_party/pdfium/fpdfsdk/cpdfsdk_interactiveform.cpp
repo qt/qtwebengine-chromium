@@ -640,9 +640,8 @@ bool CPDFSDK_InteractiveForm::IsNeedHighLight(FormFieldType fieldType) const {
 }
 
 void CPDFSDK_InteractiveForm::RemoveAllHighLights() {
-  std::fill(std::begin(highlight_color_), std::end(highlight_color_),
-            kWhiteBGR);
-  std::fill(std::begin(needs_highlight_), std::end(needs_highlight_), false);
+  std::ranges::fill(highlight_color_, kWhiteBGR);
+  std::ranges::fill(needs_highlight_, false);
 }
 
 void CPDFSDK_InteractiveForm::SetHighlightColor(FX_COLORREF clr,

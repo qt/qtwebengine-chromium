@@ -11,6 +11,7 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/functional/callback_helpers.h"
 #include "base/test/metrics/histogram_tester.h"
+#include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
 #include "base/test/test_future.h"
 #include "base/time/time.h"
@@ -31,7 +32,7 @@
 #include "components/optimization_guide/core/optimization_guide_constants.h"
 #include "components/optimization_guide/core/optimization_guide_features.h"
 #include "components/optimization_guide/proto/on_device_base_model_metadata.pb.h"
-#include "components/optimization_guide/public/mojom/model_broker.mojom-data-view.h"
+#include "components/optimization_guide/public/mojom/model_broker.mojom-shared.h"
 #include "components/prefs/testing_pref_service.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/abseil-cpp/absl/container/flat_hash_map.h"
@@ -105,7 +106,14 @@ TEST_F(OnDeviceModelAdaptationLoaderTest, DoesNotRegisterWithoutSpec) {
             base::unexpected(AdaptationUnavailability::kUpdatePending));
 }
 
-TEST_F(OnDeviceModelAdaptationLoaderTest, DoesNotRegisterWithoutUsage) {
+TEST_F(OnDeviceModelAdaptationLoaderTest,
+       DoesNotRegisterWithoutUsageOrBackgroundDownloadAllowlist) {
+  base::test::ScopedFeatureList scoped_feature_list;
+  // Enable background download, but not the tested feature.
+  scoped_feature_list.InitAndEnableFeatureWithParameters(
+      features::kOnDeviceModelBackgroundDownload,
+      {{"allowed_features", "Compose"}});
+
   loaders_.MaybeRegisterModelDownload(feature(), spec_, false);
   ASSERT_FALSE(provider_.HasRegistrations());
   histogram_tester_.ExpectUniqueSample(
@@ -113,6 +121,42 @@ TEST_F(OnDeviceModelAdaptationLoaderTest, DoesNotRegisterWithoutUsage) {
       "Test",
       OnDeviceModelAdaptationAvailability::kFeatureNotRecentlyUsed, 1);
   EXPECT_EQ(metadata_.Get(feature()),
+            base::unexpected(AdaptationUnavailability::kUpdatePending));
+}
+
+TEST_F(OnDeviceModelAdaptationLoaderTest,
+       DoesNotRegisterWithoutUsageAndBackgroundDownloadDisabled) {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitAndDisableFeature(
+      features::kOnDeviceModelBackgroundDownload);
+
+  mojom::OnDeviceFeature prompt_api_feature =
+      mojom::OnDeviceFeature::kPromptApi;
+
+  loaders_.MaybeRegisterModelDownload(prompt_api_feature, spec_,
+                                      /*was_feature_recently_used=*/false);
+  ASSERT_FALSE(provider_.HasRegistrations());
+  histogram_tester_.ExpectUniqueSample(
+      "OptimizationGuide.ModelExecution.OnDeviceAdaptationModelAvailability."
+      "PromptApi",
+      OnDeviceModelAdaptationAvailability::kFeatureNotRecentlyUsed, 1);
+  EXPECT_EQ(metadata_.Get(prompt_api_feature),
+            base::unexpected(AdaptationUnavailability::kUpdatePending));
+}
+
+TEST_F(OnDeviceModelAdaptationLoaderTest, RegistersWithBackgroundDownload) {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitAndEnableFeatureWithParameters(
+      features::kOnDeviceModelBackgroundDownload,
+      {{"allowed_features", "PromptApi"}});
+  // Use a feature that is allowed for background download.
+  mojom::OnDeviceFeature prompt_api_feature =
+      mojom::OnDeviceFeature::kPromptApi;
+
+  loaders_.MaybeRegisterModelDownload(prompt_api_feature, spec_,
+                                      /*was_feature_recently_used=*/false);
+  ASSERT_TRUE(provider_.HasRegistrations());
+  EXPECT_EQ(metadata_.Get(prompt_api_feature),
             base::unexpected(AdaptationUnavailability::kUpdatePending));
 }
 

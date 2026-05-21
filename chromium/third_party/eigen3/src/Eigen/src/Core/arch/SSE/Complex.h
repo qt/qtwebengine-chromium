@@ -277,7 +277,7 @@ EIGEN_STRONG_INLINE Packet1cd pnegate(const Packet1cd& a) {
 }
 template <>
 EIGEN_STRONG_INLINE Packet1cd pconj(const Packet1cd& a) {
-  const __m128d mask = _mm_castsi128_pd(_mm_set_epi32(0x80000000, 0x0, 0x0, 0x0));
+  const __m128d mask = _mm_castsi128_pd(_mm_set_epi32(static_cast<int32_t>(0x80000000), 0x0, 0x0, 0x0));
   return Packet1cd(_mm_xor_pd(a.v, mask));
 }
 

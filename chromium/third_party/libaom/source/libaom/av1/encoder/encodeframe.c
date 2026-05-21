@@ -308,15 +308,23 @@ static inline void setup_delta_q(AV1_COMP *const cpi, ThreadData *td,
 
   const int delta_q_res = delta_q_info->delta_q_res;
   int current_qindex = cm->quant_params.base_qindex;
+  const int sb_row = mi_row >> cm->seq_params->mib_size_log2;
+  const int sb_col = mi_col >> cm->seq_params->mib_size_log2;
+  const int sb_cols =
+      CEIL_POWER_OF_TWO(cm->mi_params.mi_cols, cm->seq_params->mib_size_log2);
+  const int sb_index = sb_row * sb_cols + sb_col;
   if (cpi->use_ducky_encode && cpi->ducky_encode_info.frame_info.qp_mode ==
                                    DUCKY_ENCODE_FRAME_MODE_QINDEX) {
-    const int sb_row = mi_row >> cm->seq_params->mib_size_log2;
-    const int sb_col = mi_col >> cm->seq_params->mib_size_log2;
-    const int sb_cols =
-        CEIL_POWER_OF_TWO(cm->mi_params.mi_cols, cm->seq_params->mib_size_log2);
-    const int sb_index = sb_row * sb_cols + sb_col;
     current_qindex =
         cpi->ducky_encode_info.frame_info.superblock_encode_qindex[sb_index];
+  } else if (cpi->ext_ratectrl.ready &&
+             (cpi->ext_ratectrl.funcs.rc_type & AOM_RC_QP) != 0 &&
+             cpi->ext_ratectrl.funcs.get_encodeframe_decision != NULL &&
+             cpi->ext_ratectrl.sb_params_list != NULL) {
+    const int q_index = cpi->ext_ratectrl.sb_params_list[sb_index].q_index;
+    if (q_index != AOM_DEFAULT_Q) {
+      current_qindex = q_index;
+    }
   } else if (cpi->oxcf.q_cfg.deltaq_mode == DELTA_Q_PERCEPTUAL) {
     if (DELTA_Q_PERCEPTUAL_MODULATION == 1) {
       const int block_wavelet_energy_level =

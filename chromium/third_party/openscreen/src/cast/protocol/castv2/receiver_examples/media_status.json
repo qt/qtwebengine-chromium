@@ -1,0 +1,24 @@
+{
+  "responseType": "MEDIA_STATUS",
+  "requestId": 101,
+  "media": [
+    {
+      "mediaSessionId": 0,
+      "playbackRate": 1.0,
+      "playerState": "PLAYING",
+      "currentTime": 0.0,
+      "supportedMediaCommands": 0,
+      "volume": {
+        "level": 1.0,
+        "muted": false,
+        "controlType": "attenuation",
+        "stepInterval": 0.05
+      },
+      "media": {
+        "contentId": "some-content-id",
+        "streamType": "LIVE",
+        "contentType": "video/webm"
+      }
+    }
+  ]
+}

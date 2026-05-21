@@ -27,12 +27,13 @@
 #include <openssl/rsa.h>
 #include <openssl/x509.h>
 
+#include "../mem_internal.h"
 #include "internal.h"
 
 
-static X509_PKEY *X509_PKEY_new(void) {
-  return reinterpret_cast<X509_PKEY *>(OPENSSL_zalloc(sizeof(X509_PKEY)));
-}
+using namespace bssl;
+
+static X509_PKEY *X509_PKEY_new() { return NewZeroed<X509_PKEY>(); }
 
 static void X509_PKEY_free(X509_PKEY *x) {
   if (x == nullptr) {
@@ -40,12 +41,10 @@ static void X509_PKEY_free(X509_PKEY *x) {
   }
 
   EVP_PKEY_free(x->dec_pkey);
-  OPENSSL_free(x);
+  Delete(x);
 }
 
-static X509_INFO *X509_INFO_new(void) {
-  return reinterpret_cast<X509_INFO *>(OPENSSL_zalloc(sizeof(X509_INFO)));
-}
+static X509_INFO *X509_INFO_new() { return NewZeroed<X509_INFO>(); }
 
 void X509_INFO_free(X509_INFO *x) {
   if (x == nullptr) {
@@ -56,7 +55,7 @@ void X509_INFO_free(X509_INFO *x) {
   X509_CRL_free(x->crl);
   X509_PKEY_free(x->x_pkey);
   OPENSSL_free(x->enc_data);
-  OPENSSL_free(x);
+  Delete(x);
 }
 
 
@@ -121,9 +120,9 @@ static enum parse_result_t parse_key(X509_INFO *info, const uint8_t *data,
 STACK_OF(X509_INFO) *PEM_X509_INFO_read_bio(BIO *bp, STACK_OF(X509_INFO) *sk,
                                             pem_password_cb *cb, void *u) {
   X509_INFO *info = nullptr;
-  bssl::UniquePtr<char> name;
-  bssl::UniquePtr<char> header;
-  bssl::Array<uint8_t> data;
+  UniquePtr<char> name;
+  UniquePtr<char> header;
+  Array<uint8_t> data;
   int ok = 0;
   STACK_OF(X509_INFO) *ret = nullptr;
 

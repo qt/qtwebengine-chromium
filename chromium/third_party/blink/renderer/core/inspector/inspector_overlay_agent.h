@@ -119,6 +119,7 @@ class CORE_EXPORT InspectTool : public GarbageCollected<InspectTool> {
   virtual void Trace(Visitor* visitor) const;
   virtual bool HideOnHideHighlight();
   virtual bool HideOnMouseMove();
+  virtual void OnAgentDisable() {}
 
  protected:
   Member<InspectorOverlayAgent> overlay_;
@@ -260,6 +261,9 @@ class CORE_EXPORT InspectorOverlayAgent final
       std::unique_ptr<
           protocol::Array<protocol::Overlay::IsolatedElementHighlightConfig>>
           isolated_element_highlight_configs) override;
+  protocol::Response setShowInspectedElementAnchor(
+      std::unique_ptr<protocol::Overlay::InspectedElementAnchorConfig>
+          inspected_element_anchor_config) override;
 
   // InspectorBaseAgent overrides.
   void Restore() override;

@@ -12,7 +12,6 @@
 
 #include "platform/base/error.h"
 #include "platform/base/location.h"
-#include "platform/base/macros.h"
 
 namespace openscreen {
 // Initialize OpenSSL if it isn't already initialized. This must be called
@@ -44,12 +43,14 @@ class OpenSSLErrStackTracer {
       : location_(location) {
     EnsureOpenSSLInit();
   }
+  OpenSSLErrStackTracer(const OpenSSLErrStackTracer&) = delete;
+  OpenSSLErrStackTracer(OpenSSLErrStackTracer&&) noexcept = delete;
+  OpenSSLErrStackTracer& operator=(const OpenSSLErrStackTracer&) = delete;
+  OpenSSLErrStackTracer& operator=(OpenSSLErrStackTracer&&) = delete;
   ~OpenSSLErrStackTracer() { ClearOpenSSLERRStack(location_); }
 
  private:
   const Location location_;
-
-  OSP_DISALLOW_IMPLICIT_CONSTRUCTORS(OpenSSLErrStackTracer);
 };
 
 }  // namespace openscreen

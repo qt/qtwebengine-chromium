@@ -350,7 +350,7 @@ class ExecutionContext extends EventEmitter_js_1.EventEmitter {
                 throw (0, utils_js_1.createEvaluationError)(exceptionDetails);
             }
             if (returnByValue) {
-                return (0, utils_js_1.valueFromRemoteObject)(remoteObject);
+                return (0, utils_js_1.valueFromPrimitiveRemoteObject)(remoteObject);
             }
             return this.#world.createCdpHandle(remoteObject);
         }
@@ -391,7 +391,7 @@ class ExecutionContext extends EventEmitter_js_1.EventEmitter {
             throw (0, utils_js_1.createEvaluationError)(exceptionDetails);
         }
         if (returnByValue) {
-            return (0, utils_js_1.valueFromRemoteObject)(remoteObject);
+            return (0, utils_js_1.valueFromPrimitiveRemoteObject)(remoteObject);
         }
         return this.#world.createCdpHandle(remoteObject);
         async function convertArgumentAsync(context, arg) {

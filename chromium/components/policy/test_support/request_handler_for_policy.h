@@ -37,7 +37,7 @@ class RequestHandlerForPolicy
 
  private:
   // Add to |fetch_response| the policies associated with |client| according to
-  // |policy_type|. Returns true is request is well-formed, or false otherwise
+  // |policy_type|. Returns true if request is well-formed, or false otherwise
   // (in which case, |error_msg| is set with the corresponding error message).
   bool ProcessCloudPolicy(
       const enterprise_management::PolicyFetchRequest& fetch_request,
@@ -45,8 +45,19 @@ class RequestHandlerForPolicy
       enterprise_management::PolicyFetchResponse* fetch_response,
       std::string* error_msg);
 
+  // Signs the policy data in |fetch_response| using the signing key associated
+  // with the version in |fetch_request|. Returns true if signing was
+  // successful, or false otherwise (in which case, |error_msg| is set with the
+  // corresponding error message).
+  bool SerializeAndSignPolicyData(
+      enterprise_management::PolicyData& policy_data,
+      const enterprise_management::PolicyFetchRequest& fetch_request,
+      const std::string& domain,
+      enterprise_management::PolicyFetchResponse* fetch_response,
+      std::string* error_msg);
+
   // Add to |response| the policies associated with |client_info| for extension
-  // policy type in |fetch_request|. Returns true is request is well-formed, or
+  // policy type in |fetch_request|. Returns true if request is well-formed, or
   // false otherwise (in which case, |error_msg| is set with the corresponding
   // error message).
   bool ProcessCloudPolicyForExtensions(
@@ -54,6 +65,20 @@ class RequestHandlerForPolicy
       const ClientStorage::ClientInfo& client_info,
       enterprise_management::DevicePolicyResponse* response,
       std::string* error_msg);
+
+  // Add to |response| the policies associated with |client_info| for extension
+  // install policy type in |fetch_request|. Returns true if request is
+  // well-formed, or false otherwise (in which case, |error_msg| is set with
+  // the corresponding error message).
+  bool ProcessCloudPolicyForExtensionInstall(
+      const enterprise_management::PolicyFetchRequest& fetch_request,
+      const ClientStorage::ClientInfo& client_info,
+      enterprise_management::DevicePolicyResponse* response,
+      std::string* error_msg);
+
+  // Returns the username associated with |client_info|, or the one from
+  // policy_storage() if not available.
+  std::string GetUsername(const ClientStorage::ClientInfo& client_info);
 };
 
 }  // namespace policy

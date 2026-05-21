@@ -177,15 +177,6 @@ bool CFX_AggDeviceDriver::DrawDeviceText(
 
 }  // namespace pdfium
 
-std::unique_ptr<CFX_GlyphBitmap> CFX_GlyphCache::RenderGlyph_Nativetext(
-    const CFX_Font* font,
-    uint32_t glyph_index,
-    const CFX_Matrix& matrix,
-    int dest_width,
-    FontAntiAliasingMode anti_alias) {
-  return nullptr;
-}
-
 void CFX_Font::ReleasePlatformResource() {
   if (platform_font_) {
     CQuartz2D& quartz2d =

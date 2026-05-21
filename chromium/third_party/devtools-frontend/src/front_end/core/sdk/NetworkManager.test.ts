@@ -8,11 +8,10 @@ import * as Persistence from '../../models/persistence/persistence.js';
 import * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as Workspace from '../../models/workspace/workspace.js';
 import {createTarget, describeWithEnvironment, updateHostConfig} from '../../testing/EnvironmentHelpers.js';
-import {describeWithMockConnection} from '../../testing/MockConnection.js';
+import {describeWithMockConnection, setMockConnectionResponseHandler} from '../../testing/MockConnection.js';
 import {createWorkspaceProject} from '../../testing/OverridesHelpers.js';
 import * as Common from '../common/common.js';
 import * as Platform from '../platform/platform.js';
-import * as Root from '../root/root.js';
 
 import * as SDK from './sdk.js';
 
@@ -1114,56 +1113,6 @@ describeWithMockConnection('NetworkManager', () => {
       });
     });
   });
-
-  it('setCookieControls is not invoked if the browsers enterprise setting blocks third party cookies', () => {
-    Object.assign(
-        Root.Runtime.hostConfig,
-        {thirdPartyCookieControls: {managedBlockThirdPartyCookies: true}, devToolsPrivacyUI: {enabled: true}});
-
-    const enableThirdPartyCookieRestrictionSetting =
-        Common.Settings.Settings.instance().createSetting('cookie-control-override-enabled', false);
-    const disableThirdPartyCookieMetadataSetting =
-        Common.Settings.Settings.instance().createSetting('grace-period-mitigation-disabled', true);
-    const disableThirdPartyCookieHeuristicsSetting =
-        Common.Settings.Settings.instance().createSetting('heuristic-mitigation-disabled', true);
-    assert.isFalse(enableThirdPartyCookieRestrictionSetting.get());
-    assert.isTrue(disableThirdPartyCookieMetadataSetting.get());
-    assert.isTrue(disableThirdPartyCookieHeuristicsSetting.get());
-
-    const target = createTarget();
-    const expectedCall = sinon.spy(target.networkAgent(), 'invoke_setCookieControls');
-
-    new SDK.NetworkManager.NetworkManager(target);
-
-    // function should not be called since there is a enterprise policy blocking third-party cookies
-    sinon.assert.notCalled(expectedCall);
-  });
-
-  it('setCookieControls gets invoked with expected values when network agent auto attach', () => {
-    updateHostConfig({devToolsPrivacyUI: {enabled: true}});
-
-    const enableThirdPartyCookieRestrictionSetting =
-        Common.Settings.Settings.instance().createSetting('cookie-control-override-enabled', false);
-    const disableThirdPartyCookieMetadataSetting =
-        Common.Settings.Settings.instance().createSetting('grace-period-mitigation-disabled', true);
-    const disableThirdPartyCookieHeuristicsSetting =
-        Common.Settings.Settings.instance().createSetting('heuristic-mitigation-disabled', true);
-    assert.isFalse(enableThirdPartyCookieRestrictionSetting.get());
-    assert.isTrue(disableThirdPartyCookieMetadataSetting.get());
-    assert.isTrue(disableThirdPartyCookieHeuristicsSetting.get());
-
-    const target = createTarget();
-    const expectedCall = sinon.spy(target.networkAgent(), 'invoke_setCookieControls');
-
-    new SDK.NetworkManager.NetworkManager(target);
-
-    // Metadata and heuristics should be disabled when cookie controls is disabled.
-    assert.isTrue(expectedCall.calledOnceWith({
-      enableThirdPartyCookieRestriction: false,
-      disableThirdPartyCookieMetadata: false,
-      disableThirdPartyCookieHeuristics: false
-    }));
-  });
 });
 
 describeWithMockConnection('MultitargetNetworkManager', () => {
@@ -1326,6 +1275,31 @@ describeWithMockConnection('MultitargetNetworkManager', () => {
       packetReordering: undefined,
       connectionType: Protocol.Network.ConnectionType.Cellular3g,
     });
+  });
+
+  it('applies global conditions if request conditions are disabled', () => {
+    updateHostConfig({devToolsIndividualRequestThrottling: {enabled: true}});
+    createTarget();
+    const manager = SDK.NetworkManager.MultitargetNetworkManager.instance({forceNew: true});
+
+    const rules: Protocol.Network.EmulateNetworkConditionsByRuleRequest[] = [];
+    setMockConnectionResponseHandler('Network.emulateNetworkConditionsByRule', request => {
+      rules.push(request);
+      return {ruleIds: []};
+    });
+
+    manager.setNetworkConditions(SDK.NetworkManager.Slow4GConditions);
+
+    assert.deepEqual(rules, [{
+                       matchedNetworkConditions: [{
+                         connectionType: Protocol.Network.ConnectionType.Cellular4g,
+                         downloadThroughput: SDK.NetworkManager.Slow4GConditions.download,
+                         latency: SDK.NetworkManager.Slow4GConditions.latency,
+                         uploadThroughput: SDK.NetworkManager.Slow4GConditions.upload,
+                         urlPattern: '',
+                       }],
+                       offline: false
+                     }]);
   });
 
   it('calls the request conditions model for global throttling if individual request throttling is enabled', () => {

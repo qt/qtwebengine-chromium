@@ -238,7 +238,7 @@ class RewritePLSTraverser : public TIntermTraverser
             {
                 // Clamp r,g,b,a to their min/max 8-bit values:
                 //
-                //     plsVar = clamp(plsVar, -128, 127) & 0xff
+                //     plsVar = clamp(plsVar, -128, 127)
                 //
                 TIntermTyped *newPLSValue = CreateBuiltInFunctionCallNode(
                     "clamp",
@@ -278,6 +278,11 @@ class RewritePLSTraverser : public TIntermTraverser
                         TType(EbtFloat, 4),
                         {expr, CreateFloatNode(0, EbpLow), CreateFloatNode(0, EbpLow),
                          CreateFloatNode(1, EbpLow)});
+                    break;
+                case EbtInt:
+                    expr = TIntermAggregate::CreateConstructor(  // "ivec4(r, 0, 0, 1)"
+                        TType(EbtInt, 4),
+                        {expr, CreateIndexNode(0), CreateIndexNode(0), CreateIndexNode(1)});
                     break;
                 case EbtUInt:
                     expr = TIntermAggregate::CreateConstructor(  // "uvec4(r, 0, 0, 1)"
@@ -380,22 +385,30 @@ class RewritePLSToImagesTraverser : public RewritePLSTraverser
             case TLayoutImageInternalFormat::EiifR32F:
                 imageType->setBasicType(EbtImage2D);
                 break;
+            case TLayoutImageInternalFormat::EiifR32I:
+                imageType->setBasicType(EbtIImage2D);
+                break;
             case TLayoutImageInternalFormat::EiifR32UI:
                 imageType->setBasicType(EbtUImage2D);
                 break;
             default:
                 UNREACHABLE();
         }
-        const bool noncoherentPLS = plsSymbol->getType().getLayoutQualifier().noncoherent;
+        ASSERT(mCompileOptions->pls.fragmentSyncType !=
+                   ShFragmentSynchronizationType::NotSupported ||
+               mCompileOptions->pls.supportsNoncoherent);
+        const bool wantsNoncoherent = mCompileOptions->pls.supportsNoncoherent &&
+                                      plsSymbol->getType().getLayoutQualifier().noncoherent;
+        const bool supportsRasterOrderQualifier =
+            mCompileOptions->pls.fragmentSyncType ==
+                ShFragmentSynchronizationType::RasterizerOrderViews_D3D ||
+            mCompileOptions->pls.fragmentSyncType ==
+                ShFragmentSynchronizationType::RasterOrderGroups_Metal;
         // Clear the noncoherent qualifier for the image, in case it got copied over from the PLS
         // variable. (noncoherent is not valid for images.)
-        imageLayoutQualifier.noncoherent = false;
-        imageLayoutQualifier.rasterOrdered =
-            !noncoherentPLS && (mCompileOptions->pls.fragmentSyncType ==
-                                    ShFragmentSynchronizationType::RasterizerOrderViews_D3D ||
-                                mCompileOptions->pls.fragmentSyncType ==
-                                    ShFragmentSynchronizationType::RasterOrderGroups_Metal);
-        if (!noncoherentPLS)
+        imageLayoutQualifier.noncoherent   = false;
+        imageLayoutQualifier.rasterOrdered = !wantsNoncoherent && supportsRasterOrderQualifier;
+        if (!wantsNoncoherent)
         {
             mAllPLSVarsNoncoherent = false;
         }
@@ -561,6 +574,9 @@ class RewritePLSToImagesTraverser : public RewritePLSTraverser
                 // Pack r,g,b,a into a single 32-bit (signed or unsigned) int:
                 //
                 //     r | (g << 8) | (b << 16) | (a << 24)
+                //
+                // Note that this calculation needs to be done in highp, which coincidentally works
+                // out as |CreateUIntNode| returns a highp constant.
                 //
                 auto shiftComponent = [=](int componentIdx) {
                     return new TIntermBinary(EOpBitShiftLeft,
@@ -789,6 +805,9 @@ class RewritePLSToFramebufferFetchTraverser : public RewritePLSTraverser
                 case EiifR32F:
                     accessVarType = new TType(EbtFloat, 1);
                     break;
+                case EiifR32I:
+                    accessVarType = new TType(EbtInt, 1);
+                    break;
                 case EiifR32UI:
                     accessVarType = new TType(EbtUInt, 1);
                     break;
@@ -810,7 +829,10 @@ class RewritePLSToFramebufferFetchTraverser : public RewritePLSTraverser
                 compiler->getResources().MaxCombinedDrawBuffersAndPixelLocalStoragePlanes -
                 plsType.getLayoutQualifier().binding - 1;
             layoutQualifier.locationsSpecified = 1;
-            if (compiler->getBuiltInResources().EXT_shader_framebuffer_fetch_non_coherent)
+            ASSERT(compileOptions.pls.fragmentSyncType !=
+                       ShFragmentSynchronizationType::NotSupported ||
+                   compileOptions.pls.supportsNoncoherent);
+            if (compileOptions.pls.supportsNoncoherent)
             {
                 // EXT_shader_framebuffer_fetch_non_coherent requires the "noncoherent" qualifier if
                 // the coherent version of the extension isn't supported. The extension also allows

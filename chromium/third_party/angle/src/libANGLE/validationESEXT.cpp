@@ -1088,14 +1088,7 @@ bool ValidateGetInteger64vEXT(const Context *context,
                               GLenum pname,
                               const GLint64 *data)
 {
-    GLenum nativeType      = GL_NONE;
-    unsigned int numParams = 0;
-    if (!ValidateStateQuery(context, entryPoint, pname, &nativeType, &numParams))
-    {
-        return false;
-    }
-
-    return true;
+    return ValidateStateQuery(context, entryPoint, pname, data, nullptr);
 }
 
 bool ValidateCopyImageSubDataEXT(const Context *context,
@@ -1870,7 +1863,7 @@ bool ValidateGetFramebufferPixelLocalStorageParameterRobustCommon(const Context 
 
     if (paramCount > bufSize)
     {
-        ANGLE_VALIDATION_ERROR(GL_INVALID_OPERATION, kInsufficientParams);
+        ANGLE_VALIDATION_ERROR(GL_INVALID_OPERATION, kInsufficientParamCount);
         return false;
     }
 
@@ -1889,6 +1882,7 @@ bool ValidatePLSInternalformat(const Context *context,
         case GL_RGBA8I:
         case GL_RGBA8UI:
         case GL_R32F:
+        case GL_R32I:
         case GL_R32UI:
             return true;
         default:
@@ -2028,6 +2022,13 @@ bool ValidateFramebufferMemorylessPixelLocalStorageANGLE(const Context *context,
         {
             return false;
         }
+
+        // INVALID_OPERATION is generated if <internalformat> is not NONE and not color-renderable.
+        if (!context->getTextureCaps().get(internalformat).textureAttachment)
+        {
+            ANGLE_VALIDATION_ERROR(GL_INVALID_OPERATION, kFormatNotRenderable);
+            return false;
+        }
     }
 
     return true;
@@ -2107,6 +2108,14 @@ bool ValidateFramebufferTexturePixelLocalStorageANGLE(const Context *context,
         GLenum internalformat = tex->getState().getBaseLevelDesc().format.info->internalFormat;
         if (!ValidatePLSInternalformat(context, entryPoint, internalformat))
         {
+            return false;
+        }
+
+        // INVALID_OPERATION is generated if <backingtexture> is nonzero and its internalformat
+        // is not color-renderable.
+        if (!context->getTextureCaps().get(internalformat).textureAttachment)
+        {
+            ANGLE_VALIDATION_ERROR(GL_INVALID_OPERATION, kFormatNotRenderable);
             return false;
         }
     }
@@ -2660,7 +2669,7 @@ bool ValidateBufferStorageEXT(const Context *context,
 {
     if (!context->isValidBufferBinding(targetPacked))
     {
-        ANGLE_VALIDATION_ERROR(GL_INVALID_ENUM, kInvalidBufferTypes);
+        ANGLE_VALIDATION_ERROR(GL_INVALID_ENUM, kInvalidBufferTarget);
         return false;
     }
 

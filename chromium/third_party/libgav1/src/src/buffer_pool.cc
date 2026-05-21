@@ -167,7 +167,7 @@ RefCountedBufferPtr BufferPool::GetFreeBuffer() {
       buffer->frame_state_ = kFrameStateUnknown;
       buffer->hdr_cll_set_ = false;
       buffer->hdr_mdcv_set_ = false;
-      buffer->itut_t35_set_ = false;
+      buffer->itut_t35_count_ = 0;
       lock.unlock();
       return RefCountedBufferPtr(buffer, RefCountedBuffer::ReturnToBufferPool);
     }

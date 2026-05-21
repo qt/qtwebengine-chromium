@@ -444,7 +444,7 @@ VideoDecoderConfig TestVideoConfig::NormalHdr(VideoCodec codec) {
   config.set_color_space_info(
       VideoColorSpace::FromGfxColorSpace(gfx::ColorSpace::CreateHDR10()));
   config.set_hdr_metadata(
-      gfx::HDRMetadata::PopulateUnspecifiedWithDefaults(std::nullopt));
+      gfx::HDRMetadata::PopulateUnspecifiedWithDefaults(gfx::HDRMetadata()));
   return config;
 }
 
@@ -453,7 +453,7 @@ VideoDecoderConfig TestVideoConfig::NormalHdrEncrypted(VideoCodec codec) {
   config.set_color_space_info(
       VideoColorSpace::FromGfxColorSpace(gfx::ColorSpace::CreateHDR10()));
   config.set_hdr_metadata(
-      gfx::HDRMetadata::PopulateUnspecifiedWithDefaults(std::nullopt));
+      gfx::HDRMetadata::PopulateUnspecifiedWithDefaults(gfx::HDRMetadata()));
   return config;
 }
 
@@ -764,8 +764,7 @@ scoped_refptr<DecoderBuffer> CreateClearBuffer() {
 bool VerifyFakeVideoBufferForTest(const DecoderBuffer& buffer,
                                   const VideoDecoderConfig& config) {
   // Check if the input |buffer| matches the |config|.
-  base::Pickle pickle = base::Pickle::WithUnownedBuffer(buffer);
-  base::PickleIterator iterator(pickle);
+  base::PickleIterator iterator = base::PickleIterator::WithData(buffer);
   std::string header;
   int width = 0;
   int height = 0;

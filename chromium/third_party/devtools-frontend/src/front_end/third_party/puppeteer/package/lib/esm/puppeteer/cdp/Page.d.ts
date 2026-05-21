@@ -4,16 +4,17 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 import type { Protocol } from 'devtools-protocol';
-import type { Browser } from '../api/Browser.js';
+import type { BluetoothEmulation } from '../api/BluetoothEmulation.js';
+import type { Browser, WindowId } from '../api/Browser.js';
 import type { BrowserContext } from '../api/BrowserContext.js';
 import { type CDPSession } from '../api/CDPSession.js';
 import type { DeviceRequestPrompt } from '../api/DeviceRequestPrompt.js';
 import type { Frame, WaitForOptions } from '../api/Frame.js';
 import type { HTTPResponse } from '../api/HTTPResponse.js';
 import type { JSHandle } from '../api/JSHandle.js';
-import type { Credentials, ReloadOptions } from '../api/Page.js';
+import type { Credentials, HeapSnapshotOptions, ReloadOptions } from '../api/Page.js';
 import { Page, type GeolocationOptions, type MediaFeature, type Metrics, type NewDocumentScriptEvaluation, type ScreenshotOptions, type WaitTimeoutOptions } from '../api/Page.js';
-import type { Cookie, DeleteCookiesRequest, CookieParam, CookiePartitionKey } from '../common/Cookie.js';
+import type { Cookie, DeleteCookiesRequest, CookieParam, CookiePartitionKey, CookieSameSite } from '../common/Cookie.js';
 import { FileChooser } from '../common/FileChooser.js';
 import type { PDFOptions } from '../common/PDFOptions.js';
 import type { Viewport } from '../common/Viewport.js';
@@ -28,6 +29,10 @@ import { CdpWebWorker } from './WebWorker.js';
 /**
  * @internal
  */
+export declare function convertSameSiteFromPuppeteerToCdp(sameSite: CookieSameSite | undefined): Protocol.Network.CookieSameSite | undefined;
+/**
+ * @internal
+ */
 export declare class CdpPage extends Page {
     #private;
     static _create(client: CdpCDPSession, target: CdpTarget, defaultViewport: Viewport | null): Promise<CdpPage>;
@@ -36,6 +41,7 @@ export declare class CdpPage extends Page {
         contentWidth: number;
         contentHeight: number;
     }): Promise<void>;
+    windowId(): Promise<WindowId>;
     _client(): CDPSession;
     isServiceWorkerBypassed(): boolean;
     isDragInterceptionEnabled(): boolean;
@@ -58,6 +64,7 @@ export declare class CdpPage extends Page {
     setDragInterception(enabled: boolean): Promise<void>;
     setOfflineMode(enabled: boolean): Promise<void>;
     emulateNetworkConditions(networkConditions: NetworkConditions | null): Promise<void>;
+    emulateFocusedPage(enabled: boolean): Promise<void>;
     setDefaultNavigationTimeout(timeout: number): void;
     setDefaultTimeout(timeout: number): void;
     getDefaultTimeout(): number;
@@ -78,6 +85,7 @@ export declare class CdpPage extends Page {
         platform?: string;
     }, userAgentMetadata?: Protocol.Emulation.UserAgentMetadata): Promise<void>;
     metrics(): Promise<Metrics>;
+    captureHeapSnapshot(options: HeapSnapshotOptions): Promise<void>;
     reload(options?: ReloadOptions): Promise<HTTPResponse | null>;
     createCDPSession(): Promise<CDPSession>;
     goBack(options?: WaitForOptions): Promise<HTTPResponse | null>;
@@ -131,6 +139,7 @@ export declare class CdpPage extends Page {
      * ```
      */
     waitForDevicePrompt(options?: WaitTimeoutOptions): Promise<DeviceRequestPrompt>;
+    get bluetooth(): BluetoothEmulation;
 }
 /**
  * @internal

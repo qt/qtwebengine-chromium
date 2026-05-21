@@ -20,7 +20,7 @@
 #include "core/fxcrt/fx_system.h"
 #include "core/fxge/android/cfpf_skiafont.h"
 #include "core/fxge/android/cfpf_skiapathfont.h"
-#include "core/fxge/freetype/fx_freetype.h"
+#include "core/fxge/cfx_fontmgr.h"
 #include "core/fxge/fx_font.h"
 
 namespace {
@@ -216,24 +216,10 @@ uint32_t SkiaGetFaceCharset(uint32_t code_range) {
 
 }  // namespace
 
-CFPF_SkiaFontMgr::CFPF_SkiaFontMgr() = default;
+CFPF_SkiaFontMgr::CFPF_SkiaFontMgr(CFX_FontMgr* font_mgr)
+    : font_mgr_(font_mgr) {}
 
 CFPF_SkiaFontMgr::~CFPF_SkiaFontMgr() = default;
-
-bool CFPF_SkiaFontMgr::InitFTLibrary() {
-  if (ft_library_) {
-    return true;
-  }
-
-  FXFT_LibraryRec* library = nullptr;
-  FT_Init_FreeType(&library);
-  if (!library) {
-    return false;
-  }
-
-  ft_library_.reset(library);
-  return true;
-}
 
 void CFPF_SkiaFontMgr::LoadFonts(const char** user_paths) {
   if (loaded_fonts_) {
@@ -345,7 +331,7 @@ CFPF_SkiaFont* CFPF_SkiaFontMgr::CreateFont(ByteStringView family_name,
 
 RetainPtr<CFX_Face> CFPF_SkiaFontMgr::GetFontFace(ByteStringView path,
                                                   int32_t face_index) {
-  return CFX_Face::OpenFromFilePath(ft_library_.get(), path, face_index);
+  return CFX_Face::OpenFromFilePath(font_mgr_, path, face_index);
 }
 
 void CFPF_SkiaFontMgr::ScanPath(const ByteString& path) {
@@ -392,10 +378,12 @@ std::unique_ptr<CFPF_SkiaPathFont> CFPF_SkiaFontMgr::ReportFace(
     RetainPtr<CFX_Face> face,
     const ByteString& file,
     int face_index) {
-  CFX_Face::FontStyleInfo fontinfo = face->GetFontStyleInfo();
-  uint32_t charset =
-      SKIACHARSET_Default | SkiaGetFaceCharset(fontinfo.os2_codepage_mask);
+  uint32_t charset = SKIACHARSET_Default;
+  std::optional<std::array<uint32_t, 2>> cp_range = face->GetOs2CodePageRange();
+  if (cp_range.has_value()) {
+    charset |= SkiaGetFaceCharset(cp_range.value()[0]);
+  }
   return std::make_unique<CFPF_SkiaPathFont>(file, face->GetFamilyName(),
-                                             fontinfo.style, face_index,
+                                             face->GetFontStyle(), face_index,
                                              charset, face->GetGlyphCount());
 }

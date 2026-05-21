@@ -4,12 +4,12 @@
 
 #include "chrome/browser/extensions/api/tabs/tabs_api.h"
 
+#include <algorithm>
 #include <array>
 #include <memory>
 #include <optional>
 #include <utility>
 
-#include "base/containers/contains.h"
 #include "base/run_loop.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
@@ -37,9 +37,9 @@
 #include "components/saved_tab_groups/public/tab_group_sync_service.h"
 #include "components/saved_tab_groups/public/types.h"
 #include "components/sessions/content/session_tab_helper.h"
+#include "components/split_tabs/split_tab_visual_data.h"
 #include "components/tab_groups/tab_group_id.h"
 #include "components/tabs/public/split_tab_collection.h"
-#include "components/tabs/public/split_tab_visual_data.h"
 #include "components/tabs/public/tab_group.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/web_contents.h"
@@ -60,9 +60,9 @@ namespace extensions {
 
 namespace {
 
-base::Value::List RunTabsQueryFunction(content::BrowserContext* browser_context,
-                                       const Extension* extension,
-                                       const std::string& query_info) {
+base::ListValue RunTabsQueryFunction(content::BrowserContext* browser_context,
+                                     const Extension* extension,
+                                     const std::string& query_info) {
   auto function = base::MakeRefCounted<TabsQueryFunction>();
   function->set_extension(extension);
   std::optional<base::Value> value =
@@ -135,6 +135,8 @@ class TabsApiUnitTest : public ExtensionServiceTestBase {
   bool CommitPendingLoadForController(
       content::NavigationController& controller);
 
+  std::vector<content::WebContents*> CreateAndGetWebContents(int count);
+
  private:
   // ExtensionServiceTestBase:
   void SetUp() override;
@@ -195,6 +197,26 @@ bool TabsApiUnitTest::CommitPendingLoadForController(
   return true;
 }
 
+std::vector<content::WebContents*> TabsApiUnitTest::CreateAndGetWebContents(
+    int count) {
+  std::vector<int> tab_ids;
+  std::vector<content::WebContents*> web_contentses;
+  for (int i = 0; i < count; ++i) {
+    std::unique_ptr<content::WebContents> contents(
+        content::WebContentsTester::CreateTestWebContents(profile(), nullptr));
+
+    CreateSessionServiceTabHelper(contents.get());
+    tab_ids.push_back(
+        sessions::SessionTabHelper::IdForTab(contents.get()).id());
+    web_contentses.push_back(contents.get());
+
+    GetTabStripModel()->AppendWebContents(std::move(contents),
+                                          /*foreground=*/true);
+  }
+  CHECK_EQ(count, GetTabStripModel()->count());
+  return web_contentses;
+}
+
 // Bug fix for crbug.com/1196309. Ensure that an extension can't update the tab
 // strip while a tab drag is in progress.
 TEST_F(TabsApiUnitTest, IsTabStripEditable) {
@@ -228,7 +250,7 @@ TEST_F(TabsApiUnitTest, IsTabStripEditable) {
   }
 
   // Start logical drag.
-  browser_window()->SetTabStripNotEditableForTesting();
+  browser_window()->DisableTabStripEditingForTesting();
   ASSERT_FALSE(browser_window()->IsTabStripEditable());
 
   // Succeed with updates that don't interact with the tab strip model.
@@ -333,7 +355,7 @@ TEST_F(TabsApiUnitTest, QueryWithoutTabsPermission) {
 
   // An extension without "tabs" permission will see none of the 3 tabs.
   scoped_refptr<const Extension> extension = ExtensionBuilder("Test").Build();
-  base::Value::List tabs_list_without_permission =
+  base::ListValue tabs_list_without_permission =
       RunTabsQueryFunction(profile(), extension.get(), kTitleAndURLQueryInfo);
   EXPECT_EQ(0u, tabs_list_without_permission.size());
 
@@ -341,13 +363,13 @@ TEST_F(TabsApiUnitTest, QueryWithoutTabsPermission) {
   scoped_refptr<const Extension> extension_with_permission =
       ExtensionBuilder()
           .SetManifest(
-              base::Value::Dict()
+              base::DictValue()
                   .Set("name", "Extension with tabs permission")
                   .Set("version", "1.0")
                   .Set("manifest_version", 2)
-                  .Set("permissions", base::Value::List().Append("tabs")))
+                  .Set("permissions", base::ListValue().Append("tabs")))
           .Build();
-  base::Value::List tabs_list_with_permission = RunTabsQueryFunction(
+  base::ListValue tabs_list_with_permission = RunTabsQueryFunction(
       profile(), extension_with_permission.get(), kTitleAndURLQueryInfo);
   ASSERT_EQ(1u, tabs_list_with_permission.size());
 
@@ -388,16 +410,16 @@ TEST_F(TabsApiUnitTest, QueryWithHostPermission) {
   // An extension with "host" permission will only see the third tab.
   scoped_refptr<const Extension> extension_with_permission =
       ExtensionBuilder()
-          .SetManifest(base::Value::Dict()
+          .SetManifest(base::DictValue()
                            .Set("name", "Extension with tabs permission")
                            .Set("version", "1.0")
                            .Set("manifest_version", 2)
-                           .Set("permissions", base::Value::List().Append(
+                           .Set("permissions", base::ListValue().Append(
                                                    "*://www.google.com/*")))
           .Build();
 
   {
-    base::Value::List tabs_list_with_permission = RunTabsQueryFunction(
+    base::ListValue tabs_list_with_permission = RunTabsQueryFunction(
         profile(), extension_with_permission.get(), kTitleAndURLQueryInfo);
     ASSERT_EQ(1u, tabs_list_with_permission.size());
 
@@ -410,7 +432,7 @@ TEST_F(TabsApiUnitTest, QueryWithHostPermission) {
   // Try the same without title, first and third tabs will match.
   const char* kURLQueryInfo = "[{\"url\": \"*://www.google.com/*\"}]";
   {
-    base::Value::List tabs_list_with_permission = RunTabsQueryFunction(
+    base::ListValue tabs_list_with_permission = RunTabsQueryFunction(
         profile(), extension_with_permission.get(), kURLQueryInfo);
     ASSERT_EQ(2u, tabs_list_with_permission.size());
 
@@ -425,23 +447,23 @@ TEST_F(TabsApiUnitTest, QueryWithHostPermission) {
 
     std::optional<int> first_tab_id = first_tab_info.GetDict().FindInt("id");
     ASSERT_TRUE(first_tab_id);
-    EXPECT_TRUE(base::Contains(expected_tabs_ids, *first_tab_id));
+    EXPECT_TRUE(std::ranges::contains(expected_tabs_ids, *first_tab_id));
 
     std::optional<int> third_tab_id = third_tab_info.GetDict().FindInt("id");
     ASSERT_TRUE(third_tab_id);
-    EXPECT_TRUE(base::Contains(expected_tabs_ids, *third_tab_id));
+    EXPECT_TRUE(std::ranges::contains(expected_tabs_ids, *third_tab_id));
   }
 }
 
 // Test that using the PDF extension for tab updates is treated as a
 // renderer-initiated navigation. crbug.com/660498
 TEST_F(TabsApiUnitTest, PDFExtensionNavigation) {
-  auto manifest = base::Value::Dict()
+  auto manifest = base::DictValue()
                       .Set("name", "pdfext")
                       .Set("description", "desc")
                       .Set("version", "0.1")
                       .Set("manifest_version", 2)
-                      .Set("permissions", base::Value::List().Append("tabs"));
+                      .Set("permissions", base::ListValue().Append("tabs"));
   scoped_refptr<const Extension> extension =
       ExtensionBuilder()
           .SetManifest(std::move(manifest))
@@ -718,11 +740,11 @@ TEST_F(TabsApiUnitTest, TabsUpdateJavaScriptUrlNotAllowed) {
   // An extension with access to www.example.com.
   scoped_refptr<const Extension> extension =
       ExtensionBuilder()
-          .SetManifest(base::Value::Dict()
+          .SetManifest(base::DictValue()
                            .Set("name", "Extension with a host permission")
                            .Set("version", "1.0")
                            .Set("manifest_version", 2)
-                           .Set("permissions", base::Value::List().Append(
+                           .Set("permissions", base::ListValue().Append(
                                                    "http://www.example.com/*")))
           .Build();
   auto function = base::MakeRefCounted<TabsUpdateFunction>();
@@ -1793,8 +1815,12 @@ TEST_F(TabsApiUnitTest, SplitTabsWithHighlightFunction) {
                                           api_test_utils::FunctionMode::kNone));
 
   // Check that both sides of the split are selected.
-  ASSERT_TRUE(GetTabStripModel()->selection_model().IsSelected(0));
-  ASSERT_TRUE(GetTabStripModel()->selection_model().IsSelected(1));
+  ASSERT_TRUE(
+      GetTabStripModel()->selection_model().GetListSelectionModel().IsSelected(
+          0));
+  ASSERT_TRUE(
+      GetTabStripModel()->selection_model().GetListSelectionModel().IsSelected(
+          1));
 }
 
 #if BUILDFLAG(IS_CHROMEOS)
@@ -1849,40 +1875,9 @@ TEST_F(TabsApiUnitTest,
 }
 #endif  // BUILDFLAG(IS_CHROMEOS)
 
-class TabsApiSideBySideUnitTest : public TabsApiUnitTest {
- public:
-  TabsApiSideBySideUnitTest() {
-    scoped_feature_list_.InitAndEnableFeature(features::kSideBySide);
-  }
-
- protected:
-  std::vector<content::WebContents*> CreateAndGetWebContents(int count) {
-    std::vector<int> tab_ids;
-    std::vector<content::WebContents*> web_contentses;
-    for (int i = 0; i < count; ++i) {
-      std::unique_ptr<content::WebContents> contents(
-          content::WebContentsTester::CreateTestWebContents(profile(),
-                                                            nullptr));
-
-      CreateSessionServiceTabHelper(contents.get());
-      tab_ids.push_back(
-          sessions::SessionTabHelper::IdForTab(contents.get()).id());
-      web_contentses.push_back(contents.get());
-
-      GetTabStripModel()->AppendWebContents(std::move(contents),
-                                            /*foreground=*/true);
-    }
-    CHECK_EQ(count, GetTabStripModel()->count());
-    return web_contentses;
-  }
-
- private:
-  base::test::ScopedFeatureList scoped_feature_list_;
-};
-
 // Tests that calling chrome.tabs.move() works when a tab is moved within a
 // split view.
-TEST_F(TabsApiSideBySideUnitTest, TabsMoveWithinSplitView) {
+TEST_F(TabsApiUnitTest, TabsMoveWithinSplitView) {
   scoped_refptr<const Extension> extension =
       ExtensionBuilder("TabsMoveWithinSplitView").Build();
 
@@ -1924,7 +1919,7 @@ TEST_F(TabsApiSideBySideUnitTest, TabsMoveWithinSplitView) {
 
 // Tests that calling chrome.tabs.move() works when a tab within a split view is
 // moved.
-TEST_F(TabsApiSideBySideUnitTest, TabsMoveFromSplitView) {
+TEST_F(TabsApiUnitTest, TabsMoveFromSplitView) {
   scoped_refptr<const Extension> extension =
       ExtensionBuilder("TabsMoveFromSplitView").Build();
 
@@ -1961,7 +1956,7 @@ TEST_F(TabsApiSideBySideUnitTest, TabsMoveFromSplitView) {
 }
 
 // Tests that chrome.tabs.duplicate removes split view.
-TEST_F(TabsApiSideBySideUnitTest, TabsDuplicateSplitView) {
+TEST_F(TabsApiUnitTest, TabsDuplicateSplitView) {
   scoped_refptr<const Extension> extension =
       ExtensionBuilder("TabsDuplicateSplitView").Build();
 
@@ -1999,7 +1994,7 @@ TEST_F(TabsApiSideBySideUnitTest, TabsDuplicateSplitView) {
 
 // Tests that calling chrome.tabs.discard on an inactive tab in an active split
 // will discard that tab.
-TEST_F(TabsApiSideBySideUnitTest, TabsDiscardInactiveTabInActiveSplitView) {
+TEST_F(TabsApiUnitTest, TabsDiscardInactiveTabInActiveSplitView) {
   scoped_refptr<const Extension> extension =
       ExtensionBuilder("TabsDeleteFromSplitView").Build();
 
@@ -2034,7 +2029,7 @@ TEST_F(TabsApiSideBySideUnitTest, TabsDiscardInactiveTabInActiveSplitView) {
 
 // Tests that calling chrome.tabs.delete works when a tab within a split view
 // is deleted.
-TEST_F(TabsApiSideBySideUnitTest, TabsDeleteFromSplitView) {
+TEST_F(TabsApiUnitTest, TabsDeleteFromSplitView) {
   scoped_refptr<const Extension> extension =
       ExtensionBuilder("TabsDeleteFromSplitView").Build();
 
@@ -2068,7 +2063,7 @@ TEST_F(TabsApiSideBySideUnitTest, TabsDeleteFromSplitView) {
   EXPECT_FALSE(GetTabStripModel()->GetSplitForTab(0).has_value());
 }
 
-TEST_F(TabsApiSideBySideUnitTest, TabsQueryWithSplitView) {
+TEST_F(TabsApiUnitTest, TabsQueryWithSplitView) {
   scoped_refptr<const Extension> extension =
       ExtensionBuilder("TabsDeleteFromSplitView").Build();
 
@@ -2085,7 +2080,7 @@ TEST_F(TabsApiSideBySideUnitTest, TabsQueryWithSplitView) {
 
   // Use the TabsQueryFunction to get the list of tabs without a split.
   const char* kNoSplitQueryInfo = "[{\"splitViewId\": -1}]";
-  base::Value::List tabs_list_without_split =
+  base::ListValue tabs_list_without_split =
       RunTabsQueryFunction(profile(), extension.get(), kNoSplitQueryInfo);
   EXPECT_EQ(3u, tabs_list_without_split.size());
 
@@ -2094,13 +2089,13 @@ TEST_F(TabsApiSideBySideUnitTest, TabsQueryWithSplitView) {
 
   constexpr char kFormatArgs[] = R"([{"splitViewId": %d}])";
   const std::string args = base::StringPrintf(kFormatArgs, split_id);
-  base::Value::List tabs_list_with_split =
+  base::ListValue tabs_list_with_split =
       RunTabsQueryFunction(profile(), extension.get(), args);
   EXPECT_EQ(2u, tabs_list_with_split.size());
   EXPECT_EQ(split_id, tabs_list_with_split[0].GetDict().FindInt("splitViewId"));
 }
 
-TEST_F(TabsApiSideBySideUnitTest, TabsUngroupSingleTabFromSplitView) {
+TEST_F(TabsApiUnitTest, TabsUngroupSingleTabFromSplitView) {
   ASSERT_TRUE(GetTabStripModel()->SupportsTabGroups());
 
   scoped_refptr<const Extension> extension =
@@ -2134,7 +2129,7 @@ TEST_F(TabsApiSideBySideUnitTest, TabsUngroupSingleTabFromSplitView) {
   EXPECT_TRUE(GetTabStripModel()->GetSplitForTab(1).has_value());
 }
 
-TEST_F(TabsApiSideBySideUnitTest, TabsUngroupBothTabsFromSplitView) {
+TEST_F(TabsApiUnitTest, TabsUngroupBothTabsFromSplitView) {
   ASSERT_TRUE(GetTabStripModel()->SupportsTabGroups());
 
   scoped_refptr<const Extension> extension =

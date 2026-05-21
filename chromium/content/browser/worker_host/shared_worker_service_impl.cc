@@ -20,7 +20,6 @@
 #include "base/timer/elapsed_timer.h"
 #include "content/browser/devtools/shared_worker_devtools_agent_host.h"
 #include "content/browser/loader/file_url_loader_factory.h"
-#include "content/browser/renderer_host/private_network_access_util.h"
 #include "content/browser/service_worker/service_worker_client.h"
 #include "content/browser/service_worker/service_worker_main_resource_handle.h"
 #include "content/browser/storage_partition_impl.h"
@@ -169,12 +168,13 @@ void SharedWorkerServiceImpl::ConnectToWorker(
   }
 
   RenderFrameHost* main_frame = render_frame_host->frame_tree()->GetMainFrame();
+  // TODO(crbug.com/379869738) Remove GetUnsafeValue.
   if (!GetContentClient()->browser()->AllowSharedWorker(
           info->url, render_frame_host->ComputeSiteForCookies(),
           main_frame->GetLastCommittedOrigin(), info->options->name,
           storage_key, info->same_site_cookies,
           render_frame_host->GetBrowserContext(),
-          client_render_frame_host_id.child_id,
+          client_render_frame_host_id.child_id.GetUnsafeValue(),
           client_render_frame_host_id.frame_routing_id)) {
     ScriptLoadFailed(std::move(client), /*error_message=*/"");
     return;
@@ -545,6 +545,16 @@ bool SharedWorkerServiceImpl::EvictBFCachedClientsIfLastActive(
   base::UmaHistogramTimes("Content.SharedWorker.Service.LastClientCheckTime",
                           timer.Elapsed());
   return was_last_active_for_any_worker;
+}
+
+void SharedWorkerServiceImpl::OnClientStateChanged(
+    RenderFrameHostImpl* render_frame_host) {
+  // Notify all workers that have this frame as a client.
+  for (const auto& host : worker_hosts_) {
+    if (host->ContainsClient(render_frame_host)) {
+      host->OnClientStateChanged();
+    }
+  }
 }
 
 }  // namespace content

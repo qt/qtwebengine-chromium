@@ -243,16 +243,26 @@ class AXNode {
     #editable = false;
     #focusable = false;
     #hidden = false;
+    #busy = false;
+    #modal = false;
+    #hasErrormessage = false;
+    #hasDetails = false;
     #name;
     #role;
+    #description;
+    #roledescription;
+    #live;
     #ignored;
     #cachedHasFocusableChild;
     #realm;
     constructor(realm, payload) {
         this.payload = payload;
-        this.#name = this.payload.name ? this.payload.name.value : '';
         this.#role = this.payload.role ? this.payload.role.value : 'Unknown';
         this.#ignored = this.payload.ignored;
+        this.#name = this.payload.name ? this.payload.name.value : '';
+        this.#description = this.payload.description
+            ? this.payload.description.value
+            : undefined;
         this.#realm = realm;
         for (const property of this.payload.properties || []) {
             if (property.name === 'editable') {
@@ -264,6 +274,24 @@ class AXNode {
             }
             if (property.name === 'hidden') {
                 this.#hidden = property.value.value;
+            }
+            if (property.name === 'busy') {
+                this.#busy = property.value.value;
+            }
+            if (property.name === 'live') {
+                this.#live = property.value.value;
+            }
+            if (property.name === 'modal') {
+                this.#modal = property.value.value;
+            }
+            if (property.name === 'roledescription') {
+                this.#roledescription = property.value.value;
+            }
+            if (property.name === 'errormessage') {
+                this.#hasErrormessage = true;
+            }
+            if (property.name === 'details') {
+                this.#hasDetails = true;
             }
         }
     }
@@ -395,7 +423,14 @@ class AXNode {
         if (this.isLandmark()) {
             return true;
         }
-        if (this.#focusable || this.#richlyEditable) {
+        if (this.#focusable ||
+            this.#richlyEditable ||
+            this.#busy ||
+            (this.#live && this.#live !== 'off') ||
+            this.#modal ||
+            this.#hasErrormessage ||
+            this.#hasDetails ||
+            this.#roledescription) {
             return true;
         }
         // If it's not focusable but has a control role, then it's interesting.
@@ -406,7 +441,7 @@ class AXNode {
         if (insideControl) {
             return false;
         }
-        return this.isLeafNode() && !!this.#name;
+        return this.isLeafNode() && (!!this.#name || !!this.#description);
     }
     serialize() {
         const properties = new Map();
@@ -446,6 +481,9 @@ class AXNode {
                 }
             },
             backendNodeId: this.payload.backendDOMNodeId,
+            // LoaderId is an experimental mechanism to establish unique IDs across
+            // navigations.
+            loaderId: this.#realm.environment._loaderId,
         };
         const userStringProperties = [
             'name',
@@ -475,9 +513,11 @@ class AXNode {
             'readonly',
             'required',
             'selected',
+            'busy',
+            'atomic',
         ];
         const getBooleanPropertyValue = (key) => {
-            return properties.get(key);
+            return !!properties.get(key);
         };
         for (const booleanProperty of booleanProperties) {
             // RootWebArea's treat focus differently than other nodes. They report whether
@@ -486,8 +526,7 @@ class AXNode {
             if (booleanProperty === 'focused' && this.#role === 'RootWebArea') {
                 continue;
             }
-            const value = getBooleanPropertyValue(booleanProperty);
-            if (!value) {
+            if (!properties.has(booleanProperty)) {
                 continue;
             }
             node[booleanProperty] = getBooleanPropertyValue(booleanProperty);
@@ -520,6 +559,10 @@ class AXNode {
             'haspopup',
             'invalid',
             'orientation',
+            'live',
+            'relevant',
+            'errormessage',
+            'details',
         ];
         const getTokenPropertyValue = (key) => {
             return properties.get(key);

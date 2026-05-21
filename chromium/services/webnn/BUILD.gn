@@ -13,8 +13,10 @@ buildflag_header("buildflags") {
   header = "buildflags.h"
   flags = [
     "WEBNN_USE_TFLITE=$webnn_use_tflite",
+    "WEBNN_USE_LITERT=$webnn_use_litert",
     "WEBNN_USE_CHROME_ML_API=$webnn_use_chrome_ml_api",
     "WEBNN_ENABLE_TFLITE_PROFILER=$webnn_enable_tflite_profiler",
+    "WEBNN_INSTALL_RUNTIME_IN_CHROME_INSTALLER=$webnn_install_runtime_in_chrome_installer",
   ]
 }
 
@@ -34,8 +36,8 @@ component("webnn_service") {
 
   sources = [
     "error.h",
-    "scoped_sequence.cc",
-    "scoped_sequence.h",
+    "scoped_gpu_sequence.cc",
+    "scoped_gpu_sequence.h",
     "sequence_deleter.cc",
     "sequence_deleter.h",
     "webnn_constant_operand.cc",
@@ -134,7 +136,7 @@ component("webnn_service") {
     ]
   }
 
-  if (webnn_use_tflite) {
+  if (webnn_use_tflite || webnn_use_litert) {
     sources += [
       "tflite/buffer_content_tflite.cc",
       "tflite/buffer_content_tflite.h",
@@ -150,6 +152,15 @@ component("webnn_service") {
       "tflite/tensor_impl_tflite.h",
     ]
 
+    if (webnn_use_litert) {
+      sources += [
+        "tflite/context_impl_litert.cc",
+        "tflite/context_impl_litert.h",
+        "tflite/graph_impl_litert.cc",
+        "tflite/graph_impl_litert.h",
+      ]
+    }
+
     deps += [
       "//third_party/flatbuffers",
       "//third_party/fp16",
@@ -158,14 +169,16 @@ component("webnn_service") {
       "//third_party/tflite:tflite_public_headers",
     ]
 
+    if (webnn_use_litert) {
+      deps += [ "//third_party/litert" ]
+    }
+
     if (build_tflite_with_xnnpack) {
       deps += [ "//third_party/xnnpack" ]
     }
 
     if (enable_ml_internal) {
       deps += [ "//services/on_device_model/ml" ]
-
-      defines += [ "ENABLE_ML_INTERNAL" ]
     }
   }
 
@@ -201,7 +214,10 @@ component("webnn_service") {
       "ort/tensor_impl_ort.cc",
       "ort/tensor_impl_ort.h",
     ]
-    deps += [ "//third_party/windows_app_sdk_headers" ]
+    deps += [
+      "//services/webnn/public/cpp:win",
+      "//third_party/windows_app_sdk_headers",
+    ]
 
     libs += [ "runtimeobject.lib" ]
 
@@ -210,7 +226,7 @@ component("webnn_service") {
     configs += [ "//build/config/compiler:no_exit_time_destructors" ]
   }
 
-  if (is_apple || webnn_use_tflite) {
+  if (is_apple || webnn_use_tflite || webnn_use_litert) {
     sources += [
       "queueable_resource_state.h",
       "queueable_resource_state_base.cc",
@@ -231,12 +247,21 @@ source_set("webnn_test_support") {
   deps = [
     ":webnn_service",
     "//base",
+    "//base/test:test_support",
     "//gpu/command_buffer/service",
     "//gpu/config",
     "//mojo/public/cpp/bindings",
     "//services/viz/privileged/mojom/gl",
+    "//services/webnn/host",
     "//services/webnn/public/mojom",
   ]
+
+  if (is_win) {
+    deps += [
+      "//services/webnn/host",
+      "//ui/gfx/mojom",
+    ]
+  }
 }
 
 source_set("tests") {
@@ -250,21 +275,7 @@ source_set("tests") {
     "webnn_test_utils.h",
   ]
 
-  if (is_win) {
-    sources += [
-      "dml/adapter_test.cc",
-      "dml/command_queue_test.cc",
-      "dml/command_recorder_test.cc",
-      "dml/context_impl_dml_test.cc",
-      "dml/graph_builder_dml_test.cc",
-      "dml/platform_functions_test.cc",
-      "dml/tensor_desc_test.cc",
-      "dml/test_base.cc",
-      "dml/test_base.h",
-    ]
-  }
-
-  if (webnn_use_tflite || is_mac || is_win) {
+  if (webnn_use_tflite || webnn_use_litert || is_mac) {
     sources += [
       "webnn_graph_impl_backend_test.cc",
       "webnn_tensor_impl_backend_test.cc",

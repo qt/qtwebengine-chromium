@@ -29,14 +29,16 @@
 
 #include "third_party/blink/renderer/core/css/selector_checker.h"
 
+#include <algorithm>
+
 #include "base/auto_reset.h"
 #include "third_party/blink/public/mojom/input/focus_type.mojom-blink.h"
 #include "third_party/blink/renderer/core/css/check_pseudo_has_argument_context.h"
 #include "third_party/blink/renderer/core/css/check_pseudo_has_cache_scope.h"
 #include "third_party/blink/renderer/core/css/css_selector_list.h"
+#include "third_party/blink/renderer/core/css/link_condition.h"
 #include "third_party/blink/renderer/core/css/part_names.h"
 #include "third_party/blink/renderer/core/css/post_style_update_scope.h"
-#include "third_party/blink/renderer/core/css/route_query.h"
 #include "third_party/blink/renderer/core/css/style_engine.h"
 #include "third_party/blink/renderer/core/css/style_rule.h"
 #include "third_party/blink/renderer/core/css/style_scope_data.h"
@@ -45,6 +47,7 @@
 #include "third_party/blink/renderer/core/dom/element_traversal.h"
 #include "third_party/blink/renderer/core/dom/flat_tree_traversal.h"
 #include "third_party/blink/renderer/core/dom/layout_tree_builder_traversal.h"
+#include "third_party/blink/renderer/core/dom/node-inl.h"
 #include "third_party/blink/renderer/core/dom/nth_index_cache.h"
 #include "third_party/blink/renderer/core/dom/popover_data.h"
 #include "third_party/blink/renderer/core/dom/pseudo_element.h"
@@ -62,8 +65,10 @@
 #include "third_party/blink/renderer/core/fullscreen/fullscreen.h"
 #include "third_party/blink/renderer/core/html/custom/element_internals.h"
 #include "third_party/blink/renderer/core/html/forms/html_button_element.h"
+#include "third_party/blink/renderer/core/html/forms/html_data_list_element.h"
 #include "third_party/blink/renderer/core/html/forms/html_field_set_element.h"
 #include "third_party/blink/renderer/core/html/forms/html_form_control_element.h"
+#include "third_party/blink/renderer/core/html/forms/html_form_element.h"
 #include "third_party/blink/renderer/core/html/forms/html_input_element.h"
 #include "third_party/blink/renderer/core/html/forms/html_option_element.h"
 #include "third_party/blink/renderer/core/html/forms/html_select_element.h"
@@ -72,6 +77,7 @@
 #include "third_party/blink/renderer/core/html/html_dialog_element.h"
 #include "third_party/blink/renderer/core/html/html_document.h"
 #include "third_party/blink/renderer/core/html/html_frame_element_base.h"
+#include "third_party/blink/renderer/core/html/html_install_element.h"
 #include "third_party/blink/renderer/core/html/html_menu_bar_element.h"
 #include "third_party/blink/renderer/core/html/html_menu_item_element.h"
 #include "third_party/blink/renderer/core/html/html_menu_list_element.h"
@@ -90,7 +96,6 @@
 #include "third_party/blink/renderer/core/page/spatial_navigation.h"
 #include "third_party/blink/renderer/core/page/spatial_navigation_controller.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
-#include "third_party/blink/renderer/core/route_matching/route.h"
 #include "third_party/blink/renderer/core/scroll/scrollable_area.h"
 #include "third_party/blink/renderer/core/scroll/scrollbar_theme.h"
 #include "third_party/blink/renderer/core/style/computed_style.h"
@@ -100,6 +105,8 @@
 #include "third_party/blink/renderer/core/view_transition/view_transition_pseudo_element_base.h"
 #include "third_party/blink/renderer/core/view_transition/view_transition_utils.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
+#include "third_party/blink/renderer/platform/wtf/text/atomic_string.h"
+#include "third_party/blink/renderer/platform/wtf/text/string_view.h"
 
 namespace blink {
 
@@ -164,9 +171,170 @@ static bool MatchesUniversalTagName(const Element& element,
          namespace_uri == element.namespaceURI();
 }
 
+// Validates a language range against RFC 4647 extended language range grammar:
+// extended-language-range = (1*8ALPHA / "*") *("-" (1*8alphanum / "*"))
+static bool IsValidExtendedLanguageRange(const String& range) {
+  if (range.empty()) {
+    return false;
+  }
+
+  const wtf_size_t len = range.length();
+  wtf_size_t pos = 0;
+  bool is_first_subtag = true;
+
+  while (pos < len) {
+    // Find the end of the current subtag (next hyphen or end of string).
+    const wtf_size_t subtag_start = pos;
+    while (pos < len && range[pos] != '-') {
+      ++pos;
+    }
+    const wtf_size_t subtag_len = pos - subtag_start;
+
+    // Empty subtag indicates leading, consecutive, or trailing hyphen.
+    if (subtag_len == 0) {
+      return false;
+    }
+
+    // Check if the subtag is a wildcard.
+    const bool is_wildcard = (subtag_len == 1 && range[subtag_start] == '*');
+
+    if (!is_wildcard) {
+      // Each subtag is limited to 8 characters.
+      if (subtag_len > 8) {
+        return false;
+      }
+
+      // First subtag must be alphabetic, subsequent ones can be alphanumeric.
+      for (wtf_size_t j = subtag_start; j < pos; ++j) {
+        const bool valid = is_first_subtag ? IsASCIIAlpha(range[j])
+                                           : IsASCIIAlphanumeric(range[j]);
+        if (!valid) {
+          return false;
+        }
+      }
+    }
+
+    is_first_subtag = false;
+
+    // Skip the hyphen separator if present.
+    if (pos < len) {
+      ++pos;
+      // Trailing hyphen: no more subtags after the hyphen.
+      if (pos == len) {
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
+
+// Matches the element's content language against one or more language ranges,
+// both represented in BCP 47 syntax, by following the extended filtering
+// algorithm defined in [RFC4647] Matching of Language Tags (section 3.3.2).
+// A language range matches a particular language tag if each respective list
+// of subtags matches. Comparisons are case-insensitive within the ASCII range.
+// See: https://www.rfc-editor.org/rfc/rfc4647#section-3.3.2
+static bool MatchesLangPseudoClass(
+    const AtomicString& language,
+    const Vector<AtomicString>& language_ranges) {
+  // Iterator class to traverse subtags within a language tag or range.
+  class LanguageTagIterator {
+    STACK_ALLOCATED();
+
+   public:
+    explicit LanguageTagIterator(const AtomicString& language_range)
+        : language_range_(language_range),
+          language_range_length_(language_range.length()),
+          subtag_end_(
+              std::min(language_range.find('-', 0), language_range.length())) {}
+    void operator++() {
+      if (subtag_end_ >= language_range_length_) {
+        subtag_start_ = language_range_length_;
+        subtag_end_ = language_range_length_;
+        return;
+      }
+      subtag_start_ = subtag_end_ + 1;
+      subtag_end_ = std::min(language_range_.find('-', subtag_start_),
+                             language_range_length_);
+    }
+    bool AtEnd() const {
+      return subtag_start_ >= subtag_end_ ||
+             subtag_start_ >= language_range_length_;
+    }
+    StringView CurrentSubtag() const {
+      return {language_range_, subtag_start_, subtag_end_ - subtag_start_};
+    }
+    bool Matches(const LanguageTagIterator& other) const {
+      return EqualIgnoringASCIICase(CurrentSubtag(), other.CurrentSubtag());
+    }
+    bool MatchesWildcard() const {
+      StringView subtag = CurrentSubtag();
+      return subtag.length() == 1 && subtag[0] == '*';
+    }
+    bool IsSingleton() const {
+      return (subtag_end_ - subtag_start_) == 1 && subtag_start_ > 0;
+    }
+
+   private:
+    const AtomicString& language_range_;
+    wtf_size_t language_range_length_;
+    wtf_size_t subtag_start_ = 0;
+    wtf_size_t subtag_end_;
+  };
+
+  for (const AtomicString& range : language_ranges) {
+    if (language.empty()) {
+      // Per CSS Selectors 4, :lang("") matches elements with lang="".
+      if (!language.IsNull() && range.empty()) {
+        return true;
+      }
+      continue;
+    }
+
+    // Malformed language ranges never match.
+    if (!IsValidExtendedLanguageRange(range.GetString())) {
+      continue;
+    }
+
+    LanguageTagIterator range_subtag(range);
+    LanguageTagIterator language_subtag(language);
+    if (!range_subtag.Matches(language_subtag) &&
+        !range_subtag.MatchesWildcard()) {
+      continue;
+    }
+
+    // Compare the subtags of language and range, taking wildcards into account.
+    // The match succeeds when all the language range subtags can be matched to
+    // the language subtags, and fails otherwise.
+    ++range_subtag;
+    ++language_subtag;
+    while (!range_subtag.AtEnd() && !language_subtag.AtEnd()) {
+      if (range_subtag.MatchesWildcard()) {
+        // A wildcard must match at least one subtag, so consume it
+        ++language_subtag;
+        ++range_subtag;
+      } else if (range_subtag.Matches(language_subtag)) {
+        ++range_subtag;
+        ++language_subtag;
+      } else if (language_subtag.IsSingleton()) {
+        // Singleton blocks further matching for this range, try next range.
+        break;
+      } else {
+        ++language_subtag;
+      }
+    }
+
+    if (range_subtag.AtEnd()) {
+      return true;
+    }
+  }
+  return false;
+}
+
 // The associated host, if we are matching in the context of a shadow tree.
 //
-// https://drafts.csswg.org/css-scoping-1/#in-the-context-of-a-shadow-tree
+// https://drafts.csswg.org/css-shadow-1/#in-the-context-of-a-shadow-tree
 static Element* ShadowHost(
     const SelectorChecker::SelectorCheckingContext& context) {
   if (auto* shadow_root = DynamicTo<ShadowRoot>(context.tree_scope)) {
@@ -178,7 +346,7 @@ static Element* ShadowHost(
 // Returns true if we're matching in the context of a shadow tree [1],
 // and currently pointing at the host associated with that shadow tree.
 //
-// [1] https://drafts.csswg.org/css-scoping-1/#in-the-context-of-a-shadow-tree
+// [1] https://drafts.csswg.org/css-shadow-1/#in-the-context-of-a-shadow-tree
 bool IsAtShadowHost(const SelectorChecker::SelectorCheckingContext& context) {
   return ShadowHost(context) == context.element;
 }
@@ -194,7 +362,7 @@ bool IsAtShadowHost(const SelectorChecker::SelectorCheckingContext& context) {
 // not escape the tree, since we have UA rules that rely on this behavior.
 // TODO(crbug.com/396459461): Find a better solution for styling UA shadows.
 //
-// [1] https://drafts.csswg.org/css-scoping-1/#in-the-context-of-a-shadow-tree
+// [1] https://drafts.csswg.org/css-shadow-1/#in-the-context-of-a-shadow-tree
 
 static Element* ParentElement(
     const SelectorChecker::SelectorCheckingContext& context) {
@@ -518,6 +686,7 @@ SelectorChecker::FeaturelessMatch SelectorChecker::MatchShadowHost(
       return CheckPseudoHas(context, result) ? kFeaturelessMatches
                                              : kFeaturelessFails;
     case CSSSelector::kPseudoActive:
+    case CSSSelector::kPseudoActiveOption:
     case CSSSelector::kPseudoActiveViewTransition:
     case CSSSelector::kPseudoActiveViewTransitionType:
     case CSSSelector::kPseudoAfter:
@@ -575,6 +744,7 @@ SelectorChecker::FeaturelessMatch SelectorChecker::MatchShadowHost(
     case CSSSelector::kPseudoOnlyChild:
     case CSSSelector::kPseudoOnlyOfType:
     case CSSSelector::kPseudoOptional:
+    case CSSSelector::kPseudoOverscrollTarget:
     case CSSSelector::kPseudoPart:
     case CSSSelector::kPseudoPermissionGranted:
     case CSSSelector::kPseudoPermissionIcon:
@@ -586,7 +756,7 @@ SelectorChecker::FeaturelessMatch SelectorChecker::MatchShadowHost(
     case CSSSelector::kPseudoResizer:
     case CSSSelector::kPseudoRightPage:
     case CSSSelector::kPseudoRoot:
-    case CSSSelector::kPseudoRouteMatch:
+    case CSSSelector::kPseudoLinkTo:
     case CSSSelector::kPseudoScrollbar:
     case CSSSelector::kPseudoScrollbarButton:
     case CSSSelector::kPseudoScrollbarCorner:
@@ -639,7 +809,6 @@ SelectorChecker::FeaturelessMatch SelectorChecker::MatchShadowHost(
     case CSSSelector::kPseudoMultiSelectFocus:
     case CSSSelector::kPseudoOpen:
     case CSSSelector::kPseudoPastCue:
-    case CSSSelector::kPseudoPatching:
     case CSSSelector::kPseudoPopoverInTopLayer:
     case CSSSelector::kPseudoPopoverOpen:
     case CSSSelector::kPseudoRelativeAnchor:
@@ -652,6 +821,8 @@ SelectorChecker::FeaturelessMatch SelectorChecker::MatchShadowHost(
     case CSSSelector::kPseudoTargetCurrent:
     case CSSSelector::kPseudoTargetBefore:
     case CSSSelector::kPseudoTargetAfter:
+    case CSSSelector::kPseudoToolFormActive:
+    case CSSSelector::kPseudoToolSubmitActive:
     case CSSSelector::kPseudoViewTransition:
     case CSSSelector::kPseudoViewTransitionGroup:
     case CSSSelector::kPseudoViewTransitionGroupChildren:
@@ -662,7 +833,7 @@ SelectorChecker::FeaturelessMatch SelectorChecker::MatchShadowHost(
     case CSSSelector::kPseudoScrollMarkerGroup:
     case CSSSelector::kPseudoScrollButton:
     case CSSSelector::kPseudoOverscrollAreaParent:
-    case CSSSelector::kPseudoOverscrollClientArea:
+    case CSSSelector::kPseudoSelectHasSlottedButton:
       // These pseudos are not allowed to match featureless elements. When
       // adding new pseudos here, they would typically be allowed if they are
       // logical pseudos which take selector arguments.
@@ -1270,7 +1441,7 @@ ALWAYS_INLINE bool SelectorChecker::CheckOne(
   // :not().) Having a separate code path for matching featureless elements
   // (MatchShadowHost) ensures the featureless matching is done correctly.
   //
-  // [1] https://drafts.csswg.org/css-scoping/#host-element-in-tree
+  // [1] https://drafts.csswg.org/css-shadow/#host-element-in-tree
   // [2] https://github.com/w3c/csswg-drafts/issues/9025
   // [3] https://drafts.csswg.org/selectors-4/#data-model
   if (ShadowHost(context) == element &&
@@ -2056,19 +2227,12 @@ bool SelectorChecker::CheckPseudoHas(const SelectorCheckingContext& context,
   return false;
 }
 
-bool SelectorChecker::CheckPseudoRouteMatch(
-    const SelectorCheckingContext& context,
-    MatchResult& result) const {
+bool SelectorChecker::CheckPseudoLinkTo(const SelectorCheckingContext& context,
+                                        MatchResult& result) const {
   DCHECK(context.selector);
-  DCHECK(context.selector->GetRouteLocation());
+  DCHECK(context.selector->GetLinkCondition());
   Element& element = GetCandidateElement(context, result);
-  const auto* anchor = DynamicTo<HTMLAnchorElement>(&element);
-  if (!anchor) {
-    return false;
-  }
-  const Route* route = context.selector->GetRouteLocation()->FindOrCreateRoute(
-      element.GetDocument());
-  return route && route->MatchesUrl(anchor->Href());
+  return context.selector->GetLinkCondition()->Evaluate(element);
 }
 
 bool SelectorChecker::CheckPseudoClass(const SelectorCheckingContext& context,
@@ -2270,6 +2434,11 @@ bool SelectorChecker::CheckPseudoClass(const SelectorCheckingContext& context,
       }
       return selector.MatchNth(NthIndexCache::NthLastOfTypeIndex(element));
     }
+    case CSSSelector::kPseudoSelectHasSlottedButton:
+      if (auto* select = DynamicTo<HTMLSelectElement>(element)) {
+        return select->SlottedButton();
+      }
+      return false;
     case CSSSelector::kPseudoSelectorFragmentAnchor:
       return MatchesSelectorFragmentAnchorPseudoClass(element);
     case CSSSelector::kPseudoTarget:
@@ -2298,6 +2467,17 @@ bool SelectorChecker::CheckPseudoClass(const SelectorCheckingContext& context,
     case CSSSelector::kPseudoAutofillPreviewed:
     case CSSSelector::kPseudoAutofillSelected:
       return CheckPseudoAutofill(selector.GetPseudoType(), element);
+    case CSSSelector::kPseudoToolFormActive:
+      if (auto* form_element = DynamicTo<HTMLFormElement>(element)) {
+        return form_element->MatchesToolFormActivePseudoClass();
+      }
+      return false;
+    case CSSSelector::kPseudoToolSubmitActive:
+      if (auto* form_control_element =
+              DynamicTo<HTMLFormControlElement>(element)) {
+        return form_control_element->MatchesToolSubmitActivePseudoClass();
+      }
+      return false;
     case CSSSelector::kPseudoAnyLink:
     case CSSSelector::kPseudoWebkitAnyLink:
       return element.IsLink();
@@ -2355,6 +2535,19 @@ bool SelectorChecker::CheckPseudoClass(const SelectorCheckingContext& context,
         return true;
       }
       return element.HasFocusWithin();
+    case CSSSelector::kPseudoActiveOption:
+      if (!RuntimeEnabledFeatures::CustomizableComboboxEnabled()) {
+        return false;
+      }
+      // This will only match for a base appearance combobox because
+      // HTMLDataListElement::ActiveOption will only return an option if the
+      // datalist is being rendered with base appearance.
+      if (auto* option = DynamicTo<HTMLOptionElement>(element)) {
+        if (HTMLDataListElement* datalist = option->OwnerDataListElement()) {
+          return datalist->ActiveOption() == option;
+        }
+      }
+      return false;
     case CSSSelector::kPseudoInterestSource:
       DCHECK(RuntimeEnabledFeatures::HTMLInterestForAttributeEnabled());
       return element.GetInterestState() != Element::InterestState::kNoInterest;
@@ -2651,23 +2844,27 @@ bool SelectorChecker::CheckPseudoClass(const SelectorCheckingContext& context,
     }
     case CSSSelector::kPseudoRoot:
       return element == element.GetDocument().documentElement();
-    case CSSSelector::kPseudoRouteMatch:
+    case CSSSelector::kPseudoLinkTo:
       DCHECK(RuntimeEnabledFeatures::RouteMatchingEnabled());
-      return CheckPseudoRouteMatch(context, result);
+      return CheckPseudoLinkTo(context, result);
     case CSSSelector::kPseudoLang: {
       auto* vtt_element = DynamicTo<VTTElement>(element);
       AtomicString value = vtt_element ? vtt_element->Language()
                                        : element.ComputeInheritedLanguage();
-      const AtomicString& argument = selector.Argument();
-      if (value.empty() ||
-          !value.StartsWith(argument, kTextCaseASCIIInsensitive)) {
-        break;
+      if (!RuntimeEnabledFeatures::CSSLangExtendedRangesEnabled()) {
+        DCHECK_EQ(selector.ArgumentList()->size(), 1u);
+        const AtomicString& argument = (*selector.ArgumentList())[0];
+        if (value.empty() ||
+            !value.StartsWith(argument, kTextCaseASCIIInsensitive)) {
+          break;
+        }
+        if (value.length() != argument.length() &&
+            value[argument.length()] != '-') {
+          break;
+        }
+        return true;
       }
-      if (value.length() != argument.length() &&
-          value[argument.length()] != '-') {
-        break;
-      }
-      return true;
+      return MatchesLangPseudoClass(value, *selector.ArgumentList());
     }
     case CSSSelector::kPseudoDir: {
       const AtomicString& argument = selector.Argument();
@@ -2719,6 +2916,8 @@ bool SelectorChecker::CheckPseudoClass(const SelectorCheckingContext& context,
         return select->PopupIsVisible();
       } else if (auto* input = DynamicTo<HTMLInputElement>(element)) {
         return input->IsPickerVisible();
+      } else if (auto* menuitem = DynamicTo<HTMLMenuItemElement>(element)) {
+        return menuitem->IsSubmenuOpen();
       }
       return false;
     case CSSSelector::kPseudoMenulistPopoverWithMenubarAnchor:
@@ -2754,6 +2953,8 @@ bool SelectorChecker::CheckPseudoClass(const SelectorCheckingContext& context,
             RuntimeEnabledFeatures::GeolocationElementEnabled(
                 element.GetExecutionContext()) ||
             RuntimeEnabledFeatures::UserMediaElementEnabled(
+                element.GetExecutionContext()) ||
+            RuntimeEnabledFeatures::InstallElementEnabled(
                 element.GetExecutionContext()));
       auto* permission_element = DynamicTo<HTMLPermissionElement>(element);
       return permission_element && permission_element->granted();
@@ -2812,9 +3013,6 @@ bool SelectorChecker::CheckPseudoClass(const SelectorCheckingContext& context,
     case CSSSelector::kPseudoPastCue: {
       auto* vtt_element = DynamicTo<VTTElement>(element);
       return vtt_element && vtt_element->IsPastNode();
-    }
-    case CSSSelector::kPseudoPatching: {
-      return element.currentPatch();
     }
     case CSSSelector::kPseudoScope:
       return CheckPseudoScope(context, result);
@@ -2917,6 +3115,8 @@ bool SelectorChecker::CheckPseudoClass(const SelectorCheckingContext& context,
         return false;
       }
       return context.search_text_request_is_current;
+    case CSSSelector::kPseudoOverscrollTarget:
+      return SelectorChecker::MatchesOverscrollTarget(element);
     case CSSSelector::kPseudoUnknown:
     default:
       NOTREACHED();
@@ -3129,8 +3329,8 @@ bool SelectorChecker::CheckPseudoElement(const SelectorCheckingContext& context,
       // contained in the pseudo-element's classes (pseudo_ident_list).
       return std::ranges::all_of(base::span(selector.IdentList()).subspan(1ul),
                                  [&](const AtomicString& class_from_selector) {
-                                   return base::Contains(pseudo_ident_list,
-                                                         class_from_selector);
+                                   return std::ranges::contains(
+                                       pseudo_ident_list, class_from_selector);
                                  });
     }
     case CSSSelector::kPseudoScrollbarButton:
@@ -3145,8 +3345,7 @@ bool SelectorChecker::CheckPseudoElement(const SelectorCheckingContext& context,
       result.dynamic_pseudo = context.pseudo_id;
       return true;
     }
-    case CSSSelector::kPseudoOverscrollAreaParent:
-    case CSSSelector::kPseudoOverscrollClientArea: {
+    case CSSSelector::kPseudoOverscrollAreaParent: {
       return element.GetPseudoIdForStyling() == pseudo_id;
     }
     case CSSSelector::kPseudoScrollButton:
@@ -3273,7 +3472,7 @@ bool SelectorChecker::CheckPseudoHost(const SelectorCheckingContext& context,
   // following MatchSelector call, since we are no longer matching in *its*
   // shadow-tree-context.
   //
-  // [1] https://drafts.csswg.org/css-scoping-1/#host-selector
+  // [1] https://drafts.csswg.org/css-shadow-1/#host-selector
   sub_context.tree_scope = &context.element->GetTreeScope();
   sub_context.scope = &sub_context.tree_scope->RootNode();
 
@@ -3471,6 +3670,20 @@ bool SelectorChecker::MatchesActiveViewTransitionPseudoClass(
   return GetTransitionForScope(element) != nullptr;
 }
 
+bool SelectorChecker::MatchesOverscrollTarget(const Element& element) {
+  if (!RuntimeEnabledFeatures::OverscrollGesturesEnabled()) {
+    return false;
+  }
+
+  const AtomicString& id = element.FastGetAttribute(html_names::kIdAttr);
+  if (id.empty() ||
+      !element.GetDocument().OverscrollCommandTargets().Contains(id)) {
+    return false;
+  }
+
+  return element.GetDocument().getElementById(id) == &element;
+}
+
 bool SelectorChecker::MatchesFocusPseudoClass(
     const Element& element,
     PseudoId matching_for_pseudo_element) {
@@ -3511,7 +3724,17 @@ bool SelectorChecker::MatchesFocusVisiblePseudoClass(const Element& element) {
   }
 
   const Settings* settings = document.GetSettings();
-  bool always_show_focus = settings->GetAccessibilityAlwaysShowFocus();
+  const FocusOptions* focus_options = element.GetDocument().GetFocusOptions();
+  const bool force_focus_invisible =
+      !settings->GetAccessibilityAlwaysShowFocus() && focus_options &&
+      focus_options->hasFocusVisible() && !focus_options->focusVisible();
+  if (force_focus_invisible) {
+    return false;
+  }
+
+  bool always_show_focus = settings->GetAccessibilityAlwaysShowFocus() ||
+                           (focus_options && focus_options->hasFocusVisible() &&
+                            focus_options->focusVisible());
   bool is_text_input = element.MayTriggerVirtualKeyboard();
   bool last_focus_from_mouse =
       document.GetFrame() &&

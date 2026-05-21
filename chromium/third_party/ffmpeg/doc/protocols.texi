@@ -352,6 +352,17 @@ means auto (seekable for normal files, non-seekable for named pipes).
 Many demuxers handle seekable and non-seekable resources differently,
 overriding this might speed up opening certain files at the cost of losing some
 features (e.g. accurate seeking).
+
+@item pkt_size
+Set the maximum packet size used for file I/O. A smaller value may reduce
+memory usage. A higher value may increase throughput especially with networked
+filesystems.
+
+For reading, if explicitly set, it overrides the default internal buffer size
+(32 KB) and limits the maximum amount of data read per operation.
+
+For writing, this sets the size of each write operation. The default is 256 KB
+for regular files, 32 KB otherwise.
 @end table
 
 @section ftp
@@ -2271,6 +2282,10 @@ The following parameters can be set via command line options
 Timeout in ms.
 @item listen
 Create the Unix socket in listening mode.
+@item pkt_size
+Maximum packet size for packet-oriented sockets (SOCK_DGRAM and
+SOCK_SEQPACKET). If greater than zero, this value is used as
+@code{max_packet_size}. Ignored for SOCK_STREAM. Default is @code{0}.
 @end table
 
 @section zmq

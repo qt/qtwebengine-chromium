@@ -20,6 +20,7 @@
 #include "third_party/blink/renderer/core/layout/geometry/box_sides.h"
 #include "third_party/blink/renderer/core/layout/geometry/box_strut.h"
 #include "third_party/blink/renderer/core/layout/geometry/fragment_geometry.h"
+#include "third_party/blink/renderer/core/layout/geometry/logical_offset.h"
 #include "third_party/blink/renderer/core/layout/geometry/physical_rect.h"
 #include "third_party/blink/renderer/core/layout/inline/fragment_items_builder.h"
 #include "third_party/blink/renderer/core/layout/layout_result.h"
@@ -172,8 +173,9 @@ class CORE_EXPORT BoxFragmentBuilder final : public FragmentBuilder {
   }
   LayoutUnit FragmentsTotalBlockSize() const {
 #if DCHECK_IS_ON()
-    if (has_block_fragmentation_)
+    if (space_.HasBlockFragmentation()) {
       DCHECK(block_size_is_for_all_fragments_);
+    }
     DCHECK(size_.block_size != kIndefiniteSize);
 #endif
     return size_.block_size;
@@ -192,8 +194,9 @@ class CORE_EXPORT BoxFragmentBuilder final : public FragmentBuilder {
 
   LayoutUnit FragmentBlockSize() const {
 #if DCHECK_IS_ON()
-    DCHECK(!block_size_is_for_all_fragments_ || !has_block_fragmentation_ ||
-           IsInitialColumnBalancingPass());
+    DCHECK(!block_size_is_for_all_fragments_ ||
+           !space_.HasBlockFragmentation() ||
+           space_.IsInitialColumnBalancingPass());
     DCHECK(size_.block_size != kIndefiniteSize);
 #endif
     return size_.block_size;
@@ -333,9 +336,16 @@ class CORE_EXPORT BoxFragmentBuilder final : public FragmentBuilder {
   // always be provided for regular in-flow children. For other types of
   // children it may be omitted, if the break shouldn't affect the appeal of
   // breaking inside this container.
+  //
+  // An out-of-flow positioned node may need to skip one or more fragmentainers
+  // before creating a fragment, for instance due to a large block-start inset.
+  // `oof_start_offset` is used for this. The inline offset is also needed,
+  // since it may be based on the hypothetically static position, which cannot
+  // be recomputed when in a subsequent fragmentainer.
   void AddBreakBeforeChild(LayoutInputNode child,
                            std::optional<BreakAppeal> appeal,
-                           bool is_forced_break);
+                           bool is_forced_break,
+                           LogicalOffset oof_start_offset = {});
 
   // Add a layout result and propagate info from it. This involves appending the
   // fragment and its relative offset to the builder, but also keeping track of

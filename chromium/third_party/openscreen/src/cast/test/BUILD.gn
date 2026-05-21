@@ -25,6 +25,10 @@ openscreen_source_set("unittests") {
   if (!build_with_chromium) {
     deps += [ "../protocol:unittests" ]
   }
+
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs = [ "//build/config/compiler:no_exit_time_destructors" ]
 }
 
 if (is_posix && !build_with_chromium) {

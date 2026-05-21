@@ -16,33 +16,48 @@
 namespace blink {
 class SchedulerTaskContext;
 class SoftNavigationContext;
+class ResourceTimingContext;
 
 class CORE_EXPORT TaskAttributionInfoImpl final
     : public TaskAttributionTaskState,
       public scheduler::TaskAttributionInfo {
  public:
-  TaskAttributionInfoImpl(scheduler::TaskAttributionId, SoftNavigationContext*);
-
+  TaskAttributionInfoImpl(SoftNavigationContext*,
+                          ResourceTimingContext*,
+                          uint32_t async_data_for_test = 0);
   // `TaskAttributionTaskState` implementation:
   scheduler::TaskAttributionInfo* GetTaskAttributionInfo() override;
   SchedulerTaskContext* GetSchedulerTaskContext() override;
+  bool IsTaskAttributionInfoImpl() const override;
+  TaskAttributionTaskState* ForkAndSetVariable(
+      ResourceTimingContext*) override;
+  TaskAttributionTaskState* ForkAndSetVariable(
+      SoftNavigationContext*) override;
 
   // `scheduler::TaskAttributionInfo` implementation:
   scheduler::TaskAttributionId Id() const override;
+  uint32_t AsyncDataForTest() const override;
   SoftNavigationContext* GetSoftNavigationContext() override;
+  ResourceTimingContext* GetResourceTimingContext() override;
 
   void Trace(Visitor*) const override;
 
  private:
   const scheduler::TaskAttributionId id_;
+  const uint32_t async_data_for_test_;
   Member<SoftNavigationContext> soft_navigation_context_;
+  Member<ResourceTimingContext> resource_timing_context_;
 };
 
-// `TaskAttributionInfoImpl` is the only implementation of
-// `scheduler::TaskAttributionInfo`, so this cast is always safe.
 template <>
 struct DowncastTraits<TaskAttributionInfoImpl> {
+  // `TaskAttributionInfoImpl` is the only implementation of
+  // `scheduler::TaskAttributionInfo`, so this cast is always safe.
   static bool AllowFrom(const scheduler::TaskAttributionInfo&) { return true; }
+  static bool AllowFrom(
+      const TaskAttributionTaskState& task_attribution_task_state) {
+    return task_attribution_task_state.IsTaskAttributionInfoImpl();
+  }
 };
 
 }  // namespace blink

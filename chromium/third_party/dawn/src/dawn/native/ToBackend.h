@@ -73,6 +73,11 @@ struct ToBackendTraits<DeviceBase, BackendTraits> {
 };
 
 template <typename BackendTraits>
+struct ToBackendTraits<ExternalTextureBase, BackendTraits> {
+    using BackendType = typename BackendTraits::ExternalTextureType;
+};
+
+template <typename BackendTraits>
 struct ToBackendTraits<PipelineCacheBase, BackendTraits> {
     using BackendType = typename BackendTraits::PipelineCacheType;
 };
@@ -88,13 +93,13 @@ struct ToBackendTraits<QuerySetBase, BackendTraits> {
 };
 
 template <typename BackendTraits>
-struct ToBackendTraits<RenderBundleBase, BackendTraits> {
-    using BackendType = typename BackendTraits::RenderBundleType;
+struct ToBackendTraits<QueueBase, BackendTraits> {
+    using BackendType = typename BackendTraits::QueueType;
 };
 
 template <typename BackendTraits>
-struct ToBackendTraits<QueueBase, BackendTraits> {
-    using BackendType = typename BackendTraits::QueueType;
+struct ToBackendTraits<RenderBundleBase, BackendTraits> {
+    using BackendType = typename BackendTraits::RenderBundleType;
 };
 
 template <typename BackendTraits>
@@ -105,6 +110,11 @@ struct ToBackendTraits<RenderPipelineBase, BackendTraits> {
 template <typename BackendTraits>
 struct ToBackendTraits<ResourceHeapBase, BackendTraits> {
     using BackendType = typename BackendTraits::ResourceHeapType;
+};
+
+template <typename BackendTraits>
+struct ToBackendTraits<ResourceTableBase, BackendTraits> {
+    using BackendType = typename BackendTraits::ResourceTableType;
 };
 
 template <typename BackendTraits>

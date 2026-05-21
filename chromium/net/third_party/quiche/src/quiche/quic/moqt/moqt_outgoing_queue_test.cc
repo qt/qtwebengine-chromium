@@ -19,6 +19,7 @@
 #include "quiche/quic/core/quic_time.h"
 #include "quiche/quic/moqt/moqt_fetch_task.h"
 #include "quiche/quic/moqt/moqt_messages.h"
+#include "quiche/quic/moqt/moqt_names.h"
 #include "quiche/quic/moqt/moqt_object.h"
 #include "quiche/quic/moqt/moqt_priority.h"
 #include "quiche/quic/moqt/moqt_publisher.h"
@@ -44,14 +45,15 @@ using ::testing::Return;
 class TestMoqtOutgoingQueue : public MoqtOutgoingQueue,
                               public MoqtObjectListener {
  public:
-  TestMoqtOutgoingQueue()
-      : MoqtOutgoingQueue(FullTrackName{"test", "track"},
-                          MoqtForwardingPreference::kSubgroup) {
+  TestMoqtOutgoingQueue() : MoqtOutgoingQueue(FullTrackName{"test", "track"}) {
     AddObjectListener(this);
   }
 
-  void OnNewObjectAvailable(Location sequence, uint64_t subgroup,
-                            MoqtPriority publisher_priority) override {
+  void OnNewObjectAvailable(
+      Location sequence, uint64_t subgroup, MoqtPriority publisher_priority,
+      MoqtForwardingPreference forwarding_preference) override {
+    // MoqtOutgoingQueue does not create datagrams.
+    ASSERT_EQ(forwarding_preference, MoqtForwardingPreference::kSubgroup);
     std::optional<PublishedObject> object =
         GetCachedObject(sequence.group, subgroup, sequence.object);
     ASSERT_THAT(object,
@@ -77,7 +79,8 @@ class TestMoqtOutgoingQueue : public MoqtOutgoingQueue,
         GetCachedObjectsInRange(Location(0, 0), *largest_location());
     for (Location object : objects) {
       if (window.InWindow(object)) {
-        OnNewObjectAvailable(object, 0, publisher_priority());
+        OnNewObjectAvailable(object, 0, default_publisher_priority(),
+                             MoqtForwardingPreference::kSubgroup);
       }
     }
   }
@@ -94,7 +97,7 @@ class TestMoqtOutgoingQueue : public MoqtOutgoingQueue,
               ());
   MOCK_METHOD(void, OnTrackPublisherGone, (), (override));
   MOCK_METHOD(void, OnSubscribeAccepted, (), (override));
-  MOCK_METHOD(void, OnSubscribeRejected, (MoqtSubscribeErrorReason reason),
+  MOCK_METHOD(void, OnSubscribeRejected, (MoqtRequestErrorInfo reason),
               (override));
 };
 
@@ -373,7 +376,6 @@ TEST(MoqtOutgoingQueue, RelativeJoiningFetch) {
   queue.AddObject(quiche::QuicheMemSlice::Copy("e"), true);   // 3, 0
   queue.AddObject(quiche::QuicheMemSlice::Copy("f"), false);  // 3, 1
   queue.AddObject(quiche::QuicheMemSlice::Copy("g"), true);   // 4, 0
-  queue.SetDeliveryOrder(MoqtDeliveryOrder::kDescending);
   // Early groups are already destroyed.
   EXPECT_THAT(
       FetchToVector(queue.RelativeFetch(4, MoqtDeliveryOrder::kDescending)),
@@ -393,7 +395,6 @@ TEST(MoqtOutgoingQueue, AbsoluteJoiningFetch) {
   queue.AddObject(quiche::QuicheMemSlice::Copy("e"), true);   // 3, 0
   queue.AddObject(quiche::QuicheMemSlice::Copy("f"), false);  // 3, 1
   queue.AddObject(quiche::QuicheMemSlice::Copy("g"), true);   // 4, 0
-  queue.SetDeliveryOrder(MoqtDeliveryOrder::kDescending);
   // Early groups are already destroyed.
   EXPECT_THAT(
       FetchToVector(queue.AbsoluteFetch(1, MoqtDeliveryOrder::kDescending)),
@@ -445,7 +446,7 @@ TEST(MoqtOutgoingQueue, EndOfTrack) {
   // end_of_track is false before Close() is called.
   fetch->SetFetchResponseCallback(
       [&end_of_track,
-       &end_location](std::variant<MoqtFetchOk, MoqtFetchError> arg) {
+       &end_location](std::variant<MoqtFetchOk, MoqtRequestError> arg) {
         end_of_track = std::get<MoqtFetchOk>(arg).end_of_track;
         end_location = std::get<MoqtFetchOk>(arg).end_location;
       });
@@ -459,7 +460,7 @@ TEST(MoqtOutgoingQueue, EndOfTrack) {
   // end_of_track is false if the fetch does not include the last object.
   fetch->SetFetchResponseCallback(
       [&end_of_track,
-       &end_location](std::variant<MoqtFetchOk, MoqtFetchError> arg) {
+       &end_location](std::variant<MoqtFetchOk, MoqtRequestError> arg) {
         end_of_track = std::get<MoqtFetchOk>(arg).end_of_track;
         end_location = std::get<MoqtFetchOk>(arg).end_location;
       });
@@ -471,7 +472,7 @@ TEST(MoqtOutgoingQueue, EndOfTrack) {
   // end_of_track is true if the fetch includes the last object.
   fetch->SetFetchResponseCallback(
       [&end_of_track,
-       &end_location](std::variant<MoqtFetchOk, MoqtFetchError> arg) {
+       &end_location](std::variant<MoqtFetchOk, MoqtRequestError> arg) {
         end_of_track = std::get<MoqtFetchOk>(arg).end_of_track;
         end_location = std::get<MoqtFetchOk>(arg).end_location;
       });

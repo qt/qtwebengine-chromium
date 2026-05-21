@@ -6,6 +6,7 @@
 
 #include <stdint.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <optional>
@@ -14,7 +15,6 @@
 #include <utility>
 #include <vector>
 
-#include "base/containers/contains.h"
 #include "base/containers/span.h"
 #include "base/feature_list.h"
 #include "base/numerics/byte_conversions.h"
@@ -89,18 +89,16 @@ void AppendReportingIdForSelectedReportingKeyKAnonKey(
     base::optional_ref<const std::string> reporting_id,
     std::string& k_anon_key) {
   if (!reporting_id.has_value()) {
-    base::StrAppend(&k_anon_key,
-                    {"\n", std::string_view("\x00\x00\x00\x00\x00", 5)});
+    base::StrAppend(
+        &k_anon_key,
+        {base::MakeStringViewWithNulChars("\n\x00\x00\x00\x00\x00")});
     return;
   }
 
   std::array<uint8_t, 4u> size_in_bytes =
       base::U32ToBigEndian(reporting_id->size());
-  base::StrAppend(
-      &k_anon_key,
-      {"\n", std::string_view("\x01", 1),
-       base::as_string_view(base::as_chars(base::span(size_in_bytes))),
-       *reporting_id});
+  base::StrAppend(&k_anon_key, {"\n\x01", base::as_string_view(size_in_bytes),
+                                *reporting_id});
 }
 
 std::string InternalPlainTextKAnonKeyForAdNameReporting(
@@ -630,7 +628,7 @@ std::string DEPRECATED_KAnonKeyForAdBid(
     const InterestGroup& group,
     const std::string& ad_url_from_gurl_spec) {
   DCHECK(group.ads);
-  DCHECK(base::Contains(
+  DCHECK(std::ranges::contains(
       *group.ads, ad_url_from_gurl_spec,
       [](const blink::InterestGroup::Ad& ad) { return ad.render_url(); }))
       << "No such ad: " << ad_url_from_gurl_spec;
@@ -685,7 +683,8 @@ std::string DEPRECATED_KAnonKeyForAdNameReporting(
     base::optional_ref<const std::string>
         selected_buyer_and_seller_reporting_id) {
   DCHECK(group.ads);
-  DCHECK(base::Contains(*group.ads, ad)) << "No such ad: " << ad.render_url();
+  DCHECK(std::ranges::contains(*group.ads, ad))
+      << "No such ad: " << ad.render_url();
   DCHECK(group.bidding_url);
   return InternalPlainTextKAnonKeyForAdNameReporting(
       group.owner, group.name, group.bidding_url.value_or(GURL()),

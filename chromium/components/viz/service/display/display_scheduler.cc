@@ -11,16 +11,18 @@
 #include "base/auto_reset.h"
 #include "base/feature_list.h"
 #include "base/memory/raw_ptr.h"
-#include "base/metrics/histogram_macros.h"
 #include "base/notimplemented.h"
 #include "base/task/delay_policy.h"
 #include "base/task/single_thread_task_runner.h"
+#include "base/time/default_tick_clock.h"
+#include "base/time/time.h"
 #include "base/trace_event/trace_event.h"
 #include "components/viz/common/features.h"
 #include "components/viz/common/frame_sinks/begin_frame_args.h"
 #include "components/viz/common/frame_sinks/begin_frame_source.h"
 #include "components/viz/service/performance_hint/hint_session.h"
 #include "third_party/perfetto/include/perfetto/tracing/track.h"
+#include "ui/gfx/presentation_feedback.h"
 
 namespace viz {
 
@@ -37,8 +39,7 @@ base::TimeDelta ComputeAdpfTarget(const BeginFrameArgs& args) {
 
 bool AdpfCanUseSetThreads() {
 #if BUILDFLAG(IS_ANDROID)
-  return android_get_device_api_level() >= __ANDROID_API_U__ &&
-         base::FeatureList::IsEnabled(features::kEnableADPFSetThreads);
+  return android_get_device_api_level() >= __ANDROID_API_U__;
 #else
   return false;
 #endif
@@ -97,7 +98,9 @@ DisplayScheduler::DisplayScheduler(BeginFrameSource* begin_frame_source,
       pending_swap_params_(std::move(pending_swap_params)),
       wait_for_all_surfaces_before_draw_(wait_for_all_surfaces_before_draw),
       observing_begin_frame_source_(false),
-      hint_session_factory_(hint_session_factory) {
+      last_targeted_latch_time_(),
+      hint_session_factory_(hint_session_factory),
+      tick_clock_(base::DefaultTickClock::GetInstance()) {
   if (base::FeatureList::IsEnabled(features::kDisplaySchedulerAsClient)) {
     begin_frame_source_->SetSchedulerClient(this);
   }
@@ -119,6 +122,15 @@ DisplayScheduler::~DisplayScheduler() {
   // in-flight swap. So always mark the gpu as not busy during destruction.
   begin_frame_source_->SetIsGpuBusy(false);
   StopObservingBeginFrames();
+}
+
+void DisplayScheduler::SetTickClockForTesting(  // IN-TEST
+    const base::TickClock* tick_clock) {
+  tick_clock_ = tick_clock;
+}
+
+base::TimeTicks DisplayScheduler::NowTicks() const {
+  return tick_clock_->NowTicks();
 }
 
 DisplayScheduler::AdpfSessionState::AdpfSessionState(
@@ -251,13 +263,35 @@ void DisplayScheduler::ReportFrameTime(
     HintSession::BoostType boost_type) {
   MaybeCreateHintSessions(std::move(animation_thread_ids),
                           std::move(renderer_main_thread_ids));
-  UMA_HISTOGRAM_CUSTOM_MICROSECONDS_TIMES("Compositing.Display.AdpfHintUs",
-                                          frame_time, base::Microseconds(1),
-                                          base::Milliseconds(50), 50);
   for (const auto& state : session_states_) {
     if (state.hint_session) {
       state.hint_session->ReportCpuCompletionTime(frame_time, draw_start,
                                                   boost_type);
+    }
+  }
+}
+
+void DisplayScheduler::OnPresentationFeedback(
+    const gfx::PresentationFeedback& feedback,
+    int64_t choreographer_vsync_id,
+    base::TimeTicks frame_time,
+    base::TimeDelta interval,
+    std::optional<PossibleDeadline> deadline,
+    std::optional<PossibleDeadline> preferred) {
+  if (deadline.has_value() && !feedback.failed()) {
+    base::TimeTicks target_latch_time = frame_time + deadline->latch_delta;
+    // The `feedback.latch_timestamp` can be later than the `target_latch_time
+    // = it->frame_time + it->deadline.latch_delta`. This could be because we
+    // missed the latch, measured by `feedback.ready_timestamp`. If we did not
+    // miss that, then we could be enqueue in Android SurfaceControl, either
+    // due to missed a buffer in the past, or an underlying delay in the OS.
+    // If the delta between the latch times is larger than `it->interval` we
+    // can detect this issue. It currently happens too often to emit a metric
+    // or trace for.
+    if (feedback.ready_timestamp > target_latch_time) {
+      TRACE_EVENT_INSTANT1("viz", "DisplayScheduler::ReadyAfterTargetLatch",
+                           TRACE_EVENT_SCOPE_THREAD, "delta",
+                           feedback.ready_timestamp - target_latch_time);
     }
   }
 }
@@ -269,12 +303,54 @@ bool DisplayScheduler::DrawAndSwap() {
                      pending_swap_params_.max_pending_swaps_120hz.value_or(0)));
   DCHECK(!output_surface_lost_);
 
-  DrawAndSwapParams params{current_begin_frame_args_.frame_time,
-                           current_frame_display_time(), MaxPendingSwaps()};
+  DrawAndSwapParams params;
+  params.begin_frame_args = current_begin_frame_args_;
+  params.expected_display_time = current_frame_display_time();
+  params.max_pending_swaps = MaxPendingSwaps();
   if (current_begin_frame_args_.possible_deadlines) {
-    params.choreographer_vsync_id =
-        current_begin_frame_args_.possible_deadlines->GetPreferredDeadline()
-            .vsync_id;
+    auto& deadlines = *current_begin_frame_args_.possible_deadlines;
+    auto selected_deadline = deadlines.GetPreferredDeadline();
+
+    if (base::FeatureList::IsEnabled(features::kSelectFutureFrameDeadline)) {
+      base::TimeTicks now = NowTicks();
+      base::TimeTicks preferred_latch_time =
+          current_begin_frame_args_.frame_time + selected_deadline.latch_delta;
+
+      // The `possible_deadlines.vsync_id` are different for each VSync we
+      // receive. However they map to overlapping latch times.
+      //
+      // VSync 1 vsync_id: 0, 1, 2, 3, 4
+      // VSync 2 vsync_id:    5, 6, 7, 8, 9
+      //
+      // When swapping a buffer, targeting the same `latch_time` does not
+      // replace it. Instead it is enqueued for the next available time.
+      //
+      // So we want to select the next available `latch_time` that we have not
+      // submitted to.
+      if (last_targeted_latch_time_ > preferred_latch_time ||
+          last_targeted_latch_time_ > now || preferred_latch_time < now) {
+        for (const auto& deadline : deadlines.deadlines) {
+          base::TimeTicks latch_time =
+              current_begin_frame_args_.frame_time + deadline.latch_delta;
+          if (latch_time > last_targeted_latch_time_ && latch_time > now) {
+            selected_deadline = deadline;
+            break;
+          }
+        }
+      }
+    }
+    last_targeted_latch_time_ =
+        current_begin_frame_args_.frame_time + selected_deadline.latch_delta;
+    params.choreographer_vsync_id = selected_deadline.vsync_id;
+    params.deadline = selected_deadline;
+    params.preferred_deadline = deadlines.GetPreferredDeadline();
+  }
+  if (current_begin_frame_args_.throttled_adjusted_frame_time !=
+      base::TimeTicks()) {
+    params.throttled_adjusted_frame_time =
+        current_begin_frame_args_.throttled_adjusted_frame_time;
+  } else if (current_begin_frame_args_.is_throttled) {
+    params.throttled_adjusted_frame_time = base::TimeTicks::Now();
   }
   bool success = client_ && client_->DrawAndSwap(params);
   if (!success)
@@ -285,7 +361,7 @@ bool DisplayScheduler::DrawAndSwap() {
 }
 
 bool DisplayScheduler::OnBeginFrame(const BeginFrameArgs& args) {
-  base::TimeTicks now = base::TimeTicks::Now();
+  base::TimeTicks now = NowTicks();
   TRACE_EVENT2("viz", "DisplayScheduler::BeginFrame", "args", args.AsValue(),
                "now", now);
 
@@ -563,6 +639,20 @@ void DisplayScheduler::ScheduleBeginFrameDeadline() {
 
   // Determine the deadline we want to use.
   BeginFrameDeadlineMode deadline_mode = AdjustedBeginFrameDeadlineMode();
+
+  if (deadline_mode == BeginFrameDeadlineMode::kLate &&
+      pending_swaps_ >= MaxPendingSwaps()) {
+    current_begin_frame_args_.is_throttled = true;
+    current_begin_frame_args_.throttled_adjusted_frame_time = base::TimeTicks();
+  } else if (current_begin_frame_args_.is_throttled) {
+    // Chrome can re-enter ScheduleBeginFrameDeadline after being throttled.
+    // For example in a 30fps video scenario it can happen when all active
+    // surfaces are ready and the buffer is freed at that point.
+    current_begin_frame_args_.is_throttled = false;
+    current_begin_frame_args_.throttled_adjusted_frame_time =
+        base::TimeTicks::Now();
+  }
+
   base::TimeTicks desired_deadline =
       DesiredBeginFrameDeadlineTime(deadline_mode, current_begin_frame_args_);
 

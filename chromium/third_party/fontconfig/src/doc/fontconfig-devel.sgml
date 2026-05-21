@@ -3,6 +3,7 @@
 <!ENTITY fcblanks SYSTEM "fcblanks.sgml">
 <!ENTITY fccache SYSTEM "fccache.sgml">
 <!ENTITY fccharset SYSTEM "fccharset.sgml">
+<!ENTITY fcconffile SYSTEM "fcconffile.sgml">
 <!ENTITY fcconfig SYSTEM "fcconfig.sgml">
 <!ENTITY fcconstant SYSTEM "fcconstant.sgml">
 <!ENTITY fcdircache SYSTEM "fcdircache.sgml">
@@ -550,6 +551,12 @@ FcMatrix structures hold an affine transformation in matrix form.
 An FcRange holds two variables to indicate a range in between.
     </para>
     &fcrange;
+  </sect2>
+  <sect2><title>FcConfigFile</title>
+    <para>
+Generate a configuration in XML format from a font file
+    </para>
+    &fcconffile;
   </sect2>
   <sect2><title>FcConfig</title>
     <para>

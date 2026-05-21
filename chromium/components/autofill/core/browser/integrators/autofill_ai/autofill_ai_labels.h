@@ -5,8 +5,8 @@
 #ifndef COMPONENTS_AUTOFILL_CORE_BROWSER_INTEGRATORS_AUTOFILL_AI_AUTOFILL_AI_LABELS_H_
 #define COMPONENTS_AUTOFILL_CORE_BROWSER_INTEGRATORS_AUTOFILL_AI_AUTOFILL_AI_LABELS_H_
 
-#include <map>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "base/containers/flat_set.h"
@@ -39,6 +39,10 @@ using EntityLabel = std::vector<std::u16string>;
 // `attribute_types_to_ignore` contains types that shouldn't be used to generate
 // labels.
 //
+// `obfuscate_sensitive_types` replaces the first characters of an entity value
+// with dots, leaving only the last 4 one visible. Only sensitive types are
+// obfuscated.
+//
 // If `only_disambiguating_types` is true, only `AttributeType`s satisfying
 // `AttributeType::is_disambiguating_type()` are considered. For example, for a
 // passport, the name and country are considered, but the number is not.
@@ -46,7 +50,8 @@ std::vector<EntityLabel> GetLabelsForEntities(
     base::span<const EntityInstance* const> entities,
     DenseSet<AttributeType> attribute_types_to_ignore,
     bool only_disambiguating_types,
-    const std::string& app_locale);
+    bool obfuscate_sensitive_types,
+    std::string_view app_locale);
 
 }  // namespace autofill
 

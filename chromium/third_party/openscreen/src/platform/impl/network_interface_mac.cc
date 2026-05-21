@@ -23,6 +23,7 @@
 #include "platform/base/span.h"
 #include "platform/impl/network_interface.h"
 #include "platform/impl/scoped_pipe.h"
+#include "platform/impl/socket_address_posix.h"
 #include "util/osp_logging.h"
 #include "util/std_util.h"
 
@@ -34,20 +35,19 @@ namespace {
 // unset bits, return the number of leftmost bits set. This also sanity-checks
 // that there are no "holes" in the bit pattern, returning 0 if that check
 // fails.
-template <size_t N>
-uint8_t ToPrefixLength(const uint8_t (&netmask)[N]) {
+uint8_t ToPrefixLength(std::span<const uint8_t> netmask) {
   uint8_t result = 0;
   size_t i = 0;
 
   // Ensure all of the leftmost bits are set.
-  while (i < N && netmask[i] == UINT8_C(0xff)) {
+  while (i < netmask.size() && netmask[i] == UINT8_C(0xff)) {
     result += 8;
     ++i;
   }
 
   // Check the intermediate byte, the first that is not 0xFF,
   // e.g. 0b11100000 or 0x00
-  if (i < N && netmask[i] != UINT8_C(0x00)) {
+  if (i < netmask.size() && netmask[i] != UINT8_C(0x00)) {
     uint8_t last_byte = netmask[i];
     // Check the left most bit, bitshifting as we go.
     while (last_byte & UINT8_C(0x80)) {
@@ -59,7 +59,7 @@ uint8_t ToPrefixLength(const uint8_t (&netmask)[N]) {
   }
 
   // Ensure the rest of the bytes are zeroed out.
-  while (i < N) {
+  while (i < netmask.size()) {
     OSP_CHECK(netmask[i] == UINT8_C(0x00));
     ++i;
   }
@@ -93,12 +93,11 @@ std::vector<InterfaceInfo> ProcessInterfacesList(ifaddrs* interfaces) {
       // skip further processing. Note that "active" here means the media is
       // connected to the interface, which is different than the interface being
       // up/down.
-      ifmediareq ifmr;
-      memset(&ifmr, 0, sizeof(ifmr));
-      // Note: Because of the memset(), memcpy() can be used to copy the
-      // ifmr.ifm_name string, and it will always be NUL terminated.
-      memcpy(ifmr.ifm_name, name.data(),
-             std::min(name.size(), sizeof(ifmr.ifm_name) - 1));
+      ifmediareq ifmr{};
+      // `ifmr` is both an input and an output of the `ioctl` method, and since
+      // it is zero-initialized it can safely be copied with strncpy() and will
+      // always be NUL terminated.
+      strncpy(ifmr.ifm_name, name.c_str(), sizeof(ifmr.ifm_name) - 1);
       if (ioctl(ioctl_socket.get(), SIOCGIFMEDIA, &ifmr) >= 0) {
         if (!((ifmr.ifm_status & IFM_AVALID) &&
               (ifmr.ifm_status & IFM_ACTIVE))) {
@@ -132,13 +131,17 @@ std::vector<InterfaceInfo> ProcessInterfacesList(ifaddrs* interfaces) {
       auto* const addr_dl = reinterpret_cast<const sockaddr_dl*>(cur->ifa_addr);
       ByteView address_bytes(reinterpret_cast<uint8_t*>(LLADDR(addr_dl)),
                              addr_dl->sdl_alen);
-      interface->hardware_address.assign(address_bytes.cbegin(),
-                                         address_bytes.cend());
+      interface->hardware_address.assign(address_bytes.begin(),
+                                         address_bytes.end());
     } else if (cur->ifa_addr->sa_family == AF_INET6) {  // Ipv6 address.
       struct in6_ifreq ifr = {};
-      // Reject network interfaces that have a deprecated flag set.
+      // `ifr` is both an input and an output of the `ioctl` method, and since
+      // it is zero-initialized it can safely be copied with strncpy() and will
+      // always be NUL terminated.
       strncpy(ifr.ifr_name, cur->ifa_name, sizeof(ifr.ifr_name) - 1);
-      memcpy(&ifr.ifr_ifru.ifru_addr, cur->ifa_addr, cur->ifa_addr->sa_len);
+      std::copy_n(reinterpret_cast<const uint8_t*>(cur->ifa_addr),
+                  cur->ifa_addr->sa_len,
+                  reinterpret_cast<uint8_t*>(&ifr.ifr_ifru.ifru_addr));
       if (ioctl(ioctl_socket.get(), SIOCGIFAFLAG_IN6, &ifr) != 0 ||
           ifr.ifr_ifru.ifru_flags & IN6_IFF_DEPRECATED) {
         continue;
@@ -146,30 +149,27 @@ std::vector<InterfaceInfo> ProcessInterfacesList(ifaddrs* interfaces) {
 
       auto* const addr_in6 =
           reinterpret_cast<const sockaddr_in6*>(cur->ifa_addr);
-      uint8_t tmp[sizeof(addr_in6->sin6_addr.s6_addr)];
-      memcpy(tmp, &(addr_in6->sin6_addr.s6_addr), sizeof(tmp));
-      const IPAddress ip(IPAddress::Version::kV6, tmp);
-      memset(tmp, 0, sizeof(tmp));
+      const IPAddress ip = GetIPAddressFromSockAddr(*addr_in6);
+      std::array<uint8_t, IPAddress::kV6Size> netmask_bytes{};
       if (cur->ifa_netmask && cur->ifa_netmask->sa_family == AF_INET6) {
-        memcpy(tmp,
-               &(reinterpret_cast<const sockaddr_in6*>(cur->ifa_netmask)
-                     ->sin6_addr.s6_addr),
-               sizeof(tmp));
+        auto* netmask_in6 =
+            reinterpret_cast<const sockaddr_in6*>(cur->ifa_netmask);
+        std::copy_n(netmask_in6->sin6_addr.s6_addr, netmask_bytes.size(),
+                    netmask_bytes.begin());
       }
-      interface->addresses.emplace_back(ip, ToPrefixLength(tmp));
+      interface->addresses.emplace_back(ip, ToPrefixLength(netmask_bytes));
     } else if (cur->ifa_addr->sa_family == AF_INET) {  // Ipv4 address.
       auto* const addr_in = reinterpret_cast<const sockaddr_in*>(cur->ifa_addr);
-      uint8_t tmp[sizeof(addr_in->sin_addr.s_addr)];
-      memcpy(tmp, &(addr_in->sin_addr.s_addr), sizeof(tmp));
-      IPAddress ip(IPAddress::Version::kV4, tmp);
-      memset(tmp, 0, sizeof(tmp));
+      IPAddress ip = GetIPAddressFromSockAddr(*addr_in);
+      std::array<uint8_t, IPAddress::kV4Size> netmask_bytes{};
       if (cur->ifa_netmask && cur->ifa_netmask->sa_family == AF_INET) {
-        memcpy(tmp,
-               &(reinterpret_cast<const sockaddr_in*>(cur->ifa_netmask)
-                     ->sin_addr.s_addr),
-               sizeof(tmp));
+        auto* netmask_in =
+            reinterpret_cast<const sockaddr_in*>(cur->ifa_netmask);
+        std::copy_n(
+            reinterpret_cast<const uint8_t*>(&netmask_in->sin_addr.s_addr),
+            netmask_bytes.size(), netmask_bytes.begin());
       }
-      interface->addresses.emplace_back(ip, ToPrefixLength(tmp));
+      interface->addresses.emplace_back(ip, ToPrefixLength(netmask_bytes));
     }
   }
 

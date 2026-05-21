@@ -24,7 +24,7 @@ chromium-metrics-reviews@google.com.
 <histograms>
 
 <histogram name="ContextualTasks.ActiveTab.UserAction.LinkClicked"
-    enum="Boolean" expires_after="2026-03-22">
+    enum="Boolean" expires_after="2026-06-28">
   <owner>sophiechang@chromium.org</owner>
   <owner>chrome-contextual-tasks-eng@google.com</owner>
   <summary>
@@ -34,7 +34,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="ContextualTasks.ActiveTasksCount" units="count"
-    expires_after="2026-03-22">
+    expires_after="2026-06-28">
   <owner>sophiechang@chromium.org</owner>
   <owner>chrome-contextual-tasks-eng@google.com</owner>
   <summary>
@@ -45,7 +45,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="ContextualTasks.AiPage.NavigationInterceptionSource"
-    enum="ContextualTasksEntrypointSource" expires_after="2026-03-22">
+    enum="ContextualTasksEntrypointSource" expires_after="2026-07-12">
   <owner>sophiechang@chromium.org</owner>
   <owner>chrome-contextual-tasks-eng@google.com</owner>
   <summary>
@@ -56,7 +56,7 @@ chromium-metrics-reviews@google.com.
 
 <histogram
     name="ContextualTasks.AiResponse.UserAction.LinkClicked.{ContextualTasksUiSurface}"
-    enum="Boolean" expires_after="2026-03-22">
+    enum="Boolean" expires_after="2026-06-21">
   <owner>sophiechang@chromium.org</owner>
   <owner>chrome-contextual-tasks-eng@google.com</owner>
   <summary>
@@ -74,8 +74,30 @@ chromium-metrics-reviews@google.com.
   </token>
 </histogram>
 
+<histogram
+    name="ContextualTasks.BackButton.UserAction.NavigatedFromSidePanelToFullTab"
+    enum="Boolean" expires_after="2026-06-28">
+  <owner>sophiechang@chromium.org</owner>
+  <owner>chrome-contextual-tasks-eng@google.com</owner>
+  <summary>
+    Recorded every time a user navigates from side panel to full tab using the
+    back button in the browser. Always recorded as true.
+  </summary>
+</histogram>
+
+<histogram
+    name="ContextualTasks.Composebox.UserAction.AddedActiveTabAfterDeletingAutoSuggestion"
+    enum="Boolean" expires_after="2026-07-12">
+  <owner>sophiechang@chromium.org</owner>
+  <owner>chrome-contextual-tasks-eng@google.com</owner>
+  <summary>
+    Recorded every time a user explicitly adds the active tab after previously
+    deleting the auto-suggestion. Always recorded as true.
+  </summary>
+</histogram>
+
 <histogram name="ContextualTasks.Context.ContextCalculationLatency" units="ms"
-    expires_after="2026-03-22">
+    expires_after="2026-06-28">
   <owner>sophiechang@chromium.org</owner>
   <owner>abhayprakash@google.com</owner>
   <summary>
@@ -86,7 +108,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="ContextualTasks.Context.ContextDeterminationStatus"
-    enum="ContextualTasksContextDeterminationStatus" expires_after="2026-03-22">
+    enum="ContextualTasksContextDeterminationStatus" expires_after="2026-06-28">
   <owner>sophiechang@chromium.org</owner>
   <owner>abhayprakash@google.com</owner>
   <summary>
@@ -140,8 +162,18 @@ chromium-metrics-reviews@google.com.
   </summary>
 </histogram>
 
+<histogram name="ContextualTasks.Context.QueryEmbeddingLatency" units="ms"
+    expires_after="2026-07-12">
+  <owner>sophiechang@chromium.org</owner>
+  <owner>abhayprakash@google.com</owner>
+  <summary>
+    Recorded every time a query is made in the contextual tasks framework.
+    Records the duration it took to calculate the query embedding.
+  </summary>
+</histogram>
+
 <histogram name="ContextualTasks.Context.RelevantTabsCount" units="count"
-    expires_after="2026-03-22">
+    expires_after="2026-07-05">
   <owner>sophiechang@chromium.org</owner>
   <owner>abhayprakash@google.com</owner>
   <summary>
@@ -152,7 +184,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="ContextualTasks.Context.TabExcessCount" units="count"
-    expires_after="2026-03-22">
+    expires_after="2026-07-12">
   <owner>sophiechang@chromium.org</owner>
   <owner>abhayprakash@google.com</owner>
   <summary>
@@ -164,7 +196,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="ContextualTasks.Context.TabOverlapCount" units="count"
-    expires_after="2026-03-22">
+    expires_after="2026-07-12">
   <owner>sophiechang@chromium.org</owner>
   <owner>abhayprakash@google.com</owner>
   <summary>
@@ -176,7 +208,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="ContextualTasks.Context.TabOverlapPercentage" units="%"
-    expires_after="2026-03-22">
+    expires_after="2026-07-12">
   <owner>sophiechang@chromium.org</owner>
   <owner>abhayprakash@google.com</owner>
   <summary>
@@ -200,8 +232,44 @@ chromium-metrics-reviews@google.com.
   </summary>
 </histogram>
 
+<histogram name="ContextualTasks.InnerFrameContents.HttpResponseCode"
+    enum="HttpResponseCode" expires_after="2026-09-05">
+  <owner>juanmojica@google.com</owner>
+  <owner>chrome-contextual-tasks-eng@google.com</owner>
+  <summary>
+    Recorded every time the contextual tasks framework navigates the top level
+    of the inner frame contents. Records the HTTP status code of the response
+    when the navigation finishes.
+  </summary>
+</histogram>
+
+<histogram
+    name="ContextualTasks.InnerFrameContents.HttpResponseCode.ExcludeZeroStateLoads"
+    enum="HttpResponseCode" expires_after="2026-09-05">
+  <owner>juanmojica@google.com</owner>
+  <owner>chrome-contextual-tasks-eng@google.com</owner>
+  <summary>
+    Recorded every time the contextual tasks framework navigates the top level
+    of the inner frame contents, excluding zero state loads. Records the HTTP
+    status code of the response when the navigation finishes.
+  </summary>
+</histogram>
+
+<histogram name="ContextualTasks.Session.Completed" enum="Boolean"
+    expires_after="2026-06-28">
+  <owner>sophiechang@chromium.org</owner>
+  <owner>chrome-contextual-tasks-eng@google.com</owner>
+  <summary>
+    Recorded every time a cobrowsing session has completed in the contextual
+    tasks framework. This can happen if the side panel is explicitly closed by
+    the user, the window housing the side panel is closed, or the Chrome session
+    has ended. Note that a cobrowsing session is only considered to have started
+    if a user enters a query via the side panel. Always recorded as true.
+  </summary>
+</histogram>
+
 <histogram name="ContextualTasks.TabAffiliationCount" units="count"
-    expires_after="2026-03-22">
+    expires_after="2026-06-28">
   <owner>sophiechang@chromium.org</owner>
   <owner>nyquist@chromium.org</owner>
   <owner>chrome-contextual-tasks-eng@google.com</owner>
@@ -235,6 +303,16 @@ chromium-metrics-reviews@google.com.
   </token>
 </histogram>
 
+<histogram name="ContextualTasks.VoiceSearch.State" enum="VoiceSearchState"
+    expires_after="2026-06-10">
+  <owner>jamesleung@google.com</owner>
+  <owner>chrome-contextual-tasks-eng@google.com</owner>
+  <summary>
+    Tracks user interactions with the voice search feature on the Contextual
+    Tasks composebox.
+  </summary>
+</histogram>
+
 <histogram name="ContextualTasks.WebUI.OAuthError"
     units="GoogleServiceAuthError" expires_after="2026-06-01">
   <owner>mercerd@chromium.org</owner>
@@ -247,7 +325,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="ContextualTasks.WebUI.UserAction{ActionType}" enum="Boolean"
-    expires_after="2026-03-22">
+    expires_after="2026-06-21">
   <owner>sophiechang@chromium.org</owner>
   <owner>chrome-contextual-tasks-eng@google.com</owner>
   <summary>
@@ -262,6 +340,8 @@ chromium-metrics-reviews@google.com.
     <variant name=".OpenMyActivity"
         summary="The user opened the My Activity page."/>
     <variant name=".OpenNewThread" summary="The user opened a new thread."/>
+    <variant name=".OpenSourcesMenu"
+        summary="The user opened the sources menu."/>
     <variant name=".OpenThreadHistory"
         summary="The user opened the thread history."/>
     <variant name=".TabFromSourcesMenuClicked"
@@ -270,7 +350,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="ContextualTasks.{EntrypointType}.UserAction{ActionType}"
-    enum="Boolean" expires_after="2026-03-22">
+    enum="Boolean" expires_after="2026-07-05">
   <owner>sophiechang@chromium.org</owner>
   <owner>chrome-contextual-tasks-eng@google.com</owner>
   <summary>

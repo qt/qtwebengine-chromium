@@ -23,7 +23,6 @@ list(APPEND libgav1_decoder_sources
             "${libgav1_source}/decoder_impl.cc"
             "${libgav1_source}/decoder_impl.h"
             "${libgav1_source}/decoder_state.h"
-            "${libgav1_source}/tile_scratch_buffer.cc"
             "${libgav1_source}/tile_scratch_buffer.h"
             "${libgav1_source}/film_grain.cc"
             "${libgav1_source}/film_grain.h"

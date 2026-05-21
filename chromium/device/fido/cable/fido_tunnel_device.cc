@@ -15,15 +15,15 @@
 #include "components/cbor/writer.h"
 #include "components/device_event_log/device_event_log.h"
 #include "crypto/random.h"
-#include "device/fido/cable/cable_discovery_data.h"
+#include "device/fido/cable/pairing.h"
 #include "device/fido/cable/v2_constants.h"
 #include "device/fido/cbor_extract.h"
-#include "device/fido/features.h"
-#include "device/fido/fido_constants.h"
 #include "device/fido/fido_device.h"
 #include "device/fido/fido_parsing_utils.h"
-#include "device/fido/fido_types.h"
 #include "device/fido/network_context_factory.h"
+#include "device/fido/public/features.h"
+#include "device/fido/public/fido_constants.h"
+#include "device/fido/public/fido_types.h"
 #include "net/base/isolation_info.h"
 #include "net/storage_access_api/status.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
@@ -145,7 +145,7 @@ FidoTunnelDevice::FidoTunnelDevice(
   network_context_factory.Run()->CreateWebSocket(
       url, {kCableWebSocketProtocol}, net::SiteForCookies(),
       net::StorageAccessApiStatus::kNone, net::IsolationInfo(),
-      /*additional_headers=*/{}, network::mojom::kBrowserProcessId,
+      /*additional_headers=*/{}, network::OriginatingProcess::browser(),
       url::Origin::Create(url), network::mojom::ClientSecurityState::New(),
       network::mojom::kWebSocketOptionBlockAllCookies,
       net::MutableNetworkTrafficAnnotationTag(kTrafficAnnotation),
@@ -203,7 +203,7 @@ FidoTunnelDevice::FidoTunnelDevice(
   network_context_factory.Run()->CreateWebSocket(
       url, {kCableWebSocketProtocol}, net::SiteForCookies(),
       net::StorageAccessApiStatus::kNone, net::IsolationInfo(),
-      std::move(headers), network::mojom::kBrowserProcessId,
+      std::move(headers), network::OriginatingProcess::browser(),
       url::Origin::Create(url), network::mojom::ClientSecurityState::New(),
       network::mojom::kWebSocketOptionBlockAllCookies,
       net::MutableNetworkTrafficAnnotationTag(kTrafficAnnotation),

@@ -29,8 +29,8 @@ class JniPaymentApp : public PaymentApp::Delegate {
 
   bool IsValidForPaymentMethodData(
       JNIEnv* env,
-      const base::android::JavaParamRef<jstring>& jmethod,
-      const base::android::JavaParamRef<jobject>& jdata_byte_buffer);
+      const base::android::JavaRef<jstring>& jmethod,
+      const base::android::JavaRef<jobject>& jdata_byte_buffer);
 
   bool HandlesShippingAddress(JNIEnv* env);
 
@@ -45,18 +45,17 @@ class JniPaymentApp : public PaymentApp::Delegate {
   bool CanPreselect(JNIEnv* env);
 
   void InvokePaymentApp(JNIEnv* env,
-                        const base::android::JavaParamRef<jobject>& jcallback);
+                        const base::android::JavaRef<jobject>& jcallback);
 
-  void UpdateWith(
-      JNIEnv* env,
-      const base::android::JavaParamRef<jobject>& jresponse_byte_buffer);
+  void UpdateWith(JNIEnv* env,
+                  const base::android::JavaRef<jobject>& jresponse_byte_buffer);
 
   void OnPaymentDetailsNotUpdated(JNIEnv* env);
 
   bool IsWaitingForPaymentDetailsUpdate(JNIEnv* env);
 
   void AbortPaymentApp(JNIEnv* env,
-                       const base::android::JavaParamRef<jobject>& jcallback);
+                       const base::android::JavaRef<jobject>& jcallback);
 
   base::android::ScopedJavaLocalRef<jstring> GetApplicationIdentifierToHide(
       JNIEnv* env);
@@ -64,15 +63,15 @@ class JniPaymentApp : public PaymentApp::Delegate {
   base::android::ScopedJavaLocalRef<jobjectArray>
   GetApplicationIdentifiersThatHideThisApp(JNIEnv* env);
 
-  jlong GetUkmSourceId(JNIEnv* env);
+  int64_t GetUkmSourceId(JNIEnv* env);
 
   void SetPaymentHandlerHost(
       JNIEnv* env,
-      const base::android::JavaParamRef<jobject>& jpayment_handler_host);
+      const base::android::JavaRef<jobject>& jpayment_handler_host);
 
   base::android::ScopedJavaLocalRef<jbyteArray> SetAppSpecificResponseFields(
       JNIEnv* env,
-      const base::android::JavaParamRef<jobject>& jpayment_response);
+      const base::android::JavaRef<jobject>& jpayment_response);
 
   void FreeNativeObject(JNIEnv* env);
 

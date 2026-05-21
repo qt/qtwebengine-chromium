@@ -7,6 +7,7 @@
 #include <memory>
 
 #include "base/files/file_path.h"
+#include "base/notreached.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "extensions/buildflags/buildflags.h"
@@ -97,7 +98,7 @@ ActionInfo::~ActionInfo() = default;
 std::unique_ptr<ActionInfo> ActionInfo::Load(
     const Extension* extension,
     Type type,
-    const base::Value::Dict& dict,
+    const base::DictValue& dict,
     std::vector<InstallWarning>* install_warnings,
     std::u16string* error) {
   auto result = std::make_unique<ActionInfo>(type);

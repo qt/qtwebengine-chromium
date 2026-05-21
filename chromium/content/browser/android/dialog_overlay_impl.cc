@@ -24,16 +24,16 @@
 #include "content/public/android/content_jni_headers/DialogOverlayImpl_jni.h"
 
 using base::android::AttachCurrentThread;
-using base::android::JavaParamRef;
+using base::android::JavaRef;
 using base::android::ScopedJavaLocalRef;
 
 namespace content {
 
-static jlong JNI_DialogOverlayImpl_Init(JNIEnv* env,
-                                        const JavaParamRef<jobject>& obj,
-                                        jlong high,
-                                        jlong low,
-                                        jboolean power_efficient) {
+static int64_t JNI_DialogOverlayImpl_Init(JNIEnv* env,
+                                          const JavaRef<jobject>& obj,
+                                          int64_t high,
+                                          int64_t low,
+                                          bool power_efficient) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   std::optional<base::UnguessableToken> token =
@@ -79,11 +79,11 @@ static jlong JNI_DialogOverlayImpl_Init(JNIEnv* env,
           ->browser()
           ->ShouldObserveContainerViewLocationForDialogOverlays();
 
-  return reinterpret_cast<jlong>(new DialogOverlayImpl(
+  return reinterpret_cast<int64_t>(new DialogOverlayImpl(
       obj, rfhi, web_contents_impl, power_efficient, observe_container_view));
 }
 
-DialogOverlayImpl::DialogOverlayImpl(const JavaParamRef<jobject>& obj,
+DialogOverlayImpl::DialogOverlayImpl(const JavaRef<jobject>& obj,
                                      RenderFrameHostImpl* rfhi,
                                      WebContents* web_contents,
                                      bool power_efficient,
@@ -166,7 +166,7 @@ void DialogOverlayImpl::Destroy(JNIEnv* env) {
 
 void DialogOverlayImpl::GetCompositorOffset(
     JNIEnv* env,
-    const base::android::JavaParamRef<jobject>& rect) {
+    const base::android::JavaRef<jobject>& rect) {
   gfx::Point point =
       web_contents()->GetNativeView()->GetLocationOfContainerViewInWindow();
 
@@ -307,7 +307,7 @@ class AndroidOverlaySyncHelper {
 
 static void JNI_DialogOverlayImpl_NotifyDestroyedSynchronously(
     JNIEnv* env,
-    jlong message_pipe_handle) {
+    int64_t message_pipe_handle) {
   mojo::MessagePipeHandle handle(message_pipe_handle);
   mojo::ScopedMessagePipeHandle scoped_handle(handle);
   mojo::Remote<media::mojom::AndroidOverlayClient> remote(
@@ -323,26 +323,23 @@ static void JNI_DialogOverlayImpl_NotifyDestroyedSynchronously(
   // `remote` goes out of scope.
 }
 
-static jint JNI_DialogOverlayImpl_RegisterSurface(
+static int32_t JNI_DialogOverlayImpl_RegisterSurface(
     JNIEnv* env,
-    const JavaParamRef<jobject>& surface) {
+    const JavaRef<jobject>& surface) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   return gpu::GpuSurfaceTracker::Get()->AddSurfaceForNativeWidget(
       gpu::SurfaceRecord(gl::ScopedJavaSurface(surface, /*auto_release=*/false),
                          /*can_be_used_with_surface_control=*/false));
 }
 
-static void JNI_DialogOverlayImpl_UnregisterSurface(
-    JNIEnv* env,
-    jint surface_id) {
+static void JNI_DialogOverlayImpl_UnregisterSurface(JNIEnv* env,
+                                                    int32_t surface_id) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   gpu::GpuSurfaceTracker::Get()->RemoveSurface(surface_id);
 }
 
 static ScopedJavaLocalRef<jobject>
-JNI_DialogOverlayImpl_LookupSurfaceForTesting(
-    JNIEnv* env,
-    jint surfaceId) {
+JNI_DialogOverlayImpl_LookupSurfaceForTesting(JNIEnv* env, int32_t surfaceId) {
   auto surface_record =
       gpu::GpuSurfaceTracker::Get()->AcquireJavaSurface(surfaceId);
   if (!std::holds_alternative<gl::ScopedJavaSurface>(

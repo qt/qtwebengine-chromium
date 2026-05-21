@@ -715,10 +715,7 @@ void CPDF_PageContentGenerator::ProcessForm(fxcrt::ostringstream* buf,
   }
 
   RetainPtr<const CPDF_Stream> pStream = pFormObj->form()->GetStream();
-  if (!pStream) {
-    return;
-  }
-
+  CHECK(pStream);
   ByteString name = RealizeResource(pStream.Get(), "XObject");
   pFormObj->SetResourceName(name);
 

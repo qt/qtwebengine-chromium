@@ -38,9 +38,9 @@ if (pdf_enable_fontations) {
     cxx_bindings = [ skia_fontations_bridge_root ]
     deps = [
       ":path_bridge",
-      "//third_party/rust/font_types/v0_10:lib",
-      "//third_party/rust/read_fonts/v0_35:lib",
-      "//third_party/rust/skrifa/v0_37:lib",
+      "//third_party/rust/font_types/v0_11:lib",
+      "//third_party/rust/read_fonts/v0_37:lib",
+      "//third_party/rust/skrifa/v0_40:lib",
     ]
     configs -= [ "//build/config/compiler:chromium_code" ]
     configs += [
@@ -197,11 +197,7 @@ config("skia_library_config") {
   }
 
   if (current_cpu == "arm") {
-    if (arm_use_neon) {
-      defines += [ "SK_ARM_HAS_NEON" ]
-    } else if (arm_optionally_use_neon) {
-      defines += [ "SK_ARM_HAS_OPTIONAL_NEON" ]
-    }
+    defines += [ "SK_ARM_HAS_NEON" ]
   }
 
   # Settings for text blitting, chosen to approximate the system browser.
@@ -512,17 +508,6 @@ skia_source_set("skia_opts") {
     # The assembly uses the frame pointer register (r7 in Thumb/r11 in
     # ARM), the compiler doesn't like that.
     cflags += [ "-fomit-frame-pointer" ]
-
-    if (arm_version >= 7) {
-      if (arm_use_neon || arm_optionally_use_neon) {
-        # Root build config sets -mfpu=$arm_fpu, which we expect to be neon
-        # when running this.
-        if (!arm_use_neon) {
-          configs -= [ "//build/config/compiler:compiler_arm_fpu" ]
-          cflags += [ "-mfpu=neon" ]
-        }
-      }
-    }
   } else if (current_cpu == "arm64") {
     # Conditional and empty body needed to avoid assert below
   } else if (current_cpu == "mipsel" || current_cpu == "mips64el") {

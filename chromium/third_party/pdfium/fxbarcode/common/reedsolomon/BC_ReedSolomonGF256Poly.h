@@ -7,6 +7,8 @@
 #ifndef FXBARCODE_COMMON_REEDSOLOMON_BC_REEDSOLOMONGF256POLY_H_
 #define FXBARCODE_COMMON_REEDSOLOMON_BC_REEDSOLOMONGF256POLY_H_
 
+#include <stdint.h>
+
 #include <memory>
 #include <vector>
 

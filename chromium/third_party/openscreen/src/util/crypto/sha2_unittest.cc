@@ -12,6 +12,9 @@
 #include "util/std_util.h"
 
 namespace openscreen {
+
+using testing::ElementsAreArray;
+
 TEST(Sha256Test, Test1) {
   // Example B.1 from FIPS 180-2: one-block message.
   std::string input = "abc";
@@ -22,7 +25,7 @@ TEST(Sha256Test, Test1) {
 
   uint8_t output[SHA256_DIGEST_LENGTH];
   EXPECT_EQ(Error::None(), SHA256HashString(input, output));
-  EXPECT_THAT(output, testing::ElementsAreArray(kExpected));
+  EXPECT_THAT(output, ElementsAreArray(kExpected));
 }
 
 TEST(Sha256Test, Test1_String) {
@@ -37,7 +40,7 @@ TEST(Sha256Test, Test1_String) {
   const ErrorOr<std::string> output = SHA256HashString(input);
   EXPECT_TRUE(output.is_value());
   ASSERT_EQ(static_cast<size_t>(SHA256_DIGEST_LENGTH), output.value().size());
-  EXPECT_THAT(output.value(), testing::ElementsAreArray(kExpected));
+  EXPECT_THAT(output.value(), ElementsAreArray(kExpected));
 }
 
 TEST(Sha256Test, Test2) {
@@ -51,7 +54,7 @@ TEST(Sha256Test, Test2) {
 
   uint8_t output[SHA256_DIGEST_LENGTH];
   EXPECT_EQ(Error::None(), SHA256HashString(input, output));
-  EXPECT_THAT(output, testing::ElementsAreArray(kExpected));
+  EXPECT_THAT(output, ElementsAreArray(kExpected));
 }
 
 TEST(Sha256Test, Test3) {
@@ -64,6 +67,6 @@ TEST(Sha256Test, Test3) {
 
   uint8_t output[SHA256_DIGEST_LENGTH];
   EXPECT_EQ(Error::None(), SHA256HashString(input, output));
-  EXPECT_THAT(output, testing::ElementsAreArray(kExpected));
+  EXPECT_THAT(output, ElementsAreArray(kExpected));
 }
 }  // namespace openscreen

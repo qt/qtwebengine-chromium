@@ -33,27 +33,26 @@
 #include <vector>
 
 #include "dawn/replay/ReadHead.h"
+#include "dawn/replay/Replay.h"
 
 namespace dawn::replay {
-
-using CaptureStream = std::istream;
 
 // For now we just expect to load the entire capture into memory.
 // In the future we'd expect to be able to stream it though we may
 // have to scan it once to find all the commands for a UI.
-class Capture {
+class CaptureImpl : public Capture {
   public:
-    static std::unique_ptr<Capture> Create(CaptureStream& commandStream,
-                                           size_t commandSize,
-                                           CaptureStream& contentStream,
-                                           size_t contentSize);
-    ~Capture();
+    static std::unique_ptr<CaptureImpl> Create(CaptureStream& commandStream,
+                                               size_t commandSize,
+                                               CaptureStream& contentStream,
+                                               size_t contentSize);
+    ~CaptureImpl() override;
 
     ReadHead GetCommandReadHead() const;
     ReadHead GetContentReadHead() const;
 
   private:
-    Capture(std::vector<uint8_t> commands, std::vector<uint8_t> content);
+    CaptureImpl(std::vector<uint8_t> commands, std::vector<uint8_t> content);
 
     std::vector<uint8_t> mCommands;
     std::vector<uint8_t> mContent;

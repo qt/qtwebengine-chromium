@@ -14,7 +14,7 @@
 #include "components/commerce/core/shopping_service.h"
 #include "components/commerce/core/subscriptions/subscriptions_observer.h"
 
-using base::android::JavaParamRef;
+using base::android::JavaRef;
 using base::android::ScopedJavaGlobalRef;
 using base::android::ScopedJavaLocalRef;
 
@@ -37,66 +37,66 @@ class ShoppingServiceAndroid : public base::SupportsUserData::Data,
   ShoppingService* GetShoppingService();
 
   void GetProductInfoForUrl(JNIEnv* env,
-                            const JavaParamRef<jobject>& j_gurl,
-                            const JavaParamRef<jobject>& j_callback);
+                            const JavaRef<jobject>& j_gurl,
+                            const JavaRef<jobject>& j_callback);
 
   ScopedJavaLocalRef<jobject> GetAvailableProductInfoForUrl(
       JNIEnv* env,
-      const JavaParamRef<jobject>& j_gurl);
+      const JavaRef<jobject>& j_gurl);
 
   void GetMerchantInfoForUrl(JNIEnv* env,
-                             const JavaParamRef<jobject>& j_gurl,
-                             const JavaParamRef<jobject>& j_callback);
+                             const JavaRef<jobject>& j_gurl,
+                             const JavaRef<jobject>& j_callback);
 
   void GetPriceInsightsInfoForUrl(JNIEnv* env,
-                                  const JavaParamRef<jobject>& j_gurl,
-                                  const JavaParamRef<jobject>& j_callback);
+                                  const JavaRef<jobject>& j_gurl,
+                                  const JavaRef<jobject>& j_callback);
 
   void GetDiscountInfoForUrl(JNIEnv* env,
-                             const JavaParamRef<jobject>& j_gurl,
-                             const JavaParamRef<jobject>& j_callback);
+                             const JavaRef<jobject>& j_gurl,
+                             const JavaRef<jobject>& j_callback);
 
   void GetAvailableDiscountInfoForUrl(JNIEnv* env,
-                                      const JavaParamRef<jobject>& j_gurl,
-                                      const JavaParamRef<jobject>& j_callback);
+                                      const JavaRef<jobject>& j_gurl,
+                                      const JavaRef<jobject>& j_callback);
 
   void FetchPriceEmailPref(JNIEnv* env);
 
   void ScheduleSavedProductUpdate(JNIEnv* env);
 
   void Subscribe(JNIEnv* env,
-                 jint j_type,
-                 jint j_id_type,
-                 jint j_management_type,
-                 const JavaParamRef<jstring>& j_id,
-                 const JavaParamRef<jstring>& j_seen_offer_id,
-                 jlong j_seen_price,
-                 const JavaParamRef<jstring>& j_seen_country,
-                 const JavaParamRef<jstring>& j_seen_locale,
-                 const JavaParamRef<jobject>& j_callback);
+                 int32_t j_type,
+                 int32_t j_id_type,
+                 int32_t j_management_type,
+                 const JavaRef<jstring>& j_id,
+                 const JavaRef<jstring>& j_seen_offer_id,
+                 int64_t j_seen_price,
+                 const JavaRef<jstring>& j_seen_country,
+                 const JavaRef<jstring>& j_seen_locale,
+                 const JavaRef<jobject>& j_callback);
 
   void Unsubscribe(JNIEnv* env,
-                   jint j_type,
-                   jint j_id_type,
-                   jint j_management_type,
-                   const JavaParamRef<jstring>& j_id,
-                   const JavaParamRef<jobject>& j_callback);
+                   int32_t j_type,
+                   int32_t j_id_type,
+                   int32_t j_management_type,
+                   const JavaRef<jstring>& j_id,
+                   const JavaRef<jobject>& j_callback);
 
   void IsSubscribed(JNIEnv* env,
-                    jint j_type,
-                    jint j_id_type,
-                    jint j_management_type,
-                    const JavaParamRef<jstring>& j_id,
-                    const JavaParamRef<jobject>& j_callback);
+                    int32_t j_type,
+                    int32_t j_id_type,
+                    int32_t j_management_type,
+                    const JavaRef<jstring>& j_id,
+                    const JavaRef<jobject>& j_callback);
 
   bool IsSubscribedFromCache(JNIEnv* env,
-                             jint j_type,
-                             jint j_id_type,
-                             jint j_management_type,
-                             const JavaParamRef<jstring>& j_id);
+                             int32_t j_type,
+                             int32_t j_id_type,
+                             int32_t j_management_type,
+                             const JavaRef<jstring>& j_id);
 
   void GetAllPriceTrackedBookmarks(JNIEnv* env,
-                                   const JavaParamRef<jobject>& j_callback);
+                                   const JavaRef<jobject>& j_callback);
 
   bool IsShoppingListEligible(JNIEnv* env);
 

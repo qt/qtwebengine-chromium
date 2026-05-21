@@ -150,7 +150,6 @@ export class DebuggerModel extends SDKModel<EventTypes> {
                                      start: Location,
                                      end: Location,
                                    }>>)|null = null;
-  #expandCallFramesCallback: ((arg0: CallFrame[]) => Promise<CallFrame[]>)|null = null;
   evaluateOnCallFrameCallback:
       ((arg0: CallFrame, arg1: EvaluationOptions) => Promise<EvaluationResult|null>)|null = null;
   #synchronizeBreakpointsCallback: ((script: Script) => Promise<void>)|null = null;
@@ -267,7 +266,7 @@ export class DebuggerModel extends SDKModel<EventTypes> {
     const maxScriptsCacheSize = isRemoteFrontend ? 10e6 : 100e6;
     const enablePromise = this.agent.invoke_enable({maxScriptsCacheSize});
     let instrumentationPromise: Promise<Protocol.Debugger.SetInstrumentationBreakpointResponse>|undefined;
-    if (Root.Runtime.experiments.isEnabled(Root.Runtime.ExperimentName.INSTRUMENTATION_BREAKPOINTS)) {
+    if (Root.Runtime.experiments.isEnabled(Root.ExperimentNames.ExperimentName.INSTRUMENTATION_BREAKPOINTS)) {
       instrumentationPromise = this.agent.invoke_setInstrumentationBreakpoint({
         instrumentation: Protocol.Debugger.SetInstrumentationBreakpointRequestInstrumentation.BeforeScriptExecution,
       });
@@ -599,10 +598,6 @@ export class DebuggerModel extends SDKModel<EventTypes> {
     this.#beforePausedCallback = callback;
   }
 
-  setExpandCallFramesCallback(callback: ((arg0: CallFrame[]) => Promise<CallFrame[]>)|null): void {
-    this.#expandCallFramesCallback = callback;
-  }
-
   setEvaluateOnCallFrameCallback(
       callback: ((arg0: CallFrame, arg1: EvaluationOptions) => Promise<EvaluationResult|null>)|null): void {
     this.evaluateOnCallFrameCallback = callback;
@@ -627,7 +622,6 @@ export class DebuggerModel extends SDKModel<EventTypes> {
 
     const pausedDetails =
         new DebuggerPausedDetails(this, callFrames, reason, auxData, breakpointIds, asyncStackTrace, asyncStackTraceId);
-    await this.#expandCallFrames(pausedDetails);
 
     if (this.continueToLocationCallback) {
       const callback = this.continueToLocationCallback;
@@ -646,33 +640,6 @@ export class DebuggerModel extends SDKModel<EventTypes> {
     } else {
       Common.EventTarget.fireEvent('DevTools.DebuggerPaused');
     }
-  }
-
-  /** Delegates to the DebuggerLanguagePlugin and potential attached source maps to expand inlined call frames */
-  async #expandCallFrames(pausedDetails: DebuggerPausedDetails): Promise<void> {
-    if (this.#expandCallFramesCallback) {
-      pausedDetails.callFrames = await this.#expandCallFramesCallback.call(null, pausedDetails.callFrames);
-    }
-
-    if (!Root.Runtime.experiments.isEnabled(Root.Runtime.ExperimentName.USE_SOURCE_MAP_SCOPES)) {
-      return;
-    }
-
-    // TODO(crbug.com/40277685): Support attaching/detaching source maps after pausing.
-    // Expanding call frames via source maps here is only suitable for the experiment prototype because
-    // we block until all relevant source maps are loaded.
-    // We should change this so the "Debugger Plugin" and "Source Map" have a bottle neck where they expand
-    // call frames and that bottleneck should support attaching/detaching source maps while paused.
-    const finalFrames: CallFrame[] = [];
-    for (const frame of pausedDetails.callFrames) {
-      const sourceMap = await this.sourceMapManager().sourceMapForClientPromise(frame.script);
-      if (sourceMap?.hasScopeInfo()) {
-        finalFrames.push(...sourceMap.expandCallFrame(frame));
-      } else {
-        finalFrames.push(frame);
-      }
-    }
-    pausedDetails.callFrames = finalFrames;
   }
 
   resumedScript(): void {
@@ -707,7 +674,8 @@ export class DebuggerModel extends SDKModel<EventTypes> {
     this.registerScript(script);
     this.dispatchEventToListeners(Events.ParsedScriptSource, script);
 
-    if (script.sourceMapURL && !hasSyntaxError) {
+    if ((!selectedDebugSymbol || selectedDebugSymbol.type === Protocol.Debugger.DebugSymbolsType.SourceMap) &&
+        script.sourceMapURL && !hasSyntaxError) {
       this.#sourceMapManager.attachSourceMap(script, script.sourceURL, script.sourceMapURL);
     }
 
@@ -727,10 +695,6 @@ export class DebuggerModel extends SDKModel<EventTypes> {
   }
 
   async setDebugInfoURL(script: Script, _externalURL: Platform.DevToolsPath.UrlString): Promise<void> {
-    if (this.#expandCallFramesCallback && this.#debuggerPausedDetails) {
-      this.#debuggerPausedDetails.callFrames =
-          await this.#expandCallFramesCallback.call(null, this.#debuggerPausedDetails.callFrames);
-    }
     this.dispatchEventToListeners(Events.DebugInfoAttached, script);
   }
 
@@ -942,10 +906,15 @@ export class DebuggerModel extends SDKModel<EventTypes> {
    * Important: This iterator will not yield the "synchronous" part of the stack trace, only the async parent chain.
    */
   async *
-      iterateAsyncParents(stackTraceOrPausedDetails: Protocol.Runtime.StackTrace|DebuggerPausedDetails):
+      iterateAsyncParents(
+          stackTraceOrPausedDetails: Protocol.Runtime.StackTrace|
+          Pick<DebuggerPausedDetails, 'asyncStackTrace'|'asyncStackTraceId'>):
           AsyncGenerator<{stackTrace: Protocol.Runtime.StackTrace, target: Target}> {
     // We make `DebuggerPausedDetails` look like a stack trace. We are only interested in `parent` and `parentId` in any case.
-    let stackTrace: Protocol.Runtime.StackTrace = stackTraceOrPausedDetails instanceof DebuggerPausedDetails ?
+    const isPausedDetails = (details: typeof stackTraceOrPausedDetails):
+        details is Pick<DebuggerPausedDetails, 'asyncStackTrace'|'asyncStackTraceId'> =>
+            !('parent' in details) && !('parentId' in details);
+    let stackTrace: Protocol.Runtime.StackTrace = isPausedDetails(stackTraceOrPausedDetails) ?
         {
           callFrames: [],
           parent: stackTraceOrPausedDetails.asyncStackTrace,
@@ -1200,11 +1169,6 @@ export interface MissingDebugFiles {
   initiator: PageResourceLoadInitiator;
 }
 
-export interface MissingDebugInfoDetails {
-  details: string;
-  resources: MissingDebugFiles[];
-}
-
 export class CallFrame {
   debuggerModel: DebuggerModel;
   readonly script: Script;
@@ -1216,7 +1180,6 @@ export class CallFrame {
   readonly functionName: string;
   readonly #functionLocation: Location|undefined;
   #returnValue: RemoteObject|null;
-  missingDebugInfoDetails: MissingDebugInfoDetails|null;
   readonly exception: RemoteObject|null;
 
   readonly canBeRestarted: boolean;
@@ -1232,7 +1195,6 @@ export class CallFrame {
     this.#localScope = null;
     this.inlineFrameIndex = inlineFrameIndex || 0;
     this.functionName = functionName ?? payload.functionName;
-    this.missingDebugInfoDetails = null;
     this.canBeRestarted = Boolean(payload.canBeRestarted);
     this.exception = exception;
     for (let i = 0; i < payload.scopeChain.length; ++i) {
@@ -1507,8 +1469,8 @@ export class DebuggerPausedDetails {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   auxData: Record<string, any>|undefined;
   breakpointIds: string[];
-  asyncStackTrace: Protocol.Runtime.StackTrace|undefined;
-  asyncStackTraceId: Protocol.Runtime.StackTraceId|undefined;
+  asyncStackTrace?: Protocol.Runtime.StackTrace;
+  asyncStackTraceId?: Protocol.Runtime.StackTraceId;
   constructor(
       debuggerModel: DebuggerModel,
       callFrames: Protocol.Debugger.CallFrame[],

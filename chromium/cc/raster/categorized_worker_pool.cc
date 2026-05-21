@@ -10,7 +10,6 @@
 #include <utility>
 
 #include "base/command_line.h"
-#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/no_destructor.h"
 #include "base/strings/string_number_conversions.h"
@@ -127,16 +126,16 @@ class CategorizedWorkerPool::CategorizedWorkerPoolSequencedTaskRunner
   // implement the SequencedTaskRunner interfaces.
   base::Lock lock_;
 
-  raw_ptr<TaskGraphRunner> task_graph_runner_;
+  raw_ptr<TaskGraphRunner> task_graph_runner_ GUARDED_BY(lock_);
   // Namespace used to schedule tasks in the task graph runner.
-  NamespaceToken namespace_token_;
+  NamespaceToken namespace_token_ GUARDED_BY(lock_);
   // List of tasks currently queued up for execution.
-  Task::Vector tasks_;
+  Task::Vector tasks_ GUARDED_BY(lock_);
   // Graph object used for scheduling tasks.
-  TaskGraph graph_;
+  TaskGraph graph_ GUARDED_BY(lock_);
   // Cached vector to avoid allocation when getting the list of complete
   // tasks.
-  Task::Vector completed_tasks_;
+  Task::Vector completed_tasks_ GUARDED_BY(lock_);
 };
 
 CategorizedWorkerPoolJob::CategorizedWorkerPoolJob() = default;
@@ -210,7 +209,7 @@ bool CategorizedWorkerPoolJob::PostDelayedTask(const base::Location& from_here,
     std::erase_if(tasks_,
                   [this](const scoped_refptr<Task>& e)
                       EXCLUSIVE_LOCKS_REQUIRED(lock_) {
-                        return base::Contains(this->completed_tasks_, e);
+                        return std::ranges::contains(this->completed_tasks_, e);
                       });
 
     tasks_.push_back(base::MakeRefCounted<ClosureTask>(std::move(task)));
@@ -392,7 +391,7 @@ size_t CategorizedWorkerPoolJob::GetMaxJobConcurrency(
   size_t num_foreground_tasks = 0;
   size_t num_background_tasks = 0;
   for (TaskCategory category : categories) {
-    if (base::Contains(kBackgroundCategories, category)) {
+    if (std::ranges::contains(kBackgroundCategories, category)) {
       if (work_queue_.NumRunningTasksForCategory(category) > 0) {
         num_background_tasks = 1;
       }
@@ -517,7 +516,7 @@ bool CategorizedWorkerPool::ShouldRunTaskForCategoryWithLockAcquired(
     return false;
   }
 
-  if (base::Contains(kBackgroundCategories, category)) {
+  if (std::ranges::contains(kBackgroundCategories, category)) {
     // Only run background tasks if there are no foreground tasks running or
     // ready to run.
     for (TaskCategory foreground_category : kForegroundCategories) {

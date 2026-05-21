@@ -177,8 +177,9 @@ void CJBig2_BitStream::setBitPos(uint32_t dwBitPos) {
   bit_idx_ = dwBitPos & 7;
 }
 
-const uint8_t* CJBig2_BitStream::getPointer() const {
-  return span_.subspan(byte_idx_).data();
+pdfium::span<const uint8_t> CJBig2_BitStream::getCurrentSpan(
+    uint32_t size) const {
+  return span_.subspan(byte_idx_, size);
 }
 
 uint32_t CJBig2_BitStream::getByteLeft() const {

@@ -8,6 +8,7 @@
 
 #include "ash/constants/ash_features.h"
 #include "ash/constants/ash_pref_names.h"
+#include "base/containers/flat_set.h"
 #include "base/feature_list.h"
 #include "base/memory/raw_ptr.h"
 #include "base/test/metrics/histogram_tester.h"
@@ -88,11 +89,11 @@ class SodaInstallerImplChromeOSTest : public testing::Test {
     soda_installer_impl_->Init(pref_service_.get(), pref_service_.get());
   }
 
-  void InstallLanguage(const std::string& language) {
+  void InstallLanguage(std::string_view language) {
     soda_installer_impl_->InstallLanguage(language, pref_service_.get());
   }
 
-  void UninstallLanguage(const std::string& language) {
+  void UninstallLanguage(std::string_view language) {
     soda_installer_impl_->UninstallLanguage(language, pref_service_.get());
   }
 
@@ -102,7 +103,7 @@ class SodaInstallerImplChromeOSTest : public testing::Test {
     fake_dlcservice_client_.set_install_error(dlcservice::kErrorNeedReboot);
   }
 
-  void SetDlcInstallRootPath(const std::string& path) {
+  void SetDlcInstallRootPath(std::string_view path) {
     fake_dlcservice_client_.set_install_root_path(path);
   }
 
@@ -223,16 +224,17 @@ TEST_F(SodaInstallerImplChromeOSTest, ConchInLiveCaptionFullList) {
   soda_installer_impl_.reset();
   soda_installer_impl_ = std::make_unique<SodaInstallerImplChromeOS>();
   std::vector<std::string> enabled_and_available_languages;
-  std::vector<base::Value::Dict> available_language_packs;
+  std::vector<base::DictValue> available_language_packs;
   {
-    auto enabled_languages = GetInstance()->GetLiveCaptionEnabledLanguages();
-    auto available_languages = GetInstance()->GetAvailableLanguages();
-    auto available_languages_set = std::unordered_set<std::string>(
-        available_languages.begin(), available_languages.end());
-    for (const auto& enabled_language : enabled_languages) {
-      if (available_languages_set.find(enabled_language) !=
-          available_languages_set.end()) {
-        enabled_and_available_languages.push_back(enabled_language);
+    std::vector<std::string> enabled_languages =
+        GetInstance()->GetLiveCaptionEnabledLanguages();
+    std::vector<std::string> available_languages =
+        GetInstance()->GetAvailableLanguages();
+    base::flat_set<std::string> available_languages_set(
+        std::move(available_languages));
+    for (auto& enabled_language : enabled_languages) {
+      if (available_languages_set.contains(enabled_language)) {
+        enabled_and_available_languages.push_back(std::move(enabled_language));
       }
     }
   }

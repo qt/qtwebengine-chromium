@@ -63,9 +63,9 @@
 #include "third_party/blink/renderer/core/dom/focus_params.h"
 #include "third_party/blink/renderer/core/dom/layout_tree_builder_traversal.h"
 #include "third_party/blink/renderer/core/dom/mutation_observer_registration.h"
+#include "third_party/blink/renderer/core/dom/node-inl.h"
 #include "third_party/blink/renderer/core/dom/node_cloning_data.h"
 #include "third_party/blink/renderer/core/dom/node_lists_node_data.h"
-#include "third_party/blink/renderer/core/dom/node_rare_data.h"
 #include "third_party/blink/renderer/core/dom/node_traversal.h"
 #include "third_party/blink/renderer/core/dom/part.h"
 #include "third_party/blink/renderer/core/dom/processing_instruction.h"
@@ -156,6 +156,10 @@
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
 
+#if DUMP_NODE_STATISTICS
+#include "third_party/blink/renderer/core/dom/named_node_map.h"
+#endif
+
 namespace blink {
 
 using ReattachHookScope = LayoutShiftTracker::ReattachHookScope;
@@ -185,7 +189,7 @@ static_assert(sizeof(Node) <= sizeof(NotSmallerThanNode),
               "members of node should be reordered for better packing");
 
 #if DUMP_NODE_STATISTICS
-using WeakNodeSet = HeapHashSet<WeakMember<Node>>;
+using WeakNodeSet = GCedHeapHashSet<WeakMember<Node>>;
 static WeakNodeSet& LiveNodeSet() {
   DEFINE_STATIC_LOCAL(Persistent<WeakNodeSet>, set,
                       (MakeGarbageCollected<WeakNodeSet>()));
@@ -314,7 +318,7 @@ void Node::DumpStatistics() {
             << elements_with_attribute_storage << " x " << sizeof(ElementData)
             << "Bytes\n"
             << "  Number of Elements with RareData: " << elements_with_rare_data
-            << " x " << sizeof(ElementRareData) << "Bytes\n"
+            << " x " << sizeof(ElementRareDataVector) << "Bytes\n"
             << "  Number of Elements with NamedNodeMap: "
             << elements_with_named_node_map << " x " << sizeof(NamedNodeMap)
             << "Bytes";
@@ -352,12 +356,8 @@ Node* Node::FromDomNodeId(DOMNodeId dom_node_id) {
   return DOMNodeIds::NodeForId(dom_node_id);
 }
 
-NodeRareData& Node::CreateRareData() {
-  if (IsElementNode()) {
-    data_ = MakeGarbageCollected<ElementRareDataVector>();
-  } else {
-    data_ = MakeGarbageCollected<NodeRareData>();
-  }
+ElementRareDataVector& Node::CreateRareData() {
+  data_ = ElementRareDataVector::Create();
   return *data_;
 }
 
@@ -384,9 +384,10 @@ void Node::setNodeValue(const String&, ExceptionState&) {
 
 NodeList* Node::childNodes() {
   auto* this_node = DynamicTo<ContainerNode>(this);
+  auto& node_lists = UnpackAndRefresh(EnsureRareData().EnsureNodeLists());
   if (this_node)
-    return EnsureRareData().EnsureNodeLists().EnsureChildNodeList(*this_node);
-  return EnsureRareData().EnsureNodeLists().EnsureEmptyChildNodeList(*this);
+    return node_lists.EnsureChildNodeList(*this_node);
+  return node_lists.EnsureEmptyChildNodeList(*this);
 }
 
 // TODO(crbug.com/447642032): Implement previous / next sibling for overscroll
@@ -1023,7 +1024,7 @@ static Node* NodeOrStringToNode(
     const V8UnionNodeOrStringOrTrustedScript* node_or_string,
     Document& document,
     bool needs_trusted_types_check,
-    const char* property_name,
+    const AtomicString& property_name,
     ExceptionState& exception_state) {
   if (!needs_trusted_types_check) {
     // Without trusted type checks, we simply extract the string from whatever
@@ -1054,9 +1055,9 @@ static Node* NodeOrStringToNode(
                             ? node_or_string->GetAsString()
                             : node_or_string->GetAsNode()->textContent();
 
-  string_value =
-      TrustedTypesCheckForScript(string_value, document.GetExecutionContext(),
-                                 "Node", property_name, exception_state);
+  string_value = TrustedTypesCheckForScript(
+      string_value, document.GetExecutionContext(), trusted_types_names::kNode,
+      property_name, exception_state);
   if (exception_state.HadException())
     return nullptr;
   return Text::Create(document, string_value);
@@ -1070,7 +1071,7 @@ VectorOf<Node> Node::ConvertNodeUnionsIntoNodes(
     const ContainerNode* parent,
     const HeapVector<Member<V8UnionNodeOrStringOrTrustedScript>>& node_unions,
     Document& document,
-    const char* property_name,
+    const AtomicString& property_name,
     ExceptionState& exception_state) {
   bool needs_check = !RuntimeEnabledFeatures::TrustedTypesHTMLEnabled() &&
                      IsA<HTMLScriptElement>(parent) &&
@@ -1162,7 +1163,8 @@ void Node::prepend(
   }
 
   VectorOf<Node> node_vector = ConvertNodeUnionsIntoNodes(
-      this_node, nodes, GetDocument(), "prepend", exception_state);
+      this_node, nodes, GetDocument(), trusted_types_names::kPrepend,
+      exception_state);
   if (exception_state.HadException()) {
     return;
   }
@@ -1181,8 +1183,9 @@ void Node::append(
     return;
   }
 
-  VectorOf<Node> node_vector = ConvertNodeUnionsIntoNodes(
-      this_node, nodes, GetDocument(), "append", exception_state);
+  VectorOf<Node> node_vector =
+      ConvertNodeUnionsIntoNodes(this_node, nodes, GetDocument(),
+                                 trusted_types_names::kAppend, exception_state);
   if (exception_state.HadException()) {
     return;
   }
@@ -1196,8 +1199,9 @@ void Node::before(
   if (!parent)
     return;
   Node* viable_previous_sibling = FindViablePreviousSibling(*this, nodes);
-  VectorOf<Node> node_vector = ConvertNodeUnionsIntoNodes(
-      parent, nodes, GetDocument(), "before", exception_state);
+  VectorOf<Node> node_vector =
+      ConvertNodeUnionsIntoNodes(parent, nodes, GetDocument(),
+                                 trusted_types_names::kBefore, exception_state);
   if (exception_state.HadException()) {
     return;
   }
@@ -1215,8 +1219,9 @@ void Node::after(
   if (!parent)
     return;
   Node* viable_next_sibling = FindViableNextSibling(*this, nodes);
-  VectorOf<Node> node_vector = ConvertNodeUnionsIntoNodes(
-      parent, nodes, GetDocument(), "after", exception_state);
+  VectorOf<Node> node_vector =
+      ConvertNodeUnionsIntoNodes(parent, nodes, GetDocument(),
+                                 trusted_types_names::kAfter, exception_state);
   if (exception_state.HadException()) {
     return;
   }
@@ -1231,7 +1236,8 @@ void Node::replaceWith(
     return;
   Node* viable_next_sibling = FindViableNextSibling(*this, nodes);
   VectorOf<Node> node_vector = ConvertNodeUnionsIntoNodes(
-      parent, nodes, GetDocument(), "replaceWith", exception_state);
+      parent, nodes, GetDocument(), trusted_types_names::kReplaceWith,
+      exception_state);
   if (exception_state.HadException()) {
     return;
   }
@@ -1255,7 +1261,8 @@ void Node::replaceChildren(
   }
 
   VectorOf<Node> nodes = ConvertNodeUnionsIntoNodes(
-      this_node, node_unions, GetDocument(), "replace", exception_state);
+      this_node, node_unions, GetDocument(), trusted_types_names::kReplace,
+      exception_state);
   if (exception_state.HadException()) {
     return;
   }
@@ -1681,7 +1688,7 @@ void Node::ClearNodeLists() {
 }
 
 FlatTreeNodeData& Node::EnsureFlatTreeNodeData() {
-  return EnsureRareData().EnsureFlatTreeNodeData();
+  return UnpackAndRefresh(EnsureRareData().EnsureFlatTreeNodeData());
 }
 
 FlatTreeNodeData* Node::GetFlatTreeNodeData() const {
@@ -3175,8 +3182,9 @@ void Node::RegisterMutationObserver(
     MutationObserverOptions options,
     const HashSet<AtomicString>& attribute_filter) {
   MutationObserverRegistration* registration = nullptr;
-  for (const auto& item :
-       EnsureRareData().EnsureMutationObserverData().Registry()) {
+  auto& mutation_observer_data =
+      UnpackAndRefresh(EnsureRareData().EnsureMutationObserverData());
+  for (const auto& item : mutation_observer_data.Registry()) {
     if (&item->Observer() == &observer) {
       registration = item.Get();
       registration->ResetObservation(options, attribute_filter);
@@ -3186,7 +3194,7 @@ void Node::RegisterMutationObserver(
   if (!registration) {
     registration = MakeGarbageCollected<MutationObserverRegistration>(
         observer, this, options, attribute_filter);
-    EnsureRareData().EnsureMutationObserverData().AddRegistration(registration);
+    mutation_observer_data.AddRegistration(registration);
   }
 
   GetDocument().AddMutationObserverTypes(registration->MutationTypes());
@@ -3204,14 +3212,14 @@ void Node::UnregisterMutationObserver(
   // understandable by humans.  The explicit dispose() is needed to have the
   // registration object unregister itself promptly.
   registration->Dispose();
-  EnsureRareData().EnsureMutationObserverData().RemoveRegistration(
-      registration);
+  UnpackAndRefresh(EnsureRareData().EnsureMutationObserverData())
+      .RemoveRegistration(registration);
 }
 
 void Node::RegisterTransientMutationObserver(
     MutationObserverRegistration* registration) {
-  EnsureRareData().EnsureMutationObserverData().AddTransientRegistration(
-      registration);
+  UnpackAndRefresh(EnsureRareData().EnsureMutationObserverData())
+      .AddTransientRegistration(registration);
 }
 
 void Node::UnregisterTransientMutationObserver(
@@ -3222,8 +3230,8 @@ void Node::UnregisterTransientMutationObserver(
   if (!transient_registry)
     return;
 
-  EnsureRareData().EnsureMutationObserverData().RemoveTransientRegistration(
-      registration);
+  UnpackAndRefresh(EnsureRareData().EnsureMutationObserverData())
+      .RemoveTransientRegistration(registration);
 }
 
 void Node::NotifyMutationObserversNodeWillDetach() {
@@ -3269,7 +3277,13 @@ DispatchEventResult Node::DispatchDOMActivateEvent(int detail,
   DCHECK(!EventDispatchForbiddenScope::IsEventDispatchForbidden());
 #endif
   UIEvent& event = *UIEvent::Create();
-  event.initUIEvent(event_type_names::kDOMActivate, true, true,
+  // DOMActivate inherits bubbles from the underlying event to prevent
+  // activation behavior of parent elements from running when it doesn't bubble.
+  const bool bubbles =
+      RuntimeEnabledFeatures::DOMActivateBubblesInheritanceEnabled()
+          ? underlying_event.bubbles()
+          : true;
+  event.initUIEvent(event_type_names::kDOMActivate, bubbles, true,
                     GetDocument().domWindow(), detail);
   event.SetUnderlyingEvent(&underlying_event);
   event.SetComposed(underlying_event.composed());
@@ -3702,10 +3716,10 @@ void Node::RemovedFromFlatTree() {
 }
 
 void Node::RegisterScrollTimeline(ScrollTimeline* timeline) {
-  EnsureRareData().RegisterScrollTimeline(timeline);
+  data_ = EnsureRareData().RegisterScrollTimeline(timeline);
 }
 void Node::UnregisterScrollTimeline(ScrollTimeline* timeline) {
-  EnsureRareData().UnregisterScrollTimeline(timeline);
+  data_ = EnsureRareData().UnregisterScrollTimeline(timeline);
 }
 
 void Node::SetManuallyAssignedSlot(HTMLSlotElement* slot) {

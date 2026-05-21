@@ -43,6 +43,11 @@ enum WGSLLanguageFeatureName {
     "chromium_print",
     "uniform_buffer_standard_layout",
     "subgroup_id",
+    "subgroup_uniformity",
+    "texture_and_sampler_let",
+    "buffer_view",
+    "filtering_parameters",
+    "swizzle_assignment",
 };
 
 // ============================================================================

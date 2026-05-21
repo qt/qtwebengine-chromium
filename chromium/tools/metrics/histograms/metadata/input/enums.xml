@@ -622,10 +622,10 @@ Unsupported non-ascii characters will cause issues with xml presubmits.
 </enum>
 
 <enum name="JpSettingsPunctuationStyle">
-  <int value="0" label="KutenTouten"/>
+  <int value="0" label="ToutenKuten"/>
   <int value="1" label="CommaPeriod"/>
-  <int value="2" label="KutenPeriod"/>
-  <int value="3" label="CommaTouten"/>
+  <int value="2" label="ToutenPeriod"/>
+  <int value="3" label="CommaKuten"/>
 </enum>
 
 <enum name="JpSettingsSelectionShortcut">
@@ -653,7 +653,7 @@ Unsupported non-ascii characters will cause issues with xml presubmits.
   <int value="3" label="SquareBracketMiddleDot"/>
 </enum>
 
-<!--LINT.ThenChange(/chrome/browser/ash/input_method/japanese/japanese_settings.cc:jp_settings_hist_enums)-->
+<!--LINT.ThenChange(/chrome/browser/ash/input_method/japanese_settings.h:jp_settings_hist_enums)-->
 
 <enum name="KoreanAction">
   <summary>Actions that are available on the Korean IME.</summary>
@@ -787,6 +787,55 @@ Unsupported non-ascii characters will cause issues with xml presubmits.
 
 <enum name="VirtualKeyboardErrorTypeHashes">
   <int value="30998784" label="Generic Error"/>
+</enum>
+
+<enum name="WebInputEventType">
+<!-- LINT.IfChange(WebInputEventType) -->
+
+  <int value="0" label="MouseDown"/>
+  <int value="1" label="MouseUp"/>
+  <int value="2" label="MouseMove"/>
+  <int value="3" label="MouseEnter"/>
+  <int value="4" label="MouseLeave"/>
+  <int value="5" label="ContextMenu"/>
+  <int value="6" label="MouseWheel"/>
+  <int value="7" label="RawKeyDown"/>
+  <int value="8" label="KeyDown"/>
+  <int value="9" label="KeyUp"/>
+  <int value="10" label="Char"/>
+  <int value="11" label="GestureScrollBegin"/>
+  <int value="12" label="GestureScrollEnd"/>
+  <int value="13" label="GestureScrollUpdate"/>
+  <int value="14" label="GestureFlingStart"/>
+  <int value="15" label="GestureFlingCancel"/>
+  <int value="16" label="GesturePinchBegin"/>
+  <int value="17" label="GesturePinchEnd"/>
+  <int value="18" label="GesturePinchUpdate"/>
+  <int value="19" label="GestureBegin"/>
+  <int value="20" label="GestureTapDown"/>
+  <int value="21" label="GestureShowPress"/>
+  <int value="22" label="GestureTap"/>
+  <int value="23" label="GestureTapCancel"/>
+  <int value="24" label="GestureShortPress"/>
+  <int value="25" label="GestureLongPress"/>
+  <int value="26" label="GestureLongTap"/>
+  <int value="27" label="GestureTwoFingerTap"/>
+  <int value="28" label="GestureTapUnconfirmed"/>
+  <int value="29" label="GestureDoubleTap"/>
+  <int value="30" label="GestureEnd"/>
+  <int value="31" label="TouchStart"/>
+  <int value="32" label="TouchMove"/>
+  <int value="33" label="TouchEnd"/>
+  <int value="34" label="TouchCancel"/>
+  <int value="35" label="TouchScrollStarted"/>
+  <int value="36" label="PointerDown"/>
+  <int value="37" label="PointerUp"/>
+  <int value="38" label="PointerMove"/>
+  <int value="39" label="PointerRawUpdate"/>
+  <int value="40" label="PointerCancel"/>
+  <int value="41" label="PointerCausedUaAction"/>
+<!-- LINT.ThenChange(/third_party/blink/public/mojom/input/input_event.mojom:EventType) -->
+
 </enum>
 
 </enums>

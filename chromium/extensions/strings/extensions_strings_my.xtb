@@ -12,6 +12,7 @@
 <translation id="2159915644201199628">'<ph name="IMAGE_NAME" />' ပုံအား ကုဒ်မဖြုတ်နိုင်ပါ။</translation>
 <translation id="2350172092385603347">ဒေသတွင်း အသုံးပြုနိုင်ရန် ဖန်တီးရာတွင် အသုံးပြုခဲ့၊ သို့သော် default_locale အားသိသာစွာ သတ်မှတ်မထားပါ။</translation>
 <translation id="2576842806987913196">ဤအမည်ဖြင့် ပြသသည့် CRX ဖိုင်ရှိပြီးဖြစ်သည်။</translation>
+<translation id="2743583586211388067">သင့်အဖွဲ့အစည်း၏ နောက်ဆက်တွဲအန္တရာယ် မူဝါဒအရ ဤနောက်ဆက်တွဲကို သုံးခွင့်ပိတ်ထားသည်။</translation>
 <translation id="2785530881066938471">အကြောင်းအရာ စာကြောင်းတန်း အတွက် ဖိုင်'<ph name="RELATIVE_PATH" />'ကို တင် မပေးနိုင်ခဲ့ပါ။ ၎င်းသည် UTF-8 ကုဒ်သွင်းထား မဟုတ်ပါ။</translation>
 <translation id="2903070246402204397"><ph name="EXTENSION_NAME" /> (နောက်ဆက်တွဲ ID "<ph name="EXTENSION_ID" />") ကို စီမံခန့်ခွဲသူက ပိတ်ဆို့ထားပါသည်။ <ph name="ADMIN_INFO" /></translation>
 <translation id="2988488679308982380">အထုပ်ကို တပ်ဆင် မပေးနိုင်ခဲ့ပါ: '<ph name="ERROR_CODE" />'</translation>
@@ -33,9 +34,11 @@
 <translation id="5356315618422219272">Appview- <ph name="APPVIEW_TAG_NAME" /></translation>
 <translation id="5456409301717116725">အိတ်စတန်းရှင်းတွင် '<ph name="KEY_PATH" />' ကီးဖိုင်ပါဝင်သည်။ သင်လုပ်ချင်မည်မဟုတ်ပါ။</translation>
 <translation id="5486326529110362464">ကိုယ်ပိုင် သော့ အတွက် ထည့်သွင်းမှု တန်ဖိုး ရှိရမည်။</translation>
+<translation id="5707185214361380026">မှ အိတ်စတန်းရှင်း ဖွင့်ခြင်း မအောင်မြင်ပါ:</translation>
 <translation id="5972529113578162692">ဤကိရိယာကို စီမံသူသည် <ph name="EXTENSION_NAME" /> အား ရယူတပ်ဆင်ရန်လိုအပ်သည်။ တပ်ပြီးပါက ပြန်ဖြုတ်မရပါ။</translation>
 <translation id="6027032947578871493">အမည်မသိပစ္စည်း <ph name="PRODUCT_ID" /> သည် <ph name="VENDOR_NAME" /> မှဖြစ်၏ (နံပါတ်စဉ် <ph name="SERIAL_NUMBER" />)</translation>
 <translation id="6068932090455285721"><ph name="PRODUCT_NAME" /> သည် <ph name="VENDOR_ID" /> ထံမှဖြစ်၏</translation>
+<translation id="6220413761270491930">တိုးချဲ့မှု တင်မှု အမှား</translation>
 <translation id="6322279351188361895">ကိုယ်ရေးကိုယ်တာ ကီးဖတ်ရန် မအောင်မြင်ပါ။</translation>
 <translation id="6391538222494443604">ထည့်သွင်းမှု လမ်းကြောင်းထွက်ရပါမည်။</translation>
 <translation id="641087317769093025">တိုးချဲ့မှု ဇီပ်ကို မဖွင့်နိုင်ခဲ့ပါ</translation>

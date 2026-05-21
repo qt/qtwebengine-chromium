@@ -403,7 +403,7 @@ ResultOrError<VkFence> Queue::GetUnusedFence() {
     return fence;
 }
 
-void Queue::DestroyImpl() {
+void Queue::DestroyImpl(DestroyReason reason) {
     Device* device = ToBackend(GetDevice());
     VkDevice vkDevice = device->GetVkDevice();
 
@@ -444,7 +444,7 @@ void Queue::DestroyImpl() {
         unusedFences->clear();
     });
 
-    QueueBase::DestroyImpl();
+    QueueBase::DestroyImpl(reason);
 }
 
 ResultOrError<ExecutionSerial> Queue::WaitForQueueSerialImpl(ExecutionSerial waitSerial,
@@ -477,7 +477,7 @@ ResultOrError<ExecutionSerial> Queue::WaitForQueueSerialImpl(ExecutionSerial wai
                 return VkResult::WrapUnsafe(VK_SUCCESS);
             }
             // Wait for the fence.
-            if (GetDevice()->GetState() == Device::State::Disconnected) [[unlikely]] {
+            if (device->GetState() == Device::State::Disconnected) [[unlikely]] {
                 // If WaitForQueueSerialImpl is called while we are Disconnected, it means that
                 // the device lost came from the ErrorInjector and we need to wait without allowing
                 // any more error to be injected. This is because the device lost was "fake" and

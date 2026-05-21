@@ -119,6 +119,11 @@ std::string OzonePlatform::GetPlatformNameForTest() {
   return GetOzonePlatformName();
 }
 
+// static
+bool OzonePlatform::RunningOnWaylandForTest() {
+  return OzonePlatform::GetPlatformNameForTest() == "wayland";
+}
+
 PlatformClipboard* OzonePlatform::GetPlatformClipboard() {
   // Platforms that support system clipboard must override this method.
   return nullptr;
@@ -155,7 +160,7 @@ PlatformSessionManager* OzonePlatform::GetSessionManager() {
 }
 
 bool OzonePlatform::IsNativePixmapConfigSupported(
-    gfx::BufferFormat format,
+    viz::SharedImageFormat format,
     gfx::BufferUsage usage) const {
   // Platform that support NativePixmap must override this method.
   return false;

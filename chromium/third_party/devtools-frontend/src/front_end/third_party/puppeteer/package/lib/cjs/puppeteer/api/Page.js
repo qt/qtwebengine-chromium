@@ -180,6 +180,14 @@ let Page = (() => {
          * @internal
          */
         _timeoutSettings = new TimeoutSettings_js_1.TimeoutSettings();
+        /**
+         * Internal API to get an implementation-specific identifier
+         * for the tab. In Chrome, it is a tab target id. If unknown,
+         * returns an empty string.
+         *
+         * @internal
+         */
+        _tabId = '';
         #requestHandlers = new WeakMap();
         #inflight$ = new rxjs_js_1.ReplaySubject(1);
         /**
@@ -624,6 +632,8 @@ let Page = (() => {
          * - `timeout`: Maximum wait time in milliseconds, defaults to `30` seconds, pass
          *   `0` to disable the timeout. The default value can be changed by using the
          *   {@link Page.setDefaultTimeout} method.
+         *
+         * - `signal`: A signal object that allows you to cancel a waitForRequest call.
          */
         waitForRequest(urlOrPredicate, options = {}) {
             const { timeout: ms = this._timeoutSettings.timeout(), signal } = options;
@@ -664,6 +674,8 @@ let Page = (() => {
          * - `timeout`: Maximum wait time in milliseconds, defaults to `30` seconds,
          *   pass `0` to disable the timeout. The default value can be changed by using
          *   the {@link Page.setDefaultTimeout} method.
+         *
+         * - `signal`: A signal object that allows you to cancel a waitForResponse call.
          */
         waitForResponse(urlOrPredicate, options = {}) {
             const { timeout: ms = this._timeoutSettings.timeout(), signal } = options;
@@ -1372,6 +1384,8 @@ let Page = (() => {
          * - `timeout`: maximum time to wait for in milliseconds. Defaults to `30000`
          *   (30 seconds). Pass `0` to disable timeout. The default value can be changed
          *   by using the {@link Page.setDefaultTimeout} method.
+         *
+         * - `signal`: A signal object that allows you to cancel a waitForSelector call.
          */
         async waitForSelector(selector, options = {}) {
             return await this.mainFrame().waitForSelector(selector, options);

@@ -298,8 +298,6 @@ static int rd_pick_filter_intra_sby(const AV1_COMP *const cpi, MACROBLOCK *x,
       best_tx_size = mbmi->tx_size;
       filter_intra_mode_info = mbmi->filter_intra_mode_info;
       av1_copy_array(best_tx_type_map, xd->tx_type_map, ctx->num_4x4_blk);
-      memcpy(ctx->blk_skip, x->txfm_search_info.blk_skip,
-             sizeof(x->txfm_search_info.blk_skip[0]) * ctx->num_4x4_blk);
       *rate = this_rate;
       *rate_tokenonly = tokenonly_rd_stats.rate;
       *distortion = tokenonly_rd_stats.dist;
@@ -1048,7 +1046,6 @@ int av1_search_palette_mode(IntraModeSearchState *intra_search_state,
       x->palette_buffer->best_palette_color_map;
   uint8_t *const color_map = xd->plane[0].color_index_map;
   MB_MODE_INFO best_mbmi_palette = *mbmi;
-  uint8_t best_blk_skip[MAX_MIB_SIZE * MAX_MIB_SIZE];
   uint8_t best_tx_type_map[MAX_MIB_SIZE * MAX_MIB_SIZE];
   const ModeCosts *mode_costs = &x->mode_costs;
   const int *const intra_mode_cost =
@@ -1064,18 +1061,15 @@ int av1_search_palette_mode(IntraModeSearchState *intra_search_state,
 
   RD_STATS rd_stats_y;
   av1_invalid_rd_stats(&rd_stats_y);
-  av1_rd_pick_palette_intra_sby(cpi, x, bsize, intra_mode_cost[DC_PRED],
-                                &best_mbmi_palette, best_palette_color_map,
-                                &best_rd_palette, &rd_stats_y.rate, NULL,
-                                &rd_stats_y.dist, &rd_stats_y.skip_txfm, NULL,
-                                ctx, best_blk_skip, best_tx_type_map);
+  av1_rd_pick_palette_intra_sby(
+      cpi, x, bsize, intra_mode_cost[DC_PRED], &best_mbmi_palette,
+      best_palette_color_map, &best_rd_palette, &rd_stats_y.rate, NULL,
+      &rd_stats_y.dist, &rd_stats_y.skip_txfm, NULL, ctx, best_tx_type_map);
   if (rd_stats_y.rate == INT_MAX || pmi->palette_size[0] == 0) {
     this_rd_cost->rdcost = INT64_MAX;
     return skippable;
   }
 
-  memcpy(x->txfm_search_info.blk_skip, best_blk_skip,
-         sizeof(best_blk_skip[0]) * bsize_to_num_blk(bsize));
   av1_copy_array(xd->tx_type_map, best_tx_type_map, ctx->num_4x4_blk);
   memcpy(color_map, best_palette_color_map,
          rows * cols * sizeof(best_palette_color_map[0]));
@@ -1137,7 +1131,6 @@ void av1_search_palette_mode_luma(const AV1_COMP *cpi, MACROBLOCK *x,
       x->palette_buffer->best_palette_color_map;
   uint8_t *const color_map = xd->plane[0].color_index_map;
   MB_MODE_INFO best_mbmi_palette = *mbmi;
-  uint8_t best_blk_skip[MAX_MIB_SIZE * MAX_MIB_SIZE];
   uint8_t best_tx_type_map[MAX_MIB_SIZE * MAX_MIB_SIZE];
   const ModeCosts *mode_costs = &x->mode_costs;
   const int *const intra_mode_cost =
@@ -1153,18 +1146,15 @@ void av1_search_palette_mode_luma(const AV1_COMP *cpi, MACROBLOCK *x,
 
   RD_STATS rd_stats_y;
   av1_invalid_rd_stats(&rd_stats_y);
-  av1_rd_pick_palette_intra_sby(cpi, x, bsize, intra_mode_cost[DC_PRED],
-                                &best_mbmi_palette, best_palette_color_map,
-                                &best_rd_palette, &rd_stats_y.rate, NULL,
-                                &rd_stats_y.dist, &rd_stats_y.skip_txfm, NULL,
-                                ctx, best_blk_skip, best_tx_type_map);
+  av1_rd_pick_palette_intra_sby(
+      cpi, x, bsize, intra_mode_cost[DC_PRED], &best_mbmi_palette,
+      best_palette_color_map, &best_rd_palette, &rd_stats_y.rate, NULL,
+      &rd_stats_y.dist, &rd_stats_y.skip_txfm, NULL, ctx, best_tx_type_map);
   if (rd_stats_y.rate == INT_MAX || pmi->palette_size[0] == 0) {
     this_rd_cost->rdcost = INT64_MAX;
     return;
   }
 
-  memcpy(x->txfm_search_info.blk_skip, best_blk_skip,
-         sizeof(best_blk_skip[0]) * bsize_to_num_blk(bsize));
   av1_copy_array(xd->tx_type_map, best_tx_type_map, ctx->num_4x4_blk);
   memcpy(color_map, best_palette_color_map,
          rows * cols * sizeof(best_palette_color_map[0]));
@@ -1231,8 +1221,6 @@ static inline int intra_block_yrd(const AV1_COMP *const cpi, MACROBLOCK *x,
     *rate_tokenonly = this_rate_tokenonly;
     *distortion = rd_stats.dist;
     *skippable = rd_stats.skip_txfm;
-    av1_copy_array(ctx->blk_skip, x->txfm_search_info.blk_skip,
-                   ctx->num_4x4_blk);
     av1_copy_array(ctx->tx_type_map, xd->tx_type_map, ctx->num_4x4_blk);
     return 1;
   }
@@ -1262,9 +1250,6 @@ static inline void handle_filter_intra_mode(const AV1_COMP *cpi, MACROBLOCK *x,
   int filter_intra_selected_flag = 0;
   TX_SIZE best_tx_size = mbmi->tx_size;
   FILTER_INTRA_MODE best_fi_mode = FILTER_DC_PRED;
-  uint8_t best_blk_skip[MAX_MIB_SIZE * MAX_MIB_SIZE];
-  memcpy(best_blk_skip, x->txfm_search_info.blk_skip,
-         sizeof(best_blk_skip[0]) * ctx->num_4x4_blk);
   uint8_t best_tx_type_map[MAX_MIB_SIZE * MAX_MIB_SIZE];
   av1_copy_array(best_tx_type_map, xd->tx_type_map, ctx->num_4x4_blk);
   mbmi->filter_intra_mode_info.use_filter_intra = 1;
@@ -1285,8 +1270,6 @@ static inline void handle_filter_intra_mode(const AV1_COMP *cpi, MACROBLOCK *x,
     if (this_rd_tmp < best_rd_so_far) {
       best_tx_size = mbmi->tx_size;
       av1_copy_array(best_tx_type_map, xd->tx_type_map, ctx->num_4x4_blk);
-      memcpy(best_blk_skip, x->txfm_search_info.blk_skip,
-             sizeof(best_blk_skip[0]) * ctx->num_4x4_blk);
       best_fi_mode = fi_mode;
       *rd_stats_y = rd_stats_y_fi;
       filter_intra_selected_flag = 1;
@@ -1296,8 +1279,6 @@ static inline void handle_filter_intra_mode(const AV1_COMP *cpi, MACROBLOCK *x,
 
   mbmi->tx_size = best_tx_size;
   av1_copy_array(xd->tx_type_map, best_tx_type_map, ctx->num_4x4_blk);
-  memcpy(x->txfm_search_info.blk_skip, best_blk_skip,
-         sizeof(x->txfm_search_info.blk_skip[0]) * ctx->num_4x4_blk);
 
   if (filter_intra_selected_flag) {
     mbmi->filter_intra_mode_info.use_filter_intra = 1;
@@ -1675,18 +1656,16 @@ int64_t av1_rd_pick_intra_sby_mode(const AV1_COMP *const cpi, MACROBLOCK *x,
       *rate_tokenonly = this_rate_tokenonly;
       *distortion = this_distortion;
       *skippable = s;
-      memcpy(ctx->blk_skip, x->txfm_search_info.blk_skip,
-             sizeof(x->txfm_search_info.blk_skip[0]) * ctx->num_4x4_blk);
       av1_copy_array(ctx->tx_type_map, xd->tx_type_map, ctx->num_4x4_blk);
     }
   }
 
   // Searches palette
   if (try_palette) {
-    av1_rd_pick_palette_intra_sby(
-        cpi, x, bsize, bmode_costs[DC_PRED], &best_mbmi, best_palette_color_map,
-        &best_rd, rate, rate_tokenonly, distortion, skippable, &beat_best_rd,
-        ctx, ctx->blk_skip, ctx->tx_type_map);
+    av1_rd_pick_palette_intra_sby(cpi, x, bsize, bmode_costs[DC_PRED],
+                                  &best_mbmi, best_palette_color_map, &best_rd,
+                                  rate, rate_tokenonly, distortion, skippable,
+                                  &beat_best_rd, ctx, ctx->tx_type_map);
   }
 
   // Searches filter_intra

@@ -5,20 +5,16 @@
 #ifndef COMPONENTS_LEGION_CLIENT_H_
 #define COMPONENTS_LEGION_CLIENT_H_
 
-#include <cstdint>
 #include <memory>
 #include <string>
 
-#include "base/containers/flat_map.h"
-#include "base/containers/flat_set.h"
 #include "base/functional/callback.h"
-#include "base/memory/raw_ptr.h"
-#include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
 #include "base/types/expected.h"
-#include "components/legion/legion_common.h"
+#include "components/legion/error_code.h"
+#include "components/legion/phosphor/token_manager.h"
 #include "components/legion/proto/legion.pb.h"
-#include "components/legion/secure_channel.h"
+#include "services/network/public/mojom/network_service.mojom.h"
 #include "url/gurl.h"
 
 namespace network::mojom {
@@ -27,20 +23,11 @@ class NetworkContext;
 
 namespace legion {
 
-// Client for starting the session and sending requests.
+class LegionLogger;
+
+// Interface for the legion client.
 class Client {
  public:
-  using BinaryEncodedProtoRequest = Request;
-  using BinaryEncodedProtoResponse = Response;
-
-  static constexpr base::TimeDelta kDefaultTimeout = base::Seconds(120);
-
-  // Callback for when a `SendRequest` operation completes.
-  // If the operation is successful, the result will contain the server's
-  // response. Otherwise, it will contain an `ErrorCode` error.
-  using OnRequestCompletedCallback = base::OnceCallback<void(
-      base::expected<BinaryEncodedProtoResponse, ErrorCode> result)>;
-
   // Callback for when a `SendTextRequest` operation completes.
   using OnTextRequestCompletedCallback =
       base::OnceCallback<void(base::expected<std::string, ErrorCode> result)>;
@@ -49,93 +36,84 @@ class Client {
   using OnGenerateContentRequestCompletedCallback = base::OnceCallback<void(
       base::expected<proto::GenerateContentResponse, ErrorCode> result)>;
 
+  // Callback for when a `SendPaicRequest` operation completes.
+  using OnPaicMessageRequestCompletedCallback = base::OnceCallback<void(
+      base::expected<proto::PaicMessage, ErrorCode> result)>;
+
   // Callback for when a `EstablishSession` operation completes.
   using OnEstablishSessionCompletedCallback =
       base::OnceCallback<void(base::expected<void, ErrorCode>)>;
 
-  using SecureChannelFactory =
-      base::RepeatingCallback<std::unique_ptr<SecureChannel>()>;
+  struct RequestOptions {
+    base::TimeDelta timeout = kDefaultTimeout;
+  };
 
-  static std::unique_ptr<Client> Create(
-      network::mojom::NetworkContext* network_context);
+  static constexpr base::TimeDelta kDefaultTimeout = base::Seconds(120);
 
-  static std::unique_ptr<Client> CreateWithUrl(
+  static std::unique_ptr<Client> CreateWithApiKey(
       const GURL& url,
       network::mojom::NetworkContext* network_context);
+
+  static std::unique_ptr<Client> CreateWithToken(
+      const GURL& url,
+      network::mojom::NetworkContext* network_context,
+      phosphor::TokenManager* token_manager);
+
+  static std::unique_ptr<Client> CreateWithProxyAndToken(
+      const GURL& url,
+      const GURL& proxy_url,
+      network::mojom::NetworkService* network_service,
+      phosphor::TokenManager* token_manager);
+
+  // Creates a client based on the provided configuration. This is a helper to
+  // consolidate client creation logic.
+  // - If `api_key` is not empty, it creates an API key based client.
+  // - Otherwise, it creates a token based client.
+  // - If `proxy_url_string` is not empty, the token based client will be
+  // wrapped in a proxy.
+  static std::unique_ptr<Client> Create(
+      const std::string& url,
+      const std::string& api_key,
+      const std::string& proxy_url_string,
+      network::mojom::NetworkContext* network_context,
+      phosphor::TokenManager* token_manager,
+      network::mojom::NetworkService* network_service);
+
+  virtual ~Client() = default;
+
+  // Takes a URL without scheme and returns a URL.
+  static GURL FormatUrl(const std::string& url);
 
   // Takes a URL without scheme and an api_key and returns a URL.
   static GURL FormatUrl(const std::string& url, const std::string& api_key);
 
-  ~Client();
-
-  Client(const Client&) = delete;
-  Client& operator=(const Client&) = delete;
-
   // Establishes a secure session without sending a request. The callback will
   // be invoked upon completion. Calling this function is optional as a session
   // will be established automatically when needed/first request is sent.
-  void EstablishSession(OnEstablishSessionCompletedCallback callback);
+  virtual void EstablishSession(
+      OnEstablishSessionCompletedCallback callback) = 0;
 
   // Sends a request with a single text content.
-  void SendTextRequest(proto::FeatureName feature_name,
-                       const std::string& text,
-                       OnTextRequestCompletedCallback callback,
-                       base::TimeDelta timeout = kDefaultTimeout);
+  virtual void SendTextRequest(proto::FeatureName feature_name,
+                               const std::string& text,
+                               OnTextRequestCompletedCallback callback,
+                               const RequestOptions& options) = 0;
 
   // Sends a `GenerateContentRequest`. The caller is responsible for populating
   // the `request` proto, including setting the content's role to "user".
-  void SendGenerateContentRequest(
+  virtual void SendGenerateContentRequest(
       proto::FeatureName feature_name,
       const proto::GenerateContentRequest& request,
       OnGenerateContentRequestCompletedCallback callback,
-      base::TimeDelta timeout = kDefaultTimeout);
+      const RequestOptions& options) = 0;
 
- private:
-  friend class ClientTest;
+  // Sends a `PaicMessage` request.
+  virtual void SendPaicRequest(proto::FeatureName feature_name,
+                               const proto::PaicMessage& request,
+                               OnPaicMessageRequestCompletedCallback callback,
+                               const RequestOptions& options) = 0;
 
-  explicit Client(SecureChannelFactory channel_factory);
-
-  // Recreates the secure channel and sets the response callback.
-  void RecreateSecureChannel();
-
-  // Sends a request over the secure channel.
-  void SendRequest(int32_t request_id,
-                   BinaryEncodedProtoRequest request,
-                   OnRequestCompletedCallback callback,
-                   base::TimeDelta timeout = kDefaultTimeout);
-
-  // Handles responses from the secure channel.
-  void OnResponseReceived(
-      base::expected<BinaryEncodedProtoResponse, ErrorCode> result);
-
-  // Wraps a request callback to record latency metrics upon completion.
-  void OnRequestCompleted(
-      OnRequestCompletedCallback callback,
-      base::TimeTicks start_time,
-      base::expected<BinaryEncodedProtoResponse, ErrorCode> result);
-
-  // Handles a request timeout.
-  void OnRequestTimeout(int32_t request_id);
-
-  // Fails all pending requests with the given error code.
-  void FailAllPendingRequests(ErrorCode error_code);
-
-  // Handles the result of a session establishment request.
-  void OnSessionEstablished(OnEstablishSessionCompletedCallback callback,
-                            base::expected<void, ErrorCode> result);
-
-  std::unique_ptr<SecureChannel> secure_channel_;
-  SecureChannelFactory secure_channel_factory_;
-  int32_t next_request_id_{1};
-
-  // Callbacks for requests that have been sent to the secure channel but have
-  // not yet received a response.
-  base::flat_map<int32_t, OnRequestCompletedCallback> pending_requests_;
-
-  // The request_ids of requests that have timed out.
-  base::flat_set<int32_t> timed_out_requests_;
-
-  base::WeakPtrFactory<Client> weak_factory_{this};
+  virtual LegionLogger* GetLogger() = 0;
 };
 
 }  // namespace legion

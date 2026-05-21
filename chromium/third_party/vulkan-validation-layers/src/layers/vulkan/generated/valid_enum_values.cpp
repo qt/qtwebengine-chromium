@@ -3,9 +3,9 @@
 
 /***************************************************************************
  *
- * Copyright (c) 2015-2025 The Khronos Group Inc.
- * Copyright (c) 2015-2025 Valve Corporation
- * Copyright (c) 2015-2025 LunarG, Inc.
+ * Copyright (c) 2015-2026 The Khronos Group Inc.
+ * Copyright (c) 2015-2026 Valve Corporation
+ * Copyright (c) 2015-2026 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -445,7 +445,41 @@ ValidValue stateless::Context::IsValidEnumValue(VkFormat value) const {
         case VK_FORMAT_PVRTC2_2BPP_SRGB_BLOCK_IMG:
         case VK_FORMAT_PVRTC2_4BPP_SRGB_BLOCK_IMG:
             return IsExtEnabled(extensions.vk_img_format_pvrtc) ? ValidValue::Valid : ValidValue::NoExtension;
+        case VK_FORMAT_ASTC_3x3x3_UNORM_BLOCK_EXT:
+        case VK_FORMAT_ASTC_3x3x3_SRGB_BLOCK_EXT:
+        case VK_FORMAT_ASTC_3x3x3_SFLOAT_BLOCK_EXT:
+        case VK_FORMAT_ASTC_4x3x3_UNORM_BLOCK_EXT:
+        case VK_FORMAT_ASTC_4x3x3_SRGB_BLOCK_EXT:
+        case VK_FORMAT_ASTC_4x3x3_SFLOAT_BLOCK_EXT:
+        case VK_FORMAT_ASTC_4x4x3_UNORM_BLOCK_EXT:
+        case VK_FORMAT_ASTC_4x4x3_SRGB_BLOCK_EXT:
+        case VK_FORMAT_ASTC_4x4x3_SFLOAT_BLOCK_EXT:
+        case VK_FORMAT_ASTC_4x4x4_UNORM_BLOCK_EXT:
+        case VK_FORMAT_ASTC_4x4x4_SRGB_BLOCK_EXT:
+        case VK_FORMAT_ASTC_4x4x4_SFLOAT_BLOCK_EXT:
+        case VK_FORMAT_ASTC_5x4x4_UNORM_BLOCK_EXT:
+        case VK_FORMAT_ASTC_5x4x4_SRGB_BLOCK_EXT:
+        case VK_FORMAT_ASTC_5x4x4_SFLOAT_BLOCK_EXT:
+        case VK_FORMAT_ASTC_5x5x4_UNORM_BLOCK_EXT:
+        case VK_FORMAT_ASTC_5x5x4_SRGB_BLOCK_EXT:
+        case VK_FORMAT_ASTC_5x5x4_SFLOAT_BLOCK_EXT:
+        case VK_FORMAT_ASTC_5x5x5_UNORM_BLOCK_EXT:
+        case VK_FORMAT_ASTC_5x5x5_SRGB_BLOCK_EXT:
+        case VK_FORMAT_ASTC_5x5x5_SFLOAT_BLOCK_EXT:
+        case VK_FORMAT_ASTC_6x5x5_UNORM_BLOCK_EXT:
+        case VK_FORMAT_ASTC_6x5x5_SRGB_BLOCK_EXT:
+        case VK_FORMAT_ASTC_6x5x5_SFLOAT_BLOCK_EXT:
+        case VK_FORMAT_ASTC_6x6x5_UNORM_BLOCK_EXT:
+        case VK_FORMAT_ASTC_6x6x5_SRGB_BLOCK_EXT:
+        case VK_FORMAT_ASTC_6x6x5_SFLOAT_BLOCK_EXT:
+        case VK_FORMAT_ASTC_6x6x6_UNORM_BLOCK_EXT:
+        case VK_FORMAT_ASTC_6x6x6_SRGB_BLOCK_EXT:
+        case VK_FORMAT_ASTC_6x6x6_SFLOAT_BLOCK_EXT:
+            return IsExtEnabled(extensions.vk_ext_texture_compression_astc_3d) ? ValidValue::Valid : ValidValue::NoExtension;
         case VK_FORMAT_R8_BOOL_ARM:
+        case VK_FORMAT_R16_SFLOAT_FPENCODING_BFLOAT16_ARM:
+        case VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E4M3_ARM:
+        case VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E5M2_ARM:
             return IsExtEnabled(extensions.vk_arm_tensors) ? ValidValue::Valid : ValidValue::NoExtension;
         case VK_FORMAT_R16G16_SFIXED5_NV:
             return IsExtEnabled(extensions.vk_nv_optical_flow) ? ValidValue::Valid : ValidValue::NoExtension;
@@ -1530,6 +1564,26 @@ ValidValue stateless::Context::IsValidEnumValue(VkConservativeRasterizationModeE
 }
 
 template <>
+ValidValue stateless::Context::IsValidEnumValue(VkDescriptorMappingSourceEXT value) const {
+    switch (value) {
+        case VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_CONSTANT_OFFSET_EXT:
+        case VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_PUSH_INDEX_EXT:
+        case VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_INDIRECT_INDEX_EXT:
+        case VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_INDIRECT_INDEX_ARRAY_EXT:
+        case VK_DESCRIPTOR_MAPPING_SOURCE_RESOURCE_HEAP_DATA_EXT:
+        case VK_DESCRIPTOR_MAPPING_SOURCE_PUSH_DATA_EXT:
+        case VK_DESCRIPTOR_MAPPING_SOURCE_PUSH_ADDRESS_EXT:
+        case VK_DESCRIPTOR_MAPPING_SOURCE_INDIRECT_ADDRESS_EXT:
+        case VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_SHADER_RECORD_INDEX_EXT:
+        case VK_DESCRIPTOR_MAPPING_SOURCE_SHADER_RECORD_DATA_EXT:
+        case VK_DESCRIPTOR_MAPPING_SOURCE_SHADER_RECORD_ADDRESS_EXT:
+            return ValidValue::Valid;
+        default:
+            return ValidValue::NotFound;
+    };
+}
+
+template <>
 ValidValue stateless::Context::IsValidEnumValue(VkBlendOverlapEXT value) const {
     switch (value) {
         case VK_BLEND_OVERLAP_UNCORRELATED_EXT:
@@ -1788,6 +1842,8 @@ ValidValue stateless::Context::IsValidEnumValue(VkIndirectCommandsTokenTypeNV va
         case VK_INDIRECT_COMMANDS_TOKEN_TYPE_DRAW_NV:
         case VK_INDIRECT_COMMANDS_TOKEN_TYPE_DRAW_TASKS_NV:
             return ValidValue::Valid;
+        case VK_INDIRECT_COMMANDS_TOKEN_TYPE_PUSH_DATA_NV:
+            return IsExtEnabled(extensions.vk_ext_descriptor_heap) ? ValidValue::Valid : ValidValue::NoExtension;
         case VK_INDIRECT_COMMANDS_TOKEN_TYPE_DRAW_MESH_TASKS_NV:
             return IsExtEnabled(extensions.vk_ext_mesh_shader) ? ValidValue::Valid : ValidValue::NoExtension;
         case VK_INDIRECT_COMMANDS_TOKEN_TYPE_PIPELINE_NV:
@@ -2154,16 +2210,6 @@ ValidValue stateless::Context::IsValidEnumValue(VkDataGraphPipelineSessionBindPo
 }
 
 template <>
-ValidValue stateless::Context::IsValidEnumValue(VkDataGraphPipelineSessionBindPointTypeARM value) const {
-    switch (value) {
-        case VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_TYPE_MEMORY_ARM:
-            return ValidValue::Valid;
-        default:
-            return ValidValue::NotFound;
-    };
-}
-
-template <>
 ValidValue stateless::Context::IsValidEnumValue(VkDataGraphPipelinePropertyARM value) const {
     switch (value) {
         case VK_DATA_GRAPH_PIPELINE_PROPERTY_CREATION_LOG_ARM:
@@ -2313,6 +2359,9 @@ ValidValue stateless::Context::IsValidEnumValue(VkIndirectCommandsTokenTypeEXT v
         case VK_INDIRECT_COMMANDS_TOKEN_TYPE_DRAW_COUNT_EXT:
         case VK_INDIRECT_COMMANDS_TOKEN_TYPE_DISPATCH_EXT:
             return ValidValue::Valid;
+        case VK_INDIRECT_COMMANDS_TOKEN_TYPE_PUSH_DATA_EXT:
+        case VK_INDIRECT_COMMANDS_TOKEN_TYPE_PUSH_DATA_SEQUENCE_INDEX_EXT:
+            return IsExtEnabled(extensions.vk_ext_descriptor_heap) ? ValidValue::Valid : ValidValue::NoExtension;
         case VK_INDIRECT_COMMANDS_TOKEN_TYPE_DRAW_MESH_TASKS_NV_EXT:
         case VK_INDIRECT_COMMANDS_TOKEN_TYPE_DRAW_MESH_TASKS_COUNT_NV_EXT:
             return IsExtEnabled(extensions.vk_nv_mesh_shader) ? ValidValue::Valid : ValidValue::NoExtension;
@@ -2552,7 +2601,41 @@ vvl::Extensions stateless::Context::GetEnumExtensions(VkFormat value) const {
         case VK_FORMAT_PVRTC2_2BPP_SRGB_BLOCK_IMG:
         case VK_FORMAT_PVRTC2_4BPP_SRGB_BLOCK_IMG:
             return {vvl::Extension::_VK_IMG_format_pvrtc};
+        case VK_FORMAT_ASTC_3x3x3_UNORM_BLOCK_EXT:
+        case VK_FORMAT_ASTC_3x3x3_SRGB_BLOCK_EXT:
+        case VK_FORMAT_ASTC_3x3x3_SFLOAT_BLOCK_EXT:
+        case VK_FORMAT_ASTC_4x3x3_UNORM_BLOCK_EXT:
+        case VK_FORMAT_ASTC_4x3x3_SRGB_BLOCK_EXT:
+        case VK_FORMAT_ASTC_4x3x3_SFLOAT_BLOCK_EXT:
+        case VK_FORMAT_ASTC_4x4x3_UNORM_BLOCK_EXT:
+        case VK_FORMAT_ASTC_4x4x3_SRGB_BLOCK_EXT:
+        case VK_FORMAT_ASTC_4x4x3_SFLOAT_BLOCK_EXT:
+        case VK_FORMAT_ASTC_4x4x4_UNORM_BLOCK_EXT:
+        case VK_FORMAT_ASTC_4x4x4_SRGB_BLOCK_EXT:
+        case VK_FORMAT_ASTC_4x4x4_SFLOAT_BLOCK_EXT:
+        case VK_FORMAT_ASTC_5x4x4_UNORM_BLOCK_EXT:
+        case VK_FORMAT_ASTC_5x4x4_SRGB_BLOCK_EXT:
+        case VK_FORMAT_ASTC_5x4x4_SFLOAT_BLOCK_EXT:
+        case VK_FORMAT_ASTC_5x5x4_UNORM_BLOCK_EXT:
+        case VK_FORMAT_ASTC_5x5x4_SRGB_BLOCK_EXT:
+        case VK_FORMAT_ASTC_5x5x4_SFLOAT_BLOCK_EXT:
+        case VK_FORMAT_ASTC_5x5x5_UNORM_BLOCK_EXT:
+        case VK_FORMAT_ASTC_5x5x5_SRGB_BLOCK_EXT:
+        case VK_FORMAT_ASTC_5x5x5_SFLOAT_BLOCK_EXT:
+        case VK_FORMAT_ASTC_6x5x5_UNORM_BLOCK_EXT:
+        case VK_FORMAT_ASTC_6x5x5_SRGB_BLOCK_EXT:
+        case VK_FORMAT_ASTC_6x5x5_SFLOAT_BLOCK_EXT:
+        case VK_FORMAT_ASTC_6x6x5_UNORM_BLOCK_EXT:
+        case VK_FORMAT_ASTC_6x6x5_SRGB_BLOCK_EXT:
+        case VK_FORMAT_ASTC_6x6x5_SFLOAT_BLOCK_EXT:
+        case VK_FORMAT_ASTC_6x6x6_UNORM_BLOCK_EXT:
+        case VK_FORMAT_ASTC_6x6x6_SRGB_BLOCK_EXT:
+        case VK_FORMAT_ASTC_6x6x6_SFLOAT_BLOCK_EXT:
+            return {vvl::Extension::_VK_EXT_texture_compression_astc_3d};
         case VK_FORMAT_R8_BOOL_ARM:
+        case VK_FORMAT_R16_SFLOAT_FPENCODING_BFLOAT16_ARM:
+        case VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E4M3_ARM:
+        case VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E5M2_ARM:
             return {vvl::Extension::_VK_ARM_tensors};
         case VK_FORMAT_R16G16_SFIXED5_NV:
             return {vvl::Extension::_VK_NV_optical_flow};
@@ -3408,6 +3491,15 @@ const char* stateless::Context::DescribeEnum(VkConservativeRasterizationModeEXT 
 }
 
 template <>
+vvl::Extensions stateless::Context::GetEnumExtensions(VkDescriptorMappingSourceEXT value) const {
+    return {};
+}
+template <>
+const char* stateless::Context::DescribeEnum(VkDescriptorMappingSourceEXT value) const {
+    return nullptr;
+}
+
+template <>
 vvl::Extensions stateless::Context::GetEnumExtensions(VkBlendOverlapEXT value) const {
     return {};
 }
@@ -3591,6 +3683,8 @@ const char* stateless::Context::DescribeEnum(VkFullScreenExclusiveEXT value) con
 template <>
 vvl::Extensions stateless::Context::GetEnumExtensions(VkIndirectCommandsTokenTypeNV value) const {
     switch (value) {
+        case VK_INDIRECT_COMMANDS_TOKEN_TYPE_PUSH_DATA_NV:
+            return {vvl::Extension::_VK_EXT_descriptor_heap};
         case VK_INDIRECT_COMMANDS_TOKEN_TYPE_DRAW_MESH_TASKS_NV:
             return {vvl::Extension::_VK_EXT_mesh_shader};
         case VK_INDIRECT_COMMANDS_TOKEN_TYPE_PIPELINE_NV:
@@ -3865,15 +3959,6 @@ const char* stateless::Context::DescribeEnum(VkDataGraphPipelineSessionBindPoint
 }
 
 template <>
-vvl::Extensions stateless::Context::GetEnumExtensions(VkDataGraphPipelineSessionBindPointTypeARM value) const {
-    return {};
-}
-template <>
-const char* stateless::Context::DescribeEnum(VkDataGraphPipelineSessionBindPointTypeARM value) const {
-    return nullptr;
-}
-
-template <>
 vvl::Extensions stateless::Context::GetEnumExtensions(VkDataGraphPipelinePropertyARM value) const {
     return {};
 }
@@ -3987,6 +4072,9 @@ const char* stateless::Context::DescribeEnum(VkIndirectExecutionSetInfoTypeEXT v
 template <>
 vvl::Extensions stateless::Context::GetEnumExtensions(VkIndirectCommandsTokenTypeEXT value) const {
     switch (value) {
+        case VK_INDIRECT_COMMANDS_TOKEN_TYPE_PUSH_DATA_EXT:
+        case VK_INDIRECT_COMMANDS_TOKEN_TYPE_PUSH_DATA_SEQUENCE_INDEX_EXT:
+            return {vvl::Extension::_VK_EXT_descriptor_heap};
         case VK_INDIRECT_COMMANDS_TOKEN_TYPE_DRAW_MESH_TASKS_NV_EXT:
         case VK_INDIRECT_COMMANDS_TOKEN_TYPE_DRAW_MESH_TASKS_COUNT_NV_EXT:
             return {vvl::Extension::_VK_NV_mesh_shader};

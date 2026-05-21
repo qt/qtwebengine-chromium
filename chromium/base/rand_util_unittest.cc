@@ -28,16 +28,16 @@ constexpr int kIntMax = std::numeric_limits<int>::max();
 
 }  // namespace
 
-TEST(RandUtilTest, RandInt) {
-  EXPECT_EQ(RandInt(0, 0), 0);
-  EXPECT_EQ(RandInt(kIntMin, kIntMin), kIntMin);
-  EXPECT_EQ(RandInt(kIntMax, kIntMax), kIntMax);
+TEST(RandUtilTest, RandIntInclusive) {
+  EXPECT_EQ(RandIntInclusive(0, 0), 0);
+  EXPECT_EQ(RandIntInclusive(kIntMin, kIntMin), kIntMin);
+  EXPECT_EQ(RandIntInclusive(kIntMax, kIntMax), kIntMax);
 
-  // Check that the DCHECKS in RandInt() don't fire due to internal overflow.
-  // There was a 50% chance of that happening, so calling it 40 times means
-  // the chances of this passing by accident are tiny (9e-13).
+  // Check that the DCHECKS in RandIntInclusive() don't fire due to internal
+  // overflow. There was a 50% chance of that happening, so calling it 40 times
+  // means the chances of this passing by accident are tiny (9e-13).
   for (int i = 0; i < 40; ++i) {
-    RandInt(kIntMin, kIntMax);
+    RandIntInclusive(kIntMin, kIntMax);
   }
 }
 
@@ -191,6 +191,25 @@ TEST(RandUtilTest, RandBytesAsString) {
   // In theory this test can fail, but it won't before the universe dies of
   // heat death.
   EXPECT_NE(0, accumulator);
+}
+
+TEST(RandUtilTest, RandomChoice) {
+  auto elements = std::to_array<uint8_t>({2, 4, 6, 8, 10, 12, 14, 16});
+
+  // Choose random cells and zero them; afterward, check whether every cell is
+  // zeroed, meaning the random choice hit every cell at least once.
+  //
+  // The probability that this will fail to clear one of the eight cells is
+  // essentially zero; all 1024 trials would have to not hit that cell
+  // (probability (7/8)**1024, which is ~4.1e-60. This is an instance of the
+  // "Coupon Collector's Problem" in probability theory.
+  for (size_t i = 0; i < 1024; i++) {
+    base::RandomChoice(elements) = 0;
+  }
+
+  for (const auto& e : elements) {
+    EXPECT_EQ(e, 0);
+  }
 }
 
 // Make sure that it is still appropriate to use RandGenerator in conjunction

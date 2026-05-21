@@ -68,8 +68,7 @@ void SharedFunctionInfo::Init(ReadOnlyRoots ro_roots, int unique_id) {
   UpdateFunctionMapIndex();
 
   set_age(0);
-
-  clear_padding();
+  set_feedback_slot(0);
 }
 
 // LINT.IfChange(GetSharedFunctionInfoCode)
@@ -86,6 +85,7 @@ Tagged<Code> SharedFunctionInfo::GetCode(Isolate* isolate) const {
     if (Tagged<Code> code; TryCast(data, &code)) {
       // Having baseline Code means we are a compiled, baseline function.
       DCHECK(HasBaselineCode());
+      SBXCHECK_EQ(code->kind(), CodeKind::BASELINE);
       return code;
     }
     if (IsInterpreterData(data)) {
@@ -257,6 +257,7 @@ void SharedFunctionInfo::CopyFrom(Tagged<SharedFunctionInfo> other,
     SetUntrustedData(other->GetUntrustedData());
   }
 
+  set_feedback_slot(other->feedback_slot());
 #if DEBUG
   // This should now be byte-for-byte identical to the input except for the age
   // field (could be reset concurrently). Compare content before age field now:

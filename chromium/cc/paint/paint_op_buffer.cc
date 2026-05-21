@@ -216,7 +216,9 @@ PaintRecord PaintOpBuffer::DeepCopyAsRecord() {
       case PaintOpType::kSaveLayerFilters: {
         const auto& o = static_cast<const SaveLayerFiltersOp&>(op);
         auto f = o.filters;
-        result->push<SaveLayerFiltersOp>(std::move(f), o.flags);
+        auto bf = o.backdrop_filter;
+        result->push<SaveLayerFiltersOp>(o.bounds, std::move(f), std::move(bf),
+                                         o.flags);
       } break;
       case PaintOpType::kScale: {
         const auto& o = static_cast<const ScaleOp&>(op);
@@ -579,9 +581,34 @@ void PaintOpBuffer::UpdateSaveLayerBounds(size_t offset, const SkRect& bounds) {
       CHECK_LE(offset + sizeof(SaveLayerAlphaOp), used_);
       static_cast<SaveLayerAlphaOp*>(op)->bounds = bounds;
       break;
+    case SaveLayerFiltersOp::kType:
+      CHECK_LE(offset + sizeof(SaveLayerFiltersOp), used_);
+      // Do not update the bounds. They are only used for backdrop filter
+      // as a clip for the filtered area, and must remain unchanged.
+      break;
     default:
       NOTREACHED();
   }
+}
+
+void PaintOpBuffer::UpdateDrawRecordOp(size_t offset,
+                                       PaintRecord paint_record) {
+  CHECK(is_mutable());
+  uint16_t aligned_size = ComputeOpAlignedSize<DrawRecordOp>();
+  CHECK_LE(offset + aligned_size, used_);
+  DrawRecordOp* op = reinterpret_cast<DrawRecordOp*>(&data_[offset]);
+  CHECK_EQ(op->GetType(), DrawRecordOp::kType);
+  CHECK(op->record.empty());
+  CHECK(op->local_ctm);
+  CHECK_NE(op->placeholder_id, ElementId());
+
+  // AdditionalBytesUsed is non-zero even with an empty PaintRecord
+  CHECK_GE(subrecord_bytes_used_, op->AdditionalBytesUsed());
+  subrecord_bytes_used_ -= op->AdditionalBytesUsed();
+
+  op->~DrawRecordOp();
+  new (op) DrawRecordOp{std::move(paint_record)};
+  AnalyzeAddedOp(op);
 }
 
 PaintOpBuffer::Iterator PaintOpBuffer::begin() const {

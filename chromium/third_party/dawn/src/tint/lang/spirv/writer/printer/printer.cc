@@ -80,6 +80,7 @@
 #include "src/tint/lang/core/type/i32.h"
 #include "src/tint/lang/core/type/matrix.h"
 #include "src/tint/lang/core/type/pointer.h"
+#include "src/tint/lang/core/type/resource_table.h"
 #include "src/tint/lang/core/type/sampler.h"
 #include "src/tint/lang/core/type/struct.h"
 #include "src/tint/lang/core/type/subgroup_matrix.h"
@@ -92,7 +93,6 @@
 #include "src/tint/lang/spirv/ir/copy_logical.h"
 #include "src/tint/lang/spirv/ir/literal_operand.h"
 #include "src/tint/lang/spirv/type/explicit_layout_array.h"
-#include "src/tint/lang/spirv/type/resource_binding.h"
 #include "src/tint/lang/spirv/type/sampled_image.h"
 #include "src/tint/lang/spirv/writer/common/binary_writer.h"
 #include "src/tint/lang/spirv/writer/common/function.h"
@@ -195,9 +195,7 @@ class Printer {
 
     /// @returns the generated SPIR-V code on success, or failure
     Result<Output> Code() {
-        if (auto res = Generate(); res != Success) {
-            return res.Failure();
-        }
+        TINT_CHECK_RESULT(Generate());
 
         uint32_t version = 0u;
         switch (options_.spirv_version) {
@@ -296,10 +294,8 @@ class Printer {
 
     /// Builds the SPIR-V from the IR
     Result<SuccessType> Generate() {
-        auto valid = core::ir::ValidateAndDumpIfNeeded(ir_, "spirv.Printer", kPrinterCapabilities);
-        if (valid != Success) {
-            return valid.Failure();
-        }
+        TINT_CHECK_RESULT(
+            core::ir::ValidateAndDumpIfNeeded(ir_, "spirv.Printer", kPrinterCapabilities));
 
         module_.PushCapability(SpvCapabilityShader);
 
@@ -320,10 +316,7 @@ class Printer {
 
         // Emit functions.
         for (core::ir::Function* func : ir_.functions) {
-            auto res = EmitFunction(func);
-            if (res != Success) {
-                return res;
-            }
+            TINT_CHECK_RESULT(EmitFunction(func));
         }
 
         return Success;
@@ -544,7 +537,7 @@ class Printer {
                 [&](const core::type::F16*) {
                     module_.PushCapability(SpvCapabilityFloat16);
                     module_.PushCapability(SpvCapabilityStorageBuffer16BitAccess);
-                    if (!options_.extensions.decompose_uniform_buffers) {
+                    if (options_.extensions.use_uniform_buffers) {
                         module_.PushCapability(SpvCapabilityUniformAndStorageBuffer16BitAccess);
                     }
                     module_.PushType(spv::Op::OpTypeFloat, {id, 16u});
@@ -576,7 +569,7 @@ class Printer {
                     module_.PushType(spv::Op::OpTypeArray,
                                      {id, Type(arr->ElemType()), Constant(count)});
                 },
-                [&](const spirv::type::ResourceBinding* rb) {
+                [&](const core::type::ResourceTable* rb) {
                     module_.PushCapability(SpvCapabilityRuntimeDescriptorArray);
                     module_.PushExtension("SPV_EXT_descriptor_indexing");
                     module_.PushType(spv::Op::OpTypeRuntimeArray, {id, Type(rb->GetBindingType())});
@@ -818,6 +811,13 @@ class Printer {
                 output_.workgroup_info.x = wg_size[0];
                 output_.workgroup_info.y = wg_size[1];
                 output_.workgroup_info.z = wg_size[2];
+
+                // Store the subgroup size information away to return from the generator when the
+                // `@subgroup_size` attribute is used.
+                const auto const_sg_size = func->SubgroupSizeAsConst();
+                if (const_sg_size.has_value()) {
+                    output_.workgroup_info.subgroup_size = const_sg_size;
+                }
 
                 module_.PushExecutionMode(
                     spv::Op::OpExecutionMode,
@@ -1131,9 +1131,16 @@ class Printer {
             return Value(idx);
         }
 
-        // If the index isn't a unsigned value, then bitcast it to unsigned. A negative
-        // value is never allowed as a constant access index in SPIR-V. This cast fixes that
+        // If the index isn't a unsigned value, then convert it to unsigned. A negative
+        // value is never allowed as a constant access index in SPIR-V. This conversion fixes that
         // potential issue.
+
+        // If the index was a constant, keep it as a constant as is required for struct members.
+        if (auto* c = idx->As<core::ir::Constant>()) {
+            return Constant(ir_.constant_values.Get(c->Value()->ValueAs<u32>()));
+        }
+
+        // Use a bitcast for runtime values.
         uint32_t spv_id = module_.NextId();
         current_function_.PushInst(spv::Op::OpBitcast,
                                    {Type(ir_.Types().u32()), spv_id, Value(idx)});

@@ -344,6 +344,7 @@ public:
     TIntermTyped* handleUnaryMath(const TSourceLoc&, const char* str, TOperator op, TIntermTyped* childNode);
     TIntermTyped* handleDotDereference(const TSourceLoc&, TIntermTyped* base, const TString& field);
     TIntermTyped* handleDotSwizzle(const TSourceLoc&, TIntermTyped* base, const TString& field);
+    TIntermTyped* handleTypeCast(const TSourceLoc&, TType *castType, TIntermTyped *base);
     void blockMemberExtensionCheck(const TSourceLoc&, const TIntermTyped* base, int member, const TString& memberName);
     TFunction* handleFunctionDeclarator(const TSourceLoc&, TFunction& function, bool prototype);
     TIntermAggregate* handleFunctionDefinition(const TSourceLoc&, TFunction&);
@@ -416,7 +417,7 @@ public:
     void redeclareBuiltinBlock(const TSourceLoc&, TTypeList& typeList, const TString& blockName, const TString* instanceName, TArraySizes* arraySizes);
     void paramCheckFixStorage(const TSourceLoc&, const TStorageQualifier&, TType& type);
     void paramCheckFix(const TSourceLoc&, const TQualifier&, TType& type);
-    void nestedBlockCheck(const TSourceLoc&);
+    void nestedBlockCheck(const TSourceLoc&, const bool allowedInnerStruct = false);
     void nestedStructCheck(const TSourceLoc&);
     void arrayObjectCheck(const TSourceLoc&, const TType&, const char* op);
     void opaqueCheck(const TSourceLoc&, const TType&, const char* op);
@@ -456,6 +457,8 @@ public:
     TParameter getParamWithDefault(const TPublicType& ty, TString* identifier, TIntermTyped* initializer,
                                    const TSourceLoc& loc);
     void inheritMemoryQualifiers(const TQualifier& from, TQualifier& to);
+    void descHeapBuiltinRemap(TType* type, bool isInnerBlock);
+    bool untypedHeapCheck(TSymbol* symbol, const TType& type, const TSourceLoc& loc, const char* name);
     TIntermNode* declareBlock(const TSourceLoc&, TTypeList& typeList, const TString* instanceName = nullptr, TArraySizes* arraySizes = nullptr);
     void blockStorageRemap(const TSourceLoc&, const TString*, TQualifier&);
     void blockStageIoCheck(const TSourceLoc&, const TQualifier&);
@@ -516,6 +519,7 @@ protected:
     void finish() override;
     void handleCoopMat2FunctionCall(const TSourceLoc& loc, const TFunction* fnCandidate, TIntermTyped* result, TIntermNode* arguments);
     void handleVector2CoopMatConversionCall(const TSourceLoc& loc, const TFunction* fnCandidate, TIntermTyped* &result, TIntermNode* arguments);
+    void handleLongVectorBuiltin(const TSourceLoc& loc, const TFunction* fnCandidate, TType* resultType, TIntermNode* arguments);
 
     virtual const char* getGlobalUniformBlockName() const override;
     virtual void finalizeGlobalUniformBlockLayout(TVariable&) override;

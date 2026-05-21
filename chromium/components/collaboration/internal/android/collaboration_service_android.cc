@@ -23,7 +23,7 @@
 
 using base::android::AttachCurrentThread;
 using base::android::ConvertJavaStringToUTF8;
-using base::android::JavaParamRef;
+using base::android::JavaRef;
 using base::android::ScopedJavaGlobalRef;
 using base::android::ScopedJavaLocalRef;
 using data_sharing::GroupData;
@@ -73,10 +73,9 @@ bool CollaborationServiceAndroid::IsEmptyService(JNIEnv* env) {
   return collaboration_service_->IsEmptyService();
 }
 
-void CollaborationServiceAndroid::StartJoinFlow(
-    JNIEnv* env,
-    jlong delegateNativePtr,
-    const JavaParamRef<jobject>& j_url) {
+void CollaborationServiceAndroid::StartJoinFlow(JNIEnv* env,
+                                                int64_t delegateNativePtr,
+                                                const JavaRef<jobject>& j_url) {
   collaboration_service_->StartJoinFlow(
       conversion::GetDelegateUniquePtrFromJava(delegateNativePtr),
       url::GURLAndroid::ToNativeGURL(env, j_url));
@@ -84,10 +83,10 @@ void CollaborationServiceAndroid::StartJoinFlow(
 
 void CollaborationServiceAndroid::StartShareOrManageFlow(
     JNIEnv* env,
-    jlong delegateNativePtr,
-    const JavaParamRef<jstring>& j_sync_group_id,
-    const JavaParamRef<jobject>& j_local_group_id,
-    jint entry) {
+    int64_t delegateNativePtr,
+    const JavaRef<jstring>& j_sync_group_id,
+    const JavaRef<jobject>& j_local_group_id,
+    int32_t entry) {
   tab_groups::EitherGroupID either_id =
       tab_groups::JavaSyncOrLocalGroupIdToEitherGroupId(env, j_sync_group_id,
                                                         j_local_group_id);
@@ -99,10 +98,10 @@ void CollaborationServiceAndroid::StartShareOrManageFlow(
 
 void CollaborationServiceAndroid::StartLeaveOrDeleteFlow(
     JNIEnv* env,
-    jlong delegateNativePtr,
-    const JavaParamRef<jstring>& j_sync_group_id,
-    const JavaParamRef<jobject>& j_local_group_id,
-    jint entry) {
+    int64_t delegateNativePtr,
+    const JavaRef<jstring>& j_sync_group_id,
+    const JavaRef<jobject>& j_local_group_id,
+    int32_t entry) {
   tab_groups::EitherGroupID either_id =
       tab_groups::JavaSyncOrLocalGroupIdToEitherGroupId(env, j_sync_group_id,
                                                         j_local_group_id);
@@ -122,19 +121,19 @@ ScopedJavaLocalRef<jobject> CollaborationServiceAndroid::GetServiceStatus(
       static_cast<int>(status.collaboration_status));
 }
 
-jint CollaborationServiceAndroid::GetCurrentUserRoleForGroup(
+int32_t CollaborationServiceAndroid::GetCurrentUserRoleForGroup(
     JNIEnv* env,
-    const JavaParamRef<jstring>& group_id) {
+    const JavaRef<jstring>& group_id) {
   data_sharing::MemberRole role =
       collaboration_service_->GetCurrentUserRoleForGroup(
           GroupId(ConvertJavaStringToUTF8(env, group_id)));
 
-  return static_cast<jint>(role);
+  return static_cast<int32_t>(role);
 }
 
 jni_zero::ScopedJavaLocalRef<jobject> CollaborationServiceAndroid::GetGroupData(
     JNIEnv* env,
-    const base::android::JavaParamRef<jstring>& group_id) {
+    const base::android::JavaRef<jstring>& group_id) {
   const std::optional<GroupData> data = collaboration_service_->GetGroupData(
       GroupId(ConvertJavaStringToUTF8(env, group_id)));
   if (!data.has_value()) {
@@ -146,8 +145,8 @@ jni_zero::ScopedJavaLocalRef<jobject> CollaborationServiceAndroid::GetGroupData(
 
 void CollaborationServiceAndroid::LeaveGroup(
     JNIEnv* env,
-    const JavaParamRef<jstring>& group_id,
-    const JavaParamRef<jobject>& j_callback) {
+    const JavaRef<jstring>& group_id,
+    const JavaRef<jobject>& j_callback) {
   collaboration_service_->LeaveGroup(
       GroupId(ConvertJavaStringToUTF8(env, group_id)),
       base::BindOnce(&base::android::RunBooleanCallbackAndroid,
@@ -156,8 +155,8 @@ void CollaborationServiceAndroid::LeaveGroup(
 
 void CollaborationServiceAndroid::DeleteGroup(
     JNIEnv* env,
-    const JavaParamRef<jstring>& group_id,
-    const JavaParamRef<jobject>& j_callback) {
+    const JavaRef<jstring>& group_id,
+    const JavaRef<jobject>& j_callback) {
   collaboration_service_->DeleteGroup(
       GroupId(ConvertJavaStringToUTF8(env, group_id)),
       base::BindOnce(&base::android::RunBooleanCallbackAndroid,

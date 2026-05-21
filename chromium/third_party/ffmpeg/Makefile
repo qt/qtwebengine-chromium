@@ -11,6 +11,8 @@ vpath %.asm  $(SRC_PATH)
 vpath %.rc   $(SRC_PATH)
 vpath %.v    $(SRC_PATH)
 vpath %.texi $(SRC_PATH)
+vpath %.glsl $(SRC_PATH)
+vpath %.spv  $(SRC_PATH)
 vpath %.cu   $(SRC_PATH)
 vpath %.ptx  $(SRC_PATH)
 vpath %.metal $(SRC_PATH)
@@ -107,10 +109,11 @@ ffbuild/.config: $(CONFIGURABLE_COMPONENTS)
 SUBDIR_VARS := CLEANFILES FFLIBS HOSTPROGS TESTPROGS TOOLS               \
                HEADERS ARCH_HEADERS BUILT_HEADERS SKIPHEADERS            \
                ARMV5TE-OBJS ARMV6-OBJS ARMV8-OBJS VFP-OBJS NEON-OBJS     \
-               ALTIVEC-OBJS VSX-OBJS MMX-OBJS X86ASM-OBJS                \
+               ALTIVEC-OBJS VSX-OBJS X86ASM-OBJS                         \
                MIPSFPU-OBJS MIPSDSPR2-OBJS MIPSDSP-OBJS MSA-OBJS         \
                MMI-OBJS LSX-OBJS LASX-OBJS RV-OBJS RVV-OBJS RVVB-OBJS    \
-               OBJS SHLIBOBJS STLIBOBJS HOSTOBJS TESTOBJS SIMD128-OBJS
+               OBJS SHLIBOBJS STLIBOBJS HOSTOBJS TESTOBJS SIMD128-OBJS   \
+               SVE-OBJS SVE2-OBJS SME-OBJS
 
 define RESET
 $(1) :=
@@ -184,7 +187,7 @@ clean::
 	$(RM) -rf coverage.info coverage.info.in lcov
 
 distclean:: clean
-	$(RM) .version config.asm config.h config_components.h mapfile  \
+	$(RM) .version config.asm config.h config_components.* mapfile  \
 		ffbuild/.config ffbuild/config.* libavutil/avconfig.h \
 		version.h libavutil/ffversion.h libavcodec/codec_names.h \
 		libavcodec/bsf_list.c libavformat/protocol_list.c \

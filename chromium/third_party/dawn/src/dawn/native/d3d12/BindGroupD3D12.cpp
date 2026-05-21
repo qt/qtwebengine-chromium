@@ -72,6 +72,13 @@ MaybeError BindGroup::InitializeImpl() {
     for (BindingIndex bindingIndex : Range(bgl->GetBindingCount())) {
         const BindingInfo& bindingInfo = bgl->GetBindingInfo(bindingIndex);
 
+        // Skip over bindings that cannot be seen by any shaders as they could cause us to create
+        // bindgroups much larger than what the rest of the backend expects (like 1000 samplers at
+        // once).
+        if (bindingInfo.visibility == wgpu::ShaderStage::None) {
+            continue;
+        }
+
         // Skip dynamic uniform buffers. Since dynamic buffers are packed at the front, we know the
         // binding is dynamic if the index is less than the number of dynamic buffers.
         const bool isDynamic = bindingIndex < bgl->GetDynamicBufferCount();
@@ -251,8 +258,8 @@ MaybeError BindGroup::InitializeImpl() {
     return {};
 }
 
-void BindGroup::DestroyImpl() {
-    BindGroupBase::DestroyImpl();
+void BindGroup::DestroyImpl(DestroyReason reason) {
+    BindGroupBase::DestroyImpl(reason);
     ToBackend(GetLayout())->DeallocateDescriptor(&mCPUViewAllocation);
     DAWN_ASSERT(!mCPUViewAllocation.IsValid());
 }

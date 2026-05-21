@@ -8,6 +8,8 @@
 
 #include "build/build_config.h"
 #include "third_party/blink/renderer/core/layout/geometry/physical_rect.h"
+#include "third_party/blink/renderer/core/paint/border_shape_painter.h"
+#include "third_party/blink/renderer/core/paint/border_shape_utils.h"
 #include "third_party/blink/renderer/core/paint/box_border_painter.h"
 #include "third_party/blink/renderer/core/paint/contoured_border_geometry.h"
 #include "third_party/blink/renderer/core/paint/paint_auto_dark_mode.h"
@@ -800,13 +802,15 @@ FloatRoundedRect::Radii GetFocusRingCornerRadii(
   return FloatRoundedRect::Radii(DefaultFocusRingCornerRadius(style));
 }
 
-void PaintSingleFocusRing(GraphicsContext& context,
-                          const Vector<gfx::Rect>& rects,
-                          float width,
-                          int offset,
-                          const FloatRoundedRect::Radii& corner_radii,
-                          const Color& color,
-                          const AutoDarkMode& auto_dark_mode) {
+void PaintSingleFocusRing(
+    GraphicsContext& context,
+    const Vector<gfx::Rect>& rects,
+    float width,
+    int offset,
+    const FloatRoundedRect::Radii& corner_radii,
+    const ContouredRect::CornerCurvature& corner_curvature,
+    const Color& color,
+    const AutoDarkMode& auto_dark_mode) {
   DCHECK(!rects.empty());
   SkPath path;
   if (!ComputeRightAnglePath(path, rects, offset, 0))
@@ -814,9 +818,22 @@ void PaintSingleFocusRing(GraphicsContext& context,
 
   SkRect rect;
   if (path.isRect(&rect)) {
-    context.DrawFocusRingRect(
-        SkRRect(FloatRoundedRect(gfx::SkRectToRectF(rect), corner_radii)),
-        color, width, auto_dark_mode);
+    if (corner_curvature.IsRound()) {
+      context.DrawFocusRingRect(
+          SkRRect(FloatRoundedRect(gfx::SkRectToRectF(rect), corner_radii)),
+          color, width, auto_dark_mode);
+    } else {
+      ContouredRect border_rect(
+          FloatRoundedRect(gfx::SkRectToRectF(rect), corner_radii),
+          corner_curvature);
+      ContouredRect contour(border_rect);
+      const auto outset = AdjustedOutlineOffset(rects[0], offset);
+      contour.OutsetWithCornerCorrection(gfx::OutsetsF::TLBR(
+          outset.top(), outset.left(), outset.bottom(), outset.right()));
+      contour.SetOriginRect(border_rect.AsRoundedRect());
+      context.DrawFocusRingPath(contour.GetPath().GetSkPath(), color, width, 0,
+                                auto_dark_mode);
+    }
     return;
   }
 
@@ -849,17 +866,30 @@ void PaintFocusRing(GraphicsContext& context,
   const float inner_ring_width = FocusRingInnerStrokeWidth(style);
   const int offset = FocusRingOffset(style, info);
 
+  const ContouredRect::CornerCurvature corner_curvature(
+      corner_radii.TopLeft().IsEmpty() ? ContouredRect::CornerCurvature::kRound
+                                       : style.CornerTopLeftShape().Exponent(),
+      corner_radii.TopRight().IsEmpty()
+          ? ContouredRect::CornerCurvature::kRound
+          : style.CornerTopRightShape().Exponent(),
+      corner_radii.BottomRight().IsEmpty()
+          ? ContouredRect::CornerCurvature::kRound
+          : style.CornerBottomRightShape().Exponent(),
+      corner_radii.BottomLeft().IsEmpty()
+          ? ContouredRect::CornerCurvature::kRound
+          : style.CornerBottomLeftShape().Exponent());
+
   Color outer_color =
       style.DarkColorScheme() ? Color(0x10, 0x10, 0x10) : Color::kWhite;
   PaintSingleFocusRing(context, rects, outer_ring_width,
                        offset + std::ceil(inner_ring_width), corner_radii,
-                       outer_color, AutoDarkMode::Disabled());
+                       corner_curvature, outer_color, AutoDarkMode::Disabled());
   // Draw the inner ring using |outer_ring_width| (which should be wider than
   // the additional offset of the outer ring) over the outer ring to ensure no
   // gaps or AA artifacts.
   DCHECK_GE(outer_ring_width, std::ceil(inner_ring_width));
   PaintSingleFocusRing(context, rects, outer_ring_width, offset, corner_radii,
-                       inner_color, AutoDarkMode::Disabled());
+                       corner_curvature, inner_color, AutoDarkMode::Disabled());
 }
 
 }  // anonymous namespace
@@ -870,6 +900,16 @@ void OutlinePainter::PaintOutlineRects(
     const Vector<PhysicalRect>& outline_rects,
     const LayoutObject::OutlineInfo& info,
     const ComputedStyle& style) {
+  PaintOutlineRects(paint_info, client, outline_rects, info, style, nullptr);
+}
+
+void OutlinePainter::PaintOutlineRects(
+    const PaintInfo& paint_info,
+    const DisplayItemClient& client,
+    const Vector<PhysicalRect>& outline_rects,
+    const LayoutObject::OutlineInfo& info,
+    const ComputedStyle& style,
+    const LayoutObject* layout_object) {
   DCHECK(style.HasOutline());
   DCHECK(!outline_rects.empty());
 
@@ -897,6 +937,25 @@ void OutlinePainter::PaintOutlineRects(
   visual_rect.Outset(OutlineOutsetExtent(style, info));
   DrawingRecorder recorder(paint_info.context, client, paint_info.phase,
                            visual_rect);
+
+  // Handle border-shape outline: if the element has a border-shape, the outline
+  // should follow the border-shape path instead of the rectangular outline.
+  if (style.HasBorderShape() && layout_object && !style.OutlineStyleIsAuto()) {
+    PhysicalRect border_rect = outline_rects[0];
+    std::optional<BorderShapeReferenceRects> shape_ref_rects =
+        ComputeBorderShapeReferenceRects(border_rect, style, *layout_object);
+    PhysicalRect outer_reference_rect =
+        shape_ref_rects ? shape_ref_rects->outer : border_rect;
+    // TODO(crbug.com/7531762): Border-shape outline painting here uses
+    // BorderShapePainter::PaintOutline which currently doesn't handle
+    // fragmented boxes. See bug for follow-up to support fragmentation and
+    // ensure the outline follows the border-shape across fragments.
+    if (BorderShapePainter::PaintOutline(paint_info.context, style,
+                                         outer_reference_rect, info.width,
+                                         info.offset)) {
+      return;
+    }
+  }
 
   if (style.OutlineStyleIsAuto()) {
     auto corner_radii = GetFocusRingCornerRadii(style, outline_rects[0], info);

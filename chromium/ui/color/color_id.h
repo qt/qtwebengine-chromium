@@ -229,6 +229,10 @@
   E_CPONLY(kColorSysActorUiGradientStart) \
   E_CPONLY(kColorSysActorUiGradientMiddle) \
   E_CPONLY(kColorSysActorUiGradientEnd) \
+  /* Glic */ \
+  E_CPONLY(kColorGlicTabUnderline1) \
+  E_CPONLY(kColorGlicTabUnderline2) \
+  E_CPONLY(kColorGlicTabUnderline3) \
   /* AI. */ \
   E_CPONLY(kColorSysAiIllustrationShapeSurface1) \
   E_CPONLY(kColorSysAiIllustrationShapeSurface2) \
@@ -367,6 +371,7 @@
   E_CPONLY(kColorHistoryClustersSidePanelCardSecondaryForeground) \
   E_CPONLY(kColorIcon) \
   E_CPONLY(kColorIconDisabled) \
+  E_CPONLY(kColorIconHovered) \
   E_CPONLY(kColorIconSecondary) \
   /* This is declared here so src/components/ can access it, but we expect */ \
   /* this to be set in the embedder. */ \

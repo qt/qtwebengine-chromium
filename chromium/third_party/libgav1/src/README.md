@@ -10,8 +10,11 @@ compliant AV1 decoder. More information on the AV1 video format can be found at
 
 ### Prerequisites
 
-1.  A C++11 compiler. gcc 6+, clang 7+ or Microsoft Visual Studio 2017+ are
-    recommended.
+1.  A C++17 compiler.
+
+    See the
+    [Foundational C++ Support Matrix](https://github.com/google/oss-policies-info/blob/main/foundational-cxx-support-matrix.md)
+    for supported compiler versions.
 
 2.  [CMake >= 3.7.1](https://cmake.org/download/)
 
@@ -20,7 +23,7 @@ compliant AV1 decoder. More information on the AV1 video format can be found at
     From within the libgav1 directory:
 
     ```shell
-    $ git clone -b 20220623.0 --depth 1 \
+    $ git clone -b 20250512.1 --depth 1 \
       https://github.com/abseil/abseil-cpp.git third_party/abseil-cpp
     ```
 
@@ -32,7 +35,7 @@ compliant AV1 decoder. More information on the AV1 video format can be found at
     From within the libgav1 directory:
 
     ```shell
-    $ git clone -b release-1.12.1 --depth 1 \
+    $ git clone -b v1.17.0 --depth 1 \
       https://github.com/google/googletest.git third_party/googletest
     ```
 

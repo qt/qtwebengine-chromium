@@ -27,7 +27,6 @@
 
 #include "base/check_op.h"
 #include "base/dcheck_is_on.h"
-#include "base/gtest_prod_util.h"
 #include "base/memory/stack_allocated.h"
 #include "base/notreached.h"
 #include "third_party/blink/public/mojom/scroll/scroll_into_view_params.mojom-blink-forward.h"
@@ -197,6 +196,10 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
   explicit LayoutBox(ContainerNode*);
   void Trace(Visitor*) const override;
 
+  // Just use `LayoutObject::IsInline` instead.
+  bool IsAtomicInline() const = delete;
+  bool IsNonAtomicInline() const = delete;
+
   PaintLayerType LayerTypeRequired() const override;
 
   bool BackgroundIsKnownToBeOpaqueInRect(
@@ -212,10 +215,6 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
   // This is the case for anchors that are affected by transforms, as that may
   // affect anything that is anchored to it.
   bool TransformsChangeMayRequireLayout() const;
-
-  // Use this with caution! No type checking is done!
-  LayoutBox* FirstChildBox() const;
-  LayoutBox* LastChildBox() const;
 
   // Returns the LogicalRect of this box for LocationContainer()'s writing-mode.
   // The coordinate origin is the border corner of the LocationContainer().
@@ -235,11 +234,6 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
     NOT_DESTROYED();
     PhysicalSize size = StitchedSize();
     return StyleRef().IsHorizontalWritingMode() ? size.height : size.width;
-  }
-
-  LayoutUnit LogicalHeightForEmptyLine() const {
-    NOT_DESTROYED();
-    return FirstLineHeight();
   }
 
   // Return the size of all fragments stitched together in the block direction.
@@ -324,22 +318,13 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
                        const PhysicalOffset& additional_offset,
                        OutlineType) const override;
 
-  // Use this with caution! No type checking is done!
-  LayoutBox* PreviousSiblingBox() const;
-  LayoutBox* NextSiblingBox() const;
-  LayoutBox* ParentBox() const;
-
   bool CanResize() const;
 
-  DISABLE_CFI_PERF PhysicalRect NoOverflowRect() const {
-    NOT_DESTROYED();
-    return PhysicalPaddingBoxRect();
-  }
   PhysicalRect ScrollableOverflowRect() const {
     NOT_DESTROYED();
     return ScrollableOverflowIsSet()
                ? overflow_->scrollable_overflow->ScrollableOverflowRect()
-               : NoOverflowRect();
+               : PhysicalPaddingBoxRect();
   }
 
   PhysicalRect VisualOverflowRect() const final;
@@ -542,22 +527,16 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
   bool HitTestAllPhases(HitTestResult&,
                         const HitTestLocation&,
                         const PhysicalOffset& accumulated_offset) final;
-  bool NodeAtPoint(HitTestResult&,
-                   const HitTestLocation&,
-                   const PhysicalOffset& accumulated_offset,
-                   HitTestPhase) override;
-  bool HasHitTestableOverflow() const;
+
   // Fast check if |NodeAtPoint| may find a hit.
   bool MayIntersect(const HitTestResult& result,
                     const HitTestLocation& hit_test_location,
                     const PhysicalOffset& accumulated_offset) const;
+  bool HasHitTestableOverflow() const;
 
   LayoutUnit OverrideContainingBlockContentLogicalWidth() const;
   bool HasOverrideContainingBlockContentLogicalWidth() const;
   void SetOverrideContainingBlockContentLogicalWidth(LayoutUnit);
-  void ClearOverrideContainingBlockContentSize();
-
-  enum PageBoundaryRule { kAssociateWithFormerPage, kAssociateWithLatterPage };
 
   bool HasInlineFragments() const final;
   wtf_size_t FirstInlineFragmentItemIndex() const final;
@@ -779,13 +758,6 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
 
   LayoutUnit ContainingBlockLogicalWidthForContent() const override;
 
-  // Block flows subclass availableWidth/Height to handle multi column layout
-  // (shrinking the width/height available to children when laying out.)
-  LayoutUnit AvailableLogicalWidth() const {
-    NOT_DESTROYED();
-    return ContentLogicalWidth();
-  }
-
   // Return both scrollbars and scrollbar gutters (defined by scrollbar-gutter).
   inline PhysicalBoxStrut ComputeScrollbars() const {
     NOT_DESTROYED();
@@ -805,7 +777,9 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
   }
 
   bool IsUserScrollable() const;
-  virtual void Autoscroll(const PhysicalOffset&);
+  // Scrolls this box to reveal the specified position during autoscroll
+  // (e.g., during drag selection). Returns true if any scrolling occurred.
+  virtual bool Autoscroll(const PhysicalOffset&);
   PhysicalOffset CalculateAutoscrollDirection(
       const gfx::PointF& point_in_root_frame) const;
   static LayoutBox* FindAutoscrollable(LayoutObject*,
@@ -868,6 +842,8 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
   virtual PhysicalRect OverflowClipRect(
       const PhysicalOffset& location,
       OverlayScrollbarClipBehavior = kIgnoreOverlayScrollbarSize) const;
+  virtual PhysicalRect OverflowClipRectForScrollNode(
+      const PhysicalOffset& location) const;
   PhysicalRect ClipRect(const PhysicalOffset& location) const;
 
   // Returns the combination of overflow clip, contain: paint clip and CSS clip
@@ -883,7 +859,10 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
     NOT_DESTROYED();
     return true;
   }
-  bool ShouldBeConsideredAsReplaced() const;
+
+  // Returns true if this object is a form-control element (excluding
+  // <fieldset>) or a fallback image.
+  bool IsSemiReplaced() const;
 
   // Return true if this block establishes a fragmentation context root (e.g. a
   // multicol container).
@@ -920,8 +899,6 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
     NOT_DESTROYED();
     return Parent() && Parent()->IsMathML();
   }
-
-  LayoutUnit FirstLineHeight() const override;
 
   PhysicalOffset OffsetPoint(const Element* parent) const;
   LayoutUnit OffsetLeft(const Element*) const final;
@@ -1263,6 +1240,16 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
  protected:
   ~LayoutBox() override;
 
+  bool IsEligibleForPaintOrLayoutContainment() const override {
+    NOT_DESTROYED();
+    return true;
+  }
+
+  bool IsEligibleForSizeContainment() const override {
+    NOT_DESTROYED();
+    return true;
+  }
+
   virtual OverflowClipAxes ComputeOverflowClipAxes() const;
 
   void WillBeDestroyed() override;
@@ -1291,11 +1278,6 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
       unsigned max_depth_to_test) const;
   virtual bool ComputeBackgroundIsKnownToBeObscured() const;
   bool ComputeCanCompositeBackgroundAttachmentFixed() const override;
-
-  virtual bool HitTestChildren(HitTestResult&,
-                               const HitTestLocation&,
-                               const PhysicalOffset& accumulated_offset,
-                               HitTestPhase);
 
   void InvalidatePaint(const PaintInvalidatorContext&) const override;
 
@@ -1438,31 +1420,6 @@ template <>
 struct DowncastTraits<LayoutBox> {
   static bool AllowFrom(const LayoutObject& object) { return object.IsBox(); }
 };
-
-inline LayoutBox* LayoutBox::PreviousSiblingBox() const {
-  NOT_DESTROYED();
-  return To<LayoutBox>(PreviousSibling());
-}
-
-inline LayoutBox* LayoutBox::NextSiblingBox() const {
-  NOT_DESTROYED();
-  return To<LayoutBox>(NextSibling());
-}
-
-inline LayoutBox* LayoutBox::ParentBox() const {
-  NOT_DESTROYED();
-  return To<LayoutBox>(Parent());
-}
-
-inline LayoutBox* LayoutBox::FirstChildBox() const {
-  NOT_DESTROYED();
-  return To<LayoutBox>(SlowFirstChild());
-}
-
-inline LayoutBox* LayoutBox::LastChildBox() const {
-  NOT_DESTROYED();
-  return To<LayoutBox>(SlowLastChild());
-}
 
 inline wtf_size_t LayoutBox::FirstInlineFragmentItemIndex() const {
   NOT_DESTROYED();

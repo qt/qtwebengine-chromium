@@ -29,6 +29,12 @@ use crate::codecs::libgav1::Libgav1;
 #[cfg(feature = "android_mediacodec")]
 use crate::codecs::android_mediacodec::MediaCodec;
 
+#[cfg(feature = "avm")]
+use crate::codecs::avm::Avm;
+
+#[cfg(feature = "jpegxl")]
+use crate::codecs::libjxl::Libjxl;
+
 use crate::codecs::DecoderConfig;
 use crate::gainmap::*;
 use crate::image::*;
@@ -38,6 +44,7 @@ use crate::parser::exif;
 use crate::parser::mp4box;
 use crate::parser::mp4box::*;
 use crate::parser::obu::Av1SequenceHeader;
+use crate::utils::pixels::ChannelIdc;
 use crate::*;
 
 use std::cmp::max;
@@ -78,9 +85,19 @@ impl CodecChoice {
                 CodecChoice::Auto | CodecChoice::Libgav1 => Some(Box::<Libgav1>::default()),
                 _ => None,
             },
+            #[cfg(feature = "avm")]
+            CompressionFormat::Avif2 => match self {
+                CodecChoice::Auto | CodecChoice::Avm => Some(Box::<Avm>::default()),
+                _ => None,
+            },
             CompressionFormat::Heic => match self {
                 #[cfg(feature = "android_mediacodec")]
                 CodecChoice::Auto | CodecChoice::MediaCodec => Some(Box::<MediaCodec>::default()),
+                _ => None,
+            },
+            #[cfg(feature = "jpegxl")]
+            CompressionFormat::JpegXl => match self {
+                CodecChoice::Auto | CodecChoice::Libjxl => Some(Box::<Libjxl>::default()),
                 _ => None,
             },
         }
@@ -355,6 +372,10 @@ pub enum CompressionFormat {
     #[default]
     Avif = 0,
     Heic = 1,
+    #[cfg(feature = "avm")]
+    Avif2 = 2, // Future AV2-ISOBMFF with HEIF (experimental)
+    #[cfg(feature = "jpegxl")]
+    JpegXl = 3,
 }
 
 pub(crate) struct GridImageHelper<'a> {
@@ -696,11 +717,20 @@ impl Decoder {
 
     fn harvest_cicp_from_sequence_header(&mut self) -> AvifResult<()> {
         let decoding_item = DecodingItem::COLOR;
+        let tile_index = 0;
         if self.tiles[decoding_item.usize()].is_empty() {
             return Ok(());
         }
+
+        // Only AV1 OBUs can be parsed for CICP values for now.
+        if !matches!(
+            self.tiles[decoding_item.usize()][tile_index].codec_config,
+            CodecConfiguration::Av1(_)
+        ) {
+            return Ok(());
+        }
+
         for search_size in (64..4096).step_by(64) {
-            let tile_index = 0;
             self.prepare_sample(
                 /*image_index=*/ 0,
                 decoding_item,
@@ -1372,6 +1402,23 @@ impl Decoder {
                 }
             }
 
+            if let Some(pixi) = find_property!(color_properties, PixelInformation) {
+                if pixi
+                    .planes
+                    .iter()
+                    .any(|plane| plane.channel_idc == Some(ChannelIdc::Alpha))
+                {
+                    if self.image.alpha_present {
+                        // TODO: b/456440247 - Handle multiple alpha planes.
+                        return AvifError::not_implemented();
+                    }
+                    self.image.alpha_present = true;
+                    self.image.alpha_premultiplied =
+                        find_property!(color_properties, AlphaInformation)
+                            .map_or(false, |alpi| alpi.is_premultiplied);
+                }
+            }
+
             if let Some(gainmap_properties) = gainmap_properties {
                 // Ensure that the bitstream contains the same 'pasp', 'clap', 'irot and 'imir'
                 // properties for both the base and gain map image items.
@@ -1479,7 +1526,11 @@ impl Decoder {
             all_layers: tile.input.all_layers,
             width: tile.width,
             height: tile.height,
-            depth: self.image.depth,
+            depth: if decoding_item.category == Category::Gainmap {
+                self.gainmap.image.depth
+            } else {
+                self.image.depth
+            },
             max_threads: self.settings.max_threads,
             image_size_limit: self.settings.image_size_limit,
             max_input_size: tile.max_sample_size(),
@@ -1640,14 +1691,11 @@ impl Decoder {
         let category = decoding_item.category;
 
         let codec = &mut self.codecs[tile.codec_index];
-        let item_data_buffer = if sample.item_id == 0 {
-            &None
-        } else {
-            &self.items.get(&sample.item_id).unwrap().data_buffer
-        };
+        let item = if sample.item_id == 0 { None } else { self.items.get(&sample.item_id) };
+        let data_buffer = if let Some(item) = item { &item.data_buffer } else { &None };
         let data = match (
             self.settings.allow_progressive,
-            sample.data(io, item_data_buffer),
+            sample.data(io, data_buffer),
         ) {
             (_, Ok(data)) => data,
             (true, Err(AvifError::TruncatedData) | Err(AvifError::NoContent)) => {
@@ -1660,6 +1708,7 @@ impl Decoder {
             sample.spatial_id,
             &mut tile.image,
             category,
+            item,
             #[cfg(feature = "android_mediacodec")]
             signal_eos,
         );
@@ -2078,7 +2127,7 @@ impl Decoder {
     // returned AvifResult::Ok. Returns 0 in all other cases.
     pub fn decoded_row_count(&self) -> u32 {
         let mut min_row_count = self.image.height;
-        for decoding_item in DecodingItem::ALL {
+        for decoding_item in self.settings.image_content_to_decode.decoding_items() {
             let decoding_item_usize = decoding_item.usize();
             if self.tiles[decoding_item_usize].is_empty() {
                 continue;

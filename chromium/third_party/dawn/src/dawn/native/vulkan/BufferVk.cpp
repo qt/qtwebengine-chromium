@@ -331,11 +331,13 @@ MaybeError Buffer::Initialize(bool mappedAtCreation) {
             }
         } else {
             if (device->IsToggleEnabled(Toggle::NonzeroClearResourcesOnCreationForTesting)) {
+                auto scopedUseDuringCreation = UseInternal();
                 ClearBuffer(ToBackend(device->GetQueue())->GetPendingRecordingContext(),
                             0x01010101);
             }
             if (device->IsToggleEnabled(Toggle::LazyClearResourceOnFirstUse) &&
                 paddingClearSize > 0) {
+                auto scopedUseDuringCreation = UseInternal();
                 CommandRecordingContext* recordingContext =
                     ToBackend(device->GetQueue())->GetPendingRecordingContext();
                 ClearBuffer(recordingContext, 0, paddingClearOffset, paddingClearSize);
@@ -562,9 +564,9 @@ MaybeError Buffer::MapAsyncImpl(wgpu::MapMode mode, size_t offset, size_t size) 
 MaybeError Buffer::FinalizeMapImpl(BufferState newState) {
     Device* device = ToBackend(GetDevice());
 
+    // The real mapped pointer is never returned for zero sized buffers. MappedAtCreation buffers
+    // are initialized in BufferBase already.
     if (NeedsInitialization() && GetSize() > 0 && newState == BufferState::Mapped) {
-        // Clear full allocated size, including padding bytes, except for zero sized buffers. For
-        // zero sized buffers GetMappedPointerImpl() points to const data which we can't clear.
         std::memset(GetMappedPointerImpl(), 0, GetAllocatedSize());
         GetDevice()->IncrementLazyClearCountForTesting();
         SetInitialized(true);
@@ -602,7 +604,7 @@ MaybeError Buffer::FinalizeMapImpl(BufferState newState) {
     return {};
 }
 
-void Buffer::UnmapImpl(BufferState oldState) {
+void Buffer::UnmapImpl(BufferState oldState, BufferState newState) {
     // We keep CPU-visible memory mapped at all times but need to flush writes to GPU memory here.
     if (!mHostCoherent && IsMappedState(oldState) && MapMode() == wgpu::MapMode::Write) {
         Device* device = ToBackend(GetDevice());
@@ -733,7 +735,7 @@ MaybeError Buffer::MapMemoryAndPerformOperation(uint64_t requestedOffset,
     return {};
 }
 
-void Buffer::DestroyImpl() {
+void Buffer::DestroyImpl(DestroyReason reason) {
     // TODO(crbug.com/dawn/831): DestroyImpl is called from two places.
     // - It may be called if the buffer is explicitly destroyed with APIDestroy.
     //   This case is NOT thread-safe and needs proper synchronization with other
@@ -741,7 +743,7 @@ void Buffer::DestroyImpl() {
     // - It may be called when the last ref to the buffer is dropped and the buffer
     //   is implicitly destroyed. This case is thread-safe because there are no
     //   other threads using the buffer since there are no other live refs.
-    BufferBase::DestroyImpl();
+    BufferBase::DestroyImpl(reason);
 
     ToBackend(GetDevice())->GetResourceMemoryAllocator()->Deallocate(&mMemoryAllocation);
 

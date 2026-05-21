@@ -31,12 +31,14 @@
 #include <utility>
 
 #include "dawn/common/Assert.h"
+#include "dawn/common/DynamicLib.h"
 #include "dawn/common/Math.h"
 #include "dawn/native/ChainUtils.h"
 #include "dawn/native/DynamicUploader.h"
 #include "dawn/native/EnumMaskIterator.h"
 #include "dawn/native/Error.h"
 #include "dawn/native/VulkanBackend.h"
+#include "dawn/native/utils/RenderDoc.h"
 #include "dawn/native/vulkan/BufferVk.h"
 #include "dawn/native/vulkan/CommandBufferVk.h"
 #include "dawn/native/vulkan/CommandRecordingContextVk.h"
@@ -859,11 +861,42 @@ void Texture::SetLabelHelper(const char* prefix) {
     SetDebugName(ToBackend(GetDevice()), mHandle, prefix, GetLabel());
 }
 
+void Texture::NotifySwapChainPresent() {
+    // When using an external swap chain texture, there's no way to determine frame boundaries since
+    // Dawn isn't managing the Vulkan swap chains. In this mode, external tools like RenderDoc
+    // will wait forever for a present that never happens. We handle this by using tool-specific
+    // hooks to inform them of the "presented" texture so it can determine frame
+    // boundaries and use its contents for the UI.
+    if (!mIsExternalSwapChainTexture) {
+        return;
+    }
+
+#if defined(DAWN_ENABLE_RENDERDOC)
+    Device* device = ToBackend(GetDevice());
+
+    // For RenderDoc, we expect the user to enable and use process injection to inject RenderDoc
+    // into the GPU process at startup. We start capturing all frames right away. The user has
+    // to kill the process or stop it from rendering (e.g. close or change tabs in Chrome).
+    if (auto renderDocApi = dawn::native::utils::GetRenderDocApi(device)) {
+        void* renderDocDevicePtr = RENDERDOC_DEVICEPOINTER_FROM_VKINSTANCE(device->GetVkInstance());
+
+        // We signal the end of the current frame and the start of the next.
+        // This means we miss capturing the very first frame.
+        renderDocApi->EndFrameCapture(renderDocDevicePtr, NULL);
+        renderDocApi->StartFrameCapture(renderDocDevicePtr, NULL);
+    }
+#endif
+}
+
+void Texture::SetIsExternalSwapchainTexture(bool isSwapChainTexture) {
+    mIsExternalSwapChainTexture = isSwapChainTexture;
+}
+
 void Texture::SetLabelImpl() {
     SetLabelHelper("Dawn_InternalTexture");
 }
 
-void Texture::DestroyImpl() {
+void Texture::DestroyImpl(DestroyReason reason) {
     // TODO(crbug.com/dawn/831): DestroyImpl is called from two places.
     // - It may be called if the texture is explicitly destroyed with APIDestroy.
     //   This case is NOT thread-safe and needs proper synchronization with other
@@ -872,8 +905,9 @@ void Texture::DestroyImpl() {
     //   is implicitly destroyed. This case is thread-safe because there are no
     //   other threads using the texture since there are no other live refs.
     mHandle = VK_NULL_HANDLE;
+    mIsExternalSwapChainTexture = false;
 
-    TextureBase::DestroyImpl();
+    TextureBase::DestroyImpl(reason);
 }
 
 VkImage Texture::GetHandle() const {
@@ -1200,7 +1234,7 @@ MaybeError Texture::ClearTexture(CommandRecordingContext* recordingContext,
 
                     DAWN_TRY(
                         RecordBeginRenderPass(recordingContext, ToBackend(GetDevice()), &beginCmd));
-                    ToBackend(GetDevice())->fn.CmdEndRenderPass(recordingContext->commandBuffer);
+                    RecordEndRenderPass(recordingContext, ToBackend(GetDevice()));
                 }
             }
         }
@@ -1326,18 +1360,18 @@ MaybeError Texture::PinImpl(wgpu::TextureUsage usage) {
 
     TransitionUsageNow(recordingContext, usage, kAllStages, pinnedSubresources);
 
-    // TODO(https://crbug.com/435317394): Investigate what to do for imported textures. Should we
-    // consider a pin/unpin pair similar to an access on a queue such that we need to wait on fences
-    // or export them?
+    // TODO(https://issues.chromium.org/473444516): Investigate what to do for imported textures.
+    // Should we consider a pin/unpin pair similar to an access on a queue such that we need to
+    // wait on fences or export them?
     return {};
 }
 
 void Texture::UnpinImpl() {
     DAWN_ASSERT(HasPinnedUsage());
 
-    // TODO(https://crbug.com/435317394): Investigate what to do for imported textures. Should we
-    // consider a pin/unpin pair similar to an access on a queue such that we need to wait on fences
-    // or export them?
+    // TODO(https://issues.chromium.org/473444516): Investigate what to do for imported textures.
+    // Should we consider a pin/unpin pair similar to an access on a queue such that we need to
+    // wait on fences or export them?
 }
 
 MaybeError Texture::EnsureSubresourceContentInitialized(CommandRecordingContext* recordingContext,
@@ -1439,6 +1473,17 @@ MaybeError InternalTexture::Initialize(VkImageUsageFlags extraUsages) {
         createInfo.flags |= VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
     }
 
+    // If the MSAARenderToSingleSampled feature is enabled, textures with RenderAttachment
+    // usage need to have VK_IMAGE_CREATE_MULTISAMPLED_RENDER_TO_SINGLE_SAMPLED_BIT_EXT set
+    // so that they can be used as a render target with an implicit sample count. syoussefi@
+    // has confirmed that this is expected to be very cheap or no cost on hardware that
+    // supports the extension.
+    if (device->HasFeature(Feature::MSAARenderToSingleSampled) &&
+        (GetInternalUsage() & wgpu::TextureUsage::RenderAttachment) && GetSampleCount() == 1 &&
+        !GetFormat().HasDepthOrStencil()) {
+        createInfo.flags |= VK_IMAGE_CREATE_MULTISAMPLED_RENDER_TO_SINGLE_SAMPLED_BIT_EXT;
+    }
+
     // Add the view format list only when the usage does not have storage. Otherwise, the VVL will
     // say creation of the texture is invalid.
     // See https://github.com/gpuweb/gpuweb/issues/4426.
@@ -1530,7 +1575,7 @@ MaybeError InternalTexture::Initialize(VkImageUsageFlags extraUsages) {
     return {};
 }
 
-void InternalTexture::DestroyImpl() {
+void InternalTexture::DestroyImpl(DestroyReason reason) {
     // TODO(crbug.com/dawn/831): DestroyImpl is called from two places.
     // - It may be called if the texture is explicitly destroyed with APIDestroy.
     //   This case is NOT thread-safe and needs proper synchronization with other
@@ -1546,7 +1591,7 @@ void InternalTexture::DestroyImpl() {
     device->GetResourceMemoryAllocator()->Deallocate(&mMemoryAllocation);
     mMemoryAllocation = ResourceMemoryAllocation();
 
-    Texture::DestroyImpl();
+    Texture::DestroyImpl(reason);
 }
 
 //
@@ -1584,7 +1629,7 @@ ImportedTextureBase::~ImportedTextureBase() {
     }
 }
 
-void ImportedTextureBase::DestroyImpl() {
+void ImportedTextureBase::DestroyImpl(DestroyReason reason) {
     // TODO(crbug.com/dawn/831): DestroyImpl is called from two places.
     // - It may be called if the texture is explicitly destroyed with APIDestroy.
     //   This case is NOT thread-safe and needs proper synchronization with other
@@ -1596,7 +1641,7 @@ void ImportedTextureBase::DestroyImpl() {
         ToBackend(GetDevice())->GetFencedDeleter()->DeleteWhenUnused(mPendingSemaphore);
         mPendingSemaphore = VK_NULL_HANDLE;
     }
-    Texture::DestroyImpl();
+    Texture::DestroyImpl(reason);
 }
 
 void ImportedTextureBase::TransitionEagerlyForExport(CommandRecordingContext* recordingContext) {
@@ -1827,7 +1872,7 @@ ResultOrError<Ref<ExternalVkImageTexture>> ExternalVkImageTexture::Create(
     return texture;
 }
 
-void ExternalVkImageTexture::DestroyImpl() {
+void ExternalVkImageTexture::DestroyImpl(DestroyReason reason) {
     // TODO(crbug.com/dawn/831): DestroyImpl is called from two places.
     // - It may be called if the texture is explicitly destroyed with APIDestroy.
     //   This case is NOT thread-safe and needs proper synchronization with other
@@ -1845,7 +1890,7 @@ void ExternalVkImageTexture::DestroyImpl() {
         mExternalAllocation = VK_NULL_HANDLE;
     }
 
-    ImportedTextureBase::DestroyImpl();
+    ImportedTextureBase::DestroyImpl(reason);
 }
 
 MaybeError ExternalVkImageTexture::Initialize(const ExternalImageDescriptorVk* descriptor,
@@ -1972,7 +2017,7 @@ ResultOrError<Ref<SharedTexture>> SharedTexture::Create(
     return texture;
 }
 
-void SharedTexture::DestroyImpl() {
+void SharedTexture::DestroyImpl(DestroyReason reason) {
     // TODO(crbug.com/dawn/831): DestroyImpl is called from two places.
     // - It may be called if the texture is explicitly destroyed with APIDestroy.
     //   This case is NOT thread-safe and needs proper synchronization with other
@@ -1982,7 +2027,7 @@ void SharedTexture::DestroyImpl() {
     //   other threads using the texture since there are no other live refs.
     mSharedTextureMemoryObjects = {};
 
-    ImportedTextureBase::DestroyImpl();
+    ImportedTextureBase::DestroyImpl(reason);
 }
 
 void SharedTexture::Initialize(SharedTextureMemory* memory) {
@@ -2099,7 +2144,7 @@ TextureView::TextureView(TextureBase* texture,
     : TextureViewBase(texture, descriptor), mTextureViewId(textureViewId) {}
 TextureView::~TextureView() {}
 
-void TextureView::DestroyImpl() {
+void TextureView::DestroyImpl(DestroyReason reason) {
     Device* device = ToBackend(GetTexture()->GetDevice());
 
     if (mSamplerYCbCrConversion != VK_NULL_HANDLE) {

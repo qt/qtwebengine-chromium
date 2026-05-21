@@ -15,7 +15,7 @@
 #ifndef OPENSSL_HEADER_EVP_H
 #define OPENSSL_HEADER_EVP_H
 
-#include <openssl/base.h>   // IWYU pragma: export
+#include <openssl/base.h>  // IWYU pragma: export
 
 #include <openssl/evp_errors.h>  // IWYU pragma: export
 
@@ -61,11 +61,10 @@ OPENSSL_EXPORT int EVP_PKEY_up_ref(EVP_PKEY *pkey);
 // an error to attempt to duplicate, export, or compare an opaque key.
 OPENSSL_EXPORT int EVP_PKEY_is_opaque(const EVP_PKEY *pkey);
 
-// EVP_PKEY_cmp compares |a| and |b| and returns one if they are equal, zero if
-// not and a negative number on error.
+// EVP_PKEY_cmp compares |a| and |b| and returns one if their public keys are
+// equal and zero otherwise.
 //
-// WARNING: this differs from the traditional return value of a "cmp"
-// function.
+// WARNING: this differs from the traditional return value of a "cmp" function.
 OPENSSL_EXPORT int EVP_PKEY_cmp(const EVP_PKEY *a, const EVP_PKEY *b);
 
 // EVP_PKEY_copy_parameters sets the parameters of |to| to equal the parameters
@@ -77,9 +76,10 @@ OPENSSL_EXPORT int EVP_PKEY_copy_parameters(EVP_PKEY *to, const EVP_PKEY *from);
 OPENSSL_EXPORT int EVP_PKEY_missing_parameters(const EVP_PKEY *pkey);
 
 // EVP_PKEY_cmp_parameters compares the parameters of |a| and |b|. It returns
-// one if they match, zero if not, or a negative number on error.
+// one if they match and zero otherwise. In algorithms that do not use
+// parameters, this function returns one; null parameters are vacuously equal.
 //
-// WARNING: the return value differs from the usual return value convention.
+// WARNING: this differs from the traditional return value of a "cmp" function.
 OPENSSL_EXPORT int EVP_PKEY_cmp_parameters(const EVP_PKEY *a,
                                            const EVP_PKEY *b);
 
@@ -93,6 +93,14 @@ OPENSSL_EXPORT int EVP_PKEY_size(const EVP_PKEY *pkey);
 // returns the bit length of the modulus. For an EC key, this returns the bit
 // length of the group order.
 OPENSSL_EXPORT int EVP_PKEY_bits(const EVP_PKEY *pkey);
+
+// EVP_PKEY_has_public returns one if |pkey| has a public key, or zero
+// otherwise.
+OPENSSL_EXPORT int EVP_PKEY_has_public(const EVP_PKEY *pkey);
+
+// EVP_PKEY_has_private returns one if |pkey| has a private key, or zero
+// otherwise.
+OPENSSL_EXPORT int EVP_PKEY_has_private(const EVP_PKEY *pkey);
 
 // The following constants are returned by |EVP_PKEY_id| and specify the type of
 // key.

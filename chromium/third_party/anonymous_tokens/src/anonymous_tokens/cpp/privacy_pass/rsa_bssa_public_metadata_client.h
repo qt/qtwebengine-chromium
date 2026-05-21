@@ -27,6 +27,10 @@
 
 namespace anonymous_tokens {
 
+// PrivacyPassRsaBssaPublicMetadataClient is a client class for token type
+// 0xDA7A. This token type supports rsa modulus size of 2048 bits. The only
+// difference from the specification is that this client class additionally
+// supports rsa modulus size of 4096 bits.
 class PrivacyPassRsaBssaPublicMetadataClient {
  public:
   #ifndef SWIG

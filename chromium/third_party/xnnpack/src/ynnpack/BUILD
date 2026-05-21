@@ -79,8 +79,8 @@ selects.config_setting_group(
 selects.config_setting_group(
     name = "msvc",
     match_any = [
-        "@rules_cc//cc/compiler:msvc-cl",
         "@rules_cc//cc/compiler:clang-cl",
+        "@rules_cc//cc/compiler:msvc-cl",
     ],
 )
 
@@ -99,6 +99,11 @@ define_build_option(
 
 define_build_option(
     name = "ynn_enable_arm_neondot",
+    default_all = [":ynn_enable_arm_neon"],
+)
+
+define_build_option(
+    name = "ynn_enable_arm_neonfma",
     default_all = [":ynn_enable_arm_neon"],
 )
 

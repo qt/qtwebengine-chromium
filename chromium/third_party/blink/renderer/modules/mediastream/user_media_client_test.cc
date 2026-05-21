@@ -6,12 +6,12 @@
 
 #include <stddef.h>
 
+#include <algorithm>
 #include <memory>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/memory/ptr_util.h"
@@ -656,8 +656,7 @@ class UserMediaProcessorUnderTest : public UserMediaProcessor {
       local_audio_source_ = nullptr;
   SourceCreationStatus source_creation_status_ = SourceCreationStatus::kOk;
   Member<MediaStreamDescriptor> last_generated_descriptor_;
-  blink::mojom::blink::MediaStreamRequestResult result_ =
-      blink::mojom::blink::MediaStreamRequestResult::NUM_MEDIA_REQUEST_RESULTS;
+  blink::mojom::blink::MediaStreamRequestResult result_;
   String constraint_name_;
   raw_ptr<RequestState> state_;
 };
@@ -2123,8 +2122,8 @@ TEST_F(UserMediaClientTest, RestrictOwnAudioTrackCapabilities) {
   ASSERT_TRUE(track->getCapabilities()->hasRestrictOwnAudio());
   Vector<bool> restrict_own_audio_capabilities =
       track->getCapabilities()->restrictOwnAudio();
-  EXPECT_TRUE(base::Contains(restrict_own_audio_capabilities, false));
-  EXPECT_EQ(base::Contains(restrict_own_audio_capabilities, true),
+  EXPECT_TRUE(std::ranges::contains(restrict_own_audio_capabilities, false));
+  EXPECT_EQ(std::ranges::contains(restrict_own_audio_capabilities, true),
             media::IsRestrictOwnAudioSupported());
 }
 

@@ -77,6 +77,10 @@ using ::testing::ElementsAre;
     EXPECT_FALSE(active_layer()->expression);  \
   } while (false)
 
+bool TreesInViz() {
+  return base::FeatureList::IsEnabled(features::kTreesInViz);
+}
+
 class PictureLayerImplTest : public TestLayerTreeHostBase {
  public:
   void SetUp() override {
@@ -353,6 +357,50 @@ class PictureLayerImplTestTreesInViz : public PictureLayerImplTest {
  private:
   base::test::ScopedFeatureList feature_list_;
 };
+
+TEST_F(PictureLayerImplTestTreesInViz, ChangeFlag) {
+  gfx::Size layer_bounds(1000, 1000);
+  SetupDefaultTrees(layer_bounds);
+
+  auto* picture_layer = active_layer();
+
+  // Test kChangedGeneralProperty.
+  picture_layer->ResetChangeTracking();
+  EXPECT_FALSE(picture_layer->GetChangeFlag(LayerImpl::kChangedAllProperties));
+
+  gfx::Size new_layer_bounds(500, 500);
+  picture_layer->SetBounds(new_layer_bounds);
+  EXPECT_TRUE(picture_layer->GetChangeFlag(LayerImpl::kChangedAllProperties));
+  EXPECT_TRUE(picture_layer->GetChangeFlag(LayerImpl::kChangedGeneralProperty));
+  EXPECT_FALSE(
+      picture_layer->GetChangeFlag(LayerImpl::kChangedPropertyTreeIndex));
+  EXPECT_FALSE(picture_layer->GetChangeFlag(LayerImpl::kChangedTile));
+
+  // Test kChangedPropertyTreeIndex.
+  picture_layer->ResetChangeTracking();
+  EXPECT_FALSE(picture_layer->GetChangeFlag(LayerImpl::kChangedAllProperties));
+
+  picture_layer->SetScrollTreeIndex(1);
+  EXPECT_TRUE(picture_layer->GetChangeFlag(LayerImpl::kChangedAllProperties));
+  EXPECT_FALSE(
+      picture_layer->GetChangeFlag(LayerImpl::kChangedGeneralProperty));
+  EXPECT_TRUE(
+      picture_layer->GetChangeFlag(LayerImpl::kChangedPropertyTreeIndex));
+  EXPECT_FALSE(picture_layer->GetChangeFlag(LayerImpl::kChangedTile));
+
+  // Test kChangedTile.
+  picture_layer->ResetChangeTracking();
+  EXPECT_FALSE(picture_layer->GetChangeFlag(LayerImpl::kChangedAllProperties));
+
+  Tile* tile = active_layer()->tilings()->tiling_at(0)->AllTilesForTesting()[0];
+  picture_layer->NotifyTileStateChanged(tile, /*update_damage=*/false);
+  EXPECT_TRUE(picture_layer->GetChangeFlag(LayerImpl::kChangedAllProperties));
+  EXPECT_FALSE(
+      picture_layer->GetChangeFlag(LayerImpl::kChangedGeneralProperty));
+  EXPECT_FALSE(
+      picture_layer->GetChangeFlag(LayerImpl::kChangedPropertyTreeIndex));
+  EXPECT_TRUE(picture_layer->GetChangeFlag(LayerImpl::kChangedTile));
+}
 
 TEST_F(LegacySWPictureLayerImplTest, CloneNoInvalidation) {
   gfx::Size layer_bounds(400, 400);
@@ -838,10 +886,16 @@ TEST_F(LegacySWPictureLayerImplTest, SnappedTilingDuringZoom) {
 
   // Zoom in a lot. Since we move in factors of two, we should get a scale that
   // is a power of 2 times 0.24. The tile at the lowest scale factor is now out
-  // of range and should be cleaned up as a result, leaving the number of tiles
-  // still at 3 due to the addition and removal.
+  // of range and should be cleaned up as a result. In non TreesInViz mode, this
+  // leaves the number of tiles still at 3 due to the addition and removal.
+  // In TreesInViz mode, due to tiling removal is delayed, the number of tiles
+  // is 4 due to the addition and delayed removal, pending viz to confirm.
   SetContentsScaleOnBothLayers(1.f, 1.0f, 1.f);
-  ASSERT_EQ(3u, active_layer()->tilings()->num_tilings());
+  if (TreesInViz()) {
+    ASSERT_EQ(4u, active_layer()->tilings()->num_tilings());
+  } else {
+    ASSERT_EQ(3u, active_layer()->tilings()->num_tilings());
+  }
   EXPECT_FLOAT_EQ(
       1.92f, active_layer()->tilings()->tiling_at(0)->contents_scale_key());
 }
@@ -2301,8 +2355,7 @@ TEST_F(LegacySWPictureLayerImplTest,
   // Now, set the bounds to be 1x1, so that minimum contents scale becomes 1.
   SetupPendingTree(FakeRasterSource::CreateFilled(gfx::Size(1, 1)));
   ActivateTree();
-  active_layer()->GetLastAppendQuadsTilingsForTesting().push_back(
-      active_layer()->tilings()->FindTilingWithScaleKey(1.0f));
+  active_layer()->GetLastAppendQuadsScalesForTesting().push_back(1.0f);
   active_layer()->UpdateTiles();
 
   EXPECT_EQ(1.f, active_layer()->MinimumContentsScale());
@@ -3695,7 +3748,7 @@ TEST_F(LegacySWPictureLayerImplTest, CleanUpTilings) {
   active_layer()->MarkAllTilingsUsed();
 
   // We only have ideal tilings, so they aren't removed.
-  active_layer()->ClearLastAppendQuadsTilingsForTesting();
+  active_layer()->ClearLastAppendsQuadsScalesForTesting();
   ASSERT_EQ(1u, active_layer()->tilings()->num_tilings());
 
   // Since this test simulates a pinch it needs an input handler.
@@ -3713,7 +3766,7 @@ TEST_F(LegacySWPictureLayerImplTest, CleanUpTilings) {
   ASSERT_EQ(1u, active_layer()->tilings()->num_tilings());
 
   // The tilings are still our target scale, so they aren't removed.
-  active_layer()->ClearLastAppendQuadsTilingsForTesting();
+  active_layer()->ClearLastAppendsQuadsScalesForTesting();
   active_layer()->CleanUpTilingsOnActiveLayer();
   ASSERT_EQ(1u, active_layer()->tilings()->num_tilings());
 
@@ -3731,9 +3784,8 @@ TEST_F(LegacySWPictureLayerImplTest, CleanUpTilings) {
   active_layer()->MarkAllTilingsUsed();
 
   // Mark the non-ideal tilings as used. They won't be removed.
-  active_layer()->ClearLastAppendQuadsTilingsForTesting();
-  active_layer()->GetLastAppendQuadsTilingsForTesting().push_back(
-      active_layer()->tilings()->tiling_at(1));
+  active_layer()->ClearLastAppendsQuadsScalesForTesting();
+  active_layer()->GetLastAppendQuadsScalesForTesting().push_back(1);
   active_layer()->CleanUpTilingsOnActiveLayer();
   ASSERT_EQ(2u, active_layer()->tilings()->num_tilings());
 
@@ -3742,7 +3794,7 @@ TEST_F(LegacySWPictureLayerImplTest, CleanUpTilings) {
 
   // The high resolution tiling is between target and ideal, so is not
   // removed.
-  active_layer()->ClearLastAppendQuadsTilingsForTesting();
+  active_layer()->ClearLastAppendsQuadsScalesForTesting();
   active_layer()->CleanUpTilingsOnActiveLayer();
   ASSERT_EQ(2u, active_layer()->tilings()->num_tilings());
 
@@ -3751,7 +3803,7 @@ TEST_F(LegacySWPictureLayerImplTest, CleanUpTilings) {
 
   // All the tilings are between are target and the ideal, so they are not
   // removed.
-  active_layer()->ClearLastAppendQuadsTilingsForTesting();
+  active_layer()->ClearLastAppendsQuadsScalesForTesting();
   active_layer()->CleanUpTilingsOnActiveLayer();
   ASSERT_EQ(2u, active_layer()->tilings()->num_tilings());
 
@@ -3761,7 +3813,7 @@ TEST_F(LegacySWPictureLayerImplTest, CleanUpTilings) {
 
   // Because the pending layer's ideal scale is still 1.0, our tilings fall
   // in the range [1.0,1.2] and are kept.
-  active_layer()->ClearLastAppendQuadsTilingsForTesting();
+  active_layer()->ClearLastAppendsQuadsScalesForTesting();
   active_layer()->CleanUpTilingsOnActiveLayer();
   ASSERT_EQ(2u, active_layer()->tilings()->num_tilings());
 
@@ -3773,15 +3825,14 @@ TEST_F(LegacySWPictureLayerImplTest, CleanUpTilings) {
   // Our 1.0 tiling now falls outside the range between our ideal scale and our
   // target raster scale. But it is in our used tilings set, so nothing is
   // deleted.
-  active_layer()->ClearLastAppendQuadsTilingsForTesting();
-  active_layer()->GetLastAppendQuadsTilingsForTesting().push_back(
-      active_layer()->tilings()->tiling_at(1));
+  active_layer()->ClearLastAppendsQuadsScalesForTesting();
+  active_layer()->GetLastAppendQuadsScalesForTesting().push_back(1);
   active_layer()->CleanUpTilingsOnActiveLayer();
   ASSERT_EQ(2u, active_layer()->tilings()->num_tilings());
 
   // If we remove it from our used tilings set, it is outside the range to keep
   // so it is deleted.
-  active_layer()->ClearLastAppendQuadsTilingsForTesting();
+  active_layer()->ClearLastAppendsQuadsScalesForTesting();
   active_layer()->CleanUpTilingsOnActiveLayer();
 
   // When TreesInViz is enabled, tiling cleanup is asynchronous.

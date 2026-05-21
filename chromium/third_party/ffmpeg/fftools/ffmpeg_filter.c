@@ -40,9 +40,6 @@
 #include "libavutil/time.h"
 #include "libavutil/timestamp.h"
 
-// FIXME private header, used for mid_pred()
-#include "libavcodec/mathops.h"
-
 typedef struct FilterGraphPriv {
     FilterGraph      fg;
 
@@ -2489,6 +2486,23 @@ early_exit:
     return float_pts;
 }
 
+static int64_t median3(int64_t a, int64_t b, int64_t c)
+{
+    int64_t max2, min2, m;
+
+    if (a >= b) {
+        max2 = a;
+        min2 = b;
+    } else {
+        max2 = b;
+        min2 = a;
+    }
+    m = (c >= max2) ? max2 : c;
+
+    return (m >= min2) ? m : min2;
+}
+
+
 /* Convert frame timestamps to the encoder timebase and decide how many times
  * should this (and possibly previous) frame be repeated in order to conform to
  * desired target framerate (if any).
@@ -2501,9 +2515,9 @@ static void video_sync_process(OutputFilterPriv *ofp, AVFrame *frame,
     double delta0, delta, sync_ipts, duration;
 
     if (!frame) {
-        *nb_frames_prev = *nb_frames = mid_pred(fps->frames_prev_hist[0],
-                                                fps->frames_prev_hist[1],
-                                                fps->frames_prev_hist[2]);
+        *nb_frames_prev = *nb_frames = median3(fps->frames_prev_hist[0],
+                                               fps->frames_prev_hist[1],
+                                               fps->frames_prev_hist[2]);
 
         if (!*nb_frames && fps->last_dropped) {
             atomic_fetch_add(&ofilter->nb_frames_drop, 1);
@@ -2614,6 +2628,16 @@ finish:
 
     fps->last_dropped = *nb_frames == *nb_frames_prev && frame;
     fps->dropped_keyframe |= fps->last_dropped && (frame->flags & AV_FRAME_FLAG_KEY);
+}
+
+static void close_input(InputFilterPriv *ifp)
+{
+    FilterGraphPriv *fgp = fgp_from_fg(ifp->ifilter.graph);
+
+    if (!ifp->eof) {
+        sch_filter_receive_finish(fgp->sch, fgp->sch_idx, ifp->ifilter.index);
+        ifp->eof = 1;
+    }
 }
 
 static int close_output(OutputFilterPriv *ofp, FilterGraphThread *fgt)
@@ -3343,7 +3367,7 @@ static int filter_thread(void *arg)
         if (ret == AVERROR_EOF) {
             av_log(fg, AV_LOG_VERBOSE, "Input %u no longer accepts new data\n",
                    input_idx);
-            sch_filter_receive_finish(fgp->sch, fgp->sch_idx, input_idx);
+            close_input(ifp);
             continue;
         }
         if (ret < 0)
@@ -3361,6 +3385,13 @@ read_frames:
             av_log(fg, AV_LOG_ERROR, "Error sending frames to consumers: %s\n",
                    av_err2str(ret));
             goto finish;
+        }
+
+        // ensure all inputs no longer accepting data are closed
+        for (int i = 0; fgt.graph && i < fg->nb_inputs; i++) {
+            InputFilterPriv *ifp = ifp_from_ifilter(fg->inputs[i]);
+            if (av_buffersrc_get_status(ifp->ifilter.filter))
+                close_input(ifp);
         }
     }
 

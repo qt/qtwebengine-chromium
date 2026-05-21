@@ -5,7 +5,6 @@
 #ifndef COMPONENTS_AUTOFILL_CORE_BROWSER_METRICS_FORM_EVENTS_ADDRESS_FORM_EVENT_LOGGER_H_
 #define COMPONENTS_AUTOFILL_CORE_BROWSER_METRICS_FORM_EVENTS_ADDRESS_FORM_EVENT_LOGGER_H_
 
-#include <map>
 #include <set>
 #include <string>
 
@@ -85,7 +84,8 @@ class AddressFormEventLogger : public FormEventLoggerBase {
   DenseSet<FormTypeNameForLogging> GetSupportedFormTypeNamesForLogging()
       const override;
   DenseSet<FormTypeNameForLogging> GetFormTypesForLogging(
-      const FormStructure& form) const override;
+      const FormStructure& form,
+      AutocompleteUnrecognizedBehavior ac_unrecognized_behavior) const override;
 
  private:
   // All profile categories for which the user has at least one profile stored.

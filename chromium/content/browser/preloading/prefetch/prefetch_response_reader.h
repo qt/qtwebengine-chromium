@@ -14,6 +14,7 @@
 #include "net/http/http_cookie_indices.h"
 #include "services/network/public/mojom/url_loader.mojom.h"
 #include "services/network/public/mojom/url_response_head.mojom-forward.h"
+#include "third_party/perfetto/include/perfetto/tracing/track_event_args.h"
 
 namespace ukm::builders {
 class PrefetchProxy_PrefetchedResource;
@@ -54,7 +55,8 @@ class CONTENT_EXPORT PrefetchResponseReader final
   PrefetchResponseReader(
       OnPrefetchDeterminedHeadCallback on_determined_head_callback,
       OnPrefetchResponseCompletedCallback
-          on_prefetch_response_completed_callback);
+          on_prefetch_response_completed_callback,
+      perfetto::Flow flow);
 
   void SetStreamingURLLoader(
       base::WeakPtr<PrefetchStreamingURLLoader> streaming_url_loader);
@@ -100,7 +102,7 @@ class CONTENT_EXPORT PrefetchResponseReader final
 
   bool Servable(base::TimeDelta cacheable_duration) const;
   bool IsWaitingForResponse() const;
-  const network::mojom::URLResponseHead* GetHead() const { return head_.get(); }
+  const network::mojom::URLResponseHeadPtr& GetHead() const { return head_; }
 
   // True if this response had Vary: Cookie (or Vary: *), and a Cookie-Indices
   // header also applies.
@@ -256,6 +258,8 @@ class CONTENT_EXPORT PrefetchResponseReader final
   //   `PrefetchStreamingURLLoaderTest.UnexpectedUrlLoaderDisconnect`).
   OnPrefetchResponseCompletedCallback on_prefetch_response_completed_callback_;
 
+  perfetto::Flow flow_;
+
   // Used for UMA recording.
   // TODO(crbug.com/40064891): we might want to adapt these flags and UMA
   // semantics for multiple client settings, but so far we don't have any
@@ -312,6 +316,9 @@ class CONTENT_EXPORT PrefetchResponseReader final
 
   base::WeakPtrFactory<PrefetchResponseReader> weak_ptr_factory_{this};
 };
+
+std::ostream& operator<<(std::ostream& ostream,
+                         PrefetchResponseReader::LoadState load_state);
 
 }  // namespace content
 

@@ -106,6 +106,9 @@ MaybeError PhysicalDevice::InitializeImpl() {
         return DAWN_INTERNAL_ERROR("D3D12CreateDevice failed");
     }
 
+    // Check if we should block the use of D3D12 on the current device.
+    DAWN_TRY(ValidateUseOfD3D12());
+
     DAWN_TRY(InitializeDebugLayerFilters());
 
     DAWN_TRY_ASSIGN(mDeviceInfo, GatherDeviceInfo(*this));
@@ -121,6 +124,19 @@ MaybeError PhysicalDevice::InitializeImpl() {
     // unclear. Use 128 instead, which is the largest possible size. Reference:
     // https://github.com/Microsoft/DirectXShaderCompiler/wiki/Wave-Intrinsics#:~:text=UINT%20WaveLaneCountMax
     mSubgroupMaxSize = 128u;
+
+    mMinExplicitComputeSubgroupSize = mDeviceInfo.waveLaneCountMin;
+    mMaxExplicitComputeSubgroupSize = mDeviceInfo.waveLaneCountMax;
+    if (mDeviceInfo.waveLaneCountMin > 0) {
+        // D3D12 doesn't have limit on the maximum subgroups in one workgroup so we choose a value
+        // to
+        // ensure `computeInvocationsPerWorkgroup <= maxComputeWorkgroupSubgroups *
+        // computeSubgroupSize` is always satisfied.
+        mMaxComputeWorkgroupSubgroups =
+            D3D12_CS_THREAD_GROUP_MAX_THREADS_PER_GROUP / mDeviceInfo.waveLaneCountMin;
+    } else {
+        mMaxComputeWorkgroupSubgroups = D3D12_CS_THREAD_GROUP_MAX_THREADS_PER_GROUP;
+    }
 
     return {};
 }
@@ -162,12 +178,9 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
     EnableFeature(Feature::Float32Blendable);
     EnableFeature(Feature::DualSourceBlending);
     EnableFeature(Feature::Unorm16TextureFormats);
-    EnableFeature(Feature::Snorm16TextureFormats);
-    EnableFeature(Feature::Norm16TextureFormats);
     EnableFeature(Feature::AdapterPropertiesMemoryHeaps);
     EnableFeature(Feature::AdapterPropertiesD3D);
     EnableFeature(Feature::MultiPlanarRenderTargets);
-    EnableFeature(Feature::R8UnormStorage);
     EnableFeature(Feature::SharedBufferMemoryD3D12Resource);
     EnableFeature(Feature::ShaderModuleCompilationOptions);
     EnableFeature(Feature::StaticSamplers);
@@ -195,6 +208,11 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
     // Subgroups feature requires SM >= 6.0 and capabilities flags.
     if (mDeviceInfo.supportsWaveOps) {
         EnableFeature(Feature::Subgroups);
+    }
+
+    // SubgroupSizeControl feature requires SM >= 6.6 for HLSL attribute `[WaveSize]`.
+    if (mDeviceInfo.highestSupportedShaderModel >= 66) {
+        EnableFeature(Feature::ChromiumExperimentalSubgroupSizeControl);
     }
 #endif
 
@@ -237,6 +255,12 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
         (r8unormFormatSupport.Support2 & D3D12_FORMAT_SUPPORT2_UAV_TYPED_LOAD) &&
         (r8unormFormatSupport.Support2 & D3D12_FORMAT_SUPPORT2_UAV_TYPED_STORE)) {
         EnableFeature(Feature::TextureFormatsTier2);
+    }
+
+    // Tier 2 hardware supports at least 1 million descriptors in a heap.
+    // Tier 3 hardware supports essentially the full 32-bit range.
+    if (GetDeviceInfo().resourceBindingTier >= D3D12_RESOURCE_BINDING_TIER_2) {
+        EnableFeature(Feature::ChromiumExperimentalSamplingResourceTable);
     }
 }
 
@@ -415,6 +439,8 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
                 kShaderBuiltinSlots + kUnusedSlots ==
             kMaxRootSignatureSize);
     }
+
+    limits->resourceTableLimits.maxResourceTableSize = kMaxResourceTableSize;
 
     return {};
 }
@@ -878,6 +904,19 @@ void PhysicalDevice::SetupBackendDeviceToggles(dawn::platform::Platform* platfor
         platform->IsFeatureEnabled(platform::Features::kWebGPUEnableRangeAnalysisForRobustness));
 }
 
+MaybeError PhysicalDevice::ValidateUseOfD3D12() const {
+    uint32_t deviceId = GetDeviceId();
+    uint32_t vendorId = GetVendorId();
+
+    // D3D12 is no longer allowed on 4th Generation Intel Processor Graphics.
+    // https://www.intel.com/content/www/us/en/support/articles/000057520/graphics.html
+    if (gpu_info::IsIntelGen7(vendorId, deviceId)) {
+        return DAWN_VALIDATION_ERROR("D3D12 backend is not allowed on Intel gen-7 GPUs.");
+    }
+
+    return {};
+}
+
 ResultOrError<Ref<DeviceBase>> PhysicalDevice::CreateDeviceImpl(
     AdapterBase* adapter,
     const UnpackedPtr<DeviceDescriptor>& descriptor,
@@ -937,6 +976,15 @@ void PhysicalDevice::PopulateBackendProperties(UnpackedPtr<AdapterInfo>& info,
     if (auto* d3dProperties = info.Get<AdapterPropertiesD3D>()) {
         // Report highest supported shader model version, instead of actual applied version.
         d3dProperties->shaderModel = GetDeviceInfo().highestSupportedShaderModel;
+    }
+    if (auto* explicitComputeSubgroupSizeConfigs =
+            info.Get<AdapterPropertiesExplicitComputeSubgroupSizeConfigs>()) {
+        explicitComputeSubgroupSizeConfigs->minExplicitComputeSubgroupSize =
+            GetMinExplicitComputeSubgroupSize();
+        explicitComputeSubgroupSizeConfigs->maxExplicitComputeSubgroupSize =
+            GetMaxExplicitComputeSubgroupSize();
+        explicitComputeSubgroupSizeConfigs->maxComputeWorkgroupSubgroups =
+            GetMaxComputeWorkgroupSubgroups();
     }
 }
 

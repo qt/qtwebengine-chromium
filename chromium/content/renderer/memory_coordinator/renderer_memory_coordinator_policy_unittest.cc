@@ -10,15 +10,17 @@
 #include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
 #include "base/time/time.h"
-#include "content/child/memory_coordinator/child_memory_consumer_registry.h"
+#include "content/child/memory_coordinator/child_memory_coordinator.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace content {
 
-using testing::InSequence;
+using ::testing::InSequence;
+using ::testing::Mock;
+using ::testing::Test;
 
-class RendererMemoryCoordinatorPolicyTest : public testing::Test {
+class RendererMemoryCoordinatorPolicyTest : public Test {
  protected:
   RendererMemoryCoordinatorPolicyTest() = default;
   ~RendererMemoryCoordinatorPolicyTest() override = default;
@@ -33,12 +35,15 @@ class RendererMemoryCoordinatorPolicyTest : public testing::Test {
   base::test::TaskEnvironment task_environment_{
       base::test::TaskEnvironment::TimeSource::MOCK_TIME};
 
-  base::ScopedMemoryConsumerRegistry<ChildMemoryConsumerRegistry> registry_;
-  RendererMemoryCoordinatorPolicy policy_{registry_.Get()};
+  ChildMemoryCoordinator coordinator_;
+  RendererMemoryCoordinatorPolicy policy_{coordinator_};
 };
 
 TEST_F(RendererMemoryCoordinatorPolicyTest,
        MemoryCoordinatorLastResortGC_Disabled) {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitAndDisableFeature(kMemoryCoordinatorLastResortGC);
+
   // Create the consumer with the `ReleaseGCReferences::kYes` trait.
   base::RegisteredMockMemoryConsumer consumer(
       "Consumer", {.release_gc_references =
@@ -119,11 +124,11 @@ TEST_F(RendererMemoryCoordinatorPolicyTest,
   EXPECT_CALL(consumer, OnReleaseMemory());
 
   NotifyV8HeapLastResortGC();
-  testing::Mock::VerifyAndClearExpectations(&consumer);
+  Mock::VerifyAndClearExpectations(&consumer);
 
   EXPECT_CALL(consumer, OnUpdateMemoryLimit()).Times(0);
   FastForwardBy(base::Seconds(kTestRestoreLimitSeconds - 1));
-  testing::Mock::VerifyAndClearExpectations(&consumer);
+  Mock::VerifyAndClearExpectations(&consumer);
 
   EXPECT_CALL(consumer, OnUpdateMemoryLimit()).WillOnce([&]() {
     EXPECT_EQ(consumer.memory_limit(), 100);

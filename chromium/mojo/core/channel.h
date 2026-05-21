@@ -41,9 +41,9 @@ constexpr bool IsAlignedForChannelMessage(size_t n) {
   return n % kChannelMessageAlignment == 0;
 }
 
-// Channel provides a thread-safe interface to read and write arbitrary
-// delimited messages over an underlying I/O channel, optionally transferring
-// one or more platform handles in the process.
+// Interface to read and write arbitrary delimited messages over an underlying
+// I/O channel, optionally transferring one or more platform handles in the
+// process.
 //
 // This class (and its subclasses) is generally not thread-safe. However, it
 // allows concurrent calls to Write().
@@ -416,8 +416,6 @@ class MOJO_SYSTEM_IMPL_EXPORT Channel
 
   Channel(const Channel&) = delete;
   Channel& operator=(const Channel&) = delete;
-
-  static void set_use_trivial_messages(bool use_trivial_messages);
 
   bool is_for_ipcz() const { return is_for_ipcz_; }
 

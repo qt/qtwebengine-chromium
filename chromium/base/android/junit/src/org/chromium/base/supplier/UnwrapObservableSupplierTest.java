@@ -47,8 +47,9 @@ public class UnwrapObservableSupplierTest {
                 }
             };
 
-    private static ObservableSupplier<Integer> make(ObservableSupplier<Object> parentSupplier) {
-        return parentSupplier.createDerived(UnwrapObservableSupplierTest::unwrap);
+    private static NullableObservableSupplier<Integer> make(
+            NullableObservableSupplier<Object> parentSupplier) {
+        return parentSupplier.createDerivedNullable(UnwrapObservableSupplierTest::unwrap);
     }
 
     private static Integer unwrap(Object obj) {
@@ -57,8 +58,9 @@ public class UnwrapObservableSupplierTest {
 
     @Test
     public void testGetWithoutObservers() {
-        ObservableSupplierImpl<Object> parentSupplier = new ObservableSupplierImpl<>();
-        ObservableSupplier<Integer> unwrapSupplier = make(parentSupplier);
+        SettableNullableObservableSupplier<Object> parentSupplier =
+                ObservableSuppliers.createNullable();
+        NullableObservableSupplier<Integer> unwrapSupplier = make(parentSupplier);
         assertEquals(0, unwrapSupplier.get().intValue());
         assertFalse(parentSupplier.hasObservers());
 
@@ -77,8 +79,9 @@ public class UnwrapObservableSupplierTest {
 
     @Test
     public void testGetWithObserver() {
-        ObservableSupplierImpl<Object> parentSupplier = new ObservableSupplierImpl<>();
-        ObservableSupplier<Integer> unwrapSupplier = make(parentSupplier);
+        SettableNullableObservableSupplier<Object> parentSupplier =
+                ObservableSuppliers.createNullable();
+        NullableObservableSupplier<Integer> unwrapSupplier = make(parentSupplier);
         unwrapSupplier.addObserver(mOnChangeCallback);
 
         ShadowLooper.idleMainLooper();
@@ -100,8 +103,9 @@ public class UnwrapObservableSupplierTest {
 
     @Test
     public void testAlreadyHasValueWhenObserverAdded() {
-        ObservableSupplierImpl<Object> parentSupplier = new ObservableSupplierImpl<>(mObject1);
-        ObservableSupplier<Integer> unwrapSupplier = make(parentSupplier);
+        SettableNonNullObservableSupplier<Object> parentSupplier =
+                ObservableSuppliers.createNonNull(mObject1);
+        NullableObservableSupplier<Integer> unwrapSupplier = make(parentSupplier);
 
         unwrapSupplier.addObserver(mOnChangeCallback);
         assertTrue(parentSupplier.hasObservers());
@@ -112,9 +116,9 @@ public class UnwrapObservableSupplierTest {
 
     @Test
     public void testAddObserver_ShouldNotifyOnAdd() {
-        ObservableSupplierImpl<Object> parentSupplier = new ObservableSupplierImpl<>();
-        parentSupplier.set(3);
-        ObservableSupplier<Integer> unwrapSupplier = make(parentSupplier);
+        SettableNonNullObservableSupplier<Object> parentSupplier =
+                ObservableSuppliers.createNonNull(3);
+        NullableObservableSupplier<Integer> unwrapSupplier = make(parentSupplier);
         unwrapSupplier.addObserver(mOnChangeCallback);
 
         ShadowLooper.idleMainLooper();
@@ -126,8 +130,9 @@ public class UnwrapObservableSupplierTest {
 
     @Test
     public void testAddObserver_ShouldNotNotifyOnAdd() {
-        ObservableSupplierImpl<Object> parentSupplier = new ObservableSupplierImpl<>();
-        ObservableSupplier<Integer> unwrapSupplier = make(parentSupplier);
+        SettableMonotonicObservableSupplier<Object> parentSupplier =
+                ObservableSuppliers.createMonotonic();
+        NullableObservableSupplier<Integer> unwrapSupplier = make(parentSupplier);
         unwrapSupplier.addSyncObserver(mOnChangeCallback);
 
         ShadowLooper.idleMainLooper();

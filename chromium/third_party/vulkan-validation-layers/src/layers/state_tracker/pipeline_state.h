@@ -1,8 +1,8 @@
-/* Copyright (c) 2015-2025 The Khronos Group Inc.
- * Copyright (c) 2015-2025 Valve Corporation
- * Copyright (c) 2015-2025 LunarG, Inc.
- * Copyright (C) 2015-2025 Google Inc.
- * Modifications Copyright (C) 2020 Advanced Micro Devices, Inc. All rights reserved.
+/* Copyright (c) 2015-2026 The Khronos Group Inc.
+ * Copyright (c) 2015-2026 Valve Corporation
+ * Copyright (c) 2015-2026 LunarG, Inc.
+ * Copyright (C) 2015-2026 Google Inc.
+ * Modifications Copyright (C) 2020,2025-2026 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -91,7 +91,13 @@ class Pipeline : public StateObject, public SubStateManager<PipelineSubState> {
     VkGraphicsPipelineLibraryFlagsEXT graphics_lib_type = static_cast<VkGraphicsPipelineLibraryFlagsEXT>(0);
     VkPipelineBindPoint pipeline_type;
     VkPipelineCreateFlags2 create_flags;
+
+    // Use |create_flags| and used to not have everyone need to re-parse the flags
+    const bool descriptor_buffer_mode;
+    const bool descriptor_heap_mode;
+
     vvl::span<const vku::safe_VkPipelineShaderStageCreateInfo> shader_stages_ci;
+    VkPipelineShaderStageCreateInfo data_graph_shader_stage_ci;
     const vku::safe_VkPipelineLibraryCreateInfoKHR *ray_tracing_library_ci = nullptr;
     // If using a shader module identifier, the module itself is not validated, but the shader stage is still known
     const bool uses_shader_module_id;
@@ -136,12 +142,13 @@ class Pipeline : public StateObject, public SubStateManager<PipelineSubState> {
     CBDynamicFlags ignored_dynamic_state;
 
     const VkPrimitiveTopology topology_at_rasterizer = VK_PRIMITIVE_TOPOLOGY_MAX_ENUM;
-    const bool descriptor_buffer_mode = false;
     const bool uses_pipeline_robustness = false;
     const bool uses_pipeline_vertex_robustness = false;
     bool ignore_color_attachments = true;
 
     mutable bool binary_data_released = false;
+
+    const uint32_t descriptor_heap_embedded_samplers_count;
 
     // TODO - Because we have hack to create a pipeline at PreCallValidate time (for GPL) we have no proper way to create inherited
     // state objects of the pipeline This is to make it clear that while currently everyone has to allocate this memory, it is only
@@ -236,19 +243,19 @@ class Pipeline : public StateObject, public SubStateManager<PipelineSubState> {
 
     // Used to know if the pipeline library is being created (as opposed to being linked)
     // Important as some pipeline checks need pipeline state that won't be there if the library is from linking
-    // Many VUs say "the pipeline require" which means "not being linked in as a library"
+    // Many VUs say "the pipeline requires" which means "not being linked in as a library"
     // If the VUs says "created with" then you should NOT use this function
     // TODO - This could probably just be a check to VkGraphicsPipelineLibraryCreateInfoEXT::flags
     bool OwnsLibState(const std::shared_ptr<PipelineLibraryState> lib_state) const {
         return lib_state && (&lib_state->parent == this);
     }
 
-    // This grabs the render pass at pipeline creation time, if you are inside a command buffer, use the vvl::RenderPass inside the
-    // command buffer! (The render pass can be different as they just have to be compatible, see
-    // vkspec.html#renderpass-compatibility)
+    // If you are inside a command buffer, use the vvl::RenderPass inside the command buffer!!
+    // - This grabs the render pass at pipeline creation time
+    // - The render pass can be different as they just have to be compatible, see vkspec.html#renderpass-compatibility
+    // - The issue is for something like VkPipelineRenderingCreateInfo we want executable version... so why this is ONLY suppose to
+    // be used when we don't have the command buffer scope
     const std::shared_ptr<const vvl::RenderPass> RenderPassState() const {
-        // TODO A render pass object is required for all of these library states. Which one should be used for an "executable
-        // pipeline"?
         if (fragment_output_state && fragment_output_state->rp_state) {
             return fragment_output_state->rp_state;
         } else if (fragment_shader_state && fragment_shader_state->rp_state) {
@@ -258,6 +265,8 @@ class Pipeline : public StateObject, public SubStateManager<PipelineSubState> {
         }
         return rp_state;
     }
+
+    const VkPipelineRenderingCreateInfo& GetRenderPassPipelineRenderingCreateInfo() const;
 
     // A pipeline does not "require" state that is specified in a library.
     bool IsRenderPassStateRequired() const {
@@ -454,6 +463,7 @@ class Pipeline : public StateObject, public SubStateManager<PipelineSubState> {
     static std::vector<ShaderStageState> GetRayTracingStageStates(
         const DeviceState &state_data, const Pipeline &pipe_state, VkPipelineLayout pipeline_layout,
         std::vector<spirv::StatelessData> *inout_per_shader_stateless_data);
+    static std::vector<ShaderStageState> GetDataGraphStageStates(const DeviceState &state_data, Pipeline &pipe_state, VkPipelineLayout pipeline_layout, spirv::StatelessData *stateless_data);
 
     // Return true if for a given PSO, the given state enum is dynamic, else return false
     bool IsDynamic(const CBDynamicState state) const { return dynamic_state[state]; }
@@ -507,59 +517,6 @@ class Pipeline : public StateObject, public SubStateManager<PipelineSubState> {
         return EnablesRasterizationStates(create_info);
     }
 
-    template <typename CreateInfo>
-    static bool ContainsLibraryState(const vvl::DeviceState &device_state, const CreateInfo &create_info,
-                                     VkGraphicsPipelineLibraryFlagsEXT lib_flags) {
-        constexpr VkGraphicsPipelineLibraryFlagsEXT null_lib = static_cast<VkGraphicsPipelineLibraryFlagsEXT>(0);
-        VkGraphicsPipelineLibraryFlagsEXT current_state = null_lib;
-
-        // Check linked libraries
-        auto link_info = vku::FindStructInPNextChain<VkPipelineLibraryCreateInfoKHR>(create_info.pNext);
-        if (link_info) {
-            const auto libs = vvl::make_span(link_info->pLibraries, link_info->libraryCount);
-            for (const auto handle : libs) {
-                auto lib = device_state.Get<vvl::Pipeline>(handle);
-                current_state |= lib->graphics_lib_type;
-            }
-        }
-
-        // Check if this is a graphics library
-        auto lib_info = vku::FindStructInPNextChain<VkGraphicsPipelineLibraryCreateInfoEXT>(create_info.pNext);
-        if (lib_info) {
-            current_state |= lib_info->flags;
-        }
-
-        if (!link_info && !lib_info) {
-            // This is not a graphics pipeline library, and therefore contains all necessary state
-            return true;
-        }
-
-        return (current_state & lib_flags) != null_lib;
-    }
-
-    // Version used at dispatch time for stateless VOs
-    template <typename CreateInfo>
-    static bool ContainsLibraryState(const CreateInfo &create_info, VkGraphicsPipelineLibraryFlagsEXT lib_flags) {
-        constexpr VkGraphicsPipelineLibraryFlagsEXT null_lib = static_cast<VkGraphicsPipelineLibraryFlagsEXT>(0);
-        VkGraphicsPipelineLibraryFlagsEXT current_state = null_lib;
-
-        auto link_info = vku::FindStructInPNextChain<VkPipelineLibraryCreateInfoKHR>(create_info.pNext);
-        // Cannot check linked library state in stateless VO
-
-        // Check if this is a graphics library
-        auto lib_info = vku::FindStructInPNextChain<VkGraphicsPipelineLibraryCreateInfoEXT>(create_info.pNext);
-        if (lib_info) {
-            current_state |= lib_info->flags;
-        }
-
-        if (!link_info && !lib_info) {
-            // This is not a graphics pipeline library, and therefore (should) contains all necessary state
-            return true;
-        }
-
-        return (current_state & lib_flags) != null_lib;
-    }
-
     // This is a helper that is meant to be used during safe_VkPipelineRenderingCreateInfo construction to determine whether or not
     // certain fields should be ignored based on graphics pipeline state
     static bool PnextRenderingInfoCustomCopy(const DeviceState &device_state, const VkGraphicsPipelineCreateInfo &graphics_info,
@@ -567,9 +524,24 @@ class Pipeline : public StateObject, public SubStateManager<PipelineSubState> {
         // "safe_struct" is assumed to be non-null as it should be the "this" member of calling class instance
         assert(safe_struct);
         if (safe_struct->sType == VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO) {
-            const bool has_fo_state = Pipeline::ContainsLibraryState(
-                device_state, graphics_info, VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_OUTPUT_INTERFACE_BIT_EXT);
-            if (!has_fo_state) {
+            // If using normal, non-GPL pipline, this is simply true
+            bool has_fragment_output_state = true;
+
+            {
+                // Same as OwnsLibState() but when there is no vvl::Pipeline state
+                auto lib_info = vku::FindStructInPNextChain<VkGraphicsPipelineLibraryCreateInfoEXT>(graphics_info.pNext);
+                if (lib_info) {
+                    has_fragment_output_state =
+                        (lib_info->flags & VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_OUTPUT_INTERFACE_BIT_EXT) != 0;
+                } else if (auto link_info = vku::FindStructInPNextChain<VkPipelineLibraryCreateInfoKHR>(graphics_info.pNext)) {
+                    if (link_info->libraryCount != 0) {
+                        // We are linking in, so we now know this pipeline doesn't "own" FragmentOuptut
+                        has_fragment_output_state = false;
+                    }
+                }
+            }
+
+            if (!has_fragment_output_state) {
                 // Clear out all pointers except for viewMask. Since viewMask is a scalar, it has already been copied at this point
                 // in vku::safe_VkPipelineRenderingCreateInfo construction.
                 auto pri = reinterpret_cast<vku::safe_VkPipelineRenderingCreateInfo *>(safe_struct);
@@ -584,6 +556,7 @@ class Pipeline : public StateObject, public SubStateManager<PipelineSubState> {
         // Signal that the custom initialization was not used
         return false;
     }
+    static uint32_t CountDescriptorHeapEmbeddedSamplers(const Pipeline& pipe_state);
 
   protected:
     static std::shared_ptr<VertexInputState> CreateVertexInputState(const Pipeline &p, const DeviceState &state,

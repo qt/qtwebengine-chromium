@@ -2,7 +2,7 @@ Name: libdmg-hfsplus
 Short Name: libdmg-hfsplus
 URL: https://github.com/mozilla/libdmg-hfsplus
 Version: N/A
-Revision: dd3db70c0f36927471cd3582f3ab0c637b5f8e59
+Revision: 7fa480f6da5c8a987fe0940f1654e62db6f0b165
 Update Mechanism: Manual (https://crbug.com/461840788)
 License: GPL-3.0
 License File: src/LICENSE
@@ -59,9 +59,46 @@ not support HFS+ extended attributes at all.
 
 This target cannot be made to build in Chromium without modification due to
 some `#define` conflicts from Chromium's zlib. To support all features required
-for creating Chromium DMGs, symlink behavior must change (to copy symlinks
-as symlinks, rather than duplicating their contents) and a new HFS+ volume
-configuration feature must be added (setting a folder to be automatically
-opened on mount).
+for creating Chromium DMGs, LZMA compression must be ported from xz-utils to
+lzma_sdk and a new HFS+ volume configuration feature must be added (setting a
+folder to be automatically opened on mount).
 
-Local modifications: None
+Local modifications:
+  * patches/2026-01-08-omnibus.patch
+    * The upstream adopted many of the changes we had previously made locally.
+      This patch file aggregates the remaining differences originally written
+      in separate commits (and separate patch files) where the Chromium
+      version still deviates from upstream. Remaining differences include:
+      * Some additional whitespace cleanups
+      * Formatting tweaks to some comments in hfsplus.h
+      * Rename `compress` (compress.h, compress.c, io.c) to `compressFn` to
+        resolve a conflict with `#define`s transitive from Chromium's zlib.h
+  * patches/2026-01-26-lzma-sdk.patch
+    * Uses `lzma_sdk` instead of `xz` for LZMA compression, since Chromium
+      already has `lzma_sdk` in `third_party`.
+    * Relies on an adapter that, in Chromium, made more sense to stash near
+      the other Google-specific `lzma_sdk` stuff rather than `libdmg-hfsplus`;
+      that's `third_party/lzma_sdk/google/seven_zip_c_buf_stream.[h|c]`.
+    * See https://chromium-review.googlesource.com/c/chromium/src/+/7467001
+      for the diff that includes the general-purpose "use a C buffer as an
+      `lzma_sdk` stream" component.
+    * `lzma_sdk`'s compression presets are not identical to `xz's`, so the
+      exact interpretation of the `--level` flag will be different.
+  * patches/2026-02-02-SizedBuf-dmg-attribute.patch
+    * Adds a new type, `SizedBuf`, containing a `char[]` with allocated capacity
+      `cap` and actual contained data length `len`.
+    * Replaces logic reached from `dmg attribute` codepath to use SizedBuf
+      instead of null-terminated strings to handle placeholders and replacements
+      so values containing embedded null bytes can be used. It is not possible
+      to specify such a string on the command line as of this patch, this only
+      paves the way for such an implementation.
+    * Backwards-compatible: existing string-based function signatures remain
+      in place, as wrappers that call the SizedBuf APIs.
+  * patches/2026-02-05-data-format-flag.patch
+    * Adds `parse_data_param.[h|c]` to abstract over parsing C-strings to
+      SizedBuf, using some encoding looked up by name.
+    * Adds `--data-format` flag to `dmg`, used in `dmg attribute`, to specify
+      which data param parser should parse the "sentinel" and "attribution"
+      positional parameters. Default is the `literal` parser, matching existing
+      behavior.
+    * Implements only the `literal` parser.

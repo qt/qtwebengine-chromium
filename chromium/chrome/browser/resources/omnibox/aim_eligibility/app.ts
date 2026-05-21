@@ -51,9 +51,10 @@ export class AimEligibilityAppElement extends CrLitElement {
     isEligibleByServer: false,
     isServerEligibilityEnabled: false,
     lastUpdated: new Date(0),
-    serverResponseBase64Encoded: '',
-    serverResponseBase64UrlEncoded: '',
-    serverResponseSource: '',
+    eligibilityResponseBase64Encoded: '',
+    eligibilityResponseSource: '',
+    eligibilityResponseAuthType: null,
+    searchboxConfigBase64UrlEncoded: '',
   };
   protected accessor inputState_: InputState = InputState.NONE;
 
@@ -85,7 +86,7 @@ export class AimEligibilityAppElement extends CrLitElement {
   protected onResponseInput_(e: Event) {
     this.eligibilityState_ = {
       ...this.eligibilityState_,
-      serverResponseBase64Encoded: (e.target as HTMLTextAreaElement).value,
+      eligibilityResponseBase64Encoded: (e.target as HTMLTextAreaElement).value,
     };
     this.inputState_ = InputState.NONE;
   }
@@ -96,16 +97,21 @@ export class AimEligibilityAppElement extends CrLitElement {
 
   protected onViewResponseClick_() {
     this.openWindowProxy_.openUrl(this.getProtoshopUrl_(
-        this.eligibilityState_.serverResponseBase64UrlEncoded));
+        this.eligibilityState_.eligibilityResponseBase64Encoded));
   }
 
   protected onDraftResponseClick_() {
     this.openWindowProxy_.openUrl(this.getProtoshopUrl_(''));
   }
 
+  protected onViewSearchboxConfigClick_() {
+    this.openWindowProxy_.openUrl(`http://go/aim-pec-api-demo?config=${
+        this.eligibilityState_.searchboxConfigBase64UrlEncoded}`);
+  }
+
   protected async onSaveResponseClick_() {
     const result = await this.pageHandler_.setEligibilityResponseForDebugging(
-        this.eligibilityState_.serverResponseBase64Encoded);
+        this.eligibilityState_.eligibilityResponseBase64Encoded);
     this.inputState_ = result.success ? InputState.NONE : InputState.FAIL;
   }
 
@@ -142,13 +148,13 @@ export class AimEligibilityAppElement extends CrLitElement {
     this.inputState_ = InputState.NONE;
   }
 
-  private getProtoshopUrl_(base64UrlProto: string): string {
+  private getProtoshopUrl_(base64Proto: string): string {
     const protoType = 'gws.searchbox.chrome.AimEligibilityResponse';
-    if (!base64UrlProto) {
+    if (!base64Proto) {
       return `http://protoshop/${protoType}`;
     }
     return `http://protoshop/embed?tabs=textproto&type=${
-        protoType}&protobytes=${base64UrlProto}`;
+        protoType}&protobytes=${encodeURIComponent(base64Proto)}`;
   }
 }
 

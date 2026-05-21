@@ -13,6 +13,7 @@
 #include <string_view>
 #include <vector>
 
+#include "base/containers/extend.h"
 #include "base/containers/flat_set.h"
 #include "base/logging.h"
 #include "base/strings/utf_string_conversions.h"
@@ -46,12 +47,10 @@ using ::testing::IsSupersetOf;
 using ::testing::Not;
 using ::testing::UnorderedElementsAreArray;
 
-auto Matches(std::u16string_view regex) {
-  icu::RegexPattern regex_pattern = *CompileRegex(regex);
-  return ::testing::Truly(
-      [regex_pattern = std::move(regex_pattern)](std::string_view actual) {
-        return MatchesRegex(base::UTF8ToUTF16(actual), regex_pattern);
-      });
+auto Matches(std::u16string regex) {
+  return ::testing::Truly([regex](std::string_view actual) {
+    return MatchesRegex(base::UTF8ToUTF16(actual), CompileRegex(regex).get());
+  });
 }
 
 auto Matches(MatchingPattern pattern) {
@@ -167,9 +166,8 @@ TEST_P(RegexPatternsTest, PseudoLanguageIsUnionOfLanguages) {
   // The expected patterns are the patterns of all languages for `kSomeName`.
   std::vector<MatchPatternRef> expected;
   for (const std::string& lang : kLanguagesOfPattern) {
-    const auto& patterns =
-        GetMatchPatterns(kSomeName, LanguageCode(lang), pattern_file());
-    expected.insert(expected.end(), patterns.begin(), patterns.end());
+    base::Extend(expected, GetMatchPatterns(kSomeName, LanguageCode(lang),
+                                            pattern_file()));
   }
   std::erase_if(expected,
                 [](auto p) { return test_api(p).is_supplementary(); });

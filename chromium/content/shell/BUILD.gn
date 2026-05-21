@@ -9,6 +9,7 @@ import("//build/config/sanitizers/sanitizers.gni")
 import("//build/config/ui.gni")
 import("//build/config/win/console_app.gni")
 import("//build/config/win/manifest.gni")
+import("//components/surface_embed/buildflags/buildflags.gni")
 import("//content/public/common/features.gni")
 import("//device/vr/buildflags/buildflags.gni")
 import("//gpu/vulkan/features.gni")
@@ -113,8 +114,8 @@ static_library("content_shell_app") {
   }
   if (is_apple) {
     sources += [
-      "app/paths_mac.h",
-      "app/paths_mac.mm",
+      "app/paths_apple.h",
+      "app/paths_apple.mm",
     ]
   }
   if (is_mac) {
@@ -131,6 +132,12 @@ static_library("content_shell_app") {
       "app/ios/web_tests_support_ios.mm",
     ]
 
+    if (target_platform == "tvos") {
+      sources += [
+        "app/ios/shell_app_scene_delegate_tvos.h",
+        "app/ios/shell_app_scene_delegate_tvos.mm",
+      ]
+    }
     deps += [ "//components/crash/core/common:reporter_running_ios" ]
 
     # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
@@ -338,6 +345,7 @@ static_library("content_shell_lib") {
     "//components/permissions",
     "//components/prefs",
     "//components/services/storage/test_api",
+    "//components/surface_embed/buildflags",
     "//components/url_formatter",
     "//components/variations/service",
     "//components/web_cache/renderer",
@@ -396,6 +404,10 @@ static_library("content_shell_lib") {
     deps += [ "//media/mojo/services" ]
   }
 
+  if (enable_surface_embed) {
+    deps += [ "//components/surface_embed/renderer" ]
+  }
+
   if (is_win) {
     sources += [
       "common/v8_crashpad_support_win.cc",
@@ -418,6 +430,7 @@ static_library("content_shell_lib") {
       "//components/strings:components_strings",
       "//services/tracing/public/cpp",
       "//services/tracing/public/mojom",
+      "//ui/accessibility:ax_base",
       "//ui/shell_dialogs",
     ]
   }

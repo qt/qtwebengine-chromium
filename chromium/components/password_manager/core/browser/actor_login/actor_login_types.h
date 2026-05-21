@@ -5,6 +5,7 @@
 #ifndef COMPONENTS_PASSWORD_MANAGER_CORE_BROWSER_ACTOR_LOGIN_ACTOR_LOGIN_TYPES_H_
 #define COMPONENTS_PASSWORD_MANAGER_CORE_BROWSER_ACTOR_LOGIN_ACTOR_LOGIN_TYPES_H_
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -20,6 +21,20 @@ namespace actor_login {
 
 enum CredentialType {
   kPassword,
+  kFederated,
+};
+
+struct FederationDetail {
+  // The `Origin` of the identity provider.
+  url::Origin idp_origin;
+
+  // The account ID provided by the identity provider.
+  std::string account_id;
+
+#if defined(UNIT_TEST)
+  friend bool operator==(const FederationDetail&,
+                         const FederationDetail&) = default;
+#endif
 };
 
 struct Credential {
@@ -43,9 +58,7 @@ struct Credential {
   // during the login process. It is unique for this `source_site_or_app`.
   // It may be an empty string if the credential has no associated username.
   // This field may be presented to the user.
-  // TODO(crbug.com/441231848): Clarify how to deal with empty usernames.
-  // We should either provide display and non-display values, or let the caller
-  // format strings to display.
+  // Callers are responsible for formatting strings for display.
   std::u16string username;
 
   // The original website or application for which this credential was saved in
@@ -57,6 +70,9 @@ struct Credential {
 
   // The origin for which this credential was requested.
   url::Origin request_origin;
+
+  // The value of `request_origin` formatted for display to the user.
+  std::u16string display_origin;
 
   // The type of the credential used for the login process.
   // It may be presented to a user if mapped to a user-friendly localized
@@ -71,6 +87,9 @@ struct Credential {
   // Whether the user has granted persistent permission for this credential to
   // be used on `request_origin`.
   bool has_persistent_permission = false;
+
+  // Only set if `type` is `kFederated`.
+  std::optional<FederationDetail> federation_detail;
 
 #if defined(UNIT_TEST)
   // An exact equality comparison of all the fields is only useful for tests.

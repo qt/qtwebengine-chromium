@@ -12,6 +12,7 @@
 #include <utility>
 
 #include "base/functional/bind.h"
+#include "base/functional/callback_helpers.h"
 #include "base/i18n/number_formatting.h"
 #include "base/logging.h"
 #include "base/posix/eintr_wrapper.h"
@@ -93,9 +94,9 @@ void WaylandBufferManagerHost::OnCommitOverlayError(
   TerminateGpuProcess();
 }
 
-wl::BufferFormatsWithModifiersMap
-WaylandBufferManagerHost::GetSupportedBufferFormats() const {
-  return connection_->buffer_factory()->GetSupportedBufferFormats();
+wl::SharedImageFormatsWithModifiersMap
+WaylandBufferManagerHost::GetSupportedSharedImageFormats() const {
+  return connection_->buffer_factory()->GetSupportedSharedImageFormats();
 }
 
 bool WaylandBufferManagerHost::SupportsDmabuf() const {
@@ -281,18 +282,6 @@ WaylandBufferHandle* WaylandBufferManagerHost::GetBufferHandle(
   return it->second->GetBufferHandle(requestor);
 }
 
-uint32_t WaylandBufferManagerHost::GetBufferFormat(WaylandSurface* requestor,
-                                                   uint32_t buffer_id) {
-  DCHECK(base::CurrentUIThread::IsSet());
-  DCHECK(requestor);
-
-  auto it = buffer_backings_.find(buffer_id);
-  if (it == buffer_backings_.end())
-    return DRM_FORMAT_INVALID;
-
-  return it->second.get()->format();
-}
-
 void WaylandBufferManagerHost::CommitOverlays(
     gfx::AcceleratedWidget widget,
     uint32_t frame_id,
@@ -367,8 +356,9 @@ bool WaylandBufferManagerHost::ValidateDataFromGpu(
       reason = "Strides are invalid";
   }
 
-  if (!IsValidBufferFormat(format))
-    reason = "Buffer format is invalid";
+  if (!IsValidDrmFormat(format)) {
+    reason = "Drm format is invalid";
+  }
 
   if (!reason.empty()) {
     error_message_ = std::move(reason);

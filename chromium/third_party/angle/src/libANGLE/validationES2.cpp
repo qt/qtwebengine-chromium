@@ -17,6 +17,7 @@
 #include "common/BinaryStream.h"
 #include "common/angle_version_info.h"
 #include "common/mathutil.h"
+#include "common/span.h"
 #include "common/string_utils.h"
 #include "common/utilities.h"
 #include "libANGLE/Context.h"
@@ -2547,17 +2548,6 @@ bool ValidateGetPointervKHR(const Context *context,
     return ValidateGetPointerv(context, entryPoint, pname, params);
 }
 
-bool ValidateGetPointervRobustANGLERobustANGLE(const Context *context,
-                                               angle::EntryPoint entryPoint,
-                                               GLenum pname,
-                                               GLsizei bufSize,
-                                               const GLsizei *length,
-                                               void *const *params)
-{
-    UNIMPLEMENTED();
-    return false;
-}
-
 bool ValidateBlitFramebufferANGLE(const Context *context,
                                   angle::EntryPoint entryPoint,
                                   GLint srcX0,
@@ -3113,7 +3103,7 @@ bool ValidateMapBufferOES(const Context *context,
 {
     if (!context->isValidBufferBinding(target))
     {
-        ANGLE_VALIDATION_ERROR(GL_INVALID_ENUM, kInvalidBufferTypes);
+        ANGLE_VALIDATION_ERROR(GL_INVALID_ENUM, kInvalidBufferTarget);
         return false;
     }
 
@@ -3673,7 +3663,7 @@ bool ValidateBufferData(const Context *context,
 
     if (!context->isValidBufferBinding(target))
     {
-        ANGLE_VALIDATION_ERROR(GL_INVALID_ENUM, kInvalidBufferTypes);
+        ANGLE_VALIDATION_ERROR(GL_INVALID_ENUM, kInvalidBufferTarget);
         return false;
     }
 
@@ -3735,7 +3725,7 @@ bool ValidateBufferSubData(const Context *context,
 
     if (!context->isValidBufferBinding(target))
     {
-        ANGLE_VALIDATION_ERROR(GL_INVALID_ENUM, kInvalidBufferTypes);
+        ANGLE_VALIDATION_ERROR(GL_INVALID_ENUM, kInvalidBufferTarget);
         return false;
     }
 
@@ -4588,18 +4578,9 @@ bool ValidateGetAttribLocation(const Context *context,
 bool ValidateGetBooleanv(const Context *context,
                          angle::EntryPoint entryPoint,
                          GLenum pname,
-                         const GLboolean *params)
+                         const GLboolean *data)
 {
-    GLenum nativeType;
-    unsigned int numParams = 0;
-
-    if (params == nullptr)
-    {
-        ANGLE_VALIDATION_ERROR(GL_INVALID_VALUE, kPLSParamsNULL);
-        return false;
-    }
-
-    return ValidateStateQuery(context, entryPoint, pname, &nativeType, &numParams);
+    return ValidateStateQuery(context, entryPoint, pname, data, nullptr);
 }
 
 bool ValidateGetError(const Context *context, angle::EntryPoint entryPoint)
@@ -4610,35 +4591,17 @@ bool ValidateGetError(const Context *context, angle::EntryPoint entryPoint)
 bool ValidateGetFloatv(const Context *context,
                        angle::EntryPoint entryPoint,
                        GLenum pname,
-                       const GLfloat *params)
+                       const GLfloat *data)
 {
-    GLenum nativeType;
-    unsigned int numParams = 0;
-
-    if (params == nullptr)
-    {
-        ANGLE_VALIDATION_ERROR(GL_INVALID_VALUE, kPLSParamsNULL);
-        return false;
-    }
-
-    return ValidateStateQuery(context, entryPoint, pname, &nativeType, &numParams);
+    return ValidateStateQuery(context, entryPoint, pname, data, nullptr);
 }
 
 bool ValidateGetIntegerv(const Context *context,
                          angle::EntryPoint entryPoint,
                          GLenum pname,
-                         const GLint *params)
+                         const GLint *data)
 {
-    GLenum nativeType;
-    unsigned int numParams = 0;
-
-    if (params == nullptr)
-    {
-        ANGLE_VALIDATION_ERROR(GL_INVALID_VALUE, kPLSParamsNULL);
-        return false;
-    }
-
-    return ValidateStateQuery(context, entryPoint, pname, &nativeType, &numParams);
+    return ValidateStateQuery(context, entryPoint, pname, data, nullptr);
 }
 
 bool ValidateGetProgramInfoLog(const Context *context,
@@ -5045,9 +5008,9 @@ bool ValidateShaderBinary(const Context *context,
     }
 
     // Check ANGLE version used to generate binary matches the current version.
-    BinaryInputStream stream(binary, length);
-    std::vector<uint8_t> versionString(angle::GetANGLEShaderProgramVersionHashSize(), 0);
-    stream.readBytes(versionString.data(), versionString.size());
+    BinaryInputStream stream(angle::Span(static_cast<const uint8_t *>(binary), length));
+    std::vector<uint8_t> versionString(angle::GetANGLEShaderProgramVersionHashSize());
+    stream.readBytes(versionString);
     if (memcmp(versionString.data(), angle::GetANGLEShaderProgramVersion(), versionString.size()) !=
         0)
     {

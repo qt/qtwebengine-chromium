@@ -1,6 +1,6 @@
-/* Copyright (c) 2015-2025 The Khronos Group Inc.
- * Copyright (c) 2015-2025 Valve Corporation
- * Copyright (c) 2015-2025 LunarG, Inc.
+/* Copyright (c) 2015-2026 The Khronos Group Inc.
+ * Copyright (c) 2015-2026 Valve Corporation
+ * Copyright (c) 2015-2026 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -87,7 +87,9 @@ class BufferAddressValidation {
     // There are times the caller will want to update state for each buffer object found
     UpdateCallback update_callback = [](const vvl::Buffer&) {};
 
-    [[nodiscard]] bool ValidateDeviceAddress(const CoreChecks& validator, const Location& device_address_loc,
+    // We use vvl::DeviceProxy instead of CoreChecks here as a current hack to allow GPU-AV to use this. We still need a better
+    // system to share CoreChecks with GPU-AV
+    [[nodiscard]] bool ValidateDeviceAddress(const vvl::DeviceProxy& validator, const Location& device_address_loc,
                                              const LogObjectList& objlist, VkDeviceAddress device_address,
                                              VkDeviceSize range_size = 0) noexcept {
         bool skip = false;
@@ -99,10 +101,24 @@ class BufferAddressValidation {
 
         vvl::span<vvl::Buffer* const> buffer_list = validator.GetBuffersByAddress(device_address);
         if (buffer_list.empty()) {
-            skip |= validator.LogError(
-                "VUID-VkDeviceAddress-size-11364", objlist, device_address_loc,
-                "(0x%" PRIx64 ") is not a valid buffer address. No call to vkGetBufferDeviceAddress has this buffer in its range.",
-                device_address);
+            NearestBufferResult nearest = validator.GetNearestBuffersByAddress(device_address);
+            std::ostringstream ss;
+            ss << "(0x" << std::hex << device_address
+               << ") is not a valid buffer address. No call to vkGetBufferDeviceAddress has this buffer in its range.";
+            if (!nearest.above_buffers.empty()) {
+                ss << "\nAbove at range " << string_range_hex(nearest.above_range) << " has buffers:";
+                for (const auto buffer : nearest.above_buffers) {
+                    // use std::to_string() to print as simple way to print size as decimal, not hex, like everything else
+                    ss << "\n  " << buffer->Describe(validator);
+                }
+            }
+            if (!nearest.below_buffers.empty()) {
+                ss << "\nBelow at range " << string_range_hex(nearest.below_range) << " has buffers:";
+                for (const auto buffer : nearest.below_buffers) {
+                    ss << "\n  " << buffer->Describe(validator);
+                }
+            }
+            skip |= validator.LogError("VUID-VkDeviceAddress-size-11364", objlist, device_address_loc, "%s", ss.str().c_str());
         }
 
         // Checks if memory is in a completely and contiguously to a single VkDeviceMemory object
@@ -110,7 +126,7 @@ class BufferAddressValidation {
         vuid_and_validations[ChecksCount] = {
             "VUID-VkDeviceAddress-None-10894",
             [](const vvl::Buffer& buffer_state) { return !buffer_state.sparse && !buffer_state.IsMemoryBound(); },
-            []() { return "The following buffers are not bound to memory or it has been freed:"; },
+            []() { return "The following buffers are not bound to memory or it has been freed"; },
             [&validator](const vvl::Buffer& buffer_state) {
                 const auto memory_state = buffer_state.MemoryState();
                 if (memory_state && memory_state->Destroyed()) {
@@ -131,7 +147,7 @@ class BufferAddressValidation {
     [[nodiscard]] bool HasValidBuffer(vvl::span<vvl::Buffer* const> buffer_list) const noexcept;
     // For every vuid, build an error mentioning every buffer from buffer_list that violates it, then log this error
     // using details provided by the other parameters.
-    [[nodiscard]] bool LogInvalidBuffers(const CoreChecks& validator, vvl::span<vvl::Buffer* const> buffer_list,
+    [[nodiscard]] bool LogInvalidBuffers(const vvl::DeviceProxy& validator, vvl::span<vvl::Buffer* const> buffer_list,
                                          const Location& device_address_loc, const LogObjectList& objlist,
                                          VkDeviceAddress device_address, VkDeviceSize range_size) const noexcept;
 
@@ -168,7 +184,8 @@ bool BufferAddressValidation<ChecksCount>::HasValidBuffer(vvl::span<vvl::Buffer*
 }
 
 template <size_t ChecksCount>
-bool BufferAddressValidation<ChecksCount>::LogInvalidBuffers(const CoreChecks& validator, vvl::span<vvl::Buffer* const> buffer_list,
+bool BufferAddressValidation<ChecksCount>::LogInvalidBuffers(const vvl::DeviceProxy& validator,
+                                                             vvl::span<vvl::Buffer* const> buffer_list,
                                                              const Location& device_address_loc, const LogObjectList& objlist,
                                                              VkDeviceAddress device_address,
                                                              VkDeviceSize range_size) const noexcept {
@@ -180,7 +197,7 @@ bool BufferAddressValidation<ChecksCount>::LogInvalidBuffers(const CoreChecks& v
     // Some checks only care about the address, but for those that have a range, print it here so it is the same across all error
     // messages
     if (range_size != 0) {
-        std::stringstream ss;
+        std::ostringstream ss;
         ss << "[0x" << std::hex << device_address << ", 0x" << (device_address + range_size) << ") (";
         if (range_size == VK_WHOLE_SIZE) {
             ss << "VK_WHOLE_SIZE";
@@ -197,7 +214,7 @@ bool BufferAddressValidation<ChecksCount>::LogInvalidBuffers(const CoreChecks& v
         }
         error_msg_beginning = ss.str();
     } else {
-        std::stringstream ss;
+        std::ostringstream ss;
         ss << "(0x" << std::hex << device_address << ") has no buffer(s) associated that are valid.\n";
         error_msg_beginning = ss.str();
     }
@@ -227,11 +244,7 @@ bool BufferAddressValidation<ChecksCount>::LogInvalidBuffers(const CoreChecks& v
 
             // Always print the buffer range/size
             error_msg += "  ";  // small indent help to visualize
-            error_msg += validator.FormatHandle(buffer->Handle());
-            error_msg += ", size ";
-            error_msg += std::to_string(buffer->create_info.size);
-            error_msg += ", range ";
-            error_msg += string_range_hex(buffer->DeviceAddressRange());
+            error_msg += buffer->Describe(validator);
             error_msg += " ";
             error_msg += error_msg_buffer_func(*buffer);
             error_msg += "\n";
@@ -258,8 +271,7 @@ bool BufferAddressValidation<ChecksCount>::LogInvalidBuffers(const CoreChecks& v
 [[maybe_unused]] static std::string PrintBufferRanges(const CoreChecks& validator, vvl::span<vvl::Buffer* const> buffers) {
     std::ostringstream ss;
     for (const auto& buffer : buffers) {
-        ss << "  " << validator.FormatHandle(buffer->Handle()) << " : size " << buffer->create_info.size << " : range "
-           << string_range_hex(buffer->DeviceAddressRange()) << '\n';
+        ss << "  " << buffer->Describe(validator) << '\n';
     }
     return ss.str();
 }

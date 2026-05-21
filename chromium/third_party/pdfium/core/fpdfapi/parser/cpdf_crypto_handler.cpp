@@ -26,7 +26,6 @@
 #include "core/fpdfapi/parser/cpdf_string.h"
 #include "core/fxcrt/check.h"
 #include "core/fxcrt/check_op.h"
-#include "core/fxcrt/fx_memcpy_wrappers.h"
 #include "core/fxcrt/stl_util.h"
 
 namespace {

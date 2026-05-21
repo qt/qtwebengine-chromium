@@ -44,6 +44,10 @@
 #include "src/diagnostics/etw-jit-win.h"
 #endif  // V8_ENABLE_ETW_STACK_WALKING
 
+#if defined(V8_ENABLE_SANDBOX) && defined(V8_ENABLE_MEMORY_CORRUPTION_API)
+#include "src/sandbox/external-strings-cage.h"
+#endif  // V8_ENABLE_SANDBOX && V8_ENABLE_MEMORY_CORRUPTION_API
+
 namespace v8 {
 namespace internal {
 
@@ -107,6 +111,12 @@ void V8::InitializePlatform(v8::Platform* platform) {
   CHECK_NOT_NULL(platform);
   platform_ = platform;
   v8::base::SetPrintStackTrace(platform_->GetStackTracePrinter());
+#if defined(V8_USE_PERFETTO)
+  // TrackEvent must be registered before TracingCategoryObserver::SetUp().
+  if (perfetto::Tracing::IsInitialized()) {
+    TrackEvent::Register();
+  }
+#endif
   v8::tracing::TracingCategoryObserver::SetUp();
 #if defined(V8_ENABLE_ETW_STACK_WALKING)
   if (v8_flags.enable_etw_stack_walking ||
@@ -211,6 +221,10 @@ void V8::Initialize() {
   Sandbox::InitializeDefaultOncePerProcess(GetPlatformVirtualAddressSpace());
   CHECK_EQ(kSandboxSize, Sandbox::current()->size());
 
+#ifdef V8_ENABLE_MEMORY_CORRUPTION_API
+  ExternalStringsCage::InitializeOncePerProcess();
+#endif  // V8_ENABLE_MEMORY_CORRUPTION_API
+
   // Enable sandbox testing mode if requested.
   //
   // This will install the sandbox crash filter to ignore all crashes that do
@@ -228,11 +242,8 @@ void V8::Initialize() {
 #endif  // V8_ENABLE_SANDBOX
 
 #if defined(V8_USE_PERFETTO)
-  if (perfetto::Tracing::IsInitialized()) {
-    TrackEvent::Register();
-    if (v8_flags.perfetto_code_logger) {
-      v8::internal::CodeDataSource::Register();
-    }
+  if (perfetto::Tracing::IsInitialized() && v8_flags.perfetto_code_logger) {
+    v8::internal::CodeDataSource::Register();
   }
 #endif
   IsolateGroup::InitializeOncePerProcess();
@@ -269,6 +280,9 @@ void V8::Dispose() {
   RegisteredExtension::UnregisterAll();
   FlagList::ReleaseDynamicAllocations();
   IsolateGroup::TearDownOncePerProcess();
+#if defined(V8_ENABLE_SANDBOX) && defined(V8_ENABLE_MEMORY_CORRUPTION_API)
+  ExternalStringsCage::TearDown();
+#endif  // V8_ENABLE_SANDBOX && V8_ENABLE_MEMORY_CORRUPTION_API
   AdvanceStartupState(V8StartupState::kV8Disposed);
 }
 
@@ -290,9 +304,7 @@ void V8::DisposePlatform() {
 
   platform_ = nullptr;
 
-#if DEBUG
-  internal::ThreadIsolation::CheckTrackedMemoryEmpty();
-#endif
+  ThreadIsolation::TearDown();
 
   AdvanceStartupState(V8StartupState::kPlatformDisposed);
 }
@@ -327,13 +339,6 @@ double Platform::SystemClockTimeMillis() {
 void SandboxHardwareSupport::InitializeBeforeThreadCreation() {
 #ifdef V8_ENABLE_SANDBOX_HARDWARE_SUPPORT
   internal::SandboxHardwareSupport::TryActivateBeforeThreadCreation();
-#endif  // V8_ENABLE_SANDBOX_HARDWARE_SUPPORT
-}
-
-// static
-void SandboxHardwareSupport::PrepareCurrentThreadForHardwareSandboxing() {
-#ifdef V8_ENABLE_SANDBOX_HARDWARE_SUPPORT
-  internal::SandboxHardwareSupport::EnableForCurrentThread();
 #endif  // V8_ENABLE_SANDBOX_HARDWARE_SUPPORT
 }
 

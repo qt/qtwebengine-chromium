@@ -5,9 +5,11 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkColorFilter.h"
 #include "include/core/SkStream.h"
 #include "include/core/SkString.h"
 #include "include/private/SkHdrMetadata.h"
+#include "src/codec/SkHdrAgtmPriv.h"
 #include "src/core/SkStreamPriv.h"
 
 namespace skhdr {
@@ -185,6 +187,21 @@ bool Metadata::getMasteringDisplayColorVolume(MasteringDisplayColorVolume* mdcv)
     return true;
 }
 
+bool Metadata::getAdaptiveGlobalToneMap(AdaptiveGlobalToneMap* agtm) const {
+    if (!fAdaptiveGlobalToneMap.has_value()) {
+        return false;
+    }
+    if (agtm) {
+        *agtm = fAdaptiveGlobalToneMap.value();
+    }
+    return true;
+}
+
+sk_sp<const SkData> Metadata::getSerializedAgtm() const {
+    return fAdaptiveGlobalToneMap.has_value() ?
+        fAdaptiveGlobalToneMap->serialize() : nullptr;
+}
+
 void Metadata::setMasteringDisplayColorVolume(const MasteringDisplayColorVolume& mdcv) {
     fMasteringDisplayColorVolume = mdcv;
 }
@@ -193,17 +210,49 @@ void Metadata::setContentLightLevelInformation(const ContentLightLevelInformatio
     fContentLightLevelInformation = clli;
 }
 
+void Metadata::setAdaptiveGlobalToneMap(const AdaptiveGlobalToneMap& agtm) {
+    fAdaptiveGlobalToneMap = agtm;
+}
+
+void Metadata::setSerializedAgtm(sk_sp<const SkData> agtm_encoded) {
+    AdaptiveGlobalToneMap agtm;
+    if (agtm.parse(agtm_encoded.get())) {
+        fAdaptiveGlobalToneMap = agtm;
+    } else {
+        fAdaptiveGlobalToneMap.reset();
+    }
+}
+
 SkString Metadata::toString() const {
-    return SkStringPrintf("{clli:%s, mdcv:%s}",
+    return SkStringPrintf("{clli:%s, mdcv:%s, agtm:%s}",
         fContentLightLevelInformation.has_value() ?
             fContentLightLevelInformation->toString().c_str() : "None",
         fMasteringDisplayColorVolume.has_value() ?
-            fMasteringDisplayColorVolume->toString().c_str() : "None");
+            fMasteringDisplayColorVolume->toString().c_str() : "None",
+        fAdaptiveGlobalToneMap.has_value() ?
+            fAdaptiveGlobalToneMap->toString().c_str() : "None");
 }
 
 bool Metadata::operator==(const Metadata& other) const {
     return fContentLightLevelInformation == other.fContentLightLevelInformation &&
-           fMasteringDisplayColorVolume == other.fMasteringDisplayColorVolume;
+           fMasteringDisplayColorVolume == other.fMasteringDisplayColorVolume &&
+           fAdaptiveGlobalToneMap == other.fAdaptiveGlobalToneMap;
+}
+
+sk_sp<SkColorFilter> Metadata::makeToneMapColorFilter(
+        float targetedHdrHeadroom, const SkColorSpace* inputColorSpace) const {
+    AdaptiveGlobalToneMap agtm;
+    float scaleFactor = 1.f;
+    if (!AgtmHelpers::PopulateToneMapAgtmParams(*this, inputColorSpace, &agtm, &scaleFactor)) {
+        return nullptr;
+    }
+
+    auto& hatm = agtm.fHeadroomAdaptiveToneMap;
+    if (!hatm.has_value()) {
+        // TODO(https://crbug.com/395659818): Add default tone mapping.
+        return nullptr;
+    }
+    return AgtmHelpers::MakeColorFilter(hatm.value(), targetedHdrHeadroom, scaleFactor);
 }
 
 }  // namespace skhdr

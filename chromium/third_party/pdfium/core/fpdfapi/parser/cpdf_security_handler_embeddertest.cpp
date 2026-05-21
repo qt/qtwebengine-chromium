@@ -93,15 +93,16 @@ class CPDFSecurityHandlerEmbedderTest : public EmbedderTest {
     ASSERT_TRUE(page);
 
     ScopedFPDFBitmap page_bitmap = RenderPage(page);
-    CompareBitmap(page_bitmap.get(), 200, 200, pdfium::HelloWorldChecksum());
+    CompareBitmapToPngWithExpectationSuffix(page_bitmap.get(),
+                                            pdfium::kHelloWorldPng);
   }
 
   void VerifyModifiedHelloWorldPage(FPDF_PAGE page) {
     ASSERT_TRUE(page);
 
     ScopedFPDFBitmap page_bitmap = RenderPage(page);
-    CompareBitmap(page_bitmap.get(), 200, 200,
-                  pdfium::HelloWorldRemovedChecksum());
+    CompareBitmapToPngWithExpectationSuffix(page_bitmap.get(),
+                                            pdfium::kHelloWorldRemovedPng);
   }
 };
 
@@ -140,22 +141,7 @@ TEST_F(CPDFSecurityHandlerEmbedderTest, OwnerPassword) {
 }
 
 TEST_F(CPDFSecurityHandlerEmbedderTest, PasswordAfterGenerateSave) {
-  const char* checksum = []() {
-    if (CFX_DefaultRenderDevice::UseSkiaRenderer()) {
-#if BUILDFLAG(IS_WIN)
-      return "caa4bfda016a9c48a540ff7c6716468c";
-#elif BUILDFLAG(IS_APPLE)
-      return "6c1a242ce886df5cf578401eeeaa1929";
-#else
-      return "ad97491cab71c02f1f4ef5ba0a7b5593";
-#endif
-    }
-#if BUILDFLAG(IS_APPLE)
-    return "2a308e8cc20a6221112c387d122075a8";
-#else
-    return "9fe7eef8e51d15a604001854be6ed1ee";
-#endif  // BUILDFLAG(IS_APPLE)
-  }();
+  constexpr char kBasename[] = "encrypted";
   {
     ASSERT_TRUE(OpenDocumentWithOptions("encrypted.pdf", "5678",
                                         LinearizeOption::kMustLinearize,
@@ -168,7 +154,7 @@ TEST_F(CPDFSecurityHandlerEmbedderTest, PasswordAfterGenerateSave) {
     EXPECT_TRUE(FPDFPath_SetDrawMode(red_rect, FPDF_FILLMODE_ALTERNATE, 0));
     FPDFPage_InsertObject(page.get(), red_rect);
     ScopedFPDFBitmap bitmap = RenderLoadedPage(page.get());
-    CompareBitmap(bitmap.get(), 612, 792, checksum);
+    CompareBitmapToPngWithExpectationSuffix(bitmap.get(), kBasename);
     EXPECT_TRUE(FPDFPage_GenerateContent(page.get()));
     SetWholeFileAvailable();
     EXPECT_TRUE(FPDF_SaveAsCopy(document(), this, 0));
@@ -190,7 +176,7 @@ TEST_F(CPDFSecurityHandlerEmbedderTest, PasswordAfterGenerateSave) {
     ASSERT_TRUE(OpenSavedDocumentWithPassword(test.password));
     FPDF_PAGE page = LoadSavedPage(0);
     ASSERT_TRUE(page);
-    VerifySavedRendering(page, 612, 792, checksum);
+    VerifySavedRenderingToPngWithExpectationSuffix(page, kBasename);
     EXPECT_EQ(test.permissions, FPDF_GetDocPermissions(saved_document()));
 
     CloseSavedPage(page);
@@ -216,13 +202,13 @@ TEST_F(CPDFSecurityHandlerEmbedderTest, UserPasswordVersion5) {
   EXPECT_EQ(0xFFFFFFFC, FPDF_GetDocPermissions(document()));
 }
 
-// Should not crash. https://crbug.com/pdfium/1436
+// Should not crash. https://crbug.com/42270437
 TEST_F(CPDFSecurityHandlerEmbedderTest, BadOkeyVersion2) {
   EXPECT_FALSE(
       OpenDocumentWithPassword("encrypted_hello_world_r2_bad_okey.pdf", "a"));
 }
 
-// Should not crash. https://crbug.com/pdfium/1436
+// Should not crash. https://crbug.com/42270437
 TEST_F(CPDFSecurityHandlerEmbedderTest, BadOkeyVersion3) {
   EXPECT_FALSE(
       OpenDocumentWithPassword("encrypted_hello_world_r3_bad_okey.pdf", "a"));

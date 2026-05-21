@@ -91,6 +91,7 @@ ContextNULL::ContextNULL(const gl::State &state,
 
     mExtensions.textureStorageEXT               = true;
     mExtensions.rgb8Rgba8OES                    = true;
+    mExtensions.colorBufferFloatEXT             = state.getClientVersion() >= gl::Version(3, 0);
     mExtensions.textureCompressionDxt1EXT       = true;
     mExtensions.textureCompressionDxt3ANGLE     = true;
     mExtensions.textureCompressionDxt5ANGLE     = true;
@@ -118,8 +119,9 @@ ContextNULL::ContextNULL(const gl::State &state,
 
     if (mExtensions.shaderPixelLocalStorageANGLE)
     {
-        mPLSOptions.type             = ShPixelLocalStorageType::FramebufferFetch;
-        mPLSOptions.fragmentSyncType = ShFragmentSynchronizationType::Automatic;
+        mPLSOptions.type                = ShPixelLocalStorageType::FramebufferFetch;
+        mPLSOptions.fragmentSyncType    = ShFragmentSynchronizationType::Automatic;
+        mPLSOptions.supportsNoncoherent = true;
     }
 }
 

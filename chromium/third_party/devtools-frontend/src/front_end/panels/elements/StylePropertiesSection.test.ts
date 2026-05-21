@@ -5,6 +5,7 @@
 import * as Common from '../../core/common/common.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
+import * as ComputedStyle from '../../models/computed_style/computed_style.js';
 import type * as TextUtils from '../../models/text_utils/text_utils.js';
 import {createTarget} from '../../testing/EnvironmentHelpers.js';
 import {describeWithMockConnection} from '../../testing/MockConnection.js';
@@ -14,9 +15,14 @@ import * as Components from '../../ui/legacy/components/utils/utils.js';
 import * as Elements from './elements.js';
 
 describeWithMockConnection('StylesPropertySection', () => {
-  let computedStyleModel: Elements.ComputedStyleModel.ComputedStyleModel;
+  let computedStyleModel: ComputedStyle.ComputedStyleModel.ComputedStyleModel;
   beforeEach(() => {
-    computedStyleModel = new Elements.ComputedStyleModel.ComputedStyleModel();
+    SDK.PageResourceLoader.PageResourceLoader.instance({forceNew: true, loadOverride: null, maxConcurrentLoads: 1});
+    computedStyleModel = new ComputedStyle.ComputedStyleModel.ComputedStyleModel();
+  });
+
+  afterEach(() => {
+    SDK.PageResourceLoader.PageResourceLoader.removeInstance();
   });
 
   it('contains specificity information', async () => {
@@ -24,7 +30,7 @@ describeWithMockConnection('StylesPropertySection', () => {
     const matchedStyles = await getMatchedStylesWithBlankRule({cssModel: new SDK.CSSModel.CSSModel(createTarget())});
     const section = new Elements.StylePropertiesSection.StylePropertiesSection(
         new Elements.StylesSidebarPane.StylesSidebarPane(computedStyleModel), matchedStyles,
-        matchedStyles.nodeStyles()[0], 0, new Map(), new Map());
+        matchedStyles.nodeStyles()[0], 0, new Map(), new Map(), null);
     section.renderSelectors([{text: '.child', specificity}], [true], new WeakMap());
     const selectorElement = section.element.querySelector('.selector');
     assert.strictEqual(selectorElement?.textContent, '.child');
@@ -35,7 +41,7 @@ describeWithMockConnection('StylesPropertySection', () => {
     const matchedStyles = await getMatchedStylesWithBlankRule({cssModel: new SDK.CSSModel.CSSModel(createTarget())});
     const section = new Elements.StylePropertiesSection.StylePropertiesSection(
         new Elements.StylesSidebarPane.StylesSidebarPane(computedStyleModel), matchedStyles,
-        matchedStyles.nodeStyles()[0], 0, new Map(), new Map());
+        matchedStyles.nodeStyles()[0], 0, new Map(), new Map(), null);
     section.renderSelectors(
         [{text: '.child', specificity: {a: 0, b: 2, c: 0}}, {text: '.item', specificity: {a: 0, b: 2, c: 0}}], [true],
         new WeakMap());
@@ -156,7 +162,7 @@ describeWithMockConnection('StylesPropertySection', () => {
       const declaration = matchedStyles.nodeStyles()[0];
       assert.exists(declaration);
       const section = new Elements.StylePropertiesSection.StylePropertiesSection(
-          stylesSidebarPane, matchedStyles, declaration, 0, null, null);
+          stylesSidebarPane, matchedStyles, declaration, 0, null, null, null);
       assert.strictEqual(section.element.textContent, 'div {  & ul {    body {      div {      }    }  }}');
     }
 
@@ -179,7 +185,7 @@ describeWithMockConnection('StylesPropertySection', () => {
       const declaration = matchedStyles.nodeStyles()[0];
       assert.exists(declaration);
       const section = new Elements.StylePropertiesSection.StylePropertiesSection(
-          stylesSidebarPane, matchedStyles, declaration, 0, null, null);
+          stylesSidebarPane, matchedStyles, declaration, 0, null, null, null);
       assert.strictEqual(section.element.textContent, 'div {  body {    }}');
     }
   });

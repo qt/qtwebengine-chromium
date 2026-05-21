@@ -53,7 +53,7 @@ WireResult Server::DoQueueOnSubmittedWorkDone(Known<WGPUQueue> queue,
     userdata->eventManager = eventManager;
     userdata->future = future;
 
-    mProcs.queueOnSubmittedWorkDone(
+    mProcs->queueOnSubmittedWorkDone(
         queue->handle, MakeCallbackInfo<WGPUQueueWorkDoneCallbackInfo, &Server::OnQueueWorkDone>(
                            userdata.release()));
     return WireResult::Success;
@@ -62,34 +62,54 @@ WireResult Server::DoQueueOnSubmittedWorkDone(Known<WGPUQueue> queue,
 WireResult Server::DoQueueWriteBuffer(Known<WGPUQueue> queue,
                                       Known<WGPUBuffer> buffer,
                                       uint64_t bufferOffset,
-                                      uint64_t size,
-                                      uint64_t writeHandleCreateInfoLength,
-                                      const uint8_t* writeHandleCreateInfo,
-                                      uint64_t writeDataUpdateInfoLength,
-                                      const uint8_t* writeDataUpdateInfo) {
+                                      const uint8_t* data,
+                                      uint64_t size) {
     if (size > std::numeric_limits<size_t>::max()) {
         return WireResult::FatalError;
     }
 
-    MemoryTransferService::WriteHandle* writeHandle = nullptr;
+    mProcs->queueWriteBuffer(queue->handle, buffer->handle, bufferOffset, data,
+                             static_cast<size_t>(size));
+    return WireResult::Success;
+}
+
+WireResult Server::DoQueueWriteBufferXl(Known<WGPUQueue> queue,
+                                        Known<WGPUBuffer> buffer,
+                                        uint64_t bufferOffset,
+                                        uint64_t size,
+                                        uint64_t writeHandleCreateInfoLength,
+                                        const uint8_t* writeHandleCreateInfo,
+                                        uint64_t writeDataUpdateInfoLength,
+                                        const uint8_t* writeDataUpdateInfo) {
+    if (size > std::numeric_limits<size_t>::max()) {
+        return WireResult::FatalError;
+    }
+
+    MemoryTransferService::WriteHandle* writeHandlePtr = nullptr;
     // Deserialize metadata produced from the client to create a companion server handle.
     if (!mMemoryTransferService->DeserializeWriteHandle(
             writeHandleCreateInfo, static_cast<size_t>(writeHandleCreateInfoLength),
-            &writeHandle)) {
+            &writeHandlePtr)) {
         return WireResult::FatalError;
     }
+
+    // Ensure the WriteHandle gets properly cleaned up when the function returns.
+    std::unique_ptr<MemoryTransferService::WriteHandle> writeHandle(writeHandlePtr);
 
     // Try first to use GetSourceData if the memory transfer service implements
     // it. If so, we can avoid a copy.
     uint8_t* sourceData = writeHandle->GetSourceData();
     if (sourceData) {
-        mProcs.queueWriteBuffer(queue->handle, buffer->handle, bufferOffset, sourceData,
-                                static_cast<size_t>(size));
+        mProcs->queueWriteBuffer(queue->handle, buffer->handle, bufferOffset, sourceData,
+                                 static_cast<size_t>(size));
         return WireResult::Success;
     }
 
     // Otherwise, fall back to DeserializeDataUpdate.
-    auto backingData = std::make_unique<char[]>(size);
+    auto backingData = std::unique_ptr<char[]>(AllocNoThrow<char>(size));
+    if (!backingData) {
+        return WireResult::FatalError;
+    }
     writeHandle->SetTarget(backingData.get());
     writeHandle->SetDataLength(size);
 
@@ -101,43 +121,64 @@ WireResult Server::DoQueueWriteBuffer(Known<WGPUQueue> queue,
         return WireResult::FatalError;
     }
 
-    mProcs.queueWriteBuffer(queue->handle, buffer->handle, bufferOffset, backingData.get(),
-                            static_cast<size_t>(size));
+    mProcs->queueWriteBuffer(queue->handle, buffer->handle, bufferOffset, backingData.get(),
+                             static_cast<size_t>(size));
     return WireResult::Success;
 }
 
 WireResult Server::DoQueueWriteTexture(Known<WGPUQueue> queue,
                                        const WGPUTexelCopyTextureInfo* destination,
+                                       const uint8_t* data,
                                        uint64_t dataSize,
                                        const WGPUTexelCopyBufferLayout* dataLayout,
-                                       const WGPUExtent3D* writeSize,
-                                       uint64_t writeHandleCreateInfoLength,
-                                       const uint8_t* writeHandleCreateInfo,
-                                       uint64_t writeDataUpdateInfoLength,
-                                       const uint8_t* writeDataUpdateInfo) {
+                                       const WGPUExtent3D* writeSize) {
     if (dataSize > std::numeric_limits<size_t>::max()) {
         return WireResult::FatalError;
     }
 
-    MemoryTransferService::WriteHandle* writeHandle = nullptr;
+    mProcs->queueWriteTexture(queue->handle, destination, data, static_cast<size_t>(dataSize),
+                              dataLayout, writeSize);
+    return WireResult::Success;
+}
+
+WireResult Server::DoQueueWriteTextureXl(Known<WGPUQueue> queue,
+                                         const WGPUTexelCopyTextureInfo* destination,
+                                         uint64_t dataSize,
+                                         const WGPUTexelCopyBufferLayout* dataLayout,
+                                         const WGPUExtent3D* writeSize,
+                                         uint64_t writeHandleCreateInfoLength,
+                                         const uint8_t* writeHandleCreateInfo,
+                                         uint64_t writeDataUpdateInfoLength,
+                                         const uint8_t* writeDataUpdateInfo) {
+    if (dataSize > std::numeric_limits<size_t>::max()) {
+        return WireResult::FatalError;
+    }
+
+    MemoryTransferService::WriteHandle* writeHandlePtr = nullptr;
     // Deserialize metadata produced from the client to create a companion server handle.
     if (!mMemoryTransferService->DeserializeWriteHandle(
             writeHandleCreateInfo, static_cast<size_t>(writeHandleCreateInfoLength),
-            &writeHandle)) {
+            &writeHandlePtr)) {
         return WireResult::FatalError;
     }
+
+    // Ensure the WriteHandle gets properly cleaned up when the function returns.
+    std::unique_ptr<MemoryTransferService::WriteHandle> writeHandle(writeHandlePtr);
 
     // Try first to use GetSourceData if the memory transfer service implements
     // it. If so, we can avoid a copy.
     uint8_t* sourceData = writeHandle->GetSourceData();
     if (sourceData) {
-        mProcs.queueWriteTexture(queue->handle, destination, sourceData,
-                                 static_cast<size_t>(dataSize), dataLayout, writeSize);
+        mProcs->queueWriteTexture(queue->handle, destination, sourceData,
+                                  static_cast<size_t>(dataSize), dataLayout, writeSize);
         return WireResult::Success;
     }
 
     // Otherwise, fall back to DeserializeDataUpdate.
-    auto backingData = std::make_unique<char[]>(dataSize);
+    auto backingData = std::unique_ptr<char[]>(AllocNoThrow<char>(dataSize));
+    if (!backingData) {
+        return WireResult::FatalError;
+    }
     writeHandle->SetTarget(backingData.get());
     writeHandle->SetDataLength(dataSize);
 
@@ -149,8 +190,8 @@ WireResult Server::DoQueueWriteTexture(Known<WGPUQueue> queue,
         return WireResult::FatalError;
     }
 
-    mProcs.queueWriteTexture(queue->handle, destination, backingData.get(),
-                             static_cast<size_t>(dataSize), dataLayout, writeSize);
+    mProcs->queueWriteTexture(queue->handle, destination, backingData.get(),
+                              static_cast<size_t>(dataSize), dataLayout, writeSize);
     return WireResult::Success;
 }
 

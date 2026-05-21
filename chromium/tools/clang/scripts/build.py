@@ -352,7 +352,7 @@ def GetLibXml2Dirs():
   return LibXmlDirs()
 
 
-def BuildLibXml2():
+def BuildLibXml2(cc, cxx, cmake_sysroot):
   """Download and build libxml2"""
   # The .tar.gz on GCS was uploaded as follows.
   # The gitlab page has more up-to-date packages than http://xmlsoft.org/,
@@ -374,10 +374,9 @@ def BuildLibXml2():
   # Disable everything except WITH_TREE and WITH_OUTPUT, both needed by LLVM's
   # WindowsManifestMerger.
   # Also enable WITH_THREADS, else libxml doesn't compile on Linux.
-  RunCommand(
-      [
-          'cmake',
-          '-GNinja',
+  cmake_args = [
+          '-DCMAKE_C_COMPILER=' + cc,
+          '-DCMAKE_CXX_COMPILER=' + cxx,
           '-DCMAKE_BUILD_TYPE=Release',
           '-DCMAKE_INSTALL_PREFIX=install',
           '-DCMAKE_INSTALL_LIBDIR=lib',
@@ -418,9 +417,11 @@ def BuildLibXml2():
           '-DLIBXML2_WITH_XPATH=OFF',
           '-DLIBXML2_WITH_XPTR=OFF',
           '-DLIBXML2_WITH_ZLIB=OFF',
-          '..',
-      ],
-      setenv=True)
+      ]
+  if cmake_sysroot:
+    cmake_args.append('-DCMAKE_SYSROOT=' + cmake_sysroot)
+
+  RunCommand(['cmake', '-GNinja'] + cmake_args + ['..'], setenv=True)
   RunCommand(['ninja', 'install'], setenv=True)
 
   if sys.platform == 'win32':
@@ -466,7 +467,7 @@ class ZStdDirs:
     self.lib_dir = os.path.join(self.install_dir, 'lib')
 
 
-def BuildZStd():
+def BuildZStd(cc, cxx, cmake_sysroot):
   """Download and build zstd lib"""
   # The zstd-1.5.5.tar.gz was downloaded from
   #   https://github.com/facebook/zstd/releases/
@@ -482,18 +483,18 @@ def BuildZStd():
   os.mkdir(dirs.build_dir)
   os.chdir(dirs.build_dir)
 
-  RunCommand(
-      [
-          'cmake',
-          '-GNinja',
+  cmake_args = [
+          '-DCMAKE_C_COMPILER=' + cc,
+          '-DCMAKE_CXX_COMPILER=' + cxx,
           '-DCMAKE_BUILD_TYPE=Release',
           '-DCMAKE_INSTALL_PREFIX=install',
           '-DCMAKE_INSTALL_LIBDIR=lib',
           '-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded',  # /MT to match LLVM.
           '-DZSTD_BUILD_SHARED=OFF',
-          '../build/cmake',
-      ],
-      setenv=True)
+      ]
+  if cmake_sysroot:
+    cmake_args.append('-DCMAKE_SYSROOT=' + cmake_sysroot)
+  RunCommand(['cmake', '-GNinja'] + cmake_args + ['../build/cmake'], setenv=True)
   RunCommand(['ninja', 'install'], setenv=True)
 
   if sys.platform == 'win32':
@@ -765,9 +766,10 @@ def main():
                       help='don\'t build Fuchsia clang_rt runtime (linux/mac)',
                       dest='with_fuchsia',
                       default=sys.platform in ('linux2', 'darwin'))
-  parser.add_argument('--with-ccache',
-                      action='store_true',
-                      help='Use ccache to build the stage 1 compiler')
+  parser.add_argument('--with-compiler-wrapper',
+                      metavar='WRAPPER',
+                      help='Use a compiler wrapper (like ccache) to build the '
+                      'stage 1 compiler')
   parser.add_argument('--without-zstd',
                       dest='with_zstd',
                       action='store_false',
@@ -885,6 +887,7 @@ def main():
   # -fuse-ld=lld there to make the compiler driver call the linker (by setting
   # LLVM_ENABLE_LLD).
   cc, cxx, lld = None, None, None
+  cmake_sysroot = None
 
   cflags = []
   cxxflags = []
@@ -910,6 +913,7 @@ def main():
       '-GNinja',
       '-DCMAKE_BUILD_TYPE=Release',
       '-DLLVM_ENABLE_ASSERTIONS=%s' % ('OFF' if args.disable_asserts else 'ON'),
+      '-DLLVM_ENABLE_IO_SANDBOX=OFF',
       f'-DLLVM_ENABLE_PROJECTS={projects}',
       f'-DLLVM_ENABLE_RUNTIMES={runtimes}',
       f'-DLLVM_TARGETS_TO_BUILD={targets}',
@@ -946,10 +950,12 @@ def main():
                                        universal_newlines=True).rstrip()
   base_cmake_args += ['-DLLVM_ENABLE_UNWIND_TABLES=OFF']
 
-  ccache_cmake_args = []
-  if args.with_ccache:
-    ccache_cmake_args.append('-DCMAKE_C_COMPILER_LAUNCHER=ccache')
-    ccache_cmake_args.append('-DCMAKE_CXX_COMPILER_LAUNCHER=ccache')
+  compiler_wrapper_cmake_args = []
+  if args.with_compiler_wrapper:
+    compiler_wrapper_cmake_args.append('-DCMAKE_C_COMPILER_LAUNCHER=' +
+                                       args.with_compiler_wrapper)
+    compiler_wrapper_cmake_args.append('-DCMAKE_CXX_COMPILER_LAUNCHER=' +
+                                       args.with_compiler_wrapper)
 
   if args.host_cc or args.host_cxx:
     assert args.host_cc and args.host_cxx, \
@@ -978,10 +984,11 @@ def main():
   if sys.platform.startswith('linux'):
     # Add the sysroot to base_cmake_args.
     if platform.machine() == 'aarch64':
-      base_cmake_args.append('-DCMAKE_SYSROOT=' + sysroot_arm64)
+      cmake_sysroot = sysroot_arm64
     else:
       # amd64 is the default toolchain.
-      base_cmake_args.append('-DCMAKE_SYSROOT=' + sysroot_amd64)
+      cmake_sysroot = sysroot_amd64
+    base_cmake_args.append('-DCMAKE_SYSROOT=' + cmake_sysroot)
 
   if sys.platform == 'win32':
     AddGitForWindowsToPath()
@@ -1005,7 +1012,7 @@ def main():
   # and to make sure lld-link output on other platforms is identical to
   # lld-link on Windows (for cross-builds).
   with timer.time('libxml2 build'):
-    libxml_cmake_args, libxml_cflags = BuildLibXml2()
+    libxml_cmake_args, libxml_cflags = BuildLibXml2(cc, cxx, cmake_sysroot)
   base_cmake_args += libxml_cmake_args
   cflags += libxml_cflags
   cxxflags += libxml_cflags
@@ -1013,7 +1020,7 @@ def main():
   if args.with_zstd:
     # Statically link zstd to make lld support zstd compression for debug info.
     with timer.time('zstd build'):
-      zstd_cmake_args, zstd_cflags = BuildZStd()
+      zstd_cmake_args, zstd_cflags = BuildZStd(cc, cxx, cmake_sysroot)
     base_cmake_args += zstd_cmake_args
     cflags += zstd_cflags
     cxxflags += zstd_cflags
@@ -1047,6 +1054,13 @@ def main():
         # TODO(https://crbug.com/404547503): fix and re-enable
         '^.*Profile-x86_64.*ContinuousSyncMode/online-merging-windows.c$',
     ]
+  if not sys.platform.startswith('linux'):
+    lit_excludes += [
+        # TODO(https://crbug.com/474402846): fix and re-enable
+        '^Builtins-.*ctor_dtor.c$',
+        '^Builtins-.*dso_handle.cpp$',
+        '^Builtins-i386-windows.*$',
+    ]
 
   test_env = os.environ.copy()
   # Dump all FileCheck input on test failure.
@@ -1075,7 +1089,7 @@ def main():
     if sys.platform == 'darwin':
       # Need ARM and AArch64 for building the ios clang_rt.
       bootstrap_targets += ';ARM;AArch64'
-    bootstrap_args = base_cmake_args + ccache_cmake_args + [
+    bootstrap_args = base_cmake_args + compiler_wrapper_cmake_args + [
         '-DLLVM_TARGETS_TO_BUILD=' + bootstrap_targets,
         '-DLLVM_ENABLE_PROJECTS=clang;lld',
         '-DLLVM_ENABLE_RUNTIMES=' + ';'.join(runtimes),
@@ -1196,7 +1210,7 @@ def main():
       with open(training_source, 'wb') as f:
         DownloadUrl(CDS_URL + '/' + training_source, f)
       train_cmd = [os.path.join(LLVM_INSTRUMENTED_DIR, 'bin', 'clang++'),
-                  '-target', 'x86_64-unknown-unknown', '-O2', '-g', '-std=c++20',
+                  '-target', 'x86_64-unknown-unknown', '-O2', '-g', '-std=c++23',
                    '-fno-exceptions', '-fno-rtti', '-w', '-c', training_source]
       if sys.platform == 'darwin':
         train_cmd.extend(['-isysroot', isysroot])
@@ -1344,6 +1358,11 @@ def main():
             'CMAKE_SYSROOT=%s' % sysroot_arm64,
             # Can't run tests on x86 host.
             'LLVM_INCLUDE_TESTS=OFF',
+
+            # Make sure libraries are compiled with PAC/BTI enabled
+            'CMAKE_C_FLAGS=-mbranch-protection=standard',
+            'CMAKE_CXX_FLAGS=-mbranch-protection=standard',
+            'CMAKE_ASM_FLAGS=-mbranch-protection=standard',
         ],
         "profile":
         True,
@@ -1557,7 +1576,7 @@ def main():
   cmake_args.append('-DLLVM_RUNTIME_TARGETS=' + all_triples)
 
   if not args.bootstrap:
-    cmake_args.extend(ccache_cmake_args)
+    cmake_args.extend(compiler_wrapper_cmake_args)
 
   if os.path.exists(LLVM_BUILD_DIR):
     RmTree(LLVM_BUILD_DIR)

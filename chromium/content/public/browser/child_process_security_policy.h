@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "content/common/content_export.h"
+#include "content/public/common/child_process_id.h"
 #include "url/gurl.h"
 #include "url/origin.h"
 
@@ -54,15 +55,7 @@ class ChildProcessSecurityPolicy {
   // may be requested by any child process, but navigations to this scheme may
   // only commit in child processes that have been explicitly granted
   // permission to do so.
-  //
-  // |always_allow_in_origin_headers| controls whether this scheme is allowed to
-  // appear as the Origin HTTP header in outbound requests, even if the
-  // originating process does not have permission to commit this scheme. This
-  // may be necessary if the scheme is used in conjunction with blink's
-  // IsolatedWorldSecurityOrigin mechanism, as for extension content scripts.
-  virtual void RegisterWebSafeIsolatedScheme(
-      const std::string& scheme,
-      bool always_allow_in_origin_headers) = 0;
+  virtual void RegisterWebSafeIsolatedScheme(const std::string& scheme) = 0;
 
   // Returns true iff |scheme| has been registered as a web-safe scheme.
   // TODO(nick): https://crbug.com/651534 This function does not have enough
@@ -74,7 +67,8 @@ class ChildProcessSecurityPolicy {
   // Whenever the user picks a file from a <input type="file"> element, the
   // browser should call this function to grant the child process the capability
   // to upload the file to the web. Grants FILE_PERMISSION_READ_ONLY.
-  virtual void GrantReadFile(int child_id, const base::FilePath& file) = 0;
+  virtual void GrantReadFile(ChildProcessId child_id,
+                             const base::FilePath& file) = 0;
 
   // This permission grants creation, read, and full write access to a file,
   // including attributes.
@@ -105,7 +99,8 @@ class ChildProcessSecurityPolicy {
   // Before servicing a child process's request to upload a file to the web, the
   // browser should call this method to determine whether the process has the
   // capability to upload the requested file.
-  virtual bool CanReadFile(int child_id, const base::FilePath& file) = 0;
+  virtual bool CanReadFile(ChildProcessId child_id,
+                           const base::FilePath& file) = 0;
   virtual bool CanCreateReadWriteFile(int child_id,
                                       const base::FilePath& file) = 0;
 

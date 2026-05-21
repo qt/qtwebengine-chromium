@@ -685,10 +685,8 @@ export abstract class Frame extends EventEmitter<FrameEvents> {
   async $$eval<
     Selector extends string,
     Params extends unknown[],
-    Func extends EvaluateFuncWith<
-      Array<NodeFor<Selector>>,
-      Params
-    > = EvaluateFuncWith<Array<NodeFor<Selector>>, Params>,
+    Func extends EvaluateFuncWith<Array<NodeFor<Selector>>, Params> =
+      EvaluateFuncWith<Array<NodeFor<Selector>>, Params>,
   >(
     selector: Selector,
     pageFunction: string | Func,
@@ -775,7 +773,7 @@ export abstract class Frame extends EventEmitter<FrameEvents> {
    * ```
    *
    * @param pageFunction - the function to evaluate in the frame context.
-   * @param options - options to configure the polling method and timeout.
+   * @param options - options to configure the polling method, timeout and signal.
    * @param args - arguments to pass to the `pageFunction`.
    * @returns the promise which resolve when the `pageFunction` returns a truthy value.
    */

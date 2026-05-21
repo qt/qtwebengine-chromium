@@ -449,9 +449,9 @@ std::unique_ptr<MediaCodecBridge> MediaCodecBridgeImpl::CreateVideoDecoder(
   auto j_csd1 = ToJavaByteArray(env, config.csd1);
 
   std::unique_ptr<JniHdrMetadata> jni_hdr_metadata;
-  if (config.hdr_metadata.has_value()) {
+  if (!config.hdr_metadata.IsEmpty()) {
     jni_hdr_metadata = std::make_unique<JniHdrMetadata>(
-        config.container_color_space, config.hdr_metadata.value());
+        config.container_color_space, config.hdr_metadata);
   }
   auto j_hdr_metadata = jni_hdr_metadata ? jni_hdr_metadata->obj() : nullptr;
   auto j_decoder_name = ConvertUTF8ToJavaString(env, config.name);
@@ -698,17 +698,17 @@ MediaCodecResult MediaCodecBridgeImpl::QueueSecureInputBuffer(
   const auto num_subsamples =
       std::max(static_cast<size_t>(1), decrypt_config.subsamples().size());
 
-  // Decompose SubsampleEntry objects into two jint arrays since there's no way
-  // to set the values directly into a jintArray :|
-  auto native_clear_array = base::HeapArray<jint>::Uninit(num_subsamples);
-  auto native_cypher_array = base::HeapArray<jint>::Uninit(num_subsamples);
+  // Decompose SubsampleEntry objects into two int32_t arrays since there's no
+  // way to set the values directly into a jintArray :|
+  auto native_clear_array = base::HeapArray<int32_t>::Uninit(num_subsamples);
+  auto native_cypher_array = base::HeapArray<int32_t>::Uninit(num_subsamples);
   if (decrypt_config.subsamples().empty()) {
     native_clear_array[0] = 0;
     native_cypher_array[0] = data.size();
   } else {
     for (size_t i = 0; i < decrypt_config.subsamples().size(); ++i) {
       const auto& subsamples = decrypt_config.subsamples()[i];
-      if (subsamples.cypher_bytes > std::numeric_limits<jint>::max()) {
+      if (subsamples.cypher_bytes > std::numeric_limits<int32_t>::max()) {
         return {MediaCodecResult::Codes::kError,
                 "Subsample size is too large."};
       }

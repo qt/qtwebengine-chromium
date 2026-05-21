@@ -10,7 +10,7 @@
  *
  * @public
  */
-export type CookieSameSite = 'Strict' | 'Lax' | 'None';
+export type CookieSameSite = 'Strict' | 'Lax' | 'None' | 'Default';
 
 /**
  * Represents the cookie's 'Priority' status:
@@ -133,7 +133,7 @@ export interface CookieParam {
    */
   priority?: CookiePriority;
   /**
-   * True if cookie is SameParty. Supported only in Chrome.
+   * @deprecated Always ignored.
    */
   sameParty?: boolean;
   /**
@@ -193,7 +193,7 @@ export interface CookieData {
    */
   priority?: CookiePriority;
   /**
-   * True if cookie is SameParty. Supported only in Chrome.
+   * @deprecated Always set to false. Supported only in Chrome.
    */
   sameParty?: boolean;
   /**

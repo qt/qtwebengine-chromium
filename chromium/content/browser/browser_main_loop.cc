@@ -72,6 +72,7 @@
 #include "content/browser/browser_thread_impl.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/compositor/viz_process_transport_factory.h"
+#include "content/browser/cpu_performance/cpu_performance.h"
 #include "content/browser/download/save_file_manager.h"
 #include "content/browser/field_trial_synchronizer.h"
 #include "content/browser/first_party_sets/first_party_set_parser.h"
@@ -84,7 +85,6 @@
 #include "content/browser/gpu/gpu_process_host.h"
 #include "content/browser/media/media_internals.h"
 #include "content/browser/media/media_keys_listener_manager_impl.h"
-#include "content/browser/memory_pressure/user_level_memory_pressure_signal_generator.h"
 #include "content/browser/metrics/histogram_synchronizer.h"
 #include "content/browser/network/browser_online_state_observer.h"
 #include "content/browser/network_service_instance_impl.h"
@@ -176,7 +176,6 @@
 
 #if BUILDFLAG(IS_ANDROID)
 #include "base/android/jni_android.h"
-#include "base/trace_event/cpufreq_monitor_android.h"
 #include "components/input/android/input_token_forwarder.h"
 #include "components/tracing/common/graphics_memory_dump_provider_android.h"
 #include "content/browser/android/browser_startup_controller.h"
@@ -184,6 +183,7 @@
 #include "content/browser/android/launcher_thread.h"
 #include "content/browser/android/tracing_controller_android.h"
 #include "content/browser/font_unique_name_lookup/font_unique_name_lookup_android.h"
+#include "content/browser/memory_pressure/user_level_memory_pressure_signal_generator.h"
 #include "content/browser/screen_orientation/screen_orientation_delegate_android.h"
 #include "media/base/android/media_drm_bridge_client.h"
 #include "ui/android/screen_android.h"
@@ -573,8 +573,7 @@ int BrowserMainLoop::EarlyInitialization() {
   // SetCurrentThreadType relies on CurrentUIThread on some platforms. The
   // MessagePumpForUI needs to be bound to the main thread by this point.
   DCHECK(base::CurrentUIThread::IsSet());
-  base::PlatformThread::SetCurrentThreadType(
-      base::ThreadType::kDisplayCritical);
+  base::PlatformThread::SetCurrentThreadType(base::ThreadType::kPresentation);
 
 #if BUILDFLAG(IS_APPLE) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || \
     BUILDFLAG(IS_ANDROID)
@@ -638,7 +637,10 @@ void BrowserMainLoop::CreateMainMessageLoop() {
 
   TRACE_EVENT0("startup", "BrowserMainLoop::CreateMainMessageLoop");
 
-  base::PlatformThread::SetName("CrBrowserMain");
+  if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisableMainThreadNameOverride)) {
+    base::PlatformThread::SetName("CrBrowserMain");
+  }
 
   // Register the main thread. The main thread's task runner should already have
   // been initialized but it's not yet known as BrowserThread::UI.
@@ -717,7 +719,6 @@ void BrowserMainLoop::PostCreateMainMessageLoop() {
         discardable_memory::DiscardableSharedMemoryManager::Get());
   }
 
-
   {
     // The process-wide accessibility state must be created before we complete
     // the initialization of main loop for the extra parts, who use it.
@@ -746,9 +747,6 @@ void BrowserMainLoop::PostCreateMainMessageLoop() {
     screen_orientation_delegate_ =
         std::make_unique<ScreenOrientationDelegateAndroid>();
   }
-
-  base::trace_event::TraceLog::GetInstance()->AddEnabledStateObserver(
-      base::trace_event::CPUFreqMonitor::GetInstance());
 #endif
 
   if (UsingInProcessGpu()) {
@@ -1489,6 +1487,12 @@ void BrowserMainLoop::PostCreateThreadsImpl() {
 #if defined(ENABLE_IPC_FUZZER)
   SetFileUrlPathAliasForIpcFuzzer();
 #endif
+
+  {
+    TRACE_EVENT0("startup",
+                 "BrowserMainLoop::PostCreateThreads:InitCpuPerformance");
+    content::cpu_performance::Initialize();
+  }
 }
 
 bool BrowserMainLoop::UsingInProcessGpu() const {

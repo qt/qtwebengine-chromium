@@ -121,6 +121,9 @@ class Environment : public UdpSocket::Client {
   // value of at least kRequiredNetworkPacketSize.
   int GetMaxPacketSize() const;
 
+  // Sets the DSCP value for the underlying UDP socket.
+  void SetDscp(UdpSocket::DscpMode mode);
+
   // Sends the given `packet` to the remote endpoint, best-effort.
   // set_remote_endpoint() must be called beforehand with a valid IPEndpoint.
   //

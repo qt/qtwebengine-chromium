@@ -121,7 +121,7 @@ struct State {
                         b.InsertBefore(mbc, [&] {
                             Value* curr_offset = mbc->Args()[arg_index];
                             Value* dyn_offset = LoadDynamicOffset(offset_index);
-                            auto* new_offset = b.Add(ty.u32(), curr_offset, dyn_offset);
+                            auto* new_offset = b.Add(curr_offset, dyn_offset);
                             mbc->SetArg(arg_index, new_offset->Result());
                         });
                     };
@@ -207,10 +207,10 @@ struct State {
         const uint32_t array_index = offset_index / 4;
         const uint32_t vec_index = offset_index % 4;
         auto* buffer_offsets = b.Access(
-            ty.ptr(immediate, ty.array(ty.vec4<u32>(), buffer_offsets_array_elements_num)),
+            ty.ptr(immediate, ty.array(ty.vec4u(), buffer_offsets_array_elements_num)),
             immediate_data_layout.var, u32(immediate_data_layout.IndexOf(buffer_offsets_offset)));
         auto* vec_ptr =
-            b.Access(ty.ptr(immediate, ty.vec4<u32>()), buffer_offsets->Result(), u32(array_index));
+            b.Access(ty.ptr(immediate, ty.vec4u()), buffer_offsets->Result(), u32(array_index));
         return b.LoadVectorElement(vec_ptr, u32(vec_index))->Result();
     }
 };
@@ -223,11 +223,8 @@ Result<SuccessType> ArrayOffsetFromImmediates(
     const uint32_t buffer_offsets_offset,
     const uint32_t buffer_offsets_array_elements_num,
     const std::unordered_map<BindingPoint, uint32_t>& bindpoint_to_offset_index) {
-    auto validated = ValidateAndDumpIfNeeded(ir, "core.ArrayOffsetFromImmediates",
-                                             kArrayOffsetFromImmediateCapabilities);
-    if (validated != Success) {
-        return validated.Failure();
-    }
+    TINT_CHECK_RESULT(ValidateAndDumpIfNeeded(ir, "core.ArrayOffsetFromImmediates",
+                                              kArrayOffsetFromImmediateCapabilities));
 
     State state{ir, immediate_data_layout, buffer_offsets_offset, buffer_offsets_array_elements_num,
                 bindpoint_to_offset_index};

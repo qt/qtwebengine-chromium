@@ -9,6 +9,7 @@
 #include "base/android/jni_android.h"
 #include "cc/slim/layer.h"
 #include "cc/slim/solid_color_layer.h"
+#include "components/thin_webview/features.h"
 #include "content/public/browser/android/compositor.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/android/color_utils_android.h"
@@ -17,7 +18,6 @@
 // Must come after all headers that specialize FromJniType() / ToJniType().
 #include "components/thin_webview/internal/jni_headers/CompositorViewImpl_jni.h"
 
-using base::android::JavaParamRef;
 using base::android::JavaRef;
 
 namespace thin_webview {
@@ -26,16 +26,21 @@ namespace {
 const int kPixelFormatUnknown = 0;
 }  // namespace
 
-static jlong JNI_CompositorViewImpl_Init(
+static int64_t JNI_CompositorViewImpl_Init(
     JNIEnv* env,
-    const JavaParamRef<jobject>& obj,
-    const JavaParamRef<jobject>& jwindow_android,
-    jint java_background_color) {
+    const JavaRef<jobject>& obj,
+    const JavaRef<jobject>& jwindow_android,
+    int32_t java_background_color) {
   ui::WindowAndroid* window_android =
       ui::WindowAndroid::FromJavaWindowAndroid(jwindow_android);
   auto compositor_view = std::make_unique<CompositorViewImpl>(
       env, obj, window_android, java_background_color);
   return reinterpret_cast<intptr_t>(compositor_view.release());
+}
+
+static bool JNI_CompositorViewImpl_ShouldUseSurfaceView(JNIEnv* env) {
+  return base::FeatureList::IsEnabled(
+      thin_webview::android::kUseSurfaceViewForThinWebView);
 }
 
 // static
@@ -89,11 +94,11 @@ void CompositorViewImpl::SurfaceDestroyed(JNIEnv* env) {
 }
 
 void CompositorViewImpl::SurfaceChanged(JNIEnv* env,
-                                        jint format,
-                                        jint width,
-                                        jint height,
+                                        int32_t format,
+                                        int32_t width,
+                                        int32_t height,
                                         bool can_be_used_with_surface_control,
-                                        const JavaParamRef<jobject>& surface) {
+                                        const JavaRef<jobject>& surface) {
   DCHECK(surface);
   if (current_surface_format_ != format) {
     current_surface_format_ = format;

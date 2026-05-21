@@ -61,7 +61,7 @@ class Device final : public DeviceBase, public ObjectWGPU<WGPUDevice> {
 
     float GetTimestampPeriodInNS() const override;
 
-    bool NeedsIndirectDrawGPUValidation() const override;
+    bool NeedsIndirectGPUValidation() const override;
 
     WGPUInstance GetInnerInstance() const;
 
@@ -83,6 +83,7 @@ class Device final : public DeviceBase, public ObjectWGPU<WGPUDevice> {
            WGPUAdapter innerAdapter,
            const UnpackedPtr<DeviceDescriptor>& descriptor,
            const TogglesState& deviceToggles,
+           const TogglesState& innerDeviceToggles,
            Ref<DeviceBase::DeviceLostEvent>&& lostEvent);
 
     ResultOrError<Ref<BindGroupBase>> CreateBindGroupImpl(
@@ -91,6 +92,8 @@ class Device final : public DeviceBase, public ObjectWGPU<WGPUDevice> {
         const UnpackedPtr<BindGroupLayoutDescriptor>& descriptor) override;
     ResultOrError<Ref<BufferBase>> CreateBufferImpl(
         const UnpackedPtr<BufferDescriptor>& descriptor) override;
+    ResultOrError<Ref<ExternalTextureBase>> CreateExternalTextureImpl(
+        const ExternalTextureDescriptor* descriptor) override;
     ResultOrError<Ref<CommandBufferBase>> CreateCommandBuffer(
         CommandEncoder* encoder,
         const CommandBufferDescriptor* descriptor) override;
@@ -103,6 +106,8 @@ class Device final : public DeviceBase, public ObjectWGPU<WGPUDevice> {
         const UnpackedPtr<PipelineLayoutDescriptor>& descriptor) override;
     ResultOrError<Ref<QuerySetBase>> CreateQuerySetImpl(
         const QuerySetDescriptor* descriptor) override;
+    ResultOrError<Ref<ResourceTableBase>> CreateResourceTableImpl(
+        const ResourceTableDescriptor* descriptor) override;
     Ref<RenderPipelineBase> CreateUninitializedRenderPipelineImpl(
         const UnpackedPtr<RenderPipelineDescriptor>& descriptor) override;
     ResultOrError<Ref<SamplerBase>> CreateSamplerImpl(const SamplerDescriptor* descriptor) override;
@@ -131,7 +136,7 @@ class Device final : public DeviceBase, public ObjectWGPU<WGPUDevice> {
                                             const TextureCopy& dst,
                                             const Extent3D& copySizePixels) override;
 
-    void DestroyImpl() override;
+    void DestroyImpl(DestroyReason reason) override;
     void SetLabelImpl() override;
 };
 

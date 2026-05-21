@@ -41,8 +41,7 @@ using namespace tint::core::number_suffixes;  // NOLINT
 class MslWriter_ArgumentBuffersTest : public core::ir::transform::TransformTest {
   public:
     void SetUp() override {
-        capabilities.Add(core::ir::Capability::kAllowPointersAndHandlesInStructures,
-                         core::ir::Capability::kAllowPrivateVarsInFunctions,
+        capabilities.Add(core::ir::Capability::kMslAllowEntryPointInterface,
                          core::ir::Capability::kAllowAnyLetType);
     }
 };
@@ -83,7 +82,7 @@ TEST_F(MslWriter_ArgumentBuffersTest, Private_NoChange) {
     b.Append(func->Block(), [&] {
         auto* load_a = b.Load(var_a);
         auto* load_b = b.Load(var_b);
-        b.Store(var_a, b.Add<i32>(load_a, load_b));
+        b.Store(var_a, b.Add(load_a, load_b));
         b.Return(func);
     });
 
@@ -137,7 +136,7 @@ TEST_F(MslWriter_ArgumentBuffersTest, Workgroup_NoChange) {
     b.Append(func->Block(), [&] {
         auto* load_a = b.Load(var_a);
         auto* load_b = b.Load(var_b);
-        b.Store(var_a, b.Add<i32>(load_a, load_b));
+        b.Store(var_a, b.Add(load_a, load_b));
         b.Return(func);
     });
 
@@ -199,7 +198,7 @@ TEST_F(MslWriter_ArgumentBuffersTest, Storage) {
         auto* load_c = b.Load(var_c);
         auto* conv_b = b.Convert(ty.i32(), load_b);
         auto* conv_c = b.Convert(ty.i32(), load_c);
-        auto* add = b.Add<i32>(b.Add<i32>(load_a, conv_b), conv_c);
+        auto* add = b.Add(b.Add(load_a, conv_b), conv_c);
         auto* conv = b.Convert(ty.u32(), add);
         b.Store(var_b, conv);
         b.Return(func);
@@ -288,7 +287,7 @@ TEST_F(MslWriter_ArgumentBuffersTest, Uniform) {
     b.Append(func->Block(), [&] {
         auto* load_a = b.Load(var_a);
         auto* load_b = b.Load(var_b);
-        b.Add<i32>(load_a, load_b);
+        b.Add(load_a, load_b);
         b.Return(func);
     });
 
@@ -504,7 +503,7 @@ TEST_F(MslWriter_ArgumentBuffersTest, MultipleAddressSpaces) {
         auto* load_a = b.Load(var_a);
         auto* load_b = b.Load(var_b);
         auto* load_c = b.Load(var_c);
-        b.Store(var_b, b.Add<i32>(load_a, b.Add<i32>(load_b, load_c)));
+        b.Store(var_b, b.Add(load_a, b.Add(load_b, load_c)));
         b.Return(func);
     });
 
@@ -591,7 +590,7 @@ TEST_F(MslWriter_ArgumentBuffersTest, EntryPointHasExistingParameters) {
     b.Append(func->Block(), [&] {
         auto* load_a = b.Load(var_a);
         auto* load_b = b.Load(var_b);
-        b.Store(var_b, b.Add<i32>(load_a, b.Add<i32>(load_b, param)));
+        b.Store(var_b, b.Add(load_a, b.Add(load_b, param)));
         b.Return(func);
     });
 
@@ -667,7 +666,7 @@ TEST_F(MslWriter_ArgumentBuffersTest, CallFunctionThatUsesVars_NoArgs) {
     b.Append(foo->Block(), [&] {
         auto* load_a = b.Load(var_a);
         auto* load_b = b.Load(var_b);
-        b.Store(var_b, b.Add<i32>(load_a, load_b));
+        b.Store(var_b, b.Add(load_a, load_b));
         b.Return(foo);
     });
 
@@ -760,7 +759,7 @@ TEST_F(MslWriter_ArgumentBuffersTest, CallFunctionThatUsesVars_WithExistingParam
     b.Append(foo->Block(), [&] {
         auto* load_a = b.Load(var_a);
         auto* load_b = b.Load(var_b);
-        b.Store(var_b, b.Add<i32>(load_a, b.Add<i32>(load_b, param)));
+        b.Store(var_b, b.Add(load_a, b.Add(load_b, param)));
         b.Return(foo);
     });
 
@@ -850,7 +849,7 @@ TEST_F(MslWriter_ArgumentBuffersTest, CallFunctionThatUsesVars_HandleTypes) {
     mod.root_block->Append(var_t);
     mod.root_block->Append(var_s);
 
-    auto* foo = b.Function("foo", ty.vec4<f32>());
+    auto* foo = b.Function("foo", ty.vec4f());
     auto* param = b.FunctionParam<i32>("param");
     foo->SetParams({param});
     b.Append(foo->Block(), [&] {
@@ -941,7 +940,7 @@ TEST_F(MslWriter_ArgumentBuffersTest, CallFunctionThatUsesVars_HandleTypes_Bindi
     mod.root_block->Append(var_t);
     mod.root_block->Append(var_s);
 
-    auto* foo = b.Function("foo", ty.vec4<f32>());
+    auto* foo = b.Function("foo", ty.vec4f());
     auto* param = b.FunctionParam<i32>("param");
     foo->SetParams({param});
     b.Append(foo->Block(), [&] {
@@ -1039,7 +1038,7 @@ TEST_F(MslWriter_ArgumentBuffersTest, CallFunctionThatUsesVars_OutOfOrder) {
     b.Append(foo->Block(), [&] {
         auto* load_a = b.Load(var_a);
         auto* load_b = b.Load(var_b);
-        b.Store(var_b, b.Add<i32>(load_a, load_b));
+        b.Store(var_b, b.Add(load_a, load_b));
         b.Return(foo);
     });
 
@@ -1135,7 +1134,7 @@ TEST_F(MslWriter_ArgumentBuffersTest, CallFunctionThatDoesNotUseVars) {
     b.Append(func->Block(), [&] {
         auto* load_a = b.Load(var_a);
         auto* load_b = b.Load(var_b);
-        b.Store(var_b, b.Add<i32>(load_a, b.Add<i32>(load_b, b.Call(foo))));
+        b.Store(var_b, b.Add(load_a, b.Add(load_b, b.Call(foo))));
         b.Return(func);
     });
 
@@ -1234,7 +1233,7 @@ TEST_F(MslWriter_ArgumentBuffersTest, CallFunctionWithOnlyTransitiveUses) {
     b.Append(func->Block(), [&] {
         auto* load_a = b.Load(var_a);
         auto* load_b = b.Load(var_b);
-        b.Store(var_b, b.Add<i32>(load_a, b.Add<i32>(load_b, b.Call(foo))));
+        b.Store(var_b, b.Add(load_a, b.Add(load_b, b.Call(foo))));
         b.Return(func);
     });
 
@@ -1350,7 +1349,7 @@ TEST_F(MslWriter_ArgumentBuffersTest, CallFunctionWithOnlyTransitiveUses_OutOfOr
     b.Append(func->Block(), [&] {
         auto* load_a = b.Load(var_a);
         auto* load_b = b.Load(var_b);
-        b.Store(var_b, b.Add<i32>(load_a, b.Add<i32>(load_b, b.Call(foo))));
+        b.Store(var_b, b.Add(load_a, b.Add(load_b, b.Call(foo))));
         b.Return(func);
     });
 
@@ -1466,7 +1465,7 @@ TEST_F(MslWriter_ArgumentBuffersTest, VarsWithNoNames) {
     b.Append(func->Block(), [&] {
         auto* load_a = b.Load(var_a);
         auto* load_b = b.Load(var_b);
-        b.Store(var_b, b.Add<i32>(load_a, b.Add<i32>(load_b, b.Call(foo))));
+        b.Store(var_b, b.Add(load_a, b.Add(load_b, b.Call(foo))));
         b.Return(func);
     });
 
@@ -1580,7 +1579,7 @@ TEST_F(MslWriter_ArgumentBuffersTest, SkipBuffers) {
         auto* load_c = b.Load(var_c);
         auto* conv_b = b.Convert(ty.i32(), load_b);
         auto* conv_c = b.Convert(ty.i32(), load_c);
-        auto* add = b.Add<i32>(b.Add<i32>(load_a, conv_b), conv_c);
+        auto* add = b.Add(b.Add(load_a, conv_b), conv_c);
         auto* conv = b.Convert(ty.u32(), add);
         b.Store(var_b, conv);
         b.Return(func);
@@ -1668,7 +1667,7 @@ TEST_F(MslWriter_ArgumentBuffersTest, DynamicOffset) {
     auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kFragment);
     b.Append(func->Block(), [&] {
         auto* load_a = b.Load(var_a);
-        auto* add = b.Add<i32>(load_a, load_a);
+        auto* add = b.Add(load_a, load_a);
         b.Store(var_a, add);
         b.Return(func);
     });
@@ -1734,7 +1733,7 @@ TEST_F(MslWriter_ArgumentBuffersTest, NoDynamicOffset) {
     auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kFragment);
     b.Append(func->Block(), [&] {
         auto* load_a = b.Load(var_a);
-        auto* add = b.Add<i32>(load_a, load_a);
+        auto* add = b.Add(load_a, load_a);
         b.Store(var_a, add);
         b.Return(func);
     });
@@ -1783,6 +1782,54 @@ tint_arg_buffer_struct_1 = struct @align(1), @core.explicit_layout {
     Run(ArgumentBuffers, cfg);
 
     EXPECT_EQ(expect, str());
+}
+
+TEST_F(MslWriter_ArgumentBuffersTest, DynamicOffsetOnNonBufferType) {
+    auto* var_a = b.Var("a", ty.ptr<storage, f32, core::Access::kReadWrite>());
+    var_a->SetBindingPoint(1, 2);
+    mod.root_block->Append(var_a);
+
+    auto* texture_ty = ty.sampled_texture(core::type::TextureDimension::k2d, ty.f32());
+    auto* var_b = b.Var("b", ty.ptr(handle, texture_ty));
+    var_b->SetBindingPoint(1, 3);
+    mod.root_block->Append(var_b);
+
+    auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kFragment);
+    b.Append(func->Block(), [&] {
+        auto* load_b = b.Load(var_b);
+        auto* tex_load = b.Call<vec4f>(core::BuiltinFn::kTextureLoad, load_b, b.Zero<vec2u>(), 0_u);
+        b.Store(var_a, b.Access<f32>(tex_load, 0_u));
+        b.Return(func);
+    });
+
+    auto* src = R"(
+$B1: {  # root
+  %a:ptr<storage, f32, read_write> = var undef @binding_point(1, 2)
+  %b:ptr<handle, texture_2d<f32>, read> = var undef @binding_point(1, 3)
+}
+
+%foo = @fragment func():void {
+  $B2: {
+    %4:texture_2d<f32> = load %b
+    %5:vec4<f32> = textureLoad %4, vec2<u32>(0u), 0u
+    %6:f32 = access %5, 0u
+    store %a, %6
+    ret
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+
+    ArgumentBufferInfo info{
+        .id = 2,
+        .dynamic_buffer_id = 3,
+        .binding_info_to_offset_index = {{3, 4}},
+    };
+    ArgumentBuffersConfig cfg{};
+    cfg.group_to_argument_buffer_info.insert({1, info});
+    auto result = ArgumentBuffers(mod, cfg);
+    EXPECT_NE(result, Success);
+    EXPECT_EQ(result.Failure().reason, "dynamic offset supplied for non-buffer type");
 }
 
 }  // namespace

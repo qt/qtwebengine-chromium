@@ -116,7 +116,8 @@ class ImageLoader::Task {
   Task(ImageLoader* loader, UpdateFromElementBehavior update_behavior)
       : loader_(loader), update_behavior_(update_behavior) {
     ExecutionContext* context = loader_->GetElement()->GetExecutionContext();
-    async_task_context_.Schedule(context, "Image");
+    async_task_context_.Schedule(context, "Image",
+                                 probe::AsyncTaskContext::ScanForAds::kTrue);
     world_ = context->GetCurrentWorld();
   }
 
@@ -275,6 +276,9 @@ void ImageLoader::Trace(Visitor* visitor) const {
 void ImageLoader::SetImageForTest(ImageResourceContent* new_image) {
   DCHECK(new_image);
   SetImageWithoutConsideringPendingLoadEvent(new_image);
+  // This is needed if the `new_image` is pending, since setting the image this
+  // way will only update the layout object if the image is fully loaded.
+  UpdateLayoutObject();
 }
 
 bool ImageLoader::ImageIsPotentiallyAvailable() const {
@@ -407,8 +411,16 @@ void ImageLoader::UpdateImageState(ImageResourceContent* new_image_content) {
     }
   } else {
     image_complete_ = false;
-    if (lazy_image_load_state_ == LazyImageLoadState::kDeferred)
-      LazyImageHelper::StartMonitoring(GetElement());
+    if (lazy_image_load_state_ == LazyImageLoadState::kDeferred) {
+      if (new_image_content->IsLoaded() &&
+          RuntimeEnabledFeatures::LazyImageConformantLoadEventTimingEnabled()) {
+        LazyImageHelper::StopMonitoring(GetElement());
+        lazy_image_load_state_ = LazyImageLoadState::kFullImage;
+        EnqueueImageLoadingMicroTask(kUpdateNormal);
+      } else {
+        LazyImageHelper::StartMonitoring(GetElement());
+      }
+    }
   }
   delay_until_image_notify_finished_ = nullptr;
 }
@@ -722,8 +734,8 @@ KURL ImageLoader::ImageSourceToKURL(AtomicString image_source_url) const {
   // Do not load any image if the 'src' attribute is missing or if it is
   // an empty string.
   if (!image_source_url.IsNull()) {
-    String stripped_image_source_url =
-        StripLeadingAndTrailingHTMLSpaces(image_source_url);
+    StringView stripped_image_source_url =
+        StripLeadingAndTrailingHtmlSpaces(image_source_url);
     if (!stripped_image_source_url.empty())
       url = document.CompleteURL(stripped_image_source_url);
   }
@@ -764,8 +776,11 @@ void ImageLoader::ImageChanged(ImageResourceContent* content,
   if (!document.IsActive())
     return;
 
-  delay_until_image_notify_finished_ =
-      std::make_unique<IncrementLoadEventDelayCount>(document);
+  if (lazy_image_load_state_ != LazyImageLoadState::kDeferred ||
+      !RuntimeEnabledFeatures::LazyImageConformantLoadEventTimingEnabled()) {
+    delay_until_image_notify_finished_ =
+        std::make_unique<IncrementLoadEventDelayCount>(document);
+  }
 }
 
 void ImageLoader::ImageNotifyFinished(ImageResourceContent* content) {
@@ -779,9 +794,23 @@ void ImageLoader::ImageNotifyFinished(ImageResourceContent* content) {
   CHECK(!image_complete_);
 
   if (lazy_image_load_state_ == LazyImageLoadState::kDeferred) {
-    // A placeholder was requested, but the result was an error or a full image.
-    // In these cases, consider this as the final image and suppress further
-    // reloading and proceed to the image load completion process below.
+    // Some other content may have triggered the load of this image, but that
+    // shouldn't fire this <img loading="lazy">'s load event at this time,
+    // because in the spec this <img> is still in Step 25 of
+    // https://html.spec.whatwg.org/#update-the-image-data.
+    // When LazyLoadImageObserver reports it to be intersecting (or close to)
+    // the viewport later (i.e. this <img> proceeds to Step 26 of the spec),
+    // actual load/error event will be fired, by going through the loading
+    // process again from `UpdateFromElement()`. Note that in Chromium
+    // implementation (unlike in the spec), the image content itself can be
+    // still loaded/updated even in this case, which can be observed via e.g.
+    // <img>'s width/height.
+    if (RuntimeEnabledFeatures::LazyImageConformantLoadEventTimingEnabled()) {
+      return;
+    }
+    // TODO(paint-dev): This is incorrect legacy behavior: the loading="lazy"
+    // <img> will fire its load event immediately. If the above feature flag
+    // doesn't cause breakage this should be removed.
     LazyImageHelper::StopMonitoring(GetElement());
     lazy_image_load_state_ = LazyImageLoadState::kFullImage;
   }
@@ -802,7 +831,6 @@ void ImageLoader::ImageNotifyFinished(ImageResourceContent* content) {
       svg_image->MaybeRecordSvgImageProcessingTime(GetElement()->GetDocument());
     }
   }
-
 
   DispatchDecodeRequestsIfComplete();
 

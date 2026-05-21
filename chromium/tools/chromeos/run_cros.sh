@@ -55,10 +55,13 @@ DISPLAY_CONFIG=${DISPLAY_RES[wxga]}
 FEATURES=
 
 # GLIC specific feature flags.
-GLIC_BASIC_FEATURES=Glic,TabstripComboButton,GlicDevelopmentCookies,\
-ContextualCueing,GlicKeyboardShortcutNewBadge,GlicRollout,GlicFreWarming,\
-GlicUseNonClient
-GLIC_SIDE_PANEL_FEATURES=GlicSidePanel,GlicMultiInstance
+GLIC_BASIC_FEATURES=Glic,TabstripComboButton,GlicUserStatusCheck,\
+ContextualCueing,GlicKeyboardShortcutNewBadge,GlicRollout,GlicUseNonClient,\
+GlicWindowDragRegions,GlicHandleDraggingNatively,GlicZeroStateSuggestions,\
+FeatureManagementGlic
+
+GLIC_SIDE_PANEL_FEATURES=GlicMultiInstance,GlicDefaultTabContextSetting,\
+GlicUnifiedFreScreen,GlicDaisyChainNewTabs,GlicLiveModeOnlyGlow
 
 export XDG_RUNTIME_DIR=${USER_TMP_DIR}/xdg1
 
@@ -213,7 +216,7 @@ do
       ;;
     --touch-device-id=*)
       id=${1:18}
-      TOUCH_DEVICE_OPTION="--touch-devices=${id} --force-show-cursor"
+      TOUCH_DEVICE_OPTION="--touch-devices=0,${id} --force-show-cursor"
       ;;
     --guest)
       GUEST_MODE=true

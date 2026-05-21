@@ -7,7 +7,7 @@
 #include <optional>
 #include <unordered_set>
 
-#include "base/containers/contains.h"
+#include "base/feature_list.h"
 #include "base/strings/stringprintf.h"
 #include "base/test/gtest_util.h"
 #include "base/test/scoped_feature_list.h"
@@ -43,6 +43,53 @@ const network::mojom::PermissionsPolicyFeature kUnavailableFeature =
 
 }  // namespace
 
+// Helper for initializing the feature flag for unload deprecation.
+void DisableDeprecateUnloadFeatures(
+    base::test::ScopedFeatureList& feature_list) {
+  feature_list.InitWithFeaturesAndParameters(
+      {}, {network::features::kDeprecateUnload});
+}
+
+// Helper for initializing the feature flags and parameters for unload
+// deprecation.
+void EnableDeprecateUnloadFeatures(
+    base::test::ScopedFeatureList& feature_list,
+    std::optional<int> percent,
+    std::optional<int> bucket,
+    std::optional<std::string> origin_allowlist) {
+  std::vector<base::test::FeatureRefAndParams> enabled_features;
+  std::vector<base::test::FeatureRef> disabled_features;
+
+  base::FieldTrialParams main_params;
+  if (percent) {
+    main_params[network::features::kDeprecateUnloadPercent.name] =
+        base::NumberToString(percent.value());
+  }
+  enabled_features.emplace_back(network::features::kDeprecateUnload,
+                                main_params);
+
+  if (bucket) {
+    enabled_features.push_back(
+        {network::features::kDeprecateUnloadByBucket,
+         {{network::features::kDeprecateUnloadBucket.name,
+           base::NumberToString(bucket.value())}}});
+  } else {
+    disabled_features.push_back(network::features::kDeprecateUnloadByBucket);
+  }
+
+  if (origin_allowlist) {
+    enabled_features.push_back(
+        {network::features::kDeprecateUnloadByAllowList,
+         {{network::features::kDeprecateUnloadAllowlist.name,
+           origin_allowlist.value()}}});
+  } else {
+    disabled_features.push_back(network::features::kDeprecateUnloadByAllowList);
+  }
+
+  feature_list.InitWithFeaturesAndParameters(enabled_features,
+                                             disabled_features);
+}
+
 class PermissionsPolicyTest : public testing::Test {
  protected:
   PermissionsPolicyTest()
@@ -66,6 +113,12 @@ class PermissionsPolicyTest : public testing::Test {
              {network::mojom::PermissionsPolicyFeature::kSharedStorageSelectUrl,
               network::PermissionsPolicyFeatureDefault::EnableForSelf},
              {network::mojom::PermissionsPolicyFeature::kPrivateAggregation,
+              network::PermissionsPolicyFeatureDefault::EnableForSelf},
+             {network::mojom::PermissionsPolicyFeature::kLocalNetworkAccess,
+              network::PermissionsPolicyFeatureDefault::EnableForSelf},
+             {network::mojom::PermissionsPolicyFeature::kLocalNetwork,
+              network::PermissionsPolicyFeatureDefault::EnableForSelf},
+             {network::mojom::PermissionsPolicyFeature::kLoopbackNetwork,
               network::PermissionsPolicyFeatureDefault::EnableForSelf}}) {}
 
   ~PermissionsPolicyTest() override = default;
@@ -83,11 +136,9 @@ class PermissionsPolicyTest : public testing::Test {
 
   std::unique_ptr<PermissionsPolicy> CreateFromParsedPolicy(
       const network::ParsedPermissionsPolicy& parsed_policy,
-      const url::Origin& origin,
-      const std::optional<network::ParsedPermissionsPolicy>& base_policy =
-          std::nullopt) {
-    return PermissionsPolicy::CreateFromParsedPolicy(parsed_policy, base_policy,
-                                                     origin, feature_list_);
+      const url::Origin& origin) {
+    return PermissionsPolicy::CreateFromParsedPolicy(parsed_policy, origin,
+                                                     feature_list_);
   }
 
   std::unique_ptr<PermissionsPolicy> CreateFromParentWithFramePolicy(
@@ -1767,6 +1818,311 @@ TEST_F(PermissionsPolicyTest, TestFeatureDelegatedAndAllowed) {
       policy4->IsFeatureEnabledForOrigin(kDefaultSelfFeature, origin_b_));
 }
 
+TEST_F(PermissionsPolicyTest,
+       TestLocalNetworkAccessFeatureDefaultAllowedSplit) {
+  base::test::ScopedFeatureList scoped_feature_list(
+      features::kLocalNetworkAccessChecksSplitPermissions);
+
+  // When the old "local-network-access" feature is allowed by default,
+  // both new features "local-network" and "loopback-network" should be
+  // enabled.
+  std::unique_ptr<PermissionsPolicy> policy1 =
+      CreateFromParentPolicy(nullptr, {}, origin_a_);
+  EXPECT_TRUE(policy1->IsFeatureEnabled(
+      network::mojom::PermissionsPolicyFeature::kLocalNetworkAccess));
+  EXPECT_TRUE(policy1->IsFeatureEnabled(
+      network::mojom::PermissionsPolicyFeature::kLocalNetwork));
+  EXPECT_TRUE(policy1->IsFeatureEnabled(
+      network::mojom::PermissionsPolicyFeature::kLoopbackNetwork));
+}
+
+TEST_F(PermissionsPolicyTest, TestLocalNetworkAccessFeatureDisallowedSplit) {
+  base::test::ScopedFeatureList scoped_feature_list(
+      features::kLocalNetworkAccessChecksSplitPermissions);
+
+  // When the old "local-network-access" feature is disallowed,
+  // none of the LNA features should be enabled.
+  std::unique_ptr<PermissionsPolicy> policy1 = CreateFromParentPolicy(
+      nullptr,
+      {{{network::mojom::PermissionsPolicyFeature::kLocalNetworkAccess,
+         /*allowed_origins=*/{},
+         /*self_if_matches=*/std::nullopt,
+         /*matches_all_origins=*/false,
+         /*matches_opaque_src=*/false}}},
+      origin_a_);
+  EXPECT_FALSE(policy1->IsFeatureEnabled(
+      network::mojom::PermissionsPolicyFeature::kLocalNetworkAccess));
+  EXPECT_FALSE(policy1->IsFeatureEnabled(
+      network::mojom::PermissionsPolicyFeature::kLocalNetwork));
+  EXPECT_FALSE(policy1->IsFeatureEnabled(
+      network::mojom::PermissionsPolicyFeature::kLoopbackNetwork));
+}
+
+TEST_F(PermissionsPolicyTest,
+       TestLocalNetworkAccessFeatureDelegatedSplitAllowed) {
+  // +--------------------------------------------------+
+  // |(1)Origin A                                       |
+  // |No Policy                                         |
+  // |                                                  |
+  // |<iframe allow="local-network-access OriginA">     |
+  // | +-------------------------------------+          |
+  // | |(2)Origin B                          |          |
+  // | |No Policy                            |          |
+  // | +-------------------------------------+          |
+  // |                                                  |
+  // |<iframe allow="local-network-access OriginB">     |
+  // | +-------------------------------------+          |
+  // | |(3)Origin B                          |          |
+  // | |local-network-access, local-nework,  |          |
+  // | | loopback-network                    |          |
+  // | +-------------------------------------+          |
+  // |                                                  |
+  // |<iframe allow="local-network-access *">           |
+  // | +-------------------------------------+          |
+  // | |local-network-access, local-nework,  |          |
+  // | | loopback-network                    |          |
+  // | +-------------------------------------+          |
+  // +--------------------------------------------------+
+  // All LNA features should be disabled in frame 2, as the origin does not
+  // match. All LNA features should be enabled in the remaining frames.
+
+  base::test::ScopedFeatureList scoped_feature_list(
+      features::kLocalNetworkAccessChecksSplitPermissions);
+
+  // Frame 1 just has defaults, no header.
+  std::unique_ptr<PermissionsPolicy> policy1 =
+      CreateFromParentPolicy(nullptr, {},  // default, no header
+                             origin_a_);
+
+  // Frame 2 has allowlist policy for OriginA.
+  network::ParsedPermissionsPolicy frame_policy1 = {
+      {{network::mojom::PermissionsPolicyFeature::
+            kLocalNetworkAccess, /*allowed_origins=*/
+        {*network::OriginWithPossibleWildcards::FromOriginAndWildcardsForTest(
+            origin_a_,
+            /*has_subdomain_wildcard=*/false)},
+        /*self_if_matches=*/std::nullopt,
+        /*matches_all_origins=*/false,
+        /*matches_opaque_src=*/false}}};
+  std::unique_ptr<PermissionsPolicy> policy2 = CreateFromParentWithFramePolicy(
+      policy1.get(), /*header_policy=*/{}, frame_policy1, origin_b_);
+
+  // Frame 3 has allowlist policy for OriginB.
+  network::ParsedPermissionsPolicy frame_policy2 = {
+      {{network::mojom::PermissionsPolicyFeature::
+            kLocalNetworkAccess, /*allowed_origins=*/
+        {*network::OriginWithPossibleWildcards::FromOriginAndWildcardsForTest(
+            origin_b_,
+            /*has_subdomain_wildcard=*/false)},
+        /*self_if_matches=*/std::nullopt,
+        /*matches_all_origins=*/false,
+        /*matches_opaque_src=*/false}}};
+  std::unique_ptr<PermissionsPolicy> policy3 = CreateFromParentWithFramePolicy(
+      policy1.get(), /*header_policy=*/{}, frame_policy2, origin_b_);
+
+  // Frame 4 has allowlist policy with wildcard.
+  network::ParsedPermissionsPolicy frame_policy3 = {
+      {{network::mojom::PermissionsPolicyFeature::kLocalNetworkAccess,
+        /*allowed_origins=*/{},
+        /*self_if_matches=*/std::nullopt,
+        /*matches_all_origins=*/true,
+        /*matches_opaque_src=*/false}}};
+  std::unique_ptr<PermissionsPolicy> policy4 = CreateFromParentWithFramePolicy(
+      policy1.get(), /*header_policy=*/{}, frame_policy3, origin_b_);
+
+  // Frame 1: all three default enabled.
+  EXPECT_TRUE(policy1->IsFeatureEnabledForOrigin(
+      network::mojom::PermissionsPolicyFeature::kLocalNetworkAccess,
+      origin_a_));
+  EXPECT_TRUE(policy1->IsFeatureEnabledForOrigin(
+      network::mojom::PermissionsPolicyFeature::kLocalNetwork, origin_a_));
+  EXPECT_TRUE(policy1->IsFeatureEnabledForOrigin(
+      network::mojom::PermissionsPolicyFeature::kLoopbackNetwork, origin_a_));
+
+  // Frame 2: none enabled, regardless of origin queried.
+  EXPECT_FALSE(policy2->IsFeatureEnabledForOrigin(
+      network::mojom::PermissionsPolicyFeature::kLocalNetworkAccess,
+      origin_a_));
+  EXPECT_FALSE(policy2->IsFeatureEnabledForOrigin(
+      network::mojom::PermissionsPolicyFeature::kLocalNetwork, origin_a_));
+  EXPECT_FALSE(policy2->IsFeatureEnabledForOrigin(
+      network::mojom::PermissionsPolicyFeature::kLoopbackNetwork, origin_a_));
+
+  EXPECT_FALSE(policy1->IsFeatureEnabledForOrigin(
+      network::mojom::PermissionsPolicyFeature::kLocalNetworkAccess,
+      origin_b_));
+  EXPECT_FALSE(policy2->IsFeatureEnabledForOrigin(
+      network::mojom::PermissionsPolicyFeature::kLocalNetwork, origin_b_));
+  EXPECT_FALSE(policy2->IsFeatureEnabledForOrigin(
+      network::mojom::PermissionsPolicyFeature::kLoopbackNetwork, origin_b_));
+
+  // Frame 3: delegated and all enabled.
+  EXPECT_TRUE(policy3->IsFeatureEnabledForOrigin(
+      network::mojom::PermissionsPolicyFeature::kLocalNetworkAccess,
+      origin_b_));
+  EXPECT_TRUE(policy3->IsFeatureEnabledForOrigin(
+      network::mojom::PermissionsPolicyFeature::kLocalNetwork, origin_b_));
+  EXPECT_TRUE(policy3->IsFeatureEnabledForOrigin(
+      network::mojom::PermissionsPolicyFeature::kLoopbackNetwork, origin_b_));
+
+  // Frame 4: delegated and all enabled.
+  EXPECT_TRUE(policy4->IsFeatureEnabledForOrigin(
+      network::mojom::PermissionsPolicyFeature::kLocalNetworkAccess,
+      origin_b_));
+  EXPECT_TRUE(policy4->IsFeatureEnabledForOrigin(
+      network::mojom::PermissionsPolicyFeature::kLocalNetwork, origin_b_));
+  EXPECT_TRUE(policy4->IsFeatureEnabledForOrigin(
+      network::mojom::PermissionsPolicyFeature::kLoopbackNetwork, origin_b_));
+}
+
+TEST_F(PermissionsPolicyTest,
+       TestLocalNetworkAccessFeatureDelegateSpecificSubfeature) {
+  // +--------------------------------------------------+
+  // |(1)Origin A                                       |
+  // |No Policy (default allow all)                     |
+  // |                                                  |
+  // |<iframe allow="local-network OriginB">                    |
+  // | +-------------------------------------+          |
+  // | |(2)Origin B                          |          |
+  // | |local-network                        |          |
+  // | +-------------------------------------+          |
+  // +--------------------------------------------------+
+  // Only "local-network" should be enabled in frame 2.
+
+  base::test::ScopedFeatureList scoped_feature_list(
+      features::kLocalNetworkAccessChecksSplitPermissions);
+
+  // Main frame just has defaults, no header.
+  std::unique_ptr<PermissionsPolicy> policy1 =
+      CreateFromParentPolicy(nullptr, {},  // default, no header
+                             origin_a_);
+
+  // Frame 2 has allowlist policy for "local-network".
+  network::ParsedPermissionsPolicy frame_policy1 = {
+      {{network::mojom::PermissionsPolicyFeature::
+            kLocalNetwork, /*allowed_origins=*/
+        {*network::OriginWithPossibleWildcards::FromOriginAndWildcardsForTest(
+            origin_b_,
+            /*has_subdomain_wildcard=*/false)},
+        /*self_if_matches=*/std::nullopt,
+        /*matches_all_origins=*/false,
+        /*matches_opaque_src=*/false}}};
+  std::unique_ptr<PermissionsPolicy> policy2 = CreateFromParentWithFramePolicy(
+      policy1.get(), /*header_policy=*/{}, frame_policy1, origin_b_);
+
+  // Frame 2: only "local-network" enabled.
+  EXPECT_FALSE(policy2->IsFeatureEnabledForOrigin(
+      network::mojom::PermissionsPolicyFeature::kLocalNetworkAccess,
+      origin_b_));
+  EXPECT_TRUE(policy2->IsFeatureEnabledForOrigin(
+      network::mojom::PermissionsPolicyFeature::kLocalNetwork, origin_b_));
+  EXPECT_FALSE(policy2->IsFeatureEnabledForOrigin(
+      network::mojom::PermissionsPolicyFeature::kLoopbackNetwork, origin_b_));
+}
+
+TEST_F(PermissionsPolicyTest, TestLocalNetworkAccessOldFeatureOverrides) {
+  // +---------------------------------------------------------------------+
+  // |(1)Origin A                                                          |
+  // |No Policy (default allow all)                                        |
+  // |                                                                     |
+  // |<iframe allow="local-network-access OriginB; local-network 'none';"> |
+  // | +------------------------------------+                              |
+  // | |(2)Origin B                         |                              |
+  // | |local-network-access, local-network |                              |
+  // | |loopback-network                    |                              |
+  // | +------------------------------------+                              |
+  // +---------------------------------------------------------------------+
+  // "local-network" will be enabled in frame 2 despite the allowlist
+  // exclusion, since the old "local-network-access" feature takes precedence.
+
+  base::test::ScopedFeatureList scoped_feature_list(
+      features::kLocalNetworkAccessChecksSplitPermissions);
+
+  // Main frame just has defaults, no header.
+  std::unique_ptr<PermissionsPolicy> policy1 =
+      CreateFromParentPolicy(nullptr, {},  // default, no header
+                             origin_a_);
+
+  // Frame 2 has allowlist policy for "local-network-access" but an empty
+  // allowlist for the more specific "local-network" feature.
+  network::ParsedPermissionsPolicy frame_policy1 = {
+      {{network::mojom::PermissionsPolicyFeature::kLocalNetworkAccess,
+        /*allowed_origins=*/
+        {*network::OriginWithPossibleWildcards::FromOriginAndWildcardsForTest(
+            origin_b_,
+            /*has_subdomain_wildcard=*/false)},
+        /*self_if_matches=*/std::nullopt,
+        /*matches_all_origins=*/false,
+        /*matches_opaque_src=*/false},
+       {network::mojom::PermissionsPolicyFeature::kLocalNetwork,
+        /*allowed_origins=*/{},
+        /*self_if_matches=*/std::nullopt,
+        /*matches_all_origins=*/false,
+        /*matches_opaque_src=*/false}}};
+  std::unique_ptr<PermissionsPolicy> policy2 = CreateFromParentWithFramePolicy(
+      policy1.get(), /*header_policy=*/{}, frame_policy1, origin_b_);
+
+  // Frame 2: All three features are propagated into the subframe.
+  EXPECT_TRUE(policy2->IsFeatureEnabledForOrigin(
+      network::mojom::PermissionsPolicyFeature::kLocalNetworkAccess,
+      origin_b_));
+  EXPECT_TRUE(policy2->IsFeatureEnabledForOrigin(
+      network::mojom::PermissionsPolicyFeature::kLocalNetwork, origin_b_));
+  EXPECT_TRUE(policy2->IsFeatureEnabledForOrigin(
+      network::mojom::PermissionsPolicyFeature::kLoopbackNetwork, origin_b_));
+}
+
+TEST_F(PermissionsPolicyTest, TestLocalNetworkAccessNewFeatureAdditive) {
+  // +---------------------------------------------------------------------+
+  // |(1)Origin A                                                          |
+  // |No Policy (default allow all)                                        |
+  // |                                                                     |
+  // |<iframe allow="local-network-access 'none'; local-network OriginB;"> |
+  // | +------------------------------------+                              |
+  // | |(2)Origin B                         |                              |
+  // | |local-network                       |                              |
+  // | +------------------------------------+                              |
+  // +---------------------------------------------------------------------+
+  // "local-network" will be enabled in frame 2 despite "local-network-access"
+  // being set to 'none', as the iframe allowlist bitset is additive.
+
+  base::test::ScopedFeatureList scoped_feature_list(
+      features::kLocalNetworkAccessChecksSplitPermissions);
+
+  // Main frame just has defaults, no header.
+  std::unique_ptr<PermissionsPolicy> policy1 =
+      CreateFromParentPolicy(nullptr, {},  // default, no header
+                             origin_a_);
+
+  // Frame 2 has an empty allowlist policy for "local-network-access" but an
+  // allowlist for OriginB the more specific "local-network" feature.
+  network::ParsedPermissionsPolicy frame_policy1 = {
+      {{network::mojom::PermissionsPolicyFeature::kLocalNetworkAccess,
+        /*allowed_origins=*/{},
+        /*self_if_matches=*/std::nullopt,
+        /*matches_all_origins=*/false,
+        /*matches_opaque_src=*/false},
+       {network::mojom::PermissionsPolicyFeature::kLocalNetwork,
+        /*allowed_origins=*/
+        {*network::OriginWithPossibleWildcards::FromOriginAndWildcardsForTest(
+            origin_b_,
+            /*has_subdomain_wildcard=*/false)},
+        /*self_if_matches=*/std::nullopt,
+        /*matches_all_origins=*/false,
+        /*matches_opaque_src=*/false}}};
+  std::unique_ptr<PermissionsPolicy> policy2 = CreateFromParentWithFramePolicy(
+      policy1.get(), /*header_policy=*/{}, frame_policy1, origin_b_);
+
+  // Frame 2: "local-network" is propagated into the subframe.
+  EXPECT_FALSE(policy2->IsFeatureEnabledForOrigin(
+      network::mojom::PermissionsPolicyFeature::kLocalNetworkAccess,
+      origin_b_));
+  EXPECT_TRUE(policy2->IsFeatureEnabledForOrigin(
+      network::mojom::PermissionsPolicyFeature::kLocalNetwork, origin_b_));
+  EXPECT_FALSE(policy2->IsFeatureEnabledForOrigin(
+      network::mojom::PermissionsPolicyFeature::kLoopbackNetwork, origin_b_));
+}
+
 TEST_F(PermissionsPolicyTest, TestDefaultSandboxedFramePolicy) {
   // +------------------+
   // |(1)Origin A       |
@@ -2709,146 +3065,6 @@ TEST_F(PermissionsPolicyTest, CreateFromParsedPolicyWithEmptyAllowlist) {
   EXPECT_FALSE(policy->IsFeatureEnabled(kDefaultSelfFeature));
 }
 
-TEST_F(PermissionsPolicyTest, CreateFromParsedPolicyWithBasePolicy) {
-  url::Origin origin_self = url::Origin::Create(GURL("https://example.edu/"));
-  network::ParsedPermissionsPolicy base_policy = {
-      {{kDefaultSelfFeature, /*allowed_origins=*/
-        {
-            *network::OriginWithPossibleWildcards::
-                FromOriginAndWildcardsForTest(origin_a_,
-                                              /*has_subdomain_wildcard=*/false),
-            *network::OriginWithPossibleWildcards::
-                FromOriginAndWildcardsForTest(origin_b_,
-                                              /*has_subdomain_wildcard=*/false),
-        },
-        /*self_if_matches=*/origin_self,
-        /*matches_all_origins=*/false,
-        /*matches_opaque_src=*/false}}};
-  network::ParsedPermissionsPolicy parsed_policy = {
-      {{kDefaultSelfFeature, /*allowed_origins=*/
-        {
-            *network::OriginWithPossibleWildcards::
-                FromOriginAndWildcardsForTest(origin_b_,
-                                              /*has_subdomain_wildcard=*/false),
-            *network::OriginWithPossibleWildcards::
-                FromOriginAndWildcardsForTest(origin_c_,
-                                              /*has_subdomain_wildcard=*/false),
-        },
-        /*self_if_matches=*/origin_self,
-        /*matches_all_origins=*/false,
-        /*matches_opaque_src=*/false}}};
-  auto policy = CreateFromParsedPolicy(parsed_policy, origin_self, base_policy);
-  EXPECT_TRUE(
-      policy->IsFeatureEnabledForOrigin(kDefaultSelfFeature, origin_self));
-  EXPECT_FALSE(
-      policy->IsFeatureEnabledForOrigin(kDefaultSelfFeature, origin_a_));
-  EXPECT_TRUE(
-      policy->IsFeatureEnabledForOrigin(kDefaultSelfFeature, origin_b_));
-  EXPECT_FALSE(
-      policy->IsFeatureEnabledForOrigin(kDefaultSelfFeature, origin_c_));
-}
-
-TEST_F(PermissionsPolicyTest,
-       CreateFromParsedPolicyWithBasePolicyExcludingSelf) {
-  url::Origin origin_self = url::Origin::Create(GURL("https://example.edu/"));
-  network::ParsedPermissionsPolicy base_policy = {
-      {{kDefaultSelfFeature, /*allowed_origins=*/{},
-        /*self_if_matches=*/std::nullopt,
-        /*matches_all_origins=*/false,
-        /*matches_opaque_src=*/false}}};
-  network::ParsedPermissionsPolicy parsed_policy = {
-      {{kDefaultSelfFeature, /*allowed_origins=*/{},
-        /*self_if_matches=*/origin_a_,
-        /*matches_all_origins=*/false,
-        /*matches_opaque_src=*/false}}};
-  auto policy = CreateFromParsedPolicy(parsed_policy, origin_a_, base_policy);
-  EXPECT_FALSE(
-      policy->IsFeatureEnabledForOrigin(kDefaultSelfFeature, origin_a_));
-}
-
-TEST_F(PermissionsPolicyTest, CreateFromParsedPolicyWithoutSelfWithBasePolicy) {
-  url::Origin origin_self = url::Origin::Create(GURL("https://example.edu/"));
-  network::ParsedPermissionsPolicy base_policy = {
-      {{kDefaultSelfFeature, /*allowed_origins=*/{},
-        /*self_if_matches=*/origin_a_,
-        /*matches_all_origins=*/false,
-        /*matches_opaque_src=*/false}}};
-  network::ParsedPermissionsPolicy parsed_policy = {
-      {{kDefaultSelfFeature, /*allowed_origins=*/{},
-        /*self_if_matches=*/std::nullopt,
-        /*matches_all_origins=*/false,
-        /*matches_opaque_src=*/false}}};
-  auto policy = CreateFromParsedPolicy(parsed_policy, origin_a_, base_policy);
-  EXPECT_FALSE(
-      policy->IsFeatureEnabledForOrigin(kDefaultSelfFeature, origin_a_));
-}
-
-TEST_F(PermissionsPolicyTest,
-       CreateFromParsedPolicyWildcardWithMoreRestrictiveBasePolicy) {
-  network::ParsedPermissionsPolicy base_policy = {
-      {{kDefaultSelfFeature, /*allowed_origins=*/
-        {*network::OriginWithPossibleWildcards::FromOriginAndWildcardsForTest(
-            origin_b_,
-            /*has_subdomain_wildcard=*/false)},
-        /*self_if_matches=*/origin_a_,
-        /*matches_all_origins=*/false,
-        /*matches_opaque_src=*/false}}};
-  network::ParsedPermissionsPolicy parsed_policy = {
-      {{kDefaultSelfFeature, /*allowed_origins=*/{},
-        /*self_if_matches=*/std::nullopt,
-        /*matches_all_origins=*/true,
-        /*matches_opaque_src=*/false}}};
-  auto policy = CreateFromParsedPolicy(parsed_policy, origin_a_, base_policy);
-  EXPECT_TRUE(
-      policy->IsFeatureEnabledForOrigin(kDefaultSelfFeature, origin_a_));
-  EXPECT_TRUE(
-      policy->IsFeatureEnabledForOrigin(kDefaultSelfFeature, origin_b_));
-  EXPECT_FALSE(
-      policy->IsFeatureEnabledForOrigin(kDefaultSelfFeature, origin_c_));
-}
-
-TEST_F(PermissionsPolicyTest, CreateFromParsedPolicyWithWildcardBasePolicy) {
-  network::ParsedPermissionsPolicy base_policy = {
-      {{kDefaultSelfFeature, /*allowed_origins=*/{},
-        /*self_if_matches=*/std::nullopt,
-        /*matches_all_origins=*/true,
-        /*matches_opaque_src=*/false}}};
-  network::ParsedPermissionsPolicy parsed_policy = {
-      {{kDefaultSelfFeature, /*allowed_origins=*/
-        {*network::OriginWithPossibleWildcards::FromOriginAndWildcardsForTest(
-            origin_a_,
-            /*has_subdomain_wildcard=*/false)},
-        /*self_if_matches=*/std::nullopt,
-        /*matches_all_origins=*/false,
-        /*matches_opaque_src=*/false}}};
-  auto policy = CreateFromParsedPolicy(parsed_policy, origin_a_, base_policy);
-  EXPECT_TRUE(
-      policy->IsFeatureEnabledForOrigin(kDefaultSelfFeature, origin_a_));
-  EXPECT_FALSE(
-      policy->IsFeatureEnabledForOrigin(kDefaultSelfFeature, origin_b_));
-  EXPECT_FALSE(
-      policy->IsFeatureEnabledForOrigin(kDefaultSelfFeature, origin_c_));
-}
-
-TEST_F(PermissionsPolicyTest, CreateFromParsedPolicyWithMissingBasePolicy) {
-  // Tests a parsed policy that includes an allowlist for a feature not
-  // declared in the base policy.
-  network::ParsedPermissionsPolicy base_policy = {
-      {{kDefaultOnFeature, /*allowed_origins=*/{},
-        /*self_if_matches=*/std::nullopt,
-        /*matches_all_origins=*/true,
-        /*matches_opaque_src=*/false}}};
-  network::ParsedPermissionsPolicy parsed_policy = {
-      {{kDefaultSelfFeature, /*allowed_origins=*/{},
-        /*self_if_matches=*/std::nullopt,
-        /*matches_all_origins=*/true,
-        /*matches_opaque_src=*/false}}};
-  auto policy = CreateFromParsedPolicy(parsed_policy, origin_a_, base_policy);
-  EXPECT_TRUE(policy->IsFeatureEnabledForOrigin(kDefaultOnFeature, origin_a_));
-  EXPECT_FALSE(
-      policy->IsFeatureEnabledForOrigin(kDefaultSelfFeature, origin_a_));
-}
-
 TEST_F(PermissionsPolicyTest, OverwriteHeaderPolicyForClientHints) {
   // We can construct a policy, set/overwrite the same header, and then check.
   auto policy1 = CreateFromParentPolicy(
@@ -3011,12 +3227,11 @@ TEST_F(PermissionsPolicyTest, GetAllowlistForFeatureIfExists) {
               testing::ContainerEq(origins4));
 }
 
-// Tests that "unload"'s default is controlled by the deprecation flag.
-TEST_F(PermissionsPolicyTest, UnloadDefaultEnabledForAll) {
+// Tests that "unload"'s default is unchanged when the feature is disabled.
+TEST_F(PermissionsPolicyTest, UnloadDefaultEnabledForAllWhenFeatureDisabled) {
   {
-    base::test::ScopedFeatureList scoped_feature_list;
-    scoped_feature_list.InitWithFeatures({},
-                                         {network::features::kDeprecateUnload});
+    base::test::ScopedFeatureList feature_list;
+    DisableDeprecateUnloadFeatures(feature_list);
     std::unique_ptr<PermissionsPolicy> policy =
         CreateFromParentPolicy(nullptr, /*header_policy=*/{}, origin_a_);
     EXPECT_EQ(network::PermissionsPolicyFeatureDefault::EnableForAll,
@@ -3026,12 +3241,14 @@ TEST_F(PermissionsPolicyTest, UnloadDefaultEnabledForAll) {
   }
 }
 
-// Tests that "unload"'s default is controlled by the deprecation flag.
-TEST_F(PermissionsPolicyTest, UnloadDefaultEnabledForNone) {
+// Tests that "unload"'s default is EnabledForNone when the feature is enabled
+// with no other parameters.
+TEST_F(PermissionsPolicyTest, UnloadDefaultEnabledForNoneWhenFeatureEnabled) {
   {
     base::test::ScopedFeatureList feature_list;
-    feature_list.InitWithFeatures({network::features::kDeprecateUnload},
-                                  /*disabled_features=*/{});
+    EnableDeprecateUnloadFeatures(feature_list, /*percent=*/std::nullopt,
+                                  /*bucket=*/std::nullopt,
+                                  /*origin_allowlist=*/std::nullopt);
     std::unique_ptr<PermissionsPolicy> policy =
         CreateFromParentPolicy(nullptr, /*header_policy=*/{}, origin_a_);
     EXPECT_EQ(network::PermissionsPolicyFeatureDefault::EnableForNone,
@@ -3060,13 +3277,8 @@ TEST_F(PermissionsPolicyTest, GetPermissionsPolicyFeatureListForUnload) {
     for (int bucket = 0; bucket < 100; bucket++) {
       SCOPED_TRACE(base::StringPrintf("bucket=%d", bucket));
       base::test::ScopedFeatureList feature_list;
-      feature_list.InitWithFeaturesAndParameters(
-          {{network::features::kDeprecateUnload,
-            {{network::features::kDeprecateUnloadPercent.name,
-              base::StringPrintf("%d", percent)},
-             {network::features::kDeprecateUnloadBucket.name,
-              base::StringPrintf("%d", bucket)}}}},
-          /*disabled_features=*/{});
+      EnableDeprecateUnloadFeatures(feature_list, percent, bucket,
+                                    /*origin_allowlist=*/std::nullopt);
       const network::PermissionsPolicyFeatureDefault unload_default =
           GetDefaultForUnload(origin);
       ASSERT_EQ(GetDefaultForUnload(origin.DeriveNewOpaqueOrigin()),
@@ -3118,11 +3330,9 @@ TEST_F(DeprecateUnloadTest, UnloadDeprecationAllowedHosts_Empty) {
 // A simple list of hosts should be parsed correctly.
 TEST_F(DeprecateUnloadTest, UnloadDeprecationAllowedHosts_Simple) {
   base::test::ScopedFeatureList feature_list;
-  feature_list.InitWithFeaturesAndParameters(
-      {{network::features::kDeprecateUnloadByAllowList,
-        {{network::features::kDeprecateUnloadAllowlist.name,
-          "testing1,testing2"}}}},
-      /*disabled_features=*/{});
+  EnableDeprecateUnloadFeatures(feature_list, /*percent=*/std::nullopt,
+                                /*bucket=*/std::nullopt,
+                                /*origin_allowlist=*/"testing1,testing2");
 
   EXPECT_EQ(std::unordered_set<std::string>({"testing1", "testing2"}),
             network::UnloadDeprecationAllowedHosts());
@@ -3131,11 +3341,10 @@ TEST_F(DeprecateUnloadTest, UnloadDeprecationAllowedHosts_Simple) {
 // A messy list of hosts should be parsed correctly.
 TEST_F(DeprecateUnloadTest, UnloadDeprecationAllowedHosts_Messy) {
   base::test::ScopedFeatureList feature_list;
-  feature_list.InitWithFeaturesAndParameters(
-      {{network::features::kDeprecateUnloadByAllowList,
-        {{network::features::kDeprecateUnloadAllowlist.name,
-          "testing1,, testing2,testing1"}}}},
-      /*disabled_features=*/{});
+  EnableDeprecateUnloadFeatures(
+      feature_list, /*percent=*/std::nullopt,
+      /*bucket=*/std::nullopt,
+      /*origin_allowlist=*/"testing1,, testing2,testing1");
 
   EXPECT_EQ(std::unordered_set<std::string>({"testing1", "testing2"}),
             network::UnloadDeprecationAllowedHosts());
@@ -3145,10 +3354,9 @@ TEST_F(DeprecateUnloadTest, UnloadDeprecationAllowedHosts_Messy) {
 // allowlist.
 TEST_F(DeprecateUnloadTest, UnloadDeprecationAllowedForHost_EmptyAllowList) {
   base::test::ScopedFeatureList feature_list;
-  feature_list.InitWithFeaturesAndParameters(
-      {{network::features::kDeprecateUnloadByAllowList,
-        {{network::features::kDeprecateUnloadAllowlist.name, ""}}}},
-      /*disabled_features=*/{});
+  EnableDeprecateUnloadFeatures(feature_list, /*percent=*/std::nullopt,
+                                /*bucket=*/std::nullopt,
+                                /*origin_allowlist=*/"");
   const auto hosts = network::UnloadDeprecationAllowedHosts();
   // With no allowlist, every origin is allowed.
   EXPECT_TRUE(
@@ -3171,11 +3379,9 @@ TEST_F(DeprecateUnloadTest, UnloadDeprecationAllowedForHost_NonEmptyAllowList) {
   // Now set an allowlist and check that only the allowed domains see
   // deprecation.
   base::test::ScopedFeatureList feature_list;
-  feature_list.InitWithFeaturesAndParameters(
-      {{network::features::kDeprecateUnloadByAllowList,
-        {{network::features::kDeprecateUnloadAllowlist.name,
-          "testing1,testing2"}}}},
-      /*disabled_features=*/{});
+  EnableDeprecateUnloadFeatures(feature_list, /*percent=*/std::nullopt,
+                                /*bucket=*/std::nullopt,
+                                /*origin_allowlist=*/"testing1,testing2");
 
   const auto hosts = network::UnloadDeprecationAllowedHosts();
   EXPECT_TRUE(
@@ -3196,11 +3402,9 @@ TEST_F(DeprecateUnloadTest, UnloadDeprecationAllowedForHost_NonEmptyAllowList) {
 TEST_F(DeprecateUnloadTest, UnloadDeprecationAllowedForOrigin_NonHttp) {
   // Set to 100% deprecation.
   base::test::ScopedFeatureList feature_list;
-  feature_list.InitWithFeaturesAndParameters(
-      {{network::features::kDeprecateUnload,
-        {{network::features::kDeprecateUnloadPercent.name, "100"},
-         {network::features::kDeprecateUnloadBucket.name, "0"}}}},
-      /*disabled_features=*/{});
+  EnableDeprecateUnloadFeatures(feature_list, /*percent=*/100,
+                                /*bucket=*/0,
+                                /*origin_allowlist=*/std::nullopt);
   const url::Origin chrome_origin =
       url::Origin::Create(GURL("chrome://settings"));
   EXPECT_FALSE(network::UnloadDeprecationAllowedForOrigin(chrome_origin));
@@ -3211,11 +3415,9 @@ TEST_F(DeprecateUnloadTest, UnloadDeprecationAllowedForOrigin_NonHttp) {
 // When the rollout is at 0%, no host should be allowed.
 TEST_F(DeprecateUnloadTest, UnloadDeprecationAllowedForOrigin_0Percent) {
   base::test::ScopedFeatureList feature_list;
-  feature_list.InitWithFeaturesAndParameters(
-      {{network::features::kDeprecateUnload,
-        {{network::features::kDeprecateUnloadPercent.name, "0"},
-         {network::features::kDeprecateUnloadBucket.name, "0"}}}},
-      /*disabled_features=*/{});
+  EnableDeprecateUnloadFeatures(feature_list, /*percent=*/0,
+                                /*bucket=*/0,
+                                /*origin_allowlist=*/std::nullopt);
   EXPECT_FALSE(network::UnloadDeprecationAllowedForOrigin(http_origin1_));
   EXPECT_FALSE(network::UnloadDeprecationAllowedForOrigin(
       http_origin1_.DeriveNewOpaqueOrigin()));
@@ -3224,11 +3426,9 @@ TEST_F(DeprecateUnloadTest, UnloadDeprecationAllowedForOrigin_0Percent) {
 // When the rollout is at 100% all hosts should be allowed.
 TEST_F(DeprecateUnloadTest, UnloadDeprecationAllowedForOrigin_100Percent) {
   base::test::ScopedFeatureList feature_list;
-  feature_list.InitWithFeaturesAndParameters(
-      {{network::features::kDeprecateUnload,
-        {{network::features::kDeprecateUnloadPercent.name, "100"},
-         {network::features::kDeprecateUnloadBucket.name, "0"}}}},
-      /*disabled_features=*/{});
+  EnableDeprecateUnloadFeatures(feature_list, /*percent=*/100,
+                                /*bucket=*/0,
+                                /*origin_allowlist=*/std::nullopt);
   EXPECT_TRUE(network::UnloadDeprecationAllowedForOrigin(http_origin1_));
   EXPECT_TRUE(network::UnloadDeprecationAllowedForOrigin(
       http_origin1_.DeriveNewOpaqueOrigin()));
@@ -3239,14 +3439,9 @@ TEST_F(DeprecateUnloadTest, UnloadDeprecationAllowedForOrigin_100Percent) {
 TEST_F(DeprecateUnloadTest,
        UnloadDeprecationAllowedForOrigin_0PercentAndAllowList) {
   base::test::ScopedFeatureList feature_list;
-  feature_list.InitWithFeaturesAndParameters(
-      {{network::features::kDeprecateUnload,
-        {{network::features::kDeprecateUnloadPercent.name, "0"},
-         {network::features::kDeprecateUnloadBucket.name, "0"}}},
-       {network::features::kDeprecateUnloadByAllowList,
-        {{network::features::kDeprecateUnloadAllowlist.name,
-          http_origin1_.host()}}}},
-      /*disabled_features=*/{});
+  EnableDeprecateUnloadFeatures(feature_list, /*percent=*/0,
+                                /*bucket=*/0,
+                                /*origin_allowlist=*/http_origin1_.host());
   EXPECT_TRUE(network::UnloadDeprecationAllowedForOrigin(http_origin1_));
   EXPECT_TRUE(network::UnloadDeprecationAllowedForOrigin(
       http_origin1_.DeriveNewOpaqueOrigin()));
@@ -3259,14 +3454,9 @@ TEST_F(DeprecateUnloadTest,
 TEST_F(DeprecateUnloadTest,
        UnloadDeprecationAllowedForOrigin_100PercentAndAllowList) {
   base::test::ScopedFeatureList feature_list;
-  feature_list.InitWithFeaturesAndParameters(
-      {{network::features::kDeprecateUnload,
-        {{network::features::kDeprecateUnloadPercent.name, "100"},
-         {network::features::kDeprecateUnloadBucket.name, "0"}}},
-       {network::features::kDeprecateUnloadByAllowList,
-        {{network::features::kDeprecateUnloadAllowlist.name,
-          http_origin1_.host()}}}},
-      /*disabled_features=*/{});
+  EnableDeprecateUnloadFeatures(feature_list, /*percent=*/100,
+                                /*bucket=*/0,
+                                /*origin_allowlist=*/http_origin1_.host());
   EXPECT_TRUE(network::UnloadDeprecationAllowedForOrigin(http_origin1_));
   EXPECT_TRUE(network::UnloadDeprecationAllowedForOrigin(
       http_origin1_.DeriveNewOpaqueOrigin()));

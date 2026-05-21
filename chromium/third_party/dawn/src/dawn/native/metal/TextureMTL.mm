@@ -441,7 +441,7 @@ Texture::Texture(DeviceBase* dev, const UnpackedPtr<TextureDescriptor>& desc)
 
 Texture::~Texture() {}
 
-void Texture::DestroyImpl() {
+void Texture::DestroyImpl(DestroyReason reason) {
     // TODO(crbug.com/dawn/831): DestroyImpl is called from two places.
     // - It may be called if the texture is explicitly destroyed with APIDestroy.
     //   This case is NOT thread-safe and needs proper synchronization with other
@@ -449,7 +449,7 @@ void Texture::DestroyImpl() {
     // - It may be called when the last ref to the texture is dropped and the texture
     //   is implicitly destroyed. This case is thread-safe because there are no
     //   other threads using the texture since there are no other live refs.
-    TextureBase::DestroyImpl();
+    TextureBase::DestroyImpl(reason);
     mMtlPlaneTextures.clear();
     mIOSurface = nullptr;
 }
@@ -475,20 +475,27 @@ MTLTextureUsage Texture::GetMTLTextureUsage() const {
 }
 
 id<MTLTexture> Texture::GetMTLTexture(Aspect aspect) const {
+    id<MTLTexture> tex;
     switch (aspect) {
         case Aspect::Plane0:
             DAWN_ASSERT(mMtlPlaneTextures.size() > 1);
-            return mMtlPlaneTextures[0].Get();
+            tex = mMtlPlaneTextures[0].Get();
+            break;
         case Aspect::Plane1:
             DAWN_ASSERT(mMtlPlaneTextures.size() > 1);
-            return mMtlPlaneTextures[1].Get();
+            tex = mMtlPlaneTextures[1].Get();
+            break;
         case Aspect::Plane2:
             DAWN_ASSERT(mMtlPlaneTextures.size() > 2);
-            return mMtlPlaneTextures[2].Get();
+            tex = mMtlPlaneTextures[2].Get();
+            break;
         default:
             DAWN_ASSERT(mMtlPlaneTextures.size() == 1);
-            return mMtlPlaneTextures[0].Get();
+            tex = mMtlPlaneTextures[0].Get();
+            break;
     }
+    DAWN_ASSERT(tex != nullptr);
+    return tex;
 }
 
 IOSurfaceRef Texture::GetIOSurface() {
@@ -685,17 +692,19 @@ MaybeError Texture::ClearTexture(CommandRecordingContext* commandContext,
         // Encode a buffer to texture copy to clear each subresource.
         for (Aspect aspect : IterateEnumMask(range.aspects)) {
             // Compute the buffer size big enough to fill the largest mip.
-            const TexelBlockInfo& blockInfo = GetFormat().GetAspectInfo(aspect).block;
+            const TypedTexelBlockInfo& blockInfo = GetFormat().GetAspectInfo(aspect).block;
 
             // Computations for the bytes per row / image height are done using the physical size
             // so that enough data is reserved for compressed textures.
-            Extent3D largestMipSize =
-                GetMipLevelSingleSubresourcePhysicalSize(range.baseMipLevel, aspect);
-            uint32_t largestMipBytesPerRow =
-                (largestMipSize.width / blockInfo.width) * blockInfo.byteSize;
-            uint64_t largestMipBytesPerImage = static_cast<uint64_t>(largestMipBytesPerRow) *
-                                               (largestMipSize.height / blockInfo.height);
-            uint64_t uploadSize = largestMipBytesPerImage * largestMipSize.depthOrArrayLayers;
+            BlockExtent3D largestMipSize = blockInfo.ToBlock(
+                GetMipLevelSingleSubresourcePhysicalSize(range.baseMipLevel, aspect));
+
+            BlockCount uploadBlocks =
+                largestMipSize.width * largestMipSize.height * largestMipSize.depthOrArrayLayers;
+            uint64_t largestMipBytesPerRow = blockInfo.ToBytes(largestMipSize.width);
+            uint64_t largestMipBytesPerImage =
+                blockInfo.ToBytes(largestMipSize.width * largestMipSize.height);
+            uint64_t uploadSize = blockInfo.ToBytes(uploadBlocks);
 
             DAWN_TRY(device->GetDynamicUploader()->WithUploadReservation(
                 uploadSize, blockInfo.byteSize, [&](UploadReservation reservation) -> MaybeError {
@@ -852,7 +861,7 @@ MaybeError TextureView::Initialize(const UnpackedPtr<TextureViewDescriptor>& des
     return {};
 }
 
-void TextureView::DestroyImpl() {
+void TextureView::DestroyImpl(DestroyReason reason) {
     mMtlTextureView = nil;
 }
 

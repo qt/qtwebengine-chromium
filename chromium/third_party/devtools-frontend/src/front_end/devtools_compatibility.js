@@ -409,7 +409,7 @@
   // InspectorFrontendHostImpl --------------------------------------------------
 
   /**
-   * Enum for recordPerformanceHistogram
+   * Enum for recordEnumeratedHistogram
    * Warning: There is another definition of this enum in the DevTools code
    * base, keep them in sync:
    * front_end/core/host/InspectorFrontendHostAPI.ts
@@ -435,13 +435,7 @@
     LighthouseModeRun: 'DevTools.LighthouseModeRun',
     LighthouseCategoryUsed: 'DevTools.LighthouseCategoryUsed',
     PanelShown: 'DevTools.PanelShown',
-    RecordingAssertion: 'DevTools.RecordingAssertion',
-    RecordingCodeToggled: 'DevTools.RecordingCodeToggled',
-    RecordingCopiedToClipboard: 'DevTools.RecordingCopiedToClipboard',
-    RecordingEdited: 'DevTools.RecordingEdited',
-    RecordingExported: 'DevTools.RecordingExported',
     RecordingReplayFinished: 'DevTools.RecordingReplayFinished',
-    RecordingReplaySpeed: 'DevTools.RecordingReplaySpeed',
     RecordingReplayStarted: 'DevTools.RecordingReplayStarted',
     RecordingToggled: 'DevTools.RecordingToggled',
     SourcesPanelFileDebugged: 'DevTools.SourcesPanelFileDebugged',
@@ -761,6 +755,14 @@
     }
 
     /**
+     * @param histogramName
+     * @param duration
+     */
+    recordPerformanceHistogramMedium(histogramName, duration) {
+      DevToolsAPI.sendMessageToEmbedder('recordPerformanceHistogramMedium', [histogramName, duration], null);
+    }
+
+    /**
      * @param featureName
      */
     recordNewBadgeUsage(featureName) {
@@ -1025,6 +1027,17 @@
      */
     recordFunctionCall(functionCallEvent) {
       DevToolsAPI.sendMessageToEmbedder('recordFunctionCall', [functionCallEvent], null);
+    }
+
+    /**
+     * @param featureName
+     */
+    setChromeFlag(featureName, value) {
+      DevToolsAPI.sendMessageToEmbedder('setChromeFlag', [featureName, value], null);
+    }
+
+    requestRestart() {
+      DevToolsAPI.sendMessageToEmbedder('requestRestart', [], null);
     }
 
     // Backward-compatible methods below this line --------------------------------------------

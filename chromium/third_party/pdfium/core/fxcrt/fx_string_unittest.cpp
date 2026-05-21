@@ -80,6 +80,10 @@ TEST(fxstring, ByteStringToInt) {
   EXPECT_EQ(0, StringToInt("beef1"));
   EXPECT_EQ(0, StringToInt("b33f"));
   EXPECT_EQ(33, StringToInt("33f"));
+
+  EXPECT_EQ(-100, StringToInt("--100"));
+  EXPECT_EQ(-100, StringToInt("+-100"));
+  EXPECT_EQ(100, StringToInt("++100"));
 }
 
 TEST(fxstring, WideStringToInt) {
@@ -110,6 +114,10 @@ TEST(fxstring, WideStringToInt) {
   EXPECT_EQ(0, StringToInt(L"beef1"));
   EXPECT_EQ(0, StringToInt(L"b33f"));
   EXPECT_EQ(33, StringToInt(L"33f"));
+
+  EXPECT_EQ(-100, StringToInt(L"--100"));
+  EXPECT_EQ(-100, StringToInt(L"+-100"));
+  EXPECT_EQ(100, StringToInt(L"++100"));
 }
 
 TEST(fxstring, ByteStringToFloat) {
@@ -119,12 +127,17 @@ TEST(fxstring, ByteStringToFloat) {
   EXPECT_FLOAT_EQ(0.0f, StringToFloat("-0.0"));
 
   EXPECT_FLOAT_EQ(0.25f, StringToFloat("0.25"));
+  EXPECT_FLOAT_EQ(0.25f, StringToFloat("+0.25"));
   EXPECT_FLOAT_EQ(-0.25f, StringToFloat("-0.25"));
 
   EXPECT_FLOAT_EQ(100.0f, StringToFloat("100"));
   EXPECT_FLOAT_EQ(100.0f, StringToFloat("100.0"));
   EXPECT_FLOAT_EQ(100.0f, StringToFloat("    100.0"));
   EXPECT_FLOAT_EQ(-100.0f, StringToFloat("-100.0000"));
+
+  EXPECT_FLOAT_EQ(-100.0f, StringToFloat("--100.0"));
+  EXPECT_FLOAT_EQ(-100.0f, StringToFloat("+-100.0"));
+  EXPECT_FLOAT_EQ(100.0f, StringToFloat("++100.0"));
 
   EXPECT_FLOAT_EQ(3.402823e+38f,
                   StringToFloat("340282300000000000000000000000000000000"));
@@ -157,12 +170,17 @@ TEST(fxstring, WideStringToFloat) {
   EXPECT_FLOAT_EQ(0.0f, StringToFloat(L"-0.0"));
 
   EXPECT_FLOAT_EQ(0.25f, StringToFloat(L"0.25"));
+  EXPECT_FLOAT_EQ(0.25f, StringToFloat(L"+0.25"));
   EXPECT_FLOAT_EQ(-0.25f, StringToFloat(L"-0.25"));
 
   EXPECT_FLOAT_EQ(100.0f, StringToFloat(L"100"));
   EXPECT_FLOAT_EQ(100.0f, StringToFloat(L"100.0"));
   EXPECT_FLOAT_EQ(100.0f, StringToFloat(L"    100.0"));
   EXPECT_FLOAT_EQ(-100.0f, StringToFloat(L"-100.0000"));
+
+  EXPECT_FLOAT_EQ(-100.0f, StringToFloat(L"--100.0"));
+  EXPECT_FLOAT_EQ(-100.0f, StringToFloat(L"+-100.0"));
+  EXPECT_FLOAT_EQ(100.0f, StringToFloat(L"++100.0"));
 
   EXPECT_FLOAT_EQ(3.402823e+38f,
                   StringToFloat(L"340282300000000000000000000000000000000"));

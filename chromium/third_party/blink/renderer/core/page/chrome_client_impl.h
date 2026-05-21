@@ -69,10 +69,12 @@ class CORE_EXPORT ChromeClientImpl final : public ChromeClient {
   void ChromeDestroyed() override;
   void SetWindowRect(const gfx::Rect&, LocalFrame&) override;
 #if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
-  void Minimize(LocalFrame&) override;
-  void Maximize(LocalFrame&) override;
-  void Restore(LocalFrame&) override;
-  void SetResizable(bool resizable, LocalFrame& frame) override;
+  void Minimize(LocalFrame&, WindowingControlsChangeCallback) override;
+  void Maximize(LocalFrame&, WindowingControlsChangeCallback) override;
+  void Restore(LocalFrame&, WindowingControlsChangeCallback) override;
+  void SetResizable(bool resizable,
+                    LocalFrame& frame,
+                    WindowingControlsChangeCallback) override;
 #endif
   gfx::Rect RootWindowRect(LocalFrame&) override;
   void DidAccessInitialMainDocument() override;
@@ -95,8 +97,8 @@ class CORE_EXPORT ChromeClientImpl final : public ChromeClient {
   void SetShouldThrottleFrameRate(bool flag, LocalFrame& main_frame) override;
   void RequestMainFrameOnCompositorAnimation(
       LocalFrame&,
-      cc::PropertyChangeForcesCommitCriteria
-          property_change_forces_commit_criteria) override;
+      cc::PropertyChangeForcesCommitCriteria criteria,
+      bool force_propagation) override;
   std::unique_ptr<cc::ScopedPauseRendering> PauseRendering(
       LocalFrame&) override;
   std::optional<int> GetMaxRenderBufferBounds(LocalFrame&) const override;
@@ -115,10 +117,6 @@ class CORE_EXPORT ChromeClientImpl final : public ChromeClient {
                              network::mojom::blink::WebSandboxFlags,
                              const SessionStorageNamespaceId&,
                              bool& consumed_user_gesture) override;
-  void Show(LocalFrame& frame,
-            LocalFrame& opener_frame,
-            NavigationPolicy navigation_policy,
-            bool user_gesture) override;
   void SetOverscrollBehavior(LocalFrame& main_frame,
                              const cc::OverscrollBehavior&) override;
   void InjectScrollbarGestureScroll(
@@ -297,7 +295,6 @@ class CORE_EXPORT ChromeClientImpl final : public ChromeClient {
 
   void OnMouseDown(Node&) override;
   void DidUpdateBrowserControls() const override;
-  void DidUpdateLoadProgress(float) override;
 
   void DidUpdateMaxSafeAreaInsets(
       const gfx::InsetsF& max_safe_area_insets) const override;

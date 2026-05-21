@@ -849,9 +849,13 @@ static void construct_gop_structure_from_rc(
         &rc_gop_decision->gop_frame_list[frame_index];
     gf_group->update_type[frame_index] = gop_frame_rc->update_type;
     gf_group->layer_depth[frame_index] = gop_frame_rc->layer_depth;
-    gf_group->display_idx[frame_index] =
-        gop_frame_rc->display_idx + rc_gop_decision->global_order_idx_offset;
     gf_group->update_ref_idx[frame_index] = gop_frame_rc->update_ref_idx;
+    // `display_idx` means differently in libaom and RC.
+    // - in libaom: it is display order index in the GOP, equivalent to
+    //              `order_idx` in RC
+    // - in RC: it is the number of display frames precedeing this frame, which
+    //          is equivalent to `cur_frame_idx` in libaom.
+    gf_group->display_idx[frame_index] = gop_frame_rc->order_idx;
     gf_group->cur_frame_idx[frame_index] = gop_frame_rc->display_idx;
     switch (gf_group->update_type[frame_index]) {
       case LF_UPDATE:
@@ -861,19 +865,30 @@ static void construct_gop_structure_from_rc(
       case ARF_UPDATE:
       case INTNL_ARF_UPDATE:
         gf_group->arf_src_offset[frame_index] =
-            gop_frame_rc->display_idx - frame_index;
+            gop_frame_rc->order_idx - gop_frame_rc->display_idx;
         break;
       default: gf_group->arf_src_offset[frame_index] = 0;
     }
-    gf_group->cur_frame_idx[frame_index] = frame_index;
     gf_group->frame_type[frame_index] =
         gop_frame_rc->is_key_frame ? KEY_FRAME : INTER_FRAME;
     gf_group->refbuf_state[frame_index] =
         gop_frame_rc->is_key_frame ? REFBUF_RESET : REFBUF_UPDATE;
+    // Always override the ref frame map from external RC.
+    gf_group->use_ext_ref_frame_map[frame_index] = 1;
+    for (int i = 0; i < REF_FRAMES; ++i) {
+      gf_group->ref_frame_list[frame_index][i] = INVALID_IDX;
+    }
+    for (int i = 0; i < AOM_RC_MAX_REF_FRAMES; ++i) {
+      int ref_name = gop_frame_rc->ref_frame_list.name[i];
+      int buf_idx = gop_frame_rc->ref_frame_list.index[i];
+      if (ref_name >= LAST_FRAME && ref_name <= ALTREF_FRAME) {
+        gf_group->ref_frame_list[frame_index][ref_name] = (int8_t)buf_idx;
+      }
+    }
   }
 }
 
-void av1_gop_setup_structure(AV1_COMP *cpi) {
+void av1_gop_setup_structure(AV1_COMP *cpi, const int is_final_pass) {
   RATE_CONTROL *const rc = &cpi->rc;
   PRIMARY_RATE_CONTROL *const p_rc = &cpi->ppi->p_rc;
   GF_GROUP *const gf_group = &cpi->ppi->gf_group;
@@ -882,9 +897,12 @@ void av1_gop_setup_structure(AV1_COMP *cpi) {
   const int key_frame = rc->frames_since_key == 0;
   FRAME_UPDATE_TYPE first_frame_update_type = ARF_UPDATE;
 
+  // define_gf_group() is called twice in av1_set_second_pass_params() with
+  // `is_final_pass` being 0 and 1 separately. But only one GOP can be advanced
+  // with the external RC. That is only done when `is_final_pass` is true.
   if (cpi->ext_ratectrl.ready &&
       (cpi->ext_ratectrl.funcs.rc_type & AOM_RC_GOP) != 0 &&
-      cpi->ext_ratectrl.funcs.get_gop_decision != NULL) {
+      cpi->ext_ratectrl.funcs.get_gop_decision != NULL && is_final_pass) {
     aom_rc_gop_decision_t gop_decision;
     aom_codec_err_t codec_status =
         av1_extrc_get_gop_decision(&cpi->ext_ratectrl, &gop_decision);
@@ -893,6 +911,9 @@ void av1_gop_setup_structure(AV1_COMP *cpi) {
                          "av1_extrc_get_gop_decision() failed");
     }
     construct_gop_structure_from_rc(gf_group, &gop_decision);
+    if (gop_decision.gop_frame_list[0].is_key_frame) {
+      rc->frames_since_key = 0;
+    }
   } else {
     if (key_frame) {
       first_frame_update_type = KF_UPDATE;

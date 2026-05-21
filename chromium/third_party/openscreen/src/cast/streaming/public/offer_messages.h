@@ -66,7 +66,7 @@ struct Stream {
   // The event logs are generally recommended for use in gathering statistics
   // for the sender session.
   bool receiver_rtcp_event_log = true;
-  std::string receiver_rtcp_dscp;
+  std::optional<int> receiver_rtcp_dscp;
   int rtp_timebase = 0;
 
   // The codec parameter field honors the format laid out in RFC 6381:

@@ -13,7 +13,7 @@ version = "0.1.0"
 edition = "2021"     # Rust version
 
 [lib]
-crate-type = ["rlib", "cdylib"]
+crate-type = ["rlib", "cdylib", "staticlib"]
 
 [dependencies]
 libc = { version = "0.2.152", optional = true }
@@ -46,6 +46,12 @@ libsharpyuv-sys = { version = "0.1.0", path = "sys/libsharpyuv-sys", features = 
 aom-sys = { version = "0.1.0", path = "sys/aom-sys", features = [
   "aom",
 ], optional = true }
+avm-sys = { version = "0.1.0", path = "sys/avm-sys", features = [
+  "avm",
+], optional = true }
+libjxl-sys = { version = "0.1.0", path = "sys/libjxl-sys", features = [
+  "libjxl",
+], optional = true }
 
 png = { version = "0.17.16", optional = true }
 image = { version = "0.25.6", features = ["jpeg"], optional = true }
@@ -75,11 +81,12 @@ heic = []
 disable_cfi = []
 aom = ["dep:aom-sys", "encoder"]
 encoder = []
+avm = ["dep:avm-sys"]
 png = ["dep:png"]
 jpeg = ["dep:image"]
 gif = ["dep:gif", "dep:gif-dispose"]
-sample_transform = []
 sharpyuv = ["dep:libsharpyuv-sys"]
+jpegxl = ["dep:libjxl-sys"]
 
 [package.metadata.capi.header]
 name = "avif"

@@ -79,8 +79,8 @@ EIGEN_STRONG_INLINE Packet4cf pnegate(const Packet4cf& a) {
 }
 template <>
 EIGEN_STRONG_INLINE Packet4cf pconj(const Packet4cf& a) {
-  const __m256 mask = _mm256_castsi256_ps(_mm256_setr_epi32(0x00000000, 0x80000000, 0x00000000, 0x80000000, 0x00000000,
-                                                            0x80000000, 0x00000000, 0x80000000));
+  const __m256 mask = _mm256_castsi256_ps(_mm256_setr_epi32(0x00000000, SIGN_MASK_I32, 0x00000000, SIGN_MASK_I32,
+                                                            0x00000000, SIGN_MASK_I32, 0x00000000, SIGN_MASK_I32));
   return Packet4cf(_mm256_xor_ps(a.v, mask));
 }
 
@@ -282,7 +282,8 @@ EIGEN_STRONG_INLINE Packet2cd pnegate(const Packet2cd& a) {
 }
 template <>
 EIGEN_STRONG_INLINE Packet2cd pconj(const Packet2cd& a) {
-  const __m256d mask = _mm256_castsi256_pd(_mm256_set_epi32(0x80000000, 0x0, 0x0, 0x0, 0x80000000, 0x0, 0x0, 0x0));
+  const __m256d mask =
+      _mm256_castsi256_pd(_mm256_set_epi32(SIGN_MASK_I32, 0x0, 0x0, 0x0, SIGN_MASK_I32, 0x0, 0x0, 0x0));
   return Packet2cd(_mm256_xor_pd(a.v, mask));
 }
 

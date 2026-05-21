@@ -38,7 +38,10 @@ source_set("font") {
 }
 
 pdfium_unittest_source_set("unittests") {
-  sources = [ "fgas_fontutils_unittest.cpp" ]
+  sources = [
+    "cfgas_fontmgr_unittest.cpp",
+    "fgas_fontutils_unittest.cpp",
+  ]
   deps = [
     ":font",
     "../../../core/fxcrt",

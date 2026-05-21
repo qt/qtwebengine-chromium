@@ -343,9 +343,11 @@ class WatchTimeReporterTest
     void OnError(const media::PipelineStatus& status) override {}
     void OnFallback(const media::PipelineStatus& status) override {}
     void SetIsEME() override {}
+    void SetHasTrackChange() override {}
     void SetTimeToMetadata(base::TimeDelta elapsed) override {}
     void SetTimeToFirstFrame(base::TimeDelta elapsed) override {}
     void SetTimeToPlayReady(base::TimeDelta elapsed) override {}
+    void SetVisibilityRatioAtPlaybackStart(double ratio) override {}
     void SetContainerName(
         media::container_names::MediaContainerName container_name) override {}
     void SetRendererType(media::RendererType renderer_type) override {}

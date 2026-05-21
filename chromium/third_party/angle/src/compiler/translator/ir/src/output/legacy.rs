@@ -1198,11 +1198,12 @@ impl<'options> Generator<'options> {
                             }
                         }
                     } else {
-                        match (image_type.is_ms, image_type.is_array) {
-                            (false, false) => ffi::ASTBasicType::Image2D,
-                            (false, true) => ffi::ASTBasicType::Image2DArray,
-                            (true, false) => ffi::ASTBasicType::Image2DMS,
-                            (true, true) => ffi::ASTBasicType::Image2DMSArray,
+                        // Multisampled storage images are a desktop GLSL feature
+                        debug_assert!(!image_type.is_ms);
+                        if image_type.is_array {
+                            ffi::ASTBasicType::Image2DArray
+                        } else {
+                            ffi::ASTBasicType::Image2D
                         }
                     }
                 }
@@ -1215,11 +1216,11 @@ impl<'options> Generator<'options> {
                             (true, true) => ffi::ASTBasicType::ISampler2DMSArray,
                         }
                     } else {
-                        match (image_type.is_ms, image_type.is_array) {
-                            (false, false) => ffi::ASTBasicType::IImage2D,
-                            (false, true) => ffi::ASTBasicType::IImage2DArray,
-                            (true, false) => ffi::ASTBasicType::IImage2DMS,
-                            (true, true) => ffi::ASTBasicType::IImage2DMSArray,
+                        debug_assert!(!image_type.is_ms);
+                        if image_type.is_array {
+                            ffi::ASTBasicType::IImage2DArray
+                        } else {
+                            ffi::ASTBasicType::IImage2D
                         }
                     }
                 }
@@ -1231,13 +1232,10 @@ impl<'options> Generator<'options> {
                             (true, false) => ffi::ASTBasicType::USampler2DMS,
                             (true, true) => ffi::ASTBasicType::USampler2DMSArray,
                         }
+                    } else if image_type.is_array {
+                        ffi::ASTBasicType::UImage2DArray
                     } else {
-                        match (image_type.is_ms, image_type.is_array) {
-                            (false, false) => ffi::ASTBasicType::UImage2D,
-                            (false, true) => ffi::ASTBasicType::UImage2DArray,
-                            (true, false) => ffi::ASTBasicType::UImage2DMS,
-                            (true, true) => ffi::ASTBasicType::UImage2DMSArray,
-                        }
+                        ffi::ASTBasicType::UImage2D
                     }
                 }
             },
@@ -1273,19 +1271,15 @@ impl<'options> Generator<'options> {
                             } else {
                                 ffi::ASTBasicType::SamplerCubeShadow
                             }
+                        } else if image_type.is_array {
+                            ffi::ASTBasicType::SamplerCubeArray
                         } else {
-                            if image_type.is_array {
-                                ffi::ASTBasicType::SamplerCubeArray
-                            } else {
-                                ffi::ASTBasicType::SamplerCube
-                            }
+                            ffi::ASTBasicType::SamplerCube
                         }
+                    } else if image_type.is_array {
+                        ffi::ASTBasicType::ImageCubeArray
                     } else {
-                        if image_type.is_array {
-                            ffi::ASTBasicType::ImageCubeArray
-                        } else {
-                            ffi::ASTBasicType::ImageCube
-                        }
+                        ffi::ASTBasicType::ImageCube
                     }
                 }
                 ImageBasicType::Int => {
@@ -1295,12 +1289,10 @@ impl<'options> Generator<'options> {
                         } else {
                             ffi::ASTBasicType::ISamplerCube
                         }
+                    } else if image_type.is_array {
+                        ffi::ASTBasicType::IImageCubeArray
                     } else {
-                        if image_type.is_array {
-                            ffi::ASTBasicType::IImageCubeArray
-                        } else {
-                            ffi::ASTBasicType::IImageCube
-                        }
+                        ffi::ASTBasicType::IImageCube
                     }
                 }
                 ImageBasicType::Uint => {
@@ -1310,36 +1302,26 @@ impl<'options> Generator<'options> {
                         } else {
                             ffi::ASTBasicType::USamplerCube
                         }
+                    } else if image_type.is_array {
+                        ffi::ASTBasicType::UImageCubeArray
                     } else {
-                        if image_type.is_array {
-                            ffi::ASTBasicType::UImageCubeArray
-                        } else {
-                            ffi::ASTBasicType::UImageCube
-                        }
+                        ffi::ASTBasicType::UImageCube
                     }
                 }
             },
             ImageDimension::Rect => match image_basic_type {
                 ImageBasicType::Float => {
-                    if image_type.is_sampled {
-                        ffi::ASTBasicType::Sampler2DRect
-                    } else {
-                        ffi::ASTBasicType::ImageRect
-                    }
+                    // Rect storage images are a desktop GLSL feature
+                    debug_assert!(image_type.is_sampled);
+                    ffi::ASTBasicType::Sampler2DRect
                 }
                 ImageBasicType::Int => {
-                    if image_type.is_sampled {
-                        ffi::ASTBasicType::ISampler2DRect
-                    } else {
-                        ffi::ASTBasicType::IImageRect
-                    }
+                    debug_assert!(image_type.is_sampled);
+                    ffi::ASTBasicType::ISampler2DRect
                 }
                 ImageBasicType::Uint => {
-                    if image_type.is_sampled {
-                        ffi::ASTBasicType::USampler2DRect
-                    } else {
-                        ffi::ASTBasicType::UImageRect
-                    }
+                    debug_assert!(image_type.is_sampled);
+                    ffi::ASTBasicType::USampler2DRect
                 }
             },
             ImageDimension::Buffer => match image_basic_type {
@@ -1448,36 +1430,18 @@ impl<'options> Generator<'options> {
         {
             ffi::ASTQualifier::SpecConst
         } else {
-            let is_input =
-                decorations.decorations.iter().any(|&decoration| decoration == Decoration::Input);
-            let is_output =
-                decorations.decorations.iter().any(|&decoration| decoration == Decoration::Output);
-            let is_inout = decorations
-                .decorations
-                .iter()
-                .any(|&decoration| decoration == Decoration::InputOutput);
-            let is_uniform =
-                decorations.decorations.iter().any(|&decoration| decoration == Decoration::Uniform);
-            let is_buffer =
-                decorations.decorations.iter().any(|&decoration| decoration == Decoration::Buffer);
-            let is_shared =
-                decorations.decorations.iter().any(|&decoration| decoration == Decoration::Shared);
-            let is_smooth =
-                decorations.decorations.iter().any(|&decoration| decoration == Decoration::Smooth);
-            let is_flat =
-                decorations.decorations.iter().any(|&decoration| decoration == Decoration::Flat);
-            let is_noperspective = decorations
-                .decorations
-                .iter()
-                .any(|&decoration| decoration == Decoration::NoPerspective);
-            let is_centroid = decorations
-                .decorations
-                .iter()
-                .any(|&decoration| decoration == Decoration::Centroid);
-            let is_sample =
-                decorations.decorations.iter().any(|&decoration| decoration == Decoration::Sample);
-            let is_patch =
-                decorations.decorations.iter().any(|&decoration| decoration == Decoration::Patch);
+            let is_input = decorations.has(Decoration::Input);
+            let is_output = decorations.has(Decoration::Output);
+            let is_inout = decorations.has(Decoration::InputOutput);
+            let is_uniform = decorations.has(Decoration::Uniform);
+            let is_buffer = decorations.has(Decoration::Buffer);
+            let is_shared = decorations.has(Decoration::Shared);
+            let is_smooth = decorations.has(Decoration::Smooth);
+            let is_flat = decorations.has(Decoration::Flat);
+            let is_noperspective = decorations.has(Decoration::NoPerspective);
+            let is_centroid = decorations.has(Decoration::Centroid);
+            let is_sample = decorations.has(Decoration::Sample);
+            let is_patch = decorations.has(Decoration::Patch);
 
             if is_uniform {
                 ffi::ASTQualifier::Uniform
@@ -1610,7 +1574,7 @@ impl<'options> Generator<'options> {
             match decoration {
                 Decoration::PushConstant => layout_qualifier.push_constant = true,
                 Decoration::NonCoherent => layout_qualifier.noncoherent = true,
-                Decoration::YUV => layout_qualifier.yuv = true,
+                Decoration::Yuv => layout_qualifier.yuv = true,
                 Decoration::Location(location) => layout_qualifier.location = location as i32,
                 Decoration::Index(index) => layout_qualifier.index = index as i32,
                 Decoration::InputAttachmentIndex(index) => {
@@ -1637,16 +1601,11 @@ impl<'options> Generator<'options> {
     }
 
     fn get_memory_qualifier(decorations: &Decorations) -> ffi::ASTMemoryQualifier {
-        let readonly =
-            decorations.decorations.iter().any(|&decoration| decoration == Decoration::ReadOnly);
-        let writeonly =
-            decorations.decorations.iter().any(|&decoration| decoration == Decoration::WriteOnly);
-        let coherent =
-            decorations.decorations.iter().any(|&decoration| decoration == Decoration::Coherent);
-        let restrict_qualifier =
-            decorations.decorations.iter().any(|&decoration| decoration == Decoration::Restrict);
-        let volatile_qualifier =
-            decorations.decorations.iter().any(|&decoration| decoration == Decoration::Volatile);
+        let readonly = decorations.has(Decoration::ReadOnly);
+        let writeonly = decorations.has(Decoration::WriteOnly);
+        let coherent = decorations.has(Decoration::Coherent);
+        let restrict_qualifier = decorations.has(Decoration::Restrict);
+        let volatile_qualifier = decorations.has(Decoration::Volatile);
 
         ffi::ASTMemoryQualifier {
             readonly,
@@ -1665,12 +1624,9 @@ impl<'options> Generator<'options> {
         built_in: Option<BuiltIn>,
         is_global: bool,
     ) -> ffi::ASTType {
-        let invariant =
-            decorations.decorations.iter().any(|&decoration| decoration == Decoration::Invariant);
-        let precise =
-            decorations.decorations.iter().any(|&decoration| decoration == Decoration::Precise);
-        let interpolant =
-            decorations.decorations.iter().any(|&decoration| decoration == Decoration::Interpolant);
+        let invariant = decorations.has(Decoration::Invariant);
+        let precise = decorations.has(Decoration::Precise);
+        let interpolant = decorations.has(Decoration::Interpolant);
 
         ffi::ASTType {
             // Note: TypeId is unused after going back to AST.
@@ -1859,6 +1815,9 @@ impl ast::Target for Generator<'_> {
                 legacy_type
             }
             &Type::Pointer(pointee_type_id) => self.types[&pointee_type_id],
+            Type::DeadCodeEliminated => {
+                return;
+            }
         };
 
         self.types.insert(id, legacy_type);
@@ -1988,41 +1947,40 @@ impl ast::Target for Generator<'_> {
         debug_assert!(ir_meta.get_type(variable.type_id).is_pointer());
         if let Type::Struct(_, fields, StructSpecialization::InterfaceBlock) =
             ir_meta.get_type(ir_meta.get_type(variable.type_id).get_element_type_id().unwrap())
+            && symbol_type == ffi::ASTSymbolType::Empty
         {
-            if symbol_type == ffi::ASTSymbolType::Empty {
-                for (index, field) in fields.iter().enumerate() {
-                    let field_name = field.name.name;
-                    let field_symbol_type =
-                        field_symbol_type.unwrap_or_else(|| Self::legacy_symbol_type(&field.name));
+            for (index, field) in fields.iter().enumerate() {
+                let field_name = field.name.name;
+                let field_symbol_type =
+                    field_symbol_type.unwrap_or_else(|| Self::legacy_symbol_type(&field.name));
 
-                    let field_type = self.types[&field.type_id];
-                    let field_ast_type = Self::get_ast_type(
-                        ir_meta.get_shader_type(),
-                        self.options.is_es1,
-                        field.precision,
-                        &field.decorations,
-                        None,
-                        true,
-                    );
+                let field_type = self.types[&field.type_id];
+                let field_ast_type = Self::get_ast_type(
+                    ir_meta.get_shader_type(),
+                    self.options.is_es1,
+                    field.precision,
+                    &field.decorations,
+                    None,
+                    true,
+                );
 
-                    let legacy_field_variable = unsafe {
-                        ffi::make_nameless_block_field_variable(
-                            self.legacy_compiler,
-                            legacy_variable,
-                            index as u32,
-                            &ffi::SymbolName {
-                                name: field_name,
-                                symbol_type: field_symbol_type,
-                                id: SYMBOL_NAME_NO_ID,
-                            },
-                            field_type,
-                            &field_ast_type,
-                        )
-                    };
+                let legacy_field_variable = unsafe {
+                    ffi::make_nameless_block_field_variable(
+                        self.legacy_compiler,
+                        legacy_variable,
+                        index as u32,
+                        &ffi::SymbolName {
+                            name: field_name,
+                            symbol_type: field_symbol_type,
+                            id: SYMBOL_NAME_NO_ID,
+                        },
+                        field_type,
+                        &field_ast_type,
+                    )
+                };
 
-                    self.nameless_block_field_variables
-                        .insert((id, index as u32), legacy_field_variable);
-                }
+                self.nameless_block_field_variables
+                    .insert((id, index as u32), legacy_field_variable);
             }
         }
     }
@@ -2101,7 +2059,7 @@ impl ast::Target for Generator<'_> {
         });
     }
 
-    fn begin_block(&mut self, ir_meta: &IRMeta, variables: &Vec<VariableId>) -> *mut TIntermBlock {
+    fn begin_block(&mut self, ir_meta: &IRMeta, variables: &[VariableId]) -> *mut TIntermBlock {
         let block = unsafe { ffi::make_interm_block() };
         variables.iter().for_each(|&id| {
             let variable = ir_meta.get_variable(id);
@@ -2133,7 +2091,7 @@ impl ast::Target for Generator<'_> {
         _block_result: &mut *mut TIntermBlock,
         result: RegisterId,
         id: TypedId,
-        indices: &Vec<u32>,
+        indices: &[u32],
     ) {
         let expr = unsafe { ffi::swizzle(&self.get_expression(id), indices) };
         self.expressions.insert(result, expr);
@@ -2160,13 +2118,12 @@ impl ast::Target for Generator<'_> {
     ) {
         // When selecting a field of a nameless interface block, the AST expects to see references
         // to the field variables directly.
-        if let Id::Variable(var_id) = id.id {
-            if let Some(&field_variable) = self.nameless_block_field_variables.get(&(var_id, index))
-            {
-                self.expressions.insert(result, field_variable);
-                self.needs_deep_copy.insert(result);
-                return;
-            }
+        if let Id::Variable(var_id) = id.id
+            && let Some(&field_variable) = self.nameless_block_field_variables.get(&(var_id, index))
+        {
+            self.expressions.insert(result, field_variable);
+            self.needs_deep_copy.insert(result);
+            return;
         }
         let expr = unsafe { ffi::select_field(&self.get_expression(id), index) };
         self.expressions.insert(result, expr);
@@ -2188,7 +2145,7 @@ impl ast::Target for Generator<'_> {
         _block_result: &mut *mut TIntermBlock,
         result: RegisterId,
         type_id: TypeId,
-        ids: &Vec<TypedId>,
+        ids: &[TypedId],
     ) {
         let expr = unsafe {
             ffi::construct(
@@ -2226,7 +2183,7 @@ impl ast::Target for Generator<'_> {
         block_result: &mut *mut TIntermBlock,
         result: Option<RegisterId>,
         function_id: FunctionId,
-        params: &Vec<TypedId>,
+        params: &[TypedId],
     ) {
         let params = params.iter().map(|&id| self.get_expression(id)).collect::<Vec<_>>();
         let function = self.functions[&function_id];
@@ -2478,7 +2435,7 @@ impl ast::Target for Generator<'_> {
         block_result: &mut *mut TIntermBlock,
         result: Option<RegisterId>,
         built_in_op: BuiltInOpCode,
-        args: &Vec<TypedId>,
+        args: &[TypedId],
     ) {
         let args = args.iter().map(|&arg| self.get_expression(arg)).collect::<Vec<_>>();
         let (expr, statement) = unsafe {
@@ -3015,7 +2972,7 @@ impl ast::Target for Generator<'_> {
         &mut self,
         block: &mut *mut TIntermBlock,
         value: TypedId,
-        case_ids: &Vec<Option<ConstantId>>,
+        case_ids: &[Option<ConstantId>],
         case_blocks: Vec<*mut TIntermBlock>,
     ) {
         let value = self.get_expression(value);

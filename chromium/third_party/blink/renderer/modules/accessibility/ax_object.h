@@ -35,6 +35,7 @@
 #include <utility>
 
 #include "base/dcheck_is_on.h"
+#include "base/gtest_prod_util.h"
 #include "base/memory/raw_ref.h"
 #include "base/memory/stack_allocated.h"
 #include "third_party/blink/public/common/features.h"
@@ -856,6 +857,10 @@ class MODULES_EXPORT AXObject : public GarbageCollected<AXObject> {
   // additional rules or limitations on role usage are applied. Use
   // RawAriaRole() instead if the raw role does not need to be recomputed.
   ax::mojom::blink::Role DetermineRawAriaRole() const;
+  // Static helper for callers that only have an Element. It mirrors
+  // DetermineRawAriaRole() by mapping the explicit role attribute (if present)
+  // to the internal role enum, otherwise returning kUnknown.
+  static ax::mojom::blink::Role DetermineRawAriaRole(const Element&);
 
   // (2) Determine the ARIA role after applying rules based on other properties.
   ax::mojom::blink::Role DetermineAriaRole() const;
@@ -1027,10 +1032,13 @@ class MODULES_EXPORT AXObject : public GarbageCollected<AXObject> {
   const AXObject* AncestorMenuList() const;
 
   // Helper for scroll markers in tabs mode.
-  virtual bool ComputeIsIgnoredAsInsideInactiveScrollMarkerTab() {
+  // Returns true if the node is inside an inactive ::scroll-marker tab in tabs
+  // mode. Which is either being an originating element for a ::scroll-marker
+  // that is not selected, or being inside such an element.
+  virtual bool ComputeIsIgnoredAsInsideInactiveScrollMarkerTab() const {
     return false;
   }
-  bool InsideOriginatingElementForInactiveScrollMarkerInTabsMode() const {
+  bool InsideInactiveScrollMarkerTab() const {
     return cached_is_ignored_as_inside_inactive_scroll_marker_tab_;
   }
 
@@ -1653,6 +1661,7 @@ class MODULES_EXPORT AXObject : public GarbageCollected<AXObject> {
   void SerializeImageDataAttributes(ui::AXNodeData* node_data) const;
   void SerializeTextInsertionDeletionOffsetAttributes(
       ui::AXNodeData* node_data) const;
+  void SerializeTextChangeTypesAttributes(ui::AXNodeData* node_data) const;
 
   void SetCachedValuesNeedUpdate(
       bool cached_values_need_update,
@@ -1708,7 +1717,7 @@ class MODULES_EXPORT AXObject : public GarbageCollected<AXObject> {
   bool cached_can_set_focus_attribute_ : 1 = false;
   bool cached_is_in_menu_list_subtree_ : 1 = false;
   // True if this object is inside the originating element for an inactive
-  // ::scroll-marker in tabs mode.
+  // ::scroll-marker in tabs mode (non-::column case).
   bool cached_is_ignored_as_inside_inactive_scroll_marker_tab_ : 1 = false;
   bool always_load_inline_text_boxes_ : 1 = false;  // Used for Android only.
   std::optional<bool> cached_is_on_screen_;

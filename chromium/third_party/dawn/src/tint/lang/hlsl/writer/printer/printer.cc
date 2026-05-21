@@ -159,10 +159,8 @@ class Printer : public tint::TextGenerator {
 
     /// @returns the generated HLSL shader
     tint::Result<Output> Generate() {
-        auto valid = core::ir::ValidateAndDumpIfNeeded(ir_, "hlsl.Printer", kPrinterCapabilities);
-        if (valid != Success) {
-            return std::move(valid.Failure());
-        }
+        TINT_CHECK_RESULT(
+            core::ir::ValidateAndDumpIfNeeded(ir_, "hlsl.Printer", kPrinterCapabilities));
 
         // Emit module-scope declarations.
         EmitRootBlock(ir_.root_block);
@@ -236,6 +234,14 @@ class Printer : public tint::TextGenerator {
                 result_.workgroup_info.x = wg[0];
                 result_.workgroup_info.y = wg[1];
                 result_.workgroup_info.z = wg[2];
+
+                auto sg_opt = func->SubgroupSizeAsConst();
+                if (sg_opt.has_value()) {
+                    Line() << "[WaveSize(" << sg_opt.value() << ")]";
+
+                    // Store the subgroup size information away to return from the generator.
+                    result_.workgroup_info.subgroup_size = sg_opt;
+                }
             }
 
             auto out = Line();

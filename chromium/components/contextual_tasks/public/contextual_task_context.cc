@@ -4,8 +4,12 @@
 
 #include "components/contextual_tasks/public/contextual_task_context.h"
 
+#include <memory>
+#include <set>
+
 #include "base/strings/utf_string_conversions.h"
 #include "components/contextual_tasks/public/contextual_task.h"
+#include "components/contextual_tasks/public/utils.h"
 #include "components/url_deduplication/url_deduplication_helper.h"
 #include "components/visited_url_ranking/public/url_visit_util.h"
 
@@ -22,7 +26,8 @@ UrlAttachmentDecoratorData::UrlAttachmentDecoratorData(
 UrlAttachmentDecoratorData& UrlAttachmentDecoratorData::operator=(
     UrlAttachmentDecoratorData&&) = default;
 
-UrlAttachment::UrlAttachment(const GURL& url) : url_(url) {}
+UrlAttachment::UrlAttachment(const GURL& url, ResourceType resource_type)
+    : url_(url), resource_type(resource_type) {}
 
 UrlAttachment::~UrlAttachment() = default;
 
@@ -66,6 +71,10 @@ SessionID UrlAttachment::GetTabSessionId() const {
   return decorator_data_.contextual_search_context_data.tab_session_id;
 }
 
+ResourceType UrlAttachment::GetResourceType() const {
+  return resource_type;
+}
+
 UrlAttachmentDecoratorData& UrlAttachment::GetMutableDecoratorDataForTesting() {
   return decorator_data_;
 }
@@ -77,7 +86,7 @@ UrlAttachmentDecoratorData& UrlAttachment::GetMutableDecoratorData() {
 ContextualTaskContext::ContextualTaskContext(const ContextualTask& task)
     : task_id_(task.GetTaskId()) {
   for (const auto& url_resource : task.GetUrlResources()) {
-    UrlAttachment attachment(url_resource.url);
+    UrlAttachment attachment(url_resource.url, url_resource.resource_type);
     if (url_resource.title.has_value()) {
       attachment.title_ = base::UTF8ToUTF16(url_resource.title.value());
     }
@@ -111,6 +120,35 @@ const std::vector<UrlAttachment>& ContextualTaskContext::GetUrlAttachments()
   return urls_;
 }
 
+std::vector<UrlAttachment> ContextualTaskContext::GetUniqueUrlAttachments()
+    const {
+  std::unique_ptr<url_deduplication::URLDeduplicationHelper>
+      deduplication_helper =
+          contextual_tasks::CreateURLDeduplicationHelperForContextualTask();
+  std::vector<UrlAttachment> unique_attachments;
+  std::set<visited_url_ranking::URLMergeKey> seen_keys;
+
+  for (const auto& attachment : urls_) {
+    visited_url_ranking::URLMergeKey merge_key;
+    if (attachment.GetURL().is_valid()) {
+      // Dedup based on URL.
+      merge_key = visited_url_ranking::ComputeURLMergeKey(
+          attachment.GetURL(), /*title=*/std::u16string(),
+          deduplication_helper.get());
+    } else {
+      // For invalid URLs, dedup based on the title.
+      merge_key = base::UTF16ToUTF8(attachment.GetTitle());
+    }
+
+    if (seen_keys.find(merge_key) == seen_keys.end()) {
+      seen_keys.insert(merge_key);
+      unique_attachments.push_back(attachment);
+    }
+  }
+
+  return unique_attachments;
+}
+
 std::vector<UrlAttachment>&
 ContextualTaskContext::GetMutableUrlAttachmentsForTesting() {
   return urls_;
@@ -123,29 +161,27 @@ std::vector<UrlAttachment>& ContextualTaskContext::GetMutableUrlAttachments() {
 bool ContextualTaskContext::ContainsURL(
     const GURL& url,
     url_deduplication::URLDeduplicationHelper* deduplication_helper) const {
-  visited_url_ranking::URLMergeKey merge_key =
-      visited_url_ranking::ComputeURLMergeKey(url, std::u16string(),
-                                              deduplication_helper);
-  for (const auto& attachment : urls_) {
-    if (visited_url_ranking::ComputeURLMergeKey(
-            attachment.GetURL(), std::u16string(), deduplication_helper) ==
-        merge_key) {
-      return true;
-    }
-  }
-  return false;
+  return !GetMatchingUrlAttachments(url, deduplication_helper).empty();
 }
 
 std::vector<const UrlAttachment*>
 ContextualTaskContext::GetMatchingUrlAttachments(
     const GURL& url,
     url_deduplication::URLDeduplicationHelper* deduplication_helper) const {
-  // TODO(crbug.com/470979776): Add unit tests for this function.
+  if (!url.is_valid()) {
+    return {};
+  }
+
   std::vector<const UrlAttachment*> matching_attachments;
   visited_url_ranking::URLMergeKey merge_key =
       visited_url_ranking::ComputeURLMergeKey(url, std::u16string(),
                                               deduplication_helper);
   for (const auto& attachment : urls_) {
+    // Filter out invalid or empty URLs.
+    if (!attachment.GetURL().is_valid()) {
+      continue;
+    }
+
     if (visited_url_ranking::ComputeURLMergeKey(
             attachment.GetURL(), std::u16string(), deduplication_helper) ==
         merge_key) {

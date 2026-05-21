@@ -16,10 +16,10 @@
 #include "device/fido/authenticator_get_assertion_response.h"
 #include "device/fido/device_operation.h"
 #include "device/fido/fido_authenticator.h"
-#include "device/fido/fido_constants.h"
 #include "device/fido/fido_request_handler_base.h"
 #include "device/fido/large_blob.h"
 #include "device/fido/pin.h"
+#include "device/fido/public/fido_constants.h"
 #include "mojo/public/cpp/base/big_buffer.h"
 #include "services/data_decoder/public/cpp/data_decoder.h"
 
@@ -160,6 +160,10 @@ class COMPONENT_EXPORT(DEVICE_FIDO) FidoDeviceAuthenticator
       CtapGetAssertionCallback callback,
       size_t original_size,
       base::expected<mojo_base::BigBuffer, std::string> result);
+  void MaybeGetEphemeralKeyForMakeCredential(
+      CtapMakeCredentialRequest request,
+      MakeCredentialOptions options,
+      CtapMakeCredentialCallback callback);
   void MaybeGetEphemeralKeyForGetAssertion(CtapGetAssertionRequest request,
                                            CtapGetAssertionOptions options,
                                            CtapGetAssertionCallback callback);
@@ -174,6 +178,12 @@ class COMPONENT_EXPORT(DEVICE_FIDO) FidoDeviceAuthenticator
       CtapGetAssertionOptions options,
       std::vector<AuthenticatorGetAssertionResponse> responses,
       CtapGetAssertionCallback callback);
+  void OnHaveEphemeralKeyForMakeCredential(
+      CtapMakeCredentialRequest request,
+      MakeCredentialOptions options,
+      CtapMakeCredentialCallback callback,
+      CtapDeviceResponseCode status,
+      std::optional<pin::KeyAgreementResponse> key);
   void OnHaveEphemeralKeyForGetAssertion(
       CtapGetAssertionRequest request,
       CtapGetAssertionOptions options,

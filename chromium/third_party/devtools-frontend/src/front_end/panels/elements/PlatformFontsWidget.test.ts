@@ -3,13 +3,14 @@
 // found in the LICENSE file.
 
 import type * as SDK from '../../core/sdk/sdk.js';
+import type * as ComputedStyle from '../../models/computed_style/computed_style.js';
 import {describeWithMockConnection} from '../../testing/MockConnection.js';
 
 import * as Elements from './elements.js';
 
 describeWithMockConnection('PlatformFontsWidget', () => {
   it('correctly displays font stats', async () => {
-    const sharedModel = {} as Elements.ComputedStyleModel.ComputedStyleModel;
+    const sharedModel = {} as ComputedStyle.ComputedStyleModel.ComputedStyleModel;
     sharedModel.addEventListener = sinon.stub();
     const cssModel = {} as SDK.CSSModel.CSSModel;
     cssModel.getPlatformFonts = async () => ([
@@ -30,7 +31,7 @@ describeWithMockConnection('PlatformFontsWidget', () => {
       id: 1,
     } as SDK.DOMModel.DOMNode;
     sharedModel.cssModel = () => cssModel;
-    sharedModel.node = () => node;
+    sharedModel.node = node;
     const platformFontsWidget = new Elements.PlatformFontsWidget.PlatformFontsWidget(sharedModel);
     await platformFontsWidget.performUpdate();
     const fontStatsItems = platformFontsWidget.contentElement.querySelectorAll('.font-stats-item');

@@ -43,10 +43,8 @@ namespace {
 class MslWriter_ModuleScopeVarsTest : public core::ir::transform::TransformTest {
   public:
     void SetUp() override {
-        capabilities.Add(core::ir::Capability::kAllowPointersAndHandlesInStructures,
-                         core::ir::Capability::kAllowPrivateVarsInFunctions,
-                         core::ir::Capability::kAllowAnyLetType,
-                         core::ir::Capability::kAllowWorkspacePointerInputToEntryPoint);
+        capabilities.Add(core::ir::Capability::kAllowAnyLetType,
+                         core::ir::Capability::kMslAllowEntryPointInterface);
     }
 };
 
@@ -86,7 +84,7 @@ TEST_F(MslWriter_ModuleScopeVarsTest, Private) {
     b.Append(func->Block(), [&] {
         auto* load_a = b.Load(var_a);
         auto* load_b = b.Load(var_b);
-        b.Store(var_a, b.Add<i32>(load_a, load_b));
+        b.Store(var_a, b.Add(load_a, load_b));
         b.Return(func);
     });
 
@@ -147,7 +145,7 @@ TEST_F(MslWriter_ModuleScopeVarsTest, Private_WithInitializers) {
     b.Append(func->Block(), [&] {
         auto* load_a = b.Load(var_a);
         auto* load_b = b.Load(var_b);
-        b.Store(var_a, b.Add<i32>(load_a, load_b));
+        b.Store(var_a, b.Add(load_a, load_b));
         b.Return(func);
     });
 
@@ -210,7 +208,7 @@ TEST_F(MslWriter_ModuleScopeVarsTest, Storage) {
     b.Append(func->Block(), [&] {
         auto* load_a = b.Load(var_a);
         auto* load_b = b.Load(var_b);
-        b.Store(var_b, b.Add<i32>(load_a, load_b));
+        b.Store(var_b, b.Add(load_a, load_b));
         b.Return(func);
     });
 
@@ -271,7 +269,7 @@ TEST_F(MslWriter_ModuleScopeVarsTest, Uniform) {
     b.Append(func->Block(), [&] {
         auto* load_a = b.Load(var_a);
         auto* load_b = b.Load(var_b);
-        b.Add<i32>(load_a, load_b);
+        b.Add(load_a, load_b);
         b.Return(func);
     });
 
@@ -443,7 +441,7 @@ TEST_F(MslWriter_ModuleScopeVarsTest, Workgroup) {
     b.Append(func->Block(), [&] {
         auto* load_a = b.Load(var_a);
         auto* load_b = b.Load(var_b);
-        b.Store(var_a, b.Add<i32>(load_a, load_b));
+        b.Store(var_a, b.Add(load_a, load_b));
         b.Return(func);
     });
 
@@ -513,7 +511,7 @@ TEST_F(MslWriter_ModuleScopeVarsTest, MultipleAddressSpaces) {
         auto* load_a = b.Load(var_a);
         auto* load_b = b.Load(var_b);
         auto* load_c = b.Load(var_c);
-        b.Store(var_b, b.Add<i32>(load_a, b.Add<i32>(load_b, load_c)));
+        b.Store(var_b, b.Add(load_a, b.Add(load_b, load_c)));
         b.Return(func);
     });
 
@@ -586,7 +584,7 @@ TEST_F(MslWriter_ModuleScopeVarsTest, EntryPointHasExistingParameters) {
     b.Append(func->Block(), [&] {
         auto* load_a = b.Load(var_a);
         auto* load_b = b.Load(var_b);
-        b.Store(var_b, b.Add<i32>(load_a, b.Add<i32>(load_b, param)));
+        b.Store(var_b, b.Add(load_a, b.Add(load_b, param)));
         b.Return(func);
     });
 
@@ -649,7 +647,7 @@ TEST_F(MslWriter_ModuleScopeVarsTest, CallFunctionThatUsesVars_NoArgs) {
     b.Append(foo->Block(), [&] {
         auto* load_a = b.Load(var_a);
         auto* load_b = b.Load(var_b);
-        b.Store(var_b, b.Add<i32>(load_a, load_b));
+        b.Store(var_b, b.Add(load_a, load_b));
         b.Return(foo);
     });
 
@@ -730,7 +728,7 @@ TEST_F(MslWriter_ModuleScopeVarsTest, CallFunctionThatUsesVars_WithExistingParam
     b.Append(foo->Block(), [&] {
         auto* load_a = b.Load(var_a);
         auto* load_b = b.Load(var_b);
-        b.Store(var_b, b.Add<i32>(load_a, b.Add<i32>(load_b, param)));
+        b.Store(var_b, b.Add(load_a, b.Add(load_b, param)));
         b.Return(foo);
     });
 
@@ -808,7 +806,7 @@ TEST_F(MslWriter_ModuleScopeVarsTest, CallFunctionThatUsesVars_HandleTypes) {
     mod.root_block->Append(var_t);
     mod.root_block->Append(var_s);
 
-    auto* foo = b.Function("foo", ty.vec4<f32>());
+    auto* foo = b.Function("foo", ty.vec4f());
     auto* param = b.FunctionParam<i32>("param");
     foo->SetParams({param});
     b.Append(foo->Block(), [&] {
@@ -886,7 +884,7 @@ TEST_F(MslWriter_ModuleScopeVarsTest, CallFunctionThatUsesVars_HandleTypes_Bindi
     mod.root_block->Append(var_t);
     mod.root_block->Append(var_s);
 
-    auto* foo = b.Function("foo", ty.vec4<f32>());
+    auto* foo = b.Function("foo", ty.vec4f());
     auto* param = b.FunctionParam<i32>("param");
     foo->SetParams({param});
     b.Append(foo->Block(), [&] {
@@ -971,7 +969,7 @@ TEST_F(MslWriter_ModuleScopeVarsTest, CallFunctionThatUsesVars_OutOfOrder) {
     b.Append(foo->Block(), [&] {
         auto* load_a = b.Load(var_a);
         auto* load_b = b.Load(var_b);
-        b.Store(var_b, b.Add<i32>(load_a, load_b));
+        b.Store(var_b, b.Add(load_a, load_b));
         b.Return(foo);
     });
 
@@ -1055,7 +1053,7 @@ TEST_F(MslWriter_ModuleScopeVarsTest, CallFunctionThatDoesNotUseVars) {
     b.Append(func->Block(), [&] {
         auto* load_a = b.Load(var_a);
         auto* load_b = b.Load(var_b);
-        b.Store(var_b, b.Add<i32>(load_a, b.Add<i32>(load_b, b.Call(foo))));
+        b.Store(var_b, b.Add(load_a, b.Add(load_b, b.Call(foo))));
         b.Return(func);
     });
 
@@ -1141,7 +1139,7 @@ TEST_F(MslWriter_ModuleScopeVarsTest, CallFunctionWithOnlyTransitiveUses) {
     b.Append(func->Block(), [&] {
         auto* load_a = b.Load(var_a);
         auto* load_b = b.Load(var_b);
-        b.Store(var_b, b.Add<i32>(load_a, b.Add<i32>(load_b, b.Call(foo))));
+        b.Store(var_b, b.Add(load_a, b.Add(load_b, b.Call(foo))));
         b.Return(func);
     });
 
@@ -1244,7 +1242,7 @@ TEST_F(MslWriter_ModuleScopeVarsTest, CallFunctionWithOnlyTransitiveUses_OutOfOr
     b.Append(func->Block(), [&] {
         auto* load_a = b.Load(var_a);
         auto* load_b = b.Load(var_b);
-        b.Store(var_b, b.Add<i32>(load_a, b.Add<i32>(load_b, b.Call(foo))));
+        b.Store(var_b, b.Add(load_a, b.Add(load_b, b.Call(foo))));
         b.Return(func);
     });
 
@@ -1337,7 +1335,7 @@ TEST_F(MslWriter_ModuleScopeVarsTest, VarsWithNoNames) {
         auto* load_a = b.Load(var_a);
         auto* load_b = b.Load(var_b);
         auto* load_c = b.Load(var_c);
-        b.Store(var_b, b.Add<i32>(load_a, b.Add<i32>(load_b, load_c)));
+        b.Store(var_b, b.Add(load_a, b.Add(load_b, load_c)));
         b.Return(func);
     });
 

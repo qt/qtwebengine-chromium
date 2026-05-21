@@ -179,6 +179,29 @@ BASE_DECLARE_FEATURE(kLensOverlayOptimizationFilter);
 COMPONENT_EXPORT(LENS_FEATURES)
 BASE_DECLARE_FEATURE(kLensOverlayNonBlockingPrivacyNotice);
 
+// Enables using separate request ids for page contents vs page viewport
+// uploads.
+// TODO(crbug.com/479292553): Make this flag apply to the legacy CSB flow.
+COMPONENT_EXPORT(LENS_FEATURES)
+BASE_DECLARE_FEATURE(kLensUseSeparateRequestIdForViewportImages);
+
+// Enables sending the vit parameter for single context next queries.
+// TODO(crbug.com/472319362): Remove this flag once vit is not needed on the
+// server for AIM queries.
+COMPONENT_EXPORT(LENS_FEATURES)
+BASE_DECLARE_FEATURE(kLensSendVitForSingleContextNextQueries);
+
+// Enables sending raw file media types for manually uploaded files, meaning
+// that all file types are supported for manual uploads.
+COMPONENT_EXPORT(LENS_FEATURES)
+BASE_DECLARE_FEATURE(kLensSendRawFileMediaTypes);
+
+// Enables restricting annotated page content to same site frames for contextual
+// next queries.
+COMPONENT_EXPORT(LENS_FEATURES)
+BASE_DECLARE_FEATURE(
+    kLensRestrictAnnotatedPageContentToSameSiteFramesForNextQueries);
+
 // The base URL for Lens.
 COMPONENT_EXPORT(LENS_FEATURES)
 extern const base::FeatureParam<std::string> kHomepageURLForLens;
@@ -989,6 +1012,16 @@ bool IsLensOverlayEduActionChipDisabledByGlic();
 COMPONENT_EXPORT(LENS_FEATURES)
 int GetLensOverlayEduActionChipMaxShownCount();
 
+// Time required between shows of the EDU action chip. If zero, do not cap.
+COMPONENT_EXPORT(LENS_FEATURES)
+base::TimeDelta GetLensOverlayEduActionChipShowInterval();
+
+// Debounce interval during which function calls are regarded as being part of
+// one showing of the EDU action chip. Needed because a single potential show
+// event can create multiple repeated calls in a short time interval.
+COMPONENT_EXPORT(LENS_FEATURES)
+base::TimeDelta GetLensOverlayEduActionChipShowDebounceInterval();
+
 // Whether to enable keyboard selection in the Lens overlay.
 COMPONENT_EXPORT(LENS_FEATURES)
 extern bool IsLensOverlayKeyboardSelectionEnabled();
@@ -1083,6 +1116,12 @@ extern bool IsLensOverlayNonBlockingPrivacyNoticeEnabled();
 // non-positive value.
 COMPONENT_EXPORT(LENS_FEATURES)
 int GetLensOverlayNonBlockingPrivacyNoticeImpressionCap();
+
+// Enables sending raw file media types for manually uploaded files, meaning
+// that all file types are supported for manual uploads.
+// TODO(crbug.com/489495600): Also disable input limits for the file picker.
+COMPONENT_EXPORT(LENS_FEATURES)
+extern bool IsLensSendRawFileMediaTypesEnabled();
 
 }  // namespace lens::features
 #endif  // COMPONENTS_LENS_LENS_FEATURES_H_

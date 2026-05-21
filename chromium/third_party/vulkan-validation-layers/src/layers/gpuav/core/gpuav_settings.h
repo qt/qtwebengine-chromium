@@ -1,6 +1,6 @@
-/* Copyright (c) 2020-2025 The Khronos Group Inc.
- * Copyright (c) 2020-2025 Valve Corporation
- * Copyright (c) 2020-2025 LunarG, Inc.
+/* Copyright (c) 2020-2026 The Khronos Group Inc.
+ * Copyright (c) 2020-2026 Valve Corporation
+ * Copyright (c) 2020-2026 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -46,6 +46,14 @@ struct GpuAVSettings {
     uint32_t debug_max_instrumentations_count = 0;  // zero is same as "unlimited"
     bool debug_print_instrumentation_info = false;
 
+    // We create a buffer of N slots as [0, N-1],
+    // but N-1 is used to signal the app everything after is garbage.
+    //   (This is required because we still need to bind our descriptors regardless.)
+    // So if you too support X commands you need to set the max to X+1
+    // N of 8K is the default, but can be raised if app sets it higher (with gpuav_max_indices_count)
+    uint32_t invalid_index_command = 8191;                      // N-1
+    uint32_t indices_buffer_count = invalid_index_command + 1;  // N
+
     bool descriptor_buffer_override = false;
 
     // Note - even though DebugPrintf basically fits in here, from the user point of view they are different and that is reflected
@@ -55,6 +63,8 @@ struct GpuAVSettings {
         bool descriptor_checks = true;
         bool buffer_device_address = true;
         bool ray_query = true;
+        bool ray_hit_object = true;
+        bool mesh_shading = true;
         bool post_process_descriptor_indexing = true;
         bool vertex_attribute_fetch_oob = true;
         bool sanitizer = true;

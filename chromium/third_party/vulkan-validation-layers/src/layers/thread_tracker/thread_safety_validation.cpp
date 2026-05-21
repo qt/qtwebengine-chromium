@@ -1,6 +1,6 @@
-/* Copyright (c) 2015-2025 The Khronos Group Inc.
- * Copyright (c) 2015-2025 Valve Corporation
- * Copyright (c) 2015-2025 LunarG, Inc.
+/* Copyright (c) 2015-2026 The Khronos Group Inc.
+ * Copyright (c) 2015-2026 Valve Corporation
+ * Copyright (c) 2015-2026 LunarG, Inc.
  * Copyright (c) 2015-2024 Google Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,8 +15,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#include "generated/dispatch_functions.h"
 #include "thread_tracker/thread_safety_validation.h"
+
+#include "containers/span.h"
+#include "containers/container_utils.h"
 
 namespace threadsafety {
 
@@ -520,6 +522,9 @@ void Device::PostCallRecordGetDeviceQueue2(VkDevice device, const VkDeviceQueueI
     CreateObject(*pQueue);
     auto lock = WriteLockGuard(thread_safety_lock);
     device_queues_map[device].insert(*pQueue);
+    if (pQueueInfo->flags & VK_DEVICE_QUEUE_CREATE_INTERNALLY_SYNCHRONIZED_BIT_KHR) {
+        internally_synchronized_queues.push_back(*pQueue);
+    }
 }
 
 void Instance::PostCallRecordGetPhysicalDeviceDisplayPropertiesKHR(VkPhysicalDevice physicalDevice, uint32_t* pPropertyCount,
@@ -673,7 +678,9 @@ void Device::PreCallRecordDeviceWaitIdle(VkDevice device, const RecordObject& re
     auto lock = ReadLockGuard(thread_safety_lock);
     const auto& queue_set = device_queues_map[device];
     for (const auto& queue : queue_set) {
-        StartWriteObject(queue, record_obj.location);
+        if (!vvl::Contains(internally_synchronized_queues, queue)) {
+            StartWriteObject(queue, record_obj.location);
+        }
     }
 }
 
@@ -682,7 +689,9 @@ void Device::PostCallRecordDeviceWaitIdle(VkDevice device, const RecordObject& r
     auto lock = ReadLockGuard(thread_safety_lock);
     const auto& queue_set = device_queues_map[device];
     for (const auto& queue : queue_set) {
-        FinishWriteObject(queue, record_obj.location);
+        if (!vvl::Contains(internally_synchronized_queues, queue)) {
+            FinishWriteObject(queue, record_obj.location);
+        }
     }
 }
 
@@ -707,9 +716,11 @@ void Device::PostCallRecordCreateRayTracingPipelinesKHR(VkDevice device, VkDefer
         this->FinishReadObject(pipelineCache, record_obj.location);
     };
 
-    auto register_objects = [this](const std::vector<VkPipeline>& pipelines) {
-        for (auto pipe : pipelines) {
-            if (!pipe) continue;
+    auto register_objects = [this](std::pair<uint32_t, VkPipeline*> pipelines) {
+        for (VkPipeline pipe : vvl::make_span(pipelines.second, pipelines.first)) {
+            if (!pipe) {
+                continue;
+            }
             CreateObject(pipe);
         }
     };
@@ -732,7 +743,7 @@ void Device::PostCallRecordCreateRayTracingPipelinesKHR(VkDevice device, VkDefer
         dispatch_device_->deferred_operation_post_completion.insert(deferredOperation, std::move(post_completion_fns));
 
         // We will only register the object once we know it was created successfully
-        std::vector<std::function<void(const std::vector<VkPipeline>&)>> post_check_fns;
+        std::vector<std::function<void(std::pair<uint32_t, VkPipeline*>)>> post_check_fns;
         auto check_find = dispatch_device_->deferred_operation_post_check.pop(deferredOperation);
         if (check_find->first) {
             post_check_fns = std::move(check_find->second);
@@ -751,7 +762,9 @@ void Device::PostCallRecordCreateRayTracingPipelinesKHR(VkDevice device, VkDefer
 }
 
 void Device::PreCallRecordQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pPresentInfo, const RecordObject& record_obj) {
-    StartWriteObject(queue, record_obj.location);
+    if (!vvl::Contains(internally_synchronized_queues, queue)) {
+        StartWriteObject(queue, record_obj.location);
+    }
     uint32_t waitSemaphoreCount = pPresentInfo->waitSemaphoreCount;
     if (pPresentInfo->pWaitSemaphores != nullptr) {
         for (uint32_t index = 0; index < waitSemaphoreCount; index++) {
@@ -771,7 +784,9 @@ void Device::PreCallRecordQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR*
 }
 
 void Device::PostCallRecordQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pPresentInfo, const RecordObject& record_obj) {
-    FinishWriteObject(queue, record_obj.location);
+    if (!vvl::Contains(internally_synchronized_queues, queue)) {
+        FinishWriteObject(queue, record_obj.location);
+    }
     uint32_t waitSemaphoreCount = pPresentInfo->waitSemaphoreCount;
     if (pPresentInfo->pWaitSemaphores != nullptr) {
         for (uint32_t index = 0; index < waitSemaphoreCount; index++) {

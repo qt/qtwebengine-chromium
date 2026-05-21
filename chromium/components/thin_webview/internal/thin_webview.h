@@ -39,12 +39,10 @@ class ThinWebView : public content::WebContentsObserver {
 
   void SetWebContents(
       JNIEnv* env,
-      const base::android::JavaParamRef<jobject>& jweb_contents,
-      const base::android::JavaParamRef<jobject>& jweb_contents_delegate);
+      const base::android::JavaRef<jobject>& jweb_contents,
+      const base::android::JavaRef<jobject>& jweb_contents_delegate);
 
-  void SizeChanged(JNIEnv* env,
-                   jint width,
-                   jint height);
+  void SizeChanged(JNIEnv* env, int32_t width, int32_t height);
 
  private:
   // content::WebContentsObserver overrides:

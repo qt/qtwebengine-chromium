@@ -565,7 +565,7 @@ class CC_PAINT_EXPORT DrawImageOp final : public PaintOpWithFlagsBaseInternal {
   DrawImageOp();
 
   // Scale that has already been applied to the decoded image during
-  // serialization. Used with OOP raster.
+  // serialization. Used with GPU raster.
   SkSize scale_adjustment = SkSize::Make(1.f, 1.f);
 };
 
@@ -609,7 +609,7 @@ class CC_PAINT_EXPORT DrawImageRectOp final
   DrawImageRectOp();
 
   // Scale that has already been applied to the decoded image during
-  // serialization. Used with OOP raster.
+  // serialization. Used with GPU raster.
   SkSize scale_adjustment = SkSize::Make(1.f, 1.f);
 };
 
@@ -834,6 +834,7 @@ class CC_PAINT_EXPORT DrawRecordOp final : public PaintOpBaseInternal {
   static constexpr PaintOpType kType = PaintOpType::kDrawRecord;
   static constexpr bool kIsDrawOp = true;
   explicit DrawRecordOp(PaintRecord record, bool local_ctm = true);
+  explicit DrawRecordOp(ElementId id);
   ~DrawRecordOp();
   static void Raster(const DrawRecordOp* op,
                      SkCanvas* canvas,
@@ -852,6 +853,11 @@ class CC_PAINT_EXPORT DrawRecordOp final : public PaintOpBaseInternal {
   HAS_SERIALIZATION_FUNCTIONS();
 
   PaintRecord record;
+
+  // Used by the canvas drawElementImage API; indicates that this paint op
+  // should be replaced at blink compositing time with a DrawRecordOp containing
+  // the PaintRecord for this element; see PaintOpBuffer::UpdateDrawRecordOp.
+  ElementId placeholder_id;
 
   // If `local_ctm` is `true`, the transform operations in `record` are local to
   // that recording: any transform changes done by `record` are undone before
@@ -1198,6 +1204,11 @@ class CC_PAINT_EXPORT SaveLayerFiltersOp final
   static constexpr PaintOpType kType = PaintOpType::kSaveLayerFilters;
   static constexpr int kMaxFiltersPerLayer = SkCanvas::kMaxFiltersPerLayer;
   explicit SaveLayerFiltersOp(base::span<const sk_sp<PaintFilter>> filters,
+                              const sk_sp<PaintFilter> backdrop_filter,
+                              const PaintFlags& flags);
+  explicit SaveLayerFiltersOp(const SkRect& bounds,
+                              base::span<const sk_sp<PaintFilter>> filters,
+                              const sk_sp<PaintFilter> backdrop_filter,
                               const PaintFlags& flags);
   ~SaveLayerFiltersOp();
   static void RasterWithFlags(const SaveLayerFiltersOp* op,
@@ -1212,7 +1223,9 @@ class CC_PAINT_EXPORT SaveLayerFiltersOp final
   bool HasSaveLayerOps() const { return true; }
   HAS_SERIALIZATION_FUNCTIONS();
 
+  SkRect bounds;
   std::vector<sk_sp<PaintFilter>> filters;
+  sk_sp<PaintFilter> backdrop_filter;
 
  private:
   SaveLayerFiltersOp();

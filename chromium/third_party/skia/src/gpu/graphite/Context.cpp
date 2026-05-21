@@ -544,7 +544,7 @@ void Context::asyncReadPixelsYUV420(std::unique_ptr<Recorder> recorder,
                          PixelTransferResult* result) {
         sk_sp<Surface> dstSurface = Surface::MakeScratch(recorder.get(),
                                                          planeInfo,
-                                                         std::move(label),
+                                                         label,
                                                          Budgeted::kYes,
                                                          Mipmapped::kNo,
                                                          SkBackingFit::kApprox);
@@ -736,9 +736,7 @@ Context::PixelTransferResult Context::transferPixels(Recorder* recorder,
     SkColorType supportedColorType;
     bool isRGB888Format;
     std::tie(supportedColorType, isRGB888Format) =
-            caps->supportedReadPixelsColorType(srcColorType,
-                                               srcProxy->textureInfo(),
-                                               dstColorInfo.colorType());
+            caps->supportedTransferColorType(srcColorType, srcProxy->textureInfo());
     if (supportedColorType == kUnknown_SkColorType) {
         return {};
     }
@@ -1016,24 +1014,6 @@ bool ContextPriv::readPixels(const SkPixmap& pm,
                  pm.height());
     return true;
 }
-
-bool ContextPriv::supportsPathRendererStrategy(PathRendererStrategy strategy) {
-    AtlasProvider::PathAtlasFlagsBitMask pathAtlasFlags =
-            AtlasProvider::QueryPathAtlasSupport(this->caps());
-    switch (strategy) {
-        case PathRendererStrategy::kComputeAnalyticAA:
-        case PathRendererStrategy::kComputeMSAA16:
-        case PathRendererStrategy::kComputeMSAA8:
-            return SkToBool(pathAtlasFlags & AtlasProvider::PathAtlasFlags::kCompute);
-        case PathRendererStrategy::kRasterAA:
-            return SkToBool(pathAtlasFlags & AtlasProvider::PathAtlasFlags::kRaster);
-        case PathRendererStrategy::kTessellation:
-            return true;
-    }
-
-    return false;
-}
-
 #endif // GPU_TEST_UTILS
 
 ///////////////////////////////////////////////////////////////////////////////////

@@ -77,6 +77,8 @@ if (current_toolchain == default_toolchain) {
       "database.icon",
       "database_off.icon",
       "description.icon",
+      "desktop_access_disabled.icon",
+      "desktop_windows.icon",
       "devices.icon",
       "devices_off.icon",
       "directions_car.icon",
@@ -182,6 +184,7 @@ if (current_toolchain == default_toolchain) {
       "password_manager_off.icon",
       "pause.icon",
       "pause_chrome_refresh.icon",
+      "payments.icon",
       "person_check.icon",
       "person_text.icon",
       "photo.icon",
@@ -251,7 +254,6 @@ if (current_toolchain == default_toolchain) {
       "sync_problem_chrome_refresh.icon",
       "sync_saved_locally.icon",
       "sync_saved_locally_off.icon",
-      "tab_search.icon",
       "tenancy.icon",
       "thumb_down.icon",
       "thumb_down_filled.icon",
@@ -326,6 +328,7 @@ if (current_toolchain == default_toolchain) {
         "google_chrome/page_insights.icon",
         "google_chrome/page_insights_color.icon",
         "google_chrome/pen_spark.icon",
+        "google_chrome/v8_off.icon",
       ]
     }
   }

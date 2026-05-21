@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "base/functional/callback.h"
+#include "base/gtest_prod_util.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/raw_ref.h"
 #include "base/memory/weak_ptr.h"
@@ -162,6 +163,7 @@ class PrintingAPIHandler : public BrowserContextKeyedAPI,
   void OnPrinterCapabilitiesRetrieved(
       const std::string& printer_id,
       GetPrinterInfoCallback callback,
+      base::optional_ref<const chromeos::Printer> printer,
       const std::optional<printing::PrinterSemanticCapsAndDefaults>& caps);
 
   // OnPrinterCapabilitiesRetrieved() calls this function.

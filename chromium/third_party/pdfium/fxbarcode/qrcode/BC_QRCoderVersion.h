@@ -7,6 +7,8 @@
 #ifndef FXBARCODE_QRCODE_BC_QRCODERVERSION_H_
 #define FXBARCODE_QRCODE_BC_QRCODERVERSION_H_
 
+#include <stdint.h>
+
 #include <array>
 #include <memory>
 

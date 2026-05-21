@@ -56,6 +56,9 @@ struct TraceEvent {
   // The trace ids of this event and its ancestors.
   TraceIdHierarchy ids;
 
+  // Flow IDs associated with this event.
+  std::vector<uint64_t> flow_ids;
+
   // Optional result of the trace event.
   Error::Code result = Error::Code::kNone;
 
@@ -64,6 +67,8 @@ struct TraceEvent {
   using Argument = std::pair<const char*, std::string>;
   std::vector<Argument> arguments;
 };
+
+std::ostream& operator<<(std::ostream& out, const TraceEvent& event);
 
 }  // namespace openscreen
 

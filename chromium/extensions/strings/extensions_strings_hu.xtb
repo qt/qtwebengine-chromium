@@ -12,6 +12,7 @@
 <translation id="2159915644201199628">Nem sikerült dekódolni a képet: „<ph name="IMAGE_NAME" />”</translation>
 <translation id="2350172092385603347">Fordítás használatban, de a default_locale (alapértelmezett nyelv- és országkód) nincs megadva a jegyzékfájlban.</translation>
 <translation id="2576842806987913196">Már van egy CRX-fájl ilyen névvel.</translation>
+<translation id="2743583586211388067">A szervezete bővítménykockázati házirendje tiltja a bővítményhez való hozzáférést.</translation>
 <translation id="2785530881066938471">A(z) '<ph name="RELATIVE_PATH" />' fájlt nem lehet betölteni tartalomszkriptre, mert nem UTF-8 kódolású.</translation>
 <translation id="2903070246402204397">A(z) <ph name="EXTENSION_NAME" /> bővítményt (bővítményazonosító: <ph name="EXTENSION_ID" />) tiltja a rendszergazda. <ph name="ADMIN_INFO" />.</translation>
 <translation id="2988488679308982380">Nem sikerült a következő csomag telepítése: "<ph name="ERROR_CODE" />"</translation>
@@ -33,9 +34,11 @@
 <translation id="5356315618422219272">Alkalmazásnézet: <ph name="APPVIEW_TAG_NAME" /></translation>
 <translation id="5456409301717116725">Ez a bővítmény a(z) "<ph name="KEY_PATH" />" kulcsfájlt tartalmazza. Ezt Ön valószínűleg nem szeretné.</translation>
 <translation id="5486326529110362464">Kell lennie beviteli értéknek a privát kulcsnál.</translation>
+<translation id="5707185214361380026">Nem sikerült a bővítmény betöltése innen:</translation>
 <translation id="5972529113578162692">A számítógép adminisztrátorának szüksége van arra, hogy a(z) <ph name="EXTENSION_NAME" /> telepítve legyen. Nem lehet eltávolítani.</translation>
 <translation id="6027032947578871493">Ismeretlen termék (<ph name="PRODUCT_ID" />) a következő szolgáltatótól: <ph name="VENDOR_NAME" /> (sorozatszám: <ph name="SERIAL_NUMBER" />)</translation>
 <translation id="6068932090455285721"><ph name="PRODUCT_NAME" />, forgalmazó: <ph name="VENDOR_ID" /></translation>
+<translation id="6220413761270491930">Hiba a bővítmény betöltésekor</translation>
 <translation id="6322279351188361895">A privát kulcs olvasása sikertelen.</translation>
 <translation id="6391538222494443604">Kell lennie beviteli könyvtárnak.</translation>
 <translation id="641087317769093025">Nem sikerült a bővítmény kicsomagolása</translation>

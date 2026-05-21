@@ -29,8 +29,6 @@ PrinterQueryOop::~PrinterQueryOop() = default;
 std::unique_ptr<PrintJobWorker> PrinterQueryOop::TransferContextToNewWorker(
     PrintJob* print_job) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-  // TODO(crbug.com/40256381)  Do extra setup on the worker as needed for
-  // supporting OOP system print dialogs.
   return CreatePrintJobWorkerOop(print_job);
 }
 
@@ -198,7 +196,7 @@ void PrinterQueryOop::GetSettingsWithUI(uint32_t document_page_count,
 #endif
 }
 
-void PrinterQueryOop::UpdatePrintSettings(base::Value::Dict new_settings,
+void PrinterQueryOop::UpdatePrintSettings(base::DictValue new_settings,
                                           SettingsCallback callback) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 

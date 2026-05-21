@@ -28,6 +28,7 @@
 #include "src/common/globals.h"
 #include "src/execution/frame-constants.h"
 #include "src/execution/frames.h"
+#include "src/execution/isolate-data.h"
 #include "src/handles/handles.h"
 #include "src/objects/heap-object.h"
 #include "src/objects/smi.h"
@@ -321,6 +322,11 @@ class V8_EXPORT_PRIVATE MacroAssembler
   void PushArray(Register array, Register size, Register scratch,
                  PushArrayOrder order = PushArrayOrder::kNormal);
 
+  MemOperand AsMemOperand(IsolateFieldId id) {
+    DCHECK(root_array_available());
+    return MemOperand(kRootRegister, IsolateData::GetOffset(id));
+  }
+
   // Operand pointing to an external reference.
   // May emit code to set up the scratch register. The operand is
   // only guaranteed to be correct as long as the scratch register
@@ -493,8 +499,7 @@ class V8_EXPORT_PRIVATE MacroAssembler
 
   // Allocates an EXIT/BUILTIN_EXIT/API_CALLBACK_EXIT frame with given number
   // of slots in non-GCed area.
-  void EnterExitFrame(int extra_slots, StackFrame::Type frame_type,
-                      Register c_function);
+  void EnterExitFrame(int extra_slots, StackFrame::Type frame_type);
   void LeaveExitFrame(Register scratch);
 
   // Load the global proxy from the current context.
@@ -742,7 +747,8 @@ void CallApiFunctionAndReturn(MacroAssembler* masm, bool with_profiling,
                               ExternalReference thunk_ref, Register thunk_arg,
                               int slots_to_drop_on_return,
                               MemOperand* argc_operand,
-                              MemOperand return_value_operand);
+                              MemOperand return_value_operand,
+                              bool handle_interceptor_result);
 
 #define ACCESS_MASM(masm) masm->
 

@@ -42,6 +42,8 @@ class InfoBarContainerWithPriority : public InfoBarContainer {
   // InfoBarContainer overrides:
   void ChangeInfoBarManager(InfoBarManager* infobar_manager) override;
 
+  bool HasPendingInfoBars() const { return !pending_infobars_.empty(); }
+
  protected:
   // InfoBarContainer overrides:
   void OnInfoBarAdded(InfoBar* infobar) override;
@@ -72,7 +74,8 @@ class InfoBarContainerWithPriority : public InfoBarContainer {
   // (visible slots available, no higher-priority items blocking) or must be
   // queued for later promotion.
   void AdmitOrQueue(InfoBar* infobar,
-                    InfoBarDelegate::InfobarPriority priority);
+                    InfoBarDelegate::InfobarPriority priority,
+                    bool animate);
 
   // Enqueues an infobar in a deterministic position: first by priority
   // (descending), then by sequence (ascending). This guarantees a stable

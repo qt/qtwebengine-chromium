@@ -149,21 +149,29 @@ class RefCountedBuffer : public MaxAlignedAllocable {
   }
   bool hdr_mdcv_set() const { return hdr_mdcv_set_; }
 
-  ObuMetadataItutT35 itut_t35() const { return itut_t35_; }
-  bool set_itut_t35(const ObuMetadataItutT35& itut_t35,
-                    const uint8_t* const payload) {
-    itut_t35_ = itut_t35;
-    if (itut_t35.payload_size > 0) {
-      if (!itut_t35_payload_.Resize(itut_t35.payload_size)) return false;
-      memcpy(itut_t35_payload_.get(), payload, itut_t35.payload_size);
-      itut_t35_.payload_bytes = itut_t35_payload_.get();
-    } else {
-      itut_t35_.payload_bytes = nullptr;
+  const ObuMetadataItutT35* itut_t35() const { return itut_t35_; }
+  bool AddItutT35Metadata(const ObuMetadataItutT35& itut_t35,
+                          const uint8_t* const payload) {
+    if (itut_t35_count_ >= 8) {
+      // Only store the first 8 itut_t35 payloads.
+      return true;
     }
-    itut_t35_set_ = true;
+    itut_t35_[itut_t35_count_] = itut_t35;
+    if (itut_t35.payload_size > 0) {
+      if (!itut_t35_payload_[itut_t35_count_].Resize(itut_t35.payload_size)) {
+        return false;
+      }
+      memcpy(itut_t35_payload_[itut_t35_count_].get(), payload,
+             itut_t35.payload_size);
+      itut_t35_[itut_t35_count_].payload_bytes =
+          itut_t35_payload_[itut_t35_count_].get();
+    } else {
+      itut_t35_[itut_t35_count_].payload_bytes = nullptr;
+    }
+    ++itut_t35_count_;
     return true;
   }
-  bool itut_t35_set() const { return itut_t35_set_; }
+  int itut_t35_count() const { return itut_t35_count_; }
 
   SegmentationMap* segmentation_map() { return &segmentation_map_; }
   const SegmentationMap* segmentation_map() const { return &segmentation_map_; }
@@ -352,9 +360,9 @@ class RefCountedBuffer : public MaxAlignedAllocable {
   bool hdr_cll_set_ = false;  // Set to true when set_hdr_cll() is called.
   ObuMetadataHdrMdcv hdr_mdcv_ = {};
   bool hdr_mdcv_set_ = false;  // Set to true when set_hdr_mdcv() is called.
-  ObuMetadataItutT35 itut_t35_ = {};
-  DynamicBuffer<uint8_t> itut_t35_payload_;
-  bool itut_t35_set_ = false;  // Set to true when set_itut_t35() is called.
+  ObuMetadataItutT35 itut_t35_[8] = {};
+  DynamicBuffer<uint8_t> itut_t35_payload_[8];
+  int itut_t35_count_ = 0;  // Set when add_itut_t35() is called.
 
   // segmentation_map_ contains a rows4x4_ by columns4x4_ 2D array.
   SegmentationMap segmentation_map_;

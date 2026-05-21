@@ -150,6 +150,86 @@ and use `find_package(Dawn)` in your CMake project to discover Dawn and link wit
 the `dawn::webgpu_dawn` target. Please see [Quickstart with CMake](./quickstart-cmake.md)
 for step-by-step instructions.
 
+### Using ccache for CMake builds
+There is a substantial number of source files that are needed to be
+built for Dawn and its dependencies (~thousands), which can lead to
+long compile times on resource bound machines (i.e. laptops),
+especially when performing clean builds. The general advice for this
+situation is use the gn build with a remote compile system like siso,
+if available.
+
+An alternative if remote compilation isn't available, or if using
+CMake is essential for your workflow, is to use
+[ccache](https://ccache.dev/) to avoid rebuilding targets. For full
+details on using ccache see the project's documentation, but below is
+an example of how to use it on a Debian based Linux dev env.
+
+```sh
+# One time Install and setup of ccache
+apt-get install ccache
+ccache -F 0 -M 0  # Sets the number of files and size of the cache to unlimited, the default is 5 GiB. Choose values that make sense for your situation.
+
+# Setup CMake + Ninja building using cccache
+mkdir -p out/cache
+cd out/cache
+cmake -GNinja -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache <Any other CMake flags> ../.
+ninja # or autoninja
+
+# Optional: In another terminal, monitor the status of the cache. (Will have a lot of misses on the first run)
+watch ccache -s
+```
+
+Using ccache will not help with the initial build of Dawn, since the
+targets still need to be built at least once locally, but subsequent
+builds, even after a clean operation should be much faster. Some
+operations like linking are not cache-able, so will need to be run on
+every build, but the bulk of file compilations should be
+cache-able. Updating the repo, editing source files, and changing build
+flags will all cause misses, since entries in the cache are based on
+flags + contents of the source file.
+
+### Weird CMake build breaks on Linux
+If you see errors like this:
+```
+error: satisfaction of constraint 'is_constructible_v<_Tp, _Up>' depends on itself
+  && is_constructible_v<_Tp, _Up>
+     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~
+```
+or similar complaints about constraints depending on themselves, this
+is a known [issue](https://github.com/llvm/llvm-project/issues/62096)
+with older versions of Clang (17ish through 19ish) and newer versions
+of GCC (15+).
+
+Specifically Clang by default uses the standard library from GCC, and
+GCC 15 introduces a construct that older Clang thinks is out of spec,
+thought it is not.
+
+Currently there is no provided hermetic Linux build for CMake to be
+used to avoid this problem, so you either need to use a newer version
+of Clang or use an older version of GCC for your entire system.
+
+For some environments currently, Clang 19.x is the newest version
+available, and GCC 15 is the default compiler, so it cannot be
+down-rev'd.
+
+In this case you will need to install a parallel GCC toolchain and
+tell Clang to use that.
+
+For Debian based systems this can be done as follows:
+```sh
+sudo apt-get install gcc-14 libgcc-14-dev
+...
+cmake -DCMAKE_CXX_FLAGS="--gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/14" <other cmake flags> <path to repo root>
+```
+
+This assumes gcc-14 is installed to
+`/usr/lib/gcc/x86_64-linux-gnu/14`, which may not be true depending on
+your specific distro and architecture.
+
+It is likely CMake will not correctly pick up this type of dev env
+change if you run this in an existing build directory, so it is
+recommended that you setup a new build directory to use this.
+
 ### Fuzzers on MacOS
 As of Late Oct 2025, fuzzing on a dev Mac is not in a good state.
 

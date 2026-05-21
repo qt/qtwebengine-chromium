@@ -281,6 +281,28 @@ even if it consistently failed 4 times out of 5 runs for some time. Try to
 correlate your failure with a luci-analysis report on this test and skip it
 until the flakiness gets resolved.
 
+### Clobber a builder's cache
+
+Builder bots utilize caching for project checkouts to speed up updates. This
+cache includes the build output directory (`/out`). Occasionally, stale files
+within these directories can interfere with the build process or test execution.
+
+If you suspect a cache issue, you can clear (clobber) the cache for a specific
+builder. This requires a local Chromium checkout to access the necessary utility
+script.
+
+Run the following command from the root of your Chromium checkout:
+
+```bash
+./tools/infra/builder-cache-clobber.py -S https://chromium-swarm.appspot.com/ --builder "Stand-alone Mac-arm64" --bucket ci --project devtools-frontend
+```
+
+#### Note about caches on try bots:
+
+Try bots (CQ) operate in tester/compilator pairs. When clearing caches, ensure
+you target both builders in the pair. For example, if you clear the cache for
+`dtf_mac_arm64_rel`, you must also clear it for `dtf_mac_arm64_compile_rel`.
+
 ## Luci Analysis configuration
 
 [Luci Analysis](go/luci-analysis) is a tool that helps you understand the

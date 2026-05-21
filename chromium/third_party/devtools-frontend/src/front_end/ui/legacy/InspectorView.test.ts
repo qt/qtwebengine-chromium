@@ -7,6 +7,7 @@ import * as Host from '../../core/host/host.js';
 import {renderElementIntoDOM} from '../../testing/DOMHelpers.js';
 import {describeWithEnvironment} from '../../testing/EnvironmentHelpers.js';
 import {expectCall} from '../../testing/ExpectStubCall.js';
+import {setupSettingsHooks} from '../../testing/SettingsHelpers.js';
 
 import * as LegacyUI from './legacy.js';
 
@@ -24,6 +25,8 @@ function getDrawerOrientationSettingByDock(dockMode: LegacyUI.InspectorView.Dock
 }
 
 describeWithEnvironment('InspectorView', () => {
+  setupSettingsHooks();
+
   function createInspectorViewWithDockState(dockState: LegacyUI.DockController.DockState): {
     inspectorView: LegacyUI.InspectorView.InspectorView,
     dockController: LegacyUI.DockController.DockController,
@@ -39,14 +42,6 @@ describeWithEnvironment('InspectorView', () => {
   }
 
   beforeEach(() => {
-    const storage = new Common.Settings.SettingsStorage({}, Common.Settings.NOOP_STORAGE, 'test');
-    Common.Settings.Settings.instance({
-      forceNew: true,
-      syncedStorage: storage,
-      globalStorage: storage,
-      localStorage: storage,
-      settingRegistrations: Common.SettingRegistration.getRegisteredSettings()
-    });
     // `setIsDocked` resolves async and leaves elements in the body after the test is finished.
     sinon.stub(Host.InspectorFrontendHost.InspectorFrontendHostInstance, 'setIsDocked');
   });
@@ -321,6 +316,34 @@ describeWithEnvironment('InspectorView', () => {
         assert.isFalse(
             inspectorView.isDrawerOrientationVertical(), 'Drawer should become horizontal when docked to the right');
       });
+    });
+  });
+
+  describe('reload required warnings', () => {
+    it('displays both debugged tab and devtools reload warnings independently', () => {
+      const {inspectorView} = createInspectorViewWithDockState(DockState.BOTTOM);
+      inspectorView.displayDebuggedTabReloadRequiredWarning('Debugged tab reload required');
+      inspectorView.displayReloadRequiredWarning('DevTools reload required');
+
+      // The infobars are added to a flex-none div within the content element.
+      // We expect two children in that div.
+      const infoBarDiv = inspectorView.contentElement.querySelector('.flex-none');
+      assert.exists(infoBarDiv);
+      assert.strictEqual(infoBarDiv.childElementCount, 2);
+
+      const firstInfobar = infoBarDiv.children[0];
+      const secondInfobar = infoBarDiv.children[1];
+
+      assert.exists(firstInfobar.shadowRoot);
+      assert.exists(secondInfobar.shadowRoot);
+
+      const firstLabel = firstInfobar.shadowRoot.querySelector('.infobar-info-text');
+      const secondLabel = secondInfobar.shadowRoot.querySelector('.infobar-info-text');
+
+      assert.exists(firstLabel);
+      assert.exists(secondLabel);
+      assert.strictEqual(firstLabel.textContent, 'Debugged tab reload required');
+      assert.strictEqual(secondLabel.textContent, 'DevTools reload required');
     });
   });
 });

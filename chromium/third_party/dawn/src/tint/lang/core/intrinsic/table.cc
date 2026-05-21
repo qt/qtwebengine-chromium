@@ -243,12 +243,9 @@ Result<Overload, StyledText> MatchIntrinsic(Context& context,
     if (num_matched == 1) {
         match = std::move(candidates[match_idx]);
     } else {
-        auto result =
-            ResolveCandidate(context, std::move(candidates), intrinsic_name, template_args, args);
-        if (DAWN_UNLIKELY(result != Success)) {
-            return result.Failure();
-        }
-        match = result.Get();
+        TINT_CHECK_RESULT_UNWRAP(result, ResolveCandidate(context, std::move(candidates),
+                                                          intrinsic_name, template_args, args));
+        match = result;
     }
 
     // Build the return type
@@ -408,7 +405,7 @@ Candidate ScoreOverload(Context& context,
         auto* matcher_indices = context.data[parameter.matcher_indices];
         auto* ty =
             context.Match(templates, overload, matcher_indices, earliest_eval_stage).Type(args[p]);
-        parameters.Emplace(ty, parameter.usage);
+        parameters.Emplace(ty, parameter.usage, parameter.is_const);
     }
 
     return Candidate{score, &overload, templates, parameters};

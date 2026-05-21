@@ -962,8 +962,7 @@ FILE *get_preset_file(char *filename, size_t filename_size,
                     datadir, desired_size, sizeof *datadir);
                 if (new_datadir) {
                     datadir = new_datadir;
-                    datadir[datadir_len] = 0;
-                    strncat(datadir, "/ffpresets",  desired_size - 1 - datadir_len);
+                    strcpy(datadir + datadir_len, "/ffpresets");
                     base[2] = datadir;
                 }
             }
@@ -1612,4 +1611,29 @@ int check_avoptions(AVDictionary *m)
     }
 
     return 0;
+}
+
+void dump_dictionary(void *ctx, const AVDictionary *m,
+                     const char *name, const char *indent,
+                     int log_level)
+{
+    const AVDictionaryEntry *tag = NULL;
+
+    if (!m)
+        return;
+
+    av_log(ctx, log_level, "%s%s:\n", indent, name);
+    while ((tag = av_dict_iterate(m, tag))) {
+        const char *p = tag->value;
+        av_log(ctx, log_level, "%s  %-16s: ", indent, tag->key);
+        while (*p) {
+            size_t len = strcspn(p, "\x8\xa\xb\xc\xd");
+            av_log(ctx, log_level, "%.*s", (int)(FFMIN(255, len)), p);
+            p += len;
+            if (*p == 0xd) av_log(ctx, log_level, " ");
+            if (*p == 0xa) av_log(ctx, log_level, "\n%s  %-16s: ", indent, "");
+            if (*p) p++;
+        }
+        av_log(ctx, log_level, "\n");
+    }
 }

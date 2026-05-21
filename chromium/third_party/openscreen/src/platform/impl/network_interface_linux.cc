@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 // clang-format: off
+#include <net/if.h>
 #include <sys/socket.h>
 // clang-format: on
 
@@ -74,7 +75,7 @@ InterfaceInfo::Type GetInterfaceType(const std::string& ifname) {
   OSP_CHECK_LT(ifname.size(), IFNAMSIZ);
   wr.ifr_name[IFNAMSIZ - 1] = 0;
   strncpy(ifr.ifr_name, ifname.c_str(), IFNAMSIZ - 1);
-  ifr.ifr_data = &ecmd;
+  ifr.ifr_data = reinterpret_cast<char*>(&ecmd);
   if (ioctl(s.get(), SIOCETHTOOL, &ifr) != -1) {
     return InterfaceInfo::Type::kEthernet;
   }
@@ -97,8 +98,7 @@ void GetInterfaceAttributes(struct rtattr* rta,
     } else if (rta->rta_type == IFLA_ADDRESS) {
       ByteView address_bytes(reinterpret_cast<uint8_t*>(RTA_DATA(rta)),
                              RTA_PAYLOAD(rta));
-      info->hardware_address.assign(address_bytes.cbegin(),
-                                    address_bytes.cend());
+      info->hardware_address.assign(address_bytes.begin(), address_bytes.end());
     }
   }
 
@@ -136,11 +136,14 @@ std::optional<IPAddress> GetIPAddressOrNull(struct rtattr* rta,
       }
     } else if (rta->rta_type == IFA_ADDRESS) {
       OSP_CHECK_EQ(expected_address_size, RTA_PAYLOAD(rta));
-      address = IPAddress(version, static_cast<uint8_t*>(RTA_DATA(rta)));
+      address =
+          IPAddress(version, std::span(static_cast<uint8_t*>(RTA_DATA(rta)),
+                                       expected_address_size));
     } else if (rta->rta_type == IFA_LOCAL) {
       OSP_CHECK_EQ(expected_address_size, RTA_PAYLOAD(rta));
       have_local = true;
-      local = IPAddress(version, static_cast<uint8_t*>(RTA_DATA(rta)));
+      local = IPAddress(version, std::span(static_cast<uint8_t*>(RTA_DATA(rta)),
+                                           expected_address_size));
     }
   }
   return have_local ? local : address;

@@ -2,12 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import '../../ui/kit/kit.js';
+
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import type * as Platform from '../../core/platform/platform.js';
 import * as Root from '../../core/root/root.js';
 import * as AiAssistanceModel from '../../models/ai_assistance/ai_assistance.js';
+import * as AiCodeGeneration from '../../models/ai_code_generation/ai_code_generation.js';
 import * as Buttons from '../../ui/components/buttons/buttons.js';
 import * as Input from '../../ui/components/input/input.js';
 import * as Switch from '../../ui/components/switch/switch.js';
@@ -121,7 +124,7 @@ const UIStrings = {
   /**
    * @description Text describing the 'Code suggestions' feature
    */
-  helpUnderstandCodeSuggestions: 'Get help completing your code',
+  helpUnderstandCodeSuggestions: 'Write code faster with AI-powered suggestions',
   /**
    * @description Text which is a hyperlink to more documentation
    */
@@ -151,12 +154,12 @@ const UIStrings = {
    * @description Explainer for which data is being sent by the AI assistance feature
    */
   freestylerSendsData:
-      'To generate explanations, any user query and data the inspected page can access via Web APIs, network requests, files, and performance traces are sent to Google. This data may be seen by human reviewers to improve this feature. Don’t use on pages with personal or sensitive information.',
+      'To generate explanations, your chat messages, any data the inspected page can see using Web APIs, and the items you select such as files, network requests, and performance traces are sent to Google. This data may be seen by human reviewers to improve this feature. Don’t use on pages with personal or sensitive information.',
   /**
    * @description Explainer for which data is being sent by the AI assistance feature
    */
   freestylerSendsDataNoLogging:
-      'To generate explanations, any user query and data the inspected page can access via Web APIs, network requests, files, and performance traces are sent to Google. This data will not be used to improve Google’s AI models. Your organization may change these settings at any time.',
+      'To generate explanations, your chat messages, any data the inspected page can see using Web APIs, and the items you select such as files, network requests, and performance traces are sent to Google. This data will not be used to improve Google’s AI models. Your organization may change these settings at any time.',
   /**
    * @description Explainer for which data is being sent by the AI generated annotations feature
    */
@@ -172,6 +175,21 @@ const UIStrings = {
    */
   asYouTypeCodeSuggestions:
       'As you type in the Console or Sources panel, you’ll get code suggestions. Press Tab to accept one.',
+  /**
+   * @description First item in the description of the 'Code suggestions' feature [updated]
+   */
+  asYouTypeRelevantDataIsBeingSentToGoogle:
+      'As you type, relevant data is being sent to Google to generate code suggestions. Press Tab to accept.',
+  /**
+   * @description Second item in the description of the 'Code suggestions' feature [new]
+   */
+  describeCodeInComment:
+      'In Console or Sources, describe the code you need in a comment, then press Ctrl+I to generate it.',
+  /**
+   * @description Second item in the description of the 'Code suggestions' feature [new]
+   */
+  describeCodeInCommentForMacOs:
+      'In Console or Sources, describe the code you need in a comment, then press Cmd+I to generate it.',
   /**
    * @description Explainer for which data is being sent for the 'Code suggestions' feature
    */
@@ -231,7 +249,7 @@ interface AiSettingParams {
 
 interface ViewInput {
   disabledReasons: string[];
-  sharedDisclaimerBulletPoints: Array<{icon: string, text: Common.UIString.LocalizedString|Lit.TemplateResult}>;
+  sharedDisclaimerBulletPoints: Array<{icon: string, text: Common.UIString.LocalizedString|Lit.LitTemplate}>;
   settingToParams: Map<Common.Settings.Setting<boolean>, AiSettingParams>;
   expandSetting(setting: Common.Settings.Setting<boolean>): void;
   toggleSetting(setting: Common.Settings.Setting<boolean>, ev: Event): void;
@@ -332,14 +350,12 @@ export const AI_SETTINGS_TAB_DEFAULT_VIEW: View = (input, _output, target): void
             <h3 class="expansion-grid-whole-row">${i18nString(UIStrings.thingsToConsider)}</h3>
             ${settingData.toConsiderSettingItems.map(item => renderSettingItem(item))}
             <div class="expansion-grid-whole-row">
-              <x-link
+              <devtools-link
                 href=${settingData.learnMoreLink.url}
                 class="link"
                 tabindex=${tabindex}
-                jslog=${VisualLogging.link(settingData.learnMoreLink.linkJSLogContext).track({
-                  click: true,
-                })}
-              >${i18nString(UIStrings.learnMore)}</x-link>
+                .jslogContext=${settingData.learnMoreLink.linkJSLogContext}
+              >${i18nString(UIStrings.learnMore)}</devtools-link>
             </div>
           </div>
         </div>
@@ -466,8 +482,9 @@ export class AISettingsTab extends UI.Widget.VBox {
 
     if (this.#aiAssistanceSetting) {
       const aiAssistanceData: AiSettingParams = {
-        settingName: i18n.i18n.lockedString('AI assistance'),
-        iconName: 'smart-assistant',
+        settingName: i18n.i18n.lockedString(
+            AiAssistanceModel.AiUtils.isGeminiBranding() ? 'Gemini in Chrome DevTools' : 'AI assistance'),
+        iconName: AiAssistanceModel.AiUtils.getIconName(),
         settingDescription: this.#getAiAssistanceSettingDescription(),
         enableSettingText: i18nString(UIStrings.enableAiAssistance),
         settingItems: [
@@ -520,12 +537,25 @@ export class AISettingsTab extends UI.Widget.VBox {
     }
 
     if (this.#aiCodeCompletionSetting) {
+      const devtoolsLocale = i18n.DevToolsLocale.DevToolsLocale.instance();
+      const isAiCodeGenerationEnabled =
+          AiCodeGeneration.AiCodeGeneration.AiCodeGeneration.isAiCodeGenerationEnabled(devtoolsLocale.locale);
+      const settingItems = isAiCodeGenerationEnabled ?
+          [
+            {iconName: 'code', text: i18nString(UIStrings.asYouTypeRelevantDataIsBeingSentToGoogle)}, {
+              iconName: 'text-analysis',
+              text: Host.Platform.isMac() ? i18nString(UIStrings.describeCodeInCommentForMacOs) :
+                                            i18nString(UIStrings.describeCodeInComment)
+            }
+          ] :
+          [{iconName: 'code', text: i18nString(UIStrings.asYouTypeCodeSuggestions)}];
+
       const aiCodeCompletionData: AiSettingParams = {
         settingName: i18n.i18n.lockedString('Code suggestions'),
         iconName: 'text-analysis',
         settingDescription: i18nString(UIStrings.helpUnderstandCodeSuggestions),
         enableSettingText: i18nString(UIStrings.enableAiCodeSuggestions),
-        settingItems: [{iconName: 'code', text: i18nString(UIStrings.asYouTypeCodeSuggestions)}],
+        settingItems,
         toConsiderSettingItems: [{
           iconName: 'google',
           text: noLogging ? i18nString(UIStrings.codeSuggestionsSendDataNoLogging) :
@@ -629,13 +659,11 @@ export class AISettingsTab extends UI.Widget.VBox {
     this.requestUpdate();
   }
 
-  #getSharedDisclaimerBulletPoints(): Array<{icon: string, text: Common.UIString.LocalizedString|Lit.TemplateResult}> {
-    const tosLink = UI.XLink.XLink.create(
-        'https://policies.google.com/terms', i18nString(UIStrings.termsOfService), undefined, undefined,
-        'terms-of-service');
-    const privacyNoticeLink = UI.XLink.XLink.create(
-        'https://policies.google.com/privacy', i18nString(UIStrings.privacyNotice), undefined, undefined,
-        'privacy-notice');
+  #getSharedDisclaimerBulletPoints(): Array<{icon: string, text: Common.UIString.LocalizedString|Lit.LitTemplate}> {
+    const tosLink = html`<devtools-link href="https://policies.google.com/terms" .jslogContext=${'terms-of-service'}>${
+        i18nString(UIStrings.termsOfService)}</devtools-link>`;
+    const privacyNoticeLink = html`<devtools-link href="https://policies.google.com/privacy" .jslogContext=${
+                                  'privacy-notice'}>${i18nString(UIStrings.privacyNotice)}</devtools-link>`;
     const noLogging = Root.Runtime.hostConfig.aidaAvailability?.enterprisePolicyValue ===
         Root.Runtime.GenAiEnterprisePolicyValue.ALLOW_WITHOUT_LOGGING;
 
@@ -651,10 +679,10 @@ export class AISettingsTab extends UI.Widget.VBox {
       },
       {
         icon: 'policy',
-        text: html`${uiI18n.getFormatLocalizedString(str_, UIStrings.termsOfServicePrivacyNotice, {
+        text: uiI18n.getFormatLocalizedStringTemplate(str_, UIStrings.termsOfServicePrivacyNotice, {
           PH1: tosLink,
           PH2: privacyNoticeLink,
-        })}`,
+        }),
       },
     ];
   }

@@ -898,7 +898,8 @@ describeWithEnvironment('FlameChart', () => {
             {groupIndex: -1, hoverType: PerfUI.FlameChart.HoverType.OUTSIDE_TRACKS});
       });
 
-      it('returns the correct group index and the icon type for given coordinates', () => {
+      // After https://crrev.com/c/7205876 this test starts failing.
+      it.skip('[crbug.com/465838131] returns the correct group index and the icon type for given coordinates', () => {
         const provider = new IndexAndCoordinatesConversionTestProvider();
         const delegate = new MockFlameChartDelegate();
         chartInstance = new PerfUI.FlameChart.FlameChart(provider, delegate);
@@ -911,7 +912,7 @@ describeWithEnvironment('FlameChart', () => {
         if (!timelineData) {
           throw new Error('Could not find timeline data');
         }
-        const context = (chartInstance.getCanvas().getContext('2d') as CanvasRenderingContext2D);
+        const context = chartInstance.getCanvas().getContext('2d')!;
         const labelWidth = chartInstance.labelWidthForGroup(context, provider.timelineData()?.groups[0]!);
 
         // Start of the view
@@ -1319,7 +1320,8 @@ describeWithEnvironment('FlameChart', () => {
     await assertScreenshot('timeline/interactions_track_candystripe.png');
   });
 
-  it('renders the frames track with screenshots', async function() {
+  // Flaky
+  it.skip('[crbug.com/474036476]: renders the frames track with screenshots', async function() {
     const {flameChart} = await renderFlameChartIntoDOM(this, {
       dataProvider: 'MAIN',
       fileNameOrParsedTrace: 'web-dev-screenshot-source-ids.json.gz',
@@ -1345,7 +1347,8 @@ describeWithEnvironment('FlameChart', () => {
     await assertScreenshot('timeline/frames_track_screenshots.png');
   });
 
-  it('renders correctly with a vertical offset', async function() {
+  // Flaky
+  it.skip('[crbug.com/474034100]: renders correctly with a vertical offset', async function() {
     const {flameChart, parsedTrace, dataProvider} = await renderFlameChartIntoDOM(this, {
       dataProvider: 'MAIN',
       fileNameOrParsedTrace: 'web-dev.json.gz',

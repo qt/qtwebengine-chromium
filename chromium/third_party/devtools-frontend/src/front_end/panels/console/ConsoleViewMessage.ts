@@ -38,7 +38,6 @@ import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
-import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
 import * as AiAssistanceModel from '../../models/ai_assistance/ai_assistance.js';
@@ -47,7 +46,6 @@ import type * as IssuesManager from '../../models/issues_manager/issues_manager.
 import * as Logs from '../../models/logs/logs.js';
 import * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as Workspace from '../../models/workspace/workspace.js';
-import * as Buttons from '../../ui/components/buttons/buttons.js';
 import * as CodeHighlighter from '../../ui/components/code_highlighter/code_highlighter.js';
 import * as Highlighting from '../../ui/components/highlighting/highlighting.js';
 import * as IssueCounter from '../../ui/components/issue_counter/issue_counter.js';
@@ -61,7 +59,6 @@ import * as Components from '../../ui/legacy/components/utils/utils.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import {render} from '../../ui/lit/lit.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
-import * as Security from '../security/security.js';
 
 import {format, updateStyle} from './ConsoleFormat.js';
 import {ConsoleInsightTeaser} from './ConsoleInsightTeaser.js';
@@ -220,10 +217,6 @@ const UIStrings = {
    * @description Message to offer insights for a console message
    */
   explainThisMessageWithAI: 'Understand this message. Powered by AI',
-  /**
-   * @description Tooltip shown when user hovers over the cookie icon to explain that the button will bring the user to the cookie report
-   */
-  SeeIssueInCookieReport: 'Click to open privacy and security panel and show third-party cookie report',
   /**
    * @description Element text content in Object Properties Section
    */
@@ -402,9 +395,6 @@ export class ConsoleViewMessage implements ConsoleViewportElement {
 
   wasShown(): void {
     this.isVisibleInternal = true;
-    if (this.elementInternal) {
-      this.#teaser?.show(this.elementInternal, this.consoleRowWrapper);
-    }
   }
 
   onResize(): void {
@@ -413,7 +403,6 @@ export class ConsoleViewMessage implements ConsoleViewportElement {
   willHide(): void {
     this.isVisibleInternal = false;
     this.cachedHeight = this.element().offsetHeight;
-    this.#teaser?.detach();
   }
 
   isVisible(): boolean {
@@ -578,23 +567,6 @@ export class ConsoleViewMessage implements ConsoleViewportElement {
     return elements;
   }
 
-  #appendCookieReportButtonToElem(elem: HTMLElement): void {
-    const button = new Buttons.Button.Button();
-    button.data = {
-      size: Buttons.Button.Size.SMALL,
-      variant: Buttons.Button.Variant.ICON,
-      iconName: 'cookie',
-      jslogContext: 'privacy',
-      title: i18nString(UIStrings.SeeIssueInCookieReport)
-    };
-
-    button.addEventListener('click', () => {
-      void Common.Revealer.reveal(new Security.CookieReportView.CookieReportView());
-    });
-
-    elem.appendChild(button);
-  }
-
   #getLinkifierMetric(): Host.UserMetrics.Action|undefined {
     const request = Logs.NetworkLog.NetworkLog.requestForConsoleMessage(this.message);
     if (request?.resourceType().isStyleSheet()) {
@@ -634,14 +606,6 @@ export class ConsoleViewMessage implements ConsoleViewportElement {
       }
       return null;
     };
-
-    if (this.message.isCookieReportIssue && Root.Runtime.hostConfig.devToolsPrivacyUI?.enabled) {
-      const anchorWrapperElement = document.createElement('span');
-      anchorWrapperElement.classList.add('console-message-anchor', 'cookie-report-anchor');
-      this.#appendCookieReportButtonToElem(anchorWrapperElement);
-      UI.UIUtils.createTextChild(anchorWrapperElement, ' ');
-      return anchorWrapperElement;
-    }
 
     const anchorElement = linkify(this.message);
     // Append a space to prevent the anchor text from being glued to the console message when the user selects and copies the console messages.
@@ -1186,7 +1150,7 @@ export class ConsoleViewMessage implements ConsoleViewportElement {
   }
 
   matchesFilterText(filter: string): boolean {
-    const text = this.contentElement().deepTextContent();
+    const text = this.contentElement().deepTextContent() + this.message.messageText;
     return text.toLowerCase().includes(filter.toLowerCase());
   }
 
@@ -1410,14 +1374,31 @@ export class ConsoleViewMessage implements ConsoleViewportElement {
   }
 
   #startTeaserGeneration(): void {
-    if (this.#teaser &&
-        Common.Settings.Settings.instance().moduleSetting('console-insight-teasers-enabled').getIfNotDisabled()) {
+    if (!this.elementInternal) {
+      return;
+    }
+    if (this.shouldShowTeaser()) {
+      if (!this.#teaser) {
+        const uuid = crypto.randomUUID();
+        this.elementInternal.setAttribute('aria-details', `teaser-${uuid}`);
+        this.#teaser = new ConsoleInsightTeaser(uuid, this);
+        this.#teaser.show(this.elementInternal, this.consoleRowWrapper);
+      }
       this.#teaser.maybeGenerateTeaser();
+    } else {  // Removes teaser if preferences have changed
+      this.#teaser?.detach();
+      this.#teaser = undefined;
     }
   }
 
   #abortTeaserGeneration(): void {
-    this.#teaser?.abortTeaserGeneration();
+    if (this.#teaser) {
+      const {okToRemove} = this.#teaser.abortTeaserGeneration();
+      if (okToRemove) {
+        this.#teaser.detach();
+        this.#teaser = undefined;
+      }
+    }
   }
 
   toMessageElement(): HTMLElement {
@@ -1449,12 +1430,6 @@ export class ConsoleViewMessage implements ConsoleViewportElement {
     this.elementInternal.removeChildren();
     this.consoleRowWrapper = this.elementInternal.createChild('div');
     this.consoleRowWrapper.classList.add('console-row-wrapper');
-
-    if (this.shouldShowTeaser()) {
-      const uuid = crypto.randomUUID();
-      this.elementInternal.setAttribute('aria-details', `teaser-${uuid}`);
-      this.#teaser = new ConsoleInsightTeaser(uuid, this);
-    }
 
     if (this.message.isGroupStartMessage()) {
       this.elementInternal.classList.add('console-group-title');

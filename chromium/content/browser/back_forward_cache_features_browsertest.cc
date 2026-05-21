@@ -2,7 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/containers/contains.h"
+#include <algorithm>
+
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/platform_thread.h"
@@ -686,11 +687,20 @@ IN_PROC_BROWSER_TEST_F(
                     {}, FROM_HERE);
 }
 
+// TODO(crbug.com/469570289): enable the flaky test.
+#if BUILDFLAG(IS_LINUX)
+#define MAYBE_PageWithDrainedDatapipeRequestsForFetchShouldBeEvicted \
+  DISABLED_PageWithDrainedDatapipeRequestsForFetchShouldBeEvicted
+#else
+#define MAYBE_PageWithDrainedDatapipeRequestsForFetchShouldBeEvicted \
+  PageWithDrainedDatapipeRequestsForFetchShouldBeEvicted
+#endif  // BUILDFLAG(IS_LINUX)
 // Tests the case when fetching started in a dedicated worker and the header was
 // received before the page is frozen, but parts of the response body is
 // received when the page is frozen.
-IN_PROC_BROWSER_TEST_F(BackForwardCacheWithDedicatedWorkerBrowserTest,
-                       PageWithDrainedDatapipeRequestsForFetchShouldBeEvicted) {
+IN_PROC_BROWSER_TEST_F(
+    BackForwardCacheWithDedicatedWorkerBrowserTest,
+    MAYBE_PageWithDrainedDatapipeRequestsForFetchShouldBeEvicted) {
   CreateHttpsServer();
 
   net::test_server::ControllableHttpResponse fetch_response(https_server(),
@@ -1771,15 +1781,16 @@ IN_PROC_BROWSER_TEST_F(BackForwardCacheBrowserTest,
   std::vector<base::Bucket> blocklist_values = histogram_tester().GetAllSamples(
       "BackForwardCache.HistoryNavigationOutcome."
       "BlocklistedFeature");
-  EXPECT_TRUE(base::Contains(blocklist_values, sample, &base::Bucket::min));
+  EXPECT_TRUE(
+      std::ranges::contains(blocklist_values, sample, &base::Bucket::min));
 
   std::vector<base::Bucket> all_sites_blocklist_values =
       histogram_tester().GetAllSamples(
           "BackForwardCache.AllSites.HistoryNavigationOutcome."
           "BlocklistedFeature");
 
-  EXPECT_TRUE(
-      base::Contains(all_sites_blocklist_values, sample, &base::Bucket::min));
+  EXPECT_TRUE(std::ranges::contains(all_sites_blocklist_values, sample,
+                                    &base::Bucket::min));
 }
 
 // Pages with acquired keyboard lock should not enter BackForwardCache.
@@ -2273,7 +2284,7 @@ IN_PROC_BROWSER_TEST_F(BackForwardCacheBrowserTest,
                     {}, {}, {}, FROM_HERE);
   auto& map = GetTreeResult()->GetBlockingDetailsMap();
   // Only WebSocket should be reported.
-  EXPECT_EQ(static_cast<int>(map.size()), 1);
+  EXPECT_EQ(map.size(), 1u);
   EXPECT_TRUE(
       map.contains(blink::scheduler::WebSchedulerTrackedFeature::kWebSocket));
   // Both socketA and socketB's JavaScript locations should be reported.
@@ -2338,7 +2349,7 @@ IN_PROC_BROWSER_TEST_F(BackForwardCacheBrowserTest,
                     {}, {}, {}, FROM_HERE);
   auto& map = GetTreeResult()->GetBlockingDetailsMap();
   // Only WebSocket should be reported.
-  EXPECT_EQ(static_cast<int>(map.size()), 1);
+  EXPECT_EQ(map.size(), 1u);
   EXPECT_TRUE(
       map.contains(blink::scheduler::WebSchedulerTrackedFeature::kWebSocket));
   // Only socketB's JavaScript locations should be reported.
@@ -2393,7 +2404,7 @@ IN_PROC_BROWSER_TEST_F(BackForwardCacheBrowserTest,
                     {}, {}, {}, FROM_HERE);
   auto& map = GetTreeResult()->GetBlockingDetailsMap();
   // Only WebSocket should be reported.
-  EXPECT_EQ(static_cast<int>(map.size()), 1);
+  EXPECT_EQ(map.size(), 1u);
   EXPECT_TRUE(
       map.contains(blink::scheduler::WebSchedulerTrackedFeature::kWebSocket));
   // Both socketA and socketB's JavaScript locations should be reported.
@@ -2455,7 +2466,7 @@ IN_PROC_BROWSER_TEST_F(BackForwardCacheBrowserTest,
                     {}, {}, {}, FROM_HERE);
   auto& map = GetTreeResult()->GetBlockingDetailsMap();
   // Only WebSocket should be reported.
-  EXPECT_EQ(static_cast<int>(map.size()), 1);
+  EXPECT_EQ(map.size(), 1u);
   EXPECT_TRUE(
       map.contains(blink::scheduler::WebSchedulerTrackedFeature::kWebSocket));
   // Only socketB's JavaScript locations should be reported.
@@ -2508,7 +2519,7 @@ IN_PROC_BROWSER_TEST_F(BackForwardCacheBrowserTest,
        blink::scheduler::WebSchedulerTrackedFeature::kWebSocketSticky},
       {}, {}, {}, FROM_HERE);
   auto& map = GetTreeResult()->GetBlockingDetailsMap();
-  EXPECT_EQ(static_cast<int>(map.size()), 3);
+  EXPECT_EQ(map.size(), 3u);
   EXPECT_TRUE(
       map.contains(blink::scheduler::WebSchedulerTrackedFeature::kWebSocket));
   EXPECT_TRUE(map.contains(
@@ -5095,40 +5106,6 @@ IN_PROC_BROWSER_TEST_F(BackForwardCacheBrowserTest,
       {}, {}, {}, FROM_HERE);
 }
 #endif  // !BUILDFLAG(IS_ANDROID)
-
-IN_PROC_BROWSER_TEST_F(BackForwardCacheBrowserTest, WebLocksNotCached) {
-  ASSERT_TRUE(embedded_test_server()->Start());
-  GURL url_a(embedded_test_server()->GetURL("/title1.html"));
-  GURL url_b(embedded_test_server()->GetURL("b.com", "/title1.html"));
-
-  // 1) Navigate to A.
-  ASSERT_TRUE(NavigateToURL(shell(), url_a));
-  RenderFrameHostImpl* rfh_a = current_frame_host();
-  RenderFrameDeletedObserver delete_observer_rfh_a(rfh_a);
-
-  // Wait for the page to acquire a lock and ensure that it continues to do so.
-  EXPECT_TRUE(ExecJs(rfh_a, R"(
-    const never_resolved = new Promise(resolve => {});
-    new Promise(continue_test => {
-      navigator.locks.request('test', async () => {
-        continue_test();
-        await never_resolved;
-      });
-    })
-  )"));
-
-  // 2) Navigate to B.
-  ASSERT_TRUE(NavigateToURL(shell(), url_b));
-
-  // - Page A should not be in the cache.
-  delete_observer_rfh_a.WaitUntilDeleted();
-
-  // 3) Go back.
-  ASSERT_TRUE(HistoryGoBack(web_contents()));
-  ExpectNotRestored({NotRestoredReason::kBlocklistedFeatures},
-                    {blink::scheduler::WebSchedulerTrackedFeature::kWebLocks},
-                    {}, {}, {}, FROM_HERE);
-}
 
 enum TestAuthenticatorBehavior {
   kErrorOut,

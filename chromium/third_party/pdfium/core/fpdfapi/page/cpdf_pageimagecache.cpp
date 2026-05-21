@@ -63,7 +63,7 @@ class CachedImage final : public CFX_DIBBase {
   }
 
   pdfium::span<const uint8_t> GetScanline(int line) const override {
-    // TODO(crbug.com/pdfium/2050): Still needed for `Realize()` call in
+    // TODO(crbug.com/40096192): Still needed for `Realize()` call in
     // `CPDF_ImageRenderer`.
     return image_->GetScanline(line);
   }

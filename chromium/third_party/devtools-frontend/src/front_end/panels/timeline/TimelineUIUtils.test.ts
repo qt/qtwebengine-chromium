@@ -239,10 +239,7 @@ describeWithMockConnection('TimelineUIUtils', function() {
       error: ['Error: No LanguageSelector instance exists yet.'],
     });
     it('maps to the authored name and script of a profile call', async function() {
-      const {sourceMap, script} = await loadBasicSourceMapExample(target);
-
-      sourceMap.hasScopeInfo();  // Trigger source map processing.
-      await sourceMap.scopesFallbackPromiseForTest;
+      const {script} = await loadBasicSourceMapExample(target);
 
       // Ideally we would get a column number we can use from the source
       // map however the current status of the source map helpers makes
@@ -281,11 +278,7 @@ describeWithMockConnection('TimelineUIUtils', function() {
       assert.strictEqual(stackTraceData[0], 'someFunction @ main.js:6:10');
     });
     it('maps to the authored name and script of a function call', async function() {
-      const {sourceMap, script} = await loadBasicSourceMapExample(target);
-
-      sourceMap.hasScopeInfo();  // Trigger source map processing.
-      await sourceMap.scopesFallbackPromiseForTest;
-
+      const {script} = await loadBasicSourceMapExample(target);
       const [lineNumber, columnNumber, ts, dur, pid, tid] =
           [0, 51, 10, 100, Trace.Types.Events.ProcessID(1), Trace.Types.Events.ThreadID(1)];
       const profileCall = makeProfileCall('function', ts, dur, pid, tid);
@@ -1726,8 +1719,8 @@ describeWithMockConnection('TimelineUIUtils', function() {
 
     it('is true for a LCP candiadate event', async function() {
       const parsedTrace = await TraceLoader.traceEngine(this, 'web-dev-initial-url.json.gz');
-      const markLCPCandidate =
-          parsedTrace.data.PageLoadMetrics.allMarkerEvents.find(Trace.Types.Events.isLargestContentfulPaintCandidate);
+      const markLCPCandidate = parsedTrace.data.PageLoadMetrics.allMarkerEvents.find(
+          Trace.Types.Events.isAnyLargestContentfulPaintCandidate);
       assert.isOk(markLCPCandidate);
       assert.isTrue(Timeline.TimelineUIUtils.isMarkerEvent(parsedTrace, markLCPCandidate));
     });
@@ -1796,13 +1789,13 @@ describeWithMockConnection('TimelineUIUtils', function() {
     it('builds the right link for an LCP Event', async function() {
       const parsedTrace = await TraceLoader.traceEngine(this, 'web-dev.json.gz');
       const markLCPEvent = getEventOfType(
-          parsedTrace.data.PageLoadMetrics.allMarkerEvents, Trace.Types.Events.isLargestContentfulPaintCandidate);
+          parsedTrace.data.PageLoadMetrics.allMarkerEvents, Trace.Types.Events.isAnyLargestContentfulPaintCandidate);
       const html = Timeline.TimelineUIUtils.TimelineUIUtils.buildDetailsNodeForMarkerEvents(
           markLCPEvent,
       );
-      const url = html.querySelector('x-link')?.getAttribute('href');
+      const url = html.querySelector('devtools-link')?.getAttribute('href');
       assert.strictEqual(url, 'https://web.dev/lcp/');
-      assert.strictEqual(html.innerText, 'Learn more about largest contentful paint.');
+      assert.strictEqual(html.innerText, 'Learn more about Largest Contentful Paint.');
     });
 
     it('builds the right link for an FCP Event', async function() {
@@ -1812,9 +1805,9 @@ describeWithMockConnection('TimelineUIUtils', function() {
       const html = Timeline.TimelineUIUtils.TimelineUIUtils.buildDetailsNodeForMarkerEvents(
           markFCPEvent,
       );
-      const url = html.querySelector('x-link')?.getAttribute('href');
+      const url = html.querySelector('devtools-link')?.getAttribute('href');
       assert.strictEqual(url, 'https://web.dev/first-contentful-paint/');
-      assert.strictEqual(html.innerText, 'Learn more about first contentful paint.');
+      assert.strictEqual(html.innerText, 'Learn more about First Contentful Paint.');
     });
 
     it('builds a generic event for other marker events', async function() {
@@ -1824,7 +1817,7 @@ describeWithMockConnection('TimelineUIUtils', function() {
       const html = Timeline.TimelineUIUtils.TimelineUIUtils.buildDetailsNodeForMarkerEvents(
           markLoadEvent,
       );
-      const url = html.querySelector('x-link')?.getAttribute('href');
+      const url = html.querySelector('devtools-link')?.getAttribute('href');
       assert.strictEqual(url, 'https://web.dev/user-centric-performance-metrics/');
       assert.strictEqual(html.innerText, 'Learn more about page performance metrics.');
     });

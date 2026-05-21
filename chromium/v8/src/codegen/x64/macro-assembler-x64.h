@@ -18,6 +18,7 @@
 #include "src/execution/isolate-data.h"
 #include "src/objects/contexts.h"
 #include "src/objects/tagged-index.h"
+#include "src/sandbox/indirect-pointer-tag.h"
 
 namespace v8 {
 namespace internal {
@@ -509,6 +510,11 @@ class V8_EXPORT_PRIVATE MacroAssembler
   void LoadRootRelative(Register destination, int32_t offset) final;
   void StoreRootRelative(int32_t offset, Register value) final;
 
+  MemOperand AsMemOperand(IsolateFieldId id) {
+    DCHECK(root_array_available());
+    return MemOperand(kRootRegister, IsolateData::GetOffset(id));
+  }
+
   // Operand pointing to an external reference.
   // May emit code to set up the scratch register. The operand is
   // only guaranteed to be correct as long as the scratch register
@@ -847,7 +853,8 @@ class V8_EXPORT_PRIVATE MacroAssembler
   // When the sandbox is enabled, these are indirect pointers using the trusted
   // pointer table. Otherwise they are regular tagged fields.
   void LoadTrustedPointerField(Register destination, Operand field_operand,
-                               IndirectPointerTag tag, Register scratch);
+                               IndirectPointerTagRange tag_range,
+                               Register scratch);
   // As above, but for kUnknownIndirectPointerTag. The type of the loaded object
   // is unknown, so this helper will check for a series of expected types and
   // jump to the given labels if the loaded object has a matching type. If the
@@ -877,7 +884,8 @@ class V8_EXPORT_PRIVATE MacroAssembler
   // Only available when the sandbox is enabled, but always visible to avoid
   // having to place the #ifdefs into the caller.
   void LoadIndirectPointerField(Register destination, Operand field_operand,
-                                IndirectPointerTag tag, Register scratch);
+                                IndirectPointerTagRange tag_range,
+                                Register scratch);
 
   // Store an indirect pointer field.
   // Only available when the sandbox is enabled, but always visible to avoid
@@ -888,11 +896,11 @@ class V8_EXPORT_PRIVATE MacroAssembler
   // Retrieve the heap object referenced by the given indirect pointer handle,
   // which can either be a trusted pointer handle or a code pointer handle.
   void ResolveIndirectPointerHandle(Register destination, Register handle,
-                                    IndirectPointerTag tag);
+                                    IndirectPointerTagRange tag_range);
 
   // Retrieve the heap object referenced by the given trusted pointer handle.
   void ResolveTrustedPointerHandle(Register destination, Register handle,
-                                   IndirectPointerTag tag);
+                                   IndirectPointerTagRange tag_range);
 
   // Retrieve the Code object referenced by the given code pointer handle.
   void ResolveCodePointerHandle(Register destination, Register handle);
@@ -912,8 +920,6 @@ class V8_EXPORT_PRIVATE MacroAssembler
 
   void LoadEntrypointFromJSDispatchTable(Register destination,
                                          Register dispatch_handle);
-  void LoadEntrypointFromJSDispatchTable(Register destination,
-                                         JSDispatchHandle dispatch_handle);
   void LoadParameterCountFromJSDispatchTable(Register destination,
                                              Register dispatch_handle);
   void LoadEntrypointAndParameterCountFromJSDispatchTable(
@@ -931,7 +937,7 @@ class V8_EXPORT_PRIVATE MacroAssembler
   void Store(ExternalReference destination, Register source);
 
   // Pushes the address of the external reference onto the stack.
-  void PushAddress(ExternalReference source);
+  void PushAddress(ExternalReference source, Register scratch);
 
   // Operations on roots in the root-array.
   // Load a root value where the index (or part of it) is variable.
@@ -994,8 +1000,7 @@ class V8_EXPORT_PRIVATE MacroAssembler
 
   // Allocates an EXIT/BUILTIN_EXIT/API_CALLBACK_EXIT frame with given number
   // of slots in non-GCed area.
-  void EnterExitFrame(int extra_slots, StackFrame::Type frame_type,
-                      Register c_function);
+  void EnterExitFrame(int extra_slots, StackFrame::Type frame_type);
   void LeaveExitFrame();
 
   // ---------------------------------------------------------------------------
@@ -1299,7 +1304,8 @@ void CallApiFunctionAndReturn(MacroAssembler* masm, bool with_profiling,
                               ExternalReference thunk_ref, Register thunk_arg,
                               int slots_to_drop_on_return,
                               MemOperand* argc_operand,
-                              MemOperand return_value_operand);
+                              MemOperand return_value_operand,
+                              bool handle_interceptor_result);
 
 #define ACCESS_MASM(masm) masm->
 

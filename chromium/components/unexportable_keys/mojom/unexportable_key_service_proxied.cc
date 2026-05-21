@@ -4,13 +4,17 @@
 
 #include "components/unexportable_keys/mojom/unexportable_key_service_proxied.h"
 
+#include <cstdint>
+#include <optional>
 #include <utility>
 #include <vector>
 
 #include "base/containers/to_vector.h"
 #include "base/functional/bind.h"
-#include "base/notimplemented.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/types/expected.h"
+#include "base/types/expected_macros.h"
+#include "base/types/optional_util.h"
 #include "base/unguessable_token.h"
 #include "components/unexportable_keys/background_task_priority.h"
 #include "components/unexportable_keys/mojom/unexportable_key_service.mojom.h"
@@ -21,8 +25,26 @@
 #include "mojo/public/cpp/bindings/pending_remote.h"
 
 namespace unexportable_keys {
+namespace {
+
+ServiceErrorOr<size_t> AdaptSizeType(ServiceErrorOr<uint64_t> result) {
+  return result.transform(
+      [](uint64_t r) { return base::checked_cast<size_t>(r); });
+}
+}  // namespace
 
 UnexportableKeyServiceProxied::CachedKeyData::CachedKeyData() = default;
+
+UnexportableKeyServiceProxied::CachedKeyData::CachedKeyData(
+    const mojom::NewKeyDataPtr& new_key_data)
+    : subject_public_key_info(new_key_data->subject_public_key_info),
+      wrapped_key(new_key_data->wrapped_key),
+      algorithm(new_key_data->algorithm),
+      key_tag(base::OptionalToExpected(new_key_data->key_tag,
+                                       ServiceError::kOperationNotSupported)),
+      creation_time(
+          base::OptionalToExpected(new_key_data->creation_time,
+                                   ServiceError::kOperationNotSupported)) {}
 
 UnexportableKeyServiceProxied::CachedKeyData::CachedKeyData(
     const UnexportableKeyServiceProxied::CachedKeyData& other) = default;
@@ -69,12 +91,7 @@ void UnexportableKeyServiceProxied::OnKeyGenerated(
   const mojom::NewKeyDataPtr& new_key_data = result.value();
   UnexportableKeyId key_id(new_key_data->key_id);
 
-  CachedKeyData cached_data;
-  cached_data.subject_public_key_info = new_key_data->subject_public_key_info;
-  cached_data.wrapped_key = new_key_data->wrapped_key;
-  cached_data.algorithm = new_key_data->algorithm;
-
-  if (!key_cache_.try_emplace(key_id, std::move(cached_data)).second) {
+  if (!key_cache_.try_emplace(key_id, new_key_data).second) {
     std::move(original_callback)
         .Run(base::unexpected(ServiceError::kKeyCollision));
     return;
@@ -108,22 +125,8 @@ void UnexportableKeyServiceProxied::OnKeyLoaded(
   const mojom::NewKeyDataPtr& new_key_data = result.value();
   UnexportableKeyId key_id(new_key_data->key_id);
 
-  key_cache_.lazy_emplace(key_id, [&](const auto& ctor) {
-    CachedKeyData cached_data;
-    cached_data.subject_public_key_info = new_key_data->subject_public_key_info;
-    cached_data.wrapped_key = new_key_data->wrapped_key;
-    cached_data.algorithm = new_key_data->algorithm;
-    ctor(key_id, std::move(cached_data));
-  });
+  key_cache_.try_emplace(key_id, new_key_data);
   std::move(original_callback).Run(key_id);
-}
-
-void UnexportableKeyServiceProxied::CopyKeyFromOtherService(
-    const UnexportableKeyService& other_service,
-    UnexportableKeyId key_id_from_other_service,
-    BackgroundTaskPriority priority,
-    base::OnceCallback<void(ServiceErrorOr<UnexportableKeyId>)> callback) {
-  NOTIMPLEMENTED();
 }
 
 void UnexportableKeyServiceProxied::SignSlowlyAsync(
@@ -162,17 +165,48 @@ UnexportableKeyServiceProxied::GetAlgorithm(UnexportableKeyId key_id) const {
   return it->second.algorithm;
 }
 
-void UnexportableKeyServiceProxied::DeleteKeySlowlyAsync(
-    UnexportableKeyId key_id,
+ServiceErrorOr<std::string> UnexportableKeyServiceProxied::GetKeyTag(
+    UnexportableKeyId key_id) const {
+  auto it = key_cache_.find(key_id);
+  if (it == key_cache_.end()) {
+    return base::unexpected(ServiceError::kKeyNotFound);
+  }
+  return it->second.key_tag;
+}
+
+ServiceErrorOr<base::Time> UnexportableKeyServiceProxied::GetCreationTime(
+    UnexportableKeyId key_id) const {
+  auto it = key_cache_.find(key_id);
+  if (it == key_cache_.end()) {
+    return base::unexpected(ServiceError::kKeyNotFound);
+  }
+  return it->second.creation_time;
+}
+
+void UnexportableKeyServiceProxied::DeleteKeysSlowlyAsync(
+    base::span<const UnexportableKeyId> key_ids,
     BackgroundTaskPriority priority,
-    base::OnceCallback<void(ServiceErrorOr<void>)> callback) {
-  NOTIMPLEMENTED();
+    base::OnceCallback<void(ServiceErrorOr<size_t>)> callback) {
+  auto to_delete = base::ToVector(key_ids);
+  std::erase_if(to_delete, [&](UnexportableKeyId key_id) {
+    return key_cache_.erase(key_id) == 0;
+  });
+
+  if (to_delete.empty()) {
+    std::move(callback).Run(base::unexpected(ServiceError::kKeyNotFound));
+    return;
+  }
+
+  remote_->DeleteKeys(to_delete, priority,
+                      base::BindOnce(&AdaptSizeType).Then(std::move(callback)));
 }
 
 void UnexportableKeyServiceProxied::DeleteAllKeysSlowlyAsync(
-    BackgroundTaskPriority priority,
     base::OnceCallback<void(ServiceErrorOr<size_t>)> callback) {
-  NOTIMPLEMENTED();
+  key_cache_.clear();
+
+  remote_->DeleteAllKeys(
+      base::BindOnce(&AdaptSizeType).Then(std::move(callback)));
 }
 
 void UnexportableKeyServiceProxied::
@@ -180,7 +214,33 @@ void UnexportableKeyServiceProxied::
         BackgroundTaskPriority priority,
         base::OnceCallback<void(ServiceErrorOr<std::vector<UnexportableKeyId>>)>
             callback) {
-  NOTIMPLEMENTED();
+  // remote_ will not call any pending callbacks after it is destroyed.
+  // Since we own remote_, it is guaranteed that this will be alive when a
+  // callback is called.
+  remote_->GetAllSigningKeysForGarbageCollection(
+      priority, base::BindOnce(&UnexportableKeyServiceProxied::
+                                   OnGetAllSigningKeysForGarbageCollection,
+                               base::Unretained(this), std::move(callback)));
+}
+
+void UnexportableKeyServiceProxied::OnGetAllSigningKeysForGarbageCollection(
+    base::OnceCallback<void(ServiceErrorOr<std::vector<UnexportableKeyId>>)>
+        original_callback,
+    ServiceErrorOr<std::vector<mojom::NewKeyDataPtr>> result) {
+  ASSIGN_OR_RETURN(std::vector<mojom::NewKeyDataPtr> key_data,
+                   std::move(result), [&](ServiceError error) {
+                     std::move(original_callback).Run(base::unexpected(error));
+                   });
+
+  std::vector<UnexportableKeyId> key_ids;
+  key_ids.reserve(key_data.size());
+  for (mojom::NewKeyDataPtr& new_key_data : key_data) {
+    UnexportableKeyId key_id = new_key_data->key_id;
+    key_cache_.try_emplace(key_id, std::move(new_key_data));
+    key_ids.push_back(key_id);
+  }
+
+  std::move(original_callback).Run(std::move(key_ids));
 }
 
 }  // namespace unexportable_keys

@@ -7,7 +7,6 @@
 #include <algorithm>
 
 #include "core/fxcrt/compiler_specific.h"
-#include "core/fxcrt/fx_memcpy_wrappers.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 

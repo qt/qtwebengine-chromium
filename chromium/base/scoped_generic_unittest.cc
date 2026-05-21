@@ -6,14 +6,13 @@
 
 #include <memory>
 #include <unordered_map>
-#include <unordered_set>
 #include <utility>
 #include <vector>
 
-#include "base/containers/contains.h"
 #include "base/memory/raw_ptr.h"
 #include "build/build_config.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/abseil-cpp/absl/container/flat_hash_set.h"
 
 namespace base {
 
@@ -37,12 +36,16 @@ TEST(ScopedGenericTest, ScopedGeneric) {
   IntTraits traits(&values_freed);
 
   // Invalid case, delete should not be called.
-  { ScopedInt a(IntTraits::InvalidValue(), traits); }
+  {
+    ScopedInt a(IntTraits::InvalidValue(), traits);
+  }
   EXPECT_TRUE(values_freed.empty());
 
   // Simple deleting case.
   static const int kFirst = 0;
-  { ScopedInt a(kFirst, traits); }
+  {
+    ScopedInt a(kFirst, traits);
+  }
   ASSERT_EQ(1u, values_freed.size());
   ASSERT_EQ(kFirst, values_freed[0]);
   values_freed.clear();
@@ -158,7 +161,7 @@ struct TrackedIntTraits : public ScopedGenericOwnershipTracking {
   using OwnerMap = std::unordered_map<
       int,
       raw_ptr<const ScopedGeneric<int, TrackedIntTraits>, CtnExperimental>>;
-  TrackedIntTraits(std::unordered_set<int>* freed, OwnerMap* owners)
+  TrackedIntTraits(absl::flat_hash_set<int>* freed, OwnerMap* owners)
       : freed(freed), owners(owners) {}
 
   static int InvalidValue() { return -1; }
@@ -183,7 +186,7 @@ struct TrackedIntTraits : public ScopedGenericOwnershipTracking {
     owners->erase(it);
   }
 
-  raw_ptr<std::unordered_set<int>> freed;
+  raw_ptr<absl::flat_hash_set<int>> freed;
   raw_ptr<OwnerMap> owners;
 };
 
@@ -193,21 +196,21 @@ using ScopedTrackedInt = ScopedGeneric<int, TrackedIntTraits>;
 
 TEST(ScopedGenericTest, OwnershipTracking) {
   TrackedIntTraits::OwnerMap owners;
-  std::unordered_set<int> freed;
+  absl::flat_hash_set<int> freed;
   TrackedIntTraits traits(&freed, &owners);
 
-#define ASSERT_OWNED(value, owner)            \
-  ASSERT_TRUE(base::Contains(owners, value)); \
-  ASSERT_EQ(&owner, owners[value]);           \
-  ASSERT_FALSE(base::Contains(freed, value))
+#define ASSERT_OWNED(value, owner)     \
+  ASSERT_TRUE(owners.contains(value)); \
+  ASSERT_EQ(&owner, owners[value]);    \
+  ASSERT_FALSE(freed.contains(value))
 
-#define ASSERT_UNOWNED(value)                  \
-  ASSERT_FALSE(base::Contains(owners, value)); \
-  ASSERT_FALSE(base::Contains(freed, value))
+#define ASSERT_UNOWNED(value)           \
+  ASSERT_FALSE(owners.contains(value)); \
+  ASSERT_FALSE(freed.contains(value))
 
-#define ASSERT_FREED(value)                    \
-  ASSERT_FALSE(base::Contains(owners, value)); \
-  ASSERT_TRUE(base::Contains(freed, value))
+#define ASSERT_FREED(value)             \
+  ASSERT_FALSE(owners.contains(value)); \
+  ASSERT_TRUE(freed.contains(value))
 
   // Constructor.
   {

@@ -163,6 +163,25 @@ class Browser extends EventEmitter_js_1.EventEmitter {
         return await this.defaultBrowserContext().deleteMatchingCookies(...filters);
     }
     /**
+     * Sets the permission for a specific origin in the default
+     * {@link BrowserContext}.
+     *
+     * @remarks
+     *
+     * Shortcut for
+     * {@link BrowserContext.setPermission |
+     * browser.defaultBrowserContext().setPermission()}.
+     *
+     * @param origin - The origin to set the permission for.
+     * @param permission - The permission descriptor.
+     * @param state - The state of the permission.
+     *
+     * @public
+     */
+    async setPermission(origin, ...permissions) {
+        return await this.defaultBrowserContext().setPermission(origin, ...permissions);
+    }
+    /**
      * Whether Puppeteer is connected to this {@link Browser | browser}.
      *
      * @deprecated Use {@link Browser | Browser.connected}.

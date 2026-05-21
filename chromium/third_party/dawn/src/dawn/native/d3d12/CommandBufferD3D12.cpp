@@ -232,6 +232,7 @@ MaybeError RecordCopyTextureWithTemporaryBuffer(CommandRecordingContext* recordi
     Ref<BufferBase> tempBufferBase;
     DAWN_TRY_ASSIGN(tempBufferBase, device->CreateBuffer(&tempBufferDescriptor));
     Ref<Buffer> tempBuffer = ToBackend(std::move(tempBufferBase));
+    auto scopedUseStaging = tempBuffer->UseInternal();
 
     BufferCopy bufferCopy;
     bufferCopy.buffer = tempBuffer;
@@ -293,6 +294,7 @@ MaybeError RecordBufferTextureCopyWithTemporaryBuffer(CommandRecordingContext* r
     // always be aligned to D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT (512).
     Ref<Buffer> tempBuffer = ToBackend(std::move(tempBufferBase));
     DAWN_ASSERT(tempBuffer->GetVA() % D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT == 0);
+    auto scopedUseStaging = tempBuffer->UseInternal();
 
     BufferCopy tempBufferCopy;
     tempBufferCopy.buffer = tempBuffer;
@@ -414,9 +416,9 @@ class ImmediateConstantTracker : public T {
 
     // Calling this after BindGroupTrackerBase::Apply() to update root signature.
     void Apply(CommandRecordingContext* commandContext) {
-        auto* lastPipeline = this->mLastPipeline;
-        DAWN_ASSERT(lastPipeline != nullptr);
+        DAWN_ASSERT(this->mLastPipeline != nullptr);
 
+        auto* lastPipeline = this->mLastPipeline;
         ImmediateConstantMask pipelineMask = lastPipeline->GetImmediateMask();
         ImmediateConstantMask uploadBits = this->mDirty & pipelineMask;
         for (auto&& [offset, size] : IterateRanges(uploadBits)) {
@@ -485,23 +487,20 @@ class BindGroupStateTracker : public BindGroupTrackerBase<false, uint64_t> {
         // the signal to change the bounded heaps.
         // Re-populating all bindgroups after the last one fails causes duplicated allocations
         // to occur on overflow.
-        bool didCreateBindGroupViews = true;
-        bool didCreateBindGroupSamplers = true;
+        bool populatedViews = true;
+        bool populatedSamplers = true;
         for (BindGroupIndex index : mDirtyBindGroups) {
             BindGroup* group = ToBackend(mBindGroups[index]);
-            didCreateBindGroupViews = group->PopulateViews(viewAllocator);
-            didCreateBindGroupSamplers = group->PopulateSamplers(samplerAllocator);
-            if (!didCreateBindGroupViews && !didCreateBindGroupSamplers) {
-                break;
-            }
+            populatedViews = populatedViews && group->PopulateViews(viewAllocator);
+            populatedSamplers = populatedSamplers && group->PopulateSamplers(samplerAllocator);
         }
 
-        if (!didCreateBindGroupViews || !didCreateBindGroupSamplers) {
-            if (!didCreateBindGroupViews) {
+        if (!populatedViews || !populatedSamplers) {
+            if (!populatedViews) {
                 DAWN_TRY(viewAllocator->AllocateAndSwitchShaderVisibleHeap());
             }
 
-            if (!didCreateBindGroupSamplers) {
+            if (!populatedSamplers) {
                 DAWN_TRY(samplerAllocator->AllocateAndSwitchShaderVisibleHeap());
             }
 
@@ -513,10 +512,10 @@ class BindGroupStateTracker : public BindGroupTrackerBase<false, uint64_t> {
 
             for (BindGroupIndex index : mBindGroupLayoutsMask) {
                 BindGroup* group = ToBackend(mBindGroups[index]);
-                didCreateBindGroupViews = group->PopulateViews(viewAllocator);
-                didCreateBindGroupSamplers = group->PopulateSamplers(samplerAllocator);
-                DAWN_ASSERT(didCreateBindGroupViews);
-                DAWN_ASSERT(didCreateBindGroupSamplers);
+                populatedViews = group->PopulateViews(viewAllocator);
+                populatedSamplers = group->PopulateSamplers(samplerAllocator);
+                DAWN_ASSERT(populatedViews);
+                DAWN_ASSERT(populatedSamplers);
             }
         }
 
@@ -946,7 +945,7 @@ MaybeError CommandBuffer::RecordCommands(CommandRecordingContext* commandContext
                     commandContext, GetResourceUsages().renderPasses[nextRenderPassNumber],
                     &passHasUAV));
 
-                LazyClearRenderPassAttachments(beginRenderPassCmd);
+                LazyClearRenderPassAttachments(device, beginRenderPassCmd);
                 DAWN_TRY(RecordRenderPass(commandContext,
                                           descriptorHeapState.GetGraphicsBindingTracker(),
                                           beginRenderPassCmd, passHasUAV));
@@ -1429,8 +1428,7 @@ MaybeError CommandBuffer::RecordComputePass(CommandRecordingContext* commandCont
             case Command::SetImmediates: {
                 SetImmediatesCmd* cmd = mCommands.NextCommand<SetImmediatesCmd>();
                 DAWN_ASSERT(cmd->size > 0);
-                uint8_t* value = nullptr;
-                value = mCommands.NextData<uint8_t>(cmd->size);
+                uint8_t* value = mCommands.NextData<uint8_t>(cmd->size);
                 immediates.SetImmediates(cmd->offset, value, cmd->size);
                 break;
             }
@@ -1477,6 +1475,11 @@ MaybeError CommandBuffer::RecordComputePass(CommandRecordingContext* commandCont
 
                 RecordWriteTimestampCmd(commandList, cmd->querySet.Get(), cmd->queryIndex);
                 break;
+            }
+
+            case Command::SetResourceTable: {
+                // TODO(https://issues.chromium.org/473354062): Add support for resource tables.
+                return DAWN_UNIMPLEMENTED_ERROR("SetResourceTable unimplemented.");
             }
 
             default:
@@ -1879,10 +1882,9 @@ MaybeError CommandBuffer::RecordRenderPass(CommandRecordingContext* commandConte
             }
 
             case Command::SetImmediates: {
-                SetImmediatesCmd* cmd = mCommands.NextCommand<SetImmediatesCmd>();
+                SetImmediatesCmd* cmd = iter->NextCommand<SetImmediatesCmd>();
                 DAWN_ASSERT(cmd->size > 0);
-                uint8_t* value = nullptr;
-                value = mCommands.NextData<uint8_t>(cmd->size);
+                uint8_t* value = iter->NextData<uint8_t>(cmd->size);
                 immediates.SetImmediates(cmd->offset, value, cmd->size);
                 break;
             }

@@ -76,6 +76,9 @@ AC_DEFINE_UNQUOTED([FC_VERSION_MAJOR], [$major], [major version])
 AC_DEFINE_UNQUOTED([FC_VERSION_MINOR], [$minor], [minor version])
 AC_DEFINE_UNQUOTED([FC_VERSION_MICRO], [$revision], [revision])
 
+dnl Preparation for enabling a FreeType-less build, for now, default enable.
+AC_DEFINE_UNQUOTED([ENABLE_FREETYPE], [1], [Enable building with FreeType.])
+
 dnl cache version
 CACHE_VERSION=11
 AC_SUBST(CACHE_VERSION)
@@ -192,9 +195,12 @@ AC_C_FLEXIBLE_ARRAY_MEMBER
 AC_TYPE_PID_T
 
 # Checks for library functions.
+AX_FUNC_SNPRINTF
 AC_FUNC_VPRINTF
 AC_FUNC_MMAP
-AC_CHECK_FUNCS([link mkstemp mkostemp _mktemp_s mkdtemp getopt getopt_long getprogname getexecname rand random lrand48 random_r rand_r readlink fstatvfs fstatfs lstat strerror strerror_r])
+AC_CHECK_FUNCS([link mkstemp _mktemp_s mkdtemp getopt getopt_long getprogname getexecname rand random lrand48 random_r rand_r readlink fstatvfs fstatfs lstat strerror strerror_r strdup vasprintf])
+
+AC_CHECK_DECL([mkostemp],[AC_DEFINE_UNQUOTED([HAVE_MKOSTEMP],[1],[Define to 1 if you have the 'mkostemp' function.])],[],[#include <stdlib.h>])
 
 AC_SEARCH_LIBS([fabs], [m], [], [AC_MSG_ERROR([unable to find the fabs() function])])
 
@@ -248,6 +254,41 @@ AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
 )])
 AC_DEFINE_UNQUOTED(FC_GPERF_SIZE_T, $FC_GPERF_SIZE_T, [The type of len parameter of the gperf hash/lookup function])
 AC_MSG_RESULT($FC_GPERF_SIZE_T)
+
+AC_CHECK_VA_COPY
+
+AC_CACHE_CHECK([Whether vsnprintf is C99-compliant], [fc_cv_c99_vsnprintf],
+	[AC_RUN_IFELSE([AC_LANG_SOURCE([[
+#include <sys/types.h>
+#include <stdio.h>
+#include <stdarg.h>
+#include <stdlib.h>
+int
+foo(char *format, ...)
+{
+	va_list ap;
+	char c;
+	int retval = 0;
+
+	va_start(ap, format);
+	if (vsnprintf(&c, 1, format, ap) < 0) {
+		retval = -1;
+	}
+	va_end(ap);
+
+	return retval;
+}
+int
+main(void)
+{
+	char c;
+
+	return foo("foo: %s", "bar");
+}]])],
+	[fc_cv_c99_vsnprintf=yes],[fc_cv_c99_vsnprintf=no],[fc_cv_c99_vsnprintf=no])])
+if test "x$fc_cv_c99_vsnprintf" = xyes; then
+	AC_DEFINE(HAVE_C99_VSNPRINTF, 1, [Have C99-compliant vsnprintf])
+fi
 
 #
 # Checks for iconv
@@ -863,6 +904,7 @@ fc-cache/Makefile
 fc-cat/Makefile
 fc-conflist/Makefile
 fc-const/Makefile
+fc-genconf/Makefile
 fc-list/Makefile
 fc-match/Makefile
 fc-pattern/Makefile

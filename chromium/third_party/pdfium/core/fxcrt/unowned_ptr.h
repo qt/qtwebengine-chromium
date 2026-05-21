@@ -62,8 +62,11 @@ using UnownedPtr = raw_ptr<T>;
 
 #else  // defined(PDF_USE_PARTITION_ALLOC)
 
+#include <compare>
 #include <cstddef>
 #include <functional>
+#include <iterator>
+#include <memory>
 #include <type_traits>
 #include <utility>
 
@@ -76,11 +79,13 @@ class TRIVIAL_ABI GSL_POINTER UnownedPtr {
  public:
   constexpr UnownedPtr() noexcept = default;
 
-  // Deliberately implicit to allow returning nullptrs.
+  // Deliberately implicit to allow initialzing with nullptrs.
   // NOLINTNEXTLINE(runtime/explicit)
   constexpr UnownedPtr(std::nullptr_t ptr) {}
 
-  explicit constexpr UnownedPtr(T* pObj) noexcept : obj_(pObj) {}
+  // Deliberately implicit to allow initialzing with raw pointers.
+  // NOLINTNEXTLINE(runtime/explicit)
+  constexpr UnownedPtr(T* pObj) noexcept : obj_(pObj) {}
 
   // Copy-construct an UnownedPtr.
   // Required in addition to copy conversion constructor below.
@@ -148,14 +153,22 @@ class TRIVIAL_ABI GSL_POINTER UnownedPtr {
 
   ~UnownedPtr() { obj_ = nullptr; }
 
-  friend inline bool operator==(const UnownedPtr& lhs, std::nullptr_t rhs) {
-    return lhs.obj_ == nullptr;
+  friend inline constexpr bool operator==(const UnownedPtr& lhs,
+                                          std::nullptr_t rhs) {
+    return !lhs.obj_;
   }
-  friend inline bool operator==(const UnownedPtr& lhs, const UnownedPtr& rhs) {
-    return lhs.obj_ == rhs.obj_;
+  friend inline constexpr bool operator==(const UnownedPtr& lhs, T* rhs) {
+    return lhs.obj_ == rhs;
   }
-  bool operator<(const UnownedPtr& that) const {
-    return std::less<T*>()(obj_, static_cast<T*>(that));
+  friend inline constexpr bool operator==(T* lhs, const UnownedPtr& rhs) {
+    return lhs == rhs.obj_;
+  }
+
+  friend inline constexpr auto operator<=>(const UnownedPtr& lhs, T* rhs) {
+    return lhs.obj_ <=> rhs;
+  }
+  friend inline constexpr auto operator<=>(T* lhs, const UnownedPtr& rhs) {
+    return lhs <=> rhs.obj_;
   }
 
   operator T*() const noexcept { return obj_; }
@@ -172,9 +185,112 @@ class TRIVIAL_ABI GSL_POINTER UnownedPtr {
   UNOWNED_PTR_EXCLUSION T* obj_ = nullptr;
 };
 
+template <typename T>
+inline constexpr bool operator==(const UnownedPtr<T>& lhs,
+                                 const UnownedPtr<T>& rhs) {
+  return lhs.get() == rhs.get();
+}
+template <typename T>
+inline constexpr auto operator<=>(const UnownedPtr<T>& lhs,
+                                  const UnownedPtr<T>& rhs) {
+  return lhs.get() <=> rhs.get();
+}
+
 }  // namespace fxcrt
 
 using fxcrt::UnownedPtr;
+
+namespace std {
+
+// Override so set/map lookups do not create extra UnownedPtr. This also allows
+// dangling pointers to be used for lookup.
+template <typename T>
+struct less<UnownedPtr<T>> {
+  using Impl = typename UnownedPtr<T>::Impl;
+  using is_transparent = void;
+
+  bool operator()(const UnownedPtr<T>& lhs, const UnownedPtr<T>& rhs) const {
+    Impl::IncrementLessCountForTest();
+    return lhs < rhs;
+  }
+
+  bool operator()(T* lhs, const UnownedPtr<T>& rhs) const {
+    Impl::IncrementLessCountForTest();
+    return lhs < rhs;
+  }
+
+  bool operator()(const UnownedPtr<T>& lhs, T* rhs) const {
+    Impl::IncrementLessCountForTest();
+    return lhs < rhs;
+  }
+};
+
+template <typename T>
+struct hash<UnownedPtr<T>> {
+  typedef UnownedPtr<T> argument_type;
+  typedef std::size_t result_type;
+  result_type operator()(argument_type const& ptr) const {
+    return hash<T*>()(ptr.get());
+  }
+};
+
+// Define for cases where UnownedPtr<T> holds a pointer to an array of type T.
+// This is consistent with definition of std::iterator_traits<T*>.
+// Algorithms like std::binary_search need that.
+template <typename T>
+struct iterator_traits<UnownedPtr<T>> {
+  using difference_type = ptrdiff_t;
+  using value_type = std::remove_cv_t<T>;
+  using pointer = T*;
+  using reference = T&;
+  using iterator_category = std::random_access_iterator_tag;
+};
+
+// Specialize std::pointer_traits. The latter is required to obtain the
+// underlying raw pointer in the std::to_address(pointer) overload.
+// Implementing the pointer_traits is the standard blessed way to customize
+// `std::to_address(pointer)` in C++20 [3].
+//
+// [1] https://wg21.link/pointer.traits.optmem
+template <typename T>
+struct pointer_traits<UnownedPtr<T>> {
+  using pointer = UnownedPtr<T>;
+  using element_type = T;
+  using difference_type = ptrdiff_t;
+
+  template <typename U>
+  using rebind = UnownedPtr<U>;
+
+  static constexpr pointer pointer_to(element_type& r) noexcept {
+    return pointer(&r);
+  }
+
+  static constexpr element_type* to_address(pointer p) noexcept {
+    return p.get();
+  }
+};
+
+// Mark `UnownedPtr<T>` and `T*` as having a common reference type (the type to
+// which both can be converted or bound) of `T*`. This makes them satisfy
+// `std::equality_comparable`, which allows usage like:
+// ```
+//   std::vector<UnownedPtr<T>> v;
+//   T* e;
+//   auto it = std::ranges::find(v, e);
+// ```
+// Without this, the `find()` call above would fail to compile with a cryptic
+// error about being unable to invoke `std::ranges::equal_to()`.
+template <typename T>
+struct common_type<fxcrt::UnownedPtr<T>, T*> {
+  using type = T*;
+};
+
+template <typename T>
+struct common_type<T*, fxcrt::UnownedPtr<T>> {
+  using type = T*;
+};
+
+}  // namespace std
 
 #endif  // defined(PDF_USE_PARTITION_ALLOC)
 

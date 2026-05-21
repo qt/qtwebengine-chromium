@@ -60,6 +60,18 @@ bool StructTraits<autofill::mojom::FieldRendererIdDataView,
 }
 
 // static
+bool StructTraits<autofill::mojom::FillIdDataView, autofill::FillId>::Read(
+    autofill::mojom::FillIdDataView data,
+    autofill::FillId* out) {
+  base::UnguessableToken id;
+  if (!data.ReadId(&id)) {
+    return false;
+  }
+  *out = autofill::FillId(id);
+  return true;
+}
+
+// static
 bool StructTraits<
     autofill::mojom::SelectOptionDataView,
     autofill::SelectOption>::Read(autofill::mojom::SelectOptionDataView data,
@@ -482,6 +494,9 @@ bool StructTraits<autofill::mojom::FormDataPredictionsDataView,
   if (!data.ReadAlternativeSignature(&out->alternative_signature)) {
     return false;
   }
+  if (!data.ReadStructuralFormSignature(&out->structural_form_signature)) {
+    return false;
+  }
   if (!data.ReadFields(&out->fields))
     return false;
 
@@ -524,8 +539,6 @@ bool StructTraits<autofill::mojom::PasswordFormFillDataDataView,
   }
 
   out->wait_for_username = data.wait_for_username();
-  out->notify_browser_of_successful_filling =
-      data.notify_browser_of_successful_filling();
 
   return true;
 }

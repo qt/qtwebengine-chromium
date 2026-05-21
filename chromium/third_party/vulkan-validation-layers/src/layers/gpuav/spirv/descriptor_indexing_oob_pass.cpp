@@ -1,4 +1,4 @@
-/* Copyright (c) 2024-2025 LunarG, Inc.
+/* Copyright (c) 2024-2026 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -63,7 +63,7 @@ uint32_t DescriptorIndexingOOBPass::CreateFunctionCall(BasicBlock& block, Instru
             // "All OpSampledImage instructions must be in the same block in which their Result <id> are consumed"
             // the simple way around this is to add a OpCopyObject to be consumed by the target instruction
             uint32_t image_id = meta.target_instruction->Operand(0);
-            const Instruction* sampled_image_inst = block.function_.FindInstruction(image_id);
+            const Instruction* sampled_image_inst = block.function_->FindInstruction(image_id);
             // TODO - Add tests to understand what else can be here other then OpSampledImage
             if (sampled_image_inst->Opcode() == spv::OpSampledImage) {
                 const uint32_t type_id = sampled_image_inst->TypeId();
@@ -78,13 +78,14 @@ uint32_t DescriptorIndexingOOBPass::CreateFunctionCall(BasicBlock& block, Instru
                 } else {
                     copy_object_map_.emplace(image_id, copy_id);
                     // slower, but need to guarantee it is placed after a OpSampledImage
-                    block.function_.CreateInstruction(spv::OpCopyObject, {type_id, copy_id, image_id}, image_id);
+                    block.function_->CreateInstruction(spv::OpCopyObject, {type_id, copy_id, image_id}, image_id);
                 }
             }
         }
     }
 
-    BindingLayout binding_layout = module_.set_index_to_bindings_layout_lut_[meta.descriptor_set][meta.descriptor_binding];
+    const auto& layout_lut = module_.interface_.instrumentation_dsl.set_index_to_bindings_layout_lut;
+    BindingLayout binding_layout = layout_lut[meta.descriptor_set][meta.descriptor_binding];
     const Constant& binding_layout_size = type_manager_.GetConstantUInt32(binding_layout.count);
     const Constant& binding_layout_offset = type_manager_.GetConstantUInt32(binding_layout.start);
 
@@ -115,8 +116,7 @@ uint32_t DescriptorIndexingOOBPass::CreateFunctionCall(BasicBlock& block, Instru
         const uint32_t sampler_descriptor_index_id =
             CastToUint32(meta.sampler_descriptor_index_id, block, inst_it);  // might be int32
 
-        BindingLayout sampler_binding_layout =
-            module_.set_index_to_bindings_layout_lut_[meta.sampler_descriptor_set][meta.sampler_descriptor_binding];
+        BindingLayout sampler_binding_layout = layout_lut[meta.sampler_descriptor_set][meta.sampler_descriptor_binding];
         const Constant& sampler_binding_layout_size = type_manager_.GetConstantUInt32(sampler_binding_layout.count);
         const Constant& sampler_binding_layout_offset = type_manager_.GetConstantUInt32(sampler_binding_layout.start);
 
@@ -378,7 +378,7 @@ bool DescriptorIndexingOOBPass::RequiresInstrumentation(const Function& function
     return true;
 }
 bool DescriptorIndexingOOBPass::Instrument() {
-    if (module_.set_index_to_bindings_layout_lut_.empty()) {
+    if (module_.interface_.instrumentation_dsl.set_index_to_bindings_layout_lut.empty()) {
         return false;  // If there is no bindings, nothing to instrument
     }
 
@@ -387,16 +387,20 @@ bool DescriptorIndexingOOBPass::Instrument() {
     bool is_original_new_block = true;
 
     // Can safely loop function list as there is no injecting of new Functions until linking time
-    for (const auto& function : module_.functions_) {
-        if (function->instrumentation_added_) continue;
+    for (Function& function : module_.functions_) {
+        if (!function.called_from_target_) {
+            continue;
+        }
 
         FunctionDuplicateTracker function_duplicate_tracker;
 
-        for (auto block_it = function->blocks_.begin(); block_it != function->blocks_.end(); ++block_it) {
+        for (auto block_it = function.blocks_.begin(); block_it != function.blocks_.end(); ++block_it) {
             BasicBlock& current_block = **block_it;
 
             cf_.Update(current_block);
-            if (debug_disable_loops_ && cf_.in_loop) continue;
+            if (debug_disable_loops_ && cf_.in_loop) {
+                continue;
+            }
 
             if (current_block.IsLoopHeader()) {
                 continue;  // Currently can't properly handle injecting CFG logic into a loop header block
@@ -420,7 +424,7 @@ bool DescriptorIndexingOOBPass::Instrument() {
 
                 InstructionMeta meta;
                 // Every instruction is analyzed by the specific pass and lets us know if we need to inject a function or not
-                if (!RequiresInstrumentation(*function, *(inst_it->get()), meta)) {
+                if (!RequiresInstrumentation(function, *(inst_it->get()), meta)) {
                     // TODO - This should be cleaned up then having it injected here
                     // we can have a situation where the incoming SPIR-V looks like
                     // %a = OpSampledImage %type %image %sampler
@@ -434,7 +438,7 @@ bool DescriptorIndexingOOBPass::Instrument() {
                         const uint32_t result_id = (*inst_it)->ResultId();
                         const uint32_t type_id = (*inst_it)->TypeId();
                         const uint32_t copy_id = module_.TakeNextId();
-                        function->ReplaceAllUsesWith(result_id, copy_id);
+                        function.ReplaceAllUsesWith(result_id, copy_id);
                         inst_it++;
                         current_block.CreateInstruction(spv::OpCopyObject, {type_id, copy_id, result_id}, &inst_it);
                         inst_it--;
@@ -453,13 +457,15 @@ bool DescriptorIndexingOOBPass::Instrument() {
                     }
                 }
 
-                if (IsMaxInstrumentationsCount()) continue;
+                if (IsMaxInstrumentationsCount()) {
+                    continue;
+                }
                 instrumentations_count_++;
 
                 if (!module_.settings_.safe_mode) {
                     CreateFunctionCall(current_block, &inst_it, meta);
                 } else {
-                    InjectConditionalData ic_data = InjectFunctionPre(*function.get(), block_it, inst_it);
+                    InjectConditionalData ic_data = InjectFunctionPre(function, block_it, inst_it);
                     ic_data.function_result_id = CreateFunctionCall(current_block, nullptr, meta);
                     InjectFunctionPost(current_block, ic_data);
                     // Skip the newly added valid and invalid block. Start searching again from newly split merge block

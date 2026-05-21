@@ -116,8 +116,9 @@ equal.
 @PURPOSE@       Add a value to a pattern
 @DESC@
 Adds a single value to the list of values associated with the property named
-`object<parameter>.  If `append</parameter> is FcTrue, the value is added at the end of any
-existing list, otherwise it is inserted at the beginning.  `value' is saved
+<parameter>object</parameter>.  If <parameter>append</parameter> is FcTrue,
+the value is added at the end of any existing list, otherwise it is inserted
+at the beginning.  <parameter>value</parameter> is saved
 (with FcValueSave) when inserted into the pattern so that the library
 retains no reference to any application-supplied data structure.
 @@

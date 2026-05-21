@@ -1,7 +1,6 @@
 // Copyright 2011 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable @devtools/no-imperative-dom-api */
 
 import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
@@ -12,9 +11,10 @@ import * as Workspace from '../../models/workspace/workspace.js';
 import type * as CodeMirror from '../../third_party/codemirror.next/codemirror.next.js';
 import * as Tooltips from '../../ui/components/tooltips/tooltips.js';
 import * as uiI18n from '../../ui/i18n/i18n.js';
-import {Icon} from '../../ui/kit/kit.js';
+import {Icon, Link} from '../../ui/kit/kit.js';
 import * as SourceFrame from '../../ui/legacy/components/source_frame/source_frame.js';
 import * as UI from '../../ui/legacy/legacy.js';
+import {html} from '../../ui/lit/lit.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
 import * as PanelCommon from '../common/common.js';
 import * as Snippets from '../snippets/snippets.js';
@@ -527,10 +527,11 @@ export class TabbedEditorContainer extends Common.ObjectWrapper.ObjectWrapper<Ev
   }
 
   private addLoadErrorIcon(tabId: string): void {
-    const icon = new Icon();
-    icon.name = 'cross-circle-filled';
-    icon.classList.add('small');
-    UI.Tooltip.Tooltip.install(icon, i18nString(UIStrings.unableToLoadThisContent));
+    // clang-format off
+    const icon = html`<devtools-icon class="small" name="cross-circle-filled"
+                                     title=${i18nString(UIStrings.unableToLoadThisContent)}>
+                      </devtools-icon>`;
+    // clang-format on
     if (this.tabbedPane.tabView(tabId)) {
       this.tabbedPane.setTrailingTabIcon(tabId, icon);
     }
@@ -606,10 +607,11 @@ export class TabbedEditorContainer extends Common.ObjectWrapper.ObjectWrapper<Ev
       const tooltip = this.tooltipForFile(uiSourceCode);
       this.tabbedPane.changeTabTitle(tabId, title, tooltip);
       if (uiSourceCode.loadError()) {
-        const icon = new Icon();
-        icon.name = 'cross-circle-filled';
-        icon.classList.add('small');
-        UI.Tooltip.Tooltip.install(icon, i18nString(UIStrings.unableToLoadThisContent));
+        // clang-format off
+        const icon = html`<devtools-icon class="small" name="cross-circle-filled"
+                                         title=${i18nString(UIStrings.unableToLoadThisContent)}>
+                          </devtools-icon>`;
+        // clang-format on
         this.tabbedPane.setTrailingTabIcon(tabId, icon);
       } else if (Persistence.Persistence.PersistenceImpl.instance().hasUnsavedCommittedChanges(uiSourceCode)) {
         /* eslint-disable @devtools/no-imperative-dom-api --
@@ -637,7 +639,7 @@ export class TabbedEditorContainer extends Common.ObjectWrapper.ObjectWrapper<Ev
           tooltip.append(uiI18n.getFormatLocalizedString(
               str_, UIStrings.changesWereNotSavedToFileSystemToSaveAddFolderToWorkspace, {PH1: link}));
         } else {
-          const link = UI.XLink.XLink.create('https://developer.chrome.com/docs/devtools/workspaces/', 'Workspace');
+          const link = Link.create('https://developer.chrome.com/docs/devtools/workspaces/', 'Workspace');
           tooltip.append(uiI18n.getFormatLocalizedString(
               str_, UIStrings.changesWereNotSavedToFileSystemToSaveSetUpYourWorkspace, {PH1: link}));
         }

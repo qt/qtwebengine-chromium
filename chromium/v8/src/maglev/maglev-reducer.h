@@ -17,6 +17,7 @@
 #include "src/maglev/maglev-graph.h"
 #include "src/maglev/maglev-interpreter-frame-state.h"
 #include "src/maglev/maglev-ir.h"
+#include "src/maglev/maglev-node-type.h"
 #include "src/zone/zone-containers.h"
 
 namespace v8 {
@@ -184,6 +185,17 @@ inline ReduceResult MaybeReduceResult::Checked() { return ReduceResult(*this); }
     variable = res.node();                  \
   } while (false)
 
+// Can be used for extracting a BasicBlock* from std::optional<BasicBlock*>.
+#define GET_BLOCK_OR_ABORT(variable, result) \
+  do {                                       \
+    auto res = (result);                     \
+    if (!res) {                              \
+      return ReduceResult::DoneWithAbort();  \
+    }                                        \
+    variable = *res;                         \
+    DCHECK_NOT_NULL(variable);               \
+  } while (false)
+
 template <typename BaseT>
 concept ReducerBaseWithKNA = requires(BaseT* b) { b->known_node_aspects(); };
 
@@ -258,6 +270,17 @@ class MaglevReducer {
     DCHECK(new_nodes_at_end_.empty());
   }
 
+  static enum CheckType GetCheckType(NodeType type, ValueNode* target) {
+    if (NodeTypeIs(type, NodeType::kAnyHeapObject)) {
+      if (auto phi = target->TryCast<Phi>()) {
+        phi->SetUseRequiresHeapObject();
+      }
+      return CheckType::kOmitHeapObjectCheck;
+    } else {
+      return CheckType::kCheckHeapObject;
+    }
+  }
+
   // Add a new node with a dynamic set of inputs which are initialized by the
   // `post_create_input_initializer` function before the node is added to the
   // graph.
@@ -278,8 +301,8 @@ class MaglevReducer {
   NodeT* AddNewNodeNoInputConversion(std::initializer_list<ValueNode*> inputs,
                                      Args&&... args);
   template <typename ControlNodeT, typename... Args>
-  void AddNewControlNode(std::initializer_list<ValueNode*> inputs,
-                         Args&&... args);
+  ReduceResult AddNewControlNode(std::initializer_list<ValueNode*> inputs,
+                                 Args&&... args);
 
   void AddInitializedNodeToGraph(Node* node);
 
@@ -306,7 +329,7 @@ class MaglevReducer {
 
   std::optional<int32_t> TryGetInt32Constant(ValueNode* value);
   std::optional<uint32_t> TryGetUint32Constant(ValueNode* value);
-  std::optional<ShiftedInt53> TryGetShiftedInt53Constant(ValueNode* value);
+  std::optional<intptr_t> TryGetIntPtrConstant(ValueNode* value);
   std::optional<Float64> TryGetFloat64OrHoleyFloat64Constant(
       UseRepresentation use_repr, ValueNode* value,
       TaggedToFloat64ConversionType conversion_type);
@@ -322,10 +345,14 @@ class MaglevReducer {
                                      const MapContainer& maps,
                                      KnownMapsMerger<MapContainer>& merger);
 
-  ValueNode* BuildSmiUntag(ValueNode* node);
+  ReduceResult BuildSmiUntag(ValueNode* node);
 
   ReduceResult BuildNumberOrOddballToFloat64OrHoleyFloat64(
       ValueNode* node, UseRepresentation use_rep, NodeType allowed_input_type);
+
+  compiler::OptionalStringRef GetStringFromInt32(int32_t value);
+
+  MaybeReduceResult TryFoldNumberToString(ValueNode* value);
 
   // Get a tagged representation node whose value is equivalent to the given
   // node.
@@ -337,16 +364,10 @@ class MaglevReducer {
   // node.
   //
   // Deopts if the value is not exactly representable as an Int32.
-  ValueNode* GetInt32(ValueNode* value, bool can_be_heap_number = false);
+  ReduceResult GetInt32(ValueNode* value, bool can_be_heap_number = false);
 
   // This does not emit any conversion.
   ValueNode* TryGetInt32(ValueNode* value);
-
-  // Get a ShiftInt53 representation node whose value is equivalent to the given
-  // node.
-  //
-  // Deopts if the value is not exactly representable as an Int32.
-  ValueNode* GetShiftedInt53(ValueNode* value);
 
   // Get an Int32 representation node whose value is equivalent to the ToInt32
   // truncation of the given node (including a ToNumber call). Only trivial
@@ -354,8 +375,8 @@ class MaglevReducer {
   // oddballs.
   //
   // Deopts if the ToNumber is non-trivial.
-  ValueNode* GetTruncatedInt32ForToNumber(ValueNode* value,
-                                          NodeType allowed_input_type);
+  ReduceResult GetTruncatedInt32ForToNumber(ValueNode* value,
+                                            NodeType allowed_input_type);
 
   ReduceResult GetFloat64OrHoleyFloat64Impl(ValueNode* value,
                                             UseRepresentation use_rep,
@@ -382,7 +403,7 @@ class MaglevReducer {
   ReduceResult GetHoleyFloat64ForToNumber(ValueNode* value,
                                           NodeType allowed_input_type);
 
-  void EnsureInt32(ValueNode* value, bool can_be_heap_number = false);
+  ReduceResult EnsureInt32(ValueNode* value, bool can_be_heap_number = false);
 
   BasicBlock* current_block() const { return current_block_; }
   void set_current_block(BasicBlock* block) {
@@ -480,9 +501,6 @@ class MaglevReducer {
   Int32Constant* GetInt32Constant(int32_t constant) {
     return graph()->GetInt32Constant(constant);
   }
-  ShiftedInt53Constant* GetShiftedInt53Constant(ShiftedInt53 constant) {
-    return graph()->GetShiftedInt53Constant(constant);
-  }
   IntPtrConstant* GetIntPtrConstant(intptr_t constant) {
     return graph()->GetIntPtrConstant(constant);
   }
@@ -535,7 +553,19 @@ class MaglevReducer {
                                                    int32_t cst_right);
   bool TryFoldInt32CompareOperation(Operation op, int32_t left, int32_t right);
 
-  MaybeReduceResult TryFoldShiftedInt53Add(ValueNode* left, ValueNode* right);
+  std::optional<bool> TryFoldUint32CompareOperation(Operation op,
+                                                    ValueNode* left,
+                                                    ValueNode* right);
+  bool TryFoldUint32CompareOperation(Operation op, uint32_t left,
+                                     uint32_t right);
+
+  std::optional<bool> TryFoldFloat64CompareOperation(Operation op,
+                                                     ValueNode* left,
+                                                     ValueNode* right);
+  std::optional<bool> TryFoldFloat64CompareOperation(Operation op,
+                                                     ValueNode* left,
+                                                     double cst_right);
+  bool TryFoldFloat64CompareOperation(Operation op, double left, double right);
 
   template <Operation kOperation>
   MaybeReduceResult TryFoldFloat64UnaryOperationForToNumber(
@@ -552,6 +582,14 @@ class MaglevReducer {
   MaybeReduceResult TryFoldFloat64Min(ValueNode* left, ValueNode* right);
   MaybeReduceResult TryFoldFloat64Max(ValueNode* left, ValueNode* right);
 
+  MaybeReduceResult TryFoldFloat64Ieee754Unary(
+      Float64Ieee754Unary::Ieee754Function ieee_function, ValueNode* input);
+  MaybeReduceResult TryFoldFloat64Ieee754Binary(
+      Float64Ieee754Binary::Ieee754Function ieee_function, ValueNode* left,
+      ValueNode* right);
+  MaybeReduceResult TryFoldInt32CountLeadingZeros(ValueNode* input);
+  MaybeReduceResult TryFoldFloat64CountLeadingZeros(ValueNode* input);
+
   MaybeReduceResult TryFoldLogicalNot(ValueNode* input);
 
   bool CheckType(ValueNode* node, NodeType type, NodeType* old = nullptr) {
@@ -564,7 +602,13 @@ class MaglevReducer {
     return known_node_aspects().EnsureType(broker(), node, type, old);
   }
   NodeType GetType(ValueNode* node) {
-    return known_node_aspects().GetType(broker(), node);
+    NodeType type = known_node_aspects().GetTypeUnchecked(broker(), node);
+    if (v8_flags.maglev_assert_types && type != NodeType::kUnknown)
+        [[unlikely]] {
+      ReduceResult result = AddNewNode<CheckMaglevType>({node}, type);
+      USE(result);
+    }
+    return type;
   }
   NodeInfo* GetOrCreateInfoFor(ValueNode* node) {
     return known_node_aspects().GetOrCreateInfoFor(broker(), node);
@@ -572,10 +616,13 @@ class MaglevReducer {
   // Returns true if we statically know that {lhs} and {rhs} have disjoint
   // types.
   bool HaveDisjointTypes(ValueNode* lhs, ValueNode* rhs) {
-    return known_node_aspects().HaveDisjointTypes(broker(), lhs, rhs);
+    NodeType rhs_type = GetType(rhs);
+    return HasDisjointType(lhs, rhs_type);
   }
+
   bool HasDisjointType(ValueNode* lhs, NodeType rhs_type) {
-    return known_node_aspects().HasDisjointType(broker(), lhs, rhs_type);
+    NodeType lhs_type = GetType(lhs);
+    return IsEmptyNodeType(IntersectType(lhs_type, rhs_type));
   }
 
   Zone* zone() const { return zone_; }

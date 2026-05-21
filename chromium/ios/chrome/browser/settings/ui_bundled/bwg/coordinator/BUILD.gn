@@ -1,13 +1,14 @@
 source_set("coordinator") {
   sources = [
-    "bwg_settings_coordinator.h",
-    "bwg_settings_coordinator.mm",
-    "bwg_settings_mediator.h",
-    "bwg_settings_mediator.mm",
+    "gemini_settings_coordinator.h",
+    "gemini_settings_coordinator.mm",
+    "gemini_settings_mediator.h",
+    "gemini_settings_mediator.mm",
   ]
   deps = [
     ":protocols",
     "//ios/chrome/app/strings",
+    "//ios/chrome/browser/intelligence/features",
     "//ios/chrome/browser/settings/ui_bundled/bwg/ui",
     "//ios/chrome/browser/shared/coordinator/chrome_coordinator",
     "//ios/chrome/browser/shared/model/browser",
@@ -16,12 +17,14 @@ source_set("coordinator") {
     "//ios/chrome/browser/shared/model/profile",
     "//ios/chrome/browser/shared/public/commands",
     "//ios/chrome/browser/shared/ui/table_view:utils",
+    "//ios/chrome/browser/signin/model:authentication_service",
+    "//ios/chrome/browser/signin/model:authentication_service_factory",
     "//ios/public/provider/chrome/browser/bwg:bwg_api",
     "//url",
   ]
 }
 
 source_set("protocols") {
-  sources = [ "bwg_settings_mutator.h" ]
+  sources = [ "gemini_settings_mutator.h" ]
   frameworks = [ "UIKit.framework" ]
 }

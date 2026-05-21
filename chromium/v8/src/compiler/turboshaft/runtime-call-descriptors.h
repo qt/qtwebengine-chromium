@@ -114,6 +114,18 @@ struct runtime : CallDescriptorBuilder {
         Operator::kNoDeopt | Operator::kNoThrow;
   };
 
+  struct NumberToStringSlow : public Descriptor<NumberToStringSlow> {
+    static constexpr auto kFunction = Runtime::kNumberToStringSlow;
+    struct Arguments : ArgumentsBase {
+      ARG(V<Number>, input)
+    };
+    using returns_t = V<String>;
+
+    static constexpr bool kCanTriggerLazyDeopt = false;
+    static constexpr Operator::Properties kProperties =
+        Operator::kNoDeopt | Operator::kNoThrow;
+  };
+
   struct StackGuard : public Descriptor<StackGuard> {
     static constexpr auto kFunction = Runtime::kStackGuard;
     using Arguments = NoArguments;
@@ -426,6 +438,18 @@ struct runtime : CallDescriptorBuilder {
     // frame.
     static constexpr bool kCanTriggerLazyDeopt = false;
     static constexpr Operator::Properties kProperties = Operator::kFoldable;
+  };
+
+  struct ArrayIsArray : public Descriptor<ArrayIsArray> {
+    static constexpr auto kFunction = Runtime::kArrayIsArray;
+    struct Arguments : ArgumentsBase {
+      ARG(V<Object>, input)
+    };
+    using returns_t = V<Boolean>;
+
+    // TODO(dmercadier): check if this can really lazy deopt.
+    static constexpr bool kCanTriggerLazyDeopt = true;
+    static constexpr Operator::Properties kProperties = Operator::kNoProperties;
   };
 };
 

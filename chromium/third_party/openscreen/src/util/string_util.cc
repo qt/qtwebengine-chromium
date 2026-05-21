@@ -4,6 +4,9 @@
 
 #include "util/string_util.h"
 
+#include <functional>
+#include <ranges>
+
 namespace openscreen::string_util {
 namespace internal {
 // clang-format off
@@ -133,70 +136,23 @@ std::string AsciiStrToUpper(std::string_view s) {
   return result;
 }
 
-bool EqualsIgnoreCase(std::string_view piece1, std::string_view piece2) {
-  if (piece1.size() != piece2.size())
-    return false;
-  if (piece1.empty() && piece2.empty())
-    return true;
-  auto it1 = piece1.cbegin();
-  auto it2 = piece2.cbegin();
-  while (it1 != piece1.cend()) {
-    if (ascii_tolower(*it1) != ascii_tolower(*it2))
-      return false;
-    it1++;
-    it2++;
-  }
-  return true;
-}
-
-[[nodiscard]] std::string StrCat(
-    std::initializer_list<std::string_view> pieces) {
-  std::string result;
-  size_t length = 0;
-  for (const auto& piece : pieces)
-    length += piece.size();
-  result.reserve(length);
-  for (const auto& piece : pieces)
-    result.append(piece);
-  return result;
+[[nodiscard]] bool EqualsIgnoreCase(std::string_view a, std::string_view b) {
+  // std::ranges::equal checks size() automatically for random-access ranges
+  // like std::string_view.
+  return std::ranges::equal(
+      a, b, std::equal_to<>{},  // 1. The Predicate: Compare for equality
+      ascii_tolower,            // 2. Projection for piece1
+      ascii_tolower             // 3. Projection for piece2
+  );
 }
 
 [[nodiscard]] std::vector<std::string_view> Split(std::string_view value,
                                                   char delim) {
-  // Count the number of tokens in the string to size the result.
-  size_t num_tokens = 0;
-  auto it = value.cbegin();
-  const auto end = value.cend();
-  while (it != end) {
-    while (it != end && *it == delim)
-      it++;
-    if (it != end)
-      num_tokens++;
-    while (it != end && *it != delim)
-      it++;
-  }
+  auto tokens = value | std::views::split(delim) |
+                std::views::filter([](auto&& r) { return !r.empty(); });
   std::vector<std::string_view> result;
-  if (num_tokens == 0)
-    return result;
-  result.reserve(num_tokens);
-
-  // Now find tokens and add them to `result`.
-  auto string_begin = value.cbegin();
-  auto token_begin = value.cbegin();
-  auto token_end = token_begin;
-  while (token_begin != end) {
-    while (token_begin != end && *token_begin == delim)
-      token_begin++;
-    token_end = token_begin;
-    while (token_end != end && *token_end != delim)
-      token_end++;
-    if (token_end != token_begin) {
-      // TODO(https://issuetracker.google.com/364687926): Replace with
-      // iterator-accepting constructor once C++20 is allowed.
-      result.emplace_back(value.data() + (token_begin - string_begin),
-                          token_end - token_begin);
-    }
-    token_begin = token_end;
+  for (auto&& token : tokens) {
+    result.emplace_back(token.begin(), token.end());
   }
   return result;
 }

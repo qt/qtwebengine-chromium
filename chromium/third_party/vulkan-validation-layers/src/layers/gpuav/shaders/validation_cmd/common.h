@@ -1,6 +1,6 @@
-// Copyright (c) 2023-2025 The Khronos Group Inc.
-// Copyright (c) 2023-2025 Valve Corporation
-// Copyright (c) 2023-2025 LunarG, Inc.
+// Copyright (c) 2023-2026 The Khronos Group Inc.
+// Copyright (c) 2023-2026 Valve Corporation
+// Copyright (c) 2023-2026 LunarG, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -43,23 +43,29 @@ bool MaxCmdErrorsCountReached() {
     return cmd_errors_count >= kMaxErrorsPerCmd;
 }
 
-void GpuavLogError4(uint error_group, uint error_sub_code, uint dword_0, uint dword_1, uint dword_2, uint dword_3) {
+void GpuavLogError5(uint error_group, uint error_sub_code, uint dword_0, uint dword_1, uint dword_2, uint dword_3, uint dword_4) {
     if (MaxCmdErrorsCountReached()) return;
 
     uint vo_idx = atomicAdd(errors_count, kErrorRecordSize);
     const bool errors_buffer_filled = (vo_idx + kErrorRecordSize) > errors_buffer.length();
     if (errors_buffer_filled) return;
 
-    errors_buffer[vo_idx + kHeaderShaderIdErrorOffset] = (error_group << kErrorGroupShift) | (error_sub_code << kErrorSubCodeShift);
-    errors_buffer[vo_idx + kHeaderErrorRecordSizeOffset] = kErrorRecordSize;
-    errors_buffer[vo_idx + kHeaderActionIdErrorLoggerIdOffset] = (action_index[0] << kActionIdShift) | resource_index[0];
+    errors_buffer[vo_idx + kHeader_ShaderIdErrorOffset] =
+        (error_group << kErrorGroup_Shift) | (error_sub_code << kErrorSubCode_Shift);
+    errors_buffer[vo_idx + kHeader_ErrorRecordSizeOffset] = kErrorRecordSize;
+    errors_buffer[vo_idx + kHeader_ActionIdErrorLoggerIdOffset] = (action_index[0] << kActionId_Shift) | resource_index[0];
 
-    errors_buffer[vo_idx + kValCmdErrorPayloadDword_0] = dword_0;
-    errors_buffer[vo_idx + kValCmdErrorPayloadDword_1] = dword_1;
-    errors_buffer[vo_idx + kValCmdErrorPayloadDword_2] = dword_2;
-    errors_buffer[vo_idx + kValCmdErrorPayloadDword_3] = dword_3;
+    errors_buffer[vo_idx + kValCmd_ErrorPayloadDword_0] = dword_0;
+    errors_buffer[vo_idx + kValCmd_ErrorPayloadDword_1] = dword_1;
+    errors_buffer[vo_idx + kValCmd_ErrorPayloadDword_2] = dword_2;
+    errors_buffer[vo_idx + kValCmd_ErrorPayloadDword_3] = dword_3;
+    errors_buffer[vo_idx + kValCmd_ErrorPayloadDword_4] = dword_4;
 }
 
 void GpuavLogError2(uint error_group, uint error_sub_code, uint dword_0, uint dword_1) {
-    GpuavLogError4(error_group, error_sub_code, dword_0, dword_1, 0, 0);
+    GpuavLogError5(error_group, error_sub_code, dword_0, dword_1, 0, 0, 0);
+}
+
+void GpuavLogError4(uint error_group, uint error_sub_code, uint dword_0, uint dword_1, uint dword_2, uint dword_3) {
+    GpuavLogError5(error_group, error_sub_code, dword_0, dword_1, dword_2, dword_3, 0);
 }

@@ -13,7 +13,6 @@
 #include <vector>
 
 #include "platform/api/time.h"
-#include "platform/base/macros.h"
 #include "platform/impl/socket_handle_waiter_posix.h"
 #include "platform/impl/task_runner.h"
 #include "platform/impl/tls_data_router_posix.h"
@@ -62,6 +61,11 @@ class PlatformClientPosix {
   static void ShutDown();
 
   static PlatformClientPosix* GetInstance() { return instance_; }
+
+  PlatformClientPosix(const PlatformClientPosix&) = delete;
+  PlatformClientPosix(PlatformClientPosix&&) noexcept = delete;
+  PlatformClientPosix& operator=(const PlatformClientPosix&) = delete;
+  PlatformClientPosix& operator=(PlatformClientPosix&&) = delete;
 
   // This method is thread-safe.
   // FIXME: Rename to GetTlsDataRouter()
@@ -119,8 +123,6 @@ class PlatformClientPosix {
   std::optional<std::thread> task_runner_thread_;
 
   static PlatformClientPosix* instance_;
-
-  OSP_DISALLOW_COPY_AND_ASSIGN(PlatformClientPosix);
 };
 
 }  // namespace openscreen

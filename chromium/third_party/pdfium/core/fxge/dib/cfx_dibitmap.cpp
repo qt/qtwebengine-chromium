@@ -182,7 +182,7 @@ void CFX_DIBitmap::Clear(uint32_t color) {
     }
     case FXDIB_Format::kBgrx:
       if (CFX_DefaultRenderDevice::UseSkiaRenderer()) {
-        // TODO(crbug.com/pdfium/2016): This is not reliable because alpha may
+        // TODO(crbug.com/42271025): This is not reliable because alpha may
         // be modified outside of this operation.
         color |= 0xFF000000;
       }

@@ -199,10 +199,10 @@ core::BuiltinFn Convert(wgsl::BuiltinFn fn) {
         CASE(kSubgroupMatrixScalarSubtract)
         CASE(kSubgroupMatrixScalarMultiply)
         CASE(kPrint)
-        CASE(kHasBinding)
-        CASE(kGetBinding)
         CASE(kHasResource)
         CASE(kGetResource)
+        CASE(kBufferView)
+        CASE(kBufferLength)
         case tint::wgsl::BuiltinFn::kBitcast:               // should lower to ir::Bitcast
         case tint::wgsl::BuiltinFn::kWorkgroupUniformLoad:  // should be handled in Lower()
         case tint::wgsl::BuiltinFn::kTintMaterialize:
@@ -215,17 +215,13 @@ core::BuiltinFn Convert(wgsl::BuiltinFn fn) {
 }  // namespace
 
 Result<SuccessType> Lower(core::ir::Module& mod) {
-    auto res =
+    TINT_CHECK_RESULT(
         core::ir::ValidateAndDumpIfNeeded(mod, "wgsl.Lower",
                                           core::ir::Capabilities{
                                               core::ir::Capability::kAllowMultipleEntryPoints,
                                               core::ir::Capability::kAllowOverrides,
-                                              core::ir::Capability::kAllowResourceBinding,
                                               core::ir::Capability::kAllow8BitIntegers,
-                                          });
-    if (res != Success) {
-        return res.Failure();
-    }
+                                          }));
 
     core::ir::Builder b{mod};
     core::type::Manager& ty{mod.Types()};

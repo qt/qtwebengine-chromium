@@ -5,7 +5,6 @@
 #ifndef CHROME_BROWSER_EXTENSIONS_API_TABS_WINDOWS_EVENT_ROUTER_H_
 #define CHROME_BROWSER_EXTENSIONS_API_TABS_WINDOWS_EVENT_ROUTER_H_
 
-#include <map>
 #include <memory>
 #include <string>
 
@@ -78,7 +77,7 @@ class WindowsEventRouter :
   void DispatchEvent(events::HistogramValue histogram_value,
                      const std::string& event_name,
                      WindowController* window_controller,
-                     base::Value::List args);
+                     base::ListValue args);
   bool HasEventListener(const std::string& event_name);
 
   // The main profile that owns this event router.

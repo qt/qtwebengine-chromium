@@ -8,13 +8,16 @@
 #include <stdint.h>
 #include <string.h>
 
+#include <array>
 #include <memory>
 
 #include "base/compiler_specific.h"
+#include "base/memory/memory_pressure_listener_registry.h"
 #include "base/memory/raw_ptr.h"
 #include "base/test/task_environment.h"
 #include "base/threading/simple_thread.h"
 #include "base/time/time.h"
+#include "build/build_config.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace discardable_memory {
@@ -80,6 +83,7 @@ class DiscardableSharedMemoryManagerTest : public testing::Test {
     manager_ = std::make_unique<TestDiscardableSharedMemoryManager>();
   }
 
+  base::MemoryPressureListenerRegistry memory_pressure_listener_registry_;
   // DiscardableSharedMemoryManager requires a message loop and a worker thread.
   base::test::TaskEnvironment task_environment_;
   std::unique_ptr<TestDiscardableSharedMemoryManager> manager_;
@@ -87,8 +91,8 @@ class DiscardableSharedMemoryManagerTest : public testing::Test {
 
 TEST_F(DiscardableSharedMemoryManagerTest, AllocateForClient) {
   const int kDataSize = 1024;
-  uint8_t data[kDataSize];
-  UNSAFE_TODO(memset(data, 0x80, kDataSize));
+  std::array<uint8_t, kDataSize> data;
+  data.fill(0x80);
 
   base::UnsafeSharedMemoryRegion shared_region;
   manager_->AllocateLockedDiscardableSharedMemoryForClient(
@@ -248,9 +252,18 @@ TEST_F(DiscardableSharedMemoryManagerTest,
   memory2.Unlock(0, 0);
 }
 
-TEST_F(DiscardableSharedMemoryManagerTest, OnMemoryPressure) {
-  // Flush to ensure MemoryPressureListener is created so that memory pressure
-  // notifications are received..
+// Memory pressure listeners are disabled on Windows and Mac, so this test
+// is disabled on those platforms as it relies on receiving notifications.
+//
+// TODO(crbug.com/483018445): Check the kSuppressMemoryMonitor feature flag
+// instead of buildflags once the feature is exposed publicly or moved to base.
+// Currently, it is internal to components/memory_pressure.
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
+#define MAYBE_OnMemoryPressure DISABLED_OnMemoryPressure
+#else
+#define MAYBE_OnMemoryPressure OnMemoryPressure
+#endif
+TEST_F(DiscardableSharedMemoryManagerTest, MAYBE_OnMemoryPressure) {
   task_environment_.RunUntilIdle();
 
   const base::MemoryPressureLevel pressure_levels[] = {

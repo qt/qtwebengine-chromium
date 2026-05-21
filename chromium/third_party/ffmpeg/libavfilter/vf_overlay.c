@@ -274,17 +274,17 @@ static int query_formats(const AVFilterContext *ctx,
         overlay_formats = overlay_pix_fmts_gbrp;
         break;
     case OVERLAY_FORMAT_AUTO:
-        return ff_set_common_formats_from_list2(ctx, cfg_in, cfg_out, alpha_pix_fmts);
+        return ff_set_pixel_formats_from_list2(ctx, cfg_in, cfg_out, alpha_pix_fmts);
     default:
         av_assert0(0);
     }
 
-    formats = ff_make_format_list(main_formats);
+    formats = ff_make_pixel_format_list(main_formats);
     if ((ret = ff_formats_ref(formats, &cfg_in[MAIN]->formats)) < 0 ||
         (ret = ff_formats_ref(formats, &cfg_out[MAIN]->formats)) < 0)
         return ret;
 
-    return ff_formats_ref(ff_make_format_list(overlay_formats),
+    return ff_formats_ref(ff_make_pixel_format_list(overlay_formats),
                           &cfg_in[OVERLAY]->formats);
 }
 
@@ -835,7 +835,7 @@ static int init_slice_fn(AVFilterContext *ctx)
         break;
     }
 
-#if ARCH_X86
+#if ARCH_X86 && HAVE_X86ASM
     ff_overlay_init_x86(ctx);
 #endif
 

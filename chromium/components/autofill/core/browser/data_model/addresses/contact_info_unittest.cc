@@ -118,8 +118,9 @@ class NameInfoTest : public testing::Test {
                            const NameInfo& b,
                            const NameInfo& expected) {
     NameInfo actual(/*alternative_names_supported=*/false);
-    ASSERT_TRUE(NameInfo::MergeNames(a, kLegacyHierarchyCountryCode, b,
-                                     kLegacyHierarchyCountryCode, actual));
+    ASSERT_TRUE(NameInfo::MergeNames(
+        a, kLegacyHierarchyCountryCode, b, kLegacyHierarchyCountryCode,
+        /*newer_was_more_recently_used=*/true, actual));
 
     // Is the "processed" data correct?
     EXPECT_EQ(expected.GetInfo(NAME_FULL, kLocale),
@@ -500,7 +501,8 @@ TEST_F(NameInfoTest, MergeStructuredName) {
                                    {.type = NAME_FULL, .value = "John Doe"},
                                    {.type = NAME_LAST, .value = "Doe"}});
 
-  EXPECT_TRUE(name1.MergeStructuredName(name2));
+  EXPECT_TRUE(
+      name1.MergeStructuredName(name2, /*newer_was_more_recently_used=*/true));
 
   test::VerifyFormGroupValues(name1, {{.type = NAME_FULL, .value = "John Doe"},
                                       {.type = NAME_FIRST, .value = "John"},
@@ -524,7 +526,8 @@ TEST_F(NameInfoTest, MergeStructuredAlternativeName) {
        {.type = ALTERNATIVE_FAMILY_NAME, .value = "やまもと"},
        {.type = ALTERNATIVE_FULL_NAME, .value = "やまもと あおい"}});
 
-  EXPECT_TRUE(stored_profile.MergeStructuredName(submitted_data));
+  EXPECT_TRUE(stored_profile.MergeStructuredName(
+      submitted_data, /*newer_was_more_recently_used=*/true));
 
   test::VerifyFormGroupValues(
       stored_profile,
@@ -552,7 +555,8 @@ TEST_F(NameInfoTest, MergeStructuredNameMergingBoth) {
                        {.type = ALTERNATIVE_FAMILY_NAME, .value = "Doe"},
                        {.type = ALTERNATIVE_FULL_NAME, .value = "John Doe"}});
 
-  EXPECT_TRUE(stored_profile.MergeStructuredName(submitted_data));
+  EXPECT_TRUE(stored_profile.MergeStructuredName(
+      submitted_data, /*newer_was_more_recently_used=*/true));
 
   test::VerifyFormGroupValues(
       stored_profile, {{.type = NAME_LAST, .value = "Doe"},
@@ -585,7 +589,8 @@ TEST_F(NameInfoTest, MergeNames_WithPermutation) {
 
   NameInfo merged_name(/*alternative_names_supported=*/false);
   NameInfo::MergeNames(name1, kLegacyHierarchyCountryCode, name2,
-                       kLegacyHierarchyCountryCode, merged_name);
+                       kLegacyHierarchyCountryCode,
+                       /*newer_was_more_recently_used=*/true, merged_name);
 
   // The merged name should maintain the structure but use the observation of
   // the custom-formatted full name.
@@ -1012,22 +1017,80 @@ TEST_F(NameInfoTest, HaveMergeableAlternativeNames) {
       AddressCountryCode("JP")));
 }
 
-TEST_F(NameInfoTest, IsNameVariantOf) {
-  const std::u16string kNormalizedFullName = u"timothe noel etienne perier";
+struct IsNameVariantOfTestCase {
+  std::u16string full_name;
+  std::u16string other_full_name;
+  bool are_variant = true;
+};
+
+class NameInfoIsNameVariantOfTest
+    : public NameInfoTest,
+      public testing::WithParamInterface<IsNameVariantOfTestCase> {};
+
+TEST_P(NameInfoIsNameVariantOfTest, NameVariants) {
+  const IsNameVariantOfTestCase test_case = GetParam();
   NameInfo name_info =
-      CreateNameInfo(u"", u"", u"", u"Timothe Noël Etienne Perier");
-
-  EXPECT_TRUE(name_info.IsNameVariantOf(kNormalizedFullName, kLocale));
-  EXPECT_TRUE(name_info.IsNameVariantOf(u"t noel etienne perier", kLocale));
-  EXPECT_TRUE(name_info.IsNameVariantOf(u"timothe perier", kLocale));
-  EXPECT_TRUE(name_info.IsNameVariantOf(u"t perier", kLocale));
-  EXPECT_TRUE(name_info.IsNameVariantOf(u"noel perier", kLocale));
-  EXPECT_TRUE(name_info.IsNameVariantOf(u"t n etienne perier", kLocale));
-  EXPECT_TRUE(name_info.IsNameVariantOf(u"tn perier", kLocale));
-  EXPECT_TRUE(name_info.IsNameVariantOf(u"te perier", kLocale));
-
-  EXPECT_FALSE(name_info.IsNameVariantOf(u"etienne noel perier", kLocale));
+      CreateNameInfo(u"", u"", u"", test_case.full_name.c_str());
+  EXPECT_EQ(name_info.IsNameVariantOf(test_case.other_full_name, kLocale),
+            test_case.are_variant);
 }
+
+INSTANTIATE_TEST_SUITE_P(
+    NameVariants,
+    NameInfoIsNameVariantOfTest,
+    testing::ValuesIn(std::vector<IsNameVariantOfTestCase>{
+        {.full_name = u"Timothe Noël Etienne Perier",
+         .other_full_name = u"timothe noel etienne perier"},
+        {.full_name = u"Timothe Noël Etienne Perier",
+         .other_full_name = u"t noel etienne perier"},
+        {.full_name = u"Timothe Noël Etienne Perier",
+         .other_full_name = u"timothe perier"},
+        {.full_name = u"Timothe Noël Etienne Perier",
+         .other_full_name = u"t perier"},
+        {.full_name = u"Timothe Noël Etienne Perier",
+         .other_full_name = u"noel perier"},
+        {.full_name = u"Timothe Noël Etienne Perier",
+         .other_full_name = u"t n etienne perier"},
+        {.full_name = u"Timothe Noël Etienne Perier",
+         .other_full_name = u"tn perier"},
+        {.full_name = u"Timothe Noël Etienne Perier",
+         .other_full_name = u"te perier"},
+        {.full_name = u"Timothe Noël Etienne Perier",
+         .other_full_name = u"etienne noel perier",
+         .are_variant = false}}));
+
+// Verifies that `IsNameVariantOf` works correctly with CJK names where one is
+// the same as the other.
+INSTANTIATE_TEST_SUITE_P(
+    CJKNamesAreVariantOfThemselves,
+    NameInfoIsNameVariantOfTest,
+    testing::ValuesIn(std::vector<IsNameVariantOfTestCase>{
+        {.full_name = u"王磊", .other_full_name = u"王磊"},
+        {.full_name = u"王 磊", .other_full_name = u"王 磊"},
+        {.full_name = u"王", .other_full_name = u"王"},
+        {.full_name = u"ワ　タシ", .other_full_name = u"ワ　タシ"},
+        {.full_name = u"ワ・タシ", .other_full_name = u"ワ・タシ"},
+        {.full_name = u"이영호", .other_full_name = u"이영호"},
+        {.full_name = u"이 영호", .other_full_name = u"이 영호"},
+        {.full_name = u"이", .other_full_name = u"이"}}));
+
+// Verifies that `IsNameVariantOf` works correctly with CJK names.
+INSTANTIATE_TEST_SUITE_P(
+    CJKNamesVariants,
+    NameInfoIsNameVariantOfTest,
+    testing::ValuesIn(std::vector<IsNameVariantOfTestCase>{
+        {.full_name = u"王磊", .other_full_name = u"王"},
+        {.full_name = u"王磊", .other_full_name = u"磊"},
+        {.full_name = u"王 磊", .other_full_name = u"王"},
+        {.full_name = u"王 磊", .other_full_name = u"磊"},
+        {.full_name = u"ワ　タシ", .other_full_name = u"ワ"},
+        {.full_name = u"ワ　タシ", .other_full_name = u"タシ"},
+        {.full_name = u"ワ・タシ", .other_full_name = u"ワ"},
+        {.full_name = u"ワ・タシ", .other_full_name = u"タシ"},
+        {.full_name = u"이영호", .other_full_name = u"이"},
+        {.full_name = u"이영호", .other_full_name = u"영호"},
+        {.full_name = u"이 영호", .other_full_name = u"영호"},
+        {.full_name = u"이 영호", .other_full_name = u"이"}}));
 
 TEST_F(NameInfoTest, HaveMergeableNames) {
   NameInfo empty = CreateNameInfo(u"", u"", u"", u"");
@@ -1169,7 +1232,8 @@ TEST_F(NameInfoTest, NameInfoWithAdditionalLastNameIsMergeable) {
   NameInfo expected = CreateNameInfo(u"John", u"", u"Doe", u"", u"", u"");
   NameInfo actual(/*alternative_names_supported=*/false);
   NameInfo::MergeNames(ni1, kLegacyHierarchyCountryCode, ni2,
-                       kLegacyHierarchyCountryCode, actual);
+                       kLegacyHierarchyCountryCode,
+                       /*newer_was_more_recently_used=*/true, actual);
   EXPECT_EQ(expected, actual);
 }
 
@@ -1184,7 +1248,8 @@ TEST_F(NameInfoTest, NameInfoWithExtraMiddleNameIsMergeable) {
   NameInfo expected = CreateNameInfo(u"John", u"Fitzgerald", u"Kennedy", u"", u"", u"");
   NameInfo actual(/*alternative_names_supported=*/false);
   NameInfo::MergeNames(ni1, kLegacyHierarchyCountryCode, ni2,
-                           kLegacyHierarchyCountryCode, actual);
+                       kLegacyHierarchyCountryCode,
+                       /*newer_was_more_recently_used=*/true, actual);
   EXPECT_EQ(expected, actual);
 }
 
@@ -1230,7 +1295,8 @@ TEST_F(NameInfoTest, MergingNotSupportedAlternativeNames) {
 
   NameInfo result(/*alternative_names_supported=*/false);
   NameInfo::MergeNames(ni1, kLegacyHierarchyCountryCode, ni2,
-                       kLegacyHierarchyCountryCode, result);
+                       kLegacyHierarchyCountryCode,
+                       /*newer_was_more_recently_used=*/true, result);
   EXPECT_FALSE(result.GetRawInfo(NAME_FULL).empty());
   EXPECT_THAT(result.GetRawInfo(ALTERNATIVE_GIVEN_NAME), testing::IsEmpty());
   EXPECT_THAT(result.GetRawInfo(ALTERNATIVE_FAMILY_NAME), testing::IsEmpty());

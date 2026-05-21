@@ -110,12 +110,12 @@ bool CompoundRtcpParser::Parse(ByteView buffer, FrameId max_feedback_frame_id) {
     if (!header) {
       return false;
     }
-    buffer.remove_prefix(kRtcpCommonHeaderSize);
+    buffer = buffer.subspan(kRtcpCommonHeaderSize);
     if (static_cast<int>(buffer.size()) < header->payload_size) {
       return false;
     }
     ByteView payload = buffer.subspan(0, header->payload_size);
-    buffer.remove_prefix(header->payload_size);
+    buffer = buffer.subspan(header->payload_size);
 
     switch (header->packet_type) {
       case RtcpPacketType::kReceiverReport:
@@ -378,7 +378,7 @@ bool CompoundRtcpParser::ParseFeedback(ByteView in,
   }
   // Skip over the "Feedback Count" field. It's currently unused, though it
   // might be useful for event tracing later...
-  in.remove_prefix(sizeof(uint8_t));
+  in = in.subspan(sizeof(uint8_t));
   const int ack_bitvector_octet_count = ConsumeField<uint8_t>(in);
   if (static_cast<int>(in.size()) < ack_bitvector_octet_count) {
     return false;
@@ -420,7 +420,7 @@ bool CompoundRtcpParser::ParseExtendedReports(
       return false;
     }
     const uint8_t block_type = ConsumeField<uint8_t>(in);
-    in.remove_prefix(sizeof(uint8_t));  // Skip the "reserved" byte.
+    in = in.subspan(sizeof(uint8_t));  // Skip the "reserved" byte.
     const int block_data_size =
         static_cast<int>(ConsumeField<uint16_t>(in)) * 4;
     if (static_cast<int>(in.size()) < block_data_size) {
@@ -435,7 +435,7 @@ bool CompoundRtcpParser::ParseExtendedReports(
     } else {
       // Ignore any other type of extended report.
     }
-    in.remove_prefix(block_data_size);
+    in = in.subspan(block_data_size);
   }
 
   return true;

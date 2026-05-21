@@ -5,7 +5,6 @@
 #ifndef COMPONENTS_COMMERCE_CORE_SHOPPING_SERVICE_TEST_BASE_H_
 #define COMPONENTS_COMMERCE_CORE_SHOPPING_SERVICE_TEST_BASE_H_
 
-#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -253,7 +252,7 @@ class ShoppingServiceTestBase : public testing::Test {
   void WebWrapperDestroyed(WebWrapper* web);
   void OnWebWrapperSwitched(WebWrapper* web);
   static void MergeProductInfoData(ProductInfo* info,
-                                   const base::Value::Dict& on_page_data_map);
+                                   const base::DictValue& on_page_data_map);
 
   // Skip the delay for running the on-page local extraction for product info
   // and wait until the task completes.

@@ -28,13 +28,18 @@ use crate::internal_utils::stream::OStream;
 use crate::internal_utils::*;
 use crate::parser::exif;
 use crate::parser::mp4box::*;
-use crate::parser::obu::Av1SequenceHeader;
 use crate::utils::clap::CropRect;
 use crate::utils::IFraction;
 use crate::*;
 
 #[cfg(feature = "aom")]
 use crate::codecs::aom::Aom;
+
+#[cfg(feature = "avm")]
+use crate::codecs::avm::Avm;
+
+#[cfg(feature = "jpegxl")]
+use crate::codecs::libjxl::Libjxl;
 
 use std::collections::HashMap;
 use std::fmt;
@@ -134,10 +139,23 @@ pub enum Recipe {
 }
 
 impl CodecChoice {
-    fn get_item_type_and_encoder_codec(&self) -> Result<(&str, Codec), AvifError> {
+    // Returns the chosen or default codec.
+    pub(crate) fn actual(self) -> Self {
         match self {
+            Self::Auto => Self::Aom,
+            _ => self,
+        }
+    }
+
+    fn get_item_type_and_encoder_codec(&self) -> Result<(&str, Codec), AvifError> {
+        match self.actual() {
+            Self::Auto => unreachable!(),
             #[cfg(feature = "aom")]
-            CodecChoice::Auto | CodecChoice::Aom => Ok(("av01", Box::<Aom>::default())),
+            Self::Aom => Ok(("av01", Box::<Aom>::default())),
+            #[cfg(feature = "avm")]
+            Self::Avm => Ok(("av02", Box::<Avm>::default())),
+            #[cfg(feature = "jpegxl")]
+            Self::Libjxl => Ok(("hxlI", Box::<Libjxl>::default())),
             _ => AvifError::no_codec_available(),
         }
     }
@@ -186,11 +204,17 @@ impl Settings {
     }
 
     pub(crate) fn must_write_extended_pixi(&self) -> bool {
-        // TODO: b/456440247 - Add support for codecs requiring extended pixi.
+        #[cfg(feature = "jpegxl")]
+        if self.codec_choice == CodecChoice::Libjxl {
+            return true;
+        }
         self.force_write_extended_pixi
     }
     pub(crate) fn codec_supports_native_alpha_channel(&self) -> bool {
-        // TODO: b/456440247 - Add support for codecs with native alpha channels.
+        #[cfg(feature = "jpegxl")]
+        if self.codec_choice == CodecChoice::Libjxl {
+            return true;
+        }
         false
     }
 }
@@ -734,17 +758,15 @@ impl Encoder {
             // TODO: check if sample count == duration count.
 
             if !item.samples.is_empty() {
-                match self.settings.codec_choice {
-                    CodecChoice::Auto | CodecChoice::Aom => {
-                        // Harvest codec configuration from AV1 sequence header.
-                        let sequence_header =
-                            Av1SequenceHeader::parse_from_obus(&item.samples[0].data)?;
-                        item.codec_configuration = CodecConfiguration::Av1(sequence_header.config);
-                    }
-                    CodecChoice::MediaCodec | CodecChoice::Dav1d | CodecChoice::Libgav1 => {
-                        return AvifError::no_codec_available()
-                    }
-                }
+                assert_eq!(item.codec_configuration, None);
+                let is_single_image = self.duration_in_timescales.len() < 2;
+                let is_lossless = self.settings.mutable.quality == 100.0;
+                item.codec_configuration = Some(item.codec.unwrap_ref().get_codec_config(
+                    &self.image_metadata,
+                    is_single_image,
+                    is_lossless,
+                    &item.samples,
+                )?);
             }
         }
         let mut stream = OStream::default();

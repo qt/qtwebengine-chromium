@@ -37,9 +37,11 @@
 #include "dawn/native/webgpu/CaptureContext.h"
 #include "dawn/native/webgpu/ComputePipelineWGPU.h"
 #include "dawn/native/webgpu/DeviceWGPU.h"
+#include "dawn/native/webgpu/ExternalTextureWGPU.h"
 #include "dawn/native/webgpu/RenderPipelineWGPU.h"
 #include "dawn/native/webgpu/SamplerWGPU.h"
 #include "dawn/native/webgpu/TextureWGPU.h"
+#include "dawn/native/webgpu/ToWGPU.h"
 
 namespace dawn::native::webgpu {
 
@@ -60,15 +62,37 @@ WGPUBindGroupEntry ToWGPU(const BindGroupEntry* entry) {
     };
 }
 
+WGPUExternalTextureBindingEntry ToWGPU(const ExternalTextureBindingEntry* entry) {
+    return {
+        .chain =
+            {
+                .next = nullptr,
+                .sType = WGPUSType_ExternalTextureBindingEntry,
+            },
+        .externalTexture = ToBackend(entry->externalTexture)->GetInnerHandle(),
+    };
+}
+
 class ComboBindGroupDescriptor {
   public:
-    explicit ComboBindGroupDescriptor(const BindGroupDescriptor* desc) {
+    explicit ComboBindGroupDescriptor(const UnpackedPtr<BindGroupDescriptor>& desc,
+                                      uint32_t externalTextureCount) {
+        // Use the pre-calculate the number of external textures to reserve upfront to prevent
+        // InlinedVector reallocation.
+        mExternalTextureEntries.reserve(externalTextureCount);
+
         mDesc.nextInChain = nullptr;
         mDesc.label = ToOutputStringView(desc->label);
         mDesc.layout = ToBackend(desc->layout->GetInternalBindGroupLayout())->GetInnerHandle();
         mDesc.entryCount = desc->entryCount;
         for (uint32_t i = 0; i < desc->entryCount; ++i) {
-            mEntries.push_back(ToWGPU(&desc->entries[i]));
+            UnpackedPtr<BindGroupEntry> entry = Unpack(&desc->entries[i]);
+            mEntries.push_back(ToWGPU(*entry));
+
+            if (auto* externalTextureEntry = entry.Get<ExternalTextureBindingEntry>()) {
+                mExternalTextureEntries.push_back(ToWGPU(externalTextureEntry));
+                mEntries.back().nextInChain = &mExternalTextureEntries.back().chain;
+            }
         }
         mDesc.entries = mEntries.data();
     }
@@ -78,6 +102,9 @@ class ComboBindGroupDescriptor {
   private:
     WGPUBindGroupDescriptor mDesc;
     absl::InlinedVector<WGPUBindGroupEntry, 8> mEntries;
+    // Use an inline size of 1 since external textures are rare, and reserve the required capacity
+    // in constructor to preserve reallocations.
+    absl::InlinedVector<WGPUExternalTextureBindingEntry, 1> mExternalTextureEntries;
 };
 
 }  // namespace
@@ -96,7 +123,7 @@ BindGroup::BindGroup(Device* device, const UnpackedPtr<BindGroupDescriptor>& des
     : BindGroupBase(this, device, descriptor),
       RecordableObject(schema::ObjectType::BindGroup),
       ObjectWGPU(device->wgpu.bindGroupRelease) {
-    ComboBindGroupDescriptor desc(*descriptor);
+    ComboBindGroupDescriptor desc(descriptor, GetLayout()->GetExternalTextureCount());
     mInnerHandle =
         ToBackend(GetDevice())
             ->wgpu.deviceCreateBindGroup(ToBackend(GetDevice())->GetInnerHandle(), desc.Get());
@@ -129,21 +156,48 @@ MaybeError BindGroup::AddReferenced(CaptureContext& captureContext) {
     {
         const auto& bindingMap = layout->GetBindingMap();
         for (const auto& [bindingNumber, apiBindingIndex] : bindingMap) {
-            BindingIndex bindingIndex = layout->AsBindingIndex(apiBindingIndex);
             const auto& bindingInfo = layout->GetAPIBindingInfo(apiBindingIndex);
 
             DAWN_TRY(MatchVariant(
                 bindingInfo.bindingLayout,
                 [&](const SamplerBindingInfo& info) -> MaybeError {
+                    BindingIndex bindingIndex = layout->AsBindingIndex(apiBindingIndex);
                     return captureContext.AddResource(ToBackend(GetBindingAsSampler(bindingIndex)));
                 },
                 [&](const StorageTextureBindingInfo& info) -> MaybeError {
+                    BindingIndex bindingIndex = layout->AsBindingIndex(apiBindingIndex);
                     return captureContext.AddResource(
                         ToBackend(GetBindingAsTextureView(bindingIndex)));
                 },
                 [&](const TextureBindingInfo& info) -> MaybeError {
+                    BindingIndex bindingIndex = layout->AsBindingIndex(apiBindingIndex);
                     return captureContext.AddResource(
                         ToBackend(GetBindingAsTextureView(bindingIndex)));
+                },
+                [&](const ExternalTextureBindingInfo& info) -> MaybeError {
+                    Ref<ExternalTextureBase> externalTexture =
+                        GetBoundExternalTexture(apiBindingIndex);
+                    if (externalTexture) {
+                        DAWN_TRY(captureContext.AddResource(ToBackend(externalTexture.Get())));
+
+                        TextureViewBase* plane1 = GetBindingAsTextureView(info.plane1);
+                        if (plane1 != nullptr) {
+                            DAWN_TRY(captureContext.AddResource(ToBackend(plane1)));
+                        }
+
+                        // No need to add reference of the internal params buffer (info.metadata) as
+                        // it is not used in WebGPU backend. That of the replayed backend will still
+                        // be created internally.
+                    }
+
+                    // If not found, it must be a texture view used as an external texture.
+                    // plane0 is that texture view.
+                    TextureViewBase* plane0 = GetBindingAsTextureView(info.plane0);
+                    if (plane0 != nullptr) {
+                        DAWN_TRY(captureContext.AddResource(ToBackend(plane0)));
+                    }
+
+                    return {};
                 },
                 [&](const auto& info) -> MaybeError { return {}; }));
         }
@@ -163,13 +217,13 @@ MaybeError BindGroup::CaptureCreationParameters(CaptureContext& captureContext) 
     Serialize(captureContext, bg);
 
     for (const auto& [bindingNumber, apiBindingIndex] : bindingMap) {
-        BindingIndex bindingIndex = layout->AsBindingIndex(apiBindingIndex);
         const auto& bindingInfo = layout->GetAPIBindingInfo(apiBindingIndex);
         uint32_t binding = uint32_t(bindingNumber);
 
         MatchVariant(
             bindingInfo.bindingLayout,
             [&](const BufferBindingInfo& info) {
+                BindingIndex bindingIndex = layout->AsBindingIndex(apiBindingIndex);
                 const auto& entry = GetBindingAsBufferBinding(bindingIndex);
                 schema::BindGroupEntryTypeBufferBinding data{{
                     .binding = binding,
@@ -182,6 +236,7 @@ MaybeError BindGroup::CaptureCreationParameters(CaptureContext& captureContext) 
                 Serialize(captureContext, data);
             },
             [&](const SamplerBindingInfo& info) {
+                BindingIndex bindingIndex = layout->AsBindingIndex(apiBindingIndex);
                 const auto& entry = GetBindingAsSampler(bindingIndex);
                 schema::BindGroupEntryTypeSamplerBinding data{{
                     .binding = binding,
@@ -192,6 +247,7 @@ MaybeError BindGroup::CaptureCreationParameters(CaptureContext& captureContext) 
                 Serialize(captureContext, data);
             },
             [&](const StorageTextureBindingInfo& info) {
+                BindingIndex bindingIndex = layout->AsBindingIndex(apiBindingIndex);
                 const auto& entry = GetBindingAsTextureView(bindingIndex);
                 schema::BindGroupEntryTypeTextureBinding data{{
                     .binding = binding,
@@ -202,11 +258,28 @@ MaybeError BindGroup::CaptureCreationParameters(CaptureContext& captureContext) 
                 Serialize(captureContext, data);
             },
             [&](const TextureBindingInfo& info) {
+                BindingIndex bindingIndex = layout->AsBindingIndex(apiBindingIndex);
                 const auto& entry = GetBindingAsTextureView(bindingIndex);
                 schema::BindGroupEntryTypeTextureBinding data{{
                     .binding = binding,
                     .data{{
                         .textureViewId = captureContext.GetId(entry),
+                    }},
+                }};
+                Serialize(captureContext, data);
+            },
+            [&](const ExternalTextureBindingInfo& info) {
+                Ref<ExternalTextureBase> externalTexture = GetBoundExternalTexture(apiBindingIndex);
+
+                schema::BindGroupEntryTypeExternalTextureBinding data{{
+                    .binding = binding,
+                    .data{{
+                        .externalTextureId = captureContext.GetId(ToBackend(externalTexture)),
+                        // The binding could bind a regular texture view if not a externalTexture
+                        .textureViewId = externalTexture
+                                             ? 0
+                                             : captureContext.GetId(
+                                                   ToBackend(GetBindingAsTextureView(info.plane0))),
                     }},
                 }};
                 Serialize(captureContext, data);

@@ -6,13 +6,17 @@
 
 #include "build/build_config.h"
 #include "components/background_sync/background_sync_permission_context.h"
+#include "components/content_settings/core/common/content_settings_utils.h"
 #include "components/content_settings/core/common/features.h"
 #include "components/permissions/contexts/camera_pan_tilt_zoom_permission_context.h"
 #include "components/permissions/contexts/clipboard_read_write_permission_context.h"
 #include "components/permissions/contexts/clipboard_sanitized_write_permission_context.h"
 #include "components/permissions/contexts/geolocation_permission_context.h"
 #include "components/permissions/contexts/keyboard_lock_permission_context.h"
+#include "components/permissions/contexts/local_network_access_compat_permission_context.h"
 #include "components/permissions/contexts/local_network_access_permission_context.h"
+#include "components/permissions/contexts/local_network_permission_context.h"
+#include "components/permissions/contexts/loopback_network_permission_context.h"
 #include "components/permissions/contexts/midi_permission_context.h"
 #include "components/permissions/contexts/midi_sysex_permission_context.h"
 #include "components/permissions/contexts/nfc_permission_context.h"
@@ -22,6 +26,7 @@
 #include "components/permissions/contexts/wake_lock_permission_context.h"
 #include "components/permissions/contexts/webxr_permission_context.h"
 #include "device/vr/buildflags/buildflags.h"
+#include "services/network/public/cpp/features.h"
 
 #if BUILDFLAG(IS_ANDROID)
 #include "components/permissions/contexts/geolocation_permission_context_android.h"
@@ -82,10 +87,7 @@ CreateDefaultPermissionContexts(content::BrowserContext* browser_context,
           std::move(
               delegates.clipboard_sanitized_write_permission_context_delegate));
   ContentSettingsType location_context_key =
-      base::FeatureList::IsEnabled(
-          content_settings::features::kApproximateGeolocationPermission)
-          ? ContentSettingsType::GEOLOCATION_WITH_OPTIONS
-          : ContentSettingsType::GEOLOCATION;
+      content_settings::GeolocationContentSettingsType();
 #if BUILDFLAG(IS_ANDROID)
   permission_contexts[location_context_key] =
       std::make_unique<permissions::GeolocationPermissionContextAndroid>(
@@ -120,8 +122,23 @@ CreateDefaultPermissionContexts(content::BrowserContext* browser_context,
   permission_contexts[ContentSettingsType::KEYBOARD_LOCK] =
       std::make_unique<permissions::KeyboardLockPermissionContext>(
           browser_context);
-  permission_contexts[ContentSettingsType::LOCAL_NETWORK_ACCESS] =
-      std::make_unique<permissions::LocalNetworkAccessPermissionContext>(
+  if (base::FeatureList::IsEnabled(
+          network::features::kLocalNetworkAccessChecksSplitPermissions)) {
+    permission_contexts[ContentSettingsType::LOCAL_NETWORK_ACCESS] =
+        std::make_unique<
+            permissions::LocalNetworkAccessCompatPermissionContext>(
+            browser_context);
+  } else {
+    permission_contexts[ContentSettingsType::LOCAL_NETWORK_ACCESS] =
+        std::make_unique<permissions::LocalNetworkAccessPermissionContext>(
+            browser_context);
+  }
+
+  permission_contexts[ContentSettingsType::LOCAL_NETWORK] =
+      std::make_unique<permissions::LocalNetworkPermissionContext>(
+          browser_context);
+  permission_contexts[ContentSettingsType::LOOPBACK_NETWORK] =
+      std::make_unique<permissions::LoopbackNetworkPermissionContext>(
           browser_context);
   permission_contexts[ContentSettingsType::MIDI] =
       std::make_unique<permissions::MidiPermissionContext>(browser_context);

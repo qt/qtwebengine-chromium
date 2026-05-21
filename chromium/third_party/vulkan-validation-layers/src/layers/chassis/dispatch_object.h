@@ -1,10 +1,11 @@
 /***************************************************************************
  *
- * Copyright (c) 2015-2025 The Khronos Group Inc.
- * Copyright (c) 2015-2025 Valve Corporation
- * Copyright (c) 2015-2025 LunarG, Inc.
- * Copyright (c) 2015-2024 Google Inc.
+ * Copyright (c) 2015-2026 The Khronos Group Inc.
+ * Copyright (c) 2015-2026 Valve Corporation
+ * Copyright (c) 2015-2026 LunarG, Inc.
+ * Copyright (c) 2015-2026 Google Inc.
  * Copyright (c) 2023-2024 RasterGrid Kft.
+ * Modifications Copyright (C) 2025-2026 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -110,11 +111,16 @@ struct DeviceExtensionProperties {
     VkPhysicalDeviceMaintenance10PropertiesKHR maintenance10_props;
     VkPhysicalDeviceTensorPropertiesARM tensor_properties;
     VkPhysicalDeviceCopyMemoryIndirectPropertiesKHR copy_memory_indirect_props;
+    VkPhysicalDeviceTileMemoryHeapPropertiesQCOM tile_memory_heap_props;
+    VkPhysicalDeviceDescriptorHeapPropertiesEXT descriptor_heap_props;
+    VkPhysicalDeviceDescriptorHeapTensorPropertiesARM descriptor_heap_tensor_props;
 #if defined(VK_USE_PLATFORM_ANDROID_KHR)
     VkPhysicalDeviceExternalFormatResolvePropertiesANDROID android_format_resolve_props;
 #endif
     VkPhysicalDeviceMemoryDecompressionPropertiesEXT memory_decompression_props;
     VkPhysicalDevicePerformanceCountersByRegionPropertiesARM renderpass_counter_by_region_props;
+    VkPhysicalDeviceRayTracingInvocationReorderPropertiesEXT ray_tracing_invocation_reorder_props;
+    VkPhysicalDeviceShaderLongVectorPropertiesEXT shader_long_vector_props;
 };
 
 // This object holds all static state for the device (device properties, enabled extensions/features, etc.)
@@ -346,9 +352,9 @@ class Device : public HandleWrapper {
     vvl::unordered_map<VkDescriptorPool, vvl::unordered_set<VkDescriptorSet>> pool_descriptor_sets_map;
 
     vvl::concurrent_unordered_map<VkDeferredOperationKHR, std::vector<std::function<void()>>, 0> deferred_operation_post_completion;
-    vvl::concurrent_unordered_map<VkDeferredOperationKHR, std::vector<std::function<void(const std::vector<VkPipeline>&)>>, 0>
+    vvl::concurrent_unordered_map<VkDeferredOperationKHR, std::vector<std::function<void(std::pair<uint32_t, VkPipeline*>)>>, 0>
         deferred_operation_post_check;
-    vvl::concurrent_unordered_map<VkDeferredOperationKHR, std::vector<VkPipeline>, 0> deferred_operation_pipelines;
+    vvl::concurrent_unordered_map<VkDeferredOperationKHR, std::pair<uint32_t, VkPipeline*>, 0> deferred_operation_pipelines;
 
     // State we track in order to populate HandleData for things such as ignored pointers
     vvl::unordered_map<VkCommandBuffer, VkCommandPool> secondary_cb_map{};

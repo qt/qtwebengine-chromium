@@ -8,7 +8,6 @@
 #include <stddef.h>
 
 #include <array>
-#include <map>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -25,6 +24,7 @@
 #include "components/autofill/core/browser/heuristic_source.h"
 #include "components/autofill/core/browser/metrics/log_event.h"
 #include "components/autofill/core/browser/proto/password_requirements.pb.h"
+#include "components/autofill/core/browser/suggestions/suggestion_util.h"
 #include "components/autofill/core/common/form_field_data.h"
 #include "components/autofill/core/common/signatures.h"
 
@@ -309,11 +309,17 @@ class AutofillField : public FormFieldData {
   // suggestions and filling are suppressed on Desktop. This function can be
   // used to determine whether suggestions and filling should be suppressed for
   // this field (independently of the predicted type).
-  bool ShouldSuppressSuggestionsAndFillingByDefault() const;
+  // `ac_unrecognized_behavior` describes the general behavior (as per
+  // `AutofillClient`) whether fields with unrecognized autocomplete value can
+  // have suppressed suggestions in general. The concrete behavior is influenced
+  // by the concrete `AutofillField` and the operating system.
+  bool ShouldSuppressSuggestionsAndFillingByDefault(
+      AutocompleteUnrecognizedBehavior ac_unrecognized_behavior) const;
 
   // Returns the current value, formatted as desired for import:
   // (1) If the field value hasn't changed since it was seen and the field is a
-  //     non-<select>, returns the empty string.
+  //     non-<select> (except for ADDRESS_HOME_{STATE,COUNTRY}), returns the
+  //     empty string.
   // (2) If the field has FormControlType::kSelect* and has a selected option,
   //     returns that option's human-readable text.
   // (3) Otherwise returns value().
@@ -321,8 +327,8 @@ class AutofillField : public FormFieldData {
   // The motivation behind (1) is that unchanged values usually carry little
   // value for importing. <select> fields are exempted because their default
   // value is often correct (e.g., in ADDRESS_HOME_COUNTRY fields).
-  // TODO(crbug.com/40137859): Consider also exempting non-<select>
-  // ADDRESS_HOME_{STATE,COUNTRY} fields.
+  // ADDRESS_HOME_{STATE,COUNTRY} fields are also exempted because the prefilled
+  // values are often correct (e.g. determinable via GeoIP).
   //
   // The motivation behind (2) is that the human-readable text of an <option> is
   // usually better suited for import than the its value. See the documentation
@@ -447,6 +453,11 @@ class AutofillField : public FormFieldData {
     return ml_supported_types_;
   }
 
+  void UpdateFieldData(const FormFieldData& field_data,
+                       base::PassKey<FormStructure> pass_key) {
+    UpdateFieldData(field_data);
+  }
+
 #if defined(UNIT_TEST)
   const std::array<FieldType,
                    static_cast<size_t>(HeuristicSource::kMaxValue) + 1>&
@@ -469,6 +480,10 @@ class AutofillField : public FormFieldData {
   };
 
   explicit AutofillField(FieldSignature field_signature);
+
+  // Copies the information from `field_data` into the members of
+  // `AutofillField` that were inherited from `FormFieldData`.
+  void UpdateFieldData(const FormFieldData& field_data);
 
   // Whether the heuristics or server predict a credit card field.
   bool IsCreditCardPrediction() const;
@@ -543,7 +558,7 @@ class AutofillField : public FormFieldData {
   // The field's initial value. Initially, it is the same as
   // `FormFieldData::value()`, but unlike value(), it remains unchanged over
   // time.
-  std::u16string initial_value_ = value();
+  std::u16string initial_value_;
 
   // Used to hold the position of the first digit to be copied as a substring
   // from credit card number.

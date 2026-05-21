@@ -33,6 +33,7 @@
 #include <optional>
 
 #include "base/check.h"
+#include "base/gtest_prod_util.h"
 #include "base/memory/scoped_refptr.h"
 #include "cc/paint/paint_record.h"
 #include "third_party/blink/renderer/core/html/canvas/canvas_context_creation_attributes_core.h"
@@ -131,6 +132,7 @@ class MODULES_EXPORT CanvasRenderingContext2D final
   void SetShouldAntialias(bool);
 
   void setFontForTesting(const String& new_font) override;
+  void fillTextForTesting(const String& text, double x, double y) override;
 
   void drawFocusIfNeeded(Element*);
   void drawFocusIfNeeded(Path2D*, Element*);
@@ -193,6 +195,7 @@ class MODULES_EXPORT CanvasRenderingContext2D final
   using BaseRenderingContext2D::GetPaintCanvas;  // Pull the non-const overload.
   const MemoryManagedPaintCanvas* GetPaintCanvas() const final;
   const MemoryManagedPaintRecorder* Recorder() const override;
+  MemoryManagedPaintRecorder* Recorder();
 
   void WillDraw(const SkIRect& dirty_rect,
                 CanvasPerformanceMonitor::DrawType) final;
@@ -214,11 +217,30 @@ class MODULES_EXPORT CanvasRenderingContext2D final
                          double dwidth,
                          double dheight,
                          ExceptionState& exception_state);
+
   DOMMatrix* drawElementImage(Element* element,
                               double x,
                               double y,
                               ExceptionState& exception_state);
   DOMMatrix* drawElementImage(Element* element,
+                              double x,
+                              double y,
+                              double dwidth,
+                              double dheight,
+                              ExceptionState& exception_state);
+  DOMMatrix* drawElementImage(Element* element,
+                              double sx,
+                              double sy,
+                              double swidth,
+                              double sheight,
+                              double x,
+                              double y,
+                              ExceptionState& exception_state);
+  DOMMatrix* drawElementImage(Element* element,
+                              double sx,
+                              double sy,
+                              double swidth,
+                              double sheight,
                               double x,
                               double y,
                               double dwidth,
@@ -290,8 +312,12 @@ class MODULES_EXPORT CanvasRenderingContext2D final
   std::unique_ptr<CanvasResourceProvider> CreateCanvasResourceProvider();
 
   DOMMatrix* DrawElementInternal(Element* element,
-                                 double x,
-                                 double y,
+                                 std::optional<double> sx,
+                                 std::optional<double> sy,
+                                 std::optional<double> swidth,
+                                 std::optional<double> sheight,
+                                 double dx,
+                                 double dy,
                                  std::optional<double> dwidth,
                                  std::optional<double> dheight,
                                  ExceptionState& exception_state);

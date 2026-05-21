@@ -258,6 +258,14 @@
             "issue": "http://crbug.com/797243"
         },
         {
+            "name": "disable_MSAA_sample_count_1",
+            "category": "Workarounds",
+            "description": [
+                "Do not expose multisample sample count 1 to avoid driver bugs"
+            ],
+            "issue": "http://anglebug.com/467164245"
+        },
+        {
             "name": "allow_clear_for_robust_resource_init",
             "category": "Workarounds",
             "description": [
@@ -763,6 +771,14 @@
             "issue": "https://anglebug.com/41488638"
         },
         {
+            "name": "emit_max_glsl_400_for_testing",
+            "category": "Workarounds",
+            "description": [
+                "Avoid GLSL versions above 4.0 for testing purposes."
+            ],
+            "issue": "https://anglebug.com/42267207"
+        },
+        {
             "name": "use_intermediate_texture_for_generate_mipmap",
             "category": "Workarounds",
             "description": [
@@ -828,6 +844,39 @@
                 "Some ES2 Mali drivers are unable to query enough information from a linked program to use passthrough shaders."
             ],
             "issue": "https://crbug.com/451796659"
+        },
+        {
+            "name": "disable_clear_tex_image_for_robust_init",
+            "category": "Workarounds",
+            "description": [
+                "IMG drivers are unable to handle glClearTexImage with various format combinations."
+            ],
+            "issue": "https://crbug.com/465918231"
+        },
+        {
+            "name": "multiview_via_viewport_array",
+            "category": "Features",
+            "description": [
+                "Use ARB_shader_viewport_layer_array or NV_viewport_array2 to implement multiview"
+            ],
+            "issue": "http://anglebug.com/42260809"
+        },
+        {
+            "name": "validate_max_per_stage_uniform_blocks_at_compile_time",
+            "category": "Workarounds",
+            "description": [
+                "Validate GL_MAX_*_UNIFORM_BLOCKS at compile time instead of link time to work around compiler bugs."
+            ],
+            "issue": "http://crbug.com/475877320"
+        },
+        {
+            "name": "recreate_mipmap_levels_before_generate",
+            "category": "Workarounds",
+            "description": [
+                "Before calling glGenerateMipmap on a mutable texture, recreate levels that the driver is ",
+                "supposed to recreate to work around driver bugs."
+            ],
+            "issue": "http://crbug.com/491732188"
         }
     ]
 }

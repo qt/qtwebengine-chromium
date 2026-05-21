@@ -100,8 +100,9 @@ WrapVideoFrameInCVPixelBuffer(scoped_refptr<VideoFrame> frame) {
   bool crop_needed = visible_rect != gfx::Rect(frame->coded_size());
 
   if (!crop_needed) {
-    // If the frame has a GMB, yank out its IOSurface if possible.
-    if (frame->HasMappableGpuBuffer()) {
+    // If the frame has a mappable SharedImage, yank out its IOSurface if it
+    // exists.
+    if (frame->HasMappableSharedImage()) {
       auto handle = frame->GetGpuMemoryBufferHandle();
       if (handle.type == gfx::GpuMemoryBufferType::IO_SURFACE_BUFFER) {
         CHECK(handle.io_surface());
@@ -126,9 +127,9 @@ WrapVideoFrameInCVPixelBuffer(scoped_refptr<VideoFrame> frame) {
     }
   }
 
-  // If the frame is backed by a GPU buffer, but needs cropping, map it and
+  // If the frame is backed by a mappable SI but needs cropping, map it and
   // and handle like a software frame. There is no memcpy here.
-  if (frame->HasMappableGpuBuffer()) {
+  if (frame->HasMappableSharedImage()) {
     frame = ConvertToMemoryMappedFrame(std::move(frame));
   }
   if (!frame) {

@@ -30,7 +30,6 @@ openscreen_source_set("streaming_configs") {
   visibility += [ "*" ]
   public = [
     "capture_configs.h",  # FIXME
-    "constants.h",
     "message_fields.h",  # FIXME
     "public/constants.h",
     "resolution.h",  # FIXME
@@ -56,12 +55,6 @@ openscreen_source_set("common") {
   # Used by multiple targets in Chromium.
   visibility += [ "*" ]
   public = [
-    "answer_messages.h",
-    "capture_recommendations.h",
-    "encoded_frame.h",
-    "environment.h",
-    "frame_id.h",
-    "offer_messages.h",
     "public/answer_messages.h",
     "public/capture_recommendations.h",
     "public/encoded_frame.h",
@@ -71,11 +64,8 @@ openscreen_source_set("common") {
     "public/receiver_message.h",
     "public/rpc_messenger.h",
     "public/session_messenger.h",
-    "receiver_message.h",
-    "rpc_messenger.h",
     "rtp_time.h",  # FIXME
     "sender_message.h",  # FIXME: Remove Chromium #include and make private
-    "session_messenger.h",
     "ssrc.h",  # FIXME: Remove Chromium #include and make private
   ]
   sources = [
@@ -151,9 +141,6 @@ openscreen_source_set("receiver") {
     "public/receiver.h",
     "public/receiver_constraints.h",
     "public/receiver_session.h",
-    "receiver.h",
-    "receiver_constraints.h",
-    "receiver_session.h",
   ]
   sources = [
     "impl/compound_rtcp_builder.cc",
@@ -195,10 +182,7 @@ openscreen_source_set("sender") {
     "public/sender_session.h",
     "public/statistics.h",
     "remoting_capabilities.h",  # FIXME: Only for Chromium tests.
-    "sender.h",
     "sender_packet_router.h",  # FIXME: Only for Chromium tests.
-    "sender_session.h",
-    "statistics.h",
   ]
   sources = [
     "impl/bandwidth_estimator.cc",
@@ -227,6 +211,10 @@ openscreen_source_set("sender") {
     ":unittests",
     ":compound_rtcp_parser_fuzzer",
   ]
+
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs = [ "//build/config/compiler:no_exit_time_destructors" ]
 }
 
 openscreen_source_set("testing") {
@@ -309,6 +297,10 @@ openscreen_source_set("unittests") {
     ":sender",
     ":receiver",
   ]
+
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs = [ "//build/config/compiler:no_exit_time_destructors" ]
 }
 
 openscreen_fuzzer_test("compound_rtcp_parser_fuzzer") {

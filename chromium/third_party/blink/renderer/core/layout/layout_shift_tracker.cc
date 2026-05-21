@@ -4,6 +4,8 @@
 
 #include "third_party/blink/renderer/core/layout/layout_shift_tracker.h"
 
+#include <algorithm>
+
 #include "cc/layers/heads_up_display_layer.h"
 #include "cc/layers/picture_layer.h"
 #include "cc/trees/layer_tree_host.h"
@@ -21,6 +23,7 @@
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/core/page/page.h"
+#include "third_party/blink/renderer/core/paint/timing/paint_timing_utils.h"
 #include "third_party/blink/renderer/core/timing/dom_window_performance.h"
 #include "third_party/blink/renderer/core/timing/performance_entry.h"
 #include "third_party/blink/renderer/core/timing/window_performance.h"
@@ -659,6 +662,24 @@ void LayoutShiftTracker::ReportShift(double score_delta,
     }
   }
 
+  if (RuntimeEnabledFeatures::SortedLayoutShiftSourcesByImpactAreaEnabled()) {
+    // Sort attributions by impact area in descending order (largest first).
+    // This benefits both the Performance API and tracing data.
+    // Using stable_sort to maintain insertion order for equal impact areas.
+    std::stable_sort(attributions_.begin(), attributions_.end(),
+                     [](const Attribution& a, const Attribution& b) {
+                       // Invalid attributions (kInvalidDOMNodeId) should sort
+                       // to the end.
+                       if (a.node_id == kInvalidDOMNodeId) {
+                         return false;
+                       }
+                       if (b.node_id == kInvalidDOMNodeId) {
+                         return true;
+                       }
+                       return a.MoreImpactfulThan(b);
+                     });
+  }
+
   SubmitPerformanceEntry(score_delta, had_recent_input);
 
   TRACE_EVENT_INSTANT2(
@@ -831,17 +852,16 @@ void LayoutShiftTracker::AttributionsToTracedValue(TracedValue& value) const {
   if (!*it)
     return;
 
-  bool should_include_names;
-  TRACE_EVENT_CATEGORY_GROUP_ENABLED(
-      TRACE_DISABLED_BY_DEFAULT("layout_shift.debug"), &should_include_names);
+  bool should_include_names = TRACE_EVENT_CATEGORY_ENABLED(
+      TRACE_DISABLED_BY_DEFAULT("layout_shift.debug"));
 
   value.BeginArray("impacted_nodes");
   while (it != attributions_.end() && it->node_id != kInvalidDOMNodeId) {
     value.BeginDictionary();
     value.SetInteger("node_id", it->node_id);
-    RectToTracedValue(gfx::ToEnclosingRect(it->old_visual_rect), value,
+    RectToTracedValue(gfx::ToRoundedRect(it->old_visual_rect), value,
                       "old_rect");
-    RectToTracedValue(gfx::ToEnclosingRect(it->new_visual_rect), value,
+    RectToTracedValue(gfx::ToRoundedRect(it->new_visual_rect), value,
                       "new_rect");
     if (should_include_names) {
       Node* node = DOMNodeIds::NodeForId(it->node_id);
@@ -855,20 +875,15 @@ void LayoutShiftTracker::AttributionsToTracedValue(TracedValue& value) const {
 
 void LayoutShiftTracker::SendLayoutShiftRectsToHud(
     const Vector<gfx::Rect>& int_rects) {
-  // Store the layout shift rects in the HUD layer.
-  auto* cc_layer = frame_view_->RootCcLayer();
-  if (cc_layer && cc_layer->layer_tree_host()) {
-    if (!cc_layer->layer_tree_host()->GetDebugState().show_layout_shift_regions)
-      return;
-    if (cc_layer->layer_tree_host()->hud_layer()) {
-      std::vector<gfx::Rect> rects;
-      cc::Region blink_region;
-      for (const gfx::Rect& rect : int_rects)
-        blink_region.Union(rect);
-      for (gfx::Rect rect : blink_region)
-        rects.emplace_back(rect);
-      cc_layer->layer_tree_host()->hud_layer()->SetLayoutShiftRects(rects);
-      cc_layer->layer_tree_host()->hud_layer()->SetNeedsPushProperties();
+  if (auto* hud_layer =
+          paint_timing::GetHUDLayerIfLayoutShiftRectsEnabled(frame_view_)) {
+    cc::Region blink_region;
+    for (const gfx::Rect& rect : int_rects) {
+      blink_region.Union(rect);
+    }
+    for (gfx::Rect rect : blink_region) {
+      hud_layer->AddWebVitalsDebugRect(
+          {cc::WebVitalMetricType::kLayoutShift, rect});
     }
   }
 }

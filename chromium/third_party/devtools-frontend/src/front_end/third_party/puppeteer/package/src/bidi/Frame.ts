@@ -21,13 +21,14 @@ import {
   switchMap,
 } from '../../third_party/rxjs/rxjs.js';
 import type {CDPSession} from '../api/CDPSession.js';
+import type {DeviceRequestPrompt} from '../api/DeviceRequestPrompt.js';
 import {
   Frame,
   throwIfDetached,
   type GoToOptions,
   type WaitForOptions,
 } from '../api/Frame.js';
-import {PageEvent} from '../api/Page.js';
+import {PageEvent, type WaitTimeoutOptions} from '../api/Page.js';
 import {Accessibility} from '../cdp/Accessibility.js';
 import type {ConsoleMessageType} from '../common/ConsoleMessage.js';
 import {
@@ -36,7 +37,7 @@ import {
 } from '../common/ConsoleMessage.js';
 import {TargetCloseError, UnsupportedOperation} from '../common/Errors.js';
 import type {TimeoutSettings} from '../common/TimeoutSettings.js';
-import type {Awaitable} from '../common/types.js';
+import type {Awaitable, HandleFor} from '../common/types.js';
 import {
   debugError,
   fromAbortSignal,
@@ -51,7 +52,7 @@ import type {Navigation} from './core/Navigation.js';
 import type {Request} from './core/Request.js';
 import {BidiDeserializer} from './Deserializer.js';
 import {BidiDialog} from './Dialog.js';
-import type {BidiElementHandle} from './ElementHandle.js';
+import {BidiElementHandle} from './ElementHandle.js';
 import {ExposableFunction} from './ExposedFunction.js';
 import {BidiHTTPRequest, requests} from './HTTPRequest.js';
 import type {BidiHTTPResponse} from './HTTPResponse.js';
@@ -199,6 +200,7 @@ export class BidiFrame extends Frame {
             args,
             getStackTraceLocations(entry.stackTrace),
             this,
+            undefined,
           ),
         );
       } else if (isJavaScriptLogEntry(entry)) {
@@ -474,8 +476,11 @@ export class BidiFrame extends Frame {
     );
   }
 
-  override waitForDevicePrompt(): never {
-    throw new UnsupportedOperation();
+  override waitForDevicePrompt(
+    options: WaitTimeoutOptions = {},
+  ): Promise<DeviceRequestPrompt> {
+    const {timeout = this.timeoutSettings.timeout(), signal} = options;
+    return this.browsingContext.waitForDevicePrompt(timeout, signal);
   }
 
   override get detached(): boolean {
@@ -599,6 +604,27 @@ export class BidiFrame extends Frame {
       element.remoteValue() as Bidi.Script.SharedReference,
       files,
     );
+  }
+
+  @throwIfDetached
+  override async frameElement(): Promise<HandleFor<HTMLIFrameElement> | null> {
+    const parentFrame = this.parentFrame();
+    if (!parentFrame) {
+      return null;
+    }
+    const [node] = await parentFrame.browsingContext.locateNodes({
+      type: 'context',
+      value: {
+        context: this._id,
+      },
+    });
+    if (!node) {
+      return null;
+    }
+    return BidiElementHandle.from(
+      node,
+      parentFrame.mainRealm(),
+    ) as HandleFor<HTMLIFrameElement>;
   }
 
   @throwIfDetached

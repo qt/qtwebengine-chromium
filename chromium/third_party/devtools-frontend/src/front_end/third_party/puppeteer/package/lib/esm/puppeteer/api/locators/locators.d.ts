@@ -35,6 +35,18 @@ export type LocatorClickOptions = ClickOptions & ActionOptions;
 /**
  * @public
  */
+export interface LocatorFillOptions extends ActionOptions {
+    /**
+     * The number of characters to type before switching to a faster fill-out
+     * method.
+     *
+     * @defaultValue `100`
+     */
+    typingThreshold?: number;
+}
+/**
+ * @public
+ */
 export interface LocatorScrollOptions extends ActionOptions {
     scrollTop?: number;
     scrollLeft?: number;
@@ -201,7 +213,7 @@ export declare abstract class Locator<T> extends EventEmitter<LocatorEvents> {
      * method is chosen based on the type. `contenteditable`, select, textarea and
      * input elements are supported.
      */
-    fill<ElementType extends Element>(this: Locator<ElementType>, value: string, options?: Readonly<ActionOptions>): Promise<void>;
+    fill<ElementType extends Element>(this: Locator<ElementType>, value: string, options?: Readonly<LocatorFillOptions>): Promise<void>;
     /**
      * Hovers over the located element.
      */

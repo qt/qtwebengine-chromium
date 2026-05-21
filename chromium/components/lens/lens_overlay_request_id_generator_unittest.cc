@@ -342,4 +342,81 @@ TEST_F(LensOverlayRequestIdGeneratorTest, GetNextRequestId_SetsContextId) {
   ASSERT_EQ(first_id->context_id(), second_id->context_id());
 }
 
+TEST_F(LensOverlayRequestIdGeneratorTest,
+       SetContextId_SetsContextIdOnNextRequest) {
+  lens::LensOverlayRequestIdGenerator request_id_generator;
+  request_id_generator.SetContextId(12345);
+  std::unique_ptr<lens::LensOverlayRequestId> request_id =
+      request_id_generator.GetNextRequestId(
+          RequestIdUpdateMode::kInitialRequest,
+          lens::LensOverlayRequestId::MEDIA_TYPE_DEFAULT_IMAGE);
+  ASSERT_EQ(request_id->context_id(), 12345);
+}
+
+TEST_F(LensOverlayRequestIdGeneratorTest,
+       SetHasChromeTabData_SetsHasChromeTabDataOnNextRequest) {
+  lens::LensOverlayRequestIdGenerator request_id_generator;
+  request_id_generator.SetHasChromeTabData(true);
+  std::unique_ptr<lens::LensOverlayRequestId> request_id =
+      request_id_generator.GetNextRequestId(
+          RequestIdUpdateMode::kInitialRequest,
+          lens::LensOverlayRequestId::MEDIA_TYPE_DEFAULT_IMAGE);
+  ASSERT_TRUE(request_id->has_chrome_tab_data());
+
+  request_id_generator.SetHasChromeTabData(false);
+  std::unique_ptr<lens::LensOverlayRequestId> request_id2 =
+      request_id_generator.GetNextRequestId(
+          RequestIdUpdateMode::kPageContentRequest,
+          lens::LensOverlayRequestId::MEDIA_TYPE_DEFAULT_IMAGE);
+  ASSERT_FALSE(request_id2->has_chrome_tab_data());
+}
+
+TEST_F(LensOverlayRequestIdGeneratorTest,
+       SetIsImplicitUpload_SetsIsImplicitUploadOnNextRequest) {
+  lens::LensOverlayRequestIdGenerator request_id_generator;
+  request_id_generator.SetIsImplicitUpload(true);
+  std::unique_ptr<lens::LensOverlayRequestId> request_id =
+      request_id_generator.GetNextRequestId(
+          RequestIdUpdateMode::kInitialRequest,
+          lens::LensOverlayRequestId::MEDIA_TYPE_DEFAULT_IMAGE);
+  ASSERT_TRUE(request_id->is_implicit_upload());
+
+  request_id_generator.SetIsImplicitUpload(false);
+  std::unique_ptr<lens::LensOverlayRequestId> request_id2 =
+      request_id_generator.GetNextRequestId(
+          RequestIdUpdateMode::kPageContentRequest,
+          lens::LensOverlayRequestId::MEDIA_TYPE_DEFAULT_IMAGE);
+  ASSERT_FALSE(request_id2->is_implicit_upload());
+}
+
+TEST_F(LensOverlayRequestIdGeneratorTest,
+       GetNextRequestIdWithMimeType_SetsMediaTypeAndMimeType) {
+  lens::LensOverlayRequestIdGenerator request_id_generator;
+  std::unique_ptr<lens::LensOverlayRequestId> request_id =
+      request_id_generator.GetNextRequestId(
+          RequestIdUpdateMode::kFullImageRequest, "application/pdf");
+  ASSERT_EQ(request_id->media_type(),
+            lens::LensOverlayRequestId::MEDIA_TYPE_RAW_FILE);
+  ASSERT_EQ(request_id->mime_type(), "application/pdf");
+}
+
+TEST_F(LensOverlayRequestIdGeneratorTest,
+       GetNextRequestIdWithMediaType_ResetsMimeType) {
+  lens::LensOverlayRequestIdGenerator request_id_generator;
+  std::unique_ptr<lens::LensOverlayRequestId> first_id =
+      request_id_generator.GetNextRequestId(
+          RequestIdUpdateMode::kFullImageRequest, "application/pdf");
+  ASSERT_EQ(first_id->media_type(),
+            lens::LensOverlayRequestId::MEDIA_TYPE_RAW_FILE);
+  ASSERT_EQ(first_id->mime_type(), "application/pdf");
+
+  std::unique_ptr<lens::LensOverlayRequestId> second_id =
+      request_id_generator.GetNextRequestId(
+          RequestIdUpdateMode::kFullImageRequest,
+          lens::LensOverlayRequestId::MEDIA_TYPE_DEFAULT_IMAGE);
+  ASSERT_EQ(second_id->media_type(),
+            lens::LensOverlayRequestId::MEDIA_TYPE_DEFAULT_IMAGE);
+  ASSERT_FALSE(second_id->has_mime_type());
+}
+
 }  // namespace lens

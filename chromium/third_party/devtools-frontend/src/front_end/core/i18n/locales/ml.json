@@ -110,9 +110,6 @@
   "core/common/Revealer.ts | requestConditionsDrawer": {
     "message": "അഭ്യർത്ഥനാ വ്യവസ്ഥകളുടെ ഡ്രോയർ"
   },
-  "core/common/Revealer.ts | securityPanel": {
-    "message": "സുരക്ഷാ പാനൽ"
-  },
   "core/common/Revealer.ts | sourcesPanel": {
     "message": "ഉറവിടങ്ങളുടെ പാനൽ"
   },
@@ -410,9 +407,6 @@
   "core/sdk/NetworkRequest.ts | notOnPath": {
     "message": "അഭ്യർത്ഥിച്ച URL-ന്റെ പാതയുമായി കൃത്യമായും പൊരുത്തപ്പെടാത്തതിനാലോ അതിന്റെ സൂപ്പർ ഡയറക്ടറി അല്ലാത്തതിനാലോ ഈ കുക്കി ബ്ലോക്ക് ചെയ്തു."
   },
-  "core/sdk/NetworkRequest.ts | samePartyFromCrossPartyContext": {
-    "message": "\"SameParty\" ആട്രിബ്യൂട്ട് ഉണ്ടെങ്കിലും അഭ്യർത്ഥന ക്രോസ് പാർട്ടി ആയതിനാൽ ഈ കുക്കി ബ്ലോക്ക് ചെയ്തു. ഉറവിട URL-ന്റെ ഡൊമെയ്‌നും ഉറവിടത്തിൽ ഉൾച്ചേർത്ത ഫ്രെയിമുകൾ/ഡോക്യുമെന്റുകൾ എന്നിവയുടെ ഡൊമെയ്‌നുകളും ഒരേ ഫസ്റ്റ് പാർട്ടി സെറ്റിലെ ഉടമകളോ അംഗങ്ങളോ അല്ലാത്തതിനാൽ അഭ്യർത്ഥന ക്രോസ് പാർട്ടി ആണെന്ന് കണക്കാക്കി."
-  },
   "core/sdk/NetworkRequest.ts | sameSiteLax": {
     "message": "\"SameSite=Lax\" ആട്രിബ്യൂട്ട് ഉള്ളതിനാലും മറ്റൊരു സൈറ്റിൽ നിന്ന് അഭ്യർത്ഥിച്ചതിനാലും ഒരു ടോപ് ലെവൽ നാവിഗേഷനിലൂടെ അല്ലാതെ ആരംഭിക്കുന്നതിനാലും ഈ കുക്കി ബ്ലോക്ക് ചെയ്തു."
   },
@@ -454,12 +448,6 @@
   },
   "core/sdk/NetworkRequest.ts | thisSetcookieHadInvalidSyntax": {
     "message": "ഈ Set-Cookie ഹെഡറിൽ അസാധുവായ വാക്യഘടന ഉണ്ടായിരുന്നു."
-  },
-  "core/sdk/NetworkRequest.ts | thisSetcookieWasBlockedBecauseItHadTheSameparty": {
-    "message": "\"SameParty\" ആട്രിബ്യൂട്ട് ഉണ്ടെങ്കിലും അഭ്യർത്ഥന ക്രോസ് പാർട്ടി ആയതിനാൽ Set-Cookie ഹെഡർ മുഖേന ഒരു കുക്കി സജ്ജീകരിക്കാനുള്ള ഈ ശ്രമം ബ്ലോക്ക് ചെയ്‌തു. ഉറവിട URL-ന്റെ ഡൊമെയ്‌നും ഉറവിടത്തിൽ ഉൾച്ചേർത്ത ഫ്രെയിമുകൾ/ഡോക്യുമെന്റുകൾ എന്നിവയുടെ ഡൊമെയ്‌നുകളും ഒരേ ഫസ്റ്റ് പാർട്ടി സെറ്റിലെ ഉടമകളോ അംഗങ്ങളോ അല്ലാത്തതിനാൽ അഭ്യർത്ഥന ക്രോസ് പാർട്ടി ആണെന്ന് കണക്കാക്കി."
-  },
-  "core/sdk/NetworkRequest.ts | thisSetcookieWasBlockedBecauseItHadTheSamepartyAttribute": {
-    "message": "\"SameParty\" ആട്രിബ്യൂട്ട് ഉണ്ടെങ്കിലും വൈരുദ്ധ്യമുള്ള മറ്റ് ആട്രിബ്യൂട്ടുകളും ഉള്ളതിനാൽ Set-Cookie ഹെഡർ മുഖേന ഒരു കുക്കി സജ്ജീകരിക്കാനുള്ള ഈ ശ്രമം ബ്ലോക്ക് ചെയ്‌തു. \"Secure\" ആട്രിബ്യൂട്ട് ഉണ്ടായിരിക്കുന്നതിനും \"SameSite=Strict\" എന്നതിൽ മാത്രമായി പരിമിതപ്പെടുത്താതിരിക്കുന്നതിനും Chrome-ന് \"SameParty\" ആട്രിബ്യൂട്ട് ഉപയോഗിക്കുന്ന കുക്കികൾ ആവശ്യമാണ്."
   },
   "core/sdk/NetworkRequest.ts | thisSetcookieWasBlockedBecauseItHadTheSamesiteStrictLax": {
     "message": "\"{PH1}\" ആട്രിബ്യൂട്ട് ഉണ്ടെങ്കിലും ടോപ്പ് ലെവൽ നാവിഗേഷനോടുള്ള പ്രതികരണമല്ലാത്ത ഒരു ക്രോസ് സൈറ്റ് പ്രതികരണത്തിൽ നിന്ന് വരുന്നതിനാൽ Set-Cookie ഹെഡർ മുഖേന ഒരു കുക്കി സജ്ജീകരിക്കാനുള്ള ഈ ശ്രമം ബ്ലോക്ക് ചെയ്‌തു. URL-ന് നിലവിലെ സൈറ്റിൽ നിന്ന് വ്യത്യസ്‌തമായ ഒരു സ്‌കീം ഉള്ളതിനാൽ ഈ പ്രതികരണം ക്രോസ് സൈറ്റ് പ്രതികരണമായി പരിഗണിക്കപ്പെടുന്നു."
@@ -1031,6 +1019,15 @@
   "entrypoints/main/GlobalAiButton.ts | aiAssistance": {
     "message": "AI സഹായം"
   },
+  "entrypoints/main/GlobalAiButton.ts | gemini": {
+    "message": "Gemini"
+  },
+  "entrypoints/main/GlobalAiButton.ts | openAiAssistance": {
+    "message": "AI സഹായ പാനൽ തുറക്കുക"
+  },
+  "entrypoints/main/GlobalAiButton.ts | openGemini": {
+    "message": "Gemini പാനൽ തുറക്കുക"
+  },
   "entrypoints/main/MainImpl.ts | aiModelDownloaded": {
     "message": "AI മോഡൽ ഡൗൺലോഡ് ചെയ്തു"
   },
@@ -1057,6 +1054,9 @@
   },
   "entrypoints/main/MainImpl.ts | focusDebuggee": {
     "message": "ഫോക്കസ് പേജ്"
+  },
+  "entrypoints/main/MainImpl.ts | getDevToolsMcp": {
+    "message": "DevTools MCP നേടൂ"
   },
   "entrypoints/main/MainImpl.ts | help": {
     "message": "സഹായം"
@@ -1298,9 +1298,6 @@
   "generated/Deprecation.ts | ChromeLoadTimesWasAlternateProtocolAvailable": {
     "message": "chrome.loadTimes() അവസാനിപ്പിച്ചു, പകരം ഏകീകൃത API ഉപയോഗിക്കുക: നാവിഗേഷൻ ടൈമിംഗ് 2-ലെ nextHopProtocol."
   },
-  "generated/Deprecation.ts | CookieWithTruncatingChar": {
-    "message": "\\(0|r|n) പ്രതീകമുള്ള കുക്കികളെ വെട്ടിച്ചുരുക്കുന്നതിന് പകരം നിരസിക്കും."
-  },
   "generated/Deprecation.ts | CrossOriginAccessBasedOnDocumentDomain": {
     "message": "document.domain സജ്ജീകരിക്കുന്നതിലൂടെ സെയിം ഒറിജിൻ നയത്തിൽ ഇളവ് വരുത്തുന്നത് അവസാനിപ്പിച്ചു, ഇത് ഡിഫോൾട്ടായി പ്രവർത്തനരഹിതമാക്കും. അവസാനിപ്പിക്കൽ സംബന്ധിച്ച ഈ മുന്നറിയിപ്പ്, document.domain സജ്ജീകരിച്ച് പ്രവർത്തനക്ഷമമാക്കിയ ക്രോസ് ഒറിജിൻ ആക്‌സസുമായി ബന്ധപ്പെട്ടുള്ളതാണ്."
   },
@@ -1454,9 +1451,6 @@
   "generated/Deprecation.ts | XMLHttpRequestSynchronousInNonWorkerOutsideBeforeUnload": {
     "message": "പ്രധാന ത്രെഡിലെ സിങ്ക്രോണസ് XMLHttpRequest, അന്തിമ ഉപയോക്താവിന്റെ അനുഭവത്തെ ദോഷകരമായി ബാധിക്കുന്നതിനാൽ അത് അവസാനിപ്പിച്ചിരിക്കുന്നു. കൂടുതൽ സഹായത്തിന്, https://xhr.spec.whatwg.org/ പരിശോധിക്കുക."
   },
-  "generated/Deprecation.ts | XMLNoExternalEntities": {
-    "message": "XML പാഴ്‌സിംഗിൽ ബാഹ്യമായി ലോഡ് ചെയ്ത എന്റിറ്റികൾ അവസാനിപ്പിച്ചു, ഈ ബ്രൗസറിൽ നിന്ന് ഉടൻ തന്നെ നീക്കം ചെയ്യും."
-  },
   "generated/Deprecation.ts | XSLT": {
     "message": "എല്ലാ ബ്രൗസറുകളും XSLTProcessor, XSLT പ്രോസസിംഗ് നിർദ്ദേശങ്ങൾ എന്നിവ അവസാനിപ്പിച്ചു. ഈ ഫീച്ചറുകൾ ഈ ബ്രൗസറിൽ നിന്ന് ഉടൻ നീക്കം ചെയ്യും."
   },
@@ -1475,17 +1469,11 @@
   "models/bindings/ContentProviderBasedProject.ts | unknownErrorLoadingFile": {
     "message": "ഫയൽ ലോഡ് ചെയ്യുമ്പോൾ അജ്ഞാതമായ പിശകുണ്ടായി"
   },
-  "models/bindings/DebuggerLanguagePlugins.ts | debugSymbolsIncomplete": {
-    "message": "{PH1} ഫംഗ്ഷനുള്ള ഡീബഗ് വിവരങ്ങൾ പൂർണ്ണമല്ല"
-  },
   "models/bindings/DebuggerLanguagePlugins.ts | errorInDebuggerLanguagePlugin": {
     "message": "ഡീബഗ്ഗർ ഭാഷാ പ്ലഗിന്നിൽ പിശക്: {PH1}"
   },
   "models/bindings/DebuggerLanguagePlugins.ts | failedToLoadDebugSymbolsFor": {
     "message": "[{PH1}] {PH2} എന്നതിനായി ഡീബഗ് ചിഹ്നങ്ങൾ ലോഡ് ചെയ്യാനായില്ല ({PH3})"
-  },
-  "models/bindings/DebuggerLanguagePlugins.ts | failedToLoadDebugSymbolsForFunction": {
-    "message": "\"{PH1}\" ഫംഗ്ഷനുള്ള ഡീബഗ് വിവരങ്ങളൊന്നുമില്ല"
   },
   "models/bindings/DebuggerLanguagePlugins.ts | loadedDebugSymbolsForButDidnt": {
     "message": "[{PH1}] {PH2} എന്നതിനായുള്ള ഡീബഗ് ചിഹ്നങ്ങൾ ലോഡ് ചെയ്‌തു, എന്നാൽ ഉറവിട ഫയലുകളൊന്നും കണ്ടെത്തിയില്ല"
@@ -1586,9 +1574,6 @@
   "models/issues_manager/CookieIssue.ts | fileCrosSiteRedirectBug": {
     "message": "ഒരു ബഗ് ഫയൽ ചെയ്യുക"
   },
-  "models/issues_manager/CookieIssue.ts | firstPartySetsExplained": {
-    "message": "First-Party Sets, SameParty ആട്രിബ്യൂട്ട് എന്നിവ"
-  },
   "models/issues_manager/CookieIssue.ts | howSchemefulSamesiteWorks": {
     "message": "സ്കീംഫുൾ Same-Site എങ്ങനെ പ്രവർത്തിക്കുന്നു"
   },
@@ -1600,9 +1585,6 @@
   },
   "models/issues_manager/CorsIssue.ts | corsLocalNetworkAccess": {
     "message": "പ്രാദേശിക നെറ്റ്‌വർക്ക് ആക്‌സസ്"
-  },
-  "models/issues_manager/CorsIssue.ts | corsPrivateNetworkAccess": {
-    "message": "സ്വകാര്യ നെറ്റ്‌വർക്ക് ആക്‌സസ്"
   },
   "models/issues_manager/CrossOriginEmbedderPolicyIssue.ts | coopAndCoep": {
     "message": "COOP, COEP"
@@ -2107,6 +2089,9 @@
   },
   "models/trace/Styles.ts | signReply": {
     "message": "സൈൻ മറുപടി"
+  },
+  "models/trace/Styles.ts | softLargestContentfulPaint": {
+    "message": "സോഫ്റ്റ് ലാർജസ്റ്റ് കണ്ടന്റ്ഫുൾ പെയിന്റ്"
   },
   "models/trace/Styles.ts | streamingCompileTask": {
     "message": "കംപൈൽ ടാസ്ക് സ്‌ട്രീം ചെയ്യുന്നു"
@@ -3086,14 +3071,20 @@
   "panels/ai_assistance/ai_assistance-meta.ts | aiAssistance": {
     "message": "AI സഹായം"
   },
-  "panels/ai_assistance/ai_assistance-meta.ts | askAi": {
-    "message": "AI-യോട് ചോദിക്കൂ"
-  },
   "panels/ai_assistance/ai_assistance-meta.ts | debugWithAi": {
     "message": "AI ഉപയോഗിച്ച് ഡീബഗ് ചെയ്യുക"
   },
+  "panels/ai_assistance/ai_assistance-meta.ts | debugWithGemini": {
+    "message": "Gemini ഉപയോഗിച്ച് ഡീബഗ് ചെയ്യുക"
+  },
   "panels/ai_assistance/ai_assistance-meta.ts | enableAiAssistance": {
     "message": "AI സഹായം പ്രവർത്തനക്ഷമമാക്കുക"
+  },
+  "panels/ai_assistance/ai_assistance-meta.ts | enableGemini": {
+    "message": "Gemini പ്രവർത്തനക്ഷമമാക്കുക"
+  },
+  "panels/ai_assistance/ai_assistance-meta.ts | gemini": {
+    "message": "Gemini"
   },
   "panels/ai_assistance/ai_assistance-meta.ts | geoRestricted": {
     "message": "ഈ ഫീച്ചർ നിലവിൽ നിങ്ങളുടെ പ്രദേശത്ത് ലഭ്യമല്ല."
@@ -3104,16 +3095,19 @@
   "panels/ai_assistance/ai_assistance-meta.ts | showAiAssistance": {
     "message": "AI സഹായം കാണിക്കുക"
   },
+  "panels/ai_assistance/ai_assistance-meta.ts | showGemini": {
+    "message": "Gemini കാണിക്കുക"
+  },
   "panels/ai_assistance/ai_assistance-meta.ts | wrongLocale": {
     "message": "ഈ ഫീച്ചർ ഉപയോഗിക്കുന്നതിന്, DevTools ക്രമീകരണത്തിൽ നിങ്ങളുടെ ഭാഷാ മുൻഗണന ഇംഗ്ലീഷ് ആയി സജ്ജീകരിക്കുക."
   },
-  "panels/ai_assistance/components/ChatView.ts | inputTextAriaDescription": {
+  "panels/ai_assistance/components/ChatInput.ts | inputTextAriaDescription": {
     "message": "നിങ്ങളുടെ സംഭാഷണം ആരംഭിക്കുന്നതിന്, മുകളിൽ നിർദ്ദേശിച്ചിരിക്കുന്ന പ്രോംപ്റ്റുകളിൽ ഒന്ന് ഉപയോഗിക്കാനും കഴിയും."
   },
-  "panels/ai_assistance/components/ChatView.ts | learnAbout": {
+  "panels/ai_assistance/components/ChatInput.ts | learnAbout": {
     "message": "DevTools-ൽ AI-യെ കുറിച്ച് അറിയുക"
   },
-  "panels/ai_assistance/components/ChatView.ts | revealContextDescription": {
+  "panels/ai_assistance/components/ChatInput.ts | revealContextDescription": {
     "message": "DevTools-ൽ തിരഞ്ഞെടുത്ത സന്ദർഭ ഇനം വെളിപ്പെടുത്തുക"
   },
   "panels/ai_assistance/components/DisabledWidget.ts | notAvailableInIncognitoMode": {
@@ -3221,6 +3215,9 @@
   "panels/application/AppManifestView.ts | appIdNote": {
     "message": "ശ്രദ്ധിക്കുക: മാനിഫെസ്റ്റിൽ id വ്യക്തമാക്കിയിട്ടില്ല, പകരം start_url ഉപയോഗിച്ചിരിക്കുന്നു. നിലവിലെ ഐഡന്റിറ്റിയുമായി പൊരുത്തപ്പെടുന്ന ആപ്പ് ഐഡി വ്യക്തമാക്കാൻ, id ഫീൽഡ് {PH1} {PH2} എന്നിവലേക്ക് സജ്ജീകരിക്കുക."
   },
+  "panels/application/AppManifestView.ts | appManifest": {
+    "message": "മാനിഫെസ്റ്റ്"
+  },
   "panels/application/AppManifestView.ts | avoidPurposeAnyAndMaskable": {
     "message": "ഐക്കൺ 'any maskable' എന്നതിന്റെ 'purpose' ആയി സാക്ഷ്യപ്പെടുത്താതിരിക്കുക. പാഡിംഗ് വളരെ കൂടുതലോ കുറച്ചോ ആയതിനാൽ ചില പ്ലാറ്റ്‌ഫോമുകളിൽ ഇത് തെറ്റായി ദൃശ്യമാകാനിടയുണ്ട്."
   },
@@ -3293,6 +3290,9 @@
   "panels/application/AppManifestView.ts | manifestCouldNotBeFetchedIsEmpty": {
     "message": "മാനിഫെസ്റ്റ് ലഭ്യമാക്കാനായില്ല, അതിൽ ഒന്നുമില്ല അല്ലെങ്കിൽ പാഴ്‌സ് ചെയ്യാനായില്ല"
   },
+  "panels/application/AppManifestView.ts | manifestDescription": {
+    "message": "നിങ്ങളുടെ ആപ്പ് ഫോണിന്റെ ഹോം സ്‌ക്രീനിൽ എങ്ങനെ ദൃശ്യമാകുമെന്നും ലോഞ്ച് ചെയ്യുമ്പോൾ അത് എങ്ങനെ ദൃശ്യമാകുമെന്നും മാനിഫെസ്റ്റ് നിർവചിക്കുന്നു."
+  },
   "panels/application/AppManifestView.ts | manifestDisplayPropertyMustBeOne": {
     "message": "മാനിഫെസ്റ്റ് 'display' പ്രോപ്പർട്ടി'standalone', 'fullscreen', 'minimal-ui' എന്നിവയിൽ ഒന്ന് ആയിരിക്കണം"
   },
@@ -3317,6 +3317,9 @@
   "panels/application/AppManifestView.ts | newNoteUrl": {
     "message": "പുതിയ കുറിപ്പിന്റെ URL"
   },
+  "panels/application/AppManifestView.ts | noManifestDetected": {
+    "message": "മാനിഫെസ്റ്റുകളൊന്നും കണ്ടെത്തിയില്ല"
+  },
   "panels/application/AppManifestView.ts | noPlayStoreIdProvided": {
     "message": "Play Store ഐഡി നൽകിയിട്ടില്ല"
   },
@@ -3328,6 +3331,9 @@
   },
   "panels/application/AppManifestView.ts | noSuppliedIconIsAtLeastSpxSquare": {
     "message": "'any' എന്ന് സജ്ജീകരിക്കുകയോ സജ്ജീകരിച്ചത് മാറ്റുകയോ ചെയ്യാനുള്ള ഉദ്ദേശ്യ ആട്രിബ്യൂട്ട് ഉപയോഗിച്ച് PNG, SVG അല്ലെങ്കിൽ WebP ഫോർമാറ്റിൽ, കുറഞ്ഞത് {PH1} പിക്സൽ സ്ക്വയർ ഉള്ള സപ്ലൈ ചെയ്ത ഐക്കണുകൾ ഒന്നുമില്ല."
+  },
+  "panels/application/AppManifestView.ts | onInvokeAlert": {
+    "message": "{PH1} എന്നതിലേക്ക് സ്ക്രോൾ ചെയ്തു"
   },
   "panels/application/AppManifestView.ts | orientation": {
     "message": "ഓറിയന്റേഷൻ"
@@ -3458,9 +3464,6 @@
   "panels/application/AppManifestView.ts | windowControlsOverlay": {
     "message": "വിൻഡോ നിയന്ത്രണങ്ങളുടെ ഓവർലേ"
   },
-  "panels/application/ApplicationPanelSidebar.ts | appManifest": {
-    "message": "മാനിഫെസ്റ്റ്"
-  },
   "panels/application/ApplicationPanelSidebar.ts | application": {
     "message": "ആപ്പ്"
   },
@@ -3530,9 +3533,6 @@
   "panels/application/ApplicationPanelSidebar.ts | manifest": {
     "message": "മാനിഫെസ്റ്റ്"
   },
-  "panels/application/ApplicationPanelSidebar.ts | manifestDescription": {
-    "message": "നിങ്ങളുടെ ആപ്പ് ഫോണിന്റെ ഹോം സ്‌ക്രീനിൽ എങ്ങനെ ദൃശ്യമാകുമെന്നും ലോഞ്ച് ചെയ്യുമ്പോൾ അത് എങ്ങനെ ദൃശ്യമാകുമെന്നും മാനിഫെസ്റ്റ് നിർവചിക്കുന്നു."
-  },
   "panels/application/ApplicationPanelSidebar.ts | noCookies": {
     "message": "കുക്കികളൊന്നും സജ്ജീകരിച്ചിട്ടില്ല"
   },
@@ -3544,9 +3544,6 @@
   },
   "panels/application/ApplicationPanelSidebar.ts | noLocalStorage": {
     "message": "പ്രദേശിക സ്‌റ്റോറേജ് ഒന്നും കണ്ടെത്തിയില്ല"
-  },
-  "panels/application/ApplicationPanelSidebar.ts | noManifestDetected": {
-    "message": "മാനിഫെസ്റ്റുകളൊന്നും കണ്ടെത്തിയില്ല"
   },
   "panels/application/ApplicationPanelSidebar.ts | noSessionStorage": {
     "message": "സെഷൻ സ്‌റ്റോറേജ് ഒന്നും കണ്ടെത്തിയില്ല"
@@ -3721,6 +3718,399 @@
   },
   "panels/application/DOMStorageItemsView.ts | domStorageItemsCleared": {
     "message": "DOM സ്റ്റോറേജ് ഇനങ്ങൾ മായ്ച്ചു"
+  },
+  "panels/application/DeviceBoundSessionsTreeElement.ts | deviceBoundSessions": {
+    "message": "ഉപകരണവുമായി ബന്ധപ്പെട്ട സെഷനുകൾ"
+  },
+  "panels/application/DeviceBoundSessionsTreeElement.ts | deviceBoundSessionsCategoryDescription": {
+    "message": "ഈ പേജിൽ നിങ്ങൾക്ക് ഉപകരണവുമായി ബന്ധപ്പെട്ട സെഷനുകളും അനുബന്ധ ഇവന്റുകളും കാണാം"
+  },
+  "panels/application/DeviceBoundSessionsTreeElement.ts | noSession": {
+    "message": "സെഷനില്ല"
+  },
+  "panels/application/DeviceBoundSessionsTreeElement.ts | sessionWithErrors": {
+    "message": "{sessionName}, സെഷനിൽ പിശകുകളുണ്ട്"
+  },
+  "panels/application/DeviceBoundSessionsTreeElement.ts | terminatedSession": {
+    "message": "{sessionName}, സെഷൻ അവസാനിപ്പിച്ചു"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | allowedRefreshInitiators": {
+    "message": "അനുവദനീയമായ റീഫ്രഷ് ഇനിഷ്യേറ്ററുകൾ"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | boundCookieSetForbidden": {
+    "message": "ബൗണ്ട് കുക്കികൾ സജ്ജീകരിക്കാനാകാത്ത ഒരു സന്ദർഭത്തിലെ രജിസ്ട്രേഷൻ"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | cachedChallenge": {
+    "message": "കാഷെ ചെയ്ത ചലഞ്ച്"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | cantSetBoundCookie": {
+    "message": "ബൗണ്ട് കുക്കി സജ്ജീകരിക്കാൻ അനുവദനീയമല്ല"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | causedAnyRequestDeferrals": {
+    "message": "ഏതെങ്കിലും അഭ്യർത്ഥനകൾ മാറ്റിവയ്ക്കാൻ കാരണമായി"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | challenge": {
+    "message": "ചലഞ്ച്"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | challengeResult": {
+    "message": "ചലഞ്ച് ഫലം"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | clearBrowsingData": {
+    "message": "ഉപയോക്താവ് ആരംഭിച്ച ബ്രൗസർ ഡാറ്റ നീക്കം ചെയ്യൽ"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | cookieCravings": {
+    "message": "കുക്കികൾ"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | creation": {
+    "message": "സൃഷ്‌ടിച്ചത്"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | deletionReason": {
+    "message": "ഇല്ലാതാക്കാനുള്ള കാരണം"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | doNotClearLogOnPageReload": {
+    "message": "പേജ് റീലോഡിലെ/നാവിഗേഷനിലെ ലോഗ് മായ്‌ക്കരുത്"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | emptyScopeSpecificationDomain": {
+    "message": "സ്കോപ്പ് സ്പെസിഫിക്കേഷൻ ഡൊമെയ്ൻ ശൂന്യമാണ്"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | emptyScopeSpecificationPath": {
+    "message": "സ്കോപ്പ് സ്പെസിഫിക്കേഷൻ പാത്ത് ശൂന്യമാണ്"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | emptySessionConfig": {
+    "message": "രജിസ്ട്രേഷനുള്ള സെഷൻ കോൺഫിഗറേഷൻ ശൂന്യമാണ്"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | error": {
+    "message": "പിശക്"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | eventDetails": {
+    "message": "ഇവന്റിന്റെ വിശദാംശങ്ങൾ"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | eventResult": {
+    "message": "ഇവന്റ് ഫലം"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | events": {
+    "message": "ഇവന്റുകൾ"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | expired": {
+    "message": "കാലഹരണപ്പെട്ടു"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | expiryDate": {
+    "message": "കാലഹരണപ്പെടുന്ന തീയതി"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | failedToRestoreKey": {
+    "message": "ഡിസ്കിൽ നിന്ന് കീ പുനഃസ്ഥാപിക്കാനായില്ല"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | failedToUnwrapKey": {
+    "message": "കീ അൺറാപ്പ് ചെയ്യാനായില്ല"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | fatalError": {
+    "message": "ഗുരുതരമായ പിശക്"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | federatedKeyThumbprintMismatch": {
+    "message": "ഫെഡറേറ്റ് ചെയ്ത കീയിൽ തെറ്റായ വിരലടയാളം ഉണ്ടായിരുന്നു"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | federatedNotAuthorizedByProvider": {
+    "message": "ഫെഡറേറ്റ് ചെയ്ത സെഷൻ, ദാതാവ് .well-known അംഗീകരിച്ചിട്ടില്ല"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | federatedNotAuthorizedByRelyingParty": {
+    "message": "റിലൈയിംഗ് പാർട്ടി .well-known, ഫെഡറേറ്റ് ചെയ്ത സെഷൻ അംഗീകരിച്ചിട്ടില്ല"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | fetchResult": {
+    "message": "ഫലം ലഭ്യമാക്കുക"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | includeSite": {
+    "message": "സൈറ്റ് ഉൾപ്പെടുന്നു"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | initializedService": {
+    "message": "സേവനം ആരംഭിച്ചു"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidChallenge": {
+    "message": "ചലഞ്ച് അസാധുവാണ്"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidConfigJson": {
+    "message": "സെഷൻ കോൺഫിഗറേഷൻ JSON അസാധുവാണ്"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidCredentialsConfig": {
+    "message": "ക്രെഡൻഷ്യലുകളുടെ കോൺഫിഗറേഷൻ അസാധുവാണ്"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidCredentialsCookie": {
+    "message": "ക്രെഡൻഷ്യലുകൾ അസാധുവാണ് - കുക്കി അസാധുവാണ്"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidCredentialsCookieCreationTime": {
+    "message": "ക്രെഡൻഷ്യലുകൾ അസാധുവാണ് - കുക്കി സൃഷ്ടിച്ച സമയം അസാധുവാണ്"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidCredentialsCookieInvalidDomain": {
+    "message": "ക്രെഡൻഷ്യലുകൾ അസാധുവാണ് - കുക്കി അസാധുവായ ഡൊമെയ്‌ൻ"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidCredentialsCookieName": {
+    "message": "ക്രെഡൻഷ്യലുകൾ അസാധുവാണ് - കുക്കിയുടെ പേര് അസാധുവാണ്"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidCredentialsCookieParsing": {
+    "message": "ക്രെഡൻഷ്യലുകൾ അസാധുവാണ് - കുക്കി പാർസ് ചെയ്യാനായില്ല"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidCredentialsCookiePrefix": {
+    "message": "ക്രെഡൻഷ്യലുകൾ അസാധുവാണ് - കുക്കിയുടെ പ്രിഫിക്‌സ് അസാധുവാണ്"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidCredentialsCookieUnpermittedAttribute": {
+    "message": "ക്രെഡൻഷ്യലുകൾ അസാധുവാണ് - കുക്കി ആട്രിബ്യൂട്ടിന് അനുമതിയില്ല"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidCredentialsEmptyName": {
+    "message": "ക്രെഡൻഷ്യലുകൾ അസാധുവാണ് - പേര് നൽകിയിട്ടില്ല"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidCredentialsType": {
+    "message": "അസാധുവായ ക്രെഡൻഷ്യലുകൾ - ശൂന്യമായതോ കുക്കി ഇതര തരത്തിലുള്ളതോ"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidFederatedKey": {
+    "message": "ഫെഡറേറ്റഡ് കീ അസാധുവാണ്"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidFederatedSessionProviderFailedToRestoreKey": {
+    "message": "സെഷൻ ദാതാവിന്റെ കീ പുനഃസ്ഥാപിക്കാനാകാത്തതിനാൽ ഫെഡറേറ്റ് ചെയ്ത സെഷൻ അസാധുവാണ്"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidFederatedSessionProviderSessionMissing": {
+    "message": "പ്രൊവൈഡർ സെഷൻ കണ്ടെത്തിയിട്ടില്ലാത്തതിനാൽ ഫെഡറേറ്റഡ് സെഷൻ അസാധുവാണ്"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidFederatedSessionUrl": {
+    "message": "ഫെഡറേറ്റ് ചെയ്ത ദാതാവിന്റെ URL സാധുതയുള്ളതല്ല"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidFederatedSessionWrongProviderOrigin": {
+    "message": "ദാതാവിന്റെ ഒറിജിൻ പൊരുത്തപ്പെടാത്തതിനാൽ ഫെഡറേറ്റ് ചെയ്ത സെഷൻ അസാധുവാണ്"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidFetcherUrl": {
+    "message": "ഫെച്ചർ URL അസാധുവാണ്"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidRefreshUrl": {
+    "message": "അസാധുവായ റീഫ്രഷ് URL"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidScopeIncludeSite": {
+    "message": "സ്കോപ്പിലെ include_site അസാധുവാണ്"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidScopeOrigin": {
+    "message": "സ്കോപ്പ് ഒറിജിൻ അസാധുവാണ്"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidScopeRuleHostPattern": {
+    "message": "സ്കോപ്പ് നയത്തിന്റെ ഹോസ്റ്റ് പാറ്റേൺ അസാധുവാണ്"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidScopeRulePath": {
+    "message": "സ്കോപ്പ് നയ പാത അസാധുവാണ്"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidScopeSpecification": {
+    "message": "സ്കോപ്പ് സ്പെസിഫിക്കേഷൻ അസാധുവാണ്"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidScopeSpecificationType": {
+    "message": "സ്കോപ്പ് സ്പെസിഫിക്കേഷൻ തരം, ഉൾപ്പെടുത്തുകയോ ഒഴിവാക്കുകയോ ചെയ്തിട്ടില്ല"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidSessionId": {
+    "message": "സെഷൻ ഐഡി അസാധുവാണ്"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidSessionParams": {
+    "message": "സെഷൻ പാരാമീറ്ററുകൾ അസാധുവാണ്"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | keyError": {
+    "message": "കീ സംബന്ധിച്ച പിശക്"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | keyId": {
+    "message": "ഐഡി"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | keySite": {
+    "message": "സൈറ്റ്"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | mismatchedSessionId": {
+    "message": "സെഷൻ ഐഡി പൊരുത്തപ്പെടുന്നില്ല"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | missingScope": {
+    "message": "സ്കോപ്പ് നൽകിയിട്ടില്ല"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | missingScopeIncludeSite": {
+    "message": "സ്കോപ്പിൽ include_site നൽകിയിട്ടില്ല"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | missingScopeSpecificationType": {
+    "message": "സ്കോപ്പ് സ്പെസിഫിക്കേഷൻ തരം നൽകിയിട്ടില്ല"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | name": {
+    "message": "പേര്"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | netError": {
+    "message": "നെറ്റ്‌വർക്ക് പിശക്"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | no": {
+    "message": "ഇല്ല"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | noCredentials": {
+    "message": "ക്രെഡന്‍ഷ്യലുകളൊന്നുമില്ല."
+  },
+  "panels/application/DeviceBoundSessionsView.ts | noEvents": {
+    "message": "ഇതുവരെ ഇവന്റുകളൊന്നും ലോഗ് ചെയ്തിട്ടില്ല."
+  },
+  "panels/application/DeviceBoundSessionsView.ts | noSessionId": {
+    "message": "സെഷൻ ഐഡി ഇല്ല"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | noSessionMatch": {
+    "message": "പൊരുത്തപ്പെടുന്ന സെഷൻ ഐഡി ഇല്ല"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | origin": {
+    "message": "ഉറവിടം"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | persistentHttpError": {
+    "message": "സ്ഥിരമായ HTTP പിശക്"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | preserveLog": {
+    "message": "ലോഗ് സംരക്ഷിക്കുക"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | proxyError": {
+    "message": "പ്രോക്സി പിശക്"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | refresh": {
+    "message": "റീഫ്രഷ് ചെയ്യുക"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | refreshFatalError": {
+    "message": "റീഫ്രഷ് ചെയ്യുന്നതിനിടെ ഗുരുതരമായ പിശക്"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | refreshInitiatorInvalidHostPattern": {
+    "message": "അനുവദനീയമായ റീഫ്രഷ് ഇനിഷ്യേറ്ററിന് അസാധുവായ ഹോസ്റ്റ് പാറ്റേൺ ഉണ്ട്"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | refreshInitiatorNotString": {
+    "message": "അനുവദനീയമായ റീഫ്രഷ് ഇനിഷ്യേറ്റർ ഒരു സ്ട്രിംഗ് അല്ല"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | refreshQuotaExceeded": {
+    "message": "റീഫ്രഷ് ക്വാട്ട കവിഞ്ഞു"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | refreshResult": {
+    "message": "ഫലം റീഫ്രഷ് ചെയ്യുക"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | refreshUrl": {
+    "message": "URL റീഫ്രഷ് ചെയ്യുക"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | refreshUrlSameSiteMismatch": {
+    "message": "Same-site മിസ്‌മാച്ച് റീഫ്രഷ് URL"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | refreshed": {
+    "message": "റീഫ്രഷ് ചെയ്തു"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | registrationAttemptedChallenge": {
+    "message": "രജിസ്ട്രേഷൻ, ചലഞ്ച് പിശക് പ്രതികരണ കോഡ് തിരികെ നൽകി"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | relyingPartyWellKnownHasRelyingOrigins": {
+    "message": "റിലൈയിംഗ് പാർട്ടി .well-known ഉള്ളടക്കത്തിന് relying_origins ഉണ്ട്"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | relyingPartyWellKnownMalformed": {
+    "message": "റിലൈയിംഗ് പാർട്ടി .well-known ഉള്ളടക്കം തെറ്റായി രൂപപ്പെടുത്തിയിരിക്കുന്നു"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | relyingPartyWellKnownUnavailable": {
+    "message": "റിലൈയിംഗ് പാർട്ടി .well-known ലഭ്യമല്ല"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | result": {
+    "message": "ഫലം"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | ruleHostPattern": {
+    "message": "ഹോസ്റ്റ് പാറ്റേൺ"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | rulePathPrefix": {
+    "message": "പാത്ത് പ്രിഫിക്‌സ്"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | ruleType": {
+    "message": "നയത്തിന്റെ തരം"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | ruleTypeExclude": {
+    "message": "ഉൾപ്പെടാത്തത്"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | ruleTypeInclude": {
+    "message": "ഉൾപ്പെടുന്നു"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | scope": {
+    "message": "സ്കോപ്പ്"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | scopeOriginContainsPath": {
+    "message": "സ്കോപ്പ് ഒറിജിനിൽ ഒരു പാത അടങ്ങിയിരിക്കുന്നു"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | scopeOriginSameSiteMismatch": {
+    "message": "Same-site മിസ്‌മാച്ച് സ്കോപ്പ് ഒറിജിൻ"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | scopeRuleOriginScopedHostPatternMismatch": {
+    "message": "ഒറിജിൻ സ്കോപ്പ് ചെയ്ത സെഷനിൽ ഹോസ്റ്റ് പാറ്റേണും ഒറിജിനും തമ്മിൽ പൊരുത്തക്കേടുണ്ട്"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | scopeRuleSiteScopedHostPatternMismatch": {
+    "message": "സൈറ്റ്-സ്കോപ്പ് ചെയ്ത സെഷനിൽ ഹോസ്റ്റ് പാറ്റേണും സൈറ്റും തമ്മിൽ പൊരുത്തക്കേടുണ്ട്"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | selectEventToViewDetails": {
+    "message": "കൂടുതൽ വിശദാംശങ്ങൾ കാണാൻ ഒരു ഇവന്റ് വരി തിരഞ്ഞെടുക്കുക."
+  },
+  "panels/application/DeviceBoundSessionsView.ts | serverError": {
+    "message": "എൻഡ്‌പോയിന്റ് ട്രാൻസിയന്റ് പിശക്"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | serverRequestedTermination": {
+    "message": "സെർവർ അവസാനിപ്പിക്കാൻ അഭ്യർത്ഥിച്ചു"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | sessionConfig": {
+    "message": "സെഷൻ കോൺഫിഗറേഷൻ"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | sessionDeletedDuringRefresh": {
+    "message": "റീഫ്രഷ് ചെയ്യുന്നതിനിടെ സെഷൻ ഇല്ലാതാക്കി"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | sessionDetails": {
+    "message": "സെഷൻ വിശദാംശങ്ങൾ"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | sessionId": {
+    "message": "സെഷൻ ഐഡി"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | sessionProviderWellKnownHasProviderOrigin": {
+    "message": "സെഷൻ ദാതാവിന്റെ .well-known ഉള്ളടക്കത്തിന് provider_origin ഉണ്ട്"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | sessionProviderWellKnownMalformed": {
+    "message": "സെഷൻ ദാതാവ് .well-known ഉള്ളടക്കം തെറ്റായി രൂപപ്പെടുത്തിയിരിക്കുന്നു"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | sessionProviderWellKnownUnavailable": {
+    "message": "സെഷൻ ദാതാവ് .well-known ലഭ്യമല്ല"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | signingError": {
+    "message": "സൈൻ ചെയ്യൽ പിശക്"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | signingQuotaExceeded": {
+    "message": "സൈൻ ചെയ്യൽ ക്വാട്ട കവിഞ്ഞു"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | storagePartitionCleared": {
+    "message": "സ്റ്റോറേജ് പാർട്ടീഷനിൽ നിന്ന് നീക്കം ചെയ്തു"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | subdomainRegistrationUnauthorized": {
+    "message": ".well-known, ഉപഡൊമെയ്‌ൻ മുഖേനയുള്ള രജിസ്ട്രേഷൻ അംഗീകരിച്ചില്ല"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | subdomainRegistrationWellKnownMalformed": {
+    "message": "ഉപഡൊമെയ്‌ൻ രജിസ്ട്രേഷൻ .well-known ഉള്ളടക്കം തെറ്റായി രൂപപ്പെടുത്തിയിരിക്കുന്നു"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | subdomainRegistrationWellKnownUnavailable": {
+    "message": "ഉപഡൊമെയ്ൻ രജിസ്ട്രേഷൻ .well-known ലഭ്യമല്ല"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | success": {
+    "message": "വിജയകരം"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | termination": {
+    "message": "നിർത്തലാക്കൽ"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | timestamp": {
+    "message": "തീയതി"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | tooManyChallenges": {
+    "message": "നിരവധി ചലഞ്ചുകൾ"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | tooManyRelyingOriginLabels": {
+    "message": ".well-known എന്നതിൽ നിരവധി റിലൈയിംഗ് ഒറിജിൻ ലേബലുകൾ ഉണ്ട്"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | transientHttpError": {
+    "message": "താൽക്കാലിക HTTP പിശക്"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | type": {
+    "message": "തരം"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | unknown": {
+    "message": "അജ്ഞാതം"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | unreachable": {
+    "message": "എൻഡ്‌പോയിന്റിൽ എത്തിച്ചേരാനാകുന്നില്ല"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | updatedSessionConfig": {
+    "message": "അപ്ഡേറ്റ് ചെയ്ത സെഷൻ കോൺഫിഗറേഷൻ"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | yes": {
+    "message": "ഉവ്വ്"
   },
   "panels/application/ExtensionStorageItemsView.ts | extensionStorageItems": {
     "message": "വിപുലീകരണ സ്‌റ്റോറേജ് ഇനങ്ങൾ"
@@ -5333,18 +5723,6 @@
   "panels/application/preloading/components/PreloadingGrid.ts | status": {
     "message": "നില"
   },
-  "panels/application/preloading/components/PreloadingMismatchedHeadersGrid.ts | activationNavigationValue": {
-    "message": "സജീവമാക്കൽ നാവിഗേഷനിലെ മൂല്യം"
-  },
-  "panels/application/preloading/components/PreloadingMismatchedHeadersGrid.ts | headerName": {
-    "message": "ഹെഡ്ഡറിന്റെ പേര്"
-  },
-  "panels/application/preloading/components/PreloadingMismatchedHeadersGrid.ts | initialNavigationValue": {
-    "message": "പ്രാഥമിക നാവിഗേഷനിലെ മൂല്യം"
-  },
-  "panels/application/preloading/components/PreloadingMismatchedHeadersGrid.ts | missing": {
-    "message": "(സമർപ്പിക്കാത്തവ)"
-  },
   "panels/application/preloading/components/PreloadingString.ts | PrefetchEvictedAfterBrowsingDataRemoved": {
     "message": "ബ്രൗസിംഗ് ഡാറ്റ നീക്കം ചെയ്തതിനാൽ പ്രീഫെച്ച് ഉപേക്ഷിച്ചു."
   },
@@ -5621,6 +5999,9 @@
   "panels/application/preloading/components/RuleSetGrid.ts | status": {
     "message": "നില"
   },
+  "panels/application/preloading/components/UsedPreloadingView.ts | activationNavigationValue": {
+    "message": "സജീവമാക്കൽ നാവിഗേഷനിലെ മൂല്യം"
+  },
   "panels/application/preloading/components/UsedPreloadingView.ts | badgeFailure": {
     "message": "പരാജയം"
   },
@@ -5651,11 +6032,20 @@
   "panels/application/preloading/components/UsedPreloadingView.ts | downgradedPrefetchUsed": {
     "message": "ആരംഭിക്കുന്ന പേജ് ഈ പേജിന്റെ URL പ്രീറെൻഡർ ചെയ്യാൻ ശ്രമിച്ചു. പ്രീറെൻഡർ ചെയ്യാനായില്ല, എന്നാൽ അതിന്റെ ഫലമായുണ്ടാകുന്ന പ്രതികരണ ബോഡി തുടർന്നും ഒരു പ്രീഫെച്ചായി ഉപയോഗിക്കുന്നു."
   },
+  "panels/application/preloading/components/UsedPreloadingView.ts | headerName": {
+    "message": "ഹെഡ്ഡറിന്റെ പേര്"
+  },
+  "panels/application/preloading/components/UsedPreloadingView.ts | initialNavigationValue": {
+    "message": "പ്രാഥമിക നാവിഗേഷനിലെ മൂല്യം"
+  },
   "panels/application/preloading/components/UsedPreloadingView.ts | learnMore": {
     "message": "കൂടുതലറിയുക: developer.chrome.com -ൽ സ്‌പെക്യുലേറ്റിവ് ലോഡിംഗ് ചെയ്യുന്നു"
   },
   "panels/application/preloading/components/UsedPreloadingView.ts | mismatchedHeadersDetail": {
     "message": "HTTP അഭ്യർത്ഥനാ ഹെഡ്ഡറുകൾ പൊരുത്തപ്പെടുന്നില്ല"
+  },
+  "panels/application/preloading/components/UsedPreloadingView.ts | missing": {
+    "message": "(സമർപ്പിക്കാത്തവ)"
   },
   "panels/application/preloading/components/UsedPreloadingView.ts | noPreloads": {
     "message": "ആരംഭിക്കുന്ന പേജ് ഈ പേജിന്റെ URL സ്‌പെക്യുലേറ്റിവ് ലോഡ് ചെയ്യാൻ ശ്രമിച്ചില്ല."
@@ -5993,11 +6383,11 @@
   "panels/common/BadgeNotification.ts | manageSettings": {
     "message": "ക്രമീകരണം മാനേജ് ചെയ്യുക"
   },
+  "panels/common/BadgeNotification.ts | noThanks": {
+    "message": "വേണ്ട"
+  },
   "panels/common/BadgeNotification.ts | receiveBadges": {
     "message": "ബാഡ്ജുകൾ ഓണാക്കുക"
-  },
-  "panels/common/BadgeNotification.ts | remindMeLater": {
-    "message": "എന്നെ പിന്നീട് ഓർമ്മിപ്പിക്കുക"
   },
   "panels/common/BadgeNotification.ts | starterBadgeAwardMessageNoGdpProfile": {
     "message": "നിങ്ങൾ {PH2} എന്നതിന് {PH1} ബാഡ്‌ജ് നേടിയിരിക്കുന്നു! നിങ്ങളുടെ ബാഡ്ജ് ക്ലെയിം ചെയ്യാൻ ഒരു പ്രൊഫൈൽ സൃഷ്ടിക്കുക."
@@ -6007,6 +6397,9 @@
   },
   "panels/common/BadgeNotification.ts | viewProfile": {
     "message": "പ്രൊഫൈൽ കാണുക"
+  },
+  "panels/common/CopyChangesToPrompt.ts | responseCopiedToClipboard": {
+    "message": "പ്രതികരണം ക്ലിപ്പ്ബോർഡിലേക്ക് പകർത്തി"
   },
   "panels/common/DOMLinkifier.ts | node": {
     "message": "<നോഡ്>"
@@ -6070,6 +6463,27 @@
   },
   "panels/common/GdpSignUpDialog.ts | termsOfService": {
     "message": "സേവന നിബന്ധനകൾ"
+  },
+  "panels/common/GeminiRebrandPromoDialog.ts | detailAiCompanion": {
+    "message": "വെബ് ഡെവലപ്‌മെന്റിനായി AI-നൽകുന്ന നിങ്ങളുടെ കമ്പാനിയനെ പരിചയപ്പെടൂ"
+  },
+  "panels/common/GeminiRebrandPromoDialog.ts | detailConsoleErrors": {
+    "message": "കൺസോൾ പിശകുകൾക്ക് തൽക്ഷണം കൃത്യമായ ഉത്തരങ്ങൾ നേടുക"
+  },
+  "panels/common/GeminiRebrandPromoDialog.ts | detailGenerateCode": {
+    "message": "CSS, JS സ്‌നിപ്പെറ്റുകൾ അതിവേഗം ജനറേറ്റ് ചെയ്യുക"
+  },
+  "panels/common/GeminiRebrandPromoDialog.ts | detailPerformance": {
+    "message": "പ്രകടന ട്രെയ്‌സുകളിലെ പ്രശ്‌നങ്ങൾ സ്വയമേവ കണ്ടെത്തുക"
+  },
+  "panels/common/GeminiRebrandPromoDialog.ts | dialogAriaLabel": {
+    "message": "DevTools-ലെ Gemini 3 Flash"
+  },
+  "panels/common/GeminiRebrandPromoDialog.ts | dismiss": {
+    "message": "ഡിസ്‌മിസ് ചെയ്യുക"
+  },
+  "panels/common/GeminiRebrandPromoDialog.ts | getStarted": {
+    "message": "ആരംഭിക്കുക"
   },
   "panels/common/PersistenceUtils.ts | linkedToS": {
     "message": "{PH1} -മായി ലിങ്ക് ചെയ്തിരിക്കുന്നു"
@@ -6280,9 +6694,6 @@
   },
   "panels/console/ConsoleViewMessage.ts | Mxx": {
     "message": " M<XX>"
-  },
-  "panels/console/ConsoleViewMessage.ts | SeeIssueInCookieReport": {
-    "message": "സ്വകാര്യതാ, സുരക്ഷാ പാനൽ തുറന്ന് മൂന്നാം കക്ഷി കുക്കി റിപ്പോർട്ട് കാണിക്കാൻ ക്ലിക്ക് ചെയ്യുക."
   },
   "panels/console/ConsoleViewMessage.ts | assertionFailed": {
     "message": "അസർഷൻ പരാജയപ്പെട്ടു: "
@@ -6869,6 +7280,12 @@
   "panels/elements/CSSRuleValidator.ts | fontVariationSettingsWarning": {
     "message": "“{PH1}” {PH2} സജ്ജീകരിക്കുന്നതിനുള്ള മൂല്യം “{PH5}” ഫോണ്ട് കുടുംബത്തിനുള്ള പിന്തുണയ്‌ക്കുന്ന പരിധിക്ക് [{PH3}, {PH4}] പുറത്താണ്."
   },
+  "panels/elements/CSSRuleValidator.ts | invalidAnchorPositioning": {
+    "message": "ഒരു ആങ്കർ നിർവചിച്ചിട്ടുണ്ട്, എന്നാൽ എലമെന്റ് ആങ്കർ-പൊസിഷൻ ചെയ്തിട്ടില്ല, പകരം \"{POSITION}\" പൊസിഷൻ ചെയ്തിരിക്കുന്നു."
+  },
+  "panels/elements/CSSRuleValidator.ts | invalidAnchorPositioningFix": {
+    "message": "പൊസിഷൻ \"fixed\" അല്ലെങ്കിൽ \"absolute\" എന്നതിലേക്ക് സജ്ജീകരിക്കുക."
+  },
   "panels/elements/CSSRuleValidator.ts | ruleViolatedByParentElementRuleFix": {
     "message": "പേരന്റിലെ {EXISTING_PARENT_ELEMENT_RULE} പ്രോപ്പർട്ടി {TARGET_PARENT_ELEMENT_RULE} എന്നതിലേക്ക് സജ്ജീകരിക്കാൻ ശ്രമിക്കുക."
   },
@@ -6886,6 +7303,9 @@
   },
   "panels/elements/CSSRuleValidator.ts | ruleViolatedBySameElementRuleReason": {
     "message": "{AFFECTED_PROPERTY_DECLARATION_CODE} എന്നതിന് ഫലമുണ്ടാകുന്നതിൽ നിന്ന് {REASON_PROPERTY_DECLARATION_CODE} പ്രോപ്പർട്ടി തടയുന്നു."
+  },
+  "panels/elements/CSSRuleValidator.ts | unusedAnchorPositioning": {
+    "message": "ഒരു ആങ്കർ നിർവചിച്ചിട്ടുണ്ട്, എന്നാൽ എലമെന്റ് മറച്ചിരിക്കുന്നു."
   },
   "panels/elements/ClassesPaneWidget.ts | addNewClass": {
     "message": "പുതിയ ക്ലാസ് ചേർക്കുക"
@@ -6905,6 +7325,9 @@
   "panels/elements/ColorSwatchPopoverIcon.ts | openShadowEditor": {
     "message": "ഷാഡോ എഡിറ്റർ തുറക്കുക"
   },
+  "panels/elements/ComputedStyleWidget.ts | filterUpdateAriaText": {
+    "message": "ബാധകമാക്കിയ ഫിൽട്ടർ: {PH1}. മൊത്തം ഫലങ്ങൾ: {PH2}"
+  },
   "panels/elements/ComputedStyleWidget.ts | group": {
     "message": "ഗ്രൂപ്പ്"
   },
@@ -6912,7 +7335,7 @@
     "message": "സെലക്ടർ ഉറവിടത്തിലേക്ക് നാവിഗേറ്റ് ചെയ്യുക"
   },
   "panels/elements/ComputedStyleWidget.ts | navigateToStyle": {
-    "message": "സ്റ്റൈലിലേക്ക് നാവിഗേറ്റ് ചെയ്യുക"
+    "message": "സ്റ്റൈലുകളിലേക്ക് നാവിഗേറ്റ് ചെയ്യുക"
   },
   "panels/elements/ComputedStyleWidget.ts | noMatchingProperty": {
     "message": "പൊരുത്തമുള്ള പ്രോപ്പർട്ടി ഒന്നുമില്ല"
@@ -7202,6 +7625,9 @@
   "panels/elements/ElementsTreeElement.ts | removeScrollbars": {
     "message": "സ്ക്രോൾബാറുകൾ നീക്കം ചെയ്യുക"
   },
+  "panels/elements/ElementsTreeElement.ts | reveal": {
+    "message": "വെളിപ്പെടുത്തുക"
+  },
   "panels/elements/ElementsTreeElement.ts | scrollIntoView": {
     "message": "കാണാൻ സ്ക്രോൾ ചെയ്യുക"
   },
@@ -7234,6 +7660,9 @@
   },
   "panels/elements/ElementsTreeElement.ts | valueIsTooLargeToEdit": {
     "message": "<എഡിറ്റ് ചെയ്യാവുന്നതിലും വളരെ വലിയ മൂല്യം ആണ്>"
+  },
+  "panels/elements/ElementsTreeElement.ts | viewSourceCode": {
+    "message": "സോഴ്‌സ് കോഡ് കാണുക"
   },
   "panels/elements/ElementsTreeElement.ts | wrapTheseItems": {
     "message": "ഈ ഇനങ്ങൾ റാപ്പ് ചെയ്യുക"
@@ -7439,11 +7868,17 @@
   "panels/elements/StylePropertyTreeElement.ts | jumpToAnimationsPanel": {
     "message": "ആനിമേഷനുകളുടെ പാനലിലേക്ക് പോകുക"
   },
+  "panels/elements/StylePropertyTreeElement.ts | openAnimationsPanel": {
+    "message": "ആനിമേഷനുകളുടെ പാനൽ തുറക്കുക"
+  },
   "panels/elements/StylePropertyTreeElement.ts | openColorPickerS": {
     "message": "വർണ്ണ പിക്കർ തുറക്കുക. {PH1}"
   },
   "panels/elements/StylePropertyTreeElement.ts | openInSourcesPanel": {
     "message": "ഉറവിടങ്ങളുടെ പാനലിൽ തുറക്കുക"
+  },
+  "panels/elements/StylePropertyTreeElement.ts | overriddenByAnimation": {
+    "message": "ആനിമേഷൻ സ്റ്റൈലുകളാൽ അസാധുവാക്കപ്പെട്ടു."
   },
   "panels/elements/StylePropertyTreeElement.ts | sIsNotDefined": {
     "message": "{PH1} നിർവ്വചിച്ചിട്ടില്ല"
@@ -7492,9 +7927,6 @@
   },
   "panels/elements/StylesSidebarPane.ts | visibleSelectors": {
     "message": "{n,plural, =1{ചുവടെ ലിസ്‌റ്റ് ചെയ്‌തിരിക്കുന്ന ദൃശ്യമായ # സെലക്‌ടർ}other{ചുവടെ ലിസ്‌റ്റ് ചെയ്‌തിരിക്കുന്ന ദൃശ്യമായ # സെലക്‌ടറുകൾ}}"
-  },
-  "panels/elements/TopLayerContainer.ts | reveal": {
-    "message": "വെളിപ്പെടുത്തുക"
   },
   "panels/elements/components/AccessibilityTreeNode.ts | ignored": {
     "message": "അവഗണിച്ചു"
@@ -7549,6 +7981,9 @@
   },
   "panels/elements/components/ElementsTreeExpandButton.ts | expand": {
     "message": "വികസിപ്പിക്കുക"
+  },
+  "panels/elements/components/StylePropertyEditor.ts | denseLabel": {
+    "message": "ഡെൻസ്"
   },
   "panels/elements/components/StylePropertyEditor.ts | deselectButton": {
     "message": "{propertyName} നീക്കം ചെയ്യുക: {propertyValue}"
@@ -9434,6 +9869,9 @@
   "panels/network/NetworkDataGridNode.ts | blockeds": {
     "message": "(ബ്ലോക്ക് ചെയ്‌തിരിക്കുന്നു:{PH1})"
   },
+  "panels/network/NetworkDataGridNode.ts | blocking": {
+    "message": "ബ്ലോക്ക് ചെയ്യുന്നു"
+  },
   "panels/network/NetworkDataGridNode.ts | broken": {
     "message": "മുറിഞ്ഞിരിക്കുന്നതായി അടയാളപ്പെടുത്തിയിരുന്നതിനാൽ HTTP/3 കണക്ഷൻ സ്ഥാപിക്കാൻ Chrome ശ്രമിച്ചില്ല."
   },
@@ -9488,6 +9926,9 @@
   "panels/network/NetworkDataGridNode.ts | finished": {
     "message": "പൂർത്തിയായി"
   },
+  "panels/network/NetworkDataGridNode.ts | inBodyParserBlocking": {
+    "message": "ഇൻ-ബോഡി പാർസർ ബ്ലോക്കിംഗ്"
+  },
   "panels/network/NetworkDataGridNode.ts | initialPriorityToolTip": {
     "message": "{PH1}, പ്രാരംഭ മുൻഗണന: {PH2}"
   },
@@ -9512,6 +9953,12 @@
   "panels/network/NetworkDataGridNode.ts | memoryCache": {
     "message": "(മെമ്മറി കാഷെ)"
   },
+  "panels/network/NetworkDataGridNode.ts | nonBlocking": {
+    "message": "നോൺ-ബ്ലോക്കിംഗ്"
+  },
+  "panels/network/NetworkDataGridNode.ts | nonBlockingDynamic": {
+    "message": "നോൺ-ബ്ലോക്കിംഗ് ഡൈനാമിക്"
+  },
   "panels/network/NetworkDataGridNode.ts | origin": {
     "message": "ഒറിജിൻ"
   },
@@ -9529,6 +9976,9 @@
   },
   "panels/network/NetworkDataGridNode.ts | pendingq": {
     "message": "(തീർച്ചപ്പെടുത്താതത്)"
+  },
+  "panels/network/NetworkDataGridNode.ts | potentiallyBlocking": {
+    "message": "ബ്ലോക്ക് ചെയ്യാൻ സാധ്യതയുള്ളത്"
   },
   "panels/network/NetworkDataGridNode.ts | prefetchCache": {
     "message": "(പ്രീഫെച്ച് കാഷെ)"
@@ -9604,6 +10054,9 @@
   },
   "panels/network/NetworkItemView.ts | cookies": {
     "message": "കുക്കികൾ"
+  },
+  "panels/network/NetworkItemView.ts | deviceBoundSessions": {
+    "message": "ഉപകരണവുമായി ബന്ധപ്പെട്ട സെഷനുകൾ"
   },
   "panels/network/NetworkItemView.ts | directsocketMessages": {
     "message": "DirectSocket സന്ദേശങ്ങൾ"
@@ -9942,7 +10395,7 @@
     "message": "ഇനീഷിയേറ്റർ"
   },
   "panels/network/NetworkLogViewColumns.ts | initiatorAddressSpace": {
-    "message": "ആരംഭ വിലാസ സ്‌പെയ്‌സ്"
+    "message": "ഇനിഷ്യേറ്റർ വിലാസ സ്‌പെയ്‌സ്"
   },
   "panels/network/NetworkLogViewColumns.ts | isAdRelated": {
     "message": "പരസ്യവുമായി ബന്ധപ്പെട്ടതാണ്"
@@ -9972,10 +10425,13 @@
     "message": "പ്രോട്ടോക്കോൾ"
   },
   "panels/network/NetworkLogViewColumns.ts | remoteAddress": {
-    "message": "വിദൂര വിലാസം"
+    "message": "റിമോട്ട് അഡ്രസ്"
   },
   "panels/network/NetworkLogViewColumns.ts | remoteAddressSpace": {
     "message": "റിമോട്ട് വിലാസ സ്‌പെയ്‌സ്"
+  },
+  "panels/network/NetworkLogViewColumns.ts | renderBlocking": {
+    "message": "റെൻഡർ ബ്ലോക്കിംഗ്"
   },
   "panels/network/NetworkLogViewColumns.ts | requestHeaders": {
     "message": "ഹെഡറുകൾ അഭ്യർത്ഥിക്കുക"
@@ -10008,7 +10464,7 @@
     "message": "സമയം"
   },
   "panels/network/NetworkLogViewColumns.ts | totalDuration": {
-    "message": "ആകെ ദൈർഘ്യം"
+    "message": "മൊത്തം കാലയളവ്"
   },
   "panels/network/NetworkLogViewColumns.ts | type": {
     "message": "തരം"
@@ -10112,26 +10568,14 @@
   "panels/network/NetworkSearchScope.ts | url": {
     "message": "URL"
   },
-  "panels/network/RequestConditionsDrawer.ts | addNetworkRequestBlockingPattern": {
-    "message": "നെറ്റ്‌വർക്ക് അഭ്യർത്ഥനയുടെ ബ്ലോക്ക് ചെയ്യൽ പാറ്റേൺ ചേർക്കുക"
-  },
-  "panels/network/RequestConditionsDrawer.ts | addPattern": {
-    "message": "പാറ്റേൺ ചേർക്കുക"
-  },
   "panels/network/RequestConditionsDrawer.ts | addPatternLabel": {
     "message": "നെറ്റ്‌വർക്ക് അഭ്യർത്ഥന ത്രോട്ടിലിംഗ് അല്ലെങ്കിൽ ബ്ലോക്ക് ചെയ്യൽ പാറ്റേൺ ചേർക്കുക"
-  },
-  "panels/network/RequestConditionsDrawer.ts | addPatternToBlock": {
-    "message": "\"{PH1}\" ബട്ടണിൽ ക്ലിക്ക് ചെയ്ത് ഒരു പാറ്റേൺ ചേർക്കുക."
   },
   "panels/network/RequestConditionsDrawer.ts | addRule": {
     "message": "നയം ചേർക്കുക"
   },
   "panels/network/RequestConditionsDrawer.ts | dAffected": {
     "message": "{PH1} എണ്ണത്തെ ബാധിച്ചു"
-  },
-  "panels/network/RequestConditionsDrawer.ts | dBlocked": {
-    "message": "{PH1} ബ്ലോക്ക് ചെയ്‌തു"
   },
   "panels/network/RequestConditionsDrawer.ts | decreasePriority": {
     "message": "{PH1} താഴേക്ക് നീക്കുക"
@@ -10141,9 +10585,6 @@
   },
   "panels/network/RequestConditionsDrawer.ts | enableBlockingAndThrottling": {
     "message": "ബ്ലോക്ക് ചെയ്യലും ത്രോട്ടിലിംഗും പ്രവർത്തനക്ഷമമാക്കുക"
-  },
-  "panels/network/RequestConditionsDrawer.ts | enableNetworkRequestBlocking": {
-    "message": "നെറ്റ്‌വർക്ക് അഭ്യർത്ഥന ബ്ലോക്ക് ചെയ്യൽ പ്രവർത്തനക്ഷമമാക്കുക"
   },
   "panels/network/RequestConditionsDrawer.ts | enableThrottlingToggleLabel": {
     "message": "{PH1} ത്രോട്ടിൽ ചെയ്യുക അല്ലെങ്കിൽ ബ്ലോക്ക് ചെയ്യുക"
@@ -10159,9 +10600,6 @@
   },
   "panels/network/RequestConditionsDrawer.ts | learnMoreLabel": {
     "message": "URL പാറ്റേൺ സിന്റാക്സിനെ കുറിച്ച് കൂടുതലറിയുക"
-  },
-  "panels/network/RequestConditionsDrawer.ts | noNetworkRequestsBlocked": {
-    "message": "ബ്ലോക്ക് ചെയ്ത നെറ്റ്‌വർക്ക് അഭ്യർത്ഥനകൾ ഒന്നുമില്ല"
   },
   "panels/network/RequestConditionsDrawer.ts | noPattern": {
     "message": "ഒന്നും ത്രോട്ടിൽ ചെയ്തിട്ടില്ല അല്ലെങ്കിൽ ബ്ലോക്ക് ചെയ്തിട്ടില്ല"
@@ -10199,9 +10637,6 @@
   "panels/network/RequestConditionsDrawer.ts | textEditPattern": {
     "message": "പൊരുത്തപ്പെടുന്ന അഭ്യർത്ഥനകൾ ബ്ലോക്ക് ചെയ്യാനോ ത്രോട്ടിൽ ചെയ്യാനോ ഉള്ള ടെക്സ്റ്റ് പാറ്റേൺ; URL Pattern സിന്റാക്സ് ഉപയോഗിക്കുക."
   },
-  "panels/network/RequestConditionsDrawer.ts | textPatternToBlockMatching": {
-    "message": "പൊരുത്തപ്പെടുന്ന അഭ്യർത്ഥനകൾ ബ്ലോക്ക് ചെയ്യാനുള്ള ടെക്‌സ്‌റ്റ് പാറ്റേൺ; വെെൽഡ്‌കാർഡിന് * ഉപയോഗിക്കുക"
-  },
   "panels/network/RequestCookiesView.ts | cookiesThatWereReceivedFromThe": {
     "message": "പ്രതികരണത്തിന്റെ 'set-cookie' ഹെഡ്ഡറിലെ സെർവറിൽ നിന്ന് ലഭിച്ച കുക്കികൾ"
   },
@@ -10235,6 +10670,30 @@
   "panels/network/RequestCookiesView.ts | thisRequestHasNoCookies": {
     "message": "ഈ അഭ്യർത്ഥനയ്‌ക്ക് കുക്കികൾ ഇല്ല."
   },
+  "panels/network/RequestDeviceBoundSessionsView.ts | deferralDecision": {
+    "message": "വൈകിപ്പിക്കൽ തീരുമാനം"
+  },
+  "panels/network/RequestDeviceBoundSessionsView.ts | deferred": {
+    "message": "മാറ്റിവെച്ചു (റീഫ്രഷ് ചെയ്യുക)"
+  },
+  "panels/network/RequestDeviceBoundSessionsView.ts | inScopeRefreshNotAllowed": {
+    "message": "മാറ്റി വച്ചിട്ടില്ല (സെഷന്റെ പരിധിയിൽ വരുന്ന അഭ്യർത്ഥനയാണ്, എന്നാൽ റീഫ്രഷ് ചെയ്യൽ ട്രിഗർ ചെയ്യാൻ ഇനിഷ്യേറ്ററിന് അനുവാദമില്ല)"
+  },
+  "panels/network/RequestDeviceBoundSessionsView.ts | inScopeRefreshNotYetNeeded": {
+    "message": "മാറ്റി വച്ചിട്ടില്ല (സെഷന്റെ പരിധിയിലാണ് അഭ്യർത്ഥന, എന്നാൽ കുക്കികൾ ഇപ്പോഴും നിലവിലുണ്ട്)"
+  },
+  "panels/network/RequestDeviceBoundSessionsView.ts | notInScope": {
+    "message": "മാറ്റി വച്ചിട്ടില്ല (സെഷന്റെ പരിധിയിലുള്ള അഭ്യർത്ഥനയില്ല)"
+  },
+  "panels/network/RequestDeviceBoundSessionsView.ts | proactiveRefreshAttempted": {
+    "message": "മാറ്റി വച്ചിട്ടില്ല (പ്രോആക്റ്റീവ് റീഫ്രഷ് ചെയ്യാൻ ശ്രമിച്ചു)"
+  },
+  "panels/network/RequestDeviceBoundSessionsView.ts | proactiveRefreshNotPossible": {
+    "message": "മാറ്റി വച്ചിട്ടില്ല (സെഷന്റെ പരിധിയിൽ അഭ്യർത്ഥനയുണ്ട്, എന്നാൽ പ്രോആക്ടീവ് റീഫ്രഷ് സാധ്യമല്ല)"
+  },
+  "panels/network/RequestDeviceBoundSessionsView.ts | sessionId": {
+    "message": "സെഷൻ ഐഡി"
+  },
   "panels/network/RequestInitiatorView.ts | noInitiator": {
     "message": "ഇനിഷ്യേറ്റർ ഡാറ്റയില്ല"
   },
@@ -10261,9 +10720,6 @@
   },
   "panels/network/RequestPayloadView.ts | requestPayload": {
     "message": "പേലോഡ് അഭ്യർത്ഥിക്കുക"
-  },
-  "panels/network/RequestPayloadView.ts | showMore": {
-    "message": "കൂടുതൽ കാണിക്കുക"
   },
   "panels/network/RequestPayloadView.ts | unableToDecodeValue": {
     "message": "(മൂല്യം ഡീകോഡ് ചെയ്യാനാകുന്നില്ല)"
@@ -10529,6 +10985,9 @@
   "panels/network/ResourceWebSocketFrameView.ts | webSocketFrame": {
     "message": "വെബ് സോക്കറ്റ് ഫ്രെയിം"
   },
+  "panels/network/ShowMoreDetailsWidget.ts | showMore": {
+    "message": "കൂടുതൽ കാണിക്കുക"
+  },
   "panels/network/SignedExchangeInfoView.ts | certificate": {
     "message": "സർട്ടിഫിക്കറ്റ്"
   },
@@ -10704,10 +11163,10 @@
     "message": "റഫറർ നയം"
   },
   "panels/network/components/RequestHeadersView.ts | remoteAddress": {
-    "message": "വിദൂര വിലാസം"
+    "message": "റിമോട്ട് അഡ്രസ്"
   },
   "panels/network/components/RequestHeadersView.ts | requestHeaders": {
-    "message": "ഹെഡ്ഡറുകൾ അഭ്യർത്ഥിക്കുക"
+    "message": "ഹെഡറുകൾ അഭ്യർത്ഥിക്കുക"
   },
   "panels/network/components/RequestHeadersView.ts | requestMethod": {
     "message": "അഭ്യർത്ഥനാ രീതി"
@@ -10811,9 +11270,6 @@
   "panels/network/network-meta.ts | addNetworkRequestBlockingOrThrottlingPattern": {
     "message": "നെറ്റ്‌വർക്ക് അഭ്യർത്ഥന ബ്ലോക്ക് ചെയ്യൽ അല്ലെങ്കിൽ ത്രോട്ടിലിംഗ് പാറ്റേൺ ചേർക്കുക"
   },
-  "panels/network/network-meta.ts | addNetworkRequestBlockingPattern": {
-    "message": "നെറ്റ്‌വർക്ക് അഭ്യർത്ഥനയുടെ ബ്ലോക്ക് ചെയ്യൽ പാറ്റേൺ ചേർക്കുക"
-  },
   "panels/network/network-meta.ts | allowToGenerateHarWithSensitiveData": {
     "message": "സെൻസിറ്റീവായിട്ടുള്ള വ്യക്തിപരമായ ഡാറ്റ ഉൾപ്പെടുത്തി HAR ജനറേറ്റ് ചെയ്യാൻ അനുവദിക്കുക"
   },
@@ -10865,9 +11321,6 @@
   "panels/network/network-meta.ts | networkConditions": {
     "message": "നെറ്റ്‌വർക്ക് അവസ്ഥകൾ"
   },
-  "panels/network/network-meta.ts | networkRequestBlocking": {
-    "message": "നെറ്റ്‌വർക്ക് അഭ്യർത്ഥന ബ്ലോക്ക് ചെയ്യൽ"
-  },
   "panels/network/network-meta.ts | networkRequestConditions": {
     "message": "അഭ്യർത്ഥനാ വ്യവസ്ഥകൾ"
   },
@@ -10880,9 +11333,6 @@
   "panels/network/network-meta.ts | removeAllNetworkRequestBlockingOrThrottlingPatterns": {
     "message": "നെറ്റ്‌വർക്ക് അഭ്യർത്ഥനാ ബ്ലോക്കിംഗ് അല്ലെങ്കിൽ ത്രോട്ടിലിംഗ് പാറ്റേണുകളെല്ലാം നീക്കം ചെയ്യുക"
   },
-  "panels/network/network-meta.ts | removeAllNetworkRequestBlockingPatterns": {
-    "message": "നെറ്റ്‌വർക്ക് അഭ്യർത്ഥനയുടെ ബ്ലോക്ക് ചെയ്യൽ പാറ്റേണുകളെല്ലാം നീക്കം ചെയ്യുക"
-  },
   "panels/network/network-meta.ts | resourceType": {
     "message": "ഉറവിട തരം"
   },
@@ -10894,9 +11344,6 @@
   },
   "panels/network/network-meta.ts | showNetworkConditions": {
     "message": "നെറ്റ്‌വർക്ക് അവസ്ഥകൾ കാണിക്കുക"
-  },
-  "panels/network/network-meta.ts | showNetworkRequestBlocking": {
-    "message": "നെറ്റ്‌വർക്ക് അഭ്യർത്ഥന ബ്ലോക്ക് ചെയ്യൽ കാണിക്കുക"
   },
   "panels/network/network-meta.ts | showRequestConditions": {
     "message": "അഭ്യർത്ഥനാ വ്യവസ്ഥകൾ കാണിക്കുക"
@@ -11735,8 +12182,17 @@
   "panels/recorder/RecorderController.ts | numberOfRecordings": {
     "message": "റെക്കോർഡിംഗ്(കൾ)"
   },
+  "panels/recorder/RecorderController.ts | recordingDeleted": {
+    "message": "റെക്കോർഡിംഗ് ഇല്ലാതാക്കി"
+  },
   "panels/recorder/RecorderController.ts | recordingDescription": {
     "message": "സ്വയമേവയുള്ള എൻഡ്-ടു-എൻഡ് ടെസ്റ്റുകളോ പ്രകടന ട്രെയ്സുകളോ സൃഷ്ടിക്കാൻ റെക്കോർഡിംഗുകൾ ഉപയോഗിക്കുക."
+  },
+  "panels/recorder/RecorderController.ts | recordingExported": {
+    "message": "റെക്കോർഡിംഗ് എക്‌സ്‌പോർട്ട് ചെയ്തു"
+  },
+  "panels/recorder/RecorderController.ts | recordingImported": {
+    "message": "റെക്കോർഡിംഗ് ഇമ്പോർട്ട് ചെയ്തു"
   },
   "panels/recorder/RecorderController.ts | replayRecording": {
     "message": "റെക്കോർഡിംഗ് വീണ്ടും പ്ലേ ചെയ്യുക"
@@ -11824,6 +12280,12 @@
   },
   "panels/recorder/components/RecordingView.ts | cancelReplay": {
     "message": "വീണ്ടും പ്ലേ ചെയ്യുന്നത് റദ്ദാക്കുക"
+  },
+  "panels/recorder/components/RecordingView.ts | codeSidebarClosed": {
+    "message": "കോഡ് സൈഡ്‌ബാർ അടച്ചു"
+  },
+  "panels/recorder/components/RecordingView.ts | codeSidebarOpened": {
+    "message": "കോഡ് സൈഡ്‌ബാർ തുറന്നു"
   },
   "panels/recorder/components/RecordingView.ts | default": {
     "message": "ഡിഫോൾട്ട്"
@@ -12155,174 +12617,6 @@
   "panels/search/SearchView.ts | typeAndPressSToSearch": {
     "message": "തിരയുന്നതിനായി, ടൈപ്പ് ചെയ്ത് {PH1} അമർത്തുക"
   },
-  "panels/security/CookieControlsView.ts | cardDisclaimer": {
-    "message": "DevTools തുറന്നിരിക്കുമ്പോൾ മാത്രം"
-  },
-  "panels/security/CookieControlsView.ts | cardTitle": {
-    "message": "മൂന്നാം കക്ഷി കുക്കികൾ താൽക്കാലികമായി പരിമിതപ്പെടുത്തുക"
-  },
-  "panels/security/CookieControlsView.ts | enableFlag": {
-    "message": "ഇത് ഉപയോഗിക്കാൻ, {PH1} എന്നത് ഡിഫോൾട്ട് ആയി സജ്ജീകരിക്കുക"
-  },
-  "panels/security/CookieControlsView.ts | enrollGracePeriod": {
-    "message": "ഇത് ഉപയോഗിക്കാൻ {PH1} എന്ന കാലയളവിൽ ഒരു സൈറ്റോ അതിൽ ഉൾച്ചേർത്ത സൈറ്റുകളോ അതിൽ എൻറോൾ ചെയ്യുക"
-  },
-  "panels/security/CookieControlsView.ts | enterpriseDisclaimer": {
-    "message": "ഈ സൈറ്റിനായുള്ള മൂന്നാം കക്ഷി കുക്കി ആക്‌സസ് മാനേജ് ചെയ്യുന്നത് നിങ്ങളുടെ സ്ഥാപനമാണ്"
-  },
-  "panels/security/CookieControlsView.ts | enterpriseTooltip": {
-    "message": "ഈ ക്രമീകരണം മാനേജ് ചെയ്യുന്നത് നിങ്ങളുടെ സ്ഥാപനമാണ്"
-  },
-  "panels/security/CookieControlsView.ts | exceptions": {
-    "message": "ഒഴിവാക്കലുകൾ"
-  },
-  "panels/security/CookieControlsView.ts | exceptionsExplanation": {
-    "message": "മൂന്നാം കക്ഷി കുക്കികളിലേക്കുള്ള ആക്സസ് അനുവദിക്കുന്ന സാഹചര്യങ്ങൾ"
-  },
-  "panels/security/CookieControlsView.ts | gracePeriod": {
-    "message": "ഗ്രേസ് കാലയളവ്"
-  },
-  "panels/security/CookieControlsView.ts | gracePeriodExplanation": {
-    "message": "ഈ സൈറ്റോ ഇതിൽ ഉൾച്ചേർത്ത ഒരു സൈറ്റോ {PH1}-ൽ എൻറോൾ ചെയ്തിട്ടുണ്ടെങ്കിൽ, സൈറ്റിന് മൂന്നാം കക്ഷി കുക്കികൾ ആക്സസ് ചെയ്യാനാകും"
-  },
-  "panels/security/CookieControlsView.ts | gracePeriodTitle": {
-    "message": "മൂന്നാം കക്ഷി കുക്കി ഗ്രേസ് കാലയളവ്"
-  },
-  "panels/security/CookieControlsView.ts | heuristicExplanation": {
-    "message": "പോപ്പ്-അപ്പുകളും റീഡയറക്റ്റുകളും പോലെയുള്ള {PH1}-ൽ, ഈ സൈറ്റിൽ ഉൾച്ചേർത്ത ഒരു സൈറ്റിന് മൂന്നാം കക്ഷി കുക്കികൾ ആക്‌സസ് ചെയ്യാനാകും"
-  },
-  "panels/security/CookieControlsView.ts | heuristicTitle": {
-    "message": "ഹ്യൂറിസ്റ്റിക്‌സ് അധിഷ്ഠിത ഒഴിവാക്കൽ"
-  },
-  "panels/security/CookieControlsView.ts | scenarios": {
-    "message": "മുൻകൂറായി നിശ്ചയിച്ച സാഹചര്യങ്ങൾ"
-  },
-  "panels/security/CookieControlsView.ts | siteReloadMessage": {
-    "message": "അപ്‌ഡേറ്റ് ചെയ്ത നിയന്ത്രണങ്ങൾ ബാധകമാക്കാൻ പേജ് റീലോഡ് ചെയ്യുക"
-  },
-  "panels/security/CookieControlsView.ts | tpcdHeuristicsGrants": {
-    "message": "#tpcd-heuristics-grants"
-  },
-  "panels/security/CookieControlsView.ts | tpcdMetadataGrants": {
-    "message": "#tpcd-metadata-grants"
-  },
-  "panels/security/CookieControlsView.ts | viewDetails": {
-    "message": "വിശദാംശങ്ങൾ കാണുക"
-  },
-  "panels/security/CookieControlsView.ts | viewExplanation": {
-    "message": "Chrome-ൽ മൂന്നാം കക്ഷി കുക്കികൾ പരിമിതമാണെങ്കിൽ ഈ സൈറ്റ് എങ്ങനെ പ്രവർത്തിക്കുമെന്ന് പരിശോധിക്കുക"
-  },
-  "panels/security/CookieControlsView.ts | viewTitle": {
-    "message": "നിയന്ത്രണങ്ങൾ"
-  },
-  "panels/security/CookieReportView.ts | adCookieTypeString": {
-    "message": "പരസ്യം ചെയ്യൽ"
-  },
-  "panels/security/CookieReportView.ts | allowed": {
-    "message": "അനുവദനീയം"
-  },
-  "panels/security/CookieReportView.ts | allowedByException": {
-    "message": "ഒഴിവാക്കൽ പ്രകാരം അനുവദിച്ചത്"
-  },
-  "panels/security/CookieReportView.ts | analyticsCookieTypeString": {
-    "message": "അനലിറ്റിക്‌സ്"
-  },
-  "panels/security/CookieReportView.ts | blocked": {
-    "message": "ബ്ലോക്ക് ചെയ്തു"
-  },
-  "panels/security/CookieReportView.ts | body": {
-    "message": "Chrome-ൽ മൂന്നാം കക്ഷി കുക്കികളും മറ്റ് കുക്കികളും പരിമിതമാണെങ്കിൽ ഈ സൈറ്റ് പ്രവർത്തിച്ചേക്കില്ല."
-  },
-  "panels/security/CookieReportView.ts | cdnCookieTypeString": {
-    "message": "CDN"
-  },
-  "panels/security/CookieReportView.ts | consentProviderCookieTypeString": {
-    "message": "സമ്മത ദാതാവ്"
-  },
-  "panels/security/CookieReportView.ts | contentCookieTypeString": {
-    "message": "ഉള്ളടക്കം"
-  },
-  "panels/security/CookieReportView.ts | customerSuccessCookieTypeString": {
-    "message": "കസ്റ്റമർ സക്‌സസ്"
-  },
-  "panels/security/CookieReportView.ts | domain": {
-    "message": "ഡൊമെയ്ൻ"
-  },
-  "panels/security/CookieReportView.ts | emptyReport": {
-    "message": "ഒന്നും ശേഷിക്കുന്നില്ല"
-  },
-  "panels/security/CookieReportView.ts | emptyReportExplanation": {
-    "message": "മൂന്നാം കക്ഷി കുക്കികളുമായി ബന്ധപ്പെട്ട പ്രശ്‌നങ്ങളൊന്നും കണ്ടെത്തിയില്ല"
-  },
-  "panels/security/CookieReportView.ts | gitHubResource": {
-    "message": "മൂന്നാം കക്ഷി സൈറ്റിൽ നിന്നുള്ള {PH1} അവലോകനം ചെയ്യുക"
-  },
-  "panels/security/CookieReportView.ts | gracePeriod": {
-    "message": "{PH1} റിവ്യൂ ചെയ്യുക. ഗ്രേസ് കാലയളവ് ഒഴിവാക്കൽ സജീവമാണ്."
-  },
-  "panels/security/CookieReportView.ts | guidance": {
-    "message": "മാർഗ്ഗനിർദ്ദേശം"
-  },
-  "panels/security/CookieReportView.ts | heuristics": {
-    "message": "പിന്നീട് നടപടി ആവശ്യമാണ്. ഹ്യൂറിസ്റ്റിക്‌സ് അധിഷ്ഠിത ഒഴിവാക്കൽ സജീവമാണ്."
-  },
-  "panels/security/CookieReportView.ts | hostingCookieTypeString": {
-    "message": "ഹോസ്റ്റിംഗ്"
-  },
-  "panels/security/CookieReportView.ts | learnMoreLink": {
-    "message": "മൂന്നാം-കക്ഷി കുക്കികൾ എങ്ങനെയാണ് ഉപയോഗിക്കുന്നതെന്നതിനെ കുറിച്ച് കൂടുതലറിയുക"
-  },
-  "panels/security/CookieReportView.ts | marketingCookieTypeString": {
-    "message": "മാർക്കറ്റിംഗ്"
-  },
-  "panels/security/CookieReportView.ts | name": {
-    "message": "പേര്"
-  },
-  "panels/security/CookieReportView.ts | other": {
-    "message": "കൂടുതൽ വിവരങ്ങൾക്ക് മൂന്നാം കക്ഷി സൈറ്റിനെ ബന്ധപ്പെടുക"
-  },
-  "panels/security/CookieReportView.ts | otherCookieTypeString": {
-    "message": "മറ്റുള്ളവ"
-  },
-  "panels/security/CookieReportView.ts | platform": {
-    "message": "പ്ലാറ്റ്‌ഫോം"
-  },
-  "panels/security/CookieReportView.ts | recommendation": {
-    "message": "നിർദ്ദേശം"
-  },
-  "panels/security/CookieReportView.ts | report": {
-    "message": "മൂന്നാം-കക്ഷി കുക്കി റിപ്പോർട്ട്"
-  },
-  "panels/security/CookieReportView.ts | reportedIssues": {
-    "message": "റിപ്പോർട്ട് ചെയ്ത പ്രശ്നങ്ങൾ"
-  },
-  "panels/security/CookieReportView.ts | showRequestsWithThisCookie": {
-    "message": "ഈ കുക്കി ഉള്ള അഭ്യർത്ഥനകൾ കാണിക്കുക"
-  },
-  "panels/security/CookieReportView.ts | socialCookieTypeString": {
-    "message": "സോഷ്യൽ"
-  },
-  "panels/security/CookieReportView.ts | status": {
-    "message": "നില"
-  },
-  "panels/security/CookieReportView.ts | tagManagerCookieTypeString": {
-    "message": "ടാഗ് മാനേജർ"
-  },
-  "panels/security/CookieReportView.ts | title": {
-    "message": "മൂന്നാം-കക്ഷി കുക്കികൾ"
-  },
-  "panels/security/CookieReportView.ts | type": {
-    "message": "തരം"
-  },
-  "panels/security/CookieReportView.ts | unknown": {
-    "message": "അജ്ഞാതം"
-  },
-  "panels/security/CookieReportView.ts | utilityCookieTypeString": {
-    "message": "യൂട്ടിലിറ്റി"
-  },
-  "panels/security/CookieReportView.ts | videoCookieTypeString": {
-    "message": "വീഡിയോ"
-  },
   "panels/security/SecurityModel.ts | cipherWithMAC": {
     "message": "{PH2} ഉള്ള {PH1}"
   },
@@ -12623,12 +12917,6 @@
   "panels/security/SecurityPanel.ts | yourPageRequestedNonsecure": {
     "message": "ബ്ലോക്ക് ചെയ്യപ്പെട്ട സുരക്ഷിതമല്ലാത്ത ഉറവിടങ്ങൾക്ക് നിങ്ങളുടെ പേജ് അഭ്യർത്ഥിച്ചു."
   },
-  "panels/security/SecurityPanelSidebar.ts | cookieReport": {
-    "message": "മൂന്നാം-കക്ഷി കുക്കികൾ"
-  },
-  "panels/security/SecurityPanelSidebar.ts | flagControls": {
-    "message": "നിയന്ത്രണങ്ങൾ"
-  },
   "panels/security/SecurityPanelSidebar.ts | mainOrigin": {
     "message": "പ്രധാന ഉറവിടം"
   },
@@ -12637,9 +12925,6 @@
   },
   "panels/security/SecurityPanelSidebar.ts | overview": {
     "message": "അവലോകനം"
-  },
-  "panels/security/SecurityPanelSidebar.ts | privacy": {
-    "message": "സ്വകാര്യത"
   },
   "panels/security/SecurityPanelSidebar.ts | reloadToViewDetails": {
     "message": "വിശദാംശങ്ങൾ കാണാൻ റീലോഡ് ചെയ്യുക"
@@ -12653,14 +12938,8 @@
   "panels/security/SecurityPanelSidebar.ts | unknownCanceled": {
     "message": "അജ്ഞാതം / റദ്ദാക്കി"
   },
-  "panels/security/security-meta.ts | PrivacyAndSecurity": {
-    "message": "സ്വകാര്യതയും സുരക്ഷയും"
-  },
   "panels/security/security-meta.ts | security": {
     "message": "സുരക്ഷ"
-  },
-  "panels/security/security-meta.ts | showPrivacyAndSecurity": {
-    "message": "സ്വകാര്യതയും സുരക്ഷയും കാണിക്കുക"
   },
   "panels/security/security-meta.ts | showSecurity": {
     "message": "സുരക്ഷ കാണിക്കുക"
@@ -12917,6 +13196,9 @@
   "panels/settings/AISettingsTab.ts | asYouTypeCodeSuggestions": {
     "message": "കൺസോൾ അല്ലെങ്കിൽ ഉറവിടങ്ങളുടെ പാനലിൽ ടൈപ്പ് ചെയ്യുന്നതിനനുസരിച്ച്, നിങ്ങൾക്ക് കോഡ് നിർദ്ദേശങ്ങൾ ലഭിക്കും. ഒരെണ്ണം സ്വീകരിക്കാൻ, ടാബ് അമർത്തുക."
   },
+  "panels/settings/AISettingsTab.ts | asYouTypeRelevantDataIsBeingSentToGoogle": {
+    "message": "നിങ്ങൾ ടൈപ്പ് ചെയ്യുമ്പോൾ, കോഡ് നിർദ്ദേശങ്ങൾ ജനറേറ്റ് ചെയ്യാൻ പ്രസക്തമായ ഡാറ്റ Google-ലേക്ക് അയയ്ക്കുന്നു. അംഗീകരിക്കാൻ ടാബ് അമർത്തുക."
+  },
   "panels/settings/AISettingsTab.ts | boostYourProductivity": {
     "message": "AI ഉപയോഗിച്ച് നിങ്ങളുടെ ഉൽപ്പാദനക്ഷമത വർദ്ധിപ്പിക്കുക"
   },
@@ -12937,6 +13219,12 @@
   },
   "panels/settings/AISettingsTab.ts | dataCollectionNoLogging": {
     "message": "നിങ്ങളുടെ Google Account മാനേജ്‌മെന്റിനെ ഒപ്പം/അല്ലെങ്കിൽ പ്രദേശത്തെ ആശ്രയിച്ച് Google ഡാറ്റാ ശേഖരണത്തിൽ നിന്ന് വിട്ടുനിന്നേക്കാം"
+  },
+  "panels/settings/AISettingsTab.ts | describeCodeInComment": {
+    "message": "കൺസോളിലോ ഉറവിടങ്ങളിലോ, നിങ്ങൾക്ക് ആവശ്യമുള്ള കോഡ് ഒരു കമന്റിൽ വിവരിക്കുക, തുടർന്ന് അത് ജനറേറ്റ് ചെയ്യാൻ Ctrl+I അമർത്തുക."
+  },
+  "panels/settings/AISettingsTab.ts | describeCodeInCommentForMacOs": {
+    "message": "കൺസോളിലോ വിഭവങ്ങളിലോ, നിങ്ങൾക്ക് ആവശ്യമുള്ള കോഡ് ഒരു കമന്റിൽ വിവരിക്കുക, തുടർന്ന് അത് ജനറേറ്റ് ചെയ്യാൻ Cmd+I അമർത്തുക."
   },
   "panels/settings/AISettingsTab.ts | enableAiAssistance": {
     "message": "AI സഹായം പ്രവർത്തനക്ഷമമാക്കുക"
@@ -12969,10 +13257,10 @@
     "message": "AI ലഭ്യമാക്കുന്ന ഉൾക്കാഴ്‌ചകൾ ഉപയോഗിച്ച് CSS സ്‌റ്റൈലുകൾ, നെറ്റ്‌വർക്ക് ആക്‌റ്റിവിറ്റി, പ്രകടനത്തിലെ തടസ്സങ്ങൾ, ഫയൽ ഉറവിടങ്ങൾ എന്നിവ മനസ്സിലാക്കുക"
   },
   "panels/settings/AISettingsTab.ts | freestylerSendsData": {
-    "message": "വിശദീകരണങ്ങൾ ജനറേറ്റ് ചെയ്യാൻ, പരിശോധിച്ച പേജിന് വെബ് API-കൾ, നെറ്റ്‌വർക്ക് അഭ്യർത്ഥനകൾ, ഫയലുകൾ, പ്രകടന ട്രെയ്‌സുകൾ എന്നിവ വഴി ആക്‌സസ് ചെയ്യാനാകുന്ന എല്ലാ ഉപയോക്തൃ ചോദ്യവും ഡാറ്റയും Google-ലേക്ക് അയയ്‌ക്കും. ഈ ഫീച്ചർ മെച്ചപ്പെടുത്താൻ അവലോകകർ ഈ ഡാറ്റ കാണുകയും ചെയ്തേക്കാം. വ്യക്തിപരമോ സൂക്ഷ്‌മമായി കൈകാര്യം ചെയ്യേണ്ടതോ ആയ വിവരങ്ങളുള്ള പേജുകളിൽ ഉപയോഗിക്കരുത്."
+    "message": "വിശദീകരണങ്ങൾ ജനറേറ്റ് ചെയ്യാൻ, നിങ്ങളുടെ ചാറ്റ് സന്ദേശങ്ങളും പരിശോധിച്ച പേജിന് വെബ് API-കൾ ഉപയോഗിച്ച് കാണാനാകുന്ന ഏത് ഡാറ്റയും, ഫയലുകൾ, നെറ്റ്‌വർക്ക് അഭ്യർത്ഥനകൾ, പ്രകടന ട്രെയ്‌സുകൾ തുടങ്ങിയ നിങ്ങൾ തിരഞ്ഞെടുക്കുന്ന ഇനങ്ങളും Google-ലേക്ക് അയയ്ക്കുന്നു. ഈ ഫീച്ചർ മെച്ചപ്പെടുത്താൻ റിവ്യൂവർമാർ ഈ ഡാറ്റ കാണ്ടേക്കാം. വ്യക്തിപരമോ സൂക്ഷ്‌മമായി കൈകാര്യം ചെയ്യേണ്ടതോ ആയ വിവരങ്ങളുള്ള പേജുകളിൽ ഉപയോഗിക്കരുത്."
   },
   "panels/settings/AISettingsTab.ts | freestylerSendsDataNoLogging": {
-    "message": "വിശദീകരണങ്ങൾ ജനറേറ്റ് ചെയ്യാൻ, പരിശോധിച്ച പേജിന് വെബ് API-കൾ, നെറ്റ്‌വർക്ക് അഭ്യർത്ഥനകൾ, ഫയലുകൾ, പ്രകടന ട്രെയ്‌സുകൾ എന്നിവ വഴി ആക്‌സസ് ചെയ്യാനാകുന്ന എല്ലാ ഉപയോക്തൃ ചോദ്യവും ഡാറ്റയും Google-ലേക്ക് അയയ്‌ക്കും. Google-ന്റെ AI മോഡലുകൾ മെച്ചപ്പെടുത്താൻ ഈ ഡാറ്റ ഉപയോഗിക്കില്ല. നിങ്ങളുടെ സ്ഥാപനത്തിന് ഈ ക്രമീകരണം എപ്പോൾ വേണമെങ്കിലും മാറ്റാം."
+    "message": "വിശദീകരണങ്ങൾ ജനറേറ്റ് ചെയ്യാൻ, നിങ്ങളുടെ ചാറ്റ് സന്ദേശങ്ങളും പരിശോധിച്ച പേജിന് വെബ് API-കൾ ഉപയോഗിച്ച് കാണാനാകുന്ന ഏത് ഡാറ്റയും, ഫയലുകൾ, നെറ്റ്‌വർക്ക് അഭ്യർത്ഥനകൾ, പ്രകടന ട്രെയ്‌സുകൾ തുടങ്ങിയ നിങ്ങൾ തിരഞ്ഞെടുക്കുന്ന ഇനങ്ങളും Google-ലേക്ക് അയയ്ക്കുന്നു. Google-ന്റെ AI മോഡലുകൾ മെച്ചപ്പെടുത്താൻ ഈ ഡാറ്റ ഉപയോഗിക്കില്ല. നിങ്ങളുടെ സ്ഥാപനത്തിന് ഈ ക്രമീകരണം എപ്പോൾ വേണമെങ്കിലും മാറ്റാം."
   },
   "panels/settings/AISettingsTab.ts | generatedAiAnnotationsSendData": {
     "message": "കുറിപ്പുമായി ബന്ധപ്പെട്ട നിർദ്ദേശങ്ങൾ ജനറേറ്റ് ചെയ്യാൻ, നിങ്ങളുടെ പ്രകടന ട്രെയ്‌സ് Google-ലേക്ക് അയയ്ക്കുന്നു. ഈ ഫീച്ചർ മെച്ചപ്പെടുത്താൻ റിവ്യൂവർമാർ ഈ ഡാറ്റ കാണുകയും ചെയ്തേക്കാം."
@@ -12984,7 +13272,7 @@
     "message": "സ്വയമേവ ജനറേറ്റ് ചെയ്ത ലേബലുകൾ ഉപയോഗിച്ച് നിങ്ങളുടെ പ്രകടന ട്രെയ്‌സ് അനോട്ടേറ്റ് ചെയ്യാൻ സഹായിക്കുന്നു"
   },
   "panels/settings/AISettingsTab.ts | helpUnderstandCodeSuggestions": {
-    "message": "നിങ്ങളുടെ കോഡ് പൂർത്തിയാക്കാൻ സഹായം നേടുക"
+    "message": "AI ലഭ്യമാക്കുന്ന നിർദ്ദേശങ്ങൾ ഉപയോഗിച്ച് അതിവേഗം കോഡ് എഴുതുക"
   },
   "panels/settings/AISettingsTab.ts | helpUnderstandConsole": {
     "message": "കൺസോൾ മുന്നറിയിപ്പുകളും പിശകുകളും മനസ്സിലാക്കാനും പരിഹരിക്കാനും നിങ്ങളെ സഹായിക്കുന്നു"
@@ -13163,14 +13451,17 @@
   "panels/settings/SettingsScreen.ts | experiments": {
     "message": "പരീക്ഷണങ്ങൾ"
   },
+  "panels/settings/SettingsScreen.ts | experimentsFound": {
+    "message": "{n,plural, =1{# പരീക്ഷണം കണ്ടെത്തി}other{# പരീക്ഷണങ്ങൾ കണ്ടെത്തി}}"
+  },
+  "panels/settings/SettingsScreen.ts | greenDevUnstable": {
+    "message": "മുന്നറിയിപ്പ്: ഈ ഫീച്ചറുകളെല്ലാം പ്രോട്ടോടൈപ്പാണ്, വളരെ അസ്ഥിരവുമാണ്. ഉപയോക്തൃ ടെസ്റ്റിംഗിന് വേണ്ടിയുള്ളവയാണ് അവ, അവയെ ആശ്രയിക്കാൻ പാകത്തിൽ രൂപകൽപ്പന ചെയ്തവയല്ല."
+  },
   "panels/settings/SettingsScreen.ts | learnMore": {
     "message": "കൂടുതലറിയുക"
   },
   "panels/settings/SettingsScreen.ts | noResults": {
     "message": "ഫിൽട്ടറുകളുമായി പൊരുത്തപ്പെടുന്ന പരീക്ഷണങ്ങളൊന്നുമില്ല"
-  },
-  "panels/settings/SettingsScreen.ts | oneOrMoreSettingsHaveChanged": {
-    "message": "ഒന്നോ അതിലധികമോ ക്രമീകരണം മാറിയിരിക്കുന്നു, അത് പ്രാബല്യത്തിൽ വരാൻ റീലോഡ് ചെയ്യേണ്ടതുണ്ട്"
   },
   "panels/settings/SettingsScreen.ts | restoreDefaultsAndReload": {
     "message": "ഡിഫോൾട്ടുകൾ പുനഃസ്ഥാപിക്കുക, തുടർന്ന് റീലോഡ് ചെയ്യുക"
@@ -13184,17 +13475,14 @@
   "panels/settings/SettingsScreen.ts | settings": {
     "message": "ക്രമീകരണം"
   },
+  "panels/settings/SettingsScreen.ts | settingsChangedReloadDevTools": {
+    "message": "ക്രമീകരണം മാറ്റി ബാധകമാക്കാൻ, DevTools റീലോഡ് ചെയ്യുക."
+  },
   "panels/settings/SettingsScreen.ts | shortcuts": {
     "message": "കുറുക്കുവഴികൾ"
   },
-  "panels/settings/SettingsScreen.ts | theseExperimentsAreParticularly": {
-    "message": "മുന്നറിയിപ്പ്: ഈ പരീക്ഷണങ്ങൾ പ്രത്യേകിച്ച് അസ്ഥിരമാണ്. നിങ്ങളുടെ സ്വന്തം ഉത്തരവാദിത്തത്തിൽ പ്രവർത്തനക്ഷമമാക്കുക."
-  },
   "panels/settings/SettingsScreen.ts | theseExperimentsCouldBeUnstable": {
     "message": "മുന്നറിയിപ്പ്: ഈ പരീക്ഷണങ്ങൾ അസ്ഥിരമോ വിശ്വസനീയമല്ലാത്തതോ ആയിരിക്കാം."
-  },
-  "panels/settings/SettingsScreen.ts | unstableExperiments": {
-    "message": "അസ്ഥിരമായ പരീക്ഷണങ്ങൾ"
   },
   "panels/settings/WorkspaceSettingsTab.ts | addFolder": {
     "message": "ഫോൾഡർ ചേർക്കുക"
@@ -13418,6 +13706,9 @@
   "panels/settings/settings-meta.ts | experiments": {
     "message": "പരീക്ഷണങ്ങൾ"
   },
+  "panels/settings/settings-meta.ts | greenDevProtoTypes": {
+    "message": "GreenDev"
+  },
   "panels/settings/settings-meta.ts | ignoreList": {
     "message": "അവഗണിക്കാവുന്നവയുടെ ലിസ്റ്റ്"
   },
@@ -13435,6 +13726,9 @@
   },
   "panels/settings/settings-meta.ts | showExperiments": {
     "message": "പരീക്ഷണങ്ങൾ കാണിക്കുക"
+  },
+  "panels/settings/settings-meta.ts | showGreenDev": {
+    "message": "GreenDev കാണിക്കുക"
   },
   "panels/settings/settings-meta.ts | showIgnoreList": {
     "message": "അവഗണിക്കാവുന്നവയുടെ ലിസ്റ്റ് കാണിക്കുക"
@@ -13588,6 +13882,12 @@
   },
   "panels/sources/CallStackSidebarPane.ts | debugFileNotFound": {
     "message": "\"{PH1}\" ഡീബഗ് ഫയൽ ലോഡ് ചെയ്യാനായില്ല."
+  },
+  "panels/sources/CallStackSidebarPane.ts | debugSymbolsIncomplete": {
+    "message": "{PH1} ഫംഗ്ഷനുള്ള ഡീബഗ് വിവരങ്ങൾ പൂർണ്ണമല്ല"
+  },
+  "panels/sources/CallStackSidebarPane.ts | failedToLoadDebugSymbolsForFunction": {
+    "message": "\"{PH1}\" ഫംഗ്ഷനുള്ള ഡീബഗ് വിവരങ്ങളൊന്നുമില്ല"
   },
   "panels/sources/CallStackSidebarPane.ts | notPaused": {
     "message": "താൽക്കാലികമായി നിർത്തിയിട്ടില്ല"
@@ -14708,8 +15008,20 @@
   "panels/timeline/ThreadAppender.ts | workletServiceS": {
     "message": "ലേലത്തിന്റെ വർക്ക്‌ലെറ്റ് സർവീസ് — {PH1}"
   },
+  "panels/timeline/TimelineController.ts | initializingTracing": {
+    "message": "ട്രേയ്‌സ് ചെയ്യൽ ആരംഭിക്കുന്നു…"
+  },
+  "panels/timeline/TimelineController.ts | tracing": {
+    "message": "ട്രേസ് ചെയ്യുന്നു…"
+  },
   "panels/timeline/TimelineController.ts | tracingNotSupported": {
     "message": "ഇത്തരത്തിലുള്ള ടാർഗറ്റിന് പ്രകടന ട്രെയ്‌സുകൾ റെക്കോർഡ് ചെയ്യുന്നത് പിന്തുണയ്ക്കില്ല"
+  },
+  "panels/timeline/TimelineController.ts | waitingForLoadEvent": {
+    "message": "ലോഡ് ഇവന്റിനായി കാത്തിരിക്കുന്നു…"
+  },
+  "panels/timeline/TimelineController.ts | waitingForLoadEventPlus5Seconds": {
+    "message": "ലോഡ് ഇവന്റിനായി കാത്തിരിക്കുന്നു (+5സെ)…"
   },
   "panels/timeline/TimelineDetailsView.ts | bottomup": {
     "message": "ബോട്ടം അപ്പ്"
@@ -14861,6 +15173,9 @@
   "panels/timeline/TimelinePanel.ts | close": {
     "message": "അടയ്ക്കുക"
   },
+  "panels/timeline/TimelinePanel.ts | compressingTraceForDownload": {
+    "message": "കംപ്രസ് ചെയ്യുന്നു…"
+  },
   "panels/timeline/TimelinePanel.ts | cpu": {
     "message": "CPU:"
   },
@@ -14881,6 +15196,9 @@
   },
   "panels/timeline/TimelinePanel.ts | enableSelectorStats": {
     "message": "CSS സെലക്‌ടർ സ്ഥിതിവിവരക്കണക്കുകൾ പ്രവർത്തനക്ഷമമാക്കുക (കുറഞ്ഞ വേഗത)"
+  },
+  "panels/timeline/TimelinePanel.ts | encodingTraceForDownload": {
+    "message": "എൻകോഡിംഗ്…"
   },
   "panels/timeline/TimelinePanel.ts | eventSelected": {
     "message": "{PH1} ഇവന്റ് തിരഞ്ഞെടുത്തു"
@@ -14920,6 +15238,9 @@
   },
   "panels/timeline/TimelinePanel.ts | networkConditions": {
     "message": "നെറ്റ്‌വർക്ക് അവസ്ഥകൾ"
+  },
+  "panels/timeline/TimelinePanel.ts | preparingTraceForDownload": {
+    "message": "തയ്യാറെടുക്കുന്നു…"
   },
   "panels/timeline/TimelinePanel.ts | processed": {
     "message": "പ്രോസസ് ചെയ്തു"
@@ -15305,9 +15626,6 @@
   "panels/timeline/TimelineUIUtils.ts | layerRoot": {
     "message": "ലെയർ റൂട്ട്"
   },
-  "panels/timeline/TimelineUIUtils.ts | layoutForced": {
-    "message": "ലേഔട്ട് നിർബന്ധമാക്കി"
-  },
   "panels/timeline/TimelineUIUtils.ts | layoutRoot": {
     "message": "ലേഔട്ട് റൂട്ട്"
   },
@@ -15358,9 +15676,6 @@
   },
   "panels/timeline/TimelineUIUtils.ts | range": {
     "message": "റേഞ്ച്"
-  },
-  "panels/timeline/TimelineUIUtils.ts | recalculationForced": {
-    "message": "റീകാൽക്കുലേഷൻ നിർബന്ധമാക്കി"
   },
   "panels/timeline/TimelineUIUtils.ts | relatedNode": {
     "message": "അനുബന്ധ നോഡ്"
@@ -16050,7 +16365,7 @@
     "message": "കാഷെയിൽ നിന്ന്"
   },
   "panels/timeline/components/NetworkRequestDetails.ts | inBodyParserBlocking": {
-    "message": "ഇൻ-ബോഡി പാഴ്സർ ബ്ലോക്കിംഗ്"
+    "message": "ഇൻ-ബോഡി പാർസർ ബ്ലോക്കിംഗ്"
   },
   "panels/timeline/components/NetworkRequestDetails.ts | initiatedBy": {
     "message": "ആരംഭിച്ചത്"
@@ -17172,7 +17487,7 @@
     "message": "വിപുലീകരിച്ചു"
   },
   "ui/legacy/components/data_grid/DataGrid.ts | headerOptions": {
-    "message": "ഹെഡർ ഓപ്ഷനുകൾ"
+    "message": "ഹെഡ്ഡർ ഓപ്ഷനുകൾ"
   },
   "ui/legacy/components/data_grid/DataGrid.ts | levelS": {
     "message": "ലെവൽ {PH1}"
@@ -17459,14 +17774,14 @@
   "ui/legacy/components/quick_open/CommandMenu.ts | noCommandsFound": {
     "message": "കമാൻഡുകളൊന്നും കണ്ടെത്തിയില്ല"
   },
-  "ui/legacy/components/quick_open/CommandMenu.ts | oneOrMoreSettingsHaveChanged": {
-    "message": "ഒന്നോ അതിലധികമോ ക്രമീകരണം മാറിയിരിക്കുന്നു, അത് പ്രാബല്യത്തിൽ വരാൻ റീലോഡ് ചെയ്യേണ്ടതുണ്ട്"
-  },
   "ui/legacy/components/quick_open/CommandMenu.ts | run": {
     "message": "റൺ ചെയ്യുക"
   },
   "ui/legacy/components/quick_open/CommandMenu.ts | runCommand": {
     "message": "കമാൻഡ് റൺ ചെയ്യുക"
+  },
+  "ui/legacy/components/quick_open/CommandMenu.ts | settingsChangedReloadDevTools": {
+    "message": "ക്രമീകരണം മാറ്റി ബാധകമാക്കാൻ, DevTools റീലോഡ് ചെയ്യുക."
   },
   "ui/legacy/components/quick_open/FilteredListWidget.ts | newFeature": {
     "message": "ഇതൊരു പുതിയ ഫീച്ചറാണ്"
@@ -17492,8 +17807,8 @@
   "ui/legacy/components/quick_open/quick_open-meta.ts | runCommand": {
     "message": "കമാൻഡ് റൺ ചെയ്യുക"
   },
-  "ui/legacy/components/settings_ui/SettingsUI.ts | oneOrMoreSettingsHaveChanged": {
-    "message": "ഒന്നോ അതിലധികമോ ക്രമീകരണം മാറിയിരിക്കുന്നു, അത് പ്രാബല്യത്തിൽ വരാൻ റീലോഡ് ചെയ്യേണ്ടതുണ്ട്"
+  "ui/legacy/components/settings_ui/SettingsUI.ts | settingsChangedReloadDevTools": {
+    "message": "ക്രമീകരണം മാറ്റി ബാധകമാക്കാൻ, DevTools റീലോഡ് ചെയ്യുക."
   },
   "ui/legacy/components/settings_ui/SettingsUI.ts | srequiresReload": {
     "message": "*റീലോഡ് ചെയ്യേണ്ടതുണ്ട്"

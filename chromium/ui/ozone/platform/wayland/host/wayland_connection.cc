@@ -82,7 +82,7 @@ namespace {
 constexpr uint32_t kMaxCompositorVersion = 4;
 constexpr uint32_t kMaxKeyboardExtensionVersion = 2;
 constexpr uint32_t kMaxXdgShellVersion = 6;
-constexpr uint32_t kMaxWpPresentationVersion = 1;
+constexpr uint32_t kMaxWpPresentationVersion = 2;
 constexpr uint32_t kMaxWpViewporterVersion = 1;
 constexpr uint32_t kMaxTextInputManagerV1Version = 1;
 constexpr uint32_t kMaxTextInputManagerV3Version = 1;
@@ -528,8 +528,7 @@ bool WaylandConnection::UseImplicitSyncInterop() const {
 }
 
 bool WaylandConnection::UsePerSurfaceScaling() const {
-  return base::FeatureList::IsEnabled(features::kWaylandPerSurfaceScale) &&
-         supports_viewporter_surface_scaling();
+  return supports_viewporter_surface_scaling();
 }
 
 bool WaylandConnection::IsUiScaleEnabled() const {
@@ -653,8 +652,7 @@ void WaylandConnection::HandleGlobal(wl_registry* registry,
              (UNSAFE_TODO(
                   strcmp(interface, "wp_linux_drm_syncobj_manager_v1")) == 0)) {
     if (enable_linux_drm_syncobj_for_testing_ ||
-        (base::FeatureList::IsEnabled(features::kWaylandLinuxDrmSyncobj) &&
-         MinSupportedKernelForLinuxDrmSyncobj())) {
+        MinSupportedKernelForLinuxDrmSyncobj()) {
       linux_drm_syncobj_manager_ = wl::Bind<wp_linux_drm_syncobj_manager_v1>(
           registry, name, std::min(version, kMaxLinuxDrmSyncobjVersion));
       if (!linux_drm_syncobj_manager_) {

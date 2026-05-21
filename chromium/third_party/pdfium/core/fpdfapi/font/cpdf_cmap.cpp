@@ -16,7 +16,6 @@
 #include "core/fpdfapi/font/cpdf_fontglobals.h"
 #include "core/fpdfapi/parser/cpdf_simple_parser.h"
 #include "core/fxcrt/check.h"
-#include "core/fxcrt/fx_memcpy_wrappers.h"
 #include "core/fxcrt/notreached.h"
 
 namespace {

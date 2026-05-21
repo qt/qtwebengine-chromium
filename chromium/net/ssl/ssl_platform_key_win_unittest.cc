@@ -10,14 +10,11 @@
 #include "base/compiler_specific.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
-#include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
 #include "crypto/evp.h"
-#include "crypto/features.h"
 #include "crypto/scoped_capi_types.h"
 #include "crypto/scoped_cng_types.h"
 #include "crypto/unexportable_key.h"
-#include "net/base/features.h"
 #include "net/cert/x509_certificate.h"
 #include "net/ssl/ssl_private_key.h"
 #include "net/ssl/ssl_private_key_test_util.h"
@@ -129,7 +126,10 @@ bool PKCS8ToBLOBForCAPI(base::span<const uint8_t> pkcs8,
     return false;
   }
 
-  blob->assign(blob_data, UNSAFE_TODO(blob_data + blob_len));
+  // SAFETY: `CBB_finish` returns a buffer `blob_data` of length `blob_len`.
+  auto blob_span = UNSAFE_BUFFERS(base::span(blob_data, blob_len));
+
+  blob->assign(blob_span.begin(), blob_span.end());
   OPENSSL_free(blob_data);
   return true;
 }
@@ -184,7 +184,9 @@ bool PKCS8ToBLOBForCNG(base::span<const uint8_t> pkcs8,
     }
 
     *blob_type = BCRYPT_RSAFULLPRIVATE_BLOB;
-    blob->assign(blob_data, UNSAFE_TODO(blob_data + blob_len));
+    // SAFETY: `CBB_finish returns a buffer of `blob_len` bytes.
+    auto blob_span = UNSAFE_BUFFERS(base::span(blob_data, blob_len));
+    blob->assign(blob_span.begin(), blob_span.end());
     OPENSSL_free(blob_data);
     return true;
   }
@@ -232,7 +234,9 @@ bool PKCS8ToBLOBForCNG(base::span<const uint8_t> pkcs8,
     }
 
     *blob_type = BCRYPT_ECCPRIVATE_BLOB;
-    blob->assign(blob_data, UNSAFE_TODO(blob_data + blob_len));
+    // SAFETY: `CBB_finish returns a buffer of `blob_len` bytes.
+    auto blob_span = UNSAFE_BUFFERS(base::span(blob_data, blob_len));
+    blob->assign(blob_span.begin(), blob_span.end());
     OPENSSL_free(blob_data);
     return true;
   }
@@ -290,6 +294,8 @@ TEST_P(SSLPlatformKeyWinTest, KeyMatchesCNG) {
   EXPECT_EQ(SSLPrivateKey::DefaultAlgorithmPreferences(test_key.type,
                                                        /*supports_pss=*/true),
             key->GetAlgorithmPreferences());
+  EXPECT_EQ("CNG: Microsoft Software Key Storage Provider",
+            key->GetProviderName());
   TestSSLPrivateKeyMatches(key.get(), *pkcs8);
 }
 
@@ -340,6 +346,8 @@ TEST_P(SSLPlatformKeyWinTest, KeyMatchesCAPI) {
       SSL_SIGN_RSA_PKCS1_SHA1,
   };
   EXPECT_EQ(expected, key->GetAlgorithmPreferences());
+  EXPECT_EQ("CAPI: Microsoft Enhanced RSA and AES Cryptographic Provider",
+            key->GetProviderName());
   TestSSLPrivateKeyMatches(key.get(), *pkcs8);
 }
 
@@ -354,9 +362,6 @@ class UnexportableSSLPlatformKeyWinTest : public testing::TestWithParam<bool> {
 };
 
 TEST_P(UnexportableSSLPlatformKeyWinTest, WrapUnexportableKeySlowly) {
-  base::test::ScopedFeatureList scoped_feature_list(
-      crypto::features::kIsHardwareBackedFixEnabled);
-
   auto provider = UseHardwareBackedKeys()
                       ? crypto::GetUnexportableKeyProvider({})
                       : crypto::GetMicrosoftSoftwareUnexportableKeyProvider();

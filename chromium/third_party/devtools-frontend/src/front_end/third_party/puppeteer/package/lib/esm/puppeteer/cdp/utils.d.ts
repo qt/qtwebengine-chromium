@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 import type { Protocol } from 'devtools-protocol';
+import type { JSHandle } from '../api/JSHandle.js';
 /**
  * @internal
  */
@@ -15,7 +16,15 @@ export declare function createClientError(details: Protocol.Runtime.ExceptionDet
 /**
  * @internal
  */
-export declare function valueFromRemoteObject(remoteObject: Protocol.Runtime.RemoteObject): unknown;
+export declare function valueFromJSHandle(handle: JSHandle): unknown;
+/**
+ * @internal
+ */
+export declare function valueFromRemoteObjectReference(handle: JSHandle): string;
+/**
+ * @internal
+ */
+export declare function valueFromPrimitiveRemoteObject(remoteObject: Protocol.Runtime.RemoteObject): unknown;
 /**
  * @internal
  */

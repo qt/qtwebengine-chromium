@@ -23,9 +23,11 @@ export type * as CDPConnection from '../front_end/core/protocol_client/CDPConnec
 export {ConnectionTransport} from '../front_end/core/protocol_client/ConnectionTransport.js';
 export * as ProtocolClient from '../front_end/core/protocol_client/protocol_client.js';
 export {DebuggerModel} from '../front_end/core/sdk/DebuggerModel.js';
+export {RuntimeModel} from '../front_end/core/sdk/RuntimeModel.js';
 export {Target} from '../front_end/core/sdk/Target.js';
 export {TargetManager} from '../front_end/core/sdk/TargetManager.js';
 export * as Foundation from '../front_end/foundation/foundation.js';
+export * as Protocol from '../front_end/generated/protocol.js';
 export {
   PerformanceInsightFormatter
 } from '../front_end/models/ai_assistance/data_formatters/PerformanceInsightFormatter.js';
@@ -34,6 +36,8 @@ export {
 } from '../front_end/models/ai_assistance/data_formatters/PerformanceTraceFormatter.js';
 export {AgentFocus} from '../front_end/models/ai_assistance/performance/AIContext.js';
 export {DebuggerWorkspaceBinding} from '../front_end/models/bindings/DebuggerWorkspaceBinding.js';
+export {CrUXManager} from '../front_end/models/crux-manager/CrUXManager.js';
+export * as Formatter from '../front_end/models/formatter/formatter.js';
 export {Issue} from '../front_end/models/issues_manager/Issue.js';
 export {
   AggregatedIssue,
@@ -49,6 +53,7 @@ export {
 export * as MarkdownIssueDescription from '../front_end/models/issues_manager/MarkdownIssueDescription.js';
 export * as StackTrace from '../front_end/models/stack_trace/stack_trace.js';
 export * as TraceEngine from '../front_end/models/trace/trace.js';
+export {IgnoreListManager} from '../front_end/models/workspace/IgnoreListManager.js';
 export * as Marked from '../front_end/third_party/marked/marked.js';
 
 installInspectorFrontendHost(new McpHostBindings());

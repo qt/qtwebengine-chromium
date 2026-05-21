@@ -14,7 +14,6 @@
 #include "base/types/optional_ref.h"
 #include "net/base/cronet_buildflags.h"
 #include "net/base/net_export.h"
-#include "net/base/network_isolation_key.h"
 #include "net/base/schemeful_site.h"
 #include "url/gurl.h"
 
@@ -24,6 +23,7 @@
 
 namespace net {
 
+class NetworkIsolationKey;
 class SiteForCookies;
 
 class NET_EXPORT CookiePartitionKey {
@@ -224,8 +224,6 @@ class NET_EXPORT CookiePartitionKey {
       const std::string& top_level_site,
       CookiePartitionKey::AncestorChainBit has_cross_site_ancestor,
       CookiePartitionKey::ParsingMode parsing_mode);
-
-  AncestorChainBit GetAncestorChainBit() const { return ancestor_chain_bit_; }
 
 #if BUILDFLAG(IS_ANDROID)
   static bool g_partitioning_disabled_in_webview_;

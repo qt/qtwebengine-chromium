@@ -31,6 +31,26 @@ bool ScopedTraceOperation::TraceAsyncEnd(const uint32_t line,
   return false;
 }
 
+// static
+bool ScopedTraceOperation::TraceFlow(
+    TraceCategory category,
+    const char* name,
+    const char* file,
+    uint32_t line,
+    uint64_t flow_id,
+    FlowType type,
+    std::optional<Clock::time_point> timestamp) {
+  const CurrentTracingDestination destination;
+  if (destination) {
+    const auto start_time = timestamp ? *timestamp : Clock::now();
+    TraceEvent event(category, start_time, name, file, line);
+    event.flow_ids.push_back(flow_id);
+    destination->LogFlow(std::move(event), type);
+    return true;
+  }
+  return false;
+}
+
 ScopedTraceOperation::ScopedTraceOperation(TraceId trace_id,
                                            TraceId parent_id,
                                            TraceId root_id) {
@@ -129,6 +149,9 @@ AsynchronousTraceLogger::~AsynchronousTraceLogger() {
     destination->LogAsyncStart(event_);
   }
 }
+
+TraceIdSetter::TraceIdSetter(TraceIdHierarchy ids)
+    : ScopedTraceOperation(ids.current, ids.parent, ids.root) {}
 
 TraceIdSetter::~TraceIdSetter() = default;
 

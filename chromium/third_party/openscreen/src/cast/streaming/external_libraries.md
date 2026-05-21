@@ -28,10 +28,10 @@ On some versions of Debian, the following apt-get command will install all of
 the necessary external libraries for Open Screen:
 
 ```sh
-sudo apt-get install libsdl2-2.0 libsdl2-dev libavcodec libavcodec-dev
-                     libavformat libavformat-dev libavutil libavutil-dev
-                     libswresample libswresample-dev libopus0 libopus-dev
-                     libvpx5 libvpx-dev
+sudo apt-get install libsdl2-2.0 libsdl2-dev libavcodec libavcodec-dev \
+                     libavformat libavformat-dev libavutil libavutil-dev \
+                     libswresample libswresample-dev libopus0 libopus-dev \
+                     libvpx5 libvpx-dev \
 ```
 
 Similarly, on some versions of Raspian, the following command will install the
@@ -39,9 +39,9 @@ necessary external libraries, at least for the standalone receiver. Note that
 this command is based off of the packages linked in the [sysroot](../../build/config/sysroot.gni):
 
 ```sh
-sudo apt-get install libavcodec58=7:4.1.4* libavcodec-dev=7:4.1.4*
-                     libsdl2-2.0-0=2.0.9* libsdl2-dev=2.0.9*
-                     libavformat-dev=7:4.1.4*
+sudo apt-get install libavcodec58=7:4.1.4* libavcodec-dev=7:4.1.4* \
+                     libsdl2-2.0-0=2.0.9* libsdl2-dev=2.0.9* \
+                     libavformat-dev=7:4.1.4* \
 ```
 
 Note: release of these operating systems may require slightly different

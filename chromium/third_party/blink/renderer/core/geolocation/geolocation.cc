@@ -36,6 +36,7 @@
 #include "services/network/public/mojom/permissions_policy/permissions_policy_feature.mojom-blink.h"
 #include "third_party/blink/public/platform/browser_interface_broker_proxy.h"
 #include "third_party/blink/public/platform/platform.h"
+#include "third_party/blink/renderer/bindings/core/v8/v8_accuracy_mode.h"
 #include "third_party/blink/renderer/core/frame/deprecation/deprecation.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/navigator.h"
@@ -54,6 +55,7 @@
 
 namespace blink {
 namespace {
+using AccuracyMode = V8AccuracyMode::Enum;
 
 const char kPermissionDeniedErrorMessage[] = "User denied Geolocation";
 const char kFeaturePolicyErrorMessage[] =
@@ -78,8 +80,14 @@ Geoposition* CreateGeoposition(
           ? std::make_optional(position.heading)
           : std::nullopt,
       position.speed >= 0. ? std::optional(position.speed) : std::nullopt);
+  AccuracyMode accuracy_mode = AccuracyMode::kPrecise;
+  if (RuntimeEnabledFeatures::ApproximateGeolocationWebVisibleAPIEnabled()) {
+    accuracy_mode = position.is_precise ? AccuracyMode::kPrecise
+                                        : AccuracyMode::kApproximate;
+  }
   return MakeGarbageCollected<Geoposition>(
-      coordinates, ConvertTimeToEpochTimeStamp(position.timestamp));
+      coordinates, ConvertTimeToEpochTimeStamp(position.timestamp),
+      V8AccuracyMode(accuracy_mode));
 }
 
 GeolocationPositionError* CreatePositionError(
@@ -140,20 +148,24 @@ PositionOptions* OverrideAccuracyHint(const PositionOptions* options) {
 }  // namespace
 
 // static
+const char Geolocation::kSupplementName[] = "Geolocation";
+
+// static
 Geolocation* Geolocation::geolocation(Navigator& navigator) {
   if (!navigator.DomWindow())
     return nullptr;
 
-  Geolocation* supplement = navigator.GetGeolocation();
+  Geolocation* supplement = Supplement<Navigator>::From<Geolocation>(navigator);
   if (!supplement) {
     supplement = MakeGarbageCollected<Geolocation>(navigator);
-    navigator.SetGeolocation(supplement);
+    ProvideTo(navigator, supplement);
   }
   return supplement;
 }
 
 Geolocation::Geolocation(Navigator& navigator)
     : ActiveScriptWrappable<Geolocation>({}),
+      Supplement<Navigator>(navigator),
       ExecutionContextLifecycleObserver(navigator.DomWindow()),
       PageVisibilityObserver(navigator.DomWindow()->GetFrame()->GetPage()),
       one_shots_(MakeGarbageCollected<GeoNotifierSet>()),
@@ -173,6 +185,7 @@ void Geolocation::Trace(Visitor* visitor) const {
   visitor->Trace(geolocation_);
   visitor->Trace(geolocation_service_);
   ScriptWrappable::Trace(visitor);
+  Supplement<Navigator>::Trace(visitor);
   ExecutionContextLifecycleObserver::Trace(visitor);
   PageVisibilityObserver::Trace(visitor);
 }
@@ -240,6 +253,7 @@ void Geolocation::getCurrentPositionForBindings(
 
   if (!GetFrame())
     return;
+
 
   probe::BreakableLocation(GetExecutionContext(),
                            "Geolocation.getCurrentPosition");
@@ -408,12 +422,19 @@ bool Geolocation::DoesOwnNotifier(GeoNotifier* notifier) const {
 bool Geolocation::HaveSuitableCachedPosition(const PositionOptions* options) {
   if (!last_position_)
     return false;
-  if (!options->maximumAge())
-    return false;
   EpochTimeStamp current_time_millis =
       ConvertTimeToEpochTimeStamp(base::Time::Now());
-  return last_position_->timestamp() >
-         current_time_millis - options->maximumAge();
+  bool is_last_position_suitable =
+      options->maximumAge() &&
+      last_position_->timestamp() > current_time_millis - options->maximumAge();
+  if (!is_last_position_suitable && !watchers_->IsEmpty()) {
+    UseCounter::Count(
+        DomWindow(),
+        WebFeature::
+            kGeolocationRequestPositionWithPotentiallyUpToDateWatchedCachedPosition);
+  }
+
+  return is_last_position_suitable;
 }
 
 void Geolocation::clearWatch(int watch_id) {

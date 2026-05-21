@@ -1,7 +1,7 @@
 /*
- * Copyright (c) 2025 The Khronos Group Inc.
- * Copyright (c) 2025 Valve Corporation
- * Copyright (c) 2025 LunarG, Inc.
+ * Copyright (c) 2025-2026 The Khronos Group Inc.
+ * Copyright (c) 2025-2026 Valve Corporation
+ * Copyright (c) 2025-2026 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -71,6 +71,9 @@ PFN_vkCreateMacOSSurfaceMVK vkCreateMacOSSurfaceMVK;
 #if defined(VK_USE_PLATFORM_SCREEN_QNX)
 PFN_vkCreateScreenSurfaceQNX vkCreateScreenSurfaceQNX;
 #endif
+#if defined(VK_USE_PLATFORM_DISPLAY)
+PFN_vkCreateDisplayPlaneSurfaceKHR vkCreateDisplayPlaneSurfaceKHR;
+#endif
 #if defined(VK_USE_PLATFORM_DIRECTFB_EXT)
 PFN_vkCreateDirectFBSurfaceEXT vkCreateDirectFBSurfaceEXT;
 #endif
@@ -113,6 +116,10 @@ PFN_vkEnumeratePhysicalDevices vkEnumeratePhysicalDevices;
 PFN_vkGetPhysicalDeviceSurfaceCapabilities2EXT vkGetPhysicalDeviceSurfaceCapabilities2EXT;
 PFN_vkGetPhysicalDeviceToolPropertiesEXT vkGetPhysicalDeviceToolPropertiesEXT;
 PFN_vkGetPhysicalDeviceFormatProperties2KHR vkGetPhysicalDeviceFormatProperties2KHR;
+PFN_vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR;
+PFN_vkGetPhysicalDeviceCalibrateableTimeDomainsKHR vkGetPhysicalDeviceCalibrateableTimeDomainsKHR;
+PFN_vkGetPhysicalDeviceFragmentShadingRatesKHR vkGetPhysicalDeviceFragmentShadingRatesKHR;
+PFN_vkGetPhysicalDeviceMultisamplePropertiesEXT vkGetPhysicalDeviceMultisamplePropertiesEXT;
 
 // Device functions
 PFN_vkCreateImage vkCreateImage;
@@ -201,6 +208,9 @@ static void load_vulkan_instance_functions(VkInstance instance) {
 #if defined(VK_USE_PLATFORM_SCREEN_QNX)
     LOAD_INSTANCE_FUNCTION(instance, vkCreateScreenSurfaceQNX);
 #endif
+#if defined(VK_USE_PLATFORM_DISPLAY)
+    LOAD_INSTANCE_FUNCTION(instance, vkCreateDisplayPlaneSurfaceKHR);
+#endif
 #if defined(VK_USE_PLATFORM_DIRECTFB_EXT)
     LOAD_INSTANCE_FUNCTION(instance, vkCreateDirectFBSurfaceEXT);
 #endif
@@ -243,6 +253,10 @@ static void load_vulkan_instance_functions(VkInstance instance) {
     LOAD_INSTANCE_FUNCTION(instance, vkGetPhysicalDeviceSurfaceCapabilities2EXT);
     LOAD_INSTANCE_FUNCTION(instance, vkGetPhysicalDeviceToolPropertiesEXT);
     LOAD_INSTANCE_FUNCTION(instance, vkGetPhysicalDeviceFormatProperties2KHR);
+    LOAD_INSTANCE_FUNCTION(instance, vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR);
+    LOAD_INSTANCE_FUNCTION(instance, vkGetPhysicalDeviceCalibrateableTimeDomainsKHR);
+    LOAD_INSTANCE_FUNCTION(instance, vkGetPhysicalDeviceFragmentShadingRatesKHR);
+    LOAD_INSTANCE_FUNCTION(instance, vkGetPhysicalDeviceMultisamplePropertiesEXT);
 
     // Load device functions using vkGetInstanceProcAddr, vulkaninfo doesn't care about the extra indirection it causes
     LOAD_INSTANCE_FUNCTION(instance, vkCreateImage);

@@ -119,6 +119,7 @@ struct packet_traits<float> : default_packet_traits {
     HasConj = 1,
     HasSin = EIGEN_FAST_MATH,
     HasCos = EIGEN_FAST_MATH,
+    HasTan = EIGEN_FAST_MATH,
     HasACos = 1,
     HasASin = 1,
     HasATan = 1,
@@ -154,6 +155,7 @@ struct packet_traits<double> : default_packet_traits {
     HasCbrt = 1,
     HasSin = EIGEN_FAST_MATH,
     HasCos = EIGEN_FAST_MATH,
+    HasTan = EIGEN_FAST_MATH,
     HasLog = 1,
     HasExp = 1,
     HasLog1p = 1,
@@ -441,15 +443,15 @@ EIGEN_STRONG_INLINE Packet16f pnegate(const Packet16f& a) {
   //       The intel docs give it a relatively high latency as well, so we're probably
   //       better off with using _mm512_set_epi32 directly anyways.
   const __m512i mask =
-      _mm512_set_epi32(0x80000000, 0x80000000, 0x80000000, 0x80000000, 0x80000000, 0x80000000, 0x80000000, 0x80000000,
-                       0x80000000, 0x80000000, 0x80000000, 0x80000000, 0x80000000, 0x80000000, 0x80000000, 0x80000000);
+      _mm512_set_epi32(SIGN_MASK_I32, SIGN_MASK_I32, SIGN_MASK_I32, SIGN_MASK_I32, SIGN_MASK_I32, SIGN_MASK_I32,
+                       SIGN_MASK_I32, SIGN_MASK_I32, SIGN_MASK_I32, SIGN_MASK_I32, SIGN_MASK_I32, SIGN_MASK_I32,
+                       SIGN_MASK_I32, SIGN_MASK_I32, SIGN_MASK_I32, SIGN_MASK_I32);
   return _mm512_castsi512_ps(_mm512_xor_epi32(_mm512_castps_si512(a), mask));
 }
 template <>
 EIGEN_STRONG_INLINE Packet8d pnegate(const Packet8d& a) {
-  const __m512i mask =
-      _mm512_set_epi64(0x8000000000000000ULL, 0x8000000000000000ULL, 0x8000000000000000ULL, 0x8000000000000000ULL,
-                       0x8000000000000000ULL, 0x8000000000000000ULL, 0x8000000000000000ULL, 0x8000000000000000ULL);
+  const __m512i mask = _mm512_set_epi64(SIGN_MASK_I64, SIGN_MASK_I64, SIGN_MASK_I64, SIGN_MASK_I64, SIGN_MASK_I64,
+                                        SIGN_MASK_I64, SIGN_MASK_I64, SIGN_MASK_I64);
   return _mm512_castsi512_pd(_mm512_xor_epi64(_mm512_castpd_si512(a), mask));
 }
 template <>
@@ -768,22 +770,22 @@ EIGEN_STRONG_INLINE Packet8l pcmp_lt(const Packet8l& a, const Packet8l& b) {
 template <>
 EIGEN_STRONG_INLINE Packet8d pcmp_eq(const Packet8d& a, const Packet8d& b) {
   __mmask8 mask = _mm512_cmp_pd_mask(a, b, _CMP_EQ_OQ);
-  return _mm512_castsi512_pd(_mm512_mask_set1_epi64(_mm512_setzero_epi32(), mask, 0xffffffffffffffffu));
+  return _mm512_castsi512_pd(_mm512_mask_set1_epi64(_mm512_setzero_epi32(), mask, int64_t(-1)));
 }
 template <>
 EIGEN_STRONG_INLINE Packet8d pcmp_le(const Packet8d& a, const Packet8d& b) {
   __mmask8 mask = _mm512_cmp_pd_mask(a, b, _CMP_LE_OQ);
-  return _mm512_castsi512_pd(_mm512_mask_set1_epi64(_mm512_setzero_epi32(), mask, 0xffffffffffffffffu));
+  return _mm512_castsi512_pd(_mm512_mask_set1_epi64(_mm512_setzero_epi32(), mask, int64_t(-1)));
 }
 template <>
 EIGEN_STRONG_INLINE Packet8d pcmp_lt(const Packet8d& a, const Packet8d& b) {
   __mmask8 mask = _mm512_cmp_pd_mask(a, b, _CMP_LT_OQ);
-  return _mm512_castsi512_pd(_mm512_mask_set1_epi64(_mm512_setzero_epi32(), mask, 0xffffffffffffffffu));
+  return _mm512_castsi512_pd(_mm512_mask_set1_epi64(_mm512_setzero_epi32(), mask, int64_t(-1)));
 }
 template <>
 EIGEN_STRONG_INLINE Packet8d pcmp_lt_or_nan(const Packet8d& a, const Packet8d& b) {
   __mmask8 mask = _mm512_cmp_pd_mask(a, b, _CMP_NGE_UQ);
-  return _mm512_castsi512_pd(_mm512_mask_set1_epi64(_mm512_setzero_epi32(), mask, 0xffffffffffffffffu));
+  return _mm512_castsi512_pd(_mm512_mask_set1_epi64(_mm512_setzero_epi32(), mask, int64_t(-1)));
 }
 
 template <>

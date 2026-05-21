@@ -7,6 +7,7 @@
  * from Polymer's paper-tooltip.
  */
 
+import {assertNotReachedCase} from '//resources/js/assert.js';
 import {EventTracker} from '//resources/js/event_tracker.js';
 import type {PropertyValues} from '//resources/lit/v3_0/lit.rollup.js';
 import {CrLitElement} from '//resources/lit/v3_0/lit.rollup.js';
@@ -105,6 +106,8 @@ export class CrTooltipElement extends CrLitElement {
   }
 
   override disconnectedCallback() {
+    super.disconnectedCallback();
+
     if (!this.manualMode) {
       this.removeListeners_();
     }
@@ -284,6 +287,8 @@ export class CrTooltipElement extends CrLitElement {
         tooltipLeft = targetLeft + targetRect.width + offset;
         tooltipTop = targetTop + verticalCenterOffset;
         break;
+      default:
+        assertNotReachedCase(this.position);
     }
     if (this.fitToVisibleBounds) {
       // Clip the left/right side

@@ -242,7 +242,7 @@ MaybeError Queue::InitializePendingContext() {
     return {};
 }
 
-void Queue::DestroyImpl() {
+void Queue::DestroyImpl(DestroyReason reason) {
     // Release the shared fence here to prevent a ref-cycle with the device, but do not destroy the
     // underlying native fence so that we can return a SharedFence on EndAccess after destruction.
     mSharedFence = nullptr;
@@ -265,23 +265,40 @@ ResultOrError<Ref<d3d::SharedFence>> Queue::GetOrCreateSharedFence() {
     return mSharedFence;
 }
 
+template <typename ScopedContextType, typename... Args>
+ScopedContextType Queue::CreateScopedCommandContext(SubmitMode submitMode,
+                                                    CommandRecordingContext::Guard&& commands,
+                                                    Args&&... args) {
+    if (submitMode == SubmitMode::Normal) {
+        mPendingCommandsNeedSubmit.store(true, std::memory_order_release);
+    }
+    return ScopedContextType(std::move(commands), std::forward<Args>(args)...);
+}
+
 ScopedCommandRecordingContext Queue::GetScopedPendingCommandContext(SubmitMode submitMode,
                                                                     bool lockD3D11Scope) {
-    return mPendingCommands.Use([&](auto commands) {
-        if (submitMode == SubmitMode::Normal) {
-            mPendingCommandsNeedSubmit.store(true, std::memory_order_release);
-        }
-        return ScopedCommandRecordingContext(std::move(commands), lockD3D11Scope);
+    return mPendingCommands.Use([&](auto commands) -> ScopedCommandRecordingContext {
+        return CreateScopedCommandContext<ScopedCommandRecordingContext>(
+            submitMode, std::move(commands), lockD3D11Scope);
     });
+}
+
+std::optional<ScopedCommandRecordingContext> Queue::TryGetScopedPendingCommandContext(
+    SubmitMode submitMode,
+    bool lockD3D11Scope) {
+    std::optional<CommandRecordingContext::Guard> guard = mPendingCommands.TryUse();
+    if (!guard) {
+        return std::nullopt;
+    }
+    return CreateScopedCommandContext<ScopedCommandRecordingContext>(submitMode, std::move(*guard),
+                                                                     lockD3D11Scope);
 }
 
 ScopedSwapStateCommandRecordingContext Queue::GetScopedSwapStatePendingCommandContext(
     SubmitMode submitMode) {
     return mPendingCommands.Use([&](auto commands) {
-        if (submitMode == SubmitMode::Normal) {
-            mPendingCommandsNeedSubmit.store(true, std::memory_order_release);
-        }
-        return ScopedSwapStateCommandRecordingContext(std::move(commands));
+        return CreateScopedCommandContext<ScopedSwapStateCommandRecordingContext>(
+            submitMode, std::move(commands));
     });
 }
 
@@ -329,25 +346,27 @@ ResultOrError<ExecutionSerial> Queue::CheckAndUpdateCompletedSerials() {
     DAWN_TRY_ASSIGN(completedSerial, CheckCompletedSerialsImpl());
 
     // Finalize Mapping on ready buffers.
-    DAWN_TRY(CheckAndMapReadyBuffers(completedSerial));
+    DAWN_TRY(CheckScheduledBufferMappings(completedSerial));
 
     return completedSerial;
 }
 
-MaybeError Queue::CheckAndMapReadyBuffers(ExecutionSerial completedSerial) {
+MaybeError Queue::CheckScheduledBufferMappings(ExecutionSerial completedSerial) {
     auto commandContext = GetScopedPendingCommandContext(QueueBase::SubmitMode::Passive);
-    for (const auto& bufferEntry : mPendingMapBuffers.IterateUpTo(completedSerial)) {
-        DAWN_TRY(
-            bufferEntry.buffer->FinalizeMap(&commandContext, completedSerial, bufferEntry.mode));
-    }
-    mPendingMapBuffers.ClearUpTo(completedSerial);
-    return {};
+    return mPendingMapBuffers.Use([&](auto pendingMapBuffers) -> MaybeError {
+        for (const auto& bufferEntry : pendingMapBuffers->IterateUpTo(completedSerial)) {
+            DAWN_TRY(
+                bufferEntry.buffer->TryMapNow(&commandContext, completedSerial, bufferEntry.mode));
+        }
+        pendingMapBuffers->ClearUpTo(completedSerial);
+        return {};
+    });
 }
 
-void Queue::TrackPendingMapBuffer(Ref<Buffer>&& buffer,
+void Queue::ScheduleBufferMapping(Ref<Buffer>&& buffer,
                                   wgpu::MapMode mode,
                                   ExecutionSerial readySerial) {
-    mPendingMapBuffers.Enqueue({buffer, mode}, readySerial);
+    mPendingMapBuffers->Enqueue({buffer, mode}, readySerial);
 }
 
 MaybeError Queue::WriteBufferImpl(BufferBase* buffer,
@@ -393,7 +412,9 @@ bool Queue::HasPendingCommands() const {
     return mPendingCommandsNeedSubmit.load(std::memory_order_acquire);
 }
 
-void Queue::ForceEventualFlushOfCommands() {}
+void Queue::ForceEventualFlushOfCommands() {
+    mPendingCommandsNeedSubmit.store(true, std::memory_order_release);
+}
 
 MaybeError Queue::WaitForIdleForDestructionImpl() {
     if (!mPendingCommands->IsValid()) {

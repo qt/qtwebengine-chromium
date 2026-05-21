@@ -26,8 +26,9 @@ namespace {
 class MockD3D12VideoEncodeDelegate : public D3D12VideoEncodeDelegate {
  public:
   explicit MockD3D12VideoEncodeDelegate(
-      Microsoft::WRL::ComPtr<ID3D12VideoDevice3> video_device)
-      : D3D12VideoEncodeDelegate(std::move(video_device)) {}
+      Microsoft::WRL::ComPtr<ID3D12VideoDevice3> video_device,
+      const gpu::GpuDriverBugWorkarounds& gpu_workarounds)
+      : D3D12VideoEncodeDelegate(std::move(video_device), gpu_workarounds) {}
   ~MockD3D12VideoEncodeDelegate() override = default;
 
   size_t GetMaxNumOfRefFrames() const override { return 8; }
@@ -71,8 +72,16 @@ D3D12VideoEncodeDelegateTestBase::CreateVideoProcessorWrapper(
     Microsoft::WRL::ComPtr<ID3D12VideoDevice>&& video_device) {
   auto video_processor_wrapper =
       std::make_unique<NiceMock<MockD3D12VideoProcessorWrapper>>(video_device);
+  // The lambda captures the fence ComPtr by value, which ensures the fence
+  // outlives the lambda stored in ON_CALL.
+  auto fence = MakeComPtr<NiceMock<D3D12FenceMock>>();
   ON_CALL(*video_processor_wrapper, Init).WillByDefault(Return(true));
-  ON_CALL(*video_processor_wrapper, ProcessFrames).WillByDefault(Return(true));
+  ON_CALL(*video_processor_wrapper, ProcessFrames)
+      .WillByDefault([fence](ID3D12Resource*, UINT, const gfx::ColorSpace&,
+                             const gfx::Rect&, ID3D12Resource*, UINT,
+                             const gfx::ColorSpace&, const gfx::Rect&) {
+        return D3D12FenceAndValue{fence.Get(), 0};
+      });
   return std::move(video_processor_wrapper);
 }
 
@@ -88,6 +97,7 @@ D3D12VideoEncodeDelegateTestBase::CreateVideoEncoderWrapper(
   auto video_encoder_wrapper =
       std::make_unique<NiceMock<MockD3D12VideoEncoderWrapper>>();
   ON_CALL(*video_encoder_wrapper, Initialize).WillByDefault(Return(true));
+  ON_CALL(*video_encoder_wrapper, Wait).WillByDefault(Return(true));
   ON_CALL(*video_encoder_wrapper, Encode)
       .WillByDefault(Return(EncoderStatus::Codes::kOk));
   ON_CALL(*video_encoder_wrapper, ReadbackBitstream)
@@ -188,8 +198,9 @@ class D3D12VideoEncodeDelegateTest : public D3D12VideoEncodeDelegateTestBase {
         .WillByDefault(SetComPointeeAndReturnOk<1>(device_.Get()));
     ON_CALL(*video_device3_.Get(), QueryInterface(IID_ID3D12VideoDevice1, _))
         .WillByDefault(SetComPointeeAndReturnOk<1>(video_device3_.Get()));
-    encoder_delegate_ =
-        std::make_unique<MockD3D12VideoEncodeDelegate>(video_device3_);
+    gpu::GpuDriverBugWorkarounds gpu_workarounds{};
+    encoder_delegate_ = std::make_unique<MockD3D12VideoEncodeDelegate>(
+        video_device3_, gpu_workarounds);
     encoder_delegate_->SetFactoriesForTesting(
         base::BindRepeating(&CreateVideoEncoderWrapper),
         base::BindRepeating(&CreateVideoProcessorWrapper));
@@ -232,16 +243,18 @@ TEST_F(D3D12VideoEncodeDelegateTestWithProcessFrame, EncodeFrameWithoutVP) {
   gfx::ColorSpace color_space = gfx::ColorSpace::CreateREC709();
   constexpr size_t kPayloadSize = 1024;
   auto shared_memory = base::UnsafeSharedMemoryRegion::Create(kPayloadSize);
-  BitstreamBuffer bitstream_buffer(base::RandInt(0, H264DPB::kDPBMaxSize - 1),
-                                   shared_memory.Duplicate(), kPayloadSize);
+  BitstreamBuffer bitstream_buffer(
+      base::RandIntInclusive(0, H264DPB::kDPBMaxSize - 1),
+      shared_memory.Duplicate(), kPayloadSize);
   EXPECT_CALL(*GetVideoProcessorWrapper(), ProcessFrames).Times(0);
   EXPECT_CALL(*GetVideoEncoderWrapper(), GetEncoderOutputMetadata)
       .WillOnce(Return(GetEncoderOutputMetadataResourceMap(kPayloadSize)));
   auto result_or_error =
-      encoder_delegate_->Encode(input_frame, 0, color_space, bitstream_buffer,
+      encoder_delegate_->Encode(input_frame, color_space, bitstream_buffer,
                                 VideoEncoder::EncodeOptions());
   Mock::VerifyAndClearExpectations(GetVideoProcessorWrapper());
-  ASSERT_TRUE(result_or_error.has_value());
+  ASSERT_TRUE(result_or_error.has_value())
+      << std::move(result_or_error).error().message();
 
   auto [bitstream_buffer_id, metadata] = std::move(result_or_error).value();
   EXPECT_EQ(bitstream_buffer_id, bitstream_buffer.id());
@@ -259,8 +272,10 @@ TEST_F(D3D12VideoEncodeDelegateTestWithProcessFrame, EncodeFrameWithVP) {
   gfx::ColorSpace color_space = gfx::ColorSpace::CreateSRGB();
   constexpr size_t kPayloadSize = 1024;
   auto shared_memory = base::UnsafeSharedMemoryRegion::Create(kPayloadSize);
-  BitstreamBuffer bitstream_buffer(base::RandInt(0, H264DPB::kDPBMaxSize - 1),
-                                   shared_memory.Duplicate(), kPayloadSize);
+  BitstreamBuffer bitstream_buffer(
+      base::RandIntInclusive(0, H264DPB::kDPBMaxSize - 1),
+      shared_memory.Duplicate(), kPayloadSize);
+  auto fence = MakeComPtr<NiceMock<D3D12FenceMock>>();
   EXPECT_CALL(*GetVideoProcessorWrapper(), ProcessFrames)
       .WillOnce([&](ID3D12Resource*, UINT, const gfx::ColorSpace&,
                     const gfx::Rect& input_rectangle, ID3D12Resource*, UINT,
@@ -270,16 +285,17 @@ TEST_F(D3D12VideoEncodeDelegateTestWithProcessFrame, EncodeFrameWithVP) {
         EXPECT_EQ(output_rectangle.width(), config.input_visible_size.width());
         EXPECT_EQ(output_rectangle.height(),
                   config.input_visible_size.height());
-        return true;
+        return D3D12FenceAndValue{fence.Get(), 0};
       });
 
   EXPECT_CALL(*GetVideoEncoderWrapper(), GetEncoderOutputMetadata)
       .WillOnce(Return(GetEncoderOutputMetadataResourceMap(kPayloadSize)));
   auto result_or_error =
-      encoder_delegate_->Encode(input_frame, 0, color_space, bitstream_buffer,
+      encoder_delegate_->Encode(input_frame, color_space, bitstream_buffer,
                                 VideoEncoder::EncodeOptions());
   Mock::VerifyAndClearExpectations(GetVideoProcessorWrapper());
-  ASSERT_TRUE(result_or_error.has_value());
+  ASSERT_TRUE(result_or_error.has_value())
+      << std::move(result_or_error).error().message();
 
   auto [bitstream_buffer_id, metadata] = std::move(result_or_error).value();
   EXPECT_EQ(bitstream_buffer_id, bitstream_buffer.id());
@@ -287,6 +303,34 @@ TEST_F(D3D12VideoEncodeDelegateTestWithProcessFrame, EncodeFrameWithVP) {
       gfx::ColorSpace::MatrixID::BT709, gfx::ColorSpace::RangeID::FULL);
   EXPECT_EQ(metadata.encoded_color_space, output_color_space);
   EXPECT_EQ(metadata.payload_size_bytes, kPayloadSize);
+}
+
+TEST_F(D3D12VideoEncodeDelegateTest, EncodeWithTooManyReferenceBuffersFails) {
+  VideoEncodeAccelerator::Config config = GetDefaultH264Config();
+  ASSERT_TRUE(encoder_delegate_->Initialize(config).is_ok());
+
+  gfx::Size input_size = config.input_visible_size;
+  auto input_frame = CreateResource(input_size, config.input_format);
+  gfx::ColorSpace color_space = gfx::ColorSpace::CreateREC709();
+  constexpr size_t kPayloadSize = 1024;
+  auto shared_memory = base::UnsafeSharedMemoryRegion::Create(kPayloadSize);
+  BitstreamBuffer bitstream_buffer(
+      base::RandIntInclusive(0, H264DPB::kDPBMaxSize - 1),
+      shared_memory.Duplicate(), kPayloadSize);
+
+  VideoEncoder::EncodeOptions options;
+  // Fill reference_buffers with one more than supported to trigger failure.
+  const size_t too_many = encoder_delegate_->GetMaxNumOfManualRefBuffers() + 1;
+  for (size_t i = 0; i < too_many; ++i) {
+    options.reference_buffers.push_back(static_cast<uint8_t>(i));
+  }
+
+  auto result_or_error = encoder_delegate_->Encode(input_frame, color_space,
+                                                   bitstream_buffer, options);
+
+  // Expect an error indicating too many reference buffers.
+  EXPECT_FALSE(result_or_error.has_value());
+  EXPECT_EQ(result_or_error.code(), EncoderStatus::Codes::kBadReferenceBuffer);
 }
 
 }  // namespace media

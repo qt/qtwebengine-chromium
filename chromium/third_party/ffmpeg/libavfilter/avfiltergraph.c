@@ -485,13 +485,13 @@ static void print_filter_formats(void *log_ctx, int level, const AVFilterContext
     for (int i = 0; i < f->nb_inputs; i++) {
         const AVFilterLink *in = f->inputs[i];
         const AVFilterNegotiation *neg = ff_filter_get_negotiation(in);
-        av_log(log_ctx, level, "  in[%d] '%s':", i, f->input_pads[i].name);
+        av_log(log_ctx, level, "  in[%d] '%s':\n", i, f->input_pads[i].name);
 
         for (unsigned i = 0; i < neg->nb_mergers; i++) {
             const AVFilterFormatsMerger *m = &neg->mergers[i];
             m->print_list(&bp, FF_FIELD_AT(void *, m->offset, in->outcfg));
             if (av_bprint_is_complete(&bp))
-                av_log(log_ctx, level, "    %s: %s", m->name, bp.str);
+                av_log(log_ctx, level, "    %s: %s\n", m->name, bp.str);
             av_bprint_clear(&bp);
         }
     }
@@ -499,13 +499,13 @@ static void print_filter_formats(void *log_ctx, int level, const AVFilterContext
     for (int i = 0; i < f->nb_outputs; i++) {
         const AVFilterLink *out = f->outputs[i];
         const AVFilterNegotiation *neg = ff_filter_get_negotiation(out);
-        av_log(log_ctx, level, "  out[%d] '%s':", i, f->output_pads[i].name);
+        av_log(log_ctx, level, "  out[%d] '%s':\n", i, f->output_pads[i].name);
 
         for (unsigned i = 0; i < neg->nb_mergers; i++) {
             const AVFilterFormatsMerger *m = &neg->mergers[i];
             m->print_list(&bp, FF_FIELD_AT(void *, m->offset, out->incfg));
             if (av_bprint_is_complete(&bp))
-                av_log(log_ctx, level, "    %s: %s", m->name, bp.str);
+                av_log(log_ctx, level, "    %s: %s\n", m->name, bp.str);
             av_bprint_clear(&bp);
         }
     }
@@ -570,7 +570,7 @@ retry:
                 void *b = FF_FIELD_AT(void *, m->offset, link->outcfg);
                 if (a && b && a != b && !m->can_merge(a, b)) {
                     for (k = 0; k < num_conv; k++) {
-                        if (conv_filters[k] == m->conversion_filter)
+                        if (!strcmp(conv_filters[k], m->conversion_filter))
                             break;
                     }
                     if (k == num_conv) {
@@ -683,7 +683,7 @@ retry:
 
                 for (neg_step = 0; neg_step < neg->nb_mergers; neg_step++) {
                     const AVFilterFormatsMerger *m = &neg->mergers[neg_step];
-                    if (m->conversion_filter != conv_filters[k])
+                    if (strcmp(m->conversion_filter, conv_filters[k]))
                         continue;
                     if ((ret = MERGE(m,  inlink)) <= 0 ||
                         (ret = MERGE(m, outlink)) <= 0) {
@@ -701,10 +701,11 @@ retry:
                 }
             }
 
-            /* if there is more than one auto filter, we may need another round
-             * to fully settle formats due to possible cross-incompatibilities
-             * between the auto filters themselves */
-            if (num_conv > 1)
+            /* if there is an auto filter, we may need another round to fully
+             * settle formats due to possible cross-incompatibilities between
+             * the auto filters themselves, or between the auto filters and
+             * a different attribute of the filter they are modifying */
+            if (num_conv)
                 goto retry;
         }
     }

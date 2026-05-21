@@ -67,6 +67,8 @@ class CORE_EXPORT StylePropertySerializer {
                                   const StylePropertyShorthand&) const;
   String GetShorthandValueForBidirectionalGapRuleInset(
       const StylePropertyShorthand&) const;
+  String GetShorthandValueForBidirectionalGapRuleEdgeInteriorInset(
+      const StylePropertyShorthand&) const;
   String GetShorthandValueForBidirectionalGapRules(
       const StylePropertyShorthand&) const;
   String GetShorthandValueForGapDecorationsRule(
@@ -75,6 +77,10 @@ class CORE_EXPORT StylePropertySerializer {
   String GetShorthandValueForGapDecorationsRuleInset(
       const StylePropertyShorthand&,
       CSSGapDecorationPropertyDirection direction) const;
+  String GetShorthandValueForGapDecorationsRuleEdgeInteriorInset(
+      const StylePropertyShorthand&,
+      CSSGapDecorationPropertyDirection direction,
+      bool is_edge) const;
   String GetShorthandValueForColumnRule(const StylePropertyShorthand&) const;
   String GetShorthandValueForColumns(const StylePropertyShorthand&) const;
   // foo || bar || ... || baz
@@ -91,7 +97,7 @@ class CORE_EXPORT StylePropertySerializer {
   String ScrollTimelineValue() const;
   String ViewTimelineValue() const;
   String AnimationRangeShorthandValue() const;
-  String TimelineTriggerRangeShorthandValue() const;
+  String TimelineTriggerActivationRangeShorthandValue() const;
   String TimelineTriggerExitRangeShorthandValue() const;
   String FontValue() const;
   String FontSynthesisValue() const;

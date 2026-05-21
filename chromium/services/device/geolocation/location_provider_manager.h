@@ -6,12 +6,14 @@
 #define SERVICES_DEVICE_GEOLOCATION_LOCATION_PROVIDER_MANAGER_H_
 
 #include <stdint.h>
+
 #include <memory>
 #include <string>
 #include <vector>
 
 #include "base/cancelable_callback.h"
 #include "base/functional/callback_forward.h"
+#include "base/gtest_prod_util.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/time/time.h"
@@ -92,8 +94,23 @@ class LocationProviderManager : public LocationProvider {
 
 
   const CustomLocationProviderCallback custom_location_provider_getter_;
+
+#if BUILDFLAG(IS_CHROMEOS)
+  // On ChromeOS, `GeolocationSystemPermissionManager`
+  // is reset in `ChromeBrowserMainExtraPartsAsh::PostMainMessageLoopRun`.
+  // This can happen before `LocationProviderManager` is destroyed, creating a
+  // dangling pointer situation.
+  // TODO(crbug.com/474434915): Remove DanglingUntriaged for ChromeOS.
   const raw_ptr<GeolocationSystemPermissionManager, DanglingUntriaged>
       geolocation_system_permission_manager_;
+#else
+  // On macOS or Windows, `GeolocationSystemPermissionManager` is never torn
+  // down, ensuring its lifetime exceeds that of `this` object. Hence, it is
+  // safe to remove the `DanglingUntriaged` annotation.
+  const raw_ptr<GeolocationSystemPermissionManager>
+      geolocation_system_permission_manager_;
+#endif
+
   const scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory_;
   const std::string api_key_;
 

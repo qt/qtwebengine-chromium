@@ -9,6 +9,7 @@
 #include "components/content_settings/core/common/content_settings.h"
 #include "components/permissions/permission_request_enums.h"
 #include "components/permissions/permission_uma_util.h"
+#include "components/permissions/resolvers/permission_prompt_options.h"
 #include "content/public/browser/web_contents.h"
 
 #if !BUILDFLAG(IS_ANDROID)
@@ -55,11 +56,12 @@ bool PermissionsClient::IsCookieDeletionDisabled(
   return false;
 }
 
-void PermissionsClient::GetUkmSourceId(ContentSettingsType permission_type,
-                                       content::BrowserContext* browser_context,
-                                       content::WebContents* web_contents,
-                                       const GURL& requesting_origin,
-                                       GetUkmSourceIdCallback callback) {
+void PermissionsClient::GetUkmSourceId(
+    ContentSettingsType permission_type,
+    content::BrowserContext* browser_context,
+    content::RenderFrameHost* render_frame_host,
+    const GURL& requesting_origin,
+    GetUkmSourceIdCallback callback) {
   std::move(callback).Run(std::nullopt);
 }
 
@@ -96,6 +98,7 @@ void PermissionsClient::TriggerPromptHatsSurveyIfEnabled(
 void PermissionsClient::OnPromptResolved(
     const PermissionRequest* request,
     PermissionAction action,
+    const PromptOptions& prompt_options,
     PermissionPromptDisposition prompt_disposition,
     PermissionPromptDispositionReason prompt_disposition_reason,
     std::optional<QuietUiReason> quiet_ui_reason,
@@ -135,15 +138,16 @@ bool PermissionsClient::CanBypassEmbeddingOriginCheck(
   return false;
 }
 
-std::optional<GURL> PermissionsClient::OverrideCanonicalOrigin(
+std::optional<GURL> PermissionsClient::GetCanonicalOriginOverride(
     const GURL& requesting_origin,
     const GURL& embedding_origin) {
   return std::nullopt;
 }
 
-bool PermissionsClient::DoURLsMatchNewTabPage(const GURL& requesting_origin,
-                                              const GURL& embedding_origin) {
-  return false;
+std::optional<GURL> PermissionsClient::GetEmbeddingOriginOverride(
+    const GURL& requesting_origin,
+    content::WebContents* web_contents) {
+  return std::nullopt;
 }
 
 permissions::PermissionIgnoredReason PermissionsClient::DetermineIgnoreReason(

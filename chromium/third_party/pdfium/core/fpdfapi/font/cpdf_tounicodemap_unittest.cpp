@@ -59,7 +59,8 @@ TEST(CPDFToUnicodeMapTest, StringToWideString) {
   EXPECT_EQ(res, CPDF_ToUnicodeMap::StringToWideString("<c2ab FaAb>"));
   EXPECT_EQ(res, CPDF_ToUnicodeMap::StringToWideString("<c2ab FaAb12>"));
   EXPECT_EQ(res, CPDF_ToUnicodeMap::StringToWideString("<c2ab FaAb 12>"));
-  EXPECT_EQ(res, CPDF_ToUnicodeMap::StringToWideString("< c 2 a b  F a A b  1 2 >"));
+  EXPECT_EQ(res,
+            CPDF_ToUnicodeMap::StringToWideString("< c 2 a b  F a A b  1 2 >"));
 }
 
 TEST(CPDFToUnicodeMapTest, HandleBeginBFCharBadCount) {
@@ -318,7 +319,29 @@ TEST(CPDFToUnicodeMapTest, HandleBeginBFRangeGoodCount) {
   EXPECT_EQ(0u, map.GetUnicodeCountByCharcodeForTesting(6u));
 }
 
-TEST(CPDFToUnicodeMapTest, InsertIntoMultimap) {
+TEST(CPDFToUnicodeMapTest, HandleBeginBFRangeDestLargeValue) {
+  static constexpr uint8_t kInput[] =
+      "1 beginbfrange<0010><00ff><fff0>endbfrange";
+  auto stream = pdfium::MakeRetain<CPDF_Stream>(kInput);
+  CPDF_ToUnicodeMap map(stream);
+  EXPECT_EQ(L"\xfff0", map.Lookup(0x10));
+  EXPECT_EQ(L"\xfff1", map.Lookup(0x11));
+  // TODO(thestig): Should this return L"\xffff"?
+  EXPECT_EQ(L"", map.Lookup(0x1f));
+  EXPECT_EQ(L"", map.Lookup(0x20));
+  EXPECT_EQ(16u, map.ReverseLookup(0xfff0));
+  EXPECT_EQ(17u, map.ReverseLookup(0xfff1));
+  EXPECT_EQ(31u, map.ReverseLookup(0xffff));
+#if defined(WCHAR_T_IS_32_BIT)
+  // TODO(crbug.com/374947848): Should be able to make this call if wchar_t is
+  // 16-bit.
+  // TODO(thestig): Should this reverse lookup work when the corresponding
+  // Lookup() call does not work?
+  EXPECT_EQ(32u, map.ReverseLookup(0x10000));
+#endif
+}
+
+TEST(CPDFToUnicodeMapTest, InsertIntoMaps) {
   {
     // Both the CIDs and the unicodes are different.
     static constexpr uint8_t kInput1[] =
@@ -342,7 +365,7 @@ TEST(CPDFToUnicodeMapTest, InsertIntoMultimap) {
   }
   {
     // Duplicate mappings of CID 0 to unicode "A". There should be only 1 entry
-    // in `multimap_`.
+    // in `reverse_map_`.
     static constexpr uint8_t kInput3[] =
         "1 beginbfrange<0><0>[<0041>]endbfrange\n"
         "1 beginbfchar<0><0041>endbfchar";

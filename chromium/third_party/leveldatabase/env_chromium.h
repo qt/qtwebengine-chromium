@@ -83,19 +83,9 @@ enum LevelDBStatusValue {
 LEVELDB_EXPORT LevelDBStatusValue
 GetLevelDBStatusUMAValue(const leveldb::Status& s);
 
-using DatabaseErrorReportingCallback =
-    base::RepeatingCallback<void(const leveldb::Status&)>;
-
 // Create the default leveldb options object suitable for leveldb operations.
 struct LEVELDB_EXPORT Options : public leveldb::Options {
   Options();
-
-  // Called when there is a error during the Get() call. Intended for metrics
-  // reporting.
-  DatabaseErrorReportingCallback on_get_error;
-  // Called when there is a error during the Write() call, which is called for
-  // Write(), Put() and Delete(). Intended for metrics reporting.
-  DatabaseErrorReportingCallback on_write_error;
 };
 
 LEVELDB_EXPORT const char* MethodIDToString(MethodID method);
@@ -147,9 +137,6 @@ class LEVELDB_EXPORT ChromiumEnv : public leveldb::Env {
   // instance that performs direct filesystem access.
   ChromiumEnv();
 
-  // Temporary debugging ctor.
-  explicit ChromiumEnv(bool log_lock_errors);
-
   // Constructs a ChromiumEnv instance with a custom FilesystemProxy instance.
   explicit ChromiumEnv(std::unique_ptr<storage::FilesystemProxy> filesystem);
 
@@ -191,10 +178,6 @@ class LEVELDB_EXPORT ChromiumEnv : public leveldb::Env {
 
  private:
   void RemoveBackupFiles(const base::FilePath& dir);
-
-  // When `log_lock_errors_` is true, this env will emit extra metrics for
-  // locking failures. TODO(crbug.com/340398745): remove this.
-  bool log_lock_errors_ = false;
 
   // `FilesystemProxy` is thread-safe.
   const std::unique_ptr<storage::FilesystemProxy> filesystem_;

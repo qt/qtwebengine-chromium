@@ -49,6 +49,8 @@ class WorkerTaskPool;
 
 namespace dawn::native {
 
+class AsyncTaskManager;
+
 // TODO(crbug.com/dawn/826): we'll add additional things to AsyncTask in the future, like
 // Cancel() and RunNow(). Cancelling helps avoid running the task's body when we are just
 // shutting down the device. RunNow() could be used for more advanced scenarios, for example
@@ -57,8 +59,7 @@ namespace dawn::native {
 
 enum class AsyncTaskState : uint8_t {
     Pending = 0,
-    Running = 1,
-    Completed = 2,
+    Completed = 1,
 };
 
 using AsyncTaskFunction = std::function<void()>;
@@ -66,10 +67,9 @@ using AsyncTaskCompletionCallback = std::function<void()>;
 
 class AsyncTask : public RefCounted {
   public:
-    explicit AsyncTask(AsyncTaskFunction task);
+    AsyncTask(AsyncTaskManager* taskManager, AsyncTaskFunction task);
 
-    AsyncTaskState GetState() const { return mState; }
-
+    bool IsCompleted() const;
     void Wait();
 
     void AddCompletionCallback(AsyncTaskCompletionCallback completionCallback);
@@ -79,23 +79,23 @@ class AsyncTask : public RefCounted {
     friend class AsyncTaskManager;
     void Run();
 
-    AsyncTaskFunction mTask;
+    // Async tasks are created when we post to an AsyncTaskManager. The task needs a pointer back to
+    // the task manager to update the manager's state to let it know it has completed.
+    raw_ptr<AsyncTaskManager> mTaskManager;
 
-    // Use a mutex to guard changes to mCompletionCallbacks, mWaitableEvent and transitioning mState
-    // to Completed.
-    // mState is atomic for a lockless getter and Pending -> Running transition.
-    std::mutex mMutex;
-    std::atomic<AsyncTaskState> mState = AsyncTaskState::Pending;
-    std::vector<AsyncTaskCompletionCallback> mCompletionCallbacks;
+    struct State {
+        explicit State(AsyncTaskFunction task);
 
-    // Hold onto the waitable platform event until the task has completed. Released before the
-    // destruction of the AsyncTask to be as light weight as possible.
-    std::unique_ptr<dawn::platform::WaitableEvent> mWaitableEvent;
+        AsyncTaskState state = AsyncTaskState::Pending;
+        AsyncTaskFunction task;
+        std::vector<AsyncTaskCompletionCallback> completionCallbacks;
+    };
+    MutexCondVarProtected<State> mState;
 };
 
 class ErrorGeneratingAsyncTask : public AsyncTask {
   public:
-    explicit ErrorGeneratingAsyncTask(std::function<MaybeError()> task);
+    ErrorGeneratingAsyncTask(AsyncTaskManager* taskManager, std::function<MaybeError()> task);
 
     bool IsSuccess() const;
     bool IsError() const;
@@ -113,27 +113,22 @@ class AsyncTaskManager {
 
     template <typename TaskType, class... Args>
     Ref<TaskType> PostTask(Args&&... args) {
-        Ref<TaskType> asyncTask = AcquireRef(new TaskType(std::forward<Args>(args)...));
+        Ref<TaskType> asyncTask = AcquireRef(new TaskType(this, std::forward<Args>(args)...));
         PostConstructedTask(asyncTask);
         return asyncTask;
     }
 
     void WaitAllPendingTasks();
-    bool HasPendingTasks();
+    bool HasPendingTasks() const;
 
   private:
-    struct WaitableTask : NonCopyable {
-        Ref<AsyncTask> asyncTask;
-        raw_ptr<AsyncTaskManager> taskManager;
-    };
+    friend class AsyncTask;
 
     void PostConstructedTask(Ref<AsyncTask> asyncTask);
-
     static void RunTask(void* task);
-    void HandleTaskCompletion(WaitableTask* task);
 
-    using PendingTasksSet = absl::flat_hash_set<std::unique_ptr<WaitableTask>>;
-    MutexProtected<PendingTasksSet> mPendingTasks;
+    using TaskSet = absl::flat_hash_set<Ref<AsyncTask>>;
+    MutexProtected<TaskSet> mTasks;
 
     raw_ptr<dawn::platform::WorkerTaskPool> mWorkerTaskPool;
 };

@@ -37,8 +37,8 @@
 #include "third_party/blink/renderer/core/css/style_change_reason.h"
 #include "third_party/blink/renderer/core/css/style_engine.h"
 #include "third_party/blink/renderer/core/css/vision_deficiency.h"
+#include "third_party/blink/renderer/core/dom/element_rare_data_vector.h"
 #include "third_party/blink/renderer/core/dom/events/event.h"
-#include "third_party/blink/renderer/core/dom/node_rare_data.h"
 #include "third_party/blink/renderer/core/dom/visited_link_state.h"
 #include "third_party/blink/renderer/core/editing/drag_caret.h"
 #include "third_party/blink/renderer/core/editing/markers/document_marker_controller.h"
@@ -76,7 +76,6 @@
 #include "third_party/blink/renderer/core/page/link_highlight.h"
 #include "third_party/blink/renderer/core/page/page_animator.h"
 #include "third_party/blink/renderer/core/page/page_hidden_state.h"
-#include "third_party/blink/renderer/core/page/page_popup_controller.h"
 #include "third_party/blink/renderer/core/page/plugin_data.h"
 #include "third_party/blink/renderer/core/page/pointer_lock_controller.h"
 #include "third_party/blink/renderer/core/page/scoped_browsing_context_group_pauser.h"
@@ -1063,8 +1062,10 @@ void Page::SettingsChanged(ChangeType change_type) {
         }
         document->GetStyleEngine()
             .EnsureEnvironmentVariables()
-            .SetPreferredTextScale(
-                document->GetSettings()->GetAccessibilityFontScaleFactor());
+            .UpdatePreferredTextScaleFromDocument();
+        if (document->TextScaleMetaTagPresent()) {
+          document->GetStyleEngine().InitialStyleChanged();
+        }
       }
       break;
     case ChangeType::kTextAutosizing:
@@ -1282,8 +1283,7 @@ void Page::DidCommitLoad(LocalFrame* frame) {
     // See crbug.com/642279
     GetVisualViewport().SetScrollOffset(
         ScrollOffset(), mojom::blink::ScrollType::kProgrammatic,
-        cc::ScrollSourceType::kNone, mojom::blink::ScrollBehavior::kInstant,
-        ScrollableArea::ScrollCallback());
+        cc::ScrollSourceType::kNone, mojom::blink::ScrollBehavior::kInstant);
   }
   // crbug/1312107: If DevTools has "Highlight ad frames" checked when the
   // main frame is refreshed or the ad frame is navigated to a different
@@ -1349,14 +1349,7 @@ void Page::Trace(Visitor* visitor) const {
   visitor->Trace(v8_compile_hints_consumer_);
   visitor->Trace(close_task_handler_);
   visitor->Trace(opener_);
-  visitor->Trace(storage_namespace_);
-  visitor->Trace(page_popup_controller_);
-  visitor->Trace(no_state_prefetch_client_);
-  visitor->Trace(audio_graph_tracer_);
-  visitor->Trace(internal_settings_);
-#if BUILDFLAG(IS_ANDROID)
-  visitor->Trace(suspend_capture_observer_);
-#endif
+  Supplementable<Page>::Trace(visitor);
 }
 
 void Page::DidInitializeCompositing(cc::AnimationHost& host) {
@@ -1589,6 +1582,11 @@ void Page::SetAttributionSupport(
   attribution_support_ = attribution_support;
 }
 
+template class CORE_TEMPLATE_EXPORT Supplement<Page>;
+
+const char InternalSettingsPageSupplementBase::kSupplementName[] =
+    "InternalSettings";
+
 // static
 void Page::PrepareForLeakDetection() {
   // Internal settings are ScriptWrappable and thus may retain documents
@@ -1596,7 +1594,7 @@ void Page::PrepareForLeakDetection() {
   // object through the Page supplement. Prepares for leak detection by removing
   // all InternalSetting objects from Pages.
   for (Page* page : OrdinaryPages()) {
-    page->SetInternalSettings(ForwardDeclaredMember<InternalSettings>(nullptr));
+    page->RemoveSupplement<InternalSettingsPageSupplementBase>();
 
     // V8CrowdsourcedCompileHintsProducer keeps v8::Script objects alive until
     // the page becomes interactive. Give it a chance to clean up.
@@ -1607,7 +1605,7 @@ void Page::PrepareForLeakDetection() {
 // Ensure the 10 bits reserved for connected frame count in NodeRareData are
 // sufficient.
 static_assert(kMaxNumberOfFrames <
-                  (1 << NodeRareData::kConnectedFrameCountBits),
+                  (1 << ElementRareDataVector::kConnectedFrameCountBits),
               "Frame limit should fit in rare data count");
 static_assert(kTenFrames < kMaxNumberOfFrames,
               "Reduced frame limit for testing should actually be lower");

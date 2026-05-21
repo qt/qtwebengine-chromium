@@ -48,7 +48,7 @@ class CastSocketTest : public ::testing::Test {
 
 TEST_F(CastSocketTest, SendMessage) {
   EXPECT_CALL(connection(), Send(_)).WillOnce([this](ByteView data) {
-    EXPECT_EQ(frame_serial_, std::vector<uint8_t>(data.cbegin(), data.cend()));
+    EXPECT_EQ(frame_serial_, std::vector<uint8_t>(data.begin(), data.end()));
     return true;
   });
   ASSERT_TRUE(socket().Send(message_).ok());
@@ -59,7 +59,7 @@ TEST_F(CastSocketTest, SendMessageEventuallyBlocks) {
       .Times(3)
       .WillRepeatedly([this](ByteView data) {
         EXPECT_EQ(frame_serial_,
-                  std::vector<uint8_t>(data.cbegin(), data.cend()));
+                  std::vector<uint8_t>(data.begin(), data.end()));
         return true;
       })
       .RetiresOnSaturation();

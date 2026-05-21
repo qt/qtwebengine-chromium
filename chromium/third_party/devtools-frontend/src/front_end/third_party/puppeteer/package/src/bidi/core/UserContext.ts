@@ -23,6 +23,7 @@ export type CreateBrowsingContextOptions = Omit<
   'type' | 'referenceContext'
 > & {
   referenceContext?: BrowsingContext;
+  background?: boolean;
 };
 
 /**
@@ -95,6 +96,7 @@ export class UserContext extends EventEmitter<{
         info.context,
         info.url,
         info.originalOpener,
+        info.clientWindow,
       );
       this.#browsingContexts.set(browsingContext.id, browsingContext);
 
@@ -147,6 +149,7 @@ export class UserContext extends EventEmitter<{
       type,
       ...options,
       referenceContext: options.referenceContext?.id,
+      background: options.background,
       userContext: this.#id,
     });
 

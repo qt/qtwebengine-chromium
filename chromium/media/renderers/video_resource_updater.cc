@@ -12,7 +12,6 @@
 #include <vector>
 
 #include "base/atomic_sequence_num.h"
-#include "base/containers/contains.h"
 #include "base/containers/span.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
@@ -198,27 +197,33 @@ bool IsFrameFormat32BitRGB(VideoPixelFormat frame_format) {
          frame_format == PIXEL_FORMAT_ABGR || frame_format == PIXEL_FORMAT_ARGB;
 }
 
-viz::SharedImageFormat::ChannelFormat SupportedMultiPlaneChannelFormat(
-    const gpu::Capabilities& caps,
-    const gpu::SharedImageCapabilities& shared_image_caps,
+std::optional<viz::SharedImageFormat::ChannelFormat>
+SupportedMultiPlaneChannelFormat(
+    viz::RasterContextProvider* raster_context_provider,
     int bits_per_channel) {
+  const auto& shared_image_caps =
+      raster_context_provider->SharedImageInterface()->GetCapabilities();
   if (bits_per_channel <= 8) {
-    // Must support texture_rg or 8-bits luminance.
-    DCHECK(shared_image_caps.supports_luminance_shared_images ||
-           caps.texture_rg);
-    return viz::SharedImageFormat::ChannelFormat::k8;
+    if (PaintCanvasVideoRenderer::MultiPlaneChannelFormatSupported(
+            raster_context_provider,
+            viz::SharedImageFormat::ChannelFormat::k8)) {
+      return viz::SharedImageFormat::ChannelFormat::k8;
+    }
   }
-  // Can support R_16 formats.
-  if (caps.texture_norm16 && shared_image_caps.supports_r16_shared_images) {
+  // TODO(https:/crbug.com/481590672): Checking `supports_r16_shared_images`
+  // may be too pessimistic. Consider removing it.
+  if (PaintCanvasVideoRenderer::MultiPlaneChannelFormatSupported(
+          raster_context_provider,
+          viz::SharedImageFormat::ChannelFormat::k16) &&
+      shared_image_caps.supports_r16_shared_images) {
     return viz::SharedImageFormat::ChannelFormat::k16;
   }
-  // Can support R_F16 or LUMINANCE_F16 formats.
-  if (shared_image_caps.is_r16f_supported ||
-      (caps.texture_half_float_linear &&
-       shared_image_caps.supports_luminance_shared_images)) {
+  if (PaintCanvasVideoRenderer::MultiPlaneChannelFormatSupported(
+          raster_context_provider,
+          viz::SharedImageFormat::ChannelFormat::k16F)) {
     return viz::SharedImageFormat::ChannelFormat::k16F;
   }
-  return viz::SharedImageFormat::ChannelFormat::k8;
+  return std::nullopt;
 }
 
 // Return multiplanar shared image format corresponding to the VideoPixelFormat.
@@ -228,7 +233,7 @@ viz::SharedImageFormat VideoPixelFormatToMultiPlanarSharedImageFormat(
   using Subsampling = viz::SharedImageFormat::Subsampling;
   using ChannelFormat = viz::SharedImageFormat::ChannelFormat;
   // Supports VideoPixelFormats based on data from
-  // Media.GpuMemoryBufferVideoFramePool.UnsupportedFormat UMA which ends up
+  // Media.MappableSharedImageVideoFramePool.UnsupportedFormat UMA which ends up
   // going through VideoResourceUpdater for software pixel upload.
   switch (input_format) {
     case PIXEL_FORMAT_I420:
@@ -377,11 +382,11 @@ class VideoResourceUpdater::FrameResource {
     DCHECK(shared_image_interface);
     // TODO(crbug.com/40239769): Set `overlay_candidate` for multiplanar
     // formats.
-    const bool overlay_candidate =
-        format.is_single_plane() && use_gpu_memory_buffer_resources &&
-        shared_image_interface->GetCapabilities()
-            .supports_scanout_shared_images &&
-        CanCreateGpuMemoryBufferForSinglePlaneSharedImageFormat(format);
+    const bool overlay_candidate = format.is_single_plane() &&
+                                   use_gpu_memory_buffer_resources &&
+                                   shared_image_interface->GetCapabilities()
+                                       .supports_scanout_shared_images &&
+                                   CanCreateNativeBufferForFormat(format);
 
     // These SharedImages will be sent over to the display compositor as
     // TransferableResources. RasterInterface which in turn uses RasterDecoder
@@ -563,15 +568,9 @@ void VideoResourceUpdater::AppendQuad(
   bool needs_blending = !contents_opaque;
 
   gfx::Rect visible_rect = frame->visible_rect();
-  gfx::Size coded_size = frame->coded_size();
 
-  const gfx::PointF uv_top_left(
-      static_cast<float>(visible_rect.x()) / coded_size.width(),
-      static_cast<float>(visible_rect.y()) / coded_size.height());
-
-  const gfx::PointF uv_bottom_right(
-      static_cast<float>(visible_rect.right()) / coded_size.width(),
-      static_cast<float>(visible_rect.bottom()) / coded_size.height());
+  const gfx::PointF uv_top_left(visible_rect.origin());
+  const gfx::PointF uv_bottom_right(visible_rect.bottom_right());
 
   switch (frame_resource_type_) {
     case VideoFrameResourceType::VIDEO_HOLE: {
@@ -595,7 +594,8 @@ void VideoResourceUpdater::AppendQuad(
       texture_quad->SetNew(shared_quad_state, quad_rect, visible_quad_rect,
                            needs_blending, frame_resource_id_, uv_top_left,
                            uv_bottom_right, SkColors::kTransparent,
-                           nearest_neighbor, false, protected_video_type);
+                           nearest_neighbor, false, protected_video_type,
+                           /*is_tex_coords_normalized=*/false);
 #if BUILDFLAG(IS_WIN)
       // Windows uses DComp surfaces to e.g. hold MediaFoundation videos, which
       // must be promoted to overlay to be composited correctly.
@@ -771,8 +771,7 @@ VideoFrameExternalResource VideoResourceUpdater::CopyHardwareResource(
       viz::TransferableResource::ResourceSource::kVideo,
       hardware_resource->sync_token(), overrides);
 
-  transferable_resource.hdr_metadata =
-      video_frame->hdr_metadata().value_or(gfx::HDRMetadata());
+  transferable_resource.hdr_metadata = video_frame->hdr_metadata();
   transferable_resource.needs_detiling = video_frame->metadata().needs_detiling;
 
   external_resource.resource = std::move(transferable_resource);
@@ -821,8 +820,7 @@ VideoFrameExternalResource VideoResourceUpdater::CreateForHardwareFrame(
   auto transfer_resource = viz::TransferableResource::Make(
       shared_image, viz::TransferableResource::ResourceSource::kVideo,
       video_frame->acquire_sync_token(), overrides);
-  transfer_resource.hdr_metadata =
-      video_frame->hdr_metadata().value_or(gfx::HDRMetadata());
+  transfer_resource.hdr_metadata = video_frame->hdr_metadata();
   transfer_resource.needs_detiling = video_frame->metadata().needs_detiling;
   if (video_frame->metadata().read_lock_fences_enabled) {
     transfer_resource.synchronization_type =
@@ -863,38 +861,26 @@ viz::SharedImageFormat VideoResourceUpdater::GetSoftwareOutputFormat(
     // Unable to display directly as yuv planes so convert it to RGB.
     return PaintCanvasVideoRenderer::GetRGBPixelsOutputFormat();
   }
-  const auto& shared_image_caps =
-      context_provider_->SharedImageInterface()->GetCapabilities();
-  if (shared_image_caps.disable_one_component_textures) {
-    // If GPU compositing is enabled, we need to convert texture to RGB if one
-    // component textures are disabled.
+  // Get the supported channel format for `yuv_si_format`'s first plane.
+  auto supported_channel_format =
+      SupportedMultiPlaneChannelFormat(context_provider_, bits_per_channel);
+
+  // There is no suitable planar format to upload to, so we will need to convert
+  // YUV to RGB on the CPU.
+  if (!supported_channel_format.has_value()) {
     return PaintCanvasVideoRenderer::GetRGBPixelsOutputFormat();
   }
 
-  const auto& caps = context_provider_->ContextCapabilities();
   // Get the multiplanar shared image format for `input_frame_format`.
   auto yuv_si_format =
       VideoPixelFormatToMultiPlanarSharedImageFormat(input_frame_format);
-  if (yuv_si_format.plane_config() ==
-      viz::SharedImageFormat::PlaneConfig::kY_UV) {
-    // Only 8-bit formats are supported with UV planes for software decoding.
-    CHECK_EQ(yuv_si_format.channel_format(),
-             viz::SharedImageFormat::ChannelFormat::k8);
-    // Two channel formats are supported only with texture_rg.
-    if (!caps.texture_rg || shared_image_caps.disable_r8_shared_images) {
-      return PaintCanvasVideoRenderer::GetRGBPixelsOutputFormat();
-    }
-  }
 
-  // Get the supported channel format for `yuv_si_format`'s first plane.
-  auto channel_format = SupportedMultiPlaneChannelFormat(
-      caps, shared_image_caps, bits_per_channel);
-  if (yuv_si_format.channel_format() != channel_format) {
+  if (yuv_si_format.channel_format() != supported_channel_format) {
     // If the requested channel format is not supported, use the supported
     // channel format and downsample later if needed.
     yuv_si_format = viz::SharedImageFormat::MultiPlane(
         yuv_si_format.plane_config(), yuv_si_format.subsampling(),
-        channel_format);
+        supported_channel_format.value());
   }
   return yuv_si_format;
 }
@@ -958,11 +944,9 @@ bool VideoResourceUpdater::WriteRGBPixelsToTexture(
     // PCVR writes to origin, so offset upload pixels by start since
     // we upload frames in coded size and pass on the visible rect to
     // the compositor. Note: It'd save a few bytes not to do this...
-    auto* dest_ptr =
-        upload_pixels_[0]
-            .subspan(video_frame->visible_rect().y() * bytes_per_row +
-                     video_frame->visible_rect().x() * sizeof(uint32_t))
-            .data();
+    auto dest_span = upload_pixels_[0].subspan(
+        video_frame->visible_rect().y() * bytes_per_row +
+        video_frame->visible_rect().x() * sizeof(uint32_t));
     // Alpha can be premul for videos that can be delegated/overlaid.
     bool premultiply_alpha =
         hardware_resource->shared_image()->alpha_type() == kPremul_SkAlphaType
@@ -970,7 +954,7 @@ bool VideoResourceUpdater::WriteRGBPixelsToTexture(
             : false;
 
     PaintCanvasVideoRenderer::ConvertVideoFrameToRGBPixels(
-        video_frame.get(), dest_ptr, bytes_per_row,
+        video_frame.get(), dest_span, bytes_per_row,
         resource_format == viz::SinglePlaneFormat::kRGBA_F16
             ? kRGBA_F16_SkColorType
             : kN32_SkColorType,
@@ -1082,10 +1066,10 @@ bool VideoResourceUpdater::WriteYUVPixelsForAllPlanesToTexture(
         int max_value = 1 << bits_per_channel;
         // Use 1.0/max_value to be consistent with multiplanar shared images
         // which create TextureDrawQuads and don't take in a multiplier, offset.
-        // This is consistent with GpuMemoryBufferVideoFramePool as well which
-        // performs libyuv conversion for converting I420 to buffer. This is
-        // sub-optimal but okay as it is only used for 16-bit float formats with
-        // slower software pixel upload path here.
+        // This is consistent with MappableSharedImageVideoFramePool as well
+        // which performs libyuv conversion for converting I420 to buffer. This
+        // is sub-optimal but okay as it is only used for 16-bit float formats
+        // with slower software pixel upload path here.
         float libyuv_multiplier = 1.f / max_value;
         libyuv::HalfFloatPlane(
             reinterpret_cast<const uint16_t*>(
@@ -1259,8 +1243,7 @@ VideoFrameExternalResource VideoResourceUpdater::CreateForSoftwareFrame(
         frame_resource->shared_image(),
         viz::TransferableResource::ResourceSource::kVideo,
         frame_resource->sync_token());
-    transferable_resource.hdr_metadata =
-        video_frame->hdr_metadata().value_or(gfx::HDRMetadata());
+    transferable_resource.hdr_metadata = video_frame->hdr_metadata();
     transferable_resource.needs_detiling =
         video_frame->metadata().needs_detiling;
     external_resource.resource = std::move(transferable_resource);
@@ -1285,8 +1268,7 @@ VideoFrameExternalResource VideoResourceUpdater::CreateForSoftwareFrame(
       frame_resource->shared_image(),
       viz::TransferableResource::ResourceSource::kVideo,
       frame_resource->sync_token());
-  transferable_resource.hdr_metadata =
-      video_frame->hdr_metadata().value_or(gfx::HDRMetadata());
+  transferable_resource.hdr_metadata = video_frame->hdr_metadata();
 
   external_resource.resource = std::move(transferable_resource);
   external_resource.release_callback =

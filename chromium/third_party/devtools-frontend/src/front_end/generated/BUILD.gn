@@ -25,6 +25,7 @@ devtools_module("generated") {
     "../models/trace/*",
     "../panels/accessibility:*",
     "../panels/elements:*",
+    "../panels/greendev:*",
   ]
 }
 

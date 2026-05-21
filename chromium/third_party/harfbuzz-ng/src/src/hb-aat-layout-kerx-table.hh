@@ -629,6 +629,8 @@ struct KerxSubTableFormat4
 	}
 	o.attach_type() = OT::Layout::GPOS_impl::ATTACH_TYPE_MARK;
 	o.attach_chain() = (int) mark - (int) buffer->idx;
+	if (c->buffer_is_reversed)
+	  o.attach_chain() = -o.attach_chain();
 	buffer->scratch_flags |= HB_BUFFER_SCRATCH_FLAG_HAS_GPOS_ATTACHMENT;
       }
 
@@ -1050,8 +1052,8 @@ struct KerxTable
 	}
       }
 
-      if (reverse)
-	c->buffer->reverse ();
+      if (reverse != c->buffer_is_reversed)
+        c->reverse_buffer ();
 
       {
 	/* See comment in sanitize() for conditional here. */
@@ -1059,15 +1061,14 @@ struct KerxTable
 	ret |= st->dispatch (c);
       }
 
-      if (reverse)
-	c->buffer->reverse ();
-
       (void) c->buffer->message (c->font, "end subtable %u", c->lookup_index);
 
     skip:
       st = &StructAfter<SubTable> (*st);
       c->set_lookup_index (c->lookup_index + 1);
     }
+    if (c->buffer_is_reversed)
+      c->reverse_buffer ();
 
     return ret;
   }

@@ -257,6 +257,10 @@ public:
 
     bool drawBlurredRRect(const SkRRect&, const SkPaint&, float deviceSigma) override;
 
+#if defined(GPU_TEST_UTILS)
+    int testingOnly_pendingRenderSteps() const;
+#endif
+
 private:
     class IntersectionTreeSet;
 
@@ -325,8 +329,13 @@ private:
     std::pair<const Renderer*, PathAtlas*> chooseRenderer(const Transform& localToDevice,
                                                           const Geometry&,
                                                           const SkStrokeRec&,
-                                                          const Rect& drawBounds,
-                                                          bool requireMSAA) const;
+                                                          const Rect& drawBounds) const;
+
+    // Ignoring specialized Shape renderers and the selected PathRendererStrategy, choose a
+    // MSAA-requiring tessellation-based renderer for the shape and style.
+    const Renderer* chooseMSAARenderer(const Shape&,
+                                       const SkStrokeRec&,
+                                       const Rect& drawBounds) const;
 
     bool needsFlushBeforeDraw(int numNewRenderSteps, DstReadStrategy);
 
@@ -356,8 +365,6 @@ private:
     // The max depth value sent to the DrawContext, incremented so each draw has a unique value.
     PaintersDepth fCurrentDepth;
 
-    // The DrawContext's target supports MSAA
-    bool fMSAASupported = false;
     // Even when MSAA is supported, small paths may be sent to the atlas for higher quality and to
     // avoid triggering MSAA overhead on a render pass. However, the number of paths is capped
     // per Device flush.

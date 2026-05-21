@@ -5,18 +5,19 @@
 import * as i18n from '../../../../core/i18n/i18n.js';
 import type {RenderBlockingInsightModel} from '../../../../models/trace/insights/RenderBlocking.js';
 import * as Trace from '../../../../models/trace/trace.js';
+import * as UI from '../../../../ui/legacy/legacy.js';
 import * as Lit from '../../../../ui/lit/lit.js';
 
 import {BaseInsightComponent} from './BaseInsightComponent.js';
 import {eventRef} from './EventRef.js';
-import {createLimitedRows, renderOthersLabel, type TableDataRow} from './Table.js';
+import {createLimitedRows, renderOthersLabel, Table, type TableDataRow} from './Table.js';
 
 const {UIStrings, i18nString, createOverlayForRequest} = Trace.Insights.Models.RenderBlocking;
 
 const {html} = Lit;
+const {widgetConfig} = UI.Widget;
 
 export class RenderBlocking extends BaseInsightComponent<RenderBlockingInsightModel> {
-  static override readonly litTagName = Lit.StaticHtml.literal`devtools-performance-render-blocking-requests`;
   override internalName = 'render-blocking-requests';
 
   mapToRow(request: Trace.Types.Events.SyntheticNetworkRequest): TableDataRow {
@@ -59,23 +60,15 @@ export class RenderBlocking extends BaseInsightComponent<RenderBlockingInsightMo
     // clang-format off
     return html`
       <div class="insight-section">
-        <devtools-performance-table
-          .data=${{
+        <devtools-widget .widgetConfig=${widgetConfig(Table, {
+           data: {
             insight: this,
             headers: [i18nString(UIStrings.renderBlockingRequest), i18nString(UIStrings.duration)],
             rows,
-          }}>
-        </devtools-performance-table>
+          }})}>
+        </devtools-widget>
       </div>
     `;
     // clang-format on
   }
 }
-
-declare global {
-  interface HTMLElementTagNameMap {
-    'devtools-performance-render-blocking-requests': RenderBlocking;
-  }
-}
-
-customElements.define('devtools-performance-render-blocking-requests', RenderBlocking);

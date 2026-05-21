@@ -25,12 +25,13 @@
 #include "base/strings/stringprintf.h"
 #include "build/build_config.h"
 #include "gpu/command_buffer/client/test_shared_image_interface.h"
-#include "gpu/command_buffer/common/mailbox_holder.h"
+#include "gpu/command_buffer/common/mailbox.h"
 #include "media/base/color_plane_layout.h"
 #include "media/base/limits.h"
 #include "media/base/simple_sync_token_client.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/libyuv/include/libyuv.h"
+#include "third_party/skia/include/core/SkYUVAPixmaps.h"
 
 namespace {
 // Creates the backing storage for a frame suitable for WrapExternalData. Note
@@ -179,18 +180,14 @@ void ExpectFrameColor(VideoFrame* yv12_frame, uint32_t expect_rgb_color) {
   ASSERT_EQ(PIXEL_FORMAT_YV12, yv12_frame->format());
   ASSERT_EQ(yv12_frame->stride(VideoFrame::Plane::kU),
             yv12_frame->stride(VideoFrame::Plane::kV));
-  ASSERT_EQ(
-      yv12_frame->coded_size().width() & (VideoFrame::kFrameSizeAlignment - 1),
-      0u);
-  ASSERT_EQ(
-      yv12_frame->coded_size().height() & (VideoFrame::kFrameSizeAlignment - 1),
-      0u);
 
-  size_t bytes_per_row = yv12_frame->coded_size().width() * 4u;
-  uint8_t* rgb_data = reinterpret_cast<uint8_t*>(
-      base::AlignedAlloc(bytes_per_row * yv12_frame->coded_size().height() +
-                             VideoFrame::kFrameSizePadding,
-                         VideoFrame::kFrameAddressAlignment));
+  auto layout = VideoFrame::CreateFullySpecifiedLayoutWithStrides(
+      PIXEL_FORMAT_ARGB, yv12_frame->coded_size());
+  ASSERT_TRUE(layout.has_value());
+
+  size_t rgb_stride = layout->planes()[0].stride;
+  uint8_t* rgb_data = reinterpret_cast<uint8_t*>(base::AlignedAlloc(
+      layout->planes()[0].size, VideoFrame::kFrameAddressAlignment));
 
   libyuv::I420ToARGB(yv12_frame->data(VideoFrame::Plane::kY),
                      yv12_frame->stride(VideoFrame::Plane::kY),
@@ -198,12 +195,12 @@ void ExpectFrameColor(VideoFrame* yv12_frame, uint32_t expect_rgb_color) {
                      yv12_frame->stride(VideoFrame::Plane::kU),
                      yv12_frame->data(VideoFrame::Plane::kV),
                      yv12_frame->stride(VideoFrame::Plane::kV), rgb_data,
-                     bytes_per_row, yv12_frame->coded_size().width(),
+                     rgb_stride, yv12_frame->coded_size().width(),
                      yv12_frame->coded_size().height());
 
   for (int row = 0; row < yv12_frame->coded_size().height(); ++row) {
     uint32_t* rgb_row_data =
-        reinterpret_cast<uint32_t*>(rgb_data + (bytes_per_row * row));
+        reinterpret_cast<uint32_t*>(rgb_data + (rgb_stride * row));
     for (int col = 0; col < yv12_frame->coded_size().width(); ++col) {
       SCOPED_TRACE(base::StringPrintf("Checking (%d, %d)", row, col));
       EXPECT_EQ(expect_rgb_color, rgb_row_data[col]);
@@ -554,28 +551,28 @@ TEST(VideoFrame, WrapMappableSharedImage) {
     EXPECT_EQ(frame->layout().planes()[i].stride,
               static_cast<size_t>(coded_size.width()));
   }
-  EXPECT_EQ(frame->storage_type(), VideoFrame::STORAGE_GPU_MEMORY_BUFFER);
+  EXPECT_EQ(frame->storage_type(), VideoFrame::STORAGE_MAPPABLE_SHARED_IMAGE);
   EXPECT_EQ(frame->coded_size(), coded_size);
   EXPECT_EQ(frame->visible_rect(), visible_rect);
   EXPECT_EQ(frame->timestamp(), timestamp);
   EXPECT_EQ(frame->HasSharedImage(), true);
   EXPECT_EQ(frame->HasReleaseMailboxCB(), true);
   EXPECT_EQ(frame->shared_image()->mailbox(), mailbox);
-  EXPECT_TRUE(frame->is_mappable_si_enabled());
+  EXPECT_TRUE(frame->HasMappableSharedImage());
 
   // Wrapped MappableSI frames must propagate the information of the wrappee.
   auto wrapped_frame = VideoFrame::WrapVideoFrame(
       frame, frame->format(), visible_rect, visible_rect.size());
   ASSERT_NE(wrapped_frame, nullptr);
   EXPECT_EQ(wrapped_frame->storage_type(),
-            VideoFrame::STORAGE_GPU_MEMORY_BUFFER);
+            VideoFrame::STORAGE_MAPPABLE_SHARED_IMAGE);
   EXPECT_EQ(wrapped_frame->coded_size(), coded_size);
   EXPECT_EQ(wrapped_frame->visible_rect(), visible_rect);
   EXPECT_EQ(wrapped_frame->timestamp(), timestamp);
   EXPECT_EQ(wrapped_frame->HasSharedImage(), true);
   EXPECT_EQ(wrapped_frame->HasReleaseMailboxCB(), true);
   EXPECT_EQ(wrapped_frame->shared_image()->mailbox(), mailbox);
-  EXPECT_TRUE(wrapped_frame->is_mappable_si_enabled());
+  EXPECT_TRUE(wrapped_frame->HasMappableSharedImage());
 }
 
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
@@ -658,9 +655,9 @@ static void TextureCallback(gpu::SyncToken* called_sync_token,
   *called_sync_token = release_sync_token;
 }
 
-// Verify the gpu::MailboxHolder::ReleaseCallback is called when VideoFrame is
-// destroyed with the default release sync point.
-TEST(VideoFrame, TextureNoLongerNeededCallbackIsCalled) {
+// Verify the `called_sync_token` is not set for when VideoFrame is created with
+// WrapSharedImage and UpdateReleaseSyncToken is not called.
+TEST(VideoFrame, WrapSharedImageUnsetReleaseSyncToken) {
   gpu::SyncToken called_sync_token(gpu::CommandBufferNamespace::GPU_IO,
                                    gpu::CommandBufferId::FromUnsafeValue(1), 1);
 
@@ -691,11 +688,10 @@ TEST(VideoFrame, TextureNoLongerNeededCallbackIsCalled) {
   EXPECT_FALSE(called_sync_token.HasData());
 }
 
-// Verify the gpu::MailboxHolder::ReleaseCallback is called when VideoFrame is
-// destroyed with the release sync point, which was updated by clients.
-// (i.e. the compositor, webgl).
-TEST(VideoFrame,
-     TexturesNoLongerNeededCallbackAfterTakingAndReleasingMailboxes) {
+// Verify the `called_sync_token` is set for when VideoFrame is
+// created with WrapSharedImage, and which is updated through
+// UpdateReleaseSyncToken by clients. (i.e. the compositor, webgl).
+TEST(VideoFrame, WrapSharedImageSetReleaseSyncToken) {
   const gpu::CommandBufferNamespace kNamespace =
       gpu::CommandBufferNamespace::GPU_IO;
   const gpu::CommandBufferId kCommandBufferId =
@@ -1127,4 +1123,152 @@ TEST(VideoFrame, WrappedPlaneDataAccess) {
   EXPECT_EQ(frame->data(VideoFrame::Plane::kV), nullptr);
   EXPECT_TRUE(frame->data_span(VideoFrame::Plane::kV).empty());
 }
+
+TEST(VideoFrame, GetVisibleSkYUVAPixmaps) {
+  const int kWidth = 64;
+  const int kHeight = 48;
+  const gfx::Size kCodedSize(kWidth, kHeight);
+  const gfx::Rect kVisibleRect(10, 10, 32, 24);
+  const gfx::Size kNaturalSize(32, 24);
+
+  {
+    auto frame =
+        VideoFrame::CreateFrame(PIXEL_FORMAT_I420, kCodedSize, kVisibleRect,
+                                kNaturalSize, base::TimeDelta());
+    ASSERT_TRUE(frame);
+
+    SkYUVAInfo yuva_info = frame->GetVisibleSkYUVAInfo();
+    EXPECT_TRUE(yuva_info.isValid());
+    EXPECT_EQ(yuva_info.dimensions().width(), kVisibleRect.width());
+    EXPECT_EQ(yuva_info.dimensions().height(), kVisibleRect.height());
+    EXPECT_EQ(yuva_info.planeConfig(), SkYUVAInfo::PlaneConfig::kY_U_V);
+    EXPECT_EQ(yuva_info.subsampling(), SkYUVAInfo::Subsampling::k420);
+
+    auto pixmaps = frame->GetVisiblePlanesSkPixmaps();
+    EXPECT_EQ(pixmaps.size(), 3u);
+    auto pm_y = pixmaps[VideoFrame::Plane::kY];
+    auto pm_u = pixmaps[VideoFrame::Plane::kU];
+    auto pm_v = pixmaps[VideoFrame::Plane::kV];
+
+    EXPECT_EQ(pm_y.width(), kVisibleRect.width());
+    EXPECT_EQ(pm_y.height(), kVisibleRect.height());
+    EXPECT_EQ(pm_y.addr(), frame->visible_data(VideoFrame::Plane::kY));
+    EXPECT_EQ(pm_y.rowBytes(),
+              static_cast<size_t>(frame->stride(VideoFrame::Plane::kY)));
+    EXPECT_EQ(pm_y.colorType(), kR8_unorm_SkColorType);
+
+    EXPECT_EQ(pm_u.width(), kVisibleRect.width() / 2);
+    EXPECT_EQ(pm_u.height(), kVisibleRect.height() / 2);
+    EXPECT_EQ(pm_u.addr(), frame->visible_data(VideoFrame::Plane::kU));
+    EXPECT_EQ(pm_u.rowBytes(),
+              static_cast<size_t>(frame->stride(VideoFrame::Plane::kU)));
+    EXPECT_EQ(pm_u.colorType(), kR8_unorm_SkColorType);
+
+    EXPECT_EQ(pm_v.width(), kVisibleRect.width() / 2);
+    EXPECT_EQ(pm_v.height(), kVisibleRect.height() / 2);
+    EXPECT_EQ(pm_v.addr(), frame->visible_data(VideoFrame::Plane::kV));
+    EXPECT_EQ(pm_v.rowBytes(),
+              static_cast<size_t>(frame->stride(VideoFrame::Plane::kV)));
+    EXPECT_EQ(pm_v.colorType(), kR8_unorm_SkColorType);
+  }
+
+  {
+    auto frame =
+        VideoFrame::CreateFrame(PIXEL_FORMAT_NV12, kCodedSize, kVisibleRect,
+                                kNaturalSize, base::TimeDelta());
+    ASSERT_TRUE(frame);
+
+    SkYUVAInfo yuva_info = frame->GetVisibleSkYUVAInfo();
+    EXPECT_TRUE(yuva_info.isValid());
+    EXPECT_EQ(yuva_info.planeConfig(), SkYUVAInfo::PlaneConfig::kY_UV);
+    EXPECT_EQ(yuva_info.subsampling(), SkYUVAInfo::Subsampling::k420);
+
+    auto pixmaps = frame->GetVisiblePlanesSkPixmaps();
+    EXPECT_EQ(pixmaps.size(), 2u);
+    auto pm_y = pixmaps[VideoFrame::Plane::kY];
+    auto pm_uv = pixmaps[VideoFrame::Plane::kUV];
+
+    EXPECT_EQ(pm_y.width(), kVisibleRect.width());
+    EXPECT_EQ(pm_y.height(), kVisibleRect.height());
+    EXPECT_EQ(pm_y.addr(), frame->visible_data(VideoFrame::Plane::kY));
+    EXPECT_EQ(pm_y.colorType(), kR8_unorm_SkColorType);
+
+    EXPECT_EQ(pm_uv.width(), kVisibleRect.width() / 2);
+    EXPECT_EQ(pm_uv.height(), kVisibleRect.height() / 2);
+    EXPECT_EQ(pm_uv.addr(), frame->visible_data(VideoFrame::Plane::kUV));
+    EXPECT_EQ(pm_uv.colorType(), kR8G8_unorm_SkColorType);
+  }
+
+  {
+    auto frame =
+        VideoFrame::CreateFrame(PIXEL_FORMAT_I420A, kCodedSize, kVisibleRect,
+                                kNaturalSize, base::TimeDelta());
+    ASSERT_TRUE(frame);
+
+    SkYUVAInfo yuva_info = frame->GetVisibleSkYUVAInfo();
+    EXPECT_TRUE(yuva_info.isValid());
+    EXPECT_EQ(yuva_info.planeConfig(), SkYUVAInfo::PlaneConfig::kY_U_V_A);
+    EXPECT_EQ(yuva_info.subsampling(), SkYUVAInfo::Subsampling::k420);
+
+    auto pixmaps = frame->GetVisiblePlanesSkPixmaps();
+    EXPECT_EQ(pixmaps.size(), 4u);
+    auto pm_y = pixmaps[VideoFrame::Plane::kY];
+    auto pm_u = pixmaps[VideoFrame::Plane::kU];
+    auto pm_v = pixmaps[VideoFrame::Plane::kV];
+    auto pm_a = pixmaps[VideoFrame::Plane::kA];
+
+    EXPECT_EQ(pm_y.width(), kVisibleRect.width());
+    EXPECT_EQ(pm_y.height(), kVisibleRect.height());
+    EXPECT_EQ(pm_y.addr(), frame->visible_data(VideoFrame::Plane::kY));
+    EXPECT_EQ(pm_y.colorType(), kR8_unorm_SkColorType);
+
+    EXPECT_EQ(pm_u.width(), kVisibleRect.width() / 2);
+    EXPECT_EQ(pm_u.height(), kVisibleRect.height() / 2);
+    EXPECT_EQ(pm_u.addr(), frame->visible_data(VideoFrame::Plane::kU));
+    EXPECT_EQ(pm_u.colorType(), kR8_unorm_SkColorType);
+
+    EXPECT_EQ(pm_v.width(), kVisibleRect.width() / 2);
+    EXPECT_EQ(pm_v.height(), kVisibleRect.height() / 2);
+    EXPECT_EQ(pm_v.addr(), frame->visible_data(VideoFrame::Plane::kV));
+    EXPECT_EQ(pm_v.colorType(), kR8_unorm_SkColorType);
+
+    EXPECT_EQ(pm_a.width(), kVisibleRect.width());
+    EXPECT_EQ(pm_a.height(), kVisibleRect.height());
+    EXPECT_EQ(pm_a.addr(), frame->visible_data(VideoFrame::Plane::kA));
+    EXPECT_EQ(pm_a.colorType(), kR8_unorm_SkColorType);
+  }
+
+  {
+    auto frame =
+        VideoFrame::CreateFrame(PIXEL_FORMAT_ABGR, kCodedSize, kVisibleRect,
+                                kNaturalSize, base::TimeDelta());
+    ASSERT_TRUE(frame);
+
+    SkYUVAInfo yuva_info = frame->GetVisibleSkYUVAInfo();
+    EXPECT_FALSE(yuva_info.isValid());
+
+    auto pixmaps = frame->GetVisiblePlanesSkPixmaps();
+    EXPECT_EQ(pixmaps.size(), 1u);
+    auto pm = pixmaps[VideoFrame::Plane::kARGB];
+
+    EXPECT_EQ(pm.width(), kVisibleRect.width());
+    EXPECT_EQ(pm.height(), kVisibleRect.height());
+    EXPECT_EQ(pm.addr(), frame->visible_data(VideoFrame::Plane::kARGB));
+    EXPECT_EQ(pm.colorType(), kRGBA_8888_SkColorType);
+  }
+
+  {
+    auto frame =
+        VideoFrame::CreateFrame(PIXEL_FORMAT_MJPEG, kCodedSize, kVisibleRect,
+                                kNaturalSize, base::TimeDelta());
+    ASSERT_TRUE(frame);
+
+    SkYUVAInfo yuva_info = frame->GetVisibleSkYUVAInfo();
+    EXPECT_FALSE(yuva_info.isValid());
+
+    auto pixmaps = frame->GetVisiblePlanesSkPixmaps();
+    EXPECT_TRUE(pixmaps.empty());
+  }
+}
+
 }  // namespace media

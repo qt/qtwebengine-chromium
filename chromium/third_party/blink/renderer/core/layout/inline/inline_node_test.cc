@@ -177,7 +177,6 @@ class InlineNodeTest : public RenderingTest {
 
   Persistent<LayoutBlockFlow> layout_block_flow_;
   Persistent<LayoutObject> layout_object_;
-  FontCachePurgePreventer purge_preventer_;
 };
 
 #define TEST_ITEM_TYPE_OFFSET(item, type, start, end) \
@@ -569,20 +568,20 @@ TEST_P(MinMaxTest, Data) {
   const MinMaxData& data = GetParam();
   LoadAhem();
   StringBuilder html;
-  html.AppendFormat(R"HTML("
+  UNSAFE_TODO(html.AppendFormat(R"HTML("
     <!DOCTYPE html>
     <style>
     #target { font: 10px Ahem;%s }
     %s
     </style>
     <div id="target")HTML",
-                    data.target_style, data.style);
+                                data.target_style, data.style));
   if (data.lang) {
-    html.AppendFormat(" lang='%s'", data.lang);
+    UNSAFE_TODO(html.AppendFormat(" lang='%s'", data.lang));
     LayoutLocale::SetHyphenationForTesting(AtomicString(data.lang),
                                            MockHyphenation::Create());
   }
-  html.AppendFormat(">%s</div>", data.content);
+  UNSAFE_TODO(html.AppendFormat(">%s</div>", data.content));
   SetupHtml("target", html.ToString());
   InlineNodeForTest node = CreateInlineNode();
   const MinMaxSizes actual_sizes = ComputeMinMaxSizes(node);
@@ -1721,31 +1720,6 @@ TEST_F(InlineNodeTest, FontFeaturesInitial) {
   };
   EXPECT_TRUE(is_initial("initial"));
   EXPECT_FALSE(is_initial("no-kern"));
-}
-
-TEST_F(InlineNodeTest, ShapeCacheLongString) {
-  for (const unsigned text_length :
-       {NGShapeCache::kMaxTextLengthOfEntries - 1,
-        NGShapeCache::kMaxTextLengthOfEntries,
-        NGShapeCache::kMaxTextLengthOfEntries + 1}) {
-    StringBuilder builder;
-    builder.Append("<div id=t>");
-    for (unsigned i = 0; i < text_length; ++i) {
-      builder.Append(static_cast<LChar>((i % 10) + '0'));
-    }
-    builder.Append("</div>");
-
-    SetupHtml("t", builder.ToString());
-    InlineNodeForTest node = CreateInlineNode();
-    node.CollectInlines();
-
-    const String& text_content(node.Text().c_str());
-    InlineItems& items = node.Items();
-    ShapeResultSpacing spacing(text_content, node.IsSvgText());
-
-    EXPECT_EQ(node.IsNGShapeCacheAllowed(text_content, nullptr, items, spacing),
-              text_length <= NGShapeCache::kMaxTextLengthOfEntries);
-  }
 }
 
 TEST_F(InlineNodeTest, ShapeCacheMultiItems) {

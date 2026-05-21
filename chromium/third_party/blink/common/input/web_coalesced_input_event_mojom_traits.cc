@@ -4,9 +4,9 @@
 
 #include "third_party/blink/public/common/input/web_coalesced_input_event_mojom_traits.h"
 
+#include <algorithm>
 #include <memory>
 
-#include "base/containers/contains.h"
 #include "base/strings/string_util.h"
 #include "base/time/time.h"
 #include "mojo/public/cpp/base/time_mojom_traits.h"
@@ -108,6 +108,10 @@ bool StructTraits<blink::mojom::EventDataView,
     key_event->dom_key = key_data->dom_key;
     key_event->is_system_key = key_data->is_system_key;
     key_event->is_browser_shortcut = key_data->is_browser_shortcut;
+#if BUILDFLAG(IS_ANDROID)
+    key_event->is_confirmed_physical_keyboard_input =
+        key_data->is_confirmed_physical_keyboard_input;
+#endif
     base::u16cstrlcpy(key_event->text.data(), key_data->text.c_str(),
                       blink::WebKeyboardEvent::kTextLengthCap);
     base::u16cstrlcpy(key_event->unmodified_text.data(),
@@ -348,6 +352,7 @@ bool StructTraits<blink::mojom::EventDataView,
                 wheel_data->event_action);
         wheel_event->delta_units =
             static_cast<ui::ScrollGranularity>(wheel_data->delta_units);
+        wheel_event->rails_mode = wheel_data->rails_mode;
       }
     }
 
@@ -380,13 +385,16 @@ StructTraits<blink::mojom::EventDataView,
       static_cast<const blink::WebKeyboardEvent*>(event->EventPointer());
   // Assure std::array<char16_t, N> fields are nul-terminated before converting
   // them to std::u16string.
-  CHECK(base::Contains(key_event->text, 0));
-  CHECK(base::Contains(key_event->unmodified_text, 0));
+  CHECK(std::ranges::contains(key_event->text, 0));
+  CHECK(std::ranges::contains(key_event->unmodified_text, 0));
   return blink::mojom::KeyData::New(
       key_event->dom_key, key_event->dom_code, key_event->windows_key_code,
       key_event->native_key_code, key_event->is_system_key,
-      key_event->is_browser_shortcut, key_event->text.data(),
-      key_event->unmodified_text.data());
+      key_event->is_browser_shortcut,
+#if BUILDFLAG(IS_ANDROID)
+      key_event->is_confirmed_physical_keyboard_input,
+#endif
+      key_event->text.data(), key_event->unmodified_text.data());
 }
 
 // static
@@ -413,7 +421,8 @@ StructTraits<blink::mojom::EventDataView,
         wheel_event->acceleration_ratio_y, wheel_event->phase,
         wheel_event->momentum_phase, wheel_event->dispatch_type,
         static_cast<uint8_t>(wheel_event->event_action),
-        static_cast<uint8_t>(wheel_event->delta_units));
+        static_cast<uint8_t>(wheel_event->delta_units),
+        wheel_event->rails_mode);
   }
 
   return PointerDataFromPointerProperties(

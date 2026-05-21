@@ -92,8 +92,8 @@ AdSamplerTrigger::AdSamplerTrigger(
       content::WebContentsUserData<AdSamplerTrigger>(*web_contents),
       sampler_frequency_denominator_(GetSamplerFrequencyDenominator()),
       start_report_delay_ms_(
-          base::RandInt(kMinAdSampleCollectionStartDelayMilliseconds,
-                        kMaxAdSampleCollectionStartDelayMilliseconds)),
+          base::RandIntInclusive(kMinAdSampleCollectionStartDelayMilliseconds,
+                                 kMaxAdSampleCollectionStartDelayMilliseconds)),
       finish_report_delay_ms_(kAdSampleCollectionPeriodMilliseconds),
       trigger_manager_(trigger_manager),
       prefs_(prefs),
@@ -143,7 +143,7 @@ void AdSamplerTrigger::CreateAdSampleReport() {
   resource.url = web_contents()->GetURL();
   resource.rfh_locator =
       security_interstitials::UnsafeResourceLocator::CreateForRenderFrameToken(
-          primary_main_frame_id.child_id,
+          primary_main_frame_id.child_id.value(),
           primary_main_frame->GetFrameToken().value());
 
   if (!trigger_manager_->StartCollectingThreatDetails(

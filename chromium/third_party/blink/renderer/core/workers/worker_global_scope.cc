@@ -263,8 +263,8 @@ void WorkerGlobalScope::importScripts(
   // [...]
   for (const auto& url : urls) {
     url_strings.push_back(TrustedTypesCheckForScriptURL(
-        url, GetExecutionContext(), "WorkerGlobalScope", "importScripts",
-        exception_state));
+        url, GetExecutionContext(), trusted_types_names::kWorkerGlobalScope,
+        trusted_types_names::kImportScripts, exception_state));
     if (exception_state.HadException()) {
       return;
     }
@@ -277,7 +277,7 @@ void WorkerGlobalScope::importScripts(
 namespace {
 
 String NetworkErrorMessageAtImportScript(const KURL& url) {
-  return "The script at '" + url.ElidedString() + "' failed to load.";
+  return StrCat({"The script at '", url.ElidedString(), "' failed to load."});
 }
 
 }  // namespace
@@ -313,7 +313,7 @@ void WorkerGlobalScope::ImportScriptsInternal(const Vector<String>& urls,
     if (!url.IsValid()) {
       exception_state.ThrowDOMException(
           DOMExceptionCode::kSyntaxError,
-          "The URL '" + url_string + "' is invalid.");
+          StrCat({"The URL '", url_string, "' is invalid."}));
       return;
     }
     if (!GetContentSecurityPolicy()->AllowScriptFromSource(
@@ -681,6 +681,9 @@ WorkerGlobalScope::WorkerGlobalScope(
               (creation_params->agent_cluster_id.is_empty()
                    ? base::UnguessableToken::Create()
                    : creation_params->agent_cluster_id),
+              creation_params->cross_origin_isolated_capability
+                  ? blink::Agent::AgentType::kCrossOriginIsolatedWorker
+                  : blink::Agent::AgentType::kNonCrossOriginIsolatedWorker,
               v8::MicrotaskQueue::New(thread->GetIsolate(),
                                       v8::MicrotasksPolicy::kScoped)),
           creation_params->global_scope_name,
@@ -693,7 +696,6 @@ WorkerGlobalScope::WorkerGlobalScope(
           creation_params->script_url.ProtocolIsData(),
           /*is_default_world_of_isolate=*/
           creation_params->is_default_world_of_isolate),
-      ActiveScriptWrappable<WorkerGlobalScope>({}),
       script_type_(creation_params->script_type),
       user_agent_(creation_params->user_agent),
       ua_metadata_(creation_params->ua_metadata),
@@ -834,18 +836,9 @@ void WorkerGlobalScope::Trace(Visitor* visitor) const {
   visitor->Trace(trusted_types_);
   visitor->Trace(worker_script_);
   visitor->Trace(browser_interface_broker_proxy_);
-  visitor->Trace(global_fetch_impl_);
-  visitor->Trace(global_cache_storage_impl_);
-  visitor->Trace(global_cookie_store_impl_);
-  visitor->Trace(global_performance_impl_);
-  visitor->Trace(font_face_set_worker_);
-  ExecutionContext::Trace(visitor);
-  WindowOrWorkerGlobalScope::Trace(visitor);
+  UniversalGlobalScope::Trace(visitor);
   WorkerOrWorkletGlobalScope::Trace(visitor);
-}
-
-bool WorkerGlobalScope::HasPendingActivity() const {
-  return !ExecutionContext::IsContextDestroyed();
+  Supplementable<WorkerGlobalScope>::Trace(visitor);
 }
 
 CodeCacheHost* WorkerGlobalScope::GetCodeCacheHost() {

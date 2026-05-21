@@ -63,12 +63,6 @@ class ProfileOAuth2TokenServiceDelegateAndroid
       const std::vector<CoreAccountId>& prev_ids,
       const std::vector<CoreAccountId>& curr_ids);
 
-  // Wrapper method to call the native UpdateAuthError() method from java.
-  void UpdateAuthErrorFromJava(JNIEnv* env,
-                               CoreAccountId& core_account_id,
-                               GoogleServiceAuthError& auth_error,
-                               jboolean fire_auth_error_changed);
-
  protected:
   std::unique_ptr<OAuth2AccessTokenFetcher> CreateAccessTokenFetcher(
       const CoreAccountId& account_id,
@@ -106,9 +100,7 @@ class ProfileOAuth2TokenServiceDelegateAndroid
     RT_LOADED
   };
 
-  // Return whether accounts are valid and we have access to all the tokens in
-  // |curr_ids|.
-  bool UpdateAccountList(const std::optional<CoreAccountId>& signed_in_id,
+  void UpdateAccountList(const std::optional<CoreAccountId>& signed_in_id,
                          const std::vector<CoreAccountId>& prev_ids,
                          const std::vector<CoreAccountId>& curr_ids,
                          std::vector<CoreAccountId>* refreshed_ids,

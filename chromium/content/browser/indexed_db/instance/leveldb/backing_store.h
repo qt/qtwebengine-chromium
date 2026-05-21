@@ -51,7 +51,6 @@ struct IndexedDBDatabaseMetadata;
 
 namespace content::indexed_db {
 
-class ActiveBlobRegistry;
 class BucketContext;
 class LevelDBWriteBatch;
 class PartitionedLockManager;
@@ -63,6 +62,7 @@ struct IndexedDBValue;
 
 namespace level_db {
 
+class ActiveBlobRegistry;
 class AutoDidCommitTransaction;
 
 class CONTENT_EXPORT BackingStore : public indexed_db::BackingStore,
@@ -138,8 +138,9 @@ class CONTENT_EXPORT BackingStore : public indexed_db::BackingStore,
 
     Status Begin(std::vector<PartitionedLock> locks) override;
     // The `serialize_fsa_handle` callback is not used.
-    Status CommitPhaseOne(BlobWriteCallback callback,
-                          SerializeFsaCallback serialize_fsa_handle) override;
+    StatusOr<bool> CommitPhaseOne(
+        BlobWriteCallback callback,
+        SerializeFsaCallback serialize_fsa_handle) override;
     Status CommitPhaseTwo() override;
     void Rollback() override;
     Status SetDatabaseVersion(int64_t version) override;
@@ -259,10 +260,9 @@ class CONTENT_EXPORT BackingStore : public indexed_db::BackingStore,
     // success, false on failure.
     bool CollectBlobFilesToRemove();
 
-    // Called by CommitPhaseOne: Kicks off the asynchronous writes of blobs
-    // identified in HandleBlobPreTransaction. The callback will be called
-    // eventually on success or failure.
-    Status WriteNewBlobs(BlobWriteCallback callback);
+    // If there are blobs to write in the current commit, returns true and
+    // invokes `callback` asynchronously, when done. Otherwise returns false.
+    bool WriteNewBlobs(BlobWriteCallback callback);
 
     // Called by CommitPhaseTwo: Partition blob references in blobs_to_remove_
     // into live (active references) and dead (no references).
@@ -473,8 +473,10 @@ class CONTENT_EXPORT BackingStore : public indexed_db::BackingStore,
 
   // BackingStore:
   bool CanOpportunisticallyClose() const override;
-  void TearDown(base::WaitableEvent* signal_on_destruction) override;
-  void InvalidateBlobReferences() override;
+  void SignalWhenDestructionComplete(
+      base::WaitableEvent* signal_on_destruction) &&
+      override;
+  void OnForceClosing() override;
   void StartPreCloseTasks(base::OnceClosure on_done) override;
   void StopPreCloseTasks() override;
   StatusOr<std::unique_ptr<indexed_db::BackingStore::Database>>
@@ -484,11 +486,11 @@ class CONTENT_EXPORT BackingStore : public indexed_db::BackingStore,
   StatusOr<bool> DatabaseExists(std::u16string_view database_name) override;
   StatusOr<std::vector<blink::mojom::IDBNameAndVersionPtr>>
   GetDatabaseNamesAndVersions() override;
-  int64_t GetInMemorySize() const override;
+  uint64_t EstimateSize(bool write_in_progress) const override;
 
   // LevelDBCleanupScheduler::Delegate:
   void OnCleanupStarted() override;
-  void OnCleanupDone() override;
+  void OnCleanupStopped(bool completed) override;
   Status GetCompleteMetadata(
       std::vector<std::unique_ptr<blink::IndexedDBDatabaseMetadata>>* output)
       override;
@@ -535,6 +537,9 @@ class CONTENT_EXPORT BackingStore : public indexed_db::BackingStore,
                 PartitionedLockManager* lock_manager,
                 bool is_first_attempt,
                 bool create_if_missing);
+
+  static uint64_t ReadSizeFromDisk(const base::FilePath& database_path,
+                                   const base::FilePath& blob_path);
 
   // LINT.IfChange(InSessionCleanupVerificationEvent)
   enum class InSessionCleanupVerificationEvent {

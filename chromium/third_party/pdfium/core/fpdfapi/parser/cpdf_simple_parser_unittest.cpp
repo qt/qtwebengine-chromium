@@ -7,7 +7,6 @@
 #include <iterator>
 
 #include "core/fpdfapi/parser/fpdf_parser_utility.h"
-#include "core/fxcrt/fx_memcpy_wrappers.h"
 #include "core/fxcrt/span.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/test_support.h"

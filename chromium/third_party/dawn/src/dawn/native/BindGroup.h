@@ -30,6 +30,7 @@
 
 #include <array>
 #include <optional>
+#include <span>
 #include <vector>
 
 #include "dawn/common/Constants.h"
@@ -47,7 +48,6 @@
 namespace dawn::native {
 
 class DeviceBase;
-class DynamicArrayState;
 
 ResultOrError<UnpackedPtr<BindGroupDescriptor>> ValidateBindGroupDescriptor(
     DeviceBase* device,
@@ -62,40 +62,34 @@ struct BufferBinding {
 
 class BindGroupBase : public ApiObjectBase {
   public:
-    static Ref<BindGroupBase> MakeError(DeviceBase* device, const BindGroupDescriptor* descriptor);
+    static Ref<BindGroupBase> MakeError(DeviceBase* device, StringView label);
 
     MaybeError Initialize(const UnpackedPtr<BindGroupDescriptor>& descriptor);
 
     ObjectType GetType() const override;
-
-    // Dawn API
-    void APIDestroy();
-    wgpu::Status APIUpdate(const BindGroupEntry* entry);
-    uint32_t APIInsertBinding(const BindGroupEntryContents* contents);
-    wgpu::Status APIRemoveBinding(uint32_t binding);
 
     BindGroupLayoutBase* GetFrontendLayout();
     const BindGroupLayoutBase* GetFrontendLayout() const;
     BindGroupLayoutInternalBase* GetLayout();
     const BindGroupLayoutInternalBase* GetLayout() const;
 
-    // Getters for static bindings part.
+    // Getters for bindings part.
     BufferBase* GetBindingAsBuffer(BindingIndex bindingIndex);
     SamplerBase* GetBindingAsSampler(BindingIndex bindingIndex) const;
     TextureViewBase* GetBindingAsTextureView(BindingIndex bindingIndex);
     BufferBinding GetBindingAsBufferBinding(BindingIndex bindingIndex);
     TexelBufferViewBase* GetBindingAsTexelBufferView(BindingIndex bindingIndex);
     const ityp::span<uint32_t, uint64_t>& GetUnverifiedBufferSizes() const;
+
+    // Returns the ExternalTexture bound at `bindingIndex` or nullptr if a Texture was bound in
+    // lieu. `bindingIndex` must be an index for an ExternalTexture in the layout.
+    Ref<ExternalTextureBase> GetBoundExternalTexture(APIBindingIndex bindingIndex) const;
+    // Returns the list of all bounds ExternalTextures, with nullptr when a Texture was bound in
+    // lieu. BindGroupLayoutInternalBase::GetBoundExternalTextureMap provides the index in this list
+    // for a given APIBindingIndex.
     const std::vector<Ref<ExternalTextureBase>>& GetBoundExternalTextures() const;
 
     void ForEachUnverifiedBufferBindingIndex(std::function<void(BindingIndex, uint32_t)> fn) const;
-
-    // Getters and operations on the dynamic array part for code that doesn't need to directly
-    // modify the state.
-    bool HasDynamicArray() const;
-    ityp::span<BindingIndex, const Ref<TextureViewBase>> GetDynamicArrayBindings() const;
-    MaybeError ValidateCanUseOnQueueNow() const;
-    DynamicArrayState* GetDynamicArray() const;
 
   protected:
     // To save memory, the size of a bind group is dynamically determined and the bind group is
@@ -123,24 +117,22 @@ class BindGroupBase : public ApiObjectBase {
 
     virtual MaybeError InitializeImpl() = 0;
 
-    void DestroyImpl() override;
+    void DestroyImpl(DestroyReason reason) override;
 
     ~BindGroupBase() override;
 
   private:
     BindGroupBase(DeviceBase* device, ObjectBase::ErrorTag tag, StringView label);
 
-    MaybeError ValidateDestroy() const;
-    std::optional<BindingIndex> GetValidDynamicArraySlotFor(BindingNumber binding) const;
-
     Ref<BindGroupLayoutBase> mLayout;
     BindGroupLayoutInternalBase::BindingDataPointers mBindingData;
-    std::vector<Ref<ExternalTextureBase>> mBoundExternalTextures;
 
-    // The dynamic array is separate so as to not bloat the size and destructor of bind groups
-    // without them. Note that this is the only persistent owning Ref. DynamicArray is a RefCounted
-    // only so WeakRef to it can be created.
-    Ref<DynamicArrayState> mDynamicArray;
+    // This vector hosts the bound external textures of the bind group of each external texture
+    // binding entry.
+    // BindGroupLayoutInternalBase::GetBoundExternalTextureMap gives a map from APIBindingIndex to
+    // index in this vector. Note: This vector can have null reference entry because external
+    // texture binding entry can bind a texture view instead of an external texture.
+    std::vector<Ref<ExternalTextureBase>> mBoundExternalTextures;
 };
 
 }  // namespace dawn::native

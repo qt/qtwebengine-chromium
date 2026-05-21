@@ -7,7 +7,6 @@
 #include <map>
 #include <utility>
 
-#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/lazy_instance.h"
@@ -30,6 +29,7 @@
 #include "extensions/renderer/scripts_run_info.h"
 #include "extensions/renderer/trace_util.h"
 #include "third_party/blink/public/platform/web_isolated_world_info.h"
+#include "third_party/blink/public/web/extension_script_streamer.h"
 #include "third_party/blink/public/web/web_document.h"
 #include "third_party/blink/public/web/web_local_frame.h"
 #include "third_party/blink/public/web/web_script_execution_callback.h"
@@ -96,7 +96,7 @@ ScriptInjection::ScriptInjection(
 
 ScriptInjection::~ScriptInjection() {
   if (!complete_)
-    NotifyWillNotInject(ScriptInjector::WONT_INJECT);
+    NotifyWillNotInject(ScriptInjector::InjectFailureReason::kWontInject);
 
   TRACE_EVENT_END("extensions", perfetto::Track::FromPointer(this),
                   ChromeTrackEvent::kRenderProcessHost,
@@ -114,21 +114,21 @@ ScriptInjection::InjectionResult ScriptInjection::TryToInject(
     // Fenced frames do not navigate to about:blank by default the way iframes
     // do. They cannot accept script injections until they perform an initial
     // navigation.
-    NotifyWillNotInject(ScriptInjector::NOT_ALLOWED);
-    return INJECTION_FINISHED;  // We're done.
+    NotifyWillNotInject(ScriptInjector::InjectFailureReason::kNotAllowed);
+    return InjectionResult::kFinished;  // We're done.
   }
 
   if (current_location < run_location_)
-    return INJECTION_WAITING;  // Wait for the right location.
+    return InjectionResult::kWaiting;  // Wait for the right location.
 
   if (request_id_ != kInvalidRequestId) {
     // We're waiting for permission right now, try again later.
-    return INJECTION_WAITING;
+    return InjectionResult::kWaiting;
   }
 
   if (!injection_host_) {
-    NotifyWillNotInject(ScriptInjector::EXTENSION_REMOVED);
-    return INJECTION_FINISHED;  // We're done.
+    NotifyWillNotInject(ScriptInjector::InjectFailureReason::kExtensionRemoved);
+    return InjectionResult::kFinished;  // We're done.
   }
 
   blink::WebLocalFrame* web_frame = render_frame_->GetWebFrame();
@@ -136,17 +136,18 @@ ScriptInjection::InjectionResult ScriptInjection::TryToInject(
       injection_host_.get(), web_frame,
       ExtensionFrameHelper::Get(render_frame_)->tab_id())) {
     case PermissionsData::PageAccess::kDenied:
-      NotifyWillNotInject(ScriptInjector::NOT_ALLOWED);
-      return INJECTION_FINISHED;  // We're done.
+      NotifyWillNotInject(ScriptInjector::InjectFailureReason::kNotAllowed);
+      return InjectionResult::kFinished;  // We're done.
     case PermissionsData::PageAccess::kWithheld:
       RequestPermissionFromBrowser(std::move(async_updated_callback));
-      return INJECTION_WAITING;  // Wait around for permission.
+      return InjectionResult::kWaiting;  // Wait around for permission.
     case PermissionsData::PageAccess::kAllowed:
       InjectionResult result = Inject(scripts_run_info);
       // If the injection is blocked, we need to set the manager so we can
       // notify it upon completion.
-      if (result == INJECTION_BLOCKED)
+      if (result == InjectionResult::kBlocked) {
         async_completion_callback_ = std::move(async_updated_callback);
+      }
       return result;
   }
 
@@ -156,8 +157,8 @@ ScriptInjection::InjectionResult ScriptInjection::TryToInject(
 ScriptInjection::InjectionResult ScriptInjection::OnPermissionGranted(
     ScriptsRunInfo* scripts_run_info) {
   if (!injection_host_) {
-    NotifyWillNotInject(ScriptInjector::EXTENSION_REMOVED);
-    return INJECTION_FINISHED;
+    NotifyWillNotInject(ScriptInjector::InjectFailureReason::kExtensionRemoved);
+    return InjectionResult::kFinished;
   }
 
   return Inject(scripts_run_info);
@@ -209,7 +210,7 @@ ScriptInjection::InjectionResult ScriptInjection::Inject(
   // be run in multiple rules, and the script has already run.
   // See crbug.com/631247.
   if (!should_inject_js && !should_inject_or_remove_css) {
-    return INJECTION_FINISHED;
+    return InjectionResult::kFinished;
   }
 
   if (should_inject_js)
@@ -227,7 +228,7 @@ ScriptInjection::InjectionResult ScriptInjection::Inject(
     ++scripts_run_info->num_blocking_js;
   }
 
-  return complete_ ? INJECTION_FINISHED : INJECTION_BLOCKED;
+  return complete_ ? InjectionResult::kFinished : InjectionResult::kBlocked;
 }
 
 void ScriptInjection::InjectJs(std::set<std::string>* executing_scripts,
@@ -235,8 +236,12 @@ void ScriptInjection::InjectJs(std::set<std::string>* executing_scripts,
   TRACE_RENDERER_EXTENSION_EVENT("ScriptInjection::InjectJs", host_id().id);
 
   DCHECK(!did_inject_js_);
+
+  ExtensionFrameHelper* frame_helper = ExtensionFrameHelper::Get(render_frame_);
+  CHECK(frame_helper);
+
   std::vector<blink::WebScriptSource> sources = injector_->GetJsSources(
-      run_location_, executing_scripts, num_injected_js_scripts);
+      run_location_, executing_scripts, num_injected_js_scripts, frame_helper);
   DCHECK(!sources.empty());
 
   base::ElapsedTimer exec_timer;
@@ -257,9 +262,6 @@ void ScriptInjection::InjectJs(std::set<std::string>* executing_scripts,
           ? blink::mojom::EvaluationTiming::kAsynchronous
           : blink::mojom::EvaluationTiming::kSynchronous;
 
-  ExtensionFrameHelper* frame_helper = ExtensionFrameHelper::Get(render_frame_);
-  CHECK(frame_helper);
-
   std::optional<std::string> world_id = injector_->GetExecutionWorldId();
   const std::string& host_string_id = injection_host_->id().id;
   const mojom::ExecutionWorld execution_world = injector_->GetExecutionWorld();
@@ -279,7 +281,7 @@ void ScriptInjection::InjectJs(std::set<std::string>* executing_scripts,
     constexpr size_t kMaxActiveUserScriptWorldCount = 10;
     if (active_user_script_worlds &&
         active_user_script_worlds->size() >= kMaxActiveUserScriptWorldCount &&
-        !base::Contains(*active_user_script_worlds, world_id)) {
+        !active_user_script_worlds->contains(world_id)) {
       // If there are 10 or more active user script worlds, we use the default
       // world for future injections.
       // Note: This *can* mean that up to 11 user script worlds for this

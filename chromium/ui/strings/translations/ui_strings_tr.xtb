@@ -20,6 +20,7 @@
 <translation id="1432724887402139994">{SECONDS,plural, =1{1 dakika önce}other{# Dakika Önce}}</translation>
 <translation id="1450753235335490080"><ph name="CONTENT_TYPE" /> paylaşılamıyor</translation>
 <translation id="1523230076022876491">{MONTHS,plural, =1{1 Ay Önce}other{# Ay Önce}}</translation>
+<translation id="1591017414891297549">ÖNİZLE</translation>
 <translation id="1591184457164800433">{MINUTES,plural, =1{1 dakika ve }other{# dakika ve }}</translation>
 <translation id="1643823602425662293">Bildirim</translation>
 <translation id="169515659049020177">ÜstKrktr</translation>
@@ -68,7 +69,7 @@
 <translation id="2583543531130364912">Dokunmatik ekranınızı ayarlayın</translation>
 <translation id="2586657967955657006">Pano</translation>
 <translation id="2653844658857826081">YENİ</translation>
-<translation id="2666092431469916601">Üst</translation>
+<translation id="2666092431469916601">Üstte</translation>
 <translation id="2701330563083355633">Paylaşan: <ph name="DEVICE_NAME" /></translation>
 <translation id="2824719307700604149">{YEARS,plural, =1{1 yıl önce}other{# yıl önce}}</translation>
 <translation id="2878511608894704031">Tümünü Sil</translation>
@@ -77,7 +78,7 @@
 <translation id="293972288692056847">{COUNT,plural, =1{Uzantı bulunamıyor}other{Uzantılar bulunamıyor}}</translation>
 <translation id="3036649622769666520">Dosya Aç</translation>
 <translation id="3049748772180311791"><ph name="QUANTITY" /> MB</translation>
-<translation id="3087734570205094154">Alt</translation>
+<translation id="3087734570205094154">Altta</translation>
 <translation id="3126026824346185272">Ctrl</translation>
 <translation id="3157931365184549694">Geri yükle</translation>
 <translation id="3183922693828471536">Buraya Kaydır</translation>
@@ -232,6 +233,7 @@
 <translation id="8677655579646609597"><ph name="QUANTITY" /> KB/sn</translation>
 <translation id="8725488761726303204"><ph name="NUMBER" /> öğe daha</translation>
 <translation id="8730621377337864115">Bitti</translation>
+<translation id="8741385002816058621">Bu özellik önizleme sürümündedir</translation>
 <translation id="8772073294905169192">{HOURS,plural, =1{1 sa.}other{# sa.}}</translation>
 <translation id="8798099450830957504">Varsayılan</translation>
 <translation id="8841375032071747811">Geri düğmesi</translation>

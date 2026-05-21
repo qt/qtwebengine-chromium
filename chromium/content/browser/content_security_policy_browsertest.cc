@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <algorithm>
 #include <string_view>
 #include <tuple>
 
@@ -10,6 +11,7 @@
 #include "base/memory/raw_ref.h"
 #include "base/notreached.h"
 #include "base/path_service.h"
+#include "base/strings/strcat.h"
 #include "base/strings/stringprintf.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/threading/thread_restrictions.h"
@@ -460,7 +462,7 @@ constexpr std::string_view kHandledPaths[] = {
 std::unique_ptr<net::test_server::HttpResponse>
 ServeCSPSandboxedWithAllowSameSiteNoneCookies(
     const net::test_server::HttpRequest& request) {
-  if (!base::Contains(kHandledPaths, request.relative_url)) {
+  if (!std::ranges::contains(kHandledPaths, request.relative_url)) {
     return nullptr;
   }
 

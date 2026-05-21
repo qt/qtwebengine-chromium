@@ -24,7 +24,7 @@ class ByteString;
 
 // A mutable string with shared buffers using copy-on-write semantics that
 // avoids the cost of std::string's iterator stability guarantees.
-// TODO(crbug.com/pdfium/2031): Consider switching to `char16_t` instead.
+// TODO(crbug.com/42271042): Consider switching to `char16_t` instead.
 class WideString : public StringTemplate<wchar_t> {
  public:
   [[nodiscard]] static WideString FormatInteger(int i);

@@ -8,7 +8,7 @@ import typescriptEslint from '../../third_party/node/node_modules/@typescript-es
 import tsParser from '../../third_party/node/node_modules/@typescript-eslint/parser/dist/index.js';
 import webUiEslint from '../../ui/webui/resources/tools/webui_eslint_plugin.js';
 
-const noRestricetdSyntaxCases = [
+const noRestrictedSyntaxCases = [
   {
     selector:
         'CallExpression[callee.object.name=JSON][callee.property.name=parse] > CallExpression[callee.object.name=JSON][callee.property.name=stringify]',
@@ -63,6 +63,28 @@ const noRestricetdSyntaxCases = [
   },
 ];
 
+const noRestrictedImportsPaths = [
+  {
+    name:
+        'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js',
+    importNames: ['Polymer'],
+    message: 'Use PolymerElement instead.',
+  },
+  {
+    name: '//resources/polymer/v3_0/polymer/polymer_bundled.min.js',
+    importNames: ['Polymer'],
+    message: 'Use PolymerElement instead.',
+  },
+  {
+    name: 'chrome://webui-test/chai.js',
+    message: 'Use chrome://webui-test/chai_assert.js instead.',
+  },
+  {
+    name: '//webui-test/chai.js',
+    message: 'Use chrome://webui-test/chai_assert.js instead.',
+  },
+];
+
 export default [
   {
     // In the flat config style, the only way to have global ignores is for the
@@ -112,6 +134,11 @@ export default [
       // https://google.github.io/styleguide/jsguide.html#features-objects-use-trailing-comma
       'comma-dangle': ['error', 'always-multiline'],
 
+      // https://google.github.io/styleguide/jsguide.html#features-switch-statements
+      // https://google.github.io/styleguide/tsguide.html#switch-statements
+      'default-case': 'error',
+      'default-case-last': 'error',
+
       curly: ['error', 'multi-line', 'consistent'],
       'new-parens': 'error',
       'no-array-constructor': 'error',
@@ -128,21 +155,7 @@ export default [
       'no-new-wrappers': 'error',
 
       'no-restricted-imports': [
-        'error', {
-          paths: [
-            {
-              name:
-                  'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js',
-              importNames: ['Polymer'],
-              message: 'Use PolymerElement instead.',
-            },
-            {
-              name: '//resources/polymer/v3_0/polymer/polymer_bundled.min.js',
-              importNames: ['Polymer'],
-              message: 'Use PolymerElement instead.',
-            }
-          ],
-        }
+        'error', {paths: [...noRestrictedImportsPaths]},
       ],
 
       'no-restricted-properties': [
@@ -170,7 +183,7 @@ export default [
         },
       ],
 
-      'no-restricted-syntax': ['error', ...noRestricetdSyntaxCases],
+      'no-restricted-syntax': ['error', ...noRestrictedSyntaxCases],
       'no-throw-literal': 'error',
       'no-trailing-spaces': 'error',
       'no-var': 'error',
@@ -239,6 +252,8 @@ export default [
       // parameter.
       'no-array-constructor': 'off',
       '@typescript-eslint/no-array-constructor': 'error',
+
+      '@stylistic/eol-last': ['error'],
 
       // https://google.github.io/styleguide/tsguide.html#automatic-semicolon-insertion
       semi: 'off',
@@ -433,6 +448,21 @@ export default [
     },
     'rules': {
       'eslint-plugin-lit/quoted-expressions': ['error', 'always'],
+      'no-restricted-imports': [
+        'error', {
+          paths: [
+            ...noRestrictedImportsPaths,
+            {
+              name: 'chrome://resources/js/load_time_data.js',
+              message: 'Use $i18n{} or I18nMixin methods for strings. Use reactive properties for feature flags.',
+            },
+            {
+              name: '//resources/js/load_time_data.js',
+              message: 'Use $i18n{} or I18nMixin methods for strings. Use reactive properties for feature flags.',
+            },
+          ],
+        }
+      ],
     },
   },
   {
@@ -448,7 +478,7 @@ export default [
       'ui/webui/resources/cr_elements/**/*.html.ts',
     ],
     rules: {
-      'no-restricted-syntax': ['error', ...noRestricetdSyntaxCases, {
+      'no-restricted-syntax': ['error', ...noRestrictedSyntaxCases, {
         'selector': 'Literal[value=/\\$i18n{.*}/]',
         'message': 'Can\'t use $i18n{...} placeholders in ui/webui/resources/ HTML templates. Use I18nMixinLit instead.'
       },
@@ -491,6 +521,14 @@ export default [
               name: 'chrome://resources/js/load_time_data.js',
               importNames: ['loadTimeData'],
               message: 'Import from chrome://settings/settings.js instead.',
+            },
+            {
+              name: 'chrome://webui-test/chai.js',
+              message: 'Use chrome://webui-test/chai_assert.js instead.',
+            },
+            {
+              name: '//webui-test/chai.js',
+              message: 'Use chrome://webui-test/chai_assert.js instead.',
             },
           ],
         }

@@ -5,15 +5,18 @@
 #include "components/facilitated_payments/core/browser/facilitated_payments_driver.h"
 
 #include <memory>
+#include <optional>
 
 #include "base/functional/bind.h"
 #include "base/test/gmock_callback_support.h"
+#include "base/test/scoped_feature_list.h"
 #include "base/test/test_future.h"
 #include "components/facilitated_payments/core/browser/facilitated_payments_api_client.h"
 #include "components/facilitated_payments/core/browser/facilitated_payments_client.h"
 #include "components/facilitated_payments/core/browser/mock_facilitated_payments_api_client.h"
 #include "components/facilitated_payments/core/browser/mock_facilitated_payments_client.h"
 #include "components/facilitated_payments/core/browser/pix_manager.h"
+#include "components/facilitated_payments/core/features/features.h"
 #include "components/optimization_guide/core/hints/test_optimization_guide_decider.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "url/gurl.h"
@@ -34,16 +37,23 @@ class MockPixManager : public PixManager {
                    optimization_guide_decider) {}
   ~MockPixManager() override = default;
 
-  MOCK_METHOD(
-      void,
-      OnPixCodeCopiedToClipboard,
-      (const GURL&, const url::Origin&, const std::string&, ukm::SourceId),
-      (override));
+  MOCK_METHOD(void,
+              OnPixCodeCopiedToClipboard,
+              (const GURL&,
+               const std::optional<GURL>&,
+               const url::Origin&,
+               std::optional<PixCodeRustValidationResult>,
+               std::string,
+               ukm::SourceId),
+              (override));
 };
 
-class FacilitatedPaymentsDriverTest : public testing::Test {
+class FacilitatedPaymentsDriverTest : public testing::TestWithParam<bool> {
  public:
   FacilitatedPaymentsDriverTest() {
+    scoped_feature_list_.InitWithFeatureState(kUseRustPixCodeValidator,
+                                              GetParam());
+
     FacilitatedPaymentsApiClientCreator api_client_creator =
         base::BindRepeating(&MockFacilitatedPaymentsApiClient::CreateApiClient);
     driver_ = std::make_unique<FacilitatedPaymentsDriver>(&client_,
@@ -58,13 +68,18 @@ class FacilitatedPaymentsDriverTest : public testing::Test {
   ~FacilitatedPaymentsDriverTest() override = default;
 
  protected:
+  base::test::ScopedFeatureList scoped_feature_list_;
   optimization_guide::TestOptimizationGuideDecider decider_;
   MockFacilitatedPaymentsClient client_;
   std::unique_ptr<FacilitatedPaymentsDriver> driver_;
   raw_ptr<MockPixManager> pix_manager_;
 };
 
-TEST_F(FacilitatedPaymentsDriverTest,
+INSTANTIATE_TEST_SUITE_P(,
+                         FacilitatedPaymentsDriverTest,
+                         testing::Values(false, true));
+
+TEST_P(FacilitatedPaymentsDriverTest,
        PixIdentifierExists_OnPixCodeCopiedToClipboardTriggered) {
   GURL url("https://example.com/");
   url::Origin origin = url::Origin::Create(url);
@@ -73,13 +88,14 @@ TEST_F(FacilitatedPaymentsDriverTest,
 
   // "0014br.gov.bcb.pix" is the Pix identifier.
   driver_->OnTextCopiedToClipboard(
-      /*render_frame_host_url=*/url,
-      /*render_frame_host_origin=*/origin, /*copied_text=*/
+      /*main_frame_url=*/url,
+      /*iframe_url=*/std::nullopt,
+      /*main_frame_origin=*/origin, /*copied_text=*/
       u"00020126370014br.gov.bcb.pix2515www.example.com6304EA3F",
       /*ukm_source_id=*/123);
 }
 
-TEST_F(FacilitatedPaymentsDriverTest,
+TEST_P(FacilitatedPaymentsDriverTest,
        PixIdentifierAbsent_OnPixCodeCopiedToClipboardNotTriggered) {
   GURL url("https://example.com/");
   url::Origin origin = url::Origin::Create(url);
@@ -87,8 +103,8 @@ TEST_F(FacilitatedPaymentsDriverTest,
   EXPECT_CALL(*pix_manager_, OnPixCodeCopiedToClipboard).Times(0);
 
   driver_->OnTextCopiedToClipboard(
-      /*render_frame_host_url=*/url, /*render_frame_host_origin=*/origin,
-      /*copied_text=*/u"notAValidPixIdentifier",
+      /*main_frame_url=*/url, /*iframe_url=*/std::nullopt,
+      /*main_frame_origin=*/origin, /*copied_text=*/u"notAValidPixIdentifier",
       /*ukm_source_id=*/123);
 }
 

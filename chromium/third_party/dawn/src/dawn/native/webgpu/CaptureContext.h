@@ -44,6 +44,8 @@ namespace dawn::native {
 class BufferBase;
 class DeviceBase;
 struct Color;
+struct Origin2D;
+struct Extent2D;
 struct BufferCopy;
 struct ProgrammableStage;
 struct TexelOrigin3D;
@@ -65,6 +67,22 @@ class CaptureContext {
                             std::ostream& commandStream,
                             std::ostream& contentStream);
     ~CaptureContext();
+
+    // Content is padded to 4 byte blocks. This class automates writing the
+    // padding.
+    class ScopedContentWriter {
+      public:
+        ScopedContentWriter(const ScopedContentWriter&) = delete;
+        ScopedContentWriter& operator=(const ScopedContentWriter&) = delete;
+
+        explicit ScopedContentWriter(CaptureContext& context);
+        ~ScopedContentWriter();
+        void WriteContentBytes(const void* data, size_t size);
+
+      private:
+        uint64_t mBytesWritten = 0;
+        CaptureContext& mContext;
+    };
 
     static constexpr uint64_t kCopyBufferSize = 1024 * 1024;
 
@@ -156,16 +174,11 @@ class CaptureContext {
     }
 
     void WriteCommandBytes(const void* data, size_t size);
-    void WriteContentBytes(const void* data, size_t size);
 
     MaybeError CaptureQueueWriteBuffer(Buffer* buffer,
                                        uint64_t bufferOffset,
                                        const void* data,
                                        size_t size);
-    MaybeError CaptureUnmapBuffer(Buffer* buffer,
-                                  uint64_t bufferOffset,
-                                  const void* data,
-                                  size_t size);
     MaybeError CaptureQueueWriteTexture(const TexelCopyTextureInfo& destination,
                                         const void* data,
                                         size_t dataSize,
@@ -173,6 +186,10 @@ class CaptureContext {
                                         const TexelExtent3D& writeSizePixel);
 
     WGPUBuffer GetCopyBuffer();
+    WGPUBuffer GetBlitTextureToBufferBuffer();
+
+  protected:
+    void WriteContentBytes(const void* data, size_t size);
 
   private:
     MaybeError CaptureCreation(schema::ObjectId id,
@@ -197,7 +214,9 @@ class CaptureContext {
 
 wgpu::TextureAspect ToDawn(const Aspect aspect);
 schema::Origin3D ToSchema(const TexelOrigin3D& origin);
+schema::Origin2D ToSchema(const Origin2D& origin);
 schema::Extent3D ToSchema(const TexelExtent3D& extent);
+schema::Extent2D ToSchema(const Extent2D& extent);
 schema::Color ToSchema(const Color& color);
 schema::ProgrammableStage ToSchema(CaptureContext& captureContext, const ProgrammableStage& stage);
 schema::TexelCopyBufferLayout ToSchema(const BufferCopy& bufferCopy,

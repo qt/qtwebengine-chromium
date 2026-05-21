@@ -112,6 +112,8 @@ let Browser = (() => {
     let _createUserContext_decorators;
     let _installExtension_decorators;
     let _uninstallExtension_decorators;
+    let _setClientWindowState_decorators;
+    let _getClientWindowInfo_decorators;
     return class Browser extends _classSuper {
         static {
             const _metadata = typeof Symbol === "function" && Symbol.metadata ? Object.create(_classSuper[Symbol.metadata] ?? null) : void 0;
@@ -123,6 +125,8 @@ let Browser = (() => {
             __esDecorate(this, null, _createUserContext_decorators, { kind: "method", name: "createUserContext", static: false, private: false, access: { has: obj => "createUserContext" in obj, get: obj => obj.createUserContext }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _installExtension_decorators, { kind: "method", name: "installExtension", static: false, private: false, access: { has: obj => "installExtension" in obj, get: obj => obj.installExtension }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _uninstallExtension_decorators, { kind: "method", name: "uninstallExtension", static: false, private: false, access: { has: obj => "uninstallExtension" in obj, get: obj => obj.uninstallExtension }, metadata: _metadata }, null, _instanceExtraInitializers);
+            __esDecorate(this, null, _setClientWindowState_decorators, { kind: "method", name: "setClientWindowState", static: false, private: false, access: { has: obj => "setClientWindowState" in obj, get: obj => obj.setClientWindowState }, metadata: _metadata }, null, _instanceExtraInitializers);
+            __esDecorate(this, null, _getClientWindowInfo_decorators, { kind: "method", name: "getClientWindowInfo", static: false, private: false, access: { has: obj => "getClientWindowInfo" in obj, get: obj => obj.getClientWindowInfo }, metadata: _metadata }, null, _instanceExtraInitializers);
             if (_metadata) Object.defineProperty(this, Symbol.metadata, { enumerable: true, configurable: true, writable: true, value: _metadata });
         }
         static async from(session) {
@@ -296,6 +300,19 @@ let Browser = (() => {
         async uninstallExtension(id) {
             await this.session.send('webExtension.uninstall', { extension: id });
         }
+        async setClientWindowState(params) {
+            await this.session.send('browser.setClientWindowState', params);
+        }
+        async getClientWindowInfo(windowId) {
+            const { result: { clientWindows }, } = await this.session.send('browser.getClientWindows', {});
+            const window = clientWindows.find(window => {
+                return window.clientWindow === windowId;
+            });
+            if (!window) {
+                throw new Error('Window not found');
+            }
+            return window;
+        }
         [(_dispose_decorators = [decorators_js_1.inertIfDisposed], _close_decorators = [(0, decorators_js_1.throwIfDisposed)(browser => {
                 // SAFETY: By definition of `disposed`, `#reason` is defined.
                 return browser.#reason;
@@ -315,6 +332,12 @@ let Browser = (() => {
                 // SAFETY: By definition of `disposed`, `#reason` is defined.
                 return browser.#reason;
             })], _uninstallExtension_decorators = [(0, decorators_js_1.throwIfDisposed)(browser => {
+                // SAFETY: By definition of `disposed`, `#reason` is defined.
+                return browser.#reason;
+            })], _setClientWindowState_decorators = [(0, decorators_js_1.throwIfDisposed)(browser => {
+                // SAFETY: By definition of `disposed`, `#reason` is defined.
+                return browser.#reason;
+            })], _getClientWindowInfo_decorators = [(0, decorators_js_1.throwIfDisposed)(browser => {
                 // SAFETY: By definition of `disposed`, `#reason` is defined.
                 return browser.#reason;
             })], disposable_js_1.disposeSymbol)]() {

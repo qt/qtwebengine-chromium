@@ -240,7 +240,7 @@ static av_cold void dump_enc_cfg(AVCodecContext *avctx,
            width, "g_pass:",            cfg->g_pass,
            width, "g_lag_in_frames:",   cfg->g_lag_in_frames);
     av_log(avctx, level, "rate control settings\n"
-                         "  %*s%u\n  %*s%d\n  %*s%p(%"SIZE_SPECIFIER")\n  %*s%u\n",
+                         "  %*s%u\n  %*s%d\n  %*s%p(%zu)\n  %*s%u\n",
            width, "rc_dropframe_thresh:", cfg->rc_dropframe_thresh,
            width, "rc_end_usage:",        cfg->rc_end_usage,
            width, "rc_twopass_stats_in:", cfg->rc_twopass_stats_in.buf, cfg->rc_twopass_stats_in.sz,
@@ -303,11 +303,7 @@ static av_cold void free_frame_list(struct FrameListData *list)
 }
 
 static av_cold int codecctl_int(AVCodecContext *avctx,
-#ifdef UENUM1BYTE
-                                aome_enc_control_id id,
-#else
-                                enum aome_enc_control_id id,
-#endif
+                                int id,
                                 int val)
 {
     AOMContext *ctx = avctx->priv_data;
@@ -380,11 +376,7 @@ static int add_hdr_plus(AVCodecContext *avctx, struct aom_image *img, const AVFr
     defined(AOM_CTRL_AV1E_GET_SEQ_LEVEL_IDX) && \
     defined(AOM_CTRL_AV1E_GET_TARGET_SEQ_LEVEL_IDX)
 static av_cold int codecctl_intp(AVCodecContext *avctx,
-#ifdef UENUM1BYTE
-                                 aome_enc_control_id id,
-#else
-                                 enum aome_enc_control_id id,
-#endif
+                                 int id,
                                  int* ptr)
 {
     AOMContext *ctx = avctx->priv_data;
@@ -392,27 +384,23 @@ static av_cold int codecctl_intp(AVCodecContext *avctx,
     int width = -30;
     int res;
 
-    snprintf(buf, sizeof(buf), "%s:", ctlidstr[id]);
-    av_log(avctx, AV_LOG_DEBUG, "  %*s%d\n", width, buf, *ptr);
-
     res = aom_codec_control(&ctx->encoder, id, ptr);
     if (res != AOM_CODEC_OK) {
-        snprintf(buf, sizeof(buf), "Failed to set %s codec control",
+        snprintf(buf, sizeof(buf), "Failed to get %s codec control",
                  ctlidstr[id]);
         log_encoder_error(avctx, buf);
         return AVERROR(EINVAL);
     }
+
+    snprintf(buf, sizeof(buf), "%s:", ctlidstr[id]);
+    av_log(avctx, AV_LOG_DEBUG, "  %*s%d\n", width, buf, *ptr);
 
     return 0;
 }
 #endif
 
 static av_cold int codecctl_imgp(AVCodecContext *avctx,
-#ifdef UENUM1BYTE
-                                 aome_enc_control_id id,
-#else
-                                 enum aome_enc_control_id id,
-#endif
+                                 int id,
                                  struct aom_image *img)
 {
     AOMContext *ctx = avctx->priv_data;
@@ -896,7 +884,7 @@ static av_cold int aom_init(AVCodecContext *avctx,
         ret                   = av_reallocp(&ctx->twopass_stats.buf, ctx->twopass_stats.sz);
         if (ret < 0) {
             av_log(avctx, AV_LOG_ERROR,
-                   "Stat buffer alloc (%"SIZE_SPECIFIER" bytes) failed\n",
+                   "Stat buffer alloc (%zu bytes) failed\n",
                    ctx->twopass_stats.sz);
             ctx->twopass_stats.sz = 0;
             return ret;
@@ -1091,7 +1079,7 @@ static int storeframe(AVCodecContext *avctx, struct FrameListData *cx_frame,
     int ret = ff_get_encode_buffer(avctx, pkt, cx_frame->sz, 0);
     if (ret < 0) {
         av_log(avctx, AV_LOG_ERROR,
-               "Error getting output packet of size %"SIZE_SPECIFIER".\n", cx_frame->sz);
+               "Error getting output packet of size %zu.\n", cx_frame->sz);
         return ret;
     }
     memcpy(pkt->data, cx_frame->buf, pkt->size);
@@ -1190,7 +1178,7 @@ static int queue_frames(AVCodecContext *avctx, AVPacket *pkt_out)
 
                 if (!cx_frame->buf) {
                     av_log(avctx, AV_LOG_ERROR,
-                           "Data buffer alloc (%"SIZE_SPECIFIER" bytes) failed\n",
+                           "Data buffer alloc (%zu bytes) failed\n",
                            cx_frame->sz);
                     av_freep(&cx_frame);
                     return AVERROR(ENOMEM);
@@ -1352,7 +1340,7 @@ static int aom_encode(AVCodecContext *avctx, AVPacket *pkt,
 
         avctx->stats_out = av_malloc(b64_size);
         if (!avctx->stats_out) {
-            av_log(avctx, AV_LOG_ERROR, "Stat buffer alloc (%"SIZE_SPECIFIER" bytes) failed\n",
+            av_log(avctx, AV_LOG_ERROR, "Stat buffer alloc (%zu bytes) failed\n",
                    b64_size);
             return AVERROR(ENOMEM);
         }

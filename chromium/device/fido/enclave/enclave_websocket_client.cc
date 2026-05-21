@@ -7,10 +7,11 @@
 #include <limits>
 #include <utility>
 
+#include "base/functional/callback_helpers.h"
 #include "components/device_event_log/device_event_log.h"
-#include "device/fido/fido_constants.h"
 #include "device/fido/fido_parsing_utils.h"
 #include "device/fido/network_context_factory.h"
+#include "device/fido/public/fido_constants.h"
 #include "net/http/http_request_headers.h"
 #include "net/storage_access_api/status.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
@@ -139,7 +140,7 @@ void EnclaveWebSocketClient::Connect() {
       net::StorageAccessApiStatus::kNone,
       net::IsolationInfo::CreateForInternalRequest(
           url::Origin::Create(service_url_)),
-      std::move(additional_headers), network::mojom::kBrowserProcessId,
+      std::move(additional_headers), network::OriginatingProcess::browser(),
       url::Origin::Create(service_url_),
       network::mojom::ClientSecurityState::New(),
       network::mojom::kWebSocketOptionBlockAllCookies,

@@ -11,7 +11,6 @@
 #include <vector>
 
 #include "base/command_line.h"
-#include "base/containers/contains.h"
 #include "base/containers/fixed_flat_map.h"
 #include "base/containers/flat_map.h"
 #include "base/files/file_path.h"
@@ -72,13 +71,13 @@ constexpr auto kServiceInfos = base::MakeFixedFlatMap<DBusApi, DbusServiceInfo>(
       {"org.freedesktop.ScreenSaver", "org.freedesktop.ScreenSaver",
        "/org/freedesktop/ScreenSaver"}}});
 
-bool ShouldPreventDisplaySleep(mojom::WakeLockType type) {
+DBusApi FallbackDBusApiForWakeLockType(mojom::WakeLockType type) {
   switch (type) {
     case mojom::WakeLockType::kPreventAppSuspension:
-      return false;
+      return DBusApi::kFreedesktopPower;
     case mojom::WakeLockType::kPreventDisplaySleep:
     case mojom::WakeLockType::kPreventDisplaySleepAllowDimming:
-      return true;
+      return DBusApi::kFreedesktopScreensaver;
   }
 }
 
@@ -89,6 +88,16 @@ const char* GetUninhibitMethodName(DBusApi api) {
     case DBusApi::kFreedesktopPower:
     case DBusApi::kFreedesktopScreensaver:
       return "UnInhibit";
+  }
+}
+
+GnomeApiInhibitFlags WakeLockTypeToGnomeInhibitFlag(mojom::WakeLockType type) {
+  switch (type) {
+    case mojom::WakeLockType::kPreventAppSuspension:
+      return GnomeApiInhibitFlags::kSuspendSession;
+    case mojom::WakeLockType::kPreventDisplaySleep:
+    case mojom::WakeLockType::kPreventDisplaySleepAllowDimming:
+      return GnomeApiInhibitFlags::kMarkSessionIdle;
   }
 }
 
@@ -161,16 +170,13 @@ class PowerSaveBlocker::Delegate {
 
   void FallBackToFreedesktopApis() {
     DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-    if (ShouldPreventDisplaySleep(type_)) {
-      DoInhibitCall(DBusApi::kFreedesktopScreensaver);
-    }
-    DoInhibitCall(DBusApi::kFreedesktopPower);
+    DoInhibitCall(FallbackDBusApiForWakeLockType(type_));
   }
 
   // Makes the Inhibit method call after ensuring the service exists.
   void DoInhibitCall(DBusApi api) {
     const DbusServiceInfo& service_info = kServiceInfos.at(api);
-    if (base::Contains(api_availability_cache_, api)) {
+    if (api_availability_cache_.contains(api)) {
       OnInhibitServiceAvailable(api, api_availability_cache_[api]);
     } else {
       dbus_utils::NameHasOwner(
@@ -216,23 +222,8 @@ class PowerSaveBlocker::Delegate {
             base::CommandLine::ForCurrentProcess()->GetProgram().value());
         writer.AppendUint32(0);  // toplevel_xid
         writer.AppendString(description_);
-        {
-          uint32_t flags = 0;
-          switch (type_) {
-            case mojom::WakeLockType::kPreventDisplaySleep:
-            case mojom::WakeLockType::kPreventDisplaySleepAllowDimming:
-              flags |=
-                  static_cast<uint32_t>(GnomeApiInhibitFlags::kMarkSessionIdle);
-              flags |=
-                  static_cast<uint32_t>(GnomeApiInhibitFlags::kSuspendSession);
-              break;
-            case mojom::WakeLockType::kPreventAppSuspension:
-              flags |=
-                  static_cast<uint32_t>(GnomeApiInhibitFlags::kSuspendSession);
-              break;
-          }
-          writer.AppendUint32(flags);
-        }
+        writer.AppendUint32(
+            static_cast<uint32_t>(WakeLockTypeToGnomeInhibitFlag(type_)));
         break;
       case DBusApi::kFreedesktopPower:
       case DBusApi::kFreedesktopScreensaver:

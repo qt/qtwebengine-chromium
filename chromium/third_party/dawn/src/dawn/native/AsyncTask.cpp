@@ -33,62 +33,72 @@
 
 namespace dawn::native {
 
-AsyncTask::AsyncTask(std::function<void()> task) : mTask(task) {}
+AsyncTask::State::State(AsyncTaskFunction task) : task(task) {
+    DAWN_ASSERT(task);
+}
+
+AsyncTask::AsyncTask(AsyncTaskManager* taskManager, AsyncTaskFunction task)
+    : mTaskManager(taskManager), mState(task) {
+    DAWN_ASSERT(mTaskManager);
+}
+
+bool AsyncTask::IsCompleted() const {
+    return mState.Use([](auto state) { return state->state == AsyncTaskState::Completed; });
+}
 
 void AsyncTask::Wait() {
-    std::unique_ptr<dawn::platform::WaitableEvent> waitableEvent;
-    {
-        std::scoped_lock<std::mutex> lock(mMutex);
-        waitableEvent = std::move(mWaitableEvent);
-    }
-
-    if (waitableEvent) {
-        waitableEvent->Wait();
-    }
+    mState.Use<NotifyType::None>([](auto state) {
+        state.Wait([](auto& x) { return x.state == AsyncTaskState::Completed; });
+    });
 }
 
 void AsyncTask::AddCompletionCallback(AsyncTaskCompletionCallback completionCallback) {
-    std::scoped_lock<std::mutex> lock(mMutex);
+    bool completeCallbackNow = false;
+    mState.Use<NotifyType::None>([&](auto state) {
+        if (state->state == AsyncTaskState::Completed) {
+            completeCallbackNow = true;
+            return;
+        }
+        state->completionCallbacks.push_back(completionCallback);
+    });
 
-    // If this task has already completed, call the completion callback immediately.
-    if (mState == AsyncTaskState::Completed) {
+    // Call callbacks without holding the lock if the task was already complete.
+    if (completeCallbackNow) {
         completionCallback();
-        return;
     }
-
-    mCompletionCallbacks.push_back(completionCallback);
 }
 
 void AsyncTask::Run() {
-    {
-        AsyncTaskState prevState = mState.exchange(AsyncTaskState::Running);
-        DAWN_ASSERT(prevState == AsyncTaskState::Pending);
-    }
+    // To ensure we only run the task once, we synchronize it with the lock, move it out when it
+    // exists, and call it without holding the lock.
+    AsyncTaskFunction task = nullptr;
+    mState.Use<NotifyType::None>([&task](auto state) {
+        task = std::move(state->task);
+        state->task = nullptr;
+    });
+    DAWN_ASSERT(task);
+    task();
 
-    mTask();
-
-    // AsyncTask may have a much longer life time than the task itself.
-    // Reset it to release any references that were captured.
-    mTask = nullptr;
-
-    // Grab the completion callbacks while locked but call them outside the lock.
+    // Update the state, notify all waiting threads, and grab the completion callbacks to call them
+    // outside the lock scope.
     std::vector<AsyncTaskCompletionCallback> completionCallbacks;
-    {
-        std::scoped_lock<std::mutex> lock(mMutex);
-        AsyncTaskState prevState = mState.exchange(AsyncTaskState::Completed);
-        DAWN_ASSERT(prevState == AsyncTaskState::Running);
-        completionCallbacks = std::move(mCompletionCallbacks);
-        mCompletionCallbacks.clear();
-        mWaitableEvent = nullptr;
-    }
+    mState.Use<NotifyType::All>([&completionCallbacks](auto state) {
+        state->state = AsyncTaskState::Completed;
 
+        completionCallbacks = std::move(state->completionCallbacks);
+        state->completionCallbacks.clear();
+    });
     for (auto completionCallback : completionCallbacks) {
         completionCallback();
     }
+
+    // Update the state of the task manager.
+    mTaskManager->mTasks.Use([this](auto tasks) { tasks->erase(this); });
 }
 
-ErrorGeneratingAsyncTask::ErrorGeneratingAsyncTask(std::function<MaybeError()> task)
-    : AsyncTask([this, task] {
+ErrorGeneratingAsyncTask::ErrorGeneratingAsyncTask(AsyncTaskManager* taskManager,
+                                                   std::function<MaybeError()> task)
+    : AsyncTask(taskManager, [this, task] {
           // Wrap the task which returns a MaybeError in a void function and store the error in a
           // member.
           MaybeError taskResult = task();
@@ -98,12 +108,12 @@ ErrorGeneratingAsyncTask::ErrorGeneratingAsyncTask(std::function<MaybeError()> t
       }) {}
 
 bool ErrorGeneratingAsyncTask::IsSuccess() const {
-    DAWN_ASSERT(GetState() == AsyncTaskState::Completed);
+    DAWN_ASSERT(IsCompleted());
     return mErrorData == nullptr;
 }
 
 bool ErrorGeneratingAsyncTask::IsError() const {
-    DAWN_ASSERT(GetState() == AsyncTaskState::Completed);
+    DAWN_ASSERT(IsCompleted());
     return mErrorData != nullptr;
 }
 
@@ -112,7 +122,7 @@ InternalErrorType ErrorGeneratingAsyncTask::GetErrorType() const {
 }
 
 std::unique_ptr<ErrorData> ErrorGeneratingAsyncTask::AcquireError() {
-    DAWN_ASSERT(GetState() == AsyncTaskState::Completed);
+    DAWN_ASSERT(IsCompleted());
     return std::move(mErrorData);
 }
 
@@ -125,56 +135,31 @@ AsyncTaskManager::~AsyncTaskManager() {
 }
 
 void AsyncTaskManager::PostConstructedTask(Ref<AsyncTask> asyncTask) {
-    // We insert new waitableTask objects into mPendingTasks in main thread (PostTask()),
-    // and we may remove waitableTask objects from mPendingTasks in either main thread
-    // (WaitAllPendingTasks()) or sub-thread (TaskCompleted), so mPendingTasks should be
-    // protected by a mutex.
-    // Hold the mutex until the task is fully posted otherwise it could complete and be deleted
-    // from mPending tasks before it is fully initialized.
-    mPendingTasks.Use(
-        [&asyncTask, taskManager = this, taskPool = mWorkerTaskPool](auto pendingTasks) {
-            // If these allocations becomes expensive, we can slab-allocate tasks.
-            auto iter = pendingTasks->emplace(std::make_unique<WaitableTask>());
-
-            // Should never be inserting the same value twice.
-            DAWN_ASSERT(iter.second);
-
-            WaitableTask* waitableTask = iter.first->get();
-            waitableTask->taskManager = taskManager;
-            waitableTask->asyncTask = asyncTask;
-
-            // Hold the task's mutex while writing to mWaitableEvent. The task could run and try to
-            // modify the waitable event while this write is happening.
-            std::scoped_lock<std::mutex> lock(asyncTask->mMutex);
-            asyncTask->mWaitableEvent = taskPool->PostWorkerTask(RunTask, waitableTask);
-        });
-}
-
-void AsyncTaskManager::HandleTaskCompletion(WaitableTask* task) {
-    DAWN_ASSERT(task);
-    DAWN_ASSERT(task->asyncTask->GetState() == AsyncTaskState::Completed);
-
-    mPendingTasks.Use([&task](auto pendingTasks) { return pendingTasks->erase(task); });
+    // Insert the new task and send it off to the workpool to have it completed.
+    mTasks.Use([&asyncTask](auto tasks) { tasks->emplace(asyncTask); });
+    mWorkerTaskPool->PostWorkerTask(RunTask, asyncTask.Get());
 }
 
 void AsyncTaskManager::WaitAllPendingTasks() {
-    PendingTasksSet allPendingTasks;
-    mPendingTasks.Use(
-        [&allPendingTasks](auto pendingTasks) { allPendingTasks.swap(*pendingTasks); });
+    TaskSet allTasks;
+    mTasks.Use([&allTasks](auto tasks) { allTasks.swap(*tasks); });
 
-    for (auto& task : allPendingTasks) {
-        task->asyncTask->Wait();
+    for (auto& task : allTasks) {
+        task->Wait();
     }
 }
 
-bool AsyncTaskManager::HasPendingTasks() {
-    return mPendingTasks.Use([](auto pendingTasks) { return !pendingTasks->empty(); });
+bool AsyncTaskManager::HasPendingTasks() const {
+    return mTasks.Use([](auto tasks) { return !tasks->empty(); });
 }
 
 void AsyncTaskManager::RunTask(void* task) {
-    WaitableTask* waitableTask = static_cast<WaitableTask*>(task);
-    waitableTask->asyncTask->Run();
-    waitableTask->taskManager->HandleTaskCompletion(waitableTask);
+    // Note that we create a new Ref<AsyncTask> here because upon completion, we erase the Ref that
+    // the AsyncTaskManager holds which may result in dropping the last reference before the
+    // completion of this function otherwise. By explicitly creating a Ref here, we ensure that the
+    // last reference is only dropped after the scope of this function.
+    Ref<AsyncTask> asyncTask = static_cast<AsyncTask*>(task);
+    asyncTask->Run();
 }
 
 }  // namespace dawn::native

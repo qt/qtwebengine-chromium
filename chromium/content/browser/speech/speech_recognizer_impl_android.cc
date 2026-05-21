@@ -26,7 +26,7 @@ using base::android::AppendJavaStringArrayToStringVector;
 using base::android::AttachCurrentThread;
 using base::android::ConvertUTF8ToJavaString;
 using base::android::JavaFloatArrayToFloatVector;
-using base::android::JavaParamRef;
+using base::android::JavaRef;
 
 namespace content {
 
@@ -174,9 +174,9 @@ void SpeechRecognizerImplAndroid::OnAudioEnd(JNIEnv* env) {
 
 void SpeechRecognizerImplAndroid::OnRecognitionResults(
     JNIEnv* env,
-    const JavaParamRef<jobjectArray>& strings,
-    const JavaParamRef<jfloatArray>& floats,
-    jboolean provisional) {
+    const JavaRef<jobjectArray>& strings,
+    const JavaRef<jfloatArray>& floats,
+    bool provisional) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   std::vector<std::u16string> options;
   AppendJavaStringArrayToStringVector(env, strings, &options);
@@ -206,7 +206,8 @@ void SpeechRecognizerImplAndroid::OnRecognitionResultsOnIOThread(
   listener()->OnRecognitionResults(session_id(), results);
 }
 
-void SpeechRecognizerImplAndroid::OnRecognitionError(JNIEnv* env, jint error) {
+void SpeechRecognizerImplAndroid::OnRecognitionError(JNIEnv* env,
+                                                     int32_t error) {
   if (BrowserThread::CurrentlyOn(BrowserThread::UI)) {
     GetIOThreadTaskRunner({})->PostTask(
         FROM_HERE,

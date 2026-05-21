@@ -107,7 +107,8 @@ void ParseFlags(const base::CommandLine& command_line,
                 std::optional<std::string>& log_path,
                 base::ScopedFD& startup_pipe,
                 bool& log_to_console,
-                int& min_log_level);
+                int& min_log_level,
+                int& port);
 
 // TODO(b/293451778): Move this to its own file.
 class RemoteCommandsWaitOperation;
@@ -125,7 +126,8 @@ class FakeDMServer : public policy::EmbeddedPolicyTestServer {
   // shut down on its own when the destructor is called.
   // Starts the gRPC server on the same thread as the fake_dmserver_main thread.
   // Returns true if it's starts the servers successfully and false otherwise.
-  bool StartFakeServer();
+  // If `port` is 0, the server will listen on a random port.
+  bool StartFakeServer(int port = 0);
 
   // Writes the host and port of the EmbeddedPolicyTestServer to the given pipe
   // in a json format {"host": "localhost", "port": 1234}, it will return true
@@ -149,7 +151,7 @@ class FakeDMServer : public policy::EmbeddedPolicyTestServer {
                                 const std::string* serialized_raw_policy);
 
   // Parses regular and external policy from the JSON dict.
-  bool ParsePolicies(const base::Value::Dict* dict);
+  bool ParsePolicies(const base::DictValue* dict);
 
   // Reads and sets the values in the policy blob file, it will return true if
   // the policy blob file doesn't exist yet or all the values are read
@@ -166,12 +168,12 @@ class FakeDMServer : public policy::EmbeddedPolicyTestServer {
   bool ReadClientStateFile();
 
   // Returns true if the key of the specific type is in the dictionary.
-  static bool FindKey(const base::Value::Dict& dict,
+  static bool FindKey(const base::DictValue& dict,
                       const std::string& key,
                       base::Value::Type type);
 
   // Converts the client to Dictionary.
-  static base::Value::Dict GetValueFromClient(
+  static base::DictValue GetValueFromClient(
       const policy::ClientStorage::ClientInfo& c);
   // Converts the value to Client.
   static std::optional<policy::ClientStorage::ClientInfo> GetClientFromValue(

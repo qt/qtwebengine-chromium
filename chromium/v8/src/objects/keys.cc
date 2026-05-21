@@ -135,11 +135,11 @@ ExceptionStatus KeyAccumulator::AddKey(DirectHandle<Object> key,
                                        AddKeyConversion convert) {
   if (filter_ == PRIVATE_NAMES_ONLY) {
     if (!IsSymbol(*key)) return ExceptionStatus::kSuccess;
-    if (!Cast<Symbol>(*key)->is_private_name())
+    if (!Cast<Symbol>(*key)->is_any_private_name())
       return ExceptionStatus::kSuccess;
   } else if (IsSymbol(*key)) {
     if (filter_ & SKIP_SYMBOLS) return ExceptionStatus::kSuccess;
-    if (Cast<Symbol>(*key)->is_private()) return ExceptionStatus::kSuccess;
+    if (Cast<Symbol>(*key)->is_any_private()) return ExceptionStatus::kSuccess;
   } else if (filter_ & SKIP_STRINGS) {
     return ExceptionStatus::kSuccess;
   }
@@ -280,7 +280,7 @@ Maybe<bool> KeyAccumulator::CollectKeys(DirectHandle<JSReceiver> receiver,
       }
     } else {
       DCHECK(IsJSObject(*current));
-      result = CollectOwnKeys(receiver, Cast<JSObject>(current));
+      result = CollectOwnKeys(Cast<JSObject>(current));
     }
     MAYBE_RETURN(result, Nothing<bool>());
     if (!result.FromJust()) break;  // |false| means "stop iterating".
@@ -738,7 +738,7 @@ KeyAccumulator::FilterForEnumerableProperties(
 
   size_t length = accessor->GetCapacity(*result, result->elements());
   for (InternalIndex entry : InternalIndex::Range(length)) {
-    if (!accessor->HasEntry(isolate(), *result, entry)) continue;
+    if (!accessor->HasEntry(isolate_, *result, entry)) continue;
 
     // Query callbacks are not expected to have side effects.
     DirectHandle<Object> element = accessor->Get(isolate_, result, entry);
@@ -746,10 +746,11 @@ KeyAccumulator::FilterForEnumerableProperties(
     if (type == kIndexed) {
       uint32_t number;
       CHECK(Object::ToUint32(*element, &number));
-      attributes = args.CallIndexedQuery(interceptor, number);
+      attributes = args.CallIndexedQuery(isolate_, interceptor, number);
     } else {
       CHECK(IsName(*element));
-      attributes = args.CallNamedQuery(interceptor, Cast<Name>(element));
+      attributes =
+          args.CallNamedQuery(isolate_, interceptor, Cast<Name>(element));
     }
     // An exception was thrown in the interceptor. Propagate.
     RETURN_VALUE_IF_EXCEPTION(isolate_, ExceptionStatus::kException);
@@ -767,10 +768,9 @@ KeyAccumulator::FilterForEnumerableProperties(
 
 // Returns |true| on success, |nothing| on exception.
 Maybe<bool> KeyAccumulator::CollectInterceptorKeysInternal(
-    DirectHandle<JSReceiver> receiver, DirectHandle<JSObject> object,
-    DirectHandle<InterceptorInfo> interceptor, IndexedOrNamed type) {
-  PropertyCallbackArguments args(isolate_, *receiver, GetHolderForApi(*object),
-                                 Just(kDontThrow));
+    DirectHandle<JSObject> object, DirectHandle<InterceptorInfo> interceptor,
+    IndexedOrNamed type) {
+  PropertyCallbackArguments args(isolate_, GetHolderForApi(*object));
 
   DCHECK_EQ(interceptor->is_named(), type == kNamed);
   if (!interceptor->has_enumerator()) {
@@ -780,10 +780,10 @@ Maybe<bool> KeyAccumulator::CollectInterceptorKeysInternal(
   {
     DirectHandle<JSObjectOrUndefined> maybe_result;
     if (type == kIndexed) {
-      maybe_result = args.CallIndexedEnumerator(interceptor);
+      maybe_result = args.CallIndexedEnumerator(isolate_, interceptor);
     } else {
       DCHECK_EQ(type, kNamed);
-      maybe_result = args.CallNamedEnumerator(interceptor);
+      maybe_result = args.CallNamedEnumerator(isolate_, interceptor);
     }
     // An exception was thrown in the interceptor. Propagate.
     RETURN_VALUE_IF_EXCEPTION_DETECTOR(isolate_, args, Nothing<bool>());
@@ -809,8 +809,7 @@ Maybe<bool> KeyAccumulator::CollectInterceptorKeysInternal(
 }
 
 Maybe<bool> KeyAccumulator::CollectInterceptorKeys(
-    DirectHandle<JSReceiver> receiver, DirectHandle<JSObject> object,
-    IndexedOrNamed type) {
+    DirectHandle<JSObject> object, IndexedOrNamed type) {
   if (type == kIndexed) {
     if (!object->HasIndexedInterceptor()) return Just(true);
   } else {
@@ -820,17 +819,17 @@ Maybe<bool> KeyAccumulator::CollectInterceptorKeys(
       type == kIndexed ? object->GetIndexedInterceptor()
                        : object->GetNamedInterceptor(),
       isolate_);
-  return CollectInterceptorKeysInternal(receiver, object, interceptor, type);
+  return CollectInterceptorKeysInternal(object, interceptor, type);
 }
 
 Maybe<bool> KeyAccumulator::CollectOwnElementIndices(
-    DirectHandle<JSReceiver> receiver, DirectHandle<JSObject> object) {
+    DirectHandle<JSObject> object) {
   if (filter_ & SKIP_STRINGS || skip_indices_) return Just(true);
 
   ElementsAccessor* accessor = object->GetElementsAccessor();
   RETURN_NOTHING_IF_NOT_SUCCESSFUL(
       accessor->CollectElementIndices(object, this));
-  return CollectInterceptorKeys(receiver, object, kIndexed);
+  return CollectInterceptorKeys(object, kIndexed);
 }
 
 namespace {
@@ -1047,7 +1046,7 @@ ExceptionStatus CollectKeysFromDictionary(DirectHandle<Dictionary> dictionary,
 }  // namespace
 
 Maybe<bool> KeyAccumulator::CollectOwnPropertyNames(
-    DirectHandle<JSReceiver> receiver, DirectHandle<JSObject> object) {
+    DirectHandle<JSObject> object) {
   if (filter_ == ENUMERABLE_STRINGS) {
     DirectHandle<FixedArray> enum_keys;
     if (object->HasFastProperties()) {
@@ -1121,11 +1120,11 @@ Maybe<bool> KeyAccumulator::CollectOwnPropertyNames(
     }
   }
   // Add the property keys from the interceptor.
-  return CollectInterceptorKeys(receiver, object, kNamed);
+  return CollectInterceptorKeys(object, kNamed);
 }
 
 ExceptionStatus KeyAccumulator::CollectPrivateNames(
-    DirectHandle<JSReceiver> receiver, DirectHandle<JSObject> object) {
+    DirectHandle<JSObject> object) {
   DCHECK_EQ(mode_, KeyCollectionMode::kOwnOnly);
   if (object->HasFastProperties()) {
     int limit = object->map()->NumberOfOwnDescriptors();
@@ -1150,11 +1149,11 @@ ExceptionStatus KeyAccumulator::CollectPrivateNames(
 
 Maybe<bool> KeyAccumulator::CollectAccessCheckInterceptorKeys(
     DirectHandle<AccessCheckInfo> access_check_info,
-    DirectHandle<JSReceiver> receiver, DirectHandle<JSObject> object) {
+    DirectHandle<JSObject> object) {
   if (!skip_indices_) {
     MAYBE_RETURN(
         (CollectInterceptorKeysInternal(
-            receiver, object,
+            object,
             direct_handle(
                 Cast<InterceptorInfo>(access_check_info->indexed_interceptor()),
                 isolate_),
@@ -1162,7 +1161,7 @@ Maybe<bool> KeyAccumulator::CollectAccessCheckInterceptorKeys(
         Nothing<bool>());
   }
   MAYBE_RETURN((CollectInterceptorKeysInternal(
-                   receiver, object,
+                   object,
                    direct_handle(Cast<InterceptorInfo>(
                                      access_check_info->named_interceptor()),
                                  isolate_),
@@ -1173,8 +1172,7 @@ Maybe<bool> KeyAccumulator::CollectAccessCheckInterceptorKeys(
 
 // Returns |true| on success, |false| if prototype walking should be stopped,
 // |nothing| if an exception was thrown.
-Maybe<bool> KeyAccumulator::CollectOwnKeys(DirectHandle<JSReceiver> receiver,
-                                           DirectHandle<JSObject> object) {
+Maybe<bool> KeyAccumulator::CollectOwnKeys(DirectHandle<JSObject> object) {
   // Check access rights if required.
   if (IsAccessCheckNeeded(*object) &&
       !isolate_->MayAccess(isolate_->native_context(), object)) {
@@ -1197,21 +1195,28 @@ Maybe<bool> KeyAccumulator::CollectOwnKeys(DirectHandle<JSReceiver> receiver,
     // We always have both kinds of interceptors or none.
     if (!access_check_info.is_null() &&
         access_check_info->named_interceptor() != Tagged<Object>()) {
-      MAYBE_RETURN(CollectAccessCheckInterceptorKeys(access_check_info,
-                                                     receiver, object),
+      MAYBE_RETURN(CollectAccessCheckInterceptorKeys(access_check_info, object),
                    Nothing<bool>());
     }
     return Just(false);
   }
+  if (IsJSDeferredModuleNamespace(*object)) [[unlikely]] {
+    DirectHandle<JSDeferredModuleNamespace> ns =
+        Cast<JSDeferredModuleNamespace>(object);
+    if (ns->module()->status() != Module::kEvaluated) {
+      JSDeferredModuleNamespace::EvaluateModuleSync(isolate_, ns);
+      RETURN_EXCEPTION_IF_EXCEPTION(isolate_);
+    }
+  }
   if (filter_ & PRIVATE_NAMES_ONLY) {
-    RETURN_NOTHING_IF_NOT_SUCCESSFUL(CollectPrivateNames(receiver, object));
+    RETURN_NOTHING_IF_NOT_SUCCESSFUL(CollectPrivateNames(object));
     return Just(true);
   }
 
   if (may_have_elements_) {
-    MAYBE_RETURN(CollectOwnElementIndices(receiver, object), Nothing<bool>());
+    MAYBE_RETURN(CollectOwnElementIndices(object), Nothing<bool>());
   }
-  MAYBE_RETURN(CollectOwnPropertyNames(receiver, object), Nothing<bool>());
+  MAYBE_RETURN(CollectOwnPropertyNames(object), Nothing<bool>());
   return Just(true);
 }
 

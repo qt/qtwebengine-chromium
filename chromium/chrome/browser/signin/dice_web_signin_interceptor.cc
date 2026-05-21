@@ -6,6 +6,7 @@
 
 #include <optional>
 #include <string>
+#include <string_view>
 
 #include "base/check.h"
 #include "base/functional/callback_helpers.h"
@@ -130,11 +131,7 @@ AccountInfo GetPrimaryAccountInfo(signin::IdentityManager* manager) {
   }
 
   // Return an AccountInfo without extended fields, based on the core info.
-  AccountInfo account_info;
-  account_info.gaia = primary_core_account_info.gaia;
-  account_info.email = primary_core_account_info.email;
-  account_info.account_id = primary_core_account_info.account_id;
-  return account_info;
+  return AccountInfo::Builder(primary_core_account_info).Build();
 }
 
 // This function is based on the email rather than the GaiaID, because the Gaia
@@ -383,9 +380,9 @@ void MaybeRecordSupervisedUserStateMetrics(
   }
 
   base::UmaHistogramEnumeration(
-      kChromeSingInInterceptionSupervisionStateHistogramPrefix +
-          DiceWebSigninInterceptorDelegate::GetHistogramSuffix(
-              interception_type),
+      base::StrCat({kChromeSingInInterceptionSupervisionStateHistogramPrefix,
+                    DiceWebSigninInterceptorDelegate::GetHistogramSuffix(
+                        interception_type)}),
       CapabilityToSupervisionState(intercepted_account_info.capabilities));
 }
 
@@ -797,7 +794,7 @@ bool DiceWebSigninInterceptor::ShouldShowMultiUserBubble(
   DCHECK(IsRequiredExtendedAccountInfoAvailable(intercepted_account_info));
 
   if (!IsUsernameAllowedForInterceptionByPattern(
-          intercepted_account_info.email)) {
+          std::string(intercepted_account_info.GetEmail()))) {
     return false;
   }
 
@@ -808,13 +805,15 @@ bool DiceWebSigninInterceptor::ShouldShowMultiUserBubble(
   // Check if the account has the same name as another account in the profile.
   for (const auto& account_info :
        identity_manager_->GetExtendedAccountInfoForAccountsWithRefreshToken()) {
-    if (account_info.account_id == intercepted_account_info.account_id) {
+    if (account_info.GetAccountId() ==
+        intercepted_account_info.GetAccountId()) {
       continue;
     }
     // Case-insensitve comparison supporting non-ASCII characters.
-    if (base::i18n::FoldCase(base::UTF8ToUTF16(account_info.given_name)) ==
-        base::i18n::FoldCase(
-            base::UTF8ToUTF16(intercepted_account_info.given_name))) {
+    if (base::i18n::FoldCase(
+            base::UTF8ToUTF16(account_info.GetGivenName().value_or(""))) ==
+        base::i18n::FoldCase(base::UTF8ToUTF16(
+            intercepted_account_info.GetGivenName().value_or("")))) {
       return false;
     }
   }
@@ -1287,7 +1286,7 @@ void DiceWebSigninInterceptor::OnChromeSigninChoice(
     case SigninInterceptionResult::kDeclined:
       RecordChromeSigninNumberOfDismissesForAccount(account_info.gaia,
                                                     processed_result);
-      signin::LaunchSigninHatsSurveyForProfile(
+      signin::LaunchHatsSurveyForProfile(
           kHatsSurveyTriggerIdentityDiceWebSigninDeclined, profile_);
       break;
     case SigninInterceptionResult::kAcceptedWithExistingProfile:
@@ -1302,7 +1301,7 @@ void DiceWebSigninInterceptor::OnChromeSigninChoice(
       signin_metrics::LogSignInStarted(access_point);
       identity_manager_->GetPrimaryAccountMutator()->SetPrimaryAccount(
           account_info.account_id, signin::ConsentLevel::kSignin, access_point);
-      signin::LaunchSigninHatsSurveyForProfile(
+      signin::LaunchHatsSurveyForProfile(
           kHatsSurveyTriggerIdentityDiceWebSigninAccepted, profile_);
   }
 
@@ -1361,8 +1360,6 @@ void DiceWebSigninInterceptor::OnNewSignedInProfileCreated(
   if (is_new_profile) {
     ProfileMetrics::LogProfileAddNewUser(
         ProfileMetrics::ADD_NEW_USER_SIGNIN_INTERCEPTION);
-    // TODO(crbug.com/40775669): Remove the condition if Guest mode
-    // option is removed.
     if (!new_profile->IsGuestSession()) {
       // Apply the new color to the profile.
       ThemeServiceFactory::GetForProfile(new_profile)
@@ -1472,8 +1469,6 @@ void DiceWebSigninInterceptor::OnNewBrowserCreated(bool is_new_profile) {
   state_->interception_bubble_handle_.reset();  // Close the bubble now.
   state_->session_startup_helper_.reset();
 
-  // TODO(crbug.com/40775669): Remove |IsGuestSession| if Guest option is
-  // no more supported.
   if (!is_new_profile || profile_->IsGuestSession()) {
     return;
   }
@@ -1529,7 +1524,7 @@ void DiceWebSigninInterceptor::RecordChromeSigninNumberOfDismissesForAccount(
 
 bool DiceWebSigninInterceptor::HasUserDeclinedProfileCreation(
     const std::string& email) const {
-  const base::Value::Dict& pref_data = profile_->GetPrefs()->GetDict(
+  const base::DictValue& pref_data = profile_->GetPrefs()->GetDict(
       prefs::kProfileCreationInterceptionDeclined);
   std::optional<int> declined_count =
       pref_data.FindInt(GetPersistentEmailHash(email));

@@ -67,7 +67,7 @@ class AudioPushFifoTest : public testing::TestWithParam<int> {
       EXPECT_EQ(GetExpectedOutputChunks(i * input_chunk_size), results_.size());
 
       // Fill audio data with predictable values.
-      std::ranges::generate(audio_bus->channel_span(0),
+      std::ranges::generate(audio_bus->channel(0),
                             [&sample_value]() { return sample_value++; });
 
       fifo_->Push(*audio_bus);
@@ -128,7 +128,7 @@ class AudioPushFifoTest : public testing::TestWithParam<int> {
   // adds a result to |results_|.
   void ReceiveAndCheckNextChunk(const AudioBus& audio_bus, int frame_delay) {
     OutputChunkResult result;
-    auto channel_data = audio_bus.channel_span(0);
+    auto channel_data = audio_bus.channel(0);
     result.num_frames = audio_bus.frames();
     result.first_sample_value = channel_data[0];
     result.last_sample_value = channel_data[audio_bus.frames() - 1];
@@ -158,8 +158,8 @@ class AudioPushFifoTest : public testing::TestWithParam<int> {
     results_.push_back(result);
   }
 
-  // Note: Not using base::RandInt() because it is horribly slow on debug
-  // builds.  The following is a very simple, deterministic LCG:
+  // Note: Not using base::RandIntInclusive() because it is horribly slow on
+  // debug builds.  The following is a very simple, deterministic LCG:
   int NextRandomInt() {
     rand_seed_ = (1103515245 * rand_seed_ + 12345) % (1 << 31);
     return static_cast<int>(rand_seed_);
@@ -208,7 +208,7 @@ TEST_P(AudioPushFifoTest, PushArbitraryNumbersOfFramesAtATime) {
     const std::unique_ptr<AudioBus> audio_bus =
         AudioBus::Create(1, input_chunk_size);
 
-    std::ranges::generate(audio_bus->channel_span(0),
+    std::ranges::generate(audio_bus->channel(0),
                           [&sample_value]() { return sample_value++; });
 
     fifo_->Push(*audio_bus);

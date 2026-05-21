@@ -17,17 +17,20 @@
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/web_contents.h"
+#include "ui/accessibility/accessibility_features.h"
 #include "ui/accessibility/ax_enums.mojom.h"
 #include "ui/accessibility/ax_node_data.h"
 #include "ui/accessibility/platform/ax_platform_node.h"
 #include "ui/accessibility/platform/ax_platform_node_delegate.h"
 #include "ui/base/metadata/metadata_impl_macros.h"
 #include "ui/events/event.h"
+#include "ui/views/accessibility/tree/widget_ax_manager.h"
 #include "ui/views/accessibility/view_accessibility.h"
 #include "ui/views/controls/webview/web_contents_set_background_color.h"
 #include "ui/views/focus/focus_manager.h"
 #include "ui/views/views_delegate.h"
 #include "ui/views/views_features.h"
+#include "ui/views/widget/widget.h"
 
 namespace views {
 
@@ -40,17 +43,6 @@ const void* const kIsWebViewContentsKey = &kIsWebViewContentsKey;
 WebView::WebContentsCreator* GetCreatorForTesting() {
   static base::NoDestructor<WebView::WebContentsCreator> creator;
   return creator.get();
-}
-
-// Updates the parent accessible object on the NativeView. As WebView overrides
-// GetNativeViewAccessible() to return the accessible from the WebContents, it
-// needs to ensure the accessible from the parent is set on the NativeView.
-void UpdateNativeViewHostAccessibleParent(NativeViewHost* holder,
-                                          View* parent) {
-  if (!parent) {
-    return;
-  }
-  holder->SetParentAccessible(parent->GetNativeViewAccessible());
 }
 
 }  // namespace
@@ -290,7 +282,7 @@ bool WebView::SkipDefaultKeyEventProcessing(const ui::KeyEvent& event) {
   // We'll first give the page a chance to process the key events.  If it does
   // not process them, they'll be returned to us and we'll treat them as
   // accelerators then.
-  return web_contents() && !web_contents()->IsCrashed();
+  return IsWebContentsAlive();
 }
 
 bool WebView::OnMousePressed(const ui::MouseEvent& event) {
@@ -309,13 +301,47 @@ bool WebView::OnMousePressed(const ui::MouseEvent& event) {
 }
 
 void WebView::OnFocus() {
-  if (web_contents() && !web_contents()->IsCrashed()) {
+  // A WebView can be focused in a few ways:
+  //
+  // - Click inside the hosted NativeView:
+  //   The native view (aura::Window or NSView) will be focused, which causes
+  //   the WebContents to notify its observer via
+  //   WebContentsObserver::OnWebContentsFocused(). WebView observes the
+  //   WebContents' focus change, then updates views::FocusManager by calling
+  //   View::RequestFocus(), which eventually calls WebView::OnFocus().
+  //   This makes the HTML element :focused, but not :focus-visible (usually
+  //   this means the element has no focus ring).
+  //
+  // - Click on the WebView (outside the NativeView):
+  //   Handled by WebView::OnMousePressed(), which calls RequestFocus(), which
+  //   eventually calls WebView::OnFocus().
+  //   This restores the HTML document's last focused element and the previous
+  //   :focus and :focus-visible state.
+  //   For the HTML document's initial focus, :focus-visible will be added.
+  //
+  // - Programmatic focus:
+  //   Some code calls FocusManager::SetFocusedView() directly, invoking
+  //   WebView::OnFocus().
+  //   This restores the HTML document's last focused element and the previous
+  //   :focus and :focus-visible state.
+  //   For the HTML document's initial focus, :focus-visible will be added.
+  //
+  // - Focus traversal (i.e., Tab and Shift+Tab):
+  //   FocusManager::AdvanceFocus() calls
+  //   View::AboutToRequestFocusFromTabTraversal(), where WebView invokes
+  //   WebContents::FocusThroughTabTraversal(). This focuses the first
+  //   focusable element (e.g., a <button>).
+  //   FocusManager then calls SetFocusedView(), invoking WebView::OnFocus().
+  //   The focused HTML element becomes :focused and :focus-visible (has focus
+  //   ring).
+  //
+  if (IsWebContentsAlive()) {
     web_contents()->Focus();
   }
 }
 
 void WebView::AboutToRequestFocusFromTabTraversal(bool reverse) {
-  if (web_contents() && !web_contents()->IsCrashed()) {
+  if (IsWebContentsAlive()) {
     web_contents()->FocusThroughTabTraversal(reverse);
   }
 }
@@ -331,8 +357,10 @@ void WebView::AddedToWidget() {
   // attached, update the accessible parent here to support reparenting the
   // WebView.
   if (holder_->native_view()) {
-    UpdateNativeViewHostAccessibleParent(holder_, parent());
+    UpdateNativeViewHostAccessibleParent();
   }
+
+  HandleWidgetAXManagerEnablement();
 }
 
 void WebView::RemovedFromWidget() {
@@ -341,10 +369,26 @@ void WebView::RemovedFromWidget() {
   if (holder_->native_view()) {
     holder_->SetParentAccessible(gfx::NativeViewAccessible());
   }
+
+  widget_ax_manager_observation_.Reset();
 }
 
 gfx::NativeViewAccessible WebView::GetNativeViewAccessible() {
-  if (web_contents() && !web_contents()->IsCrashed()) {
+  if (::features::IsAccessibilityTreeForViewsEnabled()) {
+    // When ViewsAX is enabled, WebView must be exposed as a normal View node in
+    // the Views accessibility tree. The legacy behavior below is a platform
+    // hack: it replaces the WebView's native accessible with the WebContents'
+    // native accessible (AXFragmentRootPlatformNodeWin /
+    // RenderWidgetHostViewCocoa) so the web AXTree shows up in the platform
+    // tree even though WebView itself is skipped. This was needed because Views
+    // lacked support of the kChildTreeId behavior implemented in
+    // BrowserAccessibilityManager. With ViewsAX, the Webview is now treated as
+    // any other view and the web content is exposed as a child tree through the
+    // kChildTreeId attribute.
+    return View::GetNativeViewAccessible();
+  }
+
+  if (IsWebContentsAlive()) {
     content::RenderWidgetHostView* host_view =
         web_contents()->GetRenderWidgetHostView();
     if (host_view) {
@@ -368,11 +412,16 @@ void WebView::OnAXModeAdded(ui::AXMode mode) {
     return;
   }
 
-  // Normally, it is set during AttachWebContentsNativeView when the WebView is
+  // AX platform may have been initialized after the holder_'s native view was
   // created but this may not happen on some platforms as the accessible object
   // may not have been present when this WebView was created. So, update it when
   // AX mode is added.
-  UpdateNativeViewHostAccessibleParent(holder(), parent());
+  //
+  // TODO(crbug.com/40672441): Remove when we enable ViewsAX by default.
+  // `OnWidgetAXManagerEnabled` will take care of this instead.
+  if (!::features::IsAccessibilityTreeForViewsEnabled()) {
+    UpdateNativeViewHostAccessibleParent();
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -428,7 +477,7 @@ void WebView::DidToggleFullscreenModeForTab(bool entered_fullscreen,
 
 void WebView::OnWebContentsFocused(
     content::RenderWidgetHost* render_widget_host) {
-  RequestFocus();
+  RequestFocusWithReason(FocusManager::FocusChangeReason::kFocusNativeView);
   web_contents_focused_callbacks_.Notify(this);
 }
 
@@ -477,7 +526,9 @@ void WebView::AttachWebContentsNativeView() {
   holder_->Attach(view_to_attach);
 
   // We set the parent accessible of the native view to be our parent.
-  UpdateNativeViewHostAccessibleParent(holder(), parent());
+  UpdateNativeViewHostAccessibleParent();
+
+  HandleWidgetAXManagerEnablement();
 
   // The WebContents is not focused automatically when attached, so we need to
   // tell the WebContents it has focus if this has focus.
@@ -512,6 +563,19 @@ void WebView::UpdateCrashedOverlayView() {
   }
 }
 
+void WebView::UpdateNativeViewHostAccessibleParent() {
+  // Updates the parent accessible object on the NativeView. As WebView
+  // overrides GetNativeViewAccessible() to return the accessible from the
+  // WebContents, it needs to ensure the accessible from the parent is set on
+  // the NativeView.
+  View* parent =
+      ::features::IsAccessibilityTreeForViewsEnabled() ? this : this->parent();
+  if (!parent) {
+    return;
+  }
+  holder_->SetParentAccessible(parent->GetNativeViewAccessible());
+}
+
 void WebView::NotifyAccessibilityWebContentsChanged() {
   if (!lock_child_ax_tree_id_override_) {
     content::RenderFrameHost* rfh =
@@ -520,6 +584,54 @@ void WebView::NotifyAccessibilityWebContentsChanged() {
                                               : ui::AXTreeIDUnknown());
   }
   NotifyAccessibilityEventDeprecated(ax::mojom::Event::kChildrenChanged, false);
+}
+
+void WebView::OnWidgetAXManagerEnabled() {
+  if (holder_->native_view()) {
+    UpdateNativeViewHostAccessibleParent();
+  }
+
+  widget_ax_manager_observation_.Reset();
+}
+
+bool WebView::IsWebContentsAlive() const {
+  return web_contents() && !web_contents()->IsCrashed();
+}
+
+void WebView::HandleWidgetAXManagerEnablement() {
+  if (!::features::IsAccessibilityTreeForViewsEnabled()) {
+    return;
+  }
+
+  Widget* widget = GetWidget();
+  if (!widget) {
+    return;
+  }
+
+  WidgetAXManager* manager = widget->ax_manager();
+  if (!manager) {
+    return;
+  }
+
+  if (manager->is_enabled()) {
+    if (holder_->native_view()) {
+      UpdateNativeViewHostAccessibleParent();
+    }
+    widget_ax_manager_observation_.Reset();
+    return;
+  }
+
+  if (!widget_ax_manager_observation_.IsObserving()) {
+    widget_ax_manager_observation_.Observe(manager);
+  }
+}
+
+bool WebView::IsObservingAXModeForTesting() {
+  return ax_mode_observation_.IsObserving();
+}
+
+bool WebView::IsObservingWidgetAXManagerForTesting() {
+  return widget_ax_manager_observation_.IsObserving();
 }
 
 std::unique_ptr<content::WebContents> WebView::CreateWebContents(

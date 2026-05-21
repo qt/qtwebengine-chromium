@@ -20,13 +20,13 @@ import {WindowProxy} from './window_proxy.js';
  * enough". The more confident the API is about a transcript, the higher the
  * confidence (number between 0 and 1).
  */
-const RECOGNITION_CONFIDENCE_THRESHOLD: number = 0.5;
+const RECOGNITION_CONFIDENCE_THRESHOLD: number = 0.7;
 
 /**
- * Time in milliseconds to wait before closing the UI if no interaction has
- * occurred.
+ * Time in milliseconds to wait before closing the UI if no interaction
+ * has occurred since start, OR last word spoken. Matches Google3.
  */
-const IDLE_TIMEOUT_MS: number = 8000;
+const IDLE_TIMEOUT_MS: number = 1500;
 
 // The set of controller states.
 enum State {
@@ -59,6 +59,8 @@ enum State {
 enum Error {
   // Error given when voice search permission enabled.
   NOT_ALLOWED = 0,
+  // All other errors, like network.
+  OTHER = 1,
 }
 
 // TODO(crbug.com/40449919): Remove when bug is fixed.
@@ -71,6 +73,7 @@ declare global {
 export interface ComposeboxVoiceSearchElement {
   $: {
     input: HTMLInputElement,
+    closeButton: HTMLElement,
   };
 }
 
@@ -124,7 +127,7 @@ export class ComposeboxVoiceSearchElement extends
   constructor() {
     super();
     this.voiceRecognition_ = new window.webkitSpeechRecognition();
-    this.voiceRecognition_.continuous = false;
+    this.voiceRecognition_.continuous = true;
     this.voiceRecognition_.interimResults = true;
     this.voiceRecognition_.lang = window.navigator.language;
     this.voiceRecognition_.onresult = this.onResult_.bind(this);
@@ -164,9 +167,9 @@ export class ComposeboxVoiceSearchElement extends
       // Waiting for query redirect.
       return;
     }
-    if (this.finalResult_) {
-      // Query what we recognized so far.
-      this.onFinalResult_();
+    // If there is text transcribed, process it as final.
+    if (this.transcript_) {
+      this.onFinalResult_(this.transcript_);
       return;
     }
     this.voiceRecognition_.abort();
@@ -200,7 +203,7 @@ export class ComposeboxVoiceSearchElement extends
     // Process final results if is fully final.
     if (!!speechResult && speechResult.isFinal) {
       this.finalResult_ = speechResult[0]!.transcript;
-      this.onFinalResult_();
+      this.onFinalResult_(this.finalResult_);
       return;
     }
 
@@ -210,13 +213,13 @@ export class ComposeboxVoiceSearchElement extends
       const result = resultList[0];  // best guess
       assert(result);
 
+      this.transcript_ += result.transcript;
       if (result.confidence > RECOGNITION_CONFIDENCE_THRESHOLD) {
         this.finalResult_ += result.transcript;  // Displayed
       } else {
         this.interimResult_ += result.transcript;
       }
     }
-    this.transcript_ = this.finalResult_ + this.interimResult_;
     this.fire('transcript-update', this.transcript_);
   }
 
@@ -229,13 +232,25 @@ export class ComposeboxVoiceSearchElement extends
       case State.AUDIO_RECEIVED:
       case State.SPEECH_RECEIVED:
       case State.RESULT_RECEIVED:
-        this.fire('voice-search-cancel');
+        // No metric recorded:
+        this.fire('voice-search-cancel', /*canceled-by-user=*/ false);
         return;
       case State.ERROR_RECEIVED:
         // All other errors should close voice search.
         if (this.error_ !== Error.NOT_ALLOWED) {
+          /* Cannot abort voice recognition here; will call `onEnd()_`
+           * again if do that again, leading to infinite recursion.
+           */
           this.resetState_();
-          this.fire('voice-search-cancel');
+          /* No metric recorded through this event firing.
+           * This event is fired just to hide voice overlay:
+           */
+          this.fire('voice-search-cancel', /*canceled-by-user=*/ false);
+          // Metric recorded through this event firing:
+          this.fire('voice-search-error', /*canceled-by-error=*/ true);
+        } else {
+          // Metric recorded through this event firing:
+          this.fire('voice-search-error', /*canceled-by-error=*/ false);
         }
         return;
       case State.RESULT_FINAL:  // Query already submitted if is this state
@@ -249,10 +264,11 @@ export class ComposeboxVoiceSearchElement extends
     this.state_ = State.ERROR_RECEIVED;
     switch (webkitError) {
       case 'not-allowed':
-        this.error_ = Error.NOT_ALLOWED;
         this.errorMessage_ = loadTimeData.getString('voicePermissionError');
+        this.error_ = Error.NOT_ALLOWED;
         return;
       default:
+        this.error_ = Error.OTHER;
         return;
     }
   }
@@ -262,26 +278,33 @@ export class ComposeboxVoiceSearchElement extends
     this.resetState_();
   }
 
-  private onFinalResult_() {
-    if (!this.finalResult_) {
+  private onFinalResult_(result: string) {
+    if (!result) {
       return;
     }
     this.state_ = State.RESULT_FINAL;
-    this.fire('voice-search-final-result', this.finalResult_);
+    // Metric recorded through this event firing:
+    this.fire('voice-search-final-result', result);
     this.voiceModeEndCleanup_();
   }
 
   protected onCloseClick_() {
     this.voiceModeEndCleanup_();
-    this.fire('voice-search-cancel');
+    // Record metric by setting canceled-by-user param to true in this event:
+    this.fire(
+        'voice-search-cancel',
+        /*canceled-by-user=*/ true);
   }
 
   private resetState_() {
     this.state_ = State.UNINITIALIZED;
     this.finalResult_ = '';
+    this.transcript_ = '';
     this.interimResult_ = '';
     this.error_ = null;
     this.errorMessage_ = '';
+    WindowProxy.getInstance().clearTimeout(this.timerId_);
+    this.timerId_ = null;
   }
 
   protected onLinkClick_(e: Event) {
@@ -290,9 +313,12 @@ export class ComposeboxVoiceSearchElement extends
     e.preventDefault();
     const href = (e.currentTarget as HTMLAnchorElement).href;
     if (href) {
-      this.pageHandler_.navigateUrl({url: href});
+      this.pageHandler_.navigateUrl(href);
     }
-    this.fire('voice-search-cancel');
+    /* Do not record metric by setting canceled-by-user
+     * param to false in this event:
+     */
+    this.fire('voice-search-cancel', /*canceled-by-user=*/ false);
   }
 }
 

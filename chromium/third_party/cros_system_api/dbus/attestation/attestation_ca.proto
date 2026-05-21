@@ -86,6 +86,14 @@ enum CertificateProfile {
   //   OU=<BoardID.Type as brand code>
   //   O=Android Product Identity
   ANDROID_PRODUCT_IDENTITY_CERTIFICATE = 16;
+
+  // A certificate intended for Beam devices, providing device identity and
+  // authentication. It has the following subjectName fields:
+  //   CN=<ADID>
+  //   OU=Beam
+  //   O=Google
+  //   C=US
+  BEAM_DEVICE_CERTIFICATE = 17;
 }
 
 enum TpmVersion {
@@ -284,11 +292,11 @@ message AttestationCertificateRequest {
     // `DEVICE_SETUP_CERTIFICATE` specific metadata.
     DeviceSetupCertificateMetadata device_setup_certificate_metadata = 16;
   }
-  // ADID read from the VPD. Used as the host identifier incorporated in the
-  // certificates.
-  // Used for `ENTERPRISE_ENROLLMENT_CERTIFICATE`,
-  // `ENTERPRISE_VTPM_EK_CERTIFICATE` and `ANDROID_PRODUCT_IDENTITY_CERTIFICATE`
-  // profiles only.
+  // ADID read from the VPD.
+  // Used as the host identifier incorporated in the
+  // certificates for `ENTERPRISE_ENROLLMENT_CERTIFICATE`,
+  // `ENTERPRISE_VTPM_EK_CERTIFICATE`, `ANDROID_PRODUCT_IDENTITY_CERTIFICATE`,
+  // and `BEAM_DEVICE_CERTIFICATE` profiles.
   optional bytes attested_device_id = 17;
 }
 

@@ -18,23 +18,37 @@ project(crabby_avif_c_api_tests)
 
 enable_testing()
 
-set(CMAKE_C_COMPILER "clang")
-set(CMAKE_CXX_COMPILER "clang++")
 
 cmake_path(GET CMAKE_CURRENT_SOURCE_DIR PARENT_PATH CARGO_ROOT_DIR)
 
+if(ANDROID_ABI)
+    set(GTEST_BUILD_DIR build.android/${ANDROID_ABI})
+    set(CRABBYAVIF_BUILD_DIR "target/${ANDROID_ABI}-linux-android/release")
+else()
+    set(GTEST_BUILD_DIR build)
+    set(CRABBYAVIF_BUILD_DIR "target/release")
+    set(CMAKE_C_COMPILER "clang")
+    set(CMAKE_CXX_COMPILER "clang++")
+endif()
+
 set(GTEST_INCLUDE_DIR "${CARGO_ROOT_DIR}/external/googletest/googletest/include")
-set(GTEST_LIBRARIES "${CARGO_ROOT_DIR}/external/googletest/build/lib/libgtest.a")
-set(GTEST_MAIN_LIBRARIES "${CARGO_ROOT_DIR}/external/googletest/build/lib/libgtest_main.a")
+set(GTEST_LIBRARIES "${CARGO_ROOT_DIR}/external/googletest/${GTEST_BUILD_DIR}/lib/libgtest.a")
+set(GTEST_MAIN_LIBRARIES "${CARGO_ROOT_DIR}/external/googletest/${GTEST_BUILD_DIR}/lib/libgtest_main.a")
 
 set(CRABBY_AVIF_INCLUDE_DIR "${CARGO_ROOT_DIR}/include")
-set(CRABBY_AVIF_LIBRARIES "${CARGO_ROOT_DIR}/target/release/libcrabby_avif.so")
+set(CRABBY_AVIF_LIBRARIES "${CARGO_ROOT_DIR}/${CRABBYAVIF_BUILD_DIR}/libcrabby_avif.a")
+
 
 add_library(testutil OBJECT testutil.cc)
 target_include_directories(testutil PRIVATE ${GTEST_INCLUDE_DIR})
 target_include_directories(testutil PRIVATE ${CRABBY_AVIF_INCLUDE_DIR})
 target_link_libraries(testutil PRIVATE ${GTEST_LIBRARIES})
 target_link_libraries(testutil PRIVATE ${CRABBY_AVIF_LIBRARIES})
+
+if(ANDROID_ABI)
+   find_library(mediandk-lib mediandk)
+   target_link_libraries(testutil PRIVATE ${mediandk-lib})
+endif()
 
 macro(add_avif_gtest TEST_NAME)
     add_executable(${TEST_NAME} ${TEST_NAME}.cc)

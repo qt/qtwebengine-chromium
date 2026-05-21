@@ -14,7 +14,6 @@
 #include "core/fpdfapi/font/cpdf_type3char.h"
 #include "core/fpdfapi/font/cpdf_type3font.h"
 #include "core/fpdfapi/render/cpdf_type3glyphmap.h"
-#include "core/fxcrt/compiler_specific.h"
 #include "core/fxcrt/fx_coordinates.h"
 #include "core/fxcrt/fx_safe_types.h"
 #include "core/fxge/cfx_glyphbitmap.h"
@@ -23,57 +22,53 @@
 
 namespace {
 
-bool IsScanLine1bpp(const uint8_t* pBuf, int width) {
-  int size = width / 8;
-  for (int i = 0; i < size; i++) {
-    if (UNSAFE_TODO(pBuf[i])) {
+bool IsScanLine1bpp(pdfium::span<const uint8_t> line, size_t width) {
+  for (uint8_t val : line.first(width / 8)) {
+    if (val) {
       return true;
     }
   }
-  return (width % 8) &&
-         (UNSAFE_TODO(pBuf[width / 8]) & (0xff << (8 - width % 8)));
+  return (width % 8) && (line[width / 8] & (0xff << (8 - width % 8)));
 }
 
-bool IsScanLine8bpp(const uint8_t* pBuf, int width) {
-  for (int i = 0; i < width; i++) {
-    if (UNSAFE_TODO(pBuf[i]) > 0x40) {
+bool IsScanLine8bpp(pdfium::span<const uint8_t> line, size_t width) {
+  for (uint8_t val : line.first(width)) {
+    if (val > 0x40) {
       return true;
     }
   }
   return false;
 }
 
-bool IsScanLineBpp(int bpp, const uint8_t* pBuf, int width) {
+bool IsScanLineBpp(int bpp, pdfium::span<const uint8_t> line, size_t width) {
   if (bpp == 1) {
-    return IsScanLine1bpp(pBuf, width);
+    return IsScanLine1bpp(line, width);
   }
   if (bpp > 8) {
     width *= bpp / 8;
   }
-  return IsScanLine8bpp(pBuf, width);
+  return IsScanLine8bpp(line, width);
 }
 
-int DetectFirstScan(const RetainPtr<CFX_DIBitmap>& pBitmap) {
-  const int height = pBitmap->GetHeight();
-  const int width = pBitmap->GetWidth();
-  const int bpp = pBitmap->GetBPP();
-  for (int line = 0; line < height; ++line) {
-    const uint8_t* pBuf = pBitmap->GetScanline(line).data();
-    if (IsScanLineBpp(bpp, pBuf, width)) {
-      return line;
+int DetectFirstScan(const RetainPtr<CFX_DIBitmap>& bitmap) {
+  const int height = bitmap->GetHeight();
+  const size_t width = pdfium::checked_cast<size_t>(bitmap->GetWidth());
+  const int bpp = bitmap->GetBPP();
+  for (int i = 0; i < height; ++i) {
+    if (IsScanLineBpp(bpp, bitmap->GetScanline(i), width)) {
+      return i;
     }
   }
   return -1;
 }
 
-int DetectLastScan(const RetainPtr<CFX_DIBitmap>& pBitmap) {
-  const int height = pBitmap->GetHeight();
-  const int bpp = pBitmap->GetBPP();
-  const int width = pBitmap->GetWidth();
-  for (int line = height - 1; line >= 0; --line) {
-    const uint8_t* pBuf = pBitmap->GetScanline(line).data();
-    if (IsScanLineBpp(bpp, pBuf, width)) {
-      return line;
+int DetectLastScan(const RetainPtr<CFX_DIBitmap>& bitmap) {
+  const int height = bitmap->GetHeight();
+  const int bpp = bitmap->GetBPP();
+  const int width = bitmap->GetWidth();
+  for (int i = height - 1; i >= 0; --i) {
+    if (IsScanLineBpp(bpp, bitmap->GetScanline(i), width)) {
+      return i;
     }
   }
   return -1;

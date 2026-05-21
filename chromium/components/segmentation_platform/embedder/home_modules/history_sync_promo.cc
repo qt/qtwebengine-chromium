@@ -119,11 +119,6 @@ bool HistorySyncPromo::IsEnabled(int impression_count) {
     return true;
   }
 
-  if (!base::FeatureList::IsEnabled(features::kEducationalTipModule) ||
-      !base::FeatureList::IsEnabled(switches::kHistoryOptInEducationalTip)) {
-    return false;
-  }
-
   if (impression_count >= kSingleEphemeralCardMaxImpressions) {
     return false;
   }

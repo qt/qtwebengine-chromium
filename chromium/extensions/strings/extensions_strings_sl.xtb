@@ -12,6 +12,7 @@
 <translation id="2159915644201199628">Slike ni bilo mogoče dekodirati: »<ph name="IMAGE_NAME" />«</translation>
 <translation id="2350172092385603347">Uporabljena je bila lokalizacija, vendar v manifestu ni bil naveden parameter default_locale.</translation>
 <translation id="2576842806987913196">Datoteka CRX s tem imenom že obstaja.</translation>
+<translation id="2743583586211388067">Dostop do te razširitve je blokiran v skladu s pravilnikom o tveganjih za razširitve vaše organizacije.</translation>
 <translation id="2785530881066938471">Datoteke »<ph name="RELATIVE_PATH" />« ni mogoče naložiti. Ni kodirana z UTF-8.</translation>
 <translation id="2903070246402204397"><ph name="EXTENSION_NAME" /> (ID razširitve »<ph name="EXTENSION_ID" />«) je blokiral skrbnik. <ph name="ADMIN_INFO" /></translation>
 <translation id="2988488679308982380">Paketa »<ph name="ERROR_CODE" />« ni bilo mogoče namestiti</translation>
@@ -33,9 +34,11 @@
 <translation id="5356315618422219272">Komponenta appview: <ph name="APPVIEW_TAG_NAME" /></translation>
 <translation id="5456409301717116725">Ta razširitev vključuje datoteko s ključem »<ph name="KEY_PATH" />«. Verjetno ne želite narediti tega.</translation>
 <translation id="5486326529110362464">Obstajati mora vrednost vnosa za zasebni ključ.</translation>
+<translation id="5707185214361380026">Ni bilo mogoče naložiti razširitve z mesta:</translation>
 <translation id="5972529113578162692">Skrbnik te naprave zahteva, da je nameščena razširitev <ph name="EXTENSION_NAME" />. Odstranitev ni mogoča.</translation>
 <translation id="6027032947578871493">Neznan izdelek <ph name="PRODUCT_ID" /> dobavitelja <ph name="VENDOR_NAME" /> (serijska številka <ph name="SERIAL_NUMBER" />)</translation>
 <translation id="6068932090455285721"><ph name="PRODUCT_NAME" /> dobavitelja <ph name="VENDOR_ID" /></translation>
+<translation id="6220413761270491930">Napaka pri nalaganju razširitve</translation>
 <translation id="6322279351188361895">Zasebnega ključa ni bilo mogoče prebrati.</translation>
 <translation id="6391538222494443604">Obstajati mora imenik vnosa.</translation>
 <translation id="641087317769093025">Razširitve ni bilo mogoče odpakirati</translation>

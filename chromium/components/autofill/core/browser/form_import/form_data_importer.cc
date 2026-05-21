@@ -41,6 +41,7 @@
 #include "components/autofill/core/browser/field_type_utils.h"
 #include "components/autofill/core/browser/field_types.h"
 #include "components/autofill/core/browser/form_import/addresses/address_profile_save_manager.h"
+#include "components/autofill/core/browser/form_import/payments/payments_form_data_importer.h"
 #include "components/autofill/core/browser/form_parsing/form_field_parser.h"
 #include "components/autofill/core/browser/form_structure.h"
 #include "components/autofill/core/browser/form_types.h"
@@ -122,10 +123,7 @@ bool FieldValueMatchesPrecedingField(const ValueForImport& current_values,
       current_values.value_for_import) {
     field_values_match = true;
   }
-
-  // TODO(crbug.com/40735892) Remove feature check when launched.
-  return field_values_match &&
-         base::FeatureList::IsEnabled(features::kAutofillRelaxAddressImport);
+  return field_values_match;
 }
 
 // Return true if the `field_type` and `current_values` are valid within the
@@ -235,7 +233,8 @@ FormDataImporter::FormDataImporter(AutofillClient* client,
       iban_save_manager_(std::make_unique<IbanSaveManager>(client)),
 #endif  // !BUILDFLAG(IS_IOS)
       multistep_importer_(client_->GetAppLocale(),
-                          client_->GetVariationConfigCountryCode()) {
+                          client_->GetVariationConfigCountryCode()),
+      payments_form_data_importer_(client) {
   address_data_manager_observation_.Observe(&address_data_manager());
   if (history_service) {
     history_service_observation_.Observe(history_service);
@@ -417,7 +416,7 @@ FormDataImporter::ExtractedFormData FormDataImporter::ExtractFormData(
     FormSignature form_signature = submitted_form.form_signature();
     // If multiple complete address profiles were extracted, this most likely
     // corresponds to billing and shipping sections within the same form.
-    for (size_t i = 0; i < num_complete_address_profiles; i++) {
+    for (size_t i = 0; i < num_complete_address_profiles; ++i) {
       form_associator_.TrackFormAssociations(
           origin, form_signature, FormAssociator::FormType::kAddressForm);
     }
@@ -637,6 +636,8 @@ FormDataImporter::GetAddressObservedFieldValues(
             import_log_buffer)) {
       has_invalid_field_types = true;
     }
+
+    const auto field_and_value_it = preceding_values.find(field_type);
     // Found phone number component field.
     // TODO(crbug.com/40735892) Remove feature check when launched.
     if (GroupTypeOfFieldType(field_type) == FieldTypeGroup::kPhone &&
@@ -649,7 +650,7 @@ FormDataImporter::GetAddressObservedFieldValues(
       // type a second time implies that it belongs to a new number. Since
       // Autofill currently supports storing only one phone number per profile,
       // ignore this and all subsequent phone number fields.
-      if (preceding_values.contains(field_type)) {
+      if (field_and_value_it != preceding_values.end()) {
         ignore_phone_number_fields = true;
         continue;
       }
@@ -658,8 +659,8 @@ FormDataImporter::GetAddressObservedFieldValues(
     // (which is typically user-friendly) is prioritized over the potentially
     // less readable option value that might be present in a corresponding
     // <input> field.
-    if (!preceding_values.contains(field_type) ||
-        !preceding_values[field_type].selected_option_value.has_value() ||
+    if (field_and_value_it == preceding_values.end() ||
+        !field_and_value_it->second.selected_option_value.has_value() ||
         selected_option_value.has_value()) {
       preceding_values.insert_or_assign(
           field_type, ValueForImport{.value_for_import = std::move(value),
@@ -1075,10 +1076,10 @@ std::optional<Iban> FormDataImporter::ExtractIban(const FormStructure& form) {
   return candidate_iban;
 }
 
-FormDataImporter::ExtractCreditCardFromFormResult
+payments::PaymentsFormDataImporter::ExtractCreditCardFromFormResult
 FormDataImporter::ExtractCreditCardFromForm(const FormStructure& form) {
   // Populated by the lambdas below.
-  ExtractCreditCardFromFormResult result;
+  payments::PaymentsFormDataImporter::ExtractCreditCardFromFormResult result;
   std::string app_locale = client_->GetAppLocale();
 
   // Populates `result` from `field` if it's a credit card field.
@@ -1235,6 +1236,11 @@ void FormDataImporter::
             payment_method_type_if_non_interactive_authentication_flow_completed) {
   payment_method_type_if_non_interactive_authentication_flow_completed_ =
       payment_method_type_if_non_interactive_authentication_flow_completed;
+}
+
+payments::PaymentsFormDataImporter&
+FormDataImporter::GetPaymentsFormDataImporter() {
+  return payments_form_data_importer_;
 }
 
 AddressDataManager& FormDataImporter::address_data_manager() {

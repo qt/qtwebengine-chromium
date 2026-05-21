@@ -4,7 +4,10 @@
 
 #include "chrome/browser/signin/accounts_policy_manager.h"
 
+#include <string>
+
 #include "base/auto_reset.h"
+#include "base/debug/stack_trace.h"
 #include "base/notreached.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -13,6 +16,8 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/delete_profile_helper.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/profiles/profile_attributes_entry.h"
+#include "chrome/browser/profiles/profile_attributes_storage.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/profiles/profiles_state.h"
 #include "chrome/browser/signin/chrome_signin_client.h"
@@ -21,9 +26,11 @@
 #include "chrome/browser/signin/signin_util.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
-#include "chrome/browser/ui/browser_list.h"
-#include "chrome/browser/ui/browser_list_observer.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/browser_window/public/browser_collection_observer.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_interface_iterator.h"
+#include "chrome/browser/ui/browser_window/public/profile_browser_collection.h"
 #include "chrome/browser/ui/simple_message_box.h"
 #include "chrome/browser/ui/startup/startup_types.h"
 #include "chrome/browser/ui/webui/profile_helper.h"
@@ -32,6 +39,8 @@
 #include "chrome/grit/generated_resources.h"
 #include "components/policy/core/common/features.h"
 #include "components/prefs/pref_service.h"
+#include "components/profile_metrics/browser_profile_type.h"
+#include "components/signin/public/base/consent_level.h"
 #include "components/signin/public/base/signin_metrics.h"
 #include "components/signin/public/base/signin_pref_names.h"
 #include "components/signin/public/identity_manager/account_info.h"
@@ -46,12 +55,12 @@
 // Manager that presents the profile will be deleted dialog on the first active
 // browser window.
 class AccountsPolicyManager::DeleteProfileDialogManager
-    : public BrowserListObserver {
+    : public BrowserCollectionObserver {
  public:
   DeleteProfileDialogManager(std::string primary_account_email,
                              AccountsPolicyManager* delegate)
       : primary_account_email_(primary_account_email), delegate_(delegate) {}
-  ~DeleteProfileDialogManager() override { BrowserList::RemoveObserver(this); }
+  ~DeleteProfileDialogManager() override = default;
 
   DeleteProfileDialogManager(const DeleteProfileDialogManager&) = delete;
   DeleteProfileDialogManager& operator=(const DeleteProfileDialogManager&) =
@@ -73,24 +82,25 @@ class AccountsPolicyManager::DeleteProfileDialogManager
 
       return;
     }
-
-    BrowserList::AddObserver(this);
+    auto* const browser_collection =
+        ProfileBrowserCollection::GetForProfile(profile);
+    browser_collection_observation_.Observe(browser_collection);
+    // Find the last active browser window for the profile.
     Browser* active_browser = chrome::FindLastActiveWithProfile(profile);
     if (active_browser) {
-      OnBrowserSetLastActive(active_browser);
+      OnBrowserActivated(active_browser);
     }
   }
 
-  void OnBrowserSetLastActive(Browser* browser) override {
+  void OnBrowserActivated(BrowserWindowInterface* browser) override {
     DCHECK(!profile_path_.empty());
-
-    if (profile_path_ != browser->profile()->GetPath()) {
+    if (profile_path_ != browser->GetProfile()->GetPath()) {
       return;
     }
 
     active_browser_ = browser;
     browser_did_become_inactive_subscription_ =
-        active_browser_->RegisterDidBecomeActive(base::BindRepeating(
+        browser->RegisterDidBecomeInactive(base::BindRepeating(
             &DeleteProfileDialogManager::OnBrowserDidBecomeInactive,
             base::Unretained(this)));
 
@@ -108,7 +118,8 @@ class AccountsPolicyManager::DeleteProfileDialogManager
     base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE,
         base::BindOnce(&DeleteProfileDialogManager::ShowDeleteProfileDialog,
-                       weak_factory_.GetWeakPtr(), browser->AsWeakPtr()));
+                       weak_factory_.GetWeakPtr(),
+                       active_browser_->GetWeakPtr()));
   }
 
   // Called immediately after active_browser_ becomes inactive.
@@ -117,14 +128,15 @@ class AccountsPolicyManager::DeleteProfileDialogManager
     browser_did_become_inactive_subscription_ = {};
   }
 
-  void OnBrowserRemoved(Browser* browser) override {
+  void OnBrowserClosed(BrowserWindowInterface* browser) override {
     if (active_browser_ == browser) {
       active_browser_ = nullptr;
     }
   }
 
  private:
-  void ShowDeleteProfileDialog(base::WeakPtr<Browser> active_browser) {
+  void ShowDeleteProfileDialog(
+      base::WeakPtr<BrowserWindowInterface> active_browser) {
     // Block opening dialog from nested task.
     static bool is_dialog_shown = false;
     if (is_dialog_shown) {
@@ -139,9 +151,9 @@ class AccountsPolicyManager::DeleteProfileDialogManager
     }
 
     // Show the dialog.
-    DCHECK(active_browser_->window()->GetNativeWindow());
+    DCHECK(active_browser_->GetWindow()->GetNativeWindow());
     chrome::MessageBoxResult result = chrome::ShowWarningMessageBoxSync(
-        active_browser_->window()->GetNativeWindow(),
+        active_browser_->GetWindow()->GetNativeWindow(),
         l10n_util::GetStringUTF16(IDS_PROFILE_WILL_BE_DELETED_DIALOG_TITLE),
         l10n_util::GetStringFUTF16(
             IDS_PROFILE_WILL_BE_DELETED_DIALOG_DESCRIPTION,
@@ -159,7 +171,7 @@ class AccountsPolicyManager::DeleteProfileDialogManager
             FROM_HERE,
             base::BindOnce(&DeleteProfileDialogManager::ShowDeleteProfileDialog,
                            weak_factory_.GetWeakPtr(),
-                           active_browser_->AsWeakPtr()));
+                           active_browser_->GetWeakPtr()));
         break;
       }
       case chrome::MessageBoxResult::MESSAGE_BOX_RESULT_YES:
@@ -179,8 +191,10 @@ class AccountsPolicyManager::DeleteProfileDialogManager
   std::string primary_account_email_;
   raw_ptr<AccountsPolicyManager> delegate_;
   base::FilePath profile_path_;
-  raw_ptr<Browser> active_browser_;
+  raw_ptr<BrowserWindowInterface> active_browser_;
   base::CallbackListSubscription browser_did_become_inactive_subscription_;
+  base::ScopedObservation<ProfileBrowserCollection, BrowserCollectionObserver>
+      browser_collection_observation_{this};
   base::WeakPtrFactory<DeleteProfileDialogManager> weak_factory_{this};
 };
 
@@ -241,20 +255,18 @@ void AccountsPolicyManager::OnSigninAllowedPrefChanged() {
 void AccountsPolicyManager::EnsurePrimaryAccountAllowedForProfile(
     Profile* profile,
     signin_metrics::ProfileSignout clear_primary_account_source) {
-  signin::ConsentLevel consent_level =
-      base::FeatureList::IsEnabled(syncer::kReplaceSyncPromosWithSignInPromos)
-          ? signin::ConsentLevel::kSignin
-          : signin::ConsentLevel::kSync;
   auto* identity_manager = IdentityManagerFactory::GetForProfile(profile);
-  if (!identity_manager->HasPrimaryAccount(consent_level)) {
+  if (!identity_manager->HasPrimaryAccount(signin::ConsentLevel::kSignin)) {
     return;
   }
 
   CoreAccountInfo primary_account =
-      identity_manager->GetPrimaryAccountInfo(consent_level);
-  if (CanOfferSignin(profile, primary_account.gaia, primary_account.email,
-                     /*allow_account_from_other_profile=*/true)
-          .IsOk()) {
+      identity_manager->GetPrimaryAccountInfo(signin::ConsentLevel::kSignin);
+
+  SigninUIError signin_ui_error =
+      CanOfferSignin(profile, primary_account.gaia, primary_account.email,
+                     /*allow_account_from_other_profile=*/true);
+  if (signin_ui_error.IsOk()) {
     return;
   }
 
@@ -271,6 +283,41 @@ void AccountsPolicyManager::EnsurePrimaryAccountAllowedForProfile(
     // This may be called while the profile is initializing, so it must be
     // scheduled for later to allow the profile initialization to complete.
     CHECK(profiles::IsMultipleProfilesEnabled());
+
+    if (LOG_IS_ON(WARNING)) {
+      // Extra logging for b/460765618.
+      std::u16string profile_name = u"NameNotFound";
+      ProfileAttributesEntry* profile_attributes =
+          g_browser_process->profile_manager()
+              ->GetProfileAttributesStorage()
+              .GetProfileAttributesWithPath(profile->GetPath());
+      if (profile_attributes) {
+        profile_name = profile_attributes->GetName();
+      }
+      std::string signin_level = "NotSignedIn";
+      if (identity_manager->HasPrimaryAccount(signin::ConsentLevel::kSignin)) {
+        signin_level =
+            identity_manager->HasPrimaryAccount(signin::ConsentLevel::kSync)
+                ? "Syncing"
+                : "SignedIn";
+      }
+      LOG(WARNING)
+          << "Primary account " << primary_account.email
+          << " not allowed for profile " << profile_name
+          << ", SigninUIError::message=" << signin_ui_error.message()
+          << ", SigninUIError::Type="
+          << static_cast<int>(signin_ui_error.type())
+          << ", ProfileSignoutSource="
+          << static_cast<int>(clear_primary_account_source)
+          << ", signin.allowed preference="
+          << profile->GetPrefs()->GetBoolean(prefs::kSigninAllowed)
+          << " (managed="
+          << profile->GetPrefs()->IsManagedPreference(prefs::kSigninAllowed)
+          << "), SigninLevel=" << signin_level << ", ProfileType="
+          << static_cast<int>(profile_metrics::GetBrowserProfileType(profile));
+      LOG(WARNING) << base::debug::StackTrace().ToString();
+    }
+
     base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE,
         base::BindOnce(&AccountsPolicyManager::ShowDeleteProfileDialog,

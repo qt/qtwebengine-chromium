@@ -68,15 +68,17 @@ class CommandBufferStateTracker {
                       BindGroupBase* bindgroup,
                       uint32_t dynamicOffsetCount,
                       const uint32_t* dynamicOffsets);
+    void SetResourceTable(ResourceTableBase* resourceTable);
     void SetIndexBuffer(BufferBase* buffer,
                         wgpu::IndexFormat format,
                         uint64_t offset,
                         uint64_t size);
     void UnsetVertexBuffer(VertexBufferSlot slot);
     void SetVertexBuffer(VertexBufferSlot slot, uint64_t size);
+    void SetImmediateData(uint32_t offset, uint32_t size);
     void End();
 
-    static constexpr size_t kNumAspects = 4;
+    static constexpr size_t kNumAspects = 6;
     using ValidationAspects = std::bitset<kNumAspects>;
 
     BindGroupBase* GetBindGroup(BindGroupIndex index) const;
@@ -113,10 +115,13 @@ class CommandBufferStateTracker {
     // freed from underneath this class.
     RAW_PTR_EXCLUSION PerBindGroup<BindGroupBase*> mBindgroups = {};
     PerBindGroup<std::vector<uint32_t>> mDynamicOffsets = {};
+    RAW_PTR_EXCLUSION ResourceTableBase* mResourceTable = nullptr;
 
     RAW_PTR_EXCLUSION PipelineLayoutBase* mLastPipelineLayout = nullptr;
     RAW_PTR_EXCLUSION PipelineBase* mLastPipeline = nullptr;
     RAW_PTR_EXCLUSION const RequiredBufferSizes* mMinBufferSizes = nullptr;
+
+    ImmediateConstantMask mImmediateDataMask;
 };
 
 }  // namespace dawn::native

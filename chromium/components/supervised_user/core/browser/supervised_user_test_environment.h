@@ -15,24 +15,34 @@
 #include "components/prefs/testing_pref_store.h"
 #include "components/safe_search_api/fake_url_checker_client.h"
 #include "components/signin/public/identity_manager/identity_test_environment.h"
-#include "components/supervised_user/core/browser/supervised_user_content_filters_service.h"
+#include "components/supervised_user/core/browser/device_parental_controls_noop_impl.h"
+#include "components/supervised_user/core/browser/device_parental_controls_url_filter.h"
+#include "components/supervised_user/core/browser/family_link_settings_service.h"
 #include "components/supervised_user/core/browser/supervised_user_metrics_service.h"
 #include "components/supervised_user/core/browser/supervised_user_service.h"
-#include "components/supervised_user/core/browser/supervised_user_settings_service.h"
+#include "components/supervised_user/core/browser/supervised_user_synthetic_field_trial_service_delegate.h"
+#include "components/supervised_user/core/browser/supervised_user_url_filtering_service.h"
 #include "components/supervised_user/test_support/supervised_user_url_filter_test_utils.h"
 #include "components/sync/test/mock_sync_service.h"
 #include "components/sync_preferences/testing_pref_service_syncable.h"
 #include "services/network/test/test_url_loader_factory.h"
 
 #if BUILDFLAG(IS_ANDROID)
-#include "components/supervised_user/core/browser/android/content_filters_observer_bridge.h"
+#include "components/supervised_user/core/browser/android/android_parental_controls.h"
 #endif  // BUILDFLAG(IS_ANDROID)
 
 namespace supervised_user {
 
+using DeviceParentalControlsTestImpl =
+#if BUILDFLAG(IS_ANDROID)
+    AndroidParentalControls;
+#else
+    DeviceParentalControlsNoOpImpl;
+#endif
+
 // Handy set of initial states of supervision stack, to preset before testing.
 enum class InitialSupervisionState : int {
-  // Default mode, no supervision, no content filters at startup.
+  // Default mode, no family link nor local device supervision.
   kUnsupervised,
   // Enable family link, and use defaults.
   kFamilyLinkDefault,
@@ -46,13 +56,13 @@ enum class InitialSupervisionState : int {
 
 // Launches the service from empty settings, typically during context
 // initialization.
-SupervisedUserSettingsService* InitializeSettingsServiceForTesting(
-    SupervisedUserSettingsService* settings_service);
+FamilyLinkSettingsService* InitializeSettingsServiceForTesting(
+    FamilyLinkSettingsService* settings_service);
 
 // Prepares a pref service component for use in test.
 scoped_refptr<TestingPrefStore> CreateTestingPrefStore(
-    SupervisedUserSettingsService* settings_service,
-    SupervisedUserContentFiltersService* content_filters_service);
+    FamilyLinkSettingsService* settings_service,
+    DeviceParentalControls& device_parental_controls);
 
 // Pref service exposed by this environment has the supervised user pref store
 // configured.
@@ -66,8 +76,10 @@ class SupervisedUserPrefStoreTestEnvironment {
   ~SupervisedUserPrefStoreTestEnvironment();
 
   PrefService* pref_service();
-  SupervisedUserSettingsService* settings_service();
-  SupervisedUserContentFiltersService* content_filters_service();
+  FamilyLinkSettingsService* settings_service();
+  // That's a simplification: in prod environment the parental controls are
+  // global, but in the test environment they are per pref service.
+  DeviceParentalControlsTestImpl& device_parental_controls();
 
   void Shutdown();
 
@@ -76,8 +88,8 @@ class SupervisedUserPrefStoreTestEnvironment {
   void ConfigureInitialValues(InitialSupervisionState initial_state);
 
  private:
-  SupervisedUserSettingsService settings_service_;
-  SupervisedUserContentFiltersService content_filters_service_;
+  FamilyLinkSettingsService settings_service_;
+  DeviceParentalControlsTestImpl device_parental_controls_;
 
   std::unique_ptr<sync_preferences::TestingPrefServiceSyncable>
       syncable_pref_service_ =
@@ -86,7 +98,7 @@ class SupervisedUserPrefStoreTestEnvironment {
               /*supervised_user_prefs=*/
               CreateTestingPrefStore(
                   InitializeSettingsServiceForTesting(&settings_service_),
-                  &content_filters_service_),
+                  device_parental_controls_),
               /*extension_prefs=*/base::MakeRefCounted<TestingPrefStore>(),
               /*user_prefs=*/base::MakeRefCounted<TestingPrefStore>(),
               /*recommended_prefs=*/base::MakeRefCounted<TestingPrefStore>(),
@@ -100,97 +112,17 @@ class SupervisedUserMetricsServiceExtensionDelegateFake
   bool RecordExtensionsMetrics() override;
 };
 
-class MetricsServiceAccessorDelegateMock
-    : public SupervisedUserMetricsService::MetricsServiceAccessorDelegate {
+class SynteticFieldTrialDelegateMock : public SynteticFieldTrialDelegate {
  public:
-  MetricsServiceAccessorDelegateMock();
-  ~MetricsServiceAccessorDelegateMock() override;
+  SynteticFieldTrialDelegateMock();
+  ~SynteticFieldTrialDelegateMock() override;
   MOCK_METHOD(void,
               RegisterSyntheticFieldTrial,
               (std::string_view trial_name, std::string_view group_name),
               (override));
-};
-
-#if BUILDFLAG(IS_ANDROID)
-// Fake implementation of ContentFiltersObserverBridge for testing. Imitates
-// events that would normally be produced by the Android's secure settings
-// (which store content filter settings). Content bridge is initialized with
-// "disabled" setting.
-class FakeContentFiltersObserverBridge final
-    : public ContentFiltersObserverBridge {
- public:
-  // Matching constructor of ContentFiltersObserverBridge. Setting the initial
-  // value to true helps to test scenarios when the browser is started with the
-  // setting already enabled.
-  FakeContentFiltersObserverBridge(
-      std::string_view setting_name,
-      base::RepeatingClosure on_enabled,
-      base::RepeatingClosure on_disabled,
-      base::RepeatingCallback<bool()> is_subject_to_parental_controls,
-      bool initial_value = false);
-  FakeContentFiltersObserverBridge(const FakeContentFiltersObserverBridge&) =
-      delete;
-  FakeContentFiltersObserverBridge& operator=(
-      const FakeContentFiltersObserverBridge&) = delete;
-  ~FakeContentFiltersObserverBridge() override;
-
-  // Override to suppress initialization of the java bridge.
-  void Init() override;
-  void Shutdown() override;
-
-  // Set mocked value and trigger native code callbacks.
-  void SetEnabled(bool enabled) override;
-
-  base::WeakPtr<FakeContentFiltersObserverBridge> GetWeakPtr();
 
  private:
-  bool initial_value_ = false;
-  base::WeakPtrFactory<FakeContentFiltersObserverBridge> weak_ptr_factory_{
-      this};
-};
-#endif  // BUILDFLAG(IS_ANDROID)
-
-// Offers access to the protected constructor of SupervisedUserService, used
-// to inject fake content filters observers (with initial values described in
-// initial_state)
-class TestSupervisedUserService : public SupervisedUserService {
- public:
-  // Matching constructor of SupervisedUserService.
-  TestSupervisedUserService(
-      signin::IdentityManager* identity_manager,
-      scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
-      PrefService& user_prefs,
-      SupervisedUserSettingsService& settings_service,
-      SupervisedUserContentFiltersService* content_filters_service,
-      syncer::SyncService* sync_service,
-      std::unique_ptr<SupervisedUserURLFilter> url_filter,
-      std::unique_ptr<SupervisedUserService::PlatformDelegate> platform_delegate
-#if BUILDFLAG(IS_ANDROID)
-      ,
-      ContentFiltersObserverBridge::Factory
-          content_filters_observer_bridge_factory
-#endif
-  );
-
-  // Constructor that takes the initial state of supervision.
-  TestSupervisedUserService(
-      signin::IdentityManager* identity_manager,
-      scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
-      PrefService& user_prefs,
-      SupervisedUserSettingsService& settings_service,
-      SupervisedUserContentFiltersService* content_filters_service,
-      syncer::SyncService* sync_service,
-      std::unique_ptr<SupervisedUserURLFilter> url_filter,
-      std::unique_ptr<SupervisedUserService::PlatformDelegate>
-          platform_delegate,
-      InitialSupervisionState initial_state);
-
-#if BUILDFLAG(IS_ANDROID)
-  base::WeakPtr<FakeContentFiltersObserverBridge>
-  browser_content_filters_observer_weak_ptr();
-  base::WeakPtr<FakeContentFiltersObserverBridge>
-  search_content_filters_observer_weak_ptr();
-#endif  // BUILDFLAG(IS_ANDROID)
+  base::WeakPtrFactory<SynteticFieldTrialDelegateMock> weak_ptr_factory_{this};
 };
 
 // Configures a handy set of components that form supervised user features, for
@@ -204,8 +136,8 @@ class SupervisedUserTestEnvironment {
       InitialSupervisionState initial_state =
           InitialSupervisionState::kUnsupervised);
   explicit SupervisedUserTestEnvironment(
-      std::unique_ptr<MetricsServiceAccessorDelegateMock>
-          metrics_service_accessor_delegate,
+      std::unique_ptr<SynteticFieldTrialDelegateMock>
+          synthetic_field_trial_delegate,
       InitialSupervisionState initial_state =
           InitialSupervisionState::kUnsupervised);
 
@@ -214,18 +146,16 @@ class SupervisedUserTestEnvironment {
       const SupervisedUserTestEnvironment&) = delete;
   ~SupervisedUserTestEnvironment();
 
-  SupervisedUserURLFilter* url_filter() const;
-  TestSupervisedUserService* service() const;
+  MockUrlCheckerClient& family_link_url_checker_client();
+  MockUrlCheckerClient& device_parental_controls_url_checker_client();
+
+  FamilyLinkUrlFilter* family_link_url_filter() const;
+
+  SupervisedUserService* service() const;
+  SupervisedUserUrlFilteringService* url_filtering_service() const;
   PrefService* pref_service();
   sync_preferences::TestingPrefServiceSyncable* pref_service_syncable();
-  safe_search_api::FakeURLCheckerClient* url_checker_client();
-
-#if BUILDFLAG(IS_ANDROID)
-  base::WeakPtr<FakeContentFiltersObserverBridge>
-  browser_content_filters_observer();
-  base::WeakPtr<FakeContentFiltersObserverBridge>
-  search_content_filters_observer();
-#endif  // BUILDFLAG(IS_ANDROID)
+  DeviceParentalControlsTestImpl& device_parental_controls();
 
   // Simulators of parental controls. Instance methods use services from this
   // test environment, while static methods are suitable for heavier testing
@@ -235,7 +165,7 @@ class SupervisedUserTestEnvironment {
   // and Web" settings.
   void SetWebFilterType(WebFilterType web_filter_type);
   static void SetWebFilterType(WebFilterType web_filter_type,
-                               SupervisedUserSettingsService& service);
+                               FamilyLinkSettingsService& service);
 
   // SetManualFilterForHosts methods simulate the custodian modifying manual
   // hosts overrides.
@@ -243,18 +173,21 @@ class SupervisedUserTestEnvironment {
   void SetManualFilterForHost(std::string_view host, bool allowlist);
   static void SetManualFilterForHost(std::string_view host,
                                      bool allowlist,
-                                     SupervisedUserSettingsService& service);
+                                     FamilyLinkSettingsService& service);
 
   // SetManualFilterForUrl methods simulate the custodian modifying manual urls
   // overrides.
   void SetManualFilterForUrl(std::string_view url, bool allowlist);
   static void SetManualFilterForUrl(std::string_view url,
                                     bool allowlist,
-                                    SupervisedUserSettingsService& service);
+                                    FamilyLinkSettingsService& service);
 
   void Shutdown();
 
  private:
+  MockUrlCheckerClient family_link_url_checker_client_;
+  MockUrlCheckerClient device_parental_controls_url_checker_client_;
+
   SupervisedUserPrefStoreTestEnvironment pref_store_environment_;
 
   signin::IdentityTestEnvironment identity_test_env_;
@@ -262,12 +195,9 @@ class SupervisedUserTestEnvironment {
   syncer::MockSyncService sync_service_;
 
   // Core services under test
-  std::unique_ptr<TestSupervisedUserService> service_;
+  std::unique_ptr<SupervisedUserService> service_;
+  std::unique_ptr<SupervisedUserUrlFilteringService> url_filtering_service_;
   std::unique_ptr<SupervisedUserMetricsService> metrics_service_;
-
-  // The objects are actually owned by the service_, but are referenced here for
-  // convenience.
-  raw_ptr<safe_search_api::FakeURLCheckerClient> url_checker_client_;
 };
 }  // namespace supervised_user
 

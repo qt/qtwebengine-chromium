@@ -19,10 +19,9 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "libavcodec/avcodec.h"
-#include "libavcodec/codec_desc.h"
 #include "libavcodec/h264.h"
 #include "libavcodec/startcode.h"
+#include "libavutil/avassert.h"
 #include "libavutil/base64.h"
 #include "libavutil/bprint.h"
 #include "libavutil/crc.h"
@@ -300,8 +299,6 @@ typedef struct WHIPContext {
      */
     uint8_t dtls_srtp_materials[(DTLS_SRTP_KEY_LEN + DTLS_SRTP_SALT_LEN) * 2];
 
-    char ssl_error_message[256];
-
     /* TODO: Use AVIOContext instead of URLContext */
     URLContext *dtls_uc;
 
@@ -325,7 +322,7 @@ typedef struct WHIPContext {
      * Note that pion requires a smaller value, for example, 1200.
      */
     int pkt_size;
-    int buffer_size;/* Underlying protocol send/receive buffer size */
+    int ts_buffer_size;/* Underlying protocol send/receive buffer size */
     /**
      * The optional Bearer token for WHIP Authorization.
      * See https://www.ietf.org/archive/id/draft-ietf-wish-whip-08.html#name-authentication-and-authoriz
@@ -339,11 +336,15 @@ typedef struct WHIPContext {
 /**
  * Whether the packet is a DTLS packet.
  */
-static int is_dtls_packet(uint8_t *b, int size) {
-    uint16_t version = AV_RB16(&b[1]);
-    return size > DTLS_RECORD_LAYER_HEADER_LEN &&
-        b[0] >= DTLS_CONTENT_TYPE_CHANGE_CIPHER_SPEC &&
-        (version == DTLS_VERSION_10 || version == DTLS_VERSION_12);
+static int is_dtls_packet(uint8_t *b, int size)
+{
+    int ret = 0;
+    if (size > DTLS_RECORD_LAYER_HEADER_LEN) {
+        uint16_t version = AV_RB16(&b[1]);
+        ret = b[0] >= DTLS_CONTENT_TYPE_CHANGE_CIPHER_SPEC &&
+            (version == DTLS_VERSION_10 || version == DTLS_VERSION_12);
+    }
+    return ret;
 }
 
 
@@ -381,15 +382,37 @@ static av_cold int certificate_key_init(AVFormatContext *s)
 
 static av_cold int dtls_initialize(AVFormatContext *s)
 {
+    int ret = 0;
     WHIPContext *whip = s->priv_data;
+    int is_dtls_active = whip->flags & WHIP_DTLS_ACTIVE;
+    AVDictionary *opts = NULL;
+    char buf[256];
+
+    ff_url_join(buf, sizeof(buf), "dtls", NULL, whip->ice_host, whip->ice_port, NULL);
+    av_dict_set_int(&opts, "mtu", whip->pkt_size, 0);
+    if (whip->cert_file) {
+        av_dict_set(&opts, "cert_file", whip->cert_file, 0);
+    } else
+        av_dict_set(&opts, "cert_pem", whip->cert_buf, 0);
+
+    if (whip->key_file) {
+        av_dict_set(&opts, "key_file", whip->key_file, 0);
+    } else
+        av_dict_set(&opts, "key_pem", whip->key_buf, 0);
+    av_dict_set_int(&opts, "external_sock", 1, 0);
+    av_dict_set_int(&opts, "use_srtp", 1, 0);
+    av_dict_set_int(&opts, "listen", is_dtls_active ? 0 : 1, 0);
+    ret = ffurl_open_whitelist(&whip->dtls_uc, buf, AVIO_FLAG_READ_WRITE, &s->interrupt_callback,
+        &opts, s->protocol_whitelist, s->protocol_blacklist, NULL);
+    av_dict_free(&opts);
+    if (ret < 0) {
+        av_log(whip, AV_LOG_ERROR, "Failed to open DTLS url:%s\n", buf);
+        goto end;
+    }
     /* reuse the udp created by whip */
     ff_tls_set_external_socket(whip->dtls_uc, whip->udp);
-
-    /* Make the socket non-blocking */
-    ff_socket_nonblock(ffurl_get_file_handle(whip->dtls_uc), 1);
-    whip->dtls_uc->flags |= AVIO_FLAG_NONBLOCK;
-
-    return 0;
+end:
+    return ret;
 }
 
 /**
@@ -522,20 +545,9 @@ static int parse_codec(AVFormatContext *s)
 
     for (i = 0; i < s->nb_streams; i++) {
         AVCodecParameters *par = s->streams[i]->codecpar;
-        const AVCodecDescriptor *desc = avcodec_descriptor_get(par->codec_id);
         switch (par->codec_type) {
         case AVMEDIA_TYPE_VIDEO:
-            if (whip->video_par) {
-                av_log(whip, AV_LOG_ERROR, "Only one video stream is supported by RTC\n");
-                return AVERROR(EINVAL);
-            }
             whip->video_par = par;
-
-            if (par->codec_id != AV_CODEC_ID_H264) {
-                av_log(whip, AV_LOG_ERROR, "Unsupported video codec %s by RTC, choose h264\n",
-                       desc ? desc->name : "unknown");
-                return AVERROR_PATCHWELCOME;
-            }
 
             if (par->video_delay > 0) {
                 av_log(whip, AV_LOG_ERROR, "Unsupported B frames by RTC\n");
@@ -557,17 +569,7 @@ static int parse_codec(AVFormatContext *s)
             }
             break;
         case AVMEDIA_TYPE_AUDIO:
-            if (whip->audio_par) {
-                av_log(whip, AV_LOG_ERROR, "Only one audio stream is supported by RTC\n");
-                return AVERROR(EINVAL);
-            }
             whip->audio_par = par;
-
-            if (par->codec_id != AV_CODEC_ID_OPUS) {
-                av_log(whip, AV_LOG_ERROR, "Unsupported audio codec %s by RTC, choose opus\n",
-                    desc ? desc->name : "unknown");
-                return AVERROR_PATCHWELCOME;
-            }
 
             if (par->ch_layout.nb_channels != 2) {
                 av_log(whip, AV_LOG_ERROR, "Unsupported audio channels %d by RTC, choose stereo\n",
@@ -581,9 +583,7 @@ static int parse_codec(AVFormatContext *s)
             }
             break;
         default:
-            av_log(whip, AV_LOG_ERROR, "Codec type '%s' for stream %d is not supported by RTC\n",
-                   av_get_media_type_string(par->codec_type), i);
-            return AVERROR_PATCHWELCOME;
+            av_unreachable("already checked via FF_OFMT flags");
         }
     }
 
@@ -602,6 +602,8 @@ static int generate_sdp_offer(AVFormatContext *s)
 {
     int ret = 0, profile_idc = 0, level, profile_iop = 0;
     const char *acodec_name = NULL, *vcodec_name = NULL;
+    char bundle[4];
+    int bundle_index = 0;
     AVBPrint bp;
     WHIPContext *whip = s->priv_data;
     int is_dtls_active = whip->flags & WHIP_DTLS_ACTIVE;
@@ -629,16 +631,27 @@ static int generate_sdp_offer(AVFormatContext *s)
     whip->video_payload_type = WHIP_RTP_PAYLOAD_TYPE_H264;
     whip->video_rtx_payload_type = WHIP_RTP_PAYLOAD_TYPE_VIDEO_RTX;
 
+    if (whip->audio_par) {
+        bundle[bundle_index++] = '0';
+        bundle[bundle_index++] = ' ';
+    }
+    if (whip->video_par) {
+        bundle[bundle_index++] = '1';
+        bundle[bundle_index++] = ' ';
+    }
+    bundle[bundle_index - 1] = '\0';
+
     av_bprintf(&bp, ""
         "v=0\r\n"
         "o=FFmpeg %s 2 IN IP4 %s\r\n"
         "s=FFmpegPublishSession\r\n"
         "t=0 0\r\n"
-        "a=group:BUNDLE 0 1\r\n"
+        "a=group:BUNDLE %s\r\n"
         "a=extmap-allow-mixed\r\n"
         "a=msid-semantic: WMS\r\n",
         WHIP_SDP_SESSION_ID,
-        WHIP_SDP_CREATOR_IP);
+        WHIP_SDP_CREATOR_IP,
+        bundle);
 
     if (whip->audio_par) {
         if (whip->audio_par->codec_id == AV_CODEC_ID_OPUS)
@@ -1229,7 +1242,7 @@ static int udp_connect(AVFormatContext *s)
     av_dict_set_int(&opts, "fifo_size", 0, 0);
     /* Pass through the pkt_size and buffer_size to underling protocol */
     av_dict_set_int(&opts, "pkt_size", whip->pkt_size, 0);
-    av_dict_set_int(&opts, "buffer_size", whip->buffer_size, 0);
+    av_dict_set_int(&opts, "buffer_size", whip->ts_buffer_size, 0);
 
     ret = ffurl_open_whitelist(&whip->udp, url, AVIO_FLAG_WRITE, &s->interrupt_callback,
         &opts, s->protocol_whitelist, s->protocol_blacklist, NULL);
@@ -1259,8 +1272,6 @@ static int ice_dtls_handshake(AVFormatContext *s)
     int64_t starttime = av_gettime_relative(), now;
     WHIPContext *whip = s->priv_data;
     int is_dtls_active = whip->flags & WHIP_DTLS_ACTIVE;
-    AVDictionary *opts = NULL;
-    char buf[256];
 
     if (whip->state < WHIP_STATE_UDP_CONNECTED || !whip->udp) {
         av_log(whip, AV_LOG_ERROR, "UDP not connected, state=%d, udp=%p\n", whip->state, whip->udp);
@@ -1321,32 +1332,6 @@ next_packet:
             if (whip->state < WHIP_STATE_ICE_CONNECTED) {
                 if (whip->is_peer_ice_lite)
                     whip->state = WHIP_STATE_ICE_CONNECTED;
-                whip->whip_ice_time = av_gettime_relative();
-                av_log(whip, AV_LOG_VERBOSE, "ICE STUN ok, state=%d, url=udp://%s:%d, location=%s, username=%s:%s, res=%dB, elapsed=%.2fms\n",
-                    whip->state, whip->ice_host, whip->ice_port, whip->whip_resource_url ? whip->whip_resource_url : "",
-                    whip->ice_ufrag_remote, whip->ice_ufrag_local, ret, ELAPSED(whip->whip_starttime, av_gettime_relative()));
-
-                ff_url_join(buf, sizeof(buf), "dtls", NULL, whip->ice_host, whip->ice_port, NULL);
-                av_dict_set_int(&opts, "mtu", whip->pkt_size, 0);
-                if (whip->cert_file) {
-                    av_dict_set(&opts, "cert_file", whip->cert_file, 0);
-                } else
-                    av_dict_set(&opts, "cert_pem", whip->cert_buf, 0);
-
-                if (whip->key_file) {
-                    av_dict_set(&opts, "key_file", whip->key_file, 0);
-                } else
-                    av_dict_set(&opts, "key_pem", whip->key_buf, 0);
-                av_dict_set_int(&opts, "external_sock", 1, 0);
-                av_dict_set_int(&opts, "use_srtp", 1, 0);
-                av_dict_set_int(&opts, "listen", is_dtls_active ? 0 : 1, 0);
-                /* If got the first binding response, start DTLS handshake. */
-                ret = ffurl_open_whitelist(&whip->dtls_uc, buf, AVIO_FLAG_READ_WRITE, &s->interrupt_callback,
-                    &opts, s->protocol_whitelist, s->protocol_blacklist, NULL);
-                av_dict_free(&opts);
-                if (ret < 0)
-                    goto end;
-                dtls_initialize(s);
             }
             goto next_packet;
         }
@@ -1360,13 +1345,21 @@ next_packet:
 
         /* Handle DTLS handshake */
         if (is_dtls_packet(whip->buf, ret) || is_dtls_active) {
+            whip->whip_ice_time = av_gettime_relative();
             /* Start consent timer when ICE selected */
-            whip->whip_last_consent_tx_time = whip->whip_last_consent_rx_time = av_gettime_relative();
+            whip->whip_last_consent_tx_time = whip->whip_last_consent_rx_time = whip->whip_ice_time;
             whip->state = WHIP_STATE_ICE_CONNECTED;
+            av_log(whip, AV_LOG_VERBOSE, "ICE STUN ok, state=%d, url=udp://%s:%d, location=%s, username=%s:%s, res=%dB, elapsed=%.2fms\n",
+                whip->state, whip->ice_host, whip->ice_port, whip->whip_resource_url ? whip->whip_resource_url : "",
+                whip->ice_ufrag_remote, whip->ice_ufrag_local, ret, ELAPSED(whip->whip_starttime, whip->whip_ice_time));
+
+            ret = dtls_initialize(s);
+            if (ret < 0)
+                goto end;
             ret = ffurl_handshake(whip->dtls_uc);
             if (ret < 0) {
                 whip->state = WHIP_STATE_FAILED;
-                av_log(whip, AV_LOG_VERBOSE, "DTLS session failed\n");
+                av_log(whip, AV_LOG_ERROR, "DTLS session failed\n");
                 goto end;
             }
             if (!ret) {
@@ -1643,8 +1636,11 @@ static int create_rtp_muxer(AVFormatContext *s)
         ELAPSED(whip->whip_dtls_time,   whip->whip_srtp_time));
 
 end:
-    if (rtp_ctx)
+    if (rtp_ctx) {
+        if (!rtp_ctx->pb)
+            av_freep(&buffer);
         avio_context_free(&rtp_ctx->pb);
+    }
     avformat_free_context(rtp_ctx);
     av_dict_free(&opts);
     return ret;
@@ -1934,7 +1930,7 @@ write_packet:
     if (now - whip->whip_last_consent_rx_time > WHIP_ICE_CONSENT_EXPIRED_TIMER * WHIP_US_PER_MS) {
         av_log(whip, AV_LOG_ERROR,
             "Consent Freshness expired after %.2fms (limited %dms), terminate session\n",
-            ELAPSED(now, whip->whip_last_consent_rx_time), WHIP_ICE_CONSENT_EXPIRED_TIMER);
+            ELAPSED(whip->whip_last_consent_rx_time, now), WHIP_ICE_CONSENT_EXPIRED_TIMER);
         ret = AVERROR(ETIMEDOUT);
         goto end;
     }
@@ -1951,7 +1947,7 @@ write_packet:
             av_log(whip, AV_LOG_WARNING, "Ignore failed to write packet=%dB, ret=%d\n", pkt->size, ret);
             ret = 0;
         } else if (ret == AVERROR(EAGAIN)) {
-            av_log(whip, AV_LOG_ERROR, "UDP send blocked, please increase the buffer via -buffer_size\n");
+            av_log(whip, AV_LOG_ERROR, "UDP send blocked, please increase the buffer via -ts_buffer_size\n");
         } else
             av_log(whip, AV_LOG_ERROR, "Failed to write packet, size=%d, ret=%d\n", pkt->size, ret);
         goto end;
@@ -2006,6 +2002,7 @@ static av_cold void whip_deinit(AVFormatContext *s)
     ff_srtp_free(&whip->srtp_recv);
     ffurl_close(whip->dtls_uc);
     ffurl_closep(&whip->udp);
+    av_freep(&whip->dtls_fingerprint);
 }
 
 static int whip_check_bitstream(AVFormatContext *s, AVStream *st, const AVPacket *pkt)
@@ -2029,10 +2026,12 @@ static int whip_check_bitstream(AVFormatContext *s, AVStream *st, const AVPacket
 
 #define OFFSET(x) offsetof(WHIPContext, x)
 #define ENC AV_OPT_FLAG_ENCODING_PARAM
+#define DEP AV_OPT_FLAG_DEPRECATED
 static const AVOption options[] = {
     { "handshake_timeout",  "Timeout in milliseconds for ICE and DTLS handshake.",      OFFSET(handshake_timeout),  AV_OPT_TYPE_INT,    { .i64 = 5000 },    -1, INT_MAX, ENC },
     { "pkt_size",           "The maximum size, in bytes, of RTP packets that send out", OFFSET(pkt_size),           AV_OPT_TYPE_INT,    { .i64 = 1200 },    -1, INT_MAX, ENC },
-    { "buffer_size",        "The buffer size, in bytes, of underlying protocol",        OFFSET(buffer_size),        AV_OPT_TYPE_INT,    { .i64 = -1 },      -1, INT_MAX, ENC },
+    { "buffer_size",        "The buffer size, in bytes, of underlying protocol",        OFFSET(ts_buffer_size),        AV_OPT_TYPE_INT,    { .i64 = -1 },      -1, INT_MAX, ENC | DEP },
+    { "ts_buffer_size",     "The buffer size, in bytes, of underlying protocol",        OFFSET(ts_buffer_size),        AV_OPT_TYPE_INT,    { .i64 = -1 },      -1, INT_MAX, ENC },
     { "whip_flags",         "Set flags affecting WHIP connection behavior",             OFFSET(flags),              AV_OPT_TYPE_FLAGS,  { .i64 = 0},         0, UINT_MAX, ENC, .unit = "flags" },
     { "dtls_active",        "Set dtls role as active",                                  0,                          AV_OPT_TYPE_CONST,  { .i64 = WHIP_DTLS_ACTIVE}, 0, UINT_MAX, ENC, .unit = "flags" },
     { "authorization",      "The optional Bearer token for WHIP Authorization",         OFFSET(authorization),      AV_OPT_TYPE_STRING, { .str = NULL },     0,       0, ENC },
@@ -2053,8 +2052,10 @@ const FFOutputFormat ff_whip_muxer = {
     .p.long_name        = NULL_IF_CONFIG_SMALL("WHIP(WebRTC-HTTP ingestion protocol) muxer"),
     .p.audio_codec      = AV_CODEC_ID_OPUS,
     .p.video_codec      = AV_CODEC_ID_H264,
+    .p.subtitle_codec   = AV_CODEC_ID_NONE,
     .p.flags            = AVFMT_GLOBALHEADER | AVFMT_NOFILE | AVFMT_EXPERIMENTAL,
     .p.priv_class       = &whip_muxer_class,
+    .flags_internal     = FF_OFMT_FLAG_ONLY_DEFAULT_CODECS | FF_OFMT_FLAG_MAX_ONE_OF_EACH,
     .priv_data_size     = sizeof(WHIPContext),
     .init               = whip_init,
     .write_packet       = whip_write_packet,

@@ -67,6 +67,22 @@ ReadAnythingUntrustedUI::ReadAnythingUntrustedUI(content::WebUI* web_ui)
       {"phraseHighlightTitle", IDS_READING_MODE_PHRASE_HIGHLIGHT_LABEL},
       {"sentenceHighlightTitle", IDS_READING_MODE_SENTENCE_HIGHLIGHT_LABEL},
       {"noHighlightTitle", IDS_READING_MODE_OFF_HIGHLIGHT_LABEL},
+      {"lineFocusWindowHeading", IDS_READING_MODE_LINE_FOCUS_WINDOW_HEADING},
+      {"lineFocusStyleHeading", IDS_READING_MODE_LINE_FOCUS_STYLE_HEADING},
+      {"lineFocusOneLineTitle", IDS_READING_MODE_LINE_FOCUS_SMALL_FOCUS_LABEL},
+      {"lineFocusThreeLineTitle",
+       IDS_READING_MODE_LINE_FOCUS_MEDIUM_FOCUS_LABEL},
+      {"lineFocusFiveLineTitle", IDS_READING_MODE_LINE_FOCUS_LARGE_FOCUS_LABEL},
+      {"lineFocusUnderlineTitle", IDS_READING_MODE_LINE_FOCUS_UNDERLINE_LABEL},
+      {"lineFocusLineHeading", IDS_READING_MODE_LINE_FOCUS_LINE_HEADING},
+      {"lineFocusMovementHeading",
+       IDS_READING_MODE_LINE_FOCUS_MOVEMENT_HEADING},
+      {"lineFocusStaticLineTitle",
+       IDS_READING_MODE_LINE_FOCUS_STATIC_LINE_LABEL},
+      {"lineFocusStaticTitle", IDS_READING_MODE_LINE_FOCUS_STATIC_LABEL},
+      {"lineFocusCursorLineTitle",
+       IDS_READING_MODE_LINE_FOCUS_CURSOR_LINE_LABEL},
+      {"lineFocusOffTitle", IDS_READING_MODE_LINE_FOCUS_OFF_LABEL},
       {"turnHighlightOff", IDS_READING_MODE_TURN_HIGHLIGHT_OFF},
       {"turnHighlightOn", IDS_READING_MODE_TURN_HIGHLIGHT_ON},
       {"lineSpacingStandardTitle", IDS_READING_MODE_SPACING_COMBOBOX_STANDARD},
@@ -87,6 +103,7 @@ ReadAnythingUntrustedUI::ReadAnythingUntrustedUI(content::WebUI* web_ui)
       {"previousSentenceLabel", IDS_READING_MODE_NAVIGATE_PREVIOUS_SENTENCE},
       {"nextSentenceLabel", IDS_READING_MODE_NAVIGATE_NEXT_SENTENCE},
       {"moreOptionsLabel", IDS_READING_MODE_MORE_OPTIONS},
+      {"settingsLabel", IDS_READING_MODE_SETTINGS},
       {"voiceSpeedLabel", IDS_READING_MODE_VOICE_SPEED},
       {"voiceHighlightLabel", IDS_READING_MODE_VOICE_HIGHLIGHT},
       {"voiceSpeedWithRateLabel", IDS_READING_MODE_VOICE_SPEED_WITH_RATE},
@@ -103,8 +120,12 @@ ReadAnythingUntrustedUI::ReadAnythingUntrustedUI(content::WebUI* web_ui)
        IDS_READING_MODE_DECREASE_FONT_SIZE_ANNOUNCEMENT},
       {"disableLinksLabel", IDS_READING_MODE_DISABLE_LINKS_BUTTON_LABEL},
       {"enableLinksLabel", IDS_READING_MODE_ENABLE_LINKS_BUTTON_LABEL},
+      {"imagesLabel", IDS_READING_MODE_IMAGES_LABEL},
       {"disableImagesLabel", IDS_READING_MODE_DISABLE_IMAGES_BUTTON_LABEL},
       {"enableImagesLabel", IDS_READING_MODE_ENABLE_IMAGES_BUTTON_LABEL},
+      {"pinLabel", IDS_READING_MODE_PIN_LABEL},
+      {"disablePinLabel", IDS_READING_MODE_DISABLE_PIN_BUTTON_LABEL},
+      {"enablePinLabel", IDS_READING_MODE_ENABLE_PIN_BUTTON_LABEL},
       {"readingModeToolbarLabel", IDS_READING_MODE_TOOLBAR_LABEL},
       {"readingModeReadAloudToolbarLabel",
        IDS_READING_MODE_READ_ALOUD_TOOLBAR_LABEL},
@@ -150,6 +171,12 @@ ReadAnythingUntrustedUI::ReadAnythingUntrustedUI(content::WebUI* web_ui)
       {"languageMenuDownloadFailed",
        IDS_READING_MODE_LANGUAGE_MENU_DOWNLOAD_FAILED},
       {"cantUseReadAloud", IDS_READING_MODE_CANT_USE_READ_ALOUD},
+      {"lineFocusLabel", IDS_READING_MODE_LINE_FOCUS_LABEL},
+      {"sidePanelLabel", IDS_READING_MODE_SIDE_PANEL_LABEL},
+      {"fullScreenLabel", IDS_READING_MODE_FULL_SCREEN_LABEL},
+      {"fullPageLabel", IDS_READING_MODE_VIEW_FULL_PAGE_LABEL},
+      {"viewLabel", IDS_READING_MODE_VIEW_LABEL},
+      {"linksLabel", IDS_READING_MODE_LINKS_LABEL},
   };
   for (const auto& str : kLocalizedStrings) {
     webui::AddLocalizedString(source, str.name, str.id);
@@ -166,8 +193,8 @@ ReadAnythingUntrustedUI::ReadAnythingUntrustedUI(content::WebUI* web_ui)
   source->AddResourcePath("test_loader.html", IDR_WEBUI_TEST_LOADER_HTML);
   webui::EnableTrustedTypesCSP(source);
   source->AddResourcePaths(kSidePanelReadAnythingResources);
-  source->AddResourcePath("",
-                          IDR_SIDE_PANEL_READ_ANYTHING_APP_READ_ANYTHING_HTML);
+  source->SetDefaultResource(
+      IDR_SIDE_PANEL_READ_ANYTHING_APP_READ_ANYTHING_HTML);
   source->AddResourcePaths(kSidePanelSharedResources);
   source->OverrideContentSecurityPolicy(
       network::mojom::CSPDirectiveName::ScriptSrc,
@@ -183,7 +210,14 @@ ReadAnythingUntrustedUI::ReadAnythingUntrustedUI(content::WebUI* web_ui)
       "https://fonts.gstatic.com;");
   source->OverrideContentSecurityPolicy(
       network::mojom::CSPDirectiveName::ImgSrc,
-      "img-src 'self' data: chrome-untrusted://resources;");
+      "img-src 'self' data: chrome://resources https: "
+      "chrome-untrusted://resources;");
+  source->OverrideContentSecurityPolicy(
+      network::mojom::CSPDirectiveName::TrustedTypes,
+      "trusted-types reader-mode-policy lit-html-desktop "
+      "static-types "
+      "parse-html-subset polymer-html-literal "
+      "polymer-template-event-attribute-policy;");
   raw_ptr<Profile> profile = Profile::FromWebUI(web_ui);
 
   // If the ThemeSource isn't added here, since Read Anything is

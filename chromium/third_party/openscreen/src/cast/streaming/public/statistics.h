@@ -151,6 +151,8 @@ struct SimpleHistogram {
   std::string GetBucketName(size_t index) const;
 };
 
+std::ostream& operator<<(std::ostream& out, const SimpleHistogram& histogram);
+
 struct SenderStats {
   using StatisticsList =
       std::array<double, static_cast<size_t>(StatisticType::kNumTypes)>;
@@ -173,6 +175,8 @@ struct SenderStats {
   Json::Value ToJson() const;
   std::string ToString() const;
 };
+
+std::ostream& operator<<(std::ostream& out, const SenderStats& stats);
 
 // The consumer may provide a statistics client if they are interested in
 // getting statistics about the ongoing session.

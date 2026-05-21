@@ -103,7 +103,8 @@ int ff_shuffle_filter_coefficients(SwsInternal *c, int *filterPos,
         if ((c->srcBpc == 8) && (c->dstBpc <= 14)) {
            int16_t *filterCopy = NULL;
            if (filterSize > 4) {
-               if (!FF_ALLOC_TYPED_ARRAY(filterCopy, dstW * filterSize))
+               filterCopy = av_malloc_array(dstW, filterSize * sizeof(*filterCopy));
+               if (!filterCopy)
                    return AVERROR(ENOMEM);
                memcpy(filterCopy, filter, dstW * filterSize * sizeof(int16_t));
            }
@@ -274,6 +275,11 @@ static av_cold int initFilter(int16_t **outFilter, int32_t **filterPos,
             sizeFactor = param[0] != SWS_PARAM_DEFAULT ? ceil(2 * param[0]) : 6;
         av_assert0(sizeFactor > 0);
 
+        if (sizeFactor > 50) {
+            ret = AVERROR(EINVAL);
+            goto fail;
+        }
+
         if (xInc <= 1 << 16)
             filterSize = 1 + sizeFactor;    // upscale
         else
@@ -282,7 +288,8 @@ static av_cold int initFilter(int16_t **outFilter, int32_t **filterPos,
         filterSize = FFMIN(filterSize, srcW - 2);
         filterSize = FFMAX(filterSize, 1);
 
-        if (!FF_ALLOC_TYPED_ARRAY(filter, dstW * filterSize))
+        filter = av_malloc_array(dstW, filterSize * sizeof(*filter));
+        if (!filter)
             goto nomem;
         xDstInSrc = ((dstPos*(int64_t)xInc)>>7) - ((srcPos*0x10000LL)>>7);
         for (i = 0; i < dstW; i++) {
@@ -381,7 +388,8 @@ static av_cold int initFilter(int16_t **outFilter, int32_t **filterPos,
     if (dstFilter)
         filter2Size += dstFilter->length - 1;
     av_assert0(filter2Size > 0);
-    if (!FF_ALLOCZ_TYPED_ARRAY(filter2, dstW * filter2Size))
+    filter2 = av_calloc(dstW, filter2Size * sizeof(*filter2));
+    if (!filter2)
         goto nomem;
     for (i = 0; i < dstW; i++) {
         int j, k;
@@ -549,7 +557,8 @@ static av_cold int initFilter(int16_t **outFilter, int32_t **filterPos,
 
     // Note the +1 is for the MMX scaler which reads over the end
     /* align at 16 for AltiVec (needed by hScale_altivec_real) */
-    if (!FF_ALLOCZ_TYPED_ARRAY(*outFilter, *outFilterSize * (dstW + 3)))
+    *outFilter = av_calloc(dstW + 3, *outFilterSize * sizeof(**outFilter));
+    if (!*outFilter)
         goto nomem;
 
     /* normalize & store in outFilter */
@@ -719,36 +728,37 @@ static av_cold void init_xyz_tables(void)
     }
 }
 
-static int fill_xyztables(SwsInternal *c)
+av_cold int ff_sws_fill_xyztables(SwsInternal *c)
 {
-    static const int16_t xyz2rgb_matrix[3][4] = {
+    static const int16_t xyz2rgb_matrix[3][3] = {
         {13270, -6295, -2041},
         {-3969,  7682,   170},
         {  228,  -835,  4329} };
-    static const int16_t rgb2xyz_matrix[3][4] = {
+    static const int16_t rgb2xyz_matrix[3][3] = {
         {1689, 1464,  739},
         { 871, 2929,  296},
         {  79,  488, 3891} };
 
-    if (c->xyzgamma)
+    if (c->xyz2rgb.gamma.in)
         return 0;
 
-    memcpy(c->xyz2rgb_matrix, xyz2rgb_matrix, sizeof(c->xyz2rgb_matrix));
-    memcpy(c->rgb2xyz_matrix, rgb2xyz_matrix, sizeof(c->rgb2xyz_matrix));
+    memcpy(c->xyz2rgb.mat, xyz2rgb_matrix, sizeof(c->xyz2rgb.mat));
+    memcpy(c->rgb2xyz.mat, rgb2xyz_matrix, sizeof(c->rgb2xyz.mat));
 
 #if CONFIG_SMALL
-    c->xyzgamma = av_malloc(sizeof(uint16_t) * 2 * (4096 + 65536));
-    if (!c->xyzgamma)
+    c->xyz2rgb.gamma.in = av_malloc(sizeof(uint16_t) * 2 * (4096 + 65536));
+    if (!c->xyz2rgb.gamma.in)
         return AVERROR(ENOMEM);
-    c->rgbgammainv = c->xyzgamma + 4096;
-    c->rgbgamma = c->rgbgammainv + 4096;
-    c->xyzgammainv = c->rgbgamma + 65536;
-    init_xyz_tables(c->xyzgamma, c->xyzgammainv, c->rgbgamma, c->rgbgammainv);
+    c->rgb2xyz.gamma.in  = c->xyz2rgb.gamma.in  + 4096;
+    c->xyz2rgb.gamma.out = c->rgb2xyz.gamma.in  + 4096;
+    c->rgb2xyz.gamma.out = c->xyz2rgb.gamma.out + 65536;
+    init_xyz_tables(c->xyz2rgb.gamma.in,  c->rgb2xyz.gamma.out,
+                    c->xyz2rgb.gamma.out, c->rgb2xyz.gamma.in);
 #else
-    c->xyzgamma = xyzgamma_tab;
-    c->rgbgamma = rgbgamma_tab;
-    c->xyzgammainv = xyzgammainv_tab;
-    c->rgbgammainv = rgbgammainv_tab;
+    c->xyz2rgb.gamma.in  = xyzgamma_tab;
+    c->xyz2rgb.gamma.out = rgbgamma_tab;
+    c->rgb2xyz.gamma.in  = rgbgammainv_tab;
+    c->rgb2xyz.gamma.out = xyzgammainv_tab;
 
     static AVOnce xyz_init_static_once = AV_ONCE_INIT;
     ff_thread_once(&xyz_init_static_once, init_xyz_tables);
@@ -822,7 +832,7 @@ static int handle_formats(SwsContext *sws)
     c->srcXYZ    |= handle_xyz(&sws->src_format);
     c->dstXYZ    |= handle_xyz(&sws->dst_format);
     if (c->srcXYZ || c->dstXYZ)
-        return fill_xyztables(c);
+        return ff_sws_fill_xyztables(c);
     else
         return 0;
 }
@@ -1715,8 +1725,9 @@ av_cold int ff_sws_init_single_context(SwsContext *sws, SwsFilter *srcFilter,
             goto fail;
 
 #if HAVE_ALTIVEC
-        if (!FF_ALLOC_TYPED_ARRAY(c->vYCoeffsBank, c->vLumFilterSize * sws->dst_h) ||
-            !FF_ALLOC_TYPED_ARRAY(c->vCCoeffsBank, c->vChrFilterSize * c->chrDstH))
+        c->vYCoeffsBank = av_malloc_array(sws->dst_h, c->vLumFilterSize * sizeof(*c->vYCoeffsBank));
+        c->vCCoeffsBank = av_malloc_array(c->chrDstH, c->vChrFilterSize * sizeof(*c->vCCoeffsBank));
+        if (c->vYCoeffsBank == NULL || c->vCCoeffsBank == NULL)
             goto nomem;
 
         for (i = 0; i < c->vLumFilterSize * sws->dst_h; i++) {
@@ -2312,7 +2323,7 @@ void sws_freeContext(SwsContext *sws)
     av_freep(&c->gamma);
     av_freep(&c->inv_gamma);
 #if CONFIG_SMALL
-    av_freep(&c->xyzgamma);
+    av_freep(&c->xyz2rgb.gamma.in);
 #endif
 
     av_freep(&c->rgb0_scratch);

@@ -43,6 +43,9 @@ struct ConnectionSettings {
 
   // The codec to use for encoding negotiated video streams.
   VideoCodec codec;
+
+  // Whether DSCP support should be enabled for Quality of Service.
+  bool enable_dscp = true;
 };
 
 }  // namespace openscreen::cast

@@ -294,6 +294,7 @@ class Locator extends EventEmitter_js_1.EventEmitter {
     }
     #fill(value, options) {
         const signal = options?.signal;
+        const typingThreshold = options?.typingThreshold ?? 100;
         const cause = new Error('Locator.fill');
         return this._wait(options).pipe(this.operators.conditions([
             this.#ensureElementIsInTheViewportIfNeeded,
@@ -332,52 +333,71 @@ class Locator extends EventEmitter_js_1.EventEmitter {
                 return 'unknown';
             }))
                 .pipe((0, rxjs_js_1.mergeMap)(inputType => {
+                const fillDirectly = () => {
+                    return (0, rxjs_js_1.from)(handle.focus()).pipe((0, rxjs_js_1.mergeMap)(() => {
+                        return (0, rxjs_js_1.from)(handle.evaluate((input, newValue) => {
+                            const element = input;
+                            const currentValue = element.isContentEditable
+                                ? element.innerText
+                                : element.value;
+                            if (currentValue === newValue) {
+                                return;
+                            }
+                            if (element.isContentEditable) {
+                                element.innerText = newValue;
+                            }
+                            else {
+                                element.value = newValue;
+                            }
+                            element.dispatchEvent(new Event('input', { bubbles: true }));
+                            element.dispatchEvent(new Event('change', { bubbles: true }));
+                        }, value));
+                    }));
+                };
                 switch (inputType) {
                     case 'select':
                         return (0, rxjs_js_1.from)(handle.select(value).then(rxjs_js_1.noop));
                     case 'contenteditable':
                     case 'typeable-input':
-                        return (0, rxjs_js_1.from)(handle.evaluate((input, newValue) => {
-                            const currentValue = input.isContentEditable
-                                ? input.innerText
-                                : input.value;
-                            // Clear the input if the current value does not match the filled
-                            // out value.
-                            if (newValue.length <= currentValue.length ||
-                                !newValue.startsWith(input.value)) {
-                                if (input.isContentEditable) {
-                                    input.innerText = '';
+                        if (value.length < typingThreshold) {
+                            return (0, rxjs_js_1.from)(handle.evaluate((input, newValue) => {
+                                const element = input;
+                                const currentValue = element.isContentEditable
+                                    ? element.innerText
+                                    : input.value;
+                                // Clear the input if the current value does not match the filled
+                                // out value.
+                                if (newValue.length <= currentValue.length ||
+                                    !newValue.startsWith(currentValue)) {
+                                    if (element.isContentEditable) {
+                                        element.innerText = '';
+                                    }
+                                    else {
+                                        input.value = '';
+                                    }
+                                    return newValue;
+                                }
+                                // If the value is partially filled out, only type the rest. Move
+                                // cursor to the end of the common prefix.
+                                if (element.isContentEditable) {
+                                    element.innerText = '';
+                                    element.innerText = currentValue;
                                 }
                                 else {
                                     input.value = '';
+                                    input.value = currentValue;
                                 }
-                                return newValue;
-                            }
-                            const originalValue = input.isContentEditable
-                                ? input.innerText
-                                : input.value;
-                            // If the value is partially filled out, only type the rest. Move
-                            // cursor to the end of the common prefix.
-                            if (input.isContentEditable) {
-                                input.innerText = '';
-                                input.innerText = originalValue;
-                            }
-                            else {
-                                input.value = '';
-                                input.value = originalValue;
-                            }
-                            return newValue.substring(originalValue.length);
-                        }, value)).pipe((0, rxjs_js_1.mergeMap)(textToType => {
-                            return (0, rxjs_js_1.from)(handle.type(textToType));
-                        }));
+                                return newValue.substring(currentValue.length);
+                            }, value)).pipe((0, rxjs_js_1.mergeMap)(textToType => {
+                                if (!textToType) {
+                                    return (0, rxjs_js_1.of)(undefined);
+                                }
+                                return (0, rxjs_js_1.from)(handle.type(textToType));
+                            }));
+                        }
+                        return fillDirectly();
                     case 'other-input':
-                        return (0, rxjs_js_1.from)(handle.focus()).pipe((0, rxjs_js_1.mergeMap)(() => {
-                            return (0, rxjs_js_1.from)(handle.evaluate((input, value) => {
-                                input.value = value;
-                                input.dispatchEvent(new Event('input', { bubbles: true }));
-                                input.dispatchEvent(new Event('change', { bubbles: true }));
-                            }, value));
-                        }));
+                        return fillDirectly();
                     case 'unknown':
                         throw new Error(`Element cannot be filled out.`);
                 }

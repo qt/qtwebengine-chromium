@@ -12,7 +12,7 @@
 namespace payments {
 
 CSPCheckerAndroid::CSPCheckerAndroid(
-    const base::android::JavaParamRef<jobject>& jbridge)
+    const base::android::JavaRef<jobject>& jbridge)
     : jbridge_(jbridge) {}
 
 CSPCheckerAndroid::~CSPCheckerAndroid() = default;
@@ -22,8 +22,8 @@ void CSPCheckerAndroid::Destroy(JNIEnv* env) {
 }
 
 void CSPCheckerAndroid::OnResult(JNIEnv* env,
-                                 jint callback_id,
-                                 jboolean result) {
+                                 int32_t callback_id,
+                                 bool result) {
   auto iter = result_callbacks_.find(callback_id);
   if (iter == result_callbacks_.end())
     return;
@@ -36,7 +36,7 @@ void CSPCheckerAndroid::OnResult(JNIEnv* env,
 
 // static
 base::WeakPtr<CSPCheckerAndroid> CSPCheckerAndroid::GetWeakPtr(
-    jlong native_csp_checker_android) {
+    int64_t native_csp_checker_android) {
   if (!native_csp_checker_android)
     return base::WeakPtr<CSPCheckerAndroid>();
 
@@ -69,9 +69,9 @@ void CSPCheckerAndroid::AllowConnectToSource(
 }
 
 // A static free function declared in and invoked directly from Java.
-static jlong JNI_CSPCheckerBridge_CreateNativeCSPChecker(
+static int64_t JNI_CSPCheckerBridge_CreateNativeCSPChecker(
     JNIEnv* env,
-    const base::android::JavaParamRef<jobject>& jbridge) {
+    const base::android::JavaRef<jobject>& jbridge) {
   return reinterpret_cast<intptr_t>(new CSPCheckerAndroid(jbridge));
 }
 

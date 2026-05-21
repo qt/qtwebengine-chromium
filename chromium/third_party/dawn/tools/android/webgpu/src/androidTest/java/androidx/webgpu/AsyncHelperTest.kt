@@ -1,3 +1,18 @@
+/*
+ * Copyright 2025 The Android Open Source Project
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package androidx.webgpu
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -43,14 +58,14 @@ class AsyncHelperTest {
         runBlocking {
             /* Set up a shader module to support the async call. */
             val shaderModule = device.createShaderModule(
-                ShaderModuleDescriptor(shaderSourceWGSL = ShaderSourceWGSL(""))
+                GPUShaderModuleDescriptor(shaderSourceWGSL = GPUShaderSourceWGSL(""))
             )
 
             val exception = assertThrows(WebGpuException::class.java) {
                 runBlocking {
                     /* Call an asynchronous method, converted from a callback pattern by a helper. */
                     device.createRenderPipelineAndAwait(
-                        RenderPipelineDescriptor(vertex = VertexState(module = shaderModule))
+                        GPURenderPipelineDescriptor(vertex = GPUVertexState(module = shaderModule))
                     )
                 }
             }
@@ -69,15 +84,15 @@ class AsyncHelperTest {
         runBlocking {
             /* Set up a valid shader module and descriptor */
             val shaderModule = device.createShaderModule(
-                ShaderModuleDescriptor(shaderSourceWGSL = ShaderSourceWGSL(BASIC_SHADER))
+                GPUShaderModuleDescriptor(shaderSourceWGSL = GPUShaderSourceWGSL(BASIC_SHADER))
             )
 
             /* Call an asynchronous method, converted from a callback pattern by a helper. */
             val unused = device.createRenderPipelineAndAwait(
-                RenderPipelineDescriptor(
-                    vertex = VertexState(module = shaderModule), fragment = FragmentState(
+                GPURenderPipelineDescriptor(
+                    vertex = GPUVertexState(module = shaderModule), fragment = GPUFragmentState(
                         module = shaderModule,
-                        targets = arrayOf(ColorTargetState(format = TextureFormat.RGBA8Unorm))
+                        targets = arrayOf(GPUColorTargetState(format = TextureFormat.RGBA8Unorm))
                     )
                 )
             )
@@ -91,16 +106,16 @@ class AsyncHelperTest {
 
         runBlocking {
             val shaderModule = device.createShaderModule(
-                ShaderModuleDescriptor(shaderSourceWGSL = ShaderSourceWGSL(BASIC_SHADER))
+                GPUShaderModuleDescriptor(shaderSourceWGSL = GPUShaderSourceWGSL(BASIC_SHADER))
             )
 
             /* Launch the function in a new coroutine, giving us a job handle we can cancel. */
             val job = launch {
                 var unused = device.createRenderPipelineAndAwait(
-                    RenderPipelineDescriptor(vertex = VertexState(module = shaderModule),
-                        fragment = FragmentState(
+                    GPURenderPipelineDescriptor(vertex = GPUVertexState(module = shaderModule),
+                        fragment = GPUFragmentState(
                             module = shaderModule,
-                            targets = arrayOf(ColorTargetState(format = TextureFormat.RGBA8Unorm))
+                            targets = arrayOf(GPUColorTargetState(format = TextureFormat.RGBA8Unorm))
                         )
                     )
                 )

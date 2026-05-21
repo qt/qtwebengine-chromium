@@ -478,5 +478,55 @@ TEST(TraceLoggingTest, CheckTraceAsyncEndLogsCorrectly) {
   TRACE_ASYNC_END(TraceCategory::kAny, id, result);
 }
 
+TEST(TraceLoggingTest, CheckTraceFlowLogsCorrectly) {
+  constexpr uint64_t flow_id = 12345;
+  StrictMockLoggingPlatform platform;
+#if defined(ENABLE_TRACE_LOGGING)
+  EXPECT_CALL(platform, IsTraceLoggingEnabled(TraceCategory::kAny))
+      .Times(AtLeast(1));
+
+  {
+    ::testing::InSequence s;
+
+    // Verify TRACE_FLOW_BEGIN
+    EXPECT_CALL(platform, LogFlow(_, FlowType::kFlowBegin))
+        .WillOnce([flow_id](TraceEvent event, FlowType type) {
+          EXPECT_EQ(event.flow_ids.size(), 1u);
+          EXPECT_EQ(event.flow_ids[0], flow_id);
+          EXPECT_STREQ(event.name, "FlowName");
+        });
+
+    // Verify TRACE_FLOW_STEP
+    EXPECT_CALL(platform, LogFlow(_, FlowType::kFlowStep))
+        .WillOnce([flow_id](TraceEvent event, FlowType type) {
+          EXPECT_EQ(event.flow_ids.size(), 1u);
+          EXPECT_EQ(event.flow_ids[0], flow_id);
+          EXPECT_STREQ(event.name, "FlowName");
+        });
+
+    // Verify TRACE_FLOW_END
+    EXPECT_CALL(platform, LogFlow(_, FlowType::kFlowEnd))
+        .WillOnce([flow_id](TraceEvent event, FlowType type) {
+          EXPECT_EQ(event.flow_ids.size(), 1u);
+          EXPECT_EQ(event.flow_ids[0], flow_id);
+          EXPECT_STREQ(event.name, "FlowName");
+        });
+
+    // Verify TRACE_FLOW_DEFAULT_BEGIN (uses __PRETTY_FUNCTION__ as name)
+    EXPECT_CALL(platform, LogFlow(_, FlowType::kFlowBegin))
+        .WillOnce([flow_id](TraceEvent event, FlowType type) {
+          EXPECT_EQ(event.flow_ids.size(), 1u);
+          EXPECT_EQ(event.flow_ids[0], flow_id);
+          EXPECT_NE(event.name, nullptr);
+        });
+  }
+#endif
+
+  TRACE_FLOW_BEGIN(TraceCategory::kAny, "FlowName", flow_id);
+  TRACE_FLOW_STEP(TraceCategory::kAny, "FlowName", flow_id);
+  TRACE_FLOW_END(TraceCategory::kAny, "FlowName", flow_id);
+  TRACE_FLOW_DEFAULT_BEGIN(TraceCategory::kAny, flow_id);
+}
+
 }  // namespace
 }  // namespace openscreen

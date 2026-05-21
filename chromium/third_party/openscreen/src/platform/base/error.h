@@ -10,7 +10,6 @@
 #include <string>
 #include <utility>
 
-#include "platform/base/macros.h"
 
 namespace openscreen {
 

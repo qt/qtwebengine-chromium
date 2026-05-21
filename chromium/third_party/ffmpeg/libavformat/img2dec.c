@@ -365,8 +365,10 @@ int ff_img_read_packet(AVFormatContext *s1, AVPacket *pkt)
     VideoDemuxData *s = s1->priv_data;
     AVBPrint filename;
     int i, res;
-    int size[3]           = { 0 }, ret[3] = { 0 };
-    AVIOContext *f[3]     = { NULL };
+    int ret[3] = { 0 };
+    int64_t size[3] = { 0 };
+    int64_t total_size;
+    AVIOContext *f[3] = { NULL };
     AVCodecParameters *par = s1->streams[0]->codecpar;
 
     av_bprint_init(&filename, 0, AV_BPRINT_SIZE_UNLIMITED);
@@ -400,13 +402,13 @@ int ff_img_read_packet(AVFormatContext *s1, AVPacket *pkt)
                 !s->loop &&
                 !s->split_planes) {
                 f[i] = s1->pb;
-            } else if (s1->io_open(s1, &f[i], filename.str, AVIO_FLAG_READ, NULL) < 0) {
+            } else if ((res = s1->io_open(s1, &f[i], filename.str, AVIO_FLAG_READ, NULL)) < 0) {
                 if (i >= 1)
                     break;
                 av_log(s1, AV_LOG_ERROR, "Could not open file : %s\n",
                        filename.str);
                 av_bprint_finalize(&filename, NULL);
-                return AVERROR(EIO);
+                return res;
             }
             size[i] = avio_size(f[i]);
 
@@ -456,7 +458,17 @@ int ff_img_read_packet(AVFormatContext *s1, AVPacket *pkt)
         }
     }
 
-    res = av_new_packet(pkt, size[0] + size[1] + size[2]);
+    total_size = size[0];
+    if (total_size > INT64_MAX - size[1])
+        return AVERROR_INVALIDDATA;
+    total_size += size[1];
+    if (total_size > INT64_MAX - size[2])
+        return AVERROR_INVALIDDATA;
+    total_size += size[2];
+    if (total_size > INT_MAX)
+        return AVERROR_INVALIDDATA;
+
+    res = av_new_packet(pkt, total_size);
     if (res < 0) {
         goto fail;
     }
@@ -466,7 +478,7 @@ int ff_img_read_packet(AVFormatContext *s1, AVPacket *pkt)
         struct stat img_stat;
         av_assert0(!s->is_pipe); // The ts_from_file option is not supported by piped input demuxers
         if (stat(filename.str, &img_stat)) {
-            res = AVERROR(EIO);
+            res = AVERROR(errno);
             goto fail;
         }
         pkt->pts = (int64_t)img_stat.st_mtime;
@@ -821,6 +833,15 @@ static int jpegxl_probe(const AVProbeData *p)
     if (ff_jpegxl_parse_codestream_header(p->buf, p->buf_size, NULL, 5) >= 0)
         return AVPROBE_SCORE_MAX - 2;
 #endif
+    return 0;
+}
+
+static int jpegxs_probe(const AVProbeData *p)
+{
+    const uint8_t *b = p->buf;
+
+    if (AV_RB32(b) == 0xff10ff50)
+         return AVPROBE_SCORE_EXTENSION + 1;
     return 0;
 }
 
@@ -1204,6 +1225,7 @@ IMAGEAUTO_DEMUXER(gif,       GIF)
 IMAGEAUTO_DEMUXER_EXT(hdr,   RADIANCE_HDR, HDR)
 IMAGEAUTO_DEMUXER_EXT(j2k,   JPEG2000, J2K)
 IMAGEAUTO_DEMUXER_EXT(jpeg,  MJPEG, JPEG)
+IMAGEAUTO_DEMUXER(jpegxs,    JPEGXS)
 IMAGEAUTO_DEMUXER(jpegls,    JPEGLS)
 IMAGEAUTO_DEMUXER(jpegxl,    JPEGXL)
 IMAGEAUTO_DEMUXER(pam,       PAM)

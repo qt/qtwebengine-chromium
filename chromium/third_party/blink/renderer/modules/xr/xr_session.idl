@@ -54,6 +54,7 @@ enum XRReflectionFormat {
   readonly attribute XRReflectionFormat preferredReflectionFormat;
   [RuntimeEnabled=WebXREnabledFeatures] readonly attribute FrozenArray<DOMString> enabledFeatures;
   [RuntimeEnabled=WebXRSpecParity] readonly attribute boolean isSystemKeyboardSupported;
+  [RuntimeEnabled=WebXRLayers] readonly attribute unsigned short maxRenderLayers;
 
   attribute EventHandler onend;
   attribute EventHandler onselect;
@@ -92,6 +93,9 @@ enum XRReflectionFormat {
   undefined pauseDepthSensing();
   [RaisesException]
   undefined resumeDepthSensing();
+
+  [RuntimeEnabled=WebXRPlaneDetection, CallWith=ScriptState, RaisesException]
+  Promise<undefined> initiateRoomCapture();
 
   [RaisesException]
   readonly attribute XRDepthUsage? depthUsage;

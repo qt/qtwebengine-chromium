@@ -111,7 +111,8 @@ TEST(CloudManagementAffiliationTest, UserAffiliated) {
 TEST(CloudManagementAffiliationTest, GetUserAffiliationIdsFromCore_User) {
   base::test::TaskEnvironment task_environment;
 
-  policy::MockUserCloudPolicyStore store;
+  policy::MockUserCloudPolicyStore store{
+      dm_protocol::GetChromeUserPolicyType()};
   policy::CloudPolicyCore core(
       policy::dm_protocol::GetChromeUserPolicyType(), std::string(), &store,
       base::SingleThreadTaskRunner::GetCurrentDefault(),
@@ -135,7 +136,8 @@ TEST(CloudManagementAffiliationTest, GetUserAffiliationIdsFromCore_User) {
 TEST(CloudManagementAffiliationTest, GetUserAffiliationIdsFromCore_Device) {
   base::test::TaskEnvironment task_environment;
 
-  policy::MockUserCloudPolicyStore store;
+  policy::MockUserCloudPolicyStore store{
+      dm_protocol::GetChromeUserPolicyType()};
   policy::CloudPolicyCore core(
       policy::dm_protocol::GetChromeUserPolicyType(), std::string(), &store,
       base::SingleThreadTaskRunner::GetCurrentDefault(),
@@ -159,7 +161,8 @@ TEST(CloudManagementAffiliationTest, GetUserAffiliationIdsFromCore_Device) {
 TEST(CloudManagementAffiliationTest, GetUserAffiliationIdsFromCore_NoClient) {
   base::test::TaskEnvironment task_environment;
 
-  policy::MockUserCloudPolicyStore store;
+  policy::MockUserCloudPolicyStore store{
+      dm_protocol::GetChromeUserPolicyType()};
   policy::CloudPolicyCore core(
       policy::dm_protocol::GetChromeUserPolicyType(), std::string(), &store,
       base::SingleThreadTaskRunner::GetCurrentDefault(),
@@ -180,7 +183,8 @@ TEST(CloudManagementAffiliationTest,
      GetUserAffiliationIdsFromCore_NoPolicyData) {
   base::test::TaskEnvironment task_environment;
 
-  policy::MockUserCloudPolicyStore store;
+  policy::MockUserCloudPolicyStore store{
+      dm_protocol::GetChromeUserPolicyType()};
   policy::CloudPolicyCore core(
       policy::dm_protocol::GetChromeUserPolicyType(), std::string(), &store,
       base::SingleThreadTaskRunner::GetCurrentDefault(),

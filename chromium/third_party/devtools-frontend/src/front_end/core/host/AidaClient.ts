@@ -79,6 +79,7 @@ export interface FunctionObjectParam<T extends string|number|symbol = string> ex
   type: ParametersTypes.OBJECT;
   // TODO: this can be also be ObjectParams
   properties: Record<T, FunctionPrimitiveParams|FunctionArrayParam>;
+  required: T[];
 }
 
 /**
@@ -530,6 +531,14 @@ export class AidaClient {
     if (!InspectorFrontendHostInstance.doAidaConversation) {
       throw new Error('doAidaConversation is not available');
     }
+
+    // Disable logging for now.
+    // For context, see b/454563259#comment35.
+    // We should be able to remove this ~end of April.
+    if (Root.Runtime.hostConfig.devToolsGeminiRebranding?.enabled) {
+      request.metadata.disable_user_content_logging = true;
+    }
+
     const stream = (() => {
       let {promise, resolve, reject} = Promise.withResolvers<string|null>();
       options?.signal?.addEventListener('abort', () => {
@@ -647,6 +656,13 @@ export class AidaClient {
   }
 
   registerClientEvent(clientEvent: AidaRegisterClientEvent): Promise<AidaClientResult> {
+    // Disable logging for now.
+    // For context, see b/454563259#comment35.
+    // We should be able to remove this ~end of April.
+    if (Root.Runtime.hostConfig.devToolsGeminiRebranding?.enabled) {
+      clientEvent.disable_user_content_logging = true;
+    }
+
     const {promise, resolve} = Promise.withResolvers<AidaClientResult>();
     InspectorFrontendHostInstance.registerAidaClientEvent(
         JSON.stringify({
@@ -664,6 +680,14 @@ export class AidaClient {
     if (!InspectorFrontendHostInstance.aidaCodeComplete) {
       throw new Error('aidaCodeComplete is not available');
     }
+
+    // Disable logging for now.
+    // For context, see b/454563259#comment35.
+    // We should be able to remove this ~end of April.
+    if (Root.Runtime.hostConfig.devToolsGeminiRebranding?.enabled) {
+      request.metadata.disable_user_content_logging = true;
+    }
+
     const {promise, resolve} = Promise.withResolvers<AidaCodeCompleteResult>();
     InspectorFrontendHostInstance.aidaCodeComplete(JSON.stringify(request), resolve);
     const completeCodeResult = await promise;
@@ -709,6 +733,12 @@ export class AidaClient {
 
   async generateCode(request: GenerateCodeRequest, options?: {signal?: AbortSignal}):
       Promise<GenerateCodeResponse|null> {
+    // Disable logging for now.
+    // For context, see b/454563259#comment35.
+    // We should be able to remove this ~end of April.
+    if (Root.Runtime.hostConfig.devToolsGeminiRebranding?.enabled) {
+      request.metadata.disable_user_content_logging = true;
+    }
     const response = await DispatchHttpRequestClient.makeHttpRequest<GenerateCodeResponse>(
         {
           service: SERVICE_NAME,

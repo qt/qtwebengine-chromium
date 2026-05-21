@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import {assert} from 'chrome://resources/js/assert.js';
+import {assert, assertNotReachedCase} from 'chrome://resources/js/assert.js';
 import {EventTracker} from 'chrome://resources/js/event_tracker.js';
 import {CrLitElement} from 'chrome://resources/lit/v3_0/lit.rollup.js';
 import type {PropertyValues} from 'chrome://resources/lit/v3_0/lit.rollup.js';
@@ -37,6 +37,8 @@ function getStyleForTypeface(typeface: TextTypeface): string {
       return 'Times, serif';
     case TextTypeface.MONOSPACE:
       return '"Courier New", monospace';
+    default:
+      assertNotReachedCase(typeface);
   }
 }
 
@@ -101,7 +103,7 @@ export class InkTextBoxElement extends InkTextBoxElementBase {
   private existing_: boolean = false;
   private id_: number = -1;
   private keyDownCount_: number = -1;
-  private pageNumber_: number = -1;
+  private pageIndex_: number = -1;
   private pageHeight_: number = 0;
   private pageWidth_: number = 0;
   private pageX_: number = 0;
@@ -309,7 +311,7 @@ export class InkTextBoxElement extends InkTextBoxElementBase {
         {
           text: this.textValue_,
           id: this.id_,
-          pageNumber: this.pageNumber_,
+          pageIndex: this.pageIndex_,
           textAttributes: this.attributes_,
           textBoxRect: {
             height: this.height_,
@@ -346,7 +348,7 @@ export class InkTextBoxElement extends InkTextBoxElementBase {
     this.existing_ = data.annotation.text !== '';
     this.textValue_ = data.annotation.text;
     this.id_ = data.annotation.id;
-    this.pageNumber_ = data.annotation.pageNumber;
+    this.pageIndex_ = data.annotation.pageIndex;
     this.textOrientation_ = data.annotation.textOrientation;
     this.updateTextAttributes_(data.annotation.textAttributes);
 
@@ -470,6 +472,8 @@ export class InkTextBoxElement extends InkTextBoxElementBase {
         break;
       case 'ArrowRight':
         moveX = this.keyDownCount_;
+        break;
+      default:
         break;
     }
     this.onMove_(target, moveX, moveY);

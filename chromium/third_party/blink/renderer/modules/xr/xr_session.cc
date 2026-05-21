@@ -10,7 +10,6 @@
 #include <utility>
 
 #include "base/auto_reset.h"
-#include "base/containers/contains.h"
 #include "base/dcheck_is_on.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/trace_event/trace_event.h"
@@ -94,6 +93,9 @@ const char kMultiLayersNotEnabled[] =
     "This session does not support multiple layers.";
 
 const char kDuplicateLayer[] = "All layers in render state must be unique.";
+
+const char kTooManyLayers[] =
+    "The number of layers to be enabled exceeds maxRenderLayers.";
 
 const char kInlineVerticalFOVNotSupported[] =
     "This session does not support inlineVerticalFieldOfView";
@@ -212,7 +214,7 @@ HashSet<device::HitTestSubscriptionId> GetIdsOfUnusedHitTestSources(
   // Gather all IDs of unused hit test sources:
   HashSet<device::HitTestSubscriptionId> unused_hit_test_source_ids;
   for (auto& id : all_ids) {
-    if (!base::Contains(id_to_hit_test_source, id)) {
+    if (!id_to_hit_test_source.Contains(id)) {
       unused_hit_test_source_ids.insert(id);
     }
   }
@@ -543,6 +545,13 @@ void XRSession::updateRenderState(XRRenderStateInit* init,
         !IsFeatureEnabled(device::mojom::XRSessionFeature::LAYERS)) {
       exception_state.ThrowDOMException(DOMExceptionCode::kNotSupportedError,
                                         kMultiLayersNotEnabled);
+      return;
+    }
+
+    // Validate that the number of layers is allowed.
+    if (init->layers()->size() > maxRenderLayers()) {
+      exception_state.ThrowDOMException(DOMExceptionCode::kNotSupportedError,
+                                        kTooManyLayers);
       return;
     }
 
@@ -1954,16 +1963,13 @@ void XRSession::UpdatePresentationFrameState(
 
     // Now update the input sources
     // Only process input when we can report it to the page.
+    base::span<const device::mojom::blink::XRInputSourceStatePtr> input_states;
     if (CanReportInputPoses()) {
-      base::span<const device::mojom::blink::XRInputSourceStatePtr>
-          input_states;
       if (frame_data->input_state.has_value()) {
         input_states = frame_data->input_state.value();
       }
 
       OnInputStateChangeInternal(frame_id, input_states);
-
-      ProcessInputSourceEvents(input_states);
     }
 
     // World understanding includes hit testing for transient input sources, and
@@ -1973,6 +1979,14 @@ void XRSession::UpdatePresentationFrameState(
     // generate hit test results. For this to work, this step must happen
     // after OnInputStateChangeInternal which updated input sources.
     UpdateWorldUnderstandingStateForFrame(timestamp, frame_data);
+
+    // Processing input source events may send events to the page. To this end
+    // we need to ensure that this is done *after* the WorldUnderstanding state
+    // is updated, otherwise we would be sending out input events with the old
+    // frame state, which can lead to issues with transient hit test sources.
+    if (CanReportInputPoses()) {
+      ProcessInputSourceEvents(input_states);
+    }
 
     // Now that all pose data is updated trigger a reset event if it's there.
     if (frame_data->mojo_space_reset) {
@@ -2021,6 +2035,34 @@ XRSession::getTrackedImageScores(ScriptState* script_state,
   }
 
   return promise;
+}
+
+ScriptPromise<IDLUndefined> XRSession::initiateRoomCapture(
+    ScriptState* script_state,
+    ExceptionState& exception_state) {
+  if (ended_) {
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
+                                      kSessionEnded);
+    return EmptyPromise();
+  }
+
+  if (has_called_room_capture_) {
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
+                                      "initiateRoomCapture already called.");
+    return EmptyPromise();
+  }
+
+  if (!IsFeatureEnabled(device::mojom::XRSessionFeature::PLANE_DETECTION)) {
+    exception_state.ThrowDOMException(
+        DOMExceptionCode::kNotSupportedError,
+        StrCat({kFeatureNotSupportedBySessionPrefix,
+                XRSessionFeatureToString(
+                    device::mojom::XRSessionFeature::PLANE_DETECTION)}));
+    return EmptyPromise();
+  }
+
+  has_called_room_capture_ = true;
+  return ToResolvedUndefinedPromise(script_state);
 }
 
 void XRSession::ProcessTrackedImagesData(
@@ -2545,14 +2587,14 @@ void XRSession::OnExitPresent() {
 bool XRSession::ValidateHitTestSourceExists(
     XRHitTestSource* hit_test_source) const {
   DCHECK(hit_test_source);
-  return base::Contains(hit_test_source_ids_, hit_test_source->id());
+  return hit_test_source_ids_.Contains(hit_test_source->id());
 }
 
 bool XRSession::ValidateHitTestSourceExists(
     XRTransientInputHitTestSource* hit_test_source) const {
   DCHECK(hit_test_source);
-  return base::Contains(hit_test_source_for_transient_input_ids_,
-                        hit_test_source->id());
+  return hit_test_source_for_transient_input_ids_.Contains(
+      hit_test_source->id());
 }
 
 bool XRSession::RemoveHitTestSource(XRHitTestSource* hit_test_source) {
@@ -2560,7 +2602,7 @@ bool XRSession::RemoveHitTestSource(XRHitTestSource* hit_test_source) {
 
   DCHECK(hit_test_source);
 
-  if (!base::Contains(hit_test_source_ids_, hit_test_source->id())) {
+  if (!hit_test_source_ids_.Contains(hit_test_source->id())) {
     DVLOG(2) << __func__
              << ": hit test source was already removed, hit_test_source->id()="
              << hit_test_source->id();
@@ -2598,8 +2640,8 @@ bool XRSession::RemoveHitTestSource(
 
   DCHECK(hit_test_source);
 
-  if (!base::Contains(hit_test_source_for_transient_input_ids_,
-                      hit_test_source->id())) {
+  if (!hit_test_source_for_transient_input_ids_.Contains(
+          hit_test_source->id())) {
     DVLOG(2) << __func__
              << ": hit test source was already removed, hit_test_source->id()="
              << hit_test_source->id();
@@ -2656,6 +2698,12 @@ device::mojom::blink::XRLayerManager* XRSession::LayerManager() {
     return nullptr;
   }
   return xr()->frameProvider()->layer_manager();
+}
+
+void XRSession::OnTransferComplete(const Vector<device::LayerId>& layer_ids) {
+  if (render_state_) {
+    render_state_->OnTransferComplete(layer_ids);
+  }
 }
 
 void XRSession::Trace(Visitor* visitor) const {

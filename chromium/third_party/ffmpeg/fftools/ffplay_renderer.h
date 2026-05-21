@@ -25,6 +25,20 @@
 
 typedef struct VkRenderer VkRenderer;
 
+#define VIDEO_BACKGROUND_TILE_SIZE 64
+
+enum VideoBackgroundType {
+    VIDEO_BACKGROUND_TILES,
+    VIDEO_BACKGROUND_COLOR,
+    VIDEO_BACKGROUND_NONE,
+};
+
+typedef struct RenderParams {
+    SDL_Rect target_rect;
+    uint8_t video_background_color[4];
+    enum VideoBackgroundType video_background_type;
+} RenderParams;
+
 VkRenderer *vk_get_renderer(void);
 
 int vk_renderer_create(VkRenderer *renderer, SDL_Window *window,
@@ -32,7 +46,7 @@ int vk_renderer_create(VkRenderer *renderer, SDL_Window *window,
 
 int vk_renderer_get_hw_dev(VkRenderer *renderer, AVBufferRef **dev);
 
-int vk_renderer_display(VkRenderer *renderer, AVFrame *frame);
+int vk_renderer_display(VkRenderer *renderer, AVFrame *frame, RenderParams *params);
 
 int vk_renderer_resize(VkRenderer *renderer, int width, int height);
 

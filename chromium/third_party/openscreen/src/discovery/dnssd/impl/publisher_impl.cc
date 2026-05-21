@@ -280,7 +280,7 @@ void PublisherImpl::OnDomainFound(const DomainName& requested_name,
     Error result = mdns_publisher_.RegisterRecord(mdns_record);
     if (!result.ok()) {
       reporting_client_.OnRecoverableError(
-          Error(Error::Code::kRecordPublicationError, result.ToString()));
+          Error(Error::Code::kRecordPublicationError, result.message()));
     }
   }
 

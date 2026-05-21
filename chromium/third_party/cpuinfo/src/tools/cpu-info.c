@@ -144,6 +144,8 @@ static const char* uarch_to_string(enum cpuinfo_uarch uarch) {
 			return "Zen 4";
 		case cpuinfo_uarch_zen5:
 			return "Zen 5";
+		case cpuinfo_uarch_zen6:
+			return "Zen 6";
 		case cpuinfo_uarch_geode:
 			return "Geode";
 		case cpuinfo_uarch_bobcat:
@@ -202,6 +204,8 @@ static const char* uarch_to_string(enum cpuinfo_uarch uarch) {
 			return "Cortex-A78";
 		case cpuinfo_uarch_cortex_a510:
 			return "Cortex-A510";
+		case cpuinfo_uarch_cortex_a520:
+			return "Cortex-A520";
 		case cpuinfo_uarch_cortex_a710:
 			return "Cortex-A710";
 		case cpuinfo_uarch_cortex_a715:
@@ -220,6 +224,14 @@ static const char* uarch_to_string(enum cpuinfo_uarch uarch) {
 			return "Cortex-X4";
 		case cpuinfo_uarch_cortex_x925:
 			return "Cortex-X925";
+		case cpuinfo_uarch_lumex_c1_ultra:
+			return "Lumex-C1-Ultra";
+		case cpuinfo_uarch_lumex_c1_premium:
+			return "Lumex-C1-Premium";
+		case cpuinfo_uarch_lumex_c1_pro:
+			return "Lumex-C1-Pro";
+		case cpuinfo_uarch_lumex_c1_nano:
+			return "Lumex-C1-Nano";
 		case cpuinfo_uarch_neoverse_n1:
 			return "Neoverse N1";
 		case cpuinfo_uarch_neoverse_e1:
@@ -242,6 +254,8 @@ static const char* uarch_to_string(enum cpuinfo_uarch uarch) {
 			return "Saphira";
 		case cpuinfo_uarch_oryon:
 			return "Oryon";
+		case cpuinfo_uarch_oryon_v3:
+			return "Oryon V3";
 		case cpuinfo_uarch_denver:
 			return "Denver";
 		case cpuinfo_uarch_denver2:
@@ -304,6 +318,14 @@ static const char* uarch_to_string(enum cpuinfo_uarch uarch) {
 			return "Tahiti_Everest";
 		case cpuinfo_uarch_tahiti_sawtooth:
 			return "Tahiti_Sawtooth";
+		case cpuinfo_uarch_tilos_everest:
+			return "Tilos_Everest";
+		case cpuinfo_uarch_tilos_sawtooth:
+			return "Tilos_Sawtooth";
+		case cpuinfo_uarch_donan_everest:
+			return "Donan Everest";
+		case cpuinfo_uarch_donan_sawtooth:
+			return "Donan Sawtooth";
 		case cpuinfo_uarch_thunderx:
 			return "ThunderX";
 		case cpuinfo_uarch_thunderx2:

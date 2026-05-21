@@ -26,7 +26,7 @@
 #include "src/compiler/osr.h"
 #include "src/execution/frame-constants.h"
 #include "src/heap/heap-write-barrier.h"
-#include "src/heap/mutable-page-metadata.h"
+#include "src/heap/mutable-page.h"
 #include "src/objects/code-kind.h"
 #include "src/objects/smi.h"
 #include "src/roots/roots-inl.h"
@@ -412,8 +412,13 @@ class OutOfLineRecordWrite final : public OutOfLineCode {
 #if V8_ENABLE_STICKY_MARK_BITS_BOOL
       // TODO(333906585): Optimize this path.
       Label stub_call_with_decompressed_value;
+#if CONTIGUOUS_COMPRESSED_READ_ONLY_SPACE_BOOL
+      __ JumpIfUnsignedLessThan(value_, kContiguousReadOnlyReservationSize,
+                                exit());
+#else   // !CONTIGUOUS_COMPRESSED_READ_ONLY_SPACE_BOOL
       __ CheckPageFlag(value_, scratch0_, MemoryChunk::kIsInReadOnlyHeapMask,
                        not_zero, exit());
+#endif  // !CONTIGUOUS_COMPRESSED_READ_ONLY_SPACE_BOOL
       __ CheckMarkBit(value_, scratch0_, scratch1_, carry, exit());
       __ jmp(&stub_call_with_decompressed_value);
 
@@ -1357,6 +1362,10 @@ void CodeGenerator::AssembleDeconstructFrame() {
   __ popq(rbp);
 }
 
+#ifdef V8_DUMPLING
+void CodeGenerator::AssembleDumpFrame() { __ CallBuiltin(Builtin::kDumpFrame); }
+#endif  // V8_DUMPLING
+
 void CodeGenerator::AssemblePrepareTailCall() {
   if (frame_access_state()->has_frame()) {
     __ movq(rbp, MemOperand(rbp, 0));
@@ -1696,12 +1705,13 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
             }
           } else {
             JSDispatchHandle dispatch_handle = function->dispatch_handle();
-            size_t expected =
-                IsolateGroup::current()->js_dispatch_table()->GetParameterCount(
+            uint16_t expected =
+                isolate()->js_dispatch_table().GetParameterCount(
                     dispatch_handle);
             // Defer signature mismatch abort to run-time as optimized
             // unreachable calls can have mismatched signatures.
             if (num_arguments >= expected) {
+              __ RecordJSDispatchHandle(dispatch_handle, expected);
               __ CallJSDispatchEntry(dispatch_handle, expected);
             } else {
               __ Abort(AbortReason::kJSSignatureMismatch);

@@ -148,7 +148,6 @@ extern pfnSHGetFolderPathA          pSHGetFolderPathA;
 
 FC_ASSERT_STATIC (sizeof (FcRef) == sizeof (int));
 
-#define FcStrdup(s)                    ((FcChar8 *)strdup ((const char *)(s)))
 #define FcFree(s)                      (free ((FcChar8 *)(s)))
 
 /*
@@ -205,8 +204,6 @@ typedef struct _FcValueList {
 } FcValueList;
 
 #define FcValueListNext(vl) FcPointerMember (vl, next, FcValueList)
-
-typedef int FcObject;
 
 /* The 1024 is to leave some room for future added internal objects, such
  * that caches from newer fontconfig can still be used with older fontconfig
@@ -907,6 +904,81 @@ FcReadLink (const FcChar8 *pathname,
             FcChar8       *buf,
             size_t         bufsiz);
 
+/* fcconffile.c */
+#if HAVE_VASPRINTF
+#  define FcStrDupVapFormat(__ret__, __format__, __va__)         \
+    {                                                            \
+    if (vasprintf (&(__ret__), __format__, __va__) < 0) {    \
+    (__ret__) = NULL;                                    \
+    }                                                        \
+    }
+#elif HAVE_C99_VSNPRINTF
+#  define FcStrDupVapFormat(__ret__, __format__, __va__)    \
+    {                                                       \
+    char    FcStrDupVapFormat_c;                        \
+    va_list FcStrDupVapFormat_va;                       \
+    int     FcStrDupVapFormat_size;                     \
+    \
+    (__ret__) = NULL;                                   \
+    va_copy (FcStrDupVapFormat_va, __va__);             \
+    FcStrDupVapFormat_size = vsnprintf (&FcStrDupVapFormat_c, 1, __format__, __va__) + 1; \
+    va_end (FcStrDupVapFormat_va);                      \
+    if (FcStrDupVapFormat_size > 0) {                   \
+    (__ret__) = malloc (FcStrDupVapFormat_size);    \
+    if ((__ret__)) {                                \
+    vsprintf ((__ret__), __format__, __va__);   \
+    }                                               \
+    }                                                   \
+    }
+#elif HAVE_VSNPRINTF
+#  define FcStrDupVapFormat(__ret__, __format__, __va__)               \
+    {                                                                  \
+    va_list FcStrDupVapFormat_va;                                  \
+    int     FcStrDupVapFormat_size = 1024, FcStrDupVapFormat_n;    \
+    char   *FcStrDupVapFormat_p;                                   \
+    \
+    (__ret__) = malloc (FcStrDupVapFormat_size);                   \
+    if ((__ret__)) {                                               \
+    while (1) {                                                \
+    va_copy (FcStrDupVapFormat_va, __va__);                \
+    FcStrDupVapFormat_n = vsnprintf ((__ret__), FcStrDupVapFormat_size, __format__, FcStrDupVapFormat_va); \
+    va_end (FcStrDupVapFormat_va);                         \
+    if (FcStrDupVapFormat_n > -1 &&                        \
+    FcStrDupVapFormat_n < FcStrDupVapFormat_size)      \
+    break;                                             \
+    if (FcStrDupVapFormat_n > -1)                          \
+    FcStrDupVapFormat_size = FcStrDupVapFormat_n + 1;  \
+    else                                                   \
+    FcStrDupVapFormat_size *= 2;                       \
+    FcStrDupVapFormat_p = realloc ((__ret__), FcStrDupVapFormat_size); \
+    if (!FcStrDupVapFormat_p) {                            \
+    free ((__ret__));                                  \
+    (__ret__) = NULL;                                  \
+    break;                                             \
+    }                                                      \
+    (__ret__) = FcStrDupVapFormat_p;                       \
+    }                                                          \
+    }                                                              \
+    }
+#else
+#  error no vsnprintf function implemented
+#endif
+
+#  define FcStrBufVapFormat(__ret__, __buf__, __format__, __va__)       \
+    {                                                                   \
+    char *FcStrBufVapFormat_p = NULL;                               \
+    FcStrDupVapFormat (FcStrBufVapFormat_p, __format__, __va__);    \
+    if (!FcStrBufVapFormat_p) {                                     \
+    FcStrBufDestroy (__buf__);                                  \
+    (__ret__) = FcFalse;                                        \
+    } else {                                                        \
+    FcStrBufString (__buf__, (const FcChar8 *)FcStrBufVapFormat_p); \
+    free (FcStrBufVapFormat_p);                                 \
+    (__ret__) = FcTrue;                                         \
+    }                                                               \
+    }
+
+
 /* fcdbg.c */
 
 FcPrivate void
@@ -1174,6 +1246,9 @@ enum {
 FcPrivate FcBool
 FcNameConstantWithObjectCheck (const FcChar8 *string, FcObject object, int *result);
 
+FcPrivate const FcChar8 *
+FcNameGetConstantNameFromObject (FcObject object, int value);
+
 FcPrivate FcBool
 FcNameBool (const FcChar8 *v, FcBool *result);
 
@@ -1377,6 +1452,12 @@ FcPrivate FcBool
 FcIsFsMtimeBroken (const FcChar8 *dir);
 
 /* fcstr.c */
+FcPrivate FcChar8 *
+FcStrDupVaFormat (const char *format, va_list va);
+
+FcPrivate FcChar8 *
+FcStrDupFormat (const char *format, ...);
+
 FcPrivate FcStrSet *
 FcStrSetCreateEx (unsigned int control);
 
@@ -1424,6 +1505,12 @@ FcStrBufChar (FcStrBuf *buf, FcChar8 c);
 
 FcPrivate FcBool
 FcStrBufString (FcStrBuf *buf, const FcChar8 *s);
+
+FcPrivate FcBool
+FcStrBufVaFormat (FcStrBuf *buf, const char *format, va_list va);
+
+FcPrivate FcBool
+FcStrBufFormat (FcStrBuf *buf, const char *format, ...);
 
 FcPrivate FcBool
 FcStrBufData (FcStrBuf *buf, const FcChar8 *s, int len);

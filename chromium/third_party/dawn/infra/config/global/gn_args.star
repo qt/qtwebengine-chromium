@@ -142,6 +142,13 @@ gn_args.config(
 )
 
 gn_args.config(
+    name = "minimal_symbols",
+    args = {
+        "symbol_level": 1,
+    },
+)
+
+gn_args.config(
     name = "msvc",
     args = {
         "is_clang": False,
@@ -167,6 +174,16 @@ gn_args.config(
     args = {
         "is_debug": False,
     },
+)
+
+gn_args.config(
+    name = "release_with_dchecks",
+    args = {
+        "dcheck_always_on": True,
+    },
+    configs = [
+        "release",
+    ],
 )
 
 gn_args.config(
@@ -240,6 +257,13 @@ gn_args.config(
     name = "tint_wgsl_writer",
     args = {
         "tint_build_wgsl_writer": True,
+    },
+)
+
+gn_args.config(
+    name = "tsan",
+    args = {
+        "is_tsan": True,
     },
 )
 

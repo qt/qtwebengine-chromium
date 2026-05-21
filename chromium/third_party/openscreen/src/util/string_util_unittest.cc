@@ -47,19 +47,6 @@ TEST(StringUtilTest, AsciiTest) {
   EXPECT_EQ(ascii_toupper('0'), '0');
 }
 
-TEST(StringUtilTest, StartsAndEndsWith) {
-  constexpr char kString[] = "United Federation of Planets";
-  EXPECT_TRUE(starts_with("", ""));
-  EXPECT_TRUE(starts_with(kString, ""));
-  EXPECT_TRUE(starts_with(kString, "United"));
-  EXPECT_FALSE(starts_with(kString, "Klingons"));
-
-  EXPECT_TRUE(ends_with("", ""));
-  EXPECT_TRUE(ends_with(kString, ""));
-  EXPECT_TRUE(ends_with(kString, "Planets"));
-  EXPECT_FALSE(ends_with(kString, "Borg"));
-}
-
 TEST(StringUtilTest, EqualsIgnoreCase) {
   constexpr char kString[] = "Vulcans!";
   EXPECT_TRUE(EqualsIgnoreCase("", ""));
@@ -116,16 +103,37 @@ TEST(StringUtilTest, Split) {
   EXPECT_EQ(result, expected);
 }
 
-TEST(StringUtilTest, Join) {
+TEST(StringUtilTest, JoinStringViewCollection) {
   std::vector<std::string_view> empty;
   auto single = std::vector<std::string_view>({"donut"});
-  auto input = std::vector<std::string_view>({"a", "b", "ccc"});
+  auto input = std::vector<std::string_view>({"foo", "bar", "bazzz"});
 
   EXPECT_EQ("", Join(empty.begin(), empty.end(), ","));
+  EXPECT_EQ("", Join(empty, ","));
+
   EXPECT_EQ("donut", Join(single.begin(), single.end(), ","));
-  EXPECT_EQ("abccc", Join(input.begin(), input.end(), ""));
-  EXPECT_EQ("a,b,ccc", Join(input.begin(), input.end(), ","));
-  EXPECT_EQ("a<->b<->ccc", Join(input.begin(), input.end(), "<->"));
+  EXPECT_EQ("donut", Join(single, ","));
+
+  EXPECT_EQ("foobarbazzz", Join(input.begin(), input.end(), ""));
+  EXPECT_EQ("foo,bar,bazzz", Join(input.begin(), input.end(), ","));
+  EXPECT_EQ("foo<->bar<->bazzz", Join(input.begin(), input.end(), "<->"));
+
+  EXPECT_EQ("foo, bar, bazzz", Join(input));
+  EXPECT_EQ("foo_*_bar_*_bazzz", Join(input, "_*_"));
 }
 
+TEST(StringUtilTest, JoinIntegerCollection) {
+  std::vector<int> empty;
+  std::vector<int> single = {1};
+  std::vector<int> multiple = {{2, 29, 99}};
+
+  EXPECT_EQ("", Join(empty));
+  EXPECT_EQ("", Join(empty, "---"));
+
+  EXPECT_EQ("1", Join(single));
+  EXPECT_EQ("1", Join(single.begin(), single.end(), "*"));
+
+  EXPECT_EQ("2, 29, 99", Join(multiple));
+  EXPECT_EQ("2 * 29 * 99", Join(multiple.begin(), multiple.end(), " * "));
+}
 }  // namespace openscreen::string_util

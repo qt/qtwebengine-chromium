@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2023-2025 LunarG, Inc.
- * Copyright (c) 2023-2025 Valve Corporation
+ * Copyright (c) 2023-2026 LunarG, Inc.
+ * Copyright (c) 2023-2026 Valve Corporation
  * Copyright (c) 2025 Arm Limited.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,8 +15,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#pragma once
+
 // clang-format off
+
+// We need to include this file in CMake so Visual Studio can open it easier
+// Wrap between #if 0 ... #endif so that the compiler doesn't actually try to parse anything
+#if 0
 
 // This file list all VUID that are not possible to validate.
 // This file should never be included, but here for searchability and statistics
@@ -25,6 +29,7 @@ const char* unimplementable_validation[] = {
     // sparseAddressSpaceSize can't be tracked in a layer
     // https://gitlab.khronos.org/vulkan/vulkan/-/issues/2403
     "VUID-vkCreateBuffer-flags-00911",
+    "VUID-vkCreateImage-flags-00939",
 
     // Some of the early extensions were not created with a feature bit. This means if the extension is used, we considered it
     // "enabled". This becomes a problem as some coniditional VUIDs depend on the Extension to be enabled, this means we are left
@@ -37,10 +42,12 @@ const char* unimplementable_validation[] = {
     "VUID-vkCmdEndDebugUtilsLabelEXT-commandBuffer-01912",
 
     // These VUIDs cannot be validated beyond making sure the pointer is not null
-    "VUID-VkMemoryToImageCopy-pHostPointer-09061", "VUID-VkImageToMemoryCopy-pHostPointer-09066"
+    "VUID-VkMemoryToImageCopy-pHostPointer-09061",
+    "VUID-VkImageToMemoryCopy-pHostPointer-09066"
 
     // these are already taken care in spirv-val for 08737
-    "VUID-VkShaderModuleCreateInfo-pCode-08736", "VUID-VkShaderCreateInfoEXT-pCode-08736",
+    "VUID-VkShaderModuleCreateInfo-pCode-08736",
+    "VUID-VkShaderCreateInfoEXT-pCode-08736",
 
     // is same as VUID-VkShaderModuleCreateInfo-pCode-08738
     "VUID-VkShaderModuleCreateInfo-pCode-07912",
@@ -56,16 +63,6 @@ const char* unimplementable_validation[] = {
     // These are checked already in VUID-vkGetPrivateData-objectType-04018 and VUID-vkSetPrivateData-objectHandle-04016
     "VUID-vkGetPrivateData-device-parameter",
     "VUID-vkSetPrivateData-device-parameter",
-
-    // These were added for "completeness" (by us!) and serve no real purpose.
-    // 1. VK_EXT_validation_features/VK_EXT_validation_flags are implemented by us and we don't even care
-    //    if the extension name is enabled or not
-    // 2. It would crazy for a layer to suddenly not have VK_EXT_layer_settings work if the extension name is not provided
-    //
-    // Until there is a real world usecase where these are needed, we are just going to defer validating them.
-    "VUID-VkInstanceCreateInfo-pNext-10242",
-    "VUID-VkInstanceCreateInfo-pNext-10243",
-    "VUID-VkInstanceCreateInfo-pNext-10244",
 
     // These ask if pData is a certain size, but no way to validate a pointer to memory is a certain size.
     // There is already another implicit VU checking if pData is not null.
@@ -103,6 +100,15 @@ const char* unimplementable_validation[] = {
     "VUID-VkDeviceFaultVendorBinaryHeaderVersionOneEXT-headerVersion-07341",
     "VUID-VkDeviceFaultVendorBinaryHeaderVersionOneEXT-headerVersion-parameter",
 
+    // https://gitlab.khronos.org/vulkan/vulkan/-/merge_requests/7958
+    // These are useless VUs and nothing to do
+    "VUID-VkComputePipelineCreateInfo-stage-00702",
+    "VUID-VkGraphicsPipelineCreateInfo-pStages-00742",
+    "VUID-VkGraphicsPipelineCreateInfo-None-04889",
+    "VUID-VkRayTracingPipelineCreateInfoKHR-pStages-03426",
+    "VUID-VkRayTracingPipelineCreateInfoNV-pStages-03426",
+    "VUID-VkExecutionGraphPipelineCreateInfoAMDX-pStages-09129",
+
     // Extension has redundant implicit VUs
     "VUID-VkBufferConstraintsInfoFUCHSIA-createInfo-parameter",
     "VUID-VkBufferConstraintsInfoFUCHSIA-bufferCollectionConstraints-parameter",
@@ -118,10 +124,65 @@ const char* unimplementable_validation[] = {
     "VUID-VkAccelerationStructureGeometryKHR-instances-parameter",
     "VUID-VkAccelerationStructureGeometryKHR-aabbs-parameter",
 
+    // These are being covered by both
+    //   VUID-VkWriteDescriptorSet-dstBinding-00315
+    //   VUID-VkWriteDescriptorSet-dstArrayElement-00321
+    // We would need to really make things complex in order to report these 2 VUs correctly
+    // and on top of that, there are MANY missing similar VUs in VkWriteDescriptorSet the spec would need
+    "VUID-VkDescriptorUpdateTemplateEntry-dstBinding-00354",
+    "VUID-VkDescriptorUpdateTemplateEntry-dstArrayElement-00355",
+
+    // This is just VUID-vkCmdBeginRendering-renderpass
+    // The logic in CoreChecks::InsideRenderPass() already gives a good error message
+    "VUID-vkCmdBeginRendering-commandBuffer-10914",
+
+    // If VkDeviceAddress can be zero, we will validate it in cc_buffer_address.h
     // We cover these in VUID-VkDeviceAddress-size-11364
     // https://gitlab.khronos.org/vulkan/vulkan/-/merge_requests/7517#note_546958
     "VUID-VkDescriptorAddressInfoEXT-address-parameter",
     "VUID-VkStridedDeviceAddressRangeKHR-address-parameter",
+    "VUID-VkBindIndexBufferIndirectCommandEXT-bufferAddress-parameter",
+    "VUID-VkBindIndexBufferIndirectCommandNV-bufferAddress-parameter",
+    "VUID-VkBindVertexBufferIndirectCommandEXT-bufferAddress-parameter",
+    "VUID-VkBindVertexBufferIndirectCommandNV-bufferAddress-parameter",
+    "VUID-VkDrawIndirectCountIndirectCommandEXT-bufferAddress-parameter",
+    "VUID-VkBindPipelineIndirectCommandNV-pipelineAddress-parameter",
+    "VUID-VkBufferDeviceAddressCreateInfoEXT-deviceAddress-parameter",
+    "VUID-VkBuildPartitionedAccelerationStructureIndirectCommandNV-opType-parameter",
+    "VUID-VkBuildPartitionedAccelerationStructureInfoNV-srcAccelerationStructureData-parameter",
+    "VUID-VkClusterAccelerationStructureBuildClustersBottomLevelInfoNV-clusterReferences-parameter",
+    "VUID-VkClusterAccelerationStructureBuildTriangleClusterInfoNV-clusterFlags-parameter",
+    "VUID-VkClusterAccelerationStructureBuildTriangleClusterInfoNV-geometryIndexAndFlagsBuffer-parameter",
+    "VUID-VkClusterAccelerationStructureBuildTriangleClusterInfoNV-indexBuffer-parameter",
+    "VUID-VkClusterAccelerationStructureBuildTriangleClusterInfoNV-opacityMicromapArray-parameter",
+    "VUID-VkClusterAccelerationStructureBuildTriangleClusterInfoNV-opacityMicromapIndexBuffer-parameter",
+    "VUID-VkClusterAccelerationStructureBuildTriangleClusterInfoNV-vertexBuffer-parameter",
+    "VUID-VkClusterAccelerationStructureBuildTriangleClusterTemplateInfoNV-geometryIndexAndFlagsBuffer-parameter",
+    "VUID-VkClusterAccelerationStructureBuildTriangleClusterTemplateInfoNV-indexBuffer-parameter",
+    "VUID-VkClusterAccelerationStructureBuildTriangleClusterTemplateInfoNV-instantiationBoundingBoxLimit-parameter",
+    "VUID-VkClusterAccelerationStructureBuildTriangleClusterTemplateInfoNV-opacityMicromapArray-parameter",
+    "VUID-VkClusterAccelerationStructureBuildTriangleClusterTemplateInfoNV-opacityMicromapIndexBuffer-parameter",
+    "VUID-VkClusterAccelerationStructureBuildTriangleClusterTemplateInfoNV-vertexBuffer-parameter",
+    "VUID-VkClusterAccelerationStructureCommandsInfoNV-dstImplicitData-parameter",
+    "VUID-VkClusterAccelerationStructureCommandsInfoNV-srcInfosCount-parameter",
+    "VUID-VkClusterAccelerationStructureGetTemplateIndicesInfoNV-clusterTemplateAddress-parameter",
+    "VUID-VkClusterAccelerationStructureInstantiateClusterInfoNV-clusterTemplateAddress-parameter",
+    "VUID-VkClusterAccelerationStructureMoveObjectsInfoNV-srcAccelerationStructure-parameter",
+    "VUID-VkComputePipelineIndirectBufferInfoNV-pipelineDeviceAddressCaptureReplay-parameter",
+    "VUID-VkDescriptorGetInfoEXT-accelerationStructure-parameter",
+    "VUID-VkDeviceFaultAddressInfoEXT-reportedAddress-parameter",
+    "VUID-VkPartitionedAccelerationStructureUpdateInstanceDataNV-accelerationStructure-parameter",
+    "VUID-VkPartitionedAccelerationStructureWriteInstanceDataNV-accelerationStructure-parameter",
+    "VUID-VkStridedDeviceAddressNV-startAddress-parameter",
+    "VUID-VkTraceRaysIndirectCommand2KHR-callableShaderBindingTableAddress-parameter",
+    "VUID-VkTraceRaysIndirectCommand2KHR-hitShaderBindingTableAddress-parameter",
+    "VUID-VkTraceRaysIndirectCommand2KHR-missShaderBindingTableAddress-parameter",
+    "VUID-VkTraceRaysIndirectCommand2KHR-raygenShaderRecordAddress-parameter",
+    "VUID-VkAccelerationStructureCreateInfoKHR-deviceAddress-parameter",
+    "VUID-VkGeneratedCommandsInfoEXT-preprocessAddress-parameter",
+    "VUID-VkGeneratedCommandsInfoEXT-sequenceCountAddress-parameter",
+    "VUID-VkMicromapCreateInfoEXT-deviceAddress-parameter",
+    "VUID-VkStridedDeviceAddressRegionKHR-deviceAddress-parameter",
 
     // These were added as a fix for https://gitlab.khronos.org/vulkan/vulkan/-/issues/4544
     // But really the "real" fix is banning it earlier https://gitlab.khronos.org/vulkan/vulkan/-/merge_requests/7858
@@ -189,6 +250,8 @@ const char* unimplementable_validation[] = {
     "VUID-VkVideoEncodeInfoKHR-srcPictureResource-parameter",
     // VkPushConstantRange
     "VUID-VkIndirectCommandsPushConstantTokenEXT-updateRange-parameter",
+    // VkExternalMemoryProperties
+    "VUID-VkExternalTensorPropertiesARM-externalMemoryProperties-parameter",
     // Video
     "VUID-VkVideoEncodeAV1RateControlLayerInfoKHR-maxFrameSize-parameter",
     "VUID-VkVideoEncodeAV1RateControlLayerInfoKHR-maxQIndex-parameter",
@@ -303,6 +366,12 @@ const char* unimplementable_validation[] = {
     "VUID-vkGetPhysicalDeviceCooperativeMatrixPropertiesNV-pProperties-parameter",
     "VUID-vkGetPhysicalDeviceSupportedFramebufferMixedSamplesCombinationsNV-pCombinations-parameter",
     "VUID-vkGetPhysicalDeviceOpticalFlowImageFormatsNV-pImageFormatProperties-parameter",
+    "VUID-vkGetPhysicalDeviceCooperativeVectorPropertiesNV-pProperties-parameter",
+    "VUID-VkPresentTimingsInfoEXT-pTimingInfos-parameter",
+    "VUID-vkEnumeratePhysicalDeviceQueueFamilyPerformanceCountersByRegionARM-pCounterDescriptions-parameter",
+    "VUID-vkEnumeratePhysicalDeviceQueueFamilyPerformanceCountersByRegionARM-pCounters-parameter",
+    "VUID-vkGetSwapchainTimeDomainPropertiesEXT-pTimeDomainsCounter-parameter",
+    "VUID-vkGetSwapchainTimingPropertiesEXT-pSwapchainTimingPropertiesCounter-parameter",
     "VUID-vkGetFramebufferTilePropertiesQCOM-pProperties-parameter",
     "VUID-vkGetPhysicalDeviceCooperativeMatrixFlexibleDimensionsPropertiesNV-pProperties-parameter",
     "VUID-VkAccelerationStructureBuildGeometryInfoKHR-ppGeometries-parameter",
@@ -310,6 +379,15 @@ const char* unimplementable_validation[] = {
     "VUID-vkCmdSetDepthClampRangeEXT-pDepthClampRange-parameter",
     "VUID-VkRenderingInputAttachmentIndexInfo-pColorAttachmentInputIndices-parameter",
     "VUID-VkPipelineViewportDepthClampControlCreateInfoEXT-pDepthClampRange-parameter",
+    "VUID-VkTensorCopyARM-pDstOffset-parameter",
+    "VUID-VkTensorCopyARM-pExtent-parameter",
+    "VUID-VkTensorCopyARM-pSrcOffset-parameter",
+    "VUID-VkDataGraphPipelinePropertyQueryResultARM-pData-parameter",
+    "VUID-VkDataGraphPipelineShaderModuleCreateInfoARM-pConstants-parameter",
+    "VUID-VkDataGraphPipelineShaderModuleCreateInfoARM-pSpecializationInfo-parameter",
+    "VUID-vkGetDataGraphPipelineSessionBindPointRequirementsARM-pBindPointRequirements-parameter",
+    "VUID-vkGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM-pQueueFamilyDataGraphProperties-parameter",
+    "VUID-VkGraphicsPipelineCreateInfo-pDynamicStates-04058",
     // These occur in stateless validation when a pointer member is optional and the length member is null
     "VUID-VkDeviceCreateInfo-pEnabledFeatures-parameter",
     "VUID-VkInstanceCreateInfo-pApplicationInfo-parameter",
@@ -567,7 +645,6 @@ const char* unimplementable_validation[] = {
     "VUID-VkPhysicalDeviceClusterAccelerationStructurePropertiesNV-sType-sType",
     "VUID-VkPhysicalDeviceCooperativeVectorPropertiesNV-sType-sType",
     "VUID-VkPhysicalDeviceCopyMemoryIndirectPropertiesKHR-sType-sType",
-    "VUID-VkPhysicalDeviceDataGraphOperationSupportARM-name-parameter",
     "VUID-VkPhysicalDeviceDescriptorBufferTensorPropertiesARM-sType-sType",
     "VUID-VkPhysicalDeviceExternalComputeQueuePropertiesNV-sType-sType",
     "VUID-VkPhysicalDeviceFragmentDensityMapLayeredPropertiesVALVE-sType-sType",
@@ -580,7 +657,8 @@ const char* unimplementable_validation[] = {
     "VUID-VkPhysicalDeviceTensorPropertiesARM-sType-sType",
     "VUID-VkPhysicalDeviceTileMemoryHeapPropertiesQCOM-sType-sType",
     "VUID-VkPhysicalDeviceTileShadingPropertiesQCOM-sType-sType",
-    "VUID-VkPhysicalDevicePresentationPropertiesOHOS-sType-sType",
+    "VUID-VkPhysicalDeviceRayTracingInvocationReorderPropertiesEXT-sType-sType",
+    "VUID-VkPhysicalDeviceShaderLongVectorPropertiesEXT-sType-sType",
 
     // Needs to be correct for VVL to even know about the struct
     "VUID-VkLayerSettingsCreateInfoEXT-sType-sType"
@@ -595,22 +673,95 @@ const char* unimplementable_validation[] = {
     "VUID-VkVideoEncodeAV1SessionParametersCreateInfoKHR-pStdDecoderModelInfo-parameter",
     "VUID-VkVideoEncodeAV1SessionParametersCreateInfoKHR-pStdOperatingPoints-parameter",
 
+    // https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/11382
+    // https://gitlab.khronos.org/vulkan/vulkan/-/issues/4615
+    "VUID-VkVideoBeginCodingInfoKHR-videoSessionParameters-parent",
+    "VUID-VkVideoSessionParametersCreateInfoKHR-videoSessionParametersTemplate-parent",
+
     // Acceleration structure replay related,
     // but VVL has no way of tracking needed info (typically stored offline)
     "VUID-VkAccelerationStructureCreateInfoKHR-deviceAddress-09488"
     "VUID-VkAccelerationStructureCreateInfoKHR-deviceAddress-09489"
     "VUID-VkAccelerationStructureCreateInfoKHR-deviceAddress-09490"
 
-    // If VkDeviceAddress can be zero, we will validate it in cc_buffer_address.h
-    "VUID-VkAccelerationStructureCreateInfoKHR-deviceAddress-parameter",
-    "VUID-VkGeneratedCommandsInfoEXT-preprocessAddress-parameter",
-    "VUID-VkGeneratedCommandsInfoEXT-sequenceCountAddress-parameter",
-    "VUID-VkMicromapCreateInfoEXT-deviceAddress-parameter",
-    "VUID-VkStridedDeviceAddressRegionKHR-deviceAddress-parameter",
+    // These are suppose to be for Buffer/Memory <--> Image
+    // These 3 checks are covered, Image-to-Image is different
+    // Likely needs to just be removed from the spec, but a lot of churn for little reward
+    "VUID-VkCopyImageToImageInfo-dstImage-00207",
+    "VUID-VkCopyImageToImageInfo-dstImage-00208",
+    "VUID-VkCopyImageToImageInfo-dstImage-00209",
+
+    // Can't check for a valid VkDeviceOrHostAddressConstKHR union
+    "VUID-VkAccelerationStructureDenseGeometryFormatTrianglesDataAMDX-compressedData-parameter",
+    "VUID-VkAccelerationStructureGeometryLinearSweptSpheresDataNV-indexData-parameter",
+    "VUID-VkAccelerationStructureGeometryLinearSweptSpheresDataNV-radiusData-parameter",
+    "VUID-VkAccelerationStructureGeometryLinearSweptSpheresDataNV-vertexData-parameter",
+    "VUID-VkAccelerationStructureGeometrySpheresDataNV-indexData-parameter",
+    "VUID-VkAccelerationStructureGeometrySpheresDataNV-radiusData-parameter",
+    "VUID-VkAccelerationStructureGeometrySpheresDataNV-vertexData-parameter",
+    "VUID-VkConvertCooperativeVectorMatrixInfoNV-srcData-parameter",
+    "VUID-VkConvertCooperativeVectorMatrixInfoNV-dstData-parameter",
+
+    // RT pipeline stack size is dynamic, allocated at runtime
+    // how rays behaves in the scene
+    "VUID-vkCmdSetRayTracingPipelineStackSizeKHR-pipelineStackSize-03610",
+
+    // Those VUs are related to replaying AS.
+    // VVL would need to track AS state outside of the application, impossible
+    "VUID-VkAccelerationStructureCreateInfoKHR-deviceAddress-09488",
+    "VUID-VkAccelerationStructureCreateInfoKHR-deviceAddress-09489",
+    "VUID-VkAccelerationStructureCreateInfoKHR-deviceAddress-09490",
+};
+
+// These are things that "could be done" but require a crazy amount of work, for no real usecase
+//
+// Anything here should be here because it was carefully thought over why we don't want it
+const char* not_going_to_do[] = {
+    // These were added for "completeness" (by us!) and serve no real purpose.
+    // 1. VK_EXT_validation_features/VK_EXT_validation_flags are implemented by us and we don't even care
+    //    if the extension name is enabled or not
+    // 2. It would crazy for a layer to suddenly not have VK_EXT_layer_settings work if the extension name is not provided
+    //
+    // Until there is a real world usecase where these are needed, we are just going to defer validating them.
+    "VUID-VkInstanceCreateInfo-pNext-10242",
+    "VUID-VkInstanceCreateInfo-pNext-10243",
+    "VUID-VkInstanceCreateInfo-pNext-10244",
 
     // See issue in VK_EXT_memory_decompression where we discussed why this is not possible
     // without implementing the decompression algorithm
     "VUID-VkDecompressMemoryRegionEXT-decompressedSize-07689",
+
+    // Pointless Ray Tracing VUs
+    "VUID-VkRayTracingShaderGroupCreateInfoKHR-rayTracingPipelineShaderGroupHandleCaptureReplayMixed-03603",
+    "VUID-VkRayTracingShaderGroupCreateInfoKHR-rayTracingPipelineShaderGroupHandleCaptureReplayMixed-03604",
+
+    // Where added "for completeness", but doesn't seem to be possible with any configuration
+    "VUID-vkBindImageMemory-apiVersion-07921",
+    "VUID-VkBindImageMemoryInfo-apiVersion-07921",
+
+    // We tried to add these a while ago, it had constant false positives
+    // The issue is we can't actually determine the size of the image as that is an opaque object
+    // Trying to do this is only going to lead to more bad false positives
+    "VUID-VkCopyBufferToImageInfo2-pRegions-04565",
+    "VUID-VkCopyBufferToImageInfo2KHR-pRegions-04554",
+    "VUID-VkCopyImageToBufferInfo2-pRegions-04566",
+    "VUID-VkCopyImageToBufferInfo2KHR-pRegions-04557",
+    "VUID-VkImageToMemoryCopy-pRegions-09067",
+    "VUID-VkMemoryToImageCopy-pRegions-09062",
+    "VUID-VkResolveImageInfo2-pRegions-00255",
+    "VUID-vkCmdResolveImage-pRegions-00255",
+
+    // Adding a bunch of generated code to check crazy edge cases for an extension that was only ever added to
+    // layer OpenGL ES on Vulkan is not worth it
+    "VUID-VkSamplerCreateInfo-borderColor-04442",
+
+    // Implied by VUID-vkCmdBuildAccelerationStructuresKHR-dstAccelerationStructure-03706
+    "VUID-vkCmdBuildAccelerationStructuresKHR-None-03407",
+    "VUID-vkCmdBuildAccelerationStructuresIndirectKHR-None-03407",
+
+    // https://gitlab.khronos.org/vulkan/vulkan/-/issues/4621
+    // There is no real known use for this as it will break many things prior
+    "VUID-VkSamplerYcbcrConversionCreateInfo-ycbcrRange-02748",
 };
 
 // VUs from deprecated extensions that would require complex codegen to get working
@@ -652,3 +803,4 @@ const char* deprecated_validation[] = {
 };
 
 // clang-format on
+#endif

@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 import type * as Bidi from 'webdriver-bidi-protocol';
+import type { BluetoothEmulation } from '../../api/BluetoothEmulation.js';
+import type { DeviceRequestPrompt } from '../../api/DeviceRequestPrompt.js';
 import { EventEmitter } from '../../common/EventEmitter.js';
 import { disposeSymbol } from '../../util/disposable.js';
 import type { AddPreloadScriptOptions } from './Browser.js';
@@ -94,12 +96,13 @@ export declare class BrowsingContext extends EventEmitter<{
     };
 }> {
     #private;
-    static from(userContext: UserContext, parent: BrowsingContext | undefined, id: string, url: string, originalOpener: string | null): BrowsingContext;
+    static from(userContext: UserContext, parent: BrowsingContext | undefined, id: string, url: string, originalOpener: string | null, clientWindow: string): BrowsingContext;
     readonly defaultRealm: WindowRealm;
     readonly id: string;
     readonly parent: BrowsingContext | undefined;
     readonly userContext: UserContext;
     readonly originalOpener: string | null;
+    readonly windowId: string;
     private constructor();
     get children(): Iterable<BrowsingContext>;
     get closed(): boolean;
@@ -118,6 +121,7 @@ export declare class BrowsingContext extends EventEmitter<{
     print(options?: PrintOptions): Promise<string>;
     handleUserPrompt(options?: HandleUserPromptOptions): Promise<void>;
     setViewport(options?: SetViewportOptions): Promise<void>;
+    setTouchOverride(maxTouchPoints: number | null): Promise<void>;
     performActions(actions: Bidi.Input.SourceActions[]): Promise<void>;
     releaseActions(): Promise<void>;
     createWindowRealm(sandbox: string): WindowRealm;
@@ -134,10 +138,14 @@ export declare class BrowsingContext extends EventEmitter<{
     addInterception(events: [string, ...string[]]): Promise<void>;
     [disposeSymbol](): void;
     deleteCookie(...cookieFilters: Bidi.Storage.CookieFilter[]): Promise<void>;
-    locateNodes(locator: Bidi.BrowsingContext.Locator, startNodes: [Bidi.Script.SharedReference, ...Bidi.Script.SharedReference[]]): Promise<Bidi.Script.NodeRemoteValue[]>;
+    locateNodes(locator: Bidi.BrowsingContext.Locator, startNodes?: Bidi.Script.SharedReference[]): Promise<Bidi.Script.NodeRemoteValue[]>;
     setJavaScriptEnabled(enabled: boolean): Promise<void>;
     isJavaScriptEnabled(): boolean;
     setUserAgent(userAgent: string | null): Promise<void>;
+    setClientHintsOverride(clientHints: Bidi.BidiUaClientHints.Emulation.ClientHintsMetadata | null): Promise<void>;
     setOfflineMode(enabled: boolean): Promise<void>;
+    get bluetooth(): BluetoothEmulation;
+    waitForDevicePrompt(timeout: number, signal?: AbortSignal): Promise<DeviceRequestPrompt>;
+    setExtraHTTPHeaders(headers: Record<string, string>): Promise<void>;
 }
 //# sourceMappingURL=BrowsingContext.d.ts.map

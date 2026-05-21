@@ -17,8 +17,15 @@
 #include "extensions/browser/browser_context_keyed_api_factory.h"
 #include "extensions/browser/event_router.h"
 #include "extensions/browser/extension_function.h"
+#include "extensions/buildflags/buildflags.h"
 
-class Browser;
+#if BUILDFLAG(IS_ANDROID)
+#include "base/android/scoped_java_ref.h"
+#endif
+
+static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
+
+class BrowserWindowInterface;
 class Profile;
 
 namespace sync_sessions {
@@ -30,8 +37,16 @@ namespace extensions {
 class SessionId;
 
 class SessionsGetRecentlyClosedFunction : public ExtensionFunction {
+ public:
+  SessionsGetRecentlyClosedFunction();
+  SessionsGetRecentlyClosedFunction(const SessionsGetRecentlyClosedFunction&) =
+      delete;
+  SessionsGetRecentlyClosedFunction& operator=(
+      const SessionsGetRecentlyClosedFunction&) = delete;
+
  protected:
-  ~SessionsGetRecentlyClosedFunction() override = default;
+  // Ref-counted so protected destructor.
+  ~SessionsGetRecentlyClosedFunction() override;
   ResponseAction Run() override;
   DECLARE_EXTENSION_FUNCTION("sessions.getRecentlyClosed",
                              SESSIONS_GETRECENTLYCLOSED)
@@ -45,6 +60,12 @@ class SessionsGetRecentlyClosedFunction : public ExtensionFunction {
       const sessions::tab_restore::Group& group);
   api::sessions::Session CreateSessionModel(
       const sessions::tab_restore::Entry& entry);
+#if BUILDFLAG(IS_ANDROID)
+  void OnGetRecentlyClosedWindow(
+      const base::android::JavaRef<jobject>& j_tab_model);
+#endif  // BUILDFLAG(IS_ANDROID)
+
+  std::vector<api::sessions::Session> result_;
 };
 
 class SessionsGetDevicesFunction : public ExtensionFunction {
@@ -77,11 +98,13 @@ class SessionsRestoreFunction : public ExtensionFunction {
  private:
   ResponseValue GetRestoredTabResult(content::WebContents* contents);
   ResponseValue GetRestoredWindowResult(int window_id);
-  ResponseValue RestoreMostRecentlyClosed(Browser* browser);
+  ResponseValue RestoreMostRecentlyClosed(BrowserWindowInterface* browser);
   ResponseValue RestoreLocalSession(const SessionId& session_id,
-                                    Browser* browser);
-  ResponseValue RestoreForeignSession(const SessionId& session_id,
-                                      Browser* browser);
+                                    BrowserWindowInterface* browser);
+  ResponseAction RestoreForeignSession(const SessionId& session_id,
+                                       BrowserWindowInterface* browser);
+  void OnRestoreForeignSessionWindows(
+      std::vector<BrowserWindowInterface*> browsers);
 };
 
 class SessionsEventRouter : public sessions::TabRestoreServiceObserver {

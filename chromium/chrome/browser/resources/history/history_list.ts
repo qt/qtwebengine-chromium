@@ -147,10 +147,17 @@ export class HistoryListElement extends HistoryListElementBase {
   accessor searchedTerm: string = '';
   accessor selectedItems: Set<number> = new Set();
   accessor pendingDelete: boolean = false;
-  protected accessor lastFocused_: HTMLElement|null;
-  protected accessor listBlurred_: boolean;
+  protected accessor lastFocused_: HTMLElement|null = null;
+  protected accessor listBlurred_: boolean = false;
   accessor lastSelectedIndex: number = -1;
-  accessor queryState: QueryState;
+  accessor queryState: QueryState = {
+    incremental: false,
+    querying: false,
+    searchTerm: '',
+    after: null,
+    includeUserVisits: true,
+    includeActorVisits: true,
+  };
   accessor scrollTarget: HTMLElement = document.documentElement;
   accessor scrollOffset: number = 0;
   private onHistoryDeletedListenerId_: number|null = null;
@@ -473,10 +480,9 @@ export class HistoryListElement extends HistoryListElementBase {
   }
 
   private deleteItems_(items: HistoryEntry[]): Promise<void> {
-    const removalList = items.map(item => ({
-                                    url: item.url,
-                                    timestamps: item.allTimestamps,
-                                  }));
+    const removalList = items.flatMap(
+        item => Object.entries(item.allTimestamps)
+                    .map(([url, timestamps]) => ({url, timestamps})));
 
     this.pendingDelete = true;
     return this.pageHandler_.removeVisits(removalList);
@@ -561,7 +567,7 @@ export class HistoryListElement extends HistoryListElementBase {
 
     // Handle shift selection. Change the selection state of all items between
     // |path| and |lastSelected| to the selection state of |item|.
-    if (e.detail.shiftKey && this.lastSelectedIndex !== undefined) {
+    if (e.detail.shiftKey && this.lastSelectedIndex !== -1) {
       for (let i = Math.min(index, this.lastSelectedIndex);
            i <= Math.max(index, this.lastSelectedIndex); i++) {
         indices.push(i);
@@ -590,8 +596,8 @@ export class HistoryListElement extends HistoryListElementBase {
       return false;
     }
 
-    const currentItem = this.historyData_[index];
-    const nextItem = this.historyData_[index + 1];
+    const currentItem = this.historyData_[index]!;
+    const nextItem = this.historyData_[index + 1]!;
 
     if (this.searchedTerm) {
       return currentItem.dateShort !== nextItem.dateShort;
@@ -611,8 +617,8 @@ export class HistoryListElement extends HistoryListElementBase {
       return false;
     }
     return i === 0 ||
-        this.historyData_[i].dateRelativeDay !==
-        this.historyData_[i - 1].dateRelativeDay;
+        this.historyData_[i]!.dateRelativeDay !==
+        this.historyData_[i - 1]!.dateRelativeDay;
   }
 
   /**
@@ -621,12 +627,12 @@ export class HistoryListElement extends HistoryListElementBase {
    */
   protected isCardEnd_(_item: HistoryEntry, i: number): boolean {
     const length = this.historyData_.length;
-    if (i === undefined || length === 0 || i > length - 1) {
+    if (length === 0 || i > length - 1) {
       return false;
     }
     return i === length - 1 ||
-        this.historyData_[i].dateRelativeDay !==
-        this.historyData_[i + 1].dateRelativeDay;
+        this.historyData_[i]!.dateRelativeDay !==
+        this.historyData_[i + 1]!.dateRelativeDay;
   }
 
   protected hasResults_(): boolean {
@@ -649,27 +655,18 @@ export class HistoryListElement extends HistoryListElementBase {
       return;
     }
 
-    let currentDate = results[0].dateRelativeDay;
+    let currentDate = results[0]!.dateRelativeDay;
 
-    for (let i = 0; i < results.length; i++) {
+    for (const result of results) {
       // Sets the default values for these fields to prevent undefined types.
-      results[i].selected = false;
-      results[i].readableTimestamp =
-          info.term === '' ? results[i].dateTimeOfDay : results[i].dateShort;
+      result.selected = false;
+      result.readableTimestamp =
+          info.term === '' ? result.dateTimeOfDay : result.dateShort;
 
-      if (results[i].dateRelativeDay !== currentDate) {
-        currentDate = results[i].dateRelativeDay;
+      if (result.dateRelativeDay !== currentDate) {
+        currentDate = result.dateRelativeDay;
       }
     }
-  }
-
-  private getHistoryEmbeddingsMatches_(): HistoryEntry[] {
-    return this.historyData_.slice(0, 3);
-  }
-
-  private showHistoryEmbeddings_(): boolean {
-    return loadTimeData.getBoolean('enableHistoryEmbeddings') &&
-        !!this.searchedTerm && this.historyData_?.length > 0;
   }
 
   private onIsActiveChanged_() {
@@ -727,7 +724,7 @@ export class HistoryListElement extends HistoryListElementBase {
 
   private getSelectedEntries_(): HistoryEntry[] {
     // `selectedItems` is a Set<number> of row-indexes.
-    return Array.from(this.selectedItems, idx => this.historyData_[idx]);
+    return Array.from(this.selectedItems, idx => this.historyData_[idx]!);
   }
 }
 

@@ -45,7 +45,6 @@
 #include "dawn/native/ValidationUtils_autogen.h"
 #include "dawn/platform/DawnPlatform.h"
 #include "partition_alloc/pointers/raw_ptr.h"
-#include "tint/lang/wgsl/feature_status.h"
 
 // For SwiftShader fallback
 #if defined(DAWN_ENABLE_BACKEND_VULKAN)
@@ -224,8 +223,6 @@ InstanceBase::InstanceBase(const TogglesState& instanceToggles)
 InstanceBase::~InstanceBase() = default;
 
 void InstanceBase::DeleteThis() {
-    // Stop tracking events. See comment on ShutDown.
-    mEventManager.ShutDown();
     mLoggingCallbackInfo = kEmptyLoggingCallbackInfo;
 
     // Flush all remaining callback tasks on all devices and on the instance.

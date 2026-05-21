@@ -58,7 +58,6 @@
 #include "dawn/native/CompilationMessages.h"
 #include "dawn/native/CreatePipelineAsyncEvent.h"
 #include "dawn/native/DawnNative.h"
-#include "dawn/native/DynamicArrayState.h"
 #include "dawn/native/DynamicUploader.h"
 #include "dawn/native/Error.h"
 #include "dawn/native/ErrorData.h"
@@ -74,6 +73,7 @@
 #include "dawn/native/Queue.h"
 #include "dawn/native/RenderBundleEncoder.h"
 #include "dawn/native/RenderPipeline.h"
+#include "dawn/native/ResourceTable.h"
 #include "dawn/native/Sampler.h"
 #include "dawn/native/ShaderModuleParseRequest.h"
 #include "dawn/native/SharedBufferMemory.h"
@@ -321,14 +321,31 @@ DeviceBase::DeviceBase(AdapterBase* adapter,
             }
         },
         nullptr, nullptr};
+    static constexpr WGPULoggingCallbackInfo kDefaultLoggingCallbackInfo = {
+        nullptr,
+        [](WGPULoggingType, WGPUStringView, void*, void*) {
+            static bool calledOnce = false;
+            if (!calledOnce) {
+                calledOnce = true;
+                dawn::WarningLog() << "No Dawn device logging callback callback was set. This is "
+                                      "probably not intended. If you really want to ignore logs "
+                                      "and suppress this message, set the callback explicitly.";
+            }
+        },
+        nullptr, nullptr};
 #else
     static constexpr WGPUUncapturedErrorCallbackInfo kDefaultUncapturedErrorCallbackInfo =
         kEmptyUncapturedErrorCallbackInfo;
+    static constexpr WGPULoggingCallbackInfo kDefaultLoggingCallbackInfo =
+        kEmptyLoggingCallbackInfo;
 #endif  // DAWN_ENABLE_ASSERTS
+
     mUncapturedErrorCallbackInfo = kDefaultUncapturedErrorCallbackInfo;
     if (descriptor->uncapturedErrorCallbackInfo.callback != nullptr) {
         mUncapturedErrorCallbackInfo = descriptor->uncapturedErrorCallbackInfo;
     }
+
+    mLoggingCallbackInfo = kDefaultLoggingCallbackInfo;
 
     AdapterInfo adapterInfo;
     adapter->APIGetInfo(&adapterInfo);
@@ -463,8 +480,8 @@ MaybeError DeviceBase::Initialize(const UnpackedPtr<DeviceDescriptor>& descripto
     mDynamicUploader = std::make_unique<DynamicUploader>(this);
     mCallbackTaskManager = AcquireRef(new CallbackTaskManager());
     mInternalPipelineStore = std::make_unique<InternalPipelineStore>(this);
-    if (HasFeature(Feature::ChromiumExperimentalBindless)) {
-        mDynamicArrayDefaultBindings = std::make_unique<DynamicArrayDefaultBindings>();
+    if (HasFeature(Feature::ChromiumExperimentalSamplingResourceTable)) {
+        mResourceTableDefaultResources = std::make_unique<ResourceTableDefaultResources>();
     }
 
     DAWN_ASSERT(GetPlatform() != nullptr);
@@ -540,7 +557,7 @@ void DeviceBase::WillDropLastExternalRef() {
         // the device - either directly or indirectly. We would need to ensure those tasks don't
         // create new reference cycles, and we would need to continuously try draining the pending
         // tasks to clear out all remaining refs.
-        Destroy();
+        Destroy(DestroyReason::EarlyDestroy);
     }
 
     // Flush last remaining callback tasks.
@@ -584,18 +601,23 @@ void DeviceBase::DestroyObjects() {
 
     // clang-format off
     static constexpr std::array<ObjectType, 21> kObjectTypeDependencyOrder = {
+        // Encoders first, nothing refers to them.
         ObjectType::ComputePassEncoder,
         ObjectType::RenderPassEncoder,
         ObjectType::RenderBundleEncoder,
-        ObjectType::RenderBundle,
         ObjectType::CommandEncoder,
+        // Then CommandBuffer [-> RenderBundle] -> lots of things.
         ObjectType::CommandBuffer,
+        ObjectType::RenderBundle,
+        // Then Pipeline -> PipelineLayout -> BindGroupLayout
+        // and                   BindGroup -> BindGroupLayout.
         ObjectType::RenderPipeline,
         ObjectType::ComputePipeline,
         ObjectType::PipelineLayout,
         ObjectType::BindGroup,
         ObjectType::BindGroupLayout,
         ObjectType::BindGroupLayoutInternal,
+        // And finally resource-like things.
         ObjectType::ShaderModule,
         ObjectType::SharedBufferMemory,
         ObjectType::SharedTextureMemory,
@@ -609,15 +631,18 @@ void DeviceBase::DestroyObjects() {
     // clang-format on
 
     for (ObjectType type : kObjectTypeDependencyOrder) {
-        mObjectLists[type].Destroy();
+        mObjectLists[type].Destroy(DestroyReason::EarlyDestroy);
     }
 }
 
-void DeviceBase::Destroy() {
+void DeviceBase::Destroy(DestroyReason reason) {
     // Skip if we are already destroyed.
     if (mState == State::Destroyed) {
         return;
     }
+
+    // Move away from the Alive state now so that the application cannot use this device anymore.
+    auto state = mState.exchange(State::BeingDisconnected);
 
     // This function may be called re-entrantly inside APITick(). Tick triggers callbacks
     // inside which the application may destroy the device. Thus, we should be careful not
@@ -629,7 +654,7 @@ void DeviceBase::Destroy() {
     // from Tick() whether or not there is any more pending work.
 
     // Skip handling device facilities if they haven't even been created (or failed doing so)
-    if (mState != State::BeingCreated) {
+    if (state != State::BeingCreated) {
         // The device is being destroyed so it will be lost, call the application callback.
         HandleDeviceLost(wgpu::DeviceLostReason::Destroyed, "Device was destroyed.");
 
@@ -645,7 +670,7 @@ void DeviceBase::Destroy() {
     }
 
     // Disconnect the device, depending on which state we are currently in.
-    switch (mState) {
+    switch (state) {
         case State::BeingCreated:
             // The GPU timeline was never started so we don't have to wait.
             break;
@@ -677,7 +702,7 @@ void DeviceBase::Destroy() {
             break;
     }
 
-    if (mState != State::BeingCreated) {
+    if (state != State::BeingCreated) {
         // The GPU timeline is finished.
         mQueue->AssumeCommandsComplete();
         DAWN_ASSERT(mQueue->GetCompletedCommandSerial() >= mQueue->GetLastSubmittedCommandSerial());
@@ -689,7 +714,7 @@ void DeviceBase::Destroy() {
     // implementations of DestroyImpl checks that we are disconnected before doing work.
     mState = State::Disconnected;
 
-    mDynamicArrayDefaultBindings = nullptr;
+    mResourceTableDefaultResources = nullptr;
     mDynamicUploader = nullptr;
     mEmptyBindGroupLayout = nullptr;
     mEmptyPipelineLayout = nullptr;
@@ -704,14 +729,14 @@ void DeviceBase::Destroy() {
     }
 
     // Now that the GPU timeline is empty, destroy the backend device.
-    DestroyImpl();
+    DestroyImpl(reason);
 
     mCaches = nullptr;
     mState = State::Destroyed;
 }
 
 void DeviceBase::APIDestroy() {
-    Destroy();
+    Destroy(DestroyReason::EarlyDestroy);
 }
 
 void DeviceBase::HandleEncoderError(std::unique_ptr<ErrorData> error) {
@@ -916,14 +941,14 @@ Future DeviceBase::APIPopErrorScope(const WGPUPopErrorScopeCallbackInfo& callbac
             WGPUStringView message = kEmptyOutputStringView;
             if (mScope) {
                 // Resolve errors from async tasks
-                for (auto task : mPendingAsyncTasks) {
+                for (auto& pendingTask : mPendingAsyncTasks) {
+                    ErrorGeneratingAsyncTask* task = pendingTask.task.Get();
                     // All the tasks should have completed unless this event was canceled.
-                    DAWN_ASSERT(task.task->GetState() == AsyncTaskState::Completed ||
+                    DAWN_ASSERT(task->IsCompleted() ||
                                 completionType != EventCompletionType::Ready);
-                    if (task.task->GetState() == AsyncTaskState::Completed &&
-                        task.task->IsError() &&
-                        task.captureErrorType == ToWGPUErrorType(task.task->GetErrorType())) {
-                        std::unique_ptr<ErrorData> error = task.task->AcquireError();
+                    if (task->IsCompleted() && task->IsError() &&
+                        pendingTask.captureErrorType == ToWGPUErrorType(task->GetErrorType())) {
+                        std::unique_ptr<ErrorData> error = task->AcquireError();
                         mScope->CaptureError(ToWGPUErrorType(error->GetType()),
                                              error->GetMessage());
                     }
@@ -986,9 +1011,7 @@ MaybeError DeviceBase::ValidateObject(const ApiObjectBase* object) const {
     DAWN_INVALID_IF(object->GetDevice() != this,
                     "%s is associated with %s, and cannot be used with %s.", object,
                     object->GetDevice(), this);
-
-    // TODO(dawn:563): Preserve labels for error objects.
-    DAWN_INVALID_IF(object->IsError(), "%s is invalid.", object);
+    DAWN_INVALID_IF(object->IsError(), "%s is invalid due to a previous error.", object);
 
     return {};
 }
@@ -996,7 +1019,7 @@ MaybeError DeviceBase::ValidateObject(const ApiObjectBase* object) const {
 MaybeError DeviceBase::IsNotErrorObject(const ApiObjectBase* object) const {
     DAWN_ASSERT(!IsValidationEnabled());
     DAWN_ASSERT(object != nullptr);
-    DAWN_INVALID_IF(object->IsError(), "%s is invalid.", object);
+    DAWN_INVALID_IF(object->IsError(), "%s is invalid due to a previous error.", object);
 
     return {};
 }
@@ -1054,10 +1077,10 @@ InternalPipelineStore* DeviceBase::GetInternalPipelineStore() {
     return mInternalPipelineStore.get();
 }
 
-DynamicArrayDefaultBindings* DeviceBase::GetDynamicArrayDefaultBindings() {
-    DAWN_ASSERT(HasFeature(Feature::ChromiumExperimentalBindless));
-    DAWN_ASSERT(mDynamicArrayDefaultBindings != nullptr);
-    return mDynamicArrayDefaultBindings.get();
+ResourceTableDefaultResources* DeviceBase::GetResourceTableDefaultResources() {
+    DAWN_ASSERT(HasFeature(Feature::ChromiumExperimentalSamplingResourceTable));
+    DAWN_ASSERT(mResourceTableDefaultResources != nullptr);
+    return mResourceTableDefaultResources.get();
 }
 
 bool DeviceBase::HasPendingTasks() {
@@ -1270,15 +1293,17 @@ Ref<PipelineCacheBase> DeviceBase::GetOrCreatePipelineCache(const CacheKey& key)
 // Object creation API methods
 
 BindGroupBase* DeviceBase::APICreateBindGroup(const BindGroupDescriptor* descriptor) {
+    auto deviceGuard = UseGuardForCreateBindGroup();
     Ref<BindGroupBase> result;
     if (ConsumedError(CreateBindGroup(descriptor), &result, "calling %s.CreateBindGroup(%s).", this,
                       descriptor)) {
-        return ReturnToAPI(BindGroupBase::MakeError(this, descriptor));
+        return ReturnToAPI(BindGroupBase::MakeError(this, descriptor->label));
     }
     return ReturnToAPI(std::move(result));
 }
 BindGroupLayoutBase* DeviceBase::APICreateBindGroupLayout(
     const BindGroupLayoutDescriptor* descriptor) {
+    auto deviceGuard = UseGuardForCreateBindGroupLayout();
     Ref<BindGroupLayoutBase> result;
     if (ConsumedError(CreateBindGroupLayout(descriptor), &result,
                       "calling %s.CreateBindGroupLayout(%s).", this, descriptor)) {
@@ -1313,7 +1338,7 @@ BufferBase* DeviceBase::APICreateBuffer(const BufferDescriptor* rawDescriptor) {
             // Creating a buffer from a host-mapped pointer doesn't require the lock.
             return CreateBufferImpl(descriptor);
         } else {
-            auto deviceGuard = GetGuard();
+            auto deviceGuard = UseGuardForCreateBuffer();
             return CreateBufferImpl(descriptor);
         }
     })();
@@ -1335,7 +1360,7 @@ BufferBase* DeviceBase::APICreateBuffer(const BufferDescriptor* rawDescriptor) {
     // 3. Mapping at creation. The buffer may be either valid or ErrorBuffer.
     if (rawDescriptor->mappedAtCreation) {
         // MapAtCreation requires the device lock in case it allocates staging memory.
-        auto deviceGuard = GetGuard();
+        auto deviceGuard = UseGuardForCreateBuffer();
 
         MaybeError mapResult =
             fakeOOMAtNativeMap
@@ -1445,7 +1470,16 @@ QuerySetBase* DeviceBase::APICreateQuerySet(const QuerySetDescriptor* descriptor
     }
     return ReturnToAPI(std::move(result));
 }
+ResourceTableBase* DeviceBase::APICreateResourceTable(const ResourceTableDescriptor* descriptor) {
+    Ref<ResourceTableBase> result;
+    if (ConsumedError(CreateResourceTable(descriptor), &result, InternalErrorType::OutOfMemory,
+                      "calling %s.CreateResourceTable(%s).", this, descriptor)) {
+        result = ResourceTableBase::MakeError(this, descriptor);
+    }
+    return ReturnToAPI(std::move(result));
+}
 SamplerBase* DeviceBase::APICreateSampler(const SamplerDescriptor* descriptor) {
+    auto deviceGuard = UseGuardForCreateSampler();
     Ref<SamplerBase> result;
     if (ConsumedError(CreateSampler(descriptor), &result, "calling %s.CreateSampler(%s).", this,
                       descriptor)) {
@@ -1579,6 +1613,7 @@ ShaderModuleBase* DeviceBase::APICreateErrorShaderModule(const ShaderModuleDescr
     return ReturnToAPI(std::move(result));
 }
 TextureBase* DeviceBase::APICreateTexture(const TextureDescriptor* descriptor) {
+    auto deviceGuard = UseGuardForCreateTexture();
     Ref<TextureBase> result;
     if (ConsumedError(CreateTexture(descriptor), &result, InternalErrorType::OutOfMemory,
                       "calling %s.CreateTexture(%s).", this, descriptor)) {
@@ -1778,6 +1813,9 @@ void DeviceBase::ApplyFeatures(const UnpackedPtr<DeviceDescriptor>& deviceDescri
     if (mEnabledFeatures.IsEnabled(Feature::TextureFormatsTier1)) {
         mEnabledFeatures.EnableFeature(Feature::RG11B10UfloatRenderable);
     }
+    if (mEnabledFeatures.IsEnabled(Feature::ChromiumExperimentalSubgroupSizeControl)) {
+        mEnabledFeatures.EnableFeature(Feature::Subgroups);
+    }
 
     if (level == wgpu::FeatureLevel::Core) {
         // Core-defaulting adapters always support the "core-features-and-limits" feature.
@@ -1804,10 +1842,6 @@ void DeviceBase::SetWGSLExtensionAllowList() {
     if (IsToggleEnabled(Toggle::AllowUnsafeAPIs)) {
         mWGSLAllowedFeatures.extensions.insert(
             tint::wgsl::Extension::kChromiumDisableUniformityAnalysis);
-        mWGSLAllowedFeatures.extensions.insert(tint::wgsl::Extension::kChromiumInternalGraphite);
-        // TODO(crbug.com/460481195): Remove once no longer emitted (e.g. by Skia).
-        mWGSLAllowedFeatures.extensions.insert(
-            tint::wgsl::Extension::kChromiumExperimentalImmediate);
     }
     if (mEnabledFeatures.IsEnabled(Feature::DualSourceBlending)) {
         mWGSLAllowedFeatures.extensions.insert(tint::wgsl::Extension::kDualSourceBlending);
@@ -1831,9 +1865,13 @@ void DeviceBase::SetWGSLExtensionAllowList() {
     if (mEnabledFeatures.IsEnabled(Feature::PrimitiveIndex)) {
         mWGSLAllowedFeatures.extensions.insert(tint::wgsl::Extension::kPrimitiveIndex);
     }
-    if (mEnabledFeatures.IsEnabled(Feature::ChromiumExperimentalBindless)) {
+    if (mEnabledFeatures.IsEnabled(Feature::ChromiumExperimentalSamplingResourceTable)) {
         mWGSLAllowedFeatures.extensions.insert(
-            tint::wgsl::Extension::kChromiumExperimentalDynamicBinding);
+            tint::wgsl::Extension::kChromiumExperimentalResourceTable);
+    }
+    if (mEnabledFeatures.IsEnabled(Feature::ChromiumExperimentalSubgroupSizeControl)) {
+        mWGSLAllowedFeatures.extensions.insert(
+            tint::wgsl::Extension::kChromiumExperimentalSubgroupSizeControl);
     }
 
     // Language features are enabled instance-wide.
@@ -2089,12 +2127,19 @@ ResultOrError<Ref<ComputePipelineBase>> DeviceBase::CreateComputePipeline(
     }
 
     MaybeError maybeError;
+    bool errorIsValidation = false;
     {
         SCOPED_DAWN_HISTOGRAM_TIMER_MICROS(GetPlatform(), "CreateComputePipelineUS");
         maybeError = uninitializedComputePipeline->Initialize();
+        auto error = maybeError.AcquireError();
+        if (error != nullptr) {
+            errorIsValidation = error->GetType() == dawn::native::InternalErrorType::Validation;
+        }
+        maybeError = MaybeError(std::move(error));
     }
-    DAWN_HISTOGRAM_BOOLEAN(GetPlatform(), "CreateComputePipelineSuccess", maybeError.IsSuccess());
 
+    DAWN_HISTOGRAM_BOOLEAN(GetPlatform(), "CreateComputePipelineSuccess",
+                           maybeError.IsSuccess() || errorIsValidation);
     DAWN_TRY(std::move(maybeError));
     return useCache ? AddOrGetCachedComputePipeline(std::move(uninitializedComputePipeline))
                     : std::move(uninitializedComputePipeline);
@@ -2231,11 +2276,19 @@ ResultOrError<Ref<RenderPipelineBase>> DeviceBase::CreateRenderPipeline(
     }
 
     MaybeError maybeError;
+    bool errorIsValidation = false;
     {
         SCOPED_DAWN_HISTOGRAM_TIMER_MICROS(GetPlatform(), "CreateRenderPipelineUS");
         maybeError = uninitializedRenderPipeline->Initialize();
+        auto error = maybeError.AcquireError();
+        if (error != nullptr) {
+            errorIsValidation = error->GetType() == dawn::native::InternalErrorType::Validation;
+        }
+        maybeError = MaybeError(std::move(error));
     }
-    DAWN_HISTOGRAM_BOOLEAN(GetPlatform(), "CreateRenderPipelineSuccess", maybeError.IsSuccess());
+
+    DAWN_HISTOGRAM_BOOLEAN(GetPlatform(), "CreateRenderPipelineSuccess",
+                           maybeError.IsSuccess() || errorIsValidation);
 
     DAWN_TRY(std::move(maybeError));
     return useCache ? AddOrGetCachedRenderPipeline(std::move(uninitializedRenderPipeline))
@@ -2262,6 +2315,17 @@ ResultOrError<Ref<RenderPipelineBase>> DeviceBase::CreateUninitializedRenderPipe
                                    this, *descriptor, &appliedDescriptor, allowInternalBinding));
 
     return CreateUninitializedRenderPipelineImpl(Unpack(&appliedDescriptor));
+}
+
+ResultOrError<Ref<ResourceTableBase>> DeviceBase::CreateResourceTable(
+    const ResourceTableDescriptor* descriptor) {
+    DAWN_TRY(ValidateIsAlive());
+    if (IsValidationEnabled()) {
+        DAWN_TRY_CONTEXT(ValidateResourceTableDescriptor(this, descriptor), "validating %s",
+                         descriptor);
+    }
+
+    return CreateResourceTableImpl(descriptor);
 }
 
 ResultOrError<Ref<SamplerBase>> DeviceBase::CreateSampler(const SamplerDescriptor* descriptorOrig) {
@@ -2516,6 +2580,30 @@ bool DeviceBase::ReduceMemoryUsageImpl() {
 
 void DeviceBase::PerformIdleTasksImpl() {}
 
+std::optional<DeviceGuard> DeviceBase::UseGuardForCreateBindGroup() {
+    // Backends with thread-safe Create*Impl() methods can override these to return nullopt.
+    // TODO(crbug.com/475530346): Even with thread-safe Create*Impl() methods, there's still a
+    // potential race between Device::Destroy() and APICreate*() calls without the device lock. We
+    // assume callers are responsible for synchronizing Destroy() calls with object creation.
+    return GetGuard();
+}
+
+std::optional<DeviceGuard> DeviceBase::UseGuardForCreateBindGroupLayout() {
+    return GetGuard();
+}
+
+std::optional<DeviceGuard> DeviceBase::UseGuardForCreateBuffer() {
+    return GetGuard();
+}
+
+std::optional<DeviceGuard> DeviceBase::UseGuardForCreateSampler() {
+    return GetGuard();
+}
+
+std::optional<DeviceGuard> DeviceBase::UseGuardForCreateTexture() {
+    return GetGuard();
+}
+
 bool DeviceBase::ShouldDuplicateNumWorkgroupsForDispatchIndirect(
     ComputePipelineBase* computePipeline) const {
     return false;
@@ -2552,7 +2640,7 @@ bool DeviceBase::CanAddStorageUsageToBufferWithoutSideEffects(wgpu::BufferUsage 
     return true;
 }
 
-bool DeviceBase::NeedsIndirectDrawGPUValidation() const {
+bool DeviceBase::NeedsIndirectGPUValidation() const {
     return true;
 }
 

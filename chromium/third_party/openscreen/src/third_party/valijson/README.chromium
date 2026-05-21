@@ -2,6 +2,7 @@ Name: Valijson
 Short Name: valijson
 URL: https://github.com/tristanpenman/valijson
 Security Critical: yes
+Update Mechanism: Manual
 Shipped: no
 License: BSD-2-Clause
 License File: src/LICENSE

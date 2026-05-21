@@ -106,14 +106,16 @@ class V8_EXPORT_PRIVATE MaglevAssembler : public MacroAssembler {
 #elif defined(V8_TARGET_ARCH_RISCV64)
     return kAllocatableGeneralRegisters - kMaglevExtraScratchRegister -
            kMaglevFlagsRegister;
+#elif defined(V8_TARGET_ARCH_LOONG64)
+    return kAllocatableGeneralRegisters - kMaglevFlagsRegister;
 #else
     return kAllocatableGeneralRegisters;
 #endif
   }
 
-#if defined(V8_TARGET_ARCH_RISCV64)
+#if defined(V8_TARGET_ARCH_RISCV64) || defined(V8_TARGET_ARCH_LOONG64)
   static constexpr Register GetFlagsRegister() { return kMaglevFlagsRegister; }
-#endif  // V8_TARGET_ARCH_RISCV64
+#endif  // V8_TARGET_ARCH_RISCV64 || V8_TARGET_ARCH_LOONG64
 
   static constexpr DoubleRegList GetAllocatableDoubleRegisters() {
     return kAllocatableDoubleRegisters;
@@ -171,6 +173,11 @@ class V8_EXPORT_PRIVATE MaglevAssembler : public MacroAssembler {
                      Label::Distance true_distance, bool fallthrough_when_true,
                      Label* if_false, Label::Distance false_distance,
                      bool fallthrough_when_false);
+#if defined(V8_TARGET_ARCH_LOONG64)
+  void Branch(Register r1, const Operand& r2, Condition condition,
+              Label* if_true, bool fallthrough_when_true, Label* if_false,
+              bool fallthrough_when_false);
+#endif
 
   Register FromAnyToRegister(ConstInput input, Register scratch);
 
@@ -361,7 +368,7 @@ class V8_EXPORT_PRIVATE MaglevAssembler : public MacroAssembler {
 
   inline void MoveHeapNumber(Register dst, double value);
 
-#ifdef V8_TARGET_ARCH_RISCV64
+#if defined(V8_TARGET_ARCH_RISCV64)
   inline Condition CheckSmi(Register src);
   // Abort execution if argument is not a Map, enabled via
   // --debug-code.
@@ -375,6 +382,16 @@ class V8_EXPORT_PRIVATE MaglevAssembler : public MacroAssembler {
   void Assert(Condition cond, AbortReason reason);
   void IsObjectType(Register heap_object, Register scratch1, Register scratch2,
                     InstanceType type);
+#elif defined(V8_TARGET_ARCH_LOONG64)
+  inline Condition CheckSmi(Register src);
+  void Assert(Condition cond, AbortReason reason);
+
+  void Cmp(const Register& rj, const Operand& operand);
+  void Cmp(const Register& rj, const uint32_t imm);
+  void CmpTagged(const Register& rj, const Operand& operand);
+  void CompareRoot(const Register& obj, RootIndex index,
+                   ComparisonMode mode = ComparisonMode::kDefault);
+  void CompareTaggedRoot(const Register& obj, RootIndex index);
 #endif
 
   void TruncateDoubleToInt32(Register dst, DoubleRegister src);
@@ -407,6 +424,9 @@ class V8_EXPORT_PRIVATE MaglevAssembler : public MacroAssembler {
   inline Label* GetDeoptLabel(NodeT* node, DeoptimizeReason reason);
   inline bool IsDeoptLabel(Label* label);
   inline void EmitEagerDeoptStress(Label* label);
+#ifdef V8_DUMPLING
+  inline bool IsTopFrameInterpreted(Label* label);
+#endif  // V8_DUMPLING
   template <typename NodeT>
   inline void EmitEagerDeopt(NodeT* node, DeoptimizeReason reason);
   template <typename NodeT>
@@ -426,6 +446,7 @@ class V8_EXPORT_PRIVATE MaglevAssembler : public MacroAssembler {
   inline void IncrementInt32(Register reg);
   inline void DecrementInt32(Register reg);
   inline void AddInt32(Register reg, int amount);
+  inline void AddInt32(Register reg, Register other);
   inline void AndInt32(Register reg, int mask);
   inline void OrInt32(Register reg, int mask);
   inline void AndInt32(Register reg, Register other);
@@ -435,7 +456,7 @@ class V8_EXPORT_PRIVATE MaglevAssembler : public MacroAssembler {
   inline void LoadAddress(Register dst, MemOperand location);
 
   inline void EmitEnterExitFrame(int extra_slots, StackFrame::Type frame_type,
-                                 Register c_function, Register scratch);
+                                 Register scratch);
 
   inline MemOperand StackSlotOperand(StackSlot slot);
   inline void Move(StackSlot dst, Register src);
@@ -495,8 +516,8 @@ class V8_EXPORT_PRIVATE MaglevAssembler : public MacroAssembler {
                              Label* max, Label* done);
 
   template <typename NodeT>
-  inline void DeoptIfBufferDetached(Register array, Register scratch,
-                                    NodeT* node);
+  inline void DeoptIfBufferNotValid(Register array, Register scratch,
+                                    TypedArrayAccessMode mode, NodeT* node);
 
   inline Condition IsCallableAndNotUndetectable(Register map, Register scratch);
   inline Condition IsNotCallableNorUndetactable(Register map, Register scratch);
@@ -658,6 +679,8 @@ class V8_EXPORT_PRIVATE MaglevAssembler : public MacroAssembler {
   inline void JumpIfNotUndefinedNan(DoubleRegister value, Register scratch,
                                     Label* target,
                                     Label::Distance distance = Label::kFar);
+  inline void JumpIfUndefinedNan(MemOperand operand, Label* target,
+                                 Label::Distance distance = Label::kFar);
 #endif  // V8_ENABLE_UNDEFINED_DOUBLE
   inline void JumpIfHoleNan(DoubleRegister value, Register scratch,
                             Label* target,
@@ -669,6 +692,8 @@ class V8_EXPORT_PRIVATE MaglevAssembler : public MacroAssembler {
                         Label::Distance distance = Label::kFar);
   inline void JumpIfNotNan(DoubleRegister value, Label* target,
                            Label::Distance distance = Label::kFar);
+  inline void JumpIfHoleNan(MemOperand operand, Label* target,
+                            Label::Distance distance = Label::kFar);
   inline void JumpIfNotHoleNan(MemOperand operand, Label* target,
                                Label::Distance distance = Label::kFar);
 
@@ -1008,6 +1033,19 @@ inline bool MaglevAssembler::IsDeoptLabel(Label* label) {
   }
   return false;
 }
+
+#ifdef V8_DUMPLING
+inline bool MaglevAssembler::IsTopFrameInterpreted(Label* label) {
+  DCHECK(IsDeoptLabel(label));
+  for (auto deopt : code_gen_state_->eager_deopts()) {
+    if (deopt->deopt_entry_label() == label) {
+      return deopt->top_frame().type() ==
+             DeoptFrame::FrameType::kInterpretedFrame;
+    }
+  }
+  UNREACHABLE();
+}
+#endif  // V8_DUMPLING
 
 template <typename NodeT>
 inline Label* MaglevAssembler::GetDeoptLabel(NodeT* node,

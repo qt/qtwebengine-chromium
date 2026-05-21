@@ -64,6 +64,14 @@ consoles.console_view(
     },
 )
 
+# TODO(crbug.com/406463490): Can get rid of this if/when the codesearch builders
+# move to the chromium project.
+branches.console_view_entry(
+    console_view = "cronet rotation",
+    builder = "infra:codesearch/codesearch-gen-chromium-cronet",
+    category = "codesearch",
+)
+
 ci.builder(
     name = "Android arm Builder (dbg)",
     branch_selector = branches.selector.ANDROID_BRANCHES,
@@ -444,7 +452,7 @@ ci.thin_tester(
     ),
     targets = targets.bundle(
         targets = [
-            "webview_trichrome_10_cts_tests_gtest",
+            "webview_10_cts_tests_gtest",
         ],
         mixins = [
             "has_native_resultdb_integration",
@@ -1834,6 +1842,7 @@ ci.thin_tester(
     targets = targets.bundle(
         targets = [
             "cronet_gtests",
+            "cronet_python_unittest",
         ],
         mixins = [
             "16-x64-emulator",
@@ -2304,11 +2313,6 @@ ci.builder(
                     "android_10_emulator_gtests",
                     "android_10_isolated_scripts",
                 ],
-                mixins = targets.mixin(
-                    args = [
-                        "--use-persistent-shell",
-                    ],
-                ),
             ),
             "chromium_android_scripts",
         ],
@@ -2446,18 +2450,12 @@ ci.builder(
             ),
             # If you change this, make similar changes in android-x86-code-coverage
             "webview_instrumentation_test_apk_multiple_process_mode": targets.mixin(
-                args = [
-                    "--use-persistent-shell",
-                ],
                 swarming = targets.swarming(
                     shards = 18,
                 ),
             ),
             # If you change this, make similar changes in android-x86-code-coverage
             "webview_instrumentation_test_apk_single_process_mode": targets.mixin(
-                args = [
-                    "--use-persistent-shell",
-                ],
                 # Only multiple process tests run in CQ.
                 ci_only = True,
                 swarming = targets.swarming(
@@ -2479,6 +2477,7 @@ ci.builder(
 
 ci.builder(
     name = "android-10-x86-nofieldtrial-rel",
+    branch_selector = branches.selector.ANDROID_BRANCHES,
     description_html = "Run chromium tests on Android 10 emulators without fieldtrials.",
     builder_spec = builder_config.builder_spec(
         gclient_config = builder_config.gclient_config(
@@ -2521,11 +2520,6 @@ ci.builder(
                     "android_10_emulator_gtests",
                     "android_10_isolated_scripts",
                 ],
-                mixins = targets.mixin(
-                    args = [
-                        "--use-persistent-shell",
-                    ],
-                ),
             ),
             "chromium_android_scripts",
         ],
@@ -2539,6 +2533,7 @@ ci.builder(
             "emulator-4-cores",
             "linux-jammy",
             "x86-64",
+            "retry_only_failed_tests",
         ],
         per_test_modifications = {
             "android_browsertests": targets.mixin(
@@ -2658,7 +2653,6 @@ ci.builder(
             ),
             "webview_instrumentation_test_apk_multiple_process_mode": targets.mixin(
                 args = [
-                    "--use-persistent-shell",
                     "--disable-field-trial-config",
                     "--skia-gold-consider-unsupported",
                 ],
@@ -2668,7 +2662,6 @@ ci.builder(
             ),
             "webview_instrumentation_test_apk_single_process_mode": targets.mixin(
                 args = [
-                    "--use-persistent-shell",
                     "--disable-field-trial-config",
                     "--skia-gold-consider-unsupported",
                 ],
@@ -2867,11 +2860,6 @@ ci.builder(
             "private_code_failure_test",
         ],
         mixins = [
-            targets.mixin(
-                args = [
-                    "--use-persistent-shell",
-                ],
-            ),
             "12-x64-emulator",
             "emulator-8-cores",
             "has_native_resultdb_integration",
@@ -3206,7 +3194,7 @@ ci.builder(
         per_test_modifications = {
             "android_browsertests": targets.mixin(
                 swarming = targets.swarming(
-                    shards = 4,
+                    shards = 7,
                 ),
             ),
             "cc_unittests": targets.mixin(
@@ -4300,7 +4288,7 @@ ci.builder(
         ],
     ),
     targets = targets.bundle(
-        targets = "webview_trichrome_64_cts_hostside_gtests",
+        targets = "webview_64_cts_hostside_gtests",
         mixins = [
             "13-x64-emulator",
             "emulator-8-cores",
@@ -4310,7 +4298,7 @@ ci.builder(
             "retry_only_failed_tests",
         ],
         per_test_modifications = {
-            "webview_trichrome_64_cts_hostside_tests full_mode": targets.mixin(
+            "webview_64_cts_hostside_tests full_mode": targets.mixin(
                 swarming = targets.swarming(
                     shards = 1,
                 ),

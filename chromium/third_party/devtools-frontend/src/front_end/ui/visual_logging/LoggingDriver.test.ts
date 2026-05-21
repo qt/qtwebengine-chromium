@@ -810,9 +810,35 @@ describe('LoggingDriver', () => {
     assert.notStrictEqual(recordResize.firstCall.firstArg.veid, recordResize.lastCall.firstArg.veid);
   });
 
-  it('only logs resize of the outer element', async () => {
+  it('only logs resize of the outer element when disappearing', async () => {
     addLoggableElements();
     const element = document.getElementById('element')!;
+    const child = document.createElement('div');
+    child.setAttribute('jslog', 'TreeItem; track: resize');
+    child.style.width = '100%';
+    child.style.height = '100%';
+    element.appendChild(child);
+
+    await VisualLoggingTesting.LoggingDriver.startLogging({resizeLogThrottler: throttler});
+    const recordResize = sinon.stub(
+        Host.InspectorFrontendHost.InspectorFrontendHostInstance,
+        'recordResize',
+    );
+
+    element.style.width = '0';
+    const [work] = await expectCall(throttle, {callCount: 2});
+
+    sinon.assert.notCalled(recordResize);
+    await work();
+    await expectCalled(recordResize);
+    sinon.assert.calledOnce(recordResize);
+    assert.deepEqual(recordResize.firstCall.firstArg, {veid: getVeId(element), width: 0, height: 0});
+  });
+
+  it('only logs resize of the outer element when appearing', async () => {
+    addLoggableElements();
+    const element = document.getElementById('element')!;
+    element.style.width = '0';
     const child = document.createElement('div');
     child.setAttribute('jslog', 'TreeItem; track: resize');
     child.style.width = '100%';
@@ -833,6 +859,33 @@ describe('LoggingDriver', () => {
     await expectCalled(recordResize);
     sinon.assert.calledOnce(recordResize);
     assert.deepEqual(recordResize.firstCall.firstArg, {veid: getVeId(element), width: 400, height: 300});
+  });
+
+  it('logs regular resize of both elements', async () => {
+    addLoggableElements();
+    const element = document.getElementById('element')!;
+    const child = document.createElement('div');
+    child.setAttribute('jslog', 'TreeItem; track: resize');
+    child.style.width = '100%';
+    child.style.height = '100%';
+    element.appendChild(child);
+
+    await VisualLoggingTesting.LoggingDriver.startLogging({resizeLogThrottler: throttler});
+    const recordResize = sinon.stub(
+        Host.InspectorFrontendHost.InspectorFrontendHostInstance,
+        'recordResize',
+    );
+
+    element.style.width = '400px';
+    const [work] = await expectCall(throttle, {callCount: 2});
+
+    sinon.assert.notCalled(recordResize);
+    await work();
+    await expectCalled(recordResize);
+    sinon.assert.calledTwice(recordResize);
+    assert.sameDeepMembers(
+        [recordResize.firstCall.firstArg, recordResize.lastCall.firstArg],
+        [{veid: getVeId(element), width: 400, height: 300}, {veid: getVeId(child), width: 400, height: 300}]);
   });
 
   it('does not log resize intial impressions due to visibility change', async () => {
@@ -1066,5 +1119,21 @@ describe('LoggingDriver', () => {
     assert.deepInclude(
         VisualLoggingTesting.NonDomState.getNonDomLoggables(parent),
         {loggable, config: {ve: 1, context: '123'}, parent, size: undefined});
+  });
+
+  it('does not log a non-DOM impression twice for the same loggable', async () => {
+    addLoggableElements();
+    const loggable = {};
+    const parent = document.getElementById('parent')!;
+    VisualLoggingTesting.NonDomState.registerLoggable(loggable, {ve: 1, context: '123'}, parent);
+    VisualLoggingTesting.NonDomState.registerLoggable(loggable, {ve: 1, context: '123'}, parent);
+    await VisualLoggingTesting.LoggingDriver.startLogging();
+    sinon.assert.calledOnce(recordImpression);
+
+    assert.sameDeepMembers(recordImpression.firstCall.firstArg.impressions, [
+      {id: getVeId(loggable), type: 1, context: 123, parent: getVeId(parent), width: 0, height: 0},
+      {id: getVeId('#element'), type: 1, context: 42, parent: getVeId(parent), width: 300, height: 300},
+      {id: getVeId(parent), type: 1, width: 300, height: 300},
+    ]);
   });
 });

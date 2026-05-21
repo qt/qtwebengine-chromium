@@ -1,7 +1,7 @@
-/* Copyright (c) 2015-2025 The Khronos Group Inc.
- * Copyright (c) 2015-2025 Valve Corporation
- * Copyright (c) 2015-2025 LunarG, Inc.
- * Copyright (C) 2015-2024 Google Inc.
+/* Copyright (c) 2015-2026 The Khronos Group Inc.
+ * Copyright (c) 2015-2026 Valve Corporation
+ * Copyright (c) 2015-2026 LunarG, Inc.
+ * Copyright (C) 2015-2026 Google Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -193,6 +193,11 @@ bool Device::manual_PreCallValidateCreateImage(VkDevice device, const VkImageCre
                          "includes VK_IMAGE_USAGE_HOST_TRANSFER_BIT, but hostImageCopy feature was not enabled.");
     }
 
+    if (!enabled_features.tileMemoryHeap && (pCreateInfo->usage & VK_IMAGE_USAGE_TILE_MEMORY_BIT_QCOM) != 0) {
+        skip |= LogError("VUID-VkImageCreateInfo-tileMemoryHeap-10766", device, create_info_loc.dot(Field::usage),
+                         "includes VK_IMAGE_USAGE_TILE_MEMORY_BIT_QCOM, but tileMemoryHeap feature was not enabled.");
+    }
+
     static const uint64_t drm_format_mod_linear = 0;
     bool image_create_maybe_linear = false;
     if (pCreateInfo->tiling == VK_IMAGE_TILING_LINEAR) {
@@ -313,10 +318,11 @@ bool Device::manual_PreCallValidateCreateImage(VkDevice device, const VkImageCre
         }
     }
 
-    if ((image_flags & VK_IMAGE_CREATE_DESCRIPTOR_BUFFER_CAPTURE_REPLAY_BIT_EXT) &&
+    if ((image_flags & VK_IMAGE_CREATE_DESCRIPTOR_HEAP_CAPTURE_REPLAY_BIT_EXT) && !enabled_features.descriptorHeapCaptureReplay &&
         !enabled_features.descriptorBufferCaptureReplay) {
         skip |= LogError("VUID-VkImageCreateInfo-flags-08104", device, create_info_loc.dot(Field::flags),
-                         "contains VK_IMAGE_CREATE_DESCRIPTOR_BUFFER_CAPTURE_REPLAY_BIT_EXT but the descriptorBufferCaptureReplay "
+                         "contains VK_IMAGE_CREATE_DESCRIPTOR_HEAP_CAPTURE_REPLAY_BIT_EXT but neither descriptorHeapCaptureReplay "
+                         "nor descriptorBufferCaptureReplay "
                          "feature is not enabled.");
     }
 
@@ -344,16 +350,23 @@ bool Device::manual_PreCallValidateCreateImage(VkDevice device, const VkImageCre
     }
 
     // If Chroma subsampled format ( _420_ or _422_ )
-    if (vkuFormatIsXChromaSubsampled(image_format) && (SafeModulo(pCreateInfo->extent.width, 2) != 0)) {
+    if (vkuFormatIsXChromaSubsampled(image_format) && !IsIntegerMultipleOf(pCreateInfo->extent.width, 2)) {
         skip |=
             LogError("VUID-VkImageCreateInfo-format-04712", device, create_info_loc.dot(Field::format),
                      "(%s) is X Chroma Subsampled (has _422 or _420 suffix) so the width (%" PRIu32 ") must be a multiple of 2.",
                      string_VkFormat(image_format), pCreateInfo->extent.width);
     }
-    if (vkuFormatIsYChromaSubsampled(image_format) && (SafeModulo(pCreateInfo->extent.height, 2) != 0)) {
+    if (vkuFormatIsYChromaSubsampled(image_format) && !IsIntegerMultipleOf(pCreateInfo->extent.height, 2)) {
         skip |= LogError("VUID-VkImageCreateInfo-format-04713", device, create_info_loc.dot(Field::format),
                          "(%s) is Y Chroma Subsampled (has _420 suffix) so the height (%" PRIu32 ") must be a multiple of 2.",
                          string_VkFormat(image_format), pCreateInfo->extent.height);
+    }
+    if (api_version < VK_API_VERSION_1_3 && !enabled_features.ycbcr2plane444Formats) {
+        if (IsValueIn(image_format, {VK_FORMAT_G8_B8R8_2PLANE_444_UNORM, VK_FORMAT_G10X6_B10X6R10X6_2PLANE_444_UNORM_3PACK16,
+                                     VK_FORMAT_G12X4_B12X4R12X4_2PLANE_444_UNORM_3PACK16, VK_FORMAT_G16_B16R16_2PLANE_444_UNORM})) {
+            skip |= LogError("VUID-VkImageCreateInfo-None-12279", device, create_info_loc.dot(Field::format), "is %s.",
+                             string_VkFormat(image_format));
+        }
     }
 
     return skip;
@@ -524,22 +537,22 @@ bool Device::ValidateCreateImageStencilUsage(const VkImageCreateInfo &create_inf
 
     if (vkuFormatIsDepthOrStencil(create_info.format)) {
         if ((image_stencil_struct->stencilUsage & VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT) != 0) {
-            if (create_info.extent.width > device_limits.maxFramebufferWidth) {
+            if (create_info.extent.width > phys_dev_props.limits.maxFramebufferWidth) {
                 skip |= LogError("VUID-VkImageCreateInfo-Format-02536", device,
                                  create_info_loc.pNext(Struct::VkImageStencilUsageCreateInfo, Field::stencilUsage),
                                  "includes VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT and image width (%" PRIu32
                                  ") exceeds device "
                                  "maxFramebufferWidth (%" PRIu32 ")",
-                                 create_info.extent.width, device_limits.maxFramebufferWidth);
+                                 create_info.extent.width, phys_dev_props.limits.maxFramebufferWidth);
             }
 
-            if (create_info.extent.height > device_limits.maxFramebufferHeight) {
+            if (create_info.extent.height > phys_dev_props.limits.maxFramebufferHeight) {
                 skip |= LogError("VUID-VkImageCreateInfo-format-02537", device,
                                  create_info_loc.pNext(Struct::VkImageStencilUsageCreateInfo, Field::stencilUsage),
                                  "includes VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT and image height (%" PRIu32
                                  ") exceeds device "
                                  "maxFramebufferHeight (%" PRIu32 ")",
-                                 create_info.extent.height, device_limits.maxFramebufferHeight);
+                                 create_info.extent.height, phys_dev_props.limits.maxFramebufferHeight);
             }
         }
 
@@ -721,7 +734,7 @@ bool Device::ValidateCreateImageFormatList(const VkImageCreateInfo &create_info,
                     found_compatible = true;
                 }
                 if (!found_compatible) {
-                    std::stringstream ss;
+                    std::ostringstream ss;
                     ss << "Plane 0 " << string_VkFormat(plane_0_format);
                     if (plane_count > 1) {
                         ss << "\nPlane 1 " << string_VkFormat(plane_1_format);
@@ -896,7 +909,8 @@ bool Device::ValidateImageViewCreateInfo(const VkImageViewCreateInfo &create_inf
                              create_info_loc.dot(Field::subresourceRange).dot(Field::layerCount),
                              "(%" PRIu32 ") must be 6 or VK_REMAINING_ARRAY_LAYERS.", create_info.subresourceRange.layerCount);
         }
-        if (create_info.viewType == VK_IMAGE_VIEW_TYPE_CUBE_ARRAY && (create_info.subresourceRange.layerCount % 6) != 0) {
+        if (create_info.viewType == VK_IMAGE_VIEW_TYPE_CUBE_ARRAY &&
+            !IsIntegerMultipleOf(create_info.subresourceRange.layerCount, 6)) {
             skip |= LogError("VUID-VkImageViewCreateInfo-viewType-02961", create_info.image,
                              create_info_loc.dot(Field::subresourceRange).dot(Field::layerCount),
                              "(%" PRIu32 ") must be a multiple of 6 or VK_REMAINING_ARRAY_LAYERS.",
@@ -937,6 +951,15 @@ bool Device::ValidateImageViewCreateInfo(const VkImageViewCreateInfo &create_inf
     skip |= ExportMetalObjectsPNextUtil(VK_EXPORT_METAL_OBJECT_TYPE_METAL_TEXTURE_BIT_EXT, "VUID-VkImageViewCreateInfo-pNext-06787",
                                         create_info_loc, "VK_EXPORT_METAL_OBJECT_TYPE_METAL_TEXTURE_BIT_EXT", create_info.pNext);
 #endif  // VK_USE_PLATFORM_METAL_EXT
+
+    if (api_version < VK_API_VERSION_1_3 && !enabled_features.ycbcr2plane444Formats) {
+        if (IsValueIn(create_info.format,
+                      {VK_FORMAT_G8_B8R8_2PLANE_444_UNORM, VK_FORMAT_G10X6_B10X6R10X6_2PLANE_444_UNORM_3PACK16,
+                       VK_FORMAT_G12X4_B12X4R12X4_2PLANE_444_UNORM_3PACK16, VK_FORMAT_G16_B16R16_2PLANE_444_UNORM})) {
+            skip |= LogError("VUID-VkImageViewCreateInfo-None-12280", device, create_info_loc.dot(Field::format), "is %s.",
+                             string_VkFormat(create_info.format));
+        }
+    }
 
     return skip;
 }

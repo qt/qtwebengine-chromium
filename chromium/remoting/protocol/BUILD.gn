@@ -123,6 +123,8 @@ static_library("protocol") {
     "input_stub.h",
     "it2me_host_authenticator_factory.cc",
     "it2me_host_authenticator_factory.h",
+    "jingle_message_xml_converter.cc",
+    "jingle_message_xml_converter.h",
     "jingle_messages.cc",
     "jingle_messages.h",
     "jingle_session.cc",
@@ -434,6 +436,7 @@ source_set("unit_tests") {
     "ssl_hmac_channel_authenticator_unittest.cc",
     "validating_authenticator_unittest.cc",
     "webrtc_event_log_data_unittest.cc",
+    "webrtc_video_renderer_adapter_unittest.cc",
   ]
 
   if (enable_remoting_host) {

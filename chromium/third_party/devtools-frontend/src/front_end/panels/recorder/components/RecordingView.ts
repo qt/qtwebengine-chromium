@@ -4,8 +4,6 @@
 
 import '../../../ui/kit/kit.js';
 import './ExtensionView.js';
-import './ControlButton.js';
-import './ReplaySection.js';
 
 import * as Host from '../../../core/host/host.js';
 import * as i18n from '../../../core/i18n/i18n.js';
@@ -29,14 +27,15 @@ import * as Models from '../models/models.js';
 import {PlayRecordingSpeed} from '../models/RecordingPlayer.js';
 import * as Actions from '../recorder-actions/recorder-actions.js';
 
+import {ControlButton} from './ControlButton.js';
 import recordingViewStyles from './recordingView.css.js';
-import type {ReplaySectionData, StartReplayEvent} from './ReplaySection.js';
+import {ReplaySection} from './ReplaySection.js';
 import {
   type CopyStepEvent,
   State,
-  type StepView,
-  type StepViewData,
+  StepView,
 } from './StepView.js';
+
 const {html} = Lit;
 
 const UIStrings = {
@@ -141,6 +140,14 @@ const UIStrings = {
    * @description The title of the button that open current recording in Performance panel.
    */
   performancePanel: 'Performance panel',
+  /**
+   * @description The announcement when the code sidebar is opened.
+   */
+  codeSidebarOpened: 'Code sidebar opened',
+  /**
+   * @description The announcement when the code sidebar is closed.
+   */
+  codeSidebarClosed: 'Code sidebar closed'
 } as const;
 const str_ = i18n.i18n.registerUIStrings(
     'panels/recorder/components/RecordingView.ts',
@@ -177,38 +184,6 @@ const networkConditionPresets = [
   SDK.NetworkManager.Slow4GConditions,
   SDK.NetworkManager.Fast4GConditions,
 ];
-
-function converterIdToFlowMetric(
-    converterId: string,
-    ): Host.UserMetrics.RecordingCopiedToClipboard {
-  switch (converterId) {
-    case Models.ConverterIds.ConverterIds.PUPPETEER:
-    case Models.ConverterIds.ConverterIds.PUPPETEER_FIREFOX:
-      return Host.UserMetrics.RecordingCopiedToClipboard.COPIED_RECORDING_WITH_PUPPETEER;
-    case Models.ConverterIds.ConverterIds.JSON:
-      return Host.UserMetrics.RecordingCopiedToClipboard.COPIED_RECORDING_WITH_JSON;
-    case Models.ConverterIds.ConverterIds.REPLAY:
-      return Host.UserMetrics.RecordingCopiedToClipboard.COPIED_RECORDING_WITH_REPLAY;
-    default:
-      return Host.UserMetrics.RecordingCopiedToClipboard.COPIED_RECORDING_WITH_EXTENSION;
-  }
-}
-
-function converterIdToStepMetric(
-    converterId: string,
-    ): Host.UserMetrics.RecordingCopiedToClipboard {
-  switch (converterId) {
-    case Models.ConverterIds.ConverterIds.PUPPETEER:
-    case Models.ConverterIds.ConverterIds.PUPPETEER_FIREFOX:
-      return Host.UserMetrics.RecordingCopiedToClipboard.COPIED_STEP_WITH_PUPPETEER;
-    case Models.ConverterIds.ConverterIds.JSON:
-      return Host.UserMetrics.RecordingCopiedToClipboard.COPIED_STEP_WITH_JSON;
-    case Models.ConverterIds.ConverterIds.REPLAY:
-      return Host.UserMetrics.RecordingCopiedToClipboard.COPIED_STEP_WITH_REPLAY;
-    default:
-      return Host.UserMetrics.RecordingCopiedToClipboard.COPIED_STEP_WITH_EXTENSION;
-  }
-}
 
 function renderSettings({
   settings,
@@ -363,6 +338,7 @@ function renderSettings({
           class=${Lit.Directives.classMap(replaySettingsButtonClassMap)}
           @keydown=${isEditable && onReplaySettingsKeydown}
           @click=${isEditable && onToggleReplaySettings}
+          aria-expanded=${replaySettingsButtonClassMap.expanded ?? false}
           tabindex="0"
           role="button"
           jslog=${VisualLogging.action('replay-settings').track({click: true})}
@@ -486,7 +462,7 @@ function renderTextEditor(input: ViewInput, output: ViewOutput): Lit.TemplateRes
   // clang-format off
   return html`
     <div class="text-editor" jslog=${VisualLogging.textField().track({change: true})}>
-      <devtools-text-editor .state=${input.editorState} ${Lit.Directives.ref((editor: Element | undefined) => {
+      <devtools-text-editor .state=${input.editorState} ${Lit.Directives.ref(editor => {
         if (!editor || !(editor instanceof TextEditor.TextEditor.TextEditor)) {
           return;
         }
@@ -549,17 +525,15 @@ function renderReplayOrAbortButton(input: ViewInput): Lit.LitTemplate {
   }
 
   // clang-format off
-    return html`<devtools-replay-section
-        .data=${
-          {
-            settings: input.recorderSettings,
-            replayExtensions: input.replayExtensions,
-          } as ReplaySectionData
-        }
-        .disabled=${input.replayState.isPlaying}
-        @startreplay=${input.onTogglePlaying}
+    return html`<devtools-widget
+        .widgetConfig=${UI.Widget.widgetConfig(ReplaySection, {
+          settings: input.recorderSettings,
+          replayExtensions: input.replayExtensions,
+          onStartReplay: input.onTogglePlaying,
+          disabled: input.replayState.isPlaying,
+        })}
         >
-      </devtools-replay-section>`;
+      </devtools-widget>`;
   // clang-format on
 }
 
@@ -597,65 +571,61 @@ function renderSections(input: ViewInput): Lit.LitTemplate {
               </div>
               <div class="content">
                 <div class="steps">
-                  <devtools-step-view
-                    @click=${input.onStepClick}
-                    @mouseover=${input.onStepHover}
-                    .data=${
-                      {
-                        section,
-                        state: input.getSectionState(section),
-                        isStartOfGroup: true,
-                        isEndOfGroup: section.steps.length === 0,
-                        isFirstSection: i === 0,
-                        isLastSection:
-                          i === input.sections.length - 1 &&
-                          section.steps.length === 0,
-                        isSelected:
-                          input.selectedStep === (section.causingStep || null),
-                        sectionIndex: i,
-                        isRecording: input.isRecording,
-                        isPlaying: input.replayState.isPlaying,
-                        error:
-                          input.getSectionState(section) === State.ERROR
-                            ? input.currentError
-                            : undefined,
-                        hasBreakpoint: false,
-                        removable: input.recording.steps.length > 1 && section.causingStep,
-                      } as StepViewData
-                    }
+                  <devtools-widget
+                    .widgetConfig=${UI.Widget.widgetConfig(StepView, {
+                      section,
+                      state: input.getSectionState(section),
+                      isStartOfGroup: true,
+                      isEndOfGroup: section.steps.length === 0,
+                      isFirstSection: i === 0,
+                      isLastSection:
+                        i === input.sections.length - 1 &&
+                        section.steps.length === 0,
+                      isSelected:
+                        input.selectedStep === (section.causingStep || null),
+                      sectionIndex: i,
+                      isRecording: input.isRecording,
+                      isPlaying: input.replayState.isPlaying,
+                      error:
+                        input.getSectionState(section) === State.ERROR
+                          ? (input.currentError ?? undefined)
+                          : undefined,
+                      hasBreakpoint: false,
+                      removable: input.recording.steps.length > 1 && Boolean(section.causingStep),
+                      onStepClick: input.onStepClick,
+                      onStepHover: input.onStepHover,
+                    })}
                   >
-                  </devtools-step-view>
+                  </devtools-widget>
                   ${section.steps.map(step => {
                     const stepIndex = input.recording.steps.indexOf(step);
                     return html`
-                      <devtools-step-view
-                      @click=${input.onStepClick}
-                      @mouseover=${input.onStepHover}
+                      <devtools-widget
                       @copystep=${input.onCopyStep}
-                      .data=${
-                        {
-                          step,
-                          state: input.getStepState(step),
-                          error: input.currentStep === step ? input.currentError : undefined,
-                          isFirstSection: false,
-                          isLastSection:
-                            i === input.sections.length - 1 && input.recording.steps[input.recording.steps.length - 1] === step,
-                          isStartOfGroup: false,
-                          isEndOfGroup: section.steps[section.steps.length - 1] === step,
-                          stepIndex,
-                          hasBreakpoint: input.breakpointIndexes.has(stepIndex),
-                          sectionIndex: -1,
-                          isRecording: input.isRecording,
-                          isPlaying: input.replayState.isPlaying,
-                          removable: input.recording.steps.length > 1,
-                          builtInConverters: input.builtInConverters,
-                          extensionConverters: input.extensionConverters,
-                          isSelected: input.selectedStep === step,
-                          recorderSettings: input.recorderSettings,
-                        } as StepViewData
-                      }
+                      .widgetConfig=${UI.Widget.widgetConfig(StepView, {
+                        step,
+                        state: input.getStepState(step),
+                        error: input.currentStep === step ? (input.currentError ?? undefined) : undefined,
+                        isFirstSection: false,
+                        isLastSection:
+                          i === input.sections.length - 1 && input.recording.steps[input.recording.steps.length - 1] === step,
+                        isStartOfGroup: false,
+                        isEndOfGroup: section.steps[section.steps.length - 1] === step,
+                        stepIndex,
+                        hasBreakpoint: input.breakpointIndexes.has(stepIndex),
+                        sectionIndex: -1,
+                        isRecording: input.isRecording,
+                        isPlaying: input.replayState.isPlaying,
+                        removable: input.recording.steps.length > 1,
+                        builtInConverters: input.builtInConverters as Converters.Converter.Converter[],
+                        extensionConverters: input.extensionConverters as Converters.Converter.Converter[],
+                        isSelected: input.selectedStep === step,
+                        recorderSettings: input.recorderSettings ?? undefined,
+                        onStepClick: input.onStepClick,
+                        onStepHover: input.onStepHover,
+                      })}
                       jslog=${VisualLogging.section('step').track({click: true})}
-                      ></devtools-step-view>
+                      ></devtools-widget>
                     `;
                   })}
                   ${!input.recordingTogglingInProgress && input.isRecording && i === input.sections.length - 1 ? html`<devtools-button
@@ -790,15 +760,15 @@ interface ViewInput {
   getStepState: (step: Models.Schema.Step) => State;
   onAbortReplay: () => void;
   onMeasurePerformanceClick: (event: Event) => void;
-  onTogglePlaying: (event: StartReplayEvent) => void;
+  onTogglePlaying: (speed: PlayRecordingSpeed, extension?: Extensions.ExtensionManager.Extension) => void;
   onCodeFormatChange: (event: Menus.SelectMenu.SelectMenuItemSelectedEvent) => void;
   onCopyStep: (event: CopyStepEvent) => void;
   onEditTitleButtonClick: (event: Event) => void;
   onNetworkConditionsChange: (event: Event) => void;
   onReplaySettingsKeydown: (event: Event) => void;
   onSelectMenuLabelClick: (event: Event) => void;
-  onStepClick: (event: Event) => void;
-  onStepHover: (event: MouseEvent) => void;
+  onStepClick: (step: Models.Schema.Step|Models.Section.Section) => void;
+  onStepHover: (step: Models.Schema.Step|Models.Section.Section) => void;
   onTimeoutInput: (event: Event) => void;
   onTitleBlur: (event: Event) => void;
   onTitleInputKeyDown: (event: KeyboardEvent) => void;
@@ -844,18 +814,21 @@ export const DEFAULT_VIEW = (input: ViewInput, output: ViewOutput, target: HTMLE
         `}
         ${input.isRecording ? html`<div class="footer">
           <div class="controls">
-            <devtools-control-button
+            <devtools-widget
+              class="control-button"
+              .widgetConfig=${UI.Widget.widgetConfig(ControlButton, {
+                label: footerButtonTitle,
+                shape: 'square',
+                disabled: input.recordingTogglingInProgress,
+                onClick: input.onRecordingFinished,
+              })}
               jslog=${VisualLogging.toggle('toggle-recording').track({click: true})}
-              @click=${input.onRecordingFinished}
-              .disabled=${input.recordingTogglingInProgress}
-              .shape=${'square'}
-              .label=${footerButtonTitle}
               title=${Models.Tooltip.getTooltipForActions(
                 footerButtonTitle,
                 Actions.RecorderActions.START_RECORDING,
               )}
             >
-            </devtools-control-button>
+            </devtools-widget>
           </div>
         </div>`: Lit.nothing}
       </div>
@@ -914,7 +887,7 @@ export class RecordingView extends UI.Widget.Widget {
   }
 
   #isTitleInvalid = false;
-  #selectedStep?: Models.Schema.Step|null;
+  #selectedStep: Models.Schema.Step|null = null;
   #replaySettingsExpanded = false;
   #showCodeView = false;
   #code = '';
@@ -977,11 +950,11 @@ export class RecordingView extends UI.Widget.Widget {
             this.abortReplay?.();
           },
           onMeasurePerformanceClick: this.#handleMeasurePerformanceClickEvent.bind(this),
-          onTogglePlaying: (event: StartReplayEvent) => {
+          onTogglePlaying: (speed: PlayRecordingSpeed, extension?: Extensions.ExtensionManager.Extension) => {
             this.playRecording?.({
               targetPanel: TargetPanel.DEFAULT,
-              speed: event.speed,
-              extension: event.extension,
+              speed,
+              extension,
             });
           },
           onCodeFormatChange: this.#onCodeFormatChange.bind(this),
@@ -1073,19 +1046,16 @@ export class RecordingView extends UI.Widget.Widget {
     return index >= ownIndex ? State.SUCCESS : State.OUTSTANDING;
   }
 
-  #onStepHover = (event: MouseEvent): void => {
-    const stepView = event.target as StepView;
-    const step = stepView.step || stepView.section?.causingStep;
+  #onStepHover = (stepOrSection: Models.Schema.Step|Models.Section.Section): void => {
+    const step = 'type' in stepOrSection ? stepOrSection : stepOrSection.causingStep;
     if (!step || this.#selectedStep) {
       return;
     }
     this.#highlightCodeForStep(step);
   };
 
-  #onStepClick(event: Event): void {
-    event.stopPropagation();
-    const stepView = event.target as StepView;
-    const selectedStep = stepView.step || stepView.section?.causingStep || null;
+  #onStepClick(stepOrSection: Models.Schema.Step|Models.Section.Section): void {
+    const selectedStep = 'type' in stepOrSection ? stepOrSection : stepOrSection.causingStep || null;
     if (this.#selectedStep === selectedStep) {
       return;
     }
@@ -1097,10 +1067,10 @@ export class RecordingView extends UI.Widget.Widget {
   }
 
   #onWrapperClick(): void {
-    if (this.#selectedStep === undefined) {
+    if (!this.#selectedStep) {
       return;
     }
-    this.#selectedStep = undefined;
+    this.#selectedStep = null;
     this.performUpdate();
   }
 
@@ -1199,8 +1169,6 @@ export class RecordingView extends UI.Widget.Widget {
     }
 
     Host.InspectorFrontendHost.InspectorFrontendHostInstance.copyText(text);
-    const metric = step ? converterIdToStepMetric(converter.getId()) : converterIdToFlowMetric(converter.getId());
-    Host.userMetrics.recordingCopiedToClipboard(metric);
   }
 
   #onCopyStepEvent(event: CopyStepEvent): void {
@@ -1229,10 +1197,13 @@ export class RecordingView extends UI.Widget.Widget {
 
   showCodeToggle = (): void => {
     this.#showCodeView = !this.#showCodeView;
-    Host.userMetrics.recordingCodeToggled(
-        this.#showCodeView ? Host.UserMetrics.RecordingCodeToggled.CODE_SHOWN :
-                             Host.UserMetrics.RecordingCodeToggled.CODE_HIDDEN,
-    );
+
+    if (this.#showCodeView) {
+      UI.ARIAUtils.LiveAnnouncer.alert(i18nString(UIStrings.codeSidebarOpened));
+    } else {
+      UI.ARIAUtils.LiveAnnouncer.alert(i18nString(UIStrings.codeSidebarClosed));
+    }
+
     void this.#convertToCode();
   };
 

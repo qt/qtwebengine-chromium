@@ -32,6 +32,7 @@
 #include <string>
 
 #include "src/tint/lang/core/enums.h"
+#include "src/tint/lang/core/type/binding_array.h"
 #include "src/tint/lang/core/type/sampled_texture.h"
 #include "src/tint/lang/core/type/storage_texture.h"
 #include "src/tint/lang/core/type/texture_dimension.h"
@@ -167,7 +168,7 @@ fn f() {
 }
 
 TEST_F(IRToProgramTest, EntryPoint_Vertex) {
-    auto* fn = b.Function("f", ty.vec4<f32>(), core::ir::Function::PipelineStage::kVertex);
+    auto* fn = b.Function("f", ty.vec4f(), core::ir::Function::PipelineStage::kVertex);
     fn->SetReturnBuiltin(core::BuiltinValue::kPosition);
 
     fn->Block()->Append(b.Return(fn, b.Splat<vec4<f32>>(0_f)));
@@ -182,7 +183,7 @@ fn f() -> @builtin(position) vec4<f32> {
 
 TEST_F(IRToProgramTest, EntryPoint_Parameter_BuiltinAndInvariant) {
     auto* fn = b.Function("f", ty.void_(), core::ir::Function::PipelineStage::kFragment);
-    auto* param = b.FunctionParam("input", ty.vec4<f32>());
+    auto* param = b.FunctionParam("input", ty.vec4f());
     param->SetBuiltin(core::BuiltinValue::kPosition);
     param->SetInvariant(true);
     fn->SetParams({param});
@@ -259,7 +260,7 @@ fn f() -> @builtin(sample_mask) u32 {
 }
 
 TEST_F(IRToProgramTest, EntryPoint_ReturnAttribute_Invariant) {
-    auto* fn = b.Function("f", ty.vec4<f32>(), core::ir::Function::PipelineStage::kVertex);
+    auto* fn = b.Function("f", ty.vec4f(), core::ir::Function::PipelineStage::kVertex);
     fn->SetReturnBuiltin(core::BuiltinValue::kPosition);
     fn->SetReturnInvariant(true);
 
@@ -274,7 +275,7 @@ fn f() -> @builtin(position) @invariant vec4<f32> {
 }
 
 TEST_F(IRToProgramTest, EntryPoint_ReturnAttribute_Location) {
-    auto* fn = b.Function("f", ty.vec4<f32>(), core::ir::Function::PipelineStage::kFragment);
+    auto* fn = b.Function("f", ty.vec4f(), core::ir::Function::PipelineStage::kFragment);
     fn->SetReturnLocation(1);
 
     fn->Block()->Append(b.Return(fn, b.Splat<vec4<f32>>(0_f)));
@@ -300,11 +301,11 @@ core::ir::FunctionParam* MakeBuiltinParam(core::ir::Builder& b,
 TEST_F(IRToProgramTest, EntryPoint_ParameterAttribute_Compute) {
     auto* fn = b.ComputeFunction("f", 3_u, 4_u, 5_u);
     fn->SetParams({
-        MakeBuiltinParam(b, ty.vec3<u32>(), core::BuiltinValue::kLocalInvocationId),
+        MakeBuiltinParam(b, ty.vec3u(), core::BuiltinValue::kLocalInvocationId),
         MakeBuiltinParam(b, ty.u32(), core::BuiltinValue::kLocalInvocationIndex),
-        MakeBuiltinParam(b, ty.vec3<u32>(), core::BuiltinValue::kGlobalInvocationId),
-        MakeBuiltinParam(b, ty.vec3<u32>(), core::BuiltinValue::kWorkgroupId),
-        MakeBuiltinParam(b, ty.vec3<u32>(), core::BuiltinValue::kNumWorkgroups),
+        MakeBuiltinParam(b, ty.vec3u(), core::BuiltinValue::kGlobalInvocationId),
+        MakeBuiltinParam(b, ty.vec3u(), core::BuiltinValue::kWorkgroupId),
+        MakeBuiltinParam(b, ty.vec3u(), core::BuiltinValue::kNumWorkgroups),
         MakeBuiltinParam(b, ty.u32(), core::BuiltinValue::kSubgroupInvocationId),
         MakeBuiltinParam(b, ty.u32(), core::BuiltinValue::kSubgroupSize),
     });
@@ -948,6 +949,7 @@ TEST_F(IRToProgramTest, InvalidCharacters) {
         Var("a", true);
         Var("A", true);
         Var("a_", true);
+        Var("_a", true);
         Var("a1", true);
         Var("struct_a", true);
         b.Return(fn);
@@ -965,6 +967,7 @@ fn f() {
   var a : bool = true;
   var A : bool = true;
   var a_ : bool = true;
+  var _a : bool = true;
   var a1 : bool = true;
   var struct_a : bool = true;
 }
@@ -1069,7 +1072,7 @@ TEST_F(IRToProgramTest, BinaryOp_Add) {
     auto* pb = b.FunctionParam("b", ty.i32());
     fn->SetParams({pa, pb});
 
-    b.Append(fn->Block(), [&] { b.Return(fn, b.Add(ty.i32(), pa, pb)); });
+    b.Append(fn->Block(), [&] { b.Return(fn, b.Add(pa, pb)); });
 
     EXPECT_WGSL(R"(
 fn f(a : i32, b : i32) -> i32 {
@@ -1084,7 +1087,7 @@ TEST_F(IRToProgramTest, BinaryOp_Subtract) {
     auto* pb = b.FunctionParam("b", ty.i32());
     fn->SetParams({pa, pb});
 
-    b.Append(fn->Block(), [&] { b.Return(fn, b.Subtract(ty.i32(), pa, pb)); });
+    b.Append(fn->Block(), [&] { b.Return(fn, b.Subtract(pa, pb)); });
 
     EXPECT_WGSL(R"(
 fn f(a : i32, b : i32) -> i32 {
@@ -1099,7 +1102,7 @@ TEST_F(IRToProgramTest, BinaryOp_Multiply) {
     auto* pb = b.FunctionParam("b", ty.i32());
     fn->SetParams({pa, pb});
 
-    b.Append(fn->Block(), [&] { b.Return(fn, b.Multiply(ty.i32(), pa, pb)); });
+    b.Append(fn->Block(), [&] { b.Return(fn, b.Multiply(pa, pb)); });
 
     EXPECT_WGSL(R"(
 fn f(a : i32, b : i32) -> i32 {
@@ -1114,7 +1117,7 @@ TEST_F(IRToProgramTest, BinaryOp_Divide) {
     auto* pb = b.FunctionParam("b", ty.i32());
     fn->SetParams({pa, pb});
 
-    b.Append(fn->Block(), [&] { b.Return(fn, b.Divide(ty.i32(), pa, pb)); });
+    b.Append(fn->Block(), [&] { b.Return(fn, b.Divide(pa, pb)); });
 
     EXPECT_WGSL(R"(
 fn f(a : i32, b : i32) -> i32 {
@@ -1129,7 +1132,7 @@ TEST_F(IRToProgramTest, BinaryOp_Modulo) {
     auto* pb = b.FunctionParam("b", ty.i32());
     fn->SetParams({pa, pb});
 
-    b.Append(fn->Block(), [&] { b.Return(fn, b.Modulo(ty.i32(), pa, pb)); });
+    b.Append(fn->Block(), [&] { b.Return(fn, b.Modulo(pa, pb)); });
 
     EXPECT_WGSL(R"(
 fn f(a : i32, b : i32) -> i32 {
@@ -1144,7 +1147,7 @@ TEST_F(IRToProgramTest, BinaryOp_And) {
     auto* pb = b.FunctionParam("b", ty.i32());
     fn->SetParams({pa, pb});
 
-    b.Append(fn->Block(), [&] { b.Return(fn, b.And(ty.i32(), pa, pb)); });
+    b.Append(fn->Block(), [&] { b.Return(fn, b.And(pa, pb)); });
 
     EXPECT_WGSL(R"(
 fn f(a : i32, b : i32) -> i32 {
@@ -1159,7 +1162,7 @@ TEST_F(IRToProgramTest, BinaryOp_Or) {
     auto* pb = b.FunctionParam("b", ty.i32());
     fn->SetParams({pa, pb});
 
-    b.Append(fn->Block(), [&] { b.Return(fn, b.Or(ty.i32(), pa, pb)); });
+    b.Append(fn->Block(), [&] { b.Return(fn, b.Or(pa, pb)); });
 
     EXPECT_WGSL(R"(
 fn f(a : i32, b : i32) -> i32 {
@@ -1174,7 +1177,7 @@ TEST_F(IRToProgramTest, BinaryOp_Xor) {
     auto* pb = b.FunctionParam("b", ty.i32());
     fn->SetParams({pa, pb});
 
-    b.Append(fn->Block(), [&] { b.Return(fn, b.Xor(ty.i32(), pa, pb)); });
+    b.Append(fn->Block(), [&] { b.Return(fn, b.Xor(pa, pb)); });
 
     EXPECT_WGSL(R"(
 fn f(a : i32, b : i32) -> i32 {
@@ -1279,7 +1282,7 @@ TEST_F(IRToProgramTest, BinaryOp_ShiftLeft) {
     auto* pb = b.FunctionParam("b", ty.u32());
     fn->SetParams({pa, pb});
 
-    b.Append(fn->Block(), [&] { b.Return(fn, b.ShiftLeft(ty.i32(), pa, pb)); });
+    b.Append(fn->Block(), [&] { b.Return(fn, b.ShiftLeft(pa, pb)); });
 
     EXPECT_WGSL(R"(
 fn f(a : i32, b : u32) -> i32 {
@@ -1294,7 +1297,7 @@ TEST_F(IRToProgramTest, BinaryOp_ShiftRight) {
     auto* pb = b.FunctionParam("b", ty.u32());
     fn->SetParams({pa, pb});
 
-    b.Append(fn->Block(), [&] { b.Return(fn, b.ShiftRight(ty.i32(), pa, pb)); });
+    b.Append(fn->Block(), [&] { b.Return(fn, b.ShiftRight(pa, pb)); });
 
     EXPECT_WGSL(R"(
 fn f(a : i32, b : u32) -> i32 {
@@ -1418,6 +1421,27 @@ TEST_F(IRToProgramTest, TypeConstruct_array) {
     EXPECT_WGSL(R"(
 fn f(i : i32) {
   var v : array<i32, 3u> = array<i32, 3u>(i, i, i);
+}
+)");
+}
+
+TEST_F(IRToProgramTest, TypeConstruct_binding_array) {
+    auto* el_ty = ty.sampled_texture(core::type::TextureDimension::k2d, ty.f32());
+    auto* var = Var(ty.ref(handle, ty.binding_array(el_ty, 3u)));
+    var->SetBindingPoint(0, 0);
+
+    mod.root_block->Append(var);
+
+    auto* fn = b.Function("f", ty.void_());
+    auto* i = b.FunctionParam("i", ty.i32());
+    fn->SetParams({i});
+
+    b.Append(fn->Block(), [&] { b.Return(fn); });
+
+    EXPECT_WGSL(R"(
+@group(0u) @binding(0u) var v : binding_array<texture_2d<f32>, 3u>;
+
+fn f(i : i32) {
 }
 )");
 }
@@ -1593,7 +1617,7 @@ fn f(i : bool) {
 
 TEST_F(IRToProgramTest, TypeConvert_vec3i_to_vec3u) {
     auto* fn = b.Function("f", ty.void_());
-    auto* i = b.FunctionParam("i", ty.vec3<i32>());
+    auto* i = b.FunctionParam("i", ty.vec3i());
     fn->SetParams({i});
 
     b.Append(fn->Block(), [&] {
@@ -1610,7 +1634,7 @@ fn f(i : vec3<i32>) {
 
 TEST_F(IRToProgramTest, TypeConvert_vec3u_to_vec3f) {
     auto* fn = b.Function("f", ty.void_());
-    auto* i = b.FunctionParam("i", ty.vec3<u32>());
+    auto* i = b.FunctionParam("i", ty.vec3u());
     fn->SetParams({i});
 
     b.Append(fn->Block(), [&] {
@@ -1895,7 +1919,7 @@ TEST_F(IRToProgramTest, CompoundAssign_Increment) {
 
     b.Append(fn->Block(), [&] {
         auto* v = Var<function, i32>("v");
-        b.Store(v, b.Add(ty.i32(), b.Load(v), 1_i));
+        b.Store(v, b.Add(b.Load(v), 1_i));
 
         b.Return(fn);
     });
@@ -1913,7 +1937,7 @@ TEST_F(IRToProgramTest, CompoundAssign_Decrement) {
 
     b.Append(fn->Block(), [&] {
         auto* v = Var<function, i32>("v");
-        b.Store(v, b.Subtract(ty.i32(), b.Load(v), 1_i));
+        b.Store(v, b.Subtract(b.Load(v), 1_i));
 
         b.Return(fn);
     });
@@ -1931,7 +1955,7 @@ TEST_F(IRToProgramTest, CompoundAssign_Add) {
 
     b.Append(fn->Block(), [&] {
         auto* v = Var<function, i32>("v");
-        b.Store(v, b.Add(ty.i32(), b.Load(v), 8_i));
+        b.Store(v, b.Add(b.Load(v), 8_i));
 
         b.Return(fn);
     });
@@ -1949,7 +1973,7 @@ TEST_F(IRToProgramTest, CompoundAssign_Subtract) {
 
     b.Append(fn->Block(), [&] {
         auto* v = Var<function, i32>("v");
-        b.Store(v, b.Subtract(ty.i32(), b.Load(v), 8_i));
+        b.Store(v, b.Subtract(b.Load(v), 8_i));
 
         b.Return(fn);
     });
@@ -1967,7 +1991,7 @@ TEST_F(IRToProgramTest, CompoundAssign_Multiply) {
 
     b.Append(fn->Block(), [&] {
         auto* v = Var<function, i32>("v");
-        b.Store(v, b.Multiply(ty.i32(), b.Load(v), 8_i));
+        b.Store(v, b.Multiply(b.Load(v), 8_i));
 
         b.Return(fn);
     });
@@ -1985,7 +2009,7 @@ TEST_F(IRToProgramTest, CompoundAssign_Divide) {
 
     b.Append(fn->Block(), [&] {
         auto* v = Var<function, i32>("v");
-        b.Store(v, b.Divide(ty.i32(), b.Load(v), 8_i));
+        b.Store(v, b.Divide(b.Load(v), 8_i));
 
         b.Return(fn);
     });
@@ -2003,7 +2027,7 @@ TEST_F(IRToProgramTest, CompoundAssign_Xor) {
 
     b.Append(fn->Block(), [&] {
         auto* v = Var<function, i32>("v");
-        b.Store(v, b.Xor(ty.i32(), b.Load(v), 8_i));
+        b.Store(v, b.Xor(b.Load(v), 8_i));
 
         b.Return(fn);
     });
@@ -2043,8 +2067,8 @@ TEST_F(IRToProgramTest, LetUsedTwice) {
     fn->SetParams({i});
 
     b.Append(fn->Block(), [&] {
-        auto* v = b.Let("v", b.Multiply(ty.i32(), i, 2_i));
-        b.Return(fn, b.Add(ty.i32(), v, v));
+        auto* v = b.Let("v", b.Multiply(i, 2_i));
+        b.Return(fn, b.Add(v, v));
     });
 
     EXPECT_WGSL(R"(
@@ -2074,10 +2098,10 @@ TEST_F(IRToProgramTest, Load_Reused) {
         auto* tl = b.Load(im);
         auto* sl = b.Load(sampler);
 
-        b.Phony(b.Call<wgsl::ir::BuiltinCall>(ty.vec4<f32>(), wgsl::BuiltinFn::kTextureSample, tl,
-                                              sl, b.Splat(ty.vec2<f32>(), 0_f)));
-        b.Phony(b.Call<wgsl::ir::BuiltinCall>(ty.vec4<f32>(), wgsl::BuiltinFn::kTextureSample, tl,
-                                              sl, b.Splat(ty.vec2<f32>(), 0_f)));
+        b.Phony(b.Call<wgsl::ir::BuiltinCall>(ty.vec4f(), wgsl::BuiltinFn::kTextureSample, tl, sl,
+                                              b.Splat(ty.vec2f(), 0_f)));
+        b.Phony(b.Call<wgsl::ir::BuiltinCall>(ty.vec4f(), wgsl::BuiltinFn::kTextureSample, tl, sl,
+                                              b.Splat(ty.vec2f(), 0_f)));
         b.Return(fn);
     });
 
@@ -2674,7 +2698,7 @@ TEST_F(IRToProgramTest, For_Empty) {
             });
 
             b.Append(loop->Continuing(), [&] {
-                b.Store(i, b.Add(ty.i32(), b.Load(i), 1_i));
+                b.Store(i, b.Add(b.Load(i), 1_i));
                 b.NextIteration(loop);
             });
         });
@@ -2706,7 +2730,7 @@ TEST_F(IRToProgramTest, For_Empty_NoInit) {
         });
 
         b.Append(loop->Continuing(), [&] {
-            b.Store(i, b.Add(ty.i32(), b.Load(i), 1_i));
+            b.Store(i, b.Add(b.Load(i), 1_i));
             b.NextIteration(loop);
         });
 
@@ -2778,7 +2802,7 @@ TEST_F(IRToProgramTest, For_ComplexBody) {
             });
 
             b.Append(loop->Continuing(), [&] {
-                b.Store(i, b.Add(ty.i32(), b.Load(i), 1_i));
+                b.Store(i, b.Add(b.Load(i), 1_i));
                 b.NextIteration(loop);
             });
         });
@@ -2830,7 +2854,7 @@ TEST_F(IRToProgramTest, For_ComplexBody_NoInit) {
         });
 
         b.Append(loop->Continuing(), [&] {
-            b.Store(i, b.Add(ty.i32(), b.Load(i), 1_i));
+            b.Store(i, b.Add(b.Load(i), 1_i));
             b.NextIteration(loop);
         });
 
@@ -2909,7 +2933,7 @@ TEST_F(IRToProgramTest, For_CallInInitCondCont) {
     auto* fn_n = b.Function("n", ty.i32());
     auto* v = b.FunctionParam("v", ty.i32());
     fn_n->SetParams({v});
-    b.Append(fn_n->Block(), [&] { b.Return(fn_n, b.Add(ty.i32(), v, 1_i)); });
+    b.Append(fn_n->Block(), [&] { b.Return(fn_n, b.Add(v, 1_i)); });
 
     auto* fn_f = b.Function("f", ty.void_());
 
@@ -2994,7 +3018,7 @@ TEST_F(IRToProgramTest, For_IncInInit_Cmp) {
 
             b.Append(loop->Initializer(), [&] {
                 auto* load_i = b.Load(i);
-                auto* inc_i = b.Add(ty.u32(), load_i, 1_u);
+                auto* inc_i = b.Add(load_i, 1_u);
                 b.Store(i, inc_i);
                 b.NextIteration(loop);
             });
@@ -3374,7 +3398,7 @@ TEST_F(IRToProgramTest, Loop_VarsDeclaredOutsideAndInside) {
             b.Append(loop->Continuing(), [&] {
                 auto* cont_load_a = b.Load(var_a);
                 auto* cont_load_b = b.Load(var_b);
-                b.Store(var_b, b.Add(ty.i32(), cont_load_a, cont_load_b));
+                b.Store(var_b, b.Add(cont_load_a, cont_load_b));
                 b.NextIteration(loop);
             });
         });
@@ -3509,7 +3533,7 @@ TEST_F(IRToProgramTest, Override_BinaryInitializer) {
         auto* rhs = b.Override("rhs", ty.u32());
         rhs->SetOverrideId(OverrideId{20});
 
-        o = b.Override("o", b.Add<u32>(lhs, rhs));
+        o = b.Override("o", b.Add(lhs, rhs));
     });
 
     auto* fn = b.Function("f", ty.u32());
@@ -3625,8 +3649,8 @@ TEST_F(IRToProgramTest, AllowNonUniformDerivatives) {
         b.Append(if_->True(), [&] {
             auto* tl = b.Load(im);
             auto* sl = b.Load(sampler);
-            b.Phony(b.Call<wgsl::ir::BuiltinCall>(ty.vec4<f32>(), wgsl::BuiltinFn::kTextureSample,
-                                                  tl, sl, b.Splat(ty.vec2<f32>(), 0_f)));
+            b.Phony(b.Call<wgsl::ir::BuiltinCall>(ty.vec4f(), wgsl::BuiltinFn::kTextureSample, tl,
+                                                  sl, b.Splat(ty.vec2f(), 0_f)));
             b.ExitIf(if_);
         });
         b.Return(fn);
@@ -3658,8 +3682,8 @@ TEST_F(IRToProgramTest, AllowNonUniformSubgroups) {
     b.Append(fn->Block(), [&] {  //
         auto* if_ = b.If(b.Load(non_uniform));
         b.Append(if_->True(), [&] {
-            b.Phony(b.Call<wgsl::ir::BuiltinCall>(ty.vec4<u32>(), wgsl::BuiltinFn::kSubgroupBallot,
-                                                  true));
+            b.Phony(
+                b.Call<wgsl::ir::BuiltinCall>(ty.vec4u(), wgsl::BuiltinFn::kSubgroupBallot, true));
             b.ExitIf(if_);
         });
         b.Return(fn);
@@ -3677,24 +3701,6 @@ fn f() {
     _ = subgroupBallot(true);
   }
 }
-)");
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// chromium_internal_graphite
-////////////////////////////////////////////////////////////////////////////////
-TEST_F(IRToProgramTest, Enable_ChromiumInternalGraphite_SubgroupBallot) {
-    b.Append(b.ir.root_block, [&] {
-        auto t = b.Var("T", ty.ref<core::AddressSpace::kHandle>(ty.storage_texture(
-                                core::type::TextureDimension::k2d, core::TexelFormat::kR8Unorm,
-                                core::Access::kRead)));
-        t->SetBindingPoint(0, 0);
-    });
-
-    EXPECT_WGSL(R"(
-enable chromium_internal_graphite;
-
-@group(0u) @binding(0u) var T : texture_storage_2d<r8unorm, read>;
 )");
 }
 

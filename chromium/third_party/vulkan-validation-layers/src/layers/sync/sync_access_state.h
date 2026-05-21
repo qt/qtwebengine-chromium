@@ -1,6 +1,6 @@
-/* Copyright (c) 2019-2025 The Khronos Group Inc.
- * Copyright (c) 2019-2025 Valve Corporation
- * Copyright (c) 2019-2025 LunarG, Inc.
+/* Copyright (c) 2019-2026 The Khronos Group Inc.
+ * Copyright (c) 2019-2026 Valve Corporation
+ * Copyright (c) 2019-2026 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@
 #include "sync/sync_barrier.h"
 #include "containers/span.h"
 #include <cstring>  // memcpy
+#include <optional>
 
 namespace syncval {
 
@@ -64,7 +65,6 @@ enum SyncHazard {
 
 enum class SyncOrdering : uint8_t {
     kOrderingNone = 0,
-    kNonAttachment = kOrderingNone,
     kColorAttachment = 1,
     kDepthStencilAttachment = 2,
     kRaster = 3,
@@ -310,12 +310,16 @@ struct PendingBarriers {
 
 class AccessState {
   public:
-    AccessState() = default;
     ~AccessState();
     AccessState(const AccessState &other);
-    AccessState &operator=(const AccessState &other);
     AccessState(AccessState &&other);
-    AccessState &operator=(AccessState &&other);
+
+    // Use explicit default construction and assignment to control all places where this happens
+    static AccessState DefaultAccessState() { return {}; }
+    void Assign(const AccessState &other);
+    void Assign(AccessState &&other);
+    AccessState &operator=(const AccessState &other) = delete;
+    AccessState &operator=(AccessState &&other) = delete;
 
     HazardResult DetectHazard(const SyncAccessInfo &usage_info) const;
     HazardResult DetectMarkerHazard() const;
@@ -326,8 +330,8 @@ class AccessState {
                               bool detect_load_op_after_store_op_hazards) const;
 
     HazardResult DetectAsyncHazard(const SyncAccessInfo &usage_info, ResourceUsageTag start_tag, QueueId queue_id) const;
-    HazardResult DetectAsyncHazard(const AccessState &recorded_use, const ResourceUsageRange &tag_range,
-                                   ResourceUsageTag start_tag, QueueId queue_id) const;
+    HazardResult DetectAsyncHazard(const AccessState &recorded_use, const ResourceUsageRange &tag_range, ResourceUsageTag start_tag,
+                                   QueueId queue_id) const;
 
     HazardResult DetectBarrierHazard(const SyncAccessInfo &usage_info, QueueId queue_id, VkPipelineStageFlags2 source_exec_scope,
                                      const SyncAccessFlags &source_access_scope) const;
@@ -343,7 +347,7 @@ class AccessState {
     void Resolve(const AccessState &other);
 
     // Apply a single barrier to the access state
-    void ApplyBarrier(const BarrierScope &barrier_scope, const SyncBarrier &barrier, bool layout_transition = false,
+    bool ApplyBarrier(const BarrierScope &barrier_scope, const SyncBarrier &barrier, bool layout_transition = false,
                       uint32_t layout_transition_handle_index = vvl::kNoIndex32,
                       ResourceUsageTag layout_transition_tag = kInvalidTag);
 
@@ -360,29 +364,6 @@ class AccessState {
     void ApplyPendingLayoutTransition(const PendingLayoutTransition &layout_transition, ResourceUsageTag layout_transition_tag);
 
     void ApplySemaphore(const SemaphoreScope &signal, const SemaphoreScope &wait);
-
-    struct WaitQueueTagPredicate {
-        QueueId queue;
-        ResourceUsageTag tag;
-        bool operator()(const ReadState &read_access) const;       // Read access predicate
-        bool operator()(const AccessState &access) const;  // Write access predicate
-    };
-    friend WaitQueueTagPredicate;
-
-    struct WaitTagPredicate {
-        ResourceUsageTag tag;
-        bool operator()(const ReadState &read_access) const;       // Read access predicate
-        bool operator()(const AccessState &access) const;  // Write access predicate
-    };
-    friend WaitTagPredicate;
-
-    struct WaitAcquirePredicate {
-        ResourceUsageTag present_tag;
-        ResourceUsageTag acquire_tag;
-        bool operator()(const ReadState &read_access) const;       // Read access predicate
-        bool operator()(const AccessState &access) const;  // Write access predicate
-    };
-    friend WaitAcquirePredicate;
 
     // Clear read/write accesses that satisfy the predicate
     // (predicate says which accesses should be considered synchronized).
@@ -433,6 +414,7 @@ class AccessState {
     void UpdateStats(AccessContextStats &stats) const;
 
   private:
+    AccessState() = default;  // not accessible, use DefaultAccessState instead
     void CopySimpleMembers(const AccessState &other);
     bool IsRAWHazard(const SyncAccessInfo &usage_info) const;
 
@@ -451,6 +433,14 @@ class AccessState {
     void MergeReads(const AccessState &other);
     void ClearReadStates();
 
+public:
+    // Index of the next global barrier to apply.
+    // Global barriers are stored in the AccessContext associated with this access state.
+    // If 0, no global barriers have been applied yet.
+    // If greater than 0, then all global barriers with smaller indices are already applied.
+    uint32_t next_global_barrier_index = 0;
+
+  private:
     // The most recent write.
     // NOTE: For reads, each must be "safe" relative to its prior write, so we need
     // only to save the most recent write operation, since anything *transitively*

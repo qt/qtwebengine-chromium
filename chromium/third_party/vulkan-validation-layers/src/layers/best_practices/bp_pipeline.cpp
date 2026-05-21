@@ -1,6 +1,6 @@
-/* Copyright (c) 2015-2025 The Khronos Group Inc.
- * Copyright (c) 2015-2025 Valve Corporation
- * Copyright (c) 2015-2025 LunarG, Inc.
+/* Copyright (c) 2015-2026 The Khronos Group Inc.
+ * Copyright (c) 2015-2026 Valve Corporation
+ * Copyright (c) 2015-2026 LunarG, Inc.
  * Modifications Copyright (C) 2020 Advanced Micro Devices, Inc. All rights reserved.
  * Modifications Copyright (C) 2022 RasterGrid Kft.
  *
@@ -19,9 +19,11 @@
 
 #include "best_practices/best_practices_validation.h"
 #include "best_practices/bp_state.h"
+#include "generated/spirv_grammar_helper.h"
 #include "state_tracker/render_pass_state.h"
 #include "state_tracker/pipeline_state.h"
 #include "chassis/chassis_modification_state.h"
+#include "utils/math_utils.h"
 
 static inline bool FormatHasFullThroughputBlendingArm(VkFormat format) {
     switch (format) {
@@ -157,6 +159,15 @@ bool BestPractices::ValidateCreateGraphicsPipeline(const VkGraphicsPipelineCreat
             skip |= LogPerformanceWarning("BestPractices-AMD-CreatePipelines-MinimizeNumDynamicStates", device, create_info_loc,
                                           "%s Dynamic States usage incurs a performance cost. Ensure that they are truly needed",
                                           VendorSpecificTag(kBPVendorAMD));
+        }
+    }
+
+    for (uint32_t i = 0; i < pipeline.stage_states.size(); i++) {
+        auto& stage_state = pipeline.stage_states[i];
+        const VkShaderStageFlagBits stage = stage_state.GetStage();
+        // Only validate the shader state once when added, not again when linked
+        if ((stage & pipeline.linking_shaders) == 0) {
+            skip |= ValidateShaderStage(stage_state, &pipeline, create_info_loc.dot(Field::pStages, i));
         }
     }
 
@@ -324,9 +335,7 @@ bool BestPractices::ValidateComputeShaderAmd(const spirv::Module& module_state, 
 
     const uint64_t thread_count = local_size.x * local_size.y * local_size.z;
 
-    const bool multiple_64 = ((thread_count % 64) == 0);
-
-    if (!multiple_64) {
+    if (!IsIntegerMultipleOf(thread_count, 64)) {
         skip |= LogPerformanceWarning("BestPractices-AMD-LocalWorkgroup-Multiple64", device, loc,
                                       "%s compute shader with work group dimensions (%s), workgroup size (%" PRIu64
                                       "), is not a multiple of 64. Make the workgroup size a multiple of 64 to obtain best "
@@ -368,7 +377,7 @@ bool BestPractices::PreCallValidateCreatePipelineLayout(VkDevice device, const V
 
         if (pipeline_size > kPipelineLayoutSizeWarningLimitAMD) {
             skip |= LogPerformanceWarning("BestPractices-AMD-CreatePipelinesLayout-KeepLayoutSmall", device, error_obj.location,
-                                          "%s pipeline layout size is too large. Prefer smaller pipeline layouts."
+                                          "%s pipeline layout size is too large. Prefer smaller pipeline layouts. "
                                           "Descriptor sets cost 1 DWORD each. "
                                           "Dynamic buffers cost 2 DWORDs each when robust buffer access is OFF. "
                                           "Dynamic buffers cost 4 DWORDs each when robust buffer access is ON. "
@@ -407,6 +416,7 @@ bool BestPractices::PreCallValidateCreatePipelineLayout(VkDevice device, const V
                         case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
                         case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR:
                         case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV:
+                        case VK_DESCRIPTOR_TYPE_PARTITIONED_ACCELERATION_STRUCTURE_NV:
                             descriptor_type_size = 8;
                             break;
                         case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
@@ -456,25 +466,27 @@ bool BestPractices::PreCallValidateCmdBindPipeline(VkCommandBuffer commandBuffer
                                                    VkPipeline pipeline, const ErrorObject& error_obj) const {
     bool skip = false;
 
-    if (VendorCheckEnabled(kBPVendorAMD) || VendorCheckEnabled(kBPVendorNVIDIA)) {
-        if (IsPipelineUsedInFrame(pipeline)) {
-            skip |= LogPerformanceWarning(
-                "BestPractices-Pipeline-SortAndBind", commandBuffer, error_obj.location,
-                "%s %s Pipeline %s was bound twice in the frame. "
-                "Keep pipeline state changes to a minimum, for example, by sorting draw calls by pipeline.",
-                VendorSpecificTag(kBPVendorAMD), VendorSpecificTag(kBPVendorNVIDIA), FormatHandle(pipeline).c_str());
+    if (pipelineBindPoint == VK_PIPELINE_BIND_POINT_GRAPHICS) {
+        if (VendorCheckEnabled(kBPVendorAMD) || VendorCheckEnabled(kBPVendorNVIDIA)) {
+            if (IsPipelineUsedInFrame(pipeline)) {
+                skip |= LogPerformanceWarning(
+                    "BestPractices-Pipeline-SortAndBind", commandBuffer, error_obj.location,
+                    "%s %s Pipeline %s was bound twice in the frame. "
+                    "Keep pipeline state changes to a minimum, for example, by sorting draw calls by pipeline.",
+                    VendorSpecificTag(kBPVendorAMD), VendorSpecificTag(kBPVendorNVIDIA), FormatHandle(pipeline).c_str());
+            }
         }
-    }
-    if (VendorCheckEnabled(kBPVendorNVIDIA)) {
-        auto cb_state = Get<vvl::CommandBuffer>(commandBuffer);
-        auto& sub_state = bp_state::SubState(*cb_state);
-        const auto& tgm = sub_state.nv.tess_geometry_mesh;
-        if (tgm.num_switches >= kNumBindPipelineTessGeometryMeshSwitchesThresholdNVIDIA && !tgm.threshold_signaled) {
-            LogPerformanceWarning("BestPractices-NVIDIA-BindPipeline-SwitchTessGeometryMesh", commandBuffer, error_obj.location,
-                                  "%s Avoid switching between pipelines with and without tessellation, geometry, task, "
-                                  "and/or mesh shaders. Group draw calls using these shader stages together.",
-                                  VendorSpecificTag(kBPVendorNVIDIA));
-            // Do not set 'skip' so the number of switches gets properly counted after the message.
+        if (VendorCheckEnabled(kBPVendorNVIDIA)) {
+            auto cb_state = Get<vvl::CommandBuffer>(commandBuffer);
+            auto& sub_state = bp_state::SubState(*cb_state);
+            const auto& tgm = sub_state.nv.tess_geometry_mesh;
+            if (tgm.num_switches >= kNumBindPipelineTessGeometryMeshSwitchesThresholdNVIDIA && !tgm.threshold_signaled) {
+                LogPerformanceWarning("BestPractices-NVIDIA-BindPipeline-SwitchTessGeometryMesh", commandBuffer, error_obj.location,
+                                      "%s Avoid switching between pipelines with and without tessellation, geometry, task, "
+                                      "and/or mesh shaders. Group draw calls using these shader stages together.",
+                                      VendorSpecificTag(kBPVendorNVIDIA));
+                // Do not set 'skip' so the number of switches gets properly counted after the message.
+            }
         }
     }
 
@@ -508,12 +520,34 @@ bool BestPractices::ValidateShaderStage(const ShaderStageState& stage_state, con
         }
 
         if (IsExtEnabled(extensions.vk_khr_maintenance4)) {
-            if (module_state.static_data_.has_builtin_workgroup_size) {
+            if (module_state.static_data_.has_built_in_workgroup_size) {
                 skip |= LogWarning("BestPractices-SpirvDeprecated_WorkgroupSize", device, loc,
                                    "is using the SPIR-V Workgroup built-in which SPIR-V 1.6 deprecated. When using "
                                    "VK_KHR_maintenance4 or Vulkan 1.3+, the new SPIR-V LocalSizeId execution mode should be used "
                                    "instead. This can be done by recompiling your shader and targeting Vulkan 1.3+.");
             }
+        }
+    }
+
+    if (entrypoint.stage == VK_SHADER_STAGE_TASK_BIT_EXT || entrypoint.stage == VK_SHADER_STAGE_MESH_BIT_EXT) {
+        spirv::LocalSize local_size = module_state.FindLocalSize(entrypoint);
+        if (local_size.x == 0) {
+            return skip;
+        }
+        bool is_task =
+            entrypoint.execution_model == spv::ExecutionModelTaskEXT || entrypoint.execution_model == spv::ExecutionModelTaskNV;
+
+        // Assume core checks caught any overflow
+        uint64_t invocations =
+            static_cast<uint64_t>(local_size.x) * static_cast<uint64_t>(local_size.y) * static_cast<uint64_t>(local_size.z);
+        const uint32_t preferred_size = is_task ? phys_dev_ext_props.mesh_shader_props_ext.maxPreferredTaskWorkGroupInvocations
+                                                : phys_dev_ext_props.mesh_shader_props_ext.maxPreferredMeshWorkGroupInvocations;
+        if (invocations > preferred_size) {
+            skip |= LogPerformanceWarning(
+                "BestPractices-Mesh-MaxPreferredWorkGroupInvocations", module_state.handle(), loc,
+                "SPIR-V (%s) total invocation size of %" PRIu64 " (%s) is more than %s (%" PRIu32 ").",
+                string_SpvExecutionModel(entrypoint.execution_model), invocations, local_size.ToString().c_str(),
+                is_task ? "maxPreferredTaskWorkGroupInvocations" : "maxPreferredMeshWorkGroupInvocations", preferred_size);
         }
     }
 

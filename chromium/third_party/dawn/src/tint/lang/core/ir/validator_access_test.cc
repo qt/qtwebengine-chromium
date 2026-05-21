@@ -51,7 +51,7 @@ using namespace tint::core::number_suffixes;  // NOLINT
 
 TEST_F(IR_ValidatorTest, Access_NoOperands) {
     auto* f = b.Function("my_func", ty.void_());
-    auto* obj = b.FunctionParam(ty.vec3<f32>());
+    auto* obj = b.FunctionParam(ty.vec3f());
     f->SetParams({obj});
 
     b.Append(f->Block(), [&] {
@@ -71,7 +71,7 @@ TEST_F(IR_ValidatorTest, Access_NoOperands) {
 
 TEST_F(IR_ValidatorTest, Access_NoIndices) {
     auto* f = b.Function("my_func", ty.void_());
-    auto* obj = b.FunctionParam(ty.vec3<f32>());
+    auto* obj = b.FunctionParam(ty.vec3f());
     f->SetParams({obj});
 
     b.Append(f->Block(), [&] {
@@ -90,7 +90,7 @@ TEST_F(IR_ValidatorTest, Access_NoIndices) {
 
 TEST_F(IR_ValidatorTest, Access_NoResults) {
     auto* f = b.Function("my_func", ty.void_());
-    auto* obj = b.FunctionParam(ty.vec3<f32>());
+    auto* obj = b.FunctionParam(ty.vec3f());
     f->SetParams({obj});
 
     b.Append(f->Block(), [&] {
@@ -126,7 +126,7 @@ TEST_F(IR_ValidatorTest, Access_NullObject) {
 
 TEST_F(IR_ValidatorTest, Access_NullIndex) {
     auto* f = b.Function("my_func", ty.void_());
-    auto* obj = b.FunctionParam(ty.vec3<f32>());
+    auto* obj = b.FunctionParam(ty.vec3f());
     f->SetParams({obj});
 
     b.Append(f->Block(), [&] {
@@ -145,7 +145,7 @@ TEST_F(IR_ValidatorTest, Access_NullIndex) {
 
 TEST_F(IR_ValidatorTest, Access_NegativeIndex) {
     auto* f = b.Function("my_func", ty.void_());
-    auto* obj = b.FunctionParam(ty.vec3<f32>());
+    auto* obj = b.FunctionParam(ty.vec3f());
     f->SetParams({obj});
 
     b.Append(f->Block(), [&] {
@@ -367,7 +367,7 @@ TEST_F(IR_ValidatorTest, Access_Incorrect_Type_Ptr_Value) {
 
 TEST_F(IR_ValidatorTest, Access_IndexVectorPtr) {
     auto* f = b.Function("my_func", ty.void_());
-    auto* obj = b.FunctionParam(ty.ptr<private_, vec3<f32>>());
+    auto* obj = b.FunctionParam(ty.ptr<private_, vec3f>());
     f->SetParams({obj});
 
     b.Append(f->Block(), [&] {
@@ -386,7 +386,7 @@ TEST_F(IR_ValidatorTest, Access_IndexVectorPtr) {
 
 TEST_F(IR_ValidatorTest, Access_IndexVectorPtr_WithCapability) {
     auto* f = b.Function("my_func", ty.void_());
-    auto* obj = b.FunctionParam(ty.ptr<private_, vec3<f32>>());
+    auto* obj = b.FunctionParam(ty.ptr<private_, vec3f>());
     f->SetParams({obj});
 
     b.Append(f->Block(), [&] {
@@ -400,7 +400,7 @@ TEST_F(IR_ValidatorTest, Access_IndexVectorPtr_WithCapability) {
 
 TEST_F(IR_ValidatorTest, Access_IndexVectorPtr_ViaMatrixPtr) {
     auto* f = b.Function("my_func", ty.void_());
-    auto* obj = b.FunctionParam(ty.ptr<private_, mat3x2<f32>>());
+    auto* obj = b.FunctionParam(ty.ptr<private_, mat3x2f>());
     f->SetParams({obj});
 
     b.Append(f->Block(), [&] {
@@ -419,7 +419,7 @@ TEST_F(IR_ValidatorTest, Access_IndexVectorPtr_ViaMatrixPtr) {
 
 TEST_F(IR_ValidatorTest, Access_IndexVectorPtr_ViaMatrixPtr_WithCapability) {
     auto* f = b.Function("my_func", ty.void_());
-    auto* obj = b.FunctionParam(ty.ptr<private_, mat3x2<f32>>());
+    auto* obj = b.FunctionParam(ty.ptr<private_, mat3x2f>());
     f->SetParams({obj});
 
     b.Append(f->Block(), [&] {
@@ -475,7 +475,7 @@ TEST_F(IR_ValidatorTest, Access_Incorrect_Ptr_Access) {
 
 TEST_F(IR_ValidatorTest, Access_IndexVector) {
     auto* f = b.Function("my_func", ty.void_());
-    auto* obj = b.FunctionParam(ty.vec3<f32>());
+    auto* obj = b.FunctionParam(ty.vec3f());
     f->SetParams({obj});
 
     b.Append(f->Block(), [&] {
@@ -516,7 +516,7 @@ TEST_F(IR_ValidatorTest, Access_ExtractPointerFromStruct) {
         b.Return(f);
     });
 
-    auto res = ir::Validate(mod, Capabilities{Capability::kAllowPointersAndHandlesInStructures});
+    auto res = ir::Validate(mod, Capabilities{Capability::kMslAllowEntryPointInterface});
     ASSERT_EQ(res, Success) << res.Failure();
 }
 
@@ -883,7 +883,7 @@ TEST_F(IR_ValidatorTest, LoadVectorElement_NullResult) {
     auto* f = b.Function("my_func", ty.void_());
 
     b.Append(f->Block(), [&] {
-        auto* var = b.Var(ty.ptr<function, vec3<f32>>());
+        auto* var = b.Var(ty.ptr<function, vec3f>());
         b.Append(
             mod.CreateInstruction<ir::LoadVectorElement>(nullptr, var->Result(), b.Constant(1_i)));
         b.Return(f);
@@ -920,7 +920,7 @@ TEST_F(IR_ValidatorTest, LoadVectorElement_NullIndex) {
     auto* f = b.Function("my_func", ty.void_());
 
     b.Append(f->Block(), [&] {
-        auto* var = b.Var(ty.ptr<function, vec3<f32>>());
+        auto* var = b.Var(ty.ptr<function, vec3f>());
         b.Append(mod.CreateInstruction<ir::LoadVectorElement>(b.InstructionResult(ty.f32()),
                                                               var->Result(), nullptr));
         b.Return(f);
@@ -939,7 +939,7 @@ TEST_F(IR_ValidatorTest, LoadVectorElement_MissingResult) {
     auto* f = b.Function("my_func", ty.void_());
 
     b.Append(f->Block(), [&] {
-        auto* var = b.Var(ty.ptr<function, vec3<f32>>());
+        auto* var = b.Var(ty.ptr<function, vec3f>());
         auto* load = b.LoadVectorElement(var, b.Constant(1_i));
         load->ClearResults();
         b.Return(f);
@@ -959,7 +959,7 @@ TEST_F(IR_ValidatorTest, LoadVectorElement_MissingOperands) {
     auto* f = b.Function("my_func", ty.void_());
 
     b.Append(f->Block(), [&] {
-        auto* var = b.Var(ty.ptr<function, vec3<f32>>());
+        auto* var = b.Var(ty.ptr<function, vec3f>());
         auto* load = b.LoadVectorElement(var, b.Constant(1_i));
         load->ClearOperands();
         b.Return(f);
@@ -979,7 +979,7 @@ TEST_F(IR_ValidatorTest, LoadVectorElement_InvalidIndexType) {
     auto* f = b.Function("my_func", ty.void_());
 
     b.Append(f->Block(), [&] {
-        auto* var = b.Var(ty.ptr<function, vec3<f32>>());
+        auto* var = b.Var(ty.ptr<function, vec3f>());
         b.LoadVectorElement(var->Result(), 1_f);
         b.Return(f);
     });
@@ -1022,7 +1022,7 @@ TEST_F(IR_ValidatorTest, LoadVectorElement_ConstantIndexOutOfRange) {
     auto* f = b.Function("my_func", ty.void_());
 
     b.Append(f->Block(), [&] {
-        auto* var = b.Var(ty.ptr<function, vec4<f32>>());
+        auto* var = b.Var(ty.ptr<function, vec4f>());
         b.LoadVectorElement(var->Result(), 7_u);
         b.Return(f);
     });
@@ -1060,7 +1060,7 @@ TEST_F(IR_ValidatorTest, StoreVectorElement_NullIndex) {
     auto* f = b.Function("my_func", ty.void_());
 
     b.Append(f->Block(), [&] {
-        auto* var = b.Var(ty.ptr<function, vec3<f32>>());
+        auto* var = b.Var(ty.ptr<function, vec3f>());
         b.Append(
             mod.CreateInstruction<ir::StoreVectorElement>(var->Result(), nullptr, b.Constant(2_f)));
         b.Return(f);
@@ -1079,7 +1079,7 @@ TEST_F(IR_ValidatorTest, StoreVectorElement_NullValue) {
     auto* f = b.Function("my_func", ty.void_());
 
     b.Append(f->Block(), [&] {
-        auto* var = b.Var(ty.ptr<function, vec3<f32>>());
+        auto* var = b.Var(ty.ptr<function, vec3f>());
         b.Append(
             mod.CreateInstruction<ir::StoreVectorElement>(var->Result(), b.Constant(1_i), nullptr));
         b.Return(f);
@@ -1098,7 +1098,7 @@ TEST_F(IR_ValidatorTest, StoreVectorElement_MissingOperands) {
     auto* f = b.Function("my_func", ty.void_());
 
     b.Append(f->Block(), [&] {
-        auto* var = b.Var(ty.ptr<function, vec3<f32>>());
+        auto* var = b.Var(ty.ptr<function, vec3f>());
         auto* store = b.StoreVectorElement(var, b.Constant(1_i), b.Constant(2_f));
         store->ClearOperands();
         b.Return(f);
@@ -1118,7 +1118,7 @@ TEST_F(IR_ValidatorTest, StoreVectorElement_UnexpectedResult) {
     auto* f = b.Function("my_func", ty.void_());
 
     b.Append(f->Block(), [&] {
-        auto* var = b.Var(ty.ptr<function, vec3<f32>>());
+        auto* var = b.Var(ty.ptr<function, vec3f>());
         auto* store = b.StoreVectorElement(var, b.Constant(1_i), b.Constant(2_f));
         store->SetResult(b.InstructionResult(ty.f32()));
         b.Return(f);
@@ -1138,7 +1138,7 @@ TEST_F(IR_ValidatorTest, StoreVectorElement_InvalidIndexType) {
     auto* f = b.Function("my_func", ty.void_());
 
     b.Append(f->Block(), [&] {
-        auto* var = b.Var(ty.ptr<function, vec3<f32>>());
+        auto* var = b.Var(ty.ptr<function, vec3f>());
         b.StoreVectorElement(var->Result(), 1_f, 1_f);
         b.Return(f);
     });
@@ -1181,7 +1181,7 @@ TEST_F(IR_ValidatorTest, StoreVectorElement_ConstantIndexOutOfRange) {
     auto* f = b.Function("my_func", ty.void_());
 
     b.Append(f->Block(), [&] {
-        auto* var = b.Var(ty.ptr<function, vec2<f32>>());
+        auto* var = b.Var(ty.ptr<function, vec2f>());
         b.StoreVectorElement(var->Result(), 7_u, 1_f);
         b.Return(f);
     });
@@ -1200,8 +1200,8 @@ TEST_F(IR_ValidatorTest, StoreVectorElement_ConstantIndexOutOfRange) {
 TEST_F(IR_ValidatorTest, Swizzle_MissingValue) {
     auto* f = b.Function("my_func", ty.void_());
     b.Append(f->Block(), [&] {
-        auto* var = b.Var(ty.ptr(function, ty.vec4<f32>()));
-        auto* swizzle = b.Swizzle(ty.vec4<f32>(), b.Load(var), {3, 2, 1, 0});
+        auto* var = b.Var(ty.ptr(function, ty.vec4f()));
+        auto* swizzle = b.Swizzle(ty.vec4f(), b.Load(var), {3, 2, 1, 0});
         swizzle->ClearOperands();
         b.Return(f);
     });
@@ -1218,8 +1218,8 @@ TEST_F(IR_ValidatorTest, Swizzle_MissingValue) {
 TEST_F(IR_ValidatorTest, Swizzle_NullValue) {
     auto* f = b.Function("my_func", ty.void_());
     b.Append(f->Block(), [&] {
-        auto* var = b.Var(ty.ptr(function, ty.vec4<f32>()));
-        auto* swizzle = b.Swizzle(ty.vec4<f32>(), b.Load(var), {3, 2, 1, 0});
+        auto* var = b.Var(ty.ptr(function, ty.vec4f()));
+        auto* swizzle = b.Swizzle(ty.vec4f(), b.Load(var), {3, 2, 1, 0});
         swizzle->SetOperand(0, nullptr);
         b.Return(f);
     });
@@ -1233,8 +1233,8 @@ TEST_F(IR_ValidatorTest, Swizzle_NullValue) {
 TEST_F(IR_ValidatorTest, Swizzle_MissingResult) {
     auto* f = b.Function("my_func", ty.void_());
     b.Append(f->Block(), [&] {
-        auto* var = b.Var(ty.ptr(function, ty.vec4<f32>()));
-        auto* swizzle = b.Swizzle(ty.vec4<f32>(), b.Load(var), {3, 2, 1, 0});
+        auto* var = b.Var(ty.ptr(function, ty.vec4f()));
+        auto* swizzle = b.Swizzle(ty.vec4f(), b.Load(var), {3, 2, 1, 0});
         swizzle->ClearResults();
         b.Return(f);
     });
@@ -1251,8 +1251,8 @@ TEST_F(IR_ValidatorTest, Swizzle_MissingResult) {
 TEST_F(IR_ValidatorTest, Swizzle_NullResult) {
     auto* f = b.Function("my_func", ty.void_());
     b.Append(f->Block(), [&] {
-        auto* var = b.Var(ty.ptr(function, ty.vec4<f32>()));
-        auto* swizzle = b.Swizzle(ty.vec4<f32>(), b.Load(var), {3, 2, 1, 0});
+        auto* var = b.Var(ty.ptr(function, ty.vec4f()));
+        auto* swizzle = b.Swizzle(ty.vec4f(), b.Load(var), {3, 2, 1, 0});
         swizzle->SetResult(nullptr);
         b.Return(f);
     });
@@ -1268,8 +1268,8 @@ TEST_F(IR_ValidatorTest, Swizzle_NullResult) {
 TEST_F(IR_ValidatorTest, Swizzle_NoIndices) {
     auto* f = b.Function("my_func", ty.void_());
     b.Append(f->Block(), [&] {
-        auto* var = b.Var(ty.ptr(function, ty.vec4<f32>()));
-        auto* swizzle = b.Swizzle(ty.vec4<f32>(), b.Load(var), {3, 2, 1, 0});
+        auto* var = b.Var(ty.ptr(function, ty.vec4f()));
+        auto* swizzle = b.Swizzle(ty.vec4f(), b.Load(var), {3, 2, 1, 0});
         auto indices = Vector<uint32_t, 0>();
         swizzle->SetIndices(std::move(indices));
         b.Return(f);
@@ -1287,8 +1287,8 @@ TEST_F(IR_ValidatorTest, Swizzle_NoIndices) {
 TEST_F(IR_ValidatorTest, Swizzle_TooManyIndices) {
     auto* f = b.Function("my_func", ty.void_());
     b.Append(f->Block(), [&] {
-        auto* var = b.Var(ty.ptr(function, ty.vec4<f32>()));
-        auto* swizzle = b.Swizzle(ty.vec4<f32>(), b.Load(var), {3, 2, 1, 0});
+        auto* var = b.Var(ty.ptr(function, ty.vec4f()));
+        auto* swizzle = b.Swizzle(ty.vec4f(), b.Load(var), {3, 2, 1, 0});
         auto indices = Vector<uint32_t, 5>{1, 1, 1, 1, 1};
         swizzle->SetIndices(std::move(indices));
         b.Return(f);
@@ -1306,8 +1306,8 @@ TEST_F(IR_ValidatorTest, Swizzle_TooManyIndices) {
 TEST_F(IR_ValidatorTest, Swizzle_InvalidIndices) {
     auto* f = b.Function("my_func", ty.void_());
     b.Append(f->Block(), [&] {
-        auto* var = b.Var(ty.ptr(function, ty.vec4<f32>()));
-        auto* swizzle = b.Swizzle(ty.vec4<f32>(), b.Load(var), {3, 2, 1, 0});
+        auto* var = b.Var(ty.ptr(function, ty.vec4f()));
+        auto* swizzle = b.Swizzle(ty.vec4f(), b.Load(var), {3, 2, 1, 0});
         auto indices = Vector<uint32_t, 4>{4, 3, 2, 1};
         swizzle->SetIndices(std::move(indices));
         b.Return(f);
@@ -1326,7 +1326,7 @@ TEST_F(IR_ValidatorTest, Swizzle_NotVector) {
     auto* f = b.Function("my_func", ty.void_());
     b.Append(f->Block(), [&] {
         auto* var = b.Var(ty.ptr(function, ty.f32()));
-        b.Swizzle(ty.vec4<f32>(), b.Load(var), {3, 2, 1, 0});
+        b.Swizzle(ty.vec4f(), b.Load(var), {3, 2, 1, 0});
         b.Return(f);
     });
 
@@ -1343,8 +1343,8 @@ TEST_F(IR_ValidatorTest, Swizzle_NotVector) {
 TEST_F(IR_ValidatorTest, Swizzle_TooSmallResult) {
     auto* f = b.Function("my_func", ty.void_());
     b.Append(f->Block(), [&] {
-        auto* var = b.Var(ty.ptr(function, ty.vec4<f32>()));
-        b.Swizzle(ty.vec2<f32>(), b.Load(var), {3, 2, 1, 0});
+        auto* var = b.Var(ty.ptr(function, ty.vec4f()));
+        b.Swizzle(ty.vec2f(), b.Load(var), {3, 2, 1, 0});
         b.Return(f);
     });
 
@@ -1362,8 +1362,8 @@ TEST_F(IR_ValidatorTest, Swizzle_TooSmallResult) {
 TEST_F(IR_ValidatorTest, Swizzle_TooLargeResult) {
     auto* f = b.Function("my_func", ty.void_());
     b.Append(f->Block(), [&] {
-        auto* var = b.Var(ty.ptr(function, ty.vec4<f32>()));
-        b.Swizzle(ty.vec4<f32>(), b.Load(var), {3, 2});
+        auto* var = b.Var(ty.ptr(function, ty.vec4f()));
+        b.Swizzle(ty.vec4f(), b.Load(var), {3, 2});
         b.Return(f);
     });
 
@@ -1381,8 +1381,8 @@ TEST_F(IR_ValidatorTest, Swizzle_TooLargeResult) {
 TEST_F(IR_ValidatorTest, Swizzle_WrongTypeResult) {
     auto* f = b.Function("my_func", ty.void_());
     b.Append(f->Block(), [&] {
-        auto* var = b.Var(ty.ptr(function, ty.vec4<f32>()));
-        b.Swizzle(ty.vec2<u32>(), b.Load(var), {3, 2});
+        auto* var = b.Var(ty.ptr(function, ty.vec4f()));
+        b.Swizzle(ty.vec2u(), b.Load(var), {3, 2});
         b.Return(f);
     });
 
@@ -1400,8 +1400,8 @@ TEST_F(IR_ValidatorTest, Swizzle_WrongTypeResult) {
 TEST_F(IR_ValidatorTest, Swizzle_OOBIndex) {
     auto* f = b.Function("my_func", ty.void_());
     b.Append(f->Block(), [&] {
-        auto* var = b.Var(ty.ptr(function, ty.vec2<f32>()));
-        b.Swizzle(ty.vec4<f32>(), b.Load(var), {3, 1, 1, 0});
+        auto* var = b.Var(ty.ptr(function, ty.vec2f()));
+        b.Swizzle(ty.vec4f(), b.Load(var), {3, 1, 1, 0});
         b.Return(f);
     });
 

@@ -24,11 +24,11 @@ class MockObserver final : public ServicePublisher::Observer {
  public:
   ~MockObserver() = default;
 
-  MOCK_METHOD0(OnStarted, void());
-  MOCK_METHOD0(OnStopped, void());
-  MOCK_METHOD0(OnSuspended, void());
+  MOCK_METHOD(void, OnStarted, (), (override));
+  MOCK_METHOD(void, OnStopped, (), (override));
+  MOCK_METHOD(void, OnSuspended, (), (override));
 
-  MOCK_METHOD1(OnError, void(const Error& error));
+  MOCK_METHOD(void, OnError, (const Error& error), (override));
 };
 
 class MockMdnsDelegate : public ServicePublisher::Delegate {
@@ -38,12 +38,21 @@ class MockMdnsDelegate : public ServicePublisher::Delegate {
 
   using ServicePublisher::Delegate::SetState;
 
-  MOCK_METHOD1(StartPublisher, void(const ServicePublisher::Config&));
-  MOCK_METHOD1(StartAndSuspendPublisher, void(const ServicePublisher::Config&));
-  MOCK_METHOD0(StopPublisher, void());
-  MOCK_METHOD0(SuspendPublisher, void());
-  MOCK_METHOD1(ResumePublisher, void(const ServicePublisher::Config&));
-  MOCK_METHOD0(RunTasksPublisher, void());
+  MOCK_METHOD(void,
+              StartPublisher,
+              (const ServicePublisher::Config&),
+              (override));
+  MOCK_METHOD(void,
+              StartAndSuspendPublisher,
+              (const ServicePublisher::Config&),
+              (override));
+  MOCK_METHOD(void, StopPublisher, (), (override));
+  MOCK_METHOD(void, SuspendPublisher, (), (override));
+  MOCK_METHOD(void,
+              ResumePublisher,
+              (const ServicePublisher::Config&),
+              (override));
+  MOCK_METHOD(void, RunTasksPublisher, ());
 };
 
 class ServicePublisherTest : public ::testing::Test {

@@ -184,20 +184,43 @@ static int setup_shift(const SwsOp *op, SwsOpPriv *out)
         .setup = ff_sws_setup_q,                                                \
     );
 
-/* 2x2 matrix fits inside SwsOpPriv directly; save an indirect in this case */
-static_assert(sizeof(SwsOpPriv) >= sizeof(float[2][2]), "2x2 dither matrix too large");
 static int setup_dither(const SwsOp *op, SwsOpPriv *out)
 {
-    const int size = 1 << op->dither.size_log2;
-    float *matrix = out->f32;
-    if (size > 2) {
-        matrix = out->ptr = av_mallocz(size * size * sizeof(*matrix));
-        if (!matrix)
-            return AVERROR(ENOMEM);
+    /* 1x1 matrix / single constant */
+    if (!op->dither.size_log2) {
+        const AVRational k = op->dither.matrix[0];
+        out->f32[0] = (float) k.num / k.den;
+        return 0;
     }
+
+    const int size = 1 << op->dither.size_log2;
+    int max_offset = 0;
+    for (int i = 0; i < 4; i++) {
+        const int offset = op->dither.y_offset[i] & (size - 1);
+        max_offset = FFMAX(max_offset, offset);
+    }
+
+    /* Allocate extra rows to allow over-reading for row offsets. Note that
+     * max_offset is currently never larger than 5, so the extra space needed
+     * for this over-allocation is bounded by 5 * size * sizeof(float),
+     * typically 320 bytes for a 16x16 dither matrix. */
+    const int stride = size * sizeof(float);
+    const int num_rows = size + max_offset;
+    float *matrix = out->ptr = av_mallocz(num_rows * stride);
+    if (!matrix)
+        return AVERROR(ENOMEM);
 
     for (int i = 0; i < size * size; i++)
         matrix[i] = (float) op->dither.matrix[i].num / op->dither.matrix[i].den;
+
+    memcpy(&matrix[size * size], matrix, max_offset * stride);
+
+    /* Store relative pointer offset to each row inside extra space */
+    static_assert(sizeof(out->ptr) <= sizeof(uint16_t[4]), ">8 byte pointers not supported");
+    assert(max_offset * stride <= UINT16_MAX);
+    uint16_t *offset = &out->u16[4];
+    for (int i = 0; i < 4; i++)
+        offset[i] = (op->dither.y_offset[i] & (size - 1)) * stride;
 
     return 0;
 }
@@ -206,7 +229,7 @@ static int setup_dither(const SwsOp *op, SwsOpPriv *out)
     DECL_COMMON_PATTERNS(F32, dither##SIZE##EXT,                                \
         .op    = SWS_OP_DITHER,                                                 \
         .setup = setup_dither,                                                  \
-        .free  = (1 << SIZE) > 2 ? av_free : NULL,                              \
+        .free  = (SIZE) ? av_free : NULL,                                       \
         .dither_size = SIZE,                                                    \
     );
 
@@ -616,8 +639,8 @@ static void normalize_clear(SwsOp *op)
         if (!op->c.q4[i].den)
             continue;
         switch (ff_sws_pixel_type_size(op->type)) {
-        case 1: c.u32 = 0x1010101 * priv.u8[i]; break;
-        case 2: c.u32 = priv.u16[i] << 16 | priv.u16[i]; break;
+        case 1: c.u32 = 0x1010101U * priv.u8[i]; break;
+        case 2: c.u32 = (uint32_t)priv.u16[i] << 16 | priv.u16[i]; break;
         case 4: c.u32 = priv.u32[i]; break;
         }
 

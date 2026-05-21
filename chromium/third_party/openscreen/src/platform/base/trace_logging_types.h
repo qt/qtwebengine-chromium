@@ -64,6 +64,8 @@ enum class TraceCategory : int {
 
 const char* ToString(TraceCategory category);
 
+enum class FlowType { kFlowBegin, kFlowStep, kFlowEnd };
+
 }  // namespace openscreen
 
 #endif  // PLATFORM_BASE_TRACE_LOGGING_TYPES_H_

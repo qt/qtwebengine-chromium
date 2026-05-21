@@ -9,6 +9,7 @@ assert(!is_chromeos)
 
 build_webui_tests("build") {
   files = [
+    "history_sync_optin_test.ts",
     "managed_user_profile_notice_test.ts",
     "profile_card_menu_test.ts",
     "profile_customization_test.ts",
@@ -17,6 +18,7 @@ build_webui_tests("build") {
     "profile_switch_test.ts",
     "profile_type_choice_test.ts",
     "sync_confirmation_test.ts",
+    "test_history_sync_optin_browser_proxy.ts",
     "test_manage_profiles_browser_proxy.ts",
     "test_managed_user_profile_notice_browser_proxy.ts",
     "test_profile_customization_browser_proxy.ts",
@@ -53,6 +55,9 @@ build_webui_tests("build") {
     "chrome://sync-confirmation/*|" + rebase_path(
             "$root_gen_dir/chrome/browser/resources/signin/tsc/sync_confirmation/*",
             target_gen_dir),
+    "chrome://history-sync-optin/*|" + rebase_path(
+            "$root_gen_dir/chrome/browser/resources/signin/history_sync_optin/tsc/*",
+            target_gen_dir),
     "chrome://batch-upload/batch_upload.js|" + rebase_path(
             "$root_gen_dir/chrome/browser/resources/signin/batch_upload/tsc/batch_upload.d.ts",
             target_gen_dir),
@@ -61,6 +66,7 @@ build_webui_tests("build") {
   ts_deps = [
     "//chrome/browser/resources/signin:build_ts",
     "//chrome/browser/resources/signin/batch_upload:build_ts",
+    "//chrome/browser/resources/signin/history_sync_optin:build_ts",
     "//chrome/browser/resources/signin/profile_picker:build_ts",
     "//third_party/lit/v3_0:build_ts",
     "//ui/webui/resources/cr_elements:build_ts",

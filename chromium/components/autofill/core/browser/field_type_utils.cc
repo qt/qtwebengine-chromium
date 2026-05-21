@@ -36,8 +36,8 @@ size_t AddressLineIndex(FieldType type) {
       base::MakeFixedFlatMap<FieldType, size_t>({{ADDRESS_HOME_LINE1, 0},
                                                  {ADDRESS_HOME_LINE2, 1},
                                                  {ADDRESS_HOME_LINE3, 2}});
-  if (kAddressLineIndex.contains(type)) {
-    return kAddressLineIndex.at(type);
+  if (auto it = kAddressLineIndex.find(type); it != kAddressLineIndex.end()) {
+    return it->second;
   }
   NOTREACHED();
 }
@@ -182,6 +182,7 @@ bool IsDateFieldType(FieldType field_type) {
     case FLIGHT_RESERVATION_CONFIRMATION_CODE:
     case FLIGHT_RESERVATION_ARRIVAL_AIRPORT:
     case FLIGHT_RESERVATION_DEPARTURE_AIRPORT:
+    case ADDRESS_HOME_ZIP_AND_CITY:
       return false;
     case CREDIT_CARD_EXP_DATE_2_DIGIT_YEAR:
     case CREDIT_CARD_EXP_DATE_4_DIGIT_YEAR:
@@ -328,6 +329,7 @@ bool IsAffixFormatStringEnabledForType(FieldType type) {
     case FLIGHT_RESERVATION_ARRIVAL_AIRPORT:
     case FLIGHT_RESERVATION_DEPARTURE_AIRPORT:
     case FLIGHT_RESERVATION_DEPARTURE_DATE:
+    case ADDRESS_HOME_ZIP_AND_CITY:
       return false;
     case PASSPORT_NUMBER:
     case VEHICLE_VIN:

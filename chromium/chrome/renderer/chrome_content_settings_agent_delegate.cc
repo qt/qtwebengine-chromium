@@ -11,7 +11,6 @@
 #if BUILDFLAG(IS_CHROMEOS)
 #include "ash/webui/file_manager/url_constants.h"
 #endif
-#include "base/containers/contains.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/renderer/render_frame.h"
 #include "third_party/blink/public/platform/web_security_origin.h"
@@ -42,7 +41,7 @@ ChromeContentSettingsAgentDelegate::ChromeContentSettingsAgentDelegate(
   content::RenderFrame* main_frame = render_frame->GetMainRenderFrame();
   // TODO(nasko): The main frame is not guaranteed to be in the same process
   // with this frame with --site-per-process. This code needs to be updated
-  // to handle this case. See https://crbug.com/496670.
+  // to handle this case. See https://crbug.com/40421201.
   if (main_frame && main_frame != render_frame) {
     auto* parent = ChromeContentSettingsAgentDelegate::Get(main_frame);
     temporarily_allowed_plugins_ = parent->temporarily_allowed_plugins_;
@@ -65,8 +64,8 @@ bool ChromeContentSettingsAgentDelegate::IsPluginTemporarilyAllowed(
     const std::string& identifier) {
   // If the empty string is in here, it means all plugins are allowed.
   // TODO(bauerb): Remove this once we only pass in explicit identifiers.
-  return base::Contains(temporarily_allowed_plugins_, identifier) ||
-         base::Contains(temporarily_allowed_plugins_, std::string());
+  return temporarily_allowed_plugins_.contains(identifier) ||
+         temporarily_allowed_plugins_.contains(std::string());
 }
 
 void ChromeContentSettingsAgentDelegate::AllowPluginTemporarily(

@@ -439,7 +439,7 @@ inline constexpr char kNetworkEasterEggHighScore[] =
 // if prediction of network actions is allowed, depending on network type.
 // Actions include DNS prefetching, TCP and SSL preconnection, prerendering
 // of web pages, and resource prefetching.
-// TODO(bnc): Implement this preference as per crbug.com/334602.
+// TODO(bnc): Implement this preference as per crbug.com/40347636.
 inline constexpr char kNetworkPredictionOptions[] =
     "net.network_prediction_options";
 
@@ -1193,9 +1193,6 @@ inline constexpr char kLoginExtensionApiDataForNextLoginAttempt[] =
 inline constexpr char kLastRsuDeviceIdUploaded[] =
     "rsu.last_rsu_device_id_uploaded";
 
-// A string pref stored in local state containing the name of the device.
-inline constexpr char kDeviceName[] = "device_name";
-
 // Int64 pref indicating the time in microseconds since Windows epoch when the
 // timer for update required which will block user session was started. If the
 // timer is not started the pref holds the default value base::Time().
@@ -1811,7 +1808,7 @@ inline constexpr char kMigratedToSiteNotificationChannels[] =
     "notifications.migrated_to_channels";
 
 // Boolean pref indicating whether blocked site notification channels underwent
-// a one-time reset yet for https://crbug.com/835232.
+// a one-time reset yet for https://crbug.com/41384604.
 // TODO(crbug.com/40573963): Remove this after a few releases (M69?).
 inline constexpr char kClearedBlockedSiteNotificationChannels[] =
     "notifications.cleared_blocked_channels";
@@ -1860,6 +1857,10 @@ inline constexpr char kWebRTCIPHandlingUrl[] = "webrtc.ip_handling_url";
 // post-quantum key agreement for WebRTC.
 inline constexpr char kWebRTCPostQuantumKeyAgreement[] =
     "webrtc.post_quantum_key_agreement";
+// Define the WebRTCDiagnosticLogCollectionAllowedForOrigins policy that
+// controls enabling diagnostic log collection for WebRTC.
+inline constexpr char kWebRTCDiagnosticLogCollectionAllowedForOrigins[] =
+    "webrtc.diagnostic_log_collection_allowed_for_origins";
 // Define range of UDP ports allowed to be used by WebRTC PeerConnections.
 inline constexpr char kWebRTCUDPPortRange[] = "webrtc.udp_port_range";
 // Whether WebRTC event log collection by Google domains is allowed.
@@ -1937,6 +1938,11 @@ inline constexpr char kSuppressDifferentOriginSubframeJSDialogs[] =
 inline constexpr char kUserAgentReduction[] = "user_agent_reduction";
 
 #if !BUILDFLAG(IS_ANDROID)
+// Boolean determining whether the projects panel entrypoint is displayed in the
+// tab strip.
+inline constexpr char kProjectsPanelEntrypointEnabled[] =
+    "projects_panel.entrypoint_enabled";
+
 // Boolean determining the side the side panel will be appear on (left / right).
 // True when the side panel is aligned to the right.
 inline constexpr char kSidePanelHorizontalAlignment[] =
@@ -1994,11 +2000,6 @@ inline constexpr char kChromeDataRegionSetting[] = "chrome_data_region_setting";
 // Stored as a dict with annotation hash codes as keys.
 inline constexpr char kNetworkAnnotationBlocklist[] =
     "network_annotation_blocklist";
-
-// A dictionary pref that can contain a list of configured endpoints for
-// reports to be sent to.
-inline constexpr char kReportingEndpoints[] =
-    "enterprise_reporting.reporting_endpoints";
 
 // A boolean indicating if the "Line wrap" checkbox on view source pages should
 // be prepopulated.
@@ -2092,7 +2093,7 @@ inline constexpr char kProfilesOrder[] = "profile.profiles_order";
 
 // A list of profile paths that should be deleted on shutdown. The deletion does
 // not happen if the browser crashes, so we remove the profile on next start.
-inline constexpr char kProfilesDeleted[] = "profiles.profiles_deleted";
+inline constexpr char kProfilesDeleted[] = "profiles.profile_basenames_deleted";
 
 // On Chrome OS, total number of non-Chrome user process crashes
 // since the last report.
@@ -2625,6 +2626,12 @@ inline constexpr char kWebAppCreateInQuickLaunchBar[] =
 // will be launched.
 inline constexpr char kWebAppInstallForceList[] =
     "profile.web_app.install.forcelist";
+
+#if !BUILDFLAG(IS_ANDROID)
+// Boolean pref tracking whether users can install web apps through the browser.
+inline constexpr char kWebAppInstallByUserEnabled[] =
+    "profile.web_app.install_by_user_enabled";
+#endif  // !BUILDFLAG(IS_ANDROID)
 
 // A list of dictionaries for managing Web Apps.
 inline constexpr char kWebAppSettings[] = "profile.web_app.policy_settings";
@@ -3343,6 +3350,23 @@ inline constexpr char kChromeForTestingAllowed[] = "chrome_for_testing.allowed";
 #if BUILDFLAG(IS_WIN)
 inline constexpr char kUiAutomationProviderEnabled[] =
     "accessibility.ui_automation_provider_enabled";
+
+inline constexpr char kForegroundLaunchOnLogin[] =
+    "launch_on_login.foreground.enabled";
+
+// Boolean representing whether the infobar has been accepted by the user.
+inline constexpr char kStartupLaunchInfobarAccepted[] =
+    "launch_on_login.infobar_accepted";
+
+// base::Time containing time at which the startup launch infobar was last
+// dismissed by the user.
+inline constexpr char kStartupLaunchInfobarLastDeclinedTime[] =
+    "launch_on_login.infobar_last_declined_time";
+
+// Int representing the number of times the user has dismissed the startup
+// launch infobar.
+inline constexpr char kStartupLaunchInfobarDeclinedCount[] =
+    "launch_on_login.infobar_declined_count";
 #endif
 
 // A boolean pref which determines whether the QR Code generator feature is
@@ -3363,40 +3387,6 @@ inline constexpr char kToastAlertLevel[] = "settings.toast.alert_level";
 
 // *************** SERVICE PREFS ***************
 // These are attached to the service process.
-
-inline constexpr char kCloudPrintRoot[] = "cloud_print";
-inline constexpr char kCloudPrintProxyEnabled[] = "cloud_print.enabled";
-// The unique id for this instance of the cloud print proxy.
-inline constexpr char kCloudPrintProxyId[] = "cloud_print.proxy_id";
-// The GAIA auth token for Cloud Print
-inline constexpr char kCloudPrintAuthToken[] = "cloud_print.auth_token";
-// The email address of the account used to authenticate with the Cloud Print
-// server.
-inline constexpr char kCloudPrintEmail[] = "cloud_print.email";
-// Settings specific to underlying print system.
-inline constexpr char kCloudPrintPrintSystemSettings[] =
-    "cloud_print.print_system_settings";
-// A boolean indicating whether we should poll for print jobs when don't have
-// an XMPP connection (false by default).
-inline constexpr char kCloudPrintEnableJobPoll[] =
-    "cloud_print.enable_job_poll";
-inline constexpr char kCloudPrintRobotRefreshToken[] =
-    "cloud_print.robot_refresh_token";
-inline constexpr char kCloudPrintRobotEmail[] = "cloud_print.robot_email";
-// A boolean indicating whether we should connect to cloud print new printers.
-inline constexpr char kCloudPrintConnectNewPrinters[] =
-    "cloud_print.user_settings.connectNewPrinters";
-// A boolean indicating whether we should ping XMPP connection.
-inline constexpr char kCloudPrintXmppPingEnabled[] =
-    "cloud_print.xmpp_ping_enabled";
-// An int value indicating the average timeout between xmpp pings.
-inline constexpr char kCloudPrintXmppPingTimeout[] =
-    "cloud_print.xmpp_ping_timeout_sec";
-// Dictionary with settings stored by connector setup page.
-inline constexpr char kCloudPrintUserSettings[] = "cloud_print.user_settings";
-// List of printers settings.
-inline constexpr char kCloudPrintPrinters[] =
-    "cloud_print.user_settings.printers";
 
 // Preference to store proxy settings.
 inline constexpr char kMaxConnectionsPerProxy[] =
@@ -3591,10 +3581,6 @@ inline constexpr char kCryptAuthInstanceId[] = "cryptauth.instance_id";
 inline constexpr char kCryptAuthInstanceIdToken[] =
     "cryptauth.instance_id_token";
 
-// Boolean that indicates whether elevation is needed to recover Chrome upgrade.
-inline constexpr char kRecoveryComponentNeedsElevation[] =
-    "recovery_component.needs_elevation";
-
 #if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
 // Policy that indicates how to handle animated images.
 inline constexpr char kAnimationPolicy[] = "settings.a11y.animation_policy";
@@ -3650,20 +3636,6 @@ inline constexpr char kLatestVersionWhenClickedUpdateMenuItem[] =
 inline constexpr char kCommerceMerchantViewerMessagesShownTime[] =
     "commerce_merchant_viewer_messages_shown_time";
 #endif
-
-// A dictionary which stores whether location access is enabled for the current
-// default search engine. Deprecated for kDSEPermissionsSetting.
-inline constexpr char kDSEGeolocationSettingDeprecated[] =
-    "dse_geolocation_setting";
-
-// A dictionary which stores the geolocation and notifications content settings
-// for the default search engine before it became the default search engine so
-// that they can be restored if the DSE is ever changed.
-inline constexpr char kDSEPermissionsSettings[] = "dse_permissions_settings";
-
-// A boolean indicating whether the DSE was previously disabled by enterprise
-// policy.
-inline constexpr char kDSEWasDisabledByPolicy[] = "dse_was_disabled_by_policy";
 
 // A dictionary of manifest URLs of Web Share Targets to a dictionary containing
 // attributes of its share_target field found in its manifest. Each key in the
@@ -4303,6 +4275,13 @@ inline constexpr char kExtensibleEnterpriseSSOEnabled[] =
 // This is based on the ExtensibleEnterpriseSSOBlocklist policy.
 inline constexpr char kExtensibleEnterpriseSSOEnabledIdps[] =
     "extensible_enterprise_sso.enabled_idps";
+
+// The list value of hosts for which the extensible enterprise SSO has been
+// configured. This is based on the CFPreferences under key
+// com.apple.extensiblesso
+inline constexpr char kExtensibleEnterpriseSSOConfiguredHosts[] =
+    "extensible_enterprise_sso.configured_hosts";
+
 #endif  //  BUILDFLAG(IS_MAC)
 
 // Allow or don't allow bypassing WebAudio output buffering
@@ -4323,15 +4302,16 @@ inline constexpr char kSharedWorkerBlobURLFixEnabled[] =
 inline constexpr char kClearWindowNameForNewBrowsingContextGroup[] =
     "profile.content_settings.clear_window_name_for_new_browsing_context_group";
 
-// Boolean indicating whether Local Network Access restrictions should be forced
-// on regardless of defaults.
-inline constexpr char kManagedLocalNetworkAccessRestrictionsEnabled[] =
-    "managed_local_network_access_restrictions_enabled";
-
 // Boolean indicating whether Local Network Access restrictions should be
 // temporarily opted out of.
 inline constexpr char kManagedLocalNetworkAccessRestrictionsTemporaryOptOut[] =
     "managed_local_network_access_restrictions_temporary_opt_out";
+
+// List of IP Address space overrides, in the same format as the
+// --ip-address-space-overrides command line flag. See
+// services/network/public/cpp/network_switches.cc for the format.
+inline constexpr char kManagedLocalNetworkAccessIpAddressSpaceOverrides[] =
+    "managed_local_network_access_ip_address_space_overrides";
 
 // Boolean that specifies whether SpeculationRules prefetch can be sent to
 // ServiceWorker-controlled URLs.

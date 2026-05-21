@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-
 #include "device/fido/ctap_make_credential_request.h"
 
 #include <algorithm>
@@ -13,8 +12,8 @@
 #include "components/cbor/values.h"
 #include "crypto/hash.h"
 #include "device/fido/device_response_converter.h"
-#include "device/fido/fido_constants.h"
 #include "device/fido/fido_parsing_utils.h"
+#include "device/fido/public/fido_constants.h"
 
 namespace device {
 
@@ -170,6 +169,14 @@ std::optional<CtapMakeCredentialRequest> CtapMakeCredentialRequest::Parse(
           return std::nullopt;
         }
         request.hmac_secret = extension.second.GetBool();
+      } else if (extension_name == kExtensionHmacSecretMc) {
+        if (!extension.second.is_map()) {
+          return std::nullopt;
+        }
+        request.hmac_secret_mc = HMACSecret::Parse(extension.second.GetMap());
+        if (!request.hmac_secret_mc) {
+          return std::nullopt;
+        }
       } else if (extension_name == kExtensionPRF) {
         if (!extension.second.is_map()) {
           return std::nullopt;
@@ -318,6 +325,12 @@ AsCTAPRequestValuePair(const CtapMakeCredentialRequest& request) {
 
   if (request.hmac_secret) {
     extensions[cbor::Value(kExtensionHmacSecret)] = cbor::Value(true);
+  }
+
+  if (request.hmac_secret_mc) {
+    extensions.emplace(
+        kExtensionHmacSecretMc,
+        request.hmac_secret_mc->AsCBORMapValue(request.pin_protocol));
   }
 
   if (request.prf) {

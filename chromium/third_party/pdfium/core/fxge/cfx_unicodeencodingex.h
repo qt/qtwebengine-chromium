@@ -11,7 +11,6 @@
 
 #include <memory>
 
-#include "core/fxge/cfx_face.h"
 #include "core/fxge/cfx_unicodeencoding.h"
 #include "core/fxge/fx_fontencoding.h"
 

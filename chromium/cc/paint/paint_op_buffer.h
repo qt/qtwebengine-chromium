@@ -143,13 +143,6 @@ class CC_PAINT_EXPORT PaintOpBuffer : public SkRefCnt {
     bool context_supports_distance_field_text = true;
     int max_texture_size = 0;
     const ScrollOffsetMap* raster_inducing_scroll_offsets = nullptr;
-
-    // TODO(crbug.com/40136055): Cleanup after study completion.
-    //
-    // If true, perform serializaion in a way that avoids serializing transient
-    // members, such as IDs, so that a stable digest can be calculated. This
-    // means that serialized output can't be deserialized correctly.
-    bool for_identifiability_study = false;
   };
 
   struct CC_PAINT_EXPORT DeserializeOptions {
@@ -282,6 +275,7 @@ class CC_PAINT_EXPORT PaintOpBuffer : public SkRefCnt {
   }
 
   void UpdateSaveLayerBounds(size_t offset, const SkRect& bounds);
+  void UpdateDrawRecordOp(size_t offset, PaintRecord paint_record);
 
   template <typename T>
   void AnalyzeAddedOp(const T* op) {

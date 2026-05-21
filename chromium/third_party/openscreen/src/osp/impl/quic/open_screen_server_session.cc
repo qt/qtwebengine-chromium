@@ -55,9 +55,6 @@ quic::QuicSSLConfig OpenScreenServerSession::GetSSLConfig() const {
 
 std::unique_ptr<quic::QuicCryptoStream>
 OpenScreenServerSession::CreateCryptoStream() {
-  OSP_CHECK_GT(connection_->version().transport_version,
-               quic::QuicTransportVersion::QUIC_VERSION_46);
-
   return std::make_unique<TlsServerHandshakerImpl>(this,
                                                    &crypto_server_config_);
 }

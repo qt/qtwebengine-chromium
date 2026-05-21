@@ -7,6 +7,7 @@
 #include <atomic>
 #include <iterator>
 #include <limits>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -29,6 +30,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/system/sys_info.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/task/task_traits.h"
 #include "base/task/thread_pool.h"
 #include "base/time/time.h"
@@ -175,12 +177,14 @@ Status ReadFromFileToScratch(uint64_t offset,
                              char* scratch,
                              base::File* file,
                              const base::FilePath& file_path) {
-  int bytes_read = file->Read(offset, scratch, n);
-  if (bytes_read < 0) {
+  base::span<uint8_t> scratch_span =
+      base::as_writable_bytes(UNSAFE_TODO(base::span(scratch, n)));
+  std::optional<size_t> bytes_read = file->Read(offset, scratch_span);
+  if (!bytes_read) {
     return MakeIOError(file_path.AsUTF8Unsafe(), "Could not perform read",
                        kRandomAccessFileRead);
   }
-  *result = Slice(scratch, (bytes_read < 0) ? 0 : bytes_read);
+  *result = Slice(scratch, bytes_read.value());
 
   return Status::OK();
 }
@@ -349,8 +353,7 @@ Status ChromiumWritableFile::SyncParent() {
 
 Status ChromiumWritableFile::Append(const Slice& data) {
   DCHECK(file_.IsValid());
-  int bytes_written = file_.WriteAtCurrentPos(data.data(), data.size());
-  if (static_cast<size_t>(bytes_written) != data.size()) {
+  if (!file_.WriteAtCurrentPosAndCheck(base::as_byte_span(data))) {
     base::File::Error error = base::File::GetLastFileError();
     return MakeIOError(filename_, base::File::ErrorToString(error),
                        kWritableFileAppend, error);
@@ -711,10 +714,6 @@ ChromiumEnv::ChromiumEnv()
           storage::FilesystemProxy::UNRESTRICTED,
           base::FilePath())) {}
 
-ChromiumEnv::ChromiumEnv(bool log_lock_errors) : ChromiumEnv() {
-  log_lock_errors_ = log_lock_errors;
-}
-
 ChromiumEnv::ChromiumEnv(std::unique_ptr<storage::FilesystemProxy> filesystem)
     : filesystem_(std::move(filesystem)) {
   DCHECK(filesystem_);
@@ -897,28 +896,15 @@ Status ChromiumEnv::LockFile(const std::string& fname, FileLock** lock) {
   const base::FilePath path = base::FilePath::FromUTF8Unsafe(fname);
   Retrier retrier;
   FileErrorOr<std::unique_ptr<storage::FilesystemProxy::FileLock>> lock_result;
-  bool same_process_held_lock = false;
   size_t tries = 0;
   do {
     tries++;
-    same_process_held_lock = false;
-    lock_result = filesystem_->LockFile(path, &same_process_held_lock);
+    lock_result = filesystem_->LockFile(path);
   } while (!lock_result.has_value() && retrier.ShouldKeepTrying());
 
   if (!lock_result.has_value()) {
-    if (log_lock_errors_ &&
-        lock_result.error() == base::File::FILE_ERROR_IN_USE) {
-      base::UmaHistogramBoolean("LevelDBEnv.LockFileInUseByThisProcess",
-                                same_process_held_lock);
-    }
-
     return MakeIOError(fname, FileErrorString(lock_result.error()), kLockFile,
                        lock_result.error());
-  }
-
-  if (log_lock_errors_) {
-    // 100 because the retrier tries every ~10ms for ~1000ms.
-    base::UmaHistogramCounts100("LevelDBEnv.LockFileSuccessAttempts", tries);
   }
 
   *lock = new ChromiumFileLock(std::move(lock_result.value()), fname);
@@ -1099,14 +1085,10 @@ class DBTracker::TrackedDBImpl : public base::LinkNode<TrackedDBImpl>,
   TrackedDBImpl(DBTracker* tracker,
                 const std::string& name,
                 leveldb::DB* db,
-                const leveldb::Cache* block_cache,
-                DatabaseErrorReportingCallback on_get_error,
-                DatabaseErrorReportingCallback on_write_error)
+                const leveldb::Cache* block_cache)
       : tracker_(tracker),
         name_(name),
-        db_(db),
-        on_get_error_(std::move(on_get_error)),
-        on_write_error_(std::move(on_write_error)) {
+        db_(db) {
     if (leveldb_chrome::GetSharedWebBlockCache() ==
         leveldb_chrome::GetSharedBrowserBlockCache()) {
       shared_read_cache_use_ = SharedReadCacheUse_Unified;
@@ -1149,25 +1131,13 @@ class DBTracker::TrackedDBImpl : public base::LinkNode<TrackedDBImpl>,
 
   leveldb::Status Write(const leveldb::WriteOptions& options,
                         leveldb::WriteBatch* updates) override {
-    leveldb::Status status = db_->Write(options, updates);
-    if (status.ok()) [[likely]] {
-      return status;
-    }
-    if (on_write_error_)
-      on_write_error_.Run(status);
-    return status;
+    return db_->Write(options, updates);
   }
 
   leveldb::Status Get(const leveldb::ReadOptions& options,
                       const leveldb::Slice& key,
                       std::string* value) override {
-    leveldb::Status status = db_->Get(options, key, value);
-    if (status.ok() || status.IsNotFound()) [[likely]] {
-      return status;
-    }
-    if (on_get_error_)
-      on_get_error_.Run(status);
-    return status;
+    return db_->Get(options, key, value);
   }
 
   const leveldb::Snapshot* GetSnapshot() override { return db_->GetSnapshot(); }
@@ -1201,8 +1171,6 @@ class DBTracker::TrackedDBImpl : public base::LinkNode<TrackedDBImpl>,
   std::string name_;
   std::unique_ptr<leveldb::DB> db_;
   SharedReadCacheUse shared_read_cache_use_;
-  const DatabaseErrorReportingCallback on_get_error_;
-  const DatabaseErrorReportingCallback on_write_error_;
 };
 
 // Reports live databases and in-memory env's to memory-infra. For each live
@@ -1367,9 +1335,7 @@ leveldb::Status DBTracker::OpenDatabase(const leveldb_env::Options& options,
   CHECK((status.ok() && db) || (!status.ok() && !db));
   if (status.ok()) {
     // TrackedDBImpl ctor adds the instance to the tracker.
-    *dbptr = new TrackedDBImpl(GetInstance(), name, db, options.block_cache,
-                               std::move(options.on_get_error),
-                               std::move(options.on_write_error));
+    *dbptr = new TrackedDBImpl(GetInstance(), name, db, options.block_cache);
   }
   return status;
 }

@@ -18,6 +18,7 @@
 #include "core/fxge/cfx_fillrenderoptions.h"
 #include "core/fxge/cfx_path.h"
 #include "core/fxge/renderdevicedriver_iface.h"
+#include "third_party/skia/include/core/SkColor.h"
 #include "third_party/skia/include/core/SkPoint.h"
 #include "third_party/skia/include/core/SkRSXform.h"
 #include "third_party/skia/include/core/SkRefCnt.h"
@@ -32,6 +33,7 @@ class TextCharPos;
 struct CFX_TextRenderOptions;
 
 // Assumes Skia is not going to add non-data members to its fundamental types.
+FX_DATA_PARTITION_EXCEPTION(SkColor4f);
 FX_DATA_PARTITION_EXCEPTION(SkPoint);
 FX_DATA_PARTITION_EXCEPTION(SkRSXform);
 

@@ -5,7 +5,6 @@
 #ifndef COMPONENTS_AUTOFILL_CORE_BROWSER_DATA_MODEL_ADDRESSES_AUTOFILL_STRUCTURED_ADDRESS_COMPONENT_H_
 #define COMPONENTS_AUTOFILL_CORE_BROWSER_DATA_MODEL_ADDRESSES_AUTOFILL_STRUCTURED_ADDRESS_COMPONENT_H_
 
-#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -76,6 +75,8 @@ VerificationStatus GetMoreSignificantVerificationStatus(
 // `kMergeChildrenAndReformatIfNeeded` will not be applied because
 // `kUseBetterOrMostRecentIfDifferent` is always applicable.
 enum MergeMode {
+  // Unset merge mode (shouldn't ever be merged individually).
+  kNone = 0,
   // If one component has an empty value, use the non-empty one.
   kReplaceEmpty = 1,
   // Recursively merge two components that have the same tokens in arbitrary
@@ -154,6 +155,9 @@ class AddressComponent {
   AddressComponent(FieldType storage_type,
                    SubcomponentsList subcomponents,
                    unsigned int merge_mode);
+
+  // Constructor for a child node with `kNone` merge mode.
+  AddressComponent(FieldType storage_type, SubcomponentsList subcomponents);
 
   // Disallows copies and direct assignments since they are not needed in the
   // current Autofill design.
@@ -323,7 +327,7 @@ class AddressComponent {
   // `newer_was_more_recently_used` indicates that the newer component was also
   // more recently used for filling a form.
   virtual bool MergeWithComponent(const AddressComponent& newer_component,
-                                  bool newer_was_more_recently_used = true);
+                                  bool newer_was_more_recently_used);
 
   // Merge `newer_component` into this AddressComponent.
   // The merging is possible iff the value of both root nodes is token
@@ -500,6 +504,7 @@ class AddressComponent {
 
   // Unsets the node and all of its children.
   void UnsetAddressComponentAndItsSubcomponents();
+
  private:
   friend class AddressComponentTestApi;
 

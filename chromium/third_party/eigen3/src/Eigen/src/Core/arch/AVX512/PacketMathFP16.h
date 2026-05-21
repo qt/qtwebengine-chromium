@@ -735,9 +735,9 @@ EIGEN_STRONG_INLINE half predux<Packet8h>(const Packet8h& a) {
   return half(_mm_reduce_add_ph(a));
 }
 
-// predux_half_dowto4
+// predux_half
 template <>
-EIGEN_STRONG_INLINE Packet16h predux_half_dowto4<Packet32h>(const Packet32h& a) {
+EIGEN_STRONG_INLINE Packet16h predux_half<Packet32h>(const Packet32h& a) {
   const __m512i bits = _mm512_castph_si512(a);
   Packet16h lo = _mm256_castsi256_ph(_mm512_castsi512_si256(bits));
   Packet16h hi = _mm256_castsi256_ph(_mm512_extracti64x4_epi64(bits, 1));
@@ -745,7 +745,7 @@ EIGEN_STRONG_INLINE Packet16h predux_half_dowto4<Packet32h>(const Packet32h& a) 
 }
 
 template <>
-EIGEN_STRONG_INLINE Packet8h predux_half_dowto4<Packet16h>(const Packet16h& a) {
+EIGEN_STRONG_INLINE Packet8h predux_half<Packet16h>(const Packet16h& a) {
   Packet8h lo = _mm_castsi128_ph(_mm256_castsi256_si128(_mm256_castph_si256(a)));
   Packet8h hi = _mm_castps_ph(_mm256_extractf128_ps(_mm256_castph_ps(a), 1));
   return padd(lo, hi);

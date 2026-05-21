@@ -20,6 +20,7 @@
 #include "components/keyed_service/core/keyed_service.h"
 #include "content/public/browser/service_worker_context.h"
 #include "content/public/browser/service_worker_context_observer.h"
+#include "content/public/common/child_process_id.h"
 #include "extensions/browser/lazy_context_id.h"
 #include "extensions/browser/lazy_context_task_queue.h"
 #include "extensions/browser/service_worker/sequenced_context_id.h"
@@ -183,7 +184,7 @@ class ServiceWorkerTaskQueue
   // Called once an extension Service Worker context was initialized but not
   // necessarily started executing its JavaScript.
   void RendererDidInitializeServiceWorkerContext(
-      int render_process_id,
+      content::ChildProcessId render_process_id,
       const ExtensionId& extension_id,
       int64_t service_worker_version_id,
       int thread_id,
@@ -192,7 +193,7 @@ class ServiceWorkerTaskQueue
   // This can be thought as "loadstop", i.e. the global JS script of the worker
   // has completed executing.
   void RendererDidStartServiceWorkerContext(
-      int render_process_id,
+      content::ChildProcessId render_process_id,
       const ExtensionId& extension_id,
       const base::UnguessableToken& activation_token,
       const GURL& service_worker_scope,
@@ -200,7 +201,7 @@ class ServiceWorkerTaskQueue
       int thread_id);
   // Called once an extension Service Worker was destroyed.
   void RendererDidStopServiceWorkerContext(
-      int render_process_id,
+      content::ChildProcessId render_process_id,
       const ExtensionId& extension_id,
       const base::UnguessableToken& activation_token,
       const GURL& service_worker_scope,
@@ -338,7 +339,7 @@ class ServiceWorkerTaskQueue
   enum class RegistrationReason {
     REGISTER_ON_EXTENSION_LOAD,
     RE_REGISTER_ON_STATE_MISMATCH,
-    RE_REGISTER_ON_TIMEOUT,
+    RE_REGISTER_ON_TRANSIENT_FAILURE,
   };
 
   // Manages registration/start retry attempts with exponential backoff.
@@ -361,6 +362,11 @@ class ServiceWorkerTaskQueue
   // context. Requires the worker to be ready.
   void DispatchTasksImmediately(const SequencedContextId& context_id,
                                 base::span<PendingTask> tasks);
+
+  // Returns true if a service worker registration is transient and should be
+  // retried, false otherwise.
+  bool IsRegistrationFailureRetryable(
+      blink::ServiceWorkerStatusCode status_code) const;
 
   // Returns true if a service worker start failure is transient and should be
   // retried, false otherwise.
@@ -526,6 +532,10 @@ class ServiceWorkerTaskQueue
   // Manages worker registration retries for an activation token.
   RetryMap worker_registration_retries_;
 
+  // Manages worker registration retries for an activation token when waiting
+  // for an unregistration to complete.
+  RetryMap worker_unregistration_wait_retries_;
+
   // A set of service worker registrations that are pending storage.
   // These are registrations that succeeded in the first step (triggering
   // `DidRegisterServiceWorker`), but have not yet been stored.
@@ -533,6 +543,12 @@ class ServiceWorkerTaskQueue
   // `OnRegistrationStoredSync`. The key is the extension's ID and the value is
   // the activation token expected for that registration.
   std::map<ExtensionId, base::UnguessableToken> pending_storage_registrations_;
+
+  // A set of service worker unregistrations that are pending completion.
+  // These are cleared out once `DidUnregisterServiceWorker` is called.
+  // New requests to register a service worker for the same extension will get
+  // retried to allow the unregistration to complete first.
+  std::set<ExtensionId> pending_unregistrations_;
 
   // TODO(crbug.com/40276609): Do we need to track this by `SequencedContextId`
   // or could we used `ExtensionId` instead?

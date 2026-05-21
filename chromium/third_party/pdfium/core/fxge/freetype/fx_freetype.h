@@ -57,6 +57,10 @@ class ScopedFXFTMMVar {
   const pdfium::span<const FT_Var_Axis> axis_;
 };
 
+ScopedFXFTLibraryRec InitializeFreeType();
+bool FreeTypeSetLcdFilterMode(FXFT_LibraryRec* ft_library);
+bool FreeTypeVersionSupportsHinting(FXFT_LibraryRec* ft_library);
+
 int FXFT_unicode_from_adobe_name(const char* glyph_name);
 void FXFT_adobe_name_from_unicode(pdfium::span<char> name_buf, wchar_t unicode);
 

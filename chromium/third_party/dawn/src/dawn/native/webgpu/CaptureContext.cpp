@@ -45,6 +45,23 @@
 
 namespace dawn::native::webgpu {
 
+CaptureContext::ScopedContentWriter::ScopedContentWriter(CaptureContext& context)
+    : mContext(context) {}
+
+CaptureContext::ScopedContentWriter::~ScopedContentWriter() {
+    uint64_t offset = mBytesWritten % 4;
+    if (offset) {
+        static char zero[3] = {0};
+        uint64_t paddingNeeded = 4 - offset;
+        mContext.WriteContentBytes(zero, paddingNeeded);
+    }
+}
+
+void CaptureContext::ScopedContentWriter::WriteContentBytes(const void* data, size_t size) {
+    mContext.WriteContentBytes(data, size);
+    mBytesWritten += size;
+}
+
 MaybeError CaptureContext::CaptureCreation(schema::ObjectId id,
                                            const std::string& label,
                                            RecordableObject* object) {
@@ -75,6 +92,8 @@ CaptureContext::~CaptureContext() {
 WGPUBuffer CaptureContext::GetCopyBuffer() {
     if (!mCopyBuffer) {
         WGPUBufferDescriptor desc = {};
+        // Add a label to the copy buffer for better debugging experience.
+        desc.label = ToOutputStringView("Capture Copy Buffer");
         desc.size = kCopyBufferSize;
         desc.usage = WGPUBufferUsage_CopyDst | WGPUBufferUsage_MapRead;
         mCopyBuffer = mDevice->wgpu.deviceCreateBuffer(mDevice->GetInnerHandle(), &desc);
@@ -110,25 +129,6 @@ MaybeError CaptureContext::CaptureQueueWriteBuffer(Buffer* buffer,
     return {};
 }
 
-MaybeError CaptureContext::CaptureUnmapBuffer(Buffer* buffer,
-                                              uint64_t bufferOffset,
-                                              const void* data,
-                                              size_t size) {
-    schema::ObjectId id;
-    DAWN_TRY_ASSIGN(id, AddResourceAndGetId(buffer));
-    schema::RootCommandUnmapBufferCmd cmd{{
-        .data = {{
-            .bufferId = id,
-            .bufferOffset = bufferOffset,
-            .size = size,
-        }},
-    }};
-
-    Serialize(*this, cmd);
-    WriteContentBytes(data, size);
-    return {};
-}
-
 MaybeError CaptureContext::CaptureQueueWriteTexture(const TexelCopyTextureInfo& destination,
                                                     const void* data,
                                                     size_t dataSize,
@@ -144,7 +144,9 @@ MaybeError CaptureContext::CaptureQueueWriteTexture(const TexelCopyTextureInfo& 
         }},
     }};
     Serialize(*this, cmd);
-    WriteContentBytes(data, dataSize);
+
+    CaptureContext::ScopedContentWriter writer(*this);
+    writer.WriteContentBytes(data, dataSize);
     return {};
 }
 
@@ -173,11 +175,25 @@ schema::Origin3D ToSchema(const TexelOrigin3D& origin) {
     }};
 }
 
+schema::Origin2D ToSchema(const Origin2D& origin) {
+    return {{
+        .x = origin.x,
+        .y = origin.y,
+    }};
+}
+
 schema::Extent3D ToSchema(const TexelExtent3D& extent) {
     return {{
         .width = static_cast<uint32_t>(extent.width),
         .height = static_cast<uint32_t>(extent.height),
         .depthOrArrayLayers = static_cast<uint32_t>(extent.depthOrArrayLayers),
+    }};
+}
+
+schema::Extent2D ToSchema(const Extent2D& extent) {
+    return {{
+        .width = extent.width,
+        .height = extent.height,
     }};
 }
 

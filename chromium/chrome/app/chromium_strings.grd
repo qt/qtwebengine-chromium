@@ -320,6 +320,20 @@ If you update this file, be sure also to update google_chrome_strings.grd. -->
           Welcome to Chromium
         </message>
       </if>
+      <if expr="is_linux">
+        <message name="IDS_TERMS_DIALOG_ACCEPT" desc="The button label to accept the terms of service">
+          Accept
+        </message>
+        <message name="IDS_TERMS_DIALOG_CANCEL" desc="The button label to decline the terms of service">
+          Cancel
+        </message>
+        <message name="IDS_TERMS_DIALOG_TITLE" desc="Window title for the Terms of Service dialog">
+          Chromium Additional Terms of Service
+        </message>
+        <message name="IDS_TERMS_DIALOG_ACCESSIBILITY_LABEL" desc="Accessibility label for the Terms of Service in the dialog. The actual terms text is just a placeholder for branded builds.">
+          Chromium Additional Terms of Service
+        </message>
+      </if>
       <if expr="is_chromeos">
         <message name="IDS_PRODUCT_OS_NAME" desc="The ChromeOS application name">
           ChromiumOS
@@ -382,6 +396,20 @@ If you update this file, be sure also to update google_chrome_strings.grd. -->
       <message name="IDS_SESSION_CRASHED_VIEW_UMA_OPTIN" desc="Text besides the checkbox to let users optin to UMA in the restore from previous crash bubble.">
         Help make Chromium better by sending crash reports and <ph name="UMA_LINK">$1<ex>usage statistics</ex></ph> to Google
       </message>
+      <if expr="not is_android">
+        <message name="IDS_CHROME_SIGNOUT_CONFIRMATION_PROMPT_TOO_MANY_BOOKMARKS_BODY" desc="Body of the signout confirmation dialog when the user has too many bookmarks.">
+        You reached Chromium’s limit of <ph name="BOOKMARK_LIMIT">$1<ex>100,000</ex></ph> bookmarks, so some of your bookmarks haven’t been saved in your Google Account yet.
+
+New bookmarks can’t be saved in your account until you delete some. If you sign out now, unsaved bookmarks will be deleted.
+        </message>
+      </if>
+      <if expr="is_android">
+        <message name="IDS_CHROME_SIGNOUT_CONFIRMATION_PROMPT_TOO_MANY_BOOKMARKS_BODY" desc="Body of the signout confirmation dialog when the user has too many bookmarks." formatter_data="android_java">
+        You reached Chromium’s limit of <ph name="BOOKMARK_LIMIT">%1$s<ex>100,000</ex></ph> bookmarks, so some of your bookmarks haven’t been saved in your Google Account yet.
+
+New bookmarks can’t be saved in your account until you delete some. If you sign out now, unsaved bookmarks will be deleted.
+        </message>
+      </if>
       <message name="IDS_RESET_PROFILE_SETTINGS_EXPLANATION_IN_BULLET_POINTS" desc="A label formatted with bullet points describing the consequences of the 'reset profile settings' feature">
         This action will:
         <ph name="LINE_BREAKS">&lt;br&gt;&lt;br&gt;</ph>
@@ -498,7 +526,7 @@ If you update this file, be sure also to update google_chrome_strings.grd. -->
       </if>
       <if expr="is_macosx">
         <message name="IDS_MACOS_OBSOLETE" desc="A message displayed on an at-launch infobar and About (Help) page warning the user that the OS version they are using will soon be or is already unsupported.">
-          To get future Chromium updates, you'll need macOS 12 or later. This computer is using macOS 11.
+          To get future Chromium updates, you'll need macOS 13 or later. This computer is using macOS 12.
         </message>
       </if>
       <if expr="is_win">
@@ -535,6 +563,12 @@ If you update this file, be sure also to update google_chrome_strings.grd. -->
           Chromium is unresponsive. Relaunch now?
         </message>
       </if>
+      <!-- General app failure messages -->
+      <if expr="not is_chromeos and not is_android">
+        <message name="IDS_COULDNT_STARTUP_PROFILE_ERROR" desc="Error displayed when Chrome cannot start because profiles were not opened correctly.">
+          Cannot start Chromium because something went wrong when opening your profile. Try to restart Chromium.
+        </message>
+      </if>
       <!-- Sharing messages -->
       <message name="IDS_BROWSER_SHARING_CLICK_TO_CALL_DIALOG_HELP_TEXT_NO_DEVICES" desc="The label to be shown as a help text of the dialog when user click on a phone number, if there are no phones to choose from.">
         To send a number from here to your Android phone, sign in to Chromium on both devices.
@@ -559,6 +593,9 @@ If you update this file, be sure also to update google_chrome_strings.grd. -->
       </if>
       <message name="IDS_FR_CUSTOMIZE_DEFAULT_BROWSER" desc="Default browser checkbox label">
         Make Chromium the default browser
+      </message>
+      <message name="IDS_DEFAULT_BROWSER_CHANGED_MESSAGE" desc="Body of the notification shown when Chrome is no longer the default browser.">
+        Chromium is no longer your default browser. Make Chromium the default browser?
       </message>
       <if expr="use_titlecase">
         <message name="IDS_STATUS_TRAY_KEEP_CHROME_RUNNING_IN_BACKGROUND" desc="In Title Case: The checkbox in the status tray context menu that controls whether chrome keeps running in the background after the last window is closed">
@@ -728,12 +765,26 @@ Chromium is unable to recover your settings.
           Keep in Dock
         </message>
       </if>
-        <message name="IDS_DEFAULT_BROWSER_INFOBAR_TEXT" desc="Text to show in an infobar when Chromium is not the current default browser.">
-          Chromium isn't your default browser
+      <message name="IDS_DEFAULT_BROWSER_INFOBAR_TEXT" desc="Text to show in an infobar when Chromium is not the current default browser.">
+        Chromium isn't your default browser
+      </message>
+      <message name="IDS_DEFAULT_BROWSER_PIN_INFOBAR_TEXT" desc="Text to show in an infobar when Chromium is not the current default browser and can be pinned to the taskbar.">
+        Set Chromium as your default browser and pin it to your taskbar
+      </message>
+      <if expr="not is_android and not is_chromeos">
+        <message name="IDS_DEFAULT_BROWSER_MODAL_TITLE_WITH_SETTINGS_ILLUSTRATION" desc="Title of the default browser modal with settings illustration.">
+          Set Chromium as your default browser
         </message>
-        <message name="IDS_DEFAULT_BROWSER_PIN_INFOBAR_TEXT" desc="Text to show in an infobar when Chromium is not the current default browser and can be pinned to the taskbar.">
-          Set Chromium as your default browser and pin it to your taskbar
+        <message name="IDS_DEFAULT_BROWSER_MODAL_BODY_WITH_SETTINGS_ILLUSTRATION" desc="Body text of the default browser modal with settings illustration.">
+          Keep your passwords, bookmarks, and history perfectly synced across devices. Easily access the features you know and love by updating your default browser to Chromium.
         </message>
+        <message name="IDS_DEFAULT_BROWSER_MODAL_TITLE_WITHOUT_SETTINGS_ILLUSTRATION" desc="Title of the default browser modal without settings illustration.">
+          Use Chromium recommended browser settings
+        </message>
+        <message name="IDS_DEFAULT_BROWSER_MODAL_BODY_WITHOUT_SETTINGS_ILLUSTRATION" desc="Body text of the default browser modal without settings illustration.">
+          Get easy access to the features you know, love, and trust by setting Chromium as your default browser. Chromium will be pinned to your taskbar for quick access.
+        </message>
+      </if>
       <if expr="is_win or is_macosx">
         <message name="IDS_PDF_INFOBAR_TEXT" desc="Text to show in an infobar when Chromium is not the default PDF viewer.">
           Set Chromium as your default PDF viewer
@@ -1104,13 +1155,6 @@ Chromium is unable to recover your settings.
         <message name="IDS_ENTERPRISE_VALUE_PROPOSITION_PROFILE_SUGGESTED_TITLE" desc="Title of the screen in the profile creation flow where the user is asked whether they want to confirm signing in to Chromium with their enterprise account.">
           Sign in to Chromium?
         </message>
-        <!-- New one-click sign-in dialog contents for SAML support -->
-        <message name="IDS_ONE_CLICK_SIGNIN_DIALOG_TITLE_NEW" desc="The title of the modal dialog window that opens when the user chooses to use one click sign-in.">
-          You're signed in to Chromium!
-        </message>
-        <message name="IDS_ONE_CLICK_SIGNIN_DIALOG_MESSAGE_NEW" desc="The message of the one click sign-in dialog.">
-          You're signed in as <ph name="USER_EMAIL_ADDRESS">$1<ex>foo@gmail.com</ex></ph>. Now you can access your bookmarks, history, and other settings on all your signed in devices.
-        </message>
       </if>
 
       <!-- Management bubble -->
@@ -1153,6 +1197,9 @@ Chromium is unable to recover your settings.
       </if>
 
       <!-- NTP strings -->
+      <message name="IDS_NTP_CUSTOMIZE_TOOLBAR_CATEGORY_YOUR_CHROME" desc="The label for the category of actions that involve your Chrome data, such as opening the password manager or clearing browsing data.">
+        Your Chromium
+      </message>
       <if expr="_is_chrome_for_testing_branded">
         <then>
           <message name="IDS_NTP_CUSTOMIZE_BUTTON_LABEL" desc="Label for button on the New Tab Page that opens dialog to customize Chrome for Testing browser.">
@@ -1168,6 +1215,19 @@ Chromium is unable to recover your settings.
       <message name="IDS_NTP_MODULES_SETUP_LIST_TITLE" desc="Title shown at the top of the Setup List card.">
         Make Chromium Yours
       </message>
+      <message name="IDS_NTP_CUSTOMIZE_CHROME_RESET_TO_CLASSIC_CHROME_LABEL" desc="The label for the button for resetting theme back to default chrome in the New Tab Page customize chrome side panel.">
+        Reset to Default Chromium
+      </message>
+
+      <!-- New Tab Page browser feature promotions. -->
+      <if expr="not is_android">
+        <message name="IDS_NTP_CUSTOMIZATION_PROMO" desc="The text shown in the body of the New Tab Page browser customization promotion">
+          Customize Chromium to give your browser a new look
+        </message>
+        <message name="IDS_NTP_SIGN_IN_PROMO_WITH_BOOKMARKS" desc="The text shown in the body of the New Tab Page sign in promotion">
+          Sign in to Chromium to get your passwords, bookmarks, and more on all your devices
+        </message>
+      </if>
 
       <!-- Customize Chrome Auto Promo Strings -->
       <message name="IDS_IPH_CUSTOMIZE_CHROME_AUTO_OPEN_BODY" desc="The description of the IPH to auto open Customize Chromium">
@@ -1336,7 +1396,7 @@ Chromium is unable to recover your settings.
       </if>
 
       <!-- Profile Menu -->
-      <message name="IDS_PROFILE_MENU_SIGNIN_PROMO_BUTTON" desc="Text for the button in the sign-in promo in the profile menu when the used is signed out.">
+      <message name="IDS_PROFILE_MENU_SIGNIN_PROMO_BUTTON" meaning="Button" desc="Text for the button in the sign-in promo in the profile menu when the used is signed out.">
         Sign in to Chromium
       </message>
       <message name="IDS_PROFILE_MENU_PLACEHOLDER_PROFILE_NAME" desc="Placeholder profile name, used when the user did not enter a name for their profile.">
@@ -1776,6 +1836,15 @@ Chromium is unable to recover your settings.
       </message>
 
       <!-- Lens Overlay Strings -->
+      <message name="IDS_LENS_SEND_FEEDBACK"
+        desc="Text that is shown in the more options menu to open the feedback dialog.">
+        Send feedback
+      </message>
+      <message name="IDS_LENS_SEND_FEEDBACK_PLACEHOLDER"
+        desc="Placeholder text that is shown in the feedback dialog to send feedback for the Lens Overlay.">
+        Send feedback for search with Lens
+      </message>
+
       <if expr="not is_android">
         <!-- Side Panel Pinnable Entrypoint Strings -->
         <message name="IDS_SIDE_PANEL_LENS_OVERLAY_PINNABLE_IPH"
@@ -1943,14 +2012,6 @@ Chromium is unable to recover your settings.
           desc="Label in the language picker menu denoting that the following language is the one that has been detected.">
           Detect language
         </message>
-        <message name="IDS_LENS_SEND_FEEDBACK"
-          desc="Text that is shown in the more options menu to open the feedback dialog.">
-          Send feedback
-        </message>
-        <message name="IDS_LENS_SEND_FEEDBACK_PLACEHOLDER"
-          desc="Placeholder text that is shown in the feedback dialog to send feedback for the Lens Overlay.">
-          Send feedback for search with Lens
-        </message>
         <message name="IDS_LENS_OVERLAY_RENDERER_LABEL"
           desc="The label for the renderer process housing the Lens overlay.">
           Image Search
@@ -2112,8 +2173,7 @@ Chromium is unable to recover your settings.
           desc="Text that is shown in the Lens permission bubble, giving examples of what Lens can do and informing uawea what information will be sent to the server. Includes placeholder for learn more link.">
           When you use Image Search, the page title, URL, and content, including PDFs, are sent to the server. <ph name="LEARN_MORE">$1<ex>Learn more</ex></ph>
         </message>
-        <!-- TODO(crbug.com/467451572): Remove non-translateable flag. -->
-        <message name="IDS_LENS_PERMISSION_BUBBLE_DIALOG_NON_BLOCKING_DESCRIPTION" translateable="false"
+        <message name="IDS_LENS_PERMISSION_BUBBLE_DIALOG_NON_BLOCKING_DESCRIPTION"
           desc="Text that is shown in the Lens non-blocking privacy notice, giving examples of what Lens can do and informing users what information will be sent to Google. Includes placeholder for learn more link.">
           When you open Image Search, the page title, URL, and content, including PDFs, will automatically be sent to the server. <ph name="LEARN_MORE">$1<ex>Learn more</ex></ph>
         </message>
@@ -2137,13 +2197,11 @@ Chromium is unable to recover your settings.
           desc="Instructs the user to press Tab to begin using the feature.">
           Tab to continue
         </message>
-        <!-- TODO(crbug.com/467451572): Remove non-translateable flag. -->
-        <message name="IDS_LENS_PERMISSION_BUBBLE_DIALOG_GOT_IT" translateable="false"
+        <message name="IDS_LENS_PERMISSION_BUBBLE_DIALOG_GOT_IT"
           desc="Text on button in privacy notice, indicating that user understands that information will be sent to Google.">
           Got it
         </message>
-        <!-- TODO(crbug.com/467451572): Remove non-translateable flag. -->
-        <message name="IDS_LENS_PERMISSION_BUBBLE_DIALOG_REMIND_ME_LATER" translateable="false"
+        <message name="IDS_LENS_PERMISSION_BUBBLE_DIALOG_REMIND_ME_LATER"
           desc="Text on button to dismiss privacy notice, indicating that the privacy notice will be shown again later.">
           Remind me later
         </message>
@@ -2187,7 +2245,14 @@ Chromium is unable to recover your settings.
           desc="The hint text of the AI mode searchbox in the Lens side panel. This text is shown in the searchbox when the user has not yet typed any text, and prompts the user to ask a follow up question.">
           Ask a follow up
         </message>
-
+        <message name="IDS_LENS_COMPOSEBOX_HINT_TEXT_SEARCH_PAGE"
+          desc="The hint text of the AI mode searchbox in the Lens side panel. This text is shown in the searchbox when the user has not yet typed any text but has opened the overlay to make AIM follow up queries.">
+          Search anything on page
+        </message>
+        <message name="IDS_LENS_COMPOSEBOX_HINT_TEXT_SELECT_PAGE"
+          desc="The hint text of the AI mode searchbox in the Lens side panel. This text is shown in the searchbox when the user has not yet typed any text but has opened the overlay to make AIM follow up queries.">
+          Select anything on page
+        </message>
         <message name="IDS_LENS_COMPOSEBOX_HINT_TEXT_ASK_ANYTHING"
           desc="The hint text of the AI mode searchbox in the Lens tab. This text is shown in the searchbox when the user has not yet typed any text, and prompts the user to ask a question.">
           Ask anything
@@ -2198,16 +2263,6 @@ Chromium is unable to recover your settings.
           Ask<ph name="LINE_BREAK">$1</ph>about this tab
         </message>
 
-        <message name="IDS_AI_MODE_FRIENDLY_ZERO_STATE_TITLE"
-          desc="Title for the AI Mode zero state welcome message in the Lens tab. The first placeholder is the user's given name. Includes a line break to force desired line wrapping.">
-          Hi <ph name="USER_NAME">$1<ex>Josh</ex></ph>,<ph name="LINE_BREAK">$2</ph>what's on your mind today?
-        </message>
-
-        <message name="IDS_AI_MODE_FRIENDLY_ZERO_STATE_TITLE_WITHOUT_NAME"
-          desc="Title for the AI Mode zero state welcome message in the Lens tab.">
-          What's on your mind today?
-        </message>
-
         <message name="IDS_AI_MODE_NEW_SEARCH"
           desc="Header in the Lens side panel indicating a new AI Mode search session.">
           New search
@@ -2215,13 +2270,13 @@ Chromium is unable to recover your settings.
 
         <if expr="use_titlecase">
           <message name="IDS_CONTEXT_MENU_SHOW_AI_MODE_OMNIBOX_BUTTON"
-            desc="In Title Case: The text label of the omnibox context menu option to show the 'AI Mode' shortcut button">
-            Always Show AI Mode Shortcuts
+            desc="In Title Case: The text label of the omnibox context menu option to enable showing 'AI Mode'">
+            Always Show AI Mode
           </message>
         </if>
         <if expr="not use_titlecase">
-        <message name="IDS_CONTEXT_MENU_SHOW_AI_MODE_OMNIBOX_BUTTON" desc="The text label of the omnibox context menu option to show the 'AI Mode' shortcut button">
-          Always show AI Mode shortcuts
+        <message name="IDS_CONTEXT_MENU_SHOW_AI_MODE_OMNIBOX_BUTTON" desc="The text label of the omnibox context menu option to enable showing 'AI Mode'">
+          Always show AI Mode
         </message>
         </if>
       </if>
@@ -2444,7 +2499,7 @@ Chromium is unable to recover your settings.
         </message>
 
         <!-- First Run Experience -->
-        <message name="IDS_FRE_SIGN_IN_TITLE_0"
+        <message name="IDS_FRE_SIGN_IN_TITLE_0" meaning="Title"
           desc="This string appears as a heading on a full-page screen that asks the user to sign in to Chromium with their Google Account. It appears when the user launches Chromium for the first time. When they sign in, they can personalize and customize Chromium and remember their settings in their Google Account. The tone should be inviting and alluring.">
           Sign in to Chromium
         </message>
@@ -2473,6 +2528,14 @@ Chromium is unable to recover your settings.
         </message>
         <message name="IDS_SET_BROWSER_AS_DEFAULT_MENU_ITEM" desc="Menu item that prompts user to set Chromium as their default browser.">
           Set Chromium as your default browser
+        </message>
+
+        <!-- Default Browser Promo Refresh -->
+        <message name="IDS_FRE_REFRESH_DEFAULT_BROWSER_TITLE" desc="Title for the page that prompts user to set Chromium as their default browser in the refreshed first run experience.">
+          Set Chromium as default and pin it to taskbar
+        </message>
+        <message name="IDS_FRE_REFRESH_DEFAULT_BROWSER_SUBTITLE" desc="Subtitle for the page that prompts user to set Chromium as their default browser in the refreshed first run experience.">
+          Open links in Chromium from any app and keep the browser accessible on your taskbar
         </message>
 
         <!-- Profile switch IPH -->
@@ -2529,6 +2592,22 @@ Chromium is unable to recover your settings.
       <message name="IDS_TAILORED_SECURITY_UNCONSENTED_PROMOTION_MESSAGE_ACCEPT" desc="Accept button shown in the message shown when a user changes their account-level tailored security setting encouraging them to enable Enhanced Safe Browsing">
         Continue
       </message>
+
+      <!--Launch On Startup-->
+      <if expr="is_win">
+        <message name="IDS_SETTINGS_FOREGROUND_LAUNCH_ON_STARTUP_LABEL" desc="Label for settings toggle button that enables or disables opening Chromium on system startup">
+          Launch Chromium when Windows starts
+        </message>
+        <message name="IDS_SETTINGS_FOREGROUND_LAUNCH_ON_STARTUP_SUB_LABEL" desc="Sub label for settings toggle button that enables or disables opening Chromium on system startup">
+          Launch Chromium automatically to begin browsing instantly.
+        </message>
+        <message name="IDS_STARTUP_LAUNCH_INFOBAR_OPT_IN_TITLE" desc="Title of the infobar shown to ask the user if they want to allow Chromium to launch when windows starts.">
+          Begin browsing instantly: Chromium can now launch when Windows starts.
+        </message>
+        <message name="IDS_STARTUP_LAUNCH_INFOBAR_OPT_OUT_TITLE" desc="Title of the infobar shown to inform the user that Chromium now starts automatically when Windows starts.">
+          Chromium now launches when Windows starts so you can begin browsing instantly. You can turn this off in settings.
+        </message>
+      </if>
 
       <!-- Advanced security settings -->
       <message name="IDS_SETTINGS_SECURITY_JAVASCRIPT_OPTIMIZATION_LINK_ROW_ENABLED" desc="Description for the link row of the Javascript-optimization page when javascript-optimization is enabled.">
@@ -2810,16 +2889,9 @@ Chromium is unable to recover your settings.
 
       <!-- Memory Saver IPH strings -->
       <if expr="not is_android">
-        <if expr="use_titlecase">
-          <message name="IDS_MEMORY_SAVER_MODE_PROMO_TITLE" desc="In Title Case: The title for the Memory Saver mode in-product promo bubble">
-            Make Chromium Faster
-          </message>
-        </if>
-        <if expr="not use_titlecase">
-          <message name="IDS_MEMORY_SAVER_MODE_PROMO_TITLE" desc="The title for the Memory Saver mode in-product promo bubble">
-            Make Chromium faster
-          </message>
-        </if>
+        <message name="IDS_MEMORY_SAVER_MODE_PROMO_TITLE" desc="The title for the Memory Saver mode in-product promo bubble">
+          Make Chromium faster
+        </message>
       </if>
 
       <!-- Performance Intervention Dialog strings -->
@@ -2946,10 +3018,10 @@ Chromium is unable to recover your settings.
         <message name="IDS_SETTINGS_GLIC_ROW_LABEL" translateable="false" desc="Label of the Glic row button on the AI settings page leading to the Glic subpage.">
           Gemini in Chromium
         </message>
-        <message name="IDS_SETTINGS_GLIC_PERMISSIONS_WEB_ACTUATION_TOGGLE" translateable="false" desc="Title for the Gemini feature introduction screen">
+        <message name="IDS_SETTINGS_GLIC_PERMISSIONS_WEB_ACTUATION_TOGGLE" desc="Title for the Gemini feature introduction screen">
           Let Chromium browse for you
         </message>
-        <message name="IDS_SETTINGS_GLIC_PERMISSIONS_WEB_ACTUATION_TOGGLE_SUBLABEL" translateable="false" desc="Subheader explaining what the Gemini feature does">
+        <message name="IDS_SETTINGS_GLIC_PERMISSIONS_WEB_ACTUATION_TOGGLE_SUBLABEL" desc="Subheader explaining what the Gemini feature does">
           Gemini in Chromium uses auto browse to work in your tabs and complete tasks you give it. <ph name="LINK_BEGIN">&lt;a href="#"&gt;</ph>Learn more<ph name="LINK_END">&lt;/a&gt;</ph>
         </message>
 
@@ -3028,20 +3100,56 @@ Chromium is unable to recover your settings.
 
       <!--Desktop to iOS promo strings-->
       <if expr="not is_android">
-        <message name="IDS_IOS_DESKTOP_ESB_PROMO_BUBBLE_DESCRIPTION_QR" desc="The description for the iOS desktop ESB promo bubble with a QR code.">
-          Download Chromium on your phone to add an extra layer of protection when you're on the go
-        </message>
         <message name="IDS_IOS_DESKTOP_ESB_PROMO_BUBBLE_DESCRIPTION_REMINDER" desc="The description for the iOS desktop ESB promo bubble with a reminder button.">
           Stay safer on the go with Enhanced Safe Browsing on Chromium for iOS
         </message>
+        <message name="IDS_IOS_DESKTOP_ESB_PROMO_BUBBLE_TITLE_QR" desc="The title for the iOS desktop ESB promo bubble with a QR code.">
+          Extend Enhanced Safe Browsing with Chromium on your phone
+        </message>
         <message name="IDS_IOS_DESKTOP_PASSWORD_PROMO_BUBBLE_FOOTER_DESCRIPTION_REMINDER" desc="The description for the footer of the iOS desktop password promo bubble.">
           Sign in faster to sites using saved passwords for Chromium on iOS
+        </message>
+        <message name="IDS_IOS_DESKTOP_PASSWORD_PROMO_BUBBLE_FOOTER_TITLE" desc="The title for the footer of the iOS desktop password promo bubble suggesting to users that they can use their passwords on their iOS devices.">
+          Use your passwords with Chromium on your phone
+        </message>
+        <message name="IDS_IOS_DESKTOP_PROMO_BUBBLE_BUTTON_ACCEPT_QR" desc="The text inside the iOS promo bubble button allowing the user to accept by getting the app via QR code.">
+          Get the Chromium app
         </message>
         <message name="IDS_IOS_DESKTOP_PROMO_REMINDER_CONFIRMATION" desc="Body text of the promo bubble that appears after uses choose to be reminded of the feature on their iOS device. The placeholder will be replaced by the name of the feature.">
           You'll see a prompt to try <ph name="FEATURE_NAME">$1<ex>Google Lens</ex></ph> next time you open Chromium iOS.
         </message>
         <message name="IDS_IOS_DESKTOP_PASSWORD_PROMO_REMINDER_CONFIRMATION" desc="Body text of the promo bubble that appears after uses choose to be reminded of the Password Manager on their iOS device.">
           Next time you open Chromium on your <ph name="DEVICE_TYPE">$1<ex>iPhone</ex></ph>, you'll see a prompt to use Google Password Manager.
+        </message>
+        <message name="IDS_IOS_DESKTOP_LENS_PROMO_BUBBLE_DESCRIPTION_REMINDER" desc="The description for the iOS desktop Lens promo bubble.">
+          Shop, translate and identify what you see with your camera on the Chromium iOS app
+        </message>
+        <message name="IDS_IOS_DESKTOP_LENS_PROMO_BUBBLE_TITLE_QR" desc="The title for the iOS desktop Lens promo bubble with a QR code.">
+          Try Google Lens with Chromium on your phone
+        </message>
+        <message name="IDS_IOS_DESKTOP_PASSWORD_PROMO_BUBBLE_FOOTER_DESCRIPTION_QR" desc="The description for the iOS desktop password promo bubble footer which lets the user know how to use their saved passwords on their phone: follow the QR code, download Chrome for iOS and sign in to their account.">
+          To use your saved passwords, follow the QR code, download Chromium for iOS and sign in to your Google Account
+        </message>
+        <message name="IDS_IOS_DESKTOP_LENS_PROMO_NOTIFICATION_TITLE" desc="The title for the iOS desktop Lens promo notification.">
+          Chromium Tip: Search With Lens
+        </message>
+        <message name="IDS_IOS_DESKTOP_PASSWORD_PROMO_NOTIFICATION_TITLE" desc="The title for the iOS desktop Password promo notification.">
+          Chromium Tip: Save Passwords
+        </message>
+        <message name="IDS_IOS_DESKTOP_PRICE_TRACKING_DESCRIPTION_QR" desc="The description for the iOS desktop price tracking promo bubble with a QR code.">
+          Download Chromium on your phone to track prices and get alerts when the price drops on any site
+        </message>
+        <message name="IDS_IOS_DESKTOP_PRICE_TRACKING_REMINDER_CONFIRMATION" desc="Body text of the promo bubble that appears after the user chooses to be reminded of price tracking on their iOS device.">
+          Next time you open Chromium on your <ph name="DEVICE_TYPE">$1<ex>iPhone</ex></ph>, you’ll see a prompt to enable price tracking alerts.
+        </message>
+        <message name="IDS_IOS_DESKTOP_SAFE_BROWSING_PROMO_NOTIFICATION_TITLE" desc="The title for the iOS desktop Enhanced Safe Browsing promo notification.">
+          Chromium Tip: Enhanced Safe Browsing
+        </message>
+        <message name="IDS_IOS_DESKTOP_TAB_GROUPS_PROMO_BUBBLE_DESCRIPTION_QR" desc="The description for the iOS desktop Tab Groups promo bubble with a QR code.">
+          Download Chromium on your phone to open or create new tab groups on the go.
+        </message>
+        <message name="IDS_IOS_DESKTOP_TAB_GROUPS_REMINDER_CONFIRMATION" desc="Body text of the promo bubble that appears after the user chooses to be reminded of tab groups on their iOS device.">
+          Next time you open Chromium on your <ph name="DEVICE_TYPE">$1<ex>iPhone</ex></ph>, you’ll see a prompt to use tab groups.
         </message>
       </if>
 
@@ -3061,6 +3169,15 @@ Chromium is unable to recover your settings.
       <message name="IDS_DEFAULT_SEARCH_ENGINE_RESET_NOTIFICATION_LEARN_MORE_BUTTON"
          desc="Label for the 'Learn more' button in the default search engine reset notification, which opens a help center article.">
         Learn more
+      </message>
+
+      <!--Report-unsafe-site Dialog (accessed from Help menu)-->
+      <message name="IDS_REPORT_UNSAFE_SITE_DIALOG_TITLE" desc="Title of the dialog for reporting an unsafe site to Chromium">
+        Report this site
+      </message>
+
+      <message name="IDS_REPORT_UNSAFE_SITE_DIALOG_DESCRIPTION" desc="Explanatory text in dialog for reporting an unsafe site to Chromium">
+        Improve online safety for everyone when you report a site you think is harmful.
       </message>
     </messages>
   </release>

@@ -28,3 +28,7 @@ bool CFX_ReadOnlyVectorStream::ReadBlockAtOffset(pdfium::span<uint8_t> buffer,
                                                  FX_FILESIZE offset) {
   return stream_->ReadBlockAtOffset(buffer, offset);
 }
+
+pdfium::span<const uint8_t> CFX_ReadOnlyVectorStream::span() const {
+  return stream_->span();
+}

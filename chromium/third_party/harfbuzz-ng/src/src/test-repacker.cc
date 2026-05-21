@@ -49,10 +49,11 @@ static void start_object(const char* tag,
 
 static unsigned add_object(const char* tag,
                            unsigned len,
-                           hb_serialize_context_t* c)
+                           hb_serialize_context_t* c,
+                           bool shared = false)
 {
   start_object (tag, len, c);
-  return c->pop_pack (false);
+  return c->pop_pack (shared);
 }
 
 
@@ -114,7 +115,7 @@ static void start_lookup (int8_t type,
 {
   char lookup[] = {
     0, (char)type, // type
-    0, 0, // flag
+    0, (char)2, // flag
     0, (char)num_subtables, // num subtables
   };
 
@@ -146,7 +147,8 @@ static unsigned add_extension (unsigned child,
 
 // Adds coverage table fro [start, end]
 static unsigned add_coverage (unsigned start, unsigned end,
-                              hb_serialize_context_t* c)
+                              hb_serialize_context_t* c,
+                              bool shared = false)
 {
   if (end - start == 0) {
     uint8_t coverage[] = {
@@ -156,7 +158,7 @@ static unsigned add_coverage (unsigned start, unsigned end,
       (uint8_t) ((start >> 8) & 0xFF),
       (uint8_t) (start & 0xFF), // glyph[0]
     };
-    return add_object ((char*) coverage, 6, c);
+    return add_object ((char*) coverage, 6, c, shared);
   }
 
   if (end - start == 1)
@@ -171,7 +173,7 @@ static unsigned add_coverage (unsigned start, unsigned end,
       (uint8_t) ((end >> 8) & 0xFF),
       (uint8_t) (end & 0xFF), // glyph[1]
     };
-    return add_object ((char*) coverage, 8, c);
+    return add_object ((char*) coverage, 8, c, shared);
   }
 
   uint8_t coverage[] = {
@@ -186,7 +188,7 @@ static unsigned add_coverage (unsigned start, unsigned end,
 
     0, 0,
   };
-  return add_object ((char*) coverage, 10, c);
+  return add_object ((char*) coverage, 10, c, shared);
 }
 
 
@@ -1638,59 +1640,75 @@ populate_serializer_with_large_mark_base_pos_1 (hb_serialize_context_t* c)
   c->end_serialize();
 }
 
-template<int liga_subst_count,
-         int liga_set_count,
-         int liga_per_set_count,
-         int liga_size>
-static void
-populate_serializer_with_large_liga (hb_serialize_context_t* c, bool sequential_liga_sets)
+template<unsigned LigSubstCount,
+         unsigned LigaSetCount,
+         unsigned LigaPerSetCount,
+         unsigned LigaSize>
+static void populate_serializer_with_large_ligsubst(hb_serialize_context_t* c,
+                                                    bool sequential_liga_sets,
+                                                    bool shared,
+                                                    unsigned *liga_subst_id,
+                                                    bool unique_lig_str = false)
 {
-  std::string large_string(100000, 'a');
-  c->start_serialize<char> ();
+  char ch = 'a';
 
-  unsigned liga_subst[liga_subst_count];
-
-  for (unsigned l = 0; l < liga_subst_count; l++) {
+  unsigned liga[LigaSetCount * LigaPerSetCount];
+  unsigned liga_set[LigaSetCount];
+  for (unsigned l = 0; l < LigSubstCount; l++) {
     unsigned coverage_start = 0;
-    unsigned coverage_end = liga_set_count - 1;
+    unsigned coverage_end = LigaSetCount - 1;
     if (sequential_liga_sets) {
-      coverage_start = l * liga_set_count;
-      coverage_end = (l + 1) * liga_set_count - 1;
+      coverage_start = l * LigaSetCount;
+      coverage_end = (l + 1) * LigaSetCount - 1;
     }
-    unsigned coverage = add_coverage(coverage_start, coverage_end, c);
+    unsigned coverage = add_coverage(coverage_start, coverage_end, c, shared);
 
-    unsigned liga[liga_set_count * liga_per_set_count];
-    unsigned liga_set[liga_set_count];
-    for (unsigned i = 0; i < liga_set_count; i++) {
-      for (unsigned j = 0; j < liga_per_set_count; j++)
+    for (unsigned i = 0; i < LigaSetCount; i++) {
+      for (unsigned j = 0; j < LigaPerSetCount; j++)
       {
-        start_object (large_string.c_str(), liga_size, c);
+        std::string large_string(100000, ch);
+        start_object (large_string.c_str(), LigaSize, c);
+        if (unique_lig_str)
+          ch += 1;
         add_virtual_offset(coverage, c);
-        liga[i * liga_per_set_count + j] = c->pop_pack (false);
+        liga[i * LigaPerSetCount + j] = c->pop_pack (shared);
       }
 
-      add_liga_set_header(liga_per_set_count, c);
+      add_liga_set_header(LigaPerSetCount, c);
       add_virtual_offset(coverage, c);
-      for (unsigned j = 0; j < liga_per_set_count; j++)
+      for (unsigned j = 0; j < LigaPerSetCount; j++)
       {
-        add_offset(liga[i * liga_per_set_count + j], c);
+        add_offset(liga[i * LigaPerSetCount + j], c);
       }
 
-      liga_set[i] = c->pop_pack(false);
+      liga_set[i] = c->pop_pack(shared);
     }
 
-    add_liga_header(coverage, liga_set_count, c);
-    for (unsigned i = 0; i < liga_set_count; i++)
+    add_liga_header(coverage, LigaSetCount, c);
+    for (unsigned i = 0; i < LigaSetCount; i++)
     {
       add_offset(liga_set[i], c);
     }
 
-    liga_subst[l] = c->pop_pack(false);
+    liga_subst_id[l] = c->pop_pack(shared);
   }
 
-  for (unsigned l = 0; l < liga_subst_count; l++) {
-    liga_subst[l] = add_extension(liga_subst[l], 4, c);
+  for (unsigned l = 0; l < LigSubstCount; l++) {
+    liga_subst_id[l] = add_extension(liga_subst_id[l], 4, c);
   }
+}
+
+template<unsigned liga_subst_count,
+         unsigned liga_set_count,
+         unsigned liga_per_set_count,
+         unsigned liga_size>
+static void
+populate_serializer_with_large_liga (hb_serialize_context_t* c, bool sequential_liga_sets)
+{
+  c->start_serialize<char> ();
+
+  unsigned liga_subst[liga_subst_count];
+  populate_serializer_with_large_ligsubst<liga_subst_count, liga_set_count, liga_per_set_count, liga_size>(c, sequential_liga_sets, false, liga_subst);
 
   start_lookup (7, liga_subst_count, c);
   for (unsigned l = 0; l < liga_subst_count; l++) {
@@ -1795,74 +1813,162 @@ populate_serializer_with_large_liga_overlapping_clone_result (hb_serialize_conte
   c->end_serialize();
 }
 
+template<unsigned liga_subst_count,
+         unsigned liga_set_count,
+         unsigned liga_per_set_count,
+         unsigned liga_size>
+static void
+populate_serializer_with_shared_large_liga (hb_serialize_context_t* c, bool sequential_liga_sets)
+{
+  c->start_serialize<char> ();
+
+  unsigned lookups[2];
+  // Lookup
+  // LigSubst: shared with another Lookup table, needs splitting
+  unsigned liga_subst_idx[liga_subst_count];
+  populate_serializer_with_large_ligsubst<liga_subst_count, liga_set_count, liga_per_set_count, liga_size>(c, sequential_liga_sets, true, liga_subst_idx, true);
+
+  start_lookup (7, liga_subst_count, c);
+  for (unsigned l = 0; l < liga_subst_count; l++) {
+    add_offset(liga_subst_idx[l], c);
+  }
+
+  lookups[0] = finish_lookup (c);
+
+  // Lookup with 2 LigSubst tables
+  unsigned liga_subst[liga_subst_count + 1];
+  // LigSubst: small one, not shared, no split
+  populate_serializer_with_large_ligsubst<1, 1, 1, 10>(c, sequential_liga_sets, false, liga_subst);
+
+  // LigSubst: shared, needs splitting
+  populate_serializer_with_large_ligsubst<liga_subst_count, liga_set_count, liga_per_set_count, liga_size>(c, sequential_liga_sets, true, &liga_subst[1], true);
+
+  start_lookup (7, liga_subst_count + 1, c);
+  for (unsigned l = 0; l <= liga_subst_count; l++) {
+    add_offset(liga_subst[l], c);
+  }
+
+  lookups[1] = finish_lookup (c);
+
+  unsigned lookup_list = add_lookup_list (lookups, 2, c);
+  add_gsubgpos_header (lookup_list, c);
+
+  c->end_serialize();
+}
+
+template<unsigned liga_subst_count,
+         unsigned liga_set_count,
+         unsigned liga_per_set_count,
+         unsigned liga_size>
+static void
+populate_serializer_with_liga_shared_coverage (hb_serialize_context_t* c)
+{
+  c->start_serialize<char> ();
+
+  unsigned liga_subst[liga_subst_count + 1];
+  // LigSubst: small one, no split, coverage shared
+  populate_serializer_with_large_ligsubst<1, 6, 2, 10>(c, true, true, liga_subst, true);
+
+  // LigSubst: shared coverage, needs splitting
+  populate_serializer_with_large_ligsubst<liga_subst_count, liga_set_count, liga_per_set_count, liga_size>(c, true, true, &liga_subst[1], true);
+
+  start_lookup (7, liga_subst_count + 1, c);
+  for (unsigned l = 0; l <= liga_subst_count; l++) {
+    add_offset(liga_subst[l], c);
+  }
+
+  unsigned lookup = finish_lookup (c);
+
+  unsigned lookup_list = add_lookup_list (&lookup, 1, c);
+  add_gsubgpos_header (lookup_list, c);
+
+  c->end_serialize();
+}
+
 static void test_sort_shortest ()
 {
   size_t buffer_size = 100;
-  void* buffer = malloc (buffer_size);
-  hb_serialize_context_t c (buffer, buffer_size);
-  populate_serializer_complex_2 (&c);
+  void* buffer_a = malloc (buffer_size);
+  void* buffer_e = malloc (buffer_size);
+  hb_serialize_context_t a (buffer_a, buffer_size);
+  hb_serialize_context_t e (buffer_e, buffer_size);
+  populate_serializer_complex_2 (&a);
 
-  graph_t graph (c.object_graph ());
+  graph_t graph (a.object_graph ());
   graph.sort_shortest_distance ();
+  graph.normalize();
   hb_always_assert (!graph.in_error ());
 
-  hb_always_assert(strncmp (graph.object (4).head, "abc", 3) == 0);
-  hb_always_assert(graph.object (4).real_links.length == 3);
-  hb_always_assert(graph.object (4).real_links[0].objidx == 2);
-  hb_always_assert(graph.object (4).real_links[1].objidx == 0);
-  hb_always_assert(graph.object (4).real_links[2].objidx == 3);
+  // Expected graph
+  e.start_serialize();
+  unsigned jkl = add_object ("jkl", 3, &e);
 
-  hb_always_assert(strncmp (graph.object (3).head, "mn", 2) == 0);
-  hb_always_assert(graph.object (3).real_links.length == 0);
+  start_object("ghi", 3, &e);
+  add_offset(jkl, &e);
+  unsigned ghi = e.pop_pack(false);
 
-  hb_always_assert(strncmp (graph.object (2).head, "def", 3) == 0);
-  hb_always_assert(graph.object (2).real_links.length == 1);
-  hb_always_assert(graph.object (2).real_links[0].objidx == 1);
+  start_object("def", 3, &e);
+  add_offset(ghi, &e);
+  unsigned def = e.pop_pack(false);
 
-  hb_always_assert(strncmp (graph.object (1).head, "ghi", 3) == 0);
-  hb_always_assert(graph.object (1).real_links.length == 1);
-  hb_always_assert(graph.object (1).real_links[0].objidx == 0);
+  unsigned mn = add_object("mn", 2, &e);
 
-  hb_always_assert(strncmp (graph.object (0).head, "jkl", 3) == 0);
-  hb_always_assert(graph.object (0).real_links.length == 0);
+  start_object ("abc", 3, &e);
+  add_offset (def, &e);
+  add_offset (jkl, &e);
+  add_offset (mn, &e);
+  e.pop_pack (false);
+  e.end_serialize();
 
-  free (buffer);
+  graph_t expected(e.object_graph());
+  expected.normalize();
+
+  assert(expected == graph);
+
+  free (buffer_a);
+  free (buffer_e);
 }
 
 static void test_duplicate_leaf ()
 {
   size_t buffer_size = 100;
-  void* buffer = malloc (buffer_size);
-  hb_serialize_context_t c (buffer, buffer_size);
-  populate_serializer_complex_2 (&c);
+  void* buffer_a = malloc (buffer_size);
+  void* buffer_e = malloc (buffer_size);
+  hb_serialize_context_t a (buffer_a, buffer_size);
+  hb_serialize_context_t e (buffer_e, buffer_size);
+  populate_serializer_complex_2 (&a);
 
-  graph_t graph (c.object_graph ());
+  graph_t graph (a.object_graph ());
   graph.duplicate (4, 1);
+  graph.normalize();
 
-  hb_always_assert(strncmp (graph.object (5).head, "abc", 3) == 0);
-  hb_always_assert(graph.object (5).real_links.length == 3);
-  hb_always_assert(graph.object (5).real_links[0].objidx == 3);
-  hb_always_assert(graph.object (5).real_links[1].objidx == 4);
-  hb_always_assert(graph.object (5).real_links[2].objidx == 0);
+  e.start_serialize();
+  unsigned mn = add_object("mn", 2, &e);
+  unsigned jkl_2 = add_object("jkl", 3, &e);
 
-  hb_always_assert(strncmp (graph.object (4).head, "jkl", 3) == 0);
-  hb_always_assert(graph.object (4).real_links.length == 0);
+  start_object("ghi", 3, &e);
+  add_offset(jkl_2, &e);
+  unsigned ghi = e.pop_pack(false);
 
-  hb_always_assert(strncmp (graph.object (3).head, "def", 3) == 0);
-  hb_always_assert(graph.object (3).real_links.length == 1);
-  hb_always_assert(graph.object (3).real_links[0].objidx == 2);
+  start_object("def", 3, &e);
+  add_offset(ghi, &e);
+  unsigned def = e.pop_pack(false);
 
-  hb_always_assert(strncmp (graph.object (2).head, "ghi", 3) == 0);
-  hb_always_assert(graph.object (2).real_links.length == 1);
-  hb_always_assert(graph.object (2).real_links[0].objidx == 1);
+  unsigned jkl_1 = add_object("jkl", 3, &e);
 
-  hb_always_assert(strncmp (graph.object (1).head, "jkl", 3) == 0);
-  hb_always_assert(graph.object (1).real_links.length == 0);
+  start_object("abc", 3, &e);
+  add_offset(def, &e);
+  add_offset(jkl_1, &e);
+  add_offset(mn, &e);
+  e.pop_pack(false);
 
-  hb_always_assert(strncmp (graph.object (0).head, "mn", 2) == 0);
-  hb_always_assert(graph.object (0).real_links.length == 0);
+  graph_t expected(e.object_graph());
+  expected.normalize();
 
-  free (buffer);
+  assert(expected == graph);
+
+  free (buffer_a);
+  free (buffer_e);
 }
 
 static void test_duplicate_interior ()
@@ -1875,15 +1981,15 @@ static void test_duplicate_interior ()
   graph_t graph (c.object_graph ());
   graph.duplicate (3, 2);
 
-  hb_always_assert(strncmp (graph.object (6).head, "abc", 3) == 0);
-  hb_always_assert(graph.object (6).real_links.length == 3);
-  hb_always_assert(graph.object (6).real_links[0].objidx == 4);
-  hb_always_assert(graph.object (6).real_links[1].objidx == 2);
-  hb_always_assert(graph.object (6).real_links[2].objidx == 1);
+  hb_always_assert(strncmp (graph.object (6).head, "jkl", 3) == 0);
+  hb_always_assert(graph.object (6).real_links.length == 1);
+  hb_always_assert(graph.object (6).real_links[0].objidx == 0);
 
-  hb_always_assert(strncmp (graph.object (5).head, "jkl", 3) == 0);
-  hb_always_assert(graph.object (5).real_links.length == 1);
-  hb_always_assert(graph.object (5).real_links[0].objidx == 0);
+  hb_always_assert(strncmp (graph.object (5).head, "abc", 3) == 0);
+  hb_always_assert(graph.object (5).real_links.length == 3);
+  hb_always_assert(graph.object (5).real_links[0].objidx == 4);
+  hb_always_assert(graph.object (5).real_links[1].objidx == 2);
+  hb_always_assert(graph.object (5).real_links[2].objidx == 1);
 
   hb_always_assert(strncmp (graph.object (4).head, "def", 3) == 0);
   hb_always_assert(graph.object (4).real_links.length == 1);
@@ -1891,7 +1997,7 @@ static void test_duplicate_interior ()
 
   hb_always_assert(strncmp (graph.object (3).head, "ghi", 3) == 0);
   hb_always_assert(graph.object (3).real_links.length == 1);
-  hb_always_assert(graph.object (3).real_links[0].objidx == 5);
+  hb_always_assert(graph.object (3).real_links[0].objidx == 6);
 
   hb_always_assert(strncmp (graph.object (2).head, "jkl", 3) == 0);
   hb_always_assert(graph.object (2).real_links.length == 1);
@@ -1930,6 +2036,7 @@ static void test_will_overflow_1 ()
   size_t buffer_size = 100;
   void* buffer = malloc (buffer_size);
   hb_serialize_context_t c (buffer, buffer_size);
+
   populate_serializer_complex_2 (&c);
   graph_t graph (c.object_graph ());
 
@@ -2409,6 +2516,52 @@ static void test_resolve_with_liga_split_overlapping_clone ()
   free (expected_buffer);
 }
 
+static void test_resolve_with_liga_split_shared_table ()
+{
+  size_t buffer_size = 400000;
+  void* buffer = malloc (buffer_size);
+  hb_always_assert (buffer);
+  hb_serialize_context_t c (buffer, buffer_size);
+  populate_serializer_with_shared_large_liga<1, 6, 2, 16000>(&c, true);
+
+  void* expected_buffer = malloc (buffer_size);
+  hb_always_assert (expected_buffer);
+  hb_serialize_context_t e (expected_buffer, buffer_size);
+  populate_serializer_with_shared_large_liga<3, 2, 2, 16000>(&e, true);
+
+  run_resolve_overflow_test ("test_resolve_with_liga_split_shared_table",
+                             c,
+                             e,
+                             20,
+                             true,
+                             HB_TAG('G', 'S', 'U', 'B'));
+  free (buffer);
+  free (expected_buffer);
+}
+
+static void test_resolve_with_liga_split_shared_coverage ()
+{
+  size_t buffer_size = 400000;
+  void* buffer = malloc (buffer_size);
+  hb_always_assert (buffer);
+  hb_serialize_context_t c (buffer, buffer_size);
+  populate_serializer_with_liga_shared_coverage<1, 6, 2, 16000>(&c);
+
+  void* expected_buffer = malloc (buffer_size);
+  hb_always_assert (expected_buffer);
+  hb_serialize_context_t e (expected_buffer, buffer_size);
+  populate_serializer_with_liga_shared_coverage<3, 2, 2, 16000>(&e);
+
+  run_resolve_overflow_test ("test_resolve_with_liga_split_shared_coverage",
+                             c,
+                             e,
+                             20,
+                             true,
+                             HB_TAG('G', 'S', 'U', 'B'));
+  free (buffer);
+  free (expected_buffer);
+}
+
 static void test_resolve_overflows_via_splitting_spaces ()
 {
   size_t buffer_size = 160000;
@@ -2620,6 +2773,8 @@ main (int argc, char **argv)
   test_resolve_with_liga_split_move ();
   test_dont_duplicate_virtual ();
   test_resolve_with_liga_split_overlapping_clone ();
+  test_resolve_with_liga_split_shared_table ();
+  test_resolve_with_liga_split_shared_coverage ();
 
   // TODO(grieger): have run overflow tests compare graph equality not final packed binary.
   // TODO(grieger): split test where multiple subtables in one lookup are split to test link ordering.

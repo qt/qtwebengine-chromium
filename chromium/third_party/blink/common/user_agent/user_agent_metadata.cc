@@ -2,11 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <algorithm>
-
 #include "third_party/blink/public/common/user_agent/user_agent_metadata.h"
 
-#include "base/containers/contains.h"
+#include <algorithm>
+
 #include "base/containers/span.h"
 #include "base/pickle.h"
 #include "net/http/structured_headers.h"
@@ -113,58 +112,73 @@ std::optional<std::string> UserAgentMetadata::Marshal(
 // static
 std::optional<UserAgentMetadata> UserAgentMetadata::Demarshal(
     const std::optional<std::string>& encoded) {
-  if (!encoded)
+  if (!encoded) {
     return std::nullopt;
+  }
 
-  base::Pickle pickle =
-      base::Pickle::WithUnownedBuffer(base::as_byte_span(encoded.value()));
-  base::PickleIterator in(pickle);
+  base::PickleIterator in =
+      base::PickleIterator::WithData(base::as_byte_span(encoded.value()));
 
   uint32_t version;
   UserAgentMetadata out;
-  if (!in.ReadUInt32(&version) || version != kVersion)
+  if (!in.ReadUInt32(&version) || version != kVersion) {
     return std::nullopt;
+  }
 
   uint32_t brand_version_size;
-  if (!in.ReadUInt32(&brand_version_size))
+  if (!in.ReadUInt32(&brand_version_size)) {
     return std::nullopt;
+  }
   for (uint32_t i = 0; i < brand_version_size; i++) {
     UserAgentBrandVersion brand_version;
-    if (!in.ReadString(&brand_version.brand))
+    if (!in.ReadString(&brand_version.brand)) {
       return std::nullopt;
-    if (!in.ReadString(&brand_version.version))
+    }
+    if (!in.ReadString(&brand_version.version)) {
       return std::nullopt;
+    }
     out.brand_version_list.push_back(std::move(brand_version));
   }
 
   uint32_t brand_full_version_size;
-  if (!in.ReadUInt32(&brand_full_version_size))
+  if (!in.ReadUInt32(&brand_full_version_size)) {
     return std::nullopt;
+  }
   for (uint32_t i = 0; i < brand_full_version_size; i++) {
     UserAgentBrandVersion brand_version;
-    if (!in.ReadString(&brand_version.brand))
+    if (!in.ReadString(&brand_version.brand)) {
       return std::nullopt;
-    if (!in.ReadString(&brand_version.version))
+    }
+    if (!in.ReadString(&brand_version.version)) {
       return std::nullopt;
+    }
     out.brand_full_version_list.push_back(std::move(brand_version));
   }
 
-  if (!in.ReadString(&out.full_version))
+  if (!in.ReadString(&out.full_version)) {
     return std::nullopt;
-  if (!in.ReadString(&out.platform))
+  }
+  if (!in.ReadString(&out.platform)) {
     return std::nullopt;
-  if (!in.ReadString(&out.platform_version))
+  }
+  if (!in.ReadString(&out.platform_version)) {
     return std::nullopt;
-  if (!in.ReadString(&out.architecture))
+  }
+  if (!in.ReadString(&out.architecture)) {
     return std::nullopt;
-  if (!in.ReadString(&out.model))
+  }
+  if (!in.ReadString(&out.model)) {
     return std::nullopt;
-  if (!in.ReadBool(&out.mobile))
+  }
+  if (!in.ReadBool(&out.mobile)) {
     return std::nullopt;
-  if (!in.ReadString(&out.bitness))
+  }
+  if (!in.ReadString(&out.bitness)) {
     return std::nullopt;
-  if (!in.ReadBool(&out.wow64))
+  }
+  if (!in.ReadBool(&out.wow64)) {
     return std::nullopt;
+  }
   uint32_t form_factors_size;
   if (!in.ReadUInt32(&form_factors_size)) {
     return std::nullopt;
@@ -182,7 +196,7 @@ std::optional<UserAgentMetadata> UserAgentMetadata::Demarshal(
 
 // static
 bool UserAgentMetadata::IsValidFormFactor(std::string_view form_factor) {
-  return base::Contains(kValidFormFactors, form_factor);
+  return std::ranges::contains(kValidFormFactors, form_factor);
 }
 
 bool UserAgentBrandVersion::operator==(const UserAgentBrandVersion& a) const {

@@ -116,6 +116,7 @@ class PostFilter {
   //                as the input and the output is written into
   //                |loop_restoration_buffer_| (which is just |superres_buffer_|
   //                with a shift to the left).
+  // Section 7.4.
   void ApplyFilteringThreaded();
 
   // Does the overall post processing filter for one superblock row starting at
@@ -139,6 +140,7 @@ class PostFilter {
   //                with a shift to the left or top-left).
   // Returns the index of the last row whose post processing is complete and can
   // be used for referencing.
+  // Section 7.4.
   int ApplyFilteringForOneSuperBlockRow(int row4x4, int sb4x4, bool is_last_row,
                                         bool do_deblock);
 

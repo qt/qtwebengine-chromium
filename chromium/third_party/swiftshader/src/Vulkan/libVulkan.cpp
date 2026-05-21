@@ -585,11 +585,11 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(const VkInstanceCreateInfo *pCre
 		}
 		else
 		{
-			if(VK_API_VERSION_MAJOR(appApiVersion) > VK_API_VERSION_MINOR(vk::API_VERSION))
+			if(VK_API_VERSION_MAJOR(appApiVersion) > VK_API_VERSION_MAJOR(vk::API_VERSION))
 			{
 				return VK_ERROR_INCOMPATIBLE_DRIVER;
 			}
-			if((VK_API_VERSION_MAJOR(appApiVersion) == VK_API_VERSION_MINOR(vk::API_VERSION)) &&
+			if((VK_API_VERSION_MAJOR(appApiVersion) == VK_API_VERSION_MAJOR(vk::API_VERSION)) &&
 			   VK_API_VERSION_MINOR(appApiVersion) > VK_API_VERSION_MINOR(vk::API_VERSION))
 			{
 				return VK_ERROR_INCOMPATIBLE_DRIVER;
@@ -2600,7 +2600,6 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDescriptorSetLayout(VkDevice device, cons
 		switch(extensionCreateInfo->sType)
 		{
 		case VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO_EXT:
-			ASSERT(!vk::Cast(device)->hasExtension(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME));
 			break;
 		default:
 			UNSUPPORTED("pCreateInfo->pNext sType = %s", vk::Stringify(extensionCreateInfo->sType).c_str());
@@ -4778,7 +4777,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkGetPhysicalDeviceSurfaceCapabilities2KHR(VkPhys
 	TRACE("(VkPhysicalDevice physicalDevice = %p, const VkPhysicalDeviceSurfaceInfo2KHR *pSurfaceInfo = %p, VkSurfaceCapabilities2KHR *pSurfaceCapabilities = %p)",
 	      physicalDevice, pSurfaceInfo, pSurfaceCapabilities);
 
-	if (pSurfaceInfo->surface != VK_NULL_HANDLE)
+	if(pSurfaceInfo->surface != VK_NULL_HANDLE)
 	{
 		return vk::Cast(pSurfaceInfo->surface)->getSurfaceCapabilities(pSurfaceInfo->pNext, &pSurfaceCapabilities->surfaceCapabilities, pSurfaceCapabilities->pNext);
 	}

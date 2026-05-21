@@ -131,19 +131,15 @@ void FXJSE_UpdateObjectBinding(v8::Local<v8::Object> hObject,
   DCHECK(!hObject.IsEmpty());
   DCHECK_EQ(hObject->InternalFieldCount(), 2);
   hObject->SetAlignedPointerInInternalField(
-      0, const_cast<wchar_t*>(kFXJSEHostObjectTag),
-      kDefaultPDFiumTag);
-  hObject->SetAlignedPointerInInternalField(1, pNewBinding,
-                                            kDefaultPDFiumTag);
+      0, const_cast<wchar_t*>(kFXJSEHostObjectTag), kDefaultPDFiumTag);
+  hObject->SetAlignedPointerInInternalField(1, pNewBinding, kDefaultPDFiumTag);
 }
 
 void FXJSE_ClearObjectBinding(v8::Local<v8::Object> hObject) {
   DCHECK(!hObject.IsEmpty());
   DCHECK_EQ(hObject->InternalFieldCount(), 2);
-  hObject->SetAlignedPointerInInternalField(0, nullptr,
-                                            kDefaultPDFiumTag);
-  hObject->SetAlignedPointerInInternalField(1, nullptr,
-                                            kDefaultPDFiumTag);
+  hObject->SetAlignedPointerInInternalField(0, nullptr, kDefaultPDFiumTag);
+  hObject->SetAlignedPointerInInternalField(1, nullptr, kDefaultPDFiumTag);
 }
 
 CFXJSE_HostObject* FXJSE_RetrieveObjectBinding(v8::Local<v8::Value> hValue) {
@@ -153,14 +149,13 @@ CFXJSE_HostObject* FXJSE_RetrieveObjectBinding(v8::Local<v8::Value> hValue) {
 
   v8::Local<v8::Object> hObject = hValue.As<v8::Object>();
   if (hObject->InternalFieldCount() != 2 ||
-      hObject->GetAlignedPointerFromInternalField(
-          0, kDefaultPDFiumTag) != kFXJSEHostObjectTag) {
+      hObject->GetAlignedPointerFromInternalField(0, kDefaultPDFiumTag) !=
+          kFXJSEHostObjectTag) {
     return nullptr;
   }
 
   return static_cast<CFXJSE_HostObject*>(
-      hObject->GetAlignedPointerFromInternalField(
-          1, kDefaultPDFiumTag));
+      hObject->GetAlignedPointerFromInternalField(1, kDefaultPDFiumTag));
 }
 
 // static

@@ -83,6 +83,12 @@ class Deoptimizer : public Malloced {
     return bytecode_offset_in_outermost_frame_;
   }
 
+// TODO(mdanylo): for Dumpling only use ro-functions that are guaranteed to not
+// change state and metadata.
+#ifdef V8_DUMPLING
+  void VirtualMaterializeAndPrint();
+#endif  // V8_DUMPLING
+
   static Deoptimizer* New(Address raw_function, DeoptimizeKind kind,
                           Address from, int fp_to_sp_delta, Isolate* isolate);
   static Deoptimizer* Grab(Isolate* isolate);
@@ -146,7 +152,7 @@ class Deoptimizer : public Malloced {
     return offsetof(Deoptimizer, caller_frame_top_);
   }
 
-#ifdef V8_ENABLE_CET_SHADOW_STACK
+#if defined(V8_ENABLE_CET_SHADOW_STACK) || defined(V8_ENABLE_RISCV_SHADOW_STACK)
   static constexpr int shadow_stack_offset() {
     return offsetof(Deoptimizer, shadow_stack_);
   }
@@ -319,7 +325,7 @@ class Deoptimizer : public Malloced {
   std::vector<ValueToMaterialize> values_to_materialize_;
   std::vector<ValueToMaterialize> feedback_vector_to_materialize_;
 
-#ifdef V8_ENABLE_CET_SHADOW_STACK
+#if defined(V8_ENABLE_CET_SHADOW_STACK) || defined(V8_ENABLE_RISCV_SHADOW_STACK)
   intptr_t* shadow_stack_ = nullptr;
   size_t shadow_stack_count_ = 0;
 #endif  // V8_ENABLE_CET_SHADOW_STACK
@@ -327,6 +333,12 @@ class Deoptimizer : public Malloced {
 #ifdef DEBUG
   DisallowGarbageCollection* disallow_garbage_collection_;
 #endif  // DEBUG
+
+  // Use a DisallowSandboxAccess scope for most of the deoptimizer to prevent
+  // the deoptimizer from accessing untrusted data in the sandbox. This way, we
+  // get some level of assurance that actions taken by the deoptimizer cannot
+  // be influenced by untrusted in-sandbox data but purely rely on trusted data.
+  std::optional<DisallowSandboxAccess> disallow_sandbox_access_;
 
   // Note: This is intentionally not a unique_ptr s.t. the Deoptimizer
   // satisfies is_standard_layout, needed for offsetof().
@@ -337,11 +349,6 @@ class Deoptimizer : public Malloced {
   // as members for reuse for multiple signatures during one de-optimization.
   std::optional<AccountingAllocator> alloc_;
   std::optional<Zone> zone_;
-#endif
-#if V8_ENABLE_WEBASSEMBLY
-  // Wasm deoptimizations should not access the heap at all. All deopt data is
-  // stored off-heap.
-  std::optional<DisallowSandboxAccess> no_sandbox_access_during_wasm_deopt_;
 #endif
 
   friend class DeoptimizedFrameInfo;

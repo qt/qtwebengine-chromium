@@ -185,9 +185,9 @@ typedef struct Libgav1DecoderBuffer {
   int has_hdr_mdcv;  // 1 if the values in hdr_mdcv are valid for this frame. 0
                      // otherwise.
 
-  Libgav1ObuMetadataItutT35 itut_t35;
-  int has_itut_t35;  // 1 if the values in itut_t35 are valid for this frame. 0
-                     // otherwise.
+  Libgav1ObuMetadataItutT35 itut_t35[8];
+  int itut_t35_count;  // Number of entries in the itut_t35 that are valid for
+                       // this frame.
 
   // The |user_private_data| argument passed to Decoder::EnqueueFrame().
   int64_t user_private_data;

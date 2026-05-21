@@ -11,6 +11,7 @@
 
 #include "base/containers/flat_set.h"
 #include "base/containers/span.h"
+#include "components/autofill/core/browser/data_model/autofill_ai/entity_instance.h"
 #include "components/autofill/core/browser/field_types.h"
 #include "components/autofill/core/common/mojom/autofill_types.mojom-forward.h"
 #include "components/autofill/core/common/unique_ids.h"
@@ -23,6 +24,7 @@ class AutofillField;
 struct AutofillFieldWithAttributeType;
 class EntityInstance;
 class FormStructure;
+class Section;
 
 // Returns the entities from EntityDataManager::GetEntityInstances() for which
 // filling is enabled.
@@ -44,6 +46,13 @@ std::u16string GetFillValueForEntity(
     mojom::ActionPersistence action_persistence,
     const std::string& app_locale,
     AddressNormalizer* address_normalizer);
+
+// Returns whether filling `form`'s `section` with `entity` would fill sensitive
+// attributes.
+bool WillFillSensitiveAttributes(const EntityInstance& entity,
+                                 const FormStructure& form,
+                                 const Section& section,
+                                 std::string_view app_locale);
 
 }  // namespace autofill
 

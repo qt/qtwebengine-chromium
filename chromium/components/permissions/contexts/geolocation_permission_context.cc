@@ -34,10 +34,7 @@ GeolocationPermissionContext::GeolocationPermissionContext(
     std::unique_ptr<Delegate> delegate)
     : PermissionContextBase(
           browser_context,
-          base::FeatureList::IsEnabled(
-              content_settings::features::kApproximateGeolocationPermission)
-              ? ContentSettingsType::GEOLOCATION_WITH_OPTIONS
-              : ContentSettingsType::GEOLOCATION,
+          content_settings::GeolocationContentSettingsType(),
           network::mojom::PermissionsPolicyFeature::kGeolocation),
       delegate_(std::move(delegate)) {}
 
@@ -55,51 +52,6 @@ void GeolocationPermissionContext::DecidePermission(
   }
 }
 
-void GeolocationPermissionContext::UpdateSetting(
-    const PermissionRequestData& request_data,
-    PermissionSetting setting,
-    bool is_one_time) {
-  // TODO(crbug.com/425642101): Remove (i.e. use base implementation) once
-  // content settings are migrated to the PermissionSettingsRegistry.
-
-  if (base::FeatureList::IsEnabled(
-          content_settings::features::kApproximateGeolocationPermission)) {
-    PermissionContextBase::UpdateSetting(request_data, std::move(setting),
-                                         is_one_time);
-  } else {
-    DCHECK_EQ(request_data.requesting_origin,
-              request_data.requesting_origin.DeprecatedGetOriginAsURL());
-    DCHECK_EQ(request_data.embedding_origin,
-              request_data.embedding_origin.DeprecatedGetOriginAsURL());
-    content_settings::ContentSettingConstraints constraints;
-    constraints.set_session_model(
-        is_one_time ? content_settings::mojom::SessionModel::ONE_TIME
-                    : content_settings::mojom::SessionModel::DURABLE);
-
-    ContentSetting content_setting = std::get<ContentSetting>(setting);
-
-    // The Permissions module in Safety check will revoke permissions after
-    // a finite amount of time if the permission can be revoked.
-    if (content_settings::CanBeAutoRevokedAsUnusedPermission(
-            content_settings_type(), base::Value(content_setting),
-            is_one_time)) {
-      constraints.set_track_last_visit_for_autoexpiration(true);
-    }
-
-    if (is_one_time) {
-      if (content_settings::ShouldTypeExpireActively(content_settings_type())) {
-        constraints.set_lifetime(kOneTimePermissionMaximumLifetime);
-      }
-    }
-
-    PermissionsClient::Get()
-        ->GetSettingsMap(browser_context())
-        ->SetContentSettingDefaultScope(
-            request_data.requesting_origin, request_data.embedding_origin,
-            content_settings_type(), content_setting, constraints);
-  }
-}
-
 base::WeakPtr<GeolocationPermissionContext>
 GeolocationPermissionContext::GetWeakPtr() {
   return weak_factory_.GetWeakPtr();
@@ -110,11 +62,8 @@ GeolocationPermissionContext::CreatePermissionResolver(
     const blink::mojom::PermissionDescriptorPtr& permission_descriptor) const {
   if (base::FeatureList::IsEnabled(
           content_settings::features::kApproximateGeolocationPermission)) {
-    // TODO(crbug.com/430586927) The geolocation PermissionDescriptor doesn't
-    // yet support the approximate request, hence for the time being we treat
-    // each request as a precise request.
     return std::make_unique<GeolocationPermissionResolver>(
-        /*requested_precise*/ true);
+        *permission_descriptor);
   } else {
     return PermissionContextBase::CreatePermissionResolver(
         permission_descriptor);

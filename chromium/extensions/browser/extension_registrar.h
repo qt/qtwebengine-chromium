@@ -19,6 +19,7 @@
 #include "components/keyed_service/core/keyed_service.h"
 #include "components/sync/model/string_ordinal.h"
 #include "extensions/browser/blocklist_state.h"
+#include "extensions/browser/delayed_install_manager.h"
 #include "extensions/browser/disable_reason.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/process_manager.h"
@@ -38,7 +39,6 @@ class DevToolsAgentHost;
 }  // namespace content
 
 namespace extensions {
-class DelayedInstallManager;
 class Extension;
 class ExtensionHost;
 class ExtensionPrefs;
@@ -50,7 +50,9 @@ class RendererStartupHelper;
 // extensions for a BrowserContext. It uses the ExtensionRegistry to track
 // extension states. Other classes may query the ExtensionRegistry directly,
 // but eventually only ExtensionRegistrar will be able to make changes to it.
-class ExtensionRegistrar : public KeyedService, public ProcessManagerObserver {
+class ExtensionRegistrar : public KeyedService,
+                           public ProcessManagerObserver,
+                           public DelayedInstallManager::Observer {
  public:
   // Delegate for embedder-specific functionality like policy and permissions.
   class Delegate {
@@ -131,7 +133,7 @@ class ExtensionRegistrar : public KeyedService, public ProcessManagerObserver {
         const Extension* extension,
         const syncer::StringOrdinal& page_ordinal,
         int install_flags,
-        base::Value::Dict ruleset_install_prefs) = 0;
+        base::DictValue ruleset_install_prefs) = 0;
   };
 
   explicit ExtensionRegistrar(content::BrowserContext* browser_context);
@@ -162,6 +164,10 @@ class ExtensionRegistrar : public KeyedService, public ProcessManagerObserver {
   // Called when the associated Profile is going to be destroyed.
   void Shutdown() override;
 
+  // DelayedInstallManager::Observer:
+  void OnDelayedInstallFinished(
+      scoped_refptr<const Extension> extension) override;
+
   // Adds the extension to the ExtensionRegistry. The extension will be added to
   // the enabled, disabled, blocklisted or blocked set. If the extension is
   // added as enabled, it will be activated.
@@ -177,7 +183,7 @@ class ExtensionRegistrar : public KeyedService, public ProcessManagerObserver {
                                 int install_flags,
                                 const syncer::StringOrdinal& page_ordinal,
                                 const std::string& install_parameter,
-                                base::Value::Dict ruleset_install_prefs);
+                                base::DictValue ruleset_install_prefs);
 
   // Informs the service that an extension's files are in place for loading.
   //
@@ -190,7 +196,7 @@ class ExtensionRegistrar : public KeyedService, public ProcessManagerObserver {
   void OnExtensionInstalled(const Extension* extension,
                             const syncer::StringOrdinal& page_ordinal,
                             int install_flags,
-                            base::Value::Dict ruleset_install_prefs = {});
+                            base::DictValue ruleset_install_prefs = {});
   void OnExtensionInstalled(const Extension* extension,
                             const syncer::StringOrdinal& page_ordinal) {
     OnExtensionInstalled(extension, page_ordinal,
@@ -487,6 +493,9 @@ class ExtensionRegistrar : public KeyedService, public ProcessManagerObserver {
 
   base::ScopedObservation<ProcessManager, ProcessManagerObserver>
       process_manager_observation_{this};
+  base::ScopedObservation<DelayedInstallManager,
+                          DelayedInstallManager::Observer>
+      delayed_install_manager_observation_{this};
   base::WeakPtrFactory<ExtensionRegistrar> weak_factory_{this};
 };
 

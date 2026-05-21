@@ -73,14 +73,6 @@ source_set("mf_cdm_proxy") {
 
 source_set("dcomp_texture_wrapper") {
   sources = [ "dcomp_texture_wrapper.h" ]
-  deps = [
-    "//base",
-    "//ui/gfx:memory_buffer",
-  ]
-}
-
-source_set("overlay_state_observer_subscription") {
-  sources = [ "overlay_state_observer_subscription.h" ]
   deps = [ "//base" ]
 }
 

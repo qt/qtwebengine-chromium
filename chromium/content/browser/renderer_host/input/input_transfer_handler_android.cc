@@ -179,6 +179,14 @@ bool InputTransferHandlerAndroid::OnTouchEvent(
     return false;
   }
 
+  // Speculatively send state to Viz before calling into system to transfer
+  // input.
+  if (base::FeatureList::IsEnabled(
+          input::features::kInputVizardSpeculativeTransfer)) {
+    client_->SendStateOnTouchTransfer(event,
+                                      /*browser_would_have_handled=*/false);
+  }
+
   auto transfer_result = static_cast<TransferInputToVizResult>(
       jni_delegate_->MaybeTransferInputToViz(client_->GetRootSurfaceHandle()));
 
@@ -189,21 +197,33 @@ bool InputTransferHandlerAndroid::OnTouchEvent(
     return true;
   }
 
+  if (transfer_result ==
+      TransferInputToVizResult::kMultipleBrowserWindowsOpen) {
+    // `kMultipleBrowserWindowsOpen` implies Viz token is null, don't attempt to
+    // retransfer touch sequence.
+    return false;
+  }
+
   if (!IsTouchSequencePotentiallyActiveOnViz()) {
     return false;
   }
 
   const bool browser_would_have_handled =
       (transfer_result == TransferInputToVizResult::kSelectionHandlesActive) ||
-      (transfer_result == TransferInputToVizResult::kImeIsActive) ||
-      (transfer_result == TransferInputToVizResult::kRequestedByEmbedder) ||
-      (transfer_result ==
-       TransferInputToVizResult::kMultipleBrowserWindowsOpen);
+      (transfer_result == TransferInputToVizResult::kImeIsActive);
   if (browser_would_have_handled) {
     // Forcefully transfer the touch sequence to Viz it could be pointer down,
     // in which case Viz should continue to handle the sequence.
     // And if it was start of a new sequence, pass |browser_would_have_handled|
     // so that it can return the sequence to Browser.
+
+    // Speculatively send state to Viz with browser_would_have_handled set to
+    // true before retrying transfer.
+    if (base::FeatureList::IsEnabled(
+            input::features::kInputVizardSpeculativeTransfer)) {
+      client_->SendStateOnTouchTransfer(event,
+                                        /*browser_would_have_handled=*/true);
+    }
     auto retransfer_result = static_cast<TransferInputToVizResult>(
         jni_delegate_->TransferInputToViz(client_->GetRootSurfaceHandle()));
     if (retransfer_result ==
@@ -242,6 +262,9 @@ void InputTransferHandlerAndroid::OnDetachedFromWindow() {
 
 void InputTransferHandlerAndroid::RequestInputBack(
     RequestInputBackReason reason) {
+  if (requested_input_back_ || !IsTouchSequencePotentiallyActiveOnViz()) {
+    return;
+  }
   requested_input_back_ = true;
   requested_input_back_reason_ = reason;
   GetHostFrameSinkManager()->RequestInputBack();
@@ -425,7 +448,10 @@ void InputTransferHandlerAndroid::OnTouchTransferredSuccessfully(
   cached_transferred_sequence_down_time_ms_ = event.GetRawDownTime();
   last_successful_transfer_time_ = base::TimeTicks::Now();
   last_sent_browser_would_have_handled_ = browser_would_have_handled;
-  client_->SendStateOnTouchTransfer(event, browser_would_have_handled);
+  if (!base::FeatureList::IsEnabled(
+          input::features::kInputVizardSpeculativeTransfer)) {
+    client_->SendStateOnTouchTransfer(event, browser_would_have_handled);
+  }
   // Corresponding to the `ACTION_DOWN` event which initiated the touch
   // transfer.
   num_events_in_dropped_sequence_ = 1;

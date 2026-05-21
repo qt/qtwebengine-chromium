@@ -13,6 +13,7 @@
 #include <variant>
 #include <vector>
 
+#include "base/check_op.h"
 #include "base/functional/bind.h"
 #include "base/location.h"
 #include "base/memory/ref_counted.h"
@@ -280,9 +281,9 @@ void GotManifest(std::optional<std::string> manifest_id,
   };
 
   auto manifest = Page::WebAppManifest::Create();
-  if (input_manifest->has_background_color) {
+  if (input_manifest->background_color.has_value()) {
     manifest.SetBackgroundColor(color_utils::SkColorToRgbaString(
-        static_cast<SkColor>(input_manifest->background_color)));
+        static_cast<SkColor>(input_manifest->background_color.value())));
   }
   if (input_manifest->description) {
     manifest.SetDescription(
@@ -293,8 +294,9 @@ void GotManifest(std::optional<std::string> manifest_id,
   if (!input_manifest->display_override.empty()) {
     auto display_overrides = std::make_unique<protocol::Array<std::string>>();
     for (const auto& display_override : input_manifest->display_override) {
-      display_overrides->push_back(base::ToString(display_override));
+      display_overrides->push_back(base::ToString(display_override.display()));
     }
+    // TODO(crbug.com/469012990): Extend CDP for display override URL patterns.
     manifest.SetDisplayOverrides(std::move(display_overrides));
   }
   if (!input_manifest->file_handlers.empty()) {
@@ -435,9 +437,9 @@ void GotManifest(std::optional<std::string> manifest_id,
     manifest.SetShortcuts(std::move(shortcuts));
   }
   manifest.SetStartUrl(input_manifest->start_url.possibly_invalid_spec());
-  if (input_manifest->has_theme_color) {
+  if (input_manifest->theme_color.has_value()) {
     manifest.SetThemeColor(color_utils::SkColorToRgbaString(
-        static_cast<SkColor>(input_manifest->theme_color)));
+        static_cast<SkColor>(input_manifest->theme_color.value())));
   }
 
   std::unique_ptr<Page::AppManifestParsedProperties> parsed;
@@ -1988,6 +1990,8 @@ Page::BackForwardCacheNotRestoredReason NotRestoredReasonToProtocol(
     case Reason::kSharedWorkerWithNoActiveClient:
       return Page::BackForwardCacheNotRestoredReasonEnum::
           SharedWorkerWithNoActiveClient;
+    case Reason::kWebLocksContention:
+      return Page::BackForwardCacheNotRestoredReasonEnum::WebLocksContention;
   }
 }
 
@@ -2127,8 +2131,8 @@ std::unique_ptr<Page::BackForwardCacheBlockingDetails> SourceLocationToProtocol(
   if (!source->function_name.empty()) {
     blocking_details.SetFunction(source->function_name);
   }
-  CHECK(source->line_number > 0);
-  CHECK(source->column_number > 0);
+  CHECK_GT(source->line_number, 0ul);
+  CHECK_GT(source->column_number, 0ul);
   return blocking_details.SetLineNumber(source->line_number - 1)
       .SetColumnNumber(source->column_number - 1)
       .Build();
@@ -2291,6 +2295,7 @@ Page::BackForwardCacheNotRestoredReasonType MapNotRestoredReasonToType(
     case Reason::kUnloadHandlerExistsInMainFrame:
     case Reason::kUnloadHandlerExistsInSubFrame:
     case Reason::kCacheControlNoStoreDeviceBoundSessionTerminated:
+    case Reason::kWebLocksContention:
       return Page::BackForwardCacheNotRestoredReasonTypeEnum::PageSupportNeeded;
     case Reason::kNetworkRequestDatapipeDrainedAsBytesConsumer:
     case Reason::kUnknown:

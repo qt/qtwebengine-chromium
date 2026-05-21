@@ -9,7 +9,7 @@
  *
  * @public
  */
-export type CookieSameSite = 'Strict' | 'Lax' | 'None';
+export type CookieSameSite = 'Strict' | 'Lax' | 'None' | 'Default';
 /**
  * Represents the cookie's 'Priority' status:
  * https://tools.ietf.org/html/draft-west-cookie-priority-00
@@ -127,7 +127,7 @@ export interface CookieParam {
      */
     priority?: CookiePriority;
     /**
-     * True if cookie is SameParty. Supported only in Chrome.
+     * @deprecated Always ignored.
      */
     sameParty?: boolean;
     /**
@@ -186,7 +186,7 @@ export interface CookieData {
      */
     priority?: CookiePriority;
     /**
-     * True if cookie is SameParty. Supported only in Chrome.
+     * @deprecated Always set to false. Supported only in Chrome.
      */
     sameParty?: boolean;
     /**

@@ -70,21 +70,20 @@ vars = {
 }
 
 deps = {
-  # NOTE: These commit hashes here reference a repository/branch that is a
-  # mirror of the commits in the corresponding Chromium repository directory,
-  # and should be regularly updated with the tip of the MIRRORED master branch,
-  # found here:
+  # A mirror of the corresponding folder in Chromium maintained here:
   # https://chromium.googlesource.com/chromium/src/buildtools/+/refs/heads/main
+  #
+  # IMPORTANT: Read the instructions at docs/roll_deps.md
   'buildtools': {
     'url': Var('chromium_git') + '/chromium/src/buildtools' +
-      '@' + '5df641722f2e50623646d702e0046fb68c0f5ce1',
+      '@' + 'eca5f0685c48ed59ff06077cb18cee00934249dd',
   },
 
-  # and here:
+  # A mirror of the corresponding folder in Chromium maintained here:
   # https://chromium.googlesource.com/chromium/src/build/+/refs/heads/main
   'build': {
     'url': Var('chromium_git') + '/chromium/src/build' +
-      '@' + '371ecb089d96d60e5208ec2d25c9b4f0860e556c',
+      '@' + 'c53d22a398b881e70e53a972e285a925337a2494',
     'condition': 'not build_with_chromium',
   },
 
@@ -167,16 +166,20 @@ deps = {
     'condition': 'not build_with_chromium',
   },
 
+  # Make sure to also update ./third_party/boringssl/README.chromium's
+  # `Revision:` field when updating this dependency.
   'third_party/boringssl/src': {
     'url' : Var('boringssl_git') + '/boringssl.git' +
       '@' + '26e8a8acb91a0cfbd2f95bf7245e2eb87d533a2f',
     'condition': 'not build_with_chromium',
   },
 
-  # To roll forward, use quiche_revision from chromium/src/DEPS.
+  # To roll forward, typically it is best to match Chrome's version by using
+  # quiche_revision from chromium/src/DEPS. Coordination with the QUICHE
+  # maintainers may be needed for some breaking changes.
   'third_party/quiche/src': {
     'url': Var('quiche_git') + '/quiche.git' +
-      '@' + '2b80e306994b02b4bdb067166960d3550fcb9430',  # 2025-11-11
+      '@' + 'd54ca111b1085b9fea302560b41e371df349061c',  # 2025-12-19
     'condition': 'not build_with_chromium',
   },
 
@@ -207,15 +210,17 @@ deps = {
     'condition': 'not build_with_chromium',
   },
 
+  # IMPORTANT: Read the instructions at docs/roll_deps.md
   'third_party/libc++/src': {
     'url': Var('chromium_git') +
-    '/external/github.com/llvm/llvm-project/libcxx.git' + '@' + '454a561737fb62e75ba82bfae9fb07ee64acdd68',
+    '/external/github.com/llvm/llvm-project/libcxx.git' + '@' + '07572e7b169225ef3a999584cba9d9004631ae66',
     'condition': 'not build_with_chromium',
   },
 
+  # IMPORTANT: Read the instructions at docs/roll_deps.md
   'third_party/libc++abi/src': {
     'url': Var('chromium_git') +
-    '/external/github.com/llvm/llvm-project/libcxxabi.git' + '@' + 'de02e5d57052b3b6d5fcd76dccde9380bca39360',
+    '/external/github.com/llvm/llvm-project/libcxxabi.git' + '@' + '83a852080747b9a362e8f9e361366b7a601f302c',
     'condition': 'not build_with_chromium',
   },
 
@@ -402,7 +407,8 @@ deps = {
   # Googleurl recommends living at head. This is a copy of Chrome's URL parsing
   # library. It is meant to be used by QUICHE.
   #
-  # NOTE: Pin to the current revision as newer versions use C++20 features.
+  # Make sure to also update ./third_party/googleurl/README.chromium's
+  # `Revision:` field when updating this dependency.
   'third_party/googleurl/src': {
     'url': Var('quiche_git') + '/googleurl.git' +
       '@' + '94ff147fe0b96b4cca5d6d316b9af6210c0b8051',  #2025-11-11

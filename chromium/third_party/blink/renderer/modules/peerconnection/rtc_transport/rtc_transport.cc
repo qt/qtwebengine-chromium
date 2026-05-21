@@ -24,6 +24,7 @@
 #include "third_party/blink/renderer/modules/peerconnection/adapters/web_rtc_cross_thread_copier.h"
 #include "third_party/blink/renderer/modules/peerconnection/peer_connection_util.h"
 #include "third_party/blink/renderer/modules/peerconnection/rtc_ice_candidate.h"
+#include "third_party/blink/renderer/modules/peerconnection/rtc_transport/array_buffer_util.h"
 #include "third_party/blink/renderer/modules/peerconnection/rtc_transport/rtc_transport_dependencies.h"
 #include "third_party/blink/renderer/modules/peerconnection/rtc_transport/rtc_transport_ice_event.h"
 #include "third_party/blink/renderer/platform/bindings/exception_code.h"
@@ -347,7 +348,7 @@ RtcTransport::ParseStunServers(const RtcTransportConfig* config,
 RtcTransport::RtcTransport(PassKey, ExecutionContext* context)
     : ExecutionContextLifecycleObserver(context),
       task_runner_(context->GetTaskRunner(TaskType::kNetworking)),
-      digest_(0, kMaxDigestSize) {
+      digest_(webrtc::Buffer::CreateWithCapacity(kMaxDigestSize)) {
   // Should this be done async? cf
   // RTCCertificateGenerator::GenerateCertificateAsync.
   certificate_ = webrtc::RTCCertificateGenerator::GenerateCertificate(
@@ -457,9 +458,8 @@ void RtcTransport::OnPacketReceivedOnMainThread(
     return;
   }
   received_packets_.push_back(MakeGarbageCollected<RtcReceivedPacket>(
-      DOMArrayBuffer::Create(data),
-      RTCTimeStampFromTimeTicks(context,
-                                ConvertToBaseTimeTicks(receive_time))));
+      std::move(data), RTCTimeStampFromTimeTicks(
+                           context, ConvertToBaseTimeTicks(receive_time))));
 }
 
 void RtcTransport::addRemoteCandidate(RtcTransportICECandidateInit* init,
@@ -504,7 +504,9 @@ void RtcTransport::sendPackets(
   auto packet_payloads = std::make_unique<Vector<Vector<uint8_t>>>();
   packet_payloads->reserve(packets.size());
   for (const auto& packet : packets) {
-    packet_payloads->emplace_back(packet->data()->ByteSpan());
+    // Copy from the data buffer source into a new Vector.
+    packet_payloads->emplace_back(
+        RtcTransportBufferSourceAsByteSpan(*packet->data()));
   }
 
   async_datagram_connection_->SendPackets(std::move(packet_payloads));

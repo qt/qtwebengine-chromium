@@ -27,6 +27,11 @@ class TlsConnectionFactoryPosix : public TlsConnectionFactory,
                             TaskRunner& task_runner,
                             PlatformClientPosix* platform_client =
                                 PlatformClientPosix::GetInstance());
+  TlsConnectionFactoryPosix(const TlsConnectionFactoryPosix&) = delete;
+  TlsConnectionFactoryPosix(TlsConnectionFactoryPosix&&) noexcept = delete;
+  TlsConnectionFactoryPosix& operator=(const TlsConnectionFactoryPosix&) =
+      delete;
+  TlsConnectionFactoryPosix& operator=(TlsConnectionFactoryPosix&&) = delete;
   ~TlsConnectionFactoryPosix() override;
 
   // TlsConnectionFactory overrides.
@@ -86,8 +91,6 @@ class TlsConnectionFactoryPosix : public TlsConnectionFactory,
   bssl::UniquePtr<SSL_CTX> ssl_context_;
 
   WeakPtrFactory<TlsConnectionFactoryPosix> weak_factory_{this};
-
-  OSP_DISALLOW_COPY_AND_ASSIGN(TlsConnectionFactoryPosix);
 };
 
 }  // namespace openscreen

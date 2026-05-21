@@ -226,10 +226,10 @@ void IbanSaveManager::OnUserDidDecideOnLocalSave(
     Iban import_candidate,
     payments::PaymentsAutofillClient::SaveIbanOfferUserDecision user_decision,
     std::u16string_view nickname) {
-  if (!nickname.empty()) {
-    std::u16string trimmed_nickname;
-    base::TrimWhitespace(nickname, base::TRIM_ALL, &trimmed_nickname);
-    import_candidate.set_nickname(trimmed_nickname);
+  const std::u16string_view trimmed_nickname =
+      base::TrimWhitespace(nickname, base::TRIM_ALL);
+  if (!trimmed_nickname.empty()) {
+    import_candidate.set_nickname(std::u16string(trimmed_nickname));
   }
 
   const std::string& partial_iban_hash =
@@ -266,12 +266,10 @@ void IbanSaveManager::OnUserDidDecideOnUploadSave(
     payments::PaymentsAutofillClient::SaveIbanOfferUserDecision user_decision,
     std::u16string_view nickname) {
   CHECK_NE(import_candidate.record_type(), Iban::kServerIban);
-  if (!nickname.empty()) {
-    std::u16string trimmed_nickname;
-    base::TrimWhitespace(nickname, base::TRIM_ALL, &trimmed_nickname);
-    if (!trimmed_nickname.empty()) {
-      import_candidate.set_nickname(trimmed_nickname);
-    }
+  const std::u16string_view trimmed_nickname =
+      base::TrimWhitespace(nickname, base::TRIM_ALL);
+  if (!trimmed_nickname.empty()) {
+    import_candidate.set_nickname(std::u16string(trimmed_nickname));
   }
 
   autofill_metrics::UploadIbanActionMetric action_metric;
@@ -314,7 +312,7 @@ void IbanSaveManager::OnDidGetUploadDetails(
     PaymentsRpcResult result,
     const std::u16string& validation_regex,
     const std::u16string& context_token,
-    std::unique_ptr<base::Value::Dict> legal_message) {
+    std::unique_ptr<base::DictValue> legal_message) {
   if (observer_for_testing_) {
     observer_for_testing_->OnReceivedGetUploadDetailsResponse();
   }
@@ -322,7 +320,8 @@ void IbanSaveManager::OnDidGetUploadDetails(
   // Upload should only be offered when result is `kSuccess` and the IBAN passes
   // regex validation.
   if (result == PaymentsRpcResult::kSuccess &&
-      MatchesRegex(import_candidate.value(), *CompileRegex(validation_regex))) {
+      MatchesRegex(import_candidate.value(),
+                   CompileRegex(validation_regex).get())) {
     // Upload should only be offered when legal messages are parsed
     // successfully.
     LegalMessageLines parsed_legal_message_lines;

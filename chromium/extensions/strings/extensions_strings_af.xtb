@@ -12,6 +12,7 @@
 <translation id="2159915644201199628">Kon nie prent ontsyfer nie: "<ph name="IMAGE_NAME" />"</translation>
 <translation id="2350172092385603347">Lokalisering is gebruik, maar verstek_ligging is nie in die manifes gespesifiseer nie.</translation>
 <translation id="2576842806987913196">Daar is reeds 'n CRX-lêer met hierdie naam.</translation>
+<translation id="2743583586211388067">Toegang tot hierdie uitbreiding word onder jou organisasie se uitbreidingrisikobeleid geblokkeer.</translation>
 <translation id="2785530881066938471">Kon nie lêer '<ph name="RELATIVE_PATH" />' vir inhoudskrip laai nie. Dit is nie in UTF-8 geënkodeer nie.</translation>
 <translation id="2903070246402204397"><ph name="EXTENSION_NAME" /> (uitbreiding-ID "<ph name="EXTENSION_ID" />") word deur die administrateur geblokkeer. <ph name="ADMIN_INFO" /></translation>
 <translation id="2988488679308982380">Kon nie die pakket installeer nie: '<ph name="ERROR_CODE" />'</translation>
@@ -33,9 +34,11 @@
 <translation id="5356315618422219272">Programaansig: <ph name="APPVIEW_TAG_NAME" /></translation>
 <translation id="5456409301717116725">Hierdie uitbreiding sluit die sleutellêer "<ph name="KEY_PATH" />" in. Jy wil dit waarskynlik nie doen nie.</translation>
 <translation id="5486326529110362464">Invoerwaarde vir private sleutel moet bestaan.</translation>
+<translation id="5707185214361380026">Kon nie uitbreiding hiervandaan laai nie:</translation>
 <translation id="5972529113578162692">Die administrateur van hierdie masjien vereis dat <ph name="EXTENSION_NAME" /> geïnstalleer moet wees. Dit kan nie gedeïnstalleer word nie.</translation>
 <translation id="6027032947578871493">Onbekende produk <ph name="PRODUCT_ID" /> vanaf <ph name="VENDOR_NAME" /> (reeksnommer <ph name="SERIAL_NUMBER" />)</translation>
 <translation id="6068932090455285721"><ph name="PRODUCT_NAME" /> vanaf verkoper <ph name="VENDOR_ID" /></translation>
+<translation id="6220413761270491930">Kon nie uitbreiding laai nie</translation>
 <translation id="6322279351188361895">Kon nie private sleutel lees nie.</translation>
 <translation id="6391538222494443604">Invoergids moet bestaan.</translation>
 <translation id="641087317769093025">Kon nie uitbreiding dekompakteer nie</translation>

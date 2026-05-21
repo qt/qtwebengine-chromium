@@ -9,7 +9,6 @@
 #include <string>
 #include <utility>
 
-#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/memory/raw_ptr.h"
@@ -120,7 +119,7 @@ class NativeRendererMessagingService::MessagePortScope
           port_host) {
     auto receiver_id =
         message_port_dispatchers_.Add(this, std::move(port), target_port_id);
-    CHECK(!base::Contains(message_port_hosts_, target_port_id));
+    CHECK(!message_port_hosts_.contains(target_port_id));
     auto& bound_port_host = message_port_hosts_[target_port_id] =
         mojo::AssociatedRemote(std::move(port_host));
     bound_port_host.set_disconnect_handler(
@@ -143,7 +142,7 @@ class NativeRendererMessagingService::MessagePortScope
         message_port_host_remote.InitWithNewEndpointAndPassReceiver();
     message_port_dispatchers_.Add(this, std::move(message_port_receiver),
                                   port_id);
-    CHECK(!base::Contains(message_port_hosts_, port_id));
+    CHECK(!message_port_hosts_.contains(port_id));
     auto& bound_port_host = message_port_hosts_[port_id] =
         mojo::AssociatedRemote(std::move(message_port_host_remote));
     bound_port_host.set_disconnect_handler(base::BindOnce(
@@ -184,7 +183,7 @@ class NativeRendererMessagingService::MessagePortScope
   }
 
   bool HasPort(const PortId& port_id) {
-    return base::Contains(message_port_hosts_, port_id);
+    return message_port_hosts_.contains(port_id);
   }
 
   mojom::MessagePortHost* GetMessagePortHost(const PortId& port_id) {
@@ -320,13 +319,15 @@ GinPort* NativeRendererMessagingService::Connect(
     const MessageTarget& target,
     const std::string& channel_name,
     mojom::SerializationFormat format) {
-  if (!ScriptContextIsValid(script_context))
+  if (!ScriptContextIsValid(script_context)) {
     return nullptr;
+  }
 
   MessagingPerContextData* data = GetPerContextData<MessagingPerContextData>(
-      script_context->v8_context(), kCreateIfMissing);
-  if (!data)
+      script_context->v8_context(), CreatePerContextData::kCreateIfMissing);
+  if (!data) {
     return nullptr;
+  }
 
   MessagePortScope* scope =
       GetMessagePortScope(script_context->GetRenderFrame());
@@ -355,11 +356,12 @@ v8::Local<v8::Promise> NativeRendererMessagingService::SendOneTimeMessage(
     const Message& message,
     binding::AsyncResponseType async_type,
     v8::Local<v8::Function> response_callback) {
-  if (!ScriptContextIsValid(script_context))
+  if (!ScriptContextIsValid(script_context)) {
     return v8::Local<v8::Promise>();
+  }
 
   MessagingPerContextData* data = GetPerContextData<MessagingPerContextData>(
-      script_context->v8_context(), kCreateIfMissing);
+      script_context->v8_context(), CreatePerContextData::kCreateIfMissing);
 
   MessagePortScope* scope =
       GetMessagePortScope(script_context->GetRenderFrame());
@@ -367,7 +369,7 @@ v8::Local<v8::Promise> NativeRendererMessagingService::SendOneTimeMessage(
 
   // TODO(crbug.com/40321352): Instead of inferring the
   // mojom::SerializationFormat from Message, it'd be better to have the clients
-  // pass it directly. This is because, in case of `kStructuredCloned` to
+  // pass it directly. This is because, in case of `kStructuredClone` to
   // `kJson` fallback, the format for the ports will also be `kJson`. This is
   // inconsistent with what we do for ports for long-lived channels where the
   // port's `mojom::SerializationFormat` is always the same as that passed by
@@ -393,8 +395,9 @@ void NativeRendererMessagingService::PostMessageToPort(
     std::unique_ptr<Message> message) {
   ScriptContext* script_context = GetScriptContextFromV8Context(context);
   CHECK(script_context);
-  if (!ScriptContextIsValid(script_context))
+  if (!ScriptContextIsValid(script_context)) {
     return;
+  }
 
   auto* scope = GetMessagePortScope(script_context->GetRenderFrame());
   // BFCache can disconnect the mojo pipe but leave the GinPort thinking
@@ -411,15 +414,17 @@ void NativeRendererMessagingService::ClosePort(v8::Local<v8::Context> context,
   CHECK(script_context);
 
   MessagingPerContextData* data = GetPerContextData<MessagingPerContextData>(
-      script_context->v8_context(), kDontCreateIfMissing);
-  if (!data)
+      script_context->v8_context(), CreatePerContextData::kDontCreateIfMissing);
+  if (!data) {
     return;
+  }
 
   size_t erased = data->ports.erase(port_id);
   DCHECK_GT(erased, 0u);
 
-  if (!ScriptContextIsValid(script_context))
+  if (!ScriptContextIsValid(script_context)) {
     return;
+  }
 
   CloseMessagePort(script_context, port_id, /*close_channel=*/true);
 }
@@ -471,8 +476,9 @@ void NativeRendererMessagingService::DispatchOnConnectToScriptContext(
   // If the channel was opened by this same context, ignore it. This should only
   // happen when messages are sent to an entire process (rather than a single
   // frame) as an optimization; otherwise the browser process filters this out.
-  if (script_context->context_id() == target_port_id.context_id)
+  if (script_context->context_id() == target_port_id.context_id) {
     return;
+  }
 
   // First, determine the event we'll use to connect.
   std::string target_extension_id = script_context->GetExtensionID();
@@ -581,8 +587,9 @@ void NativeRendererMessagingService::DispatchOnDisconnectToScriptContext(
     const PortId& port_id,
     const std::string& error_message,
     ScriptContext* script_context) {
-  if (!ContextHasMessagePort(script_context, port_id))
+  if (!ContextHasMessagePort(script_context, port_id)) {
     return;
+  }
 
   DispatchOnDisconnectToListeners(script_context, port_id, error_message);
 }
@@ -590,12 +597,13 @@ void NativeRendererMessagingService::DispatchOnDisconnectToScriptContext(
 bool NativeRendererMessagingService::ContextHasMessagePort(
     ScriptContext* script_context,
     const PortId& port_id) {
-  if (one_time_message_handler_.HasPort(script_context, port_id))
+  if (one_time_message_handler_.HasPort(script_context, port_id)) {
     return true;
+  }
   v8::HandleScope handle_scope(script_context->isolate());
   MessagingPerContextData* data = GetPerContextData<MessagingPerContextData>(
-      script_context->v8_context(), kDontCreateIfMissing);
-  return data && base::Contains(data->ports, port_id);
+      script_context->v8_context(), CreatePerContextData::kDontCreateIfMissing);
+  return data && data->ports.contains(port_id);
 }
 
 void NativeRendererMessagingService::DispatchOnConnectToListeners(
@@ -613,16 +621,19 @@ void NativeRendererMessagingService::DispatchOnConnectToListeners(
   v8::Context::Scope context_scope(v8_context);
 
   gin::DataObjectBuilder sender_builder(isolate);
-  if (info.source_endpoint.extension_id)
+  if (info.source_endpoint.extension_id) {
     sender_builder.Set("id", *info.source_endpoint.extension_id);
+  }
   if (info.source_endpoint.native_app_name) {
     sender_builder.Set("nativeApplication",
                        *info.source_endpoint.native_app_name);
   }
-  if (!info.source_url.is_empty())
+  if (!info.source_url.is_empty()) {
     sender_builder.Set("url", info.source_url.spec());
-  if (info.source_origin)
+  }
+  if (info.source_origin) {
     sender_builder.Set("origin", info.source_origin->Serialize());
+  }
   if (source.frame_id >= 0) {
     sender_builder.Set("frameId", source.frame_id);
   }
@@ -678,19 +689,21 @@ void NativeRendererMessagingService::DispatchOnConnectToListeners(
 
   if (binding::IsContextValid(v8_context) &&
       APIActivityLogger::IsLoggingEnabled()) {
-    base::Value::List list;
+    base::ListValue list;
     list.reserve(2u);
-    if (info.source_endpoint.extension_id)
+    if (info.source_endpoint.extension_id) {
       list.Append(*info.source_endpoint.extension_id);
-    else if (info.source_endpoint.native_app_name)
+    } else if (info.source_endpoint.native_app_name) {
       list.Append(*info.source_endpoint.native_app_name);
-    else
+    } else {
       list.Append(base::Value());
+    }
 
-    if (!info.source_url.is_empty())
+    if (!info.source_url.is_empty()) {
       list.Append(info.source_url.spec());
-    else
+    } else {
       list.Append(base::Value());
+    }
 
     APIActivityLogger::LogEvent(bindings_system_->GetIPCMessageSender(),
                                 script_context, event_name, std::move(list));
@@ -745,8 +758,9 @@ void NativeRendererMessagingService::DispatchOnDisconnectToListeners(
   port->DispatchOnDisconnect(v8_context);
   // Note: Arbitrary JS may have run; the context may now be deleted.
 
-  if (!binding::IsContextValid(v8_context))
+  if (!binding::IsContextValid(v8_context)) {
     return;
+  }
 
   if (!error_message.empty()) {
     bindings_system_->api_system()->request_handler()->last_error()->ClearError(
@@ -754,7 +768,7 @@ void NativeRendererMessagingService::DispatchOnDisconnectToListeners(
   }
 
   MessagingPerContextData* data = GetPerContextData<MessagingPerContextData>(
-      v8_context, kDontCreateIfMissing);
+      v8_context, CreatePerContextData::kDontCreateIfMissing);
   DCHECK(data);
   data->ports.erase(port_id);
 }
@@ -773,15 +787,16 @@ GinPort* NativeRendererMessagingService::CreatePort(
   // If this port is an opener, then it should have been created in this
   // context. Otherwise, it should have been created in another context, because
   // we don't support intra-context message passing.
-  if (port_id.is_opener)
+  if (port_id.is_opener) {
     DCHECK_EQ(port_id.context_id, script_context->context_id());
-  else
+  } else {
     DCHECK_NE(port_id.context_id, script_context->context_id());
+  }
 
-  MessagingPerContextData* data =
-      GetPerContextData<MessagingPerContextData>(context, kCreateIfMissing);
+  MessagingPerContextData* data = GetPerContextData<MessagingPerContextData>(
+      context, CreatePerContextData::kCreateIfMissing);
   DCHECK(data);
-  DCHECK(!base::Contains(data->ports, port_id));
+  DCHECK(!data->ports.contains(port_id));
 
   GinPort* port = cppgc::MakeGarbageCollected<GinPort>(
       isolate->GetCppHeap()->GetAllocationHandle(), context, port_id,
@@ -800,9 +815,9 @@ GinPort* NativeRendererMessagingService::GetPort(
   v8::Isolate* isolate = script_context->isolate();
 
   MessagingPerContextData* data = GetPerContextData<MessagingPerContextData>(
-      script_context->v8_context(), kDontCreateIfMissing);
+      script_context->v8_context(), CreatePerContextData::kDontCreateIfMissing);
   DCHECK(data);
-  DCHECK(base::Contains(data->ports, port_id));
+  DCHECK(data->ports.contains(port_id));
 
   GinPort* port = nullptr;
   gin::Converter<GinPort*>::FromV8(isolate, data->ports[port_id].Get(isolate),
@@ -854,6 +869,24 @@ NativeRendererMessagingService::GetMessagePortHostIfExists(
   }
   return GetMessagePortScope(script_context->GetRenderFrame())
       ->GetMessagePortHostIfExists(port_id);
+}
+
+void NativeRendererMessagingService::InvalidatePorts(ScriptContext* context) {
+  v8::HandleScope handle_scope(context->isolate());
+  MessagingPerContextData* data = GetPerContextData<MessagingPerContextData>(
+      context->v8_context(), CreatePerContextData::kDontCreateIfMissing);
+  if (!data) {
+    return;
+  }
+
+  for (const auto& [port_id, port_obj] : data->ports) {
+    GinPort* port = nullptr;
+    gin::Converter<GinPort*>::FromV8(context->isolate(),
+                                     port_obj.Get(context->isolate()), &port);
+    if (port) {
+      port->OnContextDestroyed();
+    }
+  }
 }
 
 base::SafeRef<NativeRendererMessagingService>

@@ -18,6 +18,7 @@
 #include "components/input/input_event_source.h"
 #include "components/input/native_web_keyboard_event.h"
 #include "content/common/content_export.h"
+#include "content/public/browser/tracked_element_observer.h"
 #include "content/public/common/drop_data.h"
 #include "third_party/blink/public/common/input/web_gesture_event.h"
 #include "third_party/blink/public/common/input/web_input_event.h"
@@ -59,6 +60,7 @@ class RenderProcessHost;
 class RenderWidgetHostIterator;
 class RenderWidgetHostObserver;
 class RenderWidgetHostView;
+class TrackedElementObserver;
 
 // A RenderWidgetHost acts as the abstraction for compositing and input
 // functionality. It can exist in 3 different scenarios:
@@ -110,12 +112,11 @@ class CONTENT_EXPORT RenderWidgetHost {
 
   virtual ~RenderWidgetHost() {}
 
-  // This is a method to manually notify `InputEventObserver`s that an input
-  // event is about to be sent to the renderer. This is useful for mechanisms
-  // that do not use the normal input stack and thus would not normally send
-  // notifications to observers (e.g. tools in `actor::`).
-  virtual void WillSendInputEventToRenderer(
-      const blink::WebInputEvent& event) = 0;
+  // This is a method to manually trigger user interaction notifications. This
+  // is useful for mechanisms that do not use the normal input stack and thus
+  // would not normally send notifications to observers (e.g. tools in
+  // `actor::`).
+  virtual void SimulateUserInteraction(const blink::WebInputEvent& event) = 0;
 
   // Returns the viz::FrameSinkId that this object uses to put things on screen.
   // This value is constant throughout the lifetime of this object. Note that
@@ -198,6 +199,10 @@ class CONTENT_EXPORT RenderWidgetHost {
   // crashes, instead you should always ask for it using the accessor.
   virtual RenderWidgetHostView* GetView() = 0;
   virtual const RenderWidgetHostView* GetView() const = 0;
+
+  virtual void AddTrackedElementObserver(TrackedElementObserver* observer) = 0;
+  virtual void RemoveTrackedElementObserver(
+      TrackedElementObserver* observer) = 0;
 
   // Returns true if the renderer is considered unresponsive.
   virtual bool IsCurrentlyUnresponsive() = 0;
@@ -354,6 +359,9 @@ class CONTENT_EXPORT RenderWidgetHost {
   // This can run synchronously on failure.
   using VisualStateCallback = base::OnceCallback<void(bool)>;
   virtual void InsertVisualStateCallback(VisualStateCallback callback) {}
+
+  // Sets the timeout for the hung renderer detection.
+  virtual void SetHungRendererDelay(const base::TimeDelta& delay) = 0;
 };
 
 }  // namespace content

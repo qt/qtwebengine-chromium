@@ -4,6 +4,7 @@
 
 #include "components/commerce/core/shopping_service.h"
 
+#include <algorithm>
 #include <array>
 #include <string>
 
@@ -585,18 +586,18 @@ TEST_P(ShoppingServiceTest, TestWebWrapperSet) {
       shopping_service_->GetUrlInfosForActiveWebWrappers();
 
   ASSERT_EQ(3u, open_urls.size());
-  ASSERT_TRUE(base::Contains(open_urls, url_info1));
-  ASSERT_TRUE(base::Contains(open_urls, url_info2));
-  ASSERT_TRUE(base::Contains(open_urls, url_info3));
+  ASSERT_TRUE(std::ranges::contains(open_urls, url_info1));
+  ASSERT_TRUE(std::ranges::contains(open_urls, url_info2));
+  ASSERT_TRUE(std::ranges::contains(open_urls, url_info3));
 
   // Close one of the tabs
   WebWrapperDestroyed(&web1);
 
   open_urls = shopping_service_->GetUrlInfosForActiveWebWrappers();
   ASSERT_EQ(2u, open_urls.size());
-  ASSERT_FALSE(base::Contains(open_urls, url_info1));
-  ASSERT_TRUE(base::Contains(open_urls, url_info2));
-  ASSERT_TRUE(base::Contains(open_urls, url_info3));
+  ASSERT_FALSE(std::ranges::contains(open_urls, url_info1));
+  ASSERT_TRUE(std::ranges::contains(open_urls, url_info2));
+  ASSERT_TRUE(std::ranges::contains(open_urls, url_info3));
 
   WebWrapperDestroyed(&web2);
   WebWrapperDestroyed(&web3);
@@ -982,7 +983,7 @@ TEST_P(ShoppingServiceTest,
   test_features_.InitWithFeatures({kShoppingList, kCommerceAllowLocalImages},
                                   {});
 
-  auto result = base::Value::Dict();
+  auto result = base::DictValue();
   result.Set("image", std::string(kImageUrl));
   base::Value js_result(std::move(result));
   NiceMockWebWrapper web(GURL(kProductUrl), false, &js_result);
@@ -1055,7 +1056,7 @@ TEST_P(ShoppingServiceTest,
        TestProductInfoCacheFullLifecycleWithFallback_PageLoaded) {
   test_features_.InitWithFeatures({kCommerceAllowLocalImages}, {});
 
-  auto result = base::Value::Dict();
+  auto result = base::DictValue();
   result.Set("image", std::string(kImageUrl));
   base::Value js_result(std::move(result));
   NiceMockWebWrapper web(GURL(kProductUrl), false, &js_result);
@@ -1314,7 +1315,7 @@ TEST_P(ShoppingServiceTest, TestDataMergeWithLeadImage) {
   ProductInfo info;
   info.image_url = GURL(kImageUrl);
 
-  base::Value::Dict data_map;
+  base::DictValue data_map;
   data_map.Set("image", "https://example.com/fallback_image.png");
 
   MergeProductInfoData(&info, data_map);
@@ -1326,7 +1327,7 @@ TEST_P(ShoppingServiceTest, TestDataMergeWithNoLeadImage) {
   test_features_.InitWithFeatures({kCommerceAllowLocalImages}, {});
   ProductInfo info;
 
-  base::Value::Dict data_map;
+  base::DictValue data_map;
   data_map.Set("image", kImageUrl);
 
   MergeProductInfoData(&info, data_map);
@@ -1338,7 +1339,7 @@ TEST_P(ShoppingServiceTest, TestDataMergeWithTitle) {
   ProductInfo info;
   info.title = kTitle;
 
-  base::Value::Dict data_map;
+  base::DictValue data_map;
   data_map.Set("title", "Some other fallback title");
 
   MergeProductInfoData(&info, data_map);
@@ -1349,7 +1350,7 @@ TEST_P(ShoppingServiceTest, TestDataMergeWithTitle) {
 TEST_P(ShoppingServiceTest, TestDataMergeWithNoTitle) {
   ProductInfo info;
 
-  base::Value::Dict data_map;
+  base::DictValue data_map;
   data_map.Set("title", kTitle);
 
   MergeProductInfoData(&info, data_map);
@@ -1676,7 +1677,7 @@ TEST_P(ShoppingServiceTest, TestPriceInsightsInfoResponse) {
             ASSERT_EQ(kLowTypicalPrice, info->typical_low_price_micros);
             ASSERT_EQ(kHighTypicalPrice, info->typical_high_price_micros);
             ASSERT_EQ(kAttributes, info->catalog_attributes);
-            ASSERT_EQ(2, (int)(info->catalog_history_prices.size()));
+            ASSERT_EQ(2u, info->catalog_history_prices.size());
             ASSERT_EQ("2021-01-01",
                       std::get<0>(info->catalog_history_prices[0]));
             ASSERT_EQ("2021-01-02",
@@ -1724,7 +1725,7 @@ TEST_P(ShoppingServiceTest,
             ASSERT_EQ(kLowTypicalPrice, info->typical_low_price_micros);
             ASSERT_EQ(kHighTypicalPrice, info->typical_high_price_micros);
             ASSERT_EQ(std::nullopt, info->catalog_attributes);
-            ASSERT_EQ(0, (int)(info->catalog_history_prices.size()));
+            ASSERT_EQ(0u, info->catalog_history_prices.size());
             ASSERT_EQ(std::nullopt, info->jackpot_url);
             ASSERT_EQ(PriceBucket::kHighPrice, info->price_bucket);
             ASSERT_EQ(true, info->has_multiple_catalogs);
@@ -1795,7 +1796,7 @@ TEST_P(ShoppingServiceTest, TestPriceInsightsInfoResponse_EmptyRange) {
             ASSERT_EQ(std::nullopt, info->typical_low_price_micros);
             ASSERT_EQ(std::nullopt, info->typical_high_price_micros);
             ASSERT_EQ(kAttributes, info->catalog_attributes);
-            ASSERT_EQ(2, (int)(info->catalog_history_prices.size()));
+            ASSERT_EQ(2u, info->catalog_history_prices.size());
             ASSERT_EQ("2021-01-01",
                       std::get<0>(info->catalog_history_prices[0]));
             ASSERT_EQ("2021-01-02",
@@ -2083,7 +2084,7 @@ TEST_P(ShoppingServiceTest, TestDiscountInfoResponse_ForMerchant) {
       GURL(kDiscountsUrl1),
       base::BindOnce([](const GURL& url,
                         const std::vector<DiscountInfo> discounts) {
-        ASSERT_EQ(1, (int)discounts.size());
+        ASSERT_EQ(1u, discounts.size());
         ASSERT_TRUE(discounts[0].expiry_time_sec.has_value());
       }).Then(run_loop.QuitClosure()));
   run_loop.Run();
@@ -2122,7 +2123,7 @@ TEST_P(ShoppingServiceTest, TestDiscountInfoResponse) {
       base::BindOnce(
           [](base::RunLoop* run_loop, const GURL& url,
              const std::vector<DiscountInfo> discounts) {
-            ASSERT_EQ(1, (int)discounts.size());
+            ASSERT_EQ(1u, discounts.size());
 
             ASSERT_EQ(DiscountClusterType::kOfferLevel,
                       discounts[0].cluster_type);
@@ -2176,7 +2177,7 @@ TEST_P(ShoppingServiceTest,
       GURL(kDiscountsUrl1),
       base::BindOnce([](const GURL& url,
                         const std::vector<DiscountInfo> discounts) {
-        ASSERT_EQ(1, (int)discounts.size());
+        ASSERT_EQ(1u, discounts.size());
         ASSERT_EQ(DiscountClusterType::kOfferLevel, discounts[0].cluster_type);
         ASSERT_EQ(DiscountType::kCrawledPromotion, discounts[0].type);
         ASSERT_FALSE(discounts[0].expiry_time_sec.has_value());
@@ -2220,7 +2221,7 @@ TEST_P(ShoppingServiceTest, TestDiscountInfoResponse_InfoWithoutId) {
       GURL(kDiscountsUrl1), base::BindOnce(
                                 [](base::RunLoop* run_loop, const GURL& url,
                                    const std::vector<DiscountInfo> discounts) {
-                                  ASSERT_EQ(1, (int)discounts.size());
+                                  ASSERT_EQ(1u, discounts.size());
                                   ASSERT_EQ(kDiscountId1, discounts[0].id);
                                   run_loop->Quit();
                                 },
@@ -2261,7 +2262,7 @@ TEST_P(ShoppingServiceTest, TestDiscountInfoResponse_InfoWithoutTerms) {
       base::BindOnce(
           [](base::RunLoop* run_loop, const GURL& key,
              const std::vector<DiscountInfo> discounts) {
-            ASSERT_EQ(1, (int)discounts.size());
+            ASSERT_EQ(1u, discounts.size());
             ASSERT_EQ(kDiscountId1, discounts[0].id);
             ASSERT_FALSE(discounts[0].terms_and_conditions.has_value());
             run_loop->Quit();
@@ -2300,7 +2301,7 @@ TEST_P(ShoppingServiceTest, TestDiscountInfoResponse_InfoWithoutDiscountCode) {
       GURL(kDiscountsUrl1), base::BindOnce(
                                 [](base::RunLoop* run_loop, const GURL& key,
                                    const std::vector<DiscountInfo> discounts) {
-                                  ASSERT_EQ(0, (int)discounts.size());
+                                  ASSERT_EQ(0u, discounts.size());
                                   run_loop->Quit();
                                 },
                                 &run_loop));
@@ -2337,7 +2338,7 @@ TEST_P(ShoppingServiceTest, TestDiscountInfoResponse_InfoWithUnspecifiedType) {
       GURL(kDiscountsUrl1), base::BindOnce(
                                 [](base::RunLoop* run_loop, const GURL& key,
                                    const std::vector<DiscountInfo> discounts) {
-                                  ASSERT_EQ(0, (int)discounts.size());
+                                  ASSERT_EQ(0u, discounts.size());
                                   run_loop->Quit();
                                 },
                                 &run_loop));

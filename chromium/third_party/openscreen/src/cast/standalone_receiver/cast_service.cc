@@ -44,10 +44,11 @@ discovery::Config MakeDiscoveryConfig(const InterfaceInfo& interface) {
 CastService::CastService(CastService::Configuration config)
     : local_endpoint_(DetermineEndpoint(config.interface)),
       credentials_(std::move(config.credentials)),
-      agent_(config.task_runner, *credentials_.provider),
+      agent_(config.task_runner, *credentials_.provider, config.device_uuid),
       mirroring_application_(config.task_runner,
                              local_endpoint_.address,
-                             agent_),
+                             agent_,
+                             config.enable_dscp),
       socket_factory_(agent_, *agent_.cast_socket_client()),
       connection_factory_(
           TlsConnectionFactory::CreateFactory(socket_factory_,
@@ -80,8 +81,8 @@ CastService::CastService(CastService::Configuration config)
       OSP_LOG_WARN << "Hardware address for interface " << config.interface.name
                    << " is empty. Generating a random unique_id.";
       std::array<uint8_t, kCastUniqueIdLength> random_bytes;
-      GenerateRandomBytes(random_bytes.data(), kCastUniqueIdLength);
-      info.unique_id = HexEncode(random_bytes.data(), kCastUniqueIdLength);
+      GenerateRandomBytes(random_bytes);
+      info.unique_id = HexEncode(random_bytes);
     }
     info.friendly_name = config.friendly_name;
     info.model_name = config.model_name;

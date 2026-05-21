@@ -63,7 +63,10 @@ export function getEnclosingExpression(node: Node): Node|null {
   return null;
 }
 
-export function getEnclosingProperty(node: Node): Node|null {
+export function getEnclosingProperty(node: Node|undefined): Node|null {
+  if (!node) {
+    return null;
+  }
   if (isMemberExpression(
           node, n => n.type === 'ThisExpression', n => ['Identifier', 'PrivateIdentifier'].includes(n.type))) {
     return node;

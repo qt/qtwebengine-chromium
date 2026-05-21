@@ -365,7 +365,8 @@ bool MdnsReader::Read(IPAddress::Version version, IPAddress* out) {
                               : IPAddress::kV4Size;
   const uint8_t* const address_bytes = current();
   if (Skip(ipaddress_size)) {
-    *out = IPAddress(version, address_bytes);
+    *out = IPAddress(version,
+                     std::span<const uint8_t>(address_bytes, ipaddress_size));
     return true;
   }
   return false;

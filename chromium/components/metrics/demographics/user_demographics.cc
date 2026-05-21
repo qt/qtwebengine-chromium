@@ -36,7 +36,7 @@ constexpr auto kDeprecatedDemographicsBirthYearOffsetPrefFlags =
 
 namespace {
 
-const base::Value::Dict& GetDemographicsDict(PrefService* profile_prefs) {
+const base::DictValue& GetDemographicsDict(PrefService* profile_prefs) {
 #if BUILDFLAG(IS_CHROMEOS)
   // TODO(crbug.com/40240008): On Ash only, clear sync demographics pref once
   // os-level syncable pref is fully rolled out and Ash drops support for
@@ -48,23 +48,6 @@ const base::Value::Dict& GetDemographicsDict(PrefService* profile_prefs) {
   return profile_prefs->GetDict(kSyncDemographicsPrefName);
 }
 
-void MigrateBirthYearOffset(PrefService* to_local_state,
-                            PrefService* from_profile_prefs) {
-  const int profile_offset = from_profile_prefs->GetInteger(
-      kDeprecatedDemographicsBirthYearOffsetPrefName);
-  if (profile_offset == kUserDemographicsBirthYearNoiseOffsetDefaultValue)
-    return;
-
-  // TODO(crbug.com/40240008): clear/remove deprecated pref after 2023/09
-
-  const int local_offset =
-      to_local_state->GetInteger(kUserDemographicsBirthYearOffsetPrefName);
-  if (local_offset == kUserDemographicsBirthYearNoiseOffsetDefaultValue) {
-    to_local_state->SetInteger(kUserDemographicsBirthYearOffsetPrefName,
-                               profile_offset);
-  }
-}
-
 // Returns the noise offset for the birth year. If not found in |local_state|,
 // the offset will be randomly generated within the offset range and cached in
 // |local_state|.
@@ -73,8 +56,8 @@ int GetBirthYearOffset(PrefService* local_state) {
       local_state->GetInteger(kUserDemographicsBirthYearOffsetPrefName);
   if (offset == kUserDemographicsBirthYearNoiseOffsetDefaultValue) {
     // Generate a new random offset when not already cached.
-    offset = base::RandInt(-kUserDemographicsBirthYearNoiseOffsetRange,
-                           kUserDemographicsBirthYearNoiseOffsetRange);
+    offset = base::RandIntInclusive(-kUserDemographicsBirthYearNoiseOffsetRange,
+                                    kUserDemographicsBirthYearNoiseOffsetRange);
     local_state->SetInteger(kUserDemographicsBirthYearOffsetPrefName, offset);
   }
   return offset;
@@ -120,7 +103,7 @@ bool HasEligibleBirthYear(base::Time now, int user_birth_year, int offset) {
 // Gets the synced user's birth year from synced prefs, see doc of
 // DemographicMetricsProvider in demographic_metrics_provider.h for more
 // details.
-std::optional<int> GetUserBirthYear(const base::Value::Dict& demographics) {
+std::optional<int> GetUserBirthYear(const base::DictValue& demographics) {
   return demographics.FindInt(kSyncDemographicsBirthYearPath);
 }
 
@@ -128,7 +111,7 @@ std::optional<int> GetUserBirthYear(const base::Value::Dict& demographics) {
 // DemographicMetricsProvider in demographic_metrics_provider.h for more
 // details.
 std::optional<UserDemographicsProto_Gender> GetUserGender(
-    const base::Value::Dict& demographics) {
+    const base::DictValue& demographics) {
   const std::optional<int> gender_int =
       demographics.FindInt(kSyncDemographicsGenderPath);
 
@@ -236,7 +219,7 @@ UserDemographicsResult GetUserNoisedBirthYearAndGenderFromPrefs(
   // user_demographics.h for more details.
 
   // Get the pref that contains the user's birth year and gender.
-  const base::Value::Dict& demographics = GetDemographicsDict(profile_prefs);
+  const base::DictValue& demographics = GetDemographicsDict(profile_prefs);
 
   // Get the user's birth year.
   std::optional<int> birth_year = GetUserBirthYear(demographics);
@@ -255,8 +238,9 @@ UserDemographicsResult GetUserNoisedBirthYearAndGenderFromPrefs(
 
   // Get the offset from local_state/profile_prefs and do one last check that
   // the birth year is eligible.
-  // TODO(crbug.com/40240008): remove profile_prefs after 2023/09
-  MigrateBirthYearOffset(local_state, profile_prefs);
+  // TODO(crbug.com/40240008): Remove these after 2026/12.
+  // ClearPref() call added 2025/12.
+  profile_prefs->ClearPref(kDeprecatedDemographicsBirthYearOffsetPrefName);
   int offset = GetBirthYearOffset(local_state);
   if (!HasEligibleBirthYear(now, *birth_year, offset)) {
     return UserDemographicsResult::ForStatus(

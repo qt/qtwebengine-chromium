@@ -37,23 +37,21 @@ bool StructTraits<
       data.apply_alignment_to_all_simulcast_layers();
   out->requested_resolution_alignment = data.requested_resolution_alignment();
   out->supports_frame_size_change = data.supports_frame_size_change();
+  out->number_of_manual_reference_buffers =
+      data.number_of_manual_reference_buffers();
 
-  if (!data.ReadImplementationName(&out->implementation_name))
+  if (!data.ReadImplementationName(&out->implementation_name)) {
     return false;
+  }
 
-  if (data.has_frame_delay())
-    out->frame_delay = data.frame_delay();
-  else
-    out->frame_delay.reset();
+  out->frame_delay = data.frame_delay();
 
-  if (data.has_input_capacity())
-    out->input_capacity = data.input_capacity();
-  else
-    out->input_capacity.reset();
+  out->input_capacity = data.input_capacity();
 
   base::span<std::vector<uint8_t>> fps_allocation(out->fps_allocation);
-  if (!data.ReadFpsAllocation(&fps_allocation))
+  if (!data.ReadFpsAllocation(&fps_allocation)) {
     return false;
+  }
 
   if (!data.ReadResolutionRateLimits(&out->resolution_rate_limits)) {
     return false;

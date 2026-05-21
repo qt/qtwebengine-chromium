@@ -858,8 +858,8 @@ class MjsunitImmediatesPrinter {
   void ValueType(ValueType type) {
     if (owner_->current_opcode_ == kExprBrOnCast ||
         owner_->current_opcode_ == kExprBrOnCastFail ||
-        owner_->current_opcode_ == kExprBrOnCastDesc ||
-        owner_->current_opcode_ == kExprBrOnCastDescFail) {
+        owner_->current_opcode_ == kExprBrOnCastDescEq ||
+        owner_->current_opcode_ == kExprBrOnCastDescEqFail) {
       // We somewhat incorrectly use the {ValueType} callback rather than
       // {HeapType()} for br_on_cast[_desc][_fail], because that's convenient
       // for disassembling to the text format. For module builder output,
@@ -1243,9 +1243,9 @@ class MjsunitModuleDis {
     // Support self-referential and mutually-recursive types.
     std::vector<uint32_t> needed_at(module_->types.size(), kMaxUInt32);
     auto MarkAsNeededHere = [&needed_at](ValueType vt, uint32_t here) {
-      if (!vt.is_object_reference()) return;
+      if (!vt.is_ref()) return;
       HeapType ht = vt.heap_type();
-      if (!ht.is_index()) return;
+      if (!ht.has_index()) return;
       if (ht.ref_index().index < here) return;
       if (needed_at[ht.ref_index().index] < here) return;
       needed_at[ht.ref_index().index] = here;

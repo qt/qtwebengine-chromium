@@ -1,6 +1,6 @@
-/* Copyright (c) 2018-2025 The Khronos Group Inc.
- * Copyright (c) 2018-2025 Valve Corporation
- * Copyright (c) 2018-2025 LunarG, Inc.
+/* Copyright (c) 2018-2026 The Khronos Group Inc.
+ * Copyright (c) 2018-2026 Valve Corporation
+ * Copyright (c) 2018-2026 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,6 @@
  * limitations under the License.
  */
 
-#include "chassis/chassis_modification_state.h"
 #include "gpuav/core/gpuav.h"
 #include "gpuav/core/gpuav_validation_pipeline.h"
 #include "gpuav/validation_cmd/gpuav_validation_cmd_common.h"
@@ -110,15 +109,14 @@ void TraceRaysIndirect(Validator& gpuav, const Location& loc, CommandBufferSubSt
         bool skip = false;
         using namespace glsl;
 
-        const uint32_t error_group = error_record[kHeaderShaderIdErrorOffset] >> kErrorGroupShift;
-        if (error_group != kErrorGroupGpuPreTraceRays) {
+        if (GetErrorGroup(error_record) != kErrorGroup_GpuPreTraceRays) {
             return skip;
         }
 
-        const uint32_t error_sub_code = (error_record[kHeaderShaderIdErrorOffset] & kErrorSubCodeMask) >> kErrorSubCodeShift;
+        const uint32_t error_sub_code = GetSubError(error_record);
         switch (error_sub_code) {
-            case kErrorSubCodePreTraceRaysLimitWidth: {
-                const uint32_t width = error_record[kValCmdErrorPayloadDword_0];
+            case kErrorSubCode_PreTraceRays_LimitWidth: {
+                const uint32_t width = error_record[kValCmd_ErrorPayloadDword_0];
                 skip |= gpuav.LogError("VUID-VkTraceRaysIndirectCommandKHR-width-03638", objlist, loc_with_debug_region,
                                        "Indirect trace rays of VkTraceRaysIndirectCommandKHR::width of %" PRIu32
                                        " would exceed VkPhysicalDeviceLimits::maxComputeWorkGroupCount[0] * "
@@ -128,8 +126,8 @@ void TraceRaysIndirect(Validator& gpuav, const Location& loc, CommandBufferSubSt
                                            static_cast<uint64_t>(gpuav.phys_dev_props.limits.maxComputeWorkGroupSize[0]));
                 break;
             }
-            case kErrorSubCodePreTraceRaysLimitHeight: {
-                const uint32_t height = error_record[kValCmdErrorPayloadDword_0];
+            case kErrorSubCode_PreTraceRays_LimitHeight: {
+                const uint32_t height = error_record[kValCmd_ErrorPayloadDword_0];
                 skip |= gpuav.LogError("VUID-VkTraceRaysIndirectCommandKHR-height-03639", objlist, loc_with_debug_region,
                                        "Indirect trace rays of VkTraceRaysIndirectCommandKHR::height of %" PRIu32
                                        " would exceed VkPhysicalDeviceLimits::maxComputeWorkGroupCount[1] * "
@@ -139,8 +137,8 @@ void TraceRaysIndirect(Validator& gpuav, const Location& loc, CommandBufferSubSt
                                            static_cast<uint64_t>(gpuav.phys_dev_props.limits.maxComputeWorkGroupSize[1]));
                 break;
             }
-            case kErrorSubCodePreTraceRaysLimitDepth: {
-                const uint32_t depth = error_record[kValCmdErrorPayloadDword_0];
+            case kErrorSubCode_PreTraceRays_LimitDepth: {
+                const uint32_t depth = error_record[kValCmd_ErrorPayloadDword_0];
                 skip |= gpuav.LogError("VUID-VkTraceRaysIndirectCommandKHR-depth-03640", objlist, loc_with_debug_region,
                                        "Indirect trace rays of VkTraceRaysIndirectCommandKHR::height of %" PRIu32
                                        " would exceed VkPhysicalDeviceLimits::maxComputeWorkGroupCount[2] * "
@@ -150,10 +148,10 @@ void TraceRaysIndirect(Validator& gpuav, const Location& loc, CommandBufferSubSt
                                            static_cast<uint64_t>(gpuav.phys_dev_props.limits.maxComputeWorkGroupSize[2]));
                 break;
             }
-            case kErrorSubCodePreTraceRaysLimitVolume: {
-                const VkExtent3D trace_rays_extent = {error_record[kValCmdErrorPayloadDword_0],
-                                                      error_record[kValCmdErrorPayloadDword_1],
-                                                      error_record[kValCmdErrorPayloadDword_2]};
+            case kErrorSubCode_PreTraceRays_LimitVolume: {
+                const VkExtent3D trace_rays_extent = {error_record[kValCmd_ErrorPayloadDword_0],
+                                                      error_record[kValCmd_ErrorPayloadDword_1],
+                                                      error_record[kValCmd_ErrorPayloadDword_2]};
                 const uint64_t rays_volume = trace_rays_extent.width * trace_rays_extent.height * trace_rays_extent.depth;
                 skip |= gpuav.LogError(
                     "VUID-VkTraceRaysIndirectCommandKHR-width-03641", objlist, loc_with_debug_region,
@@ -175,57 +173,15 @@ void TraceRaysIndirect(Validator& gpuav, const Location& loc, CommandBufferSubSt
 }
 
 struct BuildAccelerationStructuresValidationShader {
-    static size_t GetSpirvSize() { return validation_cmd_build_acceleration_structures_comp_size * sizeof(uint32_t); }
-    static const uint32_t* GetSpirv() { return validation_cmd_build_acceleration_structures_comp; }
+    static size_t GetSpirvSize() { return validation_cmd_tlas_comp_size * sizeof(uint32_t); }
+    static const uint32_t* GetSpirv() { return validation_cmd_tlas_comp; }
 
-    glsl::AccelerationStructureReferencePushData push_constants{};
+    glsl::TLASValidationShaderPushData push_constants{};
 
     static std::vector<VkDescriptorSetLayoutBinding> GetDescriptorSetLayoutBindings() { return {}; }
 
     std::vector<VkWriteDescriptorSet> GetDescriptorWrites() const { return {}; }
 };
-
-struct AccelerationStructureMetadata {
-    uint32_t address_low;
-    uint32_t address_high;
-    uint32_t buffer_status;
-};
-
-struct AccelerationStructuresAddrToStateObjectMap {
-    vvl::concurrent_unordered_map<VkDeviceAddress, std::shared_ptr<vvl::AccelerationStructureKHR>> map;
-};
-
-void RecordGetAccelerationStructureDeviceAddress(Validator& gpuav, VkAccelerationStructureKHR as, VkDeviceAddress as_addr) {
-    if (!gpuav.gpuav_settings.validate_acceleration_structures_builds) {
-        return;
-    }
-
-    if (as_addr == 0) {
-        return;
-    }
-
-    if (auto as_state = gpuav.Get<vvl::AccelerationStructureKHR>(as)) {
-        as_state->acceleration_structure_address = as_addr;
-        auto& as_addr_to_as_buffer = gpuav.shared_resources_cache.GetOrCreate<AccelerationStructuresAddrToStateObjectMap>();
-        as_addr_to_as_buffer.map.insert(as_addr, as_state);
-    }
-}
-
-void RemoveAccelerationStrutureDeviceAddress(Validator& gpuav, VkAccelerationStructureKHR as) {
-    if (!gpuav.gpuav_settings.validate_acceleration_structures_builds) {
-        return;
-    }
-
-    if (auto as_state = gpuav.Get<vvl::AccelerationStructureKHR>(as)) {
-        if (as_state->acceleration_structure_address != 0) {
-            auto* as_addr_to_as_buffer = gpuav.shared_resources_cache.TryGet<AccelerationStructuresAddrToStateObjectMap>();
-            if (as_addr_to_as_buffer) {
-                as_addr_to_as_buffer->map.erase(as_state->acceleration_structure_address);
-                as_state->acceleration_structure_address = 0;
-            }
-        }
-    }
-}
 
 class DummyBLAS {
   public:
@@ -402,10 +358,9 @@ class DummyBLAS {
     VkAccelerationStructureBuildGeometryInfoKHR as_build_geom_info{};
 };
 
-void BuildAccelerationStructures(Validator& gpuav, const Location& loc, CommandBufferSubState& cb_state,
-                                 const LastBound& last_bound, uint32_t info_count,
-                                 const VkAccelerationStructureBuildGeometryInfoKHR* infos,
-                                 const VkAccelerationStructureBuildRangeInfoKHR* const* build_ranges_infos) {
+void TLAS(Validator& gpuav, const Location& loc, CommandBufferSubState& cb_state, const LastBound& last_bound, uint32_t info_count,
+          const VkAccelerationStructureBuildGeometryInfoKHR* infos,
+          const VkAccelerationStructureBuildRangeInfoKHR* const* build_ranges_infos) {
     VVL_ZoneScoped;
     if (!gpuav.gpuav_settings.validate_acceleration_structures_builds) {
         return;
@@ -419,23 +374,39 @@ void BuildAccelerationStructures(Validator& gpuav, const Location& loc, CommandB
         uint32_t geom_i = 0;
     };
 
+    struct BlasBuiltInCmd {
+        std::shared_ptr<vvl::AccelerationStructureKHR> blas = {};
+        size_t p_info_i = 0;
+    };
     std::vector<BlasArray> blas_arrays;
+    std::vector<BlasBuiltInCmd> blas_built_in_cmd_array;
     for (const auto [info_i, info] : vvl::enumerate(infos, info_count)) {
-        for (uint32_t geom_i = 0; geom_i < info.geometryCount; ++geom_i) {
-            const VkAccelerationStructureGeometryKHR& geom = rt::GetGeometry(info, geom_i);
-            if (geom.geometryType == VK_GEOMETRY_TYPE_INSTANCES_KHR) {
-                BlasArray blas_array;
-                blas_array.size = build_ranges_infos[info_i][geom_i].primitiveCount;
-                blas_array.array_start_addr =
-                    geom.geometry.instances.data.deviceAddress + build_ranges_infos[info_i][geom_i].primitiveOffset;
-                blas_array.is_array_of_pointers = uint32_t(geom.geometry.instances.arrayOfPointers);
-                blas_array.info_i = info_i;
-                blas_array.geom_i = geom_i;
-                blas_arrays.emplace_back(blas_array);
+        if (info.type == VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR) {
+            for (uint32_t geom_i = 0; geom_i < info.geometryCount; ++geom_i) {
+                const VkAccelerationStructureGeometryKHR& geom = rt::GetGeometry(info, geom_i);
+                if (geom.geometryType == VK_GEOMETRY_TYPE_INSTANCES_KHR) {
+                    BlasArray blas_array;
+                    blas_array.size = build_ranges_infos[info_i][geom_i].primitiveCount;
+                    blas_array.array_start_addr =
+                        geom.geometry.instances.data.deviceAddress + build_ranges_infos[info_i][geom_i].primitiveOffset;
+                    blas_array.is_array_of_pointers = uint32_t(geom.geometry.instances.arrayOfPointers);
+                    blas_array.info_i = info_i;
+                    blas_array.geom_i = geom_i;
+                    blas_arrays.emplace_back(blas_array);
+                }
+            }
+        } else if (info.type == VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR) {
+            auto blas = gpuav.Get<vvl::AccelerationStructureKHR>(info.dstAccelerationStructure);
+            if (blas) {
+                BlasBuiltInCmd blas_build_in_cmd{};
+                blas_build_in_cmd.blas = std::move(blas);
+                blas_build_in_cmd.p_info_i = info_i;
+                blas_built_in_cmd_array.emplace_back(blas_build_in_cmd);
             }
         }
     }
 
+    // No TLAS built in command, so no validation to perform
     if (blas_arrays.empty()) {
         return;
     }
@@ -451,78 +422,90 @@ void BuildAccelerationStructures(Validator& gpuav, const Location& loc, CommandB
         return;
     }
 
-    vko::BufferRange ptr_to_accel_structs_metadata_buffer =
-        cb_state.gpu_resources_manager.GetDeviceLocalBufferRange(sizeof(VkDeviceAddress));
+    vko::BufferRange as_arrays_ptr_buffer =
+        cb_state.gpu_resources_manager.GetDeviceLocalBufferRange(sizeof(glsl::AccelerationStructureArraysPtr));
 
-    DummyBLAS& dummy_blas = gpuav.shared_resources_cache.GetOrCreate<DummyBLAS>(gpuav, cb_state);
+    cb_state.on_pre_cb_submission_functions.emplace_back([as_arrays_ptr_buffer](Validator& gpuav, CommandBufferSubState& cb,
+                                                                                VkCommandBuffer per_submission_cb) {
+        VVL_ZoneScopedN("validate_as_builds_pre_submit");
 
-    BuildAccelerationStructuresValidationShader shader_resources;
-    shader_resources.push_constants.ptr_to_ptr_to_accel_structs_metadata = ptr_to_accel_structs_metadata_buffer.offset_address;
-    shader_resources.push_constants.valid_dummy_blas_addr = dummy_blas.blas_address;
+        ReadLockGuard lock(gpuav.device_state->as_with_addresses.array_mutex);
 
-    cb_state.on_pre_cb_submission_functions.emplace_back(
-        [ptr_to_accel_structs_metadata_buffer](Validator& gpuav, CommandBufferSubState& cb, VkCommandBuffer per_submission_cb) {
-            VVL_ZoneScopedN("validate_as_builds_pre_submit");
-            // #ARNO_TODO Refacto the "copy to buffer" part
-            auto& as_addr_to_as_buffer = gpuav.shared_resources_cache.Get<AccelerationStructuresAddrToStateObjectMap>();
-            // #ARNO_TODO Definitely can see this become a big perf bottleneck
-            auto as_addr_to_as_buffer_snapshot = as_addr_to_as_buffer.map.snapshot();
+        // valid AS addresses buffer
+        vko::BufferRange as_addresses_buffer = cb.gpu_resources_manager.GetHostCoherentBufferRange(
+            2 * sizeof(uint32_t) + gpuav.device_state->as_with_addresses.array.size() * sizeof(uint64_t));
+        auto accel_struct_addresses_buffer_u32_ptr = (uint32_t*)as_addresses_buffer.offset_mapped_ptr;
 
-            vko::BufferRange accel_structs_metadata_buffer = cb.gpu_resources_manager.GetHostCoherentBufferRange(
-                sizeof(uint32_t) + as_addr_to_as_buffer_snapshot.size() * sizeof(AccelerationStructureMetadata));
-            auto accel_structs_metadata_buffer_u32_ptr = (uint32_t*)accel_structs_metadata_buffer.offset_mapped_ptr;
+        *accel_struct_addresses_buffer_u32_ptr = (uint32_t)gpuav.device_state->as_with_addresses.array.size();
 
-            *accel_structs_metadata_buffer_u32_ptr = (uint32_t)as_addr_to_as_buffer_snapshot.size();
+        auto as_addresses_ptr = (uint64_t*)(accel_struct_addresses_buffer_u32_ptr + 2);
 
-            auto as_metadata_ptr = (AccelerationStructureMetadata*)(accel_structs_metadata_buffer_u32_ptr + 1);
-            uint32_t written_count = 0;
-            for (const auto& [device_addr, as] : as_addr_to_as_buffer_snapshot) {
-                as_metadata_ptr[written_count++] = {uint32_t(device_addr), uint32_t(device_addr >> 32u),
-                                                    uint32_t(as->buffer_state && !as->buffer_state->Destroyed())};
-            }
+        // valid AS metadata buffer
+        vko::BufferRange as_metadatas_buffer = cb.gpu_resources_manager.GetHostCachedBufferRange(
+            gpuav.device_state->as_with_addresses.array.size() * sizeof(uint32_t));
+        auto as_metadatas_ptr = (uint32_t*)(as_metadatas_buffer.offset_mapped_ptr);
 
-            // Fill a GPU buffer with a pointer to the AS metadata
-            vko::BufferRange submit_time_ptr_to_accel_structs_metadata_buffer =
-                cb.gpu_resources_manager.GetHostCoherentBufferRange(sizeof(VkDeviceAddress));
-            *(VkDeviceAddress*)submit_time_ptr_to_accel_structs_metadata_buffer.offset_mapped_ptr =
-                accel_structs_metadata_buffer.offset_address;
+        // valid AS buffer address ranges buffer
+        vko::BufferRange as_buffer_addr_ranges_buffer = cb.gpu_resources_manager.GetHostCoherentBufferRange(
+            gpuav.device_state->as_with_addresses.array.size() * (2 * sizeof(uint64_t)));
+        auto as_buffer_addr_ranges_ptr = (uint64_t*)(as_buffer_addr_ranges_buffer.offset_mapped_ptr);
 
-            // Dispatch a copy command, copying the per CB submission AS metadata pointer to the AS metadata pointer created at
-            // build acceleration structures time, so that CB submission accesses correct AS metadata snapshot.
-            {
-                VkBufferMemoryBarrier barrier_write_after_read = vku::InitStructHelper();
-                barrier_write_after_read.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
-                barrier_write_after_read.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-                barrier_write_after_read.buffer = ptr_to_accel_structs_metadata_buffer.buffer;
-                barrier_write_after_read.offset = ptr_to_accel_structs_metadata_buffer.offset;
-                barrier_write_after_read.size = ptr_to_accel_structs_metadata_buffer.size;
+        uint32_t written_count = 0;
+        for (const vvl::AccelerationStructureKHR* as : gpuav.device_state->as_with_addresses.array) {
+            as_addresses_ptr[written_count] = as->acceleration_structure_address;
+            uint32_t metadata = 0;
+            const bool is_buffer_destroyed = as->buffer_state && !as->buffer_state->Destroyed();
+            const bool is_buffer_bound_to_memory = is_buffer_destroyed && as->buffer_state->IsMemoryBound();
+            metadata |= SET_BUILD_AS_METADATA_BUFFER_STATUS(is_buffer_destroyed);
+            metadata |= SET_BUILD_AS_METADATA_AS_TYPE(as->create_info.type);
+            metadata |= SET_BUILD_AS_METADATA_BUFFER_MEMORY_STATUS(is_buffer_bound_to_memory);
+            as_metadatas_ptr[written_count] = metadata;
+            const vvl::range<VkDeviceAddress> as_buffer_addr_range = as->device_address_range;
+            as_buffer_addr_ranges_ptr[2 * written_count] = as_buffer_addr_range.begin;
+            as_buffer_addr_ranges_ptr[2 * written_count + 1] = as_buffer_addr_range.end;
 
-                DispatchCmdPipelineBarrier(per_submission_cb, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-                                           VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 1, &barrier_write_after_read, 0,
-                                           nullptr);
+            ++written_count;
+        }
 
-                VkBufferCopy copy;
-                copy.srcOffset = submit_time_ptr_to_accel_structs_metadata_buffer.offset;
-                copy.dstOffset = ptr_to_accel_structs_metadata_buffer.offset;
-                copy.size = sizeof(VkDeviceAddress);
-                DispatchCmdCopyBuffer(per_submission_cb, submit_time_ptr_to_accel_structs_metadata_buffer.buffer,
-                                      ptr_to_accel_structs_metadata_buffer.buffer, 1, &copy);
+        // Fill a GPU buffer with a pointer to the AS metadata
+        vko::BufferRange submit_time_ptr_to_accel_structs_metadata_buffer =
+            cb.gpu_resources_manager.GetHostCoherentBufferRange(sizeof(glsl::AccelerationStructureArraysPtr));
+        auto submit_time_ptr_to_accel_structs_metadata_buffer_ptr =
+            (glsl::AccelerationStructureArraysPtr*)submit_time_ptr_to_accel_structs_metadata_buffer.offset_mapped_ptr;
 
-                VkBufferMemoryBarrier barrier_read_before_write = vku::InitStructHelper();
-                barrier_read_before_write.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-                barrier_read_before_write.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
-                barrier_read_before_write.buffer = ptr_to_accel_structs_metadata_buffer.buffer;
-                barrier_read_before_write.offset = ptr_to_accel_structs_metadata_buffer.offset;
-                barrier_read_before_write.size = ptr_to_accel_structs_metadata_buffer.size;
+        submit_time_ptr_to_accel_structs_metadata_buffer_ptr->addresses_ptr = as_addresses_buffer.offset_address;
+        submit_time_ptr_to_accel_structs_metadata_buffer_ptr->metadata_ptr = as_metadatas_buffer.offset_address;
+        submit_time_ptr_to_accel_structs_metadata_buffer_ptr->buffer_ranges_ptr = as_buffer_addr_ranges_buffer.offset_address;
 
-                DispatchCmdPipelineBarrier(per_submission_cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0,
-                                           0, nullptr, 1, &barrier_read_before_write, 0, nullptr);
-            }
-        });
+        vko::CmdSynchronizedCopyBufferRange(per_submission_cb, as_arrays_ptr_buffer,
+                                            submit_time_ptr_to_accel_structs_metadata_buffer);
+    });
 
     // Setup Validation pipeline
     // ---
     {
+        DummyBLAS& dummy_blas = gpuav.shared_resources_cache.GetOrCreate<DummyBLAS>(gpuav, cb_state);
+
+        // Fill a buffer with BLAS built in this cmd
+        vko::BufferRange blas_built_in_cmd_buffer;
+        if (!blas_built_in_cmd_array.empty()) {
+            blas_built_in_cmd_buffer =
+                cb_state.gpu_resources_manager.GetHostCachedBufferRange(blas_built_in_cmd_array.size() * (2 * sizeof(uint64_t)));
+            auto blas_built_in_cmd_buffer_ptr = (uint64_t*)(blas_built_in_cmd_buffer.offset_mapped_ptr);
+            for (const auto [i, blas_built_in_cmd] : vvl::enumerate(blas_built_in_cmd_array)) {
+                const vvl::range<VkDeviceAddress> blas_built_in_cmd_buffer_addr_range =
+                    blas_built_in_cmd.blas->device_address_range;
+                blas_built_in_cmd_buffer_ptr[2 * i] = blas_built_in_cmd_buffer_addr_range.begin;
+                blas_built_in_cmd_buffer_ptr[2 * i + 1] = blas_built_in_cmd_buffer_addr_range.end;
+            }
+        }
+
+        BuildAccelerationStructuresValidationShader shader_resources;
+        shader_resources.push_constants.ptr_to_ptr_to_accel_structs_arrays = as_arrays_ptr_buffer.offset_address;
+        shader_resources.push_constants.valid_dummy_blas_addr = dummy_blas.blas_address;
+        shader_resources.push_constants.blas_built_in_cmd_array_ptr = blas_built_in_cmd_buffer.offset_address;
+        shader_resources.push_constants.blas_built_in_cmd_array_size = (uint32_t)blas_built_in_cmd_array.size();
+
         DispatchCmdBindPipeline(cb_state.VkHandle(), VK_PIPELINE_BIND_POINT_COMPUTE, validation_pipeline.pipeline);
 
         // Validation dispatch, one for each TLAS build
@@ -544,6 +527,7 @@ void BuildAccelerationStructures(Validator& gpuav, const Location& loc, CommandB
                                            nullptr);
             }
 
+            shader_resources.push_constants.validation_mode = glsl::kBuildASValidationMode_invalid_AS;
             const uint32_t is_array_of_pointers = blas_arrays[blas_array_i].is_array_of_pointers;
             if (is_array_of_pointers == 0) {
                 shader_resources.push_constants.blas_array_start_addr = blas_arrays[blas_array_i].array_start_addr;
@@ -564,9 +548,20 @@ void BuildAccelerationStructures(Validator& gpuav, const Location& loc, CommandB
                 return;
             }
 
+            constexpr uint32_t wg_size_x = 8;
+            constexpr uint32_t wg_size_y = 8;
+
             const uint32_t as_instances_count = blas_arrays[blas_array_i].size;
-            const uint32_t work_group_count = as_instances_count / 32 + uint32_t(as_instances_count % 32 > 0);
-            DispatchCmdDispatch(cb_state.VkHandle(), work_group_count, 1, 1);
+            const uint32_t wg_count_x = as_instances_count / wg_size_x + uint32_t(as_instances_count % wg_size_x > 0);
+            DispatchCmdDispatch(cb_state.VkHandle(), wg_count_x, 1, 1);
+
+            shader_resources.push_constants.validation_mode = glsl::kBuildASValidationMode_memory_overlaps;
+
+            BindShaderPushConstants(validation_pipeline, gpuav, cb_state, shader_resources);
+
+            const uint32_t wg_count_y =
+                (uint32_t)blas_built_in_cmd_array.size() / wg_size_y + uint32_t(blas_built_in_cmd_array.size() % wg_size_y > 0);
+            DispatchCmdDispatch(cb_state.VkHandle(), wg_count_x, wg_count_y, 1);
 
             if (!blas_array_buffers.empty()) {
                 VkBufferMemoryBarrier barrier_read_after_write = vku::InitStructHelper();
@@ -583,60 +578,404 @@ void BuildAccelerationStructures(Validator& gpuav, const Location& loc, CommandB
         }
     }
 
-    CommandBufferSubState::ErrorLoggerFunc error_logger = [&gpuav, blas_arrays = std::move(blas_arrays)](
+    CommandBufferSubState::ErrorLoggerFunc error_logger = [&gpuav, blas_arrays = std::move(blas_arrays),
+                                                           blas_built_in_cmd_array = std::move(blas_built_in_cmd_array)](
                                                               const uint32_t* error_record, const Location& loc_with_debug_region,
                                                               const LogObjectList& objlist) {
         bool skip = false;
         using namespace glsl;
 
-        const uint32_t error_group = error_record[kHeaderShaderIdErrorOffset] >> kErrorGroupShift;
-        if (error_group != kErrorGroupGpuPreBuildAccelerationStructures) {
+        if (GetErrorGroup(error_record) != kErrorGroup_GpuPreBuildAccelerationStructures) {
             return skip;
         }
 
-        const uint64_t accel_struct_addr = glsl::GetUint64(error_record + kValCmdErrorPayloadDword_0);
-        const uint32_t as_instance_i = error_record[kValCmdErrorPayloadDword_2];
-        const uint32_t blas_array_i = error_record[kValCmdErrorPayloadDword_3];
+        const uint64_t blas_in_tlas_addr = glsl::GetUint64(error_record + kValCmd_ErrorPayloadDword_0);
+        const uint32_t as_instance_i = error_record[kValCmd_ErrorPayloadDword_2];
+        const uint32_t blas_array_i = error_record[kValCmd_ErrorPayloadDword_3];
 
+        // Gather error info
+        // ---
+        const char* vvl_bug_msg =
+            "this is most likely a validation layer bug. Please file an issue at "
+            "https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues ";
+        const auto as_found_it =
+            std::find_if(gpuav.device_state->as_with_addresses.array.begin(), gpuav.device_state->as_with_addresses.array.end(),
+                         [blas_in_tlas_addr](vvl::AccelerationStructureKHR* as) {
+                             return as->acceleration_structure_address == blas_in_tlas_addr;
+                         });
+        std::stringstream ss_as;
+        std::stringstream ss_as_buffer;
+        if (as_found_it != gpuav.device_state->as_with_addresses.array.end()) {
+            ss_as << "Acceleration structure corresponding to reference: " << gpuav.FormatHandle((*as_found_it)->VkHandle());
+            if ((*as_found_it)->buffer_state) {
+                ss_as_buffer << "(" << gpuav.FormatHandle((*as_found_it)->buffer_state->VkHandle()) << ") ";
+            }
+        } else {
+            ss_as << "Could not map acceleration structure reference to its corresponding handle, " << vvl_bug_msg;
+        }
+        const std::string ss_as_str = ss_as.str();
+        const std::string ss_buffer_str = ss_as_buffer.str();
         const BlasArray blas_array = blas_arrays[blas_array_i];
-        std::stringstream invalid_blas_loc;
+        std::ostringstream invalid_blas_loc;
         invalid_blas_loc << "pInfos[" << blas_array.info_i << "].pGeometries[" << blas_array.geom_i
                          << "].geometry.instances<VkAccelerationStructureInstance" << (blas_array.is_array_of_pointers ? " *" : "")
-                         << ">[" << as_instance_i << "] (0x" << std::hex << accel_struct_addr
-                         << ") is an invalid acceleration structure reference";
+                         << ">[" << as_instance_i << ']' << (blas_array.is_array_of_pointers ? "->" : ".")
+                         << "accelerationStructureReference (0x" << std::hex << blas_in_tlas_addr << ")";
         const std::string invalid_blas_loc_str = invalid_blas_loc.str();
 
-        const uint32_t error_sub_code = (error_record[kHeaderShaderIdErrorOffset] & kErrorSubCodeMask) >> kErrorSubCodeShift;
+        // Log error
+        // ---
+        const uint32_t error_sub_code = GetSubError(error_record);
         switch (error_sub_code) {
+            case kErrorSubCode_PreBuildAccelerationStructures_BlasAddrAlignment: {
+                skip |= gpuav.LogError("VUID-vkCmdBuildAccelerationStructuresKHR-pInfos-03717", objlist, loc_with_debug_region,
+                                       "%s is not aligned to 16 bytes.", invalid_blas_loc_str.c_str());
+                break;
+            }
             case kErrorSubCode_PreBuildAccelerationStructures_InvalidAS: {
-                skip |= gpuav.LogError("VUID-vkCmdBuildAccelerationStructuresKHR-pInfos-06707", objlist, loc_with_debug_region,
-                                       "%s.", invalid_blas_loc_str.c_str());
+                skip |= gpuav.LogError("VUID-vkCmdBuildAccelerationStructuresKHR-pInfos-12281", objlist, loc_with_debug_region,
+                                       "%s is an invalid acceleration structure reference.", invalid_blas_loc_str.c_str());
                 break;
             }
             case kErrorSubCode_PreBuildAccelerationStructures_DestroyedASBuffer: {
-                auto& as_addr_to_as_buffer = gpuav.shared_resources_cache.Get<AccelerationStructuresAddrToStateObjectMap>();
-                auto found_as = as_addr_to_as_buffer.map.find(accel_struct_addr);
-                std::stringstream ss_as;
-                std::stringstream ss_buffer;
-                if (found_as != as_addr_to_as_buffer.map.end()) {
-                    ss_as << "Acceleration structure corresponding to reference: "
-                          << gpuav.FormatHandle(found_as->second->VkHandle());
-                    if (found_as->second->buffer_state) {
-                        ss_buffer << "(" << gpuav.FormatHandle(found_as->second->buffer_state->VkHandle()) << ") ";
+                skip |= gpuav.LogError("VUID-vkCmdBuildAccelerationStructuresKHR-pInfos-12281", objlist, loc_with_debug_region,
+                                       "%s is an invalid acceleration structure reference - underlying buffer %swas already "
+                                       "destroyed when build command started execution. %s.",
+                                       invalid_blas_loc_str.c_str(), ss_buffer_str.c_str(), ss_as_str.c_str());
+                break;
+            }
+            case kErrorSubCode_PreBuildAccelerationStructures_InvalidASType: {
+                std::stringstream ss_as_type;
+                if (as_found_it != gpuav.device_state->as_with_addresses.array.end()) {
+                    ss_as_type << ", but has type " << string_VkAccelerationStructureTypeKHR((*as_found_it)->create_info.type)
+                               << ". ";
+                }
+                const std::string ss_as_type_str = ss_as_type.str();
+                skip |= gpuav.LogError("VUID-vkCmdBuildAccelerationStructuresKHR-pInfos-12281", objlist, loc_with_debug_region,
+                                       "%s is not a bottom level acceleration structure%s%s.", invalid_blas_loc_str.c_str(),
+                                       ss_as_type_str.c_str(), ss_as_str.c_str());
+                break;
+            }
+            case kErrorSubCode_PreBuildAccelerationStructures_DestroyedASMemory: {
+                skip |= gpuav.LogError("VUID-vkCmdBuildAccelerationStructuresKHR-pInfos-03709", objlist, loc_with_debug_region,
+                                       "%s is an invalid acceleration structure reference - underlying buffer %s was not bound to "
+                                       "memory anymore when build command started execution. Memory was probably destroyed. %s.",
+                                       invalid_blas_loc_str.c_str(), ss_buffer_str.c_str(), ss_as_str.c_str());
+                break;
+            }
+            case kErrorSubCode_PreBuildAccelerationStructures_BlasMemoryOverlap: {
+                const uint32_t blas_built_in_cmd_i = error_record[kValCmd_ErrorPayloadDword_4];
+                const BlasBuiltInCmd& blas_built_in_cmd = blas_built_in_cmd_array[blas_built_in_cmd_i];
+                std::stringstream error_ss;
+                if (as_found_it != gpuav.device_state->as_with_addresses.array.end()) {
+                    const vvl::range<VkDeviceAddress> blas_in_tlas_buffer_addr_range = (*as_found_it)->device_address_range;
+                    const vvl::range<VkDeviceAddress> blas_built_in_cmd_buffer_addr_range =
+                        blas_built_in_cmd.blas->device_address_range;
+                    const vvl::range<VkDeviceAddress> overlap =
+                        blas_in_tlas_buffer_addr_range & blas_built_in_cmd_buffer_addr_range;
+                    assert(overlap.non_empty());
+                    const VkAccelerationStructureKHR blas_built_in_cmd_handle = blas_built_in_cmd.blas->VkHandle();
+                    const VkAccelerationStructureKHR blas_in_tlas_handle = (*as_found_it)->VkHandle();
+                    if (blas_built_in_cmd_handle != blas_in_tlas_handle) {
+                        error_ss << "pInfos[" << blas_built_in_cmd.p_info_i << "].dstAccelerationStructure ("
+                                 << gpuav.FormatHandle(blas_built_in_cmd.blas->VkHandle()) << "), backed by buffer ("
+                                 << gpuav.FormatHandle(blas_built_in_cmd.blas->buffer_state->VkHandle())
+                                 << "), overlaps on buffer address range " << vvl::string_range_hex(overlap) << " with buffer ("
+                                 << gpuav.FormatHandle((*as_found_it)->buffer_state->VkHandle()) << ") of BLAS ("
+                                 << gpuav.FormatHandle((*as_found_it)->VkHandle()) << "), referenced in " << invalid_blas_loc_str;
+                    } else {
+                        error_ss << "pInfos[" << blas_built_in_cmd.p_info_i << "].dstAccelerationStructure ("
+                                 << gpuav.FormatHandle(blas_built_in_cmd.blas->VkHandle())
+                                 << ") is also referenced in a TLAS built in the same command, through " << invalid_blas_loc_str;
                     }
                 } else {
-                    ss_as << "Could not map acceleration structure reference to its corresponding handle, this is most likely a "
-                             "validation bug";
+                    error_ss << "Could not retrieve error information, " << vvl_bug_msg;
+                }
+                const std::string error_str = error_ss.str();
+                skip |= gpuav.LogError("VUID-vkCmdBuildAccelerationStructuresKHR-dstAccelerationStructure-03706", objlist,
+                                       loc_with_debug_region, "%s.", error_str.c_str());
+                break;
+            }
+            default:
+                break;
+        }
+
+        return skip;
+    };
+
+    cb_state.AddCommandErrorLogger(loc, &last_bound, std::move(error_logger));
+}
+
+struct BLASValidationShader {
+    static size_t GetSpirvSize() { return validation_cmd_blas_comp_size * sizeof(uint32_t); }
+    static const uint32_t* GetSpirv() { return validation_cmd_blas_comp; }
+
+    glsl::BLASValidationShaderPushData push_constants{};
+
+    static std::vector<VkDescriptorSetLayoutBinding> GetDescriptorSetLayoutBindings() { return {}; }
+
+    std::vector<VkWriteDescriptorSet> GetDescriptorWrites() const { return {}; }
+};
+
+void BLAS(Validator& gpuav, const Location& loc, CommandBufferSubState& cb_state, const LastBound& last_bound, uint32_t info_count,
+          const VkAccelerationStructureBuildGeometryInfoKHR* infos,
+          const VkAccelerationStructureBuildRangeInfoKHR* const* pp_build_ranges_infos) {
+    VVL_ZoneScoped;
+    if (!gpuav.gpuav_settings.validate_acceleration_structures_builds) {
+        return;
+    }
+
+    valpipe::RestorablePipelineState restorable_state(cb_state, VK_PIPELINE_BIND_POINT_COMPUTE);
+
+    ValidationCommandsGpuavState& val_cmd_gpuav_state =
+        gpuav.shared_resources_cache.GetOrCreate<ValidationCommandsGpuavState>(gpuav, loc);
+    valpipe::ComputePipeline<BLASValidationShader>& validation_pipeline =
+        gpuav.shared_resources_cache.GetOrCreate<valpipe::ComputePipeline<BLASValidationShader>>(
+            gpuav, loc, val_cmd_gpuav_state.error_logging_desc_set_layout_);
+    if (!validation_pipeline.valid) {
+        return;
+    }
+
+    struct ErrorInfo {
+        uint32_t info_i{};
+        uint32_t geom_i{};
+        VkGeometryTypeKHR geom_type;
+        VkAccelerationStructureGeometryDataKHR geom;
+        VkAccelerationStructureBuildRangeInfoKHR build_range_info{};
+    };
+
+    std::vector<ErrorInfo> error_infos;
+    // Setup Validation pipeline
+    // ---
+    {
+        bool error_logging_desc_set_already_bound = false;
+        for (uint32_t info_i = 0; info_i < info_count; ++info_i) {
+            const VkAccelerationStructureBuildGeometryInfoKHR& info = infos[info_i];
+
+            for (uint32_t geom_i = 0; geom_i < info.geometryCount; ++geom_i) {
+                const VkAccelerationStructureGeometryKHR& geom_data = rt::GetGeometry(info, geom_i);
+
+                const bool setup_triangle_indices_validation = geom_data.geometryType == VK_GEOMETRY_TYPE_TRIANGLES_KHR &&
+                                                               geom_data.geometry.triangles.indexType != VK_INDEX_TYPE_NONE_KHR;
+                const bool setup_aabbs_validation = geom_data.geometryType == VK_GEOMETRY_TYPE_AABBS_KHR;
+
+                if (!setup_triangle_indices_validation && !setup_aabbs_validation) {
+                    continue;
                 }
 
-                const std::string ss_as_str = ss_as.str();
-                const std::string ss_buffer_str = ss_buffer.str();
-                skip |= gpuav.LogError("VUID-vkCmdBuildAccelerationStructuresKHR-pInfos-06707", objlist, loc_with_debug_region,
-                                       "%s - underlying buffer %shas been destroyed. %s.", invalid_blas_loc_str.c_str(),
-                                       ss_buffer_str.c_str(), ss_as_str.c_str());
+                DispatchCmdBindPipeline(cb_state.VkHandle(), VK_PIPELINE_BIND_POINT_COMPUTE, validation_pipeline.pipeline);
+
+                const VkAccelerationStructureBuildRangeInfoKHR& build_range_info = pp_build_ranges_infos[info_i][geom_i];
+
+                ErrorInfo& error_info = error_infos.emplace_back();
+                error_info.info_i = info_i;
+                error_info.geom_i = geom_i;
+                error_info.geom_type = geom_data.geometryType;
+                error_info.build_range_info = build_range_info;
+
+                BLASValidationShader shader_resources;
+                shader_resources.push_constants.first_vertex = build_range_info.firstVertex;
+                shader_resources.push_constants.primitive_offset = build_range_info.primitiveOffset;
+                shader_resources.push_constants.primitive_count = build_range_info.primitiveCount;
+                shader_resources.push_constants.error_info_i = uint32_t(error_infos.size() - 1);
+
+                if (setup_triangle_indices_validation) {
+                    error_info.geom.triangles = geom_data.geometry.triangles;
+
+                    shader_resources.push_constants.validation_mode = glsl::kBLASValidationMode_triangles_indices;
+                    shader_resources.push_constants.address = geom_data.geometry.triangles.indexData.deviceAddress;
+                    shader_resources.push_constants.index_type = geom_data.geometry.triangles.indexType;
+                    shader_resources.push_constants.max_vertex = geom_data.geometry.triangles.maxVertex;
+
+                    if (!BindShaderResources(validation_pipeline, gpuav, cb_state, cb_state.compute_index,
+                                             cb_state.GetErrorLoggerIndex(), shader_resources,
+                                             !error_logging_desc_set_already_bound)) {
+                        assert(false);
+                        return;
+                    }
+                    error_logging_desc_set_already_bound = true;
+
+                    constexpr uint32_t shader_wg_size_x = 64;
+                    const uint32_t wg_count_x = (3 * build_range_info.primitiveCount) / shader_wg_size_x +
+                                                uint32_t(((3 * build_range_info.primitiveCount) % shader_wg_size_x) > 0);
+                    DispatchCmdDispatch(cb_state.VkHandle(), wg_count_x, 1, 1);
+                }
+
+                if (setup_aabbs_validation) {
+                    error_info.geom.aabbs = geom_data.geometry.aabbs;
+
+                    shader_resources.push_constants.validation_mode = glsl::kBLASValidationMode_aabbs;
+                    shader_resources.push_constants.address = geom_data.geometry.aabbs.data.deviceAddress;
+                    shader_resources.push_constants.stride = geom_data.geometry.aabbs.stride;
+
+                    if (!BindShaderResources(validation_pipeline, gpuav, cb_state, cb_state.compute_index,
+                                             cb_state.GetErrorLoggerIndex(), shader_resources,
+                                             !error_logging_desc_set_already_bound)) {
+                        assert(false);
+                        return;
+                    }
+                    error_logging_desc_set_already_bound = true;
+
+                    constexpr uint32_t shader_wg_size_x = 64;
+                    const uint32_t wg_count_x = (build_range_info.primitiveCount) / shader_wg_size_x +
+                                                uint32_t(((build_range_info.primitiveCount) % shader_wg_size_x) > 0);
+                    DispatchCmdDispatch(cb_state.VkHandle(), wg_count_x, 1, 1);
+                }
+            }
+        }
+    }
+
+    CommandBufferSubState::ErrorLoggerFunc error_logger = [&gpuav, error_infos = std::move(error_infos)](
+                                                              const uint32_t* error_record, const Location& loc_with_debug_region,
+                                                              const LogObjectList& objlist) {
+        bool skip = false;
+        using namespace glsl;
+
+        if (GetErrorGroup(error_record) != kErrorGroup_GpuPreBuildAccelerationStructures) {
+            return skip;
+        }
+
+        const uint32_t error_info_i = error_record[kValCmd_ErrorPayloadDword_0];
+        const uint32_t gid = error_record[kValCmd_ErrorPayloadDword_1];
+
+        assert(error_info_i < error_infos.size());
+        const ErrorInfo& error_info = error_infos[error_info_i];
+
+        // Log error
+        // ---
+        const uint32_t error_sub_code = GetSubError(error_record);
+        switch (error_sub_code) {
+            case kErrorSubCode_PreBuildAccelerationStructures_MaxFetchedIndex: {
+                const uint32_t index = error_record[kValCmd_ErrorPayloadDword_2];
+                const uint32_t index_type_byte_size = IndexTypeSize(error_info.geom.triangles.indexType);
+
+                skip |= gpuav.LogError(
+                    "VUID-VkAccelerationStructureBuildRangeInfoKHR-maxVertex-10774", objlist, loc_with_debug_region,
+                    "Index out of bounds.\n"
+                    "Index (%" PRIu32 ") + firstVertex (%" PRIu32 ") = %" PRIu32
+                    " but VkAccelerationStructureGeometryTrianglesDataKHR::maxVertex is only %" PRIu32
+                    ".\n"
+                    "Index buffer starts at VkDeviceAddress indexData (0x%" PRIx64 ") + primitiveOffset (%" PRIu32 ") = 0x%" PRIx64
+                    "\n"
+                    "Given index type of %s, and that starting address, that's IndexBuffer[%" PRIu32
+                    "] (VkDeviceAddress: 0x%" PRIx64
+                    ")\n"
+
+                    "Corresponding BLAS build command info:\n"
+                    "VkAccelerationStructureBuildGeometryInfoKHR[%" PRIu32 "]::VkAccelerationStructureGeometryKHR[%" PRIu32
+                    "]::VkAccelerationStructureGeometryTrianglesDataKHR was:\n"
+                    "    vertexFormat: %s\n"
+                    "    vertexData: 0x%" PRIx64
+                    "\n"
+                    "    vertexStride: %" PRIu64
+                    "\n"
+                    "    maxVertex: %" PRIu32
+                    "\n"
+                    "    indexType: %s\n"
+                    "    indexData: 0x%" PRIx64
+                    "\n"
+                    "    transformData: 0x%" PRIx64
+                    "\n\n"
+
+                    "VkAccelerationStructureBuildRangeInfoKHR[%" PRIu32 "][%" PRIu32
+                    "] was:\n"
+                    "    primitiveCount: %" PRIu32
+                    "\n"
+                    "    primitiveOffset: %" PRIu32
+                    "\n"
+                    "    firstVertex: %" PRIu32
+                    "\n"
+                    "    transformOffset: %" PRIu32 "\n",
+
+                    index, error_info.build_range_info.firstVertex, index + error_info.build_range_info.firstVertex,
+                    error_info.geom.triangles.maxVertex, error_info.geom.triangles.indexData.deviceAddress,
+                    error_info.build_range_info.primitiveOffset,
+                    error_info.geom.triangles.indexData.deviceAddress + error_info.build_range_info.primitiveOffset,
+                    string_VkIndexType(error_info.geom.triangles.indexType), gid,
+                    error_info.geom.triangles.indexData.deviceAddress + error_info.build_range_info.primitiveOffset +
+                        gid * index_type_byte_size,
+
+                    error_info.info_i, error_info.geom_i, string_VkFormat(error_info.geom.triangles.vertexFormat),
+                    error_info.geom.triangles.vertexData.deviceAddress, error_info.geom.triangles.vertexStride,
+                    error_info.geom.triangles.maxVertex, string_VkIndexType(error_info.geom.triangles.indexType),
+                    error_info.geom.triangles.indexData.deviceAddress, error_info.geom.triangles.transformData.deviceAddress,
+
+                    error_info.info_i, error_info.geom_i, error_info.build_range_info.primitiveCount,
+                    error_info.build_range_info.primitiveOffset, error_info.build_range_info.firstVertex,
+                    error_info.build_range_info.transformOffset
+
+                );
                 break;
             }
 
+            case kErrorSubCode_PreBuildAccelerationStructures_MinMaxAabb_X:
+            case kErrorSubCode_PreBuildAccelerationStructures_MinMaxAabb_Y:
+            case kErrorSubCode_PreBuildAccelerationStructures_MinMaxAabb_Z: {
+                const float min = *(float*)(error_record + kValCmd_ErrorPayloadDword_2);
+                const float max = *(float*)(error_record + kValCmd_ErrorPayloadDword_3);
+                vvl::Field min_field{};
+                vvl::Field max_field{};
+                const char* vuid = "";
+                switch (error_sub_code) {
+                    case kErrorSubCode_PreBuildAccelerationStructures_MinMaxAabb_X:
+                        min_field = vvl::Field::minX;
+                        max_field = vvl::Field::maxX;
+                        vuid = "VUID-VkAabbPositionsKHR-minX-03546";
+                        break;
+                    case kErrorSubCode_PreBuildAccelerationStructures_MinMaxAabb_Y:
+                        min_field = vvl::Field::minY;
+                        max_field = vvl::Field::maxY;
+                        vuid = "VUID-VkAabbPositionsKHR-minY-03547";
+                        break;
+                    case kErrorSubCode_PreBuildAccelerationStructures_MinMaxAabb_Z:
+                        min_field = vvl::Field::minZ;
+                        max_field = vvl::Field::maxZ;
+                        vuid = "VUID-VkAabbPositionsKHR-minZ-03548";
+                        break;
+                    default:
+                        break;
+                }
+                skip |= gpuav.LogError(
+                    vuid, objlist, loc_with_debug_region,
+                    "Ill formed AABB at primitive index %" PRIu32
+                    ".\n"
+                    "%s (%f) > %s (%f)\n"
+                    "AABB was found at VkDeviceAddress aabbs.data (0x%" PRIx64 ") + primitiveOffset (%" PRIu32
+                    ") + primitive index (%" PRIu32 ") * stride (%" PRIu64 ") = 0x%" PRIx64
+                    "\n"
+
+                    "Corresponding BLAS build command info:\n"
+                    "VkAccelerationStructureBuildGeometryInfoKHR[%" PRIu32 "]::VkAccelerationStructureGeometryKHR[%" PRIu32
+                    "]::VkAccelerationStructureGeometryAabbsDataKHR was:\n"
+                    "    data.deviceAddress: 0x%" PRIx64
+                    "\n"
+                    "    stride: %" PRIu64
+                    "\n\n"
+
+                    "VkAccelerationStructureBuildRangeInfoKHR[%" PRIu32 "][%" PRIu32
+                    "] was:\n"
+                    "    primitiveCount: %" PRIu32
+                    "\n"
+                    "    primitiveOffset: %" PRIu32
+                    "\n"
+                    "    firstVertex: %" PRIu32
+                    "\n"
+                    "    transformOffset: %" PRIu32 "\n",
+
+                    gid, vvl::String(min_field), min, vvl::String(max_field), max, error_info.geom.aabbs.data.deviceAddress,
+                    error_info.build_range_info.primitiveOffset, gid, error_info.geom.aabbs.stride,
+                    error_info.geom.aabbs.data.deviceAddress + error_info.build_range_info.primitiveOffset +
+                        gid * error_info.geom.aabbs.stride,
+
+                    error_info.info_i, error_info.geom_i, error_info.geom.aabbs.data.deviceAddress, error_info.geom.aabbs.stride,
+
+                    error_info.info_i, error_info.geom_i, error_info.build_range_info.primitiveCount,
+                    error_info.build_range_info.primitiveOffset, error_info.build_range_info.firstVertex,
+                    error_info.build_range_info.transformOffset
+
+                );
+                break;
+            }
             default:
                 break;
         }

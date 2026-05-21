@@ -12,8 +12,11 @@
 
 #include "absl/strings/string_view.h"
 #include "quiche/quic/core/quic_time.h"
+#include "quiche/quic/moqt/moqt_error.h"
 #include "quiche/quic/moqt/moqt_fetch_task.h"
+#include "quiche/quic/moqt/moqt_key_value_pair.h"
 #include "quiche/quic/moqt/moqt_messages.h"
+#include "quiche/quic/moqt/moqt_names.h"
 #include "quiche/quic/moqt/moqt_object.h"
 #include "quiche/quic/moqt/moqt_priority.h"
 #include "quiche/quic/moqt/moqt_session_callbacks.h"
@@ -27,21 +30,19 @@ using MoqtObjectAckFunction =
                                   quic::QuicTimeDelta delta_from_deadline)>;
 
 struct SubscribeOkData {
-  quic::QuicTimeDelta expires;
-  MoqtDeliveryOrder delivery_order;
-  std::optional<Location> largest_location;
-  VersionSpecificParameters parameters = VersionSpecificParameters();
+  MessageParameters parameters;
+  TrackExtensions extensions;
 };
 
 class SubscribeVisitor {
  public:
   virtual ~SubscribeVisitor() = default;
   // Called when the session receives a response to the SUBSCRIBE, unless it's
-  // a SUBSCRIBE_ERROR with a new track_alias. In that case, the session will
+  // a REQUEST_ERROR with a new track_alias. In that case, the session will
   // automatically retry.
   virtual void OnReply(
       const FullTrackName& full_track_name,
-      std::variant<SubscribeOkData, MoqtRequestError> response) = 0;
+      std::variant<SubscribeOkData, MoqtRequestErrorInfo> response) = 0;
   // Called when the subscription process is far enough that it is possible to
   // send OBJECT_ACK messages; provides a callback to do so. The callback is
   // valid for as long as the session is valid.
@@ -64,7 +65,7 @@ class SubscribeVisitor {
                              DataStreamIndex stream) = 0;
 };
 
-// MoqtSession calls this when a FETCH_OK or FETCH_ERROR is received. The
+// MoqtSession calls this when a FETCH_OK or REQUEST_ERROR is received. The
 // destination of the callback owns |fetch_task| and MoqtSession will react
 // safely if the owner destroys it.
 using FetchResponseCallback =
@@ -74,18 +75,17 @@ using FetchResponseCallback =
 // MoqtOutgoingSubscribeNamespaceCallback are deprecated. Remove.
 
 // If |error| is nullopt, this is triggered by a PUBLISH_NAMESPACE_OK.
-// Otherwise, it is triggered by PUBLISH_NAMESPACE_ERROR or
-// PUBLISH_NAMESPACE_CANCEL. For ERROR or CANCEL, MoqtSession is deleting all
-// PUBLISH_NAMESPACE state immediately after calling this callback.
+// Otherwise, it is triggered by REQUEST_ERROR or PUBLISH_NAMESPACE_CANCEL. For
+// ERROR or CANCEL, MoqtSession is deleting all PUBLISH_NAMESPACE state
+// immediately after calling this callback.
 // Alternatively, the application can call PublishNamespaceDone() to delete the
 // state.
 using MoqtOutgoingPublishNamespaceCallback =
     quiche::MultiUseCallback<void(const TrackNamespace& track_namespace,
-                                  std::optional<MoqtRequestError> error)>;
+                                  std::optional<MoqtRequestErrorInfo> error)>;
 
 using MoqtOutgoingSubscribeNamespaceCallback = quiche::SingleUseCallback<void(
-    TrackNamespace track_namespace, std::optional<RequestErrorCode> error,
-    absl::string_view reason)>;
+    TrackNamespace track_namespace, std::optional<MoqtRequestErrorInfo> info)>;
 
 class MoqtSessionInterface {
  public:
@@ -99,29 +99,9 @@ class MoqtSessionInterface {
   // Close the session with a fatal error.
   virtual void Error(MoqtError code, absl::string_view error) = 0;
 
-  // Methods below send a SUBSCRIBE for the specified track, and return true if
-  // SUBSCRIBE was actually sent.
-
-  // Subscribe from (start_group, start_object) to the end of the track.
-  virtual bool SubscribeAbsolute(const FullTrackName& name,
-                                 uint64_t start_group, uint64_t start_object,
-                                 SubscribeVisitor* visitor,
-                                 VersionSpecificParameters parameters) = 0;
-  // Subscribe from (start_group, start_object) to the end of end_group.
-  virtual bool SubscribeAbsolute(const FullTrackName& name,
-                                 uint64_t start_group, uint64_t start_object,
-                                 uint64_t end_group, SubscribeVisitor* visitor,
-                                 VersionSpecificParameters parameters) = 0;
-  // Subscribe to all objects that are larger than the current Largest
-  // Group/Object ID.
-  virtual bool SubscribeCurrentObject(const FullTrackName& name,
-                                      SubscribeVisitor* visitor,
-                                      VersionSpecificParameters parameters) = 0;
-  // Start with the first group after the current Largest Group/Object ID.
-  virtual bool SubscribeNextGroup(const FullTrackName& name,
-                                  SubscribeVisitor* visitor,
-                                  VersionSpecificParameters parameters) = 0;
-
+  // Return true if SUBSCRIBE was actually sent.
+  virtual bool Subscribe(const FullTrackName& name, SubscribeVisitor* visitor,
+                         const MessageParameters& parameters) = 0;
   // If an argument is nullopt, there is no change to the current value.
   virtual bool SubscribeUpdate(const FullTrackName& name,
                                std::optional<Location> start,

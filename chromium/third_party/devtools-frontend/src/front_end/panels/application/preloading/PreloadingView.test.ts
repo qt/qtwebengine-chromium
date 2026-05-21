@@ -4,7 +4,7 @@
 
 import * as SDK from '../../../core/sdk/sdk.js';
 import * as Protocol from '../../../generated/protocol.js';
-import {assertGridContents} from '../../../testing/DataGridHelpers.js';
+import {assertGridContents, assertGridWidgetContents} from '../../../testing/DataGridHelpers.js';
 import {
   getCleanTextContentFromElements,
   getElementWithinComponent,
@@ -20,11 +20,15 @@ import * as ReportView from '../../../ui/components/report_view/report_view.js';
 import * as UI from '../../../ui/legacy/legacy.js';
 import * as Resources from '../application.js';
 
+import * as PreloadingComponents from './components/components.js';
+
 const zip2 = <T, S>(xs: T[], ys: S[]) => {
   assert.strictEqual(xs.length, ys.length);
 
   return Array.from(xs.map((_, i) => [xs[i], ys[i]]));
 };
+
+const doubleRaf = () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 
 /** Holds targets and ids, and emits events. **/
 class NavigationEmulator {
@@ -353,12 +357,13 @@ describeWithMockConnection('PreloadingRuleSetView', () => {
     });
 
     await RenderCoordinator.done();
+    await doubleRaf();
 
-    const ruleSetGridComponent = view.getRuleSetGridForTest();
-    assert.isNotNull(ruleSetGridComponent.shadowRoot);
+    const ruleSetGrid = view.getRuleSetGridForTest();
+    assert.isNotNull(ruleSetGrid.element.shadowRoot);
 
     assertGridContents(
-        ruleSetGridComponent,
+        ruleSetGrid.element,
         ['Rule set', 'Status'],
         [
           ['example.com/', '1 running'],
@@ -384,14 +389,13 @@ describeWithMockConnection('PreloadingRuleSetView', () => {
 `);
 
     await RenderCoordinator.done();
+    await doubleRaf();
 
-    const ruleSetGridComponent = view.getRuleSetGridForTest();
-    assert.isNotNull(ruleSetGridComponent.shadowRoot);
-    const ruleSetDetailsComponent = view.getRuleSetDetailsForTest();
-    assert.isNotNull(ruleSetDetailsComponent.shadowRoot);
+    const ruleSetGrid = view.getRuleSetGridForTest();
+    assert.isNotNull(ruleSetGrid.element.shadowRoot);
 
     assertGridContents(
-        ruleSetGridComponent,
+        ruleSetGrid.element,
         ['Rule set', 'Status'],
         [
           ['example.com/', '1 error'],
@@ -399,19 +403,24 @@ describeWithMockConnection('PreloadingRuleSetView', () => {
 
     );
 
-    ruleSetGridComponent.dispatchEvent(new CustomEvent('select', {detail: 'ruleSetId:0.2'}));
+    ruleSetGrid.dispatchEventToListeners(
+        PreloadingComponents.RuleSetGrid.Events.SELECT, 'ruleSetId:0.2' as Protocol.Preload.RuleSetId);
 
     await RenderCoordinator.done();
+    const ruleSetDetailsElement =
+        view.contentElement
+            .querySelector<UI.Widget.WidgetElement<PreloadingComponents.RuleSetDetailsView.RuleSetDetailsView>>(
+                'devtools-widget');
+    const ruleSetDetailsComponent = ruleSetDetailsElement?.getWidget();
+    assert.exists(ruleSetDetailsComponent);
+    await ruleSetDetailsComponent.updateComplete;
 
     assert.deepEqual(
-        ruleSetDetailsComponent.shadowRoot?.getElementById('ruleset-url')?.textContent, 'https://example.com/');
+        ruleSetDetailsComponent.contentElement.querySelector('#ruleset-url')?.textContent, 'https://example.com/');
     assert.deepEqual(
-        ruleSetDetailsComponent.shadowRoot?.getElementById('error-message-text')?.textContent, 'fake error message');
+        ruleSetDetailsComponent.contentElement.querySelector('#error-message-text')?.textContent, 'fake error message');
   });
 
-  // TODO(https://crbug.com/1384419): Check that preloading attempts for
-  // the previous page vanish once loaderId is added to events
-  // prefetch/prerenderAttemptUpdated.
   it('clears SpeculationRules for previous pages', async () => {
     const emulator = new NavigationEmulator();
     await emulator.openDevTools();
@@ -431,12 +440,13 @@ describeWithMockConnection('PreloadingRuleSetView', () => {
     await emulator.navigateAndDispatchEvents('notprerendered.html');
 
     await RenderCoordinator.done();
+    await doubleRaf();
 
-    const ruleSetGridComponent = view.getRuleSetGridForTest();
-    assert.isNotNull(ruleSetGridComponent.shadowRoot);
+    const ruleSetGrid = view.getRuleSetGridForTest();
+    assert.isNotNull(ruleSetGrid.element.shadowRoot);
 
     assertGridContents(
-        ruleSetGridComponent,
+        ruleSetGrid.element,
         ['Rule set', 'Status'],
         [],
     );
@@ -461,12 +471,13 @@ describeWithMockConnection('PreloadingRuleSetView', () => {
     await emulator.activateAndDispatchEvents('prerendered.html');
 
     await RenderCoordinator.done();
+    await doubleRaf();
 
-    const ruleSetGridComponent = view.getRuleSetGridForTest();
-    assert.isNotNull(ruleSetGridComponent.shadowRoot);
+    const ruleSetGrid = view.getRuleSetGridForTest();
+    assert.isNotNull(ruleSetGrid.element.shadowRoot);
 
     assertGridContents(
-        ruleSetGridComponent,
+        ruleSetGrid.element,
         ['Rule set', 'Status'],
         [],
     );
@@ -510,12 +521,13 @@ describeWithMockConnection('PreloadingRuleSetView', () => {
     });
 
     await RenderCoordinator.done();
+    await doubleRaf();
 
-    const ruleSetGridComponent = view.getRuleSetGridForTest();
-    assert.isNotNull(ruleSetGridComponent.shadowRoot);
+    const ruleSetGrid = view.getRuleSetGridForTest();
+    assert.isNotNull(ruleSetGrid.element.shadowRoot);
 
     assertGridContents(
-        ruleSetGridComponent,
+        ruleSetGrid.element,
         ['Rule set', 'Status'],
         [
           ['example.com/', ''],
@@ -570,12 +582,12 @@ describeWithMockConnection('PreloadingAttemptView', () => {
     await RenderCoordinator.done();
 
     const preloadingGridComponent = view.getPreloadingGridForTest();
-    assert.isNotNull(preloadingGridComponent.shadowRoot);
+
+    assert.isNotNull(preloadingGridComponent.contentElement);
     const preloadingDetailsComponent = view.getPreloadingDetailsForTest();
     assert.isNotNull(preloadingDetailsComponent.shadowRoot);
-
-    assertGridContents(
-        preloadingGridComponent,
+    assertGridWidgetContents(
+        preloadingGridComponent.contentElement,
         ['URL', 'Action', 'Rule set', 'Status'],
         [
           [
@@ -632,12 +644,12 @@ describeWithMockConnection('PreloadingAttemptView', () => {
     await RenderCoordinator.done();
 
     const preloadingGridComponent = view.getPreloadingGridForTest();
-    assert.isNotNull(preloadingGridComponent.shadowRoot);
+    assert.isNotNull(preloadingGridComponent.contentElement);
     const preloadingDetailsComponent = view.getPreloadingDetailsForTest();
     assert.isNotNull(preloadingDetailsComponent.shadowRoot);
 
-    assertGridContents(
-        preloadingGridComponent,
+    assertGridWidgetContents(
+        preloadingGridComponent.contentElement,
         ['URL', 'Action', 'Rule set', 'Status'],
         [
           [
@@ -711,12 +723,12 @@ describeWithMockConnection('PreloadingAttemptView', () => {
 
     const ruleSetSelectorToolbarItem = view.getRuleSetSelectorToolbarItemForTest();
     const preloadingGridComponent = view.getPreloadingGridForTest();
-    assert.isNotNull(preloadingGridComponent.shadowRoot);
+    assert.isNotNull(preloadingGridComponent.contentElement);
 
     assert.strictEqual(ruleSetSelectorToolbarItem.element.querySelector('span')?.textContent, 'All speculative loads');
 
-    assertGridContents(
-        preloadingGridComponent,
+    assertGridWidgetContents(
+        preloadingGridComponent.contentElement,
         ['URL', 'Action', 'Rule set', 'Status'],
         [
           [
@@ -741,8 +753,8 @@ describeWithMockConnection('PreloadingAttemptView', () => {
 
     assert.strictEqual(ruleSetSelectorToolbarItem.element.querySelector('span')?.textContent, 'example.com/');
 
-    assertGridContents(
-        preloadingGridComponent,
+    assertGridWidgetContents(
+        preloadingGridComponent.contentElement,
         ['URL', 'Action', 'Rule set', 'Status'],
         [
           [
@@ -761,8 +773,8 @@ describeWithMockConnection('PreloadingAttemptView', () => {
 
     assert.strictEqual(ruleSetSelectorToolbarItem.element.querySelector('span')?.textContent, 'All speculative loads');
 
-    assertGridContents(
-        preloadingGridComponent,
+    assertGridWidgetContents(
+        preloadingGridComponent.contentElement,
         ['URL', 'Action', 'Rule set', 'Status'],
         [
           [
@@ -801,12 +813,12 @@ describeWithMockConnection('PreloadingAttemptView', () => {
     await RenderCoordinator.done();
 
     const preloadingGridComponent = view.getPreloadingGridForTest();
-    assert.isNotNull(preloadingGridComponent.shadowRoot);
+    assert.isNotNull(preloadingGridComponent.contentElement);
     const preloadingDetailsComponent = view.getPreloadingDetailsForTest();
     assert.isNotNull(preloadingDetailsComponent.shadowRoot);
 
-    assertGridContents(
-        preloadingGridComponent,
+    assertGridWidgetContents(
+        preloadingGridComponent.contentElement,
         ['URL', 'Action', 'Rule set', 'Status'],
         [
           [
@@ -818,8 +830,7 @@ describeWithMockConnection('PreloadingAttemptView', () => {
         ],
     );
 
-    preloadingGridComponent.dispatchEvent(
-        new CustomEvent('select', {detail: 'loaderId:1:Prerender:https://example.com/prerendered.html:undefined'}));
+    preloadingGridComponent.contentElement.querySelectorAll('tr')[1].dispatchEvent(new Event('select'));
 
     await RenderCoordinator.done();
 
@@ -866,14 +877,14 @@ describeWithMockConnection('PreloadingAttemptView', () => {
     } as Protocol.Preload.PrerenderStatusUpdatedEvent);
 
     const preloadingGridComponent = view.getPreloadingGridForTest();
-    assert.isNotNull(preloadingGridComponent.shadowRoot);
+    assert.isNotNull(preloadingGridComponent.contentElement);
     const preloadingDetailsComponent = view.getPreloadingDetailsForTest();
     assert.isNotNull(preloadingDetailsComponent.shadowRoot);
 
     await RenderCoordinator.done();
 
-    assertGridContents(
-        preloadingGridComponent,
+    assertGridWidgetContents(
+        preloadingGridComponent.contentElement,
         ['URL', 'Action', 'Rule set', 'Status'],
         [
           [
@@ -885,8 +896,7 @@ describeWithMockConnection('PreloadingAttemptView', () => {
         ],
     );
 
-    preloadingGridComponent.dispatchEvent(
-        new CustomEvent('select', {detail: 'loaderId:1:Prerender:https://example.com/prerendered.html:undefined'}));
+    preloadingGridComponent.contentElement.querySelectorAll('tr')[1].dispatchEvent(new Event('select'));
 
     await RenderCoordinator.done();
 
@@ -941,14 +951,14 @@ describeWithMockConnection('PreloadingAttemptView', () => {
     prerenderTarget?.dispose('test');
 
     const preloadingGridComponent = view.getPreloadingGridForTest();
-    assert.isNotNull(preloadingGridComponent.shadowRoot);
+    assert.isNotNull(preloadingGridComponent.contentElement);
     const preloadingDetailsComponent = view.getPreloadingDetailsForTest();
     assert.isNotNull(preloadingDetailsComponent.shadowRoot);
 
     await RenderCoordinator.done();
 
-    assertGridContents(
-        preloadingGridComponent,
+    assertGridWidgetContents(
+        preloadingGridComponent.contentElement,
         ['URL', 'Action', 'Rule set', 'Status'],
         [
           [
@@ -960,8 +970,7 @@ describeWithMockConnection('PreloadingAttemptView', () => {
         ],
     );
 
-    preloadingGridComponent.dispatchEvent(
-        new CustomEvent('select', {detail: 'loaderId:1:Prerender:https://example.com/prerendered.html:undefined'}));
+    preloadingGridComponent.contentElement.querySelectorAll('tr')[1].dispatchEvent(new Event('select'));
 
     await RenderCoordinator.done();
 
@@ -1012,171 +1021,8 @@ describeWithMockConnection('PreloadingSummaryView', () => {
     await RenderCoordinator.done();
 
     const usedPreloadingComponent = view.getUsedPreloadingForTest();
-    assert.isNotNull(usedPreloadingComponent.shadowRoot);
+    await usedPreloadingComponent.updateComplete;
 
-    assert.include(usedPreloadingComponent.shadowRoot.textContent, 'This page was successfully prerendered.');
-  });
-});
-
-async function testWarnings(
-    event: Protocol.Preload.PreloadEnabledStateUpdatedEvent, headerExpected: string|null,
-    sectionsExpected: Array<[string, string]>): Promise<void> {
-  const target = createTarget();
-
-  const warningsUpdatedPromise = new Promise<void>(resolve => {
-    const model = target.model(SDK.PreloadingModel.PreloadingModel);
-    assert.exists(model);
-    model.addEventListener(SDK.PreloadingModel.Events.WARNINGS_UPDATED, _ => resolve());
-  });
-
-  const view = createRuleSetView(target);
-  view.wasShown();
-
-  dispatchEvent(target, 'Preload.preloadEnabledStateUpdated', event);
-
-  await warningsUpdatedPromise;
-  await RenderCoordinator.done();
-
-  const infobarContainer = view.getInfobarContainerForTest();
-  const infobar = infobarContainer.querySelector('devtools-resources-preloading-disabled-infobar');
-  assert.exists(infobar);
-  assert.isNotNull(infobar.shadowRoot);
-  const headerGot = infobar.shadowRoot.querySelector('#header');
-  assert.strictEqual(headerGot?.textContent?.trim() || null, headerExpected);
-
-  if (headerExpected === null) {
-    return;
-  }
-
-  const headers =
-      [...infobar.shadowRoot.querySelectorAll('#contents div.key')].map(header => header.textContent?.trim());
-  const sections =
-      [...infobar.shadowRoot.querySelectorAll('#contents div.value')].map(section => section.textContent?.trim());
-  assert.deepEqual(zip2(headers, sections), sectionsExpected);
-}
-
-describeWithMockConnection('PreloadingWarningsView', () => {
-  beforeEach(() => {
-    SDK.ChildTargetManager.ChildTargetManager.install();
-  });
-
-  it('shows no warnings if holdback flags are disabled', async () => {
-    await testWarnings(
-        {
-          disabledByPreference: false,
-          disabledByDataSaver: false,
-          disabledByBatterySaver: false,
-          disabledByHoldbackPrefetchSpeculationRules: false,
-          disabledByHoldbackPrerenderSpeculationRules: false,
-        },
-        null,
-        [],
-    );
-  });
-
-  it('shows an warning if disabled by user settings', async () => {
-    await testWarnings(
-        {
-          disabledByPreference: true,
-          disabledByDataSaver: false,
-          disabledByBatterySaver: false,
-          disabledByHoldbackPrefetchSpeculationRules: false,
-          disabledByHoldbackPrerenderSpeculationRules: false,
-        },
-        'Speculative loading is disabled', [
-          [
-            'User settings or extensions',
-            'Speculative loading is disabled because of user settings or an extension. Go to Preload pages settings to update your preference. Go to Extensions settings to disable any extension that blocks speculative loading.',
-          ],
-        ]);
-  });
-
-  it('shows an warning if disabled disabled by Data Saver', async () => {
-    await testWarnings(
-        {
-          disabledByPreference: false,
-          disabledByDataSaver: true,
-          disabledByBatterySaver: false,
-          disabledByHoldbackPrefetchSpeculationRules: false,
-          disabledByHoldbackPrerenderSpeculationRules: false,
-        },
-        'Speculative loading is disabled', [
-          ['Data Saver', 'Speculative loading is disabled because of the operating system\'s Data Saver mode.'],
-        ]);
-  });
-
-  it('shows an warning if disabled by Battery Saver', async () => {
-    await testWarnings(
-        {
-          disabledByPreference: false,
-          disabledByDataSaver: false,
-          disabledByBatterySaver: true,
-          disabledByHoldbackPrefetchSpeculationRules: false,
-          disabledByHoldbackPrerenderSpeculationRules: false,
-        },
-        'Speculative loading is disabled', [
-          ['Battery Saver', 'Speculative loading is disabled because of the operating system\'s Battery Saver mode.'],
-        ]);
-  });
-
-  it('shows an warning if disabled by prefetch holdback', async () => {
-    await testWarnings(
-        {
-          disabledByPreference: false,
-          disabledByDataSaver: false,
-          disabledByBatterySaver: false,
-          disabledByHoldbackPrefetchSpeculationRules: true,
-          disabledByHoldbackPrerenderSpeculationRules: false,
-        },
-        'Speculative loading is force-enabled', [
-          [
-            'Prefetch was disabled, but is force-enabled now',
-            'Prefetch is forced-enabled because DevTools is open. When DevTools is closed, prefetch will be disabled because this browser session is part of a holdback group used for performance comparisons.',
-          ],
-        ]);
-  });
-
-  it('shows an warning if disabled by prerender holdback', async () => {
-    await testWarnings(
-        {
-          disabledByPreference: false,
-          disabledByDataSaver: false,
-          disabledByBatterySaver: false,
-          disabledByHoldbackPrefetchSpeculationRules: false,
-          disabledByHoldbackPrerenderSpeculationRules: true,
-        },
-        'Speculative loading is force-enabled', [
-          [
-            'Prerendering was disabled, but is force-enabled now',
-            'Prerendering is forced-enabled because DevTools is open. When DevTools is closed, prerendering will be disabled because this browser session is part of a holdback group used for performance comparisons.',
-          ],
-        ]);
-  });
-
-  it('shows multiple warnings per reason', async () => {
-    await testWarnings(
-        {
-          disabledByPreference: true,
-          disabledByDataSaver: true,
-          disabledByBatterySaver: true,
-          disabledByHoldbackPrefetchSpeculationRules: true,
-          disabledByHoldbackPrerenderSpeculationRules: true,
-        },
-        'Speculative loading is disabled', [
-          [
-            'User settings or extensions',
-            'Speculative loading is disabled because of user settings or an extension. Go to Preload pages settings to update your preference. Go to Extensions settings to disable any extension that blocks speculative loading.',
-          ],
-          ['Data Saver', 'Speculative loading is disabled because of the operating system\'s Data Saver mode.'],
-          ['Battery Saver', 'Speculative loading is disabled because of the operating system\'s Battery Saver mode.'],
-          [
-            'Prefetch was disabled, but is force-enabled now',
-            'Prefetch is forced-enabled because DevTools is open. When DevTools is closed, prefetch will be disabled because this browser session is part of a holdback group used for performance comparisons.',
-          ],
-          [
-            'Prerendering was disabled, but is force-enabled now',
-            'Prerendering is forced-enabled because DevTools is open. When DevTools is closed, prerendering will be disabled because this browser session is part of a holdback group used for performance comparisons.',
-          ],
-        ]);
+    assert.include(usedPreloadingComponent.contentElement.textContent, 'This page was successfully prerendered.');
   });
 });

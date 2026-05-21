@@ -9,13 +9,13 @@
 namespace openscreen {
 namespace {
 
-TEST(StringPrintf, ProducesFormattedStrings) {
-  EXPECT_EQ("no args", StringPrintf("no args"));
-  EXPECT_EQ("", StringPrintf("%s", ""));
-  EXPECT_EQ("42", StringPrintf("%d", 42));
+TEST(StringFormat, ProducesFormattedStrings) {
+  EXPECT_EQ("no args", StringFormat("no args"));
+  EXPECT_EQ("", StringFormat("{}", ""));
+  EXPECT_EQ("42", StringFormat("{}", 42));
   EXPECT_EQ(
       "The result of foo(1, 2) looks good!",
-      StringPrintf("The result of foo(%d, %d) looks %s%c", 1, 2, "good", '!'));
+      StringFormat("The result of foo({}, {}) looks {}{}", 1, 2, "good", '!'));
 }
 
 TEST(HexEncode, ProducesEmptyStringFromEmptyByteArray) {

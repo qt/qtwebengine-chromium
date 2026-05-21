@@ -146,10 +146,6 @@ devtools-button.link-icon {
   white-space: normal;
 }
 
-.settings-experiment-unstable {
-  color: var(--sys-color-token-subtle);
-}
-
 .settings-experiment .feedback-link {
   color: var(--sys-color-primary);
   text-decoration-line: underline;
@@ -194,4 +190,8 @@ devtools-button.link-icon {
   .tabbed-pane-header-tab.selected .tabbed-pane-header-tab-title {
     color: HighlightText;
   }
+}
+
+.greendev-widgets input[type="radio"] {
+  margin: 6px;
 }

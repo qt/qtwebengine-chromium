@@ -277,7 +277,10 @@ export class DomFragment {
   }
 }
 
-function getEnclosingVariable(node: Node, sourceCode: SourceCode): Variable|null {
+function getEnclosingVariable(node: Node|undefined, sourceCode: SourceCode): Variable|null {
+  if (!node) {
+    return null;
+  }
   if (node.type === 'Identifier') {
     let scope: Scope|null = sourceCode.getScope(node);
     const variableName = node.name;

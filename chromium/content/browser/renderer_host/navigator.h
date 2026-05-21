@@ -19,7 +19,6 @@
 #include "net/storage_access_api/status.h"
 #include "third_party/blink/public/common/navigation/impression.h"
 #include "third_party/blink/public/mojom/frame/triggering_event_info.mojom-shared.h"
-#include "third_party/blink/public/mojom/navigation/navigation_initiator_activation_and_ad_status.mojom.h"
 #include "third_party/blink/public/mojom/navigation/navigation_params.mojom-forward.h"
 #include "ui/base/window_open_disposition.h"
 
@@ -97,7 +96,8 @@ class CONTENT_EXPORT Navigator {
   void DidNavigate(RenderFrameHostImpl* render_frame_host,
                    const mojom::DidCommitProvisionalLoadParams& params,
                    std::unique_ptr<NavigationRequest> navigation_request,
-                   bool was_within_same_document);
+                   bool was_within_same_document,
+                   bool caused_by_ad);
 
   // Called on a newly created subframe during a history navigation. The browser
   // process looks up the corresponding FrameNavigationEntry for the new frame
@@ -163,8 +163,7 @@ class CONTENT_EXPORT Navigator {
       bool has_user_gesture,
       bool is_form_submission,
       const std::optional<blink::Impression>& impression,
-      blink::mojom::NavigationInitiatorActivationAndAdStatus
-          initiator_activation_and_ad_status,
+      bool started_by_ad,
       base::TimeTicks actual_navigation_start_time,
       base::TimeTicks navigation_start_time,
       bool is_embedder_initiated_fenced_frame_navigation = false,
@@ -201,7 +200,10 @@ class CONTENT_EXPORT Navigator {
           prefetched_signed_exchange_cache,
       int initiator_process_id,
       mojo::PendingReceiver<mojom::NavigationRendererCancellationListener>
-          renderer_cancellation_listener);
+          renderer_cancellation_listener,
+      mojo::PendingReceiver<
+          blink::mojom::NavigationResumeDeferredCommitListener>
+          deferred_commit_resume_listener);
 
   // Used to restart a navigation that was thought to be same-document in
   // cross-document mode.

@@ -7,7 +7,6 @@
 #include <algorithm>
 #include <string>
 
-#include "base/containers/contains.h"
 #include "base/format_macros.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
@@ -23,7 +22,6 @@
 #include "components/viz/common/gpu/raster_context_provider.h"
 #include "gpu/GLES2/gl2extchromium.h"
 #include "gpu/command_buffer/client/raster_interface.h"
-#include "gpu/config/gpu_finch_features.h"
 #include "media/base/async_destroy_video_encoder.h"
 #include "media/base/limits.h"
 #include "media/base/media_log.h"
@@ -245,8 +243,8 @@ media::EncoderStatus IsAcceleratedConfigurationSupported(
     }
 
     if (options.scalability_mode.has_value() &&
-        !base::Contains(supported_profile.scalability_modes,
-                        options.scalability_mode.value())) {
+        !std::ranges::contains(supported_profile.scalability_modes,
+                               options.scalability_mode.value())) {
       continue;
     }
 
@@ -603,14 +601,14 @@ const char* VideoEncoderTraits::GetName() {
 }
 
 String VideoEncoderTraits::ParsedConfig::ToString() {
-  return String::Format(
-      "{codec: %s, profile: %s, level: %d, hw_pref: %s, "
-      "options: {%s}, codec_string: %s, display_size: %s}",
-      media::GetCodecName(codec).c_str(),
-      media::GetProfileName(profile).c_str(), level,
-      HardwarePreferenceToIdlEnum(hw_pref).AsCStr(), options.ToString().c_str(),
-      codec_string.Utf8().c_str(),
-      display_size ? display_size->ToString().c_str() : "");
+  return UNSAFE_TODO(
+      String::Format("{codec: %s, profile: %s, level: %d, hw_pref: %s, "
+                     "options: {%s}, codec_string: %s, display_size: %s}",
+                     media::GetCodecName(codec).c_str(),
+                     media::GetProfileName(profile).c_str(), level,
+                     HardwarePreferenceToIdlEnum(hw_pref).AsCStr(),
+                     options.ToString().c_str(), codec_string.Utf8().c_str(),
+                     display_size ? display_size->ToString().c_str() : ""));
 }
 
 // static
@@ -1096,11 +1094,8 @@ void VideoEncoder::ProcessEncode(Request* request) {
   request->StartTracingVideoEncode(encode_options.key_frame,
                                    frame->timestamp());
 
-  bool mappable = frame->IsMappable() || frame->HasMappableGpuBuffer();
+  bool mappable = frame->IsMappable() || frame->HasMappableSharedImage();
   bool can_handle_shared_image =
-#if BUILDFLAG(IS_WIN)
-      !base::FeatureList::IsEnabled(features::kSkiaGraphite) &&
-#endif  // BUILDFLAG(IS_WIN)
       encoder_info_.DoesSupportGpuSharedImages(frame->format()) &&
       frame->HasSharedImage();
 

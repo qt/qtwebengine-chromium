@@ -1,6 +1,7 @@
 Name: vector
 URL: https://github.com/goldsborough/vector
-Version: commit-id: 40efe82
+Update Mechanism: Manual
+Revision: 40efe82
 License: MIT
 License File: LICENSE
 Shipped in Chromium: yes

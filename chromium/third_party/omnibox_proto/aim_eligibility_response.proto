@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-syntax = 'proto2';
+syntax = 'proto3';
 
 option optimize_for = LITE_RUNTIME;
 option java_package = 'org.chromium.components.omnibox';
@@ -10,9 +10,13 @@ option java_outer_classname = 'AimEligibilityResponseProto';
 
 package omnibox;
 
+import "model_mode.proto";
+import "searchbox_config.proto";
+
 // AIM Eligibility Response.
-// Next ID: 7
+// Next ID: 11
 message AimEligibilityResponse {
+  // Whether the user is eligible for Chrome AIM features.
   optional bool is_eligible = 1;
   optional bool is_pdf_upload_eligible = 2;
   optional bool is_deep_search_eligible = 3;
@@ -20,4 +24,30 @@ message AimEligibilityResponse {
   optional bool is_image_generation_eligible = 6;
   // The session index of the user.
   optional int32 session_index = 5;
+  optional SearchboxConfig searchbox_config = 7;
+
+  message QueryParam {
+    optional string key = 1;
+    optional string value = 2;
+  }
+
+  message AimDetectionUrlRule {
+    // A set of key-value pairs that must all be present in a URL's
+    // query parameters for it to be considered a valid AIM URL.
+    repeated QueryParam required_params = 1;
+
+    // The type of AIM experience the user is being led to.
+    optional ModelMode type = 2;
+  }
+
+  // A list of criteria sets. To be considered an AIM URL, a URL must
+  // contain all key-value pairs defined within at least one of
+  // these criteria sets.
+  repeated AimDetectionUrlRule aim_detection_url_rule = 8;
+
+  // Whether the user is eligible for Chrome Co-Browse.
+  optional bool is_cobrowse_eligible = 9;
+
+  // Whether the user is eligible for Chrome Fusebox features.
+  optional bool is_fusebox_eligible = 10;
 }

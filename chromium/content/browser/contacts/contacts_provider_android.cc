@@ -72,11 +72,11 @@ void ContactsProviderAndroid::Select(bool multiple,
 
 void ContactsProviderAndroid::AddContact(
     JNIEnv* env,
-    const base::android::JavaParamRef<jobjectArray>& names_java,
-    const base::android::JavaParamRef<jobjectArray>& emails_java,
-    const base::android::JavaParamRef<jobjectArray>& tel_java,
-    const base::android::JavaParamRef<jobjectArray>& addresses_java,
-    const base::android::JavaParamRef<jobjectArray>& icons_java) {
+    const base::android::JavaRef<jobjectArray>& names_java,
+    const base::android::JavaRef<jobjectArray>& emails_java,
+    const base::android::JavaRef<jobjectArray>& tel_java,
+    const base::android::JavaRef<jobjectArray>& addresses_java,
+    const base::android::JavaRef<jobjectArray>& icons_java) {
   DCHECK(callback_);
 
   std::optional<std::vector<std::string>> names;
@@ -149,8 +149,8 @@ void ContactsProviderAndroid::AddContact(
 }
 
 void ContactsProviderAndroid::EndContactsList(JNIEnv* env,
-                                              jint percentage_shared,
-                                              jint properties_requested) {
+                                              int32_t percentage_shared,
+                                              int32_t properties_requested) {
   DCHECK(callback_);
   ContactsPickerProperties properties =
       static_cast<ContactsPickerProperties>(properties_requested);

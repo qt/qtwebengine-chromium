@@ -640,8 +640,7 @@ CJS_Result CJS_PublicMethods::AFNumber_Format(
   // Processing decimal places
   NormalizeDecimalMark(&strValue);
 
-  // SAFETY: ByteStrings are always NUL-terminated.
-  double dValue = UNSAFE_BUFFERS(atof(strValue.c_str()));
+  double dValue = atof(strValue.c_str());
   if (iDec > 0) {
     dValue += kDoubleCorrect;
   }
@@ -860,8 +859,7 @@ CJS_Result CJS_PublicMethods::AFPercent_Format(
   }
 
   // for processing decimal places
-  // SAFETY: ByteStrings are always NUL-terminated.
-  double dValue = UNSAFE_BUFFERS(atof(strValue.c_str()));
+  double dValue = atof(strValue.c_str());
   dValue *= 100;
 
   size_t szNewSize;
@@ -882,7 +880,7 @@ CJS_Result CJS_PublicMethods::AFPercent_Format(
     // Write into |strValue|.
     pdfium::span<char> span = strValue.GetBuffer(szBufferSize);
     UNSAFE_TODO(FXSYS_snprintf(span.data(), szBufferSize, format, dValue));
-    szNewSize = UNSAFE_TODO(strlen(span.data()));
+    szNewSize = strlen(span.data());
   }
   strValue.ReleaseBuffer(szNewSize);
 
@@ -1478,8 +1476,7 @@ CJS_Result CJS_PublicMethods::AFRange_Validate(
     return CJS_Result::Success();
   }
 
-  // SAFETY: ByteStrings are always NUL-terminated.
-  double dEventValue = UNSAFE_BUFFERS(atof(pEvent->Value().ToUTF8().c_str()));
+  double dEventValue = atof(pEvent->Value().ToUTF8().c_str());
   bool bGreaterThan = pRuntime->ToBoolean(params[0]);
   double dGreaterThan = pRuntime->ToDouble(params[1]);
   bool bLessThan = pRuntime->ToBoolean(params[2]);

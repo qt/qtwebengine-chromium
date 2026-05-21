@@ -7,28 +7,16 @@ import("//build_overrides/build.gni")
 if (build_with_chromium) {
   source_set("gmock") {
     testonly = true
-    public_configs = [
-      "//build/config/compiler:default_include_dirs",
-      "../../build_overrides:openscreen_include_dirs",
-    ]
     public_deps = [ "//third_party/googletest:gmock" ]
   }
 
   source_set("gtest") {
     testonly = true
-    public_configs = [
-      "//build/config/compiler:default_include_dirs",
-      "../../build_overrides:openscreen_include_dirs",
-    ]
     public_deps = [ "//third_party/googletest:gtest" ]
   }
 
   source_set("gtest_main") {
     testonly = true
-    public_configs = [
-      "//build/config/compiler:default_include_dirs",
-      "../../build_overrides:openscreen_include_dirs",
-    ]
     public_deps = [ "//third_party/googletest:gtest_main" ]
   }
 } else {
@@ -37,11 +25,8 @@ if (build_with_chromium) {
 
     cflags_cc = []
     if (is_clang) {
-      # NOTE(crbug.com/openscreen/15): GMock does not support the override
-      # keyword.
       cflags_cc += [
         "-Wno-exit-time-destructors",
-        "-Wno-inconsistent-missing-override",
         "-Wno-sign-compare",
       ]
     }
@@ -77,7 +62,6 @@ if (build_with_chromium) {
     ]
 
     public_deps = [ ":gtest" ]
-
     include_dirs = [ "src/googlemock" ]
   }
 
@@ -89,7 +73,6 @@ if (build_with_chromium) {
     ]
 
     public_configs = [ ":gtest_config" ]
-
     include_dirs = [ "src/googletest" ]
   }
 

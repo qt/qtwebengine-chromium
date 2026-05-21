@@ -28,6 +28,10 @@ class UdpSocketReaderPosix : public SocketHandleWaiter::Subscriber {
   // Creates a new instance of this object.
   // NOTE: The provided NetworkWaiter must outlive this object.
   explicit UdpSocketReaderPosix(SocketHandleWaiter& waiter);
+  UdpSocketReaderPosix(const UdpSocketReaderPosix&) = delete;
+  UdpSocketReaderPosix(UdpSocketReaderPosix&&) noexcept = delete;
+  UdpSocketReaderPosix& operator=(const UdpSocketReaderPosix&) = delete;
+  UdpSocketReaderPosix& operator=(UdpSocketReaderPosix&&) = delete;
   ~UdpSocketReaderPosix() override;
 
   // Waits for `socket` to be readable and then calls the socket's
@@ -50,9 +54,6 @@ class UdpSocketReaderPosix : public SocketHandleWaiter::Subscriber {
 
   // NOTE: we don't subscribe to write events from the socket handle waiter.
   bool HasPendingWrite(SocketHandleRef handle) override;
-
-  OSP_DISALLOW_COPY_AND_ASSIGN(UdpSocketReaderPosix);
-
  protected:
   bool IsMappedReadForTesting(UdpSocketPosix* socket) const;
 

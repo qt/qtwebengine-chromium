@@ -38,9 +38,9 @@ struct conv_dash : public conv_adaptor_vcgen<VertexSource, vcgen_dash, Markers> 
     {
         base_type::generator().remove_all_dashes();
     }
-    void add_dash(float dash_len, float gap_len)
+    void add_dash(float dash_len)
     {
-        base_type::generator().add_dash(dash_len, gap_len);
+        base_type::generator().add_dash(dash_len);
     }
     void dash_start(float ds)
     {

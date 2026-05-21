@@ -1,4 +1,4 @@
-/* Copyright (c) 2025 LunarG, Inc.
+/* Copyright (c) 2025-2026 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,12 @@ namespace spirv {
 
 struct Constant;
 
+// Holds OpTypeResult for |x| and |y| operand
+struct BoolResultXY {
+    uint32_t x = 0;
+    uint32_t y = 0;
+};
+
 // This pass catches things that are not a dedicated VU, things such as, but not limited to
 // - dividing by zero (for an int)
 // - overflows
@@ -42,7 +48,8 @@ class SanitizerPass : public Pass {
         const Type* result_type = nullptr;
         const Instruction* target_instruction = nullptr;
 
-        uint32_t sub_code = glsl::kErrorSubCodeSanitizerEmpty;
+        uint32_t sub_code = glsl::kErrorSubCode_Sanitizer_Empty;
+        uint32_t glsl_opcode = 0;
 
         // There are cases where it is easier to just adjust the bad code than if/else wrap it
         bool skip_safe_mode = false;
@@ -54,6 +61,9 @@ class SanitizerPass : public Pass {
     bool RequiresInstrumentation(const Instruction& inst, InstructionMeta& meta);
 
     uint32_t DivideByZeroCheck(BasicBlock& block, InstructionIt* inst_it, const InstructionMeta& meta);
+    uint32_t PowCheck(BasicBlock& block, InstructionIt* inst_it, const InstructionMeta& meta);
+    uint32_t Atan2Check(BasicBlock& block, InstructionIt* inst_it, const InstructionMeta& meta);
+    BoolResultXY FminmaxCheck(BasicBlock& block, InstructionIt* inst_it, const InstructionMeta& meta);
     uint32_t CreateFunctionCall(BasicBlock& block, InstructionIt* inst_it, const InstructionMeta& meta);
 
     uint32_t GetLinkFunctionId(uint32_t sub_code);
@@ -61,7 +71,9 @@ class SanitizerPass : public Pass {
     bool IsConstantZero(const Constant& constant) const;
 
     // Function IDs to link in
-    uint32_t link_function_ids_[glsl::kErrorSubCodeSanitizerCount];
+    uint32_t link_function_ids_[glsl::kErrorSubCode_Sanitizer_Count];
+
+    uint32_t glsl_std450_id_ = 0;  // GLSL.std.450
 };
 
 }  // namespace spirv

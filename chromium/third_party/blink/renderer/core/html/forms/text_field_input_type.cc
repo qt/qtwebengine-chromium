@@ -42,6 +42,7 @@
 #include "third_party/blink/renderer/core/events/mouse_event.h"
 #include "third_party/blink/renderer/core/events/text_event.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
+#include "third_party/blink/renderer/core/html/forms/html_data_list_element.h"
 #include "third_party/blink/renderer/core/html/forms/html_input_element.h"
 #include "third_party/blink/renderer/core/html/forms/text_control_inner_elements.h"
 #include "third_party/blink/renderer/core/html/shadow/shadow_element_names.h"
@@ -65,22 +66,13 @@ class DataListIndicatorElement final : public HTMLDivElement {
     return To<HTMLInputElement>(OwnerShadowHost());
   }
 
-  EventDispatchHandlingState* PreDispatchEventHandler(Event& event) override {
-    // Chromium opens autofill popup in a mousedown event listener
-    // associated to the document. We don't want to open it in this case
-    // because we opens a datalist chooser later.
-    // FIXME: We should dispatch mousedown events even in such case.
-    if (event.type() == event_type_names::kMousedown)
-      event.stopPropagation();
-    return nullptr;
-  }
-
   void DefaultEventHandler(Event& event) override {
     DCHECK(GetDocument().IsActive());
     if (event.type() != event_type_names::kClick)
       return;
     HTMLInputElement* host = HostInput();
-    if (host && !host->IsDisabledOrReadOnly()) {
+    if (host && !host->IsDisabledOrReadOnly() &&
+        !host->IsBaseAppearanceCombobox()) {
       GetDocument().GetPage()->GetChromeClient().OpenTextDataListChooser(*host);
       event.SetDefaultHandled();
     }
@@ -101,7 +93,13 @@ class DataListIndicatorElement final : public HTMLDivElement {
     DCHECK(ContainingShadowRoot()->IsUserAgent());
     SetShadowPseudoId(shadow_element_names::kPseudoCalendarPickerIndicator);
     setAttribute(html_names::kIdAttr, shadow_element_names::kIdPickerIndicator);
-    SetInlineStyleProperty(CSSPropertyID::kDisplay, CSSValueID::kListItem);
+    if (!RuntimeEnabledFeatures::CustomizableComboboxEnabled()) {
+      // When CustomizableCombobox is enabled, this property is set in the UA
+      // stylesheet. It must be in the UA stylesheet because it uses
+      // -internal-auto-base(), which can only be parsed from the UA
+      // stylesheet.
+      SetInlineStyleProperty(CSSPropertyID::kDisplay, CSSValueID::kListItem);
+    }
     SetInlineStyleProperty(CSSPropertyID::kListStyle, "disclosure-open inside");
     SetInlineStyleProperty(CSSPropertyID::kCounterIncrement, "list-item 0");
     SetInlineStyleProperty(CSSPropertyID::kBlockSize, 1.0,
@@ -299,9 +297,22 @@ void TextFieldInputType::ForwardEvent(Event& event) {
 
 void TextFieldInputType::HandleBlurEvent() {
   InputTypeView::HandleBlurEvent();
-  GetElement().EndEditing();
+  HTMLInputElement& input = GetElement();
+
+  input.EndEditing();
   if (SpinButtonElement* spin_button = GetSpinButtonElement())
     spin_button->ReleaseCapture();
+
+  if (input.IsBaseAppearanceCombobox()) {
+    auto* datalist = input.DataList();
+    CHECK(datalist);
+    if (datalist->popoverOpen()) {
+      datalist->HidePopoverInternal(
+          &input, HidePopoverFocusBehavior::kNone,
+          HidePopoverTransitionBehavior::kNoEventsNoWaiting,
+          /*exception_state=*/nullptr);
+    }
+  }
 }
 
 bool TextFieldInputType::ShouldSubmitImplicitly(const Event& event) {
@@ -639,8 +650,10 @@ void TextFieldInputType::SubtreeHasChanged() {
 }
 
 void TextFieldInputType::OpenPopupView() {
-  if (GetElement().IsDisabledOrReadOnly())
+  if (GetElement().IsDisabledOrReadOnly() ||
+      GetElement().IsBaseAppearanceCombobox()) {
     return;
+  }
   if (ChromeClient* chrome_client = GetChromeClient())
     chrome_client->OpenTextDataListChooser(GetElement());
 }
@@ -695,6 +708,17 @@ void TextFieldInputType::SpinButtonDidReleaseMouseCapture(
     SpinButtonElement::EventDispatch event_dispatch) {
   if (event_dispatch == SpinButtonElement::kEventDispatchAllowed)
     GetElement().DispatchFormControlChangeEvent();
+}
+
+void TextFieldInputType::HandleFocusInEvent(
+    Element* old_focused_element,
+    mojom::blink::FocusType focus_type) {
+  HTMLInputElement& input = GetElement();
+  if (input.IsBaseAppearanceCombobox()) {
+    if (auto* datalist = input.DataList()) {
+      datalist->ShowPopoverInternal(&input, /*exception_state=*/nullptr);
+    }
+  }
 }
 
 }  // namespace blink

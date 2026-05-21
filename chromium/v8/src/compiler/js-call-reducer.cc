@@ -458,7 +458,8 @@ class IteratingArrayBuiltinReducerAssembler : public JSCallReducerAssembler {
                                          const bool has_stability_dependency,
                                          ElementsKind kind,
                                          SharedFunctionInfoRef shared,
-                                         NativeContextRef native_context);
+                                         NativeContextRef native_context,
+                                         ObjectRef array_ctor);
   TNode<JSArray> ReduceArrayPrototypeFilter(MapInference* inference,
                                             const bool has_stability_dependency,
                                             ElementsKind kind,
@@ -1892,7 +1893,7 @@ FrameState MapLoopEagerFrameState(const MapFrameStateParams& params,
 TNode<JSArray> IteratingArrayBuiltinReducerAssembler::ReduceArrayPrototypeMap(
     MapInference* inference, const bool has_stability_dependency,
     ElementsKind kind, SharedFunctionInfoRef shared,
-    NativeContextRef native_context) {
+    NativeContextRef native_context, ObjectRef array_ctor) {
   FrameState outer_frame_state = FrameStateInput();
   TNode<Context> context = ContextInput();
   TNode<Object> target = TargetInput();
@@ -1911,16 +1912,13 @@ TNode<JSArray> IteratingArrayBuiltinReducerAssembler::ReduceArrayPrototypeMap(
   // Even though {JSCreateArray} is not marked as {kNoThrow}, we can elide the
   // exceptional projections because it cannot throw with the given
   // parameters.
-  TNode<Object> array_ctor =
-      Constant(native_context.GetInitialJSArrayMap(broker(), kind)
-                   .GetConstructor(broker()));
 
   MapFrameStateParams frame_state_params{
       jsgraph(), shared,     context,  target,       outer_frame_state,
       receiver,  fncallback, this_arg, {} /* TBD */, original_length};
 
   TNode<JSArray> a =
-      CreateArrayNoThrow(array_ctor, original_length,
+      CreateArrayNoThrow(Constant(array_ctor), original_length,
                          MapPreLoopLazyFrameState(frame_state_params));
   frame_state_params.a = a;
 
@@ -3786,12 +3784,20 @@ Reduction JSCallReducer::ReduceArrayMap(Node* node,
     return h.inference()->NoChange();
   }
 
+  OptionalObjectRef array_ctor =
+      native_context()
+          .GetInitialJSArrayMap(broker(), h.elements_kind())
+          .GetConstructor(broker());
+  if (!array_ctor.has_value()) {
+    return h.inference()->NoChange();
+  }
+
   IteratingArrayBuiltinReducerAssembler a(this, node);
   a.InitializeEffectControl(h.effect(), h.control());
 
-  TNode<Object> subgraph =
-      a.ReduceArrayPrototypeMap(h.inference(), h.has_stability_dependency(),
-                                h.elements_kind(), shared, native_context());
+  TNode<Object> subgraph = a.ReduceArrayPrototypeMap(
+      h.inference(), h.has_stability_dependency(), h.elements_kind(), shared,
+      native_context(), array_ctor.value());
   return ReplaceWithSubgraph(&a, subgraph);
 }
 
@@ -6506,12 +6512,32 @@ Reduction JSCallReducer::ReduceArrayPrototypeShift(Node* node) {
         static_assert(BuiltinArguments::kNewTargetIndex == 0);
         static_assert(BuiltinArguments::kTargetIndex == 1);
         static_assert(BuiltinArguments::kArgcIndex == 2);
-        static_assert(BuiltinArguments::kPaddingIndex == 3);
-        if_false1 = efalse1 = vfalse1 =
-            graph()->NewNode(common()->Call(call_descriptor), stub_code,
-                             receiver, jsgraph()->PaddingConstant(), argc,
-                             target, jsgraph()->UndefinedConstant(), entry,
-                             argc, context, frame_state, efalse1, if_false1);
+#if V8_TARGET_ARCH_ARM64
+        // Make sure we insert required stack-alignment padding between extra
+        // arguments and JS arguments.
+        static_assert(BuiltinArguments::kNumExtraArgs == 4);
+        static_assert(BuiltinArguments::kOptionalPaddingIndex == 3);
+        // Just use an existing value as padding in order to avoid generation
+        // of unnecessary instructions.
+        Node* padding_value = argc;
+#else
+        // No padding required.
+        static_assert(BuiltinArguments::kNumExtraArgs == 3);
+#endif  // V8_TARGET_ARCH_ARM64
+
+        if_false1 = efalse1 = vfalse1 = graph()->NewNode(
+            common()->Call(call_descriptor), stub_code,
+            // Extra CPP builtin arguments.
+            jsgraph()->UndefinedConstant(),  // new.target
+            target,                          // target
+            argc,                            // argc
+#if V8_TARGET_ARCH_ARM64
+            padding_value,
+#endif
+            // JS arguments.
+            receiver,
+            // CEntry arguments.
+            entry, argc, context, frame_state, efalse1, if_false1);
       }
 
       if_false0 = graph()->NewNode(common()->Merge(2), if_true1, if_false1);
@@ -8759,7 +8785,9 @@ Reduction JSCallReducer::ReduceDataViewAccess(Node* node, DataViewAccess access,
         simplified()->NumberEqual(),
         graph()->NewNode(
             simplified()->NumberBitwiseAnd(), buffer_bit_field,
-            jsgraph()->ConstantNoHole(JSArrayBuffer::WasDetachedBit::kMask)),
+            jsgraph()->ConstantNoHole(JSArrayBuffer::NotValidMask(
+                access == DataViewAccess::kSet ? TypedArrayAccessMode::kWrite
+                                               : TypedArrayAccessMode::kRead))),
         jsgraph()->ZeroConstant());
     effect = graph()->NewNode(
         simplified()->CheckIf(DeoptimizeReason::kArrayBufferWasDetached,

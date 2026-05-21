@@ -1,4 +1,4 @@
-/* Copyright (c) 2024-2025 LunarG, Inc.
+/* Copyright (c) 2024-2026 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,13 +20,13 @@
 namespace gpuav {
 namespace spirv {
 
-void BasicBlock::ToBinary(std::vector<uint32_t>& out) {
+void BasicBlock::ToBinary(std::vector<uint32_t>& out) const {
     for (const auto& inst : instructions_) {
         inst->ToBinary(out);
     }
 }
 
-void Function::ToBinary(std::vector<uint32_t>& out) {
+void Function::ToBinary(std::vector<uint32_t>& out) const {
     for (const auto& inst : pre_block_inst_) {
         inst->ToBinary(out);
     }
@@ -38,12 +38,14 @@ void Function::ToBinary(std::vector<uint32_t>& out) {
     }
 }
 
-BasicBlock::BasicBlock(std::unique_ptr<Instruction> label, Function& function) : function_(function) {
-    // Used when loading initial SPIR-V
+// Used when loading initial SPIR-V
+// The Function pointer is not stable yet
+BasicBlock::BasicBlock(std::unique_ptr<Instruction> label) {
     instructions_.emplace_back(std::move(label));  // OpLabel
 }
 
-BasicBlock::BasicBlock(Module& module, Function& function) : function_(function) {
+// We are injecting a new block in a pass, so the function is stable
+BasicBlock::BasicBlock(Module& module, Function* function) : function_(function) {
     uint32_t new_label_id = module.TakeNextId();
     CreateInstruction(spv::OpLabel, {new_label_id});
 }
@@ -93,7 +95,7 @@ void BasicBlock::CreateInstruction(spv::Op opcode, const std::vector<uint32_t>& 
 
     const uint32_t result_id = new_inst->ResultId();
     if (result_id != 0) {
-        function_.inst_map_[result_id] = new_inst.get();
+        function_->inst_map_[result_id] = new_inst.get();
     }
 
     InstructionIt it = instructions_.insert(*inst_it, std::move(new_inst));
@@ -104,20 +106,19 @@ void BasicBlock::CreateInstruction(spv::Op opcode, const std::vector<uint32_t>& 
     }
 }
 
-Function::Function(Module& module, std::unique_ptr<Instruction> function_inst, bool is_entry_point)
-    : module_(module), is_entry_point_(is_entry_point), instrumentation_added_(false) {
+Function::Function(Module& module, std::unique_ptr<Instruction> function_inst) : id_(function_inst->ResultId()), module_(module) {
     // Used when loading initial SPIR-V
     pre_block_inst_.emplace_back(std::move(function_inst));  // OpFunction
 }
 
 BasicBlockIt Function::InsertNewBlock(BasicBlockIt it) {
     it++;  // make sure it inserted after
-    BasicBlockIt new_block_it = blocks_.emplace(it, std::make_unique<BasicBlock>(module_, *this));
+    BasicBlockIt new_block_it = blocks_.emplace(it, std::make_unique<BasicBlock>(module_, this));
     return new_block_it;
 }
 
 BasicBlock& Function::InsertNewBlockEnd() {
-    std::unique_ptr<BasicBlock>& new_block = blocks_.emplace_back(std::make_unique<BasicBlock>(module_, *this));
+    std::unique_ptr<BasicBlock>& new_block = blocks_.emplace_back(std::make_unique<BasicBlock>(module_, this));
     return *new_block;
 }
 

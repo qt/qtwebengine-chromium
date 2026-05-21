@@ -1,6 +1,6 @@
-/* Copyright (c) 2020-2025 The Khronos Group Inc.
- * Copyright (c) 2020-2025 Valve Corporation
- * Copyright (c) 2020-2025 LunarG, Inc.
+/* Copyright (c) 2020-2026 The Khronos Group Inc.
+ * Copyright (c) 2020-2026 Valve Corporation
+ * Copyright (c) 2020-2026 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -206,12 +206,12 @@ struct DebugPrintfCbState {
 
 void AnalyzeAndGenerateMessage(Validator &gpuav, VkCommandBuffer command_buffer, DebugPrintfBufferInfo &buffer_info,
                                uint32_t *const debug_output_buffer, const Location &loc) {
-    uint32_t output_buffer_dwords_counts = debug_output_buffer[gpuav::kDebugPrintfOutputBufferDWordsCount];
+    uint32_t output_buffer_dwords_counts = debug_output_buffer[gpuav::kDebugPrintf_OutputBuffer_DWordsCount];
     if (!output_buffer_dwords_counts) return;
 
-    uint32_t output_record_i = gpuav::kDebugPrintfOutputBufferData;  // get first OutputRecord index
+    uint32_t output_record_i = gpuav::kDebugPrintf_OutputBuffer_Data;  // get first OutputRecord index
     while (debug_output_buffer[output_record_i]) {
-        std::stringstream shader_message;
+        std::ostringstream shader_message;
 
         OutputRecord *debug_record = reinterpret_cast<OutputRecord *>(&debug_output_buffer[output_record_i]);
         // Lookup the VkShaderModule handle and SPIR-V code used to create the shader, using the unique shader ID value returned
@@ -380,15 +380,15 @@ void AnalyzeAndGenerateMessage(Validator &gpuav, VkCommandBuffer command_buffer,
         }
         output_record_i += debug_record->size;
     }
-    if ((output_record_i - gpuav::kDebugPrintfOutputBufferData) < output_buffer_dwords_counts) {
+    if ((output_record_i - gpuav::kDebugPrintf_OutputBuffer_Data) < output_buffer_dwords_counts) {
         // Originally we had this to log a warning, but if using the default settings, warnings are hidden.
         // We report this information the same we report the "real" debug printf message so we know it is seen
-        std::stringstream message;
+        std::ostringstream message;
         message << "[WARNING] Debug Printf message was truncated due to the buffer size ("
                 << gpuav.gpuav_settings.debug_printf_buffer_size << ") being too small for the messages consuming "
                 << output_buffer_dwords_counts
                 << " bytes.\nThis can be adjusted setting env var VK_LAYER_PRINTF_BUFFER_SIZE=" << output_buffer_dwords_counts
-                << " or in vkconfig)";
+                << " or in vkconfig";
         if (gpuav.gpuav_settings.debug_printf_to_stdout) {
             std::cout << message.str() << "\n";
         } else {
@@ -398,8 +398,8 @@ void AnalyzeAndGenerateMessage(Validator &gpuav, VkCommandBuffer command_buffer,
 
     // Only memset what is needed, in case we are only using a small portion of a large buffer_size.
     // At the same time we want to make sure we don't memset past the actual VkBuffer allocation
-    uint32_t clear_size =
-        sizeof(uint32_t) * (debug_output_buffer[gpuav::kDebugPrintfOutputBufferDWordsCount] + gpuav::kDebugPrintfOutputBufferData);
+    uint32_t clear_size = sizeof(uint32_t) * (debug_output_buffer[gpuav::kDebugPrintf_OutputBuffer_DWordsCount] +
+                                              gpuav::kDebugPrintf_OutputBuffer_Data);
     clear_size = std::min(gpuav.gpuav_settings.debug_printf_buffer_size, clear_size);
     memset(debug_output_buffer, 0, clear_size);
 }
@@ -415,7 +415,7 @@ void RegisterDebugPrintf(Validator &gpuav, CommandBufferSubState &cb_state) {
 
     cb_state.on_instrumentation_desc_set_update_functions.emplace_back(
         [debug_printf_buffer_size = gpuav.gpuav_settings.debug_printf_buffer_size](
-            CommandBufferSubState &cb, VkPipelineBindPoint bind_point, VkDescriptorBufferInfo &out_buffer_info,
+            CommandBufferSubState &cb, VkPipelineBindPoint bind_point, const Location &, VkDescriptorBufferInfo &out_buffer_info,
             uint32_t &out_dst_binding) {
             vko::BufferRange debug_printf_output_buffer =
                 cb.gpu_resources_manager.GetHostCoherentBufferRange(debug_printf_buffer_size);

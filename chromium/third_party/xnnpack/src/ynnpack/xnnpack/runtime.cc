@@ -68,9 +68,7 @@ struct xnn_threadpool : public slinky::ref_counted<xnn_threadpool> {
     this->scheduler.schedule = scheduler.schedule;
   }
 
-  ~xnn_threadpool() final {
-    ynn_delete_threadpool(ynn);
-  }
+  ~xnn_threadpool() { ynn_delete_threadpool(ynn); }
 
   // This layer of `ynn_scheduler` exists to wrap the tasks in code to save,
   // modify, and restore the FPU state to what XNNPACK clients expected
@@ -158,9 +156,6 @@ xnn_status xnn_update_runtime_with_threadpool(xnn_runtime_t runtime,
       reinterpret_cast<slinky::thread_pool*>(threadpool->ynn);
   return xnn_status_success;
 }
-
-// TODO(dsharlet): Find a way to make this flag visible.
-#define XNN_FLAG_SLINKY_USE_XLA_THREAD_POOL 1
 
 xnn_status xnn_create_threadpool_v2(xnn_scheduler_v2 scheduler,
                                     void* scheduler_context, uint32_t flags,

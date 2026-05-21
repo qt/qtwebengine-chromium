@@ -130,6 +130,9 @@ ComputePassEncoder::ComputePassEncoder(DeviceBase* device,
     : ProgrammableEncoder(device, descriptor->label, encodingContext),
       mCommandEncoder(commandEncoder) {
     GetObjectTrackingList()->Track(this);
+    if (auto* resourceTable = mCommandEncoder->GetResourceTable()) {
+        mCommandBufferState.SetResourceTable(resourceTable);
+    }
 }
 
 ComputePassEncoder::~ComputePassEncoder() {
@@ -161,7 +164,7 @@ Ref<ComputePassEncoder> ComputePassEncoder::MakeError(DeviceBase* device,
         new ComputePassEncoder(device, commandEncoder, encodingContext, ObjectBase::kError, label));
 }
 
-void ComputePassEncoder::DestroyImpl() {
+void ComputePassEncoder::DestroyImpl(DestroyReason reason) {
     mCommandBufferState.End();
 
     // Ensure that the pass has exited. This is done for passes only since validation requires
@@ -381,40 +384,44 @@ void ComputePassEncoder::APIDispatchWorkgroupsIndirect(BufferBase* indirectBuffe
 
             SyncScopeUsageTracker scope;
             mUsageTracker.AddReferencedBuffer(indirectBuffer);
-
             Ref<BufferBase> indirectBufferRef = indirectBuffer;
 
-            // Get applied indirect buffer with necessary changes on the original indirect
-            // buffer. For example,
-            // - Validate each indirect dispatch with a single dispatch to copy the indirect
-            //   buffer params into a scratch buffer if they're valid, and otherwise zero them
-            //   out.
-            // - Duplicate all the indirect dispatch parameters to support @num_workgroups on
-            //   D3D12.
-            // - Directly return the original indirect dispatch buffer if we don't need any
-            //   transformations on it.
-            // We could consider moving the validation earlier in the pass after the last
-            // last point the indirect buffer was used with writable usage, as well as batch
-            // validation for multiple dispatches into one, but inserting commands at
-            // arbitrary points in the past is not possible right now.
-            DAWN_TRY_ASSIGN(std::tie(indirectBufferRef, indirectOffset),
-                            TransformIndirectDispatchBuffer(indirectBufferRef, indirectOffset));
+            if (NeedsIndirectGPUValidation()) {
+                // Get applied indirect buffer with necessary changes on the original indirect
+                // buffer. For example,
+                // - Validate each indirect dispatch with a single dispatch to copy the indirect
+                //   buffer params into a scratch buffer if they're valid, and otherwise zero them
+                //   out.
+                // - Duplicate all the indirect dispatch parameters to support @num_workgroups on
+                //   D3D12.
+                // - Directly return the original indirect dispatch buffer if we don't need any
+                //   transformations on it.
+                // We could consider moving the validation earlier in the pass after the last
+                // last point the indirect buffer was used with writable usage, as well as batch
+                // validation for multiple dispatches into one, but inserting commands at
+                // arbitrary points in the past is not possible right now.
+                DAWN_TRY_ASSIGN(std::tie(indirectBufferRef, indirectOffset),
+                                TransformIndirectDispatchBuffer(indirectBufferRef, indirectOffset));
 
-            // If we have created a new scratch dispatch indirect buffer in
-            // TransformIndirectDispatchBuffer(), we need to track it in mUsageTracker.
-            if (indirectBufferRef.Get() != indirectBuffer) {
-                // |indirectBufferRef| was replaced with a scratch buffer, so we just need to track
-                // it for backend resource tracking and not for frontend validation.
-                scope.BufferUsedAs(indirectBufferRef.Get(),
-                                   kIndirectBufferForBackendResourceTracking);
-                mUsageTracker.AddReferencedBuffer(indirectBufferRef.Get());
+                // If we have created a new scratch dispatch indirect buffer in
+                // TransformIndirectDispatchBuffer(), we need to track it in mUsageTracker.
+                if (indirectBufferRef.Get() != indirectBuffer) {
+                    // |indirectBufferRef| was replaced with a scratch buffer, so we just need to
+                    // track it for backend resource tracking and not for frontend validation.
+                    scope.BufferUsedAs(indirectBufferRef.Get(),
+                                       kIndirectBufferForBackendResourceTracking);
+                    mUsageTracker.AddReferencedBuffer(indirectBufferRef.Get());
 
-                // Then we can just track indirectBuffer for frontend validation and ignore its
-                // indirect buffer usage in backend resource tracking.
-                scope.BufferUsedAs(indirectBuffer, kIndirectBufferForFrontendValidation);
+                    // Then we can just track indirectBuffer for frontend validation and ignore its
+                    // indirect buffer usage in backend resource tracking.
+                    scope.BufferUsedAs(indirectBuffer, kIndirectBufferForFrontendValidation);
+                } else {
+                    scope.BufferUsedAs(
+                        indirectBuffer,
+                        wgpu::BufferUsage::Indirect | kIndirectBufferForBackendResourceTracking);
+                }
             } else {
-                scope.BufferUsedAs(indirectBuffer, wgpu::BufferUsage::Indirect |
-                                                       kIndirectBufferForBackendResourceTracking);
+                scope.BufferUsedAs(indirectBuffer, wgpu::BufferUsage::Indirect);
             }
 
             AddDispatchSyncScope(std::move(scope));
@@ -475,6 +482,32 @@ void ComputePassEncoder::APISetBindGroup(uint32_t groupIndexIn,
         },
         "encoding %s.SetBindGroup(%u, %s, %u, ...).", this, groupIndexIn, group,
         dynamicOffsetCount);
+}
+
+void ComputePassEncoder::APISetImmediates(uint32_t offset, const void* data, size_t size) {
+    mEncodingContext->TryEncode(
+        this,
+        [&](CommandAllocator* allocator) -> MaybeError {
+            if (IsValidationEnabled()) {
+                DAWN_TRY(ValidateSetImmediates(offset, size));
+            }
+
+            // Skip SetImmediates when uploading constants are empty.
+            if (size == 0) {
+                return {};
+            }
+
+            SetImmediatesCmd* cmd = allocator->Allocate<SetImmediatesCmd>(Command::SetImmediates);
+            cmd->offset = offset;
+            cmd->size = uint32_t(size);
+            uint8_t* immediateDatas = allocator->AllocateData<uint8_t>(cmd->size);
+            memcpy(immediateDatas, data, size);
+
+            mCommandBufferState.SetImmediateData(offset, uint32_t(size));
+
+            return {};
+        },
+        "encoding %s.SetImmediates(%u, %u, ...).", this, offset, size);
 }
 
 void ComputePassEncoder::APIWriteTimestamp(QuerySetBase* querySet, uint32_t queryIndex) {

@@ -4,6 +4,7 @@
 
 #include "components/autofill/core/browser/metrics/payments/bnpl_metrics.h"
 
+#include "base/strings/strcat.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/time/time.h"
 #include "components/autofill/core/browser/data_model/payments/bnpl_issuer.h"
@@ -147,6 +148,16 @@ TEST_F(BnplMetricsTest, LogSelectBnplIssuerDialogResult_IssuerSelected) {
       /*expected_bucket_count=*/1);
 }
 
+TEST_F(BnplMetricsTest, LogSelectBnplIssuerDialogResult_TabOrBrowserClosed) {
+  base::HistogramTester histogram_tester;
+  LogSelectBnplIssuerDialogResult(
+      SelectBnplIssuerDialogResult::kTabOrBrowserClosed);
+  histogram_tester.ExpectUniqueSample(
+      "Autofill.Bnpl.SelectionDialogResult",
+      SelectBnplIssuerDialogResult::kTabOrBrowserClosed,
+      /*expected_bucket_count=*/1);
+}
+
 TEST_P(BnplMetricsTest, LogBnplIssuerSelection) {
   base::HistogramTester histogram_tester;
   IssuerId issuer_id = GetIssuerId();
@@ -272,6 +283,18 @@ TEST_P(BnplMetricsTest, LogBnplTosDialogResult_CancelButtonClicked) {
       base::StrCat({"Autofill.Bnpl.TosDialogResult.",
                     GetHistogramSuffixFromIssuerId(issuer_id)}),
       BnplTosDialogResult::kCancelButtonClicked,
+      /*expected_bucket_count=*/1);
+}
+
+TEST_P(BnplMetricsTest, LogBnplTosDialogResult_TabOrBrowserClosed) {
+  base::HistogramTester histogram_tester;
+  IssuerId issuer_id = GetIssuerId();
+
+  LogBnplTosDialogResult(BnplTosDialogResult::kTabOrBrowserClosed, issuer_id);
+  histogram_tester.ExpectUniqueSample(
+      base::StrCat({"Autofill.Bnpl.TosDialogResult.",
+                    GetHistogramSuffixFromIssuerId(issuer_id)}),
+      BnplTosDialogResult::kTabOrBrowserClosed,
       /*expected_bucket_count=*/1);
 }
 

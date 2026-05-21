@@ -14,7 +14,6 @@
 #include "discovery/dnssd/public/dns_sd_instance.h"
 #include "discovery/mdns/public/mdns_constants.h"
 #include "discovery/mdns/public/mdns_records.h"
-#include "util/span_util.h"
 #include "util/string_util.h"
 
 namespace openscreen::discovery {

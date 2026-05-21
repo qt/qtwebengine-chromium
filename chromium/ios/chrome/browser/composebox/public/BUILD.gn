@@ -2,6 +2,18 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+group("public") {
+  public_deps = [
+    ":animation",
+    ":constants",
+    ":features",
+    ":input_plate_controls",
+    ":input_plate_position",
+    ":model_options",
+    ":theme",
+  ]
+}
+
 source_set("features") {
   sources = [
     "features.h",
@@ -41,5 +53,10 @@ source_set("input_plate_position") {
 
 source_set("input_plate_controls") {
   sources = [ "composebox_input_plate_controls.h" ]
+  deps = [ "//base" ]
+}
+
+source_set("model_options") {
+  sources = [ "composebox_model_option.h" ]
   deps = [ "//base" ]
 }

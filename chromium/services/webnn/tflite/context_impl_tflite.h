@@ -5,6 +5,7 @@
 #ifndef SERVICES_WEBNN_TFLITE_CONTEXT_IMPL_TFLITE_H_
 #define SERVICES_WEBNN_TFLITE_CONTEXT_IMPL_TFLITE_H_
 
+#include "base/files/file.h"
 #include "mojo/public/cpp/bindings/pending_associated_receiver.h"
 #include "services/webnn/public/cpp/webnn_trace.h"
 #include "services/webnn/public/cpp/webnn_types.h"
@@ -29,13 +30,13 @@ class ContextImplTflite final : public WebNNContextImpl {
       mojom::CreateContextOptionsPtr options,
       mojo::ScopedDataPipeConsumerHandle write_tensor_consumer,
       mojo::ScopedDataPipeProducerHandle read_tensor_producer,
-      gpu::CommandBufferId command_buffer_id,
-      std::unique_ptr<ScopedSequence> sequence,
+      std::unique_ptr<ScopedGpuSequence> gpu_sequence,
       scoped_refptr<gpu::MemoryTracker> memory_tracker,
       scoped_refptr<base::SingleThreadTaskRunner> owning_task_runner,
       gpu::SharedImageManager* shared_image_manager,
       scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
-      ScopedTrace scoped_trace);
+      ScopedTrace scoped_trace,
+      bool is_incognito);
 
   ContextImplTflite(
       mojo::PendingReceiver<mojom::WebNNContext> receiver,
@@ -43,12 +44,12 @@ class ContextImplTflite final : public WebNNContextImpl {
       mojom::CreateContextOptionsPtr options,
       mojo::ScopedDataPipeConsumerHandle write_tensor_consumer,
       mojo::ScopedDataPipeProducerHandle read_tensor_producer,
-      gpu::CommandBufferId command_buffer_id,
-      std::unique_ptr<ScopedSequence> sequence,
+      std::unique_ptr<ScopedGpuSequence> gpu_sequence,
       scoped_refptr<gpu::MemoryTracker> memory_tracker,
       scoped_refptr<base::SingleThreadTaskRunner> owning_task_runner,
       gpu::SharedImageManager* shared_image_manager,
-      scoped_refptr<base::SingleThreadTaskRunner> main_task_runner);
+      scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
+      bool is_incognito);
 
   ContextImplTflite(const WebNNContextImpl&) = delete;
   ContextImplTflite& operator=(const ContextImplTflite&) = delete;
@@ -68,6 +69,16 @@ class ContextImplTflite final : public WebNNContextImpl {
       base::flat_map<OperandId, WebNNTensorImpl*> constant_tensor_operands,
       CreateGraphImplCallback callback) override;
 
+  void DidCreateWeightsFile(
+      mojo::PendingAssociatedReceiver<mojom::WebNNGraph> receiver,
+      mojom::GraphInfoPtr graph_info,
+      WebNNGraphImpl::ComputeResourceInfo compute_resource_info,
+      base::flat_map<OperandId, std::unique_ptr<WebNNConstantOperand>>
+          constant_operands,
+      base::flat_map<OperandId, WebNNTensorImpl*> constant_tensor_operands,
+      CreateGraphImplCallback callback,
+      base::File weights_file);
+
   base::expected<scoped_refptr<WebNNTensorImpl>, mojom::ErrorPtr>
   CreateTensorImpl(mojo::PendingAssociatedReceiver<mojom::WebNNTensor> receiver,
                    mojom::TensorInfoPtr tensor_info) override;
@@ -78,6 +89,7 @@ class ContextImplTflite final : public WebNNContextImpl {
       mojom::TensorInfoPtr tensor_info,
       WebNNTensorImpl::RepresentationPtr representation) override;
 
+  const bool is_incognito_;
   base::WeakPtrFactory<ContextImplTflite> weak_factory_{this};
 };
 

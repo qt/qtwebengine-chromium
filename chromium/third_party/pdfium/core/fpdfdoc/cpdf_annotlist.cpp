@@ -82,7 +82,7 @@ std::unique_ptr<CPDF_Annot> CreatePopupAnnot(CPDF_Document* document,
     return nullptr;
   }
 
-  // TODO(crbug.com/pdfium/1098): Determine if we really need to check if
+  // TODO(crbug.com/40643646): Determine if we really need to check if
   // /Contents is empty or not. If so, optimize decoding for empty check.
   ByteString contents =
       pParentDict->GetByteStringFor(pdfium::annotation::kContents);

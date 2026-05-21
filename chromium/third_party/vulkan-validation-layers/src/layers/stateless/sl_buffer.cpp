@@ -1,7 +1,8 @@
-/* Copyright (c) 2015-2025 The Khronos Group Inc.
- * Copyright (c) 2015-2025 Valve Corporation
- * Copyright (c) 2015-2025 LunarG, Inc.
- * Copyright (C) 2015-2025 Google Inc.
+/* Copyright (c) 2015-2026 The Khronos Group Inc.
+ * Copyright (c) 2015-2026 Valve Corporation
+ * Copyright (c) 2015-2026 LunarG, Inc.
+ * Copyright (C) 2015-2026 Google Inc.
+ * Copyright (C) 2025-2026 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +18,7 @@
  */
 
 #include "stateless/stateless_validation.h"
+#include "containers/container_utils.h"
 #include "generated/enum_flag_bits.h"
 #include "utils/image_utils.h"
 #include "utils/math_utils.h"
@@ -56,27 +58,37 @@ bool Device::manual_PreCallValidateCreateBuffer(VkDevice device, const VkBufferC
 
     if (pCreateInfo->flags & VK_BUFFER_CREATE_PROTECTED_BIT) {
         const VkBufferUsageFlags2 invalid =
-            VK_BUFFER_USAGE_2_TRANSFORM_FEEDBACK_BUFFER_BIT_EXT | VK_BUFFER_USAGE_2_TRANSFORM_FEEDBACK_COUNTER_BUFFER_BIT_EXT |
-            VK_BUFFER_USAGE_2_CONDITIONAL_RENDERING_BIT_EXT |
-            VK_BUFFER_USAGE_2_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
-            VK_BUFFER_USAGE_2_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_2_SHADER_BINDING_TABLE_BIT_KHR |
-            VK_BUFFER_USAGE_2_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT | VK_BUFFER_USAGE_2_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT |
-            VK_BUFFER_USAGE_2_PUSH_DESCRIPTORS_DESCRIPTOR_BUFFER_BIT_EXT |
-            VK_BUFFER_USAGE_2_MICROMAP_BUILD_INPUT_READ_ONLY_BIT_EXT | VK_BUFFER_USAGE_2_MICROMAP_STORAGE_BIT_EXT;
+            ~(VK_BUFFER_USAGE_2_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_2_TRANSFER_DST_BIT | VK_BUFFER_USAGE_2_UNIFORM_TEXEL_BUFFER_BIT |
+              VK_BUFFER_USAGE_2_STORAGE_TEXEL_BUFFER_BIT | VK_BUFFER_USAGE_2_UNIFORM_BUFFER_BIT |
+              VK_BUFFER_USAGE_2_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT |
+              VK_BUFFER_USAGE_2_VIDEO_DECODE_SRC_BIT_KHR | VK_BUFFER_USAGE_2_VIDEO_ENCODE_DST_BIT_KHR |
+              VK_BUFFER_USAGE_2_DESCRIPTOR_HEAP_BIT_EXT);
         if (usage & invalid) {
             skip |= LogError("VUID-VkBufferCreateInfo-flags-09641", device, create_info_loc.dot(Field::flags),
+                             "includes VK_BUFFER_CREATE_PROTECTED_BIT, but the usage contains %s.",
+                             string_VkBufferUsageFlags2(usage & invalid).c_str());
+        }
+        if ((usage & VK_BUFFER_USAGE_2_DESCRIPTOR_HEAP_BIT_EXT) != 0 &&
+            !phys_dev_ext_props.descriptor_heap_props.protectedDescriptorHeaps) {
+            skip |= LogError("VUID-VkBufferCreateInfo-flags-11277", device, create_info_loc.dot(Field::flags),
                              "includes VK_BUFFER_CREATE_PROTECTED_BIT, but the usage is %s.",
                              string_VkBufferUsageFlags2(usage).c_str());
         }
-    };
+    }
 
-    auto dedicated_allocation_buffer = vku::FindStructInPNextChain<VkDedicatedAllocationBufferCreateInfoNV>(pCreateInfo->pNext);
-    if (dedicated_allocation_buffer && dedicated_allocation_buffer->dedicatedAllocation == VK_TRUE) {
-        if (pCreateInfo->flags &
-            (VK_BUFFER_CREATE_SPARSE_BINDING_BIT | VK_BUFFER_CREATE_SPARSE_RESIDENCY_BIT | VK_BUFFER_CREATE_SPARSE_ALIASED_BIT)) {
+    if ((pCreateInfo->flags & (VK_BUFFER_CREATE_SPARSE_BINDING_BIT | VK_BUFFER_CREATE_SPARSE_RESIDENCY_BIT |
+                               VK_BUFFER_CREATE_SPARSE_ALIASED_BIT)) != 0) {
+        auto dedicated_allocation_buffer = vku::FindStructInPNextChain<VkDedicatedAllocationBufferCreateInfoNV>(pCreateInfo->pNext);
+        if (dedicated_allocation_buffer && dedicated_allocation_buffer->dedicatedAllocation == VK_TRUE) {
             skip |= LogError("VUID-VkBufferCreateInfo-pNext-01571", device, create_info_loc.dot(Field::flags),
                              "%s when VkDedicatedAllocationBufferCreateInfoNV::dedicatedAllocation is VK_TRUE.",
                              string_VkBufferCreateFlags(pCreateInfo->flags).c_str());
+        }
+        if ((usage & VK_BUFFER_USAGE_2_DESCRIPTOR_HEAP_BIT_EXT) != 0 &&
+            !phys_dev_ext_props.descriptor_heap_props.sparseDescriptorHeaps) {
+            skip |= LogError("VUID-VkBufferCreateInfo-flags-11279", device, create_info_loc.dot(Field::flags),
+                             "(%s) includes sparse flags, and usage is %s, but sparseDescriptorHeaps is VK_FALSE.",
+                             string_VkBufferCreateFlags(pCreateInfo->flags).c_str(), string_VkBufferUsageFlags2(usage).c_str());
         }
     }
 
@@ -93,6 +105,7 @@ bool Device::manual_PreCallValidateCreateBuffer(VkDevice device, const VkBufferC
 
     skip |= ValidateCreateBufferFlags(pCreateInfo->flags, create_info_loc.dot(Field::flags));
     skip |= ValidateCreateBufferBufferDeviceAddress(*pCreateInfo, create_info_loc);
+    skip |= ValidateCreateBufferTileMemory(*pCreateInfo, create_info_loc);
 
     return skip;
 }
@@ -122,14 +135,6 @@ bool Device::manual_PreCallValidateCreateBufferView(VkDevice device, const VkBuf
                          string_VkFormat(format));
     }
 
-    if ((pCreateInfo->offset % phys_dev_props.limits.minTexelBufferOffsetAlignment) != 0 &&
-        !enabled_features.texelBufferAlignment) {
-        skip |= LogError("VUID-VkBufferViewCreateInfo-offset-02749", pCreateInfo->buffer, create_info_loc.dot(Field::offset),
-                         "(%" PRIuLEAST64
-                         ") must be a multiple of VkPhysicalDeviceLimits::minTexelBufferOffsetAlignment (%" PRIuLEAST64 ").",
-                         pCreateInfo->offset, phys_dev_props.limits.minTexelBufferOffsetAlignment);
-    }
-
     if (range != VK_WHOLE_SIZE) {
         // will be 1 because  block-compressed format are not supported for Texel Buffer
         const VkDeviceSize texels_per_block = static_cast<VkDeviceSize>(vkuFormatTexelsPerBlock(format));
@@ -140,7 +145,7 @@ bool Device::manual_PreCallValidateCreateBufferView(VkDevice device, const VkBuf
                              "(%" PRIuLEAST64 ") does not equal VK_WHOLE_SIZE, range must be greater than 0.", range);
         }
 
-        if (SafeModulo(range, texel_block_size) != 0) {
+        if (!IsIntegerMultipleOf(range, texel_block_size)) {
             skip |= LogError("VUID-VkBufferViewCreateInfo-range-00929", pCreateInfo->buffer, create_info_loc.dot(Field::range),
                              "(%" PRIuLEAST64
                              ") does not equal VK_WHOLE_SIZE, so it must be a multiple of the texel block size (%" PRIuLEAST64
@@ -155,6 +160,16 @@ bool Device::manual_PreCallValidateCreateBufferView(VkDevice device, const VkBuf
                              ") texels which is more than VkPhysicalDeviceLimits::maxTexelBufferElements (%" PRIuLEAST32 ").",
                              range, string_VkFormat(format), texel_block_size, texels_per_block, texels,
                              phys_dev_props.limits.maxTexelBufferElements);
+        }
+    }
+
+    if (api_version < VK_API_VERSION_1_3 && !enabled_features.ycbcr2plane444Formats) {
+        if (IsValueIn(pCreateInfo->format,
+                      {VK_FORMAT_G8_B8R8_2PLANE_444_UNORM, VK_FORMAT_G10X6_B10X6R10X6_2PLANE_444_UNORM_3PACK16,
+                       VK_FORMAT_G12X4_B12X4R12X4_2PLANE_444_UNORM_3PACK16, VK_FORMAT_G16_B16R16_2PLANE_444_UNORM})) {
+            skip |= LogError("VUID-VkBufferViewCreateInfo-None-12278", device,
+                             context.error_obj.location.dot(Field::pCreateInfo).dot(Field::format), "is %s.",
+                             string_VkFormat(pCreateInfo->format));
         }
     }
 
@@ -229,6 +244,51 @@ bool Device::ValidateCreateBufferBufferDeviceAddress(const VkBufferCreateInfo &c
         skip |= LogError("VUID-VkBufferCreateInfo-flags-03338", device, create_info_loc.dot(Field::flags),
                          "has VK_BUFFER_CREATE_DEVICE_ADDRESS_CAPTURE_REPLAY_BIT set but the bufferDeviceAddressCaptureReplay "
                          "device feature is not enabled.");
+    }
+
+    return skip;
+}
+
+bool Device::ValidateCreateBufferTileMemory(const VkBufferCreateInfo &create_info, const Location &create_info_loc) const {
+    bool skip = false;
+
+    const VkBufferCreateFlags flags = create_info.flags;
+    const auto *usage_flags2 = vku::FindStructInPNextChain<VkBufferUsageFlags2CreateInfo>(create_info.pNext);
+    const VkBufferUsageFlags2 usage = usage_flags2 ? usage_flags2->usage : create_info.usage;
+
+    if (usage & VK_BUFFER_USAGE_TILE_MEMORY_BIT_QCOM) {
+        const VkBufferCreateFlags invalid_flag_mask =
+            VK_BUFFER_CREATE_SPARSE_BINDING_BIT | VK_BUFFER_CREATE_SPARSE_RESIDENCY_BIT | VK_BUFFER_CREATE_SPARSE_ALIASED_BIT |
+            VK_BUFFER_CREATE_PROTECTED_BIT | VK_BUFFER_CREATE_DEVICE_ADDRESS_CAPTURE_REPLAY_BIT |
+            VK_BUFFER_CREATE_VIDEO_PROFILE_INDEPENDENT_BIT_KHR | VK_BUFFER_CREATE_DESCRIPTOR_BUFFER_CAPTURE_REPLAY_BIT_EXT;
+        VkBufferUsageFlags2 valid_usage_mask = VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_TEXEL_BUFFER_BIT |
+                                               VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                                               VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TILE_MEMORY_BIT_QCOM;
+
+        if (phys_dev_ext_props.tile_memory_heap_props.tileBufferTransfers) {
+            valid_usage_mask |= VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+        }
+
+        const VkBufferCreateFlags invalid_flags = (flags & invalid_flag_mask);
+        const VkBufferUsageFlags2 invalid_usage = (usage & ~valid_usage_mask);
+
+        if (!enabled_features.tileMemoryHeap) {
+            skip |= LogError("VUID-VkBufferCreateInfo-tileMemoryHeap-10762", device, create_info_loc.dot(Field::usage),
+                             "has VK_BUFFER_USAGE_TILE_MEMORY_BIT_QCOM set but the "
+                             "tileMemoryHeap device feature is not enabled.");
+        }
+
+        if (invalid_flags) {
+            skip |= LogError("VUID-VkBufferCreateInfo-usage-10763", device, create_info_loc.dot(Field::usage),
+                             "contains VK_BUFFER_USAGE_TILE_MEMORY_BIT_QCOM but flags contains %s\nAll create flags: (%s)",
+                             string_VkBufferCreateFlags(invalid_flags).c_str(), string_VkBufferCreateFlags(flags).c_str());
+        }
+
+        if (invalid_usage) {
+            skip |= LogError("VUID-VkBufferCreateInfo-usage-10764", device, create_info_loc.dot(Field::usage),
+                             "contains VK_BUFFER_USAGE_TILE_MEMORY_BIT_QCOM but usage contains %s\nAll usage flags: (%s)",
+                             string_VkBufferUsageFlags2(invalid_usage).c_str(), string_VkBufferUsageFlags2(usage).c_str());
+        }
     }
 
     return skip;

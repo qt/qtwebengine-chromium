@@ -33,9 +33,11 @@ namespace anonymous_tokens {
 namespace {
 
 absl::Status CheckKeySize(const RSA& key) {
-  if (RSA_size(&key) != kRsaModulusSizeInBytes256) {
+  if (unsigned int size = RSA_size(&key);
+      size != kRsaModulusSizeInBytes256 && size != kRsaModulusSizeInBytes512) {
     return absl::InvalidArgumentError(
-        "Token type DA7A must use RSA key with the modulus of size 256 bytes.");
+        "Token type DA7A must use RSA key with the modulus of size 256 or 512 "
+        "bytes");
   }
   return absl::OkStatus();
 }
@@ -45,14 +47,15 @@ absl::Status CheckKeySize(const RSA& key) {
 absl::StatusOr<std::unique_ptr<PrivacyPassRsaBssaPublicMetadataClient>>
 PrivacyPassRsaBssaPublicMetadataClient::Create(const RSA& rsa_public_key) {
   ANON_TOKENS_RETURN_IF_ERROR(CheckKeySize(rsa_public_key));
+  unsigned int modulus_size = RSA_size(&rsa_public_key);
 
   // Create modulus and public exponent strings.
   ANON_TOKENS_ASSIGN_OR_RETURN(
       const std::string rsa_modulus,
-      BignumToString(*RSA_get0_n(&rsa_public_key), kRsaModulusSizeInBytes256));
+      BignumToString(*RSA_get0_n(&rsa_public_key), modulus_size));
   ANON_TOKENS_ASSIGN_OR_RETURN(
       const std::string rsa_e,
-      BignumToString(*RSA_get0_e(&rsa_public_key), kRsaModulusSizeInBytes256));
+      BignumToString(*RSA_get0_e(&rsa_public_key), modulus_size));
 
   // Create hash digest methods.
   const EVP_MD* signature_hash_function = EVP_sha384();

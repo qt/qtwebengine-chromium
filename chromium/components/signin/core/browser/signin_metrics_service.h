@@ -89,20 +89,18 @@ class SigninMetricsService : public KeyedService,
   // `std::nullopt` if the `account_id` was not previously signed in on the web.
   std::optional<base::Time> GetTimeOfWebSignin(
       const CoreAccountId& account_id) const;
-  void MaybeRecordMetricsForSigninPromoLimitsExperiment(
+  void MaybeRecordMetricsForPromoShowCountAtSignin(
       const CoreAccountInfo& account_info,
       signin_metrics::AccessPoint access_point);
   void MaybeRecordWebSigninToChromeSigninMetrics(
       const CoreAccountId& account_id,
       signin_metrics::AccessPoint access_point);
-  void RecordSigninInterceptionMetrics(
-      const GaiaId& gaia_id,
-      signin_metrics::AccessPoint access_point);
+  void RecordSigninInterceptionMetrics(const GaiaId& gaia_id);
 #endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
 
   void UpdateIsManagedForAllAccounts();
 
-  const raw_ref<signin::IdentityManager, DanglingUntriaged> identity_manager_;
+  const raw_ref<signin::IdentityManager> identity_manager_;
   const raw_ref<PrefService> pref_service_;
 
   const raw_ptr<signin::ActivePrimaryAccountsMetricsRecorder>

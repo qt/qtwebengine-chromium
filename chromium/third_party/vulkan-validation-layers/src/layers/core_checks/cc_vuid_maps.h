@@ -1,6 +1,7 @@
-/* Copyright (c) 2024-2025 The Khronos Group Inc.
- * Copyright (c) 2024-2025 Valve Corporation
- * Copyright (c) 2024-2025 LunarG, Inc.
+/* Copyright (c) 2024-2026 The Khronos Group Inc.
+ * Copyright (c) 2024-2026 Valve Corporation
+ * Copyright (c) 2024-2026 LunarG, Inc.
+ * Modifications Copyright (C) 2025-2026 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,8 +38,8 @@ enum class CopyError {
     AspectMaskSingleBit_09103,
     ExceedBufferBounds_00171,
 
-    ImageOffest_07971,
-    ImageOffest_07972,
+    ImageOffset_07971,
+    ImageOffset_07972,
     Image1D_07979,
     Image1D_07980,
     Image3D_07983,
@@ -49,7 +50,7 @@ enum class CopyError {
     TexelBlockExtentHeight_00208,
     TexelBlockExtentDepth_00209,
     MultiPlaneAspectMask_07981,
-    ImageOffest_09104,
+    ImageOffset_09104,
     AspectMask_09105,
     bufferRowLength_09106,
     bufferImageHeight_09107,
@@ -114,6 +115,9 @@ enum class SpirvInterfaceVariableError {
     Mutable_07990,
     DescriptorCount_07991,
     Inline_10391,
+    DescriptorHeapMapping_11312,
+    PushConstantStage_07987,
+    PushConstantRange_10069,
 };
 const char *GetSpirvInterfaceVariableVUID(const Location &loc, SpirvInterfaceVariableError error);
 

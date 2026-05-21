@@ -27,10 +27,6 @@
 
 #include "src/tint/lang/hlsl/writer/writer.h"
 
-#include <memory>
-#include <utility>
-#include <vector>
-
 #include "src/tint/lang/core/ir/core_builtin_call.h"
 #include "src/tint/lang/core/ir/function.h"
 #include "src/tint/lang/core/ir/module.h"
@@ -41,6 +37,7 @@
 #include "src/tint/lang/core/type/input_attachment.h"
 #include "src/tint/lang/core/type/pointer.h"
 #include "src/tint/lang/core/type/texel_buffer.h"
+#include "src/tint/lang/core/type/u16.h"
 #include "src/tint/lang/hlsl/writer/common/option_helpers.h"
 #include "src/tint/lang/hlsl/writer/printer/printer.h"
 #include "src/tint/lang/hlsl/writer/raise/raise.h"
@@ -53,9 +50,6 @@ Result<SuccessType> CanGenerate(const core::ir::Module& ir, const Options& optio
         if (ty->Is<core::type::SubgroupMatrix>()) {
             return Failure("subgroup matrices are not supported by the HLSL backend");
         }
-        if (ty->Is<core::type::ResourceBinding>()) {
-            return Failure("resource_binding not supported by the HLSL backend");
-        }
         if (ty->Is<core::type::TexelBuffer>()) {
             // TODO(crbug/382544164): Prototype texel buffer feature
             return Failure("texel buffers are not supported by the HLSL backend");
@@ -66,6 +60,12 @@ Result<SuccessType> CanGenerate(const core::ir::Module& ir, const Options& optio
                     return Failure("runtime binding array not supported by the HLSL FXC backend");
                 }
             }
+        }
+        if (ty->Is<core::type::Buffer>()) {
+            return Failure("buffers are not supported by the HLSL backend");
+        }
+        if (ty->Is<core::type::U16>()) {
+            return Failure("16-bit unsigned integers are not supported by the HLSL backend");
         }
     }
 
@@ -78,6 +78,9 @@ Result<SuccessType> CanGenerate(const core::ir::Module& ir, const Options& optio
         if (call->Func() == core::BuiltinFn::kGetResource ||
             call->Func() == core::BuiltinFn::kHasResource) {
             return Failure("resource tables not supported by the HLSL backend");
+        }
+        if (call->Func() == core::BuiltinFn::kPrint) {
+            return Failure("print is not supported by the HLSL backend");
         }
     }
 
@@ -119,97 +122,60 @@ Result<SuccessType> CanGenerate(const core::ir::Module& ir, const Options& optio
         }
     }
 
-    auto user_immediate_res = core::ir::ValidateSingleUserImmediate(ir, ep_func);
-    if (user_immediate_res != Success) {
-        return user_immediate_res.Failure();
-    }
-
-    uint32_t user_immediate_size = user_immediate_res.Get();
-
-    // Validate internal immediate offsets using shared helper.
-    {
-        std::vector<core::ir::ImmediateInfo> immediates;
-        if (options.first_index_offset) {
-            immediates.push_back({*options.first_index_offset, 4u});
-        }
-        if (options.first_instance_offset) {
-            immediates.push_back({*options.first_instance_offset, 4u});
-        }
-        if (options.num_workgroups_start_offset) {
-            immediates.push_back({*options.num_workgroups_start_offset, 4u});
-        }
-        // Pass user immediate size so internal offsets don't overlap user region.
-        if (auto res =
-                core::ir::ValidateInternalImmediateOffset(0x1000, user_immediate_size, immediates);
-            res != Success) {
-            return res.Failure();
-        }
-    }
-
     // Check for unsupported shader IO builtins.
-    for (auto& func : ir.functions) {
-        if (!func->IsEntryPoint()) {
-            continue;
+    auto check_io_attributes = [&](const core::IOAttributes& attributes) -> Result<SuccessType> {
+        if (attributes.color.has_value()) {
+            return Failure("@color attribute is not supported by the HLSL backend");
         }
-
-        for (auto* param : func->Params()) {
-            if (auto* str = param->Type()->As<core::type::Struct>()) {
-                for (auto* member : str->Members()) {
-                    if (member->Attributes().color.has_value()) {
-                        return Failure("@color attribute is not supported by the HLSL backend");
-                    }
-                    if (member->Attributes().builtin == core::BuiltinValue::kSubgroupId ||
-                        member->Attributes().builtin == core::BuiltinValue::kSubgroupInvocationId ||
-                        member->Attributes().builtin == core::BuiltinValue::kSubgroupSize ||
-                        member->Attributes().builtin == core::BuiltinValue::kNumSubgroups) {
-                        if (options.compiler == Options::Compiler::kFXC) {
-                            return Failure("subgroups are not supported by FXC");
-                        }
-                    }
-
-                    if (member->Attributes().builtin == core::BuiltinValue::kBarycentricCoord &&
-                        options.compiler == Options::Compiler::kFXC) {
-                        return Failure(
-                            "barycentric_coord is not supported by the FXC HLSL backend");
-                    }
-                }
-            } else {
-                if (param->Color().has_value()) {
-                    return Failure("@color attribute is not supported by the HLSL backend");
-                }
-                if (param->Builtin() == core::BuiltinValue::kSubgroupId ||
-                    param->Builtin() == core::BuiltinValue::kSubgroupInvocationId ||
-                    param->Builtin() == core::BuiltinValue::kSubgroupSize ||
-                    param->Builtin() == core::BuiltinValue::kNumSubgroups) {
-                    if (options.compiler == Options::Compiler::kFXC) {
-                        return Failure("subgroups are not supported by FXC");
-                    }
-                }
-
-                if (param->Builtin() == core::BuiltinValue::kBarycentricCoord &&
-                    options.compiler == Options::Compiler::kFXC) {
-                    return Failure("barycentric_coord is not supported by the FXC HLSL backend");
-                }
+        if (attributes.builtin == core::BuiltinValue::kSubgroupId ||
+            attributes.builtin == core::BuiltinValue::kSubgroupInvocationId ||
+            attributes.builtin == core::BuiltinValue::kSubgroupSize ||
+            attributes.builtin == core::BuiltinValue::kNumSubgroups) {
+            if (options.compiler == Options::Compiler::kFXC) {
+                return Failure("subgroups are not supported by FXC");
             }
         }
-    }
-
-    {
-        auto res = ValidateBindingOptions(options);
-        if (res != Success) {
-            return res.Failure();
+        if (attributes.builtin == core::BuiltinValue::kBarycentricCoord &&
+            options.compiler == Options::Compiler::kFXC) {
+            return Failure("barycentric_coord is not supported by the FXC HLSL backend");
+        }
+        if (attributes.builtin == core::BuiltinValue::kCullDistance) {
+            return Failure("cull_distance is not supported by the HLSL backend");
+        }
+        if (options.truncate_interstage_variables) {
+            if (attributes.location >= 30u) {
+                return Failure("too many locations for interstage variable truncation");
+            }
+        }
+        return Success;
+    };
+    // Check input attributes.
+    for (auto* param : ep_func->Params()) {
+        if (auto* str = param->Type()->As<core::type::Struct>()) {
+            for (auto* member : str->Members()) {
+                TINT_CHECK_RESULT(check_io_attributes(member->Attributes()));
+            }
+        } else {
+            TINT_CHECK_RESULT(check_io_attributes(param->Attributes()));
         }
     }
+    // Check output attributes.
+    if (auto* str = ep_func->ReturnType()->As<core::type::Struct>()) {
+        for (auto* member : str->Members()) {
+            TINT_CHECK_RESULT(check_io_attributes(member->Attributes()));
+        }
+    } else {
+        TINT_CHECK_RESULT(check_io_attributes(ep_func->ReturnAttributes()));
+    }
+
+    TINT_CHECK_RESULT(ValidateBindingOptions(options));
 
     return Success;
 }
 
 Result<Output> Generate(core::ir::Module& ir, const Options& options) {
     // Raise the core-dialect to HLSL-dialect
-    auto res = Raise(ir, options);
-    if (res != Success) {
-        return res.Failure();
-    }
+    TINT_CHECK_RESULT(Raise(ir, options));
 
     return Print(ir, options);
 }

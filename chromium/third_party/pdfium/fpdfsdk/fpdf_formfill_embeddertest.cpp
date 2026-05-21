@@ -24,7 +24,7 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-using pdfium::TextFormChecksum;
+using pdfium::kTextFormPng;
 
 using testing::_;
 using testing::InSequence;
@@ -1412,7 +1412,7 @@ TEST_F(FPDFFormFillEmbedderTest, FormText) {
     ScopedPage page = LoadScopedPage(0);
     ASSERT_TRUE(page);
     ScopedFPDFBitmap bitmap1 = RenderLoadedPage(page.get());
-    CompareBitmap(bitmap1.get(), 300, 300, TextFormChecksum());
+    CompareBitmapToPngWithExpectationSuffix(bitmap1.get(), kTextFormPng);
 
     // Click on the textfield
     EXPECT_EQ(
@@ -1471,7 +1471,8 @@ TEST_F(FPDFFormFillEmbedderTest, Bug1281) {
   ASSERT_TRUE(page);
 
   ScopedFPDFBitmap bitmap_normal = RenderLoadedPage(page.get());
-  CompareBitmap(bitmap_normal.get(), 200, 200, pdfium::Bug890322Checksum());
+  CompareBitmapToPngWithExpectationSuffix(bitmap_normal.get(),
+                                          pdfium::kBug890322Png);
 
   ScopedFPDFBitmap bitmap_reverse_byte_order =
       RenderLoadedPageWithFlags(page.get(), FPDF_REVERSE_BYTE_ORDER);
@@ -1646,7 +1647,7 @@ TEST_F(FPDFFormFillEmbedderTest, RemoveFormFieldHighlight) {
   ScopedPage page = LoadScopedPage(0);
   ASSERT_TRUE(page);
   ScopedFPDFBitmap bitmap1 = RenderLoadedPage(page.get());
-  CompareBitmap(bitmap1.get(), 300, 300, TextFormChecksum());
+  CompareBitmapToPngWithExpectationSuffix(bitmap1.get(), kTextFormPng);
 
   // Removing the highlight changes the rendering.
   FPDF_RemoveFormFieldHighlight(form_handle());
@@ -1656,7 +1657,7 @@ TEST_F(FPDFFormFillEmbedderTest, RemoveFormFieldHighlight) {
   // Restoring it gives the original rendering.
   SetInitialFormFieldHighlight(form_handle());
   ScopedFPDFBitmap bitmap3 = RenderLoadedPage(page.get());
-  CompareBitmap(bitmap3.get(), 300, 300, TextFormChecksum());
+  CompareBitmapToPngWithExpectationSuffix(bitmap3.get(), kTextFormPng);
 }
 
 TEST_F(FPDFFormFillEmbedderTest, HasFormInfoNone) {

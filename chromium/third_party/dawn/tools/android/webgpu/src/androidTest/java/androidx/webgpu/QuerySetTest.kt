@@ -1,3 +1,18 @@
+/*
+ * Copyright 2025 The Android Open Source Project
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package androidx.webgpu
 
 import androidx.test.filters.SmallTest
@@ -27,7 +42,7 @@ class QuerySetTest {
   @Before
   fun setup() = runBlocking {
     val gpu = createWebGpu(
-      deviceDescriptor = DeviceDescriptor(
+      deviceDescriptor = GPUDeviceDescriptor(
         requiredFeatures = intArrayOf(FeatureName.TimestampQuery),
         deviceLostCallbackExecutor = Executor(Runnable::run),
         deviceLostCallback = null,
@@ -53,7 +68,7 @@ class QuerySetTest {
   /** Helper to create a destination buffer for resolveQuerySet */
   private fun createResolveBuffer(size: Long): GPUBuffer {
     return device.createBuffer(
-      BufferDescriptor(
+      GPUBufferDescriptor(
         size = size,
         usage = BufferUsage.QueryResolve or BufferUsage.CopySrc  // CopySrc for potential readback.
       )
@@ -63,7 +78,7 @@ class QuerySetTest {
   @Test
   fun testCreateOcclusionQuerySet() {
     val querySet = device.createQuerySet(
-      QuerySetDescriptor(type = QueryType.Occlusion, count = QUERY_COUNT)
+      GPUQuerySetDescriptor(type = QueryType.Occlusion, count = QUERY_COUNT)
     )
     TestCase.assertNotNull(querySet)
     assertEquals(QueryType.Occlusion, querySet.type)
@@ -79,7 +94,7 @@ class QuerySetTest {
     }
 
     val querySet = device.createQuerySet(
-      QuerySetDescriptor(type = QueryType.Timestamp, count = QUERY_COUNT)
+      GPUQuerySetDescriptor(type = QueryType.Timestamp, count = QUERY_COUNT)
     )
     TestCase.assertNotNull(querySet)
     assertEquals(QueryType.Timestamp, querySet.type)
@@ -92,7 +107,7 @@ class QuerySetTest {
     // Attempting to create a QuerySet with count -1 should fail validation.
     device.pushErrorScope(ErrorFilter.Validation)
     val unusedQuerySet =
-      device.createQuerySet(QuerySetDescriptor(type = QueryType.Occlusion, count = -1))
+      device.createQuerySet(GPUQuerySetDescriptor(type = QueryType.Occlusion, count = -1))
     assertThrows(ValidationException::class.java) {
       runBlocking { device.popErrorScope() }
     }
@@ -101,7 +116,7 @@ class QuerySetTest {
   @Test
   fun testGetCount() {
     val querySet = device.createQuerySet(
-      QuerySetDescriptor(type = QueryType.Occlusion, count = QUERY_COUNT)
+      GPUQuerySetDescriptor(type = QueryType.Occlusion, count = QUERY_COUNT)
     )
 
     assertEquals(QUERY_COUNT, querySet.count)
@@ -110,7 +125,7 @@ class QuerySetTest {
   @Test
   fun testGetType() {
     val querySet = device.createQuerySet(
-      QuerySetDescriptor(type = QueryType.Occlusion, count = QUERY_COUNT)
+      GPUQuerySetDescriptor(type = QueryType.Occlusion, count = QUERY_COUNT)
     )
     assertEquals(QueryType.Occlusion, querySet.type)
     querySet.destroy()
@@ -120,7 +135,7 @@ class QuerySetTest {
       return  // Skip test if feature not available.
     }
     val tsQuerySet = device.createQuerySet(
-      QuerySetDescriptor(type = QueryType.Timestamp, count = QUERY_COUNT)
+      GPUQuerySetDescriptor(type = QueryType.Timestamp, count = QUERY_COUNT)
     )
     assertEquals(QueryType.Timestamp, tsQuerySet.type)
   }
@@ -129,7 +144,7 @@ class QuerySetTest {
   @Test
   fun testResolveQuerySetValid() {
     val querySet = device.createQuerySet(
-      QuerySetDescriptor(type = QueryType.Occlusion, count = QUERY_COUNT)
+      GPUQuerySetDescriptor(type = QueryType.Occlusion, count = QUERY_COUNT)
     )
     // Each individual query result is stored as a 64-bit unsigned integer.
     val destinationBuffer = createResolveBuffer((QUERY_COUNT * Long.SIZE_BYTES).toLong())
@@ -150,11 +165,11 @@ class QuerySetTest {
   @Test
   fun testResolveQuerySetInvalidDestinationUsage() {
     val querySet = device.createQuerySet(
-      QuerySetDescriptor(type = QueryType.Occlusion, count = QUERY_COUNT)
+      GPUQuerySetDescriptor(type = QueryType.Occlusion, count = QUERY_COUNT)
     )
     // Create buffer *without* QueryResolve usage.
     val invalidBuffer = device.createBuffer(
-      BufferDescriptor(size = 8, usage = BufferUsage.CopySrc)
+      GPUBufferDescriptor(size = 8, usage = BufferUsage.CopySrc)
     )
 
     val encoder = device.createCommandEncoder()
@@ -170,7 +185,7 @@ class QuerySetTest {
   @Test
   fun testResolveQuerySetDestinationTooSmall() {
     val querySet = device.createQuerySet(
-      QuerySetDescriptor(type = QueryType.Occlusion, count = QUERY_COUNT)
+      GPUQuerySetDescriptor(type = QueryType.Occlusion, count = QUERY_COUNT)
     )
     // GPUBuffer only has space for 1 result (8 bytes), but we try to resolve 2.
     val smallBuffer = createResolveBuffer((1 * Long.SIZE_BYTES).toLong())
@@ -188,7 +203,7 @@ class QuerySetTest {
   @Test
   fun testResolveQuerySetIndexOutOfBounds() {
     val querySet = device.createQuerySet(
-      QuerySetDescriptor(type = QueryType.Occlusion, count = QUERY_COUNT)
+      GPUQuerySetDescriptor(type = QueryType.Occlusion, count = QUERY_COUNT)
     )
     // Each individual query result is stored as a 64-bit unsigned integer.
     val destinationBuffer = createResolveBuffer(QUERY_COUNT * 8L)
@@ -207,7 +222,7 @@ class QuerySetTest {
   @Test
   fun testResolveQuerySetOffsetAlignment() {
     val querySet = device.createQuerySet(
-      QuerySetDescriptor(type = QueryType.Occlusion, count = QUERY_COUNT)
+      GPUQuerySetDescriptor(type = QueryType.Occlusion, count = QUERY_COUNT)
     )
 
     // Each individual query result is stored as a 64-bit unsigned integer.
@@ -237,8 +252,8 @@ class QuerySetTest {
   ) {
     // Create a 1x1 render target texture for the render pass.
     val renderTarget = device.createTexture(
-      TextureDescriptor(
-        size = Extent3D(1, 1, 1),
+      GPUTextureDescriptor(
+        size = GPUExtent3D(1, 1, 1),
         format = TextureFormat.RGBA8Unorm,
         usage = TextureUsage.RenderAttachment or TextureUsage.CopySrc
       )
@@ -247,8 +262,8 @@ class QuerySetTest {
 
     // Create a depth texture, required for the depth/stencil part of the render pass.
     val depthTexture = device.createTexture(
-      TextureDescriptor(
-        size = Extent3D(1, 1, 1),
+      GPUTextureDescriptor(
+        size = GPUExtent3D(1, 1, 1),
         format = TextureFormat.Depth24Plus,
         usage = TextureUsage.RenderAttachment
       )
@@ -258,20 +273,20 @@ class QuerySetTest {
     val queryCount = 1
     // Create the occlusion QuerySet used in the render pass.
     val querySet = device.createQuerySet(
-      QuerySetDescriptor(type = QueryType.Occlusion, count = queryCount)
+      GPUQuerySetDescriptor(type = QueryType.Occlusion, count = queryCount)
     )
 
     val resolveBufferSize = queryCount * Long.SIZE_BYTES.toLong()
     // Create a buffer for resolveQuerySet to write the 64-bit query result into.
     val resolveBuffer = device.createBuffer(
-      BufferDescriptor(
+      GPUBufferDescriptor(
         size = resolveBufferSize,
         usage = BufferUsage.QueryResolve or BufferUsage.CopySrc
       )
     )
     // Create a staging buffer for CPU readback (CopyDst for GPU copy, MapRead for CPU mapping).
     val readbackBuffer = device.createBuffer(
-      BufferDescriptor(
+      GPUBufferDescriptor(
         size = resolveBufferSize,
         usage = BufferUsage.CopyDst or BufferUsage.MapRead
       )
@@ -301,23 +316,23 @@ class QuerySetTest {
     """.trimIndent()
 
     val shaderModuleVert = device.createShaderModule(
-      ShaderModuleDescriptor(shaderSourceWGSL = ShaderSourceWGSL(vertexShaderCode))
+      GPUShaderModuleDescriptor(shaderSourceWGSL = GPUShaderSourceWGSL(vertexShaderCode))
     )
     val shaderModuleFrag = device.createShaderModule(
-      ShaderModuleDescriptor(shaderSourceWGSL = ShaderSourceWGSL(fragmentShaderCode))
+      GPUShaderModuleDescriptor(shaderSourceWGSL = GPUShaderSourceWGSL(fragmentShaderCode))
     )
 
     // Create a basic rendering pipeline.
     val pipeline = device.createRenderPipeline(
-      RenderPipelineDescriptor(
-        vertex = VertexState(module = shaderModuleVert, entryPoint = "main"),
-        fragment = FragmentState(
+      GPURenderPipelineDescriptor(
+        vertex = GPUVertexState(module = shaderModuleVert, entryPoint = "main"),
+        fragment = GPUFragmentState(
           module = shaderModuleFrag,
           entryPoint = "main",
-          targets = arrayOf(ColorTargetState(format = TextureFormat.RGBA8Unorm))
+          targets = arrayOf(GPUColorTargetState(format = TextureFormat.RGBA8Unorm))
         ),
-        primitive = PrimitiveState(topology = PrimitiveTopology.TriangleList),
-        depthStencil = DepthStencilState(
+        primitive = GPUPrimitiveState(topology = PrimitiveTopology.TriangleList),
+        depthStencil = GPUDepthStencilState(
           format = TextureFormat.Depth24Plus,
           depthWriteEnabled = OptionalBool.True,
           depthCompare = CompareFunction.Less
@@ -329,16 +344,16 @@ class QuerySetTest {
 
     // Begin render pass with the occlusion query set attached.
     val passEncoder = encoder.beginRenderPass(
-      RenderPassDescriptor(
+      GPURenderPassDescriptor(
         colorAttachments = arrayOf(
-          RenderPassColorAttachment(
+          GPURenderPassColorAttachment(
             view = renderTargetView,
             loadOp = LoadOp.Clear,
             storeOp = StoreOp.Store,
-            clearValue = Color(0.0, 0.0, 0.0, 1.0)
+            clearValue = GPUColor(0.0, 0.0, 0.0, 1.0)
           )
         ),
-        depthStencilAttachment = RenderPassDepthStencilAttachment(
+        depthStencilAttachment = GPURenderPassDepthStencilAttachment(
           view = depthView,
           depthLoadOp = LoadOp.Clear,
           depthStoreOp = StoreOp.Store,

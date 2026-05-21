@@ -542,8 +542,8 @@ RetainPtr<CFX_Face> CFX_FontMapper::UseInternalSubst(
     CFX_SubstFont* subst_font) {
   if (base_font < kNumStandardFonts) {
     if (!standard_faces_[base_font]) {
-      standard_faces_[base_font] = font_mgr_->NewFixedFace(
-          nullptr, font_mgr_->GetStandardFont(base_font), 0);
+      standard_faces_[base_font] = CFX_Face::New(
+          font_mgr_, nullptr, font_mgr_->GetStandardFont(base_font), 0);
     }
     return standard_faces_[base_font];
   }
@@ -556,15 +556,15 @@ RetainPtr<CFX_Face> CFX_FontMapper::UseInternalSubst(
   if (FontFamilyIsRoman(pitch_family)) {
     subst_font->UseChromeSerif();
     if (!generic_serif_face_) {
-      generic_serif_face_ =
-          font_mgr_->NewFixedFace(nullptr, font_mgr_->GetGenericSerifFont(), 0);
+      generic_serif_face_ = CFX_Face::New(font_mgr_, nullptr,
+                                          font_mgr_->GetGenericSerifFont(), 0);
     }
     return generic_serif_face_;
   }
   subst_font->family_ = "Chrome Sans";
   if (!generic_sans_face_) {
     generic_sans_face_ =
-        font_mgr_->NewFixedFace(nullptr, font_mgr_->GetGenericSansFont(), 0);
+        CFX_Face::New(font_mgr_, nullptr, font_mgr_->GetGenericSansFont(), 0);
   }
   return generic_sans_face_;
 }
@@ -902,9 +902,9 @@ RetainPtr<CFX_Face> CFX_FontMapper::GetCachedTTCFace(void* font_handle,
                                                      size_t data_size) {
   CHECK_GE(ttc_size, data_size);
   uint32_t checksum = GetChecksumFromTT(font_handle);
-  RetainPtr<CFX_FontMgr::FontDesc> font_desc =
-      font_mgr_->GetCachedTTCFontDesc(ttc_size, checksum);
-  if (!font_desc) {
+  RetainPtr<CFX_FontMgr::FontCacheEntry> cache_entry =
+      font_mgr_->GetTTCFontCacheEntry(ttc_size, checksum);
+  if (!cache_entry) {
     auto font_data = FixedSizeDataVector<uint8_t>::Uninit(ttc_size);
     size_t size =
         font_info_->GetFontData(font_handle, kTableTTCF, font_data.span());
@@ -912,24 +912,24 @@ RetainPtr<CFX_Face> CFX_FontMapper::GetCachedTTCFace(void* font_handle,
       return nullptr;
     }
 
-    font_desc = font_mgr_->AddCachedTTCFontDesc(ttc_size, checksum,
-                                                std::move(font_data));
+    cache_entry = font_mgr_->AddTTCFontCacheEntry(ttc_size, checksum,
+                                                  std::move(font_data));
   }
   size_t font_offset = ttc_size - data_size;
-  size_t face_index =
-      GetTTCIndex(font_desc->FontData().first(ttc_size), font_offset);
-  RetainPtr<CFX_Face> face(font_desc->GetFace(face_index));
+  uint32_t face_index =
+      GetTTCIndex(cache_entry->FontData().first(ttc_size), font_offset);
+  RetainPtr<CFX_Face> face(cache_entry->GetFace(face_index));
   if (face) {
     return face;
   }
 
-  face = font_mgr_->NewFixedFace(
-      font_desc, font_desc->FontData().first(ttc_size), face_index);
+  face = CFX_Face::New(font_mgr_, cache_entry,
+                       cache_entry->FontData().first(ttc_size), face_index);
   if (!face) {
     return nullptr;
   }
 
-  font_desc->SetFace(face_index, face.Get());
+  cache_entry->SetFace(face_index, face.Get());
   return face;
 }
 
@@ -938,30 +938,30 @@ RetainPtr<CFX_Face> CFX_FontMapper::GetCachedFace(void* font_handle,
                                                   int weight,
                                                   bool is_italic,
                                                   size_t data_size) {
-  RetainPtr<CFX_FontMgr::FontDesc> font_desc =
-      font_mgr_->GetCachedFontDesc(subst_name, weight, is_italic);
-  if (!font_desc) {
+  RetainPtr<CFX_FontMgr::FontCacheEntry> cache_entry =
+      font_mgr_->GetFontCacheEntry(subst_name, weight, is_italic);
+  if (!cache_entry) {
     auto font_data = FixedSizeDataVector<uint8_t>::Uninit(data_size);
     size_t size = font_info_->GetFontData(font_handle, 0, font_data.span());
     if (size != data_size) {
       return nullptr;
     }
 
-    font_desc = font_mgr_->AddCachedFontDesc(subst_name, weight, is_italic,
-                                             std::move(font_data));
+    cache_entry = font_mgr_->AddFontCacheEntry(subst_name, weight, is_italic,
+                                               std::move(font_data));
   }
-  RetainPtr<CFX_Face> face(font_desc->GetFace(0));
+  RetainPtr<CFX_Face> face(cache_entry->GetFace(0));
   if (face) {
     return face;
   }
 
-  face = font_mgr_->NewFixedFace(font_desc,
-                                 font_desc->FontData().first(data_size), 0);
+  face = CFX_Face::New(font_mgr_, cache_entry,
+                       cache_entry->FontData().first(data_size), 0);
   if (!face) {
     return nullptr;
   }
 
-  font_desc->SetFace(0, face.Get());
+  cache_entry->SetFace(0, face.Get());
   return face;
 }
 

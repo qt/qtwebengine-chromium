@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import './Table.js';
 import '../../../../ui/components/linkifier/linkifier.js';
 
 import * as i18n from '../../../../core/i18n/i18n.js';
@@ -12,17 +11,18 @@ import type * as Protocol from '../../../../generated/protocol.js';
 import type {SlowCSSSelectorInsightModel} from '../../../../models/trace/insights/SlowCSSSelector.js';
 import * as Trace from '../../../../models/trace/trace.js';
 import type * as Linkifier from '../../../../ui/components/linkifier/linkifier.js';
+import * as UI from '../../../../ui/legacy/legacy.js';
 import * as Lit from '../../../../ui/lit/lit.js';
 
 import {BaseInsightComponent} from './BaseInsightComponent.js';
-import type {TableData} from './Table.js';
+import {Table} from './Table.js';
 
 const {UIStrings, i18nString} = Trace.Insights.Models.SlowCSSSelector;
 
 const {html} = Lit;
+const {widgetConfig} = UI.Widget;
 
 export class SlowCSSSelector extends BaseInsightComponent<SlowCSSSelectorInsightModel> {
-  static override readonly litTagName = Lit.StaticHtml.literal`devtools-performance-slow-css-selector`;
   override internalName = 'slow-css-selector';
   #selectorLocations = new Map<string, Protocol.CSS.SourceRange[]>();
 
@@ -107,8 +107,8 @@ export class SlowCSSSelector extends BaseInsightComponent<SlowCSSSelectorInsight
     // clang-format off
     const sections = [html`
       <div class="insight-section">
-        <devtools-performance-table
-          .data=${{
+        <devtools-widget .widgetConfig=${widgetConfig(Table, {
+           data: {
             insight: this,
             headers: [i18nString(UIStrings.total), ''],
             rows: [
@@ -116,8 +116,8 @@ export class SlowCSSSelector extends BaseInsightComponent<SlowCSSSelectorInsight
               {values: [i18nString(UIStrings.matchCount), this.model.totalMatchCount]},
               {values: [i18nString(UIStrings.elapsed), i18n.TimeUtilities.millisToString(this.model.totalElapsedMs)]},
             ],
-          } as TableData}>
-        </devtools-performance-table>
+          }})}>
+        </devtools-widget>
       </div>
     `];
     // clang-format on
@@ -127,14 +127,14 @@ export class SlowCSSSelector extends BaseInsightComponent<SlowCSSSelectorInsight
       // clang-format off
       sections.push(html`
         <div class="insight-section">
-          <devtools-performance-table
-            .data=${{
+          <devtools-widget .widgetConfig=${widgetConfig(Table, {
+           data: {
               insight: this,
               headers: [`${i18nString(UIStrings.topSelectorElapsedTime)}: ${time(Trace.Types.Timing.Micro(selector['elapsed (us)']))}`],
               rows: [{
                 values: [html`${selector.selector} ${Lit.Directives.until(this.getSelectorLinks(cssModel, selector))}`]}]
-            }} as TableData>
-          </devtools-performance-table>
+            }})}>
+          </devtools-widget>
         </div>
       `);
       // clang-format on
@@ -145,15 +145,15 @@ export class SlowCSSSelector extends BaseInsightComponent<SlowCSSSelectorInsight
       // clang-format off
       sections.push(html`
         <div class="insight-section">
-          <devtools-performance-table
-            .data=${{
+          <devtools-widget .widgetConfig=${widgetConfig(Table, {
+           data: {
               insight: this,
               headers: [`${i18nString(UIStrings.topSelectorMatchAttempt)}: ${selector['match_attempts']}`],
               rows: [{
                   values: [html`${selector.selector} ${Lit.Directives.until(this.getSelectorLinks(cssModel, selector))}` as unknown as string],
               }]
-            }} as TableData}>
-          </devtools-performance-table>
+            }})}>
+          </devtools-widget>
         </div>
       `);
       // clang-format on
@@ -162,11 +162,3 @@ export class SlowCSSSelector extends BaseInsightComponent<SlowCSSSelectorInsight
     return html`${sections}`;
   }
 }
-
-declare global {
-  interface HTMLElementTagNameMap {
-    'devtools-performance-slow-css-selector': SlowCSSSelector;
-  }
-}
-
-customElements.define('devtools-performance-slow-css-selector', SlowCSSSelector);

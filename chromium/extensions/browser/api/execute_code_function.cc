@@ -52,7 +52,7 @@ ExecuteCodeFunction::~ExecuteCodeFunction() {
 
 void ExecuteCodeFunction::DidLoadAndLocalizeFile(
     const std::string& file,
-    std::vector<std::unique_ptr<std::string>> data,
+    std::vector<std::string> data,
     std::optional<std::string> load_error) {
   if (load_error) {
     // TODO(viettrungluu): bug: there's no particular reason the path should be
@@ -63,14 +63,15 @@ void ExecuteCodeFunction::DidLoadAndLocalizeFile(
 
   DCHECK_EQ(1u, data.size());
   auto& file_data = data.front();
-  if (!base::IsStringUTF8(*file_data)) {
+  if (!base::IsStringUTF8(file_data)) {
     Respond(Error(ErrorUtils::FormatErrorMessage(kBadFileEncodingError, file)));
     return;
   }
 
   std::string error;
-  if (!Execute(*file_data, &error))
+  if (!Execute(file_data, &error)) {
     Respond(Error(std::move(error)));
+  }
 
   // If Execute() succeeds, the function will respond in
   // OnExecuteCodeFinished().
@@ -265,7 +266,7 @@ void ExecuteCodeFunction::OnExecuteCodeFinished(
 
   // Place the root frame result at the beginning.
   std::iter_swap(root_frame_result, results.begin());
-  base::Value::List result_list;
+  base::ListValue result_list;
   for (auto& result : results) {
     if (result.error.empty())
       result_list.Append(std::move(result.value));

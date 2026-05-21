@@ -68,15 +68,15 @@ const UIStrings = {
   /**
    * @description A context menu item in the Data Grid of a data grid
    */
-  sortByString: 'Sort By',
+  sortByString: 'Sort by',
   /**
    * @description A context menu item in data grids to reset the columns to their default weight
    */
-  resetColumns: 'Reset Columns',
+  resetColumns: 'Reset columns',
   /**
    * @description A context menu item in data grids to list header options.
    */
-  headerOptions: 'Header Options',
+  headerOptions: 'Header options',
   /**
    * @description Text to refresh the page
    */
@@ -1679,6 +1679,8 @@ export const enum Events {
   OPENED_NODE = 'OpenedNode',
   SORTING_CHANGED = 'SortingChanged',
   PADDING_CHANGED = 'PaddingChanged',
+  EXPANDED_NODE = 'ExpandedNode',
+  COLLAPSED_NODE = 'CollapsedNode',
 }
 
 export interface EventTypes<T> {
@@ -1687,6 +1689,8 @@ export interface EventTypes<T> {
   [Events.OPENED_NODE]: DataGridNode<T>;
   [Events.SORTING_CHANGED]: void;
   [Events.PADDING_CHANGED]: void;
+  [Events.EXPANDED_NODE]: DataGridNode<T>;
+  [Events.COLLAPSED_NODE]: DataGridNode<T>;
 }
 
 export enum Order {
@@ -2227,6 +2231,7 @@ export class DataGridNode<T> {
     for (let i = 0; i < this.children.length; ++i) {
       this.children[i].revealed = false;
     }
+    this.dataGrid?.dispatchEventToListeners(Events.COLLAPSED_NODE, this);
   }
 
   collapseRecursively(): void {
@@ -2284,6 +2289,7 @@ export class DataGridNode<T> {
     }
 
     this.expandedInternal = true;
+    this.dataGrid?.dispatchEventToListeners(Events.EXPANDED_NODE, this);
   }
 
   expandRecursively(): void {

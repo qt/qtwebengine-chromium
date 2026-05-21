@@ -115,7 +115,8 @@ class TargetHandler : public DevToolsDomainHandler,
       const std::string& context_id,
       std::unique_ptr<DisposeBrowserContextCallback> callback) override;
   Response GetBrowserContexts(
-      std::unique_ptr<protocol::Array<String>>* browser_context_ids) override;
+      std::unique_ptr<protocol::Array<String>>* browser_context_ids,
+      std::optional<std::string>* default_browser_context_id) override;
   Response CreateTarget(const std::string& url,
                         std::optional<int> left,
                         std::optional<int> top,
@@ -128,6 +129,7 @@ class TargetHandler : public DevToolsDomainHandler,
                         std::optional<bool> background,
                         std::optional<bool> for_tab,
                         std::optional<bool> hidden,
+                        std::optional<bool> focus,
                         std::string* out_target_id) override;
   Response GetTargets(
       std::unique_ptr<protocol::Array<protocol::Target::FilterEntry>> filter,

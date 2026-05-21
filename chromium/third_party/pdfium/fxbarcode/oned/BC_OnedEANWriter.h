@@ -5,6 +5,8 @@
 #ifndef FXBARCODE_ONED_BC_ONEDEANWRITER_H_
 #define FXBARCODE_ONED_BC_ONEDEANWRITER_H_
 
+#include <stdint.h>
+
 #include "fxbarcode/oned/BC_OneDimWriter.h"
 
 class CBC_OneDimEANWriter : public CBC_OneDimWriter {

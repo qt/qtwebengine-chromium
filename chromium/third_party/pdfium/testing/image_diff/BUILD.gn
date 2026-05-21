@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("../../pdfium.gni")
+import("../../testing/test.gni")
 
 source_set("image_diff") {
   testonly = true
@@ -25,4 +26,10 @@ source_set("image_diff") {
     "../../:pdfium_noshorten_config",
   ]
   public_deps = [ "../../core/fxcrt" ]
+}
+
+pdfium_unittest_source_set("unittests") {
+  sources = [ "image_diff_png_unittests.cpp" ]
+  deps = [ ":image_diff" ]
+  pdfium_root_dir = "../../"
 }

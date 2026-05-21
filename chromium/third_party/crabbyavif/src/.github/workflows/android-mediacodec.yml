@@ -48,14 +48,40 @@ jobs:
       working-directory: ./sys/libyuv-sys
       run: ./libyuv_android.sh ${{ steps.setup-ndk.outputs.ndk-path }}
 
+    - name: Build googletest for Android
+      working-directory: ./external
+      run: ./googletest_android.sh ${{ steps.setup-ndk.outputs.ndk-path }}
+
     - name: Install cargo dinghy
       run: cargo install cargo-dinghy --force
+
+    - name: Install cargo ndk
+      run: cargo install cargo-ndk --force
 
     - name: Run the tests on an emulator
       uses: reactivecircus/android-emulator-runner@1dcd0090116d15e7c562f8db72807de5e036a4ed # v2.34.0
       with:
-        script: cargo dinghy -p auto-android-x86_64-latest -d android test --no-default-features --features android_mediacodec,heic,libyuv --target x86_64-linux-android -- --skip test_conformance
+        script: |
+          # Run the rust tests.
+          cargo dinghy -p auto-android-x86_64-latest -d android test --no-default-features --features android_mediacodec,heic,libyuv --target x86_64-linux-android -- --skip test_conformance
+
+          # Build the library with C API enabled.
+          export ANDROID_NDK_HOME=${{ steps.setup-ndk.outputs.ndk-path }}
+          cargo ndk -t x86_64-linux-android build --no-default-features --features capi,heic,android_mediacodec,libyuv --release
+
+          # Build the tests with C API enabled.
+          cmake -DCMAKE_TOOLCHAIN_FILE=${{ steps.setup-ndk.outputs.ndk-path }}/build/cmake/android.toolchain.cmake -DANDROID_NDK=${{ steps.setup-ndk.outputs.ndk-path }} -DANDROID_ABI=x86_64 -DANDROID_PLATFORM=android-33 -DANDROID_STL=c++_static -S c_api_tests -B c_build_android
+          make -C c_build_android decoder_tests
+
+          # Push the test binary on to the emulator.
+          adb push c_build_android/decoder_tests /data/local/tmp
+
+          # Run the test (the test data has already been copied by dinghy when
+          # running the rust tests).
+          adb shell /data/local/tmp/decoder_tests /data/local/tmp/dinghy/crabby-avif/tests/data/
+
         api-level: 34
         force-avd-creation: false
         arch: x86_64
         ndk: 25.2.9519653
+

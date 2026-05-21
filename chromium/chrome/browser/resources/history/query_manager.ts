@@ -25,12 +25,6 @@ export function convertDateToQueryValue(date: Date) {
   return `${fullYear}-${twoDigits(month)}-${twoDigits(day)}`;
 }
 
-declare global {
-  interface HTMLElementTagNameMap {
-    'history-query-manager': HistoryQueryManagerElement;
-  }
-}
-
 export class HistoryQueryManagerElement extends CrLitElement {
   static get is() {
     return 'history-query-manager';
@@ -53,8 +47,18 @@ export class HistoryQueryManagerElement extends CrLitElement {
     };
   }
 
-  accessor queryState: QueryState;
-  accessor queryResult: QueryResult;
+  accessor queryState: QueryState = {
+    incremental: false,
+    querying: false,
+    searchTerm: '',
+    after: null,
+    includeUserVisits: true,
+    includeActorVisits: true,
+  };
+  accessor queryResult: QueryResult = {
+    info: null,
+    value: [],
+  };
   private eventTracker_: EventTracker = new EventTracker();
   /**
    * When this is non-null, that means there's a QueryResult that's pending
@@ -63,19 +67,6 @@ export class HistoryQueryManagerElement extends CrLitElement {
    * these trivial queries the user typed through.
    */
   private resultPendingMetricsTimestamp_: number|null = null;
-
-  constructor() {
-    super();
-
-    this.queryState = {
-      // Whether the most recent query was incremental.
-      incremental: false,
-      // A query is initiated by page load.
-      querying: true,
-      searchTerm: '',
-      after: '',
-    };
-  }
 
   override connectedCallback() {
     super.connectedCallback();
@@ -120,12 +111,19 @@ export class HistoryQueryManagerElement extends CrLitElement {
         browserService.handler.queryHistoryContinuation() :
         browserService.handler.queryHistory(
             this.queryState.searchTerm, RESULTS_PER_PAGE,
-            afterTimestamp ? afterTimestamp : null);
+            afterTimestamp ? afterTimestamp : null,
+            this.queryState.includeUserVisits,
+            this.queryState.includeActorVisits);
     // Ignore rejected (cancelled) queries.
     promise.then((result) => this.onQueryResult_(result.results), () => {});
   }
 
-  private onChangeQuery_(e: CustomEvent<{search: string, after: string}>) {
+  private onChangeQuery_(e: CustomEvent<{
+    search: string,
+    after: string,
+    includeUserVisits?: boolean,
+    includeActorVisits?: boolean,
+  }>) {
     const changes = e.detail;
     let needsUpdate = false;
 
@@ -140,6 +138,24 @@ export class HistoryQueryManagerElement extends CrLitElement {
         changes.after !== null && changes.after !== this.queryState.after &&
         (Boolean(changes.after) || Boolean(this.queryState.after))) {
       this.queryState = {...this.queryState, after: changes.after};
+      needsUpdate = true;
+    }
+
+    if (changes.includeUserVisits !== undefined &&
+        changes.includeUserVisits !== this.queryState.includeUserVisits) {
+      this.queryState = {
+        ...this.queryState,
+        includeUserVisits: changes.includeUserVisits,
+      };
+      needsUpdate = true;
+    }
+
+    if (changes.includeActorVisits !== undefined &&
+        changes.includeActorVisits !== this.queryState.includeActorVisits) {
+      this.queryState = {
+        ...this.queryState,
+        includeActorVisits: changes.includeActorVisits,
+      };
       needsUpdate = true;
     }
 
@@ -192,6 +208,12 @@ export class HistoryQueryManagerElement extends CrLitElement {
     // Clear this regardless if it was recorded or not, because we don't want
     // to "try again" to record the same query.
     this.resultPendingMetricsTimestamp_ = null;
+  }
+}
+
+declare global {
+  interface HTMLElementTagNameMap {
+    'history-query-manager': HistoryQueryManagerElement;
   }
 }
 

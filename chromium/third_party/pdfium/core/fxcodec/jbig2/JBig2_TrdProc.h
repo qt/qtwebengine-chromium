@@ -26,19 +26,19 @@ class JBig2ArithCtx;
 struct JBig2HuffmanCode;
 
 struct JBig2IntDecoderState {
-  JBig2IntDecoderState();
+  explicit JBig2IntDecoderState(uint8_t SBSYMCODELEN);
   ~JBig2IntDecoderState();
 
-  UnownedPtr<CJBig2_ArithIntDecoder> IADT;
-  UnownedPtr<CJBig2_ArithIntDecoder> IAFS;
-  UnownedPtr<CJBig2_ArithIntDecoder> IADS;
-  UnownedPtr<CJBig2_ArithIntDecoder> IAIT;
-  UnownedPtr<CJBig2_ArithIntDecoder> IARI;
-  UnownedPtr<CJBig2_ArithIntDecoder> IARDW;
-  UnownedPtr<CJBig2_ArithIntDecoder> IARDH;
-  UnownedPtr<CJBig2_ArithIntDecoder> IARDX;
-  UnownedPtr<CJBig2_ArithIntDecoder> IARDY;
-  UnownedPtr<CJBig2_ArithIaidDecoder> IAID;
+  std::unique_ptr<CJBig2_ArithIntDecoder> IADT;
+  std::unique_ptr<CJBig2_ArithIntDecoder> IAFS;
+  std::unique_ptr<CJBig2_ArithIntDecoder> IADS;
+  std::unique_ptr<CJBig2_ArithIntDecoder> IAIT;
+  std::unique_ptr<CJBig2_ArithIntDecoder> IARI;
+  std::unique_ptr<CJBig2_ArithIntDecoder> IARDW;
+  std::unique_ptr<CJBig2_ArithIntDecoder> IARDH;
+  std::unique_ptr<CJBig2_ArithIntDecoder> IARDX;
+  std::unique_ptr<CJBig2_ArithIntDecoder> IARDY;
+  std::unique_ptr<CJBig2_ArithIaidDecoder> IAID;
 };
 
 enum JBig2Corner {
@@ -60,7 +60,7 @@ class CJBig2_TRDProc {
   std::unique_ptr<CJBig2_Image> DecodeArith(
       CJBig2_ArithDecoder* pArithDecoder,
       pdfium::span<JBig2ArithCtx> grContexts,
-      JBig2IntDecoderState* pIDS);
+      JBig2IntDecoderState& state);
 
   bool SBHUFF;
   bool SBREFINE;
@@ -68,7 +68,6 @@ class CJBig2_TRDProc {
   bool TRANSPOSED;
   bool SBDEFPIXEL;
   int8_t SBDSOFFSET;
-  uint8_t SBSYMCODELEN;
   uint32_t SBW;
   uint32_t SBH;
   uint32_t SBNUMINSTANCES;

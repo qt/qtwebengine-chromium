@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 #
-# Copyright (c) 2019-2022 Valve Corporation
-# Copyright (c) 2019-2022 LunarG, Inc.
+# Copyright (c) 2019-2026 Valve Corporation
+# Copyright (c) 2019-2026 LunarG, Inc.
 # Copyright (c) 2019-2022 Google Inc.
 # Copyright (c) 2023-2024 RasterGrid Kft.
 #
@@ -25,9 +25,9 @@ from collections import OrderedDict
 
 LICENSE_HEADER = '''
 /*
- * Copyright (c) 2019-2022 The Khronos Group Inc.
- * Copyright (c) 2019-2022 Valve Corporation
- * Copyright (c) 2019-2022 LunarG, Inc.
+ * Copyright (c) 2019-2026 The Khronos Group Inc.
+ * Copyright (c) 2019-2026 Valve Corporation
+ * Copyright (c) 2019-2026 LunarG, Inc.
  * Copyright (c) 2023-2024 RasterGrid Kft.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -76,14 +76,18 @@ std::string to_hex_str(Printer &p, const T i) {
 STRUCTURES_TO_GEN = ['VkExtent3D', 'VkExtent2D', 'VkPhysicalDeviceLimits', 'VkPhysicalDeviceFeatures', 'VkPhysicalDeviceSparseProperties',
                      'VkSurfaceCapabilitiesKHR', 'VkSurfaceFormatKHR', 'VkLayerProperties', 'VkPhysicalDeviceToolProperties', 'VkFormatProperties',
                      'VkSurfacePresentScalingCapabilitiesKHR', 'VkSurfacePresentModeCompatibilityKHR', 'VkPhysicalDeviceHostImageCopyProperties',
-                     'VkVideoProfileInfoKHR', 'VkVideoCapabilitiesKHR', 'VkVideoFormatPropertiesKHR']
+                     'VkVideoProfileInfoKHR', 'VkVideoCapabilitiesKHR', 'VkVideoFormatPropertiesKHR', 'VkCooperativeMatrixPropertiesKHR',
+                     'VkPhysicalDeviceFragmentShadingRateKHR', 'VkMultisamplePropertiesEXT',
+                     'VkDisplayPropertiesKHR', 'VkDisplayPlanePropertiesKHR', 'VkDisplayPlaneCapabilitiesKHR', 'VkDisplayModePropertiesKHR',
+                     'VkDisplayModeParametersKHR']
+
 ENUMS_TO_GEN = ['VkResult', 'VkFormat', 'VkPresentModeKHR',
-                'VkPhysicalDeviceType', 'VkImageTiling']
+                'VkPhysicalDeviceType', 'VkImageTiling', 'VkTimeDomainKHR']
 FLAGS_TO_GEN = ['VkSurfaceTransformFlagsKHR', 'VkCompositeAlphaFlagsKHR', 'VkSurfaceCounterFlagsEXT', 'VkQueueFlags',
                 'VkDeviceGroupPresentModeFlagsKHR', 'VkFormatFeatureFlags', 'VkFormatFeatureFlags2', 'VkMemoryPropertyFlags', 'VkMemoryHeapFlags']
 FLAG_STRINGS_TO_GEN = ['VkQueueFlags']
 
-STRUCT_SHORT_VERSIONS_TO_GEN = ['VkExtent3D']
+STRUCT_SHORT_VERSIONS_TO_GEN = ['VkExtent3D', 'VkExtent2D']
 
 STRUCT_COMPARISONS_TO_GEN = ['VkSurfaceFormatKHR', 'VkSurfaceFormat2KHR', 'VkSurfaceCapabilitiesKHR',
                              'VkSurfaceCapabilities2KHR', 'VkSurfaceCapabilities2EXT']
@@ -99,7 +103,7 @@ PORTABILITY_STRUCTS = ['VkPhysicalDevicePortabilitySubsetFeaturesKHR', 'VkPhysic
 PREDEFINED_TYPES = ['char', 'VkBool32', 'uint32_t', 'uint8_t', 'int32_t',
                     'float', 'uint64_t', 'size_t', 'VkDeviceSize', 'int64_t']
 
-NAMES_TO_IGNORE = ['sType', 'pNext']
+NAMES_TO_IGNORE = ['sType', 'pNext', 'displayMode', 'display', 'currentDisplay']
 
 EXTENSION_TYPE_INSTANCE = 'instance'
 EXTENSION_TYPE_DEVICE = 'device'
@@ -228,9 +232,11 @@ class VulkanInfoGenerator(BaseGenerator):
 
             if bitmask.flagName in FLAG_STRINGS_TO_GEN:
                 out.extend(self.PrintBitMaskToString(bitmask, bitmask.flagName))
-
+        # make sure dump functions for nested structures are declared before use
         for s in (x for x in types_to_gen if x in self.vk.structs and x not in STRUCT_BLACKLIST):
-            out.extend(self.PrintStructure(self.vk.structs[s]))
+            out.extend(self.PrintStructure(self.vk.structs[s], True))
+        for s in (x for x in types_to_gen if x in self.vk.structs and x not in STRUCT_BLACKLIST):
+            out.extend(self.PrintStructure(self.vk.structs[s], False))
 
         for key, value in EXTENSION_CATEGORIES.items():
             out.extend(self.PrintChainStruct(key, extension_types[key], value))
@@ -781,7 +787,7 @@ std::vector<std::unique_ptr<AppVideoProfile>> enumerate_supported_video_profiles
         return out
 
 
-    def PrintStructure(self,struct):
+    def PrintStructure(self,struct, declare_only):
         if len(struct.members) == 0:
             return []
         out = []
@@ -790,8 +796,12 @@ std::vector<std::unique_ptr<AppVideoProfile>> enumerate_supported_video_profiles
         for v in struct.members:
             if (v.type in PREDEFINED_TYPES or v.type in STRUCT_BLACKLIST) and (v.length is None or v.type in ['char'] or v.fixedSizeArray[0] in ['VK_UUID_SIZE', 'VK_LUID_SIZE']):
                 max_key_len = max(max_key_len, len(v.name))
-
-        out.append(f'void Dump{struct.name}(Printer &p, std::string name, const {struct.name} &obj) {{\n')
+        out.append(f'void Dump{struct.name}(Printer &p, std::string name, const {struct.name} &obj)')
+        if declare_only:
+            out.append(';\n')
+            out.append(self.AddGuardFooter(struct))
+            return out
+        out.append(' {\n')
         if struct.name == 'VkPhysicalDeviceLimits':
             out.append('    if (p.Type() == OutputType::json)\n')
             out.append('        p.ObjectStart("limits");\n')
@@ -807,13 +817,19 @@ std::vector<std::unique_ptr<AppVideoProfile>> enumerate_supported_video_profiles
         if max_key_len > 0:
             out.append(f'    p.SetMinKeyWidth({max_key_len});\n')
         for v in struct.members:
+            # strings
+            if v.type == 'char':
+                if v.pointer == True:
+                    out.append(f'    if (obj.{v.name} == nullptr) {{')
+                    out.append(f'        p.PrintKeyString("{v.name}", "NULL");\n')
+                    out.append('    } else {')
+                out.append(f'    p.PrintKeyString("{v.name}", obj.{v.name});\n')
+                if v.pointer == True:
+                        out.append('    }')
             # arrays
-            if v.length is not None:
-                # strings
-                if v.type == 'char':
-                    out.append(f'    p.PrintKeyString("{v.name}", obj.{v.name});\n')
+            elif v.length is not None:
                 # uuid's
-                elif v.type == 'uint8_t' and (v.fixedSizeArray[0] == 'VK_LUID_SIZE' or v.fixedSizeArray[0] == 'VK_UUID_SIZE'):  # VK_UUID_SIZE
+                if v.type == 'uint8_t' and (v.fixedSizeArray[0] == 'VK_LUID_SIZE' or v.fixedSizeArray[0] == 'VK_UUID_SIZE'):  # VK_UUID_SIZE
                     if v.fixedSizeArray[0] == 'VK_LUID_SIZE':
                         out.append('    if (obj.deviceLUIDValid) { // special case\n')
                     out.append(f'    p.PrintKeyValue("{v.name}", obj.{v.name});\n')

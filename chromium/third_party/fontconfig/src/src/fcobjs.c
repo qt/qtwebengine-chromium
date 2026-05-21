@@ -103,7 +103,7 @@ retry:
 	if (!ot)
 	    return NULL;
 
-	ot->object.object = (char *)FcStrdup (str);
+	ot->object.object = (char *)FcStrCopy ((const FcChar8 *)str);
 	ot->object.type = FcTypeUnknown;
 	ot->id = fc_atomic_int_add (next_id, +1);
 	if (ot->id < (FC_MAX_BASE_OBJECT + FC_EXT_OBJ_INDEX)) {

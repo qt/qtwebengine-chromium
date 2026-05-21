@@ -11,7 +11,6 @@
 #include "base/logging.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
-#include "base/types/cxx23_to_underlying.h"
 #include "build/build_config.h"
 #include "build/chromecast_buildflags.h"
 #include "media/base/key_systems.h"
@@ -39,6 +38,19 @@ namespace {
 // A count of all MediaPlayers created in the current process. Used to generate
 // unique IDs for the purpose of tracking UKMs.
 static base::AtomicSequenceNumber g_next_player_id;
+
+std::string GetDemuxerNameStringForTrackChangeMetrics(DemuxerType type) {
+  switch (type) {
+    case DemuxerType::kFFmpegDemuxer:
+      return "FFmpegDemuxer";
+    case DemuxerType::kChunkDemuxer:
+      return "ChunkDemuxer";
+    case DemuxerType::kManifestDemuxer:
+      return "ManifestDemuxer";
+    default:
+      return "UnknownDemuxer";
+  }
+}
 
 }  // namespace
 
@@ -102,7 +114,7 @@ MediaMetricsProvider::~MediaMetricsProvider() {
   if (!media_info_->is_mse) {
     builder.SetURLScheme(static_cast<int64_t>(media_info_->url_scheme));
     if (container_name_)
-      builder.SetContainerName(base::to_underlying(*container_name_));
+      builder.SetContainerName(std::to_underlying(*container_name_));
   }
 
   if (time_to_metadata_ != kNoTimestamp)
@@ -111,6 +123,11 @@ MediaMetricsProvider::~MediaMetricsProvider() {
     builder.SetTimeToFirstFrame(time_to_first_frame_.InMilliseconds());
   if (time_to_play_ready_ != kNoTimestamp)
     builder.SetTimeToPlayReady(time_to_play_ready_.InMilliseconds());
+
+  if (visibility_ratio_at_playback_start_.has_value()) {
+    builder.SetVisibilityRatioAtPlaybackStart(
+        std::round(visibility_ratio_at_playback_start_.value() * 100));
+  }
 
   builder.Record(ukm_recorder);
   ReportPipelineUMA();
@@ -184,6 +201,15 @@ void MediaMetricsProvider::ReportPipelineUMA() {
                                   PIPELINE_STATUS_MAX + 1);
   }
 
+  // Report the audio decoder type used for playback.
+  if (uma_info_.audio_pipeline_info.decoder_type !=
+          AudioDecoderType::kUnknown &&
+      uma_info_.audio_pipeline_info.decoder_type !=
+          AudioDecoderType::kTesting) {
+    base::UmaHistogramEnumeration("Media.Audio.DecoderType",
+                                  uma_info_.audio_pipeline_info.decoder_type);
+  }
+
   // Report whether video decoder fallback happened for each video codec, but
   // only if a video decoder was reported.
   if (uma_info_.video_pipeline_info.decoder_type !=
@@ -195,13 +221,22 @@ void MediaMetricsProvider::ReportPipelineUMA() {
 
   // Report whether this player ever saw a playback event. Used to measure the
   // effectiveness of efforts to reduce loaded-but-never-used players.
-  if (uma_info_.has_reached_have_enough)
+  if (uma_info_.has_reached_have_enough) {
     base::UmaHistogramBoolean("Media.HasEverPlayed", uma_info_.has_ever_played);
+  }
 
   // Report whether an encrypted playback is in incognito window, excluding
   // never-used players.
-  if (uma_info_.is_eme && uma_info_.has_ever_played)
+  if (uma_info_.is_eme && uma_info_.has_ever_played) {
     base::UmaHistogramBoolean("Media.EME.IsIncognito", uma_info_.is_incognito);
+  }
+
+  if (uma_info_.has_track_change_) {
+    base::UmaHistogramSparse(
+        "Media.TrackChangePipelineStatus." +
+            GetDemuxerNameStringForTrackChangeMetrics(demuxer_type_),
+        media::PIPELINE_OK);
+  }
 }
 
 // static
@@ -304,6 +339,10 @@ void MediaMetricsProvider::SetIsEME() {
   uma_info_.is_eme = true;
 }
 
+void MediaMetricsProvider::SetHasTrackChange() {
+  uma_info_.has_track_change_ = true;
+}
+
 void MediaMetricsProvider::SetTimeToMetadata(base::TimeDelta elapsed) {
   DCHECK(IsInitialized());
   DCHECK_EQ(time_to_metadata_, kNoTimestamp);
@@ -320,6 +359,10 @@ void MediaMetricsProvider::SetTimeToPlayReady(base::TimeDelta elapsed) {
   DCHECK(IsInitialized());
   DCHECK_EQ(time_to_play_ready_, kNoTimestamp);
   time_to_play_ready_ = elapsed;
+}
+
+void MediaMetricsProvider::SetVisibilityRatioAtPlaybackStart(double ratio) {
+  visibility_ratio_at_playback_start_ = ratio;
 }
 
 void MediaMetricsProvider::SetContainerName(

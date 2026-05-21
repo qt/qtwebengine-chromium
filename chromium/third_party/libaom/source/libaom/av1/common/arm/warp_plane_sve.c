@@ -12,31 +12,10 @@
 #include <arm_neon.h>
 
 #include "aom_dsp/arm/aom_neon_sve_bridge.h"
+#include "convolve_neon_dotprod.h"
+#include "convolve_neon_i8mm.h"
 #include "warp_plane_neon.h"
-
-DECLARE_ALIGNED(16, static const uint8_t, usdot_permute_idx[48]) = {
-  0, 1, 2,  3,  1, 2,  3,  4,  2,  3,  4,  5,  3,  4,  5,  6,
-  4, 5, 6,  7,  5, 6,  7,  8,  6,  7,  8,  9,  7,  8,  9,  10,
-  8, 9, 10, 11, 9, 10, 11, 12, 10, 11, 12, 13, 11, 12, 13, 14
-};
-
-DECLARE_ALIGNED(16, static const uint8_t, kMatMul6PermuteTbl[32]) = {
-  // clang-format off
-  0,  1,  2,  3,  4,  5,  6,  7,  2,  3,  4,  5,  6,  7,  8,  9,
-  4,  5,  6,  7,  8,  9, 10, 11,  6,  7,  8,  9, 10, 11, 12, 13
-  // clang-format on
-};
-
-DECLARE_ALIGNED(16, static const uint8_t, kMatMul8PermuteTbl[32]) = {
-  // clang-format off
-  1,  2,  3,  4,  5,  6,  7,  8,  3,  4,  5,  6,  7,  8,  9, 10,
-  5,  6,  7,  8,  9, 10, 11, 12,  7,  8,  9, 10, 11, 12, 13, 14
-  // clang-format on
-};
-
-DECLARE_ALIGNED(16, static const uint8_t, kTblIdx0_3[16]) = {
-  0, -1, -1, -1, 1, -1, -1, -1, 2, -1, -1, -1, 3, -1, -1, -1,
-};
+#include "warp_plane_neon_i8mm.h"
 
 static AOM_FORCE_INLINE int16x8_t horizontal_filter_4x1_f4(const uint8x16_t in,
                                                            int sx, int alpha) {
@@ -153,8 +132,8 @@ static AOM_FORCE_INLINE int16x8_t horizontal_filter_4x1_f1(const uint8x16_t in,
   int16x8_t f_s16 = vld1q_s16(av1_warped_filter[sx >> WARPEDDIFF_PREC_BITS]);
   int8x16_t f_s8 = vcombine_s8(vmovn_s16(f_s16), vmovn_s16(f_s16));
 
-  uint8x16_t perm0 = vld1q_u8(&usdot_permute_idx[0]);
-  uint8x16_t perm1 = vld1q_u8(&usdot_permute_idx[16]);
+  uint8x16_t perm0 = vld1q_u8(&kDotProdPermuteTbl[0]);
+  uint8x16_t perm1 = vld1q_u8(&kDotProdPermuteTbl[16]);
 
   // Permute samples ready for dot product.
   // { 0,  1,  2,  3,  1,  2,  3,  4,  2,  3,  4,  5,  3,  4,  5,  6 }
@@ -224,9 +203,9 @@ static AOM_FORCE_INLINE int16x8_t horizontal_filter_8x1_f1(const uint8x16_t in,
   int16x8_t f_s16 = vld1q_s16(av1_warped_filter[sx >> WARPEDDIFF_PREC_BITS]);
   int8x16_t f_s8 = vcombine_s8(vmovn_s16(f_s16), vmovn_s16(f_s16));
 
-  uint8x16_t perm0 = vld1q_u8(&usdot_permute_idx[0]);
-  uint8x16_t perm1 = vld1q_u8(&usdot_permute_idx[16]);
-  uint8x16_t perm2 = vld1q_u8(&usdot_permute_idx[32]);
+  uint8x16_t perm0 = vld1q_u8(&kDotProdPermuteTbl[0]);
+  uint8x16_t perm1 = vld1q_u8(&kDotProdPermuteTbl[16]);
+  uint8x16_t perm2 = vld1q_u8(&kDotProdPermuteTbl[32]);
 
   // Permute samples ready for dot product.
   // { 0,  1,  2,  3,  1,  2,  3,  4,  2,  3,  4,  5,  3,  4,  5,  6 }

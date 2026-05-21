@@ -66,3 +66,14 @@ for <parameter>object</parameter>.
 Returns whether a symbolic constant with name <parameter>string</parameter> is registered,
 placing the value of the constant in <parameter>result</parameter> if present.
 @@
+
+@RET@           const FcChar8 *
+@FUNC@          FcNameGetConstantNameFrom
+@TYPE1@         const char *                    @ARG1@          object
+@TYPE2@         int%                            @ARG2@          value
+@PURPOSE@       Reverse-lookup a constant name from object name and value
+@DESC@
+Obtain a corresponding constant name for <parameter>value</parameter> in <parameter>object</parameter>.
+NULL if no such constant name is available.
+@SINCE@         2.18.0
+@@

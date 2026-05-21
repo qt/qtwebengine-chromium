@@ -12,12 +12,15 @@
 #include <utility>
 #include <vector>
 
+#include "base/check.h"
 #include "base/observer_list.h"
 #include "base/observer_list_types.h"
+#include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "chrome/common/read_anything/read_anything.mojom.h"
 #include "chrome/common/read_anything/read_anything_util.h"
 #include "services/metrics/public/cpp/ukm_source_id.h"
+#include "ui/accessibility/accessibility_features.h"
 #include "ui/accessibility/ax_event_generator.h"
 #include "ui/accessibility/ax_node_id_forward.h"
 #include "ui/accessibility/ax_tree_id.h"
@@ -52,6 +55,14 @@ class ReadAnythingAppModel {
     kMaxValue = kShownWithSelectionAfter,
   };
   // LINT.ThenChange(//tools/metrics/histograms/metadata/accessibility/enums.xml:ReadAnythingEmptyState)
+
+  // Enum for keeping track of the current distillation method being used by the
+  // ReadAnythingAppController.
+  enum class DistillationMethod {
+    kScreen2x = 0,
+    kReadability = 1,
+    kMaxValue = kReadability,
+  };
 
   struct AXTreeInfo {
     explicit AXTreeInfo(std::unique_ptr<ui::AXTreeManager> manager);
@@ -90,6 +101,37 @@ class ReadAnythingAppModel {
     // is added.
   };
 
+  // Stores the necessary information to determine if one link is different
+  // from another when interacting with a link from Readability distilled
+  // content.
+  struct AnchorData {
+    AnchorData();
+    ~AnchorData();
+    AnchorData(const AnchorData& other);
+    AnchorData& operator=(const AnchorData& other);
+
+    // The value of the HTML 'id' attribute (e.g., <a id="my-link">).
+    std::string html_id;
+
+    // The accessible name or visible text of the link, used by screen readers.
+    std::string name;
+
+    // The HTML 'target' attribute, indicating where to open the link (e.g.,
+    // "_blank").
+    std::string target;
+
+    // The text content of the node immediately following this link.
+    std::string text_after;
+
+    // The text content of the node immediately preceding this link.
+    std::string text_before;
+
+    // The HTML 'title' attribute, typically shown as a hover tooltip.
+    std::string title;
+
+    ui::AXNodeID id;
+  };
+
   // Represents a grouping of AXTreeUpdates received in the same accessibility
   // event.
   using Updates = std::vector<ui::AXTreeUpdate>;
@@ -98,7 +140,7 @@ class ReadAnythingAppModel {
   // rather than just a single vector containing all updates from multiple
   // accessibility events. This is so that Unserialize can be called in
   // batches on the group of Updates received from each call to
-  // AccessibilityEventReceived. Otherwise, intermediary updates might
+  // ApplyAccessibilityUpdates. Otherwise, intermediary updates might
   // cause tree inconsistency issues with the final update.
   using PendingUpdates = std::map<ui::AXTreeID, std::vector<Updates>>;
 
@@ -157,6 +199,30 @@ class ReadAnythingAppModel {
     words_distilled_ = words_distilled;
   }
 
+  std::optional<base::TimeTicks> line_focus_session_start_time() const {
+    return line_focus_session_start_time_;
+  }
+  void set_line_focus_session_start_time(const base::TimeTicks time) {
+    line_focus_session_start_time_ = time;
+  }
+  int line_focus_mouse_distance() const { return line_focus_mouse_distance_; }
+  void set_line_focus_mouse_distance(const int distance) {
+    line_focus_mouse_distance_ = distance;
+  }
+  int line_focus_scroll_distance() const { return line_focus_scroll_distance_; }
+  void set_line_focus_scroll_distance(const int distance) {
+    line_focus_scroll_distance_ = distance;
+  }
+  int line_focus_keyboard_lines() const { return line_focus_keyboard_lines_; }
+  void set_line_focus_keyboard_lines(const int lines) {
+    line_focus_keyboard_lines_ = lines;
+  }
+  int line_focus_speech_lines() const { return line_focus_speech_lines_; }
+  void set_line_focus_speech_lines(const int lines) {
+    line_focus_speech_lines_ = lines;
+  }
+  void ResetLineFocusSession();
+
   const std::string& base_language_code() const { return base_language_code_; }
   void SetBaseLanguageCode(std::string base_language_code);
 
@@ -179,6 +245,29 @@ class ReadAnythingAppModel {
     images_enabled_ = images_enabled;
   }
 
+  // Returns the distillation method that produced the content currently
+  // visible in the UI. This is used by the WebUI to correctly interpret
+  // and render the current model data.
+  DistillationMethod current_content_distillation_method() const {
+    return current_content_distillation_method_;
+  }
+  void set_current_content_distillation_method(DistillationMethod method) {
+    current_content_distillation_method_ = method;
+  }
+
+  // Returns the distillation method that will be used for the next content
+  // update. Note: For Readability, distillation occurs in the browser process,
+  // so this represents the source of the next content update we will receive.
+  DistillationMethod next_distillation_method() const {
+    return next_distillation_method_;
+  }
+  void set_next_distillation_method(DistillationMethod method) {
+    next_distillation_method_ = method;
+  }
+  bool is_readability_next_distillation_method() const {
+    return next_distillation_method() == DistillationMethod::kReadability;
+  }
+
   read_anything::mojom::LetterSpacing letter_spacing() const {
     return letter_spacing_;
   }
@@ -198,6 +287,11 @@ class ReadAnythingAppModel {
     color_theme_ = color_theme;
   }
 
+  read_anything::mojom::LineFocus line_focus() const { return line_focus_; }
+  void set_line_focus(read_anything::mojom::LineFocus line_focus) {
+    line_focus_ = line_focus;
+  }
+
   // Sometimes iframes can return selection objects that have a valid id but
   // aren't in the tree.
   bool has_selection() const {
@@ -211,6 +305,36 @@ class ReadAnythingAppModel {
   bool distillation_in_progress() const { return distillation_in_progress_; }
   void set_distillation_in_progress(bool distillation_in_progress) {
     distillation_in_progress_ = distillation_in_progress;
+  }
+
+  bool should_extract_anchors_from_tree_for_readability() const {
+    bool is_readability_with_links_enabled =
+        features::IsReadAnythingWithReadabilityAllowLinksEnabled();
+    DUMP_WILL_BE_CHECK(is_readability_with_links_enabled);
+
+    return is_readability_with_links_enabled
+               ? should_extract_anchors_from_tree_for_readability_
+               : false;
+  }
+  void set_should_extract_anchors_from_tree_for_readability(
+      bool should_extract_anchors_from_tree_for_readability) {
+    bool is_readability_with_links_enabled =
+        features::IsReadAnythingWithReadabilityAllowLinksEnabled();
+    DUMP_WILL_BE_CHECK(is_readability_with_links_enabled);
+    should_extract_anchors_from_tree_for_readability_ =
+        is_readability_with_links_enabled
+            ? should_extract_anchors_from_tree_for_readability
+            : false;
+  }
+
+  // Processes the tree anchors.
+  // Returns true indicating that the tree was successfully processed and we can
+  // notify the frontend that anchors are ready.
+  bool ProcessAXTreeAnchors();
+  void ResetAXTreeAnchors();
+  const std::map<std::string, std::vector<AnchorData>>& ax_tree_anchors()
+      const {
+    return ax_tree_anchors_;
   }
 
   // The following methods are used for the screen2x data collection pipeline.
@@ -287,7 +411,8 @@ class ReadAnythingAppModel {
       double font_size,
       bool links_enabled,
       bool images_enabled,
-      read_anything::mojom::Colors color);
+      read_anything::mojom::Colors color,
+      read_anything::mojom::LineFocus line_focus);
 
   void OnScroll(bool on_selection, bool from_reading_mode) const;
 
@@ -319,10 +444,25 @@ class ReadAnythingAppModel {
 
   void ClearPendingUpdates();
 
-  void AccessibilityEventReceived(const ui::AXTreeID& tree_id,
-                                  Updates& updates,
-                                  std::vector<ui::AXEvent>& events,
-                                  bool speech_playing);
+  // Applies accessibility updates to the AXTree with the given tree_id.
+  // Unserializes the updates, processes generated events, and updates the
+  // model's state.
+  void ApplyAccessibilityUpdates(const ui::AXTreeID& tree_id,
+                                 Updates& updates,
+                                 std::vector<ui::AXEvent>& events);
+
+  // Queues accessibility updates to be processed later. This is used when
+  // the controller decides to not process the updates immediately to avoid
+  // interrupting the user experience. The updates are stored in
+  // pending_updates_.
+  void QueueAccessibilityUpdates(const ui::AXTreeID& tree_id,
+                                 Updates& updates,
+                                 std::vector<ui::AXEvent>& events);
+
+  // Ensures that the AXTree with the given tree_id exists in the model's
+  // tree_infos_ map. If the tree does not exist, a new one is created.
+  // Also updates the active tree ID if necessary.
+  void PrepareForAXTreeUpdates(const ui::AXTreeID& tree_id);
 
   void OnAXTreeDestroyed(const ui::AXTreeID& tree_id);
 
@@ -337,6 +477,7 @@ class ReadAnythingAppModel {
 
   void AdjustTextSize(int increment);
   void ResetTextSize();
+  void SetDefaultDistillationMethod();
 
   // PDF handling.
   bool is_pdf() const { return is_pdf_; }
@@ -355,6 +496,25 @@ class ReadAnythingAppModel {
   void AllowChildTreeForActiveTree(bool use_child_tree);
 
   bool SelectionNodesContainedInDistilledContent() const;
+
+  read_anything::mojom::ReadAnythingPresentationState
+  active_presentation_state() const {
+    return active_presentation_state_;
+  }
+  void set_active_presentation_state(
+      read_anything::mojom::ReadAnythingPresentationState
+          active_presentation_state) {
+    active_presentation_state_ = active_presentation_state;
+  }
+
+  read_anything::mojom::ReadAnythingDistillationState distillation_state()
+      const {
+    return distillation_state_;
+  }
+  void set_distillation_state(
+      read_anything::mojom::ReadAnythingDistillationState distillation_state) {
+    distillation_state_ = distillation_state;
+  }
 
  private:
   struct SelectionEndpoint {
@@ -392,6 +552,12 @@ class ReadAnythingAppModel {
                               size_t prev_tree_size,
                               size_t tree_size);
 
+  void EnsureAXTreeExists(const ui::AXTreeID& tree_id);
+
+  void UpdateActiveTreeIfNeeded(const ui::AXTreeID& tree_id);
+
+  void HandleScreen2xDataCollection(const Updates& updates);
+
   // Runs the data collection for screen2x pipeline, provided in the form of a
   // callback from the ReadAnythingAppController. This should only be called
   // when the DataCollectionModeForScreen2x feature is enabled.
@@ -402,6 +568,8 @@ class ReadAnythingAppModel {
 
   void SetFontSize(double font_size, int increment = 0);
   void SetUkmSourceId(ukm::SourceId ukm_source_id);
+  std::map<std::string, std::vector<AnchorData>> CollectAnchorsFromAXTree(
+      ui::AXSerializableTree* tree);
 
   // State.
   std::map<ui::AXTreeID, std::unique_ptr<AXTreeInfo>> tree_infos_;
@@ -479,6 +647,9 @@ class ReadAnythingAppModel {
   read_anything::mojom::Colors color_theme_ =
       read_anything::mojom::Colors::kDefaultValue;
 
+  read_anything::mojom::LineFocus line_focus_ =
+      read_anything::mojom::LineFocus::kDefaultValue;
+
   // Invariant: Either both endpoints are `!is_valid()`, or they are both valid
   // and non-equal.
   SelectionEndpoint start_;
@@ -491,6 +662,13 @@ class ReadAnythingAppModel {
   int words_seen_ = 0;
   int words_heard_ = 0;
   int words_distilled_ = 0;
+
+  // Line focus session information. Used for logging.
+  std::optional<base::TimeTicks> line_focus_session_start_time_;
+  int line_focus_mouse_distance_ = 0;
+  int line_focus_scroll_distance_ = 0;
+  int line_focus_keyboard_lines_ = 0;
+  int line_focus_speech_lines_ = 0;
 
   // For screen2x data collection, Chrome is launched from the CLI to open one
   // webpage. We record the result of the distill() call for this entire
@@ -514,6 +692,19 @@ class ReadAnythingAppModel {
 
   bool will_hide_ = false;
 
+  // Whether we should traverse the tree to find all the anchors on it.
+  bool should_extract_anchors_from_tree_for_readability_;
+  // Holds a map of an URL string with all the AX Tree Nodes that are related
+  // to that specific URL.
+  std::map<std::string, std::vector<AnchorData>> ax_tree_anchors_;
+
+  // The distillation method that will be used for the next content update.
+  DistillationMethod next_distillation_method_;
+
+  // The distillation method that produced the content currently visible in the
+  // UI.
+  DistillationMethod current_content_distillation_method_;
+
   std::map<ui::AXTreeID, ukm::SourceId> pending_ukm_sources_;
 
   // Possible child tree ids that could be used to distill content if the
@@ -524,6 +715,12 @@ class ReadAnythingAppModel {
   // If reading mode should attempt to use child trees to distill content. This
   // should only be true if the root tree has no distillable content.
   bool may_use_child_for_active_tree_ = false;
+
+  read_anything::mojom::ReadAnythingPresentationState
+      active_presentation_state_ =
+          read_anything::mojom::ReadAnythingPresentationState::kUndefined;
+  read_anything::mojom::ReadAnythingDistillationState distillation_state_ =
+      read_anything::mojom::ReadAnythingDistillationState::kNotAttempted;
 
   // List of observers of model state changes.
   base::ObserverList<ModelObserver, /*check_empty=*/true> observers_;

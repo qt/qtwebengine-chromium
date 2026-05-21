@@ -117,9 +117,10 @@ responsibility.
 from multiple origins (e.g., in iframes). APC tags all data with its source
 origin, allowing consumers to detect and handle cross-origin information
 appropriately.
-* **Handling Password Fields:** Values from password fields are removed from
-the APC representation unless the user has explicitly made them visible on the
-page.
+* **Handling Password-Like Fields:** Values from password fields (and other
+  password-like text inputs detected via heuristics such as
+  `-webkit-text-security`) are removed from the APC representation to help
+  prevent sensitive credential leakage.
 * **Paywalled Content:** APC's design helps exclude most paywalled content.
 Websites can also use specific markup
 ([`isAccessibleForFree=false`](https://developers.google.com/search/docs/appeara
@@ -158,4 +159,32 @@ To update the web test expectations:
 
 ```bash
 third_party/blink/tools/run_web_tests.py -C out/Default content_extraction --reset-results
+```
+
+### Feature Flags and APC-on-load
+
+Two Blink runtime flags control the experimental geometry and automatic build
+behaviour:
+
+* `AIPageContentOuterBoxMapToAncestorSpace` reuses the GeometryMapper mapping
+  for both the `outer_bounding_box` and `visible_bounding_box`. Enable it to
+  exercise the new geometry pipeline.
+* `AIPageContentBuildOnLoadForTesting` forces every local root frame to build APC (in
+  actionable mode) immediately after load. This mirrors the behaviour used by
+  the AnnotatedPageContentExtraction Finch trial.
+
+For example, to launch content_shell with both Blink flags:
+
+```bash
+out/Default/content_shell \
+  --enable-blink-features=AIPageContentBuildOnLoadForTesting,AIPageContentOuterBoxMapToAncestorSpace
+```
+
+A dedicated virtual test suite (`content-extraction`) exercises existing
+layout tests with these flags enabled:
+
+```bash
+third_party/blink/tools/run_web_tests.py \
+    -C out/Default \
+    --virtual-test-suite content-extraction
 ```

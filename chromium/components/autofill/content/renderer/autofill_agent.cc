@@ -19,7 +19,6 @@
 #include <vector>
 
 #include "base/check_deref.h"
-#include "base/containers/contains.h"
 #include "base/containers/flat_map.h"
 #include "base/containers/flat_set.h"
 #include "base/containers/to_vector.h"
@@ -41,7 +40,6 @@
 #include "base/task/single_thread_task_runner.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
-#include "base/types/cxx23_to_underlying.h"
 #include "base/types/optional_ref.h"
 #include "base/types/zip.h"
 #include "build/build_config.h"
@@ -70,6 +68,7 @@
 #include "services/service_manager/public/cpp/interface_provider.h"
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
 #include "third_party/blink/public/common/input/web_keyboard_event.h"
+#include "third_party/blink/public/platform/web_runtime_features_base.h"
 #include "third_party/blink/public/web/web_autofill_state.h"
 #include "third_party/blink/public/web/web_document.h"
 #include "third_party/blink/public/web/web_form_control_element.h"
@@ -99,6 +98,7 @@ using blink::WebLocalFrame;
 using blink::WebNode;
 using blink::WebRange;
 using blink::WebString;
+using blink::WebDOMEvent;
 
 namespace autofill {
 
@@ -215,7 +215,7 @@ bool ShowPredictions(const WebDocument& document,
         "\nvisible: ",
         base::ToString(field_data.is_visible()),
         "\nfocusable: ",
-        base::ToString(field_data.IsFocusable()),
+        base::ToString(field_data.is_focusable()),
         "\nfield rank: ",
         base::NumberToString(field.rank),
         "\nfield rank in signature group: ",
@@ -424,6 +424,12 @@ class AutofillAgent::DeferringAutofillDriver : public mojom::AutofillDriver {
                  : std::nullopt);
   }
   void HidePopup() override { DeferMsg(&mojom::AutofillDriver::HidePopup); }
+  void SuppressAutomaticRefills(const FillId& fill_id) override {
+    DeferMsg(&mojom::AutofillDriver::SuppressAutomaticRefills, fill_id);
+  }
+  void RequestRefill(const FillId& fill_id) override {
+    DeferMsg(&mojom::AutofillDriver::RequestRefill, fill_id);
+  }
   void FocusOnNonFormField() override {
     DeferMsg(&mojom::AutofillDriver::FocusOnNonFormField);
   }
@@ -448,6 +454,39 @@ class AutofillAgent::DeferringAutofillDriver : public mojom::AutofillDriver {
   const raw_ref<AutofillAgent> agent_;
   base::WeakPtrFactory<DeferringAutofillDriver> weak_ptr_factory_{this};
 };
+
+struct AutofillAgent::PendingRefillList::Refill {
+  const FillId fill_id;
+  base::OnceCallback<void(bool fulfilled)> callback;
+  base::OneShotTimer timeout;
+};
+
+AutofillAgent::PendingRefillList::PendingRefillList() = default;
+
+AutofillAgent::PendingRefillList::~PendingRefillList() {
+  for (Refill& refill : list_) {
+    std::move(refill.callback).Run(false);
+  }
+}
+
+void AutofillAgent::PendingRefillList::Add(
+    const FillId& fill_id,
+    base::OnceCallback<void(bool)> callback) {
+  list_.emplace_back(fill_id, std::move(callback));
+  list_.back().timeout.Start(FROM_HERE, kRequestRefillTimeout,
+                             base::BindOnce(&PendingRefillList::Reject,
+                                            base::Unretained(this), fill_id));
+}
+
+void AutofillAgent::PendingRefillList::RunAndRemove(const FillId& fill_id,
+                                                    bool fulfilled) {
+  auto it = std::ranges::find(list_, fill_id, &Refill::fill_id);
+  if (it == list_.end()) {
+    return;
+  }
+  std::move(it->callback).Run(fulfilled);
+  list_.erase(it);
+}
 
 AutofillAgent::AutofillAgent(
     content::RenderFrame* render_frame,
@@ -499,7 +538,7 @@ void AutofillAgent::DidCreateDocumentElement() {
 
 void AutofillAgent::Reset() {
   // Navigation to a new page or a page refresh.
-  last_queried_element_ = {};
+  last_queried_element_ = FieldRef();
   form_cache_.Reset();
   is_dom_content_loaded_ = false;
   select_option_change_batch_timer_.clear();
@@ -510,6 +549,8 @@ void AutofillAgent::Reset() {
   form_tracker_->ResetLastInteractedElements();
   form_tracker_->OnFormNoLongerSubmittable();
   timing_ = {};
+  input_warnings_.has_warned = false;
+  input_warnings_.remove_listeners.clear();
 }
 
 void AutofillAgent::DidDispatchDOMContentLoadedEvent() {
@@ -522,6 +563,12 @@ void AutofillAgent::DidDispatchDOMContentLoadedEvent() {
                           GetCallTimerState(kDidDispatchDomContentLoadedEvent));
   password_autofill_agent_->DispatchedDOMContentLoadedEvent(
       SynchronousFormCache(form_cache_.extracted_forms()));
+
+  if (WebDocument document = GetDocument();
+      document && document.GetFrame() &&
+      document.GetFrame()->IsInspectorConnected()) {
+    OnDevToolsSessionConnectionChanged(true);
+  }
 }
 
 void AutofillAgent::DidChangeScrollOffset() {
@@ -581,6 +628,17 @@ void AutofillAgent::FocusedElementChanged(
   ObserveCaret(new_focused_element);
 
   HidePopup();
+
+  if (content::RenderFrame* render_frame = unsafe_render_frame()) {
+    if (WebLocalFrame& frame = *render_frame->GetWebFrame();
+        frame.IsInspectorConnected() && new_focused_element &&
+        (new_focused_element.DynamicTo<WebFormControlElement>() ||
+         new_focused_element.IsContentEditable())) {
+      form_issues::EmitAutofillOrManualTextIssue(
+          GetDocument(), DenseSet<form_issues::PermissionsPolicyFeature>::all(),
+          &form_issues::EmitToDevTools);
+    }
+  }
 
   // This behavior was introduced for to fix http://crbug.com/1105254. It's
   // unclear if this is still needed.
@@ -669,7 +727,7 @@ void AutofillAgent::ObserveCaret(WebElement element) {
 }
 
 void AutofillAgent::HandleCaretMovedInFormField(WebElement element,
-                                                blink::WebDOMEvent) {
+                                                WebDOMEvent) {
   auto handle_throttled_caret_change = [](AutofillAgent& self,
                                           WebElement element) {
     if (!self.unsafe_render_frame() || !element.Focused() ||
@@ -981,15 +1039,39 @@ void AutofillAgent::UserGestureObserved() {
   password_autofill_agent_->UserGestureObserved();
 }
 
+void AutofillAgent::RequestRefill(const base::UnguessableToken& fill_id_token,
+                                  base::OnceCallback<void(bool)> callback) {
+  FillId fill_id(fill_id_token);
+  pending_refills_.Add(fill_id, std::move(callback));
+  if (auto* autofill_driver = unsafe_autofill_driver()) {
+    autofill_driver->RequestRefill(fill_id);
+  } else {
+    pending_refills_.Reject(fill_id);
+  }
+}
+
 // mojom::AutofillAgent:
 void AutofillAgent::ApplyFieldsAction(
     mojom::FormActionType action_type,
     mojom::ActionPersistence action_persistence,
-    const std::vector<FormFieldData::FillData>& fields) {
+    const std::vector<FormFieldData::FillData>& fields,
+    const FillId& fill_id,
+    bool supports_refill) {
   CHECK(!fields.empty());
   WebDocument document = GetDocument();
   if (!document) {
     return;
+  }
+
+  if (document.HasEventListeners(WebNode::EventType::kAutofill)) {
+    if (auto* autofill_driver = unsafe_autofill_driver()) {
+      autofill_driver->SuppressAutomaticRefills(fill_id);
+    }
+  }
+
+  if (action_type == mojom::FormActionType::kFill &&
+      action_persistence == mojom::ActionPersistence::kFill) {
+    pending_refills_.Fulfill(fill_id);
   }
 
   ClearPreviewedForm();
@@ -1000,13 +1082,23 @@ void AutofillAgent::ApplyFieldsAction(
   } else {
     was_last_action_fill_ = true;
 
-    std::vector<FieldRendererId> filled_element_ids = base::ToVector(
+    if (blink::WebRuntimeFeaturesBase::IsAutofillEventEnabled() &&
+        action_type == mojom::FormActionType::kFill) {
+      form_util::DispatchAutofillEvent(document, fields, fill_id,
+                                       supports_refill);
+    }
+
+    std::vector<WebFormControlElement> filled_elements = base::ToVector(
         form_util::ApplyFieldsAction(document, fields, action_type,
                                      action_persistence, field_data_manager()),
-        &std::pair<FieldRendererId, WebAutofillState>::first);
-    std::erase_if(filled_element_ids, [](FieldRendererId filled_element_id) {
-      return !form_util::GetFormControlByRendererId(filled_element_id);
-    });
+        [](const auto& p) {
+          FieldRendererId filled_element_id = p.first;
+          return form_util::GetFormControlByRendererId(filled_element_id);
+        });
+    std::erase_if(filled_elements,
+                  [](const WebFormControlElement& filled_element) {
+                    return !filled_element;
+                  });
 
     // This map contains for each filled field (returned by
     // `form_util::ApplyFieldsAction()`) the corresponding current owning form.
@@ -1015,15 +1107,12 @@ void AutofillAgent::ApplyFieldsAction(
     // function dynamic changes can occur to the DOM.
     auto filled_fields_and_forms =
         base::MakeFlatMap<FieldRendererId, FormRendererId>(
-            filled_element_ids, {},
-            [](FieldRendererId filled_element_id)
+            filled_elements, {},
+            [](const WebFormControlElement& filled_element)
                 -> std::pair<FieldRendererId, FormRendererId> {
-              WebFormControlElement element =
-                  form_util::GetFormControlByRendererId(filled_element_id);
-              CHECK(element);
-              return {filled_element_id,
+              return {form_util::GetFieldRendererId(filled_element),
                       form_util::GetFormRendererId(
-                          element.GetOwningFormForAutofill())};
+                          filled_element.GetOwningFormForAutofill())};
             });
 
     form_tracker_->TrackAutofilledElement(filled_fields_and_forms);
@@ -1127,6 +1216,32 @@ void AutofillAgent::ClearPreviewedForm() {
   previewed_elements_ = {};
 }
 
+void AutofillAgent::FindPotentialSiwgButtons(
+    base::OnceCallback<void(std::vector<mojom::SiwgButtonDataPtr>)> callback) {
+  std::vector<mojom::SiwgButtonDataPtr> results;
+  WebDocument document = GetDocument();
+  if (document.IsNull()) {
+    std::move(callback).Run(std::move(results));
+    return;
+  }
+
+  for (const WebElement& element :
+       document.QuerySelectorAll(WebString::FromUTF8(
+           R"(button, a, [role="button"], div#g_id_onload, div.g-signin2)"))) {
+    auto button_data = mojom::SiwgButtonData::New();
+    button_data->dom_node_id = element.GetDomNodeId();
+    button_data->text = element.TextContent().Utf16();
+    button_data->id_attribute = element.GetAttribute("id").Utf16();
+    button_data->class_attribute = element.GetAttribute("class").Utf16();
+    button_data->aria_label = element.GetAttribute("aria-label").Utf16();
+    button_data->href_attribute = element.GetAttribute("href").Utf16();
+    button_data->role = element.GetAttribute("role").Utf16();
+    button_data->tag_name = element.TagName().Utf16();
+    results.emplace_back(std::move(button_data));
+  }
+  std::move(callback).Run(std::move(results));
+}
+
 void AutofillAgent::TriggerSuggestions(
     FieldRendererId field_id,
     AutofillSuggestionTriggerSource trigger_source) {
@@ -1215,11 +1330,9 @@ void AutofillAgent::ApplyFieldAction(
         if (form_control) {
           if (WebFormElement form_element =
                   form_control.GetOwningFormForAutofill()) {
-            form_tracker_->UpdateLastInteractedElement(
-                form_util::GetFormRendererId(form_element));
+            form_tracker_->UpdateLastInteractedElement(form_element);
           } else {
-            form_tracker_->UpdateLastInteractedElement(
-                form_util::GetFieldRendererId(form_control));
+            form_tracker_->UpdateLastInteractedElement(form_control);
           }
         }
         break;
@@ -1403,7 +1516,10 @@ void AutofillAgent::ShowSuggestions(
         password_generation_agent_->ShowPasswordGenerationSuggestions(
             input_element, form_cache)) {
       is_popup_possibly_visible_ = true;
-      return;
+      if (!base::FeatureList::IsEnabled(
+              features::kAutofillAndroidKeyboardAccessoryDynamicPositioning)) {
+        return;
+      }
     }
     bool password_agent_handled_request = TryShowPasswordSuggestions(
         input_element, IsPasswordsAutofillManuallyTriggered(trigger_source),
@@ -1566,6 +1682,7 @@ void AutofillAgent::ExtractLabeledTextNodeValue(
 
 void AutofillAgent::OnDevToolsSessionConnectionChanged(bool attached) {
   if (!attached) {
+    input_warnings_.remove_listeners.clear();
     return;
   }
   if (is_dom_content_loaded_) {
@@ -1575,6 +1692,45 @@ void AutofillAgent::OnDevToolsSessionConnectionChanged(bool attached) {
     ExtractFormsUnthrottled(
         /*callback=*/{},
         GetCallTimerState(kOnDevToolsSessionConnectionChanged));
+  }
+
+  // Registers listeners for text-producing events and emits a warning after the
+  // first such event.
+  if (WebDocument document = GetDocument();
+      document && !input_warnings_.has_warned) {
+    constexpr auto kTextProducingEvents = std::to_array({
+        WebNode::EventType::kBeforeinput,
+        WebNode::EventType::kInput,
+        WebNode::EventType::kCompositionstart,
+        WebNode::EventType::kCompositionupdate,
+        WebNode::EventType::kCompositionend,
+        WebNode::EventType::kDrop,
+        WebNode::EventType::kPaste,
+        WebNode::EventType::kKeydown,
+        WebNode::EventType::kKeyup,
+        WebNode::EventType::kKeypress,
+    });
+    input_warnings_.remove_listeners = base::ToVector(
+        kTextProducingEvents, [&](WebNode::EventType event_type) {
+          base::RepeatingCallback<void(WebDOMEvent)> handler =
+              base::BindRepeating(
+                  [](AutofillAgent& self, WebNode::EventType event_type,
+                     WebDOMEvent) {
+                    WebDocument document = self.GetDocument();
+                    if (!document) {
+                      return;
+                    }
+                    form_issues::EmitAutofillOrManualTextIssue(
+                        document,
+                        {form_issues::PermissionsPolicyFeature::kManualText},
+                        &form_issues::EmitToDevTools);
+                    self.input_warnings_.has_warned = true;
+                    self.input_warnings_.remove_listeners.clear();
+                  },
+                  std::ref(*this), event_type);
+          return document.AddEventListener(event_type, handler,
+                                           /*use_capture=*/true);
+        });
   }
 }
 
@@ -1813,11 +1969,7 @@ void AutofillAgent::SelectFieldOptionsChanged(
   }
 
   FieldRendererId element_id = form_util::GetFieldRendererId(element);
-  base::OneShotTimer& timer =
-      base::FeatureList::IsEnabled(
-          features::kAutofillSplitTimersForSelectOptionChanges)
-          ? select_option_change_batch_timer_[element_id]
-          : select_option_change_batch_timer_[FieldRendererId()];
+  base::OneShotTimer& timer = select_option_change_batch_timer_[element_id];
 
   if (timer.IsRunning()) {
     timer.Stop();
@@ -1951,9 +2103,8 @@ void AutofillAgent::JavaScriptChangedValue(WebFormControlElement element,
   }
 }
 
-void AutofillAgent::TrackAutofilledElement(
-    const WebFormControlElement& element) {
-  form_tracker_->TrackAutofilledElement(element);
+void AutofillAgent::TrackAutofilledElement(FieldRendererId field_id) {
+  form_tracker_->TrackAutofilledElement(field_id);
 }
 
 void AutofillAgent::UpdateStateForTextChange(

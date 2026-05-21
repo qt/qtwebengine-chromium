@@ -21,9 +21,9 @@
 
 syntax = "proto2";
 
-option optimize_for = LITE_RUNTIME;
-
 package safe_browsing;
+
+option optimize_for = LITE_RUNTIME;
 
 // Protocol buffer describing the Chrome user population of the user reporting
 // data.
@@ -171,6 +171,14 @@ message LlamaForcedTriggerInfo {
   optional string trigger_url = 3;
 }
 
+// The model type that the client uses to perform intelligent scan.
+enum IntelligentScanModelType {
+  INTELLIGENT_SCAN_MODEL_TYPE_UNSPECIFIED = 0;
+  NOT_SUPPORTED = 1;
+  ON_DEVICE_MODEL = 2;
+  SERVER_SIDE_MODEL = 3;
+}
+
 message IntelligentScanInfo {
   optional string brand = 1;
   optional string intent = 2;
@@ -192,12 +200,23 @@ message IntelligentScanInfo {
     // The length of texts on the page is too short and will likely cause
     // hallucination.
     TEXT_TOO_SHORT = 5;
+    // The server side model is unavailable, which can be from a few reasons
+    // such as insufficient capacity.
+    SERVER_SIDE_MODEL_UNAVAILABLE = 6;
+    // The server side model could not create an output due to internal error.
+    SERVER_SIDE_MODEL_OUTPUT_MISSING = 7;
+    // The user has sent too many requests and has exceeded the daily quota.
+    SERVER_SIDE_MODEL_EXCEED_QUOTA = 8;
   }
   optional NoInfoReason no_info_reason = 3;
 
   // Model package version of the last used model. This will be non-zero value
   // if it exists with a value around 1,000,000,000.
+  // This field is only populated for on-device model.
   optional int64 model_version = 4;
+
+  // The model type that the client uses to perform intelligent scan.
+  optional IntelligentScanModelType model_type = 5;
 }
 
 message ClientPhishingRequest {
@@ -337,13 +356,29 @@ message ClientPhishingRequest {
   // CLIPBOARD_COPY_API.
   optional ClipboardExtractedData clipboard_extracted_data = 33;
 
-  // next available tag number: 34.
+  message EmbeddingMatchMetadata {
+    // The id of the target image embedding.
+    optional string id = 1;
+    // The similarity score between the target and current page.
+    optional float score = 2;
+  }
+
+  // The image embedding that triggered the ping. The field is only populated if
+  // the score meets the image embedding's minimum threshold.
+  optional EmbeddingMatchMetadata target_image_embedding_score = 34;
+
+  // next available tag number: 35.
 }
 
 message ClipboardExtractedData {
   repeated string suspicious_tokens = 1;
   optional bool is_first_token_suspicious = 2;
   optional bool is_last_token_suspicious = 3;
+  optional int32 payload_length = 4;
+  optional int32 total_parsed_tokens = 5;
+  repeated string urls = 6;
+  optional bool is_overall_suspicious = 7;
+  optional string content = 8;
 }
 
 // Verdict based on IntelligentScanInfo included in ClientPhishingRequest
@@ -399,12 +434,14 @@ enum PreClassificationCheckResult {
   OBSOLETE_NO_CLASSIFY_NOT_ALLOWED_BY_POLICY = 17;
   NO_CLASSIFY_MATCH_HC_ALLOWLIST = 18;
   NO_CLASSIFY_ALLOWLIST_METRIC = 19;
-  NO_CLASSIFY_MAX = 20;  // Always add before this, and update this value.
+  NO_CLASSIFY_ERROR_DOCUMENT = 20;
+  NO_CLASSIFY_MAX = 21;  // Always add before this, and update this value.
 }
 
 // This value must be kept in sync with those in
 // components/safe_browsing/content/common/safe_browsing.mojom. The enum
 // represents possible outcomes of the renderer-side classification.
+// LINT.IfChange(PhishingDetectorResult)
 enum PhishingDetectorResult {
   CLASSIFICATION_SUCCESS = 0;
   CLASSIFIER_NOT_READY = 1;
@@ -417,7 +454,9 @@ enum PhishingDetectorResult {
   DOM_EXTRACTION_FAILED = 8;
   TERM_EXTRACTION_FAILED = 9;
   VISUAL_EXTRACTION_FAILED = 10;
+  CLASSIFICATION_SKIPPED = 11;
 }
+// LINT.ThenChange(//tools/metrics/histograms/metadata/sb_client/enums.xml:ClientSidePhishingResult)
 
 // The referring app info that launches Chrome. Only used on Android.
 // This information may be spoofed so do not rely solely on its correctness
@@ -637,7 +676,7 @@ message LoginReputationClientRequest {
 
     // Deprecated: simplified_url_display_enabled.
     reserved 6;
-  };
+  }
   optional UrlDisplayExperiment url_display_experiment = 14;
 
   optional ReferringAppInfo referring_app_info = 15;
@@ -956,7 +995,7 @@ message ClientDownloadRequest {
 
     // OS X Mach-O image headers.
     repeated MachOHeaders mach_o_headers = 2;
-  };
+  }
 
   // Fields 12-17 are reserved for server-side use and are never sent by the
   // client.
@@ -1335,6 +1374,8 @@ enum ClientSideDetectionType {
   CLIPBOARD_COPY_API = 8;
   // Credit card form detected.
   CREDIT_CARD_FORM = 9;
+  // Image embedding matched.
+  IMAGE_EMBEDDING_MATCH = 10;
 }
 
 message ClientDownloadResponse {
@@ -1584,8 +1625,7 @@ message ClientIncidentReport {
         optional string target_dll = 2;
       }
       repeated Patch patches = 3;
-      message NetworkProvider {}
-      repeated NetworkProvider network_providers = 4;
+      reserved 4;
       enum Channel {
         CHANNEL_UNKNOWN = 0;
         CHANNEL_CANARY = 1;
@@ -2708,6 +2748,49 @@ message ExtensionTelemetryReportRequest {
 
     optional DeclarativeNetRequestActionInfo
         declarative_net_request_action_info = 8;
+
+    // DOM access signal information for extension telemetry.
+    // This signal is created whenever an extension attempts to access the DOM
+    // of a web page.
+    message DOMAccessInfo {
+      message DOMAccess {
+        enum AccessType {
+          ACCESS_TYPE_UNSPECIFIED = 0;
+          // A read operation was performed on the DOM.
+          READ = 1;
+          // A write operation was performed on the DOM.
+          WRITE = 2;
+        }
+        // The name of the API used to access the DOM.
+        optional string api_name = 1;
+        // The URL of the page where the DOM was accessed.
+        optional string url = 2;
+        // The type of access that was performed.
+        optional AccessType access_type = 3;
+        // The timestamp of the DOM access in microseconds.
+        optional int64 timestamp_us = 4;
+      }
+      repeated DOMAccess dom_accesses = 1;
+    }
+    optional DOMAccessInfo dom_access_info = 9;
+
+    // Script injection signal information for extension telemetry.
+    // This signal is created whenever an extension for example attempts to
+    // inject a script into a web page.
+    message ScriptInjectionInfo {
+      message ScriptInjection {
+        // The name of the API used to inject the script.
+        optional string api_name = 1;
+        // The arguments passed to the API.
+        optional string args = 2;
+        // The URL of the page where the script was injected.
+        optional string url = 3;
+        // The timestamp of the script injection in microseconds.
+        optional int64 timestamp_us = 4;
+      }
+      repeated ScriptInjection script_injections = 1;
+    }
+    optional ScriptInjectionInfo script_injection_info = 10;
   }
 
   // Single report structure consists of all the signals observed for a

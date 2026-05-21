@@ -16,8 +16,8 @@
 #include <vector>
 
 #include "base/containers/flat_map.h"
-#include "base/gtest_prod_util.h"
 #include "base/memory/raw_ptr.h"
+#include "base/types/pass_key.h"
 #include "components/autofill/core/browser/autofill_field.h"
 #include "components/autofill/core/browser/autofill_type.h"
 #include "components/autofill/core/browser/country_type.h"
@@ -48,6 +48,7 @@ using FormAndFieldSignatures =
     std::vector<std::pair<FormSignature, std::vector<FieldSignature>>>;
 using FieldSuggestion = AutofillQueryResponse::FormSuggestion::FieldSuggestion;
 
+class AutofillManager;
 struct AutofillServerPrediction;
 class FormData;
 struct FormDataPredictions;
@@ -174,6 +175,11 @@ class FormStructure {
     kFormImport,
   };
 
+  void UpdateFormData(const FormData& form_data,
+                      base::PassKey<AutofillManager> pass_key) {
+    UpdateFormData(form_data);
+  }
+
   // Assumes that `*this` is FormStructure which was freshly created from a
   // FormData object that the renderer sent to the browser and copies relevant
   // information from a `cached_form` to `*this`. Depending on the passed
@@ -267,8 +273,11 @@ class FormStructure {
   // Returns a FormData containing the data this form structure knows about.
   FormData ToFormData() const;
 
-  // Returns the possible form types.
-  DenseSet<FormType> GetFormTypes() const;
+  // Returns the possible form types. Detailed documentation for
+  // `ac_unrecognized_behavior` can be found at
+  // `AutocompleteUnrecognizedBehavior`.
+  DenseSet<FormType> GetFormTypes(
+      AutocompleteUnrecognizedBehavior ac_unrecognized_behavior) const;
 
   mojom::SubmissionSource submission_source() const {
     return submission_source_;
@@ -281,6 +290,14 @@ class FormStructure {
 
   FormVersion version() const { return version_; }
 
+  FormVersion last_successfully_queried_version() const {
+    return last_successfully_queried_version_;
+  }
+
+  void set_last_successfully_queried_version(FormVersion version) {
+    last_successfully_queried_version_ = version;
+  }
+
   // The signatures of forms recently submitted on the same origin within a
   // small period of time.
   struct FormAssociations {
@@ -290,14 +307,19 @@ class FormStructure {
   };
 
   base::flat_map<FieldGlobalId, AutofillServerPrediction> GetServerPredictions(
-      const std::vector<FieldGlobalId>& field_ids) const;
+      base::span<const FieldGlobalId> field_ids) const;
 
   base::flat_map<FieldGlobalId, FieldType> GetHeuristicPredictions(
       HeuristicSource source,
-      const std::vector<FieldGlobalId>& field_ids) const;
+      base::span<const FieldGlobalId> field_ids) const;
 
  private:
   friend class FormStructureTestApi;
+
+  // Copies the information from `form_data` into the members of `FormStructure`
+  // that are copies of information in `FormData`. `this` and `form_data` must
+  // have the same `global_id()`.
+  void UpdateFormData(const FormData& form_data);
 
   // Sets the rank of each field in the form.
   void DetermineFieldRanks();
@@ -393,6 +415,10 @@ class FormStructure {
   // A monotonically increasing counter that indicates the generation of the
   // form.
   FormVersion version_;
+
+  // The last FormVersion for which ServerPredictions::ApplyTo() ran
+  // successfully.
+  FormVersion last_successfully_queried_version_;
 
   // An identifier of the form that is unique among the forms from the same
   // frame.

@@ -455,7 +455,8 @@ ArpackGeneralizedSelfAdjointEigenSolver<MatrixType, MatrixSolver, BisSPD>::compu
   }
 
   if (!(mode == 1 && isBempty) && !(mode == 2 && isBempty) && OP.info() != Success) {
-    m_info = OP.info() delete[] v;
+    m_info = OP.info();
+    delete[] v;
     delete[] iparam;
     delete[] ipntr;
     delete[] workd;

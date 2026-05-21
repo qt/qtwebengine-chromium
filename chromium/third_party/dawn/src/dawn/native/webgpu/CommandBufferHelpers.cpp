@@ -40,8 +40,44 @@
 
 namespace dawn::native::webgpu {
 
+void CaptureSharedCommand(CaptureContext& captureContext, CommandIterator& commands, Command type) {
+    switch (type) {
+        case Command::SetBindGroup: {
+            const auto& cmd = *commands.NextCommand<SetBindGroupCmd>();
+            const uint32_t* dynamicOffsetsData =
+                cmd.dynamicOffsetCount > 0 ? commands.NextData<uint32_t>(cmd.dynamicOffsetCount)
+                                           : nullptr;
+            schema::CommandBufferCommandSetBindGroupCmd data{{
+                .data = {{
+                    .index = uint32_t(cmd.index),
+                    .bindGroupId = captureContext.GetId(cmd.group),
+                    .dynamicOffsets = std::vector<uint32_t>(
+                        dynamicOffsetsData, dynamicOffsetsData + cmd.dynamicOffsetCount),
+                }},
+            }};
+            Serialize(captureContext, data);
+            break;
+        }
+        case Command::SetImmediates: {
+            const auto& cmd = *commands.NextCommand<SetImmediatesCmd>();
+            const uint8_t* values = commands.NextData<uint8_t>(cmd.size);
+            schema::CommandBufferCommandSetImmediatesCmd data{{
+                .data = {{
+                    .offset = cmd.offset,
+                    .data = std::vector<uint8_t>(values, values + cmd.size),
+                }},
+            }};
+            Serialize(captureContext, data);
+            break;
+        }
+        default:
+            DAWN_UNREACHABLE();
+            break;
+    }
+}
+
 // Returns true if command was handled
-bool CaptureDebugCommand(CaptureContext& captureContext, CommandIterator& commands, Command type) {
+void CaptureDebugCommand(CaptureContext& captureContext, CommandIterator& commands, Command type) {
     switch (type) {
         case Command::PushDebugGroup: {
             const auto& cmd = *commands.NextCommand<PushDebugGroupCmd>();
@@ -70,11 +106,10 @@ bool CaptureDebugCommand(CaptureContext& captureContext, CommandIterator& comman
             Serialize(captureContext, data);
             break;
         }
-        default: {
-            return false;
-        }
+        default:
+            DAWN_UNREACHABLE();
+            break;
     }
-    return true;
 }
 
 // Captures commands common to a render pass and a render bundle
@@ -92,28 +127,25 @@ MaybeError CaptureRenderCommand(CaptureContext& captureContext,
             Serialize(captureContext, data);
             break;
         }
-        case Command::SetBindGroup: {
-            const auto& cmd = *commands.NextCommand<SetBindGroupCmd>();
-            const uint32_t* dynamicOffsetsData =
-                cmd.dynamicOffsetCount > 0 ? commands.NextData<uint32_t>(cmd.dynamicOffsetCount)
-                                           : nullptr;
-            schema::CommandBufferCommandSetBindGroupCmd data{{
-                .data = {{
-                    .index = uint32_t(cmd.index),
-                    .bindGroupId = captureContext.GetId(cmd.group),
-                    .dynamicOffsets = std::vector<uint32_t>(
-                        dynamicOffsetsData, dynamicOffsetsData + cmd.dynamicOffsetCount),
-                }},
-            }};
-            Serialize(captureContext, data);
-            break;
-        }
         case Command::SetVertexBuffer: {
             const auto& cmd = *commands.NextCommand<SetVertexBufferCmd>();
             schema::CommandBufferCommandSetVertexBufferCmd data{{
                 .data = {{
                     .slot = uint32_t(cmd.slot),
                     .bufferId = captureContext.GetId(cmd.buffer),
+                    .offset = cmd.offset,
+                    .size = cmd.size,
+                }},
+            }};
+            Serialize(captureContext, data);
+            break;
+        }
+        case Command::SetIndexBuffer: {
+            const auto& cmd = *commands.NextCommand<SetIndexBufferCmd>();
+            schema::CommandBufferCommandSetIndexBufferCmd data{{
+                .data = {{
+                    .bufferId = captureContext.GetId(cmd.buffer),
+                    .format = cmd.format,
                     .offset = cmd.offset,
                     .size = cmd.size,
                 }},
@@ -134,12 +166,53 @@ MaybeError CaptureRenderCommand(CaptureContext& captureContext,
             Serialize(captureContext, data);
             break;
         }
-        default: {
-            if (!CaptureDebugCommand(captureContext, commands, type)) {
-                return DAWN_UNIMPLEMENTED_ERROR("Unimplemented command");
-            }
+        case Command::DrawIndexed: {
+            const auto& cmd = *commands.NextCommand<DrawIndexedCmd>();
+            schema::CommandBufferCommandDrawIndexedCmd data{{
+                .data = {{
+                    .indexCount = cmd.indexCount,
+                    .instanceCount = cmd.instanceCount,
+                    .firstIndex = cmd.firstIndex,
+                    .baseVertex = cmd.baseVertex,
+                    .firstInstance = cmd.firstInstance,
+                }},
+            }};
+            Serialize(captureContext, data);
             break;
         }
+        case Command::DrawIndirect: {
+            const auto& cmd = *commands.NextCommand<DrawIndirectCmd>();
+            schema::CommandBufferCommandDrawIndirectCmd data{{
+                .data = {{
+                    .indirectBufferId = captureContext.GetId(cmd.indirectBuffer),
+                    .indirectOffset = cmd.indirectOffset,
+                }},
+            }};
+            Serialize(captureContext, data);
+            break;
+        }
+        case Command::DrawIndexedIndirect: {
+            const auto& cmd = *commands.NextCommand<DrawIndexedIndirectCmd>();
+            schema::CommandBufferCommandDrawIndexedIndirectCmd data{{
+                .data = {{
+                    .indirectBufferId = captureContext.GetId(cmd.indirectBuffer),
+                    .indirectOffset = cmd.indirectOffset,
+                }},
+            }};
+            Serialize(captureContext, data);
+            break;
+        }
+        case Command::SetBindGroup:
+        case Command::SetImmediates:
+            CaptureSharedCommand(captureContext, commands, type);
+            break;
+        case Command::PushDebugGroup:
+        case Command::PopDebugGroup:
+        case Command::InsertDebugMarker:
+            CaptureDebugCommand(captureContext, commands, type);
+            break;
+        default:
+            return DAWN_UNIMPLEMENTED_ERROR("Unimplemented command");
     }
 
     return {};
@@ -158,11 +231,18 @@ MaybeError GatherReferencedResourcesFromRenderCommand(CaptureContext& captureCon
         }
         case Command::SetBindGroup: {
             auto cmd = commands.NextCommand<SetBindGroupCmd>();
+            if (cmd->dynamicOffsetCount > 0) {
+                commands.NextData<uint32_t>(cmd->dynamicOffsetCount);
+            }
             usedResources.bindGroups.push_back(cmd->group.Get());
             break;
         }
         case Command::BeginOcclusionQuery:
         case Command::EndOcclusionQuery:
+        case Command::SetBlendConstant:
+        case Command::SetScissorRect:
+        case Command::SetStencilReference:
+        case Command::SetViewport:
         case Command::Draw:
         case Command::DrawIndexed:
         case Command::DrawIndirect:

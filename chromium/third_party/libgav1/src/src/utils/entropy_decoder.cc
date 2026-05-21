@@ -565,10 +565,6 @@ inline EntropyDecoder::WindowSize HostToBigEndian(
 
 }  // namespace
 
-#if !LIBGAV1_CXX17
-constexpr int EntropyDecoder::kWindowSize;  // static.
-#endif
-
 EntropyDecoder::EntropyDecoder(const uint8_t* data, size_t size,
                                bool allow_update_cdf)
     : data_(data),

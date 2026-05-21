@@ -165,7 +165,7 @@ jobject ToKotlin(JNIEnv* env, const WGPUStringView* s) {
         {% set KotlinRecord = "KotlinRecord" + structure.name.CamelCase() %}
         {{ define_kotlin_record_structure(KotlinRecord, structure.members)}}
 
-        {{ define_kotlin_to_struct_conversion("ConvertInternal", KotlinRecord, Struct, structure.members)}}
+        {{ define_kotlin_to_struct_conversion("ConvertInternal", KotlinRecord, Struct, structure.members, is_structure_converter=True)}}
         void ToNative(JNIContext* c, JNIEnv* env, jobject obj, {{ as_cType(structure.name) }}* converted) {
             JNIClasses* classes = JNIClasses::getInstance(env);
             jclass clz = classes->{{ structure.name.camelCase() }};
@@ -174,7 +174,8 @@ jobject ToKotlin(JNIEnv* env, const WGPUStringView* s) {
             {{KotlinRecord}} kotlinRecord;
             {% for member in kotlin_record_members(structure.members) %}
                 {
-                    jmethodID getter = env->GetMethodID(clz, "get{{member.name.CamelCase()}}", "(){{jni_signature(member)}}");
+                    {% set prefix = "is" if member.type.name.get() == "bool" else "get" %}
+                    jmethodID getter = env->GetMethodID(clz, "{{prefix}}{{member.name.CamelCase()}}", "(){{jni_signature(member)}}");
                     CallGetter(env, getter, obj, &kotlinRecord.{{as_varName(member.name)}});
                 }
             {% endfor %}

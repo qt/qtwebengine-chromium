@@ -51,8 +51,8 @@
 
 namespace dawn::native {
 
-class DynamicArrayState;
 class MemoryDump;
+class ResourceTableBase;
 
 enum class AllowMultiPlanarTextureFormat {
     No,
@@ -205,25 +205,27 @@ class TextureBase : public RefCountedWithExternalCount<SharedResource> {
     // TODO(crbug.com/424536624): Return BlockExtent3D for these functions.
     Extent3D GetMipLevelSingleSubresourcePhysicalSize(uint32_t level, Aspect aspect) const;
     Extent3D GetMipLevelSingleSubresourceVirtualSize(uint32_t level, Aspect aspect) const;
+    // TODO(https://issues.chromium.org/424536624): Return TexelExtent3D and take typed
+    // origin/extent.
     Extent3D ClampToMipLevelVirtualSize(uint32_t level,
                                         Aspect aspect,
                                         const Origin3D& origin,
                                         const Extent3D& extent) const;
-    // For 2d-array textures, this keeps the array layers in contrast to
-    // GetMipLevelSingleSubresourceVirtualSize.
+    // For 2d-array textures, these 2 functions keeps the array layers in contrast to
+    // GetMipLevelSingleSubresource(Physical/Virtual)Size.
+    // TODO(https://issues.chromium.org/424536624): Return TexelExtent3D.
+    Extent3D GetMipLevelSubresourcePhysicalSize(uint32_t level, Aspect aspect) const;
     Extent3D GetMipLevelSubresourceVirtualSize(uint32_t level, Aspect aspect) const;
 
     MaybeError Pin(wgpu::TextureUsage usage);
     void Unpin();
-    void AddDynamicArraySlot(DynamicArrayState* dynamicArray, BindingIndex i);
-    void RemoveDynamicArraySlot(DynamicArrayState* dynamicArray, BindingIndex i);
+    void AddResourceTableSlotUse(ResourceTableBase* table, ResourceTableSlot slot);
+    void RemoveResourceTableSlotUse(ResourceTableBase* table, ResourceTableSlot slot);
 
     ResultOrError<Ref<TextureViewBase>> CreateView(
         const TextureViewDescriptor* descriptor = nullptr);
     Ref<TextureViewBase> CreateErrorView(const TextureViewDescriptor* descriptor = nullptr);
     ApiObjectList* GetViewTrackingList();
-
-    bool IsImplicitMSAARenderTextureViewSupported() const;
 
     void DumpMemoryStatistics(dawn::native::MemoryDump* dump, const char* prefix) const;
 
@@ -248,12 +250,14 @@ class TextureBase : public RefCountedWithExternalCount<SharedResource> {
     wgpu::TextureDimension APIGetDimension() const;
     wgpu::TextureFormat APIGetFormat() const;
     wgpu::TextureUsage APIGetUsage() const;
+    wgpu::TextureViewDimension APIGetTextureBindingViewDimension() const;
+    void APISetOwnershipForMemoryDump(uint64_t ownerGuid);
 
   protected:
     TextureBase(DeviceBase* device, const UnpackedPtr<TextureDescriptor>& descriptor);
     ~TextureBase() override;
 
-    void DestroyImpl() override;
+    void DestroyImpl(DestroyReason reason) override;
     void AddInternalUsage(wgpu::TextureUsage usage);
     void SetSharedResourceMemoryContentsForTesting(Ref<SharedResourceMemoryContents> contents);
 
@@ -308,21 +312,27 @@ class TextureBase : public RefCountedWithExternalCount<SharedResource> {
         LRUCache<TextureViewQuery, Ref<TextureViewBase>, TextureViewCacheFuncs>;
     std::unique_ptr<TextureViewCache> mTextureViewCache;
 
-    // Keep a hash set of the places this texture is bound to in DynamicArrayStates.
-    struct DynamicArraySlot {
-        WeakRef<DynamicArrayState> dynamicArray;
-        BindingIndex slot;
+    // Keep a hash set of the places this texture is bound to in ResourceTables.
+    struct ResourceTableSlotUse {
+        WeakRef<ResourceTableBase> table;
+        ResourceTableSlot slot;
 
         struct HashFuncs {
-            size_t operator()(const DynamicArraySlot& query) const;
-            bool operator()(const DynamicArraySlot& a, const DynamicArraySlot& b) const;
+            size_t operator()(const ResourceTableSlotUse& query) const;
+            bool operator()(const ResourceTableSlotUse& a, const ResourceTableSlotUse& b) const;
         };
     };
-    absl::flat_hash_set<DynamicArraySlot, DynamicArraySlot::HashFuncs, DynamicArraySlot::HashFuncs>
-        mDynamicArraySlots;
+    absl::flat_hash_set<ResourceTableSlotUse,
+                        ResourceTableSlotUse::HashFuncs,
+                        ResourceTableSlotUse::HashFuncs>
+        mResourceTableSlotUses;
 
     // TODO(crbug.com/dawn/845): Use a more optimized data structure to save space
     std::vector<bool> mIsSubresourceContentInitializedAtIndex;
+
+    // Owner GUID for memory dump tracking, non-zero GUID will be reported via
+    // MemoryDump::AddOwnerGUID, and 0 indicates no external ownership for this texture.
+    uint64_t mOwnerGUIDForMemoryDump = 0u;
 };
 
 template <typename CreateFn>
@@ -377,7 +387,7 @@ class TextureViewBase : public ApiObjectBase {
     virtual YCbCrVkDescriptor GetYCbCrVkDescriptor() const;
 
   protected:
-    void DestroyImpl() override;
+    void DestroyImpl(DestroyReason reason) override;
 
   private:
     TextureViewBase(DeviceBase* device, ObjectBase::ErrorTag tag, StringView label);

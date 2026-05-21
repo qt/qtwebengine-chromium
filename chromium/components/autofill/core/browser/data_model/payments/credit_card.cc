@@ -62,8 +62,7 @@ bool ShouldUseNewFopDisplay() {
 #if BUILDFLAG(IS_IOS) || BUILDFLAG(IS_ANDROID)
   return false;
 #else
-  return base::FeatureList::IsEnabled(
-      features::kAutofillEnableNewFopDisplayDesktop);
+  return true;
 #endif
 }
 
@@ -355,7 +354,13 @@ int CreditCard::IconResourceId(Suggestion::Icon icon) {
     case Suggestion::Icon::kScanCreditCard:
     case Suggestion::Icon::kSettings:
     case Suggestion::Icon::kUndo:
-    case Suggestion::Icon::kBnpl:
+    case Suggestion::Icon::kBnplGeneric:
+    case Suggestion::Icon::kBnplAffirmUnlinked:
+    case Suggestion::Icon::kBnplAffirmLinked:
+    case Suggestion::Icon::kBnplZipUnlinked:
+    case Suggestion::Icon::kBnplZipLinked:
+    case Suggestion::Icon::kBnplKlarnaUnlinked:
+    case Suggestion::Icon::kBnplKlarnaLinked:
     case Suggestion::Icon::kGoogleWallet:
     case Suggestion::Icon::kGoogleWalletMonochrome:
     case Suggestion::Icon::kAndroidMessages:
@@ -399,7 +404,7 @@ std::u16string CreditCard::GetMidlineEllipsisDots(size_t num_dots) {
   std::u16string dots;
   dots.reserve(sizeof(kMidlineEllipsisDot) * num_dots);
 
-  for (size_t i = 0; i < num_dots; i++) {
+  for (size_t i = 0; i < num_dots; ++i) {
     dots.append(kMidlineEllipsisDot);
   }
   return dots;
@@ -1312,7 +1317,7 @@ std::ostream& operator<<(std::ostream& os, const CreditCard& credit_card) {
             << base::UTF16ToUTF8(
                    credit_card.GetRawInfo(CREDIT_CARD_EXP_4_DIGIT_YEAR))
             << " " << credit_card.bank_name() << " "
-            << base::to_underlying(credit_card.record_type()) << " "
+            << std::to_underlying(credit_card.record_type()) << " "
             << credit_card.usage_history().use_count() << " "
             << credit_card.usage_history().use_date() << " "
             << credit_card.billing_address_id() << " " << credit_card.nickname()
@@ -1322,14 +1327,14 @@ std::ostream& operator<<(std::ostream& os, const CreditCard& credit_card) {
                    credit_card.card_issuer())
             << " " << credit_card.issuer_id() << " "
             << credit_card.instrument_id() << " "
-            << base::to_underlying(credit_card.virtual_card_enrollment_state())
+            << std::to_underlying(credit_card.virtual_card_enrollment_state())
             << " " << credit_card.card_art_url().spec() << " "
             << base::UTF16ToUTF8(credit_card.product_description()) << " "
             << credit_card.product_terms_url().spec() << " "
             << credit_card.benefit_source() << " " << credit_card.cvc() << " "
-            << base::to_underlying(
+            << std::to_underlying(
                    credit_card.card_info_retrieval_enrollment_state())
-            << " " << base::to_underlying(credit_card.card_creation_source());
+            << " " << std::to_underlying(credit_card.card_creation_source());
 }
 
 void CreditCard::SetNameOnCardFromSeparateParts() {

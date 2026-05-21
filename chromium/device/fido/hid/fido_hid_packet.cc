@@ -7,7 +7,6 @@
 #include <algorithm>
 #include <utility>
 
-#include "base/containers/contains.h"
 #include "base/memory/ptr_util.h"
 #include "base/numerics/safe_conversions.h"
 
@@ -24,8 +23,9 @@ FidoHidPacket::~FidoHidPacket() = default;
 std::unique_ptr<FidoHidInitPacket> FidoHidInitPacket::CreateFromSerializedData(
     base::span<const uint8_t> serialized,
     size_t* remaining_size) {
-  if (serialized.size() <= kHidInitPacketHeaderSize)
+  if (serialized.size() <= kHidInitPacketHeaderSize) {
     return nullptr;
+  }
 
   size_t index = 0;
   auto channel_id = (serialized[index++] & 0xff) << 24;
@@ -34,8 +34,9 @@ std::unique_ptr<FidoHidInitPacket> FidoHidInitPacket::CreateFromSerializedData(
   channel_id |= serialized[index++] & 0xff;
 
   auto command = static_cast<FidoHidDeviceCommand>(serialized[index++] & 0x7f);
-  if (!base::Contains(GetFidoHidDeviceCommandList(), command))
+  if (!std::ranges::contains(GetFidoHidDeviceCommandList(), command)) {
     return nullptr;
+  }
 
   uint16_t payload_size = serialized[index++] << 8;
   payload_size |= serialized[index++];
@@ -92,8 +93,9 @@ std::unique_ptr<FidoHidContinuationPacket>
 FidoHidContinuationPacket::CreateFromSerializedData(
     base::span<const uint8_t> serialized,
     size_t* remaining_size) {
-  if (serialized.size() <= kHidContinuationPacketHeaderSize)
+  if (serialized.size() <= kHidContinuationPacketHeaderSize) {
     return nullptr;
+  }
 
   size_t index = 0;
   auto channel_id = (serialized[index++] & 0xff) << 24;

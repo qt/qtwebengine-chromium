@@ -25,6 +25,7 @@
 #include "ui/views/accessibility/atomic_view_ax_tree_manager.h"
 #include "ui/views/accessibility/ax_update_notifier.h"
 #include "ui/views/accessibility/ax_virtual_view.h"
+#include "ui/views/accessibility/tree/widget_ax_manager.h"
 #include "ui/views/view.h"
 #include "ui/views/view_utils.h"
 #include "ui/views/widget/root_view.h"
@@ -36,6 +37,10 @@
 #include "ui/views/accessibility/view_ax_platform_node_delegate_mac.h"
 #elif BUILDFLAG(IS_LINUX)
 #include "ui/views/accessibility/view_ax_platform_node_delegate_auralinux.h"
+#endif
+
+#if defined(USE_AURA)
+#include "ui/views/accessibility/ax_aura_obj_cache.h"
 #endif
 
 namespace views {
@@ -86,10 +91,9 @@ bool IsValidRoleForViews(ax::mojom::Role role) {
 // static
 std::unique_ptr<ViewAccessibility> ViewAccessibility::Create(View* view) {
   // With the feature enabled, the accessibility tree for Views is built using
-  // the `BrowserAccessibilityManager` owned by the `BrowserViewsAXManager`.
-  // ViewAccessibility is only used to managed the current accessibility state
-  // for a view.
-  if (::features::IsAccessibilityTreeForViewsEnabled()) {
+  // the WidgetAXManager. ViewAccessibility is only used to manage the current
+  // accessibility state for a view.
+  if (IsViewsAccessibilityTreeEnabled()) {
     // Cannot use std::make_unique because constructor is protected.
     return base::WrapUnique(new ViewAccessibility(view));
   }
@@ -106,8 +110,18 @@ std::unique_ptr<ViewAccessibility> ViewAccessibility::Create(View* view) {
 #endif
 }
 
-ViewAccessibility::ViewAccessibility(View* view)
-    : view_(view), focused_virtual_child_(nullptr) {
+// static
+bool ViewAccessibility::IsViewsAccessibilityTreeEnabled() {
+#if BUILDFLAG(IS_CHROMEOS)
+  // ChromeOS never uses the Views accessibility tree, even if the feature is
+  // enabled elsewhere. Instead, it uses the Automation API.
+  return false;
+#else
+  return ::features::IsAccessibilityTreeForViewsEnabled();
+#endif
+}
+
+ViewAccessibility::ViewAccessibility(View* view) : view_(view) {
   data_.id = GetUniqueId();
   CHECK(data_.id != ui::kInvalidAXNodeID);
 }
@@ -142,6 +156,8 @@ void ViewAccessibility::AddVirtualChildViewAt(
 
   AXVirtualView* added_view = virtual_children_[index].get();
   added_view->OnViewHasNewAncestor(view_);
+
+  AXUpdateNotifier::Get()->NotifyChildAdded(added_view, this);
 }
 
 std::unique_ptr<AXVirtualView> ViewAccessibility::RemoveVirtualChildView(
@@ -157,9 +173,22 @@ std::unique_ptr<AXVirtualView> ViewAccessibility::RemoveVirtualChildView(
   virtual_children_.erase(virtual_children_.begin() +
                           static_cast<ptrdiff_t>(cur_index.value()));
   child->set_parent_view(nullptr);
-  if (focused_virtual_child_ && child->Contains(focused_virtual_child_)) {
-    OverrideFocus(nullptr);
+
+  // If the removed child (or any of its descendants) was the active descendant,
+  // clear it.
+  if (data_.HasIntAttribute(ax::mojom::IntAttribute::kActivedescendantId)) {
+    int32_t active_descendant_id =
+        data_.GetIntAttribute(ax::mojom::IntAttribute::kActivedescendantId);
+    if (AXVirtualView* active_view =
+            AXVirtualView::GetFromId(active_descendant_id)) {
+      if (child->Contains(active_view)) {
+        ClearActiveDescendant();
+      }
+    }
   }
+
+  AXUpdateNotifier::Get()->NotifyChildRemoved(child.get(), this);
+
   return child;
 }
 
@@ -215,7 +244,7 @@ void ViewAccessibility::NotifyEvent(ax::mojom::Event event_type,
     return;
   }
 
-  Widget* const widget = view_->GetWidget();
+  Widget* const widget = GetWidget();
   // If it belongs to a widget but its native widget is already destructed, do
   // not send such accessibility event as it's unexpected to send such events
   // during destruction, and is likely to lead to crashes/problems.
@@ -232,20 +261,6 @@ void ViewAccessibility::NotifyEvent(ax::mojom::Event event_type,
   view_->OnAccessibilityEvent(event_type);
 }
 
-void ViewAccessibility::OverrideFocus(AXVirtualView* virtual_view) {
-  DCHECK(!virtual_view || Contains(virtual_view))
-      << "|virtual_view| must be nullptr or a descendant of this view.";
-  focused_virtual_child_ = virtual_view;
-
-  if (view_->HasFocus()) {
-    if (focused_virtual_child_) {
-      focused_virtual_child_->NotifyEvent(ax::mojom::Event::kFocus, true);
-    } else {
-      NotifyEvent(ax::mojom::Event::kFocus, true);
-    }
-  }
-}
-
 bool ViewAccessibility::IsAccessibilityFocusable() const {
   bool focusable = data_.HasState(ax::mojom::State::kFocusable);
   if (focusable) {
@@ -258,7 +273,8 @@ bool ViewAccessibility::IsAccessibilityFocusable() const {
 }
 
 bool ViewAccessibility::IsFocusedForTesting() const {
-  return view_->HasFocus() && !focused_virtual_child_;
+  return view_->HasFocus() &&
+         !data_.HasIntAttribute(ax::mojom::IntAttribute::kActivedescendantId);
 }
 
 void ViewAccessibility::SetPopupFocusOverride() {
@@ -662,27 +678,43 @@ void ViewAccessibility::SetIsScrollable(bool is_scrollable) {
   NotifyDataChanged();
 }
 
-void ViewAccessibility::SetActiveDescendant(views::View& view) {
-  SetActiveDescendant(view.GetViewAccessibility().GetUniqueId());
-}
-
-void ViewAccessibility::SetActiveDescendant(ui::AXPlatformNodeId id) {
+void ViewAccessibility::SetActiveDescendant(
+    ViewAccessibility& view_accessibility) {
+  ui::AXPlatformNodeId id = view_accessibility.GetUniqueId();
   if (data_.GetIntAttribute(ax::mojom::IntAttribute::kActivedescendantId) ==
       id) {
     return;
   }
+
+  // Store the reference to the ViewAccessibility object.
+  // TODO(https://crbug.com/40672441): Remove this once ViewsAX is fully enabled
+  // and we can rely solely on WidgetAXManager cache for lookups by ID.
+  active_descendant_view_ = view_accessibility.GetWeakPtr();
+
   data_.AddIntAttribute(ax::mojom::IntAttribute::kActivedescendantId, id);
 
   OnIntAttributeChanged(ax::mojom::IntAttribute::kActivedescendantId, id);
 
   NotifyEvent(ax::mojom::Event::kActiveDescendantChanged, true);
   NotifyDataChanged();
+
+  // If this view already has focus, fire a focus event on the new active
+  // descendant.
+  if (view_ && view_->HasFocus()) {
+    view_accessibility.NotifyEvent(ax::mojom::Event::kFocus, true);
+  }
+}
+
+void ViewAccessibility::SetActiveDescendant(views::View& view) {
+  SetActiveDescendant(view.GetViewAccessibility());
 }
 
 void ViewAccessibility::ClearActiveDescendant() {
   if (!data_.HasIntAttribute(ax::mojom::IntAttribute::kActivedescendantId)) {
     return;
   }
+
+  active_descendant_view_.reset();
   data_.RemoveIntAttribute(ax::mojom::IntAttribute::kActivedescendantId);
 
   OnIntAttributeChanged(ax::mojom::IntAttribute::kActivedescendantId,
@@ -690,6 +722,33 @@ void ViewAccessibility::ClearActiveDescendant() {
 
   NotifyEvent(ax::mojom::Event::kActiveDescendantChanged, true);
   NotifyDataChanged();
+
+  // If this view has focus, fire a focus event on this view since focus is now
+  // on the container itself (no active descendant).
+  if (view_ && view_->HasFocus()) {
+    NotifyEvent(ax::mojom::Event::kFocus, true);
+  }
+}
+
+ViewAccessibility* ViewAccessibility::GetActiveDescendantView() const {
+  // The WeakPtr will be null if the active descendant view was destroyed.
+  ViewAccessibility* active_descendant = active_descendant_view_.get();
+
+  // If the active descendant was destroyed, the WeakPtr will be null even
+  // though the ID attribute is still set. In this case, return nullptr.
+  // The ID attribute will be cleaned up when ClearActiveDescendant() is called.
+  if (!active_descendant) {
+    return nullptr;
+  }
+
+  // Validate that the stored reference is in sync with the ID attribute.
+  CHECK(data_.HasIntAttribute(ax::mojom::IntAttribute::kActivedescendantId));
+  CHECK_EQ(active_descendant->GetUniqueId(),
+           data_.GetIntAttribute(ax::mojom::IntAttribute::kActivedescendantId))
+      << "Active descendant reference is out of sync with stored ID. "
+      << "Did you forget to call SetActiveDescendant or "
+         "ClearActiveDescendant?";
+  return active_descendant;
 }
 
 void ViewAccessibility::SetIsInvisible(bool is_invisible) {
@@ -1404,7 +1463,7 @@ void ViewAccessibility::SetChildTreeID(ui::AXTreeID tree_id) {
   if (tree_id != ui::AXTreeIDUnknown()) {
     data_.AddChildTreeId(tree_id);
 
-    const views::Widget* widget = view_->GetWidget();
+    const views::Widget* widget = GetWidget();
     if (widget && widget->GetNativeView() && display::Screen::Get()) {
       // TODO(accessibility): There potentially could be an issue where the
       // device scale factor changes from the time the tree ID is set to the
@@ -1448,12 +1507,24 @@ void ViewAccessibility::SetChildTreeScaleFactor(float scale_factor) {
 }
 
 gfx::NativeViewAccessible ViewAccessibility::GetNativeObject() const {
-  return gfx::NativeViewAccessible();
+  if (!IsViewsAccessibilityTreeEnabled()) {
+    return gfx::NativeViewAccessible();
+  }
+
+  // TODO(crbug.com/40672241): Investigate whether this function should
+  // be removed altogether. Does it still make sense to let Views
+  // access the native accessible object directly with ViewsAX, or should the
+  // Views and Accessibility layer be completely separate?
+  Widget* widget = GetWidget();
+  if (!widget || !widget->ax_manager()) {
+    return gfx::NativeViewAccessible();
+  }
+
+  return widget->ax_manager()->GetNativeViewAccessibleForId(GetUniqueId());
 }
 
 void ViewAccessibility::AnnounceAlert(std::u16string_view text) {
-  CHECK(view_);
-  if (auto* const widget = view_->GetWidget()) {
+  if (auto* const widget = GetWidget()) {
     if (auto* const root_view =
             static_cast<internal::RootView*>(widget->GetRootView())) {
       root_view->AnnounceTextAs(std::u16string(text),
@@ -1463,8 +1534,7 @@ void ViewAccessibility::AnnounceAlert(std::u16string_view text) {
 }
 
 void ViewAccessibility::AnnouncePolitely(std::u16string_view text) {
-  CHECK(view_);
-  if (auto* const widget = view_->GetWidget()) {
+  if (auto* const widget = GetWidget()) {
     if (auto* const root_view =
             static_cast<internal::RootView*>(widget->GetRootView())) {
       root_view->AnnounceTextAs(std::u16string(text),
@@ -1493,6 +1563,17 @@ Widget* ViewAccessibility::GetWidget() const {
   return view_->GetWidget();
 }
 
+AXAuraObjWrapper* ViewAccessibility::GetOrCreateWrapper(AXAuraObjCache* cache) {
+#if defined(USE_AURA)
+  if (!view_) {
+    return nullptr;
+  }
+  return cache->GetOrCreate(view_);
+#else
+  return nullptr;
+#endif
+}
+
 ViewAccessibility* ViewAccessibility::GetViewAccessibilityParent() const {
   if (!view_) {
     return nullptr;
@@ -1513,8 +1594,8 @@ ViewAccessibility* ViewAccessibility::GetUnignoredParent() const {
 
 gfx::NativeViewAccessible ViewAccessibility::GetFocusedDescendant() {
   CHECK(view_);
-  if (focused_virtual_child_) {
-    return focused_virtual_child_->GetNativeObject();
+  if (ViewAccessibility* active_descendant = GetActiveDescendantView()) {
+    return active_descendant->GetNativeObject();
   }
   return view_->GetNativeViewAccessible();
 }
@@ -1522,7 +1603,10 @@ gfx::NativeViewAccessible ViewAccessibility::GetFocusedDescendant() {
 std::vector<raw_ptr<ViewAccessibility>> ViewAccessibility::GetChildren() const {
   std::vector<raw_ptr<ViewAccessibility>> out;
 
-  if (IsLeaf()) {
+  // The kChildTreeID attributes should always be set on leaf nodes only. Thus,
+  // ignore all children views and virtual views if this node has a child tree
+  // ID.
+  if (IsLeaf() || data_.HasChildTreeID()) {
     return out;
   }
 
@@ -1648,7 +1732,7 @@ void ViewAccessibility::OnWidgetDestroyed(Widget* widget) {
 
 void ViewAccessibility::OnWidgetUpdated(Widget* widget, Widget* old_widget) {
   CHECK(widget);
-  DCHECK_EQ(widget, view_->GetWidget());
+  DCHECK_EQ(widget, GetWidget());
   if (widget == old_widget) {
     return;
   }

@@ -287,8 +287,8 @@ std::optional<qos_class_t> ThreadTypeToQoSClass(ThreadType thread_type) {
       return QOS_CLASS_UTILITY;
     case ThreadType::kDefault:
       return QOS_CLASS_USER_INITIATED;
-    case ThreadType::kDisplayCritical:
-    case ThreadType::kInteractive:
+    case ThreadType::kPresentation:
+    case ThreadType::kAudioProcessing:
       return QOS_CLASS_USER_INTERACTIVE;
     case ThreadType::kRealtimeAudio:
       return std::nullopt;
@@ -318,7 +318,6 @@ void SetCurrentThreadTypeImpl(ThreadType thread_type,
   } else {
     CHECK_EQ(thread_type, ThreadType::kRealtimeAudio);
     SetPriorityRealtimeAudio(GetCurrentThreadRealtimePeriod());
-    DCHECK_EQ([NSThread.currentThread threadPriority], 1.0);
   }
 }
 
@@ -335,9 +334,10 @@ PlatformPriorityOverride SetThreadTypeOverride(
   return PlatformPriorityOverride();
 }
 
-void RemoveThreadTypeOverrideImpl(
+void RemoveThreadTypeOverride(
+    PlatformThreadHandle thread_handle,
     const PlatformPriorityOverride& priority_override_handle,
-    ThreadType thread_type) {
+    ThreadType initial_thread_type) {
   if (priority_override_handle == nullptr) {
     return;
   }
@@ -362,7 +362,7 @@ ThreadType PlatformThreadBase::GetCurrentEffectiveThreadTypeForTest() {
     case QOS_CLASS_USER_INITIATED:
       return ThreadType::kDefault;
     case QOS_CLASS_USER_INTERACTIVE:
-      return ThreadType::kDisplayCritical;
+      return ThreadType::kPresentation;
     default:
       return ThreadType::kDefault;
   }

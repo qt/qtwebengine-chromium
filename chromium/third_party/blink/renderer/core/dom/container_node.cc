@@ -34,6 +34,7 @@
 #include "third_party/blink/renderer/core/dom/child_list_mutation_scope.h"
 #include "third_party/blink/renderer/core/dom/class_collection.h"
 #include "third_party/blink/renderer/core/dom/document_part_root.h"
+#include "third_party/blink/renderer/core/dom/element_rare_data_vector.h"
 #include "third_party/blink/renderer/core/dom/element_traversal.h"
 #include "third_party/blink/renderer/core/dom/events/event_dispatch_forbidden_scope.h"
 #include "third_party/blink/renderer/core/dom/events/scoped_event_queue.h"
@@ -41,11 +42,11 @@
 #include "third_party/blink/renderer/core/dom/invalidate_node_list_caches_scope.h"
 #include "third_party/blink/renderer/core/dom/layout_tree_builder_traversal.h"
 #include "third_party/blink/renderer/core/dom/name_node_list.h"
+#include "third_party/blink/renderer/core/dom/node-inl.h"
 #include "third_party/blink/renderer/core/dom/node.h"
 #include "third_party/blink/renderer/core/dom/node_child_removal_tracker.h"
 #include "third_party/blink/renderer/core/dom/node_cloning_data.h"
 #include "third_party/blink/renderer/core/dom/node_lists_node_data.h"
-#include "third_party/blink/renderer/core/dom/node_rare_data.h"
 #include "third_party/blink/renderer/core/dom/node_traversal.h"
 #include "third_party/blink/renderer/core/dom/part.h"
 #include "third_party/blink/renderer/core/dom/part_root.h"
@@ -75,7 +76,6 @@
 #include "third_party/blink/renderer/core/layout/layout_inline.h"
 #include "third_party/blink/renderer/core/layout/layout_text.h"
 #include "third_party/blink/renderer/core/layout/layout_text_combine.h"
-#include "third_party/blink/renderer/core/patching/patch_supplement.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
 #include "third_party/blink/renderer/core/timing/soft_navigation_heuristics.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
@@ -185,12 +185,6 @@ void ContainerNode::ParserTakeAllChildrenFrom(ContainerNode& old_parent) {
     // infinite.
     old_parent.ParserRemoveChild(*child);
     ParserAppendChild(child);
-  }
-}
-
-void ContainerNode::ParserRemoveAllChildren() {
-  while (Node* child = firstChild()) {
-    ParserRemoveChild(*child);
   }
 }
 
@@ -326,6 +320,21 @@ bool ContainerNode::EnsurePreInsertionValidity(
         return false;
       }
     }
+
+    // Node::ConvertNodeUnionsIntoNodes behaves differently depending on
+    // whether there is one node or more than one, since it simulates
+    // insertion into a DocumentFragment for the latter case.  If it handled
+    // more than one node, then it already removed the children from their old
+    // parent.  Check here that those removals didn't do anything bad.  (We
+    // could potentially make this faster by using a DOMMutationDetector in
+    // ConvertNodeUnionsIntoNodes and storing whether we need to do this.)
+    if (new_children->size() != 1u &&
+        RuntimeEnabledFeatures::
+            RecheckParentDuringNodeVectorInsertionEnabled() &&
+        !RecheckNodeInsertionStructuralPrereq(*new_children, next,
+                                              exception_state)) {
+      return false;
+    }
   } else if (auto* child_fragment = DynamicTo<DocumentFragment>(new_child)) {
     for (Node* node = child_fragment->firstChild(); node;
          node = node->nextSibling()) {
@@ -348,7 +357,7 @@ bool ContainerNode::EnsurePreInsertionValidity(
 bool ContainerNode::RecheckNodeInsertionStructuralPrereq(
     const NodeVector& new_children,
     const Node* next,
-    ExceptionState& exception_state) {
+    ExceptionState& exception_state) const {
   for (const auto& child : new_children) {
     if (child->parentNode()) {
       // A new child was added to another parent before adding to this
@@ -388,10 +397,20 @@ void ContainerNode::InsertNodeVector(
       Node& child = *target_node;
       mutator(*this, child, next);
       ChildListMutationScope(*this).ChildAdded(child);
-      if (GetDocument().MayContainShadowRoots())
-        child.CheckSlotChangeAfterInserted();
-      probe::DidInsertDOMNode(&child);
-      NotifyNodeInsertedInternal(child, post_insertion_notification_targets);
+      if (RuntimeEnabledFeatures::
+              SendSlotChangeSignalAfterNodeInsertedEnabled()) {
+        probe::DidInsertDOMNode(&child);
+        NotifyNodeInsertedInternal(child, post_insertion_notification_targets);
+        if (GetDocument().MayContainShadowRoots()) {
+          child.CheckSlotChangeAfterInserted();
+        }
+      } else {
+        if (GetDocument().MayContainShadowRoots()) {
+          child.CheckSlotChangeAfterInserted();
+        }
+        probe::DidInsertDOMNode(&child);
+        NotifyNodeInsertedInternal(child, post_insertion_notification_targets);
+      }
     }
   }
 }
@@ -555,19 +574,26 @@ void ContainerNode::InsertBeforeCommon(Node& next_child, Node& new_child) {
   DCHECK(!new_child.HasPreviousSibling());
   DCHECK(!new_child.IsShadowRoot());
 
+  Node* last_child = lastChild();
+
   Node* prev = next_child.previousSibling();
-  DCHECK_NE(last_child_, prev);
+  DCHECK_NE(lastChild(), prev);
   next_child.SetPreviousSibling(&new_child);
   if (prev) {
     DCHECK_NE(firstChild(), next_child);
     DCHECK_EQ(prev->nextSibling(), next_child);
     prev->SetNextSibling(&new_child);
+    new_child.SetPreviousSibling(prev);
   } else {
     DCHECK(firstChild() == next_child);
     SetFirstChild(&new_child);
+
+    // lastChild() is always stored in the firstChild()'s previous pointer,
+    // and now firstChild() has changed, so update the storage.
+    SetLastChild(last_child);
+    new_child.SetPreviousSibling(last_child);
   }
   new_child.SetParentNode(this);
-  new_child.SetPreviousSibling(prev);
   new_child.SetNextSibling(&next_child);
 }
 
@@ -578,9 +604,9 @@ void ContainerNode::AppendChildCommon(Node& child) {
   DCHECK(ScriptForbiddenScope::IsScriptForbidden());
 
   child.SetParentNode(this);
-  if (last_child_) {
-    child.SetPreviousSibling(last_child_);
-    last_child_->SetNextSibling(&child);
+  if (lastChild()) {
+    child.SetPreviousSibling(lastChild());
+    lastChild()->SetNextSibling(&child);
   } else {
     SetFirstChild(&child);
   }
@@ -897,7 +923,6 @@ bool ContainerNode::IsReadingFlowContainer() const {
 
 void ContainerNode::Trace(Visitor* visitor) const {
   visitor->Trace(first_child_);
-  visitor->Trace(last_child_);
   Node::Trace(visitor);
 }
 
@@ -1028,8 +1053,9 @@ void ContainerNode::RemoveBetween(Node* previous_child,
     previous_child->SetNextSibling(next_child);
   if (first_child_ == &old_child)
     SetFirstChild(next_child);
-  if (last_child_ == &old_child)
+  if (lastChild() == &old_child) {
     SetLastChild(previous_child);
+  }
 
   old_child.SetPreviousSibling(nullptr);
   old_child.SetNextSibling(nullptr);
@@ -1712,7 +1738,7 @@ void ContainerNode::InvalidateNodeListCachesInAncestors(
     return;
 
   if (!attr_name || IsAttributeNode()) {
-    if (const NodeRareData* data = RareData()) {
+    if (const ElementRareDataVector* data = RareData()) {
       if (NodeListsNodeData* lists = data->NodeLists()) {
         if (ChildNodeList* child_node_list = lists->GetChildNodeList(*this)) {
           if (change) {
@@ -1839,7 +1865,7 @@ Element* ContainerNode::getElementById(const AtomicString& id) const {
 }
 
 NodeListsNodeData& ContainerNode::EnsureNodeLists() {
-  return EnsureRareData().EnsureNodeLists();
+  return UnpackAndRefresh(EnsureRareData().EnsureNodeLists());
 }
 
 // https://html.spec.whatwg.org/C/#autofocus-delegate
@@ -1908,54 +1934,27 @@ String ContainerNode::getHTML(const GetHTMLOptions* options,
                       shadow_root_inclusion);
 }
 
-WritableStream* ContainerNode::patchSelf(ScriptState* script_state,
-                                         ExceptionState& exception_state) {
-  if (!IsElementNode() && !parentElement()) {
-    exception_state.ThrowDOMException(
-        DOMExceptionCode::kHierarchyRequestError,
-        "Patching an orphan DocumentFragment is not allowed");
-    return nullptr;
-  }
-  return PatchSupplement::From(GetDocument())
-      ->CreateSinglePatchStream(script_state, *this, /*previous_child=*/nullptr,
-                                /*next_child=*/nullptr);
-}
-
-WritableStream* ContainerNode::patchAfter(ScriptState* script_state,
-                                          Node* a,
-                                          ExceptionState& exception_state) {
-  return patchBetween(script_state, a, nullptr, exception_state);
-}
-
 WritableStream* ContainerNode::streamAppendHTMLUnsafe(
     ScriptState* script_state,
+    SetHTMLUnsafeOptions* options,
     ExceptionState& exception_state) {
-  return HTMLStream::Create(script_state, this, exception_state);
+  DEFINE_STATIC_LOCAL(AtomicString, kInterfaceName, ("streamAppendHTMLUnsafe"));
+
+  return HTMLStream::Create(script_state, this, options, kInterfaceName,
+                            exception_state);
 }
 
-WritableStream* ContainerNode::patchBefore(ScriptState* script_state,
-                                           Node* b,
-                                           ExceptionState& exception_state) {
-  return patchBetween(script_state, nullptr, b, exception_state);
-}
-WritableStream* ContainerNode::patchBetween(ScriptState* script_state,
-                                            Node* a,
-                                            Node* b,
-                                            ExceptionState& exception_state) {
-  if ((a && a->parentNode() != this) || (b && b->parentNode() != this)) {
-    exception_state.ThrowDOMException(
-        DOMExceptionCode::kHierarchyRequestError,
-        "Reference nodes have to be children of the target node when patching");
-    return nullptr;
+WritableStream* ContainerNode::streamHTMLUnsafe(
+    ScriptState* script_state,
+    SetHTMLUnsafeOptions* options,
+    ExceptionState& exception_state) {
+  DEFINE_STATIC_LOCAL(AtomicString, kPropertyName, ("streamHTMLUnsafe"));
+  WritableStream* stream = HTMLStream::Create(script_state, this, options,
+                                              kPropertyName, exception_state);
+  if (!exception_state.HadException()) {
+    RemoveChildren();
   }
-
-  return PatchSupplement::From(GetDocument())
-      ->CreateSinglePatchStream(script_state, *this, a, b);
-}
-
-WritableStream* ContainerNode::patchAll(ScriptState* script_state) {
-  return PatchSupplement::From(GetDocument())
-      ->CreateSubtreePatchStream(script_state, *this);
+  return stream;
 }
 
 }  // namespace blink

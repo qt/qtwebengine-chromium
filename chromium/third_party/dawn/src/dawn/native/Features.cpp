@@ -219,16 +219,6 @@ static constexpr FeatureEnumAndInfo kFeatureInfo[] = {
       "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/dawn/features/"
       "norm16_texture_formats.md",
       FeatureInfo::FeatureState::Stable}},
-    {Feature::Snorm16TextureFormats,
-     {"Supports R/RG/RGBA16 snorm texture formats",
-      "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/dawn/features/"
-      "norm16_texture_formats.md",
-      FeatureInfo::FeatureState::Stable}},
-    {Feature::Norm16TextureFormats,
-     {"DEPRECATED Supports R/RG/RGBA16 norm texture formats.",
-      "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/dawn/features/"
-      "norm16_texture_formats.md",
-      FeatureInfo::FeatureState::Stable}},
     {Feature::SharedTextureMemoryVkDedicatedAllocation,
      {"Support specifying whether a Vulkan allocation for shared texture memory is a dedicated "
       "memory allocation.",
@@ -333,11 +323,6 @@ static constexpr FeatureEnumAndInfo kFeatureInfo[] = {
      {"Support importing ID3D12Resource as shared buffer memory.",
       "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/dawn/features/shared_buffer.md",
       FeatureInfo::FeatureState::Stable}},
-    {Feature::R8UnormStorage,
-     {"Supports using r8unorm texture as storage texture.",
-      "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/dawn/features/"
-      "r8unorm_storage.md",
-      FeatureInfo::FeatureState::Experimental}},
     {Feature::DawnFormatCapabilities,
      {"Supports querying the capabilities of a texture format.",
       "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/dawn/features/"
@@ -431,9 +416,6 @@ static constexpr FeatureEnumAndInfo kFeatureInfo[] = {
      {"Supports the \"enable primitive_index;\" directive in WGSL",
       "https://gpuweb.github.io/gpuweb/#dom-gpufeaturename-primitive-index",
       FeatureInfo::FeatureState::Stable}},
-    {Feature::ChromiumExperimentalBindless,
-     {"Experimental support for the prototype of a bindless extension",
-      "https://hackmd.io/@kangz/bindless-proposal", FeatureInfo::FeatureState::Experimental}},
     {Feature::AdapterPropertiesWGPU,
      {"Support querying WebGPU backend info from the adapter.",
       "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/dawn/features/"
@@ -450,6 +432,11 @@ static constexpr FeatureEnumAndInfo kFeatureInfo[] = {
     {Feature::ChromiumExperimentalSamplingResourceTable,
      {"Experimental support for the bindless sampling resource table",
       "https://github.com/Kangz/gpuweb/blob/bindless/proposals/bindless.md",
+      FeatureInfo::FeatureState::Experimental}},
+    {Feature::ChromiumExperimentalSubgroupSizeControl,
+     {"Support the \"enable chromium_experimental_subgroup_size_control;\" directive in WGSL.",
+      "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/tint/extensions/"
+      "chromium_experimental_subgroup_size_control.md",
       FeatureInfo::FeatureState::Experimental}}};
 
 }  // anonymous namespace

@@ -4,6 +4,7 @@
 
 import './BinaryResourceView.js';
 import './RequestConditionsDrawer.js';
+import './RequestDeviceBoundSessionsView.js';
 import './EventSourceMessagesView.js';
 import './NetworkConfigView.js';
 import './NetworkDataGridNode.js';
@@ -42,6 +43,7 @@ import * as NetworkSearchScope from './NetworkSearchScope.js';
 import * as NetworkWaterfallColumn from './NetworkWaterfallColumn.js';
 import * as RequestConditionsDrawer from './RequestConditionsDrawer.js';
 import * as RequestCookiesView from './RequestCookiesView.js';
+import * as RequestDeviceBoundSessionsView from './RequestDeviceBoundSessionsView.js';
 import * as RequestHTMLView from './RequestHTMLView.js';
 import * as RequestInitiatorView from './RequestInitiatorView.js';
 import * as RequestPayloadView from './RequestPayloadView.js';
@@ -50,6 +52,7 @@ import * as RequestResponseView from './RequestResponseView.js';
 import * as RequestTimingView from './RequestTimingView.js';
 import * as ResourceDirectSocketChunkView from './ResourceDirectSocketChunkView.js';
 import * as ResourceWebSocketFrameView from './ResourceWebSocketFrameView.js';
+import * as ShowMoreDetailsWidget from './ShowMoreDetailsWidget.js';
 import * as SignedExchangeInfoView from './SignedExchangeInfoView.js';
 
 export {
@@ -68,6 +71,7 @@ export {
   NetworkWaterfallColumn,
   RequestConditionsDrawer,
   RequestCookiesView,
+  RequestDeviceBoundSessionsView,
   RequestHTMLView,
   RequestInitiatorView,
   RequestPayloadView,
@@ -76,5 +80,6 @@ export {
   RequestTimingView,
   ResourceDirectSocketChunkView,
   ResourceWebSocketFrameView,
+  ShowMoreDetailsWidget,
   SignedExchangeInfoView,
 };

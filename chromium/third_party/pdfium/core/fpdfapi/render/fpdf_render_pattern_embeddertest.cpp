@@ -15,5 +15,5 @@ TEST_F(FPDFRenderPatternEmbedderTest, LoadError547706) {
   ScopedPage page = LoadScopedPage(0);
   ASSERT_TRUE(page);
   ScopedFPDFBitmap bitmap = RenderLoadedPage(page.get());
-  CompareBitmap(bitmap.get(), 612, 792, pdfium::kBlankPage612By792Checksum);
+  CompareBitmapToPng(bitmap.get(), pdfium::kBlankPage612By792Png);
 }

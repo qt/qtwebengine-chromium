@@ -131,7 +131,8 @@ Node::InsertionNotificationRequest HTMLOptGroupElement::InsertedInto(
   customizable_select_rendering_ = false;
   HTMLElement::InsertedInto(insertion_point);
 
-  owner_select_ = HTMLSelectElement::AssociatedSelectAndOptgroup(*this).first;
+  owner_select_ =
+      HTMLSelectElement::AssociatedSelectAndOptgroupAndDatalist(*this).select;
   if (owner_select_) {
     owner_select_->OptGroupInsertedOrRemoved(*this);
   }
@@ -151,7 +152,7 @@ Node::InsertionNotificationRequest HTMLOptGroupElement::InsertedInto(
 
 void HTMLOptGroupElement::RemovedFrom(ContainerNode& insertion_point) {
   HTMLSelectElement* new_ancestor_select =
-      HTMLSelectElement::AssociatedSelectAndOptgroup(*this).first;
+      HTMLSelectElement::AssociatedSelectAndOptgroupAndDatalist(*this).select;
   if (owner_select_ != new_ancestor_select) {
     // When removing, we can only lose an associated <select>
     CHECK(owner_select_);
@@ -189,7 +190,8 @@ HTMLSelectElement* HTMLOptGroupElement::OwnerSelectElement(
     bool skip_check) const {
   if (!skip_check) {
     DCHECK_EQ(owner_select_,
-              HTMLSelectElement::AssociatedSelectAndOptgroup(*this).first);
+              HTMLSelectElement::AssociatedSelectAndOptgroupAndDatalist(*this)
+                  .select);
   }
   return owner_select_;
 }
@@ -224,7 +226,7 @@ void HTMLOptGroupElement::ManuallyAssignSlots() {
   for (Node& child : NodeTraversal::ChildrenOf(*this)) {
     if (!child.IsSlotable())
       continue;
-    if (RuntimeEnabledFeatures::CustomizableSelectInPageEnabled() ||
+    if (RuntimeEnabledFeatures::CustomizableSelectListboxEnabled() ||
         customizable_select_rendering_ || CanAssignToOptGroupSlot(child)) {
       opt_group_nodes.push_back(child);
     }
@@ -244,12 +246,12 @@ void HTMLOptGroupElement::UpdateGroupLabel() {
   // to display:none.
   // The ContainsOnlyWhitespaceOrEmpty() check here was shortsightedly added for
   // CustomizableSelect to remove the empty line behavior, but we want to remove
-  // it for CustomizableSelectInPage.
-  if ((!RuntimeEnabledFeatures::CustomizableSelectInPageEnabled() &&
+  // it for CustomizableSelectListbox.
+  if ((!RuntimeEnabledFeatures::CustomizableSelectListboxEnabled() &&
        label_text.ContainsOnlyWhitespaceOrEmpty()) ||
       FirstChildLegend(*this)) {
     if (customizable_select_rendering_ ||
-        RuntimeEnabledFeatures::CustomizableSelectInPageEnabled()) {
+        RuntimeEnabledFeatures::CustomizableSelectListboxEnabled()) {
       // If the author uses <legend> to label the <optgroup> instead of the
       // label attribute, then we don't want extra space being taken up for the
       // unused label attribute.

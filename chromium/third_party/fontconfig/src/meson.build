@@ -41,6 +41,9 @@ conf.set('FC_VERSION_MICRO', fc_version_micro)
 
 freetype_dep = dependency('freetype2', method: 'pkg-config', version: freetype_req, required: false)
 
+# Preparation for enabling a FreeType-less build, for now, default enable.
+conf.set('ENABLE_FREETYPE', 1)
+
 # Give another shot using CMake
 if not freetype_dep.found()
   freetype_dep = dependency('freetype', method: 'cmake', version: freetype_req_cmake,
@@ -118,7 +121,6 @@ check_headers = [
 check_funcs = [
   ['link'],
   ['mkstemp'],
-  ['mkostemp'],
   ['_mktemp_s'],
   ['mkdtemp'],
   ['getopt'],
@@ -137,6 +139,7 @@ check_funcs = [
   ['strerror'],
   ['strerror_r'],
   ['mmap'],
+  ['vasprintf'],
   ['vprintf'],
   ['vsnprintf'],
   ['vsprintf'],
@@ -145,6 +148,7 @@ check_funcs = [
   ['dcgettext'],
   ['gettext'],
   ['localtime_r'],
+  ['strdup'],
 ]
 
 check_freetype_funcs = [
@@ -156,7 +160,8 @@ check_freetype_funcs = [
 ]
 
 check_header_symbols = [
-  ['posix_fadvise', 'fcntl.h']
+  ['posix_fadvise', 'fcntl.h'],
+  ['mkostemp', 'stdlib.h'],
 ]
 
 check_struct_members = [
@@ -197,6 +202,12 @@ if host_machine.system() == 'windows'
   conf.set('EXEEXT', '.exe')
 else
   conf.set('EXEEXT', '')
+endif
+
+if host_machine.system() == 'sunos'
+  if not cc.has_header_symbol('string.h', 'strdup')
+    add_project_arguments('-D__EXTENSIONS__', language: 'c')
+  endif
 endif
 
 i18n = import('i18n')
@@ -323,6 +334,9 @@ if cc.links(files('meson-cc-tests/solaris-atomic-operations.c'), name: 'Solaris 
   conf.set('HAVE_SOLARIS_ATOMIC_OPS', 1)
 endif
 
+if cc.links(files('meson-cc-tests/c99-vsnprint-test.c'), name: 'C99 compliant vsnprintf()')
+  conf.set('HAVE_C99_VSNPRINTF', 1)
+endif
 
 prefix = get_option('prefix')
 
@@ -561,6 +575,7 @@ if not get_option('tools').disabled()
   subdir('fc-cache')
   subdir('fc-cat')
   subdir('fc-conflist')
+  subdir('fc-genconf')
   subdir('fc-list')
   subdir('fc-match')
   subdir('fc-pattern')

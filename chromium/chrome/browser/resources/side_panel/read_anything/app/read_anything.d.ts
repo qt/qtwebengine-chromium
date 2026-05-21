@@ -9,6 +9,16 @@ interface Element {
   scrollIntoViewIfNeeded: () => void;
 }
 
+interface AxTreeAnchorMetadata {
+  axId: number;
+  htmlId?: string;
+  target?: string;
+  title?: string;
+  name?: string;
+  textBefore?: string;
+  textAfter?: string;
+}
+
 declare namespace chrome {
   export namespace readingMode {
     /////////////////////////////////////////////////////////////////////
@@ -44,6 +54,9 @@ declare namespace chrome {
     let speechRate: number;
     let highlightGranularity: number;
 
+    // Current line focus value.
+    let lineFocus: number;
+
     // Enum values for various visual theme changes.
     let standardLineSpacing: number;
     let looseLineSpacing: number;
@@ -60,6 +73,10 @@ declare namespace chrome {
     let lowContrastTheme: number;
     let sepiaLightTheme: number;
     let sepiaDarkTheme: number;
+    let undefinedPresentationState: number;
+    let hiddenPresentationState: number;
+    let inSidePanelPresentationState: number;
+    let inImmersiveOverlayPresentationState: number;
     let autoHighlighting: number;
     let wordHighlighting: number;
     let phraseHighlighting: number;
@@ -74,6 +91,23 @@ declare namespace chrome {
     let contentFinishedStopSource: number;
     let unexpectedUpdateContentStopSource: number;
 
+    // Enum values for line focus modes.
+    let lineFocusOff: number;
+    let lineFocusSmallStaticWindow: number;
+    let lineFocusMediumStaticWindow: number;
+    let lineFocusLargeStaticWindow: number;
+    let lineFocusSmallCursorWindow: number;
+    let lineFocusMediumCursorWindow: number;
+    let lineFocusLargeCursorWindow: number;
+    let lineFocusStaticLine: number;
+    let lineFocusCursorLine: number;
+
+    // Whether the Immersive Read Anything feature flag is enabled.
+    let isImmersiveEnabled: boolean;
+
+    // Whether Read Anything is pinned to the toolbar.
+    let isReadAnythingPinned: boolean;
+
     // Whether the Read Aloud feature flag is enabled.
     let isReadAloudEnabled: boolean;
 
@@ -85,6 +119,13 @@ declare namespace chrome {
 
     // Whether the phrase highlighting feature flag is enabled.
     let isPhraseHighlightingEnabled: boolean;
+
+    // Whether the line focus feature flag is enabled.
+    let isLineFocusEnabled: boolean;
+
+    // Whether the links can be enabled when the Readability feature flag is
+    // enabled.
+    let isReadabilityWithLinksEnabled: boolean;
 
     // Indicates if this page is a Google doc.
     let isGoogleDocs: boolean;
@@ -113,6 +154,27 @@ declare namespace chrome {
 
     // Max number of characters to display in one line of Reading mode.
     let maxLineWidth: number;
+
+    // Distiled title from DOM distiller distillation.
+    let htmlTitle: string;
+
+    // Distiled html content from DOM distiller distillation.
+    let htmlContent: string;
+
+    let axTreeAnchors: Record<string, AxTreeAnchorMetadata[]>;
+
+    // The active distillation method currently showing in page content.
+    // Possible values are distillationTypeScreen2x or
+    // distillationTypeReadability.
+    let activeDistillationMethod: number;
+
+    // The constant value representing the Screen2x (AXTree) distillation
+    // method.
+    let distillationTypeScreen2x: number;
+
+    // The constant value representing the Readability (HTML string)
+    // distillation method.
+    let distillationTypeReadability: number;
 
     // Returns whether the reading highlight is currently on.
     function isHighlightOn(): boolean;
@@ -212,6 +274,11 @@ declare namespace chrome {
     // Called when the font is changed via the webui toolbar.
     function onFontChange(font: string): void;
 
+    // Called when reading mode is closed.
+    function readingModeWillClose(): void;
+
+    function onAnchorsReadyForReadability(): void;
+
     // Called when the speech rate is changed via the webui toolbar.
     function onSpeechRateChange(rate: number): void;
 
@@ -225,6 +292,9 @@ declare namespace chrome {
 
     // Called when the highlight granularity is changed via the webui toolbar.
     function onHighlightGranularityChanged(value: number): void;
+
+    // Called when the line focus mode is changed via the webui toolbar.
+    function onLineFocusChanged(value: number): void;
 
     // Called when a language is enabled/disabled for Read Aloud
     // via the webui language menu.
@@ -281,6 +351,10 @@ declare namespace chrome {
     //   };
     function setContentForTesting(
         snapshotLite: Object, contentNodeIds: number[]): void;
+    // Sets the same structure as setContentForTesting but forces
+    // the processing of the AX Tree Anchors.
+    function setAnchorsForTesting(
+        snapshotLite: Object, contentNodeIds: number[]): void;
 
     // Set the theme. Used by tests only.
     function setThemeForTesting(
@@ -298,6 +372,21 @@ declare namespace chrome {
     // Called when the Read Anything panel is scrolled all the way down.
     function onScrolledToBottom(): void;
 
+    // Called by the Read Anything app to request the presentation state.
+    function sendGetPresentationStateRequest(): void;
+
+    // Called by the Read Anything app to close the Read Anything UI.
+    function close(): void;
+
+    // Called by the ReadAnything app to toggle the pin state.
+    function togglePinState(): void;
+
+    // Called to get the pin state from the browser.
+    function sendPinStateRequest(): void;
+
+    // Called by the Read Anything app to toggle between presentation modes.
+    function togglePresentation(): void;
+
     // Whether the Google Docs load more button is visible.
     let isDocsLoadMoreButtonVisible: boolean;
 
@@ -307,6 +396,11 @@ declare namespace chrome {
 
     // Display a loading screen to tell the user we are distilling the page.
     function showLoading(): void;
+
+    // Sets the current presentation state.
+    function onPresentationStateReceived(presentationState: number): void;
+
+    function onPinStateReceived(pinState: boolean): void;
 
     // Display the empty state page to tell the user we can't distill the page.
     function showEmpty(): void;
@@ -416,6 +510,29 @@ declare namespace chrome {
 
     // Log when the empty state page is shown.
     function logEmptyState(): void;
+
+    // Ping that a line focus session has started.
+    function startLineFocusSession(): void;
+
+    // Log all the line focus session info, including length of time and
+    // movement activity.
+    function logLineFocusSession(): void;
+
+    // Add the given distance to the cumulative scroll distance for the current
+    // line focus session.
+    function addLineFocusScrollDistance(distance: number): void;
+
+    // Add the given distance to the cumulative mouse distance for the current
+    // line focus session.
+    function addLineFocusMouseDistance(distance: number): void;
+
+    // Increment the cumulative keyboard line count for the current line focus
+    // session.
+    function incrementLineFocusKeyboardLines(): void;
+
+    // Increment the cumulative speech line count for the current line focus
+    // session.
+    function incrementLineFocusSpeechLines(): void;
 
     // Returns a list of node ids and ranges (start and length) associated with
     // the index within the given text segment. The intended use is for

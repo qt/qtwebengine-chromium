@@ -45,6 +45,7 @@
 #include "third_party/blink/renderer/platform/wtf/text/character_visitor.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_buffer.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_hash.h"
+#include "third_party/blink/renderer/platform/wtf/text/string_internal.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_to_number.h"
 #include "third_party/blink/renderer/platform/wtf/text/unicode.h"
 #include "third_party/blink/renderer/platform/wtf/text/unicode_string.h"
@@ -135,19 +136,21 @@ void* StringImpl::operator new(size_t size) {
   return Partitions::BufferMalloc(size, "blink::StringImpl");
 }
 
-void StringImpl::operator delete(void* ptr) {
-  Partitions::BufferFree(ptr);
+void StringImpl::operator delete(StringImpl* impl, std::destroying_delete_t) {
+  size_t size = impl->GetAllocatedSize();
+  impl->~StringImpl();
+  // Use sized deallocation. We explicitly pass `GetAllocatedSize()` because
+  // StringImpl instances are allocated with a dynamic size
+  Partitions::BufferFreeWithSize(impl, size);
 }
 
 inline StringImpl::~StringImpl() {
   DCHECK(!IsStatic());
 }
 
-void StringImpl::DestroyIfNeeded() const {
+void StringImpl::DestroyIfNeeded() {
   if (hash_and_flags_.load(std::memory_order_acquire) & kIsAtomic) {
-    // TODO: Remove const_cast
-    if (AtomicStringTable::Instance().ReleaseAndRemoveIfNeeded(
-            const_cast<StringImpl*>(this))) {
+    if (AtomicStringTable::Instance().ReleaseAndRemoveIfNeeded(this)) {
       delete this;
     } else {
       // AtomicStringTable::Add() revived this before we started really
@@ -516,54 +519,20 @@ scoped_refptr<StringImpl> StringImpl::Truncate(wtf_size_t length) {
   return Create(Span16().first(length));
 }
 
-namespace {
-
-using CharacterRange = std::pair<size_t, size_t>;
-
-template <class UCharPredicate>
-inline CharacterRange StrippedMatchedCharactersRange(const StringImpl& impl,
-                                                     UCharPredicate predicate) {
-  return VisitCharacters(impl, [predicate](auto characters) -> CharacterRange {
-    if (characters.empty()) {
-      return {0, 0};
-    }
-
-    size_t start = 0;
-    size_t end = characters.size() - 1;
-
-    // Skip white space from the start.
-    while (start <= end && predicate(characters[start])) {
-      ++start;
-    }
-
-    // String only contains matching characters.
-    if (start > end) {
-      return {0, 0};
-    }
-
-    // Skip white space from the end.
-    while (end && predicate(characters[end])) {
-      --end;
-    }
-    return {start, end + 1};
-  });
-}
-
-}  // namespace
-
 template <class UCharPredicate>
 inline scoped_refptr<StringImpl> StringImpl::StripMatchedCharacters(
     UCharPredicate predicate) {
-  const auto [start, end] = StrippedMatchedCharactersRange(*this, predicate);
-  if (start == end) {
-    return empty_;
-  }
-  if (start == 0 && end == length_) {
-    return this;
-  }
-  if (Is8Bit())
-    return Create(Span8().subspan(start, end - start));
-  return Create(Span16().subspan(start, end - start));
+  return VisitCharacters(*this, [&](auto chars) -> scoped_refptr<StringImpl> {
+    const auto [start, len] =
+        internal::StrippedMatchedCharactersRange(chars, predicate);
+    if (len == 0) {
+      return empty_;
+    }
+    if (start == 0 && len == length_) {
+      return this;
+    }
+    return Create(chars.subspan(start, len));
+  });
 }
 
 class UCharPredicate final {
@@ -589,9 +558,11 @@ class SpaceOrNewlinePredicate final {
 };
 
 wtf_size_t StringImpl::LengthWithStrippedWhiteSpace() const {
-  const auto [start, end] =
-      StrippedMatchedCharactersRange(*this, SpaceOrNewlinePredicate());
-  return static_cast<wtf_size_t>(end - start);
+  const auto [start, len] = VisitCharacters(*this, [](auto chars) {
+    return internal::StrippedMatchedCharactersRange(chars,
+                                                    SpaceOrNewlinePredicate());
+  });
+  return len;
 }
 
 scoped_refptr<StringImpl> StringImpl::StripWhiteSpace() {
@@ -740,18 +711,6 @@ scoped_refptr<StringImpl> StringImpl::SimplifyWhiteSpace(
   });
 }
 
-int StringImpl::ToInt(NumberParsingOptions options, bool* ok) const {
-  if (Is8Bit())
-    return CharactersToInt(Span8(), options, ok);
-  return CharactersToInt(Span16(), options, ok);
-}
-
-wtf_size_t StringImpl::ToUInt(NumberParsingOptions options, bool* ok) const {
-  if (Is8Bit())
-    return CharactersToUInt(Span8(), options, ok);
-  return CharactersToUInt(Span16(), options, ok);
-}
-
 wtf_size_t StringImpl::HexToUIntStrict(bool* ok) {
   constexpr auto kStrict = NumberParsingOptions::Strict();
   if (Is8Bit()) {
@@ -778,18 +737,6 @@ uint64_t StringImpl::ToUInt64(NumberParsingOptions options, bool* ok) const {
   if (Is8Bit())
     return CharactersToUInt64(Span8(), options, ok);
   return CharactersToUInt64(Span16(), options, ok);
-}
-
-double StringImpl::ToDouble(bool* ok) {
-  if (Is8Bit())
-    return CharactersToDouble(Span8(), ok);
-  return CharactersToDouble(Span16(), ok);
-}
-
-float StringImpl::ToFloat(bool* ok) {
-  if (Is8Bit())
-    return CharactersToFloat(Span8(), ok);
-  return CharactersToFloat(Span16(), ok);
 }
 
 // Table is based on ftp://ftp.unicode.org/Public/UNIDATA/CaseFolding.txt

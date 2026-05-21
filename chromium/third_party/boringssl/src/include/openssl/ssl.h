@@ -492,6 +492,10 @@ OPENSSL_EXPORT int SSL_set_mtu(SSL *ssl, unsigned mtu);
 //
 // This duration overrides the default of 400 milliseconds, which is
 // recommendation of RFC 9147 for real-time protocols.
+//
+// If |ssl| is an open connection, this function may update currently running
+// timers and may make them expire. Callers should call
+// |DTLSv1_get_timeout| for an updated timeout and reschedule accordingly.
 OPENSSL_EXPORT void DTLSv1_set_initial_timeout_duration(SSL *ssl,
                                                         uint32_t duration_ms);
 
@@ -1472,6 +1476,7 @@ DEFINE_CONST_STACK_OF(SSL_CIPHER)
 #define SSL_CIPHER_ECDHE_RSA_WITH_AES_256_CBC_SHA 0xc014
 #define SSL_CIPHER_ECDHE_PSK_WITH_AES_128_CBC_SHA 0xc035
 #define SSL_CIPHER_ECDHE_PSK_WITH_AES_256_CBC_SHA 0xc036
+#define SSL_CIPHER_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256 0xc023
 #define SSL_CIPHER_ECDHE_RSA_WITH_AES_128_CBC_SHA256 0xc027
 #define SSL_CIPHER_RSA_WITH_AES_128_GCM_SHA256 0x009c
 #define SSL_CIPHER_RSA_WITH_AES_256_GCM_SHA384 0x009d
@@ -2573,6 +2578,40 @@ OPENSSL_EXPORT int SSL_CTX_set1_group_ids(SSL_CTX *ctx,
 // on success and zero on failure.
 OPENSSL_EXPORT int SSL_set1_group_ids(SSL *ssl, const uint16_t *group_ids,
                                       size_t num_group_ids);
+
+// SSL_GROUP_FLAG_* define flags used with SSL_CTX_set1_group_ids_with_flags
+// and SSL_set1_group_ids_with_flags.
+//
+// If configuring a server, SSL_GROUP_FLAG_EQUAL_PREFERENCE_WITH_NEXT indicates
+// that the corresponding group has equal preference with the next member of the
+// list of groups being configured. Assigning equal preference to a range of
+// consecutively listed groups allows a server to partially respect the
+// client's preferences when |SSL_OP_CIPHER_SERVER_PREFERENCE| is enabled.
+#define SSL_GROUP_FLAG_EQUAL_PREFERENCE_WITH_NEXT 0x01
+
+// SSL_CTX_set1_group_ids_with_flags sets the preferred groups for |ctx| to
+// |group_ids|, using the corresponding |flags| for each element, which is a set
+// of SSL_GROUP_FLAG_* values ORed together. Each element of |group_ids| should
+// be a unique one of the |SSL_GROUP_*| constants. If |group_ids| is empty, a
+// default list of groups and flags defaulting to zero will be set instead.
+// |group_ids| and |flags| should both have |num_group_ids| elements. It returns
+// one on success and zero on failure.
+OPENSSL_EXPORT int SSL_CTX_set1_group_ids_with_flags(SSL_CTX *ctx,
+                                                     const uint16_t *group_ids,
+                                                     const uint32_t *flags,
+                                                     size_t num_group_ids);
+
+// SSL_set1_group_ids_with_flags sets the preferred groups for |ssl| to
+// |group_ids|, using the corresponding |flags| for each element, which is a set
+// of SSL_GROUP_FLAG_* values ORed toegether. Each element of |group_ids| should
+// be a unique one of the |SSL_GROUP_*| constants. If |group_ids| is empty, a
+// default list of groups and flags defaulting to zero will be set instead.
+// |group_ids| and |flags| should both have |num_group_ids| elements.  It
+// returns one on success and zero on failure.
+OPENSSL_EXPORT int SSL_set1_group_ids_with_flags(SSL *ssl,
+                                                 const uint16_t *group_ids,
+                                                 const uint32_t *flags,
+                                                 size_t num_group_ids);
 
 // SSL_get_group_id returns the ID of the group used by |ssl|'s most recently
 // completed handshake, or 0 if not applicable.

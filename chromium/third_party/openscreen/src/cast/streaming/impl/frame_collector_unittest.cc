@@ -162,7 +162,7 @@ TEST(FrameCollectorTest, CollectsFrameWithMultiplePartsArrivingOutOfOrder) {
     EXPECT_THAT(remaining_data.subspan(0, kPayloadSizes[i]),
                 ElementsAreArray(payloads[i]))
         << "i=" << i;
-    remaining_data.remove_prefix(kPayloadSizes[i]);
+    remaining_data = remaining_data.subspan(kPayloadSizes[i]);
   }
   ASSERT_TRUE(remaining_data.empty());
 }

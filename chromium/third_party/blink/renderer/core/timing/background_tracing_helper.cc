@@ -6,7 +6,6 @@
 
 #include <string_view>
 
-#include "base/containers/contains.h"
 #include "base/containers/span.h"
 #include "base/feature_list.h"
 #include "base/numerics/byte_conversions.h"
@@ -54,11 +53,6 @@ std::optional<uint32_t> ConvertToHashInteger(std::string_view chars) {
 }
 
 static constexpr char kTriggerPrefix[] = "trigger:";
-
-bool MarkNameIsTrigger(StringView mark_name) {
-  return StringView(mark_name, 0, std::size(kTriggerPrefix) - 1) ==
-         kTriggerPrefix;
-}
 
 std::string GenerateFullTrigger(std::string_view site,
                                 std::string_view mark_name) {
@@ -109,7 +103,7 @@ BackgroundTracingHelper::BackgroundTracingHelper(ExecutionContext* context) {
   uint32_t this_site_hash = MD5Hash32(this_site_ascii);
 
   // We only need the site information if it's allowed by the allow list.
-  if (base::Contains(GetSiteHashSet(), this_site_hash)) {
+  if (GetSiteHashSet().Contains(this_site_hash)) {
     site_ = this_site_ascii;
     site_hash_ = this_site_hash;
   }
@@ -209,6 +203,11 @@ size_t BackgroundTracingHelper::GetIdSuffixPos(StringView string) {
 
   // Return the location of the underscore.
   return cursor - 1;
+}
+
+bool BackgroundTracingHelper::MarkNameIsTrigger(StringView mark_name) {
+  return mark_name.starts_with(kTriggerPrefix) &&
+         mark_name.length() >= std::size(kTriggerPrefix);
 }
 
 std::pair<StringView, std::optional<uint32_t>>

@@ -34,6 +34,7 @@ class CPDF_PageRenderContext final : public CPDF_Page::RenderContextIface {
   std::unique_ptr<CFX_RenderDevice> device_;
   std::unique_ptr<CPDF_RenderContext> context_;
   std::unique_ptr<CPDF_ProgressiveRenderer> renderer_;
+  bool return_premultiplied_ = false;
 };
 
 #endif  // CORE_FPDFAPI_RENDER_CPDF_PAGERENDERCONTEXT_H_

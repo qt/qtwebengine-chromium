@@ -9,6 +9,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "src/api/api-inl.h"
@@ -919,11 +920,11 @@ MaybeDirectHandle<String> Intl::StringLocaleConvertCase(
   std::vector<std::string> requested_locales;
   if (!CanonicalizeLocaleList(isolate, locales, true).To(&requested_locales))
     return {};
-  std::string requested_locale = requested_locales.empty()
-                                     ? isolate->DefaultLocale()
-                                     : requested_locales[0];
+  std::string_view requested_locale = requested_locales.empty()
+                                          ? isolate->DefaultLocale()
+                                          : requested_locales[0];
   size_t dash = requested_locale.find('-');
-  if (dash != std::string::npos) {
+  if (dash != std::string_view::npos) {
     requested_locale = requested_locale.substr(0, dash);
   }
 
@@ -948,7 +949,8 @@ MaybeDirectHandle<String> Intl::StringLocaleConvertCase(
   // Greek (el) does not require any adjustment.
   if (V8_UNLIKELY((requested_locale == "tr") || (requested_locale == "el") ||
                   (requested_locale == "lt") || (requested_locale == "az"))) {
-    return LocaleConvertCase(isolate, s, to_upper, requested_locale.c_str());
+    return LocaleConvertCase(isolate, s, to_upper,
+                             std::string(requested_locale).c_str());
   } else {
     if (to_upper) {
       return ConvertToUpper(isolate, s);
@@ -1525,8 +1527,10 @@ MaybeDirectHandle<String> Intl::NumberToLocaleString(
                 Isolate::ICUObjectCacheType::kDefaultNumberFormat, locales));
     // We may use the cached icu::NumberFormat for a fast path.
     if (cached_number_format != nullptr) {
-      return JSNumberFormat::FormatNumeric(isolate, *cached_number_format,
-                                           numeric_obj);
+      std::shared_ptr<icu::number::LocalizedNumberFormatter> lfmt =
+          std::make_shared<icu::number::LocalizedNumberFormatter>(
+              *cached_number_format);
+      return JSNumberFormat::FormatNumeric(isolate, lfmt, numeric_obj);
     }
   }
 
@@ -1555,10 +1559,9 @@ MaybeDirectHandle<String> Intl::NumberToLocaleString(
   }
 
   // Return FormatNumber(numberFormat, x).
-  icu::number::LocalizedNumberFormatter* icu_number_format =
-      number_format->icu_number_formatter()->raw();
-  return JSNumberFormat::FormatNumeric(isolate, *icu_number_format,
-                                       numeric_obj);
+
+  return JSNumberFormat::FormatNumeric(
+      isolate, number_format->icu_number_formatter()->get(), numeric_obj);
 }
 
 namespace {
@@ -2197,10 +2200,10 @@ MaybeDirectHandle<JSArray> VectorToJSArray(
     Isolate* isolate, const std::vector<std::string>& array) {
   Factory* factory = isolate->factory();
   DirectHandle<FixedArray> fixed_array =
-      factory->NewFixedArray(static_cast<int32_t>(array.size()));
-  int32_t index = 0;
+      factory->NewFixedArray(static_cast<uint32_t>(array.size()));
+  uint32_t index = 0;
   for (const std::string& item : array) {
-    DirectHandle<String> str = factory->NewStringFromAsciiChecked(item.c_str());
+    DirectHandle<String> str = factory->NewStringFromAsciiChecked(item);
     fixed_array->set(index++, *str);
   }
   return factory->NewJSArrayWithElements(fixed_array);
@@ -2302,10 +2305,10 @@ MaybeDirectHandle<JSArray> AvailableUnits(Isolate* isolate) {
   Factory* factory = isolate->factory();
   std::set<std::string> sanctioned(Intl::SanctionedSimpleUnits());
   DirectHandle<FixedArray> fixed_array =
-      factory->NewFixedArray(static_cast<int32_t>(sanctioned.size()));
-  int32_t index = 0;
+      factory->NewFixedArray(static_cast<uint32_t>(sanctioned.size()));
+  uint32_t index = 0;
   for (const std::string& item : sanctioned) {
-    DirectHandle<String> str = factory->NewStringFromAsciiChecked(item.c_str());
+    DirectHandle<String> str = factory->NewStringFromAsciiChecked(item);
     fixed_array->set(index++, *str);
   }
   return factory->NewJSArrayWithElements(fixed_array);

@@ -804,8 +804,17 @@ EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE constexpr void resize_if_allowed(DstXprTyp
                                                                        const internal::assign_op<T1, T2>& /*func*/) {
   Index dstRows = src.rows();
   Index dstCols = src.cols();
-  if (((dst.rows() != dstRows) || (dst.cols() != dstCols))) dst.resize(dstRows, dstCols);
-  eigen_assert(dst.rows() == dstRows && dst.cols() == dstCols);
+  if (((dst.rows() != dstRows) || (dst.cols() != dstCols))) {
+#ifdef EIGEN_NO_AUTOMATIC_RESIZING
+    eigen_assert(
+        (dst.size() == 0 || (DstXprType::IsVectorAtCompileTime ? (dst.size() == src.size())
+                                                               : (dst.rows() == dstRows && dst.cols() == dstCols))) &&
+        "Size mismatch. Automatic resizing is disabled because EIGEN_NO_AUTOMATIC_RESIZING is defined");
+#else
+    dst.resize(dstRows, dstCols);
+    eigen_assert(dst.rows() == dstRows && dst.cols() == dstCols);
+#endif
+  }
 }
 
 template <typename DstXprType, typename SrcXprType, typename Functor>

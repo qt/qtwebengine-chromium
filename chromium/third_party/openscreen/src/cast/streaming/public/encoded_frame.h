@@ -13,7 +13,6 @@
 #include "cast/streaming/public/frame_id.h"
 #include "cast/streaming/rtp_time.h"
 #include "platform/api/time.h"
-#include "platform/base/macros.h"
 #include "platform/base/span.h"
 
 namespace openscreen::cast {
@@ -58,10 +57,11 @@ struct EncodedFrame {
                std::chrono::milliseconds new_playout_delay,
                ByteView data);
   EncodedFrame();
-  ~EncodedFrame();
-
+  EncodedFrame(const EncodedFrame&) = delete;
+  EncodedFrame& operator=(const EncodedFrame&) = delete;
   EncodedFrame(EncodedFrame&&) noexcept;
   EncodedFrame& operator=(EncodedFrame&&);
+  ~EncodedFrame();
 
   // Copies all members except `data` to `dest`. Does not modify |dest->data|.
   void CopyMetadataTo(EncodedFrame* dest) const;
@@ -112,8 +112,6 @@ struct EncodedFrame {
   // context, this points to the data to be sent. In the receiver context, this
   // is set to the region of a client-provided buffer that was populated.
   ByteView data;
-
-  OSP_DISALLOW_COPY_AND_ASSIGN(EncodedFrame);
 };
 
 }  // namespace openscreen::cast

@@ -33,6 +33,7 @@ group("all") {
     ":system_api-featured-goprotos",
     ":system_api-featured-protos",
     ":system_api-fusebox-protos",
+    ":system_api-hosts_connectivity_diagnostics-protos",
     ":system_api-hps-goprotos",
     ":system_api-hps-protos",
     ":system_api-imageloader-goprotos",
@@ -936,6 +937,14 @@ proto_library("system_api-vhost_user_starter-protos") {
   proto_in_dir = "dbus/vhost_user_starter"
   proto_out_dir = "include/vhost_user_starter/proto_bindings"
   sources = [ "${proto_in_dir}/vhost_user_starter.proto" ]
+  standalone = true
+  install_package = true
+}
+
+proto_library("system_api-hosts_connectivity_diagnostics-protos") {
+  proto_in_dir = "proto/hosts_connectivity_diagnostics"
+  proto_out_dir = "include/hosts_connectivity_diagnostics/proto_bindings"
+  sources = [ "${proto_in_dir}/hosts_connectivity_diagnostics.proto" ]
   standalone = true
   install_package = true
 }

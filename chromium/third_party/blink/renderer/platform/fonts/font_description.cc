@@ -562,10 +562,21 @@ int FontDescription::MinimumPrefixWidthToHyphenate() const {
 
 ResolvedFontFeatures FontDescription::ResolveFontFeatures() const {
   if (const auto* alternates = GetFontVariantAlternates()) {
-    ResolvedFontFeatures features_with_description =
+    // Per CSS Fonts 4 section 7.2, the font-variant-alternates CSS property
+    // takes precedence over the @font-face font-feature-settings descriptor.
+    // https://drafts.csswg.org/css-fonts-4/#feature-variation-precedence
+    ResolvedFontFeatures merged_features =
         alternates->GetResolvedFontFeatures();
-    features_with_description.AppendVector(resolved_font_features_);
-    return features_with_description;
+    const wtf_size_t resolved_size = merged_features.size();
+    merged_features.reserve(resolved_size + resolved_font_features_.size());
+    for (const auto& descriptor_feature : resolved_font_features_) {
+      if (!std::ranges::contains(
+              base::span{merged_features}.first(resolved_size),
+              descriptor_feature.tag, &FontFeatureValue::tag)) {
+        merged_features.emplace_back(descriptor_feature);
+      }
+    }
+    return merged_features;
   }
   return resolved_font_features_;
 }
@@ -750,7 +761,7 @@ String FontDescription::ToString(
 }
 
 String FontDescription::VariantLigatures::ToString() const {
-  return String::Format(
+  return UNSAFE_TODO(String::Format(
       "common=%s, discretionary=%s, historical=%s, contextual=%s",
       FontDescription::ToString(static_cast<LigaturesState>(common))
           .Ascii()
@@ -763,7 +774,7 @@ String FontDescription::VariantLigatures::ToString() const {
           .data(),
       FontDescription::ToString(static_cast<LigaturesState>(contextual))
           .Ascii()
-          .data());
+          .data()));
 }
 
 String FontDescription::Size::ToString() const {
@@ -792,7 +803,7 @@ String FontDescription::ToString(FontVariantPosition variant_position) {
 }
 
 String FontDescription::ToString() const {
-  return String::Format(
+  return UNSAFE_TODO(String::Format(
       "family_list=[%s], feature_settings=[%s], variation_settings=[%s], "
       "locale=%s, "
       "specified_size=%f, computed_size=%f, adjusted_size=%f, "
@@ -844,7 +855,7 @@ String FontDescription::ToString() const {
       FontDescription::ToString(GetFontSynthesisStyle()).Ascii().c_str(),
       FontDescription::ToString(GetFontSynthesisSmallCaps()).Ascii().c_str(),
       FontDescription::ToString(VariantPosition()).Ascii().c_str(),
-      blink::ToString(VariantEmoji()).Ascii().c_str());
+      blink::ToString(VariantEmoji()).Ascii().c_str()));
 }
 
 }  // namespace blink

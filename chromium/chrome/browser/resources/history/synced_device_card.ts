@@ -21,12 +21,6 @@ import type {ForeignSessionTab} from './externs.js';
 import {getCss} from './synced_device_card.css.js';
 import {getHtml} from './synced_device_card.html.js';
 
-declare global {
-  interface HTMLElementTagNameMap {
-    'history-synced-device-card': HistorySyncedDeviceCardElement;
-  }
-}
-
 export interface HistorySyncedDeviceCardElement {
   $: {
     'card-heading': HTMLElement,
@@ -86,7 +80,7 @@ export class HistorySyncedDeviceCardElement extends CrLitElement {
   accessor lastUpdateTime: string = '';
   accessor tabs: ForeignSessionTab[] = [];
   accessor opened: boolean = true;
-  accessor searchTerm: string;
+  accessor searchTerm: string = '';
   accessor separatorIndexes: number[] = [];
   accessor sessionTag: string = '';
 
@@ -163,8 +157,8 @@ export class HistorySyncedDeviceCardElement extends CrLitElement {
       for (let i = 0; i < this.tabs.length; i++) {
         // Entries on this UI are coming strictly from sync, so we can set
         // |isSyncedUrlForHistoryUi| to true on the getFavicon call below.
-        icons[i].style.backgroundImage = getFaviconForPageURL(
-            this.tabs[i].url, true, this.tabs[i].remoteIconUrlForUma);
+        icons[i]!.style.backgroundImage = getFaviconForPageURL(
+            this.tabs[i]!.url, true, this.tabs[i]!.remoteIconUrlForUma);
       }
     }, 0);
   }

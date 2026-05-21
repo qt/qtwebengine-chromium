@@ -20,8 +20,8 @@
 #include "core/fxcodec/jbig2/JBig2_HuffmanTable.h"
 #include "core/fxcodec/jbig2/JBig2_SymbolDict.h"
 #include "core/fxcodec/jbig2/JBig2_TrdProc.h"
-#include "core/fxcrt/fx_memcpy_wrappers.h"
 #include "core/fxcrt/fx_safe_types.h"
+#include "core/fxcrt/span_util.h"
 #include "core/fxcrt/stl_util.h"
 
 CJBig2_SDDProc::CJBig2_SDDProc() = default;
@@ -35,22 +35,13 @@ std::unique_ptr<CJBig2_SymbolDict> CJBig2_SDDProc::DecodeArith(
   auto IADH = std::make_unique<CJBig2_ArithIntDecoder>();
   auto IADW = std::make_unique<CJBig2_ArithIntDecoder>();
   auto IAAI = std::make_unique<CJBig2_ArithIntDecoder>();
-  auto IARDX = std::make_unique<CJBig2_ArithIntDecoder>();
-  auto IARDY = std::make_unique<CJBig2_ArithIntDecoder>();
   auto IAEX = std::make_unique<CJBig2_ArithIntDecoder>();
-  auto IADT = std::make_unique<CJBig2_ArithIntDecoder>();
-  auto IAFS = std::make_unique<CJBig2_ArithIntDecoder>();
-  auto IADS = std::make_unique<CJBig2_ArithIntDecoder>();
-  auto IAIT = std::make_unique<CJBig2_ArithIntDecoder>();
-  auto IARI = std::make_unique<CJBig2_ArithIntDecoder>();
-  auto IARDW = std::make_unique<CJBig2_ArithIntDecoder>();
-  auto IARDH = std::make_unique<CJBig2_ArithIntDecoder>();
 
   uint32_t SBSYMCODELENA = 0;
   while ((uint32_t)(1 << SBSYMCODELENA) < (SDNUMINSYMS + SDNUMNEWSYMS)) {
     SBSYMCODELENA++;
   }
-  auto IAID = std::make_unique<CJBig2_ArithIaidDecoder>((uint8_t)SBSYMCODELENA);
+  JBig2IntDecoderState ids(static_cast<uint8_t>(SBSYMCODELENA));
 
   std::vector<std::unique_ptr<CJBig2_Image>> SDNEWSYMS(SDNUMNEWSYMS);
   uint32_t HCHEIGHT = 0;
@@ -125,12 +116,6 @@ std::unique_ptr<CJBig2_SymbolDict> CJBig2_SDDProc::DecodeArith(
           pDecoder->SBNUMINSTANCES = REFAGGNINST;
           pDecoder->SBSTRIPS = 1;
           pDecoder->SBNUMSYMS = SDNUMINSYMS + NSYMSDECODED;
-          uint32_t nTmp = 0;
-          while ((uint32_t)(1 << nTmp) < pDecoder->SBNUMSYMS) {
-            nTmp++;
-          }
-          uint8_t SBSYMCODELEN = (uint8_t)nTmp;
-          pDecoder->SBSYMCODELEN = SBSYMCODELEN;
           std::vector<UnownedPtr<CJBig2_Image>> SBSYMS(pDecoder->SBNUMSYMS);
           fxcrt::Copy(pdfium::span(SDINSYMS).first(SDNUMINSYMS),
                       pdfium::span(SBSYMS));
@@ -156,25 +141,14 @@ std::unique_ptr<CJBig2_SymbolDict> CJBig2_SDDProc::DecodeArith(
           pDecoder->SBRAT[1] = SDRAT[1];
           pDecoder->SBRAT[2] = SDRAT[2];
           pDecoder->SBRAT[3] = SDRAT[3];
-          JBig2IntDecoderState ids;
-          ids.IADT = IADT.get();
-          ids.IAFS = IAFS.get();
-          ids.IADS = IADS.get();
-          ids.IAIT = IAIT.get();
-          ids.IARI = IARI.get();
-          ids.IARDW = IARDW.get();
-          ids.IARDH = IARDH.get();
-          ids.IARDX = IARDX.get();
-          ids.IARDY = IARDY.get();
-          ids.IAID = IAID.get();
-          BS = pDecoder->DecodeArith(pArithDecoder, grContexts, &ids);
+          BS = pDecoder->DecodeArith(pArithDecoder, grContexts, ids);
           if (!BS) {
             return nullptr;
           }
         } else if (REFAGGNINST == 1) {
           uint32_t SBNUMSYMS = SDNUMINSYMS + NSYMSDECODED;
           uint32_t IDI;
-          IAID->Decode(pArithDecoder, &IDI);
+          ids.IAID->Decode(pArithDecoder, &IDI);
           if (IDI >= SBNUMSYMS) {
             return nullptr;
           }
@@ -186,8 +160,8 @@ std::unique_ptr<CJBig2_SymbolDict> CJBig2_SDDProc::DecodeArith(
 
           int32_t RDXI;
           int32_t RDYI;
-          IARDX->Decode(pArithDecoder, &RDXI);
-          IARDY->Decode(pArithDecoder, &RDYI);
+          ids.IARDX->Decode(pArithDecoder, &RDXI);
+          ids.IARDY->Decode(pArithDecoder, &RDYI);
 
           auto pGRRD = std::make_unique<CJBig2_GRRDProc>();
           pGRRD->GRW = SYMWIDTH;
@@ -245,9 +219,8 @@ std::unique_ptr<CJBig2_SymbolDict> CJBig2_SDDProc::DecodeArith(
       continue;
     }
     if (i < SDNUMINSYMS) {
-      dict->AddImage(
-          UNSAFE_TODO(SDINSYMS[i] ? std::make_unique<CJBig2_Image>(*SDINSYMS[i])
-                                  : nullptr));
+      dict->AddImage(SDINSYMS[i] ? std::make_unique<CJBig2_Image>(*SDINSYMS[i])
+                                 : nullptr);
     } else {
       dict->AddImage(std::move(SDNEWSYMS[i - SDNUMINSYMS]));
     }
@@ -333,11 +306,13 @@ std::unique_ptr<CJBig2_SymbolDict> CJBig2_SDDProc::DecodeHuffman(
           pDecoder->SBNUMSYMS = SDNUMINSYMS + NSYMSDECODED;
           std::vector<JBig2HuffmanCode> SBSYMCODES(pDecoder->SBNUMSYMS);
           uint32_t nTmp = 1;
-          while (static_cast<uint32_t>(1 << nTmp) < pDecoder->SBNUMSYMS) {
+          while (static_cast<uint32_t>(1 << nTmp) <
+                 SDNUMINSYMS + SDNUMNEWSYMS) {
             ++nTmp;
           }
+          uint8_t SBSYMCODELEN = static_cast<uint8_t>(nTmp);
           for (uint32_t i = 0; i < pDecoder->SBNUMSYMS; ++i) {
-            SBSYMCODES[i].codelen = nTmp;
+            SBSYMCODES[i].codelen = SBSYMCODELEN;
             SBSYMCODES[i].code = i;
           }
           pDecoder->SBSYMCODES = std::move(SBSYMCODES);
@@ -372,9 +347,8 @@ std::unique_ptr<CJBig2_SymbolDict> CJBig2_SDDProc::DecodeHuffman(
           }
 
         } else if (REFAGGNINST == 1) {
-          uint32_t SBNUMSYMS = SDNUMINSYMS + SDNUMNEWSYMS;
           uint32_t nTmp = 1;
-          while ((uint32_t)(1 << nTmp) < SBNUMSYMS) {
+          while ((uint32_t)(1 << nTmp) < SDNUMINSYMS + SDNUMNEWSYMS) {
             nTmp++;
           }
           uint8_t SBSYMCODELEN = (uint8_t)nTmp;
@@ -387,6 +361,7 @@ std::unique_ptr<CJBig2_SymbolDict> CJBig2_SDDProc::DecodeHuffman(
             IDI = (IDI << 1) | nTmp;
           }
 
+          uint32_t SBNUMSYMS = SDNUMINSYMS + NSYMSDECODED;
           if (IDI >= SBNUMSYMS) {
             return nullptr;
           }
@@ -464,8 +439,7 @@ std::unique_ptr<CJBig2_SymbolDict> CJBig2_SDDProc::DecodeHuffman(
 
         BHC = std::make_unique<CJBig2_Image>(TOTWIDTH, HCHEIGHT);
         for (uint32_t i = 0; i < HCHEIGHT; ++i) {
-          UNSAFE_TODO(FXSYS_memcpy(BHC->data() + i * BHC->stride(),
-                                   pStream->getPointer(), stride));
+          fxcrt::spancpy(BHC->GetLine(i), pStream->getCurrentSpan(stride));
           pStream->addOffset(stride);
         }
       } else {
@@ -525,9 +499,8 @@ std::unique_ptr<CJBig2_SymbolDict> CJBig2_SDDProc::DecodeHuffman(
       continue;
     }
     if (i < SDNUMINSYMS) {
-      dict->AddImage(
-          UNSAFE_TODO(SDINSYMS[i] ? std::make_unique<CJBig2_Image>(*SDINSYMS[i])
-                                  : nullptr));
+      dict->AddImage(SDINSYMS[i] ? std::make_unique<CJBig2_Image>(*SDINSYMS[i])
+                                 : nullptr);
     } else {
       dict->AddImage(std::move(SDNEWSYMS[i - SDNUMINSYMS]));
     }

@@ -30,6 +30,7 @@
 #include <vector>
 
 #include "dawn/common/Log.h"
+#include "dawn/native/Adapter.h"
 #include "dawn/native/BindGroupLayout.h"
 #include "dawn/native/Buffer.h"
 #include "dawn/native/Device.h"
@@ -51,6 +52,9 @@ const DawnProcTable& GetProcsAutogen();
 
 const DawnProcTable& GetProcs() {
     return GetProcsAutogen();
+}
+std::vector<const char*> GetTogglesUsed(const wgpu::Adapter& adapter) {
+    return FromAPI(adapter.Get())->GetTogglesUsed();
 }
 
 std::vector<const char*> GetTogglesUsed(WGPUDevice device) {
@@ -195,6 +199,10 @@ void Instance::DisconnectDawnPlatform() {
     mImpl->DisconnectDawnPlatform();
 }
 
+void Instance::SetPlatformForTesting(dawn::platform::Platform* platform) {
+    mImpl->SetPlatformForTesting(platform);
+}
+
 size_t GetLazyClearCountForTesting(WGPUDevice device) {
     return FromAPI(device)->GetLazyClearCountForTesting();
 }
@@ -269,6 +277,11 @@ const FeatureInfo* GetFeatureInfo(wgpu::FeatureName feature) {
         return nullptr;
     }
     return &kFeatureNameAndInfoList[FromAPI(feature)];
+}
+
+void MemoryDump::AddOwnerGUID(const char* name, uint64_t ownerGUID) {
+    // Provide a default empty implementation to prevent breaking existing MemoryDump
+    // implementations.
 }
 
 void DumpMemoryStatistics(WGPUDevice device, MemoryDump* dump) {

@@ -547,8 +547,8 @@ YNN_INTRINSIC __m128i saturating_cast_f32_to_uint8(__m128 f0, __m128 f1, __m128 
   const __m128i i1 = _mm_cvtps_epi32(f1);
   const __m128i i2 = _mm_cvtps_epi32(f2);
   const __m128i i3 = _mm_cvtps_epi32(f3);
-  const __m128i i01_16 = _mm_packus_epi32(i0, i1);
-  const __m128i i23_16 = _mm_packus_epi32(i2, i3);
+  const __m128i i01_16 = _mm_packs_epi32(i0, i1);
+  const __m128i i23_16 = _mm_packs_epi32(i2, i3);
   return _mm_packus_epi16(i01_16, i23_16);
 }
 
@@ -597,15 +597,11 @@ YNN_INTRINSIC void partial_store_8x(float* output, size_t num_elements, __m256 v
 }
 
 YNN_INTRINSIC __m256i partial_load_8x(const int32_t* ptr, size_t num_elements) {
-  __m256i mask = _mm256_loadu_si256(
-            (const __m256i*)(&mask_table_avx_f32[8] - num_elements));
-  return _mm256_maskload_epi32(ptr, mask);
+  return _mm256_castps_si256(partial_load_8x(reinterpret_cast<const float*>(ptr), num_elements));
 }
 
 YNN_INTRINSIC void partial_store_8x(int32_t* output, size_t num_elements, __m256i v) {
-  __m256i mask = _mm256_loadu_si256(
-            (const __m256i*)(&mask_table_avx_f32[8] - num_elements));
-  _mm256_maskstore_epi32(output, mask, v);
+  partial_store_8x(reinterpret_cast<float*>(output), num_elements, _mm256_castsi256_ps(v));
 }
 
 template <typename T>
@@ -621,6 +617,43 @@ YNN_INTRINSIC void wrapper_mm256_storeu_si256(T* ptr, __m256i v) {
 YNN_INTRINSIC __m256 round(__m256 x) {
   return _mm256_round_ps(x, _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC);
 }
+
+YNN_INTRINSIC __m256 bitwise_not(__m256 val) {
+  __m256 all_ones = _mm256_castsi256_ps(_mm256_set1_epi32(-1));
+  return _mm256_xor_ps(val, all_ones);
+}
+
+YNN_INTRINSIC __m256 greater_than(__m256 a, __m256 b) {
+  return _mm256_cmp_ps(a, b, _CMP_GT_OS);
+}
+
+} // namespace
+
+"""
+    self.types.update({
+        Float(32, 8): "__m256",
+        Float(16, 8): "__m128i",
+        Int(8, 32): "__m256i",
+        Int(16, 16): "__m256i",
+        Int(32, 8): "__m256i",
+        UInt(8, 32): "__m256i",
+        UInt(16, 16): "__m256i",
+        UInt(32, 8): "__m256i",
+    })
+    self.add_load_intrinsics(256, "_mm256_")
+    self.add_store_intrinsics(256, "_mm256_")
+    self.patterns += make_x86_float32_patterns(256, "_mm256_")
+    self.patterns += make_x86_reinterpret_cast_patterns(256, "_mm256_")
+    self.patterns += make_x86_broadcast_patterns(256, "_mm256_")
+
+  def update_for_avx2(self):
+    """Updates the target for AVX2 support."""
+    self.patterns += make_x86_integer_patterns(256, "_mm256_")
+    self.patterns += make_x86_integer_min_max_patterns(256, "_mm256_")
+    self.patterns += make_x86_cast_patterns(256, "_mm256_")
+
+    self.header += """
+namespace {
 
 YNN_INTRINSIC __m256i saturating_cast_f32_to_int8(__m256 f0, __m256 f1, __m256 f2, __m256 f3) {
   const __m256 max_int16 = _mm256_set1_ps((1 << 15) - 1);
@@ -673,45 +706,14 @@ YNN_INTRINSIC __m256i saturating_cast_f32_to_uint8(__m256 f0, __m256 f1, __m256 
   const __m256i i1 = _mm256_cvtps_epi32(f1);
   const __m256i i2 = _mm256_cvtps_epi32(f2);
   const __m256i i3 = _mm256_cvtps_epi32(f3);
-  const __m256i i01_16 = _mm256_packus_epi32(i0, i1);
-  const __m256i i23_16 = _mm256_packus_epi32(i2, i3);
+  const __m256i i01_16 = _mm256_packs_epi32(i0, i1);
+  const __m256i i23_16 = _mm256_packs_epi32(i2, i3);
   const __m256i r = _mm256_packus_epi16(i01_16, i23_16);
   return _mm256_permutevar8x32_epi32(r, _mm256_setr_epi32(0, 4, 1, 5, 2, 6, 3, 7));
 }
 
-YNN_INTRINSIC __m256 bitwise_not(__m256 val) {
-  __m256 all_ones = _mm256_castsi256_ps(_mm256_set1_epi32(-1));
-  return _mm256_xor_ps(val, all_ones);
-}
-
-YNN_INTRINSIC __m256 greater_than(__m256 a, __m256 b) {
-  return _mm256_cmp_ps(a, b, _CMP_GT_OS);
-}
-
-} // namespace
-
+}  // namespace
 """
-    self.types.update({
-        Float(32, 8): "__m256",
-        Float(16, 8): "__m128i",
-        Int(8, 32): "__m256i",
-        Int(16, 16): "__m256i",
-        Int(32, 8): "__m256i",
-        UInt(8, 32): "__m256i",
-        UInt(16, 16): "__m256i",
-        UInt(32, 8): "__m256i",
-    })
-    self.add_load_intrinsics(256, "_mm256_")
-    self.add_store_intrinsics(256, "_mm256_")
-    self.patterns += make_x86_float32_patterns(256, "_mm256_")
-    self.patterns += make_x86_reinterpret_cast_patterns(256, "_mm256_")
-    self.patterns += make_x86_broadcast_patterns(256, "_mm256_")
-
-  def update_for_avx2(self):
-    """Updates the target for AVX2 support."""
-    self.patterns += make_x86_integer_patterns(256, "_mm256_")
-    self.patterns += make_x86_integer_min_max_patterns(256, "_mm256_")
-    self.patterns += make_x86_cast_patterns(256, "_mm256_")
 
   def update_for_fma3(self):
     """Updates the target for FMA3 support."""

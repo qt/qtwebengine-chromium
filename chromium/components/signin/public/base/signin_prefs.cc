@@ -6,7 +6,6 @@
 
 #include <string_view>
 
-#include "base/containers/contains.h"
 #include "base/json/values_util.h"
 #include "base/values.h"
 #include "components/prefs/pref_change_registrar.h"
@@ -194,7 +193,7 @@ size_t SigninPrefs::RemoveAllAccountPrefsExcept(
   for (const std::pair<const std::string&, const base::Value&> account_prefs :
        pref_service_->GetDict(kSigninAccountPrefs)) {
     GaiaId gaia_id(account_prefs.first);
-    if (!base::Contains(gaia_ids_to_keep, gaia_id)) {
+    if (!gaia_ids_to_keep.contains(gaia_id)) {
       accounts_prefs_to_remove.push_back(std::move(gaia_id));
     }
   }
@@ -223,8 +222,7 @@ void SigninPrefs::SetChromeSigninInterceptionUserChoice(
 
   ScopedDictPrefUpdate scoped_update(&pref_service_.get(), kSigninAccountPrefs);
   // `EnsureDict` gets or create the dictionary.
-  base::Value::Dict* account_dict =
-      scoped_update->EnsureDict(gaia_id.ToString());
+  base::DictValue* account_dict = scoped_update->EnsureDict(gaia_id.ToString());
   // `Set` will add an entry if it doesn't already exists, or if it does, it
   // will overwrite it.
   account_dict->Set(kChromeSigninInterceptionUserChoice,
@@ -233,7 +231,7 @@ void SigninPrefs::SetChromeSigninInterceptionUserChoice(
 
 ChromeSigninUserChoice SigninPrefs::GetChromeSigninInterceptionUserChoice(
     const GaiaId& gaia_id) const {
-  const base::Value::Dict* account_dict =
+  const base::DictValue* account_dict =
       pref_service_->GetDict(kSigninAccountPrefs).FindDict(gaia_id.ToString());
   // If the account dict does not exist yet; return the default value.
   if (!account_dict) {
@@ -305,8 +303,7 @@ void SigninPrefs::IncrementPasswordSigninPromoImpressionCount(
       gaia_id,
       base::FeatureList::IsEnabled(switches::kSigninPromoLimitsExperiment)
           ? kPasswordSignInPromoShownCountForLimitsExperiment
-          : kPasswordSignInPromoShownCount
-  );
+          : kPasswordSignInPromoShownCount);
 }
 
 int SigninPrefs::GetPasswordSigninPromoImpressionCount(
@@ -315,8 +312,7 @@ int SigninPrefs::GetPasswordSigninPromoImpressionCount(
       gaia_id,
       base::FeatureList::IsEnabled(switches::kSigninPromoLimitsExperiment)
           ? kPasswordSignInPromoShownCountForLimitsExperiment
-          : kPasswordSignInPromoShownCount
-  );
+          : kPasswordSignInPromoShownCount);
 }
 
 void SigninPrefs::IncrementAddressSigninPromoImpressionCount(
@@ -325,8 +321,7 @@ void SigninPrefs::IncrementAddressSigninPromoImpressionCount(
       gaia_id,
       base::FeatureList::IsEnabled(switches::kSigninPromoLimitsExperiment)
           ? kAddressSignInPromoShownCountForLimitsExperiment
-          : kAddressSignInPromoShownCount
-  );
+          : kAddressSignInPromoShownCount);
 }
 
 int SigninPrefs::GetAddressSigninPromoImpressionCount(
@@ -335,8 +330,7 @@ int SigninPrefs::GetAddressSigninPromoImpressionCount(
       gaia_id,
       base::FeatureList::IsEnabled(switches::kSigninPromoLimitsExperiment)
           ? kAddressSignInPromoShownCountForLimitsExperiment
-          : kAddressSignInPromoShownCount
-  );
+          : kAddressSignInPromoShownCount);
 }
 
 void SigninPrefs::IncrementBookmarkSigninPromoImpressionCount(
@@ -530,8 +524,7 @@ int SigninPrefs::IncrementIntPrefForAccount(const GaiaId& gaia_id,
   ScopedDictPrefUpdate scoped_update(&pref_service_.get(), kSigninAccountPrefs);
 
   // `EnsureDict` gets or create the dictionary.
-  base::Value::Dict* account_dict =
-      scoped_update->EnsureDict(gaia_id.ToString());
+  base::DictValue* account_dict = scoped_update->EnsureDict(gaia_id.ToString());
   // Get the current value of the pref.
   int new_value = account_dict->FindInt(pref).value_or(0) + 1;
   // `Set` will add an entry if it doesn't already exists, or if it does, it
@@ -544,7 +537,7 @@ int SigninPrefs::IncrementIntPrefForAccount(const GaiaId& gaia_id,
 int SigninPrefs::GetIntPrefForAccount(const GaiaId& gaia_id,
                                       std::string_view pref) const {
   CHECK(!gaia_id.empty());
-  const base::Value::Dict* account_dict =
+  const base::DictValue* account_dict =
       pref_service_->GetDict(kSigninAccountPrefs).FindDict(gaia_id.ToString());
   // If the account dict does not exist yet; return the default value.
   if (!account_dict) {
@@ -561,8 +554,7 @@ void SigninPrefs::SetBooleanPrefForAccount(const GaiaId& gaia_id,
   CHECK(!gaia_id.empty());
   ScopedDictPrefUpdate scoped_update(&pref_service_.get(), kSigninAccountPrefs);
   // `EnsureDict` gets or create the dictionary.
-  base::Value::Dict* account_dict =
-      scoped_update->EnsureDict(gaia_id.ToString());
+  base::DictValue* account_dict = scoped_update->EnsureDict(gaia_id.ToString());
   // `Set` will add an entry if it doesn't already exists, or if it does, it
   // will overwrite it.
   account_dict->Set(pref, enabled);
@@ -571,7 +563,7 @@ void SigninPrefs::SetBooleanPrefForAccount(const GaiaId& gaia_id,
 bool SigninPrefs::GetBooleanPrefForAccount(const GaiaId& gaia_id,
                                            std::string_view pref) const {
   CHECK(!gaia_id.empty());
-  const base::Value::Dict* account_dict =
+  const base::DictValue* account_dict =
       pref_service_->GetDict(kSigninAccountPrefs).FindDict(gaia_id.ToString());
   // If the account dict does not exist yet; return the default value.
   if (!account_dict) {
@@ -588,8 +580,7 @@ void SigninPrefs::SetTimePref(base::Time time,
   CHECK(!gaia_id.empty());
   ScopedDictPrefUpdate scoped_update(&pref_service_.get(), kSigninAccountPrefs);
   // `EnsureDict` gets or create the dictionary.
-  base::Value::Dict* account_dict =
-      scoped_update->EnsureDict(gaia_id.ToString());
+  base::DictValue* account_dict = scoped_update->EnsureDict(gaia_id.ToString());
   // `Set` will add an entry if it doesn't already exists, or if it does, it
   // will overwrite it.
   account_dict->Set(pref, base::TimeToValue(time));
@@ -599,7 +590,7 @@ std::optional<base::Time> SigninPrefs::GetTimePref(
     const GaiaId& gaia_id,
     std::string_view pref) const {
   CHECK(!gaia_id.empty());
-  const base::Value::Dict* account_dict =
+  const base::DictValue* account_dict =
       pref_service_->GetDict(kSigninAccountPrefs).FindDict(gaia_id.ToString());
   // If the account dict does not exist yet; return no time.
   if (!account_dict) {
@@ -614,7 +605,7 @@ void SigninPrefs::ClearPref(const GaiaId& gaia_id, std::string_view pref) {
   CHECK(!gaia_id.empty());
   ScopedDictPrefUpdate scoped_update(&pref_service_.get(), kSigninAccountPrefs);
   // Do not create an account dictionary if it does not already exist.
-  base::Value::Dict* account_dict = scoped_update->FindDict(gaia_id.ToString());
+  base::DictValue* account_dict = scoped_update->FindDict(gaia_id.ToString());
   if (!account_dict) {
     return;
   }
@@ -626,8 +617,7 @@ void SigninPrefs::SetDeprecatedPrefForTesting(const GaiaId& gaia_id) {
   CHECK(!gaia_id.empty());
   ScopedDictPrefUpdate scoped_update(&pref_service_.get(), kSigninAccountPrefs);
   // `EnsureDict` gets or create the dictionary.
-  base::Value::Dict* account_dict =
-      scoped_update->EnsureDict(gaia_id.ToString());
+  base::DictValue* account_dict = scoped_update->EnsureDict(gaia_id.ToString());
 
   account_dict->Set(kDeprecatingTestingPref, 123);
 }
@@ -635,7 +625,7 @@ void SigninPrefs::SetDeprecatedPrefForTesting(const GaiaId& gaia_id) {
 std::optional<int> SigninPrefs::GetDeprecatedPrefForTesting(
     const GaiaId& gaia_id) {
   CHECK(!gaia_id.empty());
-  const base::Value::Dict* account_dict =
+  const base::DictValue* account_dict =
       pref_service_->GetDict(kSigninAccountPrefs).FindDict(gaia_id.ToString());
   if (!account_dict) {
     return std::nullopt;

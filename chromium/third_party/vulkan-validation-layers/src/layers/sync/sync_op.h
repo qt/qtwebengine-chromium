@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2019-2025 Valve Corporation
- * Copyright (c) 2019-2025 LunarG, Inc.
+ * Copyright (c) 2019-2026 Valve Corporation
+ * Copyright (c) 2019-2026 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@
 struct DeviceExtensions;
 
 namespace vvl {
+class Event;
 class ImageView;
 class RenderPass;
 }  // namespace vvl
@@ -117,17 +118,16 @@ class SyncEventsContext {
     Map map_;
 };
 
-struct SyncBufferMemoryBarrier {
+struct SyncBufferBarrier {
     std::shared_ptr<const vvl::Buffer> buffer;
     SyncBarrier barrier;
     AccessRange range;
 
-	SyncBufferMemoryBarrier(const std::shared_ptr<const vvl::Buffer> &buffer, const SyncBarrier &barrier,
-							const AccessRange &range)
-		: buffer(buffer), barrier(barrier), range(range) {}
+    SyncBufferBarrier(const std::shared_ptr<const vvl::Buffer> &buffer, const SyncBarrier &barrier, const AccessRange &range)
+        : buffer(buffer), barrier(barrier), range(range) {}
 };
 
-struct SyncImageMemoryBarrier {
+struct SyncImageBarrier {
     std::shared_ptr<const vvl::Image> image;
     SyncBarrier barrier;
     VkImageSubresourceRange subresource_range;
@@ -135,7 +135,7 @@ struct SyncImageMemoryBarrier {
     uint32_t barrier_index;
     uint32_t handle_index = vvl::kNoIndex32;
 
-    SyncImageMemoryBarrier(const std::shared_ptr<const vvl::Image> &image, const SyncBarrier &barrier,
+    SyncImageBarrier(const std::shared_ptr<const vvl::Image> &image, const SyncBarrier &barrier,
                            const VkImageSubresourceRange &subresource_range, bool layout_transition, uint32_t barrier_index)
         : image(image),
           barrier(barrier),
@@ -148,19 +148,27 @@ struct BarrierSet {
     SyncExecScope src_exec_scope;
     SyncExecScope dst_exec_scope;
     std::vector<SyncBarrier> memory_barriers;
-    std::vector<SyncBufferMemoryBarrier> buffer_memory_barriers;
-    std::vector<SyncImageMemoryBarrier> image_memory_barriers;
-    bool single_exec_scope;
-    void MakeMemoryBarriers(const SyncExecScope &src, const SyncExecScope &dst, uint32_t memoryBarrierCount,
-                            const VkMemoryBarrier *pMemoryBarriers);
-    void MakeBufferMemoryBarriers(const SyncValidator &sync_state, const SyncExecScope &src, const SyncExecScope &dst,
-                                  uint32_t bufferMemoryBarrierCount, const VkBufferMemoryBarrier *pBufferMemoryBarriers);
-    void MakeImageMemoryBarriers(const SyncValidator &sync_state, const SyncExecScope &src, const SyncExecScope &dst,
-                                 uint32_t imageMemoryBarrierCount, const VkImageMemoryBarrier *pImageMemoryBarriers,
-                                 const DeviceExtensions &extensions);
+    std::vector<SyncBufferBarrier> buffer_barriers;
+    std::vector<SyncImageBarrier> image_barriers;
+
+    bool single_exec_scope = false;
+
+    // The numbers of additional global barriers introduced to track execution dependencies
+    // defined by image and buffer barriers, or a single execution dependencies when a sync1
+    // barrier command specifies no barriers (only exec scopes). Used for statistics tracking.
+    uint32_t execution_dependency_barrier_count = 0;
+
+    void MakeMemoryBarriers(const SyncExecScope &src, const SyncExecScope &dst, uint32_t barrier_count,
+                            const VkMemoryBarrier *barriers);
     void MakeMemoryBarriers(VkQueueFlags queue_flags, const VkDependencyInfo &dep_info);
+
+    void MakeBufferMemoryBarriers(const SyncValidator &sync_state, const SyncExecScope &src, const SyncExecScope &dst,
+                                  uint32_t barrier_count, const VkBufferMemoryBarrier *barriers);
     void MakeBufferMemoryBarriers(const SyncValidator &sync_state, VkQueueFlags queue_flags, uint32_t barrier_count,
                                   const VkBufferMemoryBarrier2 *barriers);
+
+    void MakeImageMemoryBarriers(const SyncValidator &sync_state, const SyncExecScope &src, const SyncExecScope &dst,
+                                 uint32_t barrier_count, const VkImageMemoryBarrier *barriers, const DeviceExtensions &extensions);
     void MakeImageMemoryBarriers(const SyncValidator &sync_state, VkQueueFlags queue_flags, uint32_t barrier_count,
                                  const VkImageMemoryBarrier2 *barriers, const DeviceExtensions &extensions);
 };
@@ -198,12 +206,21 @@ class SyncOpPipelineBarrier : public SyncOpBase {
     bool ReplayValidate(ReplayState &replay, ResourceUsageTag recorded_tag) const override;
     void ReplayRecord(CommandExecutionContext &exec_context, ResourceUsageTag exec_tag) const override;
 
-  private:
-    // Single barrier can be applied more efficently since there is no need to support independent
-    // barrier application and collect pending state.
-    void ApplySingleBarrier(CommandExecutionContext &exec_context) const;
+    uint32_t GetExecutionDependencyBarrierCount() const { return barrier_set_.execution_dependency_barrier_count; }
 
-    void ApplyMultipleBarriers(CommandExecutionContext &exec_context, const ResourceUsageTag exec_tag) const;
+  private:
+    // A single barrier can be applied more efficently (immidiately) compared to multiple barrier.
+    // The latter are applied in two steps (collect and then apply)
+    void ApplySingleBufferBarrier(CommandExecutionContext &exec_context, const SyncBufferBarrier &buffer_barrier,
+                                  const SyncBarrier &exec_dep_barrier) const;
+    void ApplySingleImageBarrier(CommandExecutionContext &exec_context, const SyncImageBarrier &image_barrier,
+                                 const SyncBarrier &exec_dep_barrier, ResourceUsageTag exec_tag) const;
+    void ApplySingleMemoryBarrier(CommandExecutionContext &exec_context, const SyncBarrier &memory_barrier) const;
+
+    // This handles all configurations where barriers cannot be applied immidiately and need to use
+    // the PendingBarriers helper to ensure independent barrier application. All such configurations
+    // use more than one barrier.
+    void ApplyMultipleBarriers(CommandExecutionContext &exec_context, ResourceUsageTag exec_tag) const;
 
   private:
     BarrierSet barrier_set_;

@@ -96,6 +96,7 @@ impl Format {
     pub fn pixel_size(&self, depth: u32) -> u32 {
         match self {
             Format::Rgb565 => 2,
+            Format::Rgba1010102 => 4,
             _ => self.channel_count() * if depth > 8 { 2 } else { 1 },
         }
     }

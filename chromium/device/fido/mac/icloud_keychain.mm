@@ -12,7 +12,6 @@
 #include <utility>
 
 #include "base/apple/foundation_util.h"
-#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/memory/scoped_refptr.h"
@@ -33,14 +32,14 @@
 #include "device/fido/ctap_get_assertion_request.h"
 #include "device/fido/ctap_make_credential_request.h"
 #include "device/fido/discoverable_credential_metadata.h"
-#include "device/fido/features.h"
 #include "device/fido/fido_authenticator.h"
 #include "device/fido/fido_discovery_base.h"
 #include "device/fido/fido_parsing_utils.h"
-#include "device/fido/fido_transport_protocol.h"
-#include "device/fido/fido_types.h"
 #include "device/fido/large_blob.h"
 #include "device/fido/mac/icloud_keychain_sys.h"
+#include "device/fido/public/features.h"
+#include "device/fido/public/fido_transport_protocol.h"
+#include "device/fido/public/fido_types.h"
 
 using base::apple::NSDataToSpan;
 
@@ -493,7 +492,7 @@ class API_AVAILABLE(macos(13.3)) Authenticator : public FidoAuthenticator {
       // please have macOS show its own error dialog.
       GetAssertionStatus response;
       if (error.code == 1001 &&
-          base::Contains(description, "No credentials available for login")) {
+          description.contains("No credentials available for login")) {
         response = GetAssertionStatus::kICloudKeychainNoCredentials;
       } else {
         // All other errors are currently mapped to

@@ -29,7 +29,7 @@
       "scaling": "sender"
     },
     "receiverRtcpEventLog": [0, 1],
-    "receiverRtcpDscp": [234, 567],
+    "receiverRtcpDscp": [1, 3],
     "rtpExtensions": ["adaptive_playout_delay"]
   }
 }

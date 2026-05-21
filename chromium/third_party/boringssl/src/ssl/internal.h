@@ -122,7 +122,7 @@ template <typename T, typename Name, size_t S1, size_t S2>
 inline size_t GetAllNames(const char **out, size_t max_out,
                           Span<const char *const, S1> fixed_names,
                           Name(T::*name), Span<const T, S2> objects) {
-  auto span = bssl::Span(out, max_out);
+  auto span = Span(out, max_out);
   for (size_t i = 0; !span.empty() && i < fixed_names.size(); i++) {
     span[0] = fixed_names[i];
     span = span.subspan(1);
@@ -881,7 +881,7 @@ enum ssl_private_key_result_t ssl_private_key_decrypt(SSL_HANDSHAKE *hs,
 // ssl_parse_peer_subject_public_key_info decodes a SubjectPublicKeyInfo
 // representing the peer TLS key. It returns a newly-allocated |EVP_PKEY| or
 // nullptr on error.
-bssl::UniquePtr<EVP_PKEY> ssl_parse_peer_subject_public_key_info(
+UniquePtr<EVP_PKEY> ssl_parse_peer_subject_public_key_info(
     Span<const uint8_t> spki);
 
 // ssl_pkey_supports_algorithm returns whether |pkey| may be used to sign
@@ -2121,8 +2121,7 @@ enum ssl_private_key_result_t tls13_add_certificate_verify(SSL_HANDSHAKE *hs);
 
 bool tls13_add_finished(SSL_HANDSHAKE *hs);
 bool tls13_process_new_session_ticket(SSL *ssl, const SSLMessage &msg);
-bssl::UniquePtr<SSL_SESSION> tls13_create_session_with_ticket(SSL *ssl,
-                                                              CBS *body);
+UniquePtr<SSL_SESSION> tls13_create_session_with_ticket(SSL *ssl, CBS *body);
 
 // ssl_setup_extension_permutation computes a ClientHello extension permutation
 // for |hs|, if applicable. It returns true on success and false on error.
@@ -2501,11 +2500,10 @@ struct SSL_PROTOCOL_METHOD {
   bool (*init_message)(const SSL *ssl, CBB *cbb, CBB *body, uint8_t type);
   // finish_message finishes a handshake message. It sets |*out_msg| to the
   // serialized message. It returns true on success and false on error.
-  bool (*finish_message)(const SSL *ssl, CBB *cbb,
-                         bssl::Array<uint8_t> *out_msg);
+  bool (*finish_message)(const SSL *ssl, CBB *cbb, Array<uint8_t> *out_msg);
   // add_message adds a handshake message to the pending flight. It returns
   // true on success and false on error.
-  bool (*add_message)(SSL *ssl, bssl::Array<uint8_t> msg);
+  bool (*add_message)(SSL *ssl, Array<uint8_t> msg);
   // add_change_cipher_spec adds a ChangeCipherSpec record to the pending
   // flight. It returns true on success and false on error.
   bool (*add_change_cipher_spec)(SSL *ssl);
@@ -2649,11 +2647,7 @@ struct CertCompressionAlg {
   uint16_t alg_id = 0;
 };
 
-BSSL_NAMESPACE_END
-
 DEFINE_LHASH_OF(SSL_SESSION)
-
-BSSL_NAMESPACE_BEGIN
 
 // An ssl_shutdown_t describes the shutdown state of one end of the connection,
 // whether it is alive or has been shutdown via close_notify or fatal alert.
@@ -3029,21 +3023,15 @@ struct DTLSTimer {
   // stopped.
   bool IsSet() const;
 
+  void UpdateDuration(uint64_t microseconds) { duration_ = microseconds; }
+
   // MicrosecondsRemaining returns the time remaining, in microseconds, at
   // |now|, or |kNever| if the timer is unset.
   uint64_t MicrosecondsRemaining(OPENSSL_timeval now) const;
 
  private:
-  // expire_time_ is the time when the timer expires, or zero if the timer is
-  // unset.
-  //
-  // TODO(crbug.com/366284846): This is an extremely inconvenient time
-  // representation. Switch libssl to something like a 64-bit count of
-  // microseconds. While it's decidedly past 1970 now, zero is a less obviously
-  // sound distinguished value for the monotonic clock, so maybe we should use a
-  // different distinguished time, like |INT64_MAX| in the microseconds
-  // representation.
-  OPENSSL_timeval expire_time_ = {0, 0};
+  uint64_t start_time_;
+  uint64_t duration_ = kNever;  // If set to kNever then this timer is unset.
 };
 
 // DTLS_MAX_EXTRA_WRITE_EPOCHS is the maximum number of additional write epochs
@@ -3291,6 +3279,10 @@ struct SSL_CONFIG {
   // |client_key_share_selections| must be reset if the key shares are no longer
   // a valid subsequence of the supported group list.
   Array<uint16_t> supported_group_list;
+
+  // Contains flags corresponding to `supported_group_list`, which are
+  // SSL_GROUP_FLAG_* values ORed together.
+  Array<uint32_t> supported_group_list_flags;
 
   // For a client, this may contain a subsequence of the group IDs in
   // |suppported_group_list|, which gives the groups for which key shares should
@@ -3593,7 +3585,7 @@ bool dtls1_parse_fragment(CBS *cbs, struct hm_header_st *out_hdr,
 
 void dtls1_stop_timer(SSL *ssl);
 
-unsigned int dtls1_min_mtu(void);
+unsigned int dtls1_min_mtu();
 
 bool dtls1_new(SSL *ssl);
 void dtls1_free(SSL *ssl);
@@ -3739,7 +3731,7 @@ struct ssl_ctx_st : public bssl::RefCounted<ssl_ctx_st> {
   const bssl::SSL_X509_METHOD *x509_method = nullptr;
 
   // lock is used to protect various operations on this object.
-  CRYPTO_MUTEX lock;
+  bssl::CRYPTO_MUTEX lock;
 
   // conf_max_version is the maximum acceptable protocol version configured by
   // |SSL_CTX_set_max_proto_version|. Note this version is normalized in DTLS
@@ -3946,8 +3938,9 @@ struct ssl_ctx_st : public bssl::RefCounted<ssl_ctx_st> {
   // Defined compression algorithms for certificates.
   bssl::Vector<bssl::CertCompressionAlg> cert_compression_algs;
 
-  // Supported group values inherited by SSL structure
+  // Supported group values and flags inherited by SSL structure
   bssl::Array<uint16_t> supported_group_list;
+  bssl::Array<uint32_t> supported_group_list_flags;
 
   // channel_id_private is the client's Channel ID private key, or null if
   // Channel ID should not be offered on this connection.

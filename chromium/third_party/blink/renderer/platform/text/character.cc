@@ -102,10 +102,6 @@ bool Character::IsCJKIdeographOrSymbolSlow(UChar32 c) {
   return GetProperty(c).is_cjk_ideograph_or_symbol;
 }
 
-bool Character::IsPotentialCustomElementNameChar(UChar32 character) {
-  return GetProperty(character).is_potential_custom_element_name_char;
-}
-
 bool Character::IsBidiControl(UChar32 character) {
   return GetProperty(character).is_bidi_control;
 }
@@ -142,17 +138,16 @@ unsigned Character::ExpansionOpportunityCount(
     TextJustify method,
     base::span<const LChar> characters,
     TextDirection direction,
-    bool& is_after_expansion) {
+    JustificationContext& context) {
   unsigned count = 0;
   if (direction == TextDirection::kLtr) {
     for (size_t i = 0; i < characters.size(); ++i) {
-      count += CountJustificationOpportunity8(method, characters[i],
-                                              is_after_expansion);
+      count += CountJustificationOpportunity8(method, characters[i], context);
     }
   } else {
     for (size_t i = characters.size(); i > 0; --i) {
-      count += CountJustificationOpportunity8(method, characters[i - 1],
-                                              is_after_expansion);
+      count +=
+          CountJustificationOpportunity8(method, characters[i - 1], context);
     }
   }
 
@@ -163,7 +158,7 @@ unsigned Character::ExpansionOpportunityCount(
     TextJustify method,
     base::span<const UChar> characters,
     TextDirection direction,
-    bool& is_after_expansion) {
+    JustificationContext& context) {
   if (characters.size() == 0) {
     return 0;
   }
@@ -173,8 +168,7 @@ unsigned Character::ExpansionOpportunityCount(
     if (direction == TextDirection::kLtr) {
       for (size_t i = 0; i < characters.size();) {
         UChar32 character = CodePointAtAndNext(characters, i);
-        count += CountJustificationOpportunity16(method, character,
-                                                 is_after_expansion);
+        count += CountJustificationOpportunity16(method, character, context);
       }
     } else {
       for (size_t i = characters.size(); i > 0; --i) {
@@ -184,8 +178,7 @@ unsigned Character::ExpansionOpportunityCount(
           character = U16_GET_SUPPLEMENTARY(characters[i - 2], character);
           i--;
         }
-        count += CountJustificationOpportunity16(method, character,
-                                                 is_after_expansion);
+        count += CountJustificationOpportunity16(method, character, context);
       }
     }
     return count;
@@ -195,15 +188,13 @@ unsigned Character::ExpansionOpportunityCount(
     for (int i = 0; static_cast<size_t>(i) < characters.size();
          i = iter.Next()) {
       UChar32 character = CodePointAt(characters, i);
-      count += CountJustificationOpportunity16(method, character,
-                                               is_after_expansion);
+      count += CountJustificationOpportunity16(method, character, context);
     }
   } else {
     for (int i = iter.Preceding(characters.size()); i != kTextBreakDone;
          i = iter.Preceding(i)) {
       UChar32 character = CodePointAt(characters, i);
-      count += CountJustificationOpportunity16(method, character,
-                                               is_after_expansion);
+      count += CountJustificationOpportunity16(method, character, context);
     }
   }
   return count;
@@ -416,6 +407,18 @@ UScriptCode Character::GetScriptBasedOnUnicodeBlock(int ucs4) {
     default:
       return USCRIPT_COMMON;
   }
+}
+
+bool Character::IsCursiveScript(UChar32 code_point) {
+  ICUError err;
+  UScriptCode script = uscript_getScript(code_point, &err);
+  if (!U_SUCCESS(err)) {
+    return false;
+  }
+  return script == USCRIPT_ARABIC || script == USCRIPT_HANIFI_ROHINGYA ||
+         script == USCRIPT_MANDAIC || script == USCRIPT_MONGOLIAN ||
+         script == USCRIPT_NKO || script == USCRIPT_PHAGS_PA ||
+         script == USCRIPT_SYRIAC;
 }
 
 // https://w3c.github.io/mathml-core/#stretchy-operator-axis

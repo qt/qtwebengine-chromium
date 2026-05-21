@@ -12,6 +12,7 @@
 #include "base/compiler_specific.h"
 #include "base/containers/span.h"
 #include "base/functional/bind.h"
+#include "base/functional/callback_helpers.h"
 #include "base/logging.h"
 #include "base/notreached.h"
 #include "base/numerics/safe_conversions.h"
@@ -170,10 +171,11 @@ void LetterboxPlane(VideoFrame* frame,
                  bytes_per_element, fill_byte);
 }
 
-// Helper for `LetterboxVideoFrame()`, assumes that if |frame| is GMB-backed,
-// the GpuMemoryBuffer is already mapped (via a call to `Map()`).
+// Helper for `LetterboxVideoFrame()`, assumes that if |frame| is
+// MappableSI-backed, the frame's shared image is already mapped (via a call to
+// `Map()`).
 void LetterboxPlane(VideoFrame* frame,
-                    VideoFrame::ScopedMapping* scoped_mapping,
+                    gpu::ClientSharedImage::ScopedMapping* scoped_mapping,
                     int plane,
                     const gfx::Rect& view_area_in_pixels,
                     uint8_t fill_byte) {
@@ -181,7 +183,7 @@ void LetterboxPlane(VideoFrame* frame,
   if (frame->IsMappable()) {
     plane_data = frame->writable_span(plane);
   } else if (scoped_mapping) {
-    plane_data = scoped_mapping->GetMemoryAsSpan(plane);
+    plane_data = scoped_mapping->GetMemoryForPlane(plane);
   }
   CHECK(!plane_data.empty());
 
@@ -191,7 +193,7 @@ void LetterboxPlane(VideoFrame* frame,
 void ProcessAsyncMappingResult(
     scoped_refptr<VideoFrame> video_frame,
     base::OnceCallback<void(scoped_refptr<VideoFrame>)> result_cb,
-    std::unique_ptr<VideoFrame::ScopedMapping> scoped_mapping) {
+    std::unique_ptr<gpu::ClientSharedImage::ScopedMapping> scoped_mapping) {
   CHECK(video_frame);
   if (!scoped_mapping) {
     std::move(result_cb).Run(nullptr);
@@ -201,7 +203,7 @@ void ProcessAsyncMappingResult(
   const size_t num_planes = VideoFrame::NumPlanes(video_frame->format());
   std::array<base::span<uint8_t>, VideoFrame::kMaxPlanes> planes = {};
   for (size_t i = 0; i < num_planes; i++) {
-    planes[i] = scoped_mapping->GetMemoryAsSpan(i);
+    planes[i] = scoped_mapping->GetMemoryForPlane(i);
   }
 
   auto mapped_frame = VideoFrame::WrapExternalYuvDataWithLayout(
@@ -221,10 +223,11 @@ void ProcessAsyncMappingResult(
   // is unmapped on destruction.
   mapped_frame->AddDestructionObserver(base::BindOnce(
       [](scoped_refptr<VideoFrame> frame,
-         std::unique_ptr<VideoFrame::ScopedMapping> scoped_mapping) {
+         std::unique_ptr<gpu::ClientSharedImage::ScopedMapping>
+             scoped_mapping) {
         CHECK(scoped_mapping);
         // The VideoFrame::ScopedMapping must be destroyed before the
-        // FrameResource that produced it in order to avoid dangling pointers.
+        // VideoFrame that produced it in order to avoid dangling pointers.
         scoped_mapping.reset();
       },
       std::move(video_frame), std::move(scoped_mapping)));
@@ -256,10 +259,9 @@ void FillYUVA(VideoFrame* frame, uint8_t y, uint8_t u, uint8_t v, uint8_t a) {
 }
 
 void LetterboxVideoFrame(VideoFrame* frame, const gfx::Rect& view_area) {
-  std::unique_ptr<VideoFrame::ScopedMapping> scoped_mapping;
-  if (!frame->IsMappable() &&
-      frame->storage_type() == media::VideoFrame::STORAGE_GPU_MEMORY_BUFFER) {
-    scoped_mapping = frame->MapGMBOrSharedImage();
+  std::unique_ptr<gpu::ClientSharedImage::ScopedMapping> scoped_mapping;
+  if (frame->HasMappableSharedImage()) {
+    scoped_mapping = frame->shared_image()->Map();
     CHECK(scoped_mapping);
   }
 
@@ -565,9 +567,9 @@ gfx::Size PadToMatchAspectRatio(const gfx::Size& size,
 scoped_refptr<VideoFrame> ConvertToMemoryMappedFrame(
     scoped_refptr<VideoFrame> video_frame) {
   CHECK(video_frame);
-  CHECK(video_frame->HasMappableGpuBuffer());
+  CHECK(video_frame->HasMappableSharedImage());
 
-  auto scoped_mapping = video_frame->MapGMBOrSharedImage();
+  auto scoped_mapping = video_frame->shared_image()->Map();
   if (!scoped_mapping) {
     return nullptr;
   }
@@ -575,7 +577,7 @@ scoped_refptr<VideoFrame> ConvertToMemoryMappedFrame(
   const size_t num_planes = VideoFrame::NumPlanes(video_frame->format());
   std::array<base::span<uint8_t>, VideoFrame::kMaxPlanes> planes = {};
   for (size_t i = 0; i < num_planes; i++)
-    planes[i] = scoped_mapping->GetMemoryAsSpan(i);
+    planes[i] = scoped_mapping->GetMemoryForPlane(i);
 
   auto mapped_frame = VideoFrame::WrapExternalYuvDataWithLayout(
       video_frame->layout(), video_frame->visible_rect(),
@@ -593,10 +595,11 @@ scoped_refptr<VideoFrame> ConvertToMemoryMappedFrame(
   // is unmapped on destruction.
   mapped_frame->AddDestructionObserver(base::BindOnce(
       [](scoped_refptr<VideoFrame> frame,
-         std::unique_ptr<VideoFrame::ScopedMapping> scoped_mapping) {
+         std::unique_ptr<gpu::ClientSharedImage::ScopedMapping>
+             scoped_mapping) {
         CHECK(scoped_mapping);
-        // The VideoFrame::ScopedMapping must be destroyed before the
-        // FrameResource that produced it in order to avoid dangling pointers.
+        // The ScopedMapping must be destroyed before the VideoFrame that
+        // produced it in order to avoid dangling pointers.
         scoped_mapping.reset();
       },
       std::move(video_frame), std::move(scoped_mapping)));
@@ -607,9 +610,9 @@ void ConvertToMemoryMappedFrameAsync(
     scoped_refptr<VideoFrame> video_frame,
     base::OnceCallback<void(scoped_refptr<VideoFrame>)> result_cb) {
   CHECK(video_frame);
-  CHECK(video_frame->HasMappableGpuBuffer());
+  CHECK(video_frame->HasMappableSharedImage());
 
-  video_frame->MapGMBOrSharedImageAsync(base::BindOnce(
+  video_frame->shared_image()->MapAsync(base::BindOnce(
       &ProcessAsyncMappingResult, video_frame, std::move(result_cb)));
 }
 
@@ -762,29 +765,27 @@ bool ReadbackTexturePlaneToMemorySync(VideoFrame& src_frame,
 // Media pixel format enums have names opposite to their byte order.
 // That's why PIXEL_FORMAT_ABGR corresponds to kRGBA_8888_SkColorType
 // and so on.
-MEDIA_EXPORT SkColorType SkColorTypeForPlane(VideoPixelFormat format,
-                                             size_t plane) {
+SkColorType SkColorTypeForPlaneNoCheck(VideoPixelFormat format, size_t plane) {
   switch (format) {
     case PIXEL_FORMAT_I420:
     case PIXEL_FORMAT_I420A:
     case PIXEL_FORMAT_I422:
     case PIXEL_FORMAT_I444:
-      // kGray_8_SkColorType would make more sense but doesn't work on Windows.
-      return kAlpha_8_SkColorType;
+      return kR8_unorm_SkColorType;
     case PIXEL_FORMAT_NV12:
     case PIXEL_FORMAT_NV16:
     case PIXEL_FORMAT_NV24:
-      return plane == VideoFrame::Plane::kY ? kAlpha_8_SkColorType
+      return plane == VideoFrame::Plane::kY ? kR8_unorm_SkColorType
                                             : kR8G8_unorm_SkColorType;
     case PIXEL_FORMAT_NV12A:
       return plane == VideoFrame::Plane::kY ||
                      plane == VideoFrame::Plane::kATriPlanar
-                 ? kAlpha_8_SkColorType
+                 ? kR8_unorm_SkColorType
                  : kR8G8_unorm_SkColorType;
     case PIXEL_FORMAT_P010LE:
     case PIXEL_FORMAT_P210LE:
     case PIXEL_FORMAT_P410LE:
-      return plane == VideoFrame::Plane::kY ? kA16_unorm_SkColorType
+      return plane == VideoFrame::Plane::kY ? kR16_unorm_SkColorType
                                             : kR16G16_unorm_SkColorType;
     case PIXEL_FORMAT_XBGR:
     case PIXEL_FORMAT_ABGR:
@@ -795,12 +796,18 @@ MEDIA_EXPORT SkColorType SkColorTypeForPlane(VideoPixelFormat format,
     case PIXEL_FORMAT_RGBAF16:
       return kRGBA_F16_SkColorType;
     default:
-      NOTREACHED();
+      return kUnknown_SkColorType;
   }
 }
 
-MEDIA_EXPORT VideoPixelFormat
-VideoPixelFormatFromSkColorType(SkColorType sk_color_type, bool is_opaque) {
+SkColorType SkColorTypeForPlane(VideoPixelFormat format, size_t plane) {
+  const auto result = SkColorTypeForPlaneNoCheck(format, plane);
+  CHECK_NE(result, kUnknown_SkColorType);
+  return result;
+}
+
+VideoPixelFormat VideoPixelFormatFromSkColorType(SkColorType sk_color_type,
+                                                 bool is_opaque) {
   switch (sk_color_type) {
     case kRGBA_8888_SkColorType:
       return is_opaque ? PIXEL_FORMAT_XBGR : PIXEL_FORMAT_ABGR;
@@ -810,6 +817,68 @@ VideoPixelFormatFromSkColorType(SkColorType sk_color_type, bool is_opaque) {
       return PIXEL_FORMAT_RGBAF16;
     default:
       return PIXEL_FORMAT_UNKNOWN;
+  }
+}
+
+SkYUVAInfo::PlaneConfig SkYUVAPlaneConfigForFormat(VideoPixelFormat format) {
+  switch (format) {
+    case PIXEL_FORMAT_UYVY:
+    case PIXEL_FORMAT_YUY2:
+    case PIXEL_FORMAT_ARGB:
+    case PIXEL_FORMAT_BGRA:
+    case PIXEL_FORMAT_XRGB:
+    case PIXEL_FORMAT_RGB24:
+    case PIXEL_FORMAT_MJPEG:
+    case PIXEL_FORMAT_Y16:
+    case PIXEL_FORMAT_ABGR:
+    case PIXEL_FORMAT_XBGR:
+    case PIXEL_FORMAT_XR30:
+    case PIXEL_FORMAT_XB30:
+    case PIXEL_FORMAT_RGBAF16:
+    case PIXEL_FORMAT_UNKNOWN:
+      return SkYUVAInfo::PlaneConfig::kUnknown;
+    case PIXEL_FORMAT_I420:
+    case PIXEL_FORMAT_I422:
+    case PIXEL_FORMAT_I444:
+    case PIXEL_FORMAT_YUV420P10:
+    case PIXEL_FORMAT_YUV422P10:
+    case PIXEL_FORMAT_YUV444P10:
+    case PIXEL_FORMAT_YUV420P12:
+    case PIXEL_FORMAT_YUV422P12:
+    case PIXEL_FORMAT_YUV444P12:
+      return SkYUVAInfo::PlaneConfig::kY_U_V;
+    case PIXEL_FORMAT_YV12:
+      return SkYUVAInfo::PlaneConfig::kY_V_U;
+    case PIXEL_FORMAT_I420A:
+    case PIXEL_FORMAT_I422A:
+    case PIXEL_FORMAT_I444A:
+    case PIXEL_FORMAT_YUV420AP10:
+    case PIXEL_FORMAT_YUV422AP10:
+    case PIXEL_FORMAT_YUV444AP10:
+      return SkYUVAInfo::PlaneConfig::kY_U_V_A;
+    case PIXEL_FORMAT_NV12:
+    case PIXEL_FORMAT_NV16:
+    case PIXEL_FORMAT_NV21:
+    case PIXEL_FORMAT_NV24:
+    case PIXEL_FORMAT_P010LE:
+    case PIXEL_FORMAT_P210LE:
+    case PIXEL_FORMAT_P410LE:
+      return SkYUVAInfo::PlaneConfig::kY_UV;
+    case PIXEL_FORMAT_NV12A:
+      return SkYUVAInfo::PlaneConfig::kY_UV_A;
+  }
+}
+
+SkYUVAInfo::Subsampling SkYUVASubsamplingForFormat(VideoPixelFormat format) {
+  switch (VideoPixelFormatToChromaSampling(format)) {
+    case VideoChromaSampling::k420:
+      return SkYUVAInfo::Subsampling::k420;
+    case VideoChromaSampling::k422:
+      return SkYUVAInfo::Subsampling::k422;
+    case VideoChromaSampling::k444:
+      return SkYUVAInfo::Subsampling::k444;
+    default:
+      return SkYUVAInfo::Subsampling::kUnknown;
   }
 }
 

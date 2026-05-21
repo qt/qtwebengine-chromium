@@ -553,7 +553,7 @@ static void set_bitstream_level_tier(AV1_PRIMARY *const ppi, int width,
       aom_internal_error(
           &ppi->error, AOM_CODEC_UNSUP_BITSTREAM,
           "AV1 does not support this combination of profile, level, and tier.");
-    // Buffer size in bits/s is bitrate in bits/s * 1 s
+    // Buffer size in bits is bitrate in bits/s * 1 s
     seq_params->op_params[i].buffer_size = seq_params->op_params[i].bitrate;
   }
 }
@@ -3434,6 +3434,19 @@ static int encode_with_recode_loop(AV1_COMP *cpi, size_t *size, uint8_t *dest,
         cpi->ext_ratectrl.funcs.get_encodeframe_decision != NULL) {
       aom_codec_err_t codec_status;
       aom_rc_encodeframe_decision_t encode_frame_decision;
+      const int sb_rows = CEIL_POWER_OF_TWO(cm->mi_params.mi_rows,
+                                            cm->seq_params->mib_size_log2);
+      const int sb_cols = CEIL_POWER_OF_TWO(cm->mi_params.mi_cols,
+                                            cm->seq_params->mib_size_log2);
+      // This assumes frame sizes don't change when used with external RC.
+      // cpi->ext_ratectrl is zero'ed at init.
+      if (cpi->ext_ratectrl.sb_params_list == NULL) {
+        CHECK_MEM_ERROR(
+            cm, cpi->ext_ratectrl.sb_params_list,
+            (aom_sb_params *)aom_calloc(
+                sb_rows * sb_cols, sizeof(*cpi->ext_ratectrl.sb_params_list)));
+      }
+      encode_frame_decision.sb_params_list = cpi->ext_ratectrl.sb_params_list;
       codec_status = av1_extrc_get_encodeframe_decision(
           &cpi->ext_ratectrl, cpi->gf_frame_index, &encode_frame_decision);
       if (codec_status != AOM_CODEC_OK) {
@@ -4661,6 +4674,33 @@ int av1_receive_raw_frame(AV1_COMP *cpi, aom_enc_frame_flags_t frame_flags,
   const int subsampling_y = sd->subsampling_y;
   const int use_highbitdepth = (sd->flags & YV12_FLAG_HIGHBITDEPTH) != 0;
 
+  // Note: Regarding profile setting, the following checks are added to help
+  // choose a proper profile for the input video. The criterion is that all
+  // bitstreams must be designated as the lowest profile that match its content.
+  // E.G. A bitstream that contains 4:4:4 video must be designated as High
+  // Profile in the seq header, and likewise a bitstream that contains 4:2:2
+  // bitstream must be designated as Professional Profile in the sequence
+  // header.
+  if ((seq_params->profile == PROFILE_0) && !seq_params->monochrome &&
+      (subsampling_x != 1 || subsampling_y != 1)) {
+    aom_set_error(cm->error, AOM_CODEC_INVALID_PARAM,
+                  "Non-4:2:0 color format requires profile 1 or 2");
+    return -1;
+  }
+  if ((seq_params->profile == PROFILE_1) &&
+      !(subsampling_x == 0 && subsampling_y == 0)) {
+    aom_set_error(cm->error, AOM_CODEC_INVALID_PARAM,
+                  "Profile 1 requires 4:4:4 color format");
+    return -1;
+  }
+  if ((seq_params->profile == PROFILE_2) &&
+      (seq_params->bit_depth <= AOM_BITS_10) &&
+      !(subsampling_x == 1 && subsampling_y == 0)) {
+    aom_set_error(cm->error, AOM_CODEC_INVALID_PARAM,
+                  "Profile 2 bit-depth <= 10 requires 4:2:2 color format");
+    return -1;
+  }
+
 #if CONFIG_TUNE_VMAF
   if (!is_stat_generation_stage(cpi) &&
       cpi->oxcf.tune_cfg.tuning == AOM_TUNE_VMAF_WITH_PREPROCESSING) {
@@ -4722,33 +4762,6 @@ int av1_receive_raw_frame(AV1_COMP *cpi, aom_enc_frame_flags_t frame_flags,
   aom_usec_timer_mark(&timer);
   cpi->ppi->total_time_receive_data += aom_usec_timer_elapsed(&timer);
 #endif
-
-  // Note: Regarding profile setting, the following checks are added to help
-  // choose a proper profile for the input video. The criterion is that all
-  // bitstreams must be designated as the lowest profile that match its content.
-  // E.G. A bitstream that contains 4:4:4 video must be designated as High
-  // Profile in the seq header, and likewise a bitstream that contains 4:2:2
-  // bitstream must be designated as Professional Profile in the sequence
-  // header.
-  if ((seq_params->profile == PROFILE_0) && !seq_params->monochrome &&
-      (subsampling_x != 1 || subsampling_y != 1)) {
-    aom_set_error(cm->error, AOM_CODEC_INVALID_PARAM,
-                  "Non-4:2:0 color format requires profile 1 or 2");
-    res = -1;
-  }
-  if ((seq_params->profile == PROFILE_1) &&
-      !(subsampling_x == 0 && subsampling_y == 0)) {
-    aom_set_error(cm->error, AOM_CODEC_INVALID_PARAM,
-                  "Profile 1 requires 4:4:4 color format");
-    res = -1;
-  }
-  if ((seq_params->profile == PROFILE_2) &&
-      (seq_params->bit_depth <= AOM_BITS_10) &&
-      !(subsampling_x == 1 && subsampling_y == 0)) {
-    aom_set_error(cm->error, AOM_CODEC_INVALID_PARAM,
-                  "Profile 2 bit-depth <= 10 requires 4:2:2 color format");
-    res = -1;
-  }
 
   return res;
 }
@@ -5039,16 +5052,10 @@ static inline void update_frames_till_gf_update(AV1_COMP *cpi) {
 
 static inline void update_gf_group_index(AV1_COMP *cpi) {
   // Increment the gf group index ready for the next frame.
-  if (is_one_pass_rt_params(cpi) &&
-      cpi->svc.spatial_layer_id == cpi->svc.number_spatial_layers - 1) {
-    ++cpi->gf_frame_index;
-    // Reset gf_frame_index in case it reaches MAX_STATIC_GF_GROUP_LENGTH
-    // for real time encoding.
-    if (cpi->gf_frame_index == MAX_STATIC_GF_GROUP_LENGTH)
-      cpi->gf_frame_index = 0;
-  } else {
-    ++cpi->gf_frame_index;
-  }
+  ++cpi->gf_frame_index;
+  // Reset gf_frame_index in case it reaches MAX_STATIC_GF_GROUP_LENGTH.
+  if (cpi->gf_frame_index == MAX_STATIC_GF_GROUP_LENGTH)
+    cpi->gf_frame_index = 0;
 }
 
 static void update_fb_of_context_type(const AV1_COMP *const cpi,

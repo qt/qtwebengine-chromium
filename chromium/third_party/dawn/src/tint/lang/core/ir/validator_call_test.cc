@@ -453,14 +453,14 @@ TEST_F(IR_ValidatorTest, CallToBuiltin_Frexp_UserDeclaredResultStruct) {
 TEST_F(IR_ValidatorTest, CallToBuiltin_Modf_UserDeclaredResultStruct) {
     auto* str_ty = ty.Struct(mod.symbols.New("__modf_result_vec4_f32"),
                              {
-                                 {mod.symbols.New("fract"), ty.vec4<f32>()},
-                                 {mod.symbols.New("whole"), ty.vec4<f32>()},
+                                 {mod.symbols.New("fract"), ty.vec4f()},
+                                 {mod.symbols.New("whole"), ty.vec4f()},
                              });
 
-    auto* f = b.Function("f", ty.vec4<f32>());
+    auto* f = b.Function("f", ty.vec4f());
     b.Append(f->Block(), [&] {
-        auto* c = b.Call(str_ty, BuiltinFn::kModf, b.Splat<vec4<f32>>(1_f));
-        b.Return(f, b.Access<vec4<f32>>(c, 0_u));
+        auto* c = b.Call(str_ty, BuiltinFn::kModf, b.Splat<vec4f>(1_f));
+        b.Return(f, b.Access<vec4f>(c, 0_u));
     });
 
     auto res = ir::Validate(mod);
@@ -518,12 +518,12 @@ TEST_F(IR_ValidatorTest, CallBuiltinFn_Component_TooSmall) {
 
     auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kFragment);
     b.Append(func->Block(), [&] {
-        auto* coords = b.Construct(ty.vec2<f32>(), b.Value(1_f), b.Value(2_f));
-        auto* offset = b.Composite<vec2<i32>>(1_i, 3_i);
+        auto* coords = b.Construct(ty.vec2f(), b.Value(1_f), b.Value(2_f));
+        auto* offset = b.Composite<vec2i>(1_i, 3_i);
 
         auto* t = b.Load(tex);
         auto* s = b.Load(sampler);
-        b.Let("x", b.Call<vec4<i32>>(core::BuiltinFn::kTextureGather, -2_i, t, s, coords, offset));
+        b.Let("x", b.Call<vec4i>(core::BuiltinFn::kTextureGather, -2_i, t, s, coords, offset));
         b.Return(func);
     });
 
@@ -550,12 +550,12 @@ TEST_F(IR_ValidatorTest, CallBuiltinFn_Component_TooBig) {
 
     auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kFragment);
     b.Append(func->Block(), [&] {
-        auto* coords = b.Construct(ty.vec2<f32>(), b.Value(1_f), b.Value(2_f));
-        auto* offset = b.Composite<vec2<i32>>(1_i, 3_i);
+        auto* coords = b.Construct(ty.vec2f(), b.Value(1_f), b.Value(2_f));
+        auto* offset = b.Composite<vec2i>(1_i, 3_i);
 
         auto* t = b.Load(tex);
         auto* s = b.Load(sampler);
-        b.Let("x", b.Call<vec4<i32>>(core::BuiltinFn::kTextureGather, 6_u, t, s, coords, offset));
+        b.Let("x", b.Call<vec4i>(core::BuiltinFn::kTextureGather, 6_u, t, s, coords, offset));
         b.Return(func);
     });
 
@@ -582,14 +582,14 @@ TEST_F(IR_ValidatorTest, CallBuiltinFn_Offset_TooSmall) {
 
     auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kFragment);
     b.Append(func->Block(), [&] {
-        auto* coords = b.Construct(ty.vec2<f32>(), b.Value(1_f), b.Value(2_f));
+        auto* coords = b.Construct(ty.vec2f(), b.Value(1_f), b.Value(2_f));
         auto* array_idx = b.Value(1_i);
-        auto* offset = b.Composite<vec2<i32>>(1_i, -9_i);
+        auto* offset = b.Composite<vec2i>(1_i, -9_i);
 
         auto* t = b.Load(tex);
         auto* s = b.Load(sampler);
-        b.Let("x", b.Call<vec4<i32>>(core::BuiltinFn::kTextureGather, 2_u, t, s, coords, array_idx,
-                                     offset));
+        b.Let("x",
+              b.Call<vec4i>(core::BuiltinFn::kTextureGather, 2_u, t, s, coords, array_idx, offset));
         b.Return(func);
     });
 
@@ -617,14 +617,14 @@ TEST_F(IR_ValidatorTest, CallBuiltinFn_Offset_TooBig) {
 
     auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kFragment);
     b.Append(func->Block(), [&] {
-        auto* coords = b.Construct(ty.vec2<f32>(), b.Value(1_f), b.Value(2_f));
+        auto* coords = b.Construct(ty.vec2f(), b.Value(1_f), b.Value(2_f));
         auto* array_idx = b.Value(1_i);
-        auto* offset = b.Composite<vec2<i32>>(8_i, -2_i);
+        auto* offset = b.Composite<vec2i>(8_i, -2_i);
 
         auto* t = b.Load(tex);
         auto* s = b.Load(sampler);
-        b.Let("x", b.Call<vec4<i32>>(core::BuiltinFn::kTextureGather, 2_u, t, s, coords, array_idx,
-                                     offset));
+        b.Let("x",
+              b.Call<vec4i>(core::BuiltinFn::kTextureGather, 2_u, t, s, coords, array_idx, offset));
         b.Return(func);
     });
 
@@ -647,8 +647,9 @@ TEST_F(IR_ValidatorTest, CallBuiltinFn_QuadBroadcast_NonConstId) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_THAT(res.Failure().reason, testing::HasSubstr(
-                                          R"(:4:32 error: quadBroadcast: non-constant ID provided
+    EXPECT_THAT(res.Failure().reason,
+                testing::HasSubstr(
+                    R"(:4:32 error: quadBroadcast: the 'id' argument must be a constant
     %3:i32 = quadBroadcast 2i, %a
                                ^^
 
@@ -665,9 +666,10 @@ TEST_F(IR_ValidatorTest, CallBuiltinFn_SubgroupBroadcast_NonConstId) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_THAT(res.Failure().reason,
-                testing::HasSubstr(
-                    R"(:4:36 error: subgroupBroadcast: non-constant ID provided
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:4:36 error: subgroupBroadcast: the 'sourceLaneIndex' argument must be a constant
     %3:i32 = subgroupBroadcast 2i, %a
                                    ^^
 

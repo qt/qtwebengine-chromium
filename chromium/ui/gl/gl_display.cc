@@ -9,7 +9,6 @@
 #include <vector>
 
 #include "base/command_line.h"
-#include "base/containers/contains.h"
 #include "base/debug/crash_logging.h"
 #include "base/export_template.h"
 #include "base/logging.h"
@@ -265,12 +264,12 @@ EGLDisplay GetDisplayFromType(
       extra_display_attribs.push_back(EGL_PLATFORM_ANGLE_DEVICE_TYPE_ANGLE);
       extra_display_attribs.push_back(
           EGL_PLATFORM_ANGLE_DEVICE_TYPE_SWIFTSHADER_ANGLE);
-#if BUILDFLAG(IS_CHROMEOS) && BUILDFLAG(IS_OZONE_X11)
+#if BUILDFLAG(IS_CHROMEOS) && BUILDFLAG(SUPPORTS_OZONE_X11)
       extra_display_attribs.push_back(
           EGL_PLATFORM_ANGLE_NATIVE_PLATFORM_TYPE_ANGLE);
       extra_display_attribs.push_back(
           EGL_PLATFORM_VULKAN_DISPLAY_MODE_HEADLESS_ANGLE);
-#endif  // BUILDFLAG(IS_CHROMEOS) && BUILDFLAG(IS_OZONE_X11)
+#endif  // BUILDFLAG(IS_CHROMEOS) && BUILDFLAG(SUPPORTS_OZONE_X11)
       return GetPlatformANGLEDisplay(
           display, EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE, enabled_angle_features,
           disabled_angle_features, extra_display_attribs);

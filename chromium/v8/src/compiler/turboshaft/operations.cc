@@ -33,12 +33,6 @@
 #include "src/objects/objects-inl.h"
 #endif
 
-namespace v8::internal {
-std::ostream& operator<<(std::ostream& os, AbortReason reason) {
-  return os << GetAbortReason(reason);
-}
-}  // namespace v8::internal
-
 namespace v8::internal::compiler::turboshaft {
 
 void Operation::Print() const { std::cout << *this << "\n"; }
@@ -462,10 +456,12 @@ std::ostream& operator<<(std::ostream& os, ChangeOp::Assumption assumption) {
 
 std::ostream& operator<<(std::ostream& os, SelectOp::Implementation kind) {
   switch (kind) {
-    case SelectOp::Implementation::kBranch:
+    case SelectOp::Implementation::kForceBranch:
       return os << "Branch";
-    case SelectOp::Implementation::kCMove:
+    case SelectOp::Implementation::kForceCMove:
       return os << "CMove";
+    case SelectOp::Implementation::kAny:
+      return os << "Any";
   }
 }
 
@@ -747,6 +743,36 @@ void StoreOp::PrintOptions(std::ostream& os) const {
   os << ']';
 }
 
+void TaggedBitcastOp::Validate(const Graph& graph) const {
+  if (kind == Kind::kSmi) {
+    DCHECK((from.IsWord() && to.IsTaggedOrCompressed()) ||
+           (from.IsTaggedOrCompressed() && to.IsWord()));
+    DCHECK_IMPLIES(from == RegisterRepresentation::Word64() ||
+                       to == RegisterRepresentation::Word64(),
+                   Is64());
+  } else {
+    // TODO(nicohartmann@): Without implicit truncation, the first case might
+    // not be correct anymore.
+    DCHECK((from.IsWord() && to == RegisterRepresentation::Tagged()) ||
+           (from == RegisterRepresentation::Tagged() &&
+            to == RegisterRepresentation::WordPtr()) ||
+           (from == RegisterRepresentation::Compressed() &&
+            to == RegisterRepresentation::Word32()));
+
+    if (to == RegisterRepresentation::Tagged() ||
+        to == RegisterRepresentation::Compressed()) {
+      // We shouldn't bitcast-to-tagged load results. Instead, we should
+      // correctly load tagged values as RegisterRepresentation::Tagged().
+      // There is one exception to this rule: tagged atomic loads, which aren't
+      // supported by the instruction selector and thus need to be bitcasted to
+      // Tagged. This is safe for load elimination because we don't
+      // load-eliminate atomic loads anyways.
+      DCHECK(!graph.Get(input()).Is<LoadOp>() ||
+             graph.Get(input()).Cast<LoadOp>().kind.is_atomic);
+    }
+  }
+}
+
 void AllocateOp::PrintOptions(std::ostream& os) const {
   os << '[' << type << ", ";
   switch (alignment) {
@@ -763,11 +789,22 @@ void AllocateOp::PrintOptions(std::ostream& os) const {
   os << ']';
 }
 
-void DecodeExternalPointerOp::PrintOptions(std::ostream& os) const {
+#if V8_ENABLE_SANDBOX
+void LoadExternalPointerOp::PrintOptions(std::ostream& os) const {
   os << '[';
   os << "tag_range: [" << tag_range.first << ", " << tag_range.last << "]";
   os << ']';
 }
+#endif
+
+#if V8_ENABLE_SANDBOX
+void LoadTrustedPointerOp::PrintOptions(std::ostream& os) const {
+  os << '[';
+  os << "is_immutable: " << is_immutable << ", ";
+  os << "tag_range: [" << tag_range.first << ", " << tag_range.last << "]";
+  os << ']';
+}
+#endif
 
 void FrameStateOp::PrintOptions(std::ostream& os) const {
   os << '[';
@@ -1835,8 +1872,9 @@ void Simd128ExtractLaneOp::PrintOptions(std::ostream& os) const {
   os << ", " << static_cast<int32_t>(lane) << ']';
 }
 
-void Simd128ReplaceLaneOp::PrintOptions(std::ostream& os) const {
-  os << '[';
+static void PrintReplaceLaneKind(Simd128ReplaceLaneOp::Kind kind,
+                                 std::ostream& os) {
+  using Kind = Simd128ReplaceLaneOp::Kind;
   switch (kind) {
     case Kind::kI8x16:
       os << "I8x16";
@@ -1860,6 +1898,18 @@ void Simd128ReplaceLaneOp::PrintOptions(std::ostream& os) const {
       os << "F64x2";
       break;
   }
+}
+
+void Simd128MoveLaneOp::PrintOptions(std::ostream& os) const {
+  os << '[';
+  PrintReplaceLaneKind(kind, os);
+  os << ", " << static_cast<int32_t>(into_lane) << ", "
+     << static_cast<int32_t>(from_lane) << ']';
+}
+
+void Simd128ReplaceLaneOp::PrintOptions(std::ostream& os) const {
+  os << '[';
+  PrintReplaceLaneKind(kind, os);
   os << ", " << static_cast<int32_t>(lane) << ']';
 }
 
@@ -1906,6 +1956,9 @@ void Simd128LoadTransformOp::PrintOptions(std::ostream& os) const {
 void Simd128ShuffleOp::PrintOptions(std::ostream& os) const {
   os << '[';
   switch (kind) {
+    case Kind::kI8x1:
+      os << "I8x1, ";
+      break;
     case Kind::kI8x2:
       os << "I8x2, ";
       break;
@@ -1923,7 +1976,6 @@ void Simd128ShuffleOp::PrintOptions(std::ostream& os) const {
   os << ']';
 }
 
-#if V8_ENABLE_WASM_DEINTERLEAVED_MEM_OPS
 void Simd128LoadPairDeinterleaveOp::PrintOptions(std::ostream& os) const {
   os << '[';
   if (load_kind.maybe_unaligned) os << "unaligned, ";
@@ -1945,7 +1997,6 @@ void Simd128LoadPairDeinterleaveOp::PrintOptions(std::ostream& os) const {
   }
   os << ']';
 }
-#endif  // V8_ENABLE_WASM_DEINTERLEAVED_MEM_OPS
 
 #if V8_ENABLE_WASM_SIMD256_REVEC
 void Simd256ConstantOp::PrintOptions(std::ostream& os) const {
@@ -2306,6 +2357,7 @@ bool Operation::IsOnlyUserOf(const Operation& value, const Graph& graph) const {
   DCHECK_GE(std::count(inputs().begin(), inputs().end(), graph.Index(value)),
             1);
   if (value.saturated_use_count.IsOne()) return true;
+  if (value.saturated_use_count.IsSaturated()) return false;
   return std::count(inputs().begin(), inputs().end(), graph.Index(value)) ==
          value.saturated_use_count.Get();
 }
@@ -2316,10 +2368,10 @@ bool Operation::IsProtectedLoad() const {
     return load->kind.with_trap_handler;
   } else if (const auto* load_t = TryCast<Simd128LoadTransformOp>()) {
     return load_t->load_kind.with_trap_handler;
-#ifdef V8_ENABLE_WASM_DEINTERLEAVED_MEM_OPS
-  } else if (const auto* load_t = TryCast<Simd128LoadPairDeinterleaveOp>()) {
-    return load_t->load_kind.with_trap_handler;
-#endif  // V8_ENABLE_WASM_DEINTERLEAVED_MEM_OPS
+  } else if (const auto* load_pd = TryCast<Simd128LoadPairDeinterleaveOp>()) {
+    return load_pd->load_kind.with_trap_handler;
+  } else if (const auto* load_lane = TryCast<Simd128LaneMemoryOp>()) {
+    return load_lane->kind.with_trap_handler;
   }
   return false;
 }

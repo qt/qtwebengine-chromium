@@ -192,13 +192,10 @@ struct VideoColorSpace {
   [Native]
   enum MatrixID;
 
-  [Native]
-  enum RangeID;
-
   PrimaryID primaries;
   TransferID transfer;
   MatrixID matrix;
-  RangeID range;
+  gfx.mojom.ColorSpaceRangeID range;
 };
 
 // This defines a mojo transport format for media::AudioDecoderConfig.
@@ -235,7 +232,7 @@ struct VideoDecoderConfig {
   array<uint8> extra_data;
   EncryptionScheme encryption_scheme;
   VideoColorSpace color_space_info;
-  gfx.mojom.HDRMetadata? hdr_metadata;
+  gfx.mojom.HDRMetadata hdr_metadata;
 };
 
 // Native struct media::SubsampleEntry;
@@ -369,15 +366,13 @@ struct CaptureVersion {
 };
 
 // See media/base/video_frame_metadata.h for a description of fields.
-// TODO(crbug.com/40489779): Remove |has_*| values and use nullable types.
 struct VideoFrameMetadata {
   bool allow_overlay;
 
   mojo_base.mojom.TimeTicks? capture_begin_time;
   mojo_base.mojom.TimeTicks? capture_end_time;
 
-  bool has_capture_counter;
-  int32 capture_counter;
+  int32? capture_counter;
 
   gfx.mojom.Rect? capture_update_rect;
 
@@ -392,8 +387,7 @@ struct VideoFrameMetadata {
 
   mojo_base.mojom.TimeDelta? frame_duration;
 
-  bool has_frame_rate;
-  double frame_rate;
+  double? frame_rate;
 
   bool interactive_content;
 
@@ -419,28 +413,22 @@ struct VideoFrameMetadata {
 
   bool power_efficient;
 
-  bool has_device_scale_factor;
-  double device_scale_factor;
+  double? device_scale_factor;
 
-  bool has_page_scale_factor;
-  double page_scale_factor;
+  double? page_scale_factor;
 
-  bool has_root_scroll_offset_x;
-  double root_scroll_offset_x;
+  double? root_scroll_offset_x;
 
-  bool has_root_scroll_offset_y;
-  double root_scroll_offset_y;
+  double? root_scroll_offset_y;
 
-  bool has_top_controls_visible_height;
-  double top_controls_visible_height;
+  double? top_controls_visible_height;
 
   mojo_base.mojom.TimeTicks? decode_begin_time;
   mojo_base.mojom.TimeTicks? decode_end_time;
 
   mojo_base.mojom.TimeDelta? processing_time;
 
-  bool has_rtp_timestamp;
-  double rtp_timestamp;
+  double? rtp_timestamp;
 
   mojo_base.mojom.TimeTicks? receive_time;
 
@@ -476,14 +464,13 @@ struct VideoFrame {
   VideoFrameMetadata metadata;
 
   gfx.mojom.ColorSpace color_space;
-  gfx.mojom.HDRMetadata? hdr_metadata;
+  gfx.mojom.HDRMetadata hdr_metadata;
 };
 
 // Possible choices for storing VideoFrame data.
 union VideoFrameData {
   EosVideoFrameData eos_data;
   SharedMemoryVideoFrameData shared_memory_data;
-  GpuMemoryBufferSharedImageVideoFrameData gpu_memory_buffer_shared_image_data;
   SharedImageVideoFrameData shared_image_data;
   OpaqueVideoFrameData opaque_data;
   [EnableIf=is_chromeos|is_linux]
@@ -505,19 +492,11 @@ struct SharedMemoryVideoFrameData {
   array<uint32> offsets;
 };
 
-struct GpuMemoryBufferSharedImageVideoFrameData {
-  gfx.mojom.GpuMemoryBufferHandle gpu_memory_buffer_handle;
-  gpu.mojom.ExportedSharedImage? shared_image;
-  gpu.mojom.SyncToken sync_token;
-};
-
 // This defines video frame data stored in texture shared images.
 struct SharedImageVideoFrameData {
   gpu.mojom.ExportedSharedImage shared_image;
   gpu.mojom.SyncToken sync_token;
-  // TODO(crbug.com/40263579): Remove this bool once all VideoFrame
-  // clients use MappableSI.
-  bool is_mappable_si_enabled;
+  bool is_mappable;
   // |ycbcr_data| is present on Android when the
   // video is hardware decoded and the display compositor uses Vulkan.
   [EnableIf=is_android]

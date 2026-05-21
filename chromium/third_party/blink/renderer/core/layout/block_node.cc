@@ -35,6 +35,7 @@
 #include "third_party/blink/renderer/core/layout/geometry/fragment_geometry.h"
 #include "third_party/blink/renderer/core/layout/geometry/writing_mode_converter.h"
 #include "third_party/blink/renderer/core/layout/grid/grid_layout_algorithm.h"
+#include "third_party/blink/renderer/core/layout/grid_lanes/grid_lanes_layout_algorithm.h"
 #include "third_party/blink/renderer/core/layout/inline/inline_cursor.h"
 #include "third_party/blink/renderer/core/layout/inline/inline_node.h"
 #include "third_party/blink/renderer/core/layout/layout_block_flow.h"
@@ -49,7 +50,6 @@
 #include "third_party/blink/renderer/core/layout/length_utils.h"
 #include "third_party/blink/renderer/core/layout/list/layout_list_item.h"
 #include "third_party/blink/renderer/core/layout/logical_box_fragment.h"
-#include "third_party/blink/renderer/core/layout/masonry/masonry_layout_algorithm.h"
 #include "third_party/blink/renderer/core/layout/mathml/math_fraction_layout_algorithm.h"
 #include "third_party/blink/renderer/core/layout/mathml/math_layout_utils.h"
 #include "third_party/blink/renderer/core/layout/mathml/math_operator_layout_algorithm.h"
@@ -173,7 +173,7 @@ NOINLINE void DetermineAlgorithmAndRun(const LayoutAlgorithmParams& params,
   } else if (box.IsLayoutGrid()) {
     CreateAlgorithmAndRun<GridLayoutAlgorithm>(params, callback);
   } else if (box.IsLayoutGridLanes()) {
-    CreateAlgorithmAndRun<MasonryLayoutAlgorithm>(params, callback);
+    CreateAlgorithmAndRun<GridLanesLayoutAlgorithm>(params, callback);
   } else if (box.IsLayoutReplaced()) {
     CreateAlgorithmAndRun<ReplacedLayoutAlgorithm>(params, callback);
   } else if (box.IsFieldset()) {
@@ -1143,7 +1143,7 @@ LayoutInputNode BlockNode::FirstChild() const {
   }
   auto* block = DynamicTo<LayoutBlock>(box_.Get());
   if (!block) [[unlikely]] {
-    return BlockNode(box_->FirstChildBox());
+    return BlockNode(To<LayoutBox>(box_->SlowFirstChild()));
   }
   auto* child = block->FirstChild();
   if (!child)
@@ -1198,7 +1198,7 @@ LayoutUnit BlockNode::EmptyLineBlockSize(
   // Only return a line-height for the first fragment.
   if (IsBreakInside(incoming_break_token))
     return LayoutUnit();
-  return box_->LogicalHeightForEmptyLine();
+  return box_->FirstLineStyleRef().ComputedLineHeightAsFixed();
 }
 
 String BlockNode::ToString() const {
@@ -1312,12 +1312,6 @@ bool BlockNode::IsInlineFormattingContextRoot(
 
 bool BlockNode::IsInlineLevel() const {
   return GetLayoutBox()->IsInline();
-}
-
-bool BlockNode::IsAtomicInlineLevel() const {
-  // LayoutObject::IsAtomicInlineLevel() returns true for e.g., <img
-  // style="display: block">. Check IsInline() as well.
-  return GetLayoutBox()->IsAtomicInlineLevel() && GetLayoutBox()->IsInline();
 }
 
 bool BlockNode::IsInTopOrViewTransitionLayer() const {

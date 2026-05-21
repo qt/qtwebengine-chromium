@@ -152,18 +152,18 @@ INSTANTIATE_TEST_SUITE_P(
 
 TEST_F(SpirvWriterTest, Binary_ScalarTimesVector_F32) {
     auto* scalar = b.FunctionParam("scalar", ty.f32());
-    auto* vector = b.FunctionParam("vector", ty.vec4<f32>());
+    auto* vector = b.FunctionParam("vector", ty.vec4f());
     auto* func = b.Function("foo", ty.void_());
     func->SetParams({scalar, vector});
     b.Append(func->Block(), [&] {
-        auto* result = b.Multiply(ty.vec4<f32>(), scalar, vector);
+        auto* result = b.Multiply(scalar, vector);
         b.Return(func);
         mod.SetName(result, "result");
     });
 
     auto* eb = b.ComputeFunction("main");
     b.Append(eb->Block(), [&] {
-        b.Call(func, b.Zero(ty.f32()), b.Zero(ty.vec4<f32>()));
+        b.Call(func, b.Zero(ty.f32()), b.Zero(ty.vec4f()));
         b.Return(eb);
     });
 
@@ -173,18 +173,18 @@ TEST_F(SpirvWriterTest, Binary_ScalarTimesVector_F32) {
 
 TEST_F(SpirvWriterTest, Binary_VectorTimesScalar_F32) {
     auto* scalar = b.FunctionParam("scalar", ty.f32());
-    auto* vector = b.FunctionParam("vector", ty.vec4<f32>());
+    auto* vector = b.FunctionParam("vector", ty.vec4f());
     auto* func = b.Function("foo", ty.void_());
     func->SetParams({scalar, vector});
     b.Append(func->Block(), [&] {
-        auto* result = b.Multiply(ty.vec4<f32>(), vector, scalar);
+        auto* result = b.Multiply(vector, scalar);
         b.Return(func);
         mod.SetName(result, "result");
     });
 
     auto* eb = b.ComputeFunction("main");
     b.Append(eb->Block(), [&] {
-        b.Call(func, b.Zero(ty.f32()), b.Zero(ty.vec4<f32>()));
+        b.Call(func, b.Zero(ty.f32()), b.Zero(ty.vec4f()));
         b.Return(eb);
     });
 
@@ -198,7 +198,7 @@ TEST_F(SpirvWriterTest, Binary_ScalarTimesMatrix_F32) {
     auto* func = b.Function("foo", ty.void_());
     func->SetParams({scalar, matrix});
     b.Append(func->Block(), [&] {
-        auto* result = b.Multiply(ty.mat3x4<f32>(), scalar, matrix);
+        auto* result = b.Multiply(scalar, matrix);
         b.Return(func);
         mod.SetName(result, "result");
     });
@@ -219,7 +219,7 @@ TEST_F(SpirvWriterTest, Binary_MatrixTimesScalar_F32) {
     auto* func = b.Function("foo", ty.void_());
     func->SetParams({scalar, matrix});
     b.Append(func->Block(), [&] {
-        auto* result = b.Multiply(ty.mat3x4<f32>(), matrix, scalar);
+        auto* result = b.Multiply(matrix, scalar);
         b.Return(func);
         mod.SetName(result, "result");
     });
@@ -235,19 +235,19 @@ TEST_F(SpirvWriterTest, Binary_MatrixTimesScalar_F32) {
 }
 
 TEST_F(SpirvWriterTest, Binary_VectorTimesMatrix_F32) {
-    auto* vector = b.FunctionParam("vector", ty.vec4<f32>());
+    auto* vector = b.FunctionParam("vector", ty.vec4f());
     auto* matrix = b.FunctionParam("matrix", ty.mat3x4<f32>());
     auto* func = b.Function("foo", ty.void_());
     func->SetParams({vector, matrix});
     b.Append(func->Block(), [&] {
-        auto* result = b.Multiply(ty.vec3<f32>(), vector, matrix);
+        auto* result = b.Multiply(vector, matrix);
         b.Return(func);
         mod.SetName(result, "result");
     });
 
     auto* eb = b.ComputeFunction("main");
     b.Append(eb->Block(), [&] {
-        b.Call(func, b.Zero(ty.vec4<f32>()), b.Zero(ty.mat3x4<f32>()));
+        b.Call(func, b.Zero(ty.vec4f()), b.Zero(ty.mat3x4<f32>()));
         b.Return(eb);
     });
 
@@ -256,19 +256,19 @@ TEST_F(SpirvWriterTest, Binary_VectorTimesMatrix_F32) {
 }
 
 TEST_F(SpirvWriterTest, Binary_MatrixTimesVector_F32) {
-    auto* vector = b.FunctionParam("vector", ty.vec3<f32>());
+    auto* vector = b.FunctionParam("vector", ty.vec3f());
     auto* matrix = b.FunctionParam("matrix", ty.mat3x4<f32>());
     auto* func = b.Function("foo", ty.void_());
     func->SetParams({vector, matrix});
     b.Append(func->Block(), [&] {
-        auto* result = b.Multiply(ty.vec4<f32>(), matrix, vector);
+        auto* result = b.Multiply(matrix, vector);
         b.Return(func);
         mod.SetName(result, "result");
     });
 
     auto* eb = b.ComputeFunction("main");
     b.Append(eb->Block(), [&] {
-        b.Call(func, b.Zero(ty.vec3<f32>()), b.Zero(ty.mat3x4<f32>()));
+        b.Call(func, b.Zero(ty.vec3f()), b.Zero(ty.mat3x4<f32>()));
         b.Return(eb);
     });
 
@@ -282,7 +282,7 @@ TEST_F(SpirvWriterTest, Binary_MatrixTimesMatrix_F32) {
     auto* func = b.Function("foo", ty.void_());
     func->SetParams({mat1, mat2});
     b.Append(func->Block(), [&] {
-        auto* result = b.Multiply(ty.mat3x3<f32>(), mat1, mat2);
+        auto* result = b.Multiply(mat1, mat2);
         b.Return(func);
         mod.SetName(result, "result");
     });
@@ -378,8 +378,8 @@ INSTANTIATE_TEST_SUITE_P(
 TEST_F(SpirvWriterTest, Binary_Chain) {
     auto* func = b.ComputeFunction("main");
     b.Append(func->Block(), [&] {
-        auto* sub = b.Subtract(ty.i32(), 1_i, 2_i);
-        auto* add = b.Add(ty.i32(), sub, sub);
+        auto* sub = b.Subtract(1_i, 2_i);
+        auto* add = b.Add(sub, sub);
         b.Return(func);
         mod.SetName(sub, "sub");
         mod.SetName(add, "add");
@@ -497,18 +497,18 @@ TEST_F(SpirvWriterTest, Divide_i32_i32) {
 TEST_F(SpirvWriterTest, Divide_i32_vec4i) {
     Vector<core::ir::FunctionParam*, 4> args;
     args.Push(b.FunctionParam("lhs", ty.i32()));
-    args.Push(b.FunctionParam("rhs", ty.vec4<i32>()));
-    auto* func = b.Function("foo", ty.vec4<i32>());
+    args.Push(b.FunctionParam("rhs", ty.vec4i()));
+    auto* func = b.Function("foo", ty.vec4i());
     func->SetParams(args);
     b.Append(func->Block(), [&] {
-        auto* result = b.Binary(core::BinaryOp::kDivide, ty.vec4<i32>(), args[0], args[1]);
+        auto* result = b.Binary(core::BinaryOp::kDivide, ty.vec4i(), args[0], args[1]);
         b.Return(func, result);
         mod.SetName(result, "result");
     });
 
     auto* eb = b.ComputeFunction("main");
     b.Append(eb->Block(), [&] {
-        b.Let("x", b.Call(func, b.Zero(ty.i32()), b.Zero(ty.vec4<i32>())));
+        b.Let("x", b.Call(func, b.Zero(ty.i32()), b.Zero(ty.vec4i())));
         b.Return(eb);
     });
 
@@ -551,19 +551,19 @@ TEST_F(SpirvWriterTest, Divide_i32_vec4i) {
 
 TEST_F(SpirvWriterTest, Divide_vec4i_i32) {
     Vector<core::ir::FunctionParam*, 4> args;
-    args.Push(b.FunctionParam("lhs", ty.vec4<i32>()));
+    args.Push(b.FunctionParam("lhs", ty.vec4i()));
     args.Push(b.FunctionParam("rhs", ty.i32()));
-    auto* func = b.Function("foo", ty.vec4<i32>());
+    auto* func = b.Function("foo", ty.vec4i());
     func->SetParams(args);
     b.Append(func->Block(), [&] {
-        auto* result = b.Binary(core::BinaryOp::kDivide, ty.vec4<i32>(), args[0], args[1]);
+        auto* result = b.Binary(core::BinaryOp::kDivide, ty.vec4i(), args[0], args[1]);
         b.Return(func, result);
         mod.SetName(result, "result");
     });
 
     auto* eb = b.ComputeFunction("main");
     b.Append(eb->Block(), [&] {
-        b.Let("x", b.Call(func, b.Zero(ty.vec4<i32>()), b.Zero(ty.i32())));
+        b.Let("x", b.Call(func, b.Zero(ty.vec4i()), b.Zero(ty.i32())));
         b.Return(eb);
     });
 
@@ -960,18 +960,18 @@ TEST_F(SpirvWriterTest, ShiftLeft_i32_u32) {
 TEST_F(SpirvWriterTest, Modulo_i32_vec4i) {
     Vector<core::ir::FunctionParam*, 4> args;
     args.Push(b.FunctionParam("lhs", ty.i32()));
-    args.Push(b.FunctionParam("rhs", ty.vec4<i32>()));
-    auto* func = b.Function("foo", ty.vec4<i32>());
+    args.Push(b.FunctionParam("rhs", ty.vec4i()));
+    auto* func = b.Function("foo", ty.vec4i());
     func->SetParams(args);
     b.Append(func->Block(), [&] {
-        auto* result = b.Binary(core::BinaryOp::kModulo, ty.vec4<i32>(), args[0], args[1]);
+        auto* result = b.Binary(core::BinaryOp::kModulo, ty.vec4i(), args[0], args[1]);
         b.Return(func, result);
         mod.SetName(result, "result");
     });
 
     auto* eb = b.ComputeFunction("main");
     b.Append(eb->Block(), [&] {
-        b.Let("x", b.Call(func, b.Zero(ty.i32()), b.Zero(ty.vec4<i32>())));
+        b.Let("x", b.Call(func, b.Zero(ty.i32()), b.Zero(ty.vec4i())));
         b.Return(eb);
     });
 
@@ -1022,19 +1022,19 @@ TEST_F(SpirvWriterTest, Modulo_i32_vec4i) {
 
 TEST_F(SpirvWriterTest, Modulo_vec4i_i32) {
     Vector<core::ir::FunctionParam*, 4> args;
-    args.Push(b.FunctionParam("lhs", ty.vec4<i32>()));
+    args.Push(b.FunctionParam("lhs", ty.vec4i()));
     args.Push(b.FunctionParam("rhs", ty.i32()));
-    auto* func = b.Function("foo", ty.vec4<i32>());
+    auto* func = b.Function("foo", ty.vec4i());
     func->SetParams(args);
     b.Append(func->Block(), [&] {
-        auto* result = b.Binary(core::BinaryOp::kModulo, ty.vec4<i32>(), args[0], args[1]);
+        auto* result = b.Binary(core::BinaryOp::kModulo, ty.vec4i(), args[0], args[1]);
         b.Return(func, result);
         mod.SetName(result, "result");
     });
 
     auto* eb = b.ComputeFunction("main");
     b.Append(eb->Block(), [&] {
-        b.Let("x", b.Call(func, b.Zero(ty.vec4<i32>()), b.Zero(ty.i32())));
+        b.Let("x", b.Call(func, b.Zero(ty.vec4i()), b.Zero(ty.i32())));
         b.Return(eb);
     });
 

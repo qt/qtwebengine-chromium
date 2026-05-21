@@ -101,7 +101,6 @@ public:
     Clip visitClipStackForDraw(const Transform&,
                                Geometry*,
                                const SkStrokeRec&,
-                               bool msaaSupported,
                                ElementList* outEffectiveElements) const;
 
     // Update the per-clip element state for later rendering using pre-computed clip state data for

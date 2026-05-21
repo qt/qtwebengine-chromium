@@ -10,10 +10,9 @@
 
 #include "base/functional/callback_forward.h"
 #include "base/memory/raw_ref.h"
+#include "components/supervised_user/core/browser/supervised_user_url_filtering_service.h"
 #include "components/supervised_user/core/browser/supervised_user_utils.h"
 #include "url/gurl.h"
-
-class PrefService;
 
 namespace supervised_user {
 class WebContentHandler;
@@ -71,9 +70,8 @@ class SupervisedUserInterstitial {
   static std::unique_ptr<SupervisedUserInterstitial> Create(
       std::unique_ptr<WebContentHandler> web_content_handler,
       SupervisedUserService& supervised_user_service,
-      const GURL& url,
-      const std::u16string& supervised_user_name,
-      FilteringBehaviorReason reason);
+      WebFilteringResult filtering_result,
+      const std::u16string& supervised_user_name);
 
 #if BUILDFLAG(IS_ANDROID)
   // Returns the HTML contents of the error page without the approvals section.
@@ -85,7 +83,6 @@ class SupervisedUserInterstitial {
   // Returns the HTML contents of the error page with the approvals section.
   static std::string GetHTMLContentsWithApprovals(
       SupervisedUserService* supervised_user_service,
-      PrefService* pref_service,
       FilteringBehaviorReason reason,
       bool already_sent_request,
       bool is_main_frame,
@@ -100,21 +97,17 @@ class SupervisedUserInterstitial {
 #endif  // BUILDFLAG(IS_ANDROID)
 
   // Getter methods.
-  const GURL& url() const { return url_; }
   WebContentHandler* web_content_handler() {
     return web_content_handler_.get();
   }
-  FilteringBehaviorReason filtering_behavior_reason() const {
-    return filtering_behavior_reason_;
-  }
+  WebFilteringResult filtering_result() { return filtering_result_; }
 
  private:
   SupervisedUserInterstitial(
       std::unique_ptr<WebContentHandler> web_content_handler,
       SupervisedUserService& supervised_user_service,
-      const GURL& url,
-      const std::u16string& supervised_user_name,
-      FilteringBehaviorReason reason);
+      WebFilteringResult filtering_result,
+      const std::u16string& supervised_user_name);
 
   void OutputRequestPermissionSourceMetric();
 
@@ -122,11 +115,9 @@ class SupervisedUserInterstitial {
 
   std::unique_ptr<WebContentHandler> web_content_handler_;
 
-  // The last committed url for this frame.
-  GURL url_;
+  // Filtering result for the last committed url for this frame.
+  WebFilteringResult filtering_result_;
   std::u16string supervised_user_name_;
-  const FilteringBehaviorReason filtering_behavior_reason_;
-  std::unique_ptr<UrlFormatter> url_formatter_;
 };
 }  // namespace supervised_user
 

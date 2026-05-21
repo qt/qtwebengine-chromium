@@ -12,7 +12,6 @@
 
 #include "base/auto_reset.h"
 #include "base/command_line.h"
-#include "base/containers/contains.h"
 #include "base/containers/span.h"
 #include "base/debug/alias.h"
 #include "base/feature_list.h"
@@ -1332,6 +1331,7 @@ void GpuImageDecodeCache::ClearCache() {
     it = RemoveFromPersistentCache(it);
   DCHECK(persistent_cache_.empty());
   paint_image_entries_.clear();
+  content_id_to_frame_keys_.clear();
 
   TryFlushPendingWork();
 }
@@ -1358,11 +1358,14 @@ void GpuImageDecodeCache::AddToPersistentCache(const DrawImage& draw_image,
 
   WillAddCacheEntry(draw_image);
   persistent_cache_memory_size_ += data->GetTotalSize();
-  persistent_cache_.Put(draw_image.frame_key(), std::move(data));
+  const auto& frame_key = draw_image.frame_key();
+  content_id_to_frame_keys_[frame_key.content_id()].insert(frame_key);
+  persistent_cache_.Put(frame_key, std::move(data));
 }
 
 template <typename Iterator>
 Iterator GpuImageDecodeCache::RemoveFromPersistentCache(Iterator it) {
+  const auto& frame_key = it->first;
   if (it->second->decode.ref_count != 0 || it->second->upload.ref_count != 0) {
     // Orphan the image and erase it from the |persisent_cache_|. This ensures
     // that the image will be deleted once all refs are removed.
@@ -1390,6 +1393,14 @@ Iterator GpuImageDecodeCache::RemoveFromPersistentCache(Iterator it) {
     paint_image_entries_.erase(entries_it);
 
   persistent_cache_memory_size_ -= it->second->GetTotalSize();
+
+  auto content_id_it = content_id_to_frame_keys_.find(frame_key.content_id());
+  if (content_id_it != content_id_to_frame_keys_.end()) {
+    content_id_it->second.erase(frame_key);
+    if (content_id_it->second.empty()) {
+      content_id_to_frame_keys_.erase(content_id_it);
+    }
+  }
   return persistent_cache_.Erase(it);
 }
 
@@ -1948,8 +1959,8 @@ bool GpuImageDecodeCache::NeedsDarkModeFilter(const DrawImage& draw_image,
   }
 
   // Dark mode filter is already generated and cached.
-  if (base::Contains(image_data->decode.dark_mode_color_filter_cache,
-                     draw_image.src_rect())) {
+  if (image_data->decode.dark_mode_color_filter_cache.contains(
+          draw_image.src_rect())) {
     return false;
   }
 
@@ -2212,7 +2223,7 @@ void GpuImageDecodeCache::UploadImageIfNecessary(const DrawImage& draw_image,
       ToneMapUtil::UseGlobalToneMapFilter(decoded_color_space.get())) {
     target_color_space = nullptr;
   }
-  const std::optional<gfx::HDRMetadata> hdr_metadata =
+  const gfx::HDRMetadata& hdr_metadata =
       draw_image.paint_image().GetHDRMetadata();
 
   std::array<ClientImageTransferCacheEntry::Image, kAuxImageCount> image;
@@ -2404,11 +2415,17 @@ void GpuImageDecodeCache::WillAddCacheEntry(const DrawImage& draw_image) {
       std::max(cached_content_ids[0], cached_content_ids[1]);
   DCHECK_NE(content_id_to_remove, content_id_to_keep);
 
-  for (auto it = persistent_cache_.begin(); it != persistent_cache_.end();) {
-    if (it->first.content_id() != content_id_to_remove) {
-      ++it;
-    } else {
-      it = RemoveFromPersistentCache(it);
+  auto it = content_id_to_frame_keys_.find(content_id_to_remove);
+  if (it != content_id_to_frame_keys_.end()) {
+    // Create a copy of the keys to avoid iterator invalidation issues while
+    // calling RemoveFromPersistentCache.
+    auto keys_to_remove = it->second;
+    content_id_to_frame_keys_.erase(it);
+    for (const auto& key : keys_to_remove) {
+      auto persistent_it = persistent_cache_.Peek(key);
+      if (persistent_it != persistent_cache_.end()) {
+        RemoveFromPersistentCache(persistent_it);
+      }
     }
   }
 

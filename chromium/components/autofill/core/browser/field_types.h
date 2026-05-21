@@ -6,8 +6,8 @@
 #define COMPONENTS_AUTOFILL_CORE_BROWSER_FIELD_TYPES_H_
 
 #include <type_traits>
+#include <utility>
 
-#include "base/types/cxx23_to_underlying.h"
 #include "components/autofill/core/common/dense_set.h"
 #include "components/autofill/core/common/html_field_types.h"
 
@@ -551,6 +551,11 @@ enum FieldType {
   FLIGHT_RESERVATION_ARRIVAL_AIRPORT = 205,
   FLIGHT_RESERVATION_DEPARTURE_DATE = 206,
 
+  // Combination of types ADDRESS_HOME_ZIP and ADDRESS_HOME_CITY.
+  // For France addresses, the postal code and the city can be combined into a
+  // single field (e.g. "75000 Paris").
+  ADDRESS_HOME_ZIP_AND_CITY = 207,
+
   // No new types can be added without a corresponding change to the Autofill
   // server.
   // This enum must be kept in sync with FieldType from
@@ -561,7 +566,7 @@ enum FieldType {
   // If the newly added type is a storable type of AutofillProfile, update
   // AutofillProfile.StorableTypes in
   // tools/metrics/histograms/metadata/autofill/histograms.xml.
-  MAX_VALID_FIELD_TYPE = 207,
+  MAX_VALID_FIELD_TYPE = 208,
 };
 // LINT.ThenChange(//chrome/common/extensions/api/autofill_private.idl)
 
@@ -597,7 +602,7 @@ struct DenseSetTraits<FieldType>
     : EnumDenseSetTraits<FieldType, NO_SERVER_DATA, MAX_VALID_FIELD_TYPE> {
   static constexpr bool is_valid(FieldType x) {
     return x == NO_SERVER_DATA ||
-           ToSafeFieldType(base::to_underlying(x), NO_SERVER_DATA) !=
+           ToSafeFieldType(std::to_underlying(x), NO_SERVER_DATA) !=
                NO_SERVER_DATA;
   }
 };
@@ -609,7 +614,7 @@ struct DenseSetTraits<HtmlFieldType>
                          HtmlFieldType::kMaxValue> {
   static constexpr bool is_valid(HtmlFieldType x) {
     return x == HtmlFieldType::kUnrecognized ||
-           ToSafeHtmlFieldType(base::to_underlying(x),
+           ToSafeHtmlFieldType(std::to_underlying(x),
                                HtmlFieldType::kUnrecognized) !=
                HtmlFieldType::kUnrecognized;
   }
@@ -706,8 +711,8 @@ constexpr HtmlFieldType ToSafeHtmlFieldType(
     std::underlying_type_t<HtmlFieldType> raw_value,
     HtmlFieldType fallback_value) {
   auto is_invalid = [](std::underlying_type_t<HtmlFieldType> t) {
-    return t < base::to_underlying(HtmlFieldType::kMinValue) ||
-           t > base::to_underlying(HtmlFieldType::kMaxValue) ||
+    return t < std::to_underlying(HtmlFieldType::kMinValue) ||
+           t > std::to_underlying(HtmlFieldType::kMaxValue) ||
            // Full address is deprecated.
            t == 17 ||
            // UPI is deprecated.
@@ -762,6 +767,7 @@ constexpr FieldTypeGroup GroupTypeOfFieldType(FieldType field_type) {
     case ADDRESS_HOME_CITY:
     case ADDRESS_HOME_STATE:
     case ADDRESS_HOME_ZIP:
+    case ADDRESS_HOME_ZIP_AND_CITY:
     case ADDRESS_HOME_ZIP_PREFIX:
     case ADDRESS_HOME_ZIP_SUFFIX:
     case ADDRESS_HOME_COUNTRY:
@@ -890,12 +896,12 @@ constexpr FieldTypeGroup GroupTypeOfFieldType(FieldType field_type) {
 
 namespace internal {
 consteval std::array<FieldTypeSet,
-                     base::to_underlying(FieldTypeGroup::kMaxValue) + 1>
+                     std::to_underlying(FieldTypeGroup::kMaxValue) + 1>
 FieldTypesByGroupHelper() {
-  constexpr auto kMaxValue = base::to_underlying(FieldTypeGroup::kMaxValue);
+  constexpr auto kMaxValue = std::to_underlying(FieldTypeGroup::kMaxValue);
   std::array<FieldTypeSet, kMaxValue + 1> map{};
   for (FieldType field_type : FieldTypeSet::all()) {
-    auto index = base::to_underlying(GroupTypeOfFieldType(field_type));
+    auto index = std::to_underlying(GroupTypeOfFieldType(field_type));
     map[index].insert(field_type);
   }
   return map;
@@ -903,7 +909,7 @@ FieldTypesByGroupHelper() {
 }  // namespace internal
 
 constexpr FieldTypeSet FieldTypesOfGroup(FieldTypeGroup group) {
-  return internal::FieldTypesByGroupHelper()[base::to_underlying(group)];
+  return internal::FieldTypesByGroupHelper()[std::to_underlying(group)];
 }
 
 }  // namespace autofill

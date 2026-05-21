@@ -56,18 +56,10 @@ void CastSocket::SetClient(Client* client) {
 }
 
 std::array<uint8_t, 2> CastSocket::GetSanitizedIpAddress() {
-  IPEndpoint remote = connection_->GetRemoteEndpoint();
   std::array<uint8_t, 2> result;
-  uint8_t bytes[16];
-  if (remote.address.IsV4()) {
-    remote.address.CopyToV4(bytes);
-    result[0] = bytes[2];
-    result[1] = bytes[3];
-  } else {
-    remote.address.CopyToV6(bytes);
-    result[0] = bytes[14];
-    result[1] = bytes[15];
-  }
+  IPEndpoint remote = connection_->GetRemoteEndpoint();
+  std::span<const uint8_t> bytes = remote.address.bytes().last<2>();
+  std::copy(bytes.begin(), bytes.end(), result.begin());
   return result;
 }
 
@@ -86,7 +78,7 @@ void CastSocket::OnRead(TlsConnection* connection, std::vector<uint8_t> block) {
             ByteBuffer(&read_buffer_[0], read_buffer_.size()));
     if (!message_or_error) {
       OSP_DLOG_ERROR << __func__ << ": failed to deserialize a message. "
-                     << message_or_error.error().ToString();
+                     << message_or_error.error();
       return;
     }
     OSP_DVLOG << __func__ << ": read a message. "

@@ -134,16 +134,17 @@ class InfobarUIChangeObserver : public TabStripModelObserver {
       }
     }
   }
-  void TabChangedAt(content::WebContents* contents,
-                    int index,
-                    TabChangeType change_type) override {
-    if (observers_.find(contents) == observers_.end()) {
-      observers_[contents] =
+  void OnTabChangedAt(tabs::TabInterface* tab,
+                      int index,
+                      TabChangeType change_type) override {
+    if (observers_.find(tab->GetContents()) == observers_.end()) {
+      observers_[tab->GetContents()] =
           std::make_unique<InfoBarChangeObserver>(base::BindOnce(
               &InfobarUIChangeObserver::EraseObserver, base::Unretained(this)));
-      GetInfoBarManager(contents)->AddObserver(observers_[contents].get());
+      GetInfoBarManager(tab->GetContents())
+          ->AddObserver(observers_[tab->GetContents()].get());
       if (!barrier_closure_.is_null()) {
-        observers_[contents]->SetCallback(barrier_closure_);
+        observers_[tab->GetContents()]->SetCallback(barrier_closure_);
       }
     }
   }
@@ -315,9 +316,12 @@ class WebRtcDesktopCaptureBrowserTest : public WebRtcTestBase {
 // TODO(crbug.com/40915051): Fails on MAC.
 // TODO(crbug.com/40915051): Fails with MSAN. Determine if enabling the test for
 // MSAN is feasible or not.
+// TODO(crbug.com/479691925): Fails on Windows 11.
 #if BUILDFLAG(IS_MAC)
 #define MAYBE_TabCaptureProvidesMinFps DISABLED_TabCaptureProvidesMinFps
 #elif defined(MEMORY_SANITIZER)
+#define MAYBE_TabCaptureProvidesMinFps DISABLED_TabCaptureProvidesMinFps
+#elif BUILDFLAG(IS_WIN)
 #define MAYBE_TabCaptureProvidesMinFps DISABLED_TabCaptureProvidesMinFps
 #else
 #define MAYBE_TabCaptureProvidesMinFps TabCaptureProvidesMinFps

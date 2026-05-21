@@ -2,12 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40285824): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "components/browser_ui/photo_picker/android/features.h"
+
+#include "base/compiler_specific.h"
 
 // Must come after all headers that specialize FromJniType() / ToJniType().
 #include "components/browser_ui/photo_picker/android/photo_picker_jni_headers/PhotoPickerFeatures_jni.h"
@@ -31,8 +28,10 @@ BASE_FEATURE(kAndroidMediaPickerAdoption,
              "MediaPickerAdoption",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
-static jlong JNI_PhotoPickerFeatures_GetFeature(JNIEnv* env, jint ordinal) {
-  return reinterpret_cast<jlong>(kFeaturesExposedToJava[ordinal]);
+static int64_t JNI_PhotoPickerFeatures_GetFeature(JNIEnv* env,
+                                                  int32_t ordinal) {
+  return reinterpret_cast<int64_t>(
+      UNSAFE_TODO(kFeaturesExposedToJava[ordinal]));
 }
 
 }  // namespace features

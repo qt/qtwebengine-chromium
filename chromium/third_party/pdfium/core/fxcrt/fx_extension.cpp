@@ -12,7 +12,6 @@
 
 #include "core/fxcrt/check.h"
 #include "core/fxcrt/check_op.h"
-#include "core/fxcrt/compiler_specific.h"
 #include "core/fxcrt/fx_system.h"
 #include "core/fxcrt/utf16.h"
 #include "core/fxcrt/widestring.h"
@@ -60,23 +59,6 @@ float FXSYS_wcstof(WideStringView pwsStr, size_t* pUsedLen) {
   return result.ec == std::errc() || result.ec == std::errc::result_out_of_range
              ? value
              : 0;
-}
-
-wchar_t* FXSYS_wcsncpy(wchar_t* dstStr, const wchar_t* srcStr, size_t count) {
-  DCHECK(dstStr);
-  DCHECK(srcStr);
-  DCHECK(count > 0);
-
-  // SAFETY: required from caller, enforced by UNSAFE_BUFFER_USAGE in header.
-  UNSAFE_BUFFERS({
-    for (size_t i = 0; i < count; ++i) {
-      dstStr[i] = srcStr[i];
-      if (dstStr[i] == L'\0') {
-        break;
-      }
-    }
-  });
-  return dstStr;
 }
 
 void FXSYS_IntToTwoHexChars(uint8_t n, pdfium::span<char, 2u> buf) {

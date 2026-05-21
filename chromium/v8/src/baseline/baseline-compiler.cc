@@ -31,6 +31,7 @@
 #include "src/objects/literal-objects-inl.h"
 #include "src/objects/shared-function-info-inl.h"
 #include "src/roots/roots.h"
+#include "src/roots/static-roots.h"
 
 #if V8_TARGET_ARCH_X64
 #include "src/baseline/x64/baseline-compiler-x64-inl.h"
@@ -423,6 +424,9 @@ uint32_t BaselineCompiler::Flag8(int operand_index) {
 uint32_t BaselineCompiler::Flag16(int operand_index) {
   return iterator().GetFlag16Operand(operand_index);
 }
+uint32_t BaselineCompiler::EmbeddedFeedback(int operand_index) {
+  return iterator().GetEmbeddedFeedback(operand_index);
+}
 uint32_t BaselineCompiler::RegisterCount(int operand_index) {
   return iterator().GetRegisterCountOperand(operand_index);
 }
@@ -530,6 +534,12 @@ void BaselineCompiler::VisitSingleBytecode() {
 
   VerifyFrame();
 
+#ifdef V8_DUMPLING
+  if (v8_flags.sparkplug_dumping) {
+    EmitTraceBytecodeRuntimeCall(Runtime::kDumpExecutionFrame);
+  }
+#endif
+
 #ifdef V8_TRACE_UNOPTIMIZED
   TraceBytecode(Runtime::kTraceUnoptimizedBytecodeEntry);
 #endif
@@ -602,13 +612,26 @@ void BaselineCompiler::TraceBytecode(Runtime::FunctionId function_id) {
                           function_id == Runtime::kTraceUnoptimizedBytecodeEntry
                               ? "Trace bytecode entry"
                               : "Trace bytecode exit");
+  EmitTraceBytecodeRuntimeCall(function_id);
+}
+#endif  // V8_TRACE_UNOPTIMIZED
+
+#if defined(V8_TRACE_UNOPTIMIZED) || defined(V8_DUMPLING)
+void BaselineCompiler::EmitTraceBytecodeRuntimeCall(
+    Runtime::FunctionId function_id) {
+#ifdef V8_TRACE_UNOPTIMIZED
+  if (!v8_flags.trace_baseline_exec) return;
+#endif  // V8_TRACE_UNOPTIMIZED
+#ifdef V8_DUMPLING
+  if (!v8_flags.sparkplug_dumping) return;
+#endif  // V8_DUMPLING
   SaveAccumulatorScope accumulator_scope(this, &basm_);
   CallRuntime(function_id, bytecode_,
               Smi::FromInt(BytecodeArray::kHeaderSize - kHeapObjectTag +
                            iterator().current_offset()),
               kInterpreterAccumulatorRegister);
 }
-#endif
+#endif  // V8_TRACE_UNOPTIMIZED || V8_DUMPLING
 
 #define DECLARE_VISITOR(name, ...) void Visit##name();
 BYTECODE_LIST(DECLARE_VISITOR, DECLARE_VISITOR)
@@ -683,6 +706,10 @@ constexpr static bool RuntimeFunctionMayDeopt(Runtime::FunctionId function) {
     case Runtime::kTraceUnoptimizedBytecodeExit:
       return false;
 #endif
+#ifdef V8_DUMPLING
+    case Runtime::kDumpExecutionFrame:
+      return false;
+#endif
     default:
       return true;
   }
@@ -738,6 +765,16 @@ void BaselineCompiler::CallRuntime(Runtime::FunctionId function, Args... args) {
 // Returns into kInterpreterAccumulatorRegister
 void BaselineCompiler::JumpIfToBoolean(bool do_jump_if_true, Label* label,
                                        Label::Distance distance) {
+#ifdef V8_STATIC_ROOTS
+  Label no_jump;
+  if (do_jump_if_true) {
+    __ JumpIfStaticRootToBoolean(kInterpreterAccumulatorRegister, label,
+                                 distance, &no_jump, Label::kNear);
+  } else {
+    __ JumpIfStaticRootToBoolean(kInterpreterAccumulatorRegister, &no_jump,
+                                 Label::kNear, label, distance);
+  }
+#endif
   CallBuiltin<Builtin::kToBooleanForBaselineJump>(
       kInterpreterAccumulatorRegister);
   // ToBooleanForBaselineJump returns the ToBoolean value into return reg 1, and
@@ -746,6 +783,10 @@ void BaselineCompiler::JumpIfToBoolean(bool do_jump_if_true, Label* label,
   static_assert(kReturnRegister0 == kInterpreterAccumulatorRegister);
   __ JumpIfSmi(do_jump_if_true ? kNotEqual : kEqual, kReturnRegister1,
                Smi::FromInt(0), label, distance);
+
+#ifdef V8_STATIC_ROOTS
+  __ Bind(&no_jump);
+#endif
 }
 
 void BaselineCompiler::VisitLdaZero() {
@@ -1682,37 +1723,76 @@ void BaselineCompiler::VisitConstructForwardAllArgs() {
 }
 
 void BaselineCompiler::VisitTestEqual() {
-  CallBuiltin<Builtin::kEqual_Baseline>(
-      RegisterOperand(0), kInterpreterAccumulatorRegister, FeedbackSlot(1));
+  auto feedback_value_offset =
+      iterator().GetEmbeddedFeedbackOffset(kEmbeddedFeedbackOperandIndex);
+  CallBuiltin<Builtin::kEqual_Baseline>(RegisterOperand(0),
+                                        kInterpreterAccumulatorRegister,
+                                        feedback_value_offset);
 }
 
 void BaselineCompiler::VisitTestEqualStrict() {
   auto feedback_value_offset =
-      iterator().GetEmbeddedFeedbackOffset(/*operand_index=*/1);
+      iterator().GetEmbeddedFeedbackOffset(kEmbeddedFeedbackOperandIndex);
 
-  CallBuiltin<Builtin::kStrictEqual_Baseline>(RegisterOperand(0),
+#ifdef V8_ENABLE_SPARKPLUG_PLUS
+  if (v8_flags.sparkplug_plus) {
+#define TYPED_STRICTEQUAL_CASE(type)                         \
+  case CompareOperationFeedback::Type::k##type:              \
+    CallBuiltin<Builtin::kStrictEqual_##type##_Baseline>(    \
+        RegisterOperand(0), kInterpreterAccumulatorRegister, \
+        feedback_value_offset);                              \
+    break;
+    switch (static_cast<CompareOperationFeedback::Type>(EmbeddedFeedback(1))) {
+      TYPED_STRICTEQUAL_STUB_LIST(TYPED_STRICTEQUAL_CASE)
+      default:
+        CallBuiltin<Builtin::kStrictEqual_Generic_Baseline>(
+            RegisterOperand(0), kInterpreterAccumulatorRegister,
+            feedback_value_offset);
+        break;
+    }
+#undef TYPED_STRICTEQUAL_CASE
+  } else {
+#endif  // V8_ENABLE_SPARKPLUG_PLUS
+
+    CallBuiltin<Builtin::kStrictEqual_Generic_Baseline>(
+        RegisterOperand(0), kInterpreterAccumulatorRegister,
+        feedback_value_offset);
+
+#ifdef V8_ENABLE_SPARKPLUG_PLUS
+  }
+#endif  // V8_ENABLE_SPARKPLUG_PLUS
+}
+
+void BaselineCompiler::VisitTestLessThan() {
+  auto feedback_value_offset =
+      iterator().GetEmbeddedFeedbackOffset(kEmbeddedFeedbackOperandIndex);
+  CallBuiltin<Builtin::kLessThan_Baseline>(RegisterOperand(0),
+                                           kInterpreterAccumulatorRegister,
+                                           feedback_value_offset);
+}
+
+void BaselineCompiler::VisitTestGreaterThan() {
+  auto feedback_value_offset =
+      iterator().GetEmbeddedFeedbackOffset(kEmbeddedFeedbackOperandIndex);
+  CallBuiltin<Builtin::kGreaterThan_Baseline>(RegisterOperand(0),
                                               kInterpreterAccumulatorRegister,
                                               feedback_value_offset);
 }
 
-void BaselineCompiler::VisitTestLessThan() {
-  CallBuiltin<Builtin::kLessThan_Baseline>(
-      RegisterOperand(0), kInterpreterAccumulatorRegister, FeedbackSlot(1));
-}
-
-void BaselineCompiler::VisitTestGreaterThan() {
-  CallBuiltin<Builtin::kGreaterThan_Baseline>(
-      RegisterOperand(0), kInterpreterAccumulatorRegister, FeedbackSlot(1));
-}
-
 void BaselineCompiler::VisitTestLessThanOrEqual() {
+  auto feedback_value_offset =
+      iterator().GetEmbeddedFeedbackOffset(kEmbeddedFeedbackOperandIndex);
   CallBuiltin<Builtin::kLessThanOrEqual_Baseline>(
-      RegisterOperand(0), kInterpreterAccumulatorRegister, FeedbackSlot(1));
+      RegisterOperand(0), kInterpreterAccumulatorRegister,
+      feedback_value_offset);
 }
 
 void BaselineCompiler::VisitTestGreaterThanOrEqual() {
+  auto feedback_value_offset =
+      iterator().GetEmbeddedFeedbackOffset(kEmbeddedFeedbackOperandIndex);
   CallBuiltin<Builtin::kGreaterThanOrEqual_Baseline>(
-      RegisterOperand(0), kInterpreterAccumulatorRegister, FeedbackSlot(1));
+      RegisterOperand(0), kInterpreterAccumulatorRegister,
+      feedback_value_offset);
 }
 
 void BaselineCompiler::VisitTestReferenceEqual() {

@@ -52,6 +52,8 @@ struct ModuleWireBytes;
 class StreamingDecoder;
 class WasmEnabledFeatures;
 class WasmOrphanedGlobalHandle;
+class WasmImportWrapperCache;
+class WasmStackEntryWrapperCache;
 
 class V8_EXPORT_PRIVATE CompilationResultResolver {
  public:
@@ -389,8 +391,11 @@ class V8_EXPORT_PRIVATE WasmEngine {
 
   // Free dead code.
   using DeadCodeMap = std::unordered_map<NativeModule*, std::vector<WasmCode*>>;
-  void FreeDeadCode(const DeadCodeMap&, std::vector<WasmCode*>&);
-  void FreeDeadCodeLocked(const DeadCodeMap&, std::vector<WasmCode*>&);
+  void FreeDeadCode(const DeadCodeMap&, std::vector<WasmCode*>& import_wrappers,
+                    std::vector<WasmCode*>& stack_wrappers);
+  void FreeDeadCodeLocked(const DeadCodeMap&,
+                          std::vector<WasmCode*>& import_wrappers,
+                          std::vector<WasmCode*>& stack_wrappers);
 
   DirectHandle<Script> GetOrCreateScript(Isolate*,
                                          const std::shared_ptr<NativeModule>&,
@@ -478,7 +483,7 @@ class V8_EXPORT_PRIVATE WasmEngine {
   // fails because of memory constraints.
   static std::atomic<bool> had_nondeterminism_;
 
-  AccountingAllocator allocator_;
+  TracingAccountingAllocator allocator_{/* isolate */ nullptr};
 
 #ifdef V8_ENABLE_WASM_GDB_REMOTE_DEBUGGING
   // Implements a GDB-remote stub for WebAssembly debugging.
@@ -554,6 +559,7 @@ V8_EXPORT_PRIVATE WasmCodeManager* GetWasmCodeManager();
 // Returns a reference to the WasmImportWrapperCache shared by the entire
 // process.
 V8_EXPORT_PRIVATE WasmImportWrapperCache* GetWasmImportWrapperCache();
+V8_EXPORT_PRIVATE WasmStackEntryWrapperCache* GetWasmStackEntryWrapperCache();
 
 V8_EXPORT_PRIVATE CanonicalTypeNamesProvider* GetCanonicalTypeNamesProvider();
 

@@ -494,7 +494,7 @@ select option {
     font: var(--sys-typescale-body4-regular);
     color: var(--sys-color-on-surface-subtle);
 
-    > x-link {
+    > devtools-link {
       white-space: nowrap;
       margin-left: var(--sys-size-3);
     }
@@ -610,7 +610,7 @@ button.link:focus-visible {
 @media (forced-colors: active) {
   .dimmed,
   select:disabled {
-    opacity: 100%;
+    opacity: 70%;
   }
 
   .harmony-input:not([type]),

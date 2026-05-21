@@ -27,6 +27,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/notimplemented.h"
+#include "base/rand_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/system/sys_info.h"
@@ -384,9 +385,9 @@ void RenderWidgetHostViewAndroid::ScreenStateChangeHandler::
   BeginScreenStateChange();
   pending_screen_state_.is_picture_in_picture = has_persistent_video;
   pending_screen_state_.is_fullscreen = is_fullscreen;
-  // TODO(crbug.com/40872802): We should try to re-establish throttling for
-  // Picture-in-Picture mode. Will need better determination of when we have
-  // completed entering/exiting.
+  // Throttling is disabled for Picture-in-Picture mode because re-enabling it was
+  // found to be complex and performance is acceptable without it. See
+  // crbug.com/40872802 for history.
   pending_screen_state_.any_non_rotation_size_changed = true;
   HandleScreenStateChanges(cc::DeadlinePolicy::UseDefaultDeadline());
 }
@@ -446,10 +447,6 @@ bool RenderWidgetHostViewAndroid::ScreenStateChangeHandler::
   // `physical_backing_size` will be shrunk, though it is not guaranteed to be
   // simply a scale from the fullscreen size. As sometimes inset changes are
   // also applied.
-  //
-  // TODO(crbug.com/40872802): We should try to re-establish throttling for
-  // Picture-in-Picture mode. Will need better determination of when we have
-  // completed entering/exiting.
   if (pending_screen_state_.is_picture_in_picture) {
     if (rwhva_->in_rotation_)
       end_rotation = true;
@@ -1053,7 +1050,7 @@ void RenderWidgetHostViewAndroid::DismissTextHandles(JNIEnv* env) {
   DismissTextHandles();
 }
 
-jint RenderWidgetHostViewAndroid::GetBackgroundColor(JNIEnv* env) {
+int32_t RenderWidgetHostViewAndroid::GetBackgroundColor(JNIEnv* env) {
   std::optional<SkColor> color =
       RenderWidgetHostViewAndroid::GetCachedBackgroundColor();
   if (!color)
@@ -1061,10 +1058,9 @@ jint RenderWidgetHostViewAndroid::GetBackgroundColor(JNIEnv* env) {
   return *color;
 }
 
-void RenderWidgetHostViewAndroid::ShowContextMenuAtTouchHandle(
-    JNIEnv* env,
-    jint x,
-    jint y) {
+void RenderWidgetHostViewAndroid::ShowContextMenuAtTouchHandle(JNIEnv* env,
+                                                               int32_t x,
+                                                               int32_t y) {
   if (GetTouchSelectionControllerClientManager()) {
     GetTouchSelectionControllerClientManager()->ShowContextMenu(
         gfx::Point(x, y));
@@ -1078,18 +1074,18 @@ void RenderWidgetHostViewAndroid::OnViewportInsetBottomChanged(JNIEnv* env) {
 
 void RenderWidgetHostViewAndroid::WriteContentBitmapToDiskAsync(
     JNIEnv* env,
-    jint width,
-    jint height,
-    const jni_zero::JavaParamRef<jstring>& jpath,
-    const jni_zero::JavaParamRef<jobject>& jcallback) {
-  base::OnceCallback<void(const viz::CopyOutputBitmapWithMetadata&)>
+    int32_t width,
+    int32_t height,
+    const jni_zero::JavaRef<jstring>& jpath,
+    const jni_zero::JavaRef<jobject>& jcallback) {
+  base::OnceCallback<void(const content::CopyFromSurfaceResult&)>
       result_callback = base::BindOnce(
           &RenderWidgetHostViewAndroid::OnFinishGetContentBitmap,
           weak_ptr_factory_.GetWeakPtr(),
           base::android::ScopedJavaGlobalRef<jobject>(env, jcallback),
           base::android::ConvertJavaStringToUTF8(env, jpath));
 
-  CopyFromSurface(gfx::Rect(), gfx::Size(width, height),
+  CopyFromSurface(gfx::Rect(), gfx::Size(width, height), base::TimeDelta(),
                   std::move(result_callback));
 }
 
@@ -1516,6 +1512,13 @@ void RenderWidgetHostViewAndroid::CleanupDraggingCallback() {
 
 bool RenderWidgetHostViewAndroid::OnTouchEvent(
     const ui::MotionEventAndroid& event) {
+  // A lower sampling rate should work, but we want to get accurate data on
+  // pre-release channels as well.
+  if (base::ShouldRecordSubsampledMetric(0.1)) {
+    UMA_HISTOGRAM_ENUMERATION("Android.Input.TouchEvent.Action",
+                              event.GetAction());
+  }
+
   // WARNING: Adding any code above `FilterRedundantDownEvent` check will likely
   // lead to unexpected behavior in touch sequence handling. Do not modify the
   // position of this check without careful consideration.
@@ -1879,8 +1882,8 @@ bool RenderWidgetHostViewAndroid::HasFallbackSurface() const {
 void RenderWidgetHostViewAndroid::CopyFromSurface(
     const gfx::Rect& src_subrect,
     const gfx::Size& output_size,
-    base::OnceCallback<void(const viz::CopyOutputBitmapWithMetadata&)>
-        callback) {
+    base::TimeDelta timeout,
+    base::OnceCallback<void(const content::CopyFromSurfaceResult&)> callback) {
   TRACE_EVENT0("cc", "RenderWidgetHostViewAndroid::CopyFromSurface");
   if (!IsSurfaceAvailableForCopy()) {
     std::move(callback).Run(viz::CopyOutputBitmapWithMetadata());
@@ -1893,14 +1896,15 @@ void RenderWidgetHostViewAndroid::CopyFromSurface(
   }
 
   delegated_frame_host_->CopyFromCompositingSurface(
-      src_subrect, output_size,
+      src_subrect, output_size, timeout,
       base::BindOnce(
-          [](base::OnceCallback<void(const viz::CopyOutputBitmapWithMetadata&)>
+          [](base::OnceCallback<void(const content::CopyFromSurfaceResult&)>
                  callback,
-             const viz::CopyOutputBitmapWithMetadata& result) {
+             const base::expected<viz::CopyOutputBitmapWithMetadata,
+                                  viz::CopyOutputResult::Error>& result) {
             TRACE_EVENT0(
                 "cc", "RenderWidgetHostViewAndroid::CopyFromSurface finished");
-            std::move(callback).Run(result);
+            std::move(callback).Run(ToCopyFromSurfaceResult(result));
           },
           std::move(callback)),
       /*capture_exact_surface_id=*/false,
@@ -1915,8 +1919,7 @@ RenderWidgetHostViewAndroid::GetFilteredGestureProviderForTesting() {
 void RenderWidgetHostViewAndroid::CopyFromExactSurface(
     const gfx::Rect& src_rect,
     const gfx::Size& output_size,
-    base::OnceCallback<void(const viz::CopyOutputBitmapWithMetadata&)>
-        callback) {
+    base::OnceCallback<void(const content::CopyFromSurfaceResult&)> callback) {
   CopyFromExactSurfaceWithIpcDelay(src_rect, output_size, std::move(callback),
                                    /*ipc_delay=*/base::TimeDelta());
 }
@@ -1924,7 +1927,7 @@ void RenderWidgetHostViewAndroid::CopyFromExactSurface(
 void RenderWidgetHostViewAndroid::CopyFromExactSurfaceWithIpcDelay(
     const gfx::Rect& src_rect,
     const gfx::Size& output_size,
-    base::OnceCallback<void(const viz::CopyOutputBitmapWithMetadata&)> callback,
+    base::OnceCallback<void(const content::CopyFromSurfaceResult&)> callback,
     base::TimeDelta ipc_delay) {
   CHECK(IsSurfaceAvailableForCopy())
       << "To copy the exact surface, it must be available for copy (embedded "
@@ -1933,7 +1936,18 @@ void RenderWidgetHostViewAndroid::CopyFromExactSurfaceWithIpcDelay(
   CHECK(delegated_frame_host_);
 
   delegated_frame_host_->CopyFromCompositingSurface(
-      src_rect, output_size, std::move(callback),
+      src_rect, output_size, base::TimeDelta(),
+      base::BindOnce(
+          [](base::OnceCallback<void(const content::CopyFromSurfaceResult&)>
+                 callback,
+             const base::expected<viz::CopyOutputBitmapWithMetadata,
+                                  viz::CopyOutputResult::Error>& result) {
+            TRACE_EVENT0("cc",
+                         "RenderWidgetHostViewAndroid::"
+                         "CopyFromCompositingSurface finished");
+            std::move(callback).Run(ToCopyFromSurfaceResult(result));
+          },
+          std::move(callback)),
       /*capture_exact_surface_id=*/true, ipc_delay);
 }
 
@@ -2168,8 +2182,7 @@ void RenderWidgetHostViewAndroid::ShowTouchSelectionContextMenu(
 void RenderWidgetHostViewAndroid::SynchronousCopyContents(
     const gfx::Rect& src_subrect_dip,
     const gfx::Size& dst_size_in_pixel,
-    base::OnceCallback<void(const viz::CopyOutputBitmapWithMetadata&)>
-        callback) {
+    base::OnceCallback<void(const content::CopyFromSurfaceResult&)> callback) {
   // Note: When |src_subrect| is empty, a conversion from the view size must
   // be made instead of using |current_frame_size_|. The latter sometimes also
   // includes extra height for the toolbar UI, which is not intended for
@@ -2308,14 +2321,13 @@ void RenderWidgetHostViewAndroid::OnDidUpdateVisualPropertiesComplete(
 void RenderWidgetHostViewAndroid::OnFinishGetContentBitmap(
     const base::android::JavaRef<jobject>& callback,
     const std::string& path,
-    const viz::CopyOutputBitmapWithMetadata& result) {
-  const SkBitmap& bitmap = result.bitmap;
+    const content::CopyFromSurfaceResult& result) {
   JNIEnv* env = base::android::AttachCurrentThread();
-  if (!bitmap.drawsNothing()) {
+  if (result.has_value()) {
     auto task_runner = base::ThreadPool::CreateSequencedTaskRunner(
         {base::MayBlock(), base::TaskShutdownBehavior::SKIP_ON_SHUTDOWN});
     task_runner->PostTaskAndReplyWithResult(
-        FROM_HERE, base::BindOnce(&CompressAndSaveBitmap, path, bitmap),
+        FROM_HERE, base::BindOnce(&CompressAndSaveBitmap, path, result->bitmap),
         base::BindOnce(
             &base::android::RunStringCallbackAndroid,
             base::android::ScopedJavaGlobalRef<jobject>(env, callback)));
@@ -2670,7 +2682,7 @@ void RenderWidgetHostViewAndroid::SendKeyEvent(
     ui::DomCode dom_code = static_cast<ui::DomCode>(event.dom_code);
     if (dom_code != ui::DomCode::ESCAPE &&
         (!locked_keyboard_keys_ ||
-         base::Contains(locked_keyboard_keys_.value(), dom_code))) {
+         locked_keyboard_keys_.value().contains(dom_code))) {
       event.skip_if_unhandled = true;
     }
   }

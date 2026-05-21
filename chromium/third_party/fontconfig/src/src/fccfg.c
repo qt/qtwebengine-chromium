@@ -1416,7 +1416,7 @@ FcConfigEvaluate (FcPattern *p, FcPattern *p_pat, FcObject object, FcMatchKind k
 		case FcOpPlus:
 		    v.type = FcTypeString;
 		    str = FcStrPlus (vle.u.s, vre.u.s);
-		    v.u.s = FcStrdup (str);
+		    v.u.s = FcStrCopy (str);
 		    FcStrFree (str);
 
 		    if (!v.u.s)
@@ -1655,7 +1655,7 @@ FamilyTableDel (FamilyTable   *table,
 static FcBool
 copy_string (const void *src, void **dest)
 {
-    *dest = strdup ((char *)src);
+    *dest = FcStrCopy ((const FcChar8 *)src);
     return FcTrue;
 }
 
@@ -2695,7 +2695,7 @@ FcConfigRealFilename (FcConfig      *config,
 		FcStrFree (path);
 	    } else {
 		FcStrFree (n);
-		n = FcStrdup (buf);
+		n = FcStrCopy (buf);
 	    }
 	}
     }
@@ -3013,7 +3013,7 @@ FcRuleSetCreate (const FcChar8 *name)
 	p = name;
 
     if (ret) {
-	ret->name = FcStrdup (p);
+	ret->name = FcStrCopy (p);
 	ret->description = NULL;
 	ret->domain = NULL;
 	for (k = FcMatchKindBegin; k < FcMatchKindEnd; k++)
@@ -3076,8 +3076,8 @@ FcRuleSetAddDescription (FcRuleSet     *rs,
     if (rs->description)
 	FcStrFree (rs->description);
 
-    rs->domain = domain ? FcStrdup (domain) : NULL;
-    rs->description = description ? FcStrdup (description) : NULL;
+    rs->domain = domain ? FcStrCopy (domain) : NULL;
+    rs->description = description ? FcStrCopy (description) : NULL;
 }
 
 int
@@ -3175,9 +3175,9 @@ FcConfigFileInfoIterGet (FcConfig             *config,
 	return FcFalse;
     r = FcPtrListIterGetValue (c->rulesetList, i);
     if (name)
-	*name = FcStrdup (r->name && r->name[0] ? r->name : (const FcChar8 *)"fonts.conf");
+	*name = FcStrCopy (r->name && r->name[0] ? r->name : (const FcChar8 *)"fonts.conf");
     if (description)
-	*description = FcStrdup (!r->description ? _ ("No description") : dgettext (r->domain ? (const char *)r->domain : GETTEXT_PACKAGE "-conf", (const char *)r->description));
+	*description = FcStrCopy ((const FcChar8 *)(!r->description ? _ ("No description") : dgettext (r->domain ? (const char *)r->domain : GETTEXT_PACKAGE "-conf", (const char *)r->description)));
     if (enabled)
 	*enabled = r->enabled;
 

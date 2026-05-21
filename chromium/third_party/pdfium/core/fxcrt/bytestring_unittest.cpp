@@ -1762,7 +1762,7 @@ TEST(ByteString, Empty) {
 
   const char* cstr = empty_str.c_str();
   EXPECT_TRUE(cstr);
-  EXPECT_EQ(0u, UNSAFE_TODO(strlen(cstr)));
+  EXPECT_EQ(0u, strlen(cstr));
 
   const uint8_t* rstr = empty_str.unsigned_str();
   EXPECT_FALSE(rstr);

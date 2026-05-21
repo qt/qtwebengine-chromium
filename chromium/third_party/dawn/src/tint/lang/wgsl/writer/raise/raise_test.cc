@@ -49,7 +49,7 @@ class WgslWriter_RaiseTest : public core::ir::transform::TransformTest {
 TEST_F(WgslWriter_RaiseTest, BuiltinConversion) {
     auto* f = b.Function("f", ty.void_());
     b.Append(f->Block(), [&] {  //
-        b.Call(ty.i32(), core::BuiltinFn::kMax, i32(1), i32(2));
+        b.Max(i32(1), i32(2));
         b.Return(f);
     });
 
@@ -181,12 +181,12 @@ TEST_F(WgslWriter_RaiseTest, BuiltinShadowedByUserFunction) {
     auto* y = b.FunctionParam<u32>("y");
     user_min->SetParams({x, y});
     b.Append(user_min->Block(), [&] {  //
-        b.Return(user_min, b.Add<u32>(x, y));
+        b.Return(user_min, b.Add(x, y));
     });
 
     auto* f = b.Function("f", ty.void_());
     b.Append(f->Block(), [&] {  //
-        b.Call<u32>(core::BuiltinFn::kMin, 1_u, 2_u);
+        b.Min(1_u, 2_u);
         b.Return(f);
     });
 

@@ -14,12 +14,17 @@
 #include "base/numerics/checked_math.h"
 #include "build/build_config.h"
 #include "gpu/config/gpu_finch_features.h"
+#include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkImage.h"
 #include "third_party/skia/include/core/SkImageInfo.h"
 #include "third_party/skia/include/core/SkMallocPixelRef.h"
 #include "third_party/skia/include/core/SkPixelRef.h"
 #include "third_party/skia/include/gpu/ganesh/GrDirectContext.h"
 #include "third_party/skia/include/gpu/ganesh/GrRecordingContext.h"
+
+#if BUILDFLAG(IS_ANDROID)
+#include "base/android/device_info.h"
+#endif  // BUILDFLAG(IS_ANDROID)
 
 namespace cc {
 namespace {
@@ -95,7 +100,14 @@ UIResourceBitmap::UIResourceBitmap(const SkBitmap& skbitmap) {
   const SkBitmap* target = &skbitmap;
 #if BUILDFLAG(IS_ANDROID)
   SkBitmap copy;
-  if (features::ShouldEnableDrDc()) {
+  if (features::ShouldEnableDrDc() ||
+      base::android::device_info::is_desktop()) {
+    // On android desktop, where JavaBitmap ensures 4 byte alignment, uploading
+    // ALPHA_8 to angle_vulkan_image_backing may fail because it expects 1 byte
+    // alignment stride. Workaround via copying it to N32.
+    // TODO(https://crbug.com/485286876): Remove this workaround once stride
+    // information is passed along with pixel_data to shared_image.
+
     // If GpuFeatureInfo is available, replace ShouldEnableDrDc() with
     // IsDrDcEnabled(gpu_feature_info) which is set after checking drdc
     // workarounds;

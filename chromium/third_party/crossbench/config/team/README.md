@@ -1,1 +1,0 @@
-This folder contains team-specific configs that are used on a regular basis.

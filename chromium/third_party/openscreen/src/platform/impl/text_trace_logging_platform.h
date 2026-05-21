@@ -21,6 +21,8 @@ class TextTraceLoggingPlatform : public TraceLoggingPlatform {
   void LogAsyncStart(TraceEvent event) override;
 
   void LogAsyncEnd(TraceEvent event) override;
+
+  void LogFlow(TraceEvent event, FlowType type) override;
 };
 
 }  // namespace openscreen

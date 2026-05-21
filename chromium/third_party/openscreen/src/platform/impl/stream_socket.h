@@ -13,7 +13,6 @@
 #include "platform/api/network_interface.h"
 #include "platform/base/error.h"
 #include "platform/base/ip_address.h"
-#include "platform/base/macros.h"
 #include "platform/impl/socket_handle.h"
 #include "platform/impl/socket_state.h"
 

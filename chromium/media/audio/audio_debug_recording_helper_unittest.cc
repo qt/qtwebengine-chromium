@@ -59,7 +59,7 @@ class MockAudioDebugFileWriter : public AudioDebugFileWriter {
     EXPECT_EQ(reference_data_->channels(), data.channels());
     EXPECT_EQ(reference_data_->frames(), data.frames());
     for (int ch = 0; ch < data.channels(); ++ch) {
-      EXPECT_EQ(data.channel_span(ch), reference_data_->channel_span(ch));
+      EXPECT_EQ(data.channel(ch), reference_data_->channel(ch));
     }
     DoWrite(data);
   }
@@ -250,8 +250,7 @@ TEST_F(AudioDebugRecordingHelperTest, OnData) {
     source_data[i] = i * step;
   }
   std::unique_ptr<AudioBus> audio_bus = AudioBus::Create(params);
-  audio_bus->FromInterleaved<Float32SampleTypeTraits>(source_data.data(),
-                                                      number_of_frames);
+  audio_bus->FromInterleaved<Float32SampleTypeTraits>(source_data);
 
   std::unique_ptr<AudioDebugRecordingHelper> recording_helper =
       CreateRecordingHelper(params, base::OnceClosure());

@@ -19,17 +19,19 @@ void AddSecurityData(content::WebUIDataSource* html_source) {
   html_source->AddBoolean(
       "enableBundledSecuritySettings",
       base::FeatureList::IsEnabled(safe_browsing::kBundledSecuritySettings));
+  html_source->AddBoolean(
+      "enableBundledSecuritySettingsSecureDnsV2",
+      base::FeatureList::IsEnabled(
+          safe_browsing::kBundledSecuritySettingsSecureDnsV2));
   html_source->AddBoolean("enableHttpsFirstModeNewSettings",
                           IsBalancedModeAvailable());
 
-  html_source->AddInteger(
-      "securityStandardBundleSafeBrowsingDefault",
-      static_cast<int>(safe_browsing::GeneratedSafeBrowsingPref::GetDefault(
-          SecuritySettingsBundleSetting::STANDARD)));
-  html_source->AddInteger(
-      "securityEnhancedBundleSafeBrowsingDefault",
-      static_cast<int>(safe_browsing::GeneratedSafeBrowsingPref::GetDefault(
-          SecuritySettingsBundleSetting::ENHANCED)));
+  html_source->AddInteger("securityStandardBundleSafeBrowsingDefault",
+                          static_cast<int>(GetDefaultSafeBrowsingState(
+                              SecuritySettingsBundleSetting::STANDARD)));
+  html_source->AddInteger("securityEnhancedBundleSafeBrowsingDefault",
+                          static_cast<int>(GetDefaultSafeBrowsingState(
+                              SecuritySettingsBundleSetting::ENHANCED)));
 
   // TODO(http://crbug.com/458521865) Move remainder of
   // security-related-settings (not the strings) to this function.

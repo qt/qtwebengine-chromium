@@ -80,7 +80,7 @@ config("pdfium_common_config") {
     # TODO(crbug.com/1320670): enable for non-debug builds once this stops
     # interfering with code generation.
     # TODO(tsepez): enable for windows, too.
-    if (is_debug && !is_win) {
+    if (is_debug && pdf_use_partition_alloc && !is_win) {
       cflags += [
         "-Xclang",
         "-plugin-arg-raw-ptr-plugin",
@@ -293,6 +293,7 @@ group("pdfium_unittest_deps") {
     "fpdfsdk/*",
     "fxbarcode/*",
     "fxjs/*",
+    "testing/image_diff/*",
     "xfa/*",
   ]
 }
@@ -315,6 +316,7 @@ test("pdfium_unittests") {
     "core/fxge:unittests",
     "fpdfsdk:unittests",
     "testing:unit_test_support",
+    "testing/image_diff:unittests",
     "//testing/gmock",
     "//testing/gtest",
   ]
@@ -412,6 +414,7 @@ executable("pdfium_diff") {
   deps = [
     "core/fxcrt",
     "testing:path_service",
+    "testing:pixel_diff_utils",
     "testing/image_diff",
     "//build/win:default_exe_manifest",
   ]

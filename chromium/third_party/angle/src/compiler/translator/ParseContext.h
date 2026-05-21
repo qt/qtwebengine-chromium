@@ -7,6 +7,7 @@
 #define COMPILER_TRANSLATOR_PARSECONTEXT_H_
 
 #include "common/hash_containers.h"
+#include "common/span.h"
 #include "compiler/preprocessor/Preprocessor.h"
 #include "compiler/translator/Compiler.h"
 #include "compiler/translator/Declarator.h"
@@ -15,6 +16,7 @@
 #include "compiler/translator/FunctionLookup.h"
 #include "compiler/translator/QualifierTypes.h"
 #include "compiler/translator/SymbolTable.h"
+#include "compiler/translator/ValidateVaryingLocations.h"
 
 namespace sh
 {
@@ -53,6 +55,12 @@ enum class FunctionDeclaration
 {
     Prototype,
     Definition,
+};
+
+struct VariableAndLocation
+{
+    TSourceLoc line           = {};
+    const TVariable *variable = nullptr;
 };
 
 //
@@ -96,15 +104,6 @@ class TParseContext : angle::NonCopyable
     void setTreeRoot(TIntermBlock *treeRoot);
 
     ir::IR getIR();
-
-    bool getFragmentPrecisionHigh() const
-    {
-        return mFragmentPrecisionHighOnESSL1 || mShaderVersion >= 300;
-    }
-    void setFragmentPrecisionHighOnESSL1(bool fragmentPrecisionHigh)
-    {
-        mFragmentPrecisionHighOnESSL1 = fragmentPrecisionHigh;
-    }
 
     bool usesDerivatives() const { return mUsesDerivatives; }
     bool isEarlyFragmentTestsSpecified() const { return mEarlyFragmentTestsSpecified; }
@@ -575,9 +574,6 @@ class TParseContext : angle::NonCopyable
 
     ShShaderOutput getOutputType() const { return mOutputType; }
 
-    size_t getMaxExpressionComplexity() const { return mMaxExpressionComplexity; }
-    size_t getMaxStatementDepth() const { return mMaxStatementDepth; }
-
     // Pop the side effect of a statement when it's discarded, like when ; is encountered.
     void endStatementWithValue(TIntermNode *statement);
 
@@ -757,6 +753,14 @@ class TParseContext : angle::NonCopyable
     bool parseTessControlShaderOutputLayoutQualifier(const TTypeQualifier &typeQualifier);
     bool parseTessEvaluationShaderInputLayoutQualifier(const TTypeQualifier &typeQualifier);
 
+    void checkVariableSize(const TSourceLoc &line,
+                           const ImmutableString &identifier,
+                           const TType *type);
+    void checkVaryingLocations(const TSourceLoc &line, const TVariable *variable);
+    void checkFragmentOutputLocations(const TSourceLoc &line, const TVariable *variable);
+    void checkVariableLocations(const TSourceLoc &line, const TVariable *variable);
+    void postParseValidateFragmentOutputLocations();
+
     void sizeUnsizedArrayTypes(uint32_t arraySize);
 
     enum class ControlFlowType
@@ -842,13 +846,13 @@ class TParseContext : angle::NonCopyable
     sh::GLenum mShaderType;    // vertex/fragment/geometry/etc shader
     ShShaderSpec mShaderSpec;  // The language specification compiler conforms to - GLES/WebGL/etc.
     ShCompileOptions mCompileOptions;  // Options passed to TCompiler
+    const ShBuiltInResources &mResources;  // Limits passed to TCompiler
+
     int mShaderVersion;
     TIntermBlock *mTreeRoot;  // root of parse tree being created
     int mStructNestingLevel;  // incremented while parsing a struct declaration
     const TFunction *mCurrentFunction;   // the function that's currently being parsed
     bool mFunctionReturnsValue;          // true if a non-void function has a return
-    bool mFragmentPrecisionHighOnESSL1;  // true if highp precision is supported when compiling
-                                         // ESSL1.
     bool mEarlyFragmentTestsSpecified;   // true if layout(early_fragment_tests) in; is specified.
     bool mHasDiscard;                    // true if |discard| is encountered in the shader.
     bool mSampleQualifierSpecified;      // true if the |sample| qualifier is used
@@ -868,39 +872,25 @@ class TParseContext : angle::NonCopyable
     TDirectiveHandler mDirectiveHandler;
     angle::pp::Preprocessor mPreprocessor;
     void *mScanner;
-    const size_t mMaxExpressionComplexity;
-    const size_t mMaxStatementDepth;
-    int mMinProgramTexelOffset;
-    int mMaxProgramTexelOffset;
 
-    int mMinProgramTextureGatherOffset;
-    int mMaxProgramTextureGatherOffset;
-
-    // keep track of clip/cull distance redeclaration, accessed indices, etc so that gl_ClipDistance
+    // Keep track of clip/cull distance redeclaration, accessed indices, etc so that gl_ClipDistance
     // and gl_CullDistance can be validated and sized at the end of compilation.
-    int mMaxCombinedClipAndCullDistances;
     ClipCullDistanceInfo mClipDistanceInfo;
     ClipCullDistanceInfo mCullDistanceInfo;
 
-    // keep track of local group size declared in layout. It should be declared only once.
+    // Keep track of local group size declared in layout. It should be declared only once.
     bool mComputeShaderLocalSizeDeclared;
     sh::WorkGroupSize mComputeShaderLocalSize;
-    // keep track of number of views declared in layout.
+    // Keep track of number of views declared in layout.
     int mNumViews;
-    int mMaxNumViews;
-    int mMaxImageUnits;
-    int mMaxCombinedTextureImageUnits;
-    int mMaxUniformLocations;
-    int mMaxUniformBufferBindings;
-    int mMaxVertexAttribs;
-    int mMaxAtomicCounterBindings;
-    int mMaxAtomicCounterBufferSize;
-    int mMaxShaderStorageBufferBindings;
-    int mMaxPixelLocalStoragePlanes;
-    int mMaxFunctionParameters;
-    int mMaxCallStackDepth;
 
-    // keeps track of whether any of the built-ins that can be redeclared (see
+    // Maximum number of uniform blocks allowed to be declared in this shader. Taken from the
+    // built-in resources and resolved to this shader type.
+    unsigned int mMaxUniformBlocks;
+    // Current count of declared uniform blocks.
+    unsigned int mNumUniformBlocks;
+
+    // Keeps track of whether any of the built-ins that can be redeclared (see
     // IsRedeclarableBuiltIn()) has been marked as invariant/precise before the possible
     // redeclaration.
     //
@@ -910,15 +900,18 @@ class TParseContext : angle::NonCopyable
     // and there are no known users.
     TUnorderedMap<TQualifier, bool> mBuiltInQualified;
 
-    // keeps track whether we are declaring / defining a function
+    // Keeps track whether we are declaring / defining a function
     bool mDeclaringFunction;
 
-    // keeps track whether we are declaring / defining the function main().
+    // Keeps track whether we are declaring / defining the function main().
     bool mDeclaringMain;
     const TFunction *mMainFunction;
     // Whether `return` has been observed in `main()`.  Used to validate barrier() in tessellation
     // control shaders which are not allowed after `return`.
     bool mIsReturnVisitedInMain;
+    // Keeps track of the total size of shader-private variables, if validating that this size
+    // should not exceed a sensible threshold.
+    angle::base::CheckedNumeric<size_t> mTotalPrivateVariablesSize;
 
     // Track state related to control flow, used for various validation:
     //
@@ -957,12 +950,7 @@ class TParseContext : angle::NonCopyable
     // variable, where the loop doesn't have break or return, at the end of parse we can detect
     // these loops as infinite loop.
     TUnorderedSet<TSymbolUniqueId> mConstantTrueVariables;
-    struct PossiblyInfiniteLoop
-    {
-        TSourceLoc line;
-        const TVariable *loopVariable;
-    };
-    TVector<PossiblyInfiniteLoop> mPossiblyInfiniteLoops;
+    TVector<VariableAndLocation> mPossiblyInfiniteLoops;
 
     // Track the static call graph.  Static recursion is disallowed by GLSL.
     TUnorderedMap<const TFunction *, TUnorderedSet<const TFunction *>> mCallGraph;
@@ -979,16 +967,24 @@ class TParseContext : angle::NonCopyable
     // Potential errors to generate immediately upon encountering a pixel local storage uniform.
     std::vector<std::tuple<const TSourceLoc, PLSIllegalOperations>> mPLSPotentialErrors;
 
+    // Track the locations used by input and output varyings to detect conflicts.
+    LocationValidationMap mInputVaryingLocations;
+    LocationValidationMap mOutputVaryingLocations;
+
+    // Track the locations used by fragment shader outputs to detect conflicts.
+    TVector<VariableAndLocation> mFragmentOutputsWithLocation;
+    TVector<VariableAndLocation> mFragmentOutputsWithoutLocation;
+    TVector<VariableAndLocation> mFragmentOutputsYuv;
+    bool mFragmentOutputIndex1Used;
+    bool mFragmentOutputFragDepthUsed;
+
     // Track the geometry shader global parameters declared in layout.
     TLayoutPrimitiveType mGeometryShaderInputPrimitiveType;
     TLayoutPrimitiveType mGeometryShaderOutputPrimitiveType;
     int mGeometryShaderInvocations;
     int mGeometryShaderMaxVertices;
-    int mMaxGeometryShaderInvocations;
-    int mMaxGeometryShaderMaxVertices;
     unsigned int mGeometryInputArraySize;
 
-    int mMaxPatchVertices;
     int mTessControlShaderOutputVertices;
     TLayoutTessEvaluationType mTessEvaluationShaderInputPrimitiveType;
     TLayoutTessEvaluationType mTessEvaluationShaderInputVertexSpacingType;
@@ -1028,8 +1024,7 @@ class TParseContext : angle::NonCopyable
     angle::HashMap<const TFunction *, ir::FunctionId> mFunctionToId;
 };
 
-int PaParseStrings(size_t count,
-                   const char *const string[],
+int PaParseStrings(angle::Span<const char *const> string,
                    const int length[],
                    TParseContext *context);
 

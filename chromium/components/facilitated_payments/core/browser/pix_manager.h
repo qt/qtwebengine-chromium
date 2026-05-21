@@ -7,6 +7,8 @@
 
 #include <cstring>
 #include <memory>
+#include <optional>
+#include <string>
 #include <vector>
 
 #include "base/functional/callback_forward.h"
@@ -51,14 +53,19 @@ class PixManager {
   // Resets `this` to initial state. Cancels any alive async callbacks.
   void Reset();
 
-  // Checks whether the `render_frame_host_url` is allowlisted and validates the
-  // `pix_code` before trigger the Pix payments flow. Note: If the Pix payment
-  // flow has already been triggered by the other code detection methods like
-  // DOM search then this method is a no-op.
+  // Checks whether the `main_frame_url` or the `iframe_url` (if present) is
+  // allowlisted and validates the `pix_code` before triggering the Pix payments
+  // flow. Note: If the Pix payment flow has already been triggered by the other
+  // code detection methods like DOM search then this method is a no-op.
+  //
+  // If Rust Pix code validation is enabled, `rust_validation_result` will
+  // always have a value.
   virtual void OnPixCodeCopiedToClipboard(
-      const GURL& render_frame_host_url,
-      const url::Origin& render_frame_host_origin,
-      const std::string& pix_code,
+      const GURL& main_frame_url,
+      const std::optional<GURL>& iframe_url,
+      const url::Origin& main_frame_origin,
+      std::optional<PixCodeRustValidationResult> rust_validation_result,
+      std::string pix_code,
       ukm::SourceId ukm_source_id);
 
  private:
@@ -66,6 +73,8 @@ class PixManager {
   friend class PixManagerTestForUiScreens;
   friend class PixManagerPaymentsNetworkInterfaceTest;
   // Keep all entries in alphabetical order!
+  // TODO(crbug.com/479520609): Remove all FRIEND_TEST_ALL_PREFIXES macros from
+  // PixManager by introducing a new PixManagerTestApi.
   FRIEND_TEST_ALL_PREFIXES(PixManagerPaymentsNetworkInterfaceTest,
                            OnInitiatePaymentResponseReceived_FailureResponse);
   FRIEND_TEST_ALL_PREFIXES(PixManagerPaymentsNetworkInterfaceTest,
@@ -91,10 +100,19 @@ class PixManager {
                            CopyTrigger_UrlInAllowlist_PixValidationTriggered);
   FRIEND_TEST_ALL_PREFIXES(
       PixManagerTestWithAccountLinkingEnabled,
+      CopyTrigger_UrlInAllowlist__ControlIdPopulatedInInitiatePaymentRequest);
+  FRIEND_TEST_ALL_PREFIXES(
+      PixManagerTestWithAccountLinkingEnabled,
       CopyTrigger_UrlNotInAllowlist_PixValidationNotTriggered);
   FRIEND_TEST_ALL_PREFIXES(
       PixManagerTestWithAccountLinkingEnabled,
       CopyTrigger_UrlNotInAllowlist_PayflowExitedHistogramLogged);
+  FRIEND_TEST_ALL_PREFIXES(
+      PixManagerTestWithAccountLinkingEnabled,
+      CopyTrigger_InIframe_PspHostnamePopulatedInInitiatePaymentRequest);
+  FRIEND_TEST_ALL_PREFIXES(
+      PixManagerTestWithAccountLinkingEnabled,
+      CopyTrigger_InIframe_ExperimentIdPopulatedInInitiatePaymentRequest);
   FRIEND_TEST_ALL_PREFIXES(PixManagerTestWithAccountLinkingEnabled,
                            DismissPrompt);
   FRIEND_TEST_ALL_PREFIXES(
@@ -216,15 +234,25 @@ class PixManager {
   // Returns true if the result is [1].
   bool IsMerchantAllowlisted(const GURL& url) const;
 
+  // Returns true if the URL is in the PSP allowlist.
+  bool IsIframeUrlAllowlisted(const GURL& url) const;
+
   // Called by the utility process after validation of the `pix_code`. If the
   // utility processes has disconnected (e.g., due to a crash in the validation
   // code), then `pix_qr_code_type` contains an error string instead of the
   // PixQrCodeType result. The call to validate the Pix code was made at
   // `start_time`.
   void OnPixCodeValidated(
+      std::optional<PixCodeRustValidationResult> rust_validation_result,
       std::string pix_code,
       base::TimeTicks start_time,
       base::expected<mojom::PixQrCodeType, std::string> pix_qr_code_type);
+
+  // Processes a fully-validated Pix code. Exposed separately from
+  // `OnPixCodeValidated()` since the Rust validator does not need to go to the
+  // utility process at all.
+  void OnValidPixCode(std::string pix_code,
+                      mojom::PixQrCodeType pix_qr_code_type);
 
   // Lazily initializes an API client and returns a pointer to it. Returns a
   // pointer to the existing API client, if one is already initialized. The
@@ -338,8 +366,9 @@ class PixManager {
   // state via a callback.
   UiState ui_state_ = UiState::kHidden;
 
-  // The origin of the Pix payment page that triggered the payment flow.
-  url::Origin pix_payment_page_origin_;
+  // The origin of the Pix payment page on main frame that triggered the payment
+  // flow.
+  url::Origin pix_payment_page_main_frame_origin_;
 
   base::WeakPtrFactory<PixManager> weak_ptr_factory_{this};
 };

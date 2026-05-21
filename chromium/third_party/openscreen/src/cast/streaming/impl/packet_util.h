@@ -18,7 +18,7 @@ namespace openscreen::cast {
 template <typename Integer>
 inline Integer ConsumeField(ByteView& in) {
   const Integer result = ReadBigEndian<Integer>(in.data());
-  in.remove_prefix(sizeof(Integer));
+  in = in.subspan(sizeof(Integer));
   return result;
 }
 
@@ -27,7 +27,7 @@ inline Integer ConsumeField(ByteView& in) {
 template <typename Integer>
 inline void AppendField(Integer value, ByteBuffer& out) {
   WriteBigEndian<Integer>(value, out.data());
-  out.remove_prefix(sizeof(Integer));
+  out = out.subspan(sizeof(Integer));
 }
 
 // Returns a bitmask for a field having the given number of bits. For example,
@@ -41,7 +41,7 @@ constexpr Integer FieldBitmask(unsigned field_size_in_bits) {
 // reserved space.
 inline ByteBuffer ReserveSpace(int num_bytes, ByteBuffer& out) {
   const ByteBuffer reserved = out.subspan(0, num_bytes);
-  out.remove_prefix(num_bytes);
+  out = out.subspan(num_bytes);
   return reserved;
 }
 

@@ -133,7 +133,14 @@ class VIEWS_EXPORT FocusManager : public ViewObserver {
 
     // The focus changed due to a click or a shortcut to jump directly to
     // a particular view.
-    kDirectFocusChange
+    kDirectFocusChange,
+
+    // The focus changed because a native view is focused.
+    // Note that if the focus change was initiated by the FocusManager (e.g.
+    // via kDirectFocusChange), a native view may be be focused. However, this
+    // won't trigger a kFocusNativeView focus change because the NativeView's
+    // hosting view (e.g., views::WebView) is already focused.
+    kFocusNativeView,
   };
 
   // TODO(dmazzoni): use Direction in place of bool reverse throughout.
@@ -300,6 +307,9 @@ class VIEWS_EXPORT FocusManager : public ViewObserver {
   // Checks if a focused view is being set.
   bool IsSettingFocusedView() const;
 
+  // Returns true if RestoreFocusedView() is on the call stack.
+  bool is_restoring_focused_view() const { return in_restoring_focused_view_; }
+
  private:
   // Returns the focusable view found in the FocusTraversable specified starting
   // at the specified view. This traverses down along the FocusTraversable
@@ -320,10 +330,9 @@ class VIEWS_EXPORT FocusManager : public ViewObserver {
   // ViewObserver:
   void OnViewIsDeleting(View* view) override;
 
-  // Try to redirect the accelerator to bubble's anchor widget to process it if
-  // the bubble didn't.
-  bool RedirectAcceleratorToBubbleAnchorWidget(
-      const ui::Accelerator& accelerator);
+  // Try to redirect the accelerator to the parent widget to process it if
+  // `widget_` didn't.
+  bool RedirectAcceleratorToParentWidget(const ui::Accelerator& accelerator);
 
   // Returns true if arrow key traversal is enabled for the current widget.
   bool IsArrowKeyTraversalEnabledForWidget() const;

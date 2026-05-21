@@ -1,2 +1,2 @@
-// Automatically generated on Wed Nov 12 03:05:46 2025. See crbug.com/495833.
-#include "hpeldsp_neon.S"
+// Automatically generated on Wed Jan 28 14:16:34 2026. See crbug.com/495833.
+#include "../../third_party/ffmpeg/libavcodec/aarch64/hpeldsp_neon.S"

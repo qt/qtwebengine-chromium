@@ -13,9 +13,11 @@
  * limitations under the License.
  */
 
+#include <spirv/unified1/spirv.hpp>
 #include <sstream>
 #include "state_tracker/shader_instruction.h"
 #include "generated/spirv_grammar_helper.h"
+#include "state_tracker/shader_module.h"
 
 namespace spirv {
 
@@ -177,11 +179,13 @@ spv::BuiltIn Instruction::GetBuiltIn() const {
         return static_cast<spv::BuiltIn>(Word(4));
     } else {
         assert(false);  // non valid Opcode
-        return spv::BuiltInMax;
+        return spirv::kInvalidBuiltIn;
     }
 }
 
 bool Instruction::IsArray() const { return (Opcode() == spv::OpTypeArray || Opcode() == spv::OpTypeRuntimeArray); }
+
+bool Instruction::IsVector() const { return (Opcode() == spv::OpTypeVector || Opcode() == spv::OpTypeVectorIdEXT); }
 
 bool Instruction::IsNonPtrAccessChain() const {
     const uint32_t opcode = Opcode();
@@ -259,6 +263,19 @@ spv::StorageClass Instruction::StorageClass() const {
     return storage_class;
 }
 
+// OpEntryPoint are annoying because the offset to the interface variable requires you to first detect how big the "Name" string is
+uint32_t Instruction::GetEntryPointInterfaceStart() const {
+    assert(Opcode() == spv::OpEntryPoint || Opcode() == spv::OpGraphEntryPointARM);
+    uint32_t word = 3;  // operand Name operand starts
+    // Find the end of the entrypoint's name string. additional zero bytes follow the actual null terminator, to fill out the rest
+    // of the word - so we only need to look at the last byte in the word to determine which word contains the terminator.
+    while (Word(word) & 0xff000000u) {
+        ++word;
+    }
+    ++word;
+    return word;
+}
+
 void Instruction::Fill(const std::vector<uint32_t>& words) {
     for (uint32_t word : words) {
         words_.emplace_back(word);
@@ -281,7 +298,7 @@ void Instruction::AppendWord(uint32_t word) {
     UpdateDebugInfo();
 }
 
-void Instruction::ToBinary(std::vector<uint32_t>& out) {
+void Instruction::ToBinary(std::vector<uint32_t>& out) const {
     for (auto word : words_) {
         out.push_back(word);
     }

@@ -95,7 +95,8 @@ class SystemFontInfoWrapper : public SystemFontInfoIface {
 }  // namespace
 
 TestFonts::TestFonts() {
-  if (!PathService::GetExecutableDir(&font_path_)) {
+  font_path_ = PathService::GetExecutableDir();
+  if (font_path_.empty()) {
     return;
   }
   font_path_.push_back(PATH_SEPARATOR);

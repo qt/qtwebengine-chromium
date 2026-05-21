@@ -32,6 +32,11 @@
 #include <utility>
 #include <vector>
 
+#ifdef _WIN32
+#include <fcntl.h>  // for _O_BINARY
+#include <io.h>     // for _setmode, _fileno
+#endif
+
 #if TINT_BUILD_SPV_READER
 #include "spirv-tools/libspirv.hpp"
 #include "src/tint/lang/spirv/reader/reader.h"
@@ -55,13 +60,6 @@
 
 namespace tint::cmd {
 namespace {
-
-enum class InputFormat {
-    kUnknown,
-    kWgsl,
-    kSpirvBin,
-    kSpirvAsm,
-};
 
 /// @param out the stream to write to
 /// @param value the InputFormat
@@ -120,11 +118,7 @@ tint::Program ReadSpirv(const std::vector<uint32_t>& data, const LoadProgramOpti
     }
 
     // Convert the IR module to a Program.
-    tint::wgsl::writer::Options writer_options;
-    writer_options.allow_non_uniform_derivatives =
-        opts.spirv_reader_options.allow_non_uniform_derivatives;
-    writer_options.allowed_features = opts.spirv_reader_options.allowed_features;
-    auto prog_result = tint::wgsl::writer::ProgramFromIR(result.Get(), writer_options);
+    auto prog_result = tint::wgsl::writer::ProgramFromIR(result.Get(), opts.wgsl_writer_options);
     if (prog_result != Success) {
         std::cerr << "Failed to convert IR to Program:\n\n" << prog_result.Failure() << "\n\n";
         std::cerr << tint::core::ir::Disassembler(result.Get()).Plain() << "\n";
@@ -156,12 +150,21 @@ void PrintWGSL(std::ostream& out, const tint::Program& program) {
 }
 
 ProgramInfo LoadProgramInfo(const LoadProgramOptions& opts) {
-    auto input_format = InputFormatFromFilename(opts.filename);
+    InputFormat input_format = opts.input_format;
+    if (input_format == InputFormat::kUnknown) {
+        input_format = InputFormatFromFilename(opts.filename);
+    }
+    if (input_format == InputFormat::kUnknown && IsStdin(opts.filename)) {
+        std::cerr << "No input format given for data read from stdin";
+        exit(1);
+    }
 
     auto load = [&]() -> ProgramInfo {
         switch (input_format) {
             case InputFormat::kUnknown:
-                break;
+                // Prints "unknown input format"
+                std::cerr << input_format << " input format\n";
+                exit(1);
 
             case InputFormat::kWgsl: {
 #if TINT_BUILD_WGSL_READER
@@ -233,8 +236,7 @@ ProgramInfo LoadProgramInfo(const LoadProgramOptions& opts) {
             }
         }
 
-        std::cerr << "Unknown input format: " << input_format << "\n";
-        exit(1);
+        TINT_UNREACHABLE();
     };
 
     ProgramInfo info = load();
@@ -605,6 +607,16 @@ std::string OverrideTypeToString(tint::inspector::Override::Type type) {
 
 bool IsStdout(const std::string& name) {
     return name.empty() || name == "-";
+}
+
+bool IsStdin(const std::string& name) {
+    return name.empty() || name == "-";
+}
+
+void SetStdinModeBinary() {
+#ifdef _WIN32
+    _setmode(_fileno(stdin), _O_BINARY);
+#endif
 }
 
 }  // namespace tint::cmd

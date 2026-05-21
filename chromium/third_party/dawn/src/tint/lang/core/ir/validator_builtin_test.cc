@@ -44,6 +44,152 @@ namespace tint::core::ir {
 using namespace tint::core::fluent_types;     // NOLINT
 using namespace tint::core::number_suffixes;  // NOLINT
 
+TEST_F(IR_ValidatorTest, Builtin_DuplicateInput) {
+    auto* f = FragmentEntryPoint();
+    AddBuiltinParam(f, "sm1", BuiltinValue::kSampleMask, ty.u32());
+    AddBuiltinParam(f, "sm2", BuiltinValue::kSampleMask, ty.u32());
+
+    b.Append(f->Block(), [&] { b.Unreachable(); });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:1:46 error: duplicate instance of builtin 'sample_mask' on entry point input, must be unique per entry point i/o direction
+%f = @fragment func(%sm1:u32 [@sample_mask], %sm2:u32 [@sample_mask]):void {
+                                             ^^^^^^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Builtin_DuplicateOutput) {
+    auto* sm1 = b.Var("sm1", AddressSpace::kOut, ty.u32());
+    sm1->SetBuiltin(BuiltinValue::kSampleMask);
+    mod.root_block->Append(sm1);
+
+    auto* sm2 = b.Var("sm2", AddressSpace::kOut, ty.u32());
+    sm2->SetBuiltin(BuiltinValue::kSampleMask);
+    mod.root_block->Append(sm2);
+
+    auto* f = FragmentEntryPoint();
+
+    b.Append(f->Block(), [&] {
+        b.Store(sm1, 0_u);
+        b.Store(sm2, 0_u);
+        b.Unreachable();
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:3:38 error: var: duplicate instance of builtin 'sample_mask' on entry point output, must be unique per entry point i/o direction
+  %sm2:ptr<__out, u32, read_write> = var undef @builtin(sample_mask)
+                                     ^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Builtin_InputOutput) {
+    auto* sm_out = b.Var("sm_out", AddressSpace::kOut, ty.u32());
+    sm_out->SetBuiltin(BuiltinValue::kSampleMask);
+    mod.root_block->Append(sm_out);
+
+    auto* f = FragmentEntryPoint();
+    AddBuiltinParam(f, "sm_in", BuiltinValue::kSampleMask, ty.u32());
+
+    b.Append(f->Block(), [&] {
+        b.Store(sm_out, 0_u);
+        b.Unreachable();
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_EQ(res, Success);
+}
+
+TEST_F(IR_ValidatorTest, Builtin_ClipDistance_Duplicate) {
+    const auto attr = IOAttributes{.builtin = BuiltinValue::kClipDistances};
+    auto* str_ty = ty.Struct(mod.symbols.New("OutputStruct"),
+                             {{mod.symbols.New("cd1"), ty.array<f32, 2>(), attr},
+                              {mod.symbols.New("cd2"), ty.array<f32, 2>(), attr}});
+    auto* outs = b.Var("outs", AddressSpace::kOut, str_ty);
+    mod.root_block->Append(outs);
+
+    auto* f = VertexEntryPoint();
+
+    b.Append(f->Block(), [&] {
+        auto* cd1 = b.Access(ty.ptr(AddressSpace::kOut, ty.array<f32, 2>()), outs, 0_u);
+        auto* cd2 = b.Access(ty.ptr(AddressSpace::kOut, ty.array<f32, 2>()), outs, 1_u);
+        b.Store(b.Access(ty.ptr(AddressSpace::kOut, ty.f32()), cd1, 0_u), 0_f);
+        b.Store(b.Access(ty.ptr(AddressSpace::kOut, ty.f32()), cd2, 0_u), 0_f);
+        b.Unreachable();
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:7:48 error: var: duplicate instance of builtin 'clip_distances' on entry point output, must be unique per entry point i/o direction
+  %outs:ptr<__out, OutputStruct, read_write> = var undef
+                                               ^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Builtin_ClipDistance_Duplicate_WithCapability) {
+    const auto attr = IOAttributes{.builtin = BuiltinValue::kClipDistances};
+    auto* str_ty = ty.Struct(mod.symbols.New("OutputStruct"),
+                             {{mod.symbols.New("cd1"), ty.array<f32, 2>(), attr},
+                              {mod.symbols.New("cd2"), ty.array<f32, 2>(), attr}});
+    auto* outs = b.Var("outs", AddressSpace::kOut, str_ty);
+    mod.root_block->Append(outs);
+
+    auto* f = VertexEntryPoint();
+
+    b.Append(f->Block(), [&] {
+        auto* cd1 = b.Access(ty.ptr(AddressSpace::kOut, ty.array<f32, 2>()), outs, 0_u);
+        auto* cd2 = b.Access(ty.ptr(AddressSpace::kOut, ty.array<f32, 2>()), outs, 1_u);
+        b.Store(b.Access(ty.ptr(AddressSpace::kOut, ty.f32()), cd1, 0_u), 0_f);
+        b.Store(b.Access(ty.ptr(AddressSpace::kOut, ty.f32()), cd2, 0_u), 0_f);
+        b.Unreachable();
+    });
+
+    auto res = ir::Validate(mod, Capabilities{Capability::kAllowClipDistancesOnF32ScalarAndVector});
+    ASSERT_EQ(res, Success) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Builtin_ClipDistance_Triple_WithCapability) {
+    const auto attr = IOAttributes{.builtin = BuiltinValue::kClipDistances};
+    auto* str_ty = ty.Struct(mod.symbols.New("OutputStruct"),
+                             {{mod.symbols.New("cd1"), ty.array<f32, 2>(), attr},
+                              {mod.symbols.New("cd2"), ty.array<f32, 2>(), attr},
+                              {mod.symbols.New("cd3"), ty.array<f32, 2>(), attr}});
+    auto* outs = b.Var("outs", AddressSpace::kOut, str_ty);
+    mod.root_block->Append(outs);
+
+    auto* f = VertexEntryPoint();
+
+    b.Append(f->Block(), [&] {
+        auto* cd1 = b.Access(ty.ptr(AddressSpace::kOut, ty.array<f32, 2>()), outs, 0_u);
+        auto* cd2 = b.Access(ty.ptr(AddressSpace::kOut, ty.array<f32, 2>()), outs, 1_u);
+        auto* cd3 = b.Access(ty.ptr(AddressSpace::kOut, ty.array<f32, 2>()), outs, 1_u);
+        b.Store(b.Access(ty.ptr(AddressSpace::kOut, ty.f32()), cd1, 0_u), 0_f);
+        b.Store(b.Access(ty.ptr(AddressSpace::kOut, ty.f32()), cd2, 0_u), 0_f);
+        b.Store(b.Access(ty.ptr(AddressSpace::kOut, ty.f32()), cd3, 0_u), 0_f);
+        b.Unreachable();
+    });
+
+    auto res = ir::Validate(mod, Capabilities{Capability::kAllowClipDistancesOnF32ScalarAndVector});
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:8:48 error: var: too many instances of builtin 'clip_distances' on entry point output, only two allowed with 'kAllowClipDistancesOnF32ScalarAndVector' capability enabled
+  %outs:ptr<__out, OutputStruct, read_write> = var undef
+                                               ^^^
+)")) << res.Failure();
+}
+
 TEST_F(IR_ValidatorTest, Builtin_PointSize_WrongStage) {
     auto* f = FragmentEntryPoint();
     AddBuiltinReturn(f, "size", BuiltinValue::kPointSize, ty.f32());
@@ -217,7 +363,7 @@ TEST_F(IR_ValidatorTest, Builtin_ClipDistances_WrongIODirection) {
 
 TEST_F(IR_ValidatorTest, Builtin_ClipDistances_WrongType_Vec) {
     auto* f = VertexEntryPoint();
-    AddBuiltinReturn(f, "distances", BuiltinValue::kClipDistances, ty.vec2<f32>());
+    AddBuiltinReturn(f, "distances", BuiltinValue::kClipDistances, ty.vec2f());
 
     b.Append(f->Block(), [&] { b.Unreachable(); });
 
@@ -314,7 +460,7 @@ TEST_F(IR_ValidatorTest, Builtin_NonFragDepth_NonUndefinedDepthMode) {
 
 TEST_F(IR_ValidatorTest, MissingBuiltin_WithFragDepth) {
     auto* f = ComputeEntryPoint();
-    AddReturn(f, "pos", ty.vec4<f32>());
+    AddReturn(f, "pos", ty.vec4f());
     f->SetReturnDepthMode(BuiltinDepthMode::kAny);
 
     b.Append(f->Block(), [&] { b.Unreachable(); });
@@ -422,7 +568,7 @@ TEST_F(IR_ValidatorTest, Builtin_FrontFacing_WrongType) {
 
 TEST_F(IR_ValidatorTest, Builtin_GlobalInvocationId_WrongStage) {
     auto* f = FragmentEntryPoint();
-    AddBuiltinParam(f, "invocation", BuiltinValue::kGlobalInvocationId, ty.vec3<u32>());
+    AddBuiltinParam(f, "invocation", BuiltinValue::kGlobalInvocationId, ty.vec3u());
 
     b.Append(f->Block(), [&] { b.Unreachable(); });
 
@@ -440,7 +586,7 @@ TEST_F(IR_ValidatorTest, Builtin_GlobalInvocationId_WrongStage) {
 TEST_F(IR_ValidatorTest, Builtin_GlobalInvocationId_WrongIODirection) {
     // This will also trigger the compute entry points should have void returns check
     auto* f = ComputeEntryPoint();
-    AddBuiltinReturn(f, "invocation", BuiltinValue::kGlobalInvocationId, ty.vec3<u32>());
+    AddBuiltinReturn(f, "invocation", BuiltinValue::kGlobalInvocationId, ty.vec3u());
 
     b.Append(f->Block(), [&] { b.Unreachable(); });
 
@@ -521,7 +667,7 @@ TEST_F(IR_ValidatorTest, Builtin_InstanceIndex_WrongType) {
 
 TEST_F(IR_ValidatorTest, Builtin_LocalInvocationId_WrongStage) {
     auto* f = FragmentEntryPoint();
-    AddBuiltinParam(f, "id", BuiltinValue::kLocalInvocationId, ty.vec3<u32>());
+    AddBuiltinParam(f, "id", BuiltinValue::kLocalInvocationId, ty.vec3u());
 
     b.Append(f->Block(), [&] { b.Unreachable(); });
 
@@ -539,7 +685,7 @@ TEST_F(IR_ValidatorTest, Builtin_LocalInvocationId_WrongStage) {
 TEST_F(IR_ValidatorTest, Builtin_LocalInvocationId_WrongIODirection) {
     // This will also trigger the compute entry points should have void returns check
     auto* f = ComputeEntryPoint();
-    AddBuiltinReturn(f, "id", BuiltinValue::kLocalInvocationId, ty.vec3<u32>());
+    AddBuiltinReturn(f, "id", BuiltinValue::kLocalInvocationId, ty.vec3u());
 
     b.Append(f->Block(), [&] { b.Unreachable(); });
 
@@ -621,7 +767,7 @@ TEST_F(IR_ValidatorTest, Builtin_LocalInvocationIndex_WrongType) {
 
 TEST_F(IR_ValidatorTest, Builtin_NumWorkgroups_WrongStage) {
     auto* f = FragmentEntryPoint();
-    AddBuiltinParam(f, "num", BuiltinValue::kNumWorkgroups, ty.vec3<u32>());
+    AddBuiltinParam(f, "num", BuiltinValue::kNumWorkgroups, ty.vec3u());
 
     b.Append(f->Block(), [&] { b.Unreachable(); });
 
@@ -639,7 +785,7 @@ TEST_F(IR_ValidatorTest, Builtin_NumWorkgroups_WrongStage) {
 TEST_F(IR_ValidatorTest, Builtin_NumWorkgroups_WrongIODirection) {
     // This will also trigger the compute entry points should have void returns check
     auto* f = ComputeEntryPoint();
-    AddBuiltinReturn(f, "num", BuiltinValue::kNumWorkgroups, ty.vec3<u32>());
+    AddBuiltinReturn(f, "num", BuiltinValue::kNumWorkgroups, ty.vec3u());
 
     b.Append(f->Block(), [&] { b.Unreachable(); });
 
@@ -767,7 +913,7 @@ TEST_F(IR_ValidatorTest, Builtin_VertexIndex_WrongType) {
 
 TEST_F(IR_ValidatorTest, Builtin_WorkgroupId_WrongStage) {
     auto* f = FragmentEntryPoint();
-    AddBuiltinParam(f, "id", BuiltinValue::kWorkgroupId, ty.vec3<u32>());
+    AddBuiltinParam(f, "id", BuiltinValue::kWorkgroupId, ty.vec3u());
 
     b.Append(f->Block(), [&] { b.Unreachable(); });
 
@@ -785,7 +931,7 @@ TEST_F(IR_ValidatorTest, Builtin_WorkgroupId_WrongStage) {
 TEST_F(IR_ValidatorTest, Builtin_WorkgroupId_WrongIODirection) {
     // This will also trigger the compute entry points should have void returns check
     auto* f = ComputeEntryPoint();
-    AddBuiltinReturn(f, "id", BuiltinValue::kWorkgroupId, ty.vec3<u32>());
+    AddBuiltinReturn(f, "id", BuiltinValue::kWorkgroupId, ty.vec3u());
 
     b.Append(f->Block(), [&] { b.Unreachable(); });
 
@@ -817,7 +963,7 @@ TEST_F(IR_ValidatorTest, Builtin_WorkgroupId_WrongType) {
 
 TEST_F(IR_ValidatorTest, Builtin_Position_WrongStage) {
     auto* f = ComputeEntryPoint();
-    AddBuiltinParam(f, "pos", BuiltinValue::kPosition, ty.vec4<f32>());
+    AddBuiltinParam(f, "pos", BuiltinValue::kPosition, ty.vec4f());
 
     b.Append(f->Block(), [&] { b.Unreachable(); });
 
@@ -834,7 +980,7 @@ TEST_F(IR_ValidatorTest, Builtin_Position_WrongStage) {
 
 TEST_F(IR_ValidatorTest, Builtin_Position_WrongIODirectionForVertex) {
     auto* f = VertexEntryPoint();
-    AddBuiltinParam(f, "pos", BuiltinValue::kPosition, ty.vec4<f32>());
+    AddBuiltinParam(f, "pos", BuiltinValue::kPosition, ty.vec4f());
 
     b.Append(f->Block(), [&] { b.Unreachable(); });
 
@@ -851,7 +997,7 @@ TEST_F(IR_ValidatorTest, Builtin_Position_WrongIODirectionForVertex) {
 
 TEST_F(IR_ValidatorTest, Builtin_Position_WrongIODirectionForFragment) {
     auto* f = FragmentEntryPoint();
-    AddBuiltinReturn(f, "pos", BuiltinValue::kPosition, ty.vec4<f32>());
+    AddBuiltinReturn(f, "pos", BuiltinValue::kPosition, ty.vec4f());
 
     b.Append(f->Block(), [&] { b.Unreachable(); });
 
@@ -1127,6 +1273,54 @@ TEST_F(IR_ValidatorTest, Builtin_NumSubgroups_WrongType) {
 )")) << res.Failure();
 }
 
+TEST_F(IR_ValidatorTest, Builtin_PointSize_WithoutCapability) {
+    const auto position_attr = IOAttributes{.builtin = core::BuiltinValue::kPosition};
+    const auto point_size_attr = IOAttributes{.builtin = core::BuiltinValue::kPointSize};
+    auto* str_ty = ty.Struct(mod.symbols.New("OutputStruct"),
+                             {
+                                 {mod.symbols.New("pos"), ty.vec4f(), position_attr},
+                                 {mod.symbols.New("size"), ty.f32(), point_size_attr},
+                             });
+
+    auto* f = VertexEntryPoint();
+    f->SetReturnType(str_ty);
+    f->SetReturnAttributes({});
+
+    b.Append(f->Block(), [&] {  //
+        b.Return(f, b.Zero(str_ty));
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(res.Failure().reason,
+                testing::HasSubstr(
+                    R"(:6:1 error: use of point_size builtin requires kAllowPointSizeBuiltin
+%f = @vertex func():OutputStruct {
+^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Builtin_PointSize_WithCapability) {
+    const auto position_attr = IOAttributes{.builtin = core::BuiltinValue::kPosition};
+    const auto point_size_attr = IOAttributes{.builtin = core::BuiltinValue::kPointSize};
+    auto* str_ty = ty.Struct(mod.symbols.New("OutputStruct"),
+                             {
+                                 {mod.symbols.New("pos"), ty.vec4f(), position_attr},
+                                 {mod.symbols.New("size"), ty.f32(), point_size_attr},
+                             });
+
+    auto* f = VertexEntryPoint();
+    f->SetReturnType(str_ty);
+    f->SetReturnAttributes({});
+
+    b.Append(f->Block(), [&] {  //
+        b.Return(f, b.Zero(str_ty));
+    });
+
+    auto res = ir::Validate(mod, Capabilities{Capability::kAllowPointSizeBuiltin});
+    ASSERT_EQ(res, Success) << res.Failure();
+}
+
 TEST_F(IR_ValidatorTest, Bitcast_MissingArg) {
     auto* f = b.Function("f", ty.void_());
     b.Append(f->Block(), [&] {
@@ -1195,7 +1389,7 @@ TEST_F(IR_ValidatorTest, Bitcast_NullResult) {
 
 TEST_F(IR_ValidatorTest, Builtin_NoStage) {
     auto* f = b.Function("f", ty.void_());
-    AddBuiltinParam(f, "id", BuiltinValue::kLocalInvocationId, ty.vec3<u32>());
+    AddBuiltinParam(f, "id", BuiltinValue::kLocalInvocationId, ty.vec3u());
 
     b.Append(f->Block(), [&] { b.Unreachable(); });
 
@@ -1255,50 +1449,50 @@ INSTANTIATE_TEST_SUITE_P(
         // Scalar reinterpretation
         std::make_tuple(true, TypeBuilder<u32>, TypeBuilder<i32>),
         std::make_tuple(true, TypeBuilder<u32>, TypeBuilder<f32>),
-        std::make_tuple(true, TypeBuilder<u32>, TypeBuilder<vec2<f16>>),
+        std::make_tuple(true, TypeBuilder<u32>, TypeBuilder<vec2h>),
         std::make_tuple(true, TypeBuilder<i32>, TypeBuilder<u32>),
         std::make_tuple(true, TypeBuilder<i32>, TypeBuilder<f32>),
-        std::make_tuple(true, TypeBuilder<i32>, TypeBuilder<vec2<f16>>),
+        std::make_tuple(true, TypeBuilder<i32>, TypeBuilder<vec2h>),
         std::make_tuple(true, TypeBuilder<f32>, TypeBuilder<u32>),
         std::make_tuple(true, TypeBuilder<f32>, TypeBuilder<i32>),
-        std::make_tuple(true, TypeBuilder<f32>, TypeBuilder<vec2<f16>>),
+        std::make_tuple(true, TypeBuilder<f32>, TypeBuilder<vec2h>),
         std::make_tuple(false, TypeBuilder<u32>, TypeBuilder<f16>),
         std::make_tuple(false, TypeBuilder<i32>, TypeBuilder<f16>),
         std::make_tuple(false, TypeBuilder<f32>, TypeBuilder<f16>),
         std::make_tuple(false, TypeBuilder<f16>, TypeBuilder<u32>),
         std::make_tuple(false, TypeBuilder<f16>, TypeBuilder<i32>),
         std::make_tuple(false, TypeBuilder<f16>, TypeBuilder<f32>),
-        std::make_tuple(false, TypeBuilder<f16>, TypeBuilder<vec2<f16>>),
+        std::make_tuple(false, TypeBuilder<f16>, TypeBuilder<vec2h>),
 
         // Component-wise identity, sparsely (non-exhaustively) covering types and vector sizes
-        std::make_tuple(true, TypeBuilder<vec2<u32>>, TypeBuilder<vec2<u32>>),
-        std::make_tuple(true, TypeBuilder<vec3<i32>>, TypeBuilder<vec3<i32>>),
-        std::make_tuple(true, TypeBuilder<vec4<f32>>, TypeBuilder<vec4<f32>>),
-        std::make_tuple(true, TypeBuilder<vec3<f16>>, TypeBuilder<vec3<f16>>),
-        std::make_tuple(false, TypeBuilder<vec2<u32>>, TypeBuilder<vec3<u32>>),
-        std::make_tuple(false, TypeBuilder<vec2<u32>>, TypeBuilder<vec4<u32>>),
-        std::make_tuple(false, TypeBuilder<vec3<i32>>, TypeBuilder<vec2<i32>>),
-        std::make_tuple(false, TypeBuilder<vec3<i32>>, TypeBuilder<vec4<i32>>),
-        std::make_tuple(false, TypeBuilder<vec4<f32>>, TypeBuilder<vec2<f32>>),
-        std::make_tuple(false, TypeBuilder<vec4<f32>>, TypeBuilder<vec3<f32>>),
+        std::make_tuple(true, TypeBuilder<vec2u>, TypeBuilder<vec2u>),
+        std::make_tuple(true, TypeBuilder<vec3i>, TypeBuilder<vec3i>),
+        std::make_tuple(true, TypeBuilder<vec4f>, TypeBuilder<vec4f>),
+        std::make_tuple(true, TypeBuilder<vec3h>, TypeBuilder<vec3h>),
+        std::make_tuple(false, TypeBuilder<vec2u>, TypeBuilder<vec3u>),
+        std::make_tuple(false, TypeBuilder<vec2u>, TypeBuilder<vec4u>),
+        std::make_tuple(false, TypeBuilder<vec3i>, TypeBuilder<vec2i>),
+        std::make_tuple(false, TypeBuilder<vec3i>, TypeBuilder<vec4i>),
+        std::make_tuple(false, TypeBuilder<vec4f>, TypeBuilder<vec2f>),
+        std::make_tuple(false, TypeBuilder<vec4f>, TypeBuilder<vec3f>),
 
         // Component-wise reinterpretation, sparsely (non-exhaustively) covering types and
         // vector sizes
-        std::make_tuple(true, TypeBuilder<vec2<u32>>, TypeBuilder<vec2<i32>>),
-        std::make_tuple(true, TypeBuilder<vec3<u32>>, TypeBuilder<vec3<f32>>),
-        std::make_tuple(true, TypeBuilder<vec4<i32>>, TypeBuilder<vec4<u32>>),
-        std::make_tuple(true, TypeBuilder<vec3<i32>>, TypeBuilder<vec3<f32>>),
-        std::make_tuple(true, TypeBuilder<vec3<f32>>, TypeBuilder<vec3<u32>>),
-        std::make_tuple(true, TypeBuilder<vec2<f32>>, TypeBuilder<vec2<i32>>),
-        std::make_tuple(true, TypeBuilder<vec2<u32>>, TypeBuilder<vec4<f16>>),
-        std::make_tuple(true, TypeBuilder<vec2<i32>>, TypeBuilder<vec4<f16>>),
-        std::make_tuple(true, TypeBuilder<vec2<f32>>, TypeBuilder<vec4<f16>>),
-        std::make_tuple(false, TypeBuilder<vec4<u32>>, TypeBuilder<vec4<f16>>),
-        std::make_tuple(false, TypeBuilder<vec2<i32>>, TypeBuilder<vec2<f16>>),
-        std::make_tuple(false, TypeBuilder<vec4<f32>>, TypeBuilder<vec4<f16>>),
+        std::make_tuple(true, TypeBuilder<vec2u>, TypeBuilder<vec2i>),
+        std::make_tuple(true, TypeBuilder<vec3u>, TypeBuilder<vec3f>),
+        std::make_tuple(true, TypeBuilder<vec4i>, TypeBuilder<vec4u>),
+        std::make_tuple(true, TypeBuilder<vec3i>, TypeBuilder<vec3f>),
+        std::make_tuple(true, TypeBuilder<vec3f>, TypeBuilder<vec3u>),
+        std::make_tuple(true, TypeBuilder<vec2f>, TypeBuilder<vec2i>),
+        std::make_tuple(true, TypeBuilder<vec2u>, TypeBuilder<vec4h>),
+        std::make_tuple(true, TypeBuilder<vec2i>, TypeBuilder<vec4h>),
+        std::make_tuple(true, TypeBuilder<vec2f>, TypeBuilder<vec4h>),
+        std::make_tuple(false, TypeBuilder<vec4u>, TypeBuilder<vec4h>),
+        std::make_tuple(false, TypeBuilder<vec2i>, TypeBuilder<vec2h>),
+        std::make_tuple(false, TypeBuilder<vec4f>, TypeBuilder<vec4h>),
         std::make_tuple(false, TypeBuilder<f16>, TypeBuilder<u32>),
         std::make_tuple(false, TypeBuilder<f16>, TypeBuilder<i32>),
         std::make_tuple(false, TypeBuilder<f16>, TypeBuilder<f32>),
-        std::make_tuple(false, TypeBuilder<f16>, TypeBuilder<vec2<f16>>)));
+        std::make_tuple(false, TypeBuilder<f16>, TypeBuilder<vec2h>)));
 
 }  // namespace tint::core::ir

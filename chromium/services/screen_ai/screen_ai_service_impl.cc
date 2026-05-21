@@ -37,9 +37,8 @@
 #if BUILDFLAG(IS_LINUX)
 #include "partition_alloc/buildflags.h"
 
-#if PA_BUILDFLAG( \
-    ENABLE_ALLOCATOR_SHIM_PARTITION_ALLOC_DISPATCH_WITH_ADVANCED_CHECKS_SUPPORT)
-#include "base/allocator/partition_allocator/src/partition_alloc/shim/allocator_shim_default_dispatch_to_partition_alloc_with_advanced_checks.h"
+#if PA_BUILDFLAG(USE_PARTITION_ALLOC_AS_MALLOC)
+#include "base/allocator/partition_allocator/src/partition_alloc/shim/allocator_shim_default_dispatch_to_partition_alloc.h"
 #endif
 #endif
 
@@ -225,7 +224,7 @@ class ModelDataHolder {
 
   // Returns the file handle for `relative_file_path` if it exists.
   base::File* GetModelFile(const char* relative_file_path) {
-    if (!base::Contains(model_files_, relative_file_path)) {
+    if (!model_files_.contains(relative_file_path)) {
       return nullptr;
     }
     return &model_files_[relative_file_path];
@@ -240,13 +239,11 @@ ScreenAIService::ScreenAIService(
     : factory_receiver_(this, std::move(receiver)),
       ocr_receiver_(this),
       main_content_extraction_receiver_(this) {
-#if BUILDFLAG(IS_LINUX) && \
-    PA_BUILDFLAG(          \
-        ENABLE_ALLOCATOR_SHIM_PARTITION_ALLOC_DISPATCH_WITH_ADVANCED_CHECKS_SUPPORT)
+#if BUILDFLAG(IS_LINUX) && PA_BUILDFLAG(USE_PARTITION_ALLOC_AS_MALLOC)
   // TODO(crbug.com/418199684): Remove when the bug is fixed.
   if (base::FeatureList::IsEnabled(
           ::features::kScreenAIPartitionAllocAdvancedChecksEnabled)) {
-    allocator_shim::InstallCustomDispatchForPartitionAllocWithAdvancedChecks();
+    allocator_shim::InstallPartitionAllocWithAdvancedChecks();
   }
 #endif
 
@@ -397,15 +394,14 @@ void ScreenAIService::BindMainContentExtractor(
 
 std::optional<chrome_screen_ai::VisualAnnotation>
 ScreenAIService::PerformOcrAndRecordMetrics(const SkBitmap& image) {
-  CHECK(base::Contains(ocr_client_types_,
-                       screen_ai_annotators_.current_receiver()));
+  CHECK(ocr_client_types_.contains(screen_ai_annotators_.current_receiver()));
   OcrClientTypeForMetrics client_type = GetClientType(
       ocr_client_types_.find(screen_ai_annotators_.current_receiver())->second);
   base::UmaHistogramEnumeration("Accessibility.ScreenAI.OCR.ClientType",
                                 client_type);
 
-  bool light_client = base::Contains(light_ocr_clients_,
-                                     screen_ai_annotators_.current_receiver());
+  bool light_client =
+      light_ocr_clients_.contains(screen_ai_annotators_.current_receiver());
   if (light_client != last_ocr_light_) {
     library_->SetOCRLightMode(light_client);
     last_ocr_light_ = light_client;
@@ -597,8 +593,8 @@ bool ScreenAIService::ExtractMainContentInternalAndRecordMetrics(
     const ui::AXTreeUpdate& snapshot,
     ui::AXTree& tree,
     std::optional<std::vector<int32_t>>& content_node_ids) {
-  CHECK(base::Contains(mce_client_types_,
-                       screen2x_main_content_extractors_.current_receiver()));
+  CHECK(mce_client_types_.contains(
+      screen2x_main_content_extractors_.current_receiver()));
   mce_last_used_ = base::TimeTicks::Now();
   MainContentExtractionClientTypeForMetrics client_type = GetClientType(
       mce_client_types_[screen2x_main_content_extractors_.current_receiver()]);

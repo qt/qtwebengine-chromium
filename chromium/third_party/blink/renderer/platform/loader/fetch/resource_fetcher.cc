@@ -35,7 +35,6 @@
 #include <utility>
 
 #include "base/auto_reset.h"
-#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_functions.h"
@@ -266,14 +265,6 @@ bool ShouldResourceBeKeptStrongReference(
                                                    settings_object_origin) &&
          !resource->GetResponse().CacheControlContainsNoCache() &&
          !resource->GetResponse().CacheControlContainsNoStore();
-}
-
-base::TimeDelta GetResourceStrongReferenceTimeout(Resource* resource) {
-  base::TimeDelta lifetime = resource->FreshnessLifetime();
-  if (resource->GetResponse().ResponseTime() + lifetime < base::Time::Now()) {
-    return base::TimeDelta();
-  }
-  return resource->GetResponse().ResponseTime() + lifetime - base::Time::Now();
 }
 
 static ResourceFetcher::ResourceFetcherSet& MainThreadFetchersSet() {
@@ -832,11 +823,7 @@ ResourceFetcher::ResourceFetcher(const ResourceFetcherInit& init)
       context_lifecycle_notifier_(init.context_lifecycle_notifier),
       auto_load_images_(true),
       allow_stale_resources_(false),
-      image_fetched_(false),
-      memory_pressure_listener_registration_(
-          FROM_HERE,
-          base::MemoryPressureListenerTag::kResourceFetcher,
-          this) {
+      image_fetched_(false) {
   InstanceCounters::IncrementCounter(InstanceCounters::kResourceFetcherCounter);
 
   if (IsMainThread()) {
@@ -875,12 +862,6 @@ bool ResourceFetcher::ResourceHasBeenEmulatedLoadStartedForInspector(
     return false;
   }
   return true;
-}
-
-const HeapHashSet<Member<Resource>>
-ResourceFetcher::MoveResourceStrongReferences() {
-  document_resource_strong_refs_total_size_ = 0;
-  return std::move(document_resource_strong_refs_);
 }
 
 mojom::ControllerServiceWorkerMode
@@ -1072,6 +1053,16 @@ Resource* ResourceFetcher::CreateResourceForStaticData(
     // TODO(yhirano): Consider removing this.
     if (!IsSupportedMimeType(response.MimeType().Utf8())) {
       return nullptr;
+    }
+
+    if (data && data->size()) {
+      // For cases where size limit is violated, including the URL in the report
+      // would send the large data. Use an empty URL in the report for now. This
+      // needs to be resolved by the spec.
+      // TODO(crbug.com/475522251): update report URL once behavior is defined
+      // in spec.
+      Context().CheckGuardrailsPolicyForAssetSize(
+          GuardrailPolicyAssetType::kData, data->size(), KURL());
     }
   } else {
     ArchiveResource* archive_resource =
@@ -1648,20 +1639,6 @@ Resource* ResourceFetcher::RequestResource(FetchParameters& params,
   return resource;
 }
 
-void ResourceFetcher::RemoveResourceStrongReference(Resource* resource) {
-  if (resource && document_resource_strong_refs_.Contains(resource)) {
-    const size_t resource_size =
-        static_cast<size_t>(resource->GetResponse().DecodedBodyLength());
-    document_resource_strong_refs_.erase(resource);
-    CHECK_GE(document_resource_strong_refs_total_size_, resource_size);
-    document_resource_strong_refs_total_size_ -= resource_size;
-  }
-}
-
-bool ResourceFetcher::HasStrongReferenceForTesting(Resource* resource) {
-  return document_resource_strong_refs_.Contains(resource);
-}
-
 void ResourceFetcher::ResourceTimingReportTimerFired(TimerBase* timer) {
   DCHECK_EQ(timer, &resource_timing_report_timer_);
   Vector<ScheduledResourceTimingInfo> timing_reports;
@@ -1990,7 +1967,7 @@ void ResourceFetcher::InsertAsPreloadIfNecessary(Resource* resource,
     return;
   }
   PreloadKey key(params.Url(), type);
-  if (base::Contains(preloads_, key)) {
+  if (preloads_.Contains(key)) {
     return;
   }
 
@@ -2295,7 +2272,7 @@ void ResourceFetcher::PopulateResourceRequestPermissionsPolicy(
     // policies, this might be removed.
     request->permissions_policy =
         *network::PermissionsPolicy::CreateFromParsedPolicy(
-            {}, {}, url::Origin::Create(request->url));
+            {}, url::Origin::Create(request->url));
   }
 }
 
@@ -2392,8 +2369,6 @@ void ResourceFetcher::ClearPreloads(ClearPreloadsPolicy policy) {
   preloads_.RemoveAll(keys_to_be_removed);
 
   matched_preloads_.clear();
-
-  memory_pressure_listener_registration_.Dispose();
 }
 
 void ResourceFetcher::ScheduleWarnUnusedPreloads(
@@ -3249,23 +3224,7 @@ void ResourceFetcher::MaybeSaveResourceToStrongReference(Resource* resource) {
     return;
   }
 
-  if (base::FeatureList::IsEnabled(
-          features::kResourceFetcherStoresStrongReferences)) {
-    // If the size would take us over, don't store it.
-    if (document_resource_strong_refs_total_size_ + resource_size >
-        total_size_threshold) {
-      return;
-    }
-    document_resource_strong_refs_.insert(resource);
-    document_resource_strong_refs_total_size_ += resource_size;
-    freezable_task_runner_->PostDelayedTask(
-        FROM_HERE,
-        blink::BindOnce(&ResourceFetcher::RemoveResourceStrongReference,
-                        WrapWeakPersistent(this), WrapWeakPersistent(resource)),
-        GetResourceStrongReferenceTimeout(resource));
-  } else {
-    MemoryCache::Get()->SaveStrongReference(resource);
-  }
+  MemoryCache::Get()->SaveStrongReference(resource);
 }
 
 void ResourceFetcher::StartSpeculativeImageDecodes() {
@@ -3289,18 +3248,6 @@ void ResourceFetcher::StartSpeculativeImageDecodes() {
       Context().StartSpeculativeImageDecode(resource);
     }
     speculative_decode_candidate_images_.erase(resource);
-  }
-}
-
-void ResourceFetcher::OnMemoryPressure(base::MemoryPressureLevel level) {
-  if (level == base::MEMORY_PRESSURE_LEVEL_NONE) {
-    return;
-  }
-
-  if (base::FeatureList::IsEnabled(
-          features::kReleaseResourceStrongReferencesOnMemoryPressure)) {
-    document_resource_strong_refs_.clear();
-    document_resource_strong_refs_total_size_ = 0;
   }
 }
 
@@ -3409,7 +3356,8 @@ bool ResourceFetcher::IsPotentiallyUnusedPreload(
       break;
   }
 
-  return base::Contains(context_->GetPotentiallyUnusedPreloads(), params.Url());
+  return std::ranges::contains(context_->GetPotentiallyUnusedPreloads(),
+                               params.Url());
 }
 
 void ResourceFetcher::Trace(Visitor* visitor) const {
@@ -3435,7 +3383,6 @@ void ResourceFetcher::Trace(Visitor* visitor) const {
   visitor->Trace(resource_timing_info_map_);
   visitor->Trace(blob_registry_remote_);
   visitor->Trace(subresource_web_bundles_);
-  visitor->Trace(document_resource_strong_refs_);
   visitor->Trace(context_lifecycle_notifier_);
 }
 

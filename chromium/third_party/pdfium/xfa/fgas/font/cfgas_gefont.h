@@ -53,6 +53,8 @@ class CFGAS_GEFont final : public Retainable {
     log_font_style_ = dwLogFontStyle;
   }
 
+  bool VerifyUnicode(wchar_t wcUnicode);
+
  private:
   CFGAS_GEFont();
   ~CFGAS_GEFont() override;

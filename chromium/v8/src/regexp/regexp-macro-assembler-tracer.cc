@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef V8_ENABLE_REGEXP_DIAGNOSTICS
+
 #include "src/regexp/regexp-macro-assembler-tracer.h"
 
 #include "src/objects/fixed-array-inl.h"
@@ -570,6 +572,7 @@ void RegExpMacroAssemblerTracer::CheckSpecialClassRanges(
     StandardCharacterSet type, Label* on_no_match) {
   PrintF(" CheckSpecialClassRanges(type='%c', label[%08x])\n",
          static_cast<char>(type), LabelToInt(on_no_match));
+  assembler_->CheckSpecialClassRanges(type, on_no_match);
 }
 
 void RegExpMacroAssemblerTracer::IfRegisterLT(int register_index,
@@ -631,3 +634,5 @@ DirectHandle<HeapObject> RegExpMacroAssemblerTracer::GetCode(
 
 }  // namespace internal
 }  // namespace v8
+
+#endif  // V8_ENABLE_REGEXP_DIAGNOSTICS

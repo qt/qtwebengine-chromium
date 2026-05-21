@@ -249,6 +249,9 @@ VKAPI_ATTR bool VKAPI_CALL loader_icd_init_entries(struct loader_instance* inst,
     LOOKUP_GIPA(DestroyDebugUtilsMessengerEXT);
     LOOKUP_GIPA(SubmitDebugUtilsMessageEXT);
 
+    // ---- VK_EXT_descriptor_heap extension commands
+    LOOKUP_GIPA(GetPhysicalDeviceDescriptorSizeEXT);
+
     // ---- VK_EXT_sample_locations extension commands
     LOOKUP_GIPA(GetPhysicalDeviceMultisamplePropertiesEXT);
 
@@ -333,6 +336,14 @@ VKAPI_ATTR bool VKAPI_CALL loader_icd_init_entries(struct loader_instance* inst,
 
     // ---- VK_ARM_performance_counters_by_region extension commands
     LOOKUP_GIPA(EnumeratePhysicalDeviceQueueFamilyPerformanceCountersByRegionARM);
+
+    // ---- VK_SEC_ubm_surface extension commands
+#if defined(VK_USE_PLATFORM_UBM_SEC)
+    LOOKUP_GIPA(CreateUbmSurfaceSEC);
+#endif // VK_USE_PLATFORM_UBM_SEC
+#if defined(VK_USE_PLATFORM_UBM_SEC)
+    LOOKUP_GIPA(GetPhysicalDeviceUbmPresentationSupportSEC);
+#endif // VK_USE_PLATFORM_UBM_SEC
 
 #undef LOOKUP_REQUIRED_GIPA
 #undef LOOKUP_GIPA
@@ -820,6 +831,7 @@ VKAPI_ATTR void VKAPI_CALL loader_init_device_extension_dispatch_table(struct lo
     table->GetImageViewHandleNVX = (PFN_vkGetImageViewHandleNVX)gdpa(dev, "vkGetImageViewHandleNVX");
     table->GetImageViewHandle64NVX = (PFN_vkGetImageViewHandle64NVX)gdpa(dev, "vkGetImageViewHandle64NVX");
     table->GetImageViewAddressNVX = (PFN_vkGetImageViewAddressNVX)gdpa(dev, "vkGetImageViewAddressNVX");
+    table->GetDeviceCombinedImageSamplerIndexNVX = (PFN_vkGetDeviceCombinedImageSamplerIndexNVX)gdpa(dev, "vkGetDeviceCombinedImageSamplerIndexNVX");
 
     // ---- VK_AMD_draw_indirect_count extension commands
     table->CmdDrawIndirectCountAMD = (PFN_vkCmdDrawIndirectCountAMD)gdpa(dev, "vkCmdDrawIndirectCountAMD");
@@ -898,6 +910,17 @@ VKAPI_ATTR void VKAPI_CALL loader_init_device_extension_dispatch_table(struct lo
 #if defined(VK_ENABLE_BETA_EXTENSIONS)
     table->CmdDispatchGraphIndirectCountAMDX = (PFN_vkCmdDispatchGraphIndirectCountAMDX)gdpa(dev, "vkCmdDispatchGraphIndirectCountAMDX");
 #endif // VK_ENABLE_BETA_EXTENSIONS
+
+    // ---- VK_EXT_descriptor_heap extension commands
+    table->WriteSamplerDescriptorsEXT = (PFN_vkWriteSamplerDescriptorsEXT)gdpa(dev, "vkWriteSamplerDescriptorsEXT");
+    table->WriteResourceDescriptorsEXT = (PFN_vkWriteResourceDescriptorsEXT)gdpa(dev, "vkWriteResourceDescriptorsEXT");
+    table->CmdBindSamplerHeapEXT = (PFN_vkCmdBindSamplerHeapEXT)gdpa(dev, "vkCmdBindSamplerHeapEXT");
+    table->CmdBindResourceHeapEXT = (PFN_vkCmdBindResourceHeapEXT)gdpa(dev, "vkCmdBindResourceHeapEXT");
+    table->CmdPushDataEXT = (PFN_vkCmdPushDataEXT)gdpa(dev, "vkCmdPushDataEXT");
+    table->GetImageOpaqueCaptureDataEXT = (PFN_vkGetImageOpaqueCaptureDataEXT)gdpa(dev, "vkGetImageOpaqueCaptureDataEXT");
+    table->RegisterCustomBorderColorEXT = (PFN_vkRegisterCustomBorderColorEXT)gdpa(dev, "vkRegisterCustomBorderColorEXT");
+    table->UnregisterCustomBorderColorEXT = (PFN_vkUnregisterCustomBorderColorEXT)gdpa(dev, "vkUnregisterCustomBorderColorEXT");
+    table->GetTensorOpaqueCaptureDataARM = (PFN_vkGetTensorOpaqueCaptureDataARM)gdpa(dev, "vkGetTensorOpaqueCaptureDataARM");
 
     // ---- VK_EXT_sample_locations extension commands
     table->CmdSetSampleLocationsEXT = (PFN_vkCmdSetSampleLocationsEXT)gdpa(dev, "vkCmdSetSampleLocationsEXT");
@@ -1330,17 +1353,6 @@ VKAPI_ATTR void VKAPI_CALL loader_init_device_extension_dispatch_table(struct lo
     table->UpdateIndirectExecutionSetPipelineEXT = (PFN_vkUpdateIndirectExecutionSetPipelineEXT)gdpa(dev, "vkUpdateIndirectExecutionSetPipelineEXT");
     table->UpdateIndirectExecutionSetShaderEXT = (PFN_vkUpdateIndirectExecutionSetShaderEXT)gdpa(dev, "vkUpdateIndirectExecutionSetShaderEXT");
 
-    // ---- VK_OHOS_native_buffer extension commands
-#if defined(VK_USE_PLATFORM_OHOS)
-    table->GetSwapchainGrallocUsageOHOS = (PFN_vkGetSwapchainGrallocUsageOHOS)gdpa(dev, "vkGetSwapchainGrallocUsageOHOS");
-#endif // VK_USE_PLATFORM_OHOS
-#if defined(VK_USE_PLATFORM_OHOS)
-    table->AcquireImageOHOS = (PFN_vkAcquireImageOHOS)gdpa(dev, "vkAcquireImageOHOS");
-#endif // VK_USE_PLATFORM_OHOS
-#if defined(VK_USE_PLATFORM_OHOS)
-    table->QueueSignalReleaseImageOHOS = (PFN_vkQueueSignalReleaseImageOHOS)gdpa(dev, "vkQueueSignalReleaseImageOHOS");
-#endif // VK_USE_PLATFORM_OHOS
-
     // ---- VK_EXT_external_memory_metal extension commands
 #if defined(VK_USE_PLATFORM_METAL_EXT)
     table->GetMemoryMetalHandleEXT = (PFN_vkGetMemoryMetalHandleEXT)gdpa(dev, "vkGetMemoryMetalHandleEXT");
@@ -1354,6 +1366,9 @@ VKAPI_ATTR void VKAPI_CALL loader_init_device_extension_dispatch_table(struct lo
 
     // ---- VK_EXT_custom_resolve extension commands
     table->CmdBeginCustomResolveEXT = (PFN_vkCmdBeginCustomResolveEXT)gdpa(dev, "vkCmdBeginCustomResolveEXT");
+
+    // ---- VK_NV_compute_occupancy_priority extension commands
+    table->CmdSetComputeOccupancyPriorityNV = (PFN_vkCmdSetComputeOccupancyPriorityNV)gdpa(dev, "vkCmdSetComputeOccupancyPriorityNV");
 
     // ---- VK_KHR_acceleration_structure extension commands
     table->CreateAccelerationStructureKHR = (PFN_vkCreateAccelerationStructureKHR)gdpa(dev, "vkCreateAccelerationStructureKHR");
@@ -1580,6 +1595,9 @@ VKAPI_ATTR void VKAPI_CALL loader_init_instance_extension_dispatch_table(VkLayer
     table->DestroyDebugUtilsMessengerEXT = (PFN_vkDestroyDebugUtilsMessengerEXT)gpa(inst, "vkDestroyDebugUtilsMessengerEXT");
     table->SubmitDebugUtilsMessageEXT = (PFN_vkSubmitDebugUtilsMessageEXT)gpa(inst, "vkSubmitDebugUtilsMessageEXT");
 
+    // ---- VK_EXT_descriptor_heap extension commands
+    table->GetPhysicalDeviceDescriptorSizeEXT = (PFN_vkGetPhysicalDeviceDescriptorSizeEXT)gpa(inst, "vkGetPhysicalDeviceDescriptorSizeEXT");
+
     // ---- VK_EXT_sample_locations extension commands
     table->GetPhysicalDeviceMultisamplePropertiesEXT = (PFN_vkGetPhysicalDeviceMultisamplePropertiesEXT)gpa(inst, "vkGetPhysicalDeviceMultisamplePropertiesEXT");
 
@@ -1664,6 +1682,14 @@ VKAPI_ATTR void VKAPI_CALL loader_init_instance_extension_dispatch_table(VkLayer
 
     // ---- VK_ARM_performance_counters_by_region extension commands
     table->EnumeratePhysicalDeviceQueueFamilyPerformanceCountersByRegionARM = (PFN_vkEnumeratePhysicalDeviceQueueFamilyPerformanceCountersByRegionARM)gpa(inst, "vkEnumeratePhysicalDeviceQueueFamilyPerformanceCountersByRegionARM");
+
+    // ---- VK_SEC_ubm_surface extension commands
+#if defined(VK_USE_PLATFORM_UBM_SEC)
+    table->CreateUbmSurfaceSEC = (PFN_vkCreateUbmSurfaceSEC)gpa(inst, "vkCreateUbmSurfaceSEC");
+#endif // VK_USE_PLATFORM_UBM_SEC
+#if defined(VK_USE_PLATFORM_UBM_SEC)
+    table->GetPhysicalDeviceUbmPresentationSupportSEC = (PFN_vkGetPhysicalDeviceUbmPresentationSupportSEC)gpa(inst, "vkGetPhysicalDeviceUbmPresentationSupportSEC");
+#endif // VK_USE_PLATFORM_UBM_SEC
 }
 
 // Functions that required a terminator need to have a separate dispatch table which contains their corresponding
@@ -2824,6 +2850,7 @@ VKAPI_ATTR void* VKAPI_CALL loader_lookup_device_dispatch_table(const VkLayerDis
     if (!strcmp(name, "GetImageViewHandleNVX")) return (void *)table->GetImageViewHandleNVX;
     if (!strcmp(name, "GetImageViewHandle64NVX")) return (void *)table->GetImageViewHandle64NVX;
     if (!strcmp(name, "GetImageViewAddressNVX")) return (void *)table->GetImageViewAddressNVX;
+    if (!strcmp(name, "GetDeviceCombinedImageSamplerIndexNVX")) return (void *)table->GetDeviceCombinedImageSamplerIndexNVX;
 
     // ---- VK_AMD_draw_indirect_count extension commands
     if (!strcmp(name, "CmdDrawIndirectCountAMD")) return (void *)table->CmdDrawIndirectCountAMD;
@@ -2902,6 +2929,17 @@ VKAPI_ATTR void* VKAPI_CALL loader_lookup_device_dispatch_table(const VkLayerDis
 #if defined(VK_ENABLE_BETA_EXTENSIONS)
     if (!strcmp(name, "CmdDispatchGraphIndirectCountAMDX")) return (void *)table->CmdDispatchGraphIndirectCountAMDX;
 #endif // VK_ENABLE_BETA_EXTENSIONS
+
+    // ---- VK_EXT_descriptor_heap extension commands
+    if (!strcmp(name, "WriteSamplerDescriptorsEXT")) return (void *)table->WriteSamplerDescriptorsEXT;
+    if (!strcmp(name, "WriteResourceDescriptorsEXT")) return (void *)table->WriteResourceDescriptorsEXT;
+    if (!strcmp(name, "CmdBindSamplerHeapEXT")) return (void *)table->CmdBindSamplerHeapEXT;
+    if (!strcmp(name, "CmdBindResourceHeapEXT")) return (void *)table->CmdBindResourceHeapEXT;
+    if (!strcmp(name, "CmdPushDataEXT")) return (void *)table->CmdPushDataEXT;
+    if (!strcmp(name, "GetImageOpaqueCaptureDataEXT")) return (void *)table->GetImageOpaqueCaptureDataEXT;
+    if (!strcmp(name, "RegisterCustomBorderColorEXT")) return (void *)table->RegisterCustomBorderColorEXT;
+    if (!strcmp(name, "UnregisterCustomBorderColorEXT")) return (void *)table->UnregisterCustomBorderColorEXT;
+    if (!strcmp(name, "GetTensorOpaqueCaptureDataARM")) return (void *)table->GetTensorOpaqueCaptureDataARM;
 
     // ---- VK_EXT_sample_locations extension commands
     if (!strcmp(name, "CmdSetSampleLocationsEXT")) return (void *)table->CmdSetSampleLocationsEXT;
@@ -3334,17 +3372,6 @@ VKAPI_ATTR void* VKAPI_CALL loader_lookup_device_dispatch_table(const VkLayerDis
     if (!strcmp(name, "UpdateIndirectExecutionSetPipelineEXT")) return (void *)table->UpdateIndirectExecutionSetPipelineEXT;
     if (!strcmp(name, "UpdateIndirectExecutionSetShaderEXT")) return (void *)table->UpdateIndirectExecutionSetShaderEXT;
 
-    // ---- VK_OHOS_native_buffer extension commands
-#if defined(VK_USE_PLATFORM_OHOS)
-    if (!strcmp(name, "GetSwapchainGrallocUsageOHOS")) return (void *)table->GetSwapchainGrallocUsageOHOS;
-#endif // VK_USE_PLATFORM_OHOS
-#if defined(VK_USE_PLATFORM_OHOS)
-    if (!strcmp(name, "AcquireImageOHOS")) return (void *)table->AcquireImageOHOS;
-#endif // VK_USE_PLATFORM_OHOS
-#if defined(VK_USE_PLATFORM_OHOS)
-    if (!strcmp(name, "QueueSignalReleaseImageOHOS")) return (void *)table->QueueSignalReleaseImageOHOS;
-#endif // VK_USE_PLATFORM_OHOS
-
     // ---- VK_EXT_external_memory_metal extension commands
 #if defined(VK_USE_PLATFORM_METAL_EXT)
     if (!strcmp(name, "GetMemoryMetalHandleEXT")) return (void *)table->GetMemoryMetalHandleEXT;
@@ -3358,6 +3385,9 @@ VKAPI_ATTR void* VKAPI_CALL loader_lookup_device_dispatch_table(const VkLayerDis
 
     // ---- VK_EXT_custom_resolve extension commands
     if (!strcmp(name, "CmdBeginCustomResolveEXT")) return (void *)table->CmdBeginCustomResolveEXT;
+
+    // ---- VK_NV_compute_occupancy_priority extension commands
+    if (!strcmp(name, "CmdSetComputeOccupancyPriorityNV")) return (void *)table->CmdSetComputeOccupancyPriorityNV;
 
     // ---- VK_KHR_acceleration_structure extension commands
     if (!strcmp(name, "CreateAccelerationStructureKHR")) return (void *)table->CreateAccelerationStructureKHR;
@@ -3589,6 +3619,9 @@ VKAPI_ATTR void* VKAPI_CALL loader_lookup_instance_dispatch_table(const VkLayerI
     if (!strcmp(name, "DestroyDebugUtilsMessengerEXT")) return (void *)table->DestroyDebugUtilsMessengerEXT;
     if (!strcmp(name, "SubmitDebugUtilsMessageEXT")) return (void *)table->SubmitDebugUtilsMessageEXT;
 
+    // ---- VK_EXT_descriptor_heap extension commands
+    if (!strcmp(name, "GetPhysicalDeviceDescriptorSizeEXT")) return (void *)table->GetPhysicalDeviceDescriptorSizeEXT;
+
     // ---- VK_EXT_sample_locations extension commands
     if (!strcmp(name, "GetPhysicalDeviceMultisamplePropertiesEXT")) return (void *)table->GetPhysicalDeviceMultisamplePropertiesEXT;
 
@@ -3673,6 +3706,14 @@ VKAPI_ATTR void* VKAPI_CALL loader_lookup_instance_dispatch_table(const VkLayerI
 
     // ---- VK_ARM_performance_counters_by_region extension commands
     if (!strcmp(name, "EnumeratePhysicalDeviceQueueFamilyPerformanceCountersByRegionARM")) return (void *)table->EnumeratePhysicalDeviceQueueFamilyPerformanceCountersByRegionARM;
+
+    // ---- VK_SEC_ubm_surface extension commands
+#if defined(VK_USE_PLATFORM_UBM_SEC)
+    if (!strcmp(name, "CreateUbmSurfaceSEC")) return (void *)table->CreateUbmSurfaceSEC;
+#endif // VK_USE_PLATFORM_UBM_SEC
+#if defined(VK_USE_PLATFORM_UBM_SEC)
+    if (!strcmp(name, "GetPhysicalDeviceUbmPresentationSupportSEC")) return (void *)table->GetPhysicalDeviceUbmPresentationSupportSEC;
+#endif // VK_USE_PLATFORM_UBM_SEC
 
     *found_name = false;
     return NULL;
@@ -5999,6 +6040,20 @@ VKAPI_ATTR VkResult VKAPI_CALL GetImageViewAddressNVX(
     return disp->GetImageViewAddressNVX(device, imageView, pProperties);
 }
 
+VKAPI_ATTR uint64_t VKAPI_CALL GetDeviceCombinedImageSamplerIndexNVX(
+    VkDevice                                    device,
+    uint64_t                                    imageViewIndex,
+    uint64_t                                    samplerIndex) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(device);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkGetDeviceCombinedImageSamplerIndexNVX: Invalid device "
+                   "[VUID-vkGetDeviceCombinedImageSamplerIndexNVX-device-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    return disp->GetDeviceCombinedImageSamplerIndexNVX(device, imageViewIndex, samplerIndex);
+}
+
 
 // ---- VK_AMD_draw_indirect_count extension trampoline/terminators
 
@@ -6730,6 +6785,164 @@ VKAPI_ATTR void VKAPI_CALL CmdDispatchGraphIndirectCountAMDX(
 }
 
 #endif // VK_ENABLE_BETA_EXTENSIONS
+
+// ---- VK_EXT_descriptor_heap extension trampoline/terminators
+
+VKAPI_ATTR VkResult VKAPI_CALL WriteSamplerDescriptorsEXT(
+    VkDevice                                    device,
+    uint32_t                                    samplerCount,
+    const VkSamplerCreateInfo*                  pSamplers,
+    const VkHostAddressRangeEXT*                pDescriptors) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(device);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkWriteSamplerDescriptorsEXT: Invalid device "
+                   "[VUID-vkWriteSamplerDescriptorsEXT-device-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    return disp->WriteSamplerDescriptorsEXT(device, samplerCount, pSamplers, pDescriptors);
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL WriteResourceDescriptorsEXT(
+    VkDevice                                    device,
+    uint32_t                                    resourceCount,
+    const VkResourceDescriptorInfoEXT*          pResources,
+    const VkHostAddressRangeEXT*                pDescriptors) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(device);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkWriteResourceDescriptorsEXT: Invalid device "
+                   "[VUID-vkWriteResourceDescriptorsEXT-device-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    return disp->WriteResourceDescriptorsEXT(device, resourceCount, pResources, pDescriptors);
+}
+
+VKAPI_ATTR void VKAPI_CALL CmdBindSamplerHeapEXT(
+    VkCommandBuffer                             commandBuffer,
+    const VkBindHeapInfoEXT*                    pBindInfo) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(commandBuffer);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkCmdBindSamplerHeapEXT: Invalid commandBuffer "
+                   "[VUID-vkCmdBindSamplerHeapEXT-commandBuffer-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    disp->CmdBindSamplerHeapEXT(commandBuffer, pBindInfo);
+}
+
+VKAPI_ATTR void VKAPI_CALL CmdBindResourceHeapEXT(
+    VkCommandBuffer                             commandBuffer,
+    const VkBindHeapInfoEXT*                    pBindInfo) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(commandBuffer);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkCmdBindResourceHeapEXT: Invalid commandBuffer "
+                   "[VUID-vkCmdBindResourceHeapEXT-commandBuffer-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    disp->CmdBindResourceHeapEXT(commandBuffer, pBindInfo);
+}
+
+VKAPI_ATTR void VKAPI_CALL CmdPushDataEXT(
+    VkCommandBuffer                             commandBuffer,
+    const VkPushDataInfoEXT*                    pPushDataInfo) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(commandBuffer);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkCmdPushDataEXT: Invalid commandBuffer "
+                   "[VUID-vkCmdPushDataEXT-commandBuffer-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    disp->CmdPushDataEXT(commandBuffer, pPushDataInfo);
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL GetImageOpaqueCaptureDataEXT(
+    VkDevice                                    device,
+    uint32_t                                    imageCount,
+    const VkImage*                              pImages,
+    VkHostAddressRangeEXT*                      pDatas) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(device);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkGetImageOpaqueCaptureDataEXT: Invalid device "
+                   "[VUID-vkGetImageOpaqueCaptureDataEXT-device-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    return disp->GetImageOpaqueCaptureDataEXT(device, imageCount, pImages, pDatas);
+}
+
+VKAPI_ATTR VkDeviceSize VKAPI_CALL GetPhysicalDeviceDescriptorSizeEXT(
+    VkPhysicalDevice                            physicalDevice,
+    VkDescriptorType                            descriptorType) {
+    const VkLayerInstanceDispatchTable *disp;
+    VkPhysicalDevice unwrapped_phys_dev = loader_unwrap_physical_device(physicalDevice);
+    if (VK_NULL_HANDLE == unwrapped_phys_dev) {
+        loader_log(NULL, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkGetPhysicalDeviceDescriptorSizeEXT: Invalid physicalDevice "
+                   "[VUID-vkGetPhysicalDeviceDescriptorSizeEXT-physicalDevice-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    disp = loader_get_instance_layer_dispatch(physicalDevice);
+    return disp->GetPhysicalDeviceDescriptorSizeEXT(unwrapped_phys_dev, descriptorType);
+}
+
+VKAPI_ATTR VkDeviceSize VKAPI_CALL terminator_GetPhysicalDeviceDescriptorSizeEXT(
+    VkPhysicalDevice                            physicalDevice,
+    VkDescriptorType                            descriptorType) {
+    struct loader_physical_device_term *phys_dev_term = (struct loader_physical_device_term *)physicalDevice;
+    struct loader_icd_term *icd_term = phys_dev_term->this_icd_term;
+    if (NULL == icd_term->dispatch.GetPhysicalDeviceDescriptorSizeEXT) {
+        loader_log(icd_term->this_instance, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT, 0,
+                   "ICD associated with VkPhysicalDevice does not support GetPhysicalDeviceDescriptorSizeEXT");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    return icd_term->dispatch.GetPhysicalDeviceDescriptorSizeEXT(phys_dev_term->phys_dev, descriptorType);
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL RegisterCustomBorderColorEXT(
+    VkDevice                                    device,
+    const VkSamplerCustomBorderColorCreateInfoEXT* pBorderColor,
+    VkBool32                                    requestIndex,
+    uint32_t*                                   pIndex) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(device);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkRegisterCustomBorderColorEXT: Invalid device "
+                   "[VUID-vkRegisterCustomBorderColorEXT-device-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    return disp->RegisterCustomBorderColorEXT(device, pBorderColor, requestIndex, pIndex);
+}
+
+VKAPI_ATTR void VKAPI_CALL UnregisterCustomBorderColorEXT(
+    VkDevice                                    device,
+    uint32_t                                    index) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(device);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkUnregisterCustomBorderColorEXT: Invalid device "
+                   "[VUID-vkUnregisterCustomBorderColorEXT-device-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    disp->UnregisterCustomBorderColorEXT(device, index);
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL GetTensorOpaqueCaptureDataARM(
+    VkDevice                                    device,
+    uint32_t                                    tensorCount,
+    const VkTensorARM*                          pTensors,
+    VkHostAddressRangeEXT*                      pDatas) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(device);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkGetTensorOpaqueCaptureDataARM: Invalid device "
+                   "[VUID-vkGetTensorOpaqueCaptureDataARM-device-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    return disp->GetTensorOpaqueCaptureDataARM(device, tensorCount, pTensors, pDatas);
+}
+
 
 // ---- VK_EXT_sample_locations extension trampoline/terminators
 
@@ -8943,7 +9156,7 @@ VKAPI_ATTR void VKAPI_CALL CmdSetPrimitiveRestartEnableEXT(
 
 // ---- VK_EXT_color_write_enable extension trampoline/terminators
 
-VKAPI_ATTR void                                    VKAPI_CALL CmdSetColorWriteEnableEXT(
+VKAPI_ATTR void VKAPI_CALL CmdSetColorWriteEnableEXT(
     VkCommandBuffer                             commandBuffer,
     uint32_t                                    attachmentCount,
     const VkBool32*                             pColorWriteEnables) {
@@ -10961,62 +11174,6 @@ VKAPI_ATTR VkResult VKAPI_CALL terminator_CreateSurfaceOHOS(
 
 #endif // VK_USE_PLATFORM_OHOS
 
-// ---- VK_OHOS_native_buffer extension trampoline/terminators
-
-#if defined(VK_USE_PLATFORM_OHOS)
-VKAPI_ATTR VkResult VKAPI_CALL GetSwapchainGrallocUsageOHOS(
-    VkDevice                                    device,
-    VkFormat                                    format,
-    VkImageUsageFlags                           imageUsage,
-    uint64_t*                                   grallocUsage) {
-    const VkLayerDispatchTable *disp = loader_get_dispatch(device);
-    if (NULL == disp) {
-        loader_log(NULL, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
-                   "vkGetSwapchainGrallocUsageOHOS: Invalid device "
-                   "[VUID-vkGetSwapchainGrallocUsageOHOS-device-parameter]");
-        abort(); /* Intentionally fail so user can correct issue. */
-    }
-    return disp->GetSwapchainGrallocUsageOHOS(device, format, imageUsage, grallocUsage);
-}
-
-#endif // VK_USE_PLATFORM_OHOS
-#if defined(VK_USE_PLATFORM_OHOS)
-VKAPI_ATTR VkResult VKAPI_CALL AcquireImageOHOS(
-    VkDevice                                    device,
-    VkImage                                     image,
-    int32_t                                     nativeFenceFd,
-    VkSemaphore                                 semaphore,
-    VkFence                                     fence) {
-    const VkLayerDispatchTable *disp = loader_get_dispatch(device);
-    if (NULL == disp) {
-        loader_log(NULL, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
-                   "vkAcquireImageOHOS: Invalid device "
-                   "[VUID-vkAcquireImageOHOS-device-parameter]");
-        abort(); /* Intentionally fail so user can correct issue. */
-    }
-    return disp->AcquireImageOHOS(device, image, nativeFenceFd, semaphore, fence);
-}
-
-#endif // VK_USE_PLATFORM_OHOS
-#if defined(VK_USE_PLATFORM_OHOS)
-VKAPI_ATTR VkResult VKAPI_CALL QueueSignalReleaseImageOHOS(
-    VkQueue                                     queue,
-    uint32_t                                    waitSemaphoreCount,
-    const VkSemaphore*                          pWaitSemaphores,
-    VkImage                                     image,
-    int32_t*                                    pNativeFenceFd) {
-    const VkLayerDispatchTable *disp = loader_get_dispatch(queue);
-    if (NULL == disp) {
-        loader_log(NULL, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
-                   "vkQueueSignalReleaseImageOHOS: Invalid queue "
-                   "[VUID-vkQueueSignalReleaseImageOHOS-queue-parameter]");
-        abort(); /* Intentionally fail so user can correct issue. */
-    }
-    return disp->QueueSignalReleaseImageOHOS(queue, waitSemaphoreCount, pWaitSemaphores, image, pNativeFenceFd);
-}
-
-#endif // VK_USE_PLATFORM_OHOS
-
 // ---- VK_NV_cooperative_matrix2 extension trampoline/terminators
 
 VKAPI_ATTR VkResult VKAPI_CALL GetPhysicalDeviceCooperativeMatrixFlexibleDimensionsPropertiesNV(
@@ -11154,6 +11311,90 @@ VKAPI_ATTR void VKAPI_CALL CmdBeginCustomResolveEXT(
     disp->CmdBeginCustomResolveEXT(commandBuffer, pBeginCustomResolveInfo);
 }
 
+
+// ---- VK_NV_compute_occupancy_priority extension trampoline/terminators
+
+VKAPI_ATTR void VKAPI_CALL CmdSetComputeOccupancyPriorityNV(
+    VkCommandBuffer                             commandBuffer,
+    const VkComputeOccupancyPriorityParametersNV* pParameters) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(commandBuffer);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkCmdSetComputeOccupancyPriorityNV: Invalid commandBuffer "
+                   "[VUID-vkCmdSetComputeOccupancyPriorityNV-commandBuffer-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    disp->CmdSetComputeOccupancyPriorityNV(commandBuffer, pParameters);
+}
+
+
+// ---- VK_SEC_ubm_surface extension trampoline/terminators
+
+#if defined(VK_USE_PLATFORM_UBM_SEC)
+VKAPI_ATTR VkResult VKAPI_CALL CreateUbmSurfaceSEC(
+    VkInstance                                  instance,
+    const VkUbmSurfaceCreateInfoSEC*            pCreateInfo,
+    const VkAllocationCallbacks*                pAllocator,
+    VkSurfaceKHR*                               pSurface) {
+    struct loader_instance *inst = loader_get_instance(instance);
+    if (NULL == inst) {
+        loader_log(
+            NULL, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+            "vkCreateUbmSurfaceSEC: Invalid instance [VUID-vkCreateUbmSurfaceSEC-instance-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+#error("Not implemented. Likely needs to be manually generated!");
+    return inst->disp->CreateUbmSurfaceSEC(instance, pCreateInfo, pAllocator, pSurface);
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL terminator_CreateUbmSurfaceSEC(
+    VkInstance                                  instance,
+    const VkUbmSurfaceCreateInfoSEC*            pCreateInfo,
+    const VkAllocationCallbacks*                pAllocator,
+    VkSurfaceKHR*                               pSurface) {
+    struct loader_instance *inst = loader_get_instance(instance);
+    if (NULL == inst) {
+        loader_log(
+            NULL, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+            "vkCreateUbmSurfaceSEC: Invalid instance [VUID-vkCreateUbmSurfaceSEC-instance-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+#error("Not implemented. Likely needs to be manually generated!");
+}
+
+#endif // VK_USE_PLATFORM_UBM_SEC
+#if defined(VK_USE_PLATFORM_UBM_SEC)
+VKAPI_ATTR VkBool32 VKAPI_CALL GetPhysicalDeviceUbmPresentationSupportSEC(
+    VkPhysicalDevice                            physicalDevice,
+    uint32_t                                    queueFamilyIndex,
+    struct ubm_device*                          ubm_device) {
+    const VkLayerInstanceDispatchTable *disp;
+    VkPhysicalDevice unwrapped_phys_dev = loader_unwrap_physical_device(physicalDevice);
+    if (VK_NULL_HANDLE == unwrapped_phys_dev) {
+        loader_log(NULL, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkGetPhysicalDeviceUbmPresentationSupportSEC: Invalid physicalDevice "
+                   "[VUID-vkGetPhysicalDeviceUbmPresentationSupportSEC-physicalDevice-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    disp = loader_get_instance_layer_dispatch(physicalDevice);
+    return disp->GetPhysicalDeviceUbmPresentationSupportSEC(unwrapped_phys_dev, queueFamilyIndex, ubm_device);
+}
+
+VKAPI_ATTR VkBool32 VKAPI_CALL terminator_GetPhysicalDeviceUbmPresentationSupportSEC(
+    VkPhysicalDevice                            physicalDevice,
+    uint32_t                                    queueFamilyIndex,
+    struct ubm_device*                          ubm_device) {
+    struct loader_physical_device_term *phys_dev_term = (struct loader_physical_device_term *)physicalDevice;
+    struct loader_icd_term *icd_term = phys_dev_term->this_icd_term;
+    if (NULL == icd_term->dispatch.GetPhysicalDeviceUbmPresentationSupportSEC) {
+        loader_log(icd_term->this_instance, VULKAN_LOADER_ERROR_BIT, 0,
+                   "ICD associated with VkPhysicalDevice does not support GetPhysicalDeviceUbmPresentationSupportSEC");
+        return VK_ERROR_EXTENSION_NOT_PRESENT;
+    }
+    return icd_term->dispatch.GetPhysicalDeviceUbmPresentationSupportSEC(phys_dev_term->phys_dev, queueFamilyIndex, ubm_device);
+}
+
+#endif // VK_USE_PLATFORM_UBM_SEC
 
 // ---- VK_KHR_acceleration_structure extension trampoline/terminators
 
@@ -12287,6 +12528,10 @@ bool extension_instance_gpa(struct loader_instance *ptr_instance, const char *na
         *addr = (void *)GetImageViewAddressNVX;
         return true;
     }
+    if (!strcmp("vkGetDeviceCombinedImageSamplerIndexNVX", name)) {
+        *addr = (void *)GetDeviceCombinedImageSamplerIndexNVX;
+        return true;
+    }
 
     // ---- VK_AMD_draw_indirect_count extension commands
     if (!strcmp("vkCmdDrawIndirectCountAMD", name)) {
@@ -12525,6 +12770,48 @@ bool extension_instance_gpa(struct loader_instance *ptr_instance, const char *na
         return true;
     }
 #endif // VK_ENABLE_BETA_EXTENSIONS
+
+    // ---- VK_EXT_descriptor_heap extension commands
+    if (!strcmp("vkWriteSamplerDescriptorsEXT", name)) {
+        *addr = (void *)WriteSamplerDescriptorsEXT;
+        return true;
+    }
+    if (!strcmp("vkWriteResourceDescriptorsEXT", name)) {
+        *addr = (void *)WriteResourceDescriptorsEXT;
+        return true;
+    }
+    if (!strcmp("vkCmdBindSamplerHeapEXT", name)) {
+        *addr = (void *)CmdBindSamplerHeapEXT;
+        return true;
+    }
+    if (!strcmp("vkCmdBindResourceHeapEXT", name)) {
+        *addr = (void *)CmdBindResourceHeapEXT;
+        return true;
+    }
+    if (!strcmp("vkCmdPushDataEXT", name)) {
+        *addr = (void *)CmdPushDataEXT;
+        return true;
+    }
+    if (!strcmp("vkGetImageOpaqueCaptureDataEXT", name)) {
+        *addr = (void *)GetImageOpaqueCaptureDataEXT;
+        return true;
+    }
+    if (!strcmp("vkGetPhysicalDeviceDescriptorSizeEXT", name)) {
+        *addr = (void *)GetPhysicalDeviceDescriptorSizeEXT;
+        return true;
+    }
+    if (!strcmp("vkRegisterCustomBorderColorEXT", name)) {
+        *addr = (void *)RegisterCustomBorderColorEXT;
+        return true;
+    }
+    if (!strcmp("vkUnregisterCustomBorderColorEXT", name)) {
+        *addr = (void *)UnregisterCustomBorderColorEXT;
+        return true;
+    }
+    if (!strcmp("vkGetTensorOpaqueCaptureDataARM", name)) {
+        *addr = (void *)GetTensorOpaqueCaptureDataARM;
+        return true;
+    }
 
     // ---- VK_EXT_sample_locations extension commands
     if (!strcmp("vkCmdSetSampleLocationsEXT", name)) {
@@ -13794,26 +14081,6 @@ bool extension_instance_gpa(struct loader_instance *ptr_instance, const char *na
     }
 #endif // VK_USE_PLATFORM_OHOS
 
-    // ---- VK_OHOS_native_buffer extension commands
-#if defined(VK_USE_PLATFORM_OHOS)
-    if (!strcmp("vkGetSwapchainGrallocUsageOHOS", name)) {
-        *addr = (void *)GetSwapchainGrallocUsageOHOS;
-        return true;
-    }
-#endif // VK_USE_PLATFORM_OHOS
-#if defined(VK_USE_PLATFORM_OHOS)
-    if (!strcmp("vkAcquireImageOHOS", name)) {
-        *addr = (void *)AcquireImageOHOS;
-        return true;
-    }
-#endif // VK_USE_PLATFORM_OHOS
-#if defined(VK_USE_PLATFORM_OHOS)
-    if (!strcmp("vkQueueSignalReleaseImageOHOS", name)) {
-        *addr = (void *)QueueSignalReleaseImageOHOS;
-        return true;
-    }
-#endif // VK_USE_PLATFORM_OHOS
-
     // ---- VK_NV_cooperative_matrix2 extension commands
     if (!strcmp("vkGetPhysicalDeviceCooperativeMatrixFlexibleDimensionsPropertiesNV", name)) {
         *addr = (void *)GetPhysicalDeviceCooperativeMatrixFlexibleDimensionsPropertiesNV;
@@ -13851,6 +14118,30 @@ bool extension_instance_gpa(struct loader_instance *ptr_instance, const char *na
         *addr = (void *)CmdBeginCustomResolveEXT;
         return true;
     }
+
+    // ---- VK_NV_compute_occupancy_priority extension commands
+    if (!strcmp("vkCmdSetComputeOccupancyPriorityNV", name)) {
+        *addr = (void *)CmdSetComputeOccupancyPriorityNV;
+        return true;
+    }
+
+    // ---- VK_SEC_ubm_surface extension commands
+#if defined(VK_USE_PLATFORM_UBM_SEC)
+    if (!strcmp("vkCreateUbmSurfaceSEC", name)) {
+        *addr = (ptr_instance->enabled_extensions.sec_ubm_surface == 1)
+                     ? (void *)CreateUbmSurfaceSEC
+                     : NULL;
+        return true;
+    }
+#endif // VK_USE_PLATFORM_UBM_SEC
+#if defined(VK_USE_PLATFORM_UBM_SEC)
+    if (!strcmp("vkGetPhysicalDeviceUbmPresentationSupportSEC", name)) {
+        *addr = (ptr_instance->enabled_extensions.sec_ubm_surface == 1)
+                     ? (void *)GetPhysicalDeviceUbmPresentationSupportSEC
+                     : NULL;
+        return true;
+    }
+#endif // VK_USE_PLATFORM_UBM_SEC
 
     // ---- VK_KHR_acceleration_structure extension commands
     if (!strcmp("vkCreateAccelerationStructureKHR", name)) {
@@ -14119,6 +14410,11 @@ void fill_out_enabled_instance_extensions(uint32_t extension_count, const char *
 #if defined(VK_USE_PLATFORM_OHOS)
         else if (0 == strcmp(extension_list[i], VK_OHOS_SURFACE_EXTENSION_NAME)) { enables->ohos_surface = 1; }
 #endif // VK_USE_PLATFORM_OHOS
+
+    // ---- VK_SEC_ubm_surface extension commands
+#if defined(VK_USE_PLATFORM_UBM_SEC)
+        else if (0 == strcmp(extension_list[i], VK_SEC_UBM_SURFACE_EXTENSION_NAME)) { enables->sec_ubm_surface = 1; }
+#endif // VK_USE_PLATFORM_UBM_SEC
     }
 }
 
@@ -14400,6 +14696,9 @@ const VkLayerInstanceDispatchTable instance_disp = {
     .DestroyDebugUtilsMessengerEXT = terminator_DestroyDebugUtilsMessengerEXT,
     .SubmitDebugUtilsMessageEXT = terminator_SubmitDebugUtilsMessageEXT,
 
+    // ---- VK_EXT_descriptor_heap extension commands
+    .GetPhysicalDeviceDescriptorSizeEXT = terminator_GetPhysicalDeviceDescriptorSizeEXT,
+
     // ---- VK_EXT_sample_locations extension commands
     .GetPhysicalDeviceMultisamplePropertiesEXT = terminator_GetPhysicalDeviceMultisamplePropertiesEXT,
 
@@ -14484,6 +14783,14 @@ const VkLayerInstanceDispatchTable instance_disp = {
 
     // ---- VK_ARM_performance_counters_by_region extension commands
     .EnumeratePhysicalDeviceQueueFamilyPerformanceCountersByRegionARM = terminator_EnumeratePhysicalDeviceQueueFamilyPerformanceCountersByRegionARM,
+
+    // ---- VK_SEC_ubm_surface extension commands
+#if defined(VK_USE_PLATFORM_UBM_SEC)
+    .CreateUbmSurfaceSEC = terminator_CreateUbmSurfaceSEC,
+#endif // VK_USE_PLATFORM_UBM_SEC
+#if defined(VK_USE_PLATFORM_UBM_SEC)
+    .GetPhysicalDeviceUbmPresentationSupportSEC = terminator_GetPhysicalDeviceUbmPresentationSupportSEC,
+#endif // VK_USE_PLATFORM_UBM_SEC
 };
 
 // A null-terminated list of all of the instance extensions supported by the loader.
@@ -14563,5 +14870,8 @@ const char *const LOADER_INSTANCE_EXTENSIONS[] = {
 #if defined(VK_USE_PLATFORM_OHOS)
                                                   VK_OHOS_SURFACE_EXTENSION_NAME,
 #endif // VK_USE_PLATFORM_OHOS
+#if defined(VK_USE_PLATFORM_UBM_SEC)
+                                                  VK_SEC_UBM_SURFACE_EXTENSION_NAME,
+#endif // VK_USE_PLATFORM_UBM_SEC
                                                   NULL };
 // clang-format on

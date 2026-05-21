@@ -107,12 +107,10 @@ class AutofillSuggestionDelegate;
 enum class AutofillTriggerSource;
 class IdentityCredentialDelegate;
 class EntityDataManager;
-class FastCheckoutClient;
 class FieldClassificationModelHandler;
 enum class FillingProduct;
 class FormDataImporter;
 class FormFieldData;
-struct FormInteractionsFlowId;
 class LogManager;
 class OtpFieldDetector;
 class OtpPhishGuardDelegate;
@@ -127,6 +125,7 @@ class SingleFieldFillRouter;
 class ValuablesDataManager;
 class VotesUploader;
 class PasswordManagerAutofillHelperDelegate;
+class WalletPassAccessManager;
 
 namespace autofill_metrics {
 class FormInteractionsUkmLogger;
@@ -186,8 +185,8 @@ class AutofillClient {
   // prompt related to AutofillAi saving, updating, or migrating.
   // These values are persisted to logs. Entries should not be renumbered and
   // numeric values should never be reused.
-  enum class AutofillAiBubbleClosedReason {
-    // Bubble closed reason not specified.
+  enum class AutofillAiBubbleResult {
+    // Bubble result not specified.
     kUnknown = 0,
     // The user explicitly accepted the bubble.
     kAccepted = 1,
@@ -234,25 +233,8 @@ class AutofillClient {
     PopupAnchorType anchor_type = PopupAnchorType::kField;
   };
 
-  // Describes the position of the Autofill popup on the screen.
-  struct PopupScreenLocation {
-    // The bounds of the popup in the screen coordinate system.
-    gfx::Rect bounds;
-    // Describes the position of the arrow on the popup's border and corresponds
-    // to a subset of the available options in `views::BubbleBorder::Arrow`.
-    enum class ArrowPosition {
-      kTopRight,
-      kTopLeft,
-      kBottomRight,
-      kBottomLeft,
-      kLeftTop,
-      kRightTop,
-      kMax = kRightTop
-    };
-    ArrowPosition arrow_position;
-  };
   using EntityImportPromptResultCallback =
-      base::OnceCallback<void(AutofillAiBubbleClosedReason close_reason)>;
+      base::OnceCallback<void(AutofillAiBubbleResult result)>;
 
   // The types of prompts that AutofillAi can show to the user after a form
   // submission. The values are ordered by decreasing priority of being shown
@@ -327,7 +309,7 @@ class AutofillClient {
 
   // Returns whether the client has a PersonalDataManager.
   //
-  // TODO(crbug.cm/455121491) This is a temporary fix to avoid crashes when
+  // TODO(crbug.com/455121491) This is a temporary fix to avoid crashes when
   // AutofillAnnotationsProviderImpl::AddAutofillInformation tries to query
   // autofillable data but deals with an AndroidAutofillClient.
   virtual bool HasPersonalDataManager() const;
@@ -347,6 +329,11 @@ class AutofillClient {
   // one.
   virtual EntityDataManager* GetEntityDataManager() = 0;
   const EntityDataManager* GetEntityDataManager() const;
+
+  // Gets the WalletPassAccessManager instance associated with the client, if
+  // there is one.
+  virtual WalletPassAccessManager* GetWalletPassAccessManager();
+  const WalletPassAccessManager* GetWalletPassAccessManager() const;
 
   // Gets the AutofillOptimizationGuideDecider instance associated with the
   // client. This function can return nullptr if we are on an unsupported
@@ -478,9 +465,6 @@ class AutofillClient {
   // Returns the profile type of the session.
   virtual profile_metrics::BrowserProfileType GetProfileType() const;
 
-  // Gets a FastCheckoutClient instance (can be null for unsupported platforms).
-  virtual FastCheckoutClient* GetFastCheckoutClient();
-
   // Causes the Autofill settings UI to be shown.
   virtual void ShowAutofillSettings(SuggestionType suggestion_type) = 0;
 
@@ -532,10 +516,6 @@ class AutofillClient {
   virtual void UpdateAutofillDataListValues(
       base::span<const SelectOption> datalist) = 0;
 
-  // Returns the information of the popup on the screen, if there is one that is
-  // showing. Note that this implemented only on Desktop.
-  virtual std::optional<PopupScreenLocation> GetPopupScreenLocation() const;
-
   // Returns the identifier of the suggestion UI that is currently showing or
   // `std::nullopt` is there is none.
   virtual std::optional<SuggestionUiSessionId>
@@ -550,7 +530,8 @@ class AutofillClient {
   virtual void UpdateAutofillSuggestions(
       const std::vector<Suggestion>& suggestions,
       FillingProduct main_filling_product,
-      AutofillSuggestionTriggerSource trigger_source);
+      AutofillSuggestionTriggerSource trigger_source,
+      AutofillSuggestionsIgnoreFocusLoss ignore_focus_loss);
 
   // Hides the Autofill suggestions UI if it is currently showing.
   virtual void HideAutofillSuggestions(SuggestionHidingReason reason) = 0;
@@ -591,7 +572,7 @@ class AutofillClient {
 
   // Returns whether there is an active actor task for this client's tab (if
   // one exists).
-  virtual bool IsActorTaskActive() const;
+  virtual bool IsTabInActorMode() const;
 
   // Returns true if either Profile or CreditCard Autofill is enabled.
   virtual bool IsAutofillEnabled() const = 0;
@@ -605,10 +586,6 @@ class AutofillClient {
 
   // Returns whether password management is enabled as per the user preferences.
   virtual bool IsPasswordManagerEnabled() const = 0;
-
-  // Inform the client that the form has been filled.
-  virtual void DidFillForm(AutofillTriggerSource trigger_source,
-                           bool is_refill) = 0;
 
   // If the context is secure.
   virtual bool IsContextSecure() const = 0;
@@ -654,18 +631,15 @@ class AutofillClient {
   // to the use of a large keyboard accessory view. See b/40942168.
   virtual bool ShouldFormatForLargeKeyboardAccessory() const;
 
-  // Updates and returns the current form interactions flow id. This is used as
-  // an approximation for keeping track of the number of user interactions with
-  // related forms for logging. Example implementation: the flow id is set to a
-  // GUID on the first call. That same GUID will be returned for consecutive
-  // calls in the next 20 minutes. Afterwards a new GUID is set and the pattern
-  // repeated.
-  virtual FormInteractionsFlowId GetCurrentFormInteractionsFlowId() = 0;
-
   // Returns a pointer to a DeviceAuthenticator. Might be nullptr if the given
   // platform is not supported.
   virtual std::unique_ptr<device_reauth::DeviceAuthenticator>
   GetDeviceAuthenticator();
+
+  // Same as `GetDeviceAuthenticator()` but also logs authentication results to
+  // `histogram`.
+  virtual std::unique_ptr<device_reauth::DeviceAuthenticator>
+  GetDeviceAuthenticator(std::string histogram);
 
   // Attaches the IPH for `feature` to the `field`, on
   // platforms that it. If another IPH has been shown for the tab, the IPH is
@@ -713,10 +687,24 @@ class AutofillClient {
   // Shows a bubble asking whether the user wants to save or update Autofill AI
   // data. `old_entity` is present in the update cases. It is used to give users
   // a better understanding of what was updated.
+  // `save_is_synchronous` indicates whether accepting the prompt requires a
+  // (notably) asynchronous operation. The UI can use this information to decide
+  // whether to close the prompt upon acceptance.
   virtual void ShowEntityImportBubble(
       EntityInstance new_entity,
       std::optional<EntityInstance> old_entity,
-      EntityImportPromptResultCallback prompt_closed_callback);
+      bool save_is_synchronous,
+      EntityImportPromptResultCallback prompt_result_callback);
+
+  // Hides the Autofill AI import bubble if it is currently showing.
+  virtual void CloseEntityImportBubble();
+
+  // Shows a bubble informing the user that their data was saved locally because
+  // an upload request to the Wallet server was unsuccessful.
+  virtual void ShowAutofillAiLocalSaveNotification();
+
+  // Notifies the user that an Autofill AI operation failed.
+  virtual void ShowAutofillAiFailureNotification(std::u16string message);
 
   virtual void ShowEmailVerifiedToast();
 

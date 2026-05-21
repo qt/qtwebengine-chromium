@@ -214,7 +214,7 @@ struct State {
             clamped_idx = b.Constant(u32(const_idx->Value()->ValueAs<uint32_t>()));
         } else if (IndexMayOutOfBound(idx, limit)) {
             // Clamp it to the dynamic limit.
-            clamped_idx = b.Call(ty.u32(), core::BuiltinFn::kMin, CastToU32(idx), limit)->Result();
+            clamped_idx = b.Min(CastToU32(idx), limit)->Result();
         }
 
         if (clamped_idx != nullptr) {
@@ -277,7 +277,7 @@ struct State {
             auto* const_idx = idx->As<ir::Constant>();
 
             // Determine the limit of the type being indexed into.
-            auto limit = tint::Switch(
+            auto maxAllowedIndex = tint::Switch(
                 type,  //
                 [&](const type::Vector* vec) -> ir::Value* {
                     return b.Constant(u32(vec->Width() - 1u));
@@ -308,13 +308,14 @@ struct State {
                     }
 
                     // Use the `arrayLength` builtin to get the limit of a runtime-sized array.
+                    // Subtract 1 to get the max allowed index. (Array size is always at least 1.)
                     auto* length = b.Call(ty.u32(), core::BuiltinFn::kArrayLength, object);
-                    return b.Subtract(ty.u32(), length, b.Constant(1_u))->Result();
+                    return b.Subtract(length, b.Constant(1_u))->Result();
                 });
 
             // If there's a dynamic limit that needs enforced, clamp the index operand.
-            if (limit) {
-                ClampOperand(access, ir::Access::kIndicesOperandOffset + i, limit);
+            if (maxAllowedIndex) {
+                ClampOperand(access, ir::Access::kIndicesOperandOffset + i, maxAllowedIndex);
             }
 
             // Get the type that this index produces.
@@ -335,9 +336,8 @@ struct State {
         Value* clamped_level = nullptr;
         auto clamp_level = [&](uint32_t idx) {
             auto* num_levels = b.Call(ty.u32(), core::BuiltinFn::kTextureNumLevels, args[0]);
-            auto* limit = b.Subtract(ty.u32(), num_levels, 1_u);
-            clamped_level =
-                b.Call(ty.u32(), core::BuiltinFn::kMin, CastToU32(args[idx]), limit)->Result();
+            auto* limit = b.Subtract(num_levels, 1_u);
+            clamped_level = b.Min(CastToU32(args[idx]), limit)->Result();
             call->SetOperand(CoreBuiltinCall::kArgsOperandOffset + idx, clamped_level);
         };
 
@@ -349,19 +349,17 @@ struct State {
             auto* dims = clamped_level ? b.Call(type, core::BuiltinFn::kTextureDimensions, args[0],
                                                 clamped_level)
                                        : b.Call(type, core::BuiltinFn::kTextureDimensions, args[0]);
-            auto* limit = b.Subtract(type, dims, one);
-            call->SetOperand(
-                CoreBuiltinCall::kArgsOperandOffset + idx,
-                b.Call(type, core::BuiltinFn::kMin, CastToU32(args[idx]), limit)->Result());
+            auto* limit = b.Subtract(dims, one);
+            call->SetOperand(CoreBuiltinCall::kArgsOperandOffset + idx,
+                             b.Min(CastToU32(args[idx]), limit)->Result());
         };
 
         // Helper for clamping the array index.
         auto clamp_array_index = [&](uint32_t idx) {
             auto* num_layers = b.Call(ty.u32(), core::BuiltinFn::kTextureNumLayers, args[0]);
-            auto* limit = b.Subtract(ty.u32(), num_layers, 1_u);
-            call->SetOperand(
-                CoreBuiltinCall::kArgsOperandOffset + idx,
-                b.Call(ty.u32(), core::BuiltinFn::kMin, CastToU32(args[idx]), limit)->Result());
+            auto* limit = b.Subtract(num_layers, 1_u);
+            call->SetOperand(CoreBuiltinCall::kArgsOperandOffset + idx,
+                             b.Min(CastToU32(args[idx]), limit)->Result());
         };
 
         // Select which arguments to clamp based on the function overload.
@@ -440,7 +438,7 @@ struct State {
                 stride = b.Constant(u32(min_stride));
             }
         } else {
-            stride = b.Call(ty.u32(), core::BuiltinFn::kMax, stride, u32(min_stride))->Result();
+            stride = b.Max(stride, u32(min_stride))->Result();
         }
         call->SetArg(stride_index, stride);
 
@@ -471,7 +469,7 @@ struct State {
             TINT_IR_ASSERT(ir, arr_ty->Count()->Is<type::RuntimeArrayCount>());
             array_length = b.Call(ty.u32(), core::BuiltinFn::kArrayLength, arr)->Result(0);
             if (components_per_element > 1) {
-                array_length = b.Multiply<u32>(array_length, u32(components_per_element))->Result();
+                array_length = b.Multiply(array_length, u32(components_per_element))->Result();
             }
         }
 
@@ -493,8 +491,8 @@ struct State {
         b.InsertBefore(insertion_point, [&] {
             // The beginning of the last row/column is at `offset + (major_dim-1)*stride`.
             // We then add another `min_stride` elements to get to the end of the accessed memory.
-            auto* last_slice = b.Add<u32>(offset, b.Multiply<u32>(stride, u32(major_dim - 1)));
-            auto* end = b.Add<u32>(last_slice, u32(min_stride));
+            auto* last_slice = b.Add(offset, b.Multiply(stride, u32(major_dim - 1)));
+            auto* end = b.Add(last_slice, u32(min_stride));
             auto* in_bounds = b.LessThanEqual(end, array_length);
             if (call->Func() == BuiltinFn::kSubgroupMatrixLoad) {
                 // Declare a variable to hold the result of the load, or a zero-initialized matrix.
@@ -571,10 +569,7 @@ struct State {
 }  // namespace
 
 Result<SuccessType> Robustness(Module& ir, const RobustnessConfig& config) {
-    auto result = ValidateAndDumpIfNeeded(ir, "core.Robustness", kRobustnessCapabilities);
-    if (result != Success) {
-        return result;
-    }
+    TINT_CHECK_RESULT(ValidateAndDumpIfNeeded(ir, "core.Robustness", kRobustnessCapabilities));
 
     State{config, ir}.Process();
 

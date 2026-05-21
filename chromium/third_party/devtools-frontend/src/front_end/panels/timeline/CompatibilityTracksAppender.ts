@@ -4,6 +4,7 @@
 /* eslint-disable @devtools/no-imperative-dom-api */
 
 import * as Common from '../../core/common/common.js';
+import * as Host from '../../core/host/host.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as Root from '../../core/root/root.js';
 import * as Trace from '../../models/trace/trace.js';
@@ -41,7 +42,7 @@ function isShowPostMessageEventsEnabled(): boolean {
   // cache is updated automatically.
   if (showPostMessageEvents === undefined) {
     showPostMessageEvents =
-        Root.Runtime.experiments.isEnabled(Root.Runtime.ExperimentName.TIMELINE_SHOW_POST_MESSAGE_EVENTS);
+        Root.Runtime.experiments.isEnabled(Root.ExperimentNames.ExperimentName.TIMELINE_SHOW_POST_MESSAGE_EVENTS);
   }
   return showPostMessageEvents;
 }
@@ -326,7 +327,8 @@ export class CompatibilityTracksAppender {
       }
     };
     const threads = Trace.Handlers.Threads.threadsInTrace(this.#parsedTrace.data);
-    const showAllEvents = Root.Runtime.experiments.isEnabled('timeline-show-all-events');
+    const showAllEvents =
+        Root.Runtime.experiments.isEnabled(Root.ExperimentNames.ExperimentName.TIMELINE_SHOW_ALL_EVENTS);
 
     for (const {pid, tid, name, type, entries, tree} of threads) {
       if (this.#parsedTrace.data.Meta.traceIsGeneric) {
@@ -409,6 +411,7 @@ export class CompatibilityTracksAppender {
     if (trackStartLevel === null || trackEndLevel === null) {
       throw new Error(`Could not find events for track: ${trackAppender}`);
     }
+
     const entryLevels = this.#flameChartData.entryLevels;
     const events = [];
     for (let i = 0; i < entryLevels.length; i++) {
@@ -416,7 +419,13 @@ export class CompatibilityTracksAppender {
         events.push(this.#entryData[i]);
       }
     }
-    events.sort((a, b) => a.ts - b.ts);  // TODO(paulirish): Remove as I'm 90% it's already sorted.
+
+    // TODO(crbug.com/457866795): callers expect this to be sorted, but #entryData
+    // currently isn't guaranteed to be sorted because of appendEventsAtLevel and
+    // appendEventAtLevel. Also, see
+    // TimelineFlameChartDataProvider#insertEventToEntryData. This method is cached
+    // in eventsForTreeView, so it doesn't impact performance much.
+    events.sort((a, b) => a.ts - b.ts);
 
     this.#eventsForTrack.set(trackAppender, events);
     return events;
@@ -510,7 +519,6 @@ export class CompatibilityTracksAppender {
    * @returns the index of the event in all events to be rendered in the flamechart.
    */
   appendEventAtLevel(event: Trace.Types.Events.Event, level: number, appender: TrackAppender): number {
-    // TODO(crbug.com/1442454) Figure out how to avoid the circular calls.
     this.#trackForLevel.set(level, appender);
     const index = this.#entryData.length;
     this.#entryData.push(event);
@@ -542,6 +550,11 @@ export class CompatibilityTracksAppender {
   appendEventsAtLevel<T extends Trace.Types.Events.Event>(
       events: readonly T[], trackStartLevel: number, appender: TrackAppender,
       eventAppendedCallback?: (event: T, index: number) => void): number {
+    // Usage of getEventLevel below requires `events` to be sorted.
+    if (Host.InspectorFrontendHost.isUnderTest()) {
+      Platform.ArrayUtilities.assertArrayIsSorted(events, (a, b) => a.ts - b.ts);
+    }
+
     const lastTimestampByLevel: LastTimestampByLevel = [];
     for (let i = 0; i < events.length; ++i) {
       const event = events[i];

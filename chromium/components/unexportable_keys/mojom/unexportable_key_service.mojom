@@ -4,6 +4,7 @@
 
 module unexportable_keys.mojom;
 
+import "mojo/public/mojom/base/time.mojom";
 import "mojo/public/mojom/base/unguessable_token.mojom";
 
 // Unfortunately //net depends on the unexportable_keys components. This means
@@ -39,8 +40,8 @@ enum ServiceError {
 };
 
 // LINT.ThenChange(
-//     /components/unexportable_keys/service_error.h:ServiceError,
-//     /tools/metrics/histograms/metadata/net/enums.xml:UnexportableKeyServiceResult
+// /components/unexportable_keys/service_error.h:ServiceError,
+// /tools/metrics/histograms/metadata/net/enums.xml:UnexportableKeyServiceResult
 // )
 
 // The priority at which the task will run.
@@ -63,6 +64,8 @@ struct NewKeyData {
   array<uint8> subject_public_key_info;
   array<uint8> wrapped_key;
   SignatureAlgorithm algorithm;
+  string? key_tag;
+  mojo_base.mojom.Time? creation_time;
 };
 
 // Interface for proxying calls to UnexportableKeyService from less privileged
@@ -96,21 +99,21 @@ interface UnexportableKeyService {
        BackgroundTaskPriority priority) => result<array<uint8>, ServiceError>;
 
   // Returns all signing keys currently stored by the OS that are being
-  // managed by this service. In success an array of UnexportableKeyId will
-  // be returned. If there was a failure a ServiceError will be returned
+  // managed by this service. In success an array of NewKeyData will be
+  // returned. If there was a failure a ServiceError will be returned
   // instead.
   GetAllSigningKeysForGarbageCollection(BackgroundTaskPriority priority)
-      => result<array<UnexportableKeyId>, ServiceError>;
+      => result<array<NewKeyData>, ServiceError>;
 
-  // Deletes the key identified by key_id.
-  // On Success no value is returned. On error a ServiceError is
-  // returned instead.
-  DeleteKey(UnexportableKeyId key_id, BackgroundTaskPriority priority)
-      => (ServiceError? error);
+  // Deletes the keys identified by key_ids.
+  // On success the number of keys deleted is returned. On error a ServiceError
+  // is returned instead.
+  DeleteKeys(
+      array<UnexportableKeyId> key_ids, BackgroundTaskPriority priority)
+      => result<uint64, ServiceError>;
 
   // Delete all keys.
   // On success the number of keys deleted is returned. On error a ServiceError
   // is returned instead.
-  DeleteAllKeys(BackgroundTaskPriority priority)
-      => result<uint64, ServiceError>;
+  DeleteAllKeys() => result<uint64, ServiceError>;
 };

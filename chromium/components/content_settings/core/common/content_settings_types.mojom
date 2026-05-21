@@ -60,7 +60,7 @@ enum ContentSettingsType {
   PROTECTED_MEDIA_IDENTIFIER,
   APP_BANNER,
   SITE_ENGAGEMENT,
-  DURABLE_STORAGE,
+  PERSISTENT_STORAGE,
   USB_CHOOSER_DATA,
   BLUETOOTH_GUARD,
   BACKGROUND_SYNC,
@@ -331,10 +331,6 @@ enum ContentSettingsType {
   // should be enabled.
   ANTI_ABUSE,
 
-  // Content setting used to indicate whether third-party storage partitioning
-  // should be enabled.
-  THIRD_PARTY_STORAGE_PARTITIONING,
-
   // Used to indicate whether HTTPS-First Mode is enabled on the hostname.
   HTTPS_ENFORCED,
 
@@ -407,11 +403,6 @@ enum ContentSettingsType {
   // auto-revoked notification permissions from abusive sites.
   REVOKED_ABUSIVE_NOTIFICATION_PERMISSIONS,
 
-  // Content setting that controls tracking protection status per site.
-  // BLOCK: Protections enabled. This is the default state.
-  // ALLOW: Protections disabled.
-  TRACKING_PROTECTION,
-
   // With this permission, when the application calls `getDisplayMedia()`, a
   // system audio track can be returned without showing the display media
   // selection picker. The application can explicitly specify
@@ -462,9 +453,13 @@ enum ContentSettingsType {
   // store revoked notification permissions of disruptive sites.
   REVOKED_DISRUPTIVE_NOTIFICATION_PERMISSIONS,
 
-  // Content setting for whether the site is allowed to make local network
-  // requests.
+  // Content settings for whether the site is allowed to make local network
+  // requests. Migration from LOCAL_NETWORK_ACCESS to the split setting of
+  // LOCAL_NETWORK AND LOOPBACK_NETWORK is in progress. See crbug.com/465491626
+  // for details.
   LOCAL_NETWORK_ACCESS,
+  LOCAL_NETWORK,
+  LOOPBACK_NETWORK,
 
   // Stores information on-device language packs for which a site has
   // installed using the Web Speech API.

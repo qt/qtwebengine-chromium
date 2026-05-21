@@ -422,7 +422,7 @@ struct State {
             auto* arg1 = builtin->Args()[1];
             if (arg0->Type()->Is<core::type::Scalar>()) {
                 // Calls to `distance` with a scalar argument are replaced with `abs(a - b)`.
-                auto* sub = b.Subtract(builtin->Result()->Type(), arg0, arg1);
+                auto* sub = b.Subtract(arg0, arg1);
                 b.CallWithResult(builtin->DetachResult(), core::BuiltinFn::kAbs, sub);
             } else {
                 b.CallWithResult<msl::ir::BuiltinCall>(builtin->DetachResult(),
@@ -454,10 +454,10 @@ struct State {
                     auto* func = b.Function("tint_dot", el_ty);
                     func->SetParams({lhs, rhs});
                     b.Append(func->Block(), [&] {
-                        auto* mul = b.Multiply(vec, lhs, rhs);
+                        auto* mul = b.Multiply(lhs, rhs);
                         auto* sum = b.Access(el_ty, mul, u32(0))->Result();
                         for (uint32_t i = 1; i < vec->Width(); i++) {
-                            sum = b.Add(el_ty, sum, b.Access(el_ty, mul, u32(i)))->Result();
+                            sum = b.Add(sum, b.Access(el_ty, mul, u32(i)))->Result();
                         }
                         b.Return(func, sum);
                     });
@@ -755,9 +755,7 @@ struct State {
                 const uint32_t kArrayIndex = 2;
                 auto* index_arg = builtin->Args()[kArrayIndex];
                 if (index_arg->Type()->IsSignedIntegerScalar()) {
-                    builtin->SetArg(kArrayIndex, b.Call(ty.i32(), core::BuiltinFn::kMax, index_arg,
-                                                        b.Zero<i32>())
-                                                     ->Result());
+                    builtin->SetArg(kArrayIndex, b.Max(index_arg, b.Zero<i32>())->Result());
                 }
             }
         });
@@ -1031,17 +1029,17 @@ struct State {
         auto* arg = builtin->Args()[0];
         b.InsertBefore(builtin, [&] {
             auto* conv = b.Convert(ty.i32(), arg);
-            auto* x = b.ShiftLeft(ty.i32(), conv, 16_u);
+            auto* x = b.ShiftLeft(conv, 16_u);
 
-            auto* vec = b.Construct(ty.vec2<i32>(), x, conv);
-            auto* v = b.ShiftRight(ty.vec2<i32>(), vec, b.Splat(ty.vec2<u32>(), 16_u));
+            auto* vec = b.Construct(ty.vec2i(), x, conv);
+            auto* v = b.ShiftRight(vec, b.Splat(ty.vec2u(), 16_u));
 
-            auto* flt = b.Convert(ty.vec2<f32>(), v);
-            auto* scale = b.Divide(ty.vec2<f32>(), flt, 32767_f);
+            auto* flt = b.Convert(ty.vec2f(), v);
+            auto* scale = b.Divide(flt, 32767_f);
 
-            auto* lower = b.Splat(ty.vec2<f32>(), -1_f);
-            auto* upper = b.Splat(ty.vec2<f32>(), 1_f);
-            b.CallWithResult(builtin->DetachResult(), core::BuiltinFn::kClamp, scale, lower, upper);
+            auto* lower = b.Splat(ty.vec2f(), -1_f);
+            auto* upper = b.Splat(ty.vec2f(), 1_f);
+            b.Clamp(scale, lower, upper)->SetResult(builtin->DetachResult());
         });
         builtin->Destroy();
     }
@@ -1051,17 +1049,17 @@ struct State {
     void Unpack2x16Unorm(core::ir::CoreBuiltinCall* builtin) {
         auto* arg = builtin->Args()[0];
         b.InsertBefore(builtin, [&] {
-            auto* x = b.ShiftLeft(ty.u32(), arg, 16_u);
+            auto* x = b.ShiftLeft(arg, 16_u);
 
-            auto* vec = b.Construct(ty.vec2<u32>(), x, arg);
-            auto* v = b.ShiftRight(ty.vec2<u32>(), vec, b.Splat(ty.vec2<u32>(), 16_u));
+            auto* vec = b.Construct(ty.vec2u(), x, arg);
+            auto* v = b.ShiftRight(vec, b.Splat(ty.vec2u(), 16_u));
 
-            auto* flt = b.Convert(ty.vec2<f32>(), v);
-            auto* scale = b.Divide(ty.vec2<f32>(), flt, 65535_f);
+            auto* flt = b.Convert(ty.vec2f(), v);
+            auto* scale = b.Divide(flt, 65535_f);
 
-            auto* lower = b.Splat(ty.vec2<f32>(), 0_f);
-            auto* upper = b.Splat(ty.vec2<f32>(), 1_f);
-            b.CallWithResult(builtin->DetachResult(), core::BuiltinFn::kClamp, scale, lower, upper);
+            auto* lower = b.Splat(ty.vec2f(), 0_f);
+            auto* upper = b.Splat(ty.vec2f(), 1_f);
+            b.Clamp(scale, lower, upper)->SetResult(builtin->DetachResult());
         });
         builtin->Destroy();
     }
@@ -1308,19 +1306,15 @@ struct State {
 }  // namespace
 
 Result<SuccessType> BuiltinPolyfill(core::ir::Module& ir, const BuiltinPolyfillConfig& config) {
-    auto result =
+    TINT_CHECK_RESULT(
         ValidateAndDumpIfNeeded(ir, "msl.BuiltinPolyfill",
                                 core::ir::Capabilities{
                                     core::ir::Capability::kAllow8BitIntegers,
-                                    core::ir::Capability::kAllowPointersAndHandlesInStructures,
-                                    core::ir::Capability::kAllowPrivateVarsInFunctions,
+                                    core::ir::Capability::kAllowPointSizeBuiltin,
                                     core::ir::Capability::kAllowAnyLetType,
                                     core::ir::Capability::kAllowNonCoreTypes,
-                                    core::ir::Capability::kAllowWorkspacePointerInputToEntryPoint,
-                                });
-    if (result != Success) {
-        return result.Failure();
-    }
+                                    core::ir::Capability::kMslAllowEntryPointInterface,
+                                }));
 
     State{ir, config}.Process();
 

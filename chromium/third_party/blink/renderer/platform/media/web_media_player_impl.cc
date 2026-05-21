@@ -587,7 +587,8 @@ WebMediaPlayerImpl::WebMediaPlayerImpl(
       frame_->GetTaskRunner(TaskType::kInternalMedia));
 
   main_thread_mem_dumper_ = std::make_unique<media::MemoryDumpProviderProxy>(
-      "WebMediaPlayer_MainThread", main_task_runner_,
+      media::MemoryDumpProviderProxy::Name("WebMediaPlayer_MainThread"),
+      main_task_runner_,
       blink::BindRepeating(&WebMediaPlayerImpl::OnMainThreadMemoryDump,
                            weak_this_, media_player_id_));
 
@@ -931,6 +932,14 @@ void WebMediaPlayerImpl::DoLoad(LoadType load_type,
     demuxer_manager_->SetDataSource(
         std::make_unique<media::MemoryDataSource>(std::move(data)));
     MemoryDataSourceInitialized(true, data_size);
+    return;
+  }
+
+  // `demuxer_manager_` will create a HlsManifestDemuxerEngine for HLS urls
+  // like this based on file extension, which will do a cache-free request for
+  // the manifest. If we request it first here, it will make two requests.
+  if (demuxer_manager_->IsManifestDemuxerURL()) {
+    StartPipeline();
     return;
   }
 
@@ -1290,6 +1299,7 @@ bool WebMediaPlayerImpl::HasAudio() const {
 void WebMediaPlayerImpl::EnabledAudioTracksChanged(
     std::optional<WebMediaPlayer::TrackId> enabled_track_id) {
   DCHECK(main_task_runner_->BelongsToCurrentThread());
+  media_metrics_provider_->SetHasTrackChange();
   auto media_track_id = ConvertTrackType(std::move(enabled_track_id));
   media_log_->AddEvent<MediaLogEvent::kAudioTrackChange>(media_track_id);
   pipeline_controller_->OnEnabledAudioTracksChanged(media_track_id);
@@ -1298,6 +1308,7 @@ void WebMediaPlayerImpl::EnabledAudioTracksChanged(
 void WebMediaPlayerImpl::SelectedVideoTrackChanged(
     std::optional<WebMediaPlayer::TrackId> selected_track_id) {
   DCHECK(main_task_runner_->BelongsToCurrentThread());
+  media_metrics_provider_->SetHasTrackChange();
   auto media_track_id = ConvertTrackType(std::move(selected_track_id));
   media_log_->AddEvent<MediaLogEvent::kVideoTrackChange>(media_track_id);
   pipeline_controller_->OnSelectedVideoTrackChanged(media_track_id);
@@ -1500,7 +1511,7 @@ bool WebMediaPlayerImpl::DidLoadingProgress() {
 
 void WebMediaPlayerImpl::Paint(cc::PaintCanvas* canvas,
                                const gfx::Rect& rect,
-                               cc::PaintFlags& flags) {
+                               const cc::PaintFlags& flags) {
   DCHECK(main_task_runner_->BelongsToCurrentThread());
   TRACE_EVENT0("media", "WebMediaPlayerImpl:paint");
 
@@ -1515,10 +1526,6 @@ void WebMediaPlayerImpl::Paint(cc::PaintCanvas* canvas,
   paint_params.transformation =
       pipeline_metadata_.video_decoder_config.video_transformation();
 
-  // This class should only be used with raster context providers that
-  // support OOP-R.
-  CHECK(!raster_context_provider_ ||
-        raster_context_provider_->ContextCapabilities().gpu_rasterization);
   video_renderer_.Paint(video_frame, canvas, flags, paint_params,
                         raster_context_provider_.get());
 }
@@ -1643,8 +1650,6 @@ void WebMediaPlayerImpl::OnEncryptedMediaInitData(
   encrypted_client_->Encrypted(init_data_type, init_data);
 }
 
-#if BUILDFLAG(ENABLE_FFMPEG) || BUILDFLAG(ENABLE_HLS_DEMUXER)
-
 void WebMediaPlayerImpl::AddTrack(const media::MediaTrack& track) {
   client_->AddTrack(track);
 }
@@ -1657,8 +1662,6 @@ void WebMediaPlayerImpl::SetTrackState(const media::MediaTrack& track,
                                        media::MediaTrack::State state) {
   client_->SetTrackState(track, state);
 }
-
-#endif  // BUILDFLAG(ENABLE_FFMPEG) || BUILDFLAG(ENABLE_HLS_DEMUXER)
 
 #if BUILDFLAG(ENABLE_HLS_DEMUXER)
 
@@ -3317,7 +3320,8 @@ void WebMediaPlayerImpl::MakeDemuxerThreadDumper(media::Demuxer* demuxer) {
   // posts a media thread task that deletes `media_thread_mem_dumper_` and
   // waits for it to finish.
   media_thread_mem_dumper_ = std::make_unique<media::MemoryDumpProviderProxy>(
-      "WebMediaPlayer_MediaThread", media_task_runner_,
+      media::MemoryDumpProviderProxy::Name("WebMediaPlayer_MediaThread"),
+      media_task_runner_,
       ConvertToBaseRepeatingCallback(CrossThreadBindRepeating(
           &WebMediaPlayerImpl::OnMediaThreadMemoryDump, media_player_id_,
           CrossThreadUnretained(demuxer))));
@@ -4057,6 +4061,11 @@ void WebMediaPlayerImpl::RecordVideoOcclusionState(
     std::string_view occlusion_state) {
   media_log_->AddEvent<MediaLogEvent::kVideoOcclusionState>(
       std::string(occlusion_state));
+}
+
+void WebMediaPlayerImpl::SetVisibilityRatioAtPlaybackStart(double ratio) {
+  DCHECK(main_task_runner_->BelongsToCurrentThread());
+  media_metrics_provider_->SetVisibilityRatioAtPlaybackStart(ratio);
 }
 
 void WebMediaPlayerImpl::RecordAutoPictureInPictureInfo(

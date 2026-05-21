@@ -1,6 +1,6 @@
-/* Copyright (c) 2023-2025 The Khronos Group Inc.
- * Copyright (c) 2023-2025 Valve Corporation
- * Copyright (c) 2023-2025 LunarG, Inc.
+/* Copyright (c) 2023-2026 The Khronos Group Inc.
+ * Copyright (c) 2023-2026 Valve Corporation
+ * Copyright (c) 2023-2026 LunarG, Inc.
  * Copyright (c) 2025 Arm Limited.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -54,7 +54,7 @@ static const char *GetActionType(Func command) {
 
 std::string DescriptorValidator::DescribeDescriptor(const spirv::ResourceInterfaceVariable &resource_variable, uint32_t index,
                                                     VkDescriptorType type) const {
-    std::stringstream ss;
+    std::ostringstream ss;
     switch (type) {
         case VK_DESCRIPTOR_TYPE_SAMPLER:
             ss << "sampler ";
@@ -63,7 +63,11 @@ std::string DescriptorValidator::DescribeDescriptor(const spirv::ResourceInterfa
             ss << "combined image sampler ";
             break;
         case VK_DESCRIPTOR_TYPE_SAMPLE_WEIGHT_IMAGE_QCOM:
+            ss << "sampled weight image ";
+            break;
         case VK_DESCRIPTOR_TYPE_BLOCK_MATCH_IMAGE_QCOM:
+            ss << "block match image ";
+            break;
         case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
             ss << "sampled image ";
             break;
@@ -92,8 +96,10 @@ std::string DescriptorValidator::DescribeDescriptor(const spirv::ResourceInterfa
             break;
         case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR:
         case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV:
-        case VK_DESCRIPTOR_TYPE_PARTITIONED_ACCELERATION_STRUCTURE_NV:
             ss << "acceleration structure ";
+            break;
+        case VK_DESCRIPTOR_TYPE_PARTITIONED_ACCELERATION_STRUCTURE_NV:
+            ss << "partitioned acceleration structure ";
             break;
         case VK_DESCRIPTOR_TYPE_TENSOR_ARM:
             ss << "tensor ";
@@ -310,6 +316,9 @@ bool DescriptorValidator::ValidateDescriptor(const spirv::ResourceInterfaceVaria
                              DescribeDescriptor(resource_variable, index, descriptor_type).c_str(), FormatHandle(buffer).c_str(),
                              FormatHandle(binding->Handle()).c_str(), DescribeInstruction().c_str());
         }
+        if (dev_proxy.enabled_features.tileMemoryHeap && resource_variable.IsAccessed()) {
+            skip |= dev_proxy.ValidateBoundTileMemory(*descriptor.GetBufferState(), cb_state, *vuids);
+        }
     }
     if (dev_proxy.enabled_features.protectedMemory == VK_TRUE) {
         skip |= dev_proxy.ValidateProtectedBuffer(cb_state, *buffer_node, loc.Get(), vuids->unprotected_command_buffer_02707,
@@ -441,7 +450,7 @@ bool DescriptorValidator::ValidateDescriptor(const spirv::ResourceInterfaceVaria
                 string_VkImageViewType(image_view_ci.viewType), string_SpvDim(dim), is_image_array,
                 SuggestImageViewType(dim, is_image_array),
                 (is_gpu_av && resource_variable.IsArray())
-                    ? "\nAdvice: The dimension is tied to descriptor variable, so for descriptor indexing, you might need to "
+                    ? "\nAdvice: The dimension is tied to the descriptor variable, so for descriptor indexing, you might need to "
                       "express two different arrays of different types that share the same descriptor binding."
                     : "",
                 DescribeInstruction().c_str());
@@ -470,7 +479,7 @@ bool DescriptorValidator::ValidateDescriptor(const spirv::ResourceInterfaceVaria
             // This warning was added after being discussed in https://gitlab.khronos.org/vulkan/vulkan/-/issues/4128
             auto set = descriptor_set.Handle();
             const LogObjectList objlist(this->objlist, set, image_view);
-            std::stringstream msg;
+            std::ostringstream msg;
             msg << "the " << DescribeDescriptor(resource_variable, index, descriptor_type)
                 << " is accessed by a OpTypeImage that has a Format operand "
                 << string_SpirvImageFormat(resource_variable.info.vk_format) << " (equivalent to "
@@ -535,7 +544,7 @@ bool DescriptorValidator::ValidateDescriptor(const spirv::ResourceInterfaceVaria
     if (!dev_proxy.disabled[image_layout_validation]) {
         if (const auto image_layout_map = cb_state.GetImageLayoutMap(image_state->VkHandle())) {
             auto describe_descriptor_callback = [this, &resource_variable, index, descriptor_type]() {
-                std::stringstream ss;
+                std::ostringstream ss;
                 ss << DescribeDescriptor(resource_variable, index, descriptor_type);
                 if (descriptor_set.IsPushDescriptor()) {
                     ss << " updated by vkCmdPushDescriptorSet";
@@ -658,17 +667,19 @@ bool DescriptorValidator::ValidateDescriptor(const spirv::ResourceInterfaceVaria
             const bool layout_read_only = IsImageLayoutReadOnly(attachment_info.layout);
             const bool read_attachment = (subpass.usage & (VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT)) != 0;
             if (read_attachment && descriptor_written_to) {
+                const char* vuid = attachment_info.IsDepth()     ? vuids->image_subresources_subpass_depth_12339
+                                   : attachment_info.IsStencil() ? vuids->image_subresources_subpass_stencil_12340
+                                                                 : vuids->image_subresources_subpass_color_12338;
                 if (same_view) {
                     const LogObjectList objlist(this->objlist, descriptor_set.Handle(), image_view, framebuffer);
-                    skip |= LogError(vuids->image_subresources_subpass_write_06539, objlist, loc.Get(),
-                                     "the %s has %s which will be read from as %s attachment %" PRIu32 ".%s",
-                                     DescribeDescriptor(resource_variable, index, descriptor_type).c_str(),
-                                     FormatHandle(image_view).c_str(), FormatHandle(framebuffer).c_str(), att_index,
-                                     DescribeInstruction().c_str());
+                    skip |= LogError(
+                        vuid, objlist, loc.Get(), "the %s has %s which will be read from as %s attachment %" PRIu32 ".%s",
+                        DescribeDescriptor(resource_variable, index, descriptor_type).c_str(), FormatHandle(image_view).c_str(),
+                        FormatHandle(framebuffer).c_str(), att_index, DescribeInstruction().c_str());
                 } else if (overlapping_view) {
                     const LogObjectList objlist(this->objlist, descriptor_set.Handle(), image_view, framebuffer,
                                                 view_state->Handle());
-                    skip |= LogError(vuids->image_subresources_subpass_write_06539, objlist, loc.Get(),
+                    skip |= LogError(vuid, objlist, loc.Get(),
                                      "the %s has %s which will be overlap read from as %s in %s attachment %" PRIu32 " overlap.%s",
                                      DescribeDescriptor(resource_variable, index, descriptor_type).c_str(),
                                      FormatHandle(image_view).c_str(), FormatHandle(view_state->Handle()).c_str(),
@@ -704,6 +715,10 @@ bool DescriptorValidator::ValidateDescriptor(const spirv::ResourceInterfaceVaria
             skip |= dev_proxy.ValidateUnprotectedImage(cb_state, *image_state, loc.Get(), vuids->protected_command_buffer_02712,
                                                        " (Image is in a descriptorSet)");
         }
+    }
+
+    if (dev_proxy.enabled_features.tileMemoryHeap) {
+        skip |= dev_proxy.ValidateBoundTileMemory(*image_view_state->image_state, cb_state, *vuids);
     }
 
     // If the Image View is invalid, the combined sampler mayb have the same issue
@@ -1029,7 +1044,7 @@ bool DescriptorValidator::ValidateDescriptor(const spirv::ResourceInterfaceVaria
         // This warning was added after being discussed in https://gitlab.khronos.org/vulkan/vulkan/-/issues/4128
         auto set = descriptor_set.Handle();
         const LogObjectList objlist(this->objlist, set, buffer_view);
-        std::stringstream msg;
+        std::ostringstream msg;
         msg << "the " << DescribeDescriptor(resource_variable, index, descriptor_type)
             << " is accessed by a OpTypeImage that has a Format operand "
             << string_SpirvImageFormat(resource_variable.info.vk_format) << " (equivalent to "
@@ -1142,6 +1157,10 @@ bool DescriptorValidator::ValidateDescriptor(const spirv::ResourceInterfaceVaria
         }
     }
 
+    if (dev_proxy.enabled_features.tileMemoryHeap) {
+        skip |= dev_proxy.ValidateBoundTileMemory(*buffer_view_state->buffer_state, cb_state, *vuids);
+    }
+
     return skip;
 }
 
@@ -1235,25 +1254,37 @@ bool DescriptorValidator::ValidateDescriptor(const spirv::ResourceInterfaceVaria
 bool DescriptorValidator::ValidateDescriptor(const spirv::ResourceInterfaceVariable &resource_variable, uint32_t index,
                                              VkDescriptorType descriptor_type, const vvl::TensorDescriptor &descriptor) const {
     bool skip = false;
+
     const vvl::TensorView *tensor_view_state = descriptor.GetTensorViewState();
-    const auto tensor_state = tensor_view_state->tensor_state;
+    ASSERT_AND_RETURN_SKIP(tensor_view_state);
+    if (tensor_view_state->Destroyed()) {
+        const LogObjectList objlist(this->objlist, descriptor_set.Handle());
+        skip |= LogError(vuids->descriptor_buffer_bit_set_08114, objlist, loc.Get(),
+                         "the %s is using tensor view %s that is invalid or has been destroyed.%s",
+                         DescribeDescriptor(resource_variable, index, VK_DESCRIPTOR_TYPE_TENSOR_ARM).c_str(),
+                         FormatHandle(tensor_view_state->Handle()).c_str(), DescribeInstruction().c_str());
+        return skip;
+    }
+    const vvl::Tensor *tensor_state = descriptor.GetTensorState();
+    ASSERT_AND_RETURN_SKIP(tensor_state);
+    if (tensor_state->Destroyed()) {
+        const LogObjectList objlist(this->objlist, descriptor_set.Handle());
+        skip |= LogError(vuids->descriptor_buffer_bit_set_08114, objlist, loc.Get(),
+                         "the %s is using tensor %s that is invalid or has been destroyed.%s",
+                         DescribeDescriptor(resource_variable, index, VK_DESCRIPTOR_TYPE_TENSOR_ARM).c_str(),
+                         FormatHandle(tensor_state->Handle()).c_str(), DescribeInstruction().c_str());
+        return skip;
+    }
+
     if (tensor_state->unprotected) {
         skip |= dev_proxy.ValidateUnprotectedTensor(cb_state, *tensor_state, loc.Get(), vuids->protected_command_buffer_02712);
     } else {
         skip |= dev_proxy.ValidateProtectedTensor(cb_state, *tensor_state, loc.Get(), vuids->unprotected_command_buffer_02707);
     }
 
-    // TODO: Waiting on spec clarification for vkCmdDispatchDataGraphARM:
-    // https://gitlab.khronos.org/vulkan/vulkan/-/issues/4505
+    // These VUs are only for tensors used in _shaders_. For use in _datagraphs_, VU 9923 applies.
+    // https://gitlab.khronos.org/vulkan/vulkan/-/issues/4482#note_564658
     if (loc.Get().function != Func::vkCmdDispatchDataGraphARM) {
-        if ((tensor_state->create_info.pDescription->usage & VK_TENSOR_USAGE_SHADER_BIT_ARM) == 0) {
-            const LogObjectList objlist(cb_state.Handle(), this->objlist, descriptor_set.Handle(), tensor_state->Handle());
-            skip |= LogError(
-                vuids->tensorARM_pDescription_09900, objlist, loc.Get(),
-                "the %s is using tensor %s created with usage %s, which doesn't include VK_TENSOR_USAGE_SHADER_BIT_ARM.%s",
-                DescribeDescriptor(resource_variable, index, descriptor_type).c_str(), FormatHandle(tensor_state->Handle()).c_str(),
-                string_VkTensorUsageFlagBitsARM(tensor_state->create_info.pDescription->usage), DescribeInstruction().c_str());
-        }
         if (resource_variable.info.tensor_rank != tensor_state->create_info.pDescription->dimensionCount) {
             const LogObjectList objlist(cb_state.Handle(), this->objlist, descriptor_set.Handle(), tensor_state->Handle());
             skip |= LogError(
@@ -1273,6 +1304,19 @@ bool DescriptorValidator::ValidateDescriptor(const spirv::ResourceInterfaceVaria
                 spirv::string_NumericType(resource_variable.info.numeric_type), resource_variable.info.bit_width,
                 string_VkFormat(resource_variable.info.vk_format), DescribeInstruction().c_str());
         }
+    }
+
+    VkTensorUsageFlagBitsARM usage_flag = (loc.Get().function == Func::vkCmdDispatchDataGraphARM)
+                                              ? VK_TENSOR_USAGE_DATA_GRAPH_BIT_ARM
+                                              : VK_TENSOR_USAGE_SHADER_BIT_ARM;
+    if ((tensor_state->create_info.pDescription->usage & usage_flag) == 0) {
+        const LogObjectList objlist(cb_state.Handle(), this->objlist, descriptor_set.Handle(), tensor_state->Handle());
+        skip |= LogError(vuids->tensorARM_pDescription_09900, objlist, loc.Get(),
+                         "the %s is using tensor %s created with usage %s, which doesn't include %s.%s",
+                         DescribeDescriptor(resource_variable, index, descriptor_type).c_str(),
+                         FormatHandle(tensor_state->Handle()).c_str(),
+                         string_VkTensorUsageFlagBitsARM(tensor_state->create_info.pDescription->usage),
+                         string_VkTensorUsageFlagBitsARM(usage_flag), DescribeInstruction().c_str());
     }
 
     return skip;

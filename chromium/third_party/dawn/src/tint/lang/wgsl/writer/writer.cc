@@ -50,18 +50,13 @@ Result<Output> Generate(const Program& program, const Options& options) {
 }
 
 Result<Output> WgslFromIR(core::ir::Module& module, const Options& options) {
-    auto res = ProgramFromIR(module, options);
-    if (res != Success) {
-        return res.Failure();
-    }
-    return Generate(res.Move(), options);
+    TINT_CHECK_RESULT_UNWRAP(res, ProgramFromIR(module, options));
+    return Generate(res, options);
 }
 
 Result<Program> ProgramFromIR(core::ir::Module& module, const Options& options) {
     // core-dialect -> WGSL-dialect
-    if (auto res = Raise(module); res != Success) {
-        return res.Failure();
-    }
+    TINT_CHECK_RESULT(Raise(module));
 
     auto program = IRToProgram(module, options);
     if (!program.IsValid()) {

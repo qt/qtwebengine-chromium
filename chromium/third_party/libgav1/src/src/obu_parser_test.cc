@@ -800,18 +800,22 @@ class ObuParserTest : public testing::Test {
     OBU_TEST_COMPARE(luminance_min);
   }
 
-  void VerifyMetadataItutT35(const ObuMetadataItutT35& expected) {
-    EXPECT_TRUE(obu_->current_frame_->itut_t35_set());
-    const ObuMetadataItutT35& actual = obu_->current_frame_->itut_t35();
-    OBU_TEST_COMPARE(country_code);
-    if (actual.country_code == 0xFF) {
-      OBU_TEST_COMPARE(country_code_extension_byte);
-    }
-    ASSERT_EQ(expected.payload_size, actual.payload_size);
-    if (actual.payload_size != 0) {
-      EXPECT_EQ(memcmp(expected.payload_bytes, actual.payload_bytes,
-                       actual.payload_size),
-                0);
+  void VerifyMetadataItutT35(const ObuMetadataItutT35* expected_values,
+                             int expected_count) {
+    EXPECT_EQ(obu_->current_frame_->itut_t35_count(), expected_count);
+    for (int i = 0; i < expected_count; ++i) {
+      const ObuMetadataItutT35& actual = obu_->current_frame_->itut_t35()[i];
+      const ObuMetadataItutT35& expected = expected_values[i];
+      OBU_TEST_COMPARE(country_code);
+      if (actual.country_code == 0xFF) {
+        OBU_TEST_COMPARE(country_code_extension_byte);
+      }
+      ASSERT_EQ(expected.payload_size, actual.payload_size);
+      if (actual.payload_size != 0) {
+        EXPECT_EQ(memcmp(expected.payload_bytes, actual.payload_bytes,
+                         actual.payload_size),
+                  0);
+      }
     }
   }
 
@@ -2593,7 +2597,7 @@ TEST_F(ObuParserTest, MetadataItutT35) {
   data.AppendLiteral(8, 0x00);
 
   ASSERT_TRUE(ParseMetadata(data.GenerateData()));
-  VerifyMetadataItutT35(gold);
+  VerifyMetadataItutT35(&gold, 1);
 
   gold.country_code = 0xFF;
   gold.country_code_extension_byte = 10;
@@ -2602,7 +2606,7 @@ TEST_F(ObuParserTest, MetadataItutT35) {
   data.InsertLiteral(16, 8, gold.country_code_extension_byte);
 
   ASSERT_TRUE(ParseMetadata(data.GenerateData()));
-  VerifyMetadataItutT35(gold);
+  VerifyMetadataItutT35(&gold, 1);
 }
 
 TEST_F(ObuParserTest, MetadataTimecode) {

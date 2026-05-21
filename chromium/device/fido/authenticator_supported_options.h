@@ -9,7 +9,7 @@
 
 #include "base/component_export.h"
 #include "components/cbor/values.h"
-#include "device/fido/fido_constants.h"
+#include "device/fido/public/fido_constants.h"
 
 namespace device {
 
@@ -119,6 +119,9 @@ struct COMPONENT_EXPORT(DEVICE_FIDO) AuthenticatorSupportedOptions {
   // If true, indicates that the authenticator supports the hmac_secret
   // extension.
   bool supports_hmac_secret = false;
+  // If true, indicates that the authenticator supports the hmac_secret_mc
+  // extension.
+  bool supports_hmac_secret_mc = false;
   // If true, indicates that the authenticator supports the PRF extension. This
   // will be preferred to the hmac-secret extension if supported.
   bool supports_prf = false;

@@ -202,10 +202,10 @@ wgsl::BuiltinFn Convert(core::BuiltinFn fn) {
         CASE(kSubgroupMatrixScalarSubtract)
         CASE(kSubgroupMatrixScalarMultiply)
         CASE(kPrint)
-        CASE(kHasBinding)
-        CASE(kGetBinding)
         CASE(kHasResource)
         CASE(kGetResource)
+        CASE(kBufferView)
+        CASE(kBufferLength)
         case core::BuiltinFn::kNone:
             break;
     }
@@ -264,9 +264,7 @@ void ReplaceWorkgroupBarrier(core::ir::Builder& b, core::ir::CoreBuiltinCall* ca
 }  // namespace
 
 Result<SuccessType> Raise(core::ir::Module& mod) {
-    if (auto result = core::ir::transform::RenameConflicts(mod); result != Success) {
-        return result.Failure();
-    }
+    TINT_CHECK_RESULT(core::ir::transform::RenameConflicts(mod));
 
     core::ir::Builder b{mod};
     for (auto* inst : mod.Instructions()) {
@@ -281,12 +279,8 @@ Result<SuccessType> Raise(core::ir::Module& mod) {
             }
         }
     }
-    if (auto result = raise::ValueToLet(mod); result != Success) {
-        return result.Failure();
-    }
-    if (auto result = raise::PtrToRef(mod); result != Success) {
-        return result.Failure();
-    }
+    TINT_CHECK_RESULT(raise::ValueToLet(mod));
+    TINT_CHECK_RESULT(raise::PtrToRef(mod));
 
     return Success;
 }

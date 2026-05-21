@@ -81,6 +81,7 @@ if (is_win) {
 
 grit_strings("generated_resources") {
   source = "generated_resources.grd"
+  gritdeps = "generated_resources.grd.gritdeps"
   defines = chrome_grit_defines + [ "is_cfm=${is_cfm}" ]
   output_dir = "$root_gen_dir/chrome"
   outputs = [ "grit/generated_resources.h" ]
@@ -143,6 +144,7 @@ static_library("test_support") {
     "//components/devtools/devtools_pipe",
     "//components/memory_system",
     "//components/startup_metric_utils",
+    "//components/variations/service",
     "//components/webui/about",
     "//content/public/app",
     "//content/public/common",

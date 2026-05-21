@@ -12,7 +12,6 @@
 #include <vector>
 
 #include "base/check_op.h"
-#include "base/containers/contains.h"
 #include "base/containers/span.h"
 #include "base/containers/to_vector.h"
 #include "base/files/file_path.h"
@@ -162,11 +161,11 @@ constexpr auto kTwoPageVerticalLayoutHorzLinePage1Inputs =
 // brushes and "Light Yellow" for highlighter brushes.
 constexpr SkColor kYellow = SkColorSetRGB(0xFD, 0xD6, 0x63);
 
-// Commonly used test brush message params. The color corresponds to "Red 1" for
-// pen brushes and "Light Red" for highlighter brushes.
-constexpr TestAnnotationBrushMessageParams kRedBrushParams{
-    SkColorSetRGB(0xF2, 0x8B, 0x82),
-    /*size=*/6.0};
+// Commonly used test brush color and message params. The color corresponds to
+// "Red 1" for pen brushes and "Light Red" for highlighter brushes.
+constexpr SkColor kRedColor = SkColorSetRGB(0xF2, 0x8B, 0x82);
+constexpr TestAnnotationBrushMessageParams kRedBrushParams{kRedColor,
+                                                           /*size=*/6.0};
 
 // Matcher for ink::Stroke objects against their expected brush and inputs.
 MATCHER_P(InkStrokeEq, expected_brush, "") {
@@ -221,9 +220,8 @@ MATCHER_P2(WebKeyboardEventEq, key, modifiers, "") {
   return true;
 }
 
-base::Value::Dict CreateGetAnnotationBrushMessage(
-    const std::string& brush_type) {
-  auto message = base::Value::Dict()
+base::DictValue CreateGetAnnotationBrushMessage(const std::string& brush_type) {
+  auto message = base::DictValue()
                      .Set("type", "getAnnotationBrush")
                      .Set("messageId", "foo");
   if (!brush_type.empty()) {
@@ -254,6 +252,17 @@ blink::WebTouchEvent CreatePenEvent(blink::WebInputEvent::Type type,
         blink::WebPointerProperties::PointerType::kPen;
   }
   return pen_event;
+}
+
+blink::WebTouchEvent CreateEraserTipEvent(
+    blink::WebInputEvent::Type type,
+    base::span<const gfx::PointF> points) {
+  blink::WebTouchEvent eraser_event = CreateTouchEvent(type, points);
+  for (size_t i = 0; i < eraser_event.touches_length; ++i) {
+    eraser_event.touches[i].pointer_type =
+        blink::WebPointerProperties::PointerType::kEraser;
+  }
+  return eraser_event;
 }
 
 class FakeClient : public PdfInkModuleClient {
@@ -319,7 +328,7 @@ class FakeClient : public PdfInkModuleClient {
   }
 
   bool IsPageVisible(int page_index) override {
-    return base::Contains(visible_page_indices_, page_index);
+    return visible_page_indices_.contains(page_index);
   }
 
   MOCK_METHOD(bool,
@@ -339,7 +348,7 @@ class FakeClient : public PdfInkModuleClient {
 
   MOCK_METHOD(int, PageIndexFromPoint, (const gfx::PointF& point), (override));
 
-  MOCK_METHOD(void, PostMessage, (base::Value::Dict message), (override));
+  MOCK_METHOD(void, PostMessage, (base::DictValue message), (override));
 
   MOCK_METHOD(void,
               RequestThumbnail,
@@ -503,24 +512,23 @@ class PdfInkModuleTest : public testing::TestWithParam<InkTestVariation> {
 
 TEST_P(PdfInkModuleTest, UnknownMessage) {
   EXPECT_FALSE(
-      ink_module().OnMessage(base::Value::Dict().Set("type", "nonInkMessage")));
+      ink_module().OnMessage(base::DictValue().Set("type", "nonInkMessage")));
 }
 
 // Verify that a get eraser message gets the eraser parameters.
 TEST_P(PdfInkModuleTest, HandleGetAnnotationBrushMessageEraser) {
   EnableDrawAnnotationMode();
 
-  EXPECT_CALL(client(), PostMessage)
-      .WillOnce([](const base::Value::Dict& dict) {
-        auto expected = base::test::ParseJsonDict(R"({
+  EXPECT_CALL(client(), PostMessage).WillOnce([](const base::DictValue& dict) {
+    auto expected = base::test::ParseJsonDict(R"({
             "type": "getAnnotationBrushReply",
             "messageId": "foo",
             "data": {
               "type": "eraser",
             },
         })");
-        EXPECT_THAT(dict, base::test::DictionaryHasValues(expected));
-      });
+    EXPECT_THAT(dict, base::test::DictionaryHasValues(expected));
+  });
 
   EXPECT_TRUE(
       ink_module().OnMessage(CreateGetAnnotationBrushMessage("eraser")));
@@ -530,9 +538,8 @@ TEST_P(PdfInkModuleTest, HandleGetAnnotationBrushMessageEraser) {
 TEST_P(PdfInkModuleTest, HandleGetAnnotationBrushMessagePen) {
   EnableDrawAnnotationMode();
 
-  EXPECT_CALL(client(), PostMessage)
-      .WillOnce([](const base::Value::Dict& dict) {
-        auto expected = base::test::ParseJsonDict(R"({
+  EXPECT_CALL(client(), PostMessage).WillOnce([](const base::DictValue& dict) {
+    auto expected = base::test::ParseJsonDict(R"({
             "type": "getAnnotationBrushReply",
             "messageId": "foo",
             "data": {
@@ -545,8 +552,8 @@ TEST_P(PdfInkModuleTest, HandleGetAnnotationBrushMessagePen) {
               },
             },
         })");
-        EXPECT_THAT(dict, base::test::DictionaryHasValues(expected));
-      });
+    EXPECT_THAT(dict, base::test::DictionaryHasValues(expected));
+  });
 
   EXPECT_TRUE(ink_module().OnMessage(CreateGetAnnotationBrushMessage("pen")));
 }
@@ -555,9 +562,8 @@ TEST_P(PdfInkModuleTest, HandleGetAnnotationBrushMessagePen) {
 TEST_P(PdfInkModuleTest, HandleGetAnnotationBrushMessageHighlighter) {
   EnableDrawAnnotationMode();
 
-  EXPECT_CALL(client(), PostMessage)
-      .WillOnce([](const base::Value::Dict& dict) {
-        auto expected = base::test::ParseJsonDict(R"({
+  EXPECT_CALL(client(), PostMessage).WillOnce([](const base::DictValue& dict) {
+    auto expected = base::test::ParseJsonDict(R"({
             "type": "getAnnotationBrushReply",
             "messageId": "foo",
             "data": {
@@ -570,8 +576,8 @@ TEST_P(PdfInkModuleTest, HandleGetAnnotationBrushMessageHighlighter) {
               },
             },
         })");
-        EXPECT_THAT(dict, base::test::DictionaryHasValues(expected));
-      });
+    EXPECT_THAT(dict, base::test::DictionaryHasValues(expected));
+  });
 
   EXPECT_TRUE(
       ink_module().OnMessage(CreateGetAnnotationBrushMessage("highlighter")));
@@ -582,9 +588,8 @@ TEST_P(PdfInkModuleTest, HandleGetAnnotationBrushMessageHighlighter) {
 TEST_P(PdfInkModuleTest, HandleGetAnnotationBrushMessageDefault) {
   EnableDrawAnnotationMode();
 
-  EXPECT_CALL(client(), PostMessage)
-      .WillOnce([](const base::Value::Dict& dict) {
-        auto expected = base::test::ParseJsonDict(R"({
+  EXPECT_CALL(client(), PostMessage).WillOnce([](const base::DictValue& dict) {
+    auto expected = base::test::ParseJsonDict(R"({
             "type": "getAnnotationBrushReply",
             "messageId": "foo",
             "data": {
@@ -597,8 +602,8 @@ TEST_P(PdfInkModuleTest, HandleGetAnnotationBrushMessageDefault) {
               },
             },
         })");
-        EXPECT_THAT(dict, base::test::DictionaryHasValues(expected));
-      });
+    EXPECT_THAT(dict, base::test::DictionaryHasValues(expected));
+  });
 
   EXPECT_TRUE(ink_module().OnMessage(CreateGetAnnotationBrushMessage("")));
 }
@@ -612,17 +617,16 @@ TEST_P(PdfInkModuleTest, HandleGetAnnotationBrushMessageCurrent) {
   EXPECT_TRUE(ink_module().OnMessage(
       CreateSetAnnotationBrushMessageForTesting("eraser", nullptr)));
 
-  EXPECT_CALL(client(), PostMessage)
-      .WillOnce([](const base::Value::Dict& dict) {
-        auto expected = base::test::ParseJsonDict(R"({
+  EXPECT_CALL(client(), PostMessage).WillOnce([](const base::DictValue& dict) {
+    auto expected = base::test::ParseJsonDict(R"({
             "type": "getAnnotationBrushReply",
             "messageId": "foo",
             "data": {
               "type": "eraser",
             },
         })");
-        EXPECT_THAT(dict, base::test::DictionaryHasValues(expected));
-      });
+    EXPECT_THAT(dict, base::test::DictionaryHasValues(expected));
+  });
 
   EXPECT_TRUE(ink_module().OnMessage(CreateGetAnnotationBrushMessage("")));
 }
@@ -632,7 +636,7 @@ TEST_P(PdfInkModuleTest, HandleGetAnnotationBrushMessageCurrent) {
 TEST_P(PdfInkModuleTest, HandleSetAnnotationBrushMessageEraser) {
   EnableDrawAnnotationMode();
 
-  base::Value::Dict message =
+  base::DictValue message =
       CreateSetAnnotationBrushMessageForTesting("eraser", nullptr);
   EXPECT_TRUE(ink_module().OnMessage(message));
 
@@ -648,7 +652,7 @@ TEST_P(PdfInkModuleTest, HandleSetAnnotationBrushMessagePen) {
   // Select the "Yellow 1" color.
   TestAnnotationBrushMessageParams message_params{kYellow,
                                                   /*size=*/8.0};
-  base::Value::Dict message =
+  base::DictValue message =
       CreateSetAnnotationBrushMessageForTesting("pen", &message_params);
   EXPECT_TRUE(ink_module().OnMessage(message));
 
@@ -672,7 +676,7 @@ TEST_P(PdfInkModuleTest, HandleSetAnnotationBrushMessageHighlighter) {
   // Select the "Light Yellow" color.
   TestAnnotationBrushMessageParams message_params{kYellow,
                                                   /*size=*/4.5};
-  base::Value::Dict message =
+  base::DictValue message =
       CreateSetAnnotationBrushMessageForTesting("highlighter", &message_params);
   EXPECT_TRUE(ink_module().OnMessage(message));
 
@@ -696,7 +700,7 @@ TEST_P(PdfInkModuleTest, HandleSetAnnotationBrushMessageColorZero) {
   TestAnnotationBrushMessageParams message_params{
       SkColorSetRGB(0x00, 0x00, 0x00),
       /*size=*/4.5};
-  base::Value::Dict message =
+  base::DictValue message =
       CreateSetAnnotationBrushMessageForTesting("pen", &message_params);
   EXPECT_TRUE(ink_module().OnMessage(message));
 
@@ -734,7 +738,7 @@ TEST_P(PdfInkModuleTest, HandleSetAnnotationModeMessage) {
 
   EXPECT_FALSE(ink_module().enabled());
 
-  base::Value::Dict message =
+  base::DictValue message =
       CreateSetAnnotationModeMessageForTesting(InkAnnotationMode::kOff);
 
   EXPECT_TRUE(ink_module().OnMessage(message));
@@ -772,7 +776,7 @@ TEST_P(PdfInkModuleTest, MaybeSetCursorWhenTogglingAnnotationMode) {
     EXPECT_TRUE(ink_module().enabled());
   });
 
-  base::Value::Dict message =
+  base::DictValue message =
       CreateSetAnnotationModeMessageForTesting(InkAnnotationMode::kDraw);
   EXPECT_TRUE(ink_module().OnMessage(message));
   EXPECT_TRUE(ink_module().enabled());
@@ -843,7 +847,7 @@ TEST_P(PdfInkModuleTest, MaybeSetCursorWhenChangingBrushes) {
   TestAnnotationBrushMessageParams message_params{
       SkColorSetRGB(0x00, 0xFF, 0x00),
       /*size=*/16.0};
-  base::Value::Dict message =
+  base::DictValue message =
       CreateSetAnnotationBrushMessageForTesting("pen", &message_params);
   EXPECT_TRUE(ink_module().OnMessage(message));
 
@@ -882,7 +886,7 @@ TEST_P(PdfInkModuleTest, MaybeSetCursorWhenChangingZoom) {
   TestAnnotationBrushMessageParams message_params{
       SkColorSetRGB(0x00, 0xFF, 0x00),
       /*size=*/16.0};
-  base::Value::Dict message =
+  base::DictValue message =
       CreateSetAnnotationBrushMessageForTesting("pen", &message_params);
   EXPECT_TRUE(ink_module().OnMessage(message));
 
@@ -915,7 +919,7 @@ class PdfInkModuleStrokeTest : public PdfInkModuleTest {
     PdfInkModuleTest::SetUp();
 
     EXPECT_CALL(client(), PostMessage)
-        .WillRepeatedly([&](const base::Value::Dict& dict) {
+        .WillRepeatedly([&](const base::DictValue& dict) {
           const std::string* type = dict.FindString("type");
           ASSERT_TRUE(type);
           if (*type != "updateInk2Thumbnail") {
@@ -2150,6 +2154,202 @@ TEST_P(PdfInkModuleStrokeTest, EraseStrokeWithPen) {
   EXPECT_THAT(updated_ink_thumbnail_page_indices(), ElementsAre(0, 0));
 }
 
+TEST_P(PdfInkModuleStrokeTest, EraserTipTemporarilySwitchesToEraseMode) {
+  EnableDrawAnnotationMode();
+  InitializeSimpleSinglePageBasicLayout();
+
+  ExpectStrokesAdded(/*strokes_affected=*/1);
+  const std::vector<base::span<const gfx::PointF>> move_points{
+      base::span_from_ref(kMouseMovePoint),
+  };
+  ApplyStrokeWithPenAtPoints(base::span_from_ref(kMouseDownPoint), move_points,
+                             base::span_from_ref(kMouseUpPoint));
+
+  EXPECT_THAT(
+      VisibleStrokeInputPositions(),
+      ElementsAre(Pair(0, ElementsAre(ElementsAreArray(kMousePoints)))));
+  ExpectStrokeCounts(/*started=*/1, /*modified_finished=*/1,
+                     /*unmodified_finished=*/0);
+
+  // Use eraser tip to erase.
+  ExpectUpdateStrokesActive(/*strokes_affected=*/1, /*expected_active=*/false);
+  blink::WebTouchEvent eraser_start =
+      CreateEraserTipEvent(blink::WebInputEvent::Type::kTouchStart,
+                           base::span_from_ref(kMouseDownPoint));
+  EXPECT_TRUE(ink_module().HandleInputEvent(eraser_start));
+
+  blink::WebTouchEvent eraser_move =
+      CreateEraserTipEvent(blink::WebInputEvent::Type::kTouchMove,
+                           base::span_from_ref(kMouseMovePoint));
+  EXPECT_TRUE(ink_module().HandleInputEvent(eraser_move));
+
+  blink::WebTouchEvent eraser_end =
+      CreateEraserTipEvent(blink::WebInputEvent::Type::kTouchEnd,
+                           base::span_from_ref(kMouseUpPoint));
+  EXPECT_TRUE(ink_module().HandleInputEvent(eraser_end));
+
+  EXPECT_TRUE(VisibleStrokeInputPositions().empty());
+  ExpectStrokeCounts(/*started=*/2, /*modified_finished=*/2,
+                     /*unmodified_finished=*/0);
+
+  // Tool should be restored to pen - verify by drawing another stroke.
+  ExpectStrokesAdded(/*strokes_affected=*/1);
+  ApplyStrokeWithPenAtPoints(base::span_from_ref(kMouseDownPoint), move_points,
+                             base::span_from_ref(kMouseUpPoint));
+
+  EXPECT_THAT(
+      VisibleStrokeInputPositions(),
+      ElementsAre(Pair(0, ElementsAre(ElementsAreArray(kMousePoints)))));
+  ExpectStrokeCounts(/*started=*/3, /*modified_finished=*/3,
+                     /*unmodified_finished=*/0);
+}
+
+TEST_P(PdfInkModuleStrokeTest, EraserTipWithHighlighterRestoresHighlighter) {
+  EnableDrawAnnotationMode();
+  InitializeSimpleSinglePageBasicLayout();
+
+  SelectBrushTool(PdfInkBrush::Type::kHighlighter, kRedBrushParams);
+
+  ExpectStrokesAdded(/*strokes_affected=*/1);
+  const std::vector<base::span<const gfx::PointF>> move_points{
+      base::span_from_ref(kMouseMovePoint),
+  };
+  ApplyStrokeWithPenAtPoints(base::span_from_ref(kMouseDownPoint), move_points,
+                             base::span_from_ref(kMouseUpPoint));
+
+  EXPECT_THAT(
+      VisibleStrokeInputPositions(),
+      ElementsAre(Pair(0, ElementsAre(ElementsAreArray(kMousePoints)))));
+
+  ExpectUpdateStrokesActive(/*strokes_affected=*/1, /*expected_active=*/false);
+  blink::WebTouchEvent eraser_start =
+      CreateEraserTipEvent(blink::WebInputEvent::Type::kTouchStart,
+                           base::span_from_ref(kMouseDownPoint));
+  EXPECT_TRUE(ink_module().HandleInputEvent(eraser_start));
+
+  blink::WebTouchEvent eraser_move =
+      CreateEraserTipEvent(blink::WebInputEvent::Type::kTouchMove,
+                           base::span_from_ref(kMouseMovePoint));
+  EXPECT_TRUE(ink_module().HandleInputEvent(eraser_move));
+
+  blink::WebTouchEvent eraser_end =
+      CreateEraserTipEvent(blink::WebInputEvent::Type::kTouchEnd,
+                           base::span_from_ref(kMouseUpPoint));
+  EXPECT_TRUE(ink_module().HandleInputEvent(eraser_end));
+
+  EXPECT_TRUE(VisibleStrokeInputPositions().empty());
+
+  // Verify highlighter was restored by checking opacity (0.4 for highlighter).
+  const PdfInkBrush* brush = ink_module().GetPdfInkBrushForTesting();
+  ASSERT_TRUE(brush);
+  EXPECT_EQ(0.4f, GetOpacityMultiplierFromBrush(brush->ink_brush()));
+}
+
+TEST_P(PdfInkModuleStrokeTest, EraserTipWhenAlreadyInEraserMode) {
+  EnableDrawAnnotationMode();
+  InitializeSimpleSinglePageBasicLayout();
+
+  ExpectStrokesAdded(/*strokes_affected=*/1);
+  const std::vector<base::span<const gfx::PointF>> move_points{
+      base::span_from_ref(kMouseMovePoint),
+  };
+  ApplyStrokeWithPenAtPoints(base::span_from_ref(kMouseDownPoint), move_points,
+                             base::span_from_ref(kMouseUpPoint));
+
+  EXPECT_THAT(
+      VisibleStrokeInputPositions(),
+      ElementsAre(Pair(0, ElementsAre(ElementsAreArray(kMousePoints)))));
+
+  SelectEraserTool();
+
+  ExpectUpdateStrokesActive(/*strokes_affected=*/1, /*expected_active=*/false);
+  blink::WebTouchEvent eraser_start =
+      CreateEraserTipEvent(blink::WebInputEvent::Type::kTouchStart,
+                           base::span_from_ref(kMouseDownPoint));
+  EXPECT_TRUE(ink_module().HandleInputEvent(eraser_start));
+
+  blink::WebTouchEvent eraser_move =
+      CreateEraserTipEvent(blink::WebInputEvent::Type::kTouchMove,
+                           base::span_from_ref(kMouseMovePoint));
+  EXPECT_TRUE(ink_module().HandleInputEvent(eraser_move));
+
+  blink::WebTouchEvent eraser_end =
+      CreateEraserTipEvent(blink::WebInputEvent::Type::kTouchEnd,
+                           base::span_from_ref(kMouseUpPoint));
+  EXPECT_TRUE(ink_module().HandleInputEvent(eraser_end));
+
+  EXPECT_TRUE(VisibleStrokeInputPositions().empty());
+
+  // Should still be in eraser mode.
+  EXPECT_FALSE(ink_module().GetPdfInkBrushForTesting());
+}
+
+TEST_P(PdfInkModuleStrokeTest, EraserTipInterruptsPenStroke) {
+  EnableDrawAnnotationMode();
+  InitializeSimpleSinglePageBasicLayout();
+
+  // Start drawing a stroke with pen (but don't finish it).
+  blink::WebTouchEvent pen_start =
+      CreatePenEvent(blink::WebInputEvent::Type::kTouchStart,
+                     base::span_from_ref(kMouseDownPoint));
+  EXPECT_TRUE(ink_module().HandleInputEvent(pen_start));
+
+  blink::WebTouchEvent pen_move =
+      CreatePenEvent(blink::WebInputEvent::Type::kTouchMove,
+                     base::span_from_ref(kMouseMovePoint));
+  EXPECT_TRUE(ink_module().HandleInputEvent(pen_move));
+
+  // Eraser tip arrives while stroke is in progress - should finish the partial
+  // stroke and switch to eraser mode. Use a position far from the stroke so it
+  // doesn't get erased immediately (stroke is at 10,15 -> 20,25).
+  constexpr gfx::PointF kEraserPoint = gfx::PointF(45.0f, 55.0f);
+  ExpectStrokesAdded(/*strokes_affected=*/1);
+  blink::WebTouchEvent eraser_start =
+      CreateEraserTipEvent(blink::WebInputEvent::Type::kTouchStart,
+                           base::span_from_ref(kEraserPoint));
+  EXPECT_TRUE(ink_module().HandleInputEvent(eraser_start));
+
+  // The partial stroke should have been finished and saved.
+  EXPECT_THAT(VisibleStrokeInputPositions(),
+              ElementsAre(Pair(0, ElementsAre(ElementsAre(kMouseDownPoint,
+                                                          kMouseMovePoint)))));
+
+  // Complete eraser action (still far from the stroke).
+  blink::WebTouchEvent eraser_end = CreateEraserTipEvent(
+      blink::WebInputEvent::Type::kTouchEnd, base::span_from_ref(kEraserPoint));
+  EXPECT_TRUE(ink_module().HandleInputEvent(eraser_end));
+
+  // Stroke should still be visible (eraser didn't touch it).
+  EXPECT_THAT(VisibleStrokeInputPositions(),
+              ElementsAre(Pair(0, ElementsAre(ElementsAre(kMouseDownPoint,
+                                                          kMouseMovePoint)))));
+
+  // Now use eraser tip again to actually erase the stroke.
+  ExpectUpdateStrokesActive(/*strokes_affected=*/1, /*expected_active=*/false);
+  blink::WebTouchEvent eraser_start2 =
+      CreateEraserTipEvent(blink::WebInputEvent::Type::kTouchStart,
+                           base::span_from_ref(kMouseDownPoint));
+  EXPECT_TRUE(ink_module().HandleInputEvent(eraser_start2));
+
+  blink::WebTouchEvent eraser_move =
+      CreateEraserTipEvent(blink::WebInputEvent::Type::kTouchMove,
+                           base::span_from_ref(kMouseMovePoint));
+  EXPECT_TRUE(ink_module().HandleInputEvent(eraser_move));
+
+  blink::WebTouchEvent eraser_end2 =
+      CreateEraserTipEvent(blink::WebInputEvent::Type::kTouchEnd,
+                           base::span_from_ref(kMouseUpPoint));
+  EXPECT_TRUE(ink_module().HandleInputEvent(eraser_end2));
+
+  // Stroke should now be erased.
+  EXPECT_TRUE(VisibleStrokeInputPositions().empty());
+
+  // Tool should be restored to pen (pen has opacity 1.0f).
+  const PdfInkBrush* brush = ink_module().GetPdfInkBrushForTesting();
+  ASSERT_TRUE(brush);
+  EXPECT_EQ(1.0f, GetOpacityMultiplierFromBrush(brush->ink_brush()));
+}
+
 TEST_P(PdfInkModuleStrokeTest, StrokeMissedEndEventThenMouseDown) {
   EnableDrawAnnotationMode();
   InitializeSimpleSinglePageBasicLayout();
@@ -2223,9 +2423,8 @@ TEST_P(PdfInkModuleStrokeTest, ChangeBrushColorDuringDrawing) {
 
   // While the stroke is still in progress, change the pen color.  This has no
   // immediate effect on the in-progress stroke.
-  TestAnnotationBrushMessageParams red_pen_message_params{
-      SkColorSetRGB(0xF2, 0x8B, 0x82),
-      /*size=*/3.0};
+  TestAnnotationBrushMessageParams red_pen_message_params{kRedColor,
+                                                          /*size=*/3.0};
   SelectBrushTool(PdfInkBrush::Type::kPen, red_pen_message_params);
   VerifyAndClearExpectations();
 
@@ -2244,10 +2443,8 @@ TEST_P(PdfInkModuleStrokeTest, ChangeBrushColorDuringDrawing) {
 
   // Do another stroke.  Notice that the changed pen color is in effect for
   // the new stroke that is added.
-  EXPECT_CALL(
-      client(),
-      StrokeAdded(kPageIndex, InkStrokeId(1),
-                  InkStrokeBrushColorEq(SkColorSetRGB(0xF2, 0x8B, 0x82))));
+  EXPECT_CALL(client(), StrokeAdded(kPageIndex, InkStrokeId(1),
+                                    InkStrokeBrushColorEq(kRedColor)));
   EXPECT_TRUE(ink_module().HandleInputEvent(mouse_down_event));
   EXPECT_TRUE(ink_module().HandleInputEvent(mouse_up_event));
 }
@@ -3150,7 +3347,7 @@ TEST_P(PdfInkModuleMetricsTest, StrokeBrushSizePen) {
   histograms().ExpectUniqueSample(kPenSizeMetric,
                                   StrokeMetricBrushSize::kMedium, 1);
 
-  TestAnnotationBrushMessageParams params = {SkColorSetRGB(0xF2, 0x8B, 0x82),
+  TestAnnotationBrushMessageParams params = {kRedColor,
                                              /*size=*/1.0};
   SelectBrushTool(PdfInkBrush::Type::kPen, params);
   ApplyStrokeWithMouseAtMouseDownPoint();
@@ -3174,7 +3371,7 @@ TEST_P(PdfInkModuleMetricsTest, StrokeBrushSizeHighlighter) {
   InitializeSimpleSinglePageBasicLayout();
 
   // Draw a stroke with medium size.
-  TestAnnotationBrushMessageParams params = {SkColorSetRGB(0xF2, 0x8B, 0x82),
+  TestAnnotationBrushMessageParams params = {kRedColor,
                                              /*size=*/8.0};
   SelectBrushTool(PdfInkBrush::Type::kHighlighter, params);
   ApplyStrokeWithMouseAtMouseDownPoint();
@@ -4294,6 +4491,169 @@ TEST_P(PdfInkModuleTextHighlightTest,
                      /*unmodified_finished=*/0);
 }
 
+class PdfInkModuleTextHighlightToolChangeTest
+    : public PdfInkModuleTextHighlightTest {
+ protected:
+  static constexpr int kPageIndex = 0;
+
+  void StartOrangeTextHighlight() {
+    SelectBrushTool(PdfInkBrush::Type::kHighlighter, kOrangeBrushParams);
+
+    SetSelectionRectsOnFirstPage(base::span_from_ref(kHorizontalSelection));
+    SetTextAreaPoints(base::span_from_ref(kStartPointInsidePage0));
+
+    EXPECT_CALL(client(), OnTextOrLinkAreaClick(kStartPointInsidePage0,
+                                                /*click_count=*/1));
+    EXPECT_CALL(client(), ExtendSelectionByPoint(kEndPointInsidePage0));
+
+    EXPECT_TRUE(ink_module().HandleInputEvent(
+        CreateLeftClickWebMouseEventAtPosition(kStartPointInsidePage0)));
+    EXPECT_TRUE(ink_module().HandleInputEvent(
+        CreateLeftClickWebMouseMoveEventAtPosition(kEndPointInsidePage0)));
+    VerifyAndClearExpectations();
+  }
+
+  void FinishOrangeTextHighlight() {
+    constexpr gfx::PointF kNoTextPointInsidePage0{15.0f, 15.0f};
+    EXPECT_CALL(client(), StrokeAdded(kPageIndex, InkStrokeId(0),
+                                      InkStrokeBrushColorEq(kOrangeColor)));
+    EXPECT_CALL(client(), ExtendSelectionByPoint(kNoTextPointInsidePage0));
+    EXPECT_CALL(client(), ExtendSelectionByPoint(kEndPointInsidePage0));
+
+    EXPECT_TRUE(ink_module().HandleInputEvent(
+        CreateLeftClickWebMouseMoveEventAtPosition(kNoTextPointInsidePage0)));
+    EXPECT_TRUE(ink_module().HandleInputEvent(
+        CreateLeftClickWebMouseUpEventAtPosition(kEndPointInsidePage0)));
+    VerifyAndClearExpectations();
+  }
+};
+
+TEST_P(PdfInkModuleTextHighlightToolChangeTest,
+       ChangeBrushParamsDuringHighlight) {
+  EnableDrawAnnotationMode();
+  InitializeSimpleSinglePageBasicLayout();
+
+  StartOrangeTextHighlight();
+
+  // While the text highlight is still in progress, change the color to red.
+  SelectBrushTool(PdfInkBrush::Type::kHighlighter, kRedBrushParams);
+
+  FinishOrangeTextHighlight();
+
+  // Do another text highlight. The color should be red.
+  EXPECT_CALL(client(), StrokeAdded(kPageIndex, InkStrokeId(1),
+                                    InkStrokeBrushColorEq(kRedColor)));
+  EXPECT_CALL(client(), OnTextOrLinkAreaClick(kStartPointInsidePage0,
+                                              /*click_count=*/1));
+  EXPECT_CALL(client(), ExtendSelectionByPoint(kEndPointInsidePage0));
+  ApplyStrokeWithMouseAtPoints(kStartPointInsidePage0, {kEndPointInsidePage0},
+                               kEndPointInsidePage0);
+}
+
+TEST_P(PdfInkModuleTextHighlightToolChangeTest,
+       ChangeBrushToPenDuringHighlight) {
+  EnableDrawAnnotationMode();
+  InitializeSimpleSinglePageBasicLayout();
+
+  StartOrangeTextHighlight();
+
+  // While the text highlight is still in progress, change to a pen.
+  SelectBrushTool(PdfInkBrush::Type::kPen, kRedBrushParams);
+
+  FinishOrangeTextHighlight();
+
+  // Do a stroke. The brush type should be a pen.
+  EXPECT_CALL(
+      client(),
+      StrokeAdded(kPageIndex, InkStrokeId(1),
+                  InkStrokeDrawingBrushTypeEq(PdfInkBrush::Type::kPen)));
+  ApplyStrokeWithMouseAtPoints(kStartPointInsidePage0, {kEndPointInsidePage0},
+                               kEndPointInsidePage0);
+}
+
+TEST_P(PdfInkModuleTextHighlightToolChangeTest,
+       ChangeBrushToEraserDuringHighlight) {
+  EnableDrawAnnotationMode();
+  InitializeSimpleSinglePageBasicLayout();
+
+  StartOrangeTextHighlight();
+
+  // While the text highlight is still in progress, change to an eraser. The
+  // text highlight will end.
+  EXPECT_CALL(client(), StrokeAdded(kPageIndex, InkStrokeId(0),
+                                    InkStrokeBrushColorEq(kOrangeColor)));
+  SelectEraserTool();
+
+  constexpr gfx::PointF kStartStrokeInputPoint{15.0f, 20.0f};
+  constexpr gfx::PointF kEndStrokeInputPoint{35.0f, 20.0f};
+  EXPECT_THAT(VisibleStrokeInputPositions(),
+              ElementsAre(Pair(
+                  0, ElementsAre(ElementsAreArray(
+                         {kStartStrokeInputPoint, kEndStrokeInputPoint})))));
+  ExpectStrokeCounts(/*started=*/1, /*modified_finished=*/1,
+                     /*unmodified_finished=*/0);
+
+  // Mousemove and mouseup events are ignored.
+  EXPECT_FALSE(ink_module().HandleInputEvent(
+      CreateLeftClickWebMouseMoveEventAtPosition(kStartPointInsidePage0)));
+  EXPECT_FALSE(ink_module().HandleInputEvent(
+      CreateLeftClickWebMouseUpEventAtPosition(kEndPointInsidePage0)));
+
+  // Do a stroke. The brush type should be an eraser.
+  ApplyStrokeWithMouseAtPoints(kStartStrokeInputPoint, {kEndStrokeInputPoint},
+                               kEndStrokeInputPoint);
+
+  EXPECT_TRUE(VisibleStrokeInputPositions().empty());
+  ExpectStrokeCounts(/*started=*/2, /*modified_finished=*/2,
+                     /*unmodified_finished=*/0);
+}
+
+TEST_P(PdfInkModuleTextHighlightToolChangeTest,
+       EraserTipInterruptsTextHighlight) {
+  EnableDrawAnnotationMode();
+  InitializeSimpleSinglePageBasicLayout();
+
+  StartOrangeTextHighlight();
+
+  // While text highlighting is in progress, eraser tip arrives. This should
+  // finish the text highlight and switch to erase mode. Use a position far from
+  // the stroke so it doesn't get erased immediately.
+  constexpr gfx::PointF kEraserPoint = gfx::PointF(45.0f, 55.0f);
+  EXPECT_CALL(client(), StrokeAdded(kPageIndex, InkStrokeId(0),
+                                    InkStrokeBrushColorEq(kOrangeColor)));
+  blink::WebTouchEvent eraser_start =
+      CreateEraserTipEvent(blink::WebInputEvent::Type::kTouchStart,
+                           base::span_from_ref(kEraserPoint));
+  EXPECT_TRUE(ink_module().HandleInputEvent(eraser_start));
+
+  // The text highlight should have been finished and saved.
+  constexpr gfx::PointF kStartStrokeInputPoint{15.0f, 20.0f};
+  constexpr gfx::PointF kEndStrokeInputPoint{35.0f, 20.0f};
+  EXPECT_THAT(VisibleStrokeInputPositions(),
+              ElementsAre(Pair(
+                  0, ElementsAre(ElementsAreArray(
+                         {kStartStrokeInputPoint, kEndStrokeInputPoint})))));
+  // Count is 2 because text highlight started (1) and then eraser started (2).
+  ExpectStrokeCounts(/*started=*/2, /*modified_finished=*/1,
+                     /*unmodified_finished=*/0);
+
+  // Complete the eraser action.
+  blink::WebTouchEvent eraser_end = CreateEraserTipEvent(
+      blink::WebInputEvent::Type::kTouchEnd, base::span_from_ref(kEraserPoint));
+  EXPECT_TRUE(ink_module().HandleInputEvent(eraser_end));
+
+  // Stroke should still be visible (eraser didn't touch it).
+  EXPECT_THAT(VisibleStrokeInputPositions(),
+              ElementsAre(Pair(
+                  0, ElementsAre(ElementsAreArray(
+                         {kStartStrokeInputPoint, kEndStrokeInputPoint})))));
+
+  // Highlighter should be restored after eraser tip action completes.
+  const PdfInkBrush* brush = ink_module().GetPdfInkBrushForTesting();
+  ASSERT_TRUE(brush);
+  EXPECT_EQ(0.4f, GetOpacityMultiplierFromBrush(brush->ink_brush()));
+}
+
 class PdfInkModuleTextHighlightCaretTest
     : public PdfInkModuleTextHighlightTest {
  protected:
@@ -5004,6 +5364,10 @@ INSTANTIATE_TEST_SUITE_P(All,
 INSTANTIATE_TEST_SUITE_P(
     All,
     PdfInkModuleTextHighlightTest,
+    testing::ValuesIn(GetInkTestVariationsWithTextHighlighting()));
+INSTANTIATE_TEST_SUITE_P(
+    All,
+    PdfInkModuleTextHighlightToolChangeTest,
     testing::ValuesIn(GetInkTestVariationsWithTextHighlighting()));
 INSTANTIATE_TEST_SUITE_P(
     All,

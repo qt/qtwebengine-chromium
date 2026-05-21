@@ -46,6 +46,7 @@
 #include "src/tint/lang/core/type/sampled_texture.h"
 #include "src/tint/lang/core/type/storage_texture.h"
 #include "src/tint/lang/core/type/type.h"
+#include "src/tint/lang/core/type/u16.h"
 #include "src/tint/lang/core/type/u32.h"
 #include "src/tint/lang/core/type/u64.h"
 #include "src/tint/lang/core/type/u8.h"
@@ -147,6 +148,10 @@ const core::type::I32* Manager::i32() {
 
 const core::type::U8* Manager::u8() {
     return Get<core::type::U8>();
+}
+
+const core::type::U16* Manager::u16() {
+    return Get<core::type::U16>();
 }
 
 const core::type::U32* Manager::u32() {
@@ -257,6 +262,12 @@ const core::type::SampledTexture* Manager::sampled_texture(TextureDimension dim,
     return Get<core::type::SampledTexture>(dim, type);
 }
 
+const core::type::SampledTexture* Manager::sampled_texture(TextureDimension dim,
+                                                           const core::type::Type* type,
+                                                           TextureFilterable filterable) {
+    return Get<core::type::SampledTexture>(dim, type, filterable);
+}
+
 const core::type::MultisampledTexture* Manager::multisampled_texture(TextureDimension dim,
                                                                      const core::type::Type* type) {
     return Get<core::type::MultisampledTexture>(dim, type);
@@ -337,6 +348,14 @@ const core::type::SubgroupMatrix* Manager::subgroup_matrix(SubgroupMatrixKind ki
     return Get<core::type::SubgroupMatrix>(kind, inner, cols, rows);
 }
 
+const core::type::Buffer* Manager::buffer(uint32_t n) {
+    return Get<core::type::Buffer>(Get<ConstantArrayCount>(n));
+}
+
+const core::type::Buffer* Manager::unsized_buffer() {
+    return Get<core::type::Buffer>(Get<RuntimeArrayCount>());
+}
+
 const core::type::Array* Manager::array(const core::type::Type* elem_ty, uint32_t count) {
     uint32_t implicit_stride = tint::RoundUp(elem_ty->Align(), elem_ty->Size());
 
@@ -352,10 +371,6 @@ const core::type::Array* Manager::runtime_array(const core::type::Type* elem_ty)
         /* element type */ elem_ty,
         /* element count */ Get<RuntimeArrayCount>(),
         /* array size */ implicit_stride);
-}
-
-const core::type::ResourceBinding* Manager::resource_binding() {
-    return Get<core::type::ResourceBinding>();
 }
 
 const core::type::BindingArray* Manager::binding_array(const core::type::Type* elem_ty,

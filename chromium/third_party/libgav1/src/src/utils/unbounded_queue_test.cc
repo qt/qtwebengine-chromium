@@ -24,7 +24,7 @@ namespace {
 
 class Integer {
  public:
-  explicit Integer(int value) : value_(new (std::nothrow) int{value}) {}
+  explicit Integer(int value) : value_(new(std::nothrow) int{value}) {}
 
   // Move only.
   Integer(Integer&& other) : value_(other.value_) { other.value_ = nullptr; }

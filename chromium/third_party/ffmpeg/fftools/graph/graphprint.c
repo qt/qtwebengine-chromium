@@ -74,7 +74,7 @@ typedef enum {
     SECTION_ID_ENCODER,
 } SectionID;
 
-static struct AVTextFormatSection sections[] = {
+static const AVTextFormatSection sections[] = {
     [SECTION_ID_ROOT]            = { SECTION_ID_ROOT, "root", AV_TEXTFORMAT_SECTION_FLAG_IS_WRAPPER, { SECTION_ID_FILTERGRAPHS, SECTION_ID_INPUTFILES, SECTION_ID_OUTPUTFILES, SECTION_ID_DECODERS, SECTION_ID_ENCODERS, SECTION_ID_STREAMLINKS, -1 } },
 
     [SECTION_ID_FILTERGRAPHS]    = { SECTION_ID_FILTERGRAPHS, "graphs", AV_TEXTFORMAT_SECTION_FLAG_IS_ARRAY, { SECTION_ID_FILTERGRAPH, -1 } },
@@ -468,12 +468,6 @@ static void print_filter(GraphPrintContext *gpc, const AVFilterContext *filter, 
     avtext_print_section_footer(tfc); // SECTION_ID_FILTER_OUTPUTS
 
     avtext_print_section_footer(tfc); // SECTION_ID_FILTER
-}
-
-static void init_sections(void)
-{
-    for (unsigned i = 0; i < FF_ARRAY_ELEMS(sections); i++)
-        sections[i].show_all_entries = 1;
 }
 
 static void print_filtergraph_single(GraphPrintContext *gpc, FilterGraph *fg, AVFilterGraph *graph)
@@ -876,7 +870,6 @@ static int init_graphprint(GraphPrintContext **pgpc, AVBPrint *target_buf)
     GraphPrintContext *gpc = NULL;
     int ret;
 
-    init_sections();
     *pgpc = NULL;
 
     av_bprint_init(target_buf, 0, AV_BPRINT_SIZE_UNLIMITED);
@@ -953,15 +946,12 @@ fail:
 
 int print_filtergraph(FilterGraph *fg, AVFilterGraph *graph)
 {
+    av_assert2(fg);
+
     GraphPrintContext *gpc = NULL;
     AVTextFormatContext *tfc;
     AVBPrint *target_buf = &fg->graph_print_buf;
     int ret;
-
-    if (!fg) {
-        av_log(NULL, AV_LOG_ERROR, "Invalid filter graph provided\n");
-        return AVERROR(EINVAL);
-    }
 
     if (target_buf->len)
         av_bprint_finalize(target_buf, NULL);
@@ -969,11 +959,6 @@ int print_filtergraph(FilterGraph *fg, AVFilterGraph *graph)
     ret = init_graphprint(&gpc, target_buf);
     if (ret)
         return ret;
-
-    if (!gpc) {
-        av_log(NULL, AV_LOG_ERROR, "Failed to initialize graph print context\n");
-        return AVERROR(ENOMEM);
-    }
 
     tfc = gpc->tfc;
 
@@ -1010,11 +995,6 @@ static int print_filtergraphs_priv(FilterGraph **graphs, int nb_graphs, InputFil
     ret = init_graphprint(&gpc, &target_buf);
     if (ret)
         goto cleanup;
-
-    if (!gpc) {
-        ret = AVERROR(ENOMEM);
-        goto cleanup;
-    }
 
     tfc = gpc->tfc;
 

@@ -43,6 +43,7 @@ mojom("mojom") {
     ":hdr_metadata",
     ":native_handle_types",
     "//mojo/public/mojom/base",
+    "//services/viz/public/mojom/compositing:shared_image_format",
     "//skia/public/mojom",
     "//ui/gfx/geometry/mojom",
   ]
@@ -59,23 +60,10 @@ mojom("mojom") {
     {
       types = [
         {
-          mojom = "gfx.mojom.BufferFormat"
-          cpp = "::gfx::BufferFormat"
-        },
-        {
           mojom = "gfx.mojom.BufferUsage"
           cpp = "::gfx::BufferUsage"
         },
-        {
-          mojom = "gfx.mojom.BufferUsageAndFormat"
-          cpp = "::gfx::BufferUsageAndFormat"
-        },
-        {
-          mojom = "gfx.mojom.BufferPlane"
-          cpp = "::gfx::BufferPlane"
-        },
       ]
-
       traits_headers = [ "buffer_types_mojom_traits.h" ]
       traits_public_deps = [ ":shared_mojom_traits" ]
     },
@@ -522,10 +510,12 @@ component("native_handle_types_mojom_traits") {
     "//ui/gfx",
   ]
 
-  frameworks = [
-    "CoreFoundation.framework",
-    "IOSurface.framework",
-  ]
+  if (is_apple) {
+    frameworks = [
+      "CoreFoundation.framework",
+      "IOSurface.framework",
+    ]
+  }
 }
 
 mojom("hdr_metadata") {
@@ -556,10 +546,6 @@ mojom("hdr_metadata") {
         {
           mojom = "gfx.mojom.HdrMetadataExtendedRange"
           cpp = "::gfx::HdrMetadataExtendedRange"
-        },
-        {
-          mojom = "gfx.mojom.HdrMetadataAgtm"
-          cpp = "::gfx::HdrMetadataAgtm"
         },
         {
           mojom = "gfx.mojom.HDRMetadata"
@@ -596,6 +582,8 @@ component("shared_mojom_traits") {
     "//ui/gfx",
   ]
   deps = [
+    "//components/viz/common/resources:shared_image_format",
+    "//services/viz/public/mojom/compositing:shared_image_format",
     "//skia/public/mojom",
     "//ui/base:ozone_buildflags",
   ]

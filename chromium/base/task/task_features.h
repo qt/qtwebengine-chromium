@@ -44,13 +44,18 @@ BASE_EXPORT BASE_DECLARE_FEATURE(kTimerSlackMac);
 // calling Win32 MessagePump functions less often.
 BASE_EXPORT BASE_DECLARE_FEATURE(kUIPumpImprovementsWin);
 
-// Under this feature, the Android pump will call ALooper_PollOnce() rather than
-// unconditionally yielding to native to determine whether there exists native
-// work to be done before sleep.
-BASE_EXPORT BASE_DECLARE_FEATURE(kPumpFastToSleepAndroid);
-
 // Feature to run tasks by batches before pumping out messages.
 BASE_EXPORT BASE_DECLARE_FEATURE(kRunTasksByBatches);
+
+// Feature to adjust how quickly the ThreadPool capacity is increased when
+// a foreground task is blocked in a ScopedBlockingCall.
+BASE_EXPORT BASE_DECLARE_FEATURE(kThreadPoolForegroundBlockingTimeouts);
+BASE_EXPORT BASE_DECLARE_FEATURE_PARAM(
+    TimeDelta,
+    kThreadPoolForegroundMayBlockThresholdParam);
+BASE_EXPORT BASE_DECLARE_FEATURE_PARAM(
+    TimeDelta,
+    kThreadPoolForegroundBlockedWorkersPollParam);
 
 }  // namespace base
 

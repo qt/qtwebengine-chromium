@@ -34,7 +34,6 @@
 
 #include "src/tint/api/common/binding_point.h"
 #include "src/tint/api/common/bindings.h"
-#include "src/tint/api/common/resource_binding_config.h"
 #include "src/tint/api/common/resource_table_config.h"
 #include "src/tint/api/common/substitute_overrides_config.h"
 #include "src/tint/utils/reflection.h"
@@ -64,10 +63,16 @@ struct Options {
 
         /// Reflect the fields of this class so that it can be used by tint::ForeachField()
         TINT_REFLECT(RangeOffsets, min, max);
+        TINT_REFLECT_HASH_CODE(RangeOffsets);
     };
 
     /// The set of options which control workarounds for driver issues in the SPIR-V generator.
     struct Workarounds {
+        ///////////////////////////////////////////////////////////////////////////////////////////
+        // NOTE: When adding a new option here, it should also be added to the FuzzedOptions     //
+        // structure in writer_fuzz.cc.                                                          //
+        ///////////////////////////////////////////////////////////////////////////////////////////
+
         /// Set to `true` to generate a polyfill for switch statements using if/else statements.
         bool polyfill_case_switch = false;
 
@@ -85,6 +90,10 @@ struct Options {
         /// the spec max subgroup size.
         bool subgroup_shuffle_clamped = false;
 
+        /// Set to 'true' to force workaround for 'textureSampleCompare(Level)' for texture arrays
+        /// of cube depth.
+        bool texture_sample_compare_depth_cube_array = false;
+
         /// Set to `true` to generate polyfill for `subgroupBroadcast(f16)`
         bool polyfill_subgroup_broadcast_f16 = false;
 
@@ -97,20 +106,30 @@ struct Options {
         /// Set to `true` to generate polyfill for f32 abs.
         bool polyfill_f32_abs = false;
 
+        /// Set to `true` to generate polyfill for f16 saturate.
+        bool polyfill_saturate_as_min_max_f16 = false;
+
         TINT_REFLECT(Workarounds,
                      polyfill_case_switch,
                      scalarize_max_min_clamp,
                      dva_transform_handle,
                      polyfill_pack_unpack_4x8_norm,
                      subgroup_shuffle_clamped,
+                     texture_sample_compare_depth_cube_array,
                      polyfill_subgroup_broadcast_f16,
                      pass_matrix_by_pointer,
                      polyfill_unary_f32_negation,
-                     polyfill_f32_abs);
+                     polyfill_f32_abs,
+                     polyfill_saturate_as_min_max_f16);
     };
 
     /// Any options which are controlled by the presence/absence of a vulkan extension.
     struct Extensions {
+        ///////////////////////////////////////////////////////////////////////////////////////////
+        // NOTE: When adding a new option here, it should also be added to the FuzzedOptions     //
+        // structure in writer_fuzz.cc.                                                          //
+        ///////////////////////////////////////////////////////////////////////////////////////////
+
         /// Set to `true` to allow for the usage of the demote to helper extension.
         bool use_demote_to_helper_invocation = false;
 
@@ -135,8 +154,9 @@ struct Options {
         /// Set to `true` to generate polyfill for `dot4I8Packed` and `dot4U8Packed` builtins
         bool dot_4x8_packed = false;
 
-        /// Set to `true` to decompose uniform buffers into array<vec4u, ...>.
-        bool decompose_uniform_buffers = true;
+        /// Set to `true` to use the uniform buffer directly, `false` to decompose into array<vec4u,
+        /// ...>.
+        bool use_uniform_buffers = false;
 
         TINT_REFLECT(Extensions,
                      use_demote_to_helper_invocation,
@@ -146,8 +166,13 @@ struct Options {
                      disable_image_robustness,
                      disable_runtime_sized_array_index_clamping,
                      dot_4x8_packed,
-                     decompose_uniform_buffers);
+                     use_uniform_buffers);
     };
+
+    ///////////////////////////////////////////////////////////////////////////////////////////
+    // NOTE: When adding a new option here, it should also be added to the FuzzedOptions     //
+    // structure in writer_fuzz.cc (if fuzzing is desired).                                  //
+    ///////////////////////////////////////////////////////////////////////////////////////////
 
     /// The entry point name to generate
     std::string entry_point_name;
@@ -177,14 +202,14 @@ struct Options {
     bool disable_polyfill_integer_div_mod = false;
 
     /// Set to `true` to enable integer range analysis in robustness transform.
-    bool enable_integer_range_analysis = true;
+    bool disable_integer_range_analysis = false;
 
     /// Set to `true` to generate a PointSize builtin and have it set to 1.0
     /// from all vertex shaders in the module.
     bool emit_vertex_point_size = true;
 
     /// Set to `true` to apply builtin 'position' pixel center emulation.
-    bool apply_pixel_center_polyfill = false;
+    bool polyfill_pixel_center = false;
 
     /// Any workarounds to enable/disable.
     Workarounds workarounds{};
@@ -197,9 +222,6 @@ struct Options {
 
     /// SPIR-V binary version.
     SpvVersion spirv_version = SpvVersion::kSpv13;
-
-    /// Resource binding information
-    std::optional<ResourceBindingConfig> resource_binding = std::nullopt;
 
     /// Resource table information
     std::optional<ResourceTableConfig> resource_table = std::nullopt;
@@ -217,14 +239,13 @@ struct Options {
                  disable_robustness,
                  disable_workgroup_init,
                  disable_polyfill_integer_div_mod,
-                 enable_integer_range_analysis,
+                 disable_integer_range_analysis,
                  emit_vertex_point_size,
-                 apply_pixel_center_polyfill,
+                 polyfill_pixel_center,
                  workarounds,
                  extensions,
                  depth_range_offsets,
                  spirv_version,
-                 resource_binding,
                  resource_table,
                  substitute_overrides_config);
 };

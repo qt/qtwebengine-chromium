@@ -284,7 +284,6 @@ const PaintLayer* PaintLayer::ContainingScrollContainerLayer(
     }
     is_fixed = container->GetLayoutObject().IsFixedPositioned();
   }
-  DCHECK(IsRootLayer());
   if (is_fixed_to_view)
     *is_fixed_to_view = true;
   return nullptr;
@@ -315,7 +314,7 @@ void PaintLayer::UpdateTransformAfterStyleChange(
   bool had_transform = Transform();
   bool has_transform = GetLayoutObject().HasTransform();
   if (had_transform == has_transform && old_style &&
-      !diff.TransformDataChanged()) {
+      !diff.transform_data_changed) {
     return;
   }
   bool had_3d_transform = Has3DTransform();
@@ -346,8 +345,9 @@ void PaintLayer::DirtyVisibleContentStatus() {
   MarkAncestorChainForFlagsUpdate();
   // Non-self-painting layers paint into their ancestor layer, and count as part
   // of the "visible contents" of the parent, so we need to dirty it.
-  if (!IsSelfPaintingLayer())
+  if (!IsSelfPaintingLayer() && Parent()) {
     Parent()->DirtyVisibleContentStatus();
+  }
 }
 
 void PaintLayer::MarkAncestorChainForFlagsUpdate(
@@ -388,6 +388,7 @@ void PaintLayer::UpdateDescendantDependentFlags() {
     has_self_painting_layer_descendant_ = false;
     descendant_needs_check_position_visibility_ = false;
     has_backdrop_filter_descendant_ = false;
+    has_descendant_with_transform_anim_ = false;
 
     bool can_contain_abs =
         GetLayoutObject().CanContainAbsolutePositionObjects();
@@ -445,6 +446,13 @@ void PaintLayer::UpdateDescendantDependentFlags() {
           has_backdrop_filter_descendant_ ||
           child->HasBackdropFilterDescendant() ||
           child->GetLayoutObject().StyleRef().HasNonInitialBackdropFilter();
+
+      has_descendant_with_transform_anim_ =
+          has_descendant_with_transform_anim_ ||
+          child->HasDescendantWithTransformAnim() ||
+          child->GetLayoutObject()
+              .StyleRef()
+              .HasCurrentTransformRelatedAnimation();
     }
 
     // See SetInvisibleForPositionVisibility() for explanation for
@@ -481,11 +489,18 @@ void PaintLayer::UpdateDescendantDependentFlags() {
     needs_descendant_dependent_flags_update_ = false;
 
     if (IsSelfPaintingLayer() && needs_visual_overflow_recalc_) {
-      PhysicalRect old_visual_rect =
-          PhysicalVisualOverflowRectAllowingUnset(GetLayoutObject());
-      GetLayoutObject().RecalcVisualOverflow();
-      if (old_visual_rect != GetLayoutObject().VisualOverflowRect()) {
-        MarkAncestorChainForFlagsUpdate(kDoesNotNeedDescendantDependentUpdate);
+      if (GetLayoutObject().ChildPrePaintBlockedByDisplayLock()) {
+        GetLayoutObject()
+            .GetDisplayLockContext()
+            ->NotifyVisualOverflowRecalcWasBlocked();
+      } else {
+        PhysicalRect old_visual_rect =
+            PhysicalVisualOverflowRectAllowingUnset(GetLayoutObject());
+        GetLayoutObject().RecalcVisualOverflow();
+        if (old_visual_rect != GetLayoutObject().VisualOverflowRect()) {
+          MarkAncestorChainForFlagsUpdate(
+              kDoesNotNeedDescendantDependentUpdate);
+        }
       }
     }
     needs_visual_overflow_recalc_ = false;
@@ -769,9 +784,6 @@ void PaintLayer::RemoveChild(PaintLayer* old_child) {
 
 void PaintLayer::RemoveOnlyThisLayerAfterStyleChange(
     const ComputedStyle* old_style) {
-  if (!parent_)
-    return;
-
   if (old_style) {
     if (GetLayoutObject().IsStacked(*old_style))
       DirtyStackingContextZOrderLists();
@@ -784,7 +796,7 @@ void PaintLayer::RemoveOnlyThisLayerAfterStyleChange(
     }
   }
 
-  if (IsSelfPaintingLayer()) {
+  if (parent_ && IsSelfPaintingLayer()) {
     if (PaintLayer* enclosing_self_painting_layer =
             parent_->EnclosingSelfPaintingLayer())
       enclosing_self_painting_layer->MergeNeedsPaintPhaseFlagsFrom(*this);
@@ -792,17 +804,25 @@ void PaintLayer::RemoveOnlyThisLayerAfterStyleChange(
 
   PaintLayer* next_sib = NextSibling();
 
-  // Now walk our kids and reattach them to our parent.
+  // Now walk our kids to remove them, and potentially reattach to our parent.
+  //
+  // We might not have a parent if a layout-object is being reinserted into the
+  // layout-tree. This occurs if a layout-object undergoes a in-flow state
+  // change, and the children will be reattached within LayoutObject::AddLayers.
   PaintLayer* current = first_;
   while (current) {
     PaintLayer* next = current->NextSibling();
     RemoveChild(current);
-    parent_->AddChild(current, next_sib);
+    if (parent_) {
+      parent_->AddChild(current, next_sib);
+    }
     current = next;
   }
 
   // Remove us from the parent.
-  parent_->RemoveChild(this);
+  if (parent_) {
+    parent_->RemoveChild(this);
+  }
   layout_object_->DestroyLayer();
 }
 
@@ -810,11 +830,12 @@ void PaintLayer::InsertOnlyThisLayerAfterStyleChange() {
   if (!parent_ && GetLayoutObject().Parent()) {
     // We need to connect ourselves when our layoutObject() has a parent.
     // Find our enclosingLayer and add ourselves.
-    PaintLayer* parent_layer = GetLayoutObject().Parent()->EnclosingLayer();
-    DCHECK(parent_layer);
-    PaintLayer* before_child = GetLayoutObject().Parent()->FindNextLayer(
-        parent_layer, &GetLayoutObject());
-    parent_layer->AddChild(this, before_child);
+    if (PaintLayer* parent_layer =
+            GetLayoutObject().Parent()->EnclosingLayer()) {
+      PaintLayer* before_child = GetLayoutObject().Parent()->FindNextLayer(
+          parent_layer, &GetLayoutObject());
+      parent_layer->AddChild(this, before_child);
+    }
   }
 
   // Remove all descendant layers from the hierarchy and add them to the new
@@ -856,10 +877,14 @@ void PaintLayer::UpdateStackingNode() {
 }
 
 bool PaintLayer::RequiresScrollableArea() const {
-  if (!GetLayoutBox())
+  const LayoutBox* box = GetLayoutBox();
+  if (!box) {
     return false;
-  if (GetLayoutObject().IsScrollContainer())
+  }
+  if (box->Style()->IsInternalOverscrollAreaAuto() ||
+      box->IsScrollContainer()) {
     return true;
+  }
   // Iframes with the resize property can be resized. This requires
   // scroll corner painting, which is implemented, in part, by
   // PaintLayerScrollableArea.
@@ -1236,6 +1261,9 @@ PaintLayer* PaintLayer::HitTestLayer(
       !layout_object.ChildLayoutBlockedByDisplayLock()) [[unlikely]] {
     // Skip if we need layout. This should never happen. See crbug.com/1423308
     // and crbug.com/330051489.
+
+    // TODO(crbug.com/478682594): Remove when done investigating.
+    layout_object.DumpForBug478682594();
     return nullptr;
   }
 
@@ -1266,7 +1294,7 @@ PaintLayer* PaintLayer::HitTestLayer(
   // there is an ongoing transition, since this may be too heavy of a check for
   // each hit test.
   if (auto* transition =
-          ViewTransitionUtils::TransitionForTaggedElement(layout_object)) {
+          ViewTransitionUtils::TransitionForParticipantOrScope(layout_object)) {
     // This means that the contents of the object are drawn elsewhere.
     if (transition->IsRepresentedViaPseudoElements(layout_object)) {
       return nullptr;
@@ -2162,9 +2190,8 @@ void PaintLayer::UpdateFilters(StyleDifference diff,
                                const ComputedStyle* old_style,
                                const ComputedStyle& new_style) {
   if (!filter_on_effect_node_dirty_) {
-    filter_on_effect_node_dirty_ = old_style
-                                       ? diff.FilterChanged()
-                                       : new_style.HasFilterInducingProperty();
+    filter_on_effect_node_dirty_ =
+        old_style ? diff.filter_changed : new_style.HasFilterInducingProperty();
   }
 
   if (!new_style.HasFilterInducingProperty() &&
@@ -2279,11 +2306,11 @@ void PaintLayer::StyleDidChange(StyleDifference diff,
     MarkAncestorChainForFlagsUpdate();
   }
 
-  bool needs_full_transform_update = diff.TransformChanged();
+  bool needs_full_transform_update = diff.transform_changed;
   if (needs_full_transform_update) {
     // If only the transform property changed, without other related properties
     // changing, try to schedule a deferred transform node update.
-    if (!diff.OtherTransformPropertyChanged() &&
+    if (diff.only_transform_property_changed &&
         PaintPropertyTreeBuilder::ScheduleDeferredTransformNodeUpdate(
             GetLayoutObject())) {
       needs_full_transform_update = false;
@@ -2291,7 +2318,7 @@ void PaintLayer::StyleDidChange(StyleDifference diff,
     }
   }
 
-  bool needs_full_opacity_update = diff.OpacityChanged();
+  bool needs_full_opacity_update = diff.opacity_changed;
   if (needs_full_opacity_update) {
     if (PaintPropertyTreeBuilder::ScheduleDeferredOpacityNodeUpdate(
             GetLayoutObject())) {
@@ -2303,9 +2330,9 @@ void PaintLayer::StyleDidChange(StyleDifference diff,
   // See also |LayoutObject::SetStyle| which handles these invalidations if a
   // PaintLayer is not present.
   if (needs_full_transform_update || needs_full_opacity_update ||
-      diff.ZIndexChanged() || diff.FilterChanged() || diff.CssClipChanged() ||
-      diff.BlendModeChanged() || diff.MaskChanged() ||
-      diff.CompositingReasonsChanged()) {
+      diff.z_index_changed || diff.filter_changed ||
+      diff.clip_property_changed || diff.blend_mode_changed ||
+      diff.mask_changed || diff.compositing_reasons_changed) {
     GetLayoutObject().SetNeedsPaintPropertyUpdate();
     MarkAncestorChainForFlagsUpdate();
   }
@@ -2328,13 +2355,19 @@ void PaintLayer::StyleDidChange(StyleDifference diff,
     DirtyStackingContextZOrderLists();
   }
 
-  if (diff.ZIndexChanged()) {
+  if (diff.z_index_changed) {
     // We don't need to invalidate paint of objects when paint order
     // changes. However, we do need to repaint the containing stacking
     // context, in order to generate new paint chunks in the correct order.
     // Raster invalidation will be issued if needed during paint.
-    if (auto* stacking_context = AncestorStackingContext())
+    if (auto* stacking_context = AncestorStackingContext()) {
       stacking_context->SetNeedsRepaint();
+    }
+    // We also need to invalidate intersection observer, which can be affected
+    // by z-index changes.
+    if (LocalFrameView* frame_view = GetLayoutObject().GetFrameView()) {
+      frame_view->SetIntersectionObservationState(LocalFrameView::kDesired);
+    }
   }
 
   if (old_style) {

@@ -5,6 +5,7 @@
 #ifndef CHROME_BROWSER_UI_WEBUI_SETTINGS_PERFORMANCE_HANDLER_H_
 #define CHROME_BROWSER_UI_WEBUI_SETTINGS_PERFORMANCE_HANDLER_H_
 
+#include "base/gtest_prod_util.h"
 #include "chrome/browser/performance_manager/public/user_tuning/battery_saver_mode_manager.h"
 #include "chrome/browser/ui/webui/settings/settings_page_ui_handler.h"
 
@@ -43,16 +44,16 @@ class PerformanceHandler : public SettingsPageUIHandler,
    * used.
    */
   base::Value GetCurrentOpenSites();
-  void HandleGetCurrentOpenSites(const base::Value::List& args);
+  void HandleGetCurrentOpenSites(const base::ListValue& args);
 
   /**
    * This function is called from the frontend in order to get the initial
    * state of the battery, and also has the side effect of notifying the handler
    * that it is ready to receive updates for future battery status changes.
    */
-  void HandleGetDeviceHasBattery(const base::Value::List& args);
-  void HandleOpenFeedbackDialog(const base::Value::List& args);
-  void HandleValidateTabDiscardExceptionRule(const base::Value::List& args);
+  void HandleGetDeviceHasBattery(const base::ListValue& args);
+  void HandleOpenFeedbackDialog(const base::ListValue& args);
+  void HandleValidateTabDiscardExceptionRule(const base::ListValue& args);
 };
 
 }  // namespace settings

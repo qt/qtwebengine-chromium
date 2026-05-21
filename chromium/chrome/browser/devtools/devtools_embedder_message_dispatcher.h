@@ -5,7 +5,6 @@
 #ifndef CHROME_BROWSER_DEVTOOLS_DEVTOOLS_EMBEDDER_MESSAGE_DISPATCHER_H_
 #define CHROME_BROWSER_DEVTOOLS_DEVTOOLS_EMBEDDER_MESSAGE_DISPATCHER_H_
 
-#include <map>
 #include <memory>
 #include <string>
 
@@ -148,9 +147,11 @@ class DevToolsEmbedderMessageDispatcher {
                                     const std::string& request) = 0;
     virtual void RegisterAidaClientEvent(DispatchCallback callback,
                                          const std::string& request) = 0;
+    virtual void SetChromeFlag(const std::string& flag_name, bool value) = 0;
     virtual void DispatchHttpRequest(
         DispatchCallback callback,
         const DevToolsDispatchHttpRequestParams& body) = 0;
+    virtual void RequestRestart() = 0;
   };
 
   using DispatchCallback = Delegate::DispatchCallback;
@@ -158,7 +159,7 @@ class DevToolsEmbedderMessageDispatcher {
   virtual ~DevToolsEmbedderMessageDispatcher() = default;
   virtual bool Dispatch(DispatchCallback callback,
                         const std::string& method,
-                        const base::Value::List& params) = 0;
+                        const base::ListValue& params) = 0;
 
   static std::unique_ptr<DevToolsEmbedderMessageDispatcher>
   CreateForDevToolsFrontend(Delegate* delegate);

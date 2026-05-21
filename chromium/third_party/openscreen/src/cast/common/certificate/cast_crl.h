@@ -13,7 +13,6 @@
 
 #include "cast/common/certificate/cast_cert_validator.h"
 #include "cast/common/certificate/proto/revocation.pb.h"
-#include "platform/base/macros.h"
 
 namespace openscreen::cast {
 
@@ -25,6 +24,10 @@ class TrustStore;
 class CastCRL {
  public:
   CastCRL(const proto::TbsCrl& tbs_crl, const DateTime& overall_not_after);
+  CastCRL(const CastCRL&) = delete;
+  CastCRL(CastCRL&&) noexcept;
+  CastCRL& operator=(const CastCRL&) = delete;
+  CastCRL& operator=(CastCRL&&);
   ~CastCRL();
 
   // Verifies the revocation status of a cast device certificate given a chain
@@ -61,8 +64,6 @@ class CastCRL {
   // The value is a list of revoked serial number ranges.
   std::unordered_map<std::string, std::vector<SerialNumberRange>>
       revoked_serial_numbers_;
-
-  OSP_DISALLOW_COPY_AND_ASSIGN(CastCRL);
 };
 
 // Parses and verifies the CRL used to verify the revocation status of

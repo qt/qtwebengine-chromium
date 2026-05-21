@@ -57,6 +57,7 @@
 #include "components/bookmarks/browser/scoped_group_bookmark_actions.h"
 #include "components/bookmarks/common/bookmark_pref_names.h"
 #include "components/bookmarks/managed/managed_bookmark_service.h"
+#include "components/policy/core/common/policy_pref_names.h"
 #include "components/prefs/pref_service.h"
 #include "components/profile_metrics/browser_profile_type.h"
 #include "components/strings/grit/components_strings.h"
@@ -105,8 +106,7 @@ class BookmarkContextMenu : public ui::SimpleMenuModel,
       AddItem(IDC_BOOKMARK_BAR_OPEN_ALL);
       AddItem(IDC_BOOKMARK_BAR_OPEN_ALL_NEW_WINDOW);
       AddItem(IDC_BOOKMARK_BAR_OPEN_ALL_INCOGNITO);
-      if (bookmarks.size() == 1 && bookmarks.front()->is_url() &&
-          base::FeatureList::IsEnabled(features::kSideBySide)) {
+      if (bookmarks.size() == 1 && bookmarks.front()->is_url()) {
         AddItem(IDC_BOOKMARK_BAR_OPEN_SPLIT_VIEW);
       }
       AddSeparator(ui::NORMAL_SEPARATOR);
@@ -120,8 +120,7 @@ class BookmarkContextMenu : public ui::SimpleMenuModel,
     AddItem(IDC_BOOKMARK_BAR_OPEN_ALL);
     AddItem(IDC_BOOKMARK_BAR_OPEN_ALL_NEW_WINDOW);
     AddItem(IDC_BOOKMARK_BAR_OPEN_ALL_INCOGNITO);
-    if (bookmarks.size() == 1 && bookmarks.front()->is_url() &&
-        base::FeatureList::IsEnabled(features::kSideBySide)) {
+    if (bookmarks.size() == 1 && bookmarks.front()->is_url()) {
       AddItem(IDC_BOOKMARK_BAR_OPEN_SPLIT_VIEW);
     }
     AddSeparator(ui::NORMAL_SEPARATOR);
@@ -546,6 +545,33 @@ void BookmarksPageHandler::ExecuteOpenInIncognitoWindowCommand(
                             IDC_BOOKMARK_BAR_OPEN_ALL_INCOGNITO);
 }
 
+void BookmarksPageHandler::GetIncognitoAvailableCount(
+    const std::vector<std::string>& side_panel_ids,
+    GetIncognitoAvailableCountCallback callback) {
+  const std::vector<int64_t> node_ids =
+      GetBookmarkIDsFromSidePanelIDs(*bookmark_merged_surface_, side_panel_ids);
+  if (node_ids.empty()) {
+    std::move(callback).Run(0);
+    return;
+  }
+
+  Profile* profile = browser_window_interface_->GetProfile();
+  bookmarks::BookmarkModel* bookmark_model =
+      bookmark_merged_surface_->bookmark_model();
+  std::vector<raw_ptr<const bookmarks::BookmarkNode, VectorExperimental>>
+      bookmarks = {};
+  int count = 0;
+  for (const int64_t id : node_ids) {
+    const bookmarks::BookmarkNode* bookmark =
+        bookmarks::GetBookmarkNodeByID(bookmark_model, id);
+    if (bookmarks::IsOpenInIncognitoAllowed({bookmark}, profile)) {
+      count++;
+    }
+  }
+
+  std::move(callback).Run(count);
+}
+
 void BookmarksPageHandler::ExecuteOpenInNewTabGroupCommand(
     const std::vector<std::string>& side_panel_ids,
     side_panel::mojom::ActionSource source) {
@@ -561,7 +587,6 @@ void BookmarksPageHandler::ExecuteOpenInNewTabGroupCommand(
 void BookmarksPageHandler::ExecuteOpenInSplitViewCommand(
     const std::vector<int64_t>& node_ids,
     side_panel::mojom::ActionSource source) {
-  CHECK(base::FeatureList::IsEnabled(features::kSideBySide));
   ExecuteContextMenuCommand(node_ids, source, IDC_BOOKMARK_BAR_OPEN_SPLIT_VIEW);
 }
 
@@ -605,7 +630,7 @@ void BookmarksPageHandler::ExecuteContextMenuCommand(
       node_ids, bookmarks_ui_->embedder(), source,
       bookmarks_ui_->GetShoppingListContextMenuController(),
       browser_window_interface_);
-  if (context_menu->IsCommandIdEnabled(command_id)) {
+  if (context_menu && context_menu->IsCommandIdEnabled(command_id)) {
     context_menu->ExecuteCommand(command_id, 0);
   }
 }

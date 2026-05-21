@@ -15,8 +15,8 @@
 #include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_name.h"
-#include "core/fxge/cfx_face.h"
 #include "core/fxcrt/fx_codepage.h"
+#include "core/fxge/cfx_face.h"
 #include "core/fxge/fx_font.h"
 
 namespace {
@@ -114,7 +114,7 @@ void CPDF_SimpleFont::LoadCharWidths(const CPDF_Dictionary* font_desc) {
 
   if (font_desc && font_desc->KeyExist("MissingWidth")) {
     int missing_width = font_desc->GetIntegerFor("MissingWidth");
-    std::fill(std::begin(char_width_), std::end(char_width_), missing_width);
+    std::ranges::fill(char_width_, missing_width);
   }
 
   size_t width_start = font_dict_->GetIntegerFor("FirstChar", 0);

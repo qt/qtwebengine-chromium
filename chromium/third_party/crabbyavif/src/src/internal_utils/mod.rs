@@ -203,6 +203,40 @@ pub(crate) fn check_slice_range(len: usize, range: &Range<usize>) -> AvifResult<
     Ok(())
 }
 
+#[cfg(any(feature = "jpegxl", all(test, feature = "avm")))]
+pub(crate) fn are_planes_equal(image1: &Image, image2: &Image, plane: Plane) -> AvifResult<bool> {
+    if !image1.has_same_properties_and_cicp(image2)
+        || image1.has_plane(plane) != image2.has_plane(plane)
+    {
+        return Ok(false);
+    }
+    if !image1.has_plane(plane) {
+        return Ok(true);
+    }
+    let width = image1.width(plane);
+    let height = image1.height(plane);
+    for y in 0..height as u32 {
+        if image1.depth > 8 {
+            if image1.row16(plane, y)?[..width] != image2.row16(plane, y)?[..width] {
+                return Ok(false);
+            }
+        } else if image1.row(plane, y)?[..width] != image2.row(plane, y)?[..width] {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+#[cfg(any(feature = "jpegxl", all(test, feature = "avm")))]
+pub(crate) fn are_images_equal(image1: &Image, image2: &Image) -> AvifResult<bool> {
+    for plane in image::ALL_PLANES {
+        if !are_planes_equal(image1, image2, plane)? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
 pub(crate) const AUXI_ALPHA_URN: &str = "urn:mpeg:mpegB:cicp:systems:auxiliary:alpha";
 
 pub(crate) fn is_auxiliary_type_alpha(aux_type: &str) -> bool {

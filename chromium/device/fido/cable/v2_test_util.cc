@@ -12,7 +12,6 @@
 #include "base/base64url.h"
 #include "base/check.h"
 #include "base/compiler_specific.h"
-#include "base/containers/contains.h"
 #include "base/containers/span.h"
 #include "base/functional/callback.h"
 #include "base/memory/raw_ptr.h"
@@ -28,8 +27,8 @@
 #include "device/fido/cable/v2_discovery.h"
 #include "device/fido/cable/v2_handshake.h"
 #include "device/fido/cable/websocket_adapter.h"
-#include "device/fido/fido_constants.h"
 #include "device/fido/network_context_factory.h"
+#include "device/fido/public/fido_constants.h"
 #include "device/fido/virtual_ctap2_device.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/bindings/remote.h"
@@ -62,7 +61,7 @@ class TestNetworkContext : public network::TestNetworkContext {
       net::StorageAccessApiStatus storage_access_api_status,
       const net::IsolationInfo& isolation_info,
       std::vector<network::mojom::HttpHeaderPtr> additional_headers,
-      int32_t process_id,
+      const network::OriginatingProcess& process_id,
       const url::Origin& origin,
       network::mojom::ClientSecurityStatePtr client_security_state,
       uint32_t options,
@@ -84,7 +83,7 @@ class TestNetworkContext : public network::TestNetworkContext {
     static const char kContactPrefix[] = "/cable/contact/";
     if (path.find(kNewPrefix) == 0) {
       path.remove_prefix(sizeof(kNewPrefix) - 1);
-      CHECK(!base::Contains(connections_, std::string(path)));
+      CHECK(!connections_.contains(std::string(path)));
       connections_.emplace(std::string(path), std::make_unique<Connection>(
                                                   Connection::Type::NEW,
                                                   std::move(handshake_client)));
@@ -671,7 +670,7 @@ class LateLinkingDevice : public authenticator::Transaction {
     network_context_factory_.Run()->CreateWebSocket(
         target, {device::kCableWebSocketProtocol}, net::SiteForCookies(),
         net::StorageAccessApiStatus::kNone, net::IsolationInfo(),
-        /*additional_headers=*/{}, network::mojom::kBrowserProcessId,
+        /*additional_headers=*/{}, network::OriginatingProcess::browser(),
         url::Origin::Create(target), network::mojom::ClientSecurityState::New(),
         network::mojom::kWebSocketOptionBlockAllCookies,
         net::MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS),
@@ -891,7 +890,7 @@ class HandshakeErrorDevice : public authenticator::Transaction {
     network_context_factory_.Run()->CreateWebSocket(
         target, {device::kCableWebSocketProtocol}, net::SiteForCookies(),
         net::StorageAccessApiStatus::kNone, net::IsolationInfo(),
-        /*additional_headers=*/{}, network::mojom::kBrowserProcessId,
+        /*additional_headers=*/{}, network::OriginatingProcess::browser(),
         url::Origin::Create(target), network::mojom::ClientSecurityState::New(),
         network::mojom::kWebSocketOptionBlockAllCookies,
         net::MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS),

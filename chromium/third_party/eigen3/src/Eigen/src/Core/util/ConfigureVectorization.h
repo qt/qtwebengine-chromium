@@ -428,7 +428,7 @@ extern "C" {
 #error "Eigen requires a fixed SVE lector length but EIGEN_ARM64_SVE_VL is not set."
 #endif
 
-#elif defined(EIGEN_ARCH_RISCV)
+#elif EIGEN_ARCH_RISCV
 
 #if defined(__riscv_zfh)
 #define EIGEN_HAS_BUILTIN_FLOAT16
@@ -465,6 +465,10 @@ extern "C" {
 #elif defined(_MSC_VER)
 #pragma message("The Eigen::Half vectorization requires Zfh and Zvfh extensions.")
 #endif
+#endif
+
+#if defined(__riscv_zvfbfwma)
+#define EIGEN_VECTORIZE_RVV10BF16
 #endif
 
 #endif  // defined(EIGEN_ARCH_RISCV)

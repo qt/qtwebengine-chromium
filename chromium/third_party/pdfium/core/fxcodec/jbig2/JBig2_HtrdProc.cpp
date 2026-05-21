@@ -12,6 +12,7 @@
 #include "core/fxcodec/jbig2/JBig2_BitStream.h"
 #include "core/fxcodec/jbig2/JBig2_GrdProc.h"
 #include "core/fxcodec/jbig2/JBig2_Image.h"
+#include "core/fxcrt/zip.h"
 
 CJBig2_HTRDProc::CJBig2_HTRDProc() = default;
 
@@ -25,22 +26,21 @@ std::unique_ptr<CJBig2_Image> CJBig2_HTRDProc::DecodeArith(
   if (HENABLESKIP == 1) {
     HSKIP = std::make_unique<CJBig2_Image>(HGW, HGH);
     for (uint32_t mg = 0; mg < HGH; ++mg) {
+      pdfium::span<uint8_t> row_write = HSKIP->GetLine(mg);
+      // See comment in the inner-loop below re: casting.
+      const int64_t row_x = HGX + static_cast<int64_t>(mg) * HRY;
+      const int64_t row_y = HGY + static_cast<int64_t>(mg) * HRX;
       for (uint32_t ng = 0; ng < HGW; ++ng) {
         // The `>> 8` is an arithmetic shift per spec.  Cast mg, ng to int,
         // else implicit conversions would evaluate it as unsigned shift.
         // HGX / HGY are 32 bit, HRX / HRY 16, mg / ng 32.
         // The result after >> 8 fits in about 42 bit; int64_t suffices.
-        auto mg_int = static_cast<int64_t>(mg);
-        auto ng_int = static_cast<int64_t>(ng);
-        int64_t x = (HGX + mg_int * HRY + ng_int * HRX) >> 8;
-        int64_t y = (HGY + mg_int * HRX - ng_int * HRY) >> 8;
+        int64_t x = (row_x + static_cast<int64_t>(ng) * HRX) >> 8;
+        int64_t y = (row_y - static_cast<int64_t>(ng) * HRY) >> 8;
 
-        if ((x + HPW <= 0) | (x >= static_cast<int32_t>(HBW)) | (y + HPH <= 0) |
-            (y >= static_cast<int32_t>(HBH))) {
-          HSKIP->SetPixel(ng, mg, 1);
-        } else {
-          HSKIP->SetPixel(ng, mg, 0);
-        }
+        bool out_of_bounds = (x + HPW <= 0) | (x >= static_cast<int32_t>(HBW)) |
+                             (y + HPH <= 0) | (y >= static_cast<int32_t>(HBH));
+        HSKIP->SetPixel(ng, row_write, out_of_bounds ? 1 : 0);
       }
     }
   }
@@ -86,6 +86,7 @@ std::unique_ptr<CJBig2_Image> CJBig2_HTRDProc::DecodeArith(
     while (status == FXCODEC_STATUS::kDecodeToBeContinued) {
       status = GRD.ContinueDecode(&state);
     }
+    GRD.FinishDecode();
     if (!pImage) {
       return nullptr;
     }
@@ -135,26 +136,32 @@ std::unique_ptr<CJBig2_Image> CJBig2_HTRDProc::DecodeMMR(
 std::unique_ptr<CJBig2_Image> CJBig2_HTRDProc::DecodeImage(
     const std::vector<std::unique_ptr<CJBig2_Image>>& GSPLANES) {
   auto HTREG = std::make_unique<CJBig2_Image>(HBW, HBH);
-  if (!HTREG->data()) {
+  if (!HTREG->has_data()) {
     return nullptr;
   }
 
   HTREG->Fill(HDEFPIXEL);
   for (uint32_t mg = 0; mg < HGH; ++mg) {
+    std::vector<pdfium::span<uint8_t>> rows(GSPLANES.size());
+    for (auto [plane, row] : fxcrt::Zip(GSPLANES, rows)) {
+      row = plane->GetLine(mg);
+    }
+
+    // See comment in the inner-loop below re: casting.
+    const int64_t row_x = HGX + static_cast<int64_t>(mg) * HRY;
+    const int64_t row_y = HGY + static_cast<int64_t>(mg) * HRX;
     for (uint32_t ng = 0; ng < HGW; ++ng) {
       uint32_t gsval = 0;
       for (uint8_t i = 0; i < GSPLANES.size(); ++i) {
-        gsval |= GSPLANES[i]->GetPixel(ng, mg) << i;
+        gsval |= GSPLANES[i]->GetPixel(ng, rows[i]) << i;
       }
       uint32_t pat_index = std::min(gsval, HNUMPATS - 1);
       // The `>> 8` is an arithmetic shift per spec.  Cast mg, ng to int,
       // else implicit conversions would evaluate it as unsigned shift.
       // HGX / HGY are 32 bit, HRX / HRY 16, mg / ng 32.
       // The result after >> 8 fits in about 42 bit; int64_t suffices.
-      auto mg_int = static_cast<int64_t>(mg);
-      auto ng_int = static_cast<int64_t>(ng);
-      int64_t x = (HGX + mg_int * HRY + ng_int * HRX) >> 8;
-      int64_t y = (HGY + mg_int * HRX - ng_int * HRY) >> 8;
+      int64_t x = (row_x + static_cast<int64_t>(ng) * HRX) >> 8;
+      int64_t y = (row_y - static_cast<int64_t>(ng) * HRY) >> 8;
       (*HPATS)[pat_index]->ComposeTo(HTREG.get(), x, y, HCOMBOP);
     }
   }

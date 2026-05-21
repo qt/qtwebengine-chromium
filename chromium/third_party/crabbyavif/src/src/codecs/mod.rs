@@ -24,6 +24,13 @@ pub mod android_mediacodec;
 #[cfg(feature = "aom")]
 pub mod aom;
 
+#[cfg(feature = "avm")]
+pub mod avm;
+
+#[cfg(feature = "jpegxl")]
+pub mod libjxl;
+
+use crate::decoder::item::Item;
 use crate::decoder::GridImageHelper;
 use crate::image::Image;
 use crate::parser::mp4box::CodecConfiguration;
@@ -39,7 +46,7 @@ use std::num::NonZero;
 
 // Not all fields of this struct are used in all the configurations.
 #[allow(dead_code)]
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub(crate) struct DecoderConfig {
     pub operating_point: u8,
     pub all_layers: bool,
@@ -64,6 +71,7 @@ pub(crate) trait Decoder {
         spatial_id: u8,
         image: &mut Image,
         category: Category,
+        item: Option<&Item>,
         #[cfg(feature = "android_mediacodec")] signal_eos: bool,
     ) -> AvifResult<()>;
     // Decode a list of input images and outputs them into the |grid_image_helper|.
@@ -155,6 +163,13 @@ pub(crate) trait Encoder {
         output_samples: &mut Vec<crate::encoder::Sample>,
     ) -> AvifResult<()>;
     fn finish(&mut self, output_samples: &mut Vec<crate::encoder::Sample>) -> AvifResult<()>;
+    fn get_codec_config(
+        &self,
+        image: &Image,
+        is_single_image: bool,
+        is_lossless: bool,
+        output_samples: &[crate::encoder::Sample],
+    ) -> AvifResult<CodecConfiguration>;
     // Destruction must be implemented using Drop.
 }
 

@@ -9,7 +9,7 @@
 #include "src/common/globals.h"
 #include "src/handles/global-handles-inl.h"
 #include "src/heap/heap-inl.h"  // For Space::identity().
-#include "src/heap/mutable-page-metadata-inl.h"
+#include "src/heap/mutable-page-inl.h"
 #include "src/heap/read-only-heap.h"
 #include "src/heap/visit-object.h"
 #include "src/objects/allocation-site.h"
@@ -874,7 +874,7 @@ SnapshotSpace GetSnapshotSpace(Isolate* isolate, Tagged<HeapObject> object) {
     return SnapshotSpace::kReadOnlyHeap;
   } else {
     AllocationSpace heap_space =
-        MutablePageMetadata::FromHeapObject(isolate, object)->owner_identity();
+        MutablePage::FromHeapObject(isolate, object)->owner_identity();
     // Large code objects are not supported and cannot be expressed by
     // SnapshotSpace.
     DCHECK_NE(heap_space, CODE_LO_SPACE);
@@ -1300,7 +1300,7 @@ void Serializer::ObjectSerializer::VisitProtectedPointer(
 
 void Serializer::ObjectSerializer::VisitJSDispatchTableEntry(
     Tagged<HeapObject> host, JSDispatchHandle handle) {
-  JSDispatchTable* jdt = IsolateGroup::current()->js_dispatch_table();
+  JSDispatchTable& jdt = isolate()->js_dispatch_table();
   // If the slot is empty, we will skip it here and then just serialize the
   // null handle as raw data.
   if (handle == kNullJSDispatchHandle) return;
@@ -1320,11 +1320,11 @@ void Serializer::ObjectSerializer::VisitJSDispatchTableEntry(
     auto id = static_cast<uint32_t>(serializer_->dispatch_handle_map_.size());
     serializer_->dispatch_handle_map_[handle] = id;
     sink_->Put(kAllocateJSDispatchEntry, "AllocateJSDispatchEntry");
-    sink_->PutUint30(jdt->GetParameterCount(handle), "ParameterCount");
+    sink_->PutUint30(jdt.GetParameterCount(handle), "ParameterCount");
 
     // Currently we cannot see pending objects here, but we may need to support
     // them in the future. They should already be supported by the deserializer.
-    Handle<Code> code(jdt->GetCode(handle), isolate());
+    Handle<Code> code(jdt.GetCode(handle), isolate());
     CHECK(!serializer_->SerializePendingObject(*code));
     serializer_->SerializeObject(code, SlotType::kAnySlot);
   } else {
@@ -1469,12 +1469,11 @@ bool Serializer::SerializeReadOnlyObjectReference(Tagged<HeapObject> obj,
   // create a back reference that encodes the page number as the chunk_index and
   // the offset within the page as the chunk_offset.
   Address address = obj.address();
-  MemoryChunkMetadata* chunk =
-      MemoryChunkMetadata::FromAddress(isolate(), address);
+  BasePage* chunk = BasePage::FromAddress(isolate(), address);
   uint32_t chunk_index = 0;
   ReadOnlySpace* const read_only_space = isolate()->heap()->read_only_space();
   DCHECK(!read_only_space->writable());
-  for (ReadOnlyPageMetadata* page : read_only_space->pages()) {
+  for (ReadOnlyPage* page : read_only_space->pages()) {
     if (chunk == page) break;
     ++chunk_index;
   }

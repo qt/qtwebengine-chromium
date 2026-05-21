@@ -9,6 +9,7 @@
 #include <memory>
 #include <set>
 #include <utility>
+#include <vector>
 
 #include "core/fxcrt/containers/contains.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -262,6 +263,24 @@ TEST(UnownedPtr, TransparentCompare) {
   EXPECT_EQ(holder.end(), holder.find(&foos[1]));
   EXPECT_TRUE(pdfium::Contains(holder, &foos[0]));
   EXPECT_FALSE(pdfium::Contains(holder, &foos[1]));
+}
+
+TEST(UnownedPtr, RangesEqualsTo) {
+  std::vector<UnownedPtr<Clink>> empty_vec;
+  {
+    UnownedPtr<Clink> ptr;
+    auto it = std::ranges::find(empty_vec, ptr);
+    ASSERT_TRUE(it == empty_vec.end());
+  }
+  {
+    auto ptr = std::make_unique<Clink>();
+    auto it = std::ranges::find(empty_vec, ptr.get());
+    ASSERT_TRUE(it == empty_vec.end());
+  }
+  {
+    auto it = std::ranges::find(empty_vec, nullptr);
+    ASSERT_TRUE(it == empty_vec.end());
+  }
 }
 
 #if defined(PDF_USE_PARTITION_ALLOC)

@@ -19,6 +19,8 @@
 #include "util/osp_logging.h"
 
 namespace openscreen {
+RSAPrivateKey::RSAPrivateKey(RSAPrivateKey&& other) noexcept = default;
+RSAPrivateKey& RSAPrivateKey::operator=(RSAPrivateKey&& other) = default;
 RSAPrivateKey::~RSAPrivateKey() = default;
 
 // static

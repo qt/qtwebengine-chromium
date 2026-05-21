@@ -89,25 +89,13 @@ class MdnsProbeTests : public testing::Test {
   const IPEndpoint endpoint_v4_{address_v4_, 80};
 };
 
-// TODO(issuetracker.google.com/243611087): Occasionally flaky in bots.
-TEST_F(MdnsProbeTests, DISABLED_TestNoCancelationFlow) {
-  EXPECT_CALL(sender_, SendMulticast(_));
-  clock_.Advance(kDelayBetweenProbeQueries);
-  EXPECT_EQ(task_runner_.delayed_task_count(), 1);
-  testing::Mock::VerifyAndClearExpectations(&sender_);
-
-  EXPECT_CALL(sender_, SendMulticast(_));
-  clock_.Advance(kDelayBetweenProbeQueries);
-  EXPECT_EQ(task_runner_.delayed_task_count(), 1);
-  testing::Mock::VerifyAndClearExpectations(&sender_);
-
-  EXPECT_CALL(sender_, SendMulticast(_));
-  clock_.Advance(kDelayBetweenProbeQueries);
-  EXPECT_EQ(task_runner_.delayed_task_count(), 1);
-  testing::Mock::VerifyAndClearExpectations(&sender_);
-
+TEST_F(MdnsProbeTests, TestNoCancelationFlow) {
+  // 3 probes should be sent.
+  EXPECT_CALL(sender_, SendMulticast(_)).Times(3);
   EXPECT_CALL(observer_, OnProbeSuccess(probe_.get())).Times(1);
-  clock_.Advance(kDelayBetweenProbeQueries);
+
+  // Advance enough time for all probes to finish (initial delay + 3 intervals).
+  clock_.Advance(std::chrono::seconds(1));
   EXPECT_EQ(task_runner_.delayed_task_count(), 0);
 }
 
@@ -116,14 +104,16 @@ TEST_F(MdnsProbeTests, CancelationWhenMatchingMessageReceived) {
   OnMessageReceived(CreateMessage(name_));
 }
 
-// TODO(issuetracker.google.com/243611087): Occasionally flaky in bots.
-TEST_F(MdnsProbeTests, DISABLED_TestNoCancelationOnUnrelatedMessages) {
+TEST_F(MdnsProbeTests, TestNoCancelationOnUnrelatedMessages) {
   OnMessageReceived(CreateMessage(name2_));
 
-  EXPECT_CALL(sender_, SendMulticast(_));
-  clock_.Advance(kDelayBetweenProbeQueries);
-  EXPECT_EQ(task_runner_.delayed_task_count(), 1);
-  testing::Mock::VerifyAndClearExpectations(&sender_);
+  // 3 probes should be sent.
+  EXPECT_CALL(sender_, SendMulticast(_)).Times(3);
+  EXPECT_CALL(observer_, OnProbeSuccess(probe_.get())).Times(1);
+
+  // Advance enough time for all probes to finish (initial delay + 3 intervals).
+  clock_.Advance(std::chrono::seconds(1));
+  EXPECT_EQ(task_runner_.delayed_task_count(), 0);
 }
 
 }  // namespace openscreen::discovery

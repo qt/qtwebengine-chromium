@@ -8,7 +8,6 @@
 #include <memory>
 #include <utility>
 
-#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/trace_event/trace_id_helper.h"
 #include "base/trace_event/typed_macros.h"
@@ -775,10 +774,13 @@ device::mojom::blink::XRSessionOptionsPtr XRSystem::XRSessionOptionsFromQuery(
   return session_options;
 }
 
+const char XRSystem::kSupplementName[] = "XRSystem";
+
 XRSystem* XRSystem::FromIfExists(Document& document) {
   if (!document.domWindow())
     return nullptr;
-  return document.domWindow()->navigator()->GetXRSystem();
+  return Supplement<Navigator>::From<XRSystem>(
+      document.domWindow()->navigator());
 }
 
 XRSystem* XRSystem::From(Document& document) {
@@ -795,10 +797,10 @@ XRSystem* XRSystem::xr(Navigator& navigator) {
   if (!window)
     return nullptr;
 
-  XRSystem* xr = navigator.GetXRSystem();
+  XRSystem* xr = Supplement<Navigator>::From<XRSystem>(navigator);
   if (!xr) {
     xr = MakeGarbageCollected<XRSystem>(navigator);
-    navigator.SetXRSystem(xr);
+    ProvideTo(navigator, xr);
 
     ukm::builders::XR_WebXR(window->UkmSourceID())
         .SetDidUseNavigatorXR(1)
@@ -808,7 +810,8 @@ XRSystem* XRSystem::xr(Navigator& navigator) {
 }
 
 XRSystem::XRSystem(Navigator& navigator)
-    : ExecutionContextLifecycleObserver(navigator.DomWindow()),
+    : Supplement<Navigator>(navigator),
+      ExecutionContextLifecycleObserver(navigator.DomWindow()),
       FocusChangedObserver(navigator.DomWindow()->GetFrame()->GetPage()),
       service_(navigator.DomWindow()),
       environment_provider_(navigator.DomWindow()),
@@ -1253,8 +1256,8 @@ ScriptPromise<XRSession> XRSystem::requestSession(
   if (session_mode == device::mojom::blink::XRSessionMode::kImmersiveAr &&
       !IsImmersiveArAllowed()) {
     DVLOG(1) << __func__ << ": Immersive AR not allowed";
-    exception_state.ThrowTypeError(
-        String::Format(kImmersiveArModeNotValid, "requestSession"));
+    exception_state.ThrowTypeError(UNSAFE_TODO(
+        String::Format(kImmersiveArModeNotValid, "requestSession")));
 
     // We haven't created the query yet, so we can't use it to implicitly log
     // our metrics for us, so explicitly log it here, as the query requires the
@@ -1343,7 +1346,8 @@ ScriptPromise<XRSession> XRSystem::requestSession(
       DCHECK(image->hasWidthInMeters()) << "required in IDL";
       if (std::isnan(image->widthInMeters()) ||
           image->widthInMeters() <= 0.0f) {
-        String message = String::Format(kTrackedImageWidthInvalid, index);
+        String message =
+            UNSAFE_TODO(String::Format(kTrackedImageWidthInvalid, index));
         query->RejectWithTypeError(message, &exception_state);
         return promise;
       }
@@ -1479,8 +1483,8 @@ void XRSystem::OnRequestSessionReturned(
   Element* fullscreen_element = nullptr;
   const auto& enabled_features =
       result->get_success()->session->enabled_features;
-  if (base::Contains(enabled_features,
-                     device::mojom::XRSessionFeature::DOM_OVERLAY)) {
+  if (std::ranges::contains(enabled_features,
+                            device::mojom::XRSessionFeature::DOM_OVERLAY)) {
     fullscreen_element = query->DOMOverlayElement();
   }
 
@@ -1504,7 +1508,7 @@ void XRSystem::OnRequestSessionReturned(
     return;
   }
 
-  const bool session_has_camera_access = base::Contains(
+  const bool session_has_camera_access = std::ranges::contains(
       enabled_features, device::mojom::XRSessionFeature::CAMERA_ACCESS);
 
   // At this point, we know that we have an element that we need to make
@@ -1558,9 +1562,9 @@ void XRSystem::FinishSessionCreation(
       return;
     }
 
-    String error_message =
+    String error_message = UNSAFE_TODO(
         String::Format("Could not create a session because: %s",
-                       GetConsoleMessage(result->get_failure_reason()));
+                       GetConsoleMessage(result->get_failure_reason())));
     AddConsoleMessage(mojom::blink::ConsoleMessageLevel::kError, error_message);
     query->RejectWithDOMException(DOMExceptionCode::kNotSupportedError,
                                   kSessionNotSupported, nullptr);
@@ -1594,10 +1598,10 @@ void XRSystem::FinishSessionCreation(
 
   if (query->mode() == device::mojom::blink::XRSessionMode::kImmersiveVr ||
       query->mode() == device::mojom::blink::XRSessionMode::kImmersiveAr) {
-    const bool anchors_enabled = base::Contains(
-        enabled_features, device::mojom::XRSessionFeature::ANCHORS);
-    const bool hit_test_enabled = base::Contains(
-        enabled_features, device::mojom::XRSessionFeature::HIT_TEST);
+    const bool anchors_enabled =
+        enabled_features.Contains(device::mojom::XRSessionFeature::ANCHORS);
+    const bool hit_test_enabled =
+        enabled_features.Contains(device::mojom::XRSessionFeature::HIT_TEST);
     const bool environment_integration = hit_test_enabled || anchors_enabled;
     if (environment_integration) {
       // See Task Sources spreadsheet for more information:
@@ -1618,7 +1622,7 @@ void XRSystem::FinishSessionCreation(
     auto dom_overlay_feature = device::mojom::XRSessionFeature::DOM_OVERLAY;
     if (query->mode() == device::mojom::blink::XRSessionMode::kImmersiveAr &&
         query->HasFeature(dom_overlay_feature) &&
-        base::Contains(enabled_features, dom_overlay_feature)) {
+        enabled_features.Contains(dom_overlay_feature)) {
       DCHECK(query->DOMOverlayElement());
       // The session is using DOM overlay mode. At this point the overlay
       // element is already in fullscreen mode, and the session can proceed.
@@ -1813,6 +1817,7 @@ void XRSystem::Trace(Visitor* visitor) const {
   visitor->Trace(outstanding_request_queries_);
   visitor->Trace(fullscreen_enter_observer_);
   visitor->Trace(fullscreen_exit_observer_);
+  Supplement<Navigator>::Trace(visitor);
   ExecutionContextLifecycleObserver::Trace(visitor);
   EventTarget::Trace(visitor);
 }

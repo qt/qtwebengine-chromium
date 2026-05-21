@@ -2,6 +2,7 @@ Name: LunarG VulkanTools
 Short Name: VulkanTools
 Version: N/A
 URL: https://github.com/LunarG/VulkanTools
+Update Mechanism: Manual
 SOURCE CODE: git clone https://github.com/LunarG/VulkanTools.git
 Revision: DEPS
 Security Critical: no

@@ -147,6 +147,9 @@ export class InspectorFrontendHostStub implements InspectorFrontendHostAPI {
   }
 
   inspectedURLChanged(url: Platform.DevToolsPath.UrlString): void {
+    if (!('document' in globalThis)) {
+      return;
+    }
     document.title = i18nString(UIStrings.devtoolsS, {PH1: url.replace(/^https?:\/\//, '')});
   }
 
@@ -246,6 +249,13 @@ export class InspectorFrontendHostStub implements InspectorFrontendHostAPI {
   }
 
   recordPerformanceHistogram(histogramName: string, duration: number): void {
+    if (this.recordedPerformanceHistograms.length >= MAX_RECORDED_HISTOGRAMS_SIZE) {
+      this.recordedPerformanceHistograms.shift();
+    }
+    this.recordedPerformanceHistograms.push({histogramName, duration});
+  }
+
+  recordPerformanceHistogramMedium(histogramName: string, duration: number): void {
     if (this.recordedPerformanceHistograms.length >= MAX_RECORDED_HISTOGRAMS_SIZE) {
       this.recordedPerformanceHistograms.shift();
     }
@@ -396,9 +406,6 @@ export class InspectorFrontendHostStub implements InspectorFrontendHostAPI {
       },
       devToolsFlexibleLayout: {
         verticalDrawerEnabled: true,
-      },
-      devToolsStartingStyleDebugging: {
-        enabled: false,
       },
     };
     if ('hostConfigForTesting' in globalThis) {
@@ -554,5 +561,8 @@ export class InspectorFrontendHostStub implements InspectorFrontendHostAPI {
   recordSettingAccess(_event: SettingAccessEvent): void {
   }
   recordFunctionCall(_event: FunctionCallEvent): void {
+  }
+
+  setChromeFlag(_flagName: string, _value: boolean): void {
   }
 }

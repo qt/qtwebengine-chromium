@@ -19,6 +19,7 @@ use crate::encoder::Sample;
 use crate::encoder::ScalingMode;
 use crate::image::Image;
 use crate::image::YuvRange;
+use crate::parser::obu::Av1SequenceHeader;
 use crate::utils::IFraction;
 use crate::*;
 
@@ -568,6 +569,19 @@ impl Encoder for Aom {
             }
         }
         Ok(())
+    }
+
+    fn get_codec_config(
+        &self,
+        _image: &Image,
+        _is_single_image: bool,
+        _is_lossless: bool,
+        output_samples: &[crate::encoder::Sample],
+    ) -> AvifResult<CodecConfiguration> {
+        // Harvest codec configuration from AV1 sequence header.
+        Ok(CodecConfiguration::Av1(
+            Av1SequenceHeader::parse_from_obus(&output_samples[0].data)?.config,
+        ))
     }
 }
 

@@ -129,7 +129,7 @@ pub(crate) fn write_tmap(metadata: &GainMapMetadata) -> AvifResult<Vec<u8>> {
 }
 
 impl Encoder {
-    pub(crate) fn write_ftyp(&self, stream: &mut OStream) -> AvifResult<()> {
+    pub(crate) fn write_avif_ftyp(&self, stream: &mut OStream) -> AvifResult<()> {
         let mut compatible_brands = vec![
             String::from("avif"),
             String::from("mif1"),
@@ -169,6 +169,97 @@ impl Encoder {
             stream.write_string(compatible_brand)?;
         }
         stream.finish_box()
+    }
+
+    #[cfg(feature = "avm")]
+    pub(crate) fn write_avif2_ftyp(&self, stream: &mut OStream) -> AvifResult<()> {
+        // TODO: b/437292541 - Adapt once AVIF2 is finalized.
+        let mut compatible_brands = vec![
+            String::from("av2f"),
+            String::from("mif1"),
+            String::from("miaf"),
+        ];
+        if self.is_sequence() {
+            compatible_brands.extend_from_slice(&[
+                String::from("av2s"),
+                String::from("msf1"),
+                String::from("iso8"),
+            ]);
+        }
+        if self.items.iter().any(|x| x.is_tmap()) {
+            compatible_brands.push(String::from("tmap"));
+        }
+        match self.image_metadata.depth {
+            8 | 10 => match self.image_metadata.yuv_format {
+                PixelFormat::Yuv420 => compatible_brands.push(String::from("MA1B")),
+                PixelFormat::Yuv444 => compatible_brands.push(String::from("MA1A")),
+                _ => {}
+            },
+            _ => {}
+        }
+
+        stream.start_box("ftyp")?;
+        // unsigned int(32) major_brand;
+        stream.write_string(&String::from(if self.is_sequence() {
+            "av2s"
+        } else {
+            "av2f"
+        }))?;
+        // unsigned int(32) minor_version;
+        stream.write_u32(0)?;
+        // unsigned int(32) compatible_brands[];
+        for compatible_brand in &compatible_brands {
+            stream.write_string(compatible_brand)?;
+        }
+        stream.finish_box()
+    }
+
+    #[cfg(feature = "jpegxl")]
+    pub(crate) fn write_jpegxl_ftyp(&self, stream: &mut OStream) -> AvifResult<()> {
+        stream.start_box("ftyp")?;
+        // No need to repeat the major_brand in the compatible_brands starting
+        // with ISO/IEC 14496-12:2025/DAmd 1.
+        let (major_brand, compatible_brands) = if self.is_sequence() {
+            (
+                String::from("hxlS"),
+                vec![
+                    String::from("msf1"),
+                    String::from("iso8"),
+                    // Also contains an image item.
+                    String::from("hxlI"),
+                    String::from("mif1"),
+                    String::from("miaf"),
+                ],
+            )
+        } else {
+            (
+                String::from("hxlI"),
+                vec![String::from("mif1"), String::from("miaf")],
+            )
+        };
+        // unsigned int(32) major_brand;
+        stream.write_string(&major_brand)?;
+        // unsigned int(32) minor_version;
+        stream.write_u32(0)?;
+        // unsigned int(32) compatible_brands[];
+        for compatible_brand in &compatible_brands {
+            stream.write_string(compatible_brand)?;
+        }
+        if self.items.iter().any(|x| x.is_tmap()) {
+            stream.write_string(&String::from("tmap"))?;
+        }
+        stream.finish_box()
+    }
+
+    pub(crate) fn write_ftyp(&self, stream: &mut OStream) -> AvifResult<()> {
+        match self.settings.codec_choice.actual() {
+            CodecChoice::Aom => self.write_avif_ftyp(stream),
+            #[cfg(feature = "avm")]
+            CodecChoice::Avm => self.write_avif2_ftyp(stream),
+            #[cfg(feature = "jpegxl")]
+            CodecChoice::Libjxl => self.write_jpegxl_ftyp(stream),
+            _ => unreachable!(),
+        }
     }
 
     pub(crate) fn write_iloc(stream: &mut OStream, items: &mut Vec<&mut Item>) -> AvifResult<()> {

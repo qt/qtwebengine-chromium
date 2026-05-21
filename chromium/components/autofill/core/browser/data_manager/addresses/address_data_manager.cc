@@ -12,7 +12,6 @@
 #include "base/check_deref.h"
 #include "base/check_is_test.h"
 #include "base/check_op.h"
-#include "base/containers/contains.h"
 #include "base/containers/to_vector.h"
 #include "base/feature_list.h"
 #include "base/functional/callback.h"
@@ -95,8 +94,6 @@ AddressDataManager::AddressDataManager(
       identity_manager_(identity_manager),
       sync_service_(sync_service),
       app_locale_(std::move(app_locale)) {
-  alternative_state_name_map_updater_ =
-      std::make_unique<AlternativeStateNameMapUpdater>(local_state, this);
   if (webdata_service_) {
     // The `webdata_service_` is null when the TestPDM is used.
     webdata_service_observer_.Observe(webdata_service_.get());
@@ -120,6 +117,9 @@ AddressDataManager::AddressDataManager(
       autofill_metrics::LogAutofillProfileDisabledReasonAtStartup(
           *pref_service_);
     }
+
+    alternative_state_name_map_updater_ =
+        std::make_unique<AlternativeStateNameMapUpdater>(this);
     address_data_cleaner_ = std::make_unique<AddressDataCleaner>(
         *this, sync_service, *pref_service_,
         alternative_state_name_map_updater_.get());
@@ -256,20 +256,18 @@ std::vector<const AutofillProfile*> AddressDataManager::GetProfilesToSuggest()
   const bool should_promote_name_email_profile =
       !pref_service_->GetBoolean(prefs::kAutofillWasNameAndEmailProfileUsed) &&
       (pref_service_->GetInteger(
-          prefs::kAutofillNameAndEmailProfileNotSelectedCounter) == 0);
+           prefs::kAutofillNameAndEmailProfileNotSelectedCounter) == 0);
   // Move the kAccountNameEmail profile to the front (or back) depending on
   // the `should_promote_name_email_profile`.
   std::ranges::stable_partition(
-      profiles, [should_promote_name_email_profile](
-                    const AutofillProfile* p) {
+      profiles, [should_promote_name_email_profile](const AutofillProfile* p) {
         bool is_name_email_profile =
             p->record_type() == AutofillProfile::RecordType::kAccountNameEmail;
         // stable_partition() moves all elements where the predicate returns
         // true to the front. The name/email profile should be in front when
         // it hasn't been used before and in the back otherwise.
-        return should_promote_name_email_profile
-                   ? is_name_email_profile
-                   : !is_name_email_profile;
+        return should_promote_name_email_profile ? is_name_email_profile
+                                                 : !is_name_email_profile;
       });
 
   return profiles;
@@ -311,39 +309,11 @@ void AddressDataManager::UpdateProfile(const AutofillProfile& profile) {
   if (!webdata_service_) {
     return;
   }
-
-  if (base::FeatureList::IsEnabled(
-          features::kAutofillDeduplicateAccountAddresses)) {
-    UpdateProfileInDB(profile);
-    return;
-  }
-
-  // The profile is a duplicate of an existing profile if it has a distinct GUID
-  // but the same content.
-  // Duplicates can exist across record types.
-  const std::vector<const AutofillProfile*> profiles =
-      GetProfilesByRecordType(profile.record_type());
-  auto duplicate_profile_iter = std::ranges::find_if(
-      profiles, [&profile](const AutofillProfile* other_profile) {
-        return profile.guid() != other_profile->guid() &&
-               other_profile->Compare(profile) == 0;
-      });
-
-  // Remove the profile if it is a duplicate of another already existing
-  // profile.
-  if (duplicate_profile_iter != profiles.end()) {
-    // Keep the more recently used version of the profile.
-    if (profile.usage_history().use_date() >
-        (*duplicate_profile_iter)->usage_history().use_date()) {
-      UpdateProfileInDB(profile);
-      RemoveProfile((*duplicate_profile_iter)->guid());
-    } else {
-      RemoveProfile(profile.guid());
-    }
-    return;
-  }
-
-  UpdateProfileInDB(profile);
+  ongoing_profile_changes_.emplace_back(
+      AutofillProfileChange(AutofillProfileChange::UPDATE, profile.guid(),
+                            profile),
+      /*is_ongoing=*/false);
+  HandleNextProfileChange();
 }
 
 void AddressDataManager::RemoveProfile(
@@ -785,14 +755,6 @@ void AddressDataManager::OnAutofillProfileChanged(
   OnProfileChangeDone();
 }
 
-void AddressDataManager::UpdateProfileInDB(const AutofillProfile& profile) {
-  ongoing_profile_changes_.emplace_back(
-      AutofillProfileChange(AutofillProfileChange::UPDATE, profile.guid(),
-                            profile),
-      /*is_ongoing=*/false);
-  HandleNextProfileChange();
-}
-
 void AddressDataManager::HandleNextProfileChange() {
   if (ongoing_profile_changes_.empty()) {
     return;
@@ -878,13 +840,6 @@ void AddressDataManager::LogStoredDataMetrics() const {
   autofill_metrics::LogStoredProfileMetrics(profile_pointers);
   autofill_metrics::LogStoredProfileTokenQualityMetrics(profile_pointers);
   autofill_metrics::LogStoredProfileCountWithAlternativeName(profile_pointers);
-  // TODO(crbug.com/357074792): Once the feature is launched, remove the
-  // code inside the if-statement, it won't be needed anymore.
-  if (!base::FeatureList::IsEnabled(
-          features::kAutofillDeduplicateAccountAddresses)) {
-    autofill_metrics::LogLocalProfileSupersetMetrics(
-        std::move(profile_pointers), app_locale_);
-  }
 }
 
 void AddressDataManager::RemoveProfileImpl(

@@ -54,6 +54,20 @@ FcFreeTypeQueryFace (const FT_Face  face,
                      unsigned int   id,
                      FcBlanks      *blanks);
 
+/* fcfreetype.c */
+FcPublic FcPattern *
+FcFreeTypeQuery (const FcChar8 *file,
+                 unsigned int id,
+                 FcBlanks *blanks,
+                 int *count);
+
+FcPublic unsigned int
+FcFreeTypeQueryAll (const FcChar8 *file,
+                    unsigned int id,
+                    FcBlanks *blanks,
+                    int *count,
+                    FcFontSet *set);
+
 _FCFUNCPROTOEND
 
 #endif

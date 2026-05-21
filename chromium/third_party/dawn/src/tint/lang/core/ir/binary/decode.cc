@@ -283,6 +283,11 @@ struct Decoder {
                                      Value(wg_size_in.z()));
         }
 
+        if (fn_in.has_subgroup_size()) {
+            uint32_t subgroup_size_in = fn_in.subgroup_size();
+            fn_out->SetSubgroupSize(Value(subgroup_size_in));
+        }
+
         Vector<FunctionParam*, 8> params_out;
         for (auto param_in : fn_in.parameters()) {
             auto* param_out = ValueAs<FunctionParam>(param_in);
@@ -704,8 +709,6 @@ struct Decoder {
                 return CreateTypeArray(type_in.array());
             case pb::Type::KindCase::kBindingArray:
                 return CreateTypeBindingArray(type_in.binding_array());
-            case pb::Type::KindCase::kResourceBinding:
-                return CreateTypeResourceBinding(type_in.resource_binding());
             case pb::Type::KindCase::kTexelBuffer:
                 return CreateTypeTexelBuffer(type_in.texel_buffer());
             case pb::Type::KindCase::kDepthTexture:
@@ -735,6 +738,8 @@ struct Decoder {
                                                 type_in.subgroup_matrix_result());
             case pb::Type::KindCase::kBuiltinStruct:
                 return CreateTypeBuiltinStruct(type_in.builtin_struct());
+            case pb::Type::KindCase::kBuffer:
+                return CreateTypeBuffer(type_in.buffer());
             case pb::Type::KindCase::KIND_NOT_SET:
                 break;
         }
@@ -935,10 +940,6 @@ struct Decoder {
         return mod_out_.Types().binding_array(element, count);
     }
 
-    const type::ResourceBinding* CreateTypeResourceBinding(const pb::TypeResourceBinding&) {
-        return mod_out_.Types().resource_binding();
-    }
-
     const type::Type* CreateTypeDepthTexture(const pb::TypeDepthTexture& texture_in) {
         auto dimension = TextureDimension(texture_in.dimension());
         if (!type::DepthTexture::IsValidDimension(dimension)) {
@@ -1036,6 +1037,11 @@ struct Decoder {
                                                 subgroup_matrix.rows());
     }
 
+    const type::Type* CreateTypeBuffer(const pb::TypeBuffer&) {
+        err_ << "buffer types are not supported\n";
+        return mod_out_.Types().invalid();
+    }
+
     const type::Type* CreateTypeBuiltinStruct(pb::TypeBuiltinStruct builtin_struct_in) {
         if (!TypeBuiltinStruct_IsValid(builtin_struct_in)) {
             err_ << "invalid builtin struct type, " << std::to_string(builtin_struct_in) << "\n";
@@ -1058,22 +1064,22 @@ struct Decoder {
                 res = type::CreateFrexpResult(ty, mod_out_.symbols, ty.f32());
                 break;
             case pb::TypeBuiltinStruct::FrexpResultVec2F16:
-                res = type::CreateFrexpResult(ty, mod_out_.symbols, ty.vec2<f16>());
+                res = type::CreateFrexpResult(ty, mod_out_.symbols, ty.vec2h());
                 break;
             case pb::TypeBuiltinStruct::FrexpResultVec2F32:
-                res = type::CreateFrexpResult(ty, mod_out_.symbols, ty.vec2<f32>());
+                res = type::CreateFrexpResult(ty, mod_out_.symbols, ty.vec2f());
                 break;
             case pb::TypeBuiltinStruct::FrexpResultVec3F16:
-                res = type::CreateFrexpResult(ty, mod_out_.symbols, ty.vec3<f16>());
+                res = type::CreateFrexpResult(ty, mod_out_.symbols, ty.vec3h());
                 break;
             case pb::TypeBuiltinStruct::FrexpResultVec3F32:
-                res = type::CreateFrexpResult(ty, mod_out_.symbols, ty.vec3<f32>());
+                res = type::CreateFrexpResult(ty, mod_out_.symbols, ty.vec3f());
                 break;
             case pb::TypeBuiltinStruct::FrexpResultVec4F16:
-                res = type::CreateFrexpResult(ty, mod_out_.symbols, ty.vec4<f16>());
+                res = type::CreateFrexpResult(ty, mod_out_.symbols, ty.vec4h());
                 break;
             case pb::TypeBuiltinStruct::FrexpResultVec4F32:
-                res = type::CreateFrexpResult(ty, mod_out_.symbols, ty.vec4<f32>());
+                res = type::CreateFrexpResult(ty, mod_out_.symbols, ty.vec4f());
                 break;
             case pb::TypeBuiltinStruct::ModfResultF16:
                 res = type::CreateModfResult(ty, mod_out_.symbols, ty.f16());
@@ -1082,22 +1088,22 @@ struct Decoder {
                 res = type::CreateModfResult(ty, mod_out_.symbols, ty.f32());
                 break;
             case pb::TypeBuiltinStruct::ModfResultVec2F16:
-                res = type::CreateModfResult(ty, mod_out_.symbols, ty.vec2<f16>());
+                res = type::CreateModfResult(ty, mod_out_.symbols, ty.vec2h());
                 break;
             case pb::TypeBuiltinStruct::ModfResultVec2F32:
-                res = type::CreateModfResult(ty, mod_out_.symbols, ty.vec2<f32>());
+                res = type::CreateModfResult(ty, mod_out_.symbols, ty.vec2f());
                 break;
             case pb::TypeBuiltinStruct::ModfResultVec3F16:
-                res = type::CreateModfResult(ty, mod_out_.symbols, ty.vec2<f16>());
+                res = type::CreateModfResult(ty, mod_out_.symbols, ty.vec2h());
                 break;
             case pb::TypeBuiltinStruct::ModfResultVec3F32:
-                res = type::CreateModfResult(ty, mod_out_.symbols, ty.vec3<f32>());
+                res = type::CreateModfResult(ty, mod_out_.symbols, ty.vec3f());
                 break;
             case pb::TypeBuiltinStruct::ModfResultVec4F16:
-                res = type::CreateModfResult(ty, mod_out_.symbols, ty.vec2<f16>());
+                res = type::CreateModfResult(ty, mod_out_.symbols, ty.vec2h());
                 break;
             case pb::TypeBuiltinStruct::ModfResultVec4F32:
-                res = type::CreateModfResult(ty, mod_out_.symbols, ty.vec4<f32>());
+                res = type::CreateModfResult(ty, mod_out_.symbols, ty.vec4f());
                 break;
 
             case pb::TypeBuiltinStruct::TypeBuiltinStruct_INT_MIN_SENTINEL_DO_NOT_USE_:
@@ -2054,14 +2060,14 @@ struct Decoder {
                 return core::BuiltinFn::kSubgroupMatrixScalarSubtract;
             case pb::BuiltinFn::print:
                 return core::BuiltinFn::kPrint;
-            case pb::BuiltinFn::has_binding:
-                return core::BuiltinFn::kHasBinding;
-            case pb::BuiltinFn::get_binding:
-                return core::BuiltinFn::kGetBinding;
             case pb::BuiltinFn::has_resource:
                 return core::BuiltinFn::kHasResource;
             case pb::BuiltinFn::get_resource:
                 return core::BuiltinFn::kGetResource;
+            case pb::BuiltinFn::buffer_view:
+                return core::BuiltinFn::kBufferView;
+            case pb::BuiltinFn::buffer_length:
+                return core::BuiltinFn::kBufferLength;
 
             case pb::BuiltinFn::BuiltinFn_INT_MIN_SENTINEL_DO_NOT_USE_:
             case pb::BuiltinFn::BuiltinFn_INT_MAX_SENTINEL_DO_NOT_USE_:

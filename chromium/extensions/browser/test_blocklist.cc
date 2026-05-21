@@ -6,7 +6,6 @@
 
 #include <set>
 
-#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/run_loop.h"
 #include "base/task/single_thread_task_runner.h"
@@ -35,7 +34,7 @@ void BlocklistStateFetcherMock::Request(const std::string& id,
   ++request_count_;
 
   BlocklistState result = NOT_BLOCKLISTED;
-  if (base::Contains(states_, id)) {
+  if (states_.contains(id)) {
     result = states_[id];
   }
 
@@ -53,19 +52,19 @@ void BlocklistStateFetcherMock::Clear() {
 }
 
 TestBlocklist::TestBlocklist()
-    : blocklist_(nullptr),
-      blocklist_db_(new FakeSafeBrowsingDatabaseManager(true)),
+    : blocklist_db_(new FakeSafeBrowsingDatabaseManager(true)),
       scoped_blocklist_db_(blocklist_db_) {}
 
 TestBlocklist::TestBlocklist(Blocklist* blocklist)
-    : blocklist_(nullptr),
-      blocklist_db_(new FakeSafeBrowsingDatabaseManager(true)),
+    : blocklist_db_(new FakeSafeBrowsingDatabaseManager(true)),
       scoped_blocklist_db_(blocklist_db_) {
   Attach(blocklist);
 }
 
 TestBlocklist::~TestBlocklist() {
-  Detach();
+  if (blocklist_) {
+    Detach();
+  }
 }
 
 void TestBlocklist::Attach(Blocklist* blocklist) {
@@ -80,6 +79,7 @@ void TestBlocklist::Attach(Blocklist* blocklist) {
 void TestBlocklist::Detach() {
   blocklist_->ResetBlocklistStateFetcherForTest();
   blocklist_->ResetDatabaseUpdatedListenerForTest();
+  blocklist_ = nullptr;
 }
 
 void TestBlocklist::SetBlocklistState(const std::string& extension_id,

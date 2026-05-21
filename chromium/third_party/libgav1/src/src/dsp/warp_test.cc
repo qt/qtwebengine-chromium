@@ -515,7 +515,7 @@ void ShowRange() {
   int first_pass_offset;
   if (bitdepth == 8) {
     // Derive an offset for 8 bit.
-    for (first_pass_offset = 1; - first_pass_offset > min;
+    for (first_pass_offset = 1; -first_pass_offset > min;
          first_pass_offset <<= 1) {
     }
     printf("  8bpp intermediate offset: %d.\n", first_pass_offset);

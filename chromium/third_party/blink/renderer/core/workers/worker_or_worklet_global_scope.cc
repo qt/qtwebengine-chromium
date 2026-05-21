@@ -225,6 +225,7 @@ WorkerOrWorkletGlobalScope::WorkerOrWorkletGlobalScope(
     bool is_worker_loaded_from_data_url,
     bool is_default_world_of_isolate)
     : ExecutionContext(isolate, agent),
+      ActiveScriptWrappable<WorkerOrWorkletGlobalScope>({}),
       is_creator_secure_context_(is_creator_secure_context),
       name_(name),
       parent_devtools_token_(parent_devtools_token),
@@ -242,6 +243,8 @@ WorkerOrWorkletGlobalScope::WorkerOrWorkletGlobalScope(
   GetSecurityContext().SetSecurityOrigin(std::move(origin));
 
   SetPolicyContainer(PolicyContainer::CreateEmpty());
+  if (worker_clients_)
+    worker_clients_->ReattachThread();
 }
 
 WorkerOrWorkletGlobalScope::~WorkerOrWorkletGlobalScope() = default;
@@ -267,6 +270,10 @@ v8::Local<v8::Object> WorkerOrWorkletGlobalScope::AssociateWithWrapper(
                 "as the wrapper.";
 }
 
+bool WorkerOrWorkletGlobalScope::HasPendingActivity() const {
+  return !ExecutionContext::IsContextDestroyed();
+}
+
 void WorkerOrWorkletGlobalScope::CountUse(WebFeature feature) {
   DCHECK(IsContextThread());
 
@@ -274,8 +281,9 @@ void WorkerOrWorkletGlobalScope::CountUse(WebFeature feature) {
   // the assumption is broken. Don't count features while the context is
   // destroyed.
   // TODO(https://crbug.com/1298450): Fix the lifetime of WorkerReportingProxy.
-  if (IsContextDestroyed())
+  if (ExecutionContext::IsContextDestroyed()) {
     return;
+  }
 
   DCHECK_NE(feature, WebFeature::kPageVisits);
   DCHECK_LE(feature, WebFeature::kMaxValue);
@@ -330,7 +338,7 @@ void WorkerOrWorkletGlobalScope::CountWebDXFeature(WebDXFeature feature) {
   // the assumption is broken. Don't count features while the context is
   // destroyed.
   // TODO(https://crbug.com/40058806): Fix the lifetime of WorkerReportingProxy.
-  if (IsContextDestroyed()) {
+  if (ExecutionContext::IsContextDestroyed()) {
     return;
   }
 
@@ -587,11 +595,11 @@ void WorkerOrWorkletGlobalScope::FetchModuleScript(
   // credentials mode is credentials mode, and referrer policy is the empty
   // string.
   // Module worker scripts are fetched with fetchpriority kAuto.
-  ScriptFetchOptions options(nonce, IntegrityMetadataSet(), integrity_attribute,
-                             parser_state, credentials_mode,
-                             network::mojom::ReferrerPolicy::kDefault,
-                             mojom::blink::FetchPriorityHint::kAuto,
-                             RenderBlockingBehavior::kNonBlocking);
+  ScriptFetchOptions options(
+      nonce, IntegrityMetadataSet(), integrity_attribute, parser_state,
+      credentials_mode, network::mojom::ReferrerPolicy::kDefault,
+      mojom::blink::FetchPriorityHint::kAuto,
+      RenderBlockingBehavior::kNonBlocking);
 
   Modulator* modulator = Modulator::From(ScriptController()->GetScriptState());
   // Step 3. "Perform the internal module script graph fetching procedure ..."

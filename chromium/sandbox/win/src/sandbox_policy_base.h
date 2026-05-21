@@ -18,7 +18,9 @@
 #include "base/dcheck_is_on.h"
 #include "base/memory/raw_ptr.h"
 #include "base/process/launch.h"
+#include "base/types/expected.h"
 #include "base/win/access_token.h"
+#include "base/win/scoped_process_information.h"
 #include "base/win/windows_types.h"
 #include "sandbox/win/src/app_container_base.h"
 #include "sandbox/win/src/handle_closer.h"
@@ -80,6 +82,7 @@ class ConfigBase final : public TargetConfig {
   void SetFilterEnvironment(bool filter) override;
   bool GetEnvironmentFiltered() override;
   void SetZeroAppShim() override;
+  void SetSecurityAttributeName(std::wstring_view name) override;
 
  private:
   // Can call Freeze() and is_csrss_connected().
@@ -130,6 +133,12 @@ class ConfigBase final : public TargetConfig {
   Desktop desktop() { return desktop_; }
   const HandleCloserConfig& handle_closer() { return handle_closer_; }
   bool zero_appshim() { return zero_appshim_; }
+  const std::vector<base::win::ScopedHandle>& shared_handles() {
+    return shared_handles_;
+  }
+  std::optional<std::wstring> security_attribute_name() {
+    return security_attribute_name_;
+  }
 
   TokenLevel lockdown_level_;
   TokenLevel initial_level_;
@@ -157,6 +166,19 @@ class ConfigBase final : public TargetConfig {
   std::vector<std::wstring> blocklisted_dlls_;
   // AppContainer to be applied to the target process.
   std::unique_ptr<AppContainerBase> app_container_;
+  // List of handles to be shared with a new process to complete the config.
+  std::vector<base::win::ScopedHandle> shared_handles_;
+  // The name of the Security Attribute to use in the default DACL of the
+  // target process.
+  std::optional<std::wstring> security_attribute_name_;
+};
+
+struct TargetTokens {
+  base::win::AccessToken initial_;
+  base::win::AccessToken lockdown_;
+  TargetTokens(base::win::AccessToken initial, base::win::AccessToken lockdown);
+  TargetTokens(TargetTokens&&) = default;
+  ~TargetTokens();
 };
 
 class PolicyBase final : public TargetPolicy {
@@ -185,18 +207,15 @@ class PolicyBase final : public TargetPolicy {
   // Returns true if a job is associated with this policy.
   bool HasJob();
 
-  // Updates the active process limit on the policy's job to zero.
-  // Has no effect if the job is allowed to spawn processes.
-  ResultCode DropActiveProcessLimit();
-
   // Creates the two tokens with the levels specified in a previous call to
   // SetTokenLevel().
-  ResultCode MakeTokens(std::optional<base::win::AccessToken>& initial,
-                        std::optional<base::win::AccessToken>& lockdown);
+  base::expected<TargetTokens, ResultCode> MakeTokens();
 
-  // Applies the sandbox to |target| and takes ownership. Internally a
-  // call to TargetProcess::Init() is issued.
-  ResultCode ApplyToTarget(std::unique_ptr<TargetProcess> target);
+  // Initialize the sandbox process for the policy. This creates the IPC channel
+  // using the thread pool and applies process mitigations.
+  ResultCode InitProcess(HANDLE process_handle,
+                         ThreadPool* thread_pool,
+                         DWORD& last_error);
 
   EvalResult EvalPolicy(IpcTag service, CountedParameterSetBase* params);
 

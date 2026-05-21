@@ -63,10 +63,10 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/gpu_utils.h"
+#include "content/public/browser/sandboxed_process_launcher_delegate.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/result_codes.h"
-#include "content/public/common/sandboxed_process_launcher_delegate.h"
 #include "content/public/common/zygote/zygote_buildflags.h"
 #include "gpu/command_buffer/service/gpu_switches.h"
 #include "gpu/config/gpu_driver_bug_list.h"
@@ -540,8 +540,8 @@ void BindDiscardableMemoryReceiverOnUI(
 // src/content/browser/browser_main_loop.cc once the persistent cache is used
 // for all cache types.
 void InitGpuPersistentCacheFileFactoryOnce() {
-#if BUILDFLAG(SKIA_USE_DAWN)
-  if (features::kSkiaGraphiteDawnUsePersistentCache.Get() &&
+  if ((features::kSkiaGraphiteDawnUsePersistentCache.Get() ||
+       base::FeatureList::IsEnabled(features::kGpuPersistentCache)) &&
       !viz::PersistentCacheSandboxedFileFactory::GetInstance()) {
     base::FilePath cache_root_dir =
         GetContentClient()->browser()->GetGPUPersistentCacheDirectory();
@@ -553,7 +553,6 @@ void InitGpuPersistentCacheFileFactoryOnce() {
     }
     viz::PersistentCacheSandboxedFileFactory::CreateInstance(cache_root_dir);
   }
-#endif
 }
 
 }  // anonymous namespace
@@ -741,13 +740,6 @@ GpuProcessHost::GpuProcessHost(int host_id, GpuProcessKind kind)
           switches::kInProcessGPU)) {
     in_process_ = true;
   }
-#if !BUILDFLAG(IS_ANDROID)
-  if (!in_process_ && kind != GPU_PROCESS_KIND_INFO_COLLECTION) {
-    memory_pressure_listener_registration_ =
-        std::make_unique<base::MemoryPressureListenerRegistration>(
-            FROM_HERE, base::MemoryPressureListenerTag::kGpuProcessHost, this);
-  }
-#endif
 
   // If the 'single GPU process' policy ever changes, we still want to maintain
   // it for 'gpu thread' mode and only create one instance of host and thread.
@@ -936,7 +928,7 @@ bool GpuProcessHost::Init() {
     // WGL needs to create its own window and pump messages on it.
     options.message_pump_type = base::MessagePumpType::UI;
 #endif
-    options.thread_type = base::ThreadType::kDisplayCritical;
+    options.thread_type = base::ThreadType::kPresentation;
     in_process_gpu_thread_->StartWithOptions(std::move(options));
   } else if (!LaunchGpuProcess()) {
     return false;
@@ -1487,11 +1479,5 @@ GpuProcessHost::info_collection_gpu_service() {
 int GpuProcessHost::GetIDForTesting() const {
   return process_->GetData().id;
 }
-
-#if !BUILDFLAG(IS_ANDROID)
-void GpuProcessHost::OnMemoryPressure(base::MemoryPressureLevel level) {
-  gpu_host_->gpu_service()->OnMemoryPressure(level);
-}
-#endif
 
 }  // namespace content

@@ -3,9 +3,9 @@
 
 /***************************************************************************
  *
- * Copyright (c) 2015-2025 The Khronos Group Inc.
- * Copyright (c) 2015-2025 Valve Corporation
- * Copyright (c) 2015-2025 LunarG, Inc.
+ * Copyright (c) 2015-2026 The Khronos Group Inc.
+ * Copyright (c) 2015-2026 Valve Corporation
+ * Copyright (c) 2015-2026 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -496,6 +496,22 @@ void PostCallRecordGetExecutionGraphPipelineNodeIndexAMDX(VkDevice device, VkPip
                                                           uint32_t* pNodeIndex, const RecordObject& record_obj) override;
 
 #endif  // VK_ENABLE_BETA_EXTENSIONS
+void PostCallRecordWriteSamplerDescriptorsEXT(VkDevice device, uint32_t samplerCount, const VkSamplerCreateInfo* pSamplers,
+                                              const VkHostAddressRangeEXT* pDescriptors, const RecordObject& record_obj) override;
+
+void PostCallRecordWriteResourceDescriptorsEXT(VkDevice device, uint32_t resourceCount,
+                                               const VkResourceDescriptorInfoEXT* pResources,
+                                               const VkHostAddressRangeEXT* pDescriptors, const RecordObject& record_obj) override;
+
+void PostCallRecordGetImageOpaqueCaptureDataEXT(VkDevice device, uint32_t imageCount, const VkImage* pImages,
+                                                VkHostAddressRangeEXT* pDatas, const RecordObject& record_obj) override;
+
+void PostCallRecordRegisterCustomBorderColorEXT(VkDevice device, const VkSamplerCustomBorderColorCreateInfoEXT* pBorderColor,
+                                                VkBool32 requestIndex, uint32_t* pIndex, const RecordObject& record_obj) override;
+
+void PostCallRecordGetTensorOpaqueCaptureDataARM(VkDevice device, uint32_t tensorCount, const VkTensorARM* pTensors,
+                                                 VkHostAddressRangeEXT* pDatas, const RecordObject& record_obj) override;
+
 void PostCallRecordGetImageDrmFormatModifierPropertiesEXT(VkDevice device, VkImage image,
                                                           VkImageDrmFormatModifierPropertiesEXT* pProperties,
                                                           const RecordObject& record_obj) override;
@@ -823,17 +839,6 @@ void PostCallRecordCreateIndirectExecutionSetEXT(VkDevice device, const VkIndire
                                                  VkIndirectExecutionSetEXT* pIndirectExecutionSet,
                                                  const RecordObject& record_obj) override;
 
-#ifdef VK_USE_PLATFORM_OHOS
-void PostCallRecordGetSwapchainGrallocUsageOHOS(VkDevice device, VkFormat format, VkImageUsageFlags imageUsage,
-                                                uint64_t* grallocUsage, const RecordObject& record_obj) override;
-
-void PostCallRecordAcquireImageOHOS(VkDevice device, VkImage image, int32_t nativeFenceFd, VkSemaphore semaphore, VkFence fence,
-                                    const RecordObject& record_obj) override;
-
-void PostCallRecordQueueSignalReleaseImageOHOS(VkQueue queue, uint32_t waitSemaphoreCount, const VkSemaphore* pWaitSemaphores,
-                                               VkImage image, int32_t* pNativeFenceFd, const RecordObject& record_obj) override;
-
-#endif  // VK_USE_PLATFORM_OHOS
 #ifdef VK_USE_PLATFORM_METAL_EXT
 void PostCallRecordGetMemoryMetalHandleEXT(VkDevice device, const VkMemoryGetMetalHandleInfoEXT* pGetMetalHandleInfo,
                                            void** pHandle, const RecordObject& record_obj) override;

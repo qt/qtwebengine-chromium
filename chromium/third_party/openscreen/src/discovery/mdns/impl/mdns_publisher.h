@@ -51,6 +51,10 @@ class MdnsPublisher : public MdnsResponder::RecordHandler {
                 TaskRunner& task_runner,
                 ClockNowFunctionPtr now_function,
                 const Config& config);
+  MdnsPublisher(const MdnsPublisher&) = delete;
+  MdnsPublisher(MdnsPublisher&&) noexcept = delete;
+  MdnsPublisher& operator=(const MdnsPublisher&) = delete;
+  MdnsPublisher& operator=(MdnsPublisher&&) = delete;
   ~MdnsPublisher() override;
 
   // Registers a new mDNS record for advertisement by this service. For A, AAAA,
@@ -77,8 +81,6 @@ class MdnsPublisher : public MdnsResponder::RecordHandler {
 
   // Returns the total number of records currently registered;
   size_t GetRecordCount() const;
-
-  OSP_DISALLOW_COPY_AND_ASSIGN(MdnsPublisher);
 
  private:
   // Class responsible for sending announcement and goodbye messages for
@@ -146,11 +148,7 @@ class MdnsPublisher : public MdnsResponder::RecordHandler {
   friend class MdnsPublisherTesting;
 
   // Creates a new published from the provided record.
-  RecordAnnouncerPtr CreateAnnouncer(MdnsRecord record) {
-    return std::make_unique<RecordAnnouncer>(std::move(record), *this,
-                                             task_runner_, now_function_,
-                                             max_announcement_attempts_);
-  }
+  RecordAnnouncerPtr CreateAnnouncer(MdnsRecord record);
 
   // Removes the given record from the `records_` map. A goodbye record is only
   // sent for this removal if `should_announce_deletion` is true.

@@ -7,7 +7,7 @@ import type { Cookie, CookieData, DeleteCookiesRequest } from '../common/Cookie.
 import { EventEmitter, type EventType } from '../common/EventEmitter.js';
 import { asyncDisposeSymbol, disposeSymbol } from '../util/disposable.js';
 import { Mutex } from '../util/Mutex.js';
-import type { Browser, CreatePageOptions, Permission, WaitForTargetOptions } from './Browser.js';
+import type { Browser, CreatePageOptions, Permission, PermissionDescriptor, PermissionState, WaitForTargetOptions } from './Browser.js';
 import type { Page } from './Page.js';
 import type { Target } from './Target.js';
 /**
@@ -143,8 +143,23 @@ export declare abstract class BrowserContext extends EventEmitter<BrowserContext
      * "https://example.com".
      * @param permissions - An array of permissions to grant. All permissions that
      * are not listed here will be automatically denied.
+     *
+     * @deprecated in favor of {@link BrowserContext.setPermission}.
      */
     abstract overridePermissions(origin: string, permissions: Permission[]): Promise<void>;
+    /**
+     * Sets the permission for a specific origin.
+     *
+     * @param origin - The origin to set the permission for.
+     * @param permission - The permission descriptor.
+     * @param state - The state of the permission.
+     *
+     * @public
+     */
+    abstract setPermission(origin: string | '*', ...permissions: Array<{
+        permission: PermissionDescriptor;
+        state: PermissionState;
+    }>): Promise<void>;
     /**
      * Clears all permission overrides for this
      * {@link BrowserContext | browser context}.

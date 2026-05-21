@@ -12,6 +12,7 @@
 <translation id="2159915644201199628">फोटो डिकोड गर्न सकिएन: '<ph name="IMAGE_NAME" />'</translation>
 <translation id="2350172092385603347">अनुवाद प्रयोग गरिएको, तर सूचीमा पूर्वनिर्धारित_लोकेल तोकिएको</translation>
 <translation id="2576842806987913196">त्यहाँ पहिले नै यो नाम भएको CRX फाइल उपस्थित छ।</translation>
+<translation id="2743583586211388067">तपाईंको सङ्गठनको एक्स्टेन्सनको जोखिमसम्बन्धी नीतिअन्तर्गत यो एक्स्टेन्सन एक्सेस गर्न रोक लगाइएको छ।</translation>
 <translation id="2785530881066938471">सामग्री स्क्रिप्टको लागि फाइल '<ph name="RELATIVE_PATH" />' लोड गर्न सकेन। त्यो UFT-8 इन्कोडेड छैन।</translation>
 <translation id="2903070246402204397">प्रशासकले <ph name="EXTENSION_NAME" /> (विस्तारको ID "<ph name="EXTENSION_ID" />") लाई रोक लगाउनुभएको छ। <ph name="ADMIN_INFO" /></translation>
 <translation id="2988488679308982380">प्याकेज स्थापना गर्न सकेन: '<ph name="ERROR_CODE" />'</translation>
@@ -33,9 +34,11 @@
 <translation id="5356315618422219272">अनुप्रयोगदृश्य: <ph name="APPVIEW_TAG_NAME" /></translation>
 <translation id="5456409301717116725">विस्तारले कुञ्जी फाइल '<ph name="KEY_PATH" />' समावेश गर्छ। तपाइँले सम्भव्य रूपमा त्यो गर्न चाहनुहुन्न।</translation>
 <translation id="5486326529110362464">निजी कुञ्जीको लागि मान विद्यमान हुनु पर्छ।</translation>
+<translation id="5707185214361380026">यहाँबाट विस्तार लोड गर्न असफल भयो।</translation>
 <translation id="5972529113578162692">यस कम्प्युटरका प्रशासक यहाँ <ph name="EXTENSION_NAME" /> स्थापना होस् भन्ने चाहान्छन्। यसलाई हटाउन मिल्दैन।</translation>
 <translation id="6027032947578871493"><ph name="VENDOR_NAME" /> (क्रम नम्बर <ph name="SERIAL_NUMBER" /> ) बाट अज्ञात उत्पादन <ph name="PRODUCT_ID" /></translation>
 <translation id="6068932090455285721">बिक्रेता <ph name="VENDOR_ID" /> बाट <ph name="PRODUCT_NAME" /></translation>
+<translation id="6220413761270491930">एक्सटेन्सन लोड गर्दा त्रुटि</translation>
 <translation id="6322279351188361895">निजी कुञ्जी पढ्न असफल भयो।</translation>
 <translation id="6391538222494443604">इनपुट डाइरेक्ट्री हुनैपर्छ।</translation>
 <translation id="641087317769093025">विस्तार अनजिप गर्न सकेन</translation>

@@ -21,10 +21,6 @@ default_args = {
   # Turns on compiler optimizations in V8 in Debug build.
   v8_optimized_debug = true
 
-  # PDFium is currently incompatible with the V8 Sandbox.
-  # See https://crbug.com/v8/13014 for details.
-  v8_enable_sandbox = false
-
   # Suppress V8_DEPRECATE_SOON warnings to match the chromium build
   # (at the moment). This is why chromium builds including pdfium
   # currently build against the latest V8, but standalone builds
@@ -43,6 +39,12 @@ default_args = {
 
   # PDFium bots only have 14.x. Override Chromium's 15.x requirement.
   mac_sdk_min = "14"
+
+  # PDFium must stay in C++20 for now.
+  use_cxx23 = false
+
+  # Use Siso instead of Ninja.
+  use_siso = true
 }
 
 no_check_targets = [

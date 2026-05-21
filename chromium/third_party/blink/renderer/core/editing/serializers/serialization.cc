@@ -34,6 +34,7 @@
 #include "base/metrics/histogram_macros.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/timer/elapsed_timer.h"
+#include "net/base/net_errors.h"
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/cpp/single_request_url_loader_factory.h"
 #include "third_party/blink/public/common/storage_key/storage_key.h"
@@ -131,20 +132,15 @@ class EmptyLocalFrameClientWithFailingLoaderFactory final
  public:
   scoped_refptr<network::SharedURLLoaderFactory> GetURLLoaderFactory()
       override {
-    // TODO(crbug.com/1413912): CreateFragmentFromMarkupWithContext may
-    // call this method for data: URL resources. But ResourceLoader::Start()
-    // don't need to call GetURLLoaderFactory() for data: URL because
-    // ResourceLoader handles the data: URL resource load without the returned
-    // SharedURLLoaderFactory.
-    // Note: Non-data: URL resource can't be loaded because the security checks
-    // in BaseFetchContext::CanRequestInternal fails for non-data: URL
-    // resources.
     return base::MakeRefCounted<network::SingleRequestURLLoaderFactory>(
         BindOnce(
             [](const network::ResourceRequest& resource_request,
                mojo::PendingReceiver<network::mojom::URLLoader> receiver,
                mojo::PendingRemote<network::mojom::URLLoaderClient> client) {
-              NOTREACHED();
+              mojo::Remote<network::mojom::URLLoaderClient> remote(
+                  std::move(client));
+              remote->OnComplete(
+                  network::URLLoaderCompletionStatus(net::ERR_FAILED));
             }));
   }
 };
@@ -533,7 +529,7 @@ String CreateMarkup(const Node* node,
 }
 
 static void FillContainerFromString(ContainerNode* paragraph,
-                                    const String& string) {
+                                    const StringView& string) {
   Document& document = paragraph->GetDocument();
 
   if (string.empty()) {
@@ -543,13 +539,12 @@ static void FillContainerFromString(ContainerNode* paragraph,
 
   DCHECK_EQ(string.find('\n'), kNotFound) << string;
 
-  Vector<String> tab_list;
-  string.Split('\t', true, tab_list);
+  Vector<StringView> tab_list = string.Split('\t');
   StringBuilder tab_text;
   bool first = true;
   wtf_size_t num_entries = tab_list.size();
   for (wtf_size_t i = 0; i < num_entries; ++i) {
-    const String& s = tab_list[i];
+    const StringView& s = tab_list[i];
 
     // append the non-tab textual part
     if (!s.empty()) {
@@ -649,11 +644,11 @@ DocumentFragment* CreateFragmentFromText(const EphemeralRange& context,
       block && !IsA<HTMLBodyElement>(block) && !IsA<HTMLHtmlElement>(block) &&
       block != RootEditableElementOf(context.StartPosition());
 
-  Vector<String> list;
-  string.Split('\n', true, list);  // true gets us empty strings in the list
+  // `list` will contain empty strings.
+  Vector<StringView> list = StringView(string).Split('\n');
   wtf_size_t num_lines = list.size();
   for (wtf_size_t i = 0; i < num_lines; ++i) {
-    const String& s = list[i];
+    const StringView& s = list[i];
 
     Element* element = nullptr;
     if (s.empty() && i + 1 == num_lines) {
@@ -679,6 +674,7 @@ DocumentFragment* CreateFragmentForInnerOuterHTML(
     ParserContentPolicy parser_content_policy,
     Element::ParseDeclarativeShadowRoots parse_declarative_shadows,
     Element::ForceHtml force_html,
+    ForceInertTemplate force_inert,
     CustomElementRegistry* registry,
     ExceptionState& exception_state) {
   DCHECK(context_element);
@@ -689,7 +685,8 @@ DocumentFragment* CreateFragmentForInnerOuterHTML(
   }
 
   Document& document =
-      IsA<HTMLTemplateElement>(*context_element)
+      (IsA<HTMLTemplateElement>(*context_element) ||
+       force_inert == ForceInertTemplate::kForce)
           ? context_element->GetDocument().EnsureTemplateDocument()
           : context_element->GetDocument();
   DocumentFragment* fragment = DocumentFragment::Create(document);
@@ -820,7 +817,7 @@ DocumentFragment* CreateContextualFragment(
   DocumentFragment* fragment = CreateFragmentForInnerOuterHTML(
       markup, element, parser_content_policy,
       Element::ParseDeclarativeShadowRoots::kDontParse,
-      Element::ForceHtml::kDontForce,
+      Element::ForceHtml::kDontForce, ForceInertTemplate::kDontForce,
       RuntimeEnabledFeatures::ScopedCustomElementRegistryEnabled()
           ? element->customElementRegistry()
           : element->GetDocument().customElementRegistry(),

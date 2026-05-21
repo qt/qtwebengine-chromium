@@ -1367,7 +1367,7 @@ std::optional<uint64_t> AddressValueToU64(ErrorThrower* thrower,
   }
   // The enum value is coming from inside the sandbox and while the switch is
   // exhaustive, it's not guaranteed that value is one of the declared values.
-  SBXCHECK(false);
+  UNREACHABLE();
 }
 
 // {AddressValueToU64} plus additional bounds checks.
@@ -1479,7 +1479,7 @@ v8::Local<Value> AddressValueFromUnsigned(Isolate* isolate,
 
 i::DirectHandle<i::HeapObject> DefaultReferenceValue(i::Isolate* isolate,
                                                      i::wasm::ValueType type) {
-  DCHECK(type.is_object_reference());
+  DCHECK(type.is_ref());
   // Use undefined for JS type (externref) but null for wasm types as wasm does
   // not know undefined.
   if (type.is_reference_to(i::wasm::GenericKind::kExtern)) {
@@ -1745,17 +1745,9 @@ void WebAssemblyMemoryImpl(const v8::FunctionCallbackInfo<v8::Value>& info) {
     return js_api_scope.AssertException();
   }
 
-  if (shared == i::SharedFlag::kShared) {
-    i::DirectHandle<i::JSArrayBuffer> buffer(memory_obj->array_buffer(),
-                                             i_isolate);
-    Maybe<bool> result =
-        buffer->SetIntegrityLevel(i_isolate, buffer, i::FROZEN, i::kDontThrow);
-    if (!result.FromJust()) {
-      thrower.TypeError(
-          "Status of setting SetIntegrityLevel of buffer is false.");
-      return;
-    }
-  }
+  // The JSArrayBuffer will be allocated lazily later.
+  DCHECK(IsUndefined(memory_obj->array_buffer(), i_isolate));
+
   info.GetReturnValue().Set(Utils::ToLocal(i::Cast<i::JSObject>(memory_obj)));
 }
 
@@ -2139,17 +2131,8 @@ void WebAssemblyTagImpl(const v8::FunctionCallbackInfo<v8::Value>& info) {
 
 namespace {
 
-uint32_t GetEncodedSize(i::DirectHandle<i::WasmTagObject> tag_object) {
-  auto serialized_sig = tag_object->serialized_signature();
-  i::wasm::WasmTagSig sig{
-      0, static_cast<size_t>(serialized_sig->length()),
-      reinterpret_cast<i::wasm::ValueType*>(serialized_sig->begin())};
-  return i::WasmExceptionPackage::GetEncodedSize(&sig);
-}
-
 V8_WARN_UNUSED_RESULT bool EncodeExceptionValues(
-    v8::Isolate* isolate,
-    i::DirectHandle<i::PodArray<i::wasm::ValueType>> signature,
+    v8::Isolate* isolate, const i::wasm::CanonicalSig* signature,
     i::DirectHandle<i::WasmTagObject> tag_object, const Local<Value>& arg,
     ErrorThrower* thrower, i::DirectHandle<i::FixedArray> values_out) {
   Local<Context> context = isolate->GetCurrentContext();
@@ -2165,15 +2148,18 @@ V8_WARN_UNUSED_RESULT bool EncodeExceptionValues(
     thrower->TypeError("Exception values argument has no length");
     return false;
   }
-  if (length != static_cast<uint32_t>(signature->length())) {
+  if (length != signature->parameter_count()) {
     thrower->TypeError(
         "Number of exception values does not match signature length");
     return false;
   }
-  for (int i = 0; i < signature->length(); ++i) {
+  for (size_t param_idx = 0; param_idx < signature->parameter_count();
+       ++param_idx) {
+    static_assert(i::wasm::kV8MaxWasmFunctionParams <= i::kMaxInt);
+    int param_idx_i = static_cast<int>(param_idx);
     Local<Value> value;
-    if (!values->Get(context, i).ToLocal(&value)) return false;
-    i::wasm::ValueType type = signature->get(i);
+    if (!values->Get(context, param_idx_i).ToLocal(&value)) return false;
+    i::wasm::CanonicalValueType type = signature->GetParam(param_idx);
     switch (type.kind()) {
       case i::wasm::kI32: {
         int32_t i32 = 0;
@@ -2206,20 +2192,7 @@ V8_WARN_UNUSED_RESULT bool EncodeExceptionValues(
         const char* error_message;
         i::DirectHandle<i::Object> value_handle =
             Utils::OpenDirectHandle(*value);
-        i::wasm::CanonicalValueType canonical_type = i::wasm::kWasmBottom;
-        if (type.has_index()) {
-          // Canonicalize the type using the tag's original module.
-          // Indexed types are guaranteed to come from an instance.
-          DCHECK(tag_object->has_trusted_data());
-          i::Tagged<i::WasmTrustedInstanceData> wtid =
-              tag_object->trusted_data(i_isolate);
-          const i::wasm::WasmModule* module = wtid->module();
-          canonical_type =
-              type.Canonicalize(module->canonical_type_id(type.ref_index()));
-        } else {
-          canonical_type = i::wasm::CanonicalValueType{type};
-        }
-        if (!i::wasm::JSToWasmObject(i_isolate, value_handle, canonical_type,
+        if (!i::wasm::JSToWasmObject(i_isolate, value_handle, type,
                                      &error_message)
                  .ToHandle(&value_handle)) {
           thrower->TypeError("%s", error_message);
@@ -2245,6 +2218,7 @@ V8_WARN_UNUSED_RESULT bool EncodeExceptionValues(
 
 }  // namespace
 
+// WebAssembly.Exception
 void WebAssemblyExceptionImpl(const v8::FunctionCallbackInfo<v8::Value>& info) {
   WasmJSApiScope js_api_scope{info, "WebAssembly.Exception()"};
   auto [isolate, i_isolate, thrower] = js_api_scope.isolates_and_thrower();
@@ -2279,16 +2253,14 @@ void WebAssemblyExceptionImpl(const v8::FunctionCallbackInfo<v8::Value>& info) {
     return;
   }
 
-  uint32_t size = GetEncodedSize(tag_object);
+  uint32_t size = i::WasmExceptionPackage::GetEncodedSize(sig);
   i::DirectHandle<i::WasmExceptionPackage> runtime_exception =
       i::WasmExceptionPackage::New(i_isolate, tag, size);
   // The constructor above should guarantee that the cast below succeeds.
   i::DirectHandle<i::FixedArray> values =
       i::Cast<i::FixedArray>(i::WasmExceptionPackage::GetExceptionValues(
           i_isolate, runtime_exception));
-  i::DirectHandle<i::PodArray<i::wasm::ValueType>> signature(
-      tag_object->serialized_signature(), i_isolate);
-  if (!EncodeExceptionValues(isolate, signature, tag_object, info[1], &thrower,
+  if (!EncodeExceptionValues(isolate, sig, tag_object, info[1], &thrower,
                              values)) {
     return js_api_scope.AssertException();
   }
@@ -2703,9 +2675,10 @@ void WebAssemblyTableGrowImpl(const v8::FunctionCallbackInfo<v8::Value>& info) {
 namespace {
 V8_WARN_UNUSED_RESULT bool WasmObjectToJSReturnValue(
     v8::ReturnValue<v8::Value>& return_value, i::DirectHandle<i::Object> value,
-    i::wasm::ValueType type, i::Isolate* isolate, ErrorThrower* thrower) {
-  if (type.is_abstract_ref()) {
-    switch (type.generic_kind()) {
+    i::wasm::ValueTypeBase unsafe_type, i::Isolate* isolate,
+    ErrorThrower* thrower) {
+  if (unsafe_type.is_abstract_ref()) {
+    switch (unsafe_type.generic_kind()) {
       case i::wasm::GenericKind::kStringViewIter:
       case i::wasm::GenericKind::kStringViewWtf8:
       case i::wasm::GenericKind::kStringViewWtf16:
@@ -2713,7 +2686,7 @@ V8_WARN_UNUSED_RESULT bool WasmObjectToJSReturnValue(
       case i::wasm::GenericKind::kNoExn:
       case i::wasm::GenericKind::kCont:
       case i::wasm::GenericKind::kNoCont:
-        thrower->TypeError("invalid type %s", type.name().c_str());
+        thrower->TypeError("invalid type %s", unsafe_type.name().c_str());
         return false;
       default:
         break;
@@ -2871,10 +2844,15 @@ void WebAssemblyMemoryGrowImpl(
   if (!maybe_delta_pages) return js_api_scope.AssertException();
   uint64_t delta_pages = *maybe_delta_pages;
 
-  i::DirectHandle<i::JSArrayBuffer> old_buffer(receiver->array_buffer(),
-                                               i_isolate);
+  std::shared_ptr<i::BackingStore> backing_store = receiver->backing_store();
+#ifdef DEBUG
+  if (i::Tagged<i::JSArrayBuffer> buffer;
+      TryCast(receiver->array_buffer(), &buffer)) {
+    DCHECK_EQ(buffer->GetBackingStore(), backing_store);
+  }
+#endif  // DEBUG
 
-  uint64_t old_pages = old_buffer->GetByteLength() / i::wasm::kWasmPageSize;
+  uint64_t old_pages = backing_store->byte_length() / i::wasm::kWasmPageSize;
   uint64_t max_pages = receiver->maximum_pages();
 
   if (delta_pages > max_pages - old_pages) {
@@ -2900,14 +2878,8 @@ void WebAssemblyMemoryGetBufferImpl(
   auto [isolate, i_isolate, thrower] = js_api_scope.isolates_and_thrower();
   EXTRACT_THIS(receiver, WasmMemoryObject);
 
-  i::DirectHandle<i::JSArrayBuffer> buffer(receiver->array_buffer(), i_isolate);
-  if (receiver->needs_new_buffer()) {
-    i::ResizableFlag resizable = buffer->is_resizable_by_js()
-                                     ? i::ResizableFlag::kResizable
-                                     : i::ResizableFlag::kNotResizable;
-    buffer = i::WasmMemoryObject::RefreshSharedBuffer(i_isolate, receiver,
-                                                      buffer, resizable);
-  }
+  i::DirectHandle<i::JSArrayBuffer> buffer =
+      i::WasmMemoryObject::GetArrayBuffer(i_isolate, receiver);
   info.GetReturnValue().Set(Utils::ToLocal(buffer));
 }
 
@@ -2918,11 +2890,9 @@ void WebAssemblyMemoryToFixedLengthBufferImpl(
   auto [isolate, i_isolate, thrower] = js_api_scope.isolates_and_thrower();
   EXTRACT_THIS(receiver, WasmMemoryObject);
 
-  i::DirectHandle<i::JSArrayBuffer> buffer(receiver->array_buffer(), i_isolate);
-  if (buffer->is_resizable_by_js() || receiver->needs_new_buffer()) {
-    buffer =
-        i::WasmMemoryObject::ToFixedLengthBuffer(i_isolate, receiver, buffer);
-  }
+  i::DirectHandle<i::JSArrayBuffer> buffer =
+      i::WasmMemoryObject::ChangeArrayBufferResizability(
+          i_isolate, receiver, i::ResizableFlag::kNotResizable);
   info.GetReturnValue().Set(Utils::ToLocal(buffer));
 }
 
@@ -2934,15 +2904,14 @@ void WebAssemblyMemoryToResizableBufferImpl(
   EXTRACT_THIS(receiver, WasmMemoryObject);
   i_isolate->CountUsage(v8::Isolate::UseCounterFeature::kWasmResizableBuffers);
 
-  i::DirectHandle<i::JSArrayBuffer> buffer(receiver->array_buffer(), i_isolate);
-  if (!buffer->is_resizable_by_js() || receiver->needs_new_buffer()) {
-    if (!receiver->has_maximum_pages()) {
-      thrower.TypeError("Memory must have a maximum");
-      return;
-    }
-    buffer =
-        i::WasmMemoryObject::ToResizableBuffer(i_isolate, receiver, buffer);
+  if (!receiver->has_maximum_pages()) {
+    thrower.TypeError("Memory must have a maximum");
+    return;
   }
+
+  i::DirectHandle<i::JSArrayBuffer> buffer =
+      i::WasmMemoryObject::ChangeArrayBufferResizability(
+          i_isolate, receiver, i::ResizableFlag::kResizable);
   info.GetReturnValue().Set(Utils::ToLocal(buffer));
 }
 
@@ -2952,8 +2921,8 @@ void WebAssemblyMemoryType(const v8::FunctionCallbackInfo<v8::Value>& info) {
   auto [isolate, i_isolate, thrower] = js_api_scope.isolates_and_thrower();
   EXTRACT_THIS(memory, WasmMemoryObject);
 
-  i::DirectHandle<i::JSArrayBuffer> buffer(memory->array_buffer(), i_isolate);
-  size_t curr_size = buffer->GetByteLength() / i::wasm::kWasmPageSize;
+  std::shared_ptr<i::BackingStore> backing_store = memory->backing_store();
+  size_t curr_size = backing_store->byte_length() / i::wasm::kWasmPageSize;
   DCHECK_LE(curr_size, std::numeric_limits<uint32_t>::max());
   uint32_t min_size = static_cast<uint32_t>(curr_size);
   std::optional<uint32_t> max_size;
@@ -2962,7 +2931,7 @@ void WebAssemblyMemoryType(const v8::FunctionCallbackInfo<v8::Value>& info) {
     DCHECK_LE(max_size64, std::numeric_limits<uint32_t>::max());
     max_size.emplace(static_cast<uint32_t>(max_size64));
   }
-  bool shared = buffer->is_shared();
+  bool shared = backing_store->is_shared();
   auto type = i::wasm::GetTypeForMemory(i_isolate, min_size, max_size, shared,
                                         memory->address_type());
   info.GetReturnValue().Set(Utils::ToLocal(type));
@@ -2974,14 +2943,43 @@ void WebAssemblyTagType(const v8::FunctionCallbackInfo<v8::Value>& info) {
   auto [isolate, i_isolate, thrower] = js_api_scope.isolates_and_thrower();
   EXTRACT_THIS(tag, WasmTagObject);
 
-  int n = tag->serialized_signature()->length();
-  std::vector<i::wasm::ValueType> data(n);
-  if (n > 0) {
-    tag->serialized_signature()->copy_out(0, data.data(), n);
+  i::wasm::CanonicalTypeIndex type_index{
+      static_cast<uint32_t>(tag->canonical_type_index())};
+  const i::wasm::CanonicalSig* csig =
+      i::wasm::GetTypeCanonicalizer()->LookupFunctionSignature(type_index);
+  const i::wasm::FunctionSig* sig = nullptr;
+  bool has_indexed_types =
+      std::any_of(csig->all().begin(), csig->all().end(),
+                  [](i::wasm::CanonicalValueType c) { return c.has_index(); });
+  // We need the FunctionSig. If the CanonicalSig contains indexed types, we
+  // do a linear lookup of the FunctionSig in the module. Otherwise, the
+  // CanonicalSig can be reinterpret-casted as a FunctionSig.
+  if (has_indexed_types) {
+    DCHECK(tag->has_trusted_data());
+    const i::wasm::WasmModule* module =
+        tag->trusted_data(i::IsolateForSandbox(i_isolate))->module();
+    DCHECK_GE(i::kMaxUInt32, module->isorecursive_canonical_type_ids.size());
+    size_t num_types = module->types.size();
+    DCHECK_EQ(num_types, module->isorecursive_canonical_type_ids.size());
+    for (uint32_t local_id = 0; local_id < num_types; ++local_id) {
+      if (!module->has_signature(i::wasm::ModuleTypeIndex{local_id})) {
+        continue;
+      }
+      i::wasm::CanonicalTypeIndex canonical_id =
+          module->canonical_sig_id(i::wasm::ModuleTypeIndex{local_id});
+      if (canonical_id != csig->index()) {
+        continue;
+      }
+      sig = module->signature(i::wasm::ModuleTypeIndex{local_id});
+      break;
+    }
+    DCHECK_NOT_NULL(sig);
+  } else {
+    // This also handles the case where the tag does not have an instance.
+    sig = reinterpret_cast<const i::wasm::FunctionSig*>(csig);
   }
-  const i::wasm::FunctionSig sig{0, data.size(), data.data()};
   constexpr bool kForException = true;
-  auto type = i::wasm::GetTypeForFunction(i_isolate, &sig, kForException);
+  auto type = i::wasm::GetTypeForFunction(i_isolate, sig, kForException);
   info.GetReturnValue().Set(Utils::ToLocal(type));
 }
 
@@ -3011,10 +3009,13 @@ void WebAssemblyExceptionGetArgImpl(
     return;
   }
 
+  const i::wasm::CanonicalSig* sig =
+      i::wasm::GetTypeCanonicalizer()->LookupFunctionSignature(
+          i::wasm::CanonicalTypeIndex{
+              static_cast<uint32_t>(tag_object->canonical_type_index())});
   DCHECK(!IsUndefined(*maybe_values));
   auto values = i::Cast<i::FixedArray>(maybe_values);
-  auto signature = tag_object->serialized_signature();
-  if (index >= static_cast<uint32_t>(signature->length())) {
+  if (index >= static_cast<uint32_t>(sig->parameter_count())) {
     thrower.RangeError("Index out of range");
     return;
   }
@@ -3022,7 +3023,7 @@ void WebAssemblyExceptionGetArgImpl(
   uint32_t decode_index = 0;
   // Since the bounds check above passed, the cast to int is safe.
   for (int i = 0; i < static_cast<int>(index); ++i) {
-    switch (signature->get(i).kind()) {
+    switch (sig->GetParam(i).kind()) {
       case i::wasm::kI32:
       case i::wasm::kF32:
         decode_index += 2;
@@ -3049,7 +3050,7 @@ void WebAssemblyExceptionGetArgImpl(
   }
   // Decode the value at {decode_index}.
   Local<Value> result;
-  switch (signature->get(index).kind()) {
+  switch (sig->GetParam(index).kind()) {
     case i::wasm::kI32: {
       uint32_t u32_bits = 0;
       i::DecodeI32ExceptionValue(values, &decode_index, &u32_bits);
@@ -3082,7 +3083,7 @@ void WebAssemblyExceptionGetArgImpl(
     case i::wasm::kRefNull: {
       i::DirectHandle<i::Object> obj(values->get(decode_index), i_isolate);
       ReturnValue<Value> return_value = info.GetReturnValue();
-      if (!WasmObjectToJSReturnValue(return_value, obj, signature->get(index),
+      if (!WasmObjectToJSReturnValue(return_value, obj, sig->GetParam(index),
                                      i_isolate, &thrower)) {
         return js_api_scope.AssertException();
       }
@@ -3125,7 +3126,7 @@ void WebAssemblyGlobalGetValueCommon(WasmJSApiScope& js_api_scope) {
 
   v8::ReturnValue<v8::Value> return_value = info.GetReturnValue();
 
-  i::wasm::ValueType receiver_type = receiver->type();
+  i::wasm::ValueType receiver_type = receiver->unsafe_type();
   switch (receiver_type.kind()) {
     case i::wasm::kI32:
       return_value.Set(receiver->GetI32());
@@ -3192,7 +3193,8 @@ void WebAssemblyGlobalSetValueImpl(
   }
 
   Local<Context> context = isolate->GetCurrentContext();
-  switch (receiver->type().kind()) {
+  i::wasm::ValueType unsafe_type = receiver->unsafe_type();
+  switch (unsafe_type.kind()) {
     case i::wasm::kI32: {
       int32_t i32_value = 0;
       if (!info[0]->Int32Value(context).To(&i32_value)) {
@@ -3236,7 +3238,7 @@ void WebAssemblyGlobalSetValueImpl(
               : nullptr;
       i::DirectHandle<i::Object> value = Utils::OpenDirectHandle(*info[0]);
       const char* error_message;
-      if (!i::wasm::JSToWasmObject(i_isolate, module, value, receiver->type(),
+      if (!i::wasm::JSToWasmObject(i_isolate, module, value, unsafe_type,
                                    &error_message)
                .ToHandle(&value)) {
         thrower.TypeError("%s", error_message);
@@ -3262,7 +3264,7 @@ void WebAssemblyGlobalType(const v8::FunctionCallbackInfo<v8::Value>& info) {
   EXTRACT_THIS(global, WasmGlobalObject);
 
   auto type = i::wasm::GetTypeForGlobal(i_isolate, global->is_mutable(),
-                                        global->type());
+                                        global->unsafe_type());
   info.GetReturnValue().Set(Utils::ToLocal(type));
 }
 

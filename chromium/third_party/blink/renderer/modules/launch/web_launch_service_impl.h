@@ -14,6 +14,7 @@
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/mojo/heap_mojo_associated_receiver.h"
 #include "third_party/blink/renderer/platform/mojo/heap_mojo_wrapper_mode.h"
+#include "third_party/blink/renderer/platform/supplementable.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
 
@@ -27,8 +28,9 @@ class LocalDOMWindow;
 class MODULES_EXPORT WebLaunchServiceImpl final
     : public GarbageCollected<WebLaunchServiceImpl>,
       public mojom::blink::WebLaunchService,
-      public GarbageCollectedMixin {
+      public Supplement<LocalDOMWindow> {
  public:
+  static const char kSupplementName[];
   static WebLaunchServiceImpl* From(LocalDOMWindow&);
   static void BindReceiver(
       LocalFrame* frame,
@@ -45,13 +47,14 @@ class MODULES_EXPORT WebLaunchServiceImpl final
   void Trace(Visitor* visitor) const override;
 
   // blink::mojom::WebLaunchService:
-  void SetLaunchFiles(Vector<mojom::blink::FileSystemAccessEntryPtr>) override;
-  void EnqueueLaunchParams(const KURL& launch_url,
-                           base::TimeTicks time_navigation_started_in_browser,
-                           bool navigation_started) override;
+  void EnqueueLaunchParams(
+      const KURL& launch_url,
+      base::TimeTicks time_navigation_started_in_browser,
+      bool navigation_started,
+      ::blink::Vector<::blink::mojom::blink::FileSystemAccessEntryPtr> files)
+      override;
 
  private:
-  Member<LocalDOMWindow> local_dom_window_;
   HeapMojoAssociatedReceiver<mojom::blink::WebLaunchService,
                              WebLaunchServiceImpl,
                              HeapMojoWrapperMode::kForceWithoutContextObserver>

@@ -8,17 +8,20 @@
  * #css_wrapper_metadata_end */
 
 :host {
-  --drag-placeholder-font-color: rgba(86, 89, 94, 1);
+  --color-dragging-opaque-frost-backup_: rgba(240, 242, 245, 1);
+  --color-drag-placeholder-font: rgba(86, 89, 94, 1);
+  /* Backup color: */
+  --color-search-animated-glow-background: rgba(255, 255, 255, 1);
   --drag-placeholder-font-family: inherit;
   --drag-placeholder-line-height: 24px;
   --drag-placeholder-font-size: 16px;
 
-  --end-angle-expand_: 245deg;
+  --end-angle-expand_: 250deg;
   --end-angle-listen_: 210deg;
   --end-angle-submit_: 330deg;
 
   --expand-timing_: var(--glif-rotation-duration_)
-      var(--standard-curve, --search-animated-glow-standard-curve);
+      var(--standard-curve, var(--search-animated-glow-standard-curve));
 
   /* All gradient rotation and background blur/border shrinking needs to be at
    * interval, otherwise border-radius due to border width
@@ -26,9 +29,11 @@
   --glif-rotation-duration_: var(--search-animated-glif-rotation-duration,
       2s);
 
-  --glow-stroke-width_: 2px;
+  /* Define animated glow stroke width outside of this class to customize
+   * per surface.
+   */
+  --glow-stroke-width_: var(--animated-glow-stroke-width, 2px);
 
-  --search-animated-glow-background: rgb(255, 255, 255);
   --search-animated-glow-background-z-index: 103;
   --search-animated-glow-drag-drop-placeholder-z-index: 104;
   --search-animated-glow-gradient-after-z-index: 101;
@@ -51,14 +56,14 @@
   --search-animated-glow-expand-duration: 600ms;
   --search-animated-glow-standard-curve: cubic-bezier(0.4, 0, 0.2, 1);
 
-  --start-angle-expand_: 30deg;
+  --start-angle-expand_: 90deg;
   --start-angle-submit_: 200deg;
   --start-angle-listen_: 35deg;
   border-radius: inherit;
 }
 
 #dragDropPlaceholder {
-  color: var(--drag-placeholder-font-color);
+  color: var(--color-drag-placeholder-font);
   display: none;
   font-family: var(--drag-placeholder-font-family);
   font-size: var(--drag-placeholder-font-size);
@@ -78,7 +83,9 @@
   z-index: var(--search-animated-glow-drag-drop-placeholder-z-index, 4);
 }
 
-.gradient, .double-gradient, .double-gradient-mask {
+.gradient,
+.double-gradient,
+.double-gradient-mask {
   border-radius: inherit;
   contain: paint;
   inset: 0;
@@ -87,7 +94,7 @@
 
 :host([animation-state='expanding']) .gradient.gradient-outer-glow {
   /* Standard-curve can be defined by parent; otherwise use default. */
-  animation: blur-expand var(--expand-timing_)
+  animation: blur-expand var(--expand-timing_);
 }
 
 @keyframes blur-expand {
@@ -97,7 +104,8 @@
   }
 }
 
-.gradient::before, .double-gradient::before {
+.gradient::before,
+.double-gradient::before {
   /*
   * The actual gradient border and inner glow. In
   * its raw form without .background's effects, it's a
@@ -110,6 +118,7 @@
   border-radius: 50%;
   contain: paint;
   content: '';
+  filter: blur(20px);
   height: auto; /* Controlled by aspect-ratio. */
   left: 50%;
   opacity: 0;
@@ -120,7 +129,7 @@
   * making it a glow, not a pinwheel. Too much, and it will be too
   * tall of a glow.
   */
-  scale: 1 0.6;
+  scale: 1 0.4;
   top: 50%;
   translate: -50% -50%;
   /*
@@ -156,6 +165,12 @@
 @media (prefers-color-scheme: dark) {
   :host([entrypoint-name='Omnibox'][animation-state='expanding']) .gradient::before {
     --gradient-spin-expand-peak-opacity_: 0.3;
+  }
+  :host([entrypoint-name='ContextualTasks']) {
+    --color-composebox-scrim-background: rgba(16, 18, 24, 1);
+    --color-drag-placeholder-font:  rgba(230, 232, 240, 1);
+    --color-dragging-opaque-frost-backup_: rgba(44, 45, 53, 1);
+    --color-search-animated-glow-background:  rgba(31, 31, 31, 1);
   }
 }
 
@@ -205,10 +220,10 @@
   * in dragging mode.
   */
   background-color: var(--cr-composebox-background-color,
-      --search-animated-glow-background);
+      var(--color-search-animated-glow-background));
   border-radius: inherit;
   content: '';
-  inset: 0px;
+  inset: 0;
   opacity: 0;
   pointer-events: none;
   position: absolute;
@@ -241,7 +256,7 @@
     opacity: 0;
     transform: rotate(var(--start-angle-expand_));
   }
-  17% {
+  12% {
     opacity: var(--gradient-spin-expand-peak-opacity_, 1);
   }
   100% {
@@ -317,7 +332,7 @@
    * are blurred, it makes the gradient glow instead
    * of being fully solid. */
   background-color: var(--cr-composebox-background-color,
-      --search-animated-glow-background);
+      var(--color-search-animated-glow-background));
   border-radius: inherit;
   content: '';
   contain: paint;
@@ -350,22 +365,36 @@
 
 :host([animation-state='expanding'][is-collapsible]) .background::before {
   animation: color-pulse-on-expand var(--expand-duration,
-      --search-animated-glow-expand-duration)
-      var(--standard-curve, --search-animated-glow-standard-curve);
+      var(--search-animated-glow-expand-duration))
+      var(--standard-curve, var(--search-animated-glow-standard-curve));
 }
 
 :host([animation-state='listening']) .background::before {
   animation:
-      plate-background-blur-on-expand var(--expand-timing_),
-      color-pulse-on-expand-listen var(--expand-timing_)
+      plate-background-blur-on-listen var(--expand-timing_);
 }
 
 @keyframes plate-background-blur-on-expand {
   0% {
     filter: blur(0);
   }
-  17% {
-    filter: blur(2px);
+  11% {
+    filter: blur(7px);
+  }
+  100% {
+    filter: blur(0);
+  }
+}
+
+@keyframes plate-background-blur-on-listen {
+  0% {
+    filter: blur(0);
+  }
+  12% {
+    filter: blur(7px);
+  }
+  30% {
+    filter: blur(0.5px);
   }
   100% {
     filter: blur(0);
@@ -377,15 +406,6 @@
     background: var(--color-composebox-scrim-background);
   }
   58% {
-    background: var(--color-composebox-scrim-background);
-  }
-}
-
-@keyframes color-pulse-on-expand-listen {
-  17% {
-    background: var(--color-composebox-scrim-background);
-  }
-  100% {
     background: var(--color-composebox-scrim-background);
   }
 }
@@ -421,8 +441,10 @@
 
 :host([animation-state='dragging']) .background::before {
   animation: none;
-  background-color: rgba(240, 242, 245);
-  filter: blur(28px);
+  /* Frosted glass color; overlays the actual composebox background: */
+  background-color: var(--color-search-animated-glow-dragging-opaque-frost,
+      var(--color-dragging-opaque-frost-backup_));
+  filter: blur(25px);
   z-index: var(--search-animated-glow-background-z-index, 3);
 }
 

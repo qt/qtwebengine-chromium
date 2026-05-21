@@ -13,6 +13,9 @@ namespace features {
 #if BUILDFLAG(IS_ANDROID)
 // Enables or disables usage of Window Management Web API.
 BASE_FEATURE(kAndroidWindowManagementWebApi, base::FEATURE_DISABLED_BY_DEFAULT);
+
+// Shows or hides the cancel button in the ItemChooserDialog.
+BASE_FEATURE(kAndroidItemChooserCancelButton, base::FEATURE_DISABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(IS_ANDROID)
 
 // Enables or disables whether pages with pending permission requests will
@@ -38,9 +41,6 @@ BASE_FEATURE(kPermissionsAIv3, base::FEATURE_DISABLED_BY_DEFAULT);
 BASE_FEATURE(kPermissionsAIv4, base::FEATURE_DISABLED_BY_DEFAULT);
 
 BASE_FEATURE(kPermissionsAIP92, base::FEATURE_DISABLED_BY_DEFAULT);
-
-BASE_FEATURE(kPermissionPromiseLifetimeModulation,
-             base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kPermissionOnDeviceNotificationPredictions,
              base::FEATURE_ENABLED_BY_DEFAULT);
@@ -86,7 +86,7 @@ BASE_FEATURE(kRecordChooserPermissionLastVisitedTimestamps,
 // When enabled, site settings pages use radio button groups other than toggles.
 // In the meanwhile, CPSS if exist will be a separate radio button group.
 BASE_FEATURE(kPermissionSiteSettingsRadioButton,
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 // When enabled, blocks condition to exclude auto granted permissions for
 // storage access exceptions. This will allow RWS permission grants to be
@@ -110,7 +110,7 @@ BASE_FEATURE(kSafetyHubUnusedPermissionRevocationForAllSurfaces,
 // for notifications if Chrome does not have and cannot acquire app-level
 // permissions on Android.
 BASE_FEATURE(kReturnDeniedForNotificationsWhenNoAppLevelSettings,
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
 
 // Only applicable if kApproximateGeolocationPermission is enabled. When
@@ -118,6 +118,11 @@ BASE_FEATURE(kReturnDeniedForNotificationsWhenNoAppLevelSettings,
 // of the geolocation accuracy (precise/approximate) for geolocation permission
 // prompts.
 BASE_FEATURE(kPermissionPredictionsGeolocationAccuracy,
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
+// When enabled, notification and geolocation permission requests that
+// are not accompanied by a user gesture will be shown as quiet prompts.
+BASE_FEATURE(kPermissionsGestureGatedPrompts,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 }  // namespace features
@@ -300,6 +305,14 @@ const base::FeatureParam<std::string>
 const base::FeatureParam<std::string> kWebKioskBrowserPermissionsAllowlist{
     &permissions::features::kAllowMultipleOriginsForWebKioskPermissions,
     "allowlist_urls", ""};
+
+const base::FeatureParam<bool> kPermissionsGestureGatedPromptsMuteNotifications{
+    &permissions::features::kPermissionsGestureGatedPrompts,
+    "mute_notifications", false};
+
+const base::FeatureParam<bool> kPermissionsGestureGatedPromptsMuteGeolocation{
+    &permissions::features::kPermissionsGestureGatedPrompts, "mute_geolocation",
+    false};
 
 #if !BUILDFLAG(IS_ANDROID)
 const base::FeatureParam<bool> kKeyboardLockPromptUIStyle{

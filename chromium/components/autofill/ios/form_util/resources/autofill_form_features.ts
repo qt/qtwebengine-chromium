@@ -37,16 +37,8 @@ let autofillDisallowMoreHyphenLikeLabels: boolean = false;
 /**
  * If true, checkboxes and radio buttons aren't extracted anymore.
  */
-let autofillIgnoreCheckableElements: boolean = false;
+let autofillIgnoreCheckableElements: boolean = true;
 // LINT.ThenChange(//components/autofill/core/common/autofill_features.cc:autofill_ignore_checkable_elements)
-
-// LINT.IfChange(autofill_isolated_content_world)
-/**
- Enables the logic necessary for Autofill to work from an isolated content world
- without breaking the features that need to be in the page content world.
- */
-let autofillIsolatedContentWorld: boolean = true;
-// LINT.ThenChange(//components/autofill/ios/common/features.mm:autofill_isolated_content_world)
 
 // LINT.IfChange(autofill_correct_user_edited_bit_in_parsed_field)
 /**
@@ -143,20 +135,6 @@ function isAutofillIgnoreCheckableElementsEnabled(): boolean {
 }
 
 /**
- * @see autofillIsolatedContentWorld
- */
-function setAutofillIsolatedContentWorld(enabled: boolean): void {
-  autofillIsolatedContentWorld = enabled;
-}
-
-/**
- * @see autofillIsolatedContentWorld
- */
-function isAutofillIsolatedContentWorldEnabled(): boolean {
-  return autofillIsolatedContentWorld;
-}
-
-/**
  * @see autofillCorrectUserEditedBitInParsedField
  */
 function setAutofillCorrectUserEditedBitInParsedField(enabled: boolean): void {
@@ -169,7 +147,6 @@ function setAutofillCorrectUserEditedBitInParsedField(enabled: boolean): void {
 function isAutofillCorrectUserEditedBitInParsedField(): boolean {
   return autofillCorrectUserEditedBitInParsedField;
 }
-
 
 /**
  * @see autofillAllowDefaultPreventedSubmission
@@ -230,7 +207,7 @@ function isAutofillCountFormSubmissionInRendererEnabled(): boolean {
 
 // Expose globally via `gCrWeb` instead of `export` to ensure state (feature
 // on/off) is maintained across imports.
-const autofillFormFeatures = new CrWebApi();
+const autofillFormFeatures = new CrWebApi('autofill_form_features');
 
 autofillFormFeatures.addFunction(
     'setAutofillAcrossIframes', setAutofillAcrossIframes);
@@ -252,11 +229,6 @@ autofillFormFeatures.addFunction(
 autofillFormFeatures.addFunction(
     'isAutofillIgnoreCheckableElementsEnabled',
     isAutofillIgnoreCheckableElementsEnabled);
-autofillFormFeatures.addFunction(
-    'setAutofillIsolatedContentWorld', setAutofillIsolatedContentWorld);
-autofillFormFeatures.addFunction(
-    'isAutofillIsolatedContentWorldEnabled',
-    isAutofillIsolatedContentWorldEnabled);
 autofillFormFeatures.addFunction(
     'setAutofillCorrectUserEditedBitInParsedField',
     setAutofillCorrectUserEditedBitInParsedField);
@@ -287,4 +259,4 @@ autofillFormFeatures.addFunction(
     'isAutofillCountFormSubmissionInRendererEnabled',
     isAutofillCountFormSubmissionInRendererEnabled);
 
-gCrWeb.registerApi('autofill_form_features', autofillFormFeatures);
+gCrWeb.registerApi(autofillFormFeatures);

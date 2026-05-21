@@ -77,11 +77,11 @@ struct FakeCastSocketPair {
         std::make_unique<CastSocket>(std::move(moved_peer), &mock_peer_client);
 
     ON_CALL(*connection, Send(_)).WillByDefault([this](ByteView data) {
-      peer_connection->OnRead(std::vector<uint8_t>(data.cbegin(), data.cend()));
+      peer_connection->OnRead(std::vector<uint8_t>(data.begin(), data.end()));
       return true;
     });
     ON_CALL(*peer_connection, Send(_)).WillByDefault([this](ByteView data) {
-      connection->OnRead(std::vector<uint8_t>(data.cbegin(), data.cend()));
+      connection->OnRead(std::vector<uint8_t>(data.begin(), data.end()));
       return true;
     });
   }

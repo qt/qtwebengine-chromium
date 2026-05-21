@@ -4,6 +4,8 @@
 
 #include "third_party/blink/renderer/core/css/font_face_set_worker.h"
 
+#include <optional>
+
 #include "third_party/blink/renderer/bindings/core/v8/dictionary.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
 #include "third_party/blink/renderer/core/css/css_property_value_set.h"
@@ -23,8 +25,11 @@
 
 namespace blink {
 
+// static
+const char FontFaceSetWorker::kSupplementName[] = "FontFaceSetWorker";
+
 FontFaceSetWorker::FontFaceSetWorker(WorkerGlobalScope& worker)
-    : FontFaceSet(worker) {}
+    : FontFaceSet(worker), Supplement<WorkerGlobalScope>(worker) {}
 
 FontFaceSetWorker::~FontFaceSetWorker() = default;
 
@@ -80,24 +85,30 @@ const Font* FontFaceSetWorker::ResolveFontStyle(const String& font_string) {
   default_font_description.SetSpecifiedSize(FontFaceSet::kDefaultFontSize);
   default_font_description.SetComputedSize(FontFaceSet::kDefaultFontSize);
 
-  FontDescription description = FontStyleResolver::ComputeFont(
-      *parsed_style, GetWorker()->GetFontSelector());
+  std::optional<FontDescription> maybe_description =
+      FontStyleResolver::ComputeFont(*parsed_style,
+                                     GetWorker()->GetFontSelector());
+  if (!maybe_description.has_value()) {
+    return nullptr;
+  }
 
-  return MakeGarbageCollected<Font>(description,
+  return MakeGarbageCollected<Font>(maybe_description.value(),
                                     GetWorker()->GetFontSelector());
 }
 
 FontFaceSetWorker* FontFaceSetWorker::From(WorkerGlobalScope& worker) {
-  FontFaceSetWorker* fonts = worker.GetFontFaceSetWorker();
+  FontFaceSetWorker* fonts =
+      Supplement<WorkerGlobalScope>::From<FontFaceSetWorker>(worker);
   if (!fonts) {
     fonts = MakeGarbageCollected<FontFaceSetWorker>(worker);
-    worker.SetFontFaceSetWorker(fonts);
+    ProvideTo(worker, fonts);
   }
 
   return fonts;
 }
 
 void FontFaceSetWorker::Trace(Visitor* visitor) const {
+  Supplement<WorkerGlobalScope>::Trace(visitor);
   FontFaceSet::Trace(visitor);
 }
 

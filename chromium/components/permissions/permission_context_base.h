@@ -20,6 +20,7 @@
 #include "components/permissions/permission_decision.h"
 #include "components/permissions/permission_request.h"
 #include "components/permissions/permission_request_data.h"
+#include "components/permissions/resolvers/permission_prompt_options.h"
 #include "components/permissions/resolvers/permission_resolver.h"
 #include "content/public/browser/permission_result.h"
 #include "services/network/public/mojom/permissions_policy/permissions_policy_feature.mojom.h"
@@ -28,6 +29,7 @@
 class GURL;
 
 namespace permissions {
+struct PermissionPromptDecision;
 class PermissionRequestID;
 }
 
@@ -182,6 +184,11 @@ class PermissionContextBase : public content_settings::Observer {
     has_device_permission_for_test_ = has_permission;
   }
 
+  void set_can_request_device_permission_for_test(
+      std::optional<bool> can_request) {
+    can_request_device_permission_for_test_ = can_request;
+  }
+
  protected:
   // Retrieves the current permission status. |render_frame_host| may be
   // nullptr.
@@ -198,11 +205,11 @@ class PermissionContextBase : public content_settings::Observer {
 
   // Updates stored setting if persist is set, updates tab indicators
   // and runs the callback to finish the request.
-  virtual void NotifyPermissionSet(const PermissionRequestData& request_data,
-                                   BrowserPermissionCallback callback,
-                                   bool persist,
-                                   PermissionDecision decision,
-                                   bool is_final_decision);
+  virtual void NotifyPermissionSet(
+      const PermissionRequestData& request_data,
+      BrowserPermissionCallback callback,
+      bool persist,
+      const permissions::PermissionPromptDecision& decision);
 
   // Implementors can override this method to update the icons on the
   // url bar with the result of the new permission.
@@ -246,6 +253,11 @@ class PermissionContextBase : public content_settings::Observer {
   // Implementors can override this method to avoid using automatic embargo.
   virtual bool UsesAutomaticEmbargo() const;
 
+  // Implementors can override this method to use custom notification logic.
+  virtual void NotifyObservers(const ContentSettingsPattern& primary_pattern,
+                               const ContentSettingsPattern& secondary_pattern,
+                               ContentSettingsTypeSet content_type_set) const;
+
   // Derived classes can use this function to find some particular permission
   // request.
   const PermissionRequest* FindPermissionRequest(
@@ -254,6 +266,11 @@ class PermissionContextBase : public content_settings::Observer {
   // Implementors can override this method to use a different embedding origin.
   // TODO(crbug.com/40220500): This should return a url::Origin instead.
   virtual GURL GetEffectiveEmbedderOrigin(content::RenderFrameHost* rfh) const;
+
+  // Implementors can override this method to use a custom Permission Policy
+  // check.
+  virtual bool PermissionAllowedByPermissionsPolicy(
+      content::RenderFrameHost* rfh) const;
 
   base::ObserverList<permissions::Observer> permission_observers_;
 
@@ -269,9 +286,6 @@ class PermissionContextBase : public content_settings::Observer {
  private:
   friend class PermissionContextBaseTests;
 
-  bool PermissionAllowedByPermissionsPolicy(
-      content::RenderFrameHost* rfh) const;
-
   // Called when a request is no longer used so it can be cleaned up.
   void CleanUpRequest(content::WebContents* web_contents,
                       const PermissionRequestID& id);
@@ -283,13 +297,8 @@ class PermissionContextBase : public content_settings::Observer {
       PermissionSetting new_value);
   // This is the callback for PermissionRequest and is called once the user
   // allows/blocks/dismisses a permission prompt.
-  void PermissionDecided(PermissionDecision decision,
-                         bool is_final_decision,
+  void PermissionDecided(const permissions::PermissionPromptDecision& decision,
                          const PermissionRequestData& request_data);
-
-  void NotifyObservers(const ContentSettingsPattern& primary_pattern,
-                       const ContentSettingsPattern& secondary_pattern,
-                       ContentSettingsTypeSet content_type_set) const;
 
   raw_ptr<content::BrowserContext> browser_context_;
   const ContentSettingsType content_settings_type_;
@@ -302,6 +311,7 @@ class PermissionContextBase : public content_settings::Observer {
   mutable std::optional<bool> last_has_device_permission_result_ = std::nullopt;
 
   std::optional<bool> has_device_permission_for_test_;
+  std::optional<bool> can_request_device_permission_for_test_;
 
   // Must be the last member, to ensure that it will be
   // destroyed first, which will invalidate weak pointers

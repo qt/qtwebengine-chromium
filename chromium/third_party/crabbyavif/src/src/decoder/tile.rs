@@ -131,7 +131,6 @@ impl TileInfo {
     }
 }
 
-#[derive(Default)]
 pub struct Tile {
     pub width: u32,
     pub height: u32,
@@ -157,13 +156,14 @@ impl Tile {
             height: item.height,
             operating_point: item.operating_point(),
             image: Image::default(),
+            input: DecodeInput::default(),
+            codec_index: 0,
             codec_config: item
                 .codec_config()
                 .ok_or(AvifError::BmffParseFailed(
                     "missing codec config property".into(),
                 ))?
                 .clone(),
-            ..Tile::default()
         };
         let mut layer_sizes: [usize; MAX_AV1_LAYER_COUNT] = [0; MAX_AV1_LAYER_COUNT];
         let mut layer_count: usize = 0;
@@ -294,12 +294,13 @@ impl Tile {
             width: track.width,
             height: track.height,
             operating_point: 0, // No way to set operating point via tracks
+            image: Image::default(),
             input: DecodeInput {
                 decoding_item,
                 ..DecodeInput::default()
             },
+            codec_index: 0,
             codec_config,
-            ..Tile::default()
         };
         let sample_table = &track.sample_table.unwrap_ref();
 

@@ -327,6 +327,12 @@ class PDFiumPage {
   // Value: Index of the image in the `images_` vector.
   using MarkedContentIdToImageMap = std::map<int, size_t>;
 
+  // Track which text run indices have been associated with a structured node in
+  // order to discover which text runs are unassociated with structured
+  // elements. This information is used to determine how to interleave
+  // structured and unstructured content in the final AXTree.
+  std::set<size_t> associated_text_run_indices_;
+
   struct Link {
     Link();
     Link(const Link& that);
@@ -485,6 +491,12 @@ class PDFiumPage {
   void PopulateTextRunTypeAndImageAltTextForStructElement(
       FPDF_STRUCTELEMENT current_element,
       std::set<FPDF_STRUCTELEMENT>& visited_elements);
+
+  // Looks up marked content IDs from the structure element and associates the
+  // corresponding text runs and images with the provided tree node.
+  void AssociateMarkedContentWithStructureElement(
+      FPDF_STRUCTELEMENT element,
+      AccessibilityStructureElement* tree_node);
 
   // Traverses a structure element and its subtree recursively and extracts all
   // information, storing it in a corresponding hierarchy of

@@ -41,8 +41,12 @@ var __esDecorate = (this && this.__esDecorate) || function (ctor, descriptorIn, 
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.BrowsingContext = void 0;
 const EventEmitter_js_1 = require("../../common/EventEmitter.js");
+const util_js_1 = require("../../common/util.js");
+const assert_js_1 = require("../../util/assert.js");
 const decorators_js_1 = require("../../util/decorators.js");
 const disposable_js_1 = require("../../util/disposable.js");
+const BluetoothEmulation_js_1 = require("../BluetoothEmulation.js");
+const DeviceRequestPrompt_js_1 = require("../DeviceRequestPrompt.js");
 const Navigation_js_1 = require("./Navigation.js");
 const Realm_js_1 = require("./Realm.js");
 const Request_js_1 = require("./Request.js");
@@ -65,6 +69,7 @@ let BrowsingContext = (() => {
     let _print_decorators;
     let _handleUserPrompt_decorators;
     let _setViewport_decorators;
+    let _setTouchOverride_decorators;
     let _performActions_decorators;
     let _releaseActions_decorators;
     let _createWindowRealm_decorators;
@@ -103,6 +108,7 @@ let BrowsingContext = (() => {
             __esDecorate(this, null, _print_decorators, { kind: "method", name: "print", static: false, private: false, access: { has: obj => "print" in obj, get: obj => obj.print }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _handleUserPrompt_decorators, { kind: "method", name: "handleUserPrompt", static: false, private: false, access: { has: obj => "handleUserPrompt" in obj, get: obj => obj.handleUserPrompt }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _setViewport_decorators, { kind: "method", name: "setViewport", static: false, private: false, access: { has: obj => "setViewport" in obj, get: obj => obj.setViewport }, metadata: _metadata }, null, _instanceExtraInitializers);
+            __esDecorate(this, null, _setTouchOverride_decorators, { kind: "method", name: "setTouchOverride", static: false, private: false, access: { has: obj => "setTouchOverride" in obj, get: obj => obj.setTouchOverride }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _performActions_decorators, { kind: "method", name: "performActions", static: false, private: false, access: { has: obj => "performActions" in obj, get: obj => obj.performActions }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _releaseActions_decorators, { kind: "method", name: "releaseActions", static: false, private: false, access: { has: obj => "releaseActions" in obj, get: obj => obj.releaseActions }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _createWindowRealm_decorators, { kind: "method", name: "createWindowRealm", static: false, private: false, access: { has: obj => "createWindowRealm" in obj, get: obj => obj.createWindowRealm }, metadata: _metadata }, null, _instanceExtraInitializers);
@@ -121,14 +127,16 @@ let BrowsingContext = (() => {
             __esDecorate(this, null, _locateNodes_decorators, { kind: "method", name: "locateNodes", static: false, private: false, access: { has: obj => "locateNodes" in obj, get: obj => obj.locateNodes }, metadata: _metadata }, null, _instanceExtraInitializers);
             if (_metadata) Object.defineProperty(this, Symbol.metadata, { enumerable: true, configurable: true, writable: true, value: _metadata });
         }
-        static from(userContext, parent, id, url, originalOpener) {
-            const browsingContext = new BrowsingContext(userContext, parent, id, url, originalOpener);
+        static from(userContext, parent, id, url, originalOpener, clientWindow) {
+            const browsingContext = new BrowsingContext(userContext, parent, id, url, originalOpener, clientWindow);
             browsingContext.#initialize();
             return browsingContext;
         }
         #navigation = __runInitializers(this, _instanceExtraInitializers);
         #reason;
         #url;
+        // Indicated whether client hints have been set to non-default.
+        #clientHintsAreSet = false;
         #children = new Map();
         #disposables = new disposable_js_1.DisposableStack();
         #realms = new Map();
@@ -138,15 +146,21 @@ let BrowsingContext = (() => {
         parent;
         userContext;
         originalOpener;
+        windowId;
         #emulationState = { javaScriptEnabled: true };
-        constructor(context, parent, id, url, originalOpener) {
+        #bluetoothEmulation;
+        #deviceRequestPromptManager;
+        constructor(userContext, parent, id, url, originalOpener, clientWindow) {
             super();
             this.#url = url;
             this.id = id;
             this.parent = parent;
-            this.userContext = context;
+            this.userContext = userContext;
             this.originalOpener = originalOpener;
+            this.windowId = clientWindow;
             this.defaultRealm = this.#createWindowRealm();
+            this.#bluetoothEmulation = new BluetoothEmulation_js_1.BidiBluetoothEmulation(this.id, this.#session);
+            this.#deviceRequestPromptManager = new DeviceRequestPrompt_js_1.BidiDeviceRequestPromptManager(this.id, this.#session);
         }
         #initialize() {
             const userContextEmitter = this.#disposables.use(new EventEmitter_js_1.EventEmitter(this.userContext));
@@ -164,7 +178,7 @@ let BrowsingContext = (() => {
                 if (info.parent !== this.id) {
                     return;
                 }
-                const browsingContext = BrowsingContext.from(this.userContext, this, info.context, info.url, info.originalOpener);
+                const browsingContext = BrowsingContext.from(this.userContext, this, info.context, info.url, info.originalOpener, info.clientWindow);
                 this.#children.set(info.context, browsingContext);
                 const browsingContextEmitter = this.#disposables.use(new EventEmitter_js_1.EventEmitter(browsingContext));
                 browsingContextEmitter.once('closed', () => {
@@ -311,9 +325,9 @@ let BrowsingContext = (() => {
             return data;
         }
         async close(promptUnload) {
-            await Promise.all([...this.#children.values()].map(async (child) => {
-                await child.close(promptUnload);
-            }));
+            // The WebDriver BiDi specification only allows closing top-level browsing contexts.
+            // Closing a top-level context automatically closes all its children, so there is
+            // no need to explicitly close nested contexts.
             await this.#session.send('browsingContext.close', {
                 context: this.id,
                 promptUnload,
@@ -361,6 +375,12 @@ let BrowsingContext = (() => {
             await this.#session.send('browsingContext.setViewport', {
                 context: this.id,
                 ...options,
+            });
+        }
+        async setTouchOverride(maxTouchPoints) {
+            await this.#session.send('emulation.setTouchOverride', {
+                contexts: [this.id],
+                maxTouchPoints,
             });
         }
         async performActions(actions) {
@@ -481,6 +501,9 @@ let BrowsingContext = (() => {
             })], _setViewport_decorators = [(0, decorators_js_1.throwIfDisposed)(context => {
                 // SAFETY: Disposal implies this exists.
                 return context.#reason;
+            })], _setTouchOverride_decorators = [(0, decorators_js_1.throwIfDisposed)(context => {
+                // SAFETY: Disposal implies this exists.
+                return context.#reason;
             })], _performActions_decorators = [(0, decorators_js_1.throwIfDisposed)(context => {
                 // SAFETY: Disposal implies this exists.
                 return context.#reason;
@@ -541,12 +564,14 @@ let BrowsingContext = (() => {
                 });
             }));
         }
-        async locateNodes(locator, startNodes) {
+        async locateNodes(locator, startNodes = []) {
             // TODO: add other locateNodes options if needed.
             const result = await this.#session.send('browsingContext.locateNodes', {
                 context: this.id,
                 locator,
-                startNodes: startNodes.length ? startNodes : undefined,
+                startNodes: startNodes.length
+                    ? startNodes
+                    : undefined,
             });
             return result.result.nodes;
         }
@@ -567,6 +592,18 @@ let BrowsingContext = (() => {
                 contexts: [this.id],
             });
         }
+        async setClientHintsOverride(clientHints) {
+            if (clientHints === null && !this.#clientHintsAreSet) {
+                // Ignore the call, as the client hints are not supposed to be changed. Required to
+                // avoid breakage with browsers that don't support client hints emulation.
+                return;
+            }
+            this.#clientHintsAreSet = true;
+            await this.#session.send('emulation.setClientHintsOverride', {
+                clientHints,
+                contexts: [this.id],
+            });
+        }
         async setOfflineMode(enabled) {
             await this.#session.send('emulation.setNetworkConditions', {
                 networkConditions: enabled
@@ -574,6 +611,24 @@ let BrowsingContext = (() => {
                         type: 'offline',
                     }
                     : null,
+                contexts: [this.id],
+            });
+        }
+        get bluetooth() {
+            return this.#bluetoothEmulation;
+        }
+        async waitForDevicePrompt(timeout, signal) {
+            return await this.#deviceRequestPromptManager.waitForDevicePrompt(timeout, signal);
+        }
+        async setExtraHTTPHeaders(headers) {
+            await this.#session.send('network.setExtraHeaders', {
+                headers: Object.entries(headers).map(([key, value]) => {
+                    (0, assert_js_1.assert)((0, util_js_1.isString)(value), `Expected value of header "${key}" to be String, but "${typeof value}" is found.`);
+                    return {
+                        name: key.toLowerCase(),
+                        value: { type: 'string', value: value },
+                    };
+                }),
                 contexts: [this.id],
             });
         }

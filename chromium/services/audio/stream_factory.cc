@@ -10,6 +10,7 @@
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/memory/raw_ptr.h"
+#include "base/strings/strcat.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/trace_event/trace_event.h"
 #include "base/unguessable_token.h"
@@ -366,6 +367,11 @@ void StreamFactory::CreateOutputStreamInternal(
           : group_id.ToString();
 #else
       output_device_id;
+#endif
+
+#if !BUILDFLAG(ENABLE_PASSTHROUGH_AUDIO_CODECS)
+  // This is forbidden by IPC validation.
+  CHECK(!params.IsBitstreamFormat());
 #endif
 
   // base::Unretained() is safe since |this| owns both |output_mixer_manager_|

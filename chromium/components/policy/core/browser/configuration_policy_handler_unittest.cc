@@ -18,7 +18,9 @@
 #include "components/policy/core/common/policy_types.h"
 #include "components/policy/core/common/schema.h"
 #include "components/prefs/pref_value_map.h"
+#include "components/strings/grit/components_strings.h"
 #include "testing/gmock/include/gmock/gmock.h"
+#include "ui/base/l10n/l10n_util.h"
 
 namespace policy {
 
@@ -118,8 +120,7 @@ class StringListPolicyHandler : public ListPolicyHandler {
       : ListPolicyHandler(policy_name, base::Value::Type::STRING) {}
 
  protected:
-  void ApplyList(base::Value::List filtered_list,
-                 PrefValueMap* prefs) override {
+  void ApplyList(base::ListValue filtered_list, PrefValueMap* prefs) override {
     prefs->SetValue(kTestPref, base::Value(std::move(filtered_list)));
   }
 };
@@ -142,7 +143,7 @@ JsonStringHandlerForTesting() {
 }  // namespace
 
 TEST(ListPolicyHandlerTest, CheckPolicySettings) {
-  base::Value::List list;
+  base::ListValue list;
   base::Value dict(base::Value::Type::DICT);
   policy::PolicyMap policy_map;
   policy::PolicyErrorMap errors;
@@ -190,8 +191,8 @@ TEST(ListPolicyHandlerTest, CheckPolicySettings) {
 }
 
 TEST(StringListPolicyHandlerTest, ApplyPolicySettings) {
-  base::Value::List list;
-  base::Value::List expected;
+  base::ListValue list;
+  base::ListValue expected;
   PolicyMap policy_map;
   PrefValueMap prefs;
   base::Value* value;
@@ -229,7 +230,7 @@ TEST(StringListPolicyHandlerTest, ApplyPolicySettings) {
 }
 
 TEST(StringToIntEnumListPolicyHandlerTest, CheckPolicySettings) {
-  base::Value::List list;
+  base::ListValue list;
   PolicyMap policy_map;
   PolicyErrorMap errors;
   StringMappingListPolicyHandler handler(
@@ -265,8 +266,8 @@ TEST(StringToIntEnumListPolicyHandlerTest, CheckPolicySettings) {
 }
 
 TEST(StringMappingListPolicyHandlerTest, ApplyPolicySettings) {
-  base::Value::List list;
-  base::Value::List expected;
+  base::ListValue list;
+  base::ListValue expected;
   PolicyMap policy_map;
   PrefValueMap prefs;
   base::Value* value;
@@ -771,7 +772,7 @@ TEST(SchemaValidatingPolicyHandlerTest, CheckAndGetValueUnknown) {
       handler.CheckAndGetValueForTest(policy_map, &error_map, &output_value));
   ASSERT_TRUE(output_value);
   ASSERT_TRUE(output_value->is_dict());
-  const base::Value::Dict& output = output_value->GetDict();
+  const base::DictValue& output = output_value->GetDict();
 
   // Test that CheckAndGetValue outputs warnings about unknown properties.
   EXPECT_THAT(error_map.GetErrors(kPolicyName),
@@ -1129,14 +1130,14 @@ TEST(URLPolicyHandler, CheckOnlyValidURLApplied) {
   EXPECT_EQ(*expected, *value);
 }
 
-TEST(CloudUserOnlyPolicyHandler, CheckValidatesSource) {
+TEST(CloudUserOnlyPolicyChecker, CheckValidatesSource) {
   PolicyMap policy_map;
   PrefValueMap prefs;
   std::unique_ptr<base::Value> expected;
   const base::Value* value;
   PolicyErrorMap errors;
   PolicyHandlerParameters params;
-  CloudUserOnlyPolicyHandler handler(std::make_unique<SimplePolicyHandler>(
+  CloudUserOnlyPolicyChecker handler(std::make_unique<SimplePolicyHandler>(
       kTestPolicy, kTestPref, base::Value::Type::STRING));
 
   std::vector<PolicySource> all_sources{
@@ -1176,6 +1177,120 @@ TEST(CloudUserOnlyPolicyHandler, CheckValidatesSource) {
       }
     }
   }
+}
+
+class CloudOnlyPolicyCheckerTestValid
+    : public testing::TestWithParam<PolicySource> {};
+
+TEST_P(CloudOnlyPolicyCheckerTestValid, ValidSource) {
+  PolicyMap policy_map;
+  PrefValueMap prefs;
+  std::unique_ptr<base::Value> expected;
+  const base::Value* value;
+  PolicyErrorMap errors;
+  PolicyHandlerParameters params;
+  CloudOnlyPolicyChecker handler(std::make_unique<SimplePolicyHandler>(
+      kTestPolicy, kTestPref, base::Value::Type::STRING));
+
+  policy_map.Set(kTestPolicy, POLICY_LEVEL_MANDATORY, POLICY_SCOPE_USER,
+                 GetParam(), base::Value("some_value"), nullptr);
+
+  EXPECT_TRUE(handler.CheckPolicySettings(policy_map, &errors));
+  EXPECT_TRUE(errors.empty());
+
+  handler.ApplyPolicySettingsWithParameters(policy_map, params, &prefs);
+  expected = std::make_unique<base::Value>("some_value");
+  EXPECT_TRUE(prefs.GetValue(kTestPref, &value));
+  EXPECT_EQ(*expected, *value);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    ValidSources,
+    CloudOnlyPolicyCheckerTestValid,
+    testing::ValuesIn<PolicySource>({
+        POLICY_SOURCE_CLOUD,
+        POLICY_SOURCE_CLOUD_FROM_ASH,
+#if BUILDFLAG(IS_ANDROID)
+        // Android allows command line policy for development and testing.
+        POLICY_SOURCE_COMMAND_LINE,
+#endif  // BUILDFLAG(IS_ANDROID)
+    }));
+
+class CloudOnlyPolicyCheckerTestInvalid
+    : public testing::TestWithParam<PolicySource> {};
+
+TEST_P(CloudOnlyPolicyCheckerTestInvalid, InvalidSource) {
+  PolicyMap policy_map;
+  PrefValueMap prefs;
+  std::unique_ptr<base::Value> expected;
+  PolicyErrorMap errors;
+  PolicyHandlerParameters params;
+  CloudOnlyPolicyChecker handler(std::make_unique<SimplePolicyHandler>(
+      kTestPolicy, kTestPref, base::Value::Type::STRING));
+
+  policy_map.Set(kTestPolicy, POLICY_LEVEL_MANDATORY, POLICY_SCOPE_USER,
+                 GetParam(), base::Value("some_value"), nullptr);
+
+  EXPECT_FALSE(handler.CheckPolicySettings(policy_map, &errors));
+  EXPECT_FALSE(errors.empty());
+  EXPECT_EQ(errors.GetErrorMessages(kTestPolicy),
+            l10n_util::GetStringUTF16(IDS_POLICY_CLOUD_SOURCE_ONLY_ERROR));
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    InvalidSources,
+    CloudOnlyPolicyCheckerTestInvalid,
+    testing::ValuesIn<PolicySource>({
+        POLICY_SOURCE_ENTERPRISE_DEFAULT,
+#if !BUILDFLAG(IS_ANDROID)
+        // Android allows command line policy for development and testing.
+        POLICY_SOURCE_COMMAND_LINE,
+#endif  // BUILDFLAG(IS_ANDROID)
+        POLICY_SOURCE_ACTIVE_DIRECTORY,
+        POLICY_SOURCE_DEVICE_LOCAL_ACCOUNT_OVERRIDE_DEPRECATED,
+        POLICY_SOURCE_PLATFORM,
+        POLICY_SOURCE_PRIORITY_CLOUD_DEPRECATED,
+        POLICY_SOURCE_RESTRICTED_MANAGED_GUEST_SESSION_OVERRIDE,
+    }));
+
+TEST(CloudOnlyPolicyChecker, MergedCloudSourcesIsValid) {
+  PolicyErrorMap errors;
+  CloudOnlyPolicyChecker handler(std::make_unique<SimplePolicyHandler>(
+      kTestPolicy, kTestPref, base::Value::Type::STRING));
+
+  // Merged with only cloud sources should be valid.
+  PolicyMap valid_merged_map;
+  valid_merged_map.Set(kTestPolicy, POLICY_LEVEL_MANDATORY, POLICY_SCOPE_USER,
+                       POLICY_SOURCE_CLOUD, base::Value("user cloud value"),
+                       nullptr);
+  PolicyMap other_cloud_map;
+  other_cloud_map.Set(kTestPolicy, POLICY_LEVEL_MANDATORY, POLICY_SCOPE_MACHINE,
+                      POLICY_SOURCE_CLOUD, base::Value("machine cloud value"),
+                      nullptr);
+  valid_merged_map.MergeFrom(other_cloud_map);
+  EXPECT_TRUE(handler.CheckPolicySettings(valid_merged_map, &errors));
+  EXPECT_TRUE(errors.empty());
+}
+
+TEST(CloudOnlyPolicyChecker, MergedNonCloudSourceIsInvalid) {
+  PolicyErrorMap errors;
+  CloudOnlyPolicyChecker handler(std::make_unique<SimplePolicyHandler>(
+      kTestPolicy, kTestPref, base::Value::Type::STRING));
+
+  // Merged with a non-cloud source should be invalid.
+  PolicyMap invalid_merged_map;
+  invalid_merged_map.Set(kTestPolicy, POLICY_LEVEL_MANDATORY, POLICY_SCOPE_USER,
+                         POLICY_SOURCE_CLOUD, base::Value("cloud value"),
+                         nullptr);
+  PolicyMap non_cloud_map;
+  non_cloud_map.Set(kTestPolicy, POLICY_LEVEL_MANDATORY, POLICY_SCOPE_MACHINE,
+                    POLICY_SOURCE_PLATFORM, base::Value("platform value"),
+                    nullptr);
+  invalid_merged_map.MergeFrom(non_cloud_map);
+  EXPECT_FALSE(handler.CheckPolicySettings(invalid_merged_map, &errors));
+  EXPECT_FALSE(errors.empty());
+  EXPECT_EQ(errors.GetErrorMessages(kTestPolicy),
+            l10n_util::GetStringUTF16(IDS_POLICY_CLOUD_SOURCE_ONLY_ERROR));
 }
 
 }  // namespace policy

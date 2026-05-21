@@ -11,11 +11,11 @@ import("../visibility.gni")
 generate_css("css_files") {
   sources = [
     "./aiAssistancePanel.css",
+    "./components/chatInput.css",
+    "./components/chatMessage.css",
     "./components/chatView.css",
-    "./components/collapsibleAssistanceContentWidget.css",
     "./components/disabledWidget.css",
     "./components/exploreWidget.css",
-    "./components/userActionRow.css",
     "./selectWorkspaceDialog.css",
   ]
 }
@@ -25,13 +25,13 @@ devtools_ui_module("ai_assistance") {
     "AiAssistancePanel.ts",
     "PatchWidget.ts",
     "SelectWorkspaceDialog.ts",
+    "components/ChatInput.ts",
+    "components/ChatMessage.ts",
     "components/ChatView.ts",
-    "components/CollapsibleAssistanceContentWidget.ts",
     "components/DisabledWidget.ts",
     "components/ExploreWidget.ts",
     "components/MarkdownRendererWithCodeBlock.ts",
     "components/PerformanceAgentMarkdownRenderer.ts",
-    "components/UserActionRow.ts",
   ]
 
   deps = [
@@ -39,10 +39,21 @@ devtools_ui_module("ai_assistance") {
     "../../core/common:bundle",
     "../../core/host:bundle",
     "../../core/i18n:bundle",
+    "../../core/platform:bundle",
     "../../core/root:bundle",
+    "../../core/sdk:bundle",
+    "../../generated:protocol",
     "../../models/ai_assistance:bundle",
+    "../../models/annotations:bundle",
+    "../../models/badges:bundle",
     "../../models/geometry:bundle",
+    "../../models/greendev:bundle",
+    "../../models/logs:bundle",
+    "../../models/network_time_calculator:bundle",
     "../../models/persistence:bundle",
+    "../../models/text_utils:bundle",
+    "../../models/trace/helpers:bundle",
+    "../../models/trace/insights:bundle",
     "../../models/workspace:bundle",
     "../../models/workspace_diff:bundle",
     "../../panels/changes:bundle",
@@ -52,14 +63,21 @@ devtools_ui_module("ai_assistance") {
     "../../panels/timeline:bundle",
     "../../panels/timeline/utils:bundle",
     "../../third_party/marked:bundle",
+    "../../ui/components/buttons:bundle",
+    "../../ui/components/input:bundle",
     "../../ui/components/markdown_view:bundle",
     "../../ui/components/snackbars:bundle",
     "../../ui/components/spinners:bundle",
+    "../../ui/components/tooltips:bundle",
     "../../ui/helpers:bundle",
     "../../ui/i18n:bundle",
     "../../ui/kit:bundle",
     "../../ui/legacy:bundle",
     "../../ui/lit:bundle",
+    "../../ui/visual_logging:bundle",
+    "../timeline/components:bundle",
+    "../timeline/components/insights:bundle",
+    "../utils:bundle",
   ]
 }
 
@@ -93,11 +111,12 @@ devtools_ui_module("unittests") {
     "AiAssistancePanel.test.ts",
     "PatchWidget.test.ts",
     "SelectWorkspaceDialog.test.ts",
+    "components/ChatInput.test.ts",
+    "components/ChatMessage.test.ts",
     "components/ChatView.test.ts",
     "components/DisabledWidget.test.ts",
     "components/ExploreWidget.test.ts",
     "components/MarkdownRendererWithCodeBlock.test.ts",
-    "components/UserActionRow.test.ts",
   ]
 
   deps = [

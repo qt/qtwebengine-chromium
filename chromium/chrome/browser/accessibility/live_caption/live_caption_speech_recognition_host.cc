@@ -4,13 +4,13 @@
 
 #include "chrome/browser/accessibility/live_caption/live_caption_speech_recognition_host.h"
 
+#include <algorithm>
 #include <memory>
 #include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
-#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/strings/strcat.h"
@@ -80,7 +80,7 @@ std::string RemoveLastKWords(const std::string& input) {
 
 // Returns a boolean indicating whether the language is both enabled and not
 // already installed.
-bool IsLanguageInstallable(const std::string& language_code) {
+bool IsLanguageInstallable(std::string_view language_code) {
   for (const auto& language : g_browser_process->local_state()->GetList(
            prefs::kSodaRegisteredLanguagePacks)) {
     if (language.GetString() == language_code) {
@@ -88,7 +88,7 @@ bool IsLanguageInstallable(const std::string& language_code) {
     }
   }
 
-  return base::Contains(
+  return std::ranges::contains(
       speech::SodaInstaller::GetInstance()->GetLiveCaptionEnabledLanguages(),
       language_code);
 }

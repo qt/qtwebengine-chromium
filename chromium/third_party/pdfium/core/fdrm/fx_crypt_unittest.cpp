@@ -12,7 +12,6 @@
 #include "core/fxcrt/bytestring.h"
 #include "core/fxcrt/data_vector.h"
 #include "core/fxcrt/fx_extension.h"
-#include "core/fxcrt/fx_memcpy_wrappers.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/utils/hash.h"
@@ -539,7 +538,7 @@ TEST(FXCRYPT, Sha384Pad112) {
   static const char kInput[] =
       "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-  EXPECT_EQ(112u, UNSAFE_TODO(strlen(kInput)));
+  EXPECT_EQ(112u, strlen(kInput));
   DataVector<uint8_t> actual =
       CRYPT_SHA384Generate(ByteStringView(kInput).unsigned_span());
   EXPECT_THAT(
@@ -588,7 +587,7 @@ TEST(FXCRYPT, Sha512Pad112) {
   static const char kInput[] =
       "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-  EXPECT_EQ(112u, UNSAFE_TODO(strlen(kInput)));
+  EXPECT_EQ(112u, strlen(kInput));
   DataVector<uint8_t> actual =
       CRYPT_SHA512Generate(ByteStringView(kInput).unsigned_span());
   EXPECT_THAT(

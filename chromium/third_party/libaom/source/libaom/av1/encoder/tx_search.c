@@ -111,8 +111,6 @@ static inline void fetch_mb_rd_info(int n4, const MB_RD_INFO *const mb_rd_info,
   MACROBLOCKD *const xd = &x->e_mbd;
   MB_MODE_INFO *const mbmi = xd->mi[0];
   mbmi->tx_size = mb_rd_info->tx_size;
-  memcpy(x->txfm_search_info.blk_skip, mb_rd_info->blk_skip,
-         sizeof(mb_rd_info->blk_skip[0]) * n4);
   av1_copy(mbmi->inter_tx_size, mb_rd_info->inter_tx_size);
   av1_copy_array(xd->tx_type_map, mb_rd_info->tx_type_map, n4);
   *rd_stats = mb_rd_info->rd_stats;
@@ -247,8 +245,6 @@ static inline void set_skip_txfm(MACROBLOCK *x, RD_STATS *rd_stats,
   memset(xd->tx_type_map, DCT_DCT, sizeof(xd->tx_type_map[0]) * n4);
   memset(mbmi->inter_tx_size, tx_size, sizeof(mbmi->inter_tx_size));
   mbmi->tx_size = tx_size;
-  for (int i = 0; i < n4; ++i)
-    set_blk_skip(x->txfm_search_info.blk_skip, 0, i, 1);
   rd_stats->skip_txfm = 1;
   if (is_cur_buf_hbd(xd)) dist = ROUND_POWER_OF_TWO(dist, (xd->bd - 8) * 2);
   rd_stats->dist = rd_stats->sse = (dist << 4);
@@ -297,8 +293,6 @@ static inline void save_mb_rd_info(int n4, uint32_t hash,
   const MB_MODE_INFO *const mbmi = xd->mi[0];
   mb_rd_info->hash_value = hash;
   mb_rd_info->tx_size = mbmi->tx_size;
-  memcpy(mb_rd_info->blk_skip, x->txfm_search_info.blk_skip,
-         sizeof(mb_rd_info->blk_skip[0]) * n4);
   av1_copy(mb_rd_info->inter_tx_size, mbmi->inter_tx_size);
   av1_copy_array(mb_rd_info->tx_type_map, xd->tx_type_map, n4);
   mb_rd_info->rd_stats = *rd_stats;
@@ -1819,6 +1813,9 @@ static inline uint16_t get_tx_mask(
   } else if (fast_tx_search) {
     allowed_tx_mask = 0x0c01;  // V_DCT, H_DCT, DCT_DCT
     allowed_tx_mask &= ext_tx_used_flag;
+  } else if (!is_inter && txfm_params->use_derived_intra_tx_type_set) {
+    allowed_tx_mask = av1_derived_intra_tx_used_flag[intra_dir];
+    allowed_tx_mask &= ext_tx_used_flag;
   } else {
     assert(plane == 0);
     allowed_tx_mask = ext_tx_used_flag;
@@ -2353,7 +2350,6 @@ static inline void try_tx_block_no_split(
   MACROBLOCKD *const xd = &x->e_mbd;
   MB_MODE_INFO *const mbmi = xd->mi[0];
   struct macroblock_plane *const p = &x->plane[0];
-  const int bw = mi_size_wide[plane_bsize];
   const ENTROPY_CONTEXT *const pta = ta + blk_col;
   const ENTROPY_CONTEXT *const ptl = tl + blk_row;
   const TX_SIZE txs_ctx = get_txsize_entropy_ctx(tx_size);
@@ -2383,8 +2379,6 @@ static inline void try_tx_block_no_split(
     update_txk_array(xd, blk_row, blk_col, tx_size, DCT_DCT);
   }
   rd_stats->skip_txfm = pick_skip_txfm;
-  set_blk_skip(x->txfm_search_info.blk_skip, 0, blk_row * bw + blk_col,
-               pick_skip_txfm);
 
   if (tx_size > TX_4X4 && depth < MAX_VARTX_DEPTH)
     rd_stats->rate += x->mode_costs.txfm_partition_cost[txfm_partition_ctx][0];
@@ -2640,9 +2634,6 @@ static inline void select_tx_block(
     }
     mbmi->tx_size = tx_size;
     update_txk_array(xd, blk_row, blk_col, tx_size, no_split.tx_type);
-    const int bw = mi_size_wide[plane_bsize];
-    set_blk_skip(x->txfm_search_info.blk_skip, 0, blk_row * bw + blk_col,
-                 rd_stats->skip_txfm);
   } else {
     *rd_stats = split_rd_stats;
     if (split_rd_stats.rdcost == INT64_MAX) *is_cost_valid = 0;
@@ -2935,13 +2926,11 @@ static inline void choose_tx_size_type_from_rd(const AV1_COMP *const cpi,
   }
 
   uint8_t best_txk_type_map[MAX_MIB_SIZE * MAX_MIB_SIZE];
-  uint8_t best_blk_skip[MAX_MIB_SIZE * MAX_MIB_SIZE];
   TX_SIZE best_tx_size = max_rect_tx_size;
   int64_t best_rd = INT64_MAX;
   const int num_blks = bsize_to_num_blk(bs);
   x->rd_model = FULL_TXFM_RD;
   int64_t rd[MAX_TX_DEPTH + 1] = { INT64_MAX, INT64_MAX, INT64_MAX };
-  TxfmSearchInfo *txfm_info = &x->txfm_search_info;
   for (int tx_size = start_tx, depth = init_depth; depth <= MAX_TX_DEPTH;
        depth++, tx_size = sub_tx_size_map[tx_size]) {
     if ((!cpi->oxcf.txfm_cfg.enable_tx64 &&
@@ -2972,7 +2961,6 @@ static inline void choose_tx_size_type_from_rd(const AV1_COMP *const cpi,
     rd[depth] = uniform_txfm_yrd(cpi, x, &this_rd_stats, rd_thresh, bs, tx_size,
                                  FTXS_NONE);
     if (rd[depth] < best_rd) {
-      av1_copy_array(best_blk_skip, txfm_info->blk_skip, num_blks);
       av1_copy_array(best_txk_type_map, xd->tx_type_map, num_blks);
       best_tx_size = tx_size;
       best_rd = rd[depth];
@@ -2990,7 +2978,6 @@ static inline void choose_tx_size_type_from_rd(const AV1_COMP *const cpi,
   if (rd_stats->rate != INT_MAX) {
     mbmi->tx_size = best_tx_size;
     av1_copy_array(xd->tx_type_map, best_txk_type_map, num_blks);
-    av1_copy_array(txfm_info->blk_skip, best_blk_skip, num_blks);
   }
 
 #if !CONFIG_REALTIME_ONLY
@@ -3056,16 +3043,6 @@ static inline void block_rd_txfm(int plane, int block, int blk_row, int blk_col,
   update_txb_coeff_cost(&this_rd_stats, plane, this_rd_stats.rate);
 #endif  // CONFIG_RD_DEBUG
   av1_set_txb_context(x, plane, block, tx_size, a, l);
-
-  const int blk_idx =
-      blk_row * (block_size_wide[plane_bsize] >> MI_SIZE_LOG2) + blk_col;
-
-  TxfmSearchInfo *txfm_info = &x->txfm_search_info;
-  if (plane == 0)
-    set_blk_skip(txfm_info->blk_skip, plane, blk_idx,
-                 x->plane[plane].eobs[block] == 0);
-  else
-    set_blk_skip(txfm_info->blk_skip, plane, blk_idx, 0);
 
   int64_t rd;
   if (is_inter) {
@@ -3249,21 +3226,17 @@ static inline void tx_block_yrd(const AV1_COMP *cpi, MACROBLOCK *x, int blk_row,
     rd_stats->zero_rate = zero_blk_rate;
     tx_type_rd(cpi, x, tx_size, blk_row, blk_col, block, plane_bsize, &txb_ctx,
                rd_stats, ftxs_mode, ref_best_rd);
-    const int mi_width = mi_size_wide[plane_bsize];
-    TxfmSearchInfo *txfm_info = &x->txfm_search_info;
     if (RDCOST(x->rdmult, rd_stats->rate, rd_stats->dist) >=
             RDCOST(x->rdmult, zero_blk_rate, rd_stats->sse) ||
         rd_stats->skip_txfm == 1) {
       rd_stats->rate = zero_blk_rate;
       rd_stats->dist = rd_stats->sse;
       rd_stats->skip_txfm = 1;
-      set_blk_skip(txfm_info->blk_skip, 0, blk_row * mi_width + blk_col, 1);
       x->plane[0].eobs[block] = 0;
       x->plane[0].txb_entropy_ctx[block] = 0;
       update_txk_array(xd, blk_row, blk_col, tx_size, DCT_DCT);
     } else {
       rd_stats->skip_txfm = 0;
-      set_blk_skip(txfm_info->blk_skip, 0, blk_row * mi_width + blk_col, 0);
     }
     if (tx_size > TX_4X4 && depth < MAX_VARTX_DEPTH)
       rd_stats->rate += x->mode_costs.txfm_partition_cost[ctx][0];
@@ -3783,8 +3756,6 @@ int av1_txfm_search(const AV1_COMP *cpi, MACROBLOCK *x, BLOCK_SIZE bsize,
   } else {
     av1_pick_uniform_tx_size_type_yrd(cpi, x, rd_stats_y, bsize, rd_thresh);
     memset(mbmi->inter_tx_size, mbmi->tx_size, sizeof(mbmi->inter_tx_size));
-    for (int i = 0; i < xd->height * xd->width; ++i)
-      set_blk_skip(x->txfm_search_info.blk_skip, 0, i, rd_stats_y->skip_txfm);
   }
 
   if (rd_stats_y->rate == INT_MAX) return 0;

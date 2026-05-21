@@ -138,7 +138,7 @@ export class SourceMap {
 
   readonly #debugId?: DebugId;
 
-  scopesFallbackPromiseForTest?: Promise<unknown>;
+  #scopesFallbackPromise?: Promise<void>;
 
   /**
    * Implements Source Map V3 model. See https://github.com/google/closure-compiler/wiki/Source-Maps
@@ -225,6 +225,11 @@ export class SourceMap {
     return this.#scopesInfo !== null && !this.#scopesInfo.isEmpty();
   }
 
+  waitForScopeInfo(): Promise<void> {
+    this.#ensureSourceMapProcessed();
+    return this.#scopesFallbackPromise ?? Promise.resolve();
+  }
+
   findEntry(lineNumber: number, columnNumber: number, inlineFrameIndex?: number): SourceMapEntry|null {
     this.#ensureSourceMapProcessed();
     if (inlineFrameIndex && this.#scopesInfo !== null) {
@@ -250,6 +255,15 @@ export class SourceMap {
     const index = Platform.ArrayUtilities.upperBound(
         mappings, undefined, (_, entry) => lineNumber - entry.lineNumber || columnNumber - entry.columnNumber);
     return index ? mappings[index - 1] : null;
+  }
+
+  /** Returns the entry at the given position but only if an entry exists for that exact position */
+  findEntryExact(lineNumber: number, columnNumber: number): SourceMapEntry|null {
+    const entry = this.findEntry(lineNumber, columnNumber);
+    if (entry?.lineNumber === lineNumber && entry.columnNumber === columnNumber) {
+      return entry;
+    }
+    return null;
   }
 
   findEntryRanges(lineNumber: number, columnNumber: number): {
@@ -411,7 +425,7 @@ export class SourceMap {
       try {
         this.eachSection(this.parseMap.bind(this));
         if (!this.hasScopeInfo()) {
-          this.scopesFallbackPromiseForTest = this.#buildScopesFallback().then(info => {
+          this.#scopesFallbackPromise = this.#buildScopesFallback().then(info => {
             this.#scopesInfo = info;
           });
         }
@@ -564,7 +578,7 @@ export class SourceMap {
           lineNumber, columnNumber, sourceIndex, sourceURL, sourceLineNumber, sourceColumnNumber, names[nameIndex]));
     }
 
-    if (Root.Runtime.experiments.isEnabled(Root.Runtime.ExperimentName.USE_SOURCE_MAP_SCOPES)) {
+    if (Root.Runtime.experiments.isEnabled(Root.ExperimentNames.ExperimentName.USE_SOURCE_MAP_SCOPES)) {
       if (!this.#scopesInfo) {
         this.#scopesInfo = new SourceMapScopesInfo(this, {scopes: [], ranges: []});
       }
@@ -754,15 +768,6 @@ export class SourceMap {
   compatibleForURL(sourceURL: Platform.DevToolsPath.UrlString, other: SourceMap): boolean {
     return this.embeddedContentByURL(sourceURL) === other.embeddedContentByURL(sourceURL) &&
         this.hasIgnoreListHint(sourceURL) === other.hasIgnoreListHint(sourceURL);
-  }
-
-  expandCallFrame(frame: CallFrame): CallFrame[] {
-    this.#ensureSourceMapProcessed();
-    if (this.#scopesInfo === null) {
-      return [frame];
-    }
-
-    return this.#scopesInfo.expandCallFrame(frame);
   }
 
   resolveScopeChain(frame: CallFrame): ScopeChainEntry[]|null {

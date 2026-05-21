@@ -30,7 +30,9 @@
 
 namespace dawn::wire::server {
 
-CallbackUserdata::CallbackUserdata(const std::weak_ptr<Server>& server) : server(server) {}
+CallbackUserdata::CallbackUserdata(const std::weak_ptr<Server>& server,
+                                   std::shared_ptr<const DawnProcTable>& procs)
+    : server(server), procs(procs) {}
 
 // static
 std::shared_ptr<Server> Server::Create(const DawnProcTable& procs,
@@ -59,10 +61,10 @@ Server::Server(const DawnProcTable& procs,
 }
 
 Server::~Server() {
-    // Un-set the error and lost callbacks since we cannot forward them
-    // after the server has been destroyed.
+    // Destroy all the devices to un-set the error and lost callbacks since we cannot forward
+    // them after the server has been destroyed.
     for (WGPUDevice device : GetAllDeviceHandles()) {
-        ClearDeviceCallbacks(device);
+        mProcs->deviceDestroy(device);
     }
     DestroyAllObjects();
 }
@@ -86,7 +88,7 @@ WireResult Server::InjectBuffer(WGPUBuffer buffer,
 
     // The Buffer is externally owned so it shouldn't be destroyed when we receive a destroy
     // message from the client. Add a reference to counterbalance the eventual release.
-    mProcs.bufferAddRef(buffer);
+    mProcs->bufferAddRef(buffer);
 
     return WireResult::Success;
 }
@@ -110,7 +112,7 @@ WireResult Server::InjectTexture(WGPUTexture texture,
 
     // The texture is externally owned so it shouldn't be destroyed when we receive a destroy
     // message from the client. Add a reference to counterbalance the eventual release.
-    mProcs.textureAddRef(texture);
+    mProcs->textureAddRef(texture);
 
     return WireResult::Success;
 }
@@ -134,7 +136,7 @@ WireResult Server::InjectSurface(WGPUSurface surface,
 
     // The surface is externally owned so it shouldn't be destroyed when we receive a destroy
     // message from the client. Add a reference to counterbalance the eventual release.
-    mProcs.surfaceAddRef(surface);
+    mProcs->surfaceAddRef(surface);
 
     return WireResult::Success;
 }
@@ -150,7 +152,7 @@ WireResult Server::InjectInstance(WGPUInstance instance, const Handle& handle) {
 
     // The instance is externally owned so it shouldn't be destroyed when we receive a destroy
     // message from the client. Add a reference to counterbalance the eventual release.
-    mProcs.instanceAddRef(instance);
+    mProcs->instanceAddRef(instance);
 
     return WireResult::Success;
 }
@@ -169,22 +171,16 @@ void Server::Flush() {
     }
 }
 
-namespace {
-static constexpr WGPULoggingCallbackInfo kEmptyLoggingCallbackInfo = {nullptr, nullptr, nullptr,
-                                                                      nullptr};
-}  // namespace
-
 void Server::SetForwardingDeviceCallbacks(Known<WGPUDevice> device) {
     // Note: these callbacks are manually inlined here since they do not acquire and
     // free their userdata. Also unlike other callbacks, these are cleared and unset when
     // the server is destroyed, so we don't need to check if the server is still alive
     // inside them.
-    // Also, the device is special-cased in Server::DoUnregisterObject to call
-    // ClearDeviceCallbacks. This ensures that callbacks will not fire after |deviceObject|
-    // is freed.
+    // Also, the device is special-cased in Server::DoUnregisterObject to call Destroy.
+    // This ensures that callbacks will not fire after |deviceObject| is freed.
 
     // Set callback to post warning and other information to client.
-    mProcs.deviceSetLoggingCallback(
+    mProcs->deviceSetLoggingCallback(
         device->handle, {nullptr,
                          [](WGPULoggingType type, WGPUStringView message, void* userdata, void*) {
                              DeviceInfo* info = static_cast<DeviceInfo*>(userdata);
@@ -192,11 +188,6 @@ void Server::SetForwardingDeviceCallbacks(Known<WGPUDevice> device) {
                              info->server->Flush();
                          },
                          device->info.get(), nullptr});
-}
-
-void Server::ClearDeviceCallbacks(WGPUDevice device) {
-    // Un-set the logging callback since we cannot forward them after the server has been destroyed.
-    mProcs.deviceSetLoggingCallback(device, kEmptyLoggingCallbackInfo);
 }
 
 }  // namespace dawn::wire::server

@@ -54,7 +54,7 @@ kernel void entry() {
 }
 )");
 
-    EXPECT_THAT(output_.workgroup_info.allocations, testing::ElementsAre());
+    EXPECT_THAT(output_.workgroup_allocations, testing::ElementsAre());
 }
 
 TEST_F(MslWriterTest, WorkgroupAllocations) {
@@ -67,7 +67,7 @@ TEST_F(MslWriterTest, WorkgroupAllocations) {
     b.Append(foo->Block(), [&] {
         auto* load_a = b.Load(var_a);
         auto* load_b = b.Load(var_b);
-        b.Store(var_a, b.Add<i32>(load_a, load_b));
+        b.Store(var_a, b.Add(load_a, load_b));
         b.Return(foo);
     });
 
@@ -101,7 +101,7 @@ kernel void entry(uint tint_local_index [[thread_index_in_threadgroup]], threadg
 }
 )");
 
-    EXPECT_THAT(output_.workgroup_info.allocations, testing::ElementsAre(8u));
+    EXPECT_THAT(output_.workgroup_allocations, testing::ElementsAre(8u));
 }
 
 TEST_F(MslWriterTest, NeedsStorageBufferSizes_False) {
@@ -211,11 +211,10 @@ kernel void entry(device tint_array<uint, 1>* a [[buffer(0)]], const constant ti
 }
 
 TEST_F(MslWriterTest, StripAllNames) {
-    auto* str =
-        ty.Struct(mod.symbols.New("MyStruct"), {
-                                                   {mod.symbols.Register("a"), ty.i32()},
-                                                   {mod.symbols.Register("b"), ty.vec4<i32>()},
-                                               });
+    auto* str = ty.Struct(mod.symbols.New("MyStruct"), {
+                                                           {mod.symbols.Register("a"), ty.i32()},
+                                                           {mod.symbols.Register("b"), ty.vec4i()},
+                                                       });
     auto* foo = b.Function("foo", ty.u32());
     auto* param = b.FunctionParam("param", ty.u32());
     foo->AppendParam(param);
@@ -264,7 +263,7 @@ kernel void tint_entry_point(uint v_7 [[thread_index_in_threadgroup]]) {
 }
 
 TEST_F(MslWriterTest, VertexPulling) {
-    auto* ep = b.Function("entry", ty.vec4<f32>(), core::ir::Function::PipelineStage::kVertex);
+    auto* ep = b.Function("entry", ty.vec4f(), core::ir::Function::PipelineStage::kVertex);
     ep->SetReturnBuiltin(core::BuiltinValue::kPosition);
     auto* attr = b.FunctionParam<vec4<f32>>("attr");
     attr->SetLocation(1);

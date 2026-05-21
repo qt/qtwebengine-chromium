@@ -89,6 +89,7 @@ enum class Command {
     SetImmediates,
     SetIndexBuffer,
     SetVertexBuffer,
+    SetResourceTable,
     WriteBuffer,
     WriteTimestamp,
 };
@@ -156,6 +157,7 @@ struct RenderPassDepthStencilAttachmentInfo {
 };
 
 struct ResolveRect {
+    // TODO(https://issues.chromium.org/424536624): Use TexelCount instead of uint32_t.
     uint32_t colorOffsetX = 0;
     uint32_t colorOffsetY = 0;
     uint32_t resolveOffsetX = 0;
@@ -178,10 +180,12 @@ struct BeginRenderPassCmd {
     std::array<RenderPassStorageAttachmentInfo, kMaxPLSSlots> storageAttachments;
 
     // Cache the width and height of all attachments for convenience
+    // TODO(https://issues.chromium.org/424536624): Use TexelCount instead of uint32_t.
     uint32_t width;
     uint32_t height;
     // Used for partial resolve
     ResolveRect resolveRect;
+    bool msaaRenderToSingleSampled = false;
 
     Ref<QuerySetBase> occlusionQuerySet;
     TimestampWrites timestampWrites;
@@ -227,18 +231,21 @@ struct CopyBufferToBufferCmd {
 struct CopyBufferToTextureCmd {
     BufferCopy source;
     TextureCopy destination;
+    // TODO(https://issues.chromium.org/424536624): Use BlockCount instead of TexelCount.
     TexelExtent3D copySize;
 };
 
 struct CopyTextureToBufferCmd {
     TextureCopy source;
     BufferCopy destination;
+    // TODO(https://issues.chromium.org/424536624): Use BlockCount instead of TexelCount.
     TexelExtent3D copySize;
 };
 
 struct CopyTextureToTextureCmd {
     TextureCopy source;
     TextureCopy destination;
+    // TODO(https://issues.chromium.org/424536624): Use BlockCount instead of TexelCount.
     TexelExtent3D copySize;
 };
 
@@ -391,8 +398,8 @@ struct SetImmediatesCmd {
     SetImmediatesCmd();
     ~SetImmediatesCmd();
 
-    uint64_t offset;
-    uint64_t size;
+    uint32_t offset;
+    uint32_t size;
 };
 
 struct SetIndexBufferCmd {
@@ -413,6 +420,13 @@ struct SetVertexBufferCmd {
     Ref<BufferBase> buffer;
     uint64_t offset;
     uint64_t size;
+};
+
+struct SetResourceTableCmd {
+    SetResourceTableCmd();
+    ~SetResourceTableCmd();
+
+    Ref<ResourceTableBase> table;
 };
 
 struct WriteBufferCmd {

@@ -83,6 +83,48 @@ CONVERSION_NODE_LIST(ASSERT_IS_CONV)
 
 }  // namespace
 
+void ValueNode::AddDeoptUse(const VirtualObjectList& virtual_objects) {
+  DCHECK(!Is<VirtualObject>());
+  if (InlinedAllocation* alloc = TryCast<InlinedAllocation>()) {
+    VirtualObject* vobject = virtual_objects.FindAllocatedWith(alloc);
+    if (vobject) {
+      vobject->AddDeoptUse(virtual_objects);
+      // Add an escaping use for the allocation.
+      alloc->AddNonEscapingUses(1);
+    }
+    alloc->add_use();
+  } else {
+    add_use();
+  }
+}
+
+void VirtualObject::AddDeoptUse(const VirtualObjectList& virtual_objects) {
+  ForEachSlot([&](ValueNode* value, vobj::Field desc) -> bool {
+    if (InlinedAllocation* nested_allocation =
+            value->TryCast<InlinedAllocation>()) {
+      VirtualObject* nested_object =
+          virtual_objects.FindAllocatedWith(nested_allocation);
+      if (nested_object == nullptr) {
+        CHECK(v8_flags.turbolev_non_eager_inlining ||
+              v8_flags.maglev_non_eager_inlining);
+        // The nested object must have been created by a different inlining
+        // and we cannot see it here in the virtual object list.
+        // TODO(victorgomes): Propagate somehow virtual object lists? For
+        // now, we force the allocation to escape.
+        nested_allocation->ForceEscaping();
+      } else {
+        nested_object->AddDeoptUse(virtual_objects);
+      }
+    } else if (!IsConstantNode(value->opcode()) &&
+               value->opcode() != Opcode::kArgumentsElements &&
+               value->opcode() != Opcode::kArgumentsLength &&
+               value->opcode() != Opcode::kRestLength) {
+      value->AddDeoptUse(virtual_objects);
+    }
+    return true;
+  });
+}
+
 #ifdef DEBUG
 
 void NodeBase::CheckCanOverwriteWith(Opcode new_opcode,
@@ -149,12 +191,28 @@ std::ostream& operator<<(std::ostream& os, UseRepresentation repr) {
       return os << "TruncatedInt32";
     case UseRepresentation::kUint32:
       return os << "Uint32";
-    case UseRepresentation::kShiftedInt53:
-      return os << "ShiftedInt53";
     case UseRepresentation::kFloat64:
       return os << "Float64";
     case UseRepresentation::kHoleyFloat64:
       return os << "HoleyFloat64";
+  }
+}
+
+std::ostream& operator<<(std::ostream& os, NumberConversionMode mode) {
+  switch (mode) {
+    case NumberConversionMode::kForceHeapNumber:
+      return os << "kForceHeapNumber";
+    case NumberConversionMode::kCanonicalizeSmi:
+      return os << "kCanonicalizeSmi";
+  }
+}
+
+std::ostream& operator<<(std::ostream& os, const StringEqualInputMode mode) {
+  switch (mode) {
+    case StringEqualInputMode::kOnlyStrings:
+      return os << "kOnlyStrings";
+    case StringEqualInputMode::kStringsOrOddballs:
+      return os << "kStringsOrOddballs";
   }
 }
 
@@ -199,6 +257,19 @@ void Phi::SetUseRequires31BitValue() {
     DCHECK(input_node);
     if (auto phi = input_node->TryCast<Phi>()) {
       phi->SetUseRequires31BitValue();
+    }
+  }
+}
+void Phi::SetUseRequiresHeapObject() {
+  if (uses_require_heap_object()) return;
+  set_uses_require_heap_object();
+  auto inputs =
+      is_loop_phi() ? merge_state_->predecessors_so_far() : input_count();
+  for (uint32_t i = 0; i < inputs; ++i) {
+    ValueNode* input_node = input(i).node();
+    DCHECK(input_node);
+    if (auto phi = input_node->TryCast<Phi>()) {
+      phi->SetUseRequiresHeapObject();
     }
   }
 }
@@ -254,18 +325,23 @@ void PrintResult(std::ostream& os, const ValueNode* node,
          << node_info->live_range().end << "]";
     }
   } else {
-    os << ", " << node->use_count() << " uses";
-    if (const InlinedAllocation* alloc = node->TryCast<InlinedAllocation>()) {
-      os << " (" << alloc->non_escaping_use_count() << " non escaping uses)";
-      if (alloc->HasBeenAnalysed() && alloc->HasBeenElided()) {
-        os << " 🪦";
-      }
-    } else if (!node->is_used()) {
-      if (node->opcode() != Opcode::kAllocationBlock &&
-          node->properties().is_required_when_unused()) {
-        os << ", but required";
-      } else {
-        os << " 🪦";
+    if (node->unused_inputs_were_visited()) {
+      // This node is dead, node sweeper will remove it.
+      os << "🪦";
+    } else {
+      os << ", " << node->use_count() << " uses";
+      if (const InlinedAllocation* alloc = node->TryCast<InlinedAllocation>()) {
+        os << " (" << alloc->non_escaping_use_count() << " non escaping uses)";
+        if (alloc->HasBeenAnalysed() && alloc->HasBeenElided()) {
+          os << " 🪦";
+        }
+      } else if (!node->is_used()) {
+        if (node->opcode() != Opcode::kAllocationBlock &&
+            node->properties().is_required_when_unused()) {
+          os << ", but required";
+        } else {
+          os << " 🪦";
+        }
       }
     }
     // Don't print to tagged nodes, nor to nodes that we bypass the flag.
@@ -581,14 +657,17 @@ NodeType ValueNode::GetStaticType(compiler::JSHeapBroker* broker) {
     case ValueRepresentation::kUint32:
     case ValueRepresentation::kFloat64:
     case ValueRepresentation::kIntPtr:
-    case ValueRepresentation::kShiftedInt53:
       return NodeType::kNumber;
     case ValueRepresentation::kHoleyFloat64:
       return NodeType::kNumberOrOddball;
     case ValueRepresentation::kTagged:
       break;
-    case ValueRepresentation::kRawPtr:
     case ValueRepresentation::kNone:
+      if (opcode() == Opcode::kIdentity) {
+        return UnwrapIdentities()->GetStaticType(broker);
+      }
+      [[fallthrough]];
+    case ValueRepresentation::kRawPtr:
       UNREACHABLE();
   }
   switch (opcode()) {
@@ -692,7 +771,7 @@ ValueRepresentation ToValueRepresentation(MachineType type) {
 }
 
 void NodeBase::CheckInputIs(int i, ValueRepresentation expected) const {
-  const ValueNode* inp = input(i).node();
+  const ValueNode* inp = input(i).node()->UnwrapIdentities();
   DCHECK(!inp->Is<Identity>());
   ValueRepresentation got = inp->properties().value_representation();
   bool valid = ValueRepresentationIs(got, expected);
@@ -741,7 +820,6 @@ void Phi::VerifyInputs() const {
     CASE_REPR(Tagged)
     CASE_REPR(Int32)
     CASE_REPR(Uint32)
-    CASE_REPR(ShiftedInt53)
     CASE_REPR(Float64)
     CASE_REPR(HoleyFloat64)
 #undef CASE_REPR
@@ -906,11 +984,6 @@ DirectHandle<Object> Uint32Constant::DoReify(LocalIsolate* isolate) const {
   return isolate->factory()->NewNumberFromUint<AllocationType::kOld>(value());
 }
 
-DirectHandle<Object> ShiftedInt53Constant::DoReify(
-    LocalIsolate* isolate) const {
-  UNREACHABLE();
-}
-
 DirectHandle<Object> IntPtrConstant::DoReify(LocalIsolate* isolate) const {
   return isolate->factory()->NewNumberFromInt64<AllocationType::kOld>(value());
 }
@@ -1035,11 +1108,6 @@ void Uint32Constant::DoLoadToRegister(MaglevAssembler* masm,
   __ Move(reg, value());
 }
 
-void ShiftedInt53Constant::DoLoadToRegister(MaglevAssembler* masm,
-                                            Register reg) const {
-  UNREACHABLE();
-}
-
 void IntPtrConstant::DoLoadToRegister(MaglevAssembler* masm,
                                       Register reg) const {
   __ Move(reg, value());
@@ -1081,20 +1149,6 @@ void TrustedConstant::DoLoadToRegister(MaglevAssembler* masm,
 TURBOLEV_VALUE_NODE_LIST(TURBOLEV_UNREACHABLE_NODE)
 TURBOLEV_NON_VALUE_NODE_LIST(TURBOLEV_UNREACHABLE_NODE)
 
-TURBOLEV_UNREACHABLE_NODE(CheckedShiftedInt53ToInt32)
-TURBOLEV_UNREACHABLE_NODE(CheckedShiftedInt53ToUint32)
-TURBOLEV_UNREACHABLE_NODE(CheckedIntPtrToShiftedInt53)
-TURBOLEV_UNREACHABLE_NODE(CheckedHoleyFloat64ToShiftedInt53)
-TURBOLEV_UNREACHABLE_NODE(UnsafeSmiTagShiftedInt53)
-TURBOLEV_UNREACHABLE_NODE(CheckedNumberToShiftedInt53)
-TURBOLEV_UNREACHABLE_NODE(CheckedSmiTagShiftedInt53)
-TURBOLEV_UNREACHABLE_NODE(ShiftedInt53ToNumber)
-TURBOLEV_UNREACHABLE_NODE(ChangeInt32ToShiftedInt53)
-TURBOLEV_UNREACHABLE_NODE(ChangeUint32ToShiftedInt53)
-TURBOLEV_UNREACHABLE_NODE(ChangeShiftedInt53ToFloat64)
-TURBOLEV_UNREACHABLE_NODE(ChangeShiftedInt53ToHoleyFloat64)
-TURBOLEV_UNREACHABLE_NODE(ShiftedInt53ToBoolean)
-
 TURBOLEV_UNREACHABLE_NODE(AssertRangeInt32)
 TURBOLEV_UNREACHABLE_NODE(AssertRangeFloat64)
 
@@ -1117,12 +1171,6 @@ void Int32Constant::GenerateCode(MaglevAssembler* masm,
 void Uint32Constant::SetValueLocationConstraints() { DefineAsConstant(this); }
 void Uint32Constant::GenerateCode(MaglevAssembler* masm,
                                   const ProcessingState& state) {}
-
-void ShiftedInt53Constant::SetValueLocationConstraints() { UNREACHABLE(); }
-void ShiftedInt53Constant::GenerateCode(MaglevAssembler* masm,
-                                        const ProcessingState& state) {
-  UNREACHABLE();
-}
 
 void IntPtrConstant::SetValueLocationConstraints() { DefineAsConstant(this); }
 void IntPtrConstant::GenerateCode(MaglevAssembler* masm,
@@ -1402,14 +1450,13 @@ constexpr Builtin BuiltinFor(Operation operation) {
     return Builtin::k##name##_WithFeedback;
     ARITHMETIC_OPERATION_LIST(BUILTIN_NAME_CASE)
     UNARY_OPERATION_LIST(BUILTIN_NAME_CASE)
-    BUILTIN_NAME_CASE(Equal)
-    BUILTIN_NAME_CASE(LessThan)
-    BUILTIN_NAME_CASE(LessThanOrEqual)
-    BUILTIN_NAME_CASE(GreaterThan)
-    BUILTIN_NAME_CASE(GreaterThanOrEqual)
 #undef BUILTIN_NAME_CASE
-    case Operation::kStrictEqual:
-      return Builtin::kStrictEqual_WithEmbeddedFeedback;
+
+#define BUILTIN_WITH_EMBEDDED_FEEDBACK_NAME_CASE(name) \
+  case Operation::k##name:                             \
+    return Builtin::k##name##_WithEmbeddedFeedback;
+    COMPARISON_OPERATION_LIST(BUILTIN_WITH_EMBEDDED_FEEDBACK_NAME_CASE)
+#undef BUILTIN_WITH_EMBEDDED_FEEDBACK_NAME_CASE
     default:
       UNREACHABLE();
   }
@@ -3740,6 +3787,22 @@ void CheckInt32Condition::GenerateCode(MaglevAssembler* masm,
                            NegateCondition(ToCondition(condition())), fail);
 }
 
+int CheckMaglevType::MaxCallStackArgs() const {
+  using D = CallInterfaceDescriptorFor<Builtin::kCheckMaglevType>::type;
+  return D::GetStackParameterCount();
+}
+
+void CheckMaglevType::SetValueLocationConstraints() {
+  using D = CallInterfaceDescriptorFor<Builtin::kCheckMaglevType>::type;
+  UseFixed(ValueInput(), D::GetRegisterParameter(0));
+}
+
+void CheckMaglevType::GenerateCode(MaglevAssembler* masm,
+                                   const ProcessingState& state) {
+  __ CallBuiltin<Builtin::kCheckMaglevType>(ValueInput(),
+                                            Smi::FromEnum(expected_type_));
+}
+
 int StoreContextSlotWithWriteBarrier::MaxCallStackArgs() const {
   return WriteBarrierDescriptor::GetStackParameterCount();
 }
@@ -5036,27 +5099,31 @@ void Int32ToNumber::GenerateCode(MaglevAssembler* masm,
   if (input_output_alias) {
     res = temps.AcquireScratch();
   }
-  __ SmiTagInt32AndJumpIfFail(
-      res, value,
-      __ MakeDeferredCode(
-          [](MaglevAssembler* masm, Register object, Register value,
-             Register scratch, ZoneLabelRef done, Int32ToNumber* node) {
-            MaglevAssembler::TemporaryRegisterScope temps(masm);
-            // AllocateHeapNumber needs a scratch register, and the res scratch
-            // register isn't needed anymore, so return it to the pool.
-            if (scratch.is_valid()) {
-              temps.IncludeScratch(scratch);
-            }
-            DoubleRegister double_value = temps.AcquireScratchDouble();
-            __ Int32ToDouble(double_value, value);
-            __ AllocateHeapNumber(node->register_snapshot(), object,
-                                  double_value);
-            __ Jump(*done);
-          },
-          object, value, input_output_alias ? res : Register::no_reg(), done,
-          this));
-  if (input_output_alias) {
-    __ Move(object, res);
+
+  auto allocate_heap_number = __ MakeDeferredCode(
+      [](MaglevAssembler* masm, Register object, Register value,
+         Register scratch, ZoneLabelRef done, Int32ToNumber* node) {
+        MaglevAssembler::TemporaryRegisterScope temps(masm);
+        // AllocateHeapNumber needs a scratch register, and the res scratch
+        // register isn't needed anymore, so return it to the pool.
+        if (scratch.is_valid()) {
+          temps.IncludeScratch(scratch);
+        }
+        DoubleRegister double_value = temps.AcquireScratchDouble();
+        __ Int32ToDouble(double_value, value);
+        __ AllocateHeapNumber(node->register_snapshot(), object, double_value);
+        __ Jump(*done);
+      },
+      object, value, input_output_alias ? res : Register::no_reg(), done, this);
+
+  if (force_heap_number()) {
+    __ Jump(allocate_heap_number);
+  } else {
+    __ SmiTagInt32AndJumpIfFail(res, value, allocate_heap_number);
+
+    if (input_output_alias) {
+      __ Move(object, res);
+    }
   }
   __ bind(*done);
 }
@@ -5442,6 +5509,77 @@ void StringLength::SetValueLocationConstraints() {
 void StringLength::GenerateCode(MaglevAssembler* masm,
                                 const ProcessingState& state) {
   __ StringLength(ToRegister(result()), ToRegister(StringInput()));
+}
+
+void StringSlice::SetValueLocationConstraints() {
+  using D = StringSubstringDescriptor;
+  UseFixed(StringInput(), D::GetRegisterParameter(D::kString));
+  UseAndClobberFixed(StartIndexInput(), D::GetRegisterParameter(D::kFrom));
+  UseAndClobberFixed(EndIndexInput(), D::GetRegisterParameter(D::kTo));
+  DefineAsFixed(this, kReturnRegister0);
+  set_temporaries_needed(1);
+}
+
+void StringSlice::GenerateCode(MaglevAssembler* masm,
+                               const ProcessingState& state) {
+  Register string = ToRegister(StringInput());
+  Register start = ToRegister(StartIndexInput());
+  Register end = ToRegister(EndIndexInput());
+
+  MaglevAssembler::TemporaryRegisterScope temps(masm);
+  Register length = temps.Acquire();
+
+  __ StringLength(length, string);
+
+  // Calculate relative start.
+  {
+    Label is_neg, done;
+    __ CompareInt32AndJumpIf(start, 0, kLessThan, &is_neg);
+
+    // start >= 0
+    __ CompareInt32AndJumpIf(start, length, kLessThan, &done);
+    __ Move(start, length);
+    __ Jump(&done);
+
+    __ bind(&is_neg);
+    // start < 0
+    __ AddInt32(start, length);
+    __ CompareInt32AndJumpIf(start, 0, kGreaterThanEqual, &done);
+    __ Move(start, 0);
+
+    __ bind(&done);
+  }
+
+  {
+    Label is_neg, done;
+    __ CompareInt32AndJumpIf(end, 0, kLessThan, &is_neg);
+
+    // end >= 0
+    __ CompareInt32AndJumpIf(end, length, kLessThan, &done);
+    __ Move(end, length);
+    __ Jump(&done);
+
+    __ bind(&is_neg);
+    // end < 0
+    __ AddInt32(end, length);
+    __ CompareInt32AndJumpIf(end, 0, kGreaterThanEqual, &done);
+    __ Move(end, 0);
+
+    __ bind(&done);
+  }
+
+  Label empty_string;
+  __ CompareInt32AndJumpIf(end, start, kLessThanEqual, &empty_string);
+
+  __ CallBuiltin<Builtin::kStringSubstring>(string, start, end);
+
+  Label done_all;
+  __ Jump(&done_all);
+
+  __ bind(&empty_string);
+  __ LoadRoot(kReturnRegister0, RootIndex::kempty_string);
+
+  __ bind(&done_all);
 }
 
 void StringConcat::SetValueLocationConstraints() {
@@ -5888,19 +6026,6 @@ void Float64ToString::GenerateCode(MaglevAssembler* masm,
   masm->DefineLazyDeoptPoint(this->lazy_deopt_info());
 }
 
-void DeoptIfHole::SetValueLocationConstraints() {
-  // MaglevAssembler::IsRootConstant (used in GenerateCode below) does not
-  // support constant inputs (which UseAny allows). Constants should have been
-  // optimized already by MaglevGraphBuilder or MaglevGraphOptimizer.
-  DCHECK(!IsConstantNode(ValueInput().node()->opcode()));
-  UseAny(ValueInput());
-}
-void DeoptIfHole::GenerateCode(MaglevAssembler* masm,
-                               const ProcessingState& state) {
-  __ EmitEagerDeoptIf(__ IsRootConstant(ValueInput(), RootIndex::kTheHoleValue),
-                      DeoptimizeReason::kHole, this);
-}
-
 int ThrowReferenceErrorIfHole::MaxCallStackArgs() const { return 1; }
 void ThrowReferenceErrorIfHole::SetValueLocationConstraints() {
   // MaglevAssembler::IsRootConstant (used in GenerateCode below) does not
@@ -6070,6 +6195,30 @@ void CheckedHoleyFloat64ToInt32::GenerateCode(MaglevAssembler* masm,
   __ TryTruncateDoubleToInt32(
       ToRegister(result()), ToDoubleRegister(ValueInput()),
       __ GetDeoptLabel(this, DeoptimizeReason::kNotInt32));
+}
+
+void CheckedFloat64ToSmiSizedInt32::SetValueLocationConstraints() {
+  UseRegister(ValueInput());
+  DefineAsRegister(this);
+}
+void CheckedFloat64ToSmiSizedInt32::GenerateCode(MaglevAssembler* masm,
+                                                 const ProcessingState& state) {
+  Label* fail = __ GetDeoptLabel(this, DeoptimizeReason::kNotASmi);
+  Register res = ToRegister(result());
+  __ TryTruncateDoubleToInt32(res, ToDoubleRegister(ValueInput()), fail);
+  __ CheckInt32IsSmi(res, fail);
+}
+
+void CheckedHoleyFloat64ToSmiSizedInt32::SetValueLocationConstraints() {
+  UseRegister(ValueInput());
+  DefineAsRegister(this);
+}
+void CheckedHoleyFloat64ToSmiSizedInt32::GenerateCode(
+    MaglevAssembler* masm, const ProcessingState& state) {
+  Label* fail = __ GetDeoptLabel(this, DeoptimizeReason::kNotASmi);
+  Register res = ToRegister(result());
+  __ TryTruncateDoubleToInt32(res, ToDoubleRegister(ValueInput()), fail);
+  __ CheckInt32IsSmi(res, fail);
 }
 
 void UnsafeFloat64ToInt32::SetValueLocationConstraints() {
@@ -6508,6 +6657,7 @@ void CallKnownJSFunction::GenerateCode(MaglevAssembler* masm,
 
     __ CallJSBuiltin(builtin, expected_parameter_count_);
   } else {
+    __ RecordJSDispatchHandle(dispatch_handle_, expected_parameter_count_);
     __ CallJSDispatchEntry(dispatch_handle_, expected_parameter_count_);
   }
   masm->DefineExceptionHandlerAndLazyDeoptPoint(this);
@@ -6586,31 +6736,29 @@ void CallKnownApiFunction::GenerateCallApiCallbackOptimizedInline(
           CallApiCallbackOptimizedDescriptor::ApiFunctionAddressRegister()});
 
   Register scratch = temps.Acquire();
-  Register scratch2 = temps.Acquire();
+  Register undef = temps.Acquire();
 
   using FCA = FunctionCallbackArguments;
   using ER = ExternalReference;
   using FC = ApiCallbackExitFrameConstants;
 
-  static_assert(FCA::kArgsLength == 6);
-  static_assert(FCA::kNewTargetIndex == 5);
-  static_assert(FCA::kTargetIndex == 4);
-  static_assert(FCA::kReturnValueIndex == 3);
-  static_assert(FCA::kContextIndex == 2);
-  static_assert(FCA::kIsolateIndex == 1);
-  static_assert(FCA::kUnusedIndex == 0);
+  static_assert(FCA::kApiArgsLength == 4);
+  static_assert(FCA::ApiArgIndex(FCA::kTargetIndex) == 3);
+  static_assert(FCA::ApiArgIndex(FCA::kContextIndex) == 2);
+  static_assert(FCA::ApiArgIndex(FCA::kReturnValueIndex) == 1);
+  static_assert(FCA::ApiArgIndex(FCA::kIsolateIndex) == 0);
 
-  // Set up FunctionCallbackInfo's implicit_args on the stack as follows:
+  // Set up v8::FunctionCallbackInfo's Api arguments on the stack as follows:
   //
-  // Target state:
-  //   sp[0 * kSystemPointerSize]: kUnused  <= FCA::implicit_args_
-  //   sp[1 * kSystemPointerSize]: kIsolate
-  //   sp[2 * kSystemPointerSize]: kContext
-  //   sp[3 * kSystemPointerSize]: undefined (kReturnValue)
-  //   sp[4 * kSystemPointerSize]: kTarget
-  //   sp[5 * kSystemPointerSize]: undefined (kNewTarget)
-  // Existing state:
-  //   sp[6 * kSystemPointerSize]:          <= FCA:::values_
+  //  Current state            |  Target state
+  // --------------------------+--------------------------------------------
+  //                           |  ...    JS arguments
+  //                           |  sp[4]: receiver        <- kReceiverIndex
+  //                           |  sp[3]: target          <- kTargetIndex
+  //                           |  sp[2]: context         <- kContextIndex
+  //  ...    JS arguments      |  sp[1]: undefined       <- kReturnValueIndex
+  //  sp[0]: receiver          |  sp[0]: isolate         <- kIsolateIndex
+  //
 
   // We do not inline Api calls cross native context, so native_context()
   // is the context here.
@@ -6619,13 +6767,12 @@ void CallKnownApiFunction::GenerateCallApiCallbackOptimizedInline(
                        kContextRegister);
 
   ASM_CODE_COMMENT_STRING(masm, "inlined CallApiCallbackOptimized builtin");
-  __ LoadRoot(scratch, RootIndex::kUndefinedValue);
-  // kNewTarget, kTarget, kReturnValue, kContext
-  __ Push(scratch, i::Cast<HeapObject>(function_template_info_.object()),
-          scratch, kContextRegister);
-  __ Move(scratch2, ER::isolate_address());
-  // kIsolate, kUnused
-  __ Push(scratch2, scratch);
+  __ LoadRoot(undef, RootIndex::kUndefinedValue);
+  __ Move(scratch, ER::isolate_address());
+  __ Push(function_template_info_.object(),  // kTargetIndex
+          kContextRegister,                  // kContextIndex
+          undef,                             // kReturnValue
+          scratch);                          // kIsolateIndex
 
   Register api_function_address =
       CallApiCallbackOptimizedDescriptor::ApiFunctionAddressRegister();
@@ -6648,16 +6795,25 @@ void CallKnownApiFunction::GenerateCallApiCallbackOptimizedInline(
 
   FrameScope frame_scope(masm, StackFrame::MANUAL);
   __ EmitEnterExitFrame(FC::getExtraSlotsCountFrom<ExitFrameConstants>(),
-                        StackFrame::API_CALLBACK_EXIT, api_function_address,
-                        scratch2);
+                        StackFrame::API_CALLBACK_EXIT, scratch);
 
   Register fp = __ GetFramePointer();
 #ifdef V8_TARGET_ARCH_ARM64
+  // LINT.IfChange(Workaround_347741609)
   // This is a workaround for performance regression observed on Apple Silicon
   // (https://crbug.com/347741609): reading argc value after the call via
   //   MemOperand argc_operand = MemOperand(fp, FC::kFCIArgcOffset);
   // is noticeably slower than using sp-based access:
-  MemOperand argc_operand = ExitFrameStackSlotOperand(FCA::kLengthOffset);
+  // TODO(ishell): consider another fix: store argc in C callee saved register
+  // instead of stack slot.
+  constexpr int kArgcOffsetFromSP =
+      FCA::kArgcIndex * kSystemPointerSize +
+      // Optional padding that EnterExitFrame() adds to ensure 16-byte stack
+      // alignment after reservation of the slot for the return PC.
+      ((1 + FC::getExtraSlotsCountFrom<ExitFrameConstants>()) % 2) *
+          kSystemPointerSize;
+  MemOperand argc_operand = ExitFrameStackSlotOperand(kArgcOffsetFromSP);
+  // LINT.ThenChange(/src/builtins/arm64/builtins-arm64.cc:Workaround_347741609)
 #else
   // We don't enable this workaround for other configurations because
   // a) it's not possible to convert fp-based encoding to sp-based one:
@@ -6669,17 +6825,9 @@ void CallKnownApiFunction::GenerateCallApiCallbackOptimizedInline(
 #endif  // V8_TARGET_ARCH_ARM64
   {
     ASM_CODE_COMMENT_STRING(masm, "Initialize v8::FunctionCallbackInfo");
-    // FunctionCallbackInfo::length_.
+    // kArgcIndex
     __ Move(scratch, num_args());  // not including receiver
     __ Move(argc_operand, scratch);
-
-    // FunctionCallbackInfo::implicit_args_.
-    __ LoadAddress(scratch, MemOperand(fp, FC::kImplicitArgsArrayOffset));
-    __ Move(MemOperand(fp, FC::kFCIImplicitArgsOffset), scratch);
-
-    // FunctionCallbackInfo::values_ (points at JS arguments on the stack).
-    __ LoadAddress(scratch, MemOperand(fp, FC::kFirstArgumentOffset));
-    __ Move(MemOperand(fp, FC::kFCIValuesOffset), scratch);
   }
 
   Register function_callback_info_arg = kCArgRegs[0];
@@ -6691,16 +6839,18 @@ void CallKnownApiFunction::GenerateCallApiCallbackOptimizedInline(
   DCHECK(!AreAliased(api_function_address, function_callback_info_arg));
 
   MemOperand return_value_operand = MemOperand(fp, FC::kReturnValueOffset);
-  const int kSlotsToDropOnReturn =
-      FC::kFunctionCallbackInfoArgsLength + kJSArgcReceiverSlots + num_args();
+  const int kSlotsToDropOnReturn = FC::kFunctionCallbackInfoApiArgsLength +
+                                   kJSArgcReceiverSlots + num_args();
 
   const bool with_profiling = false;
   ExternalReference no_thunk_ref;
   Register no_thunk_arg = no_reg;
 
+  const bool handle_interceptor_result = false;
   CallApiFunctionAndReturn(masm, with_profiling, api_function_address,
                            no_thunk_ref, no_thunk_arg, kSlotsToDropOnReturn,
-                           nullptr, return_value_operand);
+                           nullptr, return_value_operand,
+                           handle_interceptor_result);
   __ RecordComment("end of inlined CallApiCallbackOptimized builtin");
 
   __ bind(&done);
@@ -7139,17 +7289,17 @@ void TransitionElementsKindOrCheckMap::GenerateCode(
   __ bind(*done);
 }
 
-void CheckTypedArrayNotDetached::SetValueLocationConstraints() {
+void CheckTypedArrayValid::SetValueLocationConstraints() {
   UseRegister(ValueInput());
   set_temporaries_needed(1);
 }
 
-void CheckTypedArrayNotDetached::GenerateCode(MaglevAssembler* masm,
-                                              const ProcessingState& state) {
+void CheckTypedArrayValid::GenerateCode(MaglevAssembler* masm,
+                                        const ProcessingState& state) {
   MaglevAssembler::TemporaryRegisterScope temps(masm);
   Register object = ToRegister(ValueInput());
   Register scratch = temps.Acquire();
-  __ DeoptIfBufferDetached(object, scratch, this);
+  __ DeoptIfBufferNotValid(object, scratch, access_mode(), this);
 }
 
 void GetContinuationPreservedEmbedderData::SetValueLocationConstraints() {
@@ -7178,6 +7328,18 @@ void SetContinuationPreservedEmbedderData::GenerateCode(
   __ Move(reference, data);
 }
 
+int FulfillPromise::MaxCallStackArgs() const { return 0; }
+
+void FulfillPromise::SetValueLocationConstraints() {
+  using D = FulfillPromiseDescriptor;
+  UseFixed(PromiseInput(), D::GetRegisterParameter(D::kPromise));
+  UseFixed(ValueInput(), D::GetRegisterParameter(D::kValue));
+}
+void FulfillPromise::GenerateCode(MaglevAssembler* masm,
+                                  const ProcessingState& state) {
+  __ Move(kContextRegister, masm->native_context().object());
+  __ CallBuiltin(Builtin::kFulfillPromise);
+}
 namespace {
 
 template <typename ResultReg>
@@ -7976,6 +8138,18 @@ void HandleNoHeapWritesInterrupt::GenerateCode(MaglevAssembler* masm,
 // Print params
 // ---
 
+std::ostream& operator<<(std::ostream& os, CheckType check_type) {
+  switch (check_type) {
+    case CheckType::kOmitHeapObjectCheck:
+      os << "no heapobj check";
+      break;
+    case CheckType::kCheckHeapObject:
+      os << "check heapobj";
+      break;
+  }
+  return os;
+}
+
 void SmiConstant::PrintParams(std::ostream& os) const {
   os << "(" << value() << ")";
 }
@@ -7989,10 +8163,6 @@ void Int32Constant::PrintParams(std::ostream& os) const {
 }
 
 void Uint32Constant::PrintParams(std::ostream& os) const {
-  os << "(" << value() << ")";
-}
-
-void ShiftedInt53Constant::PrintParams(std::ostream& os) const {
   os << "(" << value() << ")";
 }
 
@@ -8107,10 +8277,6 @@ void Abort::PrintParams(std::ostream& os) const {
   os << "(" << GetAbortReason(reason()) << ")";
 }
 
-void AssertInt32::PrintParams(std::ostream& os) const {
-  os << "(" << condition_ << ")";
-}
-
 void AssertRangeInt32::PrintParams(std::ostream& os) const {
   os << "(" << range_ << ")";
 }
@@ -8142,7 +8308,7 @@ void CheckMaps::PrintParams(std::ostream& os) const {
     }
     os << *map.object();
   }
-  os << ")";
+  os << ", " << check_type() << ")";
 }
 
 void CheckMapsWithAlreadyLoadedMap::PrintParams(std::ostream& os) const {
@@ -8211,7 +8377,7 @@ void CheckInstanceType::PrintParams(std::ostream& os) const {
   if (first_instance_type_ != last_instance_type_) {
     os << " - " << last_instance_type_;
   }
-  os << ")";
+  os << ", " << check_type() << ")";
 }
 
 void CheckMapsWithMigration::PrintParams(std::ostream& os) const {
@@ -8228,29 +8394,12 @@ void CheckMapsWithMigration::PrintParams(std::ostream& os) const {
   os << ")";
 }
 
-void CheckInt32Condition::PrintParams(std::ostream& os) const {
-  os << "(" << condition() << ", " << deoptimize_reason() << ")";
+void CheckMaglevType::PrintParams(std::ostream& os) const {
+  os << "(" << expected_type_ << ")";
 }
 
 void StoreContextSlotWithWriteBarrier::PrintParams(std::ostream& os) const {
   os << "(" << index_ << ")";
-}
-
-void CheckedNumberOrOddballToFloat64::PrintParams(std::ostream& os) const {
-  os << "(" << conversion_type() << ")";
-}
-
-void UnsafeNumberOrOddballToFloat64::PrintParams(std::ostream& os) const {
-  os << "(" << conversion_type() << ")";
-}
-
-void TruncateCheckedNumberOrOddballToInt32::PrintParams(
-    std::ostream& os) const {
-  os << "(" << conversion_type() << ")";
-}
-
-void TruncateUnsafeNumberOrOddballToInt32::PrintParams(std::ostream& os) const {
-  os << "(" << conversion_type() << ")";
 }
 
 void LoadTaggedField::PrintParams(std::ostream& os) const {
@@ -8267,6 +8416,9 @@ void LoadTaggedField::PrintParams(std::ostream& os) const {
   }
   if (is_const()) {
     os << ", is_const";
+  }
+  if (load_type() != LoadType::kUnknown) {
+    os << ", " << load_type();
   }
   os << ")";
 }
@@ -8295,6 +8447,7 @@ void LoadFixedArrayElement::PrintParams(std::ostream& os) const {
   } else {
     os << "(compressed)";
   }
+  os << ", " << load_type();
 }
 
 void StoreFloat64::PrintParams(std::ostream& os) const {
@@ -8337,6 +8490,7 @@ void StoreTaggedFieldWithWriteBarrier::PrintParams(std::ostream& os) const {
   if (!property_key().is_none()) {
     os << ": " << property_key();
   }
+  os << ", maybe_smi:" << value_can_be_smi();
   os << ")";
 }
 
@@ -8375,27 +8529,13 @@ void ConstantGapMove::PrintParams(std::ostream& os) const {
   os << " → " << target() << ")";
 }
 
-void Float64Compare::PrintParams(std::ostream& os) const {
-  os << "(" << operation() << ")";
-}
-
 void Float64ToBoolean::PrintParams(std::ostream& os) const {
   if (flip()) {
     os << "(flipped)";
   }
 }
 
-void Int32Compare::PrintParams(std::ostream& os) const {
-  os << "(" << operation() << ")";
-}
-
 void Int32ToBoolean::PrintParams(std::ostream& os) const {
-  if (flip()) {
-    os << "(flipped)";
-  }
-}
-
-void ShiftedInt53ToBoolean::PrintParams(std::ostream& os) const {
   if (flip()) {
     os << "(flipped)";
   }
@@ -8501,10 +8641,6 @@ void CallRuntime::PrintParams(std::ostream& os) const {
   os << "(" << Runtime::FunctionForId(function_id())->name << ")";
 }
 
-void TestTypeOf::PrintParams(std::ostream& os) const {
-  os << "(" << interpreter::TestTypeOfFlags::ToString(literal_) << ")";
-}
-
 void ReduceInterruptBudgetForLoop::PrintParams(std::ostream& os) const {
   os << "(" << amount() << ")";
 }
@@ -8544,10 +8680,6 @@ void ExtendPropertiesBackingStore::PrintParams(std::ostream& os) const {
 
 void AllocateElementsArray::PrintParams(std::ostream& os) const {
   os << "(" << elements_kind_ << ", " << allocation_type_ << ")";
-}
-
-void UnsafeNumberOrOddballToHoleyFloat64::PrintParams(std::ostream& os) const {
-  os << "(" << conversion_type() << ")";
 }
 
 std::optional<int32_t> NodeBase::TryGetInt32ConstantInput(int index) {
@@ -8591,13 +8723,10 @@ VirtualObject::VirtualObject(uint64_t bitfield, uint32_t id,
   }
 #endif  // DEBUG
 
-  // Initialize.
-  // TODO(jgruber): We may want to initialize with some invalid value instead
-  // (nullptr?) since callers should fully initialize objects.
-  ForEachSlot([&](ValueNode*& node, vobj::Field desc) -> bool {
-    set_by_index(desc.slot_index, InitialFieldValue(builder, desc.type));
-    return true;
-  });
+  // Initialize to nullptr; we check against this in BuildInlinedAllocation to
+  // verify that all slots have been initialized by the caller.
+  static_assert(kUninitializedSlotValue == nullptr);
+  memset(slots_.data(), 0, slot_count * sizeof(slots_[0]));
 }
 
 compiler::MapRef VirtualObject::map_from_slot(
@@ -8612,27 +8741,6 @@ compiler::OptionalMapRef VirtualObject::TryGetMapFromSlot(
       get(HeapObject::kMapOffset)->TryGetConstant(broker);
   if (!maybe_constant.has_value()) return {};
   return maybe_constant->AsMap();
-}
-
-// static
-ValueNode* VirtualObject::InitialFieldValue(MaglevGraphBuilder* builder,
-                                            vobj::FieldType type) {
-  switch (type) {
-    case vobj::FieldType::kTagged:
-      return builder->GetRootConstant(RootIndex::kOnePointerFillerMap);
-    case vobj::FieldType::kTrustedPointer:
-#ifdef V8_ENABLE_SANDBOX
-      return builder->GetUint32Constant(kNullTrustedPointerHandle);
-#else
-      return builder->GetSmiConstant(0);
-#endif
-    case vobj::FieldType::kInt32:
-      return builder->GetInt32Constant(0);
-    case vobj::FieldType::kFloat64:
-      return builder->GetFloat64Constant(0.);
-    case vobj::FieldType::kNone:
-      UNREACHABLE();
-  }
 }
 
 }  // namespace maglev

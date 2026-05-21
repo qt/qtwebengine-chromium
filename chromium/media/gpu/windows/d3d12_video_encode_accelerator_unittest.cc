@@ -4,6 +4,7 @@
 
 #include "media/gpu/windows/d3d12_video_encode_accelerator.h"
 
+#include "base/functional/callback_helpers.h"
 #include "base/strings/stringprintf.h"
 #include "base/test/task_environment.h"
 #include "components/viz/common/resources/shared_image_format.h"
@@ -44,17 +45,17 @@ class MockVideoEncodeAcceleratorClient : public VideoEncodeAccelerator::Client {
 class MockVideoEncoderDelegate : public D3D12VideoEncodeDelegate {
  public:
   MockVideoEncoderDelegate(ID3D12VideoDevice3* video_device,
+                           const gpu::GpuDriverBugWorkarounds& gpu_workarounds,
                            VideoCodecProfile profile)
-      : D3D12VideoEncodeDelegate(video_device) {}
+      : D3D12VideoEncodeDelegate(video_device, gpu_workarounds) {}
 
   MOCK_METHOD1(Initialize, EncoderStatus(VideoEncodeAccelerator::Config));
   MOCK_METHOD(size_t, GetMaxNumOfRefFrames, (), (const override));
   MOCK_METHOD(size_t, GetMaxNumOfManualRefBuffers, (), (const override));
   MOCK_METHOD(bool, SupportsRateControlReconfiguration, (), (const override));
-  MOCK_METHOD5(
+  MOCK_METHOD4(
       Encode,
-      EncoderStatus::Or<EncodeResult>(Microsoft::WRL::ComPtr<ID3D12Resource>,
-                                      UINT,
+      EncoderStatus::Or<EncodeResult>(D3D12PictureBuffer,
                                       const gfx::ColorSpace&,
                                       const BitstreamBuffer&,
                                       const VideoEncoder::EncodeOptions&));
@@ -80,18 +81,18 @@ class MockVideoEncoderDelegateFactory
   std::unique_ptr<D3D12VideoEncodeDelegate> CreateVideoEncodeDelegate(
       ID3D12VideoDevice3* video_device,
       VideoCodecProfile profile) override {
+    gpu::GpuDriverBugWorkarounds gpu_workarounds{};
     auto encoder_delegate =
-        std::make_unique<NiceMock<MockVideoEncoderDelegate>>(video_device,
-                                                             profile);
+        std::make_unique<NiceMock<MockVideoEncoderDelegate>>(
+            video_device, gpu_workarounds, profile);
     ON_CALL(*encoder_delegate, Initialize(_))
         .WillByDefault(Return(EncoderStatus::Codes::kOk));
     ON_CALL(*encoder_delegate, GetMaxNumOfRefFrames())
         .WillByDefault(Return(16));
     ON_CALL(*encoder_delegate, GetMaxNumOfManualRefBuffers())
         .WillByDefault(Return(0));
-    ON_CALL(*encoder_delegate, Encode(_, _, _, _, _))
-        .WillByDefault([](Microsoft::WRL::ComPtr<ID3D12Resource>, UINT,
-                          const gfx::ColorSpace&,
+    ON_CALL(*encoder_delegate, Encode(_, _, _, _))
+        .WillByDefault([](D3D12PictureBuffer, const gfx::ColorSpace&,
                           const BitstreamBuffer& bitstream_buffer,
                           const VideoEncoder::EncodeOptions&)
                            -> D3D12VideoEncodeDelegate::EncodeResult {
@@ -126,12 +127,15 @@ class D3D12VideoEncodeAcceleratorTest : public testing::Test {
     mock_video_device3_ = MakeComPtr<NiceMock<D3D12VideoDevice3Mock>>();
     mock_command_list_ = MakeComPtr<NiceMock<D3D12GraphicsCommandListMock>>();
     mock_resource_ = MakeComPtr<NiceMock<D3D12ResourceMock>>();
+    mock_fence_ = MakeComPtr<NiceMock<D3D12FenceMock>>();
     COM_ON_CALL(mock_device_, QueryInterface(IID_ID3D12VideoDevice3, _))
         .WillByDefault(SetComPointeeAndReturnOk<1>(mock_video_device3_.Get()));
     COM_ON_CALL(mock_device_, CreateCommandList(_, _, _, _, _, _))
         .WillByDefault(SetComPointeeAndReturnOk<5>(mock_command_list_.Get()));
     COM_ON_CALL(mock_device_, OpenSharedHandle(_, IID_ID3D12Resource, _))
         .WillByDefault(SetComPointeeAndReturnOk<2>(mock_resource_.Get()));
+    COM_ON_CALL(mock_device_, CreateFence(_, _, IID_ID3D12Fence, _))
+        .WillByDefault(SetComPointeeAndReturnOk<3>(mock_fence_.Get()));
 
     video_encode_accelerator_.reset(
         new D3D12VideoEncodeAccelerator(mock_device_, {}));
@@ -223,6 +227,7 @@ class D3D12VideoEncodeAcceleratorTest : public testing::Test {
   Microsoft::WRL::ComPtr<D3D12VideoDevice3Mock> mock_video_device3_;
   Microsoft::WRL::ComPtr<D3D12GraphicsCommandListMock> mock_command_list_;
   Microsoft::WRL::ComPtr<D3D12ResourceMock> mock_resource_;
+  Microsoft::WRL::ComPtr<D3D12FenceMock> mock_fence_;
   std::unique_ptr<VideoEncodeAccelerator> video_encode_accelerator_;
   std::unique_ptr<MockVideoEncodeAcceleratorClient> client_;
   scoped_refptr<gpu::TestSharedImageInterface> test_sii_;
@@ -321,7 +326,7 @@ TEST_F(D3D12VideoEncodeAcceleratorTest, RejectsUnsupportedConfig) {
 }
 
 TEST_F(D3D12VideoEncodeAcceleratorTest,
-       InputFramesQueueAndBitstreamBuffersAreEitherEmptyForGMBEncoding) {
+       InputFramesQueueAndBitstreamBuffersAreEitherEmptyForMappableSIEncoding) {
   auto* d3d12_video_encode_accelerator =
       static_cast<D3D12VideoEncodeAccelerator*>(
           video_encode_accelerator_.get());

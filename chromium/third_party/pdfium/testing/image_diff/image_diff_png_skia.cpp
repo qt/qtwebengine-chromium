@@ -169,8 +169,10 @@ std::vector<uint8_t> EncodeBGRAPNG(pdfium::span<const uint8_t> input,
                                    int height,
                                    int row_byte_width,
                                    bool discard_transparency) {
-  return EncodePNG(input, kBGRA_8888_SkColorType, kUnpremul_SkAlphaType, width,
-                   height, pdfium::checked_cast<size_t>(row_byte_width));
+  return EncodePNG(
+      input, kBGRA_8888_SkColorType,
+      discard_transparency ? kOpaque_SkAlphaType : kUnpremul_SkAlphaType, width,
+      height, pdfium::checked_cast<size_t>(row_byte_width));
 }
 
 std::vector<uint8_t> EncodeGrayPNG(pdfium::span<const uint8_t> input,

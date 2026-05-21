@@ -271,10 +271,4 @@ const uint64_t* YetAnotherBitVector::Select(int* pos) const {
   return &bits_.as_integer;
 }
 
-// NOTE: These declarations can be removed when C++17 compliance is mandatory
-// for all embedders, as static constexpr members can be declared inline.
-constexpr int YetAnotherBitVector::kBitsPerInteger;
-constexpr uint64_t YetAnotherBitVector::kAllBitsSet;
-constexpr uint64_t YetAnotherBitVector::kNoBitsSet;
-
 }  // namespace openscreen

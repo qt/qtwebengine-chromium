@@ -788,7 +788,9 @@ void SaveLayerFiltersOp::Serialize(PaintOpWriter& writer,
                                    const SkM44& current_ctm,
                                    const SkM44& original_ctm) const {
   writer.Write(*flags_to_serialize, current_ctm);
+  writer.Write(bounds);
   writer.Write(filters, current_ctm);
+  writer.Write(backdrop_filter, current_ctm);
 }
 
 void ScaleOp::Serialize(PaintOpWriter& writer,
@@ -1177,7 +1179,9 @@ PaintOp* SaveLayerAlphaOp::Deserialize(PaintOpReader& reader, void* output) {
 PaintOp* SaveLayerFiltersOp::Deserialize(PaintOpReader& reader, void* output) {
   SaveLayerFiltersOp* op = new (output) SaveLayerFiltersOp;
   reader.Read(&op->flags);
+  reader.Read(&op->bounds);
   reader.Read(op->filters);
+  reader.Read(&op->backdrop_filter);
   return op;
 }
 
@@ -1319,7 +1323,7 @@ void DrawImageOp::RasterWithFlags(const DrawImageOp* op,
   // Retrieve the SkImages and sampling.
   sk_sp<SkImage> sk_image;
   sk_sp<SkImage> gainmap_sk_image;
-  std::optional<gfx::HDRMetadata> hdr_metadata;
+  gfx::HDRMetadata hdr_metadata;
   SkSamplingOptions sampling = op->sampling;
   // If the SkImages are from an ImageProvider, keep them in scope.
   ImageProvider::ScopedResult scoped_result;
@@ -1437,7 +1441,7 @@ void DrawImageRectOp::RasterWithFlags(const DrawImageRectOp* op,
   // Retrieve the SkImages, adjusted source rect, and sampling.
   sk_sp<SkImage> sk_image;
   sk_sp<SkImage> gainmap_sk_image;
-  std::optional<gfx::HDRMetadata> hdr_metadata;
+  gfx::HDRMetadata hdr_metadata;
   SkRect adjusted_src;
   SkSamplingOptions sampling;
   // If the SkImages are from an ImageProvider, keep them in scope.
@@ -1449,7 +1453,7 @@ void DrawImageRectOp::RasterWithFlags(const DrawImageRectOp* op,
     SkIRect int_src_rect;
     op->src.roundOut(&int_src_rect);
 
-    // Dark mode is applied only for OOP raster during serialization.
+    // Dark mode is applied only for GPU raster during serialization.
     DrawImage draw_image(op->image, false, int_src_rect, op->GetImageQuality(),
                          matrix);
     scoped_result = params.image_provider->GetRasterContent(draw_image);
@@ -1843,9 +1847,18 @@ void SaveLayerFiltersOp::RasterWithFlags(const SaveLayerFiltersOp* op,
                                          SkCanvas* canvas,
                                          const PlaybackParams& params) {
   SkPaint paint = flags->ToSkPaint();
+  // Backdrop filter is the only thing using bounds, but Skia does not use
+  // the bound when a backdrop filter is present. Instead, clip to the bound.
+  PaintFilter* backdrop_filter = op->backdrop_filter.get();
+  if (backdrop_filter && !backdrop_filter->GetCropRect() &&
+      op->bounds.left() != SK_ScalarInfinity) {
+    canvas->clipRect(op->bounds);
+  }
   canvas->saveLayer(SkCanvasPriv::ScaledBackdropLayer(
-      /*bounds=*/nullptr, &paint, /*backdrop=*/nullptr, /*backdropScale=*/1.0f,
-      /*saveLayerFlags=*/0, PaintFilter::ToSkImageFilters(op->filters)));
+      /* bounds */ nullptr, &paint,
+      PaintFilter::GetSkFilter(backdrop_filter).get(),
+      /*backdropScale=*/1.0f, /*saveLayerFlags=*/0,
+      PaintFilter::ToSkImageFilters(op->filters)));
 }
 
 void ScaleOp::Raster(const ScaleOp* op,
@@ -1959,7 +1972,8 @@ bool DrawPathOp::EqualsForTesting(const DrawPathOp& other) const {
 }
 
 bool DrawRecordOp::EqualsForTesting(const DrawRecordOp& other) const {
-  return record.EqualsForTesting(other.record);  // IN-TEST
+  return placeholder_id == other.placeholder_id &&
+         record.EqualsForTesting(other.record);  // IN-TEST
 }
 
 bool DrawRectOp::EqualsForTesting(const DrawRectOp& other) const {
@@ -2044,6 +2058,7 @@ bool SaveLayerAlphaOp::EqualsForTesting(const SaveLayerAlphaOp& other) const {
 bool SaveLayerFiltersOp::EqualsForTesting(
     const SaveLayerFiltersOp& other) const {
   return flags.EqualsForTesting(other.flags) &&  // IN-TEST
+         bounds == other.bounds &&
          std::ranges::equal(
              filters, other.filters,
              [](const sk_sp<PaintFilter>& lhs, const sk_sp<PaintFilter>& rhs) {
@@ -2051,7 +2066,12 @@ bool SaveLayerFiltersOp::EqualsForTesting(
                    lhs, rhs, [](const PaintFilter& x, const PaintFilter& y) {
                      return x.EqualsForTesting(y);  // IN-TEST
                    });
-             });
+             }) &&
+         ((!backdrop_filter && !other.backdrop_filter) ||
+          ((backdrop_filter && other.backdrop_filter) &&
+           backdrop_filter->EqualsForTesting(  // IN-TEST
+               *other.backdrop_filter)));
+  ;
 }
 
 bool ScaleOp::EqualsForTesting(const ScaleOp& other) const {
@@ -2589,6 +2609,9 @@ DrawRecordOp::DrawRecordOp(PaintRecord record, bool local_ctm)
       record(std::move(record)),
       local_ctm(local_ctm) {}
 
+DrawRecordOp::DrawRecordOp(ElementId id)
+    : PaintOpBaseInternal(kType), placeholder_id(id) {}
+
 DrawRecordOp::~DrawRecordOp() = default;
 
 size_t DrawRecordOp::AdditionalBytesUsed() const {
@@ -2695,12 +2718,25 @@ DrawSlugOp::~DrawSlugOp() = default;
 
 SaveLayerFiltersOp::SaveLayerFiltersOp(
     base::span<const sk_sp<PaintFilter>> filters,
+    const sk_sp<PaintFilter> backdrop_filter,
     const PaintFlags& flags)
     : PaintOpWithFlagsBaseInternal(kType, flags),
-      filters(filters.begin(), filters.end()) {}
+      bounds(kUnsetRect),
+      filters(filters.begin(), filters.end()),
+      backdrop_filter(backdrop_filter) {}
+
+SaveLayerFiltersOp::SaveLayerFiltersOp(
+    const SkRect& bounds,
+    base::span<const sk_sp<PaintFilter>> filters,
+    const sk_sp<PaintFilter> backdrop_filter,
+    const PaintFlags& flags)
+    : PaintOpWithFlagsBaseInternal(kType, flags),
+      bounds(bounds),
+      filters(filters.begin(), filters.end()),
+      backdrop_filter(backdrop_filter) {}
 
 SaveLayerFiltersOp::SaveLayerFiltersOp()
-    : PaintOpWithFlagsBaseInternal(kType) {}
+    : PaintOpWithFlagsBaseInternal(kType), bounds(kUnsetRect) {}
 
 SaveLayerFiltersOp::~SaveLayerFiltersOp() = default;
 

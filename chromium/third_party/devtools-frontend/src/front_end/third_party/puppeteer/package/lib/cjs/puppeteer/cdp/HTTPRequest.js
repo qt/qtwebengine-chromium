@@ -35,7 +35,19 @@ class CdpHTTPRequest extends HTTPRequest_js_1.HTTPRequest {
         this.#url = data.request.url + (data.request.urlFragment ?? '');
         this.#resourceType = (data.type || 'other').toLowerCase();
         this.#method = data.request.method;
-        this.#postData = data.request.postData;
+        if (data.request.postDataEntries &&
+            data.request.postDataEntries.length > 0) {
+            this.#postData = new TextDecoder().decode((0, encoding_js_1.mergeUint8Arrays)(data.request.postDataEntries
+                .map(entry => {
+                return entry.bytes ? (0, encoding_js_1.stringToTypedArray)(entry.bytes, true) : null;
+            })
+                .filter((entry) => {
+                return entry !== null;
+            })));
+        }
+        else {
+            this.#postData = data.request.postData;
+        }
         this.#hasPostData = data.request.hasPostData ?? false;
         this.#frame = frame;
         this._redirectChain = redirectChain;

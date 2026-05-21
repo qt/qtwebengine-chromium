@@ -5,7 +5,6 @@
 #ifndef CHROME_BROWSER_DEVTOOLS_DEVTOOLS_DISPATCH_HTTP_REQUEST_PARAMS_H_
 #define CHROME_BROWSER_DEVTOOLS_DEVTOOLS_DISPATCH_HTTP_REQUEST_PARAMS_H_
 
-#include <map>
 #include <optional>
 #include <string>
 #include <vector>
@@ -26,12 +25,13 @@ struct DevToolsDispatchHttpRequestParams {
       DevToolsDispatchHttpRequestParams&&);
 
   static std::optional<DevToolsDispatchHttpRequestParams> FromDict(
-      const base::Value::Dict& dict);
+      const base::DictValue& dict);
 
   std::string service;
   std::string path;
   std::string method;
   std::optional<std::string> body;
+  std::optional<int> stream_id;
   QueryParams query_params;
 };
 

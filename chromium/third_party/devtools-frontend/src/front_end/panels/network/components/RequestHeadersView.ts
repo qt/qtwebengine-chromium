@@ -2,8 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 /* eslint-disable @devtools/no-lit-render-outside-of-view */
-
-import './RequestHeaderSection.js';
+import '../../../ui/kit/kit.js';
 
 import * as Common from '../../../core/common/common.js';
 import * as Host from '../../../core/host/host.js';
@@ -22,7 +21,7 @@ import * as Lit from '../../../ui/lit/lit.js';
 import * as VisualLogging from '../../../ui/visual_logging/visual_logging.js';
 import * as Sources from '../../sources/sources.js';
 
-import type {RequestHeaderSectionData} from './RequestHeaderSection.js';
+import {RequestHeaderSection} from './RequestHeaderSection.js';
 import requestHeadersViewStyles from './RequestHeadersView.css.js';
 import {
   RESPONSE_HEADER_SECTION_DATA_KEY,
@@ -88,11 +87,11 @@ const UIStrings = {
   /**
    * @description A context menu item in the Network Log View Columns of the Network panel
    */
-  responseHeaders: 'Response Headers',
+  responseHeaders: 'Response headers',
   /**
    * @description A context menu item in the Network Log View Columns of the Network panel
    */
-  earlyHintsHeaders: 'Early Hints Headers',
+  earlyHintsHeaders: 'Early hints headers',
   /**
    * @description Title text for a link to the Sources panel to the file containing the header override definitions
    */
@@ -308,22 +307,22 @@ export class RequestHeadersView extends LegacyWrapper.LegacyWrapper.WrappableCom
     // Disabled until https://crbug.com/1079231 is fixed.
     // clang-format off
     return html`
-      <x-link
+      <devtools-link
           href="https://goo.gle/devtools-override"
           class="link devtools-link"
-          jslog=${VisualLogging.link('devtools-override').track({click: true})}
+          jslogcontext="devtools-override"
       >
         <devtools-icon name="help" class="inline-icon medium">
         </devtools-icon>
-      </x-link>
-      <x-link
+      </devtools-link>
+      <devtools-link
           @click=${revealHeadersFile}
           class="link devtools-link"
           title=${UIStrings.revealHeaderOverrides}
-          jslog=${VisualLogging.link('reveal-header-overrides').track({click: true})}
+          jslogcontext="reveal-header-overrides"
       >
         ${fileIcon}${Persistence.NetworkPersistenceManager.HEADERS_FILENAME}
-      </x-link>
+      </devtools-link>
     `;
     // clang-format on
   }
@@ -366,10 +365,10 @@ export class RequestHeadersView extends LegacyWrapper.LegacyWrapper.WrappableCom
       >
         ${(this.#showRequestHeadersText && requestHeadersText) ?
             this.#renderRawHeaders(requestHeadersText, false) : html`
-          <devtools-request-header-section .data=${{
+          <devtools-widget .widgetConfig=${UI.Widget.widgetConfig(RequestHeaderSection, {
             request: this.#request,
             toReveal: this.#toReveal,
-          } as RequestHeaderSectionData} jslog=${VisualLogging.section('request-headers')}></devtools-request-header-section>
+          })} jslog=${VisualLogging.section('request-headers')}></devtools-widget>
         `}
       </devtools-request-headers-category>
     `;

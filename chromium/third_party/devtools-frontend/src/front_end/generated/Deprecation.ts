@@ -1,4 +1,4 @@
-// Copyright 2025 The Chromium Authors
+// Copyright 2026 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -30,10 +30,6 @@ export const UIStrings = {
    * @description This warning occurs when the website attempts to invoke the deprecated `chrome.loadTimes().wasAlternateProtocolAvailable` API.
    */
   ChromeLoadTimesWasAlternateProtocolAvailable: "`chrome.loadTimes()` is deprecated, instead use standardized API: `nextHopProtocol` in Navigation Timing 2.",
-  /**
-   * @description This warning occurs when the browser attempts to store a cookie containing a banned character. Rather than the cookie string being truncated at the banned character, the entire cookie will be rejected now.
-   */
-  CookieWithTruncatingChar: "Cookies containing a `\\(0|r|n)` character will be rejected instead of truncated.",
   /**
    * @description This warning occurs when a frame accesses another frame's data after having set `document.domain` without having set the `Origin-Agent-Cluster` http header. This is a companion warning to `documentDomainSettingWithoutOriginAgentClusterHeader`, where that warning occurs when `document.domain` is set, and this warning occurs when an access has been made, based on that previous `document.domain` setting.
    */
@@ -247,10 +243,6 @@ export const UIStrings = {
    */
   XMLHttpRequestSynchronousInNonWorkerOutsideBeforeUnload: "Synchronous `XMLHttpRequest` on the main thread is deprecated because of its detrimental effects to the end user's experience. For more help, check https://xhr.spec.whatwg.org/.",
   /**
-   * @description Warning displayed to developers that they are using externally loaded entities in an XML document that constitutes a part of the web page. Externally loaded entities are a technical concept of XML document processing.
-   */
-  XMLNoExternalEntities: "Externally loaded entities in XML parsing have been deprecated and will be removed from this browser soon.",
-  /**
    * @description Warning displayed to developers that they are using either the XSLTProcessor API, or XSLT processing instructions, both of which have been deprecated and are scheduled to be removed.
    */
   XSLT: "XSLTProcessor and XSLT Processing Instructions have been deprecated by all browsers. These features will be removed from this browser soon.",
@@ -285,9 +277,6 @@ export const DEPRECATIONS_METADATA: Partial<Record<string, DeprecationDescriptor
   },
   "ChromeLoadTimesWasAlternateProtocolAvailable": {
     "chromeStatusFeature": 5637885046816768
-  },
-  "CookieWithTruncatingChar": {
-    "milestone": 103
   },
   "CrossOriginAccessBasedOnDocumentDomain": {
     "milestone": 115
@@ -380,10 +369,6 @@ export const DEPRECATIONS_METADATA: Partial<Record<string, DeprecationDescriptor
   },
   "XHRJSONEncodingDetection": {
     "milestone": 93
-  },
-  "XMLNoExternalEntities": {
-    "chromeStatusFeature": 6734457763659776,
-    "milestone": 144
   },
   "XSLT": {
     "chromeStatusFeature": 4709671889534976,

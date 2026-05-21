@@ -32,7 +32,8 @@ class MirroringApplication final : public ApplicationAgent::Application,
  public:
   MirroringApplication(TaskRunner& task_runner,
                        const IPAddress& interface_address,
-                       ApplicationAgent& agent);
+                       ApplicationAgent& agent,
+                       bool enable_dscp);
 
   ~MirroringApplication() final;
 
@@ -55,6 +56,7 @@ class MirroringApplication final : public ApplicationAgent::Application,
   const IPAddress interface_address_;
   const std::vector<std::string> app_ids_;
   ApplicationAgent& agent_;
+  const bool enable_dscp_;
 
   ScopedWakeLockPtr wake_lock_;
   std::unique_ptr<Environment> environment_;

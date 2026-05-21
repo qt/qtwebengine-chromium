@@ -22,7 +22,7 @@
 #endif  // BUILDFLAG(IS_CHROMEOS)
 
 #if !BUILDFLAG(IS_CHROMEOS)
-#include "chrome/browser/ui/browser_list.h"
+#include "chrome/browser/ui/browser_finder.h"
 #include "chrome/grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #endif
@@ -96,21 +96,21 @@ void BrowserLifetimeHandler::RegisterMessages() {
 #endif
 }
 
-void BrowserLifetimeHandler::HandleRestart(const base::Value::List& args) {
+void BrowserLifetimeHandler::HandleRestart(const base::ListValue& args) {
   chrome::AttemptRestart();
 }
 
-void BrowserLifetimeHandler::HandleRelaunch(const base::Value::List& args) {
+void BrowserLifetimeHandler::HandleRelaunch(const base::ListValue& args) {
   chrome::AttemptRelaunch();
 }
 
 #if BUILDFLAG(IS_CHROMEOS)
 void BrowserLifetimeHandler::HandleSignOutAndRestart(
-    const base::Value::List& args) {
+    const base::ListValue& args) {
   chrome::AttemptUserExit();
 }
 
-void BrowserLifetimeHandler::HandleFactoryReset(const base::Value::List& args) {
+void BrowserLifetimeHandler::HandleFactoryReset(const base::ListValue& args) {
   CHECK_EQ(1U, args.size());
   bool tpm_firmware_update_requested = args[0].GetBool();
 
@@ -142,14 +142,14 @@ void BrowserLifetimeHandler::HandleFactoryReset(const base::Value::List& args) {
 
 #if !BUILDFLAG(IS_CHROMEOS)
 void BrowserLifetimeHandler::HandleGetRelaunchConfirmationDialogDescription(
-    const base::Value::List& args) {
+    const base::ListValue& args) {
   AllowJavascript();
   CHECK_EQ(2U, args.size());
   const base::Value& callback_id = args[0];
   CHECK(args[1].is_bool());
   const bool is_version_update = args[1].GetBool();
 
-  size_t incognito_count = BrowserList::GetIncognitoBrowserCount();
+  size_t incognito_count = chrome::GetIncognitoBrowserCount();
   base::Value description;
 
   // The caller can specify if this is a confirmation dialog for browser version
@@ -170,7 +170,7 @@ void BrowserLifetimeHandler::HandleGetRelaunchConfirmationDialogDescription(
 }
 
 void BrowserLifetimeHandler::HandleShouldShowRelaunchConfirmationDialog(
-    const base::Value::List& args) {
+    const base::ListValue& args) {
   AllowJavascript();
   CHECK_EQ(2U, args.size());
   const base::Value& callback_id = args[0];
@@ -185,8 +185,7 @@ void BrowserLifetimeHandler::HandleShouldShowRelaunchConfirmationDialog(
   } else {
     // Show a confirmation dialog before the restart if there is an incognito
     // window open.
-    base::Value result =
-        base::Value(BrowserList::GetIncognitoBrowserCount() > 0);
+    base::Value result = base::Value(chrome::GetIncognitoBrowserCount() > 0);
     ResolveJavascriptCallback(callback_id, result);
   }
 }

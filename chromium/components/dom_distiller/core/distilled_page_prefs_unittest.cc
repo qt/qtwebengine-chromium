@@ -31,6 +31,7 @@ class MockObserver : public DistilledPagePrefs::Observer {
               (mojom::Theme new_theme, ThemeSettingsUpdateSource source),
               (override));
   MOCK_METHOD(void, OnChangeFontScaling, (float new_scaling), (override));
+  MOCK_METHOD(void, OnChangeLinksEnabled, (bool enabled), (override));
 };
 
 class TestingObserver : public DistilledPagePrefs::Observer {
@@ -56,10 +57,15 @@ class TestingObserver : public DistilledPagePrefs::Observer {
 
   float GetFontScaling() { return scaling_; }
 
+  void OnChangeLinksEnabled(bool enabled) override { links_enabled_ = enabled; }
+
+  bool GetLinksEnabled() { return links_enabled_; }
+
  private:
   mojom::FontFamily font_ = mojom::FontFamily::kSansSerif;
   mojom::Theme theme_ = mojom::Theme::kLight;
   float scaling_{1.0f};
+  bool links_enabled_{true};
 };
 
 }  // namespace
@@ -164,6 +170,29 @@ TEST_F(DistilledPagePrefsTest, TestingOnChangeThemeCalledMultipleTimes) {
 
   EXPECT_CALL(mock_observer, OnChangeTheme(mojom::Theme::kSepia, _)).Times(0);
   distilled_page_prefs_->SetUserPrefTheme(mojom::Theme::kSepia);
+  base::RunLoop().RunUntilIdle();
+  testing::Mock::VerifyAndClearExpectations(&mock_observer);
+
+  distilled_page_prefs_->RemoveObserver(&mock_observer);
+}
+
+TEST_F(DistilledPagePrefsTest,
+       TestingOnChangeThemeCalledMultipleTimesWithDefaultTheme) {
+  testing::StrictMock<MockObserver> mock_observer;
+  distilled_page_prefs_->AddObserver(&mock_observer);
+
+  // Set the default theme to dark mode.
+  EXPECT_CALL(mock_observer, OnChangeTheme(mojom::Theme::kDark,
+                                           ThemeSettingsUpdateSource::kSystem));
+  distilled_page_prefs_->SetDefaultTheme(mojom::Theme::kDark);
+  base::RunLoop().RunUntilIdle();
+  testing::Mock::VerifyAndClearExpectations(&mock_observer);
+
+  // Set the user preference to dark mode.
+  EXPECT_CALL(mock_observer,
+              OnChangeTheme(mojom::Theme::kDark,
+                            ThemeSettingsUpdateSource::kUserPreference));
+  distilled_page_prefs_->SetUserPrefTheme(mojom::Theme::kDark);
   base::RunLoop().RunUntilIdle();
   testing::Mock::VerifyAndClearExpectations(&mock_observer);
 
@@ -376,17 +405,70 @@ TEST_F(DistilledPagePrefsTest, SetDefaultFontScalingWithUserPref) {
   distilled_page_prefs_->RemoveObserver(&obs);
 }
 
+TEST_F(DistilledPagePrefsTest, SetLinksEnabled) {
+  TestingObserver obs;
+  distilled_page_prefs_->AddObserver(&obs);
+
+  base::RunLoop run_loop1;
+  distilled_page_prefs_->SetLinksEnabled(true);
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
+      FROM_HERE, run_loop1.QuitClosure());
+  run_loop1.Run();
+  ASSERT_TRUE(obs.GetLinksEnabled());
+
+  distilled_page_prefs_->SetLinksEnabled(false);
+  base::RunLoop run_loop2;
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
+      FROM_HERE, run_loop2.QuitClosure());
+  run_loop2.Run();
+  ASSERT_FALSE(obs.GetLinksEnabled());
+
+  distilled_page_prefs_->RemoveObserver(&obs);
+}
+
+TEST_F(DistilledPagePrefsTest, ClearPrefs) {
+  testing::StrictMock<MockObserver> mock_observer;
+  distilled_page_prefs_->AddObserver(&mock_observer);
+
+  // Set the default theme to dark mode.
+  EXPECT_CALL(mock_observer, OnChangeTheme(mojom::Theme::kDark,
+                                           ThemeSettingsUpdateSource::kSystem));
+  distilled_page_prefs_->SetDefaultTheme(mojom::Theme::kDark);
+  base::RunLoop().RunUntilIdle();
+  testing::Mock::VerifyAndClearExpectations(&mock_observer);
+
+  // Set the user preference to sepia.
+  EXPECT_CALL(mock_observer,
+              OnChangeTheme(mojom::Theme::kSepia,
+                            ThemeSettingsUpdateSource::kUserPreference));
+  distilled_page_prefs_->SetUserPrefTheme(mojom::Theme::kSepia);
+  base::RunLoop().RunUntilIdle();
+  testing::Mock::VerifyAndClearExpectations(&mock_observer);
+
+  // Clear the user preference, implicitly sets the theme back to the default.
+  EXPECT_CALL(mock_observer, OnChangeTheme(mojom::Theme::kDark,
+                                           ThemeSettingsUpdateSource::kSystem));
+  distilled_page_prefs_->ClearUserPrefTheme();
+  base::RunLoop().RunUntilIdle();
+  testing::Mock::VerifyAndClearExpectations(&mock_observer);
+
+  distilled_page_prefs_->RemoveObserver(&mock_observer);
+}
+
 #if BUILDFLAG(IS_ANDROID)
 class DistilledPagePrefsFeatureTest
     : public DistilledPagePrefsTest,
       public ::testing::WithParamInterface<bool> {
  public:
-  DistilledPagePrefsFeatureTest() {
+  void SetUp() override {
     if (GetParam()) {
-      scoped_feature_list_.InitAndEnableFeature(kReaderModeDistillInApp);
+      std::vector<base::test::FeatureRef> enabled_features = {
+          kReaderModeDistillInApp, kReaderModeSupportNewFonts};
+      scoped_feature_list_.InitWithFeatures(enabled_features, {});
     } else {
       scoped_feature_list_.InitAndDisableFeature(kReaderModeDistillInApp);
     }
+    DistilledPagePrefsTest::SetUp();
   }
 
  private:
@@ -487,6 +569,32 @@ TEST_P(DistilledPagePrefsFeatureTest, TestClampDefaultFontScaling) {
   run_loop2.Run();
   ASSERT_FLOAT_EQ(max_font_scale, obs.GetFontScaling());
   ASSERT_FLOAT_EQ(max_font_scale, distilled_page_prefs_->GetFontScaling());
+
+  distilled_page_prefs_->RemoveObserver(&obs);
+}
+
+TEST_P(DistilledPagePrefsFeatureTest, TestIsUserPrefFontAvailable) {
+  TestingObserver obs;
+  distilled_page_prefs_->AddObserver(&obs);
+
+  // Test availability of Lexend font based on feature flag.
+  distilled_page_prefs_->SetFontFamily(mojom::FontFamily::kLexend);
+  base::RunLoop run_loop1;
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
+      FROM_HERE, run_loop1.QuitClosure());
+  run_loop1.Run();
+
+  if (GetParam()) {
+    // Feature enabled: Lexend should be available.
+    EXPECT_EQ(mojom::FontFamily::kLexend, obs.GetFontFamily());
+    EXPECT_EQ(mojom::FontFamily::kLexend,
+              distilled_page_prefs_->GetFontFamily());
+  } else {
+    // Feature disabled: Poppins should fallback to Sans Serif.
+    EXPECT_EQ(mojom::FontFamily::kSansSerif, obs.GetFontFamily());
+    EXPECT_EQ(mojom::FontFamily::kSansSerif,
+              distilled_page_prefs_->GetFontFamily());
+  }
 
   distilled_page_prefs_->RemoveObserver(&obs);
 }

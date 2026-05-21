@@ -14,7 +14,6 @@
 #include "base/barrier_callback.h"
 #include "base/barrier_closure.h"
 #include "base/check.h"
-#include "base/containers/contains.h"
 #include "base/containers/fixed_flat_set.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
@@ -369,8 +368,7 @@ SavedPasswordsPresenter::EditSavedCredentials(
 }
 
 void SavedPasswordsPresenter::MoveCredentialsToAccount(
-    const std::vector<CredentialUIEntry>& credentials,
-    metrics_util::MoveToAccountStoreTrigger trigger) {
+    const std::vector<CredentialUIEntry>& credentials) {
   for (const auto& credential : credentials) {
     std::vector<PasswordForm> move_form_candidates =
         GetCorrespondingPasswordForms(credential);
@@ -395,10 +393,6 @@ void SavedPasswordsPresenter::MoveCredentialsToAccount(
       profile_store_->RemoveLogin(FROM_HERE, form);
     }
   }
-
-  base::UmaHistogramEnumeration(
-      "PasswordManager.AccountStorage.MoveToAccountStoreFlowAccepted2",
-      trigger);
 }
 
 std::vector<CredentialUIEntry> SavedPasswordsPresenter::GetSavedCredentials()
@@ -593,6 +587,7 @@ void SavedPasswordsPresenter::OnPasskeysChanged(
 }
 
 void SavedPasswordsPresenter::OnPasskeyModelShuttingDown() {
+  passkey_store_ = nullptr;
   passkey_store_observation_.Reset();
 }
 
@@ -678,8 +673,10 @@ void SavedPasswordsPresenter::MaybeGroupCredentials(
   std::vector<PasskeyCredential> passkeys;
 #if !BUILDFLAG(IS_ANDROID)
   if (passkey_store_) {
-    passkeys = PasskeyCredential::FromCredentialSpecifics(
-        passkey_store_->GetAllPasskeys());
+    passkeys =
+        PasskeyCredential::FromCredentialSpecifics(passkey_store_->GetPasskeys(
+            webauthn::PasskeyModel::AnyRp(),
+            webauthn::PasskeyModel::ShadowedCredentials::kInclude));
   }
 #endif  // !BUILDFLAG(IS_ANDROID)
 

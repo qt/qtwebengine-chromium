@@ -44,13 +44,13 @@ openscreen_source_set("util") {
     "read_file.h",
     "saturate_cast.h",
     "simple_fraction.h",
-    "span_util.h",
     "std_util.h",
     "string_parse.h",
     "string_util.h",
     "stringprintf.h",
     "trace_logging.h",
     "url.h",
+    "uuid.h",
     "weak_ptr.h",
     "yet_another_bit_vector.h",
   ]
@@ -72,7 +72,6 @@ openscreen_source_set("util") {
     "read_file.cc",
     "scoped_wake_lock.cc",
     "simple_fraction.cc",
-    "span_util.cc",
     "std_util.cc",
     "string_util.cc",
     "stringprintf.cc",
@@ -80,6 +79,7 @@ openscreen_source_set("util") {
     "trace_logging/scoped_trace_operations.cc",
     "trace_logging/scoped_trace_operations.h",
     "url.cc",
+    "uuid.cc",
     "yet_another_bit_vector.cc",
   ]
 
@@ -138,6 +138,7 @@ openscreen_source_set("unittests") {
     "stringprintf_unittest.cc",
     "trace_logging/scoped_trace_operations_unittest.cc",
     "url_unittest.cc",
+    "uuid_unittest.cc",
     "weak_ptr_unittest.cc",
     "yet_another_bit_vector_unittest.cc",
   ]
@@ -157,4 +158,8 @@ openscreen_source_set("unittests") {
     "../third_party/googletest:gtest",
     "../third_party/jsoncpp",
   ]
+
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs = [ "//build/config/compiler:no_exit_time_destructors" ]
 }

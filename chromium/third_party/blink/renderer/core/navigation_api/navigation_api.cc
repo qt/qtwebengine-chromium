@@ -19,6 +19,7 @@
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_navigate_event_init.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_navigation_current_entry_change_event_init.h"
+#include "third_party/blink/renderer/bindings/core/v8/v8_navigation_defer_page_swap_restore_callback.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_navigation_history_behavior.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_navigation_navigate_options.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_navigation_reload_options.h"
@@ -47,6 +48,7 @@
 #include "third_party/blink/renderer/core/timing/soft_navigation_heuristics.h"
 #include "third_party/blink/renderer/platform/bindings/exception_context.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
+#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/scheduler/public/task_attribution_info.h"
 #include "third_party/blink/renderer/platform/scheduler/public/task_attribution_tracker.h"
 
@@ -307,7 +309,7 @@ void NavigationApi::UpdateForNavigation(HistoryItem& item,
   }
 
   if (auto* routemap = RouteMap::Get(window_->document())) {
-    routemap->OnNavigationStart(old_current->url(), currentEntry()->url());
+    routemap->OnNavigationCommitted();
   }
 }
 
@@ -386,6 +388,9 @@ void NavigationApi::SetEntriesForRestore(
     if (it == keys_to_indices_.end() || entries_[it->value] != entry)
       disposed_entries->push_back(entry);
   }
+
+  FlushRestoreCallbacks();
+
   window_->GetTaskRunner(TaskType::kInternalDefault)
       ->PostTask(FROM_HERE, BindOnce(&FireDisposeEventsAsync,
                                      WrapPersistent(disposed_entries)));
@@ -471,8 +476,9 @@ NavigationResult* NavigationApi::navigate(ScriptState* script_state,
                                           NavigationNavigateOptions* options) {
   KURL completed_url = KURL(window_->BaseURL(), url);
   if (!completed_url.IsValid()) {
-    return EarlyErrorResult(script_state, DOMExceptionCode::kSyntaxError,
-                            "Invalid URL '" + completed_url.GetString() + "'.");
+    return EarlyErrorResult(
+        script_state, DOMExceptionCode::kSyntaxError,
+        StrCat({"Invalid URL '", completed_url.GetString(), "'."}));
   }
 
   if (completed_url.ProtocolIsJavaScript()) {
@@ -679,14 +685,14 @@ DOMException* NavigationApi::PerformSharedNavigationChecks(
   if (!window_->GetFrame()) {
     return MakeGarbageCollected<DOMException>(
         DOMExceptionCode::kInvalidStateError,
-        method_name_for_error_message +
-            " cannot be called when the Window is detached.");
+        StrCat({method_name_for_error_message,
+                " cannot be called when the Window is detached."}));
   }
   if (window_->document()->PageDismissalEventBeingDispatched()) {
     return MakeGarbageCollected<DOMException>(
         DOMExceptionCode::kInvalidStateError,
-        method_name_for_error_message +
-            " cannot be called during unload or beforeunload.");
+        StrCat({method_name_for_error_message,
+                " cannot be called during unload or beforeunload."}));
   }
   return nullptr;
 }
@@ -861,6 +867,18 @@ NavigationApi::DispatchResult NavigationApi::DispatchNavigateEvent(
 
   CHECK(!ongoing_navigate_event_);
   ongoing_navigate_event_ = navigate_event;
+
+  if (auto* routemap = RouteMap::Get(window_->document())) {
+    routemap->OnNavigationStart(window_->Url(), params->url);
+    if (params->frame_load_type == WebFrameLoadType::kBackForward &&
+        routemap->HasHistoryRules() && destination_entry) {
+      int previous_index = GetIndexFor(currentEntry());
+      int next_index = GetIndexFor(destination_entry);
+      routemap->OnNavigationTraverse(
+          next_index < previous_index ? RouteMap::kBack : RouteMap::kForward);
+    }
+  }
+
   has_dropped_navigation_ = false;
   DispatchEvent(*navigate_event);
 
@@ -882,6 +900,8 @@ NavigationApi::DispatchResult NavigationApi::DispatchNavigateEvent(
     navigate_event->MaybeCommitImmediately(script_state);
   } else if (params->event_type != NavigateEventType::kCrossDocument) {
     navigate_event->React(script_state);
+  } else {
+    navigate_event->MaybeDeferCrossDocumentCommit(script_state, params);
   }
 
   // Note: we cannot clean up ongoing_navigation_ for cross-document
@@ -945,9 +965,9 @@ void NavigationApi::TraverseCancelled(
              mojom::blink::TraverseCancelledReason::kSandboxViolation) {
     exception = MakeGarbageCollected<DOMException>(
         DOMExceptionCode::kSecurityError,
-        "Navigating to key " + key +
-            " would require a navigation that "
-            "violates this frame's sandbox policy");
+        StrCat({"Navigating to key ", key,
+                " would require a navigation that violates this frame's "
+                "sandbox policy"}));
   } else if (reason ==
              mojom::blink::TraverseCancelledReason::kAbortedBeforeCommit) {
     exception = MakeGarbageCollected<DOMException>(
@@ -985,9 +1005,23 @@ void NavigationApi::DidAbort(ScriptValue value) {
   }
   DispatchEvent(*event);
 
+  FlushRestoreCallbacks();
+
   if (transition_) {
     transition_->RejectFinishedPromise(value);
     transition_ = nullptr;
+  }
+}
+
+void NavigationApi::FlushRestoreCallbacks() {
+  HeapVector<Member<V8NavigationDeferPageSwapRestoreCallback>>
+      restore_callback_list;
+  std::swap(restore_callback_list, restore_callback_list_);
+  CHECK(restore_callback_list.empty() ||
+        RuntimeEnabledFeatures::NavigateEventDeferCrossDocumentCommitEnabled());
+
+  for (auto& callback : restore_callback_list) {
+    (void)callback->Invoke(this);
   }
 }
 
@@ -1066,6 +1100,7 @@ void NavigationApi::Trace(Visitor* visitor) const {
   visitor->Trace(upcoming_traverse_api_method_trackers_);
   visitor->Trace(upcoming_non_traverse_api_method_tracker_);
   visitor->Trace(ongoing_navigate_event_);
+  visitor->Trace(restore_callback_list_);
 }
 
 }  // namespace blink

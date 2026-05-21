@@ -54,6 +54,16 @@ constexpr char kConnectToP2PGroupFunction[] = "ConnectToP2PGroup";
 constexpr char kDisconnectFromP2PGroupFunction[] = "DisconnectFromP2PGroup";
 constexpr char kCreateP2PGroupFunction[] = "CreateP2PGroup";
 constexpr char kDestroyP2PGroupFunction[] = "DestroyP2PGroup";
+constexpr char kTestHostsConnectivityFunction[] = "TestHostsConnectivity";
+
+// TestHostsConnectivity option keys
+constexpr char kTestHostsConnectivityProxyKey[] = "proxy";
+constexpr char kTestHostsConnectivityTimeoutKey[] = "timeout";
+constexpr char kTestHostsConnectivityMaxErrorsKey[] = "max_errors";
+// TestHostsConnectivity proxy option values
+constexpr char kTestHostsConnectivityProxyDirect[] = "direct";
+constexpr char kTestHostsConnectivityProxyDirectUrl[] = "direct://";
+constexpr char kTestHostsConnectivityProxySystem[] = "system";
 
 // Service function names.
 constexpr char kClearPropertiesFunction[] = "ClearProperties";

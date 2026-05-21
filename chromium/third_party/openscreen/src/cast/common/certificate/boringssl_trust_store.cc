@@ -383,8 +383,8 @@ BoringSSLTrustStore::FindCertificatePath(
     intermediate_certs.emplace_back(ParseX509Der(der_certs[i]));
     if (!intermediate_certs.back()) {
       return Error(Error::Code::kErrCertsParse,
-                   StringPrintf("FindCertificatePath: Failed to parse "
-                                "intermediate certificate %zu of %zu",
+                   StringFormat("FindCertificatePath: Failed to parse "
+                                "intermediate certificate {} of {}",
                                 i, der_certs.size()));
     }
   }

@@ -7,7 +7,6 @@
 
 #include <stdint.h>
 
-#include <map>
 #include <string_view>
 
 #include "base/observer_list.h"
@@ -27,7 +26,7 @@ class COMPONENTS_PREFS_EXPORT ValueMapPrefStore : public WriteablePrefStore {
 
   // PrefStore overrides:
   bool GetValue(std::string_view key, const base::Value** value) const override;
-  base::Value::Dict GetValues() const override;
+  base::DictValue GetValues() const override;
   void AddObserver(PrefStore::Observer* observer) override;
   void RemoveObserver(PrefStore::Observer* observer) override;
   bool HasObservers() const override;

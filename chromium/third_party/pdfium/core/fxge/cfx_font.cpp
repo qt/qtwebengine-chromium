@@ -14,15 +14,12 @@
 #include <utility>
 
 #include "build/build_config.h"
-#include "core/fxcrt/check.h"
 #include "core/fxcrt/data_vector.h"
 #include "core/fxcrt/fx_codepage.h"
 #include "core/fxcrt/fx_stream.h"
-#include "core/fxcrt/numerics/safe_conversions.h"
 #include "core/fxcrt/span.h"
 #include "core/fxcrt/unowned_ptr.h"
 #include "core/fxge/cfx_face.h"
-#include "core/fxge/cfx_fontcache.h"
 #include "core/fxge/cfx_fontmapper.h"
 #include "core/fxge/cfx_fontmgr.h"
 #include "core/fxge/cfx_gemodule.h"
@@ -30,7 +27,6 @@
 #include "core/fxge/cfx_path.h"
 #include "core/fxge/cfx_substfont.h"
 #include "core/fxge/fx_font.h"
-#include "core/fxge/scoped_font_transform.h"
 
 namespace {
 
@@ -150,20 +146,29 @@ int CFX_Font::GetSubstFontItalicAngle() const {
   return subst_font ? subst_font->italic_angle_ : 0;
 }
 
+std::vector<CharCodeAndIndex> CFX_Font::GetCharCodesAndIndices(
+    char32_t max_char) {
+  if (!face_) {
+    return {};
+  }
+  return face_->GetCharCodesAndIndices(max_char);
+}
+
 #ifdef PDF_ENABLE_XFA
-bool CFX_Font::LoadFile(RetainPtr<IFX_SeekableReadStream> pFile,
-                        int nFaceIndex) {
+bool CFX_Font::LoadFromVectorStream(
+    const RetainPtr<CFX_ReadOnlyVectorStream>& vector_stream,
+    int face_index) {
   object_tag_ = 0;
-  face_ = CFX_Face::OpenFromStream(
-      CFX_GEModule::Get()->GetFontMgr()->GetFTLibrary(), pFile, nFaceIndex);
+  face_ = CFX_Face::NewFromVectorStream(CFX_GEModule::Get()->GetFontMgr(),
+                                        vector_stream, face_index);
   return !!face_;
 }
 
 #if !BUILDFLAG(IS_WIN)
-void CFX_Font::SetFace(RetainPtr<CFX_Face> face) {
+void CFX_Font::SetFaceFromFont(const CFX_Font& that) {
   ClearGlyphCache();
   object_tag_ = 0;
-  face_ = face;
+  face_ = that.face_;
 }
 
 void CFX_Font::SetSubstFont(std::unique_ptr<CFX_SubstFont> subst) {
@@ -199,6 +204,10 @@ void CFX_Font::LoadSubst(const ByteString& face_name,
   }
 }
 
+bool CFX_Font::HasAnyGlyphs() const {
+  return face_ && face_->GetGlyphCount() > 0;
+}
+
 int CFX_Font::GetGlyphWidth(uint32_t glyph_index) const {
   return GetGlyphWidth(glyph_index, 0, 0);
 }
@@ -227,8 +236,8 @@ bool CFX_Font::LoadEmbedded(pdfium::span<const uint8_t> src_span,
   vertical_ = force_vertical;
   object_tag_ = object_tag;
   font_data_allocation_ = DataVector<uint8_t>(src_span.begin(), src_span.end());
-  face_ = CFX_GEModule::Get()->GetFontMgr()->NewFixedFace(
-      nullptr, font_data_allocation_, 0);
+  face_ = CFX_Face::New(CFX_GEModule::Get()->GetFontMgr(), nullptr,
+                        font_data_allocation_, 0);
   font_data_ = font_data_allocation_;
   return !!face_;
 }
@@ -362,7 +371,7 @@ std::optional<FX_RECT> CFX_Font::GetBBox() const {
 
 RetainPtr<CFX_GlyphCache> CFX_Font::GetOrCreateGlyphCache() const {
   if (!glyph_cache_) {
-    glyph_cache_ = CFX_GEModule::Get()->GetFontCache()->GetGlyphCache(this);
+    glyph_cache_ = CFX_GEModule::Get()->GetFontMgr()->GetGlyphCache(this);
   }
   return glyph_cache_;
 }
@@ -399,7 +408,7 @@ const CFX_Path* CFX_Font::LoadGlyphPath(uint32_t glyph_index,
 }
 
 #if defined(PDF_USE_SKIA)
-CFX_TypeFace* CFX_Font::GetDeviceCache() const {
+SkTypeface* CFX_Font::GetDeviceCache() const {
   return GetOrCreateGlyphCache()->GetDeviceCache(this);
 }
 #endif

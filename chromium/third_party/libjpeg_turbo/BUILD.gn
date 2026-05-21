@@ -174,7 +174,7 @@ config("libjpeg_simd_config") {
     # and x64 MSan builds for now.
   } else if (current_cpu == "x86" || current_cpu == "x64") {
     defines = [ "WITH_SIMD" ]
-  } else if ((current_cpu == "arm" || current_cpu == "arm64") && arm_use_neon) {
+  } else if (current_cpu == "arm" || current_cpu == "arm64") {
     defines = [
       "NEON_INTRINSICS",
       "WITH_SIMD",
@@ -197,7 +197,7 @@ static_library("simd") {
   } else if (current_cpu == "x64") {
     deps += [ ":simd_asm" ]
     sources = [ "simd/x86_64/jsimd.c" ]
-  } else if ((current_cpu == "arm" || current_cpu == "arm64") && arm_use_neon) {
+  } else if (current_cpu == "arm" || current_cpu == "arm64") {
     include_dirs += [ "simd/arm/" ]
 
     sources = [

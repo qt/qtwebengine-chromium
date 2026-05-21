@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.14)
 project(harfbuzz)
 
-message(WARN "HarfBuzz has a Meson port and tries to migrate all the other build systems to it, please consider using it as we might remove our cmake port soon.")
+message(WARNING "The main build system for HarfBuzz is Meson. CMake build support is community-maintained and is not actively supported by HarfBuzz developers.")
 
 if(POLICY CMP0063)
   cmake_policy(SET CMP0063 NEW)
@@ -33,7 +33,7 @@ option(HB_HAVE_GLIB "Enable glib unicode functions" OFF)
 option(HB_HAVE_ICU "Enable icu unicode functions" OFF)
 if (TARGET freetype)
   set (HB_HAVE_FREETYPE ON)
-  add_definitions(-DHAVE_FREETYPE=1)
+  add_compile_definitions(HAVE_FREETYPE=1)
 endif ()
 if (APPLE)
   option(HB_HAVE_CORETEXT "Enable CoreText shaper backend on macOS" ON)
@@ -88,7 +88,7 @@ macro (check_funcs) # Similar to AC_CHECK_FUNCS of autotools
     string(TOUPPER ${func_name} definition_to_add)
     check_function_exists(${func_name} HAVE_${definition_to_add})
     if (${HAVE_${definition_to_add}})
-      add_definitions(-DHAVE_${definition_to_add})
+      add_compile_definitions(HAVE_${definition_to_add})
     endif ()
   endforeach ()
 endmacro ()
@@ -98,15 +98,15 @@ endif ()
 check_funcs(atexit mprotect sysconf getpagesize mmap isatty)
 check_include_file(unistd.h HAVE_UNISTD_H)
 if (${HAVE_UNISTD_H})
-  add_definitions(-DHAVE_UNISTD_H)
+  add_compile_definitions(HAVE_UNISTD_H)
 endif ()
 check_include_file(sys/mman.h HAVE_SYS_MMAN_H)
 if (${HAVE_SYS_MMAN_H})
-  add_definitions(-DHAVE_SYS_MMAN_H)
+  add_compile_definitions(HAVE_SYS_MMAN_H)
 endif ()
 check_include_file(stdbool.h HAVE_STDBOOL_H)
 if (${HAVE_STDBOOL_H})
-  add_definitions(-DHAVE_STDBOOL_H)
+  add_compile_definitions(HAVE_STDBOOL_H)
 endif ()
 
 # These will be used while making pkg-config .pc files
@@ -117,15 +117,21 @@ if (NOT MSVC)
   set(THREADS_PREFER_PTHREAD_FLAG ON)
   find_package(Threads)
   if (CMAKE_USE_PTHREADS_INIT)
-    add_definitions("-DHAVE_PTHREAD")
+    add_compile_definitions(HAVE_PTHREAD)
     list(APPEND THIRD_PARTY_LIBS Threads::Threads)
     list(APPEND PC_LIBS_PRIV -pthread)
   endif ()
 endif ()
 
+include (CheckCCompilerFlag)
 if (MSVC)
-  add_definitions(-wd4244 -wd4267 -D_CRT_SECURE_NO_WARNINGS -D_CRT_NONSTDC_NO_WARNINGS)
-  add_definitions(-bigobj)
+  add_compile_options(/wd4244 /wd4267) # lossy type conversion (e.g. double/size_t -> int)
+  add_compile_options(/bigobj) # hb-subset.cc -- compile error C1128: number of sections exceeded object file format limit
+  check_c_compiler_flag(/utf-8 MSVC_UTF8_FLAG_SUPPORTED)
+  if (MSVC_UTF8_FLAG_SUPPORTED)
+    add_compile_options(/utf-8) # set the input encoding to utf-8
+  endif ()
+  add_compile_definitions(_CRT_SECURE_NO_WARNINGS _CRT_NONSTDC_NO_WARNINGS)
 endif ()
 
 
@@ -169,6 +175,11 @@ set (subset_project_sources
      ${PROJECT_SOURCE_DIR}/src/hb-subset-plan-member-list.hh
      ${PROJECT_SOURCE_DIR}/src/hb-subset-plan-var.cc
      ${PROJECT_SOURCE_DIR}/src/hb-subset-serialize.cc
+     ${PROJECT_SOURCE_DIR}/src/hb-subset-table-layout.cc
+     ${PROJECT_SOURCE_DIR}/src/hb-subset-table-var.cc
+     ${PROJECT_SOURCE_DIR}/src/hb-subset-table-cff.cc
+     ${PROJECT_SOURCE_DIR}/src/hb-subset-table-color.cc
+     ${PROJECT_SOURCE_DIR}/src/hb-subset-table-other.cc
      ${PROJECT_SOURCE_DIR}/src/hb-subset.cc
      ${PROJECT_SOURCE_DIR}/src/hb-subset.hh
      ${PROJECT_SOURCE_DIR}/src/hb-repacker.hh
@@ -232,7 +243,7 @@ if (HB_HAVE_FREETYPE AND NOT TARGET freetype)
 
   list(APPEND THIRD_PARTY_LIBS ${FREETYPE_LIBRARIES})
   include_directories(AFTER ${FREETYPE_INCLUDE_DIRS})
-  add_definitions(-DHAVE_FREETYPE=1)
+  add_compile_definitions(HAVE_FREETYPE=1)
 
   list(APPEND project_headers ${PROJECT_SOURCE_DIR}/src/hb-ft.h)
 
@@ -248,7 +259,7 @@ if (HB_HAVE_FREETYPE)
 endif ()
 
 if (HB_HAVE_GRAPHITE2)
-  add_definitions(-DHAVE_GRAPHITE2)
+  add_compile_definitions(HAVE_GRAPHITE2)
 
   find_path(GRAPHITE2_INCLUDE_DIR graphite2/Font.h)
   find_library(GRAPHITE2_LIBRARY graphite2)
@@ -265,7 +276,7 @@ if (HB_HAVE_GRAPHITE2)
 endif ()
 
 if (HB_HAVE_GLIB)
-  add_definitions(-DHAVE_GLIB)
+  add_compile_definitions(HAVE_GLIB)
 
   # https://github.com/WebKit/webkit/blob/master/Source/cmake/FindGLIB.cmake
   find_package(PkgConfig)
@@ -287,7 +298,7 @@ if (HB_HAVE_GLIB)
 endif ()
 
 if (HB_HAVE_ICU)
-  add_definitions(-DHAVE_ICU)
+  add_compile_definitions(HAVE_ICU)
 
   find_package(ICU REQUIRED COMPONENTS uc)
 
@@ -302,7 +313,7 @@ endif ()
 
 if (APPLE AND HB_HAVE_CORETEXT)
   # Apple Advanced Typography
-  add_definitions(-DHAVE_CORETEXT)
+  add_compile_definitions(HAVE_CORETEXT)
 
   list(APPEND project_headers ${PROJECT_SOURCE_DIR}/src/hb-coretext.h)
 
@@ -339,14 +350,14 @@ if (APPLE AND HB_HAVE_CORETEXT)
 endif ()
 
 if (WIN32 AND HB_HAVE_GDI)
-  add_definitions(-DHAVE_GDI)
+  add_compile_definitions(HAVE_GDI)
   list(APPEND project_headers ${PROJECT_SOURCE_DIR}/src/hb-gdi.h)
   list(APPEND THIRD_PARTY_LIBS gdi32 user32)
   list(APPEND PC_LIBS_PRIV -lgdi32 -luser32)
 endif ()
 
 if (WIN32 AND HB_HAVE_UNISCRIBE)
-  add_definitions(-DHAVE_UNISCRIBE)
+  add_compile_definitions(HAVE_UNISCRIBE)
   list(APPEND project_headers ${PROJECT_SOURCE_DIR}/src/hb-uniscribe.h)
   list(APPEND THIRD_PARTY_LIBS usp10 gdi32 rpcrt4 user32)
   list(APPEND PC_LIBS_PRIV -lusp10 -lgdi32 -lrpcrt4 -luser32)
@@ -361,7 +372,7 @@ if (WIN32 AND HB_HAVE_DIRECTWRITE)
   if (NOT HAVE_DWRITE_1_H)
     message(FATAL_ERROR "DirectWrite was enabled explicitly, but required header is missing")
   endif ()
-  add_definitions(-DHAVE_DIRECTWRITE)
+  add_compile_definitions(HAVE_DIRECTWRITE)
   list(APPEND project_headers ${PROJECT_SOURCE_DIR}/src/hb-directwrite.h)
   list(APPEND THIRD_PARTY_LIBS dwrite)
   list(APPEND PC_LIBS_PRIV -ldwrite)
@@ -379,13 +390,13 @@ if (HB_HAVE_CAIRO)
   endif()
   include_directories(${CAIRO_INCLUDE_DIRS})
   mark_as_advanced(CAIRO_INCLUDE_DIRS CAIRO_LIBRARIESNAMES)
-  add_definitions(-DHAVE_CAIRO=1)
+  add_compile_definitions(HAVE_CAIRO=1)
   list(APPEND project_headers ${PROJECT_SOURCE_DIR}/src/hb-cairo.h)
   list(APPEND THIRD_PARTY_LIBS ${CAIRO_LIBRARIESNAMES})
 endif()
 
 if (HB_HAVE_GOBJECT)
-  add_definitions(-DHAVE_GOBJECT)
+  add_compile_definitions(HAVE_GOBJECT)
   include (FindPerl)
 
   # Use the hints from glib-2.0.pc to find glib-mkenums
@@ -652,7 +663,7 @@ if (HB_HAVE_CAIRO)
 endif()
 
 if (BUILD_SHARED_LIBS AND WIN32 AND NOT MINGW)
-  add_definitions("-DHB_DLL_EXPORT")
+  add_compile_definitions(HB_DLL_EXPORT)
 endif ()
 
 # On Windows, g-ir-scanner requires a DLL build in order for it to work
@@ -934,48 +945,19 @@ macro (make_hb_features_h)
 endmacro (make_hb_features_h)
 
 if (NOT SKIP_INSTALL_LIBRARIES AND NOT SKIP_INSTALL_ALL)
-  install(TARGETS harfbuzz
-    EXPORT harfbuzzConfig
-    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-    FRAMEWORK DESTINATION Library/Frameworks 
-    COMPONENT runtime OPTIONAL
-  )
+  set(hb_install_targets)
+  list(APPEND hb_install_targets harfbuzz)
   make_pkgconfig_pc_file("harfbuzz")
-  install(EXPORT harfbuzzConfig
-      NAMESPACE harfbuzz::
-      DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/harfbuzz
-  )
   if (HB_HAVE_ICU)
-    install(TARGETS harfbuzz-icu
-      ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-      LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-      RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-      FRAMEWORK DESTINATION Library/Frameworks 
-      COMPONENT runtime OPTIONAL
-    )
+    list(APPEND hb_install_targets harfbuzz-icu)
     make_pkgconfig_pc_file("harfbuzz-icu")
   endif ()
   if (HB_HAVE_CAIRO)
-    install(TARGETS harfbuzz-cairo
-      ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-      LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-      RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-      FRAMEWORK DESTINATION Library/Frameworks 
-      COMPONENT runtime OPTIONAL
-    )
+    list(APPEND hb_install_targets harfbuzz-cairo)
     make_pkgconfig_pc_file("harfbuzz-cairo")
   endif ()
   if (HB_BUILD_SUBSET)
-    install(TARGETS harfbuzz-subset
-      EXPORT harfbuzz-subset
-      ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-      LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-      RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-      FRAMEWORK DESTINATION Library/Frameworks 
-      COMPONENT runtime OPTIONAL
-    )
+    list(APPEND hb_install_targets harfbuzz-subset)
     make_pkgconfig_pc_file("harfbuzz-subset")
   endif ()
   if (HB_BUILD_UTILS)
@@ -1031,4 +1013,16 @@ if (NOT SKIP_INSTALL_LIBRARIES AND NOT SKIP_INSTALL_ALL)
     endif ()
   endif ()
   make_hb_features_h()
+  install(TARGETS ${hb_install_targets}
+    EXPORT harfbuzzConfig
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    FRAMEWORK DESTINATION Library/Frameworks
+    COMPONENT runtime OPTIONAL
+  )
+  install(EXPORT harfbuzzConfig
+    NAMESPACE harfbuzz::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/harfbuzz
+  )
 endif ()

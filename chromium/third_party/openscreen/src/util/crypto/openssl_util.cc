@@ -53,7 +53,7 @@ void ClearOpenSSLERRStack(const Location& location) {
       return;
     }
 
-    OSP_DVLOG << "OpenSSL ERR_get_error stack from " << location.ToString();
+    OSP_DVLOG << "OpenSSL ERR_get_error stack from " << location;
     ERR_print_errors_cb(&OpenSSLErrorCallback, nullptr);
   } else {
     ERR_clear_error();

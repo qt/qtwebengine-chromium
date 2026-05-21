@@ -41,6 +41,7 @@ struct InliningPosition;
 class LookupIterator;
 class PropertyDescriptorObject;
 class ReadOnlyRoots;
+class EarlyReadOnlyRoots;
 class RootVisitor;
 class PropertyKey;
 
@@ -352,6 +353,8 @@ class Object : public AllStatic {
       Isolate* isolate, DirectHandle<JSAny> object,
       DirectHandle<JSAny> callable);
 
+  static MaybeHandle<Object> InstantiateIfLazyClosure(
+      LookupIterator* it, DirectHandle<Object> value);
   V8_EXPORT_PRIVATE V8_WARN_UNUSED_RESULT static MaybeHandle<Object>
   GetProperty(LookupIterator* it, bool is_global_reference = false);
 
@@ -716,10 +719,11 @@ V8_INLINE bool IsNumber(Tagged<Object> obj, ReadOnlyRoots roots);
 
 // Oddball checks are faster when they are raw pointer comparisons, so the
 // isolate/read-only roots overloads should be preferred where possible.
-#define IS_TYPE_FUNCTION_DECL(Type, ...)                              \
-  V8_INLINE bool Is##Type(Tagged<Object> obj, Isolate* isolate);      \
-  V8_INLINE bool Is##Type(Tagged<Object> obj, LocalIsolate* isolate); \
-  V8_INLINE bool Is##Type(Tagged<Object> obj, ReadOnlyRoots roots);   \
+#define IS_TYPE_FUNCTION_DECL(Type, ...)                                 \
+  V8_INLINE bool Is##Type(Tagged<Object> obj, Isolate* isolate);         \
+  V8_INLINE bool Is##Type(Tagged<Object> obj, LocalIsolate* isolate);    \
+  V8_INLINE bool Is##Type(Tagged<Object> obj, ReadOnlyRoots roots);      \
+  V8_INLINE bool Is##Type(Tagged<Object> obj, EarlyReadOnlyRoots roots); \
   V8_INLINE bool Is##Type(Tagged<Object> obj);
 ODDBALL_LIST(IS_TYPE_FUNCTION_DECL)
 HOLE_LIST(IS_TYPE_FUNCTION_DECL)
@@ -911,6 +915,8 @@ class Relocatable {
   static void Iterate(Isolate* isolate, RootVisitor* v);
   static void Iterate(RootVisitor* v, Relocatable* top);
   static char* Iterate(RootVisitor* v, char* t);
+
+  Isolate* isolate() const { return isolate_; }
 
  private:
   Isolate* isolate_;

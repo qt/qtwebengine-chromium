@@ -55,8 +55,7 @@ class ResourceTableHelper {
         const std::vector<ResourceType>& types) const = 0;
 };
 
-/// This transform updates the provided IR to support the necessary `resource_binding`
-/// restrictions/requirements.
+/// This transform updates the provided IR to support resource_table restrictions/requirements.
 ///
 /// We re-write the `getResource` and `hasResource` calls to use the provided storage buffer to
 /// validate the requested types.

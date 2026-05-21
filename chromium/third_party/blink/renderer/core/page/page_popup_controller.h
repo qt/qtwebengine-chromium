@@ -36,6 +36,7 @@
 #include "third_party/blink/renderer/platform/bindings/script_wrappable.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_vector.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
+#include "third_party/blink/renderer/platform/supplementable.h"
 #include "third_party/blink/renderer/platform/wtf/forward.h"
 #include "ui/gfx/geometry/rect.h"
 
@@ -48,10 +49,11 @@ class Page;
 class PagePopup;
 class PagePopupClient;
 
-class PagePopupController : public ScriptWrappable {
+class PagePopupController : public ScriptWrappable, public Supplement<Page> {
   DEFINE_WRAPPERTYPEINFO();
 
  public:
+  static const char kSupplementName[];
   PagePopupController(Page&, PagePopup&, PagePopupClient*);
 
   static PagePopupController* From(Page&);
@@ -80,6 +82,11 @@ class PagePopupController : public ScriptWrappable {
   void setMenuListOptionsBoundsInAXTree(
       const HeapVector<Member<DOMRect>>& options_bounds,
       bool children_updated);
+
+  // This methis is used to log messages from script running in the popup for
+  // debugging purposes because running console.log in the popup doesn't print
+  // to stdout or stderr.
+  void debugLog(const String&);
 
  private:
   PagePopup& popup_;

@@ -15,6 +15,7 @@ import * as Bindings from '../../models/bindings/bindings.js';
 import * as Breakpoints from '../../models/breakpoints/breakpoints.js';
 import * as Formatter from '../../models/formatter/formatter.js';
 import * as SourceMapScopes from '../../models/source_map_scopes/source_map_scopes.js';
+import * as StackTrace from '../../models/stack_trace/stack_trace.js';
 import * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as Workspace from '../../models/workspace/workspace.js';
 import * as CodeMirror from '../../third_party/codemirror.next/codemirror.next.js';
@@ -30,6 +31,7 @@ import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
 import {AddDebugInfoURLDialog} from './AddSourceMapURLDialog.js';
 import {BreakpointEditDialog} from './BreakpointEditDialog.js';
 import {BreakpointsSidebarController} from './BreakpointsView.js';
+import {convertMissingDebugInfo} from './CallStackSidebarPane.js';
 import {Plugin} from './Plugin.js';
 import {SourcesPanel} from './SourcesPanel.js';
 
@@ -200,7 +202,6 @@ export class DebuggerPlugin extends Plugin {
   // truth for re-creating the breakpoints.
   private breakpoints: BreakpointDescription[] = [];
   private continueToLocations: Array<{from: number, to: number, async: boolean, click: () => void}>|null = null;
-  private readonly liveLocationPool: Bindings.LiveLocation.LiveLocationPool;
   // When the editor content is changed by the user, this becomes
   // true. When the plugin is muted, breakpoints show up as disabled
   // and can't be manipulated. It is cleared again when the content is
@@ -249,8 +250,8 @@ export class DebuggerPlugin extends Plugin {
     this.ignoreListCallback = this.showIgnoreListInfobarIfNeeded.bind(this);
     Workspace.IgnoreListManager.IgnoreListManager.instance().addChangeListener(this.ignoreListCallback);
 
-    UI.Context.Context.instance().addFlavorChangeListener(SDK.DebuggerModel.CallFrame, this.callFrameChanged, this);
-    this.liveLocationPool = new Bindings.LiveLocation.LiveLocationPool();
+    UI.Context.Context.instance().addFlavorChangeListener(
+        StackTrace.StackTrace.DebuggableFrameFlavor, this.callFrameChanged, this);
 
     this.updateScriptFiles();
 
@@ -479,7 +480,8 @@ export class DebuggerPlugin extends Plugin {
         contextMenu.debugSection().appendItem(
             i18nString(UIStrings.addBreakpoint),
             this.createNewBreakpoint.bind(
-                this, line, EMPTY_BREAKPOINT_CONDITION, /* enabled */ true, /* isLogpoint */ false),
+                this, line, EMPTY_BREAKPOINT_CONDITION,
+                /* enabled */ true, /* isLogpoint */ false),
             {jslogContext: 'add-breakpoint'});
         if (supportsConditionalBreakpoints) {
           contextMenu.debugSection().appendItem(i18nString(UIStrings.addConditionalBreakpoint), () => {
@@ -491,7 +493,8 @@ export class DebuggerPlugin extends Plugin {
           contextMenu.debugSection().appendItem(
               i18nString(UIStrings.neverPauseHere),
               this.createNewBreakpoint.bind(
-                  this, line, NEVER_PAUSE_HERE_CONDITION, /* enabled */ true, /* isLogpoint */ false),
+                  this, line, NEVER_PAUSE_HERE_CONDITION, /* enabled */ true,
+                  /* isLogpoint */ false),
               {jslogContext: 'never-pause-here'});
         }
       }
@@ -647,11 +650,11 @@ export class DebuggerPlugin extends Plugin {
       return null;
     }
 
-    const selectedCallFrame =
-        (UI.Context.Context.instance().flavor(SDK.DebuggerModel.CallFrame) as SDK.DebuggerModel.CallFrame);
-    if (!selectedCallFrame) {
+    const debuggableFrame = UI.Context.Context.instance().flavor(StackTrace.StackTrace.DebuggableFrameFlavor);
+    if (!debuggableFrame) {
       return null;
     }
+    const selectedCallFrame = debuggableFrame.sdkFrame;
 
     let textPosition = editor.editor.posAtCoords(event);
     if (!textPosition) {
@@ -727,8 +730,9 @@ export class DebuggerPlugin extends Plugin {
         }
         objectPopoverHelper =
             await ObjectUI.ObjectPopoverHelper.ObjectPopoverHelper.buildObjectPopover(result.object, popover);
-        const potentiallyUpdatedCallFrame = UI.Context.Context.instance().flavor(SDK.DebuggerModel.CallFrame);
-        if (!objectPopoverHelper || selectedCallFrame !== potentiallyUpdatedCallFrame) {
+        const potentiallyUpdatedCallFrame =
+            UI.Context.Context.instance().flavor(StackTrace.StackTrace.DebuggableFrameFlavor);
+        if (!objectPopoverHelper || debuggableFrame !== potentiallyUpdatedCallFrame) {
           debuggerModel.runtimeModel().releaseObjectGroup('popover');
           if (objectPopoverHelper) {
             objectPopoverHelper.dispose();
@@ -865,7 +869,12 @@ export class DebuggerPlugin extends Plugin {
     const isLogpointForDialog = breakpoint?.isLogpoint() ?? Boolean(isLogpoint);
     const decorationElement = document.createElement('div');
     const compartment = new CodeMirror.Compartment();
-    const dialog = new BreakpointEditDialog(line.number - 1, oldCondition, isLogpointForDialog, async result => {
+    const dialog = new BreakpointEditDialog();
+    dialog.editorLineNumber = line.number - 1;
+    dialog.oldCondition = oldCondition,
+    dialog.breakpointType = isLogpointForDialog ? SDK.DebuggerModel.BreakpointType.LOGPOINT :
+                                                  SDK.DebuggerModel.BreakpointType.CONDITIONAL_BREAKPOINT;
+    dialog.onFinish = async result => {
       this.activeBreakpointDialog = null;
       this.#activeBreakpointEditRequest = undefined;
       dialog.detach();
@@ -883,7 +892,7 @@ export class DebuggerPlugin extends Plugin {
       } else {
         await this.createNewBreakpoint(line, result.condition, /* enabled */ true, result.isLogpoint);
       }
-    });
+    };
     editor.dispatch({
       effects: CodeMirror.StateEffect.appendConfig.of(compartment.of(CodeMirror.EditorView.decorations.of(
           CodeMirror.Decoration.set([CodeMirror.Decoration
@@ -909,7 +918,7 @@ export class DebuggerPlugin extends Plugin {
               dialog.saveAndFinish();
               this.#scheduledFinishingActiveDialog = false;
             } else {
-              dialog.focusEditor();
+              dialog.focus();
             }
           }
         }, 200);
@@ -918,7 +927,7 @@ export class DebuggerPlugin extends Plugin {
 
     dialog.markAsExternallyManaged();
     dialog.show(decorationElement);
-    dialog.focusEditor();
+    dialog.focus();
     this.activeBreakpointDialog = dialog;
     this.#activeBreakpointEditRequest = breakpointEditRequest;
 
@@ -981,10 +990,11 @@ export class DebuggerPlugin extends Plugin {
     if (!executionContext) {
       return null;
     }
-    const callFrame = UI.Context.Context.instance().flavor(SDK.DebuggerModel.CallFrame);
-    if (!callFrame) {
+    const debuggableFrame = UI.Context.Context.instance().flavor(StackTrace.StackTrace.DebuggableFrameFlavor);
+    if (!debuggableFrame) {
       return null;
     }
+    const callFrame = debuggableFrame.sdkFrame;
     const url = this.uiSourceCode.url();
 
     const rawLocationToEditorOffset: (location: SDK.DebuggerModel.Location|null) => Promise<number|null> = location =>
@@ -1051,10 +1061,11 @@ export class DebuggerPlugin extends Plugin {
     if (!executionContext || !this.editor) {
       return;
     }
-    const callFrame = UI.Context.Context.instance().flavor(SDK.DebuggerModel.CallFrame);
-    if (!callFrame) {
+    const debuggableFrame = UI.Context.Context.instance().flavor(StackTrace.StackTrace.DebuggableFrameFlavor);
+    if (!debuggableFrame) {
       return;
     }
+    const callFrame = debuggableFrame.sdkFrame;
     const start = callFrame.functionLocation() || callFrame.location();
     const debuggerModel = callFrame.debuggerModel;
 
@@ -1341,7 +1352,8 @@ export class DebuggerPlugin extends Plugin {
       const line = this.editor.state.doc.lineAt(editorLocation);
       const uiLocation = this.transformer.editorLocationToUILocation(line.number - 1, editorLocation - line.from);
       void this.setBreakpoint(
-          uiLocation.lineNumber, uiLocation.columnNumber, EMPTY_BREAKPOINT_CONDITION, /* enabled */ true,
+          uiLocation.lineNumber, uiLocation.columnNumber, EMPTY_BREAKPOINT_CONDITION,
+          /* enabled */ true,
           /* isLogpoint */ false);
     }
   }
@@ -1428,7 +1440,9 @@ export class DebuggerPlugin extends Plugin {
     });
   }
 
-  private updateMissingDebugInfoInfobar(warning: SDK.DebuggerModel.MissingDebugInfoDetails|null): void {
+  private updateMissingDebugInfoInfobar(
+      warning: {resources: SDK.DebuggerModel.MissingDebugFiles[], details: Platform.UIString.LocalizedString}|
+      null): void {
     if (this.missingDebugInfoBar) {
       return;
     }
@@ -1642,24 +1656,22 @@ export class DebuggerPlugin extends Plugin {
   }
 
   private async callFrameChanged(): Promise<void> {
-    this.liveLocationPool.disposeAll();
-    const callFrame = UI.Context.Context.instance().flavor(SDK.DebuggerModel.CallFrame);
-    if (!callFrame) {
-      this.setExecutionLocation(null);
+    const frameFlavor = UI.Context.Context.instance().flavor(StackTrace.StackTrace.DebuggableFrameFlavor);
+    if (frameFlavor?.frame.uiSourceCode?.canonicalScriptId() === this.uiSourceCode.canonicalScriptId()) {
+      const uiLocation = new Workspace.UISourceCode.UILocation(
+          frameFlavor.frame.uiSourceCode, frameFlavor.frame.line, frameFlavor.frame.column);
+      this.setExecutionLocation(uiLocation);
+      if (frameFlavor.frame.missingDebugInfo) {
+        this.updateMissingDebugInfoInfobar(
+            convertMissingDebugInfo(frameFlavor.frame.missingDebugInfo, frameFlavor.sdkFrame.functionName));
+      } else {
+        this.updateMissingDebugInfoInfobar(null);
+      }
+      // We are paused and the user is specifically looking at this UISourceCode either because
+      // this file is on top of stack, or the user explicitly selected a stack frame for this UISourceCode.
+      this.#recordSourcesPanelDebuggedMetrics();
     } else {
-      await Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance().createCallFrameLiveLocation(
-          callFrame.location(), async (liveLocation: Bindings.LiveLocation.LiveLocation) => {
-            const uiLocation = await liveLocation.uiLocation();
-            if (uiLocation && uiLocation.uiSourceCode.canonicalScriptId() === this.uiSourceCode.canonicalScriptId()) {
-              this.setExecutionLocation(uiLocation);
-              this.updateMissingDebugInfoInfobar(callFrame.missingDebugInfoDetails);
-              // We are paused and the user is specifically looking at this UISourceCode either because
-              // this file is on top of stack, or the user explicitly selected a stack frame for this UISourceCode.
-              this.#recordSourcesPanelDebuggedMetrics();
-            } else {
-              this.setExecutionLocation(null);
-            }
-          }, this.liveLocationPool);
+      this.setExecutionLocation(null);
     }
   }
 
@@ -1730,7 +1742,6 @@ export class DebuggerPlugin extends Plugin {
     this.editor = undefined;
 
     UI.Context.Context.instance().removeFlavorChangeListener(SDK.DebuggerModel.CallFrame, this.callFrameChanged, this);
-    this.liveLocationPool.disposeAll();
   }
 
   /**

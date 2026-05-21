@@ -514,8 +514,6 @@ class CORE_EXPORT WebViewImpl final : public WebView,
   // changed.
   void DidUpdateBrowserControls();
 
-  void DidUpdateLoadProgress(float);
-
   void DidUpdateMaxSafeAreaInsets(const gfx::InsetsF& max_safe_area_insets);
 
   void AddAutoplayFlags(int32_t) override;
@@ -582,13 +580,6 @@ class CORE_EXPORT WebViewImpl final : public WebView,
   // adjacent UI element in the containing window.
   void TakeFocus(bool reverse);
 
-  // Shows a previously created WebView (via window.open()).
-  void Show(const LocalFrameToken& opener_frame_token,
-            NavigationPolicy policy,
-            const gfx::Rect& requested_rect,
-            const gfx::Rect& adjusted_rect,
-            bool opened_by_user_gesture);
-
   // Send the window rect to the browser and call `ack_callback` when the
   // browser has processed it.
   void SendWindowRectToMainFrameHost(const gfx::Rect& bounds,
@@ -599,15 +590,22 @@ class CORE_EXPORT WebViewImpl final : public WebView,
   void DidAccessInitialMainDocument();
 
 #if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
+  // Additional Windowing Controls API.
+  using WindowingControlsChangeCallback = base::OnceCallback<void(bool)>;
   // Sends window.minimize() requests to the browser window.
-  void Minimize();
+  void Minimize(WindowingControlsChangeCallback);
   // Sends window.maximize() requests to the browser window.
-  void Maximize();
+  void Maximize(WindowingControlsChangeCallback);
   // Sends window.restore() requests to the browser window.
-  void Restore();
+  void Restore(WindowingControlsChangeCallback);
   // Sends window.setResizable() requests to the browser window.
-  void SetResizable(bool resizable);
-#endif
+  void SetResizable(bool resizable, WindowingControlsChangeCallback);
+
+  // Resolve promises to window functions above.
+  void OnWindowShowStateChanged(ui::mojom::blink::WindowShowState old_state,
+                                ui::mojom::blink::WindowShowState new_state);
+  void OnResizableChanged(bool new_resizable);
+#endif  // !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
 
   // TODO(crbug.com/1149992): This is called from the associated widget and this
   // code should eventually move out of WebView into somewhere else.
@@ -658,6 +656,9 @@ class CORE_EXPORT WebViewImpl final : public WebView,
   FRIEND_TEST_ALL_PREFIXES(WebViewTest, UpdateTargetURLWithInvalidURL);
   FRIEND_TEST_ALL_PREFIXES(WebViewTest, TouchDragContextMenu);
   FRIEND_TEST_ALL_PREFIXES(WebViewTest, ContextMenuAndDrag);
+  FRIEND_TEST_ALL_PREFIXES(WebViewTest,
+                           MouseFocusOnTabindexLinkDoesNotShowBubble);
+  FRIEND_TEST_ALL_PREFIXES(WebViewTest, KeyboardFocusOnTabindexLinkShowsBubble);
 
   friend class frame_test_helpers::WebViewHelper;
   friend class SimCompositor;
@@ -797,6 +798,19 @@ class CORE_EXPORT WebViewImpl final : public WebView,
   // trigger recalculation of zoom factor for all affected widgets.
   void UpdateWidgetZoomFactors();
   void UpdateInspectorDeviceScaleFactorOverride();
+
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
+  void WasMaximized();
+  void WasMinimized();
+  void WasRestored();
+
+  enum class WindowShowStateChangeType {
+    kMaximize,
+    kMinimize,
+    kRestore,
+  };
+  void HandleWindowShowStateChangeCallbackWith(WindowShowStateChangeType type);
+#endif
 
   // A value provided by the browser to state that all Widgets in this
   // WebView's frame tree will never be user-visible and thus never need to
@@ -1015,6 +1029,13 @@ class CORE_EXPORT WebViewImpl final : public WebView,
 
   // All the registered observers.
   base::ObserverList<WebViewObserver> observers_;
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
+  std::optional<
+      std::pair<WindowShowStateChangeType, WindowingControlsChangeCallback>>
+      window_show_state_change_callback_;
+  std::optional<std::pair<bool, WindowingControlsChangeCallback>>
+      set_resizable_change_callback_;
+#endif
 };
 
 // WebView is always implemented by WebViewImpl, so explicitly allow the

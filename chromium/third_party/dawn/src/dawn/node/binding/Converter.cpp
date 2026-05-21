@@ -840,6 +840,33 @@ bool Converter::Convert(wgpu::TextureViewDimension& out,
     return Throw("invalid value for GPUTextureViewDimension");
 }
 
+bool Converter::Convert(interop::GPUTextureViewDimension& out,
+                        const wgpu::TextureViewDimension in) {
+    switch (in) {
+        case wgpu::TextureViewDimension::e1D:
+            out = interop::GPUTextureViewDimension::k1D;
+            return true;
+        case wgpu::TextureViewDimension::e2D:
+            out = interop::GPUTextureViewDimension::k2D;
+            return true;
+        case wgpu::TextureViewDimension::e2DArray:
+            out = interop::GPUTextureViewDimension::k2DArray;
+            return true;
+        case wgpu::TextureViewDimension::Cube:
+            out = interop::GPUTextureViewDimension::kCube;
+            return true;
+        case wgpu::TextureViewDimension::CubeArray:
+            out = interop::GPUTextureViewDimension::kCubeArray;
+            return true;
+        case wgpu::TextureViewDimension::e3D:
+            out = interop::GPUTextureViewDimension::k3D;
+            return true;
+        default:
+            break;
+    }
+    return false;
+}
+
 bool Converter::Convert(wgpu::ComputeState& out, const interop::GPUProgrammableStage& in) {
     out = {};
     out.module = *in.module.As<GPUShaderModule>();
@@ -1726,12 +1753,9 @@ bool Converter::Convert(interop::GPUFeatureName& out, wgpu::FeatureName in) {
         case wgpu::FeatureName::MultiPlanarFormatNv24:
         case wgpu::FeatureName::MultiPlanarFormatNv12a:
         case wgpu::FeatureName::MultiPlanarRenderTargets:
-        case wgpu::FeatureName::Norm16TextureFormats:
         case wgpu::FeatureName::Unorm16TextureFormats:
-        case wgpu::FeatureName::Snorm16TextureFormats:
         case wgpu::FeatureName::PixelLocalStorageCoherent:
         case wgpu::FeatureName::PixelLocalStorageNonCoherent:
-        case wgpu::FeatureName::R8UnormStorage:
         case wgpu::FeatureName::ShaderModuleCompilationOptions:
         case wgpu::FeatureName::SharedBufferMemoryD3D12Resource:
         case wgpu::FeatureName::SharedFenceDXGISharedHandle:
@@ -1756,11 +1780,11 @@ bool Converter::Convert(interop::GPUFeatureName& out, wgpu::FeatureName in) {
         case wgpu::FeatureName::DawnPartialLoadResolveTexture:
         case wgpu::FeatureName::DawnTexelCopyBufferRowAlignment:
         case wgpu::FeatureName::FlexibleTextureViews:
-        case wgpu::FeatureName::ChromiumExperimentalBindless:
         case wgpu::FeatureName::AdapterPropertiesWGPU:
         case wgpu::FeatureName::SharedBufferMemoryD3D12SharedMemoryFileMappingHandle:
         case wgpu::FeatureName::SharedTextureMemoryD3D12Resource:
         case wgpu::FeatureName::ChromiumExperimentalSamplingResourceTable:
+        case wgpu::FeatureName::ChromiumExperimentalSubgroupSizeControl:
             return false;
     }
     return false;
@@ -1801,6 +1825,21 @@ bool Converter::Convert(wgpu::WGSLLanguageFeatureName& out, interop::WGSLLanguag
         case interop::WGSLLanguageFeatureName::kSubgroupId:
             out = wgpu::WGSLLanguageFeatureName::SubgroupId;
             return true;
+        case interop::WGSLLanguageFeatureName::kSubgroupUniformity:
+            out = wgpu::WGSLLanguageFeatureName::SubgroupUniformity;
+            return true;
+        case interop::WGSLLanguageFeatureName::kTextureAndSamplerLet:
+            out = wgpu::WGSLLanguageFeatureName::TextureAndSamplerLet;
+            return true;
+        case interop::WGSLLanguageFeatureName::kBufferView:
+            out = wgpu::WGSLLanguageFeatureName::BufferView;
+            return true;
+        case interop::WGSLLanguageFeatureName::kFilteringParameters:
+            out = wgpu::WGSLLanguageFeatureName::FilteringParameters;
+            return true;
+        case interop::WGSLLanguageFeatureName::kSwizzleAssignment:
+            out = wgpu::WGSLLanguageFeatureName::SwizzleAssignment;
+            return true;
     }
     return false;
 }
@@ -1839,6 +1878,21 @@ bool Converter::Convert(interop::WGSLLanguageFeatureName& out, wgpu::WGSLLanguag
             return true;
         case wgpu::WGSLLanguageFeatureName::SubgroupId:
             out = interop::WGSLLanguageFeatureName::kSubgroupId;
+            return true;
+        case wgpu::WGSLLanguageFeatureName::SubgroupUniformity:
+            out = interop::WGSLLanguageFeatureName::kSubgroupUniformity;
+            return true;
+        case wgpu::WGSLLanguageFeatureName::TextureAndSamplerLet:
+            out = interop::WGSLLanguageFeatureName::kTextureAndSamplerLet;
+            return true;
+        case wgpu::WGSLLanguageFeatureName::BufferView:
+            out = interop::WGSLLanguageFeatureName::kBufferView;
+            return true;
+        case wgpu::WGSLLanguageFeatureName::FilteringParameters:
+            out = interop::WGSLLanguageFeatureName::kFilteringParameters;
+            return true;
+        case wgpu::WGSLLanguageFeatureName::SwizzleAssignment:
+            out = interop::WGSLLanguageFeatureName::kSwizzleAssignment;
             return true;
 
         case wgpu::WGSLLanguageFeatureName::ChromiumTestingUnimplemented:

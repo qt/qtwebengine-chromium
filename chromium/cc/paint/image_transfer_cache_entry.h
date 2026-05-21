@@ -84,7 +84,7 @@ class CC_PAINT_EXPORT ClientImageTransferCacheEntry final
   ClientImageTransferCacheEntry(
       const Image& image,
       bool needs_mips,
-      const std::optional<gfx::HDRMetadata>& hdr_metadata = std::nullopt,
+      const gfx::HDRMetadata& hdr_metadata,
       sk_sp<SkColorSpace> target_color_space = nullptr);
   ClientImageTransferCacheEntry(const Image& image,
                                 const Image& gainmap_image,
@@ -121,7 +121,7 @@ class CC_PAINT_EXPORT ClientImageTransferCacheEntry final
   std::optional<SkGainmapInfo> gainmap_info_;
 
   // The HDR metadata for non-gainmap HDR metadata.
-  std::optional<gfx::HDRMetadata> hdr_metadata_;
+  gfx::HDRMetadata hdr_metadata_;
 };
 
 class CC_PAINT_EXPORT ServiceImageTransferCacheEntry final
@@ -133,27 +133,6 @@ class CC_PAINT_EXPORT ServiceImageTransferCacheEntry final
   ServiceImageTransferCacheEntry(ServiceImageTransferCacheEntry&& other);
   ServiceImageTransferCacheEntry& operator=(
       ServiceImageTransferCacheEntry&& other);
-
-  // Populates this entry using the result of a hardware decode. The assumption
-  // is that |plane_images| are backed by textures that are in turn backed by a
-  // buffer (dmabuf in Chrome OS) containing the planes of the decoded image.
-  // |plane_images_format| indicates the planar layout of |plane_images|.
-  // |buffer_byte_size| is the size of the buffer. We assume the following:
-  //
-  // - The backing textures don't have mipmaps. We will generate the mipmaps if
-  //   |needs_mips| is true.
-  // - The conversion from YUV to RGB will be performed according to
-  //   |yuv_color_space|.
-  // - The colorspace of the resulting RGB image is sRGB.
-  //
-  // Returns true if the entry can be built, false otherwise.
-  bool BuildFromHardwareDecodedImage(GrDirectContext* gr_context,
-                                     std::vector<sk_sp<SkImage>> plane_images,
-                                     SkYUVAInfo::PlaneConfig plane_config,
-                                     SkYUVAInfo::Subsampling subsampling,
-                                     SkYUVColorSpace yuv_color_space,
-                                     size_t buffer_byte_size,
-                                     bool needs_mips);
 
   // ServiceTransferCacheEntry implementation:
   size_t CachedSize() const final;
@@ -183,9 +162,7 @@ class CC_PAINT_EXPORT ServiceImageTransferCacheEntry final
   size_t num_planes() const { return plane_images_.size(); }
   bool fits_on_gpu() const;
 
-  const std::optional<gfx::HDRMetadata>& hdr_metadata() const {
-    return hdr_metadata_;
-  }
+  const gfx::HDRMetadata& hdr_metadata() const { return hdr_metadata_; }
 
  private:
   raw_ptr<GrDirectContext> gr_context_ = nullptr;
@@ -199,7 +176,7 @@ class CC_PAINT_EXPORT ServiceImageTransferCacheEntry final
 
   // HDR metadata used by global tone map application and (potentially but not
   // yet) gain map application.
-  std::optional<gfx::HDRMetadata> hdr_metadata_;
+  gfx::HDRMetadata hdr_metadata_;
 
   // The value of `size_` is computed during deserialization and never updated
   // (even if the size of the image changes due to mipmaps being requested).

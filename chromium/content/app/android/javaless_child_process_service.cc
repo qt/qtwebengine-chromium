@@ -22,6 +22,7 @@
 #include "base/functional/callback.h"
 #include "base/logging.h"
 #include "base/memory/memory_pressure_listener.h"
+#include "base/memory/memory_pressure_listener_registry.h"
 #include "base/no_destructor.h"
 #include "base/process/process_handle.h"
 #include "base/strings/string_number_conversions.h"
@@ -29,8 +30,6 @@
 #include "base/synchronization/condition_variable.h"
 #include "base/synchronization/lock.h"
 #include "base/task/single_thread_task_runner.h"
-#include "base/task/thread_pool.h"
-#include "base/task/thread_pool/thread_pool_instance.h"
 #include "base/threading/simple_thread.h"
 #include "base/trace_event/trace_event.h"
 #include "base/version_info/android/channel_getter.h"
@@ -172,6 +171,16 @@ void ChildProcessService::Run() {
 }
 
 void ChildProcessService::SpawnMainThread() {
+  // LINT.IfChange
+#if defined(ARCH_CPU_64_BITS)
+  size_t stack_size = 8 * 1024 * 1024;
+#else
+  size_t stack_size = 4 * 1024 * 1024;
+#endif
+  // LINT.ThenChange(//base/android/java/src/org/chromium/base/process_launcher/ChildProcessService.java)
+  // Set up stack size to match Java.
+  base::SimpleThread::Options options;
+  options.stack_size = stack_size;
   thread_ =
       std::make_unique<base::DelegateSimpleThread>(this, "CrRendererMain");
   thread_->StartAsync();
@@ -234,19 +243,17 @@ ScopedAStatus ChildProcessService::forceKill() {
 }
 
 ScopedAStatus ChildProcessService::onMemoryPressure(int32_t pressure) {
-  // Need to make sure the threadpool exists. If it doesn't exist, that means we
-  // are probably before starting the renderer main thread, and notifying memory
-  // pressure likely won't work either.
-  if (base::ThreadPoolInstance::Get()) {
+  // Make sure the renderer main thread has been initialized. If it hasn't, it's
+  // probably too early during startup, and notifying memory pressure likely
+  // won't work either.
+  if (base::SingleThreadTaskRunner::HasMainThreadDefault()) {
     // This logic doesn't match the Java equivalent. In the Java implementation,
     // we assume that the ChildProcessService is getting memory pressure signals
     // from the browser process (this function), and ComponentCallbacks2. We
     // only have signals from the browser process available to a javaless
     // renderer, so we trust what it sends entirely.
-    base::ThreadPool::PostTask(
-        FROM_HERE,
-        base::BindOnce(&base::MemoryPressureListener::NotifyMemoryPressure,
-                       static_cast<base::MemoryPressureLevel>(pressure)));
+    base::MemoryPressureListenerRegistry::NotifyMemoryPressureFromAnyThread(
+        static_cast<base::MemoryPressureLevel>(pressure));
   }
   return ScopedAStatus::ok();
 }
@@ -284,15 +291,15 @@ std::shared_ptr<content::ChildProcessService>& getChildProcessService() {
   return *service_ptr.get();
 }
 
-std::set<int32_t>& getIntentTokens() {
-  static base::NoDestructor<std::set<int32_t>> tokens;
+std::set<uint64_t>& getBindTokens() {
+  static base::NoDestructor<std::set<uint64_t>> tokens;
   return *tokens.get();
 }
 
 void onDestroy(ANativeService* service) {}
 
 AIBinder* onBind(ANativeService* service,
-                 int32_t intentToken,
+                 uint64_t bindToken,
                  char const* action,
                  char const* data) {
   auto& child_process_service = getChildProcessService();
@@ -301,7 +308,7 @@ AIBinder* onBind(ANativeService* service,
         ndk::SharedRefBase::make<content::ChildProcessService>();
     child_process_service->SpawnMainThread();
   }
-  getIntentTokens().insert(intentToken);
+  getBindTokens().insert(bindToken);
   ::ndk::SpAIBinder spBinder = child_process_service->asBinder();
   AIBinder* result = spBinder.get();
   // Required to do this by the NDK API and is not balanced anywhere.
@@ -309,11 +316,11 @@ AIBinder* onBind(ANativeService* service,
   return result;
 }
 
-void onRebind(ANativeService* service, int32_t intentToken) {}
+void onRebind(ANativeService* service, uint64_t bindToken) {}
 
-bool onUnbind(ANativeService* service, int32_t intentToken) {
-  auto& tokens = getIntentTokens();
-  tokens.erase(intentToken);
+bool onUnbind(ANativeService* service, uint64_t bindToken) {
+  auto& tokens = getBindTokens();
+  tokens.erase(bindToken);
   if (tokens.empty()) {
     getChildProcessService().reset();
   }

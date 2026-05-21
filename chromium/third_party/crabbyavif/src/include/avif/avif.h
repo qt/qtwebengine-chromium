@@ -152,6 +152,8 @@ enum avifColorPrimaries : uint16_t {
 enum CompressionFormat {
     COMPRESSION_FORMAT_AVIF = 0,
     COMPRESSION_FORMAT_HEIC = 1,
+    COMPRESSION_FORMAT_AVIF2 = 2,
+    COMPRESSION_FORMAT_JPEG_XL = 3,
 };
 
 enum avifRGBFormat {

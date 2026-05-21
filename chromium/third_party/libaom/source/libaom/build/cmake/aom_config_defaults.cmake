@@ -60,6 +60,8 @@ set_aom_detect_var(HAVE_RVV 0 "Enables RVV optimizations.")
 set_aom_detect_var(HAVE_FEXCEPT 0
                    "Internal flag, GNU fenv.h present for target.")
 set_aom_detect_var(HAVE_PTHREAD_H 0 "Internal flag, target pthread support.")
+set_aom_detect_var(HAVE_PTHREAD_SETNAME_NP 0
+                   "Internal flag, target has pthread_setname_np API support.")
 set_aom_detect_var(HAVE_UNISTD_H 0
                    "Internal flag, unistd.h present for target.")
 set_aom_detect_var(HAVE_WXWIDGETS 0 "WxWidgets present.")

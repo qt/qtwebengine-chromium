@@ -240,9 +240,7 @@ std::ostream& operator<<(std::ostream& os, const WasmFunctionName& name) {
   return os;
 }
 
-WasmModule::WasmModule(ModuleOrigin origin)
-    : signature_zone(GetWasmEngine()->allocator(), "signature zone"),
-      origin(origin) {}
+WasmModule::WasmModule(ModuleOrigin origin) : origin(origin) {}
 
 uint64_t WasmModule::signature_hash(const TypeCanonicalizer* type_canonicalizer,
                                     uint32_t function_index) const {
@@ -331,7 +329,7 @@ DirectHandle<JSObject> GetTypeForFunction(Isolate* isolate,
 }
 
 DirectHandle<JSObject> GetTypeForGlobal(Isolate* isolate, bool is_mutable,
-                                        ValueType type) {
+                                        ValueType unsafe_type) {
   Factory* factory = isolate->factory();
 
   DirectHandle<JSFunction> object_function = isolate->object_function();
@@ -342,7 +340,7 @@ DirectHandle<JSObject> GetTypeForGlobal(Isolate* isolate, bool is_mutable,
   JSObject::AddProperty(isolate, object, mutable_string,
                         factory->ToBoolean(is_mutable), NONE);
   JSObject::AddProperty(isolate, object, value_string,
-                        ToValueTypeString(isolate, type), NONE);
+                        ToValueTypeString(isolate, unsafe_type), NONE);
 
   return object;
 }
@@ -726,13 +724,13 @@ int GetSourcePosition(const WasmModule* module, uint32_t func_index,
 size_t WasmModule::EstimateStoredSize() const {
   UPDATE_WHEN_CLASS_CHANGES(WasmModule,
 #if V8_ENABLE_DRUMBRAKE
-                            952
+                            912
 #else   // V8_ENABLE_DRUMBRAKE
-                            920
+                            880
 #endif  // V8_ENABLE_DRUMBRAKE
   );
   return sizeof(WasmModule) +                            // --
-         signature_zone.allocation_size_for_tracing() +  // --
+         signature_storage.TotalReservedSize() +         // --
          ContentSize(types) +                            // --
          ContentSize(isorecursive_canonical_type_ids) +  // --
          ContentSize(functions) +                        // --
@@ -807,9 +805,9 @@ size_t TypeFeedbackStorage::EstimateCurrentMemoryConsumption() const {
 size_t WasmModule::EstimateCurrentMemoryConsumption() const {
   UPDATE_WHEN_CLASS_CHANGES(WasmModule,
 #if V8_ENABLE_DRUMBRAKE
-                            952
+                            912
 #else   // V8_ENABLE_DRUMBRAKE
-                            920
+                            880
 #endif  // V8_ENABLE_DRUMBRAKE
   );
   size_t result = EstimateStoredSize();

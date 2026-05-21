@@ -55,5 +55,5 @@ void CBC_CommonByteMatrix::Set(size_t x, size_t y, uint8_t value) {
 }
 
 void CBC_CommonByteMatrix::Fill(uint8_t value) {
-  std::fill(std::begin(bytes_), std::end(bytes_), value);
+  std::ranges::fill(bytes_, value);
 }

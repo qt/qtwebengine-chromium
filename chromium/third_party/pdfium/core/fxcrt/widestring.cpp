@@ -42,7 +42,7 @@ namespace {
 size_t FuseSurrogates(pdfium::span<wchar_t> s) {
   size_t dest_pos = 0;
   for (size_t i = 0; i < s.size(); ++i) {
-    // TODO(crbug.com/pdfium/2031): Always use UTF-16.
+    // TODO(crbug.com/42271042): Always use UTF-16.
     if (pdfium::IsHighSurrogate(s[i]) && i + 1 < s.size() &&
         pdfium::IsLowSurrogate(s[i + 1])) {
       s[dest_pos++] = pdfium::SurrogatePair(s[i], s[i + 1]).ToCodePoint();
@@ -150,7 +150,7 @@ std::optional<size_t> GuessSizeForVSWPrintf(const wchar_t* pFormat,
       case 's': {
         const wchar_t* pstrNextArg = va_arg(argList, const wchar_t*);
         if (pstrNextArg) {
-          nItemLen = UNSAFE_TODO(wcslen(pstrNextArg));
+          nItemLen = wcslen(pstrNextArg);
           if (nItemLen < 1) {
             nItemLen = 1;
           }
@@ -161,7 +161,7 @@ std::optional<size_t> GuessSizeForVSWPrintf(const wchar_t* pFormat,
       case 'S': {
         const char* pstrNextArg = va_arg(argList, const char*);
         if (pstrNextArg) {
-          nItemLen = UNSAFE_TODO(strlen(pstrNextArg));
+          nItemLen = strlen(pstrNextArg);
           if (nItemLen < 1) {
             nItemLen = 1;
           }
@@ -173,7 +173,7 @@ std::optional<size_t> GuessSizeForVSWPrintf(const wchar_t* pFormat,
       case 'S' | FORCE_ANSI: {
         const char* pstrNextArg = va_arg(argList, const char*);
         if (pstrNextArg) {
-          nItemLen = UNSAFE_TODO(strlen(pstrNextArg));
+          nItemLen = strlen(pstrNextArg);
           if (nItemLen < 1) {
             nItemLen = 1;
           }
@@ -185,7 +185,7 @@ std::optional<size_t> GuessSizeForVSWPrintf(const wchar_t* pFormat,
       case 'S' | FORCE_UNICODE: {
         const wchar_t* pstrNextArg = va_arg(argList, wchar_t*);
         if (pstrNextArg) {
-          nItemLen = UNSAFE_TODO(wcslen(pstrNextArg));
+          nItemLen = wcslen(pstrNextArg);
           if (nItemLen < 1) {
             nItemLen = 1;
           }
@@ -240,7 +240,7 @@ std::optional<size_t> GuessSizeForVSWPrintf(const wchar_t* pFormat,
             f = va_arg(argList, double);
             FXSYS_snprintf(pszTemp, sizeof(pszTemp), "%*.*f", nWidth,
                            nPrecision + 6, f);
-            nItemLen = UNSAFE_TODO(strlen(pszTemp));
+            nItemLen = strlen(pszTemp);
           }
           break;
         case 'p':
@@ -295,8 +295,8 @@ std::optional<WideString> TryVSWPrintf(size_t size,
 // Appends a Unicode code point to a `WideString` using either UTF-16 or UTF-32,
 // depending on the platform's definition of `wchar_t`.
 //
-// TODO(crbug.com/pdfium/2031): Always use UTF-16.
-// TODO(crbug.com/pdfium/2041): Migrate to `WideString`.
+// TODO(crbug.com/42271042): Always use UTF-16.
+// TODO(crbug.com/42271053): Migrate to `WideString`.
 void AppendCodePointToWideString(char32_t code_point, WideString& buffer) {
   if (code_point > pdfium::kMaximumSupplementaryCodePoint) {
     // Invalid code point above U+10FFFF.

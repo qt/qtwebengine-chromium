@@ -460,7 +460,7 @@ BmpDecoder::Status CFX_BmpDecompressor::DecodeRGB() {
       }
       case 24:
       case 32:
-        // TODO(crbug.com/pdfium/1901): Apply bitfields.
+        // TODO(crbug.com/42270916): Apply bitfields.
         fxcrt::Copy(pdfium::span(dest_buf).first(src_row_bytes_),
                     out_row_buffer_);
         idx += src_row_bytes_;

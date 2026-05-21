@@ -1,8 +1,7 @@
 # Contributing changes to Chromium DevTools
 
 See [Get the Code](../get_the_code.md) for details on how to checkout the code,
-and [Design Documents](design.md) for information regarding our design process.
-Also check out [Contributing to
+and check out [Contributing to
 Chromium](https://chromium.googlesource.com/chromium/src/+/main/docs/contributing.md)
 for general information how to contribute to any Chromium project (including
 its developer tools).

@@ -3,9 +3,9 @@
 
 /***************************************************************************
  *
- * Copyright (c) 2015-2025 The Khronos Group Inc.
- * Copyright (c) 2015-2025 Valve Corporation
- * Copyright (c) 2015-2025 LunarG, Inc.
+ * Copyright (c) 2015-2026 The Khronos Group Inc.
+ * Copyright (c) 2015-2026 Valve Corporation
+ * Copyright (c) 2015-2026 LunarG, Inc.
  * Copyright (c) 2015-2024 Google Inc.
  * Copyright (c) 2023-2024 RasterGrid Kft.
  *
@@ -188,6 +188,9 @@ virtual void PreCallRecordGetPhysicalDeviceSparseImageFormatProperties(
 virtual void PostCallRecordGetPhysicalDeviceSparseImageFormatProperties(
     VkPhysicalDevice physicalDevice, VkFormat format, VkImageType type, VkSampleCountFlagBits samples, VkImageUsageFlags usage,
     VkImageTiling tiling, uint32_t* pPropertyCount, VkSparseImageFormatProperties* pProperties, const RecordObject& record_obj) {}
+virtual bool PreCallValidateEnumerateInstanceVersion(uint32_t* pApiVersion, const ErrorObject& error_obj) const { return false; }
+virtual void PreCallRecordEnumerateInstanceVersion(uint32_t* pApiVersion, const RecordObject& record_obj) {}
+virtual void PostCallRecordEnumerateInstanceVersion(uint32_t* pApiVersion, const RecordObject& record_obj) {}
 virtual bool PreCallValidateEnumeratePhysicalDeviceGroups(VkInstance instance, uint32_t* pPhysicalDeviceGroupCount,
                                                           VkPhysicalDeviceGroupProperties* pPhysicalDeviceGroupProperties,
                                                           const ErrorObject& error_obj) const {
@@ -1058,6 +1061,14 @@ virtual void PostCallRecordSubmitDebugUtilsMessageEXT(VkInstance instance, VkDeb
                                                       VkDebugUtilsMessageTypeFlagsEXT messageTypes,
                                                       const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
                                                       const RecordObject& record_obj) {}
+virtual bool PreCallValidateGetPhysicalDeviceDescriptorSizeEXT(VkPhysicalDevice physicalDevice, VkDescriptorType descriptorType,
+                                                               const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordGetPhysicalDeviceDescriptorSizeEXT(VkPhysicalDevice physicalDevice, VkDescriptorType descriptorType,
+                                                             const RecordObject& record_obj) {}
+virtual void PostCallRecordGetPhysicalDeviceDescriptorSizeEXT(VkPhysicalDevice physicalDevice, VkDescriptorType descriptorType,
+                                                              const RecordObject& record_obj) {}
 virtual bool PreCallValidateGetPhysicalDeviceMultisamplePropertiesEXT(VkPhysicalDevice physicalDevice,
                                                                       VkSampleCountFlagBits samples,
                                                                       VkMultisamplePropertiesEXT* pMultisampleProperties,
@@ -1349,5 +1360,29 @@ virtual void PreCallRecordEnumeratePhysicalDeviceQueueFamilyPerformanceCountersB
 virtual void PostCallRecordEnumeratePhysicalDeviceQueueFamilyPerformanceCountersByRegionARM(
     VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex, uint32_t* pCounterCount, VkPerformanceCounterARM* pCounters,
     VkPerformanceCounterDescriptionARM* pCounterDescriptions, const RecordObject& record_obj) {}
+#ifdef VK_USE_PLATFORM_UBM_SEC
+virtual bool PreCallValidateCreateUbmSurfaceSEC(VkInstance instance, const VkUbmSurfaceCreateInfoSEC* pCreateInfo,
+                                                const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface,
+                                                const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordCreateUbmSurfaceSEC(VkInstance instance, const VkUbmSurfaceCreateInfoSEC* pCreateInfo,
+                                              const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface,
+                                              const RecordObject& record_obj) {}
+virtual void PostCallRecordCreateUbmSurfaceSEC(VkInstance instance, const VkUbmSurfaceCreateInfoSEC* pCreateInfo,
+                                               const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface,
+                                               const RecordObject& record_obj) {}
+virtual bool PreCallValidateGetPhysicalDeviceUbmPresentationSupportSEC(VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex,
+                                                                       struct ubm_device* ubm_device,
+                                                                       const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordGetPhysicalDeviceUbmPresentationSupportSEC(VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex,
+                                                                     struct ubm_device* ubm_device,
+                                                                     const RecordObject& record_obj) {}
+virtual void PostCallRecordGetPhysicalDeviceUbmPresentationSupportSEC(VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex,
+                                                                      struct ubm_device* ubm_device,
+                                                                      const RecordObject& record_obj) {}
+#endif  // VK_USE_PLATFORM_UBM_SEC
 
 // NOLINTEND

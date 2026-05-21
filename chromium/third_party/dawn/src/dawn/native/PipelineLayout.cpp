@@ -57,6 +57,9 @@ ResultOrError<UnpackedPtr<PipelineLayoutDescriptor>> ValidatePipelineLayoutDescr
     UnpackedPtr<PipelineLayoutDescriptor> unpacked;
     DAWN_TRY_ASSIGN(unpacked, ValidateAndUnpack(descriptor));
 
+    // A binding count that will be updated as we validate the various parts ot the pipeline layout.
+    BindingCounts bindingCounts{};
+
     // Validation for any pixel local storage.
     if (auto* pls = unpacked.Get<PipelineLayoutPixelLocalStorage>()) {
         absl::InlinedVector<StorageAttachmentInfoForValidation, 4> attachments;
@@ -77,11 +80,41 @@ ResultOrError<UnpackedPtr<PipelineLayoutDescriptor>> ValidatePipelineLayoutDescr
                                  {attachments.data(), attachments.size()}));
     }
 
-    DAWN_INVALID_IF(descriptor->bindGroupLayoutCount > kMaxBindGroups,
-                    "bindGroupLayoutCount (%i) is larger than the maximum allowed (%i).",
-                    descriptor->bindGroupLayoutCount, kMaxBindGroups);
+    // Validation for the resource table, if any.
+    bool usesResourceTable = false;
+    if (auto* rt = unpacked.Get<PipelineLayoutResourceTable>()) {
+        DAWN_INVALID_IF(rt->usesResourceTable &&
+                            !device->HasFeature(Feature::ChromiumExperimentalSamplingResourceTable),
+                        "Resource table used without the %s feature enabled.",
+                        wgpu::FeatureName::ChromiumExperimentalSamplingResourceTable);
+        usesResourceTable = rt->usesResourceTable;
 
-    BindingCounts bindingCounts = {};
+        // Add to the limits the storage buffer that will be used for the availability data of the
+        // resource table. Set a minimum binding size so as to not increment unverifiedBufferCount.
+        BindGroupLayoutEntry availabilityEntry{
+            .binding = 0,
+            .visibility = kAllStages,
+            .buffer =
+                {
+                    .type = wgpu::BufferBindingType::ReadOnlyStorage,
+                    .minBindingSize = 4,
+                },
+        };
+        IncrementBindingCounts(&bindingCounts, Unpack(&availabilityEntry));
+    }
+
+    // Validation for the bind group layouts.
+    if (usesResourceTable) {
+        DAWN_INVALID_IF(descriptor->bindGroupLayoutCount + 1 > kMaxBindGroups,
+                        "bindGroupLayoutCount (%i) + 1 for the resource table is larger than the "
+                        "maximum allowed (%i).",
+                        descriptor->bindGroupLayoutCount, kMaxBindGroups);
+    } else {
+        DAWN_INVALID_IF(descriptor->bindGroupLayoutCount > kMaxBindGroups,
+                        "bindGroupLayoutCount (%i) is larger than the maximum allowed (%i).",
+                        descriptor->bindGroupLayoutCount, kMaxBindGroups);
+    }
+
     for (uint32_t i = 0; i < descriptor->bindGroupLayoutCount; ++i) {
         if (descriptor->bindGroupLayouts[i] == nullptr) {
             continue;
@@ -99,8 +132,6 @@ ResultOrError<UnpackedPtr<PipelineLayoutDescriptor>> ValidatePipelineLayoutDescr
                                                     ->GetValidationBindingCounts());
     }
 
-    DAWN_TRY(ValidateBindingCounts(device->GetLimits(), bindingCounts, device->GetAdapter()));
-
     // Validate immediateSize.
     if (descriptor->immediateSize) {
         DAWN_INVALID_IF(!device->GetInstance()->HasFeature(
@@ -112,6 +143,7 @@ ResultOrError<UnpackedPtr<PipelineLayoutDescriptor>> ValidatePipelineLayoutDescr
                         descriptor->immediateSize, maxImmediateSize);
     }
 
+    DAWN_TRY(ValidateBindingCounts(device->GetLimits(), bindingCounts, device->GetAdapter()));
     return unpacked;
 }
 
@@ -164,6 +196,10 @@ PipelineLayoutBase::PipelineLayoutBase(DeviceBase* device,
             mStorageAttachmentSlots[slot] = pls->storageAttachments[i].format;
         }
     }
+    // Gather the resource table information.
+    if (auto* rt = descriptor.Get<PipelineLayoutResourceTable>()) {
+        mUsesResourceTable = rt->usesResourceTable;
+    }
 
     BindingCounts bindingCounts = {};
     for (BindGroupIndex i : mMask) {
@@ -194,7 +230,7 @@ PipelineLayoutBase::PipelineLayoutBase(DeviceBase* device,
 
 PipelineLayoutBase::~PipelineLayoutBase() = default;
 
-void PipelineLayoutBase::DestroyImpl() {
+void PipelineLayoutBase::DestroyImpl(DestroyReason reason) {
     Uncache();
 }
 
@@ -332,7 +368,6 @@ ResultOrError<Ref<PipelineLayoutBase>> PipelineLayoutBase::CreateDefault(
     // Creates the BGL from the entries for a stage, checking it is valid.
     auto CreateBGL = [](DeviceBase* device, EntryMap entries,
                         PipelineCompatibilityToken pipelineCompatibilityToken,
-                        ChainedStruct* descriptorChain,
                         bool allowInternalBinding) -> ResultOrError<Ref<BindGroupLayoutBase>> {
         // Put all the values from the map in a vector
         std::vector<BindGroupLayoutEntry> entryVec;
@@ -343,7 +378,6 @@ ResultOrError<Ref<PipelineLayoutBase>> PipelineLayoutBase::CreateDefault(
 
         // Create and validate the BGL
         BindGroupLayoutDescriptor desc = {};
-        desc.nextInChain = descriptorChain;
         desc.entries = entryVec.data();
         desc.entryCount = entryVec.size();
 
@@ -373,11 +407,17 @@ ResultOrError<Ref<PipelineLayoutBase>> PipelineLayoutBase::CreateDefault(
     // there's no issue with using the same struct multiple times.
     ExternalTextureBindingLayout externalTextureBindingLayout;
 
+    bool usesResourceTable = false;
     uint32_t immediateDataRangeByteSize = 0;
 
     // Loops over all the reflected BindGroupLayoutEntries from shaders.
     for (const StageAndDescriptor& stage : stages) {
         const EntryPointMetadata& metadata = stage.module->GetEntryPoint(stage.entryPoint);
+
+        // Check if at least one stage uses a resource table
+        if (metadata.usesResourceTable) {
+            usesResourceTable = true;
+        }
 
         // TODO(dawn:1704): Find if we can usefully deduce the PLS for the pipeline layout.
         DAWN_INVALID_IF(
@@ -424,54 +464,13 @@ ResultOrError<Ref<PipelineLayoutBase>> PipelineLayoutBase::CreateDefault(
             std::max(immediateDataRangeByteSize, metadata.immediateDataRangeByteSize);
     }
 
-    // Gather the dynamic binding arrays from the shader and check compatibility between stages.
-    PerBindGroup<std::optional<GroupDynamicBindingArrayInfo>> dynamicArrays;
-    for (const StageAndDescriptor& stage : stages) {
-        const EntryPointMetadata& metadata = stage.module->GetEntryPoint(stage.entryPoint);
-
-        for (const auto& [group, array] : metadata.dynamicBindingArrays) {
-            if (!dynamicArrays[group].has_value()) {
-                dynamicArrays[group] = array;
-                continue;
-            }
-
-            DAWN_INVALID_IF(dynamicArrays[group]->start != array.start,
-                            "Dynamic array start doesn't match for @group(%u) between shader "
-                            "stages (%u vs. %u).",
-                            group, dynamicArrays[group]->start, array.start);
-
-            // If a stage doesn't access the dynamic array with any kind, merge the types of the
-            // other stages in.
-            if (dynamicArrays[group]->kind == wgpu::DynamicBindingKind::Undefined) {
-                dynamicArrays[group]->kind = array.kind;
-            } else {
-                DAWN_INVALID_IF(array.kind != wgpu::DynamicBindingKind::Undefined &&
-                                    dynamicArrays[group]->kind != array.kind,
-                                "Dynamic array kind doesn't match for @group(%u) between shader "
-                                "stages (%s vs. %s).",
-                                group, dynamicArrays[group]->kind, array.kind);
-            }
-        }
-    }
-
     // Create the bind group layouts, including the empty ones as all the bind group layouts should
     // be created with `pipelineCompatibilityToken` whether they are empty or not.
     PerBindGroup<Ref<BindGroupLayoutBase>> bindGroupLayouts = {};
     for (auto group : Range(kMaxBindGroupsTyped)) {
-        wgpu::ChainedStruct* descriptorChain = nullptr;
-
-        wgpu::BindGroupLayoutDynamicBindingArray dynamic;
-        if (dynamicArrays[group].has_value()) {
-            dynamic.nextInChain = descriptorChain;
-            dynamic.dynamicArray.kind = dynamicArrays[group]->kind;
-            dynamic.dynamicArray.start = uint32_t(dynamicArrays[group]->start);
-
-            descriptorChain = &dynamic;
-        }
-
         DAWN_TRY_ASSIGN(bindGroupLayouts[group],
                         CreateBGL(device, std::move(entryData[group]), pipelineCompatibilityToken,
-                                  descriptorChain, allowInternalBinding));
+                                  allowInternalBinding));
     }
 
     // Create the deduced pipeline layout, validating if it is valid.
@@ -485,11 +484,26 @@ ResultOrError<Ref<PipelineLayoutBase>> PipelineLayoutBase::CreateDefault(
     desc.bindGroupLayoutCount = static_cast<uint32_t>(kMaxBindGroupsTyped);
     desc.immediateSize = immediateDataRangeByteSize;
 
+    PipelineLayoutResourceTable resourceTable;
+    if (usesResourceTable) {
+        resourceTable.usesResourceTable = true;
+        resourceTable.nextInChain = desc.nextInChain;
+        desc.nextInChain = &resourceTable;
+
+        // The resource table uses one BGL entry, so remove the last one, only if it's empty, to
+        // make room for it. If it's not empty, this means kMaxBindGroups were referenced in the
+        // shader, which will trigger a validation error in CreatePipelineLayout that too many BGLs
+        // are used with the resource table.
+        if (desc.bindGroupLayouts[desc.bindGroupLayoutCount - 1]->IsEmpty()) {
+            desc.bindGroupLayoutCount--;
+        }
+    }
+
     Ref<PipelineLayoutBase> result;
     DAWN_TRY_ASSIGN(result, device->CreatePipelineLayout(&desc, pipelineCompatibilityToken));
     DAWN_ASSERT(!result->IsError());
 
-    // That the auto pipeline layout is compatible with the current pipeline.
+    // Validate that the auto pipeline layout is compatible with the current pipeline.
     // Note: the currently specified rules can generate invalid default layouts.
     // Hopefully the spec will be updated to prevent this.
     // See: https://github.com/gpuweb/gpuweb/issues/4952
@@ -580,6 +594,9 @@ size_t PipelineLayoutBase::ComputeContentHash() {
     // Hash the immediate data range byte size
     recorder.Record(mImmediateDataRangeByteSize);
 
+    // Hash the resource table state
+    recorder.Record(mUsesResourceTable);
+
     return recorder.GetContentHash();
 }
 
@@ -613,6 +630,11 @@ bool PipelineLayoutBase::EqualityFunc::operator()(const PipelineLayoutBase* a,
         return false;
     }
 
+    // Check resource table
+    if (a->mUsesResourceTable != b->mUsesResourceTable) {
+        return false;
+    }
+
     return true;
 }
 
@@ -634,6 +656,10 @@ uint32_t PipelineLayoutBase::GetNumStorageBufferBindingsInFragmentStage() const 
 
 uint32_t PipelineLayoutBase::GetNumStorageTextureBindingsInFragmentStage() const {
     return mNumStorageTextureBindingsInFragmentStage;
+}
+
+bool PipelineLayoutBase::UsesResourceTable() const {
+    return mUsesResourceTable;
 }
 
 }  // namespace dawn::native

@@ -9,6 +9,7 @@ import type * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import type * as Platform from '../../core/platform/platform.js';
 import * as Buttons from '../../ui/components/buttons/buttons.js';
+import {Link} from '../../ui/kit/kit.js';
 import * as UI from '../../ui/legacy/legacy.js';
 
 import {type LighthouseController, type Preset, Presets, RuntimeSettings} from './LighthouseController.js';
@@ -87,8 +88,8 @@ export class StartView extends UI.Widget.Widget {
     labelEl.textContent = label;
 
     if (runtimeSetting.learnMore) {
-      const link = UI.XLink.XLink.create(
-          runtimeSetting.learnMore, i18nString(UIStrings.learnMore), 'lighthouse-learn-more', undefined, 'learn-more');
+      const link =
+          Link.create(runtimeSetting.learnMore, i18nString(UIStrings.learnMore), 'lighthouse-learn-more', 'learn-more');
       labelEl.append(link);
     }
     parentElement.appendChild(labelEl);
@@ -111,8 +112,8 @@ export class StartView extends UI.Widget.Widget {
         runtimeSetting.setting as Common.Settings.Setting<boolean>, runtimeSetting.description());
     toolbar.appendToolbarItem(control);
     if (runtimeSetting.learnMore) {
-      const link = UI.XLink.XLink.create(
-          runtimeSetting.learnMore, i18nString(UIStrings.learnMore), 'lighthouse-learn-more', undefined, 'learn-more');
+      const link =
+          Link.create(runtimeSetting.learnMore, i18nString(UIStrings.learnMore), 'lighthouse-learn-more', 'learn-more');
       link.style.margin = '5px';
       control.element.appendChild(link);
     }
@@ -135,8 +136,8 @@ export class StartView extends UI.Widget.Widget {
     control.setTitle(runtimeSetting.description());
     toolbar.appendToolbarItem(control);
     if (runtimeSetting.learnMore) {
-      const link = UI.XLink.XLink.create(
-          runtimeSetting.learnMore, i18nString(UIStrings.learnMore), 'lighthouse-learn-more', undefined, 'learn-more');
+      const link =
+          Link.create(runtimeSetting.learnMore, i18nString(UIStrings.learnMore), 'lighthouse-learn-more', 'learn-more');
       link.style.marginLeft = '5px';
       link.style.display = 'inline-flex';
       link.style.height = 'revert';
@@ -181,7 +182,7 @@ export class StartView extends UI.Widget.Widget {
 <form class="lighthouse-start-view">
   <header class="hbox">
     <div class="lighthouse-logo"></div>
-    <div class="lighthouse-title">${i18nString(UIStrings.generateLighthouseReport)}</div>
+    <h1 class="lighthouse-title">${i18nString(UIStrings.generateLighthouseReport)}</h1>
     <div class="lighthouse-start-button-container" $="start-button-container">${this.startButton}</div>
   </header>
   <div $="help-text" class="lighthouse-help-text hidden"></div>

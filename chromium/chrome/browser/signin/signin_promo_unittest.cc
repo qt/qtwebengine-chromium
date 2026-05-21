@@ -216,7 +216,7 @@ class ShowPromoTest : public testing::Test {
       extensions::mojom::ManifestLocation location =
           extensions::mojom::ManifestLocation::kInternal) {
     extension_ = extensions::ExtensionBuilder()
-                     .SetManifest(base::Value::Dict()
+                     .SetManifest(base::DictValue()
                                       .Set("name", "test")
                                       .Set("manifest_version", 2)
                                       .Set("version", "1.0.0"))
@@ -224,6 +224,13 @@ class ShowPromoTest : public testing::Test {
                      .Build();
 
     return extension_.get();
+  }
+
+ protected:
+  void DisableSync() {
+    ON_CALL(*sync_service(), GetDisableReasons())
+        .WillByDefault(testing::Return(syncer::SyncService::DisableReasonSet(
+            {syncer::SyncService::DISABLE_REASON_ENTERPRISE_POLICY})));
   }
 
  private:
@@ -244,23 +251,16 @@ TEST_F(ShowPromoTest, DoNotShowBookmarkSignInPromoWithoutExplicitSignIn) {
 }
 
 #if !BUILDFLAG(IS_ANDROID)
-class ShowSyncPromoTest : public ShowPromoTest {
- protected:
-  void DisableSync() {
-    base::CommandLine::ForCurrentProcess()->AppendSwitch(syncer::kDisableSync);
-  }
-};
-
 // Verifies that ShouldShowSyncPromo returns false if sync is disabled by
 // policy.
-TEST_F(ShowSyncPromoTest, ShouldShowSyncPromoSyncDisabled) {
+TEST_F(ShowPromoTest, DoNotShowSyncPromoWithSyncDisabled) {
   DisableSync();
   EXPECT_FALSE(ShouldShowSyncPromo(*profile()));
 }
 
 // Verifies that ShouldShowSyncPromo returns true if all conditions to
 // show the promo are met.
-TEST_F(ShowSyncPromoTest, ShouldShowSyncPromoSyncEnabled) {
+TEST_F(ShowPromoTest, ShouldShowSyncPromoSyncEnabled) {
 #if BUILDFLAG(IS_CHROMEOS)
   // No sync promo on Ash.
   EXPECT_FALSE(ShouldShowSyncPromo(*profile()));
@@ -270,57 +270,14 @@ TEST_F(ShowSyncPromoTest, ShouldShowSyncPromoSyncEnabled) {
 }
 #endif  // !BUILDFLAG(IS_ANDROID)
 
-#if BUILDFLAG(ENABLE_DICE_SUPPORT)
-TEST_F(ShowSyncPromoTest, ShowExtensionSyncPromoWithoutFeatureFlag) {
-  EXPECT_TRUE(ShouldShowExtensionSyncPromo(*profile(), *CreateExtension()));
-}
-
-TEST_F(ShowSyncPromoTest, DoNotShowExtensionSyncPromoWithSyncDisabled) {
-  DisableSync();
-  ASSERT_FALSE(ShouldShowSyncPromo(*profile()));
-
-  EXPECT_FALSE(ShouldShowExtensionSyncPromo(*profile(), *CreateExtension()));
-}
-
-TEST_F(ShowSyncPromoTest, DoNotShowExtensionSyncPromoWithUnpackedExtension) {
-  const extensions::Extension* unpacked_extension =
-      CreateExtension(extensions::mojom::ManifestLocation::kUnpacked);
-
-  // Unpacked extensions cannot be synced so the sync promo is not shown.
-  ASSERT_TRUE(unpacked_extension);
-  ASSERT_FALSE(
-      extensions::sync_util::ShouldSync(profile(), unpacked_extension));
-
-  EXPECT_FALSE(ShouldShowExtensionSyncPromo(*profile(), *unpacked_extension));
-}
-
-TEST_F(ShowSyncPromoTest,
-       DoNotShowExtensionSyncPromoWithSyncingExtensionsEnabled) {
-  ON_CALL(*sync_service()->GetMockUserSettings(), GetSelectedTypes())
-      .WillByDefault(testing::Return(syncer::UserSelectableTypeSet::All()));
-  ASSERT_TRUE(extensions::sync_util::IsSyncingExtensionsEnabled(profile()));
-
-  EXPECT_FALSE(ShouldShowExtensionSyncPromo(*profile(), *CreateExtension()));
-}
-
-TEST_F(ShowSyncPromoTest,
-       DoNotShowExtensionSyncPromoWithExplicitBrowserSigninPref) {
-  profile()->GetPrefs()->SetBoolean(prefs::kExplicitBrowserSignin, true);
-  ASSERT_TRUE(profile()->GetPrefs()->GetBoolean(prefs::kExplicitBrowserSignin));
-
-  EXPECT_FALSE(ShouldShowExtensionSyncPromo(*profile(), *CreateExtension()));
-}
-
-#endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
-
 #if !BUILDFLAG(IS_CHROMEOS)
-TEST_F(ShowSyncPromoTest, ShowPromoWithSignedInAccount) {
+TEST_F(ShowPromoTest, ShowSyncPromoWithSignedInAccount) {
   MakePrimaryAccountAvailable(identity_manager(), "test@email.com",
                               ConsentLevel::kSignin);
   EXPECT_TRUE(ShouldShowSyncPromo(*profile()));
 }
 
-TEST_F(ShowSyncPromoTest, DoNotShowPromoWithSyncingAccount) {
+TEST_F(ShowPromoTest, DoNotShowSyncPromoWithSyncingAccount) {
   MakePrimaryAccountAvailable(identity_manager(), "test@email.com",
                               ConsentLevel::kSync);
   EXPECT_FALSE(ShouldShowSyncPromo(*profile()));
@@ -423,9 +380,7 @@ TEST_F(ShowSigninPromoTestWithFeatureFlags,
 TEST_F(ShowSigninPromoTestWithFeatureFlags, DoNotShowPromoWithoutSyncAllowed) {
   ASSERT_TRUE(ShouldShowPasswordSignInPromo(*profile()));
 
-  ON_CALL(*sync_service(), GetDisableReasons())
-      .WillByDefault(testing::Return(syncer::SyncService::DisableReasonSet(
-          {syncer::SyncService::DISABLE_REASON_ENTERPRISE_POLICY})));
+  DisableSync();
 
   EXPECT_FALSE(ShouldShowPasswordSignInPromo(*profile()));
 }
@@ -1056,9 +1011,9 @@ TEST_F(ShowSigninPromoTestWithFeatureFlagsPromoLimitsExperiment,
   EXPECT_FALSE(ShouldShowBookmarkSignInPromo(*profile()));
 }
 
-class SyncPromoIdentityPillManagerTest : public testing::Test {
+class AvatarButtonPromoManagerTest : public testing::Test {
  public:
-  SyncPromoIdentityPillManagerTest() {
+  AvatarButtonPromoManagerTest() {
     scoped_feature_list_.InitWithFeatures(
         /*enabled_features=*/{syncer::kReplaceSyncPromosWithSignInPromos,
                               switches::kAvatarButtonSyncPromoForTesting,
@@ -1087,7 +1042,7 @@ class SyncPromoIdentityPillManagerTest : public testing::Test {
   base::test::ScopedFeatureList scoped_feature_list_;
 };
 
-TEST_F(SyncPromoIdentityPillManagerTest, PromoTypesUseDifferentShownLimits) {
+TEST_F(AvatarButtonPromoManagerTest, PromoTypesUseDifferentShownLimits) {
   std::array<ProfileMenuAvatarButtonPromoInfo::Type, 5> promo_type_list{
       ProfileMenuAvatarButtonPromoInfo::Type::kHistorySyncPromo,
       ProfileMenuAvatarButtonPromoInfo::Type::kBatchUploadPromo,
@@ -1100,8 +1055,8 @@ TEST_F(SyncPromoIdentityPillManagerTest, PromoTypesUseDifferentShownLimits) {
   Signin("test@email.com");
 
   const size_t max_shown_count = 2;
-  SyncPromoIdentityPillManager manager(identity_manager(), &pref_service(),
-                                       max_shown_count, /*max_used_count=*/2);
+  AvatarButtonPromoManager manager(identity_manager(), &pref_service(),
+                                   max_shown_count, /*max_used_count=*/2);
 
   for (auto promo_type : promo_type_list) {
     for (size_t count = 0; count < max_shown_count; ++count) {
@@ -1112,7 +1067,7 @@ TEST_F(SyncPromoIdentityPillManagerTest, PromoTypesUseDifferentShownLimits) {
   }
 }
 
-TEST_F(SyncPromoIdentityPillManagerTest, PromoTypesUseDifferentUsedLimits) {
+TEST_F(AvatarButtonPromoManagerTest, PromoTypesUseDifferentUsedLimits) {
   std::array<ProfileMenuAvatarButtonPromoInfo::Type, 5> promo_type_list{
       ProfileMenuAvatarButtonPromoInfo::Type::kHistorySyncPromo,
       ProfileMenuAvatarButtonPromoInfo::Type::kBatchUploadPromo,
@@ -1125,8 +1080,8 @@ TEST_F(SyncPromoIdentityPillManagerTest, PromoTypesUseDifferentUsedLimits) {
   Signin("test@email.com");
 
   const size_t max_used_count = 2;
-  SyncPromoIdentityPillManager manager(identity_manager(), &pref_service(),
-                                       /*max_shown_count=*/2, max_used_count);
+  AvatarButtonPromoManager manager(identity_manager(), &pref_service(),
+                                   /*max_shown_count=*/2, max_used_count);
 
   for (auto promo_type : promo_type_list) {
     for (size_t count = 0; count < max_used_count; ++count) {
@@ -1137,17 +1092,17 @@ TEST_F(SyncPromoIdentityPillManagerTest, PromoTypesUseDifferentUsedLimits) {
   }
 }
 
-class SyncPromoIdentityPillManagerWithParamsTest
-    : public SyncPromoIdentityPillManagerTest,
+class AvatarButtonPromoManagerWithParamsTest
+    : public AvatarButtonPromoManagerTest,
       public testing::WithParamInterface<
           ProfileMenuAvatarButtonPromoInfo::Type> {};
 
-TEST_P(SyncPromoIdentityPillManagerWithParamsTest, MaxShownCount) {
+TEST_P(AvatarButtonPromoManagerWithParamsTest, MaxShownCount) {
   Signin("test@email.com");
   const int max_shown_count = 10;
-  SyncPromoIdentityPillManager manager(identity_manager(), &pref_service(),
-                                       max_shown_count,
-                                       /*max_used_count=*/1);
+  AvatarButtonPromoManager manager(identity_manager(), &pref_service(),
+                                   max_shown_count,
+                                   /*max_used_count=*/1);
 
   for (int i = 0; i < max_shown_count; ++i) {
     SCOPED_TRACE("Iteration: " + base::ToString(i));
@@ -1160,11 +1115,11 @@ TEST_P(SyncPromoIdentityPillManagerWithParamsTest, MaxShownCount) {
   EXPECT_FALSE(manager.ShouldShowPromo(GetParam()));
 }
 
-TEST_P(SyncPromoIdentityPillManagerWithParamsTest, MaxUsedCount) {
+TEST_P(AvatarButtonPromoManagerWithParamsTest, MaxUsedCount) {
   Signin("test@email.com");
   const int max_used_count = 5;
-  SyncPromoIdentityPillManager manager(identity_manager(), &pref_service(),
-                                       /*max_shown_count=*/10, max_used_count);
+  AvatarButtonPromoManager manager(identity_manager(), &pref_service(),
+                                   /*max_shown_count=*/10, max_used_count);
 
   for (int i = 0; i < max_used_count; ++i) {
     SCOPED_TRACE("Iteration: " + base::ToString(i));
@@ -1177,38 +1132,37 @@ TEST_P(SyncPromoIdentityPillManagerWithParamsTest, MaxUsedCount) {
   EXPECT_FALSE(manager.ShouldShowPromo(GetParam()));
 }
 
-TEST_P(SyncPromoIdentityPillManagerWithParamsTest,
-       ShouldNotShowPromoIfSignedOut) {
-  SyncPromoIdentityPillManager manager(identity_manager(), &pref_service(),
-                                       /*max_shown_count=*/10,
-                                       /*max_used_count=*/2);
+TEST_P(AvatarButtonPromoManagerWithParamsTest, ShouldNotShowPromoIfSignedOut) {
+  AvatarButtonPromoManager manager(identity_manager(), &pref_service(),
+                                   /*max_shown_count=*/10,
+                                   /*max_used_count=*/2);
   EXPECT_FALSE(manager.ShouldShowPromo(GetParam()));
 }
 
-TEST_P(SyncPromoIdentityPillManagerWithParamsTest,
+TEST_P(AvatarButtonPromoManagerWithParamsTest,
        ShouldNotShowPromoIfSigninPending) {
   Signin("test@email.com");
   signin::SetInvalidRefreshTokenForPrimaryAccount(identity_manager());
-  SyncPromoIdentityPillManager manager(identity_manager(), &pref_service(),
-                                       /*max_shown_count=*/10,
-                                       /*max_used_count=*/2);
+  AvatarButtonPromoManager manager(identity_manager(), &pref_service(),
+                                   /*max_shown_count=*/10,
+                                   /*max_used_count=*/2);
   EXPECT_FALSE(manager.ShouldShowPromo(GetParam()));
 }
 
-TEST_P(SyncPromoIdentityPillManagerWithParamsTest,
+TEST_P(AvatarButtonPromoManagerWithParamsTest,
        ShouldNotShowPromoIfPromotionsDisabled) {
   TestingBrowserProcess::GetGlobal()->local_state()->SetBoolean(
       prefs::kPromotionsEnabled, false);
   Signin("test@email.com");
-  SyncPromoIdentityPillManager manager(identity_manager(), &pref_service(),
-                                       /*max_shown_count=*/10,
-                                       /*max_used_count=*/2);
+  AvatarButtonPromoManager manager(identity_manager(), &pref_service(),
+                                   /*max_shown_count=*/10,
+                                   /*max_used_count=*/2);
   EXPECT_FALSE(manager.ShouldShowPromo(GetParam()));
 }
 
 INSTANTIATE_TEST_SUITE_P(
     ,
-    SyncPromoIdentityPillManagerWithParamsTest,
+    AvatarButtonPromoManagerWithParamsTest,
     testing::ValuesIn(
         {ProfileMenuAvatarButtonPromoInfo::Type::kHistorySyncPromo,
          ProfileMenuAvatarButtonPromoInfo::Type::kBatchUploadPromo,

@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <iterator>
 #include <optional>
+#include <variant>
 
 #include "base/notimplemented.h"
 #include "base/rand_util.h"
@@ -55,63 +56,38 @@ base::flat_set<std::string> TestPasskeyModel::GetAllSyncIds() const {
   return ids;
 }
 
-std::vector<sync_pb::WebauthnCredentialSpecifics>
-TestPasskeyModel::GetAllPasskeys() const {
-  return credentials_;
-}
-
-std::vector<sync_pb::WebauthnCredentialSpecifics>
-TestPasskeyModel::GetUnShadowedPasskeys() const {
-  return passkey_model_utils::FilterShadowedCredentials(credentials_);
-}
-
-std::optional<sync_pb::WebauthnCredentialSpecifics>
-TestPasskeyModel::GetPasskeyByCredentialId(
-    const std::string& rp_id,
-    const std::string& credential_id) const {
-  std::vector<sync_pb::WebauthnCredentialSpecifics> rp_passkeys;
-  std::ranges::copy_if(
-      credentials_, std::back_inserter(rp_passkeys),
-      [&rp_id](const auto& passkey) { return passkey.rp_id() == rp_id; });
-  rp_passkeys = passkey_model_utils::FilterShadowedCredentials(rp_passkeys);
-  std::vector<sync_pb::WebauthnCredentialSpecifics> result;
-  std::ranges::copy_if(rp_passkeys, std::back_inserter(result),
-                       [&credential_id](const auto& passkey) {
-                         return passkey.credential_id() == credential_id;
-                       });
-  if (result.empty()) {
-    return std::nullopt;
-  }
-  CHECK_EQ(result.size(), 1u);
-  return result.front();
-}
-
-std::optional<sync_pb::WebauthnCredentialSpecifics>
-TestPasskeyModel::GetPasskeyByUserId(const std::string& rp_id,
-                                     const std::string& user_id) const {
-  std::vector<sync_pb::WebauthnCredentialSpecifics> rp_passkeys;
-  std::ranges::copy_if(
-      credentials_, std::back_inserter(rp_passkeys),
-      [&rp_id](const auto& passkey) { return passkey.rp_id() == rp_id; });
-  rp_passkeys = passkey_model_utils::FilterShadowedCredentials(rp_passkeys);
-  std::vector<sync_pb::WebauthnCredentialSpecifics> result;
-  std::ranges::copy_if(
-      rp_passkeys, std::back_inserter(result),
-      [&user_id](const auto& passkey) { return passkey.user_id() == user_id; });
-  if (result.empty()) {
-    return std::nullopt;
-  }
-  CHECK_EQ(result.size(), 1u);
-  return result.front();
-}
-
-std::vector<sync_pb::WebauthnCredentialSpecifics>
-TestPasskeyModel::GetPasskeysForRelyingPartyId(const std::string& rp_id) const {
+std::vector<sync_pb::WebauthnCredentialSpecifics> TestPasskeyModel::GetPasskeys(
+    std::variant<AnyRp, std::string_view> rp_id,
+    ShadowedCredentials shadowed_credentials) const {
   std::vector<sync_pb::WebauthnCredentialSpecifics> passkeys;
-  std::ranges::copy_if(
-      credentials_, std::back_inserter(passkeys),
-      [&rp_id](const auto& passkey) { return passkey.rp_id() == rp_id; });
-  return passkey_model_utils::FilterShadowedCredentials(passkeys);
+
+  const std::string_view* specific_rp_id =
+      std::get_if<std::string_view>(&rp_id);
+  for (const sync_pb::WebauthnCredentialSpecifics& passkey : credentials_) {
+    if (!specific_rp_id || passkey.rp_id() == *specific_rp_id) {
+      passkeys.emplace_back(passkey);
+    }
+  }
+
+  if (shadowed_credentials == PasskeyModel::ShadowedCredentials::kExclude) {
+    return passkey_model_utils::FilterShadowedCredentials(passkeys);
+  }
+
+  return passkeys;
+}
+
+std::optional<sync_pb::WebauthnCredentialSpecifics>
+TestPasskeyModel::GetPasskey(std::variant<AnyRp, std::string_view> rp_id,
+                             std::string_view credential_id,
+                             ShadowedCredentials shadowed_credentials) const {
+  for (const sync_pb::WebauthnCredentialSpecifics& passkey :
+       GetPasskeys(rp_id, shadowed_credentials)) {
+    if (passkey.credential_id() == credential_id) {
+      return passkey;
+    }
+  }
+
+  return std::nullopt;
 }
 
 sync_pb::WebauthnCredentialSpecifics TestPasskeyModel::CreatePasskey(

@@ -119,12 +119,14 @@ base::expected<void, std::string> CreateLayer(
       break;
 
     case cc::mojom::LayerType::kNinePatchThumbScrollbar: {
-      RETURN_IF_FALSE(
-          wire.layer_extra &&
-              wire.layer_extra->is_nine_patch_thumb_scrollbar_layer_extra(),
-          "Invalid layer_extra type for NinePatchThumbScrollbarLayerImpl");
-      auto& extra =
-          wire.layer_extra->get_nine_patch_thumb_scrollbar_layer_extra();
+      RETURN_IF_FALSE(wire.general_properties &&
+                          wire.general_properties->layer_extra &&
+                          wire.general_properties->layer_extra
+                              ->is_nine_patch_thumb_scrollbar_layer_extra(),
+                      "Invalid layer_extra type for "
+                      "NinePatchThumbScrollbarLayerImpl");
+      auto& extra = wire.general_properties->layer_extra
+                        ->get_nine_patch_thumb_scrollbar_layer_extra();
       cc::ScrollbarOrientation orientation =
           extra->scrollbar_base_extra->is_horizontal_orientation
               ? cc::ScrollbarOrientation::kHorizontal
@@ -136,10 +138,13 @@ base::expected<void, std::string> CreateLayer(
     }
 
     case cc::mojom::LayerType::kPaintedScrollbar: {
-      RETURN_IF_FALSE(wire.layer_extra &&
-                          wire.layer_extra->is_painted_scrollbar_layer_extra(),
+      RETURN_IF_FALSE(wire.general_properties &&
+                          wire.general_properties->layer_extra &&
+                          wire.general_properties->layer_extra
+                              ->is_painted_scrollbar_layer_extra(),
                       "Invalid layer_extra type for PaintedScrollbarLayerImpl");
-      auto& extra = wire.layer_extra->get_painted_scrollbar_layer_extra();
+      auto& extra = wire.general_properties->layer_extra
+                        ->get_painted_scrollbar_layer_extra();
       cc::ScrollbarOrientation orientation =
           extra->scrollbar_base_extra->is_horizontal_orientation
               ? cc::ScrollbarOrientation::kHorizontal
@@ -156,11 +161,14 @@ base::expected<void, std::string> CreateLayer(
       break;
 
     case cc::mojom::LayerType::kSolidColorScrollbar: {
-      RETURN_IF_FALSE(
-          wire.layer_extra &&
-              wire.layer_extra->is_solid_color_scrollbar_layer_extra(),
-          "Invalid layer_extra type for SolidColorScrollbarLayerImpl");
-      auto& extra = wire.layer_extra->get_solid_color_scrollbar_layer_extra();
+      RETURN_IF_FALSE(wire.general_properties &&
+                          wire.general_properties->layer_extra &&
+                          wire.general_properties->layer_extra
+                              ->is_solid_color_scrollbar_layer_extra(),
+                      "Invalid layer_extra type for "
+                      "SolidColorScrollbarLayerImpl");
+      auto& extra = wire.general_properties->layer_extra
+                        ->get_solid_color_scrollbar_layer_extra();
       cc::ScrollbarOrientation orientation =
           extra->scrollbar_base_extra->is_horizontal_orientation
               ? cc::ScrollbarOrientation::kHorizontal
@@ -190,11 +198,14 @@ base::expected<void, std::string> CreateLayer(
       break;
 
     case cc::mojom::LayerType::kViewTransitionContent: {
-      RETURN_IF_FALSE(
-          wire.layer_extra &&
-              wire.layer_extra->is_view_transition_content_layer_extra(),
-          "Invalid layer_extra type for ViewTransitionContentLayerImpl");
-      auto& extra = wire.layer_extra->get_view_transition_content_layer_extra();
+      RETURN_IF_FALSE(wire.general_properties &&
+                          wire.general_properties->layer_extra &&
+                          wire.general_properties->layer_extra
+                              ->is_view_transition_content_layer_extra(),
+                      "Invalid layer_extra type for "
+                      "ViewTransitionContentLayerImpl");
+      auto& extra = wire.general_properties->layer_extra
+                        ->get_view_transition_content_layer_extra();
       layer = cc::ViewTransitionContentLayerImpl::Create(
           &tree, id, extra->resource_id, extra->is_live_content_layer,
           extra->max_extents_rect);
@@ -417,6 +428,7 @@ base::expected<void, std::string> UpdatePropertyTreeNode(
   node.may_have_backdrop_effect = wire.may_have_backdrop_effect;
   node.needs_effect_for_2d_scale_transform =
       wire.needs_effect_for_2d_scale_transform;
+  node.only_draws_visible_content = wire.only_draws_visible_content;
 
   return base::ok();
 }
@@ -551,7 +563,7 @@ DeserializeAnchorPositionScrollData(
   return anchor_position_scroll_data;
 }
 
-base::expected<void, std::string> UpdateTransformTreeProperties(
+base::expected<bool, std::string> UpdateTransformTreeProperties(
     cc::PropertyTrees& trees,
     cc::TransformTree& tree,
     mojom::TransformTreeUpdate& update) {
@@ -580,7 +592,11 @@ base::expected<void, std::string> UpdateTransformTreeProperties(
   ASSIGN_OR_RETURN(
       tree.anchor_position_scroll_data(),
       DeserializeAnchorPositionScrollData(update.anchor_position_scroll_data));
-  return base::ok();
+
+  bool drawn_elastic_overscroll_changed =
+      tree.drawn_elastic_overscroll() != update.drawn_elastic_overscroll;
+  tree.drawn_elastic_overscroll() = update.drawn_elastic_overscroll;
+  return drawn_elastic_overscroll_changed;
 }
 
 base::expected<bool, std::string> UpdateScrollTreeProperties(
@@ -631,16 +647,20 @@ void UpdateTextureLayerExtra(const mojom::TextureLayerExtraPtr& extra,
     if (!extra->transferable_resource->is_empty()) {
       release_callback = base::BindOnce(
           [](cc::LayerTreeHostImpl* host_impl, ResourceId id,
+             scoped_refptr<gpu::ClientSharedImage> shared_image,
              const gpu::SyncToken& sync_token, bool is_lost) {
-            host_impl->ReturnResource({id, sync_token,
+            host_impl->ReturnResource({id, shared_image->EndImport(sync_token),
                                        /*release_fence=*/gfx::GpuFenceHandle(),
                                        /*count=*/1, is_lost});
           },
           layer.layer_tree_impl()->host_impl(),
-          extra->transferable_resource->id);
+          extra->transferable_resource->id,
+          extra->transferable_resource->shared_image());
     }
     layer.SetTransferableResource(extra->transferable_resource.value(),
                                   std::move(release_callback));
+  } else if (extra->update_transferable_resource) {
+    layer.ClearTransferableResource();
   }
 }
 
@@ -679,7 +699,7 @@ void UpdateNinePatchThumbScrollbarLayerExtra(
       static_cast<cc::ScrollbarLayerImplBase&>(layer));
 
   layer.SetThumbThickness(extra->thumb_thickness);
-  layer.SetThumbLength(extra->thumb_length);
+  layer.SetMinimumThumbLength(extra->minimum_thumb_length);
   layer.SetTrackStart(extra->track_start);
   layer.SetTrackLength(extra->track_length);
   layer.SetImageBounds(extra->image_bounds);
@@ -702,7 +722,7 @@ void UpdatePaintedScrollbarLayerExtra(
   layer.SetJumpOnTrackClick(extra->jump_on_track_click);
   layer.SetSupportsDragSnapBack(extra->supports_drag_snap_back);
   layer.SetThumbThickness(extra->thumb_thickness);
-  layer.SetThumbLength(extra->thumb_length);
+  layer.SetMinimumThumbLength(extra->minimum_thumb_length);
   layer.SetBackButtonRect(extra->back_button_rect);
   layer.SetForwardButtonRect(extra->forward_button_rect);
   layer.SetTrackRect(extra->track_rect);
@@ -768,39 +788,6 @@ base::expected<void, std::string> UpdateLayer(const mojom::Layer& wire,
   if (wire.type != layer.GetLayerType()) {
     return base::unexpected("Incorrect layer type used in Layer update.");
   }
-  if (wire.contents_opaque && !wire.contents_opaque_for_text) {
-    return base::unexpected(
-        "Invalid contents_opaque_for_text: cannot be false if contents_opaque "
-        "is true.");
-  }
-  if (wire.safe_opaque_background_color.isOpaque() != wire.contents_opaque) {
-    return base::unexpected(
-        "Invalid safe_opaque_background_color: opaqueness must agree with "
-        "contents_opaque");
-  }
-
-  layer.SetBounds(wire.bounds);
-  layer.SetContentsOpaque(wire.contents_opaque);
-  layer.SetContentsOpaqueForText(wire.contents_opaque_for_text);
-  layer.SetDrawsContent(wire.is_drawable);
-  if (wire.layer_property_changed_not_from_property_trees) {
-    layer.NoteLayerPropertyChanged();
-  }
-  if (wire.layer_property_changed_from_property_trees) {
-    layer.NoteLayerPropertyChangedFromPropertyTrees();
-  }
-  layer.SetBackgroundColor(wire.background_color);
-  layer.SetSafeOpaqueBackgroundColor(wire.safe_opaque_background_color);
-  layer.SetHitTestOpaqueness(wire.hit_test_opaqueness);
-  layer.SetElementId(wire.element_id);
-  layer.UnionUpdateRect(wire.update_rect);
-  layer.SetOffsetToTransformParent(wire.offset_to_transform_parent);
-  layer.SetShouldCheckBackfaceVisibility(wire.should_check_backface_visibility);
-  if (wire.rare_properties) {
-    layer.SetFilterQuality(wire.rare_properties->filter_quality);
-    layer.SetDynamicRangeLimit(wire.rare_properties->dynamic_range_limit);
-    layer.SetCaptureBounds(wire.rare_properties->capture_bounds);
-  }
 
   const cc::PropertyTrees& property_trees =
       *layer.layer_tree_impl()->property_trees();
@@ -837,91 +824,134 @@ base::expected<void, std::string> UpdateLayer(const mojom::Layer& wire,
   layer.SetEffectTreeIndex(wire.effect_tree_index);
   layer.SetScrollTreeIndex(wire.scroll_tree_index);
 
-  switch (wire.type) {
-    case cc::mojom::LayerType::kMirror:
-      RETURN_IF_FALSE(
-          wire.layer_extra && wire.layer_extra->is_mirror_layer_extra(),
-          "Invalid layer_extra type for MirrorLayerImpl");
-      UpdateMirrorLayerExtra(wire.layer_extra->get_mirror_layer_extra(),
-                             static_cast<cc::MirrorLayerImpl&>(layer));
-      break;
-    case cc::mojom::LayerType::kNinePatch:
-      RETURN_IF_FALSE(
-          wire.layer_extra && wire.layer_extra->is_nine_patch_layer_extra(),
-          "Invalid layer_extra type for NinePatchLayerImpl");
-      RETURN_IF_ERROR(UpdateNinePatchLayerExtra(
-          wire.layer_extra->get_nine_patch_layer_extra(),
-          static_cast<cc::NinePatchLayerImpl&>(layer)));
-      break;
-    case cc::mojom::LayerType::kNinePatchThumbScrollbar:
-      RETURN_IF_FALSE(
-          wire.layer_extra &&
-              wire.layer_extra->is_nine_patch_thumb_scrollbar_layer_extra(),
-          "Invalid layer_extra type for NinePatchThumbScrollbarLayerImpl");
-      UpdateNinePatchThumbScrollbarLayerExtra(
-          wire.layer_extra->get_nine_patch_thumb_scrollbar_layer_extra(),
-          static_cast<cc::NinePatchThumbScrollbarLayerImpl&>(layer));
-      break;
-    case cc::mojom::LayerType::kPaintedScrollbar:
-      RETURN_IF_FALSE(wire.layer_extra &&
-                          wire.layer_extra->is_painted_scrollbar_layer_extra(),
-                      "Invalid layer_extra type for PaintedScrollbarLayerImpl");
-      UpdatePaintedScrollbarLayerExtra(
-          wire.layer_extra->get_painted_scrollbar_layer_extra(),
-          static_cast<cc::PaintedScrollbarLayerImpl&>(layer));
-      break;
-    case cc::mojom::LayerType::kSolidColorScrollbar:
-      RETURN_IF_FALSE(
-          wire.layer_extra &&
-              wire.layer_extra->is_solid_color_scrollbar_layer_extra(),
-          "Invalid layer_extra type for SolidColorScrollbarLayerImpl");
-      UpdateSolidColorScrollbarLayerExtra(
-          wire.layer_extra->get_solid_color_scrollbar_layer_extra(),
-          static_cast<cc::SolidColorScrollbarLayerImpl&>(layer));
-      break;
-    case cc::mojom::LayerType::kSurface:
-      RETURN_IF_FALSE(
-          wire.layer_extra && wire.layer_extra->is_surface_layer_extra(),
-          "Invalid layer_extra type for SurfaceLayerImpl");
-      UpdateSurfaceLayerExtra(wire.layer_extra->get_surface_layer_extra(),
-                              static_cast<cc::SurfaceLayerImpl&>(layer));
-      break;
-    case cc::mojom::LayerType::kTexture:
-      RETURN_IF_FALSE(
-          wire.layer_extra && wire.layer_extra->is_texture_layer_extra(),
-          "Invalid layer_extra type for TextureLayerImpl");
-      UpdateTextureLayerExtra(wire.layer_extra->get_texture_layer_extra(),
-                              static_cast<cc::TextureLayerImpl&>(layer));
-      break;
-    case cc::mojom::LayerType::kTileDisplay:
-      RETURN_IF_FALSE(
-          wire.layer_extra && wire.layer_extra->is_tile_display_layer_extra(),
-          "Invalid layer_extra type for TileDisplayLayerImpl");
-      UpdateTileDisplayLayerExtra(
-          wire.layer_extra->get_tile_display_layer_extra(),
-          static_cast<cc::TileDisplayLayerImpl&>(layer));
-      break;
-    case cc::mojom::LayerType::kUIResource:
-      RETURN_IF_FALSE(
-          wire.layer_extra && wire.layer_extra->is_ui_resource_layer_extra(),
-          "Invalid layer_extra type for UIResourceLayerImpl");
-      RETURN_IF_ERROR(UpdateUIResourceLayerExtra(
-          wire.layer_extra->get_ui_resource_layer_extra(),
-          static_cast<cc::UIResourceLayerImpl&>(layer)));
-      break;
-    case cc::mojom::LayerType::kViewTransitionContent:
-      RETURN_IF_FALSE(
-          wire.layer_extra &&
-              wire.layer_extra->is_view_transition_content_layer_extra(),
-          "Invalid layer_extra type for ViewTransitionContentLayerImpl");
-      UpdateViewTransitionContentLayerExtra(
-          wire.layer_extra->get_view_transition_content_layer_extra(),
-          static_cast<cc::ViewTransitionContentLayerImpl&>(layer));
-      break;
-    default:
-      // TODO(zmo): handle other types of LayerImpl.
-      break;
+  if (wire.general_properties) {
+    const auto& general = *wire.general_properties;
+    if (general.contents_opaque && !general.contents_opaque_for_text) {
+      return base::unexpected(
+          "Invalid contents_opaque_for_text: cannot be false if "
+          "contents_opaque "
+          "is true.");
+    }
+    if (general.safe_opaque_background_color.isOpaque() !=
+        general.contents_opaque) {
+      return base::unexpected(
+          "Invalid safe_opaque_background_color: opaqueness must agree with "
+          "contents_opaque");
+    }
+
+    layer.SetBounds(general.bounds);
+    layer.SetContentsOpaque(general.contents_opaque);
+    layer.SetContentsOpaqueForText(general.contents_opaque_for_text);
+    layer.SetDrawsContent(general.is_drawable);
+    if (general.layer_property_changed_not_from_property_trees) {
+      layer.NoteLayerPropertyChanged();
+    }
+    if (general.layer_property_changed_from_property_trees) {
+      layer.NoteLayerPropertyChangedFromPropertyTrees();
+    }
+    layer.SetBackgroundColor(general.background_color);
+    layer.SetSafeOpaqueBackgroundColor(general.safe_opaque_background_color);
+    layer.SetHitTestOpaqueness(general.hit_test_opaqueness);
+    layer.SetElementId(general.element_id);
+    layer.UnionUpdateRect(general.update_rect);
+    layer.SetOffsetToTransformParent(general.offset_to_transform_parent);
+    layer.SetShouldCheckBackfaceVisibility(
+        general.should_check_backface_visibility);
+    if (general.rare_properties) {
+      layer.SetFilterQuality(general.rare_properties->filter_quality);
+      layer.SetDynamicRangeLimit(general.rare_properties->dynamic_range_limit);
+      layer.SetCaptureBounds(general.rare_properties->capture_bounds);
+    }
+
+    switch (wire.type) {
+      case cc::mojom::LayerType::kMirror:
+        RETURN_IF_FALSE(
+            general.layer_extra && general.layer_extra->is_mirror_layer_extra(),
+            "Invalid layer_extra type for MirrorLayerImpl");
+        UpdateMirrorLayerExtra(general.layer_extra->get_mirror_layer_extra(),
+                               static_cast<cc::MirrorLayerImpl&>(layer));
+        break;
+      case cc::mojom::LayerType::kNinePatch:
+        RETURN_IF_FALSE(general.layer_extra &&
+                            general.layer_extra->is_nine_patch_layer_extra(),
+                        "Invalid layer_extra type for NinePatchLayerImpl");
+        RETURN_IF_ERROR(UpdateNinePatchLayerExtra(
+            general.layer_extra->get_nine_patch_layer_extra(),
+            static_cast<cc::NinePatchLayerImpl&>(layer)));
+        break;
+      case cc::mojom::LayerType::kNinePatchThumbScrollbar:
+        RETURN_IF_FALSE(
+            general.layer_extra &&
+                general.layer_extra
+                    ->is_nine_patch_thumb_scrollbar_layer_extra(),
+            "Invalid layer_extra type for NinePatchThumbScrollbarLayerImpl");
+        UpdateNinePatchThumbScrollbarLayerExtra(
+            general.layer_extra->get_nine_patch_thumb_scrollbar_layer_extra(),
+            static_cast<cc::NinePatchThumbScrollbarLayerImpl&>(layer));
+        break;
+      case cc::mojom::LayerType::kPaintedScrollbar:
+        RETURN_IF_FALSE(
+            general.layer_extra &&
+                general.layer_extra->is_painted_scrollbar_layer_extra(),
+            "Invalid layer_extra type for PaintedScrollbarLayerImpl");
+        UpdatePaintedScrollbarLayerExtra(
+            general.layer_extra->get_painted_scrollbar_layer_extra(),
+            static_cast<cc::PaintedScrollbarLayerImpl&>(layer));
+        break;
+      case cc::mojom::LayerType::kSolidColorScrollbar:
+        RETURN_IF_FALSE(
+            general.layer_extra &&
+                general.layer_extra->is_solid_color_scrollbar_layer_extra(),
+            "Invalid layer_extra type for SolidColorScrollbarLayerImpl");
+        UpdateSolidColorScrollbarLayerExtra(
+            general.layer_extra->get_solid_color_scrollbar_layer_extra(),
+            static_cast<cc::SolidColorScrollbarLayerImpl&>(layer));
+        break;
+      case cc::mojom::LayerType::kSurface:
+        RETURN_IF_FALSE(general.layer_extra &&
+                            general.layer_extra->is_surface_layer_extra(),
+                        "Invalid layer_extra type for SurfaceLayerImpl");
+        UpdateSurfaceLayerExtra(general.layer_extra->get_surface_layer_extra(),
+                                static_cast<cc::SurfaceLayerImpl&>(layer));
+        break;
+      case cc::mojom::LayerType::kTexture:
+        RETURN_IF_FALSE(general.layer_extra &&
+                            general.layer_extra->is_texture_layer_extra(),
+                        "Invalid layer_extra type for TextureLayerImpl");
+        UpdateTextureLayerExtra(general.layer_extra->get_texture_layer_extra(),
+                                static_cast<cc::TextureLayerImpl&>(layer));
+        break;
+      case cc::mojom::LayerType::kTileDisplay:
+        RETURN_IF_FALSE(general.layer_extra &&
+                            general.layer_extra->is_tile_display_layer_extra(),
+                        "Invalid layer_extra type for TileDisplayLayerImpl");
+        UpdateTileDisplayLayerExtra(
+            general.layer_extra->get_tile_display_layer_extra(),
+            static_cast<cc::TileDisplayLayerImpl&>(layer));
+        break;
+      case cc::mojom::LayerType::kUIResource:
+        RETURN_IF_FALSE(general.layer_extra &&
+                            general.layer_extra->is_ui_resource_layer_extra(),
+                        "Invalid layer_extra type for UIResourceLayerImpl");
+        RETURN_IF_ERROR(UpdateUIResourceLayerExtra(
+            general.layer_extra->get_ui_resource_layer_extra(),
+            static_cast<cc::UIResourceLayerImpl&>(layer)));
+        break;
+      case cc::mojom::LayerType::kViewTransitionContent:
+        RETURN_IF_FALSE(
+            general.layer_extra &&
+                general.layer_extra->is_view_transition_content_layer_extra(),
+            "Invalid layer_extra type for ViewTransitionContentLayerImpl");
+        UpdateViewTransitionContentLayerExtra(
+            general.layer_extra->get_view_transition_content_layer_extra(),
+            static_cast<cc::ViewTransitionContentLayerImpl&>(layer));
+        break;
+      default:
+        // TODO(zmo): handle other types of LayerImpl.
+        break;
+    }
   }
+
   return base::ok();
 }
 
@@ -931,39 +961,56 @@ base::expected<void, std::string> CreateOrUpdateLayers(
     std::optional<std::vector<int32_t>>& layer_order,
     cc::LayerTreeImpl& layers) {
   TRACE_EVENT1("viz", "CreateOrUpdateLayers", "LayerCount", updates.size());
-  if (!layer_order) {
-    // No layer list changes. Only update existing layers.
-    for (auto& wire : updates) {
-      cc::LayerImpl* layer = layers.LayerById(wire->id);
-      if (!layer) {
+
+  // First, apply all updates. This may create new layers or update existing
+  // ones.
+  for (auto& wire : updates) {
+    cc::LayerImpl* layer = layers.LayerById(wire->id);
+    if (layer) {
+      RETURN_IF_ERROR(UpdateLayer(*wire, *layer));
+    } else {
+      if (!layer_order) {
+        // If there's a new layer, there must also be a new |layer_order|.
         return base::unexpected("Invalid layer ID");
       }
-      RETURN_IF_ERROR(UpdateLayer(*wire, *layer));
+      std::unique_ptr<cc::LayerImpl> new_layer;
+      RETURN_IF_ERROR(CreateLayer(host_impl, layers, *wire, new_layer));
+      cc::LayerImpl* layer_ptr = new_layer.get();
+      RETURN_IF_ERROR(UpdateLayer(*wire, *layer_ptr));
+      layers.AddLayer(std::move(new_layer));
     }
-    return base::ok();
   }
 
-  // The layer list contents changed, so we need to rebuild the tree.
-  cc::OwnedLayerImplList old_layers = layers.DetachLayers();
-  cc::OwnedLayerImplMap layer_map;
-  for (auto& layer : old_layers) {
-    const int id = layer->id();
-    layer_map[id] = std::move(layer);
-  }
-  for (auto& wire : updates) {
-    auto& layer = layer_map[wire->id];
-    if (!layer) {
-      RETURN_IF_ERROR(CreateLayer(host_impl, layers, *wire, layer));
+  if (layer_order) {
+    cc::OwnedLayerImplList old_layers = layers.DetachLayers();
+    std::vector<std::pair<int, size_t>> layer_indices_vector;
+    layer_indices_vector.reserve(old_layers.size());
+    for (size_t i = 0; i < old_layers.size(); ++i) {
+      layer_indices_vector.emplace_back(old_layers[i]->id(), i);
     }
-    RETURN_IF_ERROR(UpdateLayer(*wire, *layer));
-  }
-  for (auto id : *layer_order) {
-    auto& layer = layer_map[id];
-    if (!layer) {
-      return base::unexpected("Invalid or duplicate layer ID");
+
+    // Layer ids should be unique here, so doing a std::sort and
+    // base::sorted_unique initializer is the most efficient, avoiding
+    // a std::stable_sort inside base::flat_map.
+    std::sort(layer_indices_vector.begin(), layer_indices_vector.end());
+    base::flat_map<int, size_t> layer_indices(base::sorted_unique,
+                                              std::move(layer_indices_vector));
+
+    layers.ReserveLayers(layer_order->size());
+    for (auto id : *layer_order) {
+      auto it = layer_indices.find(id);
+      if (it == layer_indices.end()) {
+        return base::unexpected("Invalid or duplicate layer ID");
+      }
+      size_t index = it->second;
+      auto& layer = old_layers[index];
+      if (!layer) {
+        return base::unexpected("Invalid or duplicate layer ID");
+      }
+      layers.AddLayer(std::move(layer));
     }
-    layers.AddLayer(std::move(layer));
   }
+
   return base::ok();
 }
 
@@ -1016,12 +1063,13 @@ DeserializeTileResource(cc::LayerTreeHostImpl* host_impl,
 
   ReleaseCallback release_callback = base::BindOnce(
       [](cc::LayerTreeHostImpl* host_impl, ResourceId id,
+         scoped_refptr<gpu::ClientSharedImage> shared_image,
          const gpu::SyncToken& sync_token, bool is_lost) {
-        host_impl->ReturnResource({id, sync_token,
+        host_impl->ReturnResource({id, shared_image->EndImport(sync_token),
                                    /*release_fence=*/gfx::GpuFenceHandle(),
                                    /*count=*/1, is_lost});
       },
-      host_impl, wire.resource.id);
+      host_impl, wire.resource.id, wire.resource.shared_image());
 
   auto resource_id = host_impl->resource_provider()->ImportResource(
       wire.resource,
@@ -1052,8 +1100,7 @@ DeserializeTileContents(cc::LayerTreeHostImpl* host_impl,
 base::expected<void, std::string> DeserializeTiling(
     cc::LayerTreeHostImpl* host_impl,
     cc::TileDisplayLayerImpl& layer,
-    mojom::Tiling& wire,
-    bool update_damage) {
+    mojom::Tiling& wire) {
   if (wire.is_deleted) {
     layer.RemoveTiling(wire.scale_key);
     return base::ok();
@@ -1075,7 +1122,7 @@ base::expected<void, std::string> DeserializeTiling(
     tiling.SetTileContents(
         cc::TileIndex{base::saturated_cast<int>(wire_tile->column_index),
                       base::saturated_cast<int>(wire_tile->row_index)},
-        std::move(contents), update_damage);
+        std::move(contents), wire_tile->update_damage);
   }
   if (tiling.tiles().empty()) {
     layer.RemoveTiling(tiling.contents_scale_key());
@@ -1086,6 +1133,8 @@ base::expected<void, std::string> DeserializeTiling(
 void DeserializeViewTransitionRequests(
     cc::LayerTreeImpl& layers,
     std::vector<mojom::ViewTransitionRequestPtr>& wire_data) {
+  // TODO(crbug.com/467351935): Have `delay_layer_tree_view_deletion` added to
+  //  `mojom::ViewTransitionRequestPtr`
   for (auto& wire : wire_data) {
     std::unique_ptr<cc::ViewTransitionRequest> request;
     switch (wire->type) {
@@ -1097,15 +1146,18 @@ void DeserializeViewTransitionRequests(
         request = cc::ViewTransitionRequest::CreateCapture(
             wire->transition_token, wire->maybe_cross_frame_sink,
             wire->capture_resource_ids,
-            cc::ViewTransitionRequest::ViewTransitionCaptureCallback());
+            cc::ViewTransitionRequest::ViewTransitionCaptureCallback(),
+            /*delay_layer_tree_view_deletion=*/true);
         break;
       case mojom::CompositorFrameTransitionDirectiveType::kAnimateRenderer:
         request = cc::ViewTransitionRequest::CreateAnimateRenderer(
-            wire->transition_token, wire->maybe_cross_frame_sink);
+            wire->transition_token, wire->maybe_cross_frame_sink,
+            /*delay_layer_tree_view_deletion=*/true);
         break;
       case mojom::CompositorFrameTransitionDirectiveType::kRelease:
         request = cc::ViewTransitionRequest::CreateRelease(
-            wire->transition_token, wire->maybe_cross_frame_sink);
+            wire->transition_token, wire->maybe_cross_frame_sink,
+            /*delay_layer_tree_view_deletion=*/true);
         break;
     }
     request->set_sequence_id(wire->sequence_id);
@@ -1564,9 +1616,7 @@ void LayerContextImpl::SetNeedsPrepareTilesOnImplThread() {
   NOTREACHED();
 }
 
-void LayerContextImpl::SetNeedsCommitOnImplThread(bool urgent) {
-  NOTIMPLEMENTED();
-}
+void LayerContextImpl::SetNeedsCommitOnImplThread(bool urgent) {}
 
 void LayerContextImpl::SetVideoNeedsBeginFrames(bool needs_begin_frames) {}
 void LayerContextImpl::DidChangeBeginFrameSourcePaused(bool paused) {}
@@ -1715,6 +1765,8 @@ void LayerContextImpl::UpdateDisplayTree(mojom::LayerTreeUpdatePtr update) {
   const BeginFrameArgs begin_frame_args = update->begin_frame_args;
   auto start_update_display_tree = base::TimeTicks::Now();
   const bool frame_has_damage = update->frame_has_damage;
+  host_impl_->AddDamageDataCrashKeys(update->damage_reasons_bit_mask,
+                                     /*is_viz=*/false);
   auto result = DoUpdateDisplayTree(std::move(update));
   if (!result.has_value()) {
     HandleBadMojoMessage("UpdateDisplayTree", result.error());
@@ -1753,11 +1805,17 @@ base::expected<void, std::string> LayerContextImpl::DoUpdateDisplayTree(
   // transform nodes, so they must be deserialized after the trees are resized
   // above.
   bool transform_properties_changed = false;
+  bool transform_layer_properties_changed = false;
   if (update->transform_tree_update) {
     transform_properties_changed = true;
-    RETURN_IF_ERROR(UpdateTransformTreeProperties(
-        property_trees, property_trees.transform_tree_mutable(),
-        *update->transform_tree_update));
+    ASSIGN_OR_RETURN(
+        transform_layer_properties_changed,
+        UpdateTransformTreeProperties(property_trees,
+                                      property_trees.transform_tree_mutable(),
+                                      *update->transform_tree_update));
+    if (transform_layer_properties_changed) {
+      layers.set_needs_update_draw_properties();
+    }
   }
 
   bool scroll_properties_changed = false;
@@ -1844,6 +1902,20 @@ base::expected<void, std::string> LayerContextImpl::DoUpdateDisplayTree(
 
   host_impl_->set_send_frame_token_to_embedder(
       update->send_frame_token_to_embedder);
+  host_impl_->set_is_handling_interaction_from_client(
+      update->is_handling_interaction);
+  if (update->delegated_ink_metadata) {
+    layers.set_delegated_ink_metadata(
+        std::make_unique<gfx::DelegatedInkMetadata>(
+            *update->delegated_ink_metadata));
+  } else {
+    layers.clear_delegated_ink_metadata();
+  }
+  host_impl_->SetMayThrottleIfUndrawnFrames(
+      update->may_throttle_if_undrawn_frames);
+  host_impl_->set_viewport_mobile_optimized(
+      update->is_viewport_mobile_optimized);
+  layers.set_is_animating_hud_contents(update->is_animating_hud_contents);
 
   {
     TRACE_EVENT1("viz", "DeserializeTilings", "TilingCount",
@@ -1855,7 +1927,7 @@ base::expected<void, std::string> LayerContextImpl::DoUpdateDisplayTree(
         }
         RETURN_IF_ERROR(DeserializeTiling(
             host_impl_.get(), static_cast<cc::TileDisplayLayerImpl&>(*layer),
-            *tiling, /*update_damage=*/false));
+            *tiling));
       }
     }
   }
@@ -1950,12 +2022,14 @@ base::expected<void, std::string> LayerContextImpl::DoUpdateDisplayTree(
       }
       ReleaseCallback release_callback = base::BindOnce(
           [](cc::LayerTreeHostImpl* host_impl, ResourceId id,
+             scoped_refptr<gpu::ClientSharedImage> shared_image,
              const gpu::SyncToken& sync_token, bool is_lost) {
-            host_impl->ReturnResource({id, sync_token,
+            host_impl->ReturnResource({id, shared_image->EndImport(sync_token),
                                        /*release_fence=*/gfx::GpuFenceHandle(),
                                        /*count=*/1, is_lost});
           },
-          host_impl_.get(), ui_resource_request->transferable_resource->id);
+          host_impl_.get(), ui_resource_request->transferable_resource->id,
+          ui_resource_request->transferable_resource->shared_image());
 
       auto resource_id = host_impl_->resource_provider()->ImportResource(
           ui_resource_request->transferable_resource.value(),
@@ -1964,7 +2038,9 @@ base::expected<void, std::string> LayerContextImpl::DoUpdateDisplayTree(
           /*evicted_callback=*/base::NullCallback());
 
       host_impl_->CreateUIResourceFromImportedResource(
-          ui_resource_request->uid, resource_id, ui_resource_request->opaque);
+          ui_resource_request->uid, resource_id,
+          ui_resource_request->transferable_resource->GetSize(),
+          ui_resource_request->opaque);
     } else {
       host_impl_->DeleteUIResource(ui_resource_request->uid);
     }
@@ -2018,7 +2094,8 @@ base::expected<void, std::string> LayerContextImpl::DoUpdateDisplayTree(
   // actually changed. This avoids redundant work and prevents incorrectly
   // flagging draw properties as needing an update when no relevant properties
   // have changed.
-  if (any_tree_changed || scroll_properties_changed) {
+  if (any_tree_changed || scroll_properties_changed ||
+      transform_layer_properties_changed) {
     layers.MoveChangeTrackingToLayers();
   }
 
@@ -2102,18 +2179,16 @@ void LayerContextImpl::SendTilingsCleanupNotificationToClient() {
   }
 }
 
-void LayerContextImpl::UpdateDisplayTiling(mojom::TilingPtr tiling,
-                                           bool update_damage) {
+void LayerContextImpl::UpdateDisplayTiling(mojom::TilingPtr tiling) {
   CHECK(receiver_);
-  auto result = DoUpdateDisplayTiling(std::move(tiling), update_damage);
+  auto result = DoUpdateDisplayTiling(std::move(tiling));
   if (!result.has_value()) {
     HandleBadMojoMessage("UpdateDisplayTiling", result.error());
   }
 }
 
 base::expected<void, std::string> LayerContextImpl::DoUpdateDisplayTiling(
-    mojom::TilingPtr tiling,
-    bool update_damage) {
+    mojom::TilingPtr tiling) {
   cc::LayerTreeImpl& layers = *host_impl_->active_tree();
   if (cc::LayerImpl* layer = layers.LayerById(tiling->layer_id)) {
     if (layer->GetLayerType() != cc::mojom::LayerType::kTileDisplay) {
@@ -2122,7 +2197,7 @@ base::expected<void, std::string> LayerContextImpl::DoUpdateDisplayTiling(
 
     return DeserializeTiling(host_impl_.get(),
                              static_cast<cc::TileDisplayLayerImpl&>(*layer),
-                             *tiling, update_damage);
+                             *tiling);
   }
   return base::ok();
 }

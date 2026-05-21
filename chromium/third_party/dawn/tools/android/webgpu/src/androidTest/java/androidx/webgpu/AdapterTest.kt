@@ -1,9 +1,25 @@
+/*
+ * Copyright 2025 The Android Open Source Project
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package androidx.webgpu
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.SmallTest
 import androidx.webgpu.WebGpuTestConstants.EMULATOR_TESTS_MIN_API_LEVEL
 import androidx.webgpu.helper.initLibrary
+import androidx.webgpu.GPU.createInstance
 import java.util.concurrent.Executor
 import junit.framework.TestCase.assertEquals
 import kotlinx.coroutines.runBlocking
@@ -61,9 +77,9 @@ class AdapterTest {
 
   private suspend fun requestTestDevice(
     featureToTest: IntArray = intArrayOf(),
-    limits: Limits = Limits(),
+    limits: GPULimits = GPULimits(),
   ): GPUDevice {
-    val descriptor = DeviceDescriptor(
+    val descriptor = GPUDeviceDescriptor(
       requiredFeatures = featureToTest,
       requiredLimits = limits,
       deviceLostCallback = DeviceLostCallback { device, reason, message ->
@@ -167,7 +183,7 @@ class AdapterTest {
     val betterLimit = adapterLimits.maxBindGroups + 1
     assertThrows("Requesting a better limit should fail", DeviceLostException::class.java) {
       runBlocking {
-        requestTestDevice(limits = Limits(maxBindGroups = betterLimit))
+        requestTestDevice(limits = GPULimits(maxBindGroups = betterLimit))
       }
     }
   }
@@ -182,7 +198,7 @@ class AdapterTest {
   fun requestDeviceWithWorseThanDefaultLimitClamps() {
       val worseLimit = kDefaultLimits.getValue("maxBindGroups") - 1
       assert(worseLimit > 0) // Ensure the value is still valid, just worse.
-      val device = runBlocking { requestTestDevice(limits = Limits(maxBindGroups = worseLimit)) }
+      val device = runBlocking { requestTestDevice(limits = GPULimits(maxBindGroups = worseLimit)) }
       val deviceLimits = device.getLimits()
       assertEquals(
         "Device limit should be clamped to the default",
@@ -208,7 +224,7 @@ class AdapterTest {
     ) {
       runBlocking {
         requestTestDevice(
-          limits = Limits(
+          limits = GPULimits(
             minUniformBufferOffsetAlignment = invalidAlignment
           )
         )

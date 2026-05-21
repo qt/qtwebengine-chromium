@@ -11,13 +11,13 @@
 #include "base/atomicops.h"
 #include "base/bits.h"
 #include "base/compiler_specific.h"
-#include "base/containers/contains.h"
 #include "base/containers/span.h"
 #include "base/debug/crash_logging.h"
 #include "base/memory/singleton.h"
 #include "base/metrics/persistent_memory_allocator.h"
 #include "base/notreached.h"
 #include "base/pickle.h"
+#include "base/strings/string_view_util.h"
 #include "components/variations/active_field_trials.h"
 
 namespace metrics {
@@ -364,8 +364,7 @@ void PersistentSystemProfile::AddFieldTrial(std::string_view trial,
   pickler.WriteString(trial);
   pickler.WriteString(group);
 
-  WriteToAll(kFieldTrialInfo,
-             std::string_view(pickler.data_as_char(), pickler.size()));
+  WriteToAll(kFieldTrialInfo, base::as_string_view(pickler));
 }
 
 void PersistentSystemProfile::RemoveFieldTrial(std::string_view trial) {
@@ -376,8 +375,7 @@ void PersistentSystemProfile::RemoveFieldTrial(std::string_view trial) {
   pickler.WriteString(trial);
   pickler.WriteString(kFieldTrialDeletionSentinel);
 
-  WriteToAll(kFieldTrialInfo,
-             std::string_view(pickler.data_as_char(), pickler.size()));
+  WriteToAll(kFieldTrialInfo, base::as_string_view(pickler));
 }
 // static
 bool PersistentSystemProfile::HasSystemProfile(
@@ -459,9 +457,8 @@ void PersistentSystemProfile::MergeUpdateRecords(
           }
         }
 
-        base::Pickle pickler =
-            base::Pickle::WithUnownedBuffer(base::as_byte_span(record));
-        base::PickleIterator iter(pickler);
+        base::PickleIterator iter =
+            base::PickleIterator::WithData(base::as_byte_span(record));
         std::string_view trial;
         std::string_view group;
         if (iter.ReadStringPiece(&trial) && iter.ReadStringPiece(&group)) {

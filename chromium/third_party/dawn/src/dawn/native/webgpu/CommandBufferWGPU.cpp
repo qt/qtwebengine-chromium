@@ -432,6 +432,9 @@ MaybeError GatherReferencedResourcesFromComputePass(CaptureContext& captureConte
             }
             case Command::SetBindGroup: {
                 auto cmd = commands.NextCommand<SetBindGroupCmd>();
+                if (cmd->dynamicOffsetCount > 0) {
+                    commands.NextData<uint32_t>(cmd->dynamicOffsetCount);
+                }
                 usedResources.bindGroups.push_back(cmd->group.Get());
                 break;
             }
@@ -485,6 +488,17 @@ MaybeError GatherReferencedResourcesFromRenderPass(CaptureContext& captureContex
     return {};
 }
 
+void CaptureTimestampWriteCommand(CaptureContext& captureContext, CommandIterator& commands) {
+    const auto& cmd = *commands.NextCommand<WriteTimestampCmd>();
+    schema::CommandBufferCommandWriteTimestampCmd data{{
+        .data = {{
+            .querySetId = captureContext.GetId(cmd.querySet),
+            .queryIndex = cmd.queryIndex,
+        }},
+    }};
+    Serialize(captureContext, data);
+}
+
 MaybeError CaptureComputePass(CaptureContext& captureContext, CommandIterator& commands) {
     Command type;
     while (commands.NextCommandId(&type)) {
@@ -504,22 +518,6 @@ MaybeError CaptureComputePass(CaptureContext& captureContext, CommandIterator& c
                 Serialize(captureContext, data);
                 break;
             }
-            case Command::SetBindGroup: {
-                const auto& cmd = *commands.NextCommand<SetBindGroupCmd>();
-                const uint32_t* dynamicOffsetsData =
-                    cmd.dynamicOffsetCount > 0 ? commands.NextData<uint32_t>(cmd.dynamicOffsetCount)
-                                               : nullptr;
-                schema::CommandBufferCommandSetBindGroupCmd data{{
-                    .data = {{
-                        .index = uint32_t(cmd.index),
-                        .bindGroupId = captureContext.GetId(cmd.group),
-                        .dynamicOffsets = std::vector<uint32_t>(
-                            dynamicOffsetsData, dynamicOffsetsData + cmd.dynamicOffsetCount),
-                    }},
-                }};
-                Serialize(captureContext, data);
-                break;
-            }
             case Command::Dispatch: {
                 const auto& cmd = *commands.NextCommand<DispatchCmd>();
                 schema::CommandBufferCommandDispatchCmd data{{
@@ -532,12 +530,31 @@ MaybeError CaptureComputePass(CaptureContext& captureContext, CommandIterator& c
                 Serialize(captureContext, data);
                 break;
             }
-            default: {
-                if (!CaptureDebugCommand(captureContext, commands, type)) {
-                    return DAWN_UNIMPLEMENTED_ERROR("Unimplemented command");
-                }
+            case Command::DispatchIndirect: {
+                const auto& cmd = *commands.NextCommand<DispatchIndirectCmd>();
+                schema::CommandBufferCommandDispatchIndirectCmd data{{
+                    .data = {{
+                        .bufferId = captureContext.GetId(cmd.indirectBuffer),
+                        .offset = cmd.indirectOffset,
+                    }},
+                }};
+                Serialize(captureContext, data);
                 break;
             }
+            case Command::WriteTimestamp:
+                CaptureTimestampWriteCommand(captureContext, commands);
+                break;
+            case Command::SetBindGroup:
+            case Command::SetImmediates:
+                CaptureSharedCommand(captureContext, commands, type);
+                break;
+            case Command::PushDebugGroup:
+            case Command::PopDebugGroup:
+            case Command::InsertDebugMarker:
+                CaptureDebugCommand(captureContext, commands, type);
+                break;
+            default:
+                return DAWN_UNIMPLEMENTED_ERROR("Unimplemented command");
         }
     }
     return {};
@@ -582,6 +599,57 @@ MaybeError CaptureRenderPass(CaptureContext& captureContext, CommandIterator& co
                 Serialize(captureContext, schema::CommandBufferCommand::EndOcclusionQuery);
                 break;
             }
+            case Command::SetBlendConstant: {
+                const auto& cmd = *commands.NextCommand<SetBlendConstantCmd>();
+                schema::CommandBufferCommandSetBlendConstantCmd data{{
+                    .data = {{
+                        .color = ToSchema(cmd.color),
+                    }},
+                }};
+                Serialize(captureContext, data);
+                break;
+            }
+            case Command::SetScissorRect: {
+                const auto& cmd = *commands.NextCommand<SetScissorRectCmd>();
+                schema::CommandBufferCommandSetScissorRectCmd data{{
+                    .data = {{
+                        .x = cmd.x,
+                        .y = cmd.y,
+                        .width = cmd.width,
+                        .height = cmd.height,
+                    }},
+                }};
+                Serialize(captureContext, data);
+                break;
+            }
+            case Command::SetStencilReference: {
+                const auto& cmd = *commands.NextCommand<SetStencilReferenceCmd>();
+                schema::CommandBufferCommandSetStencilReferenceCmd data{{
+                    .data = {{
+                        .reference = cmd.reference,
+                    }},
+                }};
+                Serialize(captureContext, data);
+                break;
+            }
+            case Command::SetViewport: {
+                const auto& cmd = *commands.NextCommand<SetViewportCmd>();
+                schema::CommandBufferCommandSetViewportCmd data{{
+                    .data = {{
+                        .x = cmd.x,
+                        .y = cmd.y,
+                        .width = cmd.width,
+                        .height = cmd.height,
+                        .minDepth = cmd.minDepth,
+                        .maxDepth = cmd.maxDepth,
+                    }},
+                }};
+                Serialize(captureContext, data);
+                break;
+            }
+            case Command::WriteTimestamp:
+                CaptureTimestampWriteCommand(captureContext, commands);
+                break;
             default:
                 DAWN_TRY(CaptureRenderCommand(captureContext, commands, type));
                 break;
@@ -613,6 +681,9 @@ MaybeError CommandBuffer::AddReferenced(CaptureContext& captureContext) {
     }
     for (auto texture : resourceUsages.topLevelTextures) {
         DAWN_TRY(captureContext.AddResource(ToBackend(texture)));
+    }
+    for (auto querySet : resourceUsages.usedQuerySets) {
+        DAWN_TRY(captureContext.AddResource(ToBackend(querySet)));
     }
     DAWN_TRY(AddReferencedPassResourceUsages(captureContext, resourceUsages.renderPasses));
     for (const auto& pass : resourceUsages.computePasses) {
@@ -661,10 +732,14 @@ MaybeError CommandBuffer::AddReferenced(CaptureContext& captureContext) {
                                                                  usedResources));
                 break;
             }
+            case Command::WriteBuffer:
+            case Command::ClearBuffer:
             case Command::CopyBufferToBuffer:
             case Command::CopyBufferToTexture:
             case Command::CopyTextureToBuffer:
             case Command::CopyTextureToTexture:
+            case Command::ResolveQuerySet:
+            case Command::WriteTimestamp:
             case Command::PushDebugGroup:
             case Command::InsertDebugMarker:
             case Command::PopDebugGroup:
@@ -790,6 +865,31 @@ MaybeError CommandBuffer::CaptureCreationParameters(CaptureContext& captureConte
                 Serialize(captureContext, data);
                 break;
             }
+            case Command::ClearBuffer: {
+                const auto& cmd = *commands.NextCommand<ClearBufferCmd>();
+                schema::CommandBufferCommandClearBufferCmd data{{
+                    .data = {{
+                        .bufferId = captureContext.GetId(cmd.buffer.Get()),
+                        .offset = cmd.offset,
+                        .size = cmd.size,
+                    }},
+                }};
+                Serialize(captureContext, data);
+                break;
+            }
+            case Command::WriteBuffer: {
+                const auto& cmd = *commands.NextCommand<WriteBufferCmd>();
+                auto values = mCommands.NextData<uint8_t>(cmd.size);
+                schema::CommandBufferCommandWriteBufferCmd data{{
+                    .data = {{
+                        .bufferId = captureContext.GetId(cmd.buffer.Get()),
+                        .bufferOffset = cmd.offset,
+                        .data = std::vector<uint8_t>(values, values + cmd.size),
+                    }},
+                }};
+                Serialize(captureContext, data);
+                break;
+            }
             case Command::BeginComputePass: {
                 const auto& cmd = *commands.NextCommand<BeginComputePassCmd>();
                 schema::CommandBufferCommandBeginComputePassCmd data{{
@@ -805,10 +905,31 @@ MaybeError CommandBuffer::CaptureCreationParameters(CaptureContext& captureConte
             }
             case Command::BeginRenderPass: {
                 const auto& cmd = *commands.NextCommand<BeginRenderPassCmd>();
-                std::vector<schema::ColorAttachment> colorAttachments;
-                for (ColorAttachmentIndex i : cmd.attachmentState->GetColorAttachmentsMask()) {
-                    colorAttachments.push_back(ToSchema(captureContext, cmd.colorAttachments[i]));
+
+                // The front end does not store the number of attachments but the API requires that
+                // we provide them for sparse attachments so we initialize colorAttachments with
+                // enough slots to cover all used slots and fill them with a state that will be set
+                // to unused on replay.
+                ColorAttachmentMask attachmentMask = cmd.attachmentState->GetColorAttachmentsMask();
+                ColorAttachmentIndex attachmentCount = GetHighestBitIndexPlusOne(attachmentMask);
+
+                std::vector<schema::ColorAttachment> colorAttachments(size_t(attachmentCount),
+                                                                      schema::ColorAttachment{});
+                for (ColorAttachmentIndex slot : attachmentMask) {
+                    colorAttachments[size_t(slot)] =
+                        ToSchema(captureContext, cmd.colorAttachments[slot]);
                 }
+
+                schema::ResolveRect resolveRect = {};
+                if (cmd.resolveRect.HasValue()) {
+                    resolveRect.colorOffsetX = cmd.resolveRect.colorOffsetX;
+                    resolveRect.colorOffsetY = cmd.resolveRect.colorOffsetY;
+                    resolveRect.resolveOffsetX = cmd.resolveRect.resolveOffsetX;
+                    resolveRect.resolveOffsetY = cmd.resolveRect.resolveOffsetY;
+                    resolveRect.width = cmd.resolveRect.updateWidth;
+                    resolveRect.height = cmd.resolveRect.updateHeight;
+                }
+
                 schema::CommandBufferCommandBeginRenderPassCmd data{{
                     .data = {{
                         .label = cmd.label,
@@ -817,6 +938,7 @@ MaybeError CommandBuffer::CaptureCreationParameters(CaptureContext& captureConte
                             ToSchema(captureContext, cmd.depthStencilAttachment),
                         .occlusionQuerySetId = captureContext.GetId(cmd.occlusionQuerySet.Get()),
                         .timestampWrites = ToSchema(captureContext, cmd.timestampWrites),
+                        .resolveRect = resolveRect,
                     }},
                 }};
                 Serialize(captureContext, data);
@@ -838,12 +960,16 @@ MaybeError CommandBuffer::CaptureCreationParameters(CaptureContext& captureConte
                 Serialize(captureContext, data);
                 break;
             }
-            default: {
-                if (!CaptureDebugCommand(captureContext, commands, type)) {
-                    return DAWN_UNIMPLEMENTED_ERROR("Unimplemented command");
-                }
+            case Command::WriteTimestamp:
+                CaptureTimestampWriteCommand(captureContext, commands);
                 break;
-            }
+            case Command::PushDebugGroup:
+            case Command::PopDebugGroup:
+            case Command::InsertDebugMarker:
+                CaptureDebugCommand(captureContext, commands, type);
+                break;
+            default:
+                return DAWN_UNIMPLEMENTED_ERROR("Unimplemented command");
         }
     }
     Serialize(captureContext, schema::CommandBufferCommand::End);

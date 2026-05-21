@@ -29,7 +29,6 @@
 #include "core/fxcrt/containers/contains.h"
 #include "core/fxcrt/fx_extension.h"
 #include "core/fxcrt/fx_safe_types.h"
-#include "core/fxcrt/notreached.h"
 #include "core/fxcrt/numerics/safe_conversions.h"
 #include "core/fxcrt/stl_util.h"
 
@@ -1103,9 +1102,6 @@ CPDF_DataAvail::ParseDocument(
 
   // Additional check, that all ok.
   if (GetValidator()->has_read_problems()) {
-    // TODO(crbug.com/42271016): Figure out if this should be a CHECK() or the
-    // DCHECK() removed.
-    DCHECK(false);
     return std::make_pair(CPDF_Parser::HANDLER_ERROR, nullptr);
   }
 

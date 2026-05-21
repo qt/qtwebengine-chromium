@@ -7,11 +7,16 @@ import {html} from '//resources/lit/v3_0/lit.rollup.js';
 import type {AppElement} from './app.js';
 
 export function getHtml(this: AppElement) {
+  const immersiveClass = this.isImmersiveEnabled_ ? 'immersive' : '';
   // clang-format off
   return html`<!--_html_template_start_-->
-<div id="appFlexParent" @keydown="${this.onKeyDown_}">
+<div id="appFlexParent" class="${immersiveClass}">
+<!-- Overlay to prevent cursor from interacting with background elements when
+ the settings menu is open. -->
+<div id="settingsOverlay" class="settings-overlay"></div>
   <div id="toolbar-container">
     <read-anything-toolbar
+        .presentationState="${this.presentationState_}"
         .isSpeechActive="${this.isSpeechActive_}"
         .isAudioCurrentlyPlaying="${this.isAudioCurrentlyPlaying_}"
         .isReadAloudPlayable="${this.computeIsReadAloudPlayable()}"
@@ -22,6 +27,7 @@ export function getHtml(this: AppElement) {
         .previewVoicePlaying="${this.previewVoicePlaying_}"
         .localeToDisplayName="${this.localeToDisplayName_}"
         .pageLanguage="${this.pageLanguage_}"
+        .isImmersiveMode="${this.isImmersiveMode()}"
         @select-voice="${this.onSelectVoice_}"
         @voice-language-toggle="${this.onVoiceLanguageToggle_}"
         @preview-voice="${this.onPreviewVoice_}"
@@ -43,11 +49,17 @@ export function getHtml(this: AppElement) {
         @toolbar-overflow="${this.onToolbarOverflow_}"
         @language-menu-open="${this.onLanguageMenuOpen_}"
         @language-menu-close="${this.onLanguageMenuClose_}"
+        @line-focus-style-change="${this.onLineFocusStyleChange_}"
+        @line-focus-movement-change="${this.onLineFocusMovementChange_}"
+        @close-all-menus="${this.onAllMenusClose_}"
+        @settings-opened="${this.onSettingsOpened_}"
+        @settings-closed="${this.onSettingsClosed_}"
         id="toolbar">
     </read-anything-toolbar>
   </div>
   <div id="containerParent" class="sp-card"
       ?hidden="${!this.computeHasContent()}">
+    <div id="lineFocus"></div>
     <div id="containerScroller" class="sp-scroller"
         @scroll="${this.onContainerScroll_}"
         @scrollend="${this.onContainerScrollEnd_}">

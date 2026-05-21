@@ -3,9 +3,9 @@
 
 /***************************************************************************
  *
- * Copyright (c) 2015-2025 The Khronos Group Inc.
- * Copyright (c) 2015-2025 Valve Corporation
- * Copyright (c) 2015-2025 LunarG, Inc.
+ * Copyright (c) 2015-2026 The Khronos Group Inc.
+ * Copyright (c) 2015-2026 Valve Corporation
+ * Copyright (c) 2015-2026 LunarG, Inc.
  * Copyright (c) 2015-2024 Google Inc.
  * Copyright (c) 2023-2024 RasterGrid Kft.
  *
@@ -3189,6 +3189,14 @@ virtual void PreCallRecordGetImageViewAddressNVX(VkDevice device, VkImageView im
                                                  VkImageViewAddressPropertiesNVX* pProperties, const RecordObject& record_obj) {}
 virtual void PostCallRecordGetImageViewAddressNVX(VkDevice device, VkImageView imageView,
                                                   VkImageViewAddressPropertiesNVX* pProperties, const RecordObject& record_obj) {}
+virtual bool PreCallValidateGetDeviceCombinedImageSamplerIndexNVX(VkDevice device, uint64_t imageViewIndex, uint64_t samplerIndex,
+                                                                  const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordGetDeviceCombinedImageSamplerIndexNVX(VkDevice device, uint64_t imageViewIndex, uint64_t samplerIndex,
+                                                                const RecordObject& record_obj) {}
+virtual void PostCallRecordGetDeviceCombinedImageSamplerIndexNVX(VkDevice device, uint64_t imageViewIndex, uint64_t samplerIndex,
+                                                                 const RecordObject& record_obj) {}
 virtual bool PreCallValidateCmdDrawIndirectCountAMD(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset,
                                                     VkBuffer countBuffer, VkDeviceSize countBufferOffset, uint32_t maxDrawCount,
                                                     uint32_t stride, const ErrorObject& error_obj) const {
@@ -3533,6 +3541,83 @@ virtual void PostCallRecordCmdDispatchGraphIndirectCountAMDX(VkCommandBuffer com
                                                              VkDeviceSize scratchSize, VkDeviceAddress countInfo,
                                                              const RecordObject& record_obj) {}
 #endif  // VK_ENABLE_BETA_EXTENSIONS
+virtual bool PreCallValidateWriteSamplerDescriptorsEXT(VkDevice device, uint32_t samplerCount, const VkSamplerCreateInfo* pSamplers,
+                                                       const VkHostAddressRangeEXT* pDescriptors,
+                                                       const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordWriteSamplerDescriptorsEXT(VkDevice device, uint32_t samplerCount, const VkSamplerCreateInfo* pSamplers,
+                                                     const VkHostAddressRangeEXT* pDescriptors, const RecordObject& record_obj) {}
+virtual void PostCallRecordWriteSamplerDescriptorsEXT(VkDevice device, uint32_t samplerCount, const VkSamplerCreateInfo* pSamplers,
+                                                      const VkHostAddressRangeEXT* pDescriptors, const RecordObject& record_obj) {}
+virtual bool PreCallValidateWriteResourceDescriptorsEXT(VkDevice device, uint32_t resourceCount,
+                                                        const VkResourceDescriptorInfoEXT* pResources,
+                                                        const VkHostAddressRangeEXT* pDescriptors,
+                                                        const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordWriteResourceDescriptorsEXT(VkDevice device, uint32_t resourceCount,
+                                                      const VkResourceDescriptorInfoEXT* pResources,
+                                                      const VkHostAddressRangeEXT* pDescriptors, const RecordObject& record_obj) {}
+virtual void PostCallRecordWriteResourceDescriptorsEXT(VkDevice device, uint32_t resourceCount,
+                                                       const VkResourceDescriptorInfoEXT* pResources,
+                                                       const VkHostAddressRangeEXT* pDescriptors, const RecordObject& record_obj) {}
+virtual bool PreCallValidateCmdBindSamplerHeapEXT(VkCommandBuffer commandBuffer, const VkBindHeapInfoEXT* pBindInfo,
+                                                  const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordCmdBindSamplerHeapEXT(VkCommandBuffer commandBuffer, const VkBindHeapInfoEXT* pBindInfo,
+                                                const RecordObject& record_obj) {}
+virtual void PostCallRecordCmdBindSamplerHeapEXT(VkCommandBuffer commandBuffer, const VkBindHeapInfoEXT* pBindInfo,
+                                                 const RecordObject& record_obj) {}
+virtual bool PreCallValidateCmdBindResourceHeapEXT(VkCommandBuffer commandBuffer, const VkBindHeapInfoEXT* pBindInfo,
+                                                   const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordCmdBindResourceHeapEXT(VkCommandBuffer commandBuffer, const VkBindHeapInfoEXT* pBindInfo,
+                                                 const RecordObject& record_obj) {}
+virtual void PostCallRecordCmdBindResourceHeapEXT(VkCommandBuffer commandBuffer, const VkBindHeapInfoEXT* pBindInfo,
+                                                  const RecordObject& record_obj) {}
+virtual bool PreCallValidateCmdPushDataEXT(VkCommandBuffer commandBuffer, const VkPushDataInfoEXT* pPushDataInfo,
+                                           const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordCmdPushDataEXT(VkCommandBuffer commandBuffer, const VkPushDataInfoEXT* pPushDataInfo,
+                                         const RecordObject& record_obj) {}
+virtual void PostCallRecordCmdPushDataEXT(VkCommandBuffer commandBuffer, const VkPushDataInfoEXT* pPushDataInfo,
+                                          const RecordObject& record_obj) {}
+virtual bool PreCallValidateGetImageOpaqueCaptureDataEXT(VkDevice device, uint32_t imageCount, const VkImage* pImages,
+                                                         VkHostAddressRangeEXT* pDatas, const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordGetImageOpaqueCaptureDataEXT(VkDevice device, uint32_t imageCount, const VkImage* pImages,
+                                                       VkHostAddressRangeEXT* pDatas, const RecordObject& record_obj) {}
+virtual void PostCallRecordGetImageOpaqueCaptureDataEXT(VkDevice device, uint32_t imageCount, const VkImage* pImages,
+                                                        VkHostAddressRangeEXT* pDatas, const RecordObject& record_obj) {}
+virtual bool PreCallValidateRegisterCustomBorderColorEXT(VkDevice device,
+                                                         const VkSamplerCustomBorderColorCreateInfoEXT* pBorderColor,
+                                                         VkBool32 requestIndex, uint32_t* pIndex,
+                                                         const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordRegisterCustomBorderColorEXT(VkDevice device, const VkSamplerCustomBorderColorCreateInfoEXT* pBorderColor,
+                                                       VkBool32 requestIndex, uint32_t* pIndex, const RecordObject& record_obj) {}
+virtual void PostCallRecordRegisterCustomBorderColorEXT(VkDevice device,
+                                                        const VkSamplerCustomBorderColorCreateInfoEXT* pBorderColor,
+                                                        VkBool32 requestIndex, uint32_t* pIndex, const RecordObject& record_obj) {}
+virtual bool PreCallValidateUnregisterCustomBorderColorEXT(VkDevice device, uint32_t index, const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordUnregisterCustomBorderColorEXT(VkDevice device, uint32_t index, const RecordObject& record_obj) {}
+virtual void PostCallRecordUnregisterCustomBorderColorEXT(VkDevice device, uint32_t index, const RecordObject& record_obj) {}
+virtual bool PreCallValidateGetTensorOpaqueCaptureDataARM(VkDevice device, uint32_t tensorCount, const VkTensorARM* pTensors,
+                                                          VkHostAddressRangeEXT* pDatas, const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordGetTensorOpaqueCaptureDataARM(VkDevice device, uint32_t tensorCount, const VkTensorARM* pTensors,
+                                                        VkHostAddressRangeEXT* pDatas, const RecordObject& record_obj) {}
+virtual void PostCallRecordGetTensorOpaqueCaptureDataARM(VkDevice device, uint32_t tensorCount, const VkTensorARM* pTensors,
+                                                         VkHostAddressRangeEXT* pDatas, const RecordObject& record_obj) {}
 virtual bool PreCallValidateCmdSetSampleLocationsEXT(VkCommandBuffer commandBuffer,
                                                      const VkSampleLocationsInfoEXT* pSampleLocationsInfo,
                                                      const ErrorObject& error_obj) const {
@@ -6030,35 +6115,6 @@ virtual void PostCallRecordUpdateIndirectExecutionSetShaderEXT(VkDevice device, 
                                                                uint32_t executionSetWriteCount,
                                                                const VkWriteIndirectExecutionSetShaderEXT* pExecutionSetWrites,
                                                                const RecordObject& record_obj) {}
-#ifdef VK_USE_PLATFORM_OHOS
-virtual bool PreCallValidateGetSwapchainGrallocUsageOHOS(VkDevice device, VkFormat format, VkImageUsageFlags imageUsage,
-                                                         uint64_t* grallocUsage, const ErrorObject& error_obj) const {
-    return false;
-}
-virtual void PreCallRecordGetSwapchainGrallocUsageOHOS(VkDevice device, VkFormat format, VkImageUsageFlags imageUsage,
-                                                       uint64_t* grallocUsage, const RecordObject& record_obj) {}
-virtual void PostCallRecordGetSwapchainGrallocUsageOHOS(VkDevice device, VkFormat format, VkImageUsageFlags imageUsage,
-                                                        uint64_t* grallocUsage, const RecordObject& record_obj) {}
-virtual bool PreCallValidateAcquireImageOHOS(VkDevice device, VkImage image, int32_t nativeFenceFd, VkSemaphore semaphore,
-                                             VkFence fence, const ErrorObject& error_obj) const {
-    return false;
-}
-virtual void PreCallRecordAcquireImageOHOS(VkDevice device, VkImage image, int32_t nativeFenceFd, VkSemaphore semaphore,
-                                           VkFence fence, const RecordObject& record_obj) {}
-virtual void PostCallRecordAcquireImageOHOS(VkDevice device, VkImage image, int32_t nativeFenceFd, VkSemaphore semaphore,
-                                            VkFence fence, const RecordObject& record_obj) {}
-virtual bool PreCallValidateQueueSignalReleaseImageOHOS(VkQueue queue, uint32_t waitSemaphoreCount,
-                                                        const VkSemaphore* pWaitSemaphores, VkImage image, int32_t* pNativeFenceFd,
-                                                        const ErrorObject& error_obj) const {
-    return false;
-}
-virtual void PreCallRecordQueueSignalReleaseImageOHOS(VkQueue queue, uint32_t waitSemaphoreCount,
-                                                      const VkSemaphore* pWaitSemaphores, VkImage image, int32_t* pNativeFenceFd,
-                                                      const RecordObject& record_obj) {}
-virtual void PostCallRecordQueueSignalReleaseImageOHOS(VkQueue queue, uint32_t waitSemaphoreCount,
-                                                       const VkSemaphore* pWaitSemaphores, VkImage image, int32_t* pNativeFenceFd,
-                                                       const RecordObject& record_obj) {}
-#endif  // VK_USE_PLATFORM_OHOS
 #ifdef VK_USE_PLATFORM_METAL_EXT
 virtual bool PreCallValidateGetMemoryMetalHandleEXT(VkDevice device, const VkMemoryGetMetalHandleInfoEXT* pGetMetalHandleInfo,
                                                     void** pHandle, const ErrorObject& error_obj) const {
@@ -6102,6 +6158,17 @@ virtual void PreCallRecordCmdBeginCustomResolveEXT(VkCommandBuffer commandBuffer
 virtual void PostCallRecordCmdBeginCustomResolveEXT(VkCommandBuffer commandBuffer,
                                                     const VkBeginCustomResolveInfoEXT* pBeginCustomResolveInfo,
                                                     const RecordObject& record_obj) {}
+virtual bool PreCallValidateCmdSetComputeOccupancyPriorityNV(VkCommandBuffer commandBuffer,
+                                                             const VkComputeOccupancyPriorityParametersNV* pParameters,
+                                                             const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordCmdSetComputeOccupancyPriorityNV(VkCommandBuffer commandBuffer,
+                                                           const VkComputeOccupancyPriorityParametersNV* pParameters,
+                                                           const RecordObject& record_obj) {}
+virtual void PostCallRecordCmdSetComputeOccupancyPriorityNV(VkCommandBuffer commandBuffer,
+                                                            const VkComputeOccupancyPriorityParametersNV* pParameters,
+                                                            const RecordObject& record_obj) {}
 virtual bool PreCallValidateCreateAccelerationStructureKHR(VkDevice device, const VkAccelerationStructureCreateInfoKHR* pCreateInfo,
                                                            const VkAllocationCallbacks* pAllocator,
                                                            VkAccelerationStructureKHR* pAccelerationStructure,

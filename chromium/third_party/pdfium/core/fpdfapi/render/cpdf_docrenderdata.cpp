@@ -100,7 +100,7 @@ RetainPtr<CPDF_TransferFunc> CPDF_DocRenderData::CreateTransferFunc(
   }
 
   float output[kMaxOutputs];
-  std::fill(std::begin(output), std::end(output), 0.0f);
+  std::ranges::fill(output, 0.0f);
 
   bool bIdentity = true;
   auto samples_r = FixedSizeDataVector<uint8_t>::Uninit(

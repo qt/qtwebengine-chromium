@@ -1,0 +1,46 @@
+name: Build and Run Tests (jpegxl Feature)
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+# Cancel the workflow if a new one is triggered from the same PR, branch, or tag, except on main.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  build-and-run-tests-jpexl-feature:
+    name: "Build and Run Tests on ${{ matrix.os }} (jpegxl Features)"
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+    env:
+      CC: clang
+      CXX: clang++
+
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+
+      - uses: ./.github/actions/setup-deps
+
+      - name: Cache external libjxl dependency
+        id: cache-ext-libjxl
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+        with:
+          path: sys/libjxl-sys
+          key: ${{ runner.os }}-${{ hashFiles('sys/libjxl-sys/build.rs', 'sys/libjxl-sys/Cargo.toml', 'sys/libjxl-sys/libjxl.cmd', 'sys/libjxl-sys/wrapper.h') }}
+
+      - name: Download and build libjxl
+        if: steps.cache-ext-libjxl.outputs.cache-hit != 'true'
+        working-directory: ./sys/libjxl-sys
+        run: ./libjxl.cmd
+
+      - name: Build and run the Rust tests
+        run: cargo test --features aom,jpegxl -- --skip test_conformance

@@ -24,6 +24,8 @@
 #include "third_party/blink/renderer/core/layout/svg/layout_svg_root.h"
 
 #include "base/auto_reset.h"
+#include "base/feature_list.h"
+#include "third_party/blink/public/common/features.h"
 #include "third_party/blink/renderer/core/editing/position_with_affinity.h"
 #include "third_party/blink/renderer/core/frame/frame_owner.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
@@ -269,7 +271,9 @@ bool LayoutSVGRoot::StyleChangeAffectsIntrinsicSize(
   // any other font-relative unit), any changes to the font may change said
   // dimensions.
   if (IntrinsicSizeIsFontMetricsDependent() &&
-      !base::ValuesEquivalent(old_style.GetFont(), style.GetFont())) {
+      (base::FeatureList::IsEnabled(blink::features::kCSSFontComparisonFix)
+           ? !base::ValuesEquivalent(old_style.GetFont(), style.GetFont())
+           : old_style.GetFont() != style.GetFont())) {
     return true;
   }
   return false;
@@ -300,7 +304,7 @@ void LayoutSVGRoot::StyleDidChange(
 
   SVGResources::UpdateEffects(*this, diff, old_style);
 
-  if (diff.TransformChanged()) {
+  if (diff.transform_changed) {
     for (auto& svg_text : text_set_) {
       svg_text->SetNeedsLayout(layout_invalidation_reason::kStyleChange,
                                kMarkContainerChain);
@@ -473,7 +477,7 @@ void LayoutSVGRoot::MapLocalToAncestor(const LayoutBoxModelObject* ancestor,
 bool LayoutSVGRoot::HitTestChildren(HitTestResult& result,
                                     const HitTestLocation& hit_test_location,
                                     const PhysicalOffset& accumulated_offset,
-                                    HitTestPhase phase) {
+                                    HitTestPhase phase) const {
   NOT_DESTROYED();
   HitTestLocation local_border_box_location(hit_test_location,
                                             -accumulated_offset);

@@ -1,7 +1,7 @@
-/* Copyright (c) 2019-2025 The Khronos Group Inc.
- * Copyright (c) 2019-2025 Valve Corporation
- * Copyright (c) 2019-2025 LunarG, Inc.
- * Copyright (C) 2019-2025 Google Inc.
+/* Copyright (c) 2019-2026 The Khronos Group Inc.
+ * Copyright (c) 2019-2026 Valve Corporation
+ * Copyright (c) 2019-2026 LunarG, Inc.
+ * Copyright (C) 2019-2026 Google Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -59,6 +59,11 @@ class AccessMap {
     using const_iterator = ImplMap::const_iterator;
 
   public:
+    // Use explicit assignment to control all places where this happens
+    void Assign(const AccessMap &other);
+    AccessMap &operator=(const AccessMap &other) = delete;
+    AccessMap &operator=(AccessMap &&other) = delete;
+
     iterator begin() { return impl_map_.begin(); }
     const_iterator begin() const { return impl_map_.begin(); }
     iterator end() { return impl_map_.end(); }
@@ -72,6 +77,8 @@ class AccessMap {
     iterator Erase(const iterator &pos);
     void Erase(iterator first, iterator last);
     iterator Insert(const_iterator hint, const AccessRange &range, const AccessState &access_state);
+    iterator InfillGap(const_iterator range_lower_bound, const AccessRange &range, const AccessState &access_state);
+    void InfillGaps(const AccessRange &range, const AccessState &access_state);
     iterator Split(const iterator split_it, const index_type &index);
 
     AccessMap() : impl_map_(AccessMapCompare()) {}
@@ -164,89 +171,71 @@ class ParallelIterator {
 // Split a range into pieces bound by the intersection of the iterator's range and the supplied range
 AccessMap::iterator Split(AccessMap::iterator in, AccessMap &map, const AccessRange &range);
 
-void UpdateRangeValue(AccessMap &map, const AccessRange &range, const AccessState &access_state);
-
 // Combines directly adjacent ranges with equal AccessState
 void Consolidate(AccessMap &map);
 
 // Apply an operation over a range map, infilling where content is absent, updating where content is present.
-// The passed pos must *either* be strictly less than range or *is* lower_bound (which may be end)
-// Trims to range boundaries.
-// infill op doesn't have to alter map, but mustn't invalidate iterators passed to it. (i.e. no erasure)
-// infill data (default mapped value or other initial value) is contained with ops.
-// update allows existing ranges to be updated (merged, whatever) based on data contained in ops.  All iterators
-// passed to update are already trimmed to fit within range.
+// The passed pos must either be a lower bound (can be the end iterator) or be strictly less than the range.
+// Map entries that intersect range.begin or range.end are split at the intersection point.
 template <typename InfillUpdateOps>
 AccessMap::iterator InfillUpdateRange(AccessMap &map, AccessMap::iterator pos, const AccessRange &range,
                                       const InfillUpdateOps &ops) {
+    assert(range.non_empty());
+
     const auto end = map.end();
-    assert((pos == end) || (pos == map.LowerBound(range.begin)) || pos->first.strictly_less(range));
+    assert(pos == map.LowerBound(range.begin) || pos->first.strictly_less(range));
 
-    if (range.empty()) {
-        return pos;
-    }
-    if (pos == end) {
-        // Only pass pos == end for range tail after last entry
-        assert(end == map.LowerBound(range.begin));
-    } else if (pos->first.strictly_less(range)) {
-        // pos isn't lower_bound for range (it's less than range), however, if range is monotonically increasing it's likely
-        // the next entry in the map will be the lower bound.
-
-        // If the new (pos + 1) *isn't* stricly_less and pos is,
-        // (pos + 1) must be the lower_bound, otherwise we have to look for it O(log n)
+    if (pos != end && pos->first.strictly_less(range)) {
+        // pos is not a lower bound for the range (pos < range), but if the range is
+        // monotonically increasing, the next map entry may be the lower bound
         ++pos;
-        if ((pos != end) && pos->first.strictly_less(range)) {
+
+        // If the new pos is not a lower bound, run the full search
+        if (pos != end && pos->first.strictly_less(range)) {
             pos = map.LowerBound(range.begin);
         }
-        assert(pos == map.LowerBound(range.begin));
     }
+    assert(pos == map.LowerBound(range.begin));
 
-    if ((pos != end) && (range.begin > pos->first.begin)) {
-        // lower bound starts before the range, trim and advance
+    if (pos != end && range.begin > pos->first.begin) {
+        // Lower bound starts before the range.
+        // Split the entry so that a new entry starts exactly at the range.begin
         pos = map.Split(pos, range.begin);
         ++pos;
     }
 
     AccessMap::index_type current_begin = range.begin;
     while (pos != end && current_begin < range.end) {
-        if (current_begin < pos->first.begin) {
-            // The current_begin is pointing to the beginning of a gap to infill (we supply pos for "insert in front of" calls)
-            ops.infill(map, pos, AccessRange(current_begin, std::min(range.end, pos->first.begin)));
-            // Advance current begin, but *not* pos as it's the next valid value. (infill shall not invalidate pos)
+        if (current_begin < pos->first.begin) {  // infill the gap
+            const AccessRange gap_range(current_begin, std::min(range.end, pos->first.begin));
+
+            ops.infill(map, pos, gap_range);
+
+            // Advance current location.
+            // Do not advance pos, as it's the next map entry to visit
             current_begin = pos->first.begin;
-        } else {
-            // The current_begin is pointing to the next existing value to update
+        } else {  // update existing entry
             assert(current_begin == pos->first.begin);
 
-            // We need to run the update operation on the valid portion of the current value.
-            // If this entry overlaps end-of-range we need to trim it to the range
+            // Split the current map entry if it goes beyond range.end.
+            // This ensures the update is restricted to the given range.
             if (pos->first.end > range.end) {
                 pos = map.Split(pos, range.end);
             }
 
-            // We have a valid fully contained range, apply update op
             ops.update(pos);
 
-            // Advance the current location and map entry
+            // Advance both current location and map entry
             current_begin = pos->first.end;
             ++pos;
         }
     }
 
-    // Fill to the end as needed
+    // Fill to the end if needed
     if (current_begin < range.end) {
         ops.infill(map, pos, AccessRange(current_begin, range.end));
     }
     return pos;
-}
-
-template <typename InfillUpdateOps>
-void InfillUpdateRange(AccessMap &map, const AccessRange &range, const InfillUpdateOps &ops) {
-    if (range.empty()) {
-        return;
-    }
-    auto pos = map.LowerBound(range.begin);
-    InfillUpdateRange(map, pos, range, ops);
 }
 
 }  // namespace syncval

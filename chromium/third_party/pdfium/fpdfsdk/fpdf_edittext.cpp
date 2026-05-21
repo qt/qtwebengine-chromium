@@ -35,7 +35,6 @@
 #include "core/fxcrt/compiler_specific.h"
 #include "core/fxcrt/containers/contains.h"
 #include "core/fxcrt/fx_extension.h"
-#include "core/fxcrt/fx_memcpy_wrappers.h"
 #include "core/fxcrt/fx_string_wrappers.h"
 #include "core/fxcrt/numerics/safe_conversions.h"
 #include "core/fxcrt/span_util.h"
@@ -136,16 +135,16 @@ RetainPtr<CPDF_Dictionary> LoadFontDesc(CPDF_Document* doc,
   font_descriptor_dict->SetNewFor<CPDF_Name>("Type", "FontDescriptor");
   font_descriptor_dict->SetNewFor<CPDF_Name>("FontName", font_name);
   int flags = 0;
-  if (font->GetFace()->IsFixedWidth()) {
+  if (font->IsFixedWidth()) {
     flags |= pdfium::kFontStyleFixedPitch;
   }
   if (font_name.Contains("Serif")) {
     flags |= pdfium::kFontStyleSerif;
   }
-  if (font->GetFace()->IsItalic()) {
+  if (font->IsItalic()) {
     flags |= pdfium::kFontStyleItalic;
   }
-  if (font->GetFace()->IsBold()) {
+  if (font->IsBold()) {
     flags |= pdfium::kFontStyleForceBold;
   }
 
@@ -440,15 +439,14 @@ RetainPtr<CPDF_Font> LoadSimpleFont(CPDF_Document* doc,
                                     pdfium::span<const uint8_t> font_data,
                                     int font_type) {
   // If it doesn't have a single char, just fail.
-  RetainPtr<CFX_Face> face = font->GetFace();
-  if (face->GetGlyphCount() <= 0) {
+  if (!font->HasAnyGlyphs()) {
     return nullptr;
   }
 
   // Simple fonts have 1-byte charcodes only.
   static constexpr uint32_t kMaxSimpleFontChar = 0xFF;
   auto char_codes_and_indices =
-      face->GetCharCodesAndIndices(kMaxSimpleFontChar);
+      font->GetCharCodesAndIndices(kMaxSimpleFontChar);
   if (char_codes_and_indices.empty()) {
     return nullptr;
   }
@@ -490,13 +488,12 @@ RetainPtr<CPDF_Font> LoadCompositeFont(CPDF_Document* doc,
                                        pdfium::span<const uint8_t> font_data,
                                        int font_type) {
   // If it doesn't have a single char, just fail.
-  RetainPtr<CFX_Face> face = font->GetFace();
-  if (face->GetGlyphCount() <= 0) {
+  if (!font->HasAnyGlyphs()) {
     return nullptr;
   }
 
   auto char_codes_and_indices =
-      face->GetCharCodesAndIndices(pdfium::kMaximumSupplementaryCodePoint);
+      font->GetCharCodesAndIndices(pdfium::kMaximumSupplementaryCodePoint);
   if (char_codes_and_indices.empty()) {
     return nullptr;
   }
@@ -543,8 +540,7 @@ RetainPtr<CPDF_Font> LoadCustomCompositeFont(
   CHECK_LE(cid_to_gid_map_span.size(), std::numeric_limits<uint32_t>::max());
 
   // If it doesn't have a single char, just fail.
-  RetainPtr<CFX_Face> face = font->GetFace();
-  if (face->GetGlyphCount() <= 0) {
+  if (!font->HasAnyGlyphs()) {
     return nullptr;
   }
 

@@ -39,6 +39,7 @@ export class Link extends HTMLElement {
       this.setAttribute('tabindex', '0');
     }
     this.#setDefaultTitle();
+    this.#onJslogContextChange();
 
     this.setAttribute('role', 'link');
     this.setAttribute('target', '_blank');
@@ -81,15 +82,7 @@ export class Link extends HTMLElement {
   }
 
   #onJslogContextChange(): void {
-    const href = this.href;
-    if (!href) {
-      throw new Error('`href` is a required attribute.');
-    }
-    const urlForContext = new URL(href);
-    urlForContext.search = '';
-    const jslogContext = Platform.StringUtilities.toKebabCase(
-        this.jslogContext ?? urlForContext.toString(),
-    );
+    const jslogContext = this.jslogContext ?? undefined;
     const jslog = VisualLogging.link().track({click: true, keydown: 'Enter|Space'}).context(jslogContext);
     this.setAttribute('jslog', jslog.toString());
   }
@@ -139,6 +132,37 @@ export class Link extends HTMLElement {
       { host: this },
     );
     // clang-format on
+  }
+
+  /**
+   * Should be used only by old code relying on imperative API,
+   * which we are activly migrating away from.
+   * @deprecated
+   */
+  static create(
+      url: string,
+      linkText?: string,
+      className?: string,
+      jsLogContext?: string,
+      tabindex = 0,
+      ): Link {
+    const link = new Link();
+    link.href = url as Platform.DevToolsPath.UrlString;
+    linkText = linkText ?? url;
+    link.textContent = Platform.StringUtilities.trimMiddle(linkText, 150);
+
+    const classes = className ? `${className} devtools-link` : 'devtools-link';
+    link.setAttribute('class', classes);
+
+    if (jsLogContext) {
+      link.setAttribute('jslogcontext', jsLogContext);
+    }
+
+    if (tabindex !== 0) {
+      link.setAttribute('tabindex', String(tabindex));
+    }
+
+    return link;
   }
 }
 

@@ -37,8 +37,7 @@ class COMPONENT_EXPORT(WEBNN_SERVICE) ContextImplDml final
                  mojo::ScopedDataPipeProducerHandle read_tensor_producer,
                  std::unique_ptr<CommandRecorder> command_recorder,
                  const gpu::GpuFeatureInfo& gpu_feature_info,
-                 gpu::CommandBufferId command_buffer_id,
-                 std::unique_ptr<ScopedSequence> sequence,
+                 std::unique_ptr<ScopedGpuSequence> gpu_sequence,
                  scoped_refptr<gpu::MemoryTracker> memory_tracker,
                  scoped_refptr<base::SingleThreadTaskRunner> owning_task_runner,
                  gpu::SharedImageManager* shared_image_manager,
@@ -67,27 +66,6 @@ class COMPONENT_EXPORT(WEBNN_SERVICE) ContextImplDml final
   void HandleContextLostOrCrash(std::string_view message_for_log, HRESULT hr);
 
   CommandQueue* GetCommandQueue() const;
-
-  void RemoveDeviceForTesting();
-
-  // The test cases can override the graph/tensor creating behavior by
-  // implementing this class and setting its instance by SetBackendForTesting().
-  class BackendForTesting {
-   public:
-    virtual void CreateGraphImpl(
-        mojo::PendingAssociatedReceiver<mojom::WebNNGraph> receiver,
-        ContextImplDml* context_impl,
-        WebNNGraphImpl::ComputeResourceInfo compute_resource_info,
-        CreateGraphImplCallback callback) = 0;
-
-    virtual base::expected<scoped_refptr<WebNNTensorImpl>, mojom::ErrorPtr>
-    CreateTensorImpl(
-        ContextImplDml* context,
-        mojo::PendingAssociatedReceiver<mojom::WebNNTensor> receiver,
-        mojom::TensorInfoPtr tensor_info) = 0;
-  };
-
-  static void SetBackendForTesting(BackendForTesting* backend_for_testing);
 
  private:
   ~ContextImplDml() override;

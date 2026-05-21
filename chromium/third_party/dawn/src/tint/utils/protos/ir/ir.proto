@@ -64,8 +64,10 @@ message Type {
         TypeBuiltinStruct builtin_struct = 19;
         TypeBindingArray binding_array = 20;
         TypeTexelBuffer texel_buffer = 21;
-        TypeResourceBinding resource_binding = 22;
+        TypeBuffer buffer = 23;
     }
+    reserved 22;
+    reserved "resource_binding";
 }
 
 // Non-compound types
@@ -166,6 +168,10 @@ message TypeSubgroupMatrix {
     uint32 sub_type = 1;  // Module.types
     uint32 rows = 2;
     uint32 columns = 3;
+}
+
+message TypeBuffer {
+    uint32 count = 1;
 }
 
 enum TypeBuiltinStruct {
@@ -269,6 +275,7 @@ message Function {
     optional Interpolation return_interpolation = 8;
     optional BuiltinValue return_builtin = 9;
     bool return_invariant = 10;
+    optional uint32 subgroup_size = 11;
 }
 
 enum PipelineStage {
@@ -738,11 +745,15 @@ enum BuiltinFn {
     subgroup_matrix_multiply = 147;
     subgroup_matrix_multiply_accumulate = 148;
     print = 149;
-    has_binding = 150;
-    get_binding = 151;
+    reserved 150;
+    reserved "has_binding";
+    reserved 151;
+    reserved "get_binding";
     subgroup_matrix_scalar_add = 152;
     subgroup_matrix_scalar_multiply = 153;
     subgroup_matrix_scalar_subtract = 154;
     has_resource = 155;
     get_resource = 156;
+    buffer_view = 157;
+    buffer_length = 158;
 }

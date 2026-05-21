@@ -13,7 +13,9 @@
 #include "base/time/time.h"
 #include "components/policy/core/common/cloud/cloud_policy_constants.h"
 #include "components/policy/core/common/cloud/cloud_policy_util.h"
+#include "components/policy/core/common/cloud/dmserver_job_configurations.h"
 #include "components/policy/core/common/policy_logger.h"
+#include "components/policy/core/common/policy_proto_decoders.h"
 #include "components/policy/proto/device_management_backend.pb.h"
 
 namespace em = enterprise_management;
@@ -30,7 +32,9 @@ CloudPolicyService::CloudPolicyService(const std::string& policy_type,
       store_(store),
       refresh_state_(REFRESH_NONE),
       initialization_complete_(false) {
-  client_->AddPolicyTypeToFetch(policy_type_, settings_entity_id_);
+  if (!IsExtensionInstallPolicyType(policy_type_)) {
+    client_->AddPolicyTypeToFetch(policy_type_, settings_entity_id_);
+  }
   client_->AddObserver(this);
   store_->AddObserver(this);
 
@@ -60,6 +64,15 @@ void CloudPolicyService::RefreshPolicy(RefreshPolicyCallback callback,
     std::move(callback).Run(false);
     return;
   }
+  // The client has not yet been setup to etch policies or is not supposed to
+  // fetch any policies, bail out.
+  if (!client_->HasPolicyTypeToFetch()) {
+    std::move(callback).Run(false);
+    return;
+  }
+  VLOG_POLICY(1, CBCM_ENROLLMENT)
+      << PolicyTypeLogPrefix(policy_type_, settings_entity_id_)
+      << "Triggering policy refresh";
 
   // Else, trigger a refresh.
   refresh_callbacks_.push_back(std::move(callback));
@@ -67,10 +80,87 @@ void CloudPolicyService::RefreshPolicy(RefreshPolicyCallback callback,
   client_->FetchPolicy(reason);
 }
 
+void CloudPolicyService::FetchExtensionInstallPolicy(
+    const std::string& policy_type,
+    const ExtensionIdAndVersion& extension_id_and_version,
+    PolicyFetchReason reason,
+    base::OnceCallback<void(ExtensionInstallDecision)> callback) {
+  // If the client is not registered bail out.
+  if (!client_->is_registered()) {
+    std::move(callback).Run(ExtensionInstallDecision());
+    return;
+  }
+  VLOG_POLICY(1, CBCM_ENROLLMENT)
+      << PolicyTypeLogPrefix(policy_type, settings_entity_id_)
+      << "Triggering extension install policy fetch for "
+      << extension_id_and_version.ToString();
+
+  client_->FetchExtensionInstallPolicy(
+      policy_type, reason, extension_id_and_version,
+      base::BindOnce(
+          &CloudPolicyService::HandleExtensionInstallPolicyFetchResult,
+          weak_ptr_factory_.GetWeakPtr(), extension_id_and_version,
+          std::move(callback)));
+}
+
+void CloudPolicyService::HandleExtensionInstallPolicyFetchResult(
+    ExtensionIdAndVersion extension_id_and_version,
+    base::OnceCallback<void(ExtensionInstallDecision)> callback,
+    DMServerJobResult result) {
+  if (result.dm_status != DM_STATUS_SUCCESS) {
+    VLOG_POLICY(1, CBCM_ENROLLMENT)
+        << PolicyTypeLogPrefix(policy_type_, settings_entity_id_)
+        << "Failed to fetch extension install policy: " << result.dm_status;
+    std::move(callback).Run(ExtensionInstallDecision());
+    return;
+  }
+  if (!result.response.has_policy_response() ||
+      result.response.policy_response().responses_size() == 0) {
+    LOG_POLICY(ERROR, CBCM_ENROLLMENT)
+        << PolicyTypeLogPrefix(policy_type_, settings_entity_id_)
+        << "Empty policy response.";
+    std::move(callback).Run(ExtensionInstallDecision());
+    return;
+  }
+
+  const em::DevicePolicyResponse& policy_response =
+      result.response.policy_response();
+
+  for (const auto& fetch_response : policy_response.responses()) {
+    em::PolicyData policy_data;
+    if (!policy_data.ParseFromString(fetch_response.policy_data()) ||
+        !policy_data.IsInitialized() || !policy_data.has_policy_type()) {
+      LOG_POLICY(ERROR, CBCM_ENROLLMENT)
+          << PolicyTypeLogPrefix(policy_type_, settings_entity_id_)
+          << "Invalid PolicyData received, ignoring";
+      continue;
+    }
+
+    // If the policy type and settings entity id match, run the callback and
+    // return.
+    em::ExtensionInstallPolicies extension_install_policies;
+    if (!extension_install_policies.ParseFromString(
+            policy_data.policy_value())) {
+      LOG_POLICY(ERROR, CBCM_ENROLLMENT)
+          << PolicyTypeLogPrefix(policy_type_, settings_entity_id_)
+          << "Failed to parse extension install policies";
+      continue;
+    }
+
+    std::move(callback).Run(policy::ConvertToExtensionInstallDecision(
+        extension_install_policies, extension_id_and_version));
+    return;
+  }
+  std::move(callback).Run(ExtensionInstallDecision());
+}
+
 void CloudPolicyService::OnPolicyFetched(CloudPolicyClient* client) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   if (client_->last_dm_status() != DM_STATUS_SUCCESS) {
+    LOG_POLICY(ERROR, CBCM_ENROLLMENT)
+        << PolicyTypeLogPrefix(policy_type_, settings_entity_id_)
+        << "Failed to fetch policy: " << client_->last_dm_status();
     RefreshCompleted(false);
     return;
   }
@@ -78,20 +168,31 @@ void CloudPolicyService::OnPolicyFetched(CloudPolicyClient* client) {
   const em::PolicyFetchResponse* policy =
       client_->GetPolicyFor(policy_type_, settings_entity_id_);
   if (policy) {
-    if (refresh_state_ != REFRESH_NONE)
+    if (refresh_state_ != REFRESH_NONE) {
       refresh_state_ = REFRESH_POLICY_STORE;
+    }
     policy_pending_validation_signature_ = policy->policy_data_signature();
+    VLOG_POLICY(1, CBCM_ENROLLMENT)
+        << PolicyTypeLogPrefix(policy_type_, settings_entity_id_)
+        << "Policy fetched successfully. Storing policy.";
     store_->Store(*policy, client->fetched_invalidation_version());
   } else {
+    LOG_POLICY(WARNING, CBCM_ENROLLMENT)
+        << PolicyTypeLogPrefix(policy_type_, settings_entity_id_)
+        << "Policy not found in response.";
     RefreshCompleted(false);
   }
 }
 
 void CloudPolicyService::OnClientError(CloudPolicyClient* client) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  LOG_POLICY(ERROR, CBCM_ENROLLMENT)
+      << PolicyTypeLogPrefix(policy_type_, settings_entity_id_)
+      << "Failed to fetch policy: Client error: " << client_->last_dm_status();
 
-  if (refresh_state_ == REFRESH_POLICY_FETCH)
+  if (refresh_state_ == REFRESH_POLICY_FETCH) {
     RefreshCompleted(false);
+  }
 }
 
 void CloudPolicyService::OnStoreLoaded(CloudPolicyStore* store) {
@@ -102,9 +203,10 @@ void CloudPolicyService::OnStoreLoaded(CloudPolicyStore* store) {
 
   // Timestamp.
   base::Time policy_timestamp;
-  if (policy && policy->has_timestamp())
+  if (policy && policy->has_timestamp()) {
     policy_timestamp =
         base::Time::FromMillisecondsSinceUnixEpoch(policy->timestamp());
+  }
 
   const base::Time& old_timestamp = client_->last_policy_timestamp();
   if (!policy_timestamp.is_null() && !old_timestamp.is_null() &&
@@ -125,10 +227,20 @@ void CloudPolicyService::OnStoreLoaded(CloudPolicyStore* store) {
   client_->set_last_policy_timestamp(policy_timestamp);
 
   // Public key version.
-  if (policy && policy->has_public_key_version())
+  if (policy && policy->has_public_key_version()) {
+    VLOG_POLICY(1, CBCM_ENROLLMENT)
+        << PolicyTypeLogPrefix(policy_type_, settings_entity_id_)
+        << "Policy from store has public key version, setting it in the "
+           "client."
+        << policy->public_key_version();
     client_->set_public_key_version(policy->public_key_version());
-  else
+  } else {
+    VLOG_POLICY(1, CBCM_ENROLLMENT)
+        << PolicyTypeLogPrefix(policy_type_, settings_entity_id_)
+        << "Policy from store does not have public key version, clearing it in "
+           "the client.";
     client_->clear_public_key_version();
+  }
 
   // Finally, set up registration if necessary.
   if (policy && policy->has_request_token() && policy->has_device_id() &&
@@ -159,6 +271,9 @@ void CloudPolicyService::OnStoreError(CloudPolicyStore* store) {
   ValidationAction action = kLoad;
   if (refresh_state_ == REFRESH_POLICY_STORE) {
     action = kStore;
+    LOG_POLICY(ERROR, CBCM_ENROLLMENT)
+        << PolicyTypeLogPrefix(policy_type_, settings_entity_id_)
+        << "Policy store error, completing refresh with failure.";
     RefreshCompleted(false);
   }
   CheckInitializationCompleted();
@@ -171,8 +286,9 @@ void CloudPolicyService::ReportValidationResult(CloudPolicyStore* store,
 
   const CloudPolicyValidatorBase::ValidationResult* validation_result =
       store->validation_result();
-  if (!validation_result)
+  if (!validation_result) {
     return;
+  }
 
   if (policy_pending_validation_signature_.empty() ||
       policy_pending_validation_signature_ !=
@@ -181,8 +297,9 @@ void CloudPolicyService::ReportValidationResult(CloudPolicyStore* store,
   }
   policy_pending_validation_signature_.clear();
 
-  if (validation_result->policy_token.empty())
+  if (validation_result->policy_token.empty()) {
     return;
+  }
 
   if (validation_result->status ==
           CloudPolicyValidatorBase::Status::VALIDATION_OK &&
@@ -218,33 +335,41 @@ void CloudPolicyService::ReportValidationResult(CloudPolicyStore* store,
 void CloudPolicyService::CheckInitializationCompleted() {
   if (!IsInitializationComplete() && store_->is_initialized()) {
     initialization_complete_ = true;
-    for (auto& observer : observers_)
+    for (auto& observer : observers_) {
       observer.OnCloudPolicyServiceInitializationCompleted();
+    }
   }
 }
 
 void CloudPolicyService::RefreshCompleted(bool success) {
-  if (!initial_policy_refresh_result_.has_value())
+  if (!initial_policy_refresh_result_.has_value()) {
     initial_policy_refresh_result_ = success;
+  }
 
   // If there was an error while fetching the policies the first time, assume
   // that there are no policies until the next retry.
   if (!success) {
     DVLOG_POLICY(2, POLICY_FETCHING)
+        << PolicyTypeLogPrefix(policy_type_, settings_entity_id_)
         << "Error while fetching policy. No policies until the next retry.";
     store_->SetFirstPoliciesLoaded(true);
   }
+  VLOG_POLICY(1, CBCM_ENROLLMENT)
+      << PolicyTypeLogPrefix(policy_type_, settings_entity_id_)
+      << "Policy fetch succeeded.";
   // Clear state and |refresh_callbacks_| before actually invoking them, s.t.
   // triggering new policy fetches behaves as expected.
   std::vector<RefreshPolicyCallback> callbacks;
   callbacks.swap(refresh_callbacks_);
   refresh_state_ = REFRESH_NONE;
 
-  for (auto& callback : callbacks)
+  for (auto& callback : callbacks) {
     std::move(callback).Run(success);
+  }
 
-  for (auto& observer : observers_)
+  for (auto& observer : observers_) {
     observer.OnPolicyRefreshed(success);
+  }
 }
 
 void CloudPolicyService::AddObserver(Observer* observer) {

@@ -11,7 +11,6 @@
 
 #include "cast/common/public/certificate_types.h"
 #include "platform/base/error.h"
-#include "platform/base/macros.h"
 
 namespace openscreen::cast {
 

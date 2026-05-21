@@ -26,7 +26,6 @@
 #include "absl/base/prefetch.h"
 #include "absl/hash/internal/city.h"
 
-
 #ifdef ABSL_AES_INTERNAL_HAVE_X86_SIMD
 #error ABSL_AES_INTERNAL_HAVE_X86_SIMD cannot be directly set
 #elif defined(__SSE4_2__) && defined(__AES__)
@@ -40,12 +39,212 @@
 #include <xmmintrin.h>
 #endif  // ABSL_AES_INTERNAL_HAVE_X86_SIMD
 
+#ifdef ABSL_AES_INTERNAL_HAVE_ARM_SIMD
+#error ABSL_AES_INTERNAL_HAVE_ARM_SIMD cannot be directly set
+#elif defined(ABSL_INTERNAL_HAVE_ARM_NEON) && defined(__ARM_FEATURE_CRYPTO)
+#include <arm_neon.h>
+#define ABSL_AES_INTERNAL_HAVE_ARM_SIMD
+#endif  // ABSL_INTERNAL_HAVE_ARM_NEON
+
 namespace absl {
 ABSL_NAMESPACE_BEGIN
 namespace hash_internal {
 
 namespace {
 
+void PrefetchFutureDataToLocalCache(const uint8_t* ptr) {
+  PrefetchToLocalCache(ptr + 5 * ABSL_CACHELINE_SIZE);
+}
+
+#if defined(ABSL_AES_INTERNAL_HAVE_X86_SIMD) || \
+    defined(ABSL_AES_INTERNAL_HAVE_ARM_SIMD)
+
+#if defined(ABSL_AES_INTERNAL_HAVE_X86_SIMD)
+using Vector128 = __m128i;
+
+inline Vector128 Load128(const uint8_t* ptr) {
+  return _mm_loadu_si128(reinterpret_cast<const Vector128*>(ptr));
+}
+
+inline Vector128 Set128(uint64_t a, uint64_t b) {
+  return _mm_set_epi64x(static_cast<int64_t>(a), static_cast<int64_t>(b));
+}
+
+inline Vector128 Add128(Vector128 a, Vector128 b) {
+  return _mm_add_epi64(a, b);
+}
+
+inline Vector128 Sub128(Vector128 a, Vector128 b) {
+  return _mm_sub_epi64(a, b);
+}
+
+inline Vector128 Encrypt128(Vector128 data, Vector128 key) {
+  return _mm_aesenc_si128(data, key);
+}
+
+inline Vector128 Decrypt128(Vector128 data, Vector128 key) {
+  return _mm_aesdec_si128(data, key);
+}
+
+inline uint64_t ExtractLow64(Vector128 v) {
+  return static_cast<uint64_t>(_mm_cvtsi128_si64(v));
+}
+
+inline uint64_t ExtractHigh64(Vector128 v) {
+  return static_cast<uint64_t>(_mm_extract_epi64(v, 1));
+}
+
+inline uint64_t Mix4x16Vectors(Vector128 a, Vector128 b, Vector128 c,
+                               Vector128 d) {
+  Vector128 res128 =
+      Add128(Encrypt128(Add128(a, c), d), Decrypt128(Sub128(b, d), a));
+  uint64_t x64 = ExtractLow64(res128);
+  uint64_t y64 = ExtractHigh64(res128);
+  return x64 ^ y64;
+}
+
+#else  // ABSL_AES_INTERNAL_HAVE_ARM_SIMD
+
+using Vector128 = uint8x16_t;
+
+inline Vector128 Load128(const uint8_t* ptr) { return vld1q_u8(ptr); }
+
+inline Vector128 Set128(uint64_t a, uint64_t b) {
+  return vreinterpretq_u8_u64(vsetq_lane_u64(a, vdupq_n_u64(b), 1));
+}
+
+inline Vector128 Add128(Vector128 a, Vector128 b) {
+  return vreinterpretq_u8_u64(
+      vaddq_u64(vreinterpretq_u64_u8(a), vreinterpretq_u64_u8(b)));
+}
+
+inline Vector128 Sub128(Vector128 a, Vector128 b) {
+  return vreinterpretq_u8_u64(
+      vsubq_u64(vreinterpretq_u64_u8(a), vreinterpretq_u64_u8(b)));
+}
+
+// Encrypt128 and Decrypt128 are equivalent to x86 versions.
+// `vaeseq_u8` and `vaesdq_u8` perform `^ key` before encryption/decryption.
+// We need to perform `^ key` after encryption/decryption to improve hash
+// quality and match x86 version.
+
+inline Vector128 Encrypt128(Vector128 data, Vector128 key) {
+  return vaesmcq_u8(vaeseq_u8(data, Vector128{})) ^ key;
+}
+
+inline Vector128 Decrypt128(Vector128 data, Vector128 key) {
+  return vaesimcq_u8(vaesdq_u8(data, Vector128{})) ^ key;
+}
+
+// ArmEncrypt128 and ArmDecrypt128 are ARM specific versions that use ARM
+// instructions directly.
+// We can only use these versions in the second round of encryption/decryption
+// to have good hash quality.
+
+inline Vector128 ArmEncrypt128(Vector128 data, Vector128 key) {
+  return vaesmcq_u8(vaeseq_u8(data, key));
+}
+
+inline Vector128 ArmDecrypt128(Vector128 data, Vector128 key) {
+  return vaesimcq_u8(vaesdq_u8(data, key));
+}
+
+inline uint64_t ExtractLow64(Vector128 v) {
+  return vgetq_lane_u64(vreinterpretq_u64_u8(v), 0);
+}
+
+inline uint64_t ExtractHigh64(Vector128 v) {
+  return vgetq_lane_u64(vreinterpretq_u64_u8(v), 1);
+}
+
+uint64_t Mix4x16Vectors(Vector128 a, Vector128 b, Vector128 c, Vector128 d) {
+  Vector128 res128 = Add128(ArmEncrypt128(a, c), ArmDecrypt128(b, d));
+  uint64_t x64 = ExtractLow64(res128);
+  uint64_t y64 = ExtractHigh64(res128);
+  return x64 ^ y64;
+}
+
+#endif  // ABSL_AES_INTERNAL_HAVE_X86_SIMD
+
+uint64_t LowLevelHash33To64(uint64_t seed, const uint8_t* ptr, size_t len) {
+  assert(len > 32);
+  assert(len <= 64);
+  Vector128 state = Set128(seed, len);
+  Vector128 a = Load128(ptr);
+  Vector128 b = Load128(ptr + 16);
+  auto* last32_ptr = ptr + len - 32;
+  Vector128 c = Load128(last32_ptr);
+  Vector128 d = Load128(last32_ptr + 16);
+
+  // Bits of the second argument to Decrypt128/Encrypt128 are XORed with the
+  // state argument after encryption. We use each value as the first argument to
+  // shuffle all the bits around. We do not add any salt to the state or loaded
+  // data, instead we vary instructions used to mix bits Decrypt128/Encrypt128
+  // and Add128/Sub128. On x86 Add128/Sub128 are combined to one instruction
+  // with data loading like `vpaddq  xmm1, xmm0, xmmword ptr [rdi]`.
+  Vector128 na = Decrypt128(Add128(state, a), state);
+  Vector128 nb = Decrypt128(Sub128(state, b), state);
+  Vector128 nc = Encrypt128(Add128(state, c), state);
+  Vector128 nd = Encrypt128(Sub128(state, d), state);
+
+  // We perform another round of encryption to mix bits between two halves of
+  // the input.
+  return Mix4x16Vectors(na, nb, nc, nd);
+}
+
+[[maybe_unused]] ABSL_ATTRIBUTE_NOINLINE uint64_t
+LowLevelHashLenGt64(uint64_t seed, const void* data, size_t len) {
+  assert(len > 64);
+  const uint8_t* ptr = static_cast<const uint8_t*>(data);
+  const uint8_t* last_32_ptr = ptr + len - 32;
+
+  // If we have more than 64 bytes, we're going to handle chunks of 64
+  // bytes at a time. We're going to build up four separate hash states
+  // which we will then hash together. This avoids short dependency chains.
+  Vector128 state0 = Set128(seed, len);
+  Vector128 state1 = state0;
+  Vector128 state2 = state1;
+  Vector128 state3 = state2;
+
+  // Mixing two 128-bit vectors at a time with corresponding states.
+  // All variables are mixed slightly differently to avoid hash collision
+  // due to trivial byte rotation.
+  // We combine state and data with _mm_add_epi64/_mm_sub_epi64 before applying
+  // AES encryption to make hash function dependent on the order of the blocks.
+  // See comments in LowLevelHash33To64 for more considerations.
+  auto mix_ab = [&state0,
+                 &state1](const uint8_t* p) ABSL_ATTRIBUTE_ALWAYS_INLINE {
+    Vector128 a = Load128(p);
+    Vector128 b = Load128(p + 16);
+    state0 = Decrypt128(Add128(state0, a), state0);
+    state1 = Decrypt128(Sub128(state1, b), state1);
+  };
+  auto mix_cd = [&state2,
+                 &state3](const uint8_t* p) ABSL_ATTRIBUTE_ALWAYS_INLINE {
+    Vector128 c = Load128(p);
+    Vector128 d = Load128(p + 16);
+    state2 = Encrypt128(Add128(state2, c), state2);
+    state3 = Encrypt128(Sub128(state3, d), state3);
+  };
+
+  do {
+    PrefetchFutureDataToLocalCache(ptr);
+    mix_ab(ptr);
+    mix_cd(ptr + 32);
+
+    ptr += 64;
+    len -= 64;
+  } while (len > 64);
+
+  // We now have a data `ptr` with at most 64 bytes.
+  if (len > 32) {
+    mix_ab(ptr);
+  }
+  mix_cd(last_32_ptr);
+
+  return Mix4x16Vectors(state0, state1, state2, state3);
+}
+#else
 uint64_t Mix32Bytes(const uint8_t* ptr, uint64_t current_state) {
   uint64_t a = absl::base_internal::UnalignedLoad64(ptr);
   uint64_t b = absl::base_internal::UnalignedLoad64(ptr + 8);
@@ -57,51 +256,16 @@ uint64_t Mix32Bytes(const uint8_t* ptr, uint64_t current_state) {
   return cs0 ^ cs1;
 }
 
-#ifdef ABSL_AES_INTERNAL_HAVE_X86_SIMD
-uint64_t LowLevelHash33To64(const uint8_t* ptr, size_t len, uint64_t seed) {
-  assert(len > 32);
-  assert(len <= 64);
-  __m128i state =
-      _mm_set_epi64x(static_cast<int64_t>(seed), static_cast<int64_t>(len));
-  auto a = _mm_loadu_si128(reinterpret_cast<const __m128i*>(ptr));
-  auto b = _mm_loadu_si128(reinterpret_cast<const __m128i*>(ptr + 16));
-  auto* last32_ptr = ptr + len - 32;
-  auto c = _mm_loadu_si128(reinterpret_cast<const __m128i*>(last32_ptr));
-  auto d = _mm_loadu_si128(reinterpret_cast<const __m128i*>(last32_ptr + 16));
-
-  // Bits of the second argument to _mm_aesdec_si128/_mm_aesenc_si128 are
-  // XORed with the state argument after encryption.
-  // We use each value as the first argument to shuffle all the bits around.
-  // We do not add any salt to the state or loaded data, instead we vary
-  // instructions used to mix bits _mm_aesdec_si128/_mm_aesenc_si128 and
-  // _mm_add_epi64/_mm_sub_epi64.
-  // _mm_add_epi64/_mm_sub_epi64 are combined to one instruction with data
-  // loading like `vpaddq  xmm1, xmm0, xmmword ptr [rdi]`.
-  auto na = _mm_aesdec_si128(_mm_add_epi64(state, a), state);
-  auto nb = _mm_aesdec_si128(_mm_sub_epi64(state, b), state);
-  auto nc = _mm_aesenc_si128(_mm_add_epi64(state, c), state);
-  auto nd = _mm_aesenc_si128(_mm_sub_epi64(state, d), state);
-
-  // We perform another round of encryption to mix bits between two halves of
-  // the input.
-  auto res128 = _mm_add_epi64(_mm_aesenc_si128(_mm_add_epi64(na, nc), nd),
-                              _mm_aesdec_si128(_mm_sub_epi64(nb, nd), na));
-  auto x64 = static_cast<uint64_t>(_mm_cvtsi128_si64(res128));
-  auto y64 = static_cast<uint64_t>(_mm_extract_epi64(res128, 1));
-  return x64 ^ y64;
-}
-#else
-uint64_t LowLevelHash33To64(const uint8_t* ptr, size_t len, uint64_t seed) {
+uint64_t LowLevelHash33To64(uint64_t seed, const uint8_t* ptr, size_t len) {
   assert(len > 32);
   assert(len <= 64);
   uint64_t current_state = seed ^ kStaticRandomData[0] ^ len;
   const uint8_t* last_32_ptr = ptr + len - 32;
   return Mix32Bytes(last_32_ptr, Mix32Bytes(ptr, current_state));
 }
-#endif  // ABSL_AES_INTERNAL_HAVE_X86_SIMD
 
 [[maybe_unused]] ABSL_ATTRIBUTE_NOINLINE uint64_t
-LowLevelHashLenGt64(const void* data, size_t len, uint64_t seed) {
+LowLevelHashLenGt64(uint64_t seed, const void* data, size_t len) {
   assert(len > 64);
   const uint8_t* ptr = static_cast<const uint8_t*>(data);
   uint64_t current_state = seed ^ kStaticRandomData[0] ^ len;
@@ -114,7 +278,7 @@ LowLevelHashLenGt64(const void* data, size_t len, uint64_t seed) {
   uint64_t duplicated_state2 = current_state;
 
   do {
-    PrefetchToLocalCache(ptr + 5 * ABSL_CACHELINE_SIZE);
+    PrefetchFutureDataToLocalCache(ptr);
 
     uint64_t a = absl::base_internal::UnalignedLoad64(ptr);
     uint64_t b = absl::base_internal::UnalignedLoad64(ptr + 8);
@@ -148,18 +312,19 @@ LowLevelHashLenGt64(const void* data, size_t len, uint64_t seed) {
   // safely read from `ptr + len - 32`.
   return Mix32Bytes(last_32_ptr, current_state);
 }
+#endif  // ABSL_AES_INTERNAL_HAVE_X86_SIMD
 
-[[maybe_unused]] uint64_t LowLevelHashLenGt32(const void* data, size_t len,
-                                              uint64_t seed) {
+[[maybe_unused]] uint64_t LowLevelHashLenGt32(uint64_t seed, const void* data,
+                                              size_t len) {
   assert(len > 32);
   if (ABSL_PREDICT_FALSE(len > 64)) {
-    return LowLevelHashLenGt64(data, len, seed);
+    return LowLevelHashLenGt64(seed, data, len);
   }
-  return LowLevelHash33To64(static_cast<const uint8_t*>(data), len, seed);
+  return LowLevelHash33To64(seed, static_cast<const uint8_t*>(data), len);
 }
 
 ABSL_ATTRIBUTE_ALWAYS_INLINE inline uint64_t HashBlockOn32Bit(
-    const unsigned char* data, size_t len, uint64_t state) {
+    uint64_t state, const unsigned char* data, size_t len) {
   // TODO(b/417141985): expose and use CityHash32WithSeed.
   // Note: we can't use PrecombineLengthMix here because len can be up to 1024.
   return CombineRawImpl(
@@ -168,9 +333,9 @@ ABSL_ATTRIBUTE_ALWAYS_INLINE inline uint64_t HashBlockOn32Bit(
 }
 
 ABSL_ATTRIBUTE_NOINLINE uint64_t
-SplitAndCombineOn32Bit(const unsigned char* first, size_t len, uint64_t state) {
+SplitAndCombineOn32Bit(uint64_t state, const unsigned char* first, size_t len) {
   while (len >= PiecewiseChunkSize()) {
-    state = HashBlockOn32Bit(first, PiecewiseChunkSize(), state);
+    state = HashBlockOn32Bit(state, first, PiecewiseChunkSize());
     len -= PiecewiseChunkSize();
     first += PiecewiseChunkSize();
   }
@@ -185,9 +350,9 @@ SplitAndCombineOn32Bit(const unsigned char* first, size_t len, uint64_t state) {
 }
 
 ABSL_ATTRIBUTE_ALWAYS_INLINE inline uint64_t HashBlockOn64Bit(
-    const unsigned char* data, size_t len, uint64_t state) {
+    uint64_t state, const unsigned char* data, size_t len) {
 #ifdef ABSL_HAVE_INTRINSIC_INT128
-  return LowLevelHashLenGt32(data, len, state);
+  return LowLevelHashLenGt32(state, data, len);
 #else
   return hash_internal::CityHash64WithSeed(reinterpret_cast<const char*>(data),
                                            len, state);
@@ -195,9 +360,9 @@ ABSL_ATTRIBUTE_ALWAYS_INLINE inline uint64_t HashBlockOn64Bit(
 }
 
 ABSL_ATTRIBUTE_NOINLINE uint64_t
-SplitAndCombineOn64Bit(const unsigned char* first, size_t len, uint64_t state) {
+SplitAndCombineOn64Bit(uint64_t state, const unsigned char* first, size_t len) {
   while (len >= PiecewiseChunkSize()) {
-    state = HashBlockOn64Bit(first, PiecewiseChunkSize(), state);
+    state = HashBlockOn64Bit(state, first, PiecewiseChunkSize());
     len -= PiecewiseChunkSize();
     first += PiecewiseChunkSize();
   }
@@ -213,26 +378,26 @@ SplitAndCombineOn64Bit(const unsigned char* first, size_t len, uint64_t state) {
 
 }  // namespace
 
-uint64_t CombineLargeContiguousImplOn32BitLengthGt8(const unsigned char* first,
-                                                    size_t len,
-                                                    uint64_t state) {
+uint64_t CombineLargeContiguousImplOn32BitLengthGt8(uint64_t state,
+                                                    const unsigned char* first,
+                                                    size_t len) {
   assert(len > 8);
   assert(sizeof(size_t) == 4);  // NOLINT(misc-static-assert)
   if (ABSL_PREDICT_TRUE(len <= PiecewiseChunkSize())) {
-    return HashBlockOn32Bit(first, len, state);
+    return HashBlockOn32Bit(state, first, len);
   }
-  return SplitAndCombineOn32Bit(first, len, state);
+  return SplitAndCombineOn32Bit(state, first, len);
 }
 
-uint64_t CombineLargeContiguousImplOn64BitLengthGt32(const unsigned char* first,
-                                                     size_t len,
-                                                     uint64_t state) {
+uint64_t CombineLargeContiguousImplOn64BitLengthGt32(uint64_t state,
+                                                     const unsigned char* first,
+                                                     size_t len) {
   assert(len > 32);
   assert(sizeof(size_t) == 8);  // NOLINT(misc-static-assert)
   if (ABSL_PREDICT_TRUE(len <= PiecewiseChunkSize())) {
-    return HashBlockOn64Bit(first, len, state);
+    return HashBlockOn64Bit(state, first, len);
   }
-  return SplitAndCombineOn64Bit(first, len, state);
+  return SplitAndCombineOn64Bit(state, first, len);
 }
 
 ABSL_CONST_INIT const void* const MixingHashState::kSeed = &kSeed;

@@ -189,6 +189,12 @@ Vector<String> HTMLInputElement::FilesFromFileInputFormControlState(
 }
 
 bool HTMLInputElement::ShouldAutocomplete() const {
+  if (IsBaseAppearanceCombobox()) {
+    // If we are rendering the combobox's options inside the document using a
+    // popover, then we don't need to show the same options in the browser
+    // autofill popup.
+    return false;
+  }
   if (autocomplete_ != kUninitialized)
     return autocomplete_ == kOn;
   return TextControlElement::ShouldAutocomplete();
@@ -1084,11 +1090,6 @@ bool HTMLInputElement::HasBeenPasswordField() const {
   return has_been_password_field_;
 }
 
-void HTMLInputElement::DispatchChangeEventIfNeeded() {
-  if (isConnected() && input_type_->ShouldSendChangeEventAfterCheckedChanged())
-    DispatchChangeEvent();
-}
-
 void HTMLInputElement::DispatchInputAndChangeEventIfNeeded() {
   if (isConnected() &&
       input_type_->ShouldSendChangeEventAfterCheckedChanged()) {
@@ -1459,7 +1460,7 @@ void HTMLInputElement::SetValueFromRenderer(const String& value) {
   SetAutofillState(WebAutofillState::kNotFilled);
 }
 
-EventDispatchHandlingState* HTMLInputElement::PreDispatchEventHandler(
+EventDispatchHandlingState* HTMLInputElement::LegacyPreActivationBehavior(
     Event& event) {
   if (event.type() == event_type_names::kTextInput &&
       input_type_view_->ShouldSubmitImplicitly(event)) {
@@ -1474,16 +1475,26 @@ EventDispatchHandlingState* HTMLInputElement::PreDispatchEventHandler(
       mouse_event->button() !=
           static_cast<int16_t>(WebPointerProperties::Button::kLeft))
     return nullptr;
-  return input_type_view_->WillDispatchClick();
+  return input_type_view_->LegacyPreActivationBehavior();
 }
 
-void HTMLInputElement::PostDispatchEventHandler(
+void HTMLInputElement::RunActivationBehavior(
     Event& event,
     EventDispatchHandlingState* state) {
-  if (!state)
+  if (!state) {
     return;
-  input_type_view_->DidDispatchClick(event,
-                                     *static_cast<ClickHandlingState*>(state));
+  }
+
+  // https://html.spec.whatwg.org/C#the-input-element:activation-behaviour.
+  //
+  // The activation behavior for input elements element, given event, are these
+  // steps:
+  //
+  //   [...]
+  //   2. Run element's input activation behavior, if any, and do nothing
+  //      otherwise.
+  input_type_view_->RunInputActivationBehavior(
+      event, *static_cast<ClickHandlingState*>(state));
 }
 
 void HTMLInputElement::DefaultEventHandler(Event& evt) {
@@ -1622,7 +1633,7 @@ static inline bool IsRFC2616TokenCharacter(UChar ch) {
          (ch < '[' || ch > ']') && ch != '{' && ch != '}' && ch != 0x7f;
 }
 
-static bool IsValidMIMEType(const String& type) {
+static bool IsValidMIMEType(const StringView& type) {
   size_t slash_position = type.find('/');
   if (slash_position == kNotFound || !slash_position ||
       slash_position == type.length() - 1)
@@ -1634,27 +1645,27 @@ static bool IsValidMIMEType(const String& type) {
   return true;
 }
 
-static bool IsValidFileExtension(const String& type) {
+static bool IsValidFileExtension(const StringView& type) {
   if (type.length() < 2)
     return false;
   return type[0] == '.';
 }
 
-static Vector<String> ParseAcceptAttribute(const String& accept_string,
-                                           bool (*predicate)(const String&)) {
+static Vector<String> ParseAcceptAttribute(
+    const String& accept_string,
+    bool (*predicate)(const StringView&)) {
   Vector<String> types;
   if (accept_string.empty())
     return types;
 
-  Vector<String> split_types;
-  accept_string.Split(',', false, split_types);
-  for (const String& split_type : split_types) {
-    String trimmed_type = StripLeadingAndTrailingHTMLSpaces(split_type);
+  Vector<StringView> split_types = StringView(accept_string).Split(',');
+  for (const StringView& split_type : split_types) {
+    StringView trimmed_type = split_type.StripWhiteSpace(IsHTMLSpace);
     if (trimmed_type.empty())
       continue;
     if (!predicate(trimmed_type))
       continue;
-    types.push_back(trimmed_type.DeprecatedLower());
+    types.push_back(trimmed_type.ToString().DeprecatedLower());
   }
 
   return types;
@@ -1918,10 +1929,9 @@ HTMLInputElement::FilteredDataListOptions() const {
 
   String editor_value = InnerEditorValue();
   if (Multiple() && FormControlType() == FormControlType::kInputEmail) {
-    Vector<String> emails;
-    editor_value.Split(',', true, emails);
+    auto emails = StringView(editor_value).SplitSkippingEmpty(',');
     if (!emails.empty())
-      editor_value = emails.back().StripWhiteSpace();
+      editor_value = emails.back().StripWhiteSpace().ToString();
   }
 
   HTMLDataListOptionsCollection* options = data_list->options();
@@ -2306,6 +2316,16 @@ bool HTMLInputElement::IsInteractiveContent() const {
   return input_type_->IsInteractiveContent();
 }
 
+FocusgroupFlags HTMLInputElement::NativeArrowKeyAxes() const {
+  // Text fields use arrow keys for cursor movement (both axes).
+  // Steppable inputs (number, range, date, etc.) use arrow keys for value
+  // adjustment.
+  if (IsTextField() || IsSteppable()) {
+    return FocusgroupFlags::kInline | FocusgroupFlags::kBlock;
+  }
+  return HTMLElement::NativeArrowKeyAxes();
+}
+
 void HTMLInputElement::AdjustStyle(ComputedStyleBuilder& builder) {
   return input_type_view_->AdjustStyle(builder);
 }
@@ -2500,6 +2520,16 @@ void HTMLInputElement::SetFocused(bool is_focused,
 bool HTMLInputElement::SupportsBaseAppearanceInternal(
     BaseAppearanceValue value) const {
   return input_type_->SupportsBaseAppearance(value);
+}
+
+bool HTMLInputElement::IsBaseAppearanceCombobox() const {
+  if (!RuntimeEnabledFeatures::CustomizableComboboxEnabled() || !IsTextField()) {
+    return false;
+  }
+  if (HTMLDataListElement* datalist = DataList()) {
+    return IsAppearanceBase() && datalist->IsAppearanceBase();
+  }
+  return false;
 }
 
 }  // namespace blink

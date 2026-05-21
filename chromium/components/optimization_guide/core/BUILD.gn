@@ -80,6 +80,7 @@ component("features") {
   ]
   public_deps = [
     "//base",
+    "//components/optimization_guide/public/mojom",
     "//ui/accessibility",
   ]
   deps = [
@@ -119,6 +120,7 @@ source_set("hints") {
     "hints/memory_hint.cc",
     "hints/memory_hint.h",
     "hints/optimization_guide_decider.h",
+    "hints/optimization_guide_decision.cc",
     "hints/optimization_guide_decision.h",
     "hints/optimization_guide_navigation_data.cc",
     "hints/optimization_guide_navigation_data.h",
@@ -149,10 +151,6 @@ source_set("hints") {
     "//services/metrics/public/cpp:ukm_builders",
     "//third_party/re2",
   ]
-
-  # TODO: crbug.com/421262905 - Some utilities should be extracted from
-  # core_util files.
-  allow_circular_includes_from = [ ":core_util" ]
   visibility = [ ":*" ]
 }
 
@@ -193,8 +191,6 @@ source_set("core_util") {
 source_set("model_execution") {
   # TODO: crbug.com/421262905 - Should not need these without model_execution
   sources = [
-    "model_execution/on_device_capability.cc",
-    "model_execution/on_device_capability.h",
     "model_execution/optimization_guide_model_execution_error.cc",
     "model_execution/optimization_guide_model_execution_error.h",
     "model_execution/remote_model_executor.cc",
@@ -206,6 +202,59 @@ source_set("model_execution") {
     "model_quality/model_quality_logs_uploader_service.h",
     "model_quality/model_quality_util.cc",
     "model_quality/model_quality_util.h",
+  ]
+  deps = [
+    ":core_util",
+    ":features",
+    "//base",
+    "//base/version_info",
+    "//components/optimization_guide:optimization_guide_buildflags",
+    "//components/optimization_guide/optimization_guide_internals/webui:mojo_bindings",
+    "//components/optimization_guide/proto:optimization_guide_proto",
+    "//components/optimization_guide/public/mojom",
+    "//components/policy/core/common",
+    "//components/prefs",
+    "//components/variations/net",
+    "//services/network/public/cpp",
+    "//services/network/public/mojom",
+    "//services/on_device_model/public/mojom",
+  ]
+  if (build_with_model_execution) {
+    sources += [
+      "model_execution/model_execution_features.cc",
+      "model_execution/model_execution_features.h",
+      "model_execution/model_execution_features_controller.cc",
+      "model_execution/model_execution_features_controller.h",
+      "model_execution/model_execution_fetcher.cc",
+      "model_execution/model_execution_fetcher.h",
+      "model_execution/model_execution_fetcher_impl.cc",
+      "model_execution/model_execution_fetcher_impl.h",
+      "model_execution/model_execution_manager.cc",
+      "model_execution/model_execution_manager.h",
+      "model_execution/settings_enabled_observer.cc",
+      "model_execution/settings_enabled_observer.h",
+    ]
+    deps += [
+      ":core_util",
+      ":ondevice",  # TODO: crbug.com/421262905 - Remove this dep.
+      "//components/component_updater",
+      "//components/optimization_guide/proto:optimization_guide_proto",
+      "//components/prefs",
+      "//components/signin/public/identity_manager",
+      "//components/variations/net",
+      "//components/version_info",
+      "//google_apis",
+      "//services/network/public/cpp",
+      "//third_party/tflite:buildflags",
+    ]
+  }
+}
+
+source_set("ondevice") {
+  # TODO: crbug.com/421262905 - Should not need these without model_execution
+  sources = [
+    "model_execution/on_device_capability.cc",
+    "model_execution/on_device_capability.h",
   ]
   deps = [
     ":core_util",
@@ -237,15 +286,6 @@ source_set("model_execution") {
       "model_execution/model_broker_impl.h",
       "model_execution/model_broker_state.cc",
       "model_execution/model_broker_state.h",
-      "model_execution/model_execution_features.cc",
-      "model_execution/model_execution_features.h",
-      "model_execution/model_execution_features_controller.cc",
-      "model_execution/model_execution_features_controller.h",
-      "model_execution/model_execution_fetcher.h",
-      "model_execution/model_execution_fetcher_impl.cc",
-      "model_execution/model_execution_fetcher_impl.h",
-      "model_execution/model_execution_manager.cc",
-      "model_execution/model_execution_manager.h",
       "model_execution/model_execution_util.cc",
       "model_execution/model_execution_util.h",
       "model_execution/multimodal_message.cc",
@@ -264,6 +304,8 @@ source_set("model_execution") {
       "model_execution/on_device_model_adaptation_loader.h",
       "model_execution/on_device_model_component.cc",
       "model_execution/on_device_model_component.h",
+      "model_execution/on_device_model_download_progress_manager.cc",
+      "model_execution/on_device_model_download_progress_manager.h",
       "model_execution/on_device_model_execution_proto_descriptors.h",
       "model_execution/on_device_model_execution_proto_status.h",
       "model_execution/on_device_model_execution_proto_value_utils.cc",
@@ -278,8 +320,6 @@ source_set("model_execution") {
       "model_execution/on_device_model_validator.h",
       "model_execution/performance_class.cc",
       "model_execution/performance_class.h",
-      "model_execution/redactor.cc",
-      "model_execution/redactor.h",
       "model_execution/repetition_checker.cc",
       "model_execution/repetition_checker.h",
       "model_execution/response_parser.cc",
@@ -296,8 +336,6 @@ source_set("model_execution") {
       "model_execution/safety_model_info.h",
       "model_execution/session_impl.cc",
       "model_execution/session_impl.h",
-      "model_execution/settings_enabled_observer.cc",
-      "model_execution/settings_enabled_observer.h",
       "model_execution/simple_response_parser.cc",
       "model_execution/simple_response_parser.h",
       "model_execution/substitution.cc",
@@ -317,12 +355,9 @@ source_set("model_execution") {
       "//components/optimization_guide/proto:optimization_guide_proto",
       "//components/optimization_guide/public/mojom",
       "//components/prefs",
-      "//components/signin/public/identity_manager",
-      "//components/variations/net",
+      "//components/update_client",
       "//components/version_info",
-      "//google_apis",
       "//services/data_decoder/public/cpp",
-      "//services/network/public/cpp",
       "//services/on_device_model/public/cpp",
       "//third_party/re2",
       "//third_party/tflite:buildflags",
@@ -353,6 +388,7 @@ static_library("core") {
     ":filters",
     ":hints",
     ":model_execution",
+    ":ondevice",
     ":prediction",
     "//components/autofill/core/common",
     "//components/leveldb_proto",
@@ -405,6 +441,7 @@ static_library("prediction") {
   deps = [
     ":core_util",
     ":features",
+    "//base/version_info",
     "//components/component_updater",
     "//components/crx_file",
     "//components/optimization_guide/optimization_guide_internals/webui:mojo_bindings",
@@ -501,6 +538,7 @@ static_library("model_execution_test_support") {
     ":delivery_test_support",
     ":features",
     ":model_execution",
+    ":ondevice",
     ":prediction",
     "//base",
     "//base/test:test_support",
@@ -512,12 +550,16 @@ static_library("model_execution_test_support") {
   ]
   if (build_with_model_execution) {
     sources += [
+      "model_execution/test/fake_component_update_service.cc",
+      "model_execution/test/fake_component_update_service.h",
       "model_execution/test/fake_model_assets.cc",
       "model_execution/test/fake_model_assets.h",
       "model_execution/test/fake_model_broker.cc",
       "model_execution/test/fake_model_broker.h",
       "model_execution/test/feature_config_builder.cc",
       "model_execution/test/feature_config_builder.h",
+      "model_execution/test/mock_download_progress_observer.cc",
+      "model_execution/test/mock_download_progress_observer.h",
       "model_execution/test/mock_on_device_capability.cc",
       "model_execution/test/mock_on_device_capability.h",
       "model_execution/test/mock_remote_model_executor.cc",
@@ -532,8 +574,10 @@ static_library("model_execution_test_support") {
       "model_execution/test/test_on_device_model_component_state_manager.h",
     ]
     deps += [
+      "//components/component_updater:test_support",
       "//components/optimization_guide/public/mojom",
       "//components/prefs:test_support",
+      "//components/update_client",
       "//services/on_device_model/public/cpp:types",
       "//services/on_device_model/public/cpp/test_support",
     ]
@@ -677,6 +721,7 @@ source_set("model_execution_unit_tests") {
     ":features",
     ":model_execution",
     ":model_execution_test_support",
+    ":ondevice",
     "//base",
     "//base/test:test_proto",
     "//base/test:test_support",
@@ -706,6 +751,7 @@ source_set("model_execution_unit_tests") {
       "model_execution/on_device_asset_manager_unittest.cc",
       "model_execution/on_device_model_adaptation_loader_unittest.cc",
       "model_execution/on_device_model_component_unittest.cc",
+      "model_execution/on_device_model_download_progress_manager_unittest.cc",
       "model_execution/on_device_model_execution_proto_descriptors_unittest.cc",
       "model_execution/on_device_model_execution_proto_value_utils_unittest.cc",
       "model_execution/on_device_model_feature_adapter_unittest.cc",
@@ -714,7 +760,6 @@ source_set("model_execution_unit_tests") {
       "model_execution/on_device_model_validator_unittest.cc",
       "model_execution/optimization_guide_model_execution_error_unittest.cc",
       "model_execution/performance_class_unittest.cc",
-      "model_execution/redactor_unittest.cc",
       "model_execution/repetition_checker_unittest.cc",
       "model_execution/response_parser_factory_unittest.cc",
       "model_execution/safety_checker_unittest.cc",

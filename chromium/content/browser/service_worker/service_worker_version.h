@@ -16,13 +16,14 @@
 #include <utility>
 #include <vector>
 
+#include "base/callback_list.h"
 #include "base/cancelable_callback.h"
 #include "base/containers/id_map.h"
 #include "base/functional/callback.h"
 #include "base/gtest_prod_util.h"
+#include "base/memory/advanced_memory_safety_checks.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/ref_counted.h"
-#include "base/memory/safety_checks.h"
 #include "base/observer_list.h"
 #include "base/time/clock.h"
 #include "base/time/tick_clock.h"
@@ -561,6 +562,11 @@ class CONTENT_EXPORT ServiceWorkerVersion
 
   // Sets the response information used to load the main script.
   void SetMainScriptResponse(std::unique_ptr<MainScriptResponse> response);
+
+  // Ensures that the response information for the main script is set. If it is
+  // not set yet, it starts fetching it.
+  void EnsureMainScriptResponseSet(base::OnceClosure callback);
+  bool main_script_fetched() const;
   const MainScriptResponse* GetMainScriptResponse();
 
   // Simulate ping timeout. Should be used for tests-only.
@@ -750,6 +756,8 @@ class CONTENT_EXPORT ServiceWorkerVersion
     return synthetic_response_head_;
   }
 
+  void OnPaymentHandlerDisconnect();
+
   // Timeout for a request to be handled.
   static constexpr base::TimeDelta kRequestTimeout = base::Minutes(5);
 
@@ -886,8 +894,10 @@ class CONTENT_EXPORT ServiceWorkerVersion
     base::Time start_time;
     base::TimeTicks start_time_ticks;
     ServiceWorkerMetrics::EventType event_type;
-    // Points to this request's entry in |request_timeouts_|.
-    std::set<InflightRequestTimeoutInfo>::iterator timeout_iter;
+    // Points to this request's entry in |request_timeouts_|. Please invalidate
+    // this when the corresponding entry is removed from `request_timeouts_`.
+    // TODO(crbug.com/499449324): Refactor this code by simplifying ownerships.
+    std::optional<std::set<InflightRequestTimeoutInfo>::iterator> timeout_iter;
   };
 
   // The timeout timer interval.
@@ -1067,6 +1077,23 @@ class CONTENT_EXPORT ServiceWorkerVersion
                                  GetClientCallback callback,
                                  bool success);
 
+  void DidShowPaymentHandlerWindow(
+      const GURL& url,
+      const blink::StorageKey& key,
+      const base::WeakPtr<ServiceWorkerContextCore>& context,
+      blink::mojom::ServiceWorkerHost::OpenPaymentHandlerWindowCallback
+          callback,
+      bool success,
+      int render_process_id,
+      int render_frame_id);
+
+  // Called when the payment handler timeout timer fires.
+  void OnPaymentHandlerTimeout();
+
+  // Disconnects the payment handler and records UMA.
+  // |is_timeout| indicates whether the disconnect was due to a timeout.
+  void DisconnectPaymentHandler(bool is_timeout);
+
   const int64_t version_id_;
   const int64_t registration_id_;
   const GURL script_url_;
@@ -1119,11 +1146,6 @@ class CONTENT_EXPORT ServiceWorkerVersion
   // For service worker script updates, this is set by `PrepareForUpdate()` once
   // the updated script headers have been fetched.
   // For service workers loaded from disk, this is restored from disk.
-  //
-  // TODO(crbug.com/40056874): Set all of this, not just COEP, on script
-  // updates.
-  // TODO(crbug.com/40056874): Persist all of this to disk, not just the
-  // COEP field.
   network::mojom::ClientSecurityStatePtr client_security_state_;
 
   Status status_ = NEW;
@@ -1177,6 +1199,9 @@ class CONTENT_EXPORT ServiceWorkerVersion
 
   std::unique_ptr<ServiceWorkerInstalledScriptsSender>
       installed_scripts_sender_;
+
+  base::OnceClosureList main_script_response_callbacks_;
+  bool main_script_fetched_ = false;
 
   std::vector<SkipWaitingCallback> pending_skip_waiting_requests_;
   base::TimeTicks skip_waiting_time_;
@@ -1278,6 +1303,13 @@ class CONTENT_EXPORT ServiceWorkerVersion
   bool stop_when_devtools_detached_ = false;
 
   bool is_stopping_warmed_up_worker_ = false;
+
+  bool payment_handler_connected_ = false;
+
+  // Timer for payment handler timeout. When payment_handler_connected_ is set
+  // to true, this timer starts. If it fires before OnPaymentHandlerDisconnect()
+  // is called, the payment handler connection is considered timed out.
+  base::OneShotTimer payment_handler_timeout_timer_;
 
   // This is the set of features that were used up until installation of this
   // version completed, or used during the lifetime of |this|.

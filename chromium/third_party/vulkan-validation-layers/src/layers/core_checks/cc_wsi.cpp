@@ -1,6 +1,6 @@
-/* Copyright (c) 2015-2025 The Khronos Group Inc.
- * Copyright (c) 2015-2025 Valve Corporation
- * Copyright (c) 2015-2025 LunarG, Inc.
+/* Copyright (c) 2015-2026 The Khronos Group Inc.
+ * Copyright (c) 2015-2026 Valve Corporation
+ * Copyright (c) 2015-2026 LunarG, Inc.
  * Copyright (C) 2015-2025 Google Inc.
  * Modifications Copyright (C) 2020-2022 Advanced Micro Devices, Inc. All rights reserved.
  *
@@ -34,6 +34,7 @@
 #include "state_tracker/wsi_state.h"
 #include "generated/dispatch_functions.h"
 #include "utils/math_utils.h"
+#include "containers/container_utils.h"
 
 static bool IsExtentInsideBounds(VkExtent2D extent, VkExtent2D min, VkExtent2D max) {
     if ((extent.width < min.width) || (extent.width > max.width) || (extent.height < min.height) || (extent.height > max.height)) {
@@ -98,14 +99,26 @@ bool CoreChecks::ValidateSwapchainImageExtent(const VkSwapchainCreateInfoKHR &cr
         const VkSurfacePresentScalingCapabilitiesKHR scaling_caps =
             surface_state->GetPresentModeScalingCapabilities(physical_device, create_info.presentMode);
 
-        if (!IsExtentInsideBounds(create_info.imageExtent, scaling_caps.minScaledImageExtent, scaling_caps.maxScaledImageExtent)) {
+        if (scaling_caps.supportedPresentScaling == 0) {
+            // For more information https://gitlab.khronos.org/vulkan/vulkan/-/issues/4634
             skip |= LogError("VUID-VkSwapchainCreateInfoKHR-pNext-07782", device, create_info_loc.dot(Field::imageExtent),
-                             "(%s), which is outside the bounds returned in "
+                             "is %s, but vkGetPhysicalDeviceSurfaceCapabilities2KHR was called inside validation and the "
+                             "VkSurfacePresentScalingCapabilitiesKHR::supportedPresentScaling is zero, therefore there is no valid "
+                             "imageExtent that can be used as the driver doesn't support scaling for %s.\nScaling is enabling "
+                             "because VkSwapchainPresentScalingCreateInfoKHR::scalingBehavior (%s) was not zero.",
+                             string_VkExtent2D(create_info.imageExtent).c_str(), string_VkPresentModeKHR(create_info.presentMode),
+                             string_VkPresentScalingFlagsKHR(present_scaling_ci->scalingBehavior).c_str());
+        } else if (!IsExtentInsideBounds(create_info.imageExtent, scaling_caps.minScaledImageExtent,
+                                         scaling_caps.maxScaledImageExtent)) {
+            skip |= LogError("VUID-VkSwapchainCreateInfoKHR-pNext-07782", device, create_info_loc.dot(Field::imageExtent),
+                             "(%s), which is outside the bounds for %s returned in "
                              "VkSurfacePresentScalingCapabilitiesKHR minScaledImageExtent = (%s), "
-                             "maxScaledImageExtent = (%s).",
-                             string_VkExtent2D(create_info.imageExtent).c_str(),
+                             "maxScaledImageExtent = (%s).\nScaling is enabling because "
+                             "VkSwapchainPresentScalingCreateInfoKHR::scalingBehavior (%s) was not zero.",
+                             string_VkExtent2D(create_info.imageExtent).c_str(), string_VkPresentModeKHR(create_info.presentMode),
                              string_VkExtent2D(scaling_caps.minScaledImageExtent).c_str(),
-                             string_VkExtent2D(scaling_caps.maxScaledImageExtent).c_str());
+                             string_VkExtent2D(scaling_caps.maxScaledImageExtent).c_str(),
+                             string_VkPresentScalingFlagsKHR(present_scaling_ci->scalingBehavior).c_str());
         }
     }
     return skip;
@@ -445,7 +458,7 @@ bool CoreChecks::ValidateCreateSwapchain(const VkSwapchainCreateInfoKHR &create_
     // VkSurfaceCapabilitiesKHR::supportedTransforms.
     if (!create_info.preTransform || (create_info.preTransform & (create_info.preTransform - 1)) ||
         !(create_info.preTransform & surface_caps.supportedTransforms)) {
-        std::stringstream ss;
+        std::ostringstream ss;
         for (int i = 0; i < 32; i++) {
             if ((1 << i) & surface_caps.supportedTransforms) {
                 ss << "  " << string_VkSurfaceTransformFlagBitsKHR(static_cast<VkSurfaceTransformFlagBitsKHR>(1 << i)) << "\n";
@@ -460,7 +473,7 @@ bool CoreChecks::ValidateCreateSwapchain(const VkSwapchainCreateInfoKHR &create_
     // VkSurfaceCapabilitiesKHR::supportedCompositeAlpha
     if (!create_info.compositeAlpha || (create_info.compositeAlpha & (create_info.compositeAlpha - 1)) ||
         !((create_info.compositeAlpha) & surface_caps.supportedCompositeAlpha)) {
-        std::stringstream ss;
+        std::ostringstream ss;
         for (int i = 0; i < 32; i++) {
             if ((1 << i) & surface_caps.supportedCompositeAlpha) {
                 ss << "  " << string_VkCompositeAlphaFlagBitsKHR(static_cast<VkCompositeAlphaFlagBitsKHR>(1 << i)) << "\n";
@@ -540,8 +553,9 @@ bool CoreChecks::ValidateCreateSwapchain(const VkSwapchainCreateInfoKHR &create_
         present_modes = physical_device_state->surfaceless_query_state.present_modes;
     }
 
-    if (std::find(present_modes.begin(), present_modes.end(), present_mode) == present_modes.end()) {
-        std::stringstream ss;
+    // Found a case in the wild where |present_mode| was empty, not sure why, but skip to not have confusing error messages.
+    if (!present_modes.empty() && std::find(present_modes.begin(), present_modes.end(), present_mode) == present_modes.end()) {
+        std::ostringstream ss;
         for (auto mode : present_modes) {
             ss << string_VkPresentModeKHR(mode) << " ";
         }
@@ -558,7 +572,8 @@ bool CoreChecks::ValidateCreateSwapchain(const VkSwapchainCreateInfoKHR &create_
     if (shared_present_mode) {
         if (create_info.minImageCount != 1) {
             if (LogError("VUID-VkSwapchainCreateInfoKHR-minImageCount-01383", device, create_info_loc,
-                         "called with presentMode %s, but minImageCount value is %d. For shared presentable image, minImageCount "
+                         "called with presentMode %s, but minImageCount value is %" PRIu32
+                         ". For shared presentable image, minImageCount "
                          "must be 1.",
                          string_VkPresentModeKHR(present_mode), create_info.minImageCount)) {
                 return true;
@@ -656,7 +671,7 @@ bool CoreChecks::ValidateCreateSwapchain(const VkSwapchainCreateInfoKHR &create_
     // Validate pCreateInfo->imageArrayLayers against VkImageFormatProperties::maxArrayLayers
     if (create_info.imageArrayLayers > image_properties.maxArrayLayers) {
         if (LogError("VUID-VkSwapchainCreateInfoKHR-imageFormat-01778", device, create_info_loc.dot(Field::imageArrayLayers),
-                     "%" PRIu32 ", but Maximum value returned by vkGetPhysicalDeviceImageFormatProperties() is %d "
+                     "%" PRIu32 ", but Maximum value returned by vkGetPhysicalDeviceImageFormatProperties() is %" PRIu32 " "
                      "for imageFormat %s with tiling VK_IMAGE_TILING_OPTIMAL.",
                      create_info.imageArrayLayers, image_properties.maxArrayLayers, string_VkFormat(create_info.imageFormat))) {
             return true;
@@ -1102,16 +1117,82 @@ bool CoreChecks::PreCallValidateQueuePresentKHR(VkQueue queue, const VkPresentIn
                                      PrintPNextChain(Struct::VkPresentInfoKHR, pPresentInfo->pNext).c_str());
                 }
 
-                if (present_timings_info->pTimingInfos[i].targetTime != 0 &&
-                    !IsValueIn(
+                const VkPresentTimingInfoEXT &timing_info = present_timings_info->pTimingInfos[i];
+                if (timing_info.presentStageQueries > 0 && swapchain_state->present_timing_queue_size == 0) {
+                    // https://gitlab.khronos.org/vulkan/vulkan/-/issues/4623
+                    skip |= LogError("UNASSIGNED-VkPresentTimingInfoEXT-presentStageQueries", pPresentInfo->pSwapchains[i],
+                                     present_info_loc.dot(Field::pTimingInfos, i).dot(Field::presentStageQueries),
+                                     "is %" PRIu32
+                                     ", but the swapchain's present timing queue size is 0. (Should be set with "
+                                     "vkSetSwapchainPresentTimingQueueSizeEXT)",
+                                     timing_info.presentStageQueries);
+                }
+                auto swapchain_time_domain = swapchain_state->time_domains.find(timing_info.timeDomainId);
+                if (swapchain_time_domain == swapchain_state->time_domains.end()) {
+                    // https://gitlab.khronos.org/vulkan/vulkan/-/issues/4623
+                    skip |= LogError(
+                        "UNASSIGNED-VkPresentTimingInfoEXT-timeDomainId", pPresentInfo->pSwapchains[i],
+                        present_info_loc.dot(Field::pTimingInfos, i).dot(Field::timeDomainId),
+                        "is %" PRIu64
+                        ", which is not a valid time domain id that has been returned by vkGetSwapchainTimeDomainPropertiesEXT().",
+                        timing_info.timeDomainId);
+                }
+                if (timing_info.targetTime == 0) {
+                    continue;
+                }
+                if (!IsValueIn(
                         swapchain_state->create_info.presentMode,
                         {VK_PRESENT_MODE_FIFO_KHR, VK_PRESENT_MODE_FIFO_RELAXED_KHR, VK_PRESENT_MODE_FIFO_LATEST_READY_EXT})) {
                     skip |= LogError(
                         "VUID-VkPresentTimingsInfoEXT-pSwapchains-12235", pPresentInfo->pSwapchains[i],
                         present_info_loc.pNext(Struct::VkPresentTimingsInfoEXT, Field::pTimingInfos, i).dot(Field::targetTime),
-                        "is %" PRIu64 ", but the swapchain was created with present mode %s.",
-                        present_timings_info->pTimingInfos[i].targetTime,
+                        "is %" PRIu64 ", but the swapchain was created with present mode %s.", timing_info.targetTime,
                         string_VkPresentModeKHR(swapchain_state->create_info.presentMode));
+                }
+
+                if (GetBitSetCount(timing_info.targetTimeDomainPresentStage) != 1) {
+                    if (swapchain_time_domain != swapchain_state->time_domains.end() &&
+                        swapchain_time_domain->second == VK_TIME_DOMAIN_PRESENT_STAGE_LOCAL_EXT) {
+                        skip |= LogError("VUID-VkPresentTimingInfoEXT-timeDomainId-12238", pPresentInfo->pSwapchains[i],
+                                         present_info_loc.dot(Field::pTimingInfos, i).dot(Field::targetTimeDomainPresentStage),
+                                         "is %s but timeDomainId is associated with VK_TIME_DOMAIN_PRESENT_STAGE_LOCAL_EXT and "
+                                         "targetTime is %" PRIu64 ".",
+                                         string_VkPresentStageFlagsEXT(timing_info.targetTimeDomainPresentStage).c_str(),
+                                         timing_info.targetTime);
+                    }
+                }
+                const bool relative_time_flag = (timing_info.flags & VK_PRESENT_TIMING_INFO_PRESENT_AT_RELATIVE_TIME_BIT_EXT) != 0;
+                if (!relative_time_flag) {
+                    if (!enabled_features.presentAtAbsoluteTime || !swapchain_state->present_at_absolute_time_supported) {
+                        std::string msg;
+                        if (!enabled_features.presentAtAbsoluteTime) {
+                            msg = "presentAtAbsoluteTime feature is not enabled";
+                        } else {
+                            msg = "presentAtAbsoluteTimeSupported is VK_FALSE for swapchain " +
+                                  FormatHandle(pPresentInfo->pSwapchains[i]);
+                        }
+                        skip |= LogError(
+                            "VUID-VkPresentTimingInfoEXT-targetTime-12236", device,
+                            present_info_loc.pNext(Struct::VkPresentTimingsInfoEXT, Field::pTimingInfos, i).dot(Field::targetTime),
+                            "is %" PRIu64
+                            " and flags (%s) do not contain VK_PRESENT_TIMING_INFO_PRESENT_AT_RELATIVE_TIME_BIT_EXT, but %s",
+                            timing_info.targetTime, string_VkPresentTimingInfoFlagsEXT(timing_info.flags).c_str(), msg.c_str());
+                    }
+                } else {
+                    if (!enabled_features.presentAtRelativeTime || !swapchain_state->present_at_relative_time_supported) {
+                        std::string msg;
+                        if (!enabled_features.presentAtRelativeTime) {
+                            msg = "presentAtRelativeTime feature is not enabled";
+                        } else {
+                            msg = "presentAtRelativeTimeSupported is VK_FALSE for swapchain " +
+                                  FormatHandle(pPresentInfo->pSwapchains[i]);
+                        }
+                        skip |= LogError(
+                            "VUID-VkPresentTimingInfoEXT-targetTime-12237", device,
+                            present_info_loc.pNext(Struct::VkPresentTimingsInfoEXT, Field::pTimingInfos, i).dot(Field::targetTime),
+                            "is %" PRIu64 " and flags (%s) contain VK_PRESENT_TIMING_INFO_PRESENT_AT_RELATIVE_TIME_BIT_EXT, but %s",
+                            timing_info.targetTime, string_VkPresentTimingInfoFlagsEXT(timing_info.flags).c_str(), msg.c_str());
+                    }
                 }
             }
         }
@@ -1184,6 +1265,55 @@ bool CoreChecks::PreCallValidateSetSwapchainPresentTimingQueueSizeEXT(VkDevice d
     if ((swapchain_state->create_info.flags & VK_SWAPCHAIN_CREATE_PRESENT_TIMING_BIT_EXT) == 0) {
         skip |= LogError("VUID-vkSetSwapchainPresentTimingQueueSizeEXT-swapchain-12229", swapchain, error_obj.location,
                          "was created with %s.", string_VkSwapchainCreateFlagsKHR(swapchain_state->create_info.flags).c_str());
+    }
+
+    return skip;
+}
+
+bool CoreChecks::PreCallValidateGetPastPresentationTimingEXT(
+    VkDevice device, const VkPastPresentationTimingInfoEXT *pPastPresentationTimingInfo,
+    VkPastPresentationTimingPropertiesEXT *pPastPresentationTimingProperties, const ErrorObject &error_obj) const {
+    bool skip = false;
+
+    auto swapchain_state = Get<vvl::Swapchain>(pPastPresentationTimingInfo->swapchain);
+    if (!swapchain_state->present_timing_stage_queries.empty()) {
+        if ((pPastPresentationTimingInfo->flags & VK_PAST_PRESENTATION_TIMING_ALLOW_OUT_OF_ORDER_RESULTS_BIT_EXT) != 0) {
+            uint32_t max = 0;
+            for (const auto &query : swapchain_state->present_timing_stage_queries) {
+                if (query.second > max) {
+                    max = query.second;
+                }
+            }
+            for (uint32_t i = 0; i < pPastPresentationTimingProperties->presentationTimingCount; ++i) {
+                if (pPastPresentationTimingProperties->pPresentationTimings[i].presentStageCount < max) {
+                    skip |= LogError("VUID-vkGetPastPresentationTimingEXT-flags-12230", pPastPresentationTimingInfo->swapchain,
+                                     error_obj.location.dot(Field::pPastPresentationTimingProperties)
+                                         .dot(Field::pPresentationTimings, i)
+                                         .dot(Field::presentStageCount),
+                                     "is %" PRIu32 ", but vkQueuePresentKHR was called with %" PRIu32
+                                     " bits set in VkPresentTimingInfoEXT::presentStageQueries",
+                                     pPastPresentationTimingProperties->pPresentationTimings[i].presentStageCount, max);
+                }
+            }
+        } else {
+            for (uint32_t i = 0; i < pPastPresentationTimingProperties->presentationTimingCount; ++i) {
+                uint32_t max = 0;
+                for (const auto &query : swapchain_state->present_timing_stage_queries) {
+                    if (query.first == pPastPresentationTimingProperties->pPresentationTimings[i].presentId && query.second > max) {
+                        max = query.second;
+                    }
+                }
+                if (pPastPresentationTimingProperties->pPresentationTimings[i].presentStageCount < max) {
+                    skip |= LogError("VUID-vkGetPastPresentationTimingEXT-flags-12231", pPastPresentationTimingInfo->swapchain,
+                                     error_obj.location.dot(Field::pPastPresentationTimingProperties)
+                                         .dot(Field::pPresentationTimings, i)
+                                         .dot(Field::presentStageCount),
+                                     "is %" PRIu32 ", but vkQueuePresentKHR was called with %" PRIu32
+                                     " bits set in VkPresentTimingInfoEXT::presentStageQueries",
+                                     pPastPresentationTimingProperties->pPresentationTimings[i].presentStageCount, max);
+                }
+            }
+        }
     }
 
     return skip;
@@ -1375,17 +1505,6 @@ bool core::Instance::PreCallValidateGetPhysicalDeviceWaylandPresentationSupportK
 }
 #endif  // VK_USE_PLATFORM_WAYLAND_KHR
 
-#ifdef VK_USE_PLATFORM_WIN32_KHR
-bool core::Instance::PreCallValidateGetPhysicalDeviceWin32PresentationSupportKHR(VkPhysicalDevice physicalDevice,
-                                                                                 uint32_t queueFamilyIndex,
-                                                                                 const ErrorObject &error_obj) const {
-    auto pd_state = Get<vvl::PhysicalDevice>(physicalDevice);
-    return ValidateQueueFamilyIndex(*pd_state, queueFamilyIndex,
-                                    "VUID-vkGetPhysicalDeviceWin32PresentationSupportKHR-queueFamilyIndex-01309",
-                                    error_obj.location.dot(Field::queueFamilyIndex));
-}
-#endif  // VK_USE_PLATFORM_WIN32_KHR
-
 #ifdef VK_USE_PLATFORM_XCB_KHR
 bool core::Instance::PreCallValidateGetPhysicalDeviceXcbPresentationSupportKHR(VkPhysicalDevice physicalDevice,
                                                                                uint32_t queueFamilyIndex,
@@ -1422,6 +1541,17 @@ bool core::Instance::PreCallValidateGetPhysicalDeviceScreenPresentationSupportQN
                                     error_obj.location.dot(Field::queueFamilyIndex));
 }
 #endif  // VK_USE_PLATFORM_SCREEN_QNX
+
+#ifdef VK_USE_PLATFORM_DIRECTFB_EXT
+bool core::Instance::PreCallValidateGetPhysicalDeviceDirectFBPresentationSupportEXT(VkPhysicalDevice physicalDevice,
+                                                                                    uint32_t queueFamilyIndex, IDirectFB* dfb,
+                                                                                    const ErrorObject& error_obj) const {
+    auto pd_state = Get<vvl::PhysicalDevice>(physicalDevice);
+    return ValidateQueueFamilyIndex(*pd_state, queueFamilyIndex,
+                                    "VUID-vkGetPhysicalDeviceDirectFBPresentationSupportEXT-queueFamilyIndex-04119",
+                                    error_obj.location.dot(Field::queueFamilyIndex));
+}
+#endif  // VK_USE_PLATFORM_DIRECTFB_EXT
 
 bool core::Instance::PreCallValidateGetPhysicalDeviceSurfaceSupportKHR(VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex,
                                                                        VkSurfaceKHR surface, VkBool32 *pSupported,
@@ -1532,6 +1662,15 @@ bool core::Instance::PreCallValidateCreateDisplayPlaneSurfaceKHR(VkInstance inst
 }
 
 #ifdef VK_USE_PLATFORM_WIN32_KHR
+bool core::Instance::PreCallValidateGetPhysicalDeviceWin32PresentationSupportKHR(VkPhysicalDevice physicalDevice,
+                                                                                 uint32_t queueFamilyIndex,
+                                                                                 const ErrorObject& error_obj) const {
+    auto pd_state = Get<vvl::PhysicalDevice>(physicalDevice);
+    return ValidateQueueFamilyIndex(*pd_state, queueFamilyIndex,
+                                    "VUID-vkGetPhysicalDeviceWin32PresentationSupportKHR-queueFamilyIndex-01309",
+                                    error_obj.location.dot(Field::queueFamilyIndex));
+}
+
 bool CoreChecks::PreCallValidateAcquireFullScreenExclusiveModeEXT(VkDevice device, VkSwapchainKHR swapchain,
                                                                   const ErrorObject &error_obj) const {
     bool skip = false;
@@ -1583,31 +1722,6 @@ bool CoreChecks::PreCallValidateReleaseFullScreenExclusiveModeEXT(VkDevice devic
 
     return skip;
 }
-#endif
-
-bool core::Instance::ValidatePhysicalDeviceSurfaceSupport(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface, const char *vuid,
-                                                          const Location &loc) const {
-    bool skip = false;
-
-    auto pd_state = Get<vvl::PhysicalDevice>(physicalDevice);
-    auto surface_state = Get<vvl::Surface>(surface);
-    if (pd_state && surface_state) {
-        bool is_supported = false;
-        for (uint32_t i = 0; i < pd_state->queue_family_properties.size(); i++) {
-            if (surface_state->GetQueueSupport(physicalDevice, i)) {
-                is_supported = true;
-                break;
-            }
-        }
-        if (!is_supported) {
-            skip |= LogError(vuid, physicalDevice, loc, "surface is not supported by the physicalDevice.");
-        }
-    }
-
-    return skip;
-}
-
-#ifdef VK_USE_PLATFORM_WIN32_KHR
 
 bool CoreChecks::PreCallValidateGetDeviceGroupSurfacePresentModes2EXT(VkDevice device,
                                                                       const VkPhysicalDeviceSurfaceInfo2KHR *pSurfaceInfo,
@@ -1644,8 +1758,29 @@ bool core::Instance::PreCallValidateGetPhysicalDeviceSurfacePresentModes2EXT(VkP
 
     return skip;
 }
+#endif  // VK_USE_PLATFORM_WIN32_KHR
 
-#endif
+bool core::Instance::ValidatePhysicalDeviceSurfaceSupport(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface, const char* vuid,
+                                                          const Location& loc) const {
+    bool skip = false;
+
+    auto pd_state = Get<vvl::PhysicalDevice>(physicalDevice);
+    auto surface_state = Get<vvl::Surface>(surface);
+    if (pd_state && surface_state) {
+        bool is_supported = false;
+        for (uint32_t i = 0; i < pd_state->queue_family_properties.size(); i++) {
+            if (surface_state->GetQueueSupport(physicalDevice, i)) {
+                is_supported = true;
+                break;
+            }
+        }
+        if (!is_supported) {
+            skip |= LogError(vuid, physicalDevice, loc, "surface is not supported by the physicalDevice.");
+        }
+    }
+
+    return skip;
+}
 
 bool CoreChecks::PreCallValidateGetDeviceGroupSurfacePresentModesKHR(VkDevice device, VkSurfaceKHR surface,
                                                                      VkDeviceGroupPresentModeFlagsKHR *pModes,

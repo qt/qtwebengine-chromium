@@ -11,7 +11,6 @@
 #include "base/functional/function_ref.h"
 #include "base/notimplemented.h"
 #include "base/notreached.h"
-#include "base/types/cxx23_to_underlying.h"
 #include "components/android_autofill/browser/android_autofill_manager.h"
 #include "components/android_autofill/browser/android_autofill_provider.h"
 #include "components/autofill/content/browser/content_autofill_client.h"
@@ -246,10 +245,6 @@ bool AndroidAutofillClient::IsPasswordManagerEnabled() const {
   NOTREACHED();
 }
 
-void AndroidAutofillClient::DidFillForm(
-    autofill::AutofillTriggerSource trigger_source,
-    bool is_refill) {}
-
 bool AndroidAutofillClient::IsContextSecure() const {
   // Note: As of crbug.com/701018, Chrome relies on ChromeSecurityStateTabHelper
   // to determine whether the page is secure, but WebView can only access a
@@ -271,13 +266,6 @@ bool AndroidAutofillClient::IsContextSecure() const {
          !net::IsCertStatusError(ssl_status.cert_status) &&
          !(ssl_status.content_status &
            content::SSLStatus::RAN_INSECURE_CONTENT);
-}
-
-autofill::FormInteractionsFlowId
-AndroidAutofillClient::GetCurrentFormInteractionsFlowId() {
-  // Currently not in use here. See `ChromeAutofillClient` for a proper
-  // implementation.
-  return {};
 }
 
 autofill::autofill_metrics::FormInteractionsUkmLogger&

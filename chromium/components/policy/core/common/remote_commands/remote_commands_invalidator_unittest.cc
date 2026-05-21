@@ -100,7 +100,8 @@ class RemoteCommandsInvalidatorTest : public testing::Test {
   base::test::SingleThreadTaskEnvironment task_environment_{
       base::test::SingleThreadTaskEnvironment::TimeSource::MOCK_TIME};
 
-  NiceMock<MockCloudPolicyStore> mock_store_;
+  NiceMock<MockCloudPolicyStore> mock_store_{
+      dm_protocol::GetChromeUserPolicyType()};
   CloudPolicyCore core_;
 
   invalidation::FakeInvalidationListener fake_invalidation_listener_;

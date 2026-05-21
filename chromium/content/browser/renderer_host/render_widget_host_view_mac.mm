@@ -334,6 +334,20 @@ void RenderWidgetHostViewMac::MigrateNSViewBridge(
     remote_ns_view_->SetVisible(false);
   }
 
+  // Re-send the current text input state to the new NSView bridge. This is
+  // necessary because the text input state may have been set before the
+  // migration (e.g., when a PWA launches with an auto-focused text field).
+  // Without this, the new NSView's inputContext will return nil because
+  // _textInputType remains TEXT_INPUT_TYPE_NONE, causing emoji picker and
+  // other IME features to fail. See https://crbug.com/478659019.
+  if (text_input_manager_) {
+    const ui::mojom::TextInputState* state =
+        text_input_manager_->GetTextInputState();
+    if (state) {
+      remote_ns_view_->SetTextInputState(state->type, state->flags);
+    }
+  }
+
   // End local display::Screen observation via `in_process_ns_view_bridge_`;
   // the remote NSWindow's display::Screen information will be sent by Mojo.
   // TODO(crbug.com/40179941): Maybe just destroy `in_process_ns_view_bridge_`?
@@ -557,6 +571,15 @@ void RenderWidgetHostViewMac::WasOccluded() {
 
   host()->WasHidden();
   browser_compositor_->SetRenderWidgetHostIsHidden(true);
+
+  // Headless mode forces focus change propagation inside Focus(), since there
+  // is no NSWindow to deliver the normal focus change notifications. As a
+  // result, when view is hidden, we must explicitly clear its focus state to
+  // keep focus behavior consistent and avoid leaving the view marked as focused
+  // wrongly.
+  if (IsHeadless() && HasFocus()) {
+    OnFirstResponderChanged(/*is_first_responder=*/false);
+  }
 }
 
 void RenderWidgetHostViewMac::SetSize(const gfx::Size& size) {
@@ -1045,8 +1068,8 @@ uint32_t RenderWidgetHostViewMac::GetCaptureSequenceNumber() const {
 void RenderWidgetHostViewMac::CopyFromSurface(
     const gfx::Rect& src_subrect,
     const gfx::Size& dst_size,
-    base::OnceCallback<void(const viz::CopyOutputBitmapWithMetadata&)>
-        callback) {
+    base::TimeDelta timeout,
+    base::OnceCallback<void(const content::CopyFromSurfaceResult&)> callback) {
   base::WeakPtr<RenderWidgetHostImpl> popup_host;
   base::WeakPtr<DelegatedFrameHost> popup_frame_host;
   if (popup_child_host_view_) {
@@ -1060,7 +1083,7 @@ void RenderWidgetHostViewMac::CopyFromSurface(
   RenderWidgetHostViewBase::CopyMainAndPopupFromSurface(
       host()->GetWeakPtr(),
       browser_compositor_->GetDelegatedFrameHost()->GetWeakPtr(), popup_host,
-      popup_frame_host, src_subrect, dst_size, GetDeviceScaleFactor(),
+      popup_frame_host, src_subrect, dst_size, GetDeviceScaleFactor(), timeout,
       std::move(callback));
 }
 
@@ -1751,12 +1774,34 @@ void RenderWidgetHostViewMac::OnFirstResponderChanged(bool is_first_responder) {
   is_first_responder_ = is_first_responder;
   accessibility_focus_overrider_.SetViewIsFirstResponder(is_first_responder_);
 
+  // Propagate focus changes to RenderWidgetHost only under the following
+  // conditions:
+  //
+  // - Headless mode:
+  //   IsHeadless() implies there is no NSWindow, so force focus change
+  //   propagation.
+  //
+  // - Gaining focus:
+  //   - When Focus() is being explicitly requested (is_getting_focus is true),
+  //   or
+  //   - When the window is key.
+  //   This avoids a race where claiming focus while the window is non-key could
+  //   be treated as invalid, resulting in a subsequent resignFirstResponder
+  //   overwriting the valid focus set by OnWindowIsKeyChanged.
+  //
+  // - Losing focus:
+  //   - Only when the host is currently focused.
+  //   This prevents duplicate LostFocus notifications.
   if (is_first_responder_) {
-    host()->GotFocus();
-    SetTextInputActive(true);
+    if (IsHeadless() || is_getting_focus_ || is_window_key_) {
+      host()->GotFocus();
+      SetTextInputActive(true);
+    }
   } else {
-    SetTextInputActive(false);
-    host()->LostFocus();
+    if (IsHeadless() || host()->is_focused()) {
+      SetTextInputActive(false);
+      host()->LostFocus();
+    }
   }
 }
 

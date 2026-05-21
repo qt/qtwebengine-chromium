@@ -247,12 +247,6 @@ void LogPasswordGenerationSubmissionEvent(PasswordSubmissionEvent event) {
                                 SUBMISSION_EVENT_ENUM_COUNT);
 }
 
-void LogPasswordGenerationAvailableSubmissionEvent(
-    PasswordSubmissionEvent event) {
-  base::UmaHistogramEnumeration("PasswordGeneration.SubmissionAvailableEvent",
-                                event, SUBMISSION_EVENT_ENUM_COUNT);
-}
-
 void LogAutoSigninPromoUserAction(AutoSigninPromoUserAction action) {
   base::UmaHistogramEnumeration("PasswordManager.AutoSigninFirstRunDialog",
                                 action, AUTO_SIGNIN_PROMO_ACTION_COUNT);
@@ -449,7 +443,7 @@ void LogIsSyncPasswordHashSaved(IsSyncPasswordHashSaved state) {
 void LogIsPasswordProtected(bool is_password_protected) {
   // To preserve privacy of individual data points, add a 10% statistical noise
   bool log_value = is_password_protected;
-  if (base::RandInt(0, 9) == 0) {
+  if (base::RandIntInclusive(0, 9) == 0) {
     log_value = !is_password_protected;
   }
   base::UmaHistogramBoolean("PasswordManager.IsPasswordProtected2", log_value);

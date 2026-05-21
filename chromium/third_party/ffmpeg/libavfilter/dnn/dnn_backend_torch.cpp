@@ -25,6 +25,10 @@
 
 #include <torch/torch.h>
 #include <torch/script.h>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+#include <atomic>
 
 extern "C" {
 #include "dnn_io_proc.h"
@@ -42,6 +46,11 @@ typedef struct THModel {
     SafeQueue *request_queue;
     Queue *task_queue;
     Queue *lltask_queue;
+    SafeQueue *pending_queue;       ///< requests waiting for inference
+    std::thread *worker_thread;     ///< background worker thread
+    std::mutex *mutex;              ///< mutex for the condition variable
+    std::condition_variable *cond;  ///< condition variable for worker wakeup
+    std::atomic<bool> worker_stop;  ///< signal for thread exit
 } THModel;
 
 typedef struct THInferRequest {
@@ -118,27 +127,70 @@ static void dnn_free_model_th(DNNModel **model)
     if (!model || !*model)
         return;
 
-    th_model = (THModel *) (*model);
-    while (ff_safe_queue_size(th_model->request_queue) != 0) {
-        THRequestItem *item = (THRequestItem *)ff_safe_queue_pop_front(th_model->request_queue);
-        destroy_request_item(&item);
-    }
-    ff_safe_queue_destroy(th_model->request_queue);
+    th_model = (THModel *)(*model);
 
-    while (ff_queue_size(th_model->lltask_queue) != 0) {
-        LastLevelTaskItem *item = (LastLevelTaskItem *)ff_queue_pop_front(th_model->lltask_queue);
-        av_freep(&item);
+    /* 1. Stop and join the worker thread if it exists */
+    if (th_model->worker_thread) {
+        {
+            std::lock_guard<std::mutex> lock(*th_model->mutex);
+            th_model->worker_stop = true;
+        }
+        th_model->cond->notify_all();
+        th_model->worker_thread->join();
+        delete th_model->worker_thread;
+        th_model->worker_thread = NULL;
     }
-    ff_queue_destroy(th_model->lltask_queue);
 
-    while (ff_queue_size(th_model->task_queue) != 0) {
-        TaskItem *item = (TaskItem *)ff_queue_pop_front(th_model->task_queue);
-        av_frame_free(&item->in_frame);
-        av_frame_free(&item->out_frame);
-        av_freep(&item);
+    /* 2. Safely delete C++ synchronization objects */
+    if (th_model->mutex) {
+        delete th_model->mutex;
+        th_model->mutex = NULL;
     }
-    ff_queue_destroy(th_model->task_queue);
-    delete th_model->jit_model;
+    if (th_model->cond) {
+        delete th_model->cond;
+        th_model->cond = NULL;
+    }
+
+    /* 3. Clean up the pending queue */
+    if (th_model->pending_queue) {
+        while (ff_safe_queue_size(th_model->pending_queue) > 0) {
+            THRequestItem *item = (THRequestItem *)ff_safe_queue_pop_front(th_model->pending_queue);
+            destroy_request_item(&item);
+        }
+        ff_safe_queue_destroy(th_model->pending_queue);
+    }
+
+    /* 4. Clean up standard backend queues */
+    if (th_model->request_queue) {
+        while (ff_safe_queue_size(th_model->request_queue) != 0) {
+            THRequestItem *item = (THRequestItem *)ff_safe_queue_pop_front(th_model->request_queue);
+            destroy_request_item(&item);
+        }
+        ff_safe_queue_destroy(th_model->request_queue);
+    }
+
+    if (th_model->lltask_queue) {
+        while (ff_queue_size(th_model->lltask_queue) != 0) {
+            LastLevelTaskItem *item = (LastLevelTaskItem *)ff_queue_pop_front(th_model->lltask_queue);
+            av_freep(&item);
+        }
+        ff_queue_destroy(th_model->lltask_queue);
+    }
+
+    if (th_model->task_queue) {
+        while (ff_queue_size(th_model->task_queue) != 0) {
+            TaskItem *item = (TaskItem *)ff_queue_pop_front(th_model->task_queue);
+            av_frame_free(&item->in_frame);
+            av_frame_free(&item->out_frame);
+            av_freep(&item);
+        }
+        ff_queue_destroy(th_model->task_queue);
+    }
+
+    /* 5. Final model cleanup */
+    if (th_model->jit_model)
+        delete th_model->jit_model;
+
     av_freep(&th_model);
     *model = NULL;
 }
@@ -318,6 +370,28 @@ err:
     }
 }
 
+static void th_worker_thread(THModel *th_model) {
+    while (true) {
+        THRequestItem *request = NULL;
+        {
+            std::unique_lock<std::mutex> lock(*th_model->mutex);
+            th_model->cond->wait(lock, [&]{
+                return th_model->worker_stop || ff_safe_queue_size(th_model->pending_queue) > 0;
+            });
+
+            if (th_model->worker_stop && ff_safe_queue_size(th_model->pending_queue) == 0)
+                break;
+
+            request = (THRequestItem *)ff_safe_queue_pop_front(th_model->pending_queue);
+        }
+
+        if (request) {
+            th_start_inference(request);
+            infer_completion_callback(request);
+        }
+    }
+}
+
 static int execute_model_th(THRequestItem *request, Queue *lltask_queue)
 {
     THModel *th_model = NULL;
@@ -344,14 +418,12 @@ static int execute_model_th(THRequestItem *request, Queue *lltask_queue)
         goto err;
     }
     if (task->async) {
-        avpriv_report_missing_feature(th_model->ctx, "LibTorch async");
-    } else {
-        ret = th_start_inference((void *)(request));
-        if (ret != 0) {
-            goto err;
+        std::lock_guard<std::mutex> lock(*th_model->mutex);
+        if (ff_safe_queue_push_back(th_model->pending_queue, request) < 0) {
+            return AVERROR(ENOMEM);
         }
-        infer_completion_callback(request);
-        return (task->inference_done == task->inference_todo) ? 0 : DNN_GENERIC_ERROR;
+        th_model->cond->notify_one();
+        return 0;
     }
 
 err:
@@ -483,6 +555,16 @@ static DNNModel *dnn_load_model_th(DnnContext *ctx, DNNFunctionType func_type, A
     if (!th_model->lltask_queue) {
         goto fail;
     }
+
+    th_model->pending_queue = ff_safe_queue_create();
+    if (!th_model->pending_queue) {
+        goto fail;
+    }
+
+    th_model->mutex = new std::mutex();
+    th_model->cond = new std::condition_variable();
+    th_model->worker_stop = false;
+    th_model->worker_thread = new std::thread(th_worker_thread, th_model);
 
     model->get_input = &get_input_th;
     model->get_output = &get_output_th;

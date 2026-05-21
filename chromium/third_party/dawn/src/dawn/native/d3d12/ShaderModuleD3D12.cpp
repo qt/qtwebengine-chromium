@@ -228,6 +228,15 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
             // the difference is the uniform buffer object binding
             // (arrayLengthFromUniform.ubo_binding and arrayOffsetFromUniform.ubo_binding).
             BindingNumber bindingNum = bindingAndRegisterOffset.binding;
+
+            // Skip bindings not present for the stage because GenerateBindingRemapping doesn't
+            // provide a remapping for them, which could lead to collisions between used mappings
+            // and unused mappings.
+            APIBindingIndex apiBindingIndex = bgl->GetAPIBindingIndex(bindingNum);
+            if (!(bgl->GetAPIBindingInfo(apiBindingIndex).visibility & StageBit(stage))) {
+                continue;
+            }
+
             uint32_t registerOffset = bindingAndRegisterOffset.registerOffset;
             tint::BindingPoint bindingPoint{static_cast<uint32_t>(group),
                                             static_cast<uint32_t>(bindingNum)};
@@ -245,6 +254,11 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
     req.hlsl.tintOptions.disable_robustness = !device->IsRobustnessEnabled();
     req.hlsl.tintOptions.disable_workgroup_init =
         device->IsToggleEnabled(Toggle::DisableWorkgroupInit);
+    req.hlsl.tintOptions.disable_polyfill_integer_div_mod =
+        device->IsToggleEnabled(Toggle::DisablePolyfillsOnIntegerDivisonAndModulo);
+    req.hlsl.tintOptions.disable_integer_range_analysis =
+        !device->IsToggleEnabled(Toggle::EnableIntegerRangeAnalysisInRobustness);
+
     req.hlsl.tintOptions.bindings = std::move(bindings);
     req.hlsl.tintOptions.ignored_by_robustness_transform = std::move(ignored_by_robustness);
 
@@ -285,25 +299,31 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
         req.hlsl.tintOptions.truncate_interstage_variables = true;
     }
 
-    req.hlsl.tintOptions.polyfill_reflect_vec2_f32 =
-        device->IsToggleEnabled(Toggle::D3D12PolyfillReflectVec2F32);
-    req.hlsl.tintOptions.polyfill_dot_4x8_packed =
-        device->IsToggleEnabled(Toggle::PolyFillPacked4x8DotProduct);
-    req.hlsl.tintOptions.disable_polyfill_integer_div_mod =
-        device->IsToggleEnabled(Toggle::DisablePolyfillsOnIntegerDivisonAndModulo);
-    req.hlsl.tintOptions.scalarize_max_min_clamp =
+    req.hlsl.tintOptions.workarounds.scalarize_max_min_clamp =
         device->IsToggleEnabled(Toggle::ScalarizeMaxMinClamp);
-    req.hlsl.tintOptions.polyfill_pack_unpack_4x8 =
-        device->IsToggleEnabled(Toggle::D3D12PolyFillPackUnpack4x8);
-    req.hlsl.tintOptions.polyfill_subgroup_broadcast_f16 =
+    req.hlsl.tintOptions.workarounds.polyfill_reflect_vec2_f32 =
+        device->IsToggleEnabled(Toggle::D3D12PolyfillReflectVec2F32);
+    req.hlsl.tintOptions.workarounds.polyfill_subgroup_broadcast_f16 =
         device->IsToggleEnabled(Toggle::EnableSubgroupsIntelGen9);
-    req.hlsl.tintOptions.enable_integer_range_analysis =
-        device->IsToggleEnabled(Toggle::EnableIntegerRangeAnalysisInRobustness);
+
+    req.hlsl.tintOptions.extensions.polyfill_dot_4x8_packed =
+        device->IsToggleEnabled(Toggle::PolyFillPacked4x8DotProduct);
+    req.hlsl.tintOptions.extensions.polyfill_pack_unpack_4x8 =
+        device->IsToggleEnabled(Toggle::D3D12PolyFillPackUnpack4x8);
 
     req.hlsl.limits = LimitsForCompilationRequest::Create(device->GetLimits().v1);
     req.hlsl.adapterSupportedLimits = UnsafeUnserializedValue(
         LimitsForCompilationRequest::Create(device->GetAdapter()->GetLimits().v1));
     req.hlsl.maxSubgroupSize = device->GetAdapter()->GetPhysicalDevice()->GetSubgroupMaxSize();
+
+    if (device->HasFeature(Feature::ChromiumExperimentalSubgroupSizeControl)) {
+        req.hlsl.minExplicitComputeSubgroupSize =
+            device->GetAdapter()->GetPhysicalDevice()->GetMinExplicitComputeSubgroupSize();
+        req.hlsl.maxExplicitComputeSubgroupSize =
+            device->GetAdapter()->GetPhysicalDevice()->GetMaxExplicitComputeSubgroupSize();
+        req.hlsl.maxComputeWorkgroupSubgroups =
+            device->GetAdapter()->GetPhysicalDevice()->GetMaxComputeWorkgroupSubgroups();
+    }
 
     CacheResult<d3d::CompiledShader> compiledShader;
     DAWN_TRY_LOAD_OR_RUN(compiledShader, device, std::move(req),

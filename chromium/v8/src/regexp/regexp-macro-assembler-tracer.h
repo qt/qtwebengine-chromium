@@ -5,6 +5,7 @@
 #ifndef V8_REGEXP_REGEXP_MACRO_ASSEMBLER_TRACER_H_
 #define V8_REGEXP_REGEXP_MACRO_ASSEMBLER_TRACER_H_
 
+#ifdef V8_ENABLE_REGEXP_DIAGNOSTICS
 #include "src/base/strings.h"
 #include "src/regexp/regexp-macro-assembler.h"
 
@@ -75,6 +76,10 @@ class RegExpMacroAssemblerTracer: public RegExpMacroAssembler {
                             unsigned mask1, unsigned chars2, unsigned mask2,
                             Label* on_match1, Label* on_match2,
                             Label* on_failure) override;
+  bool SkipUntilOneOfMasked3UseSimd(
+      const SkipUntilOneOfMasked3Args& args) override {
+    return assembler_->SkipUntilOneOfMasked3UseSimd(args);
+  }
   void SkipUntilOneOfMasked3(const SkipUntilOneOfMasked3Args& args) override;
   void CheckPosition(int cp_offset, Label* on_outside_input) override;
   void CheckSpecialClassRanges(StandardCharacterSet type,
@@ -121,5 +126,6 @@ class RegExpMacroAssemblerTracer: public RegExpMacroAssembler {
 
 }  // namespace internal
 }  // namespace v8
+#endif  // V8_ENABLE_REGEXP_DIAGNOSTICS
 
 #endif  // V8_REGEXP_REGEXP_MACRO_ASSEMBLER_TRACER_H_

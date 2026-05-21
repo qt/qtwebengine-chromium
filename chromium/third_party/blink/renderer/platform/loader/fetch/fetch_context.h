@@ -47,6 +47,7 @@
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/loader/fetch/fetch_initiator_info.h"
 #include "third_party/blink/renderer/platform/loader/fetch/fetch_parameters.h"
+#include "third_party/blink/renderer/platform/loader/fetch/guardrail_policy_asset_type.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_load_priority.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_request.h"
 #include "third_party/blink/renderer/platform/network/content_security_policy_parsers.h"
@@ -163,6 +164,13 @@ class PLATFORM_EXPORT FetchContext : public GarbageCollected<FetchContext> {
     return ResourceRequestBlockedReason::kOther;
   }
 
+  // Check for guardrails policy state and report large asset violation if
+  // necessary.
+  virtual void CheckGuardrailsPolicyForAssetSize(
+      GuardrailPolicyAssetType asset_type,
+      size_t bytes,
+      const KURL& url) {}
+
   // Check for policy on the resource and report if necessary, per the explainer
   // here: https://aka.ms/webembeddedperf
   virtual void CheckGuardrailsPolicyForRequest(
@@ -220,11 +228,14 @@ class PLATFORM_EXPORT FetchContext : public GarbageCollected<FetchContext> {
   // which case it checks the latter. If `out_rule` is non-null and the
   // SubresourceFilter identifies the current resource as an ad based on its
   // URL, then `out_rule` will be populated with the matching filterlist rule.
+  // `scan_stack_for_ads` should be true once per request, and should be called
+  // while the v8 stack that triggered this request is still available.
   virtual bool CalculateIfAdSubresource(
       const ResourceRequestHead& resource_request,
       base::optional_ref<const KURL> alias_url,
       ResourceType type,
       const FetchInitiatorInfo& initiator_info,
+      bool scan_stack_for_ads,
       subresource_filter::ScopedRule* out_rule) {
     return false;
   }

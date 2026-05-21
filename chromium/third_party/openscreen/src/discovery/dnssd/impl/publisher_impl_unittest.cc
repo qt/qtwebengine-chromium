@@ -23,8 +23,10 @@ using testing::StrictMock;
 
 class MockClient : public DnsSdPublisher::Client {
  public:
-  MOCK_METHOD2(OnEndpointClaimed,
-               void(const DnsSdInstance&, const DnsSdInstanceEndpoint&));
+  MOCK_METHOD(void,
+              OnEndpointClaimed,
+              (const DnsSdInstance&, const DnsSdInstanceEndpoint&),
+              (override));
 };
 
 class MockMdnsService : public MdnsService {
@@ -45,12 +47,16 @@ class MockMdnsService : public MdnsService {
 
   void ReinitializeQueries(const DomainName& name) override { FAIL(); }
 
-  MOCK_METHOD3(StartProbe,
-               Error(MdnsDomainConfirmedProvider*, DomainName, IPAddress));
-  MOCK_METHOD2(UpdateRegisteredRecord,
-               Error(const MdnsRecord&, const MdnsRecord&));
-  MOCK_METHOD1(RegisterRecord, Error(const MdnsRecord& record));
-  MOCK_METHOD1(UnregisterRecord, Error(const MdnsRecord& record));
+  MOCK_METHOD(Error,
+              StartProbe,
+              (MdnsDomainConfirmedProvider*, DomainName, IPAddress),
+              (override));
+  MOCK_METHOD(Error,
+              UpdateRegisteredRecord,
+              (const MdnsRecord&, const MdnsRecord&),
+              (override));
+  MOCK_METHOD(Error, RegisterRecord, (const MdnsRecord& record), (override));
+  MOCK_METHOD(Error, UnregisterRecord, (const MdnsRecord& record), (override));
 };
 
 class PublisherImplTest : public testing::Test {

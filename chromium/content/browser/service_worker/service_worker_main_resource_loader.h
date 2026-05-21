@@ -135,6 +135,14 @@ class CONTENT_EXPORT ServiceWorkerMainResourceLoader
       blink::mojom::ServiceWorkerFetchEventTimingPtr timing,
       scoped_refptr<ServiceWorkerVersion> version);
 
+  void DidDispatchFetchEventForSyntheticResponse(
+      blink::ServiceWorkerStatusCode status,
+      ServiceWorkerFetchDispatcher::FetchEventResult fetch_result,
+      blink::mojom::FetchAPIResponsePtr response,
+      blink::mojom::ServiceWorkerStreamHandlePtr body_as_stream,
+      blink::mojom::ServiceWorkerFetchEventTimingPtr timing,
+      scoped_refptr<ServiceWorkerVersion> version);
+
   void StartResponse(blink::mojom::FetchAPIResponsePtr response,
                      scoped_refptr<ServiceWorkerVersion> version,
                      blink::mojom::ServiceWorkerStreamHandlePtr body_as_stream);
@@ -240,7 +248,8 @@ class CONTENT_EXPORT ServiceWorkerMainResourceLoader
   // The caller should run the regular path instead.
   bool StartRaceNetworkRequest(
       scoped_refptr<ServiceWorkerContextWrapper> context_wrapper,
-      scoped_refptr<ServiceWorkerVersion> version);
+      scoped_refptr<ServiceWorkerVersion> version,
+      base::OnceCallback<void()> clone_completed_for_fetch_handler_callback);
 
   // If the feature is enabled, invoke the preload network request.
   // See this doc for the high-level code flow in

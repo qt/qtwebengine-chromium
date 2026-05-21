@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "partition_alloc/partition_dcheck_helper.h"
 
 #include <cstdint>
@@ -57,7 +52,7 @@ void DCheckRootLockIsAcquired(PartitionRoot* root) {
 
 bool DeducedRootIsValid(const SlotSpanMetadata* slot_span) {
   PartitionRoot* root = PartitionRoot::FromSlotSpanMetadata(slot_span);
-  return root->inverted_self == ~reinterpret_cast<uintptr_t>(root);
+  return root->inverted_self_ == ~reinterpret_cast<uintptr_t>(root);
 }
 
 }  // namespace partition_alloc::internal

@@ -112,13 +112,19 @@ StyledText SemHelper::Describe(const sem::Expression* expr) const {
             text << "builtin function " << style::Function(fn->Value());
         },
         [&](const sem::BuiltinEnumExpression<core::Access>* access) {
-            text << "access " << style::Enum(access->Value());
+            text << "access enumerant " << style::Enum(access->Value());
         },
         [&](const sem::BuiltinEnumExpression<core::AddressSpace>* addr) {
             text << "address space " << style::Enum(addr->Value());
         },
         [&](const sem::BuiltinEnumExpression<core::TexelFormat>* fmt) {
             text << "texel format " << style::Enum(fmt->Value());
+        },
+        [&](const sem::BuiltinEnumExpression<core::TextureFilterable>* filterable) {
+            text << "texture filterable " << style::Enum(filterable->Value());
+        },
+        [&](const sem::BuiltinEnumExpression<core::SamplerFiltering>* filtering) {
+            text << "sampler filtering " << style::Enum(filtering->Value());
         },
         [&](const UnresolvedIdentifier* ui) {
             auto name = ui->Identifier()->identifier->symbol.NameView();

@@ -6,6 +6,7 @@
 
 #include "base/feature_list.h"
 #include "base/files/file_path.h"
+#include "base/strings/strcat.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/values.h"
 #include "components/prefs/scoped_user_pref_update.h"
@@ -32,9 +33,9 @@ class GoogleGroupsManagerTest : public ::testing::Test {
   ~GoogleGroupsManagerTest() override = default;
 
   void SetSourcePref(std::vector<std::string> groups) {
-    base::Value::List pref_groups_list;
+    base::ListValue pref_groups_list;
     for (const std::string& group : groups) {
-      base::Value::Dict group_dict;
+      base::DictValue group_dict;
       group_dict.Set(variations::kDogfoodGroupsSyncPrefGaiaIdKey, group);
       pref_groups_list.Append(std::move(group_dict));
     }
@@ -48,8 +49,8 @@ class GoogleGroupsManagerTest : public ::testing::Test {
   }
 
   void SetTargetPref(std::vector<std::string> groups) {
-    base::Value::Dict groups_dict;
-    base::Value::List pref_groups_list;
+    base::DictValue groups_dict;
+    base::ListValue pref_groups_list;
     for (const std::string& group : groups) {
       pref_groups_list.Append(group);
     }
@@ -72,12 +73,12 @@ class GoogleGroupsManagerTest : public ::testing::Test {
   }
 
   void CheckTargetPref(std::vector<std::string> expected_groups) {
-    base::Value::List expected_list;
+    base::ListValue expected_list;
     for (const std::string& group : expected_groups) {
       expected_list.Append(group);
     }
 
-    const base::Value::List* actual_list =
+    const base::ListValue* actual_list =
         target_prefs_.GetDict(variations::prefs::kVariationsGoogleGroups)
             .FindList(key_);
 

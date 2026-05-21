@@ -111,87 +111,83 @@ bool CPDF_SampledFunc::v_Init(const CPDF_Object* pObj, VisitedSet* pVisited) {
 bool CPDF_SampledFunc::v_Call(pdfium::span<const float> inputs,
                               pdfium::span<float> results) const {
   int pos = 0;
-  absl::InlinedVector<float, 16, FxAllocAllocator<float>> encoded_input_buf(
+  absl::InlinedVector<float, 16, FxAllocAllocator<float>> encoded_input(
       inputs_);
-  absl::InlinedVector<uint32_t, 32, FxAllocAllocator<uint32_t>> int_buf(
-      inputs_ * 2);
-  UNSAFE_TODO({
-    float* encoded_input = encoded_input_buf.data();
-    uint32_t* index = int_buf.data();
-    uint32_t* blocksize = index + inputs_;
-    for (uint32_t i = 0; i < inputs_; i++) {
-      if (i == 0) {
-        blocksize[i] = 1;
-      } else {
-        blocksize[i] = blocksize[i - 1] * encode_info_[i - 1].sizes;
-      }
-      encoded_input[i] =
-          Interpolate(inputs[i], domains_[i * 2], domains_[i * 2 + 1],
-                      encode_info_[i].encode_min, encode_info_[i].encode_max);
-      index[i] = std::clamp(static_cast<uint32_t>(encoded_input[i]), 0U,
-                            encode_info_[i].sizes - 1);
-      pos += index[i] * blocksize[i];
+  absl::InlinedVector<uint32_t, 16, FxAllocAllocator<uint32_t>> index(inputs_);
+  absl::InlinedVector<uint32_t, 16, FxAllocAllocator<uint32_t>> blocksize(
+      inputs_);
+  for (uint32_t i = 0; i < inputs_; i++) {
+    if (i == 0) {
+      blocksize[i] = 1;
+    } else {
+      blocksize[i] = blocksize[i - 1] * encode_info_[i - 1].sizes;
     }
-    FX_SAFE_INT32 bits_to_output = outputs_;
-    bits_to_output *= bits_per_sample_;
-    if (!bits_to_output.IsValid()) {
+    encoded_input[i] =
+        Interpolate(inputs[i], domains_[i * 2], domains_[i * 2 + 1],
+                    encode_info_[i].encode_min, encode_info_[i].encode_max);
+    index[i] = std::clamp(static_cast<uint32_t>(encoded_input[i]), 0U,
+                          encode_info_[i].sizes - 1);
+    pos += index[i] * blocksize[i];
+  }
+  FX_SAFE_INT32 bits_to_output = outputs_;
+  bits_to_output *= bits_per_sample_;
+  if (!bits_to_output.IsValid()) {
+    return false;
+  }
+
+  int bits_to_skip;
+  {
+    FX_SAFE_INT32 bitpos = pos;
+    bitpos *= bits_to_output.ValueOrDie();
+    bits_to_skip = bitpos.ValueOrDefault(-1);
+    if (bits_to_skip < 0) {
       return false;
     }
 
-    int bits_to_skip;
-    {
-      FX_SAFE_INT32 bitpos = pos;
-      bitpos *= bits_to_output.ValueOrDie();
-      bits_to_skip = bitpos.ValueOrDefault(-1);
-      if (bits_to_skip < 0) {
-        return false;
-      }
-
-      FX_SAFE_INT32 range_check = bitpos;
-      range_check += bits_to_output.ValueOrDie();
-      if (!range_check.IsValid()) {
-        return false;
-      }
-    }
-
-    pdfium::span<const uint8_t> pSampleData = sample_stream_->GetSpan();
-    if (pSampleData.empty()) {
+    FX_SAFE_INT32 range_check = bitpos;
+    range_check += bits_to_output.ValueOrDie();
+    if (!range_check.IsValid()) {
       return false;
     }
+  }
 
-    CFX_BitStream bitstream(pSampleData);
-    bitstream.SkipBits(bits_to_skip);
-    for (uint32_t i = 0; i < outputs_; ++i) {
-      uint32_t sample = bitstream.GetBits(bits_per_sample_);
-      float encoded = sample;
-      for (uint32_t j = 0; j < inputs_; ++j) {
-        if (index[j] == encode_info_[j].sizes - 1) {
-          if (index[j] == 0) {
-            encoded = encoded_input[j] * sample;
-          }
-        } else {
-          FX_SAFE_INT32 bitpos2 = blocksize[j];
-          bitpos2 += pos;
-          bitpos2 *= outputs_;
-          bitpos2 += i;
-          bitpos2 *= bits_per_sample_;
-          int bits_to_skip2 = bitpos2.ValueOrDefault(-1);
-          if (bits_to_skip2 < 0) {
-            return false;
-          }
+  pdfium::span<const uint8_t> pSampleData = sample_stream_->GetSpan();
+  if (pSampleData.empty()) {
+    return false;
+  }
 
-          CFX_BitStream bitstream2(pSampleData);
-          bitstream2.SkipBits(bits_to_skip2);
-          float sample2 =
-              static_cast<float>(bitstream2.GetBits(bits_per_sample_));
-          encoded += (encoded_input[j] - index[j]) * (sample2 - sample);
+  CFX_BitStream bitstream(pSampleData);
+  bitstream.SkipBits(bits_to_skip);
+  for (uint32_t i = 0; i < outputs_; ++i) {
+    uint32_t sample = bitstream.GetBits(bits_per_sample_);
+    float encoded = sample;
+    for (uint32_t j = 0; j < inputs_; ++j) {
+      if (index[j] == encode_info_[j].sizes - 1) {
+        if (index[j] == 0) {
+          encoded = encoded_input[j] * sample;
         }
+      } else {
+        FX_SAFE_INT32 bitpos2 = blocksize[j];
+        bitpos2 += pos;
+        bitpos2 *= outputs_;
+        bitpos2 += i;
+        bitpos2 *= bits_per_sample_;
+        int bits_to_skip2 = bitpos2.ValueOrDefault(-1);
+        if (bits_to_skip2 < 0) {
+          return false;
+        }
+
+        CFX_BitStream bitstream2(pSampleData);
+        bitstream2.SkipBits(bits_to_skip2);
+        float sample2 =
+            static_cast<float>(bitstream2.GetBits(bits_per_sample_));
+        encoded += (encoded_input[j] - index[j]) * (sample2 - sample);
       }
-      results[i] =
-          Interpolate(encoded, 0, sample_max_, decode_info_[i].decode_min,
-                      decode_info_[i].decode_max);
     }
-  });
+    results[i] =
+        Interpolate(encoded, 0, sample_max_, decode_info_[i].decode_min,
+                    decode_info_[i].decode_max);
+  }
   return true;
 }
 

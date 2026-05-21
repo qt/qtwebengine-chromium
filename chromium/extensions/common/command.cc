@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "base/check.h"
+#include "base/functional/callback.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
@@ -146,7 +147,7 @@ bool Command::IsActionRelatedCommand(std::string_view command_name) {
          command_name == values::kPageActionCommandEvent;
 }
 
-bool Command::Parse(const base::Value::Dict& command,
+bool Command::Parse(const base::DictValue& command,
                     std::string_view command_name,
                     int index,
                     std::u16string* error) {
@@ -169,7 +170,7 @@ bool Command::Parse(const base::Value::Dict& command,
 
   // First try to parse the |suggested_key| as a dictionary.
 
-  if (const base::Value::Dict* suggested_key_dict =
+  if (const base::DictValue* suggested_key_dict =
           command.FindDict(keys::kSuggestedKey)) {
     for (const auto item : *suggested_key_dict) {
       // For each item in the dictionary, extract the platforms specified.

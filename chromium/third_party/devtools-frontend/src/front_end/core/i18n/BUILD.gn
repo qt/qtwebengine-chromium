@@ -49,13 +49,16 @@ devtools_entrypoint("bundle") {
     "../../core/sdk/*",
     "../../models/ai_assistance/*",
     "../../models/bindings/*",
+    "../../models/crux-manager/*",
     "../../models/emulation/*",
     "../../models/extensions/*",
     "../../models/har/*",
     "../../models/issues_manager/*",
+    "../../models/live-metrics/*",
     "../../models/logs/*",
     "../../models/network_time_calculator/*",
     "../../models/persistence/*",
+    "../../models/trace/*",
     "../../models/workspace/*",
 
     # TODO(crbug/452597733): testing should be split up for UI/non-UI testing utilities.

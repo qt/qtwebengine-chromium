@@ -33,7 +33,7 @@ libdrm_radeon = library(
   include_directories : [inc_root, inc_drm],
   link_with : libdrm,
   dependencies : [dep_threads, dep_atomic_ops],
-  version : '1.0.1',
+  version : '1.@0@.0'.format(patch_ver),
   install : true,
 )
 
@@ -42,9 +42,7 @@ ext_libdrm_radeon = declare_dependency(
   include_directories : [inc_drm, include_directories('.')],
 )
 
-if meson.version().version_compare('>= 0.54.0')
-  meson.override_dependency('libdrm_radeon', ext_libdrm_radeon)
-endif
+meson.override_dependency('libdrm_radeon', ext_libdrm_radeon)
 
 install_headers(
 	'radeon_bo.h', 'radeon_cs.h', 'radeon_surface.h', 'radeon_bo_gem.h',

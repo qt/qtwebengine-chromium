@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -72,6 +73,18 @@ MediaCapability ToCapability(VideoCodec codec) {
     default:
       OSP_DLOG_FATAL << "Invalid video codec: " << static_cast<int>(codec);
       OSP_NOTREACHED();
+  }
+}
+
+void MaybeSetDscp(AudioStream* audio, VideoStream* video, Environment& env) {
+  std::optional<int> dscp_value;
+  if (audio) {
+    dscp_value = audio->stream.receiver_rtcp_dscp;
+  } else if (video) {
+    dscp_value = video->stream.receiver_rtcp_dscp;
+  }
+  if (dscp_value) {
+    env.SetDscp(static_cast<UdpSocket::DscpMode>(dscp_value.value()));
   }
 }
 
@@ -309,7 +322,6 @@ void ReceiverSession::SelectStreams(const Offer& offer,
     }
   } else {
     OSP_CHECK(offer.cast_mode == CastMode::kRemoting);
-
     if (offer.audio_streams.size() == 1) {
       properties->selected_audio =
           std::make_unique<AudioStream>(offer.audio_streams[0]);
@@ -334,6 +346,13 @@ void ReceiverSession::InitializeSession(const PendingOffer& properties) {
 
   // Only spawn receivers if we know we have a valid answer message.
   ConfiguredReceivers receivers = SpawnReceivers(properties);
+
+  // Enable DSCP on the UDP socket, if enabled and offered by the sender.
+  if (constraints_.enable_dscp) {
+    MaybeSetDscp(properties.selected_audio.get(),
+                 properties.selected_video.get(), environment_);
+  }
+
   negotiated_sender_id_ = properties.sender_id;
   if (properties.mode == CastMode::kMirroring) {
     client_.OnNegotiated(this, std::move(receivers));
@@ -445,9 +464,6 @@ Answer ReceiverSession::ConstructAnswer(const PendingOffer& properties) {
   }
 
   if (properties.selected_video) {
-    stream_indexes.push_back(properties.selected_video->stream.index);
-    stream_ssrcs.push_back(properties.selected_video->stream.ssrc + 1);
-
     for (const auto& limit : constraints_.video_limits) {
       if (limit.codec == properties.selected_video->codec ||
           limit.applies_to_all_codecs) {
@@ -476,6 +492,24 @@ Answer ReceiverSession::ConstructAnswer(const PendingOffer& properties) {
   if (constraints.IsValid()) {
     answer_constraints = std::move(constraints);
   }
+
+  std::vector<int> receiver_rtcp_dscp;
+  if (constraints_.enable_dscp) {
+    if (properties.selected_audio &&
+        properties.selected_audio->stream.receiver_rtcp_dscp) {
+      receiver_rtcp_dscp.push_back(properties.selected_audio->stream.index);
+    }
+    if (properties.selected_video &&
+        properties.selected_video->stream.receiver_rtcp_dscp) {
+      receiver_rtcp_dscp.push_back(properties.selected_video->stream.index);
+    }
+  }
+
+  if (properties.selected_video) {
+    stream_indexes.push_back(properties.selected_video->stream.index);
+    stream_ssrcs.push_back(properties.selected_video->stream.ssrc + 1);
+  }
+
   return Answer{
       .udp_port = environment_.GetBoundLocalEndpoint().port,
       .send_indexes = std::move(stream_indexes),
@@ -483,11 +517,9 @@ Answer ReceiverSession::ConstructAnswer(const PendingOffer& properties) {
       .constraints = answer_constraints,
       .display = std::move(display),
       .receiver_rtcp_event_log = std::move(stream_indexes_with_events),
+      .receiver_rtcp_dscp = receiver_rtcp_dscp,
 
-      // TODO(jophba): add support for DSCP??
-      .receiver_rtcp_dscp = {},
-
-      // TODO(jophba): add support for adaptive playout delay??
+      // TODO(crbug.com/40238532): re-add support for adaptive playout delay??
       .rtp_extensions = {}};
 }
 

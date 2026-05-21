@@ -111,6 +111,23 @@ class CdpBrowserContext extends BrowserContext_js_1.BrowserContext {
             permissions: protocolPermissions,
         });
     }
+    async setPermission(origin, ...permissions) {
+        await Promise.all(permissions.map(async (permission) => {
+            const protocolPermission = {
+                name: permission.permission.name,
+                userVisibleOnly: permission.permission.userVisibleOnly,
+                sysex: permission.permission.sysex,
+                allowWithoutSanitization: permission.permission.allowWithoutSanitization,
+                panTiltZoom: permission.permission.panTiltZoom,
+            };
+            await this.#connection.send('Browser.setPermission', {
+                origin: origin === '*' ? undefined : origin,
+                browserContextId: this.#id || undefined,
+                permission: protocolPermission,
+                setting: permission.state,
+            });
+        }));
+    }
     async clearPermissionOverrides() {
         await this.#connection.send('Browser.resetPermissions', {
             browserContextId: this.#id || undefined,
@@ -150,6 +167,8 @@ class CdpBrowserContext extends BrowserContext_js_1.BrowserContext {
                         hasCrossSiteAncestor: cookie.partitionKey.hasCrossSiteAncestor,
                     }
                     : undefined,
+                // TODO: remove sameParty as it is removed from Chrome.
+                sameParty: cookie.sameParty ?? false,
             };
         });
     }
@@ -160,6 +179,7 @@ class CdpBrowserContext extends BrowserContext_js_1.BrowserContext {
                 return {
                     ...cookie,
                     partitionKey: (0, Page_js_1.convertCookiesPartitionKeyFromPuppeteerToCdp)(cookie.partitionKey),
+                    sameSite: (0, Page_js_1.convertSameSiteFromPuppeteerToCdp)(cookie.sameSite),
                 };
             }),
         });

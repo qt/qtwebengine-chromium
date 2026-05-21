@@ -7,6 +7,8 @@
 #ifndef FXBARCODE_QRCODE_BC_QRCODER_H_
 #define FXBARCODE_QRCODE_BC_QRCODER_H_
 
+#include <stdint.h>
+
 #include <memory>
 
 #include "core/fxcrt/unowned_ptr.h"

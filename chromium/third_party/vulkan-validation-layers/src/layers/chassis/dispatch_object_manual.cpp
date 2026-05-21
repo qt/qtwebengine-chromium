@@ -1,8 +1,9 @@
 /***************************************************************************
  *
- * Copyright (c) 2015-2025 The Khronos Group Inc.
- * Copyright (c) 2015-2025 Valve Corporation
- * Copyright (c) 2015-2025 LunarG, Inc.
+ * Copyright (c) 2015-2026 The Khronos Group Inc.
+ * Copyright (c) 2015-2026 Valve Corporation
+ * Copyright (c) 2015-2026 LunarG, Inc.
+ * Copyright (C) 2025-2026 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +20,7 @@
 
 #include "chassis/dispatch_object.h"
 #include <vulkan/utility/vk_safe_struct.hpp>
+#include "generated/vk_extension_helper.h"
 #include "state_tracker/pipeline_state.h"
 #include "containers/small_vector.h"
 #include "generated/dispatch_functions.h"
@@ -396,6 +398,8 @@ StatelessDeviceData::StatelessDeviceData(vvl::dispatch::Instance *instance, VkPh
                                              &phys_dev_ext_props.ray_tracing_props_nv);
     instance->GetPhysicalDeviceExtProperties(physical_device, extensions.vk_khr_ray_tracing_pipeline,
                                              &phys_dev_ext_props.ray_tracing_props_khr);
+    instance->GetPhysicalDeviceExtProperties(physical_device, extensions.vk_ext_ray_tracing_invocation_reorder,
+                                             &phys_dev_ext_props.ray_tracing_invocation_reorder_props);
     instance->GetPhysicalDeviceExtProperties(physical_device, extensions.vk_khr_acceleration_structure,
                                              &phys_dev_ext_props.acc_structure_props);
     instance->GetPhysicalDeviceExtProperties(physical_device, extensions.vk_ext_fragment_density_map,
@@ -404,6 +408,12 @@ StatelessDeviceData::StatelessDeviceData(vvl::dispatch::Instance *instance, VkPh
                                              &phys_dev_ext_props.fragment_density_map2_props);
     instance->GetPhysicalDeviceExtProperties(physical_device, extensions.vk_ext_fragment_density_map_offset,
                                              &phys_dev_ext_props.fragment_density_map_offset_props);
+    // TODO - mgiht be more cases like this where the properties are aliased, should have a more unified way to handle these
+    if (IsExtEnabled(extensions.vk_qcom_fragment_density_map_offset) &&
+        !IsExtEnabled(extensions.vk_ext_fragment_density_map_offset)) {
+        instance->GetPhysicalDeviceExtProperties(physical_device, extensions.vk_qcom_fragment_density_map_offset,
+                                                 &phys_dev_ext_props.fragment_density_map_offset_props);
+    }
     instance->GetPhysicalDeviceExtProperties(physical_device, extensions.vk_valve_fragment_density_map_layered,
                                              &phys_dev_ext_props.fragment_density_map_layered_props);
     instance->GetPhysicalDeviceExtProperties(physical_device, extensions.vk_khr_performance_query,
@@ -465,14 +475,24 @@ StatelessDeviceData::StatelessDeviceData(vvl::dispatch::Instance *instance, VkPh
     instance->GetPhysicalDeviceExtProperties(physical_device, extensions.vk_khr_maintenance10,
                                              &phys_dev_ext_props.maintenance10_props);
     instance->GetPhysicalDeviceExtProperties(physical_device, extensions.vk_arm_tensors, &phys_dev_ext_props.tensor_properties);
+    instance->GetPhysicalDeviceExtProperties(physical_device, extensions.vk_ext_descriptor_heap,
+                                             &phys_dev_ext_props.descriptor_heap_props);
+    if (IsExtEnabled(extensions.vk_arm_tensors)) {
+        instance->GetPhysicalDeviceExtProperties(physical_device, extensions.vk_ext_descriptor_heap,
+                                                 &phys_dev_ext_props.descriptor_heap_tensor_props);
+    }
 #if defined(VK_USE_PLATFORM_ANDROID_KHR)
     instance->GetPhysicalDeviceExtProperties(physical_device, extensions.vk_android_external_format_resolve,
                                              &phys_dev_ext_props.android_format_resolve_props);
 #endif
+    instance->GetPhysicalDeviceExtProperties(physical_device, extensions.vk_qcom_tile_memory_heap,
+                                             &phys_dev_ext_props.tile_memory_heap_props);
     instance->GetPhysicalDeviceExtProperties(physical_device, extensions.vk_ext_memory_decompression,
                                              &phys_dev_ext_props.memory_decompression_props);
     instance->GetPhysicalDeviceExtProperties(physical_device, extensions.vk_arm_performance_counters_by_region,
                                              &phys_dev_ext_props.renderpass_counter_by_region_props);
+    instance->GetPhysicalDeviceExtProperties(physical_device, extensions.vk_ext_shader_long_vector,
+                                             &phys_dev_ext_props.shader_long_vector_props);
 
     // None of these "check if supported" features are possible without first having gpdp2 first
     if (IsExtEnabled(extensions.vk_khr_get_physical_device_properties2)) {
@@ -1589,6 +1609,12 @@ void *BuildUnwrappedUpdateTemplateBuffer(Device *layer_data, uint64_t descriptor
                     template_entries.emplace_back(offset, kVulkanObjectTypeAccelerationStructureKHR, CastToUint64(wrapped_entry),
                                                   0);
                 } break;
+                case VK_DESCRIPTOR_TYPE_PARTITIONED_ACCELERATION_STRUCTURE_NV: {
+                    // PTLAS uses VkDeviceAddress directly, not an opaque handle - no unwrapping needed
+                    allocation_size = std::max(allocation_size, offset + sizeof(VkDeviceAddress));
+                    template_entries.emplace_back(offset, kVulkanObjectTypeUnknown, CastToUint64(update_entry),
+                                                  sizeof(VkDeviceAddress));
+                } break;
                 default:
                     assert(false);
                     break;
@@ -1913,35 +1939,11 @@ VkResult Device::CreateRayTracingPipelinesKHR(VkDevice device, VkDeferredOperati
         }
     }
 
-    // For deferred pipeline creation, if handle wrapping is ON:
-    // VVL will return wrapped handles when vkCreateRayTracingPipelinesKHR returns.
-    // Even though the pipelines are not yet created, this is our only chance to return wrapped handles to the user
-    // But when performing the deferred operation, if we do nothing the driver will read the pPipelines paramater,
-    // thus will read wrapped handles
-    // => we need to give the driver the list of unwrapped handles,
-    // AND make sure this list has not been freed/reallocated before the driver is done.
-    // Done with this shared unwrapped_pipelines pointer
-    VkPipeline *returned_pipelines = pPipelines;
-    std::shared_ptr<std::vector<VkPipeline>> unwrapped_pipelines;
-    // Operation may be deferred, will know when looking at dispatch VkResult,
-    // still we need to prepare
-    if (deferredOperation != VK_NULL_HANDLE) {
-        unwrapped_pipelines = std::make_shared<std::vector<VkPipeline>>(createInfoCount);
-        returned_pipelines = unwrapped_pipelines->data();
-    }
-
     VkResult result = device_dispatch_table.CreateRayTracingPipelinesKHR(
         device, deferredOperation, pipelineCache, createInfoCount, (const VkRayTracingPipelineCreateInfoKHR *)local_pCreateInfos,
-        pAllocator, returned_pipelines);
+        pAllocator, pPipelines);
 
-    for (uint32_t i = 0; i < createInfoCount; ++i) {
-        if (deferredOperation != VK_NULL_HANDLE) {
-            // Need to copy back returned pipeline handles in app provided array
-            pPipelines[i] = unwrapped_pipelines->at(i);
-        }
-    }
-
-    if (wrap_handles) {
+    if (wrap_handles && deferredOperation == VK_NULL_HANDLE) {
         for (uint32_t i = 0; i < createInfoCount; i++) {
             if (pPipelines[i] != VK_NULL_HANDLE) {
                 pPipelines[i] = WrapNew(pPipelines[i]);
@@ -1970,18 +1972,23 @@ VkResult Device::CreateRayTracingPipelinesKHR(VkDevice device, VkDeferredOperati
             for (uint32_t i = 0; i < createInfoCount; ++i) {
                 copied_wrapped_pipelines[i] = pPipelines[i];
             }
-            auto cleanup_fn = [local_pCreateInfos, captured_copied_wrapped_pipelines = std::move(copied_wrapped_pipelines),
-                               deferredOperation, this, unwrapped_pipelines]() {
-                (void)unwrapped_pipelines;
+            auto cleanup_fn = [local_pCreateInfos, deferredOperation, this, createInfoCount, pPipelines]() {
+                for (uint32_t i = 0; i < createInfoCount; i++) {
+                    if (pPipelines[i] != VK_NULL_HANDLE) {
+                        pPipelines[i] = WrapNew(pPipelines[i]);
+                    }
+                }
                 if (local_pCreateInfos) {
                     delete[] local_pCreateInfos;
                 }
-                deferred_operation_pipelines.insert(deferredOperation, std::move(captured_copied_wrapped_pipelines));
+                deferred_operation_pipelines.insert(deferredOperation,
+                                                    std::pair<uint32_t, VkPipeline *>(createInfoCount, pPipelines));
             };
             post_completion_fns.emplace_back(cleanup_fn);
         } else {
-            auto cleanup_fn = [deferredOperation, this, unwrapped_pipelines]() {
-                deferred_operation_pipelines.insert(deferredOperation, std::move(*unwrapped_pipelines));
+            auto cleanup_fn = [deferredOperation, this, createInfoCount, pPipelines]() {
+                deferred_operation_pipelines.insert(deferredOperation,
+                                                    std::pair<uint32_t, VkPipeline *>(createInfoCount, pPipelines));
             };
             post_completion_fns.emplace_back(cleanup_fn);
         }
@@ -2286,6 +2293,7 @@ void Device::GetDescriptorEXT(VkDevice device, const VkDescriptorGetInfoEXT *pDe
             break;
         case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR:
         case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV:
+        case VK_DESCRIPTOR_TYPE_PARTITIONED_ACCELERATION_STRUCTURE_NV:
             local_pDescriptorInfo.data.accelerationStructure = pDescriptorInfo->data.accelerationStructure;
             break;
         default:
@@ -2293,6 +2301,55 @@ void Device::GetDescriptorEXT(VkDevice device, const VkDescriptorGetInfoEXT *pDe
     }
 
     device_dispatch_table.GetDescriptorEXT(device, (const VkDescriptorGetInfoEXT *)&local_pDescriptorInfo, dataSize, pDescriptor);
+}
+
+VkResult Device::WriteResourceDescriptorsEXT(VkDevice device, uint32_t resourceCount, const VkResourceDescriptorInfoEXT* pResources,
+                                             const VkHostAddressRangeEXT* pDescriptors) {
+    if (!wrap_handles || resourceCount == 0)
+        return device_dispatch_table.WriteResourceDescriptorsEXT(device, resourceCount, pResources, pDescriptors);
+    // When using a union of pointer we still need to unwrap the handles, but since it is a pointer, we can just use the pointer
+    // from the incoming parameter instead of using safe structs as it is less complex doing it here
+    std::vector<vku::safe_VkResourceDescriptorInfoEXT> local_pResources(resourceCount);
+    std::vector<vku::safe_VkImageDescriptorInfoEXT> local_image;
+    local_image.reserve(resourceCount);
+    std::vector<vku::safe_VkTensorViewCreateInfoARM> local_tensor;
+    local_tensor.reserve(resourceCount);
+
+    for (uint32_t i = 0; i < resourceCount; i++) {
+        auto& local_pResource = local_pResources[i];
+        local_pResource.initialize(&pResources[i]);
+        if (IsDescriptorHeapImage(local_pResource.type)) {
+            if (local_pResource.data.pImage) {
+                local_image.emplace_back(pResources[i].data.pImage);
+                local_image.back().initialize(pResources[i].data.pImage);
+                local_pResource.data.pImage = local_image.back().ptr();
+                if (local_pResource.data.pImage->pView) {
+                    if (pResources[i].data.pImage->pView->image) {
+                        local_image.back().pView->image = Unwrap(pResources[i].data.pImage->pView->image);
+                    }
+                    if (pResources[i].data.pImage->pView->pNext) {
+                        UnwrapPnextChainHandles(local_pResources[i].data.pImage->pView->pNext);
+                    }
+                }
+            }
+        }
+
+        if (IsDescriptorHeapTensor(local_pResource.type)) {
+            if (local_pResource.data.pTensorARM) {
+                local_tensor.emplace_back(pResources[i].data.pTensorARM);
+                local_tensor.back().initialize(pResources[i].data.pTensorARM);
+                local_pResource.data.pTensorARM = local_tensor.back().ptr();
+                if (local_pResource.data.pTensorARM) {
+                    local_tensor.back().tensor = Unwrap(pResources[i].data.pTensorARM->tensor);
+                    if (pResources[i].data.pTensorARM->pNext) {
+                        UnwrapPnextChainHandles(local_pResources[i].data.pTensorARM->pNext);
+                    }
+                }
+            }
+        }
+    }
+
+    return device_dispatch_table.WriteResourceDescriptorsEXT(device, resourceCount, local_pResources[0].ptr(), pDescriptors);
 }
 
 VkResult Device::CreateComputePipelines(VkDevice device, VkPipelineCache pipelineCache, uint32_t createInfoCount,

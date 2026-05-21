@@ -1,7 +1,7 @@
-/* Copyright (c) 2015-2025 The Khronos Group Inc.
- * Copyright (c) 2015-2025 Valve Corporation
- * Copyright (c) 2015-2025 LunarG, Inc.
- * Copyright (C) 2015-2025 Google Inc.
+/* Copyright (c) 2015-2026 The Khronos Group Inc.
+ * Copyright (c) 2015-2026 Valve Corporation
+ * Copyright (c) 2015-2026 LunarG, Inc.
+ * Copyright (C) 2015-2026 Google Inc.
  * Copyright (c) 2025 Arm Limited.
  * Modifications Copyright (C) 2020-2024 Advanced Micro Devices, Inc. All rights reserved.
  *
@@ -221,7 +221,7 @@ bool SemaphoreSubmitState::ValidateWaitSemaphore(const Location &wait_semaphore_
 static std::string GetSemaphoreInUseBySwapchainMessage(const vvl::Semaphore::SwapchainWaitInfo &swapchain_info,
                                                        const vvl::Semaphore &semaphore_state, VkQueue queue,
                                                        bool swapchain_fence_supported, const Logger &logger) {
-    std::stringstream ss;
+    std::ostringstream ss;
 
     const std::string semaphore_str = logger.FormatHandle(semaphore_state.Handle());
     const std::string queue_str = logger.FormatHandle(queue);
@@ -239,10 +239,12 @@ static std::string GetSemaphoreInUseBySwapchainMessage(const vvl::Semaphore::Swa
             const uint32_t first_history_index = history_length - print_count;
 
             // If the last semaphore usage is within the history then print corresponding image index in brackets
-            const bool show_last_semaphore_usage = (swapchain.acquire_count - swapchain_info.acquire_counter_value) < print_count;
+            const bool show_last_semaphore_usage =
+                (swapchain.acquire_request_count - swapchain_info.acquire_counter_value) < print_count;
             uint32_t marked_history_index = vvl::kNoIndex32;
             if (show_last_semaphore_usage) {
-                marked_history_index = (history_length - 1) - (swapchain.acquire_count - swapchain_info.acquire_counter_value);
+                marked_history_index =
+                    (history_length - 1) - (swapchain.acquire_request_count - swapchain_info.acquire_counter_value);
             }
             // Print acquire history
             ss << "Most recently acquired image indices: ";
@@ -326,7 +328,7 @@ bool SemaphoreSubmitState::ValidateBinarySignal(const Location &semaphore_loc, c
     VkQueue other_queue = VK_NULL_HANDLE;
     vvl::Func other_command = vvl::Func::Empty;
     if (!CanSignalBinary(semaphore_state, other_queue, other_command)) {
-        std::stringstream initiator;
+        std::ostringstream initiator;
         if (other_command != vvl::Func::Empty) {
             initiator << String(other_command);
         }
@@ -1245,14 +1247,14 @@ bool CoreChecks::ValidatePipelineStage(const LogObjectList &objlist, const Locat
 }
 
 bool CoreChecks::ValidateAccessMask(const LogObjectList &objlist, const Location &access_mask_loc, const Location &stage_mask_loc,
-                                    VkQueueFlags queue_flags, VkAccessFlags2KHR access_mask,
-                                    VkPipelineStageFlags2KHR stage_mask) const {
+                                    VkQueueFlags queue_flags, VkAccessFlags2 access_mask, VkPipelineStageFlags2 stage_mask) const {
     bool skip = false;
 
-    const auto expanded_pipeline_stages = sync_utils::ExpandPipelineStages(stage_mask, queue_flags);
+    const VkPipelineStageFlags2 expanded_pipeline_stages = sync_utils::ExpandPipelineStages(stage_mask, queue_flags);
 
     if (!enabled_features.rayQuery && (access_mask & VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR)) {
-        const auto illegal_pipeline_stages = AllVkPipelineShaderStageBits2 & ~VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR;
+        const VkPipelineStageFlags2 illegal_pipeline_stages =
+            AllVkPipelineShaderStageBits2 & ~VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR;
         if (stage_mask & illegal_pipeline_stages) {
             // Select right vuid based on enabled extensions
             const auto &vuid = vvl::GetAccessMaskRayQueryVUIDSelector(access_mask_loc, extensions);
@@ -1263,20 +1265,31 @@ bool CoreChecks::ValidateAccessMask(const LogObjectList &objlist, const Location
 
     // or if only generic memory accesses are specified (or we got a 0 mask)
     access_mask &= ~(VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT);
-    if (access_mask == 0) return skip;
+    if (access_mask == 0) {
+        return skip;
+    }
 
-    const auto valid_accesses = sync_utils::CompatibleAccessMask(expanded_pipeline_stages);
-    const auto bad_accesses = (access_mask & ~valid_accesses);
+    const VkAccessFlags2 valid_accesses = sync_utils::CompatibleAccessMask(expanded_pipeline_stages);
+    const VkAccessFlags2 bad_accesses = (access_mask & ~valid_accesses);
     if (bad_accesses == 0) {
         return skip;
     }
 
     for (size_t i = 0; i < sizeof(bad_accesses) * 8; i++) {
-        VkAccessFlags2KHR bit = (1ULL << i);
+        VkAccessFlags2 bit = (1ULL << i);
         if (bad_accesses & bit) {
             const auto &vuid = vvl::GetBadAccessFlagsVUID(access_mask_loc, bit);
-            skip |= LogError(vuid, objlist, access_mask_loc, "(%s) is not supported by stage mask (%s).",
-                             sync_utils::StringAccessFlags(bit).c_str(), sync_utils::StringPipelineStageFlags(stage_mask).c_str());
+
+            std::ostringstream ss;
+            ss << "(" << sync_utils::StringAccessFlags(bit) << ") is not supported by stage mask ("
+               << sync_utils::StringPipelineStageFlags(stage_mask) << ").";
+            if (stage_mask == VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT) {
+                ss << " The expansion of " << sync_utils::StringPipelineStageFlags(stage_mask) << " for "
+                   << string_VkQueueFlags(queue_flags) << " does not include any stages that support "
+                   << sync_utils::StringAccessFlags(bit)
+                   << ".\n\nThe expanded stages are: " << string_VkPipelineStageFlags2(expanded_pipeline_stages);
+            }
+            skip |= LogError(vuid, objlist, access_mask_loc, "%s", ss.str().c_str());
         }
     }
 
@@ -1694,11 +1707,32 @@ bool CoreChecks::ValidateImageLayoutAgainstImageUsage(const Location &layout_loc
         case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
             is_error = ((usage_flags & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) == 0);
             break;
+        case VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL:
+            is_error = ((usage_flags & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) == 0);
+            break;
+        case VK_IMAGE_LAYOUT_STENCIL_ATTACHMENT_OPTIMAL:
+            is_error = ((usage_flags & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) == 0);
+            break;
+        case VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL:
+            is_error = ((usage_flags & (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)) == 0);
+            break;
         case VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL:
             is_error = ((usage_flags & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) == 0);
             break;
+        case VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL:
+            is_error = ((usage_flags & (VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
+                                        VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT)) == 0);
+            break;
+        case VK_IMAGE_LAYOUT_STENCIL_READ_ONLY_OPTIMAL:
+            is_error = ((usage_flags & (VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
+                                        VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT)) == 0);
+            break;
         case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
             is_error = ((usage_flags & (VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT)) == 0);
+            break;
+        case VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL:
+            is_error = ((usage_flags & (VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
+                                        VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT)) == 0);
             break;
         case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
             is_error = ((usage_flags & VK_IMAGE_USAGE_TRANSFER_SRC_BIT) == 0);
@@ -1906,34 +1940,29 @@ bool CoreChecks::ValidateImageBarrierAgainstImage(const vvl::CommandBuffer &cb_s
     return skip;
 }
 
-bool CoreChecks::ValidateImageBarrierZeroInitializedSubresourceRange(const vvl::CommandBuffer &cb_state,
-                                                                     const ImageBarrier &barrier, const vvl::Image &image_state,
-                                                                     const Location &barrier_loc) const {
+bool CoreChecks::ValidateImageBarrierZeroInitializedSubresourceRange(const VkImageSubresourceRange &subresource_range,
+                                                                     const vvl::Image &image_state, const LogObjectList &objlist,
+                                                                     const Location &barrier_or_transition_loc) const {
     bool skip = false;
-    const auto &vuid = GetImageBarrierVUID(barrier_loc, vvl::ImageError::kZeroInitializeSubresource);
-    const Location subresource_range_loc = barrier_loc.dot(Field::subresourceRange);
-    const VkImageSubresourceRange subresource_range = barrier.subresourceRange;
+    const auto &vuid = GetImageBarrierVUID(barrier_or_transition_loc, vvl::ImageError::kZeroInitializeSubresource);
+    const Location subresource_range_loc = barrier_or_transition_loc.dot(Field::subresourceRange);
 
     if (subresource_range.baseArrayLayer != 0) {
-        const LogObjectList objlist(cb_state.Handle(), image_state.Handle());
         skip |= LogError(vuid, objlist, subresource_range_loc.dot(Field::baseArrayLayer),
                          "(%" PRIu32 ") is not zero, but you need to zero initialize the entire image resource at once.",
                          subresource_range.baseArrayLayer);
     } else if (subresource_range.baseMipLevel != 0) {
-        const LogObjectList objlist(cb_state.Handle(), image_state.Handle());
         skip |= LogError(vuid, objlist, subresource_range_loc.dot(Field::baseMipLevel),
                          "(%" PRIu32 ") is not zero, but you need to zero initialize the entire image resource at once.",
                          subresource_range.baseMipLevel);
     } else if (subresource_range.layerCount != VK_REMAINING_ARRAY_LAYERS &&
                subresource_range.layerCount != image_state.create_info.arrayLayers) {
-        const LogObjectList objlist(cb_state.Handle(), image_state.Handle());
         skip |= LogError(vuid, objlist, subresource_range_loc.dot(Field::layerCount),
                          "(%" PRIu32 ") is not the same as VkImageCreateInfo::arrayLayers (%" PRIu32
                          "), but you need to zero initialize the entire image resource at once.",
                          subresource_range.layerCount, image_state.create_info.arrayLayers);
     } else if (subresource_range.levelCount != VK_REMAINING_MIP_LEVELS &&
                subresource_range.levelCount != image_state.create_info.mipLevels) {
-        const LogObjectList objlist(cb_state.Handle(), image_state.Handle());
         skip |= LogError(vuid, objlist, subresource_range_loc.dot(Field::levelCount),
                          "(%" PRIu32 ") is not the same as VkImageCreateInfo::mipLevels (%" PRIu32
                          "), but you need to zero initialize the entire image resource at once.",
@@ -2400,7 +2429,9 @@ bool CoreChecks::ValidateImageBarrier(const LogObjectList &objlist, const vvl::C
         skip |= ValidateImageBarrierAgainstImage(cb_state, barrier, barrier_loc, *image_state, local_layout_registry);
 
         if (old_layout == VK_IMAGE_LAYOUT_ZERO_INITIALIZED_EXT) {
-            skip |= ValidateImageBarrierZeroInitializedSubresourceRange(cb_state, barrier, *image_state, barrier_loc);
+            const LogObjectList objlist(cb_state.Handle(), image_state->Handle());
+            skip |=
+                ValidateImageBarrierZeroInitializedSubresourceRange(barrier.subresourceRange, *image_state, objlist, barrier_loc);
         }
     }
     return skip;

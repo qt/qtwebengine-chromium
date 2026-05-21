@@ -279,7 +279,7 @@ TEST_F(FxgeSkiaEmbedderTest, RenderBigImageTwice) {
         ASSERT_TRUE(image);
         image_ids.insert(image->uniqueID());
 
-        // TODO(crbug.com/pdfium/2026): Image dimensions should be clipped to
+        // TODO(crbug.com/42271036): Image dimensions should be clipped to
         // 5100x3320. The extra `kPageToImageFactor` accounts for anti-aliasing.
         EXPECT_EQ(SkISize::Make(kImageWidth, kImageHeight), image->dimensions())
             << "Actual image dimensions: " << image->width() << "x"

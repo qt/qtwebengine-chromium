@@ -1,4 +1,4 @@
-/* Copyright (c) 2024-2025 LunarG, Inc.
+/* Copyright (c) 2024-2026 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,11 +13,10 @@
  * limitations under the License.
  */
 
-#include "gpuav/instrumentation/post_process_descriptor_indexing.h"
-
 #include "drawdispatch/descriptor_validator.h"
 #include "gpuav/core/gpuav.h"
 #include "gpuav/core/gpuav_constants.h"
+#include "gpuav/shaders/gpuav_error_header.h"
 #include "gpuav/resources/gpuav_shader_resources.h"
 #include "gpuav/resources/gpuav_state_trackers.h"
 #include "state_tracker/pipeline_state.h"
@@ -51,7 +50,7 @@ void RegisterPostProcessingValidation(Validator& gpuav, CommandBufferSubState& c
         });
 
     cb.on_instrumentation_desc_set_update_functions.emplace_back(
-        [dummy_buffer_range = vko::BufferRange{}](CommandBufferSubState& cb, VkPipelineBindPoint,
+        [dummy_buffer_range = vko::BufferRange{}](CommandBufferSubState& cb, VkPipelineBindPoint, const Location&,
                                                   VkDescriptorBufferInfo& out_buffer_info, uint32_t& out_dst_binding) mutable {
             PostProcessingCbState* pp_cb_state = cb.shared_resources_cache.TryGet<PostProcessingCbState>();
             if (pp_cb_state) {
@@ -122,36 +121,9 @@ void RegisterPostProcessingValidation(Validator& gpuav, CommandBufferSubState& c
                 }
             }
 
-            // Dispatch a copy command, copying the per CB submission descriptor set LUT to the LUT created at
-            // "bind descriptor set command" record time, aka the one that shaders will ultimately access.
-            {
-                VkBufferMemoryBarrier barrier_write_after_read = vku::InitStructHelper();
-                barrier_write_after_read.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
-                barrier_write_after_read.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-                barrier_write_after_read.buffer = desc_binding_cmd.desc_set_binding_to_post_process_buffers_lut.buffer;
-                barrier_write_after_read.offset = desc_binding_cmd.desc_set_binding_to_post_process_buffers_lut.offset;
-                barrier_write_after_read.size = desc_binding_cmd.desc_set_binding_to_post_process_buffers_lut.size;
-
-                DispatchCmdPipelineBarrier(per_pre_submission_cb, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-                                           VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 1, &barrier_write_after_read, 0, nullptr);
-                VkBufferCopy copy;
-                copy.srcOffset = desc_set_buffer_lut_buffer_range.offset;
-                copy.dstOffset = desc_binding_cmd.desc_set_binding_to_post_process_buffers_lut.offset;
-                copy.size = desc_binding_cmd.bound_descriptor_sets.size() * sizeof(VkDeviceAddress);
-                DispatchCmdCopyBuffer(per_pre_submission_cb, desc_set_buffer_lut_buffer_range.buffer,
-                                      desc_binding_cmd.desc_set_binding_to_post_process_buffers_lut.buffer, 1, &copy);
-
-                VkBufferMemoryBarrier barrier_read_before_write = vku::InitStructHelper();
-                barrier_read_before_write.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-                barrier_read_before_write.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
-                barrier_read_before_write.buffer = desc_binding_cmd.desc_set_binding_to_post_process_buffers_lut.buffer;
-                barrier_read_before_write.offset = desc_binding_cmd.desc_set_binding_to_post_process_buffers_lut.offset;
-                barrier_read_before_write.size = desc_binding_cmd.desc_set_binding_to_post_process_buffers_lut.size;
-
-                DispatchCmdPipelineBarrier(per_pre_submission_cb, VK_PIPELINE_STAGE_TRANSFER_BIT,
-                                           VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 1, &barrier_read_before_write, 0,
-                                           nullptr);
-            }
+            vko::CmdSynchronizedCopyBufferRange(per_pre_submission_cb,
+                                                desc_binding_cmd.desc_set_binding_to_post_process_buffers_lut,
+                                                desc_set_buffer_lut_buffer_range);
         }
     });
 
@@ -192,10 +164,10 @@ void RegisterPostProcessingValidation(Validator& gpuav, CommandBufferSubState& c
                     for (uint32_t descriptor_i = 0; descriptor_i < binding_layout.count; descriptor_i++) {
                         const glsl::PostProcessDescriptorIndexSlot slot = slot_ptr[binding_layout.start + descriptor_i];
                         if (slot.meta_data & glsl::kPostProcessMetaMaskAccessed) {
-                            const uint32_t shader_id = slot.meta_data & glsl::kShaderIdMask;
+                            const uint32_t unique_shader_id = slot.meta_data & glsl::kShaderIdMask;
                             const uint32_t error_logger_i = (slot.meta_data & glsl::kPostProcessMetaMaskErrorLoggerIndex) >>
                                                             glsl::kPostProcessMetaShiftErrorLoggerIndex;
-                            descriptor_access_map[shader_id].emplace_back(DescriptorAccess{
+                            descriptor_access_map[unique_shader_id].emplace_back(DescriptorAccess{
                                 binding, descriptor_i, slot.variable_id, slot.instruction_position_offset, error_logger_i});
                         }
                     }
@@ -203,8 +175,8 @@ void RegisterPostProcessingValidation(Validator& gpuav, CommandBufferSubState& c
             }
 
             // For each shader ID we can do the state object lookup once, then validate all the accesses inside of it
-            for (const auto& [shader_id, descriptor_accesses] : descriptor_access_map) {
-                auto it = gpuav.instrumented_shaders_map_.find(shader_id);
+            for (const auto& [unique_shader_id, descriptor_accesses] : descriptor_access_map) {
+                auto it = gpuav.instrumented_shaders_map_.find(unique_shader_id);
                 if (it == gpuav.instrumented_shaders_map_.end()) {
                     assert(false);
                     continue;
@@ -226,12 +198,15 @@ void RegisterPostProcessingValidation(Validator& gpuav, CommandBufferSubState& c
 
                 context.SetOriginalSpirv(&it->second.original_spirv);
 
+                const uint32_t invalid_index_command = gpuav.gpuav_settings.invalid_index_command;
                 for (const DescriptorAccess& descriptor_access : descriptor_accesses) {
-                    if (descriptor_access.error_logger_i == cst::invalid_index_command) {
+                    if (descriptor_access.error_logger_i == invalid_index_command) {
                         gpuav.LogError("GPUAV-Overflow-Unknown", LogObjectList(), Location(vvl::Func::Empty),
                                        "Cannot perform runtime descriptor access validation, access was done in a command past the "
-                                       "internal limit of %" PRIu32 " draw/dispatch/traceRays in a command buffer.",
-                                       cst::indices_count);
+                                       "internal limit of %" PRIu32
+                                       " draw/dispatch/traceRays commands in a command buffer.\nThis can be adjusted setting env "
+                                       "var VK_LAYER_GPUAV_MAX_INDICES_COUNT to a higher value.",
+                                       gpuav.gpuav_settings.invalid_index_command);
                         continue;
                     }
 

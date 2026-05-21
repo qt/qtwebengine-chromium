@@ -97,9 +97,10 @@ class NavigationURLLoaderTest : public testing::Test {
             nullptr /* trust_token_params */, std::nullopt /* impression */,
             base::TimeTicks() /* renderer_before_unload_start */,
             base::TimeTicks() /* renderer_before_unload_end */,
-            blink::mojom::NavigationInitiatorActivationAndAdStatus::
-                kDidNotStartWithTransientActivation,
-            false /* is_container_initiated */,
+            base::TimeTicks() /* before_unload_dialog_opened */,
+            base::TimeTicks() /* before_unload_dialog_closed */,
+            false /* started_with_transient_activation */,
+            false /* started_by_ad */, false /* is_container_initiated */,
             net::StorageAccessApiStatus::kNone, false /* has_rel_opener */);
     auto common_params = blink::CreateCommonNavigationParams();
     common_params->url = url;
@@ -133,7 +134,6 @@ class NavigationURLLoaderTest : public testing::Test {
             false /* is_pdf */,
             ChildProcessHost::kInvalidUniqueID /* initiator_process_id */,
             std::nullopt /* initiator_document_token */,
-            GlobalRenderFrameHostId() /* previous_render_frame_host_id */,
             nullptr /* serving_page_metrics_container */,
             false /* allow_cookies_from_browser */, 0 /* navigation_id */,
             false /* shared_storage_writable */, false /* is_ad_tagged */,

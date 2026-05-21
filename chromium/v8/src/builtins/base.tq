@@ -353,6 +353,8 @@ const kHeapObjectTag: constexpr int31 generates 'kHeapObjectTag';
 const V8_INFINITY: constexpr float64 generates 'V8_INFINITY';
 const MINUS_V8_INFINITY: constexpr float64 generates '-V8_INFINITY';
 
+const V8_STATIC_ROOTS: constexpr bool generates 'V8_STATIC_ROOTS_BOOL';
+
 extern enum ElementsKind extends int32 {
   NO_ELEMENTS,
 
@@ -461,11 +463,14 @@ extern enum MessageTemplate {
   kBigIntTooBig,
   kBigIntDivZero,
   kNotTypedArray,
-  kDetachedOperation,
+  kTypedArrayDetachedErrorOperation,
+  kTypedArrayValidateErrorOperation,
+  kTypedArrayValidateWriteErrorOperation,
   kBadSortComparisonFunction,
   kIncompatibleMethodReceiver,
   kInvalidDataViewAccessorOffset,
   kTypedArraySetOffsetOutOfBounds,
+  kTypedArrayImmutableBufferErrorOperation,
   kInvalidArgument,
   kInvalidRegExpExecResult,
   kInvalidSizeValue,
@@ -1418,6 +1423,7 @@ extern macro Float32Constant(constexpr float32): float32;
 extern macro SmiConstant(constexpr int31): Smi;
 extern macro SmiConstant(constexpr Smi): Smi;
 extern macro SmiConstant(constexpr MessageTemplate): Smi;
+extern macro SmiConstant(constexpr BuiltinsName): Smi;
 extern macro SmiConstant(constexpr bool): Smi;
 extern macro SmiConstant(constexpr uint32): Smi;
 macro SmiConstant(il: constexpr IntegerLiteral): Smi {
@@ -1658,6 +1664,8 @@ macro IsForceSlowPath(): bool {
 }
 
 extern macro BranchIfToBooleanIsTrue(JSAny): never
+    labels Taken, NotTaken;
+extern macro BranchIfToBooleanIsTrue(JSAny, constexpr bool): never
     labels Taken, NotTaken;
 extern macro BranchIfToBooleanIsFalse(JSAny): never
     labels Taken, NotTaken;
@@ -2240,3 +2248,5 @@ extern macro LoadSimd128(intptr): Simd128;
 extern macro I8x16BitMask(I8X16): int32;
 extern macro I8x16Eq(I8X16, I8X16): I8X16;
 extern macro I8x16Splat(int32): I8X16;
+
+extern enum TypedArrayAccessMode extends int31 { kRead, kWrite }

@@ -6,7 +6,6 @@
 
 #include <utility>
 
-#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
@@ -68,7 +67,6 @@ PageTimingMetricsSender::PageTimingMetricsSender(
       timer_(std::move(timer)),
       last_timing_(std::move(initial_timing)),
       last_cpu_timing_(mojom::CpuTiming::New()),
-      input_timing_delta_(mojom::InputTiming::New()),
       metadata_(mojom::FrameMetadata::New()),
       soft_navigation_metrics_(CreateSoftNavigationMetrics()),
       buffer_timer_delay_ms_(GetBufferTimerDelayMillis(TimerType::kRenderer)),
@@ -125,21 +123,29 @@ void PageTimingMetricsSender::DidObserveNewFeatureUsage(
 
 void PageTimingMetricsSender::DidObserveSoftNavigation(
     blink::SoftNavigationMetricsForReporting new_metrics) {
+  CHECK(new_metrics.count);
+  CHECK_GT(new_metrics.count, soft_navigation_metrics_->count);
+
+  CHECK(new_metrics.navigation_id);  // blink::kNavigationIdAbsentValue
+  // Increases strictly monotonically but can overflow,
+  // see blink::NavigationIdGenerator.
+  CHECK_NE(new_metrics.navigation_id, soft_navigation_metrics_->navigation_id);
+
   // The start_time is a TimeDelta, and its resolution is in microseconds.
-  // Every time we observe a new soft navigation we expect the total count to
-  // increase by one, and the navigation_id to update, however, we have no
-  // expectations about start_time values.  This is because soft-navs start_time
-  // might not be monotonically increasing. See: crbug.com/418449366#comment3
-  CHECK(new_metrics.count >= soft_navigation_metrics_->count);
+  // Note that it may not be monotonically increasing, see:
+  // crbug.com/418449366#comment3
   CHECK(!new_metrics.start_time.is_zero());
-  CHECK(new_metrics.navigation_id != soft_navigation_metrics_->navigation_id);
 
+  CHECK(!new_metrics.same_document_metrics_token.is_empty());
+  CHECK(new_metrics.same_document_metrics_token !=
+        soft_navigation_metrics_->same_document_metrics_token);
+
+  // Now that we've checked the invariants, start with a fresh Mojom
+  // message, including a cleared out largest_contentful_paint field.
+  soft_navigation_metrics_ = CreateSoftNavigationMetrics();
   soft_navigation_metrics_->count = new_metrics.count;
-
-  soft_navigation_metrics_->start_time = new_metrics.start_time;
-
   soft_navigation_metrics_->navigation_id = new_metrics.navigation_id;
-
+  soft_navigation_metrics_->start_time = new_metrics.start_time;
   soft_navigation_metrics_->same_document_metrics_token =
       new_metrics.same_document_metrics_token;
 
@@ -150,11 +156,8 @@ void PageTimingMetricsSender::DidObserveLayoutShift(
     double score,
     bool after_input_or_scroll) {
   DCHECK(score > 0);
-  render_data_.layout_shift_delta += score;
-  render_data_.new_layout_shifts.push_back(
-      mojom::LayoutShift::New(base::TimeTicks::Now(), score));
-  if (!after_input_or_scroll)
-    render_data_.layout_shift_delta_before_input_or_scroll += score;
+  render_data_.new_layout_shifts.push_back(mojom::LayoutShift::New(
+      base::TimeTicks::Now(), score, after_input_or_scroll));
   EnsureSendTimer();
 }
 
@@ -215,8 +218,9 @@ void PageTimingMetricsSender::DidLoadResourceFromMemoryCache(
   // ResourceFetcher::EmulateLoadStartedForInspector(). In this case, ignore
   // multiple resources being loaded in the document, as memory cache resources
   // are only reported once per context by design in all other cases.
-  if (base::Contains(page_resource_data_use_, request_id))
+  if (page_resource_data_use_.contains(request_id)) {
     return;
+  }
 
   FindOrInsertPageResourceDataUse(request_id)
       ->DidLoadFromMemoryCache(response_url, encoded_body_length, mime_type);
@@ -284,15 +288,13 @@ void PageTimingMetricsSender::Update(
   EnsureSendTimer(send_urgently);
 }
 
-void PageTimingMetricsSender::UpdateSoftNavigationMetrics(
-    mojom::SoftNavigationMetricsPtr soft_navigation_metrics) {
-  if (soft_navigation_metrics_->Equals(*soft_navigation_metrics)) {
-    return;
-  }
-
-  soft_navigation_metrics_ = std::move(soft_navigation_metrics);
-
-  EnsureSendTimer(true);
+void PageTimingMetricsSender::DidObserveSoftLargestContentfulPaint(
+    mojom::LargestContentfulPaintTimingPtr lcp) {
+  soft_navigation_metrics_->largest_contentful_paint = std::move(lcp);
+  // Until we introduce multiple pending soft lcps, send this urgently
+  // because the next arriving soft navigation will clear
+  // soft_navigation_metrics_.largest_contentful_paint.
+  EnsureSendTimer(/*urgent=*/true);
 }
 
 void PageTimingMetricsSender::SendCustomUserTimingMark(
@@ -354,10 +356,10 @@ void PageTimingMetricsSender::SendNow() {
 
   sender_->SendTiming(last_timing_, metadata_, std::move(new_features_),
                       std::move(resources), render_data_, last_cpu_timing_,
-                      std::move(input_timing_delta_), subresource_load_metrics_,
+                      std::move(event_timings_), subresource_load_metrics_,
                       soft_navigation_metrics_);
 
-  input_timing_delta_ = mojom::InputTiming::New();
+  event_timings_.clear();
   new_features_.clear();
   metadata_->main_frame_intersection_rect.reset();
   metadata_->main_frame_viewport_rect.reset();
@@ -365,8 +367,6 @@ void PageTimingMetricsSender::SendNow() {
   last_cpu_timing_->task_time = base::TimeDelta();
   modified_resources_.clear();
   render_data_.new_layout_shifts.clear();
-  render_data_.layout_shift_delta = 0;
-  render_data_.layout_shift_delta_before_input_or_scroll = 0;
   // As PageTimingMetricsSender is owned by MetricsRenderFrameObserver, which is
   // instantiated for each frame, there's no need to make soft_navigation_count_
   // zero here, as its value only increments through the lifetime of the frame.
@@ -392,10 +392,9 @@ void PageTimingMetricsSender::DidObserveUserInteraction(
   metadata_recorder_.AddInteractionDurationAfterQueueingMetadata(
       max_event_start, max_event_queued_main_thread, max_event_commit_finish,
       max_event_end);
-  base::TimeDelta max_event_duration = max_event_end - max_event_start;
-  input_timing_delta_->user_interaction_latencies.emplace_back(
-      mojom::UserInteractionLatency::New(max_event_duration, interaction_offset,
-                                         max_event_start));
+  base::TimeDelta duration = max_event_end - max_event_start;
+  event_timings_.push_back(
+      mojom::EventTiming::New(duration, interaction_offset, max_event_start));
   EnsureSendTimer();
 }
 }  // namespace page_load_metrics

@@ -32,12 +32,17 @@ class MockUdpSocketPosix : public UdpSocketPosix {
 
   bool IsIPv6() const override { return version_ == UdpSocket::Version::kV6; }
 
-  MOCK_METHOD0(Bind, void());
-  MOCK_METHOD1(SetMulticastOutboundInterface, void(NetworkInterfaceIndex));
-  MOCK_METHOD2(JoinMulticastGroup,
-               void(const IPAddress&, NetworkInterfaceIndex));
-  MOCK_METHOD2(SendMessage, void(ByteView, const IPEndpoint&));
-  MOCK_METHOD1(SetDscp, void(DscpMode));
+  MOCK_METHOD(void, Bind, (), (override));
+  MOCK_METHOD(void,
+              SetMulticastOutboundInterface,
+              (NetworkInterfaceIndex),
+              (override));
+  MOCK_METHOD(void,
+              JoinMulticastGroup,
+              (const IPAddress&, NetworkInterfaceIndex),
+              (override));
+  MOCK_METHOD(void, SendMessage, (ByteView, const IPEndpoint&), (override));
+  MOCK_METHOD(void, SetDscp, (DscpMode), (override));
 
  private:
   Version version_;

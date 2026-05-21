@@ -3,7 +3,7 @@
 
 /***************************************************************************
  *
- * Copyright (c) 2024-2025 LunarG, Inc.
+ * Copyright (c) 2024-2026 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -104,6 +104,9 @@ static const std::unordered_map<std::string, uint32_t> instance_extension_map = 
 #ifdef VK_USE_PLATFORM_OHOS
     {VK_OHOS_SURFACE_EXTENSION_NAME, VK_OHOS_SURFACE_SPEC_VERSION},
 #endif  // VK_USE_PLATFORM_OHOS
+#ifdef VK_USE_PLATFORM_UBM_SEC
+    {VK_SEC_UBM_SURFACE_EXTENSION_NAME, VK_SEC_UBM_SURFACE_SPEC_VERSION},
+#endif  // VK_USE_PLATFORM_UBM_SEC
 };
 
 // Map of device extension name to version
@@ -210,6 +213,7 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
     {VK_KHR_RAY_TRACING_POSITION_FETCH_EXTENSION_NAME, VK_KHR_RAY_TRACING_POSITION_FETCH_SPEC_VERSION},
     {VK_KHR_PIPELINE_BINARY_EXTENSION_NAME, VK_KHR_PIPELINE_BINARY_SPEC_VERSION},
     {VK_KHR_SWAPCHAIN_MAINTENANCE_1_EXTENSION_NAME, VK_KHR_SWAPCHAIN_MAINTENANCE_1_SPEC_VERSION},
+    {VK_KHR_INTERNALLY_SYNCHRONIZED_QUEUES_EXTENSION_NAME, VK_KHR_INTERNALLY_SYNCHRONIZED_QUEUES_SPEC_VERSION},
     {VK_KHR_COOPERATIVE_MATRIX_EXTENSION_NAME, VK_KHR_COOPERATIVE_MATRIX_SPEC_VERSION},
     {VK_KHR_COMPUTE_SHADER_DERIVATIVES_EXTENSION_NAME, VK_KHR_COMPUTE_SHADER_DERIVATIVES_SPEC_VERSION},
     {VK_KHR_VIDEO_DECODE_AV1_EXTENSION_NAME, VK_KHR_VIDEO_DECODE_AV1_SPEC_VERSION},
@@ -294,6 +298,7 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
 #ifdef VK_ENABLE_BETA_EXTENSIONS
     {VK_AMDX_SHADER_ENQUEUE_EXTENSION_NAME, VK_AMDX_SHADER_ENQUEUE_SPEC_VERSION},
 #endif  // VK_ENABLE_BETA_EXTENSIONS
+    {VK_EXT_DESCRIPTOR_HEAP_EXTENSION_NAME, VK_EXT_DESCRIPTOR_HEAP_SPEC_VERSION},
     {VK_AMD_MIXED_ATTACHMENT_SAMPLES_EXTENSION_NAME, VK_AMD_MIXED_ATTACHMENT_SAMPLES_SPEC_VERSION},
     {VK_AMD_SHADER_FRAGMENT_MASK_EXTENSION_NAME, VK_AMD_SHADER_FRAGMENT_MASK_SPEC_VERSION},
     {VK_EXT_INLINE_UNIFORM_BLOCK_EXTENSION_NAME, VK_EXT_INLINE_UNIFORM_BLOCK_SPEC_VERSION},
@@ -314,6 +319,7 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
     {VK_NV_REPRESENTATIVE_FRAGMENT_TEST_EXTENSION_NAME, VK_NV_REPRESENTATIVE_FRAGMENT_TEST_SPEC_VERSION},
     {VK_EXT_FILTER_CUBIC_EXTENSION_NAME, VK_EXT_FILTER_CUBIC_SPEC_VERSION},
     {VK_QCOM_RENDER_PASS_SHADER_RESOLVE_EXTENSION_NAME, VK_QCOM_RENDER_PASS_SHADER_RESOLVE_SPEC_VERSION},
+    {VK_QCOM_COOPERATIVE_MATRIX_CONVERSION_EXTENSION_NAME, VK_QCOM_COOPERATIVE_MATRIX_CONVERSION_SPEC_VERSION},
     {VK_EXT_GLOBAL_PRIORITY_EXTENSION_NAME, VK_EXT_GLOBAL_PRIORITY_SPEC_VERSION},
     {VK_EXT_EXTERNAL_MEMORY_HOST_EXTENSION_NAME, VK_EXT_EXTERNAL_MEMORY_HOST_SPEC_VERSION},
     {VK_AMD_BUFFER_MARKER_EXTENSION_NAME, VK_AMD_BUFFER_MARKER_SPEC_VERSION},
@@ -378,6 +384,7 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
     {VK_EXT_DEVICE_MEMORY_REPORT_EXTENSION_NAME, VK_EXT_DEVICE_MEMORY_REPORT_SPEC_VERSION},
     {VK_EXT_ROBUSTNESS_2_EXTENSION_NAME, VK_EXT_ROBUSTNESS_2_SPEC_VERSION},
     {VK_EXT_CUSTOM_BORDER_COLOR_EXTENSION_NAME, VK_EXT_CUSTOM_BORDER_COLOR_SPEC_VERSION},
+    {VK_EXT_TEXTURE_COMPRESSION_ASTC_3D_EXTENSION_NAME, VK_EXT_TEXTURE_COMPRESSION_ASTC_3D_SPEC_VERSION},
     {VK_GOOGLE_USER_TYPE_EXTENSION_NAME, VK_GOOGLE_USER_TYPE_SPEC_VERSION},
     {VK_NV_PRESENT_BARRIER_EXTENSION_NAME, VK_NV_PRESENT_BARRIER_SPEC_VERSION},
     {VK_EXT_PRIVATE_DATA_EXTENSION_NAME, VK_EXT_PRIVATE_DATA_SPEC_VERSION},
@@ -519,11 +526,9 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
     {VK_NV_PARTITIONED_ACCELERATION_STRUCTURE_EXTENSION_NAME, VK_NV_PARTITIONED_ACCELERATION_STRUCTURE_SPEC_VERSION},
     {VK_EXT_DEVICE_GENERATED_COMMANDS_EXTENSION_NAME, VK_EXT_DEVICE_GENERATED_COMMANDS_SPEC_VERSION},
     {VK_MESA_IMAGE_ALIGNMENT_CONTROL_EXTENSION_NAME, VK_MESA_IMAGE_ALIGNMENT_CONTROL_SPEC_VERSION},
+    {VK_NV_PUSH_CONSTANT_BANK_EXTENSION_NAME, VK_NV_PUSH_CONSTANT_BANK_SPEC_VERSION},
     {VK_EXT_RAY_TRACING_INVOCATION_REORDER_EXTENSION_NAME, VK_EXT_RAY_TRACING_INVOCATION_REORDER_SPEC_VERSION},
     {VK_EXT_DEPTH_CLAMP_CONTROL_EXTENSION_NAME, VK_EXT_DEPTH_CLAMP_CONTROL_SPEC_VERSION},
-#ifdef VK_USE_PLATFORM_OHOS
-    {VK_OHOS_NATIVE_BUFFER_EXTENSION_NAME, VK_OHOS_NATIVE_BUFFER_SPEC_VERSION},
-#endif  // VK_USE_PLATFORM_OHOS
     {VK_HUAWEI_HDR_VIVID_EXTENSION_NAME, VK_HUAWEI_HDR_VIVID_SPEC_VERSION},
     {VK_NV_COOPERATIVE_MATRIX_2_EXTENSION_NAME, VK_NV_COOPERATIVE_MATRIX_2_SPEC_VERSION},
     {VK_ARM_PIPELINE_OPACITY_MICROMAP_EXTENSION_NAME, VK_ARM_PIPELINE_OPACITY_MICROMAP_SPEC_VERSION},
@@ -542,8 +547,11 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
     {VK_EXT_SHADER_64BIT_INDEXING_EXTENSION_NAME, VK_EXT_SHADER_64BIT_INDEXING_SPEC_VERSION},
     {VK_EXT_CUSTOM_RESOLVE_EXTENSION_NAME, VK_EXT_CUSTOM_RESOLVE_SPEC_VERSION},
     {VK_QCOM_DATA_GRAPH_MODEL_EXTENSION_NAME, VK_QCOM_DATA_GRAPH_MODEL_SPEC_VERSION},
+    {VK_EXT_SHADER_LONG_VECTOR_EXTENSION_NAME, VK_EXT_SHADER_LONG_VECTOR_SPEC_VERSION},
     {VK_SEC_PIPELINE_CACHE_INCREMENTAL_MODE_EXTENSION_NAME, VK_SEC_PIPELINE_CACHE_INCREMENTAL_MODE_SPEC_VERSION},
     {VK_EXT_SHADER_UNIFORM_BUFFER_UNSIZED_ARRAY_EXTENSION_NAME, VK_EXT_SHADER_UNIFORM_BUFFER_UNSIZED_ARRAY_SPEC_VERSION},
+    {VK_NV_COMPUTE_OCCUPANCY_PRIORITY_EXTENSION_NAME, VK_NV_COMPUTE_OCCUPANCY_PRIORITY_SPEC_VERSION},
+    {VK_EXT_SHADER_SUBGROUP_PARTITIONED_EXTENSION_NAME, VK_EXT_SHADER_SUBGROUP_PARTITIONED_SPEC_VERSION},
     {VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME, VK_KHR_ACCELERATION_STRUCTURE_SPEC_VERSION},
     {VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME, VK_KHR_RAY_TRACING_PIPELINE_SPEC_VERSION},
     {VK_KHR_RAY_QUERY_EXTENSION_NAME, VK_KHR_RAY_QUERY_SPEC_VERSION},
@@ -1439,6 +1447,8 @@ static VKAPI_ATTR uint32_t VKAPI_CALL GetImageViewHandleNVX(VkDevice device, con
 static VKAPI_ATTR uint64_t VKAPI_CALL GetImageViewHandle64NVX(VkDevice device, const VkImageViewHandleInfoNVX* pInfo);
 static VKAPI_ATTR VkResult VKAPI_CALL GetImageViewAddressNVX(VkDevice device, VkImageView imageView,
                                                              VkImageViewAddressPropertiesNVX* pProperties);
+static VKAPI_ATTR uint64_t VKAPI_CALL GetDeviceCombinedImageSamplerIndexNVX(VkDevice device, uint64_t imageViewIndex,
+                                                                            uint64_t samplerIndex);
 static VKAPI_ATTR void VKAPI_CALL CmdDrawIndirectCountAMD(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset,
                                                           VkBuffer countBuffer, VkDeviceSize countBufferOffset,
                                                           uint32_t maxDrawCount, uint32_t stride);
@@ -1554,6 +1564,25 @@ static VKAPI_ATTR void VKAPI_CALL CmdDispatchGraphIndirectAMDX(VkCommandBuffer c
 static VKAPI_ATTR void VKAPI_CALL CmdDispatchGraphIndirectCountAMDX(VkCommandBuffer commandBuffer, VkDeviceAddress scratch,
                                                                     VkDeviceSize scratchSize, VkDeviceAddress countInfo);
 #endif  // VK_ENABLE_BETA_EXTENSIONS
+static VKAPI_ATTR VkResult VKAPI_CALL WriteSamplerDescriptorsEXT(VkDevice device, uint32_t samplerCount,
+                                                                 const VkSamplerCreateInfo* pSamplers,
+                                                                 const VkHostAddressRangeEXT* pDescriptors);
+static VKAPI_ATTR VkResult VKAPI_CALL WriteResourceDescriptorsEXT(VkDevice device, uint32_t resourceCount,
+                                                                  const VkResourceDescriptorInfoEXT* pResources,
+                                                                  const VkHostAddressRangeEXT* pDescriptors);
+static VKAPI_ATTR void VKAPI_CALL CmdBindSamplerHeapEXT(VkCommandBuffer commandBuffer, const VkBindHeapInfoEXT* pBindInfo);
+static VKAPI_ATTR void VKAPI_CALL CmdBindResourceHeapEXT(VkCommandBuffer commandBuffer, const VkBindHeapInfoEXT* pBindInfo);
+static VKAPI_ATTR void VKAPI_CALL CmdPushDataEXT(VkCommandBuffer commandBuffer, const VkPushDataInfoEXT* pPushDataInfo);
+static VKAPI_ATTR VkResult VKAPI_CALL GetImageOpaqueCaptureDataEXT(VkDevice device, uint32_t imageCount, const VkImage* pImages,
+                                                                   VkHostAddressRangeEXT* pDatas);
+static VKAPI_ATTR VkDeviceSize VKAPI_CALL GetPhysicalDeviceDescriptorSizeEXT(VkPhysicalDevice physicalDevice,
+                                                                             VkDescriptorType descriptorType);
+static VKAPI_ATTR VkResult VKAPI_CALL RegisterCustomBorderColorEXT(VkDevice device,
+                                                                   const VkSamplerCustomBorderColorCreateInfoEXT* pBorderColor,
+                                                                   VkBool32 requestIndex, uint32_t* pIndex);
+static VKAPI_ATTR void VKAPI_CALL UnregisterCustomBorderColorEXT(VkDevice device, uint32_t index);
+static VKAPI_ATTR VkResult VKAPI_CALL GetTensorOpaqueCaptureDataARM(VkDevice device, uint32_t tensorCount,
+                                                                    const VkTensorARM* pTensors, VkHostAddressRangeEXT* pDatas);
 static VKAPI_ATTR void VKAPI_CALL CmdSetSampleLocationsEXT(VkCommandBuffer commandBuffer,
                                                            const VkSampleLocationsInfoEXT* pSampleLocationsInfo);
 static VKAPI_ATTR void VKAPI_CALL GetPhysicalDeviceMultisamplePropertiesEXT(VkPhysicalDevice physicalDevice,
@@ -2178,13 +2207,6 @@ static VKAPI_ATTR void VKAPI_CALL UpdateIndirectExecutionSetShaderEXT(
 #ifdef VK_USE_PLATFORM_OHOS
 static VKAPI_ATTR VkResult VKAPI_CALL CreateSurfaceOHOS(VkInstance instance, const VkSurfaceCreateInfoOHOS* pCreateInfo,
                                                         const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface);
-static VKAPI_ATTR VkResult VKAPI_CALL GetSwapchainGrallocUsageOHOS(VkDevice device, VkFormat format, VkImageUsageFlags imageUsage,
-                                                                   uint64_t* grallocUsage);
-static VKAPI_ATTR VkResult VKAPI_CALL AcquireImageOHOS(VkDevice device, VkImage image, int32_t nativeFenceFd, VkSemaphore semaphore,
-                                                       VkFence fence);
-static VKAPI_ATTR VkResult VKAPI_CALL QueueSignalReleaseImageOHOS(VkQueue queue, uint32_t waitSemaphoreCount,
-                                                                  const VkSemaphore* pWaitSemaphores, VkImage image,
-                                                                  int32_t* pNativeFenceFd);
 #endif  // VK_USE_PLATFORM_OHOS
 static VKAPI_ATTR VkResult VKAPI_CALL GetPhysicalDeviceCooperativeMatrixFlexibleDimensionsPropertiesNV(
     VkPhysicalDevice physicalDevice, uint32_t* pPropertyCount, VkCooperativeMatrixFlexibleDimensionsPropertiesNV* pProperties);
@@ -2203,6 +2225,15 @@ static VKAPI_ATTR void VKAPI_CALL CmdEndRendering2EXT(VkCommandBuffer commandBuf
                                                       const VkRenderingEndInfoKHR* pRenderingEndInfo);
 static VKAPI_ATTR void VKAPI_CALL CmdBeginCustomResolveEXT(VkCommandBuffer commandBuffer,
                                                            const VkBeginCustomResolveInfoEXT* pBeginCustomResolveInfo);
+static VKAPI_ATTR void VKAPI_CALL CmdSetComputeOccupancyPriorityNV(VkCommandBuffer commandBuffer,
+                                                                   const VkComputeOccupancyPriorityParametersNV* pParameters);
+#ifdef VK_USE_PLATFORM_UBM_SEC
+static VKAPI_ATTR VkResult VKAPI_CALL CreateUbmSurfaceSEC(VkInstance instance, const VkUbmSurfaceCreateInfoSEC* pCreateInfo,
+                                                          const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface);
+static VKAPI_ATTR VkBool32 VKAPI_CALL GetPhysicalDeviceUbmPresentationSupportSEC(VkPhysicalDevice physicalDevice,
+                                                                                 uint32_t queueFamilyIndex,
+                                                                                 struct ubm_device* ubm_device);
+#endif  // VK_USE_PLATFORM_UBM_SEC
 static VKAPI_ATTR VkResult VKAPI_CALL CreateAccelerationStructureKHR(VkDevice device,
                                                                      const VkAccelerationStructureCreateInfoKHR* pCreateInfo,
                                                                      const VkAllocationCallbacks* pAllocator,
@@ -2720,6 +2751,7 @@ static const std::unordered_map<std::string, void*> name_to_func_ptr_map = {
     {"vkGetImageViewHandleNVX", (void*)GetImageViewHandleNVX},
     {"vkGetImageViewHandle64NVX", (void*)GetImageViewHandle64NVX},
     {"vkGetImageViewAddressNVX", (void*)GetImageViewAddressNVX},
+    {"vkGetDeviceCombinedImageSamplerIndexNVX", (void*)GetDeviceCombinedImageSamplerIndexNVX},
     {"vkCmdDrawIndirectCountAMD", (void*)CmdDrawIndirectCountAMD},
     {"vkCmdDrawIndexedIndirectCountAMD", (void*)CmdDrawIndexedIndirectCountAMD},
     {"vkGetShaderInfoAMD", (void*)GetShaderInfoAMD},
@@ -2782,6 +2814,16 @@ static const std::unordered_map<std::string, void*> name_to_func_ptr_map = {
     {"vkCmdDispatchGraphIndirectAMDX", (void*)CmdDispatchGraphIndirectAMDX},
     {"vkCmdDispatchGraphIndirectCountAMDX", (void*)CmdDispatchGraphIndirectCountAMDX},
 #endif  // VK_ENABLE_BETA_EXTENSIONS
+    {"vkWriteSamplerDescriptorsEXT", (void*)WriteSamplerDescriptorsEXT},
+    {"vkWriteResourceDescriptorsEXT", (void*)WriteResourceDescriptorsEXT},
+    {"vkCmdBindSamplerHeapEXT", (void*)CmdBindSamplerHeapEXT},
+    {"vkCmdBindResourceHeapEXT", (void*)CmdBindResourceHeapEXT},
+    {"vkCmdPushDataEXT", (void*)CmdPushDataEXT},
+    {"vkGetImageOpaqueCaptureDataEXT", (void*)GetImageOpaqueCaptureDataEXT},
+    {"vkGetPhysicalDeviceDescriptorSizeEXT", (void*)GetPhysicalDeviceDescriptorSizeEXT},
+    {"vkRegisterCustomBorderColorEXT", (void*)RegisterCustomBorderColorEXT},
+    {"vkUnregisterCustomBorderColorEXT", (void*)UnregisterCustomBorderColorEXT},
+    {"vkGetTensorOpaqueCaptureDataARM", (void*)GetTensorOpaqueCaptureDataARM},
     {"vkCmdSetSampleLocationsEXT", (void*)CmdSetSampleLocationsEXT},
     {"vkGetPhysicalDeviceMultisamplePropertiesEXT", (void*)GetPhysicalDeviceMultisamplePropertiesEXT},
     {"vkGetImageDrmFormatModifierPropertiesEXT", (void*)GetImageDrmFormatModifierPropertiesEXT},
@@ -3079,9 +3121,6 @@ static const std::unordered_map<std::string, void*> name_to_func_ptr_map = {
     {"vkUpdateIndirectExecutionSetShaderEXT", (void*)UpdateIndirectExecutionSetShaderEXT},
 #ifdef VK_USE_PLATFORM_OHOS
     {"vkCreateSurfaceOHOS", (void*)CreateSurfaceOHOS},
-    {"vkGetSwapchainGrallocUsageOHOS", (void*)GetSwapchainGrallocUsageOHOS},
-    {"vkAcquireImageOHOS", (void*)AcquireImageOHOS},
-    {"vkQueueSignalReleaseImageOHOS", (void*)QueueSignalReleaseImageOHOS},
 #endif  // VK_USE_PLATFORM_OHOS
     {"vkGetPhysicalDeviceCooperativeMatrixFlexibleDimensionsPropertiesNV",
      (void*)GetPhysicalDeviceCooperativeMatrixFlexibleDimensionsPropertiesNV},
@@ -3093,6 +3132,11 @@ static const std::unordered_map<std::string, void*> name_to_func_ptr_map = {
      (void*)EnumeratePhysicalDeviceQueueFamilyPerformanceCountersByRegionARM},
     {"vkCmdEndRendering2EXT", (void*)CmdEndRendering2EXT},
     {"vkCmdBeginCustomResolveEXT", (void*)CmdBeginCustomResolveEXT},
+    {"vkCmdSetComputeOccupancyPriorityNV", (void*)CmdSetComputeOccupancyPriorityNV},
+#ifdef VK_USE_PLATFORM_UBM_SEC
+    {"vkCreateUbmSurfaceSEC", (void*)CreateUbmSurfaceSEC},
+    {"vkGetPhysicalDeviceUbmPresentationSupportSEC", (void*)GetPhysicalDeviceUbmPresentationSupportSEC},
+#endif  // VK_USE_PLATFORM_UBM_SEC
     {"vkCreateAccelerationStructureKHR", (void*)CreateAccelerationStructureKHR},
     {"vkDestroyAccelerationStructureKHR", (void*)DestroyAccelerationStructureKHR},
     {"vkCmdBuildAccelerationStructuresKHR", (void*)CmdBuildAccelerationStructuresKHR},
@@ -4609,6 +4653,11 @@ static VKAPI_ATTR VkResult VKAPI_CALL GetImageViewAddressNVX(VkDevice device, Vk
     return VK_SUCCESS;
 }
 
+static VKAPI_ATTR uint64_t VKAPI_CALL GetDeviceCombinedImageSamplerIndexNVX(VkDevice device, uint64_t imageViewIndex,
+                                                                            uint64_t samplerIndex) {
+    return VK_SUCCESS;
+}
+
 static VKAPI_ATTR void VKAPI_CALL CmdDrawIndirectCountAMD(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset,
                                                           VkBuffer countBuffer, VkDeviceSize countBufferOffset,
                                                           uint32_t maxDrawCount, uint32_t stride) {
@@ -4823,6 +4872,42 @@ static VKAPI_ATTR void VKAPI_CALL CmdDispatchGraphIndirectCountAMDX(VkCommandBuf
                                                                     VkDeviceSize scratchSize, VkDeviceAddress countInfo) {}
 
 #endif  // VK_ENABLE_BETA_EXTENSIONS
+static VKAPI_ATTR VkResult VKAPI_CALL WriteSamplerDescriptorsEXT(VkDevice device, uint32_t samplerCount,
+                                                                 const VkSamplerCreateInfo* pSamplers,
+                                                                 const VkHostAddressRangeEXT* pDescriptors) {
+    return VK_SUCCESS;
+}
+
+static VKAPI_ATTR VkResult VKAPI_CALL WriteResourceDescriptorsEXT(VkDevice device, uint32_t resourceCount,
+                                                                  const VkResourceDescriptorInfoEXT* pResources,
+                                                                  const VkHostAddressRangeEXT* pDescriptors) {
+    return VK_SUCCESS;
+}
+
+static VKAPI_ATTR void VKAPI_CALL CmdBindSamplerHeapEXT(VkCommandBuffer commandBuffer, const VkBindHeapInfoEXT* pBindInfo) {}
+
+static VKAPI_ATTR void VKAPI_CALL CmdBindResourceHeapEXT(VkCommandBuffer commandBuffer, const VkBindHeapInfoEXT* pBindInfo) {}
+
+static VKAPI_ATTR void VKAPI_CALL CmdPushDataEXT(VkCommandBuffer commandBuffer, const VkPushDataInfoEXT* pPushDataInfo) {}
+
+static VKAPI_ATTR VkResult VKAPI_CALL GetImageOpaqueCaptureDataEXT(VkDevice device, uint32_t imageCount, const VkImage* pImages,
+                                                                   VkHostAddressRangeEXT* pDatas) {
+    return VK_SUCCESS;
+}
+
+static VKAPI_ATTR VkResult VKAPI_CALL RegisterCustomBorderColorEXT(VkDevice device,
+                                                                   const VkSamplerCustomBorderColorCreateInfoEXT* pBorderColor,
+                                                                   VkBool32 requestIndex, uint32_t* pIndex) {
+    return VK_SUCCESS;
+}
+
+static VKAPI_ATTR void VKAPI_CALL UnregisterCustomBorderColorEXT(VkDevice device, uint32_t index) {}
+
+static VKAPI_ATTR VkResult VKAPI_CALL GetTensorOpaqueCaptureDataARM(VkDevice device, uint32_t tensorCount,
+                                                                    const VkTensorARM* pTensors, VkHostAddressRangeEXT* pDatas) {
+    return VK_SUCCESS;
+}
+
 static VKAPI_ATTR void VKAPI_CALL CmdSetSampleLocationsEXT(VkCommandBuffer commandBuffer,
                                                            const VkSampleLocationsInfoEXT* pSampleLocationsInfo) {}
 
@@ -5988,22 +6073,6 @@ static VKAPI_ATTR VkResult VKAPI_CALL CreateSurfaceOHOS(VkInstance instance, con
     return VK_SUCCESS;
 }
 
-static VKAPI_ATTR VkResult VKAPI_CALL GetSwapchainGrallocUsageOHOS(VkDevice device, VkFormat format, VkImageUsageFlags imageUsage,
-                                                                   uint64_t* grallocUsage) {
-    return VK_SUCCESS;
-}
-
-static VKAPI_ATTR VkResult VKAPI_CALL AcquireImageOHOS(VkDevice device, VkImage image, int32_t nativeFenceFd, VkSemaphore semaphore,
-                                                       VkFence fence) {
-    return VK_SUCCESS;
-}
-
-static VKAPI_ATTR VkResult VKAPI_CALL QueueSignalReleaseImageOHOS(VkQueue queue, uint32_t waitSemaphoreCount,
-                                                                  const VkSemaphore* pWaitSemaphores, VkImage image,
-                                                                  int32_t* pNativeFenceFd) {
-    return VK_SUCCESS;
-}
-
 #endif  // VK_USE_PLATFORM_OHOS
 static VKAPI_ATTR VkResult VKAPI_CALL GetPhysicalDeviceCooperativeMatrixFlexibleDimensionsPropertiesNV(
     VkPhysicalDevice physicalDevice, uint32_t* pPropertyCount, VkCooperativeMatrixFlexibleDimensionsPropertiesNV* pProperties) {
@@ -6038,6 +6107,24 @@ static VKAPI_ATTR void VKAPI_CALL CmdEndRendering2EXT(VkCommandBuffer commandBuf
 static VKAPI_ATTR void VKAPI_CALL CmdBeginCustomResolveEXT(VkCommandBuffer commandBuffer,
                                                            const VkBeginCustomResolveInfoEXT* pBeginCustomResolveInfo) {}
 
+static VKAPI_ATTR void VKAPI_CALL CmdSetComputeOccupancyPriorityNV(VkCommandBuffer commandBuffer,
+                                                                   const VkComputeOccupancyPriorityParametersNV* pParameters) {}
+
+#ifdef VK_USE_PLATFORM_UBM_SEC
+static VKAPI_ATTR VkResult VKAPI_CALL CreateUbmSurfaceSEC(VkInstance instance, const VkUbmSurfaceCreateInfoSEC* pCreateInfo,
+                                                          const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface) {
+    unique_lock_t lock(global_lock);
+    *pSurface = (VkSurfaceKHR)global_unique_handle++;
+    return VK_SUCCESS;
+}
+
+static VKAPI_ATTR VkBool32 VKAPI_CALL GetPhysicalDeviceUbmPresentationSupportSEC(VkPhysicalDevice physicalDevice,
+                                                                                 uint32_t queueFamilyIndex,
+                                                                                 struct ubm_device* ubm_device) {
+    return VK_SUCCESS;
+}
+
+#endif  // VK_USE_PLATFORM_UBM_SEC
 static VKAPI_ATTR VkResult VKAPI_CALL CreateAccelerationStructureKHR(VkDevice device,
                                                                      const VkAccelerationStructureCreateInfoKHR* pCreateInfo,
                                                                      const VkAllocationCallbacks* pAllocator,

@@ -37,7 +37,7 @@ class CJBig2_BitStream {
   uint32_t getBitPos() const;
   void setBitPos(uint32_t dwBitPos);
   pdfium::span<const uint8_t> getBufSpan() const { return span_; }
-  const uint8_t* getPointer() const;
+  pdfium::span<const uint8_t> getCurrentSpan(uint32_t size) const;
   uint32_t getByteLeft() const;
   uint64_t getKey() const { return key_; }
   bool IsInBounds() const;

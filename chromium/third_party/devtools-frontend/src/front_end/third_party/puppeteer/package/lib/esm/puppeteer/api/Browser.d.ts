@@ -53,8 +53,23 @@ export type IsPageTargetCallback = (target: Target) => boolean;
 export declare const WEB_PERMISSION_TO_PROTOCOL_PERMISSION: Map<Permission, Protocol.Browser.PermissionType>;
 /**
  * @public
+ * @deprecated in favor of {@link PermissionDescriptor}.
  */
 export type Permission = 'accelerometer' | 'ambient-light-sensor' | 'background-sync' | 'camera' | 'clipboard-read' | 'clipboard-sanitized-write' | 'clipboard-write' | 'geolocation' | 'gyroscope' | 'idle-detection' | 'keyboard-lock' | 'magnetometer' | 'microphone' | 'midi-sysex' | 'midi' | 'notifications' | 'payment-handler' | 'persistent-storage' | 'pointer-lock';
+/**
+ * @public
+ */
+export interface PermissionDescriptor {
+    name: string;
+    userVisibleOnly?: boolean;
+    sysex?: boolean;
+    panTiltZoom?: boolean;
+    allowWithoutSanitization?: boolean;
+}
+/**
+ * @public
+ */
+export type PermissionState = 'granted' | 'denied' | 'prompt';
 /**
  * @public
  */
@@ -139,11 +154,89 @@ export interface DebugInfo {
 /**
  * @public
  */
-export type CreatePageOptions = {
-    type: 'tab';
+export type WindowState = 'normal' | 'minimized' | 'maximized' | 'fullscreen';
+/**
+ * @public
+ */
+export interface WindowBounds {
+    left?: number;
+    top?: number;
+    width?: number;
+    height?: number;
+    windowState?: WindowState;
+}
+/**
+ * @public
+ */
+export type WindowId = string;
+/**
+ * @public
+ */
+export type CreatePageOptions = ({
+    type?: 'tab';
 } | {
     type: 'window';
+    windowBounds?: WindowBounds;
+}) & {
+    /**
+     * Whether to create the page in the background.
+     *
+     * @defaultValue `false`
+     */
+    background?: boolean;
 };
+/**
+ * @public
+ */
+export interface ScreenOrientation {
+    angle: number;
+    type: string;
+}
+/**
+ * @public
+ */
+export interface ScreenInfo {
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+    availLeft: number;
+    availTop: number;
+    availWidth: number;
+    availHeight: number;
+    devicePixelRatio: number;
+    colorDepth: number;
+    orientation: ScreenOrientation;
+    isExtended: boolean;
+    isInternal: boolean;
+    isPrimary: boolean;
+    label: string;
+    id: string;
+}
+/**
+ * @public
+ */
+export interface WorkAreaInsets {
+    top?: number;
+    left?: number;
+    bottom?: number;
+    right?: number;
+}
+/**
+ * @public
+ */
+export interface AddScreenParams {
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+    workAreaInsets?: WorkAreaInsets;
+    devicePixelRatio?: number;
+    rotation?: number;
+    colorDepth?: number;
+    label?: string;
+    isInternal?: boolean;
+}
 /**
  * {@link Browser} represents a browser instance that is either:
  *
@@ -249,6 +342,14 @@ export declare abstract class Browser extends EventEmitter<BrowserEvents> {
      * {@link Browser.defaultBrowserContext | default browser context}.
      */
     abstract newPage(options?: CreatePageOptions): Promise<Page>;
+    /**
+     * Gets the specified window {@link WindowBounds | bounds}.
+     */
+    abstract getWindowBounds(windowId: WindowId): Promise<WindowBounds>;
+    /**
+     * Sets the specified window {@link WindowBounds | bounds}.
+     */
+    abstract setWindowBounds(windowId: WindowId, windowBounds: WindowBounds): Promise<void>;
     /**
      * Gets all active {@link Target | targets}.
      *
@@ -360,6 +461,26 @@ export declare abstract class Browser extends EventEmitter<BrowserEvents> {
      */
     deleteMatchingCookies(...filters: DeleteCookiesRequest[]): Promise<void>;
     /**
+     * Sets the permission for a specific origin in the default
+     * {@link BrowserContext}.
+     *
+     * @remarks
+     *
+     * Shortcut for
+     * {@link BrowserContext.setPermission |
+     * browser.defaultBrowserContext().setPermission()}.
+     *
+     * @param origin - The origin to set the permission for.
+     * @param permission - The permission descriptor.
+     * @param state - The state of the permission.
+     *
+     * @public
+     */
+    setPermission(origin: string, ...permissions: Array<{
+        permission: PermissionDescriptor;
+        state: PermissionState;
+    }>): Promise<void>;
+    /**
      * Installs an extension and returns the ID. In Chrome, this is only
      * available if the browser was created using `pipe: true` and the
      * `--enable-unsafe-extension-debugging` flag is set.
@@ -371,6 +492,26 @@ export declare abstract class Browser extends EventEmitter<BrowserEvents> {
      * `--enable-unsafe-extension-debugging` flag is set.
      */
     abstract uninstallExtension(id: string): Promise<void>;
+    /**
+     * Gets a list of {@link ScreenInfo | screen information objects}.
+     */
+    abstract screens(): Promise<ScreenInfo[]>;
+    /**
+     * Adds a new screen, returns the added {@link ScreenInfo | screen information object}.
+     *
+     * @remarks
+     *
+     * Only supported in headless mode.
+     */
+    abstract addScreen(params: AddScreenParams): Promise<ScreenInfo>;
+    /**
+     * Removes a screen.
+     *
+     * @remarks
+     *
+     * Only supported in headless mode. Fails if the primary screen id is specified.
+     */
+    abstract removeScreen(screenId: string): Promise<void>;
     /**
      * Whether Puppeteer is connected to this {@link Browser | browser}.
      *

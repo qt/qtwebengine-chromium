@@ -42,14 +42,24 @@ TEST_F(MoqtSimulatorTest, DefaultSettings) {
   MoqtSimulator simulator(SimulationParameters{});
   simulator.Run();
   EXPECT_NEAR(simulator.received_on_time_fraction(), 1.0f, 0.001f);
-  EXPECT_EQ(CountEventType(simulator.client_trace(),
-                           EventType::MOQT_TARGET_BITRATE_SET),
-            0);
 
   EXPECT_EQ(GetCongestionControlType(*simulator.client_quic_session()),
             quic::CongestionControlType::kBBR);
   EXPECT_EQ(GetCongestionControlType(*simulator.server_quic_session()),
             quic::CongestionControlType::kBBR);
+
+  int bitrate_events = 0;
+  for (const quic_trace::Event& event : simulator.client_trace().events()) {
+    if (event.event_type() != EventType::MOQT_TARGET_BITRATE_SET) {
+      continue;
+    }
+    ++bitrate_events;
+    EXPECT_GT(event.bandwidth_estimate_bps(),
+              SimulationParameters().bitrate.ToBitsPerSecond());
+    EXPECT_LT(event.bandwidth_estimate_bps(),
+              SimulationParameters().bandwidth.ToBitsPerSecond());
+  }
+  EXPECT_GT(bitrate_events, 0);
 }
 
 // Ensure that the bitrate adaptation down works.
@@ -61,14 +71,10 @@ TEST_F(MoqtSimulatorTest, BandwidthTooLow) {
   MoqtSimulator simulator(parameters);
   simulator.Run();
   EXPECT_GE(simulator.received_on_time_fraction(), 0.8f);
-  EXPECT_LT(simulator.received_on_time_fraction(), 0.99f);
-  // TODO(vasilvv): re-enable once rate adaptation works well enough so that
-  // this is no longer flaky.
-#if 0
+  EXPECT_LT(simulator.received_on_time_fraction(), 0.999f);
   EXPECT_GT(CountEventType(simulator.client_trace(),
                            EventType::MOQT_TARGET_BITRATE_SET),
             0);
-#endif
 
   quic::QuicConnectionStats stats =
       simulator.client_quic_session()->connection()->GetStats();

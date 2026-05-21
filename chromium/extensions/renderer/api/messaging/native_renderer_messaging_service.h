@@ -60,7 +60,7 @@ struct PortId;
 //   renderer has a listener, it will respond with an OpenMessagePort message.
 //   If no renderer has a listener, the browser will close the port.
 // Message Posting
-// * Calls to postMessage() trigger a PostMessageToPort messge to the browser.
+// * Calls to postMessage() trigger a PostMessageToPort message to the browser.
 // * The browser sends a DeliverMessage message to listening renderers. These
 //   then dispatch the onMessage event to listeners.
 // Disconnecting
@@ -182,6 +182,9 @@ class NativeRendererMessagingService : public GinPort::Delegate {
   mojom::MessagePortHost* GetMessagePortHostIfExists(
       ScriptContext* script_context,
       const PortId& port_id);
+
+  // Invalidates any ports associated with the given `context`.
+  void InvalidatePorts(ScriptContext* context);
 
  private:
   class MessagePortScope;

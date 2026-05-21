@@ -24,6 +24,7 @@ int avcodec_send_packet(AVCodecContext *avctx, const AVPacket *avpkt);
 int avcodec_receive_frame(AVCodecContext *avctx, AVFrame *frame);
 AVPacket *av_packet_alloc(void);
 void av_packet_free(AVPacket **pkt);
+void avcodec_align_dimensions2(AVCodecContext *s, int *width, int *height, int linesize_align[AV_NUM_DATA_POINTERS]);
 
 //------------------------------------------------
 // Functions from avformat used in chromium code.

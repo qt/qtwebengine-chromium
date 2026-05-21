@@ -198,7 +198,7 @@ void CPDF_RenderStatus::Initialize(const CPDF_RenderStatus* pParentStatus,
       }
       if (!initial_states_.color_state().HasStrokeColor()) {
         initial_states_.mutable_color_state().SetStrokeColorRef(
-            pParentStatus->initial_states_.color_state().GetFillColorRef());
+            pParentStatus->initial_states_.color_state().GetStrokeColorRef());
         *initial_states_.mutable_color_state().GetMutableStrokeColor() =
             *pParentStatus->initial_states_.color_state().GetStrokeColor();
       }
@@ -1089,7 +1089,7 @@ bool CPDF_RenderStatus::ProcessType3Text(CPDF_TextObject* textobj,
     return true;
   }
 
-  FX_RECT rect = GetGlyphsBBox(glyphs, FontAntiAliasingMode::kNormal);
+  FX_RECT rect = GetGlyphsBBox(glyphs, /*anti_alias_is_lcd=*/false);
   auto bitmap = pdfium::MakeRetain<CFX_DIBitmap>();
   if (!bitmap->Create(rect.Width(), rect.Height(), FXDIB_Format::k8bppMask)) {
     return true;

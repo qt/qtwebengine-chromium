@@ -253,16 +253,8 @@ bool MdnsWriter::Write(const MdnsMessage& message) {
 }
 
 bool MdnsWriter::Write(const IPAddress& address) {
-  uint8_t bytes[IPAddress::kV6Size];
-  size_t size;
-  if (address.IsV6()) {
-    address.CopyToV6(bytes);
-    size = IPAddress::kV6Size;
-  } else {
-    address.CopyToV4(bytes);
-    size = IPAddress::kV4Size;
-  }
-  return Write(bytes, size);
+  const auto bytes = address.bytes();
+  return BigEndianWriter::Write(bytes.data(), bytes.size());
 }
 
 bool MdnsWriter::Write(const Rdata& rdata) {

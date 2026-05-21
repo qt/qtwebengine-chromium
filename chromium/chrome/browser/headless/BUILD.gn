@@ -143,6 +143,10 @@ if (!is_android) {
       ]
     }
 
+    if (is_mac) {
+      deps += [ "//components/remote_cocoa/app_shim" ]
+    }
+
     if (use_aura && is_win) {
       deps += [
         "//ui/aura",
@@ -158,6 +162,7 @@ if (!is_android) {
       "test/data/",
       "//components/headless/test/data",
       "//third_party/blink/web_tests/http/tests/inspector-protocol/resources/inspector-protocol-test.js",
+      "//third_party/blink/web_tests/http/tests/inspector-protocol/resources/inspector-protocol-test-subtarget.html",
       "//third_party/blink/web_tests/http/tests/inspector-protocol/resources/http-interceptor.js",
     ]
 

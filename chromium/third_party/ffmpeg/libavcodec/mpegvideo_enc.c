@@ -47,7 +47,6 @@
 #include "avcodec.h"
 #include "encode.h"
 #include "idctdsp.h"
-#include "mpeg12codecs.h"
 #include "mpeg12data.h"
 #include "mpeg12enc.h"
 #include "mpegvideo.h"
@@ -86,7 +85,6 @@
 static int encode_picture(MPVMainEncContext *const s, const AVPacket *pkt);
 static int dct_quantize_refine(MPVEncContext *const s, int16_t *block, int16_t *weight, int16_t *orig, int n, int qscale);
 static int sse_mb(MPVEncContext *const s);
-static void denoise_dct_c(MPVEncContext *const s, int16_t *block);
 static int dct_quantize_c(MPVEncContext *const s,
                           int16_t *block, int n,
                           int qscale, int *overflow);
@@ -300,11 +298,8 @@ static av_cold void mpv_encode_defaults(MPVMainEncContext *const m)
 av_cold void ff_dct_encode_init(MPVEncContext *const s)
 {
     s->dct_quantize = dct_quantize_c;
-    s->denoise_dct  = denoise_dct_c;
 
-#if ARCH_MIPS
-    ff_mpvenc_dct_init_mips(s);
-#elif ARCH_X86
+#if ARCH_X86
     ff_dct_encode_init_x86(s);
 #endif
 
@@ -1370,7 +1365,7 @@ static int load_input_picture(MPVMainEncContext *const m, const AVFrame *pic_arg
         if (s->c.linesize & (STRIDE_ALIGN-1))
             direct = 0;
 
-        ff_dlog(s->c.avctx, "%d %d %"PTRDIFF_SPECIFIER" %"PTRDIFF_SPECIFIER"\n", pic_arg->linesize[0],
+        ff_dlog(s->c.avctx, "%d %d %td %td\n", pic_arg->linesize[0],
                 pic_arg->linesize[1], s->c.linesize, s->c.uvlinesize);
 
         pic = av_refstruct_pool_get(s->c.picture_pool);
@@ -2644,13 +2639,13 @@ typedef struct MBBackup {
         int mv[2][4][2];
         int last_mv[2][2][2];
         int mv_type, mv_dir;
-        int last_dc[3];
         int mb_intra, mb_skipped;
         int qscale;
         int block_last_index[8];
         int interlaced_dct;
     } c;
     int mb_skip_run;
+    int last_dc[3];
     int mv_bits, i_tex_bits, p_tex_bits, i_count, misc_bits, last_bits;
     int dquant;
     int esc3_level_length;
@@ -2668,7 +2663,7 @@ static inline void BEFORE ##_context_before_encode(DST_TYPE *const d,       \
     /* MPEG-1 */                                                            \
     d->mb_skip_run = s->mb_skip_run;                                        \
     for (int i = 0; i < 3; i++)                                             \
-        d->c.last_dc[i] = s->c.last_dc[i];                                  \
+        d->last_dc[i] = s->last_dc[i];                                      \
                                                                             \
     /* statistics */                                                        \
     d->mv_bits    = s->mv_bits;                                             \
@@ -2696,7 +2691,7 @@ static inline void AFTER ## _context_after_encode(DST_TYPE *const d,        \
     /* MPEG-1 */                                                            \
     d->mb_skip_run = s->mb_skip_run;                                        \
     for (int i = 0; i < 3; i++)                                             \
-        d->c.last_dc[i] = s->c.last_dc[i];                                  \
+        d->last_dc[i] = s->last_dc[i];                                      \
                                                                             \
     /* statistics */                                                        \
     d->mv_bits    = s->mv_bits;                                             \
@@ -3014,14 +3009,14 @@ static int encode_thread(AVCodecContext *c, void *arg){
     for(i=0; i<3; i++){
         /* init last dc values */
         /* note: quant matrix value (8) is implied here */
-        s->c.last_dc[i] = 128 << s->c.intra_dc_precision;
+        s->last_dc[i] = 128 << s->c.intra_dc_precision;
 
         s->encoding_error[i] = 0;
     }
     if (s->c.codec_id == AV_CODEC_ID_AMV) {
-        s->c.last_dc[0] = 128 * 8 / 13;
-        s->c.last_dc[1] = 128 * 8 / 14;
-        s->c.last_dc[2] = 128 * 8 / 14;
+        s->last_dc[0] = 128 * 8 / 13;
+        s->last_dc[1] = 128 * 8 / 14;
+        s->last_dc[2] = 128 * 8 / 14;
 #if CONFIG_MPEG4_ENCODER
     } else if (s->partitioned_frame) {
         av_assert1(s->c.codec_id == AV_CODEC_ID_MPEG4);
@@ -3044,7 +3039,7 @@ static int encode_thread(AVCodecContext *c, void *arg){
             mb_y = ff_speedhq_mb_y_order_to_mb(mb_y_order, s->c.mb_height, &first_in_slice);
             if (first_in_slice && mb_y_order != s->c.start_mb_y)
                 ff_speedhq_end_slice(s);
-            s->c.last_dc[0] = s->c.last_dc[1] = s->c.last_dc[2] = 1024 << s->c.intra_dc_precision;
+            s->last_dc[0] = s->last_dc[1] = s->last_dc[2] = 1024 << s->c.intra_dc_precision;
         } else {
             mb_y = mb_y_order;
         }
@@ -3148,7 +3143,7 @@ static int encode_thread(AVCodecContext *c, void *arg){
                     case AV_CODEC_ID_MPEG2VIDEO:
                         if (CONFIG_MPEG1VIDEO_ENCODER || CONFIG_MPEG2VIDEO_ENCODER) {
                             ff_mpeg1_encode_slice_header(s);
-                            ff_mpeg1_clean_buffers(&s->c);
+                            ff_mpeg1_clean_buffers(s);
                         }
                     break;
 #if CONFIG_H263P_ENCODER
@@ -3955,29 +3950,14 @@ static int encode_picture(MPVMainEncContext *const m, const AVPacket *pkt)
     return 0;
 }
 
-static void denoise_dct_c(MPVEncContext *const s, int16_t *block)
+static inline void denoise_dct(MPVEncContext *const s, int16_t block[])
 {
+    if (!s->dct_error_sum)
+        return;
+
     const int intra = s->c.mb_intra;
-    int i;
-
     s->dct_count[intra]++;
-
-    for(i=0; i<64; i++){
-        int level= block[i];
-
-        if(level){
-            if(level>0){
-                s->dct_error_sum[intra][i] += level;
-                level -= s->dct_offset[intra][i];
-                if(level<0) level=0;
-            }else{
-                s->dct_error_sum[intra][i] -= level;
-                level += s->dct_offset[intra][i];
-                if(level>0) level=0;
-            }
-            block[i]= level;
-        }
-    }
+    s->mpvencdsp.denoise_dct(block, s->dct_error_sum[intra], s->dct_offset[intra]);
 }
 
 static int dct_quantize_trellis_c(MPVEncContext *const s,
@@ -4009,8 +3989,8 @@ static int dct_quantize_trellis_c(MPVEncContext *const s,
 
     s->fdsp.fdct(block);
 
-    if(s->dct_error_sum)
-        s->denoise_dct(s, block);
+    denoise_dct(s, block);
+
     qmul= qscale*16;
     qadd= ((qscale-1)|1)*8;
 
@@ -4678,8 +4658,7 @@ static int dct_quantize_c(MPVEncContext *const s,
 
     s->fdsp.fdct(block);
 
-    if(s->dct_error_sum)
-        s->denoise_dct(s, block);
+    denoise_dct(s, block);
 
     if (s->c.mb_intra) {
         scantable = s->c.intra_scantable.scantable;

@@ -1,7 +1,7 @@
-/* Copyright (c) 2015-2025 The Khronos Group Inc.
- * Copyright (c) 2015-2025 Valve Corporation
- * Copyright (c) 2015-2025 LunarG, Inc.
- * Copyright (C) 2015-2024 Google Inc.
+/* Copyright (c) 2015-2026 The Khronos Group Inc.
+ * Copyright (c) 2015-2026 Valve Corporation
+ * Copyright (c) 2015-2026 LunarG, Inc.
+ * Copyright (C) 2015-2026 Google Inc.
  * Modifications Copyright (C) 2020 Advanced Micro Devices, Inc. All rights reserved.
  * Modifications Copyright (C) 2022 RasterGrid Kft.
  *
@@ -18,6 +18,7 @@
  * limitations under the License.
  */
 #include "state_tracker/buffer_state.h"
+#include <sstream>
 #include "generated/dispatch_functions.h"
 #include "state_tracker/state_tracker.h"
 
@@ -122,6 +123,13 @@ bool Buffer::CompareCreateInfo(const Buffer &other) const {
     return (create_info.flags == other.create_info.flags) && (create_info.size == other.create_info.size) &&
            (usage == other.usage) && (create_info.sharingMode == other.create_info.sharingMode) && valid_external &&
            valid_queue_family;
+}
+
+std::string Buffer::Describe(const Logger& dev_data) const {
+    std::stringstream ss;
+    ss << dev_data.FormatHandle(Handle()) << ", size " << std::to_string(create_info.size) << ", range "
+       << string_range_hex(DeviceAddressRange());
+    return ss.str();
 }
 
 BufferView::BufferView(const std::shared_ptr<vvl::Buffer> &bf, VkBufferView handle, const VkBufferViewCreateInfo *pCreateInfo,

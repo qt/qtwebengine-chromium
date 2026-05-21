@@ -238,7 +238,9 @@ TEST(MdnsWriterTest, WriteAAAARecordRdata) {
   };
   // clang-format on
   TestWriteEntrySucceeds(
-      AAAARecordRdata(IPAddress(IPAddress::Version::kV6, kExpectedRdata + 2)),
+      AAAARecordRdata(
+          IPAddress(IPAddress::Version::kV6,
+                    std::span(kExpectedRdata).subspan(2, IPAddress::kV6Size))),
       kExpectedRdata, sizeof(kExpectedRdata));
 }
 

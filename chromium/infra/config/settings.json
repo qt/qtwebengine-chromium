@@ -1,9 +1,9 @@
 {
-    "project": "chromium-m144",
-    "project_title": "Chromium M144",
-    "ref": "refs/branch-heads/7559",
-    "chrome_project": "chrome-m144",
-    "dawn_ref": "refs/heads/chromium/7559",
+    "project": "chromium-m146",
+    "project_title": "Chromium M146",
+    "ref": "refs/branch-heads/7680",
+    "chrome_project": "chrome-m146",
+    "dawn_ref": "refs/heads/chromium/7680",
     "is_main": false,
     "platforms": {
         "android": {
@@ -14,19 +14,24 @@
             "description": "beta/stable",
             "gardener_rotation": "chrome_browser_release"
         },
-        "cros-lts": {
-            "description": "CrOS LTS"
-        },
         "fuchsia": {
-            "description": "beta/stable/extended stable",
+            "description": "beta/stable",
+            "gardener_rotation": "chrome_browser_release"
+        },
+        "ios": {
+            "description": "beta/stable",
+            "gardener_rotation": "chrome_browser_release"
+        },
+        "linux": {
+            "description": "beta/stable",
             "gardener_rotation": "chrome_browser_release"
         },
         "mac": {
-            "description": "beta/stable/extended stable",
+            "description": "beta/stable",
             "gardener_rotation": "chrome_browser_release"
         },
         "windows": {
-            "description": "beta/stable/extended stable",
+            "description": "beta/stable",
             "gardener_rotation": "chrome_browser_release"
         }
     }

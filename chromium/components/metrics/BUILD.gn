@@ -40,7 +40,6 @@ source_set("library_support") {
 
 if (!is_cronet_build && is_android) {
   generate_jni("jni_headers") {
-    namespace = "metrics"
     sources = [
       "android/java/src/org/chromium/components/metrics/LowEntropySource.java",
     ]
@@ -284,6 +283,7 @@ if (!is_cronet_build || is_ios) {
       "//base:build_time",
       "//base:i18n",
       "//build:branding_buildflags",
+      "//components/background_task_scheduler",
       "//components/metrics/public/mojom:call_stack_mojo_bindings",
       "//components/metrics/public/mojom:histogram_fetcher_mojo_bindings",
       "//components/network_time",

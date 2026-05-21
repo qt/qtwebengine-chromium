@@ -73,6 +73,7 @@ let currentUpdateQueue: Map<Widget, PromiseWithResolvers<void>>|null = null;
 const currentlyProcessed = new Set<Widget>();
 let nextUpdateQueue = new Map<Widget, PromiseWithResolvers<void>>();
 let pendingAnimationFrame: number|null = null;
+let overallUpdatePromise: PromiseWithResolvers<void>|null = null;
 
 function enqueueIntoNextUpdateQueue(widget: Widget): Promise<void> {
   const scheduledUpdate = nextUpdateQueue.get(widget) ?? Promise.withResolvers<void>();
@@ -132,6 +133,10 @@ function runNextUpdate(): void {
     } else {
       currentUpdateQueue = null;
       currentlyProcessed.clear();
+      if (!pendingAnimationFrame && overallUpdatePromise) {
+        overallUpdatePromise.resolve();
+        overallUpdatePromise = null;
+      }
     }
   });
 }
@@ -246,6 +251,13 @@ export class WidgetElement<WidgetT extends Widget> extends HTMLElement {
       widgetParams: this.#widgetParams,
     };
     return clone;
+  }
+
+  override focus(): void {
+    const widget = Widget.get(this);
+    if (widget) {
+      widget.focus();
+    }
   }
 }
 
@@ -405,6 +417,16 @@ export class Widget {
    */
   static get(node: Node): Widget|undefined {
     return widgetMap.get(node);
+  }
+
+  static get allUpdatesComplete(): Promise<void> {
+    if (!pendingAnimationFrame && !currentUpdateQueue) {
+      return Promise.resolve();
+    }
+    if (!overallUpdatePromise) {
+      overallUpdatePromise = Promise.withResolvers<void>();
+    }
+    return overallUpdatePromise.promise;
   }
 
   static getOrCreateWidget(element: HTMLElement): Widget {
@@ -998,9 +1020,7 @@ export class Widget {
    * assert.isTrue(widget.someDataLoaded);
    * ```
    *
-   * @returns a promise that resolves to a `boolean` when the widget has finished
-   *          updating, the value is `true` if there are no more pending updates,
-   *          and `false` if the update cycle triggered another update.
+   * @returns a promise that resolves when the widget has finished updating.
    */
   get updateComplete(): Promise<void> {
     return this.#updateComplete;

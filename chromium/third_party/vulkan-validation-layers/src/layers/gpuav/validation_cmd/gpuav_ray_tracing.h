@@ -1,6 +1,6 @@
-/* Copyright (c) 2018-2025 The Khronos Group Inc.
- * Copyright (c) 2018-2025 Valve Corporation
- * Copyright (c) 2018-2025 LunarG, Inc.
+/* Copyright (c) 2018-2026 The Khronos Group Inc.
+ * Copyright (c) 2018-2026 Valve Corporation
+ * Copyright (c) 2018-2026 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,12 +30,12 @@ namespace valcmd {
 void TraceRaysIndirect(Validator &gpuav, const Location &loc, CommandBufferSubState &cb_state, const LastBound &last_bound,
                        VkDeviceAddress indirect_data_address);
 
-void RecordGetAccelerationStructureDeviceAddress(Validator &gpuav, VkAccelerationStructureKHR as, VkDeviceAddress as_addr);
-void RemoveAccelerationStrutureDeviceAddress(Validator &gpuav, VkAccelerationStructureKHR as);
+void TLAS(Validator &gpuav, const Location &loc, CommandBufferSubState &cb_state, const LastBound &last_bound, uint32_t info_count,
+          const VkAccelerationStructureBuildGeometryInfoKHR *infos,
+          const VkAccelerationStructureBuildRangeInfoKHR *const *pp_build_ranges_infos);
 
-void BuildAccelerationStructures(Validator &gpuav, const Location &loc, CommandBufferSubState &cb_state,
-                                 const LastBound &last_bound, uint32_t info_count,
-                                 const VkAccelerationStructureBuildGeometryInfoKHR *infos,
-                                 const VkAccelerationStructureBuildRangeInfoKHR *const *pp_build_ranges_infos);
+void BLAS(Validator &gpuav, const Location &loc, CommandBufferSubState &cb_state, const LastBound &last_bound, uint32_t info_count,
+          const VkAccelerationStructureBuildGeometryInfoKHR *infos,
+          const VkAccelerationStructureBuildRangeInfoKHR *const *pp_build_ranges_infos);
 }
 }  // namespace gpuav

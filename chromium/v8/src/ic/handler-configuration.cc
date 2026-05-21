@@ -233,7 +233,7 @@ Handle<Object> LoadHandler::LoadNonExistent(
 Handle<LoadHandler> LoadHandler::LoadInterceptorHolderIsLookupStartupObject(
     Isolate* isolate, DirectHandle<Map> lookup_start_object_map,
     DirectHandle<InterceptorInfo> interceptor_info) {
-  Tagged<Smi> smi_handler = LoadInterceptor();
+  Tagged<Smi> smi_handler = LoadInterceptor(interceptor_info->non_masking());
 
   bool access_check_needed = lookup_start_object_map->is_access_check_needed();
 
@@ -332,7 +332,7 @@ MaybeObjectHandle StoreHandler::StoreOwnTransition(Isolate* isolate,
     DirectHandle<DescriptorArray> descriptors(
         transition_map->instance_descriptors(isolate), isolate);
     PropertyDetails details = descriptors->GetDetails(descriptor);
-    if (descriptors->GetKey(descriptor)->IsPrivate()) {
+    if (descriptors->GetKey(descriptor)->IsAnyPrivate()) {
       DCHECK_EQ(DONT_ENUM, details.attributes());
     } else {
       DCHECK_EQ(NONE, details.attributes());
@@ -368,9 +368,9 @@ MaybeObjectHandle StoreHandler::StoreTransition(Isolate* isolate,
     DirectHandle<DescriptorArray> descriptors(
         transition_map->instance_descriptors(isolate), isolate);
     // Private fields must be added via StoreOwnTransition handler.
-    DCHECK(!descriptors->GetKey(descriptor)->IsPrivateName());
+    DCHECK(!descriptors->GetKey(descriptor)->IsAnyPrivateName());
     PropertyDetails details = descriptors->GetDetails(descriptor);
-    if (descriptors->GetKey(descriptor)->IsPrivate()) {
+    if (descriptors->GetKey(descriptor)->IsAnyPrivate()) {
       DCHECK_EQ(DONT_ENUM, details.attributes());
     } else {
       DCHECK_EQ(NONE, details.attributes());
@@ -447,7 +447,7 @@ Handle<Object> StoreHandler::StoreThroughPrototype(
 Handle<StoreHandler> StoreHandler::StoreInterceptorHolderIsReceiver(
     Isolate* isolate, DirectHandle<Map> lookup_start_object_map,
     DirectHandle<InterceptorInfo> interceptor_info) {
-  Tagged<Smi> smi_handler = StoreInterceptor();
+  Tagged<Smi> smi_handler = StoreInterceptor(interceptor_info->non_masking());
 
   bool access_check_needed = lookup_start_object_map->is_access_check_needed();
 

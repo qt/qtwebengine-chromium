@@ -53,6 +53,8 @@
 // this include file manages BLAS and MKL related macros
 // and inclusion of their respective header files
 #include "src/Core/util/MKL_support.h"
+#include "src/Core/util/AOCL_Support.h"    // ← ADD THIS
+
 
 #if defined(EIGEN_HAS_CUDA_FP16) || defined(EIGEN_HAS_HIP_FP16)
 #define EIGEN_HAS_GPU_FP16
@@ -286,6 +288,9 @@ using std::ptrdiff_t;
 #if defined EIGEN_VECTORIZE_RVV10FP16
 #include "src/Core/arch/RVV10/PacketMathFP16.h"
 #endif
+#if defined EIGEN_VECTORIZE_RVV10BF16
+#include "src/Core/arch/RVV10/PacketMathBF16.h"
+#endif
 #elif defined EIGEN_VECTORIZE_ZVECTOR
 #include "src/Core/arch/ZVector/PacketMath.h"
 #include "src/Core/arch/ZVector/MathFunctions.h"
@@ -432,6 +437,8 @@ using std::ptrdiff_t;
 #include "src/Core/arch/NEON/GeneralBlockPanelKernel.h"
 #elif defined EIGEN_VECTORIZE_LSX
 #include "src/Core/arch/LSX/GeneralBlockPanelKernel.h"
+#elif defined EIGEN_VECTORIZE_RVV10
+#include "src/Core/arch/RVV10/GeneralBlockPanelKernel.h"
 #endif
 
 #if defined(EIGEN_VECTORIZE_AVX512)
@@ -461,6 +468,10 @@ using std::ptrdiff_t;
 
 #ifdef EIGEN_USE_MKL_VML
 #include "src/Core/Assign_MKL.h"
+#endif
+
+#ifdef EIGEN_USE_AOCL_VML
+#include "src/Core/Assign_AOCL.h"
 #endif
 
 #include "src/Core/GlobalFunctions.h"

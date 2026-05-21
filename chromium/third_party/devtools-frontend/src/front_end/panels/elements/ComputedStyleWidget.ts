@@ -38,6 +38,7 @@ import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
+import * as ComputedStyleModule from '../../models/computed_style/computed_style.js';
 import * as TreeOutline from '../../ui/components/tree_outline/tree_outline.js';
 import * as InlineEditor from '../../ui/legacy/components/inline_editor/inline_editor.js';
 import * as Components from '../../ui/legacy/components/utils/utils.js';
@@ -45,7 +46,6 @@ import * as UI from '../../ui/legacy/legacy.js';
 import * as Lit from '../../ui/lit/lit.js';
 
 import * as ElementsComponents from './components/components.js';
-import {type ComputedStyle, type ComputedStyleModel, Events} from './ComputedStyleModel.js';
 import computedStyleSidebarPaneStyles from './computedStyleSidebarPane.css.js';
 import {ImagePreviewPopover} from './ImagePreviewPopover.js';
 import {PlatformFontsWidget} from './PlatformFontsWidget.js';
@@ -82,7 +82,13 @@ const UIStrings = {
    * @description Context menu item in Elements panel to navigate to the corresponding CSS style rule
    * for this computed property.
    */
-  navigateToStyle: 'Navigate to style',
+  navigateToStyle: 'Navigate to styles',
+  /**
+   * @description Text announced to screen readers when a filter is applied to the computed styles list, informing them of the filter term and the number of results.
+   * @example {example} PH1
+   * @example {5} PH2
+   */
+  filterUpdateAriaText: `Filter applied: {PH1}. Total Results: {PH2}`,
 } as const;
 const str_ = i18n.i18n.registerUIStrings('panels/elements/ComputedStyleWidget.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -201,8 +207,8 @@ class ColorRenderer extends rendererBase(SDK.CSSPropertyParserMatchers.ColorMatc
     }
 
     const swatch = new InlineEditor.ColorSwatch.ColorSwatch();
-    swatch.setReadonly(true);
-    swatch.renderColor(color);
+    swatch.readonly = true;
+    swatch.color = color;
     const valueElement = document.createElement('span');
     valueElement.textContent = match.text;
 
@@ -256,7 +262,7 @@ type ComputedStyleData = {
 };
 
 export class ComputedStyleWidget extends UI.Widget.VBox {
-  private computedStyleModel: ComputedStyleModel;
+  private computedStyleModel: ComputedStyleModule.ComputedStyleModel.ComputedStyleModel;
   private readonly showInheritedComputedStylePropertiesSetting: Common.Settings.Setting<boolean>;
   private readonly groupComputedStylesSetting: Common.Settings.Setting<boolean>;
   input: UI.Toolbar.ToolbarInput;
@@ -268,15 +274,17 @@ export class ComputedStyleWidget extends UI.Widget.VBox {
   #computedStylesTree = new TreeOutline.TreeOutline.TreeOutline<ComputedStyleData>();
   #treeData?: TreeOutline.TreeOutline.TreeOutlineData<ComputedStyleData>;
 
-  constructor(computedStyleModel: ComputedStyleModel) {
+  constructor(computedStyleModel: ComputedStyleModule.ComputedStyleModel.ComputedStyleModel) {
     super({useShadowDom: true});
     this.registerRequiredCSS(computedStyleSidebarPaneStyles);
 
     this.contentElement.classList.add('styles-sidebar-computed-style-widget');
 
     this.computedStyleModel = computedStyleModel;
-    this.computedStyleModel.addEventListener(Events.CSS_MODEL_CHANGED, this.requestUpdate, this);
-    this.computedStyleModel.addEventListener(Events.COMPUTED_STYLE_CHANGED, this.requestUpdate, this);
+    this.computedStyleModel.addEventListener(
+        ComputedStyleModule.ComputedStyleModel.Events.CSS_MODEL_CHANGED, this.requestUpdate, this);
+    this.computedStyleModel.addEventListener(
+        ComputedStyleModule.ComputedStyleModel.Events.COMPUTED_STYLE_CHANGED, this.requestUpdate, this);
 
     this.showInheritedComputedStylePropertiesSetting =
         Common.Settings.Settings.instance().createSetting('show-inherited-computed-style-properties', false);
@@ -313,7 +321,7 @@ export class ComputedStyleWidget extends UI.Widget.VBox {
         return link;
       }
       return null;
-    }, () => this.computedStyleModel.node());
+    }, () => this.computedStyleModel.node);
 
     const fontsWidget = new PlatformFontsWidget(this.computedStyleModel);
     fontsWidget.show(this.contentElement);
@@ -350,7 +358,7 @@ export class ComputedStyleWidget extends UI.Widget.VBox {
   }
 
   private async fetchMatchedCascade(): Promise<SDK.CSSMatchedStyles.CSSMatchedStyles|null> {
-    const node = this.computedStyleModel.node();
+    const node = this.computedStyleModel.node;
     if (!node || !this.computedStyleModel.cssModel()) {
       return null;
     }
@@ -364,12 +372,13 @@ export class ComputedStyleWidget extends UI.Widget.VBox {
 
     function validateStyles(this: ComputedStyleWidget, matchedStyles: SDK.CSSMatchedStyles.CSSMatchedStyles|null):
         SDK.CSSMatchedStyles.CSSMatchedStyles|null {
-      return matchedStyles && matchedStyles.node() === this.computedStyleModel.node() ? matchedStyles : null;
+      return matchedStyles && matchedStyles.node() === this.computedStyleModel.node ? matchedStyles : null;
     }
   }
 
-  private async rebuildAlphabeticalList(nodeStyle: ComputedStyle, matchedStyles: SDK.CSSMatchedStyles.CSSMatchedStyles):
-      Promise<void> {
+  private async rebuildAlphabeticalList(
+      nodeStyle: ComputedStyleModule.ComputedStyleModel.ComputedStyle,
+      matchedStyles: SDK.CSSMatchedStyles.CSSMatchedStyles): Promise<void> {
     this.imagePreviewPopover.hide();
     this.linkifier.reset();
     const cssModel = this.computedStyleModel.cssModel();
@@ -411,7 +420,8 @@ export class ComputedStyleWidget extends UI.Widget.VBox {
   }
 
   private async rebuildGroupedList(
-      nodeStyle: ComputedStyle|null, matchedStyles: SDK.CSSMatchedStyles.CSSMatchedStyles|null): Promise<void> {
+      nodeStyle: ComputedStyleModule.ComputedStyleModel.ComputedStyle|null,
+      matchedStyles: SDK.CSSMatchedStyles.CSSMatchedStyles|null): Promise<void> {
     this.imagePreviewPopover.hide();
     this.linkifier.reset();
     const cssModel = this.computedStyleModel.cssModel();
@@ -600,9 +610,14 @@ export class ComputedStyleWidget extends UI.Widget.VBox {
     return result;
   }
 
-  private onFilterChanged(event: Common.EventTarget.EventTargetEvent<string>): void {
-    void this.filterComputedStyles(
+  private async onFilterChanged(event: Common.EventTarget.EventTargetEvent<string>): Promise<void> {
+    await this.filterComputedStyles(
         event.data ? new RegExp(Platform.StringUtilities.escapeForRegExp(event.data), 'i') : null);
+
+    if (event.data && this.#computedStylesTree.data && this.#computedStylesTree.data.tree) {
+      UI.ARIAUtils.LiveAnnouncer.alert(i18nString(
+          UIStrings.filterUpdateAriaText, {PH1: event.data, PH2: this.#computedStylesTree.data.tree.length}));
+    }
   }
 
   async filterComputedStyles(regex: RegExp|null): Promise<void> {

@@ -20,6 +20,8 @@
 #include <fcntl.h>  // For mode_t & O_RDONLY/RDWR. Exists also on Windows.
 #include <stddef.h>
 
+#include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -32,6 +34,8 @@
 
 namespace perfetto {
 namespace base {
+
+class TaskRunner;
 
 #if PERFETTO_BUILDFLAG(PERFETTO_OS_WIN)
 using FileOpenMode = int;
@@ -127,6 +131,12 @@ std::string Dirname(const std::string& path);
 base::Status ListFilesRecursive(const std::string& dir_path,
                                 std::vector<std::string>& output);
 
+// Lists immediate subdirectories in |dir_path| (non-recursive). Directory names
+// are relative to |dir_path| and do not include the path separator. Returns
+// only directories, not files. Works on both Unix and Windows.
+base::Status ListDirectories(const std::string& dir_path,
+                             std::vector<std::string>& output);
+
 // Sets |path|'s owner group to |group_name| and permission mode bits to
 // |mode_bits|.
 base::Status SetFilePermissions(const std::string& path,
@@ -138,6 +148,38 @@ std::optional<uint64_t> GetFileSize(const std::string& path);
 
 // Returns the size of the open file |fd|, or nullopt in case of error.
 std::optional<uint64_t> GetFileSize(PlatformHandle fd);
+
+// This class uses inotify (on Linux/Android) to watch for the creation of
+// files in the filesystem. When the specified file is created, it triggers a
+// callback function.
+// Destroying the returned unique_ptr will automatically unregister the watch.
+//
+// Note: This only works with filesystem paths (not abstract sockets or other
+// special file types).
+// It's only supported on Linux and Android, it's a no-op (returns nullptr) on
+// other platforms.
+//
+// Usage:
+//   auto watch = LinuxFileWatch::WatchFileCreation(
+//       task_runner, "/tmp/my_file", []() {
+//         // Called when /tmp/my_file is created
+//       });
+class LinuxFileWatch {
+ public:
+  // Creates a watcher for file creation. Returns nullptr if the path is not a
+  // valid filesystem path or if the platform doesn't support inotify. The
+  // callback will be invoked on the provided TaskRunner when the file is
+  // created.
+  static std::unique_ptr<LinuxFileWatch> WatchFileCreation(
+      TaskRunner*,
+      const char* path,
+      std::function<void()> callback);
+
+  virtual ~LinuxFileWatch();
+
+ protected:
+  LinuxFileWatch() = default;
+};
 
 }  // namespace base
 }  // namespace perfetto

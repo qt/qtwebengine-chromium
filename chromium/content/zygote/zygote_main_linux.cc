@@ -21,6 +21,7 @@
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "base/functional/bind.h"
+#include "base/functional/callback.h"
 #include "base/logging.h"
 #include "base/posix/eintr_wrapper.h"
 #include "base/posix/unix_domain_socket.h"
@@ -187,9 +188,9 @@ bool ZygoteMain(
 
   if (using_layer1_sandbox) {
     // Let the ZygoteHost know we're booting up.
-    if (!base::UnixDomainSocket::SendMsg(
-            kZygoteSocketPairFd, kZygoteBootMessage, sizeof(kZygoteBootMessage),
-            std::vector<int>())) {
+    if (!base::UnixDomainSocket::SendMsg(kZygoteSocketPairFd,
+                                         base::as_byte_span(kZygoteBootMessage),
+                                         std::vector<int>())) {
       // This is not a CHECK failure because the browser process could either
       // crash or quickly exit while the zygote is starting. In either case a
       // zygote crash is not useful. https://crbug.com/692227

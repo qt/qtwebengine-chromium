@@ -4,44 +4,46 @@
 
 #include "platform/base/ip_address.h"
 
+#include <format>
+
+#include "build/build_config.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "platform/base/error.h"
 
 namespace openscreen {
 
+#if BUILDFLAG(IS_MAC)
+constexpr char kLoopbackInterface[] = "lo0";
+#else
+constexpr char kLoopbackInterface[] = "lo";
+#endif
+
 using ::testing::ElementsAreArray;
 
 TEST(IPAddressTest, V4Constructors) {
-  uint8_t bytes[4] = {};
-  IPAddress address1(std::array<uint8_t, 4>{{1, 2, 3, 4}});
-  address1.CopyToV4(bytes);
-  EXPECT_THAT(bytes, ElementsAreArray({1, 2, 3, 4}));
+  IPAddress address1(std::array<uint8_t, 4>{1, 2, 3, 4});
+  EXPECT_THAT(address1.bytes(), ElementsAreArray({1, 2, 3, 4}));
 
   uint8_t x[] = {4, 3, 2, 1};
   IPAddress address2(x);
-  address2.CopyToV4(bytes);
-  EXPECT_THAT(bytes, ElementsAreArray(x));
+  EXPECT_THAT(address2.bytes(), ElementsAreArray(x));
 
   const auto b = address2.bytes();
   const uint8_t raw_bytes[4]{b[0], b[1], b[2], b[3]};
   EXPECT_THAT(raw_bytes, ElementsAreArray(x));
 
-  IPAddress address3(IPAddress::Version::kV4, &x[0]);
-  address3.CopyToV4(bytes);
-  EXPECT_THAT(bytes, ElementsAreArray(x));
+  IPAddress address3(IPAddress::Version::kV4, x);
+  EXPECT_THAT(address3.bytes(), ElementsAreArray(x));
 
   IPAddress address4(6, 5, 7, 9);
-  address4.CopyToV4(bytes);
-  EXPECT_THAT(bytes, ElementsAreArray({6, 5, 7, 9}));
+  EXPECT_THAT(address4.bytes(), ElementsAreArray({6, 5, 7, 9}));
 
   IPAddress address5(address4);
-  address5.CopyToV4(bytes);
-  EXPECT_THAT(bytes, ElementsAreArray({6, 5, 7, 9}));
+  EXPECT_THAT(address5.bytes(), ElementsAreArray({6, 5, 7, 9}));
 
   address5 = address1;
-  address5.CopyToV4(bytes);
-  EXPECT_THAT(bytes, ElementsAreArray({1, 2, 3, 4}));
+  EXPECT_THAT(address5.bytes(), ElementsAreArray({1, 2, 3, 4}));
 }
 
 TEST(IPAddressTest, V4ComparisonAndBoolean) {
@@ -64,12 +66,9 @@ TEST(IPAddressTest, V4ComparisonAndBoolean) {
 }
 
 TEST(IPAddressTest, V4Parse) {
-  uint8_t bytes[4] = {};
-
   ErrorOr<IPAddress> address = IPAddress::Parse("192.168.0.1");
   ASSERT_TRUE(address);
-  address.value().CopyToV4(bytes);
-  EXPECT_THAT(bytes, ElementsAreArray({192, 168, 0, 1}));
+  EXPECT_THAT(address.value().bytes(), ElementsAreArray({192, 168, 0, 1}));
 }
 
 TEST(IPAddressTest, V4ParseFailures) {
@@ -102,34 +101,28 @@ TEST(IPAddressTest, V4ParseFailures) {
 }
 
 TEST(IPAddressTest, V6Constructors) {
-  uint8_t bytes[16] = {};
-  IPAddress address1(std::array<uint16_t, 8>{
-      {0x0102, 0x0304, 0x0506, 0x0708, 0x090a, 0x0b0c, 0x0d0e, 0x0f10}});
-  address1.CopyToV6(bytes);
-  EXPECT_THAT(bytes, ElementsAreArray({1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
-                                       13, 14, 15, 16}));
+  IPAddress address1(std::array<uint16_t, 8>{0x0102, 0x0304, 0x0506, 0x0708,
+                                             0x090a, 0x0b0c, 0x0d0e, 0x0f10});
+  EXPECT_THAT(address1.bytes(), ElementsAreArray({1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
+                                                  11, 12, 13, 14, 15, 16}));
 
   const uint8_t x[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
   const uint16_t hextets[] = {0x0102, 0x0304, 0x0506, 0x0708,
                               0x090a, 0x0b0c, 0x0d0e, 0x0f10};
   IPAddress address2(hextets);
-  address2.CopyToV6(bytes);
-  EXPECT_THAT(bytes, ElementsAreArray(x));
+  EXPECT_THAT(address2.bytes(), ElementsAreArray(x));
 
-  IPAddress address3(IPAddress::Version::kV6, &x[0]);
-  address3.CopyToV6(bytes);
-  EXPECT_THAT(bytes, ElementsAreArray(x));
+  IPAddress address3(IPAddress::Version::kV6, x);
+  EXPECT_THAT(address3.bytes(), ElementsAreArray(x));
 
   IPAddress address4(0x100f, 0x0e0d, 0x0c0b, 0x0a09, 0x0807, 0x0605, 0x0403,
                      0x0201);
-  address4.CopyToV6(bytes);
-  EXPECT_THAT(bytes, ElementsAreArray({16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6,
-                                       5, 4, 3, 2, 1}));
+  EXPECT_THAT(address4.bytes(), ElementsAreArray({16, 15, 14, 13, 12, 11, 10, 9,
+                                                  8, 7, 6, 5, 4, 3, 2, 1}));
 
   IPAddress address5(address4);
-  address5.CopyToV6(bytes);
-  EXPECT_THAT(bytes, ElementsAreArray({16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6,
-                                       5, 4, 3, 2, 1}));
+  EXPECT_THAT(address5.bytes(), ElementsAreArray({16, 15, 14, 13, 12, 11, 10, 9,
+                                                  8, 7, 6, 5, 4, 3, 2, 1}));
 }
 
 TEST(IPAddressTest, V6ComparisonAndBoolean) {
@@ -152,69 +145,66 @@ TEST(IPAddressTest, V6ComparisonAndBoolean) {
 }
 
 TEST(IPAddressTest, V6ParseBasic) {
-  uint8_t bytes[16] = {};
   ErrorOr<IPAddress> address =
       IPAddress::Parse("abcd:ef01:2345:6789:9876:5432:10FE:DBCA");
   ASSERT_TRUE(address);
-  address.value().CopyToV6(bytes);
-  EXPECT_THAT(bytes, ElementsAreArray({0xab, 0xcd, 0xef, 0x01, 0x23, 0x45, 0x67,
-                                       0x89, 0x98, 0x76, 0x54, 0x32, 0x10, 0xfe,
-                                       0xdb, 0xca}));
+  EXPECT_THAT(
+      address.value().bytes(),
+      ElementsAreArray({0xab, 0xcd, 0xef, 0x01, 0x23, 0x45, 0x67, 0x89, 0x98,
+                        0x76, 0x54, 0x32, 0x10, 0xfe, 0xdb, 0xca}));
 }
 
 TEST(IPAddressTest, V6ParseDoubleColon) {
-  uint8_t bytes[16] = {};
   ErrorOr<IPAddress> address1 =
       IPAddress::Parse("abcd:ef01:2345:6789:9876:5432::dbca");
   ASSERT_TRUE(address1);
-  address1.value().CopyToV6(bytes);
-  EXPECT_THAT(bytes, ElementsAreArray({0xab, 0xcd, 0xef, 0x01, 0x23, 0x45, 0x67,
-                                       0x89, 0x98, 0x76, 0x54, 0x32, 0x00, 0x00,
-                                       0xdb, 0xca}));
+  EXPECT_THAT(
+      address1.value().bytes(),
+      ElementsAreArray({0xab, 0xcd, 0xef, 0x01, 0x23, 0x45, 0x67, 0x89, 0x98,
+                        0x76, 0x54, 0x32, 0x00, 0x00, 0xdb, 0xca}));
   ErrorOr<IPAddress> address2 = IPAddress::Parse("abcd::10fe:dbca");
   ASSERT_TRUE(address2);
-  address2.value().CopyToV6(bytes);
-  EXPECT_THAT(bytes, ElementsAreArray({0xab, 0xcd, 0x00, 0x00, 0x00, 0x00, 0x00,
-                                       0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0xfe,
-                                       0xdb, 0xca}));
+  EXPECT_THAT(
+      address2.value().bytes(),
+      ElementsAreArray({0xab, 0xcd, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                        0x00, 0x00, 0x00, 0x10, 0xfe, 0xdb, 0xca}));
 
   ErrorOr<IPAddress> address3 = IPAddress::Parse("::10fe:dbca");
   ASSERT_TRUE(address3);
-  address3.value().CopyToV6(bytes);
-  EXPECT_THAT(bytes, ElementsAreArray({0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                                       0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0xfe,
-                                       0xdb, 0xca}));
+  EXPECT_THAT(
+      address3.value().bytes(),
+      ElementsAreArray({0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                        0x00, 0x00, 0x00, 0x10, 0xfe, 0xdb, 0xca}));
 
   ErrorOr<IPAddress> address4 = IPAddress::Parse("10fe:dbca::");
   ASSERT_TRUE(address4);
-  address4.value().CopyToV6(bytes);
-  EXPECT_THAT(bytes, ElementsAreArray({0x10, 0xfe, 0xdb, 0xca, 0x00, 0x00, 0x00,
-                                       0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                                       0x00, 0x00}));
+  EXPECT_THAT(
+      address4.value().bytes(),
+      ElementsAreArray({0x10, 0xfe, 0xdb, 0xca, 0x00, 0x00, 0x00, 0x00, 0x00,
+                        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}));
 }
 
 TEST(IPAddressTest, V6SmallValues) {
-  uint8_t bytes[16] = {};
   ErrorOr<IPAddress> address1 = IPAddress::Parse("::");
   ASSERT_TRUE(address1);
-  address1.value().CopyToV6(bytes);
-  EXPECT_THAT(bytes, ElementsAreArray({0x0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                                       0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                                       0x00, 0x00}));
+  EXPECT_THAT(
+      address1.value().bytes(),
+      ElementsAreArray({0x0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}));
 
   ErrorOr<IPAddress> address2 = IPAddress::Parse("::1");
   ASSERT_TRUE(address2);
-  address2.value().CopyToV6(bytes);
-  EXPECT_THAT(bytes, ElementsAreArray({0x0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                                       0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                                       0x00, 0x01}));
+  EXPECT_THAT(
+      address2.value().bytes(),
+      ElementsAreArray({0x0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01}));
 
   ErrorOr<IPAddress> address3 = IPAddress::Parse("::2:1");
   ASSERT_TRUE(address3);
-  address3.value().CopyToV6(bytes);
-  EXPECT_THAT(bytes, ElementsAreArray({0x0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                                       0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02,
-                                       0x00, 0x01}));
+  EXPECT_THAT(
+      address3.value().bytes(),
+      ElementsAreArray({0x0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                        0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x01}));
 }
 
 TEST(IPAddressTest, V6ParseFailures) {
@@ -248,13 +238,12 @@ TEST(IPAddressTest, V6ParseFailures) {
 }
 
 TEST(IPAddressTest, V6ParseThreeDigitValue) {
-  uint8_t bytes[16] = {};
   ErrorOr<IPAddress> address = IPAddress::Parse("::123");
   ASSERT_TRUE(address);
-  address.value().CopyToV6(bytes);
-  EXPECT_THAT(bytes, ElementsAreArray({0x0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                                       0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                                       0x01, 0x23}));
+  EXPECT_THAT(
+      address.value().bytes(),
+      ElementsAreArray({0x0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                        0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x23}));
 }
 
 TEST(IPAddressTest, IPEndpointBoolOperator) {
@@ -426,6 +415,174 @@ TEST(IPAddressTest, OstreamOperatorForIPv4) {
   oss.str("");
   oss << IPAddress{23, 45, 67, 89};
   EXPECT_EQ("23.45.67.89", oss.str());
+}
+
+TEST(IPAddressTest, V6IsLinkLocal) {
+  ErrorOr<IPAddress> address = IPAddress::Parse("fe80::1");
+  ASSERT_TRUE(address);
+  EXPECT_TRUE(address.value().IsLinkLocal());
+
+  address = IPAddress::Parse("fe90::1");
+  ASSERT_TRUE(address);
+  EXPECT_TRUE(address.value().IsLinkLocal());
+
+  address = IPAddress::Parse("febf::ffff:ffff:ffff:ffff");
+  ASSERT_TRUE(address);
+  EXPECT_TRUE(address.value().IsLinkLocal());
+
+  address = IPAddress::Parse("fec0::1");
+  ASSERT_TRUE(address);
+  EXPECT_FALSE(address.value().IsLinkLocal());
+
+  address = IPAddress::Parse("::1");
+  ASSERT_TRUE(address);
+  EXPECT_FALSE(address.value().IsLinkLocal());
+}
+
+TEST(IPAddressTest, V6ParseLinkLocal) {
+  // NOTE: This test is using the loopback interface kLoopbackInterface which
+  // should exist on any Linux system.
+  const ErrorOr<IPAddress> address =
+      IPAddress::Parse(std::string("fe80::1%") + kLoopbackInterface);
+  EXPECT_TRUE(address);
+  if (address) {
+    EXPECT_TRUE(address.value().IsLinkLocal());
+    EXPECT_NE(0u, address.value().GetScopeId());
+  }
+}
+
+TEST(IPAddressTest, V6ParseLinkLocalFailures) {
+  // Scope ID on non-link-local address.
+  EXPECT_FALSE(
+      IPAddress::Parse(std::string("::1%") + kLoopbackInterface).is_value());
+  // Invalid scope ID.
+  EXPECT_FALSE(IPAddress::Parse("fe80::1%invalidscope"));
+}
+
+TEST(IPAddressTest, V6ComparisonWithScopeId) {
+  const ErrorOr<IPAddress> address1_or_error = IPAddress::Parse("fe80::1");
+  ASSERT_TRUE(address1_or_error);
+  const IPAddress address1 = address1_or_error.value();
+
+  const ErrorOr<IPAddress> address2_or_error = IPAddress::Parse("fe80::1");
+  ASSERT_TRUE(address2_or_error);
+  const IPAddress address2 = address2_or_error.value();
+
+  const ErrorOr<IPAddress> address3_or_error = IPAddress::Parse("fe80::2");
+  ASSERT_TRUE(address3_or_error);
+  const IPAddress address3 = address3_or_error.value();
+
+  EXPECT_EQ(address1, address2);
+  EXPECT_NE(address1, address3);
+  EXPECT_LT(address1, address3);
+
+  // It is not possible to create an IPAddress with a scope ID in this test
+  // without creating a network interface.
+}
+
+TEST(IPAddressTest, OstreamOperatorForIPv6LinkLocal) {
+  std::ostringstream oss;
+  const ErrorOr<IPAddress> address = IPAddress::Parse("fe80::1");
+  ASSERT_TRUE(address);
+
+  oss << address.value();
+  EXPECT_EQ("fe80:0000:0000:0000:0000:0000:0000:0001", oss.str());
+}
+
+TEST(IPAddressTest, OstreamOperatorForIPv6LinkLocalWithScope) {
+  std::ostringstream oss;
+  ErrorOr<IPAddress> address =
+      IPAddress::Parse(std::string("fe80::1%") + kLoopbackInterface);
+  ASSERT_TRUE(address);
+
+  oss << address.value();
+  EXPECT_EQ(std::string("fe80:0000:0000:0000:0000:0000:0000:0001%") +
+                kLoopbackInterface,
+            oss.str());
+}
+
+TEST(IPAddressTest, IPEndpointParseWithScope) {
+  // NOTE: This test is using the loopback interface kLoopbackInterface which
+  // should exist on any Linux system.
+  const ErrorOr<IPEndpoint> result =
+      IPEndpoint::Parse(std::format("[fe80::1%{}]:8080", kLoopbackInterface));
+  ASSERT_TRUE(result.is_value()) << result.error();
+  EXPECT_TRUE(result.value().address.IsLinkLocal());
+  EXPECT_NE(0u, result.value().address.GetScopeId());
+  EXPECT_EQ(8080, result.value().port);
+
+  // Numeric scope ID.
+  const ErrorOr<IPEndpoint> result_scopeid =
+      IPEndpoint::Parse("[fe80::1%1]:8080");
+  ASSERT_TRUE(result_scopeid.is_value()) << result_scopeid.error();
+  EXPECT_TRUE(result_scopeid.value().address.IsLinkLocal());
+  EXPECT_EQ(1u, result_scopeid.value().address.GetScopeId());
+  EXPECT_EQ(8080, result_scopeid.value().port);
+
+  // Scope ID on non-link-local address should fail.
+  EXPECT_FALSE(
+      IPEndpoint::Parse(std::format("[::1%{}]:8080", kLoopbackInterface))
+          .is_value());
+
+  // Invalid scope ID should fail.
+  EXPECT_FALSE(IPEndpoint::Parse("[fe80::1%nosuchinterface]:8080").is_value());
+}
+
+TEST(IPAddressTest, V4ConstructorFromSpan) {
+  const uint8_t data[] = {192, 168, 0, 1};
+  std::span<const uint8_t> span(data);
+  const IPAddress address(IPAddress::Version::kV4, span);
+
+  EXPECT_TRUE(address.IsV4());
+  EXPECT_EQ(address, IPAddress(192, 168, 0, 1));
+}
+
+TEST(IPAddressTest, V6ConstructorFromSpan) {
+  const uint8_t data[] = {0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1};
+  std::span<const uint8_t> span(data);
+  const IPAddress address(IPAddress::Version::kV6, span);
+
+  EXPECT_TRUE(address.IsV6());
+  EXPECT_THAT(address.bytes(), ElementsAreArray(data));
+}
+
+TEST(IPAddressTest, CopyToSpanV4) {
+  const IPAddress address(192, 168, 1, 1);
+  uint8_t buffer[4];
+  std::span<uint8_t> span(buffer);
+
+  address.CopyTo(span);
+
+  const uint8_t expected[] = {192, 168, 1, 1};
+  EXPECT_THAT(buffer, ElementsAreArray(expected));
+}
+
+TEST(IPAddressTest, CopyToSpanV6) {
+  const uint8_t v6_bytes[] = {0, 1, 2,  3,  4,  5,  6,  7,
+                              8, 9, 10, 11, 12, 13, 14, 15};
+  const IPAddress address(IPAddress::Version::kV6, v6_bytes);
+
+  uint8_t buffer[16];
+  std::span<uint8_t> span(buffer);
+
+  address.CopyTo(span);
+
+  EXPECT_THAT(buffer, ElementsAreArray(v6_bytes));
+}
+
+TEST(IPAddressTest, BytesMethodReturnsSpan) {
+  IPAddress v4_address(10, 0, 0, 1);
+  auto v4_span = v4_address.bytes();
+  EXPECT_EQ(v4_span.size(), 4u);
+  const uint8_t expected_v4[] = {10, 0, 0, 1};
+  EXPECT_THAT(v4_span, ElementsAreArray(expected_v4));
+
+  const uint8_t v6_data[] = {0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0,
+                             0,    0,    0,    0,    0, 0, 0, 1};
+  const IPAddress v6_address(IPAddress::Version::kV6, v6_data);
+  auto v6_span = v6_address.bytes();
+  EXPECT_EQ(v6_span.size(), 16u);
+  EXPECT_THAT(v6_span, ElementsAreArray(v6_data));
 }
 
 }  // namespace openscreen

@@ -119,6 +119,12 @@ VkFilter ToVulkanSamplerFilter(wgpu::FilterMode filter);
 
 VkImageAspectFlags VulkanAspectMask(const Aspect& aspects);
 
+VkShaderStageFlags VulkanShaderStages(wgpu::ShaderStage stages);
+VkShaderStageFlagBits VulkanShaderStage(SingleShaderStage stage);
+
+VkAttachmentLoadOp VulkanAttachmentLoadOp(wgpu::LoadOp op);
+VkAttachmentStoreOp VulkanAttachmentStoreOp(wgpu::StoreOp op);
+
 TexelExtent3D ComputeTextureCopyExtent(const TextureCopy& textureCopy,
                                        const TexelExtent3D& copySize);
 
@@ -175,6 +181,8 @@ void SetDebugName(Device* device,
 
 std::string GetNextDeviceDebugPrefix();
 std::string GetDeviceDebugPrefixFromDebugName(const char* debugName);
+
+std::string FormatAPIVersion(uint32_t version);
 
 // Get the properties for the given format.
 // https://registry.khronos.org/vulkan/specs/1.3-extensions/man/html/VkDrmFormatModifierPropertiesEXT.html

@@ -16,6 +16,8 @@
 #include "base/time/time.h"
 #include "base/values.h"
 #include "build/build_config.h"
+#include "components/prefs/mock_pref_change_callback.h"
+#include "components/prefs/pref_change_registrar.h"
 #include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/scoped_user_pref_update.h"
 #include "components/prefs/testing_pref_service.h"
@@ -34,6 +36,8 @@
 namespace sync_preferences {
 
 namespace {
+
+using ServiceStatus = ::sync_preferences::CrossDevicePrefTracker::ServiceStatus;
 
 // Define constants used in the implementation for validation.
 constexpr char kValueKey[] = "value";
@@ -138,6 +142,7 @@ class MockObserver : public CrossDevicePrefTracker::Observer {
                const TimestampedPrefValue& value,
                const syncer::DeviceInfo& device_info),
               (override));
+  MOCK_METHOD(void, OnServiceStatusChanged, (ServiceStatus status), (override));
 };
 
 class CrossDevicePrefTrackerTest : public testing::Test {
@@ -244,10 +249,10 @@ class CrossDevicePrefTrackerTest : public testing::Test {
 
   // Helper to retrieve the cross-device dictionary entry for a given pref and
   // device. Returns nullptr if the entry does not exist.
-  const base::Value::Dict* GetCrossDevicePrefEntry(
+  const base::DictValue* GetCrossDevicePrefEntry(
       const std::string& cross_device_pref_name,
       const std::string& cache_guid) {
-    const base::Value::Dict& dict =
+    const base::DictValue& dict =
         profile_prefs_.GetDict(cross_device_pref_name);
     return dict.FindDict(cache_guid);
   }
@@ -279,7 +284,8 @@ class CrossDevicePrefTrackerTest : public testing::Test {
         /*paask_info=*/std::nullopt,
         /*fcm_registration_token=*/std::string(),
         /*interested_data_types=*/syncer::DataTypeSet(),
-        /*auto_sign_out_last_signin_timestamp=*/std::nullopt);
+        /*auto_sign_out_last_signin_timestamp=*/std::nullopt,
+        /*desktop_to_ios_promo_receiving_enabled=*/false);
   }
 
   // Helper to create a fake `DeviceInfo` for testing filters.
@@ -303,7 +309,7 @@ class CrossDevicePrefTrackerTest : public testing::Test {
                                   base::Time update_time,
                                   std::optional<base::Time> observed_time) {
     ScopedDictPrefUpdate update(&profile_prefs_, cross_device_pref_name);
-    base::Value::Dict entry;
+    base::DictValue entry;
     entry.Set(kValueKey, value.Clone());
     entry.Set(kUpdateTimeKey, base::TimeToValue(update_time));
     if (observed_time.has_value()) {
@@ -334,14 +340,14 @@ TEST_F(CrossDevicePrefTrackerTest,
 
   // Verify that the initial values are synced to the cross-device prefs.
   // These are initial syncs, so they should not have an observed timestamp.
-  const base::Value::Dict* profile_pref_entry =
+  const base::DictValue* profile_pref_entry =
       GetCrossDevicePrefEntry(kCrossDeviceProfilePref, kLocalCacheGuid);
   ASSERT_NE(profile_pref_entry, nullptr);
   EXPECT_EQ(profile_pref_entry->FindInt(kValueKey), 10);
   EXPECT_TRUE(profile_pref_entry->contains(kUpdateTimeKey));
   EXPECT_FALSE(profile_pref_entry->contains(kLastObservedChangeTimeKey));
 
-  const base::Value::Dict* local_state_pref_entry =
+  const base::DictValue* local_state_pref_entry =
       GetCrossDevicePrefEntry(kCrossDeviceLocalStatePref, kLocalCacheGuid);
   ASSERT_NE(local_state_pref_entry, nullptr);
   EXPECT_EQ(local_state_pref_entry->FindInt(kValueKey), 20);
@@ -357,7 +363,7 @@ TEST_F(CrossDevicePrefTrackerTest,
   CreateTracker();
 
   // Initial state (default value 0).
-  const base::Value::Dict* initial_entry =
+  const base::DictValue* initial_entry =
       GetCrossDevicePrefEntry(kCrossDeviceProfilePref, kLocalCacheGuid);
   EXPECT_EQ(initial_entry, nullptr);
 
@@ -366,7 +372,7 @@ TEST_F(CrossDevicePrefTrackerTest,
   profile_prefs_.SetInteger(kTrackedProfilePref, 50);
 
   // Verify the change is propagated with both timestamps.
-  const base::Value::Dict* entry =
+  const base::DictValue* entry =
       GetCrossDevicePrefEntry(kCrossDeviceProfilePref, kLocalCacheGuid);
   ASSERT_NE(entry, nullptr);
   EXPECT_EQ(entry->FindInt(kValueKey), 50);
@@ -384,7 +390,7 @@ TEST_F(CrossDevicePrefTrackerTest,
   profile_prefs_.ClearPref(kTrackedProfilePref);
 
   // Verify the entry is now removed from the cross-device dictionary.
-  const base::Value::Dict* cleared_entry =
+  const base::DictValue* cleared_entry =
       GetCrossDevicePrefEntry(kCrossDeviceProfilePref, kLocalCacheGuid);
   EXPECT_EQ(cleared_entry, nullptr);
 }
@@ -395,7 +401,7 @@ TEST_F(CrossDevicePrefTrackerTest,
        SyncsLocalStatePrefChangeWithObservedTimestamp) {
   CreateTracker();
   local_state_prefs_.SetInteger(kTrackedLocalStatePref, 60);
-  const base::Value::Dict* entry =
+  const base::DictValue* entry =
       GetCrossDevicePrefEntry(kCrossDeviceLocalStatePref, kLocalCacheGuid);
   ASSERT_NE(entry, nullptr);
   EXPECT_EQ(entry->FindInt(kValueKey), 60);
@@ -410,7 +416,7 @@ TEST_F(CrossDevicePrefTrackerTest, IgnoresUntrackedPrefChange) {
 
   // Ensure no unexpected writes occurred. The tracked pref entry should not
   // exist because it was initialized to its default value and never changed.
-  const base::Value::Dict* entry =
+  const base::DictValue* entry =
       GetCrossDevicePrefEntry(kCrossDeviceProfilePref, kLocalCacheGuid);
   EXPECT_EQ(entry, nullptr);
 }
@@ -431,7 +437,7 @@ TEST_F(CrossDevicePrefTrackerTest, DelayedInitializationWaitsForDeviceInfo) {
   InitializeLocalDeviceInfo();
 
   // Verify that the initial value is now synced.
-  const base::Value::Dict* entry =
+  const base::DictValue* entry =
       GetCrossDevicePrefEntry(kCrossDeviceProfilePref, kLocalCacheGuid);
   ASSERT_NE(entry, nullptr);
   EXPECT_EQ(entry->FindInt(kValueKey), 10);
@@ -456,7 +462,7 @@ TEST_F(CrossDevicePrefTrackerTest, SyncsLatestValueAfterDelayedInitialization) {
 
   // Verify the latest value (50) is synced. This is considered a refresh, not
   // an observed change.
-  const base::Value::Dict* entry1 =
+  const base::DictValue* entry1 =
       GetCrossDevicePrefEntry(kCrossDeviceProfilePref, kLocalCacheGuid);
   ASSERT_NE(entry1, nullptr);
   EXPECT_EQ(entry1->FindInt(kValueKey), 50);
@@ -465,7 +471,7 @@ TEST_F(CrossDevicePrefTrackerTest, SyncsLatestValueAfterDelayedInitialization) {
 
   // Verify subsequent changes are correctly handled as observed changes.
   profile_prefs_.SetInteger(kTrackedProfilePref, 55);
-  const base::Value::Dict* entry2 =
+  const base::DictValue* entry2 =
       GetCrossDevicePrefEntry(kCrossDeviceProfilePref, kLocalCacheGuid);
   ASSERT_NE(entry2, nullptr);
   EXPECT_EQ(entry2->FindInt(kValueKey), 55);
@@ -479,7 +485,7 @@ TEST_F(CrossDevicePrefTrackerTest, SkipsWriteOnRefreshIfValueIsUnchanged) {
   profile_prefs_.SetInteger(kTrackedProfilePref, 10);
   CreateTracker();
 
-  const base::Value::Dict* entry =
+  const base::DictValue* entry =
       GetCrossDevicePrefEntry(kCrossDeviceProfilePref, kLocalCacheGuid);
   ASSERT_NE(entry, nullptr);
   EXPECT_EQ(entry->FindInt(kValueKey), 10);
@@ -494,7 +500,7 @@ TEST_F(CrossDevicePrefTrackerTest, SkipsWriteOnRefreshIfValueIsUnchanged) {
   CreateTracker();
 
   // Verify the timestamp has NOT changed, indicating the write was skipped.
-  const base::Value::Dict* updated_entry =
+  const base::DictValue* updated_entry =
       GetCrossDevicePrefEntry(kCrossDeviceProfilePref, kLocalCacheGuid);
   ASSERT_NE(updated_entry, nullptr);
   EXPECT_EQ(updated_entry->FindInt(kValueKey), 10);
@@ -511,7 +517,7 @@ TEST_F(CrossDevicePrefTrackerTest,
   CreateTracker();
   profile_prefs_.SetInteger(kTrackedProfilePref, 10);  // Observed change.
 
-  const base::Value::Dict* entry =
+  const base::DictValue* entry =
       GetCrossDevicePrefEntry(kCrossDeviceProfilePref, kLocalCacheGuid);
   ASSERT_NE(entry, nullptr);
   EXPECT_EQ(entry->FindInt(kValueKey), 10);
@@ -526,7 +532,7 @@ TEST_F(CrossDevicePrefTrackerTest,
   CreateTracker();  // This is a non-observed, initial sync.
 
   // Verify the observed timestamp was preserved.
-  const base::Value::Dict* updated_entry =
+  const base::DictValue* updated_entry =
       GetCrossDevicePrefEntry(kCrossDeviceProfilePref, kLocalCacheGuid);
   ASSERT_NE(updated_entry, nullptr);
   EXPECT_EQ(updated_entry->FindInt(kValueKey), 10);
@@ -546,7 +552,7 @@ TEST_F(CrossDevicePrefTrackerTest,
   profile_prefs_.SetInteger(kTrackedProfilePref, 10);  // Observed change.
 
   // Verify initial state has an observed timestamp.
-  const base::Value::Dict* entry1 =
+  const base::DictValue* entry1 =
       GetCrossDevicePrefEntry(kCrossDeviceProfilePref, kLocalCacheGuid);
   ASSERT_NE(entry1, nullptr);
   EXPECT_EQ(entry1->FindInt(kValueKey), 10);
@@ -562,7 +568,7 @@ TEST_F(CrossDevicePrefTrackerTest,
 
   // Verify the new value (20) is synced, but it should NOT have the observed
   // timestamp, as this specific value change was not observed live.
-  const base::Value::Dict* entry2 =
+  const base::DictValue* entry2 =
       GetCrossDevicePrefEntry(kCrossDeviceProfilePref, kLocalCacheGuid);
   ASSERT_NE(entry2, nullptr);
   EXPECT_EQ(entry2->FindInt(kValueKey), 20);
@@ -879,21 +885,21 @@ TEST_F(CrossDevicePrefTrackerTest, GetValuesHandlesInvalidDictionaryEntries) {
 
   // Manually add entries with various invalid formats.
   ScopedDictPrefUpdate update(&profile_prefs_, kCrossDeviceProfilePref);
-  base::Value::Dict& dict = update.Get();
+  base::DictValue& dict = update.Get();
 
   // Entry 1: Valid (control case).
-  base::Value::Dict entry1;
+  base::DictValue entry1;
   entry1.Set(kValueKey, 1);
   entry1.Set(kUpdateTimeKey, base::TimeToValue(kNow));
   dict.Set("guid1", std::move(entry1));
 
   // Entry 2: Missing 'value' key.
-  base::Value::Dict entry2;
+  base::DictValue entry2;
   entry2.Set(kUpdateTimeKey, base::TimeToValue(kNow));
   dict.Set("guid2", std::move(entry2));
 
   // Entry 3: Invalid 'update_time' format.
-  base::Value::Dict entry3;
+  base::DictValue entry3;
   entry3.Set(kValueKey, 3);
   entry3.Set(kUpdateTimeKey, "invalid_time");
   dict.Set("guid3", std::move(entry3));
@@ -1168,7 +1174,7 @@ TEST_F(CrossDevicePrefTrackerTest, DoesNotNotifyIfRemoteUpdateIsMalformed) {
   // Manually manipulate the dictionary as InjectCrossDevicePrefEntry enforces
   // the correct format.
   ScopedDictPrefUpdate update(&profile_prefs_, kCrossDeviceProfilePref);
-  base::Value::Dict entry;
+  base::DictValue entry;
   entry.Set(kValueKey, base::Value(100));
   // Missing kUpdateTimeKey, which makes ParseCrossDevicePrefEntry() fail.
   update->Set(kRemoteGuid, std::move(entry));
@@ -1224,7 +1230,7 @@ TEST_F(CrossDevicePrefTrackerTest, DoesNotInitializeWhenSyncIsInactive) {
   CreateTracker();
 
   // Verify that the initial values are NOT synced because Sync is inactive.
-  const base::Value::Dict* profile_pref_entry =
+  const base::DictValue* profile_pref_entry =
       GetCrossDevicePrefEntry(kCrossDeviceProfilePref, kLocalCacheGuid);
   EXPECT_EQ(profile_pref_entry, nullptr);
 }
@@ -1239,7 +1245,7 @@ TEST_F(CrossDevicePrefTrackerTest, IgnoresLocalChangesWhenSyncIsInactive) {
   profile_prefs_.SetInteger(kTrackedProfilePref, 50);
 
   // Verify the change is NOT propagated.
-  const base::Value::Dict* entry =
+  const base::DictValue* entry =
       GetCrossDevicePrefEntry(kCrossDeviceProfilePref, kLocalCacheGuid);
   EXPECT_EQ(entry, nullptr);
 }
@@ -1260,7 +1266,7 @@ TEST_F(CrossDevicePrefTrackerTest, RefreshesPrefsWhenSyncBecomesActive) {
 
   // Verify that the current value (10) is now synced. This is a refresh, not
   // an observed change.
-  const base::Value::Dict* entry =
+  const base::DictValue* entry =
       GetCrossDevicePrefEntry(kCrossDeviceProfilePref, kLocalCacheGuid);
   ASSERT_NE(entry, nullptr);
   EXPECT_EQ(entry->FindInt(kValueKey), 10);
@@ -1283,7 +1289,7 @@ TEST_F(CrossDevicePrefTrackerTest, SyncsLatestValueWhenSyncBecomesActive) {
   ChangeSyncState(true);
 
   // Verify the latest value (50) is synced.
-  const base::Value::Dict* entry =
+  const base::DictValue* entry =
       GetCrossDevicePrefEntry(kCrossDeviceProfilePref, kLocalCacheGuid);
   ASSERT_NE(entry, nullptr);
   EXPECT_EQ(entry->FindInt(kValueKey), 50);
@@ -1301,13 +1307,13 @@ TEST_F(CrossDevicePrefTrackerTest, HandlesNullSyncService) {
   EXPECT_EQ(tracker_->sync_service(), nullptr);
 
   // Verify that no sync occurs.
-  const base::Value::Dict* entry1 =
+  const base::DictValue* entry1 =
       GetCrossDevicePrefEntry(kCrossDeviceProfilePref, kLocalCacheGuid);
   EXPECT_EQ(entry1, nullptr);
 
   // Verify that local changes are also ignored.
   profile_prefs_.SetInteger(kTrackedProfilePref, 20);
-  const base::Value::Dict* entry2 =
+  const base::DictValue* entry2 =
       GetCrossDevicePrefEntry(kCrossDeviceProfilePref, kLocalCacheGuid);
   EXPECT_EQ(entry2, nullptr);
 }
@@ -1336,7 +1342,7 @@ TEST_F(CrossDevicePrefTrackerTest, DelayedInitWaitsForDeviceInfoAndSync) {
   ChangeSyncState(true);
 
   // Verify sync occurred.
-  const base::Value::Dict* entry =
+  const base::DictValue* entry =
       GetCrossDevicePrefEntry(kCrossDeviceProfilePref, kLocalCacheGuid);
   ASSERT_NE(entry, nullptr);
   EXPECT_EQ(entry->FindInt(kValueKey), 10);
@@ -1362,7 +1368,7 @@ TEST_F(CrossDevicePrefTrackerTest, InactiveWhenDataTypeIsDisabled) {
   test_sync_service_.FireStateChanged();  // Trigger initial check
 
   // Verify that the initial value is NOT synced.
-  const base::Value::Dict* entry =
+  const base::DictValue* entry =
       GetCrossDevicePrefEntry(kCrossDeviceProfilePref, kLocalCacheGuid);
   EXPECT_EQ(entry, nullptr);
 
@@ -1638,16 +1644,14 @@ TEST_F(CrossDevicePrefTrackerTest, RecordsTrackerAvailabilityMetricAvailable) {
 
   tracker_->GetValues(kTrackedProfilePref, {});
 
-  histogram_tester.ExpectUniqueSample(
-      kAvailabilityAtQueryHistogram,
-      CrossDevicePrefTrackerAvailabilityAtQuery::kAvailable, 1);
+  histogram_tester.ExpectUniqueSample(kAvailabilityAtQueryHistogram,
+                                      ServiceStatus::kAvailable, 1);
 
   tracker_->GetMostRecentValue(kTrackedProfilePref, {});
 
   histogram_tester.ExpectTotalCount(kAvailabilityAtQueryHistogram, 2);
-  histogram_tester.ExpectBucketCount(
-      kAvailabilityAtQueryHistogram,
-      CrossDevicePrefTrackerAvailabilityAtQuery::kAvailable, 2);
+  histogram_tester.ExpectBucketCount(kAvailabilityAtQueryHistogram,
+                                     ServiceStatus::kAvailable, 2);
 }
 
 // Verifies that the metric records `kSyncNotConfigured` when `DeviceInfo` is
@@ -1661,9 +1665,8 @@ TEST_F(CrossDevicePrefTrackerTest,
 
   tracker_->GetValues(kTrackedProfilePref, {});
 
-  histogram_tester.ExpectUniqueSample(
-      kAvailabilityAtQueryHistogram,
-      CrossDevicePrefTrackerAvailabilityAtQuery::kSyncNotConfigured, 1);
+  histogram_tester.ExpectUniqueSample(kAvailabilityAtQueryHistogram,
+                                      ServiceStatus::kSyncNotConfigured, 1);
 }
 
 // Verifies that the metric records `kLocalDeviceInfoMissing` when Sync is
@@ -1678,8 +1681,7 @@ TEST_F(CrossDevicePrefTrackerTest,
   tracker_->GetValues(kTrackedProfilePref, {});
 
   histogram_tester.ExpectUniqueSample(
-      kAvailabilityAtQueryHistogram,
-      CrossDevicePrefTrackerAvailabilityAtQuery::kLocalDeviceInfoMissing, 1);
+      kAvailabilityAtQueryHistogram, ServiceStatus::kLocalDeviceInfoMissing, 1);
 }
 
 // Verifies that the metric records the combined state when both `DeviceInfo` is
@@ -1697,9 +1699,7 @@ TEST_F(
 
   histogram_tester.ExpectUniqueSample(
       kAvailabilityAtQueryHistogram,
-      CrossDevicePrefTrackerAvailabilityAtQuery::
-          kSyncNotConfiguredAndLocalDeviceInfoMissing,
-      1);
+      ServiceStatus::kSyncNotConfiguredAndLocalDeviceInfoMissing, 1);
 }
 
 // Verifies that the `AvailabilityAtQuery` histogram correctly reflects the
@@ -1712,16 +1712,14 @@ TEST_F(CrossDevicePrefTrackerTest,
   base::HistogramTester histogram_tester;
 
   tracker_->GetValues(kTrackedProfilePref, {});
-  histogram_tester.ExpectBucketCount(
-      kAvailabilityAtQueryHistogram,
-      CrossDevicePrefTrackerAvailabilityAtQuery::kLocalDeviceInfoMissing, 1);
+  histogram_tester.ExpectBucketCount(kAvailabilityAtQueryHistogram,
+                                     ServiceStatus::kLocalDeviceInfoMissing, 1);
 
   InitializeLocalDeviceInfo();
 
   tracker_->GetValues(kTrackedProfilePref, {});
-  histogram_tester.ExpectBucketCount(
-      kAvailabilityAtQueryHistogram,
-      CrossDevicePrefTrackerAvailabilityAtQuery::kAvailable, 1);
+  histogram_tester.ExpectBucketCount(kAvailabilityAtQueryHistogram,
+                                     ServiceStatus::kAvailable, 1);
 
   histogram_tester.ExpectTotalCount(kAvailabilityAtQueryHistogram, 2);
 }
@@ -1877,6 +1875,190 @@ TEST_F(CrossDevicePrefTrackerTest, CloningTimestampedValueReturnsDeepCopy) {
             &cloned_value.last_observed_change_time);
   EXPECT_NE(&original_value.device_sync_cache_guid,
             &cloned_value.device_sync_cache_guid);
+}
+
+// Verifies that `GetServiceStatus` returns `kAvailable` when properly
+// configured.
+TEST_F(CrossDevicePrefTrackerTest, GetServiceStatusReturnsAvailable) {
+  CreateTracker();
+  EXPECT_EQ(tracker_->GetServiceStatus(), ServiceStatus::kAvailable);
+}
+
+// Verifies that `GetServiceStatus` returns `kSyncNotConfigured` when Sync is
+// disabled.
+TEST_F(CrossDevicePrefTrackerTest, GetServiceStatusReturnsSyncNotConfigured) {
+  SetSyncEnabled(false);
+  CreateTracker();
+  EXPECT_EQ(tracker_->GetServiceStatus(), ServiceStatus::kSyncNotConfigured);
+}
+
+// Verifies that `GetServiceStatus` returns `kLocalDeviceInfoMissing` when
+// `DeviceInfo` is not ready.
+TEST_F(CrossDevicePrefTrackerTest,
+       GetServiceStatusReturnsLocalDeviceInfoMissing) {
+  ResetLocalDeviceInfo();
+  CreateTracker();
+  EXPECT_EQ(tracker_->GetServiceStatus(),
+            ServiceStatus::kLocalDeviceInfoMissing);
+}
+
+// Verifies that `GetServiceStatus` returns the combined status when both
+// Sync is disabled and `DeviceInfo` is missing.
+TEST_F(CrossDevicePrefTrackerTest,
+       GetServiceStatusReturnsSyncNotConfiguredAndLocalDeviceInfoMissing) {
+  ResetLocalDeviceInfo();
+  SetSyncEnabled(false);
+  CreateTracker();
+  EXPECT_EQ(tracker_->GetServiceStatus(),
+            ServiceStatus::kSyncNotConfiguredAndLocalDeviceInfoMissing);
+}
+
+// Verifies that `GetServiceStatus` updates dynamically when `DeviceInfo`
+// becomes ready.
+TEST_F(CrossDevicePrefTrackerTest, GetServiceStatusUpdatesOnStateChange) {
+  ResetLocalDeviceInfo();
+  CreateTracker();
+
+  // Initially missing.
+  EXPECT_EQ(tracker_->GetServiceStatus(),
+            ServiceStatus::kLocalDeviceInfoMissing);
+
+  InitializeLocalDeviceInfo();
+
+  // Should now be available.
+  EXPECT_EQ(tracker_->GetServiceStatus(), ServiceStatus::kAvailable);
+}
+
+// Verifies that `GetServiceStatus` works correctly when the tracker is
+// initialized with a null `SyncService`.
+TEST_F(CrossDevicePrefTrackerTest, GetServiceStatusWithNullSyncService) {
+  InitializeLocalDeviceInfo();
+  CreateTracker(/*pass_sync_service=*/false);
+  // If `SyncService` is null, it is technically "Not Configured".
+  EXPECT_EQ(tracker_->GetServiceStatus(), ServiceStatus::kSyncNotConfigured);
+}
+
+// Verifies that observers are notified when the service status changes from
+// `kLocalDeviceInfoMissing` to `kAvailable`.
+TEST_F(CrossDevicePrefTrackerTest,
+       NotifiesObserverOnServiceStatusChangeWhenDeviceInfoBecomesReady) {
+  ResetLocalDeviceInfo();
+  CreateTracker();
+  ASSERT_EQ(tracker_->GetServiceStatus(),
+            ServiceStatus::kLocalDeviceInfoMissing);
+
+  MockObserver mock_observer;
+  tracker_->AddObserver(&mock_observer);
+
+  EXPECT_CALL(mock_observer, OnServiceStatusChanged(ServiceStatus::kAvailable));
+
+  InitializeLocalDeviceInfo();
+
+  tracker_->RemoveObserver(&mock_observer);
+}
+
+// Verifies that observers are notified when the service status changes due to
+// Sync configuration changes (enabling and disabling).
+TEST_F(CrossDevicePrefTrackerTest,
+       NotifiesObserverOnServiceStatusChangeWhenSyncConfigChanges) {
+  SetSyncEnabled(false);
+  CreateTracker();
+  ASSERT_EQ(tracker_->GetServiceStatus(), ServiceStatus::kSyncNotConfigured);
+
+  MockObserver mock_observer;
+  tracker_->AddObserver(&mock_observer);
+
+  // Enabling Sync: Status should transition to `kAvailable`.
+  EXPECT_CALL(mock_observer, OnServiceStatusChanged(ServiceStatus::kAvailable));
+  ChangeSyncState(true);
+
+  testing::Mock::VerifyAndClearExpectations(&mock_observer);
+
+  // Disabling Sync: Status should transition back to `kSyncNotConfigured`.
+  EXPECT_CALL(mock_observer,
+              OnServiceStatusChanged(ServiceStatus::kSyncNotConfigured));
+  ChangeSyncState(false);
+
+  tracker_->RemoveObserver(&mock_observer);
+}
+
+// Verifies that observers are notified when the service status changes to
+// `kSyncNotConfiguredAndLocalDeviceInfoMissing`.
+TEST_F(CrossDevicePrefTrackerTest,
+       NotifiesObserverWhenServiceStatusChangesToTotallyUnavailable) {
+  // Start with just local device info missing.
+  ResetLocalDeviceInfo();
+  CreateTracker();
+  ASSERT_EQ(tracker_->GetServiceStatus(),
+            ServiceStatus::kLocalDeviceInfoMissing);
+
+  MockObserver mock_observer;
+  tracker_->AddObserver(&mock_observer);
+
+  // Disable Sync. Now both are missing.
+  EXPECT_CALL(mock_observer,
+              OnServiceStatusChanged(
+                  ServiceStatus::kSyncNotConfiguredAndLocalDeviceInfoMissing));
+  ChangeSyncState(false);
+
+  tracker_->RemoveObserver(&mock_observer);
+}
+
+// Verifies that observers are NOT notified if an event occurs (like a Sync
+// state change) but the calculated `ServiceStatus` remains unchanged.
+TEST_F(CrossDevicePrefTrackerTest,
+       DoesNotNotifyObserverIfServiceStatusRemainsUnchanged) {
+  CreateTracker();
+  ASSERT_EQ(tracker_->GetServiceStatus(), ServiceStatus::kAvailable);
+
+  MockObserver mock_observer;
+  tracker_->AddObserver(&mock_observer);
+
+  // We expect 0 calls because the status remains `kAvailable`.
+  EXPECT_CALL(mock_observer, OnServiceStatusChanged).Times(0);
+
+  // Trigger a state change notification without actually changing the
+  // configuration (Sync remains active).
+  ChangeSyncState(true);
+
+  tracker_->RemoveObserver(&mock_observer);
+}
+
+// Verifies that syncing a default pref does not cause unnecessary writes to the
+// cross-device dictionary (preventing Sync traffic spikes).
+TEST_F(CrossDevicePrefTrackerTest, DoesNotWriteToDictionaryForDefaultValues) {
+  // Listen for internal changes to the cross-device dictionary pref.
+  MockPrefChangeCallback observer(&profile_prefs_);
+  PrefChangeRegistrar registrar;
+  registrar.Init(&profile_prefs_);
+  registrar.Add(kCrossDeviceProfilePref, observer.GetCallback());
+
+  // The tracked pref is at its default value, and the cross-device dictionary
+  // is empty. NO writes should occur because there is nothing to remove.
+  EXPECT_CALL(observer, OnPreferenceChanged(kCrossDeviceProfilePref)).Times(0);
+  CreateTracker();
+  testing::Mock::VerifyAndClearExpectations(&observer);
+
+  // Change the tracked pref to a non-default value. (This must trigger a write
+  // to add the new value.)
+  EXPECT_CALL(observer, OnPreferenceChanged(kCrossDeviceProfilePref)).Times(1);
+  profile_prefs_.SetInteger(kTrackedProfilePref, 50);
+  testing::Mock::VerifyAndClearExpectations(&observer);
+
+  // Clear the pref back to default. (This must trigger a write to remove the
+  // cache GUID from the dictionary.)
+  EXPECT_CALL(observer, OnPreferenceChanged(kCrossDeviceProfilePref)).Times(1);
+  profile_prefs_.ClearPref(kTrackedProfilePref);
+  testing::Mock::VerifyAndClearExpectations(&observer);
+
+  // Simulate a refresh (e.g., Sync toggled off and on, or restart) while the
+  // pref remains at its default value.
+  tracker_->Shutdown();
+
+  // The dictionary does not contain the Cache GUID, so the optimization should
+  // bypass the `ScopedDictPrefUpdate` entirely.
+  EXPECT_CALL(observer, OnPreferenceChanged(kCrossDeviceProfilePref)).Times(0);
+  CreateTracker();
 }
 
 }  // namespace

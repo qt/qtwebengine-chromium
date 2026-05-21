@@ -29,6 +29,7 @@
 #include "absl/strings/string_view.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
+#include "quiche/quic/moqt/moqt_error.h"
 #include "quiche/quic/moqt/moqt_messages.h"
 #include "quiche/quic/moqt/moqt_object.h"
 #include "quiche/quic/moqt/moqt_session.h"
@@ -129,8 +130,8 @@ class MoqtIngestionHandler {
           << "Rejected remote publish_namespace as it contained "
              "disallowed characters; namespace: "
           << track_namespace;
-      std::move(callback)(MoqtPublishNamespaceErrorReason{
-          RequestErrorCode::kInternalError,
+      std::move(callback)(MoqtRequestErrorInfo{
+          RequestErrorCode::kInternalError, std::nullopt,
           "Track namespace contains disallowed characters"});
       return;
     }
@@ -152,8 +153,8 @@ class MoqtIngestionHandler {
       QUICHE_LOG(ERROR) << "Failed to create directory " << directory_path
                         << "; " << status;
       std::move(callback)(
-          MoqtPublishNamespaceErrorReason{RequestErrorCode::kInternalError,
-                                          "Failed to create output directory"});
+          MoqtRequestErrorInfo{RequestErrorCode::kInternalError, std::nullopt,
+                               "Failed to create output directory"});
       return;
     }
 
@@ -176,11 +177,11 @@ class MoqtIngestionHandler {
 
     void OnReply(
         const FullTrackName& full_track_name,
-        std::variant<SubscribeOkData, MoqtRequestError> response) override {
-      if (std::holds_alternative<MoqtRequestError>(response)) {
-        QUICHE_LOG(ERROR) << "Failed to subscribe to the peer track "
-                          << full_track_name << ": "
-                          << std::get<MoqtRequestError>(response).reason_phrase;
+        std::variant<SubscribeOkData, MoqtRequestErrorInfo> response) override {
+      if (std::holds_alternative<MoqtRequestErrorInfo>(response)) {
+        QUICHE_LOG(ERROR)
+            << "Failed to subscribe to the peer track " << full_track_name
+            << ": " << std::get<MoqtRequestErrorInfo>(response).reason_phrase;
       }
     }
 
@@ -264,9 +265,11 @@ int main(int argc, char** argv) {
   quiche::QuicheIpAddress bind_address;
   QUICHE_CHECK(bind_address.FromString(
       quiche::GetQuicheCommandLineFlag(FLAGS_bind_address)));
-  server.quic_server().CreateUDPSocketAndListen(quic::QuicSocketAddress(
-      bind_address, quiche::GetQuicheCommandLineFlag(FLAGS_port)));
-  server.quic_server().HandleEventsForever();
+  absl::Status socket_status =
+      server.CreateUDPSocketAndListen(quic::QuicSocketAddress(
+          bind_address, quiche::GetQuicheCommandLineFlag(FLAGS_port)));
+  QUICHE_CHECK_OK(socket_status);
+  server.HandleEventsForever();
 
   return 0;
 }

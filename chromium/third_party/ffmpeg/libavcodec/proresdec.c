@@ -185,10 +185,11 @@ static av_cold int decode_init(AVCodecContext *avctx)
 static int decode_frame_header(ProresContext *ctx, const uint8_t *buf,
                                const int data_size, AVCodecContext *avctx)
 {
-    int hdr_size, width, height, flags;
+    int hdr_size, width, height, flags, dimensions_changed = 0;
     int version;
     const uint8_t *ptr;
     enum AVPixelFormat pix_fmt;
+    int old_frame_type = ctx->frame_type;
 
     hdr_size = AV_RB16(buf);
     ff_dlog(avctx, "header size %d\n", hdr_size);
@@ -214,6 +215,7 @@ static int decode_frame_header(ProresContext *ctx, const uint8_t *buf,
                avctx->width, avctx->height, width, height);
         if ((ret = ff_set_dimensions(avctx, width, height)) < 0)
             return ret;
+        dimensions_changed = 1;
     }
 
     ctx->frame_type = (buf[12] >> 2) & 3;
@@ -250,7 +252,8 @@ static int decode_frame_header(ProresContext *ctx, const uint8_t *buf,
         }
     }
 
-    if (pix_fmt != ctx->pix_fmt) {
+    if (pix_fmt != ctx->pix_fmt || dimensions_changed ||
+        ctx->frame_type != old_frame_type) {
 #define HWACCEL_MAX (CONFIG_PRORES_VIDEOTOOLBOX_HWACCEL + CONFIG_PRORES_VULKAN_HWACCEL)
 #if HWACCEL_MAX
         enum AVPixelFormat pix_fmts[HWACCEL_MAX + 2], *fmtp = pix_fmts;
@@ -855,6 +858,7 @@ static int update_thread_context(AVCodecContext *dst, const AVCodecContext *src)
     ProresContext *cdst = dst->priv_data;
 
     cdst->pix_fmt = csrc->pix_fmt;
+    cdst->frame_type = csrc->frame_type;
 
     return 0;
 }

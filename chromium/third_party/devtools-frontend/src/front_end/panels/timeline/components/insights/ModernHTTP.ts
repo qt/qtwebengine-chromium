@@ -6,18 +6,19 @@ import './Table.js';
 
 import type {ModernHTTPInsightModel} from '../../../../models/trace/insights/ModernHTTP.js';
 import * as Trace from '../../../../models/trace/trace.js';
+import * as UI from '../../../../ui/legacy/legacy.js';
 import * as Lit from '../../../../ui/lit/lit.js';
 
 import {BaseInsightComponent} from './BaseInsightComponent.js';
 import {eventRef} from './EventRef.js';
-import {createLimitedRows, renderOthersLabel, type TableData, type TableDataRow} from './Table.js';
+import {createLimitedRows, renderOthersLabel, Table, type TableDataRow} from './Table.js';
 
 const {UIStrings, i18nString, createOverlayForRequest} = Trace.Insights.Models.ModernHTTP;
 
 const {html} = Lit;
+const {widgetConfig} = UI.Widget;
 
 export class ModernHTTP extends BaseInsightComponent<ModernHTTPInsightModel> {
-  static override readonly litTagName = Lit.StaticHtml.literal`devtools-performance-modern-http`;
   override internalName = 'modern-http';
 
   protected override hasAskAiSupport(): boolean {
@@ -57,22 +58,14 @@ export class ModernHTTP extends BaseInsightComponent<ModernHTTPInsightModel> {
     // clang-format off
     return html`
       <div class="insight-section">
-        <devtools-performance-table
-          .data=${{
+        <devtools-widget .widgetConfig=${widgetConfig(Table, {
+           data: {
             insight: this,
             headers: [i18nString(UIStrings.request), i18nString(UIStrings.protocol)],
             rows,
-          } as TableData}>
-        </devtools-performance-table>
+          }})}>
+        </devtools-widget>
       </div>`;
     // clang-format on
   }
 }
-
-declare global {
-  interface HTMLElementTagNameMap {
-    'devtools-performance-modern-http': ModernHTTP;
-  }
-}
-
-customElements.define('devtools-performance-modern-http', ModernHTTP);

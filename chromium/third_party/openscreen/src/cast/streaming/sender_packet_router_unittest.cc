@@ -143,8 +143,8 @@ class MockSender : public SenderPacketRouter::Sender {
               (Clock::time_point send_time, ByteBuffer buffer),
               (override));
   MOCK_METHOD(Clock::time_point, GetRtpResumeTime, (), (override));
-  MOCK_METHOD(RtpTimeTicks, GetLastRtpTimestamp, (), (const override));
-  MOCK_METHOD(StreamType, GetStreamType, (), (const override));
+  MOCK_METHOD(RtpTimeTicks, GetLastRtpTimestamp, (), (const, override));
+  MOCK_METHOD(StreamType, GetStreamType, (), (const, override));
 };
 
 class SenderPacketRouterTest : public testing::Test {

@@ -7,17 +7,21 @@
 
 #include <memory>
 
+#include "base/memory/raw_ref.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/task/sequenced_task_runner.h"
+#include "crypto/process_bound_string.h"
+#include "net/disk_cache/cache_file.h"
 #include "net/disk_cache/disk_cache.h"
 
-namespace network::enterprise {
+namespace network::enterprise_encryption {
 
 class UnboundEncryptedBackendFileOperations final
     : public disk_cache::UnboundBackendFileOperations {
  public:
   explicit UnboundEncryptedBackendFileOperations(
-      std::unique_ptr<disk_cache::UnboundBackendFileOperations> decorated_ops);
+      std::unique_ptr<disk_cache::UnboundBackendFileOperations> decorated_ops,
+      const crypto::ProcessBoundString& primary_key);
   ~UnboundEncryptedBackendFileOperations() override;
 
   std::unique_ptr<disk_cache::BackendFileOperations> Bind(
@@ -25,23 +29,23 @@ class UnboundEncryptedBackendFileOperations final
 
  private:
   std::unique_ptr<disk_cache::UnboundBackendFileOperations> decorated_ops_;
+  const crypto::ProcessBoundString primary_key_;
 };
 
 // Decorator to add encryption layer to file operations.
-// TODO(crbug.com/460509865): Currently, this decorator only signals encryption
-// status for cache management (invalidation on config change). It does not yet
-// implement actual encryption/decryption logic for file I/O.
 class EncryptedBackendFileOperations final
     : public disk_cache::BackendFileOperations {
  public:
   explicit EncryptedBackendFileOperations(
-      std::unique_ptr<disk_cache::BackendFileOperations> decorated_backend);
+      std::unique_ptr<disk_cache::BackendFileOperations> decorated_backend,
+      const crypto::ProcessBoundString& primary_key);
   ~EncryptedBackendFileOperations() override;
 
   bool CreateDirectory(const base::FilePath& path) override;
   bool PathExists(const base::FilePath& path) override;
   bool DirectoryExists(const base::FilePath& path) override;
-  base::File OpenFile(const base::FilePath& path, uint32_t flags) override;
+  std::unique_ptr<disk_cache::CacheFile> OpenFile(const base::FilePath& path,
+                                                  uint32_t flags) override;
   bool DeleteFile(const base::FilePath& path, DeleteFileMode mode) override;
   bool ReplaceFile(const base::FilePath& from_path,
                    const base::FilePath& to_path,
@@ -57,8 +61,9 @@ class EncryptedBackendFileOperations final
 
  private:
   std::unique_ptr<disk_cache::BackendFileOperations> decorated_backend_;
+  const crypto::ProcessBoundString primary_key_;
 };
 
-}  // namespace network::enterprise
+}  // namespace network::enterprise_encryption
 
 #endif  // SERVICES_NETWORK_ENTERPRISE_ENCRYPTION_ENCRYPTED_BACKEND_FILE_OPERATIONS_H_

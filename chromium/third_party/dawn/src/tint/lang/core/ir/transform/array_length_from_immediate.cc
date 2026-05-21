@@ -297,10 +297,10 @@ struct State {
                 const uint32_t array_index = size_index / 4;
                 const uint32_t vec_index = size_index % 4;
                 auto* buffer_sizes = b.Access(
-                    ty.ptr(immediate, ty.array(ty.vec4<u32>(), buffer_sizes_array_elements_num)),
+                    ty.ptr(immediate, ty.array(ty.vec4u(), buffer_sizes_array_elements_num)),
                     immediate_data_layout.var,
                     u32(immediate_data_layout.IndexOf(buffer_sizes_offset)));
-                auto* vec_ptr = b.Access(ty.ptr(immediate, ty.vec4<u32>()), buffer_sizes->Result(),
+                auto* vec_ptr = b.Access(ty.ptr(immediate, ty.vec4u()), buffer_sizes->Result(),
                                          u32(array_index));
                 auto* total_buffer_size = b.LoadVectorElement(vec_ptr, u32(vec_index))->Result();
 
@@ -314,15 +314,13 @@ struct State {
                     // The variable is a struct, so subtract the byte offset of the array member.
                     auto* member = str->Members().Back();
                     array_type = member->Type()->As<core::type::Array>();
-                    array_size =
-                        b.Subtract<u32>(total_buffer_size, u32(member->Offset()))->Result();
+                    array_size = b.Subtract(total_buffer_size, u32(member->Offset()))->Result();
                 } else {
                     array_type = info.store_type->As<core::type::Array>();
                 }
                 TINT_IR_ASSERT(ir, array_type);
 
-                auto* length =
-                    b.Divide<u32>(array_size, u32(array_type->ImplicitStride()))->Result();
+                auto* length = b.Divide(array_size, u32(array_type->ImplicitStride()))->Result();
                 constructor_values.Push(length);
             }
             lengths_constructor->SetOperands(std::move(constructor_values));
@@ -352,11 +350,8 @@ Result<ArrayLengthFromImmediateResult> ArrayLengthFromImmediates(
     const uint32_t buffer_sizes_offset,
     const uint32_t buffer_sizes_array_elements_num,
     const std::unordered_map<BindingPoint, uint32_t>& bindpoint_to_size_index) {
-    auto validated = ValidateAndDumpIfNeeded(ir, "core.ArrayLengthFromImmediates",
-                                             kArrayLengthFromImmediateCapabilities);
-    if (validated != Success) {
-        return validated.Failure();
-    }
+    TINT_CHECK_RESULT(ValidateAndDumpIfNeeded(ir, "core.ArrayLengthFromImmediates",
+                                              kArrayLengthFromImmediateCapabilities));
 
     State state{ir, immediate_data_layout, buffer_sizes_offset, buffer_sizes_array_elements_num,
                 bindpoint_to_size_index};

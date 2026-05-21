@@ -43,7 +43,6 @@
 #include "src/tint/cmd/common/helper.h"
 #include "src/tint/lang/core/ir/disassembler.h"
 #include "src/tint/lang/core/ir/referenced_module_vars.h"
-#include "src/tint/lang/core/ir/transform/resource_binding_helper.h"
 #include "src/tint/lang/core/ir/transform/resource_table_helper.h"
 #include "src/tint/lang/core/ir/var.h"
 #include "src/tint/lang/core/type/f16.h"
@@ -137,6 +136,7 @@ struct Options {
     bool emit_single_entry_point = false;
 
     Format format = Format::kUnknown;
+    tint::cmd::InputFormat input_format = tint::cmd::InputFormat::kUnknown;
 
     bool verbose = false;
     bool parse_only = false;
@@ -150,10 +150,13 @@ struct Options {
     bool enable_robustness = true;
 
     bool dump_ir = false;
-    bool minify = false;
+    bool ir_roundtrip = false;
 
 #if TINT_BUILD_SPV_READER
     tint::spirv::reader::Options spirv_reader_options;
+#endif  // TINT_BUILD_SPV_READER
+#if TINT_BUILD_WGSL_WRITER
+    tint::wgsl::writer::Options wgsl_writer_options;
 #endif  // TINT_BUILD_SPV_READER
 
 #if TINT_BUILD_SPV_WRITER
@@ -268,6 +271,25 @@ If not provided, will be inferred from output filename extension:
                                                 format_enum_names, ShortName{"f"});
     TINT_DEFER(opts->format = fmt.value.value_or(Format::kUnknown));
 
+    tint::Vector<EnumName<tint::cmd::InputFormat>, 3> input_format_enum_names;
+#if TINT_BUILD_WGSL_READER
+    input_format_enum_names.Emplace(tint::cmd::InputFormat::kWgsl, "wgsl");
+#endif
+
+#if TINT_BUILD_SPV_READER
+    input_format_enum_names.Emplace(tint::cmd::InputFormat::kSpirvBin, "spirv");
+    input_format_enum_names.Emplace(tint::cmd::InputFormat::kSpirvAsm, "spvasm");
+#endif
+    auto& input_fmt =
+        options.Add<EnumOption<tint::cmd::InputFormat>>("input-format",
+                                                        R"(Input format.
+If not provided, will be inferred from input filename extension:
+.spvasm -> spvasm
+.spv    -> spirv
+.wgsl   -> wgsl)",
+                                                        input_format_enum_names, ShortName{"if"});
+    TINT_DEFER(opts->input_format = input_fmt.value.value_or(tint::cmd::InputFormat::kUnknown));
+
     const auto default_color_mode =
         exe_mode == ExeMode::kServer ? tint::ColorMode::kPlain : tint::ColorModeDefault();
     auto& col =
@@ -311,8 +333,10 @@ If not provided, will be inferred from output filename extension:
     auto& rename_all = options.Add<BoolOption>("rename-all", "Renames all symbols", Default{false});
     TINT_DEFER(opts->rename_all = *rename_all.value);
 
+#if TINT_BUILD_WGSL_WRITER
     auto& minify = options.Add<BoolOption>("minify", "Minify the output WGSL", Default{false});
-    TINT_DEFER(opts->minify = *minify.value);
+    TINT_DEFER(opts->wgsl_writer_options.minify = *minify.value);
+#endif
 
     auto& overrides = options.Add<StringOption>(
         "overrides", "Override values as IDENTIFIER=VALUE, comma-separated");
@@ -373,19 +397,29 @@ of the hash codes in the comma separated list of hashes)");
         }
     });
 
-#if TINT_BUILD_SPV_READER
-    auto& allow_nud =
-        options.Add<BoolOption>("allow-non-uniform-derivatives",
-                                R"(When using SPIR-V input, allow non-uniform derivatives by
-inserting a module-scope directive to suppress any uniformity
+#if TINT_BUILD_WGSL_WRITER
+    auto& allow_nud = options.Add<BoolOption>(
+        "allow-non-uniform-derivatives",
+        R"(Allow non-uniform derivatives by inserting a module-scope directive to suppress any uniformity
 violations that may be produced)",
-                                Default{false});
+        Default{false});
     TINT_DEFER({
         if (allow_nud.value.value_or(false)) {
-            opts->spirv_reader_options.allow_non_uniform_derivatives = true;
+            opts->wgsl_writer_options.allow_non_uniform_derivatives = true;
         }
     });
 
+    auto& ignore_unreachable = options.Add<BoolOption>(
+        "disable-unreachable-code-warning",
+        R"(Disable the warning for unreachable code when converting to WGSL)", Default{false});
+    TINT_DEFER({
+        if (ignore_unreachable.value.value_or(false)) {
+            opts->wgsl_writer_options.disable_unreachable_code_warning = true;
+        }
+    });
+#endif
+
+#if TINT_BUILD_SPV_READER
     auto& sampler_mapping = options.Add<StringOption>(
         "sampler-mapping",
         "Allows remapping the binding points of samplers from the SPIR-V file. "
@@ -483,6 +517,10 @@ When specified, automatically enables HLSL validation)",
     auto& dump_ir = options.Add<BoolOption>("dump-ir", "Writes the IR to stdout", Alias{"emit-ir"},
                                             Default{false});
     TINT_DEFER(opts->dump_ir = *dump_ir.value);
+
+    auto& ir_roundtrip = options.Add<BoolOption>(
+        "ir-roundtrip", "Converts the Program to IR and then back to a Program", Default{false});
+    TINT_DEFER(opts->ir_roundtrip = *ir_roundtrip.value);
 
     auto& dump_inspector_bindings = options.Add<BoolOption>(
         "dump-inspector-bindings", "Dump reflection data about bindings to stdout",
@@ -879,7 +917,6 @@ std::string Disassemble(const std::vector<uint32_t>& data) {
     }
 
     gen_options.bindings = tint::GenerateBindings(ir, options.ep_name, false, false);
-    gen_options.resource_binding = tint::core::ir::transform::GenerateResourceBindingConfig(ir);
     gen_options.resource_table = tint::core::ir::transform::GenerateResourceTableConfig(ir);
 
     // Enable the Vulkan Memory Model if needed.
@@ -920,8 +957,19 @@ std::string Disassemble(const std::vector<uint32_t>& data) {
     }
 
     if (options.validate && options.skip_hash.count(hash) == 0) {
-        // Use Vulkan 1.1, since this is what Tint, internally, uses.
-        spvtools::SpirvTools tools(SPV_ENV_VULKAN_1_1);
+        // Use Vulkan 1.1, since this is the minimum version required by Dawn.
+        spv_target_env target_env = SPV_ENV_MAX;
+        switch (options.spirv_version) {
+            case tint::spirv::writer::SpvVersion::kSpv13:
+                target_env = SPV_ENV_VULKAN_1_1;
+                break;
+            case tint::spirv::writer::SpvVersion::kSpv14:
+                target_env = SPV_ENV_VULKAN_1_1_SPIRV_1_4;
+                break;
+            case tint::spirv::writer::SpvVersion::kSpv15:
+                TINT_UNREACHABLE() << "SPIR-V 1.5 validation not yet supported";
+        }
+        spvtools::SpirvTools tools(target_env);
         tools.SetMessageConsumer(
             [](spv_message_level_t, const char*, const spv_position_t& pos, const char* msg) {
                 std::cerr << (pos.line + 1) << ":" << (pos.column + 1) << ": " << msg << "\n";
@@ -948,10 +996,7 @@ bool GenerateWgsl([[maybe_unused]] Options& options,
                   [[maybe_unused]] tint::inspector::Inspector& inspector,
                   [[maybe_unused]] tint::Program& program) {
 #if TINT_BUILD_WGSL_WRITER
-    tint::wgsl::writer::Options writer_options{
-        .minify = options.minify,
-    };
-    auto result = tint::wgsl::writer::Generate(program, writer_options);
+    auto result = tint::wgsl::writer::Generate(program, options.wgsl_writer_options);
     if (result != tint::Success) {
         std::cerr << "Failed to generate: " << result.Failure() << "\n";
         return false;
@@ -1056,7 +1101,7 @@ tint::msl::writer::ArrayLengthOptions GenerateArrayLengthFromConstants(tint::cor
         ir, options.ep_name, !options.use_argument_buffers, !options.use_argument_buffers);
     // TODO(crbug.com/366291600): Replace ubo with immediate block for end2end tests
     gen_options.immediate_binding_point = tint::BindingPoint{.group = 0u, .binding = 30u};
-    gen_options.disable_demote_to_helper = options.disable_demote_to_helper;
+    gen_options.extensions.disable_demote_to_helper = options.disable_demote_to_helper;
     gen_options.use_argument_buffers = options.use_argument_buffers;
     gen_options.group_to_argument_buffer_info = options.group_to_argument_buffer_info;
     gen_options.array_length_from_constants = GenerateArrayLengthFromConstants(ir, options.ep_name);
@@ -1145,8 +1190,9 @@ tint::msl::writer::ArrayLengthOptions GenerateArrayLengthFromConstants(tint::cor
     gen_options.disable_robustness = !options.enable_robustness;
     gen_options.disable_workgroup_init = options.disable_workgroup_init;
     gen_options.pixel_local = options.pixel_local_options;
-    gen_options.polyfill_dot_4x8_packed = options.hlsl_shader_model < kMinShaderModelForDP4aInHLSL;
-    gen_options.polyfill_pack_unpack_4x8 =
+    gen_options.extensions.polyfill_dot_4x8_packed =
+        options.hlsl_shader_model < kMinShaderModelForDP4aInHLSL;
+    gen_options.extensions.polyfill_pack_unpack_4x8 =
         options.hlsl_shader_model < kMinShaderModelForPackUnpack4x8InHLSL;
     gen_options.compiler = for_fxc ? tint::hlsl::writer::Options::Compiler::kFXC
                                    : tint::hlsl::writer::Options::Compiler::kDXC;
@@ -1448,6 +1494,10 @@ int Run(tint::VectorRef<std::string_view> arguments, ExeMode exe_mode) {
         std::cerr << "Cannot emit binary SPIR-V to stdout in server mode\n";
         return 1;
     }
+    if (exe_mode == ExeMode::kServer && options.input_format == tint::cmd::InputFormat::kSpirvBin) {
+        std::cerr << "Cannot read binary SPIR-V from stdin in server mode\n";
+        return 1;
+    }
 
     // Implement output format defaults.
     if (options.format == Format::kUnknown) {
@@ -1461,15 +1511,19 @@ int Run(tint::VectorRef<std::string_view> arguments, ExeMode exe_mode) {
 
     tint::cmd::LoadProgramOptions opts{
         .filename = options.input_filename,
+        .input_format = options.input_format,
 #if TINT_BUILD_SPV_READER
         .spirv_reader_options = options.spirv_reader_options,
+#endif
+#if TINT_BUILD_WGSL_WRITER
+        .wgsl_writer_options = options.wgsl_writer_options,
 #endif
         .printer = options.printer.get(),
     };
 
-#if TINT_BUILD_SPV_READER
+#if TINT_BUILD_WGSL_WRITER
     // Allow the shader-f16 extension
-    opts.spirv_reader_options.allowed_features = tint::wgsl::AllowedFeatures::Everything();
+    opts.wgsl_writer_options.allowed_features = tint::wgsl::AllowedFeatures::Everything();
 #endif
 
     auto info = tint::cmd::LoadProgramInfo(opts);
@@ -1488,6 +1542,21 @@ int Run(tint::VectorRef<std::string_view> arguments, ExeMode exe_mode) {
         }
     }
 
+#if TINT_BUILD_WGSL_WRITER && TINT_BUILD_WGSL_READER
+    if (options.ir_roundtrip) {
+        auto ir = tint::wgsl::reader::ProgramToIR(info.program);
+        if (ir != tint::Success) {
+            std::cerr << "Failed convert program to IR: " << ir.Failure() << "\n";
+            return 1;
+        }
+        auto p = tint::wgsl::writer::ProgramFromIR(ir.Get(), {});
+        if (p != tint::Success) {
+            std::cerr << "Failed converting IR to program: " << p.Failure() << "\n";
+            return 1;
+        }
+    }
+#endif
+
     tint::inspector::Inspector inspector(info.program);
     if (options.dump_inspector_bindings) {
         tint::cmd::PrintInspectorBindings(inspector);
@@ -1498,22 +1567,32 @@ int Run(tint::VectorRef<std::string_view> arguments, ExeMode exe_mode) {
         return GenerateWgsl(options, inspector, info.program) ? 0 : 1;
     }
 
-    if (inspector.GetEntryPoints().empty()) {
+    auto entry_points = inspector.GetEntryPoints();
+    if (entry_points.empty()) {
         std::cerr << "no entry point found, entry point required\n";
         return 1;
     }
 
+    if (!tint::cmd::IsStdout(options.output_file) && !options.emit_single_entry_point) {
+        if (entry_points.size() > 1) {
+            std::cerr
+                << "Emitting to a file but the module has multiple entry points. Please provide "
+                   "the `--ep <name>` option to specific the entry point to emit\n";
+            return 1;
+        }
+
+        // Set the emitted entry point to the name from the inspector
+        options.ep_name = entry_points.front().name;
+        options.emit_single_entry_point = true;
+    }
+
     bool success = true;
-    std::string outfile_name = options.output_file;
-    auto entry_points = inspector.GetEntryPoints();
     for (auto& entry_point : entry_points) {
         if (options.emit_single_entry_point && entry_point.name != options.ep_name) {
             continue;
         }
 
-        // If we're emitting to stdout, add a separator between the entry points. If we're going
-        // to a file, and we aren't emitting a single entry point, add the entry point name into
-        // the output file name.
+        // If we're emitting to stdout, add a separator between the entry points.
         if (tint::cmd::IsStdout(options.output_file)) {
             if (entry_points.size() > 1) {
                 if (options.format == Format::kSpvAsm) {
@@ -1527,14 +1606,6 @@ int Run(tint::VectorRef<std::string_view> arguments, ExeMode exe_mode) {
                 } else {
                     std::cout << "//\n";
                 }
-            }
-        } else if (!options.emit_single_entry_point) {
-            auto pos = outfile_name.rfind(".");
-            if (pos == std::string_view::npos) {
-                options.output_file = outfile_name + "." + entry_point.name;
-            } else {
-                options.output_file = outfile_name.substr(0, pos) + "." + entry_point.name + "." +
-                                      outfile_name.substr(pos + 1);
             }
         }
 

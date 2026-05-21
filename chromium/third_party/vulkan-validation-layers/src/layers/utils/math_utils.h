@@ -1,7 +1,8 @@
-/* Copyright (c) 2015-2017, 2019-2025 The Khronos Group Inc.
- * Copyright (c) 2015-2017, 2019-2025 Valve Corporation
- * Copyright (c) 2015-2017, 2019-2025 LunarG, Inc.
+/* Copyright (c) 2015-2017, 2019-2026 The Khronos Group Inc.
+ * Copyright (c) 2015-2017, 2019-2026 Valve Corporation
+ * Copyright (c) 2015-2017, 2019-2026 LunarG, Inc.
  * Modifications Copyright (C) 2022 RasterGrid Kft.
+ * Modifications Copyright (C) 2025-2026 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -138,13 +139,13 @@ static inline bool IsIntegerMultipleOf(const VkOffset2D& value, const VkOffset2D
     return IsIntegerMultipleOf(value.x, granularity.x) && IsIntegerMultipleOf(value.y, granularity.y);
 }
 
-// Perform a zero-tolerant modulo operation
-static inline VkDeviceSize SafeModulo(VkDeviceSize dividend, VkDeviceSize divisor) {
-    VkDeviceSize result = 0;
-    if (divisor != 0) {
-        result = dividend % divisor;
-    }
-    return result;
+static inline bool IsPointerAligned(const void* address, VkDeviceSize alignment) {
+    auto ptr = reinterpret_cast<std::uintptr_t>(address);
+    return alignment != 0 && (ptr % alignment == 0);
+}
+
+static inline bool IsPointerAligned(VkDeviceAddress address, VkDeviceSize alignment) {
+    return alignment != 0 && (address % alignment == 0);
 }
 
 static inline VkDeviceSize SafeDivision(VkDeviceSize dividend, VkDeviceSize divisor) {
@@ -167,4 +168,15 @@ template <typename T>
 constexpr T AbsDiff(T a, T b) {
     static_assert(std::is_unsigned_v<T>);
     return a > b ? a - b : b - a;
+}
+
+static inline uint32_t GetSmallestGreaterOrEquallPowerOfTwo(uint32_t v) {
+    v--;
+    v |= v >> 1;
+    v |= v >> 2;
+    v |= v >> 4;
+    v |= v >> 8;
+    v |= v >> 16;
+    v++;
+    return v;
 }

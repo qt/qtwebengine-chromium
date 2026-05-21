@@ -147,7 +147,7 @@ void CreateFakeWebApps(
 
 // Returns the position of `elt` in `list`. If `list` does not contain `elt`,
 // return -1.
-int PositionInList(base::Value::List& list, const std::string& elt) {
+int PositionInList(base::ListValue& list, const std::string& elt) {
   for (size_t i = 0; i < list.size(); i++) {
     if (elt == list[i]) {
       return i;
@@ -264,10 +264,8 @@ auto IsOpenInOfficeTask() {
 class FileHandlerDialogBrowserTest : public InProcessBrowserTest {
  public:
   FileHandlerDialogBrowserTest() {
-    feature_list_.InitWithFeatures(
-        {chromeos::features::kUploadOfficeToCloud,
-         chromeos::features::kUploadOfficeToCloudForEnterprise},
-        {});
+    feature_list_.InitWithFeatures({chromeos::features::kUploadOfficeToCloud},
+                                   {});
   }
 
   explicit FileHandlerDialogBrowserTest(int num_tasks)
@@ -510,7 +508,7 @@ IN_PROC_BROWSER_TEST_F(FileHandlerDialogBrowserTest, OpenFileTaskFromDialog) {
 
   // Get the `tasks` member from the `FileHandlerPageElement` which are all of
   // the observed local file tasks.
-  base::Value::List observed_app_ids;
+  base::ListValue observed_app_ids;
   ASSERT_TRUE(base::test::RunUntil([&] {
     // It is possible that the `FileHandlerPageElement` element still hasn't
     // been initiated yet. It is completed when the `localTasks` member is

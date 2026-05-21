@@ -65,7 +65,8 @@ const CSSValue* StyleValueToCSSValue(
   // TODO(https://crbug.com/545324): Move this into a method on
   // CSSProperty when there are more of these cases.
   switch (property_id) {
-    case CSSPropertyID::kAnchorScope: {
+    case CSSPropertyID::kAnchorScope:
+    case CSSPropertyID::kTriggerScope: {
       // The 'all' keyword is tree-scoped.
       if (const auto* ident =
               DynamicTo<CSSIdentifierValue>(style_value.ToCSSValue());
@@ -143,6 +144,21 @@ const CSSValue* StyleValueToCSSValue(
       const auto* value = style_value.ToCSSValue();
       // single keywords are wrapped in a list.
       if (value->IsIdentifierValue() && !value->IsCSSWideKeyword()) {
+        CSSValueList* list = CSSValueList::CreateSpaceSeparated();
+        list->Append(*style_value.ToCSSValue());
+        return list;
+      }
+      break;
+    }
+    case CSSPropertyID::kGridLanesDirection: {
+      const auto* value = style_value.ToCSSValue();
+      // Only 'normal' is stored as an identifier, the other keywords are
+      // wrapped in a list.
+      const auto* identifier_value = DynamicTo<CSSIdentifierValue>(value);
+      if (identifier_value && !value->IsCSSWideKeyword() &&
+          identifier_value->GetValueID() != CSSValueID::kNormal) {
+        DCHECK(identifier_value->GetValueID() == CSSValueID::kRow ||
+               identifier_value->GetValueID() == CSSValueID::kColumn);
         CSSValueList* list = CSSValueList::CreateSpaceSeparated();
         list->Append(*style_value.ToCSSValue());
         return list;

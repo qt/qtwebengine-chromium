@@ -4,10 +4,10 @@
 
 #include "components/autofill/core/browser/data_model/addresses/autofill_i18n_api.h"
 
+#include <algorithm>
 #include <memory>
 #include <string>
 
-#include "base/containers/contains.h"
 #include "base/containers/flat_map.h"
 #include "base/feature_list.h"
 #include "base/notreached.h"
@@ -55,7 +55,7 @@ std::u16string GetFormattingExpressionOverrides(
            "SG", "LK", "TH", "GB", "US", "VN", "ZA"});
 
   if (field_type == ADDRESS_HOME_STREET_LOCATION) {
-    if (base::Contains(kHouseNumberFirstCountriesSet, country_code.value())) {
+    if (kHouseNumberFirstCountriesSet.contains(country_code.value())) {
       return u"${ADDRESS_HOME_HOUSE_NUMBER;;} ${ADDRESS_HOME_STREET_NAME;;}";
     }
   }
@@ -72,12 +72,11 @@ std::u16string GetFormattingExpressionOverrides(
   // with space zip code separator.
   static constexpr auto kSpaceZipCodeSeparatorCountriesSet =
       base::MakeFixedFlatSet<std::string_view>(
-          {"CZ", "GB", "GR", "HR", "IE", "LB", "MT", "SE", "SK"});
+          {"CZ", "GB", "GR", "HR", "IE", "LB", "MT", "SE", "SK", "IN"});
 
   if (field_type == ADDRESS_HOME_ZIP &&
       base::FeatureList::IsEnabled(features::kAutofillSupportSplitZipCode)) {
-    if (base::Contains(kSpaceZipCodeSeparatorCountriesSet,
-                       country_code.value())) {
+    if (kSpaceZipCodeSeparatorCountriesSet.contains(country_code.value())) {
       return u"${ADDRESS_HOME_ZIP_PREFIX;;} ${ADDRESS_HOME_ZIP_SUFFIX;;}";
     }
   }
@@ -166,11 +165,12 @@ std::unique_ptr<AddressComponent> BuildTreeNode(
     case ADDRESS_HOME_STREET_LOCATION_AND_LOCALITY:
     case ADDRESS_HOME_STREET_LOCATION_AND_LANDMARK:
     case ADDRESS_HOME_DEPENDENT_LOCALITY_AND_LANDMARK:
+    case ADDRESS_HOME_ZIP_AND_CITY:
     case ADDRESS_HOME_ZIP_PREFIX:
     case ADDRESS_HOME_ZIP_SUFFIX:
     case DELIVERY_INSTRUCTIONS:
-      return std::make_unique<AddressComponent>(type, std::move(children),
-                                                MergeMode::kDefault);
+      // TODO(crbug.com/447111009) Restore `kDefault` merge mode.
+      return std::make_unique<AddressComponent>(type, std::move(children));
     case NO_SERVER_DATA:
     case UNKNOWN_TYPE:
     case EMPTY_TYPE:
@@ -466,7 +466,7 @@ bool IsTypeEnabledForCountry(FieldType field_type,
   return std::ranges::any_of(
       it->second, [field_type](const FieldTypeDescription& description) {
         return description.field_type == field_type ||
-               base::Contains(description.children, field_type);
+               std::ranges::contains(description.children, field_type);
       });
 }
 

@@ -31,7 +31,7 @@
 #include "content/browser/devtools/devtools_instrumentation.h"
 #include "content/browser/loader/navigation_url_loader_impl.h"
 #include "content/browser/loader/url_loader_factory_utils.h"
-#include "content/browser/renderer_host/private_network_access_util.h"
+#include "content/browser/renderer_host/local_network_access_util.h"
 #include "content/browser/service_worker/service_worker_client.h"
 #include "content/browser/service_worker/service_worker_container_host.h"
 #include "content/browser/service_worker/service_worker_context_core.h"
@@ -1099,6 +1099,17 @@ ServiceWorkerContextWrapper::GetRemoteAssociatedInterfaces(
   return *version.associated_interface_provider();
 }
 
+void ServiceWorkerContextWrapper::AddMessageToConsole(
+    int64_t service_worker_version_id,
+    blink::mojom::ConsoleMessageLevel level,
+    const std::string& message) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  auto* version = GetLiveServiceWorker(service_worker_version_id);
+  if (version) {
+    version->AddMessageToConsole(level, message);
+  }
+}
+
 std::optional<ServiceWorkerRunningInfo>
 ServiceWorkerContextWrapper::GetRunningServiceWorkerInfo(int64_t version_id) {
   const auto search = running_service_workers_.find(version_id);
@@ -1896,7 +1907,7 @@ ServiceWorkerContextWrapper::GetLoaderFactoryForBrowserInitiatedRequest(
           ForServiceWorkerMainScript(this, version_id)) {
     params->Run(
         /*is_navigation=*/true, /*is_download=*/false, factory_builder,
-        /*factory_override=*/nullptr);
+        /*factory_override=*/nullptr, &header_client);
   }
 
   bool use_client_header_factory = header_client.is_valid();

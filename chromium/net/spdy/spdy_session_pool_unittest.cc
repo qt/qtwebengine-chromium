@@ -2129,7 +2129,6 @@ TEST_F(SpdySessionPoolTest, NotifyConnectionChangeOnSessionClose) {
       socket_params, /*proxy_annotation_tag=*/std::nullopt, MEDIUM,
       test_key.socket_tag(), ClientSocketPool::RespectLimits::ENABLED,
       callback.callback(), ClientSocketPool::ProxyAuthCallback(),
-      /*fail_if_alias_requires_proxy_override=*/false,
       http_session_->GetSocketPool(HttpNetworkSession::NORMAL_SOCKET_POOL,
                                    ProxyChain::Direct()),
       net_log);
@@ -2139,7 +2138,7 @@ TEST_F(SpdySessionPoolTest, NotifyConnectionChangeOnSessionClose) {
   base::WeakPtr<SpdySession> session;
   auto connection_management_config = ConnectionManagementConfig();
   connection_management_config.connection_change_observer =
-      connection_change_observer.get();
+      connection_change_observer->GetWeakPtr();
   rv = spdy_session_pool_->CreateAvailableSessionFromSocketHandle(
       test_key, std::move(connection), net_log,
       MultiplexedSessionCreationInitiator::kUnknown, &session,
@@ -2217,7 +2216,6 @@ TEST_F(SpdySessionPoolTest, NotifyConnectionChangeOnConnectionFailure) {
       socket_params, /*proxy_annotation_tag=*/std::nullopt, MEDIUM,
       test_key.socket_tag(), ClientSocketPool::RespectLimits::ENABLED,
       callback.callback(), ClientSocketPool::ProxyAuthCallback(),
-      /*fail_if_alias_requires_proxy_override=*/false,
       http_session_->GetSocketPool(HttpNetworkSession::NORMAL_SOCKET_POOL,
                                    ProxyChain::Direct()),
       net_log);
@@ -2227,7 +2225,7 @@ TEST_F(SpdySessionPoolTest, NotifyConnectionChangeOnConnectionFailure) {
   base::WeakPtr<SpdySession> session;
   auto connection_management_config = ConnectionManagementConfig();
   connection_management_config.connection_change_observer =
-      connection_change_observer.get();
+      connection_change_observer->GetWeakPtr();
   rv = spdy_session_pool_->CreateAvailableSessionFromSocketHandle(
       test_key, std::move(connection), net_log,
       MultiplexedSessionCreationInitiator::kUnknown, &session,

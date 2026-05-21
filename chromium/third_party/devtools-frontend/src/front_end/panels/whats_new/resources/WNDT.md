@@ -1,11 +1,11 @@
-### [Request conditions](request-conditions)
-
-Block and throttle individual network requests with the new Request conditions panel.
-
 ### [MCP server](mcp-server)
 
-Use auto connect to continue a debugging session in an already running Chrome instance.
+CrUX data in performance trace summaries, a new --slim mode, specialized skills and experimental screen recording support.
 
-### [Adopted stylesheets](adopted-stylesheets)
+### [Preserve Console history edits](console-history)
 
-Adopted stylesheets are now visible under shadow roots in the Elements panel.
+Modify a previous command, browse for another one, and return to your draft without losing your work.
+
+### [Improved support for adopted stylesheets](adopted-stylesheets)
+
+Adopted Style Sheets are now grouped under a dedicated #adopted-style-sheets node within the DOM tree in the Elements panel.

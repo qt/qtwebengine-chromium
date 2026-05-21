@@ -30,6 +30,7 @@
 #include <memory>
 #include <optional>
 
+#include "base/byte_size.h"
 #include "base/check_op.h"
 #include "base/memory/raw_ptr_exclusion.h"
 #include "base/memory/scoped_refptr.h"
@@ -71,7 +72,8 @@ class PaintCanvasVideoRenderer;
 namespace blink {
 
 class AcceleratedStaticBitmapImage;
-class CanvasResourceProvider;
+class CanvasNon2DResourceProviderSharedImage;
+class CanvasSnapshotProvider;
 class EXTDisjointTimerQuery;
 class EXTDisjointTimerQueryWebGL2;
 class Element;
@@ -434,6 +436,32 @@ class MODULES_EXPORT WebGLRenderingContextBase
                     Element* element,
                     ExceptionState& exception_state);
 
+  void texElement2D(GLenum target,
+                    GLint level,
+                    GLint internalformat,
+                    GLfloat sx,
+                    GLfloat sy,
+                    GLfloat swidth,
+                    GLfloat sheight,
+                    GLenum format,
+                    GLenum type,
+                    Element* element,
+                    ExceptionState& exception_state);
+
+  void texElement2D(GLenum target,
+                    GLint level,
+                    GLint internalformat,
+                    GLfloat sx,
+                    GLfloat sy,
+                    GLfloat swidth,
+                    GLfloat sheight,
+                    GLsizei width,
+                    GLsizei height,
+                    GLenum format,
+                    GLenum type,
+                    Element* element,
+                    ExceptionState& exception_state);
+
   void texElementImage2D(GLenum target,
                          GLint level,
                          GLint internalformat,
@@ -445,6 +473,32 @@ class MODULES_EXPORT WebGLRenderingContextBase
   void texElementImage2D(GLenum target,
                          GLint level,
                          GLint internalformat,
+                         GLsizei width,
+                         GLsizei height,
+                         GLenum format,
+                         GLenum type,
+                         Element* element,
+                         ExceptionState& exception_state);
+
+  void texElementImage2D(GLenum target,
+                         GLint level,
+                         GLint internalformat,
+                         GLfloat sx,
+                         GLfloat sy,
+                         GLfloat swidth,
+                         GLfloat sheight,
+                         GLenum format,
+                         GLenum type,
+                         Element* element,
+                         ExceptionState& exception_state);
+
+  void texElementImage2D(GLenum target,
+                         GLint level,
+                         GLint internalformat,
+                         GLfloat sx,
+                         GLfloat sy,
+                         GLfloat swidth,
+                         GLfloat sheight,
                          GLsizei width,
                          GLsizei height,
                          GLenum format,
@@ -628,12 +682,8 @@ class MODULES_EXPORT WebGLRenderingContextBase
   void Trace(Visitor*) const override;
 
   // Returns approximate gpu memory allocated.
-  base::ByteCount AllocatedBufferSize() const override;
-  int AllocatedBufferCountPerPixel() const override { NOTREACHED(); }
+  base::ByteSize AllocatedBufferSize() const override;
 
-  // Returns the drawing buffer size after it is, probably, has scaled down
-  // to the maximum supported canvas size.
-  gfx::Size DrawingBufferSize() const override;
   DrawingBuffer* GetDrawingBuffer() const;
 
   class TextureUnitState {
@@ -726,8 +776,9 @@ class MODULES_EXPORT WebGLRenderingContextBase
       std::unique_ptr<WebGraphicsContext3DProvider>,
       const Platform::WebGLContextInfo&);
   void SetupFlags();
-  bool CopyRenderingResultsFromDrawingBuffer(CanvasResourceProviderSharedImage*,
-                                             SourceDrawingBuffer);
+  bool CopyRenderingResultsFromDrawingBuffer(
+      CanvasNon2DResourceProviderSharedImage*,
+      SourceDrawingBuffer);
 
   // CanvasRenderingContext implementation.
   bool IsComposited() const override { return true; }
@@ -911,33 +962,26 @@ class MODULES_EXPORT WebGLRenderingContextBase
 
   Vector<GLenum> compressed_texture_formats_;
 
-  // Fixed-size cache of reusable resource providers for image and video
+  // Fixed-size cache of reusable snapshot providers for image and video
   // texImage2D calls.
-  class LRUCanvasResourceProviderCache {
+  class LRUCanvasSnapshotProviderCache {
    public:
     enum class CacheType { kImage, kVideo };
-    LRUCanvasResourceProviderCache(wtf_size_t capacity, CacheType type);
+    LRUCanvasSnapshotProviderCache(wtf_size_t capacity, CacheType type);
     // The pointer returned is owned by the image buffer map.
-    CanvasResourceProvider* GetCanvasResourceProvider(
-        gfx::Size size,
-        viz::SharedImageFormat format,
-        SkAlphaType alpha_type,
-        const gfx::ColorSpace& color_space);
+    CanvasSnapshotProvider* GetCanvasSnapshotProvider(
+        const CanvasSnapshotProvider::Info& info);
 
    private:
     void BubbleToFront(wtf_size_t idx);
     const wtf_size_t capacity_;
     const CacheType type_;
-    Vector<std::unique_ptr<CanvasResourceProvider>> resource_providers_;
-    // The returned CanvasResourceProvider may have a different format from the
-    // one requested (e.g, BGRA vs RGBA). Ensure this doesn't cause cache
-    // misses by recording also the requested format.
-    Vector<viz::SharedImageFormat> requested_formats_;
+    Vector<std::unique_ptr<CanvasSnapshotProvider>> snapshot_providers_;
   };
-  LRUCanvasResourceProviderCache generated_image_cache_{
-      4, LRUCanvasResourceProviderCache::CacheType::kImage};
-  LRUCanvasResourceProviderCache generated_video_cache_{
-      4, LRUCanvasResourceProviderCache::CacheType::kVideo};
+  LRUCanvasSnapshotProviderCache generated_image_cache_{
+      4, LRUCanvasSnapshotProviderCache::CacheType::kImage};
+  LRUCanvasSnapshotProviderCache generated_video_cache_{
+      4, LRUCanvasSnapshotProviderCache::CacheType::kVideo};
 
   GLint max_texture_size_;
   GLint max_cube_map_texture_size_;
@@ -1983,13 +2027,13 @@ class MODULES_EXPORT WebGLRenderingContextBase
   scoped_refptr<ExternalCanvasResource> ExportLowLatencyCanvasResource(
       SourceDrawingBuffer source_buffer);
 
-  CanvasResourceProviderSharedImage* GetSharedImageResourceProvider();
+  CanvasNon2DResourceProviderSharedImage* GetSharedImageResourceProvider();
 
   // Attempts to paint the most recent rendering results into a
-  // CanvasResourceProvider. Returns the CanvasResourceProvider if the paint
+  // CanvasNon2DResourceProviderSharedImage. Returns the provider if the paint
   // succeeded; otherwise returns nullptr.
-  CanvasResourceProvider* PaintRenderingResultsToResourceProvider(
-      SourceDrawingBuffer source_buffer);
+  CanvasNon2DResourceProviderSharedImage*
+  PaintRenderingResultsToResourceProvider(SourceDrawingBuffer source_buffer);
   void TexImageHelperMediaVideoFrame(
       TexImageParams,
       WebGLTexture*,
@@ -2026,6 +2070,10 @@ class MODULES_EXPORT WebGLRenderingContextBase
   void TexElementImage2DInternal(GLenum target,
                                  GLint level,
                                  GLint internalformat,
+                                 std::optional<GLfloat> sx,
+                                 std::optional<GLfloat> sy,
+                                 std::optional<GLfloat> swidth,
+                                 std::optional<GLfloat> sheight,
                                  std::optional<GLsizei> width,
                                  std::optional<GLsizei> height,
                                  GLenum format,
@@ -2035,7 +2083,7 @@ class MODULES_EXPORT WebGLRenderingContextBase
 
   // Used to provide accelerated snapshots and CanvasResources holding the
   // current content.
-  std::unique_ptr<CanvasResourceProviderSharedImage> resource_provider_;
+  std::unique_ptr<CanvasNon2DResourceProviderSharedImage> resource_provider_;
 
   // Whether `resource_provider_` has fresh content that should be sent to the
   // compositor in response to a PushFrame() call.

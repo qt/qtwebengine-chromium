@@ -55,6 +55,7 @@ class QuicConnectionImpl final : public QuicConnection,
   void OnServerPreferredAddressAvailable(
       const quic::QuicSocketAddress& server_preferred_address) override;
   void OnPathDegrading() override;
+  void OnConfigNegotiated(const quic::QuicConfig& config) override;
 
   // OpenScreenSessionBase::Visitor overrides
   void OnCryptoHandshakeComplete() override;

@@ -383,9 +383,9 @@ std::optional<uint64_t> DwaService::HashRepeatedFieldTrials(
 
   std::sort(field_trials_vector.begin(), field_trials_vector.end());
 
-  base::Value::List value_list;
+  base::ListValue value_list;
   for (const auto& field_trials : field_trials_vector) {
-    base::Value::List field_trial_pair;
+    base::ListValue field_trial_pair;
     field_trial_pair.Append(base::NumberToString(field_trials.first));
     field_trial_pair.Append(base::NumberToString(field_trials.second));
     value_list.Append(std::move(field_trial_pair));
@@ -454,6 +454,10 @@ DwaService::EncryptPrivateMetricReport(
   *encrypted_report.mutable_report_header() = std::move(report_header);
   encrypted_report.set_report_type(
       ::private_metrics::EncryptedPrivateMetricReport::DWA);
+  *encrypted_report.mutable_encrypted_symmetric_key() =
+      std::move(result.value().encrypted_symmetric_key);
+  *encrypted_report.mutable_encapsulated_public_key() =
+      std::move(result.value().encapped_key);
   return encrypted_report;
 }
 

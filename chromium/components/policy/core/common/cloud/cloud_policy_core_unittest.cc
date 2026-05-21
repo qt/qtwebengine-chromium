@@ -18,6 +18,7 @@
 #include "components/policy/core/common/policy_pref_names.h"
 #include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/testing_pref_service.h"
+#include "extensions/buildflags/buildflags.h"
 #include "services/network/test/test_network_connection_tracker.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -89,7 +90,7 @@ class CloudPolicyCoreTest : public testing::Test,
   base::test::SingleThreadTaskEnvironment task_environment_;
 
   TestingPrefServiceSimple prefs_;
-  MockCloudPolicyStore store_;
+  MockCloudPolicyStore store_{dm_protocol::GetChromeUserPolicyType()};
   std::unique_ptr<CloudPolicyCore> core_;
 
   int core_connected_callback_count_ = 0;

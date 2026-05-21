@@ -1890,7 +1890,7 @@ TEST(WideString, Empty) {
 
   const wchar_t* cstr = empty_str.c_str();
   EXPECT_TRUE(cstr);
-  EXPECT_EQ(0u, UNSAFE_TODO(wcslen(cstr)));
+  EXPECT_EQ(0u, wcslen(cstr));
 
   pdfium::span<const wchar_t> cspan = empty_str.span();
   EXPECT_TRUE(cspan.empty());

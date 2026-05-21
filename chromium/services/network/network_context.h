@@ -47,7 +47,6 @@
 #include "net/storage_access_api/status.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "services/network/cors/preflight_controller.h"
-#include "services/network/devtools_durable_msg_collector.h"
 #include "services/network/first_party_sets/first_party_sets_access_delegate.h"
 #include "services/network/http_cache_data_counter.h"
 #include "services/network/http_cache_data_remover.h"
@@ -61,7 +60,6 @@
 #include "services/network/public/mojom/cookie_access_observer.mojom.h"
 #include "services/network/public/mojom/cookie_manager.mojom-shared.h"
 #include "services/network/public/mojom/host_resolver.mojom.h"
-#include "services/network/public/mojom/network_context.mojom-forward.h"
 #include "services/network/public/mojom/network_context.mojom.h"
 #include "services/network/public/mojom/network_context_client.mojom.h"
 #include "services/network/public/mojom/network_service.mojom-forward.h"
@@ -320,10 +318,6 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
   void SetNetworkConditions(
       const base::UnguessableToken& throttling_profile_id,
       std::vector<mojom::MatchedNetworkConditionsPtr> conditions) override;
-  void EnableDurableMessageCollector(
-      const base::UnguessableToken& throttling_profile_id,
-      mojo::PendingReceiver<network::mojom::DurableMessageCollector> receiver)
-      override;
   void SetAcceptLanguage(const std::string& new_accept_language) override;
   void SetEnableReferrers(bool enable_referrers) override;
 #if BUILDFLAG(IS_CT_SUPPORTED)
@@ -389,7 +383,7 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
       net::StorageAccessApiStatus storage_access_api_status,
       const net::IsolationInfo& isolation_info,
       std::vector<mojom::HttpHeaderPtr> additional_headers,
-      int32_t process_id,
+      const network::OriginatingProcess& process_id,
       const url::Origin& origin,
       network::mojom::ClientSecurityStatePtr client_security_state,
       uint32_t options,
@@ -469,6 +463,7 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
       const GURL& url,
       mojom::CredentialsMode credentials_mode,
       const net::NetworkAnonymizationKey& network_anonymization_key,
+      const std::optional<base::UnguessableToken>& network_restrictions_id,
       const net::MutableNetworkTrafficAnnotationTag& traffic_annotation,
       const std::optional<net::ConnectionKeepAliveConfig>& keepalive_config,
       mojo::PendingRemote<mojom::ConnectionChangeObserverClient>
@@ -489,8 +484,6 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
       const url::Origin& origin,
       const net::IsolationInfo& isolation_info,
       const base::flat_map<std::string, std::string>& endpoints) override;
-  void SetEnterpriseReportingEndpoints(
-      const base::flat_map<std::string, GURL>& endpoints) override;
   void SendReportsAndRemoveSource(
       const base::UnguessableToken& reporting_source) override;
   void QueueReport(
@@ -499,11 +492,11 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
       const GURL& url,
       const std::optional<base::UnguessableToken>& reporting_source,
       const net::NetworkAnonymizationKey& network_anonymization_key,
-      base::Value::Dict body) override;
+      base::DictValue body) override;
   void QueueEnterpriseReport(const std::string& type,
                              const std::string& group,
                              const GURL& url,
-                             base::Value::Dict body) override;
+                             base::DictValue body) override;
   void QueueSignedExchangeReport(
       mojom::SignedExchangeReportPtr report,
       const net::NetworkAnonymizationKey& network_anonymization_key) override;
@@ -562,6 +555,7 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
       const scoped_refptr<net::X509Certificate>& certificate) override;
   void FlushMatchingCachedClientCert(
       const scoped_refptr<net::X509Certificate>& certificate) override;
+  void FlushClientCertCache() override;
   void RevokeNetworkForNonces(
       std::vector<mojom::NonceAndAllowlistedPatternsPtr> nonces_to_patterns,
       RevokeNetworkForNoncesCallback callback) override;
@@ -605,19 +599,15 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
 
   // The following methods are used to track the number of requests per process
   // and ensure it doesn't go over a reasonable limit.
-  void LoaderCreated(uint32_t process_id);
-  void LoaderDestroyed(uint32_t process_id);
-  bool CanCreateLoader(uint32_t process_id);
+  void LoaderCreated(const OriginatingProcess& process_id);
+  void LoaderDestroyed(const OriginatingProcess& process_id);
+  bool CanCreateLoader(const OriginatingProcess& process_id);
 
   void set_max_loaders_per_process_for_testing(uint32_t count) {
     max_loaders_per_process_ = count;
   }
 
   size_t GetNumOutstandingResolveHostRequestsForTesting() const;
-
-  size_t num_devtools_durable_message_collectors_for_testing() const {
-    return devtools_profile_to_durable_message_collectors_.size();
-  }
 
   size_t pending_proxy_lookup_requests_for_testing() const {
     return proxy_lookup_requests_.size();
@@ -695,12 +685,6 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
     return shared_resource_checker_.get();
   }
 
-  // Create a Durable Message for the request and DevTools Profile ID,
-  // if durable message collection is enabled on the Devtools profile.
-  base::WeakPtr<DevtoolsDurableMessage> MaybeCreateDurableMessage(
-      const std::optional<base::UnguessableToken>& throttling_profile_id,
-      const std::optional<std::string>& devtools_request_id);
-
   // Returns the current same-origin-policy exceptions.  For more details see
   // network::mojom::NetworkContextParams::cors_origin_access_list and
   // network::mojom::NetworkContext::SetCorsOriginAccessListsForOrigin.
@@ -741,6 +725,12 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
   // `network_revocation_exemptions_`.
   bool IsNetworkForNonceAndUrlAllowed(const base::UnguessableToken& nonce,
                                       const GURL& url) const;
+
+  // Checks whether host resolution is allowed for `host` given the network
+  // restrictions ID `nonce`.
+  bool IsHostResolutionForNonceAndHostAllowed(
+      const base::UnguessableToken& nonce,
+      const mojom::HostResolverHost& host) const;
 
  private:
   class NetworkContextHttpAuthPreferences : public net::HttpAuthPreferences {
@@ -844,18 +834,13 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
 
   void InitializePrefetchURLLoaderFactory();
 
-  // Invoked when DevTools DurableMessage Clients for a profile are
-  // disconnected.
-  void OnDevToolsDurableMessageClientsDisconnected(
-      const base::UnguessableToken& throttling_profile_id);
-
   void QueueReportInternal(
       const std::string& type,
       const std::string& group,
       const GURL& url,
       const std::optional<base::UnguessableToken>& reporting_source,
       const net::NetworkAnonymizationKey& network_anonymization_key,
-      base::Value::Dict body,
+      base::DictValue body,
       net::ReportingTargetType target_type);
 
   const raw_ptr<NetworkService> network_service_;
@@ -942,7 +927,7 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
       web_transports_;
 
   // A count of outstanding requests per initiating process.
-  std::map<uint32_t, uint32_t> loader_count_per_process_;
+  std::map<OriginatingProcess, uint32_t> loader_count_per_process_;
 
   static constexpr uint32_t kMaxOutstandingRequestsPerProcess = 2700;
   uint32_t max_loaders_per_process_ = kMaxOutstandingRequestsPerProcess;
@@ -1099,18 +1084,13 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
   // Manager for device bound sessions.
   std::unique_ptr<DeviceBoundSessionManager> device_bound_session_manager_;
 
-  // Used only when network::features::kCacheSharingForPervasiveScripts is
+  // Used only when network::features::kCacheSharingForPervasiveResources is
   // enabled to determine if a given request is for a well-known
-  // pervasive script.
+  // pervasive resource.
   // See https://chromestatus.com/feature/5202380930678784
   // This needs to be ordered after cookie_manager_ as it maintains a reference
   // to the cookie settings object from cookie_manager_.
   std::unique_ptr<SharedResourceChecker> shared_resource_checker_;
-
-  // DevTools Durable Message Collectors. Created on first use.
-  absl::flat_hash_map<base::UnguessableToken,
-                      std::unique_ptr<DevtoolsDurableMessageCollector>>
-      devtools_profile_to_durable_message_collectors_;
 
   SEQUENCE_CHECKER(sequence_checker_);
 

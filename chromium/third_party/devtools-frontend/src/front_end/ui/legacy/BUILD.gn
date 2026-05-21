@@ -70,6 +70,7 @@ devtools_ui_module("ui") {
     "InplaceEditor.ts",
     "InspectorView.ts",
     "KeyboardShortcut.ts",
+    "LinkContextMenuProvider.ts",
     "ListControl.ts",
     "ListModel.ts",
     "ListWidget.ts",
@@ -97,8 +98,6 @@ devtools_ui_module("ui") {
     "ViewManager.ts",
     "ViewRegistration.ts",
     "Widget.ts",
-    "XElement.ts",
-    "XLink.ts",
     "ZoomManager.ts",
   ]
 
@@ -111,12 +110,14 @@ devtools_ui_module("ui") {
     "../../core/root:bundle",
     "../../core/sdk:bundle",
     "../../foundation:bundle",
+    "../../generated:protocol",
+    "../../models/annotations:bundle",
     "../../models/geometry:bundle",
+    "../../models/greendev:bundle",
     "../../models/logs:bundle",
     "../../models/text_utils:bundle",
     "../../models/trace:bundle",
     "../../ui/legacy/theme_support:bundle",
-    "../components/annotations:bundle",
     "../components/buttons:bundle",
     "../components/helpers:bundle",
     "../components/highlighting:bundle",
@@ -157,15 +158,12 @@ devtools_entrypoint("bundle") {
     "../components/list:*",
     "../components/markdown_view:*",
     "../components/menus:*",
+    "../components/panel_feedback/*",
     "../components/request_link_icon:unittests",
     "../components/snackbars:*",
+    "../components/text_editor/*",
     "../components/tooltips:*",
     "./*",
-
-    # Required for x-link
-    "../components/panel_feedback/*",
-    "../components/settings/*",
-    "../components/text_editor/*",
 
     # Required for correct button styling in the Computed tab
     # (http://crbug.com/435601104).
@@ -195,6 +193,8 @@ devtools_ui_module("unittests") {
     "ListWidget.test.ts",
     "SearchableView.test.ts",
     "ShortcutRegistry.test.ts",
+    "SoftContextMenu.test.ts",
+    "SoftDropDown.test.ts",
     "SplitWidget.test.ts",
     "SuggestBox.test.ts",
     "TabbedPane.test.ts",
@@ -206,7 +206,6 @@ devtools_ui_module("unittests") {
     "ViewManager.test.ts",
     "ViewRegistration.test.ts",
     "Widget.test.ts",
-    "XLink.test.ts",
   ]
 
   deps = [

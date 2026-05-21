@@ -202,6 +202,18 @@ void Adapter::SetInfo(const WGPUAdapterInfo* info) {
                 mPowerProperties.powerPreference = powerProperties->powerPreference;
                 break;
             }
+            case WGPUSType_AdapterPropertiesExplicitComputeSubgroupSizeConfigs: {
+                auto* subgroupSizeConfigs =
+                    reinterpret_cast<WGPUAdapterPropertiesExplicitComputeSubgroupSizeConfigs*>(
+                        chain);
+                mExplicitComputeSubgroupSizeConfigs.minExplicitComputeSubgroupSize =
+                    subgroupSizeConfigs->minExplicitComputeSubgroupSize;
+                mExplicitComputeSubgroupSizeConfigs.maxExplicitComputeSubgroupSize =
+                    subgroupSizeConfigs->maxExplicitComputeSubgroupSize;
+                mExplicitComputeSubgroupSizeConfigs.maxComputeWorkgroupSubgroups =
+                    subgroupSizeConfigs->maxComputeWorkgroupSubgroups;
+                break;
+            }
             default:
                 DAWN_UNREACHABLE();
                 break;
@@ -260,6 +272,22 @@ WGPUStatus Adapter::APIGetInfo(WGPUAdapterInfo* info) const {
                 powerProperties->powerPreference = mPowerProperties.powerPreference;
                 break;
             }
+            case WGPUSType_AdapterPropertiesExplicitComputeSubgroupSizeConfigs: {
+                if (!APIHasFeature(WGPUFeatureName_ChromiumExperimentalSubgroupSizeControl)) {
+                    return WGPUStatus_Error;
+                }
+                auto* explicitComputeSubgroupSizeConfigs =
+                    reinterpret_cast<WGPUAdapterPropertiesExplicitComputeSubgroupSizeConfigs*>(
+                        chain);
+                explicitComputeSubgroupSizeConfigs->minExplicitComputeSubgroupSize =
+                    mExplicitComputeSubgroupSizeConfigs.minExplicitComputeSubgroupSize;
+                explicitComputeSubgroupSizeConfigs->maxExplicitComputeSubgroupSize =
+                    mExplicitComputeSubgroupSizeConfigs.maxExplicitComputeSubgroupSize;
+                explicitComputeSubgroupSizeConfigs->maxComputeWorkgroupSubgroups =
+                    mExplicitComputeSubgroupSizeConfigs.maxComputeWorkgroupSubgroups;
+                break;
+            }
+
             default:
                 break;
         }

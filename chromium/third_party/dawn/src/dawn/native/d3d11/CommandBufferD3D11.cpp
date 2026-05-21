@@ -42,6 +42,7 @@
 #include "dawn/native/Commands.h"
 #include "dawn/native/ExternalTexture.h"
 #include "dawn/native/ImmediateConstantsTracker.h"
+#include "dawn/native/Queue.h"
 #include "dawn/native/RenderBundle.h"
 #include "dawn/native/d3d/D3DError.h"
 #include "dawn/native/d3d11/BindGroupTrackerD3D11.h"
@@ -224,12 +225,9 @@ class ImmediateConstantTracker : public T {
     ImmediateConstantTracker() = default;
 
     MaybeError Apply(const ScopedSwapStateCommandRecordingContext* commandContext) {
-        auto* lastPipeline = this->mLastPipeline;
-        if (!lastPipeline) {
-            return {};
-        }
+        DAWN_ASSERT(this->mLastPipeline != nullptr);
 
-        ImmediateConstantMask pipelineMask = lastPipeline->GetImmediateMask();
+        ImmediateConstantMask pipelineMask = this->mLastPipeline->GetImmediateMask();
         ImmediateConstantMask uploadBits = this->mDirty & pipelineMask;
         for (auto&& [offset, size] : IterateRanges(uploadBits)) {
             uint32_t immediateContentStartOffset =
@@ -265,7 +263,10 @@ Ref<CommandBuffer> CommandBuffer::Create(CommandEncoder* encoder,
 }
 
 MaybeError CommandBuffer::Execute(const ScopedSwapStateCommandRecordingContext* commandContext) {
-    auto LazyClearSyncScope = [&commandContext](const SyncScopeResourceUsage& scope) -> MaybeError {
+    ExecutionSerial pendingSerial = GetDevice()->GetQueue()->GetPendingCommandSerial();
+
+    auto LazyClearSyncScope = [&commandContext,
+                               pendingSerial](const SyncScopeResourceUsage& scope) -> MaybeError {
         for (size_t i = 0; i < scope.textures.size(); i++) {
             Texture* texture = ToBackend(scope.textures[i]);
 
@@ -286,8 +287,8 @@ MaybeError CommandBuffer::Execute(const ScopedSwapStateCommandRecordingContext* 
         }
 
         for (BufferBase* buffer : scope.buffers) {
+            DAWN_TRY(ToBackend(buffer)->TrackUsage(commandContext, pendingSerial));
             DAWN_TRY(ToBackend(buffer)->EnsureDataInitialized(commandContext));
-            buffer->MarkUsedInPendingCommands();
         }
 
         return {};
@@ -301,14 +302,6 @@ MaybeError CommandBuffer::Execute(const ScopedSwapStateCommandRecordingContext* 
         switch (type) {
             case Command::BeginComputePass: {
                 mCommands.NextCommand<BeginComputePassCmd>();
-                for (BufferBase* buffer :
-                     GetResourceUsages().computePasses[nextComputePassNumber].referencedBuffers) {
-                    buffer->MarkUsedInPendingCommands();
-                }
-                for (TextureBase* texture :
-                     GetResourceUsages().computePasses[nextComputePassNumber].referencedTextures) {
-                    DAWN_TRY(ToBackend(texture)->SynchronizeTextureBeforeUse(commandContext));
-                }
                 for (const SyncScopeResourceUsage& scope :
                      GetResourceUsages().computePasses[nextComputePassNumber].dispatchUsages) {
                     for (TextureBase* texture : scope.textures) {
@@ -355,11 +348,12 @@ MaybeError CommandBuffer::Execute(const ScopedSwapStateCommandRecordingContext* 
                 Buffer* source = ToBackend(copy->source.Get());
                 Buffer* destination = ToBackend(copy->destination.Get());
 
+                DAWN_TRY(source->TrackUsage(commandContext, pendingSerial));
+                DAWN_TRY(destination->TrackUsage(commandContext, pendingSerial));
+
                 // Buffer::Copy() will ensure the source and destination buffers are initialized.
                 DAWN_TRY(Buffer::Copy(commandContext, source, copy->sourceOffset, copy->size,
                                       destination, copy->destinationOffset));
-                source->MarkUsedInPendingCommands();
-                destination->MarkUsedInPendingCommands();
                 break;
             }
 
@@ -374,12 +368,15 @@ MaybeError CommandBuffer::Execute(const ScopedSwapStateCommandRecordingContext* 
                 auto& dst = copy->destination;
 
                 Buffer* buffer = ToBackend(src.buffer.Get());
+                DAWN_TRY(buffer->TrackUsage(commandContext, pendingSerial));
+
                 uint64_t bufferOffset = src.offset;
                 Ref<BufferBase> stagingBuffer;
                 const TypedTexelBlockInfo& blockInfo = GetBlockInfo(dst);
 
                 // If the buffer is not mappable, we need to create a staging buffer and copy the
                 // data from the buffer to the staging buffer.
+                std::optional<BufferBase::ScopedUseBuffer> use;
                 if (!buffer->IsCPUReadable()) {
                     // TODO(dawn:1768): use compute shader to copy data from buffer to texture.
                     BufferDescriptor desc;
@@ -389,7 +386,7 @@ MaybeError CommandBuffer::Execute(const ScopedSwapStateCommandRecordingContext* 
                     desc.usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::MapRead;
                     DAWN_TRY_ASSIGN(stagingBuffer, Buffer::Create(ToBackend(GetDevice()),
                                                                   Unpack(&desc), commandContext));
-
+                    use = stagingBuffer->UseInternal();
                     DAWN_TRY(Buffer::Copy(commandContext, buffer, src.offset,
                                           stagingBuffer->GetSize(), ToBackend(stagingBuffer.Get()),
                                           0));
@@ -413,8 +410,6 @@ MaybeError CommandBuffer::Execute(const ScopedSwapStateCommandRecordingContext* 
                                         copy->copySize.ToExtent3D(), data,
                                         static_cast<uint32_t>(bytesPerRow),
                                         static_cast<uint32_t>(src.rowsPerImage)));
-
-                buffer->MarkUsedInPendingCommands();
                 break;
             }
 
@@ -428,13 +423,15 @@ MaybeError CommandBuffer::Execute(const ScopedSwapStateCommandRecordingContext* 
                 auto& src = copy->source;
                 auto& dst = copy->destination;
 
+                Buffer* buffer = ToBackend(dst.buffer.Get());
+                DAWN_TRY(buffer->TrackUsage(commandContext, pendingSerial));
+
                 SubresourceRange subresources = GetSubresourcesAffectedByCopy(src, copy->copySize);
                 Texture* texture = ToBackend(src.texture.Get());
                 DAWN_TRY(texture->SynchronizeTextureBeforeUse(commandContext));
                 DAWN_TRY(
                     texture->EnsureSubresourceContentInitialized(commandContext, subresources));
 
-                Buffer* buffer = ToBackend(dst.buffer.Get());
                 Buffer::ScopedMap scopedDstMap;
                 DAWN_TRY_ASSIGN(scopedDstMap, Buffer::ScopedMap::Create(commandContext, buffer,
                                                                         wgpu::MapMode::Write));
@@ -455,8 +452,6 @@ MaybeError CommandBuffer::Execute(const ScopedSwapStateCommandRecordingContext* 
                              ->Read(commandContext, subresources, src.origin.ToOrigin3D(),
                                     copy->copySize.ToExtent3D(), static_cast<uint32_t>(bytesPerRow),
                                     static_cast<uint32_t>(dst.rowsPerImage), callback));
-
-                dst.buffer->MarkUsedInPendingCommands();
                 break;
             }
 
@@ -482,8 +477,8 @@ MaybeError CommandBuffer::Execute(const ScopedSwapStateCommandRecordingContext* 
                     break;
                 }
                 Buffer* buffer = ToBackend(cmd->buffer.Get());
+                DAWN_TRY(buffer->TrackUsage(commandContext, pendingSerial));
                 DAWN_TRY(buffer->Clear(commandContext, 0, cmd->offset, cmd->size));
-                buffer->MarkUsedInPendingCommands();
                 break;
             }
 
@@ -495,9 +490,9 @@ MaybeError CommandBuffer::Execute(const ScopedSwapStateCommandRecordingContext* 
                 Buffer* destination = ToBackend(cmd->destination.Get());
                 uint64_t destinationOffset = cmd->destinationOffset;
 
+                DAWN_TRY(destination->TrackUsage(commandContext, pendingSerial));
                 DAWN_TRY(querySet->Resolve(commandContext, firstQuery, queryCount, destination,
                                            destinationOffset));
-                destination->MarkUsedInPendingCommands();
                 break;
             }
 
@@ -513,9 +508,9 @@ MaybeError CommandBuffer::Execute(const ScopedSwapStateCommandRecordingContext* 
                 }
 
                 Buffer* dstBuffer = ToBackend(cmd->buffer.Get());
+                DAWN_TRY(dstBuffer->TrackUsage(commandContext, pendingSerial));
                 uint8_t* data = mCommands.NextData<uint8_t>(cmd->size);
                 DAWN_TRY(dstBuffer->Write(commandContext, cmd->offset, data, cmd->size));
-                dstBuffer->MarkUsedInPendingCommands();
 
                 break;
             }
@@ -621,8 +616,7 @@ MaybeError CommandBuffer::ExecuteComputePass(
             case Command::SetImmediates: {
                 SetImmediatesCmd* cmd = mCommands.NextCommand<SetImmediatesCmd>();
                 DAWN_ASSERT(cmd->size > 0);
-                uint8_t* value = nullptr;
-                value = mCommands.NextData<uint8_t>(cmd->size);
+                uint8_t* value = mCommands.NextData<uint8_t>(cmd->size);
                 immediates.SetImmediates(cmd->offset, value, cmd->size);
                 break;
             }
@@ -650,7 +644,7 @@ MaybeError CommandBuffer::ExecuteRenderPass(
         SubresourceRange range = colorAttachment.view->GetSubresourceRange();
         colorAttachment.view->GetTexture()->SetIsSubresourceContentInitialized(true, range);
     }
-    LazyClearRenderPassAttachments(renderPass);
+    LazyClearRenderPassAttachments(GetDevice(), renderPass);
 
     auto* d3d11DeviceContext = commandContext->GetD3D11DeviceContext3();
     // Hold ID3D11RenderTargetView ComPtr to make attachments alive.
@@ -878,10 +872,9 @@ MaybeError CommandBuffer::ExecuteRenderPass(
             }
 
             case Command::SetImmediates: {
-                SetImmediatesCmd* cmd = mCommands.NextCommand<SetImmediatesCmd>();
+                SetImmediatesCmd* cmd = iter->NextCommand<SetImmediatesCmd>();
                 DAWN_ASSERT(cmd->size > 0);
-                uint8_t* value = nullptr;
-                value = mCommands.NextData<uint8_t>(cmd->size);
+                uint8_t* value = iter->NextData<uint8_t>(cmd->size);
                 immediates.SetImmediates(cmd->offset, value, cmd->size);
                 break;
             }

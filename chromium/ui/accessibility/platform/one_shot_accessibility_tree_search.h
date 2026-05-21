@@ -7,6 +7,7 @@
 
 #include <stddef.h>
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -30,6 +31,8 @@ typedef bool (*AccessibilityMatchPredicate)(
                                     BrowserAccessibility* this_element)
 
 DECLARE_ACCESSIBILITY_PREDICATE(AccessibilityArticlePredicate);
+DECLARE_ACCESSIBILITY_PREDICATE(
+    AccessibilityContainedInAtomicLiveRegionPredicate);
 DECLARE_ACCESSIBILITY_PREDICATE(AccessibilityBlockquotePredicate);
 DECLARE_ACCESSIBILITY_PREDICATE(AccessibilityButtonPredicate);
 DECLARE_ACCESSIBILITY_PREDICATE(AccessibilityCheckboxPredicate);
@@ -81,11 +84,9 @@ class COMPONENT_EXPORT(AX_PLATFORM) OneShotAccessibilityTreeSearch final {
  public:
   enum Direction { FORWARDS, BACKWARDS };
 
-  const int UNLIMITED_RESULTS = -1;
-
-  // The node passed in |scope| determines the scope of results returned -
-  // they will all be within the subtree of the *parent* of |scope| - in other
-  // words, siblings of |scope| and their descendants.
+  // The node passed in `scope` determines the scope of results returned -
+  // Results will all be within the subtree of `scope` - in other
+  // words, `scope`, and its descendants.
   explicit OneShotAccessibilityTreeSearch(BrowserAccessibility* scope);
 
   OneShotAccessibilityTreeSearch(const OneShotAccessibilityTreeSearch&) =
@@ -109,9 +110,18 @@ class COMPONENT_EXPORT(AX_PLATFORM) OneShotAccessibilityTreeSearch final {
   // Search forwards or backwards in an in-order traversal of the tree.
   void SetDirection(Direction direction);
 
-  // Set the maximum number of results, or UNLIMITED_RESULTS
+  // Set the maximum number of results, or kUnlimitedResults
   // for no limit (default).
-  void SetResultLimit(int result_limit);
+  void SetResultLimit(size_t result_limit);
+
+  // Sets the maximum number of nodes to inspect, or kUnlimitedSearchLimit
+  // for no limit (default).
+  // Note: This is different from the result_limit_. Setting a search limit
+  // stops execution once we have checked search_limit_ amount of nodes
+  // within the tree regardless if they match the predicate whereas
+  // setting a result limit stops execution once we have found
+  // result_limit_ amount of nodes within the tree that match the predicate.
+  void SetSearchLimit(size_t search_limit);
 
   // If true, only searches children of |start_node| and doesn't
   // recurse.
@@ -145,21 +155,19 @@ class COMPONENT_EXPORT(AX_PLATFORM) OneShotAccessibilityTreeSearch final {
   void SearchByWalkingTree();
   void SearchByIteratingOverChildren();
   bool Matches(BrowserAccessibility* node);
-
   raw_ptr<BrowserAccessibilityManager> tree_;
   raw_ptr<BrowserAccessibility> scope_node_;
   raw_ptr<BrowserAccessibility> start_node_;
-  Direction direction_;
-  int result_limit_;
-  bool immediate_descendants_only_;
-  bool can_wrap_to_last_element_;
-  bool onscreen_only_;
+  Direction direction_ = OneShotAccessibilityTreeSearch::FORWARDS;
+  std::optional<size_t> result_limit_;
+  std::optional<size_t> search_limit_;
+  bool immediate_descendants_only_ = false;
+  bool can_wrap_to_last_element_ = false;
+  bool onscreen_only_ = false;
   std::string search_text_;
-
   std::vector<AccessibilityMatchPredicate> predicates_;
   std::vector<raw_ptr<BrowserAccessibility, VectorExperimental>> matches_;
-
-  bool did_search_;
+  bool did_search_ = false;
 };
 
 }  // namespace ui

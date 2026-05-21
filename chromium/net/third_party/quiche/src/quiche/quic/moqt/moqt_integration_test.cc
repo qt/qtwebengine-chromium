@@ -17,8 +17,11 @@
 #include "quiche/quic/core/quic_generic_session.h"
 #include "quiche/quic/core/quic_time.h"
 #include "quiche/quic/core/quic_types.h"
+#include "quiche/quic/moqt/moqt_error.h"
+#include "quiche/quic/moqt/moqt_key_value_pair.h"
 #include "quiche/quic/moqt/moqt_known_track_publisher.h"
 #include "quiche/quic/moqt/moqt_messages.h"
+#include "quiche/quic/moqt/moqt_names.h"
 #include "quiche/quic/moqt/moqt_object.h"
 #include "quiche/quic/moqt/moqt_outgoing_queue.h"
 #include "quiche/quic/moqt/moqt_priority.h"
@@ -96,11 +99,12 @@ class MoqtIntegrationTest : public quiche::test::QuicheTest {
     EXPECT_CALL(*visitor, OnReply)
         .WillOnce(
             [&](const FullTrackName&,
-                std::variant<SubscribeOkData, MoqtRequestError> response) {
+                std::variant<SubscribeOkData, MoqtRequestErrorInfo> response) {
               received_ok = std::holds_alternative<SubscribeOkData>(response);
             });
-    client_->session()->SubscribeCurrentObject(track_name, visitor,
-                                               VersionSpecificParameters());
+    MessageParameters parameters(MoqtFilterType::kLargestObject);
+    client_->session()->Subscribe(track_name, visitor, parameters);
+
     bool success =
         test_harness_.RunUntilWithDefaultTimeout([&]() { return received_ok; });
     EXPECT_TRUE(success);
@@ -113,7 +117,7 @@ class MoqtIntegrationTest : public quiche::test::QuicheTest {
   MockSessionCallbacks server_callbacks_;
   MockSubscribeRemoteTrackVisitor subscribe_visitor_;
   testing::MockFunction<void(TrackNamespace track_namespace,
-                             std::optional<MoqtRequestError> error_message)>
+                             std::optional<MoqtRequestErrorInfo> error_message)>
       outgoing_publish_namespace_callback_;
   std::unique_ptr<MoqtClientEndpoint> client_;
   std::unique_ptr<MoqtServerEndpoint> server_;
@@ -142,9 +146,9 @@ TEST_F(MoqtIntegrationTest, Handshake) {
 }
 
 TEST_F(MoqtIntegrationTest, VersionMismatch) {
-  client_ = std::make_unique<MoqtClientEndpoint>(
-      &test_harness_.simulator(), "Client", "Server",
-      MoqtVersion::kUnrecognizedVersionForTests);
+  client_ = std::make_unique<MoqtClientEndpoint>(&test_harness_.simulator(),
+                                                 "Client", "Server",
+                                                 kUnrecognizedVersionForTests);
   server_ = std::make_unique<MoqtServerEndpoint>(
       &test_harness_.simulator(), "Server", "Client", kDefaultMoqtVersion);
   SetupCallbacks();
@@ -177,9 +181,8 @@ TEST_F(MoqtIntegrationTest, PublishNamespaceSuccessThenPublishNamespaceDone) {
                    MoqtResponseCallback callback) {
         std::move(callback)(std::nullopt);
       });
-  testing::MockFunction<void(
-      TrackNamespace track_namespace,
-      std::optional<MoqtPublishNamespaceErrorReason> error_message)>
+  testing::MockFunction<void(TrackNamespace track_namespace,
+                             std::optional<MoqtRequestErrorInfo> error_message)>
       publish_namespace_callback;
   client_->session()->PublishNamespace(
       TrackNamespace{"foo"}, publish_namespace_callback.AsStdFunction(),
@@ -187,7 +190,7 @@ TEST_F(MoqtIntegrationTest, PublishNamespaceSuccessThenPublishNamespaceDone) {
   bool matches = false;
   EXPECT_CALL(publish_namespace_callback, Call(_, _))
       .WillOnce([&](TrackNamespace track_namespace,
-                    std::optional<MoqtPublishNamespaceErrorReason> error) {
+                    std::optional<MoqtRequestErrorInfo> error) {
         matches = true;
         EXPECT_EQ(track_namespace, TrackNamespace{"foo"});
         EXPECT_FALSE(error.has_value());
@@ -221,9 +224,8 @@ TEST_F(MoqtIntegrationTest, PublishNamespaceSuccessThenCancel) {
                    MoqtResponseCallback callback) {
         std::move(callback)(std::nullopt);
       });
-  testing::MockFunction<void(
-      TrackNamespace track_namespace,
-      std::optional<MoqtPublishNamespaceErrorReason> error_message)>
+  testing::MockFunction<void(TrackNamespace track_namespace,
+                             std::optional<MoqtRequestErrorInfo> error_message)>
       publish_namespace_callback;
   client_->session()->PublishNamespace(
       TrackNamespace{"foo"}, publish_namespace_callback.AsStdFunction(),
@@ -231,7 +233,7 @@ TEST_F(MoqtIntegrationTest, PublishNamespaceSuccessThenCancel) {
   bool matches = false;
   EXPECT_CALL(publish_namespace_callback, Call(_, _))
       .WillOnce([&](TrackNamespace track_namespace,
-                    std::optional<MoqtPublishNamespaceErrorReason> error) {
+                    std::optional<MoqtRequestErrorInfo> error) {
         matches = true;
         EXPECT_EQ(track_namespace, TrackNamespace{"foo"});
         EXPECT_FALSE(error.has_value());
@@ -242,7 +244,7 @@ TEST_F(MoqtIntegrationTest, PublishNamespaceSuccessThenCancel) {
   matches = false;
   EXPECT_CALL(publish_namespace_callback, Call(_, _))
       .WillOnce([&](TrackNamespace track_namespace,
-                    std::optional<MoqtPublishNamespaceErrorReason> error) {
+                    std::optional<MoqtRequestErrorInfo> error) {
         matches = true;
         EXPECT_EQ(track_namespace, TrackNamespace{"foo"});
         ASSERT_TRUE(error.has_value());
@@ -273,15 +275,16 @@ TEST_F(MoqtIntegrationTest, PublishNamespaceSuccessSubscribeInResponse) {
   bool matches = false;
   EXPECT_CALL(outgoing_publish_namespace_callback_, Call)
       .WillOnce([&](TrackNamespace track_namespace,
-                    std::optional<MoqtRequestError> error) {
+                    std::optional<MoqtRequestErrorInfo> error) {
         EXPECT_EQ(track_namespace, TrackNamespace{"foo"});
         FullTrackName track_name(track_namespace, "/catalog");
         EXPECT_FALSE(error.has_value());
-        server_->session()->SubscribeCurrentObject(
-            track_name, &subscribe_visitor_, VersionSpecificParameters());
+        MessageParameters parameters(MoqtFilterType::kLargestObject);
+        server_->session()->Subscribe(track_name, &subscribe_visitor_,
+                                      parameters);
       })
       .WillOnce([&](TrackNamespace track_namespace,
-                    std::optional<MoqtRequestError> error) {
+                    std::optional<MoqtRequestErrorInfo> error) {
         EXPECT_EQ(track_namespace, TrackNamespace{"foo"});
         EXPECT_TRUE(error.has_value());
       });
@@ -313,13 +316,13 @@ TEST_F(MoqtIntegrationTest, PublishNamespaceSuccessSendDataInResponse) {
                     MoqtResponseCallback callback) {
         FullTrackName track_name(track_namespace, "data");
         std::move(callback)(std::nullopt);
-        server_->session()->SubscribeAbsolute(
-            track_name, /*start_group=*/0, /*start_object=*/0,
-            &subscribe_visitor_, VersionSpecificParameters());
+        MessageParameters parameters;
+        server_->session()->Subscribe(track_name, &subscribe_visitor_,
+                                      parameters);
       });
 
-  auto queue = std::make_shared<MoqtOutgoingQueue>(
-      FullTrackName{"test", "data"}, MoqtForwardingPreference::kSubgroup);
+  auto queue =
+      std::make_shared<MoqtOutgoingQueue>(FullTrackName{"test", "data"});
   MoqtKnownTrackPublisher known_track_publisher;
   known_track_publisher.Add(queue);
   client_->session()->set_publisher(&known_track_publisher);
@@ -329,7 +332,7 @@ TEST_F(MoqtIntegrationTest, PublishNamespaceSuccessSendDataInResponse) {
   });
   client_->session()->PublishNamespace(
       TrackNamespace{"test"},
-      [](TrackNamespace, std::optional<MoqtRequestError>) {}, *parameters);
+      [](TrackNamespace, std::optional<MoqtRequestErrorInfo>) {}, *parameters);
   bool success = test_harness_.RunUntilWithDefaultTimeout(
       [&]() { return received_subscribe_ok; });
   EXPECT_TRUE(success);
@@ -366,6 +369,7 @@ TEST_F(MoqtIntegrationTest, SendMultipleGroups) {
   EstablishSession();
   MoqtKnownTrackPublisher publisher;
   server_->session()->set_publisher(&publisher);
+  MessageParameters parameters(MoqtFilterType::kLargestObject);
 
   for (MoqtForwardingPreference forwarding_preference :
        {MoqtForwardingPreference::kSubgroup,
@@ -373,24 +377,24 @@ TEST_F(MoqtIntegrationTest, SendMultipleGroups) {
     SCOPED_TRACE(MoqtForwardingPreferenceToString(forwarding_preference));
     std::string name =
         absl::StrCat("pref_", static_cast<int>(forwarding_preference));
-    auto queue = std::make_shared<MoqtOutgoingQueue>(
-        FullTrackName{"test", name}, forwarding_preference);
+    auto queue =
+        std::make_shared<MoqtOutgoingQueue>(FullTrackName{"test", name});
     publisher.Add(queue);
 
     // These will not be delivered.
     queue->AddObject(MemSliceFromString("object 1"), /*key=*/true);
     queue->AddObject(MemSliceFromString("object 2"), /*key=*/false);
     queue->AddObject(MemSliceFromString("object 3"), /*key=*/false);
-    client_->session()->SubscribeCurrentObject(FullTrackName("test", name),
-                                               &subscribe_visitor_,
-                                               VersionSpecificParameters());
+    client_->session()->Subscribe(FullTrackName("test", name),
+                                  &subscribe_visitor_, parameters);
     std::optional<Location> largest_id;
     EXPECT_CALL(subscribe_visitor_, OnReply)
         .WillOnce(
             [&](const FullTrackName&,
-                std::variant<SubscribeOkData, MoqtRequestError> response) {
+                std::variant<SubscribeOkData, MoqtRequestErrorInfo> response) {
               EXPECT_TRUE(std::holds_alternative<SubscribeOkData>(response));
-              largest_id = std::get<SubscribeOkData>(response).largest_location;
+              largest_id =
+                  std::get<SubscribeOkData>(response).parameters.largest_object;
             });
     bool success = test_harness_.RunUntilWithDefaultTimeout([&]() {
       return largest_id.has_value() && *largest_id == Location(0, 2);
@@ -484,8 +488,7 @@ TEST_F(MoqtIntegrationTest, FetchItemsFromPast) {
   server_->session()->set_publisher(&publisher);
 
   FullTrackName full_track_name("test", "fetch");
-  auto queue = std::make_shared<MoqtOutgoingQueue>(
-      full_track_name, MoqtForwardingPreference::kSubgroup);
+  auto queue = std::make_shared<MoqtOutgoingQueue>(full_track_name);
   publisher.Add(queue);
   for (int i = 0; i < 100; ++i) {
     queue->AddObject(MemSliceFromString("object"), /*key=*/true);
@@ -528,9 +531,8 @@ TEST_F(MoqtIntegrationTest, FetchItemsFromPast) {
 
 TEST_F(MoqtIntegrationTest, PublishNamespaceFailure) {
   EstablishSession();
-  testing::MockFunction<void(
-      TrackNamespace track_namespace,
-      std::optional<MoqtPublishNamespaceErrorReason> error_message)>
+  testing::MockFunction<void(TrackNamespace track_namespace,
+                             std::optional<MoqtRequestErrorInfo> error_message)>
       publish_namespace_callback;
   client_->session()->PublishNamespace(
       TrackNamespace{"foo"}, publish_namespace_callback.AsStdFunction(),
@@ -538,7 +540,7 @@ TEST_F(MoqtIntegrationTest, PublishNamespaceFailure) {
   bool matches = false;
   EXPECT_CALL(publish_namespace_callback, Call(_, _))
       .WillOnce([&](TrackNamespace track_namespace,
-                    std::optional<MoqtPublishNamespaceErrorReason> error) {
+                    std::optional<MoqtRequestErrorInfo> error) {
         matches = true;
         EXPECT_EQ(track_namespace, TrackNamespace{"foo"});
         ASSERT_TRUE(error.has_value());
@@ -560,21 +562,20 @@ TEST_F(MoqtIntegrationTest, SubscribeAbsoluteOk) {
   publisher.Add(track_publisher);
 
   bool received_ok = false;
-  ON_CALL(*track_publisher, expiration)
-      .WillByDefault(Return(quic::QuicTimeDelta::Zero()));
-  ON_CALL(*track_publisher, delivery_order)
-      .WillByDefault(Return(MoqtDeliveryOrder::kAscending));
+  ON_CALL(*track_publisher, expiration).WillByDefault(Return(std::nullopt));
   EXPECT_CALL(*track_publisher, AddObjectListener)
       .WillOnce([&](MoqtObjectListener* listener) {
         listener->OnSubscribeAccepted();
       });
   EXPECT_CALL(subscribe_visitor_, OnReply)
-      .WillOnce([&](const FullTrackName&,
-                    std::variant<SubscribeOkData, MoqtRequestError> response) {
-        received_ok = std::holds_alternative<SubscribeOkData>(response);
-      });
-  client_->session()->SubscribeAbsolute(
-      full_track_name, 0, 0, &subscribe_visitor_, VersionSpecificParameters());
+      .WillOnce(
+          [&](const FullTrackName&,
+              std::variant<SubscribeOkData, MoqtRequestErrorInfo> response) {
+            received_ok = std::holds_alternative<SubscribeOkData>(response);
+          });
+  MessageParameters parameters;
+  client_->session()->Subscribe(full_track_name, &subscribe_visitor_,
+                                parameters);
   bool success =
       test_harness_.RunUntilWithDefaultTimeout([&]() { return received_ok; });
   EXPECT_TRUE(success);
@@ -593,19 +594,19 @@ TEST_F(MoqtIntegrationTest, SubscribeCurrentObjectOk) {
   bool received_ok = false;
   ON_CALL(*track_publisher, expiration)
       .WillByDefault(Return(quic::QuicTimeDelta::Zero()));
-  ON_CALL(*track_publisher, delivery_order)
-      .WillByDefault(Return(MoqtDeliveryOrder::kAscending));
   EXPECT_CALL(*track_publisher, AddObjectListener)
       .WillOnce([&](MoqtObjectListener* listener) {
         listener->OnSubscribeAccepted();
       });
   EXPECT_CALL(subscribe_visitor_, OnReply)
-      .WillOnce([&](const FullTrackName&,
-                    std::variant<SubscribeOkData, MoqtRequestError> response) {
-        received_ok = std::holds_alternative<SubscribeOkData>(response);
-      });
-  client_->session()->SubscribeCurrentObject(
-      full_track_name, &subscribe_visitor_, VersionSpecificParameters());
+      .WillOnce(
+          [&](const FullTrackName&,
+              std::variant<SubscribeOkData, MoqtRequestErrorInfo> response) {
+            received_ok = std::holds_alternative<SubscribeOkData>(response);
+          });
+  MessageParameters parameters(MoqtFilterType::kLargestObject);
+  client_->session()->Subscribe(full_track_name, &subscribe_visitor_,
+                                parameters);
   bool success =
       test_harness_.RunUntilWithDefaultTimeout([&]() { return received_ok; });
   EXPECT_TRUE(success);
@@ -624,19 +625,19 @@ TEST_F(MoqtIntegrationTest, SubscribeNextGroupOk) {
   bool received_ok = false;
   ON_CALL(*track_publisher, expiration)
       .WillByDefault(Return(quic::QuicTimeDelta::Zero()));
-  ON_CALL(*track_publisher, delivery_order)
-      .WillByDefault(Return(MoqtDeliveryOrder::kAscending));
   EXPECT_CALL(*track_publisher, AddObjectListener)
       .WillOnce([&](MoqtObjectListener* listener) {
         listener->OnSubscribeAccepted();
       });
   EXPECT_CALL(subscribe_visitor_, OnReply)
-      .WillOnce([&](const FullTrackName&,
-                    std::variant<SubscribeOkData, MoqtRequestError> response) {
-        received_ok = std::holds_alternative<SubscribeOkData>(response);
-      });
-  client_->session()->SubscribeNextGroup(full_track_name, &subscribe_visitor_,
-                                         VersionSpecificParameters());
+      .WillOnce(
+          [&](const FullTrackName&,
+              std::variant<SubscribeOkData, MoqtRequestErrorInfo> response) {
+            received_ok = std::holds_alternative<SubscribeOkData>(response);
+          });
+  MessageParameters parameters(MoqtFilterType::kNextGroupStart);
+  client_->session()->Subscribe(full_track_name, &subscribe_visitor_,
+                                parameters);
   bool success =
       test_harness_.RunUntilWithDefaultTimeout([&]() { return received_ok; });
   EXPECT_TRUE(success);
@@ -647,12 +648,15 @@ TEST_F(MoqtIntegrationTest, SubscribeError) {
   FullTrackName full_track_name("foo", "bar");
   bool received_ok = false;
   EXPECT_CALL(subscribe_visitor_, OnReply)
-      .WillOnce([&](const FullTrackName&,
-                    std::variant<SubscribeOkData, MoqtRequestError> response) {
-        received_ok = std::holds_alternative<MoqtRequestError>(response);
-      });
-  client_->session()->SubscribeCurrentObject(
-      full_track_name, &subscribe_visitor_, VersionSpecificParameters());
+      .WillOnce(
+          [&](const FullTrackName&,
+              std::variant<SubscribeOkData, MoqtRequestErrorInfo> response) {
+            received_ok =
+                std::holds_alternative<MoqtRequestErrorInfo>(response);
+          });
+  MessageParameters parameters(MoqtFilterType::kLargestObject);
+  client_->session()->Subscribe(full_track_name, &subscribe_visitor_,
+                                parameters);
   bool success =
       test_harness_.RunUntilWithDefaultTimeout([&]() { return received_ok; });
   EXPECT_TRUE(success);
@@ -682,8 +686,9 @@ TEST_F(MoqtIntegrationTest, CleanPublishDone) {
   EXPECT_TRUE(success);
 
   // Reject this subscribe because there already is one.
-  EXPECT_FALSE(client_->session()->SubscribeCurrentObject(
-      full_track_name, &subscribe_visitor_, VersionSpecificParameters()));
+  MessageParameters parameters(MoqtFilterType::kLargestObject);
+  EXPECT_FALSE(client_->session()->Subscribe(full_track_name,
+                                             &subscribe_visitor_, parameters));
   queue->RemoveAllSubscriptions();  // Induce a PUBLISH_DONE.
   bool publish_done = false;
   EXPECT_CALL(subscribe_visitor_, OnPublishDone).WillOnce([&]() {
@@ -694,13 +699,14 @@ TEST_F(MoqtIntegrationTest, CleanPublishDone) {
   EXPECT_TRUE(success);
   // Subscription is deleted; the client session should not immediately reject
   // a new attempt.
-  EXPECT_TRUE(client_->session()->SubscribeCurrentObject(
-      full_track_name, &subscribe_visitor_, VersionSpecificParameters()));
+  EXPECT_TRUE(client_->session()->Subscribe(full_track_name,
+                                            &subscribe_visitor_, parameters));
   EXPECT_CALL(subscribe_visitor_, OnReply)
-      .WillOnce([](const FullTrackName&,
-                   std::variant<SubscribeOkData, MoqtRequestError> response) {
-        EXPECT_TRUE(std::holds_alternative<MoqtRequestError>(response));
-      });  // Teardown
+      .WillOnce(
+          [](const FullTrackName&,
+             std::variant<SubscribeOkData, MoqtRequestErrorInfo> response) {
+            EXPECT_TRUE(std::holds_alternative<MoqtRequestErrorInfo>(response));
+          });  // Teardown
 }
 
 TEST_F(MoqtIntegrationTest, ObjectAcks) {
@@ -714,10 +720,11 @@ TEST_F(MoqtIntegrationTest, ObjectAcks) {
 
   MoqtKnownTrackPublisher publisher;
   server_->session()->set_publisher(&publisher);
-  auto track_publisher = std::make_shared<MockTrackPublisher>(full_track_name);
+  auto track_publisher = std::make_shared<MoqtOutgoingQueue>(
+      full_track_name, test_harness_.simulator().GetClock());
   publisher.Add(track_publisher);
 
-  MockPublishingMonitorInterface monitoring;
+  testing::StrictMock<MockPublishingMonitorInterface> monitoring;
   server_->session()->SetMonitoringInterfaceForTrack(full_track_name,
                                                      &monitoring);
 
@@ -726,25 +733,17 @@ TEST_F(MoqtIntegrationTest, ObjectAcks) {
       .WillOnce([&](MoqtObjectAckFunction new_ack_function) {
         ack_function = std::move(new_ack_function);
       });
-  EXPECT_CALL(*track_publisher, AddObjectListener)
-      .WillOnce([&](MoqtObjectListener* listener) {
-        listener->OnSubscribeAccepted();
-      });
   EXPECT_CALL(subscribe_visitor_, OnReply)
       .WillOnce([&](const FullTrackName&,
-                    std::variant<SubscribeOkData, MoqtRequestError>) {
+                    std::variant<SubscribeOkData, MoqtRequestErrorInfo>) {
         ack_function(10, 20, quic::QuicTimeDelta::FromMicroseconds(-123));
         ack_function(100, 200, quic::QuicTimeDelta::FromMicroseconds(456));
       });
 
-  VersionSpecificParameters parameters;
+  MessageParameters parameters(MoqtFilterType::kLargestObject);
   parameters.oack_window_size = quic::QuicTimeDelta::FromMilliseconds(100);
-  ON_CALL(*track_publisher, expiration)
-      .WillByDefault(Return(quic::QuicTimeDelta::Zero()));
-  ON_CALL(*track_publisher, delivery_order)
-      .WillByDefault(Return(MoqtDeliveryOrder::kAscending));
-  client_->session()->SubscribeCurrentObject(full_track_name,
-                                             &subscribe_visitor_, parameters);
+  client_->session()->Subscribe(full_track_name, &subscribe_visitor_,
+                                parameters);
   EXPECT_CALL(monitoring, OnObjectAckSupportKnown(parameters.oack_window_size));
   EXPECT_CALL(monitoring,
               OnObjectAckReceived(Location(10, 20),
@@ -756,6 +755,9 @@ TEST_F(MoqtIntegrationTest, ObjectAcks) {
       .WillOnce([&] { done = true; });
   bool success = test_harness_.RunUntilWithDefaultTimeout([&] { return done; });
   EXPECT_TRUE(success);
+
+  EXPECT_CALL(monitoring, OnNewObjectEnqueued(Location(0, 0)));
+  track_publisher->AddObject(QuicheMemSlice::Copy("test"), true);
 
   const quic_trace::Trace& trace = *server_->trace_visitor()->trace();
   std::vector<int64_t> ack_deltas;
@@ -781,15 +783,16 @@ TEST_F(MoqtIntegrationTest, DeliveryTimeout) {
 
   bool received_ok = false;
   EXPECT_CALL(subscribe_visitor_, OnReply)
-      .WillOnce([&](const FullTrackName&,
-                    std::variant<SubscribeOkData, MoqtRequestError> response) {
-        received_ok = std::holds_alternative<SubscribeOkData>(response);
-      });
-  VersionSpecificParameters parameters;
+      .WillOnce(
+          [&](const FullTrackName&,
+              std::variant<SubscribeOkData, MoqtRequestErrorInfo> response) {
+            received_ok = std::holds_alternative<SubscribeOkData>(response);
+          });
+  MessageParameters parameters(MoqtFilterType::kLargestObject);
   // Set delivery timeout to ~ 1 RTT: any loss is fatal.
   parameters.delivery_timeout = quic::QuicTimeDelta::FromMilliseconds(100);
-  client_->session()->SubscribeCurrentObject(full_track_name,
-                                             &subscribe_visitor_, parameters);
+  client_->session()->Subscribe(full_track_name, &subscribe_visitor_,
+                                parameters);
   bool success =
       test_harness_.RunUntilWithDefaultTimeout([&]() { return received_ok; });
   EXPECT_TRUE(success);
@@ -829,19 +832,18 @@ TEST_F(MoqtIntegrationTest, AlternateDeliveryTimeout) {
 
   bool received_ok = false;
   EXPECT_CALL(subscribe_visitor_, OnReply)
-      .WillOnce([&](const FullTrackName&,
-                    std::variant<SubscribeOkData, MoqtRequestError> response) {
-        received_ok = std::holds_alternative<SubscribeOkData>(response);
-      });
-  VersionSpecificParameters parameters;
+      .WillOnce(
+          [&](const FullTrackName&,
+              std::variant<SubscribeOkData, MoqtRequestErrorInfo> response) {
+            received_ok = std::holds_alternative<SubscribeOkData>(response);
+          });
+  MessageParameters parameters(MoqtFilterType::kLargestObject);
   // Set delivery timeout to ~ 1 RTT: any loss is fatal.
   parameters.delivery_timeout = quic::QuicTimeDelta::FromMilliseconds(100);
   ON_CALL(*track_publisher, expiration)
       .WillByDefault(Return(quic::QuicTimeDelta::Zero()));
-  ON_CALL(*track_publisher, delivery_order)
-      .WillByDefault(Return(MoqtDeliveryOrder::kAscending));
-  client_->session()->SubscribeCurrentObject(full_track_name,
-                                             &subscribe_visitor_, parameters);
+  client_->session()->Subscribe(full_track_name, &subscribe_visitor_,
+                                parameters);
   bool success =
       test_harness_.RunUntilWithDefaultTimeout([&]() { return received_ok; });
   EXPECT_TRUE(success);
@@ -904,17 +906,17 @@ TEST_F(MoqtIntegrationTest, RecordTrace) {
   MoqtKnownTrackPublisher publisher;
   client_->session()->set_publisher(&publisher);
 
-  auto queue = std::make_shared<MoqtOutgoingQueue>(
-      FullTrackName{"test", "subgroup"}, MoqtForwardingPreference::kSubgroup);
+  auto queue =
+      std::make_shared<MoqtOutgoingQueue>(FullTrackName{"test", "subgroup"});
   publisher.Add(queue);
 
-  server_->session()->SubscribeCurrentObject(FullTrackName("test", "subgroup"),
-                                             &subscribe_visitor_,
-                                             VersionSpecificParameters());
+  MessageParameters parameters(MoqtFilterType::kLargestObject);
+  server_->session()->Subscribe(FullTrackName("test", "subgroup"),
+                                &subscribe_visitor_, parameters);
   bool subscribed = false;
   EXPECT_CALL(subscribe_visitor_, OnReply)
       .WillOnce([&](const FullTrackName&,
-                    std::variant<SubscribeOkData, MoqtRequestError>) {
+                    std::variant<SubscribeOkData, MoqtRequestErrorInfo>) {
         subscribed = true;
       });
   bool success =

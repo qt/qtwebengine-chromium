@@ -29,10 +29,15 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/open_search_description_document_handler.mojom.h"
 #include "chrome/common/webui_url_constants.h"
+#include "chrome/renderer/actor/journal.h"
+#include "chrome/renderer/actor/page_stability_monitor.h"
+#include "chrome/renderer/actor/tool_executor.h"
 #include "chrome/renderer/chrome_content_settings_agent_delegate.h"
 #include "chrome/renderer/media/media_feeds.h"
 #include "chrome/renderer/process_state.h"
 #include "components/crash/core/common/crash_key.h"
+#include "components/guest_view/buildflags/buildflags.h"
+#include "components/guest_view/renderer/slim_web_view/slim_web_view_bindings.h"
 #include "components/lens/lens_metadata.mojom.h"
 #include "components/no_state_prefetch/renderer/no_state_prefetch_helper.h"
 #include "components/no_state_prefetch/renderer/no_state_prefetch_utils.h"
@@ -74,9 +79,6 @@
 
 #if !BUILDFLAG(IS_ANDROID)
 #include "chrome/renderer/accessibility/read_anything/read_anything_app_controller.h"
-#include "chrome/renderer/actor/journal.h"
-#include "chrome/renderer/actor/page_stability_monitor.h"
-#include "chrome/renderer/actor/tool_executor.h"
 #include "chrome/renderer/searchbox/searchbox_extension.h"
 #endif  // !BUILDFLAG(IS_ANDROID)
 
@@ -190,9 +192,7 @@ ChromeRenderFrameObserver::ChromeRenderFrameObserver(
     : content::RenderFrameObserver(render_frame),
       translate_agent_(nullptr),
       page_text_agent_(new optimization_guide::PageTextAgent(render_frame)),
-#if !BUILDFLAG(IS_ANDROID)
       actor_journal_(std::make_unique<actor::Journal>()),
-#endif
       web_cache_impl_(web_cache_impl) {
   render_frame->GetAssociatedInterfaceRegistry()
       ->AddInterface<chrome::mojom::ChromeRenderFrame>(base::BindRepeating(
@@ -254,7 +254,6 @@ void ChromeRenderFrameObserver::DidSetPageLifecycleState(
       translate_agent_) {
     translate_agent_->RenewPageRegistration();
   }
-#if !BUILDFLAG(IS_ANDROID)
   if (bfcache_change == blink::BFCacheStateChange::kStoredToBFCache) {
     // Reset actor state if entering the BFCache
     page_stability_monitor_.reset();
@@ -265,7 +264,6 @@ void ChromeRenderFrameObserver::DidSetPageLifecycleState(
     // from the constructor.
     actor_journal_->SendLogBuffer();
   }
-#endif
 }
 
 void ChromeRenderFrameObserver::DidFinishLoad() {
@@ -352,6 +350,9 @@ void ChromeRenderFrameObserver::DidClearWindowObject() {
     ReadAnythingAppController::Install(render_frame());
   }
 #endif  // !BUILDFLAG(IS_ANDROID)
+#if BUILDFLAG(ENABLE_GUEST_VIEW) && !BUILDFLAG(ENABLE_EXTENSIONS_CORE)
+  guest_view::SlimWebViewBindings::MaybeInstall(*render_frame());
+#endif  // BUILDFLAG(ENABLE_GUEST_VIEW) && !BUILDFLAG(ENABLE_EXTENSIONS_CORE)
 }
 
 void ChromeRenderFrameObserver::DidMeaningfulLayout(
@@ -581,7 +582,7 @@ void ChromeRenderFrameObserver::FindImageElements(
 void ChromeRenderFrameObserver::RequestReloadImageForContextNode() {
   WebLocalFrame* frame = render_frame()->GetWebFrame();
   // TODO(dglazkov): This code is clearly in the wrong place. Need
-  // to investigate what it is doing and fix (http://crbug.com/606164).
+  // to investigate what it is doing and fix (http://crbug.com/41250588).
   WebNode context_node = frame->ContextMenuImageNode();
   if (!context_node.IsNull()) {
     frame->ReloadImage(context_node);
@@ -626,7 +627,25 @@ void ChromeRenderFrameObserver::SetShouldDeferMediaLoad(bool should_defer) {
   prerender::SetShouldDeferMediaLoad(render_frame(), should_defer);
 }
 
-#if !BUILDFLAG(IS_ANDROID)
+void ChromeRenderFrameObserver::InitializeTool(
+    actor::mojom::ToolInvocationPtr request,
+    InitializeToolCallback callback) {
+  if (!tool_executor_) {
+    tool_executor_ =
+        std::make_unique<actor::ToolExecutor>(render_frame(), *actor_journal_);
+  }
+
+  actor::mojom::InitializeToolResultPtr result =
+      tool_executor_->InitializeTool(std::move(request));
+  std::move(callback).Run(std::move(result));
+}
+
+void ChromeRenderFrameObserver::ExecuteTool(const actor::TaskId& task_id,
+                                            ExecuteToolCallback callback) {
+  CHECK(tool_executor_) << "ExecuteTool was called before InitializeTool";
+  tool_executor_->ExecuteTool(task_id, std::move(callback));
+}
+
 void ChromeRenderFrameObserver::InvokeTool(
     actor::mojom::ToolInvocationPtr request,
     InvokeToolCallback callback) {
@@ -649,6 +668,15 @@ void ChromeRenderFrameObserver::StartActorJournal(
   actor_journal_->Bind(std::move(client));
 }
 
+void ChromeRenderFrameObserver::GetCrossDocumentScriptToolResult(
+    GetCrossDocumentScriptToolResultCallback callback) {
+  render_frame()->GetWebFrame()->GetDocument().GetCrossDocumentScriptToolResult(
+      base::BindOnce(
+          [](GetCrossDocumentScriptToolResultCallback cb,
+             blink::WebString result) { std::move(cb).Run(result.Utf8()); },
+          std::move(callback)));
+}
+
 void ChromeRenderFrameObserver::CreatePageStabilityMonitor(
     mojo::PendingReceiver<actor::mojom::PageStabilityMonitor> monitor,
     const actor::TaskId& task_id,
@@ -657,8 +685,6 @@ void ChromeRenderFrameObserver::CreatePageStabilityMonitor(
       *render_frame(), supports_paint_stability, task_id, *actor_journal_);
   page_stability_monitor_->Bind(std::move(monitor));
 }
-
-#endif
 
 void ChromeRenderFrameObserver::SetClientSidePhishingDetection() {
 #if BUILDFLAG(SAFE_BROWSING_AVAILABLE)

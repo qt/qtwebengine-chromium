@@ -301,11 +301,6 @@ class AddressDataManager : public AutofillWebDataServiceObserverOnUISequence {
     return auto_accept_address_imports_for_testing_;
   }
 
-  AlternativeStateNameMapUpdater*
-  get_alternative_state_name_map_updater_for_testing() {
-    return alternative_state_name_map_updater_.get();
-  }
-
   HomeAndWorkMetadataStore* home_and_work_metadata_store() {
     return home_and_work_metadata_.get();
   }
@@ -383,10 +378,6 @@ class AddressDataManager : public AutofillWebDataServiceObserverOnUISequence {
 
   // Triggered when a profile is added/updated/removed on db.
   void OnAutofillProfileChanged(const AutofillProfileChange& change);
-
-  // Update a profile in AutofillTable asynchronously. The change only surfaces
-  // in the PDM after the task on the DB sequence has finished.
-  void UpdateProfileInDB(const AutofillProfile& profile);
 
   // Look at the next `ongoing_profile_changes_` and schedules the corresponding
   // database operation.
@@ -471,6 +462,8 @@ class AddressDataManager : public AutofillWebDataServiceObserverOnUISequence {
 
   // Used to populate AlternativeStateNameMap with the geographical state data
   // (including their abbreviations and localized names).
+  // For ownership discussion see:
+  // https://crrev.com/c/7233861/comments/c09f1ac4_8ac62a3c.
   std::unique_ptr<AlternativeStateNameMapUpdater>
       alternative_state_name_map_updater_;
 

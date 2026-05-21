@@ -60,7 +60,8 @@ ${this.shown_ ? html`
       ${this.accountInfo_ &&
         this.isSignInState_(HistorySignInState.WEB_ONLY_SIGNED_IN) ? html`
           <div id="profile-info-row" class="profile-row">
-            <img class="avatar" src="${this.accountInfo_.accountImageSrc.url}">
+            <img class="avatar" src="${this.accountInfo_.accountImageSrc}"
+                alt="">
             <div>
               <div class="account-name">${this.accountInfo_.name}</div>
               <div class="account-email">${this.accountInfo_.email}</div>
@@ -83,5 +84,5 @@ ${this.shown_ ? html`
   </div>
 </div>` : ''}
 <!--_html_template_end_-->`;
-// clang-format on
+  // clang-format on
 }

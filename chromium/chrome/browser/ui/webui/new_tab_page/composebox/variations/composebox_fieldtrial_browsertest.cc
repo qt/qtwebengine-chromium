@@ -38,7 +38,7 @@ class TestingAimEligibilityService : public ChromeAimEligibilityService {
                                     template_url_service,
                                     /*url_loader_factory=*/nullptr,
                                     /*identity_manager=*/nullptr,
-                                    /*is_off_the_record=*/false),
+                                    /*configuration=*/{}),
         is_locally_eligible_(is_locally_eligible),
         is_server_eligible_(is_server_eligible),
         server_eligibility_enabled_(server_eligibility_enabled) {}
@@ -49,6 +49,7 @@ class TestingAimEligibilityService : public ChromeAimEligibilityService {
   bool IsServerEligibilityEnabled() const override {
     return server_eligibility_enabled_;
   }
+  bool IsFuseboxEligible() const override { return IsAimEligible(); }
   bool IsAimEligible() const override {
     if (!IsAimLocallyEligible()) {
       return false;
@@ -269,8 +270,7 @@ INSTANTIATE_TEST_SUITE_P(,
                              // Values for the generic realbox next feature.
                              ::testing::Values(true, false)));
 
-// TODO(crbug.com/467751950): Update and re-enable test.
-IN_PROC_BROWSER_TEST_P(NtpRealboxNextFieldTrialBrowserTest, DISABLED_Test) {
+IN_PROC_BROWSER_TEST_P(NtpRealboxNextFieldTrialBrowserTest, Test) {
   bool expected = GetExpectedEnabled();
   if (!base::FeatureList::IsEnabled(ntp_realbox::kNtpRealboxNext)) {
     expected = false;

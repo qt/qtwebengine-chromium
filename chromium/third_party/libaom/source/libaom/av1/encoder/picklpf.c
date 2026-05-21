@@ -228,7 +228,7 @@ void av1_pick_filter_level(const YV12_BUFFER_CONFIG *sd, AV1_COMP *cpi,
     // written to pick levels 0, 1 and 7 to keep it simple.
     int max_lf_sharpness;
 
-    if (cm->quant_params.base_qindex <= 120) {
+    if (cm->quant_params.base_qindex <= 112) {
       max_lf_sharpness = 7;
     } else if (cm->quant_params.base_qindex <= 160) {
       max_lf_sharpness = 1;

@@ -45,6 +45,8 @@ struct ServiceInfo {
   IPEndpoint v6_endpoint;
 };
 
+std::ostream& operator<<(std::ostream& out, const ServiceInfo& info);
+
 }  // namespace openscreen::osp
 
 #endif  // OSP_PUBLIC_SERVICE_INFO_H_

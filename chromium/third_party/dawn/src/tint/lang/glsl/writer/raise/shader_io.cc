@@ -112,7 +112,7 @@ struct StateImpl : core::ir::transform::ShaderIOBackendState {
                     if (addrspace == core::AddressSpace::kIn &&
                         config.bgra_swizzle_locations.count(*io.attributes.location) != 0) {
                         bgra_swizzle_original_types.Add(*io.attributes.location, io.type);
-                        type = ty.vec4<f32>();
+                        type = ty.vec4f();
                     }
                 }
                 name << name_suffix;
@@ -206,9 +206,9 @@ struct StateImpl : core::ir::transform::ShaderIOBackendState {
             // Recalculate gl_Position.z = ((2.0f * gl_Position.z) - gl_Position.w);
             auto* z = builder.Swizzle(ty.f32(), value, {2});
             auto* w = builder.Swizzle(ty.f32(), value, {3});
-            auto* mul = builder.Multiply(ty.f32(), 2_f, z);
-            auto* new_z = builder.Subtract(ty.f32(), mul, w);
-            value = builder.Construct(ty.vec4<f32>(), x, new_y, new_z, w)->Result();
+            auto* mul = builder.Multiply(2_f, z);
+            auto* new_z = builder.Subtract(mul, w);
+            value = builder.Construct(ty.vec4f(), x, new_y, new_z, w)->Result();
         }
 
         builder.Store(to, value);
@@ -229,7 +229,7 @@ struct StateImpl : core::ir::transform::ShaderIOBackendState {
         auto max_idx = u32(config.immediate_data_layout.IndexOf(config.depth_range_offsets->max));
         auto* min = builder.Load(builder.Access<ptr<immediate, f32>>(immediate_data, min_idx));
         auto* max = builder.Load(builder.Access<ptr<immediate, f32>>(immediate_data, max_idx));
-        return builder.Call<f32>(core::BuiltinFn::kClamp, frag_depth, min, max)->Result();
+        return builder.Clamp(frag_depth, min, max)->Result();
     }
 
     /// @copydoc ShaderIO::BackendState::NeedsVertexPointSize
@@ -239,13 +239,10 @@ struct StateImpl : core::ir::transform::ShaderIOBackendState {
 }  // namespace
 
 Result<SuccessType> ShaderIO(core::ir::Module& ir, const ShaderIOConfig& config) {
-    auto result = ValidateAndDumpIfNeeded(
+    TINT_CHECK_RESULT(ValidateAndDumpIfNeeded(
         ir, "glsl.ShaderIO",
         core::ir::Capabilities{core::ir::Capability::kAllowHandleVarsWithoutBindings,
-                               core::ir::Capability::kAllowDuplicateBindings});
-    if (result != Success) {
-        return result;
-    }
+                               core::ir::Capability::kAllowDuplicateBindings}));
 
     core::ir::transform::RunShaderIOBase(ir, [&](core::ir::Module& mod, core::ir::Function* func) {
         return std::make_unique<StateImpl>(mod, func, config);

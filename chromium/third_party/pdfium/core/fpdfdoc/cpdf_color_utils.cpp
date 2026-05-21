@@ -9,7 +9,6 @@
 #include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfdoc/cpdf_defaultappearance.h"
 #include "core/fxcrt/bytestring.h"
-#include "core/fxcrt/notreached.h"
 
 namespace fpdfdoc {
 

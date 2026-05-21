@@ -664,7 +664,7 @@ TEST_F(FPDFTextEmbedderTest, TextSearchSpaceInSearchTerm) {
   EXPECT_FALSE(FPDFText_FindNext(search.get()));
 }
 
-// Fails on Windows. https://crbug.com/pdfium/1370
+// Fails on Windows. https://crbug.com/42270374
 #if BUILDFLAG(IS_WIN)
 #define MAYBE_TextSearchLatinExtended DISABLED_TextSearchLatinExtended
 #else
@@ -1038,7 +1038,7 @@ TEST_F(FPDFTextEmbedderTest, GetFontInfo) {
     ASSERT_EQ(expected_length, length);
     EXPECT_EQ(pdfium::kFontStyleNonSymbolic, flags);
     font_name.resize(length);
-    std::fill(font_name.begin(), font_name.end(), 'a');
+    std::ranges::fill(font_name, 'a');
     flags = -1;
     EXPECT_EQ(expected_length,
               FPDFText_GetFontInfo(textpage.get(), i, font_name.data(),
@@ -1049,7 +1049,7 @@ TEST_F(FPDFTextEmbedderTest, GetFontInfo) {
   // If the size of the buffer is not large enough, the buffer should remain
   // unchanged.
   font_name.pop_back();
-  std::fill(font_name.begin(), font_name.end(), 'a');
+  std::ranges::fill(font_name, 'a');
   EXPECT_EQ(sizeof(kExpectedFontName1),
             FPDFText_GetFontInfo(textpage.get(), 0, font_name.data(),
                                  font_name.size(), nullptr));
@@ -1076,7 +1076,7 @@ TEST_F(FPDFTextEmbedderTest, GetFontInfo) {
     ASSERT_EQ(expected_length, length);
     EXPECT_EQ(pdfium::kFontStyleNonSymbolic, flags);
     font_name.resize(length);
-    std::fill(font_name.begin(), font_name.end(), 'a');
+    std::ranges::fill(font_name, 'a');
     flags = -1;
     EXPECT_EQ(expected_length,
               FPDFText_GetFontInfo(textpage.get(), i, font_name.data(),
@@ -1393,7 +1393,7 @@ TEST_F(FPDFTextEmbedderTest, CountRects) {
   }
 
   // Now test larger start values.
-  const int kExpectedLength = UNSAFE_TODO(strlen(kHelloGoodbyeText));
+  const int kExpectedLength = strlen(kHelloGoodbyeText);
   for (int start = kGoodbyeWorldStart + 1; start < kExpectedLength; ++start) {
     EXPECT_EQ(1, FPDFText_CountRects(textpage.get(), start, -1));
     EXPECT_EQ(0, FPDFText_CountRects(textpage.get(), start, 0));
@@ -1616,7 +1616,7 @@ TEST_F(FPDFTextEmbedderTest, GetFontWeight) {
 
   // Using a /StemV value of 82, the estimate comes out to 410, even though
   // /FontWeight is 400.
-  // TODO(crbug.com/pdfium/1420): Fix this the return value here.
+  // TODO(crbug.com/42270423): Fix this the return value here.
   EXPECT_EQ(410, FPDFText_GetFontWeight(text_page.get(), 1));
 }
 
@@ -2187,7 +2187,7 @@ TEST_F(FPDFTextEmbedderTest, Bug1769) {
   ASSERT_TRUE(textpage);
 
   unsigned short buffer[128] = {};
-  // TODO(crbug.com/pdfium/1769): Improve text extraction.
+  // TODO(crbug.com/42270780): Improve text extraction.
   // The first instance of "world" is visible to the human eye and should be
   // extracted as is. The second instance is not, so how it should be
   // extracted is debatable.
@@ -2353,4 +2353,32 @@ TEST_F(FPDFTextEmbedderTest, Bug431824298) {
   EXPECT_FALSE(FPDFText_FindNext(search.get()));
   EXPECT_EQ(0, FPDFText_GetSchResultIndex(search.get()));
   EXPECT_EQ(0, FPDFText_GetSchCount(search.get()));
+}
+
+TEST_F(FPDFTextEmbedderTest, WhitespaceCharCount) {
+  ASSERT_TRUE(OpenDocument("whitespace.pdf"));
+  ScopedPage page = LoadScopedPage(0);
+  ASSERT_TRUE(page);
+
+  ScopedFPDFTextPage textpage(FPDFText_LoadPage(page.get()));
+  ASSERT_TRUE(textpage);
+  // TODO(crbug.com/40643656): FPDFText_CountChars() should return 1.
+  EXPECT_EQ(0, FPDFText_CountChars(textpage.get()));
+}
+
+TEST_F(FPDFTextEmbedderTest, Bug444176962) {
+  ASSERT_TRUE(OpenDocument("bug_444176962.pdf"));
+  ScopedPage page = LoadScopedPage(0);
+  ASSERT_TRUE(page);
+
+  ScopedFPDFTextPage textpage(FPDFText_LoadPage(page.get()));
+  ASSERT_TRUE(textpage);
+
+  // TODO(crbug.com/444176962): FPDFText_GetText() should return 10.
+  // kMissingSpaceResult should be replaced with kResult as "local act"
+  unsigned short buffer[128] = {};
+  static constexpr char kMissingSpaceResult[] = "localact";
+  ASSERT_EQ(9, FPDFText_GetText(textpage.get(), 0, std::size(buffer), buffer));
+  EXPECT_THAT(pdfium::span(buffer).first<9>(),
+              ElementsAreArray(kMissingSpaceResult));
 }

@@ -13,6 +13,11 @@ import reportViewStyles from './reportView.css.js';
 import type {Toolbar} from './Toolbar.js';
 import {Tooltip} from './Tooltip.js';
 import {VBox} from './Widget.js';
+
+/**
+ * @deprecated Please consider using the web component version of this widget
+ *             (`ui/components/report_view/ReportView.ts`) for new code.
+ */
 export class ReportView extends VBox {
   private readonly contentBox: HTMLElement;
   private headerElement: HTMLElement;
@@ -182,7 +187,7 @@ export class Section extends VBox {
     return row.lastElementChild as HTMLElement;
   }
 
-  appendFlexedField(title: string, textValue?: string): Element {
+  appendFlexedField(title: string, textValue?: string): HTMLElement {
     const field = this.appendField(title, textValue);
     field.classList.add('report-field-value-is-flexed');
     return field;
@@ -224,9 +229,5 @@ export class Section extends VBox {
   markFieldListAsGroup(): void {
     ARIAUtils.markAsGroup(this.fieldList);
     ARIAUtils.setLabel(this.fieldList, this.title());
-  }
-
-  setIconMasked(masked: boolean): void {
-    this.element.classList.toggle('show-mask', masked);
   }
 }

@@ -58,6 +58,10 @@ const char kContextualTasksContextEnterprisePolicyAllowed[] =
     "optimization_guide.model_execution.contextual_tasks_context_enterprise_"
     "policy_allowed";
 
+const char kGeminiAntiscamProtectionEnterprisePolicyAllowed[] =
+    "optimization_guide.model_execution.gemini_antiscam_protection_enterprise_"
+    "policy_allowed";
+
 }  // namespace prefs
 
 namespace features {
@@ -91,6 +95,9 @@ BASE_FEATURE(kBlingPrototypingMqlsLogging, base::FEATURE_DISABLED_BY_DEFAULT);
 BASE_FEATURE(kContextualTasksContextMqlsLogging,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
+BASE_FEATURE(kGeminiAntiscamProtectionMqlsLogging,
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
 }  // namespace features
 
 namespace {
@@ -112,7 +119,7 @@ void RegisterActorLogin() {
 }
 
 void RegisterCompose() {
-  const char* kComposeName = "Compose";
+  const char kComposeName[] = "Compose";
   EnterprisePolicyPref enterprise_policy =
       EnterprisePolicyRegistry::GetInstance().Register(
           prefs::kComposeEnterprisePolicyAllowed);
@@ -132,7 +139,7 @@ void RegisterCompose() {
 }
 
 void RegisterTabOrganization() {
-  const char* kTabOrganizationName = "TabOrganization";
+  const char kTabOrganizationName[] = "TabOrganization";
   EnterprisePolicyPref enterprise_policy =
       EnterprisePolicyRegistry::GetInstance().Register(
           prefs::kTabOrganizationEnterprisePolicyAllowed);
@@ -149,9 +156,7 @@ void RegisterTabOrganization() {
         if (quality.user_feedback()) {
           return quality.user_feedback();
         }
-        // TODO(b/331852814): Remove this else case along with the multi tab
-        // organization flag.
-        return quality.organizations()[0].user_feedback();
+        return proto::UserFeedback::USER_FEEDBACK_UNSPECIFIED;
       });
   auto mqls_metadata = std::make_unique<MqlsFeatureMetadata>(
       kTabOrganizationName,
@@ -166,7 +171,7 @@ void RegisterTabOrganization() {
 }
 
 void RegisterWallpaperSearch() {
-  const char* kWallpaperSearchName = "WallpaperSearch";
+  const char kWallpaperSearchName[] = "WallpaperSearch";
   EnterprisePolicyPref enterprise_policy =
       EnterprisePolicyRegistry::GetInstance().Register(
           prefs::kWallpaperSearchEnterprisePolicyAllowed);
@@ -215,7 +220,7 @@ void RegisterHistorySearch() {
 }
 
 void RegisterPasswordChangeSubmission() {
-  const char* kPasswordChangeSubmissionName = "PasswordChangeSubmission";
+  const char kPasswordChangeSubmissionName[] = "PasswordChangeSubmission";
   EnterprisePolicyPref enterprise_policy =
       EnterprisePolicyRegistry::GetInstance().Register(
           prefs::kAutomatedPasswordChangeEnterprisePolicyAllowed);
@@ -298,6 +303,17 @@ void RegisterContextualTasksContext() {
           FeedbackUnspecified()));
 }
 
+void RegisterGeminiAntiscamProtection() {
+  MqlsFeatureRegistry::GetInstance().Register(
+      std::make_unique<MqlsFeatureMetadata>(
+          "GeminiAntiscamProtection",
+          proto::LogAiDataRequest::FeatureCase::kGeminiAntiscamProtection,
+          EnterprisePolicyRegistry::GetInstance().Register(
+              prefs::kGeminiAntiscamProtectionEnterprisePolicyAllowed),
+          &features::kGeminiAntiscamProtectionMqlsLogging,
+          FeedbackUnspecified()));
+}
+
 }  // anonymous namespace
 
 void RegisterGenAiFeatures(PrefRegistrySimple* pref_registry) {
@@ -319,6 +335,7 @@ void RegisterGenAiFeatures(PrefRegistrySimple* pref_registry) {
     RegisterNotificationContentDetection();
     RegisterBlingPrototyping();
     RegisterContextualTasksContext();
+    RegisterGeminiAntiscamProtection();
     features_registered = true;
   }
   EnterprisePolicyRegistry::GetInstance().RegisterProfilePrefs(pref_registry);

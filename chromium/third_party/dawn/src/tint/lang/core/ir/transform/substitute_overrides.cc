@@ -162,13 +162,10 @@ struct State {
         // that represents the `&&` then we'll produce an incorrect compile error. Instead evaluate
         // the `constexpr-if` constructs early to remove them all and remove any blocks which should
         // not be evaluated.
-        auto res = EvalConstExprIf();
-        if (res != Success) {
-            return res;
-        }
+        TINT_CHECK_RESULT(EvalConstExprIf());
 
-        // Workgroup size MUST be evaluated prior to 'propagate' because workgroup size parameters
-        // are not proper usages.
+        // Workgroup size and subgroup size MUST be evaluated prior to 'propagate' because workgroup
+        // size and subgroup size parameters are not proper usages.
         for (auto func : ir.functions) {
             if (!func->IsCompute()) {
                 continue;
@@ -179,13 +176,16 @@ struct State {
 
             std::array<ir::Value*, 3> new_wg{};
             for (size_t i = 0; i < 3; ++i) {
-                auto new_value = CalculateOverride(wgs.value()[i]);
-                if (new_value != Success) {
-                    return new_value.Failure();
-                }
-                new_wg[i] = new_value.Get();
+                TINT_CHECK_RESULT_UNWRAP(new_value, CalculateOverride(wgs.value()[i]));
+                new_wg[i] = new_value;
             }
             func->SetWorkgroupSize(new_wg);
+
+            auto sgs = func->SubgroupSize();
+            if (sgs.has_value()) {
+                TINT_CHECK_RESULT_UNWRAP(new_sg, CalculateOverride(sgs.value()));
+                func->SetSubgroupSize(new_sg);
+            }
         }
 
         // Replace array types MUST be evaluate prior to 'propagate' because array count values are
@@ -198,14 +198,11 @@ struct State {
             auto* cnt = old_ty->Count()->As<core::ir::type::ValueArrayCount>();
             TINT_IR_ASSERT(ir, cnt);
 
-            auto new_value = CalculateOverride(cnt->value);
-            if (new_value != Success) {
-                return new_value.Failure();
-            }
+            TINT_CHECK_RESULT_UNWRAP(new_value, CalculateOverride(cnt->value));
 
             // Pipeline creation error for zero or negative sized array. This is important as we do
             // not check constant evaluation access against zero size.
-            int64_t cnt_size_check = new_value.Get()->Value()->ValueAs<AInt>();
+            int64_t cnt_size_check = new_value->Value()->ValueAs<AInt>();
             if (cnt_size_check < 1) {
                 diag::Diagnostic error{};
                 error.severity = diag::Severity::Error;
@@ -214,7 +211,7 @@ struct State {
                 return diag::Failure(error);
             }
 
-            uint32_t num_elements = new_value.Get()->Value()->ValueAs<uint32_t>();
+            uint32_t num_elements = new_value->Value()->ValueAs<uint32_t>();
             uint64_t new_ary_size = uint64_t{num_elements} * old_ty->ImplicitStride();
             if (new_ary_size > std::numeric_limits<uint32_t>::max()) {
                 diag::Diagnostic error{};
@@ -241,10 +238,7 @@ struct State {
                     // This is an edge case where we have to specifically verify bounds access for
                     // these new arrays for all usages.
                     if (NeedsEval(usage->instruction)) {
-                        auto r = eval::Eval(b, usage->instruction);
-                        if (r != Success) {
-                            return r.Failure();
-                        }
+                        TINT_CHECK_RESULT(eval::Eval(b, usage->instruction));
                     }
                     if (!usage->instruction->Is<core::ir::Let>()) {
                         continue;
@@ -257,19 +251,13 @@ struct State {
         }
 
         for (auto* override : override_complex_init) {
-            auto res_const = CalculateOverride(override->Result());
-            if (res_const != Success) {
-                return res_const.Failure();
-            }
-            override->Result()->ReplaceAllUsesWith(res_const.Get());
-            values_to_propagate.Push(res_const.Get());
+            TINT_CHECK_RESULT_UNWRAP(res_const, CalculateOverride(override->Result()));
+            override->Result()->ReplaceAllUsesWith(res_const);
+            values_to_propagate.Push(res_const);
         }
 
         // Propagate any replaced override instructions up their instruction chains
-        res = Propagate(values_to_propagate);
-        if (res != Success) {
-            return res;
-        }
+        TINT_CHECK_RESULT(Propagate(values_to_propagate));
 
         // Remove any non-var instruction in the root block
         for (auto* inst : to_remove) {
@@ -301,14 +289,11 @@ struct State {
                 continue;
             }
 
-            auto res = eval::Eval(b, constexpr_if->Condition());
-            if (res != Success) {
-                return res.Failure();
-            }
+            TINT_CHECK_RESULT_UNWRAP(res, eval::Eval(b, constexpr_if->Condition()));
+            TINT_IR_ASSERT(ir, res);
 
-            TINT_IR_ASSERT(ir, res.Get());
             auto* inline_block =
-                res.Get()->Value()->ValueAs<bool>() ? constexpr_if->True() : constexpr_if->False();
+                res->Value()->ValueAs<bool>() ? constexpr_if->True() : constexpr_if->False();
             TINT_IR_ASSERT(ir, inline_block->Terminator());
             for (;;) {
                 auto block_inst = *inline_block->begin();
@@ -328,13 +313,9 @@ struct State {
     }
 
     diag::Result<core::ir::Constant*> CalculateOverride(core::ir::Value* val) {
-        auto r = eval::Eval(b, val);
-        if (r != Success) {
-            return r.Failure();
-        }
+        TINT_CHECK_RESULT_UNWRAP(r, eval::Eval(b, val));
         // Must be able to evaluate the constant.
-        TINT_IR_ASSERT(ir, r.Get());
-
+        TINT_IR_ASSERT(ir, r);
         return r;
     }
 
@@ -352,14 +333,9 @@ struct State {
                     continue;
                 }
 
-                auto r = eval::Eval(b, usage.instruction);
-                if (r != Success) {
-                    return r.Failure();
-                }
-
                 // The replacement can be a `nullptr` if we try to evaluate something like a `dpdx`
                 // builtin which doesn't have a `@const` annotation.
-                auto* replacement = r.Get();
+                TINT_CHECK_RESULT_UNWRAP(replacement, eval::Eval(b, usage.instruction));
                 if (!replacement) {
                     continue;
                 }
@@ -403,13 +379,8 @@ struct State {
 }  // namespace
 
 Result<SuccessType> SubstituteOverrides(Module& ir, const SubstituteOverridesConfig& cfg) {
-    {
-        auto result = ValidateAndDumpIfNeeded(ir, "core.SubstituteOverrides",
-                                              kSubstituteOverridesCapabilities);
-        if (result != Success) {
-            return result.Failure();
-        }
-    }
+    TINT_CHECK_RESULT(
+        ValidateAndDumpIfNeeded(ir, "core.SubstituteOverrides", kSubstituteOverridesCapabilities));
     {
         auto result = State{ir, cfg}.Process();
         if (result != Success) {

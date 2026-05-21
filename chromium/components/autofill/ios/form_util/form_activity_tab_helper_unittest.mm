@@ -20,15 +20,14 @@
 #import "components/autofill/core/common/unique_ids.h"
 #import "components/autofill/ios/browser/autofill_java_script_feature.h"
 #import "components/autofill/ios/browser/autofill_util.h"
-#import "components/autofill/ios/browser/test_autofill_java_script_feature_container.h"
 #import "components/autofill/ios/common/features.h"
 #import "components/autofill/ios/common/javascript_feature_util.h"
 #import "components/autofill/ios/form_util/autofill_form_features_java_script_feature.h"
 #import "components/autofill/ios/form_util/autofill_test_with_web_state.h"
 #import "components/autofill/ios/form_util/form_activity_observer.h"
 #import "components/autofill/ios/form_util/form_handlers_java_script_feature.h"
-#import "components/autofill/ios/form_util/form_util_java_script_feature.h"
 #import "components/autofill/ios/form_util/programmatic_form_submission_handler_java_script_feature.h"
+#import "components/autofill/ios/form_util/renderer_id_test_util.h"
 #import "components/autofill/ios/form_util/test_form_activity_observer.h"
 #import "ios/web/public/js_messaging/java_script_feature.h"
 #import "ios/web/public/js_messaging/web_frame.h"
@@ -113,7 +112,6 @@ class FormActivityTabHelperTest : public AutofillTestWithWebState {
     web::FakeWebClient* web_client =
         static_cast<web::FakeWebClient*>(GetWebClient());
     std::vector<JavaScriptFeature*> features = {
-        FormUtilJavaScriptFeature::GetInstance(),
         FormHandlersJavaScriptFeature::GetInstance(),
         AutofillJavaScriptFeature::GetInstance(),
         ProgrammaticFormSubmissionHandlerJavaScriptFeature::GetInstance(),
@@ -715,17 +713,14 @@ TEST_F(FormMutationTest, RemoveFormlessFields) {
   const FieldRendererId phone_id = FieldRendererId(4);
   const FieldRendererId url_id = FieldRendererId(5);
   const FieldRendererId number_id = FieldRendererId(6);
-  const FieldRendererId checkbox_id = FieldRendererId(7);
-  const FieldRendererId radio_id = FieldRendererId(8);
-  const FieldRendererId select_id = FieldRendererId(9);
-  const FieldRendererId textarea_id = FieldRendererId(10);
+  const FieldRendererId select_id = FieldRendererId(7);
+  const FieldRendererId textarea_id = FieldRendererId(8);
 
   EXPECT_THAT(form_removal_params.value().removed_forms, IsEmpty());
 
   EXPECT_THAT(form_removal_params.value().removed_unowned_fields,
               UnorderedElementsAre(password_id, text_id, email_id, phone_id,
-                                   url_id, number_id, checkbox_id, radio_id,
-                                   select_id, textarea_id));
+                                   url_id, number_id, select_id, textarea_id));
 }
 
 // Tests that a new form triggers form_changed event.
@@ -825,11 +820,15 @@ class FormSubmittedHookTest : public FormActivityTabHelperTest {
   FormSubmittedHookTest() : FormActivityTabHelperTest() {
     web::FakeWebClient* web_client =
         static_cast<web::FakeWebClient*>(GetWebClient());
+
+    renderer_id_feature_ =
+        autofill::test::CreateRendererIdTestJavaScriptFeature();
+
     web_client->SetJavaScriptFeatures({
-        FormUtilJavaScriptFeature::GetInstance(),
-        feature_container_.form_handlers_java_script_feature(),
-        feature_container_.autofill_java_script_feature(),
+        FormHandlersJavaScriptFeature::GetInstance(),
+        AutofillJavaScriptFeature::GetInstance(),
         ProgrammaticFormSubmissionHandlerJavaScriptFeature::GetInstance(),
+        renderer_id_feature_.get(),
     });
   }
 
@@ -842,7 +841,7 @@ class FormSubmittedHookTest : public FormActivityTabHelperTest {
       return false;
     }
     __block bool finished = false;
-    feature_container_.autofill_java_script_feature()->FetchForms(
+    AutofillJavaScriptFeature::GetInstance()->FetchForms(
         main_frame, base::BindOnce(^(NSString* result) {
           finished = true;
         }));
@@ -852,12 +851,8 @@ class FormSubmittedHookTest : public FormActivityTabHelperTest {
     });
   }
 
-  //  Test instances of JavaScriptFeature's that are injected in a different
-  //  content world depending on kAutofillIsolatedWorldForJavascriptIos.
-  //  TODO(crbug.com/359538514): Remove this variable and use
-  //  the statically stored instances once Autofill in the isolated
-  //  world is launched.
-  TestAutofillJavaScriptFeatureContainer feature_container_;
+ private:
+  std::unique_ptr<web::JavaScriptFeature> renderer_id_feature_;
 };
 
 // Validate that programmatic form submissions are detected and sent to
@@ -874,10 +869,12 @@ TEST_F(FormSubmittedHookTest, TestFormSubmittedHook) {
   web::test::ExecuteJavaScriptForFeature(
       web_state(),
       @"var form = document.forms[0];"
-       "__gCrWeb.fill.setUniqueIDIfNeeded(form);"
+       "__gCrWeb.getRegisteredApi('renderer_id_test').getFunction('"
+       "setUniqueIDIfNeeded')(form);"
        "var input = document.getElementById('text');"
-       "__gCrWeb.fill.setUniqueIDIfNeeded(input);",
-      feature_container_.autofill_java_script_feature());
+       "__gCrWeb.getRegisteredApi('renderer_id_test').getFunction('"
+       "setUniqueIDIfNeeded')(input);",
+      AutofillJavaScriptFeature::GetInstance());
 
   ASSERT_FALSE(observer_->submit_document_info());
 

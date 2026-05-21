@@ -115,7 +115,7 @@ retry:
     lang = fc_atomic_ptr_get (&config->default_lang);
     if (!lang) {
 	FcStrSet *langs = FcConfigGetDefaultLangs (config);
-	lang = FcStrdup (langs->strs[0]);
+	lang = FcStrCopy (langs->strs[0]);
 
 	if (!fc_atomic_ptr_cmpexch (&config->default_lang, NULL, lang)) {
 	    free (lang);
@@ -166,17 +166,17 @@ retry:
 		buf[len] = '\0';
 	    }
 
-	    prgname = FcStrdup (p);
+	    prgname = FcStrCopy (p);
 	}
 #elif defined(HAVE_GETPROGNAME)
 	const char *q = getprogname();
 	if (q)
-	    prgname = FcStrdup (q);
+	    prgname = FcStrCopy (q);
 	else
-	    prgname = FcStrdup ("");
+	    prgname = FcStrCopy ("");
 #else
 #  if defined(HAVE_GETEXECNAME)
-	char *p = FcStrdup (getexecname());
+	char *p = FcStrCopy (getexecname());
 #  elif defined(HAVE_READLINK)
 	size_t size = FC_PATH_MAX;
 	char  *p = NULL;
@@ -212,11 +212,11 @@ retry:
 	    else
 		r = p;
 
-	    prgname = FcStrdup (r);
+	    prgname = FcStrCopy ((const FcChar8 *)r);
 	}
 
 	if (!prgname)
-	    prgname = FcStrdup ("");
+	    prgname = FcStrCopy ((const FcChar8 *)"");
 
 	if (p)
 	    free (p);
@@ -257,9 +257,9 @@ retry:
 	char *s = getenv ("XDG_CURRENT_DESKTOP");
 
 	if (!s)
-	    desktop_name = FcStrdup ("");
+	    desktop_name = FcStrCopy ((const FcChar8 *)"");
 	else
-	    desktop_name = FcStrdup (s);
+	    desktop_name = FcStrCopy ((const FcChar8 *)s);
 	if (!desktop_name) {
 	    fprintf (stderr, "Fontconfig error: out of memory in %s\n",
 	             __FUNCTION__);

@@ -34,6 +34,7 @@
 #include "content/common/features.h"
 #include "content/common/input/synthetic_gesture_target.h"
 #include "content/public/browser/render_process_host.h"
+#include "content/public/browser/render_widget_host_view.h"
 #include "third_party/blink/public/common/frame/frame_visual_properties.h"
 #include "third_party/blink/public/common/input/web_touch_event.h"
 #include "third_party/blink/public/mojom/frame/intrinsic_sizing_info.mojom.h"
@@ -243,7 +244,7 @@ void RenderWidgetHostViewChildFrame::EnsureSurfaceSynchronizedForWebTest() {
 uint32_t RenderWidgetHostViewChildFrame::GetCaptureSequenceNumber() const {
   if (!frame_connector_)
     return 0u;
-  return frame_connector_->capture_sequence_number();
+  return frame_connector_->GetCaptureSequenceNumber();
 }
 
 void RenderWidgetHostViewChildFrame::ShowWithVisibility(
@@ -287,7 +288,7 @@ void RenderWidgetHostViewChildFrame::WasUnOccluded() {
 gfx::Rect RenderWidgetHostViewChildFrame::GetViewBounds() {
   gfx::Rect screen_space_rect;
   if (frame_connector_) {
-    screen_space_rect = frame_connector_->rect_in_parent_view_in_dip();
+    screen_space_rect = frame_connector_->GetRectInParentViewInDip();
 
     RenderWidgetHostView* parent_view =
         frame_connector_->GetParentRenderWidgetHostView();
@@ -303,7 +304,7 @@ gfx::Rect RenderWidgetHostViewChildFrame::GetViewBounds() {
     // on. We want the location of the frame in screen coordinates to place
     // popups but we want the size in local coordinates to produce the right-
     // sized CompositorFrames. https://crbug.com/928825.
-    screen_space_rect.set_size(frame_connector_->local_frame_size_in_dip());
+    screen_space_rect.set_size(frame_connector_->GetLocalFrameSizeInDip());
   }
   return screen_space_rect;
 }
@@ -412,7 +413,7 @@ void RenderWidgetHostViewChildFrame::
 
 gfx::Size RenderWidgetHostViewChildFrame::GetCompositorViewportPixelSize() {
   if (frame_connector_)
-    return frame_connector_->local_frame_size_in_pixels();
+    return frame_connector_->GetLocalFrameSizeInPixels();
   return gfx::Size();
 }
 
@@ -461,13 +462,13 @@ void RenderWidgetHostViewChildFrame::UpdateCursor(const ui::Cursor& cursor) {
 
 void RenderWidgetHostViewChildFrame::UpdateScreenInfo() {
   if (frame_connector_)
-    screen_infos_ = frame_connector_->screen_infos();
+    screen_infos_ = frame_connector_->GetScreenInfos();
 }
 
 void RenderWidgetHostViewChildFrame::SendInitialPropertiesIfNeeded() {
   if (initial_properties_sent_ || !frame_connector_)
     return;
-  UpdateViewportIntersection(frame_connector_->intersection_state(),
+  UpdateViewportIntersection(frame_connector_->GetIntersectionState(),
                              std::nullopt);
   SetIsInert();
   UpdateInheritedEffectiveTouchAction();
@@ -737,10 +738,13 @@ const viz::FrameSinkId& RenderWidgetHostViewChildFrame::GetFrameSinkId() const {
   return frame_sink_id_;
 }
 
-const viz::LocalSurfaceId& RenderWidgetHostViewChildFrame::GetLocalSurfaceId()
-    const {
+const viz::LocalSurfaceId&
+
+RenderWidgetHostViewChildFrame::GetLocalSurfaceId() const {
   if (frame_connector_)
-    return frame_connector_->local_surface_id();
+
+    return frame_connector_->GetLocalSurfaceId();
+
   return viz::ParentLocalSurfaceIdAllocator::InvalidLocalSurfaceId();
 }
 
@@ -802,11 +806,11 @@ viz::SurfaceId RenderWidgetHostViewChildFrame::GetCurrentSurfaceId() const {
 }
 
 bool RenderWidgetHostViewChildFrame::HasSize() const {
-  return frame_connector_ && frame_connector_->has_size();
+  return frame_connector_ && frame_connector_->HasSize();
 }
 
 double RenderWidgetHostViewChildFrame::GetCSSZoomFactor() const {
-  return frame_connector_ ? frame_connector_->css_zoom_factor() : 1.0;
+  return frame_connector_ ? frame_connector_->GetCssZoomFactor() : 1.0;
 }
 
 gfx::PointF RenderWidgetHostViewChildFrame::TransformPointToRootCoordSpaceF(
@@ -868,10 +872,11 @@ uint64_t RenderWidgetHostViewChildFrame::GetNSViewId() const {
 void RenderWidgetHostViewChildFrame::CopyFromSurface(
     const gfx::Rect& src_subrect,
     const gfx::Size& output_size,
-    base::OnceCallback<void(const viz::CopyOutputBitmapWithMetadata&)>
-        callback) {
+    base::TimeDelta timeout,
+    base::OnceCallback<void(const content::CopyFromSurfaceResult&)> callback) {
   if (!IsSurfaceAvailableForCopy()) {
-    std::move(callback).Run(viz::CopyOutputBitmapWithMetadata());
+    std::move(callback).Run(base::unexpected<CopyFromSurfaceError>(
+        CopyFromSurfaceError::kNotImplemented));
     return;
   }
 
@@ -880,12 +885,12 @@ void RenderWidgetHostViewChildFrame::CopyFromSurface(
           viz::CopyOutputRequest::ResultFormat::RGBA,
           viz::CopyOutputRequest::ResultDestination::kSystemMemory,
           base::BindOnce(
-              [](base::OnceCallback<void(
-                     const viz::CopyOutputBitmapWithMetadata&)> callback,
+              [](base::OnceCallback<void(const content::CopyFromSurfaceResult&)>
+                     callback,
                  std::unique_ptr<viz::CopyOutputResult> result) {
-                auto scoped_bitmap = result->ScopedAccessSkBitmap();
-                std::move(callback).Run(
-                    scoped_bitmap.GetOutScopedBitmapAndMetadata());
+                std::move(callback).Run(ToCopyFromSurfaceResult(
+                    result->ScopedAccessSkBitmap()
+                        .GetOutScopedBitmapAndMetadata()));
               },
               std::move(callback)));
 
@@ -915,8 +920,9 @@ void RenderWidgetHostViewChildFrame::CopyFromSurface(
         gfx::Vector2d(output_size.width(), output_size.height()));
   }
 
-  GetHostFrameSinkManager()->RequestCopyOfOutput(GetCurrentSurfaceId(),
-                                                 std::move(request));
+  GetHostFrameSinkManager()->RequestCopyOfOutput(
+      GetCurrentSurfaceId(), std::move(request),
+      /*capture_exact_surface_id=*/false, timeout);
 }
 
 void RenderWidgetHostViewChildFrame::OnFirstSurfaceActivation(

@@ -8,16 +8,20 @@ import '../menus/simple_action_menu.js';
 import '../menus/color_menu.js';
 import '../menus/font_menu.js';
 import '../menus/font_select.js';
+import '../menus/line_focus_menu.js';
 import '../menus/line_spacing_menu.js';
 import '../menus/letter_spacing_menu.js';
 import '../menus/highlight_menu.js';
 import '../menus/rate_menu.js';
+import '../menus/presentation_menu.js';
+import '../menus/settings_menu.js';
 import '//resources/cr_elements/cr_action_menu/cr_action_menu.js';
 import '//resources/cr_elements/cr_button/cr_button.js';
 import '//resources/cr_elements/cr_icon_button/cr_icon_button.js';
 import '//resources/cr_elements/cr_lazy_render/cr_lazy_render_lit.js';
 import '//resources/cr_elements/icons.html.js';
 
+import {AnchorAlignment} from '//resources/cr_elements/cr_action_menu/cr_action_menu.js';
 import type {CrActionMenuElement} from '//resources/cr_elements/cr_action_menu/cr_action_menu.js';
 import type {CrIconButtonElement} from '//resources/cr_elements/cr_icon_button/cr_icon_button.js';
 import type {CrLazyRenderLitElement} from '//resources/cr_elements/cr_lazy_render/cr_lazy_render_lit.js';
@@ -28,16 +32,21 @@ import {loadTimeData} from '//resources/js/load_time_data.js';
 import {CrLitElement, html, type TemplateResult} from '//resources/lit/v3_0/lit.rollup.js';
 import type {PropertyValues} from '//resources/lit/v3_0/lit.rollup.js';
 
+import {DEFAULT_SETTINGS, SettingsOption, ToolbarEvent} from '../content/read_anything_types.js';
+import type {SettingsPrefs} from '../content/read_anything_types.js';
 import type {ColorMenuElement} from '../menus/color_menu.js';
 import type {FontMenuElement} from '../menus/font_menu.js';
 import type {HighlightMenuElement} from '../menus/highlight_menu.js';
 import type {LetterSpacingMenuElement} from '../menus/letter_spacing_menu.js';
+import type {LineFocusMenuElement} from '../menus/line_focus_menu.js';
 import type {LineSpacingMenuElement} from '../menus/line_spacing_menu.js';
+import type {ToolbarMenu} from '../menus/menu_util.js';
+import type {PresentationMenuElement} from '../menus/presentation_menu.js';
 import type {RateMenuElement} from '../menus/rate_menu.js';
+import type {SettingsMenuElement} from '../menus/settings_menu.js';
 import {getCurrentSpeechRate} from '../read_aloud/speech_presentation_rules.js';
 import type {VoiceSelectionMenuElement} from '../read_aloud/voice_selection_menu.js';
-import {minOverflowLengthToScroll, openMenu, spinnerDebounceTimeout, ToolbarEvent} from '../shared/common.js';
-import type {SettingsPrefs} from '../shared/common.js';
+import {minOverflowLengthToScroll, openMenu, spinnerDebounceTimeout} from '../shared/common.js';
 import {getNewIndex, isArrow, isForwardArrow, isHorizontalArrow} from '../shared/keyboard_util.js';
 import {ReadAnythingSettingsChange} from '../shared/metrics_browser_proxy.js';
 import {ReadAnythingLogger, SpeechControls, TimeFrom} from '../shared/read_anything_logger.js';
@@ -56,11 +65,13 @@ export interface ReadAnythingToolbarElement {
     moreOptionsMenu: CrLazyRenderLitElement<CrActionMenuElement>,
     voiceSelectionMenu: VoiceSelectionMenuElement,
     highlightMenu: HighlightMenuElement,
+    lineFocusMenu: LineFocusMenuElement,
     toolbarContainer: HTMLElement,
     more: CrIconButtonElement,
+    settingsMenu: SettingsMenuElement,
+    presentationMenu: PresentationMenuElement,
   };
 }
-
 interface MenuButton {
   id: string;
   icon: string;
@@ -136,10 +147,16 @@ export class ReadAnythingToolbarElement extends ReadAnythingToolbarElementBase {
       speechRate_: {type: Number},
       moreOptionsButtons_: {type: Array},
       pageLanguage: {type: String},
+      presentationState: {type: Number},
+      isImmersiveMode: {type: Boolean},
+      isReadAnythingPinned: {type: Boolean},
+      isImmersiveEnabled_: {type: Boolean},
+      isReadAloudEnabled_: {type: Boolean},
     };
   }
 
   // Reactive properties below
+  accessor presentationState: number = 0;
   accessor availableVoices: SpeechSynthesisVoice[] = [];
   accessor enabledLangs: string[] = [];
   // If Read Aloud is playing speech.
@@ -153,20 +170,16 @@ export class ReadAnythingToolbarElement extends ReadAnythingToolbarElementBase {
   // certain toolbar buttons like the play / pause button should be disabled.
   // This is set from the parent element via one way data binding.
   accessor isReadAloudPlayable: boolean = false;
+  accessor isReadAnythingPinned: boolean = false;
   accessor localeToDisplayName: {[lang: string]: string} = {};
   accessor previewVoicePlaying: SpeechSynthesisVoice|null = null;
-  accessor settingsPrefs: SettingsPrefs = {
-    letterSpacing: 0,
-    lineSpacing: 0,
-    theme: 0,
-    speechRate: 0,
-    font: '',
-    highlightGranularity: 0,
-  };
+  accessor settingsPrefs: SettingsPrefs = DEFAULT_SETTINGS;
   accessor selectedVoice: SpeechSynthesisVoice|undefined;
   accessor pageLanguage: string = '';
+  accessor isImmersiveMode: boolean = false;
   protected accessor hideSpinner_: boolean = true;
-  protected isReadAloudEnabled_: boolean = true;
+  protected accessor isReadAloudEnabled_: boolean = true;
+  protected accessor isImmersiveEnabled_: boolean = false;
   // Overflow buttons on the toolbar that open a menu of options.
   protected accessor moreOptionsButtons_: MenuButton[] = [];
   protected accessor speechRate_: number = 1;
@@ -207,6 +220,10 @@ export class ReadAnythingToolbarElement extends ReadAnythingToolbarElementBase {
   }
 
   private maybeUpdateMoreOptions_() {
+    if (this.isImmersiveEnabled_) {
+      return;
+    }
+
     // Hide the more options button first to calculate if we need it
     const toolbar = this.$.toolbarContainer;
     const moreOptionsButton = toolbar.querySelector<HTMLElement>('#more');
@@ -292,6 +309,7 @@ export class ReadAnythingToolbarElement extends ReadAnythingToolbarElementBase {
     this.logger_.logTimeFrom(
         TimeFrom.TOOLBAR, this.startTime_, this.constructorTime_);
     this.isReadAloudEnabled_ = chrome.readingMode.isReadAloudEnabled;
+    this.isImmersiveEnabled_ = chrome.readingMode.isImmersiveEnabled;
 
     // Only add the button to the toolbar if the feature is enabled.
     if (chrome.readingMode.imagesFeatureEnabled) {
@@ -328,17 +346,23 @@ export class ReadAnythingToolbarElement extends ReadAnythingToolbarElementBase {
   }
 
   private initializeMenuButtons_() {
+    const fontSizeElement = {
+      id: 'font-size',
+      icon: 'read-anything:font-size',
+      ariaLabel: loadTimeData.getString('fontSizeTitle'),
+      openMenu: (target: HTMLElement) =>
+          openMenu(this.$.fontSizeMenu.get(), target),
+      announceBlock: html`<div id='size-announce' class='announce-block'
+            aria-live='polite'></div>`,
+    };
+    if (this.isImmersiveEnabled_) {
+      this.textStyleOptions_ = [fontSizeElement];
+      return;
+    }
+
     if (this.isReadAloudEnabled_) {
       this.textStyleOptions_.push(
-          {
-            id: 'font-size',
-            icon: 'read-anything:font-size',
-            ariaLabel: loadTimeData.getString('fontSizeTitle'),
-            openMenu: (target: HTMLElement) =>
-                openMenu(this.$.fontSizeMenu.get(), target),
-            announceBlock: html`<div id='size-announce' class='announce-block'
-       aria-live='polite'></div>`,
-          },
+          fontSizeElement,
           {
             id: 'font',
             icon: 'read-anything:font',
@@ -368,7 +392,16 @@ export class ReadAnythingToolbarElement extends ReadAnythingToolbarElementBase {
           ariaLabel: loadTimeData.getString('letterSpacingTitle'),
           openMenu: (target: HTMLElement) =>
               this.$.letterSpacingMenu.open(target),
-        });
+        },
+    );
+    if (chrome.readingMode.isLineFocusEnabled) {
+      this.textStyleOptions_.push({
+        id: 'line-focus',
+        icon: 'read-anything:line-focus',
+        ariaLabel: loadTimeData.getString('lineFocusLabel'),
+        openMenu: (target: HTMLElement) => this.$.lineFocusMenu.open(target),
+      });
+    }
     this.requestUpdate();
   }
 
@@ -382,6 +415,10 @@ export class ReadAnythingToolbarElement extends ReadAnythingToolbarElementBase {
         loadTimeData.getStringF(
             'voiceSpeedOptionTitle', this.speechRate_.toLocaleString()) :
         this.speechRate_.toLocaleString();
+  }
+
+  protected onCloseClick_() {
+    chrome.readingMode.close();
   }
 
   // Loading the fonts stylesheet can take a while, especially with slow
@@ -435,6 +472,7 @@ export class ReadAnythingToolbarElement extends ReadAnythingToolbarElementBase {
   restoreSettingsFromPrefs() {
     this.updateLinkToggleButton();
     this.updateImagesToggleButton();
+    this.setFont_(chrome.readingMode.fontName);
 
     if (this.isReadAloudEnabled_) {
       this.speechRate_ = getCurrentSpeechRate();
@@ -494,15 +532,23 @@ export class ReadAnythingToolbarElement extends ReadAnythingToolbarElementBase {
   }
 
   protected onMoreOptionsClick_(event: MouseEvent) {
+    const target = event.target as HTMLElement;
+    if (this.isImmersiveEnabled_) {
+      this.$.settingsMenu.open(target);
+      return;
+    }
+
     const menu = this.$.moreOptionsMenu.get();
-    openMenu(menu, event.target as HTMLElement);
+    openMenu(menu, target);
   }
 
   protected onHighlightChange_(event: CustomEvent<{data: number}>) {
     // Event handler for highlight-change (from highlight-menu).
     const changedHighlight = event.detail.data;
-    this.setHighlightButtonIcon_(
-        changedHighlight !== chrome.readingMode.noHighlighting);
+    if (!this.isImmersiveEnabled_) {
+      this.setHighlightButtonIcon_(
+          changedHighlight !== chrome.readingMode.noHighlighting);
+    }
   }
 
   protected onHighlightClick_(event: MouseEvent) {
@@ -525,9 +571,12 @@ export class ReadAnythingToolbarElement extends ReadAnythingToolbarElementBase {
     }
   }
 
+  private setFont_(font: string) {
+    this.style.fontFamily = chrome.readingMode.getValidatedFontName(font);
+  }
+
   protected onFontChange_(event: CustomEvent<{data: string}>) {
-    this.style.fontFamily =
-        chrome.readingMode.getValidatedFontName(event.detail.data);
+    this.setFont_(event.detail.data);
   }
 
   protected onRateChange_(event: CustomEvent<{data: number}>) {
@@ -713,6 +762,71 @@ export class ReadAnythingToolbarElement extends ReadAnythingToolbarElementBase {
     elementToFocus.focus();
   }
 
+  protected onCloseAllMenus_(
+      event: CustomEvent<{previousId: SettingsOption | null}>) {
+    this.closeAllMenus_(event.detail?.previousId);
+  }
+
+  protected onCloseSubmenuRequested_(
+      event: CustomEvent<{previousId: SettingsOption}>) {
+    this.closeSubmenu_(event.detail.previousId);
+  }
+
+  protected onOpenSettingsSubmenu_(event: CustomEvent<{
+    id: SettingsOption,
+    previousId: SettingsOption|null,
+    target: HTMLElement,
+  }>) {
+    if (!this.isImmersiveEnabled_) {
+      return;
+    }
+
+    const {id, previousId, target} = event.detail;
+    if (previousId) {
+      const previousMenu = this.settingsMenu_[previousId];
+      previousMenu?.close();
+    }
+
+    const showAtConfig = {
+      minY: 0,
+      anchorAlignmentX: AnchorAlignment.BEFORE_START,
+      anchorAlignmentY: AnchorAlignment.AFTER_START,
+    };
+    const currentMenu = this.settingsMenu_[id];
+    currentMenu?.open(target, showAtConfig);
+  }
+
+  private closeAllMenus_(previousId: SettingsOption|null = null) {
+    if (!this.isImmersiveEnabled_) {
+      return;
+    }
+
+    if (previousId) {
+      this.closeSubmenu_(previousId);
+    }
+
+    this.$.settingsMenu.close();
+  }
+
+  private closeSubmenu_(submenuId: SettingsOption) {
+    const previousMenu = this.settingsMenu_[submenuId];
+    assert(previousMenu, `settings ${submenuId} submenu not found`);
+    previousMenu.close();
+  }
+
+  get settingsMenu_(): Partial<Record<SettingsOption, ToolbarMenu>> {
+    return {
+      [SettingsOption.COLOR]: this.$.colorMenu,
+      [SettingsOption.VOICE_HIGHLIGHT]: this.$.highlightMenu,
+      [SettingsOption.FONT]: this.$.fontMenu,
+      [SettingsOption.LETTER_SPACING]: this.$.letterSpacingMenu,
+      [SettingsOption.LINE_FOCUS]: this.$.lineFocusMenu,
+      [SettingsOption.LINE_SPACING]: this.$.lineSpacingMenu,
+      [SettingsOption.VOICE_SELECTION]: this.$.voiceSelectionMenu,
+      [SettingsOption.PRESENTATION]: this.$.presentationMenu,
+    };
+  }
+
   private getMoreOptionsButtons_(): HTMLElement[] {
     return Array.from(
         this.$.toolbarContainer.querySelectorAll(moreOptionsClass));
@@ -733,9 +847,11 @@ export class ReadAnythingToolbarElement extends ReadAnythingToolbarElementBase {
     // itself and go directly to the children. We still need this button in the
     // list of focusable elements because it can become focused by tabbing while
     // the menu is open and we want the arrow key behavior to continue smoothly.
+    // This is skipped in immersive mode because the more options button opens
+    // the main settings menu instead of the overflow menu.
     const elementToFocus = focusableElements[newIndex];
     assert(elementToFocus);
-    if (elementToFocus.id === 'more' ||
+    if ((elementToFocus.id === 'more' && !this.isImmersiveEnabled_) ||
         elementToFocus.classList.contains(moreOptionsClass.slice(1))) {
       const moreOptionsRendered = this.$.moreOptionsMenu.getIfExists();
       // If the more options menu has not been rendered yet, render it and wait
@@ -817,7 +933,9 @@ export class ReadAnythingToolbarElement extends ReadAnythingToolbarElementBase {
     } else {
       elementToFocus.tabIndex = 0;
       // Close the overflow menu if the next button is not in the menu.
-      this.$.moreOptionsMenu.getIfExists()?.close();
+      if (!this.isImmersiveEnabled_) {
+        this.$.moreOptionsMenu.getIfExists()?.close();
+      }
     }
 
     // Wait for the next animation frame for the overflow menu to show or hide.
@@ -841,6 +959,36 @@ export class ReadAnythingToolbarElement extends ReadAnythingToolbarElementBase {
 
   protected getVoiceSpeedLabel_(): string {
     return loadTimeData.getStringF('voiceSpeedWithRateLabel', this.speechRate_);
+  }
+
+  protected shouldShowToolbarAudioControls_(): boolean {
+    return this.isReadAloudEnabled_ || this.isImmersiveEnabled_;
+  }
+
+  protected getAudioState_(): string {
+    if (this.isImmersiveEnabled_) {
+      return 'immersive-enabled';
+    }
+    if (this.isSpeechActive) {
+      return 'active';
+    }
+    return 'inactive';
+  }
+
+  protected getToolbarContainerClass_(): string {
+    return this.isImmersiveEnabled_ ? 'immersive-toolbar-container' :
+                                      'toolbar-container';
+  }
+
+  protected getGranularityContainerClass_(): string {
+    return this.isSpeechActive || this.isImmersiveEnabled_ ?
+        'granularity-container-when-active-true' :
+        'granularity-container-when-active-false';
+  }
+
+  protected shouldDisableGranularityNavButtons_(): boolean {
+    return !this.isReadAloudPlayable ||
+        (this.isImmersiveEnabled_ && !this.isSpeechActive);
   }
 }
 

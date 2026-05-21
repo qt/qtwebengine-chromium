@@ -114,7 +114,7 @@ EIGEN_DEVICE_FUNC inline bool is_free_allowed_impl(bool update, bool new_value =
 EIGEN_DEVICE_FUNC inline bool is_free_allowed() { return is_free_allowed_impl(false); }
 EIGEN_DEVICE_FUNC inline bool set_is_free_allowed(bool new_value) { return is_free_allowed_impl(true, new_value); }
 EIGEN_DEVICE_FUNC inline void check_that_free_is_allowed() {
-  eigen_assert(is_malloc_allowed() &&
+  eigen_assert(is_free_allowed() &&
                "heap deallocation is forbidden (EIGEN_RUNTIME_NO_MALLOC is defined and set_is_free_allowed is false)");
 }
 #else

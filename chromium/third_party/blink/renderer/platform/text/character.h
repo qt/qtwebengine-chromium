@@ -50,6 +50,8 @@
 
 namespace blink {
 
+struct JustificationContext;
+
 class PLATFORM_EXPORT Character {
   STATIC_ONLY(Character);
 
@@ -117,20 +119,13 @@ class PLATFORM_EXPORT Character {
   static unsigned ExpansionOpportunityCount(TextJustify method,
                                             base::span<const LChar>,
                                             TextDirection,
-                                            bool& is_after_expansion);
+                                            JustificationContext&);
   static unsigned ExpansionOpportunityCount(TextJustify method,
                                             base::span<const UChar>,
                                             TextDirection,
-                                            bool& is_after_expansion);
+                                            JustificationContext&);
 
   static bool IsUprightInMixedVertical(UChar32 character);
-
-  // https://html.spec.whatwg.org/C/#prod-potentialcustomelementname
-  static bool IsPotentialCustomElementName8BitChar(LChar ch) {
-    return IsASCIILower(ch) || IsASCIIDigit(ch) || ch == '-' || ch == '.' ||
-           ch == '_' || ch == 0xb7 || (0xc0 <= ch && ch != 0xd7 && ch != 0xf7);
-  }
-  static bool IsPotentialCustomElementNameChar(UChar32 character);
 
   // http://unicode.org/reports/tr9/#Directional_Formatting_Characters
   static bool IsBidiControl(UChar32 character);
@@ -259,6 +254,8 @@ class PLATFORM_EXPORT Character {
   // and that script code is not USCRIPT_COMMON or USCRIPT_INHERITED.
   static bool HasLikelyScript(UChar32);
   static UScriptCode GetScriptBasedOnUnicodeBlock(UChar32);
+  // https://drafts.csswg.org/css-text-4/#cursive-script
+  static bool IsCursiveScript(UChar32);
 
   static bool IsModernGeorgianUppercase(UChar32 c) {
     return IsInRange(c, 0x1C90, 0x1CBF);

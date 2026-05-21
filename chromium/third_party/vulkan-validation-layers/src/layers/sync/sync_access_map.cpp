@@ -1,6 +1,6 @@
-/* Copyright (c) 2025 The Khronos Group Inc.
- * Copyright (c) 2025 Valve Corporation
- * Copyright (c) 2025 LunarG, Inc.
+/* Copyright (c) 2026 The Khronos Group Inc.
+ * Copyright (c) 2026 Valve Corporation
+ * Copyright (c) 2026 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,11 @@
 #include "sync_access_map.h"
 
 namespace syncval {
+
+void AccessMap::Assign(const AccessMap &other) {
+    auto temp_copy(other.impl_map_);
+    impl_map_.swap(temp_copy);
+}
 
 AccessMap::iterator AccessMap::LowerBound(ResourceAddress range_begin) {
     auto it = impl_map_.lower_bound(AccessRange(range_begin, range_begin));
@@ -43,6 +48,7 @@ void AccessMap::Erase(iterator first, iterator last) {
 }
 
 AccessMap::iterator AccessMap::Insert(const_iterator hint, const AccessRange &range, const AccessState &access_state) {
+    assert(range.non_empty());
     bool hint_open;
     const_iterator impl_next = hint;
     if (impl_map_.empty()) {
@@ -70,9 +76,8 @@ AccessMap::iterator AccessMap::Insert(const_iterator hint, const AccessRange &ra
 }
 
 std::pair<AccessMap::iterator, bool> AccessMap::Insert(const AccessRange &range, const AccessState &access_state) {
-    if (!range.non_empty()) {
-        return std::make_pair(end(), false);
-    }
+    assert(range.non_empty());
+
     // Look for range conflicts (and an insertion point, which makes the lower_bound *not* wasted work)
     // we don't have to check upper if just check that lower doesn't intersect (which it would if lower != upper)
     auto lower = LowerBound(range.begin);
@@ -82,6 +87,32 @@ std::pair<AccessMap::iterator, bool> AccessMap::Insert(const AccessRange &range,
     }
     // We don't replace
     return {lower, false};
+}
+
+AccessMap::iterator AccessMap::InfillGap(const_iterator range_lower_bound, const AccessRange &range,
+                                         const AccessState &access_state) {
+    assert(LowerBound(range.begin) == range_lower_bound);
+    assert(range_lower_bound == end() || range.strictly_less(range_lower_bound->first));
+    return impl_map_.insert(range_lower_bound, {range, access_state});
+}
+
+void AccessMap::InfillGaps(const AccessRange &range, const AccessState &access_state) {
+    AccessMapLocator pos(*this, range.begin);
+    while (range.includes(pos.index)) {
+        if (!pos.inside_lower_bound_range) {
+            if (pos.lower_bound == end() || range.end <= pos.lower_bound->first.begin) {
+                const AccessRange gap_range(pos.index, range.end);
+                impl_map_.insert(pos.lower_bound, {gap_range, access_state});
+                return;  // reached range.end
+            } else {
+                const AccessRange gap_range(pos.index, pos.lower_bound->first.begin);
+                impl_map_.insert(pos.lower_bound, {gap_range, access_state});
+                pos.Seek(pos.lower_bound->first.end);
+            }
+        } else {
+            pos.Seek(pos.lower_bound->first.end);
+        }
+    }
 }
 
 AccessMap::iterator AccessMap::Split(const iterator split_it, const index_type &index) {
@@ -135,29 +166,6 @@ AccessMap::iterator Split(AccessMap::iterator in, AccessMap &map, const AccessRa
         pos = map.Split(pos, split_range.end);
     }
     return pos;
-}
-
-void UpdateRangeValue(AccessMap &map, const AccessRange &range, const AccessState &access_state) {
-    AccessMapLocator pos(map, range.begin);
-    while (range.includes(pos.index)) {
-        if (!pos.inside_lower_bound_range) {
-            // Fill in the leading space (or in the case of pos at end the trailing space)
-            const auto start = pos.index;
-            auto it = pos.lower_bound;
-            const auto limit = (it != map.end()) ? std::min(it->first.begin, range.end) : range.end;
-            map.Insert(it, AccessRange(start, limit), access_state);
-            // We inserted before pos->lower_bound, so pos->lower_bound isn't invalid, but the associated index *is* and seek
-            // will fix this (and move the state to valid)
-            pos.Seek(limit);
-        }
-        // Note that after the "fill" operation pos may have become valid so we check again
-        if (pos.inside_lower_bound_range) {
-            // "prefer_dest" means don't overwrite existing values, so we'll skip this interval.
-            // Point just past the end of this section,  if it's within the given range, it will get filled next iteration
-            // ++pos could move us past the end of range (which would exit the loop) so we don't use it.
-            pos.Seek(pos.lower_bound->first.end);
-        }
-    }
 }
 
 void Consolidate(AccessMap &map) {

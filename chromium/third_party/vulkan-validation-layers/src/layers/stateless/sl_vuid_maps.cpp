@@ -1,6 +1,6 @@
-/* Copyright (c) 2024 The Khronos Group Inc.
- * Copyright (c) 2024 LunarG, Inc.
- * Copyright (c) 2024 Advanced Micro Devices, Inc. All rights reserved.
+/* Copyright (c) 2024-2026 The Khronos Group Inc.
+ * Copyright (c) 2024-2026 LunarG, Inc.
+ * Copyright (c) 2024-2026 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -62,6 +62,22 @@ const std::string &GetPipelineBinaryInfoVUID(const Location &loc, PipelineBinary
              {Key(Func::vkCreateExecutionGraphPipelinesAMDX), "VUID-vkCreateExecutionGraphPipelinesAMDX-binaryCount-09622"},
              {Key(Func::vkCreateComputePipelines), "VUID-vkCreateComputePipelines-binaryCount-09622"},
          }}},
+        {PipelineBinaryInfoError::Flags_11311,
+         {{
+             {Key(Func::vkCreateGraphicsPipelines), "VUID-VkGraphicsPipelineCreateInfo-flags-11311"},
+             {Key(Func::vkCreateRayTracingPipelinesNV), "VUID-VkRayTracingPipelineCreateInfoNV-flags-11311"},
+             {Key(Func::vkCreateRayTracingPipelinesKHR), "VUID-VkRayTracingPipelineCreateInfoKHR-flags-11311"},
+             {Key(Func::vkCreateExecutionGraphPipelinesAMDX), "VUID-VkExecutionGraphPipelineCreateInfoAMDX-flags-11311"},
+             {Key(Func::vkCreateComputePipelines), "VUID-VkComputePipelineCreateInfo-flags-11311"},
+         }}},
+        {PipelineBinaryInfoError::Flags_11367,
+         {{
+             {Key(Func::vkCreateGraphicsPipelines), "UNASSIGNED"},  // not used
+             {Key(Func::vkCreateRayTracingPipelinesNV), "VUID-VkRayTracingPipelineCreateInfoNV-None-11368"},
+             {Key(Func::vkCreateRayTracingPipelinesKHR), "VUID-VkRayTracingPipelineCreateInfoKHR-None-11369"},
+             {Key(Func::vkCreateExecutionGraphPipelinesAMDX), "VUID-VkExecutionGraphPipelineCreateInfoAMDX-None-11363"},
+             {Key(Func::vkCreateComputePipelines), "VUID-VkComputePipelineCreateInfo-None-11367"},
+         }}},
     };
 
     const auto &result = FindVUID(error, loc, errors);
@@ -72,5 +88,45 @@ const std::string &GetPipelineBinaryInfoVUID(const Location &loc, PipelineBinary
     }
     return result;
 }
+
+// clang-format off
+const char *GetPipelineCreateFlagVUID(const Location &loc, PipelineCreateFlagError error) {
+    switch (error) {
+        case PipelineCreateFlagError::CacheControl_02878:
+            return
+                loc.function == Func::vkCreateGraphicsPipelines       ? "VUID-VkGraphicsPipelineCreateInfo-pipelineCreationCacheControl-02878" :
+                loc.function == Func::vkCreateComputePipelines        ? "VUID-VkComputePipelineCreateInfo-pipelineCreationCacheControl-02878" :
+                loc.function == Func::vkCreateRayTracingPipelinesKHR  ? "VUID-VkRayTracingPipelineCreateInfoKHR-pipelineCreationCacheControl-02878" :
+                loc.function == Func::vkCreateRayTracingPipelinesNV   ? "VUID-VkRayTracingPipelineCreateInfoNV-pipelineCreationCacheControl-02878" :
+                loc.function == Func::vkCreateDataGraphPipelinesARM   ? "VUID-VkDataGraphPipelineCreateInfoARM-pipelineCreationCacheControl-09871" :
+                kVUIDUndefined;
+        case PipelineCreateFlagError::Shader64BitIndexing_11798:
+            return
+                loc.function == Func::vkCreateGraphicsPipelines       ? "VUID-VkGraphicsPipelineCreateInfo-flags-11798" :
+                loc.function == Func::vkCreateComputePipelines        ? "VUID-VkComputePipelineCreateInfo-flags-11798" :
+                loc.function == Func::vkCreateRayTracingPipelinesKHR  ? "VUID-VkRayTracingPipelineCreateInfoKHR-flags-11798" :
+                loc.function == Func::vkCreateRayTracingPipelinesNV   ? "VUID-VkRayTracingPipelineCreateInfoNV-flags-11798" :
+                // TOOD - Missing vkCreateDataGraphPipelinesARM
+                kVUIDUndefined;
+        case PipelineCreateFlagError::ProtectedAccess_07368:
+            return
+                loc.function == Func::vkCreateGraphicsPipelines       ? "VUID-VkGraphicsPipelineCreateInfo-pipelineProtectedAccess-07368" :
+                loc.function == Func::vkCreateComputePipelines        ? "VUID-VkComputePipelineCreateInfo-pipelineProtectedAccess-07368" :
+                loc.function == Func::vkCreateRayTracingPipelinesKHR  ? "VUID-VkRayTracingPipelineCreateInfoKHR-pipelineProtectedAccess-07368" :
+                loc.function == Func::vkCreateRayTracingPipelinesNV   ? "VUID-VkRayTracingPipelineCreateInfoNV-pipelineProtectedAccess-07368" :
+                loc.function == Func::vkCreateDataGraphPipelinesARM   ? "VUID-VkDataGraphPipelineCreateInfoARM-pipelineProtectedAccess-09772" :
+                kVUIDUndefined;
+        case PipelineCreateFlagError::ProtectedAccess_07369:
+            return
+                loc.function == Func::vkCreateGraphicsPipelines       ? "VUID-VkGraphicsPipelineCreateInfo-flags-07369" :
+                loc.function == Func::vkCreateComputePipelines        ? "VUID-VkComputePipelineCreateInfo-flags-07369" :
+                loc.function == Func::vkCreateRayTracingPipelinesKHR  ? "VUID-VkRayTracingPipelineCreateInfoKHR-flags-07369" :
+                loc.function == Func::vkCreateRayTracingPipelinesNV   ? "VUID-VkRayTracingPipelineCreateInfoNV-flags-07369" :
+                loc.function == Func::vkCreateDataGraphPipelinesARM   ? "VUID-VkDataGraphPipelineCreateInfoARM-flags-09773" :
+                kVUIDUndefined;
+    }
+    return "UNASSIGNED-CoreChecks-unhandled-pipeline-create-flags";
+}
+// clang-format on
 
 }  // namespace vvl

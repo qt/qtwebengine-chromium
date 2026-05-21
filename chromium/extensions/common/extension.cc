@@ -15,12 +15,12 @@
 
 #include "base/base64.h"
 #include "base/command_line.h"
-#include "base/containers/contains.h"
 #include "base/containers/map_util.h"
 #include "base/files/file_path.h"
 #include "base/i18n/rtl.h"
 #include "base/json/json_writer.h"
 #include "base/memory/singleton.h"
+#include "base/notreached.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
@@ -80,7 +80,7 @@ bool ContainsReservedCharacters(const base::FilePath& path) {
   // Extensions are cross-platform.
   // Since FilePath uses backslash '\\' as file path separator on Windows, so we
   // need to check manually.
-  if (base::Contains(path.value(), '\\')) {
+  if (path.value().contains('\\')) {
     return true;
   }
   return !net::IsSafePortableRelativePath(path);
@@ -152,7 +152,7 @@ bool IsManifestSupported(int manifest_version,
 
 // Computes the |extension_id| from the given parameters. On success, returns
 // true. On failure, populates |error| and returns false.
-bool ComputeExtensionID(const base::Value::Dict& manifest,
+bool ComputeExtensionID(const base::DictValue& manifest,
                         const base::FilePath& path,
                         int creation_flags,
                         std::u16string* error,
@@ -234,7 +234,7 @@ void Extension::set_silence_deprecated_manifest_version_warnings_for_testing(
 // static
 scoped_refptr<Extension> Extension::Create(const base::FilePath& path,
                                            ManifestLocation location,
-                                           const base::Value::Dict& value,
+                                           const base::DictValue& value,
                                            int flags,
                                            std::u16string* error) {
   return Extension::Create(path, location, value, flags,
@@ -244,7 +244,7 @@ scoped_refptr<Extension> Extension::Create(const base::FilePath& path,
 
 scoped_refptr<Extension> Extension::Create(const base::FilePath& path,
                                            ManifestLocation location,
-                                           const base::Value::Dict& value,
+                                           const base::DictValue& value,
                                            int flags,
                                            const ExtensionId& explicit_id,
                                            std::u16string* error) {
@@ -483,10 +483,10 @@ Extension::ManifestData* Extension::GetManifestData(
 
 void Extension::SetManifestData(std::string_view key,
                                 std::unique_ptr<Extension::ManifestData> data) {
-  DCHECK(!finished_parsing_manifest_);
-  DCHECK(thread_checker_.CalledOnValidThread());
+  CHECK(!finished_parsing_manifest_);
+  CHECK(thread_checker_.CalledOnValidThread());
   bool inserted = manifest_data_.emplace(key, std::move(data)).second;
-  DCHECK(inserted);
+  CHECK(inserted);
 }
 
 void Extension::SetGUID(const ExtensionGuid& guid) {
@@ -727,7 +727,7 @@ bool Extension::LoadExtent(const char* key,
     *error = base::ASCIIToUTF16(list_error);
     return false;
   }
-  const base::Value::List& pattern_list = temp_pattern_value->GetList();
+  const base::ListValue& pattern_list = temp_pattern_value->GetList();
   for (size_t i = 0; i < pattern_list.size(); ++i) {
     std::string pattern_string;
     if (pattern_list[i].is_string()) {
@@ -770,7 +770,7 @@ bool Extension::LoadExtent(const char* key,
 
     // We do not allow authors to put wildcards in their paths. Instead, we
     // imply one at the end.
-    if (base::Contains(pattern.path(), '*')) {
+    if (pattern.path().contains('*')) {
       *error = ErrorUtils::FormatErrorMessageUTF16(
           value_error, base::NumberToString(i), errors::kNoWildCardsInPaths);
       return false;
@@ -854,13 +854,13 @@ bool Extension::LoadShortName(std::u16string* error) {
   return true;
 }
 
-ExtensionInfo::ExtensionInfo(const base::Value::Dict* manifest,
+ExtensionInfo::ExtensionInfo(const base::DictValue* manifest,
                              const ExtensionId& id,
                              const base::FilePath& path,
                              ManifestLocation location)
     : extension_id(id), extension_path(path), extension_location(location) {
   if (manifest) {
-    extension_manifest = std::make_unique<base::Value::Dict>(manifest->Clone());
+    extension_manifest = std::make_unique<base::DictValue>(manifest->Clone());
   }
 }
 

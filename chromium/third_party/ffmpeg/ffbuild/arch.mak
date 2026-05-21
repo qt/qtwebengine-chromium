@@ -5,6 +5,7 @@ OBJS-$(HAVE_VFP)     += $(VFP-OBJS)     $(VFP-OBJS-yes)
 OBJS-$(HAVE_NEON)    += $(NEON-OBJS)    $(NEON-OBJS-yes)
 OBJS-$(HAVE_SVE)     += $(SVE-OBJS)     $(SVE-OBJS-yes)
 OBJS-$(HAVE_SVE2)    += $(SVE2-OBJS)    $(SVE2-OBJS-yes)
+OBJS-$(HAVE_SME)     += $(SME-OBJS)     $(SME-OBJS-yes)
 
 OBJS-$(HAVE_MIPSFPU)   += $(MIPSFPU-OBJS)    $(MIPSFPU-OBJS-yes)
 OBJS-$(HAVE_MIPSDSP)   += $(MIPSDSP-OBJS)    $(MIPSDSP-OBJS-yes)
@@ -23,5 +24,4 @@ OBJS-$(HAVE_RV_ZVBB) += $(RVVB-OBJS)    $(RVVB-OBJS-yes)
 
 OBJS-$(HAVE_SIMD128) += $(SIMD128-OBJS) $(SIMD128-OBJS-yes)
 
-OBJS-$(HAVE_MMX)     += $(MMX-OBJS)     $(MMX-OBJS-yes)
 OBJS-$(HAVE_X86ASM)  += $(X86ASM-OBJS)  $(X86ASM-OBJS-yes)

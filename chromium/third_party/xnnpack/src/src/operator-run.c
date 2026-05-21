@@ -576,14 +576,27 @@ XNN_INLINE static void compute_hmp_qp8gemm(
     if (context->dynamic_quantization) {
       const void* workspace = (const void*)((uintptr_t)a + a_offset);
       const struct xnn_qd8_quantization_params* quantization_params = workspace;
-      const void* packed_inputs =
+
+      if (context->with_row_sum) {
+        const float* row_sum = (const float*)((uintptr_t)workspace +
+            mr * sizeof(struct xnn_qd8_quantization_params));
+        const void* packed_inputs =
+            (const void*)((uintptr_t)row_sum + mr * sizeof(float));
+        context->dq_qc2w_ukernel.function[uarch_index](
+            mr_step, nr_block_size, k_scaled, packed_inputs,
+            packed_input_stride, packed_w,
+            (void*)(c + mr_block_start * cm_stride), cm_stride, cn_stride,
+            context->fused_params, row_sum, quantization_params);
+      } else {
+        const void* packed_inputs =
           (const void*)((uintptr_t)workspace +
                         mr * sizeof(struct xnn_qd8_quantization_params));
-
-      context->dq_ukernel.function[uarch_index](
-          mr_step, nr_block_size, k_scaled, packed_inputs, packed_input_stride,
-          packed_w, (void*)(c + mr_block_start * cm_stride), cm_stride,
-          cn_stride, context->fused_params, quantization_params);
+        context->dq_ukernel.function[uarch_index](
+            mr_step, nr_block_size, k_scaled, packed_inputs,
+            packed_input_stride, packed_w,
+            (void*)(c + mr_block_start * cm_stride), cm_stride, cn_stride,
+            context->fused_params, quantization_params);
+      }
     } else {
       context->qp8_ukernel.function[uarch_index](
           mr_step, nr_block_size, k_scaled,
@@ -1980,7 +1993,7 @@ void xnn_compute_f32_qx8_convert(
     // Compute and store the row sum of the quantized output.
     const size_t num_bytes = n / sizeof(float) * sizeof(int8_t);
     int32_t row_sum = 0;
-    struct xnn_qs8_rsum_params rsum_params;
+    struct xnn_qs8_rsum_params rsum_params = {0,};
     context->rsum_ukernel(num_bytes, output, &row_sum, &rsum_params);
     context->row_sum[batch_index] = (float)row_sum;
   }

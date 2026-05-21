@@ -54,6 +54,7 @@
 #include "content/public/browser/render_process_host_observer.h"
 #include "content/public/browser/render_process_host_priority_client.h"
 #include "content/public/browser/render_widget_host.h"
+#include "content/public/browser/render_widget_host_view.h"
 #include "mojo/public/cpp/bindings/associated_remote.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
@@ -111,18 +112,15 @@ namespace ui {
 enum class DomCode : uint32_t;
 }
 
-namespace viz {
-struct CopyOutputBitmapWithMetadata;
-}  // namespace viz
-
 namespace content {
 class FrameTree;
 class MockRenderWidgetHost;
 class MockRenderWidgetHostImpl;
-class RenderWidgetHostOwnerDelegate;
 class RenderWidgetHostFactory;
+class RenderWidgetHostOwnerDelegate;
 class SiteInstanceGroup;
 class SyntheticGestureController;
+class TrackedElementObserver;
 class VisibleTimeRequestTrigger;
 
 // This implements the RenderWidgetHost interface that is exposed to
@@ -197,7 +195,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl
 
   ~RenderWidgetHostImpl() override;
 
-  void WillSendInputEventToRenderer(const blink::WebInputEvent& event) override;
+  void SimulateUserInteraction(const blink::WebInputEvent& event) override;
 
   // Similar to RenderWidgetHost::FromID, but returning the Impl object.
   static RenderWidgetHostImpl* FromID(int32_t process_id, int32_t routing_id);
@@ -272,6 +270,8 @@ class CONTENT_EXPORT RenderWidgetHostImpl
       RenderWidgetHost::InputEventObserver* observer) override;
   void RemoveInputEventObserver(
       RenderWidgetHost::InputEventObserver* observer) override;
+  void AddTrackedElementObserver(TrackedElementObserver* observer) override;
+  void RemoveTrackedElementObserver(TrackedElementObserver* observer) override;
   void AddObserver(RenderWidgetHostObserver* observer) override;
   void RemoveObserver(RenderWidgetHostObserver* observer) override;
   display::ScreenInfo GetScreenInfo() const override;
@@ -320,6 +320,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl
       const gfx::Point& point,
       const ui::mojom::MenuSourceType source_type) override;
   void InsertVisualStateCallback(VisualStateCallback callback) override;
+  void SetHungRendererDelay(const base::TimeDelta& delay) override;
 
   // RenderProcessHostPriorityClient implementation.
   RenderProcessHostPriorityClient::Priority GetPriority() override;
@@ -640,11 +641,13 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   //   (on Windows);
   // * when it receives a "preedit_changed" signal of GtkIMContext (on Linux);
   // * when markedText of NSTextInput is called (on Mac).
-  void ImeSetComposition(const std::u16string& text,
-                         const std::vector<ui::ImeTextSpan>& ime_text_spans,
-                         const gfx::Range& replacement_range,
-                         int selection_start,
-                         int selection_end);
+  void ImeSetComposition(
+      const std::u16string& text,
+      const std::vector<ui::ImeTextSpan>& ime_text_spans,
+      const gfx::Range& replacement_range,
+      int selection_start,
+      int selection_end,
+      blink::mojom::ImeState ime_state = blink::mojom::ImeState::kNone);
 
   // Deletes the ongoing composition if any, inserts the specified text, and
   // moves the cursor.
@@ -1037,6 +1040,8 @@ class CONTENT_EXPORT RenderWidgetHostImpl
     return synthetic_gesture_controller_.get();
   }
 
+  base::TimeDelta GetHungRendererDelayForTesting();
+
  protected:
   // |routing_id| must not be IPC::mojom::kRoutingIdNone.
   // If this object outlives |delegate|, DetachDelegate() must be called when
@@ -1186,7 +1191,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   void OnSnapshotFromSurfaceReceived(
       int snapshot_id,
       int retry_count,
-      const viz::CopyOutputBitmapWithMetadata& result);
+      const content::CopyFromSurfaceResult& result);
 
   void OnSnapshotReceived(int snapshot_id, gfx::Image image);
 
@@ -1431,6 +1436,9 @@ class CONTENT_EXPORT RenderWidgetHostImpl
       ime_input_event_observers_;
 #endif
 
+  // The observers watching for tracked element changes.
+  base::ObserverList<TrackedElementObserver> tracked_element_observers_;
+
   // The observers watching us.
   base::ObserverList<RenderWidgetHostObserver> observers_;
 
@@ -1454,7 +1462,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // back to the original tab, because the content may already have changed.
   bool suppress_events_until_keydown_ = false;
 
-  bool pending_pointer_lock_request_ = false;
   bool pointer_lock_raw_movement_ = false;
   // Stores the keyboard keys to lock while waiting for a pending lock request.
   std::optional<base::flat_set<ui::DomCode>> keyboard_keys_to_lock_;
@@ -1512,6 +1519,9 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // This value indicates how long to wait for a new compositor frame from a
   // renderer process before clearing any previously displayed content.
   base::TimeDelta new_content_rendering_delay_;
+
+  // This value indicates how long to wait before we consider a renderer hung.
+  base::TimeDelta hung_renderer_delay_;
 
   // When true, the RenderWidget is regularly sending updates regarding
   // composition info. It should only be true when there is a focused editable

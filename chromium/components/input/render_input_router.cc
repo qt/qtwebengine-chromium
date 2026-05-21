@@ -10,6 +10,7 @@
 #include "base/command_line.h"
 #include "base/location.h"
 #include "base/memory/ptr_util.h"
+#include "base/memory/safety_checks.h"
 #include "base/no_destructor.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/trace_event/trace_event.h"
@@ -60,6 +61,7 @@ class UnboundWidgetInputHandler : public blink::mojom::WidgetInputHandler {
                          const gfx::Range& range,
                          int32_t start,
                          int32_t end,
+                         blink::mojom::ImeState ime_state,
                          ImeSetCompositionCallback callback) override {
     DLOG(WARNING) << "Input request on unbound interface";
   }
@@ -492,6 +494,10 @@ void RenderInputRouter::ForwardGestureEvent(
 void RenderInputRouter::ForwardGestureEventWithLatencyInfo(
     const blink::WebGestureEvent& gesture_event,
     const ui::LatencyInfo& latency_info) {
+  // Input comes from the OS (trusted) and is critical for user interaction, we
+  // exclude free-d memory from additional safety checks.
+  // TODO(crbug.com/478562227): Optimize and remove if possible.
+  base::ScopedSafetyChecksExclusion excluded;
   TRACE_EVENT1("input", "RenderInputRouter::ForwardGestureEvent", "type",
                WebInputEvent::GetName(gesture_event.GetType()));
 
@@ -642,6 +648,10 @@ void RenderInputRouter::ForwardTouchEventWithLatencyInfo(
     const blink::WebTouchEvent& touch_event,
     const ui::LatencyInfo& latency) {
   TRACE_EVENT0("input,input.scrolling", "RenderInputRouter::ForwardTouchEvent");
+  // Input comes from the OS (trusted) and is critical for user interaction, we
+  // exclude free-d memory from additional safety checks.
+  // TODO(crbug.com/478562227): Optimize and remove if possible.
+  base::ScopedSafetyChecksExclusion excluded;
 
   // Always forward TouchEvents for touch stream consistency. They will be
   // ignored if appropriate in FilterInputEvent().
@@ -783,6 +793,11 @@ void RenderInputRouter::RenderProcessBlockedStateChanged(bool blocked) {
   is_blocked_ = blocked;
   is_blocked_ ? StopInputEventAckTimeout()
               : RestartInputEventAckTimeoutIfNecessary();
+}
+
+void RenderInputRouter::SetHungRendererDelay(base::TimeDelta delay) {
+  CHECK_LE(delay, input::kHungRendererDelay);
+  hung_renderer_delay_ = delay;
 }
 
 void RenderInputRouter::SetInputTargetClientForTesting(

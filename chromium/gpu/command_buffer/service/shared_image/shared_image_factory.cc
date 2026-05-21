@@ -7,8 +7,8 @@
 #include <inttypes.h>
 
 #include <memory>
+#include <utility>
 
-#include "base/containers/contains.h"
 #include "base/debug/crash_logging.h"
 #include "base/debug/dump_without_crashing.h"
 #include "base/metrics/histogram_functions.h"
@@ -95,9 +95,18 @@
 #include "gpu/command_buffer/service/shared_image/dawn_image_backing_factory.h"
 #endif  // BUILDFLAG(USE_DAWN)
 
+#if BUILDFLAG(IS_CHROMEOS)
+#include "ash/constants/ash_switches.h"
+#endif  // BUILDFLAG(IS_CHROMEOS)
+
+#include "base/feature_list.h"
+
 namespace gpu {
 
 namespace {
+
+BASE_FEATURE(kUseCompoundImageBackingAsDefault,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 const char* GmbTypeToString(gfx::GpuMemoryBufferType type) {
   switch (type) {
@@ -372,16 +381,21 @@ bool SharedImageFactory::CreateSharedImage(
     return false;
   }
 
-  auto backing = factory->CreateSharedImage(
+  auto temp_backing = factory->CreateSharedImage(
       mailbox, format, surface_handle, size, color_space, surface_origin,
       alpha_type, SharedImageUsageSet(usage), std::move(debug_label),
       IsSharedBetweenThreads(usage));
+
+  std::unique_ptr<SharedImageBacking> backing =
+      base::FeatureList::IsEnabled(kUseCompoundImageBackingAsDefault)
+          ? CompoundImageBacking::WrapExternalBacking(this, copy_manager(),
+                                                      std::move(temp_backing))
+          : std::move(temp_backing);
 
   DVLOG_IF(1, !!backing) << "CreateSharedImage[" << backing->GetName()
                          << "] size=" << size.ToString()
                          << " usage=" << CreateLabelForSharedImageUsage(usage)
                          << " format=" << format.ToString();
-
   return RegisterBacking(std::move(backing), std::move(pool_id));
 }
 
@@ -441,9 +455,8 @@ bool SharedImageFactory::IsNativeBufferSupported(
   }
   NOTREACHED();
 #elif BUILDFLAG(IS_OZONE)
-  auto buffer_format = viz::SharedImageFormatToBufferFormat(format);
-  return ui::OzonePlatform::GetInstance()->IsNativePixmapConfigSupported(
-      buffer_format, usage);
+  return ui::OzonePlatform::GetInstance()->IsNativePixmapConfigSupported(format,
+                                                                         usage);
 #elif BUILDFLAG(IS_WIN)
   switch (usage) {
     case gfx::BufferUsage::GPU_READ:
@@ -480,16 +493,12 @@ bool SharedImageFactory::CreateSharedImage(const Mailbox& mailbox,
                                            SharedImageUsageSet usage,
                                            std::string debug_label,
                                            gfx::BufferUsage buffer_usage) {
-  if (!viz::HasEquivalentBufferFormat(format)) {
-    // Client GMB code still operates on BufferFormat so the SharedImageFormat
-    // received here must have an equivalent BufferFormat.
-    LOG(ERROR) << "Invalid format " << format.ToString();
-    return false;
-  }
-
   auto native_buffer_supported =
       IsNativeBufferSupported(format, buffer_usage, gpu_extra_info_);
   std::unique_ptr<SharedImageBacking> backing;
+  const bool force_compound_backing =
+      base::FeatureList::IsEnabled(kUseCompoundImageBackingAsDefault);
+
   if (native_buffer_supported) {
     auto* factory = GetFactoryByUsage(usage, format, size,
                                       /*pixel_data=*/{}, GetNativeBufferType());
@@ -499,17 +508,20 @@ bool SharedImageFactory::CreateSharedImage(const Mailbox& mailbox,
       return false;
     }
 
-    backing = factory->CreateSharedImage(
+    auto temp_backing = factory->CreateSharedImage(
         mailbox, format, surface_handle, size, color_space, surface_origin,
         alpha_type, SharedImageUsageSet(usage), debug_label,
         IsSharedBetweenThreads(usage), buffer_usage);
 
-    if (backing) {
-      DVLOG(1) << "CreateSharedImageBackedByBuffer[" << backing->GetName()
-               << "] size=" << size.ToString()
-               << " usage=" << CreateLabelForSharedImageUsage(usage)
-               << " format=" << format.ToString();
-    }
+    backing = force_compound_backing
+                  ? CompoundImageBacking::WrapExternalBacking(
+                        this, copy_manager(), std::move(temp_backing))
+                  : std::move(temp_backing);
+
+    DVLOG_IF(1, !!backing) << "CreateSharedImageBackedByBuffer["
+                           << backing->GetName() << "] size=" << size.ToString()
+                           << " usage=" << CreateLabelForSharedImageUsage(usage)
+                           << " format=" << format.ToString();
   } else {
     // If native buffers are not supported, try to create shared memory based
     // backings.
@@ -538,10 +550,19 @@ bool SharedImageFactory::CreateSharedImage(const Mailbox& mailbox,
 
       if (!use_compound) {
         if (factory) {
-          backing = factory->CreateSharedImage(
+          auto temp_backing = factory->CreateSharedImage(
               mailbox, format, surface_handle, size, color_space,
               surface_origin, alpha_type, SharedImageUsageSet(usage),
               debug_label, IsSharedBetweenThreads(usage), buffer_usage);
+          backing = force_compound_backing
+                        ? CompoundImageBacking::WrapExternalBacking(
+                              this, copy_manager(), std::move(temp_backing))
+                        : std::move(temp_backing);
+          DVLOG_IF(1, !!backing)
+              << "CreateSharedImageBackedByBuffer[" << backing->GetName()
+              << "] size=" << size.ToString()
+              << " usage=" << CreateLabelForSharedImageUsage(usage)
+              << " format=" << format.ToString();
         } else {
           LogGetFactoryFailed(usage, format, gfx::SHARED_MEMORY_BUFFER, size,
                               debug_label);
@@ -575,16 +596,32 @@ bool SharedImageFactory::CreateSharedImage(const Mailbox& mailbox,
     return false;
   }
 
-  auto backing = factory->CreateSharedImage(
+  auto temp_backing = factory->CreateSharedImage(
       mailbox, format, size, color_space, surface_origin, alpha_type,
       SharedImageUsageSet(usage), std::move(debug_label),
       IsSharedBetweenThreads(usage), data);
-  if (backing) {
-    DVLOG(1) << "CreateSharedImagePixels[" << backing->GetName()
-             << "] with pixels size=" << size.ToString()
-             << " usage=" << CreateLabelForSharedImageUsage(usage)
-             << " format=" << format.ToString();
-  }
+
+#if BUILDFLAG(IS_ANDROID)
+  LOG_IF(ERROR, !temp_backing)
+      << "Could not CreateSharedImagePixels type="
+      << std::to_underlying(factory->GetBackingType())
+      << " with params: usage: " << CreateLabelForSharedImageUsage(usage)
+      << ", format: " << format.ToString()
+      << ", share_between_threads: " << IsSharedBetweenThreads(usage)
+      << ", size: " << size.ToString() << ", debug_label: " << debug_label;
+#endif  // BUILDFLAG(IS_ANDROID)
+
+  std::unique_ptr<SharedImageBacking> backing =
+      base::FeatureList::IsEnabled(kUseCompoundImageBackingAsDefault)
+          ? CompoundImageBacking::WrapExternalBacking(this, copy_manager(),
+                                                      std::move(temp_backing))
+          : std::move(temp_backing);
+
+  DVLOG_IF(1, !!backing) << "CreateSharedImagePixels[" << backing->GetName()
+                         << "] with pixels size=" << size.ToString()
+                         << " usage=" << CreateLabelForSharedImageUsage(usage)
+                         << " format=" << format.ToString();
+
   return RegisterBacking(std::move(backing));
 }
 
@@ -630,19 +667,23 @@ bool SharedImageFactory::CreateSharedImage(
   }
 
   if (!use_compound) {
-    backing = factory->CreateSharedImage(
+    auto temp_backing = factory->CreateSharedImage(
         mailbox, format, size, color_space, surface_origin, alpha_type, usage,
         std::move(debug_label), IsSharedBetweenThreads(usage),
         std::move(buffer_handle));
+
+    backing = base::FeatureList::IsEnabled(kUseCompoundImageBackingAsDefault)
+                  ? CompoundImageBacking::WrapExternalBacking(
+                        this, copy_manager(), std::move(temp_backing))
+                  : std::move(temp_backing);
   }
 
-  if (backing) {
-    DVLOG(1) << "CreateSharedImageWithBuffer[" << backing->GetName()
-             << "] size=" << size.ToString()
-             << " usage=" << CreateLabelForSharedImageUsage(usage)
-             << " format=" << format.ToString()
-             << " gmb_type=" << GmbTypeToString(gmb_type);
-  }
+  DVLOG_IF(1, !!backing) << "CreateSharedImageWithBuffer[" << backing->GetName()
+                         << "] size=" << size.ToString()
+                         << " usage=" << CreateLabelForSharedImageUsage(usage)
+                         << " format=" << format.ToString()
+                         << " gmb_type=" << GmbTypeToString(gmb_type);
+
   return RegisterBacking(std::move(backing), std::move(pool_id));
 }
 
@@ -919,6 +960,12 @@ bool SharedImageFactory::IsSharedBetweenThreads(
     return true;
   }
 
+  // WebNN shared tensors will be accessed on both the GPU main thread and the
+  // sequence owning the WebNN tensor. Synchronization is done via SyncTokens.
+  if (usage.Has(SHARED_IMAGE_USAGE_WEBNN_SHARED_TENSOR)) {
+    return true;
+  }
+
   // DISPLAY is for gpu composition and SCANOUT for overlays.
   constexpr gpu::SharedImageUsageSet kDisplayCompositorUsage =
       SHARED_IMAGE_USAGE_DISPLAY_READ | SHARED_IMAGE_USAGE_DISPLAY_WRITE |
@@ -973,6 +1020,14 @@ void SharedImageFactory::LogGetFactoryFailed(gpu::SharedImageUsageSet usage,
              << ", size: " << size.ToString()
              << ", debug_label: " << debug_label;
 
+#if BUILDFLAG(IS_CHROMEOS)
+  // Do not dump crash reports for Reven ChromeOS boards.
+  auto* command_line = base::CommandLine::ForCurrentProcess();
+  if (command_line->HasSwitch(ash::switches::kRevenBranding)) {
+    return;
+  }
+#endif  // BUILDFLAG(IS_CHROMEOS)
+
   std::string new_debug_label = debug_label;
   // Get the debug label with Process Id for filtering crash reports by label as
   // key.
@@ -988,7 +1043,17 @@ void SharedImageFactory::LogGetFactoryFailed(gpu::SharedImageUsageSet usage,
   if (new_debug_label.find("CanvasResourceRasterGmb") != std::string::npos) {
     return;
   }
-#endif
+#endif  // BUILDFLAG(IS_ANDROID)
+
+#if BUILDFLAG(IS_LINUX)
+  // VizBufferQueue with Vulkan enabled over command-line for Linux does not
+  // work. Suppress dumps for these cases.
+  if (context_state_->GrContextIsVulkan() &&
+      new_debug_label.find("VizBufferQueue") != std::string::npos) {
+    return;
+  }
+#endif  // BUILDFLAG(IS_LINUX)
+
   SCOPED_CRASH_KEY_STRING64("SIFactory", "DebugLabel", new_debug_label);
   SCOPED_CRASH_KEY_STRING64("SIFactory", "Format", format.ToString());
   SCOPED_CRASH_KEY_NUMBER("SIFactory", "Usage", static_cast<uint32_t>(usage));

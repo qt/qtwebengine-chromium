@@ -11,6 +11,7 @@
 #include "base/strings/pattern.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
+#include "base/strings/to_string.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
 #include "chrome/browser/extensions/extension_browsertest.h"
@@ -402,7 +403,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionManagementApiEscalationTest,
                        DisabledReason) {
   scoped_refptr<ManagementGetFunction> function =
       new ManagementGetFunction();
-  base::Value::Dict dict =
+  base::DictValue dict =
       test_utils::ToDict(test_utils::RunFunctionAndReturnSingleResult(
           function.get(), base::StringPrintf("[\"%s\"]", kId), profile()));
   std::string reason =

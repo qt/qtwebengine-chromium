@@ -19,8 +19,9 @@ namespace internal {
 void UnmappedNativeStructSerializerImpl::Serialize(
     const native::NativeStructPtr& input,
     MessageFragment<native::internal::NativeStruct_Data>& fragment) {
-  if (!input)
+  if (!input) {
     return;
+  }
 
   fragment.Allocate();
   MessageFragment<Array_Data<uint8_t>> data_fragment(fragment.message());
@@ -65,7 +66,8 @@ void UnmappedNativeStructSerializerImpl::SerializeMessageContents(
   // Allocate a uint8 array, initialize its header, and copy the Pickle in.
   MessageFragment<Array_Data<uint8_t>> data_fragment(fragment.message());
   data_fragment.AllocateArrayData(ipc_message->payload_size());
-  UNSAFE_TODO(memcpy(data_fragment->storage(), ipc_message->payload(),
+  UNSAFE_TODO(memcpy(data_fragment->storage(),
+                     ipc_message->payload_bytes().data(),
                      ipc_message->payload_size()));
   fragment->data.Set(data_fragment.data());
 
@@ -99,14 +101,16 @@ bool UnmappedNativeStructSerializerImpl::DeserializeMessageAttachments(
     native::internal::NativeStruct_Data* data,
     Message* message,
     IPC::Message* ipc_message) {
-  if (data->handles.is_null())
+  if (data->handles.is_null()) {
     return true;
+  }
 
   auto* handles_data = data->handles.Get();
   for (size_t i = 0; i < handles_data->size(); ++i) {
     auto* handle_data = handles_data->at(i).Get();
-    if (!handle_data)
+    if (!handle_data) {
       return false;
+    }
     ScopedHandle handle;
     internal::Serializer<ScopedHandle, ScopedHandle>::Deserialize(
         &handle_data->the_handle, &handle, message);

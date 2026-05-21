@@ -20,6 +20,7 @@
 #include "third_party/blink/renderer/platform/graphics/graphics_context.h"
 #include "third_party/blink/renderer/platform/graphics/static_bitmap_image.h"
 #include "third_party/blink/renderer/platform/graphics/unaccelerated_static_bitmap_image.h"
+#include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkImage.h"
 #include "third_party/skia/include/core/SkSurface.h"
 
@@ -53,11 +54,11 @@ void ImageBitmapRenderingContext::Reset() {
   Host()->DiscardResources();
 }
 
-base::ByteCount ImageBitmapRenderingContext::AllocatedBufferSize() const {
+base::ByteSize ImageBitmapRenderingContext::AllocatedBufferSize() const {
   if (!IsPaintable()) {
-    return base::ByteCount();
+    return base::ByteSize();
   }
-  base::ByteCount result =
+  base::ByteSize result =
       image_layer_bridge_->GetImage()->EstimatedSizeInBytes();
   if (resource_provider_for_offscreen_canvas_) {
     result += resource_provider_for_offscreen_canvas_->EstimatedSizeInBytes();
@@ -150,16 +151,14 @@ void ImageBitmapRenderingContext::Trace(Visitor* visitor) const {
   CanvasRenderingContext::Trace(visitor);
 }
 
-CanvasResourceProviderSharedImage*
-ImageBitmapRenderingContext::GetOrCreateResourceProviderForOffscreenCanvas() {
+bool ImageBitmapRenderingContext::PushFrame() {
   CHECK(Host()->IsOffscreenCanvas());
   if (isContextLost() && !IsContextBeingRestored()) {
-    return nullptr;
+    return false;
   }
 
-  if (CanvasResourceProviderSharedImage* provider =
-          resource_provider_for_offscreen_canvas_.get()) {
-    if (!provider->IsValid()) {
+  if (resource_provider_for_offscreen_canvas_) {
+    if (!resource_provider_for_offscreen_canvas_->IsValid()) {
       // The canvas context is not lost but the provider is invalid. This
       // happens if the GPU process dies in the middle of a render task. The
       // canvas is notified of GPU context losses via the `NotifyGpuContextLost`
@@ -170,60 +169,51 @@ ImageBitmapRenderingContext::GetOrCreateResourceProviderForOffscreenCanvas() {
       // provider that is now invalid. We can early return here, trying to
       // re-create the provider right away would just fail. We need to let
       // `TryRestoreContextEvent` wait for the GPU process to up again.
-      return nullptr;
+      return false;
     }
-    return provider;
+  } else {
+    if (!Host()->IsValidImageSize() && !Host()->Size().IsEmpty()) {
+      LoseContext(CanvasRenderingContext::kInvalidCanvasSize);
+      return false;
+    }
+
+    gfx::Size surface_size(Host()->width(), Host()->height());
+    const SkAlphaType alpha_type = GetAlphaType();
+    const viz::SharedImageFormat format = GetSharedImageFormat();
+    const gfx::ColorSpace color_space = GetColorSpace();
+    if (SharedGpuContext::IsGpuCompositingEnabled()) {
+      resource_provider_for_offscreen_canvas_ =
+          CanvasNon2DResourceProviderSharedImage::Create(
+              Host()->Size(), format, alpha_type, color_space,
+              CanvasResourceProvider::ShouldInitialize::kCallClear,
+              SharedGpuContext::ContextProviderWrapper(), RasterMode::kGPU,
+              gpu::SHARED_IMAGE_USAGE_DISPLAY_READ, Host());
+    } else if (static_cast<OffscreenCanvas*>(Host())->HasPlaceholderCanvas()) {
+      resource_provider_for_offscreen_canvas_ =
+          CanvasNon2DResourceProviderSharedImage::CreateForSoftwareCompositor(
+              Host()->Size(), format, alpha_type, color_space,
+              CanvasResourceProvider::ShouldInitialize::kCallClear,
+              SharedGpuContext::SharedImageInterfaceProvider(), Host());
+    }
+
+    Host()->UpdateMemoryUsage();
+
+    if (resource_provider_for_offscreen_canvas_.get() &&
+        resource_provider_for_offscreen_canvas_.get()->IsValid()) {
+      // todo(crbug.com/1064363)  Add a separate UMA for Offscreen Canvas usage
+      // and understand if the if (ResourceProvider() &&
+      // ResourceProvider()->IsValid()) is really needed.
+      base::UmaHistogramBoolean(
+          "Blink.Canvas.ResourceProviderIsAccelerated",
+          resource_provider_for_offscreen_canvas_.get()->IsAccelerated());
+      base::UmaHistogramEnumeration(
+          "Blink.Canvas.ResourceProviderType",
+          resource_provider_for_offscreen_canvas_.get()->GetType());
+      Host()->DidDraw();
+    }
   }
 
-  if (!Host()->IsValidImageSize() && !Host()->Size().IsEmpty()) {
-    LoseContext(CanvasRenderingContext::kInvalidCanvasSize);
-    return nullptr;
-  }
-
-  std::unique_ptr<CanvasResourceProviderSharedImage> provider;
-  gfx::Size surface_size(Host()->width(), Host()->height());
-  const SkAlphaType alpha_type = GetAlphaType();
-  const viz::SharedImageFormat format = GetSharedImageFormat();
-  const gfx::ColorSpace color_space = GetColorSpace();
-  if (SharedGpuContext::IsGpuCompositingEnabled()) {
-    provider = CanvasResourceProvider::CreateSharedImageProvider(
-        Host()->Size(), format, alpha_type, color_space,
-        CanvasResourceProvider::ShouldInitialize::kCallClear,
-        SharedGpuContext::ContextProviderWrapper(), RasterMode::kGPU,
-        gpu::SHARED_IMAGE_USAGE_DISPLAY_READ, Host());
-  } else if (static_cast<OffscreenCanvas*>(Host())->HasPlaceholderCanvas()) {
-    base::WeakPtr<CanvasResourceDispatcher> dispatcher_weakptr =
-        Host()->GetOrCreateResourceDispatcher()->GetWeakPtr();
-    provider =
-        CanvasResourceProvider::CreateSharedImageProviderForSoftwareCompositor(
-            Host()->Size(), format, alpha_type, color_space,
-            CanvasResourceProvider::ShouldInitialize::kCallClear,
-            SharedGpuContext::SharedImageInterfaceProvider(), Host());
-  }
-
-  resource_provider_for_offscreen_canvas_ = std::move(provider);
-  Host()->UpdateMemoryUsage();
-
-  if (resource_provider_for_offscreen_canvas_.get() &&
-      resource_provider_for_offscreen_canvas_.get()->IsValid()) {
-    // todo(crbug.com/1064363)  Add a separate UMA for Offscreen Canvas usage
-    // and understand if the if (ResourceProvider() &&
-    // ResourceProvider()->IsValid()) is really needed.
-    base::UmaHistogramBoolean(
-        "Blink.Canvas.ResourceProviderIsAccelerated",
-        resource_provider_for_offscreen_canvas_.get()->IsAccelerated());
-    base::UmaHistogramEnumeration(
-        "Blink.Canvas.ResourceProviderType",
-        resource_provider_for_offscreen_canvas_.get()->GetType());
-    Host()->DidDraw();
-  }
-  return resource_provider_for_offscreen_canvas_.get();
-}
-
-bool ImageBitmapRenderingContext::PushFrame() {
-  DCHECK(Host());
-  DCHECK(Host()->IsOffscreenCanvas());
-  if (!GetOrCreateResourceProviderForOffscreenCanvas()) {
+  if (!resource_provider_for_offscreen_canvas_) {
     return false;
   }
 

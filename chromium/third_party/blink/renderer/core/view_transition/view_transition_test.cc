@@ -654,7 +654,8 @@ TEST_P(ViewTransitionTest, ViewTransitionPseudoTree) {
       [](const v8::FunctionCallbackInfo<v8::Value>& info) {};
   auto start_setup_callback =
       v8::Function::New(script_state->GetContext(), start_setup_lambda,
-                        v8::External::New(script_state->GetIsolate(), &data))
+                        v8::External::New(script_state->GetIsolate(), &data,
+                                          gin::kViewTransitionTestDataTag))
           .ToLocalChecked();
 
   auto* transition = ViewTransitionSupplement::startViewTransition(
@@ -721,7 +722,8 @@ TEST_P(ViewTransitionTest, ScopedPseudoTree) {
   auto lambda = [](const v8::FunctionCallbackInfo<v8::Value>& info) {};
   auto* callback = V8ViewTransitionCallback::Create(
       v8::Function::New(script_state->GetContext(), lambda,
-                        v8::External::New(script_state->GetIsolate(), document))
+                        v8::External::New(script_state->GetIsolate(), document,
+                                          gin::kViewTransitionTestDocumentTag))
           .ToLocalChecked());
 
   auto* transition = ScopedViewTransition::startViewTransition(
@@ -1521,13 +1523,13 @@ TEST_P(ViewTransitionTest, SubframeSnapshotLayer) {
   UpdateAllLifecyclePhasesForTest();
   auto layer = transition->GetScopeSnapshotLayer();
   ASSERT_TRUE(layer);
-  EXPECT_TRUE(layer->is_live_content_layer_for_testing());
+  EXPECT_TRUE(layer->is_live_content_layer());
 
   child_document.GetPage()->GetChromeClient().WillCommitCompositorFrame();
   auto new_layer = transition->GetScopeSnapshotLayer();
   ASSERT_TRUE(new_layer);
   EXPECT_NE(layer, new_layer);
-  EXPECT_FALSE(new_layer->is_live_content_layer_for_testing());
+  EXPECT_FALSE(new_layer->is_live_content_layer());
 }
 
 TEST_P(ViewTransitionTest, ReplaceDocumentElement) {
@@ -1618,6 +1620,59 @@ TEST_P(ViewTransitionTest, ReplaceBody) {
 
   EXPECT_FALSE(
       document->IsUseCounted(WebFeature::kViewTransitionChangeRootElement));
+}
+
+TEST_P(ViewTransitionTest, ViewTransitionDelayLayerTreeViewDeletion) {
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitAndEnableFeature(
+      blink::features::kDelayLayerTreeViewDeletionOnLocalSwap);
+
+  bool callback_ran = false;
+  ViewTransition::ViewTransitionStateCallback callback = base::BindOnce(
+      [](bool* callback_ran, const ViewTransitionState& state) {
+        EXPECT_TRUE(state.IsDelayLayerTreeViewDeletionEnabled());
+        *callback_ran = true;
+      },
+      &callback_ran);
+
+  auto page_swap_params = mojom::blink::PageSwapEventParams::New();
+  page_swap_params->url = KURL("http://test.com");
+  page_swap_params->navigation_type =
+      mojom::blink::NavigationTypeForNavigationApi::kPush;
+  ViewTransitionSupplement::SnapshotDocumentForNavigation(
+      GetDocument(), blink::ViewTransitionToken(), std::move(page_swap_params),
+      std::move(callback));
+  ASSERT_TRUE(GetDocument().GetViewTransitions().GetTransition());
+
+  UpdateAllLifecyclePhasesAndFinishDirectives();
+  EXPECT_TRUE(callback_ran);
+}
+
+TEST_P(ViewTransitionTest,
+       ViewTransitionDelayLayerTreeViewDeletion_FeatureDisabled) {
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitAndDisableFeature(
+      blink::features::kDelayLayerTreeViewDeletionOnLocalSwap);
+
+  bool callback_ran = false;
+  ViewTransition::ViewTransitionStateCallback callback = base::BindOnce(
+      [](bool* callback_ran, const ViewTransitionState& state) {
+        EXPECT_FALSE(state.IsDelayLayerTreeViewDeletionEnabled());
+        *callback_ran = true;
+      },
+      &callback_ran);
+
+  auto page_swap_params = mojom::blink::PageSwapEventParams::New();
+  page_swap_params->url = KURL("http://test.com");
+  page_swap_params->navigation_type =
+      mojom::blink::NavigationTypeForNavigationApi::kPush;
+  ViewTransitionSupplement::SnapshotDocumentForNavigation(
+      GetDocument(), blink::ViewTransitionToken(), std::move(page_swap_params),
+      std::move(callback));
+  ASSERT_TRUE(GetDocument().GetViewTransitions().GetTransition());
+
+  UpdateAllLifecyclePhasesAndFinishDirectives();
+  EXPECT_TRUE(callback_ran);
 }
 
 }  // namespace blink

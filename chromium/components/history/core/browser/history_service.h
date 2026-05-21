@@ -21,6 +21,7 @@
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/functional/callback_forward.h"
+#include "base/gtest_prod_util.h"
 #include "base/location.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/ref_counted.h"
@@ -371,8 +372,8 @@ class HistoryService : public KeyedService,
       base::OnceCallback<void(VisibleVisitCountToHostResult)>;
 
   // TODO(crbug.com/40778368): Rename this function to use origin instead of
-  // host.
-  base::CancelableTaskTracker::TaskId GetVisibleVisitCountToHost(
+  // host. Virtual for mocking.
+  virtual base::CancelableTaskTracker::TaskId GetVisibleVisitCountToHost(
       const GURL& url,
       GetVisibleVisitCountToHostCallback callback,
       base::CancelableTaskTracker* tracker);

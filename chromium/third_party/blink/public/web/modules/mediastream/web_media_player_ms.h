@@ -26,7 +26,7 @@
 #include "third_party/blink/public/platform/web_surface_layer_bridge.h"
 
 namespace media {
-class GpuMemoryBufferVideoFramePool;
+class MappableSharedImageVideoFramePool;
 class MediaLog;
 }  // namespace media
 
@@ -131,7 +131,7 @@ class BLINK_MODULES_EXPORT WebMediaPlayerMS
   // Methods for painting.
   void Paint(cc::PaintCanvas* canvas,
              const gfx::Rect& rect,
-             cc::PaintFlags& flags) override;
+             const cc::PaintFlags& flags) override;
   scoped_refptr<media::VideoFrame> GetCurrentFrameThenUpdate() override;
   std::optional<media::VideoFrame::ID> CurrentFrameId() const override;
   media::PaintCanvasVideoRenderer* GetPaintCanvasVideoRenderer() override;
@@ -223,7 +223,7 @@ class BLINK_MODULES_EXPORT WebMediaPlayerMS
   friend class WebMediaPlayerMSTest;
 
 #if BUILDFLAG(IS_WIN)
-  static const gfx::Size kUseGpuMemoryBufferVideoFramesMinResolution;
+  static const gfx::Size kUseMappableSIVideoFramesMinResolution;
 #endif  // BUILDFLAG(IS_WIN)
 
   void ReplaceCurrentFrameWithACopy();
@@ -250,8 +250,8 @@ class BLINK_MODULES_EXPORT WebMediaPlayerMS
   void ReloadAudio();
 
   // Helper method used for testing.
-  void SetGpuMemoryBufferVideoForTesting(
-      media::GpuMemoryBufferVideoFramePool* gpu_memory_buffer_pool);
+  void SetMappableSharedImagePoolForTesting(
+      media::MappableSharedImageVideoFramePool* mappable_shared_image_pool);
   void SetMediaStreamRendererFactoryForTesting(
       std::unique_ptr<MediaStreamRendererFactory>);
 

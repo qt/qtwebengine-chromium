@@ -161,7 +161,8 @@ declare_args() {
   use_text_section_splitting = is_chromeos
 
   # Enable DWARF v5.
-  use_dwarf5 = false
+  # See analysis for is_android at https://crbug.com/479802735
+  use_dwarf5 = is_android && !is_official_build  # Untested on official builds.
 
   # Override this to put full paths to PDBs in Windows PE files. This helps
   # windbg and Windows Performance Analyzer with finding the PDBs in some local-
@@ -254,6 +255,15 @@ if (is_android) {
         }
       }
     }
+  }
+}
+
+if (target_os == "chromeos") {
+  declare_args() {
+    # Setting this value selects a specific CPU type among the broader
+    # class selected by target_cpu. For example, a build with
+    # target_cpu="arm64" may set cros_target_cpu_arch="armv8-a+crc+crypto").
+    cros_target_cpu_arch = ""
   }
 }
 
@@ -613,13 +623,6 @@ config("compiler") {
     }
   }
 
-  # Fuchsia-specific compiler flags setup.
-  # ------------------------------------
-  if (is_fuchsia) {
-    # Enable LLD's balanced partitioning for ordering function sections.
-    ldflags += [ "-Wl,--bp-compression-sort=function" ]
-  }
-
   if (is_chromeos_device && current_toolchain == default_toolchain) {
     # Flags added automatically by ChromeOS's custom toolchain that are
     # not already added elsewhere in the configuration. Add these here,
@@ -751,16 +754,10 @@ config("compiler") {
     }
 
     cflags_c += [ "-std=${standard_prefix}11" ]
-    if (is_clang) {
-      if (use_cxx23) {
-        cflags_cc += [ "-std=${standard_prefix}++23" ]
-      } else {
-        cflags_cc += [ "-std=${standard_prefix}++20" ]
-      }
+    if (use_cxx23) {
+      cflags_cc += [ "-std=${standard_prefix}++23" ]
     } else {
-      # The gcc bots are currently using GCC 9, which is not new enough to
-      # support "c++20"/"gnu++20".
-      cflags_cc += [ "-std=${standard_prefix}++2a" ]
+      cflags_cc += [ "-std=${standard_prefix}++20" ]
     }
   } else if (is_win) {
     cflags_c += [ "/std:c11" ]
@@ -791,9 +788,9 @@ config("compiler") {
     cflags_cc += [ "-Wno-trigraphs" ]
   }
 
-  if (use_relative_vtables_abi) {
+  # Fuchsia enables this by default.
+  if (use_relative_vtables_abi && !is_fuchsia) {
     cflags_cc += [ "-fexperimental-relative-c++-abi-vtables" ]
-    ldflags += [ "-fexperimental-relative-c++-abi-vtables" ]
   }
 
   if (is_wasm) {
@@ -934,7 +931,7 @@ config("compiler") {
 
     # TODO(crbug.com/40182783): investigate why this isn't effective on
     # arm32.
-    if (!is_android || current_cpu == "arm64") {
+    if (!is_android || current_cpu != "arm") {
       cflags += [ "-fwhole-program-vtables" ]
 
       if (toolchain_supports_rust_thin_lto) {
@@ -1299,6 +1296,11 @@ config("compiler_cpu_abi") {
         ldflags += [ "-m64" ]
       }
       cflags += [ "-msse3" ]
+      if (target_os == "chromeos" && cros_target_cpu_arch != "" &&
+          current_cpu == target_cpu) {
+        cflags += [ "-march=$cros_target_cpu_arch" ]
+        ldflags += [ "-march=$cros_target_cpu_arch" ]
+      }
     } else if (current_cpu == "x86") {
       if (is_clang && !is_android && !is_chromeos_device) {
         cflags += [ "--target=i386-unknown-linux-gnu" ]
@@ -1320,13 +1322,15 @@ config("compiler_cpu_abi") {
         "-march=$arm_arch",
         "-mfloat-abi=$arm_float_abi",
       ]
-      if (arm_tune != "") {
-        cflags += [ "-mtune=$arm_tune" ]
-      }
     } else if (current_cpu == "arm64") {
       if (is_clang && !is_android && !is_fuchsia && !is_chromeos_device) {
         cflags += [ "--target=aarch64-linux-gnu" ]
         ldflags += [ "--target=aarch64-linux-gnu" ]
+      }
+      if (target_os == "chromeos" && cros_target_cpu_arch != "" &&
+          current_cpu == target_cpu) {
+        cflags += [ "-march=$cros_target_cpu_arch" ]
+        ldflags += [ "-march=$cros_target_cpu_arch" ]
       }
     } else if (current_cpu == "mipsel") {
       ldflags += [ "-Wl,--hash-style=sysv" ]
@@ -1621,7 +1625,9 @@ config("compiler_codegen") {
     # This can be removed once https://bugs.llvm.org/show_bug.cgi?id=40348
     # has been resolved, and -mno-outline is obeyed by the linker during
     # ThinLTO.
-    ldflags += [ "-Wl,-mllvm,-enable-machine-outliner=never" ]
+    if (use_thin_lto && use_lld) {
+      ldflags += [ "-Wl,-mllvm,-enable-machine-outliner=never" ]
+    }
   }
 
   asmflags = cflags
@@ -1849,6 +1855,18 @@ config("sanitize_c_array_bounds") {
     cflags = [
       "-fsanitize=array-bounds",
       "-fsanitize-trap=array-bounds",
+
+      # Some code users feature detection to determine if UBSAN (or any
+      # sanitizer) is enabled, they then do expensive debug like operations. We
+      # want to suppress this behaviour since we want to keep performance costs
+      # as low as possible while having these checks.
+      "-fsanitize-ignore-for-ubsan-feature=array-bounds",
+
+      # Because we've enabled array-bounds sanitizing we also want to suppress
+      # the related warning about "unsafe-buffer-usage-in-static-sized-array",
+      # since we know that the array bounds sanitizing will catch any out-of-
+      # bounds accesses.
+      "-Wno-unsafe-buffer-usage-in-static-sized-array",
     ]
   }
 }
@@ -1867,7 +1885,7 @@ config("rustc_revision") {
 
 config("compiler_arm_fpu") {
   if (current_cpu == "arm" && !is_ios) {
-    cflags = [ "-mfpu=$arm_fpu" ]
+    cflags = [ "-mfpu=neon" ]
     if (!arm_use_thumb) {
       cflags += [ "-marm" ]
     }
@@ -1909,6 +1927,7 @@ config("libcxx_module") {
       # is not a config mismatch.
       # For example, compiling libcxx without -Wfoo and then having another
       # target which uses it declare -Wfoo should not be an error
+      "-Xclang",
       "-fmodules-disable-diagnostic-validation",
 
       # Needed to allow using builtin modules when the headers are
@@ -2269,13 +2288,6 @@ config("default_warnings") {
   if (is_apple) {
     ldflags += [ "-Wl,-no_warn_duplicate_libraries" ]
   }
-
-  # Rust warnings
-
-  # Require `unsafe` blocks even in `unsafe` fns. This is intended to become
-  # an error by default eventually; see
-  # https://github.com/rust-lang/rust/issues/71668
-  rustflags = [ "-Dunsafe_op_in_unsafe_fn" ]
 }
 
 # prevent_unsafe_narrowing ----------------------------------------------------
@@ -3032,6 +3044,24 @@ config("win_pdbaltpath") {
   }
 }
 
+config("split_dwarf") {
+  split_dwarf_flags = [ "-gsplit-dwarf" ]
+
+  # When building for ChromeOS, turn off split DWARF inlining.
+  # Breakpad does not correctly handle files generated with
+  # that feature (https://g-issues.chromium.org/issues/41312543).
+  if (is_chromeos) {
+    split_dwarf_flags += [ "-fno-split-dwarf-inlining" ]
+  }
+  cflags = split_dwarf_flags
+
+  # Split debug info with all thinlto builds except apple.
+  # thinlto requires -gsplit-dwarf in ldflags.
+  if (use_thin_lto && !is_apple) {
+    ldflags = split_dwarf_flags
+  }
+}
+
 # Full symbols.
 config("symbols") {
   rustflags = []
@@ -3072,6 +3102,9 @@ config("symbols") {
     cflags = [ "-gseparate-dwarf" ]
     ldflags = [ "-gseparate-dwarf" ]
   } else {
+    if (use_debug_fission) {
+      configs += [ ":split_dwarf" ]
+    }
     cflags = []
     if (is_apple && enable_dsyms) {
       # If generating dSYMs, specify -fno-standalone-debug. This was
@@ -3121,37 +3154,29 @@ config("symbols") {
       swiftflags = [ "-g" ]
     }
 
-    split_dwarf_flags = []
-    if (use_debug_fission) {
-      split_dwarf_flags += [ "-gsplit-dwarf" ]
-
-      # When building for ChromeOS, turn off split DWARF inlining.
-      # Breakpad does not correctly handle files generated with
-      # that feature (https://g-issues.chromium.org/issues/41312543).
-      if (is_chromeos) {
-        split_dwarf_flags += [ "-fno-split-dwarf-inlining" ]
-      }
-    }
-    cflags += split_dwarf_flags
     asmflags = cflags
     ldflags = []
 
-    # Split debug info with all thinlto builds except apple.
-    # thinlto requires -gsplit-dwarf in ldflags.
-    if (use_debug_fission && use_thin_lto && !is_apple) {
-      ldflags += split_dwarf_flags
-    }
-
-    _enable_gdb_index = symbol_level == 2 && !is_apple && use_lld && !is_wasm
-    if (_enable_gdb_index) {
-      if (is_clang) {
-        # This flag enables the GNU-format pubnames and pubtypes sections,
-        # which lld needs in order to generate a correct GDB index.
-        # TODO(pcc): Try to make lld understand non-GNU-format pubnames
-        # sections (llvm.org/PR34820).
-        cflags += [ "-ggnu-pubnames" ]
+    # Disable debugger index for Android, which uses lldb. lldb can create (and
+    # cache) its own index in about 20 seconds, so there's no need to pay the
+    # price of an index on every link.
+    _add_symbol_index =
+        symbol_level == 2 && !is_apple && use_lld && !is_wasm && !is_android
+    if (_add_symbol_index) {
+      if (use_dwarf5) {
+        cflags += [ "-gpubnames" ]
+      } else {
+        if (is_clang) {
+          # This flag enables the GNU-format pubnames and pubtypes sections,
+          # which lld needs in order to generate a correct GDB index.
+          # TODO(pcc): Try to make lld understand non-GNU-format pubnames
+          # sections (llvm.org/PR34820).
+          cflags += [ "-ggnu-pubnames" ]
+        }
+        ldflags += [ "-Wl,--gdb-index" ]
       }
-      ldflags += [ "-Wl,--gdb-index" ]
+    } else {
+      cflags += [ "-gno-pubnames" ]
     }
   }
 
@@ -3199,6 +3224,7 @@ config("symbols") {
 # This config guarantees to hold symbol for stack trace which are shown to user
 # when crash happens in unittests running on buildbot.
 config("minimal_symbols") {
+  configs = []
   rustflags = []
   if (is_win) {
     # Functions, files, and line tables only.
@@ -3228,6 +3254,9 @@ config("minimal_symbols") {
       cflags += [ "-gline-tables-only" ]
     }
   } else {
+    if (use_debug_fission) {
+      configs += [ ":split_dwarf" ]
+    }
     cflags = []
     if (is_mac && !use_dwarf5) {
       # clang defaults to DWARF2 on macOS unless mac_deployment_target is
@@ -3352,6 +3381,15 @@ if (is_android) {
         "-Wl,--no-warn-symbol-ordering",
       ]
       inputs = [ chrome_orderfile_path ]
+
+      # These are txt files used by gclient to decide which version to download.
+      # They have zero effect on the build. We add them here merely so that
+      # GN-analyze recognizes them as dependencies when the version gets rolled.
+      if (current_cpu == "arm64" || current_cpu == "x64") {
+        inputs += [ "//chrome/build/android-arm64.orderfile.txt" ]
+      } else if (current_cpu == "arm" || current_cpu == "x86") {
+        inputs += [ "//chrome/build/android-arm.orderfile.txt" ]
+      }
     }
   }
 }

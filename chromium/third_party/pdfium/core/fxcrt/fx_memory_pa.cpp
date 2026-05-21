@@ -20,21 +20,11 @@ namespace {
 constexpr partition_alloc::PartitionOptions kOptions = {};
 
 struct Allocators {
-#ifndef V8_ENABLE_SANDBOX
-  partition_alloc::PartitionAllocator array_buffer_allocator{kOptions};
-#endif
-
   partition_alloc::PartitionAllocator general_allocator{kOptions};
   partition_alloc::PartitionAllocator string_allocator{kOptions};
 };
 
 Allocators* g_allocators = nullptr;
-
-#ifndef V8_ENABLE_SANDBOX
-partition_alloc::PartitionAllocator& GetArrayBufferPartitionAllocator() {
-  return g_allocators->array_buffer_allocator;
-}
-#endif
 
 partition_alloc::PartitionAllocator& GetGeneralPartitionAllocator() {
   return g_allocators->general_allocator;
@@ -141,21 +131,3 @@ void FX_DestroyMemoryAllocators() {
   delete g_allocators;
   g_allocators = nullptr;
 }
-
-#ifndef V8_ENABLE_SANDBOX
-void* FX_ArrayBufferAllocate(size_t length) {
-  return GetArrayBufferPartitionAllocator()
-      .root()
-      ->AllocInline<partition_alloc::AllocFlags::kZeroFill>(length,
-                                                            "FXArrayBuffer");
-}
-
-void* FX_ArrayBufferAllocateUninitialized(size_t length) {
-  return GetArrayBufferPartitionAllocator().root()->Alloc(length,
-                                                          "FXArrayBuffer");
-}
-
-void FX_ArrayBufferFree(void* data) {
-  GetArrayBufferPartitionAllocator().root()->Free(data);
-}
-#endif  // V8_ENABLE_SANDBOX

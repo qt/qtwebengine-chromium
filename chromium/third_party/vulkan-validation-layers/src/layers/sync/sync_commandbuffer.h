@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2019-2025 Valve Corporation
- * Copyright (c) 2019-2025 LunarG, Inc.
+ * Copyright (c) 2019-2026 Valve Corporation
+ * Copyright (c) 2019-2026 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -223,8 +223,8 @@ class CommandBufferAccessContext : public CommandExecutionContext, DebugNameProv
     void RecordEndRendering(const RecordObject &record_obj);
     bool ValidateDispatchDrawDescriptorSet(VkPipelineBindPoint pipelineBindPoint, const Location &loc) const;
     void RecordDispatchDrawDescriptorSet(VkPipelineBindPoint pipelineBindPoint, ResourceUsageTag tag);
-    bool ValidateDrawVertex(std::optional<uint32_t> vertexCount, uint32_t firstVertex, const Location &loc) const;
-    void RecordDrawVertex(std::optional<uint32_t> vertexCount, uint32_t firstVertex, ResourceUsageTag tag);
+    bool ValidateDrawVertex(uint32_t vertexCount, uint32_t firstVertex, const Location &loc) const;
+    void RecordDrawVertex(uint32_t vertexCount, uint32_t firstVertex, ResourceUsageTag tag);
     bool ValidateDrawVertexIndex(uint32_t indexCount, uint32_t firstIndex, const Location &loc) const;
     void RecordDrawVertexIndex(uint32_t indexCount, uint32_t firstIndex, ResourceUsageTag tag);
     bool ValidateDrawAttachment(const Location &loc) const;
@@ -298,11 +298,10 @@ class CommandBufferAccessContext : public CommandExecutionContext, DebugNameProv
 
     struct ClearAttachmentInfo {
         const vvl::ImageView &attachment_view;
-        VkImageAspectFlags aspects_to_clear = 0;
         VkImageSubresourceRange subresource_range{};
     };
-    std::optional<ClearAttachmentInfo> GetClearAttachmentInfo(const VkClearAttachment &clear_attachment,
-                                                              const VkClearRect &rect) const;
+    std::optional<ClearAttachmentInfo> GetClearAttachmentInfo(const VkClearAttachment &clear_attachment, uint32_t clear_first_layer,
+                                                              uint32_t clear_layer_count) const;
 
     void CheckCommandTagDebugCheckpoint();
 

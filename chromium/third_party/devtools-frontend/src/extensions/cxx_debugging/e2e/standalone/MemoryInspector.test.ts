@@ -24,8 +24,8 @@ describe('LinearMemoryInspector', () => {
 
     const file = 'scope-view-primitives.c';
     const breakpoint = 14;
-    await openFileInEditor(file);
-    await addBreakpointForLine(Number(breakpoint));
+    await openFileInEditor(file, devToolsPage);
+    await addBreakpointForLine(Number(breakpoint), devToolsPage);
 
     await inspectedPage.reload();
     await devToolsPage.waitForFunction(
@@ -42,8 +42,14 @@ describe('LinearMemoryInspector', () => {
       root: localVariable,
     });
 
-    const byteHighlights = await devToolsPage.waitForMany('.byte-cell.highlight-area', 8);
-    const byteHighlightText = await Promise.all(byteHighlights.map(cell => cell.evaluate(cell => cell.textContent)));
+    const byteHighlightText = await devToolsPage.waitForFunction(async () => {
+      const byteHighlights = await devToolsPage.waitForMany('.byte-cell.highlight-area', 8);
+      const byteHighlightText = await Promise.all(byteHighlights.map(cell => cell.evaluate(cell => cell.textContent)));
+      if (byteHighlightText[0] === '33' && byteHighlightText[7] === '3F') {
+        return byteHighlightText;
+      }
+      return false;
+    });
     assert.deepEqual(byteHighlightText, ['33', '33', '33', '33', '33', '33', 'F3', '3F']);
 
     const valueHighlights = await devToolsPage.waitForMany('.text-cell.highlight-area', 8);

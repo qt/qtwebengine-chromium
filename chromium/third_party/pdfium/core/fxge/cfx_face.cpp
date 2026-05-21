@@ -29,7 +29,6 @@
 #include "core/fxge/dib/fx_dib.h"
 #include "core/fxge/fx_font.h"
 #include "core/fxge/fx_fontencoding.h"
-#include "core/fxge/scoped_font_transform.h"
 
 #define EM_ADJUST(em, a) (em == 0 ? (a) : (a) * 1000 / em)
 
@@ -283,24 +282,6 @@ fxge::FontEncoding ToFontEncoding(uint32_t ft_encoding) {
   }
   NOTREACHED();
 }
-#if defined(PDF_ENABLE_XFA)
-unsigned long FTStreamRead(FXFT_StreamRec* stream,
-                           unsigned long offset,
-                           unsigned char* buffer,
-                           unsigned long count) {
-  if (count == 0) {
-    return 0;
-  }
-  IFX_SeekableReadStream* pFile =
-      static_cast<IFX_SeekableReadStream*>(stream->descriptor.pointer);
-  // SAFETY: caller ensures `buffer` points to at least `count` bytes.
-  return pFile && pFile->ReadBlockAtOffset(
-                      UNSAFE_BUFFERS(pdfium::span(buffer, count)), offset)
-             ? count
-             : 0;
-}
-void FTStreamClose(FXFT_StreamRec* stream) {}
-#endif
 
 FX_RECT FXRectFromFTPos(FT_Pos left, FT_Pos top, FT_Pos right, FT_Pos bottom) {
   return FX_RECT(pdfium::checked_cast<int32_t>(left),
@@ -322,43 +303,64 @@ FX_RECT ScaledFXRectFromFTPos(FT_Pos left,
   return FXRectFromFTPos(left * 1000 / x_scale, top * 1000 / y_scale,
                          right * 1000 / x_scale, bottom * 1000 / y_scale);
 }
+
+FT_Render_Mode FtRenderModeFromFontAntiAliasingMode(
+    FontAntiAliasingMode anti_alias) {
+  switch (anti_alias) {
+    case FontAntiAliasingMode::kNormal:
+      return FT_RENDER_MODE_NORMAL;
+    case FontAntiAliasingMode::kMono:
+      return FT_RENDER_MODE_MONO;
+    case FontAntiAliasingMode::kLcd:
+      return FT_RENDER_MODE_LCD;
+  }
+  NOTREACHED();
+}
+
+// Sets the given transform on the FaceRec, and resets it to the identity when
+// it goes out of scope.
+class ScopedFaceTransform {
+ public:
+  FX_STACK_ALLOCATED();
+
+  ScopedFaceTransform(FXFT_FaceRec* rec, FT_Matrix* matrix) : rec_(rec) {
+    FT_Set_Transform(rec_, matrix, nullptr);
+  }
+
+  ~ScopedFaceTransform() {
+    FT_Matrix matrix = {0x10000L, 0L, 0L, 0x10000L};
+    FT_Set_Transform(rec_, &matrix, nullptr);
+  }
+
+ private:
+  UnownedPtr<FXFT_FaceRec> const rec_;
+};
+
 }  // namespace
 
 // static
-RetainPtr<CFX_Face> CFX_Face::New(FT_Library library,
-                                  RetainPtr<Retainable> pDesc,
-                                  pdfium::span<const FT_Byte> data,
-                                  FT_Long face_index) {
-  FXFT_FaceRec* pRec = nullptr;
-  if (FT_New_Memory_Face(library, data.data(),
-                         pdfium::checked_cast<FT_Long>(data.size()), face_index,
-                         &pRec) != 0) {
+RetainPtr<CFX_Face> CFX_Face::New(CFX_FontMgr* font_mgr,
+                                  RetainPtr<Retainable> desc,
+                                  pdfium::span<const uint8_t> data,
+                                  uint32_t face_index) {
+  FXFT_FaceRec* face_rec = nullptr;
+  if (FT_New_Memory_Face(font_mgr->GetFTLibrary(), data.data(),
+                         pdfium::checked_cast<FT_Long>(data.size()),
+                         pdfium::checked_cast<FT_Long>(face_index),
+                         &face_rec) != 0) {
     return nullptr;
   }
   // Private ctor.
-  return pdfium::WrapRetain(new CFX_Face(pRec, std::move(pDesc)));
-}
-
-#if BUILDFLAG(IS_ANDROID) || defined(PDF_ENABLE_XFA)
-// static
-RetainPtr<CFX_Face> CFX_Face::Open(FT_Library library,
-                                   const FT_Open_Args* args,
-                                   FT_Long face_index) {
-  if (!library) {
-    return nullptr;
-  }
-  FXFT_FaceRec* pRec = nullptr;
-  if (FT_Open_Face(library, args, face_index, &pRec) != 0) {
+  auto face = pdfium::WrapRetain(new CFX_Face(face_rec, std::move(desc)));
+  if (!face->SetPixelSize(64, 64)) {
     return nullptr;
   }
 
-  // Private ctor.
-  return pdfium::WrapRetain(new CFX_Face(pRec, nullptr));
+  return face;
 }
-#endif
 
 #if BUILDFLAG(IS_ANDROID)
-RetainPtr<CFX_Face> CFX_Face::OpenFromFilePath(FT_Library library,
+RetainPtr<CFX_Face> CFX_Face::OpenFromFilePath(CFX_FontMgr* font_mgr,
                                                ByteStringView path,
                                                int32_t face_index) {
   if (path.IsEmpty()) {
@@ -369,52 +371,50 @@ RetainPtr<CFX_Face> CFX_Face::OpenFromFilePath(FT_Library library,
     return nullptr;
   }
 
+  FXFT_LibraryRec* library = font_mgr->GetFTLibrary();
+  if (!library) {
+    return nullptr;
+  }
+
   FT_Open_Args args;
   args.flags = FT_OPEN_PATHNAME;
   args.pathname = const_cast<FT_String*>(path.unterminated_c_str());
-  RetainPtr<CFX_Face> face = Open(library, &args, face_index);
+
+  FXFT_FaceRec* face_rec = nullptr;
+  if (FT_Open_Face(library, &args, pdfium::checked_cast<FT_Long>(face_index),
+                   &face_rec) != 0) {
+    return nullptr;
+  }
+
+  // Private ctor.
+  RetainPtr<CFX_Face> face =
+      pdfium::WrapRetain(new CFX_Face(face_rec, nullptr));
   if (!face) {
     return nullptr;
   }
+
   face->SetPixelSize(0, 64);
   return face;
 }
 #endif
 
 #if defined(PDF_ENABLE_XFA)
-RetainPtr<CFX_Face> CFX_Face::OpenFromStream(
-    FT_Library library,
-    const RetainPtr<IFX_SeekableReadStream>& font_stream,
-    FT_Long face_index) {
+RetainPtr<CFX_Face> CFX_Face::NewFromVectorStream(
+    CFX_FontMgr* font_mgr,
+    const RetainPtr<CFX_ReadOnlyVectorStream>& font_stream,
+    uint32_t face_index) {
   if (!font_stream) {
     return nullptr;
   }
-  auto ft_stream = std::make_unique<FXFT_StreamRec>();
-  *ft_stream = {};  // Aggregate initialization.
-  static_assert(
-      std::is_aggregate_v<std::remove_pointer_t<decltype(ft_stream.get())>>);
-  ft_stream->base = nullptr;
-  ft_stream->descriptor.pointer = static_cast<void*>(font_stream.Get());
-  ft_stream->pos = 0;
-  ft_stream->size = static_cast<unsigned long>(font_stream->GetSize());
-  ft_stream->read = FTStreamRead;
-  ft_stream->close = FTStreamClose;
-
-  FT_Open_Args ft_args = {};  // Aggregate initialization.
-  static_assert(std::is_aggregate_v<decltype(ft_args)>);
-  ft_args.flags = FT_OPEN_STREAM;
-  ft_args.stream = ft_stream.get();
-
-  RetainPtr<CFX_Face> face = Open(library, &ft_args, face_index);
+  RetainPtr<CFX_Face> face =
+      New(font_mgr, nullptr, font_stream->span(), face_index);
   if (!face) {
     return nullptr;
   }
   face->SetPixelSize(0, 64);
   face->owned_font_stream_ = std::move(font_stream);
-  face->owned_stream_rec_ = std::move(ft_stream);
   return face;
 }
-
 #endif
 
 bool CFX_Face::HasGlyphNames() const {
@@ -497,6 +497,7 @@ size_t CFX_Face::GetSfntTable(uint32_t table, pdfium::span<uint8_t> buffer) {
   return pdfium::checked_cast<size_t>(length);
 }
 
+#if defined(PDF_ENABLE_XFA)
 std::optional<std::array<uint32_t, 4>> CFX_Face::GetOs2UnicodeRange() {
   auto* os2 = static_cast<TT_OS2*>(FT_Get_Sfnt_Table(GetRec(), FT_SFNT_OS2));
   if (!os2) {
@@ -507,7 +508,9 @@ std::optional<std::array<uint32_t, 4>> CFX_Face::GetOs2UnicodeRange() {
                                  static_cast<uint32_t>(os2->ulUnicodeRange3),
                                  static_cast<uint32_t>(os2->ulUnicodeRange4)};
 }
+#endif  // defined(PDF_ENABLE_XFA)
 
+#if defined(PDF_ENABLE_XFA) || BUILDFLAG(IS_ANDROID)
 std::optional<std::array<uint32_t, 2>> CFX_Face::GetOs2CodePageRange() {
   auto* os2 = static_cast<TT_OS2*>(FT_Get_Sfnt_Table(GetRec(), FT_SFNT_OS2));
   if (!os2) {
@@ -525,6 +528,7 @@ std::optional<std::array<uint8_t, 2>> CFX_Face::GetOs2Panose() {
   // SAFETY: required from library.
   return UNSAFE_BUFFERS(std::array<uint8_t, 2>{os2->panose[0], os2->panose[1]});
 }
+#endif  // defined(PDF_ENABLE_XFA) || BUILDFLAG(IS_ANDROID)
 
 int CFX_Face::GetGlyphCount() const {
   return pdfium::checked_cast<int>(GetRec()->num_glyphs);
@@ -566,7 +570,7 @@ std::unique_ptr<CFX_GlyphBitmap> CFX_Face::RenderGlyph(
     }
   }
 
-  ScopedFontTransform scoped_transform(pdfium::WrapRetain(this), &ft_matrix);
+  ScopedFaceTransform scoped_transform(GetRec(), &ft_matrix);
   int load_flags = FT_LOAD_NO_BITMAP | FT_LOAD_PEDANTIC;
   if (!IsTtOt()) {
     load_flags |= FT_LOAD_NO_HINTING;
@@ -610,7 +614,8 @@ std::unique_ptr<CFX_GlyphBitmap> CFX_Face::RenderGlyph(
   }
   FT_Library_SetLcdFilter(CFX_GEModule::Get()->GetFontMgr()->GetFTLibrary(),
                           FT_LCD_FILTER_DEFAULT);
-  error = FT_Render_Glyph(glyph, static_cast<FT_Render_Mode>(anti_alias));
+  error =
+      FT_Render_Glyph(glyph, FtRenderModeFromFontAntiAliasingMode(anti_alias));
   if (error) {
     return nullptr;
   }
@@ -635,7 +640,7 @@ std::unique_ptr<CFX_GlyphBitmap> CFX_Face::RenderGlyph(
   UNSAFE_TODO({
     if (anti_alias != FontAntiAliasingMode::kMono &&
         bitmap.pixel_mode == FT_PIXEL_MODE_MONO) {
-      unsigned int bytes = anti_alias == FontAntiAliasingMode::kLcd ? 3 : 1;
+      unsigned int bytes = 1;
       for (unsigned int i = 0; i < bitmap.rows; i++) {
         for (unsigned int n = 0; n < bitmap.width; n++) {
           uint8_t data =
@@ -678,7 +683,7 @@ std::unique_ptr<CFX_Path> CFX_Face::LoadGlyphPath(
       AdjustVariationParams(glyph_index, dest_width, subst_font->weight_);
     }
   }
-  ScopedFontTransform scoped_transform(pdfium::WrapRetain(this), &ft_matrix);
+  ScopedFaceTransform scoped_transform(GetRec(), &ft_matrix);
   int load_flags = FT_LOAD_NO_BITMAP;
   if (!IsTtOt() || !IsTricky()) {
     load_flags |= FT_LOAD_NO_HINTING;
@@ -883,7 +888,7 @@ FX_RECT CFX_Face::GetGlyphBBox() const {
                  NormalizeFontMetric(top - glyph->metrics.height, upem));
 }
 
-std::vector<CFX_Face::CharCodeAndIndex> CFX_Face::GetCharCodesAndIndices(
+std::vector<CharCodeAndIndex> CFX_Face::GetCharCodesAndIndices(
     char32_t max_char) {
   CharCodeAndIndex char_code_and_index;
   char_code_and_index.char_code = static_cast<uint32_t>(
@@ -920,27 +925,30 @@ CFX_Face::CharMapId CFX_Face::GetCharMapIdByIndex(size_t index) const {
 }
 
 int CFX_Face::GetCharMapPlatformIdByIndex(size_t index) const {
-  CHECK_LT(index, GetCharMapCount());
-  // SAFETY: required from library as enforced by check above.
-  return UNSAFE_BUFFERS(GetRec()->charmaps[index]->platform_id);
+  return GetCharMaps()[index]->platform_id;
 }
 
 int CFX_Face::GetCharMapEncodingIdByIndex(size_t index) const {
-  CHECK_LT(index, GetCharMapCount());
-  // SAFETY: required from library as enforced by check above.
-  return UNSAFE_BUFFERS(GetRec()->charmaps[index]->encoding_id);
+  return GetCharMaps()[index]->encoding_id;
 }
 
 fxge::FontEncoding CFX_Face::GetCharMapEncodingByIndex(size_t index) const {
-  CHECK_LT(index, GetCharMapCount());
-  // SAFETY: required from library as enforced by check above.
-  return ToFontEncoding(UNSAFE_BUFFERS(GetRec()->charmaps[index]->encoding));
+  return ToFontEncoding(GetCharMaps()[index]->encoding);
 }
 
 size_t CFX_Face::GetCharMapCount() const {
   return GetRec()->charmaps
              ? pdfium::checked_cast<size_t>(GetRec()->num_charmaps)
              : 0;
+}
+
+pdfium::span<const FT_CharMap> CFX_Face::GetCharMaps() const {
+  size_t count = GetCharMapCount();
+  if (count == 0) {
+    return {};
+  }
+  // SAFETY: required from library to provide correct count.
+  return UNSAFE_BUFFERS({GetRec()->charmaps, count});
 }
 
 void CFX_Face::SetCharMap(CharMap map) {
@@ -987,7 +995,7 @@ CFX_Face::~CFX_Face() = default;
 void CFX_Face::AdjustVariationParams(int glyph_index,
                                      int dest_width,
                                      int weight) {
-  DCHECK(dest_width >= 0);
+  DCHECK_GE(dest_width, 0);
 
   FXFT_FaceRec* rec = GetRec();
   ScopedFXFTMMVar variation_desc(rec);
@@ -1028,7 +1036,8 @@ void CFX_Face::AdjustVariationParams(int glyph_index,
   FT_Set_MM_Design_Coordinates(rec, 2, coords);
 }
 
-CFX_Face::FontStyleInfo CFX_Face::GetFontStyleInfo() {
+#if defined(PDF_ENABLE_XFA) || BUILDFLAG(IS_ANDROID)
+uint32_t CFX_Face::GetFontStyle() {
   uint32_t style = 0;
   if (IsBold()) {
     style |= pdfium::kFontStyleForceBold;
@@ -1040,12 +1049,10 @@ CFX_Face::FontStyleInfo CFX_Face::GetFontStyleInfo() {
     style |= pdfium::kFontStyleFixedPitch;
   }
 
-  uint32_t os2_codepage_mask = 0;
   std::optional<std::array<uint32_t, 2>> code_page_range =
       GetOs2CodePageRange();
   if (code_page_range.has_value() && (code_page_range.value()[0] & (1 << 31))) {
     style |= pdfium::kFontStyleSymbolic;
-    os2_codepage_mask = code_page_range.value()[0];
   }
 
   std::optional<std::array<uint8_t, 2>> panose = GetOs2Panose();
@@ -1055,5 +1062,6 @@ CFX_Face::FontStyleInfo CFX_Face::GetFontStyleInfo() {
       style |= pdfium::kFontStyleSerif;
     }
   }
-  return {style, os2_codepage_mask};
+  return style;
 }
+#endif  // defined(PDF_ENABLE_XFA) || BUILDFLAG(IS_ANDROID)

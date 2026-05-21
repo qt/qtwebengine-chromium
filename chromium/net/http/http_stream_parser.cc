@@ -63,10 +63,10 @@ std::string GetResponseHeaderLines(const HttpResponseHeaders& headers) {
   return cr_separated_headers;
 }
 
-base::Value::Dict NetLogSendRequestBodyParams(uint64_t length,
-                                              bool is_chunked,
-                                              bool did_merge) {
-  base::Value::Dict dict;
+base::DictValue NetLogSendRequestBodyParams(uint64_t length,
+                                            bool is_chunked,
+                                            bool did_merge) {
+  base::DictValue dict;
   dict.Set("length", static_cast<int>(length));
   dict.Set("is_chunked", is_chunked);
   dict.Set("did_merge", did_merge);
@@ -545,7 +545,8 @@ int HttpStreamParser::DoSendRequestReadBodyComplete(int result) {
       sent_last_chunk_ = true;
     }
     // Encode the buffer as 1 chunk.
-    const std::string_view payload(request_body_read_buf_->data(), result);
+    const std::string_view payload =
+        base::as_string_view(request_body_read_buf_->first(result));
     request_body_send_buf_->Clear();
     result = EncodeChunk(payload, request_body_send_buf_->span());
   }

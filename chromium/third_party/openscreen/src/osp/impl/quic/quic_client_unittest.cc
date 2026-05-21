@@ -31,7 +31,10 @@ class MockConnectionObserver final : public ProtocolConnection::Observer {
  public:
   ~MockConnectionObserver() override = default;
 
-  MOCK_METHOD1(OnConnectionClosed, void(const ProtocolConnection& connection));
+  MOCK_METHOD(void,
+              OnConnectionClosed,
+              (const ProtocolConnection& connection),
+              (override));
 };
 
 class ConnectCallback final : public ConnectRequestCallback {

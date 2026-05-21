@@ -26,6 +26,7 @@
 #include "config.h"
 #include <opencv2/core/core_c.h>
 #include <opencv2/imgproc/imgproc_c.h>
+#include "libavutil/avassert.h"
 #include "libavutil/avstring.h"
 #include "libavutil/common.h"
 #include "libavutil/file.h"
@@ -36,18 +37,17 @@
 #include "formats.h"
 #include "video.h"
 
-static void fill_iplimage_from_frame(IplImage *img, const AVFrame *frame, enum AVPixelFormat pixfmt)
+static void fill_iplimage_from_frame(IplImage **_img, const AVFrame *frame, enum AVPixelFormat pixfmt)
 {
-    IplImage *tmpimg;
+    IplImage *img;
     int depth, channels_nb;
 
     if      (pixfmt == AV_PIX_FMT_GRAY8) { depth = IPL_DEPTH_8U;  channels_nb = 1; }
     else if (pixfmt == AV_PIX_FMT_BGRA)  { depth = IPL_DEPTH_8U;  channels_nb = 4; }
     else if (pixfmt == AV_PIX_FMT_BGR24) { depth = IPL_DEPTH_8U;  channels_nb = 3; }
-    else return;
+    else av_unreachable("unsupported pix fmt");
 
-    tmpimg = cvCreateImageHeader((CvSize){frame->width, frame->height}, depth, channels_nb);
-    *img = *tmpimg;
+    *_img = img = cvCreateImageHeader((CvSize){frame->width, frame->height}, depth, channels_nb);
     img->imageData = img->imageDataOrigin = frame->data[0];
     img->dataOrder = IPL_DATA_ORDER_PIXEL;
     img->origin    = IPL_ORIGIN_TL;
@@ -205,7 +205,7 @@ static int parse_iplconvkernel(IplConvKernel **kernel, char *buf, void *log_ctx)
     int cols = 0, rows = 0, anchor_x = 0, anchor_y = 0, shape = CV_SHAPE_RECT;
     int *values = NULL, ret = 0;
 
-    sscanf(buf, "%dx%d+%dx%d/%32[^=]=%127s", &cols, &rows, &anchor_x, &anchor_y, shape_str, shape_filename);
+    sscanf(buf, "%dx%d+%dx%d/%31[^=]=%127s", &cols, &rows, &anchor_x, &anchor_y, shape_str, shape_filename);
 
     if      (!strcmp(shape_str, "rect"   )) shape = CV_SHAPE_RECT;
     else if (!strcmp(shape_str, "cross"  )) shape = CV_SHAPE_CROSS;
@@ -294,6 +294,8 @@ static av_cold void dilate_uninit(AVFilterContext *ctx)
     OCVContext *s = ctx->priv;
     DilateContext *dilate = s->priv;
 
+    if (!dilate)
+        return;
     cvReleaseStructuringElement(&dilate->kernel);
 }
 
@@ -366,7 +368,7 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
     OCVContext *s = ctx->priv;
     AVFilterLink *outlink= inlink->dst->outputs[0];
     AVFrame *out;
-    IplImage inimg, outimg;
+    IplImage *inimg, *outimg;
 
     out = ff_get_video_buffer(outlink, outlink->w, outlink->h);
     if (!out) {
@@ -377,10 +379,12 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
 
     fill_iplimage_from_frame(&inimg , in , inlink->format);
     fill_iplimage_from_frame(&outimg, out, inlink->format);
-    s->end_frame_filter(ctx, &inimg, &outimg);
-    fill_frame_from_iplimage(out, &outimg, inlink->format);
+    s->end_frame_filter(ctx, inimg, outimg);
+    fill_frame_from_iplimage(out, outimg, inlink->format);
 
     av_frame_free(&in);
+    cvReleaseImageHeader(&inimg);
+    cvReleaseImageHeader(&outimg);
 
     return ff_filter_frame(outlink, out);
 }

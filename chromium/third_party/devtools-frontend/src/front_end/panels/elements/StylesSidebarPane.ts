@@ -43,6 +43,7 @@ import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
 import * as Bindings from '../../models/bindings/bindings.js';
+import type * as ComputedStyle from '../../models/computed_style/computed_style.js';
 import * as TextUtils from '../../models/text_utils/text_utils.js';
 import {createIcon, Icon} from '../../ui/kit/kit.js';
 import * as InlineEditor from '../../ui/legacy/components/inline_editor/inline_editor.js';
@@ -52,7 +53,6 @@ import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
 import * as PanelsCommon from '../common/common.js';
 
 import * as ElementsComponents from './components/components.js';
-import type {ComputedStyleModel, CSSModelChangedEvent} from './ComputedStyleModel.js';
 import {ElementsPanel} from './ElementsPanel.js';
 import {ElementsSidebarPane} from './ElementsSidebarPane.js';
 import {ImagePreviewPopover} from './ImagePreviewPopover.js';
@@ -204,11 +204,11 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
   #updateAbortController?: AbortController;
   #updateComputedStylesAbortController?: AbortController;
 
-  constructor(computedStyleModel: ComputedStyleModel) {
-    super(computedStyleModel, true /* delegatesFocus */);
+  constructor(computedStyleModel: ComputedStyle.ComputedStyleModel.ComputedStyleModel) {
+    super(computedStyleModel, {delegatesFocus: true});
     this.setMinimumSize(96, 26);
     this.registerRequiredCSS(stylesSidebarPaneStyles);
-    Common.Settings.Settings.instance().moduleSetting('text-editor-indent').addChangeListener(this.update.bind(this));
+    Common.Settings.Settings.instance().moduleSetting('text-editor-indent').addChangeListener(this.requestUpdate, this);
     this.toolbarPaneElement = this.createStylesSidebarToolbar();
     this.noMatchesElement = this.contentElement.createChild('div', 'gray-info-message hidden');
     this.noMatchesElement.textContent = i18nString(UIStrings.noMatchingSelectorOrStyle);
@@ -237,6 +237,12 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
       }
       return null;
     }, () => this.node());
+
+    UI.ViewManager.ViewManager.instance().addEventListener(UI.ViewManager.Events.VIEW_VISIBILITY_CHANGED, event => {
+      if (event.data.revealedViewId === 'animations' || event.data.hiddenViewId === 'animations') {
+        this.#scheduleResetUpdateIfNotEditing();
+      }
+    });
   }
 
   get webCustomData(): WebCustomData|undefined {
@@ -330,7 +336,7 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
   revealProperty(cssProperty: SDK.CSSProperty.CSSProperty): void {
     void this.decorator.highlightProperty(cssProperty);
     this.lastRevealedProperty = cssProperty;
-    this.update();
+    this.requestUpdate();
   }
 
   jumpToProperty(propertyName: string, sectionName?: string, blockName?: string): boolean {
@@ -366,7 +372,7 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
     this.#swatchPopoverHelper.hide();
     this.#updateAbortController?.abort();
     this.resetCache();
-    this.update();
+    this.requestUpdate();
   }
 
   private sectionsContainerKeyDown(event: Event): void {
@@ -482,6 +488,10 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
 
   private onFilterChanged(event: Common.EventTarget.EventTargetEvent<string>): void {
     const regex = event.data ? new RegExp(Platform.StringUtilities.escapeForRegExp(event.data), 'i') : null;
+    this.setFilter(regex);
+  }
+
+  setFilter(regex: RegExp|null): void {
     this.lastFilterChange = Date.now();
     this.#filterRegex = regex;
     this.updateFilter();
@@ -530,7 +540,7 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
     this.nodeStylesUpdatedForTest(node, false);
   }
 
-  override async doUpdate(): Promise<void> {
+  override async performUpdate(): Promise<void> {
     this.#updateAbortController?.abort();
     this.#updateAbortController = new AbortController();
     await this.#innerDoUpdate(this.#updateAbortController.signal);
@@ -572,14 +582,17 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
     const nodeId = this.node()?.id;
     const parentNodeId = this.matchedStyles?.getParentLayoutNodeId();
 
-    const [computedStyles, parentsComputedStyles] =
-        await Promise.all([this.fetchComputedStylesFor(nodeId), this.fetchComputedStylesFor(parentNodeId)]);
+    const [computedStyles, parentsComputedStyles, computedStyleExtraFields] = await Promise.all([
+      this.fetchComputedStylesFor(nodeId), this.fetchComputedStylesFor(parentNodeId),
+      this.fetchComputedStyleExtraFieldsFor(nodeId)
+    ]);
 
     if (signal.aborted) {
       return;
     }
 
-    await this.innerRebuildUpdate(signal, this.matchedStyles, computedStyles, parentsComputedStyles);
+    await this.innerRebuildUpdate(
+        signal, this.matchedStyles, computedStyles, parentsComputedStyles, computedStyleExtraFields);
 
     if (signal.aborted) {
       return;
@@ -627,6 +640,15 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
       return null;
     }
     return await node.domModel().cssModel().getComputedStyle(nodeId);
+  }
+
+  private async fetchComputedStyleExtraFieldsFor(nodeId: Protocol.DOM.NodeId|undefined):
+      Promise<Protocol.CSS.ComputedStyleExtraFields|null> {
+    const node = this.node();
+    if (node === null || nodeId === undefined) {
+      return null;
+    }
+    return await node.domModel().cssModel().getComputedStyleExtraFields(nodeId);
   }
 
   override onResize(): void {
@@ -707,7 +729,8 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
     }
   }
 
-  override onCSSModelChanged(event: Common.EventTarget.EventTargetEvent<CSSModelChangedEvent>): void {
+  override onCSSModelChanged(
+      event: Common.EventTarget.EventTargetEvent<ComputedStyle.ComputedStyleModel.CSSModelChangedEvent>): void {
     const edit = event?.data && 'edit' in event.data ? event.data.edit : null;
     if (edit) {
       for (const section of this.allSections()) {
@@ -722,6 +745,10 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
 
   override onComputedStyleChanged(): void {
     if (!Root.Runtime.hostConfig.devToolsAnimationStylesInStylesTab?.enabled) {
+      return;
+    }
+
+    if (!UI.ViewManager.ViewManager.instance().isViewVisible('animations')) {
       return;
     }
 
@@ -741,7 +768,7 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
     }
 
     this.resetCache();
-    this.update();
+    this.requestUpdate();
   }
 
   #scheduleResetUpdateIfNotEditing(): void {
@@ -910,7 +937,8 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
 
   private async innerRebuildUpdate(
       signal: AbortSignal, matchedStyles: SDK.CSSMatchedStyles.CSSMatchedStyles|null,
-      computedStyles: Map<string, string>|null, parentsComputedStyles: Map<string, string>|null): Promise<void> {
+      computedStyles: Map<string, string>|null, parentsComputedStyles: Map<string, string>|null,
+      computedStyleExtraFields: Protocol.CSS.ComputedStyleExtraFields|null): Promise<void> {
     // ElementsSidebarPane's throttler schedules this method. Usually,
     // rebuild is suppressed while editing (see onCSSModelChanged()), but we need a
     // 'force' flag since the currently running throttler process cannot be canceled.
@@ -936,7 +964,8 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
     }
 
     const blocks = await this.rebuildSectionsForMatchedStyleRules(
-        (matchedStyles as SDK.CSSMatchedStyles.CSSMatchedStyles), computedStyles, parentsComputedStyles);
+        (matchedStyles as SDK.CSSMatchedStyles.CSSMatchedStyles), computedStyles, parentsComputedStyles,
+        computedStyleExtraFields);
 
     if (signal.aborted) {
       return;
@@ -1019,13 +1048,16 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
 
   rebuildSectionsForMatchedStyleRulesForTest(
       matchedStyles: SDK.CSSMatchedStyles.CSSMatchedStyles, computedStyles: Map<string, string>|null,
-      parentsComputedStyles: Map<string, string>|null): Promise<SectionBlock[]> {
-    return this.rebuildSectionsForMatchedStyleRules(matchedStyles, computedStyles, parentsComputedStyles);
+      parentsComputedStyles: Map<string, string>|null,
+      computedStyleExtraFields: Protocol.CSS.ComputedStyleExtraFields|null): Promise<SectionBlock[]> {
+    return this.rebuildSectionsForMatchedStyleRules(
+        matchedStyles, computedStyles, parentsComputedStyles, computedStyleExtraFields);
   }
 
   private async rebuildSectionsForMatchedStyleRules(
       matchedStyles: SDK.CSSMatchedStyles.CSSMatchedStyles, computedStyles: Map<string, string>|null,
-      parentsComputedStyles: Map<string, string>|null): Promise<SectionBlock[]> {
+      parentsComputedStyles: Map<string, string>|null,
+      computedStyleExtraFields: Protocol.CSS.ComputedStyleExtraFields|null): Promise<SectionBlock[]> {
     if (this.idleCallbackManager) {
       this.idleCallbackManager.discard();
     }
@@ -1036,6 +1068,7 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
     let sectionIdx = 0;
     let lastParentNode: SDK.DOMModel.DOMNode|null = null;
 
+    let lastLayerParent: SectionBlock|undefined;
     let lastLayers: SDK.CSSLayer.CSSLayer[]|null = null;
     let sawLayers = false;
 
@@ -1046,6 +1079,7 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
         if ((layers.length || lastLayers) && lastLayers !== layers) {
           const block = SectionBlock.createLayerBlock(parentRule);
           blocks.push(block);
+          lastLayerParent?.childBlocks.push(block);
           sawLayers = true;
           lastLayers = layers;
         }
@@ -1055,29 +1089,35 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
     // We disable the layer widget initially. If we see a layer in
     // the matched styles we reenable the button.
     LayersWidget.ButtonProvider.instance().item().setVisible(false);
-
+    const animationsPanelVisible = UI.ViewManager.ViewManager.instance().isViewVisible('animations');
     for (const style of matchedStyles.nodeStyles()) {
+      const isTransitionOrAnimationStyle = style.type === SDK.CSSStyleDeclaration.Type.Transition ||
+          style.type === SDK.CSSStyleDeclaration.Type.Animation;
+      if (isTransitionOrAnimationStyle && !animationsPanelVisible) {
+        continue;
+      }
+
       const parentNode = matchedStyles.isInherited(style) ? matchedStyles.nodeForStyle(style) : null;
       if (parentNode && parentNode !== lastParentNode) {
         lastParentNode = parentNode;
         const block = await SectionBlock.createInheritedNodeBlock(lastParentNode);
+        lastLayerParent = block;
         blocks.push(block);
       }
 
       addLayerSeparator(style);
 
       const lastBlock = blocks[blocks.length - 1];
-      const isTransitionOrAnimationStyle = style.type === SDK.CSSStyleDeclaration.Type.Transition ||
-          style.type === SDK.CSSStyleDeclaration.Type.Animation;
       if (lastBlock && (!isTransitionOrAnimationStyle || style.allProperties().length > 0)) {
         this.idleCallbackManager.schedule(() => {
-          const section =
-              new StylePropertiesSection(this, matchedStyles, style, sectionIdx, computedStyles, parentsComputedStyles);
+          const section = new StylePropertiesSection(
+              this, matchedStyles, style, sectionIdx, computedStyles, parentsComputedStyles, computedStyleExtraFields);
           sectionIdx++;
           lastBlock.sections.push(section);
         });
       }
     }
+    lastLayerParent = undefined;
 
     const customHighlightPseudoRulesets: Array<{
       highlightName: string | null,
@@ -1130,9 +1170,11 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
           if (parentNode) {
             const block =
                 await SectionBlock.createInheritedPseudoTypeBlock(pseudo.pseudoType, pseudo.highlightName, parentNode);
+            lastLayerParent = block;
             blocks.push(block);
           } else {
             const block = SectionBlock.createPseudoTypeBlock(pseudo.pseudoType, pseudo.highlightName);
+            lastLayerParent = block;
             blocks.push(block);
           }
         }
@@ -1142,7 +1184,7 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
         const lastBlock = blocks[blocks.length - 1];
         this.idleCallbackManager.schedule(() => {
           const section = new HighlightPseudoStylePropertiesSection(
-              this, matchedStyles, style, sectionIdx, computedStyles, parentsComputedStyles);
+              this, matchedStyles, style, sectionIdx, computedStyles, parentsComputedStyles, computedStyleExtraFields);
           sectionIdx++;
           lastBlock.sections.push(section);
         });
@@ -1503,6 +1545,7 @@ const MAX_LINK_LENGTH = 23;
 export class SectionBlock {
   readonly #titleElement: Element|null;
   sections: StylePropertiesSection[];
+  childBlocks: SectionBlock[] = [];
   #expanded = false;
   #icon: Icon|undefined;
   constructor(titleElement: Element|null, expandable?: boolean, expandedByDefault?: boolean) {
@@ -1634,14 +1677,15 @@ export class SectionBlock {
   }
 
   updateFilter(): number {
-    let hasAnyVisibleSection = false;
     let numVisibleSections = 0;
+    for (const childBlock of this.childBlocks) {
+      numVisibleSections += childBlock.updateFilter();
+    }
     for (const section of this.sections) {
       numVisibleSections += section.updateFilter() ? 1 : 0;
-      hasAnyVisibleSection = section.updateFilter() || hasAnyVisibleSection;
     }
     if (this.#titleElement) {
-      this.#titleElement.classList.toggle('hidden', !hasAnyVisibleSection);
+      this.#titleElement.classList.toggle('hidden', numVisibleSections === 0);
     }
     return numVisibleSections;
   }
@@ -1858,6 +1902,13 @@ export class CSSPropertyPrompt extends UI.TextPrompt.TextPrompt {
       Promise<UI.SuggestBox.Suggestions> {
     const lowerQuery = query.toLowerCase();
     const editingVariable = !this.isEditingName && expression.trim().endsWith('var(');
+    if (this.isEditingName && expression) {
+      const invalidCharsRegex = /["':;,\s()]/;
+      if (invalidCharsRegex.test(expression)) {
+        return await Promise.resolve([]);
+      }
+    }
+
     if (!query && !force && !editingVariable && (this.isEditingName || expression)) {
       return await Promise.resolve([]);
     }
@@ -2023,7 +2074,7 @@ export class CSSPropertyPrompt extends UI.TextPrompt.TextPrompt {
 
     function colorSwatchRenderer(color: Common.Color.Color): Element {
       const swatch = new InlineEditor.ColorSwatch.ColorSwatch();
-      swatch.renderColor(color);
+      swatch.color = color;
       swatch.style.pointerEvents = 'none';
       return swatch;
     }

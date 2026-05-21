@@ -12,6 +12,7 @@
 <translation id="2159915644201199628">Kuvan koodin purkaminen epäonnistui: <ph name="IMAGE_NAME" /></translation>
 <translation id="2350172092385603347">Lokalisaatiota käytetään, mutta default_locale ei ole määritetty luettelossa.</translation>
 <translation id="2576842806987913196">Tämän niminen CRX-tiedosto on jo olemassa.</translation>
+<translation id="2743583586211388067">Pääsy tähän laajennukseen on estetty organisaation laajennusriskikäytännön mukaisesti.</translation>
 <translation id="2785530881066938471">Sisältökomentosarjan tiedoston <ph name="RELATIVE_PATH" /> lataus epäonnistui, sillä tiedoston merkistökoodaus ei ole UTF-8.</translation>
 <translation id="2903070246402204397"><ph name="EXTENSION_NAME" /> (tunnus <ph name="EXTENSION_ID" />) on järjestelmänvalvojan estämä. <ph name="ADMIN_INFO" /></translation>
 <translation id="2988488679308982380">Paketin <ph name="ERROR_CODE" /> asentaminen epäonnistui.</translation>
@@ -33,9 +34,11 @@
 <translation id="5356315618422219272">Appview: <ph name="APPVIEW_TAG_NAME" /></translation>
 <translation id="5456409301717116725">Tämä laajennus sisältää avaintiedoston <ph name="KEY_PATH" />. Et todennäköisesti halua sitä.</translation>
 <translation id="5486326529110362464">Yksityisen avaimen syötearvoa ei ole olemassa.</translation>
+<translation id="5707185214361380026">Laajennuksen lataaminen seuraavasta kohteesta epäonnistui:</translation>
 <translation id="5972529113578162692">Tämän laitteen järjestelmänvalvoja on määrittänyt, että laitteessa täytyy olla <ph name="EXTENSION_NAME" />. Laajennusta ei voi poistaa.</translation>
 <translation id="6027032947578871493">Tuntematon laite <ph name="PRODUCT_ID" /> toimittajalta <ph name="VENDOR_NAME" /> (sarjanumero <ph name="SERIAL_NUMBER" />)</translation>
 <translation id="6068932090455285721"><ph name="PRODUCT_NAME" /> toimittajalta <ph name="VENDOR_ID" /></translation>
+<translation id="6220413761270491930">Virhe ladattaessa laajennusta</translation>
 <translation id="6322279351188361895">Yksityisen avaimen lukeminen epäonnistui.</translation>
 <translation id="6391538222494443604">Syöttöhakemistoa ei ole olemassa.</translation>
 <translation id="641087317769093025">Laajennuksen purkaminen epäonnistui</translation>

@@ -33,6 +33,7 @@
 #include "src/wasm/wasm-module.h"
 #include "src/wasm/wasm-objects-inl.h"
 #include "src/wasm/wasm-opcodes-inl.h"
+#include "src/wasm/wasm-stack-wrapper-cache.h"
 #include "src/wasm/wasm-subtyping.h"
 
 #ifdef V8_USE_SIMULATOR_WITH_GENERIC_C_CALLS
@@ -246,7 +247,7 @@ bool IsSupportedWasmFastApiFunction(Isolate* isolate,
             c_func_id, "at least one parameter is needed as the receiver");
         continue;
       }
-      if (!expected_sig->GetParam(0).is_reference()) {
+      if (!expected_sig->GetParam(0).is_ref()) {
         log_imported_function_mismatch(c_func_id,
                                        "the receiver has to be a reference");
         continue;
@@ -359,13 +360,13 @@ bool IsDataViewSetterSig(const wasm::CanonicalSig* sig,
 }
 
 const MachineSignature* GetFunctionSigForFastApiImport(
-    Zone* zone, const CFunctionInfo* info) {
+    WasmModuleSignatureStorage* storage, const CFunctionInfo* info) {
   uint32_t arg_count = info->ArgumentCount();
   uint32_t ret_count =
       info->ReturnInfo().GetType() == CTypeInfo::Type::kVoid ? 0 : 1;
   constexpr uint32_t param_offset = 1;
 
-  MachineSignature::Builder sig_builder(zone, ret_count,
+  MachineSignature::Builder sig_builder(storage, ret_count,
                                         arg_count - param_offset);
   if (ret_count) {
     sig_builder.AddReturn(MachineType::TypeForCType(info->ReturnInfo()));
@@ -488,13 +489,13 @@ WellKnownImport CheckForWellKnownImport(
     // would store the same signature to the native module.
     if (!native_module->has_fast_api_signature(func_index)) {
       // We have to use the lock of the NativeModule here because the
-      // `signature_zone` may get accessed by another module instantiation
+      // `signature_storage` may get accessed by another module instantiation
       // concurrently.
       NativeModule::NativeModuleAllocationLockScope lock(native_module);
       native_module->set_fast_api_signature(
           func_index,
           GetFunctionSigForFastApiImport(
-              &native_module->module()->signature_zone,
+              &native_module->module()->signature_storage,
               func_data->GetCSignature(isolate, out_api_function_index)));
     }
 
@@ -1107,10 +1108,10 @@ MaybeDirectHandle<WasmInstanceObject> InstanceBuilder::Build() {
   isolate_->metrics_recorder()->DelayMainThreadEvent(module_instantiated,
                                                      context_id_);
 
-  // Publish any delayed counter updates of the NativeModule and the import
-  // wrapper cache in the isolate.
+  // Publish any delayed counter updates.
   native_module_->counter_updates()->Publish(isolate_);
   GetWasmImportWrapperCache()->PublishCounterUpdates(isolate_);
+  GetWasmStackEntryWrapperCache()->PublishCounterUpdates(isolate_);
 
   return direct_handle(trusted_data_->instance_object(), isolate_);
 }
@@ -1170,8 +1171,9 @@ Maybe<bool> InstanceBuilder::Build_Phase1(
     auto maximum_pages =
         static_cast<int>(RoundUp(buffer->byte_length(), wasm::kWasmPageSize) /
                          wasm::kWasmPageSize);
-    DirectHandle<WasmMemoryObject> memory_object = WasmMemoryObject::New(
-        isolate_, buffer, maximum_pages, AddressType::kI32);
+    DirectHandle<WasmMemoryObject> memory_object =
+        WasmMemoryObject::New(isolate_, buffer, buffer->GetBackingStore(),
+                              maximum_pages, AddressType::kI32);
     constexpr int kMemoryIndexZero = 0;
     trusted_data_->memory_objects()->set(kMemoryIndexZero, *memory_object);
   } else {
@@ -1704,6 +1706,7 @@ MaybeDirectHandle<Object> InstanceBuilder::LookupImportAsm(
       }
       return value;
     }
+    case LookupIterator::MODULE_NAMESPACE:
     case LookupIterator::STRING_LOOKUP_START_OBJECT:
       UNREACHABLE();
   }
@@ -1756,7 +1759,7 @@ void InstanceBuilder::LoadDataSegments() {
 void InstanceBuilder::WriteGlobalValue(const WasmGlobal& global,
                                        const WasmValue& value) {
   TRACE("init [globals_start=%p + %u] = %s, type = %s\n",
-        global.type.is_reference()
+        global.type.is_ref()
             ? reinterpret_cast<uint8_t*>(tagged_globals_->address())
             : raw_buffer_ptr(untagged_globals_, 0),
         global.offset, value.to_string().c_str(), global.type.name().c_str());
@@ -1958,7 +1961,7 @@ bool InstanceBuilder::ProcessImportedFunction(int import_index,
 #ifdef V8_ENABLE_TURBOFAN
       DCHECK(IsJSFunction(*callable) || IsJSBoundFunction(*callable));
 
-      std::shared_ptr<wasm::WasmImportWrapperHandle> wrapper_handle =
+      std::shared_ptr<wasm::WasmWrapperHandle> wrapper_handle =
           GetWasmImportWrapperCache()->CompileWasmJsFastCallWrapper(
               isolate_, callable, expected_sig);
 
@@ -1992,8 +1995,8 @@ bool InstanceBuilder::ProcessImportedFunction(int import_index,
   }
 
   WasmImportWrapperCache* cache = GetWasmImportWrapperCache();
-  std::shared_ptr<wasm::WasmImportWrapperHandle> wrapper_handle = cache->Get(
-      isolate_, kind, expected_arity, resolved.suspend(), expected_sig);
+  std::shared_ptr<wasm::WasmWrapperHandle> wrapper_handle = cache->Get(
+      isolate_, {kind, expected_sig, expected_arity, resolved.suspend()});
 
   imported_entry.SetWasmToWrapper(isolate_, callable, std::move(wrapper_handle),
                                   resolved.suspend(), expected_sig);
@@ -2096,7 +2099,8 @@ bool InstanceBuilder::ProcessImportedWasmGlobalObject(
   DirectHandle<WasmTrustedInstanceData> trusted_instance_data =
       trusted_data(global.shared);
 
-  wasm::ValueType actual_type = global_object->type();
+  wasm::ValueType actual_type = global_object->unsafe_type();
+  SBXCHECK(actual_type.is_valid());
   const WasmModule* source_module = nullptr;
   if (global_object->has_trusted_data()) {
     source_module = global_object->trusted_data(isolate_)->module();
@@ -2124,7 +2128,7 @@ bool InstanceBuilder::ProcessImportedWasmGlobalObject(
   if (global.mutability) {
     DCHECK_LT(global.index, module_->num_imported_mutable_globals);
     DirectHandle<Object> buffer;
-    if (global.type.is_reference()) {
+    if (global.type.is_ref()) {
       static_assert(sizeof(global_object->offset()) <= sizeof(Address),
                     "The offset into the globals buffer does not fit into "
                     "the imported_mutable_globals array");
@@ -2238,7 +2242,7 @@ bool InstanceBuilder::ProcessImportedGlobal(int import_index, int global_index,
     return false;
   }
 
-  if (global.type.is_reference()) {
+  if (global.type.is_ref()) {
     const char* error_message;
     DirectHandle<Object> wasm_value;
     if (!wasm::JSToWasmObject(isolate_, module_, value, global.type,
@@ -2383,9 +2387,24 @@ bool InstanceBuilder::ProcessImportedMemories(
     uint32_t memory_index = import.index;
     auto memory_object = Cast<WasmMemoryObject>(value);
 
-    DirectHandle<JSArrayBuffer> buffer{memory_object->array_buffer(), isolate_};
+    std::shared_ptr<BackingStore> backing_store =
+        memory_object->backing_store();
+#ifdef DEBUG
+    if (Tagged<JSArrayBuffer> buffer;
+        TryCast(memory_object->array_buffer(), &buffer)) {
+      DCHECK_EQ(backing_store, buffer->GetBackingStore());
+      DCHECK_EQ(backing_store->is_shared(), buffer->is_shared());
+      if (backing_store->is_shared()) {
+        // Note: For shared memory, the backing store might have just grown in
+        // another thread.
+        DCHECK_GE(backing_store->byte_length(), buffer->GetByteLength());
+      } else {
+        DCHECK_EQ(backing_store->byte_length(), buffer->GetByteLength());
+      }
+    }
+#endif  // DEBUG
     uint32_t imported_cur_pages =
-        static_cast<uint32_t>(buffer->GetByteLength() / kWasmPageSize);
+        static_cast<uint32_t>(backing_store->byte_length() / kWasmPageSize);
     const WasmMemory* memory = &module_->memories[memory_index];
     if (memory->address_type != memory_object->address_type()) {
       thrower_->LinkError("cannot import %s memory as %s",
@@ -2419,12 +2438,12 @@ bool InstanceBuilder::ProcessImportedMemories(
         return false;
       }
     }
-    if (memory->is_shared != buffer->is_shared()) {
+    if (memory->is_shared != backing_store->is_shared()) {
       thrower_->LinkError(
           "%s: mismatch in shared state of memory, declared = %d, imported = "
           "%d",
           ImportName(import_index).c_str(), memory->is_shared,
-          buffer->is_shared());
+          backing_store->is_shared());
       return false;
     }
 
@@ -2453,7 +2472,7 @@ void InstanceBuilder::InitGlobals() {
         trusted_data_, shared_trusted_data_);
     if (MaybeMarkError(result, thrower_)) return;
 
-    if (global.type.is_reference()) {
+    if (global.type.is_ref()) {
       (global.shared ? shared_tagged_globals_ : tagged_globals_)
           ->set(global.offset, *to_value(result).to_ref());
     } else {
@@ -2596,7 +2615,7 @@ void InstanceBuilder::ProcessExports() {
         if (global.mutability && global.imported) {
           DirectHandle<FixedArray> buffers_array(
               maybe_shared_data->imported_mutable_globals_buffers(), isolate_);
-          if (global.type.is_reference()) {
+          if (global.type.is_ref()) {
             tagged_buffer = direct_handle(
                 Cast<FixedArray>(buffers_array->get(global.index)), isolate_);
             // For externref globals we store the relative offset in the
@@ -2619,7 +2638,7 @@ void InstanceBuilder::ProcessExports() {
             offset = static_cast<uint32_t>(global_addr - backing_store);
           }
         } else {
-          if (global.type.is_reference()) {
+          if (global.type.is_ref()) {
             tagged_buffer = direct_handle(
                 maybe_shared_data->tagged_globals_buffer(), isolate_);
           } else {
@@ -2855,7 +2874,7 @@ ValueOrError ConsumeElementSegmentEntry(
 }  // namespace
 
 std::optional<MessageTemplate> InitializeElementSegment(
-    Zone* zone, Isolate* isolate,
+    Isolate* isolate,
     DirectHandle<WasmTrustedInstanceData> trusted_instance_data,
     DirectHandle<WasmTrustedInstanceData> shared_trusted_instance_data,
     uint32_t segment_index, PrecreateExternal precreate_external_functions) {
@@ -2902,10 +2921,12 @@ std::optional<MessageTemplate> InitializeElementSegment(
       result->set(static_cast<int>(i), *value);
     }
   } else {
+    Zone temp_zone{isolate->allocator(), "InitializeElementSegment"};
     for (size_t i = 0; i < elem_segment.element_count; ++i) {
-      ValueOrError value = ConsumeElementSegmentEntry(
-          zone, isolate, trusted_instance_data, shared_trusted_instance_data,
-          elem_segment, decoder, kStrictFunctionsAndNull);
+      ValueOrError value =
+          ConsumeElementSegmentEntry(&temp_zone, isolate, trusted_instance_data,
+                                     shared_trusted_instance_data, elem_segment,
+                                     decoder, kStrictFunctionsAndNull);
       if (is_error(value)) return {to_error(value)};
       result->set(static_cast<int>(i), *to_value(value).to_ref());
     }

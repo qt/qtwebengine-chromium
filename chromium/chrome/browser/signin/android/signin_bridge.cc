@@ -9,20 +9,23 @@
 #include "base/android/scoped_java_ref.h"
 #include "chrome/browser/android/tab_android.h"
 #include "content/public/browser/web_contents.h"
+#include "google_apis/gaia/core_account_id.h"
 #include "ui/android/window_android.h"
 #include "url/android/gurl_android.h"
 
 // Must come after all headers that specialize FromJniType() / ToJniType().
 #include "chrome/android/chrome_jni_headers/SigninBridge_jni.h"
 
-using base::android::JavaParamRef;
+using base::android::JavaRef;
 
-void SigninBridge::StartAddAccountFlow(ui::WindowAndroid* window,
+void SigninBridge::StartAddAccountFlow(TabAndroid* tab,
                                        const std::string& prefilled_email,
                                        const GURL& continue_url) {
-  DCHECK(window);
+  if (!tab) {
+    return;
+  }
   JNIEnv* env = base::android::AttachCurrentThread();
-  Java_SigninBridge_startAddAccountFlow(env, window->GetJavaObject(),
+  Java_SigninBridge_startAddAccountFlow(env, tab->GetJavaObject(),
                                         prefilled_email, continue_url);
 }
 
@@ -37,14 +40,15 @@ void SigninBridge::OpenAccountManagementScreen(
 
 void SigninBridge::OpenAccountPickerBottomSheet(
     content::WebContents* web_contents,
-    const GURL& continue_url) {
+    const GURL& continue_url,
+    const std::optional<CoreAccountId>& account_id) {
   TabAndroid* tab = TabAndroid::FromWebContents(web_contents);
   if (!tab) {
     return;
   }
   JNIEnv* env = base::android::AttachCurrentThread();
   Java_SigninBridge_openAccountPickerBottomSheet(env, tab->GetJavaObject(),
-                                                 continue_url);
+                                                 continue_url, account_id);
 }
 
 DEFINE_JNI(SigninBridge)

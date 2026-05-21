@@ -15,7 +15,7 @@
 
 using base::android::ConvertJavaStringToUTF8;
 using base::android::ConvertUTF8ToJavaString;
-using base::android::JavaParamRef;
+using base::android::JavaRef;
 using base::android::ScopedJavaLocalRef;
 
 namespace tab_groups {
@@ -30,7 +30,7 @@ LocalTabID FromJavaTabId(int tab_id) {
   return tab_id;
 }
 
-jint ToJavaTabId(const std::optional<LocalTabID>& tab_id) {
+int32_t ToJavaTabId(const std::optional<LocalTabID>& tab_id) {
   return tab_id.value_or(kInvalidTabId);
 }
 
@@ -39,14 +39,14 @@ ScopedJavaLocalRef<jstring> UuidToJavaString(JNIEnv* env,
   return ConvertUTF8ToJavaString(env, uuid.AsLowercaseString());
 }
 
-base::Uuid JavaStringToUuid(JNIEnv* env, const JavaParamRef<jstring>& j_uuid) {
+base::Uuid JavaStringToUuid(JNIEnv* env, const JavaRef<jstring>& j_uuid) {
   return base::Uuid::ParseLowercase(ConvertJavaStringToUTF8(env, j_uuid));
 }
 
 EitherGroupID JavaSyncOrLocalGroupIdToEitherGroupId(
     JNIEnv* env,
-    const JavaParamRef<jstring>& j_sync_group_id,
-    const JavaParamRef<jobject>& j_local_group_id) {
+    const JavaRef<jstring>& j_sync_group_id,
+    const JavaRef<jobject>& j_local_group_id) {
   if (j_local_group_id.is_null()) {
     std::string sync_group_id_str =
         ConvertJavaStringToUTF8(env, j_sync_group_id);

@@ -76,7 +76,7 @@ void RenderPageImpl(CPDF_PageRenderContext* context,
     is_printing |= context->device_->GetDeviceType() == DeviceType::kPrinter;
 #endif
 
-    // TODO(https://crbug.com/pdfium/993) - maybe pass true here.
+    // TODO(https://crbug.com/42271964) - maybe pass true here.
     const bool bShowWidget = false;
     pList->DisplayAnnots(context->context_.get(), is_printing, matrix,
                          bShowWidget);

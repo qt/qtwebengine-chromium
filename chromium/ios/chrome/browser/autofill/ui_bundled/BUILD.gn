@@ -24,6 +24,8 @@ source_set("coordinator") {
     "//components/infobars/core",
     "//components/leveldb_proto",
     "//components/optimization_guide:machine_learning_tflite_buildflags",
+    "//components/optimization_guide/core:model_execution",
+    "//components/optimization_guide/proto:optimization_guide_proto_gen",
     "//components/password_manager/core/browser",
     "//components/password_manager/core/browser/features:password_features",
     "//components/password_manager/core/browser/form_parsing",
@@ -42,12 +44,14 @@ source_set("coordinator") {
     "//ios/chrome/browser/autofill/model/credit_card:infobar_delegate",
     "//ios/chrome/browser/autofill/ui_bundled/bottom_sheet:virtual_card_enrollment_bottom_sheet_coordinator",
     "//ios/chrome/browser/autofill/ui_bundled/cells",
-    "//ios/chrome/browser/autofill/ui_bundled/manual_fill",
     "//ios/chrome/browser/autofill/ui_bundled/manual_fill:manual_fill_ui",
     "//ios/chrome/browser/device_reauth/model",
     "//ios/chrome/browser/history/model",
     "//ios/chrome/browser/infobars/model",
+    "//ios/chrome/browser/intelligence/proto_wrappers",
     "//ios/chrome/browser/metrics/model",
+    "//ios/chrome/browser/metrics/model:google_groups_updater",
+    "//ios/chrome/browser/optimization_guide/model",
     "//ios/chrome/browser/passwords/model",
     "//ios/chrome/browser/plus_addresses/model",
     "//ios/chrome/browser/shared/model/application_context",
@@ -56,6 +60,7 @@ source_set("coordinator") {
     "//ios/chrome/browser/shared/model/profile",
     "//ios/chrome/browser/shared/model/web_state_list",
     "//ios/chrome/browser/shared/public/commands",
+    "//ios/chrome/browser/shared/public/features",
     "//ios/chrome/browser/shared/ui/util",
     "//ios/chrome/browser/signin/model",
     "//ios/chrome/browser/signin/model:authentication_service",
@@ -147,14 +152,6 @@ source_set("ui_type") {
   ]
 }
 
-source_set("autofill_metrics") {
-  sources = [
-    "save_card_infobar_metrics_recorder.h",
-    "save_card_infobar_metrics_recorder.mm",
-  ]
-  deps = [ "//base" ]
-}
-
 source_set("common") {
   sources = [
     "scoped_autofill_payment_reauth_module_override.h",
@@ -195,6 +192,7 @@ source_set("eg2_tests") {
     "//ios/chrome/browser/infobars/ui_bundled:eg_test_support+eg2",
     "//ios/chrome/browser/infobars/ui_bundled/banners:public",
     "//ios/chrome/browser/infobars/ui_bundled/modals:public",
+    "//ios/chrome/browser/intelligence/features",
     "//ios/chrome/browser/metrics/model:eg_test_support+eg2",
     "//ios/chrome/browser/signin/model:fake_system_identity",
     "//ios/chrome/test:eg_test_support+eg2",
@@ -241,10 +239,6 @@ source_set("eg_app_support+eg2") {
     "//ios/web/public/js_messaging",
     "//services/network:test_support",
   ]
-
-  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
-  # enable the diagnostic by removing this line.
-  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }
 
 source_set("eg_test_support+eg2") {

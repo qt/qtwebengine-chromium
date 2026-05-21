@@ -14,7 +14,6 @@
 #include "discovery/mdns/testing/mdns_test_util.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "util/span_util.h"
 #include "util/std_util.h"
 
 namespace openscreen::discovery {

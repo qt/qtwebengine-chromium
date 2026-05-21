@@ -40,12 +40,16 @@
         <structure type="lottie" name="IDR_AUTOFILL_SAVE_PASSPORT_AND_NATIONAL_ID_CARD_LOTTIE" file="resources/autofill/autofill_save_passport_and_national_id_card.json" compress="brotli"/>
         <structure type="lottie" name="IDR_AUTOFILL_SAVE_VEHICLE_LOTTIE" file="resources/autofill/autofill_save_vehicle.json" compress="brotli"/>
         <structure type="lottie" name="IDR_AUTOFILL_SAVE_KNOWN_TRAVELER_NUMBER_AND_REDRESS_NUMBER_LOTTIE" file="resources/autofill/autofill_save_known_traveler_number_and_redress_number.json" compress="brotli"/>
+        <structure type="lottie" name="IDR_AUTOFILL_SAVE_IBAN_LOTTIE" file="resources/autofill/autofill_save_iban.json" compress="brotli"/>
         <structure type="lottie" name="IDR_AUTOFILL_SAVE_CARD_SECURE_LOTTIE" file="resources/autofill/autofill_save_card_secure.json" compress="brotli"/>
         <structure type="lottie" name="IDR_AUTOFILL_SAVE_CARD_LOCAL_LOTTIE" file="resources/autofill/autofill_save_card_local.json" compress="brotli"/>
         <structure type="lottie" name="IDR_AUTOFILL_SAVE_SECURITY_CODE_LOTTIE" file="resources/autofill/autofill_save_security_code.json" compress="brotli"/>
 
         <!-- Shopping resources -->
         <structure type="lottie" name="IDR_SHOPPING_DISCOUNTS_AVAILABLE_LOTTIE" file="resources/shopping/discounts_available.json" compress="brotli"/>
+
+        <!-- Projects Panel resources -->
+        <structure type="lottie" name="IDR_PROJECTS_NO_TAB_GROUPS" file="resources/projects/resumption_empty_state.json" compress="brotli"/>
 
         <!-- Automated Password Change resources -->
         <structure type="lottie" name="IDR_PASSWORD_CHANGE_SUCCESS_LOTTIE" file="resources/automated_password_change/password_change_success.json" compress="brotli"/>
@@ -152,8 +156,7 @@
         <include name="IDR_DEVICE_EMULATOR_SHARED_STYLES_JS" file="${root_gen_dir}\chrome\browser\resources\chromeos\emulator\shared_styles.js" use_base_dir="false"  type="BINDATA" />
         <if expr="_google_chrome">
           <then>
-            <include name="IDR_GOOGLE_XKB_MANIFEST" file="${root_gen_dir}\chrome\browser\resources\chromeos\input_method\google_xkb_manifest.json" use_base_dir="false" type="BINDATA" />
-            <include name="IDR_GOOGLE_XKB_MANIFEST_V3" file="${root_gen_dir}\chrome\browser\resources\chromeos\input_method\google_xkb_manifest_v3.json" use_base_dir="false" type="BINDATA" />
+            <include name="IDR_GOOGLE_XKB_MANIFEST" file="resources\chromeos\input_method\google_xkb_manifest.json" type="BINDATA" />
           </then>
           <else>
             <include name="IDR_XKB_MANIFEST" file="resources\chromeos\input_method\xkb_manifest.json" type="BINDATA" />
@@ -167,7 +170,6 @@
         </if>
 
         <include name="IDR_BRAILLE_MANIFEST" file="resources\chromeos\accessibility\braille_ime\manifest.json" type="BINDATA" />
-        <include name="IDR_BRAILLE_MANIFEST_MV3" file="resources\chromeos\accessibility\braille_ime\mv3\manifest.json" type="BINDATA" />
         <include name="IDR_SMB_SHARES_DIALOG_CONTAINER_HTML" file="resources\chromeos\smb_shares\smb_share_dialog_container.html" type="chrome_html" />
         <include name="IDR_SMB_SHARES_DIALOG_JS" file="${root_gen_dir}\chrome\browser\resources\chromeos\smb_shares\smb_share_dialog.js" use_base_dir="false" type="chrome_html" />
         <include name="IDR_SMB_CREDENTIALS_DIALOG_CONTAINER_HTML" file="resources\chromeos\smb_shares\smb_credentials_dialog_container.html" type="chrome_html" />

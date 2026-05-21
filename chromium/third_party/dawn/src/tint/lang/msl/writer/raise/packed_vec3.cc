@@ -429,7 +429,7 @@ struct State {
                     // vec3<u32>. We need to unpack the packed_vec3<u32> to a vec3<u32> and then
                     // convert it to a vec3<bool>.
                     auto* unpacked =
-                        b.Call<msl::ir::BuiltinCall>(ty.vec3<u32>(), msl::BuiltinFn::kConvert, load)
+                        b.Call<msl::ir::BuiltinCall>(ty.vec3u(), msl::BuiltinFn::kConvert, load)
                             ->Result();
                     return b.Convert<vec3<bool>>(unpacked)->Result();
                 } else {
@@ -678,15 +678,14 @@ struct State {
 }  // namespace
 
 Result<SuccessType> PackedVec3(core::ir::Module& ir) {
-    auto result = ValidateAndDumpIfNeeded(ir, "msl.PackedVec3",
-                                          tint::core::ir::Capabilities{
-                                              core::ir::Capability::kAllow8BitIntegers,
-                                              tint::core::ir::Capability::kAllowDuplicateBindings,
-                                              core::ir::Capability::kAllowNonCoreTypes,
-                                          });
-    if (result != Success) {
-        return result.Failure();
-    }
+    TINT_CHECK_RESULT(
+        ValidateAndDumpIfNeeded(ir, "msl.PackedVec3",
+                                tint::core::ir::Capabilities{
+                                    core::ir::Capability::kAllow8BitIntegers,
+                                    tint::core::ir::Capability::kAllowPointSizeBuiltin,
+                                    tint::core::ir::Capability::kAllowDuplicateBindings,
+                                    core::ir::Capability::kAllowNonCoreTypes,
+                                }));
 
     State{ir}.Process();
 

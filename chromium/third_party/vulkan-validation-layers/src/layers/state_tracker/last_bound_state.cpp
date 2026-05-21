@@ -1,7 +1,7 @@
-/* Copyright (c) 2015-2025 The Khronos Group Inc.
- * Copyright (c) 2015-2025 Valve Corporation
- * Copyright (c) 2015-2025 LunarG, Inc.
- * Copyright (C) 2015-2025 Google Inc.
+/* Copyright (c) 2015-2026 The Khronos Group Inc.
+ * Copyright (c) 2015-2026 Valve Corporation
+ * Copyright (c) 2015-2026 LunarG, Inc.
+ * Copyright (C) 2015-2026 Google Inc.
  * Modifications Copyright (C) 2020 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -255,7 +255,7 @@ bool LastBound::IsColorBlendEnabled(uint32_t i) const {
 }
 
 std::string LastBound::DescribeColorBlendEnabled(uint32_t i) const {
-    std::stringstream ss;
+    std::ostringstream ss;
     if (IsDynamic(CB_DYNAMIC_STATE_COLOR_BLEND_ENABLE_EXT)) {
         if (cb_state.IsDynamicStateSet(CB_DYNAMIC_STATE_COLOR_BLEND_ENABLE_EXT)) {
             ss << "vkCmdSetColorBlendEnableEXT::pColorBlendEnables[" << i << "] is ";
@@ -324,7 +324,7 @@ bool LastBound::IsDualBlending(uint32_t i) const {
 }
 
 std::string LastBound::DescribeBlendFactorEquation(uint32_t i) const {
-    std::stringstream ss;
+    std::ostringstream ss;
     if (IsDynamic(CB_DYNAMIC_STATE_COLOR_BLEND_EQUATION_EXT)) {
         if (cb_state.IsDynamicStateSet(CB_DYNAMIC_STATE_COLOR_BLEND_EQUATION_EXT)) {
             const VkColorBlendEquationEXT &eq = cb_state.dynamic_state_value.color_blend_equations[i];
@@ -720,8 +720,8 @@ bool LastBound::IsSampleShadingEnabled() const {
         if (variable.storage_class != spv::StorageClassInput) {
             continue;
         }
-        if (variable.decorations.Has(spirv::DecorationSet::sample_bit) || variable.decorations.builtin == spv::BuiltInSampleId ||
-            variable.decorations.builtin == spv::BuiltInSamplePosition) {
+        if (variable.decorations.Has(spirv::DecorationSet::sample_bit) || variable.decorations.built_in == spv::BuiltInSampleId ||
+            variable.decorations.built_in == spv::BuiltInSamplePosition) {
             return true;
         }
     }
@@ -749,7 +749,7 @@ float LastBound::GetMinSampleShading() const {
 }
 
 std::string LastBound::DescribeSampleShading() const {
-    std::stringstream ss;
+    std::ostringstream ss;
     ss << "Sample Shading was enbled ";
 
     bool is_implicit = false;
@@ -762,12 +762,12 @@ std::string LastBound::DescribeSampleShading() const {
                 ss << "implicitly in the fragment shader because there is a Sample decorated input variable.";
                 is_implicit = true;
                 break;
-            } else if (variable.decorations.builtin == spv::BuiltInSampleId) {
+            } else if (variable.decorations.built_in == spv::BuiltInSampleId) {
                 ss << "implicitly in the fragment shader because there is a SampleId BuiltIn decorated input variable. "
                       "(gl_SampleID)";
                 is_implicit = true;
                 break;
-            } else if (variable.decorations.builtin == spv::BuiltInSamplePosition) {
+            } else if (variable.decorations.built_in == spv::BuiltInSamplePosition) {
                 ss << "implicitly in the fragment shader because there is a SamplePosition BuiltIn decorated input variable. "
                       "(gl_SamplePosition)";
                 is_implicit = true;
@@ -991,16 +991,21 @@ vvl::DescriptorMode LastBound::GetActionDescriptorMode() const {
         return descriptor_mode;  // Most common case
     }
 
-    // This is only needed  at draw/dispatch time when there is a chance there is not bound descriptor, but can still find from a
+    // This is only needed at draw/dispatch time when there is a chance there is not bound descriptor, but can still find from a
     // pipeline/layout
     if (pipeline_state) {
-        if (pipeline_state->create_flags & VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT) {
+        if (pipeline_state->descriptor_buffer_mode) {
             return vvl::DescriptorModeBuffer;
+        } else if (pipeline_state->descriptor_heap_mode) {
+            return vvl::DescriptorModeHeap;
         } else {
             return vvl::DescriptorModeClassic;
         }
     } else {
         // Shader Object
+        if (GetFirstShader() && GetFirstShader()->descriptor_heap_mode) {
+            return vvl::DescriptorModeHeap;
+        }
         if (desc_set_pipeline_layout) {
             for (uint32_t i = 0; i < desc_set_pipeline_layout->set_layouts.list.size(); i++) {
                 if (const auto set_layout_state = desc_set_pipeline_layout->set_layouts.list[i]) {

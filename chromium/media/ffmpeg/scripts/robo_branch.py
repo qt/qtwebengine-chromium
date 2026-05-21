@@ -3,21 +3,37 @@
 # Copyright 2018 The Chromium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-#
-# Functions to facilitate a branching for merges.
-#
-# A "sushi branch" is a branch that we've created and manage.  We do this to
-# prevent making changes to branches that we don't understand.  It's mostly as
-# a sanity check that we're being used correctly.
+"""Functions to facilitate a branching for merges.
+
+A "sushi branch" is a branch that we've created and manage.  We do this to
+prevent making changes to branches that we don't understand.  It's mostly as
+a sanity check that we're being used correctly.
+"""
 
 import check_merge
 from datetime import datetime
-import find_patches
 import config_flag_changes
+import json
 import os
 import re
+import requests
 from robo_lib.errors import UserInstructions
 from robo_lib import shell
+import robo_setup
+
+
+def AreGnConfigsDone(cfg):
+    # Try to get everything to build if we haven't committed the configs yet.
+    # Note that the only time we need to do this again is if some change makes
+    # different files added / deleted to the build, or if ffmpeg configure
+    # changes.  We don't need to do this if you just edit ffmpeg sources;
+    # those will be built with the tests if they've changed since last time.
+    #
+    # So, if you're just editing ffmpeg sources to get tests to pass, then you
+    # probably don't need to do this step again.
+    if cfg.force_gn_rebuild():
+        return False
+    return robo_branch.IsCommitOnThisBranch(cfg, cfg.gn_commit_title())
 
 
 def IsWorkingDirectoryClean():
@@ -82,7 +98,7 @@ def AreThereAnyUntrackedAutorenamesUnderCwd(cfg):
          "*autorename*"]) != ""
 
 
-def CreateAndCheckoutDatedSushiBranchIfNeeded(cfg):
+def CreateAndCheckoutSushiBranchIfNeeded(cfg):
     """Create a dated branch from upstream/HEAD if we're not already on one."""
     if cfg.sushi_branch_name():
         shell.log(f"Already on sushi branch {cfg.sushi_branch_name()}")
@@ -96,14 +112,64 @@ def CreateAndCheckoutDatedSushiBranchIfNeeded(cfg):
     CreateAndCheckoutDatedSushiBranch(cfg)
 
 
+def DeleteExtraTags(cfg):
+    """Deletes local tags that are not present on origin.
+
+    This is important because, depending on your git configuration, git may
+    attempt to upload any tags it deems are "missing" from origin as part of
+    any `git push` or `git cl upload` commands, which will cause a permission
+    denied error and reject your attempt to upload."""
+    shell.log("Cleaning up extra tags...")
+
+    # 1. Get local tags
+    local_tags_output = shell.output_or_error(["git", "tag", "--list"])
+    local_tags = set(filter(None, local_tags_output.splitlines()))
+
+    # 2. Get remote tags from origin
+    # Use ls-remote to check remote tags
+    origin_tags_output = shell.output_or_error(
+        ["git", "ls-remote", "--tags", "--refs", "origin"])
+    origin_tags = set()
+    for line in origin_tags_output.splitlines():
+        parts = line.split()
+        if len(parts) == 2:
+            ref = parts[1]
+            if ref.startswith("refs/tags/"):
+                origin_tags.add(ref.replace("refs/tags/", ""))
+
+    # 3. Identify tags to remove
+    tags_to_remove = local_tags - origin_tags
+
+    if not tags_to_remove:
+        shell.log("No extra tags to delete.")
+        return
+
+    shell.log(f"Deleting {len(tags_to_remove)} extra tags...")
+
+    # Delete in batches
+    batch_size = 100
+    sorted_tags = sorted(list(tags_to_remove))
+    for i in range(0, len(sorted_tags), batch_size):
+        batch = sorted_tags[i:i + batch_size]
+        cfg.Call(["git", "tag", "-d"] + batch)
+
+
 @RequiresCleanWorkingDirectory
 def MergeUpstreamToSushiBranch(cfg):
     shell.log("Merging upstream/master to local branch")  # nocheck
     if not cfg.sushi_branch_name():
         raise Exception("Refusing to do a merge on a branch I didn't create")
+
+    # Ensure upstream remote exists before fetching.
+    robo_setup.EnsureUpstreamRemote(cfg)
+
     if cfg.Call(["git", "fetch", "upstream"]):
         raise Exception("Could not fetch from upstream")
-    if cfg.Call(["git", "merge", "upstream/master"]):  # nocheck
+
+    # Upstream fetch might have brought in thousands of tags. Clean them up.
+    DeleteExtraTags(cfg)
+
+    if cfg.Call(["git", "merge", "upstream/master"]):
         raise UserInstructions("Merge failed -- resolve conflicts manually.")
     shell.log("Merge has completed successfully")
 
@@ -169,14 +235,6 @@ def CheckMerge(cfg):
     check_merge.main([])
 
 
-def WritePatchesReadme(cfg):
-    """Write the chromium patches file."""
-    shell.log("Generating CHROMIUM.patches file")
-    cfg.chdir_to_ffmpeg_home()
-    with open(os.path.join(cfg.patches_dir_location(), "README"), "w+") as f:
-        find_patches.write_patches_file("HEAD", f)
-
-
 def WriteConfigChangesFile(cfg):
     """Write a file that summarizes the config changes, for easier reviewing."""
     cfg.chdir_to_ffmpeg_home()
@@ -188,14 +246,14 @@ def WriteConfigChangesFile(cfg):
             f.write(f'{delta}\n')
 
 
-def AddAndCommit(cfg, commit_title):
+def AddAndCommit(cfg, commit_title=None):
     """Add everything, and commit locally with |commit_title|"""
+    commit_title = commit_title or cfg.gn_commit_title()
     shell.log("Creating local commit %s" % commit_title)
     cfg.chdir_to_ffmpeg_src()
     if IsWorkingDirectoryClean():
         shell.log("No files to commit to %s" % commit_title)
         return
-    # TODO: Ignore this file, for the "comment out autorename exception" thing.
     if cfg.Call(["git", "add", "-u"]):
         raise Exception("Could not add files")
     if cfg.Call(["git", "commit", "-m", commit_title]):
@@ -257,22 +315,6 @@ def IsCommitOnThisBranch(robo_configuration, commit_title):
         "origin/master..%s" % robo_configuration.branch_name()  # nocheck
     ])
     return commit_title in titles
-
-
-def IsPatchesFileDone(robo_configuration):
-    """Return False if and only if the patches file isn't checked in."""
-    if IsCommitOnThisBranch(robo_configuration,
-                            robo_configuration.patches_commit_title()):
-        shell.log("Skipping patches file since already committed")
-        return True
-    return False
-
-
-@RequiresCleanWorkingDirectory
-def UpdatePatchesFileUnconditionally(robo_configuration):
-    """Update the patches file."""
-    WritePatchesReadme(robo_configuration)
-    AddAndCommit(robo_configuration, robo_configuration.patches_commit_title())
 
 
 def IsChromiumReadmeDone(robo_configuration):
@@ -344,8 +386,13 @@ def IsUploadedForReviewAndLanded(robo_configuration):
     branch_name = robo_configuration.sushi_branch_name()
     # See if origin/sushi and local/sushi are the same.  This check by itself
     # isn't sufficient, since it would return true any time the two are in sync.
-    diff = shell.output_or_error(
-        ["git", "diff", "origin/" + branch_name, branch_name])
+    upstream_branch = shell.output_or_error(
+        ["git", "rev-parse", "--abbrev-ref", "@{u}"])
+    if 'origin' not in upstream_branch:
+        print(f"WARNING - Your branch upstream is set to `{upstream_branch}`" +
+              " but it must be set to an upstream branch in order to continue")
+        return False
+    diff = shell.output_or_error(["git", "diff", upstream_branch, branch_name])
     if diff:
         print(
             "WARNING: Local and origin branches differ. Run `git diff origin/"
@@ -396,6 +443,13 @@ def IsSushiMergedBackToOriginMasterAndPushed(robo_configuration):
 
 @RequiresCleanWorkingDirectory
 def MergeBackToOriginMaster(robo_configuration):
+    if not DoesFakeDepsRollExist(robo_configuration):
+        raise UserInstructions(
+            "You must upload the fake merge to chromium CQ to run *san bots")
+
+    if not IsFakeDepsRollGreen(robo_configuration):
+        raise UserInstructions("You must wait for the CQ to be pass all tests")
+
     """Once the sushi branch has landed in origin after review, merge it back
      to upstream locally and push it."""
     shell.log("Considering merge back of sushi to origin/master")  # nocheck
@@ -431,14 +485,16 @@ def MergeBackToOriginMaster(robo_configuration):
         ["git", "push", "origin", refspec, "-o", "push-justification=b/0"]):
         raise Exception("Could not push to 'origin %s'" % refspec)
 
-    # TODO: should we move the local mastеr branch to origin/mastеr too?
+    # TODO(crbug.com/450394703): should we move the local mastеr branch to
+    # origin/mastеr too?
 
 
 @RequiresCleanWorkingDirectory
 def TryRealDepsRoll(robo_configuration):
     """Once the roll is merged back to upstream, we can start a deps roll"""
     shell.log("Trying to start DEPS roll")
-    # TODO: check if there's already a DEPS roll in progress, somehow.
+    # TODO(crbug.com/450394703): check if there's already a DEPS roll in
+    # progress, somehow.
 
     if not IsSushiMergedBackToOriginMasterAndPushed(robo_configuration):
         raise Exception(
@@ -450,8 +506,9 @@ def TryRealDepsRoll(robo_configuration):
         raise Exception("Cannot get sha1 of HEAD for DEPS roll")
 
     robo_configuration.chdir_to_chrome_src()
-    # TODO: do we need to check if there's already a 'git cl issue'?
-    # TODO: --bug would be nice.
+    # TODO(crbug.com/450394703): do we need to check if there's already
+    # a 'git cl issue'?
+    # TODO(crbug.com/450394703): --bug would be nice.
     shell.output_or_error([
         "roll_dep.py", "--roll-to", sha1, "--log-limit", "10",
         "src/third_party/ffmpeg"
@@ -464,19 +521,27 @@ def TryRealDepsRoll(robo_configuration):
 
 def PrintHappyMessage(robo_configuration):
     # Success!
-    shell.log("==================")
+    shell.log("==================", style=shell.Style.GREEN)
     shell.log(
-        "If you have not already done so, add *san bots to the DEPS roll.")
-    shell.log("Wait until the DEPS roll completes, land it, and then you will")
-    shell.log("have completed your quest to roll the most recent FFmpeg into")
-    shell.log("chromium.  Congratulations, Adventurer!")
-    shell.log("==================")
+        "If you have not already done so, add *san bots to the DEPS roll.",
+        style=shell.Style.GREEN)
+    shell.log("Wait until the DEPS roll completes, land it, and then you will",
+              style=shell.Style.GREEN)
+    shell.log("have completed your quest to roll the most recent FFmpeg into",
+              style=shell.Style.GREEN)
+    shell.log("chromium.  Congratulations, Adventurer!",
+              style=shell.Style.GREEN)
+    shell.log("==================", style=shell.Style.GREEN)
 
 
 @RequiresCleanWorkingDirectory
 def TryFakeDepsRoll(robo_configuration):
     """Start a deps roll against the sushi branch, and -1 it."""
     shell.log("Considering starting a fake deps roll")
+
+    if DoesFakeDepsRollExist(robo_configuration):
+        shell.log("Sorry, you can't re-run this step without a new branch")
+        return
 
     # Make sure that we've landed the sushi commits. Note that this can happen
     # if somebody re-runs robosushi after we upload the commits to Gerrit, but
@@ -487,13 +552,120 @@ def TryFakeDepsRoll(robo_configuration):
             "Cannot start a fake deps roll until gerrit review lands!")
 
     robo_configuration.chdir_to_ffmpeg_home()
-    sha1 = shell.output_or_error("git", "log", "-1", "--format=%H")
+    sha1 = shell.output_or_error(["git", "log", "-1", "--format=%H"])
     if not sha1:
         raise Exception("Cannot get sha1 of HEAD for fakes dep roll")
 
     robo_configuration.chdir_to_chrome_src()
-    # TODO: make sure that there's not a deps roll in progress, else we'll keep
-    # doing this every time we're run.
-    # TODO: get mad otherwise.
+    # TODO(crbug.com/450394703): make sure that there's not a deps roll in
+    # progress, else we'll keep doing this every time we're run.
+    # TODO(crbug.com/450394703): get mad otherwise.
     shell.output_or_error(["roll_dep.py", "third_party/ffmpeg", sha1])
-    # TODO: -1 it.
+    # TODO(crbug.com/450394703): -1 it.
+
+
+def DoesFakeDepsRollExist(robo_configuration):
+    robo_configuration.chdir_to_chrome_src()
+    current_branch = shell.output_or_error(["git", "branch", "--show-current"])
+    issue = f"branch.{current_branch}.gerritissue"
+    try:
+        return shell.output_or_error(["git", "config", "--get", issue]).strip()
+    except:
+        return False
+
+
+
+_DETAIL = "https://chromium-review.googlesource.com/changes/{}/detail?O=16314"
+_CQINFO = "https://cr-buildbucket.appspot.com/prpc/buildbucket.v2.Builds/Batch"
+_CQLINK = "https://chromium-review.googlesource.com/c/chromium/src/+/{}"
+
+
+def _FetchGerritUrlToJson(url:str):
+    query = requests.get(url=url)
+    if query.status_code // 100 != 2:
+        raise Exception(f"Status code [{url}] = {query.status_code}")
+    if query.text[0:4] == ")]}'":
+        return json.loads(query.text[5:])
+    return json.loads(query.text)
+
+
+def _GetCQInfo(issue, revision):
+    # BEHOLD THE MAGICAL INCANTATION
+    payload = {"requests": [{
+        "searchBuilds": {
+            "pageSize": 1000,
+            "mask": {
+                "fields": "id,builder,status,critical",
+                "output_properties": [
+                    {"path": ["cq_fault_attributions"]}
+                ]
+            },
+            "predicate": {
+                "includeExperimental": False,
+                "gerritChanges": [{
+                    "change": issue,
+                    "host": "chromium-review.googlesource.com",
+                    "patchset": revision,
+                    "project": "chromium/src",
+                }]
+            }
+        }
+    }]}
+    headers = {
+        "accept": "application/json",
+    }
+    query = requests.post(_CQINFO, json=payload, headers=headers)
+    if query.status_code // 100 != 2:
+        raise Exception(f"Status code [{url}] = {query.status_code}")
+    if query.text[0:4] == ")]}'":
+        return json.loads(query.text[5:])
+    return json.loads(query.text)
+
+
+def IsFakeDepsRollGreen(robo_configuration):
+    if issue := DoesFakeDepsRollExist(robo_configuration):
+        info = _FetchGerritUrlToJson(_DETAIL.format(issue))
+        active_revision = info["revisions"][info["current_revision"]]
+        rev = active_revision["_number"]
+        cq_info = _GetCQInfo(issue, rev)
+        try:
+            link4msg = _CQLINK.format(issue)
+            botlist = cq_info["responses"][0]["searchBuilds"].get("builds", [])
+            required_bots = set([
+                "linux-tsan-rel", "linux-ubsan-rel", "win-asan-rel",
+                "linux-asan-rel", "mac-asan-rel", "mac-arm64-asan-rel"])
+            bots_pending = False
+            if len(botlist) < 30:
+                shell.log(f"Kick off trybots on {link4msg}")
+                return False
+
+            has_rendered_botlist_url = False
+            for bot in botlist:
+                botname = bot["builder"]["builder"]
+                if bot["status"] != "SUCCESS":
+                    if not has_rendered_botlist_url:
+                        shell.log(f"Follow trybot status at: {link4msg}")
+                        has_rendered_botlist_url = True
+                    shell.log(f"  Bot status [{botname}] is `{bot['status']}`")
+                else:
+                    bots_pending = True
+                if botname in required_bots:
+                    required_bots.remove(botname)
+
+            if required_bots:
+                shell.log(f"CQ {link4msg} is missing bots: {required_bots}")
+                return False
+
+            if bots_pending:
+                shell.log(f"CQ {link4msg} bots are still pending")
+                return False
+        except Exception as e:
+            shell.log(f"DEBUG - Why are the trybots failing?")
+            print("request params", issue, rev)
+            print("response", cq_info)
+            raise e
+
+        return True
+    else:
+        shell.log("This branch has not been uploaded to gerrit for CQ")
+        return False

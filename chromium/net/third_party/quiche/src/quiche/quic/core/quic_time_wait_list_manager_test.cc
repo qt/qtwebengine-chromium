@@ -5,18 +5,32 @@
 #include "quiche/quic/core/quic_time_wait_list_manager.h"
 
 #include <cerrno>
+#include <cstddef>
+#include <cstdint>
 #include <memory>
+#include <string>
 #include <tuple>
 #include <utility>
 #include <vector>
 
+#include "absl/strings/str_cat.h"
+#include "quiche/quic/core/crypto/quic_random.h"
+#include "quiche/quic/core/quic_alarm.h"
+#include "quiche/quic/core/quic_alarm_factory.h"
+#include "quiche/quic/core/quic_arena_scoped_ptr.h"
 #include "quiche/quic/core/quic_connection_id.h"
 #include "quiche/quic/core/quic_framer.h"
+#include "quiche/quic/core/quic_one_block_arena.h"
 #include "quiche/quic/core/quic_packet_writer.h"
 #include "quiche/quic/core/quic_packets.h"
+#include "quiche/quic/core/quic_time.h"
+#include "quiche/quic/core/quic_types.h"
 #include "quiche/quic/core/quic_utils.h"
+#include "quiche/quic/core/quic_versions.h"
 #include "quiche/quic/platform/api/quic_flags.h"
+#include "quiche/quic/platform/api/quic_socket_address.h"
 #include "quiche/quic/platform/api/quic_test.h"
+#include "quiche/quic/test_tools/mock_clock.h"
 #include "quiche/quic/test_tools/mock_quic_session_visitor.h"
 #include "quiche/quic/test_tools/quic_test_utils.h"
 #include "quiche/quic/test_tools/quic_time_wait_list_manager_peer.h"
@@ -158,7 +172,7 @@ class QuicTimeWaitListManagerTest : public QuicTest {
   void ProcessPacket(QuicConnectionId connection_id) {
     time_wait_list_manager_.ProcessPacket(
         self_address_, peer_address_, connection_id, GOOGLE_QUIC_Q043_PACKET,
-        kTestPacketSize, std::make_unique<QuicPerPacketContext>());
+        kTestPacketSize);
   }
 
   QuicEncryptedPacket* ConstructEncryptedPacket(
@@ -235,7 +249,7 @@ TEST_F(QuicTimeWaitListManagerTest, SendVersionNegotiationPacket) {
   time_wait_list_manager_.SendVersionNegotiationPacket(
       connection_id_, EmptyQuicConnectionId(), /*ietf_quic=*/false,
       /*use_length_prefix=*/false, AllSupportedVersions(), self_address_,
-      peer_address_, std::make_unique<QuicPerPacketContext>());
+      peer_address_);
   EXPECT_EQ(0u, time_wait_list_manager_.num_connections());
 }
 
@@ -252,7 +266,7 @@ TEST_F(QuicTimeWaitListManagerTest,
   time_wait_list_manager_.SendVersionNegotiationPacket(
       connection_id_, EmptyQuicConnectionId(), /*ietf_quic=*/true,
       /*use_length_prefix=*/false, AllSupportedVersions(), self_address_,
-      peer_address_, std::make_unique<QuicPerPacketContext>());
+      peer_address_);
   EXPECT_EQ(0u, time_wait_list_manager_.num_connections());
 }
 
@@ -268,7 +282,7 @@ TEST_F(QuicTimeWaitListManagerTest, SendIetfVersionNegotiationPacket) {
   time_wait_list_manager_.SendVersionNegotiationPacket(
       connection_id_, EmptyQuicConnectionId(), /*ietf_quic=*/true,
       /*use_length_prefix=*/true, AllSupportedVersions(), self_address_,
-      peer_address_, std::make_unique<QuicPerPacketContext>());
+      peer_address_);
   EXPECT_EQ(0u, time_wait_list_manager_.num_connections());
 }
 
@@ -285,7 +299,7 @@ TEST_F(QuicTimeWaitListManagerTest,
   time_wait_list_manager_.SendVersionNegotiationPacket(
       connection_id_, TestConnectionId(0x33), /*ietf_quic=*/true,
       /*use_length_prefix=*/true, AllSupportedVersions(), self_address_,
-      peer_address_, std::make_unique<QuicPerPacketContext>());
+      peer_address_);
   EXPECT_EQ(0u, time_wait_list_manager_.num_connections());
 }
 
@@ -649,8 +663,7 @@ TEST_F(QuicTimeWaitListManagerTest,
   // Processes IETF short header packet.
   time_wait_list_manager_.ProcessPacket(
       self_address_, peer_address_, connection_id_,
-      IETF_QUIC_SHORT_HEADER_PACKET, kTestPacketSize,
-      std::make_unique<QuicPerPacketContext>());
+      IETF_QUIC_SHORT_HEADER_PACKET, kTestPacketSize);
 }
 
 TEST_F(QuicTimeWaitListManagerTest,
@@ -672,8 +685,7 @@ TEST_F(QuicTimeWaitListManagerTest,
   // Processes IETF short header packet.
   time_wait_list_manager_.ProcessPacket(
       self_address_, peer_address_, connection_id_,
-      IETF_QUIC_SHORT_HEADER_PACKET, kTestPacketSize,
-      std::make_unique<QuicPerPacketContext>());
+      IETF_QUIC_SHORT_HEADER_PACKET, kTestPacketSize);
 }
 
 TEST_F(QuicTimeWaitListManagerTest,
@@ -699,9 +711,9 @@ TEST_F(QuicTimeWaitListManagerTest,
       .WillRepeatedly(Return(WriteResult(WRITE_STATUS_OK, 1)));
   // Processes IETF short header packet.
   for (auto const& cid : active_connection_ids) {
-    time_wait_list_manager_.ProcessPacket(
-        self_address_, peer_address_, cid, IETF_QUIC_SHORT_HEADER_PACKET,
-        kTestPacketSize, std::make_unique<QuicPerPacketContext>());
+    time_wait_list_manager_.ProcessPacket(self_address_, peer_address_, cid,
+                                          IETF_QUIC_SHORT_HEADER_PACKET,
+                                          kTestPacketSize);
   }
 }
 
@@ -714,13 +726,12 @@ TEST_F(QuicTimeWaitListManagerTest, DonotCrashOnNullStatelessReset) {
       self_address_, peer_address_, TestConnectionId(1),
       /*ietf_quic=*/true,
       /*received_packet_length=*/
-      QuicFramer::GetMinStatelessResetPacketLength() - 1,
-      /*packet_context=*/nullptr);
+      QuicFramer::GetMinStatelessResetPacketLength() - 1);
 }
 
 TEST_F(QuicTimeWaitListManagerTest, SendOrQueueNullPacket) {
   QuicTimeWaitListManagerPeer::SendOrQueuePacket(&time_wait_list_manager_,
-                                                 nullptr, nullptr);
+                                                 nullptr);
 }
 
 TEST_F(QuicTimeWaitListManagerTest, TooManyPendingPackets) {
@@ -739,12 +750,25 @@ TEST_F(QuicTimeWaitListManagerTest, TooManyPendingPackets) {
         self_address_, peer_address_, TestConnectionId(1),
         /*ietf_quic=*/true,
         /*received_packet_length=*/
-        QuicFramer::GetMinStatelessResetPacketLength() + 1,
-        /*packet_context=*/nullptr);
+        QuicFramer::GetMinStatelessResetPacketLength() + 1);
   }
   // Verify pending packet queue size is limited.
   EXPECT_EQ(5u, QuicTimeWaitListManagerPeer::PendingPacketsQueueSize(
                     &time_wait_list_manager_));
+}
+
+TEST(TimeWaitActionTest, Stringify) {
+  EXPECT_EQ(absl::StrCat(QuicTimeWaitListManager::SEND_TERMINATION_PACKETS),
+            "SEND_TERMINATION_PACKETS");
+  EXPECT_EQ(
+      absl::StrCat(QuicTimeWaitListManager::SEND_CONNECTION_CLOSE_PACKETS),
+      "SEND_CONNECTION_CLOSE_PACKETS");
+  EXPECT_EQ(absl::StrCat(QuicTimeWaitListManager::SEND_STATELESS_RESET),
+            "SEND_STATELESS_RESET");
+  EXPECT_EQ(absl::StrCat(QuicTimeWaitListManager::DO_NOTHING), "DO_NOTHING");
+  EXPECT_EQ(
+      absl::StrCat(static_cast<QuicTimeWaitListManager::TimeWaitAction>(0xff)),
+      "Unknown TimeWaitAction (255)");
 }
 
 }  // namespace

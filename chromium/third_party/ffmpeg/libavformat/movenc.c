@@ -161,6 +161,18 @@ static int64_t update_size(AVIOContext *pb, int64_t pos)
     return curpos - pos;
 }
 
+static int64_t update_size_and_version(AVIOContext *pb, int64_t pos, int version)
+{
+    int64_t curpos = avio_tell(pb);
+    avio_seek(pb, pos, SEEK_SET);
+    avio_wb32(pb, curpos - pos); /* rewrite size */
+    avio_skip(pb, 4);
+    avio_w8(pb, version); /* rewrite version */
+    avio_seek(pb, curpos, SEEK_SET);
+
+    return curpos - pos;
+}
+
 static int co64_required(const MOVTrack *track)
 {
     if (track->entry > 0 && track->cluster[track->entry - 1].pos + track->data_offset > UINT32_MAX)
@@ -1344,6 +1356,18 @@ static int mov_write_pcmc_tag(AVFormatContext *s, AVIOContext *pb, MOVTrack *tra
     return update_size(pb, pos);
 }
 
+static int mov_write_srat_tag(AVIOContext *pb, MOVTrack *track)
+{
+    int64_t pos = avio_tell(pb);
+    avio_wb32(pb, 0); /* size */
+    ffio_wfourcc(pb, "srat");
+    avio_wb32(pb, 0); /* version & flags */
+
+    avio_wb32(pb, track->par->sample_rate);
+
+    return update_size(pb, pos);
+}
+
 static int mov_write_audio_tag(AVFormatContext *s, AVIOContext *pb, MOVMuxContext *mov, MOVTrack *track)
 {
     int64_t pos = avio_tell(pb);
@@ -1363,6 +1387,10 @@ static int mov_write_audio_tag(AVFormatContext *s, AVIOContext *pb, MOVMuxContex
                    track->par->codec_id == AV_CODEC_ID_QDM2) {
             version = 1;
         }
+    } else if (track->mode == MODE_MP4) {
+        if (track->par->sample_rate > UINT16_MAX &&
+            (tag == MOV_MP4_IPCM_TAG || tag == MOV_MP4_FPCM_TAG))
+            version = 1;
     }
 
     avio_wb32(pb, 0); /* size */
@@ -1395,6 +1423,8 @@ static int mov_write_audio_tag(AVFormatContext *s, AVIOContext *pb, MOVMuxContex
         avio_wb32(pb, track->sample_size);
         avio_wb32(pb, get_samples_per_packet(track));
     } else {
+        unsigned sample_rate = track->par->sample_rate;
+
         if (track->mode == MODE_MOV) {
             avio_wb16(pb, track->par->ch_layout.nb_channels);
             if (track->par->codec_id == AV_CODEC_ID_PCM_U8 ||
@@ -1415,6 +1445,9 @@ static int mov_write_audio_tag(AVFormatContext *s, AVIOContext *pb, MOVMuxContex
                 avio_wb16(pb, 16);
             }
             avio_wb16(pb, 0);
+
+            while (sample_rate > UINT16_MAX)
+                sample_rate >>= 1;
         }
 
         avio_wb16(pb, 0); /* packet size (= 0) */
@@ -1425,14 +1458,13 @@ static int mov_write_audio_tag(AVFormatContext *s, AVIOContext *pb, MOVMuxContex
         else if (track->par->codec_id == AV_CODEC_ID_TRUEHD)
             avio_wb32(pb, track->par->sample_rate);
         else
-            avio_wb16(pb, track->par->sample_rate <= UINT16_MAX ?
-                          track->par->sample_rate : 0);
+            avio_wb16(pb, sample_rate);
 
         if (track->par->codec_id != AV_CODEC_ID_TRUEHD)
             avio_wb16(pb, 0); /* Reserved */
     }
 
-    if (version == 1) { /* SoundDescription V1 extended info */
+    if (track->mode == MODE_MOV && version == 1) { /* SoundDescription V1 extended info */
         if (mov_pcm_le_gt16(track->par->codec_id) ||
             mov_pcm_be_gt16(track->par->codec_id))
             avio_wb32(pb, 1); /*  must be 1 for  uncompressed formats */
@@ -1478,6 +1510,8 @@ static int mov_write_audio_tag(AVFormatContext *s, AVIOContext *pb, MOVMuxContex
     else if (track->par->codec_id == AV_CODEC_ID_TRUEHD)
         ret = mov_write_dmlp_tag(s, pb, track);
     else if (tag == MOV_MP4_IPCM_TAG || tag == MOV_MP4_FPCM_TAG) {
+        if (track->par->sample_rate > UINT16_MAX)
+            mov_write_srat_tag(pb, track);
         if (track->par->ch_layout.nb_channels > 1)
             ret = mov_write_chnl_tag(s, pb, track);
         if (ret < 0)
@@ -1507,6 +1541,9 @@ static int mov_write_audio_tag(AVFormatContext *s, AVIOContext *pb, MOVMuxContex
     if (mov->write_btrt &&
             ((ret = mov_write_btrt_tag(pb, track)) < 0))
         return ret;
+
+    if (track->mode == MODE_MP4)
+        track->entry_version = version;
 
     ret = update_size(pb, pos);
     return ret;
@@ -3122,7 +3159,7 @@ static int mov_write_stsd_tag(AVFormatContext *s, AVIOContext *pb, MOVMuxContext
 
     track->last_stsd_index = stsd_index_back;
 
-    return update_size(pb, pos);
+    return update_size_and_version(pb, pos, track->entry_version);
 }
 
 static int mov_write_ctts_tag(AVFormatContext *s, AVIOContext *pb, MOVTrack *track)
@@ -5808,8 +5845,11 @@ static int mov_write_sidx_tags(AVIOContext *pb, MOVMuxContext *mov,
             total_size -= mov_write_sidx_tag(avio_buf, track, ref_size,
                                              total_size);
         }
-        if (round == 0)
+        if (round == 0) {
             total_size = ffio_close_null_buf(avio_buf);
+            if (total_size < 0)
+                return total_size;
+        }
     }
     return 0;
 }
@@ -5874,6 +5914,8 @@ static int mov_write_moof_tag(AVIOContext *pb, MOVMuxContext *mov, int tracks,
         return ret;
     mov_write_moof_tag_internal(avio_buf, mov, tracks, 0);
     moof_size = ffio_close_null_buf(avio_buf);
+    if (moof_size < 0)
+        return moof_size;
 
     if (mov->flags & FF_MOV_FLAG_DASH &&
         !(mov->flags & (FF_MOV_FLAG_GLOBAL_SIDX | FF_MOV_FLAG_SKIP_SIDX)))
@@ -7163,9 +7205,11 @@ static int mov_write_single_packet(AVFormatContext *s, AVPacket *pkt)
         uint8_t *side = av_packet_get_side_data(pkt, AV_PKT_DATA_NEW_EXTRADATA, &side_size);
         /* Overwrite extradata only on flush packets or when no extradata was available during init */
         if (side_size > 0 && (!pkt->size || !trk->extradata_size[trk->last_stsd_index])) {
-            void *newextra = av_memdup(side, side_size);
+            void *newextra = av_malloc(side_size + AV_INPUT_BUFFER_PADDING_SIZE);
             if (!newextra)
                 return AVERROR(ENOMEM);
+            memset((uint8_t*)newextra + side_size, 0, AV_INPUT_BUFFER_PADDING_SIZE);
+            memcpy(newextra, side, side_size);
             av_free(trk->extradata[trk->last_stsd_index]);
             trk->extradata[trk->last_stsd_index] = newextra;
             trk->extradata_size[trk->last_stsd_index] = side_size;
@@ -7830,8 +7874,11 @@ static int mov_init_iamf_track(AVFormatContext *s)
         default:
             av_assert0(0);
         }
-        if (ret < 0)
+        if (ret < 0) {
+            ff_iamf_uninit_context(iamf);
+            av_free(iamf);
             return ret;
+        }
     }
 
     track = &mov->tracks[first_iamf_idx];

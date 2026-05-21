@@ -6,6 +6,7 @@
 #define CHROME_BROWSER_UI_WEBUI_TOP_CHROME_UNTRUSTED_TOP_CHROME_WEB_UI_CONTROLLER_H_
 
 #include "chrome/browser/ui/webui/top_chrome/top_chrome_web_ui_controller.h"
+#include "content/public/browser/web_ui_browser_interface_broker_registry.h"
 
 namespace content {
 class WebUI;
@@ -17,13 +18,17 @@ class WebUI;
 // interface needed.
 class UntrustedTopChromeWebUIController : public TopChromeWebUIController {
  public:
-  explicit UntrustedTopChromeWebUIController(content::WebUI* contents,
-                                             bool enable_chrome_send = false);
+  explicit UntrustedTopChromeWebUIController(
+      content::WebUI* contents,
+      bool enable_chrome_send = false,
+      bool enable_chrome_histograms = false);
   ~UntrustedTopChromeWebUIController() override;
   UntrustedTopChromeWebUIController(UntrustedTopChromeWebUIController&) =
       delete;
   UntrustedTopChromeWebUIController& operator=(
       const UntrustedTopChromeWebUIController&) = delete;
+
+  content::WebUIController::TrustPolicy GetTrustPolicy() override;
 };
 
 #endif  // CHROME_BROWSER_UI_WEBUI_TOP_CHROME_UNTRUSTED_TOP_CHROME_WEB_UI_CONTROLLER_H_

@@ -64,18 +64,18 @@ class InternalAuthenticatorAndroid : public webauthn::InternalAuthenticator {
 
   void InvokeMakeCredentialResponse(
       JNIEnv* env,
-      jint status,
-      const base::android::JavaParamRef<jobject>& byte_buffer);
+      int32_t status,
+      const base::android::JavaRef<jobject>& byte_buffer);
   void InvokeGetAssertionResponse(
       JNIEnv* env,
-      jint status,
-      const base::android::JavaParamRef<jobject>& byte_buffer);
+      int32_t status,
+      const base::android::JavaRef<jobject>& byte_buffer);
   void InvokeIsUserVerifyingPlatformAuthenticatorAvailableResponse(
       JNIEnv* env,
-      jboolean is_uvpaa);
+      bool is_uvpaa);
   void InvokeGetMatchingCredentialIdsResponse(
       JNIEnv* env,
-      const base::android::JavaParamRef<jobjectArray>& credential_ids_array);
+      const base::android::JavaRef<jobjectArray>& credential_ids_array);
 
  private:
   // Returns the associated AuthenticatorImpl Java object. Initializes new

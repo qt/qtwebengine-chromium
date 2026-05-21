@@ -11,6 +11,7 @@
 namespace blink {
 
 XRShapedLayer::XRShapedLayer(const XRLayerInit* init,
+                             V8XRLayerLayout::Enum final_layout,
                              XRGraphicsBinding* binding,
                              XRLayerDrawingContext* drawing_context)
     : XRCompositionLayer(binding, drawing_context),
@@ -19,7 +20,7 @@ XRShapedLayer::XRShapedLayer(const XRLayerInit* init,
       texture_height_(init->viewPixelHeight()),
       is_static_(init->isStatic()),
       clear_on_access_(init->clearOnAccess()) {
-  SetLayout(init->layout());
+  SetLayout(final_layout);
   SetMipLevels(init->mipLevels());
 }
 
@@ -42,6 +43,7 @@ void XRShapedLayer::UpdateLayerBackend() {
     device::mojom::blink::XRLayerMutableDataPtr mutable_data =
         device::mojom::blink::XRLayerMutableData::New();
     mutable_data->blend_texture_source_alpha = blendTextureSourceAlpha();
+    mutable_data->force_mono_presentation = forceMonoPresentation();
     mutable_data->opacity = opacity();
     mutable_data->native_origin_information = NativeOrigin();
 

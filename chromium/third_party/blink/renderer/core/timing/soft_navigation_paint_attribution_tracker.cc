@@ -4,9 +4,9 @@
 
 #include "third_party/blink/renderer/core/timing/soft_navigation_paint_attribution_tracker.h"
 
-#include "base/feature_list.h"
 #include "base/trace_event/trace_event.h"
 #include "third_party/blink/renderer/core/dom/node.h"
+#include "third_party/blink/renderer/core/dom/shadow_root.h"
 #include "third_party/blink/renderer/core/layout/layout_object.h"
 #include "third_party/blink/renderer/core/paint/timing/paint_timing_utils.h"
 #include "third_party/blink/renderer/core/paint/timing/text_paint_timing_detector.h"
@@ -14,16 +14,6 @@
 #include "third_party/blink/renderer/core/timing/soft_navigation_context.h"
 
 namespace blink {
-
-namespace {
-
-// When enabled, text aggregator nodes are marked as needing repaint in the
-// `TextPaintTimingDetector` when the `SoftNavigationContext` associated with
-// the node changes.
-BASE_FEATURE(kMarkTextNodesForRepaintOnContextChange,
-             base::FEATURE_ENABLED_BY_DEFAULT);
-
-}  // namespace
 
 SoftNavigationPaintAttributionTracker::SoftNavigationPaintAttributionTracker(
     TextPaintTimingDetector* detector)
@@ -41,6 +31,23 @@ void SoftNavigationPaintAttributionTracker::MarkNodeAsDirectlyModified(
     SoftNavigationContext* context) {
   CHECK(node);
   CHECK(context);
+
+  // Some APIs modify text content directly, e.g. Node.nodeValue. In that case,
+  // mark the parent (container) as modified to be compatible with the pre-paint
+  // walk.
+  if (paint_timing::IsTextType(*node)) {
+    // Special case for modifying text nodes inside of a UA shadow tree, e.g.
+    // changing the value attribute of <input type="button">. The parent node
+    // might not have an associated layout object in that case, so we need to
+    // select the shadow host (e.g. the <input>) as the container.
+    if (ShadowRoot* root = node->ContainingShadowRoot();
+        root && root->IsUserAgent()) {
+      node = &root->host();
+    } else {
+      node = node->parentNode();
+    }
+    CHECK(node);
+  }
 
   if (context->ContextId() != last_modification_context_id_) {
     last_modification_context_id_ = context->ContextId();
@@ -163,9 +170,6 @@ SoftNavigationPaintAttributionTracker::UpdateOnPrePaint(
 
 void SoftNavigationPaintAttributionTracker::
     NotifyPaintTimingDetectorOnContextChanged(const LayoutObject& object) {
-  if (!base::FeatureList::IsEnabled(kMarkTextNodesForRepaintOnContextChange)) {
-    return;
-  }
   if (paint_timing::IsImageType(object)) {
     return;
   }

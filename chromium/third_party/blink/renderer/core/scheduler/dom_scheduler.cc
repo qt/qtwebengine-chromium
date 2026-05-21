@@ -62,17 +62,21 @@ V8TaskPriority::Enum V8TaskEnumFromWebSchedulingPriority(
 }
 }  // namespace
 
+const char DOMScheduler::kSupplementName[] = "DOMScheduler";
+
 DOMScheduler* DOMScheduler::scheduler(ExecutionContext& context) {
-  DOMScheduler* scheduler = context.GetDOMScheduler();
+  DOMScheduler* scheduler =
+      Supplement<ExecutionContext>::From<DOMScheduler>(context);
   if (!scheduler) {
     scheduler = MakeGarbageCollected<DOMScheduler>(&context);
-    context.SetDOMScheduler(scheduler);
+    Supplement<ExecutionContext>::ProvideTo(context, scheduler);
   }
   return scheduler;
 }
 
 DOMScheduler::DOMScheduler(ExecutionContext* context)
     : ExecutionContextLifecycleObserver(context),
+      Supplement<ExecutionContext>(*context),
       fixed_priority_task_signals_(kWebSchedulingPriorityCount) {
   if (context->IsContextDestroyed()) {
     return;
@@ -95,6 +99,7 @@ void DOMScheduler::Trace(Visitor* visitor) const {
   visitor->Trace(signal_to_continuation_queue_map_);
   ScriptWrappable::Trace(visitor);
   ExecutionContextLifecycleObserver::Trace(visitor);
+  Supplement<ExecutionContext>::Trace(visitor);
 }
 
 ScriptPromise<IDLAny> DOMScheduler::postTask(
@@ -218,29 +223,28 @@ SchedulerTaskContext* DOMScheduler::GetSchedulerTaskContextForYield() {
   return can_use_context ? task_context : nullptr;
 }
 
-scheduler::TaskAttributionIdType DOMScheduler::taskId(v8::Isolate* isolate) {
+uint32_t DOMScheduler::asyncData(v8::Isolate* isolate) {
   // `tracker` will be null if TaskAttributionInfrastructureDisabledForTesting
   // is enabled.
   if (auto* tracker = scheduler::TaskAttributionTracker::From(isolate)) {
     // `task_state` is null if there's nothing to propagate.
     if (scheduler::TaskAttributionInfo* task_state =
             tracker->CurrentTaskState()) {
-      return task_state->Id().value();
+      return task_state->AsyncDataForTest();
     }
   }
   return 0;
 }
 
-void DOMScheduler::setTaskId(v8::Isolate* isolate,
-                             scheduler::TaskAttributionIdType task_id) {
+void DOMScheduler::setAsyncData(v8::Isolate* isolate, uint32_t async_data) {
   if (!scheduler::TaskAttributionTracker::From(isolate)) {
     // This will be null if TaskAttributionInfrastructureDisabledForTesting is
     // enabled.
     return;
   }
   auto* task_state = MakeGarbageCollected<TaskAttributionInfoImpl>(
-      scheduler::TaskAttributionId(task_id),
-      /*soft_navigation_context=*/nullptr);
+      /*soft_navigation_context=*/nullptr,
+      /*resource_timing_context=*/nullptr, async_data);
   TaskAttributionTaskState::SetCurrent(isolate, task_state);
   auto* scheduler = ThreadScheduler::Current()->ToMainThreadScheduler();
   // This test API is only available on the main thread.

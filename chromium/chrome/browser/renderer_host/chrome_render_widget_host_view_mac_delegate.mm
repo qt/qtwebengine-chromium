@@ -17,8 +17,8 @@
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/tabs/inactive_window_mouse_event_controller.h"
 #include "chrome/browser/ui/tabs/public/tab_features.h"
-#include "chrome/browser/ui/webui/top_chrome/webui_url_utils.h"
 #include "chrome/common/url_constants.h"
+#include "chrome/common/webui_url_utils.h"
 #include "components/prefs/pref_service.h"
 #include "components/spellcheck/browser/pref_names.h"
 #include "components/spellcheck/browser/spellcheck_platform.h"
@@ -94,6 +94,16 @@
   }
 
   return content::WebContents::FromRenderViewHost(renderViewHost);
+}
+
+- (BOOL)shouldRefuseBecomingKeyView {
+  content::WebContents* webContents = self.webContents;
+  if (webContents && ShouldRefuseBecomingKeyViewForTopChromeWebUI(
+                         webContents->GetLastCommittedURL())) {
+    return YES;
+  }
+
+  return NO;
 }
 
 - (NSView*)nsView {

@@ -38,13 +38,14 @@ class FaxModule {
       int Columns,
       int Rows);
 
+  // `dest_buf` must be exactly `height` * `pitch` in size.
   // Return the ending bit position.
-  static int FaxG4Decode(pdfium::span<const uint8_t> src_buf,
-                         int starting_bitpos,
-                         int width,
-                         int height,
-                         int pitch,
-                         uint8_t* dest_buf);
+  static uint32_t FaxG4Decode(pdfium::span<const uint8_t> src_buf,
+                              uint32_t starting_bitpos,
+                              int width,
+                              int height,
+                              int pitch,
+                              pdfium::span<uint8_t> dest_buf);
 
 #if BUILDFLAG(IS_WIN)
   // `src` must have a BPP value of 1.

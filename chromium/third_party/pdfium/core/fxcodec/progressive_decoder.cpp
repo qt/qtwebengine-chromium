@@ -91,9 +91,7 @@ ProgressiveDecoder::ProgressiveDecoder() = default;
 ProgressiveDecoder::~ProgressiveDecoder() = default;
 
 #ifdef PDF_ENABLE_XFA_PNG
-bool ProgressiveDecoder::PngReadHeader(int width,
-                                       int height,
-                                       double* gamma) {
+bool ProgressiveDecoder::PngReadHeader(int width, int height, double* gamma) {
   if (!device_bitmap_) {
     got_png_metadata_ = true;
     src_width_ = width;
@@ -774,7 +772,7 @@ bool ProgressiveDecoder::ReadMoreData(size_t unconsumed_bytes,
       return false;
     }
   } else {
-    // TODO(crbug.com/pdfium/1904): Simplify the `CFX_CodecMemory` API so we
+    // TODO(crbug.com/42270919): Simplify the `CFX_CodecMemory` API so we
     // don't need to do this awkward dance to free up exactly enough buffer
     // space for the next read.
     size_t already_read_bytes = codec_memory_->GetSize() - unconsumed_bytes;

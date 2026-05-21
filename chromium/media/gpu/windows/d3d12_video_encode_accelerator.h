@@ -36,6 +36,7 @@ class VEAEncodingLatencyMetricsHelper;
 
 typedef base::OnceCallback<void(scoped_refptr<VideoFrame> frame,
                                 base::win::ScopedHandle shared_handle,
+                                uint64_t source_texture_fence_value,
                                 HRESULT hr)>
     FrameAvailableCB;
 
@@ -112,11 +113,11 @@ class MEDIA_GPU_EXPORT D3D12VideoEncodeAccelerator
       uint32_t framerate,
       const std::optional<gfx::Size>& size);
 
-  Microsoft::WRL::ComPtr<ID3D12Resource>
-  CreateResourceForGpuMemoryBufferVideoFrame(const VideoFrame& frame);
+  D3D12PictureBuffer CreateResourceForDXGIHandleBackedVideoFrame(
+      const VideoFrame& frame);
 
-  Microsoft::WRL::ComPtr<ID3D12Resource>
-  CreateResourceForSharedMemoryVideoFrame(const VideoFrame& frame);
+  D3D12PictureBuffer CreateResourceForSharedMemoryVideoFrame(
+      const VideoFrame& frame);
 
   void EncodeTask(scoped_refptr<VideoFrame> frame,
                   const VideoEncoder::EncodeOptions& options);
@@ -143,6 +144,7 @@ class MEDIA_GPU_EXPORT D3D12VideoEncodeAccelerator
   // Invoked when a shared image backed VideoFrame is resolved.
   void OnSharedImageResolved(scoped_refptr<VideoFrame> frame,
                              base::win::ScopedHandle shared_handle,
+                             uint64_t source_texture_fence_value,
                              HRESULT hr);
 
   std::vector<D3D12_VIDEO_ENCODER_CODEC> codecs_;
@@ -203,6 +205,10 @@ class MEDIA_GPU_EXPORT D3D12VideoEncodeAccelerator
   // Used for frame format conversion.
   VideoFrameConverter frame_converter_;
 
+  // Helper that holds a shared D3D11/D3D12 fence used for D3D11 -> D3D12
+  // interop synchronization.
+  std::unique_ptr<D3D11To12Fence> source_texture_fence_;
+
   // Invoked once flush is completed.
   FlushCallback flush_callback_;
 
@@ -210,6 +216,13 @@ class MEDIA_GPU_EXPORT D3D12VideoEncodeAccelerator
       GUARDED_BY_CONTEXT(encoder_sequence_checker_);
 
   base::queue<BitstreamBuffer> bitstream_buffers_
+      GUARDED_BY_CONTEXT(encoder_sequence_checker_);
+
+  // Persistent D3D12 resources for if the input frame needs to be copied from
+  // shared memory.
+  Microsoft::WRL::ComPtr<ID3D12Resource> upload_buffer_
+      GUARDED_BY_CONTEXT(encoder_sequence_checker_);
+  Microsoft::WRL::ComPtr<ID3D12Resource> input_texture_
       GUARDED_BY_CONTEXT(encoder_sequence_checker_);
 
   // Cache for shared handle to D3D12Resource mapping when caching is enabled.

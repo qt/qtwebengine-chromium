@@ -27,6 +27,7 @@
 
 #include "dawn/native/CommandBufferStateTracker.h"
 
+#include <bit>
 #include <limits>
 #include <optional>
 #include <type_traits>
@@ -36,6 +37,7 @@
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/inlined_vector.h"
 #include "dawn/common/Assert.h"
+#include "dawn/common/Math.h"
 #include "dawn/native/BindGroup.h"
 #include "dawn/native/ComputePassEncoder.h"
 #include "dawn/native/ComputePipeline.h"
@@ -51,6 +53,7 @@
 namespace dawn::native {
 
 namespace {
+
 // Returns nullopt if all buffers in unverifiedBufferSizes are at least large enough to satisfy the
 // minimum listed in pipelineMinBufferSizes, or the index of the first detected failing buffer
 // otherwise.
@@ -303,27 +306,33 @@ bool TextureViewsAllMatch(const VectorOfTextureViews& views) {
 enum ValidationAspect {
     VALIDATION_ASPECT_PIPELINE,
     VALIDATION_ASPECT_BIND_GROUPS,
+    VALIDATION_ASPECT_RESOURCE_TABLES,
     VALIDATION_ASPECT_VERTEX_BUFFERS,
     VALIDATION_ASPECT_INDEX_BUFFER,
+    VALIDATION_ASPECT_IMMEDIATE_DATA,
 
     VALIDATION_ASPECT_COUNT
 };
 static_assert(VALIDATION_ASPECT_COUNT == CommandBufferStateTracker::kNumAspects);
 
 static constexpr CommandBufferStateTracker::ValidationAspects kDispatchAspects =
-    1 << VALIDATION_ASPECT_PIPELINE | 1 << VALIDATION_ASPECT_BIND_GROUPS;
+    1 << VALIDATION_ASPECT_PIPELINE | 1 << VALIDATION_ASPECT_BIND_GROUPS |
+    1 << VALIDATION_ASPECT_RESOURCE_TABLES | 1 << VALIDATION_ASPECT_IMMEDIATE_DATA;
 
 static constexpr CommandBufferStateTracker::ValidationAspects kDrawAspects =
     1 << VALIDATION_ASPECT_PIPELINE | 1 << VALIDATION_ASPECT_BIND_GROUPS |
-    1 << VALIDATION_ASPECT_VERTEX_BUFFERS;
+    1 << VALIDATION_ASPECT_RESOURCE_TABLES | 1 << VALIDATION_ASPECT_VERTEX_BUFFERS |
+    1 << VALIDATION_ASPECT_IMMEDIATE_DATA;
 
 static constexpr CommandBufferStateTracker::ValidationAspects kDrawIndexedAspects =
     1 << VALIDATION_ASPECT_PIPELINE | 1 << VALIDATION_ASPECT_BIND_GROUPS |
-    1 << VALIDATION_ASPECT_VERTEX_BUFFERS | 1 << VALIDATION_ASPECT_INDEX_BUFFER;
+    1 << VALIDATION_ASPECT_RESOURCE_TABLES | 1 << VALIDATION_ASPECT_VERTEX_BUFFERS |
+    1 << VALIDATION_ASPECT_INDEX_BUFFER | 1 << VALIDATION_ASPECT_IMMEDIATE_DATA;
 
 static constexpr CommandBufferStateTracker::ValidationAspects kLazyAspects =
-    1 << VALIDATION_ASPECT_BIND_GROUPS | 1 << VALIDATION_ASPECT_VERTEX_BUFFERS |
-    1 << VALIDATION_ASPECT_INDEX_BUFFER;
+    1 << VALIDATION_ASPECT_BIND_GROUPS | 1 << VALIDATION_ASPECT_RESOURCE_TABLES |
+    1 << VALIDATION_ASPECT_VERTEX_BUFFERS | 1 << VALIDATION_ASPECT_INDEX_BUFFER |
+    1 << VALIDATION_ASPECT_IMMEDIATE_DATA;
 
 CommandBufferStateTracker::CommandBufferStateTracker() = default;
 
@@ -546,6 +555,14 @@ void CommandBufferStateTracker::RecomputeLazyAspects(ValidationAspects aspects) 
         }
     }
 
+    if (aspects[VALIDATION_ASPECT_RESOURCE_TABLES]) {
+        // If current pipeline uses a resource table, make sure one has been set on the command
+        // encoder
+        if (!mLastPipelineLayout->UsesResourceTable() || mResourceTable) {
+            mAspects.set(VALIDATION_ASPECT_RESOURCE_TABLES);
+        }
+    }
+
     if (aspects[VALIDATION_ASPECT_VERTEX_BUFFERS]) {
         RenderPipelineBase* lastRenderPipeline = GetRenderPipeline();
 
@@ -560,6 +577,13 @@ void CommandBufferStateTracker::RecomputeLazyAspects(ValidationAspects aspects) 
         if (!IsStripPrimitiveTopology(lastRenderPipeline->GetPrimitiveTopology()) ||
             mIndexFormat == lastRenderPipeline->GetStripIndexFormat()) {
             mAspects.set(VALIDATION_ASPECT_INDEX_BUFFER);
+        }
+    }
+
+    if (aspects[VALIDATION_ASPECT_IMMEDIATE_DATA]) {
+        ImmediateConstantMask requiredMask = mLastPipeline->GetUserImmediateSlots();
+        if (IsSubset(requiredMask, mImmediateDataMask)) {
+            mAspects.set(VALIDATION_ASPECT_IMMEDIATE_DATA);
         }
     }
 }
@@ -599,6 +623,13 @@ MaybeError CommandBufferStateTracker::CheckMissingAspects(ValidationAspects aspe
         return DAWN_VALIDATION_ERROR("Index buffer is invalid.");
     }
 
+    if (aspects[VALIDATION_ASPECT_RESOURCE_TABLES]) {
+        return DAWN_VALIDATION_ERROR(
+            "The current pipeline (%s) was created with `usesResourceTable` but no resource table "
+            "was set on the command encoder.",
+            mLastPipeline);
+    }
+
     if (aspects[VALIDATION_ASPECT_VERTEX_BUFFERS]) {
         // Try to be helpful by finding one missing vertex buffer to surface in the error message.
         const auto missingVertexBuffers =
@@ -609,6 +640,16 @@ MaybeError CommandBufferStateTracker::CheckMissingAspects(ValidationAspects aspe
                                                   VertexBufferSlot(uint8_t(1)));
         return DAWN_VALIDATION_ERROR("Vertex buffer slot %u required by %s was not set.",
                                      uint8_t(firstMissing), GetRenderPipeline());
+    }
+
+    if (aspects[VALIDATION_ASPECT_IMMEDIATE_DATA]) {
+        ImmediateConstantMask requiredMask = mLastPipeline->GetUserImmediateSlots();
+        if (!IsSubset(requiredMask, mImmediateDataMask)) {
+            ImmediateConstantMask missing = requiredMask & ~mImmediateDataMask;
+            size_t firstMissing = std::countr_zero(static_cast<uint64_t>(missing.to_ullong()));
+            return DAWN_VALIDATION_ERROR("Required immediate data at offset %u was not set.",
+                                         firstMissing * kImmediateConstantElementByteSize);
+        }
     }
 
     if (aspects[VALIDATION_ASPECT_BIND_GROUPS]) {
@@ -750,6 +791,11 @@ void CommandBufferStateTracker::SetBindGroup(BindGroupIndex index,
     mAspects.reset(VALIDATION_ASPECT_BIND_GROUPS);
 }
 
+void CommandBufferStateTracker::SetResourceTable(ResourceTableBase* resourceTable) {
+    mResourceTable = resourceTable;
+    mAspects.reset(VALIDATION_ASPECT_RESOURCE_TABLES);
+}
+
 void CommandBufferStateTracker::SetIndexBuffer(BufferBase* buffer,
                                                wgpu::IndexFormat format,
                                                uint64_t offset,
@@ -769,6 +815,14 @@ void CommandBufferStateTracker::UnsetVertexBuffer(VertexBufferSlot slot) {
 void CommandBufferStateTracker::SetVertexBuffer(VertexBufferSlot slot, uint64_t size) {
     mVertexBuffersUsed.set(slot);
     mVertexBufferSizes[slot] = size;
+}
+
+void CommandBufferStateTracker::SetImmediateData(uint32_t offset, uint32_t size) {
+    static_assert(ImmediateConstantMask{}.size() <= 64);
+    uint64_t startSlot = offset / kImmediateConstantElementByteSize;
+    uint64_t slotCount = size / kImmediateConstantElementByteSize;
+
+    mImmediateDataMask |= ImmediateConstantMask(((1u << slotCount) - 1u) << startSlot);
 }
 
 void CommandBufferStateTracker::SetPipelineCommon(PipelineBase* pipeline) {
@@ -834,6 +888,7 @@ void CommandBufferStateTracker::End() {
     mLastPipeline = nullptr;
     mMinBufferSizes = nullptr;
     mBindgroups.fill(nullptr);
+    mResourceTable = nullptr;
 }
 
 }  // namespace dawn::native

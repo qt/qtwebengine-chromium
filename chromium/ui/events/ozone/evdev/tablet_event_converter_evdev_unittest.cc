@@ -10,10 +10,12 @@
 #include <linux/input.h>
 #include <unistd.h>
 
+#include <array>
 #include <memory>
 #include <utility>
 #include <vector>
 
+#include "ash/constants/ash_features.h"
 #include "base/containers/span.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_file.h"
@@ -26,6 +28,9 @@
 #include "base/time/time.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/re2/src/re2/re2.h"
+#include "ui/display/screen.h"
+#include "ui/display/screen_base.h"
+#include "ui/display/test/test_screen.h"
 #include "ui/events/event.h"
 #include "ui/events/event_constants.h"
 #include "ui/events/keycodes/keyboard_codes_posix.h"
@@ -38,10 +43,6 @@
 #include "ui/events/platform/platform_event_source.h"
 #include "ui/events/test/scoped_event_test_tick_clock.h"
 #include "ui/events/types/event_type.h"
-
-#if BUILDFLAG(IS_CHROMEOS)
-#include "ash/constants/ash_features.h"
-#endif
 
 namespace {
 
@@ -483,6 +484,16 @@ class TabletEventConverterEvdevTest : public testing::Test {
     dispatched_events_.push_back(std::move(cloned_event));
   }
 
+  static constexpr int64_t kPrimaryDisplayId = 1;
+  static constexpr gfx::Rect kPrimaryDisplayBounds{0, 0, 800, 600};
+
+  // testing::Test:
+  void SetUp() override {
+    test_screen_.display_list().AddDisplay(
+        display::Display(kPrimaryDisplayId, kPrimaryDisplayBounds),
+        display::DisplayList::Type::PRIMARY);
+  }
+
  private:
   base::test::SingleThreadTaskEnvironment task_environment_{
       base::test::SingleThreadTaskEnvironment::MainThreadType::UI};
@@ -493,6 +504,8 @@ class TabletEventConverterEvdevTest : public testing::Test {
   const std::unique_ptr<ui::EventFactoryEvdev> event_factory_;
   const std::unique_ptr<ui::DeviceEventDispatcherEvdev> dispatcher_;
   const std::unique_ptr<ui::test::ScopedEventTestTickClock> test_clock_;
+  display::test::TestScreen test_screen_{/*create_display=*/false,
+                                         /*register_screen=*/true};
 
   std::vector<std::unique_ptr<ui::Event>> dispatched_events_;
 
@@ -524,7 +537,7 @@ TEST_F(TabletEventConverterEvdevTest, MoveTopLeft) {
       {{0, 0}, EV_SYN, SYN_REPORT, 0},
   };
 
-  dev->ProcessEvents(mock_kernel_queue, std::size(mock_kernel_queue));
+  dev->ProcessEvents(mock_kernel_queue);
   ASSERT_EQ(1u, size());
 
   ui::MouseEvent* event = dispatched_event(0);
@@ -558,7 +571,7 @@ TEST_F(TabletEventConverterEvdevTest, MoveTopRight) {
       {{0, 0}, EV_SYN, SYN_REPORT, 0},
   };
 
-  dev->ProcessEvents(mock_kernel_queue, std::size(mock_kernel_queue));
+  dev->ProcessEvents(mock_kernel_queue);
   ASSERT_EQ(1u, size());
 
   ui::MouseEvent* event = dispatched_event(0);
@@ -593,7 +606,7 @@ TEST_F(TabletEventConverterEvdevTest, MoveBottomLeft) {
       {{0, 0}, EV_SYN, SYN_REPORT, 0},
   };
 
-  dev->ProcessEvents(mock_kernel_queue, std::size(mock_kernel_queue));
+  dev->ProcessEvents(mock_kernel_queue);
   ASSERT_EQ(1u, size());
 
   ui::MouseEvent* event = dispatched_event(0);
@@ -629,7 +642,7 @@ TEST_F(TabletEventConverterEvdevTest, MoveBottomRight) {
       {{0, 0}, EV_SYN, SYN_REPORT, 0},
   };
 
-  dev->ProcessEvents(mock_kernel_queue, std::size(mock_kernel_queue));
+  dev->ProcessEvents(mock_kernel_queue);
   ASSERT_EQ(1u, size());
 
   ui::MouseEvent* event = dispatched_event(0);
@@ -669,7 +682,7 @@ TEST_F(TabletEventConverterEvdevTest,
       {{0, 0}, EV_SYN, SYN_REPORT, 0},
   };
 
-  dev->ProcessEvents(mock_kernel_queue, std::size(mock_kernel_queue));
+  dev->ProcessEvents(mock_kernel_queue);
   ASSERT_EQ(1u, size());
 
   ui::MouseEvent* event = dispatched_event(0);
@@ -717,7 +730,7 @@ TEST_F(TabletEventConverterEvdevTest, Tap) {
       {{0, 0}, EV_SYN, SYN_REPORT, 0},
   };
 
-  dev->ProcessEvents(mock_kernel_queue, std::size(mock_kernel_queue));
+  dev->ProcessEvents(mock_kernel_queue);
   EXPECT_EQ(3u, size());
 
   ui::MouseEvent* event = dispatched_event(0);
@@ -776,7 +789,7 @@ TEST_F(TabletEventConverterEvdevTest, StylusButtonPress) {
       {{0, 0}, EV_SYN, SYN_REPORT, 0},
   };
 
-  dev->ProcessEvents(mock_kernel_queue, std::size(mock_kernel_queue));
+  dev->ProcessEvents(mock_kernel_queue);
   EXPECT_EQ(3u, size());
 
   ui::MouseEvent* event = dispatched_event(0);
@@ -802,7 +815,7 @@ TEST_F(TabletEventConverterEvdevTest, TabletButtonPress) {
       {{0, 0}, EV_KEY, BTN_0, 0},
   };
 
-  dev->ProcessEvents(mock_kernel_queue, std::size(mock_kernel_queue));
+  dev->ProcessEvents(mock_kernel_queue);
   EXPECT_EQ(2u, size());
 
   ui::KeyEvent* event = dispatched_key_event(0);
@@ -825,7 +838,7 @@ TEST_F(TabletEventConverterEvdevTest, CheckStylusFiltering) {
       {{0, 0}, EV_SYN, SYN_REPORT, 0},
   };
 
-  dev->ProcessEvents(mock_kernel_queue, std::size(mock_kernel_queue));
+  dev->ProcessEvents(mock_kernel_queue);
   EXPECT_EQ(0u, size());
 }
 
@@ -872,7 +885,7 @@ TEST_F(TabletEventConverterEvdevTest, DigitizerPenOneSideButtonPress) {
       {{0, 0}, EV_SYN, SYN_REPORT, 0},
   };
 
-  dev->ProcessEvents(mock_kernel_queue, std::size(mock_kernel_queue));
+  dev->ProcessEvents(mock_kernel_queue);
   EXPECT_EQ(3u, size());
 
   ui::MouseEvent* event = dispatched_event(0);
@@ -927,7 +940,7 @@ TEST_F(TabletEventConverterEvdevTest, NoButtonPressedKernel5And6) {
       {PointerType::kPen, ui::EventType::kMouseMoved, ui::EF_NONE},
   };
 
-  dev->ProcessEvents(mock_kernel_queue, std::size(mock_kernel_queue));
+  dev->ProcessEvents(mock_kernel_queue);
   CheckEvents(expected_events);
 }
 
@@ -973,7 +986,7 @@ TEST_F(TabletEventConverterEvdevTest, SideEraserAlwaysPressedKernel5) {
       {PointerType::kEraser, ui::EventType::kMouseMoved, ui::EF_NONE},
   };
 
-  dev->ProcessEvents(mock_kernel_queue, std::size(mock_kernel_queue));
+  dev->ProcessEvents(mock_kernel_queue);
   CheckEvents(expected_events);
 }
 
@@ -1015,7 +1028,7 @@ TEST_F(TabletEventConverterEvdevTest, SideEraserAlwaysPressedKernel6) {
       {PointerType::kEraser, ui::EventType::kMouseMoved, ui::EF_NONE},
   };
 
-  dev->ProcessEvents(mock_kernel_queue, std::size(mock_kernel_queue));
+  dev->ProcessEvents(mock_kernel_queue);
   CheckEvents(expected_events);
 }
 
@@ -1070,7 +1083,7 @@ TEST_F(TabletEventConverterEvdevTest, SideEraserReleasedWhileTouchingKernel5) {
       {PointerType::kPen, ui::EventType::kMouseMoved, ui::EF_NONE},
   };
 
-  dev->ProcessEvents(mock_kernel_queue, std::size(mock_kernel_queue));
+  dev->ProcessEvents(mock_kernel_queue);
   CheckEvents(expected_events);
 }
 
@@ -1120,7 +1133,7 @@ TEST_F(TabletEventConverterEvdevTest, SideEraserReleasedWhileTouchingKernel6) {
       {PointerType::kPen, ui::EventType::kMouseMoved, ui::EF_NONE},
   };
 
-  dev->ProcessEvents(mock_kernel_queue, std::size(mock_kernel_queue));
+  dev->ProcessEvents(mock_kernel_queue);
   CheckEvents(expected_events);
 }
 
@@ -1179,7 +1192,7 @@ TEST_F(TabletEventConverterEvdevTest,
       {PointerType::kEraser, ui::EventType::kMouseMoved, ui::EF_NONE},
   };
 
-  dev->ProcessEvents(mock_kernel_queue, std::size(mock_kernel_queue));
+  dev->ProcessEvents(mock_kernel_queue);
   CheckEvents(expected_events);
 }
 
@@ -1229,7 +1242,7 @@ TEST_F(TabletEventConverterEvdevTest, TailEraserKernel5And6) {
        ui::EF_LEFT_MOUSE_BUTTON},
   };
 
-  dev->ProcessEvents(mock_kernel_queue, std::size(mock_kernel_queue));
+  dev->ProcessEvents(mock_kernel_queue);
   CheckEvents(expected_events);
 }
 
@@ -1280,7 +1293,7 @@ TEST_F(TabletEventConverterEvdevTest, Button1AlwaysPressedKernel5) {
        ui::EF_RIGHT_MOUSE_BUTTON},
   };
 
-  dev->ProcessEvents(mock_kernel_queue, std::size(mock_kernel_queue));
+  dev->ProcessEvents(mock_kernel_queue);
   CheckEvents(expected_events);
 }
 
@@ -1333,7 +1346,7 @@ TEST_F(TabletEventConverterEvdevTest, Button1AlwaysPressedKernel6) {
        ui::EF_RIGHT_MOUSE_BUTTON},
   };
 
-  dev->ProcessEvents(mock_kernel_queue, std::size(mock_kernel_queue));
+  dev->ProcessEvents(mock_kernel_queue);
   CheckEvents(expected_events);
 }
 
@@ -1404,7 +1417,7 @@ TEST_F(TabletEventConverterEvdevTest, Button1ReleasedWhileTouchingKernel5) {
       {PointerType::kPen, ui::EventType::kMouseMoved, ui::EF_NONE},
   };
 
-  dev->ProcessEvents(mock_kernel_queue, std::size(mock_kernel_queue));
+  dev->ProcessEvents(mock_kernel_queue);
   CheckEvents(expected_events);
 }
 
@@ -1479,7 +1492,7 @@ TEST_F(TabletEventConverterEvdevTest, Button1ReleasedWhileTouchingKernel6) {
       {PointerType::kPen, ui::EventType::kMouseMoved, ui::EF_NONE},
   };
 
-  dev->ProcessEvents(mock_kernel_queue, std::size(mock_kernel_queue));
+  dev->ProcessEvents(mock_kernel_queue);
   CheckEvents(expected_events);
 }
 
@@ -1536,7 +1549,7 @@ TEST_F(TabletEventConverterEvdevTest, Button1PressedWhileTouchingKernel5) {
        ui::EF_RIGHT_MOUSE_BUTTON},
   };
 
-  dev->ProcessEvents(mock_kernel_queue, std::size(mock_kernel_queue));
+  dev->ProcessEvents(mock_kernel_queue);
   CheckEvents(expected_events);
 }
 
@@ -1612,7 +1625,7 @@ TEST_F(TabletEventConverterEvdevTest, Button1PressedWhileTouchingKernel6) {
        ui::EF_RIGHT_MOUSE_BUTTON},
   };
 
-  dev->ProcessEvents(mock_kernel_queue, std::size(mock_kernel_queue));
+  dev->ProcessEvents(mock_kernel_queue);
   CheckEvents(expected_events);
 }
 
@@ -1673,7 +1686,7 @@ TEST_F(TabletEventConverterEvdevTest, Button2AlwaysPressedKernel5And6) {
       {PointerType::kPen, ui::EventType::kMouseMoved, ui::EF_NONE},
   };
 
-  dev->ProcessEvents(mock_kernel_queue, std::size(mock_kernel_queue));
+  dev->ProcessEvents(mock_kernel_queue);
   CheckEvents(expected_events);
 }
 
@@ -1735,7 +1748,7 @@ TEST_F(TabletEventConverterEvdevTest, Button2ReleasedWhileTouchingKernel5And6) {
       {PointerType::kPen, ui::EventType::kMouseMoved, ui::EF_NONE},
   };
 
-  dev->ProcessEvents(mock_kernel_queue, std::size(mock_kernel_queue));
+  dev->ProcessEvents(mock_kernel_queue);
   CheckEvents(expected_events);
 }
 
@@ -1792,7 +1805,7 @@ TEST_F(TabletEventConverterEvdevTest, Button2PressedWhileTouchingKernel5And6) {
       {PointerType::kPen, ui::EventType::kMouseMoved, ui::EF_NONE},
   };
 
-  dev->ProcessEvents(mock_kernel_queue, std::size(mock_kernel_queue));
+  dev->ProcessEvents(mock_kernel_queue);
   CheckEvents(expected_events);
 }
 
@@ -1857,7 +1870,7 @@ TEST_F(TabletEventConverterEvdevTest,
        ui::EF_MIDDLE_MOUSE_BUTTON},
   };
 
-  dev->ProcessEvents(mock_kernel_queue, std::size(mock_kernel_queue));
+  dev->ProcessEvents(mock_kernel_queue);
   CheckEvents(expected_events);
 }
 
@@ -1924,7 +1937,7 @@ TEST_F(TabletEventConverterEvdevTest,
        ui::EF_LEFT_MOUSE_BUTTON},
   };
 
-  dev->ProcessEvents(mock_kernel_queue, std::size(mock_kernel_queue));
+  dev->ProcessEvents(mock_kernel_queue);
   CheckEvents(expected_events);
 }
 
@@ -1987,7 +2000,7 @@ TEST_F(TabletEventConverterEvdevTest,
        ui::EF_MIDDLE_MOUSE_BUTTON},
   };
 
-  dev->ProcessEvents(mock_kernel_queue, std::size(mock_kernel_queue));
+  dev->ProcessEvents(mock_kernel_queue);
   CheckEvents(expected_events);
 }
 
@@ -2054,7 +2067,7 @@ TEST_F(TabletEventConverterEvdevTest,
        ui::EF_RIGHT_MOUSE_BUTTON},
   };
 
-  dev->ProcessEvents(mock_kernel_queue, std::size(mock_kernel_queue));
+  dev->ProcessEvents(mock_kernel_queue);
   CheckEvents(expected_events);
 }
 
@@ -2122,7 +2135,7 @@ TEST_F(TabletEventConverterEvdevTest,
        ui::EF_LEFT_MOUSE_BUTTON},
   };
 
-  dev->ProcessEvents(mock_kernel_queue, std::size(mock_kernel_queue));
+  dev->ProcessEvents(mock_kernel_queue);
   CheckEvents(expected_events);
 }
 
@@ -2187,7 +2200,7 @@ TEST_F(TabletEventConverterEvdevTest,
        ui::EF_RIGHT_MOUSE_BUTTON},
   };
 
-  dev->ProcessEvents(mock_kernel_queue, std::size(mock_kernel_queue));
+  dev->ProcessEvents(mock_kernel_queue);
   CheckEvents(expected_events);
 }
 
@@ -2272,4 +2285,123 @@ TEST_F(TabletEventConverterEvdevTest, LogXYTilt) {
   dev->DescribeForLog(output);
 
   EXPECT_EQ(output.str(), log);
+}
+
+// Uses real data captured from Wacom Intuos 5 Pen
+TEST_F(TabletEventConverterEvdevTest, MoveTopLeftRotate90) {
+  std::unique_ptr<ui::MockTabletEventConverterEvdev> dev =
+      CreateDevice(kWacomIntuos5SPen);
+
+  display::Screen* screen = display::Screen::Get();
+  screen->SetPanelRotationForTesting(screen->GetPrimaryDisplay().id(),
+                                     display::Display::ROTATE_90);
+
+  std::array<input_event, 15> mock_kernel_queue{{
+      {{0, 0}, EV_ABS, ABS_DISTANCE, 63},
+      {{0, 0}, EV_ABS, ABS_X, 477},
+      {{0, 0}, EV_ABS, ABS_TILT_X, 66},
+      {{0, 0}, EV_ABS, ABS_TILT_Y, 62},
+      {{0, 0}, EV_ABS, ABS_MISC, 1050626},
+      {{0, 0}, EV_KEY, BTN_TOOL_PEN, 1},
+      {{0, 0}, EV_MSC, MSC_SERIAL, 897618290},
+      {{0, 0}, EV_SYN, SYN_REPORT, 0},
+      {{0, 0}, EV_ABS, ABS_DISTANCE, 0},
+      {{0, 0}, EV_ABS, ABS_TILT_X, 0},
+      {{0, 0}, EV_ABS, ABS_TILT_Y, 0},
+      {{0, 0}, EV_KEY, BTN_TOOL_PEN, 0},
+      {{0, 0}, EV_ABS, ABS_MISC, 0},
+      {{0, 0}, EV_MSC, MSC_SERIAL, 897618290},
+      {{0, 0}, EV_SYN, SYN_REPORT, 0},
+  }};
+
+  dev->ProcessEvents(mock_kernel_queue);
+  ASSERT_EQ(1u, size());
+
+  ui::MouseEvent* event = dispatched_event(0);
+  EXPECT_EQ(ui::EventType::kMouseMoved, event->type());
+
+  // When the panel is installed at 90 degree rotation, top left of tablet
+  // should correspond to the top right of the screen.
+  EXPECT_GT(cursor()->GetLocation().x(),
+            cursor()->GetCursorConfinedBounds().width() - EPSILON);
+  EXPECT_LT(cursor()->GetLocation().y(), EPSILON);
+}
+
+TEST_F(TabletEventConverterEvdevTest, MoveTopLeftRotate180) {
+  std::unique_ptr<ui::MockTabletEventConverterEvdev> dev =
+      CreateDevice(kWacomIntuos5SPen);
+
+  display::Screen* screen = display::Screen::Get();
+  screen->SetPanelRotationForTesting(screen->GetPrimaryDisplay().id(),
+                                     display::Display::ROTATE_180);
+
+  std::array<input_event, 15> mock_kernel_queue{{
+      {{0, 0}, EV_ABS, ABS_DISTANCE, 63},
+      {{0, 0}, EV_ABS, ABS_X, 477},
+      {{0, 0}, EV_ABS, ABS_TILT_X, 66},
+      {{0, 0}, EV_ABS, ABS_TILT_Y, 62},
+      {{0, 0}, EV_ABS, ABS_MISC, 1050626},
+      {{0, 0}, EV_KEY, BTN_TOOL_PEN, 1},
+      {{0, 0}, EV_MSC, MSC_SERIAL, 897618290},
+      {{0, 0}, EV_SYN, SYN_REPORT, 0},
+      {{0, 0}, EV_ABS, ABS_DISTANCE, 0},
+      {{0, 0}, EV_ABS, ABS_TILT_X, 0},
+      {{0, 0}, EV_ABS, ABS_TILT_Y, 0},
+      {{0, 0}, EV_KEY, BTN_TOOL_PEN, 0},
+      {{0, 0}, EV_ABS, ABS_MISC, 0},
+      {{0, 0}, EV_MSC, MSC_SERIAL, 897618290},
+      {{0, 0}, EV_SYN, SYN_REPORT, 0},
+  }};
+
+  dev->ProcessEvents(mock_kernel_queue);
+  ASSERT_EQ(1u, size());
+
+  ui::MouseEvent* event = dispatched_event(0);
+  EXPECT_EQ(ui::EventType::kMouseMoved, event->type());
+
+  // When the panel is installed at 180 degree rotation, top left of tablet
+  // should correspond to the bottom right of the screen.
+  EXPECT_GT(cursor()->GetLocation().x(),
+            cursor()->GetCursorConfinedBounds().height() - EPSILON);
+  EXPECT_GT(cursor()->GetLocation().y(),
+            cursor()->GetCursorConfinedBounds().height() - EPSILON);
+}
+
+TEST_F(TabletEventConverterEvdevTest, MoveTopLeftRotate270) {
+  std::unique_ptr<ui::MockTabletEventConverterEvdev> dev =
+      CreateDevice(kWacomIntuos5SPen);
+
+  display::Screen* screen = display::Screen::Get();
+  screen->SetPanelRotationForTesting(screen->GetPrimaryDisplay().id(),
+                                     display::Display::ROTATE_270);
+
+  std::array<input_event, 15> mock_kernel_queue{{
+      {{0, 0}, EV_ABS, ABS_DISTANCE, 63},
+      {{0, 0}, EV_ABS, ABS_X, 477},
+      {{0, 0}, EV_ABS, ABS_TILT_X, 66},
+      {{0, 0}, EV_ABS, ABS_TILT_Y, 62},
+      {{0, 0}, EV_ABS, ABS_MISC, 1050626},
+      {{0, 0}, EV_KEY, BTN_TOOL_PEN, 1},
+      {{0, 0}, EV_MSC, MSC_SERIAL, 897618290},
+      {{0, 0}, EV_SYN, SYN_REPORT, 0},
+      {{0, 0}, EV_ABS, ABS_DISTANCE, 0},
+      {{0, 0}, EV_ABS, ABS_TILT_X, 0},
+      {{0, 0}, EV_ABS, ABS_TILT_Y, 0},
+      {{0, 0}, EV_KEY, BTN_TOOL_PEN, 0},
+      {{0, 0}, EV_ABS, ABS_MISC, 0},
+      {{0, 0}, EV_MSC, MSC_SERIAL, 897618290},
+      {{0, 0}, EV_SYN, SYN_REPORT, 0},
+  }};
+
+  dev->ProcessEvents(mock_kernel_queue);
+  ASSERT_EQ(1u, size());
+
+  ui::MouseEvent* event = dispatched_event(0);
+  EXPECT_EQ(ui::EventType::kMouseMoved, event->type());
+
+  // When the panel is installed at 270 degree rotation, top left of tablet
+  // should correspond to the bottom left of the screen.
+  EXPECT_LT(cursor()->GetLocation().x(), EPSILON);
+  EXPECT_GT(cursor()->GetLocation().y(),
+            cursor()->GetCursorConfinedBounds().height() - EPSILON);
 }

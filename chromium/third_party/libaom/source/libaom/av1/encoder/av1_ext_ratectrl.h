@@ -24,6 +24,7 @@ typedef struct AOM_EXT_RATECTRL {
   aom_rc_funcs_t funcs;
   aom_rc_config_t ratectrl_config;
   aom_rc_firstpass_stats_t rc_firstpass_stats;
+  aom_sb_params *sb_params_list;
 } AOM_EXT_RATECTRL;
 
 aom_codec_err_t av1_extrc_init(AOM_EXT_RATECTRL *ext_ratectrl);

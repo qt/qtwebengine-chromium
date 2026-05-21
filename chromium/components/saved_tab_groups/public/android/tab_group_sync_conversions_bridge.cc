@@ -21,7 +21,7 @@
 using base::android::ConvertJavaStringToUTF16;
 using base::android::ConvertUTF16ToJavaString;
 using base::android::ConvertUTF8ToJavaString;
-using base::android::JavaParamRef;
+using base::android::JavaRef;
 using base::android::ScopedJavaLocalRef;
 using base::android::TokenAndroid;
 
@@ -99,10 +99,10 @@ JNI_TabGroupSyncConversionsBridge_createGroup(JNIEnv* env,
 // static
 static void JNI_TabGroupSyncConversionsBridge_UpdateVisualData(
     JNIEnv* env,
-    jlong j_group_ptr,
-    const JavaParamRef<jobject>& j_group_id,
-    const JavaParamRef<jstring>& j_title,
-    jint j_color) {
+    int64_t j_group_ptr,
+    const JavaRef<jobject>& j_group_id,
+    const JavaRef<jstring>& j_title,
+    int32_t j_color) {
   // Set visuals on the given SavedTabGroup.
   SavedTabGroup* group = reinterpret_cast<SavedTabGroup*>(j_group_ptr);
   if (j_group_id) {
@@ -119,10 +119,10 @@ static void JNI_TabGroupSyncConversionsBridge_UpdateVisualData(
 // static
 static void JNI_TabGroupSyncConversionsBridge_AddTab(
     JNIEnv* env,
-    jlong j_group_ptr,
-    jint j_tab_id,
-    const JavaParamRef<jstring>& j_title,
-    const JavaParamRef<jobject>& j_url) {
+    int64_t j_group_ptr,
+    int32_t j_tab_id,
+    const JavaRef<jstring>& j_title,
+    const JavaRef<jobject>& j_url) {
   SavedTabGroup* group = reinterpret_cast<SavedTabGroup*>(j_group_ptr);
 
   // Add a tab to the given SavedTabGroup.
@@ -155,7 +155,7 @@ ScopedJavaLocalRef<jobject> TabGroupSyncConversionsBridge::CreateGroup(
 // static
 LocalTabGroupID TabGroupSyncConversionsBridge::FromJavaTabGroupId(
     JNIEnv* env,
-    const JavaParamRef<jobject>& j_group_id) {
+    const JavaRef<jobject>& j_group_id) {
   auto j_token =
       Java_TabGroupSyncConversionsBridge_getNativeTabGroupId(env, j_group_id);
   return TokenAndroid::FromJavaToken(env, j_token);
@@ -174,8 +174,8 @@ ScopedJavaLocalRef<jobject> TabGroupSyncConversionsBridge::ToJavaTabGroupId(
 // static
 void TabGroupSyncConversionsBridge::FillNativeSavedTabGroup(
     JNIEnv* env,
-    const jlong native_saved_tab_group_ptr,
-    const JavaParamRef<jobject>& j_saved_tab_group) {
+    const int64_t native_saved_tab_group_ptr,
+    const JavaRef<jobject>& j_saved_tab_group) {
   Java_TabGroupSyncConversionsBridge_toNativeSavedTabGroup(
       env, native_saved_tab_group_ptr, j_saved_tab_group);
 }

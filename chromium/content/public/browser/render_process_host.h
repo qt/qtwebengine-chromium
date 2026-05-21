@@ -15,16 +15,17 @@
 #include "base/clang_profiling_buildflags.h"
 #include "base/containers/heap_array.h"
 #include "base/containers/id_map.h"
+#include "base/functional/callback_helpers.h"
 #include "base/functional/function_ref.h"
-#include "base/memory/safety_checks.h"
+#include "base/memory/advanced_memory_safety_checks.h"
 #include "base/process/kill.h"
 #include "base/process/process.h"
 #include "base/supports_user_data.h"
 #include "build/build_config.h"
 #include "content/common/buildflags.h"
 #include "content/common/content_export.h"
-#include "content/public/browser/child_process_id.h"
 #include "content/public/browser/web_exposed_isolation_level.h"
+#include "content/public/common/child_process_id.h"
 #include "ipc/ipc_listener.h"
 #include "media/media_buildflags.h"
 #include "media/mojo/mojom/video_decode_perf_history.mojom-forward.h"
@@ -288,10 +289,14 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Listener,
   // counts, then this function does nothing. Otherwise, the function will
   // ignore checking for keep-alive references. This can be removed once
   // keep-alive migration has landed (see crbug.com/40236167).
+  // If |ignore_pending_reuse| is false and this renderer has any pending reuse
+  // ref counts, then this function does nothing. Otherwise, the function will
+  // ignore checking for pending reuse references.
   virtual bool FastShutdownIfPossible(size_t page_count = 0,
                                       bool skip_unload_handlers = false,
                                       bool ignore_workers = false,
-                                      bool ignore_keep_alive = false) = 0;
+                                      bool ignore_keep_alive = false,
+                                      bool ignore_pending_reuse = false) = 0;
 
   // Returns true if fast shutdown was started for the renderer.
   virtual bool FastShutdownStarted() = 0;
@@ -638,7 +643,7 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Listener,
 
   // The following several methods are for internal use only, and are only
   // exposed here to support MockRenderProcessHost usage in tests.
-  virtual void DelayProcessShutdown(
+  [[nodiscard]] virtual base::ScopedClosureRunner DelayProcessShutdown(
       const base::TimeDelta& subframe_shutdown_timeout,
       const base::TimeDelta& unload_handler_timeout,
       const SiteInfo& site_info) = 0;
@@ -789,6 +794,11 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Listener,
   // read from the OS but is cached for a short duration so we don't incur
   // a cost on every call.
   virtual uint64_t GetPrivateMemoryFootprint() = 0;
+
+  // Returns whether the process is only hosting RFHs in prerendered pages
+  // or no RFHs at all. This is for internal use only, and is only exposed here
+  // to support MockRenderProcessHost usage in tests.
+  virtual bool IsOnlyHostingPrerenderedFramesOrEmpty() = 0;
 
   // Static management functions -----------------------------------------------
 

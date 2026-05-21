@@ -7,6 +7,7 @@
 
 #include <optional>
 
+#include "base/memory/memory_pressure_listener.h"
 #include "base/no_destructor.h"
 #include "base/scoped_observation.h"
 #include "base/time/time.h"
@@ -27,7 +28,8 @@ class PerProfileWebUITracker;
 //
 // See comments in TopChromeWebUIConfig for making a WebUI preloadable.
 class WebUIContentsPreloadManager : public ProfileObserver,
-                                    public PerProfileWebUITracker::Observer {
+                                    public PerProfileWebUITracker::Observer,
+                                    public base::MemoryPressureListener {
  public:
   enum class PreloadMode {
     // Preloads on calling `WarmupForBrowser()` and after every WebUI
@@ -80,6 +82,9 @@ class WebUIContentsPreloadManager : public ProfileObserver,
   // Returns the timeticks when the specific `web_contents` was requested.
   std::optional<base::TimeTicks> GetRequestTime(
       content::WebContents* web_contents);
+
+  // Sets the timeticks when the specific `web_contents` was requested.
+  void SetRequestTime(content::WebContents* web_contents, base::TimeTicks time);
 
   // Returns true if the given `web_contents` was preloaded.
   bool WasPreloaded(content::WebContents* web_contents) const;
@@ -179,6 +184,12 @@ class WebUIContentsPreloadManager : public ProfileObserver,
   void OnWebContentsPrimaryPageChanged(
       content::WebContents* web_contents) override;
 
+  // base::MemoryPressureListener:
+  // Note: This class only cares about querying the current level, so no need
+  // to actually react on memory pressure level change.
+  void OnMemoryPressure(
+      base::MemoryPressureLevel memory_pressure_level) override {}
+
   PreloadMode preload_mode_ = PreloadMode::kPreloadOnMakeContents;
 
   // Disable navigations for views unittests because they don't initialize
@@ -213,6 +224,9 @@ class WebUIContentsPreloadManager : public ProfileObserver,
 
   // Observation of destroy of preload content's profile.
   base::ScopedObservation<Profile, ProfileObserver> profile_observation_{this};
+
+  base::MemoryPressureListenerRegistration
+      memory_pressure_listener_registration_;
 };
 
 #endif  // CHROME_BROWSER_UI_WEBUI_TOP_CHROME_WEBUI_CONTENTS_PRELOAD_MANAGER_H_

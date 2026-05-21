@@ -51,6 +51,9 @@ class CastService final : public discovery::ReportingClient {
     // The credentials that the cast service should use for TLS.
     GeneratedCredentials credentials;
 
+    // Device UUID
+    std::string device_uuid;
+
     // The friendly name to be used for broadcasting.
     std::string friendly_name;
 
@@ -59,6 +62,9 @@ class CastService final : public discovery::ReportingClient {
 
     // Whether we should broadcast over mDNS/DNS-SD.
     bool enable_discovery = true;
+
+    // Whether we should enable DSCP packet prioritization for UDP sockets.
+    bool enable_dscp = true;
   };
 
   explicit CastService(Configuration config);

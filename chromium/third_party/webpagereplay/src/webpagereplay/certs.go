@@ -210,6 +210,7 @@ func (tp *tlsProxy) getRecordConfigForClient(clientHello *tls.ClientHelloInfo) (
 	}
 
 	negotiatedProtocol, err := tp.writable_archive.Archive.FindHostNegotiatedProtocol(h)
+	hasArchiveNegotiatedProtocol := err == nil
 	if err != nil {
 		negotiatedProtocol, err = TryNegotiateWPRSupportedProtocol(h)
 	}
@@ -219,6 +220,7 @@ func (tp *tlsProxy) getRecordConfigForClient(clientHello *tls.ClientHelloInfo) (
 
 	certificates := []tls.Certificate{}
 	derBytes, err := tp.writable_archive.Archive.FindHostCertificate(h)
+	hasArchiveCertificate := err == nil
 	if err == nil && derBytes != nil && tp.use_archive_certificates {
 		certBytes := parseDerBytes(derBytes)
 		for i := 0; i < len(certBytes); i++ {
@@ -244,10 +246,12 @@ func (tp *tlsProxy) getRecordConfigForClient(clientHello *tls.ClientHelloInfo) (
 			PrivateKey:  tp.roots[i].PrivateKey})
 		totalDerBytes = append(totalDerBytes, derBytes...)
 	}
-	if tp.use_archive_certificates {
+	if tp.use_archive_certificates && !hasArchiveCertificate {
 		tp.writable_archive.RecordHostCertificate(h, totalDerBytes)
 	}
-	tp.writable_archive.RecordHostNegotiatedProtocol(h, negotiatedProtocol)
+	if !hasArchiveNegotiatedProtocol {
+		tp.writable_archive.RecordHostNegotiatedProtocol(h, negotiatedProtocol)
+	}
 
 	return &tls.Config{
 		Certificates: certificates,

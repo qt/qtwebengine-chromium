@@ -1,0 +1,79 @@
+digraph {
+    graph [
+        bgcolor=transparent,
+        fontname="sans-serif",
+        fontsize=15,
+    ];
+
+    node [shape=box,fontname="sans-serif"]
+    edge [fontname="sans-serif", fontsize=9];
+
+    // Use a single, invisible cluster to force vertical alignment
+    subgraph cluster_main_stack {
+        style=invis;
+
+        // Sender components at the top
+        subgraph cluster_host_sender {
+            label="Host Sender Application";
+            style=dashed;
+            bgcolor="#FBBC04BB";
+
+            sender_app [label="Sender Application\n(UI, etc.)"];
+
+            subgraph cluster_libcast_sender {
+                label="libcast Library";
+                style=solid;
+                bgcolor="#4285F4CC";
+
+                libcast_sender [label="libcast Sender"];
+                streaming_sender [label="Streaming Component"];
+                platform_api_sender [label="Platform API"];
+            }
+
+            platform_impl_sender [label="Platform API Implementation"];
+        }
+
+        // Receiver components at the bottom
+        subgraph cluster_host_receiver {
+            label="Host Receiver Application";
+            style=dashed;
+            bgcolor="#34A853BB";
+
+            { rank=min; receiver_app; } // Force receiver_app to the top of this subgraph
+            receiver_app [label="Receiver Application\n(Media Player)"];
+
+            subgraph cluster_libcast_receiver {
+                label="libcast Library";
+                style=solid;
+                bgcolor="#4285F4CC";
+
+                libcast_receiver [label="libcast Receiver"];
+                streaming_receiver [label="Streaming Component"];
+                platform_api_receiver [label="Platform API"];
+            }
+            // Put dns_sd and platform_impl_receiver on the same rank below the libcast cluster
+            { rank=same; dns_sd; platform_impl_receiver; }
+            dns_sd [label="DNS-SD Publisher"];
+            platform_impl_receiver [label="Platform API Implementation"];
+        }
+    }
+
+    // Sender Side
+    sender_app -> libcast_sender [label=" Owns & Calls "];
+    platform_api_sender -> platform_impl_sender [dir=back, style=dashed, label="Implemented By"];
+    libcast_sender -> platform_api_sender [label="Uses", color="#333333"];
+    libcast_sender -> streaming_sender [label="Uses", color="#333333"];
+    streaming_sender -> platform_api_sender [label="Uses", color="#333333"];
+
+    // Receiver Side
+    dns_sd -> libcast_receiver [label="Publishes"];
+    libcast_receiver -> receiver_app [label="Launches & Forwards Stream"];
+    platform_api_receiver -> platform_impl_receiver [dir=back, style=dashed, label="Implemented By"];
+    libcast_receiver -> platform_api_receiver [label="Uses", color="#333333"];
+    receiver_app -> streaming_receiver [dir=back, label="Receives From"];
+    libcast_receiver -> streaming_receiver [label="Uses", color="#333333"];
+    streaming_receiver -> platform_api_receiver [label="Uses", color="#333333"];
+
+    // Network Connection
+    libcast_sender -> libcast_receiver [style=dotted, label="Network"];
+}

@@ -31,6 +31,8 @@
 #include "src/maglev/s390/maglev-assembler-s390-inl.h"
 #elif V8_TARGET_ARCH_PPC64
 #include "src/maglev/ppc/maglev-assembler-ppc-inl.h"
+#elif V8_TARGET_ARCH_LOONG64
+#include "src/maglev/loong64/maglev-assembler-loong64-inl.h"
 #else
 #error "Maglev does not supported this architecture."
 #endif
@@ -313,7 +315,7 @@ inline void MaglevAssembler::StoreContextCellSmiValue(Register cell,
                                  value);
 }
 
-#if !defined(V8_TARGET_ARCH_RISCV64)
+#if !defined(V8_TARGET_ARCH_RISCV64) && !defined(V8_TARGET_ARCH_LOONG64)
 
 inline void MaglevAssembler::CompareInstanceTypeAndJumpIf(
     Register map, InstanceType type, Condition cond, Label* target,
@@ -784,7 +786,11 @@ inline void MaglevAssembler::CallBuiltin(Builtin builtin) {
 inline void MaglevAssembler::CallBuiltinImpl(Builtin builtin) {
   // Special case allowing calls to DoubleToI, which takes care to preserve all
   // registers and therefore doesn't require special spill handling.
-  DCHECK(allow_call() || builtin == Builtin::kDoubleToI);
+  DCHECK(allow_call() || builtin == Builtin::kDoubleToI
+#ifdef V8_DUMPLING
+         || builtin == Builtin::kDumpFrame
+#endif  // V8_DUMPLING
+  );
 
   // Checking that the allow_allocate effect is correct.
   // TODO(dmercadier): also check this on Bazel (currently disabled by the
@@ -792,8 +798,11 @@ inline void MaglevAssembler::CallBuiltinImpl(Builtin builtin) {
   // builtins-effects.cc in the final v8 binary.
 #ifndef GOOGLE3
   DCHECK_IMPLIES(!allow_allocate(), builtin == Builtin::kDoubleToI ||
+#ifdef V8_DUMPLING
+                                        builtin == Builtin::kDumpFrame ||
+#endif  // V8_DUMPLING
                                         !BuiltinCanAllocate(builtin));
-#endif
+#endif  // GOOGLE3
 
   // Temporaries have to be reset before calling CallBuiltin, in case it uses
   // temporaries that alias register parameters.

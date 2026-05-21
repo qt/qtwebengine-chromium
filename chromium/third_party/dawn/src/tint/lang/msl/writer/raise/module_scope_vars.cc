@@ -341,18 +341,15 @@ struct State {
 }  // namespace
 
 Result<SuccessType> ModuleScopeVars(core::ir::Module& ir) {
-    auto result =
+    TINT_CHECK_RESULT(
         ValidateAndDumpIfNeeded(ir, "msl.ModuleScopeVars",
                                 core::ir::Capabilities{
                                     core::ir::Capability::kAllow8BitIntegers,
-                                    core::ir::Capability::kAllowPointersAndHandlesInStructures,
-                                    core::ir::Capability::kAllowWorkspacePointerInputToEntryPoint,
+                                    core::ir::Capability::kAllowPointSizeBuiltin,
+                                    core::ir::Capability::kMslAllowEntryPointInterface,
                                     core::ir::Capability::kAllowDuplicateBindings,
                                     core::ir::Capability::kAllowNonCoreTypes,
-                                });
-    if (result != Success) {
-        return result.Failure();
-    }
+                                }));
 
     State{ir}.Process();
 

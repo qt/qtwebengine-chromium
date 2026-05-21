@@ -93,9 +93,6 @@ EXCLUDED_TESTS_WINDOWS = [
 
     # Temporarily disabled due to https://crbug.com/400524229
     os.path.join('tests', 'ui', 'process', 'win-command-child-path.rs'),
-
-    # Temporarily disabled due to https://crbug.com/436652831
-    os.path.join('tests', 'ui', 'asm', 'x86_64', 'may_unwind.rs'),
 ]
 EXCLUDED_TESTS_MAC = [
 ]
@@ -558,7 +555,7 @@ def MakeVersionStamp(rust_hash, rust_force_head_revision,
 
 
 def GetLatestRustCommit():
-    """Get the latest commit hash in the LLVM monorepo."""
+    """Get the latest commit hash in the Rust repo."""
     url = (
         'https://chromium.googlesource.com/external/' +
         'github.com/rust-lang/rust/+/refs/heads/main?format=JSON'  # nocheck
@@ -581,30 +578,31 @@ def RustTargetTriple():
 
 
 # Build the LLVM libraries and install them .
-def BuildLLVMLibraries(skip_build, llvm_force_head_revision):
-    if not skip_build:
-        print(f'Building the host LLVM in {RUST_HOST_LLVM_BUILD_DIR}...')
-        build_cmd = [
-            sys.executable,
-            os.path.join(CLANG_SCRIPTS_DIR, 'build.py'),
-            '--disable-asserts',
-            '--no-tools',
-            '--no-runtimes',
-            # PIC needed for Rust build (links LLVM into shared object)
-            '--pic',
-            '--with-ml-inliner-model=',
-            # Not using this in Rust yet, see also crbug.com/1476464.
-            '--without-zstd',
-        ]
-        if llvm_force_head_revision:
-            build_cmd.append('--llvm-force-head-revision')
-        if sys.platform.startswith('linux'):
-            build_cmd.append('--without-android')
-            build_cmd.append('--without-fuchsia')
-        RunCommand(build_cmd + [
-            '--build-dir', RUST_HOST_LLVM_BUILD_DIR, '--install-dir',
-            RUST_HOST_LLVM_INSTALL_DIR
-        ])
+def BuildLLVMLibraries(skip_checkout, llvm_force_head_revision):
+    print(f'Building the host LLVM in {RUST_HOST_LLVM_BUILD_DIR}...')
+    build_cmd = [
+        sys.executable,
+        os.path.join(CLANG_SCRIPTS_DIR, 'build.py'),
+        '--disable-asserts',
+        '--no-tools',
+        '--no-runtimes',
+        # PIC needed for Rust build (links LLVM into shared object)
+        '--pic',
+        '--with-ml-inliner-model=',
+        # Not using this in Rust yet, see also crbug.com/1476464.
+        '--without-zstd',
+    ]
+    if llvm_force_head_revision:
+        build_cmd.append('--llvm-force-head-revision')
+    elif skip_checkout:
+        build_cmd.append('--skip-checkout')
+    if sys.platform.startswith('linux'):
+        build_cmd.append('--without-android')
+        build_cmd.append('--without-fuchsia')
+    RunCommand(build_cmd + [
+        '--build-dir', RUST_HOST_LLVM_BUILD_DIR, '--install-dir',
+        RUST_HOST_LLVM_INSTALL_DIR
+    ])
 
 
 # Move a git submodule to point to a different branch.
@@ -658,10 +656,20 @@ def GitApplyCherryPicks():
     # with `GitMoveSubmoduleBranch()`.
     #############################
 
-    # TODO(crbug.com/446690349): Remove once
-    # https://github.com/rust-lang/rust/pull/146905 lands and we roll past it.
-    GitCherryPick(RUST_SRC_DIR, 'f9c040b7318f86e54fc57119ba5e0664df117600',
+    # TODO(crbug.com/474940921): Remove once
+    # https://github.com/rust-lang/rust/pull/150998 lands and we roll past it.
+    GitCherryPick(RUST_SRC_DIR, '6ca950136de7abd91cc1820b5a7f7109fe568016',
                   'https://github.com/rust-lang/rust.git')
+    # TODO(crbug.com/474940920): Remove once
+    # https://github.com/rust-lang/rust/pull/151072 lands and we roll past it.
+    GitCherryPick(RUST_SRC_DIR, '5435e8188ce1bf0912b3a98a54e316e391d3ca27',
+                  'https://github.com/rust-lang/rust.git')
+
+    # TODO(crbug.com/477565811): Remove once the outline atomics situation is
+    # resolved. This cherry-picks
+    # https://github.com/zmodem/rust/commit/b01caa5309eb7d47bbd2a0b4ae63f7d065be1963
+    GitCherryPick(RUST_SRC_DIR, 'b01caa5309eb7d47bbd2a0b4ae63f7d065be1963',
+                  'https://github.com/zmodem/rust.git', 'zmodem')
 
     print('Finished applying cherry-picks.')
 
@@ -684,6 +692,12 @@ def main():
         action='store_true',
         help=
         'dump all environment variables set for x.py to a file `rust-build-env`'
+    )
+    parser.add_argument(
+        '--stage-1',
+        action='store_true',
+        help=
+        'build/install stage 1 Rust toolchain instead of stage 2 toolchain for faster iteration'
     )
     parser.add_argument('--skip-checkout',
                         action='store_true',
@@ -893,7 +907,8 @@ def main():
         # the hash is valid.
         return 0
 
-    BuildLLVMLibraries(args.skip_llvm_build, args.llvm_force_head_revision)
+    if not args.skip_llvm_build:
+        BuildLLVMLibraries(args.skip_checkout, args.llvm_force_head_revision)
 
     AddCMakeToPath()
 
@@ -906,7 +921,8 @@ def main():
         return 0
 
     target_triple = RustTargetTriple()
-    xpy_args = ['--build', target_triple]
+    stage = '1' if args.stage_1 else '2'
+    xpy_args = ['--build', target_triple, '--stage', stage]
 
     # Delete the build directory.
     if not args.skip_clean:
@@ -916,21 +932,20 @@ def main():
 
     if not args.skip_test:
         print(f'Building stage 2 artifacts and running tests...')
-        xpy.run('test', ['--stage', '2'] + xpy_args + GetTestArgs())
+        xpy.run('test', xpy_args + GetTestArgs())
 
     if not args.skip_install:
-        # Build stage 2 compiler, tools, and libraries. This should reuse
-        # earlier stages from the test command (if run).
-        print('Installing stage 2 artifacts...')
-        xpy.run('build', xpy_args + ['--stage', '2'] + BUILD_TARGETS)
+        # Build compiler, tools, and libraries. This should reuse earlier
+        # stages from the test command (if run).
+        print(f'Building stage {stage} artifacts...')
+        xpy.run('build', xpy_args + BUILD_TARGETS)
 
-    if not args.skip_install:
         print(f'Installing Rust to {RUST_TOOLCHAIN_OUT_DIR} ...')
         # Clean output directory.
         if os.path.exists(RUST_TOOLCHAIN_OUT_DIR):
             RmTree(RUST_TOOLCHAIN_OUT_DIR)
 
-        xpy.run('install', xpy_args + [])
+        xpy.run('install', xpy_args)
 
         WriteStampFile(
             MakeVersionStamp(checkout_revision, args.rust_force_head_revision,
@@ -960,10 +975,9 @@ def main():
                 sys.executable,
                 os.path.join(THIS_DIR, 'build_crubit.py')
             ]
-            # TODO: crbug.com/40226863 - Remove `fail_hard=False` once we can
-            # depend on the OSS Crubit build staying green with latest Rust and
-            # Clang.
-            TeeCmd(build_cmd, log, fail_hard=False)
+            if args.rust_force_head_revision:
+                build_cmd.append("--crubit-force-head-revision")
+            TeeCmd(build_cmd, log)
 
         if args.gnrt_stdlib:
             print('Building gnrt...')

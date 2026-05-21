@@ -49,6 +49,16 @@ COMPONENT_EXPORT(CONTENT_SETTINGS_FEATURES)
 extern const base::FeatureParam<bool>
     kSafetyCheckUnusedSitePermissionsWithDelay;
 
+// When enabled, allows users to choose between approximate and precise location
+// in geolocation permission prompts.
+//
+// Enabling this feature will migrate geolocation permissions from
+// ContentSettingsType::GEOLOCATION to
+// ContentSettingsType::GEOLOCATION_WITH_OPTIONS. When the feature is enabled,
+// ContentSettingType::GEOLOCATION_WITH_OPTIONS should be used in place of
+// ContentSettingsType::GEOLOCATION. The correct ContentSettingsType for
+// geolocation can always be retrieved using
+// content_settings::GeolocationContentSettingsType().
 COMPONENT_EXPORT(CONTENT_SETTINGS_FEATURES)
 BASE_DECLARE_FEATURE(kApproximateGeolocationPermission);
 
@@ -176,8 +186,6 @@ extern const char kTpcdWritePopupCurrentInteractionHeuristicsGrantsName[];
 COMPONENT_EXPORT(CONTENT_SETTINGS_FEATURES)
 extern const char kTpcdWritePopupPastInteractionHeuristicsGrantsName[];
 COMPONENT_EXPORT(CONTENT_SETTINGS_FEATURES)
-extern const char kTpcdBackfillPopupHeuristicsGrantsName[];
-COMPONENT_EXPORT(CONTENT_SETTINGS_FEATURES)
 extern const char kTpcdPopupHeuristicDisableForAdTaggedPopupsName[];
 
 enum class EnableForIframeTypes { kNone = 0, kFirstParty = 1, kAll = 2 };
@@ -212,13 +220,6 @@ extern const base::FeatureParam<base::TimeDelta>
 COMPONENT_EXPORT(CONTENT_SETTINGS_FEATURES)
 extern const base::FeatureParam<base::TimeDelta>
     kTpcdWritePopupPastInteractionHeuristicsGrants;
-
-// The lookback and duration of the storage access grants created when
-// backfilling the Popup With Current Interaction scenario on onboarding to
-// 3PCD. If set to zero duration, to not create backfill grants.
-COMPONENT_EXPORT(CONTENT_SETTINGS_FEATURES)
-extern const base::FeatureParam<base::TimeDelta>
-    kTpcdBackfillPopupHeuristicsGrants;
 
 // Whether to disable writing Popup heuristic grants when the popup is opened
 // via an ad-tagged frame.

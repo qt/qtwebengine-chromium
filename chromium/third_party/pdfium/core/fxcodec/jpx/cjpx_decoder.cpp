@@ -589,7 +589,7 @@ bool CJPX_Decoder::Decode(pdfium::span<uint8_t> dest_buf,
   // the channels of the JPX image. They will contain more information besides
   // the color component data if `image_->numcomps` > `component_count`.
   // Currently only the color component data is used for rendering.
-  // TODO(crbug.com/pdfium/1747): Make full use of the component information.
+  // TODO(crbug.com/42270756): Make full use of the component information.
   std::ranges::fill(dest_buf.first(image_->comps[0].h * pitch), 0xff);
   std::vector<uint8_t*> channel_bufs(image_->numcomps);
   std::vector<int> adjust_comps(image_->numcomps);

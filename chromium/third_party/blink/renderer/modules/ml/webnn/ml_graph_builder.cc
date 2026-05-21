@@ -7,12 +7,12 @@
 #include <algorithm>
 #include <variant>
 
-#include "base/containers/contains.h"
 #include "base/containers/enum_set.h"
 #include "base/containers/span.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/notimplemented.h"
 #include "base/numerics/checked_math.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/trace_event/trace_event.h"
 #include "base/types/expected.h"
 #include "base/types/expected_macros.h"
@@ -1563,8 +1563,8 @@ void FoldReshapableConstants(blink_mojom::GraphInfo& graph_info) {
               graph_info.operations,
               [&constant_operand_id](
                   const blink_mojom::OperationPtr& operation) {
-                return base::Contains(GetInputs(*operation),
-                                      constant_operand_id);
+                return std::ranges::contains(GetInputs(*operation),
+                                             constant_operand_id);
               }) > 1) {
         break;
       }

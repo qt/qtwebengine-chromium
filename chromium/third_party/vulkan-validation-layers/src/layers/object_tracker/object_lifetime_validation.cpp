@@ -1,7 +1,8 @@
-/* Copyright (c) 2015-2025 The Khronos Group Inc.
- * Copyright (c) 2015-2025 Valve Corporation
- * Copyright (c) 2015-2025 LunarG, Inc.
- * Copyright (C) 2015-2025 Google Inc.
+/* Copyright (c) 2015-2026 The Khronos Group Inc.
+ * Copyright (c) 2015-2026 Valve Corporation
+ * Copyright (c) 2015-2026 LunarG, Inc.
+ * Copyright (C) 2015-2026 Google Inc.
+ * Modifications Copyright (C) 2025-2026 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +16,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+#include <vulkan/vk_enum_string_helper.h>
 #include <vulkan/vulkan.h>
 #include "generated/vk_object_types.h"
 #include "object_lifetime_validation.h"
 #include "chassis/dispatch_object.h"
+#include "containers/small_vector.h"
+#include "utils/vk_api_utils.h"
 
 namespace object_lifetimes {
 
@@ -425,7 +429,8 @@ bool Device::ValidateDescriptorWrite(VkWriteDescriptorSet const *desc, bool is_p
                                        "VUID-vkUpdateDescriptorSets-pDescriptorWrites-06236", loc.dot(Field::pTexelBufferView, i));
                 if (!enabled_features.nullDescriptor && desc->pTexelBufferView[i] == VK_NULL_HANDLE) {
                     skip |= LogError("VUID-VkWriteDescriptorSet-descriptorType-02995", desc->dstSet,
-                                     loc.dot(Field::pTexelBufferView, i), "is VK_NULL_HANDLE.");
+                                     loc.dot(Field::pTexelBufferView, i), "is VK_NULL_HANDLE, and descriptorType is %s",
+                                     string_VkDescriptorType(desc->descriptorType));
                 }
             }
             break;
@@ -440,13 +445,18 @@ bool Device::ValidateDescriptorWrite(VkWriteDescriptorSet const *desc, bool is_p
                                            "VUID-vkUpdateDescriptorSets-pDescriptorWrites-06239",
                                            loc.dot(Field::pImageInfo, i).dot(Field::imageView));
                     if (!enabled_features.nullDescriptor && desc->pImageInfo[i].imageView == VK_NULL_HANDLE) {
-                        skip |= LogError("VUID-VkWriteDescriptorSet-descriptorType-02997", desc->dstSet,
-                                         loc.dot(Field::pImageInfo, i).dot(Field::imageView), "is VK_NULL_HANDLE.");
+                        skip |=
+                            LogError("VUID-VkWriteDescriptorSet-descriptorType-02997", desc->dstSet,
+                                     loc.dot(Field::pImageInfo, i).dot(Field::imageView),
+                                     "is VK_NULL_HANDLE, and descriptorType is %s", string_VkDescriptorType(desc->descriptorType));
                     }
                 }
             }
             break;
         }
+
+        case VK_DESCRIPTOR_TYPE_SAMPLE_WEIGHT_IMAGE_QCOM:
+        case VK_DESCRIPTOR_TYPE_BLOCK_MATCH_IMAGE_QCOM:
         case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT: {
             // Input attachments can never be null
             if (desc->pImageInfo) {
@@ -469,14 +479,17 @@ bool Device::ValidateDescriptorWrite(VkWriteDescriptorSet const *desc, bool is_p
                         desc->pBufferInfo[i].buffer, kVulkanObjectTypeBuffer, true, "VUID-VkDescriptorBufferInfo-buffer-parameter",
                         "VUID-vkUpdateDescriptorSets-pDescriptorWrites-06237", loc.dot(Field::pBufferInfo, i).dot(Field::buffer));
                     if (!enabled_features.nullDescriptor && desc->pBufferInfo[i].buffer == VK_NULL_HANDLE) {
-                        skip |= LogError("VUID-VkDescriptorBufferInfo-buffer-02998", desc->dstSet,
-                                         loc.dot(Field::pBufferInfo, i).dot(Field::buffer), "is VK_NULL_HANDLE.");
+                        skip |=
+                            LogError("VUID-VkDescriptorBufferInfo-buffer-02998", desc->dstSet,
+                                     loc.dot(Field::pBufferInfo, i).dot(Field::buffer),
+                                     "is VK_NULL_HANDLE, and descriptorType is %s", string_VkDescriptorType(desc->descriptorType));
                     }
                 }
             }
             break;
         }
 
+        case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV:
         case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR: {
             if (const auto *acc_info = vku::FindStructInPNextChain<VkWriteDescriptorSetAccelerationStructureKHR>(desc->pNext)) {
                 for (uint32_t i = 0; i < desc->descriptorCount; ++i) {
@@ -516,15 +529,23 @@ bool Device::ValidateDescriptorWrite(VkWriteDescriptorSet const *desc, bool is_p
             break;
         }
 
-        // VkWriteDescriptorSetPartitionedAccelerationStructureNV contains no VkObjects to validate
-        case VK_DESCRIPTOR_TYPE_PARTITIONED_ACCELERATION_STRUCTURE_NV:
+        case VK_DESCRIPTOR_TYPE_TENSOR_ARM: {
+            if (const auto *tensor_info = vku::FindStructInPNextChain<VkWriteDescriptorSetTensorARM>(desc->pNext)) {
+                for (uint32_t i = 0; i < desc->descriptorCount; ++i) {
+                    skip |= ValidateObject(tensor_info->pTensorViews[i], kVulkanObjectTypeTensorViewARM, true,
+                                           "VUID-VkWriteDescriptorSetTensorARM-pTensorViews-parameter",
+                                           "VUID-vkUpdateDescriptorSets-pDescriptorWrites-12324",
+                                           loc.pNext(Struct::VkWriteDescriptorSetTensorARM, Field::pTensorViews, i));
+                }
+            }
+            break;
+        }
 
-        // TODO - These need to be checked as well
+        // PTLAS uses VkDeviceAddress values, not VkAccelerationStructureKHR handles - no objects to validate
+        case VK_DESCRIPTOR_TYPE_PARTITIONED_ACCELERATION_STRUCTURE_NV:
+        // Inline has no objects, so nothing to validate
         case VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK:
-        case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV:
-        case VK_DESCRIPTOR_TYPE_SAMPLE_WEIGHT_IMAGE_QCOM:
-        case VK_DESCRIPTOR_TYPE_BLOCK_MATCH_IMAGE_QCOM:
-        case VK_DESCRIPTOR_TYPE_TENSOR_ARM:
+        // Not possible to have MUTABLE because this is where the real type is set
         case VK_DESCRIPTOR_TYPE_MUTABLE_EXT:
         case VK_DESCRIPTOR_TYPE_MAX_ENUM:
             break;
@@ -1511,9 +1532,11 @@ bool Device::PreCallValidateCreateRayTracingPipelinesKHR(VkDevice device, VkDefe
                     }
                 }
             }
-            skip |= ValidateObject(pCreateInfos[index0].layout, kVulkanObjectTypePipelineLayout, false, false,
-                                   "VUID-VkRayTracingPipelineCreateInfoKHR-layout-parameter",
-                                   "VUID-VkRayTracingPipelineCreateInfoKHR-commonparent", create_info_loc.dot(Field::layout));
+            if (pCreateInfos[index0].layout) {
+                skip |= ValidateObject(pCreateInfos[index0].layout, kVulkanObjectTypePipelineLayout, false,
+                                       "VUID-VkRayTracingPipelineCreateInfoKHR-layout-parameter",
+                                       "VUID-VkRayTracingPipelineCreateInfoKHR-commonparent", create_info_loc.dot(Field::layout));
+            }
             if ((pCreateInfos[index0].flags & VK_PIPELINE_CREATE_DERIVATIVE_BIT) && (pCreateInfos[index0].basePipelineIndex == -1))
                 skip |= ValidateObject(pCreateInfos[index0].basePipelineHandle, kVulkanObjectTypePipeline, false,
                                        "VUID-VkRayTracingPipelineCreateInfoKHR-flags-07984",
@@ -1534,11 +1557,11 @@ void Device::PostCallRecordCreateRayTracingPipelinesKHR(VkDevice device, VkDefer
     if (VK_ERROR_VALIDATION_FAILED_EXT == record_obj.result) return;
     if (pPipelines) {
         if (deferredOperation != VK_NULL_HANDLE && record_obj.result == VK_OPERATION_DEFERRED_KHR) {
-            auto register_fn = [this, pAllocator, record_obj, chassis_state](const std::vector<VkPipeline> &pipelines) {
+            auto register_fn = [this, pAllocator, record_obj, chassis_state](std::pair<uint32_t, VkPipeline *> pipelines) {
                 // Just need to capture chassis state to maintain pipeline creations parameters alive, see
                 // https://vkdoc.net/chapters/deferred-host-operations#deferred-host-operations-requesting
                 (void)chassis_state;
-                for (VkPipeline pipe : pipelines) {
+                for (VkPipeline pipe : vvl::make_span(pipelines.second, pipelines.first)) {
                     this->tracker.CreateObject(pipe, kVulkanObjectTypePipeline, pAllocator, record_obj.location, this->device);
                 }
             };
@@ -1546,7 +1569,7 @@ void Device::PostCallRecordCreateRayTracingPipelinesKHR(VkDevice device, VkDefer
             if (dispatch_device_->wrap_handles) {
                 deferredOperation = dispatch_device_->Unwrap(deferredOperation);
             }
-            std::vector<std::function<void(const std::vector<VkPipeline> &)>> cleanup_fn;
+            std::vector<std::function<void(std::pair<uint32_t, VkPipeline *>)>> cleanup_fn;
             auto find_res = dispatch_device_->deferred_operation_post_check.pop(deferredOperation);
             if (find_res->first) {
                 cleanup_fn = std::move(find_res->second);
@@ -1840,5 +1863,38 @@ void Device::PostCallRecordCreatePipelineBinariesKHR(VkDevice device, const VkPi
                                  record_obj.location, device);
         }
     }
+}
+
+bool Device::PreCallValidateWriteResourceDescriptorsEXT(VkDevice device, uint32_t resourceCount,
+                                                        const VkResourceDescriptorInfoEXT* pResources,
+                                                        const VkHostAddressRangeEXT* pDescriptors,
+                                                        const ErrorObject& error_obj) const {
+    bool skip = false;
+    // Checked by chassis: device: "VUID-vkWriteResourceDescriptorsEXT-device-parameter"
+    if (pResources) {
+        for (uint32_t index0 = 0; index0 < resourceCount; ++index0) {
+            [[maybe_unused]] const Location index0_loc = error_obj.location.dot(Field::pResources, index0);
+            [[maybe_unused]] const Location data_loc = index0_loc.dot(Field::data);
+            if (pResources[index0].data.pImage && IsDescriptorHeapImage(pResources[index0].type)) {
+                [[maybe_unused]] const Location pImage_loc = data_loc.dot(Field::pImage);
+                if (pResources[index0].data.pImage->pView) {
+                    [[maybe_unused]] const Location pView_loc = pImage_loc.dot(Field::pView);
+                    skip |= ValidateObject(pResources[index0].data.pImage->pView->image, kVulkanObjectTypeImage, false,
+                                           "VUID-VkImageViewCreateInfo-image-parameter",
+                                           "UNASSIGNED-VkImageViewCreateInfo-image-parent", pView_loc.dot(Field::image));
+                    if ([[maybe_unused]] auto pNext = vku::FindStructInPNextChain<VkSamplerYcbcrConversionInfo>(
+                            pResources[index0].data.pImage->pView->pNext)) {
+                        [[maybe_unused]] const Location pNext_loc = pView_loc.pNext(Struct::VkSamplerYcbcrConversionInfo);
+                        skip |= ValidateObject(pNext->conversion, kVulkanObjectTypeSamplerYcbcrConversion, false,
+                                               "VUID-VkSamplerYcbcrConversionInfo-conversion-parameter",
+                                               "UNASSIGNED-VkSamplerYcbcrConversionInfo-conversion-parent",
+                                               pNext_loc.dot(Field::conversion));
+                    }
+                }
+            }
+        }
+    }
+
+    return skip;
 }
 }  // namespace object_lifetimes

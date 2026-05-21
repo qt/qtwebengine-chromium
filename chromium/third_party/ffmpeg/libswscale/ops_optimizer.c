@@ -31,20 +31,104 @@
             return ret;                                                        \
     } while (0)
 
-/* Returns true for operations that are independent per channel. These can
- * usually be commuted freely other such operations. */
-static bool op_type_is_independent(SwsOpType op)
+/**
+ * Try to commute a clear op with the next operation. Makes any adjustments
+ * to the operations as needed, but does not perform the actual commutation.
+ *
+ * Returns whether successful.
+ */
+static bool op_commute_clear(SwsOp *op, SwsOp *next)
 {
-    switch (op) {
-    case SWS_OP_SWAP_BYTES:
+    av_assert1(op->op == SWS_OP_CLEAR);
+    switch (next->op) {
+    case SWS_OP_CONVERT:
+        op->type = next->convert.to;
+        /* fall through */
     case SWS_OP_LSHIFT:
     case SWS_OP_RSHIFT:
-    case SWS_OP_CONVERT:
     case SWS_OP_DITHER:
     case SWS_OP_MIN:
     case SWS_OP_MAX:
     case SWS_OP_SCALE:
+    case SWS_OP_READ:
+    case SWS_OP_SWIZZLE:
+        ff_sws_apply_op_q(next, op->c.q4);
         return true;
+    case SWS_OP_INVALID:
+    case SWS_OP_SWAP_BYTES:
+    case SWS_OP_WRITE:
+    case SWS_OP_LINEAR:
+    case SWS_OP_PACK:
+    case SWS_OP_UNPACK:
+    case SWS_OP_CLEAR:
+        return false;
+    case SWS_OP_TYPE_NB:
+        break;
+    }
+
+    av_unreachable("Invalid operation type!");
+    return false;
+}
+
+ /**
+  * Try to commute a swizzle op with the next operation. Makes any adjustments
+  * to the operations as needed, but does not perform the actual commutation.
+  *
+  * Returns whether successful.
+  */
+static bool op_commute_swizzle(SwsOp *op, SwsOp *next)
+{
+    bool seen[4] = {0};
+
+    av_assert1(op->op == SWS_OP_SWIZZLE);
+    switch (next->op) {
+    case SWS_OP_CONVERT:
+        op->type = next->convert.to;
+        /* fall through */
+    case SWS_OP_SWAP_BYTES:
+    case SWS_OP_LSHIFT:
+    case SWS_OP_RSHIFT:
+    case SWS_OP_SCALE:
+        return true;
+
+    /**
+     * We can commute per-channel ops only if the per-channel constants are the
+     * same for all duplicated channels; e.g.:
+     *   SWIZZLE {0, 0, 0, 3}
+     *   NEXT    {x, x, x, w}
+     * ->
+     *   NEXT    {x, _, _, w}
+     *   SWIZZLE {0, 0, 0, 3}
+     */
+    case SWS_OP_MIN:
+    case SWS_OP_MAX: {
+        const SwsConst c = next->c;
+        for (int i = 0; i < 4; i++) {
+            if (next->comps.unused[i])
+                continue;
+            const int j = op->swizzle.in[i];
+            if (seen[j] && av_cmp_q(next->c.q4[j], c.q4[i]))
+                return false;
+            next->c.q4[j] = c.q4[i];
+            seen[j] = true;
+        }
+        return true;
+    }
+
+    case SWS_OP_DITHER: {
+        const SwsDitherOp d = next->dither;
+        for (int i = 0; i < 4; i++) {
+            if (next->comps.unused[i])
+                continue;
+            const int j = op->swizzle.in[i];
+            if (seen[j] && next->dither.y_offset[j] != d.y_offset[i])
+                return false;
+            next->dither.y_offset[j] = d.y_offset[i];
+            seen[j] = true;
+        }
+        return true;
+    }
+
     case SWS_OP_INVALID:
     case SWS_OP_READ:
     case SWS_OP_WRITE:
@@ -60,245 +144,6 @@ static bool op_type_is_independent(SwsOpType op)
 
     av_unreachable("Invalid operation type!");
     return false;
-}
-
-/* merge_comp_flags() forms a monoid with flags_identity as the null element */
-static const unsigned flags_identity = SWS_COMP_ZERO | SWS_COMP_EXACT;
-static unsigned merge_comp_flags(unsigned a, unsigned b)
-{
-    const unsigned flags_or  = SWS_COMP_GARBAGE;
-    const unsigned flags_and = SWS_COMP_ZERO | SWS_COMP_EXACT;
-    return ((a & b) & flags_and) | ((a | b) & flags_or);
-}
-
-/* Infer + propagate known information about components */
-void ff_sws_op_list_update_comps(SwsOpList *ops)
-{
-    SwsComps next = { .unused = {true, true, true, true} };
-    SwsComps prev = { .flags = {
-        SWS_COMP_GARBAGE, SWS_COMP_GARBAGE, SWS_COMP_GARBAGE, SWS_COMP_GARBAGE,
-    }};
-
-    /* Forwards pass, propagates knowledge about the incoming pixel values */
-    for (int n = 0; n < ops->num_ops; n++) {
-        SwsOp *op = &ops->ops[n];
-
-        /* Prefill min/max values automatically; may have to be fixed in
-         * special cases */
-        memcpy(op->comps.min, prev.min, sizeof(prev.min));
-        memcpy(op->comps.max, prev.max, sizeof(prev.max));
-
-        if (op->op != SWS_OP_SWAP_BYTES) {
-            ff_sws_apply_op_q(op, op->comps.min);
-            ff_sws_apply_op_q(op, op->comps.max);
-        }
-
-        switch (op->op) {
-        case SWS_OP_READ:
-            for (int i = 0; i < op->rw.elems; i++) {
-                if (ff_sws_pixel_type_is_int(op->type)) {
-                    int bits = 8 * ff_sws_pixel_type_size(op->type);
-                    if (!op->rw.packed && ops->src.desc) {
-                        /* Use legal value range from pixdesc if available;
-                         * we don't need to do this for packed formats because
-                         * non-byte-aligned packed formats will necessarily go
-                         * through SWS_OP_UNPACK anyway */
-                        for (int c = 0; c < 4; c++) {
-                            if (ops->src.desc->comp[c].plane == i) {
-                                bits = ops->src.desc->comp[c].depth;
-                                break;
-                            }
-                        }
-                    }
-
-                    op->comps.flags[i] = SWS_COMP_EXACT;
-                    op->comps.min[i] = Q(0);
-                    op->comps.max[i] = Q((1ULL << bits) - 1);
-                }
-            }
-            for (int i = op->rw.elems; i < 4; i++)
-                op->comps.flags[i] = prev.flags[i];
-            break;
-        case SWS_OP_WRITE:
-            for (int i = 0; i < op->rw.elems; i++)
-                av_assert1(!(prev.flags[i] & SWS_COMP_GARBAGE));
-            /* fall through */
-        case SWS_OP_SWAP_BYTES:
-        case SWS_OP_LSHIFT:
-        case SWS_OP_RSHIFT:
-        case SWS_OP_MIN:
-        case SWS_OP_MAX:
-            /* Linearly propagate flags per component */
-            for (int i = 0; i < 4; i++)
-                op->comps.flags[i] = prev.flags[i];
-            break;
-        case SWS_OP_DITHER:
-            /* Strip zero flag because of the nonzero dithering offset */
-            for (int i = 0; i < 4; i++)
-                op->comps.flags[i] = prev.flags[i] & ~SWS_COMP_ZERO;
-            break;
-        case SWS_OP_UNPACK:
-            for (int i = 0; i < 4; i++) {
-                if (op->pack.pattern[i])
-                    op->comps.flags[i] = prev.flags[0];
-                else
-                    op->comps.flags[i] = SWS_COMP_GARBAGE;
-            }
-            break;
-        case SWS_OP_PACK: {
-            unsigned flags = flags_identity;
-            for (int i = 0; i < 4; i++) {
-                if (op->pack.pattern[i])
-                    flags = merge_comp_flags(flags, prev.flags[i]);
-                if (i > 0) /* clear remaining comps for sanity */
-                    op->comps.flags[i] = SWS_COMP_GARBAGE;
-            }
-            op->comps.flags[0] = flags;
-            break;
-        }
-        case SWS_OP_CLEAR:
-            for (int i = 0; i < 4; i++) {
-                if (op->c.q4[i].den) {
-                    if (op->c.q4[i].num == 0) {
-                        op->comps.flags[i] = SWS_COMP_ZERO | SWS_COMP_EXACT;
-                    } else if (op->c.q4[i].den == 1) {
-                        op->comps.flags[i] = SWS_COMP_EXACT;
-                    }
-                } else {
-                    op->comps.flags[i] = prev.flags[i];
-                }
-            }
-            break;
-        case SWS_OP_SWIZZLE:
-            for (int i = 0; i < 4; i++)
-                op->comps.flags[i] = prev.flags[op->swizzle.in[i]];
-            break;
-        case SWS_OP_CONVERT:
-            for (int i = 0; i < 4; i++) {
-                op->comps.flags[i] = prev.flags[i];
-                if (ff_sws_pixel_type_is_int(op->convert.to))
-                    op->comps.flags[i] |= SWS_COMP_EXACT;
-            }
-            break;
-        case SWS_OP_LINEAR:
-            for (int i = 0; i < 4; i++) {
-                unsigned flags = flags_identity;
-                AVRational min = Q(0), max = Q(0);
-                for (int j = 0; j < 4; j++) {
-                    const AVRational k = op->lin.m[i][j];
-                    AVRational mink = av_mul_q(prev.min[j], k);
-                    AVRational maxk = av_mul_q(prev.max[j], k);
-                    if (k.num) {
-                        flags = merge_comp_flags(flags, prev.flags[j]);
-                        if (k.den != 1) /* fractional coefficient */
-                            flags &= ~SWS_COMP_EXACT;
-                        if (k.num < 0)
-                            FFSWAP(AVRational, mink, maxk);
-                        min = av_add_q(min, mink);
-                        max = av_add_q(max, maxk);
-                    }
-                }
-                if (op->lin.m[i][4].num) { /* nonzero offset */
-                    flags &= ~SWS_COMP_ZERO;
-                    if (op->lin.m[i][4].den != 1) /* fractional offset */
-                        flags &= ~SWS_COMP_EXACT;
-                    min = av_add_q(min, op->lin.m[i][4]);
-                    max = av_add_q(max, op->lin.m[i][4]);
-                }
-                op->comps.flags[i] = flags;
-                op->comps.min[i] = min;
-                op->comps.max[i] = max;
-            }
-            break;
-        case SWS_OP_SCALE:
-            for (int i = 0; i < 4; i++) {
-                op->comps.flags[i] = prev.flags[i];
-                if (op->c.q.den != 1) /* fractional scale */
-                    op->comps.flags[i] &= ~SWS_COMP_EXACT;
-                if (op->c.q.num < 0)
-                    FFSWAP(AVRational, op->comps.min[i], op->comps.max[i]);
-            }
-            break;
-
-        case SWS_OP_INVALID:
-        case SWS_OP_TYPE_NB:
-            av_unreachable("Invalid operation type!");
-        }
-
-        prev = op->comps;
-    }
-
-    /* Backwards pass, solves for component dependencies */
-    for (int n = ops->num_ops - 1; n >= 0; n--) {
-        SwsOp *op = &ops->ops[n];
-
-        switch (op->op) {
-        case SWS_OP_READ:
-        case SWS_OP_WRITE:
-            for (int i = 0; i < op->rw.elems; i++)
-                op->comps.unused[i] = op->op == SWS_OP_READ;
-            for (int i = op->rw.elems; i < 4; i++)
-                op->comps.unused[i] = next.unused[i];
-            break;
-        case SWS_OP_SWAP_BYTES:
-        case SWS_OP_LSHIFT:
-        case SWS_OP_RSHIFT:
-        case SWS_OP_CONVERT:
-        case SWS_OP_DITHER:
-        case SWS_OP_MIN:
-        case SWS_OP_MAX:
-        case SWS_OP_SCALE:
-            for (int i = 0; i < 4; i++)
-                op->comps.unused[i] = next.unused[i];
-            break;
-        case SWS_OP_UNPACK: {
-            bool unused = true;
-            for (int i = 0; i < 4; i++) {
-                if (op->pack.pattern[i])
-                    unused &= next.unused[i];
-                op->comps.unused[i] = i > 0;
-            }
-            op->comps.unused[0] = unused;
-            break;
-        }
-        case SWS_OP_PACK:
-            for (int i = 0; i < 4; i++) {
-                if (op->pack.pattern[i])
-                    op->comps.unused[i] = next.unused[0];
-                else
-                    op->comps.unused[i] = true;
-            }
-            break;
-        case SWS_OP_CLEAR:
-            for (int i = 0; i < 4; i++) {
-                if (op->c.q4[i].den)
-                    op->comps.unused[i] = true;
-                else
-                    op->comps.unused[i] = next.unused[i];
-            }
-            break;
-        case SWS_OP_SWIZZLE: {
-            bool unused[4] = { true, true, true, true };
-            for (int i = 0; i < 4; i++)
-                unused[op->swizzle.in[i]] &= next.unused[i];
-            for (int i = 0; i < 4; i++)
-                op->comps.unused[i] = unused[i];
-            break;
-        }
-        case SWS_OP_LINEAR:
-            for (int j = 0; j < 4; j++) {
-                bool unused = true;
-                for (int i = 0; i < 4; i++) {
-                    if (op->lin.m[i][j].num)
-                        unused &= next.unused[i];
-                }
-                op->comps.unused[j] = unused;
-            }
-            break;
-        }
-
-        next = op->comps;
-    }
 }
 
 /* returns log2(x) only if x is a power of two, or 0 otherwise */
@@ -416,7 +261,8 @@ int ff_sws_op_list_optimize(SwsOpList *ops)
 retry:
     ff_sws_op_list_update_comps(ops);
 
-    for (int n = 0; n < ops->num_ops;) {
+    /* Apply all in-place optimizations (that do not re-order the list) */
+    for (int n = 0; n < ops->num_ops; n++) {
         SwsOp dummy = {0};
         SwsOp *op = &ops->ops[n];
         SwsOp *prev = n ? &ops->ops[n - 1] : &dummy;
@@ -520,30 +366,14 @@ retry:
                 ff_sws_op_list_remove_at(ops, n + 1, 1);
                 goto retry;
             }
-
-            /* Prefer to clear as late as possible, to avoid doing
-             * redundant work */
-            if ((op_type_is_independent(next->op) && next->op != SWS_OP_SWAP_BYTES) ||
-                next->op == SWS_OP_SWIZZLE)
-            {
-                if (next->op == SWS_OP_CONVERT)
-                    op->type = next->convert.to;
-                ff_sws_apply_op_q(next, op->c.q4);
-                FFSWAP(SwsOp, *op, *next);
-                goto retry;
-            }
             break;
 
-        case SWS_OP_SWIZZLE: {
-            bool seen[4] = {0};
-            bool has_duplicates = false;
+        case SWS_OP_SWIZZLE:
             for (int i = 0; i < 4; i++) {
                 if (next->comps.unused[i])
                     continue;
                 if (op->swizzle.in[i] != i)
                     noop = false;
-                has_duplicates |= seen[op->swizzle.in[i]];
-                seen[op->swizzle.in[i]] = true;
             }
 
             /* Identity swizzle */
@@ -560,32 +390,7 @@ retry:
                 ff_sws_op_list_remove_at(ops, n + 1, 1);
                 goto retry;
             }
-
-            /* Try to push swizzles with duplicates towards the output */
-            if (has_duplicates && op_type_is_independent(next->op)) {
-                if (next->op == SWS_OP_CONVERT)
-                    op->type = next->convert.to;
-                if (next->op == SWS_OP_MIN || next->op == SWS_OP_MAX) {
-                    /* Un-swizzle the next operation */
-                    const SwsConst c = next->c;
-                    for (int i = 0; i < 4; i++) {
-                        if (!next->comps.unused[i])
-                            next->c.q4[op->swizzle.in[i]] = c.q4[i];
-                    }
-                }
-                FFSWAP(SwsOp, *op, *next);
-                goto retry;
-            }
-
-            /* Move swizzle out of the way between two converts so that
-             * they may be merged */
-            if (prev->op == SWS_OP_CONVERT && next->op == SWS_OP_CONVERT) {
-                op->type = next->convert.to;
-                FFSWAP(SwsOp, *op, *next);
-                goto retry;
-            }
             break;
-        }
 
         case SWS_OP_CONVERT:
             /* No-op conversion */
@@ -744,16 +549,6 @@ retry:
                 goto retry;
             }
 
-            /* Scaling by integer before conversion to int */
-            if (op->c.q.den == 1 &&
-                next->op == SWS_OP_CONVERT &&
-                ff_sws_pixel_type_is_int(next->convert.to))
-            {
-                op->type = next->convert.to;
-                FFSWAP(SwsOp, *op, *next);
-                goto retry;
-            }
-
             /* Scaling by exact power of two */
             if (factor2 && ff_sws_pixel_type_is_int(op->type)) {
                 op->op = factor2 > 0 ? SWS_OP_LSHIFT : SWS_OP_RSHIFT;
@@ -763,9 +558,69 @@ retry:
             break;
         }
         }
+    }
 
-        /* No optimization triggered, move on to next operation */
-        n++;
+    /* Push clears to the back to void any unused components */
+    for (int n = 1; n < ops->num_ops - 1; n++) { /* exclude READ/WRITE */
+        SwsOp *op = &ops->ops[n];
+        SwsOp *next = &ops->ops[n + 1];
+
+        switch (op->op) {
+        case SWS_OP_CLEAR:
+            if (op_commute_clear(op, next)) {
+                FFSWAP(SwsOp, *op, *next);
+                goto retry;
+            }
+            break;
+        }
+    }
+
+    /* Apply any remaining preferential re-ordering optimizations; do these
+     * last because they are more likely to block other optimizations if done
+     * too aggressively */
+    for (int n = 1; n < ops->num_ops - 1; n++) { /* exclude READ/WRITE */
+        SwsOp *op = &ops->ops[n];
+        SwsOp *prev = &ops->ops[n - 1];
+        SwsOp *next = &ops->ops[n + 1];
+
+        switch (op->op) {
+        case SWS_OP_SWIZZLE: {
+            bool seen[4] = {0};
+            bool has_duplicates = false;
+            for (int i = 0; i < 4; i++) {
+                if (next->comps.unused[i])
+                    continue;
+                has_duplicates |= seen[op->swizzle.in[i]];
+                seen[op->swizzle.in[i]] = true;
+            }
+
+            /* Try to push swizzles with duplicates towards the output */
+            if (has_duplicates && op_commute_swizzle(op, next)) {
+                FFSWAP(SwsOp, *op, *next);
+                goto retry;
+            }
+
+            /* Move swizzle out of the way between two converts so that
+             * they may be merged */
+            if (prev->op == SWS_OP_CONVERT && next->op == SWS_OP_CONVERT) {
+                op->type = next->convert.to;
+                FFSWAP(SwsOp, *op, *next);
+                goto retry;
+            }
+            break;
+        }
+
+        case SWS_OP_SCALE:
+            /* Scaling by integer before conversion to int */
+            if (op->c.q.den == 1 && next->op == SWS_OP_CONVERT &&
+                ff_sws_pixel_type_is_int(next->convert.to))
+            {
+                op->type = next->convert.to;
+                FFSWAP(SwsOp, *op, *next);
+                goto retry;
+            }
+            break;
+        }
     }
 
     return 0;

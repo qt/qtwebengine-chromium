@@ -805,6 +805,33 @@ TEST(ReformatTest, NullCases) {
   avifRGBImageFreePixels(nullptr);
 }
 
+TEST(RGBImageTest, PixelSize) {
+  static constexpr struct {
+    int depth;
+    avifRGBFormat format;
+    int expected_pixel_size;
+  } kParams[] = {
+      {8, AVIF_RGB_FORMAT_RGB, 3},          {8, AVIF_RGB_FORMAT_RGBA, 4},
+      {8, AVIF_RGB_FORMAT_ARGB, 4},         {8, AVIF_RGB_FORMAT_BGR, 3},
+      {8, AVIF_RGB_FORMAT_BGRA, 4},         {8, AVIF_RGB_FORMAT_ABGR, 4},
+      {8, AVIF_RGB_FORMAT_RGB565, 2},       {8, AVIF_RGB_FORMAT_RGBA1010102, 4},
+      {8, AVIF_RGB_FORMAT_GRAY, 1},         {8, AVIF_RGB_FORMAT_GRAY_A, 2},
+      {8, AVIF_RGB_FORMAT_A_GRAY, 2},       {16, AVIF_RGB_FORMAT_RGB, 6},
+      {16, AVIF_RGB_FORMAT_RGBA, 8},        {16, AVIF_RGB_FORMAT_ARGB, 8},
+      {16, AVIF_RGB_FORMAT_BGR, 6},         {16, AVIF_RGB_FORMAT_BGRA, 8},
+      {16, AVIF_RGB_FORMAT_ABGR, 8},        {16, AVIF_RGB_FORMAT_RGB565, 2},
+      {16, AVIF_RGB_FORMAT_RGBA1010102, 4}, {16, AVIF_RGB_FORMAT_GRAY, 2},
+      {16, AVIF_RGB_FORMAT_GRAY_A, 4},      {16, AVIF_RGB_FORMAT_A_GRAY, 4},
+  };
+
+  for (const auto& param : kParams) {
+    avifRGBImage rgb;
+    rgb.depth = param.depth;
+    rgb.format = param.format;
+    EXPECT_EQ(avifRGBImagePixelSize(&rgb), param.expected_pixel_size);
+  }
+}
+
 TEST(RGBToYUVTest, 8BitGrayToYUV420) {
   // 2x2 8-bit image
   static constexpr uint8_t gray[4] = {4, 3, 2, 1};

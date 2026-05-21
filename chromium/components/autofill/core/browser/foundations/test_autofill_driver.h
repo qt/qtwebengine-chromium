@@ -5,6 +5,7 @@
 #ifndef COMPONENTS_AUTOFILL_CORE_BROWSER_FOUNDATIONS_TEST_AUTOFILL_DRIVER_H_
 #define COMPONENTS_AUTOFILL_CORE_BROWSER_FOUNDATIONS_TEST_AUTOFILL_DRIVER_H_
 
+#include <algorithm>
 #include <concepts>
 #include <map>
 #include <string>
@@ -126,6 +127,8 @@ class TestAutofillDriverTemplate : public T {
       mojom::FormActionType action_type,
       mojom::ActionPersistence action_persistence,
       base::span<const FormFieldData> fields,
+      const FillId& fill_id,
+      bool supports_refill,
       const url::Origin& triggered_origin,
       const base::flat_map<FieldGlobalId, FieldType>& field_type_map,
       const Section& section_for_clear_form_on_ios) override {
@@ -136,7 +139,7 @@ class TestAutofillDriverTemplate : public T {
     for (const auto& [id, type] : field_type_map) {
       if ((!field_type_map_filter_ ||
            field_type_map_filter_.Run(triggered_origin, id, type)) &&
-          base::Contains(fields, id, &FormFieldData::global_id)) {
+          std::ranges::contains(fields, id, &FormFieldData::global_id)) {
         result.push_back(id);
       }
     }

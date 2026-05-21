@@ -157,35 +157,6 @@ BASE_FEATURE(kSegmentationPlatformEphemeralCardRanker,
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 
-// Feature flag for enabling the Tips Emphemeral Card.
-BASE_FEATURE(kSegmentationPlatformTipsEphemeralCard,
-#if BUILDFLAG(IS_IOS)
-             base::FEATURE_ENABLED_BY_DEFAULT);
-#else
-             base::FEATURE_DISABLED_BY_DEFAULT);
-#endif
-
-const char kTipsEphemeralCardExperimentTrainParam[] =
-    "TipsEphemeralCardExperimentTrainParam";
-
-std::string TipsExperimentTrainEnabled() {
-  return base::GetFieldTrialParamByFeatureAsString(
-      segmentation_platform::features::kSegmentationPlatformTipsEphemeralCard,
-      kTipsEphemeralCardExperimentTrainParam,
-      /*default_value=*/
-      base::StrCat({kLensEphemeralModuleSearchVariation, ",",
-                    kEnhancedSafeBrowsingEphemeralModule}));
-}
-
-const char kTipsEphemeralCardModuleMaxImpressionCount[] =
-    "TipsEphemeralCardModuleMaxImpressionCount";
-
-int GetTipsEphemeralCardModuleMaxImpressionCount() {
-  return base::GetFieldTrialParamByFeatureAsInt(
-      segmentation_platform::features::kSegmentationPlatformTipsEphemeralCard,
-      kTipsEphemeralCardModuleMaxImpressionCount, /*default_value=*/3);
-}
-
 BASE_FEATURE(kSegmentationSurveyPage,
 #if BUILDFLAG(IS_ANDROID)
              base::FEATURE_ENABLED_BY_DEFAULT);
@@ -195,8 +166,6 @@ BASE_FEATURE(kSegmentationSurveyPage,
 
 constexpr base::FeatureParam<bool> kSegmentationSurveyInternalsPage{
     &kSegmentationSurveyPage, "survey_internals_page", /*default_value=*/true};
-
-BASE_FEATURE(kEducationalTipModule, base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kAndroidAppIntegrationModule, base::FEATURE_ENABLED_BY_DEFAULT);
 
@@ -271,5 +240,7 @@ constexpr base::FeatureParam<int> kStartTimeMinutes{&kAndroidTipsNotifications,
 constexpr base::FeatureParam<int> kWindowTimeMinutes{&kAndroidTipsNotifications,
                                                      "window_time_minutes",
                                                      /*default_value=*/120};
+
+BASE_FEATURE(kAndroidTipsNotificationsV2, base::FEATURE_DISABLED_BY_DEFAULT);
 
 }  // namespace segmentation_platform::features

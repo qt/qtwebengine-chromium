@@ -6,7 +6,6 @@
 
 #include <limits.h>
 
-#include "base/check_is_test.h"
 #include "base/test/test_future.h"
 #include "base/unguessable_token.h"
 #include "services/webnn/public/cpp/context_properties.h"
@@ -15,6 +14,7 @@
 #include "services/webnn/public/cpp/webnn_types.h"
 #include "services/webnn/webnn_context_impl.h"
 #include "third_party/blink/public/common/tokens/tokens.h"
+#include "ui/gl/gl_switches.h"
 
 namespace webnn {
 

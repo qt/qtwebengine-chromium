@@ -20,6 +20,7 @@
 #include "components/permissions/permission_util.h"
 #include "components/permissions/prediction_service/permission_ui_selector.h"
 #include "components/permissions/request_type.h"
+#include "components/permissions/resolvers/permission_prompt_options.h"
 #include "services/metrics/public/cpp/ukm_source_id.h"
 #include "url/origin.h"
 
@@ -38,10 +39,6 @@ class WebContents;
 namespace content_settings {
 class CookieSettings;
 }
-
-namespace privacy_sandbox {
-class TrackingProtectionSettings;
-}  // namespace privacy_sandbox
 
 namespace permissions {
 class ObjectPermissionContextBase;
@@ -77,10 +74,6 @@ class PermissionsClient {
   // Retrieves the CookieSettings for this context.
   virtual scoped_refptr<content_settings::CookieSettings> GetCookieSettings(
       content::BrowserContext* browser_context) = 0;
-
-  // Retrieves the TrackingProtectionSettings for this context.
-  virtual privacy_sandbox::TrackingProtectionSettings*
-  GetTrackingProtectionSettings(content::BrowserContext* browser_context) = 0;
 
   // Retrieves the subresource filter activation from browser website settings.
   virtual bool IsSubresourceFilterActivated(
@@ -129,14 +122,14 @@ class PermissionsClient {
       const GURL& origin);
 
   // Retrieves the ukm::SourceId (if any) associated with this
-  // |permission_type|, |browser_context|, and |web_contents|. |web_contents|
-  // may be null. |callback| will be called with the result, and may be run
-  // synchronously if the result is available immediately.
+  // |permission_type|, |browser_context|, and |render_frame_host|.
+  // |render_frame_host| may be null. |callback| will be called with the result,
+  // and may be run synchronously if the result is available immediately.
   using GetUkmSourceIdCallback =
       base::OnceCallback<void(std::optional<ukm::SourceId>)>;
   virtual void GetUkmSourceId(ContentSettingsType permission_type,
                               content::BrowserContext* browser_context,
-                              content::WebContents* web_contents,
+                              content::RenderFrameHost* render_frame_host,
                               const GURL& requesting_origin,
                               GetUkmSourceIdCallback callback);
 
@@ -177,6 +170,7 @@ class PermissionsClient {
   virtual void OnPromptResolved(
       const PermissionRequest* request,
       PermissionAction action,
+      const PromptOptions& prompt_options,
       PermissionPromptDisposition prompt_disposition,
       PermissionPromptDispositionReason prompt_disposition_reason,
       std::optional<QuietUiReason> quiet_ui_reason,
@@ -224,14 +218,16 @@ class PermissionsClient {
   // Allows embedder to override the canonical origin for a permission request.
   // This is the origin that will be used for requesting/storing/displaying
   // permissions.
-  virtual std::optional<GURL> OverrideCanonicalOrigin(
+  virtual std::optional<GURL> GetCanonicalOriginOverride(
       const GURL& requesting_origin,
       const GURL& embedding_origin);
 
-  // Checks if `requesting_origin` and `embedding_origin` are the new tab page
-  // origins.
-  virtual bool DoURLsMatchNewTabPage(const GURL& requesting_origin,
-                                     const GURL& embedding_origin);
+  // Returns the WebContents' GetLastCommittedURL() to use as the embedding
+  // origin when special handling is needed, or std::nullopt to use the default
+  // main frame origin.
+  virtual std::optional<GURL> GetEmbeddingOriginOverride(
+      const GURL& requesting_origin,
+      content::WebContents* web_contents);
 
   // Determines the reason why a prompt was ignored.
   virtual permissions::PermissionIgnoredReason DetermineIgnoreReason(

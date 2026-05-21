@@ -172,6 +172,15 @@ bool D3D12VideoEncoderWrapper::Initialize(uint32_t max_subregions_number) {
   return true;
 }
 
+bool D3D12VideoEncoderWrapper::Wait(D3D12FenceAndValue fence_and_value) {
+  auto [fence, value] = fence_and_value;
+  CHECK(fence);
+  HRESULT hr = command_queue_->Wait(fence.Get(), value);
+  RETURN_ON_HR_FAILURE(hr, "Failed to wait on video encoder command queue",
+                       false);
+  return true;
+}
+
 EncoderStatus D3D12VideoEncoderWrapper::Encode(
     const D3D12_VIDEO_ENCODER_ENCODEFRAME_INPUT_ARGUMENTS& input_arguments,
     const D3D12_VIDEO_ENCODER_RECONSTRUCTED_PICTURE& reconstructed_picture) {
@@ -254,7 +263,7 @@ EncoderStatus D3D12VideoEncoderWrapper::Encode(
 
   ID3D12CommandList* command_lists[] = {command_list_.Get()};
   command_queue_->ExecuteCommandLists(std::size(command_lists), command_lists);
-  return fence_->SignalAndWait(*command_queue_.Get()) == D3D11StatusCode::kOk
+  return fence_->SignalAndWaitCPU(*command_queue_.Get()) == D3D11StatusCode::kOk
              ? EncoderStatus::Codes::kOk
              : EncoderStatus::Codes::kSystemAPICallError;
 }

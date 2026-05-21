@@ -11,7 +11,6 @@
 #include <utility>
 
 #include "core/fxcrt/check_op.h"
-#include "core/fxcrt/notreached.h"
 #include "core/fxcrt/stl_util.h"
 #include "core/fxge/dib/cfx_dibitmap.h"
 

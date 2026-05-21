@@ -112,6 +112,7 @@ enum class Toggle {
     UseBlitForStencilTextureWrite,
     UseBlitForDepthTextureToTextureCopyToNonzeroSubresource,
     UseBlitForDepth16UnormTextureToBufferCopy,
+    UseBlitForDepth24PlusTextureToBufferCopy,
     UseBlitForDepth32FloatTextureToBufferCopy,
     UseBlitForStencilTextureToBufferCopy,
     UseBlitForSnormTextureToBufferCopy,
@@ -146,8 +147,10 @@ enum class Toggle {
     ExposeWGSLExperimentalFeatures,
     DisablePolyfillsOnIntegerDivisonAndModulo,
     ScalarizeMaxMinClamp,
+    SaturateAsMinMaxF16,
     MetalPolyfillClampFloat,
     SubgroupShuffleClamped,
+    VulkanSampleCompareDepthCubeArrayWorkaround,
     MetalDisableModuleConstantF16,
     EnableImmediateErrorHandling,
     VulkanUseStorageInputOutput16,
@@ -173,6 +176,9 @@ enum class Toggle {
     DecomposeUniformBuffers,
     VulkanEnableF16OnNvidia,
     EnableRenderDocProcessInjection,
+    VulkanUseDynamicRendering,
+    EnableSpirvValidation,
+    VulkanUseCreateRenderPass2,
 
     // Once all backends have been updated to be thread safe for waiting, we can remove this toggle.
     WaitIsThreadSafe,
@@ -190,6 +196,9 @@ enum class Toggle {
     D3D11DelayFlushToGPU,
     IgnoreImportedAHardwareBufferVulkanImageSize,
     GLAllowContextOnMultiThreads,
+    GLDefer,
+    DisableTransientAttachment,
+    AutoMapBackendBuffer,
 
     EnumCount,
     InvalidEnum = EnumCount,

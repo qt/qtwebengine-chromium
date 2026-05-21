@@ -2,7 +2,40 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {SnapshotTester} from '../../testing/SnapshotTester.js';
+
 import * as TextUtils from './text_utils.js';
+
+type SplitByRegexExpected = Array<[string, number, number]>;
+
+interface SplitByRegexTestCase {
+  testString: string;
+  testName: string;
+  regexes: RegExp[];
+  expected: SplitByRegexExpected;
+}
+
+function assertResults(
+    results: Array<{
+      value: string,
+      position: number,
+      regexIndex: number,
+      captureGroups: Array<string|undefined>,
+    }>,
+    expected: Array<[string, number, number]>) {
+  if (results.length !== expected.length) {
+    throw new Error('error they should match');
+  }
+
+  for (let i = 0; i < results.length; i++) {
+    const result = results[i];
+    const expect = expected[i];
+
+    assert.strictEqual(result.value, expect[0]);
+    assert.strictEqual(result.position, expect[1]);
+    assert.strictEqual(result.regexIndex, expect[2]);
+  }
+}
 
 describe('TextUtils', () => {
   describe('Utils', () => {
@@ -95,6 +128,91 @@ describe('TextUtils', () => {
         assert.strictEqual(result[0].regexIndex, 0, 'regex index was wrong');
         assert.deepEqual(result[0].captureGroups, [], 'capture groups was not empty');
       });
+
+      const splitByRegexTestCases: SplitByRegexTestCase[] = [
+        {
+          testName: 'returns splitted strings by regex',
+          testString: 'hello123hello123',
+          regexes: [/hello/g, /[0-9]+/g],
+          expected: [
+            ['hello', 0, 0],
+            ['123', 5, 1],
+            ['hello', 8, 0],
+            ['123', 13, 1],
+          ]
+        },
+        {
+          testName: 'returns splitted string with match at start',
+          testString: 'yes thank you',
+          regexes: [/yes/g],
+          expected: [
+            ['yes', 0, 0],
+            [' thank you', 3, -1],
+          ]
+        },
+        {
+          testName: 'returns splitted string with match at end',
+          testString: 'yes thank you',
+          regexes: [/you/g],
+          expected: [
+            ['yes thank ', 0, -1],
+            ['you', 10, 0],
+          ]
+        },
+        {
+          testName: 'returns splitted string avoiding inner match',
+          testString: 'image: url("red.com")',
+          regexes: [/url\("red\.com"\)/g, /red/g],
+          expected: [
+            ['image: ', 0, -1],
+            ['url("red.com")', 7, 0],
+          ]
+        },
+        {
+          testName: 'returns input for single regex without match',
+          testString: 'nothing',
+          regexes: [/something/g],
+          expected: [
+            ['nothing', 0, -1],
+          ]
+        },
+        {
+          testName: 'returns input for multiple regex without match',
+          testString: 'nothing',
+          regexes: [/something/g, /123/g, /abc/g],
+          expected: [
+            ['nothing', 0, -1],
+          ]
+        },
+        {
+          testName: 'complex case',
+          testString: 'Start. (okay) kit-kat okay (kale) ka( ) okay. End',
+          regexes: [/\(([^)]+)\)/g, /okay/g, /ka/g],
+          expected: [
+            ['Start. ', 0, -1],
+            ['(okay)', 7, 0],
+            [' kit-', 13, -1],
+            ['ka', 18, 2],
+            ['t ', 20, -1],
+            ['okay', 22, 1],
+            [' ', 26, -1],
+            ['(kale)', 27, 0],
+            [' ', 33, -1],
+            ['ka', 34, 2],
+            ['( )', 36, 0],
+            [' ', 39, -1],
+            ['okay', 40, 1],
+            ['. End', 44, -1],
+          ]
+        }
+      ];
+
+      for (const testCase of splitByRegexTestCases) {
+        it(testCase.testName, () => {
+          const results = TextUtils.TextUtils.Utils.splitStringByRegexes(testCase.testString, testCase.regexes);
+          assertResults(results, testCase.expected);
+        });
+      }
     });
   });
 
@@ -333,7 +451,7 @@ describe('TextUtils', () => {
     });
   });
 
-  describe('BalancedJSONTokenizer', () => {
+  describe('BalancedJSONTokenizer', function() {
     it('can be instantiated successfully', () => {
       const callback = () => {};
       const findMultiple = false;
@@ -412,6 +530,121 @@ describe('TextUtils', () => {
       assert.isFalse(result, 'return value was incorrect');
       assert.deepEqual(callbackResults, [], 'callback had unexpected results');
       assert.strictEqual(tokenizer.remainder(), ']]', 'remainder was incorrect');
+    });
+
+    const snapshotTester = new SnapshotTester(this, import.meta);
+
+    it('matches quotes', function() {
+      const testStrings = [
+        {'odd back slashes with text around': 'tes\\"t'},
+        {'escaped double quotes': '"test"'},
+        {'escaped back slash before double quote': 'test\\'},
+        {1: 2},
+        {'': ''},
+        {'nested brackets': {}},
+        {'nested brackets with double quotes': {'': ''}},
+        {etc: {'\\': '"'}},
+        {etc: {'\\\\': '\\'}},
+        {etc: {'\\\\"': '\\\\"'}},
+      ];
+      const results: string[] = [];
+      const callback = (str: string) => results.push(str);
+
+      for (const testString of testStrings) {
+        const jsonString = JSON.stringify(testString);
+        results.push('Parsing ' + jsonString);
+        const tokenizer = new TextUtils.TextUtils.BalancedJSONTokenizer(callback);
+        const result = tokenizer.write(jsonString);
+        assert.isTrue(result, `tokenizer.write() returned ${result}, true expected`);
+      }
+      snapshotTester.assert(this, results.join('\n'));
+    });
+
+    it('matches sequence using one shot', function() {
+      const testData = [
+        {one: 'one'},
+        [{one: 'one'}, {two: 'two'}],
+        [{one: 'one'}, {two: 'two'}, {three: 'three'}],
+      ];
+      const results: string[] = [];
+      const callback = (str: string) => results.push(str);
+
+      for (const data of testData) {
+        const jsonString = JSON.stringify(data);
+        results.push('Parsing ' + jsonString);
+        const tokenizer = new TextUtils.TextUtils.BalancedJSONTokenizer(callback);
+        const result = tokenizer.write(jsonString);
+        assert.isDefined(result, `tokenizer.write() returned ${result}, true expected`);
+      }
+      snapshotTester.assert(this, results.join('\n'));
+    });
+
+    it('matches sequence using multiple', function() {
+      const testData = [
+        {one: 'one'},
+        [{one: 'one'}, {two: 'two'}],
+        [{one: 'one'}, {two: 'two'}, {three: 'three'}],
+      ];
+      const results: string[] = [];
+      const callback = (str: string) => results.push(str);
+
+      for (const data of testData) {
+        const jsonString = JSON.stringify(data);
+        results.push('Parsing ' + jsonString);
+        const tokenizer = new TextUtils.TextUtils.BalancedJSONTokenizer(callback, true);
+        const result = tokenizer.write(jsonString);
+        const expectedResult = !(data instanceof Array);
+        assert.strictEqual(result, expectedResult, `tokenizer.write() returned ${result}, ${expectedResult} expected`);
+      }
+      snapshotTester.assert(this, results.join('\n'));
+    });
+
+    it('incremental writes', function() {
+      const testStrings = [
+        {'odd back slashes with text around': 'tes\\"t'},
+        {'escaped double quotes': '"test"'},
+        {'escaped back slash before double quote': 'test\\'},
+        {1: 2},
+        {'': ''},
+        {'nested brackets': {}},
+        {'nested brackets with double quotes': {'': ''}},
+        {etc: {'\\': '"'}},
+        {etc: {'\\\\': '\\'}},
+        {etc: {'\\\\"': '\\\\"'}},
+      ];
+      const results: string[] = [];
+      const callback = (str: string) => results.push(str);
+      const jsonString = JSON.stringify(testStrings);
+      let tokenizer = new TextUtils.TextUtils.BalancedJSONTokenizer(callback, true);
+
+      results.push('Running at once:');
+      const result = tokenizer.write(jsonString);
+      assert.isDefined(result, `tokenizer.write() returned ${result}, false expected`);
+
+      for (const sample of [3, 15, 50]) {
+        tokenizer = new TextUtils.TextUtils.BalancedJSONTokenizer(callback, true);
+        results.push('Running by ' + sample + ':');
+        for (let i = 0; i < jsonString.length; i += sample) {
+          const result = tokenizer.write(jsonString.substring(i, i + sample));
+          const expectedResult = (i + sample < jsonString.length);
+          assert.strictEqual(
+              !!result, expectedResult, `tokenizer.write() returned ${result}, ${expectedResult} expected`);
+        }
+      }
+      snapshotTester.assert(this, results.join('\n'));
+    });
+
+    it('garbage after object', function() {
+      const testString = '[{a: \'b\'}], {\'x\': {a: \'b\'}}';
+      const results: string[] = [];
+      const callback = (str: string) => results.push(str);
+
+      results.push('Parsing ' + testString);
+      const tokenizer = new TextUtils.TextUtils.BalancedJSONTokenizer(callback, true);
+      const result = tokenizer.write(testString);
+      assert.isFalse(result, `tokenizer.write() returned ${result}, false expected`);
+
+      snapshotTester.assert(this, results.join('\n'));
     });
   });
 

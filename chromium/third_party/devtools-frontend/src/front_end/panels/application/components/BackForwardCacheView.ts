@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import '../../../ui/components/chrome_link/chrome_link.js';
 import '../../../ui/components/expandable_list/expandable_list.js';
 import '../../../ui/components/report_view/report_view.js';
 import '../../../ui/legacy/legacy.js';
+import '../../../ui/kit/kit.js';
 
 import * as Common from '../../../core/common/common.js';
 import * as i18n from '../../../core/i18n/i18n.js';
@@ -199,10 +199,10 @@ function renderMainFrameInformation(
         frame.backForwardCacheDetails.explanationsTree,
         reasonToFramesMap)}
     <devtools-report-section>
-      <x-link href="https://web.dev/bfcache/" class="link"
-      jslog=${VisualLogging.action('learn-more.eligibility').track({click: true})}>
+      <devtools-link href="https://web.dev/bfcache/" class="link"
+      jslogcontext="learn-more.eligibility">
         ${i18nString(UIStrings.learnMore)}
-      </x-link>
+      </devtools-link>
     </devtools-report-section>`;
   // clang-format on
 }
@@ -341,7 +341,7 @@ function maybeRenderReasonContext(explanation: Protocol.Page.BackForwardCacheNot
     const link = 'chrome://extensions/?id=' + explanation.context as Platform.DevToolsPath.UrlString;
     // clang-format off
     return html`${i18nString(UIStrings.blockingExtensionId)}
-      <devtools-chrome-link .href=${link}>${explanation.context}</devtools-chrome-link>`;
+      <devtools-link .href=${link}>${explanation.context}</devtools-link>`;
     // clang-format on
   }
   return nothing;
@@ -370,12 +370,10 @@ function maybeRenderDeepLinkToUnload(explanation: Protocol.Page.BackForwardCache
   if (explanation.reason === Protocol.Page.BackForwardCacheNotRestoredReason.UnloadHandlerExistsInMainFrame ||
       explanation.reason === Protocol.Page.BackForwardCacheNotRestoredReason.UnloadHandlerExistsInSubFrame) {
     return html`
-        <x-link href="https://web.dev/bfcache/#never-use-the-unload-event" class="link"
-        jslog=${VisualLogging.action('learn-more.never-use-unload').track({
-      click: true,
-    })}>
+        <devtools-link href="https://web.dev/bfcache/#never-use-the-unload-event" class="link"
+        jslogContext=${'learn-more.never-use-unload'}>
           ${i18nString(UIStrings.neverUseUnload)}
-        </x-link>`;
+        </devtools-link>`;
   }
   return nothing;
 }

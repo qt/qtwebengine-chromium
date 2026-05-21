@@ -4,6 +4,7 @@
 
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
+import * as ComputedStyle from '../../models/computed_style/computed_style.js';
 import {renderElementIntoDOM} from '../../testing/DOMHelpers.js';
 import {
   createTarget,
@@ -32,7 +33,7 @@ describe('StylesSidebarPane', () => {
     beforeEach(() => {
       const target = createTarget();
       const cssModel = target.model(SDK.CSSModel.CSSModel);
-      sinon.stub(Elements.ComputedStyleModel.ComputedStyleModel.prototype, 'cssModel').returns(cssModel);
+      sinon.stub(ComputedStyle.ComputedStyleModel.ComputedStyleModel.prototype, 'cssModel').returns(cssModel);
     });
 
     it('unescapes CSS strings', () => {
@@ -69,7 +70,7 @@ describe('StylesSidebarPane', () => {
     describe('rebuildSectionsForMatchedStyleRulesForTest', () => {
       it('should add @position-try section', async () => {
         const stylesSidebarPane =
-            new Elements.StylesSidebarPane.StylesSidebarPane(new Elements.ComputedStyleModel.ComputedStyleModel());
+            new Elements.StylesSidebarPane.StylesSidebarPane(new ComputedStyle.ComputedStyleModel.ComputedStyleModel());
         const matchedStyles = await getMatchedStyles({
           cssModel: stylesSidebarPane.cssModel() as SDK.CSSModel.CSSModel,
           node: sinon.createStubInstance(SDK.DOMModel.DOMNode),
@@ -84,19 +85,100 @@ describe('StylesSidebarPane', () => {
           }],
         });
 
-        const sectionBlocks =
-            await stylesSidebarPane.rebuildSectionsForMatchedStyleRulesForTest(matchedStyles, new Map(), new Map());
+        const sectionBlocks = await stylesSidebarPane.rebuildSectionsForMatchedStyleRulesForTest(
+            matchedStyles, new Map(), new Map(), null);
 
         assert.lengthOf(sectionBlocks, 2);
         assert.strictEqual(sectionBlocks[1].titleElement()?.textContent, '@position-try --try-one');
         assert.lengthOf(sectionBlocks[1].sections, 1);
         assert.instanceOf(sectionBlocks[1].sections[0], Elements.StylePropertiesSection.PositionTryRuleSection);
       });
+
+      it('correctly hides and shows nested section blocks when filtering', async () => {
+        const stylesSidebarPane =
+            new Elements.StylesSidebarPane.StylesSidebarPane(new ComputedStyle.ComputedStyleModel.ComputedStyleModel());
+        const node = sinon.createStubInstance(SDK.DOMModel.DOMNode);
+        node.nodeName.returns('div');
+        node.id = 1 as Protocol.DOM.NodeId;
+        const parentNode = sinon.createStubInstance(SDK.DOMModel.DOMNode);
+        node.parentNode = parentNode;
+        parentNode.nodeName.returns('body');
+
+        const matchedStyles = await getMatchedStyles({
+          cssModel: stylesSidebarPane.cssModel() as SDK.CSSModel.CSSModel,
+          node,
+          matchedPayload: [{
+            rule: {
+              selectorList: {selectors: [{text: 'div'}], text: 'div'},
+              origin: Protocol.CSS.StyleSheetOrigin.Regular,
+              style: {
+                cssProperties: [{name: 'background', value: 'red'}],
+                shorthandEntries: [],
+              },
+            },
+            matchingSelectors: [0],
+          }],
+          inheritedPayload: [{
+            matchedCSSRules: [{
+              rule: {
+                selectorList: {selectors: [{text: 'body'}], text: 'body'},
+                origin: Protocol.CSS.StyleSheetOrigin.Regular,
+                style: {
+                  cssProperties: [{name: 'color', value: 'blue'}],
+                  shorthandEntries: [],
+                },
+                layers: [{text: 'mylayer'}],
+              },
+              matchingSelectors: [0],
+            }],
+          }],
+        });
+
+        const sectionBlocks = await stylesSidebarPane.rebuildSectionsForMatchedStyleRulesForTest(
+            matchedStyles, new Map(), new Map(), null);
+
+        assert.lengthOf(sectionBlocks, 3);
+        const inheritedBlock = sectionBlocks[1];
+        assert.strictEqual(inheritedBlock.titleElement()?.textContent, 'Inherited from ');
+        assert.lengthOf(inheritedBlock.childBlocks, 1);
+        const layerBlock = inheritedBlock.childBlocks[0];
+        assert.strictEqual(layerBlock.titleElement()?.textContent, 'Layermylayer');
+
+        const elementStyleSections = sectionBlocks[0].sections;
+        const inheritedStyleSections = layerBlock.sections;
+
+        // Filter to something that only matches the inherited style.
+        stylesSidebarPane.setFilter(/color/i);
+        sectionBlocks.forEach(block => block.updateFilter());
+
+        assert.isTrue(elementStyleSections[0].element.classList.contains('hidden'));
+        assert.isFalse(inheritedStyleSections[0].element.classList.contains('hidden'));
+        assert.isFalse(inheritedBlock.titleElement()?.classList.contains('hidden'));
+        assert.isFalse(layerBlock.titleElement()?.classList.contains('hidden'));
+
+        // Filter to something that matches nothing.
+        stylesSidebarPane.setFilter(/display/i);
+        sectionBlocks.forEach(block => block.updateFilter());
+
+        assert.isTrue(elementStyleSections[0].element.classList.contains('hidden'));
+        assert.isTrue(inheritedStyleSections[0].element.classList.contains('hidden'));
+        assert.isTrue(inheritedBlock.titleElement()?.classList.contains('hidden'));
+        assert.isTrue(layerBlock.titleElement()?.classList.contains('hidden'));
+
+        // Clear filter.
+        stylesSidebarPane.setFilter(null);
+        sectionBlocks.forEach(block => block.updateFilter());
+
+        assert.isFalse(elementStyleSections[0].element.classList.contains('hidden'));
+        assert.isFalse(inheritedStyleSections[0].element.classList.contains('hidden'));
+        assert.isFalse(inheritedBlock.titleElement()?.classList.contains('hidden'));
+        assert.isFalse(layerBlock.titleElement()?.classList.contains('hidden'));
+      });
     });
 
     it('should add @font-* section to the end', async () => {
       const stylesSidebarPane =
-          new Elements.StylesSidebarPane.StylesSidebarPane(new Elements.ComputedStyleModel.ComputedStyleModel());
+          new Elements.StylesSidebarPane.StylesSidebarPane(new ComputedStyle.ComputedStyleModel.ComputedStyleModel());
       const matchedStyles = await getMatchedStyles({
         cssModel: stylesSidebarPane.cssModel() as SDK.CSSModel.CSSModel,
         node: sinon.createStubInstance(SDK.DOMModel.DOMNode),
@@ -132,7 +214,7 @@ describe('StylesSidebarPane', () => {
       });
 
       const sectionBlocks =
-          await stylesSidebarPane.rebuildSectionsForMatchedStyleRulesForTest(matchedStyles, new Map(), new Map());
+          await stylesSidebarPane.rebuildSectionsForMatchedStyleRulesForTest(matchedStyles, new Map(), new Map(), null);
 
       assert.lengthOf(sectionBlocks, 2);
       assert.strictEqual(sectionBlocks[1].titleElement()?.textContent, '@font-*');
@@ -151,7 +233,7 @@ describe('StylesSidebarPane', () => {
 
     it('should add @function section to the end', async () => {
       const stylesSidebarPane =
-          new Elements.StylesSidebarPane.StylesSidebarPane(new Elements.ComputedStyleModel.ComputedStyleModel());
+          new Elements.StylesSidebarPane.StylesSidebarPane(new ComputedStyle.ComputedStyleModel.ComputedStyleModel());
       const matchedStyles = await getMatchedStyles({
         cssModel: stylesSidebarPane.cssModel() as SDK.CSSModel.CSSModel,
         node: sinon.createStubInstance(SDK.DOMModel.DOMNode),
@@ -209,7 +291,7 @@ describe('StylesSidebarPane', () => {
       });
 
       const sectionBlocks =
-          await stylesSidebarPane.rebuildSectionsForMatchedStyleRulesForTest(matchedStyles, new Map(), new Map());
+          await stylesSidebarPane.rebuildSectionsForMatchedStyleRulesForTest(matchedStyles, new Map(), new Map(), null);
 
       assert.lengthOf(sectionBlocks, 2);
       assert.strictEqual(sectionBlocks[1].titleElement()?.textContent, '@function');
@@ -227,6 +309,7 @@ describe('StylesSidebarPane', () => {
 
       beforeEach(() => {
         sinon.stub(PanelsCommon.DOMLinkifier.Linkifier.instance(), 'linkify').returns(document.createElement('div'));
+        sinon.stub(UI.ViewManager.ViewManager.instance(), 'isViewVisible').returns(false);
         updateHostConfig({
           devToolsAnimationStylesInStylesTab: {
             enabled: true,
@@ -234,9 +317,9 @@ describe('StylesSidebarPane', () => {
         });
       });
 
-      it('should render transition & animation styles in the styles tab', async () => {
+      it('should not render transition & animation styles when the animations panel is not visible', async () => {
         const stylesSidebarPane =
-            new Elements.StylesSidebarPane.StylesSidebarPane(new Elements.ComputedStyleModel.ComputedStyleModel());
+            new Elements.StylesSidebarPane.StylesSidebarPane(new ComputedStyle.ComputedStyleModel.ComputedStyleModel());
         const matchedStyles = await getMatchedStyles({
           cssModel: stylesSidebarPane.cssModel() as SDK.CSSModel.CSSModel,
           node: sinon.createStubInstance(SDK.DOMModel.DOMNode),
@@ -246,15 +329,6 @@ describe('StylesSidebarPane', () => {
               style: {
                 cssProperties: [{
                   name: 'background-color',
-                  value: 'blue',
-                }],
-                shorthandEntries: [],
-              },
-            },
-            {
-              style: {
-                cssProperties: [{
-                  name: 'color',
                   value: 'blue',
                 }],
                 shorthandEntries: [],
@@ -271,15 +345,62 @@ describe('StylesSidebarPane', () => {
           inheritedAnimatedPayload: [],
         });
 
-        const sectionBlocks =
-            await stylesSidebarPane.rebuildSectionsForMatchedStyleRulesForTest(matchedStyles, new Map(), new Map());
-        assert.lengthOf(sectionBlocks[0].sections, 3);
-        assert.strictEqual(sectionBlocks[0].sections[0].headerText(), 'transitions style');
-        assert.strictEqual(sectionBlocks[0].sections[1].headerText(), '--animation-name animation');
-        assert.strictEqual(sectionBlocks[0].sections[2].headerText(), 'animation style');
+        const sectionBlocks = await stylesSidebarPane.rebuildSectionsForMatchedStyleRulesForTest(
+            matchedStyles, new Map(), new Map(), null);
+        assert.lengthOf(sectionBlocks[0].sections, 0);
       });
 
+      it('should render transition & animation styles in the styles tab when the animations panel is visible',
+         async () => {
+           (UI.ViewManager.ViewManager.instance().isViewVisible as sinon.SinonStub).returns(true);
+           const stylesSidebarPane = new Elements.StylesSidebarPane.StylesSidebarPane(
+               new ComputedStyle.ComputedStyleModel.ComputedStyleModel());
+           const matchedStyles = await getMatchedStyles({
+             cssModel: stylesSidebarPane.cssModel() as SDK.CSSModel.CSSModel,
+             node: sinon.createStubInstance(SDK.DOMModel.DOMNode),
+             animationStylesPayload: [
+               {
+                 name: '--animation-name',
+                 style: {
+                   cssProperties: [{
+                     name: 'background-color',
+                     value: 'blue',
+                   }],
+                   shorthandEntries: [],
+                 },
+               },
+               {
+                 style: {
+                   cssProperties: [{
+                     name: 'color',
+                     value: 'blue',
+                   }],
+                   shorthandEntries: [],
+                 },
+               },
+             ],
+             transitionsStylePayload: {
+               cssProperties: [{
+                 name: 'color',
+                 value: 'red',
+               }],
+               shorthandEntries: [],
+             },
+             inheritedAnimatedPayload: [],
+           });
+
+           const sectionBlocks = await stylesSidebarPane.rebuildSectionsForMatchedStyleRulesForTest(
+               matchedStyles, new Map(), new Map(), null);
+           assert.lengthOf(sectionBlocks[0].sections, 3);
+           assert.strictEqual(sectionBlocks[0].sections[0].headerText(), 'transitions style');
+           assert.strictEqual(sectionBlocks[0].sections[1].headerText(), '--animation-name animation');
+           assert.strictEqual(sectionBlocks[0].sections[2].headerText(), 'animation style');
+         });
+
       describe('should auto update animated style sections when onComputedStyleChanged called', () => {
+        beforeEach(() => {
+          (UI.ViewManager.ViewManager.instance().isViewVisible as sinon.SinonStub).returns(true);
+        });
         describe('transition styles', () => {
           it('should trigger re-render when there was no transition style before', async () => {
             mockGetAnimatedComputedStyles({
@@ -294,8 +415,8 @@ describe('StylesSidebarPane', () => {
             const node = sinon.createStubInstance(SDK.DOMModel.DOMNode);
             node.id = 1 as Protocol.DOM.NodeId;
 
-            const stylesSidebarPane =
-                new Elements.StylesSidebarPane.StylesSidebarPane(new Elements.ComputedStyleModel.ComputedStyleModel());
+            const stylesSidebarPane = new Elements.StylesSidebarPane.StylesSidebarPane(
+                new ComputedStyle.ComputedStyleModel.ComputedStyleModel(node));
             const resetUpdateSpy = sinon.spy(stylesSidebarPane, 'scheduleResetUpdateIfNotEditingCalledForTest');
             const matchedStyles = await getMatchedStyles({
               cssModel: stylesSidebarPane.cssModel() as SDK.CSSModel.CSSModel,
@@ -303,8 +424,8 @@ describe('StylesSidebarPane', () => {
               transitionsStylePayload: null,
             });
             stylesSidebarPane.setMatchedStylesForTest(matchedStyles);
-            const sectionBlocks =
-                await stylesSidebarPane.rebuildSectionsForMatchedStyleRulesForTest(matchedStyles, new Map(), new Map());
+            const sectionBlocks = await stylesSidebarPane.rebuildSectionsForMatchedStyleRulesForTest(
+                matchedStyles, new Map(), new Map(), null);
             assert.lengthOf(sectionBlocks[0].sections, 0);
 
             const handledComputedStyleChanged =
@@ -328,8 +449,8 @@ describe('StylesSidebarPane', () => {
             const node = sinon.createStubInstance(SDK.DOMModel.DOMNode);
             node.id = 1 as Protocol.DOM.NodeId;
 
-            const stylesSidebarPane =
-                new Elements.StylesSidebarPane.StylesSidebarPane(new Elements.ComputedStyleModel.ComputedStyleModel());
+            const stylesSidebarPane = new Elements.StylesSidebarPane.StylesSidebarPane(
+                new ComputedStyle.ComputedStyleModel.ComputedStyleModel(node));
             const resetUpdateSpy = sinon.spy(stylesSidebarPane, 'scheduleResetUpdateIfNotEditingCalledForTest');
             const matchedStyles = await getMatchedStyles({
               cssModel: stylesSidebarPane.cssModel() as SDK.CSSModel.CSSModel,
@@ -343,8 +464,8 @@ describe('StylesSidebarPane', () => {
               },
             });
             stylesSidebarPane.setMatchedStylesForTest(matchedStyles);
-            const sectionBlocks =
-                await stylesSidebarPane.rebuildSectionsForMatchedStyleRulesForTest(matchedStyles, new Map(), new Map());
+            const sectionBlocks = await stylesSidebarPane.rebuildSectionsForMatchedStyleRulesForTest(
+                matchedStyles, new Map(), new Map(), null);
             assert.lengthOf(sectionBlocks[0].sections, 1);
             assert.include(
                 sectionBlocks[0].sections[0].propertiesTreeOutline.contentElement.textContent, 'color: blue;');
@@ -377,8 +498,8 @@ describe('StylesSidebarPane', () => {
             const node = sinon.createStubInstance(SDK.DOMModel.DOMNode);
             node.id = 1 as Protocol.DOM.NodeId;
 
-            const stylesSidebarPane =
-                new Elements.StylesSidebarPane.StylesSidebarPane(new Elements.ComputedStyleModel.ComputedStyleModel());
+            const stylesSidebarPane = new Elements.StylesSidebarPane.StylesSidebarPane(
+                new ComputedStyle.ComputedStyleModel.ComputedStyleModel(node));
             const resetUpdateSpy = sinon.spy(stylesSidebarPane, 'scheduleResetUpdateIfNotEditingCalledForTest');
             const matchedStyles = await getMatchedStyles({
               cssModel: stylesSidebarPane.cssModel() as SDK.CSSModel.CSSModel,
@@ -386,8 +507,8 @@ describe('StylesSidebarPane', () => {
               animationStylesPayload: [],
             });
             stylesSidebarPane.setMatchedStylesForTest(matchedStyles);
-            const sectionBlocks =
-                await stylesSidebarPane.rebuildSectionsForMatchedStyleRulesForTest(matchedStyles, new Map(), new Map());
+            const sectionBlocks = await stylesSidebarPane.rebuildSectionsForMatchedStyleRulesForTest(
+                matchedStyles, new Map(), new Map(), null);
             assert.lengthOf(sectionBlocks[0].sections, 0);
 
             const handledComputedStyleChanged =
@@ -405,8 +526,8 @@ describe('StylesSidebarPane', () => {
             const node = sinon.createStubInstance(SDK.DOMModel.DOMNode);
             node.id = 1 as Protocol.DOM.NodeId;
 
-            const stylesSidebarPane =
-                new Elements.StylesSidebarPane.StylesSidebarPane(new Elements.ComputedStyleModel.ComputedStyleModel());
+            const stylesSidebarPane = new Elements.StylesSidebarPane.StylesSidebarPane(
+                new ComputedStyle.ComputedStyleModel.ComputedStyleModel(node));
             const resetUpdateSpy = sinon.spy(stylesSidebarPane, 'scheduleResetUpdateIfNotEditingCalledForTest');
             const matchedStyles = await getMatchedStyles({
               cssModel: stylesSidebarPane.cssModel() as SDK.CSSModel.CSSModel,
@@ -422,8 +543,8 @@ describe('StylesSidebarPane', () => {
               }],
             });
             stylesSidebarPane.setMatchedStylesForTest(matchedStyles);
-            const sectionBlocks =
-                await stylesSidebarPane.rebuildSectionsForMatchedStyleRulesForTest(matchedStyles, new Map(), new Map());
+            const sectionBlocks = await stylesSidebarPane.rebuildSectionsForMatchedStyleRulesForTest(
+                matchedStyles, new Map(), new Map(), null);
             assert.lengthOf(sectionBlocks[0].sections, 1);
 
             const handledComputedStyleChanged =
@@ -449,8 +570,8 @@ describe('StylesSidebarPane', () => {
             const node = sinon.createStubInstance(SDK.DOMModel.DOMNode);
             node.id = 1 as Protocol.DOM.NodeId;
 
-            const stylesSidebarPane =
-                new Elements.StylesSidebarPane.StylesSidebarPane(new Elements.ComputedStyleModel.ComputedStyleModel());
+            const stylesSidebarPane = new Elements.StylesSidebarPane.StylesSidebarPane(
+                new ComputedStyle.ComputedStyleModel.ComputedStyleModel(node));
             const resetUpdateSpy = sinon.spy(stylesSidebarPane, 'scheduleResetUpdateIfNotEditingCalledForTest');
             const matchedStyles = await getMatchedStyles({
               cssModel: stylesSidebarPane.cssModel() as SDK.CSSModel.CSSModel,
@@ -466,8 +587,8 @@ describe('StylesSidebarPane', () => {
               }],
             });
             stylesSidebarPane.setMatchedStylesForTest(matchedStyles);
-            const sectionBlocks =
-                await stylesSidebarPane.rebuildSectionsForMatchedStyleRulesForTest(matchedStyles, new Map(), new Map());
+            const sectionBlocks = await stylesSidebarPane.rebuildSectionsForMatchedStyleRulesForTest(
+                matchedStyles, new Map(), new Map(), null);
             assert.lengthOf(sectionBlocks[0].sections, 1);
             assert.include(
                 sectionBlocks[0].sections[0].propertiesTreeOutline.contentElement.textContent, 'color: blue;');
@@ -503,7 +624,7 @@ describe('StylesSidebarPane', () => {
                  node.parentNode = sinon.createStubInstance(SDK.DOMModel.DOMNode);
 
                  const stylesSidebarPane = new Elements.StylesSidebarPane.StylesSidebarPane(
-                     new Elements.ComputedStyleModel.ComputedStyleModel());
+                     new ComputedStyle.ComputedStyleModel.ComputedStyleModel(node));
                  const resetUpdateSpy = sinon.spy(stylesSidebarPane, 'scheduleResetUpdateIfNotEditingCalledForTest');
                  const matchedStyles = await getMatchedStyles({
                    cssModel: stylesSidebarPane.cssModel() as SDK.CSSModel.CSSModel,
@@ -511,7 +632,7 @@ describe('StylesSidebarPane', () => {
                  });
                  stylesSidebarPane.setMatchedStylesForTest(matchedStyles);
                  const sectionBlocks = await stylesSidebarPane.rebuildSectionsForMatchedStyleRulesForTest(
-                     matchedStyles, new Map(), new Map());
+                     matchedStyles, new Map(), new Map(), null);
                  assert.lengthOf(sectionBlocks[0].sections, 0);
 
                  const handledComputedStyleChanged =
@@ -540,7 +661,7 @@ describe('StylesSidebarPane', () => {
                  node.parentNode = sinon.createStubInstance(SDK.DOMModel.DOMNode);
 
                  const stylesSidebarPane = new Elements.StylesSidebarPane.StylesSidebarPane(
-                     new Elements.ComputedStyleModel.ComputedStyleModel());
+                     new ComputedStyle.ComputedStyleModel.ComputedStyleModel(node));
                  const resetUpdateSpy = sinon.spy(stylesSidebarPane, 'scheduleResetUpdateIfNotEditingCalledForTest');
                  const matchedStyles = await getMatchedStyles({
                    cssModel: stylesSidebarPane.cssModel() as SDK.CSSModel.CSSModel,
@@ -548,7 +669,7 @@ describe('StylesSidebarPane', () => {
                  });
                  stylesSidebarPane.setMatchedStylesForTest(matchedStyles);
                  const sectionBlocks = await stylesSidebarPane.rebuildSectionsForMatchedStyleRulesForTest(
-                     matchedStyles, new Map(), new Map());
+                     matchedStyles, new Map(), new Map(), null);
                  assert.lengthOf(sectionBlocks[0].sections, 0);
 
                  const handledComputedStyleChanged =
@@ -577,7 +698,7 @@ describe('StylesSidebarPane', () => {
                  node.parentNode = sinon.createStubInstance(SDK.DOMModel.DOMNode);
 
                  const stylesSidebarPane = new Elements.StylesSidebarPane.StylesSidebarPane(
-                     new Elements.ComputedStyleModel.ComputedStyleModel());
+                     new ComputedStyle.ComputedStyleModel.ComputedStyleModel(node));
                  const resetUpdateSpy = sinon.spy(stylesSidebarPane, 'scheduleResetUpdateIfNotEditingCalledForTest');
                  const matchedStyles = await getMatchedStyles({
                    cssModel: stylesSidebarPane.cssModel() as SDK.CSSModel.CSSModel,
@@ -597,7 +718,7 @@ describe('StylesSidebarPane', () => {
                  });
                  stylesSidebarPane.setMatchedStylesForTest(matchedStyles);
                  const sectionBlocks = await stylesSidebarPane.rebuildSectionsForMatchedStyleRulesForTest(
-                     matchedStyles, new Map(), new Map());
+                     matchedStyles, new Map(), new Map(), null);
                  assert.lengthOf(sectionBlocks[1].sections, 1);
                  assert.include(
                      sectionBlocks[1].sections[0].propertiesTreeOutline.contentElement.textContent, 'color: blue;');
@@ -740,6 +861,37 @@ describe('StylesSidebarPane', () => {
         assert.strictEqual(completions?.[0].text, 'word-wrap');
         assert.strictEqual(completions?.[1].text, 'overflow-wrap');
         assert.strictEqual(completions?.[1].subtitle, '= word-wrap');
+      });
+
+      it('returns no completions when property name contains invalid characters', async () => {
+        const attachedElement = document.createElement('div');
+        renderElementIntoDOM(attachedElement);
+        const cssPropertyPrompt = new CSSPropertyPrompt(mockTreeItem, true);
+
+        cssPropertyPrompt.attachAndStartEditing(attachedElement, noop);
+        const suggestBox = cssPropertyPrompt.suggestBoxForTest();
+        assert.exists(suggestBox);
+        const spyObj = sinon.spy(suggestBox);
+
+        cssPropertyPrompt.setText('height"');
+        await cssPropertyPrompt.complete(true);
+
+        sinon.assert.notCalled(spyObj.updateSuggestions);
+      });
+
+      it('allows completions for valid property names', async () => {
+        const attachedElement = document.createElement('div');
+        renderElementIntoDOM(attachedElement);
+        const cssPropertyPrompt = new CSSPropertyPrompt(mockTreeItem, true);
+
+        cssPropertyPrompt.attachAndStartEditing(attachedElement, noop);
+        const spyObj = sinon.spy(cssPropertyPrompt.suggestBoxForTest());
+        cssPropertyPrompt.setText('backgrou');
+        await cssPropertyPrompt.complete(true);
+
+        assert.isTrue(spyObj?.updateSuggestions.called);
+        const completions = spyObj?.updateSuggestions.firstCall.args[1];
+        assert.isAbove(completions.length, 0);
       });
     });
   });

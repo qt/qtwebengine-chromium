@@ -46,6 +46,8 @@ typedef eigen_packet_wrapper<__m256i, 3> Packet4l;
 typedef eigen_packet_wrapper<__m256i, 5> Packet4ul;
 #endif
 
+#define SIGN_MASK_I64 static_cast<int64_t>(0x8000000000000000ULL)
+
 template <>
 struct is_arithmetic<__m256> {
   enum { value = true };
@@ -110,6 +112,7 @@ struct packet_traits<float> : default_packet_traits {
     HasReciprocal = EIGEN_FAST_MATH,
     HasSin = EIGEN_FAST_MATH,
     HasCos = EIGEN_FAST_MATH,
+    HasTan = EIGEN_FAST_MATH,
     HasACos = 1,
     HasASin = 1,
     HasATan = 1,
@@ -143,6 +146,7 @@ struct packet_traits<double> : default_packet_traits {
 #ifdef EIGEN_VECTORIZE_AVX2
     HasSin = EIGEN_FAST_MATH,
     HasCos = EIGEN_FAST_MATH,
+    HasTan = EIGEN_FAST_MATH,
 #endif
     HasTanh = EIGEN_FAST_MATH,
     HasErf = 1,
@@ -873,12 +877,12 @@ EIGEN_STRONG_INLINE Packet8ui psub<Packet8ui>(const Packet8ui& a, const Packet8u
 
 template <>
 EIGEN_STRONG_INLINE Packet8f pnegate(const Packet8f& a) {
-  const Packet8f mask = _mm256_castsi256_ps(_mm256_set1_epi32(0x80000000));
+  const Packet8f mask = _mm256_castsi256_ps(_mm256_set1_epi32(SIGN_MASK_I32));
   return _mm256_xor_ps(a, mask);
 }
 template <>
 EIGEN_STRONG_INLINE Packet4d pnegate(const Packet4d& a) {
-  const Packet4d mask = _mm256_castsi256_pd(_mm256_set1_epi64x(0x8000000000000000ULL));
+  const Packet4d mask = _mm256_castsi256_pd(_mm256_set1_epi64x(SIGN_MASK_I64));
   return _mm256_xor_pd(a, mask);
 }
 template <>

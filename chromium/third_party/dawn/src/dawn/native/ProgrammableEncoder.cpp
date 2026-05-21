@@ -49,7 +49,7 @@ ProgrammableEncoder::ProgrammableEncoder(DeviceBase* device,
     : ApiObjectBase(device, label),
       mEncodingContext(encodingContext),
       mValidationEnabled(device->IsValidationEnabled()),
-      mNeedsIndirectDrawGPUValidation(device->NeedsIndirectDrawGPUValidation()) {}
+      mNeedsIndirectGPUValidation(device->NeedsIndirectGPUValidation()) {}
 
 ProgrammableEncoder::ProgrammableEncoder(DeviceBase* device,
                                          EncodingContext* encodingContext,
@@ -58,14 +58,14 @@ ProgrammableEncoder::ProgrammableEncoder(DeviceBase* device,
     : ApiObjectBase(device, errorTag, label),
       mEncodingContext(encodingContext),
       mValidationEnabled(device->IsValidationEnabled()),
-      mNeedsIndirectDrawGPUValidation(device->NeedsIndirectDrawGPUValidation()) {}
+      mNeedsIndirectGPUValidation(device->NeedsIndirectGPUValidation()) {}
 
 bool ProgrammableEncoder::IsValidationEnabled() const {
     return mValidationEnabled;
 }
 
-bool ProgrammableEncoder::NeedsIndirectDrawGPUValidation() const {
-    return mNeedsIndirectDrawGPUValidation;
+bool ProgrammableEncoder::NeedsIndirectGPUValidation() const {
+    return mNeedsIndirectGPUValidation;
 }
 
 MaybeError ProgrammableEncoder::ValidateProgrammableEncoderEnd() const {
@@ -123,43 +123,24 @@ void ProgrammableEncoder::APIPushDebugGroup(StringView groupLabelIn) {
         "encoding %s.PushDebugGroup(%s).", this, groupLabel);
 }
 
-void ProgrammableEncoder::APISetImmediates(uint32_t offset, const void* data, size_t size) {
-    mEncodingContext->TryEncode(
-        this,
-        [&](CommandAllocator* allocator) -> MaybeError {
-            if (IsValidationEnabled()) {
-                DAWN_INVALID_IF(!GetDevice()->GetInstance()->HasFeature(
-                                    wgpu::WGSLLanguageFeatureName::ImmediateAddressSpace),
-                                "ImmediateAddressSpace feature is not enabled");
+MaybeError ProgrammableEncoder::ValidateSetImmediates(uint32_t offset, size_t size) const {
+    DAWN_INVALID_IF(!GetDevice()->GetInstance()->HasFeature(
+                        wgpu::WGSLLanguageFeatureName::ImmediateAddressSpace),
+                    "ImmediateAddressSpace feature is not enabled");
 
-                // Validate offset and size are aligned to 4 bytes.
-                DAWN_INVALID_IF(offset % 4 != 0, "offset (%u) is not a multiple of 4", offset);
-                DAWN_INVALID_IF(size % 4 != 0, "size (%u) is not a multiple of 4", size);
+    // Validate offset and size are aligned to 4 bytes.
+    DAWN_INVALID_IF(offset % 4 != 0, "offset (%u) is not a multiple of 4", offset);
+    DAWN_INVALID_IF(size % 4 != 0, "size (%u) is not a multiple of 4", size);
 
-                // Validate OOB
-                uint32_t maxImmediateSize = GetDevice()->GetLimits().v1.maxImmediateSize;
-                DAWN_INVALID_IF(offset > maxImmediateSize,
-                                "offset (%u) is larger than maxImmediateSize (%u).", offset,
-                                maxImmediateSize);
-                DAWN_INVALID_IF(size > maxImmediateSize - offset,
-                                "offset (%u) + size (%u): is larger than maxImmediateSize (%u).",
-                                offset, size, maxImmediateSize);
-            }
+    // Validate OOB
+    uint32_t maxImmediateSize = GetDevice()->GetLimits().v1.maxImmediateSize;
+    DAWN_INVALID_IF(offset > maxImmediateSize, "offset (%u) is larger than maxImmediateSize (%u).",
+                    offset, maxImmediateSize);
+    DAWN_INVALID_IF(size > maxImmediateSize - offset,
+                    "offset (%u) + size (%u): is larger than maxImmediateSize (%u).", offset, size,
+                    maxImmediateSize);
 
-            // Skip SetImmediates when uploading constants are empty.
-            if (size == 0) {
-                return {};
-            }
-
-            SetImmediatesCmd* cmd = allocator->Allocate<SetImmediatesCmd>(Command::SetImmediates);
-            cmd->offset = offset;
-            cmd->size = size;
-            uint8_t* immediateDatas = allocator->AllocateData<uint8_t>(cmd->size);
-            memcpy(immediateDatas, data, size);
-
-            return {};
-        },
-        "encoding %s.SetImmediates(%u, %u, ...).", this, offset, size);
+    return {};
 }
 
 MaybeError ProgrammableEncoder::ValidateSetBindGroup(BindGroupIndex index,

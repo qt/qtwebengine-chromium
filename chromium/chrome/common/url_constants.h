@@ -342,10 +342,6 @@ inline constexpr char16_t kMemorySaverModeTabDiscardingHelpUrl[] =
 inline constexpr char16_t kIncognitoHelpCenterURL[] =
     u"https://support.google.com/chrome?p=incognito";
 
-// The URL for the Help Center page about IP Protection.
-inline constexpr char kIpProtectionHelpCenterURL[] =
-    "https://support.google.com/chrome?p=ip_protection";
-
 // The URL for "Learn more" page for Isolated Web Apps.
 // TODO(crbug.com/40281470): Update this URL with proper user-facing explainer.
 inline constexpr char16_t kIsolatedWebAppsLearnMoreUrl[] =
@@ -355,10 +351,6 @@ inline constexpr char16_t kIsolatedWebAppsLearnMoreUrl[] =
 // first run dialog.
 inline constexpr char kLearnMoreReportingURL[] =
     "https://support.google.com/chrome?p=ui_usagestat";
-
-// The URL for the Help Center page about managing third-party cookies.
-inline constexpr char kManage3pcHelpCenterURL[] =
-    "https://support.google.com/chrome?p=manage_tp_cookies";
 
 // The URL for the tab group sync help center page.
 inline constexpr char kTabGroupsLearnMoreURL[] =
@@ -394,6 +386,12 @@ inline constexpr char16_t kGeminiPersonalContextUrl[] =
 // The URL for "Your Gemini Apps Activity" page.
 inline constexpr char16_t kMyActivityGeminiAppsUrl[] =
     u"https://myactivity.google.com/product/gemini";
+
+#if !BUILDFLAG(IS_CHROMEOS) && BUILDFLAG(GOOGLE_CHROME_BRANDING)
+// "Learn more" URL for On-Device AI.
+inline constexpr char16_t kOnDeviceAiLearnMoreUrl[] =
+    u"https://support.google.com/chrome?p=on_device_genAI";
+#endif
 
 // Help URL for the Omnibox setting.
 inline constexpr char16_t kOmniboxLearnMoreURL[] =
@@ -999,10 +997,6 @@ inline constexpr char kWindowsXPVistaDeprecationURL[] =
 inline constexpr char kWindows78DeprecationURL[] =
     "https://support.google.com/chrome?p=unsupported_windows";
 #endif
-
-// "Learn more" URL for the one click signin infobar.
-inline constexpr char kChromeSyncLearnMoreURL[] =
-    "https://support.google.com/chrome?p=chrome_sync";
 
 #if BUILDFLAG(ENABLE_PLUGINS)
 // The URL for the "Learn more" page for the outdated plugin infobar.

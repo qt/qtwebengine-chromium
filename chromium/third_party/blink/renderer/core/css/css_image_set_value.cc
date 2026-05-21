@@ -29,6 +29,8 @@
 
 #include "third_party/blink/renderer/core/css/css_image_set_option_value.h"
 #include "third_party/blink/renderer/core/css/css_length_resolver.h"
+#include "third_party/blink/renderer/core/css/css_value_list.h"
+#include "third_party/blink/renderer/core/css/resolver/style_resolver_state.h"
 #include "third_party/blink/renderer/core/loader/resource/image_resource_content.h"
 #include "third_party/blink/renderer/core/paint/timing/paint_timing.h"
 #include "third_party/blink/renderer/core/style/style_image_set.h"
@@ -147,6 +149,56 @@ bool CSSImageSetValue::HasFailedOrCanceledSubresources() const {
   }
 
   return true;
+}
+
+CSSImageSetValue* CSSImageSetValue::ResolveValuesAndCreateCopyIfNeeded(
+    const StyleResolverState& state) const {
+  CSSImageSetValue* new_value = MakeGarbageCollected<CSSImageSetValue>();
+  bool values_changed = false;
+  for (const auto& item : *this) {
+    const auto* option = To<CSSImageSetOptionValue>(item.Get());
+    const CSSValue& image = option->GetImage();
+    const CSSValue& resolved_image = state.ResolveGradients(image);
+    if (&image == &resolved_image) {
+      new_value->Append(*option);
+    } else {
+      values_changed = true;
+      new_value->Append(*MakeGarbageCollected<CSSImageSetOptionValue>(
+          &resolved_image, &option->GetResolution(), option->GetType()));
+    }
+  }
+  if (values_changed) {
+    return new_value;
+  }
+  return nullptr;
+}
+
+const CSSImageSetValue& CSSImageSetValue::ResolveValuesIfNeeded(
+    const StyleResolverState& state) const {
+  if (CSSImageSetValue* resolved = ResolveValuesAndCreateCopyIfNeeded(state)) {
+    return *resolved;
+  }
+  return *this;
+}
+
+CSSImageSetValue& CSSImageSetValue::ResolveValuesIfNeeded(
+    const StyleResolverState& state) {
+  if (CSSImageSetValue* resolved = ResolveValuesAndCreateCopyIfNeeded(state)) {
+    return *resolved;
+  }
+  return *this;
+}
+
+bool CSSImageSetValue::HasRandomFunctions() const {
+  if (CSSValueList::HasRandomFunctions()) {
+    return true;
+  }
+  for (const auto& option : options_) {
+    if (option && option->HasRandomFunctions()) {
+      return true;
+    }
+  }
+  return false;
 }
 
 void CSSImageSetValue::TraceAfterDispatch(blink::Visitor* visitor) const {

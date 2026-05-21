@@ -24,46 +24,50 @@
 #include <stdlib.h>
 #include <string.h>
 
+using namespace bssl;
+
 static BOOL CALLBACK call_once_init(INIT_ONCE *once, void *arg, void **out) {
-  void (**init)(void) = (void (**)(void))arg;
+  void (**init)() = (void (**)())arg;
   (**init)();
   return TRUE;
 }
 
-void CRYPTO_once(CRYPTO_once_t *once, void (*init)(void)) {
+void bssl::CRYPTO_once(CRYPTO_once_t *once, void (*init)()) {
   if (!InitOnceExecuteOnce(once, call_once_init, &init, nullptr)) {
     abort();
   }
 }
 
-void CRYPTO_MUTEX_init(CRYPTO_MUTEX *lock) { InitializeSRWLock(lock); }
+void bssl::CRYPTO_MUTEX_init(CRYPTO_MUTEX *lock) { InitializeSRWLock(lock); }
 
-void CRYPTO_MUTEX_lock_read(CRYPTO_MUTEX *lock) { AcquireSRWLockShared(lock); }
+void bssl::CRYPTO_MUTEX_lock_read(CRYPTO_MUTEX *lock) {
+  AcquireSRWLockShared(lock);
+}
 
-void CRYPTO_MUTEX_lock_write(CRYPTO_MUTEX *lock) {
+void bssl::CRYPTO_MUTEX_lock_write(CRYPTO_MUTEX *lock) {
   AcquireSRWLockExclusive(lock);
 }
 
-void CRYPTO_MUTEX_unlock_read(CRYPTO_MUTEX *lock) {
+void bssl::CRYPTO_MUTEX_unlock_read(CRYPTO_MUTEX *lock) {
   ReleaseSRWLockShared(lock);
 }
 
-void CRYPTO_MUTEX_unlock_write(CRYPTO_MUTEX *lock) {
+void bssl::CRYPTO_MUTEX_unlock_write(CRYPTO_MUTEX *lock) {
   ReleaseSRWLockExclusive(lock);
 }
 
-void CRYPTO_MUTEX_cleanup(CRYPTO_MUTEX *lock) {
+void bssl::CRYPTO_MUTEX_cleanup(CRYPTO_MUTEX *lock) {
   // SRWLOCKs require no cleanup.
 }
 
 static SRWLOCK g_destructors_lock = SRWLOCK_INIT;
 static thread_local_destructor_t g_destructors[NUM_OPENSSL_THREAD_LOCALS];
 
-static CRYPTO_once_t g_thread_local_init_once = CRYPTO_ONCE_INIT;
+static bssl::CRYPTO_once_t g_thread_local_init_once = CRYPTO_ONCE_INIT;
 static DWORD g_thread_local_key;
 static int g_thread_local_failed;
 
-static void thread_local_init(void) {
+static void thread_local_init() {
   g_thread_local_key = TlsAlloc();
   g_thread_local_failed = (g_thread_local_key == TLS_OUT_OF_INDEXES);
 }
@@ -172,7 +176,7 @@ PIMAGE_TLS_CALLBACK p_thread_callback_boringssl = thread_local_destructor;
 
 #endif  // _WIN64
 
-static void **get_thread_locals(void) {
+static void **get_thread_locals() {
   // |TlsGetValue| clears the last error even on success, so that callers may
   // distinguish it successfully returning NULL or failing. It is documented to
   // never fail if the argument is a valid index from |TlsAlloc|, so we do not
@@ -190,7 +194,7 @@ static void **get_thread_locals(void) {
   return ret;
 }
 
-void *CRYPTO_get_thread_local(thread_local_data_t index) {
+void *bssl::CRYPTO_get_thread_local(thread_local_data_t index) {
   CRYPTO_once(&g_thread_local_init_once, thread_local_init);
   if (g_thread_local_failed) {
     return nullptr;
@@ -203,8 +207,8 @@ void *CRYPTO_get_thread_local(thread_local_data_t index) {
   return pointers[index];
 }
 
-int CRYPTO_set_thread_local(thread_local_data_t index, void *value,
-                            thread_local_destructor_t destructor) {
+int bssl::CRYPTO_set_thread_local(thread_local_data_t index, void *value,
+                                  thread_local_destructor_t destructor) {
   CRYPTO_once(&g_thread_local_init_once, thread_local_init);
   if (g_thread_local_failed) {
     destructor(value);

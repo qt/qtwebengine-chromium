@@ -14,7 +14,6 @@
 
 #include "platform/api/time.h"
 #include "platform/base/error.h"
-#include "platform/base/macros.h"
 #include "platform/impl/socket_handle.h"
 
 namespace openscreen {
@@ -38,7 +37,7 @@ class SocketHandleWaiter {
 
   class Subscriber {
    public:
-    virtual ~Subscriber() = default;
+    virtual ~Subscriber();
 
     // Provides a socket handle to the subscriber which has data waiting to be
     // processed.
@@ -55,7 +54,11 @@ class SocketHandleWaiter {
   };
 
   explicit SocketHandleWaiter(ClockNowFunctionPtr now_function);
-  virtual ~SocketHandleWaiter() = default;
+  SocketHandleWaiter(const SocketHandleWaiter&) = delete;
+  SocketHandleWaiter(SocketHandleWaiter&&) noexcept = delete;
+  SocketHandleWaiter& operator=(const SocketHandleWaiter&) = delete;
+  SocketHandleWaiter& operator=(SocketHandleWaiter&&) = delete;
+  virtual ~SocketHandleWaiter();
 
   // Start notifying `subscriber` whenever `handle` has an event. May be called
   // multiple times, to be notified for multiple handles, but should not be
@@ -77,8 +80,6 @@ class SocketHandleWaiter {
   void OnHandleDeletion(Subscriber* subscriber,
                         SocketHandleRef handle,
                         bool disable_locking_for_testing = false);
-
-  OSP_DISALLOW_COPY_AND_ASSIGN(SocketHandleWaiter);
 
   // Gets all socket handles to process, checks them for readable data, and
   // handles any changes that have occurred.

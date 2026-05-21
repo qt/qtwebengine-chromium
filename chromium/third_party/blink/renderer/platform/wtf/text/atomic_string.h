@@ -27,6 +27,7 @@
 
 #include "base/compiler_specific.h"
 #include "base/containers/span.h"
+#include "base/strings/string_view_util.h"
 #include "build/build_config.h"
 #include "third_party/blink/renderer/platform/wtf/allocator/allocator.h"
 #include "third_party/blink/renderer/platform/wtf/forward.h"
@@ -52,10 +53,18 @@ namespace blink {
 // instances can share their string storage if the strings are
 // identical. Comparing two AtomicString instances is much faster than comparing
 // two String instances because we just check string storage identity.
+//
+// When a method of this class is compatible with an equivalent method in
+// `std::string`, we use the same method name as `std::string` (i.e.,
+// `snake_case()`) rather than following the Google/Blink C++ style guide's
+// naming rules. This improves consistency in string manipulation.
 class WTF_EXPORT AtomicString {
   USING_FAST_MALLOC(AtomicString);
 
  public:
+  using size_type = string_size_t;
+  static constexpr size_type npos = kNotFound;
+
   // The function is defined in StringStatics.cpp.
   static void Init();
 
@@ -162,12 +171,6 @@ class WTF_EXPORT AtomicString {
       TextCaseSensitivity case_sensitivity = kTextCaseSensitive) const {
     return string_.EndsWith(suffix, case_sensitivity);
   }
-  // Unicode aware case insensitive string matching. Non-ASCII characters might
-  // match to ASCII characters. This function is rarely used to implement web
-  // platform features.  See crbug.com/40476285.
-  bool DeprecatedEndsWithIgnoringCase(const StringView& suffix) const {
-    return string_.DeprecatedEndsWithIgnoringCase(suffix);
-  }
   bool EndsWith(UChar character) const { return string_.EndsWith(character); }
 
   // Returns a lowercase/uppercase version of the string.
@@ -177,11 +180,6 @@ class WTF_EXPORT AtomicString {
   AtomicString UpperASCII() const;
 
   bool IsLowerASCII() const { return string_.IsLowerASCII(); }
-
-  // See comments in WTFString.h.
-  int ToInt(bool* ok = nullptr) const { return string_.ToInt(ok); }
-  double ToDouble(bool* ok = nullptr) const { return string_.ToDouble(ok); }
-  float ToFloat(bool* ok = nullptr) const { return string_.ToFloat(ok); }
 
   template <typename IntegerType>
   static AtomicString Number(IntegerType number) {
@@ -216,8 +214,7 @@ class WTF_EXPORT AtomicString {
   // This function should be removed after enabling C++23 because
   // std::u16string_view(Span16()) will work with C++23.
   std::u16string_view View16() const LIFETIME_BOUND {
-    auto chars = Span16();
-    return std::u16string_view(chars.begin(), chars.end());
+    return base::as_string_view(Span16());
   }
 
   size_t CharactersSizeInBytes() const {
@@ -235,20 +232,20 @@ class WTF_EXPORT AtomicString {
 
   String string_;
 
-  ALWAYS_INLINE static scoped_refptr<StringImpl> Add(
-      scoped_refptr<StringImpl>&& r) {
-    if (!r || r->IsAtomic())
+  ALWAYS_INLINE static String Add(String&& r) {
+    if (!r || r.Impl()->IsAtomic()) {
       return std::move(r);
+    }
     return AddSlowCase(std::move(r));
   }
 
-  ALWAYS_INLINE static scoped_refptr<StringImpl> Add(StringImpl* r) {
+  ALWAYS_INLINE static String Add(StringImpl* r) {
     if (!r || r->IsAtomic())
       return r;
     return AddSlowCase(r);
   }
-  static scoped_refptr<StringImpl> AddSlowCase(scoped_refptr<StringImpl>&&);
-  static scoped_refptr<StringImpl> AddSlowCase(StringImpl*);
+  static String AddSlowCase(String&&);
+  static String AddSlowCase(StringImpl*);
 };
 
 inline bool operator==(const AtomicString& a, const AtomicString& b) {

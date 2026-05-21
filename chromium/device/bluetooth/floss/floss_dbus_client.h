@@ -15,8 +15,8 @@
 #include <utility>
 #include <vector>
 
-#include "base/containers/contains.h"
 #include "base/functional/callback.h"
+#include "base/functional/callback_helpers.h"
 #include "base/logging.h"
 #include "base/no_destructor.h"
 #include "base/strings/strcat.h"
@@ -831,14 +831,14 @@ class DEVICE_BLUETOOTH_EXPORT FlossDBusClient {
         if (!entry_reader.PopString(&key))
           return false;
 
-        if (base::Contains(fields_, key)) {
+        if (fields_.contains(key)) {
           dbus::MessageReader variant_reader(nullptr);
           entry_reader.PopVariant(&variant_reader);
 
           if (!fields_[key](&variant_reader, data))
             return false;
 
-          if (base::Contains(parsed_fields, key))
+          if (parsed_fields.contains(key))
             return false;
 
           parsed_fields.insert(key);

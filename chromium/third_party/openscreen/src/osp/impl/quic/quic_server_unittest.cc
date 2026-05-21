@@ -31,19 +31,26 @@ class MockConnectRequestCallback final : public ConnectRequestCallback {
  public:
   ~MockConnectRequestCallback() override = default;
 
-  MOCK_METHOD3(OnConnectSucceed,
-               void(uint64_t request_id,
-                    std::string_view instance_name,
-                    uint64_t instance_id));
-  MOCK_METHOD2(OnConnectFailed,
-               void(uint64_t request_id, std::string_view instance_name));
+  MOCK_METHOD(void,
+              OnConnectSucceed,
+              (uint64_t request_id,
+               std::string_view instance_name,
+               uint64_t instance_id),
+              (override));
+  MOCK_METHOD(void,
+              OnConnectFailed,
+              (uint64_t request_id, std::string_view instance_name),
+              (override));
 };
 
 class MockConnectionObserver final : public ProtocolConnection::Observer {
  public:
   ~MockConnectionObserver() override = default;
 
-  MOCK_METHOD1(OnConnectionClosed, void(const ProtocolConnection& connection));
+  MOCK_METHOD(void,
+              OnConnectionClosed,
+              (const ProtocolConnection& connection),
+              (override));
 };
 
 class QuicServerTest : public Test {

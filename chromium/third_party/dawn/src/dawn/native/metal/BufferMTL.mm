@@ -89,8 +89,8 @@ MaybeError Buffer::Initialize(bool mappedAtCreation) {
     }
 
     // The vertex pulling transform requires at least 4 bytes in the buffer.
-    // 0-sized vertex buffer bindings are allowed, so we always need an additional 4 bytes
-    // after the end.
+    // Zero-sized vertex buffer bindings at the very end of the buffer are
+    // allowed, so we always need an additional 4 bytes after the end.
     NSUInteger extraBytes = 0u;
     if ((GetInternalUsage() & wgpu::BufferUsage::Vertex) != 0) {
         extraBytes = 4u;
@@ -103,13 +103,19 @@ MaybeError Buffer::Initialize(bool mappedAtCreation) {
         std::max(static_cast<NSUInteger>(GetSize()) + extraBytes, NSUInteger(4));
 
     if (currentSize > std::numeric_limits<NSUInteger>::max() - alignment) {
-        // Alignment would overlow.
+        // Alignment would overflow.
         return DAWN_OUT_OF_MEMORY_ERROR("Buffer allocation is too large");
     }
     currentSize = Align(currentSize, alignment);
 
     uint64_t maxBufferSize = QueryMaxBufferLength(ToBackend(GetDevice())->GetMTLDevice());
     if (currentSize > maxBufferSize) {
+        // Note if this is a vertex buffer, this will result in an OutOfMemory error even when there
+        // is otherwise enough memory (e.g. a storage buffer of the same size would succeed).
+        // TODO(crbug.com/488400770): Find some way to avoid falsely signalling to the app that
+        // there is high memory pressure. (Note, this won't happen if Metal's max buffer size is
+        // greater than maxBufferSize+4, as it is on M1+ when limit tiering is enabled.)
+
         return DAWN_OUT_OF_MEMORY_ERROR("Buffer allocation is too large");
     }
 
@@ -125,6 +131,7 @@ MaybeError Buffer::Initialize(bool mappedAtCreation) {
     // BufferBase::MapAtCreation().
     if (GetDevice()->IsToggleEnabled(Toggle::NonzeroClearResourcesOnCreationForTesting) &&
         !mappedAtCreation) {
+        auto scopedUseDuringCreation = UseInternal();
         CommandRecordingContext* commandContext =
             ToBackend(GetDevice()->GetQueue())->GetPendingCommandContext();
         ClearBuffer(commandContext, uint8_t(1u));
@@ -137,6 +144,7 @@ MaybeError Buffer::Initialize(bool mappedAtCreation) {
             uint32_t clearSize = Align(paddingBytes, 4);
             uint64_t clearOffset = GetAllocatedSize() - clearSize;
 
+            auto scopedUseDuringCreation = UseInternal();
             CommandRecordingContext* commandContext =
                 ToBackend(GetDevice()->GetQueue())->GetPendingCommandContext();
             ClearBuffer(commandContext, 0, clearOffset, clearSize);
@@ -180,6 +188,7 @@ MaybeError Buffer::InitializeHostMapped(const BufferHostMappedPointer* hostMappe
 Buffer::~Buffer() = default;
 
 id<MTLBuffer> Buffer::GetMTLBuffer() const {
+    DAWN_ASSERT(mMtlBuffer != nullptr);
     return mMtlBuffer.Get();
 }
 
@@ -193,14 +202,17 @@ MaybeError Buffer::MapAtCreationImpl() {
 }
 
 MaybeError Buffer::MapAsyncImpl(wgpu::MapMode mode, size_t offset, size_t size) {
-    CommandRecordingContext* commandContext =
-        ToBackend(GetDevice()->GetQueue())->GetPendingCommandContext();
-    EnsureDataInitialized(commandContext);
-
     return {};
 }
 
 MaybeError Buffer::FinalizeMapImpl(BufferState newState) {
+    // The real mapped pointer is never returned for zero sized buffers. MappedAtCreation buffers
+    // are initialized in BufferBase already.
+    if (NeedsInitialization() && GetSize() > 0 && newState == BufferState::Mapped) {
+        std::memset(GetMappedPointerImpl(), 0, GetAllocatedSize());
+        GetDevice()->IncrementLazyClearCountForTesting();
+        SetInitialized(true);
+    }
     return {};
 }
 
@@ -208,11 +220,11 @@ void* Buffer::GetMappedPointerImpl() {
     return [*mMtlBuffer contents];
 }
 
-void Buffer::UnmapImpl(BufferState oldState) {
+void Buffer::UnmapImpl(BufferState oldState, BufferState newState) {
     // Nothing to do, Metal StorageModeShared buffers are always mapped.
 }
 
-void Buffer::DestroyImpl() {
+void Buffer::DestroyImpl(DestroyReason reason) {
     // TODO(crbug.com/dawn/831): DestroyImpl is called from two places.
     // - It may be called if the buffer is explicitly destroyed with APIDestroy.
     //   This case is NOT thread-safe and needs proper synchronization with other
@@ -220,7 +232,7 @@ void Buffer::DestroyImpl() {
     // - It may be called when the last ref to the buffer is dropped and the buffer
     //   is implicitly destroyed. This case is thread-safe because there are no
     //   other threads using the buffer since there are no other live refs.
-    BufferBase::DestroyImpl();
+    BufferBase::DestroyImpl(reason);
     mMtlBuffer = nullptr;
 }
 

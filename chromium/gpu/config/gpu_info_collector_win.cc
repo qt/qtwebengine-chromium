@@ -142,12 +142,12 @@ bool GetActiveAdapterLuid(LUID* luid) {
     return false;
 
   Microsoft::WRL::ComPtr<IDXGIDevice> dxgi_device;
-  if (FAILED(d3d11_device.As(&dxgi_device)))
-    return false;
+  HRESULT hr = d3d11_device.As(&dxgi_device);
+  CHECK_EQ(hr, S_OK);
 
   Microsoft::WRL::ComPtr<IDXGIAdapter> adapter;
-  if (FAILED(dxgi_device->GetAdapter(&adapter)))
-    return false;
+  hr = dxgi_device->GetAdapter(&adapter);
+  CHECK_EQ(hr, S_OK);
 
   DXGI_ADAPTER_DESC desc;
   CHECK_EQ(S_OK, adapter->GetDesc(&desc));

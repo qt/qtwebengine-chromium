@@ -12,6 +12,7 @@
 <translation id="2159915644201199628">Não foi possível descodificar a imagem: "<ph name="IMAGE_NAME" />"</translation>
 <translation id="2350172092385603347">Localização utilizada, mas não foi especificado default_locale no manifesto.</translation>
 <translation id="2576842806987913196">Já existe um ficheiro CRX com este nome.</translation>
+<translation id="2743583586211388067">O acesso a esta extensão está bloqueado ao abrigo da política de risco de extensões da sua organização.</translation>
 <translation id="2785530881066938471">Não foi possível carregar o ficheiro "<ph name="RELATIVE_PATH" />" para script de conteúdo. Não está codificado em UTF-8.</translation>
 <translation id="2903070246402204397"><ph name="EXTENSION_NAME" /> (ID de extensão "<ph name="EXTENSION_ID" />") está bloqueada pelo gestor. <ph name="ADMIN_INFO" /></translation>
 <translation id="2988488679308982380">Não foi possível instalar o pacote: "<ph name="ERROR_CODE" />"</translation>
@@ -33,9 +34,11 @@
 <translation id="5356315618422219272">Vista de aplicação: <ph name="APPVIEW_TAG_NAME" /></translation>
 <translation id="5456409301717116725">Esta extensão inclui o ficheiro-chave "<ph name="KEY_PATH" />". Provavelmente não quer fazer isso.</translation>
 <translation id="5486326529110362464">O valor de entrada para uma chave privada tem de existir.</translation>
+<translation id="5707185214361380026">Falha ao carregar a extensão de:</translation>
 <translation id="5972529113578162692">O gestor deste computador requer que a extensão <ph name="EXTENSION_NAME" /> esteja instalada. Não é possível desinstalá-la.</translation>
 <translation id="6027032947578871493">Produto desconhecido <ph name="PRODUCT_ID" /> de <ph name="VENDOR_NAME" /> (número de série <ph name="SERIAL_NUMBER" />)</translation>
 <translation id="6068932090455285721"><ph name="PRODUCT_NAME" /> do fornecedor <ph name="VENDOR_ID" /></translation>
+<translation id="6220413761270491930">Erro ao carregar a extensão</translation>
 <translation id="6322279351188361895">Falha ao ler a chave privada.</translation>
 <translation id="6391538222494443604">O directório de entrada tem de existir.</translation>
 <translation id="641087317769093025">Não foi possível descomprimir a extensão</translation>

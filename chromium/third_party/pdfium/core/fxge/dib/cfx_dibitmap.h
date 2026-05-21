@@ -104,7 +104,7 @@ class CFX_DIBitmap final : public CFX_DIBBase {
   // Requires `this` to be of format `FXDIB_Format::kBgra`.
   void SetUniformOpaqueAlpha();
 
-  // TODO(crbug.com/pdfium/2007): Migrate callers to `CFX_RenderDevice`.
+  // TODO(crbug.com/42271015): Migrate callers to `CFX_RenderDevice`.
   bool MultiplyAlpha(float alpha);
   bool MultiplyAlphaMask(RetainPtr<const CFX_DIBitmap> mask);
 

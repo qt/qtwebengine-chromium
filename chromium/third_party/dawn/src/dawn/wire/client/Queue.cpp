@@ -36,6 +36,7 @@
 #include <string>
 #include <utility>
 
+#include "dawn/common/Atomic.h"
 #include "dawn/common/StringViewUtils.h"
 #include "dawn/wire/BufferConsumer_impl.h"
 #include "dawn/wire/client/Client.h"
@@ -44,6 +45,9 @@
 
 namespace dawn::wire::client {
 namespace {
+
+// Buffer and Texture uploads larger than 4Mb use a different path optimized for larger transfers.
+const uint64_t kWriteXLThreshold = 1024 * 1024 * 4;
 
 class WorkDoneEvent : public TrackedEvent {
   public:
@@ -94,6 +98,49 @@ ObjectType Queue::GetObjectType() const {
     return ObjectType::Queue;
 }
 
+uint64_t Queue::GetLastSubmitIndex() const {
+    return mLastSubmitIndex;
+}
+
+uint64_t Queue::GetCompletedSubmitIndex() const {
+    return mCompletedSubmitIndex;
+}
+
+void Queue::APISubmit(size_t commandCount, const WGPUCommandBuffer* commands) {
+    mLastSubmitIndex++;
+
+    // Send the submit command
+    QueueSubmitCmd cmd;
+    cmd.self = ToAPI(this);
+    cmd.commandCount = commandCount;
+    cmd.commands = commands;
+    GetClient()->SerializeCommand(cmd);
+
+    // Immediately request a callback for OnSubmittedWorkDone to update mCompletedSubmitIndex before
+    // any OnSubmittedWorkDone callbacks from the application.
+    struct CallbackData {
+        Ref<Queue> self;
+        uint64_t submitIndex;
+    };
+    WGPUQueueWorkDoneCallbackInfo callback = {
+        .nextInChain = nullptr,
+        .mode = WGPUCallbackMode_AllowSpontaneous,
+        .callback =
+            [](WGPUQueueWorkDoneStatus status, WGPUStringView, void* userdata1, void* userdata2) {
+                if (status != WGPUQueueWorkDoneStatus_Success) {
+                    return;
+                }
+
+                std::unique_ptr<CallbackData> data(reinterpret_cast<CallbackData*>(userdata1));
+                FetchMax(data->self->mCompletedSubmitIndex, data->submitIndex);
+            },
+        .userdata1 = new CallbackData{this, mLastSubmitIndex},
+        .userdata2 = nullptr,
+    };
+
+    APIOnSubmittedWorkDone(callback);
+}
+
 WireResult Client::DoQueueWorkDoneCallback(ObjectHandle eventManager,
                                            WGPUFuture future,
                                            WGPUQueueWorkDoneStatus status,
@@ -126,6 +173,27 @@ void Queue::APIWriteBuffer(WGPUBuffer cBuffer,
                            uint64_t bufferOffset,
                            const void* data,
                            size_t size) {
+    if (size >= kWriteXLThreshold) {
+        WriteBufferXL(cBuffer, bufferOffset, data, size);
+        return;
+    }
+
+    Buffer* buffer = FromAPI(cBuffer);
+
+    QueueWriteBufferCmd cmd;
+    cmd.queueId = GetWireHandle(GetClient()).id;
+    cmd.bufferId = buffer->GetWireHandle(GetClient()).id;
+    cmd.bufferOffset = bufferOffset;
+    cmd.data = static_cast<const uint8_t*>(data);
+    cmd.size = size;
+
+    GetClient()->SerializeCommand(cmd);
+}
+
+void Queue::WriteBufferXL(WGPUBuffer cBuffer,
+                          uint64_t bufferOffset,
+                          const void* data,
+                          size_t size) {
     Buffer* buffer = FromAPI(cBuffer);
     Client* client = GetClient();
 
@@ -146,7 +214,7 @@ void Queue::APIWriteBuffer(WGPUBuffer cBuffer,
     // Prepare to serialize data update command.
     size_t writeDataUpdateInfoLength = writeHandle->SizeOfSerializeDataUpdate(0u, size);
 
-    QueueWriteBufferCmd cmd;
+    QueueWriteBufferXlCmd cmd;
     cmd.queueId = GetWireHandle(client).id;
     cmd.bufferId = buffer->GetWireHandle(client).id;
     cmd.bufferOffset = bufferOffset;
@@ -174,6 +242,27 @@ void Queue::APIWriteTexture(const WGPUTexelCopyTextureInfo* destination,
                             size_t dataSize,
                             const WGPUTexelCopyBufferLayout* dataLayout,
                             const WGPUExtent3D* writeSize) {
+    if (dataSize >= kWriteXLThreshold) {
+        WriteTextureXL(destination, data, dataSize, dataLayout, writeSize);
+        return;
+    }
+
+    QueueWriteTextureCmd cmd;
+    cmd.queueId = GetWireHandle(GetClient()).id;
+    cmd.destination = destination;
+    cmd.data = static_cast<const uint8_t*>(data);
+    cmd.dataSize = dataSize;
+    cmd.dataLayout = dataLayout;
+    cmd.writeSize = writeSize;
+
+    GetClient()->SerializeCommand(cmd);
+}
+
+void Queue::WriteTextureXL(const WGPUTexelCopyTextureInfo* destination,
+                           const void* data,
+                           size_t dataSize,
+                           const WGPUTexelCopyBufferLayout* dataLayout,
+                           const WGPUExtent3D* writeSize) {
     Client* client = GetClient();
 
     // Create write handle and prepare to serialize command.
@@ -193,7 +282,7 @@ void Queue::APIWriteTexture(const WGPUTexelCopyTextureInfo* destination,
     // Prepare to serialize data update command.
     size_t writeDataUpdateInfoLength = writeHandle->SizeOfSerializeDataUpdate(0u, dataSize);
 
-    QueueWriteTextureCmd cmd;
+    QueueWriteTextureXlCmd cmd;
     cmd.queueId = GetWireHandle(GetClient()).id;
     cmd.destination = destination;
     cmd.dataSize = dataSize;

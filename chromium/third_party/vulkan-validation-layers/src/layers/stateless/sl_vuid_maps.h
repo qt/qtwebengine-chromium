@@ -1,6 +1,6 @@
-/* Copyright (c) 2024 The Khronos Group Inc.
- * Copyright (c) 2024 LunarG, Inc.
- * Copyright (c) 2024 Advanced Micro Devices, Inc. All rights reserved.
+/* Copyright (c) 2024-2026 The Khronos Group Inc.
+ * Copyright (c) 2024-2026 LunarG, Inc.
+ * Copyright (c) 2024-2026 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,8 +27,18 @@ enum class PipelineBinaryInfoError {
     BinaryCount_09620,
     BinaryCount_09621,
     BinaryCount_09622,
+    Flags_11311,
+    Flags_11367,
 };
 
 const std::string &GetPipelineBinaryInfoVUID(const Location &loc, PipelineBinaryInfoError error);
+
+enum class PipelineCreateFlagError {
+    CacheControl_02878,
+    Shader64BitIndexing_11798,
+    ProtectedAccess_07368,
+    ProtectedAccess_07369,
+};
+const char *GetPipelineCreateFlagVUID(const Location &loc, PipelineCreateFlagError error);
 
 }  // namespace vvl

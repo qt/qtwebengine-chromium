@@ -24,7 +24,7 @@ import {
   SqlTable,
   SqlTableFunction,
 } from './sql_modules';
-import {SqlTableDescription} from '../../components/widgets/sql/table/table_description';
+import {SqlTableDefinition} from '../../components/widgets/sql/table/table_description';
 import {TableColumn} from '../../components/widgets/sql/table/table_column';
 import {Trace} from '../../public/trace';
 import {
@@ -32,21 +32,29 @@ import {
   PerfettoSqlType,
 } from '../../trace_processor/perfetto_sql_type';
 import {unwrapResult} from '../../base/result';
-import {createTableColumn} from '../../components/widgets/sql/table/create_column';
+import {createTableColumn} from '../../components/widgets/sql/table/columns';
 
 export class SqlModulesImpl implements SqlModules {
   readonly packages: SqlPackage[];
   private disabledModules: Set<string> = new Set();
-  private initPromise: Promise<void>;
+  private initPromise: Promise<void> | undefined;
+  private readonly startInit: () => Promise<void>;
 
   constructor(trace: Trace, docs: SqlModulesDocsSchema) {
     this.packages = docs.map((json) => new StdlibPackageImpl(trace, json));
-    // Start computing disabled modules based on data availability
-    this.initPromise = this.computeDisabledModules(trace, docs);
+    // Capture initialization logic in a closure to avoid storing trace/docs
+    this.startInit = () => this.computeDisabledModules(trace, docs);
+  }
+
+  ensureInitialized(): Promise<void> {
+    if (this.initPromise === undefined) {
+      this.initPromise = this.startInit();
+    }
+    return this.initPromise;
   }
 
   async waitForInit(): Promise<void> {
-    await this.initPromise;
+    await this.ensureInitialized();
   }
 
   private async computeDisabledModules(
@@ -78,12 +86,10 @@ export class SqlModulesImpl implements SqlModules {
       }
     }
 
-    console.log(
-      `[SqlModules] Found ${modulesWithChecks.size} modules with data checks`,
-    );
-
     // Check data availability for modules with checks
     const missingDataModules = new Set<string>();
+    // Track modules whose trace checks explicitly passed (have data)
+    const hasDataModules = new Set<string>();
     for (const [moduleName, checkSql] of modulesWithChecks) {
       try {
         const result = await trace.engine.query(checkSql);
@@ -98,23 +104,41 @@ export class SqlModulesImpl implements SqlModules {
               ? hasDataValue !== 0n
               : Number(hasDataValue) !== 0;
           if (!hasData) {
-            console.log(`[SqlModules] Module "${moduleName}" has no data`);
             missingDataModules.add(moduleName);
+          } else {
+            hasDataModules.add(moduleName);
           }
         }
       } catch (e) {
         // If query fails, assume no data
-        console.warn(`[SqlModules] Data check failed for "${moduleName}":`, e);
         missingDataModules.add(moduleName);
       }
     }
 
-    console.log(
-      `[SqlModules] ${missingDataModules.size} modules with missing data:`,
-      Array.from(missingDataModules),
-    );
+    // Compute "protected" modules: modules with passing checks AND all modules
+    // that depend on them (transitively). These should not be disabled by
+    // dependency propagation since they have access to data through at least
+    // one dependency with a passing trace check.
+    const protectedModules = new Set(hasDataModules);
+    const protectedQueue = Array.from(hasDataModules);
+
+    while (protectedQueue.length > 0) {
+      const current = protectedQueue.shift()!;
+      const deps = dependents.get(current);
+
+      if (deps) {
+        for (const dependent of deps) {
+          if (!protectedModules.has(dependent)) {
+            protectedModules.add(dependent);
+            protectedQueue.push(dependent);
+          }
+        }
+      }
+    }
 
     // BFS to find all transitive dependents of modules with missing data
+    // Skip disabling protected modules (those with passing checks or that
+    // depend on modules with passing checks)
     const queue = Array.from(missingDataModules);
     const disabled = new Set(missingDataModules);
 
@@ -124,7 +148,7 @@ export class SqlModulesImpl implements SqlModules {
 
       if (deps) {
         for (const dependent of deps) {
-          if (!disabled.has(dependent)) {
+          if (!disabled.has(dependent) && !protectedModules.has(dependent)) {
             disabled.add(dependent);
             queue.push(dependent);
           }
@@ -133,10 +157,6 @@ export class SqlModulesImpl implements SqlModules {
     }
 
     this.disabledModules = disabled;
-    console.log(
-      `[SqlModules] Total disabled modules (including transitive deps): ${disabled.size}`,
-      Array.from(disabled),
-    );
   }
 
   isModuleDisabled(moduleName: string): boolean {
@@ -222,11 +242,11 @@ export class StdlibPackageImpl implements SqlPackage {
     return undefined;
   }
 
-  getSqlTableDescription(tableName: string): SqlTableDescription | undefined {
+  getSqlTableDefinition(tableName: string): SqlTableDefinition | undefined {
     for (const module of this.modules) {
       for (const t of module.tables) {
         if (t.name == tableName) {
-          return module.getSqlTableDescription(tableName);
+          return module.getSqlTableDefinition(tableName);
         }
       }
     }
@@ -273,7 +293,7 @@ export class StdlibModuleImpl implements SqlModule {
     return undefined;
   }
 
-  getSqlTableDescription(tableName: string): SqlTableDescription | undefined {
+  getSqlTableDefinition(tableName: string): SqlTableDefinition | undefined {
     const sqlTable = this.getTable(tableName);
     if (sqlTable === undefined) {
       return undefined;
@@ -281,7 +301,10 @@ export class StdlibModuleImpl implements SqlModule {
     return {
       imports: [this.includeKey],
       name: sqlTable.name,
-      columns: sqlTable.getTableColumns(),
+      columns: sqlTable.columns.map((col) => ({
+        column: col.name,
+        type: col.type,
+      })),
     };
   }
 }

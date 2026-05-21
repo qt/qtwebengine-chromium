@@ -48,13 +48,188 @@ const cachedNavigatorCredentials: CredentialsContainer = navigator.credentials;
 // passkeys requests directly in the browser.
 declare const shouldHandleModalPasskeyRequests: () => boolean;
 
-/*! {{PLACEHOLDER_HANDLE_MODAL_PASSKEY_REQUESTS}} */
+// A function will be defined here by the placeholder replacement.
+// It will be called to determine whether to attempt to handle conditional
+// passkeys requests directly in the browser.
+declare const shouldHandleConditionalPasskeyRequests: () => boolean;
+
+// A function will be defined here by the placeholder replacement.
+// It will be called to determine whether to shim
+// PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable.
+declare const shouldShimIsUVPAA: () => boolean;
+
+/*! {{PLACEHOLDER_HANDLE_PASSKEY_REQUESTS}} */
 
 // Returns whether a passkey request uses conditional mediation.
 function isConditionalMediation(
     options: CredentialRequestOptions|CredentialCreationOptions): boolean {
   return ('mediation' in options && options.mediation === 'conditional');
 }
+
+// Returns whether passkey requests should be handled directly in the browser.
+function shouldHandlePasskeyRequests(isConditional: boolean): boolean {
+  return isConditional ? shouldHandleConditionalPasskeyRequests() :
+                         shouldHandleModalPasskeyRequests();
+}
+
+// Partial interface for overriding getClientCapabilities properties.
+interface PublicKeyCredentialClientCapabilities {
+  // Whether conditional passkey requests are supported.
+  conditionalGet?: boolean;
+  conditionalCreate?: boolean;
+
+  // Whether the platform supports user-verifying platform authenticators.
+  userVerifyingPlatformAuthenticator?: boolean;
+}
+
+// Class to backup and override PublicKeyCredential methods.
+class PublicKeyCredentialOverrider {
+  private static readonly IS_UVPAA =
+      'isUserVerifyingPlatformAuthenticatorAvailable';
+
+  // PublicKeyCredential.isConditionalMediationAvailable.
+  private originalIsConditionalMediationAvailable:
+      (() => Promise<boolean>)|undefined;
+
+  // PublicKeyCredential.getClientCapabilities.
+  private originalGetClientCapabilities:
+      (() => Promise<PublicKeyCredentialClientCapabilities>)|undefined;
+
+  // PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable.
+  private originalIsUVPAA: (() => Promise<boolean>)|undefined;
+
+  constructor() {
+    // Backup methods which may get overridden.
+    if (PublicKeyCredential.isConditionalMediationAvailable) {
+      this.originalIsConditionalMediationAvailable =
+          PublicKeyCredential.isConditionalMediationAvailable.bind(
+              PublicKeyCredential);
+    }
+
+    if (PublicKeyCredential.getClientCapabilities) {
+      this.originalGetClientCapabilities =
+          PublicKeyCredential.getClientCapabilities.bind(PublicKeyCredential);
+    }
+
+    if (PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable) {
+      this.originalIsUVPAA =
+          PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable
+              .bind(PublicKeyCredential);
+    }
+  }
+
+  // Overrides PublicKeyCredential methods to expose the browser's capabilities.
+  override(): void {
+    // Only override PublicKeyCredential's behaviour when the browser is
+    // handling passkey requests.
+    if (shouldHandleConditionalPasskeyRequests() ||
+        shouldHandleModalPasskeyRequests()) {
+      // While conditional passkey requests are handled by the browser, force
+      // enable conditional mediation.
+      if (shouldHandleConditionalPasskeyRequests()) {
+        this.overrideToTrue('isConditionalMediationAvailable');
+      }
+
+      // While passkey requests are handled by the browser, a platform
+      // authenticator is available.
+      this.overrideToTrue(PublicKeyCredentialOverrider.IS_UVPAA);
+
+      // Match the behaviour of getClientCapabilities to the overridden
+      // functions above.
+      Object.defineProperty(PublicKeyCredential, 'getClientCapabilities', {
+        value: async () => {
+          let capabilities: PublicKeyCredentialClientCapabilities = {};
+
+          if (this.originalGetClientCapabilities) {
+            capabilities = await this.originalGetClientCapabilities();
+          }
+
+          if (shouldHandleConditionalPasskeyRequests()) {
+            capabilities.conditionalGet = true;
+            capabilities.conditionalCreate = true;
+          }
+          capabilities.userVerifyingPlatformAuthenticator = true;
+          return capabilities;
+        },
+      });
+    } else if (shouldShimIsUVPAA()) {
+      Object.defineProperty(
+          PublicKeyCredential, PublicKeyCredentialOverrider.IS_UVPAA, {
+            value: () => this.isUvpaaShim(),
+          });
+    }
+  }
+
+  // Forces a PublicKeyCredential method to always return true.
+  private overrideToTrue(methodName: string): void {
+    Object.defineProperty(PublicKeyCredential, methodName, {
+      value: () => Promise.resolve(true),
+    });
+  }
+
+  // A replacement for
+  // PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable. This
+  // is a temporary workaround for the fact that certain WebKit versions
+  // incorrectly always return false for this method.
+  // See crbug.com/465915379.
+  private async isUvpaaShim(): Promise<boolean> {
+    if (this.originalIsUVPAA) {
+      const value = await this.originalIsUVPAA();
+
+      // Try the cached version first, and short-circuit if it returns true.
+      // Our workaround is only targeting false negatives.
+      if (value) {
+        return true;
+      }
+    }
+
+    // WebKit's `getClientCapabilities` is not affected by the same bug,
+    // and the value returned for that object's
+    // 'userVerifyingPlatformAuthenticator' property should always match
+    // `isUserVerifyingPlatformAuthenticatorAvailable`. Get and return that
+    // value instead.
+    if (this.originalGetClientCapabilities) {
+      return (await this.originalGetClientCapabilities())
+                 ?.userVerifyingPlatformAuthenticator ??
+          false;
+    }
+
+    return false;
+  }
+
+  // Checks whether the conditional get or conditional create capability was
+  // originally supported by the renderer.
+  private async checkOriginalCapability(
+      key: 'conditionalGet'|'conditionalCreate'): Promise<boolean> {
+    if (this.originalIsConditionalMediationAvailable) {
+      const isAvailable = await this.originalIsConditionalMediationAvailable();
+      if (isAvailable) {
+        return true;
+      }
+    }
+
+    if (this.originalGetClientCapabilities) {
+      const capabilities = await this.originalGetClientCapabilities();
+      if (capabilities[key]) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  // Returns whether conditional get was originally supported.
+  async checkOriginalConditionalGetCapability(): Promise<boolean> {
+    return this.checkOriginalCapability('conditionalGet');
+  }
+
+  // Returns whether conditional create was originally supported.
+  async checkOriginalConditionalCreateCapability(): Promise<boolean> {
+    return this.checkOriginalCapability('conditionalCreate');
+  }
+}
+
+const publicKeyCredentialOverrider = new PublicKeyCredentialOverrider();
 
 // Returns whether a Credential is a PublicKeyCredential upon successful
 // completion of navigator.credentials.create() or navigator.credentials.get().
@@ -135,9 +310,9 @@ function decodeBase64URLToArrayBuffer(base64: string): ArrayBuffer {
   return stringToArrayBuffer(atob(standardBase64));
 }
 
-// Converts a buffer source to a base 64 encoded (forgiving policy) string.
-function bufferSourceToBase64(buffer: BufferSource): string {
-  return arrayBufferToBase64(
+// Converts a buffer source to a base 64 URL encoded string.
+function bufferSourceToBase64URL(buffer: BufferSource): string {
+  return arrayBufferToBase64URL(
       buffer instanceof ArrayBuffer ? buffer : buffer.buffer);
 }
 
@@ -162,7 +337,7 @@ interface UserEntity {
 // Returns a dictionary of the user's entity.
 function extractUserEntity(user: PublicKeyCredentialUserEntity): UserEntity {
   return {
-    'id': bufferSourceToBase64(user.id),
+    'id': bufferSourceToBase64URL(user.id),
     'name': user.name,
     'displayName': user.displayName,
   };
@@ -192,11 +367,13 @@ function extractRelyingPartyEntity(options: Options): RelyingPartyEntity {
 interface RequestInformation {
   challenge: string;
   userVerification: string;
+  isConditional: boolean;
   extensions: AuthenticationExtensionsClientInputs|undefined;
 }
 
 // Returns a dictionary of this request's information.
-function extractRequestInformation(options: Options): RequestInformation {
+function extractRequestInformation(
+    options: Options, isConditional: boolean): RequestInformation {
   let uvRequirement: UserVerificationRequirement|undefined;
   if (isCreationOptions(options)) {
     uvRequirement = options.authenticatorSelection?.userVerification;
@@ -205,8 +382,9 @@ function extractRequestInformation(options: Options): RequestInformation {
   }
 
   return {
-    'challenge': bufferSourceToBase64(options.challenge),
+    'challenge': bufferSourceToBase64URL(options.challenge),
     'userVerification': uvRequirement ?? 'unknown',
+    'isConditional': isConditional,
     'extensions': options.extensions,
   };
 }
@@ -234,16 +412,130 @@ function publicKeyCredentialDescriptorAsSerializedDescriptors(
   // Map the array and convert BufferSource to base64.
   return descriptors.map((desc) => ({
                            type: desc.type,
-                           id: bufferSourceToBase64(desc.id),
+                           id: bufferSourceToBase64URL(desc.id),
                            transports: transportsAsStrings(desc.transports),
                          }));
+}
+
+// Converts PRF values to strings (Base64URL).
+function prfValuesToBase64URL(values: AuthenticationExtensionsPRFValues):
+    AuthenticationExtensionsPRFValuesJSON {
+  const result: AuthenticationExtensionsPRFValuesJSON = {
+    first: bufferSourceToBase64URL(values.first),
+  };
+  if (values.second) {
+    result.second = bufferSourceToBase64URL(values.second);
+  }
+  return result;
+}
+
+// Serializes all PRF-related data from the extensions dictionary.
+function serializePRF(prf: AuthenticationExtensionsPRFInputs):
+    AuthenticationExtensionsPRFInputsJSON {
+  const result: AuthenticationExtensionsPRFInputsJSON = {};
+
+  // Add main PRF values to result as Base64 strings if present.
+  if (prf.eval) {
+    result.eval = prfValuesToBase64URL(prf.eval);
+  }
+
+  // Get per credential PRF values as Base64 strings if present.
+  const perCredentialPRFData:
+      Map<string, AuthenticationExtensionsPRFValuesJSON> = new Map();
+  for (const credentialId in prf.evalByCredential) {
+    const credentialPRFData = prf.evalByCredential[credentialId];
+    if (credentialPRFData) {
+      // credentialId is base64url encoded, as specified by the webauthn spec
+      // here: https://www.w3.org/TR/webauthn-3/#prf-extension
+      perCredentialPRFData.set(
+          credentialId, prfValuesToBase64URL(credentialPRFData));
+    }
+  }
+
+  // Copy per credential PRF values as Base64 strings to result if present.
+  if (prf.evalByCredential) {
+    result.evalByCredential =
+        Object.fromEntries(perCredentialPRFData.entries());
+  }
+
+  return result;
+}
+
+// Serialize all extension inputs.
+function serializeExtensions(extensions?: AuthenticationExtensionsClientInputs):
+    AuthenticationExtensionsClientInputsJSON {
+  const result: AuthenticationExtensionsClientInputsJSON = {};
+
+  if (!extensions) {
+    return result;
+  }
+
+  if (extensions.prf) {
+    result.prf = serializePRF(extensions.prf);
+  }
+
+  // TODO(crbug.com/460485679): Support extensions other than PRF.
+
+  return result;
+}
+
+// Converts Base64URL strings to PRF values.
+function prfBase64URLToValues(outputs: AuthenticationExtensionsPRFValuesJSON):
+    AuthenticationExtensionsPRFValues {
+  const result: AuthenticationExtensionsPRFValues = {
+    first: decodeBase64URLToArrayBuffer(outputs.first),
+  };
+  if (outputs.second) {
+    result.second = decodeBase64URLToArrayBuffer(outputs.second);
+  }
+  return result;
+}
+
+// Interface containing serialized PRF outputs.
+// eslint-disable-next-line @typescript-eslint/naming-convention
+interface AuthenticationExtensionsPRFOutputsJSON {
+  enabled: boolean;
+  results: AuthenticationExtensionsPRFValuesJSON;
+}
+
+// Interface containing serialized extension outputs.
+// eslint-disable-next-line @typescript-eslint/naming-convention
+interface AuthenticationExtensionsClientOutputsJSON {
+  prf: AuthenticationExtensionsPRFOutputsJSON;
+}
+
+// Deserializes all PRF-related data from the extensions dictionary.
+function deserializePRF(prf: AuthenticationExtensionsPRFOutputsJSON):
+    AuthenticationExtensionsPRFOutputs {
+  return {enabled: prf.enabled, results: prfBase64URLToValues(prf.results)};
+}
+
+// Deserialize all extension outputs.
+function deserializeExtensions(
+    extensions?: AuthenticationExtensionsClientOutputsJSON):
+    AuthenticationExtensionsClientOutputs {
+  const result: AuthenticationExtensionsClientOutputs = {};
+
+  if (!extensions) {
+    return result;
+  }
+
+  if (extensions.prf) {
+    result.prf = deserializePRF(extensions.prf);
+  }
+
+  // TODO(crbug.com/460485679): Support extensions other than PRF.
+
+  return result;
 }
 
 // Creates a PublicKeyCredential from the provided list of arguments.
 // The credential's type is always set to 'public-key'.
 function createPublicKeyCredential(
     authenticatorAttachment: string, rawId: ArrayBuffer,
-    response: AuthenticatorResponse): PublicKeyCredential {
+    response: AuthenticatorResponse,
+    extensionOutputs: AuthenticationExtensionsClientOutputs):
+    PublicKeyCredential {
   return {
     id: arrayBufferToBase64URL(rawId),
     type: 'public-key',
@@ -251,10 +543,9 @@ function createPublicKeyCredential(
     rawId: rawId,
     response: response,
     getClientExtensionResults(): AuthenticationExtensionsClientOutputs {
-      // TODO(crbug.com/460485679): implement when adding extension support.
-      return {};
+      return extensionOutputs;
     },
-    toJSON(): any {
+    toJSON(): Record<string, unknown> {
       return {
         id: this.id,
         type: this.type,
@@ -269,9 +560,9 @@ function createPublicKeyCredential(
 // Creates an empty credential, which will be used to resolve a Credential
 // promise so that the promise resolution is deferred to the renderer.
 function createEmptyCredential(): PublicKeyCredential {
-  const nullArray = new ArrayBuffer(0);
-  const emptyResponse: AuthenticatorResponse = {clientDataJSON: nullArray};
-  return createPublicKeyCredential('', nullArray, emptyResponse);
+  const emptyArray = new ArrayBuffer(0);
+  const emptyResponse: AuthenticatorResponse = {clientDataJSON: emptyArray};
+  return createPublicKeyCredential('', emptyArray, emptyResponse, {});
 }
 
 // Returns whether a credential is non empty.
@@ -417,8 +708,8 @@ function createPassthroughAssertionRequest(
 
 // Creates a registration request from the provided parameters.
 function createRegistrationRequest(
-    publicKeyOptions: PublicKeyCredentialCreationOptions):
-    Promise<Credential|null> {
+    publicKeyOptions: PublicKeyCredentialCreationOptions,
+    isConditional: boolean): Promise<Credential|null> {
   const deferredPromise =
       new DeferredPublicKeyCredentialPromise(publicKeyOptions.timeout);
 
@@ -426,11 +717,12 @@ function createRegistrationRequest(
     'event': 'handleCreateRequest',
     'frameId': gCrWeb.getFrameId(),
     'requestId': deferredPromise.id,
-    'request': extractRequestInformation(publicKeyOptions),
+    'request': extractRequestInformation(publicKeyOptions, isConditional),
     'rpEntity': extractRelyingPartyEntity(publicKeyOptions),
     'userEntity': extractUserEntity(publicKeyOptions.user),
     'excludeCredentials': publicKeyCredentialDescriptorAsSerializedDescriptors(
         publicKeyOptions.excludeCredentials),
+    'extensions': serializeExtensions(publicKeyOptions.extensions),
   });  // Attestation request
 
   return deferredPromise.promise;
@@ -438,8 +730,8 @@ function createRegistrationRequest(
 
 // Creates an assertion request from the provided parameters.
 function createAssertionRequest(
-    publicKeyOptions: PublicKeyCredentialRequestOptions):
-    Promise<Credential|null> {
+    publicKeyOptions: PublicKeyCredentialRequestOptions,
+    isConditional: boolean): Promise<Credential|null> {
   const deferredPromise =
       new DeferredPublicKeyCredentialPromise(publicKeyOptions.timeout);
 
@@ -447,10 +739,11 @@ function createAssertionRequest(
     'event': 'handleGetRequest',
     'frameId': gCrWeb.getFrameId(),
     'requestId': deferredPromise.id,
-    'request': extractRequestInformation(publicKeyOptions),
+    'request': extractRequestInformation(publicKeyOptions, isConditional),
     'rpEntity': extractRelyingPartyEntity(publicKeyOptions),
     'allowCredentials': publicKeyCredentialDescriptorAsSerializedDescriptors(
         publicKeyOptions.allowCredentials),
+    'extensions': serializeExtensions(publicKeyOptions.extensions),
   });  // Assertion request
 
   return deferredPromise.promise;
@@ -466,16 +759,19 @@ const credentialsContainer: CredentialsContainer = {
       return cachedNavigatorCredentials.get(options);
     }
 
-    if (shouldHandleModalPasskeyRequests() &&
-        !isConditionalMediation(options) && options.publicKey.challenge) {
-      return createAssertionRequest(options.publicKey).then(result => {
-        if (isValidCredential(result)) {
-          // TODO(crbug.com/460485333): Notification message of success here?
-          return result;
-        }
+    const isConditional: boolean = isConditionalMediation(options);
+    if (shouldHandlePasskeyRequests(isConditional) &&
+        options.publicKey.challenge) {
+      return createAssertionRequest(options.publicKey, isConditional)
+          .then(result => {
+            if (isValidCredential(result)) {
+              // TODO(crbug.com/460485333): Notification message of success
+              // here?
+              return result;
+            }
 
-        return createPassthroughAssertionRequest(options);
-      });
+            return createPassthroughAssertionRequest(options);
+          });
     } else {
       return createPassthroughAssertionRequest(options);
     }
@@ -487,17 +783,20 @@ const credentialsContainer: CredentialsContainer = {
       return cachedNavigatorCredentials.create(options);
     }
 
-    if (shouldHandleModalPasskeyRequests() &&
-        !isConditionalMediation(options) && options.publicKey.challenge &&
-        options.publicKey.user && options.publicKey.user.id) {
-      return createRegistrationRequest(options.publicKey).then(result => {
-        if (isValidCredential(result)) {
-          // TODO(crbug.com/460485333): Notification message of success here?
-          return result;
-        }
+    const isConditional: boolean = isConditionalMediation(options);
+    if (shouldHandlePasskeyRequests(isConditional) &&
+        options.publicKey.challenge && options.publicKey.user &&
+        options.publicKey.user.id) {
+      return createRegistrationRequest(options.publicKey, isConditional)
+          .then(result => {
+            if (isValidCredential(result)) {
+              // TODO(crbug.com/460485333): Notification message of success
+              // here?
+              return result;
+            }
 
-        return createPassthroughRegistrationRequest(options);
-      });
+            return createPassthroughRegistrationRequest(options);
+          });
     } else {
       return createPassthroughRegistrationRequest(options);
     }
@@ -516,17 +815,61 @@ const credentialsContainer: CredentialsContainer = {
 Object.defineProperty(navigator, 'credentials', {value: credentialsContainer});
 
 // Function called from C++ to yield the passkey request back to the OS.
-function deferToRenderer(requestId: string): void {
+function deferToRenderer(requestId: string, requestType: number): void {
+  // LINT.IfChange
+  // Whether the request in modal, conditional get or conditional create.
+  enum RequestType {
+    // Unknown (due to bad request).
+    UNKNOWN,
+    // Modal (non conditional) request.
+    MODAL,
+    // Conditional assertion request.
+    CONDITIONAL_GET,
+    // Conditional registration request.
+    CONDITIONAL_CREATE,
+  }
+  // LINT.ThenChange(//components/webauthn/ios/passkey_request_params.h)
+
   const emptyCredential: PublicKeyCredential = createEmptyCredential();
-  DeferredPublicKeyCredentialPromise.resolve(requestId, emptyCredential);
+
+  if (requestType === RequestType.CONDITIONAL_GET) {
+    publicKeyCredentialOverrider.checkOriginalConditionalGetCapability().then(
+        (isAvailable) => {
+          if (isAvailable) {
+            DeferredPublicKeyCredentialPromise.resolve(
+                requestId, emptyCredential);
+          } else {
+            DeferredPublicKeyCredentialPromise.reject(requestId);
+          }
+        });
+  } else if (requestType === RequestType.CONDITIONAL_CREATE) {
+    publicKeyCredentialOverrider.checkOriginalConditionalCreateCapability()
+        .then((isAvailable) => {
+          if (isAvailable) {
+            DeferredPublicKeyCredentialPromise.resolve(
+                requestId, emptyCredential);
+          } else {
+            DeferredPublicKeyCredentialPromise.reject(requestId);
+          }
+        });
+  } else {  // MODAL or UNKNOWN
+    DeferredPublicKeyCredentialPromise.resolve(requestId, emptyCredential);
+  }
 }
+
+// Function called from C++ to reject a passkey request.
+function rejectPasskeyRequest(requestId: string): void {
+  DeferredPublicKeyCredentialPromise.reject(requestId);
+}
+
 
 // Resolves the credential promise with the provided response.
 function resolveCredentialPromise(
-    requestId: string, id64: string, response: AuthenticatorResponse): void {
+    requestId: string, id64: string, response: AuthenticatorResponse,
+    extensions: AuthenticationExtensionsClientOutputsJSON): void {
   const id = decodeBase64URLToArrayBuffer(id64);
-  const credential: PublicKeyCredential =
-      createPublicKeyCredential('platform', id, response);
+  const credential: PublicKeyCredential = createPublicKeyCredential(
+      'platform', id, response, deserializeExtensions(extensions));
 
   DeferredPublicKeyCredentialPromise.resolve(requestId, credential);
 }
@@ -534,8 +877,9 @@ function resolveCredentialPromise(
 // Function called from C++ to resolve the deferred promise with a valid
 // assertion credential.
 function resolveAssertionRequest(
-    requestId: string, id64: string, authenticatorData64: string,
-    clientDataJson: string, signature64: string, userHandle64: string): void {
+    requestId: string, id64: string, signature64: string,
+    authenticatorData64: string, userHandle64: string, clientDataJson: string,
+    extensions: AuthenticationExtensionsClientOutputsJSON): void {
   const response: AuthenticatorAssertionResponse = {
     authenticatorData: decodeBase64URLToArrayBuffer(authenticatorData64),
     clientDataJSON: stringToArrayBuffer(clientDataJson),
@@ -543,7 +887,7 @@ function resolveAssertionRequest(
     userHandle: decodeBase64URLToArrayBuffer(userHandle64),
   };
 
-  resolveCredentialPromise(requestId, id64, response);
+  resolveCredentialPromise(requestId, id64, response, extensions);
 }
 
 // Function called from C++ to resolve the deferred promise with a valid
@@ -551,20 +895,25 @@ function resolveAssertionRequest(
 function resolveAttestationRequest(
     requestId: string, id64: string, attestationObject64: string,
     authenticatorData64: string, publicKeySpkiDer64: string,
-    clientDataJson: string): void {
+    clientDataJson: string,
+    extensions: AuthenticationExtensionsClientOutputsJSON): void {
   const response: AuthenticatorAttestationResponse =
       createAuthenticatorAttestationResponse(
           decodeBase64URLToArrayBuffer(attestationObject64),
           decodeBase64URLToArrayBuffer(authenticatorData64),
           decodeBase64URLToArrayBuffer(publicKeySpkiDer64), clientDataJson);
 
-  resolveCredentialPromise(requestId, id64, response);
+  resolveCredentialPromise(requestId, id64, response, extensions);
 }
 
-const passkey = new CrWebApi();
+const passkey = new CrWebApi('passkey');
 
 passkey.addFunction('deferToRenderer', deferToRenderer);
+passkey.addFunction('rejectPasskeyRequest', rejectPasskeyRequest);
 passkey.addFunction('resolveAssertionRequest', resolveAssertionRequest);
 passkey.addFunction('resolveAttestationRequest', resolveAttestationRequest);
 
-gCrWeb.registerApi('passkey', passkey);
+gCrWeb.registerApi(passkey);
+
+// Override PublicKeyCredential's behaviour to expose browser capabilities.
+publicKeyCredentialOverrider.override();

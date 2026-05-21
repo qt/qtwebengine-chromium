@@ -6,18 +6,19 @@ import '../../../../ui/kit/kit.js';
 
 import type {ImageDeliveryInsightModel} from '../../../../models/trace/insights/ImageDelivery.js';
 import * as Trace from '../../../../models/trace/trace.js';
+import * as UI from '../../../../ui/legacy/legacy.js';
 import * as Lit from '../../../../ui/lit/lit.js';
 
 import {BaseInsightComponent} from './BaseInsightComponent.js';
-import {imageRef} from './EventRef.js';
-import {createLimitedRows, renderOthersLabel, type TableDataRow} from './Table.js';
+import {imageRef} from './ImageRef.js';
+import {createLimitedRows, renderOthersLabel, Table, type TableDataRow} from './Table.js';
 
 const {UIStrings, i18nString, createOverlayForRequest} = Trace.Insights.Models.ImageDelivery;
 
 const {html} = Lit;
+const {widgetConfig} = UI.Widget;
 
 export class ImageDelivery extends BaseInsightComponent<ImageDeliveryInsightModel> {
-  static override readonly litTagName = Lit.StaticHtml.literal`devtools-performance-image-delivery`;
   override internalName = 'image-delivery';
 
   mapToRow(image: Trace.Insights.Models.ImageDelivery.OptimizableImage): TableDataRow {
@@ -57,23 +58,15 @@ export class ImageDelivery extends BaseInsightComponent<ImageDeliveryInsightMode
     // clang-format off
     return html`
       <div class="insight-section">
-        <devtools-performance-table
-          .data=${{
+        <devtools-widget .widgetConfig=${widgetConfig(Table, {
+           data: {
             insight: this,
             headers: [i18nString(UIStrings.optimizeFile)],
             rows,
-          }}>
-        </devtools-performance-table>
+          }})}>
+        </devtools-widget>
       </div>
     `;
     // clang-format on
   }
 }
-
-declare global {
-  interface HTMLElementTagNameMap {
-    'devtools-performance-image-delivery': ImageDelivery;
-  }
-}
-
-customElements.define('devtools-performance-image-delivery', ImageDelivery);

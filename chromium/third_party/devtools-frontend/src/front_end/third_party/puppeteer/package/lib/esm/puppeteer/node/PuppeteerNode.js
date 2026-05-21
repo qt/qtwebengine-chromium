@@ -249,11 +249,11 @@ export class PuppeteerNode extends Puppeteer {
             },
         ];
         // Resolve current buildIds.
-        for (const item of puppeteerBrowsers) {
+        await Promise.all(puppeteerBrowsers.map(async (item) => {
             const tag = this.configuration?.[item.product]?.version ??
                 PUPPETEER_REVISIONS[item.product];
             item.currentBuildId = await resolveBuildId(item.browser, platform, tag);
-        }
+        }));
         const currentBrowserBuilds = new Set(puppeteerBrowsers.map(browser => {
             return `${browser.browser}_${browser.currentBuildId}`;
         }));

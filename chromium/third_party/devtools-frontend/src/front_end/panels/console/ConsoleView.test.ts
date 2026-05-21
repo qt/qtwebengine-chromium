@@ -12,10 +12,13 @@ import * as IssuesManager from '../../models/issues_manager/issues_manager.js';
 import * as TextUtils from '../../models/text_utils/text_utils.js';
 import {findMenuItemWithLabel, getContextMenuForElement} from '../../testing/ContextMenuHelpers.js';
 import {dispatchPasteEvent, renderElementIntoDOM} from '../../testing/DOMHelpers.js';
-import {createTarget, registerNoopActions} from '../../testing/EnvironmentHelpers.js';
+import {createTarget, registerNoopActions, updateHostConfig} from '../../testing/EnvironmentHelpers.js';
 import {expectCall, expectCalled} from '../../testing/ExpectStubCall.js';
 import {stubFileManager} from '../../testing/FileManagerHelpers.js';
-import {describeWithMockConnection} from '../../testing/MockConnection.js';
+import {describeWithMockConnection, dispatchEvent} from '../../testing/MockConnection.js';
+import * as TextEditor from '../../ui/components/text_editor/text_editor.js';
+import * as UI from '../../ui/legacy/legacy.js';
+import {AiCodeCompletionSummaryToolbar} from '../common/common.js';
 
 import * as Console from './console.js';
 
@@ -47,10 +50,13 @@ describeWithMockConnection('ConsoleView', () => {
   });
 
   function createConsoleMessage(
-      target: SDK.Target.Target, message: string,
-      type: SDK.ConsoleModel.MessageType = Protocol.Runtime.ConsoleAPICalledEventType.Log) {
+      target: SDK.Target.Target,
+      message: string,
+      type: SDK.ConsoleModel.MessageType = Protocol.Runtime.ConsoleAPICalledEventType.Log,
+      level: Protocol.Log.LogEntryLevel|null = null,
+  ) {
     return new SDK.ConsoleModel.ConsoleMessage(
-        target.model(SDK.RuntimeModel.RuntimeModel), Protocol.Log.LogEntrySource.Javascript, null, message, {type});
+        target.model(SDK.RuntimeModel.RuntimeModel), Protocol.Log.LogEntrySource.Javascript, level, message, {type});
   }
 
   it('can save to file', async () => {
@@ -105,6 +111,35 @@ describeWithMockConnection('ConsoleView', () => {
     sinon.assert.callCount(copyText, 1);
     assert.deepEqual(copyText.lastCall.args, ['message 1\nmessage 2\n']);
     copyText.resetHistory();
+  });
+
+  it('creates console history', () => {
+    const target = createTarget();
+    const id = 1;
+    dispatchEvent(target, 'Runtime.executionContextCreated', {
+      context: {
+        id: id as Protocol.Runtime.ExecutionContextId,
+        origin: 'http://example.com',
+        name: `c${id}`,
+        uniqueId: `c${id}`,
+        auxData: {
+          frameId: 'f2',
+        },
+      },
+    });
+    const runtimeModel = target.model(SDK.RuntimeModel.RuntimeModel);
+    assert.exists(runtimeModel);
+    const executionContext = runtimeModel.executionContext(id);
+    assert.exists(executionContext);
+    UI.Context.Context.instance().setFlavor(SDK.RuntimeModel.ExecutionContext, executionContext);
+
+    const consoleModel = target.model(SDK.ConsoleModel.ConsoleModel);
+    assert.exists(consoleModel);
+    consoleModel.addMessage(createConsoleMessage(target, 'let x = 1;', SDK.ConsoleModel.FrontendMessageType.Command));
+    consoleModel.addMessage(createConsoleMessage(target, 'let y = 100;', SDK.ConsoleModel.FrontendMessageType.Command));
+
+    const consoleHistory = consoleView.getConsoleMessageHistory();
+    assert.deepEqual(consoleHistory, 'let x = 1;\n\nlet y = 100;\n\n');
   });
 
   async function getConsoleMessages() {
@@ -272,5 +307,182 @@ describeWithMockConnection('ConsoleView', () => {
     renderElementIntoDOM(consoleView);
     issuesManager.dispatchEventToListeners(IssuesManager.IssuesManager.Events.ISSUES_COUNT_UPDATED);
     sinon.assert.calledTwice(spy);
+  });
+
+  describe('ai code completion provider callbacks', () => {
+    beforeEach(async () => {
+      updateHostConfig({
+        devToolsAiCodeCompletion: {
+          enabled: true,
+        },
+        aidaAvailability: {
+          enabled: true,
+          blockedByAge: false,
+          blockedByGeo: false,
+        },
+      });
+      const aiCodeCompletionProviderStub =
+          sinon.createStubInstance(TextEditor.AiCodeCompletionProvider.AiCodeCompletionProvider);
+      aiCodeCompletionProviderStub.extension.returns([]);
+      sinon.stub(TextEditor.AiCodeCompletionProvider.AiCodeCompletionProvider, 'createInstance')
+          .returns(aiCodeCompletionProviderStub);
+      sinon.stub(Host.AidaClient.HostConfigTracker, 'instance').returns({
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        dispose: () => {},
+      } as unknown as Host.AidaClient.HostConfigTracker);
+      Common.Settings.Settings.instance().createSetting('ai-code-completion-enabled', true);
+      consoleView = Console.ConsoleView.ConsoleView.instance({forceNew: true, viewportThrottlerTimeout: 0});
+    });
+
+    it('initializes toolbar when the feature is enabled', async () => {
+      const providerConfig = consoleView.aiCodeCompletionConfig;
+      assert.exists(providerConfig);
+
+      providerConfig.onFeatureEnabled();
+
+      assert.exists(consoleView.element.querySelector('div.ai-code-completion-summary-toolbar-container'));
+    });
+
+    it('cleans up toolbar when the feature is disabled', async () => {
+      const providerConfig = consoleView.aiCodeCompletionConfig;
+      assert.exists(providerConfig);
+      providerConfig.onFeatureEnabled();
+      assert.exists(consoleView.element.querySelector('div.ai-code-completion-summary-toolbar-container'));
+
+      providerConfig.onFeatureDisabled();
+
+      assert.notExists(consoleView.element.querySelector('div.ai-code-completion-summary-toolbar-container'));
+    });
+
+    it('shows a loading state when a request is triggered', async () => {
+      const setLoadingSpy = sinon.stub(AiCodeCompletionSummaryToolbar.prototype, 'setLoading');
+      const providerConfig = consoleView.aiCodeCompletionConfig;
+      assert.exists(providerConfig);
+      providerConfig.onFeatureEnabled();
+
+      providerConfig.onRequestTriggered();
+
+      sinon.assert.calledOnce(setLoadingSpy);
+      assert.isTrue(setLoadingSpy.firstCall.args[0]);
+    });
+
+    it('hides the loading indicator when a response is received', async () => {
+      const setLoadingSpy = sinon.stub(AiCodeCompletionSummaryToolbar.prototype, 'setLoading');
+      const providerConfig = consoleView.aiCodeCompletionConfig;
+      assert.exists(providerConfig);
+      providerConfig.onFeatureEnabled();
+      providerConfig.onRequestTriggered();
+      sinon.assert.calledOnce(setLoadingSpy);
+      assert.isTrue(setLoadingSpy.firstCall.args[0]);
+
+      providerConfig.onResponseReceived();
+
+      sinon.assert.calledTwice(setLoadingSpy);
+      assert.isFalse(setLoadingSpy.secondCall.args[0]);
+    });
+
+    it('attaches the citations toolbar when a suggestion with citations is accepted', async () => {
+      const updateCitationsSpy = sinon.spy(AiCodeCompletionSummaryToolbar.prototype, 'updateCitations');
+      const providerConfig = consoleView.aiCodeCompletionConfig;
+      assert.exists(providerConfig);
+
+      providerConfig.onFeatureEnabled();
+      providerConfig.onResponseReceived();
+
+      providerConfig.onSuggestionAccepted([{uri: 'https://example.com/source'}]);
+
+      sinon.assert.calledOnce(updateCitationsSpy);
+      assert.deepEqual(updateCitationsSpy.firstCall.args, [['https://example.com/source']]);
+    });
+
+    it('does not attach the citations toolbar if there are no citations', async () => {
+      const updateCitationsSpy = sinon.spy(AiCodeCompletionSummaryToolbar.prototype, 'updateCitations');
+      const providerConfig = consoleView.aiCodeCompletionConfig;
+      assert.exists(providerConfig);
+
+      providerConfig.onFeatureEnabled();
+      providerConfig.onResponseReceived();
+
+      providerConfig.onSuggestionAccepted([]);
+
+      sinon.assert.notCalled(updateCitationsSpy);
+    });
+  });
+
+  describe('group visibility', () => {
+    let target: ReturnType<typeof createTarget>;
+    let consoleModel: SDK.ConsoleModel.ConsoleModel|null;
+
+    beforeEach(() => {
+      target = createTarget();
+      SDK.TargetManager.TargetManager.instance().setScopeTarget(target);
+      consoleModel = target.model(SDK.ConsoleModel.ConsoleModel);
+      assert.exists(consoleModel);
+    });
+
+    function addMessage(
+        message: string, type: Protocol.Runtime.ConsoleAPICalledEventType, level: Protocol.Log.LogEntryLevel) {
+      consoleModel!.addMessage(createConsoleMessage(target, message, type, level));
+    }
+
+    for (const level
+             of [Protocol.Log.LogEntryLevel.Error,
+                 Protocol.Log.LogEntryLevel.Warning,
+                 Protocol.Log.LogEntryLevel.Info,
+                 Protocol.Log.LogEntryLevel.Verbose,
+    ]) {
+      it(`shows collapsed group but not message when filtering for ${level}`, async () => {
+        const levels = Console.ConsoleFilter.ConsoleFilter.singleLevelMask(level);
+        // Setting might exist, .set() is crucial
+        Common.Settings.Settings.instance().createSetting('message-level-filters', levels).set(levels);
+
+        consoleView.markAsRoot();
+        renderElementIntoDOM(consoleView);
+
+        addMessage(
+            'group', Protocol.Runtime.ConsoleAPICalledEventType.StartGroupCollapsed, Protocol.Log.LogEntryLevel.Info);
+        addMessage('message', Protocol.Runtime.ConsoleAPICalledEventType.Log, level);
+        addMessage('', Protocol.Runtime.ConsoleAPICalledEventType.EndGroup, Protocol.Log.LogEntryLevel.Info);
+
+        const messages = await getConsoleMessages();
+        assert.include(messages, 'group');
+        assert.notInclude(messages, 'message');
+      });
+
+      it(`shows expanded group and message when filtering for ${level}`, async () => {
+        const levels = Console.ConsoleFilter.ConsoleFilter.singleLevelMask(level);
+        // Setting might exist, .set() is crucial
+        Common.Settings.Settings.instance().createSetting('message-level-filters', levels).set(levels);
+
+        consoleView.markAsRoot();
+        renderElementIntoDOM(consoleView);
+
+        addMessage('group', Protocol.Runtime.ConsoleAPICalledEventType.StartGroup, Protocol.Log.LogEntryLevel.Info);
+        addMessage('message', Protocol.Runtime.ConsoleAPICalledEventType.Log, level);
+        addMessage('', Protocol.Runtime.ConsoleAPICalledEventType.EndGroup, Protocol.Log.LogEntryLevel.Info);
+
+        const messages = await getConsoleMessages();
+        assert.include(messages, 'group');
+        assert.include(messages, 'message');
+      });
+    }
+
+    it(`does not show group when filtering for level it does not contain`, async () => {
+      const levels = Console.ConsoleFilter.ConsoleFilter.singleLevelMask(Protocol.Log.LogEntryLevel.Warning);
+      // Setting might exist, .set() is crucial
+      Common.Settings.Settings.instance().createSetting('message-level-filters', levels).set(levels);
+
+      consoleView.markAsRoot();
+      renderElementIntoDOM(consoleView);
+
+      addMessage('group', Protocol.Runtime.ConsoleAPICalledEventType.StartGroup, Protocol.Log.LogEntryLevel.Info);
+      addMessage('message', Protocol.Runtime.ConsoleAPICalledEventType.Log, Protocol.Log.LogEntryLevel.Error);
+      addMessage('', Protocol.Runtime.ConsoleAPICalledEventType.EndGroup, Protocol.Log.LogEntryLevel.Info);
+
+      const messages = await getConsoleMessages();
+      assert.notInclude(messages, 'group');
+      assert.notInclude(messages, 'message');
+    });
   });
 });

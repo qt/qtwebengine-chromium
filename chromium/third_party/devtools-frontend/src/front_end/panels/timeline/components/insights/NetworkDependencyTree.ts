@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 import './Table.js';
-import './NodeLink.js';
 import '../../../../ui/kit/kit.js';
 
 import * as i18n from '../../../../core/i18n/i18n.js';
@@ -11,23 +10,24 @@ import type {
   CriticalRequestNode, NetworkDependencyTreeInsightModel} from
   '../../../../models/trace/insights/NetworkDependencyTree.js';
 import * as Trace from '../../../../models/trace/trace.js';
+import * as UI from '../../../../ui/legacy/legacy.js';
 import * as Lit from '../../../../ui/lit/lit.js';
 
 import {BaseInsightComponent} from './BaseInsightComponent.js';
 import {eventRef} from './EventRef.js';
 import {md} from './Helpers.js';
 import networkDependencyTreeInsightStyles from './networkDependencyTreeInsight.css.js';
-import type {NodeLinkData} from './NodeLink.js';
-import {renderOthersLabel, type TableData, type TableDataRow} from './Table.js';
+import {nodeLink} from './NodeLink.js';
+import {renderOthersLabel, Table, type TableDataRow} from './Table.js';
 
 const {UIStrings, i18nString} = Trace.Insights.Models.NetworkDependencyTree;
 
 const {html} = Lit;
+const {widgetConfig} = UI.Widget;
 
 export const MAX_CHAINS_TO_SHOW = 5;
 
 export class NetworkDependencyTree extends BaseInsightComponent<NetworkDependencyTreeInsightModel> {
-  static override readonly litTagName = Lit.StaticHtml.literal`devtools-performance-long-critical-network-tree`;
   override internalName = 'long-critical-network-tree';
 
   #relatedRequests: Set<Trace.Types.Events.SyntheticNetworkRequest>|null = null;
@@ -117,13 +117,13 @@ export class NetworkDependencyTree extends BaseInsightComponent<NetworkDependenc
 
     // clang-format off
     return html`
-      <devtools-performance-table
-          .data=${{
+      <devtools-widget .widgetConfig=${widgetConfig(Table, {
+           data: {
             insight: this,
             headers: [i18nString(UIStrings.columnRequest), i18nString(UIStrings.columnTime)],
             rows,
-          } as TableData}>
-      </devtools-performance-table>
+          }})}>
+      </devtools-widget>
     `;
     // clang-format on
   }
@@ -225,16 +225,11 @@ export class NetworkDependencyTree extends BaseInsightComponent<NetworkDependenc
         };
       }
 
-      // clang-format off
-      const nodeEl = html`
-        <devtools-performance-node-link
-          .data=${{
-            backendNodeId: preconnectOrigin.node_id,
-            frame: preconnectOrigin.frame,
-            fallbackHtmlSnippet: `<link rel="preconnect" href="${preconnectOrigin.url}">`,
-          } as NodeLinkData}>
-        </devtools-performance-node-link>`;
-      // clang-format on
+      const nodeEl = nodeLink({
+        backendNodeId: preconnectOrigin.node_id,
+        frame: preconnectOrigin.frame,
+        fallbackHtmlSnippet: `<link rel="preconnect" href="${preconnectOrigin.url}">`,
+      });
 
       return {
         values: [preconnectOrigin.url, nodeEl],
@@ -247,13 +242,13 @@ export class NetworkDependencyTree extends BaseInsightComponent<NetworkDependenc
       <div class="insight-section">
         ${preconnectOriginsTableTitle}
         ${this.#renderTooManyPreconnectsWarning()}
-        <devtools-performance-table
-          .data=${{
+        <devtools-widget .widgetConfig=${widgetConfig(Table, {
+           data: {
             insight: this,
             headers: [i18nString(UIStrings.columnOrigin), i18nString(UIStrings.columnSource)],
             rows,
-          } as TableData}>
-        </devtools-performance-table>
+          }})}>
+        </devtools-widget>
       </div>
     `;
     // clang-format on
@@ -290,13 +285,13 @@ export class NetworkDependencyTree extends BaseInsightComponent<NetworkDependenc
     return html`
       <div class="insight-section">
         ${estSavingTableTitle}
-        <devtools-performance-table
-          .data=${{
+        <devtools-widget .widgetConfig=${widgetConfig(Table, {
+           data: {
             insight: this,
             headers: [i18nString(UIStrings.columnOrigin), i18nString(UIStrings.columnWastedMs)],
             rows,
-          } as TableData}>
-        </devtools-performance-table>
+          }})}>
+        </devtools-widget>
       </div>
     `;
     // clang-format on
@@ -310,11 +305,3 @@ export class NetworkDependencyTree extends BaseInsightComponent<NetworkDependenc
     `;
   }
 }
-
-declare global {
-  interface HTMLElementTagNameMap {
-    'devtools-performance-long-critical-network-tree': NetworkDependencyTree;
-  }
-}
-
-customElements.define('devtools-performance-long-critical-network-tree', NetworkDependencyTree);

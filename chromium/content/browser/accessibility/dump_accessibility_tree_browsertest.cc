@@ -63,8 +63,6 @@ void DumpAccessibilityTreeTest::SetUpCommandLine(
   // Enable aria-actions.
   command_line->AppendSwitchASCII(switches::kEnableBlinkFeatures,
                                   "AriaActions");
-  // Enable CSSInert, used by AccessibilityCSSInteractivityInert.
-  command_line->AppendSwitchASCII(switches::kEnableBlinkFeatures, "CSSInert");
   // Enable custom elements to have a default role of "none", removing them
   // from the accessibility tree.
   base::CommandLine::ForCurrentProcess()->AppendSwitchASCII(
@@ -113,10 +111,18 @@ void DumpAccessibilityTreeTest::ChooseFeatures(
       features::kEnableAccessibilityAriaVirtualContent);
   // crbug.com/339418716 - temporary until enabled by default
   enabled_features->emplace_back(blink::features::kPermissionElement);
+#if BUILDFLAG(IS_WIN)
+  // Enable UIA MathML support for dump tests
+  enabled_features->emplace_back(features::kUiaMathMlSupport);
+#endif  // BUILDFLAG(IS_WIN)
 #if BUILDFLAG(IS_ANDROID)
   disabled_features->emplace_back(
       features::kAccessibilityPopulateSupplementalDescriptionApi);
 #endif  // BUILDFLAG(IS_ANDROID)
+#if BUILDFLAG(IS_WIN)
+  // Enable UIA MathML support on Windows.
+  enabled_features->emplace_back(features::kUiaMathMlSupport);
+#endif  // BUILDFLAG(IS_WIN)
   DumpAccessibilityTestBase::ChooseFeatures(enabled_features,
                                             disabled_features);
 }
@@ -1360,6 +1366,11 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
                        AccessibilityAriaListBoxChildFocus) {
   RunAriaTest(FILE_PATH_LITERAL("aria-listbox-childfocus.html"));
+}
+
+IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
+                       AccessibilityAriaListboxOptionRedundancy) {
+  RunAriaTest(FILE_PATH_LITERAL("aria-listbox-option-redundancy.html"));
 }
 
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest, AccessibilityAriaListItem) {
@@ -4809,6 +4820,22 @@ INSTANTIATE_TEST_SUITE_P(
 
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeWithCarouselTest, CarouselNoTabs) {
   RunCSSTest(FILE_PATH_LITERAL("carousel-no-tabs.html"));
+}
+
+IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeWithCarouselTest,
+                       CarouselWithColumnTabs) {
+  RunCSSTest(FILE_PATH_LITERAL("carousel-with-column-tabs.html"));
+}
+
+IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeWithCarouselTest,
+                       CarouselWithColumnTabsDynamic) {
+  RunCSSTest(FILE_PATH_LITERAL("carousel-with-column-tabs-dynamic.html"));
+}
+
+IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeWithCarouselTest,
+                       CarouselWithWrappedColumnTabsDynamic) {
+  RunCSSTest(
+      FILE_PATH_LITERAL("carousel-with-wrapped-column-tabs-dynamic.html"));
 }
 
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeWithCarouselTest,

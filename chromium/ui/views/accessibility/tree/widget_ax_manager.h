@@ -12,6 +12,7 @@
 
 #include "base/functional/callback_forward.h"
 #include "base/memory/raw_ptr.h"
+#include "base/observer_list.h"
 #include "build/build_config.h"
 #include "ui/accessibility/ax_enums.mojom-forward.h"
 #include "ui/accessibility/ax_node_id_forward.h"
@@ -21,6 +22,7 @@
 #include "ui/accessibility/platform/ax_node_id_delegate.h"
 #include "ui/accessibility/platform/ax_platform_tree_manager_delegate.h"
 #include "ui/views/accessibility/tree/view_accessibility_ax_tree_source.h"
+#include "ui/views/accessibility/tree/widget_ax_manager_observer.h"
 #include "ui/views/views_export.h"
 
 #if BUILDFLAG(IS_WIN)
@@ -69,6 +71,9 @@ class VIEWS_EXPORT WidgetAXManager : public ui::AXModeObserver,
 
   bool is_enabled() const { return is_enabled_; }
 
+  void AddObserver(WidgetAXManagerObserver* observer);
+  void RemoveObserver(WidgetAXManagerObserver* observer);
+
   void OnEvent(ViewAccessibility& view_ax, ax::mojom::Event event_type);
   void OnDataChanged(ViewAccessibility& view_ax);
 
@@ -78,6 +83,8 @@ class VIEWS_EXPORT WidgetAXManager : public ui::AXModeObserver,
   void OnChildManagerAdded(WidgetAXManager& child_manager);
   void OnChildManagerRemoved(WidgetAXManager& child_manager);
 
+  gfx::NativeViewAccessible GetNativeViewAccessibleForId(ui::AXNodeID id);
+
   // Sets a test callback that is invoked on every exit from
   // SendPendingUpdate(). If updates/events were actually sent, the optional
   // contains the ui::AXUpdatesAndEvents; otherwise it is absl::nullopt.
@@ -86,6 +93,11 @@ class VIEWS_EXPORT WidgetAXManager : public ui::AXModeObserver,
           void(const std::optional<ui::AXUpdatesAndEvents>&)> callback) {
     updates_and_events_callback_for_testing_ = std::move(callback);
   }
+
+  // Returns a weak pointer to the underlying BrowserAccessibilityManager for
+  // testing purposes. Used by accessibility event tests to access the tree
+  // manager for firing sentinel events.
+  base::WeakPtr<ui::AXPlatformTreeManager> GetAXTreeManagerWeakPtrForTesting();
 
   // ui::AXModeObserver:
   void OnAXModeAdded(ui::AXMode mode) override;
@@ -125,6 +137,7 @@ class VIEWS_EXPORT WidgetAXManager : public ui::AXModeObserver,
 
   void InitAXTreeManager();
   void Enable();
+  void NotifyEnabled();
 
   void SchedulePendingUpdate();
   void SendPendingUpdate();
@@ -170,6 +183,11 @@ class VIEWS_EXPORT WidgetAXManager : public ui::AXModeObserver,
   // dispatched to the tree manager.
   base::RepeatingCallback<void(const std::optional<ui::AXUpdatesAndEvents>&)>
       updates_and_events_callback_for_testing_;
+
+  base::ObserverList<WidgetAXManagerObserver,
+                     /*check_empty=*/true,
+                     /*allow_reentrancy=*/false>
+      observers_;
 
 #if BUILDFLAG(IS_WIN)
   // The IAccessible of the Widget's parent HWND.

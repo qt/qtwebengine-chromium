@@ -12,7 +12,6 @@
 
 #include "build/build_config.h"
 #include "core/fxcrt/fx_codepage.h"
-#include "core/fxcrt/fx_memcpy_wrappers.h"
 #include "core/fxcrt/span.h"
 #include "core/fxge/cfx_defaultrenderdevice.h"
 #include "core/fxge/cfx_font.h"
@@ -133,7 +132,7 @@ std::unique_ptr<CFX_GlyphBitmap> CFX_GlyphCache::RenderGlyph(
 const CFX_Path* CFX_GlyphCache::LoadGlyphPath(const CFX_Font* font,
                                               uint32_t glyph_index,
                                               int dest_width) {
-  if (!GetFace() || glyph_index == kInvalidGlyphIndex) {
+  if (!face_ || glyph_index == kInvalidGlyphIndex) {
     return nullptr;
   }
 
@@ -186,33 +185,12 @@ const CFX_GlyphBitmap* CFX_GlyphCache::LoadGlyphBitmap(
 #if BUILDFLAG(IS_APPLE)
   DCHECK(!CFX_DefaultRenderDevice::UseSkiaRenderer());
 
-  std::unique_ptr<CFX_GlyphBitmap> pGlyphBitmap;
   auto it = size_map_.find(FaceGlyphsKey);
   if (it != size_map_.end()) {
-    SizeGlyphCache* pSizeCache = &(it->second);
-    auto it2 = pSizeCache->find(glyph_index);
-    if (it2 != pSizeCache->end()) {
-      return it2->second.get();
-    }
-
-    pGlyphBitmap = RenderGlyph_Nativetext(font, glyph_index, matrix, dest_width,
-                                          anti_alias);
-    if (pGlyphBitmap) {
-      CFX_GlyphBitmap* pResult = pGlyphBitmap.get();
-      (*pSizeCache)[glyph_index] = std::move(pGlyphBitmap);
-      return pResult;
-    }
-  } else {
-    pGlyphBitmap = RenderGlyph_Nativetext(font, glyph_index, matrix, dest_width,
-                                          anti_alias);
-    if (pGlyphBitmap) {
-      CFX_GlyphBitmap* pResult = pGlyphBitmap.get();
-
-      SizeGlyphCache cache;
-      cache[glyph_index] = std::move(pGlyphBitmap);
-
-      size_map_[FaceGlyphsKey] = std::move(cache);
-      return pResult;
+    SizeGlyphCache& size_glyph_cache = it->second;
+    auto size_glyph_it = size_glyph_cache.find(glyph_index);
+    if (size_glyph_it != size_glyph_cache.end()) {
+      return size_glyph_it->second.get();
     }
   }
   UniqueKeyGen keygen2(font, matrix, dest_width, anti_alias,
@@ -281,7 +259,7 @@ void CFX_GlyphCache::DestroyGlobals() {
   g_fontmgr = nullptr;
 }
 
-CFX_TypeFace* CFX_GlyphCache::GetDeviceCache(const CFX_Font* font) {
+SkTypeface* CFX_GlyphCache::GetDeviceCache(const CFX_Font* font) {
   if (!typeface_ && g_fontmgr) {
     pdfium::span<const uint8_t> span = font->GetFontSpan();
     typeface_ = g_fontmgr->makeFromStream(

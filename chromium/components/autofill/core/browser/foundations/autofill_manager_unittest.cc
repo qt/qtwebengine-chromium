@@ -47,10 +47,10 @@ using ::testing::_;
 using ::testing::AtLeast;
 using ::testing::ElementsAre;
 using ::testing::Eq;
-using ::testing::Field;
 using ::testing::IsEmpty;
 using ::testing::NiceMock;
 using ::testing::Pair;
+using ::testing::Pointee;
 using ::testing::Property;
 using ::testing::Ref;
 using ::testing::Return;
@@ -88,6 +88,7 @@ class MockFieldClassificationModelHandler
               GetModelPredictionsForForms,
               (std::vector<FormData>,
                const GeoIpCountryCode& client_country,
+               bool,
                base::OnceCallback<void(std::vector<ModelPredictions>)>),
               (override));
 };
@@ -111,20 +112,14 @@ std::vector<FormGlobalId> GetFormIds(const std::vector<FormData>& forms) {
 // Matches a std::map<FormGlobalId, std::unique_ptr<FormStructure>>::value_type
 // whose key is `form.global_id()`.
 auto HaveSameFormIdAs(const FormData& form) {
-  return Field(
-      "global_id",
-      &std::pair<const FormGlobalId, std::unique_ptr<FormStructure>>::first,
-      form.global_id());
+  return Pointee(
+      Property("global_id", &FormStructure::global_id, form.global_id()));
 }
 
 // Matches a std::map<FormGlobalId, std::unique_ptr<FormStructure>> whose
 // keys are the same the FormGlobalIds of the forms in |forms|.
 auto HaveSameFormIdsAs(const std::vector<FormData>& forms) {
-  std::vector<decltype(HaveSameFormIdAs(forms.front()))> matchers;
-  matchers.reserve(forms.size());
-  std::ranges::transform(forms, std::back_inserter(matchers),
-                         &HaveSameFormIdAs);
-  return UnorderedElementsAreArray(matchers);
+  return UnorderedElementsAreArray(base::ToVector(forms, &HaveSameFormIdAs));
 }
 
 // Expects the calls triggered by OnFormsSeen().
@@ -132,9 +127,10 @@ void OnFormsSeenWithExpectations(MockAutofillManager& autofill_manager,
                                  const std::vector<FormData>& updated_forms,
                                  const std::vector<FormGlobalId>& removed_forms,
                                  const std::vector<FormData>& expectation) {
-  const size_t num = std::min(updated_forms.size(),
-                              kAutofillManagerMaxFormCacheSize -
-                                  autofill_manager.form_structures().size());
+  const size_t num =
+      std::min(updated_forms.size(),
+               kAutofillManagerMaxFormCacheSize -
+                   test_api(autofill_manager).form_structures().size());
   EXPECT_CALL(autofill_manager, ShouldParseForms)
       .Times(1)
       .WillOnce(Return(true));
@@ -144,7 +140,7 @@ void OnFormsSeenWithExpectations(MockAutofillManager& autofill_manager,
                                    {AutofillManagerEvent::kFormsSeen});
   autofill_manager.OnFormsSeen(updated_forms, removed_forms);
   ASSERT_TRUE(waiter.Wait());
-  EXPECT_THAT(autofill_manager.form_structures(),
+  EXPECT_THAT(test_api(autofill_manager).form_structures(),
               HaveSameFormIdsAs(expectation));
 }
 
@@ -158,6 +154,11 @@ class AutofillManagerTest
     InitAutofillClient();
     autofill_client().SetPrefs(test::PrefServiceForTesting());
     CreateAutofillDriver();
+  }
+
+  MockAutofillCrowdsourcingManager& crowdsourcing_manager() {
+    return static_cast<MockAutofillCrowdsourcingManager&>(
+        autofill_client().GetCrowdsourcingManager());
   }
 
  protected:
@@ -190,11 +191,6 @@ class AutofillManagerTest_OnLoadedServerPredictionsObserver
   void TearDown() override {
     autofill_manager().RemoveObserver(&observer_);
     AutofillManagerTest::TearDown();
-  }
-
-  MockAutofillCrowdsourcingManager& crowdsourcing_manager() {
-    return static_cast<MockAutofillCrowdsourcingManager&>(
-        autofill_client().GetCrowdsourcingManager());
   }
 
   MockAutofillManagerObserver observer_;
@@ -257,7 +253,8 @@ TEST_F(AutofillManagerTest, FormCacheUpdatesValue) {
   FormGlobalId form_id = form.global_id();
   auto current_cached_value = [this,
                                &form_id]() -> std::optional<std::u16string> {
-    FormStructure* cached_form = autofill_manager().FindCachedFormById(form_id);
+    const FormStructure* cached_form =
+        autofill_manager().FindCachedFormById(form_id);
     if (!cached_form || cached_form->fields().empty()) {
       return std::nullopt;
     }
@@ -326,6 +323,7 @@ TEST_F(AutofillManagerTest, ObserverReceiveCalls) {
   auto g = Eq(other_form.global_id());
   auto ff = Eq(field.global_id());
   auto heuristics = Eq(FieldTypeSource::kHeuristicsOrAutocomplete);
+  auto small_forms_parsing = Eq(autofill_client().IsTabInActorMode());
 
   MockAutofillManagerObserver observer;
   base::ScopedObservation<AutofillManager, MockAutofillManagerObserver>
@@ -422,8 +420,10 @@ TEST_F(AutofillManagerTest, ObserverReceiveCalls) {
     EXPECT_CALL(observer, OnAfterFormsSeen(m, ElementsAre(f, g),
                                            ElementsAre(id_to_remove)))
         .WillOnce(RunClosure(run_loop.QuitClosure()));
-    EXPECT_CALL(observer, OnFieldTypesDetermined(m, f, heuristics));
-    EXPECT_CALL(observer, OnFieldTypesDetermined(m, g, heuristics));
+    EXPECT_CALL(observer,
+                OnFieldTypesDetermined(m, f, heuristics, small_forms_parsing));
+    EXPECT_CALL(observer,
+                OnFieldTypesDetermined(m, g, heuristics, small_forms_parsing));
     std::move(run_loop).Run();
   }
 
@@ -437,8 +437,10 @@ TEST_F(AutofillManagerTest, ObserverReceiveCalls) {
     }());
     EXPECT_CALL(observer, OnAfterLanguageDetermined(m))
         .WillOnce(RunClosure(run_loop.QuitClosure()));
-    EXPECT_CALL(observer, OnFieldTypesDetermined(m, f, heuristics));
-    EXPECT_CALL(observer, OnFieldTypesDetermined(m, g, heuristics));
+    EXPECT_CALL(observer,
+                OnFieldTypesDetermined(m, f, heuristics, small_forms_parsing));
+    EXPECT_CALL(observer,
+                OnFieldTypesDetermined(m, g, heuristics, small_forms_parsing));
     std::move(run_loop).Run();
   }
 
@@ -454,7 +456,8 @@ TEST_F(AutofillManagerTest, ObserverReceiveCalls) {
     EXPECT_CALL(observer,
                 OnAfterTextFieldValueChanged(m, f, ff, std::u16string()))
         .WillOnce(RunClosure(run_loop.QuitClosure()));
-    EXPECT_CALL(observer, OnFieldTypesDetermined(m, f, heuristics));
+    EXPECT_CALL(observer,
+                OnFieldTypesDetermined(m, f, heuristics, small_forms_parsing));
     std::move(run_loop).Run();
   }
 
@@ -591,7 +594,7 @@ class AutofillManagerTestForModelPredictions : public AutofillManagerTest {
     ON_CALL(*handler, GetModelPredictionsForForms)
         .WillByDefault(
             [](std::vector<FormData> forms,
-               const GeoIpCountryCode& client_country,
+               const GeoIpCountryCode& client_country, bool ignore_small_forms,
                base::OnceCallback<void(std::vector<ModelPredictions>)>
                    callback) {
               const ModelPredictions kEmptyPredictions = ModelPredictions(
@@ -671,31 +674,6 @@ TEST_F(AutofillManagerTestForModelPredictions,
 
 TEST_F(
     AutofillManagerTest_OnLoadedServerPredictionsObserver,
-    OnFormsSeen_SuccessfulQueryRequest_NotifiesBeforeLoadedServerPredictionsObserver) {
-  std::vector<FormData> forms = CreateTestForms(1);
-  base::RunLoop run_loop;
-  EXPECT_CALL(observer_,
-              OnBeforeLoadedServerPredictions(Ref(autofill_manager())));
-  EXPECT_CALL(observer_, OnFieldTypesDetermined).Times(0);
-  EXPECT_CALL(observer_, OnFieldTypesDetermined(
-                             Ref(autofill_manager()), forms[0].global_id(),
-                             FieldTypeSource::kHeuristicsOrAutocomplete));
-  EXPECT_CALL(crowdsourcing_manager(), StartQueryRequest)
-      .WillOnce(
-          [](const auto&, const auto&,
-             base::OnceCallback<void(std::optional<QueryResponse>)> callback) {
-            std::move(callback).Run(QueryResponse("", {}));
-            return true;
-          });
-  EXPECT_CALL(observer_,
-              OnAfterLoadedServerPredictions(Ref(autofill_manager())))
-      .WillOnce(RunClosure(run_loop.QuitClosure()));
-  OnFormsSeenWithExpectations(autofill_manager(), forms, {}, forms);
-  std::move(run_loop).Run();
-}
-
-TEST_F(
-    AutofillManagerTest_OnLoadedServerPredictionsObserver,
     OnFormsSeen_FailedQueryRequest_NotifiesBothLoadedServerPredictionsObservers) {
   std::vector<FormData> forms = CreateTestForms(1);
   base::RunLoop run_loop;
@@ -704,7 +682,9 @@ TEST_F(
   EXPECT_CALL(observer_, OnFieldTypesDetermined).Times(0);
   EXPECT_CALL(observer_, OnFieldTypesDetermined(
                              Ref(autofill_manager()), forms[0].global_id(),
-                             FieldTypeSource::kHeuristicsOrAutocomplete));
+                             FieldTypeSource::kHeuristicsOrAutocomplete,
+                             /*small_forms_were_parsed=*/
+                             Eq(autofill_client().IsTabInActorMode())));
   EXPECT_CALL(crowdsourcing_manager(), StartQueryRequest)
       .WillOnce(
           [](const auto&, const auto&,
@@ -719,24 +699,15 @@ TEST_F(
   std::move(run_loop).Run();
 }
 
-TEST_F(
-    AutofillManagerTest_OnLoadedServerPredictionsObserver,
-    OnLoadedServerPredictions_EmptyQueriedFormSignatures_NotifiesAfterLoadedServerPredictionsObserver) {
+TEST_F(AutofillManagerTest_OnLoadedServerPredictionsObserver, TabInActorMode) {
   std::vector<FormData> forms = CreateTestForms(1);
+  autofill_client().set_is_tab_in_actor_mode(true);
+
   base::RunLoop run_loop;
-  EXPECT_CALL(observer_,
-              OnBeforeLoadedServerPredictions(Ref(autofill_manager())));
-  EXPECT_CALL(observer_, OnFieldTypesDetermined).Times(0);
   EXPECT_CALL(observer_, OnFieldTypesDetermined(
                              Ref(autofill_manager()), forms[0].global_id(),
-                             FieldTypeSource::kHeuristicsOrAutocomplete));
-  EXPECT_CALL(crowdsourcing_manager(), StartQueryRequest)
-      .WillOnce(
-          [&](const auto&, const auto&,
-              base::OnceCallback<void(std::optional<QueryResponse>)> callback) {
-            std::move(callback).Run(QueryResponse("", {}));
-            return true;
-          });
+                             FieldTypeSource::kHeuristicsOrAutocomplete,
+                             /*small_forms_were_parsed=*/true));
   EXPECT_CALL(observer_,
               OnAfterLoadedServerPredictions(Ref(autofill_manager())))
       .WillOnce(RunClosure(run_loop.QuitClosure()));
@@ -746,7 +717,7 @@ TEST_F(
 
 TEST_F(
     AutofillManagerTest_OnLoadedServerPredictionsObserver,
-    OnLoadedServerPredictions_NonEmptyQueriedFormSignatures_NotifiesAfterLoadedServerPredictionsObserver) {
+    OnFormsSeen_NonEmptyQueriedFormSignatures_NotifiesAfterLoadedServerPredictionsObserver) {
   std::vector<FormData> forms = CreateTestForms(1);
   base::RunLoop run_loop;
   EXPECT_CALL(observer_,
@@ -754,15 +725,20 @@ TEST_F(
   EXPECT_CALL(observer_, OnFieldTypesDetermined).Times(0);
   EXPECT_CALL(observer_, OnFieldTypesDetermined(
                              Ref(autofill_manager()), forms[0].global_id(),
-                             FieldTypeSource::kHeuristicsOrAutocomplete));
-  EXPECT_CALL(observer_, OnFieldTypesDetermined(
-                             Ref(autofill_manager()), forms[0].global_id(),
-                             FieldTypeSource::kAutofillServer));
+                             FieldTypeSource::kHeuristicsOrAutocomplete,
+                             /*small_forms_were_parsed=*/
+                             Eq(autofill_client().IsTabInActorMode())));
+  EXPECT_CALL(observer_,
+              OnFieldTypesDetermined(
+                  Ref(autofill_manager()), forms[0].global_id(),
+                  FieldTypeSource::kAutofillServer, /*small_forms_were_parsed=*/
+                  Eq(autofill_client().IsTabInActorMode())));
   EXPECT_CALL(crowdsourcing_manager(), StartQueryRequest)
       .WillOnce(
           [&](const auto&, const auto&,
               base::OnceCallback<void(std::optional<QueryResponse>)> callback) {
             std::move(callback).Run(
+                // Server responses always have non-empty form signatures.
                 QueryResponse("", {autofill_manager()
                                        .FindCachedFormById(forms[0].global_id())
                                        ->form_signature()}));
@@ -801,6 +777,264 @@ TEST_F(AutofillManagerTest, GetHeuristicPredictionForForm) {
               base::ToVector(unseen_form.fields(),
                              &autofill::FormFieldData::global_id))
           .empty());
+}
+
+// Tests that QueryServerPredictions() starts a query request for the forms
+// that should be queried and that the resulting call to
+// OnLoadedServerPredictions() adds a new form structure to the cache.
+TEST_F(AutofillManagerTest,
+       EarlyServerPredictions_QueryServerPredictions_StartQueryRequestCalled) {
+  base::test::ScopedFeatureList feature_list{
+      features::kAutofillServerQueryPredictionsEarly};
+
+  std::vector<FormData> forms = CreateTestForms(1);
+  std::vector<FormSignature> form_signatures = {
+      CalculateFormSignature(forms[0])};
+
+  EXPECT_CALL(crowdsourcing_manager(), StartQueryRequest)
+      .WillOnce(
+          [form_signatures](
+              const std::vector<FormData>&, std::optional<net::IsolationInfo>,
+              base::OnceCallback<void(
+                  std::optional<AutofillCrowdsourcingManager::QueryResponse>)>
+                  callback) {
+            std::move(callback).Run(AutofillCrowdsourcingManager::QueryResponse(
+                "", form_signatures));
+            return true;
+          });
+
+  EXPECT_CALL(autofill_manager(), OnFormProcessed);
+
+  test_api(autofill_manager()).QueryServerPredictions(forms);
+  EXPECT_EQ(test_api(autofill_manager()).form_structures().size(), 1u);
+}
+
+// Tests that QueryServerPredictions() starts a query request for the forms
+// that should be queried and that the resulting call to
+// OnLoadedServerPredictions() updates the existing form structure with the
+// same form ID but different form signature and lower version.
+TEST_F(AutofillManagerTest,
+       EarlyServerPredictions_QueryServerPredictions_UpdatesExistingFormId) {
+  base::test::ScopedFeatureList feature_list{
+      features::kAutofillServerQueryPredictionsEarly};
+
+  // Create a form and add it to the form cache via OnFormsSeen().
+  EXPECT_CALL(autofill_manager(), ShouldParseForms).WillOnce(Return(true));
+  TestAutofillManagerWaiter waiter(autofill_manager());
+  FormData initial_form = test::CreateTestAddressFormData();
+  autofill_manager().OnFormsSeen({initial_form}, /*removed_forms=*/{});
+  ASSERT_TRUE(waiter.Wait());
+  ASSERT_EQ(test_api(autofill_manager()).form_structures().size(), 1u);
+
+  // Create a form with the same form ID but different form signature and higher
+  // version for server predictions.
+  FormData updated_form = initial_form;
+  updated_form.set_action(GURL("https://example.test/"));
+  updated_form.set_version(autofill::FormVersion::FromUnsafeValue(
+      initial_form.version().value() + 1));
+  std::vector<FormSignature> form_signatures = {
+      CalculateFormSignature(updated_form)};
+  ASSERT_NE(test_api(autofill_manager()).form_structures()[0]->form_signature(),
+            form_signatures[0]);
+  ASSERT_EQ(test_api(autofill_manager()).form_structures()[0]->global_id(),
+            updated_form.global_id());
+
+  EXPECT_CALL(crowdsourcing_manager(), StartQueryRequest)
+      .WillOnce(
+          [form_signatures](
+              const std::vector<FormData>&, std::optional<net::IsolationInfo>,
+              base::OnceCallback<void(
+                  std::optional<AutofillCrowdsourcingManager::QueryResponse>)>
+                  callback) {
+            std::move(callback).Run(AutofillCrowdsourcingManager::QueryResponse(
+                "", form_signatures));
+            return true;
+          });
+
+  // Expect updated form to be stored in the form cache.
+  test_api(autofill_manager()).QueryServerPredictions({updated_form});
+  ASSERT_EQ(test_api(autofill_manager()).form_structures().size(), 1u);
+  EXPECT_EQ(test_api(autofill_manager()).form_structures()[0]->form_signature(),
+            form_signatures[0]);
+  EXPECT_EQ(test_api(autofill_manager()).form_structures()[0]->version(),
+            updated_form.version());
+}
+
+// Tests that QueryServerPredictions() starts a query request for the forms
+// that should be queried and that the resulting call to
+// OnLoadedServerPredictions() updates the existing form structure
+// with the same form ID but same form signature and lower version.
+TEST_F(
+    AutofillManagerTest,
+    EarlyServerPredictions_QueryServerPredictions_UpdatesExistingFormIdWithSameSignature) {
+  base::test::ScopedFeatureList feature_list{
+      features::kAutofillServerQueryPredictionsEarly};
+
+  // Create a form and add it to the form cache via OnFormsSeen().
+  EXPECT_CALL(autofill_manager(), ShouldParseForms).WillOnce(Return(true));
+  TestAutofillManagerWaiter waiter(autofill_manager());
+  FormData initial_form = test::CreateTestAddressFormData();
+  autofill_manager().OnFormsSeen({initial_form}, /*removed_forms=*/{});
+  ASSERT_TRUE(waiter.Wait());
+  ASSERT_EQ(test_api(autofill_manager()).form_structures().size(), 1u);
+  const FormStructure& form_structure = CHECK_DEREF(
+      autofill_manager().FindCachedFormById(initial_form.global_id()));
+  ASSERT_EQ(form_structure.field_count(), 11u);
+  ASSERT_EQ(form_structure.fields()[0]->heuristic_type(), NAME_FIRST);
+  ASSERT_EQ(form_structure.fields()[1]->heuristic_type(), NAME_MIDDLE);
+
+  // Create a form with the same form ID but same form signature and higher
+  // version for server predictions.
+  FormData updated_form = initial_form;
+  updated_form.set_version(autofill::FormVersion::FromUnsafeValue(
+      initial_form.version().value() + 1));
+  std::vector<FormSignature> form_signatures = {
+      CalculateFormSignature(updated_form)};
+  ASSERT_EQ(test_api(autofill_manager()).form_structures()[0]->form_signature(),
+            form_signatures[0]);
+  ASSERT_EQ(test_api(autofill_manager()).form_structures()[0]->global_id(),
+            updated_form.global_id());
+
+  EXPECT_CALL(crowdsourcing_manager(), StartQueryRequest)
+      .WillOnce(
+          [form_signatures](
+              const std::vector<FormData>&, std::optional<net::IsolationInfo>,
+              base::OnceCallback<void(
+                  std::optional<AutofillCrowdsourcingManager::QueryResponse>)>
+                  callback) {
+            std::move(callback).Run(AutofillCrowdsourcingManager::QueryResponse(
+                "", form_signatures));
+            return true;
+          });
+
+  // The cached form should still be in the cache, predictions should be applied
+  // and other attributes (like heuristic predictions) should not be overridden.
+  test_api(autofill_manager()).QueryServerPredictions({updated_form});
+  ASSERT_EQ(test_api(autofill_manager()).form_structures().size(), 1u);
+  EXPECT_EQ(form_structure.form_signature(), form_signatures[0]);
+  EXPECT_EQ(form_structure.version(), updated_form.version());
+  ASSERT_EQ(form_structure.field_count(), 11u);
+  EXPECT_EQ(form_structure.fields()[0]->heuristic_type(), NAME_FIRST);
+  EXPECT_EQ(form_structure.fields()[1]->heuristic_type(), NAME_MIDDLE);
+}
+
+// Tests that QueryServerPredictions() starts a query request for the forms
+// that should be queried and that the resulting call to
+// OnLoadedServerPredictions() does not override the existing form structure
+// with the same form ID but different form signature and higher version.
+TEST_F(
+    AutofillManagerTest,
+    EarlyServerPredictions_QueryServerPredictions_DoesNotOverridesExistingFormIdWithHigherVersion) {
+  base::test::ScopedFeatureList feature_list{
+      features::kAutofillServerQueryPredictionsEarly};
+
+  // Create a form and add it to the form cache via OnFormsSeen().
+  EXPECT_CALL(autofill_manager(), ShouldParseForms).WillOnce(Return(true));
+  TestAutofillManagerWaiter waiter(autofill_manager());
+  FormData initial_form = test::CreateTestAddressFormData();
+  initial_form.set_version(autofill::FormVersion::FromUnsafeValue(1));
+  autofill_manager().OnFormsSeen({initial_form}, /*removed_forms=*/{});
+  ASSERT_TRUE(waiter.Wait());
+  ASSERT_EQ(test_api(autofill_manager()).form_structures().size(), 1u);
+
+  // Create a form with the same form ID but different form signature and lower
+  // version for server predictions.
+  FormData previous_form = initial_form;
+  previous_form.set_action(GURL("https://example.test/"));
+  previous_form.set_version(autofill::FormVersion::FromUnsafeValue(
+      initial_form.version().value() - 1));
+  std::vector<FormSignature> form_signatures = {
+      CalculateFormSignature(previous_form)};
+  ASSERT_NE(test_api(autofill_manager()).form_structures()[0]->form_signature(),
+            form_signatures[0]);
+  ASSERT_EQ(test_api(autofill_manager()).form_structures()[0]->global_id(),
+            previous_form.global_id());
+
+  EXPECT_CALL(crowdsourcing_manager(), StartQueryRequest)
+      .WillOnce(
+          [form_signatures](
+              const std::vector<FormData>&, std::optional<net::IsolationInfo>,
+              base::OnceCallback<void(
+                  std::optional<AutofillCrowdsourcingManager::QueryResponse>)>
+                  callback) {
+            std::move(callback).Run(AutofillCrowdsourcingManager::QueryResponse(
+                "", form_signatures));
+            return true;
+          });
+
+  // Expect server predictions to still be processed for the previous form.
+  EXPECT_CALL(autofill_manager(), OnFormProcessed);
+  test_api(autofill_manager()).QueryServerPredictions({previous_form});
+  ASSERT_EQ(test_api(autofill_manager()).form_structures().size(), 1u);
+  EXPECT_EQ(test_api(autofill_manager()).form_structures()[0]->form_signature(),
+            CalculateFormSignature(initial_form));
+}
+
+// Tests that OnLoadedServerPredictions() does not add forms to the cache if
+// their signature is not part of the query response.
+TEST_F(AutofillManagerTest,
+       EarlyServerPredictions_QueryServerPredictions_MissingSignature) {
+  base::test::ScopedFeatureList feature_list{
+      features::kAutofillServerQueryPredictionsEarly};
+
+  std::vector<FormData> forms = {
+      test::CreateTestAddressFormData(/*unique_id=*/"0"),
+      test::CreateTestAddressFormData(/*unique_id=*/"1")};
+  std::vector<FormSignature> form_signatures = {
+      CalculateFormSignature(forms[0])};
+
+  EXPECT_CALL(crowdsourcing_manager(), StartQueryRequest)
+      .WillOnce(
+          [form_signatures](
+              const std::vector<FormData>&, std::optional<net::IsolationInfo>,
+              base::OnceCallback<void(
+                  std::optional<AutofillCrowdsourcingManager::QueryResponse>)>
+                  callback) {
+            std::move(callback).Run(AutofillCrowdsourcingManager::QueryResponse(
+                "", form_signatures));
+            return true;
+          });
+
+  EXPECT_CALL(autofill_manager(), OnFormProcessed);
+
+  test_api(autofill_manager()).QueryServerPredictions(forms);
+  EXPECT_EQ(test_api(autofill_manager()).form_structures().size(), 1u);
+}
+
+// Tests that OnLoadedServerPredictions() respects the form cache size limit
+// when adding new forms to the cache.
+TEST_F(
+    AutofillManagerTest,
+    EarlyServerPredictions_OnLoadedServerPredictions_QueryServerPredictions_RespectsCacheSize) {
+  base::test::ScopedFeatureList feature_list{
+      features::kAutofillServerQueryPredictionsEarly};
+
+  std::vector<FormData> forms;
+  for (size_t i = 0; i < kAutofillManagerMaxFormCacheSize + 1; ++i) {
+    forms.push_back(test::CreateTestAddressFormData(
+        base::NumberToString(static_cast<int>(i)).c_str()));
+  }
+  std::vector<FormSignature> form_signatures =
+      base::ToVector(forms, &CalculateFormSignature);
+
+  EXPECT_CALL(crowdsourcing_manager(), StartQueryRequest)
+      .WillOnce(
+          [form_signatures](
+              const std::vector<FormData>&, std::optional<net::IsolationInfo>,
+              base::OnceCallback<void(
+                  std::optional<AutofillCrowdsourcingManager::QueryResponse>)>
+                  callback) {
+            std::move(callback).Run(AutofillCrowdsourcingManager::QueryResponse(
+                "", form_signatures));
+            return true;
+          });
+
+  EXPECT_CALL(autofill_manager(), OnFormProcessed)
+      .Times(kAutofillManagerMaxFormCacheSize);
+
+  test_api(autofill_manager()).QueryServerPredictions(forms);
+  EXPECT_EQ(test_api(autofill_manager()).form_structures().size(),
+            kAutofillManagerMaxFormCacheSize);
 }
 
 }  // namespace

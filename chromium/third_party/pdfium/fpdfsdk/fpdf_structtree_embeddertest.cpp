@@ -851,7 +851,7 @@ TEST_F(FPDFStructTreeEmbedderTest, GetStructTreeForNestedTaggedPDF) {
   ASSERT_TRUE(page);
 
   {
-    // This call should not crash. https://crbug.com/pdfium/1480
+    // This call should not crash. https://crbug.com/42270484
     ScopedFPDFStructTree struct_tree(FPDF_StructTree_GetForPage(page.get()));
     ASSERT_TRUE(struct_tree);
   }
@@ -903,7 +903,7 @@ TEST_F(FPDFStructTreeEmbedderTest, MarkedContentReferenceAndObjectReference) {
     EXPECT_EQ(-1, FPDF_StructElement_GetMarkedContentID(object13));
     ASSERT_EQ(1, FPDF_StructElement_CountChildren(object13));
 
-    // TODO(crbug.com/pdfium/672): Fetch this child element.
+    // TODO(crbug.com/42271637): Fetch this child element.
     EXPECT_FALSE(FPDF_StructElement_GetChildAtIndex(object13, 0));
 
     // Second branch. 11 -> 14 -> Inline dict.
@@ -925,7 +925,7 @@ TEST_F(FPDFStructTreeEmbedderTest, MarkedContentReferenceAndObjectReference) {
     EXPECT_EQ(-1, FPDF_StructElement_GetMarkedContentID(object14));
     ASSERT_EQ(2, FPDF_StructElement_CountChildren(object14));
 
-    // TODO(crbug.com/pdfium/672): Object 15 should be at index 1.
+    // TODO(crbug.com/42271637): Object 15 should be at index 1.
     EXPECT_FALSE(FPDF_StructElement_GetChildAtIndex(object14, 1));
     FPDF_STRUCTELEMENT object15 =
         FPDF_StructElement_GetChildAtIndex(object14, 0);
@@ -936,7 +936,7 @@ TEST_F(FPDFStructTreeEmbedderTest, MarkedContentReferenceAndObjectReference) {
     EXPECT_EQ(-1, FPDF_StructElement_GetMarkedContentID(object15));
     ASSERT_EQ(1, FPDF_StructElement_CountChildren(object15));
 
-    // TODO(crbug.com/pdfium/672): Fetch this child element.
+    // TODO(crbug.com/42271637): Fetch this child element.
     EXPECT_FALSE(FPDF_StructElement_GetChildAtIndex(object15, 0));
   }
 }
@@ -951,7 +951,7 @@ TEST_F(FPDFStructTreeEmbedderTest, Bug1768) {
     ASSERT_TRUE(struct_tree);
     ASSERT_EQ(1, FPDF_StructTree_CountChildren(struct_tree.get()));
 
-    // TODO(crbug.com/pdfium/1768): Fetch this child element. Then consider
+    // TODO(crbug.com/42270779): Fetch this child element. Then consider
     // writing more of the test to make sure other elements in the tree can be
     // fetched correctly as well.
     EXPECT_FALSE(FPDF_StructTree_GetChildAtIndex(struct_tree.get(), 0));

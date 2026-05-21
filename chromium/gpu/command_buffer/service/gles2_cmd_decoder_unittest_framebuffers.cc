@@ -982,7 +982,7 @@ TEST_P(GLES2DecoderManualInitTest, ReadPixels2AlignmentWorkaround) {
   EXPECT_CALL(*gl_, PixelStorei(GL_PACK_ALIGNMENT, 1))
       .Times(1)
       .RetiresOnSaturation();
-  UNSAFE_TODO(offset += (kWidth * kBytesPerPixel + kPadding)) * (kHeight - 1);
+  UNSAFE_TODO(offset += (kWidth * kBytesPerPixel + kPadding) * (kHeight - 1));
   EXPECT_CALL(*gl_,
               ReadPixels(0, kHeight - 1, kWidth, 1, kFormat, kType, offset))
       .Times(1)
@@ -3723,7 +3723,7 @@ TEST_P(GLES2DecoderManualInitTest, MESAFramebufferFlipYExtensionEnabled) {
   EXPECT_TRUE(feature_info()->validators()->framebuffer_parameter.IsValid(
       GL_FRAMEBUFFER_FLIP_Y_MESA));
 
-  EXPECT_CALL(*gl_, FramebufferParameteri(_, _, _))
+  EXPECT_CALL(*gl_, FramebufferParameteriMESA(_, _, _))
       .Times(1)
       .RetiresOnSaturation();
 
@@ -3744,7 +3744,7 @@ TEST_P(GLES2DecoderManualInitTest, MESAFramebufferFlipYExtensionDisabled) {
   EXPECT_FALSE(feature_info()->validators()->framebuffer_parameter.IsValid(
       GL_FRAMEBUFFER_FLIP_Y_MESA));
 
-  EXPECT_CALL(*gl_, FramebufferParameteri(_, _, _))
+  EXPECT_CALL(*gl_, FramebufferParameteriMESA(_, _, _))
       .Times(0)
       .RetiresOnSaturation();
 

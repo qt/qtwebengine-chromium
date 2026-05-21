@@ -71,7 +71,8 @@ Decoder::Decoder(const std::string& codec_name) : codec_name_(codec_name) {
 Decoder::~Decoder() = default;
 
 void Decoder::Decode(FrameId frame_id, const Decoder::Buffer& buffer) {
-  TRACE_DEFAULT_SCOPED(TraceCategory::kStandaloneReceiver);
+  TRACE_FLOW_STEP(TraceCategory::kStandaloneReceiver, "Frame.Decode.Begin",
+                  frame_id);
   if (!codec_ && !Initialize()) {
     return;
   }
@@ -116,6 +117,8 @@ void Decoder::Decode(FrameId frame_id, const Decoder::Buffer& buffer) {
       OnError("avcodec_receive_frame", receive_frame_result, decoded_frame_id);
       return;
     }
+    TRACE_FLOW_STEP(TraceCategory::kStandaloneReceiver, "Frame.Decode.End",
+                    decoded_frame_id);
     if (client_) {
       client_->OnFrameDecoded(decoded_frame_id, *decoded_frame_);
     }

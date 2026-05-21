@@ -145,6 +145,7 @@ gles_requestable_extensions = [
     "GL_EXT_shader_io_blocks",
     "GL_EXT_shader_non_constant_global_initializers",
     "GL_EXT_shader_texture_lod",
+    "GL_EXT_shader_texture_samples",
     "GL_EXT_shadow_samplers",
     "GL_EXT_sRGB",
     "GL_EXT_tessellation_shader",
@@ -428,6 +429,9 @@ supported_egl_extensions = [
 check_sorted('supported_egl_extensions', supported_egl_extensions)
 
 supported_cl_extensions = [
+    # OpenCL 1.0
+    "cl_arm_import_memory",
+
     # Since OpenCL 1.1
     "cl_khr_byte_addressable_store",
     "cl_khr_global_int32_base_atomics",

@@ -53,7 +53,7 @@ struct VkRenderer {
 
     int (*get_hw_dev)(VkRenderer *renderer, AVBufferRef **dev);
 
-    int (*display)(VkRenderer *renderer, AVFrame *frame);
+    int (*display)(VkRenderer *renderer, AVFrame *frame, RenderParams *params);
 
     int (*resize)(VkRenderer *renderer, int width, int height);
 
@@ -103,36 +103,6 @@ static void vk_log_cb(void *log_priv, enum pl_log_level level,
     if (level > 0 && level < FF_ARRAY_ELEMS(level_map))
         av_log(log_priv, level_map[level], "%s\n", msg);
 }
-
-// Should keep sync with optional_device_exts inside hwcontext_vulkan.c
-static const char *optional_device_exts[] = {
-    /* Misc or required by other extensions */
-    VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME,
-    VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME,
-    VK_KHR_SAMPLER_YCBCR_CONVERSION_EXTENSION_NAME,
-    VK_EXT_DESCRIPTOR_BUFFER_EXTENSION_NAME,
-    VK_EXT_PHYSICAL_DEVICE_DRM_EXTENSION_NAME,
-    VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME,
-    VK_KHR_COOPERATIVE_MATRIX_EXTENSION_NAME,
-
-    /* Imports/exports */
-    VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME,
-    VK_EXT_EXTERNAL_MEMORY_DMA_BUF_EXTENSION_NAME,
-    VK_EXT_IMAGE_DRM_FORMAT_MODIFIER_EXTENSION_NAME,
-    VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME,
-    VK_EXT_EXTERNAL_MEMORY_HOST_EXTENSION_NAME,
-#ifdef _WIN32
-    VK_KHR_EXTERNAL_MEMORY_WIN32_EXTENSION_NAME,
-    VK_KHR_EXTERNAL_SEMAPHORE_WIN32_EXTENSION_NAME,
-#endif
-
-    /* Video encoding/decoding */
-    VK_KHR_VIDEO_QUEUE_EXTENSION_NAME,
-    VK_KHR_VIDEO_DECODE_QUEUE_EXTENSION_NAME,
-    VK_KHR_VIDEO_DECODE_H264_EXTENSION_NAME,
-    VK_KHR_VIDEO_DECODE_H265_EXTENSION_NAME,
-    "VK_MESA_video_decode_av1",
-};
 
 static inline int enable_debug(const AVDictionary *opt)
 {
@@ -374,6 +344,8 @@ static int create_vk_by_placebo(VkRenderer *renderer,
     int decode_index;
     int decode_count;
     int ret;
+    const char **dev_exts;
+    int num_dev_exts;
 
     ctx->get_proc_addr = SDL_Vulkan_GetVkGetInstanceProcAddr();
 
@@ -388,16 +360,21 @@ static int create_vk_by_placebo(VkRenderer *renderer,
     }
     ctx->inst = ctx->placebo_instance->instance;
 
+    dev_exts = av_vk_get_optional_device_extensions(&num_dev_exts);
+    if (!dev_exts)
+        return AVERROR(ENOMEM);
+
     ctx->placebo_vulkan = pl_vulkan_create(ctx->vk_log, pl_vulkan_params(
             .instance = ctx->placebo_instance->instance,
             .get_proc_addr = ctx->placebo_instance->get_proc_addr,
             .surface = ctx->vk_surface,
             .allow_software = false,
-            .opt_extensions = optional_device_exts,
-            .num_opt_extensions = FF_ARRAY_ELEMS(optional_device_exts),
+            .opt_extensions = dev_exts,
+            .num_opt_extensions = num_dev_exts,
             .extra_queues = VK_QUEUE_VIDEO_DECODE_BIT_KHR,
             .device_name = select_device(opt),
     ));
+    av_free(dev_exts);
     if (!ctx->placebo_vulkan)
         return AVERROR_EXTERNAL;
     ctx->hw_device_ref = av_hwdevice_ctx_alloc(AV_HWDEVICE_TYPE_VULKAN);
@@ -725,11 +702,13 @@ static int convert_frame(VkRenderer *renderer, AVFrame *frame)
     return ret;
 }
 
-static int display(VkRenderer *renderer, AVFrame *frame)
+static int display(VkRenderer *renderer, AVFrame *frame, RenderParams *params)
 {
+    SDL_Rect *rect = &params->target_rect;
     struct pl_swapchain_frame swap_frame = {0};
     struct pl_frame pl_frame = {0};
     struct pl_frame target = {0};
+    struct pl_render_params pl_params = pl_render_default_params;
     RendererContext *ctx = (RendererContext *) renderer;
     int ret = 0;
     struct pl_color_space hint = {0};
@@ -754,8 +733,26 @@ static int display(VkRenderer *renderer, AVFrame *frame)
     }
 
     pl_frame_from_swapchain(&target, &swap_frame);
-    if (!pl_render_image(ctx->renderer, &pl_frame, &target,
-                         &pl_render_default_params)) {
+
+    target.crop = (pl_rect2df){.x0 = rect->x, .x1 = rect->x + rect->w,
+                               .y0 = rect->y, .y1 = rect->y + rect->h};
+    switch (params->video_background_type) {
+    case VIDEO_BACKGROUND_TILES:
+        pl_params.background = PL_CLEAR_TILES;
+        pl_params.tile_size = VIDEO_BACKGROUND_TILE_SIZE * 2;
+        break;
+    case VIDEO_BACKGROUND_COLOR:
+        pl_params.background = PL_CLEAR_COLOR;
+        for (int i = 0; i < 3; i++)
+            pl_params.background_color[i] = params->video_background_color[i] / 255.0;
+        pl_params.background_transparency = (255 - params->video_background_color[3]) / 255.0;
+        break;
+    case VIDEO_BACKGROUND_NONE:
+        pl_frame.repr.alpha = PL_ALPHA_NONE;
+        break;
+    }
+
+    if (!pl_render_image(ctx->renderer, &pl_frame, &target, &pl_params)) {
         av_log(NULL, AV_LOG_ERROR, "pl_render_image failed\n");
         ret = AVERROR_EXTERNAL;
         goto out;
@@ -858,9 +855,9 @@ int vk_renderer_get_hw_dev(VkRenderer *renderer, AVBufferRef **dev)
     return renderer->get_hw_dev(renderer, dev);
 }
 
-int vk_renderer_display(VkRenderer *renderer, AVFrame *frame)
+int vk_renderer_display(VkRenderer *renderer, AVFrame *frame, RenderParams *render_params)
 {
-    return renderer->display(renderer, frame);
+    return renderer->display(renderer, frame, render_params);
 }
 
 int vk_renderer_resize(VkRenderer *renderer, int width, int height)

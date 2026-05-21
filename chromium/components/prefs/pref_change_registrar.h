@@ -7,7 +7,6 @@
 
 #include <functional>
 #include <initializer_list>
-#include <map>
 #include <string>
 #include <string_view>
 
@@ -15,7 +14,7 @@
 #include "base/memory/raw_ptr.h"
 #include "components/prefs/pref_observer.h"
 #include "components/prefs/prefs_export.h"
-#include "components/prefs/transparent_unordered_string_map.h"
+#include "third_party/abseil-cpp/absl/container/flat_hash_map.h"
 
 class PrefService;
 
@@ -82,7 +81,8 @@ class COMPONENTS_PREFS_EXPORT PrefChangeRegistrar final : public PrefObserver {
   void OnPreferenceChanged(PrefService* service,
                            std::string_view pref_name) final;
 
-  using ObserverMap = TransparentUnorderedStringMap<NamedChangeAsViewCallback>;
+  using ObserverMap =
+      absl::flat_hash_map<std::string, NamedChangeAsViewCallback>;
 
   ObserverMap observers_;
   raw_ptr<PrefService, AcrossTasksDanglingUntriaged> service_;

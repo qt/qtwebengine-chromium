@@ -34,7 +34,7 @@ constexpr auto kRetryableHttpErrors =
 bool IsHttpErrorNonRetryable(
     std::optional<net::HttpStatusCode> response_code_optional) {
   return response_code_optional.has_value() &&
-         !base::Contains(kRetryableHttpErrors, response_code_optional.value());
+         !kRetryableHttpErrors.contains(response_code_optional.value());
 }
 }  // namespace
 // static
@@ -164,7 +164,7 @@ void AffiliationFetchThrottler::OnBackoffDelayExpiredCallback() {
 }
 
 void AffiliationFetchThrottler::OnConnectionChanged(
-    network::mojom::ConnectionType type) {
+    net::NetworkChangeNotifier::ConnectionType type) {
   bool old_has_network_connectivity = has_network_connectivity_;
   // We reread the connection type here instead of relying on |type| because
   // NetworkConnectionTracker will call this function an extra time with

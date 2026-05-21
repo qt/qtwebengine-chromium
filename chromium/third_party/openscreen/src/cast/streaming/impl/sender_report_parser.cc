@@ -29,12 +29,12 @@ std::optional<SenderReportParser::SenderReportWithId> SenderReportParser::Parse(
     if (!header) {
       return std::nullopt;
     }
-    buffer.remove_prefix(kRtcpCommonHeaderSize);
+    buffer = buffer.subspan(kRtcpCommonHeaderSize);
     if (static_cast<int>(buffer.size()) < header->payload_size) {
       return std::nullopt;
     }
     auto chunk = buffer.subspan(0, header->payload_size);
-    buffer.remove_prefix(header->payload_size);
+    buffer = buffer.subspan(header->payload_size);
 
     // Only process Sender Reports with a matching SSRC.
     if (header->packet_type != RtcpPacketType::kSenderReport) {

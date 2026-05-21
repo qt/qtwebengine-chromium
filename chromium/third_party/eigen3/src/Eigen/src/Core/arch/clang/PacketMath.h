@@ -56,6 +56,7 @@ struct generic_float_packet_traits : default_packet_traits {
     HasReciprocal = 1,
     HasSin = 1,
     HasCos = 1,
+    HasTan = 1,
     HasACos = 1,
     HasASin = 1,
     HasATan = 1,
@@ -337,7 +338,7 @@ EIGEN_STRONG_INLINE Packet8d pcast_long_to_double(const Packet8l& a) { return re
   }                                                                                                  \
   template <>                                                                                        \
   constexpr EIGEN_STRONG_INLINE PACKET_TYPE ptrue<PACKET_TYPE>(const PACKET_TYPE& /*unused*/) {      \
-    return PACKET_TYPE(0) == PACKET_TYPE(0);                                                         \
+    return numext::bit_cast<PACKET_TYPE>(PACKET_TYPE(0) == PACKET_TYPE(0));                          \
   }                                                                                                  \
   template <>                                                                                        \
   EIGEN_STRONG_INLINE PACKET_TYPE pand<PACKET_TYPE>(const PACKET_TYPE& a, const PACKET_TYPE& b) {    \
@@ -376,9 +377,9 @@ EIGEN_CLANG_PACKET_BITWISE_INT(Packet8l)
 // Bitwise ops for floating point packets
 #define EIGEN_CLANG_PACKET_BITWISE_FLOAT(PACKET_TYPE, CAST_TO_INT, CAST_FROM_INT)                    \
   template <>                                                                                        \
-  EIGEN_STRONG_INLINE PACKET_TYPE ptrue<PACKET_TYPE>(const PACKET_TYPE& /* unused */) {              \
+  constexpr EIGEN_STRONG_INLINE PACKET_TYPE ptrue<PACKET_TYPE>(const PACKET_TYPE& /* unused */) {    \
     using Scalar = detail::scalar_type_of_vector_t<PACKET_TYPE>;                                     \
-    return CAST_FROM_INT(PACKET_TYPE(Scalar(0)) == PACKET_TYPE(Scalar(0)));                          \
+    return numext::bit_cast<PACKET_TYPE>(PACKET_TYPE(Scalar(0)) == PACKET_TYPE(Scalar(0)));          \
   }                                                                                                  \
   template <>                                                                                        \
   EIGEN_STRONG_INLINE PACKET_TYPE pand<PACKET_TYPE>(const PACKET_TYPE& a, const PACKET_TYPE& b) {    \

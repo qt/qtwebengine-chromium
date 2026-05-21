@@ -10,6 +10,16 @@ version <next>:
 - D3D12 H.264 encoder
 - drawvg filter via libcairo
 - ffmpeg CLI tiled HEIF support
+- D3D12 AV1 encoder
+- ProRes Vulkan hwaccel
+- DPX Vulkan hwaccel
+- Rockchip H.264/HEVC hardware encoder
+- Add vf_scale_d3d12 filter
+- JPEG-XS parser
+- JPEG-XS decoder and encoder through libsvtjpegxs
+- JPEG-XS raw bitstream muxer and demuxer
+- IAMF Projection mode Ambisonic Audio Elements muxing and demuxing
+- Add vf_mestimate_d3d12 filter
 
 
 version 8.0:

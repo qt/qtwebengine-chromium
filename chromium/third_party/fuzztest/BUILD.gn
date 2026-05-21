@@ -38,11 +38,6 @@ config("fuzztest_internal_config") {
     "-Wno-c++98-compat-extra-semi",
     "-Wno-deprecated-declarations",
   ]
-
-  # int_utils.h depends on an SSE 4.2 intrinsic.
-  if (current_cpu == "x64") {
-    cflags += [ "-msse4.2" ]
-  }
 }
 
 config("fuzztest_public_config") {
@@ -192,6 +187,8 @@ if (use_centipede) {
       "src/centipede/corpus.cc",
       "src/centipede/corpus_io.cc",
       "src/centipede/coverage.cc",
+      "src/centipede/crash_deduplication.cc",
+      "src/centipede/crash_deduplication.h",
       "src/centipede/distill.cc",
       "src/centipede/distill.h",
       "src/centipede/environment.cc",
@@ -245,6 +242,10 @@ source_set("fuzztest_internal") {
   }
 
   sources = [
+    # Ideally all files in common/ would live in `:common`, but some files
+    # depend on fuzztest/internal.
+    "src/common/crashing_input_filename.cc",
+    "src/common/crashing_input_filename.h",
     "src/fuzztest/domain.h",
     "src/fuzztest/domain_core.h",
     "src/fuzztest/fuzzing_bit_gen.cc",
@@ -311,6 +312,8 @@ source_set("fuzztest_internal") {
     "src/fuzztest/internal/registry.h",
     "src/fuzztest/internal/runtime.cc",
     "src/fuzztest/internal/runtime.h",
+    "src/fuzztest/internal/sanitizer_interface.cc",
+    "src/fuzztest/internal/sanitizer_interface.h",
     "src/fuzztest/internal/seed_seq.cc",
     "src/fuzztest/internal/seed_seq.h",
     "src/fuzztest/internal/serialization.cc",

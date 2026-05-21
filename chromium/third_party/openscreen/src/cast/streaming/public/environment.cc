@@ -93,6 +93,12 @@ int Environment::GetMaxPacketSize() const {
   }
 }
 
+void Environment::SetDscp(UdpSocket::DscpMode mode) {
+  if (socket_) {
+    socket_->SetDscp(mode);
+  }
+}
+
 void Environment::SendPacket(ByteView packet, PacketMetadata metadata) {
   OSP_CHECK(remote_endpoint_.address);
   OSP_CHECK_NE(remote_endpoint_.port, 0);

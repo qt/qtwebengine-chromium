@@ -33,7 +33,41 @@
 FcChar8 *
 FcStrCopy (const FcChar8 *s)
 {
-    return FcStrdup (s);
+#ifdef HAVE_STRDUP
+    return (FcChar8 *)strdup ((const char *)s);
+#else
+    FcChar8 *ret;
+    size_t len = strlen ((const char *)s) + 1;
+
+    ret = malloc (len);
+    if (!ret)
+        return NULL;
+
+    return memcpy (ret, s, len);
+#endif
+}
+
+FcChar8 *
+FcStrDupVaFormat (const char *format, va_list va)
+{
+    char *ret = NULL;
+
+    FcStrDupVapFormat (ret, format, va);
+
+    return (FcChar8 *)ret;
+}
+
+FcChar8 *
+FcStrDupFormat (const char *format, ...)
+{
+    va_list va;
+    char *ret = NULL;
+
+    va_start (va, format);
+    FcStrDupVapFormat (ret, format, va);
+    va_end (va);
+
+    return (FcChar8 *)ret;
 }
 
 static FcChar8 *
@@ -891,6 +925,33 @@ FcStrBufString (FcStrBuf *buf, const FcChar8 *s)
 	if (!FcStrBufChar (buf, c))
 	    return FcFalse;
     return FcTrue;
+}
+
+FcBool
+FcStrBufVaFormat (FcStrBuf *buf, const char *format, va_list va)
+{
+    FcBool ret = FcFalse;
+
+    FcStrBufVapFormat (ret, buf, format, va);
+    if (!ret)
+	buf->failed = FcTrue;
+
+    return ret;
+}
+
+FcBool
+FcStrBufFormat (FcStrBuf *buf, const char *format, ...)
+{
+    va_list va;
+    FcBool ret;
+
+    va_start (va, format);
+    FcStrBufVapFormat (ret, buf, format, va);
+    if (!ret)
+	buf->failed = FcTrue;
+    va_end (va);
+
+    return ret;
 }
 
 FcBool

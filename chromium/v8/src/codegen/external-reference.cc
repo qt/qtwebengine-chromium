@@ -33,6 +33,7 @@
 #include "src/numbers/math-random.h"
 #include "src/objects/elements-kind.h"
 #include "src/objects/elements.h"
+#include "src/objects/module.h"
 #include "src/objects/object-type.h"
 #include "src/objects/objects-inl.h"
 #include "src/objects/ordered-hash-table.h"
@@ -215,10 +216,6 @@ constexpr struct alignas(16) {
 
 // Implementation of ExternalReference
 
-bool ExternalReference::IsIsolateFieldId() const {
-  return (raw_ > 0 && raw_ <= static_cast<Address>(kNumIsolateFieldIds));
-}
-
 Address ExternalReference::address() const {
   // If this CHECK triggers, then an ExternalReference gets created with an
   // IsolateFieldId where the root register is not available, and therefore
@@ -230,8 +227,7 @@ Address ExternalReference::address() const {
 
 int32_t ExternalReference::offset_from_root_register() const {
   CHECK(IsIsolateFieldId());
-  return static_cast<int32_t>(
-      IsolateData::GetOffset(static_cast<IsolateFieldId>(raw_)));
+  return IsolateData::GetOffset(GetIsolateFieldId());
 }
 
 static ExternalReference::Type BuiltinCallTypeForResultSize(int result_size) {
@@ -282,10 +278,6 @@ ExternalReference ExternalReference::isolate_address(Isolate* isolate) {
 
 ExternalReference ExternalReference::isolate_address() {
   return ExternalReference(IsolateFieldId::kIsolateAddress);
-}
-
-ExternalReference ExternalReference::jslimit_address() {
-  return ExternalReference(IsolateFieldId::kJsLimitAddress);
 }
 
 ExternalReference ExternalReference::handle_scope_implementer_address(
@@ -369,10 +361,9 @@ ExternalReference ExternalReference::memory_chunk_metadata_table_address() {
 
 #endif  // V8_ENABLE_SANDBOX
 
-ExternalReference ExternalReference::js_dispatch_table_address() {
-  // TODO(saelo): maybe rename to js_dispatch_table_base_address?
-  return ExternalReference(
-      IsolateGroup::current()->js_dispatch_table()->base_address());
+ExternalReference ExternalReference::js_dispatch_table_address(
+    Isolate* isolate) {
+  return ExternalReference(isolate->js_dispatch_table().base_address());
 }
 
 ExternalReference ExternalReference::interpreter_dispatch_table_address(
@@ -406,9 +397,9 @@ ExternalReference ExternalReference::Create(StatsCounter* counter) {
 }
 
 // static
-ExternalReference ExternalReference::Create(IsolateAddressId id,
+ExternalReference ExternalReference::Create(IsolateFieldId id,
                                             Isolate* isolate) {
-  return ExternalReference(isolate->get_address_from_id(id));
+  return ExternalReference(isolate->isolate_data()->GetAddress(id));
 }
 
 // static
@@ -611,7 +602,9 @@ FUNCTION_REFERENCE(wasm_suspend_stack, wasm::suspend_stack)
 FUNCTION_REFERENCE(wasm_resume_jspi_stack, wasm::resume_jspi_stack)
 FUNCTION_REFERENCE(wasm_resume_wasmfx_stack, wasm::resume_wasmfx_stack)
 FUNCTION_REFERENCE(wasm_suspend_wasmfx_stack, wasm::suspend_wasmfx_stack)
-FUNCTION_REFERENCE(wasm_return_stack, wasm::return_stack)
+FUNCTION_REFERENCE(wasm_return_jspi_stack, wasm::return_jspi_stack)
+FUNCTION_REFERENCE(wasm_return_wasmfx_stack, wasm::return_wasmfx_stack)
+FUNCTION_REFERENCE(wasm_retire_stack, wasm::retire_stack)
 FUNCTION_REFERENCE(wasm_switch_to_the_central_stack,
                    wasm::switch_to_the_central_stack)
 FUNCTION_REFERENCE(wasm_switch_from_the_central_stack,
@@ -896,6 +889,11 @@ ExternalReference ExternalReference::address_of_shared_string_table_flag() {
   return ExternalReference(&v8_flags.shared_string_table);
 }
 
+ExternalReference
+ExternalReference::address_of_track_array_buffer_views_flag() {
+  return ExternalReference(&v8_flags.track_array_buffer_views);
+}
+
 #ifdef V8_ENABLE_CET_SHADOW_STACK
 ExternalReference ExternalReference::address_of_cet_compatible_flag() {
   return ExternalReference(&v8_flags.cet_compatible);
@@ -1087,6 +1085,22 @@ ExternalReference ExternalReference::invoke_accessor_getter_callback() {
   return ExternalReference::Create(&thunk_fun, thunk_type);
 }
 
+ExternalReference
+ExternalReference::invoke_named_interceptor_getter_callback() {
+  Address thunk_address = FUNCTION_ADDR(&InvokeNamedInterceptorGetterCallback);
+  ExternalReference::Type thunk_type = ExternalReference::DIRECT_GETTER_CALL;
+  ApiFunction thunk_fun(thunk_address);
+  return ExternalReference::Create(&thunk_fun, thunk_type);
+}
+
+ExternalReference
+ExternalReference::invoke_named_interceptor_setter_callback() {
+  Address thunk_address = FUNCTION_ADDR(&InvokeNamedInterceptorSetterCallback);
+  ExternalReference::Type thunk_type = ExternalReference::DIRECT_SETTER_CALL;
+  ApiFunction thunk_fun(thunk_address);
+  return ExternalReference::Create(&thunk_fun, thunk_type);
+}
+
 #if V8_TARGET_ARCH_X64
 #define re_stack_check_func RegExpMacroAssemblerX64::CheckStackGuardState
 #elif V8_TARGET_ARCH_IA32
@@ -1233,15 +1247,13 @@ void* libc_memchr(void* string, int character, size_t search_length) {
 FUNCTION_REFERENCE(libc_memchr_function, libc_memchr)
 
 void* libc_memcpy(void* dest, const void* src, size_t n) {
-  base::MemCopy(dest, src, n);
-  return dest;
+  return memcpy(dest, src, n);
 }
 
 FUNCTION_REFERENCE(libc_memcpy_function, libc_memcpy)
 
 void* libc_memmove(void* dest, const void* src, size_t n) {
-  base::MemMove(dest, src, n);
-  return dest;
+  return memmove(dest, src, n);
 }
 
 FUNCTION_REFERENCE(libc_memmove_function, libc_memmove)
@@ -1603,13 +1615,6 @@ ExternalReference::search_string_raw<const base::uc16, const uint8_t>();
 template ExternalReference
 ExternalReference::search_string_raw<const base::uc16, const base::uc16>();
 
-ExternalReference ExternalReference::FromRawAddress(Address address) {
-  if (address <= static_cast<Address>(kNumIsolateFieldIds)) {
-    return ExternalReference(static_cast<IsolateFieldId>(address));
-  }
-  return ExternalReference(address);
-}
-
 ExternalReference ExternalReference::cpu_features() {
   DCHECK(CpuFeatures::initialized_);
   return ExternalReference(&CpuFeatures::supported_);
@@ -1932,15 +1937,15 @@ size_t hash_value(ExternalReference reference) {
 namespace {
 static constexpr const char* GetNameOfIsolateFieldId(IsolateFieldId id) {
   switch (id) {
-#define CASE(CamelName, name)        \
-  case IsolateFieldId::k##CamelName: \
-    return #name;
-    EXTERNAL_REFERENCE_LIST_ISOLATE_FIELDS(CASE)
-#undef CASE
-#define CASE(camel, size, name)  \
-  case IsolateFieldId::k##camel: \
-    return #name;
+#define CASE(CamelName, Size, hacker_name) \
+  case IsolateFieldId::k##CamelName:       \
+    return #hacker_name;
     ISOLATE_DATA_FIELDS(CASE)
+#undef CASE
+#define CASE(CamelName, hacker_name, ...) \
+  case IsolateFieldId::k##CamelName:      \
+    return #hacker_name;
+    ISOLATE_DATA_SUBFIELDS(CASE)
 #undef CASE
     default:
       return "unknown";
@@ -1951,9 +1956,7 @@ static constexpr const char* GetNameOfIsolateFieldId(IsolateFieldId id) {
 std::ostream& operator<<(std::ostream& os, ExternalReference reference) {
   os << reinterpret_cast<const void*>(reference.raw());
   if (reference.IsIsolateFieldId()) {
-    os << " <"
-       << GetNameOfIsolateFieldId(static_cast<IsolateFieldId>(reference.raw()))
-       << ">";
+    os << " <" << GetNameOfIsolateFieldId(reference.GetIsolateFieldId()) << ">";
   } else {
     const Runtime::Function* fn =
         Runtime::FunctionForEntry(reference.address());

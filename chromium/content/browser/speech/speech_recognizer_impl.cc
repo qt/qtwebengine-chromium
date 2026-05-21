@@ -101,12 +101,12 @@ const float kAudioMeterRangeMaxUnclipped = 47.0f / 48.0f;
 // Returns true if more than 5% of the samples are at min or max value.
 bool DetectClipping(const AudioChunk& chunk) {
   const int num_samples = chunk.NumSamples();
-  const int16_t* samples = chunk.SamplesData16();
+  base::span<const int16_t> samples = chunk.SamplesData16AsSpan();
   const int kThreshold = num_samples / 20;
   int clipping_samples = 0;
 
-  for (int i = 0; i < num_samples; ++i) {
-    if (UNSAFE_TODO(samples[i] <= -32767 || samples[i] >= 32767)) {
+  for (const int16_t sample : samples) {
+    if (sample <= -32767 || sample >= 32767) {
       if (++clipping_samples > kThreshold)
         return true;
     }
@@ -156,15 +156,14 @@ scoped_refptr<AudioChunk> SpeechRecognizerImpl::OnDataConverter::Convert(
   // See http://crbug.com/506051 for details.
   audio_converter_.Convert(output_bus_.get());
   // Create an audio chunk based on the converted result.
-  scoped_refptr<AudioChunk> chunk(new AudioChunk(
+  auto chunk = base::MakeRefCounted<AudioChunk>(
       output_parameters_.GetBytesPerBuffer(media::kSampleFormatS16),
-      kNumBitsPerAudioSample / 8));
+      kBytesPerAudioSample);
 
-  static_assert(SpeechRecognizerImpl::kNumBitsPerAudioSample == 16,
-                "kNumBitsPerAudioSample must match interleaving type.");
+  static_assert(SpeechRecognizerImpl::kBytesPerAudioSample == sizeof(int16_t),
+                "kBytesPerAudioSample must match interleaving type.");
   output_bus_->ToInterleaved<media::SignedInt16SampleTypeTraits>(
-      output_bus_->frames(),
-      reinterpret_cast<int16_t*>(chunk->writable_data()));
+      chunk->SamplesData16AsWriteableSpan());
   return chunk;
 }
 
@@ -335,17 +334,33 @@ void SpeechRecognizerImpl::AddAudioFromRenderer(
     return;
   }
 
-  std::unique_ptr<media::AudioBus> data =
-      AudioBus::Create(buffer->channel_count, buffer->frame_count);
+  if (buffer->channel_count <= 0 || buffer->frame_count <= 0) {
+    mojo::ReportBadMessage("AudioDataS16: non-positive dimensions");
+    return;
+  }
 
-  data->FromInterleaved<media::SignedInt16SampleTypeTraits>(
-      buffer->data.data(), buffer->frame_count);
+  auto total_samples =
+      base::CheckMul(buffer->channel_count, buffer->frame_count);
 
-  scoped_refptr<AudioChunk> chunk(new AudioChunk(
-      buffer->channel_count * buffer->frame_count * kNumBitsPerAudioSample / 8,
-      kNumBitsPerAudioSample / 8));
-  data->ToInterleaved<media::SignedInt16SampleTypeTraits>(
-      data->frames(), reinterpret_cast<int16_t*>(chunk->writable_data()));
+  if (!total_samples.IsValid() ||
+      buffer->data.size() != total_samples.ValueOrDie<size_t>()) {
+    mojo::ReportBadMessage("AudioDataS16: size mismatch");
+    return;
+  }
+
+  // If ever the sample format changed to `float`, we would have to clip and
+  // sanitize data coming from the renderer. `int16_t` doesn't need it, since it
+  // cannot represent invalid values or values outside the [-1.0, 1.0] range.
+  static_assert(SpeechRecognizerImpl::kBytesPerAudioSample == sizeof(int16_t),
+                "`AddAudioFromRenderer()` expects `int16_t`.");
+
+  const auto chunk_size =
+      base::CheckMul(total_samples, kBytesPerAudioSample).ValueOrDie<size_t>();
+  auto chunk =
+      base::MakeRefCounted<AudioChunk>(chunk_size, kBytesPerAudioSample);
+
+  chunk->SamplesData16AsWriteableSpan().copy_from(buffer->data);
+
   FSMEventArgs event_args(EVENT_AUDIO_DATA);
   event_args.audio_chunk = std::move(chunk);
   GetIOThreadTaskRunner({})->PostTask(

@@ -111,6 +111,9 @@ Error Receiver::ReportPlayoutEvent(FrameId frame_id,
                 playout_delay)});
   }
 
+  TRACE_FLOW_END_WITH_TIME(TraceCategory::kReceiver, "Frame.PlayedOut",
+                           frame_id, playout_time);
+
   return Error::None();
 }
 
@@ -143,17 +146,20 @@ int Receiver::AdvanceToNextFrame() {
     if (entry.collector.is_complete()) {
       const EncryptedFrame& encrypted_frame =
           entry.collector.PeekAtAssembledFrame();
-      if (f == immediate_next_frame) {  // Typical case.
-        return FrameCrypto::GetPlaintextSize(encrypted_frame);
-      }
-      if (encrypted_frame.dependency != EncodedFrame::Dependency::kDependent) {
+
+      const bool is_next_frame = f == immediate_next_frame;
+      const bool is_independent =
+          encrypted_frame.dependency != EncodedFrame::Dependency::kDependent;
+      const bool is_ready = is_next_frame || is_independent;
+      if (is_ready) {
         // Found a frame after skipping past some frames. Drop the ones being
         // skipped, advancing `last_frame_consumed_` before returning.
-        DropAllFramesBefore(f);
+        if (!is_next_frame) {
+          DropAllFramesBefore(f);
+        }
+        TRACE_FLOW_STEP(TraceCategory::kReceiver, "Frame.Ready", f);
         return FrameCrypto::GetPlaintextSize(encrypted_frame);
       }
-      // Conclusion: The frame in the current queue entry is complete, but
-      // depends on a prior incomplete frame. Continue scanning...
     }
 
     // Do not consider skipping past this frame if its estimated capture time is
@@ -185,6 +191,8 @@ EncodedFrame Receiver::ConsumeNextFrame(ByteBuffer buffer) {
   // `last_frame_consumed_` is set to one before the frame to be consumed here.
   const FrameId frame_id = last_frame_consumed_ + 1;
   OSP_CHECK_LE(frame_id, checkpoint_frame());
+
+  TRACE_FLOW_STEP(TraceCategory::kReceiver, "Frame.Consumed", frame_id);
 
   // Decrypt the frame, populating the given output `frame`.
   PendingFrame& entry = GetQueueEntry(frame_id);
@@ -336,6 +344,8 @@ void Receiver::OnReceivedRtpPacket(Clock::time_point arrival_time,
   if (!collector.is_complete()) {
     return;  // Wait for the rest of the packets to come in.
   }
+  TRACE_FLOW_STEP(TraceCategory::kReceiver, "Frame.Complete", part->frame_id);
+
   const EncryptedFrame& encrypted_frame = collector.PeekAtAssembledFrame();
 
   // Whenever a key frame has been received, the decoder has what it needs to
@@ -364,10 +374,14 @@ void Receiver::OnReceivedRtcpPacket(Clock::time_point arrival_time,
   std::optional<SenderReportParser::SenderReportWithId> parsed_report =
       rtcp_parser_.Parse(packet);
   if (!parsed_report) {
+    TRACE_SCOPED(TraceCategory::kReceiver, "ReceivedInvalidRtcpReport");
     RECEIVER_LOG(WARN) << "Parsing of " << packet.size()
                        << " bytes as an RTCP packet failed.";
     return;
   }
+
+  TRACE_DEFAULT_SCOPED1(TraceCategory::kReceiver, "packet_id",
+                        parsed_report->report_id);
   last_sender_report_ = std::move(parsed_report);
   last_sender_report_arrival_time_ = arrival_time;
 

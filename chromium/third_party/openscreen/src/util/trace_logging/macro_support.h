@@ -27,17 +27,6 @@
 #define TRACE_INTERNAL_UNIQUE_VAR_NAME(a) \
   TRACE_INTERNAL_CONCAT_CONST(a, __LINE__)
 
-// Because we need to suppress unused variables, and this code is used
-// repeatedly in below macros, define helper macros to do this on a per-compiler
-// basis until we begin using C++ 17 which supports [[maybe_unused]] officially.
-#if defined(__clang__)
-#define TRACE_INTERNAL_IGNORE_UNUSED_VAR [[maybe_unused]]
-#elif defined(__GNUC__)
-#define TRACE_INTERNAL_IGNORE_UNUSED_VAR __attribute__((unused))
-#else
-#define TRACE_INTERNAL_IGNORE_UNUSED_VAR [[maybe_unused]]
-#endif  // defined(__clang__)
-
 namespace openscreen::internal {
 
 inline bool IsTraceLoggingEnabled(TraceCategory category) {
@@ -54,7 +43,7 @@ inline bool IsTraceLoggingEnabled(TraceCategory category) {
 #define TRACE_SET_HIERARCHY_INTERNAL(line, ids)                            \
   alignas(32) uint8_t TRACE_INTERNAL_CONCAT_CONST(                         \
       tracing_storage, line)[sizeof(openscreen::internal::TraceIdSetter)]; \
-  TRACE_INTERNAL_IGNORE_UNUSED_VAR                                         \
+  [[maybe_unused]]                                                         \
   const auto TRACE_INTERNAL_UNIQUE_VAR_NAME(trace_ref_) =                  \
       TRACE_IS_ENABLED(openscreen::TraceCategory::kAny)                    \
           ? openscreen::internal::TraceInstanceHelper<                     \
@@ -68,7 +57,7 @@ inline bool IsTraceLoggingEnabled(TraceCategory category) {
   alignas(32) uint8_t TRACE_INTERNAL_CONCAT_CONST(                         \
       tracing_storage,                                                     \
       line)[sizeof(openscreen::internal::SynchronousTraceLogger)];         \
-  TRACE_INTERNAL_IGNORE_UNUSED_VAR                                         \
+  [[maybe_unused]]                                                         \
   const auto TRACE_INTERNAL_UNIQUE_VAR_NAME(trace_ref_) =                  \
       TRACE_IS_ENABLED(category)                                           \
           ? openscreen::internal::TraceInstanceHelper<                     \
@@ -82,7 +71,7 @@ inline bool IsTraceLoggingEnabled(TraceCategory category) {
   alignas(32) uint8_t TRACE_INTERNAL_CONCAT_CONST(                        \
       temp_storage,                                                       \
       line)[sizeof(openscreen::internal::AsynchronousTraceLogger)];       \
-  TRACE_INTERNAL_IGNORE_UNUSED_VAR                                        \
+  [[maybe_unused]]                                                        \
   const auto TRACE_INTERNAL_UNIQUE_VAR_NAME(trace_ref_) =                 \
       TRACE_IS_ENABLED(category)                                          \
           ? openscreen::internal::TraceInstanceHelper<                    \

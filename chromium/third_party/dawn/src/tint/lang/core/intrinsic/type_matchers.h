@@ -51,11 +51,11 @@
 #include "src/tint/lang/core/type/multisampled_texture.h"
 #include "src/tint/lang/core/type/pointer.h"
 #include "src/tint/lang/core/type/reference.h"
-#include "src/tint/lang/core/type/resource_binding.h"
 #include "src/tint/lang/core/type/sampled_texture.h"
 #include "src/tint/lang/core/type/storage_texture.h"
 #include "src/tint/lang/core/type/string.h"
 #include "src/tint/lang/core/type/texture_dimension.h"
+#include "src/tint/lang/core/type/u16.h"
 #include "src/tint/lang/core/type/u32.h"
 #include "src/tint/lang/core/type/u64.h"
 #include "src/tint/lang/core/type/u8.h"
@@ -127,6 +127,14 @@ inline const type::U8* BuildU8(intrinsic::MatchState& state, const type::Type*) 
 
 inline bool MatchU8(intrinsic::MatchState&, const type::Type* ty) {
     return ty->IsAnyOf<intrinsic::Any, type::U8, type::AbstractInt>();
+}
+
+inline const type::U16* BuildU16(intrinsic::MatchState& state, const type::Type*) {
+    return state.types.u16();
+}
+
+inline bool MatchU16(intrinsic::MatchState&, const type::Type* ty) {
+    return ty->IsAnyOf<intrinsic::Any, type::U16, type::AbstractInt>();
 }
 
 inline bool MatchVec(intrinsic::MatchState&,
@@ -311,6 +319,40 @@ inline const type::SubgroupMatrix* BuildSubgroupMatrix(intrinsic::MatchState& st
                                        A.Value(), B.Value());
 }
 
+inline bool MatchUnsizedBuffer(intrinsic::MatchState&, const type::Type* ty) {
+    if (ty->Is<intrinsic::Any>()) {
+        return true;
+    }
+    if (auto* b = ty->As<type::Buffer>()) {
+        return b->Size() == 0;
+    }
+    return false;
+}
+
+inline const type::Buffer* BuildUnsizedBuffer(intrinsic::MatchState& state, const type::Type*) {
+    return state.types.unsized_buffer();
+}
+
+inline bool MatchBuffer(intrinsic::MatchState&, const type::Type* ty, intrinsic::Number& N) {
+    if (ty->Is<intrinsic::Any>()) {
+        N = intrinsic::Number::any;
+        return true;
+    }
+    if (auto* b = ty->As<type::Buffer>()) {
+        if (b->Size() != 0) {
+            N = b->Size();
+            return true;
+        }
+    }
+    return false;
+}
+
+inline const type::Buffer* BuildBuffer(intrinsic::MatchState& state,
+                                       const type::Type*,
+                                       intrinsic::Number N) {
+    return state.types.buffer(N.Value());
+}
+
 inline bool MatchArray(intrinsic::MatchState&,
                        const type::Type* ty,
                        const type::Type*& T,
@@ -357,22 +399,6 @@ inline const type::Array* BuildRuntimeArray(intrinsic::MatchState& state,
                                             const type::Type*,
                                             const type::Type* el) {
     return state.types.runtime_array(el);
-}
-
-inline const type::ResourceBinding* BuildResourceBinding(intrinsic::MatchState& state,
-                                                         const type::Type*) {
-    return state.types.resource_binding();
-}
-
-inline bool MatchResourceBinding(intrinsic::MatchState&, const type::Type* ty) {
-    if (ty->Is<intrinsic::Any>()) {
-        return true;
-    }
-
-    if (ty->Is<type::ResourceBinding>()) {
-        return true;
-    }
-    return false;
 }
 
 inline const type::BindingArray* BuildBindingArray(intrinsic::MatchState& state,

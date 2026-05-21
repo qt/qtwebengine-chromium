@@ -8,6 +8,7 @@
 
 #include "base/compiler_specific.h"
 #include "base/functional/bind.h"
+#include "base/functional/callback_helpers.h"
 #include "base/memory/ptr_util.h"
 #include "base/run_loop.h"
 #include "base/test/task_environment.h"
@@ -34,15 +35,12 @@ namespace audio {
 
 namespace {
 
-constexpr uint8_t kAudioByteData = 127;
 constexpr float kAudioData = 0.618;
 constexpr base::TimeDelta kDelay = base::Microseconds(123);
 constexpr char kDeviceId[] = "testdeviceid";
 constexpr int kFrames = 789;
 constexpr char kNonDefaultDeviceId[] = "valid-nondefault-device-id";
 constexpr base::TimeDelta kAuthTimeout = base::Milliseconds(10000);
-constexpr int kBitstreamFrames = 101;
-constexpr size_t kBitstreamDataSize = 512;
 
 class MockRenderCallback : public media::AudioRendererSink::RenderCallback {
  public:
@@ -242,8 +240,8 @@ TEST_F(AudioServiceOutputDeviceTest, MAYBE_VerifyDataFlow) {
         .WillOnce(WithArg<3>([](media::AudioBus* client_bus) -> int {
           // Place some test data in the bus so that we can check that it was
           // copied to the audio service side.
-          std::ranges::fill(client_bus->channel_span(0), kAudioData);
-          std::ranges::fill(client_bus->channel_span(1), kAudioData);
+          std::ranges::fill(client_bus->channel(0), kAudioData);
+          std::ranges::fill(client_bus->channel(1), kAudioData);
           return client_bus->frames();
         }));
     env.reader->RequestMoreData(kDelay, env.time_stamp, glitch_info);
@@ -254,13 +252,14 @@ TEST_F(AudioServiceOutputDeviceTest, MAYBE_VerifyDataFlow) {
       return sample == kAudioData;
     };
 
-    EXPECT_TRUE(std::ranges::all_of(test_bus->channel_span(0), samples_match));
-    EXPECT_TRUE(std::ranges::all_of(test_bus->channel_span(1), samples_match));
+    EXPECT_TRUE(std::ranges::all_of(test_bus->channel(0), samples_match));
+    EXPECT_TRUE(std::ranges::all_of(test_bus->channel(1), samples_match));
   }
 }
 
+#if BUILDFLAG(ENABLE_PASSTHROUGH_AUDIO_CODECS)
 TEST_F(AudioServiceOutputDeviceTest, CreateBitStreamStream) {
-  const int kAudioParameterFrames = 4321;
+  constexpr int kAudioParameterFrames = 4321;
   media::AudioParameters params(media::AudioParameters::AUDIO_BITSTREAM_EAC3,
                                 media::ChannelLayoutConfig::Stereo(), 48000,
                                 kAudioParameterFrames);
@@ -293,6 +292,9 @@ TEST_F(AudioServiceOutputDeviceTest, CreateBitStreamStream) {
   // At this point, the callback thread should be running. Send some data over
   // and verify that it's propagated to |env.callback|. Do it a few times.
   auto test_bus = media::AudioBus::Create(params);
+  constexpr uint8_t kAudioByteData = 127;
+  constexpr size_t kBitstreamDataSize = 512;
+  constexpr int kBitstreamFrames = 101;
   for (int i = 0; i < 10; ++i) {
     test_bus->Zero();
     media::AudioGlitchInfo glitch_info{.duration = base::Milliseconds(100),
@@ -326,6 +328,7 @@ TEST_F(AudioServiceOutputDeviceTest, CreateBitStreamStream) {
   EXPECT_CALL(*ipc, CloseStream());
   task_env_.RunUntilIdle();
 }
+#endif
 
 TEST_F(AudioServiceOutputDeviceTest, CreateNondefaultDevice) {
   auto params = media::AudioParameters::UnavailableDeviceParams();

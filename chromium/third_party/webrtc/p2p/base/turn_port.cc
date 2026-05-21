@@ -92,6 +92,8 @@ static int GetRelayPreference(ProtocolType proto) {
       return ICE_TYPE_PREFERENCE_RELAY_TCP;
     case PROTO_TLS:
       return ICE_TYPE_PREFERENCE_RELAY_TLS;
+    case PROTO_DTLS:
+      return ICE_TYPE_PREFERENCE_RELAY_DTLS;
     default:
       RTC_DCHECK(proto == PROTO_UDP);
       return ICE_TYPE_PREFERENCE_RELAY_UDP;
@@ -297,6 +299,7 @@ TurnPort::~TurnPort() {
 
   if (socket_) {
     socket_->UnsubscribeSentPacket(this);
+    socket_->UnsubscribeReadyToSend(this);
     socket_->UnsubscribeConnect(this);
     socket_->UnsubscribeCloseEvent(this);
   }
@@ -437,6 +440,23 @@ bool TurnPort::CreateTurnClientSocket() {
         env(), SocketAddress(Network()->GetBestIP(), 0), min_port(),
         max_port());
     socket_ = owned_socket_.get();
+  } else if (server_address_.proto == PROTO_DTLS) {
+    RTC_DCHECK(!SharedSocket());
+    int opts = PacketSocketFactory::OPT_STUN;
+    if (tls_cert_policy_ == TlsCertPolicy::TLS_CERT_POLICY_INSECURE_NO_CHECK) {
+      opts |= PacketSocketFactory::OPT_DTLS_INSECURE;
+    } else {
+      opts |= PacketSocketFactory::OPT_DTLS;
+    }
+    PacketSocketTcpOptions udp_options;
+    udp_options.opts = opts;
+    udp_options.tls_alpn_protocols = tls_alpn_protocols_;
+    udp_options.tls_elliptic_curves = tls_elliptic_curves_;
+    udp_options.tls_cert_verifier = tls_cert_verifier_;
+    owned_socket_ = socket_factory()->CreateClientUdpSocket(
+        env(), SocketAddress(Network()->GetBestIP(), 0),
+        server_address_.address, min_port(), max_port(), udp_options);
+    socket_ = owned_socket_.get();
   } else if (server_address_.proto == PROTO_TCP ||
              server_address_.proto == PROTO_TLS) {
     RTC_DCHECK(!SharedSocket());
@@ -497,12 +517,14 @@ bool TurnPort::CreateTurnClientSocket() {
         }
       });
 
-  // TCP port is ready to send stun requests after the socket is connected,
-  // while UDP port is ready to do so once the socket is created.
+  // TCP and UDP with DTLS port is ready to send stun requests after the socket
+  // is connected, while pure UDP port is ready to do so once the socket is
+  // created.
   if (server_address_.proto == PROTO_TCP ||
-      server_address_.proto == PROTO_TLS) {
+      server_address_.proto == PROTO_TLS ||
+      server_address_.proto == PROTO_DTLS) {
     socket_->SubscribeConnect(
-        [this](AsyncPacketSocket* socket) { OnSocketConnect(socket); });
+        this, [this](AsyncPacketSocket* socket) { OnSocketConnect(socket); });
     socket_->SubscribeCloseEvent(
         this, [this](AsyncPacketSocket* s, int err) { OnSocketClose(s, err); });
   } else {
@@ -515,7 +537,8 @@ void TurnPort::OnSocketConnect(AsyncPacketSocket* socket) {
   // This slot should only be invoked if we're using a connection-oriented
   // protocol.
   RTC_DCHECK(server_address_.proto == PROTO_TCP ||
-             server_address_.proto == PROTO_TLS);
+             server_address_.proto == PROTO_TLS ||
+             server_address_.proto == PROTO_DTLS);
 
   // Do not use this port if the socket bound to an address not associated with
   // the desired network interface. This is seen in Chrome, where TCP sockets
@@ -569,7 +592,7 @@ void TurnPort::OnSocketConnect(AsyncPacketSocket* socket) {
 
   RTC_LOG(LS_INFO) << "TurnPort connected to "
                    << socket->GetRemoteAddress().ToSensitiveString()
-                   << " using tcp.";
+                   << " using tcp or dtls.";
   SendRequest(new TurnAllocateRequest(this), 0);
 }
 
@@ -864,7 +887,8 @@ void TurnPort::ResolveTurnAddress(const SocketAddress& address) {
     // any).
     auto& result = resolver_->result();
     if (result.GetError() != 0 && (server_address_.proto == PROTO_TCP ||
-                                   server_address_.proto == PROTO_TLS)) {
+                                   server_address_.proto == PROTO_TLS ||
+                                   server_address_.proto == PROTO_DTLS)) {
       if (!CreateTurnClientSocket()) {
         OnAllocateError(STUN_ERROR_SERVER_NOT_REACHABLE,
                         "TURN host lookup received error.");
@@ -1015,10 +1039,11 @@ void TurnPort::TryAlternateServer() {
     // realm and nonce values.
     SendRequest(new TurnAllocateRequest(this), 0);
   } else {
-    // Since it's TCP, we have to delete the connected socket and reconnect
+    // Since it's not UDP, we have to delete the connected socket and reconnect
     // with the alternate server. PrepareAddress will send stun binding once
     // the new socket is connected.
-    RTC_DCHECK(server_address().proto == PROTO_TCP ||
+    RTC_DCHECK(server_address().proto == PROTO_DTLS ||
+               server_address().proto == PROTO_TCP ||
                server_address().proto == PROTO_TLS);
     RTC_DCHECK(!SharedSocket());
     owned_socket_ = nullptr;
@@ -1296,6 +1321,10 @@ std::string TurnPort::ReconstructServerUrl() {
     case PROTO_SSLTCP:
     case PROTO_TLS:
       scheme = "turns";
+      break;
+    case PROTO_DTLS:
+      scheme = "turns";
+      transport = "udp";
       break;
     case PROTO_UDP:
       transport = "udp";

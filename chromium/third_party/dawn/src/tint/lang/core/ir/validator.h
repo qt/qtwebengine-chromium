@@ -44,6 +44,8 @@ namespace tint::core::ir {
 enum class Capability : uint8_t {
     /// Allows 8-bit integer types.
     kAllow8BitIntegers,
+    /// Allows 16-bit integer types.
+    kAllow16BitIntegers,
     /// Allows 64-bit integer types.
     kAllow64BitIntegers,
     /// Allows ClipDistances on f32 and vecN<f32> parameters
@@ -56,14 +58,10 @@ enum class Capability : uint8_t {
     kAllowMultipleEntryPoints,
     /// Allow overrides
     kAllowOverrides,
-    /// Allows pointers and handle addressspace variables inside structures.
-    kAllowPointersAndHandlesInStructures,
     /// Allows ref types
     kAllowRefTypes,
     /// Allows access instructions to create pointers to vector elements.
     kAllowVectorElementPointer,
-    /// Allows private address space variables in function scopes.
-    kAllowPrivateVarsInFunctions,
     /// Allows phony assignment instructions to be used.
     kAllowPhonyInstructions,
     /// Allows lets to have any type, used by MSL backend for module scoped vars
@@ -71,9 +69,6 @@ enum class Capability : uint8_t {
     /// Allows input_attachment_index to be associated with any type, used by
     /// SPIRV backend for spirv.image.
     kAllowAnyInputAttachmentIndexType,
-    /// Allows workgroup address space pointers as entry point inputs. Used by
-    /// the MSL backend.
-    kAllowWorkspacePointerInputToEntryPoint,
     /// Allows binding points to be non-unique. Used after BindingRemapper is
     /// invoked by MSL & GLSL backends.
     kAllowDuplicateBindings,
@@ -85,9 +80,6 @@ enum class Capability : uint8_t {
     kAllowStructMatrixDecorations,
     /// Allows @location on structs, matrices, and arrays that have numeric elements
     kAllowLocationForNumericElements,
-    /// Allows resource_binding to be used. Should not be present after
-    /// core::core::ir::transform::ResourceBinding runs
-    kAllowResourceBinding,
     /// Allows a pointer to a handle type
     kAllowPointerToHandle,
     /// Allows ShaderIO specific features, like blend_src on non-struct members.
@@ -95,6 +87,13 @@ enum class Capability : uint8_t {
     /// other.
     /// TODO(448417342): Validate in/out address space usage based on this capability
     kLoosenValidationForShaderIO,
+    /// Allows the PointSize builtin to be used.
+    kAllowPointSizeBuiltin,
+    /// Allows MSL specific entry point variance.
+    /// Specifically pointers and handle address space variables inside structures, private address
+    /// space variables in function scopes, workgroup address space pointers as entry point inputs,
+    /// binding point on non-module scope variables in entry point interface.
+    kMslAllowEntryPointInterface,
 };
 
 /// Capabilities is a set of Capability
@@ -116,26 +115,6 @@ Result<SuccessType> ValidateAndDumpIfNeeded(const Module& ir,
                                             const char* msg,
                                             Capabilities capabilities = {},
                                             std::string_view timing = "before");
-
-// Scans the given entry point referenced variables for user-declared immediate data (module-scope
-// `var<immediate>` declarations). Returns Success if there is at most one.
-// On success, the returned uint32_t is the 4-byte rounded-up size of the
-// user-declared immediate data (or 0 if none present). Fails if multiple
-// immediates are declared.
-Result<uint32_t> ValidateSingleUserImmediate(const Module& ir, core::ir::Function* ep);
-
-// Immediate data validation helpers
-struct ImmediateInfo {
-    uint32_t offset = 0;
-    uint32_t size = 0;
-};
-
-// Validates internal (implementation-provided) immediates. Offsets must not overlap each other
-// or the user-declared immediate data (if present). `user_immediate_data_size` is the 4-byte
-// rounded size of the user immediate block, or 0 if none exists.
-Result<SuccessType> ValidateInternalImmediateOffset(uint32_t max_immediate_block_size,
-                                                    uint32_t user_immediate_data_size,
-                                                    const std::vector<ImmediateInfo>& immediates);
 
 }  // namespace tint::core::ir
 

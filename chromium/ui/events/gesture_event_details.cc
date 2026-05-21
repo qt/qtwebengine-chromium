@@ -4,12 +4,22 @@
 
 #include "ui/events/gesture_event_details.h"
 
+#include <algorithm>
 #include <ostream>
+#include <utility>
 
 #include "base/check_op.h"
-#include "base/compiler_specific.h"
+#include "base/containers/span.h"
 #include "base/notreached.h"
-#include "base/types/cxx23_to_underlying.h"
+
+// Since ui::GestureEventDetails::Details is a union structure that corresponds
+// to only one EventType, allow conversion to a byte span to avoid using memset
+// and memcmp.
+namespace base {
+template <>
+inline constexpr bool
+    kCanSafelyConvertToByteSpan<ui::GestureEventDetails::Details> = true;
+}
 
 namespace ui {
 
@@ -67,8 +77,17 @@ GestureEventDetails::GestureEventDetails(ui::EventType type,
 
     default:
       NOTREACHED() << "Invalid event type for constructor: "
-                   << base::to_underlying(type);
+                   << std::to_underlying(type);
   }
+}
+
+bool GestureEventDetails::operator==(const GestureEventDetails& other) const {
+  return type_ == other.type_ &&
+         base::byte_span_from_ref(data_) ==
+             base::byte_span_from_ref(other.data_) &&
+         device_type_ == other.device_type_ &&
+         touch_points_ == other.touch_points_ &&
+         bounding_box_ == other.bounding_box_;
 }
 
 GestureEventDetails::GestureEventDetails(ui::EventType type,
@@ -95,8 +114,8 @@ GestureEventDetails::GestureEventDetails(ui::EventType type,
     case ui::EventType::kGestureSwipe:
     case ui::EventType::kGesturePinchUpdate:
       DCHECK_EQ(type, other.type()) << " - Invalid gesture conversion from "
-                                    << base::to_underlying(other.type())
-                                    << " to " << base::to_underlying(type);
+                                    << std::to_underlying(other.type())
+                                    << " to " << std::to_underlying(type);
       break;
     default:
       break;
@@ -104,7 +123,7 @@ GestureEventDetails::GestureEventDetails(ui::EventType type,
 }
 
 GestureEventDetails::Details::Details() {
-  UNSAFE_TODO(memset(this, 0, sizeof(Details)));
+  std::ranges::fill(base::byte_span_from_ref(*this), 0);
 }
 
 }  // namespace ui

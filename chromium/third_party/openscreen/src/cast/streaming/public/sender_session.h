@@ -123,6 +123,12 @@ class SenderSession final {
     // Whether or not the android RTP value hack should be used (for legacy
     // android devices). For more information, see https://crbug.com/631828.
     bool use_android_rtp_hack = true;
+
+    // If true, allows the sender to negotiate DSCP marking for RTP and RTCP
+    // packets, which can help provide Quality-of-Service in some
+    // environments. This feature is off by default to allow embedders to opt
+    // in and experiment as desired.
+    bool enable_dscp = false;
   };
 
   // The SenderSession assumes that the passed in client, environment, and

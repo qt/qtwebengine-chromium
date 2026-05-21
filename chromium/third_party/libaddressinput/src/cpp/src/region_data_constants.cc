@@ -225,6 +225,7 @@ const RegionData kRegionData[] = {
       R"("languages":"dz")"
       "}"},
   {"BV", "{"
+      R"("languages":"no")"
       "}"},
   {"BW", "{"
       R"("languages":"en~tn")"
@@ -242,7 +243,7 @@ const RegionData kRegionData[] = {
       R"("fmt":"%N%n%O%n%A%n%C %S %Z",)"
       R"("require":"ACSZ",)"
       R"("zipex":"H3Z 2Y7,V8X 3X4,T0L 1K0,T0H 1A0,K1A 0B1",)"
-      R"("posturl":"https://www.canadapost.ca/cpo/mc/personal/postalcode/fpc.jsf",)"
+      R"("posturl":"https://www.canadapost-postescanada.ca/cpo/mc/personal/postalcode/fpc.jsf",)"
       R"("languages":"en~fr")"
       "}"},
   {"CC", "{"
@@ -251,10 +252,10 @@ const RegionData kRegionData[] = {
       R"("languages":"en")"
       "}"},
   {"CD", "{"
-      R"("languages":"sw~lua~fr~ln~kg")"
+      R"("languages":"fr~sw~lua~ln~kg")"
       "}"},
   {"CF", "{"
-      R"("languages":"fr~sg")"
+      R"("languages":"sg~fr")"
       "}"},
   {"CG", "{"
       R"("languages":"fr")"
@@ -344,7 +345,7 @@ const RegionData kRegionData[] = {
       R"("languages":"de~frr")"
       "}"},
   {"DJ", "{"
-      R"("languages":"ar~fr")"
+      R"("languages":"fr~ar")"
       "}"},
   {"DK", "{"
       R"("fmt":"%N%n%O%n%A%n%Z %C",)"
@@ -434,7 +435,7 @@ const RegionData kRegionData[] = {
   {"FO", "{"
       R"("fmt":"%N%n%O%n%A%nFO%Z %C",)"
       R"("zipex":"100",)"
-      R"("posturl":"https://www.posta.fo/fo/forsida/finn-postnr-stad/",)"
+      R"("posturl":"https://posta.fo/en/private/send-receive/postcodes",)"
       R"("languages":"fo")"
       "}"},
   {"FR", "{"
@@ -521,7 +522,8 @@ const RegionData kRegionData[] = {
   {"GS", "{"
       R"("fmt":"%N%n%O%n%A%n%n%C%n%Z",)"
       R"("require":"ACZ",)"
-      R"("zipex":"SIQQ 1ZZ")"
+      R"("zipex":"SIQQ 1ZZ",)"
+      R"("languages":"en")"
       "}"},
   {"GT", "{"
       R"("fmt":"%N%n%O%n%A%n%Z- %C",)"
@@ -646,7 +648,7 @@ const RegionData kRegionData[] = {
       R"("fmt":"%N%n%O%n%A%n%Z %C %S",)"
       R"("require":"ACSZ",)"
       R"("zipex":"00144,47037,39049",)"
-      R"("posturl":"http://www.poste.it/online/cercacap/",)"
+      R"("posturl":"https://www.poste.it/cerca/index.html#/risultati-cerca-cap/",)"
       R"("languages":"it")"
       "}"},
   {"JE", "{"
@@ -698,7 +700,7 @@ const RegionData kRegionData[] = {
       R"("languages":"en~gil")"
       "}"},
   {"KM", "{"
-      R"("languages":"ar~fr~zdj~wni")"
+      R"("languages":"ar~zdj~wni~fr")"
       "}"},
   {"KN", "{"
       R"("fmt":"%N%n%O%n%A%n%C, %S",)"
@@ -863,7 +865,7 @@ const RegionData kRegionData[] = {
       R"("fmt":"%A%n%O%n%N",)"
       R"("lfmt":"%N%n%O%n%A",)"
       R"("require":"A",)"
-      R"("languages":"zh-Hant~pt")"
+      R"("languages":"zh-Hant~yue~pt")"
       "}"},
   {"MP", "{"
       R"("fmt":"%N%n%O%n%A%n%C %S %Z",)"
@@ -896,7 +898,7 @@ const RegionData kRegionData[] = {
   {"MU", "{"
       R"("fmt":"%N%n%O%n%A%n%Z%n%C",)"
       R"("zipex":"42602",)"
-      R"("languages":"en~fr")"
+      R"("languages":"fr~en")"
       "}"},
   {"MV", "{"
       R"("fmt":"%N%n%O%n%A%n%C %Z",)"
@@ -971,7 +973,7 @@ const RegionData kRegionData[] = {
       R"("fmt":"%O%n%N%n%A%n%Z %C",)"
       R"("require":"ACZ",)"
       R"("zipex":"1234 AB,2490 AA",)"
-      R"("posturl":"http://www.postnl.nl/voorthuis/",)"
+      R"("posturl":"https://www.postnl.nl/en/find-a-postcode/",)"
       R"("languages":"nl~fy")"
       "}"},
   {"NO", "{"
@@ -1198,7 +1200,7 @@ const RegionData kRegionData[] = {
       R"("fmt":"%N%n%O%n%A%n%Z %C",)"
       R"("require":"AZ",)"
       R"("zipex":"47890,47891,47895,47899",)"
-      R"("posturl":"http://www.poste.it/online/cercacap/",)"
+      R"("posturl":"https://www.poste.it/cerca/index.html#/risultati-cerca-cap/",)"
       R"("languages":"it")"
       "}"},
   {"SN", "{"
@@ -1233,7 +1235,7 @@ const RegionData kRegionData[] = {
       "}"},
   {"SY", "{"
       R"("locality_name_type":"district",)"
-      R"("languages":"ar~fr")"
+      R"("languages":"ar")"
       "}"},
   {"SZ", "{"
       R"("fmt":"%N%n%O%n%A%n%C%n%Z",)"
@@ -1253,7 +1255,7 @@ const RegionData kRegionData[] = {
       R"("languages":"en")"
       "}"},
   {"TD", "{"
-      R"("languages":"fr~ar")"
+      R"("languages":"ar~fr")"
       "}"},
   {"TF", "{"
       R"("languages":"fr")"
@@ -1273,7 +1275,7 @@ const RegionData kRegionData[] = {
       R"("languages":"tg")"
       "}"},
   {"TK", "{"
-      R"("languages":"en~tkl")"
+      R"("languages":"tkl~en")"
       "}"},
   {"TL", "{"
       R"("languages":"pt~tet")"
@@ -1375,7 +1377,6 @@ const RegionData kRegionData[] = {
   {"VC", "{"
       R"("fmt":"%N%n%O%n%A%n%C %Z",)"
       R"("zipex":"VC0100,VC0110,VC0400",)"
-      R"("posturl":"http://www.svgpost.gov.vc/?option=com_content&view=article&id=3&Itemid=16",)"
       R"("languages":"en")"
       "}"},
   {"VE", "{"
@@ -1383,7 +1384,6 @@ const RegionData kRegionData[] = {
       R"("require":"ACS",)"
       R"("state_name_type":"state",)"
       R"("zipex":"1010,3001,8011,1020",)"
-      R"("posturl":"http://postcode.vnpost.vn/services/search.aspx",)"
       R"("languages":"es")"
       "}"},
   {"VG", "{"
@@ -1404,8 +1404,8 @@ const RegionData kRegionData[] = {
   {"VN", "{"
       R"("fmt":"%N%n%O%n%A%n%C%n%S %Z",)"
       R"("lfmt":"%N%n%O%n%A%n%C%n%S %Z",)"
+      R"("require":"AS",)"
       R"("zipex":"70010,55999",)"
-      R"("posturl":"http://postcode.vnpost.vn/services/search.aspx",)"
       R"("languages":"vi")"
       "}"},
   {"VU", "{"
@@ -1503,7 +1503,7 @@ std::vector<std::string> InitRegionCodes() {
   return region_codes;
 }
 
-const std::map<std::string, size_t> InitMaxLookupKeyDepth() {
+std::map<std::string, size_t> InitMaxLookupKeyDepth() {
   std::map<std::string, size_t> max_depth;
   for (const auto& region_data : kRegionData) {
     std::vector<FormatElement> fields;

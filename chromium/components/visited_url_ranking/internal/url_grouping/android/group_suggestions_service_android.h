@@ -31,7 +31,7 @@ class GroupSuggestionsServiceAndroid : public base::SupportsUserData::Data {
 
   void DidSelectTab(JNIEnv* env,
                     int tab_id,
-                    const jni_zero::JavaParamRef<jobject>& url,
+                    const jni_zero::JavaRef<jobject>& url,
                     int tab_selection_type,
                     int last_id);
 
@@ -47,7 +47,7 @@ class GroupSuggestionsServiceAndroid : public base::SupportsUserData::Data {
 
   base::android::ScopedJavaLocalRef<jobject> GetCachedSuggestions(
       JNIEnv* env,
-      jint window_id);
+      int32_t window_id);
 
   base::android::ScopedJavaLocalRef<jobject> GetJavaObject();
 

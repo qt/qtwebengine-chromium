@@ -22,6 +22,7 @@
 #include "third_party/blink/renderer/core/layout/table/table_fragment_data.h"
 #include "third_party/blink/renderer/core/style/style_overflow_clip_margin.h"
 #include "third_party/blink/renderer/platform/graphics/overlay_scrollbar_clip_behavior.h"
+#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/wtf/bit_field.h"
 #include "third_party/blink/renderer/platform/wtf/casting.h"
 #include "third_party/blink/renderer/platform/wtf/text/atomic_string.h"
@@ -215,10 +216,13 @@ class CORE_EXPORT PhysicalBoxFragment final : public PhysicalFragment {
     return nullptr;
   }
 
-  // The name of the page (if any) to which this fragment belongs. The page name
-  // is propagated all the way up to the page fragment, which is needed in order
-  // to support e.g. page orientation. See https://drafts.csswg.org/css-page-3
-  AtomicString PageName() const {
+  // The page name propagated from descendants of this fragment, not including
+  // any page name specified on this node directly. The page name is propagated
+  // all the way up to the page fragment, which is needed in order to support
+  // named pages.
+  //
+  // See https://drafts.csswg.org/css-page-3/#using-named-pages
+  AtomicString PropagatedPageName() const {
     if (const auto* field = GetRareField(FieldId::kPageName)) {
       return field->page_name;
     }
@@ -574,7 +578,9 @@ class CORE_EXPORT PhysicalBoxFragment final : public PhysicalFragment {
 
    public:
     explicit MutableForOofFragmentation(const PhysicalBoxFragment& fragment)
-        : fragment_(const_cast<PhysicalBoxFragment&>(fragment)) {}
+        : fragment_(const_cast<PhysicalBoxFragment&>(fragment)) {
+      DCHECK(!RuntimeEnabledFeatures::FragmentedOofInCbEnabled());
+    }
 
     // Merge relevant parts of the specified fragmentainer into this one. This
     // means that all children will be copied over, and they will all be assumed

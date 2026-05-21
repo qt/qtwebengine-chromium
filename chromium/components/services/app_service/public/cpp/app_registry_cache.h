@@ -15,7 +15,6 @@
 
 #include "base/compiler_specific.h"
 #include "base/component_export.h"
-#include "base/containers/contains.h"
 #include "base/memory/raw_ptr.h"
 #include "base/observer_list.h"
 #include "base/observer_list_types.h"
@@ -131,7 +130,7 @@ class COMPONENT_EXPORT(APP_UPDATE) AppRegistryCache {
     for (const auto& d_iter : deltas_in_progress_) {
       const App* delta = d_iter.second;
 
-      if (base::Contains(states_, d_iter.first)) {
+      if (states_.contains(d_iter.first)) {
         continue;
       }
 
@@ -281,7 +280,8 @@ class COMPONENT_EXPORT(APP_UPDATE) AppRegistryCache {
   // Nested OnApps calls are expected to be rare (but still dealt with
   // sensibly). In the typical case, OnApps should call DoOnApps exactly once,
   // and deltas_pending_ will stay empty.
-  std::map<std::string, raw_ptr<App, CtnExperimental>, std::less<>> deltas_in_progress_;
+  std::map<std::string, raw_ptr<App, CtnExperimental>, std::less<>>
+      deltas_in_progress_;
   std::vector<AppPtr> deltas_pending_;
 
   // Saves app types which will finish initialization, and OnAppTypeInitialized

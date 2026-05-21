@@ -31,22 +31,31 @@ class MockController : public Connection::Controller {
   MockController() = default;
   ~MockController() override = default;
 
-  MOCK_METHOD2(CloseConnection, Error(Connection*, Connection::CloseReason));
-  MOCK_METHOD3(OnPresentationTerminated,
-               Error(const std::string&, TerminationSource, TerminationReason));
-  MOCK_METHOD1(OnConnectionDestroyed, void(Connection*));
+  MOCK_METHOD(Error,
+              CloseConnection,
+              (Connection*, Connection::CloseReason),
+              (override));
+  MOCK_METHOD(Error,
+              OnPresentationTerminated,
+              (const std::string&, TerminationSource, TerminationReason),
+              (override));
+  MOCK_METHOD(void, OnConnectionDestroyed, (Connection*), (override));
 };
 
 class MockConnectRequestCallback final : public ConnectRequestCallback {
  public:
   ~MockConnectRequestCallback() override = default;
 
-  MOCK_METHOD3(OnConnectSucceed,
-               void(uint64_t request_id,
-                    std::string_view instance_name,
-                    uint64_t instance_id));
-  MOCK_METHOD2(OnConnectFailed,
-               void(uint64_t request_id, std::string_view instance_name));
+  MOCK_METHOD(void,
+              OnConnectSucceed,
+              (uint64_t request_id,
+               std::string_view instance_name,
+               uint64_t instance_id),
+              (override));
+  MOCK_METHOD(void,
+              OnConnectFailed,
+              (uint64_t request_id, std::string_view instance_name),
+              (override));
 };
 
 }  // namespace

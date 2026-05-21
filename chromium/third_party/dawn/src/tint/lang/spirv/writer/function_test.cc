@@ -166,7 +166,7 @@ TEST_F(SpirvWriterTest, Function_EntryPoint_Fragment) {
 }
 
 TEST_F(SpirvWriterTest, Function_EntryPoint_Vertex) {
-    auto* func = b.Function("main", ty.vec4<f32>(), core::ir::Function::PipelineStage::kVertex);
+    auto* func = b.Function("main", ty.vec4f(), core::ir::Function::PipelineStage::kVertex);
     func->SetReturnBuiltin(core::BuiltinValue::kPosition);
     b.Append(func->Block(), [&] {  //
         b.Return(func, b.Zero<vec4<f32>>());
@@ -254,7 +254,7 @@ TEST_F(SpirvWriterTest, Function_Parameters) {
     func->SetParams({x, y});
 
     b.Append(func->Block(), [&] {
-        auto* result = b.Add(i32, x, y);
+        auto* result = b.Add(x, y);
         b.Return(func, result);
     });
 
@@ -301,7 +301,7 @@ TEST_F(SpirvWriterTest, Function_Call) {
     foo->SetParams({x, y});
 
     b.Append(foo->Block(), [&] {
-        auto* result = b.Add(i32, x, y);
+        auto* result = b.Add(x, y);
         b.Return(foo, result);
     });
 
@@ -324,20 +324,19 @@ TEST_F(SpirvWriterTest, Function_Call_Void) {
 
     auto* bar = b.ComputeFunction("main");
     b.Append(bar->Block(), [&] {
-        auto* result = b.Call(ty.void_(), foo);
+        b.Call(ty.void_(), foo);
         b.Return(bar);
-        mod.SetName(result, "result");
     });
 
     ASSERT_TRUE(Generate()) << Error() << output_;
-    EXPECT_INST("%result = OpFunctionCall %void %foo");
+    EXPECT_INST("%7 = OpFunctionCall %void %foo");
 }
 
 TEST_F(SpirvWriterTest, Function_ShaderIO_VertexPointSize) {
-    auto* func = b.Function("main", ty.vec4<f32>(), core::ir::Function::PipelineStage::kVertex);
+    auto* func = b.Function("main", ty.vec4f(), core::ir::Function::PipelineStage::kVertex);
     func->SetReturnBuiltin(core::BuiltinValue::kPosition);
     b.Append(func->Block(), [&] {  //
-        b.Return(func, b.Construct(ty.vec4<f32>(), 0.5_f));
+        b.Return(func, b.Construct(ty.vec4f(), 0.5_f));
     });
 
     Options options;
@@ -367,13 +366,13 @@ TEST_F(SpirvWriterTest, Function_ShaderIO_VertexPointSize) {
 }
 
 TEST_F(SpirvWriterTest, Function_ShaderIO_F16_Input_WithCapability) {
-    auto* input = b.FunctionParam("input", ty.vec4<f16>());
+    auto* input = b.FunctionParam("input", ty.vec4h());
     input->SetLocation(1);
-    auto* func = b.Function("main", ty.vec4<f32>(), core::ir::Function::PipelineStage::kFragment);
+    auto* func = b.Function("main", ty.vec4f(), core::ir::Function::PipelineStage::kFragment);
     func->SetReturnLocation(2);
     func->SetParams({input});
     b.Append(func->Block(), [&] {  //
-        b.Return(func, b.Convert(ty.vec4<f32>(), input));
+        b.Return(func, b.Convert(ty.vec4f(), input));
     });
 
     Options options;
@@ -395,13 +394,13 @@ TEST_F(SpirvWriterTest, Function_ShaderIO_F16_Input_WithCapability) {
 }
 
 TEST_F(SpirvWriterTest, Function_ShaderIO_F16_Input_WithoutCapability) {
-    auto* input = b.FunctionParam("input", ty.vec4<f16>());
+    auto* input = b.FunctionParam("input", ty.vec4h());
     input->SetLocation(1);
-    auto* func = b.Function("main", ty.vec4<f32>(), core::ir::Function::PipelineStage::kFragment);
+    auto* func = b.Function("main", ty.vec4f(), core::ir::Function::PipelineStage::kFragment);
     func->SetReturnLocation(2);
     func->SetParams({input});
     b.Append(func->Block(), [&] {  //
-        b.Return(func, b.Convert(ty.vec4<f32>(), input));
+        b.Return(func, b.Convert(ty.vec4f(), input));
     });
 
     Options options;
@@ -423,13 +422,13 @@ TEST_F(SpirvWriterTest, Function_ShaderIO_F16_Input_WithoutCapability) {
 }
 
 TEST_F(SpirvWriterTest, Function_ShaderIO_F16_Output_WithCapability) {
-    auto* input = b.FunctionParam("input", ty.vec4<f32>());
+    auto* input = b.FunctionParam("input", ty.vec4f());
     input->SetLocation(1);
-    auto* func = b.Function("main", ty.vec4<f16>(), core::ir::Function::PipelineStage::kFragment);
+    auto* func = b.Function("main", ty.vec4h(), core::ir::Function::PipelineStage::kFragment);
     func->SetReturnLocation(2);
     func->SetParams({input});
     b.Append(func->Block(), [&] {  //
-        b.Return(func, b.Convert(ty.vec4<f16>(), input));
+        b.Return(func, b.Convert(ty.vec4h(), input));
     });
 
     Options options;
@@ -451,13 +450,13 @@ TEST_F(SpirvWriterTest, Function_ShaderIO_F16_Output_WithCapability) {
 }
 
 TEST_F(SpirvWriterTest, Function_ShaderIO_F16_Output_WithoutCapability) {
-    auto* input = b.FunctionParam("input", ty.vec4<f32>());
+    auto* input = b.FunctionParam("input", ty.vec4f());
     input->SetLocation(1);
-    auto* func = b.Function("main", ty.vec4<f16>(), core::ir::Function::PipelineStage::kFragment);
+    auto* func = b.Function("main", ty.vec4h(), core::ir::Function::PipelineStage::kFragment);
     func->SetReturnLocation(2);
     func->SetParams({input});
     b.Append(func->Block(), [&] {  //
-        b.Return(func, b.Convert(ty.vec4<f16>(), input));
+        b.Return(func, b.Convert(ty.vec4h(), input));
     });
 
     Options options;
@@ -539,8 +538,8 @@ TEST_F(SpirvWriterTest, Function_PassMatrixByPointer) {
     auto* value_b = b.FunctionParam("value_b", mat_ty);
     target->SetParams({value_a, scalar, value_b});
     b.Append(target->Block(), [&] {
-        auto* scale = b.Multiply(mat_ty, value_a, scalar);
-        auto* sum = b.Add(mat_ty, scale, value_b);
+        auto* scale = b.Multiply(value_a, scalar);
+        auto* sum = b.Add(scale, value_b);
         b.Return(target, sum);
     });
 
@@ -658,7 +657,7 @@ TEST_F(SpirvWriterTest, WorkgroupStorageSizeCompoundTypes) {
 TEST_F(SpirvWriterTest, WorkgroupStorageSizeAlignmentPadding) {
     // vec3<f32> has an alignment of 16 but a size of 12. We leverage this to test
     // that our padded size calculation for workgroup storage is accurate.
-    auto* var = mod.root_block->Append(b.Var("var_f32", ty.ptr(workgroup, ty.vec3<f32>())));
+    auto* var = mod.root_block->Append(b.Var("var_f32", ty.ptr(workgroup, ty.vec3f())));
 
     auto* func = b.ComputeFunction("main", 32_u, 4_u, 1_u);
     b.Append(func->Block(), [&] {  //

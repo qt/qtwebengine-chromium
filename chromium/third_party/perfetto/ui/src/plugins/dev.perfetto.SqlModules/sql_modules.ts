@@ -13,7 +13,7 @@
 // limitations under the License.
 
 import {TableColumn} from '../../components/widgets/sql/table/table_column';
-import {SqlTableDescription} from '../../components/widgets/sql/table/table_description';
+import {SqlTableDefinition} from '../../components/widgets/sql/table/table_description';
 import {PerfettoSqlType} from '../../trace_processor/perfetto_sql_type';
 
 // Handles the access to all of the Perfetto SQL modules accessible to Trace
@@ -41,6 +41,11 @@ export interface SqlModules {
 
   // Returns the set of all disabled module names.
   getDisabledModules(): ReadonlySet<string>;
+
+  // Triggers the data availability checks if not already started.
+  // Safe to call multiple times - subsequent calls are no-ops.
+  // Returns a promise that resolves when initialization is complete.
+  ensureInitialized(): Promise<void>;
 }
 
 // Handles the access to a specific Perfetto SQL Package. Package consists of
@@ -60,8 +65,8 @@ export interface SqlPackage {
   // Returns sqlModule containing table with provided name.
   getModuleForTable(tableName: string): SqlModule | undefined;
 
-  // Returns sqlTableDescription of the table with provided name.
-  getSqlTableDescription(tableName: string): SqlTableDescription | undefined;
+  // Returns sqlTableDefinition of the table with provided name.
+  getSqlTableDefinition(tableName: string): SqlTableDefinition | undefined;
 }
 
 // Handles the access to a specific Perfetto SQL module.
@@ -76,8 +81,8 @@ export interface SqlModule {
   // Returns sqlTable with provided name.
   getTable(tableName: string): SqlTable | undefined;
 
-  // Returns sqlTableDescription of the table with provided name.
-  getSqlTableDescription(tableName: string): SqlTableDescription | undefined;
+  // Returns sqlTableDefinition of the table with provided name.
+  getSqlTableDefinition(tableName: string): SqlTableDefinition | undefined;
 }
 
 // The definition of Perfetto SQL table/view.

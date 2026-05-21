@@ -12,6 +12,7 @@
 <translation id="2159915644201199628">ఈ చిత్రం డీకోడ్ చేయబడదు: '<ph name="IMAGE_NAME" />'</translation>
 <translation id="2350172092385603347">స్థానికీకరణ ఉపయోగించబడుతుంది, అయితే మానిఫెస్ట్‌లో default_localeను పేర్కొనలేదు.</translation>
 <translation id="2576842806987913196">ఈ పేరుతో ఇప్పటికే CRX ఫైల్ ఉంది.</translation>
+<translation id="2743583586211388067">మీ సంస్థ ఎక్స్‌టెన్షన్ రిస్క్ పాలసీ ప్రకారం ఈ ఎక్స్‌టెన్షన్‌కు యాక్సెస్ బ్లాక్ చేయబడింది.</translation>
 <translation id="2785530881066938471">కంటెంట్ స్క్రిప్ట్‌కు '<ph name="RELATIVE_PATH" />' ఫైల్‌ను లోడ్ చేయలేకపోయింది. ఈ ఫైల్ UTF-8లో ఎన్‌కోడ్ కాలేదు.</translation>
 <translation id="2903070246402204397"><ph name="EXTENSION_NAME" /> (ఎక్స్‌టెన్ష‌న్‌ ID "<ph name="EXTENSION_ID" />") నిర్వాహకుల ద్వారా బ్లాక్ చేయబడింది. <ph name="ADMIN_INFO" /></translation>
 <translation id="2988488679308982380">ప్యాకేజీని ఇన్‌స్టాల్ చేయడం సాధ్యపడలేదు: '<ph name="ERROR_CODE" />'</translation>
@@ -33,9 +34,11 @@
 <translation id="5356315618422219272">యాప్‌ వీక్షణ: <ph name="APPVIEW_TAG_NAME" /></translation>
 <translation id="5456409301717116725">ఈ ఎక్స్‌టెన్షన్‌ '<ph name="KEY_PATH" />' కీ ఫైల్‌ను కలిగి ఉంది. బహుశా మీరు దాన్ని చేయకూడదు.</translation>
 <translation id="5486326529110362464">ప్రైవేట్ కీ కోసం ఇన్‌పుట్ విలువ తప్పనిసరిగా ఉండాలి.</translation>
+<translation id="5707185214361380026">దీని నుండి ఎక్స్‌టెన్షన్‌ను లోడ్ చేయడంలో విఫలమైంది:</translation>
 <translation id="5972529113578162692"><ph name="EXTENSION_NAME" />ని ఇన్‌స్టాల్ చేయడం ఈ మెషిన్‌ నిర్వాహకుడికి అవసరం. ఇది అన్ఇన్‌స్టాల్ చేయబడదు.</translation>
 <translation id="6027032947578871493"><ph name="VENDOR_NAME" /> నుండి తెలియని ఉత్పత్తి <ph name="PRODUCT_ID" /> (క్రమ సంఖ్య <ph name="SERIAL_NUMBER" />)</translation>
 <translation id="6068932090455285721"><ph name="VENDOR_ID" /> విక్రేత నుండి <ph name="PRODUCT_NAME" /></translation>
+<translation id="6220413761270491930">ఎక్స్‌టెన్షన్‌ను లోడ్ చేయడంలో ఎర్రర్</translation>
 <translation id="6322279351188361895">ప్రైవేట్ కీని చదవడంలో విఫలమైంది.</translation>
 <translation id="6391538222494443604">ఇన్‌పుట్ డైరెక్టరీ తప్పనిసరిగా ఉనికిలో ఉండాలి.</translation>
 <translation id="641087317769093025">ఎక్స్‌టెన్షన్‌ అన్‌జిప్ చేయబడదు</translation>

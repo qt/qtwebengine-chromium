@@ -24,6 +24,14 @@ export class TabSearchAppElement extends CrLitElement {
     return 'tab-search-app';
   }
 
+  static override get styles() {
+    return getCss();
+  }
+
+  override render() {
+    return getHtml.bind(this)();
+  }
+
   static override get properties() {
     return {
       selectedTabSection_: {type: Object},
@@ -48,14 +56,6 @@ export class TabSearchAppElement extends CrLitElement {
   protected accessor declutterEnabled_: boolean =
       loadTimeData.getBoolean('declutterEnabled');
   protected accessor availableHeight_: number = 0;
-
-  static override get styles() {
-    return getCss();
-  }
-
-  override render() {
-    return getHtml.bind(this)();
-  }
 
   constructor() {
     super();
@@ -107,13 +107,6 @@ export class TabSearchAppElement extends CrLitElement {
 
   private onTabSectionChanged_(section: TabSearchSection) {
     this.selectedTabSection_ = section;
-    if (section === TabSearchSection.kOrganize) {
-      const organizationSelector =
-          this.shadowRoot.querySelector('tab-organization-selector');
-      if (organizationSelector) {
-        organizationSelector.maybeLogFeatureShow();
-      }
-    }
   }
 
   private onTabOrganizationEnabledChanged_(enabled: boolean) {

@@ -44,7 +44,7 @@ import {CSSModel} from './CSSModel.js';
 import {FrameManager} from './FrameManager.js';
 import {OverlayModel} from './OverlayModel.js';
 import {RemoteObject} from './RemoteObject.js';
-import {ResourceTreeModel} from './ResourceTreeModel.js';
+import {Events as ResourceTreeModelEvents, type ResourceTreeFrame, ResourceTreeModel} from './ResourceTreeModel.js';
 import {RuntimeModel} from './RuntimeModel.js';
 import {SDKModel} from './SDKModel.js';
 import {Capability, type Target} from './Target.js';
@@ -108,7 +108,25 @@ export const ARIA_ATTRIBUTES = new Set<string>([
   'aria-valuetext',
 ]);
 
-export class DOMNode {
+export enum DOMNodeEvents {
+  TOP_LAYER_INDEX_CHANGED = 'TopLayerIndexChanged',
+  SCROLLABLE_FLAG_UPDATED = 'ScrollableFlagUpdated',
+  GRID_OVERLAY_STATE_CHANGED = 'GridOverlayStateChanged',
+  FLEX_CONTAINER_OVERLAY_STATE_CHANGED = 'FlexContainerOverlayStateChanged',
+  SCROLL_SNAP_OVERLAY_STATE_CHANGED = 'ScrollSnapOverlayStateChanged',
+  CONTAINER_QUERY_OVERLAY_STATE_CHANGED = 'ContainerQueryOverlayStateChanged',
+}
+
+export interface DOMNodeEventTypes {
+  [DOMNodeEvents.TOP_LAYER_INDEX_CHANGED]: void;
+  [DOMNodeEvents.SCROLLABLE_FLAG_UPDATED]: void;
+  [DOMNodeEvents.GRID_OVERLAY_STATE_CHANGED]: {enabled: boolean};
+  [DOMNodeEvents.FLEX_CONTAINER_OVERLAY_STATE_CHANGED]: {enabled: boolean};
+  [DOMNodeEvents.SCROLL_SNAP_OVERLAY_STATE_CHANGED]: {enabled: boolean};
+  [DOMNodeEvents.CONTAINER_QUERY_OVERLAY_STATE_CHANGED]: {enabled: boolean};
+}
+
+export class DOMNode extends Common.ObjectWrapper.ObjectWrapper<DOMNodeEventTypes> {
   #domModel: DOMModel;
   #agent: ProtocolProxyApi.DOMApi;
   ownerDocument!: DOMDocument|null;
@@ -162,8 +180,14 @@ export class DOMNode {
   detached = false;
   #retainedNodes?: Set<Protocol.DOM.BackendNodeId>;
   #adoptedStyleSheets: AdoptedStyleSheet[] = [];
+  /**
+   * 1-based index of the node in the top layer. Only set
+   * for non-backdrop nodes.
+   */
+  #topLayerIndex = -1;
 
   constructor(domModel: DOMModel) {
+    super();
     this.#domModel = domModel;
     this.#agent = this.#domModel.getAgent();
   }
@@ -185,6 +209,7 @@ export class DOMNode {
 
     this.id = payload.nodeId;
     this.#backendNodeId = payload.backendNodeId;
+    this.#frameOwnerFrameId = payload.frameId || null;
     this.#domModel.registerNode(this);
     this.#nodeType = payload.nodeType;
     this.#nodeName = payload.nodeName;
@@ -193,7 +218,6 @@ export class DOMNode {
     this.#pseudoType = payload.pseudoType;
     this.#pseudoIdentifier = payload.pseudoIdentifier;
     this.#shadowRootType = payload.shadowRootType;
-    this.#frameOwnerFrameId = payload.frameId || null;
     this.#xmlVersion = payload.xmlVersion;
     this.#isSVGNode = Boolean(payload.isSVG);
     this.#isScrollable = Boolean(payload.isScrollable);
@@ -285,6 +309,18 @@ export class DOMNode {
     return await (childModel?.requestDocument() || null);
   }
 
+  setTopLayerIndex(idx: number): void {
+    const oldIndex = this.#topLayerIndex;
+    this.#topLayerIndex = idx;
+    if (oldIndex !== idx) {
+      this.dispatchEventToListeners(DOMNodeEvents.TOP_LAYER_INDEX_CHANGED);
+    }
+  }
+
+  topLayerIndex(): number {
+    return this.#topLayerIndex;
+  }
+
   isAdFrameNode(): boolean {
     if (this.isIframe() && this.#frameOwnerFrameId) {
       const frame = FrameManager.instance().getFrame(this.#frameOwnerFrameId);
@@ -292,6 +328,13 @@ export class DOMNode {
         return false;
       }
       return frame.adFrameType() !== Protocol.Page.AdFrameType.None;
+    }
+    return false;
+  }
+
+  isRootNode(): boolean {
+    if (this.nodeType() === Node.ELEMENT_NODE && this.nodeName() === 'HTML') {
+      return true;
     }
     return false;
   }
@@ -359,6 +402,11 @@ export class DOMNode {
 
   setIsScrollable(isScrollable: boolean): void {
     this.#isScrollable = isScrollable;
+    this.dispatchEventToListeners(DOMNodeEvents.SCROLLABLE_FLAG_UPDATED);
+    if (this.nodeName() === '#document') {
+      // We show the scroll badge of the document on the <html> element.
+      this.ownerDocument?.documentElement?.setIsScrollable(isScrollable);
+    }
   }
 
   setAffectedByStartingStyles(affectedByStartingStyles: boolean): void {
@@ -834,7 +882,7 @@ export class DOMNode {
   }
 
   private toAdoptedStyleSheets(ids: Protocol.DOM.StyleSheetId[]): AdoptedStyleSheet[] {
-    return ids.map(id => (new AdoptedStyleSheet(id, this.#domModel.cssModel())));
+    return ids.map(id => (new AdoptedStyleSheet(id, this)));
   }
 
   setAdoptedStyleSheets(ids: Protocol.DOM.StyleSheetId[]): void {
@@ -1203,10 +1251,16 @@ export class DOMNodeShortcut {
   nodeType: number;
   nodeName: string;
   deferredNode: DeferredDOMNode;
-  constructor(target: Target, backendNodeId: Protocol.DOM.BackendNodeId, nodeType: number, nodeName: string) {
+  // Shortctus to elements that children of the element this shortcut is for.
+  // Currently, use for backdrop elements in the top layer.«
+  childShortcuts: DOMNodeShortcut[] = [];
+  constructor(
+      target: Target, backendNodeId: Protocol.DOM.BackendNodeId, nodeType: number, nodeName: string,
+      childShortcuts: DOMNodeShortcut[] = []) {
     this.nodeType = nodeType;
     this.nodeName = nodeName;
     this.deferredNode = new DeferredDOMNode(target, backendNodeId);
+    this.childShortcuts = childShortcuts;
   }
 }
 
@@ -1226,13 +1280,18 @@ export class DOMDocument extends DOMNode {
 }
 
 export class AdoptedStyleSheet {
-  constructor(readonly id: Protocol.DOM.StyleSheetId, readonly cssModel: CSSModel) {
+  constructor(readonly id: Protocol.DOM.StyleSheetId, readonly parent: DOMNode) {
+  }
+
+  get cssModel(): CSSModel {
+    return this.parent.domModel().cssModel();
   }
 }
 
 export class DOMModel extends SDKModel<EventTypes> {
   agent: ProtocolProxyApi.DOMApi;
   idToDOMNode = new Map<Protocol.DOM.NodeId, DOMNode>();
+  frameIdToOwnerNode = new Map<Protocol.Page.FrameId, DOMNode>();
   #document: DOMDocument|null = null;
   readonly #attributeLoadNodeIds = new Set<Protocol.DOM.NodeId>();
   readonly runtimeModelInternal: RuntimeModel;
@@ -1241,6 +1300,10 @@ export class DOMModel extends SDKModel<EventTypes> {
   #frameOwnerNode?: DOMNode|null;
   #loadNodeAttributesTimeout?: number;
   #searchId?: string;
+  #topLayerThrottler = new Common.Throttler.Throttler(100);
+  #topLayerNodes: DOMNode[] = [];
+  #resourceTreeModel: ResourceTreeModel|null = null;
+
   constructor(target: Target) {
     super(target);
 
@@ -1249,11 +1312,14 @@ export class DOMModel extends SDKModel<EventTypes> {
     target.registerDOMDispatcher(new DOMDispatcher(this));
     this.runtimeModelInternal = (target.model(RuntimeModel) as RuntimeModel);
 
+    this.#resourceTreeModel = target.model(ResourceTreeModel);
+    this.#resourceTreeModel?.addEventListener(ResourceTreeModelEvents.DocumentOpened, this.onDocumentOpened, this);
+
     if (!target.suspended()) {
       void this.agent.invoke_enable({});
     }
 
-    if (Root.Runtime.experiments.isEnabled('capture-node-creation-stacks')) {
+    if (Root.Runtime.experiments.isEnabled(Root.ExperimentNames.ExperimentName.CAPTURE_NODE_CREATION_STACKS)) {
       void this.agent.invoke_setNodeStackTracesEnabled({enable: true});
     }
   }
@@ -1290,6 +1356,19 @@ export class DOMModel extends SDKModel<EventTypes> {
       }
 
       this.dispatchEventToListeners(Events.DOMMutated, node);
+    }
+  }
+
+  private onDocumentOpened(event: Common.EventTarget.EventTargetEvent<ResourceTreeFrame>): void {
+    const frame = event.data;
+    const node = this.frameIdToOwnerNode.get(frame.id);
+    if (node) {
+      const contentDocument = node.contentDocument();
+      if (contentDocument && contentDocument.documentURL !== frame.url) {
+        contentDocument.documentURL = frame.url;
+        contentDocument.baseURL = frame.url;
+        this.dispatchEventToListeners(Events.DocumentURLChanged, contentDocument);
+      }
     }
   }
 
@@ -1469,6 +1548,7 @@ export class DOMModel extends SDKModel<EventTypes> {
 
   private setDocument(payload: Protocol.DOM.Node|null): void {
     this.idToDOMNode = new Map();
+    this.frameIdToOwnerNode = new Map();
     if (payload && 'nodeId' in payload) {
       this.#document = new DOMDocument(this, payload);
     } else {
@@ -1609,7 +1689,6 @@ export class DOMModel extends SDKModel<EventTypes> {
       return;
     }
     node.setIsScrollable(isScrollable);
-    this.dispatchEventToListeners(Events.ScrollableFlagUpdated, {node});
   }
 
   affectedByStartingStylesFlagUpdated(nodeId: Protocol.DOM.NodeId, affectedByStartingStyles: boolean): void {
@@ -1619,10 +1698,6 @@ export class DOMModel extends SDKModel<EventTypes> {
     }
     node.setAffectedByStartingStyles(affectedByStartingStyles);
     this.dispatchEventToListeners(Events.AffectedByStartingStylesFlagUpdated, {node});
-  }
-
-  topLayerElementsUpdated(): void {
-    this.dispatchEventToListeners(Events.TopLayerElementsChanged);
   }
 
   pseudoElementRemoved(parentId: Protocol.DOM.NodeId, pseudoElementId: Protocol.DOM.NodeId): void {
@@ -1652,6 +1727,10 @@ export class DOMModel extends SDKModel<EventTypes> {
 
   private unbind(node: DOMNode): void {
     this.idToDOMNode.delete(node.id);
+    const frameId = node.frameOwnerFrameId();
+    if (frameId) {
+      this.frameIdToOwnerNode.delete(frameId);
+    }
     const children = node.children();
     for (let i = 0; children && i < children.length; ++i) {
       this.unbind(children[i]);
@@ -1730,6 +1809,69 @@ export class DOMModel extends SDKModel<EventTypes> {
     return this.agent.invoke_getTopLayerElements().then(({nodeIds}) => nodeIds);
   }
 
+  topLayerElementsUpdated(): void {
+    void this.#topLayerThrottler.schedule(async () => {
+      // This returns top layer nodes for all local frames.
+      const result = await this.agent.invoke_getTopLayerElements();
+      if (result.getError()) {
+        return;
+      }
+      // Re-set indexes as we re-create top layer nodes list.
+      const previousDocs = new Set<DOMDocument>();
+      for (const node of this.#topLayerNodes) {
+        node.setTopLayerIndex(-1);
+        if (node.ownerDocument) {
+          previousDocs.add(node.ownerDocument);
+        }
+      }
+      this.#topLayerNodes.splice(0);
+      const nodes: DOMNode[] =
+          result.nodeIds.map(id => this.idToDOMNode.get(id)).filter((node): node is DOMNode => Boolean(node));
+      const nodesByDocument = new Map<DOMDocument, DOMNode[]>();
+      for (const node of nodes) {
+        const document = node.ownerDocument;
+        if (!document) {
+          continue;
+        }
+        if (!nodesByDocument.has(document)) {
+          nodesByDocument.set(document, []);
+        }
+        nodesByDocument.get(document)?.push(node);
+      }
+      for (const [document, nodes] of nodesByDocument) {
+        let topLayerIdx = 1;
+        const documentShortcuts = [];
+        for (const [idx, node] of nodes.entries()) {
+          if (node.nodeName() === '::backdrop') {
+            continue;
+          }
+          const childShortcuts = [];
+          const previousNode = result.nodeIds[idx - 1] ? this.idToDOMNode.get(result.nodeIds[idx - 1]) : null;
+          if (previousNode && previousNode.nodeName() === '::backdrop') {
+            childShortcuts.push(
+                new DOMNodeShortcut(this.target(), previousNode.backendNodeId(), 0, previousNode.nodeName()));
+          }
+          const shortcut = new DOMNodeShortcut(this.target(), node.backendNodeId(), 0, node.nodeName(), childShortcuts);
+          node.setTopLayerIndex(topLayerIdx++);
+          this.#topLayerNodes.push(node);
+          documentShortcuts.push(shortcut);
+          previousDocs.delete(document);
+        }
+        this.dispatchEventToListeners(Events.TopLayerElementsChanged, {
+          document,
+          documentShortcuts,
+        });
+      }
+      // Emit empty events for documents that are no longer in the top layer.
+      for (const document of previousDocs) {
+        this.dispatchEventToListeners(Events.TopLayerElementsChanged, {
+          document,
+          documentShortcuts: [],
+        });
+      }
+    });
+  }
+
   getDetachedDOMNodes(): Promise<Protocol.DOM.DetachedElementInfo[]|null> {
     return this.agent.invoke_getDetachedDomNodes().then(({detachedNodes}) => detachedNodes);
   }
@@ -1776,6 +1918,7 @@ export class DOMModel extends SDKModel<EventTypes> {
   }
 
   override dispose(): void {
+    this.#resourceTreeModel?.removeEventListener(ResourceTreeModelEvents.DocumentOpened, this.onDocumentOpened, this);
     DOMModelUndoStack.instance().dispose(this);
   }
 
@@ -1790,6 +1933,10 @@ export class DOMModel extends SDKModel<EventTypes> {
 
   registerNode(node: DOMNode): void {
     this.idToDOMNode.set(node.id, node);
+    const frameId = node.frameOwnerFrameId();
+    if (frameId) {
+      this.frameIdToOwnerNode.set(frameId, node);
+    }
   }
 }
 
@@ -1799,6 +1946,7 @@ export enum Events {
   AttrRemoved = 'AttrRemoved',
   CharacterDataModified = 'CharacterDataModified',
   DOMMutated = 'DOMMutated',
+  DocumentURLChanged = 'DocumentURLChanged',
   NodeInserted = 'NodeInserted',
   NodeRemoved = 'NodeRemoved',
   DocumentUpdated = 'DocumentUpdated',
@@ -1806,7 +1954,6 @@ export enum Events {
   DistributedNodesChanged = 'DistributedNodesChanged',
   MarkersChanged = 'MarkersChanged',
   TopLayerElementsChanged = 'TopLayerElementsChanged',
-  ScrollableFlagUpdated = 'ScrollableFlagUpdated',
   AffectedByStartingStylesFlagUpdated = 'AffectedByStartingStylesFlagUpdated',
   AdoptedStyleSheetsModified = 'AdoptedStyleSheetsModified',
   /* eslint-enable @typescript-eslint/naming-convention */
@@ -1817,14 +1964,14 @@ export interface EventTypes {
   [Events.AttrRemoved]: {node: DOMNode, name: string};
   [Events.CharacterDataModified]: DOMNode;
   [Events.DOMMutated]: DOMNode;
+  [Events.DocumentURLChanged]: DOMDocument;
   [Events.NodeInserted]: DOMNode;
   [Events.NodeRemoved]: {node: DOMNode, parent: DOMNode};
   [Events.DocumentUpdated]: DOMModel;
   [Events.ChildNodeCountUpdated]: DOMNode;
   [Events.DistributedNodesChanged]: DOMNode;
   [Events.MarkersChanged]: DOMNode;
-  [Events.TopLayerElementsChanged]: void;
-  [Events.ScrollableFlagUpdated]: {node: DOMNode};
+  [Events.TopLayerElementsChanged]: {document: DOMDocument, documentShortcuts: DOMNodeShortcut[]};
   [Events.AffectedByStartingStylesFlagUpdated]: {node: DOMNode};
   [Events.AdoptedStyleSheetsModified]: DOMNode;
 }

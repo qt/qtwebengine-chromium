@@ -10,7 +10,7 @@
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
 #include "third_party/blink/renderer/core/css/cssom/prepopulated_computed_style_property_map.h"
 #include "third_party/blink/renderer/core/dom/document.h"
-#include "third_party/blink/renderer/core/dom/node_rare_data.h"
+#include "third_party/blink/renderer/core/dom/element_rare_data_vector.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/layout/layout_object.h"
@@ -29,16 +29,18 @@ const size_t kMaxPaintCountToSwitch = 30u;
 
 // static
 PaintWorklet* PaintWorklet::From(LocalDOMWindow& window) {
-  PaintWorklet* supplement = window.GetPaintWorklet();
+  PaintWorklet* supplement =
+      Supplement<LocalDOMWindow>::From<PaintWorklet>(window);
   if (!supplement && window.GetFrame()) {
     supplement = MakeGarbageCollected<PaintWorklet>(window);
-    window.SetPaintWorklet(supplement);
+    ProvideTo(window, supplement);
   }
   return supplement;
 }
 
 PaintWorklet::PaintWorklet(LocalDOMWindow& window)
     : Worklet(window),
+      Supplement<LocalDOMWindow>(window),
       pending_generator_registry_(
           MakeGarbageCollected<PaintWorkletPendingGeneratorRegistry>()),
       worklet_id_(PaintWorkletIdGenerator::NextId()),
@@ -90,7 +92,7 @@ int PaintWorklet::GetPaintsBeforeSwitching() {
   // according to the actual paints per frame. For example, if we found that
   // there are typically ~1000 paints in each frame, we'd want to set the number
   // to average at 500.
-  return base::RandInt(0, kMaxPaintCountToSwitch - 1);
+  return base::RandIntInclusive(0, kMaxPaintCountToSwitch - 1);
 }
 
 wtf_size_t PaintWorklet::SelectNewGlobalScope() {
@@ -138,10 +140,14 @@ scoped_refptr<Image> PaintWorklet::Paint(const String& name,
   return PaintGeneratedImage::Create(std::move(paint_record), container_size);
 }
 
+// static
+const char PaintWorklet::kSupplementName[] = "PaintWorklet";
+
 void PaintWorklet::Trace(Visitor* visitor) const {
   visitor->Trace(pending_generator_registry_);
   visitor->Trace(proxy_client_);
   Worklet::Trace(visitor);
+  Supplement<LocalDOMWindow>::Trace(visitor);
 }
 
 void PaintWorklet::RegisterCSSPaintDefinition(const String& name,

@@ -5,6 +5,10 @@
 #ifndef CONTENT_BROWSER_MEDIA_URL_PROVISION_FETCHER_H_
 #define CONTENT_BROWSER_MEDIA_URL_PROVISION_FETCHER_H_
 
+#include <optional>
+#include <string>
+#include <string_view>
+
 #include "media/base/provision_fetcher.h"
 
 namespace network {
@@ -20,6 +24,9 @@ class URLProvisionFetcher : public media::ProvisionFetcher {
  public:
   explicit URLProvisionFetcher(
       scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory);
+  URLProvisionFetcher(
+      scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
+      std::string_view user_agent);
 
   URLProvisionFetcher(const URLProvisionFetcher&) = delete;
   URLProvisionFetcher& operator=(const URLProvisionFetcher&) = delete;
@@ -29,14 +36,15 @@ class URLProvisionFetcher : public media::ProvisionFetcher {
   // media::ProvisionFetcher implementation.
   void Retrieve(const GURL& default_url,
                 const std::string& request_data,
-                ProvisionFetcher::ResponseCB response_cb) override;
+                media::ProvisionFetcher::ResponseCB response_cb) override;
 
  private:
-  void OnSimpleLoaderComplete(std::unique_ptr<std::string> response_body);
+  void OnSimpleLoaderComplete(std::optional<std::string> response_body);
 
   scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory_;
   std::unique_ptr<network::SimpleURLLoader> simple_url_loader_;
   media::ProvisionFetcher::ResponseCB response_cb_;
+  const std::string user_agent_;
 };
 
 }  // namespace content

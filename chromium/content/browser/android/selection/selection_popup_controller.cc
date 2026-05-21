@@ -33,7 +33,7 @@
 using base::android::AttachCurrentThread;
 using base::android::ConvertUTF16ToJavaString;
 using base::android::ConvertUTF8ToJavaString;
-using base::android::JavaParamRef;
+using base::android::JavaRef;
 using base::android::ScopedJavaGlobalRef;
 using base::android::ScopedJavaLocalRef;
 
@@ -66,17 +66,17 @@ BASE_FEATURE(kDismissMagnifierOnViewSwap, base::FEATURE_ENABLED_BY_DEFAULT);
 
 }  // namespace
 
-static jboolean
+static bool
 JNI_SelectionPopupControllerImpl_IsMagnifierWithSurfaceControlSupported(
     JNIEnv* env) {
   static bool enabled = gfx::SurfaceControl::SupportsSurfacelessControl();
   return enabled;
 }
 
-static jlong JNI_SelectionPopupControllerImpl_Init(
+static int64_t JNI_SelectionPopupControllerImpl_Init(
     JNIEnv* env,
-    const JavaParamRef<jobject>& obj,
-    const JavaParamRef<jobject>& jweb_contents) {
+    const JavaRef<jobject>& obj,
+    const JavaRef<jobject>& jweb_contents) {
   WebContents* web_contents = WebContents::FromJavaWebContents(jweb_contents);
   DCHECK(web_contents);
 
@@ -99,17 +99,16 @@ SelectionPopupController* SelectionPopupController::FromWebContents(
   // Then get the native pointer from the newly-created
   // SelectionPopupController. The Java SelectionPopupController owns the C++
   // SelectionPopupController.
-  jlong selection_popup_controller =
+  int64_t selection_popup_controller =
       Java_SelectionPopupControllerImpl_getNativePtr(
           env, jselection_popup_controller);
   return reinterpret_cast<SelectionPopupController*>(
       selection_popup_controller);
 }
 
-SelectionPopupController::SelectionPopupController(
-    JNIEnv* env,
-    const JavaParamRef<jobject>& obj,
-    WebContents* web_contents)
+SelectionPopupController::SelectionPopupController(JNIEnv* env,
+                                                   const JavaRef<jobject>& obj,
+                                                   WebContents* web_contents)
     : RenderWidgetHostConnector(web_contents) {
   java_obj_ = JavaObjectWeakGlobalRef(env, obj);
 }
@@ -135,15 +134,14 @@ ScopedJavaLocalRef<jobject> SelectionPopupController::GetContext() const {
 
 void SelectionPopupController::SetTextHandlesHiddenForDropdownMenu(
     JNIEnv* env,
-    jboolean hidden) {
+    bool hidden) {
   if (rwhva_) {
     rwhva_->SetTextHandlesHiddenForDropdownMenu(hidden);
   }
 }
 
-void SelectionPopupController::SetTextHandlesTemporarilyHidden(
-    JNIEnv* env,
-    jboolean hidden) {
+void SelectionPopupController::SetTextHandlesTemporarilyHidden(JNIEnv* env,
+                                                               bool hidden) {
   if (rwhva_)
     rwhva_->SetTextHandlesTemporarilyHidden(hidden);
 }

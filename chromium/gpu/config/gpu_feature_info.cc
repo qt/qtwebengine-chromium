@@ -4,7 +4,8 @@
 
 #include "gpu/config/gpu_feature_info.h"
 
-#include "base/containers/contains.h"
+#include <algorithm>
+
 #include "gpu/config/gpu_blocklist.h"
 #include "gpu/config/gpu_driver_bug_list.h"
 #include "ui/gl/gl_context.h"
@@ -12,8 +13,9 @@
 namespace gpu {
 
 GpuFeatureInfo::GpuFeatureInfo() {
-  for (auto& status : status_values)
+  for (auto& status : status_values) {
     status = kGpuFeatureStatusUndefined;
+  }
 }
 
 GpuFeatureInfo::GpuFeatureInfo(const GpuFeatureInfo&) = default;
@@ -32,7 +34,8 @@ void GpuFeatureInfo::ApplyToGLContext(gl::GLContext* gl_context) const {
 }
 
 bool GpuFeatureInfo::IsWorkaroundEnabled(int32_t workaround) const {
-  return base::Contains(this->enabled_gpu_driver_bug_workarounds, workaround);
+  return std::ranges::contains(this->enabled_gpu_driver_bug_workarounds,
+                               workaround);
 }
 
 bool GpuFeatureInfo::IsInitialized() const {

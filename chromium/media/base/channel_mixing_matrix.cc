@@ -9,7 +9,6 @@
 #include <algorithm>
 
 #include "base/check_op.h"
-#include "base/containers/contains.h"
 #include "media/base/channel_mixer.h"
 
 namespace media {
@@ -57,10 +56,12 @@ ChannelMixingMatrix::ChannelMixingMatrix(ChannelLayout input_layout,
   CHECK_NE(output_layout, CHANNEL_LAYOUT_STEREO_DOWNMIX);
 
   // Verify that the layouts are supported
-  if (input_layout != CHANNEL_LAYOUT_DISCRETE)
+  if (input_layout != CHANNEL_LAYOUT_DISCRETE) {
     ValidateLayout(input_layout);
-  if (output_layout != CHANNEL_LAYOUT_DISCRETE)
+  }
+  if (output_layout != CHANNEL_LAYOUT_DISCRETE) {
     ValidateLayout(output_layout);
+  }
 
   // Special case for 5.0, 5.1 with back channels when upmixed to 7.0, 7.1,
   // which should map the back LR to side LR.
@@ -81,8 +82,9 @@ bool ChannelMixingMatrix::CreateTransformationMatrix(
 
   // Size out the initial matrix.
   matrix_->reserve(output_channels_);
-  for (int output_ch = 0; output_ch < output_channels_; ++output_ch)
+  for (int output_ch = 0; output_ch < output_channels_; ++output_ch) {
     matrix_->push_back(std::vector<float>(input_channels_, 0));
+  }
 
   // First check for discrete case.
   if (input_layout_ == CHANNEL_LAYOUT_DISCRETE ||
@@ -92,8 +94,9 @@ bool ChannelMixingMatrix::CreateTransformationMatrix(
     // If the number of input channels is less than output channels, then
     // copy them all, then zero out the remaining output channels.
     int passthrough_channels = std::min(input_channels_, output_channels_);
-    for (int i = 0; i < passthrough_channels; ++i)
+    for (int i = 0; i < passthrough_channels; ++i) {
       (*matrix_)[i][i] = 1;
+    }
 
     return true;
   }
@@ -102,8 +105,9 @@ bool ChannelMixingMatrix::CreateTransformationMatrix(
   for (Channels ch = LEFT; ch < CHANNELS_MAX + 1;
        ch = static_cast<Channels>(ch + 1)) {
     int input_ch_index = ChannelOrder(input_layout_, ch);
-    if (input_ch_index < 0)
+    if (input_ch_index < 0) {
       continue;
+    }
 
     // If input layout is mono or 1.1, and output layout has L/R channel, we
     // expect up mix center channel into L/R channel no matter if output
@@ -252,8 +256,9 @@ bool ChannelMixingMatrix::CreateTransformationMatrix(
     for (int input_ch = 0; input_ch < input_channels_; ++input_ch) {
       // We can only remap if each row contains a single scale of 1.  I.e., each
       // output channel is mapped from a single unscaled input channel.
-      if ((*matrix_)[output_ch][input_ch] != 1 || ++input_mappings > 1)
+      if ((*matrix_)[output_ch][input_ch] != 1 || ++input_mappings > 1) {
         return false;
+      }
     }
   }
 
@@ -266,7 +271,7 @@ void ChannelMixingMatrix::AccountFor(Channels ch) {
 }
 
 bool ChannelMixingMatrix::IsUnaccounted(Channels ch) const {
-  return base::Contains(unaccounted_inputs_, ch);
+  return std::ranges::contains(unaccounted_inputs_, ch);
 }
 
 bool ChannelMixingMatrix::IsMonoInputLayout() const {

@@ -1,3 +1,10 @@
+yyyy-mm-dd next version
+  This release is ABI compatible with the last release.
+
+  - Speedups
+    * Make Adaptive CDEF more decoder-friendly by limiting CDEF application to
+      only regions where high filter strengths are needed.
+
 2025-09-05 v3.13.1
   This release is ABI compatible with the last release.
 

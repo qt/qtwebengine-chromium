@@ -227,7 +227,7 @@ ResultOrError<ShaderModuleEntryPoint> ValidateVertexState(
         DAWN_TRY_CONTEXT(ValidateVertexBufferLayout(device, &descriptor->buffers[i], vertexMetadata,
                                                     &attributesSetMask),
                          "validating buffers[%u].", i);
-        totalAttributesNum += descriptor->buffers[i].attributeCount;
+        totalAttributesNum += uint32_t(descriptor->buffers[i].attributeCount);
     }
 
     if (device->IsCompatibilityMode() &&
@@ -953,7 +953,7 @@ RenderPipelineBase::RenderPipelineBase(DeviceBase* device,
                    descriptor->label,
                    GetRenderStagesAndSetPlaceholderShader(device, *descriptor)),
       mAttachmentState(device->GetOrCreateAttachmentState(descriptor, GetLayout())) {
-    mVertexBufferCount = descriptor->vertex.bufferCount;
+    mVertexBufferCount = uint32_t(descriptor->vertex.bufferCount);
 
     auto buffers =
         ityp::SpanFromUntyped<VertexBufferSlot>(descriptor->vertex.buffers, mVertexBufferCount);
@@ -1088,7 +1088,7 @@ RenderPipelineBase::RenderPipelineBase(DeviceBase* device,
 
 RenderPipelineBase::~RenderPipelineBase() = default;
 
-void RenderPipelineBase::DestroyImpl() {
+void RenderPipelineBase::DestroyImpl(DestroyReason reason) {
     Uncache();
 
     // Remove reference to the attachment state so that we don't have lingering references to

@@ -17,6 +17,7 @@
 #include "extensions/renderer/bindings/api_binding_util.h"
 #include "gin/public/wrappable_pointer_tags.h"
 #include "gin/wrappable.h"
+#include "v8/include/cppgc/prefinalizer.h"
 #include "v8/include/v8-forward.h"
 
 namespace gin {
@@ -33,6 +34,8 @@ class Message;
 // out this responsibility. This class only handles the JS interface (both calls
 // from JS and forward events to JS).
 class GinPort final : public gin::Wrappable<GinPort> {
+  CPPGC_USING_PRE_FINALIZER(GinPort, Dispose);
+
  public:
   class Delegate {
    public:
@@ -81,12 +84,18 @@ class GinPort final : public gin::Wrappable<GinPort> {
   // lazily set as a data property in first access.
   void SetSender(v8::Local<v8::Context> context, v8::Local<v8::Value> sender);
 
+  // Called when the `ServiceWorkerData` owning the `Delegate` and
+  // `APIEventHandler` is destroyed.
+  void OnContextDestroyed();
+
   const PortId& port_id() const { return port_id_; }
   const std::string& name() const { return name_; }
 
   bool is_closed_for_testing() const { return state_ == State::kDisconnected; }
 
  private:
+  void Dispose() { context_invalidation_listener_.Dispose(); }
+
   const gin::WrapperInfo* wrapper_info() const override;
 
   enum class State {
@@ -128,6 +137,9 @@ class GinPort final : public gin::Wrappable<GinPort> {
   // Invalidates the port's events after the port has been disconnected.
   void InvalidateEvents(v8::Local<v8::Context> context);
 
+  // Clears the delegate and event handler pointers.
+  void ClearContextPointers();
+
   // Throws the given `error`.
   void ThrowError(v8::Isolate* isolate, std::string_view error);
 
@@ -143,24 +155,19 @@ class GinPort final : public gin::Wrappable<GinPort> {
   // The type of the associated channel.
   const mojom::ChannelType channel_type_;
 
-  // The associated APIEventHandler. Guaranteed to outlive this object.
-  const raw_ptr<APIEventHandler> event_handler_;
+  // The associated APIEventHandler. Guaranteed to live until
+  // `OnContextDestroyed` is called.
+  raw_ptr<APIEventHandler> event_handler_;
 
   // The delegate for handling the message passing between ports. Guaranteed to
-  // outlive this object.
-  const raw_ptr<Delegate, DanglingUntriaged> delegate_;
+  // live until `OnContextDestroyed` is called.
+  raw_ptr<Delegate> delegate_;
 
   // Whether the `sender` property has been accessed, and thus set on the
   // port JS object.
   bool accessed_sender_;
 
-  // A listener for context invalidation. Note: this isn't actually optional;
-  // it just needs to be created after `weak_factory_`, which needs to be the
-  // final member.
-  std::optional<binding::ContextInvalidationListener>
-      context_invalidation_listener_;
-
-  base::WeakPtrFactory<GinPort> weak_factory_{this};
+  binding::ContextInvalidationListener context_invalidation_listener_;
 };
 
 }  // namespace extensions

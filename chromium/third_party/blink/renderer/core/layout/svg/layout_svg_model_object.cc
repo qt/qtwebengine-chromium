@@ -106,6 +106,21 @@ void LayoutSVGModelObject::WillBeDestroyed() {
   LayoutObject::WillBeDestroyed();
 }
 
+bool LayoutSVGModelObject::MapToVisualRectInAncestorSpaceInternal(
+    const LayoutBoxModelObject* ancestor,
+    TransformState& transform_state,
+    VisualRectFlags visual_rect_flags) const {
+  NOT_DESTROYED();
+  transform_state.Flatten();
+  PhysicalRect rect = PhysicalRect::FastAndLossyFromRectF(
+      transform_state.LastPlanarQuad().BoundingBox());
+  // Apply other mappings on local SVG coordinates.
+  bool retval = SVGLayoutSupport::MapToVisualRectInAncestorSpace(
+      *this, ancestor, gfx::RectF(rect), rect);
+  transform_state.SetQuad(gfx::QuadF(gfx::RectF(rect)));
+  return retval;
+}
+
 bool LayoutSVGModelObject::CheckForImplicitTransformChange(
     const SVGLayoutInfo& layout_info,
     bool bbox_changed) const {
@@ -133,12 +148,10 @@ void LayoutSVGModelObject::ImageChanged(WrappedImagePtr image,
     if (style_image && image == style_image->Data()) {
       SetShouldDoFullPaintInvalidationWithoutLayoutChange(
           PaintInvalidationReason::kImage);
-      if (style_image->IsMaskSource()) {
-        // Since an invalid <mask> reference does not yield a paint property on
-        // SVG content (see CSSMaskPainter), we need to update paint properties
-        // when such a reference changes.
-        SetNeedsPaintPropertyUpdate();
-      }
+      // Since an invalid <mask> reference does not yield a paint property on
+      // SVG content (see CSSMaskPainter), we need to update paint properties
+      // when such a reference changes.
+      SetNeedsPaintPropertyUpdate();
       break;
     }
   }
@@ -152,8 +165,9 @@ void LayoutSVGModelObject::StyleDidChange(
   LayoutObject::StyleDidChange(diff, old_style, style_change_context);
 
   if (diff.NeedsFullLayout()) {
-    if (diff.TransformChanged())
+    if (diff.transform_changed) {
       SetNeedsTransformUpdate();
+    }
   }
 
   SetHasTransformRelatedProperty(
@@ -165,7 +179,7 @@ void LayoutSVGModelObject::StyleDidChange(
     return;
 
   if (!IsSVGHiddenContainer()) {
-    if (diff.BlendModeChanged()) {
+    if (diff.blend_mode_changed) {
       DCHECK(IsBlendingAllowed());
       Parent()->DescendantIsolationRequirementsChanged(
           StyleRef().HasBlendMode() ? kDescendantIsolationRequired

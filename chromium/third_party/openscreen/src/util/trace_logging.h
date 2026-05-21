@@ -5,7 +5,9 @@
 #ifndef UTIL_TRACE_LOGGING_H_
 #define UTIL_TRACE_LOGGING_H_
 
+#include <sstream>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -50,19 +52,50 @@
        ? openscreen::internal::ScopedTraceOperation::root_id() \
        : kEmptyTraceId)
 
-// NOTE: this method requires arguments to be passed as already serialized
-// strings.
+namespace openscreen::internal {
+
+template <typename T>
+std::string ToString(T&& val) {
+  using DecayT = std::decay_t<T>;
+  if constexpr (std::is_constructible_v<std::string, T>) {
+    return std::string(std::forward<T>(val));
+  } else if constexpr (std::is_arithmetic_v<DecayT>) {
+    return std::to_string(val);
+  } else {
+    std::ostringstream oss;
+    oss << val;
+    return oss.str();
+  }
+}
+
+// Helper to extract a flow ID from various types (arithmetic or wrappers like
+// FrameId).
+template <typename T>
+constexpr uint64_t ToFlowId(const T& val) {
+  if constexpr (std::is_arithmetic_v<T>) {
+    return static_cast<uint64_t>(val);
+  } else {
+    // Assume it's a numeric wrapper like FrameId with a .value() method.
+    return static_cast<uint64_t>(val.value());
+  }
+}
+
+}  // namespace openscreen::internal
+
+template <typename V1 = std::string, typename V2 = std::string>
 inline std::vector<openscreen::TraceEvent::Argument> ToArgumentArray(
-    const char* argname = {},
-    std::string argval = {},
-    const char* argname_two = {},
-    std::string argval_two = {}) {
+    const char* argname = nullptr,
+    V1&& argval = V1(),
+    const char* argname_two = nullptr,
+    V2&& argval_two = V2()) {
   std::vector<openscreen::TraceEvent::Argument> out;
   if (argname) {
-    out.emplace_back(argname, std::move(argval));
+    out.emplace_back(argname,
+                     openscreen::internal::ToString(std::forward<V1>(argval)));
   }
   if (argname_two) {
-    out.emplace_back(argname_two, std::move(argval_two));
+    out.emplace_back(argname_two, openscreen::internal::ToString(
+                                      std::forward<V2>(argval_two)));
   }
   return out;
 }
@@ -117,6 +150,70 @@ inline std::vector<openscreen::TraceEvent::Argument> ToArgumentArray(
         __LINE__, __FILE__, id, result)                        \
   : false
 
+// Flow events are used to link trace events across different threads or
+// processes. Flows are linked by their flow_id.
+// - Flows can span across different trace categories.
+// - If a TRACE_FLOW_BEGIN is missing (e.g. because the embedder didn't
+// instrument it),
+//   the first TRACE_FLOW_STEP encountered will effectively start the flow
+//   visualization.
+#define TRACE_FLOW_BEGIN(category, name, flow_id)          \
+  TRACE_IS_ENABLED(category)                               \
+  ? openscreen::internal::ScopedTraceOperation::TraceFlow( \
+        category, name, __FILE__, __LINE__,                \
+        openscreen::internal::ToFlowId(flow_id),           \
+        openscreen::FlowType::kFlowBegin)                  \
+  : false
+
+#define TRACE_FLOW_STEP(category, name, flow_id)           \
+  TRACE_IS_ENABLED(category)                               \
+  ? openscreen::internal::ScopedTraceOperation::TraceFlow( \
+        category, name, __FILE__, __LINE__,                \
+        openscreen::internal::ToFlowId(flow_id),           \
+        openscreen::FlowType::kFlowStep)                   \
+  : false
+
+#define TRACE_FLOW_END(category, name, flow_id)            \
+  TRACE_IS_ENABLED(category)                               \
+  ? openscreen::internal::ScopedTraceOperation::TraceFlow( \
+        category, name, __FILE__, __LINE__,                \
+        openscreen::internal::ToFlowId(flow_id),           \
+        openscreen::FlowType::kFlowEnd)                    \
+  : false
+
+#define TRACE_FLOW_BEGIN_WITH_TIME(category, name, flow_id, timestamp) \
+  TRACE_IS_ENABLED(category)                                           \
+  ? openscreen::internal::ScopedTraceOperation::TraceFlow(             \
+        category, name, __FILE__, __LINE__,                            \
+        openscreen::internal::ToFlowId(flow_id),                       \
+        openscreen::FlowType::kFlowBegin, timestamp)                   \
+  : false
+
+#define TRACE_FLOW_STEP_WITH_TIME(category, name, flow_id, timestamp) \
+  TRACE_IS_ENABLED(category)                                          \
+  ? openscreen::internal::ScopedTraceOperation::TraceFlow(            \
+        category, name, __FILE__, __LINE__,                           \
+        openscreen::internal::ToFlowId(flow_id),                      \
+        openscreen::FlowType::kFlowStep, timestamp)                   \
+  : false
+
+#define TRACE_FLOW_END_WITH_TIME(category, name, flow_id, timestamp) \
+  TRACE_IS_ENABLED(category)                                         \
+  ? openscreen::internal::ScopedTraceOperation::TraceFlow(           \
+        category, name, __FILE__, __LINE__,                          \
+        openscreen::internal::ToFlowId(flow_id),                     \
+        openscreen::FlowType::kFlowEnd, timestamp)                   \
+  : false
+
+#define TRACE_FLOW_DEFAULT_BEGIN(category, flow_id) \
+  TRACE_FLOW_BEGIN(category, __PRETTY_FUNCTION__, flow_id)
+
+#define TRACE_FLOW_DEFAULT_STEP(category, flow_id) \
+  TRACE_FLOW_STEP(category, __PRETTY_FUNCTION__, flow_id)
+
+#define TRACE_FLOW_DEFAULT_END(category, flow_id) \
+  TRACE_FLOW_END(category, __PRETTY_FUNCTION__, flow_id)
+
 #else  // ENABLE_TRACE_LOGGING not defined
 
 namespace openscreen::internal {
@@ -156,6 +253,29 @@ inline void DoNothingForTracing(Args... args) {}
   openscreen::internal::DoNothingForTracing(category, name, ##__VA_ARGS__)
 #define TRACE_ASYNC_END(category, id, result) \
   openscreen::internal::DoNothingForTracing(category, id, result)
+
+#define TRACE_FLOW_BEGIN(category, name, flow_id) \
+  openscreen::internal::DoNothingForTracing(category, name, flow_id)
+#define TRACE_FLOW_STEP(category, name, flow_id) \
+  openscreen::internal::DoNothingForTracing(category, name, flow_id)
+#define TRACE_FLOW_END(category, name, flow_id) \
+  openscreen::internal::DoNothingForTracing(category, name, flow_id)
+
+#define TRACE_FLOW_BEGIN_WITH_TIME(category, name, flow_id, timestamp) \
+  openscreen::internal::DoNothingForTracing(category, name, flow_id, timestamp)
+
+#define TRACE_FLOW_STEP_WITH_TIME(category, name, flow_id, timestamp) \
+  openscreen::internal::DoNothingForTracing(category, name, flow_id, timestamp)
+
+#define TRACE_FLOW_END_WITH_TIME(category, name, flow_id, timestamp) \
+  openscreen::internal::DoNothingForTracing(category, name, flow_id, timestamp)
+
+#define TRACE_FLOW_DEFAULT_BEGIN(category, flow_id) \
+  openscreen::internal::DoNothingForTracing(category, flow_id)
+#define TRACE_FLOW_DEFAULT_STEP(category, flow_id) \
+  openscreen::internal::DoNothingForTracing(category, flow_id)
+#define TRACE_FLOW_DEFAULT_END(category, flow_id) \
+  openscreen::internal::DoNothingForTracing(category, flow_id)
 
 #endif  // defined(ENABLE_TRACE_LOGGING)
 

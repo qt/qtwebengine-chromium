@@ -84,9 +84,6 @@ class CookieSettingsBase {
   // Enum for measuring the mechanism for re-enabling third-party cookies when
   // applying 3PCD experiment. These values are persisted to logs. Entries
   // should not be renumbered and numeric values should never be reused.
-  //
-  // Keep in sync with ThirdPartyCookieAllowMechanism at
-  // //src/tools/metrics/histograms/metadata/page/enums.xml
   enum class ThirdPartyCookieAllowMechanism {
     kNone = 0,
     // Allow by explicit cookie content setting (e.g. UserBypass).
@@ -259,7 +256,7 @@ class CookieSettingsBase {
   };
 
   // Set of types relevant for CookieSettings.
-  using CookieSettingsTypeSet = base::fixed_flat_set<ContentSettingsType, 8>;
+  using CookieSettingsTypeSet = base::fixed_flat_set<ContentSettingsType, 7>;
 
   // ContentSettings listed in this set will be automatically synced to the
   // CookieSettings instance in the network service.
@@ -492,10 +489,6 @@ class CookieSettingsBase {
   bool IsAllowedBySandboxValue(const GURL& url,
                                const GURL& first_party_url,
                                net::CookieSettingOverrides overrides) const;
-
-  IsAllowedWithMetadata IsAllowedByTrackingProtectionSetting(
-      const GURL& url,
-      const GURL& first_party_url) const;
 
   bool IsAllowedBy3pcdHeuristicsGrantsSettings(
       const GURL& url,

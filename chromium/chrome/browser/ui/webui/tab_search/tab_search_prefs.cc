@@ -4,7 +4,8 @@
 
 #include "chrome/browser/ui/webui/tab_search/tab_search_prefs.h"
 
-#include "base/types/cxx23_to_underlying.h"
+#include <utility>
+
 #include "chrome/browser/ui/webui/tab_search/tab_search.mojom.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/prefs/pref_registry_simple.h"
@@ -19,6 +20,10 @@ const char kTabSearchRecentlyClosedSectionExpanded[] =
 // Integer pref indicating which tab the Tab Search bubble should open to
 // when shown.
 const char kTabSearchTabIndex[] = "tab_search.tab_index";
+
+// Boolean pref indicating whether the Tab Search bubble has been used (a tab
+// has been activated or closed).
+const char kTabSearchUsed[] = "tab_search.used";
 
 // Integer pref indicating which organization feature, if any, the Tab
 // Organization Selector should open to when shown.
@@ -40,6 +45,7 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
   registry->RegisterIntegerPref(
       kTabSearchTabIndex,
       GetIntFromTabSearchSection(tab_search::mojom::TabSearchSection::kSearch));
+  registry->RegisterBooleanPref(kTabSearchUsed, false);
   registry->RegisterIntegerPref(
       kTabOrganizationFeature,
       GetIntFromTabOrganizationFeature(
@@ -57,7 +63,7 @@ tab_search::mojom::TabSearchSection GetTabSearchSectionFromInt(
 
 int GetIntFromTabSearchSection(
     const tab_search::mojom::TabSearchSection section) {
-  return base::to_underlying(section);
+  return std::to_underlying(section);
 }
 
 tab_search::mojom::TabOrganizationFeature GetTabOrganizationFeatureFromInt(
@@ -68,7 +74,7 @@ tab_search::mojom::TabOrganizationFeature GetTabOrganizationFeatureFromInt(
 
 int GetIntFromTabOrganizationFeature(
     const tab_search::mojom::TabOrganizationFeature feature) {
-  return base::to_underlying(feature);
+  return std::to_underlying(feature);
 }
 
 }  // namespace tab_search_prefs

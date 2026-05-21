@@ -529,6 +529,9 @@ protocol::Response InspectorOverlayAgent::disable() {
 
   persistent_tool_ = nullptr;
   hinge_ = nullptr;
+  if (inspect_tool_) {
+    inspect_tool_->OnAgentDisable();
+  }
   PickTheRightTool();
   SetNeedsUnbufferedInput(false);
   document_to_ax_context_.clear();
@@ -942,6 +945,13 @@ protocol::Response InspectorOverlayAgent::setShowIsolatedElements(
 
   PickTheRightTool();
 
+  return protocol::Response::Success();
+}
+
+protocol::Response InspectorOverlayAgent::setShowInspectedElementAnchor(
+    std::unique_ptr<protocol::Overlay::InspectedElementAnchorConfig>
+        inspected_element_anchor_config) {
+  LOG(ERROR) << "Not implemented yet";
   return protocol::Response::Success();
 }
 

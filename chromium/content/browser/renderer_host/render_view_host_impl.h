@@ -8,7 +8,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -242,7 +241,10 @@ class CONTENT_EXPORT RenderViewHostImpl
 
   // Called when the RenderFrameHostImpls/RenderFrameProxyHosts that own this
   // RenderViewHost enter the BackForwardCache.
-  void EnterBackForwardCache();
+  // `new_navigation_request_url` is a URL for the next new page's
+  // navigation_request_url, not the bfcached page's URL.
+  void EnterBackForwardCache(
+      const base::optional_ref<const GURL> new_navigation_request_url);
 
   // Indicates whether or not |this| has received an acknowledgement from
   // renderer that it has enered BackForwardCache.
@@ -348,7 +350,6 @@ class CONTENT_EXPORT RenderViewHostImpl
   void RenderWidgetDidForwardMouseEvent(
       const blink::WebMouseEvent& mouse_event) override;
 
-  bool ShouldContributePriorityToProcess() override;
   void SetBackgroundOpaque(bool opaque) override;
   bool IsMainFrameActive() override;
   blink::web_pref::WebPreferences GetWebkitPreferencesForWidget() override;

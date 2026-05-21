@@ -1,6 +1,23 @@
-CHANGES BETWEEN 2.14.1 and 2.14.2 (2025-Mmm-DD)
+CHANGES BETWEEN 2.14.1 and 2.14.2 (2026-Mmm-DD)
 
-  I. IMPORTANT BUG FIXES
+  I. IMPORTANT CHANGES
+
+  - Several  changes  related  to  LCD  filtering  are implemented  to
+    achieve better performance and encourage sound practices.
+
+    . Instead of  blanket LCD filtering over the entire bitmap,  it is
+      now applied only to non-zero spans using direct rendering.  This
+      speeds up the ClearType-like rendering by more than 40% at sizes
+      above 32 ppem.
+
+    . Setting the filter weights with FT_Face_Properties  is no longer
+      supported.  The default and light filters  are optimized to work
+      with any face.
+
+    . The legacy libXft LCD filter algorithm is no longer provided.
+
+
+  II. IMPORTANT BUG FIXES
 
   - The italic angle in `PS_FontInfo`  is now stored  as a fixed-point
     value  in degrees  for  all  Type 1 fonts  and  their derivatives,

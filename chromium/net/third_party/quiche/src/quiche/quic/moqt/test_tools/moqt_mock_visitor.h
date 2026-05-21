@@ -17,7 +17,9 @@
 #include "absl/strings/string_view.h"
 #include "quiche/quic/core/quic_time.h"
 #include "quiche/quic/moqt/moqt_fetch_task.h"
+#include "quiche/quic/moqt/moqt_key_value_pair.h"
 #include "quiche/quic/moqt/moqt_messages.h"
+#include "quiche/quic/moqt/moqt_names.h"
 #include "quiche/quic/moqt/moqt_object.h"
 #include "quiche/quic/moqt/moqt_priority.h"
 #include "quiche/quic/moqt/moqt_publisher.h"
@@ -40,7 +42,7 @@ struct MockSessionCallbacks {
                              MoqtResponseCallback)>
       incoming_publish_namespace_callback;
   testing::MockFunction<void(const TrackNamespace&,
-                             std::optional<VersionSpecificParameters>,
+                             std::optional<MessageParameters>,
                              MoqtResponseCallback)>
       incoming_subscribe_namespace_callback;
 
@@ -66,8 +68,7 @@ class MockTrackPublisher : public MoqtTrackPublisher {
  public:
   explicit MockTrackPublisher(FullTrackName name)
       : track_name_(std::move(name)) {
-    ON_CALL(*this, delivery_order())
-        .WillByDefault(testing::Return(MoqtDeliveryOrder::kAscending));
+    ON_CALL(*this, extensions()).WillByDefault(testing::ReturnRef(extensions_));
   }
   const FullTrackName& GetTrackName() const override { return track_name_; }
 
@@ -78,10 +79,7 @@ class MockTrackPublisher : public MoqtTrackPublisher {
   MOCK_METHOD(void, RemoveObjectListener, (MoqtObjectListener * listener),
               (override));
   MOCK_METHOD(std::optional<Location>, largest_location, (), (const, override));
-  MOCK_METHOD(std::optional<MoqtForwardingPreference>, forwarding_preference,
-              (), (const, override));
-  MOCK_METHOD(std::optional<MoqtDeliveryOrder>, delivery_order, (),
-              (const, override));
+  MOCK_METHOD(const TrackExtensions&, extensions, (), (const, override));
   MOCK_METHOD(std::optional<quic::QuicTimeDelta>, expiration, (),
               (const, override));
   MOCK_METHOD(std::unique_ptr<MoqtFetchTask>, StandaloneFetch,
@@ -94,6 +92,7 @@ class MockTrackPublisher : public MoqtTrackPublisher {
 
  private:
   FullTrackName track_name_;
+  const TrackExtensions extensions_;
 };
 
 // A very simple MoqtTrackPublisher that allows tests to add arbitrary objects.
@@ -121,13 +120,7 @@ class TestTrackPublisher : public MoqtTrackPublisher {
   std::optional<Location> largest_location() const override {
     return largest_location_;
   }
-  std::optional<MoqtForwardingPreference> forwarding_preference()
-      const override {
-    return MoqtForwardingPreference::kSubgroup;
-  }
-  std::optional<MoqtDeliveryOrder> delivery_order() const override {
-    return MoqtDeliveryOrder::kAscending;
-  }
+  const TrackExtensions& extensions() const override { return extensions_; }
   std::optional<quic::QuicTimeDelta> expiration() const override {
     return quic::QuicTimeDelta::Infinite();
   }
@@ -166,7 +159,8 @@ class TestTrackPublisher : public MoqtTrackPublisher {
       largest_location_ = location;
     }
     for (MoqtObjectListener* listener : listeners_) {
-      listener->OnNewObjectAvailable(location, subgroup, 128);
+      listener->OnNewObjectAvailable(location, subgroup, 128,
+                                     MoqtForwardingPreference::kSubgroup);
     }
   }
   void RemoveAllSubscriptions() {
@@ -180,6 +174,7 @@ class TestTrackPublisher : public MoqtTrackPublisher {
   absl::flat_hash_set<MoqtObjectListener*> listeners_;
   absl::flat_hash_map<Location, CachedObject> objects_;
   std::optional<Location> largest_location_;
+  TrackExtensions extensions_;
 };
 
 // TODO(martinduke): Rename to MockSubscribeVisitor.
@@ -187,7 +182,7 @@ class MockSubscribeRemoteTrackVisitor : public SubscribeVisitor {
  public:
   MOCK_METHOD(void, OnReply,
               (const FullTrackName& full_track_name,
-               (std::variant<SubscribeOkData, MoqtRequestError> response)),
+               (std::variant<SubscribeOkData, MoqtRequestErrorInfo> response)),
               (override));
   MOCK_METHOD(void, OnCanAckObjects, (MoqtObjectAckFunction ack_function),
               (override));
@@ -211,6 +206,7 @@ class MockPublishingMonitorInterface : public MoqtPublishingMonitorInterface {
  public:
   MOCK_METHOD(void, OnObjectAckSupportKnown,
               (std::optional<quic::QuicTimeDelta> time_window), (override));
+  MOCK_METHOD(void, OnNewObjectEnqueued, (Location location), (override));
   MOCK_METHOD(void, OnObjectAckReceived,
               (Location location, quic::QuicTimeDelta delta_from_deadline),
               (override));
@@ -220,7 +216,7 @@ class MockFetchTask : public MoqtFetchTask {
  public:
   MockFetchTask() {};  // No synchronous callbacks.
   MockFetchTask(std::optional<MoqtFetchOk> fetch_ok,
-                std::optional<MoqtFetchError> fetch_error,
+                std::optional<MoqtRequestError> fetch_error,
                 bool synchronous_object_available)
       : synchronous_fetch_ok_(fetch_ok),
         synchronous_fetch_error_(fetch_error),
@@ -258,7 +254,7 @@ class MockFetchTask : public MoqtFetchTask {
 
   void CallObjectsAvailableCallback() { objects_available_callback_(); };
   void CallFetchResponseCallback(
-      std::variant<MoqtFetchOk, MoqtFetchError> response) {
+      std::variant<MoqtFetchOk, MoqtRequestError> response) {
     std::move(fetch_response_callback_)(response);
   }
 
@@ -266,15 +262,16 @@ class MockFetchTask : public MoqtFetchTask {
   FetchResponseCallback fetch_response_callback_;
   ObjectsAvailableCallback objects_available_callback_;
   std::optional<MoqtFetchOk> synchronous_fetch_ok_;
-  std::optional<MoqtFetchError> synchronous_fetch_error_;
+  std::optional<MoqtRequestError> synchronous_fetch_error_;
   bool synchronous_object_available_ = false;
 };
 
 class MockMoqtObjectListener : public MoqtObjectListener {
  public:
   MOCK_METHOD(void, OnSubscribeAccepted, (), (override));
-  MOCK_METHOD(void, OnSubscribeRejected, (MoqtRequestError), (override));
-  MOCK_METHOD(void, OnNewObjectAvailable, (Location, uint64_t, MoqtPriority),
+  MOCK_METHOD(void, OnSubscribeRejected, (MoqtRequestErrorInfo), (override));
+  MOCK_METHOD(void, OnNewObjectAvailable,
+              (Location, uint64_t, MoqtPriority, MoqtForwardingPreference),
               (override));
   MOCK_METHOD(void, OnNewFinAvailable, (Location, uint64_t), (override));
   MOCK_METHOD(void, OnSubgroupAbandoned,

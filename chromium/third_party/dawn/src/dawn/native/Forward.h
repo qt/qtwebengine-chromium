@@ -63,6 +63,7 @@ class RenderBundleEncoder;
 class RenderPassEncoder;
 class RenderPipelineBase;
 class ResourceHeapBase;
+class ResourceTableBase;
 class SamplerBase;
 class SharedFenceBase;
 class Surface;

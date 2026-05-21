@@ -124,11 +124,11 @@ struct StateImpl : core::ir::transform::ShaderIOBackendState {
                   core::Access access,
                   const char* name_suffix) {
         if (func->IsVertex() && addrspace == core::AddressSpace::kOut &&
-            config.apply_pixel_center_polyfill) {
+            config.polyfill_pixel_center) {
             center_pos_vert_idx = AddCenterPosInterpolant(entries, addrspace);
 
         } else if (func->IsFragment() && addrspace == core::AddressSpace::kIn &&
-                   config.apply_pixel_center_polyfill) {
+                   config.polyfill_pixel_center) {
             center_pos_frag_idx = AddCenterPosInterpolant(entries, addrspace);
         }
 
@@ -211,7 +211,7 @@ struct StateImpl : core::ir::transform::ShaderIOBackendState {
             auto* vec_xy = builder.Swizzle(ty.vec2f(), value, {0, 1});
             auto* floor_xy = builder.Call(ty.vec2f(), core::BuiltinFn::kFloor, vec_xy);
             auto p5_const = builder.Constant(0.5_f);
-            auto* plus_p5 = builder.Add(ty.vec2f(), floor_xy, builder.Splat(ty.vec2f(), p5_const));
+            auto* plus_p5 = builder.Add(floor_xy, builder.Splat(ty.vec2f(), p5_const));
 
             auto* xyzw_from_user_center = builder.Load(input_vars[center_pos_frag_idx.value()]);
 
@@ -256,9 +256,9 @@ struct StateImpl : core::ir::transform::ShaderIOBackendState {
             // Special center position polyfilled from within vertex shader.
             TINT_IR_ASSERT(ir, vert_out_position);
             auto one_div_w =
-                builder.Divide(ty.f32(), 1_f, builder.Swizzle(ty.f32(), vert_out_position, {3u}));
-            auto z_div_w = builder.Multiply(ty.f32(), one_div_w,
-                                            builder.Swizzle(ty.f32(), vert_out_position, {2u}));
+                builder.Divide(1_f, builder.Swizzle(ty.f32(), vert_out_position, {3u}));
+            auto z_div_w =
+                builder.Multiply(one_div_w, builder.Swizzle(ty.f32(), vert_out_position, {2u}));
             value =
                 builder
                     .Construct(ty.vec4f(), builder.Swizzle(ty.vec2f(), vert_out_position, {0, 1}),
@@ -296,9 +296,9 @@ struct StateImpl : core::ir::transform::ShaderIOBackendState {
         auto* max = builder.Load(builder.Access<ptr<immediate, f32>>(immediate_data, max_idx));
         // Viewport remapping depth normalization equation.
         // https://www.w3.org/TR/webgpu/#coordinate-systems#:~:text=Viewport%20coordinates
-        auto* max_minus_min = builder.Subtract(ty.f32(), max, min);
-        auto* rhs = builder.Multiply(ty.f32(), max_minus_min, frag_depth);
-        return builder.Add(ty.f32(), min, rhs)->Result();
+        auto* max_minus_min = builder.Subtract(max, min);
+        auto* rhs = builder.Multiply(max_minus_min, frag_depth);
+        return builder.Add(min, rhs)->Result();
     }
 
     /// Clamp a frag_depth builtin value if necessary.
@@ -315,7 +315,7 @@ struct StateImpl : core::ir::transform::ShaderIOBackendState {
         auto max_idx = u32(config.immediate_data_layout.IndexOf(config.depth_range_offsets->max));
         auto* min = builder.Load(builder.Access<ptr<immediate, f32>>(immediate_data, min_idx));
         auto* max = builder.Load(builder.Access<ptr<immediate, f32>>(immediate_data, max_idx));
-        return builder.Call<f32>(core::BuiltinFn::kClamp, frag_depth, min, max)->Result();
+        return builder.Clamp(frag_depth, min, max)->Result();
     }
 
     /// @copydoc ShaderIO::BackendState::NeedsVertexPointSize
@@ -324,10 +324,7 @@ struct StateImpl : core::ir::transform::ShaderIOBackendState {
 }  // namespace
 
 Result<SuccessType> ShaderIO(core::ir::Module& ir, const ShaderIOConfig& config) {
-    auto result = ValidateAndDumpIfNeeded(ir, "spirv.ShaderIO", kShaderIOCapabilities);
-    if (result != Success) {
-        return result;
-    }
+    TINT_CHECK_RESULT(ValidateAndDumpIfNeeded(ir, "spirv.ShaderIO", kShaderIOCapabilities));
 
     core::ir::transform::RunShaderIOBase(ir, [&](core::ir::Module& mod, core::ir::Function* func) {
         return std::make_unique<StateImpl>(mod, func, config);

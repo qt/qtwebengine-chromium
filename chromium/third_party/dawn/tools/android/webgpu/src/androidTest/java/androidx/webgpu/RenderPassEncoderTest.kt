@@ -1,3 +1,18 @@
+/*
+ * Copyright 2025 The Android Open Source Project
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package androidx.webgpu
 
 import androidx.test.filters.MediumTest
@@ -34,8 +49,8 @@ class RenderPassEncoderTest {
     device = gpu.device
 
     renderTarget = device.createTexture(
-      TextureDescriptor(
-        size = Extent3D(1, 1, 1),
+      GPUTextureDescriptor(
+        size = GPUExtent3D(1, 1, 1),
         format = TextureFormat.RGBA8Unorm,
         usage = TextureUsage.RenderAttachment
       )
@@ -43,8 +58,8 @@ class RenderPassEncoderTest {
     renderTargetView = renderTarget.createView()
 
     renderTargetDepth = device.createTexture(
-      TextureDescriptor(
-        size = Extent3D(1, 1, 1),
+      GPUTextureDescriptor(
+        size = GPUExtent3D(1, 1, 1),
         format = kDepthFormat,
         usage = TextureUsage.RenderAttachment
       )
@@ -52,8 +67,8 @@ class RenderPassEncoderTest {
     renderTargetDepthView = renderTargetDepth.createView()
 
     shaderModule = device.createShaderModule(
-      ShaderModuleDescriptor(
-        shaderSourceWGSL = ShaderSourceWGSL(
+      GPUShaderModuleDescriptor(
+        shaderSourceWGSL = GPUShaderSourceWGSL(
           """
                         @vertex fn vsMain() -> @builtin(position) vec4<f32> {
                             return vec4<f32>(0.0, 0.0, 0.0, 1.0);
@@ -66,20 +81,20 @@ class RenderPassEncoderTest {
       )
     )
 
-    layout = device.createPipelineLayout(PipelineLayoutDescriptor())
+    layout = device.createPipelineLayout(GPUPipelineLayoutDescriptor())
 
     defaultColorPipeline = device.createRenderPipeline(
-      RenderPipelineDescriptor(
+      GPURenderPipelineDescriptor(
         layout = layout,
-        vertex = VertexState(module = shaderModule, entryPoint = "vsMain"),
-        fragment = FragmentState(
+        vertex = GPUVertexState(module = shaderModule, entryPoint = "vsMain"),
+        fragment = GPUFragmentState(
           module = shaderModule,
           entryPoint = "fsMain",
           targets = arrayOf(
-            ColorTargetState(format = TextureFormat.RGBA8Unorm)
+            GPUColorTargetState(format = TextureFormat.RGBA8Unorm)
           )
         ),
-        primitive = PrimitiveState(topology = PrimitiveTopology.TriangleList),
+        primitive = GPUPrimitiveState(topology = PrimitiveTopology.TriangleList),
       )
     )
   }
@@ -106,13 +121,13 @@ class RenderPassEncoderTest {
    */
   private fun beginDefaultRenderPass(encoder: GPUCommandEncoder): GPURenderPassEncoder {
     return encoder.beginRenderPass(
-      RenderPassDescriptor(
+      GPURenderPassDescriptor(
         colorAttachments = arrayOf(
-          RenderPassColorAttachment(
+          GPURenderPassColorAttachment(
             view = renderTargetView,
             loadOp = LoadOp.Clear,
             storeOp = StoreOp.Store,
-            clearValue = Color(0.0, 0.0, 0.0, 1.0)
+            clearValue = GPUColor(0.0, 0.0, 0.0, 1.0)
           )
         )
       )
@@ -127,7 +142,7 @@ class RenderPassEncoderTest {
     val paddedSize = (dataSize + 3) and -4L  // Aligns to 4 bytes.
 
     val buffer = device.createBuffer(
-      BufferDescriptor(
+      GPUBufferDescriptor(
         size = paddedSize,
         usage = BufferUsage.Index or BufferUsage.CopyDst
       )
@@ -148,7 +163,7 @@ class RenderPassEncoderTest {
     byteBuffer.asIntBuffer().put(data)
 
     val buffer = device.createBuffer(
-      BufferDescriptor(
+      GPUBufferDescriptor(
         size = byteBuffer.capacity().toLong(),
         usage = BufferUsage.Indirect or BufferUsage.CopyDst
       )
@@ -204,7 +219,7 @@ class RenderPassEncoderTest {
   @Test
   fun testSetVertexBufferInvalidUsageFails() {
     val invalidBuffer = device.createBuffer(
-      BufferDescriptor(size = 16, usage = BufferUsage.CopyDst)
+      GPUBufferDescriptor(size = 16, usage = BufferUsage.CopyDst)
     )
     val encoder = device.createCommandEncoder()
     val passEncoder = beginDefaultRenderPass(encoder)
@@ -255,7 +270,7 @@ class RenderPassEncoderTest {
   @Test
   fun testDrawIndirectInvalidBufferFails() {
     val invalidBuffer = device.createBuffer(
-      BufferDescriptor(size = 16, usage = BufferUsage.CopyDst)  // 4 * Int.
+      GPUBufferDescriptor(size = 16, usage = BufferUsage.CopyDst)  // 4 * Int.
     )
     val encoder = device.createCommandEncoder()
     val passEncoder = beginDefaultRenderPass(encoder)
@@ -315,18 +330,18 @@ class RenderPassEncoderTest {
     // We can't use the class-level 'defaultColorPipeline' because it's color-only.
 
     val depthPipeline = device.createRenderPipeline(
-      RenderPipelineDescriptor(
+      GPURenderPipelineDescriptor(
         layout = layout,
-        vertex = VertexState(module = shaderModule, entryPoint = "vsMain"),
-        fragment = FragmentState(
+        vertex = GPUVertexState(module = shaderModule, entryPoint = "vsMain"),
+        fragment = GPUFragmentState(
           module = shaderModule,
           entryPoint = "fsMain",
           targets = arrayOf(
-            ColorTargetState(format = TextureFormat.RGBA8Unorm)
+            GPUColorTargetState(format = TextureFormat.RGBA8Unorm)
           )
         ),
-        primitive = PrimitiveState(topology = PrimitiveTopology.TriangleList),
-        depthStencil = DepthStencilState(
+        primitive = GPUPrimitiveState(topology = PrimitiveTopology.TriangleList),
+        depthStencil = GPUDepthStencilState(
           format = kDepthFormat,
           depthWriteEnabled = OptionalBool.Companion.True,
           depthCompare = CompareFunction.Always
@@ -335,20 +350,20 @@ class RenderPassEncoderTest {
     )
 
     val querySet = device.createQuerySet(
-      QuerySetDescriptor(type = QueryType.Occlusion, count = 1)
+      GPUQuerySetDescriptor(type = QueryType.Occlusion, count = 1)
     )
     val encoder = device.createCommandEncoder()
     val passEncoder = encoder.beginRenderPass(
-      RenderPassDescriptor(
+      GPURenderPassDescriptor(
         colorAttachments = arrayOf(
-          RenderPassColorAttachment(
+          GPURenderPassColorAttachment(
             view = renderTargetView,
             loadOp = LoadOp.Clear,
             storeOp = StoreOp.Store,
-            clearValue = Color(0.0, 0.0, 0.0, 1.0)
+            clearValue = GPUColor(0.0, 0.0, 0.0, 1.0)
           )
         ),
-        depthStencilAttachment = RenderPassDepthStencilAttachment(
+        depthStencilAttachment = GPURenderPassDepthStencilAttachment(
           view = renderTargetDepthView,
           depthLoadOp = LoadOp.Clear,
           depthStoreOp = StoreOp.Store,
@@ -380,7 +395,7 @@ class RenderPassEncoderTest {
     val passEncoder = beginDefaultRenderPass(encoder)
     passEncoder.setViewport(0f, 0f, 1f, 1f, 0f, 1f)
     passEncoder.setScissorRect(0, 0, 1, 1)
-    passEncoder.setBlendConstant(Color(0.0, 0.0, 0.0, 0.0))
+    passEncoder.setBlendConstant(GPUColor(0.0, 0.0, 0.0, 0.0))
     passEncoder.setStencilReference(0)
     passEncoder.end()
 
@@ -407,7 +422,7 @@ class RenderPassEncoderTest {
   @Test
   fun testExecuteBundlesSucceeds() {
     val bundleEncoder = device.createRenderBundleEncoder(
-      RenderBundleEncoderDescriptor(
+      GPURenderBundleEncoderDescriptor(
         colorFormats = intArrayOf(TextureFormat.RGBA8Unorm)
       )
     )

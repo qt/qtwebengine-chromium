@@ -8,7 +8,6 @@
 #include <string>
 #include <string_view>
 
-#include "base/containers/contains.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/raw_ref.h"
 #include "components/autofill/core/browser/form_structure.h"
@@ -60,6 +59,10 @@ class FormStructureTestApi {
   }
 
   void AssignSections() { autofill::AssignSections(form_structure_->fields_); }
+
+  void UpdateFormData(const FormData& form) {
+    form_structure_->UpdateFormData(form);
+  }
 
  private:
   const raw_ref<FormStructure> form_structure_;

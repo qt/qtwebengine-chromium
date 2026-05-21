@@ -38,10 +38,6 @@ export class DebuggerWorkspaceBinding implements SDK.TargetManager.SDKModelObser
     this.workspace = workspace;
 
     this.#debuggerModelToData = new Map();
-    targetManager.addModelListener(
-        SDK.DebuggerModel.DebuggerModel, SDK.DebuggerModel.Events.GlobalObjectCleared, this.globalObjectCleared, this);
-    targetManager.addModelListener(
-        SDK.DebuggerModel.DebuggerModel, SDK.DebuggerModel.Events.DebuggerResumed, this.debuggerResumed, this);
     targetManager.observeModels(SDK.DebuggerModel.DebuggerModel, this);
     this.ignoreListManager.addEventListener(
         Workspace.IgnoreListManager.Events.IGNORED_SCRIPT_RANGES_UPDATED, event => this.updateLocations(event.data));
@@ -191,6 +187,14 @@ export class DebuggerWorkspaceBinding implements SDK.TargetManager.SDKModelObser
     return await model.createFromProtocolRuntime(stackTrace, this.#translateRawFrames.bind(this));
   }
 
+  async createStackTraceFromDebuggerPaused(
+      pausedDetails: SDK.DebuggerModel.DebuggerPausedDetails,
+      target: SDK.Target.Target): Promise<StackTrace.StackTrace.DebuggableStackTrace> {
+    const model =
+        target.model(StackTraceImpl.StackTraceModel.StackTraceModel) as StackTraceImpl.StackTraceModel.StackTraceModel;
+    return await model.createFromDebuggerPaused(pausedDetails, this.#translateRawFrames.bind(this));
+  }
+
   async createLiveLocation(
       rawLocation: SDK.DebuggerModel.Location, updateDelegate: (arg0: LiveLocation) => Promise<void>,
       locationPool: LiveLocationPool): Promise<Location|null> {
@@ -211,24 +215,6 @@ export class DebuggerWorkspaceBinding implements SDK.TargetManager.SDKModelObser
         StackTraceTopFrameLocation.createStackTraceTopFrameLocation(rawLocations, this, updateDelegate, locationPool);
     this.recordLiveLocationChange(locationPromise);
     return await locationPromise;
-  }
-
-  async createCallFrameLiveLocation(
-      location: SDK.DebuggerModel.Location, updateDelegate: (arg0: LiveLocation) => Promise<void>,
-      locationPool: LiveLocationPool): Promise<Location|null> {
-    const script = location.script();
-    if (!script) {
-      return null;
-    }
-    const debuggerModel = location.debuggerModel;
-    const liveLocationPromise = this.createLiveLocation(location, updateDelegate, locationPool);
-    this.recordLiveLocationChange(liveLocationPromise);
-    const liveLocation = await liveLocationPromise;
-    if (!liveLocation) {
-      return null;
-    }
-    this.registerCallFrameLiveLocation(debuggerModel, liveLocation);
-    return liveLocation;
   }
 
   async rawLocationToUILocation(rawLocation: SDK.DebuggerModel.Location):
@@ -401,21 +387,6 @@ export class DebuggerWorkspaceBinding implements SDK.TargetManager.SDKModelObser
     return scripts.every(script => script.isJavaScript());
   }
 
-  private globalObjectCleared(event: Common.EventTarget.EventTargetEvent<SDK.DebuggerModel.DebuggerModel>): void {
-    this.reset(event.data);
-  }
-
-  private reset(debuggerModel: SDK.DebuggerModel.DebuggerModel): void {
-    const modelData = this.#debuggerModelToData.get(debuggerModel);
-    if (!modelData) {
-      return;
-    }
-    for (const location of modelData.callFrameLocations.values()) {
-      this.removeLiveLocation(location);
-    }
-    modelData.callFrameLocations.clear();
-  }
-
   resetForTest(target: SDK.Target.Target): void {
     const debuggerModel = (target.model(SDK.DebuggerModel.DebuggerModel) as SDK.DebuggerModel.DebuggerModel);
     const modelData = this.#debuggerModelToData.get(debuggerModel);
@@ -424,23 +395,11 @@ export class DebuggerWorkspaceBinding implements SDK.TargetManager.SDKModelObser
     }
   }
 
-  private registerCallFrameLiveLocation(debuggerModel: SDK.DebuggerModel.DebuggerModel, location: Location): void {
-    const modelData = this.#debuggerModelToData.get(debuggerModel);
-    if (modelData) {
-      const locations = modelData.callFrameLocations;
-      locations.add(location);
-    }
-  }
-
   removeLiveLocation(location: Location): void {
     const modelData = this.#debuggerModelToData.get(location.rawLocation.debuggerModel);
     if (modelData) {
       modelData.disposeLocation(location);
     }
-  }
-
-  private debuggerResumed(event: Common.EventTarget.EventTargetEvent<SDK.DebuggerModel.DebuggerModel>): void {
-    this.reset(event.data);
   }
 
   private async shouldPause(
@@ -488,7 +447,7 @@ export class DebuggerWorkspaceBinding implements SDK.TargetManager.SDKModelObser
     const modelData =
         this.#debuggerModelToData.get(target.model(SDK.DebuggerModel.DebuggerModel) as SDK.DebuggerModel.DebuggerModel);
     if (modelData) {
-      modelData.translateRawFramesStep(rawFrames, translatedFrames);
+      await modelData.translateRawFramesStep(rawFrames, translatedFrames);
       return;
     }
 
@@ -501,7 +460,6 @@ export class DebuggerWorkspaceBinding implements SDK.TargetManager.SDKModelObser
 class ModelData {
   readonly #debuggerModel: SDK.DebuggerModel.DebuggerModel;
   readonly #debuggerWorkspaceBinding: DebuggerWorkspaceBinding;
-  callFrameLocations: Set<Location>;
   #defaultMapping: DefaultScriptMapping;
   readonly #resourceMapping: ResourceMapping;
   #resourceScriptMapping: ResourceScriptMapping;
@@ -511,8 +469,6 @@ class ModelData {
   constructor(debuggerModel: SDK.DebuggerModel.DebuggerModel, debuggerWorkspaceBinding: DebuggerWorkspaceBinding) {
     this.#debuggerModel = debuggerModel;
     this.#debuggerWorkspaceBinding = debuggerWorkspaceBinding;
-
-    this.callFrameLocations = new Set();
 
     const {workspace} = debuggerWorkspaceBinding.resourceMapping;
     this.#defaultMapping = new DefaultScriptMapping(debuggerModel, workspace, debuggerWorkspaceBinding);
@@ -601,10 +557,10 @@ class ModelData {
     return scope;
   }
 
-  translateRawFramesStep(
+  async translateRawFramesStep(
       rawFrames: StackTraceImpl.Trie.RawFrame[],
-      translatedFrames: Awaited<ReturnType<StackTraceImpl.StackTraceModel.TranslateRawFrames>>): void {
-    if (!this.compilerMapping.translateRawFramesStep(rawFrames, translatedFrames)) {
+      translatedFrames: Awaited<ReturnType<StackTraceImpl.StackTraceModel.TranslateRawFrames>>): Promise<void> {
+    if (!await this.compilerMapping.translateRawFramesStep(rawFrames, translatedFrames)) {
       this.#defaultTranslateRawFramesStep(rawFrames, translatedFrames);
     }
   }

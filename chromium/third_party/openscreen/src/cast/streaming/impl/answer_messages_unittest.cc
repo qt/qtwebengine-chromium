@@ -62,13 +62,13 @@ constexpr char kValidAnswerJson[] = R"({
     "scaling": "sender"
   },
   "receiverRtcpEventLog": [0, 1],
-  "receiverRtcpDscp": [234, 567],
+  "receiverRtcpDscp": [1, 3],
   "rtpExtensions": ["adaptive_playout_delay"]
 })";
 
 const Answer kValidAnswer{
     1234,                         // udp_port
-    std::vector<int>{1, 2, 3},    // send_indexes
+    std::vector<int>{1, 3},       // send_indexes
     std::vector<Ssrc>{123, 456},  // ssrcs
     std::optional<Constraints>(Constraints{
         AudioConstraints{
@@ -86,8 +86,8 @@ const Answer kValidAnswer{
             300000,             // min_bit_rate
             144000000,          // max_bit_rate
             milliseconds(3000)  // max_delay
-        }                       // video
-    }),                         // constraints
+        }  // video
+    }),  // constraints
     std::optional<DisplayDescription>(DisplayDescription{
         std::optional<Dimensions>(Dimensions{640, 480, SimpleFraction{30, 1}}),
         std::optional<AspectRatio>(AspectRatio{16, 9}),  // aspect_ratio
@@ -95,7 +95,7 @@ const Answer kValidAnswer{
             AspectRatioConstraint::kFixed),  // scaling
     }),
     std::vector<int>{7, 8, 9},              // receiver_rtcp_event_log
-    std::vector<int>{11, 12, 13},           // receiver_rtcp_dscp
+    std::vector<int>{1, 3},                 // receiver_rtcp_dscp
     std::vector<std::string>{"foo", "bar"}  // rtp_extensions
 };
 
@@ -146,7 +146,7 @@ void ExpectEqualsValidAnswerJson(const Answer& answer) {
             display.aspect_ratio_constraint.value());
 
   EXPECT_THAT(answer.receiver_rtcp_event_log, ElementsAre(0, 1));
-  EXPECT_THAT(answer.receiver_rtcp_dscp, ElementsAre(234, 567));
+  EXPECT_THAT(answer.receiver_rtcp_dscp, ElementsAre(1, 3));
   EXPECT_THAT(answer.rtp_extensions, ElementsAre("adaptive_playout_delay"));
 }
 
@@ -185,8 +185,7 @@ TEST(AnswerMessagesTest, ProperlyPopulatedAnswerSerializesProperly) {
   Json::Value sendIndexes = std::move(root["sendIndexes"]);
   EXPECT_EQ(sendIndexes.type(), Json::ValueType::arrayValue);
   EXPECT_EQ(sendIndexes[0], 1);
-  EXPECT_EQ(sendIndexes[1], 2);
-  EXPECT_EQ(sendIndexes[2], 3);
+  EXPECT_EQ(sendIndexes[1], 3);
 
   Json::Value ssrcs = std::move(root["ssrcs"]);
   EXPECT_EQ(ssrcs.type(), Json::ValueType::arrayValue);
@@ -240,9 +239,8 @@ TEST(AnswerMessagesTest, ProperlyPopulatedAnswerSerializesProperly) {
 
   Json::Value receiver_rtcp_dscp = std::move(root["receiverRtcpDscp"]);
   EXPECT_EQ(receiver_rtcp_dscp.type(), Json::ValueType::arrayValue);
-  EXPECT_EQ(receiver_rtcp_dscp[0], 11);
-  EXPECT_EQ(receiver_rtcp_dscp[1], 12);
-  EXPECT_EQ(receiver_rtcp_dscp[2], 13);
+  EXPECT_EQ(receiver_rtcp_dscp[0], 1);
+  EXPECT_EQ(receiver_rtcp_dscp[1], 3);
 
   Json::Value rtp_extensions = std::move(root["rtpExtensions"]);
   EXPECT_EQ(rtp_extensions.type(), Json::ValueType::arrayValue);

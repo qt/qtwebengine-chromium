@@ -16,6 +16,7 @@
    --audio-icon-color: var(--color-tab-search-media-icon);
    --glic-active-icon-color: var(--color-tab-search-media-glic-active-icon);
    --media-recording-icon-color:  var(--color-tab-search-media-recording-icon);
+   position: relative;
  }
 
 :host([size=large]) {
@@ -197,4 +198,8 @@ cr-icon-button {
 :host([size=large]) #iconContainer {
   height: 56px;
   width: 56px;
+}
+
+cr-tooltip {
+  white-space: nowrap;
 }

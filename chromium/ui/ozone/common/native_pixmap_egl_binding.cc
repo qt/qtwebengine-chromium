@@ -9,7 +9,6 @@
 #include "base/logging.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/notreached.h"
-#include "ui/gfx/buffer_format_util.h"
 #include "ui/gfx/linux/drm_util_linux.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_surface_egl.h"
@@ -190,7 +189,7 @@ bool NativePixmapEGLBinding::InitializeFromNativePixmap(
       attrs.push_back(kPlanePitchAttrs[attrs_plane]);
       attrs.push_back(pixmap->GetDmaBufPitch(attrs_plane));
 
-      uint64_t modifier = pixmap->GetBufferFormatModifier();
+      uint64_t modifier = pixmap->GetFormatModifier();
       if (has_dma_buf_import_modifier &&
           modifier != gfx::NativePixmapHandle::kNoModifier) {
         DCHECK(attrs_plane < std::size(kPlaneLoModifierAttrs));

@@ -225,6 +225,16 @@ dawn_win_functional_cq_tester(
 )
 
 dawn_win_functional_cq_tester(
+    name = "dawn-cq-win-arm64-rel",
+    description_html = "Tests release Dawn on Win/ARM64 configs. Blocks CL submission",
+    mirrors = [
+        "ci/dawn-win-arm64-builder-rel",
+        "ci/dawn-win-arm64-qualcomm-snapdragonxelite-rel",
+    ],
+    gn_args = "ci/dawn-win-arm64-builder-rel",
+)
+
+dawn_win_functional_cq_tester(
     name = "dawn-cq-win-x64-msvc-dbg",
     description_html = "Tests debug Dawn built with MSVC on Win/x64 on multiple hardware configs. Blocks CL submission",
     mirrors = [
@@ -406,6 +416,16 @@ dawn_linux_manual_builder(
 )
 
 dawn_linux_manual_builder(
+    name = "dawn-try-linux-x64-sws-tsan",
+    description_html = "Tests release Dawn on Linux/x64 with SwiftShader with TSAN. Manual only.",
+    mirrors = [
+        "ci/dawn-linux-x64-builder-tsan",
+        "ci/dawn-linux-x64-sws-tsan",
+    ],
+    gn_args = "ci/dawn-linux-x64-builder-tsan",
+)
+
+dawn_linux_manual_builder(
     name = "dawn-try-linux-x86-sws-dbg",
     description_html = "Tests debug Dawn on Linux/x86 with SwiftShader. Manual only.",
     mirrors = [
@@ -456,6 +476,16 @@ dawn_mac_manual_builder(
 )
 
 dawn_mac_manual_builder(
+    name = "dawn-try-mac-x64-intel-uhd630-exp-rel",
+    description_html = "Tests release Dawn on Mac/x64 on 2018 Mac Minis w/ Intel UHD 630 GPUs w/ experimental OS configs. Manual only.",
+    mirrors = [
+        "ci/dawn-mac-x64-builder-rel",
+        "ci/dawn-mac-x64-intel-uhd630-exp-rel",
+    ],
+    gn_args = "ci/dawn-mac-x64-builder-rel",
+)
+
+dawn_mac_manual_builder(
     name = "dawn-try-mac-x64-intel-uhd630-rel",
     description_html = "Tests release Dawn on Mac/x64 on 2018 Mac Minis w/ Intel UHD 630 GPUs. Manual only.",
     mirrors = [
@@ -496,6 +526,16 @@ dawn_win_manual_builder(
 )
 
 dawn_win_manual_builder(
+    name = "dawn-try-win-x64-amd-rx5500xt-rel",
+    description_html = "Tests release Dawn on Windows/x64 on AMD RX 5500 XT GPUs. Manual only.",
+    mirrors = [
+        "ci/dawn-win-x64-builder-rel",
+        "ci/dawn-win-x64-amd-rx5500xt-rel",
+    ],
+    gn_args = "ci/dawn-win-x64-builder-rel",
+)
+
+dawn_win_manual_builder(
     name = "dawn-try-win-x64-intel-uhd630-asan",
     description_html = "Tests release Dawn on Windows/x64/ASAN on Intel CPUs w/ UHD 630. Manual only.",
     mirrors = [
@@ -533,6 +573,16 @@ dawn_win_manual_builder(
         "ci/dawn-win-x64-nvidia-gtx1660-asan",
     ],
     gn_args = "ci/dawn-win-x64-builder-asan",
+)
+
+dawn_win_manual_builder(
+    name = "dawn-try-win-x64-nvidia-gtx1660-exp-rel",
+    description_html = "Tests release Dawn on Windows/x64 on NVIDIA GTX 1660 GPUs w/ experimental OS/driver configs. Manual only.",
+    mirrors = [
+        "ci/dawn-win-x64-builder-rel",
+        "ci/dawn-win-x64-nvidia-gtx1660-exp-rel",
+    ],
+    gn_args = "ci/dawn-win-x64-builder-rel",
 )
 
 dawn_win_manual_builder(

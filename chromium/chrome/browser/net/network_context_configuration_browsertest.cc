@@ -5,7 +5,6 @@
 #include <atomic>
 #include <optional>
 #include <string>
-#include <unordered_set>
 #include <vector>
 
 #include "base/command_line.h"
@@ -99,6 +98,7 @@
 #include "services/network/test/test_dns_util.h"
 #include "services/network/test/test_url_loader_client.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/abseil-cpp/absl/container/flat_hash_set.h"
 #include "url/gurl.h"
 
 #if BUILDFLAG(IS_MAC)
@@ -168,8 +168,9 @@ class ConnectionTypeWaiter
     tracker_->RemoveNetworkConnectionObserver(this);
   }
 
-  void Wait(network::mojom::ConnectionType expected_type) {
-    auto current_type = network::mojom::ConnectionType::CONNECTION_UNKNOWN;
+  void Wait(net::NetworkChangeNotifier::ConnectionType expected_type) {
+    auto current_type =
+        net::NetworkChangeNotifier::ConnectionType::CONNECTION_UNKNOWN;
     for (;;) {
       network::NetworkConnectionTracker::ConnectionTypeCallback callback =
           base::BindOnce(&ConnectionTypeWaiter::OnConnectionChanged,
@@ -185,7 +186,8 @@ class ConnectionTypeWaiter
 
  private:
   // network::NetworkConnectionTracker::NetworkConnectionObserver:
-  void OnConnectionChanged(network::mojom::ConnectionType type) override {
+  void OnConnectionChanged(
+      net::NetworkChangeNotifier::ConnectionType type) override {
     if (run_loop_)
       run_loop_->Quit();
   }
@@ -285,7 +287,7 @@ class NetworkContextConfigurationBrowserTest
     // the connection type to be available to avoid getting notified of the
     // connection change halfway through the test.
     ConnectionTypeWaiter().Wait(
-        network::mojom::ConnectionType::CONNECTION_ETHERNET);
+        net::NetworkChangeNotifier::ConnectionType::CONNECTION_ETHERNET);
 #endif
   }
 
@@ -530,13 +532,9 @@ class NetworkContextConfigurationBrowserTest
     request->credentials_mode = network::mojom::CredentialsMode::kOmit;
     live_during_shutdown_simple_loader_ = network::SimpleURLLoader::Create(
         std::move(request), TRAFFIC_ANNOTATION_FOR_TESTS);
-    live_during_shutdown_simple_loader_helper_ =
-        std::make_unique<content::SimpleURLLoaderTestHelper>();
 
-    live_during_shutdown_simple_loader_
-        ->DownloadToStringOfUnboundedSizeUntilCrashAndDie(
-            loader_factory(),
-            live_during_shutdown_simple_loader_helper_->GetCallback());
+    live_during_shutdown_simple_loader_->DownloadHeadersOnly(loader_factory(),
+                                                             base::DoNothing());
 
     // Don't actually care about controlling the response, just need to wait
     // until it sees the request, to make sure that a URLRequest has been
@@ -598,14 +596,18 @@ class NetworkContextConfigurationBrowserTest
     request->trusted_params->isolation_info =
         net::IsolationInfo::CreateForInternalRequest(origin);
 
-    content::SimpleURLLoaderTestHelper simple_loader_helper;
+    base::RunLoop run_loop;
     std::unique_ptr<network::SimpleURLLoader> simple_loader =
         network::SimpleURLLoader::Create(std::move(request),
                                          TRAFFIC_ANNOTATION_FOR_TESTS);
 
-    simple_loader->DownloadToStringOfUnboundedSizeUntilCrashAndDie(
-        loader_factory(), simple_loader_helper.GetCallback());
-    simple_loader_helper.WaitForCallback();
+    simple_loader->DownloadHeadersOnly(
+        loader_factory(),
+        base::BindLambdaForTesting(
+            [&](scoped_refptr<net::HttpResponseHeaders> headers) {
+              run_loop.Quit();
+            }));
+    run_loop.Run();
     EXPECT_EQ(net::OK, simple_loader->NetError());
   }
 
@@ -712,7 +714,7 @@ class NetworkContextConfigurationBrowserTest
 
     // Make sure |network_context()| is working as expected. Use '/echoheader'
     // instead of '/echo' to avoid a disk_cache bug.
-    // See https://crbug.com/792255.
+    // See https://crbug.com/40553335.
     auto request = std::make_unique<network::ResourceRequest>();
     request->url = embedded_test_server()->GetURL("/echoheader");
     request->load_flags = net::LOAD_BYPASS_PROXY;
@@ -746,8 +748,6 @@ class NetworkContextConfigurationBrowserTest
   testing::NiceMock<policy::MockConfigurationPolicyProvider> provider_;
   // Used in tests that need a live request during browser shutdown.
   std::unique_ptr<network::SimpleURLLoader> live_during_shutdown_simple_loader_;
-  std::unique_ptr<content::SimpleURLLoaderTestHelper>
-      live_during_shutdown_simple_loader_helper_;
   base::test::ScopedFeatureList scoped_feature_list_;
 };
 
@@ -1246,7 +1246,7 @@ IN_PROC_BROWSER_TEST_P(NetworkContextConfigurationBrowserTest, Hsts) {
     return;
   // The network service must be cleanly shut down to guarantee HSTS information
   // is flushed to disk, but that currently generally doesn't happen. See
-  // https://crbug.com/820996.
+  // https://crbug.com/40566707.
   if (GetHttpCacheType() == StorageType::kDisk) {
     return;
   }
@@ -1882,8 +1882,7 @@ class NetworkContextConfigurationProxySettingsBrowserTest
       return nullptr;
 
     // Record the number of connections we're seeing.
-    CHECK(observed_request_urls_.find(request.GetURL().spec()) ==
-          observed_request_urls_.end());
+    CHECK(!observed_request_urls_.contains(request.GetURL().spec()));
     observed_request_urls_.emplace(request.GetURL().spec());
     CHECK_GE(GetExpectedMaxConnectionsPerProxy(),
              observed_request_urls_.size());
@@ -1952,7 +1951,7 @@ class NetworkContextConfigurationProxySettingsBrowserTest
   // test. This member, which is only accessed from the server's IO thread,
   // records each observed request to ensure we see only as many connections as
   // we expect.
-  std::unordered_set<std::string> observed_request_urls_;
+  absl::flat_hash_set<std::string> observed_request_urls_;
 };
 
 // Test failure on macOS: crbug.com/1287934

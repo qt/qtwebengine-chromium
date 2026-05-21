@@ -13,15 +13,23 @@ class ContainerNode;
 class SetHTMLOptions;
 class SetHTMLUnsafeOptions;
 class ExceptionState;
+class StreamingSanitizer;
 
 class SanitizerAPI final {
  public:
-  static void SanitizeSafeInternal(ContainerNode* element,
+  static void SanitizeSafeInternal(const ContainerNode* context_element,
+                                   ContainerNode* root_element,
                                    SetHTMLOptions* options,
                                    ExceptionState& exception_state);
-  static void SanitizeUnsafeInternal(ContainerNode* element,
+  static void SanitizeUnsafeInternal(const ContainerNode* context_element,
+                                     ContainerNode* root_element,
                                      SetHTMLUnsafeOptions* options,
                                      ExceptionState& exception_state);
+
+  static StreamingSanitizer* CreateStreamingSanitizerUnsafeInternal(
+      const SetHTMLUnsafeOptions* options,
+      const ContainerNode* context,
+      ExceptionState& exception_state);
 };
 
 }  // namespace blink

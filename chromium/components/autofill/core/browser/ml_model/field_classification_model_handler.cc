@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "base/barrier_callback.h"
+#include "base/containers/extend.h"
 #include "base/containers/span.h"
 #include "base/containers/to_vector.h"
 #include "base/functional/bind.h"
@@ -63,7 +64,7 @@ bool AllFieldsClassifiedWithConfidence(
     const FieldClassificationModelEncoder::ModelOutput& output,
     size_t num_fields,
     float confidence_threshold) {
-  for (size_t i = 0; i < num_fields; i++) {
+  for (size_t i = 0; i < num_fields; ++i) {
     if (std::ranges::max(output[i]) < confidence_threshold) {
       return false;
     }
@@ -135,7 +136,8 @@ bool FieldClassificationModelHandler::ShouldApplySmallFormRules() const {
 void FieldClassificationModelHandler::ApplySmallFormRules(
     const FormData& form,
     const GeoIpCountryCode& client_country,
-    std::vector<FieldType>& predicted_types) const {
+    std::vector<FieldType>& predicted_types,
+    bool ignore_small_forms) const {
   FieldCandidatesMap field_candidates_map;
   for (size_t i = 0; i < predicted_types.size(); ++i) {
     FieldCandidates candidates;
@@ -148,7 +150,8 @@ void FieldClassificationModelHandler::ApplySmallFormRules(
   }
 
   FormFieldParser::ClearCandidatesIfHeuristicsDidNotFindEnoughFields(
-      form.fields(), field_candidates_map, client_country, nullptr);
+      form.fields(), field_candidates_map, client_country, nullptr,
+      ignore_small_forms);
 
   for (size_t i = 0; i < predicted_types.size(); ++i) {
     const auto& field_id = form.fields()[i].global_id();
@@ -255,6 +258,7 @@ void PopulateMlPredictionLogAfterInference(
 void FieldClassificationModelHandler::GetModelPredictionsForForm(
     FormData form,
     const GeoIpCountryCode& client_country,
+    bool ignore_small_forms,
     base::OnceCallback<void(ModelPredictions)> callback) {
   if (!ModelAvailable() || !state_) {
     // No model, no predictions.
@@ -310,6 +314,7 @@ void FieldClassificationModelHandler::GetModelPredictionsForForm(
                  prediction_log,
              FormData form, const GeoIpCountryCode& client_country,
              std::optional<ModelInputHash> model_input_hash,
+             bool ignore_small_forms,
              base::OnceCallback<void(ModelPredictions)> callback,
              const std::optional<FieldClassificationModelEncoder::ModelOutput>&
                  output) {
@@ -322,8 +327,8 @@ void FieldClassificationModelHandler::GetModelPredictionsForForm(
               std::vector<FieldType> predicted_types =
                   self->GetMostLikelyTypes(form, *output);
               if (self->ShouldApplySmallFormRules()) {
-                self->ApplySmallFormRules(form, client_country,
-                                          predicted_types);
+                self->ApplySmallFormRules(form, client_country, predicted_types,
+                                          ignore_small_forms);
               }
               predictions = self->BuildModelPredictions(form, predicted_types);
               if (model_input_hash.has_value()) {
@@ -340,13 +345,14 @@ void FieldClassificationModelHandler::GetModelPredictionsForForm(
           },
           weak_ptr_factory_.GetWeakPtr(), std::move(prediction_log),
           std::move(form), client_country, std::move(input_hash),
-          std::move(callback)),
+          ignore_small_forms, std::move(callback)),
       std::move(encoded_input));
 }
 
 void FieldClassificationModelHandler::GetModelPredictionsForForms(
     std::vector<FormData> forms,
     const GeoIpCountryCode& client_country,
+    bool ignore_small_forms,
     base::OnceCallback<void(std::vector<ModelPredictions>)> callback) {
   // `base::BarrierCallback` is not guaranteed to gather the results in order so
   // we have to sort them.
@@ -367,7 +373,7 @@ void FieldClassificationModelHandler::GetModelPredictionsForForms(
       forms.size(), std::move(sort_results).Then(std::move(callback)));
   for (size_t form_index = 0; form_index < forms.size(); ++form_index) {
     GetModelPredictionsForForm(
-        std::move(forms[form_index]), client_country,
+        std::move(forms[form_index]), client_country, ignore_small_forms,
         base::BindOnce(
             [](size_t form_index,
                ModelPredictions prediction) -> IndexAndOutput {
@@ -402,6 +408,8 @@ void FieldClassificationModelHandler::OnModelUpdated(
   }
   state.encoder = FieldClassificationModelEncoder(
       state.metadata.input_token(), state.metadata.encoding_parameters());
+  // Avoid duplication with the ModelEncoder.
+  state.metadata.clear_input_token();
   supported_types_.clear();
   for (int type : state.metadata.output_type()) {
     supported_types_.insert(ToSafeFieldType(FieldType(type), NO_SERVER_DATA));
@@ -433,7 +441,7 @@ std::vector<FieldType> FieldClassificationModelHandler::GetMostLikelyTypes(
   std::map<FieldType, std::pair<size_t, float>> unique_types_assignment;
   std::vector<FieldType> predicted_types;
 
-  for (size_t i = 0; i < relevant_fields; i++) {
+  for (size_t i = 0; i < relevant_fields; ++i) {
     auto [most_likely_type, current_confidence] = GetMostLikelyType(output[i]);
 
     if (state_->metadata.postprocessing_parameters()
@@ -510,8 +518,7 @@ FieldClassificationModelHandler::CalculateModelInputHash(
   flattened_data.reserve(flattened_data_size);
   for (const std::vector<FieldClassificationModelEncoder::TokenId>&
            field_tokens : input) {
-    flattened_data.insert(flattened_data.end(), field_tokens.begin(),
-                          field_tokens.end());
+    base::Extend(flattened_data, field_tokens);
   }
 
   return ModelInputHash(base::FastHash(base::as_byte_span(flattened_data)));
@@ -519,24 +526,22 @@ FieldClassificationModelHandler::CalculateModelInputHash(
 
 std::string FieldClassificationModelHandler::TokenIdToString(
     FieldClassificationModelEncoder::TokenId token_id) const {
-  const int token = static_cast<int>(token_id.value());
-  if (token == 0) {
+  if (token_id.value() == 0) {
     // Padding token, always encoded as 0.
     return "";
-  } else if (token == 1) {
+  }
+  if (token_id.value() == 1) {
     // Unknown, out-of-vocabulary token, always encoded as 1.
     return "[UNK]";
-  } else if (token == state_->metadata.input_token_size() + 2) {
-    // Special "classification" token used by the model, encoded as
-    // `vocabulary_size` (where the vocab size includes the two special tokens,
-    // hence the +2).
-    return "[CLS]";
-  } else if (token < 2 || token >= state_->metadata.input_token_size() + 2) {
-    return "[INVALID]";
-  } else {
-    // Indexing starts at 2 because of the special tokens.
-    return state_->metadata.input_token(token_id.value() - 2);
   }
+  if (token_id == state_->encoder.GetClsToken()) {
+    return "[CLS]";
+  }
+  std::string token = state_->encoder.FindTokenById(token_id);
+  if (!token.empty()) {
+    return token;
+  }
+  return "[INVALID]";
 }
 
 }  // namespace autofill

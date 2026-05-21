@@ -42,11 +42,6 @@ class ClearMultiviewGL;
 class ContextGL;
 class FunctionsGL;
 class StateManagerGL;
-enum class MultiviewImplementationTypeGL
-{
-    NV_VIEWPORT_ARRAY2,
-    UNSPECIFIED
-};
 
 // State-tracking data for the swap control to allow DisplayGL to remember per
 // drawable information for swap control.
@@ -63,7 +58,7 @@ struct SwapControlData
 };
 
 VendorID GetVendorID(const FunctionsGL *functions);
-ShShaderOutput GetShaderOutputType(const FunctionsGL *functions);
+ShShaderOutput GetShaderOutputType(const angle::FeaturesGL &features, const FunctionsGL *functions);
 
 // Helpers for extracting the GL helper objects out of a context
 const FunctionsGL *GetFunctionsGL(const gl::Context *context);
@@ -118,7 +113,6 @@ void GenerateCaps(const FunctionsGL *functions,
                   gl::Extensions *extensions,
                   gl::Limitations *limitations,
                   gl::Version *maxSupportedESVersion,
-                  MultiviewImplementationTypeGL *multiviewImplementationType,
                   ShPixelLocalStorageOptions *);
 
 void InitializeFeatures(const FunctionsGL *functions, angle::FeaturesGL *features);

@@ -4,6 +4,10 @@
 
 #include "content/browser/media/url_provision_fetcher.h"
 
+#include <optional>
+#include <string>
+#include <utility>
+
 #include "base/functional/bind.h"
 #include "base/metrics/histogram_functions.h"
 #include "content/public/browser/provision_fetcher_factory.h"
@@ -23,7 +27,13 @@ namespace content {
 
 URLProvisionFetcher::URLProvisionFetcher(
     scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory)
-    : url_loader_factory_(std::move(url_loader_factory)) {
+    : URLProvisionFetcher(std::move(url_loader_factory), "Widevine CDM v1.0") {}
+
+URLProvisionFetcher::URLProvisionFetcher(
+    scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
+    std::string_view user_agent)
+    : url_loader_factory_(std::move(url_loader_factory)),
+      user_agent_(user_agent) {
   DCHECK(url_loader_factory_);
 }
 
@@ -76,7 +86,7 @@ void URLProvisionFetcher::Retrieve(
   resource_request->credentials_mode = network::mojom::CredentialsMode::kOmit;
   resource_request->method = net::HttpRequestHeaders::kPostMethod;
   resource_request->headers.SetHeader(net::HttpRequestHeaders::kUserAgent,
-                                      "Widevine CDM v1.0");
+                                      user_agent_);
 
   std::string post_body;
   std::string content_type;
@@ -106,7 +116,7 @@ void URLProvisionFetcher::Retrieve(
 }
 
 void URLProvisionFetcher::OnSimpleLoaderComplete(
-    std::unique_ptr<std::string> response_body) {
+    std::optional<std::string> response_body) {
   bool success = false;
   int response_code = simple_url_loader_->NetError();
   std::string response;
@@ -122,7 +132,7 @@ void URLProvisionFetcher::OnSimpleLoaderComplete(
 
   if (response_body) {
     success = true;
-    response = std::move(*response_body);
+    response = std::move(response_body).value();
   } else {
     DVLOG(1) << "CDM provision: server returned error code " << response_code;
   }
@@ -139,6 +149,14 @@ std::unique_ptr<media::ProvisionFetcher> CreateProvisionFetcher(
     scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory) {
   DCHECK(url_loader_factory);
   return std::make_unique<URLProvisionFetcher>(std::move(url_loader_factory));
+}
+
+std::unique_ptr<media::ProvisionFetcher> CreateProvisionFetcherWithUserAgent(
+    scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
+    std::string_view user_agent) {
+  DCHECK(url_loader_factory);
+  return std::make_unique<URLProvisionFetcher>(std::move(url_loader_factory),
+                                               user_agent);
 }
 
 }  // namespace content

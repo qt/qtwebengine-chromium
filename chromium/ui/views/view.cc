@@ -20,7 +20,6 @@
 #include "base/check_op.h"
 #include "base/command_line.h"
 #include "base/containers/adapters.h"
-#include "base/containers/contains.h"
 #include "base/containers/flat_set.h"
 #include "base/debug/crash_logging.h"
 #include "base/debug/dump_without_crashing.h"
@@ -45,6 +44,7 @@
 #include "third_party/skia/include/core/SkPath.h"
 #include "third_party/skia/include/core/SkScalar.h"
 #include "ui/accessibility/ax_action_data.h"
+#include "ui/accessibility/ax_enums.mojom.h"
 #include "ui/actions/actions.h"
 #include "ui/base/accelerators/accelerator_manager.h"
 #include "ui/base/cursor/cursor.h"
@@ -92,6 +92,7 @@
 #include "ui/views/interaction/element_tracker_views.h"
 #include "ui/views/layout/fill_layout.h"
 #include "ui/views/layout/layout_provider.h"
+#include "ui/views/property_effects.h"
 #include "ui/views/view_class_properties.h"
 #include "ui/views/view_observer.h"
 #include "ui/views/view_tracker.h"
@@ -149,12 +150,10 @@ const View* GetHierarchyRoot(const View* view) {
 
 namespace internal {
 
-#if DCHECK_IS_ON()
 ScopedChildrenLock::ScopedChildrenLock(const View* view)
     : reset_(&view->iterating_, true) {}
 
 ScopedChildrenLock::~ScopedChildrenLock() = default;
-#endif
 
 }  // namespace internal
 
@@ -332,9 +331,7 @@ void View::ReorderChildView(View* view, size_t index) {
   }
 
   // Rotate |view| to be at the desired position.
-#if DCHECK_IS_ON()
-  DCHECK(!iterating_);
-#endif
+  CHECK(!iterating_);
   if (pos < i) {
     std::rotate(pos, i, std::next(i));
   } else {
@@ -1312,6 +1309,15 @@ void View::ConvertRectToScreen(const View* src, gfx::Rect* rect) {
   rect->set_origin(new_origin);
 }
 
+// static
+gfx::Rect View::ConvertRectFromScreen(const View* dst, const gfx::Rect& rect) {
+  gfx::Point local_origin = rect.origin();
+  ConvertPointFromScreen(dst, &local_origin);
+  gfx::Rect local_rect = rect;
+  local_rect.set_origin(local_origin);
+  return local_rect;
+}
+
 gfx::Rect View::ConvertRectToParent(const gfx::Rect& rect) const {
   // This mapping returns the enclosing rect, which is good because pixels that
   // partially occupy in the parent should be included.
@@ -1637,6 +1643,12 @@ ui::Cursor View::GetCursor(const ui::MouseEvent& event) {
   return ui::Cursor();
 }
 
+bool View::IsHitInView(views::View* target, const gfx::Point& point) const {
+  gfx::Point point_in_target = point;
+  View::ConvertPointToTarget(this, target, &point_in_target);
+  return target->HitTestPoint(point_in_target);
+}
+
 bool View::HitTestPoint(const gfx::Point& point) const {
   return HitTestRect(gfx::Rect(point, gfx::Size(1, 1)));
 }
@@ -1852,7 +1864,7 @@ void View::AddAccelerator(const ui::Accelerator& accelerator) {
     accelerators_ = std::make_unique<std::vector<ui::Accelerator>>();
   }
 
-  if (!base::Contains(*accelerators_, accelerator)) {
+  if (!std::ranges::contains(*accelerators_, accelerator)) {
     accelerators_->push_back(accelerator);
   }
 
@@ -2077,15 +2089,27 @@ const FocusManager* View::GetFocusManager() const {
 }
 
 void View::RequestFocus() {
+  auto focus_reason =
+      GetFocusManager() && GetFocusManager()->is_restoring_focused_view()
+          ? FocusManager::FocusChangeReason::kFocusRestore
+          : FocusManager::FocusChangeReason::kDirectFocusChange;
+  RequestFocusWithReason(focus_reason);
+}
+
+void View::RequestFocusWithReason(FocusManager::FocusChangeReason reason) {
   FocusManager* focus_manager = GetFocusManager();
-  if (focus_manager) {
-    bool focusable = focus_manager->keyboard_accessible()
-                         ? GetViewAccessibility().IsAccessibilityFocusable()
-                         : IsFocusable();
-    if (focusable) {
-      focus_manager->SetFocusedView(this);
-    }
+  if (!focus_manager) {
+    return;
   }
+
+  bool focusable = focus_manager->keyboard_accessible()
+                       ? GetViewAccessibility().IsAccessibilityFocusable()
+                       : IsFocusable();
+  if (!focusable) {
+    return;
+  }
+
+  focus_manager->SetFocusedViewWithReason(this, reason);
 }
 
 bool View::SkipDefaultKeyEventProcessing(const ui::KeyEvent& event) {
@@ -2639,7 +2663,8 @@ void View::AddLayerToRegionImpl(
     ui::Layer* new_layer,
     std::vector<raw_ptr<ui::Layer, VectorExperimental>>& layer_vector) {
   DCHECK(new_layer);
-  DCHECK(!base::Contains(layer_vector, new_layer)) << "Layer already added.";
+  DCHECK(!std::ranges::contains(layer_vector, new_layer))
+      << "Layer already added.";
 
   new_layer->AddObserver(this);
   new_layer->SetVisible(GetVisible());
@@ -2782,9 +2807,12 @@ void View::Focus() {
     }
 
     // Notify assistive technologies of the focus change.
-    AXVirtualView* const focused_virtual_child =
-        view_accessibility_ ? view_accessibility_->FocusedVirtualChild()
-                            : nullptr;
+    // Check if there's an active descendant that should receive the focus
+    // event.
+    ViewAccessibility* active_descendant_view = nullptr;
+    if (view_accessibility_) {
+      active_descendant_view = view_accessibility_->GetActiveDescendantView();
+    }
 
     // Rare edge case: the top-level window can briefly lose focus to a child
     // widget that is then destroyed (e.g., another widget opens, gains focus,
@@ -2796,8 +2824,8 @@ void View::Focus() {
     if (!ui::AXPlatformNode::GetPopupFocusOverride() ||
         ui::AXPlatformNode::GetPopupFocusOverride() ==
             GetNativeViewAccessible()) {
-      if (focused_virtual_child) {
-        focused_virtual_child->NotifyEvent(ax::mojom::Event::kFocus, true);
+      if (active_descendant_view) {
+        active_descendant_view->NotifyEvent(ax::mojom::Event::kFocus, true);
       } else {
         NotifyAccessibilityEventDeprecated(ax::mojom::Event::kFocus, true);
       }
@@ -3136,9 +3164,7 @@ void View::AddChildViewAtImpl(View* view, size_t index) {
   }
 
   view->parent_ = this;
-#if DCHECK_IS_ON()
-  DCHECK(!iterating_);
-#endif
+  CHECK(!iterating_);
   const auto pos = children_.insert(
       std::next(children_.cbegin(), static_cast<ptrdiff_t>(index)), view);
 
@@ -3284,9 +3310,7 @@ void View::DoRemoveChildView(View* view,
     view_to_be_deleted.reset(view);
   }
 
-#if DCHECK_IS_ON()
-  DCHECK(!iterating_);
-#endif
+  CHECK(!iterating_);
   children_.erase(i);
 
   if (update_tool_tip) {

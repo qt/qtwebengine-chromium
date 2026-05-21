@@ -6,7 +6,6 @@
 
 #include <wrl.h>
 
-#include "base/check_is_test.h"
 #include "base/notreached.h"
 #include "base/types/expected_macros.h"
 #include "gpu/command_buffer/service/shared_context_state.h"
@@ -19,7 +18,7 @@
 #include "services/webnn/dml/utils.h"
 #include "services/webnn/error.h"
 #include "services/webnn/public/mojom/features.mojom.h"
-#include "services/webnn/scoped_sequence.h"
+#include "services/webnn/scoped_gpu_sequence.h"
 #include "services/webnn/webnn_context_impl.h"
 #include "services/webnn/webnn_context_provider_impl.h"
 
@@ -37,13 +36,7 @@ base::expected<scoped_refptr<Adapter>, mojom::ErrorPtr> GetDmlGpuAdapter(
                                         "WebNN is blocklisted for GPU."));
   }
 
-  if (!dxgi_adapter) {
-    // Unit tests do not pass in an IDXGIAdapter. `GetGpuInstanceForTesting`
-    // will select the default adapter returned by `IDXGIFactory::EnumAdapters`.
-    CHECK_IS_TEST();
-    return Adapter::GetGpuInstanceForTesting();
-  }
-
+  CHECK(dxgi_adapter);
   return Adapter::GetGpuInstance(std::move(dxgi_adapter));
 }
 
@@ -56,8 +49,7 @@ CreateDmlContext(scoped_refptr<Adapter> adapter,
                  mojo::ScopedDataPipeConsumerHandle write_tensor_consumer,
                  mojo::ScopedDataPipeProducerHandle read_tensor_producer,
                  const gpu::GpuFeatureInfo& gpu_feature_info,
-                 gpu::CommandBufferId command_buffer_id,
-                 std::unique_ptr<ScopedSequence> sequence,
+                 std::unique_ptr<ScopedGpuSequence> gpu_sequence,
                  scoped_refptr<gpu::MemoryTracker> memory_tracker,
                  scoped_refptr<base::SingleThreadTaskRunner> owning_task_runner,
                  gpu::SharedImageManager* shared_image_manager,
@@ -75,9 +67,9 @@ CreateDmlContext(scoped_refptr<Adapter> adapter,
           std::move(adapter), std::move(receiver), std::move(context_provider),
           std::move(options), std::move(write_tensor_consumer),
           std::move(read_tensor_producer), std::move(command_recorder),
-          gpu_feature_info, command_buffer_id, std::move(sequence),
-          std::move(memory_tracker), std::move(owning_task_runner),
-          shared_image_manager, std::move(main_task_runner)),
+          gpu_feature_info, std::move(gpu_sequence), std::move(memory_tracker),
+          std::move(owning_task_runner), shared_image_manager,
+          std::move(main_task_runner)),
       OnTaskRunnerDeleter(std::move(task_runner)));
   return context_impl;
 }
@@ -109,8 +101,7 @@ CreateContextFromOptions(
     const gpu::SharedContextState* shared_context_state,
     mojo::PendingReceiver<mojom::WebNNContext> receiver,
     base::WeakPtr<WebNNContextProviderImpl> context_provider,
-    gpu::CommandBufferId command_buffer_id,
-    std::unique_ptr<ScopedSequence> sequence,
+    std::unique_ptr<ScopedGpuSequence> gpu_sequence,
     scoped_refptr<gpu::MemoryTracker> memory_tracker,
     scoped_refptr<base::SingleThreadTaskRunner> owning_task_runner,
     gpu::SharedImageManager* shared_image_manager,
@@ -133,24 +124,24 @@ CreateContextFromOptions(
       NOTREACHED();
     case mojom::Device::kGpu: {
       ComPtr<IDXGIAdapter> dxgi_adapter;
-      if (shared_context_state) {
-        ComPtr<ID3D11Device> d3d11_device =
-            shared_context_state->GetD3D11Device();
-        if (!d3d11_device) {
-          return base::unexpected(
-              CreateError(mojom::Error::Code::kNotSupportedError,
-                          "Failed to get D3D11 device."));
-        }
-        ComPtr<IDXGIDevice> dxgi_device;
-        // A QueryInterface() via As() from an ID3D11Device to IDXGIDevice is
-        // always expected to succeed.
-        CHECK_EQ(d3d11_device.As(&dxgi_device), S_OK);
-
-        // The D3D team has promised that asking for an adapter from a valid
-        // IDXGIDevice will always succeed.
-        CHECK_EQ(dxgi_device->GetAdapter(&dxgi_adapter), S_OK);
-        CHECK(dxgi_adapter);
+      CHECK(shared_context_state);
+      ComPtr<ID3D11Device> d3d11_device =
+          shared_context_state->GetD3D11Device();
+      if (!d3d11_device) {
+        return base::unexpected(
+            CreateError(mojom::Error::Code::kNotSupportedError,
+                        "Failed to get D3D11 device."));
       }
+      ComPtr<IDXGIDevice> dxgi_device;
+      // A QueryInterface() via As() from an ID3D11Device to IDXGIDevice is
+      // always expected to succeed.
+      CHECK_EQ(d3d11_device.As(&dxgi_device), S_OK);
+
+      // The D3D team has promised that asking for an adapter from a valid
+      // IDXGIDevice will always succeed.
+      CHECK_EQ(dxgi_device->GetAdapter(&dxgi_adapter), S_OK);
+      CHECK(dxgi_adapter);
+
       adapter_creation_result =
           GetDmlGpuAdapter(dxgi_adapter.Get(), gpu_feature_info);
       break;
@@ -164,12 +155,12 @@ CreateContextFromOptions(
     return base::unexpected(std::move(adapter_creation_result.error()));
   }
 
-  return CreateDmlContext(
-      std::move(adapter_creation_result.value()), std::move(receiver),
-      std::move(context_provider), std::move(options),
-      std::move(write_tensor_consumer), std::move(read_tensor_producer),
-      gpu_feature_info, command_buffer_id, std::move(sequence),
-      std::move(memory_tracker), std::move(owning_task_runner),
-      shared_image_manager, std::move(main_task_runner));
+  return CreateDmlContext(std::move(adapter_creation_result.value()),
+                          std::move(receiver), std::move(context_provider),
+                          std::move(options), std::move(write_tensor_consumer),
+                          std::move(read_tensor_producer), gpu_feature_info,
+                          std::move(gpu_sequence), std::move(memory_tracker),
+                          std::move(owning_task_runner), shared_image_manager,
+                          std::move(main_task_runner));
 }
 }  // namespace webnn::dml

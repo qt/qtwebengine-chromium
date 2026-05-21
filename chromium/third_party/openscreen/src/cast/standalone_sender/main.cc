@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <csignal>
+
 #include "platform/impl/logging.h"
 
 #if defined(CAST_STANDALONE_SENDER_HAVE_EXTERNAL_LIBS)
@@ -27,18 +29,20 @@
 #include "platform/impl/text_trace_logging_platform.h"
 #include "third_party/getopt/getopt.h"
 #include "util/chrono_helpers.h"
+#include "util/string_parse.h"
+#include "util/string_util.h"
 #include "util/stringprintf.h"
 
 namespace openscreen::cast {
 namespace {
 
 void LogUsage(const char* argv0) {
-  constexpr char kTemplate[] = R"(
-usage: %s <options> network_interface media_file
+  static constexpr char kTemplate[] = R"(
+usage: {} <options> network_interface media_file
 
 or
 
-usage: %s <options> addr[:port] media_file
+usage: {} <options> addr[:port] media_file
 
    The first form runs this application in discovery+interactive mode. It will
    scan for Cast Receivers on the LAN reachable from the given network
@@ -49,37 +53,42 @@ usage: %s <options> addr[:port] media_file
    discover Cast Receivers, and instead connect directly to the Cast Receiver at
    addr:[port] (e.g., 192.168.1.22, 192.168.1.22:%d or [::1]:%d).
 
-      -m, --max-bitrate=N
-           Specifies the maximum bits per second for the media streams.
+options:
+    -a, --android-hack:
+          Use the wrong RTP payload types, for compatibility with older Android
+          TV receivers. See https://crbug.com/631828.
 
-           Default if not set: %d
+    -c, --codec: Specifies the video codec to be used. Can be one of:
+                 vp8, vp9, av1. Defaults to vp8 if not specified.
 
-      -n, --no-looping
-           Disable looping the passed in video after it finishes playing.
+    -d, --developer-certificate=path-to-cert
+          Specifies the path to a self-signed developer certificate that will
+          be permitted for use as a root CA certificate for receivers that
+          this sender instance will connect to. If omitted, only connections to
+          receivers using an official Google-signed cast certificate chain will
+          be permitted.
 
-      -d, --developer-certificate=path-to-cert
-           Specifies the path to a self-signed developer certificate that will
-           be permitted for use as a root CA certificate for receivers that
-           this sender instance will connect to. If omitted, only connections to
-           receivers using an official Google-signed cast certificate chain will
-           be permitted.
-      -a, --android-hack:
-           Use the wrong RTP payload types, for compatibility with older Android
-           TV receivers. See https://crbug.com/631828.
+    -h, --help: Show this help message.
 
-      -r, --remoting: Enable remoting content instead of mirroring.
+    -m, --max-bitrate=N
+          Specifies the maximum bits per second for the media streams.
+          Default if not set: %d
 
-      -t, --tracing: Enable performance tracing logging.
+    -n, --no-looping
+          Disable looping the passed in video after it finishes playing.
 
-      -v, --verbose: Enable verbose logging.
+    -q, --disable-dscp: Disable DSCP packet prioritization, used for QoS over
+                        the UDP socket connection.
 
-      -h, --help: Show this help message.
+    -r, --remoting: Enable remoting content instead of mirroring.
 
-      -c, --codec: Specifies the video codec to be used. Can be one of:
-                   vp8, vp9, av1. Defaults to vp8 if not specified.
+    -t, --tracing: Enable performance tracing logging.
+
+    -v, --verbose: Enable verbose logging.
+
 )";
 
-  std::cerr << StringPrintf(kTemplate, argv0, argv0, kDefaultCastPort,
+  std::cerr << StringFormat(kTemplate, argv0, argv0, kDefaultCastPort,
                             kDefaultCastPort, kDefaultMaxBitrate);
 }
 
@@ -102,23 +111,27 @@ IPEndpoint ParseAsEndpoint(const char* string_form) {
   return result;
 }
 
-int StandaloneSenderMain(int argc, char* argv[]) {
-  // A note about modifying command line arguments: consider uniformity
-  // between all Open Screen executables. If it is a platform feature
-  // being exposed, consider if it applies to the standalone receiver,
-  // standalone sender, osp demo, and test_main argument options.
-  const get_opt::option kArgumentOptions[] = {
-      {"max-bitrate", required_argument, nullptr, 'm'},
-      {"no-looping", no_argument, nullptr, 'n'},
-      {"developer-certificate", required_argument, nullptr, 'd'},
-      {"android-hack", no_argument, nullptr, 'a'},
-      {"remoting", no_argument, nullptr, 'r'},
-      {"tracing", no_argument, nullptr, 't'},
-      {"verbose", no_argument, nullptr, 'v'},
-      {"help", no_argument, nullptr, 'h'},
-      {"codec", required_argument, nullptr, 'c'},
-      {nullptr, 0, nullptr, 0}};
+std::optional<VideoCodec> ParseCodec(std::string_view arg) {
+  // We can only support codecs that have a corresponding encoder library.
+  static constexpr std::array<VideoCodec, 3> kSupportedCodecs = {
+      {VideoCodec::kVp8, VideoCodec::kVp9, VideoCodec::kAv1}};
 
+  const auto parsed = StringToVideoCodec(arg);
+  if (!parsed || std::ranges::find(kSupportedCodecs, parsed.value()) ==
+                     std::ranges::end(kSupportedCodecs)) {
+    OSP_LOG_ERROR << "Invalid --codec specified: " << arg << " is not one of: "
+                  << string_util::Join(kSupportedCodecs, " ");
+    return std::nullopt;
+  }
+  return parsed.value();
+}
+
+struct Arguments {
+  // Required positional arguments
+  const char* iface_or_endpoint = nullptr;
+  const char* file_path = nullptr;
+
+  // Optional arguments
   int max_bitrate = kDefaultMaxBitrate;
   bool should_loop_video = true;
   std::string developer_certificate_path;
@@ -127,76 +140,101 @@ int StandaloneSenderMain(int argc, char* argv[]) {
   bool is_verbose = false;
   VideoCodec codec = VideoCodec::kVp8;
   std::unique_ptr<TextTraceLoggingPlatform> trace_logger;
+  bool enable_dscp = true;
+};
+
+std::optional<Arguments> ParseArgs(int argc, char* argv[]) {
+  // A note about modifying command line arguments: consider uniformity
+  // between all Open Screen executables. If it is a platform feature
+  // being exposed, consider if it applies to the standalone receiver,
+  // standalone sender, osp demo, and test_main argument options.
+  const get_opt::option kArgumentOptions[] = {
+      {"android-hack", no_argument, nullptr, 'a'},
+      {"codec", required_argument, nullptr, 'c'},
+      {"developer-certificate", required_argument, nullptr, 'd'},
+      {"help", no_argument, nullptr, 'h'},
+      {"max-bitrate", required_argument, nullptr, 'm'},
+      {"no-looping", no_argument, nullptr, 'n'},
+      {"disable-dscp", no_argument, nullptr, 'q'},
+      {"remoting", no_argument, nullptr, 'r'},
+      {"tracing", no_argument, nullptr, 't'},
+      {"verbose", no_argument, nullptr, 'v'},
+      {nullptr, 0, nullptr, 0}};
+
+  Arguments args;
   int ch = -1;
-  while ((ch = getopt_long(argc, argv, "m:nd:artvhc:", kArgumentOptions,
+  while ((ch = getopt_long(argc, argv, "ac:d:hm:nqrtv", kArgumentOptions,
                            nullptr)) != -1) {
     switch (ch) {
+      case 'a':
+        args.use_android_rtp_hack = true;
+        break;
       case 'm':
-        max_bitrate = atoi(get_opt::optarg);
-        if (max_bitrate < kMinRequiredBitrate) {
+        if (!string_parse::ParseAsciiNumber(get_opt::optarg,
+                                            args.max_bitrate) ||
+            args.max_bitrate < kMinRequiredBitrate) {
           OSP_LOG_ERROR << "Invalid --max-bitrate specified: "
                         << get_opt::optarg << " is less than "
                         << kMinRequiredBitrate;
-          LogUsage(argv[0]);
-          return 1;
+          return std::nullopt;
         }
         break;
       case 'n':
-        should_loop_video = false;
+        args.should_loop_video = false;
         break;
       case 'd':
-        developer_certificate_path = get_opt::optarg;
+        args.developer_certificate_path = get_opt::optarg;
         break;
-      case 'a':
-        use_android_rtp_hack = true;
+      case 'q':
+        args.enable_dscp = false;
         break;
       case 'r':
-        use_remoting = true;
+        args.use_remoting = true;
         break;
       case 't':
-        trace_logger = std::make_unique<TextTraceLoggingPlatform>();
+        args.trace_logger = std::make_unique<TextTraceLoggingPlatform>();
         break;
       case 'v':
-        is_verbose = true;
+        args.is_verbose = true;
         break;
       case 'h':
-        LogUsage(argv[0]);
-        return 1;
+        return std::nullopt;
       case 'c':
-        auto specified_codec = StringToVideoCodec(get_opt::optarg);
-        if (specified_codec.is_value() &&
-            (specified_codec.value() == VideoCodec::kVp8 ||
-             specified_codec.value() == VideoCodec::kVp9 ||
-             specified_codec.value() == VideoCodec::kAv1)) {
-          codec = specified_codec.value();
+        if (const auto parsed = ParseCodec(get_opt::optarg)) {
+          args.codec = *parsed;
         } else {
-          OSP_LOG_ERROR << "Invalid --codec specified: " << get_opt::optarg
-                        << " is not one of: vp8, vp9, av1.";
-          LogUsage(argv[0]);
-          return 1;
+          return std::nullopt;
         }
         break;
     }
   }
 
-  openscreen::SetLogLevel(is_verbose ? openscreen::LogLevel::kVerbose
-                                     : openscreen::LogLevel::kInfo);
   // The second to last command line argument must be one of: 1) the network
   // interface name or 2) a specific IP address (port is optional). The last
   // argument must be the path to the file.
   if (get_opt::optind != (argc - 2)) {
+    return std::nullopt;
+  }
+  args.iface_or_endpoint = argv[get_opt::optind++];
+  args.file_path = argv[get_opt::optind];
+  return args;
+}
+
+int StandaloneSenderMain(int argc, char* argv[]) {
+  const std::optional<Arguments> args = ParseArgs(argc, argv);
+  if (!args) {
     LogUsage(argv[0]);
     return 1;
   }
-  const char* const iface_or_endpoint = argv[get_opt::optind++];
-  const char* const path = argv[get_opt::optind];
 
+  openscreen::SetLogLevel(args->is_verbose ? openscreen::LogLevel::kVerbose
+                                           : openscreen::LogLevel::kInfo);
   std::unique_ptr<TrustStore> cast_trust_store;
-  if (!developer_certificate_path.empty()) {
+  if (!args->developer_certificate_path.empty()) {
     cast_trust_store =
-        TrustStore::CreateInstanceFromPemFile(developer_certificate_path);
+        TrustStore::CreateInstanceFromPemFile(args->developer_certificate_path);
     OSP_LOG_INFO << "using cast trust store generated from: "
-                 << developer_certificate_path;
+                 << args->developer_certificate_path;
   }
   if (!cast_trust_store) {
     cast_trust_store = CastTrustStore::Create();
@@ -206,10 +244,10 @@ int StandaloneSenderMain(int argc, char* argv[]) {
   PlatformClientPosix::Create(milliseconds(50),
                               std::unique_ptr<TaskRunnerImpl>(task_runner));
 
-  IPEndpoint remote_endpoint = ParseAsEndpoint(iface_or_endpoint);
+  IPEndpoint remote_endpoint = ParseAsEndpoint(args->iface_or_endpoint);
   if (!remote_endpoint.port) {
     for (const InterfaceInfo& interface : GetNetworkInterfaces()) {
-      if (interface.name == iface_or_endpoint) {
+      if (interface.name == args->iface_or_endpoint) {
         ReceiverChooser chooser(interface, *task_runner,
                                 [&](IPEndpoint endpoint) {
                                   remote_endpoint = endpoint;
@@ -230,20 +268,21 @@ int StandaloneSenderMain(int argc, char* argv[]) {
 
   // `cast_agent` must be constructed and destroyed from a Task run by the
   // TaskRunner.
-  LoopingFileCastAgent* cast_agent = nullptr;
+  std::unique_ptr<LoopingFileCastAgent> cast_agent;
   task_runner->PostTask([&] {
-    cast_agent =
-        new LoopingFileCastAgent(*task_runner, std::move(cast_trust_store),
-                                 [&] { task_runner->RequestStopSoon(); });
+    cast_agent = std::make_unique<LoopingFileCastAgent>(
+        *task_runner, std::move(cast_trust_store),
+        [&] { task_runner->RequestStopSoon(); });
 
     cast_agent->Connect({.receiver_endpoint = remote_endpoint,
-                         .path_to_file = path,
-                         .max_bitrate = max_bitrate,
+                         .path_to_file = args->file_path,
+                         .max_bitrate = args->max_bitrate,
                          .should_include_video = true,
-                         .use_android_rtp_hack = use_android_rtp_hack,
-                         .use_remoting = use_remoting,
-                         .should_loop_video = should_loop_video,
-                         .codec = codec});
+                         .use_android_rtp_hack = args->use_android_rtp_hack,
+                         .use_remoting = args->use_remoting,
+                         .should_loop_video = args->should_loop_video,
+                         .codec = args->codec,
+                         .enable_dscp = args->enable_dscp});
   });
 
   // Run the event loop until SIGINT (e.g., CTRL-C at the console) or
@@ -254,7 +293,7 @@ int StandaloneSenderMain(int argc, char* argv[]) {
   // destruction/shutdown tasks.
   OSP_LOG_INFO << "Shutting down...";
   task_runner->PostTask([&] {
-    delete cast_agent;
+    cast_agent.reset();
     task_runner->RequestStopSoon();
   });
   task_runner->RunUntilStopped();
@@ -269,14 +308,18 @@ int StandaloneSenderMain(int argc, char* argv[]) {
 #endif
 
 int main(int argc, char* argv[]) {
+  // Ignore SIGPIPE events at the application level -- tearing down the network
+  // interface will close a TLS or UDP socket connection, which will result
+  // in a more graceful exit than terminating on the SIGPIPE call.
+  std::signal(SIGPIPE, SIG_IGN);
+
 #if defined(CAST_STANDALONE_SENDER_HAVE_EXTERNAL_LIBS)
   return openscreen::cast::StandaloneSenderMain(argc, argv);
 #else
   OSP_LOG_ERROR
       << "It compiled! However, you need to configure the build to point to "
          "external libraries in order to build a useful app. For more "
-         "information, see "
-         "[external_libraries.md](../../build/config/external_libraries.md).";
+         "information, please check the docs for external_libraries.md.";
   return 1;
 #endif
 }

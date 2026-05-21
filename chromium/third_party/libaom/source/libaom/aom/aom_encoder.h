@@ -922,8 +922,9 @@ typedef struct aom_codec_enc_cfg {
  * is not thread safe and should be guarded with a lock if being used
  * in a multithreaded context.
  *
- * If aom_codec_enc_init_ver() fails, it is not necessary to call
- * aom_codec_destroy() on the encoder context.
+ * On success, aom_codec_destroy() must be used to free resources allocated for
+ * the encoder context. If aom_codec_enc_init_ver() fails, it is not necessary
+ * to call aom_codec_destroy() on the encoder context.
  *
  * \param[in]    ctx     Pointer to this instance's context.
  * \param[in]    iface   Pointer to the algorithm interface to use.

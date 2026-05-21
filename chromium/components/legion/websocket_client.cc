@@ -5,12 +5,17 @@
 #include "components/legion/websocket_client.h"
 
 #include <limits>
+#include <optional>
+#include <string>
 #include <utility>
 
 #include "base/functional/callback.h"
 #include "base/functional/callback_helpers.h"
+#include "base/metrics/histogram_functions.h"
+#include "base/strings/string_util.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/types/expected.h"
+#include "components/legion/proto_utils/google_rpc_code.h"
 #include "net/http/http_request_headers.h"
 #include "net/storage_access_api/status.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
@@ -56,11 +61,14 @@ constexpr net::NetworkTrafficAnnotationTag kTrafficAnnotation =
 
 }  // namespace
 
-WebSocketClient::WebSocketClient(const GURL& service_url,
-                                 NetworkContextFactory network_context_factory)
+WebSocketClient::WebSocketClient(
+    const GURL& service_url,
+    network::mojom::NetworkContext* network_context)
     : service_url_(service_url),
-      network_context_factory_(std::move(network_context_factory)),
-      readable_watcher_(FROM_HERE, mojo::SimpleWatcher::ArmingPolicy::MANUAL) {}
+      network_context_(network_context),
+      readable_watcher_(FROM_HERE, mojo::SimpleWatcher::ArmingPolicy::MANUAL) {
+  CHECK(network_context_);
+}
 
 WebSocketClient::~WebSocketClient() = default;
 
@@ -143,12 +151,12 @@ void WebSocketClient::Connect() {
   additional_headers.push_back(network::mojom::HttpHeader::New(
       "X-WebChannel-Content-Type", "application/x-protobuf"));
 
-  network_context_factory_.Run()->CreateWebSocket(
+  network_context_->CreateWebSocket(
       service_url_, requested_protocols, net::SiteForCookies(),
       net::StorageAccessApiStatus::kNone,
       net::IsolationInfo::CreateForInternalRequest(
           url::Origin::Create(service_url_)),
-      std::move(additional_headers), network::mojom::kBrowserProcessId,
+      std::move(additional_headers), network::OriginatingProcess::browser(),
       url::Origin::Create(service_url_),
       network::mojom::ClientSecurityState::New(),
       network::mojom::kWebSocketOptionBlockAllCookies,
@@ -273,6 +281,15 @@ void WebSocketClient::OnDropChannel(bool was_clean,
   CHECK(state_ == State::kOpen || state_ == State::kConnecting);
   LOG(ERROR) << "OnDropChannel: " << code << " - " << reason;
 
+  base::UmaHistogramSparse("Legion.Client.WebSocketCloseCode", code);
+
+  // If there is a reason, it indicates an error from the server.
+  if (!reason.empty()) {
+    base::UmaHistogramEnumeration("Legion.Client.ServerErrorCode",
+                                  ParseGoogleRpcCode(reason),
+                                  static_cast<legion::rpc::GoogleRpcCode>(
+                                      legion::rpc::GoogleRpcCode_MAX + 1));
+  }
   ClosePipe(TransportError::kSocketClosed);
 }
 

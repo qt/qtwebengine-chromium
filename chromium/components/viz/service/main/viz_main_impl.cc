@@ -43,7 +43,7 @@ std::unique_ptr<base::Thread> CreateAndStartIOThread() {
   base::Thread::Options thread_options(base::MessagePumpType::IO, 0);
   // TODO(reveman): Remove this in favor of setting it explicitly for each
   // type of process.
-  thread_options.thread_type = base::ThreadType::kDisplayCritical;
+  thread_options.thread_type = base::ThreadType::kPresentation;
   auto io_thread = std::make_unique<base::Thread>("GpuIOThread");
   CHECK(io_thread->StartWithOptions(std::move(thread_options)));
 
@@ -239,9 +239,7 @@ void VizMainImpl::CreateGpuService(
     base::PlatformThreadId main_thread_id = base::PlatformThread::CurrentId();
     gpu_process_thread_ids.insert(main_thread_id);
 #if BUILDFLAG(IS_ANDROID)
-    if (base::FeatureList::IsEnabled(::features::kWebViewEnableADPFGpuMain)) {
-      viz_compositor_thread_runner_->SetGpuMainThreadId(main_thread_id);
-    }
+    viz_compositor_thread_runner_->SetGpuMainThreadId(main_thread_id);
 #endif
 
     CompositorGpuThread* compositor_gpu_thread =
@@ -354,7 +352,7 @@ void VizMainImpl::RequestBeginFrameForGpuService(bool toggle) {
 }
 
 #if BUILDFLAG(USE_VIZ_DEBUGGER)
-void VizMainImpl::FilterDebugStream(base::Value::Dict filter_data) {
+void VizMainImpl::FilterDebugStream(base::DictValue filter_data) {
   VizDebugger::GetInstance()->FilterDebugStream(std::move(filter_data));
 }
 

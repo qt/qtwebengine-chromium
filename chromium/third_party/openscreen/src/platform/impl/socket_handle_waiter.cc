@@ -16,6 +16,9 @@ namespace openscreen {
 SocketHandleWaiter::SocketHandleWaiter(ClockNowFunctionPtr now_function)
     : now_function_(now_function) {}
 
+SocketHandleWaiter::Subscriber::~Subscriber() = default;
+SocketHandleWaiter::~SocketHandleWaiter() = default;
+
 void SocketHandleWaiter::Subscribe(Subscriber* subscriber,
                                    SocketHandleRef handle,
                                    uint32_t flags) {

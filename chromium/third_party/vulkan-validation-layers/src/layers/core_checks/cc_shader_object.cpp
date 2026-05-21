@@ -1,5 +1,5 @@
 /* Copyright (c) 2023-2025 Nintendo
- * Copyright (c) 2023-2025 LunarG, Inc.
+ * Copyright (c) 2023-2026 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,7 +26,6 @@
 #include "state_tracker/cmd_buffer_state.h"
 #include "generated/spirv_grammar_helper.h"
 #include "drawdispatch/drawdispatch_vuids.h"
-#include "containers/limits.h"
 #include "utils/action_command_utils.h"
 #include "utils/shader_utils.h"
 
@@ -243,7 +242,7 @@ bool CoreChecks::ValidateCreateShadersMesh(const VkShaderCreateInfoEXT& create_i
                                            const Location& create_info_loc) const {
     bool skip = false;
     if (create_info.flags & VK_SHADER_CREATE_NO_TASK_SHADER_BIT_EXT) return skip;
-    if (spirv.static_data_.has_builtin_draw_index) {
+    if (spirv.static_data_.has_built_in_draw_index) {
         skip |= LogError(
             "VUID-vkCreateShadersEXT-pCreateInfos-09632", device, create_info_loc,
             "the mesh Shader Object being created uses DrawIndex (gl_DrawID) which will be an undefined value when reading.");
@@ -293,6 +292,10 @@ bool CoreChecks::ValidateCreateShadersSpirv(uint32_t createInfoCount, const VkSh
 
         // Will be empty if not VK_SHADER_CODE_TYPE_SPIRV_EXT
         const std::shared_ptr<spirv::Module> spirv = chassis_state.module_states[i];
+        const uint32_t embedded_samplers_count = CountDescriptorHeapEmbeddedSamplers(create_info.pNext);
+        if ((create_info.flags & VK_SHADER_CREATE_DESCRIPTOR_HEAP_BIT_EXT) != 0 && embedded_samplers_count > 0) {
+            skip |= ValidateEmbeddedSamplersCount(embedded_samplers_count, loc.dot(Field::pCreateInfos, i));
+        }
 
         if (!spirv || create_info.codeType != VK_SHADER_CODE_TYPE_SPIRV_EXT) {
             continue;
@@ -315,7 +318,9 @@ bool CoreChecks::ValidateCreateShadersSpirv(uint32_t createInfoCount, const VkSh
 
         // Finally, we have "pipeline" level information and can do validation we normally do at pipeline creation time
         vku::safe_VkShaderCreateInfoEXT safe_create_info = vku::safe_VkShaderCreateInfoEXT(&pCreateInfos[i]);
-        const ShaderStageState stage_state(nullptr, &safe_create_info, &set_layouts, nullptr, spirv, VK_NULL_HANDLE);
+        const bool descriptor_heap_mode = (create_info.flags & VK_SHADER_CREATE_DESCRIPTOR_HEAP_BIT_EXT) != 0;
+        const ShaderStageState stage_state(nullptr, &safe_create_info, &set_layouts, nullptr, spirv, VK_NULL_HANDLE,
+                                           descriptor_heap_mode);
         skip |= ValidateShaderStage(stage_state, nullptr, create_info_loc);
 
         if (create_info.stage == VK_SHADER_STAGE_MESH_BIT_EXT) {
@@ -377,14 +382,20 @@ bool CoreChecks::ValidateCreateShadersSpirv(uint32_t createInfoCount, const VkSh
                              "tessellation evaluation shader (%s).",
                              string_SpvExecutionMode(tesc.subdivision), string_SpvExecutionMode(tese.subdivision));
         }
-        if (tesc.orientation != spirv::kInvalidValue && tese.orientation != spirv::kInvalidValue &&
-            tesc.orientation != tese.orientation) {
+        if (tesc.orientation == spirv::kInvalidValue && tese.orientation == spirv::kInvalidValue) {
+            skip |= LogError("VUID-vkCreateShadersEXT-pCreateInfos-12224", device, loc,
+                             "The orientation of generated triangles is not specified in either of the tessellation shaders.");
+        } else if (tesc.orientation != spirv::kInvalidValue && tese.orientation != spirv::kInvalidValue &&
+                   tesc.orientation != tese.orientation) {
             skip |= LogError("VUID-vkCreateShadersEXT-pCreateInfos-08868", device, loc,
                              "The orientation specified in tessellation control shader (%s) does not match the orientation in "
                              "tessellation evaluation shader (%s).",
                              string_SpvExecutionMode(tesc.orientation), string_SpvExecutionMode(tese.orientation));
         }
-        if (tesc.spacing != spirv::kInvalidValue && tese.spacing != spirv::kInvalidValue && tesc.spacing != tese.spacing) {
+        if (tesc.spacing == spirv::kInvalidValue && tese.spacing == spirv::kInvalidValue) {
+            skip |= LogError("VUID-vkCreateShadersEXT-pCreateInfos-12225", device, loc,
+                             "The spacing of segments is not specified in either of the tessellation shaders.");
+        } else if (tesc.spacing != spirv::kInvalidValue && tese.spacing != spirv::kInvalidValue && tesc.spacing != tese.spacing) {
             skip |= LogError("VUID-vkCreateShadersEXT-pCreateInfos-08870", device, loc,
                              "The spacing specified in tessellation control shader (%s) does not match the spacing in "
                              "tessellation evaluation shader (%s).",
@@ -790,7 +801,7 @@ bool CoreChecks::ValidateDrawShaderObjectPushConstantAndLayout(const LastBound& 
             const LogObjectList objlist(cb_state.Handle(), first->Handle(), shader_state->Handle());
             skip |= LogError(vuid.shaders_push_constants_08878, objlist, vuid.loc(),
                              "The bound %s shader was created with a pushConstantRangeCount of %" PRIu32
-                             " which doesn't match the bound %s shader create with a pushConstantRangeCount of %" PRIu32 "",
+                             " which doesn't match the bound %s shader created with a pushConstantRangeCount of %" PRIu32 "",
                              string_VkShaderStageFlagBits(first->create_info.stage), first->create_info.pushConstantRangeCount,
                              string_VkShaderStageFlagBits(shader_state->create_info.stage),
                              shader_state->create_info.pushConstantRangeCount);
@@ -819,7 +830,7 @@ bool CoreChecks::ValidateDrawShaderObjectPushConstantAndLayout(const LastBound& 
             skip |=
                 LogError(vuid.shaders_descriptor_layouts_08879, objlist, vuid.loc(),
                          "The bound %s shader was created with a setLayoutCount of %" PRIu32
-                         " which doesn't match the bound %s shader create with a setLayoutCount of %" PRIu32 "",
+                         " which doesn't match the bound %s shader created with a setLayoutCount of %" PRIu32,
                          string_VkShaderStageFlagBits(first->create_info.stage), first->create_info.setLayoutCount,
                          string_VkShaderStageFlagBits(shader_state->create_info.stage), shader_state->create_info.setLayoutCount);
         } else {
@@ -840,6 +851,20 @@ bool CoreChecks::ValidateDrawShaderObjectPushConstantAndLayout(const LastBound& 
                     break;
                 }
             }
+        }
+
+        if ((first->create_info.flags & VK_SHADER_CREATE_DESCRIPTOR_HEAP_BIT_EXT) !=
+            (shader_state->create_info.flags & VK_SHADER_CREATE_DESCRIPTOR_HEAP_BIT_EXT)) {
+            const vvl::ShaderObject* heap_shader =
+                (first->create_info.flags & VK_SHADER_CREATE_DESCRIPTOR_HEAP_BIT_EXT) ? first : shader_state;
+            const vvl::ShaderObject* non_heap_shader =
+                (first->create_info.flags & VK_SHADER_CREATE_DESCRIPTOR_HEAP_BIT_EXT) ? shader_state : first;
+            const LogObjectList objlist(cb_state.Handle(), heap_shader->Handle(), non_heap_shader->Handle());
+            skip |= LogError(vuid.shaders_descriptor_layouts_08879, objlist, vuid.loc(),
+                             "The bound %s shader was created with VK_SHADER_CREATE_DESCRIPTOR_HEAP_BIT_EXT, but the bound %s "
+                             "shader was created without VK_SHADER_CREATE_DESCRIPTOR_HEAP_BIT_EXT",
+                             string_VkShaderStageFlagBits(heap_shader->create_info.stage),
+                             string_VkShaderStageFlagBits(non_heap_shader->create_info.stage));
         }
     }
 
@@ -863,7 +888,7 @@ bool CoreChecks::ValidateDrawShaderObjectMesh(const LastBound& last_bound_state,
 
     if (has_task_shader || has_mesh_shader) {
         auto print_mesh_task = [this, has_task_shader, has_mesh_shader, mesh_shader_handle, task_shader_handle]() {
-            std::stringstream msg;
+            std::ostringstream msg;
             if (has_task_shader && has_mesh_shader) {
                 msg << "Task shader (" << FormatHandle(task_shader_handle).c_str() << ") and mesh shader ("
                     << FormatHandle(mesh_shader_handle).c_str() << ") are";
@@ -917,10 +942,10 @@ bool CoreChecks::ValidateDrawShaderObjectMesh(const LastBound& last_bound_state,
                     FormatHandle(mesh_shader_handle).c_str(), FormatHandle(task_shader_handle).c_str());
             }
 
-            if (const vvl::ShaderObject* task_state = last_bound_state.GetShaderObjectState(ShaderObjectStage::TASK)) {
-                if (task_state->spirv && mesh_state->entrypoint) {
-                    skip |= ValidateTaskPayload(*task_state->spirv, *mesh_state->entrypoint, vuid.loc());
-                }
+            if (mesh_state->entrypoint) {
+                const vvl::ShaderObject* task_state = last_bound_state.GetShaderObjectState(ShaderObjectStage::TASK);
+                const spirv::Module* task_module = (task_state && task_state->spirv) ? task_state->spirv.get() : nullptr;
+                skip |= ValidateTaskPayload(task_module, *mesh_state->entrypoint, vuid.loc());
             }
         }
     }
@@ -933,7 +958,7 @@ bool CoreChecks::ValidateDrawShaderObjectMesh(const LastBound& last_bound_state,
         const bool has_tese_shader = tese_shader_handle != VK_NULL_HANDLE;
         const bool has_geom_shader = geom_shader_handle != VK_NULL_HANDLE;
         if (has_vertex_shader || has_tesc_shader || has_tese_shader || has_geom_shader) {
-            std::stringstream msg;
+            std::ostringstream msg;
             if (has_vertex_shader) msg << "Vertex shader: " << FormatHandle(vertex_shader_handle) << '\n';
             if (has_tese_shader) msg << "Tessellation Eval shader: " << FormatHandle(tese_shader_handle) << '\n';
             if (has_tesc_shader) msg << "Tessellation Control shader: " << FormatHandle(tesc_shader_handle) << '\n';

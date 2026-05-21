@@ -47,6 +47,7 @@ constexpr char kValidOfferMessage[] = R"({
         "level": "4",
         "aesKey": "bbf109bf84513b456b13a184453b66ce",
         "aesIvMask": "edaf9e4536e2b66191f560d9c04b2a69",
+        "receiverRtcpDscp": 46,
         "resolutions": [
           {
             "width": 1280,
@@ -68,6 +69,7 @@ constexpr char kValidOfferMessage[] = R"({
         "level": "4",
         "aesKey": "040d756791711fd3adb939066e6d8690",
         "aesIvMask": "9ff0f022a959150e70a2d05a6c184aed",
+        "receiverRtcpDscp": 46,
         "resolutions": [
           {
             "width": 1280,
@@ -88,6 +90,7 @@ constexpr char kValidOfferMessage[] = R"({
         "maxBitRate": 5000000,
         "aesKey": "040d756791711fd3adb939066e6d8690",
         "aesIvMask": "9ff0f022a959150e70a2d05a6c184aed",
+        "receiverRtcpDscp": 46,
         "resolutions": [
           {
             "width": 1920,
@@ -106,7 +109,8 @@ constexpr char kValidOfferMessage[] = R"({
         "timeBase": "1/48000",
         "channels": 2,
         "aesKey": "51027e4e2347cbcb49d57ef10177aebc",
-        "aesIvMask": "7f12a19be62a36c04ae4116caaeff6d1"
+        "aesIvMask": "7f12a19be62a36c04ae4116caaeff6d1",
+        "receiverRtcpDscp": 46
       }
     ]
   }
@@ -1025,6 +1029,43 @@ TEST_F(ReceiverSessionTest, HandlesRpcMessage) {
 
   message_port_->ReceiveMessage(kValidRemotingOfferMessage);
   ASSERT_TRUE(received_initialize_message);
+}
+
+TEST_F(ReceiverSessionTest, EnablesDscpInAnswer) {
+  ReceiverConstraints constraints;
+  constraints.enable_dscp = true;
+  SetUpWithConstraints(std::move(constraints));
+  EXPECT_CALL(client_, OnNegotiated(session_.get(), _));
+  EXPECT_CALL(client_,
+              OnReceiversDestroying(session_.get(),
+                                    ReceiverSession::Client::kEndOfSession));
+  message_port_->ReceiveMessage(kValidOfferMessage);
+  const std::vector<std::string>& messages = message_port_->posted_messages();
+  ASSERT_EQ(1u, messages.size());
+  Json::Value message = ExpectIsValidAnswer(messages[0]);
+  const Json::Value& answer = message["answer"];
+  ASSERT_TRUE(answer.isObject());
+  const Json::Value& dscp = answer["receiverRtcpDscp"];
+  ASSERT_FALSE(dscp.empty());
+  EXPECT_EQ(dscp[0], 1337);
+  EXPECT_EQ(dscp[1], 31338);
+
+  message_port_->clear();
+  ReceiverConstraints constraints2;
+  constraints2.enable_dscp = false;
+  SetUpWithConstraints(std::move(constraints2));
+  EXPECT_CALL(client_, OnNegotiated(session_.get(), _));
+  EXPECT_CALL(client_,
+              OnReceiversDestroying(session_.get(),
+                                    ReceiverSession::Client::kEndOfSession));
+  message_port_->ReceiveMessage(kValidOfferMessage);  // Re-send offer message
+  const std::vector<std::string>& messages2 = message_port_->posted_messages();
+  ASSERT_EQ(1u, messages2.size());
+  message = ExpectIsValidAnswer(messages2[0]);
+  const Json::Value& answer2 = message["answer"];
+  ASSERT_TRUE(answer2.isObject());
+  const Json::Value& dscp2 = answer2["receiverRtcpDscp"];
+  ASSERT_TRUE(dscp2.empty());
 }
 
 }  // namespace openscreen::cast

@@ -251,16 +251,12 @@ void CreateTranslatorClient::OnGotAvailability(
 
   receiver_.Bind(client.InitWithNewPipeAndPassReceiver(), task_runner_);
 
-  mojo::PendingRemote<mojom::blink::ModelDownloadProgressObserver>
+  mojo::PendingRemote<on_device_model::mojom::blink::DownloadObserver>
       progress_observer;
 
   if (monitor_) {
     progress_observer = monitor_->BindRemote();
   }
-
-  bool add_fake_download_delay =
-      result ==
-      CanCreateTranslatorResult::kAfterDownloadTranslatorCreationRequired;
 
   AIInterfaceProxy::GetTranslationManagerRemote(GetExecutionContext())
       ->CreateTranslator(
@@ -268,8 +264,7 @@ void CreateTranslatorClient::OnGotAvailability(
           mojom::blink::TranslatorCreateOptions::New(
               mojom::blink::TranslatorLanguageCode::New(source_language_),
               mojom::blink::TranslatorLanguageCode::New(target_language_),
-              std::move(progress_observer)),
-          add_fake_download_delay);
+              std::move(progress_observer)));
 }
 
 void CreateTranslatorClient::ResetReceiver() {

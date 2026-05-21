@@ -8,6 +8,7 @@
 #include "third_party/blink/renderer/core/dom/container_node.h"
 #include "third_party/blink/renderer/core/dom/document_fragment.h"
 #include "third_party/blink/renderer/core/dom/document_part_root.h"
+#include "third_party/blink/renderer/core/dom/node-inl.h"
 #include "third_party/blink/renderer/core/dom/node_cloning_data.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_vector.h"
@@ -206,8 +207,8 @@ void ChildNodePart::replaceChildren(
 
   // Insert new contents.
   VectorOf<Node> node_vector = Node::ConvertNodeUnionsIntoNodes(
-      parent, nodes_mapped, parent->GetDocument(), "replaceChildren",
-      exception_state);
+      parent, nodes_mapped, parent->GetDocument(),
+      trusted_types_names::kReplaceChildren, exception_state);
   if (exception_state.HadException()) {
     return;
   }

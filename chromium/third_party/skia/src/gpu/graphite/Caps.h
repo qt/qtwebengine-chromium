@@ -145,7 +145,17 @@ public:
                                       RenderPassDesc*,
                                       const RendererProvider*) const { return false; }
 
+    SkColorType getDefaultColorType(const TextureInfo&) const;
     bool areColorTypeAndTextureInfoCompatible(SkColorType, const TextureInfo&) const;
+
+    // Tries to return a sample count > 1 if needing MSAA to render into the target specification.
+    // If the target is already multisampled, it will be that count; otherwise it will be the
+    // highest supported sample count less than the configured max internal sample count.
+    //
+    // NOTE: If avoidMSAA() is true (either from ContextOptions or driver workarounds), the max
+    // internal sample count is 1. In this case getCompatibleMSAASampleCount() returns k1 for single
+    // sampled targets to show MSAA isn't supported.
+    SampleCount getCompatibleMSAASampleCount(const TextureInfo&) const;
 
     bool isTexturable(const TextureInfo&) const;
     virtual bool isRenderable(const TextureInfo&) const = 0;
@@ -154,7 +164,11 @@ public:
     virtual bool loadOpAffectsMSAAPipelines() const { return false; }
 
     int maxTextureSize() const { return fMaxTextureSize; }
-    SampleCount defaultMSAASamplesCount() const { return fDefaultMSAASamples; }
+
+    bool avoidMSAA() const {
+        // Publicly, treat avoiding MSAA due to device issues or due to client option equivalently.
+        return fAvoidMSAA || fMaxInternalSampleCount == SampleCount::k1;
+    }
 
     /**
      * Returns the maximum number of varyings allowed in a render pipeline. Note that this is the
@@ -220,36 +234,20 @@ public:
     virtual bool supportsReadPixels(const TextureInfo&) const = 0;
 
     /**
-     * Given a dst pixel config and a src color type what color type must the caller coax the
-     * the data into in order to use writePixels.
+     * Given a texture config and its color type interpretation, returns the color type that matches
+     * the texture's layout after a copy (i.e. does not have any of the automatic swizzling that
+     * occurs during regular sampling). The returned colortype either represents the color type that
+     * source data must be coaxed into for writePixels(), or it represents the color type after a
+     * readPixels() operation.
      *
      * We currently don't have an SkColorType for a 3 channel RGB format. Additionally the current
      * implementation of raster pipeline requires power of 2 channels, so it is not easy to add such
      * an SkColorType. Thus we need to check for data that is 3 channels using the isRGBFormat
-     * return value and handle it manually
+     * return value and handle it manually.
      */
-    virtual std::pair<SkColorType, bool /*isRGB888Format*/> supportedWritePixelsColorType(
-            SkColorType dstColorType,
-            const TextureInfo& dstTextureInfo,
-            SkColorType srcColorType) const = 0;
-
-    /**
-     * Given a src surface's color type and its texture info as well as a color type the caller
-     * would like read into, this provides a legal color type that the caller can use for
-     * readPixels. The returned color type may differ from the passed dstColorType, in
-     * which case the caller must convert the read pixel data (see GrConvertPixels). When converting
-     * to dstColorType the swizzle in the returned struct should be applied. The caller must check
-     * the returned color type for kUnknown.
-     *
-     * We currently don't have an SkColorType for a 3 channel RGB format. Additionally the current
-     * implementation of raster pipeline requires power of 2 channels, so it is not easy to add such
-     * an SkColorType. Thus we need to check for data that is 3 channels using the isRGBFormat
-     * return value and handle it manually
-     */
-    virtual std::pair<SkColorType, bool /*isRGBFormat*/> supportedReadPixelsColorType(
-            SkColorType srcColorType,
-            const TextureInfo& srcTextureInfo,
-            SkColorType dstColorType) const = 0;
+    std::pair<SkColorType, bool /*isRGB888Format*/> supportedTransferColorType(
+            SkColorType colorType,
+            const TextureInfo& textureInfo) const;
 
     /**
      * Checks whether the passed color type is renderable. If so, the same color type is passed
@@ -494,8 +492,6 @@ protected:
 
     int fMaxTextureSize = 0;
 
-    SampleCount fDefaultMSAASamples = SampleCount::k4;
-
     size_t fRequiredUniformBufferAlignment = 0;
     size_t fRequiredStorageBufferAlignment = 0;
     size_t fRequiredTransferBufferAlignment = 0;
@@ -515,17 +511,31 @@ protected:
     bool fBufferMapsAreAsync = false;
     bool fMSAARenderToSingleSampledSupport = false;
     bool fDifferentResolveAttachmentSizeSupport = false;
+    bool fAvoidMSAA = false;
 
     bool fComputeSupport = false;
     bool fSupportsAHardwareBufferImages = false;
-    BlendEquationSupport fBlendEqSupport = BlendEquationSupport::kBasic;
     bool fFullCompressedUploadSizeMustAlignToBlockDims = false;
+
+    // Dynamic state.  The granularity is less fine than Vulkan's, but there is still some
+    // granularity to allow for some dynamic state to be disabled due to driver bugs without having
+    // to disable everything.  Eventually, these can be used to create fewer pipelines in the first
+    // place (b/414645289).
+    bool fUseBasicDynamicState = false;
+    bool fUseVertexInputDynamicState = false;
+    bool fUsePipelineLibraries = false;
+
+    // Whether it's possible to upload data to images using the CPU (host) instead of the device.
+    // Under certain circumstances, it's more efficient to upload data in this way instead of
+    // through a staging buffer.
+    bool fSupportsHostImageCopy = false;
 
 #if defined(GPU_TEST_UTILS)
     bool fDrawBufferCanBeMappedForReadback = true;
 #endif
 
     ResourceBindingRequirements fResourceBindingReqs;
+    BlendEquationSupport fBlendEqSupport = BlendEquationSupport::kBasic;
 
     GpuStatsFlags fSupportedGpuStats = GpuStatsFlags::kNone;
 
@@ -543,6 +553,10 @@ protected:
     std::optional<PathRendererStrategy> fRequestedPathRendererStrategy;
 #endif
 
+    // NOTE: This is a requested limit, the actual supported sample counts for a particular format
+    // could be lower or higher.
+    SampleCount fMaxInternalSampleCount = SampleCount::k4;
+
     size_t fGlyphCacheTextureMaximumBytes = 2048 * 1024 * 4;
 
     float fMinMSAAPathSize = 0;
@@ -558,22 +572,11 @@ protected:
 
     bool fSetBackendLabels = false;
 
-    // Dynamic state.  The granularity is less fine than Vulkan's, but there is still some
-    // granularity to allow for some dynamic state to be disabled due to driver bugs without having
-    // to disable everything.  Eventually, these can be used to create fewer pipelines in the first
-    // place (b/414645289).
-    bool fUseBasicDynamicState = false;
-    bool fUseVertexInputDynamicState = false;
-    bool fUsePipelineLibraries = false;
-
-    // Whether it's possible to upload data to images using the CPU (host) instead of the device.
-    // Under certain circumstances, it's more efficient to upload data in this way instead of
-    // through a staging buffer.
-    bool fSupportsHostImageCopy = false;
-
 private:
     virtual bool onIsTexturable(const TextureInfo&) const = 0;
-    virtual const ColorTypeInfo* getColorTypeInfo(SkColorType, const TextureInfo&) const = 0;
+    virtual SkSpan<const ColorTypeInfo> getColorTypeInfos(const TextureInfo&) const = 0;
+
+    const ColorTypeInfo* getColorTypeInfo(SkColorType, const TextureInfo&) const;
 
     sk_sp<SkCapabilities> fCapabilities;
 };

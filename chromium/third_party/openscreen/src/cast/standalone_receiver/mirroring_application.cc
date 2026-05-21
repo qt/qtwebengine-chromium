@@ -26,11 +26,13 @@ constexpr char kRemotingRpcNamespace[] = "urn:x-cast:com.google.cast.remoting";
 
 MirroringApplication::MirroringApplication(TaskRunner& task_runner,
                                            const IPAddress& interface_address,
-                                           ApplicationAgent& agent)
+                                           ApplicationAgent& agent,
+                                           bool enable_dscp)
     : task_runner_(task_runner),
       interface_address_(interface_address),
       app_ids_(GetCastStreamingAppIds()),
-      agent_(agent) {
+      agent_(agent),
+      enable_dscp_(enable_dscp) {
   agent_.RegisterApplication(this);
 }
 
@@ -66,6 +68,7 @@ bool MirroringApplication::Launch(const std::string& app_id,
   constraints.video_codecs.insert(constraints.video_codecs.begin(),
                                   {VideoCodec::kAv1, VideoCodec::kVp9});
   constraints.remoting = std::make_unique<RemotingConstraints>();
+  constraints.enable_dscp = enable_dscp_;
   current_session_ = std::make_unique<ReceiverSession>(
       *controller_, *environment_, *message_port, std::move(constraints));
   return true;

@@ -9,7 +9,6 @@
 #include "base/android/jni_android.h"
 #include "base/android/jni_array.h"
 #include "base/android/jni_string.h"
-#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/location.h"
 #include "base/logging.h"
@@ -23,7 +22,6 @@
 
 using base::android::AttachCurrentThread;
 using base::android::ConvertJavaStringToUTF8;
-using base::android::JavaParamRef;
 using base::android::JavaRef;
 
 namespace device {
@@ -220,7 +218,7 @@ void BluetoothRemoteGattCharacteristicAndroid::
 
 void BluetoothRemoteGattCharacteristicAndroid::OnChanged(
     JNIEnv* env,
-    const JavaParamRef<jbyteArray>& value) {
+    const JavaRef<jbyteArray>& value) {
   base::android::JavaByteArrayToByteVector(env, value, &value_);
   adapter_->NotifyGattCharacteristicValueChanged(this, value_);
 }
@@ -228,7 +226,7 @@ void BluetoothRemoteGattCharacteristicAndroid::OnChanged(
 void BluetoothRemoteGattCharacteristicAndroid::OnRead(
     JNIEnv* env,
     int32_t status,
-    const JavaParamRef<jbyteArray>& value) {
+    const JavaRef<jbyteArray>& value) {
   read_pending_ = false;
 
   // Clear callbacks before calling to avoid reentrancy issues.
@@ -265,14 +263,14 @@ void BluetoothRemoteGattCharacteristicAndroid::OnWrite(JNIEnv* env,
 
 void BluetoothRemoteGattCharacteristicAndroid::CreateGattRemoteDescriptor(
     JNIEnv* env,
-    const JavaParamRef<jstring>& instanceId,
-    const JavaParamRef<jobject>& /* BluetoothGattDescriptorWrapper */
+    const JavaRef<jstring>& instanceId,
+    const JavaRef<jobject>& /* BluetoothGattDescriptorWrapper */
         bluetooth_gatt_descriptor_wrapper,
-    const JavaParamRef<jobject>& /* ChromeBluetoothDevice */
+    const JavaRef<jobject>& /* ChromeBluetoothDevice */
         chrome_bluetooth_device) {
   std::string instanceIdString = ConvertJavaStringToUTF8(env, instanceId);
 
-  DCHECK(!base::Contains(descriptors_, instanceIdString));
+  DCHECK(!descriptors_.contains(instanceIdString));
   AddDescriptor(BluetoothRemoteGattDescriptorAndroid::Create(
       instanceIdString, bluetooth_gatt_descriptor_wrapper,
       chrome_bluetooth_device));

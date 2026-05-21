@@ -15,7 +15,7 @@
 #include "components/dom_distiller/core/android/jni_headers/DomDistillerService_jni.h"
 
 using base::android::ConvertUTF8ToJavaString;
-using base::android::JavaParamRef;
+using base::android::JavaRef;
 using base::android::ScopedJavaLocalRef;
 
 namespace dom_distiller {
@@ -32,7 +32,7 @@ DomDistillerServiceAndroid::DomDistillerServiceAndroid(
 
 DomDistillerServiceAndroid::~DomDistillerServiceAndroid() = default;
 
-jlong DomDistillerServiceAndroid::GetDistilledPagePrefsPtr(JNIEnv* env) {
+int64_t DomDistillerServiceAndroid::GetDistilledPagePrefsPtr(JNIEnv* env) {
   return reinterpret_cast<intptr_t>(service_->GetDistilledPagePrefs());
 }
 

@@ -11,7 +11,6 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "platform/base/span.h"
-#include "platform/test/byte_view_test_util.h"
 #include "platform/test/fake_udp_socket.h"
 #include "platform/test/mock_udp_socket.h"
 
@@ -24,8 +23,7 @@ using testing::StrictMock;
 using testing::WithArgs;
 
 ACTION_P(MatchesBytes, expected_data) {
-  const ByteView& actual_data = arg0;
-  ExpectByteViewsHaveSameBytes(actual_data, expected_data);
+  EXPECT_THAT(arg0, testing::ElementsAreArray(expected_data));
 }
 
 class MdnsSenderTest : public testing::Test {

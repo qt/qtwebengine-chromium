@@ -5,6 +5,7 @@ Revision: DEPS
 License: MIT, NCSA
 License File: src/LICENSE.TXT
 Security Critical: yes
+Update Mechanism: Manual
 Shipped: yes
 
 Description:

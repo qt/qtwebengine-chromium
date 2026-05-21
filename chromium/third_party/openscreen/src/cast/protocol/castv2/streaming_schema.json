@@ -36,7 +36,7 @@
         "aesKey": {"type": "string", "pattern": "[0-9a-fA-F]{32}"},
         "aesIvMask": {"type": "string", "pattern": "[0-9a-fA-F]{32}"},
         "receiverRtcpEventLog": {"type": "boolean"},
-        "receiverRtcpDscp": {"type": "integer", "minimum": 0, "default": 46},
+        "receiverRtcpDscp": {"type": "integer", "minimum": 0, "default": 46, "maximum": 63},
         "rtpExtensions": {"$ref": "#/definitions/rtp_extensions"},
         "timeBase": {
           "type": "string",

@@ -23,6 +23,7 @@
 #include "third_party/blink/renderer/core/xml/xslt_processor.h"
 
 #include "base/notreached.h"
+#include "third_party/blink/public/common/features_generated.h"
 #include "third_party/blink/renderer/core/dom/document_encoding_data.h"
 #include "third_party/blink/renderer/core/dom/document_fragment.h"
 #include "third_party/blink/renderer/core/dom/document_init.h"
@@ -74,14 +75,8 @@ void AddXSLTConsoleWarning(Document& document, const String& message) {
 
 void XSLTProcessor::ReportXSLTDisabled(Document& document,
                                        ExceptionState* exception_state) {
-  if (!RuntimeEnabledFeatures::XSLTEnabled()) {
-    // Normal case - XSLT is disabled.
-    AddXSLTConsoleWarning(
-        document,
-        "XSLTProcessor and XSLT Processing Instructions have been "
-        "removed in this browser. See "
-        "https://chromestatus.com/feature/4709671889534976.");
-  } else if (!RuntimeEnabledFeatures::XSLTSpecialTrialEnabled()) {
+  CHECK(!RuntimeEnabledFeatures::XSLTEnabled());
+  if (RuntimeEnabledFeatures::XSLTSpecialTrialEnabled()) {
     // Special trial run of XSLT removal (pre-stable channels, via Finch).
     AddXSLTConsoleWarning(
         document,
@@ -95,7 +90,12 @@ void XSLTProcessor::ReportXSLTDisabled(Document& document,
         "https://issues.chromium.org/issues/"
         "new?component=1456730&template=2210866");
   } else {
-    NOTREACHED();
+    // Normal case - XSLT is disabled.
+    AddXSLTConsoleWarning(
+        document,
+        "XSLTProcessor and XSLT Processing Instructions have been "
+        "removed in this browser. See "
+        "https://chromestatus.com/feature/4709671889534976.");
   }
   if (exception_state) {
     exception_state->ThrowDOMException(DOMExceptionCode::kNotSupportedError,
@@ -108,8 +108,12 @@ XSLTProcessor::XSLTProcessor(PassKey,
                              WebFeature feature,
                              ExceptionState& exception_state)
     : document_(&document) {
-  if (!RuntimeEnabledFeatures::XSLTEnabled() ||
-      !RuntimeEnabledFeatures::XSLTSpecialTrialEnabled()) {
+  if (!RuntimeEnabledFeatures::XSLTEnabled()) {
+    // Ordinarily we will not get here, since in this case the runtime enabled
+    // feature will be disabled, which removes the XSLTProcessor from IDL.
+    // However, there are corner cases, such as that Finch has disabled XSLT
+    // via the base::Feature, but the user has explicitly set the runtime
+    // enabled feature back to true with `--enable-blink-features`.
     ReportXSLTDisabled(document, &exception_state);
     return;
   }

@@ -19,6 +19,8 @@ class TaskAttributionInfo;
 
 namespace blink {
 class SchedulerTaskContext;
+class ResourceTimingContext;
+class SoftNavigationContext;
 
 // `TaskAttributionTaskState` objects are stored in V8 as continuation preserved
 // embedder data (CPED). They aren't exposed directly to JS.
@@ -60,6 +62,19 @@ class CORE_EXPORT TaskAttributionTaskState
 
   virtual scheduler::TaskAttributionInfo* GetTaskAttributionInfo() = 0;
   virtual SchedulerTaskContext* GetSchedulerTaskContext() = 0;
+
+  // Fork to a new copy, overriding with specified TaskAttributionId and
+  // ResourceTimingContext.
+  virtual TaskAttributionTaskState* ForkAndSetVariable(
+      ResourceTimingContext*) = 0;
+
+  // Fork to a new copy, overriding with specified TaskAttributionId and
+  // SoftNavigationContext.
+  virtual TaskAttributionTaskState* ForkAndSetVariable(
+      SoftNavigationContext*) = 0;
+
+  virtual bool IsWebSchedulingTaskState() const { return false; }
+  virtual bool IsTaskAttributionInfoImpl() const { return false; }
 
   virtual void Trace(Visitor*) const {}
 };

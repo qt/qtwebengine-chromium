@@ -546,7 +546,7 @@ export class LensSidePanelAppElement extends LensSidePanelAppElementBase {
   }
 
   private loadResultsInFrame(resultsUrl: Url) {
-    const url = new URL(resultsUrl.url);
+    const url = new URL(resultsUrl);
     const resultsBoundingRect = this.getResults().getBoundingClientRect();
     if (resultsBoundingRect.width > 0) {
       url.searchParams.set(
@@ -700,12 +700,16 @@ export class LensSidePanelAppElement extends LensSidePanelAppElementBase {
 
     if (loadTimeData.getBoolean('updatedFeedbackEnabled')) {
       this.feedbackToastShowAfterDelayTimeoutId = setTimeout(() => {
-        if (this.isComposeboxFocused) {
+        if (this.$.composebox.isExpanded()) {
           return;
         }
         this.feedbackToastShown = true;
         this.$.feedbackToast.show();
       }, loadTimeData.getInteger('updatedFeedbackToastTimeoutMs'));
+      return;
+    }
+
+    if (this.$.composebox.isExpanded()) {
       return;
     }
 

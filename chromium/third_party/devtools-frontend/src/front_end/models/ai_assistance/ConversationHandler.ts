@@ -213,7 +213,7 @@ export class ConversationHandler extends Common.ObjectWrapper.ObjectWrapper<Even
     const conversation = new AiConversation(
         conversationType,
         [],
-        aiAgent.id,
+        aiAgent.sessionId,
         /* isReadOnly */ true,
         this.#aidaClient,
         undefined,
@@ -228,7 +228,8 @@ export class ConversationHandler extends Common.ObjectWrapper.ObjectWrapper<Even
     selected: NodeContext|PerformanceTraceContext|RequestContext|null,
   }): AsyncGenerator<ExternalRequestResponse, ExternalRequestResponse> {
     const {conversation, prompt, selected} = opts;
-    const generator = conversation.run(prompt, {selected});
+    conversation.setContext(selected);
+    const generator = conversation.run(prompt);
     const devToolsLogs: object[] = [];
     for await (const data of generator) {
       if (data.type !== ResponseType.ANSWER || data.complete) {

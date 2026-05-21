@@ -8,7 +8,6 @@
 #include <utility>
 #include <vector>
 
-#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
@@ -189,14 +188,14 @@ ServiceWorkerPaymentApp::CreateCanMakePaymentEventData() {
 
   DCHECK(spec_->details().modifiers);
   for (const auto& modifier : *spec_->details().modifiers) {
-    if (base::Contains(supported_url_methods,
-                       modifier->method_data->supported_method)) {
+    if (supported_url_methods.contains(
+            modifier->method_data->supported_method)) {
       event_data->modifiers.emplace_back(modifier.Clone());
     }
   }
 
   for (const auto& data : spec_->method_data()) {
-    if (base::Contains(supported_url_methods, data->supported_method)) {
+    if (supported_url_methods.contains(data->supported_method)) {
       event_data->method_data.push_back(data.Clone());
     }
   }
@@ -300,14 +299,13 @@ ServiceWorkerPaymentApp::CreatePaymentRequestEventData() {
 
   DCHECK(spec_->details().modifiers);
   for (const auto& modifier : *spec_->details().modifiers) {
-    if (base::Contains(GetAppMethodNames(),
-                       modifier->method_data->supported_method)) {
+    if (GetAppMethodNames().contains(modifier->method_data->supported_method)) {
       event_data->modifiers.emplace_back(modifier.Clone());
     }
   }
 
   for (const auto& data : spec_->method_data()) {
-    if (base::Contains(GetAppMethodNames(), data->supported_method)) {
+    if (GetAppMethodNames().contains(data->supported_method)) {
       event_data->method_data.push_back(data.Clone());
     }
   }
@@ -526,6 +524,12 @@ void ServiceWorkerPaymentApp::OnPaymentAppIdentity(const url::Origin& origin,
   if (payment_handler_host_) {
     payment_handler_host_->set_sw_origin_for_logs(origin);
     payment_handler_host_->set_registration_id_for_logs(registration_id_);
+    payment_handler_host_->set_disconnect_callback(
+        base::BindOnce(&ServiceWorkerPaymentApp::OnPaymentHandlerDisconnected,
+                       weak_ptr_factory_.GetWeakPtr()));
+  }
+  if (auto* payment_app_provider = GetPaymentAppProvider()) {
+    payment_app_provider->SetRegistrationId(registration_id_);
   }
 }
 
@@ -585,6 +589,12 @@ content::PaymentAppProvider* ServiceWorkerPaymentApp::GetPaymentAppProvider() {
              ? nullptr
              : content::PaymentAppProvider::GetOrCreateForWebContents(
                    web_contents_.get());
+}
+
+void ServiceWorkerPaymentApp::OnPaymentHandlerDisconnected() {
+  if (auto* payment_app_provider = GetPaymentAppProvider()) {
+    payment_app_provider->OnPaymentHandlerDisconnected();
+  }
 }
 
 }  // namespace payments

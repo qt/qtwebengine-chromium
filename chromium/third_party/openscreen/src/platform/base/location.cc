@@ -6,7 +6,7 @@
 
 #include <sstream>
 
-#include "platform/base/macros.h"
+#include "platform/base/compiler_specific.h"
 
 namespace openscreen {
 
@@ -22,7 +22,7 @@ Location& Location::operator=(Location&& other) = default;
 
 std::string Location::ToString() const {
   if (program_counter_ == nullptr) {
-    return "pc:NULL";
+    return "pc:nullptr";
   }
 
   std::ostringstream oss;
@@ -45,6 +45,10 @@ OSP_NOINLINE Location Location::CreateFromHere() {
 // static
 OSP_NOINLINE const void* GetProgramCounter() {
   return RETURN_ADDRESS();
+}
+
+std::ostream& operator<<(std::ostream& out, const Location& location) {
+  return out << location.ToString();
 }
 
 }  // namespace openscreen

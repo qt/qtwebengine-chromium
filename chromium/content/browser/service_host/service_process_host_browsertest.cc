@@ -14,6 +14,7 @@
 #include "base/process/process.h"
 #include "base/run_loop.h"
 #include "base/test/bind.h"
+#include "base/test/test_future.h"
 #include "base/time/time.h"
 #include "base/timer/elapsed_timer.h"
 #include "content/public/common/content_switches.h"
@@ -252,7 +253,7 @@ IN_PROC_BROWSER_TEST_F(ServiceProcessHostBrowserTest, PreloadLibraryNotSet) {
 
   base::RunLoop loop;
   echo_service->LoadNativeLibrary(
-      GetDllPath(kEchoPreloadLibrary), /*call_sec32_delayload=*/false,
+      GetDllPath(kEchoPreloadLibrary), /*call_winmm_delayload=*/false,
       base::BindLambdaForTesting([&](LoadStatus status, uint32_t result) {
         EXPECT_EQ(LoadStatus::kFailedLoadLibrary, status);
         EXPECT_EQ(DWORD{ERROR_ACCESS_DENIED}, result);
@@ -276,7 +277,7 @@ IN_PROC_BROWSER_TEST_F(ServiceProcessHostBrowserTest, PreloadLibraryPreloaded) {
   base::RunLoop loop;
   echo_service->LoadNativeLibrary(
       GetDllPath(kEchoPreloadLibrary),
-      /*call_sec32_delayload=*/true,
+      /*call_winmm_delayload=*/true,
       base::BindLambdaForTesting([&](LoadStatus status, uint32_t result) {
         EXPECT_EQ(LoadStatus::kSuccess, status);
         EXPECT_EQ(0u, result);
@@ -302,7 +303,7 @@ IN_PROC_BROWSER_TEST_F(ServiceProcessHostBrowserTest, PreloadLibraryMultiple) {
 
   base::RunLoop loop;
   echo_service->LoadNativeLibrary(
-      GetDllPath(kEchoPreloadLibrary), /*call_sec32_delayload=*/false,
+      GetDllPath(kEchoPreloadLibrary), /*call_winmm_delayload=*/false,
       base::BindLambdaForTesting([&](LoadStatus status, uint32_t result) {
         EXPECT_EQ(LoadStatus::kSuccess, status);
         EXPECT_EQ(0u, result);
@@ -326,7 +327,7 @@ IN_PROC_BROWSER_TEST_F(ServiceProcessHostBrowserTest, PreloadLibraryModName) {
   base::RunLoop loop;
   // Once preloaded can people simply provide the module name?
   echo_service->LoadNativeLibrary(
-      base::FilePath(kEchoPreloadLibrary), /*call_sec32_delayload=*/false,
+      base::FilePath(kEchoPreloadLibrary), /*call_winmm_delayload=*/false,
       base::BindLambdaForTesting([&](LoadStatus status, uint32_t result) {
         EXPECT_EQ(LoadStatus::kSuccess, status);
         EXPECT_EQ(0u, result);
@@ -351,5 +352,14 @@ IN_PROC_BROWSER_TEST_F(ServiceProcessHostBrowserTest, PreloadLibraryBadPath) {
   observer.WaitForCrash();
 }
 #endif  // BUILDFLAG(IS_WIN)
+
+IN_PROC_BROWSER_TEST_F(ServiceProcessHostBrowserTest, UtilityCheckIsTest) {
+  mojo::Remote<echo::mojom::EchoService> echo_service;
+  content::ServiceProcessHost::Launch(
+      echo_service.BindNewPipeAndPassReceiver());
+  base::test::TestFuture<bool> future;
+  echo_service->VerifyCheckIsTest(future.GetCallback());
+  EXPECT_TRUE(future.Get());
+}
 
 }  // namespace content

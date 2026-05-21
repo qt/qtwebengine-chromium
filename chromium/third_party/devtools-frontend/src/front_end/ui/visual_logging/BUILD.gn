@@ -21,6 +21,7 @@ devtools_ui_module("visual_logging") {
   deps = [
     "../../core/common:bundle",
     "../../core/host:bundle",
+    "../../core/platform:bundle",
     "../../core/root:bundle",
     "../components/render_coordinator:bundle",
   ]
@@ -34,6 +35,7 @@ devtools_entrypoint("bundle") {
   visibility = [
     ":*",
     "../../entrypoints/device_mode_emulation_frame/*",
+    "../../entrypoints/inspector_main/*",
     "../../entrypoints/main/*",
     "../../panels/*",
     "../components/*",

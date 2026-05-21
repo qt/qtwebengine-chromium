@@ -3,8 +3,11 @@
 // found in the LICENSE file.
 
 #include <algorithm>
+#include <csignal>
 #include <iostream>
 #include <memory>
+#include <random>
+#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -24,13 +27,14 @@
 #include "util/string_util.h"
 #include "util/stringprintf.h"
 #include "util/trace_logging.h"
+#include "util/uuid.h"
 
 namespace openscreen::cast {
 namespace {
 
 void LogUsage(const char* argv0) {
-  constexpr char kTemplate[] = R"(
-usage: %s <options> <interface>
+  static constexpr char kTemplate[] = R"(
+usage: {} <options> <interface>
 
     interface
         Specifies the network interface to bind to. The interface is
@@ -38,11 +42,6 @@ usage: %s <options> <interface>
         Mandatory, as it must be known for publishing discovery.
 
 options:
-    -p, --private-key=path-to-key: Path to OpenSSL-generated private key to be
-                    used for TLS authentication. If a private key is not
-                    provided, a randomly generated one will be used for this
-                    session.
-
     -d, --developer-certificate=path-to-cert: Path to PEM file containing a
                            developer generated server root TLS certificate.
                            If a root server certificate is not provided, one
@@ -50,29 +49,35 @@ options:
                            private key. Note that if a certificate path is
                            passed, the private key path is a mandatory field.
 
+    -f, --friendly-name: Friendly name to be used for receiver discovery.
+
     -g, --generate-credentials: Instructs the binary to generate a private key
                                 and self-signed root certificate with the CA
                                 bit set to true, and then exit. The resulting
                                 private key and certificate can then be used as
                                 values for the -p and -s flags.
 
-    -f, --friendly-name: Friendly name to be used for receiver discovery.
+    -h, --help: Show this help message.
 
     -m, --model-name: Model name to be used for receiver discovery.
+
+    -p, --private-key=path-to-key: Path to OpenSSL-generated private key to be
+                    used for TLS authentication. If a private key is not
+                    provided, a randomly generated one will be used for this
+                    session.
+
+    -q, --disable-dscp: Disable DSCP packet prioritization, used for QoS over
+                        the UDP socket connection.
 
     -t, --tracing: Enable performance tracing logging.
 
     -v, --verbose: Enable verbose logging.
 
-    -h, --help: Show this help message.
-
-    -x, --disable-discovery: Disable discovery, useful for platforms like Mac OS
-                             where our implementation is incompatible with
-                             the native Bonjour service.
+    -x, --disable-discovery: Disable discovery.
 
 )";
 
-  std::cerr << StringPrintf(kTemplate, argv0);
+  std::cerr << StringFormat(kTemplate, argv0);
 }
 
 InterfaceInfo GetInterfaceInfoFromName(const char* name) {
@@ -109,6 +114,85 @@ void RunCastService(TaskRunnerImpl* runner, CastService::Configuration config) {
   OSP_LOG_INFO << "Bye!";
 }
 
+struct Arguments {
+  // Required positional arguments
+  const char* interface_name = nullptr;
+
+  // Optional arguments
+  std::string developer_certificate_path;
+  bool enable_discovery = true;
+  bool enable_dscp = true;
+  std::string friendly_name = "Cast Standalone Receiver";
+  bool should_generate_credentials = false;
+  std::string model_name = "cast_standalone_receiver";
+  std::string private_key_path;
+  std::unique_ptr<TextTraceLoggingPlatform> trace_logger;
+  bool is_verbose = false;
+};
+
+std::optional<Arguments> ParseArgs(int argc, char* argv[]) {
+  // A note about modifying command line arguments: consider uniformity
+  // between all Open Screen executables. If it is a platform feature
+  // being exposed, consider if it applies to the standalone receiver,
+  // standalone sender, osp demo, and test_main argument options.
+  const get_opt::option kArgumentOptions[] = {
+      {"developer-certificate", required_argument, nullptr, 'd'},
+      {"disable-discovery", no_argument, nullptr, 'x'},
+      {"disable-dscp", no_argument, nullptr, 'q'},
+      {"friendly-name", required_argument, nullptr, 'f'},
+      {"generate-credentials", no_argument, nullptr, 'g'},
+      {"help", no_argument, nullptr, 'h'},
+      {"model-name", required_argument, nullptr, 'm'},
+      {"private-key", required_argument, nullptr, 'p'},
+      {"tracing", no_argument, nullptr, 't'},
+      {"verbose", no_argument, nullptr, 'v'},
+      {nullptr, 0, nullptr, 0}};
+
+  Arguments args;
+  int ch = -1;
+  while ((ch = getopt_long(argc, argv, "d:f:ghm:p:qtvx", kArgumentOptions,
+                           nullptr)) != -1) {
+    switch (ch) {
+      case 'd':
+        args.developer_certificate_path = get_opt::optarg;
+        break;
+      case 'f':
+        args.friendly_name = get_opt::optarg;
+        break;
+      case 'g':
+        args.should_generate_credentials = true;
+        break;
+      case 'h':
+        return {};
+      case 'm':
+        args.model_name = get_opt::optarg;
+        break;
+      case 'p':
+        args.private_key_path = get_opt::optarg;
+        break;
+      case 'q':
+        args.enable_dscp = false;
+        break;
+      case 't':
+        args.trace_logger = std::make_unique<TextTraceLoggingPlatform>();
+        break;
+      case 'v':
+        args.is_verbose = true;
+        break;
+      case 'x':
+        args.enable_discovery = false;
+        break;
+    }
+  }
+
+  args.interface_name = argv[get_opt::optind];
+  if (!args.should_generate_credentials) {
+    OSP_CHECK(args.interface_name && strlen(args.interface_name) > 0)
+        << "No interface name provided.";
+  }
+  return args;
+}
+
 int RunStandaloneReceiver(int argc, char* argv[]) {
 #if !defined(CAST_STANDALONE_RECEIVER_HAVE_EXTERNAL_LIBS)
   OSP_LOG_INFO
@@ -117,102 +201,46 @@ int RunStandaloneReceiver(int argc, char* argv[]) {
          "install the required external libraries. For more information, see: "
          "[external_libraries.md](../streaming/external_libraries.md).";
 #endif
-
-  // A note about modifying command line arguments: consider uniformity
-  // between all Open Screen executables. If it is a platform feature
-  // being exposed, consider if it applies to the standalone receiver,
-  // standalone sender, osp demo, and test_main argument options.
-  const get_opt::option kArgumentOptions[] = {
-      {"private-key", required_argument, nullptr, 'p'},
-      {"developer-certificate", required_argument, nullptr, 'd'},
-      {"generate-credentials", no_argument, nullptr, 'g'},
-      {"friendly-name", required_argument, nullptr, 'f'},
-      {"model-name", required_argument, nullptr, 'm'},
-      {"tracing", no_argument, nullptr, 't'},
-      {"verbose", no_argument, nullptr, 'v'},
-      {"help", no_argument, nullptr, 'h'},
-
-      // Discovery is enabled by default, however there are cases where it
-      // needs to be disabled, such as on Mac OS X.
-      {"disable-discovery", no_argument, nullptr, 'x'},
-      {nullptr, 0, nullptr, 0}};
-
-  bool is_verbose = false;
-  bool enable_discovery = true;
-  std::string private_key_path;
-  std::string developer_certificate_path;
-  std::string friendly_name = "Cast Standalone Receiver";
-  std::string model_name = "cast_standalone_receiver";
-  bool should_generate_credentials = false;
-  std::unique_ptr<TextTraceLoggingPlatform> trace_logger;
-  int ch = -1;
-  while ((ch = getopt_long(argc, argv, "p:d:f:m:grtvhx", kArgumentOptions,
-                           nullptr)) != -1) {
-    switch (ch) {
-      case 'p':
-        private_key_path = get_opt::optarg;
-        break;
-      case 'd':
-        developer_certificate_path = get_opt::optarg;
-        break;
-      case 'f':
-        friendly_name = get_opt::optarg;
-        break;
-      case 'm':
-        model_name = get_opt::optarg;
-        break;
-      case 'g':
-        should_generate_credentials = true;
-        break;
-      case 't':
-        trace_logger = std::make_unique<TextTraceLoggingPlatform>();
-        break;
-      case 'v':
-        is_verbose = true;
-        break;
-      case 'x':
-        enable_discovery = false;
-        break;
-      case 'h':
-        LogUsage(argv[0]);
-        return 1;
-    }
+  const std::optional<Arguments> args = ParseArgs(argc, argv);
+  if (!args) {
+    LogUsage(argv[0]);
+    return 1;
   }
-
-  SetLogLevel(is_verbose ? LogLevel::kVerbose : LogLevel::kInfo);
+  SetLogLevel(args->is_verbose ? LogLevel::kVerbose : LogLevel::kInfo);
 
   // Either -g is required, or both -p and -d.
-  if (should_generate_credentials) {
+  if (args->should_generate_credentials) {
     GenerateDeveloperCredentialsToFile();
     return 0;
   }
-  if (private_key_path.empty() || developer_certificate_path.empty()) {
+  if (args->private_key_path.empty() ||
+      args->developer_certificate_path.empty()) {
     OSP_LOG_FATAL << "You must either invoke with -g to generate credentials, "
                      "or provide both a private key path and root certificate "
                      "using -p and -d";
     return 1;
   }
 
-  const char* interface_name = argv[get_opt::optind];
-  OSP_CHECK(interface_name && strlen(interface_name) > 0)
-      << "No interface name provided.";
-
-  std::string receiver_id =
-      string_util::StrCat({"Standalone Receiver on ", interface_name});
+  const std::string receiver_id =
+      string_util::StrCat({"Standalone Receiver on ", args->interface_name});
   ErrorOr<GeneratedCredentials> creds = GenerateCredentials(
-      receiver_id, private_key_path, developer_certificate_path);
+      receiver_id, args->private_key_path, args->developer_certificate_path);
   OSP_CHECK(creds.is_value()) << creds.error();
 
-  const InterfaceInfo interface = GetInterfaceInfoFromName(interface_name);
+  const InterfaceInfo interface =
+      GetInterfaceInfoFromName(args->interface_name);
   OSP_CHECK(interface.GetIpAddressV4() || interface.GetIpAddressV6());
 
   auto* const task_runner = new TaskRunnerImpl(&Clock::now);
   PlatformClientPosix::Create(milliseconds(50),
                               std::unique_ptr<TaskRunnerImpl>(task_runner));
-  RunCastService(task_runner,
-                 CastService::Configuration{
-                     *task_runner, interface, std::move(creds.value()),
-                     friendly_name, model_name, enable_discovery});
+
+  RunCastService(
+      task_runner,
+      CastService::Configuration{
+          *task_runner, interface, std::move(creds.value()),
+          Uuid::GenerateRandomV4().AsLowercaseString(), args->friendly_name,
+          args->model_name, args->enable_discovery});
   PlatformClientPosix::ShutDown();
 
   return 0;
@@ -222,5 +250,10 @@ int RunStandaloneReceiver(int argc, char* argv[]) {
 }  // namespace openscreen::cast
 
 int main(int argc, char* argv[]) {
+  // Ignore SIGPIPE events at the application level -- tearing down the network
+  // interface will close a TLS or UDP socket connection, which will result
+  // in a more graceful exit than terminating on the SIGPIPE call.
+  std::signal(SIGPIPE, SIG_IGN);
+
   return openscreen::cast::RunStandaloneReceiver(argc, argv);
 }

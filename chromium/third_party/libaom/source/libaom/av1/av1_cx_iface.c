@@ -8,6 +8,8 @@
  * Media Patent License 1.0 was not distributed with this source code in the
  * PATENTS file, you can obtain it at www.aomedia.org/license/patent.
  */
+
+#include <assert.h>
 #include <limits.h>
 #include <math.h>
 #include <stdbool.h>
@@ -48,6 +50,33 @@
 #include "av1/arg_defs.h"
 
 #include "common/args_helper.h"
+
+// Creates a setjmp target using `CPI->common.error->jmp` and sets
+// `CPI->common.error->setjmp = 1`. Returns `CPI->common.error->error_code` on
+// longjmp. This macro expects `aom_codec_alg_priv_t *ctx` to be available.
+// This should be accompanied by a call to DISABLE_SETJMP using the same CPI
+// before going out of scope.
+#define ENABLE_SETJMP(CPI)                                      \
+  do {                                                          \
+    struct aom_internal_error_info *const enable_setjmp_error = \
+        (CPI)->common.error;                                    \
+    if (setjmp(enable_setjmp_error->jmp)) {                     \
+      enable_setjmp_error->setjmp = 0;                          \
+      ctx->base.err_detail = enable_setjmp_error->has_detail    \
+                                 ? enable_setjmp_error->detail  \
+                                 : NULL;                        \
+      return enable_setjmp_error->error_code;                   \
+    }                                                           \
+    enable_setjmp_error->setjmp = 1;                            \
+  } while (0)
+
+// Sets CPI->common.error->setjmp = 0.
+#define DISABLE_SETJMP(CPI)                                     \
+  do {                                                          \
+    struct aom_internal_error_info *const enable_setjmp_error = \
+        (CPI)->common.error;                                    \
+    enable_setjmp_error->setjmp = 0;                            \
+  } while (0)
 
 struct av1_extracfg {
   int cpu_used;
@@ -1356,10 +1385,20 @@ static void set_encoder_config(AV1EncoderConfig *oxcf,
   color_cfg->chroma_sample_position = extra_cfg->chroma_sample_position;
 
   // Set Group of frames configuration.
-  // Force lag_in_frames to 0 for REALTIME mode
+#if CONFIG_REALTIME_ONLY
   gf_cfg->lag_in_frames = (oxcf->mode == REALTIME)
                               ? 0
                               : clamp(cfg->g_lag_in_frames, 0, MAX_LAG_BUFFERS);
+#else
+  gf_cfg->lag_in_frames = clamp(cfg->g_lag_in_frames, 0, MAX_LAG_BUFFERS);
+#endif
+
+  // Modify lag_in_frames slightly for better coding performance (e.g. better
+  // temporal filtering result).
+  if (oxcf->mode == GOOD && gf_cfg->lag_in_frames >= 32 &&
+      gf_cfg->lag_in_frames < 39)
+    gf_cfg->lag_in_frames = AOMMIN(39, MAX_LAG_BUFFERS);
+
   gf_cfg->enable_auto_arf = extra_cfg->enable_auto_alt_ref;
   gf_cfg->enable_auto_brf = extra_cfg->enable_auto_bwd_ref;
   gf_cfg->min_gf_interval = extra_cfg->min_gf_interval;
@@ -1580,7 +1619,7 @@ AV1EncoderConfig av1_get_encoder_config(const aom_codec_enc_cfg_t *cfg) {
 static aom_codec_err_t encoder_set_config(aom_codec_alg_priv_t *ctx,
                                           const aom_codec_enc_cfg_t *cfg) {
   aom_codec_err_t res;
-  int force_key = 0;
+  volatile int force_key = 0;
 
   if (cfg->g_w != ctx->cfg.g_w || cfg->g_h != ctx->cfg.g_h) {
     if (cfg->g_lag_in_frames > 1 || cfg->g_pass != AOM_RC_ONE_PASS)
@@ -1632,11 +1671,16 @@ static aom_codec_err_t encoder_set_config(aom_codec_alg_priv_t *ctx,
     bool is_sb_size_changed = false;
     av1_change_config_seq(ctx->ppi, &ctx->oxcf, &is_sb_size_changed);
     for (int i = 0; i < ctx->ppi->num_fp_contexts; i++) {
-      av1_change_config(ctx->ppi->parallel_cpi[i], &ctx->oxcf,
-                        is_sb_size_changed);
+      AV1_COMP *const cpi = ctx->ppi->parallel_cpi[i];
+      ENABLE_SETJMP(cpi);
+      av1_change_config(cpi, &ctx->oxcf, is_sb_size_changed);
+      DISABLE_SETJMP(cpi);
     }
     if (ctx->ppi->cpi_lap != NULL) {
-      av1_change_config(ctx->ppi->cpi_lap, &ctx->oxcf, is_sb_size_changed);
+      AV1_COMP *const cpi = ctx->ppi->cpi_lap;
+      ENABLE_SETJMP(cpi);
+      av1_change_config(cpi, &ctx->oxcf, is_sb_size_changed);
+      DISABLE_SETJMP(cpi);
     }
   }
 
@@ -1688,25 +1732,15 @@ static aom_codec_err_t update_encoder_cfg(aom_codec_alg_priv_t *ctx) {
   av1_change_config_seq(ctx->ppi, &ctx->oxcf, &is_sb_size_changed);
   for (int i = 0; i < ctx->ppi->num_fp_contexts; i++) {
     AV1_COMP *const cpi = ctx->ppi->parallel_cpi[i];
-    struct aom_internal_error_info *const error = cpi->common.error;
-    if (setjmp(error->jmp)) {
-      error->setjmp = 0;
-      return error->error_code;
-    }
-    error->setjmp = 1;
+    ENABLE_SETJMP(cpi);
     av1_change_config(cpi, &ctx->oxcf, is_sb_size_changed);
-    error->setjmp = 0;
+    DISABLE_SETJMP(cpi);
   }
   if (ctx->ppi->cpi_lap != NULL) {
     AV1_COMP *const cpi_lap = ctx->ppi->cpi_lap;
-    struct aom_internal_error_info *const error = cpi_lap->common.error;
-    if (setjmp(error->jmp)) {
-      error->setjmp = 0;
-      return error->error_code;
-    }
-    error->setjmp = 1;
+    ENABLE_SETJMP(cpi_lap);
     av1_change_config(cpi_lap, &ctx->oxcf, is_sb_size_changed);
-    error->setjmp = 0;
+    DISABLE_SETJMP(cpi_lap);
   }
   return AOM_CODEC_OK;
 }
@@ -3008,9 +3042,8 @@ static aom_codec_err_t encoder_init(aom_codec_ctx_t *ctx) {
       reduce_ratio(&priv->timestamp_ratio);
 
       set_encoder_config(&priv->oxcf, &priv->cfg, &priv->extra_cfg);
-      if (priv->oxcf.rc_cfg.mode != AOM_CBR &&
-          priv->oxcf.pass == AOM_RC_ONE_PASS && priv->oxcf.mode == GOOD) {
-        // Enable look ahead - enabled for AOM_Q, AOM_CQ, AOM_VBR
+      if (priv->oxcf.pass == AOM_RC_ONE_PASS) {
+        // Enable look ahead.
         *num_lap_buffers =
             AOMMIN((int)priv->cfg.g_lag_in_frames,
                    AOMMIN(MAX_LAP_BUFFERS, priv->oxcf.kf_cfg.key_freq_max +
@@ -3522,7 +3555,7 @@ static aom_codec_err_t encoder_encode(aom_codec_alg_priv_t *ctx,
 #endif  // CONFIG_MULTITHREAD
 
     // Call for LAP stage
-    if (cpi_lap != NULL) {
+    if (cpi_lap != NULL && !is_one_pass_rt_lag_params(cpi)) {
       if (cpi_lap->ppi->b_freeze_internal_state) {
         av1_save_all_coding_context(cpi_lap);
       }
@@ -3574,6 +3607,15 @@ static aom_codec_err_t encoder_encode(aom_codec_alg_priv_t *ctx,
 
 #endif  // CONFIG_FPMT_TEST
       if (!simulate_parallel_frame) {
+        // Add a range check here to give an error for frame_parallel_level
+        // array out-of-bounds access.
+        if (cpi->gf_frame_index >= MAX_STATIC_GF_GROUP_LENGTH) {
+          aom_internal_error(&ppi->error, AOM_CODEC_ERROR,
+                             "cpi->gf_frame_index is out of range");
+        }
+
+        // May need a better way for checking the frame's frame_parallel_level,
+        // especially for the first frame of the following gop.
         if (ppi->gf_group.frame_parallel_level[cpi->gf_frame_index] == 0) {
           status = av1_get_compressed_data(cpi, &cpi_data);
         } else if (ppi->gf_group.frame_parallel_level[cpi->gf_frame_index] ==
@@ -3980,7 +4022,7 @@ static aom_codec_err_t ctrl_set_svc_params(aom_codec_alg_priv_t *ctx,
   AV1_PRIMARY *const ppi = ctx->ppi;
   AV1_COMP *const cpi = ppi->cpi;
   aom_svc_params_t *const params = va_arg(args, aom_svc_params_t *);
-  int64_t target_bandwidth = 0;
+  volatile int64_t target_bandwidth = 0;
   // Note svc.use_flexible_mode is set by AV1E_SET_SVC_REF_FRAME_CONFIG. When
   // it is false (the default) the actual limit is 3 for both spatial and
   // temporal layers. Given the order of these calls are unpredictable the
@@ -4066,7 +4108,9 @@ static aom_codec_err_t ctrl_set_svc_params(aom_codec_alg_priv_t *ctx,
       ctx->oxcf.rc_cfg.target_bandwidth = oxcf->rc_cfg.target_bandwidth =
           target_bandwidth;
       set_primary_rc_buffer_sizes(oxcf, ppi);
+      ENABLE_SETJMP(cpi);
       av1_update_layer_context_change_config(cpi, target_bandwidth);
+      DISABLE_SETJMP(cpi);
       check_reset_rc_flag(cpi);
     } else {
       // Note av1_init_layer_context() relies on cpi->oxcf. The order of that
@@ -4080,7 +4124,9 @@ static aom_codec_err_t ctrl_set_svc_params(aom_codec_alg_priv_t *ctx,
       seq_params->operating_points_cnt_minus_1 =
           ppi->number_spatial_layers * ppi->number_temporal_layers - 1;
 
+      ENABLE_SETJMP(cpi);
       av1_init_layer_context(cpi);
+      DISABLE_SETJMP(cpi);
       // update_encoder_cfg() is somewhat costly and this control may be called
       // multiple times, so update_encoder_cfg() is only called to ensure frame
       // and superblock sizes are updated before they're fixed by the first

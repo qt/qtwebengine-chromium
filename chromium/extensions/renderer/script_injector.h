@@ -27,16 +27,18 @@ class WebLocalFrame;
 
 namespace extensions {
 
+class ExtensionFrameHelper;
+
 // The pseudo-delegate class for a ScriptInjection that provides all necessary
 // information about how to inject the script, including what code to inject and
 // when (run location), but without any injection logic.
 class ScriptInjector {
  public:
   // The possible reasons for not injecting the script.
-  enum InjectFailureReason {
-    EXTENSION_REMOVED,  // The extension was removed before injection.
-    NOT_ALLOWED,        // The script is not allowed to inject.
-    WONT_INJECT         // The injection won't inject because the user rejected
+  enum class InjectFailureReason {
+    kExtensionRemoved,  // The extension was removed before injection.
+    kNotAllowed,        // The script is not allowed to inject.
+    kWontInject,        // The injection won't inject because the user rejected
                         // (or just did not accept) the injection.
   };
 
@@ -95,7 +97,8 @@ class ScriptInjector {
   virtual std::vector<blink::WebScriptSource> GetJsSources(
       mojom::RunLocation run_location,
       std::set<std::string>* executing_scripts,
-      size_t* num_injected_js_scripts) const = 0;
+      size_t* num_injected_js_scripts,
+      ExtensionFrameHelper* frame_helper) const = 0;
 
   // Returns the css to inject at the given `run_location`.
   // Only called if ShouldInjectOrRemoveCss() is true.

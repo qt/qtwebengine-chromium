@@ -7,6 +7,7 @@
 #include "public/fpdf_flatten.h"
 #include "public/fpdfview.h"
 #include "testing/embedder_test.h"
+#include "testing/embedder_test_constants.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -67,120 +68,59 @@ TEST_F(FPDFFlattenEmbedderTest, FlatWithFontNoBaseEncoding) {
 }
 
 TEST_F(FPDFFlattenEmbedderTest, Bug861842) {
-  const char* checkbox_checksum = []() {
-    if (CFX_DefaultRenderDevice::UseSkiaRenderer()) {
-#if BUILDFLAG(IS_APPLE)
-      return "b3eb634cf60b27cdaab6fd641da7b949";
-#else
-      return "582088a334926edd70265c897c08e45e";
-#endif
-    }
-#if BUILDFLAG(IS_APPLE)
-    return "6aafcb2d98da222964bcdbf5aa1f4f1f";
-#else
-    return "594265790b81df2d93120d33b72a6ada";
-#endif
-  }();
-
   ASSERT_TRUE(OpenDocument("bug_861842.pdf"));
   ScopedPage page = LoadScopedPage(0);
   ASSERT_TRUE(page);
 
   ScopedFPDFBitmap bitmap = RenderLoadedPageWithFlags(page.get(), FPDF_ANNOT);
-  CompareBitmap(bitmap.get(), 100, 120, checkbox_checksum);
+  CompareBitmapToPngWithExpectationSuffix(bitmap.get(), "bug_861842");
 
   EXPECT_EQ(FLATTEN_SUCCESS, FPDFPage_Flatten(page.get(), FLAT_PRINT));
   EXPECT_TRUE(FPDF_SaveAsCopy(document(), this, 0));
 
   // TODO(crbug.com/861842): This should not render blank.
-  static constexpr char kBlankPageHash[] = "48400809c3862dae64b0cd00d51057a4";
-  VerifySavedDocument(100, 120, kBlankPageHash);
+  VerifySavedDocumentToPng("blank_100x120");
 }
 
 TEST_F(FPDFFlattenEmbedderTest, Bug889099) {
-  const char* page_checksum = []() {
-    if (CFX_DefaultRenderDevice::UseSkiaRenderer()) {
-#if BUILDFLAG(IS_WIN)
-      return "69972ac73cb8d3ae8701127103f3a055";
-#elif BUILDFLAG(IS_APPLE)
-      return "810ea30de6d86cbb71d7a7859066eb92";
-#else
-      return "8f571404322082ea91c0a23916baacab";
-#endif
-    }
-#if BUILDFLAG(IS_APPLE)
-    return "049ed3f1e21fc72f929af3410c64bc8f";
-#else
-    return "3db87245e3f4e37f4cb18654bbe22d97";
-#endif
-  }();
-  const char* flattened_page_checksum = []() {
-    if (CFX_DefaultRenderDevice::UseSkiaRenderer()) {
-#if BUILDFLAG(IS_WIN)
-      return "07deccbd4a42aaf6bf45a525f0be388e";
-#elif BUILDFLAG(IS_APPLE)
-      return "f1bbe115355a2ad6d8ac34c7ff14ba75";
-#else
-      return "7978c7b3d643a5f0ac0f03ce759c55fe";
-#endif
-    }
-#if BUILDFLAG(IS_APPLE)
-    return "41debc60cf2a8f74c710ec6082d77b18";
-#else
-    return "0832157462ea70fbbf053e14b1d6457f";
-#endif
-  }();
-
   ASSERT_TRUE(OpenDocument("bug_889099.pdf"));
   ScopedPage page = LoadScopedPage(0);
   ASSERT_TRUE(page);
 
   // The original document has a malformed media box; the height is -400.
   ScopedFPDFBitmap bitmap = RenderLoadedPageWithFlags(page.get(), FPDF_ANNOT);
-  CompareBitmap(bitmap.get(), 300, 400, page_checksum);
+  CompareBitmapToPngWithExpectationSuffix(bitmap.get(), "bug_889099");
 
   EXPECT_EQ(FLATTEN_SUCCESS, FPDFPage_Flatten(page.get(), FLAT_PRINT));
   EXPECT_TRUE(FPDF_SaveAsCopy(document(), this, 0));
 
-  VerifySavedDocument(300, 400, flattened_page_checksum);
+  VerifySavedDocumentToPngWithExpectationSuffix("bug_889099_flattened");
 }
 
 TEST_F(FPDFFlattenEmbedderTest, Bug890322) {
-  const char* checksum = []() {
-    if (CFX_DefaultRenderDevice::UseSkiaRenderer()) {
-      return "793689536cf64fe792c2f241888c0cf3";
-    }
-    return "6c674642154408e877d88c6c082d67e9";
-  }();
   ASSERT_TRUE(OpenDocument("bug_890322.pdf"));
   ScopedPage page = LoadScopedPage(0);
   ASSERT_TRUE(page);
 
   ScopedFPDFBitmap bitmap = RenderLoadedPageWithFlags(page.get(), FPDF_ANNOT);
-  CompareBitmap(bitmap.get(), 200, 200, checksum);
+  CompareBitmapToPngWithExpectationSuffix(bitmap.get(), pdfium::kBug890322Png);
 
   EXPECT_EQ(FLATTEN_SUCCESS, FPDFPage_Flatten(page.get(), FLAT_PRINT));
   EXPECT_TRUE(FPDF_SaveAsCopy(document(), this, 0));
 
-  VerifySavedDocument(200, 200, checksum);
+  VerifySavedDocumentToPngWithExpectationSuffix(pdfium::kBug890322Png);
 }
 
 TEST_F(FPDFFlattenEmbedderTest, Bug896366) {
-  const char* checksum = []() {
-    if (CFX_DefaultRenderDevice::UseSkiaRenderer()) {
-      return "c3cccfadc4c5249e6aa0675e511fa4c3";
-    }
-    return "f71ab085c52c8445ae785eca3ec858b1";
-  }();
   ASSERT_TRUE(OpenDocument("bug_896366.pdf"));
   ScopedPage page = LoadScopedPage(0);
   ASSERT_TRUE(page);
 
   ScopedFPDFBitmap bitmap = RenderLoadedPageWithFlags(page.get(), FPDF_ANNOT);
-  CompareBitmap(bitmap.get(), 612, 792, checksum);
+  CompareBitmapToPngWithExpectationSuffix(bitmap.get(), "bug_896366");
 
   EXPECT_EQ(FLATTEN_SUCCESS, FPDFPage_Flatten(page.get(), FLAT_PRINT));
   EXPECT_TRUE(FPDF_SaveAsCopy(document(), this, 0));
 
-  VerifySavedDocument(612, 792, checksum);
+  VerifySavedDocumentToPngWithExpectationSuffix("bug_896366");
 }

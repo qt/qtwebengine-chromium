@@ -68,12 +68,12 @@ export const domApi: RuleCreator = {
         if (isIdentifier(property, 'setAttribute')) {
           const attribute = firstArg;
           const value = secondArg;
-          if (attribute.type === 'Literal' && value && value.type !== 'SpreadElement' && attribute.value) {
+          if (attribute?.type === 'Literal' && value && value.type !== 'SpreadElement' && attribute.value) {
             domFragment.attributes.push({key: attribute.value.toString(), value});
             return true;
           }
         }
-        if (isIdentifier(property, 'appendChild')) {
+        if (isIdentifier(property, 'appendChild') && firstArg) {
           domFragment.appendChild(firstArg, sourceCode);
           return true;
         }
@@ -81,7 +81,7 @@ export const domApi: RuleCreator = {
           if (secondArg) {
             const index = domFragment.children.indexOf(DomFragment.getOrCreate(secondArg, sourceCode));
             domFragment.insertChildAt(secondArg, index, sourceCode);
-          } else {
+          } else if (firstArg) {
             domFragment.appendChild(firstArg, sourceCode);
           }
           return true;

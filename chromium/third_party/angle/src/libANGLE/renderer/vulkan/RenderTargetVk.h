@@ -59,7 +59,6 @@ class RenderTargetVk final : public FramebufferAttachmentRenderTarget
               vk::ImageViewHelper *imageViews,
               vk::ImageHelper *resolveImage,
               vk::ImageViewHelper *resolveImageViews,
-              UniqueSerial imageSiblingSerial,
               gl::LevelIndex levelIndexGL,
               uint32_t layerIndex,
               uint32_t layerCount,
@@ -188,7 +187,12 @@ class RenderTargetVk final : public FramebufferAttachmentRenderTarget
     void updateWriteColorspace(gl::SrgbWriteControlMode srgbWriteControlMode)
     {
         ASSERT(mImage && mImage->valid() && mImageViews);
-        mImageViews->updateSrgbWiteControlMode(*mImage, srgbWriteControlMode);
+        mImageViews->updateSrgbWriteControlMode(*mImage, srgbWriteControlMode);
+        if (hasResolveAttachment() && !isYuvResolve())
+        {
+            ASSERT(mResolveImage && mResolveImage->valid() && mResolveImageViews);
+            mResolveImageViews->updateSrgbWriteControlMode(*mResolveImage, srgbWriteControlMode);
+        }
     }
     bool hasColorspaceOverrideForRead() const
     {
@@ -238,8 +242,6 @@ class RenderTargetVk final : public FramebufferAttachmentRenderTarget
     // LOAD.
     vk::ImageHelper *mResolveImage;
     vk::ImageViewHelper *mResolveImageViews;
-
-    UniqueSerial mImageSiblingSerial;
 
     // Which subresource of the image is used as render target.
     //

@@ -327,7 +327,7 @@ Deserializer<IsolateT>::Deserializer(IsolateT* isolate,
       magic_number_(magic_number),
       new_maps_(isolate),
       new_allocation_sites_(isolate),
-      new_code_objects_(isolate),
+      new_instruction_stream_objects_(isolate),
       accessor_infos_(isolate),
       interceptor_infos_(isolate),
       function_template_infos_(isolate),
@@ -498,6 +498,14 @@ void PostProcessExternalString(Tagged<ExternalString> string,
                                Isolate* isolate) {
   DisallowGarbageCollection no_gc;
   uint32_t index = string->GetResourceRefForDeserialization();
+  // Our (sandbox) fuzzers can sometimes get here by mutating an in-sandbox
+  // object after deserialization but before post-processing, and making it
+  // look like an ExternalString. In that case, the Isolate may not have any
+  // external references and this CHECK then avoids false-positive crashes.
+  // Technically we should probably also check that the index is in-bounds if
+  // we do have external references on the Isolate, but in our current fuzzer
+  // setup, this doesn't seem to be the case.
+  CHECK_NE(isolate->api_external_references(), nullptr);
   Address address =
       static_cast<Address>(isolate->api_external_references()[index]);
   string->InitExternalPointerFields(isolate);
@@ -574,7 +582,8 @@ void Deserializer<Isolate>::PostProcessNewJSReceiver(
       ResizableFlag resizable = bs && bs->is_resizable_by_js()
                                     ? ResizableFlag::kResizable
                                     : ResizableFlag::kNotResizable;
-      buffer->Setup(shared, resizable, bs, main_thread_isolate());
+      buffer->Setup(shared, resizable, bs, main_thread_isolate(),
+                    buffer->views());
     }
   } else if (InstanceTypeChecker::IsJSDate(instance_type)) {
     Cast<JSDate>(*obj)->UpdateFieldsAfterDeserialization(main_thread_isolate());
@@ -657,7 +666,8 @@ void Deserializer<IsolateT>::PostProcessNewObject(DirectHandle<Map> map,
     // Hence we only remember each individual code object when deserializing
     // user code.
     if (deserializing_user_code()) {
-      new_code_objects_.push_back(TrustedCast<InstructionStream>(obj));
+      new_instruction_stream_objects_.push_back(
+          TrustedCast<InstructionStream>(obj));
     }
   } else if (InstanceTypeChecker::IsCode(instance_type)) {
     Tagged<Code> code = TrustedCast<Code>(raw_obj);
@@ -1152,7 +1162,7 @@ int Deserializer<IsolateT>::ReadReadOnlyHeapRef(uint8_t data,
   uint32_t chunk_offset = source_.GetUint30();
 
   ReadOnlySpace* read_only_space = isolate()->heap()->read_only_space();
-  ReadOnlyPageMetadata* page = read_only_space->pages()[chunk_index];
+  ReadOnlyPage* page = read_only_space->pages()[chunk_index];
   Address address = page->OffsetToAddress(chunk_offset);
   Tagged<HeapObject> heap_object = HeapObject::FromAddress(address);
 

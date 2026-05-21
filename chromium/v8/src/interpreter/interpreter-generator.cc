@@ -618,10 +618,10 @@ IGNITION_HANDLER(GetNamedProperty, InterpreterAssembler) {
   TVARIABLE(Object, var_result);
   ExitPoint exit_point(this, &done, &var_result);
 
-  AccessorAssembler::LazyLoadICParameters params(lazy_context, recv, lazy_name,
-                                                 lazy_slot, feedback_vector);
   AccessorAssembler accessor_asm(state());
-  accessor_asm.LoadIC_BytecodeHandler(&params, &exit_point);
+  auto lazy_p = accessor_asm.MakeLazyLoadICParameters(
+      lazy_context, recv, lazy_name, lazy_slot, feedback_vector);
+  accessor_asm.LoadIC_BytecodeHandler(&lazy_p, &exit_point);
 
   BIND(&done);
   {
@@ -697,7 +697,7 @@ class InterpreterSetNamedPropertyAssembler : public InterpreterAssembler {
                                        OperandScale operand_scale)
       : InterpreterAssembler(state, bytecode, operand_scale) {}
 
-  void SetNamedProperty(Builtin ic_bultin, NamedPropertyType property_type) {
+  void SetNamedProperty(Builtin ic_builtin, NamedPropertyType property_type) {
     TNode<Object> object = LoadRegisterAtOperandIndex(0);
     TNode<Name> name = CAST(LoadConstantPoolEntryAtOperandIndex(1));
     TNode<Object> value = GetAccumulator();
@@ -705,7 +705,7 @@ class InterpreterSetNamedPropertyAssembler : public InterpreterAssembler {
     TNode<HeapObject> maybe_vector = LoadFeedbackVector();
     TNode<Context> context = GetContext();
 
-    TNode<Object> result = CallBuiltin(ic_bultin, context, object, name, value,
+    TNode<Object> result = CallBuiltin(ic_builtin, context, object, name, value,
                                        slot, maybe_vector);
     // To avoid special logic in the deoptimizer to re-materialize the value in
     // the accumulator, we clobber the accumulator after the IC call. It
@@ -1592,15 +1592,15 @@ class InterpreterJSCallAssembler : public InterpreterAssembler {
       case 2:
         CallJSAndDispatch(
             function, context, Int32Constant(arg_count), receiver_mode,
-            LoadRegisterAtOperandIndex(kFirstArgumentOperandIndex + 1),
-            LoadRegisterAtOperandIndex(kFirstArgumentOperandIndex));
+            LoadRegisterAtOperandIndex(kFirstArgumentOperandIndex),
+            LoadRegisterAtOperandIndex(kFirstArgumentOperandIndex + 1));
         break;
       case 3:
         CallJSAndDispatch(
             function, context, Int32Constant(arg_count), receiver_mode,
-            LoadRegisterAtOperandIndex(kFirstArgumentOperandIndex + 2),
+            LoadRegisterAtOperandIndex(kFirstArgumentOperandIndex),
             LoadRegisterAtOperandIndex(kFirstArgumentOperandIndex + 1),
-            LoadRegisterAtOperandIndex(kFirstArgumentOperandIndex));
+            LoadRegisterAtOperandIndex(kFirstArgumentOperandIndex + 2));
         break;
       default:
         UNREACHABLE();
@@ -1794,51 +1794,6 @@ class InterpreterCompareOpAssembler : public InterpreterAssembler {
                                 OperandScale operand_scale)
       : InterpreterAssembler(state, bytecode, operand_scale) {}
 
-  void CompareOpWithFeedback(Operation compare_op) {
-    TNode<Object> lhs = LoadRegisterAtOperandIndex(0);
-    TNode<Object> rhs = GetAccumulator();
-    TNode<Context> context = GetContext();
-
-    TVARIABLE(Smi, var_type_feedback);
-    TVARIABLE(Object, var_exception);
-    Label if_exception(this, Label::kDeferred);
-    TNode<Boolean> result;
-    {
-      ScopedExceptionHandler handler(this, &if_exception, &var_exception);
-      switch (compare_op) {
-        case Operation::kEqual:
-          result = Equal(lhs, rhs, context, &var_type_feedback);
-          break;
-        case Operation::kLessThan:
-        case Operation::kGreaterThan:
-        case Operation::kLessThanOrEqual:
-        case Operation::kGreaterThanOrEqual:
-          result = RelationalComparison(compare_op, lhs, rhs, context,
-                                        &var_type_feedback);
-          break;
-        default:
-          UNREACHABLE();
-      }
-    }
-
-    TNode<UintPtrT> slot_index = BytecodeOperandFeedbackSlot(1);
-    static constexpr UpdateFeedbackMode mode = DefaultUpdateFeedbackMode();
-    UpdateFeedback(var_type_feedback.value(),
-                   LoadFeedbackVectorOrUndefinedIfJitless(), slot_index, mode);
-    SetAccumulator(result);
-    Dispatch();
-
-    BIND(&if_exception);
-    {
-      slot_index = BytecodeOperandFeedbackSlot(1);
-      UpdateFeedback(var_type_feedback.value(),
-                     LoadFeedbackVectorOrUndefinedIfJitless(), slot_index,
-                     mode);
-      CallRuntime(Runtime::kReThrow, context, var_exception.value());
-      Unreachable();
-    }
-  }
-
   void CompareOpWithEmbeddedFeedback(Operation compare_op) {
     TNode<Object> lhs = LoadRegisterAtOperandIndex(0);
     TNode<Object> rhs = GetAccumulator();
@@ -1854,31 +1809,42 @@ class InterpreterCompareOpAssembler : public InterpreterAssembler {
         case Operation::kStrictEqual:
           result = StrictEqual(lhs, rhs, &var_type_feedback);
           break;
-
+        case Operation::kEqual:
+          result = Equal(lhs, rhs, context, &var_type_feedback);
+          break;
+        case Operation::kLessThan:
+        case Operation::kGreaterThan:
+        case Operation::kLessThanOrEqual:
+        case Operation::kGreaterThanOrEqual:
+          result = RelationalComparison(compare_op, lhs, rhs, context,
+                                        &var_type_feedback);
+          break;
         default:
           UNREACHABLE();
       }
     }
 
-    UpdateEmbeddedFeedback(var_type_feedback.value(), 1);
+    UpdateEmbeddedFeedback(var_type_feedback.value(),
+                           kEmbeddedFeedbackOperandIndex);
 
     SetAccumulator(result);
     Dispatch();
 
     BIND(&if_exception);
     {
-      UpdateEmbeddedFeedback(var_type_feedback.value(), 1);
+      UpdateEmbeddedFeedback(var_type_feedback.value(),
+                             kEmbeddedFeedbackOperandIndex);
       CallRuntime(Runtime::kReThrow, context, var_exception.value());
       Unreachable();
     }
   }
 };
 
-// TestEqual <src>
+// TestEqual <src> <feedback_value>
 //
 // Test if the value in the <src> register equals the accumulator.
 IGNITION_HANDLER(TestEqual, InterpreterCompareOpAssembler) {
-  CompareOpWithFeedback(Operation::kEqual);
+  CompareOpWithEmbeddedFeedback(Operation::kEqual);
 }
 
 // TestEqualStrict <src> <feedback_value>
@@ -1888,34 +1854,34 @@ IGNITION_HANDLER(TestEqualStrict, InterpreterCompareOpAssembler) {
   CompareOpWithEmbeddedFeedback(Operation::kStrictEqual);
 }
 
-// TestLessThan <src>
+// TestLessThan <src> <feedback_value>
 //
 // Test if the value in the <src> register is less than the accumulator.
 IGNITION_HANDLER(TestLessThan, InterpreterCompareOpAssembler) {
-  CompareOpWithFeedback(Operation::kLessThan);
+  CompareOpWithEmbeddedFeedback(Operation::kLessThan);
 }
 
-// TestGreaterThan <src>
+// TestGreaterThan <src> <feedback_value>
 //
 // Test if the value in the <src> register is greater than the accumulator.
 IGNITION_HANDLER(TestGreaterThan, InterpreterCompareOpAssembler) {
-  CompareOpWithFeedback(Operation::kGreaterThan);
+  CompareOpWithEmbeddedFeedback(Operation::kGreaterThan);
 }
 
-// TestLessThanOrEqual <src>
+// TestLessThanOrEqual <src> <feedback_value>
 //
 // Test if the value in the <src> register is less than or equal to the
 // accumulator.
 IGNITION_HANDLER(TestLessThanOrEqual, InterpreterCompareOpAssembler) {
-  CompareOpWithFeedback(Operation::kLessThanOrEqual);
+  CompareOpWithEmbeddedFeedback(Operation::kLessThanOrEqual);
 }
 
-// TestGreaterThanOrEqual <src>
+// TestGreaterThanOrEqual <src> <feedback_value>
 //
 // Test if the value in the <src> register is greater than or equal to the
 // accumulator.
 IGNITION_HANDLER(TestGreaterThanOrEqual, InterpreterCompareOpAssembler) {
-  CompareOpWithFeedback(Operation::kGreaterThanOrEqual);
+  CompareOpWithEmbeddedFeedback(Operation::kGreaterThanOrEqual);
 }
 
 // TestReferenceEqual <src>

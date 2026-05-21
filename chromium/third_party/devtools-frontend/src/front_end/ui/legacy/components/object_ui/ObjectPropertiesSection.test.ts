@@ -8,6 +8,7 @@ import * as SDK from '../../../../core/sdk/sdk.js';
 import {assertScreenshot, dispatchClickEvent, renderElementIntoDOM} from '../../../../testing/DOMHelpers.js';
 import {describeWithEnvironment} from '../../../../testing/EnvironmentHelpers.js';
 import {expectCall} from '../../../../testing/ExpectStubCall.js';
+import type * as UI from '../../legacy.js';
 
 import * as ObjectUI from './object_ui.js';
 
@@ -56,11 +57,35 @@ describe('ObjectPropertiesSection', () => {
 });
 
 describeWithEnvironment('ObjectPropertyTreeElement', () => {
-  it('can edit values', async () => {
+  it('populates the context menu with a copy option for LocalJSONObjects', () => {
+    const parentObject = SDK.RemoteObject.RemoteObject.fromLocalObject({foo: 'bar'});
+    const parentProperty = new SDK.RemoteObject.RemoteObjectProperty('parentNode', parentObject);
+    const parentNode = new ObjectUI.ObjectPropertiesSection.ObjectTreeNode(parentProperty);
+
+    const childObject = SDK.RemoteObject.RemoteObject.fromLocalObject('bar');
+    const childProperty = new SDK.RemoteObject.RemoteObjectProperty('foo', childObject);
+    const childNode = new ObjectUI.ObjectPropertiesSection.ObjectTreeNode(childProperty, undefined, parentNode);
+
+    const treeElement = new ObjectUI.ObjectPropertiesSection.ObjectPropertyTreeElement(childNode);
+
+    const event = new MouseEvent('contextmenu');
+    const contextMenu = treeElement.getContextMenu(event);
+
+    const copyValueItem = contextMenu.clipboardSection().items.find(
+        (item: UI.ContextMenu.Item) => item.buildDescriptor().label === 'Copy value');
+    assert.exists(copyValueItem);
+
+    const copyText = sinon.stub(Host.InspectorFrontendHost.InspectorFrontendHostInstance, 'copyText');
+    contextMenu.invokeHandler(copyValueItem!.id());
+    sinon.assert.calledWith(copyText, 'bar');
+  });
+
+  it('does not edit readonly values', async () => {
     const property = new SDK.RemoteObject.RemoteObjectProperty(
         'name', SDK.RemoteObject.RemoteObject.fromLocalObject(42), true, true);
     const container = document.createElement('div');
     const input = {
+      editable: false,
       startEditing: sinon.stub(),
       invokeGetter: sinon.stub(),
       onAutoComplete: sinon.stub(),
@@ -73,7 +98,36 @@ describeWithEnvironment('ObjectPropertyTreeElement', () => {
       node: new ObjectUI.ObjectPropertiesSection.ObjectTreeNode(property),
     };
     const output = {valueElement: undefined, nameElement: undefined};
-    ObjectUI.ObjectPropertiesSection.TREE_ELEMENT_DEFAULT_VIEW(input, output, container);
+    ObjectUI.ObjectPropertiesSection.OBJECT_PROPERTY_DEFAULT_VIEW(input, output, container);
+
+    sinon.assert.notCalled(input.startEditing);
+    const event = new MouseEvent('dblclick', {bubbles: true, cancelable: true});
+    const valueElement = container.querySelector('.value');
+    assert.exists(valueElement);
+    assert.strictEqual(valueElement, output.valueElement);
+    valueElement.dispatchEvent(event);
+    sinon.assert.notCalled(input.startEditing);
+  });
+
+  it('can edit values', async () => {
+    const property = new SDK.RemoteObject.RemoteObjectProperty(
+        'name', SDK.RemoteObject.RemoteObject.fromLocalObject(42), true, true);
+    const container = document.createElement('div');
+    const input = {
+      editable: true,
+      startEditing: sinon.stub(),
+      invokeGetter: sinon.stub(),
+      onAutoComplete: sinon.stub(),
+      linkifier: undefined,
+      completions: [],
+      expanded: false,
+      editing: false,
+      editingEnded: sinon.stub(),
+      editingCommitted: sinon.stub(),
+      node: new ObjectUI.ObjectPropertiesSection.ObjectTreeNode(property),
+    };
+    const output = {valueElement: undefined, nameElement: undefined};
+    ObjectUI.ObjectPropertiesSection.OBJECT_PROPERTY_DEFAULT_VIEW(input, output, container);
 
     sinon.assert.notCalled(input.startEditing);
     const event = new MouseEvent('dblclick', {bubbles: true, cancelable: true});
@@ -83,12 +137,11 @@ describeWithEnvironment('ObjectPropertyTreeElement', () => {
     valueElement.dispatchEvent(event);
     sinon.assert.calledOnce(input.startEditing);
 
-    const viewFunction = sinon.stub<[ObjectUI.ObjectPropertiesSection.TreeElementViewInput, object, HTMLElement]>();
-    const section = new ObjectUI.ObjectPropertiesSection.ObjectPropertyTreeElement(
-        new ObjectUI.ObjectPropertiesSection.ObjectTreeNode(property), undefined, viewFunction);
-    section.treeOutline = new ObjectUI.ObjectPropertiesSection.ObjectPropertiesSectionsTreeOutline();
+    const viewFunction = sinon.stub<[ObjectUI.ObjectPropertiesSection.ObjectPropertyViewInput, object, HTMLElement]>();
+    const section = new ObjectUI.ObjectPropertiesSection.ObjectPropertyWidget(undefined, viewFunction);
+    section.property = new ObjectUI.ObjectPropertiesSection.ObjectTreeNode(property),
 
-    renderElementIntoDOM(section.listItemElement);
+    renderElementIntoDOM(section);
     const firstExpectedCall = expectCall(viewFunction);
     section.performUpdate();
     const [firstInput] = await firstExpectedCall;

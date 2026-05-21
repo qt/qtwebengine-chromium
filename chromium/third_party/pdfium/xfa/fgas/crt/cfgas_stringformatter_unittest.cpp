@@ -452,7 +452,7 @@ TEST_F(CFGASStringFormatterTest, NumParse) {
   };
 
   static const TestCase failures[] = {
-      // https://crbug.com/pdfium/1260
+      // https://crbug.com/42270259
       {L"en", L"..", L"VC", L"."},
 
       // https://crbug.com/938626
@@ -569,7 +569,7 @@ TEST_F(CFGASStringFormatterTest, NumFormat) {
       // {L"en", L"-123.5", L"zzz.z)", L"123.5)"},
       {L"en", L"123.5", L"zzz.z)", L"123.5 "},
       {L"en", L"123.5", L"zzz.z(", L"123.5 "},
-      // https://crbug.com/pdfium/1233
+      // https://crbug.com/42270229
       {L"en", L"1", L"r9", L"r1"},
       {L"en", L"1", L"R9", L"R1"},
       {L"en", L"1", L"b9", L"b1"},
@@ -578,7 +578,7 @@ TEST_F(CFGASStringFormatterTest, NumFormat) {
       {L"en", L"1", L"9.C", L"1"},
       {L"en", L"1", L"9.d", L"1"},
       {L"en", L"1", L"9.D", L"1"},
-      // https://crbug.com/pdfium/1244
+      // https://crbug.com/42270241
       {L"en", L"1", L"E", L"1"},
       {L"en", L"0", L"E", L"0"},
       {L"en", L"-1", L"E", L"-1"},
@@ -592,7 +592,7 @@ TEST_F(CFGASStringFormatterTest, NumFormat) {
   };
 
   static const TestCase failures[] = {
-      // https://crbug.com/pdfium/1271
+      // https://crbug.com/42270271
       {L"en", L"1", L"num.{E", L""},
   };
 

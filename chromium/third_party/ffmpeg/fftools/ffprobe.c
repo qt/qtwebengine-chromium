@@ -252,7 +252,7 @@ static const char *get_stream_group_type(const void *data)
     return av_x_if_null(avformat_stream_group_name(stg->type), "unknown");
 }
 
-static struct AVTextFormatSection sections[] = {
+static const AVTextFormatSection sections[] = {
     [SECTION_ID_CHAPTERS] =           { SECTION_ID_CHAPTERS, "chapters", AV_TEXTFORMAT_SECTION_FLAG_IS_ARRAY, { SECTION_ID_CHAPTER, -1 } },
     [SECTION_ID_CHAPTER] =            { SECTION_ID_CHAPTER, "chapter", 0, { SECTION_ID_CHAPTER_TAGS, -1 } },
     [SECTION_ID_CHAPTER_TAGS] =       { SECTION_ID_CHAPTER_TAGS, "tags", AV_TEXTFORMAT_SECTION_FLAG_HAS_VARIABLE_FIELDS, { -1 }, .element_name = "tag", .unique_name = "chapter_tags" },
@@ -324,6 +324,13 @@ static struct AVTextFormatSection sections[] = {
     [SECTION_ID_SUBTITLE] =           { SECTION_ID_SUBTITLE, "subtitle", 0, { -1 } },
 };
 
+typedef struct EntrySelection {
+    int show_all_entries;
+    AVDictionary *entries_to_show;
+} EntrySelection;
+
+static EntrySelection selected_entries[FF_ARRAY_ELEMS(sections)] = { 0 };
+
 static const OptionDef *options;
 
 /* FFprobe context */
@@ -357,6 +364,14 @@ typedef struct LogBuffer {
 
 static LogBuffer *log_buffer;
 static int log_buffer_size;
+
+static int is_key_selected_callback(AVTextFormatContext *tctx, const char *key)
+{
+    const AVTextFormatSection *section = tctx->section[tctx->level];
+    const EntrySelection *selection = &selected_entries[section - sections];
+
+    return selection->show_all_entries || av_dict_get(selection->entries_to_show, key, NULL, 0);
+}
 
 static void log_callback(void *ptr, int level, const char *fmt, va_list vl)
 {
@@ -437,6 +452,30 @@ static void log_callback(void *ptr, int level, const char *fmt, va_list vl)
 #define print_duration_ts(k, v)       avtext_print_ts(tfc, k, v, 1)
 #define print_val(k, v, u)      avtext_print_unit_integer(tfc, k, v, u)
 
+static void print_integers(AVTextFormatContext *tfc, const char *key,
+                           const void *data, int size, const char *format,
+                           int columns, int bytes, int offset_add)
+{
+    AVBPrint bp;
+    unsigned offset = 0;
+
+    av_bprint_init(&bp, 0, AV_BPRINT_SIZE_AUTOMATIC);
+    av_bprint_chars(&bp, '\n', 1);
+    while (size) {
+        av_bprintf(&bp, "%08x: ", offset);
+        for (int i = 0, l = FFMIN(size, columns); i < l; i++) {
+            if      (bytes == 1) av_bprintf(&bp, format, *(const uint8_t*)data);
+            else if (bytes == 2) av_bprintf(&bp, format, AV_RN16(data));
+            else if (bytes == 4) av_bprintf(&bp, format, AV_RN32(data));
+            data = (const char*)data + bytes;
+            size--;
+        }
+        av_bprint_chars(&bp, '\n', 1);
+        offset += offset_add;
+    }
+    avtext_print_string(tfc, key, bp.str, 0);
+}
+
 #define REALLOCZ_ARRAY_STREAM(ptr, cur_n, new_n)                        \
 {                                                                       \
     ret = av_reallocp_array(&(ptr), (new_n), sizeof(*(ptr)));           \
@@ -468,7 +507,7 @@ static void print_displaymatrix(AVTextFormatContext *tfc, const int32_t matrix[9
     double rotation = av_display_rotation_get(matrix);
     if (isnan(rotation))
         rotation = 0;
-    avtext_print_integers(tfc, "displaymatrix", (void*)matrix, 9, " %11d", 3, 4, 1);
+    print_integers(tfc, "displaymatrix", matrix, 9, " %11d", 3, 4, 1);
     print_int("rotation", rotation);
 }
 
@@ -1776,6 +1815,10 @@ static int show_stream(AVTextFormatContext *tfc, AVFormatContext *fmt_ctx, int s
     print_str("codec_tag_string",    av_fourcc2str(par->codec_tag));
     print_fmt("codec_tag", "0x%04"PRIx32, par->codec_tag);
 
+    av_bprint_clear(&pbuf);
+    if (!av_mime_codec_str(par, stream->avg_frame_rate, &pbuf))
+        print_str("mime_codec_string", pbuf.str);
+
     switch (par->codec_type) {
     case AVMEDIA_TYPE_VIDEO:
         print_int("width",        par->width);
@@ -2074,6 +2117,10 @@ static void print_iamf_param_definition(AVTextFormatContext *tfc, const char *na
 static void print_iamf_audio_element_params(AVTextFormatContext *tfc, const AVStreamGroup *stg,
                                             const AVIAMFAudioElement *audio_element)
 {
+    AVBPrint pbuf;
+
+    av_bprint_init(&pbuf, 1, AV_BPRINT_SIZE_UNLIMITED);
+
     avtext_print_section_header(tfc, stg, SECTION_ID_STREAM_GROUP_COMPONENT);
     print_int("nb_layers",          audio_element->nb_layers);
     print_int("audio_element_type", audio_element->audio_element_type);
@@ -2088,8 +2135,12 @@ static void print_iamf_audio_element_params(AVTextFormatContext *tfc, const AVSt
         if (audio_element->audio_element_type == AV_IAMF_AUDIO_ELEMENT_TYPE_CHANNEL) {
             print_int("output_gain_flags", layer->output_gain_flags);
             print_q("output_gain",         layer->output_gain, '/');
-        } else if (audio_element->audio_element_type == AV_IAMF_AUDIO_ELEMENT_TYPE_SCENE)
+        } else if (audio_element->audio_element_type == AV_IAMF_AUDIO_ELEMENT_TYPE_SCENE) {
             print_int("ambisonics_mode",   layer->ambisonics_mode);
+            if (layer->ambisonics_mode == AV_IAMF_AMBISONICS_MODE_PROJECTION)
+                print_list_fmt("demixing_matrix", "%d/%d", layer->nb_demixing_matrix, 1, layer->demixing_matrix[idx].num,
+                                                                                         layer->demixing_matrix[idx].den);
+        }
         avtext_print_section_footer(tfc); // SECTION_ID_STREAM_GROUP_SUBCOMPONENT
     }
     if (audio_element->demixing_info)
@@ -2100,6 +2151,8 @@ static void print_iamf_audio_element_params(AVTextFormatContext *tfc, const AVSt
                                     SECTION_ID_STREAM_GROUP_SUBCOMPONENT);
     avtext_print_section_footer(tfc); // SECTION_ID_STREAM_GROUP_SUBCOMPONENTS
     avtext_print_section_footer(tfc); // SECTION_ID_STREAM_GROUP_COMPONENT
+
+    av_bprint_finalize(&pbuf, NULL);
 }
 
 static void print_iamf_submix_params(AVTextFormatContext *tfc, const AVIAMFSubmix *submix)
@@ -2723,14 +2776,15 @@ static int opt_format(void *optctx, const char *opt, const char *arg)
 static inline void mark_section_show_entries(SectionID section_id,
                                              int show_all_entries, AVDictionary *entries)
 {
-    struct AVTextFormatSection *section = &sections[section_id];
+    EntrySelection *selection = &selected_entries[section_id];
 
-    section->show_all_entries = show_all_entries;
+    selection->show_all_entries = show_all_entries;
     if (show_all_entries) {
+        const AVTextFormatSection *section = &sections[section_id];
         for (const int *id = section->children_ids; *id != -1; id++)
             mark_section_show_entries(*id, show_all_entries, entries);
     } else {
-        av_dict_copy(&section->entries_to_show, entries, 0);
+        av_dict_copy(&selection->entries_to_show, entries, 0);
     }
 }
 
@@ -3153,9 +3207,12 @@ static const OptionDef real_options[] = {
 
 static inline int check_section_show_entries(int section_id)
 {
-    struct AVTextFormatSection *section = &sections[section_id];
-    if (sections[section_id].show_all_entries || sections[section_id].entries_to_show)
+    const EntrySelection *selection = &selected_entries[section_id];
+
+    if (selection->show_all_entries || selection->entries_to_show)
         return 1;
+
+    const AVTextFormatSection *section = &sections[section_id];
     for (const int *id = section->children_ids; *id != -1; id++)
         if (check_section_show_entries(*id))
             return 1;
@@ -3174,7 +3231,7 @@ int main(int argc, char **argv)
     AVTextWriterContext *wctx;
     char *buf;
     char *f_name = NULL, *f_args = NULL;
-    int ret, input_ret, i;
+    int ret, input_ret;
 
     init_dynload();
 
@@ -3268,6 +3325,7 @@ int main(int argc, char **argv)
         goto end;
 
     AVTextFormatOptions tf_options = {
+        .is_key_selected              = is_key_selected_callback,
         .show_optional_fields = show_optional_fields,
         .show_value_unit = show_value_unit,
         .use_value_prefix = use_value_prefix,
@@ -3324,8 +3382,8 @@ end:
     av_freep(&read_intervals);
 
     uninit_opts();
-    for (i = 0; i < FF_ARRAY_ELEMS(sections); i++)
-        av_dict_free(&(sections[i].entries_to_show));
+    for (size_t i = 0; i < FF_ARRAY_ELEMS(selected_entries); ++i)
+        av_dict_free(&selected_entries[i].entries_to_show);
 
     avformat_network_deinit();
 

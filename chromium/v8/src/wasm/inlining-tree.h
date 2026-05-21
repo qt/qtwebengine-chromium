@@ -299,12 +299,34 @@ void InliningTree::Inline() {
       CallTargetVector call_targets_for_call_site;
 
       decoder.consume_bytes(offset - decoder.pc_offset());
-      switch (*decoder.pc()) {
+      // Break if {offset} points past the end of the function.
+      if (!decoder.more()) {
+        if (v8_flags.trace_wasm_compilation_hints) {
+          PrintF(
+              "(function %d: instruction-hint offset %d OOB, ignoring the "
+              "rest)\n",
+              function_index_, offset);
+        }
+        break;
+      }
+      switch (decoder.consume_u8()) {
         case kExprCallFunction:
         case kExprReturnCall: {
           // For direct calls, find the call target in the wire bytes.
-          decoder.consume_bytes(1);
           uint32_t function_index = decoder.consume_u32v("function index");
+          if (decoder.failed()) {
+            if (v8_flags.trace_wasm_compilation_hints) {
+              PrintF(
+                  "(function %d: reached end of function, ignoring the rest of "
+                  "the hints)",
+                  function_index_);
+            }
+            break;
+          }
+          if (v8_flags.trace_wasm_compilation_hints) {
+            PrintF("(function %d: found direct call to %d at offset %d)\n",
+                   function_index_, function_index, offset);
+          }
           call_targets_for_call_site.emplace_back(function_index, 100U);
           break;
         }
@@ -314,7 +336,10 @@ void InliningTree::Inline() {
         case kExprReturnCallRef: {
           if (call_targets == nullptr) {
             if (v8_flags.trace_wasm_compilation_hints) {
-              PrintF("(no call targets, skipping instruction frequencies) ");
+              PrintF(
+                  "(function %d: no call targets, skipping instruction "
+                  "frequencies)\n",
+                  function_index_);
             }
             break;  // No call targets, do not inline.
           }
@@ -325,9 +350,9 @@ void InliningTree::Inline() {
                  (*call_targets)[call_targets_index].first < offset) {
             if (v8_flags.trace_wasm_compilation_hints) {
               PrintF(
-                  "(no instruction frequencies or direct call at offset %d, "
-                  "skipping call targets) ",
-                  offset);
+                  "(function %d: no instruction frequencies or direct call at "
+                  "offset %d, skipping call targets)\n",
+                  function_index_, offset);
             }
             call_targets_index++;
           }
@@ -336,11 +361,15 @@ void InliningTree::Inline() {
               (*call_targets)[call_targets_index].first != offset) {
             if (v8_flags.trace_wasm_compilation_hints) {
               PrintF(
-                  "(no call targets at offset %d, skipping instruction "
-                  "frequencies) ",
-                  offset);
+                  "(function %d: no call targets at offset %d, skipping "
+                  "instruction frequencies)\n",
+                  function_index_, offset);
             }
             break;
+          }
+          if (v8_flags.trace_wasm_compilation_hints) {
+            PrintF("(function %d: found indirect call at offset %d)\n",
+                   function_index_, offset);
           }
           call_targets_for_call_site =
               (*call_targets)[call_targets_index].second;
@@ -349,13 +378,14 @@ void InliningTree::Inline() {
         default:
           if (v8_flags.trace_wasm_compilation_hints) {
             PrintF(
-                "(hint at offset %d does not map to a call instruction, "
-                "ignoring) ",
-                offset);
+                "(function %d: hint at offset %d does not map to a call "
+                "instruction, ignoring)\n",
+                function_index_, offset);
           }
           break;
       }
 
+      if (decoder.failed()) break;
       if (call_targets_for_call_site.empty()) continue;
 
       bool has_non_inlineable_targets = false;

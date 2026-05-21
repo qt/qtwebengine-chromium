@@ -26,17 +26,17 @@ class MockObserver final : public ServiceListener::Observer {
  public:
   ~MockObserver() = default;
 
-  MOCK_METHOD0(OnStarted, void());
-  MOCK_METHOD0(OnStopped, void());
-  MOCK_METHOD0(OnSuspended, void());
-  MOCK_METHOD0(OnSearching, void());
+  MOCK_METHOD(void, OnStarted, (), (override));
+  MOCK_METHOD(void, OnStopped, (), (override));
+  MOCK_METHOD(void, OnSuspended, (), (override));
+  MOCK_METHOD(void, OnSearching, (), (override));
 
-  MOCK_METHOD1(OnReceiverAdded, void(const ServiceInfo& info));
-  MOCK_METHOD1(OnReceiverChanged, void(const ServiceInfo& info));
-  MOCK_METHOD1(OnReceiverRemoved, void(const ServiceInfo& info));
-  MOCK_METHOD0(OnAllReceiversRemoved, void());
+  MOCK_METHOD(void, OnReceiverAdded, (const ServiceInfo& info), (override));
+  MOCK_METHOD(void, OnReceiverChanged, (const ServiceInfo& info), (override));
+  MOCK_METHOD(void, OnReceiverRemoved, (const ServiceInfo& info), (override));
+  MOCK_METHOD(void, OnAllReceiversRemoved, (), (override));
 
-  MOCK_METHOD1(OnError, void(const Error& error));
+  MOCK_METHOD(void, OnError, (const Error& error), (override));
 };
 
 class MockMdnsDelegate : public ServiceListener::Delegate {
@@ -46,14 +46,19 @@ class MockMdnsDelegate : public ServiceListener::Delegate {
 
   using ServiceListener::Delegate::SetState;
 
-  MOCK_METHOD1(StartListener, void(const ServiceListener::Config& config));
-  MOCK_METHOD1(StartAndSuspendListener,
-               void(const ServiceListener::Config& config));
-  MOCK_METHOD0(StopListener, void());
-  MOCK_METHOD0(SuspendListener, void());
-  MOCK_METHOD0(ResumeListener, void());
-  MOCK_METHOD1(SearchNow, void(State));
-  MOCK_METHOD0(RunTasksListener, void());
+  MOCK_METHOD(void,
+              StartListener,
+              (const ServiceListener::Config& config),
+              (override));
+  MOCK_METHOD(void,
+              StartAndSuspendListener,
+              (const ServiceListener::Config& config),
+              (override));
+  MOCK_METHOD(void, StopListener, (), (override));
+  MOCK_METHOD(void, SuspendListener, (), (override));
+  MOCK_METHOD(void, ResumeListener, (), (override));
+  MOCK_METHOD(void, SearchNow, (State), (override));
+  MOCK_METHOD(void, RunTasksListener, ());
 };
 
 class ServiceListenerTest : public ::testing::Test {

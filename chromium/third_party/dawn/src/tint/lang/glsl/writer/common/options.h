@@ -134,6 +134,18 @@ struct ArrayLengthFromUniformOptions {
 
 /// Configuration options used for generating GLSL.
 struct Options {
+    /// Constructor
+    Options();
+    /// Destructor
+    ~Options();
+    /// Copy constructor
+    Options(const Options&);
+
+    ///////////////////////////////////////////////////////////////////////////////////////////
+    // NOTE: When adding a new option here, it should also be added to the FuzzedOptions     //
+    // structure in writer_fuzz.cc (if fuzzing is desired).                                  //
+    ///////////////////////////////////////////////////////////////////////////////////////////
+
     struct RangeOffsets {
         /// The offset of the min_depth immediate data
         uint32_t min = 0;
@@ -142,16 +154,8 @@ struct Options {
 
         /// Reflect the fields of this class so that it can be used by tint::ForeachField()
         TINT_REFLECT(RangeOffsets, min, max);
+        TINT_REFLECT_HASH_CODE(RangeOffsets);
     };
-
-    /// Constructor
-    Options();
-
-    /// Destructor
-    ~Options();
-
-    /// Copy constructor
-    Options(const Options&);
 
     /// Set to `true` to strip all user-declared identifiers from the module.
     bool strip_all_names = false;
@@ -160,7 +164,7 @@ struct Options {
     bool disable_robustness = false;
 
     /// Set to `true` to enable integer range analysis in robustness transform.
-    bool enable_integer_range_analysis = true;
+    bool disable_integer_range_analysis = false;
 
     /// Set to `true` to disable workgroup memory zero initialization
     bool disable_workgroup_init = false;
@@ -171,8 +175,9 @@ struct Options {
     /// Set to `true` to run ArrayLengthFromTransform workaround
     bool use_array_length_from_uniform = false;
 
-    /// Set to `true` to decompose uniform buffers into array<vec4u, ...>.
-    bool decompose_uniform_buffers = true;
+    /// Set to `true` to use the uniform buffer directly, `false` to decompose into array<vec4u,
+    /// ...>.
+    bool use_uniform_buffers = false;
 
     /// The entry point name to emit
     std::string entry_point_name;
@@ -219,11 +224,11 @@ struct Options {
     TINT_REFLECT(Options,
                  strip_all_names,
                  disable_robustness,
-                 enable_integer_range_analysis,
+                 disable_integer_range_analysis,
                  disable_workgroup_init,
                  disable_polyfill_integer_div_mod,
                  use_array_length_from_uniform,
-                 decompose_uniform_buffers,
+                 use_uniform_buffers,
                  entry_point_name,
                  version,
                  first_vertex_offset,

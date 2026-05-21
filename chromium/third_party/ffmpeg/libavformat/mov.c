@@ -1075,6 +1075,40 @@ fail:
 }
 #endif
 
+static int mov_read_srat(MOVContext *c, AVIOContext *pb, MOVAtom atom)
+{
+    AVStream *st;
+    int32_t sample_rate;
+
+    if (atom.size < 8 || c->fc->nb_streams < 1)
+        return 0;
+
+    st = c->fc->streams[c->fc->nb_streams-1];
+    if (st->codecpar->codec_type != AVMEDIA_TYPE_AUDIO) {
+        av_log(c->fc, AV_LOG_WARNING, "'srat' within non-audio sample entry, skip\n");
+        return 0;
+    }
+
+    if (!c->isom) {
+        av_log(c->fc, AV_LOG_WARNING, "'srat' within non-isom, skip\n");
+        return 0;
+    }
+
+    avio_skip(pb, 4); // version+flags
+    sample_rate = avio_rb32(pb);
+    if (sample_rate > 0) {
+        av_log(c->fc, AV_LOG_DEBUG,
+               "overwrite sample rate from %d to %d by 'srat'\n",
+               st->codecpar->sample_rate, sample_rate);
+        st->codecpar->sample_rate = sample_rate;
+    } else {
+        av_log(c->fc, AV_LOG_WARNING,
+               "ignore invalid sample rate %d in 'srat'\n", sample_rate);
+    }
+
+    return 0;
+}
+
 static int mov_read_dec3(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 {
     AVStream *st;
@@ -2687,12 +2721,18 @@ static void mov_parse_stsd_video(MOVContext *c, AVIOContext *pb,
      * read in ff_mov_read_stsd_entries() */
     stsd_start = avio_tell(pb) - 16;
 
-    avio_rb16(pb); /* version */
-    avio_rb16(pb); /* revision level */
-    id = avio_rl32(pb); /* vendor */
-    av_dict_set(&st->metadata, "vendor_id", av_fourcc2str(id), 0);
-    avio_rb32(pb); /* temporal quality */
-    avio_rb32(pb); /* spatial quality */
+    if (c->isom) {
+        avio_skip(pb, 2);  /* pre_defined */
+        avio_skip(pb, 2);  /* reserved */
+        avio_skip(pb, 12); /* pre_defined */
+    } else {
+        avio_rb16(pb); /* version */
+        avio_rb16(pb); /* revision level */
+        id = avio_rl32(pb); /* vendor */
+        av_dict_set(&st->metadata, "vendor_id", av_fourcc2str(id), 0);
+        avio_rb32(pb); /* temporal quality */
+        avio_rb32(pb); /* spatial quality */
+    }
 
     st->codecpar->width  = avio_rb16(pb); /* width */
     st->codecpar->height = avio_rb16(pb); /* height */
@@ -2742,9 +2782,13 @@ static void mov_parse_stsd_audio(MOVContext *c, AVIOContext *pb,
     AVDictionaryEntry *compatible_brands = av_dict_get(c->fc->metadata, "compatible_brands", NULL, AV_DICT_MATCH_CASE);
     int channel_count;
 
-    avio_rb16(pb); /* revision level */
-    id = avio_rl32(pb); /* vendor */
-    av_dict_set(&st->metadata, "vendor_id", av_fourcc2str(id), 0);
+    if (c->isom)
+        avio_skip(pb, 6); /* reserved */
+    else {
+        avio_rb16(pb); /* revision level */
+        id = avio_rl32(pb); /* vendor */
+        av_dict_set(&st->metadata, "vendor_id", av_fourcc2str(id), 0);
+    }
 
     channel_count = avio_rb16(pb);
 
@@ -3231,6 +3275,7 @@ fail:
             av_freep(&sc->extradata[j]);
     }
 
+    sc->stsd_count = 0;
     av_freep(&sc->extradata);
     av_freep(&sc->extradata_size);
     return ret;
@@ -6213,7 +6258,8 @@ static int mov_read_sidx(MOVContext *c, AVIOContext *pb, MOVAtom atom)
             }
         }
 
-        c->frag_index.complete = 1;
+        if (offadd == 0)
+            c->frag_index.complete = 1;
     }
 
     return 0;
@@ -8007,7 +8053,7 @@ static int mov_read_tenc(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 {
     AVStream *st;
     MOVStreamContext *sc;
-    unsigned int version, pattern, is_protected, iv_size;
+    unsigned int version, pattern, is_protected, iv_size, per_sample_iv_size;
 
     if (c->fc->nb_streams < 1)
         return 0;
@@ -8047,12 +8093,12 @@ static int mov_read_tenc(MOVContext *c, AVIOContext *pb, MOVAtom atom)
         if (!sc->cenc.encryption_index)
             return AVERROR(ENOMEM);
     }
-    sc->cenc.per_sample_iv_size = avio_r8(pb);
-    if (sc->cenc.per_sample_iv_size != 0 && sc->cenc.per_sample_iv_size != 8 &&
-        sc->cenc.per_sample_iv_size != 16) {
+    per_sample_iv_size = avio_r8(pb);
+    if (per_sample_iv_size != 0 && per_sample_iv_size != 8 && per_sample_iv_size != 16) {
         av_log(c->fc, AV_LOG_ERROR, "invalid per-sample IV size value\n");
         return AVERROR_INVALIDDATA;
     }
+    sc->cenc.per_sample_iv_size = per_sample_iv_size;
     if (avio_read(pb, sc->cenc.default_encrypted_sample->key_id, 16) != 16) {
         av_log(c->fc, AV_LOG_ERROR, "failed to read the default key ID\n");
         return AVERROR_INVALIDDATA;
@@ -9509,6 +9555,7 @@ static const MOVParseTableEntry mov_default_parse_table[] = {
 #if CONFIG_IAMFDEC
 { MKTAG('i','a','c','b'), mov_read_iacb },
 #endif
+{ MKTAG('s','r','a','t'), mov_read_srat },
 { 0, NULL }
 };
 
@@ -10235,6 +10282,9 @@ static int read_image_grid(AVFormatContext *s, const HEIFGrid *grid,
         offset = c->idat_offset;
     }
 
+    if (offset > INT64_MAX - item->extent_offset)
+        return AVERROR_INVALIDDATA;
+
     avio_seek(s->pb, item->extent_offset + offset, SEEK_SET);
 
     avio_r8(s->pb);    /* version */
@@ -10318,6 +10368,9 @@ static int read_image_iovl(AVFormatContext *s, const HEIFGrid *grid,
         offset = c->idat_offset;
     }
 
+    if (offset > INT64_MAX - item->extent_offset)
+        return AVERROR_INVALIDDATA;
+
     avio_seek(s->pb, item->extent_offset + offset, SEEK_SET);
 
     avio_r8(s->pb);    /* version */
@@ -10390,6 +10443,11 @@ static int mov_parse_exif_item(AVFormatContext *s,
     buf = av_buffer_alloc(ref->extent_length);
     if (!buf)
         return AVERROR(ENOMEM);
+
+    if (offset > INT64_MAX - ref->extent_offset) {
+        err = AVERROR(ENOMEM);
+        goto fail;
+    }
 
     avio_seek(s->pb, ref->extent_offset + offset, SEEK_SET);
     err = avio_read(s->pb, buf->data, ref->extent_length);
@@ -10602,6 +10660,9 @@ static int mov_parse_heif_items(AVFormatContext *s)
 
         err = sanity_checks(s, sc, st->index);
         if (err)
+            return AVERROR_INVALIDDATA;
+
+        if (offset > INT64_MAX - item->extent_offset)
             return AVERROR_INVALIDDATA;
 
         sc->chunk_offsets[0] = item->extent_offset + offset;

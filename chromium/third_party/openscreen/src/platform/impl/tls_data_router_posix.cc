@@ -15,6 +15,8 @@
 
 namespace openscreen {
 
+TlsDataRouterPosix::SocketObserver::~SocketObserver() = default;
+
 TlsDataRouterPosix::TlsDataRouterPosix(
     SocketHandleWaiter* waiter,
     std::function<Clock::time_point()> now_function)

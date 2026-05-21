@@ -42,6 +42,7 @@ import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
+import * as AiAssistance from '../../models/ai_assistance/ai_assistance.js';
 import * as Bindings from '../../models/bindings/bindings.js';
 import type * as HAR from '../../models/har/har.js';
 import * as Logs from '../../models/logs/logs.js';
@@ -323,8 +324,26 @@ const UIStrings = {
    */
   initialPriorityToolTip: '{PH1}, Initial priority: {PH2}',
   /**
-   * @description Tooltip to explain why the request has an IPP icon
+   * @description Text in Network Data Grid Node of the Network panel. Noun. Refers to a render blocking resource.
    */
+  blocking: 'Blocking',
+  /**
+   * @description Text in Network Data Grid Node of the Network panel. Noun. Refers to a resource that blocks the parser from starting to parse the document.
+   */
+  inBodyParserBlocking: 'In-body parser blocking',
+  /**
+   * @description Text in Network Data Grid Node of the Network panel. Noun. Refers to a non-blocking resource.
+   */
+  nonBlocking: 'Non-blocking',
+  /**
+   * @description Text in Network Data Grid Node of the Network panel. Noun. Refers to a non-blocking resource.
+   */
+  nonBlockingDynamic: 'Non-blocking dynamic',
+  /**
+   * @description Text in Network Data Grid Node of the Network panel. Noun. Refers to a potentially blocking resource.
+   */
+  potentiallyBlocking: 'Potentially blocking',
+
 } as const;
 const str_ = i18n.i18n.registerUIStrings('panels/network/NetworkDataGridNode.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -775,6 +794,25 @@ export class NetworkRequestNode extends NetworkNode {
     return aRequest.identityCompare(bRequest);
   }
 
+  static RenderBlockingComparator(a: NetworkNode, b: NetworkNode): number {
+    const aRequest = a.requestOrFirstKnownChildRequest();
+    const bRequest = b.requestOrFirstKnownChildRequest();
+    if (!aRequest || !bRequest) {
+      return !aRequest ? -1 : 1;
+    }
+    const order = [
+      Protocol.Network.RenderBlockingBehavior.InBodyParserBlocking,
+      Protocol.Network.RenderBlockingBehavior.Blocking,
+      Protocol.Network.RenderBlockingBehavior.PotentiallyBlocking,
+      Protocol.Network.RenderBlockingBehavior.NonBlocking,
+      Protocol.Network.RenderBlockingBehavior.NonBlockingDynamic,
+      undefined,
+    ];
+    const aOrder = order.indexOf(aRequest.renderBlockingBehavior());
+    const bOrder = order.indexOf(bRequest.renderBlockingBehavior());
+    return aOrder - bOrder;
+  }
+
   static RequestPropertyComparator(propertyName: string, a: NetworkNode, b: NetworkNode): number {
     // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1049,6 +1087,10 @@ export class NetworkRequestNode extends NetworkNode {
       }
       case 'is-ad-related': {
         this.setTextAndTitle(cell, this.requestInternal.isAdRelated().toLocaleString());
+        break;
+      }
+      case 'render-blocking': {
+        this.renderRenderBlockingCell(cell);
         break;
       }
       case 'cookies': {
@@ -1360,6 +1402,29 @@ export class NetworkRequestNode extends NetworkNode {
     }
   }
 
+  private renderRenderBlockingCell(cell: HTMLElement): void {
+    switch (this.requestInternal.renderBlockingBehavior()) {
+      case Protocol.Network.RenderBlockingBehavior.Blocking:
+        UI.UIUtils.createTextChild(cell, i18nString(UIStrings.blocking));
+        break;
+      case Protocol.Network.RenderBlockingBehavior.InBodyParserBlocking:
+        UI.UIUtils.createTextChild(cell, i18nString(UIStrings.inBodyParserBlocking));
+        break;
+      case Protocol.Network.RenderBlockingBehavior.NonBlocking:
+        UI.UIUtils.createTextChild(cell, i18nString(UIStrings.nonBlocking));
+        break;
+      case Protocol.Network.RenderBlockingBehavior.NonBlockingDynamic:
+        UI.UIUtils.createTextChild(cell, i18nString(UIStrings.nonBlockingDynamic));
+        break;
+      case Protocol.Network.RenderBlockingBehavior.PotentiallyBlocking:
+        UI.UIUtils.createTextChild(cell, i18nString(UIStrings.potentiallyBlocking));
+        break;
+      default:
+        UI.UIUtils.createTextChild(cell, '');
+        break;
+    }
+  }
+
   #getLinkifierMetric(): Host.UserMetrics.Action|undefined {
     if (this.requestInternal.resourceType().isStyleSheet()) {
       return Host.UserMetrics.Action.StyleSheetInitiatorLinkClicked;
@@ -1557,7 +1622,8 @@ export class NetworkRequestNode extends NetworkNode {
       const action = UI.ActionRegistry.ActionRegistry.instance().getAction('drjones.network-floating-button');
       const aiButtonContainer = document.createElement('span');
       aiButtonContainer.classList.add('ai-button-container');
-      const floatingButton = Buttons.FloatingButton.create('smart-assistant', action.title(), 'ask-ai');
+      const icon = AiAssistance.AiUtils.getIconName();
+      const floatingButton = Buttons.FloatingButton.create(icon, action.title(), 'ask-ai');
       floatingButton.addEventListener('click', ev => {
         ev.stopPropagation();
         this.select();

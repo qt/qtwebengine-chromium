@@ -28,6 +28,7 @@
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/dom/events/simulated_click_options.h"
 #include "third_party/blink/renderer/core/html/html_element.h"
+#include "third_party/blink/renderer/platform/scheduler/public/post_cancellable_task.h"
 
 namespace blink {
 
@@ -95,7 +96,10 @@ class CORE_EXPORT HTMLOptionElement final : public HTMLElement {
   String TextIndentedToRespectGroupLabel() const;
 
   // Update 'selectedness'.
-  void SetSelectedState(bool);
+  // Setting skip_mutation_observer_update to true prevents this method from
+  // calling UpdateMutationObserver.
+  void SetSelectedState(bool selected,
+                        bool skip_mutation_observer_update = false);
   // Update 'dirtiness'.
   void SetDirty(bool);
 
@@ -123,6 +127,9 @@ class CORE_EXPORT HTMLOptionElement final : public HTMLElement {
   // an HTMLOptionElement.
   static bool IsLabelContainerElement(const Element& element);
 
+  void UpdateMutationObserver(bool in_style_recalc);
+  bool HasMutationObserver() const { return text_observer_; }
+
  private:
   FocusableState SupportsFocus(UpdateBehavior update_behavior) const override;
   bool IsKeyboardFocusableSlow(UpdateBehavior update_behavior) const override;
@@ -137,6 +144,7 @@ class CORE_EXPORT HTMLOptionElement final : public HTMLElement {
   String CollectOptionInnerText() const;
 
   void UpdateLabel();
+  void UpdateAncestors();
 
   void DefaultEventHandlerInternal(Event&);
 
@@ -149,6 +157,7 @@ class CORE_EXPORT HTMLOptionElement final : public HTMLElement {
   void ChooseOption(Event&);
 
   bool IsVisibleInViewport();
+  bool NeedsMutationObserver();
 
   Member<OptionTextObserver> text_observer_;
 
@@ -169,10 +178,24 @@ class CORE_EXPORT HTMLOptionElement final : public HTMLElement {
   // <optgroup> element ancestor above nearest_ancestor_select_.
   Member<HTMLOptGroupElement> nearest_ancestor_optgroup_;
 
+  // Just like nearest_ancestor_select_ and nearest_ancestor_optgroup_, but for
+  // an ancestor <datalist> if present. Only one of nearest_ancestor_select_ and
+  // nearest_ancestor_datalist_ can be non-null.
+  Member<HTMLDataListElement> nearest_ancestor_datalist_;
+
   // label_container_ contains the text content of DisplayLabel(). Based on UA
   // style rules, it is rendered when this option is not inside of a select
   // element with appearance:base-select.
   Member<HTMLElement> label_container_;
+
+  // DidChangeTextContent and UpdateLabel may update copies of the text content
+  // of this element into the UA ShadowRoot of this element and the nearest
+  // ancestor select element. This may be triggered as the result of the
+  // appearance of the nearest ancestor select element switching from base
+  // appearance to auto appearance, in which case we can't update the DOM yet
+  // because we are in style recalc. In this case, update_label_task_ holds a
+  // task to call DidChangeTextContent after style recalc is done.
+  TaskHandle update_label_task_;
 
   // Represents 'selectedness'.
   // https://html.spec.whatwg.org/C/#concept-option-selectedness
@@ -183,6 +206,9 @@ class CORE_EXPORT HTMLOptionElement final : public HTMLElement {
   // Represents the option being focused on in a multi-select non-contiguous
   // traversal via the keyboard.
   bool is_multi_select_focused_ = false;
+  // Gets set to true when a child element is inserted into this option
+  // element. Never gets set back to false once set to true.
+  bool was_element_inserted_ = false;
 
   friend class HTMLOptionElementTest;
 };

@@ -672,6 +672,10 @@ class PrivateState : angle::NonCopyable
                                bool pureInteger,
                                GLuint relativeOffset);
 
+    GLuint getGroupMarkerCount() const { return mGroupMarkerCount; }
+    void incrementGroupMarkers() { mGroupMarkerCount++; }
+    void decrementGroupMarkers() { mGroupMarkerCount--; }
+
   private:
     bool hasConstantColor(GLenum sourceRGB, GLenum destRGB) const;
     bool hasConstantAlpha(GLenum sourceRGB, GLenum destRGB) const;
@@ -723,6 +727,10 @@ class PrivateState : angle::NonCopyable
 
     ClipOrigin mClipOrigin;
     ClipDepthMode mClipDepthMode;
+
+    // GL_EXT_debug_marker
+    // Keeps track of debug group marker count. Pop calls are ignored if there is no marker to pop.
+    GLuint mGroupMarkerCount;
 
     // GL_ANGLE_provoking_vertex
     ProvokingVertexConvention mProvokingVertex;
@@ -886,6 +894,10 @@ class State : angle::NonCopyable
     TextureCapsMap *getMutableTextureCaps() { return mPrivateState.getMutableTextureCaps(); }
     Extensions *getMutableExtensions() { return mPrivateState.getMutableExtensions(); }
     Limitations *getMutableLimitations() { return mPrivateState.getMutableLimitations(); }
+
+    GLuint getGroupMarkerCount() const { return mPrivateState.getGroupMarkerCount(); }
+    void incrementGroupMarkers() { mPrivateState.incrementGroupMarkers(); }
+    void decrementGroupMarkers() { mPrivateState.decrementGroupMarkers(); }
 
     const TextureCaps &getTextureCap(GLenum internalFormat) const
     {
@@ -1142,7 +1154,7 @@ class State : angle::NonCopyable
     void getFloatv(GLenum pname, GLfloat *params) const { mPrivateState.getFloatv(pname, params); }
     angle::Result getIntegerv(const Context *context, GLenum pname, GLint *params) const;
     void getPointerv(const Context *context, GLenum pname, void **params) const;
-    void getIntegeri_v(const Context *context, GLenum target, GLuint index, GLint *data) const;
+    void getIntegeri_v(GLenum target, GLuint index, GLint *data) const;
     void getInteger64i_v(GLenum target, GLuint index, GLint64 *data) const;
     void getBooleani_v(GLenum target, GLuint index, GLboolean *data) const;
 

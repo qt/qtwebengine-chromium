@@ -2436,6 +2436,11 @@ Only used if option named @var{start} is set to @code{-1}.
 
 Merge two or more audio streams into a single multi-channel stream.
 
+All inputs must have the same sample rate, and format.
+
+If inputs do not have the same duration, the output will stop with the
+shortest.
+
 The filter accepts the following options:
 
 @table @option
@@ -2443,15 +2448,25 @@ The filter accepts the following options:
 @item inputs
 Set the number of inputs. Default is 2.
 
-@end table
+@item layout_mode
 
-If the channel layouts of the inputs are disjoint, and therefore compatible,
-the channel layout of the output will be set accordingly and the channels
-will be reordered as necessary. If the channel layouts of the inputs are not
-disjoint, the output will have all the channels of the first input then all
-the channels of the second input, in that order, and the channel layout of
-the output will be the default value corresponding to the total number of
-channels.
+This option controls how the output channel layout is determined and if the
+audio channels are reordered during merge.
+
+@table @option
+
+@item legacy
+
+This is the mode how the filter behaved historically so it is the default.
+
+If the channel layouts of the inputs are known and disjoint, and therefore
+compatible, the channel layout of the output will be set accordingly and the
+channels will be reordered as necessary. If the channel layouts of the inputs
+are not disjoint, some of them are unknown, or they are using special channel
+layouts, such as ambisonics, the output will have all the channels of the first
+input then all the channels of the second input, in that order, and the channel
+layout of the output will be the default value corresponding to the total
+number of channels.
 
 For example, if the first input is in 2.1 (FL+FR+LF) and the second input
 is FC+BL+BR, then the output will be in 5.1, with the channels in the
@@ -2462,10 +2477,22 @@ On the other hand, if both input are in stereo, the output channels will be
 in the default order: a1, a2, b1, b2, and the channel layout will be
 arbitrarily set to 4.0, which may or may not be the expected value.
 
-All inputs must have the same sample rate, and format.
+@item reset
+This mode ignores the input channel layouts and does no channel reordering.
+The output will have all the channels of the first input, then all the channels
+of the second input, in that order, and so on.
 
-If inputs do not have the same duration, the output will stop with the
-shortest.
+The output channel layout will only specify the total channel count.
+
+@item normal
+This mode keeps channel name and designation information from the input
+channels and does no channel reordering. The output will have all the channels
+of the first input, then all the channels of the second input, in that order,
+and so on.
+
+@end table
+
+@end table
 
 @subsection Examples
 
@@ -4386,7 +4413,7 @@ Add a chorus effect to the audio.
 Can make a single vocal sound like a chorus, but can also be applied to instrumentation.
 
 Chorus resembles an echo effect with a short delay, but whereas with echo the delay is
-constant, with chorus, it is varied using using sinusoidal or triangular modulation.
+constant, with chorus, it is varied using sinusoidal or triangular modulation.
 The modulation depth defines the range the modulated delay is played before or after
 the delay. Hence the delayed sound will sound slower or faster, that is the delayed
 sound tuned around the original one, like in a chorus where some vocals are slightly
@@ -13084,7 +13111,7 @@ Path of the file to load the script source.
 
 Since Cairo only supports RGB images, if the input video is something else (like
 YUV 4:2:0), before executing the script the video is converted to a format
-compatible with Cairo. Then, you have to use use either the @ref{format} filter,
+compatible with Cairo. Then, you have to use either the @ref{format} filter,
 or the @code{-pix_fmt} option, to convert it to the expected format in the
 output.
 
@@ -16662,6 +16689,7 @@ exist.
 @item color_primaries
 @item color_trc
 @item range
+@item chroma_location
 Configure the colorspace that output frames will be delivered in. The default
 value of @code{auto} outputs frames in the same format as the input frames,
 leading to no change. For any other value, conversion will be performed.
@@ -21469,27 +21497,6 @@ The command accepts the same syntax of the corresponding option.
 
 If the specified expression is not valid, it is kept at its current
 value.
-@end table
-
-@section scale_vt
-
-Scale and convert the color parameters using VTPixelTransferSession.
-
-The filter accepts the following options:
-@table @option
-@item w
-@item h
-Set the output video dimension expression. Default value is the input dimension.
-
-@item color_matrix
-Set the output colorspace matrix.
-
-@item color_primaries
-Set the output color primaries.
-
-@item color_transfer
-Set the output transfer characteristics.
-
 @end table
 
 @section scharr
@@ -26525,6 +26532,7 @@ Possible values are:
 @item bicubic
 @item spline16
 @item spline36
+@item spline64
 @item lanczos
 @end table
 
@@ -28920,6 +28928,106 @@ drawbox=x=-t:y=0.5*(ih-iw/2.4)-t:w=iw+t*2:h=iw/2.4+t*2:t=2:c=red
 
 @c man end VAAPI VIDEO FILTERS
 
+@chapter VideoToolbox Video Filters
+@c man begin VIDEOTOOLBOX VIDEO FILTERS
+
+Below is a description of the currently available VideoToolbox video filters.
+
+VideoToolbox filter depends on VideoToolbox framework, and is auto detected
+when building ffmpeg for an Apple platform such as macOS. Add
+@code{--enable-videotoolbox} to configure if autodetect is disabled.
+
+@section scale_vt
+
+Scale and convert the color parameters using VTPixelTransferSession.
+
+The filter accepts the following options:
+@table @option
+@item w
+@item h
+Set the output video dimension expression. Default value is the input dimension.
+
+@item color_matrix
+Set the output colorspace matrix.
+
+@item color_primaries
+Set the output color primaries.
+
+@item color_transfer
+Set the output transfer characteristics.
+
+@end table
+
+@subsection Examples
+
+@itemize
+@item
+Perform HDR to SDR conversion, and scale to half size of input
+@example
+ffmpeg -hwaccel videotoolbox \
+        -hwaccel_output_format videotoolbox_vld \
+        -i hdr.mov \
+        -c:v hevc_videotoolbox \
+        -profile:v main \
+        -b:v 3M \
+        -vf scale_vt=w=iw/2:h=ih/2:color_matrix=bt709:color_primaries=bt709:color_transfer=bt709 \
+        -c:a copy \
+        -tag:v hvc1 \
+        sdr.mp4
+@end example
+
+@end itemize
+
+@section transpose_vt
+
+Transpose rows with columns in the input video and optionally flip it.
+For more in depth examples see the @ref{transpose} video filter, which shares mostly the same options.
+
+It accepts the following parameters:
+
+@table @option
+
+@item dir
+Specify the transposition direction.
+
+Can assume the following values:
+@table @samp
+@item cclock_flip
+Rotate by 90 degrees counterclockwise and vertically flip. (default)
+
+@item clock
+Rotate by 90 degrees clockwise.
+
+@item cclock
+Rotate by 90 degrees counterclockwise.
+
+@item clock_flip
+Rotate by 90 degrees clockwise and vertically flip.
+
+@item hflip
+Flip the input video horizontally.
+
+@item vflip
+Flip the input video vertically.
+
+@end table
+
+@item passthrough
+Do not apply the transposition if the input geometry matches the one
+specified by the specified value. It accepts the following values:
+@table @samp
+@item none
+Always apply transposition. (default)
+@item portrait
+Preserve portrait geometry (when @var{height} >= @var{width}).
+@item landscape
+Preserve landscape geometry (when @var{width} >= @var{height}).
+@end table
+
+@end table
+
+@c man end VIDEOTOOLBOX VIDEO FILTERS
+
 @chapter Vulkan Video Filters
 @c man begin VULKAN VIDEO FILTERS
 
@@ -29221,54 +29329,6 @@ Default value is @code{0}.
 @item y
 Set the y coordinate of the overlaid video on the main video.
 Default value is @code{0}.
-
-@end table
-
-@section transpose_vt
-
-Transpose rows with columns in the input video and optionally flip it.
-For more in depth examples see the @ref{transpose} video filter, which shares mostly the same options.
-
-It accepts the following parameters:
-
-@table @option
-
-@item dir
-Specify the transposition direction.
-
-Can assume the following values:
-@table @samp
-@item cclock_flip
-Rotate by 90 degrees counterclockwise and vertically flip. (default)
-
-@item clock
-Rotate by 90 degrees clockwise.
-
-@item cclock
-Rotate by 90 degrees counterclockwise.
-
-@item clock_flip
-Rotate by 90 degrees clockwise and vertically flip.
-
-@item hflip
-Flip the input video horizontally.
-
-@item vflip
-Flip the input video vertically.
-
-@end table
-
-@item passthrough
-Do not apply the transposition if the input geometry matches the one
-specified by the specified value. It accepts the following values:
-@table @samp
-@item none
-Always apply transposition. (default)
-@item portrait
-Preserve portrait geometry (when @var{height} >= @var{width}).
-@item landscape
-Preserve landscape geometry (when @var{width} >= @var{height}).
-@end table
 
 @end table
 
@@ -33759,10 +33819,41 @@ data in the frame.
 @end table
 
 @item type
-Set side data type used with all modes. Must be set for @code{select} mode. For
-the list of frame side data types, refer to the @code{AVFrameSideDataType} enum
-in @file{libavutil/frame.h}. For example, to choose
-@code{AV_FRAME_DATA_PANSCAN} side data, you must specify @code{PANSCAN}.
+Set side data type used with all modes. Must be set for @code{select} mode.
+
+Possible values are:
+
+@table @samp
+@item PANSCAN
+@item A53_CC
+@item STEREO3D
+@item MATRIXENCODING
+@item DOWNMIX_INFO
+@item REPLAYGAIN
+@item DISPLAYMATRIX
+@item AFD
+@item MOTION_VECTORS
+@item SKIP_SAMPLES
+@item AUDIO_SERVICE_TYPE
+@item MASTERING_DISPLAY_METADATA
+@item GOP_TIMECODE
+@item SPHERICAL
+@item CONTENT_LIGHT_LEVEL
+@item ICC_PROFILE
+@item S12M_TIMECODE
+@item DYNAMIC_HDR_PLUS
+@item REGIONS_OF_INTEREST
+@item VIDEO_ENC_PARAMS
+@item SEI_UNREGISTERED
+@item FILM_GRAIN_PARAMS
+@item DETECTION_BOUNDING_BOXES
+@item DETECTION_BBOXES
+@item DOVI_RPU_BUFFER
+@item DOVI_METADATA
+@item DYNAMIC_HDR_VIVID
+@item AMBIENT_VIEWING_ENVIRONMENT
+@item VIDEO_HINT
+@end table
 
 @end table
 

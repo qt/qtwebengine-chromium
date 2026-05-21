@@ -51,8 +51,9 @@ const char kSepiaJsTheme[] = "sepia";
 const char kSerifJsFontFamily[] = "serif";
 const char kSansSerifJsFontFamily[] = "sans-serif";
 const char kMonospaceJsFontFamily[] = "monospace";
+const char kLexendJsFontFamily[] = "Lexend";
 
-// LINT.ThenChange(//components/dom_distiller/core/javascript/dom_distiller_viewer.js:JSThemesAndFonts)
+// LINT.ThenChange(//components/dom_distiller/core/javascript/dom_distiller_viewer_main.js:JSThemesAndFonts)
 
 // LINT.IfChange
 
@@ -65,6 +66,7 @@ const char kSepiaCssClass[] = "sepia";
 const char kSerifCssClass[] = "serif";
 const char kSansSerifCssClass[] = "sans-serif";
 const char kMonospaceCssClass[] = "monospace";
+const char kLexendCssClass[] = "Lexend";
 
 // LINT.ThenChange(//components/dom_distiller/core/css/distilledpage_common.css)
 
@@ -74,15 +76,15 @@ std::string GetVersionedCss() {
     return ui::ResourceBundle::GetSharedInstance().LoadDataResourceString(
         IDR_DISTILLER_NEW_CSS);
   }
-#endif
-#if BUILDFLAG(IS_IOS)
-  if (base::FeatureList::IsEnabled(dom_distiller::kEnableReaderModeNewCss)) {
-    return ui::ResourceBundle::GetSharedInstance().LoadDataResourceString(
-        IDR_DISTILLER_NEW_CSS);
-  }
-#endif
   return ui::ResourceBundle::GetSharedInstance().LoadDataResourceString(
       IDR_DISTILLER_CSS);
+#elif BUILDFLAG(IS_IOS)
+  return ui::ResourceBundle::GetSharedInstance().LoadDataResourceString(
+      IDR_DISTILLER_NEW_CSS);
+#else
+  return ui::ResourceBundle::GetSharedInstance().LoadDataResourceString(
+      IDR_DISTILLER_CSS);
+#endif
 }
 
 std::string GetPlatformSpecificCss() {
@@ -114,20 +116,32 @@ const std::string GetThemeCssClass(mojom::Theme theme) {
 
 // Maps font families to JS font families.
 const std::string GetJsFontFamily(mojom::FontFamily font_family) {
-  if (font_family == mojom::FontFamily::kSerif)
-    return kSerifJsFontFamily;
-  if (font_family == mojom::FontFamily::kMonospace)
-    return kMonospaceJsFontFamily;
-  return kSansSerifJsFontFamily;
+  switch (font_family) {
+    case mojom::FontFamily::kSerif:
+      return kSerifJsFontFamily;
+    case mojom::FontFamily::kSansSerif:
+      return kSansSerifJsFontFamily;
+    case mojom::FontFamily::kMonospace:
+      return kMonospaceJsFontFamily;
+    case mojom::FontFamily::kLexend:
+      return kLexendJsFontFamily;
+  }
+  NOTREACHED();
 }
 
 // Maps fontFamilies to CSS fontFamily classes.
 const std::string GetFontCssClass(mojom::FontFamily font_family) {
-  if (font_family == mojom::FontFamily::kSerif)
-    return kSerifCssClass;
-  if (font_family == mojom::FontFamily::kMonospace)
-    return kMonospaceCssClass;
-  return kSansSerifCssClass;
+  switch (font_family) {
+    case mojom::FontFamily::kSansSerif:
+      return kSansSerifCssClass;
+    case mojom::FontFamily::kSerif:
+      return kSerifCssClass;
+    case mojom::FontFamily::kMonospace:
+      return kMonospaceCssClass;
+    case mojom::FontFamily::kLexend:
+      return kLexendCssClass;
+  }
+  NOTREACHED();
 }
 
 const std::string EnsureNonEmptyContent(const std::string& content) {
@@ -206,7 +220,11 @@ std::string ReplaceHtmlTemplateValues(const mojom::Theme theme,
     csp << "default-src 'none'; ";
     csp << "script-src 'nonce-" << csp_nonce << "'; ";
     // YouTube videos are embedded as an iframe.
-    csp << "frame-src http://www.youtube.com; ";
+    csp << "frame-src https://www.youtube.com "
+           "https://www.youtube-nocookie.com; ";
+
+    // Allow the browser to send a referrer.
+    csp << "referrer strict-origin-when-cross-origin; ";
     csp << "style-src 'unsafe-inline' https://fonts.googleapis.com; ";
     // Allows the fallback font-face from the main stylesheet.
     csp << "font-src https://fonts.gstatic.com; ";
@@ -349,6 +367,10 @@ const std::string GetJavaScript() {
                                          GetMinPinchZoomScale());
   base::ReplaceFirstSubstringAfterOffset(&js, 0, "$MAX_SCALE",
                                          GetMaxPinchZoomScale());
+  // The viewer's UI components are lazily instantiated. This call initializes
+  // them after the script loads. This relies on the script being loaded after
+  // the relevant DOM elements are available.
+  js += "initializeDomDistillerViewer();";
   return js;
 }
 
@@ -389,6 +411,10 @@ std::unique_ptr<ViewerHandle> CreateViewRequest(
 
 const std::string GetDistilledPageThemeJs(mojom::Theme theme) {
   return "useTheme('" + GetJsTheme(theme) + "');";
+}
+
+const std::string GetDistilledPageLinksEnabledJs(bool enabled) {
+  return "setLinksEnabled(" + base::ToString(enabled) + ");";
 }
 
 const std::string GetDistilledPageFontFamilyJs(mojom::FontFamily font_family) {

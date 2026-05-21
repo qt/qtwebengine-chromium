@@ -35,25 +35,43 @@ class SimpleGuardedInteger {
   SimpleGuardedInteger& operator=(const SimpleGuardedInteger&) = delete;
 
   void Decrement() {
+    // As of Abseil LTS 20250512.1 no LTS release has a version of the
+    // constructor that takes a reference.
+#if defined(ABSL_LTS_RELEASE_VERSION)
     absl::MutexLock l(&mutex_);
+#else
+    absl::MutexLock l(mutex_);
+#endif
     assert(value_ >= 1);
     --value_;
     changed_.SignalAll();
   }
 
   void Increment() {
+#if defined(ABSL_LTS_RELEASE_VERSION)
     absl::MutexLock l(&mutex_);
+#else
+    absl::MutexLock l(mutex_);
+#endif
     ++value_;
     changed_.SignalAll();
   }
 
   int Value() {
+#if defined(ABSL_LTS_RELEASE_VERSION)
     absl::MutexLock l(&mutex_);
+#else
+    absl::MutexLock l(mutex_);
+#endif
     return value_;
   }
 
   void WaitForZero() {
+#if defined(ABSL_LTS_RELEASE_VERSION)
     absl::MutexLock l(&mutex_);
+#else
+    absl::MutexLock l(mutex_);
+#endif
     while (value_ != 0) {
       changed_.Wait(&mutex_);
     }

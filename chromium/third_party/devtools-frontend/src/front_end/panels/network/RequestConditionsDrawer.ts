@@ -15,6 +15,7 @@ import * as SDK from '../../core/sdk/sdk.js';
 import * as Logs from '../../models/logs/logs.js';
 import * as Buttons from '../../ui/components/buttons/buttons.js';
 import * as uiI18n from '../../ui/i18n/i18n.js';
+import {Link} from '../../ui/kit/kit.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import {Directives, html, type LitTemplate, nothing, render} from '../../ui/lit/lit.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
@@ -23,7 +24,7 @@ import * as PanelUtils from '../utils/utils.js';
 
 import requestConditionsDrawerStyles from './requestConditionsDrawer.css.js';
 
-const {ref} = Directives;
+const {ref, live} = Directives;
 const {widgetConfig} = UI.Widget;
 
 const UIStrings = {
@@ -181,7 +182,6 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
   render(
       // clang-format off
     html`
-    <style>${RequestConditionsDrawer}</style>
     <devtools-toolbar jslog=${VisualLogging.toolbar()}>
       <devtools-checkbox
         ?checked=${input.enabled}
@@ -326,13 +326,13 @@ export class AffectedCountWidget extends UI.Widget.Widget {
 }
 
 function learnMore(): LitTemplate {
-  return html`<x-link
+  return html`<devtools-link
         href=${NETWORK_REQUEST_BLOCKING_EXPLANATION_URL}
         tabindex=0
         class=devtools-link
-        jslog=${VisualLogging.link().track({click: true, keydown: 'Enter|Space'}).context('learn-more')}>
+        .jslogContext=${'learn-more'}>
           ${i18nString(UIStrings.learnMore)}
-      </x-link>`;
+      </devtools-link>`;
 }
 
 export class RequestConditionsDrawer extends UI.Widget.VBox implements
@@ -439,10 +439,10 @@ export class RequestConditionsDrawer extends UI.Widget.VBox implements
           // clang-format off
         html`
     <input class=blocked-url-checkbox
-      @click=${toggle}
+      @change=${toggle}
       type=checkbox
       title=${i18nString(UIStrings.enableThrottlingToggleLabel, {PH1: constructorStringOrWildcardURL})}
-      .checked=${enabled}
+      .checked=${live(enabled)}
       .disabled=${!editable || !originalOrUpgradedURLPattern}
       jslog=${VisualLogging.toggle().track({ change: true })}>
     <devtools-button
@@ -519,7 +519,7 @@ export class RequestConditionsDrawer extends UI.Widget.VBox implements
           // clang-format off
         html`
     <input class=blocked-url-checkbox
-      @click=${toggle}
+      @change=${toggle}
       type=checkbox
       .checked=${condition.enabled}
       .disabled=${!editable}
@@ -575,8 +575,7 @@ export class RequestConditionsDrawer extends UI.Widget.VBox implements
     const titles = content.createChild('div', 'blocked-url-edit-row');
     const label = titles.createChild('label');
     if (Root.Runtime.hostConfig.devToolsIndividualRequestThrottling?.enabled) {
-      const learnMore = UI.XLink.XLink.create(
-          PATTERN_API_DOCS_URL, i18nString(UIStrings.learnMore), undefined, undefined, 'learn-more');
+      const learnMore = Link.create(PATTERN_API_DOCS_URL, i18nString(UIStrings.learnMore), undefined, 'learn-more');
       learnMore.title = i18nString(UIStrings.learnMoreLabel);
       titles.append('\xA0', learnMore);
       label.textContent = i18nString(UIStrings.textEditPattern);

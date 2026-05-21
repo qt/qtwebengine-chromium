@@ -5,6 +5,7 @@
 #include "components/autofill/core/browser/data_model/addresses/autofill_structured_address_component.h"
 
 #include <map>
+#include <queue>
 #include <string>
 #include <vector>
 
@@ -19,12 +20,14 @@
 #include "components/autofill/core/browser/data_model/addresses/autofill_structured_address_utils.h"
 #include "components/autofill/core/browser/field_types.h"
 #include "components/autofill/core/common/autofill_features.h"
+#include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using base::ASCIIToUTF16;
 using base::UTF8ToUTF16;
 
 namespace autofill {
+namespace {
 
 using AddressComponentTestValues = std::vector<AddressComponentTestValue>;
 
@@ -184,28 +187,6 @@ class TestNonProperFirstNameAddressComponent : public AddressComponent {
  private:
   TestAtomicFirstNameAddressComponent first_name;
 };
-
-// Tests the merging of two atomic component with |type|, and values
-// |older_values| and |newer_values| respectively, and |merge_modes|.
-// If |is_mergeable| it is expected that the two components are mergeable.
-// If |newer_was_more_recently_used| the newer component was also more recently
-// used which is true by default.
-void TestAtomMerging(FieldType type,
-                     AddressComponentTestValues older_values,
-                     AddressComponentTestValues newer_values,
-                     AddressComponentTestValues merge_expectation,
-                     bool is_mergeable,
-                     int merge_modes,
-                     bool newer_was_more_recently_used = true) {
-  AddressComponent older(type, {}, merge_modes);
-  AddressComponent newer(type, {}, merge_modes);
-
-  SetTestValues(&older, older_values);
-  SetTestValues(&newer, newer_values);
-
-  TestMerging(&older, &newer, merge_expectation, is_mergeable, merge_modes,
-              newer_was_more_recently_used);
-}
 
 void TestCompoundNameMerging(AddressComponentTestValues older_values,
                              AddressComponentTestValues newer_values,
@@ -1303,7 +1284,8 @@ TEST_F(AutofillStructuredAddressAddressComponent,
 
   // |one| and |two| are note mergeable because they contain completely
   // different values.
-  EXPECT_FALSE(one.MergeWithComponent(two));
+  EXPECT_FALSE(
+      one.MergeWithComponent(two, /*newer_was_more_recently_used=*/true));
   // Since |one| and |two| are not mergeable, it is expected that the value of
   // |one| is preserved.
   EXPECT_EQ(one.GetValue(), u"Peter");
@@ -1318,7 +1300,8 @@ TEST_F(AutofillStructuredAddressAddressComponent,
   TestAtomicFirstNameAddressComponent two;
   two.SetValue(u"Peter", VerificationStatus::kUserVerified);
 
-  EXPECT_TRUE(one.MergeWithComponent(two));
+  EXPECT_TRUE(
+      one.MergeWithComponent(two, /*newer_was_more_recently_used=*/true));
   EXPECT_EQ(one.GetValue(), u"Peter");
 
   // The actual action is that the higher verification status is picked.
@@ -1334,7 +1317,8 @@ TEST_F(AutofillStructuredAddressAddressComponent,
   two.SetValue(u"Muller", VerificationStatus::kUserVerified);
 
   // Should be mergeable because the values are the same after normalization.
-  EXPECT_TRUE(one.MergeWithComponent(two));
+  EXPECT_TRUE(
+      one.MergeWithComponent(two, /*newer_was_more_recently_used=*/true));
   // The value should be Muller because of its higher validation status.
   EXPECT_EQ(one.GetValue(), u"Muller");
 
@@ -1350,14 +1334,16 @@ TEST_F(AutofillStructuredAddressAddressComponent,
   TestAtomicFirstNameAddressComponent two;
   two.SetValue(u"Pan Peter", VerificationStatus::kUserVerified);
 
-  EXPECT_TRUE(one.MergeWithComponent(two));
+  EXPECT_TRUE(
+      one.MergeWithComponent(two, /*newer_was_more_recently_used=*/true));
   EXPECT_EQ(one.GetValue(), u"Pan Peter");
   EXPECT_EQ(one.GetVerificationStatus(), VerificationStatus::kUserVerified);
 
   // If the merging is applied the other way round, the value of two is not
   // altered because |two| has the higher validation status.
   one.SetValue(u"Peter Pan", VerificationStatus::kFormatted);
-  EXPECT_TRUE(two.MergeWithComponent(one));
+  EXPECT_TRUE(
+      two.MergeWithComponent(one, /*newer_was_more_recently_used=*/true));
   EXPECT_EQ(two.GetValue(), u"Pan Peter");
   EXPECT_EQ(two.GetVerificationStatus(), VerificationStatus::kUserVerified);
 }
@@ -1452,7 +1438,8 @@ TEST_F(AutofillStructuredAddressAddressComponent,
   EXPECT_EQ(two.GetValueForType(NAME_FULL), u"First LastFirst LastSecond");
   EXPECT_EQ(two.GetValueForType(NAME_MIDDLE), u"");
 
-  EXPECT_TRUE(one.MergeWithComponent(two));
+  EXPECT_TRUE(
+      one.MergeWithComponent(two, /*newer_was_more_recently_used=*/true));
   EXPECT_EQ(one.GetValueForType(NAME_FULL), u"First LastFirst LastSecond");
   EXPECT_EQ(one.GetVerificationStatusForType(NAME_FULL),
             VerificationStatus::kUserVerified);
@@ -1495,7 +1482,8 @@ TEST_F(AutofillStructuredAddressAddressComponent, MergePermutedComponent) {
 
   TestCompoundNameAddressComponent copy_of_one;
   copy_of_one.CopyFrom(one);
-  EXPECT_TRUE(one.MergeWithComponent(two));
+  EXPECT_TRUE(
+      one.MergeWithComponent(two, /*newer_was_more_recently_used=*/true));
 
   // As a result of the merging, the unstructured representation should be
   // maintained, but the substructure should be corrected
@@ -1513,7 +1501,8 @@ TEST_F(AutofillStructuredAddressAddressComponent, MergePermutedComponent) {
             VerificationStatus::kObserved);
 
   // The merging should work in both directions the same way.
-  EXPECT_TRUE(two.MergeWithComponent(copy_of_one));
+  EXPECT_TRUE(two.MergeWithComponent(copy_of_one,
+                                     /*newer_was_more_recently_used=*/true));
   EXPECT_EQ(two.GetValueForType(NAME_FULL), u"Last First Middle");
   EXPECT_EQ(two.GetVerificationStatusForType(NAME_FULL),
             VerificationStatus::kUserVerified);
@@ -1728,7 +1717,8 @@ TEST_F(AutofillStructuredAddressAddressComponent, MergeChildsAndReformatRoot) {
   SetTestValues(&unmergeable_newer, unmergeable_values);
 
   EXPECT_TRUE(older.IsMergeableWithComponent(newer));
-  EXPECT_TRUE(older.MergeWithComponent(newer));
+  EXPECT_TRUE(
+      older.MergeWithComponent(newer, /*newer_was_more_recently_used=*/true));
 
   VerifyTestValues(&older, expectation);
 
@@ -1736,7 +1726,8 @@ TEST_F(AutofillStructuredAddressAddressComponent, MergeChildsAndReformatRoot) {
   SetTestValues(&older, older_values);
   SetTestValues(&unmergeable_newer, unmergeable_values);
   EXPECT_FALSE(older.IsMergeableWithComponent(unmergeable_newer));
-  EXPECT_FALSE(older.MergeWithComponent(unmergeable_newer));
+  EXPECT_FALSE(older.MergeWithComponent(unmergeable_newer,
+                                        /*newer_was_more_recently_used=*/true));
   VerifyTestValues(&older, older_values);
 }
 
@@ -1898,4 +1889,105 @@ TEST_F(AutofillStructuredAddressAddressComponent, TestFillTreeGapsParsing) {
   VerifyTestValues(&name, expectation);
 }
 
+class PerCountryAutofillStructuredAddressAddressComponentTest
+    : public AutofillStructuredAddressAddressComponent,
+      public testing::WithParamInterface<std::string_view> {};
+
+struct TypesByProperties {
+  std::set<std::string> types_with_defined_recursive_merge_mode;
+  std::set<std::string> types_accessible_recursively;
+};
+
+// Given an `AddressComponentStore`, returns which types in the hierarchy it
+// represents:
+// 1. have defined merge modes
+// 2. are accessible recursively.
+TypesByProperties GetTypesByProperties(
+    const AddressComponentsStore& address_component_store) {
+  std::queue<AddressComponent*> components_queue;
+  std::set<AddressComponent*> components_with_defined_merge_mode;
+  std::set<AddressComponent*> components_accessible_recursively;
+
+  components_accessible_recursively.insert(address_component_store.Root());
+  components_queue.push(address_component_store.Root());
+  while (!components_queue.empty()) {
+    AddressComponentTestApi current_component(*components_queue.front());
+    if (current_component.GetMergeMode() != 0) {
+      components_with_defined_merge_mode.insert(components_queue.front());
+    }
+    if (current_component.GetMergeMode() & kMergeChildrenAndReformatIfNeeded) {
+      components_accessible_recursively.insert_range(
+          components_queue.front()->Subcomponents());
+    }
+    components_queue.push_range(components_queue.front()->Subcomponents());
+    components_queue.pop();
+  }
+
+  auto address_component_pointer_set_to_string_set =
+      [](std::set<AddressComponent*> address_component_set)
+      -> std::set<std::string> {
+    std::set<std::string> result;
+    for (AddressComponent* address_component : address_component_set) {
+      result.insert(address_component->GetStorageTypeName());
+    }
+    return result;
+  };
+
+  return {.types_with_defined_recursive_merge_mode =
+              address_component_pointer_set_to_string_set(
+                  components_with_defined_merge_mode),
+          .types_accessible_recursively =
+              address_component_pointer_set_to_string_set(
+                  components_accessible_recursively)};
+}
+
+// Currently a merge mode is effective for a type node if and only if all
+// parents of this type node up to the root node have
+// `kMergeChildrenAndReformatIfNeeded` in their merge modes. It is technically
+// possible to define merge modes for types in which they will never be
+// effective - or have nodes without merge mode. This is unexpected by the
+// reader and as such should be treated as misconfiguration - this test guards
+// against that.
+TEST_P(PerCountryAutofillStructuredAddressAddressComponentTest,
+       MergeModesDefinedExactlyWhereNeeded) {
+  AddressComponentsStore address_component_store =
+      i18n_model_definition::CreateAddressComponentModel(
+          autofill::AddressCountryCode(std::string(GetParam())));
+
+  TypesByProperties types_by_properties =
+      GetTypesByProperties(address_component_store);
+
+  // In all the hierarchies that have ADDRESS_HOME_DEPENDENT_LOCALITY it is a
+  // direct descendant of ADDRESS_HOME_ADDRESS - except for India, where it is a
+  // leaf of a multi layer tree. This is a bit unfortunate, let's have an
+  // exception for that.
+  if (GetParam() == "IN") {
+    types_by_properties.types_with_defined_recursive_merge_mode.erase(
+        "ADDRESS_HOME_DEPENDENT_LOCALITY");
+  }
+
+  // 1) If there were types with merge mode defined that aren't accessible
+  // recursively, it would mean that the reader might get wrong assumptions.
+  // 2) If there were types accessible recursively that don't have merge modes
+  // defined, it would mean that at times, only SameAs() based equivalence is a
+  // valid reason to merge, which isn't what anyone expects.
+  EXPECT_THAT(
+      types_by_properties.types_with_defined_recursive_merge_mode,
+      testing::ContainerEq(types_by_properties.types_accessible_recursively));
+}
+
+std::set<std::string_view> GetAllAutofillCountriesWithHierarchy() {
+  std::set<std::string_view> result;
+  for (const auto& [country, _] : i18n_model_definition::kAutofillModelRules) {
+    result.insert(country);
+  }
+  return result;
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    Instantiation,
+    PerCountryAutofillStructuredAddressAddressComponentTest,
+    testing::ValuesIn(GetAllAutofillCountriesWithHierarchy()));
+
+}  // namespace
 }  // namespace autofill

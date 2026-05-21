@@ -6,12 +6,12 @@
 
 #include <utility>
 
-#include "cast/streaming/encoded_frame.h"
 #include "cast/streaming/impl/rtcp_common.h"
 #include "cast/streaming/impl/rtp_defines.h"
 #include "cast/streaming/impl/session_config.h"
 #include "cast/streaming/impl/statistics_collector.h"
 #include "cast/streaming/impl/statistics_common.h"
+#include "cast/streaming/public/encoded_frame.h"
 #include "cast/streaming/public/environment.h"
 #include "platform/base/trivial_clock_traits.h"
 #include "util/chrono_helpers.h"

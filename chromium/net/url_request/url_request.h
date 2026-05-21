@@ -41,6 +41,7 @@
 #include "net/cookies/cookie_setting_override.h"
 #include "net/cookies/cookie_util.h"
 #include "net/cookies/site_for_cookies.h"
+#include "net/device_bound_sessions/refresh_result.h"
 #include "net/device_bound_sessions/session_key.h"
 #include "net/device_bound_sessions/session_service.h"
 #include "net/device_bound_sessions/session_usage.h"
@@ -503,7 +504,7 @@ class NET_EXPORT URLRequest : public base::SupportsUserData {
 
   // Returns a partial representation of the request's state as a value, for
   // debugging.
-  base::Value::Dict GetStateAsValue(NetLogCaptureMode capture_mode) const;
+  base::DictValue GetStateAsValue(NetLogCaptureMode capture_mode) const;
 
   // Logs information about what external object currently blocking the
   // request. LogUnblocked must be called before resuming the request. This
@@ -957,26 +958,29 @@ class NET_EXPORT URLRequest : public base::SupportsUserData {
         allows_device_bound_session_registration;
   }
 
-  // Whether this request was in the scope of any device-bound session,
-  // even if it did not need to be deferred.
-  device_bound_sessions::SessionUsage device_bound_session_usage() const {
+  // Whether this request was in the scope of any device-bound session for this
+  // request's site, even if it did not need to be deferred.
+  const base::flat_map<device_bound_sessions::SessionKey,
+                       device_bound_sessions::SessionUsage>&
+  device_bound_session_usage() const {
     return device_bound_session_usage_;
   }
   void set_device_bound_session_usage(
+      const device_bound_sessions::SessionKey& key,
       device_bound_sessions::SessionUsage usage) {
-    device_bound_session_usage_ = usage;
+    device_bound_session_usage_[key] = usage;
   }
 
   // Returns all the device-bound sessions that have deferred this
   // request.
   const base::flat_map<device_bound_sessions::SessionKey,
-                       device_bound_sessions::SessionService::RefreshResult>&
+                       device_bound_sessions::RefreshResult>&
   device_bound_session_deferrals() const {
     return device_bound_session_deferrals_;
   }
   void AddDeviceBoundSessionDeferral(
       const device_bound_sessions::SessionKey& deferral,
-      const device_bound_sessions::SessionService::RefreshResult result) {
+      const device_bound_sessions::RefreshResult result) {
     device_bound_session_deferrals_[deferral] = result;
   }
 
@@ -1272,13 +1276,15 @@ class NET_EXPORT URLRequest : public base::SupportsUserData {
 
   // Whether the request is allowed to register new device-bound sessions
   bool allows_device_bound_session_registration_ = false;
-  // How existing device-bound sessions interacted with this request
-  device_bound_sessions::SessionUsage device_bound_session_usage_ =
-      device_bound_sessions::SessionUsage::kUnknown;
+  // How existing device-bound sessions for the request's site interacted with
+  // this request.
+  base::flat_map<device_bound_sessions::SessionKey,
+                 device_bound_sessions::SessionUsage>
+      device_bound_session_usage_;
   // Which device-bound sessions have deferred this request, and the
   // result of that refresh.
   base::flat_map<device_bound_sessions::SessionKey,
-                 device_bound_sessions::SessionService::RefreshResult>
+                 device_bound_sessions::RefreshResult>
       device_bound_session_deferrals_;
 
   THREAD_CHECKER(thread_checker_);

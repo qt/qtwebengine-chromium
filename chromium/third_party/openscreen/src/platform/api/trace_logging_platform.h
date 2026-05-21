@@ -40,6 +40,11 @@ class TraceLoggingPlatform {
 
   // Log an asynchronous trace end.
   virtual void LogAsyncEnd(TraceEvent event) = 0;
+
+  // Log a flow event.
+  // TODO(crbug.com/479316209): fast-follow: make non-optional once implemented
+  // in Chromium.
+  virtual void LogFlow(TraceEvent event, FlowType type);
 };
 
 }  // namespace openscreen

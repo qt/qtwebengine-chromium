@@ -36,6 +36,7 @@
 #include "base/check_op.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/notreached.h"
+#include "base/strings/string_view_util.h"
 #include "build/build_config.h"
 #include "skia/ext/font_utils.h"
 #include "third_party/blink/public/platform/linux/web_sandbox_support.h"
@@ -64,7 +65,7 @@
 namespace blink {
 
 AtomicString ToAtomicString(const SkString& str) {
-  return AtomicString::FromUTF8(std::string_view(str.begin(), str.end()));
+  return AtomicString::FromUTF8(base::as_string_view(str));
 }
 
 namespace {
@@ -256,7 +257,6 @@ const SimpleFontData* FontCache::GetLastResortFallbackFont(
       last_resort_fallback_attempt, kMaxAttempts);
   base::UmaHistogramBoolean("Blink.Fonts.LastResortFallbackFound",
                             font_platform_data != nullptr);
-  DCHECK(font_platform_data);
   return FontDataFromFontPlatformData(font_platform_data);
 }
 

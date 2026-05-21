@@ -10,10 +10,10 @@
 
 #include "base/compiler_specific.h"
 #include "base/feature_list.h"
-#include "base/functional/bind.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_macros.h"
 #include "build/build_config.h"
+#include "third_party/blink/renderer/platform/wtf/cross_thread_functional.h"
 #include "third_party/blink/renderer/platform/wtf/text/atomic_string.h"
 #include "third_party/blink/renderer/platform/wtf/wtf.h"
 #include "third_party/skia/include/core/SkColorSpace.h"
@@ -111,7 +111,7 @@ enum class WebPFileFormat {
 //
 // TODO(crbug.com/1009237): consider combining this with the logic to detect
 // WebPs that can be decoded to YUV.
-bool IsSimpleLossyWebPImage(const sk_sp<SkData>& blob) {
+bool IsSimpleLossyWebPImage(const sk_sp<const SkData>& blob) {
   if (blob->size() < 20UL) {
     return false;
   }
@@ -122,7 +122,7 @@ bool IsSimpleLossyWebPImage(const sk_sp<SkData>& blob) {
 
 // This method parses |blob|'s header and emits a UMA with the file format, as
 // defined by WebP, see WebPFileFormat.
-void UpdateWebPFileFormatUMA(const sk_sp<SkData>& blob) {
+void UpdateWebPFileFormatUMA(const sk_sp<const SkData>& blob) {
   if (!blink::IsMainThread()) {
     return;
   }
@@ -369,14 +369,16 @@ bool WEBPImageDecoder::UpdateDemuxer() {
     // alpha.
     if (!(format_flags_ & (ANIMATION_FLAG | ALPHA_FLAG))) {
       WebPBitstreamFeatures features;
-      CHECK_EQ(WebPGetFeatures(consolidated_data_->bytes(),
-                               consolidated_data_->size(), &features),
-               VP8_STATUS_OK);
+      if (WebPGetFeatures(consolidated_data_->bytes(),
+                          consolidated_data_->size(),
+                          &features) != VP8_STATUS_OK) {
+        return SetFailed();
+      }
       if (features.format == CompressionFormat::kLossyFormat) {
         is_lossy_not_animated_no_alpha_ = true;
         static constexpr char kType[] = "WebP";
         update_bpp_histogram_callback_ =
-            base::BindOnce(&UpdateBppHistogram<kType>);
+            CrossThreadBindOnce(&UpdateBppHistogram<kType>);
       }
     }
   }

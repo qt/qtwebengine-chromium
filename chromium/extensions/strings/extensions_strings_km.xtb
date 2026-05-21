@@ -12,6 +12,7 @@
 <translation id="2159915644201199628">មិនអាចបម្លែងរូបភាព '<ph name="IMAGE_NAME" />' ទេ</translation>
 <translation id="2350172092385603347">មូលដ្ឋានីយកម្មត្រូវបានប្រើប្រាស់ ប៉ុន្តែ មូលដ្ឋាន_លំនាំដើម មិនត្រូវបានបញ្ជាក់នៅក្នុងមេនីហ្វេសទេ។</translation>
 <translation id="2576842806987913196">មានឯកសារ CRX បង្ហាញជាមួយឈ្មោះនេះរួចទៅហើយ។</translation>
+<translation id="2743583586211388067">សិទ្ធិចូលប្រើ​កម្មវិធីបន្ថែម​នេះត្រូវបាន​ទប់ស្កាត់​ក្រោម​គោលការណ៍​ហានិភ័យ​នៃកម្មវិធីបន្ថែម​របស់​ស្ថាប័ន​អ្នក។</translation>
 <translation id="2785530881066938471">មិនអាចដំណើរការឯកសារ '<ph name="RELATIVE_PATH" />' សម្រាប់ស្គ្រីបមាតិកាទេ។ មិនអាចបម្លែង UTF-8 ទេ។</translation>
 <translation id="2903070246402204397"><ph name="EXTENSION_NAME" /> (​លេខសំគាល់កម្មវិធីបន្ថែម "<ph name="EXTENSION_ID" />") ត្រូវ​បាន​ទប់ស្កាត់​ដោយ​អ្នកគ្រប់គ្រង។ <ph name="ADMIN_INFO" /></translation>
 <translation id="2988488679308982380">មិនអាចតំឡើងកញ្ចប់ទេ៖ '<ph name="ERROR_CODE" />'</translation>
@@ -33,9 +34,11 @@
 <translation id="5356315618422219272">មើលកម្មវិធី៖ <ph name="APPVIEW_TAG_NAME" /></translation>
 <translation id="5456409301717116725">កម្មវិធីបន្ថែមនេះរាប់បញ្ចូលទាំងឯកសារសោ '<ph name="KEY_PATH" />'។ អ្នកប្រហែលជាមិនចង់ធ្វើដូច្នេះទេ។</translation>
 <translation id="5486326529110362464">ត្រូវមានតម្លៃធាតុបញ្ចូលសម្រាប់សោឯកជន</translation>
+<translation id="5707185214361380026">បានបរាជ័យក្នុងការដំណើរការកម្មវិធីបន្ថែមពី៖</translation>
 <translation id="5972529113578162692">អ្នកគ្រប់គ្រងម៉ាស៊ីននេះតម្រូវឲ្យតំឡើង <ph name="EXTENSION_NAME" />។ វាមិនអាចលុបការតំឡើងវិញបានទេ។</translation>
 <translation id="6027032947578871493">មិនស្គាល់ផលិតផល <ph name="PRODUCT_ID" /> ពី <ph name="VENDOR_NAME" /> (លេខសេរ៊ី <ph name="SERIAL_NUMBER" />)</translation>
 <translation id="6068932090455285721"><ph name="PRODUCT_NAME" /> ពីអ្នកលក់ <ph name="VENDOR_ID" /></translation>
+<translation id="6220413761270491930">កំហុសឆ្គងការដំណើរការកម្មវិធីបន្ថែម</translation>
 <translation id="6322279351188361895">បានបរាជ័យក្នុងការអានសោឯកជន។</translation>
 <translation id="6391538222494443604">ត្រូវមានថតឯកសារធាតុបញ្ចូល។</translation>
 <translation id="641087317769093025">មិនអាចពន្លាកម្មវិធីបន្ថែមទេ</translation>

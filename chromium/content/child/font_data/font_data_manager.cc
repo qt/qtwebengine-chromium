@@ -19,6 +19,7 @@
 #include "base/trace_event/trace_event.h"
 #include "content/common/features.h"
 #include "content/public/child/child_thread.h"
+#include "skia/ext/font_utils.h"
 #if BUILDFLAG(IS_WIN)
 #include "third_party/skia/src/ports/SkTypeface_win_dw.h"  // nogncheck
 #endif
@@ -78,6 +79,13 @@ FontDataManager::FontDataManager()
 }
 
 FontDataManager::~FontDataManager() = default;
+
+// static
+void FontDataManager::CreateAndInitialize() {
+  sk_sp<FontDataManager> font_data_manager = sk_make_sp<FontDataManager>();
+
+  skia::OverrideDefaultSkFontMgr(font_data_manager);
+}
 
 int FontDataManager::onCountFamilies() const {
   base::AutoLock locked(family_names_lock_);
@@ -322,6 +330,8 @@ sk_sp<SkTypeface> FontDataManager::CreateTypefaceFromMatchResult(
     base::HeapArray<SkFontArguments::VariationPosition::Coordinate>
         typeface_axis;
     SkFontArguments args;
+    args.setSyntheticBold(match_result->synthetic_bold);
+    args.setSyntheticOblique(match_result->synthetic_oblique);
     args.setCollectionIndex(match_result->ttc_index);
     if (match_result->variation_position &&
         match_result->variation_position->coordinateCount > 0) {

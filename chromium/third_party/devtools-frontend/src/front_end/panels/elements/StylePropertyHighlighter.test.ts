@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import * as SDK from '../../core/sdk/sdk.js';
+import * as ComputedStyle from '../../models/computed_style/computed_style.js';
 import {createTarget} from '../../testing/EnvironmentHelpers.js';
 import {describeWithMockConnection} from '../../testing/MockConnection.js';
 import {getMatchedStyles} from '../../testing/StyleHelpers.js';
@@ -17,8 +18,9 @@ describeWithMockConnection('StylePropertyHighlighter', () => {
     matchedStyles: SDK.CSSMatchedStyles.CSSMatchedStyles,
   }> {
     const target = createTarget();
-    UI.Context.Context.instance().setFlavor(SDK.DOMModel.DOMNode, sinon.createStubInstance(SDK.DOMModel.DOMNode));
-    const computedStyleModel = new Elements.ComputedStyleModel.ComputedStyleModel();
+    const node = sinon.createStubInstance(SDK.DOMModel.DOMNode);
+    UI.Context.Context.instance().setFlavor(SDK.DOMModel.DOMNode, node);
+    const computedStyleModel = new ComputedStyle.ComputedStyleModel.ComputedStyleModel(node);
     const stylesSidebarPane = new Elements.StylesSidebarPane.StylesSidebarPane(computedStyleModel);
     const matchedStyles = await getMatchedStyles(
         {node: stylesSidebarPane.node() as SDK.DOMModel.DOMNode, cssModel: target.model(SDK.CSSModel.CSSModel)!});
@@ -43,7 +45,7 @@ describeWithMockConnection('StylePropertyHighlighter', () => {
     return new Elements.StylePropertiesSection.StylePropertiesSection(
         stylesSidebarPane, matchedStyles, style,
         /* sectionIdx */ 0, /* computedStyles */ null,
-        /* parentsComputedStyles */ null, sectionName);
+        /* parentsComputedStyles */ null, /* computedStyleExtraFields */ null, sectionName);
   }
 
   function createBlockAndSection(
@@ -142,7 +144,7 @@ describeWithMockConnection('StylePropertyHighlighter', () => {
     style.allProperties.returns([shorthandProperty, longhandProperty]);
 
     const section = new Elements.StylePropertiesSection.StylePropertiesSection(
-        stylesSidebarPane, matchedStyles, style, 0, null, null);
+        stylesSidebarPane, matchedStyles, style, 0, null, null, null);
     sinon.stub(stylesSidebarPane, 'allSections').returns([section]);
 
     const highlighter = new Elements.StylePropertyHighlighter.StylePropertyHighlighter(stylesSidebarPane);

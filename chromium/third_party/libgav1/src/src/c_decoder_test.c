@@ -82,6 +82,10 @@ static const uint8_t kFrame1WithHdrCllAndHdrMdcv[] = {
 static const uint8_t kFrame2WithItutT35[] = {
     OBU_TEMPORAL_DELIMITER, OBU_METADATA_ITUT_T35, OBU_FRAME_2};
 
+static const uint8_t kFrame2WithMultipleItutT35[] = {
+    OBU_TEMPORAL_DELIMITER, OBU_METADATA_ITUT_T35, OBU_METADATA_ITUT_T35,
+    OBU_FRAME_2};
+
 typedef struct DecoderTest {
   Libgav1Decoder* decoder;
   int frames_in_use;
@@ -432,7 +436,7 @@ static void DecoderTestMetadataObu(void) {
   ASSERT_NE(buffer, NULL);
   ASSERT_EQ(buffer->has_hdr_cll, 1);
   ASSERT_EQ(buffer->has_hdr_mdcv, 1);
-  ASSERT_EQ(buffer->has_itut_t35, 0);
+  ASSERT_EQ(buffer->itut_t35_count, 0);
   ASSERT_EQ(test.released_input_buffer, &kFrame1WithHdrCllAndHdrMdcv);
 
   ASSERT_EQ(test.frames_in_use, 1);
@@ -452,10 +456,68 @@ static void DecoderTestMetadataObu(void) {
   ASSERT_NE(buffer, NULL);
   ASSERT_EQ(buffer->has_hdr_cll, 0);
   ASSERT_EQ(buffer->has_hdr_mdcv, 0);
-  ASSERT_EQ(buffer->has_itut_t35, 1);
-  ASSERT_NE(buffer->itut_t35.payload_bytes, NULL);
-  ASSERT_NE(buffer->itut_t35.payload_size, 0);
+  ASSERT_EQ(buffer->itut_t35_count, 1);
+  ASSERT_NE(buffer->itut_t35[0].payload_bytes, NULL);
+  ASSERT_NE(buffer->itut_t35[0].payload_size, 0);
   ASSERT_EQ(test.released_input_buffer, &kFrame2WithItutT35);
+
+  ASSERT_EQ(test.frames_in_use, 2);
+  ASSERT_EQ(test.buffer_private_data, buffer->buffer_private_data);
+
+  status = Libgav1DecoderSignalEOS(test.decoder);
+  ASSERT_EQ(status, kLibgav1StatusOk);
+  ASSERT_EQ(test.frames_in_use, 0);
+
+  Libgav1DecoderDestroy(test.decoder);
+}
+
+static void DecoderTestMetadataObuMultipleItutT35(void) {
+  DecoderTest test;
+  DecoderTestInit(&test);
+  DecoderTestSetUp(&test);
+
+  Libgav1StatusCode status;
+  const Libgav1DecoderBuffer* buffer;
+
+  // Enqueue frame1 for decoding.
+  status = Libgav1DecoderEnqueueFrame(test.decoder, kFrame1WithHdrCllAndHdrMdcv,
+                                      sizeof(kFrame1WithHdrCllAndHdrMdcv), 0,
+                                      (uint8_t*)&kFrame1WithHdrCllAndHdrMdcv);
+  ASSERT_EQ(status, kLibgav1StatusOk);
+  ASSERT_EQ(test.frames_in_use, 0);
+
+  // Dequeue the output of frame1.
+  status = Libgav1DecoderDequeueFrame(test.decoder, &buffer);
+  ASSERT_EQ(status, kLibgav1StatusOk);
+  ASSERT_NE(buffer, NULL);
+  ASSERT_EQ(buffer->has_hdr_cll, 1);
+  ASSERT_EQ(buffer->has_hdr_mdcv, 1);
+  ASSERT_EQ(buffer->itut_t35_count, 0);
+  ASSERT_EQ(test.released_input_buffer, &kFrame1WithHdrCllAndHdrMdcv);
+
+  ASSERT_EQ(test.frames_in_use, 1);
+  ASSERT_EQ(test.buffer_private_data, buffer->buffer_private_data);
+
+  // Enqueue frame2 for decoding.
+  status = Libgav1DecoderEnqueueFrame(test.decoder, kFrame2WithMultipleItutT35,
+                                      sizeof(kFrame2WithMultipleItutT35), 0,
+                                      (uint8_t*)&kFrame2WithMultipleItutT35);
+  ASSERT_EQ(status, kLibgav1StatusOk);
+
+  ASSERT_EQ(test.frames_in_use, 1);
+
+  // Dequeue the output of frame2.
+  status = Libgav1DecoderDequeueFrame(test.decoder, &buffer);
+  ASSERT_EQ(status, kLibgav1StatusOk);
+  ASSERT_NE(buffer, NULL);
+  ASSERT_EQ(buffer->has_hdr_cll, 0);
+  ASSERT_EQ(buffer->has_hdr_mdcv, 0);
+  ASSERT_EQ(buffer->itut_t35_count, 2);
+  ASSERT_NE(buffer->itut_t35[0].payload_bytes, NULL);
+  ASSERT_NE(buffer->itut_t35[0].payload_size, 0);
+  ASSERT_NE(buffer->itut_t35[1].payload_bytes, NULL);
+  ASSERT_NE(buffer->itut_t35[1].payload_size, 0);
+  ASSERT_EQ(test.released_input_buffer, &kFrame2WithMultipleItutT35);
 
   ASSERT_EQ(test.frames_in_use, 2);
   ASSERT_EQ(test.buffer_private_data, buffer->buffer_private_data);
@@ -474,6 +536,7 @@ int main(void) {
   DecoderTestNonFrameParallelModeEOSBeforeDequeuingLastFrame();
   DecoderTestNonFrameParallelModeInvalidFrameAfterEOS();
   DecoderTestMetadataObu();
+  DecoderTestMetadataObuMultipleItutT35();
   fprintf(stderr, "C DecoderTest passed\n");
   return 0;
 }

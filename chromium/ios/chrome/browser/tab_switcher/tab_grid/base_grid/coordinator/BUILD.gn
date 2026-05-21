@@ -21,6 +21,8 @@ source_set("coordinator") {
     "//ios/chrome/browser/feature_engagement/model",
     "//ios/chrome/browser/menu/ui_bundled:tab_context_menu_delegate",
     "//ios/chrome/browser/shared/coordinator/chrome_coordinator",
+    "//ios/chrome/browser/shared/coordinator/scene:scene_state_header",
+    "//ios/chrome/browser/shared/coordinator/scene/state",
     "//ios/chrome/browser/shared/model/browser",
     "//ios/chrome/browser/shared/model/profile",
     "//ios/chrome/browser/shared/model/web_state_list",
@@ -39,6 +41,7 @@ source_set("coordinator") {
     "//ios/chrome/browser/tab_switcher/ui_bundled/tab_grid/transitions",
     "//ios/web/public",
     "//ui/base",
+    "//ui/strings",
   ]
 }
 
@@ -109,18 +112,6 @@ source_set("mediator") {
     "//ios/web/public",
     "//net",
     "//ui/gfx",
-  ]
-}
-
-source_set("scene_agent") {
-  sources = [
-    "tab_grid_observing.h",
-    "tab_grid_scene_agent.h",
-    "tab_grid_scene_agent.mm",
-  ]
-  deps = [
-    "//ios/chrome/browser/shared/coordinator/scene:observing_scene_agent",
-    "//ui/base",
   ]
 }
 

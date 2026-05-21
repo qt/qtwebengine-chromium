@@ -1,7 +1,7 @@
 #!/usr/bin/python3 -i
 #
-# Copyright (c) 2023-2025 The Khronos Group Inc.
-# Copyright (c) 2023-2025 Valve Corporation
+# Copyright (c) 2023-2026 The Khronos Group Inc.
+# Copyright (c) 2023-2026 Valve Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -25,14 +25,19 @@ class ErrorLocationHelperOutputGenerator(BaseGenerator):
         self.fields = set()
         self.pointer_fields = set()
 
+        # could generate "all" but currently only generate those that are are used
+        self.union_helper = {
+            'VkDescriptorMappingSourceEXT' : 'VkDescriptorMappingSourceDataEXT',
+        }
+
     def generate(self):
         self.write(f'''// *** THIS FILE IS GENERATED - DO NOT EDIT ***
             // See {os.path.basename(__file__)} for modifications
 
             /***************************************************************************
             *
-            * Copyright (c) 2023-2025 The Khronos Group Inc.
-            * Copyright (c) 2023-2025 Valve Corporation
+            * Copyright (c) 2023-2026 The Khronos Group Inc.
+            * Copyright (c) 2023-2026 Valve Corporation
             *
             * Licensed under the Apache License, Version 2.0 (the "License");
             * you may not use this file except in compliance with the License.
@@ -109,7 +114,7 @@ class ErrorLocationHelperOutputGenerator(BaseGenerator):
 
         out.append('\n')
         out.append('enum class Field {\n')
-        out.append('    Empty = 0,\n')
+        out.append('    Empty = 0,  // Field::Empty (if something tries to print it, it will be empty)\n')
         # Already alpha-sorted
         for field in self.fields:
             out.append(f'    {field},\n')
@@ -169,8 +174,13 @@ class ErrorLocationHelperOutputGenerator(BaseGenerator):
 
             // Used to help know which struct in a pNext chain is
             Struct StypeToStruct(VkStructureType stype);
-            }  // namespace vvl
+
+            // The following are helpers to get the Field for a union look up
             ''')
+        for key, value in self.union_helper.items():
+            out.append(f'vvl::Field Field_{value}({key} selector);')
+
+        out.append('\n}  // namespace vvl')
         self.write("".join(out))
 
     def generateSource(self):
@@ -211,7 +221,7 @@ const char* String(Struct structure) {
 
 const char* String(Field field) {
     static const std::string_view table[] = {
-    {"INVALID_EMPTY", 15}, // Field::Empty
+    {"", 1}, // Field::Empty
 ''')
         for field in self.fields:
             out.append(f'    {{"{field}", {len(field) + 1}}},\n')
@@ -292,7 +302,7 @@ Func FindAlias(Func func) {
 
         out.append('''
             std::string String(const Extensions& extensions) {
-                std::stringstream out;
+                std::ostringstream out;
                 for (size_t i = 0; i < extensions.size(); i++) {
                     out << String(extensions[i]);
                     if (i + 1 != extensions.size()) {
@@ -312,7 +322,7 @@ Func FindAlias(Func func) {
             }
 
             std::string String(const Requirements& requirements) {
-                std::stringstream out;
+                std::ostringstream out;
                 for (size_t i = 0; i < requirements.size(); i++) {
                     out << String(requirements[i]);
                     if (i + 1 != requirements.size()) {
@@ -322,7 +332,22 @@ Func FindAlias(Func func) {
                 return out.str();
             }
 
-        }  // namespace vvl
         ''')
 
+        for key, value in self.union_helper.items():
+            out.append(f'vvl::Field Field_{value}({key} selector) {{')
+            out.append('switch (selector) {')
+            union_members = self.vk.structs[value].members
+            for member in union_members:
+                out.append(f'  case {member.selection[0]}:')
+                out.append(f'     return vvl::Field::{member.name};')
+            out.append('''
+                            default:
+                                break;
+                        }
+                        return vvl::Field::Empty;
+                    }\n
+                    ''')
+
+        out.append('\n}  // namespace vvl')
         self.write("".join(out))

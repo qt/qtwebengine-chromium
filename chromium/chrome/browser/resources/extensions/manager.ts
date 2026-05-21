@@ -22,11 +22,10 @@ import './site_permissions/site_permissions.js';
 import './site_permissions/site_permissions_by_site.js';
 import './toolbar.js';
 
-import {CrContainerShadowMixinLit} from 'chrome://resources/cr_elements/cr_container_shadow_mixin_lit.js';
 import {getToastManager} from 'chrome://resources/cr_elements/cr_toast/cr_toast_manager.js';
 import type {CrViewManagerElement} from 'chrome://resources/cr_elements/cr_view_manager/cr_view_manager.js';
 import {I18nMixinLit} from 'chrome://resources/cr_elements/i18n_mixin_lit.js';
-import {assert, assertNotReached} from 'chrome://resources/js/assert.js';
+import {assert, assertNotReached, assertNotReachedCase} from 'chrome://resources/js/assert.js';
 import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
 import {PromiseResolver} from 'chrome://resources/js/promise_resolver.js';
 import {CrLitElement} from 'chrome://resources/lit/v3_0/lit.rollup.js';
@@ -80,16 +79,14 @@ declare global {
 
 export interface ExtensionsManagerElement {
   $: {
+    scrollableShadow: HTMLElement,
     toolbar: ExtensionsToolbarElement,
     viewManager: CrViewManagerElement,
     'items-list': ExtensionsItemListElement,
   };
 }
 
-// TODO(crbug.com/40270029): Always show a top shadow for the DETAILS, ERRORS and
-// SITE_PERMISSIONS_ALL_SITES pages.
-const ExtensionsManagerElementBase =
-    I18nMixinLit(CrContainerShadowMixinLit(CrLitElement));
+const ExtensionsManagerElementBase = I18nMixinLit(CrLitElement);
 
 export class ExtensionsManagerElement extends ExtensionsManagerElementBase {
   static get is() {
@@ -402,7 +399,7 @@ export class ExtensionsManagerElement extends ExtensionsManagerElementBase {
       case ExtensionType.THEME:
         assertNotReached('Don\'t send themes to the chrome://extensions page');
       default:
-        assertNotReached();
+        assertNotReachedCase(item.type);
     }
   }
 
@@ -661,6 +658,11 @@ export class ExtensionsManagerElement extends ExtensionsManagerElementBase {
         `${loadTimeData.getString('title')} - ${this.detailViewItem_!.name}` :
         loadTimeData.getString('title');
     this.currentPage_ = newPage;
+
+    this.$.scrollableShadow.classList.toggle(
+        'force-on',
+        toPage === Page.DETAILS || toPage === Page.ERRORS ||
+            toPage === Page.SITE_PERMISSIONS_ALL_SITES);
   }
 
   /**

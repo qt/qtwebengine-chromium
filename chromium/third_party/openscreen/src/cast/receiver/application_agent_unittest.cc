@@ -244,7 +244,7 @@ class ApplicationAgentTest : public ::testing::Test {
   FakeCastSocketPair socket_pair_;
   StrictMock<FakeApplication> idle_app_{"E8C28D3C", "Backdrop"};
   TestCredentialsProvider creds_;
-  ApplicationAgent agent_{task_runner_, creds_};
+  ApplicationAgent agent_{task_runner_, creds_, "fakeId"};
 };
 
 TEST_F(ApplicationAgentTest, JustConnectsWithoutDoingAnything) {}
@@ -484,6 +484,33 @@ TEST_F(ApplicationAgentTest, LaunchesApp_PassesMessages_ThenStopsApp) {
             message, kPlatformReceiverId, kBroadcastId, kReceiverNamespace);
         EXPECT_EQ(json::Parse(kRunningAppReceiverStatus).value(), payload);
       });
+
+  EXPECT_CALL(*sender_inbound(), OnMessage(_, _))
+      .InSequence(phase1)
+      .WillOnce([&](CastSocket*, CastMessage message) {
+        constexpr char kExpectedJson[] = R"({
+          "type":"LAUNCH_STATUS",
+          "launchRequestId":17,
+          "status":"USER_ALLOWED"
+        })";
+        const Json::Value payload =
+            ValidateAndParseMessage(message, kPlatformReceiverId,
+                                    kPlatformSenderId, kReceiverNamespace);
+        EXPECT_EQ(json::Parse(kExpectedJson).value(), payload);
+      });
+
+  EXPECT_CALL(*sender_inbound(), OnMessage(_, _))
+      .InSequence(phase1)
+      .WillOnce([&](CastSocket*, CastMessage message) {
+        const Json::Value payload =
+            ValidateAndParseMessage(message, kPlatformReceiverId,
+                                    kPlatformSenderId, kReceiverNamespace);
+        ErrorOr<Json::Value> status = json::Parse(kRunningAppReceiverStatus);
+        Json::Value expected = status.value();
+        expected["requestId"] = 17;
+        EXPECT_EQ(expected, payload);
+      });
+
   auto launch_result = sender_outbound()->Send(MakeCastMessage(
       kPlatformSenderId, kPlatformReceiverId, kReceiverNamespace, R"({
         "requestId":17,
@@ -604,14 +631,23 @@ TEST_F(ApplicationAgentTest, AllowsVirtualConnectionsToApp) {
         port->SetClient(some_app);
       });
   std::string transport_id;
+  Sequence sequence;
   EXPECT_CALL(*sender_inbound(), OnMessage(_, _))
-      .WillRepeatedly([&](CastSocket*, CastMessage message) {
+      .InSequence(sequence)
+      .WillOnce([&](CastSocket*, CastMessage message) {
         const Json::Value payload = ValidateAndParseMessage(
             message, kPlatformReceiverId, kBroadcastId, kReceiverNamespace);
         if (payload["type"].asString() == "RECEIVER_STATUS") {
           transport_id =
               payload["status"]["applications"][0]["transportId"].asString();
         }
+      });
+  EXPECT_CALL(*sender_inbound(), OnMessage(_, _))
+      .InSequence(sequence)
+      .WillRepeatedly([&](CastSocket*, CastMessage message) {
+        const Json::Value payload =
+            ValidateAndParseMessage(message, kPlatformReceiverId,
+                                    kPlatformSenderId, kReceiverNamespace);
       });
   auto launch_result = sender_outbound()->Send(MakeCastMessage(
       kPlatformSenderId, kPlatformReceiverId, kReceiverNamespace, R"({

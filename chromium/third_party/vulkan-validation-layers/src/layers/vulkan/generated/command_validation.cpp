@@ -3,8 +3,8 @@
 
 /***************************************************************************
  *
- * Copyright (c) 2021-2025 Valve Corporation
- * Copyright (c) 2021-2025 LunarG, Inc.
+ * Copyright (c) 2021-2026 Valve Corporation
+ * Copyright (c) 2021-2026 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -1434,6 +1434,33 @@ static const vvl::unordered_map<Func, CommandValidationInfo> kCommandValidationT
     "VUID-vkCmdDispatchGraphIndirectCountAMDX-suspended",
     false, true, false,
 }},
+{Func::vkCmdBindSamplerHeapEXT, {
+    "VUID-vkCmdBindSamplerHeapEXT-commandBuffer-recording",
+    nullptr,
+    VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdBindSamplerHeapEXT-commandBuffer-cmdpool",
+    CommandScope::Both, kVUIDUndefined,
+    CommandScope::Outside, "VUID-vkCmdBindSamplerHeapEXT-videocoding",
+    kVUIDUndefined,
+    true, false, false,
+}},
+{Func::vkCmdBindResourceHeapEXT, {
+    "VUID-vkCmdBindResourceHeapEXT-commandBuffer-recording",
+    nullptr,
+    VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdBindResourceHeapEXT-commandBuffer-cmdpool",
+    CommandScope::Both, kVUIDUndefined,
+    CommandScope::Outside, "VUID-vkCmdBindResourceHeapEXT-videocoding",
+    kVUIDUndefined,
+    true, false, false,
+}},
+{Func::vkCmdPushDataEXT, {
+    "VUID-vkCmdPushDataEXT-commandBuffer-recording",
+    nullptr,
+    VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdPushDataEXT-commandBuffer-cmdpool",
+    CommandScope::Both, kVUIDUndefined,
+    CommandScope::Outside, "VUID-vkCmdPushDataEXT-videocoding",
+    kVUIDUndefined,
+    true, false, false,
+}},
 {Func::vkCmdSetSampleLocationsEXT, {
     "VUID-vkCmdSetSampleLocationsEXT-commandBuffer-recording",
     nullptr,
@@ -2020,12 +2047,12 @@ static const vvl::unordered_map<Func, CommandValidationInfo> kCommandValidationT
     false, true, false,
 }},
 {Func::vkCmdDecompressMemoryIndirectCountNV, {
-    "UNASSIGNED-vkCmdDecompressMemoryIndirectCountNV-commandBuffer-recording",
+    "VUID-vkCmdDecompressMemoryIndirectCountNV-commandBuffer-recording",
     nullptr,
-    VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT, "UNASSIGNED-vkCmdDecompressMemoryIndirectCountNV-commandBuffer-cmdpool",
-    CommandScope::Outside, "UNASSIGNED-vkCmdDecompressMemoryIndirectCountNV-renderpass",
-    CommandScope::Outside, "UNASSIGNED-vkCmdDecompressMemoryIndirectCountNV-videocoding",
-    "UNASSIGNED-vkCmdDecompressMemoryIndirectCountNV-suspended",
+    VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdDecompressMemoryIndirectCountNV-commandBuffer-cmdpool",
+    CommandScope::Outside, "VUID-vkCmdDecompressMemoryIndirectCountNV-renderpass",
+    CommandScope::Outside, "VUID-vkCmdDecompressMemoryIndirectCountNV-videocoding",
+    "VUID-vkCmdDecompressMemoryIndirectCountNV-suspended",
     false, true, false,
 }},
 {Func::vkCmdUpdatePipelineIndirectBufferNV, {
@@ -2459,6 +2486,15 @@ static const vvl::unordered_map<Func, CommandValidationInfo> kCommandValidationT
     CommandScope::Outside, "VUID-vkCmdBeginCustomResolveEXT-videocoding",
     "VUID-vkCmdBeginCustomResolveEXT-suspended",
     false, true, false,
+}},
+{Func::vkCmdSetComputeOccupancyPriorityNV, {
+    "VUID-vkCmdSetComputeOccupancyPriorityNV-commandBuffer-recording",
+    nullptr,
+    VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdSetComputeOccupancyPriorityNV-commandBuffer-cmdpool",
+    CommandScope::Both, kVUIDUndefined,
+    CommandScope::Outside, "VUID-vkCmdSetComputeOccupancyPriorityNV-videocoding",
+    kVUIDUndefined,
+    true, false, false,
 }},
 {Func::vkCmdBuildAccelerationStructuresKHR, {
     "VUID-vkCmdBuildAccelerationStructuresKHR-commandBuffer-recording",

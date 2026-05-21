@@ -116,6 +116,15 @@ class CC_EXPORT ScopedPauseRendering {
   base::WeakPtr<LayerTreeHost> host_;
 };
 
+class CC_EXPORT ScopedRequestHighFramerate {
+ public:
+  explicit ScopedRequestHighFramerate(LayerTreeHost* host);
+  ~ScopedRequestHighFramerate();
+
+ private:
+  base::WeakPtr<LayerTreeHost> host_;
+};
+
 // A scoped object to keep a `viz::Surface` referenced, such that a
 // `CopyOutputRequest` can be made against it, even after the original
 // `SurfaceLayer` is destroyed.
@@ -369,7 +378,11 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
                              PaintHoldingReason reason,
                              std::optional<PaintHoldingCommitTrigger> trigger);
 
+  // Several clients may call this independently. In this case, there is
+  // internal reference counting so that the the state is only exited when the
+  // last client removes its request.
   void SetShouldThrottleFrameRate(bool flag);
+  std::unique_ptr<ScopedRequestHighFramerate> RequestHighFramerate();
 
   // Returns whether there are any outstanding ScopedDeferMainFrameUpdate,
   // though commits may be deferred also when the local_surface_id_from_parent()
@@ -377,6 +390,10 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
   bool defer_main_frame_update() const {
     DCHECK(IsMainThread());
     return defer_main_frame_update_count_;
+  }
+
+  bool force_commit_for_propagation() const {
+    return force_commit_for_propagation_;
   }
 
   // Synchronously performs a complete main frame update, commit and compositor
@@ -396,8 +413,8 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
 
   // Requests a main frame if a composited animation changes a draw property.
   void RequestMainFrameOnCompositorAnimation(
-      PropertyChangeForcesCommitCriteria
-          property_change_forces_commit_criteria);
+      PropertyChangeForcesCommitCriteria criteria,
+      bool force_propagation);
 
   // Input Handling ---------------------------------------------
 
@@ -424,11 +441,11 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
 
   // Returns the id of the benchmark on success, 0 otherwise.
   int ScheduleMicroBenchmark(const std::string& benchmark_name,
-                             base::Value::Dict settings,
+                             base::DictValue settings,
                              MicroBenchmark::DoneCallback callback);
 
   // Returns true if the message was successfully delivered and handled.
-  bool SendMessageToMicroBenchmark(int id, base::Value::Dict message);
+  bool SendMessageToMicroBenchmark(int id, base::DictValue message);
 
   // When the main thread informs the compositor thread that it is ready to
   // commit, generally it would remain blocked until the main thread state is
@@ -558,7 +575,6 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
 
   void SetBrowserControlsParams(const BrowserControlsParams& params);
   void SetBrowserControlsShownRatio(float top_ratio, float bottom_ratio);
-  void SetLoadProgress(float progress);
 
   void SetOverscrollBehavior(const OverscrollBehavior& overscroll_behavior);
   const OverscrollBehavior& overscroll_behavior() const {
@@ -665,6 +681,13 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
   // Requests that we force send RenderFrameMetadata with the next frame.
   void RequestForceSendMetadata() {
     pending_commit_state()->force_send_metadata_request = true;
+  }
+
+  // Requests a cap on CPU performance during idle periods. Forwarded
+  // to ADPF on Android, no-op on other platforms.
+  void RequestEfficientScheduling(bool prefer_efficient_scheduling) {
+    pending_commit_state()->prefer_efficient_scheduling =
+        prefer_efficient_scheduling;
   }
 
   // Returns the state of |force_send_metadata_request_| and resets the
@@ -1013,6 +1036,7 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
   friend class ScopedDeferMainFrameUpdate;
   friend class ScopedPauseRendering;
   friend class ScopedKeepSurfaceAlive;
+  friend class ScopedRequestHighFramerate;
 
   // This is the number of consecutive frames in which we want the content to be
   // free of slow-paths before toggling the flag.
@@ -1050,6 +1074,8 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
       const gfx::Vector2dF& delta,
       ScrollSourceType type,
       const std::optional<TargetSnapAreaElementIds>&);
+
+  void SetRequestHighFramerate(bool flag);
 
   const CompositorMode compositor_mode_;
 
@@ -1089,6 +1115,10 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
   // Track when we're inside a main frame to see if compositor is being
   // destroyed midway which causes a crash. crbug.com/654672
   bool inside_main_frame_ = false;
+
+  // Set to force a commit during BeginMainFrame even if there are no actual
+  // rendering changes, to ensure the bits in CommitState are propagated.
+  bool force_commit_for_propagation_ = true;
 
   // State cached until impl side is initialized.
   raw_ptr<TaskGraphRunner> task_graph_runner_;

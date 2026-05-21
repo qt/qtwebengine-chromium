@@ -55,6 +55,12 @@ class SocketAddressPosix {
   IPEndpoint endpoint_;
 };
 
+IPAddress GetIPAddressFromSockAddr(const struct sockaddr_in& sa);
+IPAddress GetIPAddressFromSockAddr(const struct sockaddr_in6& sa);
+
+struct sockaddr_in ToSockAddrIn(const IPEndpoint& endpoint);
+struct sockaddr_in6 ToSockAddrIn6(const IPEndpoint& endpoint);
+
 }  // namespace openscreen
 
 #endif  // PLATFORM_IMPL_SOCKET_ADDRESS_POSIX_H_

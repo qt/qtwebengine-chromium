@@ -266,6 +266,11 @@ bool GetWebGLContext(const egl::AttributeMap &attribs)
     return (attribs.get(EGL_CONTEXT_WEBGL_COMPATIBILITY_ANGLE, EGL_FALSE) == EGL_TRUE);
 }
 
+bool GetHardenedContext(const egl::AttributeMap &attribs)
+{
+    return (attribs.get(EGL_CONTEXT_HARDENED_ANGLE, EGL_FALSE) == EGL_TRUE);
+}
+
 Version GetClientVersion(egl::Display *display, const egl::AttributeMap &attribs)
 {
     const Version requestedVersion(static_cast<uint8_t>(GetClientMajorVersion(attribs)),
@@ -710,6 +715,7 @@ Context::Context(egl::Display *display,
       mCurrentReadSurface(static_cast<egl::Surface *>(EGL_NO_SURFACE)),
       mDisplay(display),
       mWebGLContext(GetWebGLContext(attribs)),
+      mHardenedContext(GetHardenedContext(attribs)),
       mBufferAccessValidationEnabled(false),
       mRequiresRobustBehavior(false),
       mExtensionsEnabled(GetExtensionsEnabled(attribs, mWebGLContext)),
@@ -723,7 +729,8 @@ Context::Context(egl::Display *display,
       mFrameCapture(new angle::FrameCapture),
       mRefCount(0),
       mOverlay(mImplementation.get()),
-      mIsDestroyed(false)
+      mIsDestroyed(false),
+      mDestroyedManagers(false)
 {
     for (angle::SubjectIndex uboIndex = kUniformBuffer0SubjectIndex;
          uboIndex < kUniformBufferMaxSubjectIndex; ++uboIndex)
@@ -1022,19 +1029,40 @@ egl::Error Context::onDestroy(const egl::Display *display)
 
 void Context::releaseSharedObjects()
 {
+    mDestroyedManagers = true;
+
     mState.mBufferManager->release(this);
+    mState.mBufferManager = nullptr;
+
     // mProgramPipelineManager must be before mShaderProgramManager to give each
     // PPO the chance to release any references they have to the Programs that
     // are bound to them before the Programs are released()'ed.
     mState.mProgramPipelineManager->release(this);
+    mState.mProgramPipelineManager = nullptr;
+
     mState.mShaderProgramManager->release(this);
+    mState.mShaderProgramManager = nullptr;
+
     mState.mTextureManager->release(this);
+    mState.mTextureManager = nullptr;
+
     mState.mRenderbufferManager->release(this);
+    mState.mRenderbufferManager = nullptr;
+
     mState.mSamplerManager->release(this);
+    mState.mSamplerManager = nullptr;
+
     mState.mSyncManager->release(this);
+    mState.mSyncManager = nullptr;
+
     mState.mFramebufferManager->release(this);
+    mState.mFramebufferManager = nullptr;
+
     mState.mMemoryObjectManager->release(this);
+    mState.mMemoryObjectManager = nullptr;
+
     mState.mSemaphoreManager->release(this);
+    mState.mSemaphoreManager = nullptr;
 }
 
 Context::~Context() {}
@@ -1750,7 +1778,7 @@ void Context::getQueryiv(QueryType target, GLenum pname, GLint *params)
 
 void Context::getQueryivRobust(QueryType target,
                                GLenum pname,
-                               GLsizei bufSize,
+                               GLsizei paramCount,
                                GLsizei *length,
                                GLint *params)
 {
@@ -1774,7 +1802,7 @@ void Context::getQueryObjectiv(QueryID id, GLenum pname, GLint *params)
 
 void Context::getQueryObjectivRobust(QueryID id,
                                      GLenum pname,
-                                     GLsizei bufSize,
+                                     GLsizei paramCount,
                                      GLsizei *length,
                                      GLint *params)
 {
@@ -1788,7 +1816,7 @@ void Context::getQueryObjectuiv(QueryID id, GLenum pname, GLuint *params)
 
 void Context::getQueryObjectuivRobust(QueryID id,
                                       GLenum pname,
-                                      GLsizei bufSize,
+                                      GLsizei paramCount,
                                       GLsizei *length,
                                       GLuint *params)
 {
@@ -1802,7 +1830,7 @@ void Context::getQueryObjecti64v(QueryID id, GLenum pname, GLint64 *params)
 
 void Context::getQueryObjecti64vRobust(QueryID id,
                                        GLenum pname,
-                                       GLsizei bufSize,
+                                       GLsizei paramCount,
                                        GLsizei *length,
                                        GLint64 *params)
 {
@@ -1816,7 +1844,7 @@ void Context::getQueryObjectui64v(QueryID id, GLenum pname, GLuint64 *params)
 
 void Context::getQueryObjectui64vRobust(QueryID id,
                                         GLenum pname,
-                                        GLsizei bufSize,
+                                        GLsizei paramCount,
                                         GLsizei *length,
                                         GLuint64 *params)
 {
@@ -2562,23 +2590,24 @@ void Context::getPointerv(GLenum pname, void **params)
     mState.getPointerv(this, pname, params);
 }
 
-void Context::getPointervRobustANGLERobust(GLenum pname,
-                                           GLsizei bufSize,
-                                           GLsizei *length,
-                                           void **params)
+void Context::getIntegeri_v(GLenum target, GLuint index, GLint *data)
 {
-    UNIMPLEMENTED();
+    getIntegeri_vRobust(target, index, 0, nullptr, data);
 }
 
-void Context::getIntegeri_v(GLenum target, GLuint index, GLint *data)
+void Context::getIntegeri_vRobust(GLenum target,
+                                  GLuint index,
+                                  GLsizei paramCount,
+                                  GLsizei *length,
+                                  GLint *data)
 {
     // Queries about context capabilities and maximums are answered by Context.
     // Queries about current GL state values are answered by State.
 
     GLenum nativeType;
     unsigned int numParams;
-    bool queryStatus = getIndexedQueryParameterInfo(target, &nativeType, &numParams);
-    ASSERT(queryStatus);
+    const bool paramFound = getIndexedQueryParameterInfo(target, &nativeType, &numParams);
+    ASSERT(paramFound);
 
     if (nativeType == GL_INT)
     {
@@ -2593,33 +2622,38 @@ void Context::getIntegeri_v(GLenum target, GLuint index, GLint *data)
                 *data = mState.getCaps().maxComputeWorkGroupSize[index];
                 break;
             default:
-                mState.getIntegeri_v(this, target, index, data);
+                mState.getIntegeri_v(target, index, data);
         }
     }
     else
     {
         CastIndexedStateValues(this, nativeType, target, index, numParams, data);
     }
-}
 
-void Context::getIntegeri_vRobust(GLenum target,
-                                  GLuint index,
-                                  GLsizei bufSize,
-                                  GLsizei *length,
-                                  GLint *data)
-{
-    getIntegeri_v(target, index, data);
+    if (length != nullptr)
+    {
+        *length = numParams;
+    }
 }
 
 void Context::getInteger64i_v(GLenum target, GLuint index, GLint64 *data)
+{
+    getInteger64i_vRobust(target, index, 0, nullptr, data);
+}
+
+void Context::getInteger64i_vRobust(GLenum target,
+                                    GLuint index,
+                                    GLsizei paramCount,
+                                    GLsizei *length,
+                                    GLint64 *data)
 {
     // Queries about context capabilities and maximums are answered by Context.
     // Queries about current GL state values are answered by State.
 
     GLenum nativeType;
     unsigned int numParams;
-    bool queryStatus = getIndexedQueryParameterInfo(target, &nativeType, &numParams);
-    ASSERT(queryStatus);
+    const bool paramFound = getIndexedQueryParameterInfo(target, &nativeType, &numParams);
+    ASSERT(paramFound);
 
     if (nativeType == GL_INT_64_ANGLEX)
     {
@@ -2629,15 +2663,11 @@ void Context::getInteger64i_v(GLenum target, GLuint index, GLint64 *data)
     {
         CastIndexedStateValues(this, nativeType, target, index, numParams, data);
     }
-}
 
-void Context::getInteger64i_vRobust(GLenum target,
-                                    GLuint index,
-                                    GLsizei bufSize,
-                                    GLsizei *length,
-                                    GLint64 *data)
-{
-    getInteger64i_v(target, index, data);
+    if (length != nullptr)
+    {
+        *length = numParams;
+    }
 }
 
 void Context::getBooleani_v(GLenum target, GLuint index, GLboolean *data)
@@ -2647,8 +2677,8 @@ void Context::getBooleani_v(GLenum target, GLuint index, GLboolean *data)
 
     GLenum nativeType;
     unsigned int numParams;
-    bool queryStatus = getIndexedQueryParameterInfo(target, &nativeType, &numParams);
-    ASSERT(queryStatus);
+    const bool paramFound = getIndexedQueryParameterInfo(target, &nativeType, &numParams);
+    ASSERT(paramFound);
 
     if (nativeType == GL_BOOL)
     {
@@ -2660,15 +2690,6 @@ void Context::getBooleani_v(GLenum target, GLuint index, GLboolean *data)
     }
 }
 
-void Context::getBooleani_vRobust(GLenum target,
-                                  GLuint index,
-                                  GLsizei bufSize,
-                                  GLsizei *length,
-                                  GLboolean *data)
-{
-    getBooleani_v(target, index, data);
-}
-
 void Context::getBufferParameteriv(BufferBinding target, GLenum pname, GLint *params)
 {
     Buffer *buffer = mState.getTargetBuffer(target);
@@ -2677,7 +2698,7 @@ void Context::getBufferParameteriv(BufferBinding target, GLenum pname, GLint *pa
 
 void Context::getBufferParameterivRobust(BufferBinding target,
                                          GLenum pname,
-                                         GLsizei bufSize,
+                                         GLsizei paramCount,
                                          GLsizei *length,
                                          GLint *params)
 {
@@ -2696,7 +2717,7 @@ void Context::getFramebufferAttachmentParameteriv(GLenum target,
 void Context::getFramebufferAttachmentParameterivRobust(GLenum target,
                                                         GLenum attachment,
                                                         GLenum pname,
-                                                        GLsizei bufSize,
+                                                        GLsizei paramCount,
                                                         GLsizei *length,
                                                         GLint *params)
 {
@@ -2711,7 +2732,7 @@ void Context::getRenderbufferParameteriv(GLenum target, GLenum pname, GLint *par
 
 void Context::getRenderbufferParameterivRobust(GLenum target,
                                                GLenum pname,
-                                               GLsizei bufSize,
+                                               GLsizei paramCount,
                                                GLsizei *length,
                                                GLint *params)
 {
@@ -2748,7 +2769,7 @@ void Context::getTexParameterfv(TextureType target, GLenum pname, GLfloat *param
 
 void Context::getTexParameterfvRobust(TextureType target,
                                       GLenum pname,
-                                      GLsizei bufSize,
+                                      GLsizei paramCount,
                                       GLsizei *length,
                                       GLfloat *params)
 {
@@ -2775,29 +2796,11 @@ void Context::getTexParameterIuiv(TextureType target, GLenum pname, GLuint *para
 
 void Context::getTexParameterivRobust(TextureType target,
                                       GLenum pname,
-                                      GLsizei bufSize,
+                                      GLsizei paramCount,
                                       GLsizei *length,
                                       GLint *params)
 {
     getTexParameteriv(target, pname, params);
-}
-
-void Context::getTexParameterIivRobust(TextureType target,
-                                       GLenum pname,
-                                       GLsizei bufSize,
-                                       GLsizei *length,
-                                       GLint *params)
-{
-    UNIMPLEMENTED();
-}
-
-void Context::getTexParameterIuivRobust(TextureType target,
-                                        GLenum pname,
-                                        GLsizei bufSize,
-                                        GLsizei *length,
-                                        GLuint *params)
-{
-    UNIMPLEMENTED();
 }
 
 void Context::getTexLevelParameteriv(TextureTarget target, GLint level, GLenum pname, GLint *params)
@@ -2809,7 +2812,7 @@ void Context::getTexLevelParameteriv(TextureTarget target, GLint level, GLenum p
 void Context::getTexLevelParameterivRobust(TextureTarget target,
                                            GLint level,
                                            GLenum pname,
-                                           GLsizei bufSize,
+                                           GLsizei paramCount,
                                            GLsizei *length,
                                            GLint *params)
 {
@@ -2828,7 +2831,7 @@ void Context::getTexLevelParameterfv(TextureTarget target,
 void Context::getTexLevelParameterfvRobust(TextureTarget target,
                                            GLint level,
                                            GLenum pname,
-                                           GLsizei bufSize,
+                                           GLsizei paramCount,
                                            GLsizei *length,
                                            GLfloat *params)
 {
@@ -2849,7 +2852,7 @@ void Context::texParameterfv(TextureType target, GLenum pname, const GLfloat *pa
 
 void Context::texParameterfvRobust(TextureType target,
                                    GLenum pname,
-                                   GLsizei bufSize,
+                                   GLsizei paramCount,
                                    const GLfloat *params)
 {
     texParameterfv(target, pname, params);
@@ -2888,26 +2891,10 @@ void Context::texParameterIuiv(TextureType target, GLenum pname, const GLuint *p
 
 void Context::texParameterivRobust(TextureType target,
                                    GLenum pname,
-                                   GLsizei bufSize,
+                                   GLsizei paramCount,
                                    const GLint *params)
 {
     texParameteriv(target, pname, params);
-}
-
-void Context::texParameterIivRobust(TextureType target,
-                                    GLenum pname,
-                                    GLsizei bufSize,
-                                    const GLint *params)
-{
-    UNIMPLEMENTED();
-}
-
-void Context::texParameterIuivRobust(TextureType target,
-                                     GLenum pname,
-                                     GLsizei bufSize,
-                                     const GLuint *params)
-{
-    UNIMPLEMENTED();
 }
 
 void Context::drawArraysInstanced(PrimitiveMode mode,
@@ -3077,6 +3064,7 @@ void Context::insertEventMarker(GLsizei length, const char *marker)
 
 void Context::pushGroupMarker(GLsizei length, const char *marker)
 {
+    ASSERT(mState.getGroupMarkerCount() < getCaps().maxDebugGroupStackDepth);
     if (length < 0)
     {
         return;  // no-op, not an error
@@ -3093,11 +3081,18 @@ void Context::pushGroupMarker(GLsizei length, const char *marker)
         ANGLE_CONTEXT_TRY(
             mImplementation->pushGroupMarker(GetMarkerLength(length, marker), marker));
     }
+    mState.incrementGroupMarkers();
 }
 
 void Context::popGroupMarker()
 {
+    // According to the spec, if there is no group marker to pop, the pop command should be ignored.
+    if (mState.getGroupMarkerCount() == 0)
+    {
+        return;
+    }
     ANGLE_CONTEXT_TRY(mImplementation->popGroupMarker());
+    mState.decrementGroupMarkers();
 }
 
 void Context::bindUniformLocation(ShaderProgramID program,
@@ -3142,12 +3137,12 @@ void Context::getProgramResourceiv(ShaderProgramID program,
                                    GLuint index,
                                    GLsizei propCount,
                                    const GLenum *props,
-                                   GLsizei bufSize,
+                                   GLsizei count,
                                    GLsizei *length,
                                    GLint *params)
 {
     const Program *programObject = getProgramResolveLink(program);
-    QueryProgramResourceiv(programObject, programInterface, {index}, propCount, props, bufSize,
+    QueryProgramResourceiv(programObject, programInterface, {index}, propCount, props, count,
                            length, params);
 }
 
@@ -3158,16 +3153,6 @@ void Context::getProgramInterfaceiv(ShaderProgramID program,
 {
     const Program *programObject = getProgramResolveLink(program);
     QueryProgramInterfaceiv(programObject, programInterface, pname, params);
-}
-
-void Context::getProgramInterfaceivRobust(ShaderProgramID program,
-                                          GLenum programInterface,
-                                          GLenum pname,
-                                          GLsizei bufSize,
-                                          GLsizei *length,
-                                          GLint *params)
-{
-    UNIMPLEMENTED();
 }
 
 void Context::handleError(GLenum errorCode,
@@ -3394,26 +3379,10 @@ void Context::samplerParameterIuiv(SamplerID sampler, GLenum pname, const GLuint
 
 void Context::samplerParameterivRobust(SamplerID sampler,
                                        GLenum pname,
-                                       GLsizei bufSize,
+                                       GLsizei paramCount,
                                        const GLint *param)
 {
     samplerParameteriv(sampler, pname, param);
-}
-
-void Context::samplerParameterIivRobust(SamplerID sampler,
-                                        GLenum pname,
-                                        GLsizei bufSize,
-                                        const GLint *param)
-{
-    UNIMPLEMENTED();
-}
-
-void Context::samplerParameterIuivRobust(SamplerID sampler,
-                                         GLenum pname,
-                                         GLsizei bufSize,
-                                         const GLuint *param)
-{
-    UNIMPLEMENTED();
 }
 
 void Context::samplerParameterf(SamplerID sampler, GLenum pname, GLfloat param)
@@ -3432,7 +3401,7 @@ void Context::samplerParameterfv(SamplerID sampler, GLenum pname, const GLfloat 
 
 void Context::samplerParameterfvRobust(SamplerID sampler,
                                        GLenum pname,
-                                       GLsizei bufSize,
+                                       GLsizei paramCount,
                                        const GLfloat *param)
 {
     samplerParameterfv(sampler, pname, param);
@@ -3461,29 +3430,11 @@ void Context::getSamplerParameterIuiv(SamplerID sampler, GLenum pname, GLuint *p
 
 void Context::getSamplerParameterivRobust(SamplerID sampler,
                                           GLenum pname,
-                                          GLsizei bufSize,
+                                          GLsizei paramCount,
                                           GLsizei *length,
                                           GLint *params)
 {
     getSamplerParameteriv(sampler, pname, params);
-}
-
-void Context::getSamplerParameterIivRobust(SamplerID sampler,
-                                           GLenum pname,
-                                           GLsizei bufSize,
-                                           GLsizei *length,
-                                           GLint *params)
-{
-    UNIMPLEMENTED();
-}
-
-void Context::getSamplerParameterIuivRobust(SamplerID sampler,
-                                            GLenum pname,
-                                            GLsizei bufSize,
-                                            GLsizei *length,
-                                            GLuint *params)
-{
-    UNIMPLEMENTED();
 }
 
 void Context::getSamplerParameterfv(SamplerID sampler, GLenum pname, GLfloat *params)
@@ -3495,7 +3446,7 @@ void Context::getSamplerParameterfv(SamplerID sampler, GLenum pname, GLfloat *pa
 
 void Context::getSamplerParameterfvRobust(SamplerID sampler,
                                           GLenum pname,
-                                          GLsizei bufSize,
+                                          GLsizei paramCount,
                                           GLsizei *length,
                                           GLfloat *params)
 {
@@ -3773,8 +3724,6 @@ void Context::setExtensionEnabled(const char *name, bool enabled)
             };
             enableIfRequestable("GL_OES_draw_buffers_indexed");
             enableIfRequestable("GL_EXT_draw_buffers_indexed");
-            enableIfRequestable("GL_EXT_color_buffer_float");
-            enableIfRequestable("GL_EXT_color_buffer_half_float");
             enableIfRequestable("GL_EXT_shader_framebuffer_fetch_non_coherent");
             enableIfRequestable("GL_ANGLE_shader_pixel_local_storage_coherent");
             enableIfRequestable("GL_ANGLE_shader_pixel_local_storage");
@@ -5135,21 +5084,6 @@ void Context::readPixelsRobust(GLint x,
     readPixels(x, y, width, height, format, type, pixels);
 }
 
-void Context::readnPixelsRobust(GLint x,
-                                GLint y,
-                                GLsizei width,
-                                GLsizei height,
-                                GLenum format,
-                                GLenum type,
-                                GLsizei bufSize,
-                                GLsizei *length,
-                                GLsizei *columns,
-                                GLsizei *rows,
-                                void *data)
-{
-    readPixels(x, y, width, height, format, type, data);
-}
-
 void Context::copyTexImage2D(TextureTarget target,
                              GLint level,
                              GLenum internalformat,
@@ -5750,7 +5684,7 @@ void Context::compressedTexImage2DRobust(TextureTarget target,
                                          GLsizei height,
                                          GLint border,
                                          GLsizei imageSize,
-                                         GLsizei dataSize,
+                                         GLsizei bufSize,
                                          const GLvoid *data)
 {
     compressedTexImage2D(target, level, internalformat, width, height, border, imageSize, data);
@@ -5785,7 +5719,7 @@ void Context::compressedTexImage3DRobust(TextureTarget target,
                                          GLsizei depth,
                                          GLint border,
                                          GLsizei imageSize,
-                                         GLsizei dataSize,
+                                         GLsizei bufSize,
                                          const GLvoid *data)
 {
     compressedTexImage3D(target, level, internalformat, width, height, depth, border, imageSize,
@@ -5821,7 +5755,7 @@ void Context::compressedTexSubImage2DRobust(TextureTarget target,
                                             GLsizei height,
                                             GLenum format,
                                             GLsizei imageSize,
-                                            GLsizei dataSize,
+                                            GLsizei bufSize,
                                             const GLvoid *data)
 {
     compressedTexSubImage2D(target, level, xoffset, yoffset, width, height, format, imageSize,
@@ -5867,7 +5801,7 @@ void Context::compressedTexSubImage3DRobust(TextureTarget target,
                                             GLsizei depth,
                                             GLenum format,
                                             GLsizei imageSize,
-                                            GLsizei dataSize,
+                                            GLsizei bufSize,
                                             const GLvoid *data)
 {
     compressedTexSubImage3D(target, level, xoffset, yoffset, zoffset, width, height, depth, format,
@@ -6010,7 +5944,7 @@ void Context::getBufferPointerv(BufferBinding target, GLenum pname, void **param
 
 void Context::getBufferPointervRobust(BufferBinding target,
                                       GLenum pname,
-                                      GLsizei bufSize,
+                                      GLsizei paramCount,
                                       GLsizei *length,
                                       void **params)
 {
@@ -6057,16 +5991,7 @@ void *Context::mapBufferRange(BufferBinding target,
         return nullptr;
     }
 
-    // TODO: (anglebug.com/42266294): Modify return value in entry point layer
-    angle::FrameCaptureShared *frameCaptureShared = getShareGroup()->getFrameCaptureShared();
-    if (frameCaptureShared->enabled())
-    {
-        return frameCaptureShared->maybeGetShadowMemoryPointer(buffer, length, access);
-    }
-    else
-    {
-        return buffer->getMapPointer();
-    }
+    return buffer->getMapPointer();
 }
 
 void Context::flushMappedBufferRange(BufferBinding /*target*/,
@@ -6174,7 +6099,7 @@ void Context::getVertexAttribiv(GLuint index, GLenum pname, GLint *params)
 
 void Context::getVertexAttribivRobust(GLuint index,
                                       GLenum pname,
-                                      GLsizei bufSize,
+                                      GLsizei paramCount,
                                       GLsizei *length,
                                       GLint *params)
 {
@@ -6193,7 +6118,7 @@ void Context::getVertexAttribfv(GLuint index, GLenum pname, GLfloat *params)
 
 void Context::getVertexAttribfvRobust(GLuint index,
                                       GLenum pname,
-                                      GLsizei bufSize,
+                                      GLsizei paramCount,
                                       GLsizei *length,
                                       GLfloat *params)
 {
@@ -6212,7 +6137,7 @@ void Context::getVertexAttribIiv(GLuint index, GLenum pname, GLint *params)
 
 void Context::getVertexAttribIivRobust(GLuint index,
                                        GLenum pname,
-                                       GLsizei bufSize,
+                                       GLsizei paramCount,
                                        GLsizei *length,
                                        GLint *params)
 {
@@ -6231,7 +6156,7 @@ void Context::getVertexAttribIuiv(GLuint index, GLenum pname, GLuint *params)
 
 void Context::getVertexAttribIuivRobust(GLuint index,
                                         GLenum pname,
-                                        GLsizei bufSize,
+                                        GLsizei paramCount,
                                         GLsizei *length,
                                         GLuint *params)
 {
@@ -6246,7 +6171,7 @@ void Context::getVertexAttribPointerv(GLuint index, GLenum pname, void **pointer
 
 void Context::getVertexAttribPointervRobust(GLuint index,
                                             GLenum pname,
-                                            GLsizei bufSize,
+                                            GLsizei paramCount,
                                             GLsizei *length,
                                             void **pointer)
 {
@@ -6581,7 +6506,7 @@ void Context::getMultisamplefv(GLenum pname, GLuint index, GLfloat *val)
 
 void Context::getMultisamplefvRobust(GLenum pname,
                                      GLuint index,
-                                     GLsizei bufSize,
+                                     GLsizei paramCount,
                                      GLsizei *length,
                                      GLfloat *val)
 {
@@ -6663,7 +6588,7 @@ void Context::framebufferTexture2DMultisample(GLenum target,
 
 void Context::getSynciv(SyncID syncPacked,
                         GLenum pname,
-                        GLsizei bufSize,
+                        GLsizei count,
                         GLsizei *length,
                         GLint *values)
 {
@@ -6672,22 +6597,13 @@ void Context::getSynciv(SyncID syncPacked,
     {
         syncObject = getSync(syncPacked);
     }
-    ANGLE_CONTEXT_TRY(QuerySynciv(this, syncObject, pname, bufSize, length, values));
+    ANGLE_CONTEXT_TRY(QuerySynciv(this, syncObject, pname, count, length, values));
 }
 
 void Context::getFramebufferParameteriv(GLenum target, GLenum pname, GLint *params)
 {
     Framebuffer *framebuffer = mState.getTargetFramebuffer(target);
     QueryFramebufferParameteriv(framebuffer, pname, params);
-}
-
-void Context::getFramebufferParameterivRobust(GLenum target,
-                                              GLenum pname,
-                                              GLsizei bufSize,
-                                              GLsizei *length,
-                                              GLint *params)
-{
-    UNIMPLEMENTED();
 }
 
 void Context::framebufferParameteri(GLenum target, GLenum pname, GLint param)
@@ -7205,67 +7121,94 @@ GLint Context::getAttribLocation(ShaderProgramID program, const GLchar *name)
     return programObject->getExecutable().getAttributeLocation(name);
 }
 
-void Context::getBooleanv(GLenum pname, GLboolean *params)
+void Context::getBooleanv(GLenum pname, GLboolean *data)
+{
+    getBooleanvRobust(pname, 0, nullptr, data);
+}
+
+void Context::getBooleanvRobust(GLenum pname, GLsizei paramCount, GLsizei *length, GLboolean *data)
 {
     GLenum nativeType;
-    unsigned int numParams = 0;
-    getQueryParameterInfo(pname, &nativeType, &numParams);
+    unsigned int numParams;
+    const bool paramFound = getQueryParameterInfo(pname, &nativeType, &numParams);
+    if (ANGLE_UNLIKELY(!paramFound))
+    {
+        return;  // Avoid crashing with invalid apps running with no validation.
+    }
 
     if (nativeType == GL_BOOL)
     {
-        getBooleanvImpl(pname, params);
+        getBooleanvImpl(pname, data);
     }
     else
     {
-        CastStateValues(this, nativeType, pname, numParams, params);
+        CastStateValues(this, nativeType, pname, numParams, data);
+    }
+
+    if (length != nullptr)
+    {
+        *length = numParams;
     }
 }
 
-void Context::getBooleanvRobust(GLenum pname, GLsizei bufSize, GLsizei *length, GLboolean *params)
+void Context::getFloatv(GLenum pname, GLfloat *data)
 {
-    getBooleanv(pname, params);
+    getFloatvRobust(pname, 0, nullptr, data);
 }
 
-void Context::getFloatv(GLenum pname, GLfloat *params)
+void Context::getFloatvRobust(GLenum pname, GLsizei paramCount, GLsizei *length, GLfloat *data)
 {
     GLenum nativeType;
-    unsigned int numParams = 0;
-    getQueryParameterInfo(pname, &nativeType, &numParams);
+    unsigned int numParams;
+    const bool paramFound = getQueryParameterInfo(pname, &nativeType, &numParams);
+    if (ANGLE_UNLIKELY(!paramFound))
+    {
+        return;  // Avoid crashing with invalid apps running with no validation.
+    }
 
     if (nativeType == GL_FLOAT)
     {
-        getFloatvImpl(pname, params);
+        getFloatvImpl(pname, data);
     }
     else
     {
-        CastStateValues(this, nativeType, pname, numParams, params);
+        CastStateValues(this, nativeType, pname, numParams, data);
+    }
+
+    if (length != nullptr)
+    {
+        *length = numParams;
     }
 }
 
-void Context::getFloatvRobust(GLenum pname, GLsizei bufSize, GLsizei *length, GLfloat *params)
+void Context::getIntegerv(GLenum pname, GLint *data)
 {
-    getFloatv(pname, params);
+    getIntegervRobust(pname, 0, nullptr, data);
 }
 
-void Context::getIntegerv(GLenum pname, GLint *params)
+void Context::getIntegervRobust(GLenum pname, GLsizei paramCount, GLsizei *length, GLint *data)
 {
-    GLenum nativeType      = GL_NONE;
-    unsigned int numParams = 0;
-    getQueryParameterInfo(pname, &nativeType, &numParams);
+    GLenum nativeType;
+    unsigned int numParams;
+    const bool paramFound = getQueryParameterInfo(pname, &nativeType, &numParams);
+    if (ANGLE_UNLIKELY(!paramFound))
+    {
+        return;  // Avoid crashing with invalid apps running with no validation.
+    }
 
     if (nativeType == GL_INT)
     {
-        getIntegervImpl(pname, params);
+        getIntegervImpl(pname, data);
     }
     else
     {
-        CastStateValues(this, nativeType, pname, numParams, params);
+        CastStateValues(this, nativeType, pname, numParams, data);
     }
-}
 
-void Context::getIntegervRobust(GLenum pname, GLsizei bufSize, GLsizei *length, GLint *data)
-{
-    getIntegerv(pname, data);
+    if (length != nullptr)
+    {
+        *length = numParams;
+    }
 }
 
 void Context::getProgramiv(ShaderProgramID program, GLenum pname, GLint *params)
@@ -7282,7 +7225,7 @@ void Context::getProgramiv(ShaderProgramID program, GLenum pname, GLint *params)
 
 void Context::getProgramivRobust(ShaderProgramID program,
                                  GLenum pname,
-                                 GLsizei bufSize,
+                                 GLsizei paramCount,
                                  GLsizei *length,
                                  GLint *params)
 {
@@ -7356,7 +7299,7 @@ void Context::getShaderiv(ShaderProgramID shader, GLenum pname, GLint *params)
 
 void Context::getShaderivRobust(ShaderProgramID shader,
                                 GLenum pname,
-                                GLsizei bufSize,
+                                GLsizei paramCount,
                                 GLsizei *length,
                                 GLint *params)
 {
@@ -7962,7 +7905,7 @@ void Context::getActiveUniformBlockiv(ShaderProgramID program,
 void Context::getActiveUniformBlockivRobust(ShaderProgramID program,
                                             UniformBlockIndex uniformBlockIndex,
                                             GLenum pname,
-                                            GLsizei bufSize,
+                                            GLsizei paramCount,
                                             GLsizei *length,
                                             GLint *params)
 {
@@ -8030,25 +7973,34 @@ void Context::waitSync(SyncID syncPacked, GLbitfield flags, GLuint64 timeout)
     ANGLE_CONTEXT_TRY(syncObject->serverWait(this, flags, timeout));
 }
 
-void Context::getInteger64v(GLenum pname, GLint64 *params)
+void Context::getInteger64v(GLenum pname, GLint64 *data)
 {
-    GLenum nativeType      = GL_NONE;
-    unsigned int numParams = 0;
-    getQueryParameterInfo(pname, &nativeType, &numParams);
+    getInteger64vRobust(pname, 0, nullptr, data);
+}
+
+void Context::getInteger64vRobust(GLenum pname, GLsizei paramCount, GLsizei *length, GLint64 *data)
+{
+    GLenum nativeType;
+    unsigned int numParams;
+    const bool paramFound = getQueryParameterInfo(pname, &nativeType, &numParams);
+    if (ANGLE_UNLIKELY(!paramFound))
+    {
+        return;  // Avoid crashing with invalid apps running with no validation.
+    }
 
     if (nativeType == GL_INT_64_ANGLEX)
     {
-        getInteger64vImpl(pname, params);
+        getInteger64vImpl(pname, data);
     }
     else
     {
-        CastStateValues(this, nativeType, pname, numParams, params);
+        CastStateValues(this, nativeType, pname, numParams, data);
     }
-}
 
-void Context::getInteger64vRobust(GLenum pname, GLsizei bufSize, GLsizei *length, GLint64 *data)
-{
-    getInteger64v(pname, data);
+    if (length != nullptr)
+    {
+        *length = numParams;
+    }
 }
 
 void Context::getBufferParameteri64v(BufferBinding target, GLenum pname, GLint64 *params)
@@ -8059,7 +8011,7 @@ void Context::getBufferParameteri64v(BufferBinding target, GLenum pname, GLint64
 
 void Context::getBufferParameteri64vRobust(BufferBinding target,
                                            GLenum pname,
-                                           GLsizei bufSize,
+                                           GLsizei paramCount,
                                            GLsizei *length,
                                            GLint64 *params)
 {
@@ -8096,7 +8048,7 @@ void Context::deleteSamplers(GLsizei count, const SamplerID *samplers)
 void Context::getInternalformativ(GLenum target,
                                   GLenum internalformat,
                                   GLenum pname,
-                                  GLsizei bufSize,
+                                  GLsizei count,
                                   GLint *params)
 {
     Texture *texture    = nullptr;
@@ -8106,17 +8058,17 @@ void Context::getInternalformativ(GLenum target,
         texture = getTextureByType(textype);
     }
     const TextureCaps &formatCaps = mState.getTextureCap(internalformat);
-    QueryInternalFormativ(this, texture, internalformat, formatCaps, pname, bufSize, params);
+    QueryInternalFormativ(this, texture, internalformat, formatCaps, pname, count, params);
 }
 
 void Context::getInternalformativRobust(GLenum target,
                                         GLenum internalformat,
                                         GLenum pname,
-                                        GLsizei bufSize,
+                                        GLsizei paramCount,
                                         GLsizei *length,
                                         GLint *params)
 {
-    getInternalformativ(target, internalformat, pname, bufSize, params);
+    getInternalformativ(target, internalformat, pname, paramCount, params);
 }
 
 void Context::programUniform1i(ShaderProgramID program, UniformLocation location, GLint v0)
@@ -8549,15 +8501,6 @@ void Context::getnUniformfv(ShaderProgramID program,
     programObject->getExecutable().getUniformfv(this, location, params);
 }
 
-void Context::getnUniformfvRobust(ShaderProgramID program,
-                                  UniformLocation location,
-                                  GLsizei bufSize,
-                                  GLsizei *length,
-                                  GLfloat *params)
-{
-    UNIMPLEMENTED();
-}
-
 void Context::getnUniformiv(ShaderProgramID program,
                             UniformLocation location,
                             GLsizei bufSize,
@@ -8578,24 +8521,6 @@ void Context::getnUniformuiv(ShaderProgramID program,
     ASSERT(programObject);
 
     programObject->getExecutable().getUniformuiv(this, location, params);
-}
-
-void Context::getnUniformivRobust(ShaderProgramID program,
-                                  UniformLocation location,
-                                  GLsizei bufSize,
-                                  GLsizei *length,
-                                  GLint *params)
-{
-    UNIMPLEMENTED();
-}
-
-void Context::getnUniformuivRobust(ShaderProgramID program,
-                                   UniformLocation location,
-                                   GLsizei bufSize,
-                                   GLsizei *length,
-                                   GLuint *params)
-{
-    UNIMPLEMENTED();
 }
 
 GLboolean Context::isFenceNV(FenceNVID fence) const
@@ -9111,7 +9036,7 @@ void Context::getFramebufferPixelLocalStorageParameteriv(GLint plane, GLenum pna
 
 void Context::getFramebufferPixelLocalStorageParameterfvRobust(GLint plane,
                                                                GLenum pname,
-                                                               GLsizei bufSize,
+                                                               GLsizei paramCount,
                                                                GLsizei *length,
                                                                GLfloat *params)
 {
@@ -9120,7 +9045,7 @@ void Context::getFramebufferPixelLocalStorageParameterfvRobust(GLint plane,
 
 void Context::getFramebufferPixelLocalStorageParameterivRobust(GLint plane,
                                                                GLenum pname,
-                                                               GLsizei bufSize,
+                                                               GLsizei paramCount,
                                                                GLsizei *length,
                                                                GLint *params)
 {
@@ -10083,6 +10008,51 @@ void Context::onActiveTransformFeedbackChange()
     mStateCache.onActiveTransformFeedbackChange(this);
     // This can only be called from current context since transform feedback are per context.
     mPrivateStateCache.invalidateCachedBasicDrawElementsError();
+}
+
+bool Context::retainIdUntilObjectDestroyed() const
+{
+    // If BindGeneratesResource is disabled, then we can defer recycling the handle ID until the
+    // object has had the `onDestroy` method called, preventing ID reuse bugs.
+    //
+    // If the context is being destroyed however, we don't want to try to recycle as the handle
+    // manager may be gone.
+    return !mDestroyedManagers && !mState.isBindGeneratesResourceEnabled();
+}
+
+void Context::onBufferDestroy(const Buffer *buffer) const
+{
+    mState.mBufferManager->recycleHandle(buffer->id());
+}
+
+void Context::onTextureDestroy(const Texture *texture) const
+{
+    mState.mTextureManager->recycleHandle(texture->id());
+}
+
+void Context::onRenderbufferDestroy(const Renderbuffer *renderBuffer) const
+{
+    mState.mRenderbufferManager->recycleHandle(renderBuffer->id());
+}
+
+void Context::onSamplerDestroy(const Sampler *sampler) const
+{
+    mState.mSamplerManager->recycleHandle(sampler->id());
+}
+
+void Context::onSyncDestroy(const Sync *sync) const
+{
+    mState.mSyncManager->recycleHandle(sync->id());
+}
+
+void Context::onFramebufferDestroy(const Framebuffer *framebuffer) const
+{
+    mState.mFramebufferManager->recycleHandle(framebuffer->id());
+}
+
+void Context::onProgramPipelineDestroy(const ProgramPipeline *programPipeline) const
+{
+    mState.mProgramPipelineManager->recycleHandle(programPipeline->id());
 }
 
 // ErrorSet implementation.

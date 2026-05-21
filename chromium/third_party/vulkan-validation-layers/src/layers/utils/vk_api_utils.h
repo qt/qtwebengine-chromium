@@ -1,7 +1,8 @@
-/* Copyright (c) 2019-2025 The Khronos Group Inc.
- * Copyright (c) 2019-2025 Valve Corporation
- * Copyright (c) 2019-2025 LunarG, Inc.
+/* Copyright (c) 2019-2026 The Khronos Group Inc.
+ * Copyright (c) 2019-2026 Valve Corporation
+ * Copyright (c) 2019-2026 LunarG, Inc.
  * Modifications Copyright (C) 2022 RasterGrid Kft.
+ * Modifications Copyright (C) 2025-2026 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,8 +33,8 @@ static const VkShaderStageFlags kShaderStageAllRayTracing =
     VK_SHADER_STAGE_ANY_HIT_BIT_KHR | VK_SHADER_STAGE_CALLABLE_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR |
     VK_SHADER_STAGE_INTERSECTION_BIT_KHR | VK_SHADER_STAGE_MISS_BIT_KHR | VK_SHADER_STAGE_RAYGEN_BIT_KHR;
 
-static inline uint32_t GetIndexAlignment(VkIndexType indexType) {
-    switch (indexType) {
+static inline uint32_t IndexTypeSize(VkIndexType index_type) {
+    switch (index_type) {
         case VK_INDEX_TYPE_UINT16:
             return 2;
         case VK_INDEX_TYPE_UINT32:
@@ -42,27 +43,12 @@ static inline uint32_t GetIndexAlignment(VkIndexType indexType) {
             return 1;
         case VK_INDEX_TYPE_NONE_KHR:  // alias VK_INDEX_TYPE_NONE_NV
             return 0;
-        default:
-            // Not a real index type. Express no alignment requirement here; we expect upper layer
-            // to have already picked up on the enum being nonsense.
-            return 1;
-    }
-}
-
-inline constexpr uint32_t GetIndexBitsSize(VkIndexType indexType) {
-    switch (indexType) {
-        case VK_INDEX_TYPE_UINT16:
-            return 16;
-        case VK_INDEX_TYPE_UINT32:
-            return 32;
-        case VK_INDEX_TYPE_NONE_KHR:
-            return 0;
-        case VK_INDEX_TYPE_UINT8_KHR:
-            return 8;
         case VK_INDEX_TYPE_MAX_ENUM:
-            return 0;
+            break;
+            // Not a real index type. Express no alignment requirement here
+            // Assume caller is handling this already
     }
-    return 0;
+    return 1;  // so compilers don't complain nothing is returned in all cases
 }
 
 static bool inline IsStageInPipelineBindPoint(VkShaderStageFlags stages, VkPipelineBindPoint bind_point) {
@@ -141,6 +127,15 @@ static inline VkOffset3D CastTo3D(const VkOffset2D &d2) {
     return d3;
 }
 
+// Returns true if sub_rect is entirely contained within rect
+static inline bool ContainsRect(VkRect2D rect, VkRect2D sub_rect) {
+    if ((sub_rect.offset.x < rect.offset.x) || (sub_rect.offset.x + sub_rect.extent.width > rect.offset.x + rect.extent.width) ||
+        (sub_rect.offset.y < rect.offset.y) || (sub_rect.offset.y + sub_rect.extent.height > rect.offset.y + rect.extent.height)) {
+        return false;
+    }
+    return true;
+}
+
 static constexpr VkPipelineStageFlags2 kFramebufferStagePipelineStageFlags =
     (VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
      VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
@@ -159,4 +154,58 @@ static constexpr bool HasFramebufferStagePipelineStageFlags(VkPipelineStageFlags
 
 static constexpr bool HasNonShaderTileImageAccessFlags(VkAccessFlags2 in_flags) {
     return ((in_flags & ~kShaderTileImageAllowedAccessFlags) != 0);
+}
+
+static inline const VkSamplerCreateInfo* GetEmbeddedSampler(const VkDescriptorSetAndBindingMappingEXT& mapping) {
+    switch (mapping.source) {
+        case VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_CONSTANT_OFFSET_EXT:
+            return mapping.sourceData.constantOffset.pEmbeddedSampler;
+        case VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_PUSH_INDEX_EXT:
+            return mapping.sourceData.pushIndex.pEmbeddedSampler;
+        case VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_INDIRECT_INDEX_EXT:
+            return mapping.sourceData.indirectIndex.pEmbeddedSampler;
+        case VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_INDIRECT_INDEX_ARRAY_EXT:
+            return mapping.sourceData.indirectIndexArray.pEmbeddedSampler;
+        case VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_SHADER_RECORD_INDEX_EXT:
+            return mapping.sourceData.shaderRecordIndex.pEmbeddedSampler;
+        default:
+            return nullptr;
+    }
+}
+
+static inline uint32_t CountDescriptorHeapEmbeddedSamplers(const void* pNext) {
+    const VkShaderDescriptorSetAndBindingMappingInfoEXT* mapping_info =
+        vku::FindStructInPNextChain<VkShaderDescriptorSetAndBindingMappingInfoEXT>(pNext);
+    uint32_t count = 0;
+
+    if (mapping_info) {
+        for (uint32_t i = 0; i < mapping_info->mappingCount; ++i) {
+            const VkDescriptorSetAndBindingMappingEXT& mapping = mapping_info->pMappings[i];
+            if (GetEmbeddedSampler(mapping) != nullptr) {
+                count++;
+            }
+        }
+    }
+
+    return count;
+}
+
+static constexpr bool IsDescriptorHeapAddr(const VkDescriptorType type) {
+    return (type == VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR) || (type == VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV) ||
+           (type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER) || (type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER) ||
+           (type == VK_DESCRIPTOR_TYPE_PARTITIONED_ACCELERATION_STRUCTURE_NV);
+}
+
+static constexpr bool IsDescriptorHeapTexelBuffer(const VkDescriptorType type) {
+    return (type == VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER) || (type == VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER);
+}
+
+static constexpr bool IsDescriptorHeapImage(const VkDescriptorType type) {
+    return (type == VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE) || (type == VK_DESCRIPTOR_TYPE_BLOCK_MATCH_IMAGE_QCOM) ||
+           (type == VK_DESCRIPTOR_TYPE_SAMPLE_WEIGHT_IMAGE_QCOM) || (type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE) ||
+           (type == VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT);
+}
+
+static constexpr bool IsDescriptorHeapTensor(const VkDescriptorType type) {
+    return (type == VK_DESCRIPTOR_TYPE_TENSOR_ARM);
 }

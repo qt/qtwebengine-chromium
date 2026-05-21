@@ -1496,7 +1496,7 @@ int Tile::ReadTransformCoefficients(const Block& block, Plane plane,
     // Read all the other coefficients.
     // Lookup used to call the right variant of ReadCoeffBase*() based on the
     // transform class.
-    static constexpr void (Tile::*kGetCoeffBaseFunc[])(
+    static constexpr void (Tile::* kGetCoeffBaseFunc[])(
         const uint16_t* scan, TransformSize tx_size, int adjusted_tx_width_log2,
         int eob,
         uint16_t coeff_base_cdf[kCoeffBaseContexts][kCoeffBaseSymbolCount + 1],

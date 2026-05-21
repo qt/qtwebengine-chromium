@@ -1112,6 +1112,19 @@ Called by update_gpu_driver_bug_workaround_entries.py.-->
   <int value="10" label="NoKillForGpuProgressInCrashDump"/>
 </enum>
 
+<!-- LINT.IfChange(GraphiteInsertRecordingStatus) -->
+
+<enum name="GraphiteInsertRecordingStatus">
+  <int value="0" label="Success"/>
+  <int value="1" label="InvalidRecording"/>
+  <int value="2" label="PromiseImageInstantiationFailed"/>
+  <int value="3" label="AddCommandsFailed"/>
+  <int value="4" label="AsyncShaderCompilesFailed"/>
+  <int value="5" label="OutOfOrderRecording"/>
+</enum>
+
+<!-- LINT.ThenChange(//gpu/command_buffer/service/graphite_shared_context.cc:InsertRecordingStatusUma) -->
+
 <enum name="HasDiscreteGpu">
   <int value="0" label="No"/>
   <int value="1" label="Yes"/>
@@ -1176,6 +1189,13 @@ Called by update_gpu_driver_bug_workaround_entries.py.-->
 </enum>
 
 <!-- LINT.ThenChange(//gpu/config/gpu_info.h:IntelGpuSeriesType) -->
+
+<enum name="IntelNpuDeviceId">
+  <int value="25662" label="0x643e, Intel Lunarlake"/>
+  <int value="32029" label="0x7d1d, Intel Meteorlake"/>
+  <int value="44317" label="0xad1d, Intel Arrowlake"/>
+  <int value="45118" label="0xb03e, Intel Pantherlake"/>
+</enum>
 
 <enum name="MaximumGLESVersion">
   <summary>The maximum GLES version supported.</summary>

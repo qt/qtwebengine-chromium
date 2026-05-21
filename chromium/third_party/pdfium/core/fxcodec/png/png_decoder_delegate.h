@@ -22,9 +22,7 @@ class PngDecoderDelegate {
   // * Return `true` upon success (and `false` otherwise)
   // * Set `*gamma` to the target gamma to decode with
   // * TODO(crbug.com/355630556): Add out parameter for desired alpha-premul.
-  virtual bool PngReadHeader(int width,
-                             int height,
-                             double* gamma) = 0;
+  virtual bool PngReadHeader(int width, int height, double* gamma) = 0;
 
   // Called by `PngDecoder` to ask where to write decoded BGRA/8 pixels.
   // Implementation should return a span to the buffer where decoder can write

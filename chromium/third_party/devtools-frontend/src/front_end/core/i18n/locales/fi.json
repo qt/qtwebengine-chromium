@@ -110,9 +110,6 @@
   "core/common/Revealer.ts | requestConditionsDrawer": {
     "message": "Pyyntöehtojen vetopaneeli"
   },
-  "core/common/Revealer.ts | securityPanel": {
-    "message": "Turvapaneeli"
-  },
   "core/common/Revealer.ts | sourcesPanel": {
     "message": "Lähdepaneeli"
   },
@@ -410,9 +407,6 @@
   "core/sdk/NetworkRequest.ts | notOnPath": {
     "message": "Tämä eväste estettiin, sillä sen polku ei vastannut täsmälleen pyynnön URL-osoitteen polkua tai sen ylähakemistoa."
   },
-  "core/sdk/NetworkRequest.ts | samePartyFromCrossPartyContext": {
-    "message": "Tämä eväste estettiin, koska sillä oli \"SameParty\"-määrite, mutta pyyntö oli osapuolten välinen. Pyyntö katsottiin osapuolten väliseksi pyynnöksi, koska resurssin URL-osoitteen verkkotunnus ja resurssin sisällyskehysten/-asiakirjojen verkkotunnukset eivät ole saman ensimmäisen osapuolen ryhmän (First-Party Set) omistajia tai jäseniä."
-  },
   "core/sdk/NetworkRequest.ts | sameSiteLax": {
     "message": "Tämä eväste estettiin, koska sillä oli määrite \"SameSite=Lax\" ja pyyntö tehtiin eri sivustolta eikä ylätason navigoinnin käynnistämänä."
   },
@@ -454,12 +448,6 @@
   },
   "core/sdk/NetworkRequest.ts | thisSetcookieHadInvalidSyntax": {
     "message": "Tämän Set-Cookie-otsikon syntaksi oli virheellinen."
-  },
-  "core/sdk/NetworkRequest.ts | thisSetcookieWasBlockedBecauseItHadTheSameparty": {
-    "message": "Tämä Set-Cookie-otsikon kautta yritetty evästeen tallennus estettiin, koska sillä oli määrite \"SameParty\", mutta pyyntö oli osapuolten välinen. Pyyntö katsottiin osapuolten väliseksi pyynnöksi, koska resurssin URL-osoitteen verkkotunnus ja resurssin sisällyskehysten/-dokumenttien verkkotunnukset eivät ole saman ensimmäisen osapuolen ryhmän (First-Party Set) omistajia tai jäseniä."
-  },
-  "core/sdk/NetworkRequest.ts | thisSetcookieWasBlockedBecauseItHadTheSamepartyAttribute": {
-    "message": "Tämä Set-Cookie-otsikon kautta yritetty evästeen tallennus estettiin, koska sillä oli sekä määrite \"SameParty\" että muita ristiriidassa olevia määritteitä. Chrome edellyttää, että määritettä \"SameParty\" käyttävillä evästeillä on myös määrite \"Secure\", eikä niillä saa olla rajoitusta \"SameSite=Strict\"."
   },
   "core/sdk/NetworkRequest.ts | thisSetcookieWasBlockedBecauseItHadTheSamesiteStrictLax": {
     "message": "Tämä Set-Cookie-otsikon kautta yritetty evästeen tallennus estettiin, koska sillä oli määrite \"{PH1}\", mutta se tuli sivujen välisestä vastauksesta, joka ei ollut vastaus ylätason navigointiin. Vastauksen katsotaan olevan sivustojen välinen, koska URL-osoitteen skeema poikkeaa nykyisestä sivustosta."
@@ -1031,6 +1019,15 @@
   "entrypoints/main/GlobalAiButton.ts | aiAssistance": {
     "message": "Tekoälyavustaja"
   },
+  "entrypoints/main/GlobalAiButton.ts | gemini": {
+    "message": "Gemini"
+  },
+  "entrypoints/main/GlobalAiButton.ts | openAiAssistance": {
+    "message": "Avaa tekoälyavustajapaneeli"
+  },
+  "entrypoints/main/GlobalAiButton.ts | openGemini": {
+    "message": "Avaa Gemini-paneeli"
+  },
   "entrypoints/main/MainImpl.ts | aiModelDownloaded": {
     "message": "Tekoälymalli ladattu"
   },
@@ -1057,6 +1054,9 @@
   },
   "entrypoints/main/MainImpl.ts | focusDebuggee": {
     "message": "Kohdista sivuun"
+  },
+  "entrypoints/main/MainImpl.ts | getDevToolsMcp": {
+    "message": "Tilaa DevTools MCP"
   },
   "entrypoints/main/MainImpl.ts | help": {
     "message": "Ohje"
@@ -1298,9 +1298,6 @@
   "generated/Deprecation.ts | ChromeLoadTimesWasAlternateProtocolAvailable": {
     "message": "chrome.loadTimes() on poistettu käytöstä, käytä sen sijaan standardoitua APIa: nextHopProtocol Navigation Timing 2:ssa."
   },
-  "generated/Deprecation.ts | CookieWithTruncatingChar": {
-    "message": "\\(0|r|n) ‑merkin sisältävät evästeet hylätään lyhentämisen sijaan."
-  },
   "generated/Deprecation.ts | CrossOriginAccessBasedOnDocumentDomain": {
     "message": "Saman alkuperän käytännön lieventäminen määrittämällä document.domain on poistettu käytöstä eikä näin ollen ole käytössä oletuksena. Tämä käytöstäpoistovaroitus koskee eri lähteistä peräisin olevaa pääsyoikeutta, joka on otettu käyttöön asetuksella document.domain."
   },
@@ -1454,9 +1451,6 @@
   "generated/Deprecation.ts | XMLHttpRequestSynchronousInNonWorkerOutsideBeforeUnload": {
     "message": "Pääsäikeen samanaikainen XMLHttpRequest on poistettu käytöstä, koska sillä oli haitallisia vaikutuksia loppukäyttäjän kokemukseen. Lue lisäohjeita osoitteesta https://xhr.spec.whatwg.org/."
   },
-  "generated/Deprecation.ts | XMLNoExternalEntities": {
-    "message": "XML-jäsentämisen ulkoisesti ladatut entiteetit on poistettu käytöstä, ja ne poistetaan pian tästä selaimesta."
-  },
   "generated/Deprecation.ts | XSLT": {
     "message": "Kaikki selaimet ovat poistaneet XSLTProcessorin ja XSLT-käsittelyohjeet käytöstä. Ominaisuudet poistetaan pian tästä selaimesta."
   },
@@ -1475,17 +1469,11 @@
   "models/bindings/ContentProviderBasedProject.ts | unknownErrorLoadingFile": {
     "message": "Tuntematon virhe ladattaessa tiedostoa"
   },
-  "models/bindings/DebuggerLanguagePlugins.ts | debugSymbolsIncomplete": {
-    "message": "Funktion {PH1} virheenkorjaustiedot ovat puutteelliset"
-  },
   "models/bindings/DebuggerLanguagePlugins.ts | errorInDebuggerLanguagePlugin": {
     "message": "Virheenkorjauksen kieliliitännäisen virhe: {PH1}"
   },
   "models/bindings/DebuggerLanguagePlugins.ts | failedToLoadDebugSymbolsFor": {
     "message": "[{PH1}] Kohteen {PH2} virheenkorjaussymboleiden lataaminen epäonnistui ({PH3})"
-  },
-  "models/bindings/DebuggerLanguagePlugins.ts | failedToLoadDebugSymbolsForFunction": {
-    "message": "Ei virheenkorjaustietoja toiminnolle {PH1}"
   },
   "models/bindings/DebuggerLanguagePlugins.ts | loadedDebugSymbolsForButDidnt": {
     "message": "[{PH1}] Ladattiin virheenkorjaussymbolit kohteelle {PH2}, mutta lähdetiedostoja ei löytynyt"
@@ -1586,9 +1574,6 @@
   "models/issues_manager/CookieIssue.ts | fileCrosSiteRedirectBug": {
     "message": "Ilmoita virheestä"
   },
-  "models/issues_manager/CookieIssue.ts | firstPartySetsExplained": {
-    "message": "Määritteet First-Party Sets ja SameParty"
-  },
   "models/issues_manager/CookieIssue.ts | howSchemefulSamesiteWorks": {
     "message": "Skeemapohjaisen Same-Siten toiminta"
   },
@@ -1600,9 +1585,6 @@
   },
   "models/issues_manager/CorsIssue.ts | corsLocalNetworkAccess": {
     "message": "Pääsy lähiverkkoon"
-  },
-  "models/issues_manager/CorsIssue.ts | corsPrivateNetworkAccess": {
-    "message": "Private Network Access"
   },
   "models/issues_manager/CrossOriginEmbedderPolicyIssue.ts | coopAndCoep": {
     "message": "COOP ja COEP"
@@ -2107,6 +2089,9 @@
   },
   "models/trace/Styles.ts | signReply": {
     "message": "Allekirjoita vastaus"
+  },
+  "models/trace/Styles.ts | softLargestContentfulPaint": {
+    "message": "Pehmeä Largest Contentful Paint"
   },
   "models/trace/Styles.ts | streamingCompileTask": {
     "message": "Striimauksen kääntämistehtävä"
@@ -2739,7 +2724,7 @@
     "message": "Sisältö"
   },
   "panels/accessibility/AccessibilityStrings.ts | controls": {
-    "message": "Asetukset"
+    "message": "Ohjaimet"
   },
   "panels/accessibility/AccessibilityStrings.ts | describedBy": {
     "message": "Kuvailija:"
@@ -3086,14 +3071,20 @@
   "panels/ai_assistance/ai_assistance-meta.ts | aiAssistance": {
     "message": "Tekoälyavustaja"
   },
-  "panels/ai_assistance/ai_assistance-meta.ts | askAi": {
-    "message": "Kysy tekoälyltä"
-  },
   "panels/ai_assistance/ai_assistance-meta.ts | debugWithAi": {
     "message": "Korjaa virheitä tekoälyn avulla"
   },
+  "panels/ai_assistance/ai_assistance-meta.ts | debugWithGemini": {
+    "message": "Korjaa virheitä Geminillä"
+  },
   "panels/ai_assistance/ai_assistance-meta.ts | enableAiAssistance": {
     "message": "Ota tekoälyavustaja käyttöön"
+  },
+  "panels/ai_assistance/ai_assistance-meta.ts | enableGemini": {
+    "message": "Ota Gemini käyttöön"
+  },
+  "panels/ai_assistance/ai_assistance-meta.ts | gemini": {
+    "message": "Gemini"
   },
   "panels/ai_assistance/ai_assistance-meta.ts | geoRestricted": {
     "message": "Tämä ominaisuus ei ole käytettävissä alueellasi."
@@ -3104,16 +3095,19 @@
   "panels/ai_assistance/ai_assistance-meta.ts | showAiAssistance": {
     "message": "Näytä tekoälyavustaja"
   },
+  "panels/ai_assistance/ai_assistance-meta.ts | showGemini": {
+    "message": "Näytä Gemini"
+  },
   "panels/ai_assistance/ai_assistance-meta.ts | wrongLocale": {
     "message": "Jos haluat käyttää tätä ominaisuutta, valitse DevTools-asetuksista kieleksi englanti."
   },
-  "panels/ai_assistance/components/ChatView.ts | inputTextAriaDescription": {
+  "panels/ai_assistance/components/ChatInput.ts | inputTextAriaDescription": {
     "message": "Voit myös aloittaa keskustelun jollakin yllä olevista ehdotetuista kehotteista"
   },
-  "panels/ai_assistance/components/ChatView.ts | learnAbout": {
+  "panels/ai_assistance/components/ChatInput.ts | learnAbout": {
     "message": "Lue lisää tekoälystä DevToolsissa"
   },
-  "panels/ai_assistance/components/ChatView.ts | revealContextDescription": {
+  "panels/ai_assistance/components/ChatInput.ts | revealContextDescription": {
     "message": "Näytä valittu kontekstikohta DevToolsissa"
   },
   "panels/ai_assistance/components/DisabledWidget.ts | notAvailableInIncognitoMode": {
@@ -3221,6 +3215,9 @@
   "panels/application/AppManifestView.ts | appIdNote": {
     "message": "Huom. id on määrittämättä manifestissa. Sen sijaan käytössä on start_url. Voit määrittää sovellustunnuksen, joka vastaa nykyistä identiteettiä, valitsemalla id-kenttään osoitteen {PH1} {PH2}."
   },
+  "panels/application/AppManifestView.ts | appManifest": {
+    "message": "Manifesti"
+  },
   "panels/application/AppManifestView.ts | avoidPurposeAnyAndMaskable": {
     "message": "Kuvaketta ei suositella määriteltäväksi tällä: purpose / any maskable. Se näyttää todennäköisesti väärältä joillain alustoilla liian vähäisen täytteen vuoksi."
   },
@@ -3293,6 +3290,9 @@
   "panels/application/AppManifestView.ts | manifestCouldNotBeFetchedIsEmpty": {
     "message": "Manifestin nouto ei onnistunut, se on tyhjä tai ei jäsenneltävissä"
   },
+  "panels/application/AppManifestView.ts | manifestDescription": {
+    "message": "Manifesti määrittää, miltä sovelluksesi näyttää puhelimen aloitusnäytöllä ja miltä se näyttää käynnistettäessä."
+  },
   "panels/application/AppManifestView.ts | manifestDisplayPropertyMustBeOne": {
     "message": "Manifestin \"display\"-omaisuuden on oltava \"standalone\", \"fullscreen\" tai \"minimal-ui\""
   },
@@ -3317,6 +3317,9 @@
   "panels/application/AppManifestView.ts | newNoteUrl": {
     "message": "Uuden muistiinpanon URL-osoite"
   },
+  "panels/application/AppManifestView.ts | noManifestDetected": {
+    "message": "Manifestiä ei löydy"
+  },
   "panels/application/AppManifestView.ts | noPlayStoreIdProvided": {
     "message": "Ei Play Kaupan tunnusta"
   },
@@ -3328,6 +3331,9 @@
   },
   "panels/application/AppManifestView.ts | noSuppliedIconIsAtLeastSpxSquare": {
     "message": "Mikään lisätyistä kuvakkeista ei ole vähintään {PH1} pikselin kokoinen neliö, jonka tiedostomuoto on PNG, SVG tai WebP ja jolle ei ole asetettu purpose-määritettä tai jonka määritteen asetus on any."
+  },
+  "panels/application/AppManifestView.ts | onInvokeAlert": {
+    "message": "Vieritetty kohtaan {PH1}"
   },
   "panels/application/AppManifestView.ts | orientation": {
     "message": "Suunta"
@@ -3458,9 +3464,6 @@
   "panels/application/AppManifestView.ts | windowControlsOverlay": {
     "message": "Window Controls Overlay"
   },
-  "panels/application/ApplicationPanelSidebar.ts | appManifest": {
-    "message": "Manifesti"
-  },
   "panels/application/ApplicationPanelSidebar.ts | application": {
     "message": "Sovellus"
   },
@@ -3530,9 +3533,6 @@
   "panels/application/ApplicationPanelSidebar.ts | manifest": {
     "message": "Manifesti"
   },
-  "panels/application/ApplicationPanelSidebar.ts | manifestDescription": {
-    "message": "Manifesti määrittää, miltä sovelluksesi näyttää puhelimen aloitusnäytöllä ja miltä se näyttää käynnistettäessä."
-  },
   "panels/application/ApplicationPanelSidebar.ts | noCookies": {
     "message": "Evästeitä ei ole asetettu"
   },
@@ -3544,9 +3544,6 @@
   },
   "panels/application/ApplicationPanelSidebar.ts | noLocalStorage": {
     "message": "Paikallista tallennustilaa ei havaittu"
-  },
-  "panels/application/ApplicationPanelSidebar.ts | noManifestDetected": {
-    "message": "Manifestiä ei löydy"
   },
   "panels/application/ApplicationPanelSidebar.ts | noSessionStorage": {
     "message": "Istuntotallennustilaa ei havaittu"
@@ -3721,6 +3718,399 @@
   },
   "panels/application/DOMStorageItemsView.ts | domStorageItemsCleared": {
     "message": "DOM-tallennustilan kohteet tyhjennetty"
+  },
+  "panels/application/DeviceBoundSessionsTreeElement.ts | deviceBoundSessions": {
+    "message": "Laitteeseen sidotut istunnot"
+  },
+  "panels/application/DeviceBoundSessionsTreeElement.ts | deviceBoundSessionsCategoryDescription": {
+    "message": "Tältä sivulta voit nähdä laitteeseen sidotut istunnot ja niihin liittyvät tapahtumat"
+  },
+  "panels/application/DeviceBoundSessionsTreeElement.ts | noSession": {
+    "message": "Ei istuntoa"
+  },
+  "panels/application/DeviceBoundSessionsTreeElement.ts | sessionWithErrors": {
+    "message": "{sessionName}, istunnossa on virheitä"
+  },
+  "panels/application/DeviceBoundSessionsTreeElement.ts | terminatedSession": {
+    "message": "{sessionName}, istunto lopetettu"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | allowedRefreshInitiators": {
+    "message": "Sallitut päivityksen aloittajat"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | boundCookieSetForbidden": {
+    "message": "Rekisteröinti kontekstissa, jossa sidottuja evästeitä ei voi asettaa"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | cachedChallenge": {
+    "message": "Välimuistiin tallennettu haaste"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | cantSetBoundCookie": {
+    "message": "Sidotun evästeen asettaminen ei ole sallittua"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | causedAnyRequestDeferrals": {
+    "message": "Aiheutti pyyntöjen lykkäyksiä"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | challenge": {
+    "message": "Haaste"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | challengeResult": {
+    "message": "Haasteen tulokset"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | clearBrowsingData": {
+    "message": "Käyttäjän aloittama selausdatan poisto"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | cookieCravings": {
+    "message": "Evästeet"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | creation": {
+    "message": "Luomisaika"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | deletionReason": {
+    "message": "Poiston syy"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | doNotClearLogOnPageReload": {
+    "message": "Älä tyhjennä lokitiedostoja sivun päivittämisen tai siirtymisen yhteydessä."
+  },
+  "panels/application/DeviceBoundSessionsView.ts | emptyScopeSpecificationDomain": {
+    "message": "Tyhjä laajuuden määrityksen verkkotunnus"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | emptyScopeSpecificationPath": {
+    "message": "Tyhjä laajuuden määrityksen polku"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | emptySessionConfig": {
+    "message": "Tyhjä istuntomääritys rekisteröintiä varten"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | error": {
+    "message": "Virhe"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | eventDetails": {
+    "message": "Tapahtuman tiedot"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | eventResult": {
+    "message": "Tapahtuman tulos"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | events": {
+    "message": "Tapahtumat"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | expired": {
+    "message": "Vanhentunut"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | expiryDate": {
+    "message": "Vanhenemispäivä"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | failedToRestoreKey": {
+    "message": "Avaimen palauttaminen levyltä epäonnistui"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | failedToUnwrapKey": {
+    "message": "Avaimen purkaminen epäonnistui"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | fatalError": {
+    "message": "Vakava virhe"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | federatedKeyThumbprintMismatch": {
+    "message": "Liitetyllä avaimella oli virheellinen sormenjälki"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | federatedNotAuthorizedByProvider": {
+    "message": ".well-known-tarjoaja ei ole valtuuttanut liittovaltion istuntoa"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | federatedNotAuthorizedByRelyingParty": {
+    "message": "Luottava osapuoli ei ole valtuuttanut liittoutunutta istuntoa .well-known-polussa"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | fetchResult": {
+    "message": "Hae tulos"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | includeSite": {
+    "message": "Sisällytä sivusto"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | initializedService": {
+    "message": "Palvelu alustettu"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidChallenge": {
+    "message": "Virheellinen haaste"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidConfigJson": {
+    "message": "Virheellinen istuntomääritysten JSON"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidCredentialsConfig": {
+    "message": "Virheellinen kirjautumistietojen määritys"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidCredentialsCookie": {
+    "message": "Virheelliset kirjautumistiedot – eväste on virheellinen"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidCredentialsCookieCreationTime": {
+    "message": "Virheelliset kirjautumistiedot – evästeen luontiaika on virheellinen"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidCredentialsCookieInvalidDomain": {
+    "message": "Virheelliset kirjautumistiedot – evästeen virheellinen verkkotunnus"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidCredentialsCookieName": {
+    "message": "Virheelliset kirjautumistiedot – evästeen nimi on virheellinen"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidCredentialsCookieParsing": {
+    "message": "Virheelliset kirjautumistiedot – evästeen jäsentäminen epäonnistui"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidCredentialsCookiePrefix": {
+    "message": "Virheelliset kirjautumistiedot – evästeen virheellinen etuliite"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidCredentialsCookieUnpermittedAttribute": {
+    "message": "Virheelliset kirjautumistiedot – evästemääritettä ei sallita"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidCredentialsEmptyName": {
+    "message": "Virheelliset kirjautumistiedot – nimi on tyhjä"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidCredentialsType": {
+    "message": "Virheelliset kirjautumistiedot – tyhjä tai muu kuin evästetyyppi"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidFederatedKey": {
+    "message": "Liittovaltion avain on virheellinen"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidFederatedSessionProviderFailedToRestoreKey": {
+    "message": "Liittovaltion istunto on virheellinen, koska istuntopalveluntarjoajan avaimen palauttaminen epäonnistui"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidFederatedSessionProviderSessionMissing": {
+    "message": "Liitetty istunto on virheellinen, koska palveluntarjoajan istuntoa ei löydy"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidFederatedSessionUrl": {
+    "message": "Liittoutuneen palveluntarjoajan URL-osoite ei kelpaa"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidFederatedSessionWrongProviderOrigin": {
+    "message": "Liitetty istunto on virheellinen, koska palveluntarjoajan alkuperä ei täsmää"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidFetcherUrl": {
+    "message": "Virheellinen hakijan URL-osoite"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidRefreshUrl": {
+    "message": "Virheellinen päivityksen URL-osoite"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidScopeIncludeSite": {
+    "message": "Virheellinen include_site-arvo laajuudessa"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidScopeOrigin": {
+    "message": "Virheellinen laajuuden alkuperä"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidScopeRuleHostPattern": {
+    "message": "Virheellinen laajuussäännön isäntämalli"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidScopeRulePath": {
+    "message": "Virheellinen laajuussäännön polku"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidScopeSpecification": {
+    "message": "Virheellinen laajuuden määritys"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidScopeSpecificationType": {
+    "message": "Laajuusmäärityksen tyyppi ei sisällytä eikä sulje pois"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidSessionId": {
+    "message": "Virheellinen istunnon tunnus"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidSessionParams": {
+    "message": "Virheelliset istuntoparametrit"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | keyError": {
+    "message": "Avainvirhe"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | keyId": {
+    "message": "Tunnus"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | keySite": {
+    "message": "Sivusto"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | mismatchedSessionId": {
+    "message": "Istunnon tunnus ei täsmää"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | missingScope": {
+    "message": "Puuttuva laajuus"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | missingScopeIncludeSite": {
+    "message": "\"include_site\" puuttuu laajuudesta"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | missingScopeSpecificationType": {
+    "message": "Laajuuden määrityksen tyyppi puuttuu"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | name": {
+    "message": "Nimi"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | netError": {
+    "message": "Verkkovirhe"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | no": {
+    "message": "Ei"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | noCredentials": {
+    "message": "Ei kirjautumistietoja"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | noEvents": {
+    "message": "Tapahtumia ei ole vielä kirjattu."
+  },
+  "panels/application/DeviceBoundSessionsView.ts | noSessionId": {
+    "message": "Ei istunnon tunnusta"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | noSessionMatch": {
+    "message": "Ei vastaavaa istunnon tunnusta"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | origin": {
+    "message": "Alkuperä"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | persistentHttpError": {
+    "message": "Pysyvä HTTP-virhe"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | preserveLog": {
+    "message": "Säilytä loki"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | proxyError": {
+    "message": "Välityspalvelinvirhe"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | refresh": {
+    "message": "Päivitä"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | refreshFatalError": {
+    "message": "Vakava virhe päivityksen aikana"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | refreshInitiatorInvalidHostPattern": {
+    "message": "Sallitun päivityksen käynnistäjän isäntämalli on virheellinen"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | refreshInitiatorNotString": {
+    "message": "Sallittu päivityksen käynnistäjä ei ole merkkijono"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | refreshQuotaExceeded": {
+    "message": "Päivityskiintiö ylitetty"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | refreshResult": {
+    "message": "Päivitä tulos"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | refreshUrl": {
+    "message": "Päivitä URL-osoite"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | refreshUrlSameSiteMismatch": {
+    "message": "Saman sivuston ristiriita: päivitä URL-osoite"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | refreshed": {
+    "message": "Päivitetty"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | registrationAttemptedChallenge": {
+    "message": "Rekisteröinti palautti haastevirheen vastauskoodin"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | relyingPartyWellKnownHasRelyingOrigins": {
+    "message": "Luottavan osapuolen .well-known-sisältö sisältää luottavat alkuperät"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | relyingPartyWellKnownMalformed": {
+    "message": "Luottavan osapuolen .well-known-sisältö on virheellinen"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | relyingPartyWellKnownUnavailable": {
+    "message": "Luottava osapuoli .well-known ei ole käytettävissä"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | result": {
+    "message": "Tulos"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | ruleHostPattern": {
+    "message": "Isäntämalli"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | rulePathPrefix": {
+    "message": "Polun etuliite"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | ruleType": {
+    "message": "Säännön tyyppi"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | ruleTypeExclude": {
+    "message": "Sulje pois"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | ruleTypeInclude": {
+    "message": "Sisällytä"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | scope": {
+    "message": "Laajuus"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | scopeOriginContainsPath": {
+    "message": "Laajuuden alkuperä sisältää polun"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | scopeOriginSameSiteMismatch": {
+    "message": "Saman sivuston ristiriidan laajuuden alkuperä"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | scopeRuleOriginScopedHostPatternMismatch": {
+    "message": "Alkuperäkohtaisessa istunnossa isäntämalli ja alkuperä eivät täsmää"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | scopeRuleSiteScopedHostPatternMismatch": {
+    "message": "Sivustokohtaisessa istunnossa on ristiriita isäntämallin ja sivuston välillä"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | selectEventToViewDetails": {
+    "message": "Valitse tapahtumarivi nähdäksesi lisätietoja."
+  },
+  "panels/application/DeviceBoundSessionsView.ts | serverError": {
+    "message": "Päätepisteen tilapäinen virhe"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | serverRequestedTermination": {
+    "message": "Palvelin pyysi lopettamista"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | sessionConfig": {
+    "message": "Istunnon määritys"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | sessionDeletedDuringRefresh": {
+    "message": "Istunto poistettu päivityksen aikana"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | sessionDetails": {
+    "message": "Istunnon tiedot"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | sessionId": {
+    "message": "Istunnon tunnus"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | sessionProviderWellKnownHasProviderOrigin": {
+    "message": "Istunnon tarjoajan .well-known-sisällöllä on provider_origin"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | sessionProviderWellKnownMalformed": {
+    "message": "Istunnon tarjoajan .well-known-sisältö on virheellinen"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | sessionProviderWellKnownUnavailable": {
+    "message": "Istunnon palveluntarjoajan .well-known ei ole saatavilla"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | signingError": {
+    "message": "Allekirjoitusvirhe"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | signingQuotaExceeded": {
+    "message": "Allekirjoituskiintiö ylitetty"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | storagePartitionCleared": {
+    "message": "Poistettu tallennusosiosta"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | subdomainRegistrationUnauthorized": {
+    "message": ".well-known ei valtuuttanut rekisteröintiä aliverkkotunnuksella"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | subdomainRegistrationWellKnownMalformed": {
+    "message": "Aliverkkotunnuksen rekisteröinnin .well-known-sisältö on virheellinen"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | subdomainRegistrationWellKnownUnavailable": {
+    "message": "Aliverkkotunnuksen rekisteröinti .\"well-known\" ei ole saatavilla"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | success": {
+    "message": "Onnistui"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | termination": {
+    "message": "Purkaminen"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | timestamp": {
+    "message": "Päivä"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | tooManyChallenges": {
+    "message": "Liian monta haastetta"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | tooManyRelyingOriginLabels": {
+    "message": "Liikaa .well-known-osoitteissa olevia luotettuja alkuperätunnisteita"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | transientHttpError": {
+    "message": "Tilapäinen HTTP-virhe"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | type": {
+    "message": "Tyyppi"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | unknown": {
+    "message": "Tuntematon"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | unreachable": {
+    "message": "Päätepiste ei ole tavoitettavissa"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | updatedSessionConfig": {
+    "message": "Päivitetty istuntomääritys"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | yes": {
+    "message": "Kyllä"
   },
   "panels/application/ExtensionStorageItemsView.ts | extensionStorageItems": {
     "message": "Laajennuksen tallennustilan kohteet"
@@ -5333,18 +5723,6 @@
   "panels/application/preloading/components/PreloadingGrid.ts | status": {
     "message": "Tila"
   },
-  "panels/application/preloading/components/PreloadingMismatchedHeadersGrid.ts | activationNavigationValue": {
-    "message": "Arvo aktivointinavigoinnissa"
-  },
-  "panels/application/preloading/components/PreloadingMismatchedHeadersGrid.ts | headerName": {
-    "message": "Otsikon nimi"
-  },
-  "panels/application/preloading/components/PreloadingMismatchedHeadersGrid.ts | initialNavigationValue": {
-    "message": "Arvo alkunavigoinnissa"
-  },
-  "panels/application/preloading/components/PreloadingMismatchedHeadersGrid.ts | missing": {
-    "message": "(puuttuu)"
-  },
   "panels/application/preloading/components/PreloadingString.ts | PrefetchEvictedAfterBrowsingDataRemoved": {
     "message": "Esihaku hylättiin, koska selausdata poistettiin."
   },
@@ -5621,6 +5999,9 @@
   "panels/application/preloading/components/RuleSetGrid.ts | status": {
     "message": "Tila"
   },
+  "panels/application/preloading/components/UsedPreloadingView.ts | activationNavigationValue": {
+    "message": "Arvo aktivointinavigoinnissa"
+  },
   "panels/application/preloading/components/UsedPreloadingView.ts | badgeFailure": {
     "message": "Virhe"
   },
@@ -5651,11 +6032,20 @@
   "panels/application/preloading/components/UsedPreloadingView.ts | downgradedPrefetchUsed": {
     "message": "Aloitussivu yritti esirenderöidä tämän sivun URL-osoitteen. Esirenderöinti epäonnistui, mutta tuloksena olevaa vastauksen leipätekstiä käytettiin kuitenkin esihakuna."
   },
+  "panels/application/preloading/components/UsedPreloadingView.ts | headerName": {
+    "message": "Otsikon nimi"
+  },
+  "panels/application/preloading/components/UsedPreloadingView.ts | initialNavigationValue": {
+    "message": "Arvo alkunavigoinnissa"
+  },
   "panels/application/preloading/components/UsedPreloadingView.ts | learnMore": {
     "message": "Lue lisää ennakoivasta lataamisesta osoitteessa developer.chrome.com"
   },
   "panels/application/preloading/components/UsedPreloadingView.ts | mismatchedHeadersDetail": {
     "message": "HTTP-pyyntöjen otsikot eivät täsmää"
+  },
+  "panels/application/preloading/components/UsedPreloadingView.ts | missing": {
+    "message": "(puuttuu)"
   },
   "panels/application/preloading/components/UsedPreloadingView.ts | noPreloads": {
     "message": "Aloitussivu ei yrittänyt ladata sivun URL-osoitetta ennakoivasti."
@@ -5993,11 +6383,11 @@
   "panels/common/BadgeNotification.ts | manageSettings": {
     "message": "Asetusten muuttaminen"
   },
+  "panels/common/BadgeNotification.ts | noThanks": {
+    "message": "Ei kiitos"
+  },
   "panels/common/BadgeNotification.ts | receiveBadges": {
     "message": "Laita merkit päälle"
-  },
-  "panels/common/BadgeNotification.ts | remindMeLater": {
-    "message": "Muistuta myöhemmin"
   },
   "panels/common/BadgeNotification.ts | starterBadgeAwardMessageNoGdpProfile": {
     "message": "Ansaitsit merkin ({PH1}) tästä: {PH2}. Luo profiili, niin voit lunastaa merkkisi."
@@ -6007,6 +6397,9 @@
   },
   "panels/common/BadgeNotification.ts | viewProfile": {
     "message": "Näytä profiili"
+  },
+  "panels/common/CopyChangesToPrompt.ts | responseCopiedToClipboard": {
+    "message": "Vastaus kopioitu leikepöydälle"
   },
   "panels/common/DOMLinkifier.ts | node": {
     "message": "<noodi>"
@@ -6070,6 +6463,27 @@
   },
   "panels/common/GdpSignUpDialog.ts | termsOfService": {
     "message": "Käyttöehdot"
+  },
+  "panels/common/GeminiRebrandPromoDialog.ts | detailAiCompanion": {
+    "message": "Tutustu tekoälyä hyödyntävään verkkokehitysavustajaan"
+  },
+  "panels/common/GeminiRebrandPromoDialog.ts | detailConsoleErrors": {
+    "message": "Saat välittömiä ja tarkkoja vastauksia konsolivirheisiin"
+  },
+  "panels/common/GeminiRebrandPromoDialog.ts | detailGenerateCode": {
+    "message": "Luo CSS- ja JS-katkelmia käden käänteessä"
+  },
+  "panels/common/GeminiRebrandPromoDialog.ts | detailPerformance": {
+    "message": "Löydä ongelmia automaattisesti suorituskyvyn jäljityksestä"
+  },
+  "panels/common/GeminiRebrandPromoDialog.ts | dialogAriaLabel": {
+    "message": "Gemini 3 Flash DevToolsissa"
+  },
+  "panels/common/GeminiRebrandPromoDialog.ts | dismiss": {
+    "message": "Ohita"
+  },
+  "panels/common/GeminiRebrandPromoDialog.ts | getStarted": {
+    "message": "Aloita"
   },
   "panels/common/PersistenceUtils.ts | linkedToS": {
     "message": "Linkitetty kohteeseen {PH1}"
@@ -6280,9 +6694,6 @@
   },
   "panels/console/ConsoleViewMessage.ts | Mxx": {
     "message": " M<XX>"
-  },
-  "panels/console/ConsoleViewMessage.ts | SeeIssueInCookieReport": {
-    "message": "Avaa yksityisyys- ja turvallisuuspaneeli ja klikkaa nähdäksesi kolmannen osapuolen evästeistä kertovan raportin"
   },
   "panels/console/ConsoleViewMessage.ts | assertionFailed": {
     "message": "Väittämä epäonnistui: "
@@ -6869,6 +7280,12 @@
   "panels/elements/CSSRuleValidator.ts | fontVariationSettingsWarning": {
     "message": "Asetuksen \"{PH1}\" arvo {PH2} on fonttiperheen \"{PH5}\" tuetun alueen [{PH3}, {PH4}] ulkopuolella."
   },
+  "panels/elements/CSSRuleValidator.ts | invalidAnchorPositioning": {
+    "message": "Ankkuri on määritetty, mutta elementtiä ei ole sijoitettu ankkurin mukaan vaan \"{POSITION}\"-arvon mukaan."
+  },
+  "panels/elements/CSSRuleValidator.ts | invalidAnchorPositioningFix": {
+    "message": "Aseta sijainniksi joko \"kiinteä\" tai \"absoluuttinen\"."
+  },
   "panels/elements/CSSRuleValidator.ts | ruleViolatedByParentElementRuleFix": {
     "message": "Kokeile asettaa ylätason elementin muuttujan ({EXISTING_PARENT_ELEMENT_RULE}) arvoksi {TARGET_PARENT_ELEMENT_RULE}."
   },
@@ -6886,6 +7303,9 @@
   },
   "panels/elements/CSSRuleValidator.ts | ruleViolatedBySameElementRuleReason": {
     "message": "Muuttuja ({REASON_PROPERTY_DECLARATION_CODE}) estää tämän vaikutuksen: {AFFECTED_PROPERTY_DECLARATION_CODE}."
+  },
+  "panels/elements/CSSRuleValidator.ts | unusedAnchorPositioning": {
+    "message": "Ankkuri on määritetty, mutta elementti on piilotettu."
   },
   "panels/elements/ClassesPaneWidget.ts | addNewClass": {
     "message": "Lisää uusi luokka"
@@ -6905,6 +7325,9 @@
   "panels/elements/ColorSwatchPopoverIcon.ts | openShadowEditor": {
     "message": "Näytä varjoeditori"
   },
+  "panels/elements/ComputedStyleWidget.ts | filterUpdateAriaText": {
+    "message": "Suodatin lisätty: {PH1}. Tulokset yhteensä: {PH2}"
+  },
   "panels/elements/ComputedStyleWidget.ts | group": {
     "message": "Ryhmä"
   },
@@ -6912,7 +7335,7 @@
     "message": "Siirry valitsimen lähteeseen"
   },
   "panels/elements/ComputedStyleWidget.ts | navigateToStyle": {
-    "message": "Siirry tyyliin"
+    "message": "Siirry tyyleihin"
   },
   "panels/elements/ComputedStyleWidget.ts | noMatchingProperty": {
     "message": "Ei ehtoja vastaavia omaisuuksia"
@@ -7202,6 +7625,9 @@
   "panels/elements/ElementsTreeElement.ts | removeScrollbars": {
     "message": "Poista vierityspalkit"
   },
+  "panels/elements/ElementsTreeElement.ts | reveal": {
+    "message": "näytä"
+  },
   "panels/elements/ElementsTreeElement.ts | scrollIntoView": {
     "message": "Vieritä, kunnes sisältö näkyy"
   },
@@ -7234,6 +7660,9 @@
   },
   "panels/elements/ElementsTreeElement.ts | valueIsTooLargeToEdit": {
     "message": "<arvo on liian suuri muokattavaksi>"
+  },
+  "panels/elements/ElementsTreeElement.ts | viewSourceCode": {
+    "message": "Näytä lähdekoodi"
   },
   "panels/elements/ElementsTreeElement.ts | wrapTheseItems": {
     "message": "Kääri nämä tuotteet"
@@ -7439,11 +7868,17 @@
   "panels/elements/StylePropertyTreeElement.ts | jumpToAnimationsPanel": {
     "message": "Siirry Animaatiot-paneeliin"
   },
+  "panels/elements/StylePropertyTreeElement.ts | openAnimationsPanel": {
+    "message": "Avaa animaatiot-paneeli"
+  },
   "panels/elements/StylePropertyTreeElement.ts | openColorPickerS": {
     "message": "Avaa värinvalitsin. {PH1}"
   },
   "panels/elements/StylePropertyTreeElement.ts | openInSourcesPanel": {
     "message": "Avaa Lähteet-paneelissa"
+  },
+  "panels/elements/StylePropertyTreeElement.ts | overriddenByAnimation": {
+    "message": "Ohitettu animaatiotyyleillä."
   },
   "panels/elements/StylePropertyTreeElement.ts | sIsNotDefined": {
     "message": "{PH1} on määrittämättä"
@@ -7492,9 +7927,6 @@
   },
   "panels/elements/StylesSidebarPane.ts | visibleSelectors": {
     "message": "{n,plural, =1{# näkyvä valitsin alla}other{# näkyvää valitsinta alla}}"
-  },
-  "panels/elements/TopLayerContainer.ts | reveal": {
-    "message": "näytä"
   },
   "panels/elements/components/AccessibilityTreeNode.ts | ignored": {
     "message": "Ohitettu"
@@ -7549,6 +7981,9 @@
   },
   "panels/elements/components/ElementsTreeExpandButton.ts | expand": {
     "message": "Laajenna"
+  },
+  "panels/elements/components/StylePropertyEditor.ts | denseLabel": {
+    "message": "Tiivis"
   },
   "panels/elements/components/StylePropertyEditor.ts | deselectButton": {
     "message": "Poista {propertyName}: {propertyValue}"
@@ -9434,6 +9869,9 @@
   "panels/network/NetworkDataGridNode.ts | blockeds": {
     "message": "(estetty: {PH1})"
   },
+  "panels/network/NetworkDataGridNode.ts | blocking": {
+    "message": "Estäminen"
+  },
   "panels/network/NetworkDataGridNode.ts | broken": {
     "message": "Chrome ei yrittänyt muodostaa HTTP/3-yhteyttä, koska se oli merkitty rikkinäiseksi."
   },
@@ -9488,6 +9926,9 @@
   "panels/network/NetworkDataGridNode.ts | finished": {
     "message": "Valmis"
   },
+  "panels/network/NetworkDataGridNode.ts | inBodyParserBlocking": {
+    "message": "Kehon sisäisen jäsentäjän esto"
+  },
   "panels/network/NetworkDataGridNode.ts | initialPriorityToolTip": {
     "message": "{PH1}, alkuperäinen prioriteetti: {PH2}"
   },
@@ -9512,6 +9953,12 @@
   "panels/network/NetworkDataGridNode.ts | memoryCache": {
     "message": "(välimuisti)"
   },
+  "panels/network/NetworkDataGridNode.ts | nonBlocking": {
+    "message": "Ei-estävä"
+  },
+  "panels/network/NetworkDataGridNode.ts | nonBlockingDynamic": {
+    "message": "Ei-estävä dynaaminen"
+  },
   "panels/network/NetworkDataGridNode.ts | origin": {
     "message": "alkuperä"
   },
@@ -9529,6 +9976,9 @@
   },
   "panels/network/NetworkDataGridNode.ts | pendingq": {
     "message": "(odottaa)"
+  },
+  "panels/network/NetworkDataGridNode.ts | potentiallyBlocking": {
+    "message": "Mahdollisesti estävä"
   },
   "panels/network/NetworkDataGridNode.ts | prefetchCache": {
     "message": "(esihaun välimuisti)"
@@ -9604,6 +10054,9 @@
   },
   "panels/network/NetworkItemView.ts | cookies": {
     "message": "Evästeet"
+  },
+  "panels/network/NetworkItemView.ts | deviceBoundSessions": {
+    "message": "Laitteeseen sidotut istunnot"
   },
   "panels/network/NetworkItemView.ts | directsocketMessages": {
     "message": "DirectSocket-viestit"
@@ -9975,7 +10428,10 @@
     "message": "Etäosoite"
   },
   "panels/network/NetworkLogViewColumns.ts | remoteAddressSpace": {
-    "message": "Etäosoiteavaruus"
+    "message": "Etäosoitteen tila"
+  },
+  "panels/network/NetworkLogViewColumns.ts | renderBlocking": {
+    "message": "Renderöinnin esto"
   },
   "panels/network/NetworkLogViewColumns.ts | requestHeaders": {
     "message": "Pyynnön otsikot"
@@ -9996,7 +10452,7 @@
     "message": "Koko"
   },
   "panels/network/NetworkLogViewColumns.ts | startTime": {
-    "message": "Aloitusaika"
+    "message": "Alkamisaika"
   },
   "panels/network/NetworkLogViewColumns.ts | status": {
     "message": "Tila"
@@ -10112,26 +10568,14 @@
   "panels/network/NetworkSearchScope.ts | url": {
     "message": "URL-osoite"
   },
-  "panels/network/RequestConditionsDrawer.ts | addNetworkRequestBlockingPattern": {
-    "message": "Lisää verkkopyynnön estomalli"
-  },
-  "panels/network/RequestConditionsDrawer.ts | addPattern": {
-    "message": "Lisää kuvio"
-  },
   "panels/network/RequestConditionsDrawer.ts | addPatternLabel": {
     "message": "Lisää verkkopyyntöjen rajoitus- tai estomalli"
-  },
-  "panels/network/RequestConditionsDrawer.ts | addPatternToBlock": {
-    "message": "Lisää malli klikkaamalla {PH1}-painiketta."
   },
   "panels/network/RequestConditionsDrawer.ts | addRule": {
     "message": "Lisää sääntö"
   },
   "panels/network/RequestConditionsDrawer.ts | dAffected": {
     "message": "Koskee {PH1} kohdetta"
-  },
-  "panels/network/RequestConditionsDrawer.ts | dBlocked": {
-    "message": "{PH1} estetty"
   },
   "panels/network/RequestConditionsDrawer.ts | decreasePriority": {
     "message": "Siirrä {PH1} alas"
@@ -10141,9 +10585,6 @@
   },
   "panels/network/RequestConditionsDrawer.ts | enableBlockingAndThrottling": {
     "message": "Ota esto ja rajoitus käyttöön"
-  },
-  "panels/network/RequestConditionsDrawer.ts | enableNetworkRequestBlocking": {
-    "message": "Ota käyttöön verkkopyyntöjen esto"
   },
   "panels/network/RequestConditionsDrawer.ts | enableThrottlingToggleLabel": {
     "message": "Estä {PH1} tai rajoita sitä"
@@ -10159,9 +10600,6 @@
   },
   "panels/network/RequestConditionsDrawer.ts | learnMoreLabel": {
     "message": "Lue lisää URL-osoitemallin syntaksista"
-  },
-  "panels/network/RequestConditionsDrawer.ts | noNetworkRequestsBlocked": {
-    "message": "Ei estettyjä verkkopyyntöjä"
   },
   "panels/network/RequestConditionsDrawer.ts | noPattern": {
     "message": "Mitään ei rajoitettu tai estetty"
@@ -10199,9 +10637,6 @@
   "panels/network/RequestConditionsDrawer.ts | textEditPattern": {
     "message": "Tekstimalli, jolla estetään tai rajoitetaan osuvia pyyntöjä. Käytä URL-osoitemallin syntaksia."
   },
-  "panels/network/RequestConditionsDrawer.ts | textPatternToBlockMatching": {
-    "message": "Tekstimalli, jolla estetään osuvia pyyntöjä – * toimii jokerimerkkinä"
-  },
   "panels/network/RequestCookiesView.ts | cookiesThatWereReceivedFromThe": {
     "message": "Evästeet, jotka vastaanotettiin palvelimelta vastauksen otsikossa set-cookie"
   },
@@ -10235,6 +10670,30 @@
   "panels/network/RequestCookiesView.ts | thisRequestHasNoCookies": {
     "message": "Tällä pyynnöllä ei ole evästeitä."
   },
+  "panels/network/RequestDeviceBoundSessionsView.ts | deferralDecision": {
+    "message": "Lykkäyspäätös"
+  },
+  "panels/network/RequestDeviceBoundSessionsView.ts | deferred": {
+    "message": "Lykkäys (päivitä)"
+  },
+  "panels/network/RequestDeviceBoundSessionsView.ts | inScopeRefreshNotAllowed": {
+    "message": "Ei lykätty (pyyntö kuuluu istuntoon, mutta aloittajalla ei ole lupaa käynnistää päivitystä)"
+  },
+  "panels/network/RequestDeviceBoundSessionsView.ts | inScopeRefreshNotYetNeeded": {
+    "message": "Ei lykätty (pyyntö kuuluu istuntoon, mutta evästeet ovat edelleen paikalla)"
+  },
+  "panels/network/RequestDeviceBoundSessionsView.ts | notInScope": {
+    "message": "Ei lykätty (pyyntö ei kuulu istuntoon)"
+  },
+  "panels/network/RequestDeviceBoundSessionsView.ts | proactiveRefreshAttempted": {
+    "message": "Ei lykätty (ennakoivaa päivitystä yritetty)"
+  },
+  "panels/network/RequestDeviceBoundSessionsView.ts | proactiveRefreshNotPossible": {
+    "message": "Ei lykätty (pyyntö kuuluu istuntoon, mutta ennakoiva päivitys ei ole mahdollinen)"
+  },
+  "panels/network/RequestDeviceBoundSessionsView.ts | sessionId": {
+    "message": "Istunnon tunnus"
+  },
   "panels/network/RequestInitiatorView.ts | noInitiator": {
     "message": "Ei aloittajadataa"
   },
@@ -10261,9 +10720,6 @@
   },
   "panels/network/RequestPayloadView.ts | requestPayload": {
     "message": "Pyydä resurssia"
-  },
-  "panels/network/RequestPayloadView.ts | showMore": {
-    "message": "Näytä lisää"
   },
   "panels/network/RequestPayloadView.ts | unableToDecodeValue": {
     "message": "(arvon koodauksen purkaminen ei onnistu)"
@@ -10528,6 +10984,9 @@
   },
   "panels/network/ResourceWebSocketFrameView.ts | webSocketFrame": {
     "message": "WebSocket-kehys"
+  },
+  "panels/network/ShowMoreDetailsWidget.ts | showMore": {
+    "message": "Näytä lisää"
   },
   "panels/network/SignedExchangeInfoView.ts | certificate": {
     "message": "Varmenne"
@@ -10811,9 +11270,6 @@
   "panels/network/network-meta.ts | addNetworkRequestBlockingOrThrottlingPattern": {
     "message": "Lisää verkkopyynnön esto- tai rajoitusmalli"
   },
-  "panels/network/network-meta.ts | addNetworkRequestBlockingPattern": {
-    "message": "Lisää verkkopyynnön estomalli"
-  },
   "panels/network/network-meta.ts | allowToGenerateHarWithSensitiveData": {
     "message": "Salli, että HAR luodaan sisältäen arkaluontoisen datan"
   },
@@ -10865,9 +11321,6 @@
   "panels/network/network-meta.ts | networkConditions": {
     "message": "Verkko-olosuhteet"
   },
-  "panels/network/network-meta.ts | networkRequestBlocking": {
-    "message": "Verkkopyyntöjen esto"
-  },
   "panels/network/network-meta.ts | networkRequestConditions": {
     "message": "Pyyntöehdot"
   },
@@ -10880,9 +11333,6 @@
   "panels/network/network-meta.ts | removeAllNetworkRequestBlockingOrThrottlingPatterns": {
     "message": "Poista kaikki verkkopyyntöjen esto- tai rajoitusmallit"
   },
-  "panels/network/network-meta.ts | removeAllNetworkRequestBlockingPatterns": {
-    "message": "Poista kaikki verkkopyyntöjen estomallit"
-  },
   "panels/network/network-meta.ts | resourceType": {
     "message": "resurssityyppi"
   },
@@ -10894,9 +11344,6 @@
   },
   "panels/network/network-meta.ts | showNetworkConditions": {
     "message": "Näytä Verkko-olosuhteet"
-  },
-  "panels/network/network-meta.ts | showNetworkRequestBlocking": {
-    "message": "Näytä verkkopyyntöjen esto"
   },
   "panels/network/network-meta.ts | showRequestConditions": {
     "message": "Näytä pyyntöehdot"
@@ -11735,8 +12182,17 @@
   "panels/recorder/RecorderController.ts | numberOfRecordings": {
     "message": "tallenne(tta)"
   },
+  "panels/recorder/RecorderController.ts | recordingDeleted": {
+    "message": "Tallenne poistettu"
+  },
   "panels/recorder/RecorderController.ts | recordingDescription": {
     "message": "Luo tallenteiden avulla automaattisia päästä päähän -testejä tai tulosten jäljityksiä."
+  },
+  "panels/recorder/RecorderController.ts | recordingExported": {
+    "message": "Tallenne viety"
+  },
+  "panels/recorder/RecorderController.ts | recordingImported": {
+    "message": "Tallenne tuotu"
   },
   "panels/recorder/RecorderController.ts | replayRecording": {
     "message": "Tallenteen toisto"
@@ -11824,6 +12280,12 @@
   },
   "panels/recorder/components/RecordingView.ts | cancelReplay": {
     "message": "Peruuta uudelleentoisto"
+  },
+  "panels/recorder/components/RecordingView.ts | codeSidebarClosed": {
+    "message": "Koodisivupalkki suljettu"
+  },
+  "panels/recorder/components/RecordingView.ts | codeSidebarOpened": {
+    "message": "Koodisivupalkki avattu"
   },
   "panels/recorder/components/RecordingView.ts | default": {
     "message": "Oletus"
@@ -12155,174 +12617,6 @@
   "panels/search/SearchView.ts | typeAndPressSToSearch": {
     "message": "Kirjoita ja paina {PH1}, niin voit tehdä haun"
   },
-  "panels/security/CookieControlsView.ts | cardDisclaimer": {
-    "message": "Vain kun DevTools on auki"
-  },
-  "panels/security/CookieControlsView.ts | cardTitle": {
-    "message": "Rajoita kolmannen osapuolen evästeitä tilapäisesti"
-  },
-  "panels/security/CookieControlsView.ts | enableFlag": {
-    "message": "Jos haluat käyttää tätä, aseta \"{PH1}\"-arvoksi Oletus"
-  },
-  "panels/security/CookieControlsView.ts | enrollGracePeriod": {
-    "message": "Jos haluat käyttää tätä, rekisteröi tämä sivusto tai sille upotetut sivustot {PH1} ‑palveluun"
-  },
-  "panels/security/CookieControlsView.ts | enterpriseDisclaimer": {
-    "message": "Organisaatiosi hallinnoi kolmannen osapuolen evästeiden pääsyoikeuksia tällä sivustolla"
-  },
-  "panels/security/CookieControlsView.ts | enterpriseTooltip": {
-    "message": "Järjestelmänvalvojasi ylläpitää tätä asetusta"
-  },
-  "panels/security/CookieControlsView.ts | exceptions": {
-    "message": "Poikkeukset"
-  },
-  "panels/security/CookieControlsView.ts | exceptionsExplanation": {
-    "message": "Tilanteet, joissa myönnetään pääsy kolmannen osapuolen evästeisiin"
-  },
-  "panels/security/CookieControlsView.ts | gracePeriod": {
-    "message": "lisäaika"
-  },
-  "panels/security/CookieControlsView.ts | gracePeriodExplanation": {
-    "message": "Jos {PH1} koskee tätä sivustoa tai sille upotettua sivustoa, sivusto saa pääsyn kolmannen osapuolen evästeisiin"
-  },
-  "panels/security/CookieControlsView.ts | gracePeriodTitle": {
-    "message": "Kolmannen osapuolen evästeiden lisäaika"
-  },
-  "panels/security/CookieControlsView.ts | heuristicExplanation": {
-    "message": "Jos {PH1} (esim. ponnahdusikkunat tai uudelleenohjaukset) ovat käytössä, tälle sivustolle upotettu sivusto saa pääsyn kolmannen osapuolen evästeisiin"
-  },
-  "panels/security/CookieControlsView.ts | heuristicTitle": {
-    "message": "Heuristiikkaan perustuva poikkeus"
-  },
-  "panels/security/CookieControlsView.ts | scenarios": {
-    "message": "ennalta määritetyt skenaariot"
-  },
-  "panels/security/CookieControlsView.ts | siteReloadMessage": {
-    "message": "Jos haluat ottaa päivitetyt asetukset käyttöön, päivitä sivu"
-  },
-  "panels/security/CookieControlsView.ts | tpcdHeuristicsGrants": {
-    "message": "#tpcd-heuristics-grants"
-  },
-  "panels/security/CookieControlsView.ts | tpcdMetadataGrants": {
-    "message": "#tpcd-metadata-grants"
-  },
-  "panels/security/CookieControlsView.ts | viewDetails": {
-    "message": "Näytä tiedot"
-  },
-  "panels/security/CookieControlsView.ts | viewExplanation": {
-    "message": "Testaa, miten tämä sivusto toimii, jos kolmannen osapuolen evästeitä on rajoitettu Chromessa"
-  },
-  "panels/security/CookieControlsView.ts | viewTitle": {
-    "message": "Asetukset"
-  },
-  "panels/security/CookieReportView.ts | adCookieTypeString": {
-    "message": "Mainonta"
-  },
-  "panels/security/CookieReportView.ts | allowed": {
-    "message": "Sallittu"
-  },
-  "panels/security/CookieReportView.ts | allowedByException": {
-    "message": "Sallittu poikkeuksella"
-  },
-  "panels/security/CookieReportView.ts | analyticsCookieTypeString": {
-    "message": "Analytiikka"
-  },
-  "panels/security/CookieReportView.ts | blocked": {
-    "message": "Estetty"
-  },
-  "panels/security/CookieReportView.ts | body": {
-    "message": "Tämä sivusto ei välttämättä toimi, jos kolmannen osapuolen evästeitä ja muita evästeitä on rajoitettu Chromessa."
-  },
-  "panels/security/CookieReportView.ts | cdnCookieTypeString": {
-    "message": "CDN"
-  },
-  "panels/security/CookieReportView.ts | consentProviderCookieTypeString": {
-    "message": "Suostumuspalveluntarjoaja"
-  },
-  "panels/security/CookieReportView.ts | contentCookieTypeString": {
-    "message": "Sisältö"
-  },
-  "panels/security/CookieReportView.ts | customerSuccessCookieTypeString": {
-    "message": "Asiakasmenestys"
-  },
-  "panels/security/CookieReportView.ts | domain": {
-    "message": "Verkkotunnus"
-  },
-  "panels/security/CookieReportView.ts | emptyReport": {
-    "message": "Ei muruakaan jäljellä"
-  },
-  "panels/security/CookieReportView.ts | emptyReportExplanation": {
-    "message": "Kolmannen osapuolen evästeisiin liittyviä ongelmia ei löytynyt"
-  },
-  "panels/security/CookieReportView.ts | gitHubResource": {
-    "message": "Katso {PH1} kolmannen osapuolen sivustolta."
-  },
-  "panels/security/CookieReportView.ts | gracePeriod": {
-    "message": "Tarkista {PH1}. Lisäaikapoikkeus on aktiivinen."
-  },
-  "panels/security/CookieReportView.ts | guidance": {
-    "message": "ohjeet"
-  },
-  "panels/security/CookieReportView.ts | heuristics": {
-    "message": "Toimi myöhemmin. Heuristiikkaan perustuva poikkeus on aktiivinen."
-  },
-  "panels/security/CookieReportView.ts | hostingCookieTypeString": {
-    "message": "Hostaus"
-  },
-  "panels/security/CookieReportView.ts | learnMoreLink": {
-    "message": "Lue lisää kolmannen osapuolen evästeiden käytöstä"
-  },
-  "panels/security/CookieReportView.ts | marketingCookieTypeString": {
-    "message": "Markkinointi"
-  },
-  "panels/security/CookieReportView.ts | name": {
-    "message": "Nimi"
-  },
-  "panels/security/CookieReportView.ts | other": {
-    "message": "Pyydä lisätietoa kolmannen osapuolen sivustolta"
-  },
-  "panels/security/CookieReportView.ts | otherCookieTypeString": {
-    "message": "Muu"
-  },
-  "panels/security/CookieReportView.ts | platform": {
-    "message": "Alusta"
-  },
-  "panels/security/CookieReportView.ts | recommendation": {
-    "message": "Suositus"
-  },
-  "panels/security/CookieReportView.ts | report": {
-    "message": "Kolmannen osapuolen evästeraportti"
-  },
-  "panels/security/CookieReportView.ts | reportedIssues": {
-    "message": "ilmoitetut ongelmat"
-  },
-  "panels/security/CookieReportView.ts | showRequestsWithThisCookie": {
-    "message": "Näytä pyynnöt tällä evästeellä"
-  },
-  "panels/security/CookieReportView.ts | socialCookieTypeString": {
-    "message": "Sosiaaliset"
-  },
-  "panels/security/CookieReportView.ts | status": {
-    "message": "Tila"
-  },
-  "panels/security/CookieReportView.ts | tagManagerCookieTypeString": {
-    "message": "Tag Manager"
-  },
-  "panels/security/CookieReportView.ts | title": {
-    "message": "Kolmannen osapuolen evästeet"
-  },
-  "panels/security/CookieReportView.ts | type": {
-    "message": "Tyyppi"
-  },
-  "panels/security/CookieReportView.ts | unknown": {
-    "message": "Tuntematon"
-  },
-  "panels/security/CookieReportView.ts | utilityCookieTypeString": {
-    "message": "Apusovellus"
-  },
-  "panels/security/CookieReportView.ts | videoCookieTypeString": {
-    "message": "Video"
-  },
   "panels/security/SecurityModel.ts | cipherWithMAC": {
     "message": "{PH1}, {PH2}"
   },
@@ -12623,12 +12917,6 @@
   "panels/security/SecurityPanel.ts | yourPageRequestedNonsecure": {
     "message": "Sivu pyysi ei-turvallisia resursseja, jotka estettiin"
   },
-  "panels/security/SecurityPanelSidebar.ts | cookieReport": {
-    "message": "Kolmannen osapuolen evästeet"
-  },
-  "panels/security/SecurityPanelSidebar.ts | flagControls": {
-    "message": "Asetukset"
-  },
   "panels/security/SecurityPanelSidebar.ts | mainOrigin": {
     "message": "Päälähde"
   },
@@ -12637,9 +12925,6 @@
   },
   "panels/security/SecurityPanelSidebar.ts | overview": {
     "message": "Yleiskatsaus"
-  },
-  "panels/security/SecurityPanelSidebar.ts | privacy": {
-    "message": "Yksityisyys"
   },
   "panels/security/SecurityPanelSidebar.ts | reloadToViewDetails": {
     "message": "Katso tiedot lataamalla uudelleen"
@@ -12653,14 +12938,8 @@
   "panels/security/SecurityPanelSidebar.ts | unknownCanceled": {
     "message": "Tuntematon/peruttu"
   },
-  "panels/security/security-meta.ts | PrivacyAndSecurity": {
-    "message": "Yksityisyys ja turvallisuus"
-  },
   "panels/security/security-meta.ts | security": {
     "message": "Suojaus"
-  },
-  "panels/security/security-meta.ts | showPrivacyAndSecurity": {
-    "message": "Näytä Yksityisyys ja turvallisuus"
   },
   "panels/security/security-meta.ts | showSecurity": {
     "message": "Näytä Suojaus-paneeli"
@@ -12917,6 +13196,9 @@
   "panels/settings/AISettingsTab.ts | asYouTypeCodeSuggestions": {
     "message": "Kun kirjoitat Console- tai Sources-paneeliin, saat koodiehdotuksia. Hyväksy yksi painamalla sarkainta."
   },
+  "panels/settings/AISettingsTab.ts | asYouTypeRelevantDataIsBeingSentToGoogle": {
+    "message": "Kirjoittaessasi Googlelle lähetetään asiaankuuluvaa dataa, jotta se voi luoda koodiehdotuksia. Hyväksy painamalla sarkainta."
+  },
   "panels/settings/AISettingsTab.ts | boostYourProductivity": {
     "message": "Tehosta tuottavuutta tekoälyn avulla"
   },
@@ -12937,6 +13219,12 @@
   },
   "panels/settings/AISettingsTab.ts | dataCollectionNoLogging": {
     "message": "Google voi jättää datan keräämättä riippuen Google-tilisi hallinnoinnista tai alueesta"
+  },
+  "panels/settings/AISettingsTab.ts | describeCodeInComment": {
+    "message": "Kirjoita Konsoliin tai Lähteet-paneeliin kommentti, jossa kuvailet tarvitsemaasi koodia, ja luo se painamalla Ctrl+I."
+  },
+  "panels/settings/AISettingsTab.ts | describeCodeInCommentForMacOs": {
+    "message": "Kirjoita Konsoliin tai Lähteet-paneeliin kommentti, jossa kuvailet tarvitsemaasi koodia, ja luo se painamalla Cmd+I."
   },
   "panels/settings/AISettingsTab.ts | enableAiAssistance": {
     "message": "Ota tekoälyavustaja käyttöön"
@@ -12969,10 +13257,10 @@
     "message": "Ymmärrä CSS-tyylejä, verkkotapahtumia, suorituskyvyn pullonkauloja ja tiedostojen alkuperää tekoälyä hyödyntävien vinkkien avulla"
   },
   "panels/settings/AISettingsTab.ts | freestylerSendsData": {
-    "message": "Selitysten luomista varten Googlelle lähetetään mikä tahansa käyttäjäkysely ja data, joihin tarkasteltavalla sivulla on pääsy verkkorajapintojen, verkkopyyntöjen, tiedostojen ja suorituskyvyn jäljityksen kautta. Tarkastajat voivat nähdä tämän datan ominaisuuden kehittämiseksi. Älä käytä sivuilla, joilla on henkilökohtaisia tai arkaluontoisia tietoja."
+    "message": "Selitysten luomista varten Googlelle lähetetään chat-viestisi, kaikki data, jonka tarkasteltava sivu voi nähdä verkko-APIen avulla, sekä valitsemasi kohteet, kuten tiedostot, verkkopyynnöt ja suorituskyvyn jäljitykset. Tarkastajat voivat nähdä tämän datan ominaisuuden kehittämiseksi. Älä käytä sivuilla, joilla on henkilökohtaisia tai arkaluontoisia tietoja."
   },
   "panels/settings/AISettingsTab.ts | freestylerSendsDataNoLogging": {
-    "message": "Selitysten luomista varten Googlelle lähetetään mikä tahansa käyttäjäkysely ja data, joihin tarkasteltavalla sivulla on pääsy verkkorajapintojen, verkkopyyntöjen, tiedostojen ja suorituskyvyn jäljityksen kautta. Dataa ei käytetä Googlen tekoälymallien parantamiseen. Organisaatio voi muuttaa näitä asetuksia milloin tahansa."
+    "message": "Selitysten luomista varten Googlelle lähetetään chat-viestisi, kaikki data, jonka tarkasteltava sivu voi nähdä verkko-APIen avulla, sekä valitsemasi kohteet, kuten tiedostot, verkkopyynnöt ja suorituskyvyn jäljitykset. Dataa ei käytetä Googlen tekoälymallien parantamiseen. Organisaatio voi muuttaa näitä asetuksia milloin tahansa."
   },
   "panels/settings/AISettingsTab.ts | generatedAiAnnotationsSendData": {
     "message": "Suorituskyvyn jäljitys lähetetään Googlelle merkintäehdotusten luomiseksi. Tarkastajat voivat nähdä tämän datan ominaisuuden kehittämiseksi."
@@ -12984,7 +13272,7 @@
     "message": "Auttaa lisäämään suorituskyvyn jäljitykseen automaattisesti luotuja tunnisteita"
   },
   "panels/settings/AISettingsTab.ts | helpUnderstandCodeSuggestions": {
-    "message": "Apua koodin viimeistelyyn"
+    "message": "Kirjoita koodia nopeammin tekoälyehdotusten avulla"
   },
   "panels/settings/AISettingsTab.ts | helpUnderstandConsole": {
     "message": "Auttaa ymmärtämään ja korjaamaan konsolin varoituksia ja virheitä"
@@ -13163,14 +13451,17 @@
   "panels/settings/SettingsScreen.ts | experiments": {
     "message": "Kokeilut"
   },
+  "panels/settings/SettingsScreen.ts | experimentsFound": {
+    "message": "{n,plural, =1{# kokeilu löytyi}other{# kokeilua löytyi}}"
+  },
+  "panels/settings/SettingsScreen.ts | greenDevUnstable": {
+    "message": "Varoitus: Kaikki nämä ominaisuudet ovat prototyyppejä ja erittäin epävakaita. Ne on tarkoitettu käyttäjätestausta varten, eikä niitä ole suunniteltu luotettaviksi."
+  },
   "panels/settings/SettingsScreen.ts | learnMore": {
     "message": "Lue lisää"
   },
   "panels/settings/SettingsScreen.ts | noResults": {
     "message": "Kokeilut eivät vastaa suodatinta"
-  },
-  "panels/settings/SettingsScreen.ts | oneOrMoreSettingsHaveChanged": {
-    "message": "Ainakin yhtä asetusta on muutettu. Voimaantulo edellyttää päivitystä."
   },
   "panels/settings/SettingsScreen.ts | restoreDefaultsAndReload": {
     "message": "Palauta oletusasetukset ja lataa uudelleen"
@@ -13184,17 +13475,14 @@
   "panels/settings/SettingsScreen.ts | settings": {
     "message": "Asetukset"
   },
+  "panels/settings/SettingsScreen.ts | settingsChangedReloadDevTools": {
+    "message": "Asetuksia muutettiin. Ota muutos käyttöön lataamalla DevTools uudelleen."
+  },
   "panels/settings/SettingsScreen.ts | shortcuts": {
     "message": "Pikanäppäimet"
   },
-  "panels/settings/SettingsScreen.ts | theseExperimentsAreParticularly": {
-    "message": "Varoitus: Nämä kokeilut ovat erityisen epävakaita. Otat ne käyttöön omalla vastuullasi."
-  },
   "panels/settings/SettingsScreen.ts | theseExperimentsCouldBeUnstable": {
     "message": "Varoitus: Nämä kokeilut voivat olla epävakaita tai epäluotettavia."
-  },
-  "panels/settings/SettingsScreen.ts | unstableExperiments": {
-    "message": "Epävakaat kokeilut"
   },
   "panels/settings/WorkspaceSettingsTab.ts | addFolder": {
     "message": "Lisää kansio"
@@ -13418,6 +13706,9 @@
   "panels/settings/settings-meta.ts | experiments": {
     "message": "Kokeilut"
   },
+  "panels/settings/settings-meta.ts | greenDevProtoTypes": {
+    "message": "GreenDev"
+  },
   "panels/settings/settings-meta.ts | ignoreList": {
     "message": "Ohituslista"
   },
@@ -13435,6 +13726,9 @@
   },
   "panels/settings/settings-meta.ts | showExperiments": {
     "message": "Näytä kokeilut"
+  },
+  "panels/settings/settings-meta.ts | showGreenDev": {
+    "message": "Näytä GreenDev"
   },
   "panels/settings/settings-meta.ts | showIgnoreList": {
     "message": "Näytä ohituslista"
@@ -13588,6 +13882,12 @@
   },
   "panels/sources/CallStackSidebarPane.ts | debugFileNotFound": {
     "message": "Virheenkorjaustiedoston lataaminen epäonnistui: {PH1}."
+  },
+  "panels/sources/CallStackSidebarPane.ts | debugSymbolsIncomplete": {
+    "message": "Funktion {PH1} virheenkorjaustiedot ovat puutteelliset"
+  },
+  "panels/sources/CallStackSidebarPane.ts | failedToLoadDebugSymbolsForFunction": {
+    "message": "Ei virheenkorjaustietoja toiminnolle {PH1}"
   },
   "panels/sources/CallStackSidebarPane.ts | notPaused": {
     "message": "Ei keskeytetty"
@@ -14708,8 +15008,20 @@
   "panels/timeline/ThreadAppender.ts | workletServiceS": {
     "message": "Huutokauppa-workletpalvelu – {PH1}"
   },
+  "panels/timeline/TimelineController.ts | initializingTracing": {
+    "message": "Alustetaan jäljitystä…"
+  },
+  "panels/timeline/TimelineController.ts | tracing": {
+    "message": "Jäljitetään…"
+  },
   "panels/timeline/TimelineController.ts | tracingNotSupported": {
     "message": "Suorituskyvyn jäljityksen tallennusta ei tueta tällä kohdetyypillä"
+  },
+  "panels/timeline/TimelineController.ts | waitingForLoadEvent": {
+    "message": "Odotetaan lataustapahtumaa…"
+  },
+  "panels/timeline/TimelineController.ts | waitingForLoadEventPlus5Seconds": {
+    "message": "Odotetaan lataustapahtumaa (+5 s)…"
   },
   "panels/timeline/TimelineDetailsView.ts | bottomup": {
     "message": "Alhaalta ylös"
@@ -14861,6 +15173,9 @@
   "panels/timeline/TimelinePanel.ts | close": {
     "message": "Sulje"
   },
+  "panels/timeline/TimelinePanel.ts | compressingTraceForDownload": {
+    "message": "Pakataan…"
+  },
   "panels/timeline/TimelinePanel.ts | cpu": {
     "message": "Suoritin:"
   },
@@ -14881,6 +15196,9 @@
   },
   "panels/timeline/TimelinePanel.ts | enableSelectorStats": {
     "message": "Ota CSS-valitsimen tilastot käyttöön (hidas)"
+  },
+  "panels/timeline/TimelinePanel.ts | encodingTraceForDownload": {
+    "message": "Koodataan…"
   },
   "panels/timeline/TimelinePanel.ts | eventSelected": {
     "message": "Tapahtuma {PH1} valittu"
@@ -14920,6 +15238,9 @@
   },
   "panels/timeline/TimelinePanel.ts | networkConditions": {
     "message": "Verkko-olosuhteet"
+  },
+  "panels/timeline/TimelinePanel.ts | preparingTraceForDownload": {
+    "message": "Valmistellaan…"
   },
   "panels/timeline/TimelinePanel.ts | processed": {
     "message": "Käsitelty"
@@ -15305,9 +15626,6 @@
   "panels/timeline/TimelineUIUtils.ts | layerRoot": {
     "message": "Tason juuri"
   },
-  "panels/timeline/TimelineUIUtils.ts | layoutForced": {
-    "message": "Asettelu pakotettu"
-  },
   "panels/timeline/TimelineUIUtils.ts | layoutRoot": {
     "message": "Asettelun juuri"
   },
@@ -15358,9 +15676,6 @@
   },
   "panels/timeline/TimelineUIUtils.ts | range": {
     "message": "Väli"
-  },
-  "panels/timeline/TimelineUIUtils.ts | recalculationForced": {
-    "message": "Uudelleenlaskenta pakotettu"
   },
   "panels/timeline/TimelineUIUtils.ts | relatedNode": {
     "message": "Samantyyppinen noodi"
@@ -17459,14 +17774,14 @@
   "ui/legacy/components/quick_open/CommandMenu.ts | noCommandsFound": {
     "message": "Komentoja ei löydy"
   },
-  "ui/legacy/components/quick_open/CommandMenu.ts | oneOrMoreSettingsHaveChanged": {
-    "message": "Ainakin yhtä asetusta on muutettu. Voimaantulo edellyttää päivitystä."
-  },
   "ui/legacy/components/quick_open/CommandMenu.ts | run": {
     "message": "Suorita"
   },
   "ui/legacy/components/quick_open/CommandMenu.ts | runCommand": {
     "message": "Suorita komento"
+  },
+  "ui/legacy/components/quick_open/CommandMenu.ts | settingsChangedReloadDevTools": {
+    "message": "Asetuksia muutettiin. Ota muutos käyttöön lataamalla DevTools uudelleen."
   },
   "ui/legacy/components/quick_open/FilteredListWidget.ts | newFeature": {
     "message": "Tämä on uusi ominaisuus"
@@ -17492,8 +17807,8 @@
   "ui/legacy/components/quick_open/quick_open-meta.ts | runCommand": {
     "message": "Suorita komento"
   },
-  "ui/legacy/components/settings_ui/SettingsUI.ts | oneOrMoreSettingsHaveChanged": {
-    "message": "Ainakin yhtä asetusta on muutettu. Voimaantulo edellyttää päivitystä."
+  "ui/legacy/components/settings_ui/SettingsUI.ts | settingsChangedReloadDevTools": {
+    "message": "Asetuksia muutettiin. Ota muutos käyttöön lataamalla DevTools uudelleen."
   },
   "ui/legacy/components/settings_ui/SettingsUI.ts | srequiresReload": {
     "message": "* Edellyttää uudelleenlatausta"

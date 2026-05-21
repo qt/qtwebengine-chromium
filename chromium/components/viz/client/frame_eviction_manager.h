@@ -13,7 +13,6 @@
 #include <utility>
 
 #include "base/gtest_prod_util.h"
-#include "base/memory/memory_pressure_listener.h"
 #include "base/memory/post_delayed_memory_reduction_task.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/singleton.h"
@@ -28,6 +27,10 @@
 #if BUILDFLAG(IS_ANDROID)
 #include "base/android/pre_freeze_background_memory_trimmer.h"
 #endif
+
+namespace ash {
+FORWARD_DECLARE_TEST(LockStateControllerTest, PauseFrameEvictionWhileLocked);
+}  // namespace ash
 
 namespace viz {
 
@@ -44,8 +47,7 @@ class FrameEvictionManagerClient {
 // clients can lock their frame to prevent it from being discarded, e.g. if the
 // tab is visible, or while capturing a screenshot.
 class VIZ_CLIENT_EXPORT FrameEvictionManager
-    : public base::trace_event::MemoryDumpProvider,
-      public base::MemoryPressureListener {
+    : public base::trace_event::MemoryDumpProvider {
  public:
   // Pauses frame eviction within its scope.
   class VIZ_CLIENT_EXPORT ScopedPause {
@@ -75,11 +77,6 @@ class VIZ_CLIENT_EXPORT FrameEvictionManager
     max_number_of_saved_frames_ = max_number_of_saved_frames;
   }
 
-  // React on memory pressure events to adjust the number of cached frames.
-  // Please make this private when crbug.com/443824 has been fixed.
-  void OnMemoryPressure(
-      base::MemoryPressureLevel memory_pressure_level) override;
-
   // Purges all unlocked frames, allowing us to reclaim resources.
   void PurgeAllUnlockedFrames();
 
@@ -92,6 +89,8 @@ class VIZ_CLIENT_EXPORT FrameEvictionManager
  private:
   friend struct base::DefaultSingletonTraits<FrameEvictionManager>;
   FRIEND_TEST_ALL_PREFIXES(FrameEvictionManagerTest, PeriodicCulling);
+  FRIEND_TEST_ALL_PREFIXES(ash::LockStateControllerTest,
+                           PauseFrameEvictionWhileLocked);
 
   FrameEvictionManager();
   ~FrameEvictionManager() override;
@@ -103,8 +102,6 @@ class VIZ_CLIENT_EXPORT FrameEvictionManager
 #else
   void CullOldUnlockedFrames();
 #endif
-
-  void PurgeMemory(int percentage);
 
   // Pauses/unpauses frame eviction.
   void Pause();
@@ -120,10 +117,7 @@ class VIZ_CLIENT_EXPORT FrameEvictionManager
   bool OnMemoryDump(const base::trace_event::MemoryDumpArgs& args,
                     base::trace_event::ProcessMemoryDump* pmd) override;
 
-  // Listens for system under pressure notifications and adjusts number of
-  // cached frames accordingly.
-  base::AsyncMemoryPressureListenerRegistration
-      memory_pressure_listener_registration_;
+  bool is_paused_for_testing() const { return pause_count_ != 0; }
 
   std::map<FrameEvictionManagerClient*, size_t> locked_frames_;
   // {FrameEvictionManagerClient, Last Unlock() time}, ordered with the most

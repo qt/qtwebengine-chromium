@@ -92,6 +92,7 @@ struct TextureLayerExtra {
   bool force_texture_to_opaque;
   gfx.mojom.PointF uv_top_left;
   gfx.mojom.PointF uv_bottom_right;
+  bool update_transferable_resource;
   TransferableResource? transferable_resource;
 };
 
@@ -154,7 +155,7 @@ struct NinePatchThumbScrollbarLayerExtra {
   ScrollbarLayerBaseExtra scrollbar_base_extra;
 
   int32 thumb_thickness;
-  int32 thumb_length;
+  int32 minimum_thumb_length;
   int32 track_start;
   int32 track_length;
   gfx.mojom.Size image_bounds;
@@ -173,7 +174,7 @@ struct PaintedScrollbarLayerExtra {
   bool jump_on_track_click;
   bool supports_drag_snap_back;
   int32 thumb_thickness;
-  int32 thumb_length;
+  int32 minimum_thumb_length;
   gfx.mojom.Rect back_button_rect;
   gfx.mojom.Rect forward_button_rect;
   gfx.mojom.Rect track_rect;
@@ -252,20 +253,8 @@ union LayerExtra {
   NinePatchLayerExtra nine_patch_layer_extra;
 };
 
-// Details about a cc::LayerImpl that has been added to a tree or modified in
-// some interesting way since a prior tree update.
-struct Layer {
-  // The layer's assigned ID. This is an arbitrary integer value which is
-  // guaranteed to be (a) unique across all layers currently in the tree and
-  // (b) consistent for the lifetime of each layer. When a LayerTreeUpdate
-  // contains a Layer with a previously unseen ID, the Layer is being added to
-  // the tree; otherwise an existing layer's properties are changing.
-  int64 id;
-
-  // The type of this layer. If this structure is updating an existing layer,
-  // the type here must match that of the existing layer.
-  cc.mojom.LayerType type;
-
+// General properties, common to all Layer types.
+struct LayerGeneralProperties {
   // Bounds of the layer, generally in layer space. If this is the root layer,
   // bounds are in viewport space, including device scale factor.
   gfx.mojom.Size bounds;
@@ -303,6 +292,28 @@ struct Layer {
   // The post-transform position of this layer.
   gfx.mojom.Vector2dF offset_to_transform_parent;
 
+  bool should_check_backface_visibility;
+
+  RareProperties? rare_properties;
+
+  // Extra properties that are specific to a layerImpl type.
+  LayerExtra? layer_extra;
+};
+
+// Details about a cc::LayerImpl that has been added to a tree or modified in
+// some interesting way since a prior tree update.
+struct Layer {
+  // The layer's assigned ID. This is an arbitrary integer value which is
+  // guaranteed to be (a) unique across all layers currently in the tree and
+  // (b) consistent for the lifetime of each layer. When a LayerTreeUpdate
+  // contains a Layer with a previously unseen ID, the Layer is being added to
+  // the tree; otherwise an existing layer's properties are changing.
+  int64 id;
+
+  // The type of this layer. If this structure is updating an existing layer,
+  // the type here must match that of the existing layer.
+  cc.mojom.LayerType type;
+
   // Property tree node IDs. Each of these IDs is bound to the range [0, N) for
   // a property tree with N nodes.
   int32 transform_tree_index;
@@ -310,12 +321,7 @@ struct Layer {
   int32 effect_tree_index;
   int32 scroll_tree_index;
 
-  bool should_check_backface_visibility;
-
-  RareProperties? rare_properties;
-
-  // Extra properties that are specific to a layerImpl type.
-  LayerExtra? layer_extra;
+  LayerGeneralProperties? general_properties;
 };
 
 // See blink::AnchorPositionScrollData, from which the fields here are derived.
@@ -361,6 +367,7 @@ struct TransformTreeUpdate {
   array<int32> nodes_affected_by_safe_area_bottom;
   array<StickyPositionNodeData> sticky_position_data;
   array<AnchorPositionScrollData> anchor_position_scroll_data;
+  map<cc.mojom.ElementId, gfx.mojom.Vector2dF> drawn_elastic_overscroll;
 };
 
 // Details about a new or updated node within a transform property tree.
@@ -575,6 +582,10 @@ struct EffectNode {
   // Whether this effect is triggered by a non-identity 2D scale transform
   // (and no other transform).
   bool needs_effect_for_2d_scale_transform;
+
+  // If true, the subtree rooted at this node only draws content that is visible
+  // in the target surface.
+  bool only_draws_visible_content;
 
   // The CopyOutputRequests that have been made for this node.
   array<CopyOutputRequest> copy_output_requests;

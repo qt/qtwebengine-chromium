@@ -64,11 +64,13 @@ import { EventEmitter } from '../common/EventEmitter.js';
 import { FileChooser } from '../common/FileChooser.js';
 import { NetworkManagerEvent } from '../common/NetworkManagerEvents.js';
 import { debugError, evaluationString, getReadableAsTypedArray, getReadableFromProtocolStream, parsePDFOptions, timeout, validateDialogType, } from '../common/util.js';
+import { environment } from '../environment.js';
 import { assert } from '../util/assert.js';
 import { Deferred } from '../util/Deferred.js';
 import { AsyncDisposableStack } from '../util/disposable.js';
 import { isErrorLike } from '../util/ErrorLike.js';
 import { Binding } from './Binding.js';
+import { CdpBluetoothEmulation } from './BluetoothEmulation.js';
 import { CdpCDPSession } from './CdpSession.js';
 import { isTargetClosedError } from './Connection.js';
 import { Coverage } from './Coverage.js';
@@ -80,7 +82,7 @@ import { CdpKeyboard, CdpMouse, CdpTouchscreen } from './Input.js';
 import { MAIN_WORLD } from './IsolatedWorlds.js';
 import { releaseObject } from './JSHandle.js';
 import { Tracing } from './Tracing.js';
-import { createClientError, pageBindingInitString, valueFromRemoteObject, } from './utils.js';
+import { createClientError, pageBindingInitString, valueFromJSHandle, } from './utils.js';
 import { CdpWebWorker } from './WebWorker.js';
 function convertConsoleMessageLevel(method) {
     switch (method) {
@@ -88,6 +90,19 @@ function convertConsoleMessageLevel(method) {
             return 'warn';
         default:
             return method;
+    }
+}
+/**
+ * @internal
+ */
+export function convertSameSiteFromPuppeteerToCdp(sameSite) {
+    switch (sameSite) {
+        case 'Strict':
+        case 'Lax':
+        case 'None':
+            return sameSite;
+        default:
+            return undefined;
     }
 }
 /**
@@ -114,6 +129,7 @@ export class CdpPage extends Page {
     }
     #closed = false;
     #targetManager;
+    #cdpBluetoothEmulation;
     #primaryTargetClient;
     #primaryTarget;
     #tabTargetClient;
@@ -140,6 +156,7 @@ export class CdpPage extends Page {
         assert(this.#tabTargetClient, 'Tab target session is not defined.');
         this.#tabTarget = this.#tabTargetClient.target();
         assert(this.#tabTarget, 'Tab target is not defined.');
+        this._tabId = this.#tabTarget._getTargetInfo().targetId;
         this.#primaryTarget = target;
         this.#targetManager = target._targetManager();
         this.#keyboard = new CdpKeyboard(client);
@@ -150,6 +167,9 @@ export class CdpPage extends Page {
         this.#tracing = new Tracing(client);
         this.#coverage = new Coverage(client);
         this.#viewport = null;
+        // Use browser context's connection, as current Bluetooth emulation in Chromium is
+        // implemented on the browser context level, and not tight to the specific tab.
+        this.#cdpBluetoothEmulation = new CdpBluetoothEmulation(this.#primaryTargetClient.connection());
         const frameManagerEmitter = new EventEmitter(this.#frameManager);
         frameManagerEmitter.on(FrameManagerEvent.FrameAttached, frame => {
             this.emit("frameattached" /* PageEvent.FrameAttached */, frame);
@@ -275,7 +295,7 @@ export class CdpPage extends Page {
         assert(session instanceof CdpCDPSession);
         this.#frameManager.onAttachedToTarget(session.target());
         if (session.target()._getTargetInfo().type === 'worker') {
-            const worker = new CdpWebWorker(session, session.target().url(), session.target()._targetId, session.target().type(), this.#addConsoleMessage.bind(this), this.#handleException.bind(this), this.#frameManager.networkManager);
+            const worker = new CdpWebWorker(session, session.target().url(), session.target()._targetId, session.target().type(), this.#onConsoleAPI.bind(this), this.#handleException.bind(this), this.#frameManager.networkManager);
             this.#workers.set(session.id(), worker);
             this.emit("workercreated" /* PageEvent.WorkerCreated */, worker);
         }
@@ -299,12 +319,16 @@ export class CdpPage extends Page {
         }
     }
     async resize(params) {
-        const { windowId } = await this.#primaryTargetClient.send('Browser.getWindowForTarget');
+        const windowId = await this.windowId();
         await this.#primaryTargetClient.send('Browser.setContentsSize', {
-            windowId,
+            windowId: Number(windowId),
             width: params.contentWidth,
             height: params.contentHeight,
         });
+    }
+    async windowId() {
+        const { windowId } = await this.#primaryTargetClient.send('Browser.getWindowForTarget');
+        return windowId.toString();
     }
     async #onFileChooser(event) {
         const env_1 = { stack: [], error: void 0, hasError: false };
@@ -402,7 +426,7 @@ export class CdpPage extends Page {
             });
         }
         if (source !== 'worker') {
-            this.emit("console" /* PageEvent.Console */, new ConsoleMessage(convertConsoleMessageLevel(level), text, [], [{ url, lineNumber }], undefined, stackTrace));
+            this.emit("console" /* PageEvent.Console */, new ConsoleMessage(convertConsoleMessageLevel(level), text, [], [{ url, lineNumber }], undefined, stackTrace, this.#primaryTarget._targetId));
         }
     }
     mainFrame() {
@@ -445,6 +469,9 @@ export class CdpPage extends Page {
     async emulateNetworkConditions(networkConditions) {
         return await this.#frameManager.networkManager.emulateNetworkConditions(networkConditions);
     }
+    async emulateFocusedPage(enabled) {
+        return await this.#emulationManager.emulateFocus(enabled);
+    }
     setDefaultNavigationTimeout(timeout) {
         this._timeoutSettings.setDefaultNavigationTimeout(timeout);
     }
@@ -486,6 +513,8 @@ export class CdpPage extends Page {
                 partitionKey: cookie.partitionKey
                     ? cookie.partitionKey.topLevelSite
                     : undefined,
+                // TODO: remove sameParty as it is removed from Chrome.
+                sameParty: cookie.sameParty ?? false,
             };
         });
     }
@@ -532,6 +561,7 @@ export class CdpPage extends Page {
                     return {
                         ...cookieParam,
                         partitionKey: convertCookiesPartitionKeyFromPuppeteerToCdp(cookieParam.partitionKey),
+                        sameSite: convertSameSiteFromPuppeteerToCdp(cookieParam.sameSite),
                     };
                 }),
             });
@@ -593,6 +623,32 @@ export class CdpPage extends Page {
         const response = await this.#primaryTargetClient.send('Performance.getMetrics');
         return this.#buildMetricsObject(response.metrics);
     }
+    async captureHeapSnapshot(options) {
+        const { createWriteStream } = environment.value.fs;
+        const stream = createWriteStream(options.path);
+        const streamPromise = new Promise((resolve, reject) => {
+            stream.on('error', reject);
+            stream.on('finish', resolve);
+        });
+        const client = this.#primaryTargetClient;
+        await client.send('HeapProfiler.enable');
+        await client.send('HeapProfiler.collectGarbage');
+        const handler = (event) => {
+            stream.write(event.chunk);
+        };
+        client.on('HeapProfiler.addHeapSnapshotChunk', handler);
+        try {
+            await client.send('HeapProfiler.takeHeapSnapshot', {
+                reportProgress: false,
+            });
+        }
+        finally {
+            client.off('HeapProfiler.addHeapSnapshotChunk', handler);
+            await client.send('HeapProfiler.disable');
+        }
+        stream.end();
+        await streamPromise;
+    }
     #emitMetrics(event) {
         this.emit("metrics" /* PageEvent.Metrics */, {
             title: event.title,
@@ -615,7 +671,34 @@ export class CdpPage extends Page {
         const values = event.args.map(arg => {
             return world.createCdpHandle(arg);
         });
-        this.#addConsoleMessage(convertConsoleMessageLevel(event.type), values, event.stackTrace);
+        if (!this.listenerCount("console" /* PageEvent.Console */)) {
+            values.forEach(arg => {
+                return arg.dispose();
+            });
+            return;
+        }
+        const textTokens = [];
+        // eslint-disable-next-line max-len -- The comment is long.
+        // eslint-disable-next-line @puppeteer/use-using -- These are not owned by this function.
+        for (const arg of values) {
+            textTokens.push(valueFromJSHandle(arg));
+        }
+        const stackTraceLocations = [];
+        if (event.stackTrace) {
+            for (const callFrame of event.stackTrace.callFrames) {
+                stackTraceLocations.push({
+                    url: callFrame.url,
+                    lineNumber: callFrame.lineNumber,
+                    columnNumber: callFrame.columnNumber,
+                });
+            }
+        }
+        let targetId;
+        if (world.environment.client instanceof CdpCDPSession) {
+            targetId = world.environment.client.target()._targetId;
+        }
+        const message = new ConsoleMessage(convertConsoleMessageLevel(event.type), textTokens.join(' '), values, stackTraceLocations, undefined, event.stackTrace, targetId);
+        this.emit("console" /* PageEvent.Console */, message);
     }
     async #onBindingCalled(world, event) {
         let payload;
@@ -637,38 +720,6 @@ export class CdpPage extends Page {
         }
         const binding = this.#bindings.get(name);
         await binding?.run(context, seq, args, isTrivial);
-    }
-    #addConsoleMessage(eventType, args, stackTrace) {
-        if (!this.listenerCount("console" /* PageEvent.Console */)) {
-            args.forEach(arg => {
-                return arg.dispose();
-            });
-            return;
-        }
-        const textTokens = [];
-        // eslint-disable-next-line max-len -- The comment is long.
-        // eslint-disable-next-line @puppeteer/use-using -- These are not owned by this function.
-        for (const arg of args) {
-            const remoteObject = arg.remoteObject();
-            if (remoteObject.objectId) {
-                textTokens.push(arg.toString());
-            }
-            else {
-                textTokens.push(valueFromRemoteObject(remoteObject));
-            }
-        }
-        const stackTraceLocations = [];
-        if (stackTrace) {
-            for (const callFrame of stackTrace.callFrames) {
-                stackTraceLocations.push({
-                    url: callFrame.url,
-                    lineNumber: callFrame.lineNumber,
-                    columnNumber: callFrame.columnNumber,
-                });
-            }
-        }
-        const message = new ConsoleMessage(convertConsoleMessageLevel(eventType), textTokens.join(' '), args, stackTraceLocations, undefined, stackTrace);
-        this.emit("console" /* PageEvent.Console */, message);
     }
     #onDialog(event) {
         const type = validateDialogType(event.type);
@@ -902,6 +953,9 @@ export class CdpPage extends Page {
      */
     async waitForDevicePrompt(options = {}) {
         return await this.mainFrame().waitForDevicePrompt(options);
+    }
+    get bluetooth() {
+        return this.#cdpBluetoothEmulation;
     }
 }
 const supportedMetrics = new Set([

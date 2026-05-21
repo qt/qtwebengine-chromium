@@ -16,27 +16,22 @@ namespace {
 
 const AccessPoint kAccessPointsThatSupportUserAction[] = {
     AccessPoint::kStartPage,
-    AccessPoint::kNtpLink,
     AccessPoint::kMenu,
     AccessPoint::kSettings,
     AccessPoint::kSettingsYourSavedInfo,
-    AccessPoint::kSupervisedUser,
     AccessPoint::kExtensionInstallBubble,
     AccessPoint::kExtensions,
     AccessPoint::kBookmarkBubble,
     AccessPoint::kBookmarkManager,
     AccessPoint::kAvatarBubbleSignIn,
     AccessPoint::kUserManager,
-    AccessPoint::kDevicesPage,
     AccessPoint::kFullscreenSigninPromo,
     AccessPoint::kRecentTabs,
     AccessPoint::kUnknown,
     AccessPoint::kPasswordBubble,
     AccessPoint::kAutofillDropdown,
     AccessPoint::kResigninInfobar,
-    AccessPoint::kTabSwitcher,
     AccessPoint::kMachineLogon,
-    AccessPoint::kGoogleServicesSettings,
     AccessPoint::kNtpFeedTopPromo,
     AccessPoint::kPostDeviceRestoreSigninPromo,
     AccessPoint::kNtpFeedCardMenuPromo,
@@ -55,11 +50,11 @@ const AccessPoint kAccessPointsThatSupportUserAction[] = {
     AccessPoint::kNonModalSigninBookmarkPromo,
     AccessPoint::kUserManagerWithPrefilledEmail,
     AccessPoint::kEnterpriseDialogAfterSigninInterception,
+    AccessPoint::kCredentialExchangeImport,
 };
 
 const AccessPoint kAccessPointsThatSupportImpression[] = {
     AccessPoint::kStartPage,
-    AccessPoint::kNtpLink,
     AccessPoint::kMenu,
     AccessPoint::kSettings,
     AccessPoint::kSettingsYourSavedInfo,
@@ -67,13 +62,11 @@ const AccessPoint kAccessPointsThatSupportImpression[] = {
     AccessPoint::kBookmarkBubble,
     AccessPoint::kBookmarkManager,
     AccessPoint::kAvatarBubbleSignIn,
-    AccessPoint::kDevicesPage,
     AccessPoint::kFullscreenSigninPromo,
     AccessPoint::kRecentTabs,
     AccessPoint::kPasswordBubble,
     AccessPoint::kAutofillDropdown,
     AccessPoint::kResigninInfobar,
-    AccessPoint::kTabSwitcher,
     AccessPoint::kNtpFeedTopPromo,
     AccessPoint::kPostDeviceRestoreSigninPromo,
     AccessPoint::kNtpFeedCardMenuPromo,
@@ -85,6 +78,7 @@ const AccessPoint kAccessPointsThatSupportImpression[] = {
     AccessPoint::kNotificationsOptInScreenContentToggle,
     AccessPoint::kAddressBubble,
     AccessPoint::kEnterpriseDialogAfterSigninInterception,
+    AccessPoint::kCredentialExchangeImport,
 };
 
 class SigninMetricsTest : public ::testing::Test {
@@ -93,16 +87,12 @@ class SigninMetricsTest : public ::testing::Test {
     switch (access_point) {
       case AccessPoint::kStartPage:
         return "StartPage";
-      case AccessPoint::kNtpLink:
-        return "NTP";
       case AccessPoint::kMenu:
         return "Menu";
       case AccessPoint::kSettings:
         return "Settings";
       case AccessPoint::kSettingsYourSavedInfo:
         return "YourSavedInfo";
-      case AccessPoint::kSupervisedUser:
-        return "SupervisedUser";
       case AccessPoint::kExtensionInstallBubble:
         return "ExtensionInstallBubble";
       case AccessPoint::kExtensions:
@@ -115,8 +105,6 @@ class SigninMetricsTest : public ::testing::Test {
         return "AvatarBubbleSignin";
       case AccessPoint::kUserManager:
         return "UserManager";
-      case AccessPoint::kDevicesPage:
-        return "DevicesPage";
       case AccessPoint::kFullscreenSigninPromo:
         return "SigninPromo";
       case AccessPoint::kRecentTabs:
@@ -129,26 +117,14 @@ class SigninMetricsTest : public ::testing::Test {
         return "AutofillDropdown";
       case AccessPoint::kResigninInfobar:
         return "ReSigninInfobar";
-      case AccessPoint::kTabSwitcher:
-        return "TabSwitcher";
       case AccessPoint::kMachineLogon:
         return "MachineLogon";
-      case AccessPoint::kGoogleServicesSettings:
-        return "GoogleServicesSettings";
-      case AccessPoint::kSyncErrorCard:
-        return "SyncErrorCard";
       case AccessPoint::kForcedSignin:
         return "ForcedSignin";
-      case AccessPoint::kAccountRenamed:
-        return "AccountRenamed";
       case AccessPoint::kWebSignin:
         return "WebSignIn";
       case AccessPoint::kSafetyCheck:
         return "SafetyCheck";
-      case AccessPoint::kKaleidoscope:
-        return "Kaleidoscope";
-      case AccessPoint::kEnterpriseSignoutCoordinator:
-        return "EnterpriseSignoutResignSheet";
       case AccessPoint::kSigninInterceptFirstRunExperience:
         return "SigninInterceptFirstRunExperience";
       case AccessPoint::kSendTabToSelfPromo:
@@ -179,8 +155,6 @@ class SigninMetricsTest : public ::testing::Test {
         return "ReauthInfoBar";
       case AccessPoint::kAccountConsistencyService:
         return "AccountConsistencyService";
-      case AccessPoint::kSearchCompanion:
-        return "SearchCompanion";
       case AccessPoint::kSetUpList:
         return "SetUpList";
       case AccessPoint::kSaveToDriveIos:
@@ -203,8 +177,6 @@ class SigninMetricsTest : public ::testing::Test {
         return "ProfileMenuSignoutConfirmationPrompt";
       case AccessPoint::kSettingsSignoutConfirmationPrompt:
         return "SettingsSignoutConfirmationPrompt";
-      case AccessPoint::kNtpIdentityDisc:
-        return "NtpIdentityDisc";
       case AccessPoint::kOidcRedirectionInterception:
         return "OidcRedirectionInterception";
       case AccessPoint::kWebauthnModalDialog:
@@ -257,6 +229,12 @@ class SigninMetricsTest : public ::testing::Test {
         return "NtpFeaturePromo";
       case AccessPoint::kEnterpriseDialogAfterSigninInterception:
         return "EnterpriseDialogAfterSigninInterception";
+      case AccessPoint::kCredentialExchangeImport:
+        return "CredentialExchangeImport";
+      case AccessPoint::kSetSyncConsentFromSyncInternals:
+        return "SetSyncConsentFromSyncInternals";
+      case AccessPoint::kIosChromeWebView:
+        return "IosChromeWebView";
     }
   }
 };
@@ -277,6 +255,13 @@ TEST_F(SigninMetricsTest, RecordSigninImpressionUserAction) {
     EXPECT_EQ(1, user_action_tester.GetActionCount(
                      "Signin_Impression_From" + GetAccessPointDescription(ap)));
   }
+}
+
+TEST_F(SigninMetricsTest, AccessPointFromInt) {
+  EXPECT_EQ(AccessPoint::kStartPage, AccessPointFromInt(0));
+  EXPECT_EQ(std::optional<AccessPoint>(), AccessPointFromInt(-1));
+  // Deprecated access point kNtpLink.
+  EXPECT_EQ(std::optional<AccessPoint>(), AccessPointFromInt(1));
 }
 
 TEST(LogSyncOptInOfferedTest, RecordsHistogram) {

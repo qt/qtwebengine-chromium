@@ -5,12 +5,13 @@
 #include "components/pdf/renderer/pdf_accessibility_tree_builder.h"
 
 #include <optional>
-#include <queue>
 #include <string>
 
 #include "base/i18n/break_iterator.h"
+#include "base/logging.h"
 #include "base/strings/utf_string_conversion_utils.h"
 #include "components/pdf/renderer/pdf_accessibility_tree_builder_heuristic.h"
+#include "components/pdf/renderer/pdf_accessibility_tree_builder_structure.h"
 #include "components/strings/grit/components_strings.h"
 #include "pdf/accessibility_structs.h"
 #include "pdf/page_character_index.h"
@@ -99,14 +100,14 @@ PdfAccessibilityTreeBuilder::PdfAccessibilityTreeBuilder(
     const chrome_pdf::AccessibilityPageObjects& page_objects,
     const chrome_pdf::AccessibilityPageInfo& page_info,
     uint32_t page_index,
+    const chrome_pdf::AccessibilityStructureElement* page_structure_tree,
     ui::AXNodeData* root_node,
     blink::WebAXObject* container_obj,
     std::vector<std::unique_ptr<ui::AXNodeData>>* nodes,
     std::map<int32_t, chrome_pdf::PageCharacterIndex>*
         node_id_to_page_char_index,
     std::map<int32_t, PdfAccessibilityTree::AnnotationInfo>*
-        node_id_to_annotation_info
-    )
+        node_id_to_annotation_info)
     : mark_headings_using_heuristic_(mark_headings_using_heuristic),
       text_runs_(text_runs),
       chars_(chars),
@@ -116,13 +117,13 @@ PdfAccessibilityTreeBuilder::PdfAccessibilityTreeBuilder(
       text_fields_(page_objects.form_fields.text_fields),
       buttons_(page_objects.form_fields.buttons),
       choice_fields_(page_objects.form_fields.choice_fields),
+      page_structure_tree_(page_structure_tree),
       page_index_(page_index),
       root_node_(root_node),
       container_obj_(container_obj),
       nodes_(nodes),
       node_id_to_page_char_index_(node_id_to_page_char_index),
-      node_id_to_annotation_info_(node_id_to_annotation_info)
-{
+      node_id_to_annotation_info_(node_id_to_annotation_info) {
   page_node_ = CreateAndAppendNode(ax::mojom::Role::kRegion,
                                    ax::mojom::Restriction::kReadOnly);
   page_node_->AddStringAttribute(
@@ -147,9 +148,24 @@ PdfAccessibilityTreeBuilder::PdfAccessibilityTreeBuilder(
 PdfAccessibilityTreeBuilder::~PdfAccessibilityTreeBuilder() = default;
 
 void PdfAccessibilityTreeBuilder::BuildPageTree() {
-  // Build tree using heuristics.
-  // TODO(crbug.com/40707542): Add structure tree mode for tagged PDFs.
-  PdfAccessibilityTreeBuilderHeuristic(*this).BuildPageTree();
+  // Use structure tree mode if a structure tree exists. Structure tree mode
+  // preserves semantic structure from the PDF's tags and inserts any
+  // unassociated text runs as additional content. Fall back to heuristic mode
+  // only when no structure tree is available.
+  bool use_structure_mode =
+      page_structure_tree_ &&
+      PdfAccessibilityTreeBuilderStructure::StructureTreeHasContent(
+          page_structure_tree_);
+
+  VLOG(1) << "PDF page " << page_index_ << ": "
+          << (use_structure_mode ? "structure tree" : "heuristic") << " mode";
+
+  if (use_structure_mode) {
+    PdfAccessibilityTreeBuilderStructure(*this, page_structure_tree_)
+        .BuildPageTree();
+  } else {
+    PdfAccessibilityTreeBuilderHeuristic(*this).BuildPageTree();
+  }
 }
 
 void PdfAccessibilityTreeBuilder::AddWordStartsAndEnds(

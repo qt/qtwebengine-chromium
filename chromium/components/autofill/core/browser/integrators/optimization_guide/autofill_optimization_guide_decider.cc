@@ -6,7 +6,7 @@
 
 #include <algorithm>
 
-#include "base/containers/contains.h"
+#include "base/containers/adapters.h"
 #include "base/containers/flat_set.h"
 #include "components/autofill/core/browser/autofill_field.h"
 #include "components/autofill/core/browser/data_manager/payments/payments_data_manager.h"
@@ -20,6 +20,8 @@
 #include "components/autofill/core/common/credit_card_network_identifiers.h"
 #include "components/optimization_guide/core/hints/optimization_guide_decider.h"
 #include "components/optimization_guide/proto/hints.pb.h"
+#include "url/gurl.h"
+#include "url/url_constants.h"
 
 namespace autofill {
 
@@ -67,10 +69,7 @@ GetCardBenefitsOptimizationTypesForCard(
     optimization_types.push_back(
         optimization_guide::proto::
             AMERICAN_EXPRESS_CREDIT_CARD_SUBSCRIPTION_BENEFITS);
-  } else if (card.benefit_source() == kBmoCardBenefitSource &&
-             base::FeatureList::IsEnabled(
-                 features::
-                     kAutofillEnableAllowlistForBmoCardCategoryBenefits)) {
+  } else if (card.benefit_source() == kBmoCardBenefitSource) {
     optimization_types.push_back(
         optimization_guide::proto::BMO_CREDIT_CARD_AIR_MILES_PARTNER_BENEFITS);
     optimization_types.push_back(
@@ -112,6 +111,14 @@ void AddCreditCardOptimizationTypes(
     const PaymentsDataManager& payments_data_manager,
     base::flat_set<optimization_guide::proto::OptimizationType>&
         optimization_types) {
+  // This optimization type should already be registered by
+  // `OnPaymentsDataLoaded()`, but we register it again here to be sure.
+  if (base::FeatureList::IsEnabled(
+          features::kAutofillActorRewriteCreditCardTriggerField)) {
+    optimization_types.insert(
+        optimization_guide::proto::AUTOFILL_ACTOR_IFRAME_ORIGIN_ALLOWLIST);
+  }
+
   for (const CreditCard* card : payments_data_manager.GetServerCreditCards()) {
     auto vcn_merchant_opt_out_optimization_type =
         GetVcnMerchantOptOutOptimizationTypeForCard(*card);
@@ -126,12 +133,9 @@ void AddCreditCardOptimizationTypes(
     // optimizations.
     if (base::FeatureList::IsEnabled(
             features::kAutofillEnableCardBenefitsSync)) {
-      auto benefits_optimization_types =
-          GetCardBenefitsOptimizationTypesForCard(*card, payments_data_manager);
-      if (!benefits_optimization_types.empty()) {
-        optimization_types.insert(benefits_optimization_types.begin(),
-                                  benefits_optimization_types.end());
-      }
+      optimization_types.insert_range(
+          base::RangeAsRvalues(GetCardBenefitsOptimizationTypesForCard(
+              *card, payments_data_manager)));
     }
   }
 }
@@ -206,7 +210,8 @@ void AddOptimizationTypesForBnplIssuers(
     BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID)
   auto bnpl_issuer_allowlist_can_be_loaded =
       [&bnpl_issuers](BnplIssuer::IssuerId issuer_id) {
-        return base::Contains(bnpl_issuers, issuer_id, &BnplIssuer::issuer_id);
+        return std::ranges::contains(bnpl_issuers, issuer_id,
+                                     &BnplIssuer::issuer_id);
       };
 
   if (bnpl_issuer_allowlist_can_be_loaded(BnplIssuer::IssuerId::kBnplAffirm)) {
@@ -261,8 +266,6 @@ AutofillOptimizationGuideDecider::~AutofillOptimizationGuideDecider() = default;
 
 void AutofillOptimizationGuideDecider::OnPaymentsDataLoaded(
     const PaymentsDataManager& payments_data_manager) {
-
-
   // This flat set represents all of the optimization types that we need to
   // register after loading payments data.
   base::flat_set<optimization_guide::proto::OptimizationType>
@@ -270,6 +273,12 @@ void AutofillOptimizationGuideDecider::OnPaymentsDataLoaded(
 
   AddOptimizationTypesForBnplIssuers(payments_data_manager.GetBnplIssuers(),
                                      optimization_types);
+
+  if (base::FeatureList::IsEnabled(
+          features::kAutofillActorRewriteCreditCardTriggerField)) {
+    optimization_types.insert(
+        optimization_guide::proto::AUTOFILL_ACTOR_IFRAME_ORIGIN_ALLOWLIST);
+  }
 
   // If we do not have any optimization types to register, do not do anything.
   if (!optimization_types.empty()) {
@@ -332,10 +341,7 @@ AutofillOptimizationGuideDecider::AttemptToGetEligibleCreditCardBenefitCategory(
     issuer_optimization_types.push_back(
         optimization_guide::proto::
             AMERICAN_EXPRESS_CREDIT_CARD_SUBSCRIPTION_BENEFITS);
-  } else if (benefit_source == kBmoCardBenefitSource &&
-             base::FeatureList::IsEnabled(
-                 features::
-                     kAutofillEnableAllowlistForBmoCardCategoryBenefits)) {
+  } else if (benefit_source == kBmoCardBenefitSource) {
     issuer_optimization_types.push_back(
         optimization_guide::proto::BMO_CREDIT_CARD_AIR_MILES_PARTNER_BENEFITS);
     issuer_optimization_types.push_back(
@@ -518,11 +524,13 @@ bool AutofillOptimizationGuideDecider::IsUrlEligibleForBnplIssuer(
 
 bool AutofillOptimizationGuideDecider::IsIframeUrlAllowlistedForActor(
     const GURL& url) const {
-  return decider_->CanApplyOptimization(
+  // To match server-side allowlisting, we require that the url is HTTPS.
+  return url.SchemeIs(url::kHttpsScheme) &&
+         decider_->CanApplyOptimization(
              url,
              optimization_guide::proto::AUTOFILL_ACTOR_IFRAME_ORIGIN_ALLOWLIST,
              /*optimization_metadata=*/nullptr) ==
-         optimization_guide::OptimizationGuideDecision::kTrue;
+             optimization_guide::OptimizationGuideDecision::kTrue;
 }
 
 }  // namespace autofill

@@ -67,7 +67,7 @@ RenderEncoderBase::RenderEncoderBase(DeviceBase* device,
       mDisableBaseVertex(device->IsToggleEnabled(Toggle::DisableBaseVertex)),
       mDisableBaseInstance(device->IsToggleEnabled(Toggle::DisableBaseInstance)) {}
 
-void RenderEncoderBase::DestroyImpl() {
+void RenderEncoderBase::DestroyImpl(DestroyReason reason) {
     // Remove reference to the attachment state so that we don't have lingering references to
     // it preventing it from being uncached in the device.
     mAttachmentState = nullptr;
@@ -223,7 +223,7 @@ void RenderEncoderBase::APIDrawIndirect(BufferBase* indirectBuffer, uint64_t ind
             bool duplicateBaseVertexInstance =
                 GetDevice()->ShouldDuplicateParametersForDrawIndirect(
                     mCommandBufferState.GetRenderPipeline());
-            if (NeedsIndirectDrawGPUValidation() &&
+            if (NeedsIndirectGPUValidation() &&
                 (IsValidationEnabled() || duplicateBaseVertexInstance)) {
                 // Later, EncodeIndirectDrawValidationCommands will allocate a scratch storage
                 // buffer which will store the validated or duplicated indirect data. The buffer
@@ -286,7 +286,7 @@ void RenderEncoderBase::APIDrawIndexedIndirect(BufferBase* indirectBuffer,
                     mCommandBufferState.GetRenderPipeline());
             bool applyIndexBufferOffsetToFirstIndex =
                 GetDevice()->ShouldApplyIndexBufferOffsetToFirstIndex();
-            if (NeedsIndirectDrawGPUValidation() &&
+            if (NeedsIndirectGPUValidation() &&
                 (IsValidationEnabled() || duplicateBaseVertexInstance ||
                  applyIndexBufferOffsetToFirstIndex)) {
                 // Later, EncodeIndirectDrawValidationCommands will allocate a scratch storage
@@ -399,7 +399,7 @@ void RenderEncoderBase::APIMultiDrawIndirect(BufferBase* indirectBuffer,
                 mCommandBufferState.GetRenderPipeline()->GetPrimitiveTopology(),
                 duplicateBaseVertexInstance, cmd);
 
-            if (NeedsIndirectDrawGPUValidation() &&
+            if (NeedsIndirectGPUValidation() &&
                 (IsValidationEnabled() ||
                  GetDevice()->MayRequireDuplicationOfIndirectParameters())) {
                 // We only set usage as `kIndirectBufferForFrontendValidation` because
@@ -509,7 +509,7 @@ void RenderEncoderBase::APIMultiDrawIndexedIndirect(BufferBase* indirectBuffer,
                 mCommandBufferState.GetRenderPipeline()->GetPrimitiveTopology(),
                 duplicateBaseVertexInstance, cmd);
 
-            if (NeedsIndirectDrawGPUValidation() &&
+            if (NeedsIndirectGPUValidation() &&
                 (IsValidationEnabled() ||
                  GetDevice()->MayRequireDuplicationOfIndirectParameters())) {
                 // We only set usage as `kIndirectBufferForFrontendValidation` because
@@ -725,6 +725,32 @@ void RenderEncoderBase::APISetBindGroup(uint32_t groupIndexIn,
         },
         "encoding %s.SetBindGroup(%u, %s, %u, ...).", this, groupIndexIn, group,
         dynamicOffsetCount);
+}
+
+void RenderEncoderBase::APISetImmediates(uint32_t offset, const void* data, size_t size) {
+    mEncodingContext->TryEncode(
+        this,
+        [&](CommandAllocator* allocator) -> MaybeError {
+            if (IsValidationEnabled()) {
+                DAWN_TRY(ValidateSetImmediates(offset, size));
+            }
+
+            // Skip SetImmediates when uploading constants are empty.
+            if (size == 0) {
+                return {};
+            }
+
+            SetImmediatesCmd* cmd = allocator->Allocate<SetImmediatesCmd>(Command::SetImmediates);
+            cmd->offset = offset;
+            cmd->size = uint32_t(size);
+            uint8_t* immediateDatas = allocator->AllocateData<uint8_t>(cmd->size);
+            memcpy(immediateDatas, data, size);
+
+            mCommandBufferState.SetImmediateData(offset, uint32_t(size));
+
+            return {};
+        },
+        "encoding %s.SetImmediates(%u, %u, ...).", this, offset, size);
 }
 
 }  // namespace dawn::native

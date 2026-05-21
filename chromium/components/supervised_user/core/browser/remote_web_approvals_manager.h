@@ -6,12 +6,12 @@
 #define COMPONENTS_SUPERVISED_USER_CORE_BROWSER_REMOTE_WEB_APPROVALS_MANAGER_H_
 
 #include <stddef.h>
+
 #include <memory>
 #include <string>
 #include <vector>
 
 #include "base/functional/callback_forward.h"
-#include "base/gtest_prod_util.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
@@ -21,7 +21,6 @@ class GURL;
 namespace supervised_user {
 
 class PermissionRequestCreator;
-class UrlFormatter;
 
 // Manages remote web approval requests from Family Link users.
 //
@@ -42,11 +41,11 @@ class RemoteWebApprovalsManager {
 
   ~RemoteWebApprovalsManager();
 
-  // Adds an approval request for the `url`.
+  // Adds an approval request with a `target_url` to the list of pending
+  // requests.
   // The `callback` is run when the request was sent or sending of the request
   // failed.
-  void RequestApproval(const GURL& url,
-                       const UrlFormatter& url_formatter,
+  void RequestApproval(const GURL& target_url,
                        ApprovalRequestInitiatedCallback callback);
 
   // Returns whether approval requests are enabled.

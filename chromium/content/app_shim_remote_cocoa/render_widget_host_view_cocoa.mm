@@ -15,7 +15,6 @@
 
 #import "base/apple/foundation_util.h"
 #include "base/apple/owned_objc.h"
-#include "base/containers/contains.h"
 #include "base/debug/crash_logging.h"
 #import "base/mac/mac_util.h"
 #include "base/memory/raw_ptr.h"
@@ -180,6 +179,10 @@ void ExtractUnderlines(NSAttributedString* string,
     BOOL automaticQuoteSubstitutionEnabled;
 @property(getter=isAutomaticDashSubstitutionEnabled)
     BOOL automaticDashSubstitutionEnabled;
+
+// Tracks the window for which the "onWindowDidResignKey" notification was
+// deferred.
+@property(weak, nonatomic, class) NSWindow* deferredResignKeyWindow;
 
 - (void)keyEvent:(NSEvent*)theEvent wasKeyEquivalent:(BOOL)equiv;
 - (void)windowDidChangeScreenOrBackingProperties:(NSNotification*)notification;
@@ -362,6 +365,9 @@ void ExtractUnderlines(NSAttributedString* string,
 @synthesize textInputType = _textInputType;
 @synthesize textInputFlags = _textInputFlags;
 @synthesize spellCheckerForTesting = _spellCheckerForTesting;
+
+// Static storage for the class property deferredResignKeyWindow
+static NSWindow* __weak _deferredResignKeyWindow;
 
 + (void)initialize {
   RenderWidgetHostViewMacEditCommandHelper::AddEditingSelectorsToClass(self);
@@ -1157,7 +1163,7 @@ void ExtractUnderlines(NSAttributedString* string,
   // to exit fullscreen and we don't want to prevent them from exiting.
   ui::DomCode domCode = ui::KeycodeConverter::NativeKeycodeToDomCode(keyCode);
   return _keyboardLockActive && domCode != ui::DomCode::ESCAPE &&
-         (!_lockedKeys || base::Contains(_lockedKeys.value(), domCode));
+         (!_lockedKeys || _lockedKeys.value().contains(domCode));
 }
 
 - (BOOL)performKeyEquivalent:(NSEvent*)theEvent {
@@ -1653,7 +1659,13 @@ void ExtractUnderlines(NSAttributedString* string,
                                   name:NSWindowDidResignKeyNotification
                                 object:oldWindow];
     [notificationCenter removeObserver:self
+                                  name:NSWindowWillCloseNotification
+                                object:oldWindow];
+    [notificationCenter removeObserver:self
                                   name:@"ChromeWillOrderFrontCharacterPalette"
+                                object:nil];
+    [notificationCenter removeObserver:self
+                                  name:NSApplicationDidResignActiveNotification
                                 object:nil];
   }
   if (newWindow) {
@@ -1684,8 +1696,16 @@ void ExtractUnderlines(NSAttributedString* string,
                                name:NSWindowDidResignKeyNotification
                              object:newWindow];
     [notificationCenter addObserver:self
+                           selector:@selector(windowWillClose:)
+                               name:NSWindowWillCloseNotification
+                             object:newWindow];
+    [notificationCenter addObserver:self
                            selector:@selector(characterPaletteWillOrderFront:)
                                name:@"ChromeWillOrderFrontCharacterPalette"
+                             object:nil];
+    [notificationCenter addObserver:self
+                           selector:@selector(applicationDidResignActive:)
+                               name:NSApplicationDidResignActiveNotification
                              object:nil];
   }
 
@@ -1746,8 +1766,16 @@ void ExtractUnderlines(NSAttributedString* string,
 }
 
 - (BOOL)canBecomeKeyView {
-  if ([self hostIsDisconnected])
+  if ([self hostIsDisconnected]) {
     return NO;
+  }
+
+  if (_responderDelegate &&
+      [_responderDelegate
+          respondsToSelector:@selector(shouldRefuseBecomingKeyView)] &&
+      [_responderDelegate shouldRefuseBecomingKeyView]) {
+    return NO;
+  }
 
   return _canBeKeyView;
 }
@@ -1762,6 +1790,7 @@ void ExtractUnderlines(NSAttributedString* string,
 - (void)windowDidBecomeKey:(NSNotification*)notification {
   DCHECK([self window]);
   DCHECK_EQ([self window], [notification object]);
+  [self performDeferredResignKeyWindow];
   if ([_responderDelegate respondsToSelector:@selector(windowDidBecomeKey)])
     [_responderDelegate windowDidBecomeKey];
   if ([self window].isKeyWindow)
@@ -1776,14 +1805,39 @@ void ExtractUnderlines(NSAttributedString* string,
   // message, since it just means that a menu extra (on the "system status bar")
   // was activated; we'll get another |-windowDidResignKey| if we ever really
   // lose key window status.
-  if ([NSApp isActive] && ([NSApp keyWindow] == [self window]))
+  if ([NSApp isActive] && ([NSApp keyWindow] == [self window])) {
+    // Defer processing when the window is still reported as key. This occurs
+    // in:
+    // 1. Menu extra activation (system status bar items)
+    // 2. Window switching via system notifications
+    //
+    // We cannot immediately determine if this is a transient state or true
+    // resignation, so we defer until either another window becomes key or the
+    // application resigns active status, at which point we can process
+    // correctly.
+    RenderWidgetHostViewCocoa.deferredResignKeyWindow = notification.object;
     return;
+  }
+  RenderWidgetHostViewCocoa.deferredResignKeyWindow = nil;
 
   _host->OnWindowIsKeyChanged(false);
   if (base::FeatureList::IsEnabled(
           features::kCancelCompositionWhenWindowLosesFocus)) {
     // Cancel any ongoing composition when the window loses focus.
     [self cancelComposition];
+  }
+}
+
+- (void)windowWillClose:(NSNotification*)notification {
+  // Clear deferred window if it's the one being closed. The __weak pointer
+  // could remain valid between windowWillClose: and deallocation. If
+  // performDeferredResignKeyWindow is called during this gap, it would post
+  // NSWindowDidResignKeyNotification for a closing window. Explicit nil
+  // prevents this race condition.
+  if (RenderWidgetHostViewCocoa.deferredResignKeyWindow &&
+      RenderWidgetHostViewCocoa.deferredResignKeyWindow ==
+          notification.object) {
+    RenderWidgetHostViewCocoa.deferredResignKeyWindow = nil;
   }
 }
 
@@ -1826,6 +1880,32 @@ void ExtractUnderlines(NSAttributedString* string,
   [self cancelComposition];
 
   return YES;
+}
+
+- (void)applicationDidResignActive:(NSNotification*)notification {
+  [self performDeferredResignKeyWindow];
+}
+
+- (void)performDeferredResignKeyWindow {
+  // It's now time to decide whether the previously deferred
+  // "windowDidResignKey" notification should be executed. If so, we repost
+  // the notification to allow observers to update accordingly and ensure the
+  // web contents enter the correct state.
+  if (RenderWidgetHostViewCocoa.deferredResignKeyWindow &&
+      RenderWidgetHostViewCocoa.deferredResignKeyWindow != [NSApp keyWindow]) {
+    [[NSNotificationCenter defaultCenter]
+        postNotificationName:NSWindowDidResignKeyNotification
+                      object:RenderWidgetHostViewCocoa.deferredResignKeyWindow];
+  }
+  RenderWidgetHostViewCocoa.deferredResignKeyWindow = nil;
+}
+
++ (NSWindow*)deferredResignKeyWindow {
+  return _deferredResignKeyWindow;
+}
+
++ (void)setDeferredResignKeyWindow:(NSWindow*)window {
+  _deferredResignKeyWindow = window;
 }
 
 - (BOOL)isAutomaticQuoteSubstitutionEnabled {

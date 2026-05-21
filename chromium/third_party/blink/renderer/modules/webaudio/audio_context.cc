@@ -9,6 +9,7 @@
 #include "base/functional/callback_helpers.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/strings/strcat.h"
 #include "base/strings/to_string.h"
 #include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
@@ -38,16 +39,15 @@
 #include "third_party/blink/renderer/core/timing/dom_window_performance.h"
 #include "third_party/blink/renderer/core/timing/window_performance.h"
 #include "third_party/blink/renderer/modules/mediastream/media_stream.h"
-#include "third_party/blink/renderer/modules/peerconnection/peer_connection_dependency_factory.h"
 #include "third_party/blink/renderer/modules/permissions/permission_utils.h"
 #include "third_party/blink/renderer/modules/webaudio/audio_listener.h"
+#include "third_party/blink/renderer/modules/webaudio/audio_playback_stats.h"
 #include "third_party/blink/renderer/modules/webaudio/audio_playout_stats.h"
 #include "third_party/blink/renderer/modules/webaudio/audio_sink_info.h"
 #include "third_party/blink/renderer/modules/webaudio/media_element_audio_source_node.h"
 #include "third_party/blink/renderer/modules/webaudio/media_stream_audio_destination_node.h"
 #include "third_party/blink/renderer/modules/webaudio/media_stream_audio_source_node.h"
 #include "third_party/blink/renderer/modules/webaudio/realtime_audio_destination_node.h"
-#include "third_party/blink/renderer/modules/webrtc/webrtc_audio_device_impl.h"
 #include "third_party/blink/renderer/platform/audio/audio_utilities.h"
 #include "third_party/blink/renderer/platform/audio/vector_math.h"
 #include "third_party/blink/renderer/platform/bindings/exception_messages.h"
@@ -129,8 +129,8 @@ const char* LatencyCategoryToString(
 String GetAudioContextLogString(const WebAudioLatencyHint& latency_hint,
                                 std::optional<float> sample_rate) {
   StringBuilder builder;
-  builder.AppendFormat("({latency_hint=%s}",
-                       LatencyCategoryToString(latency_hint.Category()));
+  UNSAFE_TODO(builder.AppendFormat(
+      "({latency_hint=%s}", LatencyCategoryToString(latency_hint.Category())));
   if (latency_hint.Category() == WebAudioLatencyHint::kCategoryExact) {
     builder.AppendFormat(", {seconds=%.3f}", latency_hint.Seconds());
   }
@@ -424,6 +424,28 @@ AudioContext* AudioContext::Create(ExecutionContext* context,
     sample_rate = context_options->sampleRate();
   }
 
+  std::optional<uint32_t> render_quantum_frames = 128;
+  if (RuntimeEnabledFeatures::WebAudioConfigurableRenderQuantumEnabled(
+          context) &&
+      context_options->hasRenderSizeHint()) {
+    UseCounter::Count(context, WebFeature::kWebAudioRenderSizeHint);
+    const auto* hint = context_options->renderSizeHint();
+    switch (hint->GetContentType()) {
+      case V8UnionAudioContextRenderSizeCategoryOrUnsignedLong::ContentType::
+          kUnsignedLong:
+        render_quantum_frames = hint->GetAsUnsignedLong();
+        break;
+      case V8UnionAudioContextRenderSizeCategoryOrUnsignedLong::ContentType::
+          kAudioContextRenderSizeCategory:
+        if (hint->GetAsAudioContextRenderSizeCategory() ==
+            V8AudioContextRenderSizeCategory::Enum::kHardware) {
+          // Use `nullopt` to indicate a "hardware" hint.
+          render_quantum_frames.reset();
+        }
+        break;
+    }
+  }
+
   // The empty string means the default audio device.
   auto frame_token = window.GetLocalFrameToken();
   WebAudioSinkDescriptor sink_descriptor(g_empty_string, frame_token);
@@ -459,21 +481,48 @@ AudioContext* AudioContext::Create(ExecutionContext* context,
     return nullptr;
   }
 
-  SCOPED_UMA_HISTOGRAM_TIMER("WebAudio.AudioContext.CreateTime");
-  uint32_t render_quantum_frames = 128;
-  if (RuntimeEnabledFeatures::WebAudioConfigurableRenderQuantumEnabled() &&
-      context_options->hasRenderSizeHint()) {
-    if (context_options->renderSizeHint()->IsUnsignedLong()) {
-      render_quantum_frames = audio_utilities::GetClampedRenderQuantumFrames(
-          context_options->renderSizeHint()->GetAsUnsignedLong());
+  // Pre-validation for renderSizeHint if sampleRate is provided. This prevents
+  // allocating excessive memory for clearly invalid renderSizeHint values
+  // before the AudioContext is fully constructed.
+  bool render_quantum_frames_validated = false;
+  if (sample_rate.has_value() && render_quantum_frames.has_value()) {
+    if (!audio_utilities::IsValidRenderQuantumSize(
+            render_quantum_frames.value(), sample_rate.value())) {
+      exception_state.ThrowDOMException(
+          DOMExceptionCode::kNotSupportedError,
+          ExceptionMessages::IndexOutsideRange(
+              "renderSizeHint", render_quantum_frames.value(),
+              audio_utilities::MinRenderQuantumSize(),
+              ExceptionMessages::kInclusiveBound,
+              audio_utilities::MaxRenderQuantumSize(sample_rate.value()),
+              ExceptionMessages::kInclusiveBound));
+      return nullptr;
     }
+    render_quantum_frames_validated = true;
   }
 
+  SCOPED_UMA_HISTOGRAM_TIMER("WebAudio.AudioContext.CreateTime");
   AudioContext* audio_context = MakeGarbageCollected<AudioContext>(
       window, latency_hint, sample_rate, sink_descriptor,
       update_echo_cancellation_on_first_start, render_quantum_frames);
   ++hardware_context_count;
   audio_context->UpdateStateIfNeeded();
+
+  // If the render quantum size was not able to be validated before due to the
+  // sample rate or hardware buffer size not being known, validate it here.
+  if (!render_quantum_frames_validated &&
+      !audio_utilities::IsValidRenderQuantumSize(
+          audio_context->renderQuantumSize(), audio_context->sampleRate())) {
+    exception_state.ThrowDOMException(
+        DOMExceptionCode::kNotSupportedError,
+        ExceptionMessages::IndexOutsideRange(
+            "renderSizeHint", audio_context->renderQuantumSize(),
+            audio_utilities::MinRenderQuantumSize(),
+            ExceptionMessages::kInclusiveBound,
+            audio_utilities::MaxRenderQuantumSize(audio_context->sampleRate()),
+            ExceptionMessages::kInclusiveBound));
+    return nullptr;
+  }
 
   // This starts the audio thread. The destination node's
   // provideInput() method will now be called repeatedly to render
@@ -488,7 +537,14 @@ AudioContext* AudioContext::Create(ExecutionContext* context,
     TRACE_EVENT1("webaudio", "AudioContext::Create - allowed to start",
                  "UUID", audio_context->Uuid());
     audio_context->StartRendering();
-    audio_context->SetContextState(V8AudioContextState::Enum::kRunning);
+    if (RuntimeEnabledFeatures::AudioContextAsyncStateTransitionsEnabled()) {
+      // The state of AudioContext is "suspended" immediately after construction
+      // and transitions to "running" asynchronously.
+      // https://webaudio.github.io/web-audio-api/#AudioContext-constructors
+      audio_context->ScheduleInitialTransitionToRunning();
+    } else {
+      audio_context->SetContextState(V8AudioContextState::Enum::kRunning);
+    }
   } else {
     TRACE_EVENT1("webaudio", "AudioContext::Create - NOT allowed to start",
                  "UUID", audio_context->Uuid());
@@ -512,10 +568,10 @@ AudioContext::AudioContext(LocalDOMWindow& window,
                            std::optional<float> sample_rate,
                            WebAudioSinkDescriptor sink_descriptor,
                            bool update_echo_cancellation_on_first_start,
-                           uint32_t render_quantum_frames)
+                           std::optional<uint32_t> render_quantum_frames)
     : BaseAudioContext(&window,
                        ContextType::kRealtimeContext,
-                       render_quantum_frames),
+                       render_quantum_frames.value_or(128)),
       FrameVisibilityObserver(GetLocalFrame()),
       PageVisibilityObserver(GetPageFromFrame()),
       context_id_(context_id++),
@@ -673,8 +729,9 @@ AudioContext::~AudioContext() {
 
 void AudioContext::Trace(Visitor* visitor) const {
   visitor->Trace(close_resolver_);
-  visitor->Trace(audio_playout_stats_);
   visitor->Trace(audio_context_manager_);
+  visitor->Trace(audio_playback_stats_);
+  visitor->Trace(audio_playout_stats_);
   visitor->Trace(permission_service_);
   visitor->Trace(permission_receiver_);
   visitor->Trace(set_sink_id_resolvers_);
@@ -684,6 +741,7 @@ void AudioContext::Trace(Visitor* visitor) const {
   visitor->Trace(media_player_host_);
   visitor->Trace(media_player_receiver_);
   visitor->Trace(media_player_observer_);
+  visitor->Trace(pending_suspend_resolvers_);
   BaseAudioContext::Trace(visitor);
   FrameVisibilityObserver::Trace(visitor);
   PageVisibilityObserver::Trace(visitor);
@@ -699,6 +757,31 @@ ScriptPromise<IDLUndefined> AudioContext::suspendContext(
         script_state, MakeGarbageCollected<DOMException>(
                           DOMExceptionCode::kInvalidStateError,
                           "Cannot suspend a closed AudioContext."));
+  }
+
+  if (RuntimeEnabledFeatures::AudioContextAsyncStateTransitionsEnabled()) {
+    // The transition to "suspended" is executed asynchronously to prevent race
+    // conditions when suspend() is called immediately after construction.
+    // https://webaudio.github.io/web-audio-api/#dom-audiocontext-suspend
+    auto* resolver = MakeGarbageCollected<ScriptPromiseResolver<IDLUndefined>>(
+        script_state, exception_state.GetContext());
+    auto promise = resolver->Promise();
+
+    {
+      DeferredTaskHandler::GraphAutoLocker locker(this);
+      pending_suspend_resolvers_.push_back(resolver);
+    }
+
+    // If resume() is called before the async transition to "suspended" runs,
+    // it will clear this flag to make that task a no-op.
+    suspended_by_user_ = true;
+
+    // Probe reports the user action to the inspector synchronously.
+    probe::DidSuspendAudioContext(GetExecutionContext());
+
+    // The actual state transition will happen asynchronously.
+    ScheduleTransitionToSuspended();
+    return promise;
   }
 
   suspended_by_user_ = true;
@@ -726,7 +809,12 @@ ScriptPromise<IDLUndefined> AudioContext::resumeContext(
         script_state, MakeGarbageCollected<DOMException>(
                           DOMExceptionCode::kInvalidStateError,
                           "Cannot resume a closed AudioContext."));
-  } else if (ContextState() == V8AudioContextState::Enum::kInterrupted) {
+  }
+
+  // Clear this flag to cancel any pending async transition to "suspended".
+  suspended_by_user_ = false;
+
+  if (ContextState() == V8AudioContextState::Enum::kInterrupted) {
     return ScriptPromise<IDLUndefined>::RejectWithDOMException(
         script_state, MakeGarbageCollected<DOMException>(
                           DOMExceptionCode::kInvalidStateError,
@@ -755,8 +843,6 @@ ScriptPromise<IDLUndefined> AudioContext::resumeContext(
     resolver->Resolve();
     return promise;
   }
-
-  suspended_by_user_ = false;
 
   // Restart the destination node to pull on the audio graph.
   if (destination()) {
@@ -844,6 +930,9 @@ ScriptPromise<IDLUndefined> AudioContext::closeContext(
 }
 
 void AudioContext::DidClose() {
+  // Cancel any pending async transition to the "running" state.
+  pending_initial_transition_to_running_ = false;
+
   EnsureAudioContextManagerService();
   if (audio_context_manager_.is_bound()) {
     audio_context_manager_->AudioContextClosed(context_id_);
@@ -863,11 +952,105 @@ void AudioContext::DidClose() {
         "going away"));
   }
   set_sink_id_resolvers_.clear();
+
+  // Reject all pending suspend promises.
+  {
+    DeferredTaskHandler::GraphAutoLocker locker(this);
+    for (auto& resolver : pending_suspend_resolvers_) {
+      resolver->Reject(MakeGarbageCollected<DOMException>(
+          DOMExceptionCode::kInvalidStateError,
+          "AudioContext closed before a pending suspend() could complete."));
+    }
+    pending_suspend_resolvers_.clear();
+  }
+
   is_closed_ = true;
 }
 
 bool AudioContext::IsContextCleared() const {
   return close_resolver_ || BaseAudioContext::IsContextCleared();
+}
+
+void AudioContext::ScheduleInitialTransitionToRunning() {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(main_thread_sequence_checker_);
+  DCHECK(!pending_initial_transition_to_running_);
+
+  pending_initial_transition_to_running_ = true;
+
+  // Track pages creating an AudioContext with async state transitions enabled.
+  // Two other counters will measure state reads during pending transitions.
+  UseCounter::Count(GetExecutionContext(),
+                    WebFeature::kAudioContextAsyncStateTransitions);
+
+  GetExecutionContext()
+      ->GetTaskRunner(TaskType::kMediaElementEvent)
+      ->PostTask(
+          FROM_HERE,
+          blink::BindOnce(&AudioContext::PerformInitialTransitionToRunning,
+                          WrapWeakPersistent(this)));
+}
+
+void AudioContext::PerformInitialTransitionToRunning() {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(main_thread_sequence_checker_);
+
+  if (!pending_initial_transition_to_running_) {
+    return;  // Cancelled by DidClose().
+  }
+  pending_initial_transition_to_running_ = false;
+
+  if (ContextState() == V8AudioContextState::Enum::kSuspended) {
+    SetContextState(V8AudioContextState::Enum::kRunning);
+  }
+
+  // Resolve pending resume() promises now that we are in the "running" state.
+  HeapVector<Member<ScriptPromiseResolver<IDLUndefined>>> resolvers;
+  {
+    DeferredTaskHandler::GraphAutoLocker locker(this);
+    resolvers.swap(pending_promises_resolvers_);
+    is_resolving_resume_promises_ = false;
+  }
+  for (auto& resolver : resolvers) {
+    resolver->Resolve();
+  }
+}
+
+void AudioContext::ScheduleTransitionToSuspended() {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(main_thread_sequence_checker_);
+
+  GetExecutionContext()
+      ->GetTaskRunner(TaskType::kMediaElementEvent)
+      ->PostTask(FROM_HERE,
+                 blink::BindOnce(&AudioContext::PerformTransitionToSuspended,
+                                 WrapWeakPersistent(this)));
+}
+
+void AudioContext::PerformTransitionToSuspended() {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(main_thread_sequence_checker_);
+
+  HeapVector<Member<ScriptPromiseResolver<IDLUndefined>>> resolvers;
+  {
+    DeferredTaskHandler::GraphAutoLocker locker(this);
+    resolvers.swap(pending_suspend_resolvers_);
+  }
+
+  // If the context has already been closed, reject pending suspend promises.
+  if (ContextState() == V8AudioContextState::Enum::kClosed) {
+    for (auto& resolver : resolvers) {
+      resolver->Reject(MakeGarbageCollected<DOMException>(
+          DOMExceptionCode::kInvalidStateError,
+          "Cannot suspend a closed AudioContext."));
+    }
+    return;
+  }
+
+  // Stop rendering unless resume() was called after this task was scheduled.
+  if (suspended_by_user_ && destination()) {
+    SuspendRendering();
+  }
+
+  for (auto& resolver : resolvers) {
+    resolver->Resolve();
+  }
 }
 
 void AudioContext::StartRendering() {
@@ -903,18 +1086,39 @@ void AudioContext::SuspendRendering() {
   TRACE_EVENT2("webaudio", __func__, "UUID", Uuid(),
                "state", static_cast<int>(ContextState()));
 
+  // Cancel any pending transitions to "running" and stop rendering regardless
+  // of current state. This addresses a race condition when suspend() is called
+  // after resume() but before the state has transitioned to "running".
+  if (is_interrupted_while_suspended_) {
+    should_transition_to_running_after_interruption_ = false;
+  }
+  destination()->GetAudioDestinationHandler().StopRendering();
+
   if (ContextState() == V8AudioContextState::Enum::kRunning ||
       ContextState() == V8AudioContextState::Enum::kInterrupted) {
-    if (is_interrupted_while_suspended_) {
-      should_transition_to_running_after_interruption_ = false;
-    }
-    destination()->GetAudioDestinationHandler().StopRendering();
     SetContextState(V8AudioContextState::Enum::kSuspended);
   }
 }
 
 void AudioContext::SetVolumeMultiplier(double multiplier) {
   volume_multiplier_ = multiplier;
+}
+
+V8AudioContextState AudioContext::state() const {
+  // Track state reads during pending async transitions after construction and
+  // after suspend(). Previously the state was updated immediately, but now we
+  // return the old state until the transition completes.
+  if (pending_initial_transition_to_running_) {
+    UseCounter::Count(
+        GetExecutionContext(),
+        WebFeature::kAudioContextAsyncTransitionToRunningStateRead);
+  } else if (suspended_by_user_ &&
+             ContextState() == V8AudioContextState::Enum::kRunning) {
+    UseCounter::Count(
+        GetExecutionContext(),
+        WebFeature::kAudioContextAsyncTransitionToSuspendedStateRead);
+  }
+  return BaseAudioContext::state();
 }
 
 double AudioContext::baseLatency() const {
@@ -932,6 +1136,14 @@ double AudioContext::outputLatency() const {
 
   double factor = GetOutputLatencyQuantizingFactor();
   return std::round(output_position_.hardware_output_latency / factor) * factor;
+}
+
+AudioPlaybackStats* AudioContext::playbackStats() {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(main_thread_sequence_checker_);
+  if (!audio_playback_stats_) {
+    audio_playback_stats_ = MakeGarbageCollected<AudioPlaybackStats>(this);
+  }
+  return audio_playback_stats_.Get();
 }
 
 AudioPlayoutStats* AudioContext::playoutStats() {

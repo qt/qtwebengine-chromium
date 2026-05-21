@@ -160,6 +160,7 @@ impl From<&avifEncoder> for Settings {
 }
 
 impl avifEncoder {
+    #[allow(clippy::replace_box)]
     fn initialize_or_update_rust_encoder(&mut self) -> avifResult {
         if self.rust_encoder_initialized {
             // TODO - b/416560730: Validate the immutable settings.

@@ -55,6 +55,18 @@ gfx::Transform GeometryMapper::SourceToDestinationProjection(
                                                extra_result, success);
 }
 
+bool GeometryMapper::SourceToDestinationProjection(
+    const TransformPaintPropertyNode& source,
+    const TransformPaintPropertyNode& destination,
+    gfx::Transform& projection) {
+  ExtraProjectionResult extra_result;
+  bool success = false;
+  projection = SourceToDestinationProjectionInternal(source, destination,
+                                                     extra_result, success);
+  return !RuntimeEnabledFeatures::GeometryMapperSingularTransformFixEnabled() ||
+         success;
+}
+
 // Returns flatten(destination_to_screen)^-1 * flatten(source_to_screen)
 //
 // In case that source and destination are coplanar in tree hierarchy [1],
@@ -210,6 +222,15 @@ bool GeometryMapper::LocalToAncestorVisualRect(
       local_state, ancestor_state, mapping_rect, clip_behavior, flags);
 }
 
+bool GeometryMapper::LocalToLocalRootViewportRect(
+    const PropertyTreeState& local_state,
+    FloatClipRect& mapping_rect,
+    OverlayScrollbarClipBehavior clip_behavior,
+    VisualRectFlags flags) {
+  return LocalToAncestorVisualRect(local_state, PropertyTreeState::Root(),
+                                   mapping_rect, clip_behavior, flags);
+}
+
 template <GeometryMapper::ForCompositingOverlap for_compositing_overlap>
 bool GeometryMapper::LocalToAncestorVisualRectInternal(
     const PropertyTreeState& local_state,
@@ -270,6 +291,10 @@ bool GeometryMapper::LocalToAncestorVisualRectInternal(
     rect_to_map = InfiniteLooseFloatClipRect();
   } else {
     rect_to_map.Map(projection);
+  }
+
+  if (flags & VisualRectFlags::kSkipAncestorAndViewportClips) {
+    return true;
   }
 
   FloatClipRect clip_rect =

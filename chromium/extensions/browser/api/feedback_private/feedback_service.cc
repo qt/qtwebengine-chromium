@@ -37,6 +37,8 @@
 #include "net/base/network_change_notifier.h"
 
 #if BUILDFLAG(IS_CHROMEOS)
+#include <optional>
+
 #include "base/base64.h"
 #include "chromeos/ash/components/cryptohome/cryptohome_parameters.h"
 #include "components/account_id/account_id.h"
@@ -477,7 +479,7 @@ void FeedbackService::OnVariationsFetchHpkeURL(
     std::unique_ptr<network::SimpleURLLoader> loader,
     scoped_refptr<feedback::FeedbackData> feedback_data,
     base::RepeatingClosure barrier_closure,
-    std::unique_ptr<std::string> hpke_public_key) {
+    std::optional<std::string> hpke_public_key) {
   if (!loader) {
     LOG(ERROR) << "invalid loader";
     return VariationsFinished(false, barrier_closure);
@@ -525,8 +527,8 @@ void FeedbackService::VariationsExtractHpkePublicKey(
     return VariationsFinished(false, barrier_closure);
   }
 
-  const base::Value::Dict& json_dict = result->GetDict();
-  const base::Value::List* key_list = json_dict.FindList("key");
+  const base::DictValue& json_dict = result->GetDict();
+  const base::ListValue* key_list = json_dict.FindList("key");
 
   if (!key_list || key_list->empty()) {
     LOG(ERROR) << "Key list not found or empty.";
@@ -535,7 +537,7 @@ void FeedbackService::VariationsExtractHpkePublicKey(
 
   // Get the first item in the "key" list
   const base::Value& key_item = (*key_list)[0];
-  const base::Value::Dict* key_dict = key_item.GetIfDict();
+  const base::DictValue* key_dict = key_item.GetIfDict();
 
   if (!key_dict) {
     LOG(ERROR) << "Unexpected format in 'key' item.";
@@ -543,7 +545,7 @@ void FeedbackService::VariationsExtractHpkePublicKey(
   }
 
   // Extract "keyData" dictionary
-  const base::Value::Dict* key_data_dict = key_dict->FindDict("keyData");
+  const base::DictValue* key_data_dict = key_dict->FindDict("keyData");
   if (!key_data_dict) {
     LOG(ERROR) << "Failed to find 'keyData' dictionary.";
     return VariationsFinished(false, barrier_closure);

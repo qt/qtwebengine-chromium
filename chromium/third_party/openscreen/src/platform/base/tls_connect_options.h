@@ -5,7 +5,6 @@
 #ifndef PLATFORM_BASE_TLS_CONNECT_OPTIONS_H_
 #define PLATFORM_BASE_TLS_CONNECT_OPTIONS_H_
 
-#include "platform/base/macros.h"
 
 namespace openscreen {
 

@@ -19,13 +19,12 @@
 #include "public/fpdf_edit.h"
 #include "public/fpdf_thumbnail.h"
 #include "testing/fx_string_testhelpers.h"
-#include "testing/image_diff/image_diff_png.h"
+#include "testing/utils/png_encode.h"
 
 #ifdef PDF_ENABLE_SKIA
 #include "third_party/skia/include/core/SkData.h"         // nogncheck
 #include "third_party/skia/include/core/SkImage.h"        // nogncheck
 #include "third_party/skia/include/core/SkPicture.h"      // nogncheck
-#include "third_party/skia/include/core/SkPixmap.h"       // nogncheck
 #include "third_party/skia/include/core/SkSerialProcs.h"  // nogncheck
 #include "third_party/skia/include/core/SkStream.h"       // nogncheck
 #ifdef PDF_ENABLE_RUST_PNG
@@ -190,35 +189,6 @@ const char* PageObjectTypeToCString(int type) {
   NOTREACHED();
 }
 
-std::vector<uint8_t> EncodePng(pdfium::span<const uint8_t> input,
-                               int width,
-                               int height,
-                               int stride,
-                               int format) {
-  std::vector<uint8_t> png;
-  switch (format) {
-    case FPDFBitmap_Unknown:
-      break;
-    case FPDFBitmap_Gray:
-      png = image_diff_png::EncodeGrayPNG(input, width, height, stride);
-      break;
-    case FPDFBitmap_BGR:
-      png = image_diff_png::EncodeBGRPNG(input, width, height, stride);
-      break;
-    case FPDFBitmap_BGRx:
-      png = image_diff_png::EncodeBGRAPNG(input, width, height, stride,
-                                          /*discard_transparency=*/true);
-      break;
-    case FPDFBitmap_BGRA:
-      png = image_diff_png::EncodeBGRAPNG(input, width, height, stride,
-                                          /*discard_transparency=*/false);
-      break;
-    default:
-      NOTREACHED();
-  }
-  return png;
-}
-
 #ifdef _WIN32
 int CALLBACK EnhMetaFileProc(HDC hdc,
                              HANDLETABLE* handle_table,
@@ -262,19 +232,66 @@ std::string GenerateImageOutputFilename(const char* pdf_name,
   return filename;
 }
 
+std::string WritePng(const char* pdf_name,
+                     int num,
+                     void* buffer,
+                     const BitmapAttributes& bitmap_attributes,
+                     bool buffer_has_premultiplied_alpha) {
+  if (!CheckDimensions(bitmap_attributes.stride, bitmap_attributes.width,
+                       bitmap_attributes.height)) {
+    return "";
+  }
+
+  auto input = pdfium::span(
+      static_cast<uint8_t*>(buffer),
+      static_cast<size_t>(bitmap_attributes.stride) * bitmap_attributes.height);
+  int format;
+  if (bitmap_attributes.has_alpha) {
+    format = buffer_has_premultiplied_alpha ? FPDFBitmap_BGRA_Premul
+                                            : FPDFBitmap_BGRA;
+  } else {
+    format = FPDFBitmap_BGRx;
+  }
+  std::vector<uint8_t> png_encoding =
+      EncodePng(input, bitmap_attributes.width, bitmap_attributes.height,
+                bitmap_attributes.stride, format);
+  if (png_encoding.empty()) {
+    fprintf(stderr, "Failed to convert bitmap to PNG\n");
+    return "";
+  }
+
+  std::string filename = GeneratePageOutputFilename(pdf_name, num, "png");
+  if (filename.empty()) {
+    return std::string();
+  }
+  FILE* fp = fopen(filename.c_str(), "wb");
+  if (!fp) {
+    fprintf(stderr, "Failed to open %s for output\n", filename.c_str());
+    return std::string();
+  }
+
+  size_t bytes_written =
+      fwrite(&png_encoding.front(), 1, png_encoding.size(), fp);
+  if (bytes_written != png_encoding.size()) {
+    fprintf(stderr, "Failed to write to %s\n", filename.c_str());
+  }
+
+  (void)fclose(fp);
+  return filename;
+}
+
 }  // namespace
 
 std::string WritePpm(const char* pdf_name,
                      int num,
                      void* buffer_void,
-                     int stride,
-                     int width,
-                     int height) {
-  if (!CheckDimensions(stride, width, height)) {
+                     const BitmapAttributes& bitmap_attributes) {
+  if (!CheckDimensions(bitmap_attributes.stride, bitmap_attributes.width,
+                       bitmap_attributes.height)) {
     return "";
   }
 
-  int out_len = width * height;
+  int out_len = bitmap_attributes.width * bitmap_attributes.height;
   if (out_len > INT_MAX / 3) {
     return "";
   }
@@ -290,15 +307,16 @@ std::string WritePpm(const char* pdf_name,
     return std::string();
   }
 
-  fprintf(fp, "P6\n# PDF test render\n%d %d\n255\n", width, height);
+  fprintf(fp, "P6\n# PDF test render\n%d %d\n255\n", bitmap_attributes.width,
+          bitmap_attributes.height);
   // Source data is B, G, R, unused.
   // Dest data is R, G, B.
   const uint8_t* buffer = reinterpret_cast<const uint8_t*>(buffer_void);
   std::vector<uint8_t> result(out_len);
-  for (int h = 0; h < height; ++h) {
-    const uint8_t* src_line = buffer + (stride * h);
-    uint8_t* dest_line = result.data() + (width * h * 3);
-    for (int w = 0; w < width; ++w) {
+  for (int h = 0; h < bitmap_attributes.height; ++h) {
+    const uint8_t* src_line = buffer + (bitmap_attributes.stride * h);
+    uint8_t* dest_line = result.data() + (bitmap_attributes.width * h * 3);
+    for (int w = 0; w < bitmap_attributes.width; ++w) {
       // R
       dest_line[w * 3] = src_line[(w * 4) + 2];
       // G
@@ -456,57 +474,37 @@ void WriteAnnot(FPDF_PAGE page, const char* pdf_name, int num) {
   (void)fclose(fp);
 }
 
-std::string WritePng(const char* pdf_name,
-                     int num,
-                     void* buffer,
-                     int stride,
-                     int width,
-                     int height) {
-  if (!CheckDimensions(stride, width, height)) {
-    return "";
-  }
-
-  auto input = pdfium::span(static_cast<uint8_t*>(buffer),
-                            static_cast<size_t>(stride) * height);
-  std::vector<uint8_t> png_encoding =
-      EncodePng(input, width, height, stride, FPDFBitmap_BGRA);
-  if (png_encoding.empty()) {
-    fprintf(stderr, "Failed to convert bitmap to PNG\n");
-    return "";
-  }
-
-  std::string filename = GeneratePageOutputFilename(pdf_name, num, "png");
-  if (filename.empty()) {
-    return std::string();
-  }
-  FILE* fp = fopen(filename.c_str(), "wb");
-  if (!fp) {
-    fprintf(stderr, "Failed to open %s for output\n", filename.c_str());
-    return std::string();
-  }
-
-  size_t bytes_written =
-      fwrite(&png_encoding.front(), 1, png_encoding.size(), fp);
-  if (bytes_written != png_encoding.size()) {
-    fprintf(stderr, "Failed to write to %s\n", filename.c_str());
-  }
-
-  (void)fclose(fp);
-  return filename;
+std::string WriteStraightAlphaBufferToPng(
+    const char* pdf_name,
+    int num,
+    void* buffer,
+    const BitmapAttributes& bitmap_attributes) {
+  return WritePng(pdf_name, num, buffer, bitmap_attributes,
+                  /*buffer_has_premultiplied_alpha=*/false);
 }
+
+#ifdef PDF_ENABLE_SKIA
+std::string WritePremultipliedAlphaBufferToPng(
+    const char* pdf_name,
+    int num,
+    void* buffer,
+    const BitmapAttributes& bitmap_attributes) {
+  return WritePng(pdf_name, num, buffer, bitmap_attributes,
+                  /*buffer_has_premultiplied_alpha=*/true);
+}
+#endif
 
 #ifdef _WIN32
 std::string WriteBmp(const char* pdf_name,
                      int num,
                      void* buffer,
-                     int stride,
-                     int width,
-                     int height) {
-  if (!CheckDimensions(stride, width, height)) {
+                     const BitmapAttributes& bitmap_attributes) {
+  if (!CheckDimensions(bitmap_attributes.stride, bitmap_attributes.width,
+                       bitmap_attributes.height)) {
     return std::string();
   }
 
-  int out_len = stride * height;
+  int out_len = bitmap_attributes.stride * bitmap_attributes.height;
   if (out_len > INT_MAX / 3) {
     return std::string();
   }
@@ -522,8 +520,8 @@ std::string WriteBmp(const char* pdf_name,
 
   BITMAPINFO bmi = {};
   bmi.bmiHeader.biSize = sizeof(bmi) - sizeof(RGBQUAD);
-  bmi.bmiHeader.biWidth = width;
-  bmi.bmiHeader.biHeight = -height;  // top-down image
+  bmi.bmiHeader.biWidth = bitmap_attributes.width;
+  bmi.bmiHeader.biHeight = -bitmap_attributes.height;  // top-down image
   bmi.bmiHeader.biPlanes = 1;
   bmi.bmiHeader.biBitCount = 32;
   bmi.bmiHeader.biCompression = BI_RGB;

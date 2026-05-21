@@ -130,7 +130,7 @@ class CanvasResourceDispatcherTest
     dispatcher_ = std::make_unique<MockCanvasResourceDispatcher>(
         agent_group_scheduler_compositor_task_runner);
     resource_provider_ =
-        CanvasResourceProvider::CreateSharedImageProviderForSoftwareCompositor(
+        CanvasNon2DResourceProviderSharedImage::CreateForSoftwareCompositor(
             gfx::Size(kWidth, kHeight), GetN32FormatForCanvas(),
             kPremul_SkAlphaType, gfx::ColorSpace::CreateSRGB(),
             CanvasResourceProvider::ShouldInitialize::kCallClear,
@@ -147,7 +147,7 @@ class CanvasResourceDispatcherTest
   test::TaskEnvironment task_environment_{
       base::test::TaskEnvironment::TimeSource::MOCK_TIME};
   std::unique_ptr<MockCanvasResourceDispatcher> dispatcher_;
-  std::unique_ptr<CanvasResourceProvider> resource_provider_;
+  std::unique_ptr<CanvasResourceProviderSharedImage> resource_provider_;
   std::unique_ptr<WebGraphicsSharedImageInterfaceProvider>
       test_web_shared_image_interface_provider_;
 };

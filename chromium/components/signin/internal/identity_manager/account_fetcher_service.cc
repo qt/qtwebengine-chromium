@@ -21,8 +21,8 @@
 #include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/pref_service.h"
 #include "components/signin/internal/identity_manager/account_capabilities_fetcher.h"
-#include "components/signin/internal/identity_manager/account_capabilities_fetcher_factory.h"
-#include "components/signin/internal/identity_manager/account_info_fetcher.h"
+#include "components/signin/internal/identity_manager/account_fetcher_factory.h"
+#include "components/signin/internal/identity_manager/account_info_fetcher_gaia.h"
 #include "components/signin/internal/identity_manager/account_tracker_service.h"
 #include "components/signin/internal/identity_manager/profile_oauth2_token_service.h"
 #include "components/signin/public/base/avatar_icon_util.h"
@@ -65,8 +65,7 @@ void AccountFetcherService::Initialize(
     ProfileOAuth2TokenService* token_service,
     AccountTrackerService* account_tracker_service,
     std::unique_ptr<image_fetcher::ImageDecoder> image_decoder,
-    std::unique_ptr<AccountCapabilitiesFetcherFactory>
-        account_capabilities_fetcher_factory) {
+    std::unique_ptr<AccountFetcherFactory> account_fetcher_factory) {
   DCHECK(signin_client);
   DCHECK(!signin_client_);
   signin_client_ = signin_client;
@@ -81,10 +80,9 @@ void AccountFetcherService::Initialize(
   DCHECK(image_decoder);
   DCHECK(!image_decoder_);
   image_decoder_ = std::move(image_decoder);
-  DCHECK(!account_capabilities_fetcher_factory_);
-  DCHECK(account_capabilities_fetcher_factory);
-  account_capabilities_fetcher_factory_ =
-      std::move(account_capabilities_fetcher_factory);
+  DCHECK(!account_fetcher_factory_);
+  DCHECK(account_fetcher_factory);
+  account_fetcher_factory_ = std::move(account_fetcher_factory);
 
   repeating_timer_ = std::make_unique<signin::PersistentRepeatingTimer>(
       signin_client_->GetPrefs(), AccountFetcherService::kLastUpdatePref,
@@ -130,9 +128,9 @@ void AccountFetcherService::EnableAccountRemovalForTest() {
   enable_account_removal_for_test_ = true;
 }
 
-AccountCapabilitiesFetcherFactory*
-AccountFetcherService::GetAccountCapabilitiesFetcherFactoryForTest() {
-  return account_capabilities_fetcher_factory_.get();
+AccountFetcherFactory*
+AccountFetcherService::GetAccountFetcherFactoryForTest() {
+  return account_fetcher_factory_.get();
 }
 
 void AccountFetcherService::RefreshAllAccountInfo(bool only_fetch_if_invalid) {
@@ -172,17 +170,13 @@ void AccountFetcherService::StartFetchingUserInfo(
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK(network_fetches_enabled_);
 
-  std::unique_ptr<AccountInfoFetcher>& request =
-      user_info_requests_[account_id];
-  if (!request) {
+  if (!user_info_requests_.contains(account_id)) {
     DVLOG(1) << "StartFetching " << account_id;
-    std::unique_ptr<AccountInfoFetcher> fetcher =
-        std::make_unique<AccountInfoFetcher>(
-            token_service_, signin_client_->GetURLLoaderFactory(), this,
-            account_id);
-    request = std::move(fetcher);
     user_info_fetch_start_times_[account_id] = base::TimeTicks::Now();
-    request->Start();
+    user_info_requests_.emplace(
+        account_id, std::make_unique<AccountInfoFetcherGaia>(
+                        token_service_, signin_client_->GetURLLoaderFactory(),
+                        this, account_id));
   }
 }
 
@@ -192,8 +186,7 @@ void AccountFetcherService::DestroyFetchers(const CoreAccountId& account_id) {
 }
 
 void AccountFetcherService::PrepareForFetchingAccountCapabilities() {
-  account_capabilities_fetcher_factory_
-      ->PrepareForFetchingAccountCapabilities();
+  account_fetcher_factory_->PrepareForFetchingAccountCapabilities();
 }
 
 void AccountFetcherService::StartFetchingAccountCapabilities(
@@ -207,15 +200,14 @@ void AccountFetcherService::StartFetchingAccountCapabilities(
     AccountInfo account_info =
         account_tracker_service_->GetAccountInfo(core_account_info.account_id);
 
-    request =
-        account_capabilities_fetcher_factory_->CreateAccountCapabilitiesFetcher(
-            core_account_info,
-            account_info.capabilities.AreAnyCapabilitiesKnown()
-                ? AccountCapabilitiesFetcher::FetchPriority::kBackground
-                : AccountCapabilitiesFetcher::FetchPriority::kForeground,
-            base::BindOnce(
-                &AccountFetcherService::OnAccountCapabilitiesFetchComplete,
-                base::Unretained(this)));
+    request = account_fetcher_factory_->CreateAccountCapabilitiesFetcher(
+        core_account_info,
+        account_info.capabilities.AreAnyCapabilitiesKnown()
+            ? AccountCapabilitiesFetcher::FetchPriority::kBackground
+            : AccountCapabilitiesFetcher::FetchPriority::kForeground,
+        base::BindOnce(
+            &AccountFetcherService::OnAccountCapabilitiesFetchComplete,
+            base::Unretained(this)));
     request->Start();
   }
 }
@@ -259,7 +251,7 @@ void AccountFetcherService::RefreshAccountInfo(const CoreAccountId& account_id,
 
 void AccountFetcherService::OnUserInfoFetchSuccess(
     const CoreAccountId& account_id,
-    const base::Value::Dict& user_info) {
+    const base::DictValue& user_info) {
   account_tracker_service_->SetAccountInfoFromUserInfo(account_id, user_info);
   auto it = user_info_fetch_start_times_.find(account_id);
   if (it != user_info_fetch_start_times_.end()) {
@@ -287,18 +279,21 @@ void AccountFetcherService::FetchAccountImage(const CoreAccountId& account_id) {
   DCHECK(signin_client_);
   AccountInfo account_info =
       account_tracker_service_->GetAccountInfo(account_id);
-  std::string picture_url_string = account_info.picture_url;
+  if (!account_info.GetAvatarUrl().has_value()) {
+    return;
+  }
 
-  GURL picture_url(picture_url_string);
+  GURL picture_url(*account_info.GetAvatarUrl());
   if (!picture_url.is_valid()) {
-    DVLOG(1) << "Invalid avatar picture URL: \"" + picture_url_string + "\"";
+    DVLOG(1) << "Invalid avatar picture URL: \"" << *account_info.GetAvatarUrl()
+             << "\"";
     return;
   }
   GURL image_url_with_size(signin::GetAvatarImageURLWithOptions(
       picture_url, signin::kAccountInfoImageSize, true /* no_silhouette */));
 
   if (image_url_with_size.spec() ==
-      account_info.last_downloaded_image_url_with_size) {
+      account_info.GetLastDownloadedAvatarUrlWithSize()) {
     return;
   }
 

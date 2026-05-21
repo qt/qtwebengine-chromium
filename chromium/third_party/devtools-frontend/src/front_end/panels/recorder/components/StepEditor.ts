@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import * as Host from '../../../core/host/host.js';
 import * as i18n from '../../../core/i18n/i18n.js';
 import * as Platform from '../../../core/platform/platform.js';
 import type * as Puppeteer from '../../../third_party/puppeteer/puppeteer.js';
@@ -517,19 +516,14 @@ export class StepEditor extends LitElement {
     this.dispatchEvent(new RequestSelectorAttributeEvent(send));
   };
 
-  #handleAddOrRemoveClick =
-      (assignments: DeepImmutable<DeepPartial<Assignments<EditorState>>>, query: string,
-       metric: Host.UserMetrics.RecordingEdited): ((event: Event) => void) => event => {
+  #handleAddOrRemoveClick = (assignments: DeepImmutable<DeepPartial<Assignments<EditorState>>>, query: string):
+      ((event: Event) => void) => event => {
         event.preventDefault();
         event.stopPropagation();
 
         this.#commit(immutableDeepAssign(this.state, assignments));
 
         this.#ensureFocus(query);
-
-        if (metric) {
-          Host.userMetrics.recordingEdited(metric);
-        }
       };
 
   #handleKeyDownEvent = (event: Event): void => {
@@ -551,7 +545,6 @@ export class StepEditor extends LitElement {
     attribute: A,
     // If there are not assignments, then we should ignore the event.
     from(this: StepEditor, value: DataType<A>): DeepImmutable<DeepPartial<Assignments<EditorState>>>|undefined,
-    metric: Host.UserMetrics.RecordingEdited,
   }): ((event: Event) => void) => event => {
     assert(event.target instanceof SuggestionInput.SuggestionInput.SuggestionInput);
     if (event.target.disabled) {
@@ -565,10 +558,6 @@ export class StepEditor extends LitElement {
       return;
     }
     this.#commit(immutableDeepAssign(this.state, assignments));
-
-    if (opts.metric) {
-      Host.userMetrics.recordingEdited(opts.metric);
-    }
   };
 
   #handleTypeInputBlur = async(event: Event): Promise<void> => {
@@ -586,7 +575,6 @@ export class StepEditor extends LitElement {
       return;
     }
     this.#commit(await EditorState.default(value));
-    Host.userMetrics.recordingEdited(Host.UserMetrics.RecordingEdited.TYPE_CHANGED);
   };
 
   #handleAddRowClickEvent = async(event: MouseEvent): Promise<void> => {
@@ -610,6 +598,7 @@ export class StepEditor extends LitElement {
     return html`
       <devtools-button
         title=${opts.title}
+        .accessibleLabel=${opts.title}
         .size=${Buttons.Button.Size.SMALL}
         .iconName=${opts.iconName}
         .variant=${Buttons.Button.Variant.ICON}
@@ -658,8 +647,9 @@ export class StepEditor extends LitElement {
     this.#renderedAttributes.add('type');
     // clang-format off
     return html`<div class="row attribute" data-attribute="type" jslog=${VisualLogging.treeItem('type')}>
-      <div>type<span class="separator">:</span></div>
+      <div id="type">type<span class="separator">:</span></div>
       <devtools-suggestion-input
+        aria-labelledby="type"
         .disabled=${!editable || this.disabled}
         .options=${Object.values(Models.Schema.StepType)}
         .placeholder=${defaultValuesByAttribute.type}
@@ -678,9 +668,10 @@ export class StepEditor extends LitElement {
     }
     // clang-format off
     return html`<div class="row attribute" data-attribute=${attribute} jslog=${VisualLogging.treeItem(Platform.StringUtilities.toKebabCase(attribute))}>
-      <div>${attribute}<span class="separator">:</span></div>
+      <div id=${attribute}>${attribute}<span class="separator">:</span></div>
       <devtools-suggestion-input
         .disabled=${this.disabled}
+        aria-labelledby=${attribute}
         .placeholder=${defaultValuesByAttribute[attribute].toString()}
         .value=${live(attributeValue)}
         .mimeType=${(() => {
@@ -699,14 +690,8 @@ export class StepEditor extends LitElement {
         if (this.state[attribute] === undefined) {
           return;
         }
-        switch (attribute) {
-          case 'properties':
-            Host.userMetrics.recordingAssertion(Host.UserMetrics.RecordingAssertion.PROPERTY_ASSERTION_EDITED);
-            break;
-        }
         return {[attribute]: value};
       },
-      metric: Host.UserMetrics.RecordingEdited.OTHER_EDITING,
     })}
       ></devtools-suggestion-input>
       ${this.#renderDeleteButton(attribute)}
@@ -723,13 +708,14 @@ export class StepEditor extends LitElement {
     return html`
       <div class="attribute" data-attribute="frame" jslog=${VisualLogging.treeItem('frame')}>
         <div class="row">
-          <div>frame<span class="separator">:</span></div>
+          <div id="frame">frame<span class="separator">:</span></div>
           ${this.#renderDeleteButton('frame')}
         </div>
         ${this.state.frame.map((frame, index, frames) => {
           return html`
             <div class="padded row">
               <devtools-suggestion-input
+                aria-labelledby="frame"
                 .disabled=${this.disabled}
                 .placeholder=${defaultValuesByAttribute.frame[0].toString()}
                 .value=${live(frame.toString())}
@@ -744,7 +730,6 @@ export class StepEditor extends LitElement {
                       frame: new ArrayAssignments({ [index]: value }),
                     };
                   },
-                  metric: Host.UserMetrics.RecordingEdited.OTHER_EDITING,
                 })}
               ></devtools-suggestion-input>
               ${this.#renderInlineButton({
@@ -760,7 +745,6 @@ export class StepEditor extends LitElement {
                     }),
                   },
                   `devtools-suggestion-input[data-path="frame.${index + 1}"]`,
-                  Host.UserMetrics.RecordingEdited.OTHER_EDITING,
                 ),
               })}
               ${this.#renderInlineButton({
@@ -775,7 +759,6 @@ export class StepEditor extends LitElement {
                     index,
                     frames.length - 2,
                   )}"]`,
-                  Host.UserMetrics.RecordingEdited.OTHER_EDITING,
                 ),
               })}
             </div>
@@ -806,7 +789,7 @@ export class StepEditor extends LitElement {
       </div>
       ${this.state.selectors.map((selector, index, selectors) => {
         return html`<div class="padded row" data-selector-path=${index}>
-            <div>selector #${index + 1}<span class="separator">:</span></div>
+            <div id="selector-${index}">selector #${index + 1}<span class="separator">:</span></div>
             ${this.#renderInlineButton({
               class: 'add-selector',
               title: i18nString(UIStrings.addSelector),
@@ -820,7 +803,6 @@ export class StepEditor extends LitElement {
                   }),
                 },
                 `devtools-suggestion-input[data-path="selectors.${index + 1}.0"]`,
-                Host.UserMetrics.RecordingEdited.SELECTOR_ADDED,
               ),
             })}
             ${this.#renderInlineButton({
@@ -833,7 +815,6 @@ export class StepEditor extends LitElement {
                   index,
                   selectors.length - 2,
                 )}.0"]`,
-                Host.UserMetrics.RecordingEdited.SELECTOR_REMOVED,
               ),
             })}
           </div>
@@ -843,6 +824,7 @@ export class StepEditor extends LitElement {
               data-selector-path="${index}.${partIndex}"
             >
               <devtools-suggestion-input
+                aria-labelledby="selector-${index}"
                 .disabled=${this.disabled}
                 .placeholder=${defaultValuesByAttribute.selectors[0][0]}
                 .value=${live(part)}
@@ -863,7 +845,6 @@ export class StepEditor extends LitElement {
                       }),
                     };
                   },
-                  metric: Host.UserMetrics.RecordingEdited.SELECTOR_PART_EDITED,
                 })}
               ></devtools-suggestion-input>
               ${this.#renderInlineButton({
@@ -883,7 +864,6 @@ export class StepEditor extends LitElement {
                   `devtools-suggestion-input[data-path="selectors.${index}.${
                     partIndex + 1
                   }"]`,
-                  Host.UserMetrics.RecordingEdited.SELECTOR_PART_ADDED,
                 ),
               })}
               ${this.#renderInlineButton({
@@ -902,7 +882,6 @@ export class StepEditor extends LitElement {
                     partIndex,
                     parts.length - 2,
                   )}"]`,
-                  Host.UserMetrics.RecordingEdited.SELECTOR_PART_REMOVED,
                 ),
               })}
             </div>`;
@@ -925,12 +904,13 @@ export class StepEditor extends LitElement {
       </div>
       ${this.state.assertedEvents.map((event, index) => {
         return html` <div class="padded row" jslog=${VisualLogging.treeItem('event-type')}>
-            <div>type<span class="separator">:</span></div>
-            <div>${event.type}</div>
+            <div id="event-type">type<span class="separator">:</span></div>
+            <div aria-labelledby="event-type">${event.type}</div>
           </div>
           <div class="padded row" jslog=${VisualLogging.treeItem('event-title')}>
-            <div>title<span class="separator">:</span></div>
+            <div id="event-title">title<span class="separator">:</span></div>
             <devtools-suggestion-input
+              aria-labelledby="event-title"
               .disabled=${this.disabled}
               .placeholder=${defaultValuesByAttribute.assertedEvents[0].title}
               .value=${live(event.title ?? '')}
@@ -946,13 +926,13 @@ export class StepEditor extends LitElement {
                     }),
                   };
                 },
-                metric: Host.UserMetrics.RecordingEdited.OTHER_EDITING,
               })}
             ></devtools-suggestion-input>
           </div>
-          <div class="padded row" jslog=${VisualLogging.treeItem('event-url')}>
+          <div  id="event-url" class="padded row" jslog=${VisualLogging.treeItem('event-url')}>
             <div>url<span class="separator">:</span></div>
             <devtools-suggestion-input
+              aria-labelledby="event-url"
               .disabled=${this.disabled}
               .placeholder=${defaultValuesByAttribute.assertedEvents[0].url}
               .value=${live(event.url ?? '')}
@@ -968,7 +948,6 @@ export class StepEditor extends LitElement {
                     }),
                   };
                 },
-                metric: Host.UserMetrics.RecordingEdited.OTHER_EDITING,
               })}
             ></devtools-suggestion-input>
           </div>`;
@@ -1002,14 +981,10 @@ export class StepEditor extends LitElement {
                 if (this.state.attributes?.[index]?.name === undefined) {
                   return;
                 }
-                Host.userMetrics.recordingAssertion(
-                  Host.UserMetrics.RecordingAssertion.ATTRIBUTE_ASSERTION_EDITED,
-                );
                 return {
                   attributes: new ArrayAssignments({ [index]: { name } }),
                 };
               },
-              metric: Host.UserMetrics.RecordingEdited.OTHER_EDITING,
             })}
           ></devtools-suggestion-input>
           <span class="separator">:</span>
@@ -1024,14 +999,10 @@ export class StepEditor extends LitElement {
                 if (this.state.attributes?.[index]?.value === undefined) {
                   return;
                 }
-                Host.userMetrics.recordingAssertion(
-                  Host.UserMetrics.RecordingAssertion.ATTRIBUTE_ASSERTION_EDITED,
-                );
                 return {
                   attributes: new ArrayAssignments({ [index]: { value } }),
                 };
               },
-              metric: Host.UserMetrics.RecordingEdited.OTHER_EDITING,
             })}
           ></devtools-suggestion-input>
           ${this.#renderInlineButton({
@@ -1064,7 +1035,6 @@ export class StepEditor extends LitElement {
               `devtools-suggestion-input[data-path="attributes.${
                 index + 1
               }.name"]`,
-              Host.UserMetrics.RecordingEdited.OTHER_EDITING,
             ),
           })}
           ${this.#renderInlineButton({
@@ -1077,7 +1047,6 @@ export class StepEditor extends LitElement {
                 index,
                 attributes.length - 2,
               )}.value"]`,
-              Host.UserMetrics.RecordingEdited.OTHER_EDITING,
             ),
           })}
         </div>`;

@@ -10,6 +10,8 @@ static_library("safe_browsing") {
   sources = [
     "chrome_controller_client.cc",
     "chrome_controller_client.h",
+    "metrics/bundled_settings_metrics_provider.cc",
+    "metrics/bundled_settings_metrics_provider.h",
     "url_checker_delegate_impl.cc",
     "url_checker_delegate_impl.h",
   ]
@@ -35,6 +37,7 @@ static_library("safe_browsing") {
     "//chrome/browser/profiles:profile",
     "//chrome/browser/profiles:profile_io_data",
     "//chrome/browser/signin",
+    "//chrome/browser/site_protection:utils",
     "//chrome/browser/sync",
     "//chrome/browser/ui/autofill",
     "//chrome/common",
@@ -106,6 +109,10 @@ static_library("safe_browsing") {
   }
 
   if (is_win || is_mac || is_linux || is_chromeos) {
+    sources += [
+      "security_settings_bundle_toast_helper.cc",
+      "security_settings_bundle_toast_helper.h",
+    ]
     deps += [
       "//chrome/browser/ui/browser_window",
       "//chrome/browser/ui/toasts",
@@ -151,6 +158,10 @@ static_library("safe_browsing") {
       "client_side_detection_intelligent_scan_delegate_util.h",
       "client_side_detection_service_factory.cc",
       "client_side_detection_service_factory.h",
+      "cloud_content_scanning/file_analysis_request.cc",
+      "cloud_content_scanning/file_analysis_request.h",
+      "cloud_content_scanning/file_opening_job.cc",
+      "cloud_content_scanning/file_opening_job.h",
       "delayed_warning_navigation_throttle.cc",
       "delayed_warning_navigation_throttle.h",
       "download_protection/check_client_download_request.cc",
@@ -181,6 +192,10 @@ static_library("safe_browsing") {
       "download_protection/file_system_access_metadata.h",
       "external_app_redirect_checking.cc",
       "external_app_redirect_checking.h",
+      "gemini_antiscam_protection/gemini_antiscam_protection_service.cc",
+      "gemini_antiscam_protection/gemini_antiscam_protection_service.h",
+      "gemini_antiscam_protection/gemini_antiscam_protection_service_factory.cc",
+      "gemini_antiscam_protection/gemini_antiscam_protection_service_factory.h",
       "network_context_service.cc",
       "network_context_service.h",
       "network_context_service_factory.cc",
@@ -257,6 +272,7 @@ static_library("safe_browsing") {
       "//components/content_extraction/content/browser",
       "//components/content_settings/core/browser",
       "//components/enterprise/connectors/core",
+      "//components/enterprise/connectors/core:cloud_content_scanning",
       "//components/no_state_prefetch/browser",
       "//components/omnibox/browser",
       "//components/password_manager/content/browser",
@@ -277,6 +293,7 @@ static_library("safe_browsing") {
       "//components/safe_browsing/content/browser/triggers:trigger_throttler",
       "//components/safe_browsing/content/common:file_type_policies",
       "//components/safe_browsing/core/browser",
+      "//components/safe_browsing/core/browser:intelligent_scan_delegate",
       "//components/safe_browsing/core/browser:referring_app_info",
       "//components/safe_browsing/core/browser:token_fetcher",
       "//components/safe_browsing/core/browser:verdict_cache_manager",
@@ -311,22 +328,14 @@ static_library("safe_browsing") {
       sources += [
         "chrome_safe_browsing_hats_delegate.cc",
         "chrome_safe_browsing_hats_delegate.h",
-        "cloud_content_scanning/binary_upload_service.cc",
-        "cloud_content_scanning/binary_upload_service.h",
         "cloud_content_scanning/cloud_binary_upload_service.cc",
         "cloud_content_scanning/cloud_binary_upload_service.h",
         "cloud_content_scanning/cloud_binary_upload_service_factory.cc",
         "cloud_content_scanning/cloud_binary_upload_service_factory.h",
         "cloud_content_scanning/deep_scanning_utils.cc",
         "cloud_content_scanning/deep_scanning_utils.h",
-        "cloud_content_scanning/file_analysis_request.cc",
-        "cloud_content_scanning/file_analysis_request.h",
-        "cloud_content_scanning/file_opening_job.cc",
-        "cloud_content_scanning/file_opening_job.h",
         "cloud_content_scanning/multipart_uploader.cc",
         "cloud_content_scanning/multipart_uploader.h",
-        "cloud_content_scanning/resumable_uploader.cc",
-        "cloud_content_scanning/resumable_uploader.h",
         "download_protection/deep_scanning_request.cc",
         "download_protection/deep_scanning_request.h",
         "download_protection/download_feedback.cc",
@@ -508,7 +517,10 @@ static_library("safe_browsing") {
         ]
       }
       if (!is_android) {
-        deps += [ "//chrome/browser/ui:browser_list" ]
+        deps += [
+          "//chrome/browser/ui:browser_list",
+          "//chrome/browser/user_education",
+        ]
       }
     } else if (safe_browsing_mode == 2) {
       sources += [
@@ -641,7 +653,12 @@ source_set("unit_tests") {
     "advanced_protection_status_manager_factory_unittest.cc",
     "advanced_protection_status_manager_unittest.cc",
     "application_advanced_protection_status_detector_unittest.cc",
+    "metrics/bundled_settings_metrics_provider_unittest.cc",
   ]
+
+  if (safe_browsing_mode != 0) {
+    sources += [ "gemini_antiscam_protection/gemini_antiscam_protection_service_unittest.cc" ]
+  }
 
   deps = [
     ":safe_browsing",
@@ -654,11 +671,24 @@ source_set("unit_tests") {
     "//content/test:test_support",
     "//testing/gtest",
   ]
+
+  if (safe_browsing_mode != 0) {
+    deps += [
+      "//chrome/browser/history",
+      "//chrome/browser/optimization_guide",
+      "//chrome/browser/optimization_guide:test_support",
+      "//components/safe_browsing/core/common/proto:csd_proto",
+    ]
+  }
+
   if (is_android) {
     deps += [ "android:test_support" ]
   }
   if (is_win || is_mac || is_linux || is_chromeos) {
-    sources += [ "safe_browsing_pref_change_handler_unittest.cc" ]
+    sources += [
+      "safe_browsing_pref_change_handler_unittest.cc",
+      "security_settings_bundle_toast_helper_unittest.cc",
+    ]
 
     deps += [
       "//chrome/browser/sync",
@@ -700,6 +730,7 @@ source_set("test_support") {
       "//components/safe_browsing/content/browser:safe_browsing_service",
       "//components/safe_browsing/core/browser/db:database_manager",
       "//components/safe_browsing/core/browser/db:test_database_manager",
+      "//components/safe_browsing/core/browser/db:v4_protocol_config",
       "//components/safe_browsing/core/browser/db:v4_protocol_manager_util",
       "//components/safe_browsing/core/common/proto:crx_info_proto",
       "//content/public/browser",

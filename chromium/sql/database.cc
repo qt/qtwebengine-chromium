@@ -26,6 +26,7 @@
 
 #include "base/check.h"
 #include "base/check_op.h"
+#include "base/compiler_specific.h"
 #include "base/dcheck_is_on.h"
 #include "base/feature_list.h"
 #include "base/files/drive_info.h"
@@ -44,6 +45,7 @@
 #include "base/notreached.h"
 #include "base/sequence_checker.h"
 #include "base/strings/cstring_view.h"
+#include "base/strings/escape.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
@@ -72,7 +74,6 @@
 #include "third_party/sqlite/sqlite3.h"
 
 #if BUILDFLAG(IS_WIN)
-#include "base/containers/contains.h"
 #include "base/strings/utf_string_conversions.h"
 #endif
 
@@ -343,14 +344,93 @@ base::FilePath Database::SharedMemoryFilePath(const base::FilePath& db_path) {
 }
 
 // static
-int Database::WalHookCallback(void* db_ptr,
-                              sqlite3* db_handle,
-                              const char* db_name,
-                              int pages) {
+int Database::WalCommitHook(void* db_ptr,
+                            sqlite3* db_handle,
+                            const char* db_name,
+                            int pages) {
   Database* self = reinterpret_cast<Database*>(db_ptr);
-  DCHECK_CALLED_ON_VALID_SEQUENCE(self->sequence_checker_);
-  self->options_.wal_commit_callback_.Run(pages);
+  CHECK_EQ(db_handle, self->db_.get());
+
+  // SAFETY: `db_name` is the terminated name of the database as provided by
+  // SQLite.
+  self->OnWalDataCommit(UNSAFE_BUFFERS(base::cstring_view(db_name)), pages);
+
+  // Unconditionally return SQLITE_OK as per the recommendation in
+  // https://www.sqlite.org/c3ref/wal_hook.html and the default implementation
+  // in SQLite.
   return SQLITE_OK;
+}
+
+void Database::OnWalDataCommit(base::cstring_view db_name, int pages) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
+  // The default number of frames to accumulate in the log file before
+  // checkpointing the database in WAL mode.
+  static constexpr int kDefaultWalAutoCheckpoint = 1000;
+
+  if (options_.wal_commit_callback_ && db_name == kSqliteMainDatabaseName) {
+    // The creator has specified their own callback and this is the main
+    // database.
+    options_.wal_commit_callback_.Run(pages);
+  } else if (pages >= kDefaultWalAutoCheckpoint) {
+    // Perform the default behavior of checkpointing if more than 1000 pages are
+    // in the log.
+    (void)WalCheckpointImpl(db_name, /*is_auto_checkpoint=*/true);
+  }
+}
+
+int Database::WalCheckpointImpl(base::cstring_view db_name,
+                                bool is_auto_checkpoint) {
+  // The number of frames in the write-ahead log after the checkpoint completes.
+  int log_frame_count = 0;
+
+  // The number of frames in the write-ahead log that were copied into the
+  // database file; i.e., the subset of `log_frame_count` that made it into the
+  // database. If this is equal to `log_frame_count`, then all entries in the
+  // log were added to the database; otherwise, a concurrent reader prevented
+  // such and the log will continue to grow as new data is written to the
+  // database. Once all frames are checkpointed, the next write will rewind the
+  // log and start it fresh. This is one reason why WAL mode works best when the
+  // database is opened for exclusive access -- checkpoints will never be
+  // prevented from transferring all frames on success.
+  int checkpointed_frame_count = 0;
+
+  TRACE_EVENT_BEGIN("sql", "Checkpoint", "is_auto_checkpoint",
+                    is_auto_checkpoint);
+  std::optional<base::ScopedBlockingCall> scoped_blocking_call;
+  InitScopedBlockingCall(FROM_HERE, &scoped_blocking_call);
+
+  base::ElapsedTimer timer;
+  const int result =
+      sqlite3_wal_checkpoint_v2(db_, db_name.c_str(), SQLITE_CHECKPOINT_PASSIVE,
+                                /*pnLog=*/&log_frame_count,
+                                /*pnCkpt=*/&checkpointed_frame_count);
+  RecordTimingHistogram(is_auto_checkpoint
+                            ? "Sql.Database.AutoCheckpoint.Time."
+                            : "Sql.Database.ManualCheckpoint.Time.",
+                        timer.Elapsed());
+  TRACE_EVENT_END("sql", "result", result, "log_frame_count", log_frame_count,
+                  "checkpointed_frame_count", checkpointed_frame_count);
+  scoped_blocking_call.reset();
+
+  // Expected result codes, among others:
+  // - SQLITE_BUSY if the lock could not be acquired. Not possible if the
+  //   database is in exclusive mode.
+  // - SQLITE_LOCKED if a transaction is open.
+  // - SQLITE_READONLY if the db is in read-only mode.
+  UmaHistogramSqliteResult(
+      base::StrCat({"Sql.Database.", (is_auto_checkpoint ? "Auto" : "Manual"),
+                    "Checkpoint.Result.", histogram_tag()}),
+      result);
+
+  if (checkpointed_frame_count > 0) {
+    base::UmaHistogramCounts10000(
+        base::StrCat({"Sql.Database.", (is_auto_checkpoint ? "Auto" : "Manual"),
+                      "Checkpoint.FrameCount.", histogram_tag()}),
+        checkpointed_frame_count);
+  }
+
+  return result;
 }
 
 base::WeakPtr<Database> Database::GetWeakPtr(InternalApiToken) {
@@ -2006,13 +2086,14 @@ bool Database::OpenInternal(const std::string& db_file_path) {
     const bool in_memory = db_file_path == kSqliteOpenInMemoryPath;
     if (!in_memory) {
       // Do not allow query injection.
-      if (base::Contains(db_file_path, '?')) {
+      if (db_file_path.contains('?')) {
         RecordOpenDatabaseFailureReason(
             histogram_tag_, OpenDatabaseFailedReason::kIncorrectPath);
         return false;
       }
       open_flags |= SQLITE_OPEN_URI;
-      uri_file_path = base::StrCat({"file:", db_file_path, "?exclusive=true"});
+      uri_file_path = base::StrCat(
+          {"file:", base::EscapePath(db_file_path), "?exclusive=true"});
     }
 #else
     NOTREACHED()
@@ -2188,10 +2269,9 @@ bool Database::OpenInternal(const std::string& db_file_path) {
         return false;
       }
 
-      // Register a WAL commit hook to call the caller's `wal_commit_callback_`.
-      if (options_.wal_commit_callback_) {
-        sqlite3_wal_hook(db_, &Database::WalHookCallback, this);
-      }
+      // Register a WAL commit hook. This is used to report metrics and to call
+      // the caller's `wal_commit_callback_` if they have provided one.
+      sqlite3_wal_hook(db_, &Database::WalCommitHook, this);
     } else {
       // For speed, change the journal mode from the default DELETE to TRUNCATE.
       // Both modes will delete the rollback journal at the conclusion of every
@@ -2395,8 +2475,6 @@ void Database::OnSqliteError(SqliteErrorCode sqlite_error_code,
   DCHECK_NE(statement != nullptr, sql_statement != nullptr)
       << __func__ << " should either get a Statement or a raw SQL string";
 
-  base::WeakPtr<Database> weak_this =
-      weak_factory_lifetime_tracker_.GetWeakPtr();
   ++handling_error_nesting_;
 
   // Use `base::UmaHistogramSparse` because sqlite result codes aren't
@@ -2443,17 +2521,23 @@ void Database::OnSqliteError(SqliteErrorCode sqlite_error_code,
   std::ignore = IsExpectedSqliteError(static_cast<int>(sqlite_error_code));
 
   if (!error_callback_.is_null()) {
+    base::WeakPtr<Database> weak_this =
+        weak_factory_lifetime_tracker_.GetWeakPtr();
+
     // Create an additional reference to the state in `error_callback_`, so the
     // state doesn't go away if the callback changes `error_callback_` by
     // calling set_error_callback() or reset_error_callback(). This avoids a
     // subtle source of use-after-frees. See https://crbug.com/254584.
     ErrorCallback error_callback_copy = error_callback_;
     error_callback_copy.Run(static_cast<int>(sqlite_error_code), statement);
+
+    // Abort if `error_callback_` deleted this `Database` object.
+    if (!weak_this) {
+      return;
+    }
   }
 
-  if (weak_this) {
-    --weak_this->handling_error_nesting_;
-  }
+  --handling_error_nesting_;
 }
 
 std::string Database::GetDiagnosticInfo(int sqlite_error_code,
@@ -2597,14 +2681,9 @@ bool Database::UseWALMode() const {
 
 bool Database::CheckpointDatabase() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  std::optional<base::ScopedBlockingCall> scoped_blocking_call;
-  InitScopedBlockingCall(FROM_HERE, &scoped_blocking_call);
 
-  auto sqlite_result_code = ToSqliteResultCode(sqlite3_wal_checkpoint_v2(
-      db_, kSqliteMainDatabaseName, SQLITE_CHECKPOINT_PASSIVE,
-      /*pnLog=*/nullptr, /*pnCkpt=*/nullptr));
-
-  return sqlite_result_code == SqliteResultCode::kOk;
+  return WalCheckpointImpl(kSqliteMainDatabaseName,
+                           /*is_auto_checkpoint=*/false) == SQLITE_OK;
 }
 
 }  // namespace sql

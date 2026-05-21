@@ -33,6 +33,7 @@
 #include "base/metrics/histogram_macros.h"
 #include "base/notreached.h"
 #include "base/observer_list.h"
+#include "base/strings/strcat.h"
 #include "base/task/task_traits.h"
 #include "base/task/thread_pool.h"
 #include "base/task/updateable_sequenced_task_runner.h"
@@ -1399,7 +1400,7 @@ void AttributionManagerImpl::OnAggregatableDebugReportProcessed(
       storage_partition_->GetAggregationService();
   if (!aggregation_service) {
     NotifyAggregatableDebugReportSent(
-        result.report, /*report_body=*/base::Value::Dict(), result.result,
+        result.report, /*report_body=*/base::DictValue(), result.result,
         SendAggregatableDebugReportResult(
             SendAggregatableDebugReportResult::AssemblyFailed()));
     return;
@@ -1408,7 +1409,7 @@ void AttributionManagerImpl::OnAggregatableDebugReportProcessed(
       result.report.CreateAggregatableReportRequest();
   if (!request.has_value()) {
     NotifyAggregatableDebugReportSent(
-        result.report, /*report_body=*/base::Value::Dict(), result.result,
+        result.report, /*report_body=*/base::DictValue(), result.result,
         SendAggregatableDebugReportResult(
             SendAggregatableDebugReportResult::AssemblyFailed()));
     return;
@@ -1428,7 +1429,7 @@ void AttributionManagerImpl::OnAggregatableDebugReportAssembled(
     AggregationService::AssemblyStatus) {
   if (!assembled_report.has_value()) {
     NotifyAggregatableDebugReportSent(
-        result.report, /*report_body=*/base::Value::Dict(), result.result,
+        result.report, /*report_body=*/base::DictValue(), result.result,
         SendAggregatableDebugReportResult(
             SendAggregatableDebugReportResult::AssemblyFailed()));
     return;

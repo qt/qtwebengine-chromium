@@ -183,6 +183,7 @@ class CORE_EXPORT BlockLayoutAlgorithm
   NOINLINE const LayoutResult* RelayoutClampingAfterLayoutObject(
       const LayoutObject*);
   NOINLINE const LayoutResult* RelayoutForTextBoxTrimEnd();
+  NOINLINE const LayoutResult* RelayoutForMarginTrimEnd();
 
   inline const LayoutResult* Layout(
       InlineChildLayoutContext* inline_child_layout_context);
@@ -266,7 +267,9 @@ class CORE_EXPORT BlockLayoutAlgorithm
       PreviousInflowPosition*,
       const InlineBreakToken** inline_break_token_out);
 
-  void HandleOutOfFlowPositioned(const PreviousInflowPosition&, BlockNode);
+  void HandleOutOfFlowPositioned(const PreviousInflowPosition&,
+                                 const BlockNode&,
+                                 const BlockBreakToken*);
   void HandleFloat(const PreviousInflowPosition&,
                    BlockNode,
                    const BlockBreakToken*);
@@ -478,7 +481,7 @@ class CORE_EXPORT BlockLayoutAlgorithm
   // This is called only if |this| is a text control.
   // This function returns a new value for `PreviousInflowPosition::
   // logical_block_offset` and the status of placeholder layout.
-  PlaceholderLayoutResult HandleTextControlPlaceholder(
+  NOINLINE PlaceholderLayoutResult HandleTextControlPlaceholder(
       BlockNode placeholder,
       const PreviousInflowPosition& previous_inflow_position);
   // A helper for HandleTextControlPlaceholder().
@@ -514,6 +517,20 @@ class CORE_EXPORT BlockLayoutAlgorithm
   InlineNode override_text_box_trim_end_child_ = nullptr;
   const BreakToken* override_text_box_trim_end_break_token_ = nullptr;
 
+  // The last in-flow child laid out that isn't self-collapsing. If trailing
+  // margins are to be trimmed, the outgoing block-end margin from this child is
+  // where to start trimming.
+  LayoutInputNode last_non_self_collapsing_child_ = nullptr;
+
+  // In relayout for end margin trimming, this is the child after which margin
+  // trimming should start. It will be set to nullptr when the child is
+  // reached. If it's nullptr initially, it means that the entire container is
+  // self-collapsing.
+  LayoutInputNode pending_margin_end_trim_child_ = nullptr;
+
+  // The incoming margin strut at the start of layout.
+  MarginStrut incoming_margin_strut_;
+
   // Intrinsic block size based on child layout and containment.
   LayoutUnit intrinsic_block_size_;
 
@@ -546,6 +563,15 @@ class CORE_EXPORT BlockLayoutAlgorithm
   // this). It is used to check if we're at a valid class A or B breakpoint
   // (between block-level siblings or line box siblings).
   bool has_break_opportunity_before_next_child_ : 1;
+
+  // Set when performing an extra layout pass to correctly truncate trailing
+  // margins for end margin trimming.
+  bool is_relayout_for_margin_end_trim_ : 1 = false;
+
+  // Set if last_non_self_collapsing_child_ should be left as-is, because we're
+  // in a relayout pass (but not necessarily in a relayout pass for margin
+  // trimming).
+  bool is_last_non_self_collapsing_child_determined_ : 1 = false;
 };
 
 }  // namespace blink

@@ -2,17 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40285824): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "components/wifi/network_properties.h"
 
 #include <optional>
 #include <string>
 #include <utility>
 
+#include "base/compiler_specific.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 
@@ -32,8 +28,8 @@ NetworkProperties& NetworkProperties::operator=(NetworkProperties&& other) =
 
 NetworkProperties::~NetworkProperties() = default;
 
-base::Value::Dict NetworkProperties::ToValue(bool network_list) const {
-  base::Value::Dict value;
+base::DictValue NetworkProperties::ToValue(bool network_list) const {
+  base::DictValue value;
 
   value.Set(onc::network_config::kGUID, guid);
   value.Set(onc::network_config::kName, name);
@@ -44,7 +40,7 @@ base::Value::Dict NetworkProperties::ToValue(bool network_list) const {
   // For now, assume all WiFi services are connectable.
   value.Set(onc::network_config::kConnectable, true);
 
-  base::Value::Dict wifi;
+  base::DictValue wifi;
   wifi.Set(onc::wifi::kSecurity, security);
   wifi.Set(onc::wifi::kSignalStrength, static_cast<int>(signal_strength));
 
@@ -53,7 +49,7 @@ base::Value::Dict NetworkProperties::ToValue(bool network_list) const {
     if (frequency != kFrequencyUnknown) {
       wifi.Set(onc::wifi::kFrequency, frequency);
     }
-    base::Value::List frequency_list;
+    base::ListValue frequency_list;
     for (FrequencySet::const_iterator it = this->frequency_set.begin();
          it != this->frequency_set.end(); ++it) {
       frequency_list.Append(*it);
@@ -72,7 +68,7 @@ base::Value::Dict NetworkProperties::ToValue(bool network_list) const {
   return value;
 }
 
-bool NetworkProperties::UpdateFromValue(const base::Value::Dict& value) {
+bool NetworkProperties::UpdateFromValue(const base::DictValue& value) {
   const std::string* network_type =
       value.FindString(onc::network_config::kType);
   // Get network type and make sure that it is WiFi (if specified).
@@ -83,7 +79,7 @@ bool NetworkProperties::UpdateFromValue(const base::Value::Dict& value) {
     type = *network_type;
   }
 
-  const base::Value::Dict* wifi = value.FindDict(onc::network_type::kWiFi);
+  const base::DictValue* wifi = value.FindDict(onc::network_type::kWiFi);
   if (wifi) {
     const std::string* name_ptr = value.FindString(onc::network_config::kName);
     if (name_ptr) {
@@ -127,9 +123,10 @@ std::string NetworkProperties::MacAddressAsString(const uint8_t mac_as_int[6]) {
   // mac_as_int is big-endian. Write in byte chunks.
   // Format is XX:XX:XX:XX:XX:XX.
   static const char* const kMacFormatString = "%02x:%02x:%02x:%02x:%02x:%02x";
-  return base::StringPrintf(kMacFormatString, mac_as_int[0], mac_as_int[1],
-                            mac_as_int[2], mac_as_int[3], mac_as_int[4],
-                            mac_as_int[5]);
+  return base::StringPrintf(
+      kMacFormatString, mac_as_int[0], UNSAFE_TODO(mac_as_int[1]),
+      UNSAFE_TODO(mac_as_int[2]), UNSAFE_TODO(mac_as_int[3]),
+      UNSAFE_TODO(mac_as_int[4]), UNSAFE_TODO(mac_as_int[5]));
 }
 
 bool NetworkProperties::OrderByType(const NetworkProperties& l,

@@ -36,29 +36,40 @@ class MockServiceListenerDelegate final : public ServiceListener::Delegate {
 
   ServiceListener* listener() { return listener_; }
 
-  MOCK_METHOD1(StartListener, void(const ServiceListener::Config& config));
-  MOCK_METHOD1(StartAndSuspendListener,
-               void(const ServiceListener::Config& config));
-  MOCK_METHOD0(StopListener, void());
-  MOCK_METHOD0(SuspendListener, void());
-  MOCK_METHOD0(ResumeListener, void());
-  MOCK_METHOD1(SearchNow, void(ServiceListener::State from));
-  MOCK_METHOD0(RunTasksListener, void());
+  MOCK_METHOD(void,
+              StartListener,
+              (const ServiceListener::Config& config),
+              (override));
+  MOCK_METHOD(void,
+              StartAndSuspendListener,
+              (const ServiceListener::Config& config),
+              (override));
+  MOCK_METHOD(void, StopListener, (), (override));
+  MOCK_METHOD(void, SuspendListener, (), (override));
+  MOCK_METHOD(void, ResumeListener, (), (override));
+  MOCK_METHOD(void, SearchNow, (ServiceListener::State from), (override));
+  MOCK_METHOD(void, RunTasksListener, ());
 };
 
 class MockReceiverObserver final : public ReceiverObserver {
  public:
   ~MockReceiverObserver() override = default;
 
-  MOCK_METHOD2(OnRequestFailed,
-               void(const std::string& presentation_url,
-                    const std::string& instance_name));
-  MOCK_METHOD2(OnReceiverAvailable,
-               void(const std::string& presentation_url,
-                    const std::string& instance_name));
-  MOCK_METHOD2(OnReceiverUnavailable,
-               void(const std::string& presentation_url,
-                    const std::string& instance_name));
+  MOCK_METHOD(void,
+              OnRequestFailed,
+              (const std::string& presentation_url,
+               const std::string& instance_name),
+              (override));
+  MOCK_METHOD(void,
+              OnReceiverAvailable,
+              (const std::string& presentation_url,
+               const std::string& instance_name),
+              (override));
+  MOCK_METHOD(void,
+              OnReceiverUnavailable,
+              (const std::string& presentation_url,
+               const std::string& instance_name),
+              (override));
 };
 
 class MockRequestDelegate final : public RequestDelegate {
@@ -69,8 +80,10 @@ class MockRequestDelegate final : public RequestDelegate {
   void OnConnection(std::unique_ptr<Connection> connection) override {
     OnConnectionMock(connection);
   }
-  MOCK_METHOD1(OnConnectionMock, void(std::unique_ptr<Connection>& connection));
-  MOCK_METHOD1(OnError, void(const Error& error));
+  MOCK_METHOD(void,
+              OnConnectionMock,
+              (std::unique_ptr<Connection> & connection));
+  MOCK_METHOD(void, OnError, (const Error& error), (override));
 };
 
 }  // namespace

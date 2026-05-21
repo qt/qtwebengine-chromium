@@ -1,0 +1,120 @@
+// Copyright 2025 The ChromiumOS Authors
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+syntax = "proto3";
+
+option optimize_for = LITE_RUNTIME;
+
+package hosts_connectivity_diagnostics;
+
+// Result codes for a single diagnostic test checking connectivity to a hostname
+// using direct connection or through a proxy server.
+enum ConnectivityResultCode {
+  // Should not be used. Helps with forward compatibility when new values are
+  // introduced - old clients will see new values as unset and return this.
+  UNSPECIFIED = 0;
+  // The operation completed successfully.
+  SUCCESS = 1;
+  // The tool failed due to internal reasons (d-bus error, proxy fetching
+  // error, etc). See `error_message` for more details.
+  INTERNAL_ERROR = 2;
+  // The provided hostname are invalid.
+  NO_VALID_HOSTNAME = 3;
+  // The tool was unable to determine the problem.
+  UNKNOWN_ERROR = 4;
+  // General connectivity error, when the tool is unable to determine the
+  // reason of failure.
+  CONNECTION_FAILURE = 5;
+  // Operation timed out during connection to host.
+  CONNECTION_TIMEOUT = 6;
+  // Unable to resolve hostname.
+  DNS_RESOLUTION_ERROR = 7;
+  // Unable to resolve proxy.
+  PROXY_DNS_RESOLUTION_ERROR = 8;
+  // Unable to establish connection to proxy.
+  PROXY_CONNECTION_FAILURE = 9;
+  // Failed to establish SSL/TLS connection.
+  SSL_CONNECTION_ERROR = 10;
+  // Peer certificate cannot be authenticated with known CA certificates.
+  PEER_CERTIFICATE_ERROR = 11;
+  // Failures on http response.
+  HTTP_ERROR = 12;
+  // The network was disconnected during the time of the test.
+  NO_NETWORK_ERROR = 13;
+  // The provided proxy URL is invalid.
+  NO_VALID_PROXY = 14;
+}
+
+// Represents a single, distinct outcome of host/proxy from the connectivity
+// diagnostic test.
+//
+// Field availability by result_code:
+// +-------------------------------+----------+----------+---------------+--------------------+------------+
+// | result_code                   | hostname | proxy    | error_message | resolution_message | timestamps |
+// +-------------------------------+----------+----------+---------------+--------------------+------------+
+// | SUCCESS                       | always   | optional | never         | never              | always     |
+// | NO_VALID_HOSTNAME             | optional | never    | always        | optional           | never      |
+// | NO_VALID_PROXY                | optional | optional | always        | optional           | never      |
+// | PROXY_DNS_RESOLUTION_ERROR    | always   | always   | always        | optional           | always     |
+// | PROXY_CONNECTION_FAILURE      | always   | always   | always        | optional           | always     |
+// | All other errors              | always   | optional | always        | optional           | always     |
+// +-------------------------------+----------+----------+---------------+--------------------+------------+
+//
+// Legend:
+//   always   - field is guaranteed to have a non-empty value
+//   optional - field may or may not have a value depending on availability
+//   never    - field will be empty
+//
+// Notes:
+// - "proxy" is "optional" as it depends on whether a proxy was used for the test.
+// - "hostname" is "optional" for NO_VALID_HOSTNAME as it will be empty if user
+//   provided no hostnames at all.
+// - For NO_VALID_PROXY, hostname and proxy are mutually exclusive based on proxy
+//   mode:
+//   * User-provided proxy: hostname is empty, proxy contains the invalid proxy URL
+//   * System proxy option: hostname is set, proxy is empty (proxy couldn't be
+//     determined for this hostname)
+// - "All other errors" includes: INTERNAL_ERROR, UNKNOWN_ERROR, CONNECTION_FAILURE,
+//   CONNECTION_TIMEOUT, DNS_RESOLUTION_ERROR, SSL_CONNECTION_ERROR,
+//   PEER_CERTIFICATE_ERROR, HTTP_ERROR, NO_NETWORK_ERROR
+message ConnectivityResultEntry {
+  // The high-level error code for this group of hosts/proxies.
+  ConnectivityResultCode result_code = 1;
+  // The specific, detailed message.
+  string error_message = 2;
+  // Hostname that was tested. Empty if the error is proxy-related (i.e.,
+  // the failure occurred before attempting to connect to the hostname).
+  // When empty, check the proxy field and result_code for proxy-specific
+  // errors.
+  string hostname = 3;
+  // The actual proxy used for this test. Empty if no proxy was used.
+  // For system proxy option, this contains the resolved proxy address
+  // (e.g., "proxy.example.com:8080"). For custom proxy option, this contains
+  // the provided proxy URL/IP. If hostname is empty and result_code indicates
+  // a proxy error, this field contains the proxy server that failed.
+  string proxy = 4;
+  // Human-readable suggestion for resolving the issue, intended for enterprise
+  // admins, CaPSE, or Tech Support personnel. Always in English (no i18n).
+  // Examples:
+  // - DNS_RESOLUTION_ERROR: "Check DNS server configuration or verify the
+  //   hostname is correct"
+  // - PROXY_CONNECTION_FAILURE: "Verify proxy server is running and accessible"
+  // - SSL_CONNECTION_ERROR: "Check if a firewall or proxy is intercepting TLS
+  //   connections"
+  // May be empty if no specific resolution can be suggested.
+  string resolution_message = 5;
+  // UTC timestamp in milliseconds since Unix epoch that represents the start
+  // of the connectivity test. Empty for NO_VALID_HOSTNAME and NO_VALID_PROXY
+  // (see field availability table above).
+  optional fixed64 timestamp_start = 6;
+  // UTC timestamp in milliseconds since Unix epoch that represents the end
+  // of the connectivity test. Empty for NO_VALID_HOSTNAME and NO_VALID_PROXY
+  // (see field availability table above).
+  optional fixed64 timestamp_end = 7;
+}
+
+// The comprehensive report returned by the TestConnectivity D-Bus method.
+message TestConnectivityResponse {
+  repeated ConnectivityResultEntry connectivity_results = 1;
+}

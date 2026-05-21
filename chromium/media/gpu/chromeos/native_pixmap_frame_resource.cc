@@ -132,7 +132,7 @@ scoped_refptr<NativePixmapFrameResource> NativePixmapFrameResource::Create(
 
   // Note: |buffer_usage| is not set. As a result, the constructed
   // NativePixmapFrameResource cannot be converted to a
-  // STORAGE_GPU_MEMORY_BUFFER VideoFrame.
+  // STORAGE_MAPPABLE_SHARED_IMAGE VideoFrame.
   return base::MakeRefCounted<NativePixmapFrameResource>(
       base::PassKey<NativePixmapFrameResource>(), layout, visible_rect,
       natural_size, timestamp, *si_format, base::UnguessableToken::Create(),
@@ -183,7 +183,7 @@ scoped_refptr<NativePixmapFrameResource> NativePixmapFrameResource::Create(
   auto layout = media::VideoFrameLayout::CreateWithPlanes(
       *pixel_format, pixmap->GetBufferSize(), std::move(planes),
       media::VideoFrameLayout::kBufferAddressAlignment,
-      pixmap->GetBufferFormatModifier());
+      pixmap->GetFormatModifier());
   if (!layout) {
     DLOGF(ERROR) << " Invalid layout";
     return nullptr;
@@ -298,10 +298,13 @@ NativePixmapFrameResource::CreateGpuMemoryBufferHandle() const {
   return gmb_handle;
 }
 
-std::unique_ptr<VideoFrame::ScopedMapping>
-NativePixmapFrameResource::MapGMBOrSharedImage() const {
-  // This accessor is used for frames with STORAGE_GPU_MEMORY_BUFFER. This class
-  // is coded to advertise STORAGE_DMABUFS, so this always returns nullptr.
+bool NativePixmapFrameResource::HasMappableSharedImage() const {
+  return false;
+}
+
+scoped_refptr<gpu::ClientSharedImage>
+NativePixmapFrameResource::GetSharedImage() const {
+  // This class does not hold a ClientSharedImage internally.
   return nullptr;
 }
 
@@ -320,7 +323,7 @@ int NativePixmapFrameResource::stride(size_t plane) const {
 
 VideoFrame::StorageType NativePixmapFrameResource::storage_type() const {
   // TODO(nhebert): We should remove storage_type from FrameResource in favor of
-  // HasDmabufs, HasGpuMemoryBuffer.
+  // HasDmabufs, HasMappableSharedImage.
   return VideoFrame::STORAGE_DMABUFS;
 }
 
@@ -349,13 +352,12 @@ void NativePixmapFrameResource::set_color_space(
   color_space_ = color_space;
 }
 
-const std::optional<gfx::HDRMetadata>& NativePixmapFrameResource::hdr_metadata()
-    const {
+const gfx::HDRMetadata& NativePixmapFrameResource::hdr_metadata() const {
   return hdr_metadata_;
 }
 
 void NativePixmapFrameResource::set_hdr_metadata(
-    const std::optional<gfx::HDRMetadata>& hdr_metadata) {
+    const gfx::HDRMetadata& hdr_metadata) {
   hdr_metadata_ = hdr_metadata;
 }
 
@@ -445,8 +447,9 @@ std::string NativePixmapFrameResource::AsHumanReadableString() const {
 
 gfx::GpuMemoryBufferHandle
 NativePixmapFrameResource::GetGpuMemoryBufferHandleForTesting() const {
-  // This accessor is used for frames with STORAGE_GPU_MEMORY_BUFFER. This class
-  // is coded to advertise STORAGE_DMABUFS, so this always returns empty handle.
+  // This accessor is used for frames with STORAGE_MAPPABLE_SHARED_IMAGE. This
+  // class is coded to advertise STORAGE_DMABUFS, so this always returns empty
+  // handle.
   return gfx::GpuMemoryBufferHandle();
 }
 
@@ -486,12 +489,13 @@ scoped_refptr<VideoFrame> NativePixmapFrameResource::CreateDmabufVideoFrame()
   return video_frame;
 }
 
-scoped_refptr<VideoFrame> NativePixmapFrameResource::CreateMappableVideoFrame(
+scoped_refptr<VideoFrame>
+NativePixmapFrameResource::CreateMappableSharedImageVideoFrame(
     gpu::SharedImageInterface* sii) const {
   LOG_ASSERT(buffer_usage_.has_value())
-      << "Unsupported conversion from wrapped DMA buffers to GpuMemoryBuffer "
-         "VideoFrame.";
-  // Creates a GMB-backed frame with using duplicated file descriptors.
+      << "Unsupported conversion from wrapped DMA buffers to "
+         "MappableSharedImage VideoFrame.";
+  // Creates a MappableSI-backed frame using duplicated file descriptors.
   auto video_frame = CreateVideoFrameFromGpuMemoryBufferHandle(
       CreateGpuMemoryBufferHandle(), format(), coded_size(), visible_rect(),
       natural_size(), timestamp(), *buffer_usage_, sii);

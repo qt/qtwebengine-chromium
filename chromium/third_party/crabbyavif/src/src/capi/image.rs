@@ -784,12 +784,27 @@ pub unsafe extern "C" fn crabby_avifImageSetViewRect(
     {
         return avifResult::InvalidArgument;
     }
-    if !src.yuvFormat.is_monochrome()
+    let (x, y) = if !src.yuvFormat.is_monochrome()
         && ((rect.x & src.yuvFormat.chroma_shift_x().0) != 0
             || (rect.y & src.yuvFormat.chroma_shift_y()) != 0)
     {
-        return avifResult::InvalidArgument;
-    }
+        if cfg!(feature = "android_mediacodec") {
+            // On Android, when an odd row/column is requested for a subsampled plane, return the
+            // nearest even row/column rounded down.
+            if (rect.x % 2) == 1 && (rect.y % 2) == 1 {
+                (rect.x - 1, rect.y - 1)
+            } else if (rect.x % 2) == 1 {
+                (rect.x - 1, rect.y)
+            } else {
+                // rect.y must be odd in this case because of the surrounding if condition.
+                (rect.x, rect.y - 1)
+            }
+        } else {
+            return avifResult::InvalidArgument;
+        }
+    } else {
+        (rect.x, rect.y)
+    };
     *dst = avifImage {
         width: src.width,
         height: src.height,
@@ -817,8 +832,8 @@ pub unsafe extern "C" fn crabby_avifImageSetViewRect(
             continue;
         }
         let chroma_shift = src.yuvFormat.chroma_shift_x();
-        let x = if plane == 0 { rect.x } else { (rect.x >> chroma_shift.0) << chroma_shift.1 };
-        let y = if plane == 0 { rect.y } else { rect.y >> src.yuvFormat.chroma_shift_y() };
+        let x = if plane == 0 { x } else { (x >> chroma_shift.0) << chroma_shift.1 };
+        let y = if plane == 0 { y } else { y >> src.yuvFormat.chroma_shift_y() };
         let offset = match isize_from_u32(y * src.yuvRowBytes[plane] + x * pixel_size) {
             Ok(x) => x,
             _ => return avifResult::InvalidArgument,
@@ -829,7 +844,7 @@ pub unsafe extern "C" fn crabby_avifImageSetViewRect(
         dst.yuvRowBytes[plane] = src.yuvRowBytes[plane];
     }
     if !src.alphaPlane.is_null() {
-        let offset = match isize_from_u32(rect.y * src.alphaRowBytes + rect.x * pixel_size) {
+        let offset = match isize_from_u32(y * src.alphaRowBytes + x * pixel_size) {
             Ok(x) => x,
             _ => return avifResult::InvalidArgument,
         };

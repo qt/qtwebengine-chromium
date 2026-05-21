@@ -180,6 +180,9 @@ export class McpHostBindings implements Host.InspectorFrontendHostAPI.InspectorF
   recordPerformanceHistogram(): void {
   }
 
+  recordPerformanceHistogramMedium(): void {
+  }
+
   recordUserMetricsAction(): void {
   }
 
@@ -306,5 +309,8 @@ export class McpHostBindings implements Host.InspectorFrontendHostAPI.InspectorF
   }
 
   recordFunctionCall(): void {
+  }
+
+  setChromeFlag(): void {
   }
 }

@@ -124,11 +124,13 @@ std::shared_ptr<ShaderTranslateTask> ShaderGL::compile(const gl::Context *contex
 {
     ContextGL *contextGL         = GetImplAs<ContextGL>(context);
     const FunctionsGL *functions = GetFunctionsGL(context);
+    const angle::FeaturesGL &features = GetFeaturesGL(context);
 
     options->initGLPosition = true;
 
     bool isWebGL = context->isWebGL();
-    if (isWebGL && mState.getShaderType() != gl::ShaderType::Compute)
+    if (isWebGL || (features.initFragmentOutputVariables.enabled &&
+                    mState.getShaderType() == gl::ShaderType::Fragment))
     {
         options->initOutputVariables = true;
     }
@@ -136,13 +138,6 @@ std::shared_ptr<ShaderTranslateTask> ShaderGL::compile(const gl::Context *contex
     if (isWebGL && !context->getState().getEnableFeature(GL_TEXTURE_RECTANGLE_ANGLE))
     {
         options->disableARBTextureRectangle = true;
-    }
-
-    const angle::FeaturesGL &features = GetFeaturesGL(context);
-
-    if (features.initFragmentOutputVariables.enabled)
-    {
-        options->initFragmentOutputVariables = true;
     }
 
     if (features.emulateAbsIntFunction.enabled)
@@ -200,8 +195,7 @@ std::shared_ptr<ShaderTranslateTask> ShaderGL::compile(const gl::Context *contex
         options->preTransformTextureCubeGradDerivatives = true;
     }
 
-    if (contextGL->getMultiviewImplementationType() ==
-        MultiviewImplementationTypeGL::NV_VIEWPORT_ARRAY2)
+    if (features.multiviewViaViewportArray.enabled)
     {
         options->initializeBuiltinsForInstancedMultiview = true;
         options->selectViewInNvGLSLVertexShader          = true;
@@ -270,6 +264,11 @@ std::shared_ptr<ShaderTranslateTask> ShaderGL::compile(const gl::Context *contex
     if (contextGL->getNativeExtensions().shaderPixelLocalStorageANGLE)
     {
         options->pls = contextGL->getNativePixelLocalStorageOptions();
+    }
+
+    if (features.validateMaxPerStageUniformBlocksAtCompileTime.enabled)
+    {
+        options->validatePerStageMaxUniformBlocks = true;
     }
 
     return std::shared_ptr<ShaderTranslateTask>(

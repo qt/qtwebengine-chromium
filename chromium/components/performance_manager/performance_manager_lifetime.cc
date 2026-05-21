@@ -13,6 +13,7 @@
 #include "components/performance_manager/execution_context/execution_context_registry_impl.h"
 #include "components/performance_manager/execution_context_priority/closing_page_voter.h"
 #include "components/performance_manager/execution_context_priority/extension_service_worker_voter.h"
+#include "components/performance_manager/execution_context_priority/force_foreground_voter.h"
 #include "components/performance_manager/execution_context_priority/frame_audible_voter.h"
 #include "components/performance_manager/execution_context_priority/frame_capturing_media_stream_voter.h"
 #include "components/performance_manager/execution_context_priority/frame_visibility_voter.h"
@@ -25,8 +26,12 @@
 #include "components/performance_manager/performance_manager_impl.h"
 #include "components/performance_manager/public/decorators/page_live_state_decorator.h"
 #include "components/performance_manager/public/execution_context_priority/priority_voting_system.h"
+#include "components/performance_manager/public/features.h"
 #include "components/performance_manager/public/graph/graph.h"
+#include "components/performance_manager/public/user_tuning/prefs.h"
 #include "components/performance_manager/v8_memory/v8_context_tracker.h"
+#include "components/prefs/pref_service.h"
+
 #if BUILDFLAG(IS_MAC)
 #include "components/performance_manager/execution_context_priority/inherit_parent_priority_voter.h"
 #endif  // BUILDFLAG(IS_MAC)
@@ -42,7 +47,7 @@ GraphCreatedCallback* GetAdditionalGraphCreatedCallback() {
 }
 
 // Adds the default set of execution context voters.
-void AddVoters(GraphImpl* graph) {
+void AddVoters(GraphImpl* graph, PrefService* pref_service) {
   if (auto* priority_voting_system =
           graph->GetRegisteredObjectAs<
               execution_context_priority::PriorityVotingSystem>()) {
@@ -81,6 +86,23 @@ void AddVoters(GraphImpl* graph) {
           ->AddPriorityVoter<execution_context_priority::ClosingPageVoter>();
     }
 
+#if !BUILDFLAG(IS_ANDROID)
+    bool force_foreground_priority_policy_enabled =
+        pref_service &&
+        pref_service->GetBoolean(performance_manager::user_tuning::prefs::
+                                     kForceForegroundPriorityForAllTabs);
+#else
+    // User tuning local state prefs are not registered on Android.
+    bool force_foreground_priority_policy_enabled = false;
+#endif  // !BUILDFLAG(IS_ANDROID)
+    // Casts a USER_BLOCKING vote for all frames and workers.
+    if (base::FeatureList::IsEnabled(
+            features::kForceForegroundPriorityForAllTabs) ||
+        force_foreground_priority_policy_enabled) {
+      priority_voting_system->AddPriorityVoter<
+          execution_context_priority::ForceForegroundVoter>();
+    }
+
 #if BUILDFLAG(IS_MAC)
     // Casts a vote for each child frame with the parent's priority.
     if (features::kInheritParentPriority.Get()) {
@@ -97,7 +119,8 @@ std::optional<GraphFeatures>* GetGraphFeaturesOverride() {
 }
 
 void OnGraphCreated(const GraphFeatures& graph_features,
-                    GraphCreatedCallback external_graph_created_callback) {
+                    GraphCreatedCallback external_graph_created_callback,
+                    PrefService* pref_service) {
   GraphImpl* graph = PerformanceManagerImpl::GetGraphImpl();
 
   auto graph_features_override = *GetGraphFeaturesOverride();
@@ -107,7 +130,7 @@ void OnGraphCreated(const GraphFeatures& graph_features,
   // Install required features on the graph.
   configured_features.ConfigureGraph(graph);
 
-  AddVoters(graph);
+  AddVoters(graph, pref_service);
 
   // Run graph created callbacks.
   std::move(external_graph_created_callback).Run(graph);
@@ -119,9 +142,11 @@ void OnGraphCreated(const GraphFeatures& graph_features,
 
 PerformanceManagerLifetime::PerformanceManagerLifetime(
     const GraphFeatures& graph_features,
-    GraphCreatedCallback graph_created_callback) {
+    GraphCreatedCallback graph_created_callback,
+    PrefService* pref_service) {
   performance_manager_ = PerformanceManagerImpl::Create();
-  OnGraphCreated(graph_features, std::move(graph_created_callback));
+  OnGraphCreated(graph_features, std::move(graph_created_callback),
+                 pref_service);
   performance_manager_registry_ =
       performance_manager::PerformanceManagerRegistry::Create();
 }

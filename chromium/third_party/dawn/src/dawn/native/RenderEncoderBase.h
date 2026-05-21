@@ -84,6 +84,8 @@ class RenderEncoderBase : public ProgrammableEncoder {
                          uint32_t dynamicOffsetCount = 0,
                          const uint32_t* dynamicOffsets = nullptr);
 
+    void APISetImmediates(uint32_t offset, const void* data, size_t size);
+
     const AttachmentState* GetAttachmentState() const;
     bool IsDepthReadOnly() const;
     bool IsStencilReadOnly() const;
@@ -97,7 +99,7 @@ class RenderEncoderBase : public ProgrammableEncoder {
                       ErrorTag errorTag,
                       StringView label);
 
-    void DestroyImpl() override;
+    void DestroyImpl(DestroyReason reason) override;
 
     CommandBufferStateTracker mCommandBufferState;
     RenderPassResourceUsageTracker mUsageTracker;

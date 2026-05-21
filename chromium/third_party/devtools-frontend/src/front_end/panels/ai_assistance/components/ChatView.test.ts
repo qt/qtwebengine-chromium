@@ -12,7 +12,7 @@ import * as AiAssistancePanel from '../ai_assistance.js';
 describeWithEnvironment('ChatView', () => {
   function getProp(options: Partial<AiAssistancePanel.Props>): AiAssistancePanel.Props {
     const noop = () => {};
-    const messages: AiAssistancePanel.ChatMessage[] = options.messages ?? [];
+    const messages = options.messages ?? [];
     const selectedContext = sinon.createStubInstance(AiAssistanceModel.StylingAgent.NodeContext);
     selectedContext.getTitle.returns('');
     return {
@@ -23,7 +23,8 @@ describeWithEnvironment('ChatView', () => {
       onContextClick: noop,
       onCopyResponseClick: noop,
       onNewConversation: noop,
-      onTextInputChange: noop,
+      onContextRemoved: noop,
+      onContextAdd: noop,
       changeManager: new AiAssistanceModel.ChangeManager.ChangeManager(),
       inspectElementToggled: false,
       conversationType: AiAssistanceModel.AiHistoryStorage.ConversationType.STYLING,
@@ -38,7 +39,6 @@ describeWithEnvironment('ChatView', () => {
       emptyStateSuggestions: [],
       inputPlaceholder: i18n.i18n.lockedString('input placeholder'),
       disclaimerText: i18n.i18n.lockedString('disclaimer text'),
-      isTextInputEmpty: true,
       markdownRenderer: new AiAssistancePanel.MarkdownRendererWithCodeBlock(),
       additionalFloatyContext: [],
       ...options,
@@ -53,7 +53,7 @@ describeWithEnvironment('ChatView', () => {
       const props = getProp({
         messages: [
           {
-            entity: AiAssistancePanel.ChatMessageEntity.MODEL,
+            entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.MODEL,
             parts: [
               {
                 type: 'step',

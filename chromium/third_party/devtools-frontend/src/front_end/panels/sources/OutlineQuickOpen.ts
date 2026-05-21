@@ -179,6 +179,25 @@ export function outline(state: CodeMirror.EditorState): OutlineItem[] {
             ])) {
           let title = state.sliceDoc(cursor.from, cursor.to);
           const {lineNumber, columnNumber} = toLineColumn(cursor.from);
+          let hasEquals = false;
+          let node: CodeMirror.SyntaxNode|null = cursor.node;
+          while (node && node.name !== 'AssignmentExpression' && node.name !== 'VariableDeclaration') {
+            let sibling = node.nextSibling;
+            while (sibling) {
+              if (sibling.name === 'Equals') {
+                hasEquals = true;
+                break;
+              }
+              sibling = sibling.nextSibling;
+            }
+            if (hasEquals) {
+              break;
+            }
+            node = node.parent;
+          }
+          if (!hasEquals) {
+            break;
+          }
           while (cursor.name as string !== 'Equals') {
             if (!cursor.next()) {
               return items;

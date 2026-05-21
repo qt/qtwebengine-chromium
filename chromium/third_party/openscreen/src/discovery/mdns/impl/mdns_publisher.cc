@@ -43,6 +43,13 @@ inline MdnsRecord CreateGoodbyeRecord(const MdnsRecord& record) {
 
 }  // namespace
 
+MdnsPublisher::RecordAnnouncerPtr MdnsPublisher::CreateAnnouncer(
+    MdnsRecord record) {
+  return std::make_unique<RecordAnnouncer>(std::move(record), *this,
+                                           task_runner_, now_function_,
+                                           max_announcement_attempts_);
+}
+
 MdnsPublisher::MdnsPublisher(MdnsSender& sender,
                              MdnsProbeManager& ownership_manager,
                              TaskRunner& task_runner,

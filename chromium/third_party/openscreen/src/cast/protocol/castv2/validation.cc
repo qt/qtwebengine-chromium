@@ -31,7 +31,7 @@ std::vector<Error> MapErrors(const valijson::ValidationResults& results) {
     const std::string context =
         string_util::Join(result.context.cbegin(), result.context.cend(), ", ");
     errors.emplace_back(Error::Code::kJsonParseError,
-                        StringPrintf("Node: %s, Message: %s", context.c_str(),
+                        StringFormat("Node: {}, Message: {}", context.c_str(),
                                      result.description.c_str()));
   }
   return errors;

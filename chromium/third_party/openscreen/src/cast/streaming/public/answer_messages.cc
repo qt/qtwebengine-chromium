@@ -102,7 +102,7 @@ constexpr char kDisplay[] = "display";
 // std::optional array of numbers specifying the indexes of streams that will
 // send event logs through RTCP.
 constexpr char kReceiverRtcpEventLog[] = "receiverRtcpEventLog";
-// OPtional array of numbers specifying the indexes of streams that will use
+// Optional array of numbers specifying the indexes of streams that will use
 // DSCP values specified in the OFFER message for RTCP packets.
 constexpr char kReceiverRtcpDscp[] = "receiverRtcpDscp";
 // If this optional field is present the receiver supports the specific
@@ -334,7 +334,7 @@ Json::Value DisplayDescription::ToJson() const {
   Json::Value root;
   if (aspect_ratio.has_value()) {
     root[kAspectRatio] =
-        StringPrintf("%d%c%d", aspect_ratio->width, kAspectRatioDelimiter,
+        StringFormat("{}{}{}", aspect_ratio->width, kAspectRatioDelimiter,
                      aspect_ratio->height);
   }
   if (dimensions.has_value()) {

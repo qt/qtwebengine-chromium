@@ -32,6 +32,7 @@
 
 #include <atomic>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -79,12 +80,12 @@ class AttachmentStateBlueprint;
 class Blob;
 class BlobCache;
 class CallbackTaskManager;
-class DynamicArrayDefaultBindings;
 class DynamicUploader;
 class ErrorScope;
 class ErrorScopeStack;
-class SharedTextureMemory;
 class OwnedCompilationMessages;
+class ResourceTableDefaultResources;
+class SharedTextureMemoryBase;
 struct CallbackTask;
 struct InternalPipelineStore;
 struct ShaderModuleParseResult;
@@ -233,6 +234,8 @@ class DeviceBase : public ErrorSink,
     ResultOrError<Ref<RenderPipelineBase>> CreateUninitializedRenderPipeline(
         const RenderPipelineDescriptor* descriptor,
         bool allowInternalBinding = false);
+    ResultOrError<Ref<ResourceTableBase>> CreateResourceTable(
+        const ResourceTableDescriptor* descriptor);
     ResultOrError<Ref<SamplerBase>> CreateSampler(const SamplerDescriptor* descriptor = nullptr);
     ResultOrError<Ref<ShaderModuleBase>> CreateShaderModule(
         const ShaderModuleDescriptor* descriptor,
@@ -266,6 +269,7 @@ class DeviceBase : public ErrorSink,
         const RenderBundleEncoderDescriptor* descriptor);
     RenderPipelineBase* APICreateRenderPipeline(const RenderPipelineDescriptor* descriptor);
     ExternalTextureBase* APICreateExternalTexture(const ExternalTextureDescriptor* descriptor);
+    ResourceTableBase* APICreateResourceTable(const ResourceTableDescriptor* descriptor);
     SharedBufferMemoryBase* APIImportSharedBufferMemory(
         const SharedBufferMemoryDescriptor* descriptor);
     SharedTextureMemoryBase* APIImportSharedTextureMemory(
@@ -278,7 +282,7 @@ class DeviceBase : public ErrorSink,
     TextureBase* APICreateTexture(const TextureDescriptor* descriptor);
 
     InternalPipelineStore* GetInternalPipelineStore();
-    DynamicArrayDefaultBindings* GetDynamicArrayDefaultBindings();
+    ResourceTableDefaultResources* GetResourceTableDefaultResources();
 
     // For Dawn Wire
     BufferBase* APICreateErrorBuffer(const BufferDescriptor* desc);
@@ -315,6 +319,7 @@ class DeviceBase : public ErrorSink,
                                                BufferBase* destination,
                                                uint64_t destinationOffset,
                                                uint64_t size) = 0;
+    // TODO(https://issues.chromium.org/424536624): Use BlockExtent3D instead of Extent3D.
     MaybeError CopyFromStagingToTexture(BufferBase* source,
                                         const TexelCopyBufferLayout& src,
                                         const TextureCopy& dst,
@@ -409,8 +414,8 @@ class DeviceBase : public ErrorSink,
                                                               wgpu::BufferUsage originalUsage,
                                                               size_t bufferSize) const;
 
-    // Whether the backend needs to validate the indirect buffer on GPU compute pass.
-    virtual bool NeedsIndirectDrawGPUValidation() const;
+    // Whether the backend needs to validate the indirect buffer on GPU.
+    virtual bool NeedsIndirectGPUValidation() const;
 
     bool HasFeature(Feature feature) const;
 
@@ -487,7 +492,7 @@ class DeviceBase : public ErrorSink,
     MaybeError Initialize(const UnpackedPtr<DeviceDescriptor>& descriptor,
                           Ref<QueueBase> defaultQueue);
     void DestroyObjects();
-    void Destroy();
+    void Destroy(DestroyReason reason);
 
     virtual MaybeError GetAHardwareBufferPropertiesImpl(
         void* handle,
@@ -520,6 +525,8 @@ class DeviceBase : public ErrorSink,
         const UnpackedPtr<PipelineLayoutDescriptor>& descriptor) = 0;
     virtual ResultOrError<Ref<QuerySetBase>> CreateQuerySetImpl(
         const QuerySetDescriptor* descriptor) = 0;
+    virtual ResultOrError<Ref<ResourceTableBase>> CreateResourceTableImpl(
+        const ResourceTableDescriptor* descriptor) = 0;
     virtual ResultOrError<Ref<SamplerBase>> CreateSamplerImpl(
         const SamplerDescriptor* descriptor) = 0;
     virtual ResultOrError<Ref<ShaderModuleBase>> CreateShaderModuleImpl(
@@ -553,6 +560,14 @@ class DeviceBase : public ErrorSink,
     virtual void SetLabelImpl();
     virtual bool ReduceMemoryUsageImpl();
     virtual void PerformIdleTasksImpl();
+
+    // TODO(crbug.com/475520968): Remove this once all backends' Create*Impl methods are
+    // thread-safe
+    virtual std::optional<DeviceGuard> UseGuardForCreateBindGroup();
+    virtual std::optional<DeviceGuard> UseGuardForCreateBindGroupLayout();
+    virtual std::optional<DeviceGuard> UseGuardForCreateBuffer();
+    virtual std::optional<DeviceGuard> UseGuardForCreateSampler();
+    virtual std::optional<DeviceGuard> UseGuardForCreateTexture();
 
     virtual MaybeError TickImpl() = 0;
     void FlushCallbackTaskQueue();
@@ -599,7 +614,7 @@ class DeviceBase : public ErrorSink,
 
     // DestroyImpl is used to clean up and release resources used by device, does not wait for
     // GPU or check errors.
-    virtual void DestroyImpl() = 0;
+    virtual void DestroyImpl(DestroyReason reason) = 0;
 
     virtual MaybeError CopyFromStagingToTextureImpl(BufferBase* source,
                                                     const TexelCopyBufferLayout& src,
@@ -653,7 +668,7 @@ class DeviceBase : public ErrorSink,
     FeaturesSet mEnabledFeatures;
     tint::wgsl::AllowedFeatures mWGSLAllowedFeatures;
 
-    std::unique_ptr<DynamicArrayDefaultBindings> mDynamicArrayDefaultBindings;
+    std::unique_ptr<ResourceTableDefaultResources> mResourceTableDefaultResources;
     std::unique_ptr<InternalPipelineStore> mInternalPipelineStore;
     Ref<BufferBase> mTemporaryUniformBuffer;
 

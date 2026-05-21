@@ -66,17 +66,6 @@ BindGroup::BindGroup(Device* device,
 BindGroup::~BindGroup() = default;
 
 MaybeError BindGroup::InitializeImpl() {
-    DAWN_TRY(InitializeStaticBindings());
-
-    if (HasDynamicArray()) {
-        DAWN_TRY(InitializeDynamicArray());
-    }
-
-    SetLabelImpl();
-    return {};
-}
-
-MaybeError BindGroup::InitializeStaticBindings() {
     const auto* layout = ToBackend(GetLayout());
 
     // Now do a write of a single descriptor set with all possible chained data allocated on the
@@ -214,66 +203,12 @@ MaybeError BindGroup::InitializeStaticBindings() {
     // TODO(https://crbug.com/42242088): Batch these updates
     device->fn.UpdateDescriptorSets(device->GetVkDevice(), numWrites, writes.data(), 0, nullptr);
 
+    SetLabelImpl();
     return {};
 }
 
-MaybeError BindGroup::InitializeDynamicArray() {
-    // This backend only supports DynamicArrayKind::SampledTexture at the moment.
-    DAWN_ASSERT(GetLayout()->GetDynamicArrayKind() == wgpu::DynamicBindingKind::SampledTexture);
-
-    // Write only the entries that have bindings present, the availability buffer will prevent
-    // reading entries that aren't written to and may contain garbage.
-    // TODO(crbug.com/435251399): Instead of bespoke initialization, handle the creation like any
-    // other updates to the dynamic array, so as to have a single code path handling updates.
-    std::vector<VkDescriptorImageInfo> imageWrites;
-    std::vector<uint32_t> arrayElements;
-
-    auto bindings = GetDynamicArrayBindings();
-    for (auto [i, view] : Enumerate(bindings)) {
-        if (view == nullptr) {
-            continue;
-        }
-
-        VkImageView handle = ToBackend(view)->GetHandle();
-        if (handle == nullptr) {
-            continue;
-        }
-
-        VkDescriptorImageInfo imageWrite = {
-            .sampler = VkSampler{},
-            .imageView = handle,
-            .imageLayout = VulkanImageLayout(view->GetFormat(), wgpu::TextureUsage::TextureBinding),
-        };
-        imageWrites.push_back(imageWrite);
-        arrayElements.push_back(uint32_t(i));
-    }
-
-    std::vector<VkWriteDescriptorSet> writes;
-    for (size_t i = 0; i < imageWrites.size(); i++) {
-        VkWriteDescriptorSet write{
-            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-            .pNext = nullptr,
-            .dstSet = GetHandle(),
-            .dstBinding = uint32_t(GetLayout()->GetDynamicArrayStart()),
-            .dstArrayElement = arrayElements[i],
-            .descriptorCount = 1,
-            .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
-            .pImageInfo = &imageWrites[i],
-            .pBufferInfo = nullptr,
-            .pTexelBufferView = nullptr,
-        };
-        writes.push_back(write);
-    }
-
-    Device* device = ToBackend(GetDevice());
-    device->fn.UpdateDescriptorSets(device->GetVkDevice(), writes.size(), writes.data(), 0,
-                                    nullptr);
-
-    return {};
-}
-
-void BindGroup::DestroyImpl() {
-    BindGroupBase::DestroyImpl();
+void BindGroup::DestroyImpl(DestroyReason reason) {
+    BindGroupBase::DestroyImpl(reason);
     ToBackend(GetLayout())->DeallocateDescriptorSet(&mDescriptorSetAllocation);
 }
 

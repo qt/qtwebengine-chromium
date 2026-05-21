@@ -114,7 +114,7 @@ struct RemotingConstraints {
   // ALAC (Apple Lossless)
   // AC-3 (Dolby Digital)
   // These properties are tied directly to what Chrome supports. See:
-  // https://source.chromium.org/chromium/chromium/src/+/master:media/base/audio_codecs.h
+  // https://source.chromium.org/chromium/chromium/src/+/main:media/base/audio_codecs.h
   bool supports_chrome_audio_codecs = false;
 
   // Current remoting senders assume that the receiver supports 4K for all
@@ -143,7 +143,7 @@ class ReceiverConstraints {
   // Returns true if all configurations supported by `other` are also
   // supported by this instance.
   //
-  // TODO(crbug.com/1356762): Implement receiver-side session renegotation
+  // TODO(crbug.com/1356762): Implement receiver-side session renegotiation
   // so we can eliminate complicated logic for constraints compatiblity.
   bool IsSupersetOf(const ReceiverConstraints& other) const;
 
@@ -167,6 +167,12 @@ class ReceiverConstraints {
   // offers may provide a set of remoting constraints, or leave nullptr for
   // all remoting OFFERs to be rejected in favor of continuing streaming.
   std::unique_ptr<RemotingConstraints> remoting;
+
+  // If true, allows the receiver to negotiate DSCP marking for RTP and RTCP
+  // packets, which can help improve Quality of Service in some environments.
+  // This feature is off by default to allow embedders to opt in and experiment
+  // as desired.
+  bool enable_dscp = false;
 };
 
 }  // namespace openscreen::cast

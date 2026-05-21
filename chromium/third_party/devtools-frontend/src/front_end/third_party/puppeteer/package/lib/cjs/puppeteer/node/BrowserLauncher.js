@@ -110,6 +110,7 @@ class BrowserLauncher {
             env,
             pipe: usePipe,
             onExit: onProcessExit,
+            signal: options.signal,
         });
         let browser;
         let cdpConnection;

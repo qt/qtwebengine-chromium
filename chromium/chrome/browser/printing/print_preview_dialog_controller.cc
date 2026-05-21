@@ -11,7 +11,6 @@
 
 #include "base/auto_reset.h"
 #include "base/check.h"
-#include "base/containers/contains.h"
 #include "base/memory/weak_ptr.h"
 #include "build/build_config.h"
 #include "chrome/browser/browser_process.h"
@@ -247,9 +246,10 @@ WebContents* PrintPreviewDialogController::GetOrCreatePreviewDialog(
 WebContents* PrintPreviewDialogController::GetPrintPreviewForContents(
     WebContents* contents) const {
   // `preview_dialog_map_` is keyed by the preview dialog, so if
-  // base::Contains() succeeds, then `contents` is the preview dialog.
-  if (base::Contains(preview_dialog_map_, contents))
+  // std::ranges::contains() succeeds, then `contents` is the preview dialog.
+  if (preview_dialog_map_.contains(contents)) {
     return contents;
+  }
 
   for (const auto& it : preview_dialog_map_) {
     // If `contents` is an initiator.

@@ -3,9 +3,9 @@
 // found in the LICENSE file.
 #include "device/vr/openxr/android/openxr_graphics_binding_open_gles.h"
 
+#include <algorithm>
 #include <vector>
 
-#include "base/containers/contains.h"
 #include "components/viz/common/resources/shared_image_format.h"
 #include "device/vr/android/xr_image_transport_base.h"
 #include "device/vr/openxr/openxr_api_wrapper.h"
@@ -192,7 +192,7 @@ int64_t OpenXrGraphicsBindingOpenGLES::GetSwapchainFormat(
   // still return it anyway as that will cause an error with creating the
   // swapchain, which is better than arbitrarily returning a type that the
   // runtime supports, but we don't.
-  if (!base::Contains(swapchain_formats, kSwapchainFormat)) {
+  if (!std::ranges::contains(swapchain_formats, kSwapchainFormat)) {
     LOG(ERROR) << "No matching supported swapchain formats with OpenXr Runtime";
   }
 
@@ -242,9 +242,10 @@ void OpenXrGraphicsBindingOpenGLES::ResizeSharedBuffer(
 
   // TODO(crbug.com/459811463): We don't use GL_TEXTURE_CUBE_MAP because
   // AHARDWAREBUFFER_USAGE_GPU_CUBE_MAP is not always supported. So we put
-  // 6 faces inside a 2D texture aligned from bottom to top.
+  // 6 faces inside a 2D texture, 3 tiles per row, 2 rows in total.
   if (layer.type() == OpenXrCompositionLayer::Type::kCube) {
-    transfer_size.set_height(transfer_size.height() * 6);
+    transfer_size.set_width(transfer_size.width() * 3);
+    transfer_size.set_height(transfer_size.height() * 2);
   }
 
   if (!open_gles_layer_data.using_shared_images ||
@@ -256,10 +257,11 @@ void OpenXrGraphicsBindingOpenGLES::ResizeSharedBuffer(
   if (swap_chain_info.shared_image) {
     DVLOG(2) << ": DestroySharedImage, mailbox="
              << swap_chain_info.shared_image->mailbox().ToDebugString();
-    // Note: the sync token in mailbox_holder may not be accurate. See comment
-    // in TransferFrame below.
-    sii->DestroySharedImage(swap_chain_info.sync_token,
-                            std::move(swap_chain_info.shared_image));
+    // Note: The sync token in shared image may not be accurate. See comment
+    // in XrImageTransportBase::TransferFrame.
+    swap_chain_info.shared_image->UpdateDestructionSyncToken(
+        swap_chain_info.sync_token);
+    swap_chain_info.shared_image.reset();
   }
 
   // Remove reference to previous image (if any).

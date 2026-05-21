@@ -79,7 +79,7 @@ class UserDemographicsPrefsTest : public testing::Test {
   void SetDemographicsImpl(const std::string& pref_name,
                            int birth_year,
                            UserDemographicsProto::Gender gender) {
-    base::Value::Dict dict;
+    base::DictValue dict;
     dict.Set(kSyncDemographicsBirthYearPath, birth_year);
     dict.Set(kSyncDemographicsGenderPath, static_cast<int>(gender));
     GetProfilePrefs()->SetDict(pref_name, std::move(dict));
@@ -198,40 +198,6 @@ TEST_F(UserDemographicsPrefsTest, ReadAndClearUserDemographicPreferences) {
 #endif
   EXPECT_TRUE(
       GetLocalState()->HasPrefPath(kUserDemographicsBirthYearOffsetPrefName));
-  // Deprecated offset is not created if it does not already exist.
-  EXPECT_FALSE(GetProfilePrefs()->HasPrefPath(
-      kDeprecatedDemographicsBirthYearOffsetPrefName));
-}
-
-TEST_F(UserDemographicsPrefsTest, ReadAndClearDeprecatedOffsetPref) {
-  // Verify demographic prefs are not available when there is nothing set.
-  ASSERT_FALSE(GetUserNoisedBirthYearAndGenderFromPrefs(
-                   GetNowTime(), GetLocalState(), GetProfilePrefs())
-                   .IsSuccess());
-
-  // Set demographic prefs directly from the pref service interface because
-  // demographic prefs will only be set on the server-side. The SyncPrefs
-  // interface cannot set demographic prefs.
-  SetDemographics(1983, UserDemographicsProto::GENDER_FEMALE);
-
-  // Set deprecated birth year noise offset in the UserPrefs
-  GetProfilePrefs()->SetInteger(kDeprecatedDemographicsBirthYearOffsetPrefName,
-                                2);
-
-  // Verify that demographics are provided.
-  {
-    UserDemographicsResult demographics_result =
-        GetUserNoisedBirthYearAndGenderFromPrefs(GetNowTime(), GetLocalState(),
-                                                 GetProfilePrefs());
-    ASSERT_TRUE(demographics_result.IsSuccess());
-  }
-
-  // Offset if migrated to new pref.
-  EXPECT_EQ(
-      2, GetLocalState()->GetInteger(kUserDemographicsBirthYearOffsetPrefName));
-  // TODO(crbug.com/40240008): clear/remove deprecated pref after 2023/09
-  EXPECT_TRUE(GetProfilePrefs()->HasPrefPath(
-      kDeprecatedDemographicsBirthYearOffsetPrefName));
 }
 
 #if BUILDFLAG(IS_CHROMEOS)

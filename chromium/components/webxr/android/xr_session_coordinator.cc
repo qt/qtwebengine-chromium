@@ -35,7 +35,7 @@ XrSessionCoordinator::XrSessionCoordinator() {
     return;
   }
   ScopedJavaLocalRef<jobject> j_xr_session_coordinator =
-      Java_XrSessionCoordinator_create(env, (jlong)this);
+      Java_XrSessionCoordinator_create(env, (int64_t)this);
   if (j_xr_session_coordinator.is_null()) {
     return;
   }
@@ -130,8 +130,8 @@ void XrSessionCoordinator::EndSession(
 
 void XrSessionCoordinator::OnDrawingSurfaceReady(
     JNIEnv* env,
-    const base::android::JavaParamRef<jobject>& surface,
-    const base::android::JavaParamRef<jobject>& java_root_window,
+    const base::android::JavaRef<jobject>& surface,
+    const base::android::JavaRef<jobject>& java_root_window,
     int rotation,
     int width,
     int height) {
@@ -178,7 +178,7 @@ void XrSessionCoordinator::OnXrSessionButtonTouched(JNIEnv* env) {
 
 void XrSessionCoordinator::OnXrHostActivityReady(
     JNIEnv* env,
-    const base::android::JavaParamRef<jobject>& activity) {
+    const base::android::JavaRef<jobject>& activity) {
   DVLOG(1) << __func__;
   if (activity_ready_callback_) {
     std::move(activity_ready_callback_).Run(activity);

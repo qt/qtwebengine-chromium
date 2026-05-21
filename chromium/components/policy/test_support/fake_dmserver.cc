@@ -19,6 +19,7 @@
 #include "base/task/bind_post_task.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
+#include "base/types/optional_util.h"
 #include "components/policy/test_support/client_storage.h"
 #include "components/policy/test_support/embedded_policy_test_server.h"
 #include "components/policy/test_support/policy_storage.h"
@@ -71,6 +72,7 @@ constexpr char kLogPathSwitch[] = "log-path";
 constexpr char kStartupPipeSwitch[] = "startup-pipe";
 constexpr char kMinLogLevelSwitch[] = "min-log-level";
 constexpr char kLogToConsoleSwitch[] = "log-to-console";
+constexpr char kPortSwitch[] = "port";
 
 constexpr base::TimeDelta kRemoteCommandTimeoutSeconds = base::Seconds(10);
 constexpr int64_t kDefaultServerStopTimeoutMs = 100;
@@ -86,7 +88,7 @@ BuildWaitRemoteCommandResultResponse(const em::RemoteCommandResult& result) {
   return resp;
 }
 
-void ParsePolicyUser(const base::Value::Dict* dict,
+void ParsePolicyUser(const base::DictValue* dict,
                      policy::PolicyStorage* policy_storage) {
   const std::string* policy_user = dict->FindString(kPolicyUserKey);
   if (policy_user) {
@@ -99,9 +101,9 @@ void ParsePolicyUser(const base::Value::Dict* dict,
   }
 }
 
-void ParseManagedUsers(const base::Value::Dict* dict,
+void ParseManagedUsers(const base::DictValue* dict,
                        policy::PolicyStorage* policy_storage) {
-  const base::Value::List* managed_users = dict->FindList(kManagedUsersKey);
+  const base::ListValue* managed_users = dict->FindList(kManagedUsersKey);
   if (managed_users) {
     for (const base::Value& managed_user : *managed_users) {
       const std::string* managed_val = managed_user.GetIfString();
@@ -113,9 +115,9 @@ void ParseManagedUsers(const base::Value::Dict* dict,
   }
 }
 
-void ParseDeviceAffiliationIds(const base::Value::Dict* dict,
+void ParseDeviceAffiliationIds(const base::DictValue* dict,
                                policy::PolicyStorage* policy_storage) {
-  const base::Value::List* device_affiliation_ids =
+  const base::ListValue* device_affiliation_ids =
       dict->FindList(kDeviceAffiliationIdsKey);
   if (device_affiliation_ids) {
     for (const base::Value& device_affiliation_id : *device_affiliation_ids) {
@@ -130,9 +132,9 @@ void ParseDeviceAffiliationIds(const base::Value::Dict* dict,
   }
 }
 
-void ParseUserAffiliationIds(const base::Value::Dict* dict,
+void ParseUserAffiliationIds(const base::DictValue* dict,
                              policy::PolicyStorage* policy_storage) {
-  const base::Value::List* user_affiliation_ids =
+  const base::ListValue* user_affiliation_ids =
       dict->FindList(kUserAffiliationIdsKey);
   if (user_affiliation_ids) {
     for (const base::Value& user_affiliation_id : *user_affiliation_ids) {
@@ -147,7 +149,7 @@ void ParseUserAffiliationIds(const base::Value::Dict* dict,
   }
 }
 
-void ParseDirectoryApiId(const base::Value::Dict* dict,
+void ParseDirectoryApiId(const base::DictValue* dict,
                          policy::PolicyStorage* policy_storage) {
   const std::string* directory_api_id = dict->FindString(kDirectoryApiIdKey);
   if (directory_api_id) {
@@ -156,7 +158,7 @@ void ParseDirectoryApiId(const base::Value::Dict* dict,
   }
 }
 
-bool ParseAllowSetDeviceAttributes(const base::Value::Dict* dict,
+bool ParseAllowSetDeviceAttributes(const base::DictValue* dict,
                                    policy::PolicyStorage* policy_storage) {
   if (const base::Value* v = dict->Find(kAllowSetDeviceAttributesKey); v) {
     std::optional<bool> allow_set_device_attributes = v->GetIfBool();
@@ -172,7 +174,7 @@ bool ParseAllowSetDeviceAttributes(const base::Value::Dict* dict,
   return true;
 }
 
-bool ParseUseUniversalSigningKeys(const base::Value::Dict* dict,
+bool ParseUseUniversalSigningKeys(const base::DictValue* dict,
                                   policy::PolicyStorage* policy_storage) {
   const base::Value* use_universal_signing_keys =
       dict->Find(kUseUniversalSigningKeysKey);
@@ -192,7 +194,7 @@ bool ParseUseUniversalSigningKeys(const base::Value::Dict* dict,
   return true;
 }
 
-void ParseRobotApiAuthCode(const base::Value::Dict* dict,
+void ParseRobotApiAuthCode(const base::DictValue* dict,
                            policy::PolicyStorage* policy_storage) {
   const std::string* robot_api_auth_code =
       dict->FindString(kRobotApiAuthCodeKey);
@@ -203,9 +205,9 @@ void ParseRobotApiAuthCode(const base::Value::Dict* dict,
   }
 }
 
-bool ParseRequestErrors(const base::Value::Dict* dict,
+bool ParseRequestErrors(const base::DictValue* dict,
                         FakeDMServer* fake_dmserver) {
-  const base::Value::Dict* request_errors = dict->FindDict(kRequestErrorsKey);
+  const base::DictValue* request_errors = dict->FindDict(kRequestErrorsKey);
   if (request_errors) {
     for (auto request_error : *request_errors) {
       std::optional<int> net_error_code = request_error.second.GetIfInt();
@@ -223,13 +225,13 @@ bool ParseRequestErrors(const base::Value::Dict* dict,
   return true;
 }
 
-bool ParseInitialEnrollmentState(const base::Value::Dict* dict,
+bool ParseInitialEnrollmentState(const base::DictValue* dict,
                                  policy::PolicyStorage* policy_storage) {
-  const base::Value::Dict* initial_enrollment_state =
+  const base::DictValue* initial_enrollment_state =
       dict->FindDict(kInitialEnrollmentStateKey);
   if (initial_enrollment_state) {
     for (auto state : *initial_enrollment_state) {
-      const base::Value::Dict* state_val = state.second.GetIfDict();
+      const base::DictValue* state_val = state.second.GetIfDict();
       if (!state_val) {
         LOG(ERROR) << "The current state value for key " << state.first
                    << " isn't a dict";
@@ -258,7 +260,7 @@ bool ParseInitialEnrollmentState(const base::Value::Dict* dict,
   return true;
 }
 
-bool ParseCurrentKeyIndex(const base::Value::Dict* dict,
+bool ParseCurrentKeyIndex(const base::DictValue* dict,
                           policy::PolicyStorage* policy_storage) {
   if (const base::Value* v = dict->Find(kCurrentKeyIndexKey); v) {
     std::optional<int> current_key_index = v->GetIfInt();
@@ -303,7 +305,8 @@ void ParseFlags(const base::CommandLine& command_line,
                 std::optional<std::string>& log_path,
                 base::ScopedFD& startup_pipe,
                 bool& log_to_console,
-                int& min_log_level) {
+                int& min_log_level,
+                int& port) {
   policy_blob_path = kDefaultPolicyBlobFilename;
   client_state_path = kDefaultClientStateFilename;
   log_to_console = kDefaultLogToConsole;
@@ -345,6 +348,12 @@ void ParseFlags(const base::CommandLine& command_line,
 
   if (command_line.HasSwitch(kLogToConsoleSwitch)) {
     log_to_console = true;
+  }
+
+  if (command_line.HasSwitch(kPortSwitch)) {
+    std::string port_str = command_line.GetSwitchValueASCII(kPortSwitch);
+    CHECK(base::StringToInt(port_str, &port))
+        << "Expected an int value for --port switch, but got: " << port_str;
   }
 }
 
@@ -602,13 +611,13 @@ void FakeDMServer::HandleWaitRemoteCommandAcked(
   reactor->Write(std::move(resp));
 }
 
-bool FakeDMServer::StartFakeServer() {
+bool FakeDMServer::StartFakeServer(int port) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(fake_dmserver_main_sequence_checker_);
   LOG(INFO) << "Starting the FakeDMServer with args policy_blob_path="
             << policy_blob_path_ << " client_state_path=" << client_state_path_
             << " grpc_unix_socket_uri=" << grpc_unix_socket_uri_;
 
-  if (!policy::EmbeddedPolicyTestServer::Start()) {
+  if (!policy::EmbeddedPolicyTestServer::Start(port)) {
     LOG(ERROR) << "Failed to start the EmbeddedPolicyTestServer";
     return false;
   }
@@ -736,11 +745,11 @@ bool FakeDMServer::SetExternalPolicyPayload(
   return true;
 }
 
-bool FakeDMServer::ParsePolicies(const base::Value::Dict* dict) {
-  const base::Value::List* policies = dict->FindList(kPoliciesKey);
+bool FakeDMServer::ParsePolicies(const base::DictValue* dict) {
+  const base::ListValue* policies = dict->FindList(kPoliciesKey);
   if (policies) {
     for (const base::Value& policy : *policies) {
-      const base::Value::Dict* policy_as_dict = policy.GetIfDict();
+      const base::DictValue* policy_as_dict = policy.GetIfDict();
       if (!policy_as_dict) {
         LOG(ERROR) << "The current policy isn't a dict";
         return false;
@@ -754,11 +763,11 @@ bool FakeDMServer::ParsePolicies(const base::Value::Dict* dict) {
     }
   }
 
-  const base::Value::List* external_policies =
+  const base::ListValue* external_policies =
       dict->FindList(kExternalPoliciesKey);
   if (external_policies) {
     for (const base::Value& policy : *external_policies) {
-      const base::Value::Dict* policy_as_dict = policy.GetIfDict();
+      const base::DictValue* policy_as_dict = policy.GetIfDict();
       if (!policy_as_dict) {
         LOG(ERROR) << "The current external policy isn't a dict";
         return false;
@@ -793,7 +802,7 @@ bool FakeDMServer::ReadPolicyBlobFile() {
     return false;
   }
   LOG(INFO) << "Deserialized value of the policy blob: " << *value;
-  const base::Value::Dict* dict = value->GetIfDict();
+  const base::DictValue* dict = value->GetIfDict();
   if (!dict) {
     LOG(ERROR) << "Policy blob isn't a dict";
     return false;
@@ -815,14 +824,16 @@ bool FakeDMServer::ReadPolicyBlobFile() {
   return true;
 }
 
-base::Value::Dict FakeDMServer::GetValueFromClient(
+base::DictValue FakeDMServer::GetValueFromClient(
     const policy::ClientStorage::ClientInfo& c) {
-  base::Value::Dict dict;
+  base::DictValue dict;
   dict.Set(kDeviceIdKey, c.device_id);
   dict.Set(kDeviceTokenKey, c.device_token);
   dict.Set(kMachineNameKey, c.machine_name);
-  dict.Set(kUsernameKey, c.username.value_or(""));
-  base::Value::List state_keys, allowed_policy_types;
+  if (c.username.has_value()) {
+    dict.Set(kUsernameKey, c.username.value());
+  }
+  base::ListValue state_keys, allowed_policy_types;
   for (auto& key : c.state_keys) {
     state_keys.Append(key);
   }
@@ -838,7 +849,7 @@ bool FakeDMServer::WriteClientStateFile() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(embedded_server_sequence_checker_);
   std::vector<policy::ClientStorage::ClientInfo> clients =
       client_storage()->GetAllClients();
-  base::Value::Dict dict_clients;
+  base::DictValue dict_clients;
   for (auto& c : clients) {
     dict_clients.Set(c.device_id, GetValueFromClient(c));
   }
@@ -847,7 +858,7 @@ bool FakeDMServer::WriteClientStateFile() {
   return serializer.Serialize(base::ValueView(dict_clients));
 }
 
-bool FakeDMServer::FindKey(const base::Value::Dict& dict,
+bool FakeDMServer::FindKey(const base::DictValue& dict,
                            const std::string& key,
                            base::Value::Type type) {
   switch (type) {
@@ -860,7 +871,7 @@ bool FakeDMServer::FindKey(const base::Value::Dict& dict,
       return true;
     }
     case base::Value::Type::LIST: {
-      const base::Value::List* list_val = dict.FindList(key);
+      const base::ListValue* list_val = dict.FindList(key);
       if (!list_val) {
         LOG(ERROR) << "Key `" << key << "` is missing or not a list.";
         return false;
@@ -876,7 +887,7 @@ bool FakeDMServer::FindKey(const base::Value::Dict& dict,
 std::optional<policy::ClientStorage::ClientInfo>
 FakeDMServer::GetClientFromValue(const base::Value& v) {
   policy::ClientStorage::ClientInfo client_info;
-  const base::Value::Dict* dict = v.GetIfDict();
+  const base::DictValue* dict = v.GetIfDict();
   if (!dict) {
     LOG(ERROR) << "Client value isn't a dict";
     return std::nullopt;
@@ -885,7 +896,6 @@ FakeDMServer::GetClientFromValue(const base::Value& v) {
   if (!FindKey(*dict, kDeviceIdKey, base::Value::Type::STRING) ||
       !FindKey(*dict, kDeviceTokenKey, base::Value::Type::STRING) ||
       !FindKey(*dict, kMachineNameKey, base::Value::Type::STRING) ||
-      !FindKey(*dict, kUsernameKey, base::Value::Type::STRING) ||
       !FindKey(*dict, kStateKeysKey, base::Value::Type::LIST) ||
       !FindKey(*dict, kAllowedPolicyTypesKey, base::Value::Type::LIST)) {
     return std::nullopt;
@@ -894,8 +904,8 @@ FakeDMServer::GetClientFromValue(const base::Value& v) {
   client_info.device_id = *dict->FindString(kDeviceIdKey);
   client_info.device_token = *dict->FindString(kDeviceTokenKey);
   client_info.machine_name = *dict->FindString(kMachineNameKey);
-  client_info.username = *dict->FindString(kUsernameKey);
-  const base::Value::List* state_keys = dict->FindList(kStateKeysKey);
+  client_info.username = base::OptionalFromPtr(dict->FindString(kUsernameKey));
+  const base::ListValue* state_keys = dict->FindList(kStateKeysKey);
   for (const auto& it : *state_keys) {
     const std::string* key = it.GetIfString();
     if (!key) {
@@ -904,8 +914,7 @@ FakeDMServer::GetClientFromValue(const base::Value& v) {
     }
     client_info.state_keys.emplace_back(*key);
   }
-  const base::Value::List* policy_types =
-      dict->FindList(kAllowedPolicyTypesKey);
+  const base::ListValue* policy_types = dict->FindList(kAllowedPolicyTypesKey);
   for (const auto& it : *policy_types) {
     const std::string* key = it.GetIfString();
     if (!key) {
@@ -933,7 +942,7 @@ bool FakeDMServer::ReadClientStateFile() {
                << ": " << error_msg;
     return false;
   }
-  const base::Value::Dict* dict = value->GetIfDict();
+  const base::DictValue* dict = value->GetIfDict();
   if (!dict) {
     LOG(ERROR) << "The client state file isn't a dict.";
     return false;

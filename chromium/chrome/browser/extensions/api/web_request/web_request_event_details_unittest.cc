@@ -20,6 +20,7 @@
 #include "net/http/http_util.h"
 #include "net/test/cert_builder.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/re2/src/re2/re2.h"
 #include "url/gurl.h"
 
 static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
@@ -48,15 +49,14 @@ TEST(WebRequestEventDetailsTest, SetResponseHeaders) {
     WebRequestInfo request_info(std::move(params));
     WebRequestEventDetails details(request_info, kFilter);
     details.SetResponseHeaders(request_info, headers.get());
-    base::Value::Dict dict =
+    base::DictValue dict =
         details.GetFilteredDict(kFilter, nullptr, std::string(), false);
-    const base::Value::List* filtered_headers =
-        dict.FindList("responseHeaders");
+    const base::ListValue* filtered_headers = dict.FindList("responseHeaders");
     ASSERT_TRUE(filtered_headers);
     ASSERT_EQ(2u, filtered_headers->size());
-    const base::Value::Dict& first_header =
+    const base::DictValue& first_header =
         CHECK_DEREF(filtered_headers)[0].GetDict();
-    const base::Value::Dict& second_header =
+    const base::DictValue& second_header =
         CHECK_DEREF(filtered_headers)[1].GetDict();
     EXPECT_EQ("Key1", CHECK_DEREF(first_header.FindString("name")));
     EXPECT_EQ("Value1", CHECK_DEREF(first_header.FindString("value")));
@@ -72,13 +72,12 @@ TEST(WebRequestEventDetailsTest, SetResponseHeaders) {
     WebRequestInfo gaia_request_info(std::move(params));
     WebRequestEventDetails gaia_details(gaia_request_info, kFilter);
     gaia_details.SetResponseHeaders(gaia_request_info, headers.get());
-    base::Value::Dict dict =
+    base::DictValue dict =
         gaia_details.GetFilteredDict(kFilter, nullptr, std::string(), false);
-    base::Value::List* filtered_headers = dict.FindList("responseHeaders");
+    base::ListValue* filtered_headers = dict.FindList("responseHeaders");
     ASSERT_TRUE(filtered_headers);
     ASSERT_EQ(1u, filtered_headers->size());
-    const base::Value::Dict& header =
-        CHECK_DEREF(filtered_headers)[0].GetDict();
+    const base::DictValue& header = CHECK_DEREF(filtered_headers)[0].GetDict();
     EXPECT_EQ("Key1", CHECK_DEREF(header.FindString("name")));
     EXPECT_EQ("Value1", CHECK_DEREF(header.FindString("value")));
   }
@@ -102,6 +101,13 @@ std::unique_ptr<WebRequestInfo> CreateFakeRequestInfoWithSSL(
   return request_info;
 }
 
+// Checks that a string is formatted properly as sha256 fingerprint
+// which is formatted as 31 pairs of "XX:" followed by one "XX".
+bool IsSha256Fingerprint(const std::string& input) {
+  static const re2::RE2 kPattern("([0-9A-F]{2}:){31}[0-9A-F]{2}");
+  return re2::RE2::FullMatch(input, kPattern);
+}
+
 // Tests that if no SSLInfo is provided (e.g. HTTP request)
 // then WebRequestEventDetails will produce SecurityInfo object
 // with state insecure and other fields absent according to the explainer
@@ -117,11 +123,10 @@ TEST(WebRequestEventDetailsTest, SetSecurityInfo_Insecure) {
   details.SetSecurityInfo(request_info);
 
   // Check that filter will not remove the necessary keys.
-  base::Value::Dict dict =
+  base::DictValue dict =
       details.GetFilteredDict(kFilter, nullptr, std::string(), false);
 
-  const base::Value::Dict* security_info =
-      dict.FindDict(keys::kSecurityInfoKey);
+  const base::DictValue* security_info = dict.FindDict(keys::kSecurityInfoKey);
   ASSERT_TRUE(security_info);
   EXPECT_EQ("insecure", *security_info->FindString(keys::kStateKey));
   EXPECT_FALSE(security_info->FindList(keys::kCertificatesKey));
@@ -140,15 +145,27 @@ TEST(WebRequestEventDetailsTest, SetSecurityInfo_Broken) {
   details.SetSecurityInfo(*request_info);
 
   // Check that filter will not remove the necessary keys.
-  base::Value::Dict dict =
+  base::DictValue dict =
       details.GetFilteredDict(kFilter, nullptr, std::string(), false);
 
-  const base::Value::Dict* security_info =
-      dict.FindDict(keys::kSecurityInfoKey);
+  const base::DictValue* security_info = dict.FindDict(keys::kSecurityInfoKey);
   ASSERT_TRUE(security_info);
   EXPECT_EQ("broken", *security_info->FindString(keys::kStateKey));
   // Certificate list should still be present even if broken.
-  EXPECT_TRUE(security_info->FindList(keys::kCertificatesKey));
+  const base::ListValue* certificates =
+      security_info->FindList(keys::kCertificatesKey);
+  ASSERT_TRUE(certificates);
+  ASSERT_EQ(1u, certificates->size());
+
+  const base::DictValue& leaf_cert = certificates->front().GetDict();
+  EXPECT_FALSE(leaf_cert.FindBlob(keys::kRawDerKey));
+
+  const base::DictValue* fingerprint =
+      leaf_cert.FindDict(keys::kFingerprintKey);
+  ASSERT_TRUE(fingerprint);
+
+  std::string sha256 = CHECK_DEREF(fingerprint->FindString(keys::kSha256Key));
+  ASSERT_TRUE(IsSha256Fingerprint(sha256));
 }
 // Tests that when SSLInfo is provided (e.g. successful https request)
 // then WebRequestEventDetails will produce SecurityInfo object
@@ -163,28 +180,27 @@ TEST(WebRequestEventDetailsTest, SetSecurityInfoRawDer_Secure) {
   details.SetSecurityInfo(*request_info);
 
   // Check that filter will not remove the necessary keys.
-  base::Value::Dict dict =
+  base::DictValue dict =
       details.GetFilteredDict(kFilter, nullptr, std::string(), false);
 
-  const base::Value::Dict* security_info =
-      dict.FindDict(keys::kSecurityInfoKey);
+  const base::DictValue* security_info = dict.FindDict(keys::kSecurityInfoKey);
   ASSERT_TRUE(security_info);
   EXPECT_EQ("secure", *security_info->FindString(keys::kStateKey));
 
-  const base::Value::List* certificates =
+  const base::ListValue* certificates =
       security_info->FindList(keys::kCertificatesKey);
   ASSERT_TRUE(certificates);
   ASSERT_EQ(1u, certificates->size());
 
-  const base::Value::Dict& leaf_cert = certificates->front().GetDict();
+  const base::DictValue& leaf_cert = certificates->front().GetDict();
 
   EXPECT_TRUE(leaf_cert.FindBlob(keys::kRawDerKey));
 
-  const base::Value::Dict* fingerprint =
+  const base::DictValue* fingerprint =
       leaf_cert.FindDict(keys::kFingerprintKey);
-
   ASSERT_TRUE(fingerprint);
-  EXPECT_TRUE(fingerprint->FindString(keys::kSha256Key));
+  std::string sha256 = CHECK_DEREF(fingerprint->FindString(keys::kSha256Key));
+  ASSERT_TRUE(IsSha256Fingerprint(sha256));
 }
 
 // Test checks that WebRequestEventDetails::GetFilteredDict
@@ -198,11 +214,10 @@ TEST(WebRequestEventDetailsTest, SetSecurityInfo_FilteredOut) {
   WebRequestEventDetails details(*request_info, kFilter);
   details.SetSecurityInfo(*request_info);
 
-  base::Value::Dict dict = details.GetFilteredDict(
+  base::DictValue dict = details.GetFilteredDict(
       /*extra_info_spec=*/0, nullptr, std::string(), false);
 
-  const base::Value::Dict* security_info =
-      dict.FindDict(keys::kSecurityInfoKey);
+  const base::DictValue* security_info = dict.FindDict(keys::kSecurityInfoKey);
   ASSERT_FALSE(security_info);
 }
 
@@ -218,28 +233,27 @@ TEST(WebRequestEventDetailsTest, SetSecurityInfoRawDer_FilteredOut) {
       ExtraInfoSpec::SECURITY_INFO | ExtraInfoSpec::SECURITY_INFO_RAW_DER);
   details.SetSecurityInfo(*request_info);
 
-  base::Value::Dict dict = details.GetFilteredDict(
-      ExtraInfoSpec::SECURITY_INFO, nullptr, std::string(), false);
+  base::DictValue dict = details.GetFilteredDict(ExtraInfoSpec::SECURITY_INFO,
+                                                 nullptr, std::string(), false);
 
-  const base::Value::Dict* security_info =
-      dict.FindDict(keys::kSecurityInfoKey);
+  const base::DictValue* security_info = dict.FindDict(keys::kSecurityInfoKey);
   ASSERT_TRUE(security_info);
   EXPECT_EQ("secure", *security_info->FindString(keys::kStateKey));
 
-  const base::Value::List* certificates =
+  const base::ListValue* certificates =
       security_info->FindList(keys::kCertificatesKey);
   ASSERT_TRUE(certificates);
   ASSERT_EQ(1u, certificates->size());
 
-  const base::Value::Dict& leaf_cert = certificates->front().GetDict();
+  const base::DictValue& leaf_cert = certificates->front().GetDict();
 
   EXPECT_FALSE(leaf_cert.FindBlob(keys::kRawDerKey));
 
-  const base::Value::Dict* fingerprint =
+  const base::DictValue* fingerprint =
       leaf_cert.FindDict(keys::kFingerprintKey);
-
   ASSERT_TRUE(fingerprint);
-  EXPECT_TRUE(fingerprint->FindString(keys::kSha256Key));
+  std::string sha256 = CHECK_DEREF(fingerprint->FindString(keys::kSha256Key));
+  ASSERT_TRUE(IsSha256Fingerprint(sha256));
 }
 
 }  // namespace extensions

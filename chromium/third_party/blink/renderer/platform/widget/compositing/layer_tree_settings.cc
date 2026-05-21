@@ -344,7 +344,17 @@ cc::LayerTreeSettings GenerateLayerTreeSettings(
   settings.use_partial_raster = !cmd.HasSwitch(switches::kDisablePartialRaster);
   // Partial raster is not supported with RawDraw
   settings.use_partial_raster &= !::features::IsUsingRawDraw();
-  settings.enable_elastic_overscroll = platform->IsElasticOverscrollEnabled();
+
+  // Overscroll effect on the root scroller.
+  settings.enable_elastic_overscroll_on_root =
+      platform->IsElasticOverscrollEnabledOnRoot();
+
+  // Overscroll effect on non-root scrollers.
+  settings.enable_elastic_overscroll_for_subscroll =
+      base::FeatureList::IsEnabled(
+          ::features::kOverscrollEffectOnNonRootScrollers) &&
+      platform->IsElasticOverscrollSupported();
+
   settings.use_gpu_memory_buffer_resources =
       cmd.HasSwitch(switches::kEnableGpuMemoryBufferCompositorResources);
   settings.use_painted_device_scale_factor = true;
@@ -394,6 +404,8 @@ cc::LayerTreeSettings GenerateLayerTreeSettings(
       cmd.HasSwitch(::switches::kShowFPSCounter);
   settings.initial_debug_state.show_layer_animation_bounds_rects =
       cmd.HasSwitch(::switches::kShowLayerAnimationBounds);
+  settings.initial_debug_state.show_contentful_paint_rects =
+      cmd.HasSwitch(switches::kShowContentfulPaintRects);
   settings.initial_debug_state.show_paint_rects =
       cmd.HasSwitch(switches::kShowPaintRects);
   settings.initial_debug_state.show_layout_shift_regions =

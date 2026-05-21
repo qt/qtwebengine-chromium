@@ -436,42 +436,6 @@ ResultOrError<PixelLocalMemberType> FromTintPixelLocalMemberType(
     DAWN_UNREACHABLE();
 }
 
-ResultOrError<wgpu::DynamicBindingKind> FromArrayResourceType(tint::ResourceType type) {
-    switch (type) {
-        case tint::ResourceType::kTexture1d_f32:
-        case tint::ResourceType::kTexture1d_i32:
-        case tint::ResourceType::kTexture1d_u32:
-        case tint::ResourceType::kTexture2d_f32:
-        case tint::ResourceType::kTexture2d_i32:
-        case tint::ResourceType::kTexture2d_u32:
-        case tint::ResourceType::kTexture2dArray_f32:
-        case tint::ResourceType::kTexture2dArray_i32:
-        case tint::ResourceType::kTexture2dArray_u32:
-        case tint::ResourceType::kTexture3d_f32:
-        case tint::ResourceType::kTexture3d_i32:
-        case tint::ResourceType::kTexture3d_u32:
-        case tint::ResourceType::kTextureCube_f32:
-        case tint::ResourceType::kTextureCube_i32:
-        case tint::ResourceType::kTextureCube_u32:
-        case tint::ResourceType::kTextureCubeArray_f32:
-        case tint::ResourceType::kTextureCubeArray_i32:
-        case tint::ResourceType::kTextureCubeArray_u32:
-        case tint::ResourceType::kTextureMultisampled2d_f32:
-        case tint::ResourceType::kTextureMultisampled2d_i32:
-        case tint::ResourceType::kTextureMultisampled2d_u32:
-        case tint::ResourceType::kTextureDepth2d:
-        case tint::ResourceType::kTextureDepth2dArray:
-        case tint::ResourceType::kTextureDepthCube:
-        case tint::ResourceType::kTextureDepthCubeArray:
-        case tint::ResourceType::kTextureDepthMultisampled2d:
-            return wgpu::DynamicBindingKind::SampledTexture;
-        case tint::ResourceType::kEmpty:
-            return DAWN_VALIDATION_ERROR(
-                "Attempted to convert 'None' array resource type from Tint.");
-    }
-    DAWN_UNREACHABLE();
-}
-
 // Validation errors, if any, are stored within outputParseResult instead of get returned as
 // ErrorData.
 MaybeError ParseWGSL(std::unique_ptr<tint::Source::File> file,
@@ -485,7 +449,7 @@ MaybeError ParseWGSL(std::unique_ptr<tint::Source::File> file,
     tint::Program program = tint::wgsl::reader::Parse(file.get(), options);
 
     // Store the compilation messages into outputParseResult.
-    DAWN_TRY(outputParseResult->compilationMessages.AddMessages(program.Diagnostics()));
+    outputParseResult->compilationMessages.AddMessages(program.Diagnostics());
 
     // If WGSL parsing succeed, store the generated Tint program with no validation error.
     if (program.IsValid()) {
@@ -519,6 +483,7 @@ MaybeError ParseSPIRV(const std::vector<uint32_t>& spirv,
 
     tint::wgsl::writer::Options options;
     options.allow_non_uniform_derivatives = allowNonUniformDerivatives;
+    options.disable_unreachable_code_warning = true;
     options.allowed_features = allowedFeatures.ToTint();
     auto wgslResult = tint::wgsl::writer::ProgramFromIR(irResult.Get(), options);
 
@@ -527,7 +492,7 @@ MaybeError ParseSPIRV(const std::vector<uint32_t>& spirv,
         tint::Program program = wgslResult.Move();
 
         // Store the compilation messages into outputParseResult.
-        DAWN_TRY(outputParseResult->compilationMessages.AddMessages(program.Diagnostics()));
+        outputParseResult->compilationMessages.AddMessages(program.Diagnostics());
 
         outputParseResult->tintProgram = UnsafeUnserializedValue<std::optional<Ref<TintProgram>>>(
             AcquireRef(new TintProgram(std::move(program), nullptr)));
@@ -770,30 +735,6 @@ MaybeError ValidateCompatibilityOfSingleBindingWithLayout(const DeviceBase* devi
         });
 }
 
-MaybeError ValidateCompatibilityOfDynamicBindingArrayWithLayout(
-    DeviceBase* device,
-    const BindGroupLayoutInternalBase* layout,
-    const GroupDynamicBindingArrayInfo& shaderDynamicArray) {
-    DAWN_INVALID_IF(!layout->HasDynamicArray(), "%s doesn't contain a dynamic binding array.",
-                    layout);
-
-    DAWN_INVALID_IF(layout->GetAPIDynamicArrayStart() != shaderDynamicArray.start,
-                    "@binding for the dynamic array in the shader (%u) doesn't match the start "
-                    "(%u) defined in %s.",
-                    shaderDynamicArray.start, layout->GetAPIDynamicArrayStart(), layout);
-
-    // If the dynamic binding array is never accessed with any type in the shader, it is valid to
-    // use with any DynamicArrayKind.
-    if (shaderDynamicArray.kind != wgpu::DynamicBindingKind::Undefined) {
-        DAWN_INVALID_IF(shaderDynamicArray.kind != layout->GetDynamicArrayKind(),
-                        "Shader dynamic binding array is used with types (of kind %s) incompatible "
-                        "with %s's kind of dynamic binding array (%s).",
-                        shaderDynamicArray.kind, layout, layout->GetDynamicArrayKind());
-    }
-
-    return {};
-}
-
 MaybeError ValidateCompatibilityWithBindGroupLayout(DeviceBase* device,
                                                     BindGroupIndex group,
                                                     const EntryPointMetadata& entryPoint,
@@ -806,15 +747,6 @@ MaybeError ValidateCompatibilityWithBindGroupLayout(DeviceBase* device,
                          "validating that the entry-point's declaration for @group(%u) "
                          "@binding(%u) matches %s",
                          group, bindingId, layout);
-    }
-
-    // Check that the dynamic binding array, if any in the shader, matches the BindGroupLayout.
-    if (entryPoint.dynamicBindingArrays.contains(group)) {
-        DAWN_TRY_CONTEXT(
-            ValidateCompatibilityOfDynamicBindingArrayWithLayout(
-                device, layout, entryPoint.dynamicBindingArrays.at(group)),
-            "validating that the entry-point's dynamic binding array for @group(%u) matches %s",
-            group, layout);
     }
 
     return {};
@@ -896,6 +828,16 @@ ResultOrError<std::unique_ptr<EntryPointMetadata>> ReflectEntryPointUsingTint(
     if (entryPoint.immediate_data_size) {
         DAWN_ASSERT(IsAligned(entryPoint.immediate_data_size, 4u));
         metadata->immediateDataRangeByteSize = entryPoint.immediate_data_size;
+
+        // Avoid calling GetImmediateBlockInfo if the size exceeds the limit,
+        // as it might cause an assertion in Tint.
+        DAWN_INVALID_IF(
+            entryPoint.immediate_data_size > kMaxExternalImmediateConstantsPerPipeline * 4,
+            "Immediate data size (%u) exceeds the maximum allowed size (%u).",
+            entryPoint.immediate_data_size, kMaxExternalImmediateConstantsPerPipeline * 4);
+
+        auto immediateBlockInfo = inspector->GetImmediateBlockInfo(entryPoint.name);
+        metadata->immediateDataUsedSlots = ImmediateConstantMask(immediateBlockInfo.to_ullong());
     }
 
     // Vertex shader specific reflection.
@@ -919,7 +861,7 @@ ResultOrError<std::unique_ptr<EntryPointMetadata>> ReflectEntryPointUsingTint(
         // Vertex output (inter-stage variables) reflection.
         uint32_t clipDistancesSlots = 0;
         if (entryPoint.clip_distances_size.has_value()) {
-            clipDistancesSlots = RoundUp(*entryPoint.clip_distances_size, 4) / 4;
+            clipDistancesSlots = uint32_t(RoundUp(*entryPoint.clip_distances_size, 4) / 4);
         }
         uint32_t minInvalidLocation = maxInterStageShaderVariables - clipDistancesSlots;
         for (const auto& outputVar : entryPoint.output_variables) {
@@ -958,7 +900,7 @@ ResultOrError<std::unique_ptr<EntryPointMetadata>> ReflectEntryPointUsingTint(
 
         // Other vertex metadata.
         metadata->totalInterStageShaderVariables =
-            entryPoint.output_variables.size() + clipDistancesSlots;
+            uint32_t(entryPoint.output_variables.size()) + clipDistancesSlots;
         if (metadata->totalInterStageShaderVariables > maxInterStageShaderVariables) {
             size_t userDefinedOutputVariables = entryPoint.output_variables.size();
 
@@ -1017,15 +959,30 @@ ResultOrError<std::unique_ptr<EntryPointMetadata>> ReflectEntryPointUsingTint(
             }
         }
 
-        uint32_t totalInterStageShaderVariables = entryPoint.input_variables.size();
+        uint32_t totalInterStageShaderVariables = uint32_t(entryPoint.input_variables.size());
 
         // Other fragment metadata
         metadata->usesSampleMaskOutput = entryPoint.output_sample_mask_used;
         metadata->usesSampleIndex = entryPoint.sample_index_used;
-        if (entryPoint.front_facing_used || entryPoint.input_sample_mask_used ||
-            entryPoint.sample_index_used) {
-            ++totalInterStageShaderVariables;
+
+        struct BoolName {
+            const bool& value;
+            const char* name;
+        };
+        BoolName boolNames[] = {
+            {entryPoint.front_facing_used, "front_facing"},
+            {entryPoint.input_sample_mask_used, "sample_mask"},
+            {entryPoint.sample_index_used, "sample_index_used"},
+            {entryPoint.primitive_index_used, "primitive_index_used"},
+            {entryPoint.subgroup_invocation_id_used, "subgroup_invocation_id"},
+            {entryPoint.subgroup_size_used, "subgroup_size"},
+        };
+        for (const auto& boolName : boolNames) {
+            if (boolName.value) {
+                ++totalInterStageShaderVariables;
+            }
         }
+
         metadata->usesFragDepth = entryPoint.frag_depth_used;
         metadata->usesFragPosition = entryPoint.frag_position_used;
         metadata->usesFineDerivativeBuiltin = entryPoint.fine_derivative_builtin_used;
@@ -1037,24 +994,13 @@ ResultOrError<std::unique_ptr<EntryPointMetadata>> ReflectEntryPointUsingTint(
             std::ostringstream builtinInfo;
             if (metadata->totalInterStageShaderVariables > userDefinedInputVariables) {
                 builtinInfo << " + 1 (";
-                bool isFirst = true;
-                if (entryPoint.front_facing_used) {
-                    builtinInfo << "front_facing";
-                    isFirst = false;
-                }
-                if (entryPoint.input_sample_mask_used) {
-                    if (!isFirst) {
-                        builtinInfo << "|";
+
+                const char* separator = "";
+                for (const auto& boolName : boolNames) {
+                    if (boolName.value) {
+                        builtinInfo << separator << boolName.name;
+                        separator = "|";
                     }
-                    builtinInfo << "sample_mask";
-                    isFirst = false;
-                }
-                if (entryPoint.sample_index_used) {
-                    if (!isFirst) {
-                        builtinInfo << "|";
-                    }
-                    builtinInfo << "sample_index";
-                    isFirst = false;
                 }
             }
 
@@ -1278,50 +1224,14 @@ ResultOrError<std::unique_ptr<EntryPointMetadata>> ReflectEntryPointUsingTint(
                         resource.binding, resource.bind_group);
     }
 
-    // Dynamic binding array reflection
-    for (const tint::inspector::ResourceBindingInfo& array :
-         inspector->GetResourceBindingInfo(entryPoint.name)) {
-        BindGroupIndex group(array.group);
-        if (DelayedInvalidIf(group >= kMaxBindGroupsTyped,
-                             "The entry-point uses a binding with a group decoration (%u) "
-                             "that exceeds maxBindGroups (%u) - 1.",
-                             group, kMaxBindGroups)) {
-            continue;
-        }
-
-        BindingNumber binding(array.binding);
-        if (DelayedInvalidIf(
-                binding >= kMaxBindingsPerBindGroupTyped,
-                "Binding number (%u) exceeds the maxBindingsPerBindGroup limit (%u) - 1.",
-                uint32_t(binding), kMaxBindingsPerBindGroup)) {
-            continue;
-        }
-
-        // Check that all the uses of the dynamic binding array have compatible DynamicArrayKind.
-        wgpu::DynamicBindingKind kind = wgpu::DynamicBindingKind::Undefined;
-        for (const auto& type : array.type_info) {
-            wgpu::DynamicBindingKind kindForType;
-            DAWN_TRY_ASSIGN(kindForType, FromArrayResourceType(type));
-
-            // This is the first kind that we compute, just store it.
-            if (kind == wgpu::DynamicBindingKind::Undefined) {
-                kind = kindForType;
-                continue;
-            }
-
-            DAWN_INVALID_IF(kindForType != kind,
-                            "Dynamic binding array for @group(%u) used with two incompatible kinds "
-                            "of types %s vs. %s",
-                            group, kind, kindForType);
-        }
-
-        DAWN_INVALID_IF(metadata->dynamicBindingArrays.contains(group),
-                        "Duplicate dynamic binding array for group: %u.", group);
-        metadata->dynamicBindingArrays[group] = {{
-            .start = binding,
-            .kind = kind,
-        }};
-    }
+    // Resource table reflection.
+    // TODO(https://issues.chromium.org/473354064): Check that the list of uses of the resource
+    // table are:
+    // 1) compatible with the bindless feature enabled (sampling vs. full)
+    // 2) potentially that each type used is enabled by whatever feature enables it (for example
+    // texel buffers might require an extension)
+    auto resourceTableInfo = inspector->GetResourceTableInfo(entryPoint.name);
+    metadata->usesResourceTable = !resourceTableInfo.empty();
 
     // Sampler binding point placeholder for non-sampler texture usage. Make it
     // ToTint(EntryPointMetadata::nonSamplerBindingPoint), so that we have
@@ -1404,30 +1314,29 @@ void ReflectShaderUsingTint(const ShaderModuleParseDeviceInfo& deviceInfo,
 }  // anonymous namespace
 
 ResultOrError<Extent3D> ValidateComputeStageWorkgroupSize(
-    uint32_t x,
-    uint32_t y,
-    uint32_t z,
-    size_t workgroupStorageSize,
+    const tint::WorkgroupInfo& workgroupInfo,
     bool usesSubgroupMatrix,
     uint32_t maxSubgroupSize,
     const LimitsForCompilationRequest& limits,
-    const LimitsForCompilationRequest& adaterSupportedlimits) {
-    DAWN_INVALID_IF(x < 1 || y < 1 || z < 1,
+    const LimitsForCompilationRequest& adapterSupportedlimits) {
+    DAWN_INVALID_IF(workgroupInfo.x < 1 || workgroupInfo.y < 1 || workgroupInfo.z < 1,
                     "Entry-point uses workgroup_size(%u, %u, %u) that are below the "
                     "minimum allowed (1, 1, 1).",
-                    x, y, z);
+                    workgroupInfo.x, workgroupInfo.y, workgroupInfo.z);
 
-    if (x > limits.maxComputeWorkgroupSizeX || y > limits.maxComputeWorkgroupSizeY ||
-        z > limits.maxComputeWorkgroupSizeZ) [[unlikely]] {
+    if (workgroupInfo.x > limits.maxComputeWorkgroupSizeX ||
+        workgroupInfo.y > limits.maxComputeWorkgroupSizeY ||
+        workgroupInfo.z > limits.maxComputeWorkgroupSizeZ) [[unlikely]] {
         uint32_t maxComputeWorkgroupSizeXAdapterLimit =
-            adaterSupportedlimits.maxComputeWorkgroupSizeX;
+            adapterSupportedlimits.maxComputeWorkgroupSizeX;
         uint32_t maxComputeWorkgroupSizeYAdapterLimit =
-            adaterSupportedlimits.maxComputeWorkgroupSizeY;
+            adapterSupportedlimits.maxComputeWorkgroupSizeY;
         uint32_t maxComputeWorkgroupSizeZAdapterLimit =
-            adaterSupportedlimits.maxComputeWorkgroupSizeZ;
+            adapterSupportedlimits.maxComputeWorkgroupSizeZ;
         std::string increaseLimitAdvice =
-            (x <= maxComputeWorkgroupSizeXAdapterLimit &&
-             y <= maxComputeWorkgroupSizeYAdapterLimit && z <= maxComputeWorkgroupSizeZAdapterLimit)
+            (workgroupInfo.x <= maxComputeWorkgroupSizeXAdapterLimit &&
+             workgroupInfo.y <= maxComputeWorkgroupSizeYAdapterLimit &&
+             workgroupInfo.z <= maxComputeWorkgroupSizeZAdapterLimit)
                 ? absl::StrFormat(
                       " This adapter supports higher maxComputeWorkgroupSizeX of %u, "
                       "maxComputeWorkgroupSizeY of %u, and maxComputeWorkgroupSizeZ of %u, which "
@@ -1440,39 +1349,74 @@ ResultOrError<Extent3D> ValidateComputeStageWorkgroupSize(
         return DAWN_VALIDATION_ERROR(
             "Entry-point uses workgroup_size(%u, %u, %u) that exceeds the "
             "maximum allowed (%u, %u, %u).%s",
-            x, y, z, limits.maxComputeWorkgroupSizeX, limits.maxComputeWorkgroupSizeY,
-            limits.maxComputeWorkgroupSizeZ, increaseLimitAdvice);
+            workgroupInfo.x, workgroupInfo.y, workgroupInfo.z, limits.maxComputeWorkgroupSizeX,
+            limits.maxComputeWorkgroupSizeY, limits.maxComputeWorkgroupSizeZ, increaseLimitAdvice);
     }
 
-    uint64_t numInvocations = static_cast<uint64_t>(x) * y * z;
+    uint64_t numInvocations =
+        static_cast<uint64_t>(workgroupInfo.x) * workgroupInfo.y * workgroupInfo.z;
     uint32_t maxComputeInvocationsPerWorkgroup = limits.maxComputeInvocationsPerWorkgroup;
     DAWN_INVALID_IF(numInvocations > maxComputeInvocationsPerWorkgroup,
                     "The total number of workgroup invocations (%u) exceeds the "
                     "maximum allowed (%u).%s",
                     numInvocations, maxComputeInvocationsPerWorkgroup,
-                    DAWN_INCREASE_LIMIT_MESSAGE(adaterSupportedlimits,
+                    DAWN_INCREASE_LIMIT_MESSAGE(adapterSupportedlimits,
                                                 maxComputeInvocationsPerWorkgroup, numInvocations));
 
     uint32_t maxComputeWorkgroupStorageSize = limits.maxComputeWorkgroupStorageSize;
     DAWN_INVALID_IF(
-        workgroupStorageSize > maxComputeWorkgroupStorageSize,
+        workgroupInfo.storage_size > maxComputeWorkgroupStorageSize,
         "The total use of workgroup storage (%u bytes) is larger than "
         "the maximum allowed (%u bytes).%s",
-        workgroupStorageSize, maxComputeWorkgroupStorageSize,
-        DAWN_INCREASE_LIMIT_MESSAGE(adaterSupportedlimits, maxComputeWorkgroupStorageSize,
-                                    workgroupStorageSize));
+        workgroupInfo.storage_size, maxComputeWorkgroupStorageSize,
+        DAWN_INCREASE_LIMIT_MESSAGE(adapterSupportedlimits, maxComputeWorkgroupStorageSize,
+                                    workgroupInfo.storage_size));
 
     if (usesSubgroupMatrix) {
         // maxSubgroupSize must have a valid value if usesSubgroupMatrix is true and subgroups
         // feature is supported.
         DAWN_ASSERT(maxSubgroupSize > 0);
-        DAWN_INVALID_IF((x % maxSubgroupSize) != 0,
+        DAWN_INVALID_IF((workgroupInfo.x % maxSubgroupSize) != 0,
                         "The x-dimension of workgroup_size (%u) must be a multiple of the device "
                         "maxSubgroupSize (%u) when the shader uses a subgroup matrix",
-                        x, maxSubgroupSize);
+                        workgroupInfo.x, maxSubgroupSize);
     }
 
-    return Extent3D{x, y, z};
+    if (workgroupInfo.subgroup_size.has_value()) {
+        const uint32_t explicitSubgroupSize = workgroupInfo.subgroup_size.value();
+        DAWN_ASSERT(explicitSubgroupSize > 0);
+        DAWN_INVALID_IF((workgroupInfo.x % explicitSubgroupSize != 0),
+                        "The x-dimension of workgroup invocations (%u) is not a multiple of the "
+                        "subgroup_size attribute (%u)",
+                        workgroupInfo.x, explicitSubgroupSize);
+    }
+
+    return Extent3D{workgroupInfo.x, workgroupInfo.y, workgroupInfo.z};
+}
+
+MaybeError ValidateExplicitComputeSubgroupSize(const tint::WorkgroupInfo& workgroupInfo,
+                                               uint32_t minExplicitSubgroupSize,
+                                               uint32_t maxExplicitSubgroupSize,
+                                               uint32_t maxComputeWorkgroupSubgroups) {
+    if (workgroupInfo.subgroup_size.has_value()) {
+        DAWN_ASSERT(minExplicitSubgroupSize > 0 && maxExplicitSubgroupSize > 0);
+        const uint32_t explicitSubgroupSize = workgroupInfo.subgroup_size.value();
+        DAWN_INVALID_IF(
+            explicitSubgroupSize < minExplicitSubgroupSize ||
+                explicitSubgroupSize > maxExplicitSubgroupSize,
+            "The subgroup_size attribute (%u) is not in the allowed range "
+            "[minExplicitComputeSubgroupSize, maxExplicitComputeSubgroupSize] ([%u, %u]).",
+            explicitSubgroupSize, minExplicitSubgroupSize, maxExplicitSubgroupSize);
+        uint64_t numInvocations =
+            static_cast<uint64_t>(workgroupInfo.x) * workgroupInfo.y * workgroupInfo.z;
+        DAWN_INVALID_IF(
+            numInvocations > maxComputeWorkgroupSubgroups * explicitSubgroupSize,
+            "The total number of workgroup invocations (%u) exceeds the product of"
+            "maxComputeWorkgroupSubgroups and the subgroup_size attribute (%u * %u = %u).",
+            numInvocations, maxComputeWorkgroupSubgroups, explicitSubgroupSize, numInvocations);
+    }
+
+    return {};
 }
 
 CachedValidationError::CachedValidationError(std::unique_ptr<ErrorData>&& errorData) {
@@ -1623,10 +1567,6 @@ MaybeError ValidateCompatibilityWithPipelineLayout(DeviceBase* device,
                         "The entry-point uses bindings in group %u but %s doesn't have a "
                         "BindGroupLayout for this index.",
                         group, layout);
-        DAWN_INVALID_IF(entryPoint.dynamicBindingArrays.contains(group),
-                        "The entry-point uses a dynamic binding array in group %u but %s doesn't "
-                        "have a BindGroupLayout for this index.",
-                        group, layout);
     }
 
     // Validate that filtering samplers are not used with unfilterable textures.
@@ -1730,6 +1670,11 @@ MaybeError ValidateCompatibilityWithPipelineLayout(DeviceBase* device,
                         "doesn't use a `pixel local` block.");
     }
 
+    // Validate resource table usage
+    DAWN_INVALID_IF(entryPoint.usesResourceTable && !layout->UsesResourceTable(),
+                    "The entry-point uses a resource table but the pipeline layout doesn't enable "
+                    "`usesResourceTable`.");
+
     // Validate that immediate data used by programmable state are smaller than pipelineLayout
     // immediate data range bytes.
     DAWN_INVALID_IF(entryPoint.immediateDataRangeByteSize > layout->GetImmediateDataRangeByteSize(),
@@ -1737,6 +1682,94 @@ MaybeError ValidateCompatibilityWithPipelineLayout(DeviceBase* device,
                     "amount (%u) in %s.",
                     entryPoint.immediateDataRangeByteSize, layout->GetImmediateDataRangeByteSize(),
                     layout);
+
+    return {};
+}
+
+MaybeError ValidateSubgroupMatrixConfiguration(const tint::SubgroupMatrixInfo& smInfo,
+                                               const std::vector<SubgroupMatrixConfig>& cfg) {
+    if (cfg.empty()) {
+        DAWN_INVALID_IF(!smInfo.configs.empty(),
+                        "Shader uses a subgroup matrix, but no subgroup matrix configuration "
+                        "found for the device");
+    }
+
+    auto compare = [](wgpu::SubgroupMatrixComponentType wgpu_type,
+                      tint::SubgroupMatrixType tint_type) -> bool {
+        return (wgpu_type == wgpu::SubgroupMatrixComponentType::F16 &&
+                tint_type == tint::SubgroupMatrixType::kF16) ||
+               (wgpu_type == wgpu::SubgroupMatrixComponentType::F32 &&
+                tint_type == tint::SubgroupMatrixType::kF32) ||
+               (wgpu_type == wgpu::SubgroupMatrixComponentType::I8 &&
+                tint_type == tint::SubgroupMatrixType::kI8) ||
+               (wgpu_type == wgpu::SubgroupMatrixComponentType::U8 &&
+                tint_type == tint::SubgroupMatrixType::kU8) ||
+               (wgpu_type == wgpu::SubgroupMatrixComponentType::I32 &&
+                tint_type == tint::SubgroupMatrixType::kI32) ||
+               (wgpu_type == wgpu::SubgroupMatrixComponentType::U32 &&
+                tint_type == tint::SubgroupMatrixType::kU32);
+    };
+
+    auto SubgroupTypeToString = [](tint::SubgroupMatrixType type) -> std::string {
+        switch (type) {
+            case tint::SubgroupMatrixType::kF16:
+                return "f16";
+            case tint::SubgroupMatrixType::kF32:
+                return "f32";
+            case tint::SubgroupMatrixType::kI8:
+                return "i8";
+            case tint::SubgroupMatrixType::kU8:
+                return "u8";
+            case tint::SubgroupMatrixType::kI32:
+                return "i32";
+            case tint::SubgroupMatrixType::kU32:
+                return "u32";
+            default:
+                DAWN_UNREACHABLE();
+        }
+    };
+
+    for (auto& info : smInfo.configs) {
+        bool found = false;
+        for (const auto& config : cfg) {
+            if (info.direction == tint::SubgroupMatrixDirection::kResult &&
+                compare(config.resultComponentType, info.type) && config.M == info.M &&
+                config.N == info.N) {
+                found = true;
+            } else if (compare(config.componentType, info.type)) {
+                if (info.direction == tint::SubgroupMatrixDirection::kLeft && info.M == config.M &&
+                    info.K == config.K) {
+                    found = true;
+                } else if (info.direction == tint::SubgroupMatrixDirection::kRight &&
+                           info.N == config.N && info.K == config.K) {
+                    found = true;
+                }
+            }
+        }
+        DAWN_INVALID_IF(!found,
+                        "Subgroup matrix usage found which is not supported by the device.\n"
+                        "Unknown configuration is M(%zu), N(%zu), K(%zu), %s",
+                        info.M, info.N, info.K, SubgroupTypeToString(info.type));
+    }
+
+    for (auto& info : smInfo.multiplies) {
+        bool found = false;
+        for (const auto& config : cfg) {
+            if (config.M == info.M && config.N == info.N && config.K == info.K &&
+                compare(config.resultComponentType, info.output_type) &&
+                compare(config.componentType, info.input_type)) {
+                found = true;
+                break;
+            }
+        }
+        DAWN_INVALID_IF(!found,
+                        "Subgroup matrix multiplication found which is not "
+                        "supported by the device.\n"
+                        "Unknown configuration is M(%zu) N(%zu) K(%zu) "
+                        "InputType(%s) OutputType(%s).",
+                        info.M, info.N, info.K, SubgroupTypeToString(info.input_type),
+                        SubgroupTypeToString(info.output_type));
+    }
 
     return {};
 }
@@ -1814,7 +1847,7 @@ ShaderModuleBase::ShaderModuleBase(DeviceBase* device,
 
 ShaderModuleBase::~ShaderModuleBase() = default;
 
-void ShaderModuleBase::DestroyImpl() {
+void ShaderModuleBase::DestroyImpl(DestroyReason reason) {
     Uncache();
 }
 
@@ -2088,7 +2121,7 @@ ShaderModuleParseRequest ShaderModuleBase::GenerateShaderModuleParseRequest(
             spirvOptionsDescriptor.allowNonUniformDerivatives = mAllowSpirvNonUniformDerivitives;
             spirvDescriptor.nextInChain = &spirvOptionsDescriptor;
 
-            spirvDescriptor.codeSize = mOriginalSpirv.size();
+            spirvDescriptor.codeSize = uint32_t(mOriginalSpirv.size());
             spirvDescriptor.code = mOriginalSpirv.data();
             descriptor.nextInChain = &spirvDescriptor;
             break;

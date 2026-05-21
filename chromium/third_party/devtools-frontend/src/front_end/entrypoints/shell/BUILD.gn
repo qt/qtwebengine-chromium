@@ -38,6 +38,7 @@ devtools_entrypoint("shell") {
     "../..:*",
     "../../testing/*",
     "../devtools_app:*",
+    "../greendev_floaty:*",
     "../js_app:*",
     "../ndb_app:*",
     "../node_app:*",

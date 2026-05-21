@@ -7,10 +7,13 @@ package org.chromium.base.supplier;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotSame;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
 import android.os.Handler;
 
+import org.junit.Assert;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.robolectric.annotation.Config;
@@ -18,7 +21,6 @@ import org.robolectric.shadows.ShadowLooper;
 
 import org.chromium.base.Callback;
 import org.chromium.base.test.BaseRobolectricTestRunner;
-import org.chromium.build.annotations.Nullable;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -29,8 +31,8 @@ public class ObservableSupplierImplTest {
     private static final String TEST_STRING_1 = "Test";
     private static final String TEST_STRING_2 = "Test2";
 
-    private final ObservableSupplierImpl<@Nullable String> mSupplier =
-            new ObservableSupplierImpl<>();
+    private final SettableNullableObservableSupplier<String> mSupplier =
+            ObservableSuppliers.createNullable();
 
     private int mCallCount;
     private String mLastSuppliedString;
@@ -303,6 +305,28 @@ public class ObservableSupplierImplTest {
 
         mSupplier.removeObserver(observer2);
         assertFalse("Both observers should be gone", mSupplier.hasObservers());
+    }
+
+    @Test
+    public void testMonotonicNonNull() {
+        SettableMonotonicObservableSupplier<String> supplier =
+                ObservableSuppliers.createMonotonic();
+        assertThrows(AssertionError.class, () -> supplier.set(null));
+        assertThrows(AssertionError.class, () -> supplier.asNonNull());
+        supplier.set("some value");
+        assertEquals("some value", supplier.asNonNull().get());
+    }
+
+    @Test
+    public void testDestroy() {
+        mSupplier.set("foo");
+        mSupplier.addSyncObserver(Assert::fail);
+        mSupplier.destroy();
+        assertFalse(mSupplier.hasObservers());
+        assertNull(mSupplier.get());
+        // set() should be ignored.
+        mSupplier.set("bar");
+        assertNull(mSupplier.get());
     }
 
     private void checkState(

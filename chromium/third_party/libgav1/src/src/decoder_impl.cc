@@ -1226,11 +1226,13 @@ StatusCode DecoderImpl::CopyFrameToOutputBuffer(
   } else {
     buffer_.has_hdr_mdcv = 0;
   }
-  if (frame->itut_t35_set()) {
-    buffer_.has_itut_t35 = 1;
-    buffer_.itut_t35 = frame->itut_t35();
+  if (frame->itut_t35_count() > 0) {
+    buffer_.itut_t35_count = frame->itut_t35_count();
+    for (int i = 0; i < buffer_.itut_t35_count; ++i) {
+      buffer_.itut_t35[i] = frame->itut_t35()[i];
+    }
   } else {
-    buffer_.has_itut_t35 = 0;
+    buffer_.itut_t35_count = 0;
   }
   output_frame_ = frame;
   return kStatusOk;

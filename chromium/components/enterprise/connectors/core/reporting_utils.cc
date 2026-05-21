@@ -6,6 +6,7 @@
 
 #include "base/logging.h"
 #include "base/notreached.h"
+#include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "components/enterprise/common/proto/synced/browser_events.pb.h"
@@ -424,12 +425,12 @@ proto::TriggeredRuleInfo ConvertMatchedUrlNavigationRuleToTriggeredRuleInfo(
 
 void AddTriggeredRuleInfoToUrlFilteringInterstitialEvent(
     const safe_browsing::RTLookupResponse& response,
-    base::Value::Dict& event) {
-  base::Value::List triggered_rule_info;
+    base::DictValue& event) {
+  base::ListValue triggered_rule_info;
 
   for (const safe_browsing::RTLookupResponse::ThreatInfo& threat_info :
        response.threat_info()) {
-    base::Value::Dict triggered_rule;
+    base::DictValue triggered_rule;
     triggered_rule.Set(kKeyTriggeredRuleName,
                        threat_info.matched_url_navigation_rule().rule_name());
     int rule_id = 0;
@@ -885,11 +886,11 @@ std::vector<std::string> GetLocalIpAddresses() {
 void AddReferrerChainToEvent(
     const google::protobuf::RepeatedPtrField<safe_browsing::ReferrerChainEntry>&
         referrer_chain,
-    base::Value::Dict& event) {
-  base::Value::List referrers;
+    base::DictValue& event) {
+  base::ListValue referrers;
   for (const auto& referrer : referrer_chain) {
     if (!referrer.url().empty() || !referrer.ip_addresses().empty()) {
-      base::Value::Dict referrer_dict;
+      base::DictValue referrer_dict;
       referrer_dict.Set("url", referrer.url());
       if (referrer.ip_addresses().size() > 0) {
         referrer_dict.Set("ip", referrer.ip_addresses()[0]);
@@ -902,8 +903,8 @@ void AddReferrerChainToEvent(
 
 void AddFrameUrlChainToEvent(
     const google::protobuf::RepeatedPtrField<std::string>& frame_url_chain,
-    base::Value::Dict& event) {
-  base::Value::List iframe_urls;
+    base::DictValue& event) {
+  base::ListValue iframe_urls;
   for (const auto& frame_url : frame_url_chain) {
     iframe_urls.Append(frame_url);
   }
@@ -987,6 +988,7 @@ void MaybeTruncateLongUrls(proto::Event& event_variant) {
     case proto::Event::kSuspiciousUrlEvent:
     case proto::Event::kPrototypeRawEvent:
     case proto::Event::kTelomereEvent:
+    case proto::Event::kSaasUsageReportEvent:
     case proto::Event::EVENT_NOT_SET:
       break;
   }

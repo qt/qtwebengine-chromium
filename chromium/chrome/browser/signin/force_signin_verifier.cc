@@ -26,7 +26,6 @@
 #include "components/signin/public/identity_manager/identity_manager.h"
 #include "components/signin/public/identity_manager/primary_account_access_token_fetcher.h"
 #include "components/signin/public/identity_manager/primary_account_mutator.h"
-#include "components/signin/public/identity_manager/scope_set.h"
 #include "components/sync/base/features.h"
 #include "content/public/browser/network_service_instance.h"
 #include "google_apis/gaia/gaia_constants.h"
@@ -113,7 +112,7 @@ void ForceSigninVerifier::OnAccessTokenFetchComplete(
 }
 
 void ForceSigninVerifier::OnConnectionChanged(
-    network::mojom::ConnectionType type) {
+    net::NetworkChangeNotifier::ConnectionType type) {
   // Try again immediately once the network is back and cancel any pending
   // request.
   backoff_entry_.Reset();
@@ -132,7 +131,7 @@ void ForceSigninVerifier::Cancel() {
 }
 
 void ForceSigninVerifier::SendRequest() {
-  auto type = network::mojom::ConnectionType::CONNECTION_NONE;
+  auto type = net::NetworkChangeNotifier::ConnectionType::CONNECTION_NONE;
   if (content::GetNetworkConnectionTracker()->GetConnectionType(
           &type,
           base::BindOnce(&ForceSigninVerifier::SendRequestIfNetworkAvailable,
@@ -142,13 +141,14 @@ void ForceSigninVerifier::SendRequest() {
 }
 
 void ForceSigninVerifier::SendRequestIfNetworkAvailable(
-    network::mojom::ConnectionType network_type) {
+    net::NetworkChangeNotifier::ConnectionType network_type) {
   if (!identity_manager_ || !identity_manager_->AreRefreshTokensLoaded()) {
     request_waiting_for_refresh_tokens_ = true;
     return;
   }
 
-  if (network_type == network::mojom::ConnectionType::CONNECTION_NONE ||
+  if (network_type ==
+          net::NetworkChangeNotifier::ConnectionType::CONNECTION_NONE ||
       !ShouldSendRequest()) {
     return;
   }

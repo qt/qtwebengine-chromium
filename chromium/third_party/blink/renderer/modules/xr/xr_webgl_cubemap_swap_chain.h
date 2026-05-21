@@ -10,7 +10,7 @@
 namespace blink {
 
 // This swapchain is a shim which wraps another swapchain that has 6
-// square sub-images laid out from bottom to top, and produces a cubemap
+// square sub-images laid out as 3 tiles per row, and produces a cubemap
 // instead. When the frame ends the contents of each face of the cubemap are
 // copied to the corresponding location in the texture 2d. This obviously incurs
 // undesirable overhead, and it  would be ideal if we could use the cubemap
@@ -18,7 +18,8 @@ namespace blink {
 // crbug.com/459811463.
 class XRWebGLCubemapSwapChain final : public XRWebGLSwapChain {
  public:
-  explicit XRWebGLCubemapSwapChain(XRWebGLSwapChain* wrapped_swapchain);
+  explicit XRWebGLCubemapSwapChain(XRWebGLSwapChain* wrapped_swapchain,
+                                   bool clear_on_access);
   ~XRWebGLCubemapSwapChain() override;
 
   bool IsCube() const override { return true; }
@@ -29,7 +30,7 @@ class XRWebGLCubemapSwapChain final : public XRWebGLSwapChain {
 
   void SetLayer(XRCompositionLayer* layer) override;
 
-  scoped_refptr<StaticBitmapImage> TransferToStaticBitmapImage() override;
+  std::unique_ptr<SharedImageHolder> TransferToSharedImageHolder() override;
 
   void Trace(Visitor* visitor) const override;
 

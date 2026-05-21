@@ -20,8 +20,7 @@ namespace pdfium {
 
 namespace {
 
-const char kEmailRecommendedFilledChecksum[] =
-    "211e4e46eb347aa2bc7c425556d600b0";
+constexpr char kEmailRecommendedFilledFilename[] = "email_filled";
 
 }  // namespace
 
@@ -81,7 +80,7 @@ TEST_F(CFWLEditEmbedderTest, LeftClickMouseSelection) {
 }
 
 TEST_F(CFWLEditEmbedderTest, DragMouseSelection) {
-  // TODO(crbug.com/pdfium/11): Fix this test and enable for Skia variants.
+  // TODO(crbug.com/40096188): Fix this test and enable for Skia variants.
   if (CFX_DefaultRenderDevice::UseSkiaRenderer()) {
     return;
   }
@@ -106,27 +105,27 @@ TEST_F(CFWLEditEmbedderTest, DragMouseSelection) {
   EXPECT_EQ("defgh", GetPlatformString(buf));
 
   // TODO(hnakashima): This is incorrect. Visually 'abcdefgh' are selected.
-  const char kDraggedMD5[] = "f131526c8edd04e44de17b2647ec54c8";
+  constexpr char kDraggedFilename[] = "drag_mouse_formfill";
   {
     ScopedFPDFBitmap page_bitmap =
         RenderLoadedPageWithFlags(page.get(), FPDF_ANNOT);
-    CompareBitmap(page_bitmap.get(), 612, 792, kDraggedMD5);
+    CompareBitmapToPng(page_bitmap.get(), kDraggedFilename);
   }
 }
 
 TEST_F(CFWLEditEmbedderTest, SimpleFill) {
-  // TODO(crbug.com/pdfium/11): Fix this test and enable for Skia variants.
+  // TODO(crbug.com/40096188): Fix this test and enable for Skia variants.
   if (CFX_DefaultRenderDevice::UseSkiaRenderer()) {
     return;
   }
 
   CreateAndInitializeFormPDF("xfa/email_recommended.pdf");
   ScopedPage page = LoadScopedPage(0);
-  const char kBlankMD5[] = "8dda78a3afaf9f7b5210eb81cacc4600";
+  constexpr char kBlankFilename[] = "blank_email";
   {
     ScopedFPDFBitmap page_bitmap =
         RenderLoadedPageWithFlags(page.get(), FPDF_ANNOT);
-    CompareBitmap(page_bitmap.get(), 612, 792, kBlankMD5);
+    CompareBitmapToPng(page_bitmap.get(), kBlankFilename);
   }
 
   FORM_OnLButtonDown(form_handle(), page.get(), 0, 115, 58);
@@ -137,12 +136,12 @@ TEST_F(CFWLEditEmbedderTest, SimpleFill) {
   {
     ScopedFPDFBitmap page_bitmap =
         RenderLoadedPageWithFlags(page.get(), FPDF_ANNOT);
-    CompareBitmap(page_bitmap.get(), 612, 792, kEmailRecommendedFilledChecksum);
+    CompareBitmapToPng(page_bitmap.get(), kEmailRecommendedFilledFilename);
   }
 }
 
 TEST_F(CFWLEditEmbedderTest, FillWithNewLineWithoutMultiline) {
-  // TODO(crbug.com/pdfium/11): Fix this test and enable for Skia variants.
+  // TODO(crbug.com/40096188): Fix this test and enable for Skia variants.
   if (CFX_DefaultRenderDevice::UseSkiaRenderer()) {
     return;
   }
@@ -161,12 +160,11 @@ TEST_F(CFWLEditEmbedderTest, FillWithNewLineWithoutMultiline) {
   {
     ScopedFPDFBitmap page_bitmap =
         RenderLoadedPageWithFlags(page.get(), FPDF_ANNOT);
-    CompareBitmap(page_bitmap.get(), 612, 792, kEmailRecommendedFilledChecksum);
+    CompareBitmapToPng(page_bitmap.get(), kEmailRecommendedFilledFilename);
   }
 }
 
-// Disabled due to flakiness.
-TEST_F(CFWLEditEmbedderTest, DISABLED_FillWithNewLineWithMultiline) {
+TEST_F(CFWLEditEmbedderTest, FillWithNewLineWithMultiline) {
   CreateAndInitializeFormPDF("xfa/xfa_multiline_textfield.pdf");
   ScopedPage page = LoadScopedPage(0);
   FORM_OnLButtonDown(form_handle(), page.get(), 0, 115, 58);
@@ -183,14 +181,12 @@ TEST_F(CFWLEditEmbedderTest, DISABLED_FillWithNewLineWithMultiline) {
   // abcde
   // fghij|
   {
-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
-    const char kFilledMultilineMD5[] = "fc1f4d5fdb2c5755005fc525b0a60ec9";
-#else
-    const char kFilledMultilineMD5[] = "a5654e027d8b1667c20f3b86d1918003";
-#endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+    constexpr char kFilledMultilineBasename[] =
+        "xfa_multiline_textfield_filled";
     ScopedFPDFBitmap page_bitmap =
         RenderLoadedPageWithFlags(page.get(), FPDF_ANNOT);
-    CompareBitmap(page_bitmap.get(), 612, 792, kFilledMultilineMD5);
+    CompareBitmapToPngWithExpectationSuffix(page_bitmap.get(),
+                                            kFilledMultilineBasename);
   }
 
   for (size_t i = 0; i < 4; ++i) {
@@ -210,19 +206,17 @@ TEST_F(CFWLEditEmbedderTest, DISABLED_FillWithNewLineWithMultiline) {
   // Should look like:
   // abcde|ghij
   {
-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
-    const char kMultilineBackspaceMD5[] = "8bb62a8100ff1e1cc113d4033e0d824e";
-#else
-    const char kMultilineBackspaceMD5[] = "a2f1dcab92bb1fb7c2f9ccc70100c989";
-#endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+    constexpr char kMultilineBackspaceBasename[] =
+        "xfa_multiline_textfield_backspace";
     ScopedFPDFBitmap page_bitmap =
         RenderLoadedPageWithFlags(page.get(), FPDF_ANNOT);
-    CompareBitmap(page_bitmap.get(), 612, 792, kMultilineBackspaceMD5);
+    CompareBitmapToPngWithExpectationSuffix(page_bitmap.get(),
+                                            kMultilineBackspaceBasename);
   }
 }
 
 TEST_F(CFWLEditEmbedderTest, DateTimePickerTest) {
-  // TODO(crbug.com/pdfium/11): Fix this test and enable for Skia variants.
+  // TODO(crbug.com/40096188): Fix this test and enable for Skia variants.
   if (CFX_DefaultRenderDevice::UseSkiaRenderer()) {
     return;
   }
@@ -233,11 +227,11 @@ TEST_F(CFWLEditEmbedderTest, DateTimePickerTest) {
   // Give focus to date time widget, creating down-arrow button.
   FORM_OnLButtonDown(form_handle(), page.get(), 0, 115, 58);
   FORM_OnLButtonUp(form_handle(), page.get(), 0, 115, 58);
-  const char kSelectedMD5[] = "1036b8837a9dba75c6bd8f9347ae2eb2";
+  constexpr char kSelectedFilename[] = "selected_datetime";
   {
     ScopedFPDFBitmap page_bitmap =
         RenderLoadedPageWithFlags(page.get(), FPDF_ANNOT);
-    CompareBitmap(page_bitmap.get(), 612, 792, kSelectedMD5);
+    CompareBitmapToPng(page_bitmap.get(), kSelectedFilename);
   }
 
   // Click down-arrow button, bringing up calendar widget.
@@ -269,19 +263,11 @@ TEST_F(CFWLEditEmbedderTest, ImageEditTest) {
   CreateAndInitializeFormPDF("xfa/xfa_image_edit.pdf");
   ScopedPage page = LoadScopedPage(0);
   FORM_OnLButtonDown(form_handle(), page.get(), 0, 115, 58);
-  const char* filled_checksum = []() {
-    if (CFX_DefaultRenderDevice::UseSkiaRenderer()) {
-#if BUILDFLAG(IS_APPLE) && defined(ARCH_CPU_ARM64)
-      return "062ad65614888e4f114b99f3396be3e8";
-#else
-      return "23658ed124114f05518372d41c80e41b";
-#endif
-    }
-    return "101cf6223fa2403fba4c413a8310ab02";
-  }();
+  constexpr char kFilledBasename[] = "xfa_image_edit";
   ScopedFPDFBitmap page_bitmap =
       RenderLoadedPageWithFlags(page.get(), FPDF_ANNOT);
-  CompareBitmap(page_bitmap.get(), 612, 792, filled_checksum);
+  CompareBitmapToPngWithFuzzyExpectationSuffix(page_bitmap.get(),
+                                               kFilledBasename);
 }
 
 TEST_F(CFWLEditEmbedderTest, ComboBoxTest) {
@@ -292,15 +278,10 @@ TEST_F(CFWLEditEmbedderTest, ComboBoxTest) {
   FORM_OnLButtonDown(form_handle(), page.get(), 0, 115, 58);
   FORM_OnLButtonUp(form_handle(), page.get(), 0, 115, 58);
   {
-    const char* filled_checksum = []() {
-      if (CFX_DefaultRenderDevice::UseSkiaRenderer()) {
-        return "eaf121044b088a55c94829920d6581c5";
-      }
-      return "dad642ae8a5afce2591ffbcabbfc58dd";
-    }();
+    constexpr char kFilledBasename[] = "filled_combox";
     ScopedFPDFBitmap page_bitmap =
         RenderLoadedPageWithFlags(page.get(), FPDF_ANNOT);
-    CompareBitmap(page_bitmap.get(), 612, 792, filled_checksum);
+    CompareBitmapToPngWithExpectationSuffix(page_bitmap.get(), kFilledBasename);
   }
 
   // Click on down-arrow button, dropdown list appears.

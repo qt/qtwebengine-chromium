@@ -466,7 +466,7 @@ void ValidateRequestMatchesEntry(NavigationRequest* request,
   }
   DCHECK_EQ(request->commit_params().should_clear_history_list,
             entry->should_clear_history_list());
-  DCHECK_EQ(request->common_params().has_user_gesture,
+  DCHECK_EQ(request->common_params().has_possibly_filtered_user_gesture,
             entry->has_user_gesture());
   DCHECK_EQ(request->common_params().base_url_for_data_url,
             entry->GetBaseURLForDataURL());
@@ -1208,7 +1208,14 @@ int NavigationControllerImpl::GetIndexForOffset(int offset) {
 }
 
 std::optional<int> NavigationControllerImpl::GetIndexForGoBack() {
-  for (int index = GetIndexForOffset(-1); index >= 0; index--) {
+  return GetIndexForGoBackWithSkipping(GetCurrentEntryIndex());
+}
+
+std::optional<int> NavigationControllerImpl::GetIndexForGoBackWithSkipping(
+    int from_index) {
+  // Start searching one step behind the provided index for the first entry that
+  // shouldn't be skipped by the history manipulation intervention.
+  for (int index = from_index - 1; index >= 0; index--) {
     if (!GetEntryAtIndex(index)->should_skip_on_back_forward_ui()) {
       return index;
     }
@@ -1241,7 +1248,14 @@ bool NavigationControllerImpl::ShouldEnableBackButton() {
 }
 
 std::optional<int> NavigationControllerImpl::GetIndexForGoForward() {
-  for (int index = GetIndexForOffset(1); index < GetEntryCount(); index++) {
+  return GetIndexForGoForwardWithSkipping(GetCurrentEntryIndex());
+}
+
+std::optional<int> NavigationControllerImpl::GetIndexForGoForwardWithSkipping(
+    int from_index) {
+  // Start searching one step ahead the provided index for the first entry that
+  // shouldn't be skipped by the history manipulation intervention.
+  for (int index = from_index + 1; index < GetEntryCount(); index++) {
     if (!GetEntryAtIndex(index)->should_skip_on_back_forward_ui()) {
       return index;
     }
@@ -1280,22 +1294,49 @@ bool NavigationControllerImpl::CanGoToOffset(int offset) {
 
 #if BUILDFLAG(IS_ANDROID)
 bool NavigationControllerImpl::CanGoToOffsetWithSkipping(int offset) {
+  return GetIndexForOffsetWithSkipping(offset).has_value();
+}
+#endif
+
+#if BUILDFLAG(IS_ANDROID)
+std::optional<int> NavigationControllerImpl::GetIndexForOffsetWithSkipping(
+    int offset) {
+  int current_scan_index = GetCurrentEntryIndex();
+
   if (offset == 0) {
-    return true;
+    return current_scan_index;
   }
-  int increment = offset > 0 ? 1 : -1;
-  int non_skippable_entries = 0;
-  for (int index = GetIndexForOffset(increment);
-       index >= 0 && index < GetEntryCount(); index += increment) {
-    if (!GetEntryAtIndex(index)->should_skip_on_back_forward_ui()) {
-      non_skippable_entries++;
+
+  int steps = std::abs(offset);
+
+  // Note on time complexity:
+  //
+  // This algorithm is O(N) (where N is the number of entries) despite the
+  // nested loop structure.
+  //
+  // The outer loop runs 'steps' times. However, 'current_scan_index' is updated
+  // at the end of each iteration. The inner scanning functions
+  // (GetIndexForGoBackWithSkipping / GetIndexForGoForwardWithSkipping) start
+  // scanning strictly adjacent to the passed input index and never backtrack.
+  // This ensures that each entry in the navigation list is visited at most
+  // once.
+  for (int i = 0; i < steps; ++i) {
+    std::optional<int> next_index;
+
+    if (offset < 0) {
+      next_index = GetIndexForGoBackWithSkipping(current_scan_index);
+    } else {
+      next_index = GetIndexForGoForwardWithSkipping(current_scan_index);
     }
 
-    if (non_skippable_entries == std::abs(offset)) {
-      return true;
+    if (!next_index.has_value()) {
+      return std::nullopt;
     }
+
+    current_scan_index = next_index.value();
   }
-  return false;
+
+  return current_scan_index;
 }
 #endif
 
@@ -1412,32 +1453,14 @@ NavigationControllerImpl::GoToIndexAndReturnAllRequests(int index) {
 
 #if BUILDFLAG(IS_ANDROID)
 void NavigationControllerImpl::GoToOffsetWithSkipping(int offset) {
+  std::optional<int> target_index = GetIndexForOffsetWithSkipping(offset);
+
   // Note: This is actually reached in unit tests.
-  if (!CanGoToOffsetWithSkipping(offset)) {
+  if (!target_index.has_value()) {
     return;
   }
 
-  if (offset == 0) {
-    GoToIndex(GetIndexForOffset(offset));
-    return;
-  }
-  int increment = offset > 0 ? 1 : -1;
-  // Find the offset without counting skippable entries.
-  int target_index = GetIndexForOffset(increment);
-  int non_skippable_entries = 0;
-  for (int index = target_index; index >= 0 && index < GetEntryCount();
-       index += increment) {
-    if (!GetEntryAtIndex(index)->should_skip_on_back_forward_ui()) {
-      non_skippable_entries++;
-    }
-
-    if (non_skippable_entries == std::abs(offset)) {
-      target_index = index;
-      break;
-    }
-  }
-
-  GoToIndex(target_index);
+  GoToIndex(target_index.value());
 }
 #endif
 
@@ -1585,6 +1608,7 @@ bool NavigationControllerImpl::RendererDidNavigate(
     bool is_same_document_navigation,
     bool was_on_initial_empty_document,
     bool previous_document_had_history_intervention_activation,
+    bool caused_by_ad,
     NavigationRequest* navigation_request) {
   DCHECK(navigation_request);
 
@@ -1783,18 +1807,18 @@ bool NavigationControllerImpl::RendererDidNavigate(
     case NAVIGATION_TYPE_MAIN_FRAME_NEW_ENTRY:
       RendererDidNavigateToNewEntry(
           rfh, params, details->is_same_document, details->did_replace_entry,
-          previous_document_had_history_intervention_activation,
+          previous_document_had_history_intervention_activation, caused_by_ad,
           navigation_request, details, &deferred_notifier);
       break;
     case NAVIGATION_TYPE_MAIN_FRAME_EXISTING_ENTRY:
       RendererDidNavigateToExistingEntry(
-          rfh, params, details->is_same_document, was_restored,
+          rfh, params, details->is_same_document, was_restored, caused_by_ad,
           navigation_request, keep_pending_entry, details, &deferred_notifier);
       break;
     case NAVIGATION_TYPE_NEW_SUBFRAME:
       RendererDidNavigateNewSubframe(
           rfh, params, details->is_same_document, details->did_replace_entry,
-          previous_document_had_history_intervention_activation,
+          previous_document_had_history_intervention_activation, caused_by_ad,
           navigation_request, details, &deferred_notifier);
       break;
     case NAVIGATION_TYPE_AUTO_SUBFRAME:
@@ -2201,6 +2225,7 @@ void NavigationControllerImpl::RendererDidNavigateToNewEntry(
     bool is_same_document,
     bool replace_entry,
     bool previous_document_had_history_intervention_activation,
+    bool caused_by_ad,
     NavigationRequest* request,
     LoadCommittedDetails* commit_details,
     ScopedDeferredNavigationStateChangeNotifier* deferred_notifier) {
@@ -2362,6 +2387,10 @@ void NavigationControllerImpl::RendererDidNavigateToNewEntry(
       request->IsRendererInitiated(), request->GetPreviousPageUkmSourceId(),
       rfh);
 
+  SetAdCreatorAndTargetEntryStatusIfNeeded(
+      *new_entry, is_same_document, caused_by_ad, /*is_append=*/!replace_entry,
+      /*is_replace=*/replace_entry, /*is_main_frame=*/true);
+
   // If this is a history navigation and the old entry has an existing
   // back/forward cache metrics object, keep using the old one so that the
   // reasons logged from the last time the page navigated gets preserved.
@@ -2392,6 +2421,7 @@ void NavigationControllerImpl::RendererDidNavigateToExistingEntry(
     const mojom::DidCommitProvisionalLoadParams& params,
     bool is_same_document,
     bool was_restored,
+    bool caused_by_ad,
     NavigationRequest* request,
     bool keep_pending_entry,
     LoadCommittedDetails* commit_details,
@@ -2499,6 +2529,15 @@ void NavigationControllerImpl::RendererDidNavigateToExistingEntry(
                                NavigationEntryImpl::UpdatePolicy::kUpdate,
                                false /* is_new_entry */, commit_details);
 
+  // We determine if this is a replace operation (e.g., history.replaceState)
+  // by checking if we are reusing the current entry. This distinguishes it from
+  // back/forward navigation.
+  bool is_replace = (entry == GetLastCommittedEntry());
+
+  SetAdCreatorAndTargetEntryStatusIfNeeded(
+      *entry, is_same_document, caused_by_ad, /*is_append=*/false, is_replace,
+      /*is_main_frame=*/true);
+
   // The redirected to page should not inherit the favicon from the previous
   // page.
   if (ui::PageTransitionIsRedirect(params.transition) && !is_same_document) {
@@ -2531,6 +2570,7 @@ void NavigationControllerImpl::RendererDidNavigateNewSubframe(
     bool is_same_document,
     bool replace_entry,
     bool previous_document_had_history_intervention_activation,
+    bool caused_by_ad,
     NavigationRequest* request,
     LoadCommittedDetails* commit_details,
     ScopedDeferredNavigationStateChangeNotifier* deferred_notifier) {
@@ -2599,6 +2639,10 @@ void NavigationControllerImpl::RendererDidNavigateNewSubframe(
       replace_entry, previous_document_had_history_intervention_activation,
       request->IsRendererInitiated(), request->GetPreviousPageUkmSourceId(),
       rfh);
+
+  SetAdCreatorAndTargetEntryStatusIfNeeded(
+      *new_entry, is_same_document, caused_by_ad, /*is_append=*/!replace_entry,
+      /*is_replace=*/replace_entry, /*is_main_frame=*/false);
 
   // TODO(creis): Update this to add the frame_entry if we can't find the one
   // to replace, which can happen due to a unique name change. See
@@ -2883,8 +2927,7 @@ bool NavigationControllerImpl::ValidateDataURLAsString(
     return false;
   }
 
-  if (data_url_as_string->size() >
-      kMaxLengthOfDataURLString.InBytesUnsigned()) {
+  if (data_url_as_string->size() > kMaxLengthOfDataURLString.InBytes()) {
     return false;
   }
 
@@ -3031,8 +3074,8 @@ void NavigationControllerImpl::NavigateFromFrameProxy(
     scoped_refptr<network::SharedURLLoaderFactory> blob_url_loader_factory,
     bool is_form_submission,
     const std::optional<blink::Impression>& impression,
-    blink::mojom::NavigationInitiatorActivationAndAdStatus
-        initiator_activation_and_ad_status,
+    bool has_user_gesture,
+    bool started_by_ad,
     base::TimeTicks actual_navigation_start_time,
     base::TimeTicks navigation_start_time,
     bool is_embedder_initiated_fenced_frame_navigation,
@@ -3149,8 +3192,7 @@ void NavigationControllerImpl::NavigateFromFrameProxy(
   params.can_load_local_resources = false;
   /* params.should_replace_current_entry: skip */
   /* params.frame_name: skip */
-  // TODO(clamy): See if user gesture should be propagated to this function.
-  params.has_user_gesture = false;
+  params.has_user_gesture = has_user_gesture;
   params.should_clear_history_list = false;
   params.started_from_context_menu = false;
   /* params.navigation_ui_data: skip */
@@ -3160,16 +3202,16 @@ void NavigationControllerImpl::NavigateFromFrameProxy(
   params.impression = impression;
   params.download_policy = std::move(download_policy);
   params.is_form_submission = is_form_submission;
-  params.initiator_activation_and_ad_status =
-      initiator_activation_and_ad_status;
+  params.started_by_ad = started_by_ad;
   params.has_rel_opener = has_rel_opener;
 
   std::unique_ptr<NavigationRequest> request =
       CreateNavigationRequestFromLoadParams(
           node, params, override_user_agent, should_replace_current_entry,
-          false /* has_user_gesture */, std::move(source_location),
-          ReloadType::NONE, entry.get(), frame_entry.get(),
-          actual_navigation_start_time, navigation_start_time,
+          std::move(source_location), ReloadType::NONE, entry.get(),
+          frame_entry.get(), actual_navigation_start_time,
+          navigation_start_time,
+          /*from_frame_proxy=*/true,
           is_embedder_initiated_fenced_frame_navigation,
           is_unfenced_top_navigation, is_container_initiated,
           storage_access_api_status, embedder_shared_storage_context);
@@ -4064,9 +4106,9 @@ base::WeakPtr<NavigationHandle> NavigationControllerImpl::NavigateWithoutEntry(
   std::unique_ptr<NavigationRequest> request =
       CreateNavigationRequestFromLoadParams(
           node, params, override_user_agent, should_replace_current_entry,
-          params.has_user_gesture, network::mojom::SourceLocation::New(),
-          reload_type, pending_entry_, pending_entry_->GetFrameEntry(node),
-          actual_navigation_start, navigation_start_time);
+          network::mojom::SourceLocation::New(), reload_type, pending_entry_,
+          pending_entry_->GetFrameEntry(node), actual_navigation_start,
+          navigation_start_time, /*from_frame_proxy=*/false);
 
   // If the navigation couldn't start, return immediately and discard the
   // pending NavigationEntry.
@@ -4246,6 +4288,8 @@ NavigationControllerImpl::CreateNavigationEntryFromLoadParams(
   // started_from_context_menu. Move started_from_context_menu to
   // NavigationUIData.
   entry->set_started_from_context_menu(params.started_from_context_menu);
+  entry->set_remove_extra_headers_on_cross_origin_redirect(
+      params.remove_extra_headers_on_cross_origin_redirect);
 
   return entry;
 }
@@ -4256,13 +4300,13 @@ NavigationControllerImpl::CreateNavigationRequestFromLoadParams(
     const LoadURLParams& params,
     bool override_user_agent,
     bool should_replace_current_entry,
-    bool has_user_gesture,
     network::mojom::SourceLocationPtr source_location,
     ReloadType reload_type,
     NavigationEntryImpl* entry,
     FrameNavigationEntry* frame_entry,
     base::TimeTicks actual_navigation_start_time,
     base::TimeTicks navigation_start_time,
+    bool from_frame_proxy,
     bool is_embedder_initiated_fenced_frame_navigation,
     bool is_unfenced_top_navigation,
     bool is_container_initiated,
@@ -4367,6 +4411,10 @@ NavigationControllerImpl::CreateNavigationRequestFromLoadParams(
   std::string page_state_data =
       frame_entry ? frame_entry->page_state().ToEncodedData() : std::string();
 
+  // TODO(clamy): See if user gesture should be propagated to `common_params`.
+  bool has_user_gesture_for_common_params =
+      from_frame_proxy ? false : params.has_user_gesture;
+
   blink::mojom::CommonNavigationParamsPtr common_params =
       blink::mojom::CommonNavigationParams::New(
           url_to_load, params.initiator_origin, params.initiator_base_url,
@@ -4377,7 +4425,7 @@ NavigationControllerImpl::CreateNavigationRequestFromLoadParams(
           actual_navigation_start_time, navigation_start_time,
           params.load_type == LOAD_TYPE_HTTP_POST ? "POST" : "GET",
           params.post_data, std::move(source_location),
-          params.started_from_context_menu, has_user_gesture,
+          params.started_from_context_menu, has_user_gesture_for_common_params,
           false /* has_text_fragment_token */,
           network::mojom::CSPDisposition::CHECK, std::vector<int>(),
           params.href_translate,
@@ -4413,8 +4461,7 @@ NavigationControllerImpl::CreateNavigationRequestFromLoadParams(
           /*document_ukm_source_id=*/ukm::kInvalidSourceId,
           node->pending_frame_policy(),
           /*force_enabled_origin_trials=*/std::vector<std::string>(),
-          /*origin_agent_cluster=*/false,
-          /*origin_agent_cluster_left_as_default=*/true,
+          blink::mojom::AgentClusterKey::NewSiteKey(GURL()),
           /*enabled_client_hints=*/
           std::vector<network::mojom::WebClientHintsType>(),
           /*is_cross_site_cross_browsing_context_group=*/false,
@@ -4449,11 +4496,11 @@ NavigationControllerImpl::CreateNavigationRequestFromLoadParams(
           /*commit_target_frame_token=*/std::nullopt,
   /*is_initial_webui=*/
 #if !BUILDFLAG(IS_ANDROID)
-          GetContentClient()->browser()->IsInitialWebUIURL(common_params->url)
+          GetContentClient()->browser()->IsInitialWebUIURL(common_params->url),
 #else
-          false
+          false,
 #endif
-      );
+          /*permissions_policy_override=*/std::nullopt);
 
 #if BUILDFLAG(IS_ANDROID)
   if (ValidateDataURLAsString(params.data_url_as_string)) {
@@ -4467,15 +4514,19 @@ NavigationControllerImpl::CreateNavigationRequestFromLoadParams(
   std::string extra_headers_crlf;
   base::ReplaceChars(params.extra_headers, "\n", "\r\n", &extra_headers_crlf);
 
+  bool started_with_transient_activation =
+      params.is_renderer_initiated && params.has_user_gesture;
+
   auto navigation_request = NavigationRequest::Create(
       node, std::move(common_params), std::move(commit_params),
       !params.is_renderer_initiated, params.was_opener_suppressed,
       params.initiator_frame_token, params.initiator_process_id,
       extra_headers_crlf, frame_entry, entry, params.is_form_submission,
       params.navigation_ui_data ? params.navigation_ui_data->Clone() : nullptr,
-      params.impression, params.initiator_activation_and_ad_status,
-      params.is_pdf, is_embedder_initiated_fenced_frame_navigation,
-      is_container_initiated, params.has_rel_opener, storage_access_api_status,
+      params.impression, started_with_transient_activation,
+      params.started_by_ad, params.is_pdf,
+      is_embedder_initiated_fenced_frame_navigation, is_container_initiated,
+      params.has_rel_opener, storage_access_api_status,
       embedder_shared_storage_context);
 
   if (!navigation_request) {
@@ -4490,6 +4541,8 @@ NavigationControllerImpl::CreateNavigationRequestFromLoadParams(
   if (params.force_no_https_upgrade) {
     navigation_request->set_force_no_https_upgrade();
   }
+  navigation_request->set_remove_extra_headers_on_cross_origin_redirect(
+      params.remove_extra_headers_on_cross_origin_redirect);
   return navigation_request;
 }
 
@@ -4601,15 +4654,18 @@ NavigationControllerImpl::CreateNavigationRequestFromEntry(
     commit_params->srcdoc_value = frame_tree_node->srcdoc_value();
   }
   const bool is_browser_initiated = !initiator_frame_token;
-  return NavigationRequest::Create(
+  std::unique_ptr<NavigationRequest> request = NavigationRequest::Create(
       frame_tree_node, std::move(common_params), std::move(commit_params),
       is_browser_initiated, false /* was_opener_suppressed */,
       initiator_frame_token, initiator_process_id, entry->extra_headers(),
       frame_entry, entry, is_form_submission, nullptr /* navigation_ui_data */,
       std::nullopt /* impression */,
-      blink::mojom::NavigationInitiatorActivationAndAdStatus::
-          kDidNotStartWithTransientActivation,
+      false /* started_with_transient_activation */, false /* started_by_ad */,
       false /* is_pdf */);
+
+  request->set_remove_extra_headers_on_cross_origin_redirect(
+      entry->remove_extra_headers_on_cross_origin_redirect());
+  return request;
 }
 
 void NavigationControllerImpl::NotifyNavigationEntryCommitted(
@@ -4900,6 +4956,43 @@ void NavigationControllerImpl::SetSkippableForSameDocumentEntries(
         document_sequence_number) {
       entry->set_should_skip_on_back_forward_ui(skippable);
     }
+  }
+}
+
+void NavigationControllerImpl::SetAdCreatorAndTargetEntryStatusIfNeeded(
+    NavigationEntryImpl& new_entry,
+    bool is_same_document,
+    bool caused_by_ad,
+    bool is_append,
+    bool is_replace,
+    bool is_main_frame) {
+  if (last_committed_entry_index_ == -1) {
+    return;
+  }
+
+  NavigationEntryImpl* last_entry = GetLastCommittedEntry();
+  DCHECK(last_entry);
+
+  // Only tag if the navigation appends or replaces an entry (e.g., not
+  // back/forward navigations or other cases).
+  if (!is_append && !is_replace) {
+    return;
+  }
+
+  // Skip tagging for main frame, cross-docment navigation.
+  if (is_main_frame && !is_same_document) {
+    return;
+  }
+
+  // Tag the new entry to indicate if it was created by an ad.
+  new_entry.set_is_entry_created_by_ad(caused_by_ad);
+
+  // For navigations that append a new entry due to an ad, mark the initiating
+  // NavigationEntry as an `ad_entry_creator`. This state is never reset for a
+  // given NavigationEntry, to prevent pages from hiding that an ad entry was
+  // created.
+  if (is_append && caused_by_ad) {
+    last_entry->set_is_ad_entry_creator(true);
   }
 }
 

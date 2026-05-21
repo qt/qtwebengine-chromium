@@ -231,11 +231,11 @@ static int query_formats(const AVFilterContext *ctx,
     static const enum AVPixelFormat pix_fmts[] = { AV_PIX_FMT_YUV444P, AV_PIX_FMT_YUVJ444P, AV_PIX_FMT_YUVA444P, AV_PIX_FMT_NONE };
     int ret;
 
-    formats = ff_make_format_list(sample_fmts);
+    formats = ff_make_sample_format_list(sample_fmts);
     if ((ret = ff_formats_ref(formats, &cfg_in[0]->formats)) < 0)
         return ret;
 
-    formats = ff_make_format_list(pix_fmts);
+    formats = ff_make_pixel_format_list(pix_fmts);
     if ((ret = ff_formats_ref(formats, &cfg_out[0]->formats)) < 0)
         return ret;
 
@@ -1012,7 +1012,7 @@ static int config_output(AVFilterLink *outlink)
         break;
     case DIRECTION_RL:
     case DIRECTION_DU:
-        s->pos = s->sono_size;
+        s->pos = FFMAX(s->sono_size - 1, 0);
         break;
     }
 
@@ -1087,7 +1087,7 @@ static int output_frame(AVFilterContext *ctx)
         case DIRECTION_RL:
             s->pos--;
             if (s->pos < 0) {
-                s->pos = s->sono_size;
+                s->pos = FFMAX(s->sono_size - 1, 0);
                 s->new_frame = 1;
             }
             break;
@@ -1101,7 +1101,7 @@ static int output_frame(AVFilterContext *ctx)
         case DIRECTION_DU:
             s->pos--;
             if (s->pos < 0) {
-                s->pos = s->sono_size;
+                s->pos = FFMAX(s->sono_size - 1, 0);
                 s->new_frame = 1;
             }
             break;
@@ -1115,7 +1115,7 @@ static int output_frame(AVFilterContext *ctx)
             break;
         case DIRECTION_RL:
         case DIRECTION_DU:
-            s->pos = s->sono_size;
+            s->pos = FFMAX(s->sono_size - 1, 0);
             break;
         }
         break;

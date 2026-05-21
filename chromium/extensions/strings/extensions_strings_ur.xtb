@@ -12,6 +12,7 @@
 <translation id="2159915644201199628">تصویر کو ڈیکوڈ نہیں کیا جا سکا: '<ph name="IMAGE_NAME" />'</translation>
 <translation id="2350172092385603347">‏لوکلائزیشن کا استعمال کیا گیا، لیکن مینی فیسٹ میں default_locale کی وضاحت نہیں کی گئی۔</translation>
 <translation id="2576842806987913196">‏اس نام کی ایک CRX فائل پہلے سے موجود ہے۔</translation>
+<translation id="2743583586211388067">آپ کی تنظیم کی ایکسٹینشن کے خطرے کی پالیسی کے تحت اس ایکسٹینشن تک رسائی مسدود ہے۔</translation>
 <translation id="2785530881066938471">‏مواد کی اسکرپٹ کیلئے فائل '<ph name="RELATIVE_PATH" />' کو لوڈ نہیں کیا جا سکا۔ یہ UTF-8 ان کوڈڈ نہیں ہے۔</translation>
 <translation id="2903070246402204397">‏<ph name="EXTENSION_NAME" /> (ایکسٹینشن ID <ph name="EXTENSION_ID" />) کو منتظم نے مسدود کر دیا ہے۔ <ph name="ADMIN_INFO" /></translation>
 <translation id="2988488679308982380">پیکیج انسٹال نہیں کیا جا سکا: '<ph name="ERROR_CODE" />'</translation>
@@ -33,9 +34,11 @@
 <translation id="5356315618422219272">ایپ ویو: <ph name="APPVIEW_TAG_NAME" /></translation>
 <translation id="5456409301717116725">اس ایکسٹیسشن میں کلیدی فائل ‘<ph name="KEY_PATH" />' شامل ہے۔ غالباً آپ کو ایسا کرنے کی ضرورت نہیں ہے۔</translation>
 <translation id="5486326529110362464">نجی کلید کیلئے ان پٹ قدر موجود ہونا ضروری ہے۔</translation>
+<translation id="5707185214361380026">ایکسٹیشن کو اس سے لوڈ کرنے میں ناکام:</translation>
 <translation id="5972529113578162692">اس مشین کے منتظم کا تقاضہ ہے کہ <ph name="EXTENSION_NAME" /> کو انسٹال کیا جائے۔ اسے ان انسٹال نہیں کیا جا سکتا۔</translation>
 <translation id="6027032947578871493"><ph name="VENDOR_NAME" /> کی جانب سے نامعلوم پروڈکٹ <ph name="PRODUCT_ID" /> (نمبر شمار <ph name="SERIAL_NUMBER" />)</translation>
 <translation id="6068932090455285721">وینڈر <ph name="VENDOR_ID" /> کی جانب سے <ph name="PRODUCT_NAME" /></translation>
+<translation id="6220413761270491930">ایکسٹینشن کو لوڈ کرتے ہوئے خرابی</translation>
 <translation id="6322279351188361895">نجی کلید کو پڑھنے میں ناکام۔</translation>
 <translation id="6391538222494443604">ان پٹ ڈائرکٹری موجود ہونا ضروری ہے۔</translation>
 <translation id="641087317769093025">ایکسٹینشن کو زپ سے نہیں نکالا نہیں جا سکا</translation>

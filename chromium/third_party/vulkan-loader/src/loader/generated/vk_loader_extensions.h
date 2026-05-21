@@ -416,6 +416,9 @@ struct loader_icd_term_dispatch {
     PFN_vkDestroyDebugUtilsMessengerEXT DestroyDebugUtilsMessengerEXT;
     PFN_vkSubmitDebugUtilsMessageEXT SubmitDebugUtilsMessageEXT;
 
+    // ---- VK_EXT_descriptor_heap extension commands
+    PFN_vkGetPhysicalDeviceDescriptorSizeEXT GetPhysicalDeviceDescriptorSizeEXT;
+
     // ---- VK_EXT_sample_locations extension commands
     PFN_vkGetPhysicalDeviceMultisamplePropertiesEXT GetPhysicalDeviceMultisamplePropertiesEXT;
 
@@ -500,6 +503,14 @@ struct loader_icd_term_dispatch {
 
     // ---- VK_ARM_performance_counters_by_region extension commands
     PFN_vkEnumeratePhysicalDeviceQueueFamilyPerformanceCountersByRegionARM EnumeratePhysicalDeviceQueueFamilyPerformanceCountersByRegionARM;
+
+    // ---- VK_SEC_ubm_surface extension commands
+#if defined(VK_USE_PLATFORM_UBM_SEC)
+    PFN_vkCreateUbmSurfaceSEC CreateUbmSurfaceSEC;
+#endif // VK_USE_PLATFORM_UBM_SEC
+#if defined(VK_USE_PLATFORM_UBM_SEC)
+    PFN_vkGetPhysicalDeviceUbmPresentationSupportSEC GetPhysicalDeviceUbmPresentationSupportSEC;
+#endif // VK_USE_PLATFORM_UBM_SEC
 };
 
 struct loader_instance_extension_enable_list {
@@ -575,6 +586,9 @@ struct loader_instance_extension_enable_list {
 #if defined(VK_USE_PLATFORM_OHOS)
     uint8_t ohos_surface;
 #endif // defined(VK_USE_PLATFORM_OHOS)
+#if defined(VK_USE_PLATFORM_UBM_SEC)
+    uint8_t sec_ubm_surface;
+#endif // defined(VK_USE_PLATFORM_UBM_SEC)
 };
 
 // Functions that required a terminator need to have a separate dispatch table which contains their corresponding

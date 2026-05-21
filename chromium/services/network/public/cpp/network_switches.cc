@@ -111,16 +111,19 @@ const char kUseRelatedWebsiteSet[] = "use-related-website-set";
 // This allows running local tests against "public" and "local" IP addresses.
 //
 // This switch is specified as a comma-separated list of overrides. Each
-// override is given as a colon-separated "<endpoint>:<address space>" pair.
+// override is an equals-separated "<endpoint|ip-range>=<address space>" pair.
+//
 // Grammar, in pseudo-BNF format:
 //
 //   switch := override-list
 //   override-list := override “,” override-list | <nil>
-//   override := ip-endpoint “=” address-space
+//   override := (ip-endpoint | ip_range) “=” address-space
 //   address-space := “public” | “private” | “local” | "loopback"
 //   ip-endpoint := ip-address ":" port
 //   ip-address := see `net::ParseURLHostnameToAddress()` for details
 //   port := integer in the [0-65535] range
+//   ip-range := ip-address "/" bitmask
+//   bitmask := integer in the [0-128] range
 //
 // Any invalid entries in the comma-separated list are ignored. If the port
 // specified is 0, all ports for the given ip-address will be overridden.
@@ -135,6 +138,11 @@ const char kUseRelatedWebsiteSet[] = "use-related-website-set";
 // have changed slightly due to Local Network Access (LNA) replacing Private
 // Network Access (PNA).
 const char kIpAddressSpaceOverrides[] = "ip-address-space-overrides";
+
+// If set, Local Network Access (LNA) permissions policy features will be
+// default enabled in all frames, rather than requiring explicit delegation.
+const char kLocalNetworkAccessPermissionsPolicyDefaultEnabled[] =
+    "local-network-access-permissions-policy-default-enabled";
 
 // The switch to disable the shared dictionary storage clean up task. Only for
 // testing.

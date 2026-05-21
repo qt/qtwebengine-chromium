@@ -63,6 +63,7 @@
 #include "storage/browser/quota/quota_manager_proxy.h"
 #include "storage/common/file_system/file_system_types.h"
 #include "third_party/blink/public/common/features.h"
+#include "third_party/blink/public/common/features_generated.h"
 #include "third_party/blink/public/common/storage_key/storage_key.h"
 #include "third_party/blink/public/mojom/file_system_access/file_system_access_data_transfer_token.mojom.h"
 #include "third_party/blink/public/mojom/file_system_access/file_system_access_error.mojom.h"
@@ -948,6 +949,11 @@ void FileSystemAccessManagerImpl::BindObserverHost(
         host_receiver) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
+  if (!base::FeatureList::IsEnabled(blink::features::kFileSystemObserver)) {
+    receivers_.ReportBadMessage("FileSystemAccessObserver not available");
+    return;
+  }
+
   const BindingContext& context = receivers_.current_context();
   watcher_manager().BindObserverHost(context, std::move(host_receiver));
 }
@@ -1562,6 +1568,18 @@ void FileSystemAccessManagerImpl::DidChooseEntries(
     return;
   }
 
+#if BUILDFLAG(IS_ANDROID)
+  // Use Content-URIs rather than Virtual Document Paths in FSA.
+  // TODO(crbug.com/7556471): This can be removed if SelectFileDialog is
+  // changed back to return CU rather than VDP from crrev.com/c/7130102.
+  for (auto& entry : entries) {
+    auto content_uri = base::ResolveToContentUri(entry.path);
+    if (content_uri) {
+      entry.path = *content_uri;
+    }
+  }
+#endif
+
   if (!permission_context_) {
     DidVerifySensitiveDirectoryAccess(
         binding_context, options, starting_directory_id,
@@ -2142,8 +2160,7 @@ bool FileSystemAccessManagerImpl::IsSafePathComponent(
     // Check for both '/' and '\' as path separators, regardless of what OS
     // we're running on.
     return component16 != u"." && component16 != u".." &&
-           !base::Contains(component16, '/') &&
-           !base::Contains(component16, '\\');
+           !component16.contains('/') && !component16.contains('\\');
   }
 
   // base::i18n::IsFilenameLegal blocks names that start with '.', so strip out

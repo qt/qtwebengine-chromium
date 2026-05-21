@@ -40,28 +40,22 @@ export function getReleaseNote(): ReleaseNote {
 }
 
 let releaseNote: ReleaseNote = {
-  version: 144,
-  header: 'What\'s new in DevTools 144',
+  version: 146,
+  header: 'What\'s new in DevTools 146',
   markdownLinks: [
     {
-      key: 'request-conditions',
-      link: 'https://developer.chrome.com/blog/new-in-devtools-144/#request-conditions',
+      key: 'mcp-server',
+      link: 'https://developer.chrome.com/blog/new-in-devtools-146/#mcp-server',
     },
     {
-      key: 'mcp-server',
-      link: 'https://developer.chrome.com/blog/new-in-devtools-144/#mcp-server',
+      key: 'console-history',
+      link: 'https://developer.chrome.com/blog/new-in-devtools-146/#console-history',
     },
     {
       key: 'adopted-stylesheets',
-      link: 'https://developer.chrome.com/blog/new-in-devtools-144/#adopted-stylesheets',
+      link: 'https://developer.chrome.com/blog/new-in-devtools-146/#adopted-stylesheets',
     },
   ],
-  videoLinks: [
-    {
-      description: 'See past highlights from Chrome 144',
-      link: 'https://developer.chrome.com/blog/new-in-devtools-144' as Platform.DevToolsPath.UrlString,
-      type: VideoType.WHATS_NEW,
-    },
-  ],
-  link: 'https://developer.chrome.com/blog/new-in-devtools-144/',
+  videoLinks: [],
+  link: 'https://developer.chrome.com/blog/new-in-devtools-146/',
 };

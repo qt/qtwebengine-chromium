@@ -18,7 +18,6 @@
 #include "components/optimization_guide/core/model_execution/session_impl.h"
 #include "components/optimization_guide/proto/on_device_model_execution_config.pb.h"
 #include "components/optimization_guide/proto/text_safety_model_metadata.pb.h"
-#include "components/optimization_guide/public/mojom/model_broker.mojom-shared.h"
 #include "components/optimization_guide/public/mojom/model_broker.mojom.h"
 #include "mojo/public/cpp/base/proto_wrapper.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
@@ -214,6 +213,14 @@ void ModelBrokerClient::CreateSession(mojom::OnDeviceFeature feature,
                                       CreateSessionCallback callback) {
   GetSubscriber(feature).CreateSession(std::move(config_params),
                                        std::move(callback), logger_);
+}
+
+void ModelBrokerClient::AddModelDownloadProgressObserver(
+    mojo::PendingRemote<on_device_model::mojom::DownloadObserver> observer) {
+  // TODO: crbug.com/474999857 Enable this interface on Android.
+#if !BUILDFLAG(IS_ANDROID)
+  remote_->AddModelDownloadProgressObserver(std::move(observer));
+#endif  // !BUILDFLAG(IS_ANDROID)
 }
 
 }  // namespace optimization_guide

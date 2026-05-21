@@ -3,17 +3,22 @@
 // found in the LICENSE file.
 
 import * as SDK from '../../core/sdk/sdk.js';
-import type * as Protocol from '../../generated/protocol.js';
+import * as Protocol from '../../generated/protocol.js';
 import {createTarget} from '../../testing/EnvironmentHelpers.js';
-import {describeWithMockConnection, setMockConnectionResponseHandler} from '../../testing/MockConnection.js';
-import {protocolCallFrame, stringifyStackTrace} from '../../testing/StackTraceHelpers.js';
+import {MockCDPConnection} from '../../testing/MockCDPConnection.js';
+import {setupRuntimeHooks} from '../../testing/RuntimeHelpers.js';
+import {setupSettingsHooks} from '../../testing/SettingsHelpers.js';
+import {debuggerCallFrame, protocolCallFrame, stringifyStackTrace} from '../../testing/StackTraceHelpers.js';
 
 import * as StackTrace from './stack_trace.js';
 // TODO(crbug.com/444191656): Expose a `testing` bundle.
 // eslint-disable-next-line @devtools/es-modules-import
 import * as StackTraceImpl from './stack_trace_impl.js';
 
-describeWithMockConnection('StackTraceModel', () => {
+describe('StackTraceModel', () => {
+  setupSettingsHooks();
+  setupRuntimeHooks();
+
   const identityTranslateFn: StackTraceImpl.StackTraceModel.TranslateRawFrames = (frames, _target) =>
       Promise.resolve(frames.map(f => [{
                                    url: f.url,
@@ -23,10 +28,13 @@ describeWithMockConnection('StackTraceModel', () => {
                                  }]));
 
   function setup() {
-    const target = createTarget();
+    const connection = new MockCDPConnection();
+    const target = createTarget({connection});
     return {
       model: target.model(StackTraceImpl.StackTraceModel.StackTraceModel)!,
+      connection,
       translateSpy: sinon.spy(identityTranslateFn),
+      debuggerModel: target.model(SDK.DebuggerModel.DebuggerModel)!,
     };
   }
 
@@ -90,15 +98,16 @@ describeWithMockConnection('StackTraceModel', () => {
     });
 
     it('correctly handles a async fragments from different targets', async () => {
+      const {model, connection} = setup();
       {
         let index = 0;
-        setMockConnectionResponseHandler(
-            'Debugger.enable', () => ({debuggerId: `target${index++}` as Protocol.Runtime.UniqueDebuggerId}));
+        connection.setHandler(
+            'Debugger.enable', () => ({result: {debuggerId: `target${index++}` as Protocol.Runtime.UniqueDebuggerId}}));
         sinon.stub(SDK.DebuggerModel.DebuggerModel, 'resyncDebuggerIdForModels');
       }
-      const {model} = setup();
       const [model1, model2] = [
-        createTarget().model(SDK.DebuggerModel.DebuggerModel)!, createTarget().model(SDK.DebuggerModel.DebuggerModel)!
+        createTarget({connection}).model(SDK.DebuggerModel.DebuggerModel)!,
+        createTarget({connection}).model(SDK.DebuggerModel.DebuggerModel)!
       ];
 
       await Promise.all([
@@ -176,6 +185,15 @@ describeWithMockConnection('StackTraceModel', () => {
       ].join('\n'));
     });
 
+    it('allows empty sync fragments', async () => {
+      const {model} = setup();
+
+      const stackTrace = await model.createFromProtocolRuntime({callFrames: []}, identityTranslateFn);
+
+      assert.lengthOf(stackTrace.syncFragment.frames, 0);
+      assert.lengthOf(stackTrace.asyncFragments, 0);
+    });
+
     it('calls the translate function with the correct raw frames', async () => {
       const {model, translateSpy} = setup();
       const callFrames = [
@@ -187,6 +205,20 @@ describeWithMockConnection('StackTraceModel', () => {
       await model.createFromProtocolRuntime({callFrames}, translateSpy);
 
       sinon.assert.calledOnceWithMatch(translateSpy, callFrames, model.target());
+    });
+
+    it('translates identical stack traces only once', async () => {
+      const {model, translateSpy} = setup();
+      const callFrames = [
+        'foo.js:1:foo:1:10',
+        'bar.js:2:bar:2:20',
+        'baz.js:3:baz:3:30',
+      ].map(protocolCallFrame);
+
+      await model.createFromProtocolRuntime({callFrames}, translateSpy);
+      await model.createFromProtocolRuntime({callFrames}, translateSpy);
+
+      sinon.assert.calledOnce(translateSpy);
     });
 
     it('throws if the translation function returns the wrong number of frames', async () => {
@@ -219,6 +251,37 @@ describeWithMockConnection('StackTraceModel', () => {
 
       assert.strictEqual(
           stackTrace.syncFragment.frames[0].missingDebugInfo?.type, StackTrace.StackTrace.MissingDebugInfoType.NO_INFO);
+    });
+
+    it('translates different stack traces sequentially', async () => {
+      const {model} = setup();
+      const callFrames1 = ['foo.js:1:foo:1:10', 'bar.js:2:bar:2:20', 'baz.js:3:baz:3:30'].map(protocolCallFrame);
+      const callFrames2 = ['foo.js:1:foo:1:10', 'bar.js:2:bar:2:20', 'baz.js:4:baz:4:40'].map(protocolCallFrame);
+
+      let resolveTranslate: () => void = () => {};
+      const translatePromise = new Promise<void>(resolve => {
+        resolveTranslate = resolve;
+      });
+      const delayedTranslateFn: StackTraceImpl.StackTraceModel.TranslateRawFrames = async (frames, target) => {
+        await translatePromise;
+        return await identityTranslateFn(frames, target);
+      };
+      const translateSpy = sinon.spy(delayedTranslateFn);
+      const stackTracePromise1 = model.createFromProtocolRuntime({callFrames: callFrames1}, translateSpy);
+      const stackTracePromise2 = model.createFromProtocolRuntime({callFrames: callFrames2}, translateSpy);
+
+      await new Promise(r => setTimeout(r, 0));  // Run microtask queue as far as possible.
+      sinon.assert.calledOnceWithExactly(translateSpy, callFrames1, model.target());
+
+      resolveTranslate();
+      await stackTracePromise1;
+
+      // Now the second call should have happened.
+      await new Promise(r => setTimeout(r, 0));  // Run microtask queue as far as possible.
+      sinon.assert.calledTwice(translateSpy);
+      sinon.assert.calledWith(translateSpy, callFrames2, model.target());
+
+      await stackTracePromise2;
     });
   });
 
@@ -365,6 +428,49 @@ describeWithMockConnection('StackTraceModel', () => {
 
       const frame = stackTrace.syncFragment.frames[0];
       assert.strictEqual(frame.missingDebugInfo?.type, StackTrace.StackTrace.MissingDebugInfoType.NO_INFO);
+    });
+  });
+
+  describe('createFromDebuggerPaused', () => {
+    it('assigns the right DebuggerModel.CallFrame to the right StackTrace.Frame', async () => {
+      const {model, debuggerModel} = setup();
+      sinon.stub(debuggerModel, 'scriptForId').returns({} as SDK.Script.Script);
+
+      const details = new SDK.DebuggerModel.DebuggerPausedDetails(
+          debuggerModel,
+          [
+            'foo.js:id1:foo:1:10',
+            'bar.js:id2:bar:2:20',
+          ].map(debuggerCallFrame),
+          Protocol.Debugger.PausedEventReason.Other, undefined, []);
+
+      const stackTrace = await model.createFromDebuggerPaused(details, identityTranslateFn);
+
+      assert.strictEqual(stackTrace.syncFragment.frames[0].sdkFrame, details.callFrames[0]);
+      assert.strictEqual(stackTrace.syncFragment.frames[1].sdkFrame, details.callFrames[1]);
+    });
+
+    it('assigns the same DebuggerModel.CallFrame to inlined StackTrace.Frame', async () => {
+      const {model, debuggerModel} = setup();
+      sinon.stub(debuggerModel, 'scriptForId').returns({} as SDK.Script.Script);
+
+      const details = new SDK.DebuggerModel.DebuggerPausedDetails(
+          debuggerModel, [debuggerCallFrame('foo.js:id1:foo:1:10')], Protocol.Debugger.PausedEventReason.Other,
+          undefined, []);
+
+      const stackTrace = await model.createFromDebuggerPaused(details, () => Promise.resolve([[
+        {url: 'foo.ts', name: 'foo', line: 10, column: 20},
+        {url: 'bar.ts', name: 'bar', line: 20, column: 30},
+        {url: 'baz.ts', name: 'baz', line: 40, column: 50},
+      ]]));
+
+      assert.strictEqual(stackTrace.syncFragment.frames[0].sdkFrame, details.callFrames[0]);
+
+      assert.strictEqual(stackTrace.syncFragment.frames[1].sdkFrame.inlineFrameIndex, 1);
+      assert.strictEqual(stackTrace.syncFragment.frames[1].sdkFrame.functionName, 'bar');
+
+      assert.strictEqual(stackTrace.syncFragment.frames[2].sdkFrame.inlineFrameIndex, 2);
+      assert.strictEqual(stackTrace.syncFragment.frames[2].sdkFrame.functionName, 'baz');
     });
   });
 });

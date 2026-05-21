@@ -44,10 +44,7 @@ class Deserializer {
     }
 
     base::span<const volatile uint8_t> span = memory_.take_first(sizeof(T));
-    // SAFETY: Take `data()` and `size()` from another span
-    auto src = UNSAFE_BUFFERS(
-        base::span(const_cast<const uint8_t*>(span.data()), span.size()));
-    base::byte_span_from_ref(val).copy_from(src);
+    base::byte_span_from_ref(val).copy_from(span);
     return true;
   }
 
@@ -120,7 +117,7 @@ class ServiceFontManager::SkiaDiscardableManager
         &crash_key, base::StringPrintf(kFormatString, type, fontSize));
     NOTREACHED();
 #else
-    if (dump_count_ < kMaxDumps && base::RandInt(1, 100) == 1 &&
+    if (dump_count_ < kMaxDumps && base::RandIntInclusive(1, 100) == 1 &&
         !font_manager_->disable_oopr_debug_crash_dump()) {
       crash_reporter::ScopedCrashKeyString auto_clear(
           &crash_key, base::StringPrintf(kFormatString, type, fontSize));

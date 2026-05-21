@@ -58,42 +58,57 @@ const Error& InvalidRpcError() {
   return kError;
 }
 
+// Returns DSCP suggestions based on Table 1 in RFC 8837.
+// https://datatracker.ietf.org/doc/html/rfc8837#name-dscp-mappings
+UdpSocket::DscpMode GetDscpSuggestion(bool has_audio, bool has_video) {
+  if (has_video) {
+    // Whether or not we have audio, use Assured Forwarding with
+    // lowest level drop precedence (AF1).
+    return UdpSocket::DscpMode::kAF41;
+  } else if (has_audio) {
+    // If this is an audio only session, the spec indicates that Expedited
+    // Forwarding (EF) should be used.
+    return UdpSocket::DscpMode::kEF;
+  }
+
+  // No audio or video means no session, which means this function should not be
+  // called.
+  OSP_NOTREACHED();
+}
+
+std::optional<int> ToWire(std::optional<UdpSocket::DscpMode> mode) {
+  if (mode) {
+    return static_cast<int>(mode.value());
+  }
+  return std::nullopt;
+}
+
 AudioStream CreateStream(int index,
                          const AudioCaptureConfig& config,
-                         bool use_android_rtp_hack) {
-  return AudioStream{Stream{index,
-                            Stream::Type::kAudioSource,
-                            config.channels,
-                            GetPayloadType(config.codec, use_android_rtp_hack),
-                            GenerateSsrc(true /*high_priority*/),
-                            config.target_playout_delay,
-                            GenerateRandomBytes16(),
-                            GenerateRandomBytes16(),
-                            true /* receiver_rtcp_event_log */,
-                            {} /* receiver_rtcp_dscp */,
-                            config.sample_rate,
-                            config.codec_parameter},
-                     config.codec,
-                     std::max(config.bit_rate, kDefaultAudioMinBitRate)};
+                         bool use_android_rtp_hack,
+                         std::optional<UdpSocket::DscpMode> dscp_mode) {
+  return AudioStream{
+      Stream{index, Stream::Type::kAudioSource, config.channels,
+             GetPayloadType(config.codec, use_android_rtp_hack),
+             GenerateSsrc(true /*high_priority*/), config.target_playout_delay,
+             GenerateRandomBytes16(), GenerateRandomBytes16(),
+             true /* receiver_rtcp_event_log */, ToWire(dscp_mode),
+             config.sample_rate, config.codec_parameter},
+      config.codec, std::max(config.bit_rate, kDefaultAudioMinBitRate)};
 }
 
 VideoStream CreateStream(int index,
                          const VideoCaptureConfig& config,
-                         bool use_android_rtp_hack) {
+                         bool use_android_rtp_hack,
+                         std::optional<UdpSocket::DscpMode> dscp_mode) {
   constexpr int kVideoStreamChannelCount = 1;
   return VideoStream{
-      Stream{index,
-             Stream::Type::kVideoSource,
-             kVideoStreamChannelCount,
+      Stream{index, Stream::Type::kVideoSource, kVideoStreamChannelCount,
              GetPayloadType(config.codec, use_android_rtp_hack),
-             GenerateSsrc(false /*high_priority*/),
-             config.target_playout_delay,
-             GenerateRandomBytes16(),
-             GenerateRandomBytes16(),
-             true /* receiver_rtcp_event_log */,
-             {} /* receiver_rtcp_dscp */,
-             kRtpVideoTimebase,
-             config.codec_parameter},
+             GenerateSsrc(false /*high_priority*/), config.target_playout_delay,
+             GenerateRandomBytes16(), GenerateRandomBytes16(),
+             true /* receiver_rtcp_event_log */, ToWire(dscp_mode),
+             kRtpVideoTimebase, config.codec_parameter},
       config.codec,
       config.max_frame_rate,
       (config.max_bit_rate >= kDefaultVideoMinBitRate)
@@ -111,45 +126,60 @@ template <typename S, typename C>
 void CreateStreamList(int offset_index,
                       const std::vector<C>& configs,
                       bool use_android_rtp_hack,
+                      std::optional<UdpSocket::DscpMode> dscp_mode,
                       std::vector<S>* out) {
   out->reserve(configs.size());
   for (size_t i = 0; i < configs.size(); ++i) {
-    out->emplace_back(
-        CreateStream(i + offset_index, configs[i], use_android_rtp_hack));
+    out->emplace_back(CreateStream(i + offset_index, configs[i],
+                                   use_android_rtp_hack, dscp_mode));
   }
 }
 
 Offer CreateMirroringOffer(const std::vector<AudioCaptureConfig>& audio_configs,
                            const std::vector<VideoCaptureConfig>& video_configs,
-                           bool use_android_rtp_hack) {
+                           bool use_android_rtp_hack,
+                           bool enable_dscp) {
   Offer offer;
   offer.cast_mode = CastMode::kMirroring;
 
+  const bool has_audio = !audio_configs.empty();
+  const bool has_video = !video_configs.empty();
+  std::optional<UdpSocket::DscpMode> dscp_mode;
+  if (enable_dscp) {
+    dscp_mode = GetDscpSuggestion(has_audio, has_video);
+  }
+
   // NOTE here: IDs will always follow the pattern:
   // [0.. audio streams... N - 1][N.. video streams.. K]
-  CreateStreamList(0, audio_configs, use_android_rtp_hack,
+  CreateStreamList(0, audio_configs, use_android_rtp_hack, dscp_mode,
                    &offer.audio_streams);
   CreateStreamList(audio_configs.size(), video_configs, use_android_rtp_hack,
-                   &offer.video_streams);
+                   dscp_mode, &offer.video_streams);
 
   return offer;
 }
 
 Offer CreateRemotingOffer(const AudioCaptureConfig& audio_config,
                           const VideoCaptureConfig& video_config,
-                          bool use_android_rtp_hack) {
+                          bool use_android_rtp_hack,
+                          bool enable_dscp) {
   Offer offer;
   offer.cast_mode = CastMode::kRemoting;
 
+  std::optional<UdpSocket::DscpMode> dscp_mode;
+  if (enable_dscp) {
+    dscp_mode = GetDscpSuggestion(true, true);
+  }
+
   AudioStream audio_stream =
-      CreateStream(0, audio_config, use_android_rtp_hack);
+      CreateStream(0, audio_config, use_android_rtp_hack, dscp_mode);
   audio_stream.codec = AudioCodec::kNotSpecified;
   audio_stream.stream.rtp_payload_type =
       GetPayloadType(AudioCodec::kNotSpecified, use_android_rtp_hack);
   offer.audio_streams.push_back(std::move(audio_stream));
 
   VideoStream video_stream =
-      CreateStream(1, video_config, use_android_rtp_hack);
+      CreateStream(1, video_config, use_android_rtp_hack, dscp_mode);
   video_stream.codec = VideoCodec::kNotSpecified;
   video_stream.stream.rtp_payload_type =
       GetPayloadType(VideoCodec::kNotSpecified, use_android_rtp_hack);
@@ -227,6 +257,38 @@ RemotingCapabilities ToCapabilities(const ReceiverCapability& capability) {
   return out;
 }
 
+void MaybeSetDscp(const Offer& offer, const Answer& answer, Environment& env) {
+  if (answer.send_indexes.empty() || answer.receiver_rtcp_dscp.empty()) {
+    return;
+  }
+
+  // DSCP support is all or nothing, which is both recommended by the RFC
+  // spec and also a practical result of sharing one UDP socket for audio
+  // and video streams. Thus, only enable it if the receiver wanted it on
+  // all selected streams.
+  std::vector<int> sorted_indexes = answer.send_indexes;
+  std::vector<int> sorted_dscp_indexes = answer.receiver_rtcp_dscp;
+  std::ranges::sort(sorted_indexes);
+  std::ranges::sort(sorted_dscp_indexes);
+  if (sorted_indexes != sorted_dscp_indexes) {
+    return;
+  }
+
+  // To be spec compliant, the DSCP value is nested on each stream. However,
+  // we either use one DSCP value for every stream, or none at all. If dynamic
+  // DSCP values end up being supported, we may need to look up the original
+  // stream here.
+  std::optional<int> suggested_dscp;
+  if (!offer.audio_streams.empty()) {
+    suggested_dscp = offer.audio_streams.front().stream.receiver_rtcp_dscp;
+  } else if (!offer.video_streams.empty()) {
+    suggested_dscp = offer.video_streams.front().stream.receiver_rtcp_dscp;
+  }
+  if (suggested_dscp) {
+    env.SetDscp(static_cast<UdpSocket::DscpMode>(suggested_dscp.value()));
+  }
+}
+
 }  // namespace
 
 SenderSession::Client::~Client() = default;
@@ -268,8 +330,9 @@ Error SenderSession::Negotiate(std::vector<AudioCaptureConfig> audio_configs,
     return Error(Error::Code::kParameterInvalid, "Invalid configs provided.");
   }
 
-  Offer offer = CreateMirroringOffer(audio_configs, video_configs,
-                                     config_.use_android_rtp_hack);
+  Offer offer =
+      CreateMirroringOffer(audio_configs, video_configs,
+                           config_.use_android_rtp_hack, config_.enable_dscp);
   return StartNegotiation(std::move(audio_configs), std::move(video_configs),
                           std::move(offer));
 }
@@ -283,8 +346,9 @@ Error SenderSession::NegotiateRemoting(AudioCaptureConfig audio_config,
                  "Passed invalid audio or video config.");
   }
 
-  Offer offer = CreateRemotingOffer(audio_config, video_config,
-                                    config_.use_android_rtp_hack);
+  Offer offer =
+      CreateRemotingOffer(audio_config, video_config,
+                          config_.use_android_rtp_hack, config_.enable_dscp);
   return StartNegotiation({audio_config}, {video_config}, std::move(offer));
 }
 
@@ -385,7 +449,7 @@ void SenderSession::OnCapabilitiesResponse(ErrorOr<ReceiverMessage> message) {
   // error response to indicate remoting is not supported.
   if (!message) {
     config_.client.OnError(this, Error(Error::Code::kRemotingNotSupported,
-                                       message.error().ToString()));
+                                       message.error().message()));
     return;
   }
   if (!message.value().valid ||
@@ -403,8 +467,8 @@ void SenderSession::OnCapabilitiesResponse(ErrorOr<ReceiverMessage> message) {
   }
 
   if (remoting_version > kSupportedRemotingVersion) {
-    std::string error_message = StringPrintf(
-        "Receiver is using too new of a version for remoting (%d > %d)",
+    std::string error_message = StringFormat(
+        "Receiver is using too new of a version for remoting ({} > {})",
         remoting_version, kSupportedRemotingVersion);
     config_.client.OnError(this, Error(Error::Code::kRemotingNotSupported,
                                        std::move(error_message)));
@@ -513,6 +577,11 @@ SenderSession::ConfiguredSenders SenderSession::SelectSenders(
       config_.remote_address, static_cast<uint16_t>(answer.udp_port)});
   OSP_LOG_INFO << "Streaming to " << config_.environment->remote_endpoint()
                << "...";
+
+  // If DSCP was successfully negotiated, enable it.
+  if (config_.enable_dscp) {
+    MaybeSetDscp(current_negotiation_->offer, answer, *config_.environment);
+  }
 
   ConfiguredSenders senders;
   for (size_t i = 0; i < answer.send_indexes.size(); ++i) {

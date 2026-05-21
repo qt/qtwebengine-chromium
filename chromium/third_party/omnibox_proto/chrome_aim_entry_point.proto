@@ -52,4 +52,16 @@ enum ChromeAimEntryPoint {
 
   // AIM is entered from the lens contextual searchbox.
   DESKTOP_CHROME_LENS_CONTEXTUAL_SEARCHBOX_ENTRY_POINT = 117;
+
+  // AIM is entered from the NTP Threads.
+  DESKTOP_CHROME_NTP_THREADS_ENTRY_POINT = 129;
+
+  // AIM is entered from toolbar button to enter cobrowsing mode in Chrome.
+  DESKTOP_CHROME_COBROWSE_TOOLBAR_BUTTON = 130;
+
+  // AIM is entered from the fusebox entrypoint on Chrome iOS.
+  IOS_CHROME_FUSEBOX_ENTRY_POINT = 139;
+
+  // AIM is entered from the fusebox entrypoint on Chrome Android.
+  ANDROID_CHROME_FUSEBOX_ENTRY_POINT = 140;
 }

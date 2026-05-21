@@ -1,0 +1,5 @@
+{
+  "responseType": "LAUNCH_ERROR",
+  "requestId": 123,
+  "reason": "NOT_FOUND"
+}

@@ -4,17 +4,19 @@
 
 #include "device/fido/fido_discovery_factory.h"
 
-#include "base/containers/contains.h"
+#include <algorithm>
+
 #include "base/notreached.h"
 #include "build/build_config.h"
 #include "components/device_event_log/device_event_log.h"
 #include "device/bluetooth/bluetooth_adapter_factory.h"
 #include "device/fido/cable/fido_cable_discovery.h"
+#include "device/fido/cable/pairing.h"
 #include "device/fido/cable/v2_discovery.h"
 #include "device/fido/enclave/enclave_discovery.h"
-#include "device/fido/features.h"
 #include "device/fido/fido_discovery_base.h"
 #include "device/fido/hid/fido_hid_discovery.h"
+#include "device/fido/public/features.h"
 
 #if BUILDFLAG(IS_WIN)
 // clang-format off
@@ -90,8 +92,8 @@ std::vector<std::unique_ptr<FidoDiscoveryBase>> FidoDiscoveryFactory::Create(
         std::vector<std::unique_ptr<FidoDiscoveryBase>> ret;
         const bool have_v2_discovery_data =
             cable_data_.has_value() &&
-            base::Contains(*cable_data_, CableDiscoveryData::Version::V2,
-                           &CableDiscoveryData::version);
+            std::ranges::contains(*cable_data_, CableDiscoveryData::Version::V2,
+                                  &CableDiscoveryData::version);
         if (qr_generator_key_.has_value() || have_v2_discovery_data) {
           ret.emplace_back(std::make_unique<cablev2::Discovery>(
               request_type_.value(), network_context_factory_,

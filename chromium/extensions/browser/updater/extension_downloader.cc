@@ -6,6 +6,8 @@
 
 #include <stddef.h>
 
+#include <optional>
+#include <string>
 #include <string_view>
 #include <utility>
 
@@ -26,7 +28,6 @@
 #include "components/signin/public/identity_manager/access_token_info.h"
 #include "components/signin/public/identity_manager/identity_manager.h"
 #include "components/signin/public/identity_manager/primary_account_access_token_fetcher.h"
-#include "components/signin/public/identity_manager/scope_set.h"
 #include "components/update_client/update_query_params.h"
 #include "content/public/browser/file_url_loader.h"
 #include "content/public/browser/shared_cors_origin_access_list.h"
@@ -702,7 +703,7 @@ void ExtensionDownloader::RetryRequestOrHandleFailureOnManifestFetchFailure(
 
 void ExtensionDownloader::OnManifestLoadComplete(
     std::unique_ptr<network::SimpleURLLoader> loader,
-    std::unique_ptr<std::string> response_body) {
+    std::optional<std::string> response_body) {
   const GURL url = loader->GetFinalURL();
   DCHECK(loader);
 
@@ -851,6 +852,7 @@ ExtensionDownloader::UpdateAvailability
 ExtensionDownloader::GetUpdateAvailability(
     const ExtensionId& extension_id,
     const std::vector<const UpdateManifestResult*>& possible_candidates,
+    bool is_corrupt_reinstall,
     UpdateManifestResult** update_result_out) const {
   const bool is_extension_pending = delegate_->IsExtensionPending(extension_id);
   std::string extension_version;
@@ -897,11 +899,13 @@ ExtensionDownloader::GetUpdateAvailability(
       }
 
       const base::Version existing_version(extension_version);
-      if (update_version.CompareTo(existing_version) <= 0) {
-        VLOG(2) << extension_id << " version is not older than '"
-                << update_version_str << "'";
+      int versions_compare = update_version.CompareTo(existing_version);
+      // The installation should be allowed when the version is upgraded, or
+      // when reinstalling the same versions of a corrupted extension.
+      if (versions_compare < 0 ||
+          (versions_compare == 0 && !is_corrupt_reinstall)) {
         bool can_rollback =
-            update_version.CompareTo(existing_version) < 0 &&
+            versions_compare < 0 &&
             (delegate_->RequestRollback(extension_id) ==
              ExtensionDownloaderDelegate::RequestRollbackResult::kAllowed);
         if (!can_rollback) {
@@ -970,8 +974,9 @@ void ExtensionDownloader::DetermineUpdates(
             << " update entries for " << extension_id;
 
     UpdateManifestResult* update_result = nullptr;
-    UpdateAvailability update_availability = GetUpdateAvailability(
-        extension_id, possible_candidates, &update_result);
+    UpdateAvailability update_availability =
+        GetUpdateAvailability(extension_id, possible_candidates,
+                              task.is_corrupt_reinstall, &update_result);
 
     switch (update_availability) {
       case UpdateAvailability::kAvailable:

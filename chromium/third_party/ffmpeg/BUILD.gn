@@ -42,15 +42,16 @@ if (has_nasm_deps) {
       nasm_flags += [ "-DARCH_X86_64" ]
     }
 
-    inputs = [
-      "$platform_config_root/config.asm",
-      "$platform_config_root/config_components.asm",
+    inputs =
+        ffmpeg_asm_deps + [
+          "$platform_config_root/config.asm",
+          "$platform_config_root/config_components.asm",
 
-      # Sets visibility hidden for cglobal functions. Explicitly included
-      # to avoid overlooking changes to this file in incremental builds.
-      "libavutil/x86/x86inc.asm",
-      "libavutil/x86/x86util.asm",
-    ]
+          # Sets visibility hidden for cglobal functions. Explicitly included
+          # to avoid overlooking changes to this file in incremental builds.
+          "libavutil/x86/x86inc.asm",
+          "libavutil/x86/x86util.asm",
+        ]
 
     if (ffmpeg_branding == "Chrome") {
       inputs += [ "libavcodec/x86/videodsp.asm" ]
@@ -216,6 +217,7 @@ target(link_target_type, "ffmpeg_internal") {
               "$platform_config_root/config.h",
               "$platform_config_root/libavutil/avconfig.h",
             ]
+  inputs = ffmpeg_c_deps
   include_dirs = [
     platform_config_root,
     ".",

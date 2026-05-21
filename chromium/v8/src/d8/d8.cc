@@ -13,6 +13,7 @@
 #include <iomanip>
 #include <iterator>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <type_traits>
 #include <unordered_map>
@@ -71,6 +72,7 @@
 #include "src/parsing/scanner-character-streams.h"
 #include "src/profiler/profile-generator.h"
 #include "src/snapshot/snapshot.h"
+#include "src/strings/owning-external-string-resource.h"
 #include "src/tasks/cancelable-task.h"
 #include "src/tracing/perfetto-sdk.h"
 #include "src/utils/ostreams.h"
@@ -86,6 +88,7 @@
 #endif  // V8_ENABLE_MAGLEV
 
 #ifdef V8_ENABLE_PARTITION_ALLOC
+#include <partition_alloc/partition_root.h>
 #include <partition_alloc/shim/allocator_shim_default_dispatch_to_partition_alloc.h>
 #endif  // V8_ENABLE_PARTITION_ALLOC
 
@@ -528,22 +531,6 @@ static platform::tracing::TraceConfig* CreateTraceConfigFromJSON(
 }
 
 }  // namespace tracing
-
-class ExternalOwningOneByteStringResource
-    : public String::ExternalOneByteStringResource {
- public:
-  ExternalOwningOneByteStringResource() = default;
-  ExternalOwningOneByteStringResource(
-      std::unique_ptr<base::OS::MemoryMappedFile> file)
-      : file_(std::move(file)) {}
-  const char* data() const override {
-    return static_cast<char*>(file_->memory());
-  }
-  size_t length() const override { return file_->size(); }
-
- private:
-  std::unique_ptr<base::OS::MemoryMappedFile> file_;
-};
 
 // static variables:
 CounterMap* Shell::counter_map_;
@@ -4721,6 +4708,31 @@ MaybeLocal<Context> Shell::CreateEvaluationContext(Isolate* isolate) {
         context->GetExtrasBindingObject()->Get(context, name).ToLocalChecked();
     context->Global()->Set(context, name, console).FromJust();
   }
+#ifdef V8_ENABLE_HARDWARE_WATCHPOINT_SUPPORT
+  if (options.memory_corruption_via_watchpoints) {
+    // The global "Sandbox" object is installed in src/sandbox/testing.cc via
+    // `SandboxTesting::InstallMemoryCorruptionApi`. We add another method to
+    // it with a callback implemented in hardware-watchpoints.cc.
+    Local<Object> sandbox_object =
+        context->Global()
+            ->Get(context,
+                  String::NewFromUtf8Literal(isolate, "Sandbox",
+                                             NewStringType::kInternalized))
+            .ToLocalChecked()
+            .As<Object>();
+    Local<FunctionTemplate> templ = FunctionTemplate::New(
+        isolate, SetHardwareWatchpointCallback, {}, {}, 0,
+        ConstructorBehavior::kThrow, SideEffectType::kHasSideEffect);
+    Local<Function> function = templ->GetFunction(context).ToLocalChecked();
+    CHECK(sandbox_object
+              ->Set(context,
+                    String::NewFromUtf8Literal(isolate,
+                                               "markForCorruptionOnAccess",
+                                               NewStringType::kInternalized),
+                    function)
+              .FromMaybe(false));
+  }
+#endif  // V8_ENABLE_HARDWARE_WATCHPOINT_SUPPORT
 
   return handle_scope.Escape(context);
 }
@@ -4957,6 +4969,12 @@ void Shell::WriteLcovData(v8::Isolate* isolate, const char* file) {
 }
 
 void Shell::OnExit(v8::Isolate* isolate, bool dispose) {
+#ifdef V8_ENABLE_HARDWARE_WATCHPOINT_SUPPORT
+  if (v8::Shell::options.memory_corruption_via_watchpoints) {
+    ResetAllHardwareWatchpoints();
+  }
+#endif  // V8_ENABLE_HARDWARE_WATCHPOINT_SUPPORT
+
   platform::NotifyIsolateShutdown(g_default_platform, isolate);
 
   if (Worker* worker = Worker::GetCurrentWorker()) {
@@ -5253,14 +5271,16 @@ MaybeLocal<String> Shell::ReadFile(Isolate* isolate, const char* name,
     return MaybeLocal<String>();
   }
   size_t full_file_size = file->size();
-  if (full_file_size > size_t{i::kMaxInt}) {
+  if (full_file_size > size_t{String::kMaxLength}) {
     FATAL("Input file too large (%zu bytes)", full_file_size);
   }
+  static_assert(String::kMaxLength <= i::kMaxInt);
   int size = static_cast<int>(full_file_size);
   char* chars = static_cast<char*>(file->memory());
   if (i::v8_flags.use_external_strings && i::String::IsAscii(chars, size)) {
     String::ExternalOneByteStringResource* resource =
-        new ExternalOwningOneByteStringResource(std::move(file));
+        new i::OwningExternalOneByteStringResource(
+            std::string_view(chars, size));
     return String::NewExternalOneByte(isolate, resource);
   }
   return String::NewFromUtf8(isolate, chars, NewStringType::kNormal, size);
@@ -5732,8 +5752,6 @@ bool Worker::StartWorkerThread(Isolate* requester,
 }
 
 void Worker::WorkerThread::Run() {
-  v8::SandboxHardwareSupport::PrepareCurrentThreadForHardwareSandboxing();
-
   // Prevent a lifetime cycle from Worker -> WorkerThread -> Worker.
   // We must clear the worker_ field of the thread, but we keep the
   // worker alive via a stack root until the thread finishes execution
@@ -6310,7 +6328,20 @@ bool Shell::SetOptions(int argc, char* argv[]) {
     } else if (FlagWithArgMatches("--perf-ack-fd", &flag_value, argc, argv,
                                   &i)) {
       options.perf_ack_fd = atoi(flag_value);
-#endif
+#endif  // V8_OS_LINUX
+#ifdef V8_ENABLE_HARDWARE_WATCHPOINT_SUPPORT
+    } else if (bool enable_tracing = FlagMatches(
+                   "--trace-memory-corruption-via-watchpoints", &argv[i]);
+               enable_tracing ||
+               FlagMatches("--memory-corruption-via-watchpoints", &argv[i])) {
+      // The tracing flag also implies enabling the API.
+      options.memory_corruption_via_watchpoints = true;
+      options.trace_memory_corruption_via_watchpoints = enable_tracing;
+      // Imply --expose-memory-corruption-api.
+      i::v8_flags.expose_memory_corruption_api = true;
+      // Disable compaction to get stable addresses.
+      i::v8_flags.compact = false;
+#endif  // V8_ENABLE_HARDWARE_WATCHPOINT_SUPPORT
     } else if (FlagMatches("--disable-in-process-stack-traces", &argv[i])) {
       options.disable_in_process_stack_traces = true;
 #ifdef V8_OS_POSIX
@@ -7066,11 +7097,15 @@ void ConfigurePartitionAllocIfEnabled() {
   static constexpr size_t kThreadCacheLargeSizeThreshold = 1 << 15;
   ::partition_alloc::ThreadCache::SetLargestCachedSize(
       kThreadCacheLargeSizeThreshold);
-#if defined(V8_OS_DARWIN) || defined(V8_OS_WIN)
-  allocator_shim::AdjustDefaultAllocatorForForeground();
-#endif  // defined(V8_OS_DARWIN) || defined(V8_OS_WIN)
+  // Adjust slot span ring size to 1024. Keep it aligned with constants in
+  // partition_alloc_constants.h
+  static constexpr int kForegroundMaxEmptySlotSpansDirtyBytesShift = 2;
+  static constexpr int kSlotSpanRingSize = 1 << 10;
+  allocator_shim::internal::PartitionAllocMalloc::Allocator()
+      ->AdjustSlotSpanRing(kSlotSpanRingSize,
+                           kForegroundMaxEmptySlotSpansDirtyBytesShift);
 #endif  // PA_BUILDFLAG(USE_PARTITION_ALLOC_AS_MALLOC)
-#endif
+#endif  // defined(V8_ENABLE_PARTITION_ALLOC)
 }
 
 }  // namespace
@@ -7078,7 +7113,16 @@ void ConfigurePartitionAllocIfEnabled() {
 int Shell::Main(int argc, char* argv[]) {
   ConfigurePartitionAllocIfEnabled();
   v8::base::EnsureConsoleOutput();
-  if (!SetOptions(argc, argv)) return 1;
+  if (!v8::Shell::SetOptions(argc, argv)) return 1;
+
+#ifdef V8_ENABLE_HARDWARE_WATCHPOINT_SUPPORT
+  if (v8::Shell::options.memory_corruption_via_watchpoints) {
+    bool enable_tracing =
+        v8::Shell::options.trace_memory_corruption_via_watchpoints;
+    SetupForHardwareWatchpoints(enable_tracing);
+  }
+#endif  // V8_ENABLE_HARDWARE_WATCHPOINT_SUPPORT
+
   if (!i::v8_flags.fuzzing) d8_install_sigterm_handler();
 
   base::FlushDenormalsScope denormals_scope(options.flush_denormals);
@@ -7278,10 +7322,6 @@ int Shell::Main(int argc, char* argv[]) {
 
 #ifdef V8_FUZZILLI
 
-#ifdef V8_ENABLE_SANDBOX_HARDWARE_SUPPORT
-  sanitizer_cov_prepare_for_hardware_sandbox();
-#endif  // V8_ENABLE_SANDBOX_HARDWARE_SUPPORT
-
   if (options.fuzzilli_enable_builtins_coverage) {
     cov_init_builtins_edges(static_cast<uint32_t>(
         i::BasicBlockProfiler::Get()
@@ -7317,6 +7357,15 @@ int Shell::Main(int argc, char* argv[]) {
         }
       }
 #endif  // V8_FUZZILLI
+#ifdef V8_DUMPLING
+      v8::internal::Isolate* internal_isolate =
+          reinterpret_cast<v8::internal::Isolate*>(isolate);
+      // TODO(mdanylo): ideally this should be a part of fd-based protocol
+      // between Fuzzilli and V8.
+      if (internal_isolate->dumpling_manager()->IsDumpingEnabled()) {
+        internal_isolate->dumpling_manager()->PrepareForNextREPRLCycle();
+      }
+#endif  // V8_DUMPLING
 
       result = 0;
 
@@ -7425,6 +7474,15 @@ int Shell::Main(int argc, char* argv[]) {
         profile->Delete();
         cpu_profiler->Dispose();
       }
+
+#ifdef V8_DUMPLING
+      // Need to make sure that dump file is fully readable by Fuzzilli.
+      // TODO(mdanylo): ideally this should be a part of fd-based protocol
+      // between Fuzzilli and V8.
+      if (internal_isolate->dumpling_manager()->IsDumpingEnabled()) {
+        internal_isolate->dumpling_manager()->FinishCurrentREPRLCycle();
+      }
+#endif  // V8_DUMPLING
 
 #ifdef V8_FUZZILLI
       // Send result to parent (fuzzilli) and reset edge guards.

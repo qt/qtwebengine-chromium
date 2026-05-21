@@ -20,8 +20,6 @@ class WebFrame;
 
 namespace autofill {
 
-class AutofillRendererIDJavaScriptFeature;
-
 // Communicates with the JavaScript file, autofill_controller.js, which contains
 // form parsing and autofill functions.
 class AutofillJavaScriptFeature : public web::JavaScriptFeature {
@@ -39,14 +37,14 @@ class AutofillJavaScriptFeature : public web::JavaScriptFeature {
   // Fills `data` into the active form field in `frame`, then executes the
   // `callback`. `callback` cannot be nil.
   void FillActiveFormField(web::WebFrame* frame,
-                           base::Value::Dict data,
+                           base::DictValue data,
                            base::OnceCallback<void(BOOL)> callback);
 
   // Fills `data` into the field identified by `data['renderer_id']`,
   // then executes callback. This is similar to `FillActiveFormField`, but does
   // not require that the target element be the active element.
   void FillSpecificFormField(web::WebFrame* frame,
-                             base::Value::Dict data,
+                             base::DictValue data,
                              base::OnceCallback<void(BOOL)> callback);
 
   // Fills a number of fields in the same named form for full-form Autofill.
@@ -58,7 +56,7 @@ class AutofillJavaScriptFeature : public web::JavaScriptFeature {
   // which must contain pairs of unique renderer ids of filled fields and
   // corresponding filled values. `callback` cannot be nil.
   void FillForm(web::WebFrame* frame,
-                base::Value::Dict data,
+                base::DictValue data,
                 autofill::FieldRendererId force_fill_field_id,
                 base::OnceCallback<void(NSString*)> callback);
 
@@ -77,7 +75,7 @@ class AutofillJavaScriptFeature : public web::JavaScriptFeature {
       base::OnceCallback<void(NSString*)> callback);
 
   // Marks up the form with autofill field prediction data (diagnostic tool).
-  void FillPredictionData(web::WebFrame* frame, base::Value::Dict data);
+  void FillPredictionData(web::WebFrame* frame, base::DictValue data);
 
   // web::JavaScriptFeature:
   std::optional<std::string> GetScriptMessageHandlerName() const override;
@@ -99,11 +97,6 @@ class AutofillJavaScriptFeature : public web::JavaScriptFeature {
   AutofillJavaScriptFeature(const AutofillJavaScriptFeature&) = delete;
   AutofillJavaScriptFeature& operator=(const AutofillJavaScriptFeature&) =
       delete;
-
-  //  TODO(crbug.com/359538514): Remove test constructor once isolated world for
-  //  Autofill is launched.
-  AutofillJavaScriptFeature(
-      AutofillRendererIDJavaScriptFeature* renderer_id_feature);
 };
 
 }  // namespace autofill

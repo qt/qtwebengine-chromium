@@ -22,13 +22,19 @@ class MockConnectionDelegate : public Connection::Delegate {
   MockConnectionDelegate& operator=(MockConnectionDelegate&&) noexcept = delete;
   ~MockConnectionDelegate() override = default;
 
-  MOCK_METHOD0(OnConnected, void());
-  MOCK_METHOD0(OnClosedByRemote, void());
-  MOCK_METHOD0(OnDiscarded, void());
-  MOCK_METHOD1(OnError, void(const std::string_view message));
-  MOCK_METHOD0(OnTerminated, void());
-  MOCK_METHOD1(OnStringMessage, void(const std::string_view message));
-  MOCK_METHOD1(OnBinaryMessage, void(const std::vector<uint8_t>& data));
+  MOCK_METHOD(void, OnConnected, (), (override));
+  MOCK_METHOD(void, OnClosedByRemote, (), (override));
+  MOCK_METHOD(void, OnDiscarded, (), (override));
+  MOCK_METHOD(void, OnError, (const std::string_view message), (override));
+  MOCK_METHOD(void, OnTerminated, (), (override));
+  MOCK_METHOD(void,
+              OnStringMessage,
+              (const std::string_view message),
+              (override));
+  MOCK_METHOD(void,
+              OnBinaryMessage,
+              (const std::vector<uint8_t>& data),
+              (override));
 };
 
 }  // namespace openscreen::osp

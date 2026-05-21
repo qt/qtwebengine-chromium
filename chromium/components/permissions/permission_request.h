@@ -8,6 +8,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <variant>
 
 #include "base/functional/callback.h"
 #include "base/functional/callback_helpers.h"
@@ -16,11 +17,13 @@
 #include "components/content_settings/core/common/content_settings.h"
 #include "components/content_settings/core/common/content_settings_types.h"
 #include "components/permissions/permission_decision.h"
+#include "components/permissions/permission_prompt_decision.h"
 #include "components/permissions/permission_request_data.h"
 #include "components/permissions/permission_request_enums.h"
 #include "components/permissions/request_type.h"
 #include "components/permissions/resolvers/permission_prompt_options.h"
 #include "content/public/browser/global_routing_id.h"
+#include "services/metrics/public/cpp/ukm_source_id.h"
 #include "url/gurl.h"
 
 namespace content {
@@ -47,10 +50,9 @@ class PermissionRequest {
   // be passed into this callback.
   // If `is_one_time` is true, the decision will last until all tabs of
   // `requesting_origin_` are closed or navigated away from.
-  using PermissionDecidedCallback = base::RepeatingCallback<void(
-      PermissionDecision /*decision*/,
-      bool /*is_final_decision*/,
-      const PermissionRequestData& /*request_data*/)>;
+  using PermissionDecidedCallback =
+      base::RepeatingCallback<void(const PermissionPromptDecision&,
+                                   const PermissionRequestData&)>;
 
   // `permission_decided_callback` is called when the permission request is
   // resolved by the user (see comment on PermissionDecidedCallback above).
@@ -180,7 +182,7 @@ class PermissionRequest {
   // If |is_one_time| is true the permission will last until all tabs of
   // |origin| are closed or navigated away from, and then the permission will
   // automatically expire after 1 day.
-  void PermissionGranted(bool is_one_time);
+  void PermissionGranted(const PromptOptions& prompt_options, bool is_one_time);
 
   // Called when the user has denied the requested permission.
   void PermissionDenied();
@@ -194,12 +196,6 @@ class PermissionRequest {
   // To keep things simple this metric is only recorded for the most popular
   // request types.
   PermissionRequestGestureType GetGestureType() const;
-
-  // Used to store the prompt options for the permission request.
-  void SetPromptOptions(PromptOptions prompt_options);
-
-  // Return stored prompt options.
-  const PromptOptions& prompt_options() const { return data_->prompt_options; }
 
   virtual const std::vector<std::string>& GetRequestedAudioCaptureDeviceIds()
       const;
@@ -222,6 +218,12 @@ class PermissionRequest {
   const content::GlobalRenderFrameHostId& get_requesting_frame_id() const {
     return data_->id.global_render_frame_host_id();
   }
+
+  void set_ukm_source_id(ukm::SourceId ukm_source_id) {
+    ukm_source_id_ = ukm_source_id;
+  }
+
+  ukm::SourceId get_ukm_source_id() const { return ukm_source_id_; }
 
   // Permission name text fragment which can be used in permission prompts to
   // identify the permission being requested.
@@ -251,6 +253,8 @@ class PermissionRequest {
   base::OnceClosure request_finished_callback_;
 
   const bool uses_automatic_embargo_ = true;
+
+  ukm::SourceId ukm_source_id_ = ukm::kInvalidSourceId;
 
   base::WeakPtrFactory<PermissionRequest> weak_factory_{this};
 };

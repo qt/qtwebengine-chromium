@@ -4,7 +4,7 @@
 
 #include "base/test/metrics/histogram_tester.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/ui/views/extensions/extensions_toolbar_container_view_controller.h"
+#include "chrome/browser/ui/views/extensions/extensions_toolbar_desktop_view_controller.h"
 #include "chrome/browser/ui/views/user_education/custom_webui_help_bubble.h"
 #include "chrome/browser/ui/webui/extensions_zero_state_promo/zero_state_promo.mojom.h"
 #include "chrome/common/pref_names.h"
@@ -38,7 +38,7 @@ class ExtensionsZeroStatePromoTestBase : public InteractiveFeaturePromoTest {
 
   void SetUpOnMainThread() override {
     InteractiveFeaturePromoTest::SetUpOnMainThread();
-    ExtensionsToolbarContainerViewController::WakeZeroStatePromoForTesting();
+    ExtensionsToolbarDesktopViewController::WakeZeroStatePromoForTesting();
   }
 
   auto CheckZeroStatePromoClosedReason(
@@ -259,9 +259,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionsZeroStateCustomUiChipIphTestV1,
       ClickElement(kZeroStatePromoWebUiIphId, kDismissButton,
                    ExecuteJsMode::kFireAndForget),
       WaitForHide(CustomWebUIHelpBubble::kWebViewIdForTesting),
-      CheckResult(
-          [this] { return browser()->tab_strip_model()->GetTabCount(); }, 1,
-          "CheckTabCount"),
+      CheckResult([this] { return browser()->tab_strip_model()->count(); }, 1,
+                  "CheckTabCount"),
       CheckZeroStatePromoClosedReason(
           user_education::FeaturePromoClosedReason::kDismiss));
 }
@@ -418,9 +417,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionsZeroStateCustomUiChipIphTestV2,
       ClickElement(kZeroStatePromoWebUiIphId, kDismissButton,
                    ExecuteJsMode::kFireAndForget),
       WaitForHide(CustomWebUIHelpBubble::kWebViewIdForTesting),
-      CheckResult(
-          [this] { return browser()->tab_strip_model()->GetTabCount(); }, 1,
-          "CheckTabCount"),
+      CheckResult([this] { return browser()->tab_strip_model()->count(); }, 1,
+                  "CheckTabCount"),
       CheckZeroStatePromoClosedReason(
           user_education::FeaturePromoClosedReason::kDismiss));
 }
@@ -577,9 +575,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionsZeroStateCustomUiChipIphTestV3,
       ClickElement(kZeroStatePromoWebUiIphId, kDismissButton,
                    ExecuteJsMode::kFireAndForget),
       WaitForHide(CustomWebUIHelpBubble::kWebViewIdForTesting),
-      CheckResult(
-          [this] { return browser()->tab_strip_model()->GetTabCount(); }, 1,
-          "CheckTabCount"),
+      CheckResult([this] { return browser()->tab_strip_model()->count(); }, 1,
+                  "CheckTabCount"),
       CheckZeroStatePromoClosedReason(
           user_education::FeaturePromoClosedReason::kDismiss));
 }
@@ -759,9 +756,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionsZeroStateCustomUiPlainLinkIphTest,
       ClickElement(kZeroStatePromoWebUiIphId, kDismissButton,
                    ExecuteJsMode::kFireAndForget),
       WaitForHide(CustomWebUIHelpBubble::kWebViewIdForTesting),
-      CheckResult(
-          [this] { return browser()->tab_strip_model()->GetTabCount(); }, 1,
-          "CheckTabCount"),
+      CheckResult([this] { return browser()->tab_strip_model()->count(); }, 1,
+                  "CheckTabCount"),
       CheckZeroStatePromoClosedReason(
           user_education::FeaturePromoClosedReason::kDismiss));
 }
@@ -781,9 +777,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionsZeroStateCustomUiPlainLinkIphTest,
       ClickElement(kZeroStatePromoWebUiIphId, kGotItButton,
                    ExecuteJsMode::kFireAndForget),
       WaitForHide(CustomWebUIHelpBubble::kWebViewIdForTesting),
-      CheckResult(
-          [this] { return browser()->tab_strip_model()->GetTabCount(); }, 1,
-          "CheckTabCount"),
+      CheckResult([this] { return browser()->tab_strip_model()->count(); }, 1,
+                  "CheckTabCount"),
       CheckZeroStatePromoClosedReason(
           user_education::FeaturePromoClosedReason::kDismiss));
 }

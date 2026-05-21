@@ -361,10 +361,14 @@ TEST(LowLevelHashTest, VerifyGolden) {
 #if defined(ABSL_IS_BIG_ENDIAN) || !defined(ABSL_HAVE_INTRINSIC_INT128) || \
     UINTPTR_MAX != UINT64_MAX
   constexpr uint64_t kGolden[kNumGoldenOutputs] = {};
-  GTEST_SKIP()
-      << "We only maintain golden data for little endian 64 bit systems with "
-         "128 bit intristics.";
-#elif defined(__SSE4_2__) && defined(__AES__)
+  // This conditional is to avoid an unreachable code warning.
+  bool skip = true;
+  if (skip) {
+    GTEST_SKIP()
+        << "We only maintain golden data for little endian 64 bit systems with "
+           "128 bit intristics.";
+  }
+#elif (defined(__SSE4_2__) && defined(__AES__))
   constexpr uint64_t kGolden[kNumGoldenOutputs] = {
       0xd6bdb2c9ba5e55f2, 0xffd3e23d4115a8ae, 0x2c3218ef486127de,
       0x554fa7f3a262b886, 0x06304cbf82e312d3, 0x490b3fb5af80622c,
@@ -376,28 +380,63 @@ TEST(LowLevelHashTest, VerifyGolden) {
       0xe4c78173c7ea537b, 0x0bbdc2bcabdb50b1, 0xd9aa134df2d87623,
       0x6c4907c9477a9409, 0xc3e418a5dbda52e5, 0x4d24f3e9d0dda93a,
       0xcdb565a363dbe45f, 0xa95f228c8ee57478, 0x6b8f00bab5130227,
-      0x2d05a0f44818b67a, 0xa64b55b071afbbea, 0xa205bfe6c724ce4d,
-      0x69dd26ca8ac21744, 0xef80e2ff2f6a9bc0, 0xde266c0baa202c20,
-      0xfa3463080ac74c50, 0x379d968a40125c2b, 0x4cbbd0a7b3c7d648,
-      0xc92afd93f4c665d2, 0x6e28f5adb7ae38dc, 0x7c689c9c237be35e,
-      0xaea41b29bd9d0f73, 0x832cef631d77e59f, 0x70cac8e87bc37dd3,
-      0x8e8c98bbde68e764, 0xd6117aeb3ddedded, 0xd796ab808e766240,
-      0x8953d0ea1a7d9814, 0xa212eba4281b391c, 0x21a555a8939ce597,
-      0x809d31660f6d81a8, 0x2356524b20ab400f, 0x5bc611e1e49d0478,
-      0xba9c065e2f385ce2, 0xb0a0fd12f4e83899, 0x14d076a35b1ff2ca,
-      0x8acd0bb8cf9a93c0, 0xe62e8ec094039ee4, 0x38a536a7072bdc61,
-      0xca256297602524f8, 0xfc62ebfb3530caeb, 0x8d8b0c05520569f6,
-      0xbbaca65cf154c59d, 0x3739b5ada7e338d3, 0xdb9ea31f47365340,
-      0x410b5c9c1da56755, 0x7e0abc03dbd10283, 0x136f87be70ed442e,
-      0x6b727d4feddbe1e9, 0x074ebb21183b01df, 0x3fe92185b1985484,
-      0xc5d8efd3c68305ca, 0xd9bada21b17e272e, 0x64d73133e1360f83,
-      0xeb8563aa993e21f9, 0xe5e8da50cceab28f, 0x7a6f92eb3223d2f3,
-      0xbdaf98370ea9b31b, 0x1682a84457f077bc, 0x4abd2d33b6e3be37,
-      0xb35bc81a7c9d4c04, 0x3e5bde3fb7cfe63d, 0xff3abe6e2ffec974,
-      0xb8116dd26cf6feec, 0x7a77a6e4ed0cf081, 0xb71eec2d5a184316,
-      0x6fa932f77b4da817, 0x795f79b33909b2c4, 0x1b8755ef6b5eb34e,
-      0x2255b72d7d6b2d79, 0xf2bdafafa90bd50a, 0x442a578f02cb1fc8,
-      0xc25aefe55ecf83db, 0x3114c056f9c5a676,
+      0x2d05a0f44818b67a, 0xd6bf7d990b5f44cb, 0xa3608bdb4712861a,
+      0xf20c33e5e355330b, 0xbc86e1b13130180d, 0x0848221b397b839a,
+      0x17cc0acf44a7e210, 0xc18c6dc584fe0f62, 0x896c7858a59f991d,
+      0xeab1e6d7d2856ed7, 0x7e4b2d99c23edc51, 0x9aeeeb7fa46e7cf0,
+      0x161b9f2e3611790f, 0x5f82aae18d971b36, 0x8d0dd9965881e162,
+      0x56700ea26285895a, 0xcd919c86c29a053e, 0x3e5d589282d9a722,
+      0x92caee9f48a66604, 0x7e1a2fd9b06f14b0, 0xce1d5293f95b0178,
+      0x8101361290e70a11, 0x570e3e9c9eafc1c6, 0x77b6241926a7a568,
+      0x313e5cb34f346699, 0xab8ebeab0514b82b, 0x6e0a43763a310408,
+      0x761b76ec22b2e440, 0x4238c84a9ec00528, 0xb9ea1f6d4d5552af,
+      0xd21f8f110b9dc060, 0xb3d3842b69ac3689, 0xd0a88aa1dcf59869,
+      0xf3f69f637b123403, 0xf5f34b1068cac7da, 0xe69a08d604774abf,
+      0x57648d3a73332437, 0x9762947f5013d00d, 0x35c5d734a0015922,
+      0xbee2fe5a104ce209, 0xedb060efa6efca34, 0x5ccf0f4786d97bc2,
+      0x1ef8ed72e80d7bef, 0x58522deb49c5e30f, 0xde97cd2a6f8bd13b,
+      0x3fae37c6f9855d09, 0xea99ae786feca261, 0x8c6d1d46670b0943,
+      0x84658b2a232c7bfb, 0x7058b7a7968de394, 0x0d44fba68e25aa8f,
+      0xc7f687020f8eb00b, 0xbf9671e1196153d6, 0x1009be891b7f83e7,
+      0x4f9457fb4aa12865, 0x30a49d9563643b32, 0x0302e2c5b46d5a3a,
+      0x77553f42fb0bfbf7, 0x26b95e89f0077110, 0x76ce68ebe01191ba,
+      0x724110fb509e4376, 0xebe74b016b5cfb88, 0x3b0fe11dcf175fc9,
+      0x20b737b9c0490538, 0x0db21c429b45fd17,
+  };
+#elif (defined(ABSL_INTERNAL_HAVE_ARM_NEON) && defined(__ARM_FEATURE_CRYPTO))
+  constexpr uint64_t kGolden[kNumGoldenOutputs] = {
+      0x248c82373f7f0d24, 0x0a4f8cbf55047086, 0x498dd0a4445ed65f,
+      0x6d418b193638ab0f, 0x4112c1ce9142980e, 0x02132db6a189f206,
+      0x36e550ca9139ee44, 0xe0a67fdbd8627314, 0x2b9528fe18f65d1d,
+      0x037d9cf48ca9fd1c, 0xa87222631332ca06, 0x31f35e09af065022,
+      0xacd6f1d29071c8e5, 0x54eb4f229a0d15a4, 0x132c27c6a747e136,
+      0x13d7cb427efe7e2f, 0x71a5d21e00f00dcd, 0xdb909cbf1b0fbb64,
+      0x4dc943ad8901fa5b, 0xacf4b3d41a46feb5, 0x12a37d19c14ffd65,
+      0xdb511011bcdd95b9, 0xd6d75af1c8b86dbd, 0xc65aefdcff941a8e,
+      0xbea311ef212c0306, 0xc49861afe7a6888b, 0x598424b541daf528,
+      0x4cc264fbb57c4640, 0x1a7376211a5e674a, 0xcb82900ad06bf89b,
+      0xd9d6201d685a4971, 0x77ed120a277ce616, 0x9bd5ad973b4d358c,
+      0x880850ff91b6b772, 0xf9d24d40448fce38, 0x870b8ee54a31707d,
+      0x613130fe647bd169, 0x04a0cc02a81989f3, 0x998adbda0ab3f8fa,
+      0x2b28729269102040, 0xbdb9be95e352a6d5, 0xd5e2a55d78bd9fb0,
+      0xef609c2b22eb93d6, 0xac23eb02494ae8e0, 0xcb8c5ab08163d2a3,
+      0x63f822fc21b42698, 0xe7e8814288c470cc, 0x143b07aae2ccd592,
+      0xc5d142f4806e13a3, 0xe695de2a1d8a344b, 0xc8ddc3ed542a5988,
+      0x60ec526cc1e5274d, 0x732a04dcf34a7ac9, 0xf1daef52096a872a,
+      0x541f04b87b3de158, 0xeb143a708b621f94, 0x0849cd39e156b25f,
+      0x36eb0746caa62c5c, 0xbfa14eb3c31f78bf, 0x256637f35dc41f20,
+      0x08293113693a58e2, 0x064202395a685840, 0x0593285ee1ed42ea,
+      0xdcbf16fd8a44f213, 0xe9f5586745f4f23d, 0x66808a2c18365ae9,
+      0xa70496836a5166e1, 0xe9ed7d0f9f572246, 0x024ba6063287d0cb,
+      0xa441f6ac287479db, 0x72502c190698ee02, 0xb79705c6ced58c29,
+      0x5c03f52968cb1fdc, 0x6f4b7c6bed6cc232, 0xed834775697438d3,
+      0x6273b075725ffb6f, 0x60df77a69e9aafb2, 0x84483bf48b989c4e,
+      0x37e42a1d35795a31, 0x280dcdb36b853ae5, 0x63309d698f2dd42c,
+      0x24e65be2c805ea5b, 0x1db08e0d041efdf9, 0xb94aea8c4648772b,
+      0x109f2b81aa4660d2, 0xcae92809feb1a390, 0x0a1cbf9628383b41,
+      0xca0bf416706fc5c8, 0x9d4751bd7e638488, 0x343b363d5d96c7c7,
+      0x6bacaedde1daf5aa, 0x721ead1618c4e405, 0xcfc19e400cb6dbc6,
+      0x7ac0dd9128ec8cc3, 0xb7dd428bb44fc744,
   };
 #else
   constexpr uint64_t kGolden[kNumGoldenOutputs] = {
@@ -438,7 +477,7 @@ TEST(LowLevelHashTest, VerifyGolden) {
 
   auto hash_fn = [](absl::string_view s, uint64_t state) {
     return absl::hash_internal::CombineLargeContiguousImplOn64BitLengthGt32(
-        reinterpret_cast<const unsigned char*>(s.data()), s.size(), state);
+        state, reinterpret_cast<const unsigned char*>(s.data()), s.size());
   };
 
 #if UPDATE_GOLDEN

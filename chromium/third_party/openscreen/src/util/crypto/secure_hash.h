@@ -12,7 +12,6 @@
 
 #include "openssl/base.h"
 #include "openssl/evp.h"
-#include "platform/base/macros.h"
 
 namespace openscreen {
 

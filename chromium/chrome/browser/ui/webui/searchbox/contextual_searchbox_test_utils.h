@@ -16,6 +16,7 @@
 #include "components/contextual_search/contextual_search_metrics_recorder.h"
 #include "components/contextual_search/internal/test_composebox_query_controller.h"
 #include "components/lens/contextual_input.h"
+#include "components/variations/scoped_variations_ids_provider.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "mojo/public/cpp/test_support/test_utils.h"
 #include "services/network/public/cpp/weak_wrapper_shared_url_loader_factory.h"
@@ -103,10 +104,49 @@ class MockContextualSearchMetricsRecorder
               NotifySessionStateChanged,
               (contextual_search::SessionState session_state),
               (override));
+  MOCK_METHOD(void,
+              NotifyQuerySubmitted,
+              (bool has_tab_context, bool has_non_tab_context),
+              (override));
+  MOCK_METHOD(void, ActivateMetricsFunnel, (const std::string&), (override));
+  MOCK_METHOD(void,
+              RecordToolMode,
+              (composebox_query::mojom::ToolMode tool_mode),
+              (override));
+  MOCK_METHOD(void,
+              RecordModelMode,
+              (composebox_query::mojom::ModelMode model_mode),
+              (override));
+  MOCK_METHOD(void,
+              RecordModesOnSubmission,
+              (composebox_query::mojom::ToolMode tool_mode,
+               composebox_query::mojom::ModelMode model_mode),
+              (override));
 
   void NotifySessionStateChangedBase(
       contextual_search::SessionState session_state) {
     ContextualSearchMetricsRecorder::NotifySessionStateChanged(session_state);
+  }
+
+  void NotifyQuerySubmittedBase(bool has_tab_context,
+                                bool has_non_tab_context) {
+    ContextualSearchMetricsRecorder::NotifyQuerySubmitted(has_tab_context,
+                                                          has_non_tab_context);
+  }
+
+  void RecordToolModeBase(composebox_query::mojom::ToolMode tool_mode) {
+    ContextualSearchMetricsRecorder::RecordToolMode(tool_mode);
+  }
+
+  void RecordModelModeBase(composebox_query::mojom::ModelMode model_mode) {
+    ContextualSearchMetricsRecorder::RecordModelMode(model_mode);
+  }
+
+  void RecordModesOnSubmissionBase(
+      composebox_query::mojom::ToolMode tool_mode,
+      composebox_query::mojom::ModelMode model_mode) {
+    ContextualSearchMetricsRecorder::RecordModesOnSubmission(tool_mode,
+                                                             model_mode);
   }
 };
 

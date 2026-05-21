@@ -256,6 +256,7 @@ MaybeError Device::TickImpl() {
     // error during execution and early out as a result.
     DAWN_TRY(CheckDebugLayerAndGenerateErrors());
     DAWN_TRY(ToBackend(GetQueue())->SubmitPendingCommands());
+    UnmapDestroyedBuffers();
     return {};
 }
 
@@ -302,7 +303,10 @@ Ref<RenderPipelineBase> Device::CreateUninitializedRenderPipelineImpl(
     const UnpackedPtr<RenderPipelineDescriptor>& descriptor) {
     return RenderPipeline::CreateUninitialized(this, descriptor);
 }
-
+ResultOrError<Ref<ResourceTableBase>> Device::CreateResourceTableImpl(
+    const ResourceTableDescriptor* descriptor) {
+    return DAWN_UNIMPLEMENTED_ERROR("ResourceTable is not supported on D3D11");
+}
 ResultOrError<Ref<SamplerBase>> Device::CreateSamplerImpl(const SamplerDescriptor* descriptor) {
     return Sampler::Create(this, descriptor);
 }
@@ -396,6 +400,8 @@ MaybeError Device::CopyFromStagingToBuffer(BufferBase* source,
     // D3D11 requires that buffers are unmapped before being used in a copy.
     DAWN_TRY(source->Unmap());
 
+    auto scopedUseBuffer = source->UseInternal();
+
     auto commandContext =
         ToBackend(GetQueue())->GetScopedPendingCommandContext(QueueBase::SubmitMode::Normal);
     return Buffer::Copy(&commandContext, ToBackend(source), sourceOffset, size,
@@ -467,7 +473,7 @@ void Device::AppendDeviceLostMessage(ErrorData* error) {
     }
 }
 
-void Device::DestroyImpl() {
+void Device::DestroyImpl(DestroyReason reason) {
     // TODO(crbug.com/dawn/831): DestroyImpl is called from two places.
     // - It may be called if the device is explicitly destroyed with APIDestroy.
     //   This case is NOT thread-safe and needs proper synchronization with other
@@ -480,7 +486,7 @@ void Device::DestroyImpl() {
     mImplicitPixelLocalStorageAttachmentTextureViews = {};
     mStagingBuffers.clear();
 
-    Base::DestroyImpl();
+    Base::DestroyImpl(reason);
 }
 
 uint32_t Device::GetOptimalBytesPerRowAlignment() const {
@@ -501,10 +507,32 @@ void Device::DisposeKeyedMutex(ComPtr<IDXGIKeyedMutex> dxgiKeyedMutex) {
     // Nothing to do, the ComPtr will release the keyed mutex.
 }
 
+void Device::DeferUnmapDestroyedBuffer(ComPtr<ID3D11Buffer> buffer) {
+    if (!buffer) {
+        return;
+    }
+    mPendingDestroyedBufferUnmaps->push_back(std::move(buffer));
+}
+
+void Device::UnmapDestroyedBuffers() {
+    auto commandContext =
+        ToBackend(GetQueue())
+            ->GetScopedPendingCommandContext(ExecutionQueueBase::SubmitMode::Passive);
+
+    mPendingDestroyedBufferUnmaps.Use([&](auto buffers) {
+        for (auto& buffer : *buffers) {
+            commandContext.Unmap(buffer.Get(), 0);
+        }
+        buffers->clear();
+    });
+}
+
 bool Device::ReduceMemoryUsageImpl() {
     mVertexShaderCache.Clear();
     mPixelShaderCache.Clear();
     mComputeShaderCache.Clear();
+
+    UnmapDestroyedBuffers();
 
     // D3D11 defers the deletion of resources until we call Flush().
     // So trigger a Flush() here to force deleting any pending resources.
@@ -520,6 +548,26 @@ bool Device::ReduceMemoryUsageImpl() {
     }
 
     return false;
+}
+
+std::optional<DeviceGuard> Device::UseGuardForCreateBindGroup() {
+    return std::nullopt;
+}
+
+std::optional<DeviceGuard> Device::UseGuardForCreateBindGroupLayout() {
+    return std::nullopt;
+}
+
+std::optional<DeviceGuard> Device::UseGuardForCreateBuffer() {
+    return std::nullopt;
+}
+
+std::optional<DeviceGuard> Device::UseGuardForCreateSampler() {
+    return std::nullopt;
+}
+
+std::optional<DeviceGuard> Device::UseGuardForCreateTexture() {
+    return std::nullopt;
 }
 
 bool Device::MayRequireDuplicationOfIndirectParameters() const {

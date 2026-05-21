@@ -5,6 +5,7 @@
 #include <optional>
 
 #include "src/asmjs/asm-js.h"
+#include "src/codegen/assembler-inl.h"
 #include "src/codegen/compilation-cache.h"
 #include "src/codegen/compiler.h"
 #include "src/common/assert-scope.h"
@@ -19,6 +20,10 @@
 #include "src/objects/shared-function-info.h"
 #include "src/runtime/runtime-utils.h"
 
+#ifdef V8_ENABLE_SPARKPLUG_PLUS
+#include "src/common/code-memory-access.h"
+#endif  // V8_ENABLE_SPARKPLUG_PLUS
+
 namespace v8::internal {
 
 namespace {
@@ -26,8 +31,7 @@ void LogExecution(Isolate* isolate, DirectHandle<JSFunction> function) {
   DCHECK(v8_flags.log_function_events);
   if (!function->has_feedback_vector()) return;
   DCHECK(function->IsLoggingRequested(isolate));
-  IsolateGroup::current()->js_dispatch_table()->ResetTieringRequest(
-      function->dispatch_handle());
+  isolate->js_dispatch_table().ResetTieringRequest(function->dispatch_handle());
   DirectHandle<SharedFunctionInfo> sfi(function->shared(), isolate);
   DirectHandle<String> name = SharedFunctionInfo::DebugName(isolate, sfi);
   DisallowGarbageCollection no_gc;
@@ -43,6 +47,23 @@ void LogExecution(Isolate* isolate, DirectHandle<JSFunction> function) {
                    event_name.c_str(), Cast<Script>(raw_sfi->script())->id(), 0,
                    raw_sfi->StartPosition(), raw_sfi->EndPosition(), *name));
 }
+
+#ifdef V8_ENABLE_SPARKPLUG_PLUS
+Builtin GetTypedBinaryOpBuiltin(CompareOperationFeedback::Type hint) noexcept {
+  Builtin target_builtin = Builtin::kIllegal;
+  switch (hint) {
+#define TYPED_STRICTEQUAL_CASE(type)                          \
+  case CompareOperationFeedback::Type::k##type:               \
+    target_builtin = Builtin::kStrictEqual_##type##_Baseline; \
+    break;
+    TYPED_STRICTEQUAL_STUB_LIST(TYPED_STRICTEQUAL_CASE)
+#undef TYPED_STRICTEQUAL_CASE
+    default:
+      target_builtin = Builtin::kStrictEqual_Generic_Baseline;
+  }
+  return target_builtin;
+}
+#endif  // V8_ENABLE_SPARKPLUG_PLUS
 }  // namespace
 
 RUNTIME_FUNCTION(Runtime_CompileLazy) {
@@ -127,7 +148,7 @@ namespace {
 void CompileOptimized(DirectHandle<JSFunction> function, ConcurrencyMode mode,
                       CodeKind target_kind, Isolate* isolate) {
   // Ensure that the tiering request is reset even if compilation fails.
-  function->ResetTieringRequests();
+  function->ResetTieringRequests(isolate);
 
   // As a pre- and post-condition of CompileOptimized, the function *must* be
   // compiled, i.e. the installed InstructionStream object must not be
@@ -228,7 +249,7 @@ RUNTIME_FUNCTION(Runtime_MarkLazyDeoptimized) {
   }
 
   if (!function->code(isolate)->marked_for_deoptimization()) {
-    function->ResetTieringRequests();
+    function->ResetTieringRequests(isolate);
     if (reoptimize) {
       // Set the budget such that we have one invocation which allows us to
       // detect if any ICs need updating before re-optimization.
@@ -441,6 +462,26 @@ Tagged<Object> CompileOptimizedOSR(Isolate* isolate,
 }
 
 }  // namespace
+
+#ifdef V8_DUMPLING
+RUNTIME_FUNCTION(Runtime_PrintDumpedFrame) {
+  HandleScope scope(isolate);
+  DCHECK_EQ(args.length(), 1);
+  CHECK(isolate->context().is_null());
+
+  DCHECK(!AllowGarbageCollection::IsAllowed());
+
+  Deoptimizer* dumper = isolate->GetAndClearCurrentDeoptimizer();
+
+  Tagged<Context> saved_context = isolate->context();
+  isolate->set_context(dumper->function()->native_context());
+  dumper->VirtualMaterializeAndPrint();
+  delete dumper;
+
+  isolate->set_context(saved_context);
+  return ReadOnlyRoots(isolate).undefined_value();
+}
+#endif  // V8_DUMPLING
 
 RUNTIME_FUNCTION(Runtime_NotifyDeoptimized) {
   HandleScope scope(isolate);
@@ -760,5 +801,45 @@ RUNTIME_FUNCTION(Runtime_ResolvePossiblyDirectEval) {
                            language_mode, args.smi_value_at(4),
                            args.smi_value_at(5));
 }
+
+#ifdef V8_ENABLE_SPARKPLUG_PLUS
+RUNTIME_FUNCTION(Runtime_MaybePatchBinaryBaselineCode) {
+  HandleScope scope(isolate);
+  CHECK(v8_flags.sparkplug_plus);
+  DCHECK_EQ(4, args.length());
+
+  DirectHandle<Boolean> compare_result = args.at<Boolean>(1);
+  if (!isolate->is_short_builtin_calls_enabled()) return *compare_result;
+  int current_feedback = args.smi_value_at(0);
+  auto hint = static_cast<CompareOperationFeedback::Type>(current_feedback);
+
+  // update embedded feedback
+  Tagged<BytecodeArray> bytecode_array = TrustedCast<BytecodeArray>(args[2]);
+  int feedback_offset = static_cast<int>(args.number_value_at(3)) -
+                        BytecodeArray::kHeaderSize + kHeapObjectTag;
+  bytecode_array->set(feedback_offset, static_cast<uint8_t>(current_feedback));
+  bytecode_array->set(feedback_offset + 1,
+                      (static_cast<uint8_t>(current_feedback >> 8)));
+
+  DisallowGarbageCollection no_gc;
+  const Address entry = Isolate::c_entry_fp(isolate->thread_local_top());
+  Address* pc_address =
+      reinterpret_cast<Address*>(entry + ExitFrameConstants::kCallerPCOffset);
+  Address pc =
+      StackFrame::ReadPC(pc_address) - Assembler::kCallTargetAddressOffset;
+
+  Builtin target_builtin = GetTypedBinaryOpBuiltin(hint);
+
+  if (target_builtin != Builtin::kIllegal) {
+    Address target = Builtins::EntryOf(target_builtin, isolate);
+    WritableJitAllocation jit_allocation =
+        WritableJitAllocation::ForPatchableBaselineJIT(
+            pc, Assembler::kCallTargetAddressOffset);
+    Assembler::set_target_address_at(pc, kNullAddress, target, &jit_allocation,
+                                     FLUSH_ICACHE_IF_NEEDED);
+  }
+  return *compare_result;
+}
+#endif  // V8_ENABLE_SPARKPLUG_PLUS
 
 }  // namespace v8::internal

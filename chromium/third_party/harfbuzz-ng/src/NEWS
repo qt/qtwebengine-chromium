@@ -1,3 +1,115 @@
+Overview of changes leading to 12.3.0
+Saturday, December 27, 2025
+=====================================
+- Invalid font tables (eg. GSUB/GPOS) are outright rejected, instead of
+  partially validated and used. This behavior is different from DirectWrite
+  and HarfRust, and is in line with CoreText. For context and reasoning see:
+  https://github.com/harfbuzz/harfbuzz/issues/5535#issuecomment-3573738217
+- Various speed optimizations:
+  * AAT shaping: speed up state machine on Apple silicon using a fast-path.
+    12% faster in LucidaGrande benchmark.
+  * OpenType shaping: speed up (Chain)Context lookup shaping using a fast-path
+    and Coverage caching. 20% speedup in NotoNastaliqUrdu benchmark.
+  * Drawing mega variable-fonts: 30% speedup on GoogleSansFlex benchmark.
+  * Drawing `VARC` fonts: 5% speedup on varc-hanzi benchmark.
+- Always apply synthetic slant around horizontal glyph origin in hb-draw API.
+- Fix undefined C++ behavior in some uses of union.
+- Remove the disabled by default uniscribe-bug-compatible mode from Indic and
+  Khmer shapers, that used to be used when testing against Uniscribe shaping
+  behaviour.
+- Support full instancing fonts with v2 `avar` table.
+- Various subsetting, build, fuzzing, and documentation fixes.
+
+
+Overview of changes leading to 12.2.0
+Wednesday, November 5, 2025
+=====================================
+- While Windows platform contain the matching of the ChainContext rules to
+  within the syllable for those features that are applied per syllable (in
+  Indic-like and USE shapers), in 2015 we decided that in HarfBuzz we would
+  allow the backtrack / lookahead parts of the rule to match across syllables.
+  However, our implementation had a latent bug, causing the backtrack sequence
+  to be matched within syllable most of the time, and inconsistently so. As
+  such, and after empirical testing, we have decided to match the Windows
+  implementation for this, so now both backtrack and lookahead sequences are
+  contained to within the syllable, just like DirectWrite does.
+- Disable legacy `kern` table for most shapers, enabling it only for default,
+  Arabic, Hangul, and Hebrew shapers.
+- When dropping `STAT` table during subsetting, drop also named IDs that are
+  referenced only by it.
+- Don’t apply synthetic slant to glyph origin, fixing horizontal shift in
+  slanted glyphs.
+- Various build and fuzzing fixes.
+- Documentation fixes.
+
+
+Overview of changes leading to 12.1.0
+Wednesday, October 1, 2025
+=====================================
+- Build fixes with GCC 15 on some 32 bit platforms.
+- Fix misaligned pointer use.
+- New API, `hb_ot_layout_lookup_collect_glyph_alternates()`, to collect glyph
+  substitutions from single and alternate substitution lookups in one call,
+  instead of getting substitutions one by one using
+  `hb_ot_layout_lookup_get_glyph_alternates()`.
+
+- New API
++hb_ot_layout_lookup_collect_glyph_alternates()
+
+
+Overview of changes leading to 12.0.0
+Sunday, September 28, 2025
+=====================================
+- The major feature of this release is that the Variable Composites /
+  Components (`VARC` table) addition to the ISO OpenFontFormat has graduated
+  from experimental, and is now enabled by default. It can be disabled at
+  compile time by defining the `HB_NO_VAR_COMPOSITES`z macro.
+
+  `VARC` table is a new way to store glyph outlines, that allows for better
+  shape reuse, and can reduce font file size for Chinese, Japanese, Korean, and
+  some other scripts drastically. Some font design tools provide a similar
+  feature to designers, known as "smart components". This technology brings the
+  same idea to the compiled font file. For the format specification, see:
+  https://github.com/harfbuzz/boring-expansion-spec/blob/main/VARC.md
+
+  Test fonts can be found at:
+  https://github.com/notofonts/noto-cjk-varco/releases/tag/v0.003
+
+  The Fontra font editor already supports this technology.
+
+  Note that this new format involves just the HarfBuzz draw API and does not
+  affect shaping.
+
+- Correctly handle `markFilteringSet` lookup field during subsetting.
+- Deduplicate features during subsetting.
+- Disable “more” buffer messages that give more verbose output when using
+  buffer messages callbacks, as it has a performance overhead. Users/tools that
+  need the more verbose messages should define `HB_BUFFER_MESSAGE_MORE` to 1
+  when building HarfBuzz.
+- Shaping and instancing optimizations.
+- Fix subsetting issues when building with GCC 12.
+
+
+Overview of changes leading to 11.5.1
+Monday, September 22, 2025
+=====================================
+- Optimized partial-instancing of fonts with a large number of axes. Now over two times faster.
+- Fix C++ STL atomics implementation.
+
+
+Overview of changes leading to 11.5.0
+Saturday, September 12, 2025
+=====================================
+- Update to Unicode 17.0.0.
+- Subsetter optimizations.
+
+
+Overview of changes leading to 11.4.5
+Saturday, August 30, 2025
+=====================================
+- Bug fixes for “AAT” shaping, and other shaping micro optimizations.
+
+
 Overview of changes leading to 11.4.4
 Tuesday, August 26, 2025
 =====================================

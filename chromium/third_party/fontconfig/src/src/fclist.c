@@ -37,6 +37,8 @@ FcObjectSetCreate (void)
     os->nobject = 0;
     os->sobject = 0;
     os->objects = 0;
+    os->nobjIds = 0;
+    os->objIds = 0;
     return os;
 }
 
@@ -44,31 +46,29 @@ FcBool
 FcObjectSetAdd (FcObjectSet *os, const char *object)
 {
     int          s;
-    const char **objects;
     int          high, low, mid, c;
+    FcObject    *objects, o = FcObjectFromName (object);
 
-    if (os->nobject == os->sobject) {
+    if (os->nobjIds == os->sobject) {
 	s = os->sobject + 4;
-	if (os->objects)
-	    objects = (const char **)realloc ((void *)os->objects,
-	                                      s * sizeof (const char *));
+	if (os->objIds)
+	    objects = (FcObject *)realloc ((void *)os->objIds,
+	                                   s * sizeof (FcObject));
 	else
-	    objects = (const char **)malloc (s * sizeof (const char *));
+	    objects = (FcObject *)malloc (s * sizeof (FcObject));
 	if (!objects)
 	    return FcFalse;
-	os->objects = objects;
+	os->objIds = objects;
 	os->sobject = s;
     }
-    high = os->nobject - 1;
+    high = os->nobjIds - 1;
     low = 0;
     mid = 0;
     c = 1;
-    object = strdup (object);
     while (low <= high) {
 	mid = (low + high) >> 1;
-	c = os->objects[mid] - object;
+	c = os->objIds[mid] - o;
 	if (c == 0) {
-	    FcFree (object);
 	    return FcTrue;
 	}
 	if (c < 0)
@@ -78,24 +78,19 @@ FcObjectSetAdd (FcObjectSet *os, const char *object)
     }
     if (c < 0)
 	mid++;
-    memmove (os->objects + mid + 1, os->objects + mid,
-             (os->nobject - mid) * sizeof (const char *));
-    os->objects[mid] = object;
-    os->nobject++;
+    memmove (os->objIds + mid + 1, os->objIds + mid,
+             (os->nobjIds - mid) * sizeof (FcObject));
+    os->objIds[mid] = o;
+    os->nobjIds++;
     return FcTrue;
 }
 
 void
 FcObjectSetDestroy (FcObjectSet *os)
 {
-    int i;
-
     if (os) {
-	if (os->objects) {
-	    for (i = 0; i < os->nobject; i++)
-		FcFree (os->objects[i]);
-
-	    free ((void *)os->objects);
+	if (os->objIds) {
+	    free ((void *)os->objIds);
 	}
 	free (os);
     }
@@ -182,9 +177,9 @@ FcListPatternEqual (FcPattern   *p1,
     int           i;
     FcPatternElt *e1, *e2;
 
-    for (i = 0; i < os->nobject; i++) {
-	e1 = FcPatternObjectFindElt (p1, FcObjectFromName (os->objects[i]));
-	e2 = FcPatternObjectFindElt (p2, FcObjectFromName (os->objects[i]));
+    for (i = 0; i < os->nobjIds; i++) {
+	e1 = FcPatternObjectFindElt (p1, os->objIds[i]);
+	e2 = FcPatternObjectFindElt (p2, os->objIds[i]);
 	if (!e1 && !e2)
 	    continue;
 	if (!e1 || !e2)
@@ -291,8 +286,8 @@ FcListPatternHash (FcPattern   *font,
     FcPatternElt *e;
     FcChar32      h = 0;
 
-    for (n = 0; n < os->nobject; n++) {
-	e = FcPatternObjectFindElt (font, FcObjectFromName (os->objects[n]));
+    for (n = 0; n < os->nobjIds; n++) {
+	e = FcPatternObjectFindElt (font, os->objIds[n]);
 	if (e)
 	    h = h ^ FcListValueListHash (FcPatternEltValues (e));
     }
@@ -406,29 +401,29 @@ FcListAppend (FcListHashTable *table,
     if (!bucket->pattern)
 	goto bail1;
 
-    for (o = 0; o < os->nobject; o++) {
-	if (!strcmp (os->objects[o], FC_FAMILY) || !strcmp (os->objects[o], FC_FAMILYLANG)) {
+    for (o = 0; o < os->nobjIds; o++) {
+	if (os->objIds[o] == FC_FAMILY_OBJECT || os->objIds[o] == FC_FAMILYLANG_OBJECT) {
 	    if (familyidx < 0)
 		familyidx = FcGetDefaultObjectLangIndex (font, FC_FAMILYLANG_OBJECT, lang);
 	    defidx = familyidx;
-	} else if (!strcmp (os->objects[o], FC_FULLNAME) || !strcmp (os->objects[o], FC_FULLNAMELANG)) {
+	} else if (os->objIds[o] == FC_FULLNAME_OBJECT || os->objIds[o] == FC_FULLNAMELANG_OBJECT) {
 	    if (fullnameidx < 0)
-		fullnameidx = FcGetDefaultObjectLangIndex (font, FC_FULLNAMELANG_OBJECT, lang);
+	        fullnameidx = FcGetDefaultObjectLangIndex (font, FC_FULLNAMELANG_OBJECT, lang);
 	    defidx = fullnameidx;
-	} else if (!strcmp (os->objects[o], FC_STYLE) || !strcmp (os->objects[o], FC_STYLELANG)) {
+        } else if (os->objIds[o] == FC_STYLE_OBJECT || os->objIds[o] == FC_STYLELANG_OBJECT) {
 	    if (styleidx < 0)
 		styleidx = FcGetDefaultObjectLangIndex (font, FC_STYLELANG_OBJECT, lang);
 	    defidx = styleidx;
 	} else
 	    defidx = 0;
 
-	e = FcPatternObjectFindElt (font, FcObjectFromName (os->objects[o]));
+	e = FcPatternObjectFindElt (font, os->objIds[o]);
 	if (e) {
 	    for (v = FcPatternEltValues (e), idx = 0; v;
 	         v = FcValueListNext (v), ++idx) {
-		if (!FcPatternAdd (bucket->pattern,
-		                   os->objects[o],
-		                   FcValueCanonicalize (&v->value), defidx != idx))
+		if (!FcPatternObjectAdd (bucket->pattern,
+		                         os->objIds[o],
+		                         FcValueCanonicalize (&v->value), defidx != idx))
 		    goto bail2;
 	    }
 	}

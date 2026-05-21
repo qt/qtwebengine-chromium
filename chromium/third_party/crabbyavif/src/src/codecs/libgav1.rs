@@ -14,6 +14,7 @@
 
 use crate::codecs::Decoder;
 use crate::codecs::DecoderConfig;
+use crate::decoder::item::Item;
 use crate::decoder::GridImageHelper;
 use crate::image::Image;
 use crate::image::YuvRange;
@@ -70,10 +71,9 @@ impl Decoder for Libgav1 {
         spatial_id: u8,
         image: &mut Image,
         category: Category,
+        _item: Option<&Item>,
     ) -> AvifResult<()> {
-        if self.decoder.is_none() {
-            self.initialize(&DecoderConfig::default())?;
-        }
+        assert_ne!(self.decoder, None);
         unsafe {
             let ret = Libgav1DecoderEnqueueFrame(
                 self.decoder.unwrap(),

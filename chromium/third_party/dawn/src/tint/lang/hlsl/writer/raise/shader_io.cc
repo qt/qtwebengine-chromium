@@ -229,7 +229,7 @@ struct StateImpl : core::ir::transform::ShaderIOBackendState {
             if (!has_position_member) {
                 core::IOAttributes attrs;
                 attrs.builtin = core::BuiltinValue::kPosition;
-                AddInput(ir.symbols.New("pos"), ty.vec4<f32>(), attrs);
+                AddInput(ir.symbols.New("pos"), ty.vec4f(), attrs);
             }
         }
 
@@ -440,7 +440,7 @@ struct StateImpl : core::ir::transform::ShaderIOBackendState {
         // Create uniform var that will receive the number of workgroups
         core::ir::Var* num_wg_var = nullptr;
         builder.Append(ir.root_block, [&] {
-            num_wg_var = builder.Var("tint_num_workgroups", ty.ptr(uniform, ty.vec3<u32>()));
+            num_wg_var = builder.Var("tint_num_workgroups", ty.ptr(uniform, ty.vec3u()));
         });
         if (config.num_workgroups_binding.has_value()) {
             // If config.num_workgroups_binding holds a value, use it.
@@ -524,7 +524,7 @@ struct StateImpl : core::ir::transform::ShaderIOBackendState {
             TINT_IR_ASSERT(ir, local_invocation_index_index);
             auto* local_index = GetInput(builder, local_invocation_index_index.value());
             auto* subgroup_size = GetSubgroupSize(builder);
-            return builder.Divide<u32>(local_index, subgroup_size)->Result();
+            return builder.Divide(local_index, subgroup_size)->Result();
         }
 
         // Otherwise, we use the atomic counter that is incremented by each subgroup, and then
@@ -539,8 +539,8 @@ struct StateImpl : core::ir::transform::ShaderIOBackendState {
         // subgroup size (rounding up).
         if (linear_workgroup_size) {
             auto* subgroup_size = GetSubgroupSize(builder);
-            auto* add = builder.Add<u32>(u32(linear_workgroup_size.value() - 1), subgroup_size);
-            return builder.Divide<u32>(add, subgroup_size)->Result();
+            auto* add = builder.Add(u32(linear_workgroup_size.value() - 1), subgroup_size);
+            return builder.Divide(add, subgroup_size)->Result();
         }
 
         // Otherwise, we use the atomic counter that is incremented by each subgroup, and then load
@@ -592,23 +592,23 @@ struct StateImpl : core::ir::transform::ShaderIOBackendState {
             // If this is an input position builtin we need to invert the 'w' component of the
             // vector.
             auto* w = builder.Access(ty.f32(), v, 3_u);
-            auto* div = builder.Divide(ty.f32(), 1.0_f, w);
-            auto* swizzle = builder.Swizzle(ty.vec3<f32>(), v, {0, 1, 2});
-            v = builder.Construct(ty.vec4<f32>(), swizzle, div)->Result();
+            auto* div = builder.Divide(1.0_f, w);
+            auto* swizzle = builder.Swizzle(ty.vec3f(), v, {0, 1, 2});
+            v = builder.Construct(ty.vec4f(), swizzle, div)->Result();
         } else if (config.first_index_offset_binding.has_value() &&
                    inputs[idx].attributes.builtin == core::BuiltinValue::kVertexIndex) {
             // Apply vertex_index offset
             TINT_IR_ASSERT(ir, tint_first_index_offset);
             auto* vertex_index_offset =
                 builder.Access(ty.ptr<uniform, u32>(), tint_first_index_offset, 0_u);
-            v = builder.Add<u32>(v, builder.Load(vertex_index_offset))->Result();
+            v = builder.Add(v, builder.Load(vertex_index_offset))->Result();
         } else if (config.first_index_offset_binding.has_value() &&
                    inputs[idx].attributes.builtin == core::BuiltinValue::kInstanceIndex) {
             // Apply instance_index offset
             TINT_IR_ASSERT(ir, tint_first_index_offset);
             auto* instance_index_offset =
                 builder.Access(ty.ptr<uniform, u32>(), tint_first_index_offset, 1_u);
-            v = builder.Add<u32>(v, builder.Load(instance_index_offset))->Result();
+            v = builder.Add(v, builder.Load(instance_index_offset))->Result();
         } else if (config.first_index_offset.has_value() &&
                    inputs[idx].attributes.builtin == core::BuiltinValue::kVertexIndex) {
             auto* immediate_data = config.immediate_data_layout.var;
@@ -616,7 +616,7 @@ struct StateImpl : core::ir::transform::ShaderIOBackendState {
                 u32(config.immediate_data_layout.IndexOf(config.first_index_offset.value()));
             auto first_index_offset =
                 builder.Access<ptr<immediate, u32>>(immediate_data, first_index_offset_idx);
-            v = builder.Add<u32>(v, builder.Load(first_index_offset))->Result();
+            v = builder.Add(v, builder.Load(first_index_offset))->Result();
         } else if (config.first_instance_offset.has_value() &&
                    inputs[idx].attributes.builtin == core::BuiltinValue::kInstanceIndex) {
             auto* immediate_data = config.immediate_data_layout.var;
@@ -624,7 +624,7 @@ struct StateImpl : core::ir::transform::ShaderIOBackendState {
                 u32(config.immediate_data_layout.IndexOf(config.first_instance_offset.value()));
             auto first_instance_offset =
                 builder.Access<ptr<immediate, u32>>(immediate_data, first_instance_offset_idx);
-            v = builder.Add<u32>(v, builder.Load(first_instance_offset))->Result();
+            v = builder.Add(v, builder.Load(first_instance_offset))->Result();
         }
 
         return v;
@@ -696,11 +696,9 @@ struct StateImpl : core::ir::transform::ShaderIOBackendState {
 }  // namespace
 
 Result<SuccessType> ShaderIO(core::ir::Module& ir, const ShaderIOConfig& config) {
-    auto result = ValidateAndDumpIfNeeded(
-        ir, "hlsl.ShaderIO", core::ir::Capabilities{core::ir::Capability::kAllowDuplicateBindings});
-    if (result != Success) {
-        return result;
-    }
+    TINT_CHECK_RESULT(ValidateAndDumpIfNeeded(
+        ir, "hlsl.ShaderIO",
+        core::ir::Capabilities{core::ir::Capability::kAllowDuplicateBindings}));
 
     core::ir::transform::RunShaderIOBase(ir, [&](core::ir::Module& mod, core::ir::Function* func) {
         return std::make_unique<StateImpl>(mod, func, config);

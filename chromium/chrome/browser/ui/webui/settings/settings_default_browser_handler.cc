@@ -4,16 +4,22 @@
 
 #include "chrome/browser/ui/webui/settings/settings_default_browser_handler.h"
 
+#include <utility>
+
 #include "base/functional/bind.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/metrics/user_metrics.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/default_browser/default_browser_controller.h"
+#include "chrome/browser/default_browser/default_browser_manager.h"
+#include "chrome/browser/global_features.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/startup/default_browser_prompt/default_browser_prompt.h"
 #include "chrome/browser/ui/startup/default_browser_prompt/default_browser_prompt_manager.h"
 #include "chrome/browser/ui/startup/default_browser_prompt/default_browser_prompt_prefs.h"
 #include "chrome/browser/ui/ui_features.h"
+#include "chrome/common/chrome_features.h"
 #include "chrome/common/pref_names.h"
 #include "components/prefs/pref_service.h"
 #include "content/public/browser/web_ui.h"
@@ -55,6 +61,11 @@ void DefaultBrowserHandler::RegisterMessages() {
       base::BindRepeating(&DefaultBrowserHandler::RequestDefaultBrowserState,
                           base::Unretained(this)));
   web_ui()->RegisterMessageCallback(
+      "requestUserValueStringsFeatureState",
+      base::BindRepeating(
+          &DefaultBrowserHandler::HandleRequestUserValueStringsFeatureState,
+          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
       "setAsDefaultBrowser",
       base::BindRepeating(&DefaultBrowserHandler::SetAsDefaultBrowser,
                           base::Unretained(this)));
@@ -67,28 +78,52 @@ void DefaultBrowserHandler::OnJavascriptAllowed() {
       prefs::kDefaultBrowserSettingEnabled,
       base::BindRepeating(&DefaultBrowserHandler::OnDefaultBrowserSettingChange,
                           base::Unretained(this)));
-  default_browser_worker_ = new shell_integration::DefaultBrowserWorker();
+
+  default_browser_controller_ =
+      default_browser::DefaultBrowserManager::CreateControllerFor(
+          default_browser::DefaultBrowserEntrypointType::kSettingsPage);
+  CHECK(default_browser_controller_);
+
+  default_browser_controller_->OnShown();
+  did_user_interact_ = false;
 }
 
 void DefaultBrowserHandler::OnJavascriptDisallowed() {
+  if (!did_user_interact_) {
+    default_browser_controller_->OnIgnored();
+  }
+
+  did_user_interact_ = false;
   local_state_pref_registrar_.RemoveAll();
   weak_ptr_factory_.InvalidateWeakPtrs();
-  default_browser_worker_ = nullptr;
+  default_browser_controller_.reset();
 }
 
 void DefaultBrowserHandler::RequestDefaultBrowserState(
-    const base::Value::List& args) {
+    const base::ListValue& args) {
   AllowJavascript();
 
   CHECK_EQ(args.size(), 1U);
   auto& callback_id = args[0].GetString();
 
-  default_browser_worker_->StartCheckIsDefault(
-      base::BindOnce(&DefaultBrowserHandler::OnDefaultBrowserWorkerFinished,
-                     weak_ptr_factory_.GetWeakPtr(), callback_id));
+  default_browser::DefaultBrowserManager::From(g_browser_process)
+      ->GetDefaultBrowserState(
+          base::BindOnce(&DefaultBrowserHandler::OnDefaultBrowserWorkerFinished,
+                         weak_ptr_factory_.GetWeakPtr(), callback_id));
 }
 
-void DefaultBrowserHandler::SetAsDefaultBrowser(const base::Value::List& args) {
+void DefaultBrowserHandler::HandleRequestUserValueStringsFeatureState(
+    const base::ListValue& args) {
+  AllowJavascript();
+
+  CHECK_EQ(args.size(), 1U);
+  auto& callback_id = args[0].GetString();
+
+  bool is_enabled =
+      base::FeatureList::IsEnabled(features::kUserValueDefaultBrowserStrings);
+  ResolveJavascriptCallback(callback_id, base::Value(is_enabled));
+}
+void DefaultBrowserHandler::SetAsDefaultBrowser(const base::ListValue& args) {
   CHECK(!DefaultBrowserIsDisabledByPolicy());
   AllowJavascript();
   RecordSetAsDefaultUMA();
@@ -102,7 +137,8 @@ void DefaultBrowserHandler::SetAsDefaultBrowser(const base::Value::List& args) {
   }
 #endif  // BUILDFLAG(IS_WIN)
 
-  default_browser_worker_->StartSetAsDefault(
+  did_user_interact_ = true;
+  default_browser_controller_->OnAccepted(
       base::BindOnce(&DefaultBrowserHandler::OnDefaultBrowserWorkerFinished,
                      weak_ptr_factory_.GetWeakPtr(), std::nullopt));
 
@@ -115,9 +151,10 @@ void DefaultBrowserHandler::SetAsDefaultBrowser(const base::Value::List& args) {
 }
 
 void DefaultBrowserHandler::OnDefaultBrowserSettingChange() {
-  default_browser_worker_->StartCheckIsDefault(
-      base::BindOnce(&DefaultBrowserHandler::OnDefaultBrowserWorkerFinished,
-                     weak_ptr_factory_.GetWeakPtr(), std::nullopt));
+  default_browser::DefaultBrowserManager::From(g_browser_process)
+      ->GetDefaultBrowserState(
+          base::BindOnce(&DefaultBrowserHandler::OnDefaultBrowserWorkerFinished,
+                         weak_ptr_factory_.GetWeakPtr(), std::nullopt));
 }
 
 void DefaultBrowserHandler::RecordSetAsDefaultUMA() {
@@ -160,7 +197,7 @@ void DefaultBrowserHandler::OnDefaultCheckFinished(
     const std::optional<std::string>& js_callback_id,
     bool can_pin,
     shell_integration::DefaultWebClientState state) {
-  base::Value::Dict dict;
+  base::DictValue dict;
   dict.Set("isDefault", state == shell_integration::IS_DEFAULT);
   dict.Set("canPin", can_pin);
   dict.Set("canBeDefault", shell_integration::CanSetAsDefaultBrowser());

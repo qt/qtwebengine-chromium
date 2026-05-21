@@ -157,7 +157,7 @@ class ObjectReceiver : public SubscribeVisitor {
 
   void OnReply(
       const FullTrackName& full_track_name,
-      std::variant<SubscribeOkData, MoqtRequestError> response) override;
+      std::variant<SubscribeOkData, MoqtRequestErrorInfo> response) override;
 
   void OnCanAckObjects(MoqtObjectAckFunction ack_function) override {
     object_ack_function_ = std::move(ack_function);

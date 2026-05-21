@@ -7,23 +7,54 @@
 #include <algorithm>
 
 #include "base/check_op.h"
-#include "base/feature_list.h"
 #include "base/format_macros.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/notreached.h"
+#include "base/rand_util.h"
 #include "base/time/time.h"
 #include "base/trace_event/trace_event.h"
 #include "base/trace_event/traced_value.h"
 #include "base/values.h"
+#include "build/build_config.h"
 #include "cc/base/features.h"
+#include "cc/scheduler/commit_earlyout_reason.h"
 #include "components/viz/common/features.h"
 #include "components/viz/common/frame_sinks/begin_frame_args.h"
 #include "third_party/perfetto/include/perfetto/tracing/track.h"
+
+#if BUILDFLAG(IS_ANDROID)
+#include "base/android/device_info.h"
+#endif
 
 namespace cc {
 
 namespace {
 // Surfaces and CompositorTimingHistory don't support more than 1 pending swap.
 const int kMaxPendingSubmitFrames = 1;
+
+bool IsEligibleToThrottleMainFrameRate() {
+#if BUILDFLAG(IS_ANDROID)
+  // Still requires balancing tradeoffs for desktop Android, not enabled yet.
+  return !base::android::device_info::is_desktop();
+#else
+  return true;
+#endif
+}
+
+bool ShouldThrottleMainFrameRate(const SchedulerSettings& settings) {
+  if (!features::IsEligibleForThrottleMainFrameTo60Hz()) {
+    return false;
+  }
+#if BUILDFLAG(IS_ANDROID)
+  bool is_webview = settings.using_synchronous_renderer_compositor;
+  return is_webview
+             ? base::FeatureList::IsEnabled(
+                   features::kThrottleMainFrameTo60HzWebView)
+             : base::FeatureList::IsEnabled(features::kThrottleMainFrameTo60Hz);
+#else
+  return base::FeatureList::IsEnabled(features::kThrottleMainFrameTo60Hz);
+#endif  // BUILDFLAG(IS_ANDROID)
+}
 
 }  // namespace
 
@@ -285,7 +316,7 @@ void SchedulerStateMachine::AsProtozeroInto(
       processing_animation_worklets_for_pending_tree_);
   minor_state->set_processing_paint_worklets_for_pending_tree(
       processing_paint_worklets_for_pending_tree_);
-  minor_state->set_processing_paint_worklets_for_pending_tree(should_warm_up_);
+  minor_state->set_should_warm_up(should_warm_up_);
 }
 
 bool SchedulerStateMachine::PendingDrawsShouldBeAborted() const {
@@ -364,6 +395,15 @@ bool SchedulerStateMachine::ShouldBeginLayerTreeFrameSinkCreation() const {
   return layer_tree_frame_sink_state_ == LayerTreeFrameSinkState::NONE;
 }
 
+bool SchedulerStateMachine::CheckShouldDraw() const {
+  // Wait for ready to draw in full-pipeline mode or the browser compositor's
+  // commit-to-active-tree mode.
+  // When
+  return ((settings_.wait_for_all_pipeline_stages_before_draw ||
+           settings_.commit_to_active_tree) &&
+          !active_tree_is_ready_to_draw_);
+}
+
 bool SchedulerStateMachine::ShouldDraw() const {
   // If we need to abort draws, we should do so ASAP since the draw could
   // be blocking other important actions (like output surface initialization),
@@ -395,11 +435,7 @@ bool SchedulerStateMachine::ShouldDraw() const {
   if (begin_impl_frame_state_ != BeginImplFrameState::INSIDE_DEADLINE)
     return false;
 
-  // Wait for ready to draw in full-pipeline mode or the browser compositor's
-  // commit-to-active-tree mode.
-  if ((settings_.wait_for_all_pipeline_stages_before_draw ||
-       settings_.commit_to_active_tree) &&
-      !active_tree_is_ready_to_draw_) {
+  if (CheckShouldDraw()) {
     return false;
   }
 
@@ -667,7 +703,6 @@ bool SchedulerStateMachine::ShouldSendBeginMainFrame() const {
 bool SchedulerStateMachine::ShouldThrottleSendBeginMainFrame() const {
   bool result = false;
   auto throttled_interval = MainFrameThrottledInterval();
-
   if (throttled_interval.is_positive() &&
       last_begin_impl_frame_time_ - last_sent_begin_main_frame_time_ <
           throttled_interval) {
@@ -679,15 +714,6 @@ bool SchedulerStateMachine::ShouldThrottleSendBeginMainFrame() const {
   // throttle. This is more expensive, but is required to reach perceptual
   // visual parity between throttled and non-throttled scrolling.
   if (is_current_scroll_main_painted_) {
-    result = false;
-  }
-
-  // Only evaluate the condition if we would be throttling, this is important
-  // for experiment targeting (not querying the feature).
-  if (result &&
-      base::FeatureList::IsEnabled(
-          features::kBoostFrameRateForUrgentMainFrame) &&
-      (Now() - last_urgent_main_frame_request_) < kUrgentBoostDuration) {
     result = false;
   }
 
@@ -971,6 +997,11 @@ void SchedulerStateMachine::WillNotifyBeginMainFrameNotExpectedSoon() {
   did_notify_begin_main_frame_not_expected_soon_ = true;
 }
 
+bool SchedulerStateMachine::CheckWillCommit() const {
+  return (!active_tree_needs_first_draw_ ||
+          !settings_.wait_for_all_pipeline_stages_before_draw);
+}
+
 void SchedulerStateMachine::WillCommit(bool commit_has_no_updates) {
   bool can_have_pending_tree =
       commit_has_no_updates &&
@@ -1012,11 +1043,9 @@ void SchedulerStateMachine::WillCommit(bool commit_has_no_updates) {
     has_pending_tree_ = true;
     pending_tree_needs_first_draw_on_activation_ = true;
     pending_tree_is_ready_for_activation_ = false;
-    if (!active_tree_needs_first_draw_ ||
-        !settings_.wait_for_all_pipeline_stages_before_draw) {
+    if (CheckWillCommit()) {
       // Wait for the new pending tree to become ready to draw, which may happen
-      // before or after activation (unless we're in full-pipeline mode and
-      // need first draw to come through).
+      // before or after activation.
       active_tree_is_ready_to_draw_ = false;
     }
   }
@@ -1359,6 +1388,11 @@ void SchedulerStateMachine::OnBeginImplFrame(const viz::BeginFrameArgs& args) {
   did_invalidate_layer_tree_frame_sink_ = false;
   did_perform_impl_side_invalidation_ = false;
   waiting_for_scroll_event_ = false;
+
+  if (base::ShouldRecordSubsampledMetric(0.001)) {
+    UMA_HISTOGRAM_BOOLEAN("Compositing.Scheduler.HighFramerateRequested",
+                          high_framerate_requests_count_ > 0);
+  }
 }
 
 void SchedulerStateMachine::OnBeginImplFrameDeadline() {
@@ -1492,9 +1526,13 @@ bool SchedulerStateMachine::ShouldTriggerBeginImplFrameDeadlineImmediately()
   return false;
 }
 
+bool SchedulerStateMachine::CheckShouldBlockDeadlineIndefinitely() const {
+  return (!settings_.wait_for_all_pipeline_stages_before_draw &&
+          !settings_.commit_to_active_tree);
+}
+
 bool SchedulerStateMachine::ShouldBlockDeadlineIndefinitely() const {
-  if (!settings_.wait_for_all_pipeline_stages_before_draw &&
-      !settings_.commit_to_active_tree) {
+  if (CheckShouldBlockDeadlineIndefinitely()) {
     return false;
   }
 
@@ -1548,22 +1586,13 @@ void SchedulerStateMachine::FrameIntervalUpdated(
   //
   // Apply some slack, so that if for some reason the interval is a bit larger
   // than 8.33333333333333ms, then we catch it still.
-  //
-  // Do not enable throttling for the synchronous compositor, as it hasn't been
-  // evaluated for this use case, as of 09/2025. The aim is to make sure that
-  // this does not get enabled on WebView when the feature is active on Android,
-  // as they share the same binary configuration. Exclude this platform, which
-  // is using the synchronous compositor.
   constexpr float kSlackFactor = .9;
   bool fast_vsync_interval =
       frame_interval < base::Hertz(120) * (1 / kSlackFactor);
-  if (fast_vsync_interval && !settings_.using_synchronous_renderer_compositor) {
+  if (fast_vsync_interval && IsEligibleToThrottleMainFrameRate()) {
     features::SetIsEligibleForThrottleMainFrameTo60Hz(true);
   }
-  // Same as above, no synchronous compositor.
-  if (fast_vsync_interval &&
-      base::FeatureList::IsEnabled(features::kThrottleMainFrameTo60Hz) &&
-      !settings_.using_synchronous_renderer_compositor) {
+  if (fast_vsync_interval && ShouldThrottleMainFrameRate(settings_)) {
     // Here as well, use a slack factor, to make sure that small timing
     // variations don't result in uneven pacing.
     //
@@ -1709,7 +1738,6 @@ void SchedulerStateMachine::SetNeedsBeginMainFrame(bool now) {
 
   if (now) {
     last_sent_begin_main_frame_time_ = base::TimeTicks();
-    last_urgent_main_frame_request_ = Now();
   }
 }
 
@@ -1749,6 +1777,9 @@ void SchedulerStateMachine::BeginMainFrameAborted(CommitEarlyOutReason reason) {
       case CommitEarlyOutReason::kFinishedNoUpdates:
         WillCommit(/*commit_had_no_updates=*/true);
         break;
+      case CommitEarlyOutReason::kNoEarlyOut:
+        // Not a real case, only used for metrics.
+        NOTREACHED();
     }
   } else {
     DCHECK(settings_.main_frame_before_commit_enabled);
@@ -1764,6 +1795,9 @@ void SchedulerStateMachine::BeginMainFrameAborted(CommitEarlyOutReason reason) {
       case CommitEarlyOutReason::kFinishedNoUpdates:
         commit_count_++;
         break;
+      case CommitEarlyOutReason::kNoEarlyOut:
+        // Not a real case, only used for metrics.
+        NOTREACHED();
     }
   }
 }
@@ -1871,13 +1905,26 @@ void SchedulerStateMachine::SetShouldThrottleFrameRate(bool flag) {
   }
 }
 
-base::TimeTicks SchedulerStateMachine::Now() const {
-  return base::TimeTicks::Now();
+void SchedulerStateMachine::SetRequestHighFramerate(bool flag) {
+  TRACE_EVENT("blink", __PRETTY_FUNCTION__);
+  if (flag) {
+    high_framerate_requests_count_ += 1;
+  } else {
+    DCHECK_GE(high_framerate_requests_count_, 1u);
+    high_framerate_requests_count_ =
+        std::max(static_cast<uint64_t>(1), high_framerate_requests_count_) - 1;
+  }
 }
 
 base::TimeDelta SchedulerStateMachine::MainFrameThrottledInterval() const {
   if (!throttle_frame_rate_) {
-    return main_frame_throttled_interval_;
+    if (high_framerate_requests_count_ &&
+        base::FeatureList::IsEnabled(
+            features::kHighFramerateRequestFromClient)) {
+      return base::TimeDelta();
+    } else {
+      return main_frame_throttled_interval_;
+    }
   } else {
     auto throttled_interval =
         std::max(base::Hertz(features::kRenderThrottledFrameIntervalHz.Get()),

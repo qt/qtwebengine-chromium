@@ -17,7 +17,6 @@
 
 namespace browser_ui {
 
-using base::android::JavaParamRef;
 using base::android::JavaRef;
 
 namespace prefs {
@@ -27,7 +26,7 @@ const char kWebKitFontScaleFactor[] = "webkit.webprefs.font_scale_factor";
 FontSizePrefsAndroid::FontSizePrefsAndroid(
     JNIEnv* env,
     const base::android::JavaRef<jobject>& obj,
-    const JavaParamRef<jobject>& jbrowser_context_handle)
+    const JavaRef<jobject>& jbrowser_context_handle)
     : pref_service_(user_prefs::UserPrefs::Get(
           content::BrowserContextFromJavaHandle(jbrowser_context_handle))) {
   java_ref_.Reset(env, obj);
@@ -36,7 +35,7 @@ FontSizePrefsAndroid::FontSizePrefsAndroid(
 FontSizePrefsAndroid::~FontSizePrefsAndroid() = default;
 
 void FontSizePrefsAndroid::SetFontScaleFactor(JNIEnv* env,
-                                              jfloat font_scale_factor) {
+                                              float font_scale_factor) {
   pref_service_->SetDouble(prefs::kWebKitFontScaleFactor,
                            static_cast<double>(font_scale_factor));
 }
@@ -45,10 +44,10 @@ void FontSizePrefsAndroid::Destroy(JNIEnv* env) {
   delete this;
 }
 
-static jlong JNI_FontSizePrefs_Init(
+static int64_t JNI_FontSizePrefs_Init(
     JNIEnv* env,
-    const JavaParamRef<jobject>& obj,
-    const base::android::JavaParamRef<jobject>& jbrowser_context_handle) {
+    const JavaRef<jobject>& obj,
+    const base::android::JavaRef<jobject>& jbrowser_context_handle) {
   FontSizePrefsAndroid* font_size_prefs_android =
       new FontSizePrefsAndroid(env, obj, jbrowser_context_handle);
   return reinterpret_cast<intptr_t>(font_size_prefs_android);

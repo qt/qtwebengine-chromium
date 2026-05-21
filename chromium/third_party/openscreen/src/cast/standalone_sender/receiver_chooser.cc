@@ -15,12 +15,6 @@
 
 namespace openscreen::cast {
 
-// NOTE: the compile requires a definition as well as the declaration
-// in the header.
-// TODO(issuetracker.google.com/174081818): move to inline C++17 feature.
-constexpr decltype(ReceiverChooser::kWaitForStragglersDelay)
-    ReceiverChooser::kWaitForStragglersDelay;
-
 ReceiverChooser::ReceiverChooser(const InterfaceInfo& interface,
                                  TaskRunner& task_runner,
                                  ResultCallback result_callback)

@@ -148,7 +148,7 @@ TEST_P(PDFiumPageTest, Constructor) {
 }
 
 TEST_P(PDFiumPageTest, NonTextPage) {
-  TestClient client;
+  TestClient client(/*use_skia_renderer=*/GetParam());
   std::unique_ptr<PDFiumEngine> engine =
       InitializeEngine(&client, FILE_PATH_LITERAL("rectangles.pdf"));
   ASSERT_TRUE(engine);
@@ -166,7 +166,7 @@ TEST_P(PDFiumPageTest, NonTextPage) {
 }
 
 TEST_P(PDFiumPageTest, IsCharInPageBounds) {
-  TestClient client;
+  TestClient client(/*use_skia_renderer=*/GetParam());
   std::unique_ptr<PDFiumEngine> engine =
       InitializeEngine(&client, FILE_PATH_LITERAL("hello_world_cropped.pdf"));
   ASSERT_TRUE(engine);
@@ -198,7 +198,7 @@ TEST_P(PDFiumPageTest, IsCharInPageBounds) {
 
 TEST_P(PDFiumPageTest, GetBoundingBoxRotatedMultipage) {
   // Check getting bounding box for multiple rotated pages.
-  TestClient client;
+  TestClient client(/*use_skia_renderer=*/GetParam());
   std::unique_ptr<PDFiumEngine> engine =
       InitializeEngine(&client, FILE_PATH_LITERAL("rotated_multi_page.pdf"));
   ASSERT_TRUE(engine);
@@ -245,7 +245,7 @@ TEST_P(PDFiumPageTest, GetBoundingBoxRotatedMultipage) {
 
 TEST_P(PDFiumPageTest, GetBoundingBoxAnnotations) {
   // Check getting the bounding box for annotations.
-  TestClient client;
+  TestClient client(/*use_skia_renderer=*/GetParam());
   std::unique_ptr<PDFiumEngine> engine =
       InitializeEngine(&client, FILE_PATH_LITERAL("annots.pdf"));
   ASSERT_TRUE(engine);
@@ -262,7 +262,7 @@ TEST_P(PDFiumPageTest, GetBoundingBoxAnnotations) {
 TEST_P(PDFiumPageTest, GetBoundingBoxBlankPage) {
   // Check getting the bounding box for a blank page. The bounding box should be
   // the crop box scaled to page pixels.
-  TestClient client;
+  TestClient client(/*use_skia_renderer=*/GetParam());
   std::unique_ptr<PDFiumEngine> engine =
       InitializeEngine(&client, FILE_PATH_LITERAL("blank.pdf"));
   ASSERT_TRUE(engine);
@@ -280,7 +280,7 @@ TEST_P(PDFiumPageTest, GetBoundingBoxBlankPage) {
 TEST_P(PDFiumPageTest, GetBoundingBoxCropped) {
   // Check getting the bounding box for a page with a crop box different than
   // the media box.
-  TestClient client;
+  TestClient client(/*use_skia_renderer=*/GetParam());
   std::unique_ptr<PDFiumEngine> engine =
       InitializeEngine(&client, FILE_PATH_LITERAL("landscape_rectangles.pdf"));
   ASSERT_TRUE(engine);
@@ -297,7 +297,7 @@ TEST_P(PDFiumPageTest, GetBoundingBoxCropped) {
 TEST_P(PDFiumPageTest, GetBoundingBoxRotatedMultipageCropped) {
   // Check getting the bounding box for a multiple rotated pages with a crop
   // box.
-  TestClient client;
+  TestClient client(/*use_skia_renderer=*/GetParam());
   std::unique_ptr<PDFiumEngine> engine = InitializeEngine(
       &client, FILE_PATH_LITERAL("rotated_multi_page_cropped.pdf"));
   ASSERT_TRUE(engine);
@@ -360,7 +360,7 @@ class PDFiumPageLinkTest : public PDFiumTestBase {
 };
 
 TEST_P(PDFiumPageLinkTest, LinkGeneration) {
-  TestClient client;
+  TestClient client(/*use_skia_renderer=*/GetParam());
   std::unique_ptr<PDFiumEngine> engine =
       InitializeEngine(&client, FILE_PATH_LITERAL("weblinks.pdf"));
   ASSERT_TRUE(engine);
@@ -425,7 +425,7 @@ TEST_P(PDFiumPageLinkTest, AnnotLinkGeneration) {
   }
   static constexpr size_t kExpectedLinkCount = std::size(expected_links);
 
-  TestClient client;
+  TestClient client(/*use_skia_renderer=*/GetParam());
   std::unique_ptr<PDFiumEngine> engine =
       InitializeEngine(&client, FILE_PATH_LITERAL("link_annots.pdf"));
   ASSERT_TRUE(engine);
@@ -457,7 +457,7 @@ TEST_P(PDFiumPageLinkTest, AnnotLinkGeneration) {
 }
 
 TEST_P(PDFiumPageLinkTest, GetLinkTarget) {
-  TestClient client;
+  TestClient client(/*use_skia_renderer=*/GetParam());
   std::unique_ptr<PDFiumEngine> engine = InitializeEngine(
       &client, FILE_PATH_LITERAL("in_doc_link_with_various_page_sizes.pdf"));
   ASSERT_EQ(3, engine->GetNumberOfPages());
@@ -496,7 +496,7 @@ TEST_P(PDFiumPageLinkTest, GetLinkTarget) {
 
 // Regression test for crbug.com/1396248
 TEST_P(PDFiumPageLinkTest, GetUTF8LinkTarget) {
-  TestClient client;
+  TestClient client(/*use_skia_renderer=*/GetParam());
   std::unique_ptr<PDFiumEngine> engine =
       InitializeEngine(&client, FILE_PATH_LITERAL("uri_action_utf8.pdf"));
   ASSERT_EQ(1, engine->GetNumberOfPages());
@@ -528,7 +528,7 @@ INSTANTIATE_TEST_SUITE_P(All, PDFiumPageLinkTest, testing::Bool());
 using PDFiumPageImageTest = PDFiumTestBase;
 
 TEST_P(PDFiumPageImageTest, ImagesWithAltText) {
-  TestClient client;
+  TestClient client(/*use_skia_renderer=*/GetParam());
   std::unique_ptr<PDFiumEngine> engine =
       InitializeEngine(&client, FILE_PATH_LITERAL("image_alt_text.pdf"));
   ASSERT_TRUE(engine);
@@ -546,7 +546,7 @@ TEST_P(PDFiumPageImageTest, ImagesWithAltText) {
 }
 
 TEST_P(PDFiumPageImageTest, TextAndImagesWithAltText) {
-  TestClient client;
+  TestClient client(/*use_skia_renderer=*/GetParam());
   std::unique_ptr<PDFiumEngine> engine =
       InitializeEngine(&client, FILE_PATH_LITERAL("text_with_image.pdf"));
   ASSERT_TRUE(engine);
@@ -590,7 +590,7 @@ class PDFiumPageImageForOcrTest : public PDFiumPageImageTest {
 };
 
 TEST_P(PDFiumPageImageForOcrTest, LowResolutionImage) {
-  TestClient client;
+  TestClient client(/*use_skia_renderer=*/GetParam());
   std::unique_ptr<PDFiumEngine> engine =
       InitializeEngine(&client, FILE_PATH_LITERAL("text_with_image.pdf"));
   ASSERT_TRUE(engine);
@@ -618,7 +618,7 @@ TEST_P(PDFiumPageImageForOcrTest, LowResolutionImage) {
 }
 
 TEST_P(PDFiumPageImageForOcrTest, HighResolutionImage) {
-  TestClient client;
+  TestClient client(/*use_skia_renderer=*/GetParam());
   std::unique_ptr<PDFiumEngine> engine =
       InitializeEngine(&client, FILE_PATH_LITERAL("big_image.pdf"));
   ASSERT_TRUE(engine);
@@ -640,7 +640,7 @@ TEST_P(PDFiumPageImageForOcrTest, HighResolutionImage) {
 }
 
 TEST_P(PDFiumPageImageForOcrTest, RotatedPage) {
-  TestClient client;
+  TestClient client(/*use_skia_renderer=*/GetParam());
   std::unique_ptr<PDFiumEngine> engine =
       InitializeEngine(&client, FILE_PATH_LITERAL("rotated_page.pdf"));
   ASSERT_TRUE(engine);
@@ -659,7 +659,7 @@ TEST_P(PDFiumPageImageForOcrTest, RotatedPage) {
 }
 
 TEST_P(PDFiumPageImageForOcrTest, NonImage) {
-  TestClient client;
+  TestClient client(/*use_skia_renderer=*/GetParam());
   std::unique_ptr<PDFiumEngine> engine =
       InitializeEngine(&client, FILE_PATH_LITERAL("text_with_image.pdf"));
   ASSERT_TRUE(engine);
@@ -691,7 +691,7 @@ INSTANTIATE_TEST_SUITE_P(All, PDFiumPageImageForOcrTest, testing::Bool());
 using PDFiumPageTextTest = PDFiumTestBase;
 
 TEST_P(PDFiumPageTextTest, TextRunBounds) {
-  TestClient client;
+  TestClient client(/*use_skia_renderer=*/GetParam());
   std::unique_ptr<PDFiumEngine> engine = InitializeEngine(
       &client, FILE_PATH_LITERAL("leading_trailing_spaces_per_text_run.pdf"));
   ASSERT_TRUE(engine);
@@ -764,7 +764,7 @@ TEST_P(PDFiumPageTextTest, TextRunBounds) {
 }
 
 TEST_P(PDFiumPageTextTest, GetTextRunInfoAt) {
-  TestClient client;
+  TestClient client(/*use_skia_renderer=*/GetParam());
   std::unique_ptr<PDFiumEngine> engine =
       InitializeEngine(&client, FILE_PATH_LITERAL("weblinks.pdf"));
   ASSERT_TRUE(engine);
@@ -852,7 +852,7 @@ TEST_P(PDFiumPageTextTest, GetTextRunInfoAt) {
 }
 
 TEST_P(PDFiumPageTextTest, GetTextRunInfoAtBlankPage) {
-  TestClient client;
+  TestClient client(/*use_skia_renderer=*/GetParam());
   std::unique_ptr<PDFiumEngine> engine =
       InitializeEngine(&client, FILE_PATH_LITERAL("blank.pdf"));
   ASSERT_TRUE(engine);
@@ -862,7 +862,7 @@ TEST_P(PDFiumPageTextTest, GetTextRunInfoAtBlankPage) {
 }
 
 TEST_P(PDFiumPageTextTest, HighlightTextRunInfo) {
-  TestClient client;
+  TestClient client(/*use_skia_renderer=*/GetParam());
   std::unique_ptr<PDFiumEngine> engine =
       InitializeEngine(&client, FILE_PATH_LITERAL("highlights.pdf"));
   ASSERT_TRUE(engine);
@@ -930,7 +930,7 @@ TEST_P(PDFiumPageHighlightTest, PopulateHighlights) {
       {20, 1, {192, 196, 13, 26}, kHighlightNoColor},
   });
 
-  TestClient client;
+  TestClient client(/*use_skia_renderer=*/GetParam());
   std::unique_ptr<PDFiumEngine> engine =
       InitializeEngine(&client, FILE_PATH_LITERAL("highlights.pdf"));
   ASSERT_TRUE(engine);
@@ -970,7 +970,7 @@ TEST_P(PDFiumPageTextFieldTest, PopulateTextFields) {
       {"Password", "", {138, 356, 135, 35}, 8192},
   });
 
-  TestClient client;
+  TestClient client(/*use_skia_renderer=*/GetParam());
   std::unique_ptr<PDFiumEngine> engine =
       InitializeEngine(&client, FILE_PATH_LITERAL("form_text_fields.pdf"));
   ASSERT_TRUE(engine);
@@ -1052,7 +1052,7 @@ TEST_P(PDFiumPageChoiceFieldTest, PopulateChoiceFields) {
        2097152},
   });
 
-  TestClient client;
+  TestClient client(/*use_skia_renderer=*/GetParam());
   std::unique_ptr<PDFiumEngine> engine =
       InitializeEngine(&client, FILE_PATH_LITERAL("form_choice_fields.pdf"));
   ASSERT_TRUE(engine);
@@ -1139,7 +1139,7 @@ TEST_P(PDFiumPageButtonTest, PopulateButtons) {
        {118, 270, 55, 67}},
   });
 
-  TestClient client;
+  TestClient client(/*use_skia_renderer=*/GetParam());
   std::unique_ptr<PDFiumEngine> engine =
       InitializeEngine(&client, FILE_PATH_LITERAL("form_buttons.pdf"));
   ASSERT_TRUE(engine);
@@ -1169,6 +1169,11 @@ INSTANTIATE_TEST_SUITE_P(All, PDFiumPageButtonTest, testing::Bool());
 
 class PDFiumPageThumbnailTest : public PDFiumTestBase {
  public:
+  struct ComparisonOptions {
+    bool use_platform_suffix;
+    bool fuzzy_match;
+  };
+
   PDFiumPageThumbnailTest() = default;
   PDFiumPageThumbnailTest(const PDFiumPageThumbnailTest&) = delete;
   PDFiumPageThumbnailTest& operator=(const PDFiumPageThumbnailTest&) = delete;
@@ -1179,28 +1184,32 @@ class PDFiumPageThumbnailTest : public PDFiumTestBase {
                              float device_pixel_ratio,
                              const gfx::Size& expected_thumbnail_size,
                              const std::string& expectation_file_prefix) {
-    return TestGenerateThumbnailWithPlatformSpecificData(
+    return TestGenerateThumbnailWithOptions(
         engine, page_index, device_pixel_ratio, expected_thumbnail_size,
         expectation_file_prefix,
-        /*use_platform_suffix=*/false);
+        {.use_platform_suffix = false, .fuzzy_match = false});
   }
 
-  void TestGenerateThumbnailWithPlatformSpecificData(
+  void TestGenerateThumbnailWithOptions(
       PDFiumEngine& engine,
       size_t page_index,
       float device_pixel_ratio,
       const gfx::Size& expected_thumbnail_size,
       const std::string& expectation_file_prefix,
-      bool use_platform_suffix) {
+      const ComparisonOptions& options) {
     sk_sp<SkImage> image = GenerateThumbnailImage(
         engine, page_index, device_pixel_ratio, expected_thumbnail_size);
     ASSERT_TRUE(image);
 
     base::FilePath expectation_png_file_path = GetThumbnailTestData(
         expectation_file_prefix, page_index, device_pixel_ratio,
-        /*use_skia=*/GetParam(), use_platform_suffix);
+        /*use_skia=*/GetParam(), options.use_platform_suffix);
 
-    EXPECT_TRUE(MatchesPngFile(*image, expectation_png_file_path));
+    if (options.fuzzy_match) {
+      EXPECT_TRUE(FuzzyMatchesPngFile(*image, expectation_png_file_path));
+    } else {
+      EXPECT_TRUE(MatchesPngFile(*image, expectation_png_file_path));
+    }
   }
 
   sk_sp<SkImage> GenerateThumbnailImage(
@@ -1228,7 +1237,7 @@ class PDFiumPageThumbnailTest : public PDFiumTestBase {
 };
 
 TEST_P(PDFiumPageThumbnailTest, GenerateThumbnail) {
-  TestClient client;
+  TestClient client(/*use_skia_renderer=*/GetParam());
   std::unique_ptr<PDFiumEngine> engine =
       InitializeEngine(&client, FILE_PATH_LITERAL("variable_page_sizes.pdf"));
   ASSERT_TRUE(engine);
@@ -1248,7 +1257,7 @@ TEST_P(PDFiumPageThumbnailTest, GenerateThumbnail) {
 
 // For crbug.com/40197256
 TEST_P(PDFiumPageThumbnailTest, GenerateThumbnailForAnnotation) {
-  TestClient client;
+  TestClient client(/*use_skia_renderer=*/GetParam());
   std::unique_ptr<PDFiumEngine> engine =
       InitializeEngine(&client, FILE_PATH_LITERAL("signature_widget.pdf"));
   ASSERT_TRUE(engine);
@@ -1261,7 +1270,7 @@ TEST_P(PDFiumPageThumbnailTest, GenerateThumbnailForAnnotation) {
 }
 
 TEST_P(PDFiumPageThumbnailTest, GenerateThumbnailWithTransparency) {
-  TestClient client;
+  TestClient client(/*use_skia_renderer=*/GetParam());
   std::unique_ptr<PDFiumEngine> engine =
       InitializeEngine(&client, FILE_PATH_LITERAL("bug_40216952.pdf"));
   ASSERT_TRUE(engine);
@@ -1270,19 +1279,19 @@ TEST_P(PDFiumPageThumbnailTest, GenerateThumbnailWithTransparency) {
 }
 
 TEST_P(PDFiumPageThumbnailTest, GenerateThumbnailWithOverlapCropBox) {
-  TestClient client;
+  TestClient client(/*use_skia_renderer=*/GetParam());
   std::unique_ptr<PDFiumEngine> engine =
       InitializeEngine(&client, FILE_PATH_LITERAL("hello_world_cropped.pdf"));
   ASSERT_TRUE(engine);
-  TestGenerateThumbnailWithPlatformSpecificData(
+  TestGenerateThumbnailWithOptions(
       *engine, /*page_index=*/0, /*device_pixel_ratio=*/1,
       /*expected_thumbnail_size=*/{162, 108}, "hello_world_cropped",
-      /*use_platform_suffix=*/true);
+      {.use_platform_suffix = true, .fuzzy_match = true});
 }
 
 // For crbug.com/438884266
 TEST_P(PDFiumPageThumbnailTest, GenerateThumbnailWithNoOverlapCropBox) {
-  TestClient client;
+  TestClient client(/*use_skia_renderer=*/GetParam());
   std::unique_ptr<PDFiumEngine> engine =
       InitializeEngine(&client, FILE_PATH_LITERAL("cropped_no_overlap.pdf"));
   ASSERT_TRUE(engine);
@@ -1298,7 +1307,7 @@ TEST_P(PDFiumPageThumbnailTest, GenerateThumbnailWithNoOverlapCropBox) {
 
 #if BUILDFLAG(ENABLE_PDF_INK2)
 TEST_P(PDFiumPageThumbnailTest, GetThumbnailSize) {
-  TestClient client;
+  TestClient client(/*use_skia_renderer=*/GetParam());
   std::unique_ptr<PDFiumEngine> engine =
       InitializeEngine(&client, FILE_PATH_LITERAL("variable_page_sizes.pdf"));
   ASSERT_EQ(7, engine->GetNumberOfPages());

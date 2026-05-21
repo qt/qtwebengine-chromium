@@ -5,6 +5,7 @@ import '../shell/shell.js';
 import '../../panels/css_overview/css_overview-meta.js';
 import '../../panels/elements/elements-meta.js';
 import '../../panels/browser_debugger/browser_debugger-meta.js';
+import '../../panels/greendev/greendev-meta.js';
 import '../../panels/network/network-meta.js';
 import '../../panels/security/security-meta.js';
 import '../../panels/emulation/emulation-meta.js';

@@ -26,17 +26,24 @@
 
 #include "../internal.h"
 #include "../lhash/internal.h"
+#include "../mem_internal.h"
 #include "internal.h"
 
 
+using namespace bssl;
+
+BSSL_NAMESPACE_BEGIN
+
 DEFINE_LHASH_OF(ASN1_STRING_TABLE)
+
+BSSL_NAMESPACE_END
 
 static LHASH_OF(ASN1_STRING_TABLE) *string_tables = nullptr;
 static CRYPTO_MUTEX string_tables_lock = CRYPTO_MUTEX_INIT;
 
 void ASN1_STRING_set_default_mask(unsigned long mask) {}
 
-unsigned long ASN1_STRING_get_default_mask(void) { return B_ASN1_UTF8STRING; }
+unsigned long ASN1_STRING_get_default_mask() { return B_ASN1_UTF8STRING; }
 
 int ASN1_STRING_set_default_mask_asc(const char *p) { return 1; }
 
@@ -176,8 +183,7 @@ int ASN1_STRING_TABLE_add(int nid, long minsize, long maxsize,
     }
   }
 
-  tbl = reinterpret_cast<ASN1_STRING_TABLE *>(
-      OPENSSL_malloc(sizeof(ASN1_STRING_TABLE)));
+  tbl = New<ASN1_STRING_TABLE>();
   if (tbl == nullptr) {
     goto err;
   }
@@ -188,7 +194,7 @@ int ASN1_STRING_TABLE_add(int nid, long minsize, long maxsize,
   tbl->mask = mask;
   ASN1_STRING_TABLE *old_tbl;
   if (!lh_ASN1_STRING_TABLE_insert(string_tables, &old_tbl, tbl)) {
-    OPENSSL_free(tbl);
+    Delete(tbl);
     goto err;
   }
   assert(old_tbl == nullptr);
@@ -199,10 +205,10 @@ err:
   return ret;
 }
 
-void ASN1_STRING_TABLE_cleanup(void) {}
+void ASN1_STRING_TABLE_cleanup() {}
 
-void asn1_get_string_table_for_testing(const ASN1_STRING_TABLE **out_ptr,
-                                       size_t *out_len) {
+void bssl::asn1_get_string_table_for_testing(const ASN1_STRING_TABLE **out_ptr,
+                                             size_t *out_len) {
   *out_ptr = tbl_standard;
   *out_len = std::size(tbl_standard);
 }

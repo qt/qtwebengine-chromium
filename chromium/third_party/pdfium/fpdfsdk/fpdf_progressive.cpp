@@ -67,6 +67,7 @@ FPDF_RenderPageBitmapWithColorScheme_Start(FPDF_BITMAP bitmap,
   auto owned_context = std::make_unique<CPDF_PageRenderContext>();
   CPDF_PageRenderContext* context = owned_context.get();
   pPage->SetRenderContext(std::move(owned_context));
+  context->return_premultiplied_ = pBitmap->IsPremultiplied();
 
 #if defined(PDF_USE_SKIA)
   if (CFX_DefaultRenderDevice::UseSkiaRenderer()) {
@@ -85,7 +86,8 @@ FPDF_RenderPageBitmapWithColorScheme_Start(FPDF_BITMAP bitmap,
 
   if (!context->renderer_) {
 #if defined(PDF_USE_SKIA)
-    if (CFX_DefaultRenderDevice::UseSkiaRenderer()) {
+    if (CFX_DefaultRenderDevice::UseSkiaRenderer() &&
+        !context->return_premultiplied_) {
       pBitmap->UnPreMultiply();
     }
 #endif  // defined(PDF_USE_SKIA)
@@ -95,21 +97,17 @@ FPDF_RenderPageBitmapWithColorScheme_Start(FPDF_BITMAP bitmap,
 
   int status = ToFPDFStatus(context->renderer_->GetStatus());
   if (status == FPDF_RENDER_TOBECONTINUED) {
-    // Note that `pBitmap` is still pre-multiplied here, as the caller is
-    // expected to pass it to FPDF_RenderPage_Continue(). Then
-    // FPDF_RenderPage_Continue() can continue rendering into it without doing
-    // another round of (un)pre-multiplication. FPDF_RenderPage_Continue() will
-    // call UnPreMultiply() when done.
-    //
-    // Normally, PDFium would not return a pre-multiplied bitmap to the caller,
-    // but in this case, the bitmap is in an indeterminate state while it is
-    // being progressively rendered. So many an exception here, as it can
-    // greatly improve performance.
+    // Note that `pBitmap` is always pre-multiplied here, even if a straight
+    // alpha bitmap was passed in, as the caller is expected to pass it to
+    // FPDF_RenderPage_Continue(). Then FPDF_RenderPage_Continue() can continue
+    // rendering into it without doing another round of (un)pre-multiplication.
+    // FPDF_RenderPage_Continue() will call UnPreMultiply() if needed when done.
     return FPDF_RENDER_TOBECONTINUED;
   }
 
 #if defined(PDF_USE_SKIA)
-  if (CFX_DefaultRenderDevice::UseSkiaRenderer()) {
+  if (CFX_DefaultRenderDevice::UseSkiaRenderer() &&
+      !context->return_premultiplied_) {
     pBitmap->UnPreMultiply();
   }
 #endif  // defined(PDF_USE_SKIA)
@@ -156,7 +154,8 @@ FPDF_EXPORT int FPDF_CALLCONV FPDF_RenderPage_Continue(FPDF_PAGE page,
   }
 
 #if defined(PDF_USE_SKIA)
-  if (CFX_DefaultRenderDevice::UseSkiaRenderer()) {
+  if (CFX_DefaultRenderDevice::UseSkiaRenderer() &&
+      !context->return_premultiplied_) {
     context->device_->GetBitmap()->UnPreMultiply();
   }
 #endif  // defined(PDF_USE_SKIA)

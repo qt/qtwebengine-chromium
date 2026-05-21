@@ -703,8 +703,9 @@ struct CommonQuantParams {
 
   /*!
    * Flag indicating whether quantization matrices are being used:
-   *  - If true, qm_level_y, qm_level_u and qm_level_v indicate the level
-   *    indices to be used to access appropriate global quant matrix tables.
+   *  - If true, qmatrix_level_y, qmatrix_level_u and qmatrix_level_v indicate
+   *    the level indices to be used to access appropriate global quant matrix
+   *    tables.
    *  - If false, we implicitly use level index 'NUM_QM_LEVELS - 1'.
    */
   bool using_qmatrix;

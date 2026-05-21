@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "absl/container/flat_hash_map.h"
 #include "src/base/hashmap.h"
 #include "src/base/logging.h"
 #include "src/codegen/code-desc.h"
@@ -506,7 +507,7 @@ class ParallelMoveResolver {
 
   // TODO(victorgomes): Use MaglevAssembler::StackSlot instead of int32_t.
   // moves_from_stack_slot_[source] = target.
-  std::unordered_map<int32_t, GapMoveTargets> moves_from_stack_slot_;
+  absl::flat_hash_map<int32_t, GapMoveTargets> moves_from_stack_slot_;
 
   // materializing_register_moves[target] = node.
   std::array<ValueNode*, RegisterT::kNumRegisters>
@@ -643,7 +644,6 @@ class ExceptionHandlerTrampolineBuilder {
         case ValueRepresentation::kHoleyFloat64:
           materialising_moves->emplace_back(target, source);
           break;
-        case ValueRepresentation::kShiftedInt53:
         case ValueRepresentation::kNone:
           UNREACHABLE();
       }
@@ -1451,7 +1451,6 @@ class MaglevFrameTranslationBuilder {
         translation_array_builder_->StoreHoleyDoubleRegister(
             operand.GetDoubleRegister());
         break;
-      case ValueRepresentation::kShiftedInt53:
       case ValueRepresentation::kRawPtr:
       case ValueRepresentation::kNone:
         UNREACHABLE();
@@ -1480,7 +1479,6 @@ class MaglevFrameTranslationBuilder {
       case ValueRepresentation::kHoleyFloat64:
         translation_array_builder_->StoreHoleyDoubleStackSlot(stack_slot);
         break;
-      case ValueRepresentation::kShiftedInt53:
       case ValueRepresentation::kRawPtr:
       case ValueRepresentation::kNone:
         UNREACHABLE();

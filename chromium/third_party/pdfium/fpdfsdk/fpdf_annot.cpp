@@ -1752,11 +1752,6 @@ FPDFAnnot_AddFileAttachment(FPDF_ANNOTATION annot, FPDF_WIDESTRING name) {
     return nullptr;
   }
 
-  RetainPtr<CPDF_Dictionary> annot_dict = context->GetMutableAnnotDict();
-  if (!annot_dict) {
-    return nullptr;
-  }
-
   // SAFETY: required from caller.
   WideString ws_name = UNSAFE_BUFFERS(WideStringFromFPDFWideString(name));
   if (ws_name.IsEmpty()) {
@@ -1770,6 +1765,7 @@ FPDFAnnot_AddFileAttachment(FPDF_ANNOTATION annot, FPDF_WIDESTRING name) {
   fs_obj->SetNewFor<CPDF_String>("UF", ws_name.AsStringView());
   fs_obj->SetNewFor<CPDF_String>("F", ws_name.AsStringView());
 
-  annot_dict->SetNewFor<CPDF_Reference>("FS", doc, fs_obj->GetObjNum());
+  context->GetMutableAnnotDict()->SetNewFor<CPDF_Reference>(
+      "FS", doc, fs_obj->GetObjNum());
   return FPDFAttachmentFromCPDFObject(fs_obj);
 }

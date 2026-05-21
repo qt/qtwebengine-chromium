@@ -10,19 +10,21 @@ build_webui("build") {
   grd_prefix = "omnibox_popup"
   static_files = [
     "images/create_images.png",
+    "omnibox_popup.html",
     "omnibox_popup_aim.html",
     "omnibox_popup_full.html",
-    "omnibox_popup.html",
   ]
   ts_files = [
     "aim_app.html.ts",
     "aim_app.ts",
     "aim_browser_proxy.ts",
     "app.html.ts",
+    "app_contextual_entrypoint.html.ts",
     "app.ts",
     "full_app.html.ts",
     "full_app.ts",
     "omnibox_popup.ts",
+    "omnibox_popup_browser_proxy.ts",
   ]
   css_files = [
     "aim_app.css",
@@ -44,7 +46,10 @@ build_webui("build") {
   mojo_files_deps =
       [ "//chrome/browser/ui/webui/omnibox_popup/mojom:mojom_ts__generator" ]
 
-  mojo_files = [ "$root_gen_dir/chrome/browser/ui/webui/omnibox_popup/mojom/omnibox_popup_aim.mojom-webui.ts" ]
+  mojo_files = [
+    "$root_gen_dir/chrome/browser/ui/webui/omnibox_popup/mojom/omnibox_popup.mojom-webui.ts",
+    "$root_gen_dir/chrome/browser/ui/webui/omnibox_popup/mojom/omnibox_popup_aim.mojom-webui.ts",
+  ]
 
   webui_context_type = "trusted"
   optimize = optimize_webui
@@ -53,10 +58,10 @@ build_webui("build") {
     optimize_webui_in_files = [ "omnibox_popup.js" ]
     optimize_webui_excludes = [
       "chrome://resources/cr_components/color_change_listener/color_change_listener.mojom-webui.js",
-      "chrome://resources/mojo/omnibox/browser/searchbox.mojom-webui.js",
       "chrome://resources/js/metrics_reporter/metrics_reporter.mojom-webui.js",
       "chrome://resources/mojo/mojo/public/mojom/base/string16.mojom-webui.js",
       "chrome://resources/mojo/mojo/public/mojom/base/time.mojom-webui.js",
+      "chrome://resources/mojo/omnibox/browser/searchbox.mojom-webui.js",
       "chrome://resources/mojo/url/mojom/url.mojom-webui.js",
     ]
   }

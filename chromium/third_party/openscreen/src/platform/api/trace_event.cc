@@ -54,4 +54,8 @@ void TraceEvent::TruncateStrings() {
   }
 }
 
+std::ostream& operator<<(std::ostream& out, const TraceEvent& event) {
+  return out << event.ToString();
+}
+
 }  // namespace openscreen

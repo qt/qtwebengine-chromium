@@ -31,7 +31,6 @@
 #include "core/fpdfapi/parser/fpdf_parser_utility.h"
 #include "core/fpdfdoc/cpdf_annot.h"
 #include "core/fxcrt/fx_string_wrappers.h"
-#include "core/fxcrt/notreached.h"
 #include "fpdfsdk/cpdfsdk_helpers.h"
 
 enum FPDF_TYPE { MAX, MIN };

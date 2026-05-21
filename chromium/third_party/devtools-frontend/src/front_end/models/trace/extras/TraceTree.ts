@@ -493,8 +493,10 @@ export class BottomUpRootNode extends Node {
         node.totalTime += totalTimeById.get(id) || 0;
         totalTimeById.delete(id);
       }
-      // TODO: this may be wrong. See the skipped test in TraceTree.test.ts.
-      if (firstNodeStack.length) {
+
+      // An item on this stack means that this current node has a caller. Therefore,
+      // in a bottom-up view it has children.
+      if (idStack.length > 0) {
         node.setHasChildren(true);
       }
     }
@@ -685,7 +687,7 @@ export function generateEventID(event: Types.Events.Event): string {
         SamplesIntegrator.nativeGroup(event.callFrame.functionName) :
         event.callFrame.functionName;
     const location = event.callFrame.scriptId || event.callFrame.url || '';
-    return `f:${name}@${location}`;
+    return `f:${name}@${location}:${event.callFrame.lineNumber}:${event.callFrame.columnNumber}`;
   }
 
   if (Types.Events.isConsoleTimeStamp(event) && event.args.data) {

@@ -505,12 +505,6 @@ FXDIB_Format GetCreateCompatibleBitmapFormat(int render_caps,
   return CFX_DIBBase::kPlatformRGBFormat;
 }
 
-bool IsModeNonLCD(FontAntiAliasingMode mode) {
-  return mode == FontAntiAliasingMode::kNormal ||
-         mode == FontAntiAliasingMode::kLight ||
-         mode == FontAntiAliasingMode::kMono;
-}
-
 }  // namespace
 
 CFX_RenderDevice::CFX_RenderDevice() = default;
@@ -1177,11 +1171,12 @@ bool CFX_RenderDevice::DrawNormalText(pdfium::span<const TextCharPos> pCharPos,
     }
   }
   std::vector<TextGlyphPos> glyphs(pCharPos.size());
+  const bool anti_alias_is_lcd = anti_alias == FontAntiAliasingMode::kLcd;
   for (auto [charpos, glyph] : fxcrt::Zip(pCharPos, pdfium::span(glyphs))) {
     glyph.device_origin_ = text2Device.Transform(charpos.origin_);
-    glyph.origin_.x = IsModeNonLCD(anti_alias)
-                          ? FXSYS_roundf(glyph.device_origin_.x)
-                          : static_cast<int>(floor(glyph.device_origin_.x));
+    glyph.origin_.x = anti_alias_is_lcd
+                          ? static_cast<int>(floor(glyph.device_origin_.x))
+                          : FXSYS_roundf(glyph.device_origin_.x);
     glyph.origin_.y = FXSYS_roundf(glyph.device_origin_.y);
 
     CFX_Matrix matrix = charpos.GetEffectiveMatrix(char2device);
@@ -1189,11 +1184,11 @@ bool CFX_RenderDevice::DrawNormalText(pdfium::span<const TextCharPos> pCharPos,
         charpos.glyph_index_, charpos.font_style_, matrix,
         charpos.font_char_width_, anti_alias, &text_options);
   }
-  if (IsModeNonLCD(anti_alias) && glyphs.size() > 1) {
+  if (!anti_alias_is_lcd && glyphs.size() > 1) {
     AdjustGlyphSpace(&glyphs);
   }
 
-  FX_RECT bmp_rect = GetGlyphsBBox(glyphs, anti_alias);
+  FX_RECT bmp_rect = GetGlyphsBBox(glyphs, anti_alias_is_lcd);
   bmp_rect.Intersect(clip_box_);
   if (bmp_rect.IsEmpty()) {
     return true;

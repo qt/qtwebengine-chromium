@@ -11,7 +11,6 @@
 #include <utility>
 
 #include "base/base64.h"
-#include "base/hash/sha1.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
@@ -22,6 +21,7 @@
 #include "components/prefs/pref_service.h"
 #include "components/prefs/scoped_user_pref_update.h"
 #include "crypto/hmac.h"
+#include "crypto/obsolete/sha1.h"
 #include "third_party/zlib/google/compression_utils.h"
 
 namespace metrics {
@@ -53,9 +53,9 @@ std::string DecodeFromBase64(const std::string& to_convert) {
 class LogsPrefWriter {
  public:
   // Create a writer that will write unsent logs to |list_value|. |list_value|
-  // should be a base::Value::List representing a pref. Clears the contents of
+  // should be a base::ListValue representing a pref. Clears the contents of
   // |list_value|.
-  explicit LogsPrefWriter(base::Value::List* list_value)
+  explicit LogsPrefWriter(base::ListValue* list_value)
       : list_value_(list_value) {
     DCHECK(list_value);
     list_value->clear();
@@ -70,7 +70,7 @@ class LogsPrefWriter {
   void WriteLogEntry(UnsentLogStore::LogInfo* log) {
     DCHECK(!finished_);
 
-    base::Value::Dict dict_value;
+    base::DictValue dict_value;
     dict_value.Set(kLogHashKey, EncodeToBase64(log->hash));
     dict_value.Set(kLogSignatureKey, EncodeToBase64(log->signature));
     dict_value.Set(kLogDataKey, EncodeToBase64(log->compressed_log_data));
@@ -114,7 +114,7 @@ class LogsPrefWriter {
 
  private:
   // The list where the logs will be written to. This should represent a pref.
-  raw_ptr<base::Value::List> list_value_;
+  raw_ptr<base::ListValue> list_value_;
 
   // Whether or not this writer has finished writing to pref.
   bool finished_ = false;
@@ -129,7 +129,7 @@ class LogsPrefWriter {
   size_t unsent_logs_count_ = 0;
 };
 
-bool GetString(const base::Value::Dict& dict,
+bool GetString(const base::DictValue& dict,
                std::string_view key,
                std::string& out) {
   const std::string* value = dict.FindString(key);
@@ -142,12 +142,11 @@ bool GetString(const base::Value::Dict& dict,
 }  // namespace
 
 UnsentLogStore::LogInfo::LogInfo() = default;
-UnsentLogStore::LogInfo::~LogInfo() = default;
 
-void UnsentLogStore::LogInfo::Init(const std::string& log_data,
-                                   const std::string& log_timestamp,
-                                   const std::string& signing_key,
-                                   const LogMetadata& optional_log_metadata) {
+UnsentLogStore::LogInfo::LogInfo(const std::string& log_data,
+                                 const std::string& log_timestamp,
+                                 const std::string& signing_key,
+                                 const LogMetadata& optional_log_metadata) {
   DCHECK(!log_data.empty());
 
   if (!compression::GzipCompress(log_data, &compressed_log_data)) {
@@ -155,19 +154,22 @@ void UnsentLogStore::LogInfo::Init(const std::string& log_data,
     return;
   }
 
-  hash = base::SHA1HashString(log_data);
+  hash = Sha1ForUnsentLogStore(log_data);
   signature = ComputeHMACForLog(log_data, signing_key);
 
   timestamp = log_timestamp;
   log_metadata = optional_log_metadata;
 }
 
-void UnsentLogStore::LogInfo::Init(const std::string& log_data,
-                                   const std::string& signing_key,
-                                   const LogMetadata& optional_log_metadata) {
-  Init(log_data, base::NumberToString(base::Time::Now().ToTimeT()), signing_key,
-       optional_log_metadata);
-}
+UnsentLogStore::LogInfo::LogInfo(const std::string& log_data,
+                                 const std::string& signing_key,
+                                 const LogMetadata& optional_log_metadata)
+    : LogInfo(log_data,
+              base::NumberToString(base::Time::Now().ToTimeT()),
+              signing_key,
+              optional_log_metadata) {}
+
+UnsentLogStore::LogInfo::~LogInfo() = default;
 
 UnsentLogStore::UnsentLogStore(std::unique_ptr<UnsentLogStoreMetrics> metrics,
                                PrefService* local_state,
@@ -373,8 +375,8 @@ void UnsentLogStore::LoadPersistedUnsentLogs() {
 void UnsentLogStore::StoreLog(const std::string& log_data,
                               const LogMetadata& log_metadata,
                               MetricsLogsEventManager::CreateReason reason) {
-  std::unique_ptr<LogInfo> info = std::make_unique<LogInfo>();
-  info->Init(log_data, signing_key_, log_metadata);
+  std::unique_ptr<LogInfo> info =
+      std::make_unique<LogInfo>(log_data, signing_key_, log_metadata);
   StoreLogInfo(std::move(info), log_data.size(), reason);
 }
 
@@ -409,8 +411,8 @@ std::string UnsentLogStore::ReplaceLogAtIndex(size_t index,
   std::string old_hash;
   old_hash.swap(list_[index]->hash);
 
-  std::unique_ptr<LogInfo> info = std::make_unique<LogInfo>();
-  info->Init(new_log_data, old_timestamp, signing_key_, log_metadata);
+  std::unique_ptr<LogInfo> info = std::make_unique<LogInfo>(
+      new_log_data, old_timestamp, signing_key_, log_metadata);
   // Note that both the compression ratio of the new log and the log that is
   // being replaced are recorded.
   metrics_->RecordCompressionRatio(info->compressed_log_data.size(),
@@ -444,7 +446,7 @@ void UnsentLogStore::SetLogsEventManager(
   logs_event_manager_ = logs_event_manager;
 }
 
-void UnsentLogStore::ReadLogsFromPrefList(const base::Value::List& list_value) {
+void UnsentLogStore::ReadLogsFromPrefList(const base::ListValue& list_value) {
   // The below DCHECK ensures that a log from prefs is not loaded multiple
   // times, which is important for the semantics of the NotifyLogsCreated() call
   // below.
@@ -460,7 +462,7 @@ void UnsentLogStore::ReadLogsFromPrefList(const base::Value::List& list_value) {
   list_.resize(log_count);
 
   for (size_t i = 0; i < log_count; ++i) {
-    const base::Value::Dict* dict = list_value[i].GetIfDict();
+    const base::DictValue* dict = list_value[i].GetIfDict();
     std::unique_ptr<LogInfo> info = std::make_unique<LogInfo>();
     if (!dict || !GetString(*dict, kLogDataKey, info->compressed_log_data) ||
         !GetString(*dict, kLogHashKey, info->hash) ||
@@ -515,7 +517,7 @@ void UnsentLogStore::WriteToMetricsPref(
   }
 
   ScopedDictPrefUpdate update(local_state_, metadata_pref_name_);
-  base::Value::Dict& pref_data = update.Get();
+  base::DictValue& pref_data = update.Get();
   pref_data.Set(kLogUnsentCountKey, unsent_samples_count);
   pref_data.Set(kLogSentCountKey, sent_samples_count);
   // Round up to kb.
@@ -528,7 +530,7 @@ void UnsentLogStore::RecordMetaDataMetrics() {
     return;
   }
 
-  const base::Value::Dict& value = local_state_->GetDict(metadata_pref_name_);
+  const base::DictValue& value = local_state_->GetDict(metadata_pref_name_);
 
   auto unsent_samples_count = value.FindInt(kLogUnsentCountKey);
   auto sent_samples_count = value.FindInt(kLogSentCountKey);
@@ -578,6 +580,16 @@ void UnsentLogStore::NotifyLogsEvent(base::span<std::unique_ptr<LogInfo>> logs,
   for (const std::unique_ptr<LogInfo>& info : logs) {
     logs_event_manager_->NotifyLogEvent(event, info->hash, message);
   }
+}
+
+// Computes a SHA-1 hash of |data| and returns it as a string. This is
+// required for backward compatibility with existing on-disk data. This function
+// is intentionally declared in a separate header file "crypto/obsolete/sha1.h",
+// so as to easily monitor current usage of SHA-1 in Chrome, since SHA-1 is now
+// discouraged for new code.
+std::string Sha1ForUnsentLogStore(std::string_view data) {
+  return std::string(base::as_string_view(
+      crypto::obsolete::Sha1::Hash(base::as_byte_span(data))));
 }
 
 }  // namespace metrics

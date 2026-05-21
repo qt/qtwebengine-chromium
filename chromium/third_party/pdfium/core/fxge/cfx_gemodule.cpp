@@ -8,7 +8,6 @@
 
 #include "core/fxcrt/check.h"
 #include "core/fxge/cfx_folderfontinfo.h"
-#include "core/fxge/cfx_fontcache.h"
 #include "core/fxge/cfx_fontmgr.h"
 
 namespace {
@@ -20,7 +19,6 @@ CFX_GEModule* g_pGEModule = nullptr;
 CFX_GEModule::CFX_GEModule(const char** pUserFontPaths)
     : platform_(PlatformIface::Create()),
       font_mgr_(std::make_unique<CFX_FontMgr>()),
-      font_cache_(std::make_unique<CFX_FontCache>()),
       user_font_paths_(pUserFontPaths) {}
 
 CFX_GEModule::~CFX_GEModule() = default;

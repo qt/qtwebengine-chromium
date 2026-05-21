@@ -9,7 +9,7 @@
 
 #include "base/memory/raw_ref.h"
 #include "base/types/expected.h"
-#include "chrome/common/actor.mojom.h"
+#include "chrome/common/actor.mojom-forward.h"
 #include "chrome/common/actor/task_id.h"
 #include "chrome/renderer/actor/tool_base.h"
 #include "third_party/blink/public/common/input/web_input_event.h"
@@ -33,15 +33,13 @@ class MouseMoveTool : public ToolBase {
   ~MouseMoveTool() override;
 
   // actor::ToolBase
+  ValidationResult Validate() override;
   void Execute(ToolFinishedCallback callback) override;
   std::string DebugString() const override;
 
  private:
-  using ValidatedResult =
-      base::expected<ResolvedTarget, mojom::ActionResultPtr>;
-  ValidatedResult Validate() const;
-
   mojom::MouseMoveActionPtr action_;
+  std::optional<ResolvedTarget> validated_target_;
 };
 
 }  // namespace actor

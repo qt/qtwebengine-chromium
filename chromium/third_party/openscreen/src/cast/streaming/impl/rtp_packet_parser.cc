@@ -92,7 +92,7 @@ std::optional<RtpPacketParser::ParseResult> RtpPacketParser::Parse(
       result.new_playout_delay =
           std::chrono::milliseconds(ReadBigEndian<uint16_t>(buffer.data()));
     }
-    buffer.remove_prefix(size);
+    buffer = buffer.subspan(size);
   }
 
   // All remaining data in the packet is the payload.

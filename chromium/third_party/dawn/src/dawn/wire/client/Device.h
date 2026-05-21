@@ -31,8 +31,10 @@
 #include <webgpu/webgpu.h>
 
 #include <memory>
+#include <optional>
 
 #include "dawn/common/LinkedList.h"
+#include "dawn/common/MutexProtected.h"
 #include "dawn/common/RefCountedWithExternalCount.h"
 #include "dawn/wire/WireCmd_autogen.h"
 #include "dawn/wire/client/ApiObjects_autogen.h"
@@ -58,6 +60,8 @@ class Device final : public RefCountedWithExternalCount<ObjectWithEventsBase> {
     void SetFeatures(const WGPUFeatureName* features, uint32_t featuresCount);
 
     bool IsAlive() const;
+    Queue* GetQueue();
+    const LimitsAndFeatures& GetLimitsAndFeatures() const;
 
     void HandleError(WGPUErrorType errorType, WGPUStringView message);
     void HandleLogging(WGPULoggingType loggingType, WGPUStringView message);
@@ -77,6 +81,9 @@ class Device final : public RefCountedWithExternalCount<ObjectWithEventsBase> {
     WGPUFuture APICreateRenderPipelineAsync(
         WGPURenderPipelineDescriptor const* descriptor,
         const WGPUCreateRenderPipelineAsyncCallbackInfo& callbackInfo);
+    WGPUResourceTable APICreateResourceTable(const WGPUResourceTableDescriptor* descriptor);
+    WGPUTexture APICreateTexture(const WGPUTextureDescriptor* descriptor);
+    WGPUTexture APICreateErrorTexture(const WGPUTextureDescriptor* descriptor);
 
     WGPUStatus APIGetLimits(WGPULimits* limits) const;
     WGPUFuture APIGetLostFuture();
@@ -97,16 +104,24 @@ class Device final : public RefCountedWithExternalCount<ObjectWithEventsBase> {
     WGPUFuture CreatePipelineAsync(Descriptor const* descriptor, const CallbackInfo& callbackInfo);
 
     LimitsAndFeatures mLimitsAndFeatures;
+    std::variant<Ref<TrackedEvent>, FutureID> mDeviceLostInfo;
 
-    struct DeviceLostInfo {
-        FutureID futureID = kNullFutureID;
-        Ref<TrackedEvent> event = nullptr;
+    struct CallbackInfos {
+        CallbackInfos(const WGPUUncapturedErrorCallbackInfo& error,
+                      const WGPULoggingCallbackInfo& logging);
+
+        // The callback infos are optional because once the device is lost, they are set to
+        // std::nullopt and no longer do anything.
+        std::optional<WGPUUncapturedErrorCallbackInfo> error = std::nullopt;
+        std::optional<WGPULoggingCallbackInfo> logging = std::nullopt;
+
+        // Counter that tracks how many places are currently using callback infos. This is used to
+        // ensure that before we call the device lost callback (which may deallocate the uncaptured
+        // error and logging callbacks), we have ensured that there are no outstanding references to
+        // those callbacks.
+        uint32_t semaphore = 0;
     };
-    DeviceLostInfo mDeviceLostInfo;
-
-    WGPUUncapturedErrorCallbackInfo mUncapturedErrorCallbackInfo =
-        WGPU_UNCAPTURED_ERROR_CALLBACK_INFO_INIT;
-    WGPULoggingCallbackInfo mLoggingCallbackInfo = WGPU_LOGGING_CALLBACK_INFO_INIT;
+    MutexCondVarProtected<CallbackInfos> mCallbackInfos;
 
     Ref<Adapter> mAdapter;
     Ref<Queue> mQueue;

@@ -6,12 +6,11 @@ This page assumes a working Chromium DevTools [checkout and build](../get_the_co
 
 1.   [Quick Start](#Quick-Start)
 2.   [IDE Setup](#IDE-Setup)
-3.   [Design Documents](./design.md)
-4.   [Contributing changes](./changes.md)
-5.   [Issues Guidelines](./issues.md)
-6.   [Settings, Experiments, and Features](./settings-experiments-features.md)
-7.   [Infrastructure](./infrastructure.md)
-8.   [Legal Stuff](#Legal-Stuff)
+3.   [Contributing changes](./changes.md)
+4.   [Issues Guidelines](./issues.md)
+5.   [Settings, Experiments, and Features](./settings-experiments-features.md)
+6.   [Infrastructure](./infrastructure.md)
+7.   [Legal Stuff](#Legal-Stuff)
 
 
 ## Quick Start

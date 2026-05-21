@@ -1,4 +1,4 @@
-/* Copyright (c) 2024-2025 LunarG, Inc.
+/* Copyright (c) 2024-2026 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -44,7 +44,8 @@ void PostProcessDescriptorIndexingPass::CreateFunctionCall(BasicBlock& block, In
     const Constant& binding_constant = type_manager_.GetConstantUInt32(meta.descriptor_binding);
     const uint32_t descriptor_index_id = CastToUint32(meta.descriptor_index_id, block, inst_it);  // might be int32
 
-    BindingLayout binding_layout = module_.set_index_to_bindings_layout_lut_[meta.descriptor_set][meta.descriptor_binding];
+    const auto& layout_lut = module_.interface_.instrumentation_dsl.set_index_to_bindings_layout_lut;
+    BindingLayout binding_layout = layout_lut[meta.descriptor_set][meta.descriptor_binding];
     const Constant& binding_layout_offset = type_manager_.GetConstantUInt32(binding_layout.start);
     const Constant& variable_id_constant = type_manager_.GetConstantUInt32(meta.variable_id);
 
@@ -167,20 +168,24 @@ bool PostProcessDescriptorIndexingPass::RequiresInstrumentation(const Function& 
 }
 
 bool PostProcessDescriptorIndexingPass::Instrument() {
-    if (module_.set_index_to_bindings_layout_lut_.empty()) {
+    if (module_.interface_.instrumentation_dsl.set_index_to_bindings_layout_lut.empty()) {
         return false;  // If there is no bindings, nothing to instrument
     }
 
-    for (const auto& function : module_.functions_) {
-        if (function->instrumentation_added_) continue;
+    for (Function& function : module_.functions_) {
+        if (!function.called_from_target_) {
+            continue;
+        }
 
         FunctionDuplicateTracker function_duplicate_tracker;
 
-        for (auto block_it = function->blocks_.begin(); block_it != function->blocks_.end(); ++block_it) {
+        for (auto block_it = function.blocks_.begin(); block_it != function.blocks_.end(); ++block_it) {
             BasicBlock& current_block = **block_it;
 
             cf_.Update(current_block);
-            if (debug_disable_loops_ && cf_.in_loop) continue;
+            if (debug_disable_loops_ && cf_.in_loop) {
+                continue;
+            }
 
             auto& block_instructions = current_block.instructions_;
 
@@ -192,7 +197,7 @@ bool PostProcessDescriptorIndexingPass::Instrument() {
                 pc_access.Update(module_, inst_it);
 
                 InstructionMeta meta;
-                if (!RequiresInstrumentation(*function, *(inst_it->get()), meta)) {
+                if (!RequiresInstrumentation(function, *(inst_it->get()), meta)) {
                     continue;
                 }
 
@@ -205,7 +210,9 @@ bool PostProcessDescriptorIndexingPass::Instrument() {
                     continue;  // duplicate detected
                 }
 
-                if (IsMaxInstrumentationsCount()) continue;
+                if (IsMaxInstrumentationsCount()) {
+                    continue;
+                }
                 instrumentations_count_++;
 
                 CreateFunctionCall(current_block, &inst_it, meta);

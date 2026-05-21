@@ -65,6 +65,7 @@
 #include "third_party/blink/renderer/core/paint/object_paint_invalidator.h"
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
 #include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
+#include "third_party/blink/renderer/core/paint/text_overflow_post_layout_snapshot.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/clear_collection_scope.h"
 #include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
@@ -126,17 +127,6 @@ bool LayoutBlockFlow::CanContainFirstFormattedLine() const {
   // https://drafts.csswg.org/css-text-3/#text-indent-property
   return !IsAnonymousBlockFlow() || !PreviousSibling() || IsFlexItem() ||
          IsGridItem();
-}
-
-void LayoutBlockFlow::WillBeDestroyed() {
-  NOT_DESTROYED();
-  // Make sure to destroy anonymous children first while they are still
-  // connected to the rest of the tree, so that they will properly dirty line
-  // boxes that they are removed from. Effects that do :before/:after only on
-  // hover could crash otherwise.
-  Children()->DestroyLeftoverChildren();
-
-  LayoutBlock::WillBeDestroyed();
 }
 
 void LayoutBlockFlow::AddChildBeforeDescendant(
@@ -207,12 +197,8 @@ void LayoutBlockFlow::AddChild(LayoutObject* new_child,
   // children as blocks.
   // So, if our children are currently inline and a block child has to be
   // inserted, we move all our inline children into anonymous block boxes.
-  const bool child_is_inline_level =
-      new_child->IsInline() ||
-      (LayoutObject::RequiresAnonymousTableWrappers(new_child) &&
-       LayoutTable::ShouldCreateInlineAnonymous(*this));
-  bool child_is_block_level =
-      !child_is_inline_level && !new_child->IsFloatingOrOutOfFlowPositioned();
+  const bool child_is_block_level =
+      !new_child->IsInline() && !new_child->IsFloatingOrOutOfFlowPositioned();
 
   if (ChildrenInline()) {
     if (child_is_block_level) {
@@ -280,76 +266,90 @@ void LayoutBlockFlow::RemoveChild(LayoutObject* old_child) {
     LayoutBox::RemoveChild(old_child);
     return;
   }
-  const bool is_inner_editor_child = IsAnonymous() && IsInnerEditorChild(*this);
 
   // If this child is a block, and if our previous and next siblings are both
   // anonymous blocks with inline content, then we can go ahead and fold the
-  // inline content back together. If only one of the siblings is such an
-  // anonymous blocks, check if the other sibling (and any of *its* siblings)
-  // are floating or out-of-flow positioned. In that case, they should be moved
-  // into the anonymous block.
-  LayoutObject* prev = old_child->PreviousSibling();
-  LayoutObject* next = old_child->NextSibling();
-  bool merged_anonymous_blocks = false;
-  if (prev && next && !old_child->IsInline()) {
-    auto* prev_block_flow = DynamicTo<LayoutBlockFlow>(prev);
-    auto* next_block_flow = DynamicTo<LayoutBlockFlow>(next);
-    if (prev_block_flow && next_block_flow &&
-        prev_block_flow->MergeSiblingContiguousAnonymousBlock(
-            next_block_flow)) {
-      merged_anonymous_blocks = true;
-      next = nullptr;
-    } else if (prev_block_flow && IsMergeableAnonymousBlock(prev_block_flow)) {
-      // The previous sibling is anonymous. Scan the next siblings and reparent
-      // any floating or out-of-flow positioned objects into the end of the
-      // previous anonymous block.
-      while (next && next->IsFloatingOrOutOfFlowPositioned()) {
-        LayoutObject* sibling = next->NextSibling();
-        MoveChildTo(prev_block_flow, next, nullptr, false);
-        next = sibling;
+  // inline content back together.
+  if (!RuntimeEnabledFeatures::LayoutMergeAnonymousFixEnabled() &&
+      !old_child->IsInline()) {
+    auto* prev_block_flow =
+        DynamicTo<LayoutBlockFlow>(old_child->PreviousSibling());
+    auto* next_block_flow =
+        DynamicTo<LayoutBlockFlow>(old_child->NextSibling());
+    if (prev_block_flow && next_block_flow) {
+      prev_block_flow->MergeSiblingContiguousAnonymousBlock(next_block_flow);
+    }
+  }
+
+  // If the old_child is block-level we need to check if any adjacent siblings
+  // are floating or out-of-flow positioned, and if so reparent them into the
+  // inline-level anonymous block.
+  //
+  // This logic is the complement to these reparenting methods:
+  //  - ReparentPrecedingFloatingOrOutOfFlowSiblings
+  //  - ReparentSubsequentFloatingOrOutOfFlowSiblings
+  {
+    LayoutObject* prev = old_child->PreviousSibling();
+    LayoutObject* next = old_child->NextSibling();
+    if (prev && next && !old_child->IsInline()) {
+      auto* prev_block_flow = DynamicTo<LayoutBlockFlow>(prev);
+      if (prev_block_flow && IsMergeableAnonymousBlock(prev_block_flow)) {
+        // The previous sibling is an anonymous block-flow. Scan the next
+        // siblings and reparent any floating or out-of-flow positioned objects
+        // into the end of the previous anonymous block-flow.
+        while (next && next->IsFloatingOrOutOfFlowPositioned()) {
+          LayoutObject* sibling = next->NextSibling();
+          MoveChildTo(prev_block_flow, next, nullptr, false);
+          next = sibling;
+        }
       }
-    } else if (next_block_flow && IsMergeableAnonymousBlock(next_block_flow)) {
-      // The next sibling is anonymous. Scan the previous siblings and reparent
-      // any floating or out-of-flow positioned objects into the start of the
-      // next anonymous block.
-      while (prev && prev->IsFloatingOrOutOfFlowPositioned()) {
-        LayoutObject* sibling = prev->PreviousSibling();
-        MoveChildTo(next_block_flow, prev, next_block_flow->FirstChild(),
-                    false);
-        prev = sibling;
+
+      auto* next_block_flow = DynamicTo<LayoutBlockFlow>(prev->NextSibling());
+      if (next_block_flow && IsMergeableAnonymousBlock(next_block_flow)) {
+        // The next sibling is an anonymous block-flow. Scan the previous
+        // siblings and reparent any floating or out-of-flow positioned objects
+        // into the start of the next anonymous block-flow.
+        while (prev && prev->IsFloatingOrOutOfFlowPositioned()) {
+          LayoutObject* sibling = prev->PreviousSibling();
+          MoveChildTo(next_block_flow, prev, next_block_flow->FirstChild(),
+                      false);
+          prev = sibling;
+        }
       }
     }
   }
 
   LayoutBlock::RemoveChild(old_child);
 
+  const bool is_inner_editor_child = IsAnonymous() && IsInnerEditorChild(*this);
   if (is_inner_editor_child && !BeingDestroyed()) {
     if (old_child->IsBR() && FirstChild()) {
       // We removed a LayoutBR from `this`. If this still contains LayoutTexts,
       // we move them to the next anonymous block. Then, remove `this` from the
       // parent.
-      if (auto* next_anonymous = To<LayoutBlockFlow>(NextSibling())) {
-        CHECK(next_anonymous->IsAnonymous());
-        MoveAllChildrenTo(next_anonymous, next_anonymous->FirstChild(),
-                          /* full_remove_insert */ true);
+      if (auto* next_block_flow = To<LayoutBlockFlow>(NextSibling())) {
+        // `next_block_flow` might be a non-anonymous block-flow for InsertHTML
+        // TestRendering.
+        if (next_block_flow->IsAnonymous()) {
+          MoveAllChildrenTo(next_block_flow, next_block_flow->FirstChild(),
+                            /* full_remove_insert */ true);
+        }
       }
     }
-    if (!FirstChild() && Parent()) {
-      Parent()->RemoveChild(this);
+    if (!FirstChild()) {
       Destroy();
     }
     return;
   }
 
-  LayoutObject* child = prev ? prev : next;
-  auto* child_block_flow = DynamicTo<LayoutBlockFlow>(child);
-  if (child_block_flow && !child_block_flow->PreviousSibling() &&
-      !child_block_flow->NextSibling()) {
+  if (FirstChild() == LastChild()) {
     // If the removal has knocked us down to containing only a single anonymous
-    // box we can go ahead and pull the content right back up into our
-    // box.
-    if (merged_anonymous_blocks || IsMergeableAnonymousBlock(child_block_flow))
-      CollapseAnonymousBlockChild(child_block_flow);
+    // box we can go ahead and pull the content right back up into our box.
+    if (auto* child_block_flow = DynamicTo<LayoutBlockFlow>(FirstChild())) {
+      if (IsMergeableAnonymousBlock(child_block_flow)) {
+        CollapseAnonymousBlockChild(child_block_flow);
+      }
+    }
   }
 
   if (FirstChild() && !BeingDestroyed() &&
@@ -359,22 +359,30 @@ void LayoutBlockFlow::RemoveChild(LayoutObject* old_child) {
     // inline without the need for anonymous blocks, then do that.
     MakeChildrenInlineIfPossible();
   }
+
+  if (RuntimeEnabledFeatures::LayoutReinsertOnInFlowStateChangeEnabled()) {
+    if (!FirstChild() && IsMergeableAnonymousBlock(this)) {
+      // If we don't have any children, and this was created as an anonymous
+      // block, remove this object as we aren't needed anymore.
+      Destroy();
+    }
+  }
 }
 
-void LayoutBlockFlow::MoveAllChildrenIncludingFloatsTo(
-    LayoutBlock* to_block,
-    bool full_remove_insert) {
-  NOT_DESTROYED();
-  auto* to_block_flow = To<LayoutBlockFlow>(to_block);
+bool LayoutBlockFlow::CanMergeWith(const LayoutBoxModelObject& other) const {
+  const auto* other_block_flow = DynamicTo<LayoutBlockFlow>(other);
+  if (!other_block_flow) {
+    return false;
+  }
 
-  DCHECK(full_remove_insert ||
-         to_block_flow->ChildrenInline() == ChildrenInline());
-
-  MoveAllChildrenTo(to_block_flow, full_remove_insert);
+  return IsMergeableAnonymousBlock(this) &&
+         IsMergeableAnonymousBlock(other_block_flow);
 }
 
 void LayoutBlockFlow::ChildBecameFloatingOrOutOfFlow(LayoutBox* child) {
   NOT_DESTROYED();
+  DCHECK(!RuntimeEnabledFeatures::LayoutReinsertOnInFlowStateChangeEnabled());
+
   if (IsAnonymousBlockFlow()) {
     if (auto* parent_inline = DynamicTo<LayoutInline>(Parent())) {
       // The child used to be an in-flow block-in-inline, which requires an
@@ -456,9 +464,7 @@ bool LayoutBlockFlow::MergeSiblingContiguousAnonymousBlock(
   bool full_remove_insert = sibling_that_may_be_deleted->HasLayer() ||
                             HasLayer() ||
                             sibling_that_may_be_deleted->IsInsideMulticol();
-  sibling_that_may_be_deleted->MoveAllChildrenIncludingFloatsTo(
-      this, full_remove_insert);
-  // Delete the now-empty block's lines and nuke it.
+  sibling_that_may_be_deleted->MoveAllChildrenTo(this, full_remove_insert);
   sibling_that_may_be_deleted->Destroy();
   return true;
 }
@@ -602,7 +608,6 @@ void LayoutBlockFlow::MakeChildrenNonInline(LayoutObject* insertion_point) {
   // This means that we cannot coalesce inlines before |insertionPoint| with
   // inlines following |insertionPoint|, because the new child is going to be
   // inserted in between the inlines, splitting them.
-  DCHECK(!IsInline() || IsAtomicInlineLevel());
   DCHECK(!insertion_point || insertion_point->Parent() == this);
 
   SetChildrenInline(false);
@@ -637,6 +642,7 @@ void LayoutBlockFlow::MakeChildrenNonInline(LayoutObject* insertion_point) {
 
 void LayoutBlockFlow::ChildBecameNonInline(LayoutObject*) {
   NOT_DESTROYED();
+  DCHECK(!RuntimeEnabledFeatures::LayoutReinsertOnInFlowStateChangeEnabled());
   MakeChildrenNonInline();
   auto* parent_layout_block = DynamicTo<LayoutBlock>(Parent());
   if (IsAnonymousBlockFlow() && parent_layout_block) {
@@ -655,8 +661,23 @@ bool LayoutBlockFlow::ShouldTruncateOverflowingText() const {
     }
     object_to_check = parent;
   }
-  return object_to_check->HasNonVisibleOverflow() &&
-         !object_to_check->StyleRef().TextOverflow().IsClip();
+  if (!object_to_check->HasNonVisibleOverflow() ||
+      object_to_check->StyleRef().TextOverflow().IsClip()) {
+    return false;
+  }
+  if (RuntimeEnabledFeatures::DisableEllipsisWhenScrolledEnabled()) {
+    if (const auto* box = DynamicTo<LayoutBox>(object_to_check)) {
+      if (auto* scrollable_area = box->GetScrollableArea()) {
+        auto* snapshot = scrollable_area->GetTextOverflowPostLayoutSnapshot();
+        if (!snapshot) {
+          snapshot = MakeGarbageCollected<TextOverflowPostLayoutSnapshot>(
+              *scrollable_area);
+        }
+        return !snapshot->IsScrolled();
+      }
+    }
+  }
+  return true;
 }
 
 Node* LayoutBlockFlow::NodeForHitTest() const {
@@ -670,30 +691,6 @@ Node* LayoutBlockFlow::NodeForHitTest() const {
     return Parent()->NodeForHitTest();
   }
   return LayoutBlock::NodeForHitTest();
-}
-
-bool LayoutBlockFlow::HitTestChildren(HitTestResult& result,
-                                      const HitTestLocation& hit_test_location,
-                                      const PhysicalOffset& accumulated_offset,
-                                      HitTestPhase phase) {
-  NOT_DESTROYED();
-  PhysicalOffset scrolled_offset = accumulated_offset;
-  if (IsScrollContainer())
-    scrolled_offset -= PhysicalOffset(PixelSnappedScrolledContentOffset());
-
-  // TODO(1229581): Layout objects that don't allow fragment traversal for paint
-  // and hit-testing (see CanTraversePhysicalFragments()) still end up here. We
-  // may even end up here if ChildrenInline(). That's just the initial state of
-  // a block, though. As soon as a non-fragment-traversale object gets children,
-  // they will be blocks, and *they* will be fragment-traversable.
-  DCHECK(!ChildrenInline() || !FirstChild());
-  if (!ChildrenInline() &&
-      LayoutBlock::HitTestChildren(result, hit_test_location,
-                                   accumulated_offset, phase)) {
-    return true;
-  }
-
-  return false;
 }
 
 void LayoutBlockFlow::AddOutlineRects(
@@ -856,7 +853,7 @@ PositionWithAffinity LayoutBlockFlow::PositionForPoint(
   DCHECK_GE(GetDocument().Lifecycle().GetState(),
             DocumentLifecycle::kPrePaintClean);
 
-  if (IsAtomicInlineLevel()) {
+  if (IsInline()) {
     PositionWithAffinity position =
         PositionForPointIfOutsideAtomicInlineLevel(point);
     if (!position.IsNull())

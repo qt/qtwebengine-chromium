@@ -11,13 +11,13 @@ namespace openscreen {
 
 std::array<uint8_t, 16> GenerateRandomBytes16() {
   std::array<uint8_t, 16> result;
-  GenerateRandomBytes(result.data(), result.size());
+  GenerateRandomBytes(result);
   return result;
 }
 
-void GenerateRandomBytes(uint8_t* out, int len) {
+void GenerateRandomBytes(ByteBuffer out) {
   // Working cryptography is mandatory for our library to run.
-  OSP_CHECK(RAND_bytes(out, len) == 1);
+  OSP_CHECK(RAND_bytes(out.data(), out.size()) == 1);
 }
 
 }  // namespace openscreen

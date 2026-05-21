@@ -104,16 +104,16 @@ const base::FeatureParam<std::string>
         &kRelaxLimitAImageReaderMaxSizeToOne,
         "RelaxLimitAImageReaderMaxSizeToOneModelBlocklist", ""};
 
-// Allows using recommended AHardwareBuffer usage from Vulkan, that should allow
-// drivers to pick most optimal layout.
-BASE_FEATURE(kUseHardwareBufferUsageFlagsFromVulkan,
-             base::FEATURE_ENABLED_BY_DEFAULT);
+#endif
 
-// Same as above (and depends on it) and allows using extra usage even if we use
-// USAGE_COMPOSER_OVERLAY.
-BASE_FEATURE(kAllowHardwareBufferUsageFlagsFromVulkanForScanout,
-             base::FEATURE_ENABLED_BY_DEFAULT);
+// When enabled, gives GpuChannel/Host its own dedicated Mojo pipe instead
+// of associating with an unused IPC::Channel.
+BASE_FEATURE(kRemoveGPULegacyIPC, base::FEATURE_DISABLED_BY_DEFAULT);
 
+#if BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_LINUX)
+// Feature flag to control whether SharedImageStub sequence uses high priority
+// on ChromeOS and Linux. Enabled by default.
+BASE_FEATURE(kSharedImageStubHighPriority, base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 
 // Enable GPU Rasterization by default. This can still be overridden by
@@ -180,6 +180,11 @@ BASE_FEATURE(kVulkan,
 #endif
 );
 
+// Force enable WebGPU interop when enabled. When disabled the webgpu interop
+// mechanism will default to auto detection in 'GetWebGPUOnVulkanViaGLInterop'
+// function.
+BASE_FEATURE(kForceEnableWebGpuInterop, base::FEATURE_DISABLED_BY_DEFAULT);
+
 BASE_FEATURE(kEnableDrDc,
 #if BUILDFLAG(IS_ANDROID)
              base::FEATURE_ENABLED_BY_DEFAULT
@@ -203,6 +208,10 @@ BASE_FEATURE(kEnableDrDc,
 BASE_FEATURE(kWebGPUService, WEBGPU_ENABLED);
 BASE_FEATURE(kWebGPUBlobCache, WEBGPU_ENABLED);
 #undef WEBGPU_ENABLED
+
+// Feature enforces WebGPU security in Android Advanced Protection Mode.
+// Disable feature by default for Finch testing.
+BASE_FEATURE(kAAPMBlocksWebGPU, base::FEATURE_DISABLED_BY_DEFAULT);
 
 // List of Dawn toggles for WebGPU, delimited by ,
 // The FeatureParam may be overridden via Finch config, or via the command line
@@ -348,6 +357,10 @@ const base::FeatureParam<bool> kSkiaGraphiteDawnBackendValidation{
 const base::FeatureParam<bool> kSkiaGraphiteDawnBackendDebugLabels{
     &kSkiaGraphite, "dawn_backend_debug_labels", DCHECK_IS_ON()};
 
+// Enables automatic buffer mappings in Dawn's backend.
+const base::FeatureParam<bool> kSkiaGraphiteDawnEnableAutoMap{
+    &kSkiaGraphite, "dawn_enable_auto_map", true};
+
 // Whether to use PersistentCache for Dawn's pipeline cache.
 BASE_FEATURE_PARAM(bool,
                    kSkiaGraphiteDawnUsePersistentCache,
@@ -389,6 +402,11 @@ const base::FeatureParam<bool> kSkiaGraphiteDawnD3D11DelayFlush{
 BASE_FEATURE(kSkiaGraphiteDawnUseD3D12, base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 
+// Whether to use the GpuPersistentCache for caching GPU process shader blobs.
+// Usage for Graphite is controlled independently with
+// kSkiaGraphiteDawnUsePersistentCache.
+BASE_FEATURE(kGpuPersistentCache, base::FEATURE_DISABLED_BY_DEFAULT);
+
 // Enabling this will make the GPU decode path use a mock implementation of
 // discardable memory.
 BASE_FEATURE(kNoDiscardableMemoryForGpuDecodePath,
@@ -416,10 +434,6 @@ BASE_FEATURE(kD3DBackingUploadWithUpdateSubresource,
              base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
 
-// This feature allows viz to handle overlays' swap failures instead of loosing a context and
-// restarting a gpu service.
-BASE_FEATURE(kHandleOverlaysSwapFailure, base::FEATURE_DISABLED_BY_DEFAULT);
-
 // This feature allows enabling specific entries in
 // software_rendering_list.json, via experimentation. The entries must have
 // test_group property and test_group feature parameter should be set in the
@@ -435,6 +449,12 @@ const base::FeatureParam<int> kGPUBlockListTestGroupId{&kGPUBlockListTestGroup,
 BASE_FEATURE(kGPUDriverBugListTestGroup, base::FEATURE_DISABLED_BY_DEFAULT);
 const base::FeatureParam<int> kGPUDriverBugListTestGroupId{
     &kGPUDriverBugListTestGroup, "test_group", 0};
+
+#if BUILDFLAG(IS_LINUX)
+bool IsForceEnableWebGpuInterop() {
+  return base::FeatureList::IsEnabled(kForceEnableWebGpuInterop);
+}
+#endif
 
 bool IsUsingVulkan() {
 #if BUILDFLAG(IS_ANDROID)
@@ -736,6 +756,10 @@ bool EnablePurgeGpuImageDecodeCache() {
 }
 bool EnablePruneOldTransferCacheEntries() {
   return base::FeatureList::IsEnabled(kPruneOldTransferCacheEntries);
+}
+
+bool IsLegacyIpcDisabled() {
+  return base::FeatureList::IsEnabled(kRemoveGPULegacyIPC);
 }
 
 #if BUILDFLAG(IS_ANDROID)

@@ -4,20 +4,20 @@
 
 #include "device/fido/auth_token_requester.h"
 
+#include <algorithm>
 #include <list>
 #include <optional>
 #include <string>
 
-#include "base/containers/contains.h"
 #include "base/containers/span.h"
 #include "base/logging.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/task_environment.h"
-#include "device/fido/fido_constants.h"
 #include "device/fido/fido_device_authenticator.h"
 #include "device/fido/pin.h"
+#include "device/fido/public/fido_constants.h"
 #include "device/fido/virtual_ctap2_device.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -100,7 +100,7 @@ class TestAuthTokenRequesterDelegate : public AuthTokenRequester::Delegate {
       FidoAuthenticator* authenticator,
       AuthTokenRequester::Result result,
       std::optional<pin::TokenResponse> response) override {
-    if (!base::Contains(
+    if (!std::ranges::contains(
             std::vector<AuthTokenRequester::Result>{
                 AuthTokenRequester::Result::
                     kPreTouchAuthenticatorResponseInvalid,

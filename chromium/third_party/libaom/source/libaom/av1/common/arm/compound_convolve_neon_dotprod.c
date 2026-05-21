@@ -15,25 +15,9 @@
 #include "aom_dsp/arm/mem_neon.h"
 #include "aom_dsp/arm/transpose_neon.h"
 #include "av1/common/arm/compound_convolve_neon.h"
+#include "av1/common/arm/convolve_neon_dotprod.h"
 #include "config/aom_config.h"
 #include "config/av1_rtcd.h"
-
-DECLARE_ALIGNED(16, static const uint8_t, dot_prod_permute_tbl[48]) = {
-  0, 1, 2,  3,  1, 2,  3,  4,  2,  3,  4,  5,  3,  4,  5,  6,
-  4, 5, 6,  7,  5, 6,  7,  8,  6,  7,  8,  9,  7,  8,  9,  10,
-  8, 9, 10, 11, 9, 10, 11, 12, 10, 11, 12, 13, 11, 12, 13, 14
-};
-
-DECLARE_ALIGNED(16, static const uint8_t, kDotProdMergeBlockTbl[48]) = {
-  // clang-format off
-  // Shift left and insert new last column in transposed 4x4 block.
-  1, 2,  3,  16, 5, 6,  7,  20, 9,  10, 11, 24, 13, 14, 15, 28,
-  // Shift left and insert two new columns in transposed 4x4 block.
-  2, 3,  16, 17, 6, 7,  20, 21, 10, 11, 24, 25, 14, 15, 28, 29,
-  // Shift left and insert three new columns in transposed 4x4 block.
-  3, 16, 17, 18, 7, 20, 21, 22, 11, 24, 25, 26, 15, 28, 29, 30
-  // clang-format on
-};
 
 static inline int16x4_t convolve4_4_2d_h(uint8x16_t samples,
                                          const int8x8_t x_filter,
@@ -109,7 +93,7 @@ static inline void dist_wtd_convolve_2d_horiz_neon_dotprod(
   int height = im_h;
 
   if (w == 4) {
-    const uint8x16_t permute_tbl = vld1q_u8(dot_prod_permute_tbl);
+    const uint8x16_t permute_tbl = vld1q_u8(kDotProdPermuteTbl);
     // 4-tap filters are used for blocks having width <= 4.
     // Filter values are even, so halve to reduce intermediate precision reqs.
     const int8x8_t x_filter =
@@ -149,7 +133,7 @@ static inline void dist_wtd_convolve_2d_horiz_neon_dotprod(
       dst_ptr += dst_stride;
     } while (--height != 0);
   } else {
-    const uint8x16x3_t permute_tbl = vld1q_u8_x3(dot_prod_permute_tbl);
+    const uint8x16x3_t permute_tbl = vld1q_u8_x3(kDotProdPermuteTbl);
     // Filter values are even, so halve to reduce intermediate precision reqs.
     const int8x8_t x_filter = vshrn_n_s16(x_filter_s16, 1);
 
@@ -361,7 +345,7 @@ static inline void dist_wtd_convolve_x_dist_wtd_avg_neon_dotprod(
   int height = h;
 
   if (w == 4) {
-    const uint8x16_t permute_tbl = vld1q_u8(dot_prod_permute_tbl);
+    const uint8x16_t permute_tbl = vld1q_u8(kDotProdPermuteTbl);
     // 4-tap filters are used for blocks having width <= 4.
     // Filter values are even, so halve to reduce intermediate precision reqs.
     const int8x8_t x_filter =
@@ -398,7 +382,7 @@ static inline void dist_wtd_convolve_x_dist_wtd_avg_neon_dotprod(
       height -= 4;
     } while (height != 0);
   } else {
-    const uint8x16x3_t permute_tbl = vld1q_u8_x3(dot_prod_permute_tbl);
+    const uint8x16x3_t permute_tbl = vld1q_u8_x3(kDotProdPermuteTbl);
     // Filter values are even, so halve to reduce intermediate precision reqs.
     const int8x8_t x_filter = vshrn_n_s16(x_filter_s16, 1);
 
@@ -481,7 +465,7 @@ static inline void dist_wtd_convolve_x_avg_neon_dotprod(
   int height = h;
 
   if (w == 4) {
-    const uint8x16_t permute_tbl = vld1q_u8(dot_prod_permute_tbl);
+    const uint8x16_t permute_tbl = vld1q_u8(kDotProdPermuteTbl);
     // 4-tap filters are used for blocks having width <= 4.
     // Filter values are even, so halve to reduce intermediate precision reqs.
     const int8x8_t x_filter =
@@ -518,7 +502,7 @@ static inline void dist_wtd_convolve_x_avg_neon_dotprod(
       height -= 4;
     } while (height != 0);
   } else {
-    const uint8x16x3_t permute_tbl = vld1q_u8_x3(dot_prod_permute_tbl);
+    const uint8x16x3_t permute_tbl = vld1q_u8_x3(kDotProdPermuteTbl);
     // Filter values are even, so halve to reduce intermediate precision reqs.
     const int8x8_t x_filter = vshrn_n_s16(x_filter_s16, 1);
 
@@ -598,7 +582,7 @@ static inline void dist_wtd_convolve_x_neon_dotprod(
   int height = h;
 
   if (w == 4) {
-    const uint8x16_t permute_tbl = vld1q_u8(dot_prod_permute_tbl);
+    const uint8x16_t permute_tbl = vld1q_u8(kDotProdPermuteTbl);
     // 4-tap filters are used for blocks having width <= 4.
     // Filter values are even, so halve to reduce intermediate precision reqs.
     const int8x8_t x_filter =
@@ -626,7 +610,7 @@ static inline void dist_wtd_convolve_x_neon_dotprod(
       height -= 4;
     } while (height != 0);
   } else {
-    const uint8x16x3_t permute_tbl = vld1q_u8_x3(dot_prod_permute_tbl);
+    const uint8x16x3_t permute_tbl = vld1q_u8_x3(kDotProdPermuteTbl);
     // Filter values are even, so halve to reduce intermediate precision reqs.
     const int8x8_t x_filter = vshrn_n_s16(x_filter_s16, 1);
 

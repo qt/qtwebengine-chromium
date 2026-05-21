@@ -19,12 +19,13 @@
 
 #include "../../internal.h"
 
-#if defined(__cplusplus)
-extern "C" {
-#endif
 
+DECLARE_OPAQUE_STRUCT(dh_st, DHImpl)
 
-struct dh_st {
+BSSL_NAMESPACE_BEGIN
+
+class DHImpl : public dh_st {
+ public:
   BIGNUM *p;
   BIGNUM *g;
   BIGNUM *q;
@@ -35,11 +36,10 @@ struct dh_st {
   // the private value will be the same length as |p|.
   unsigned priv_length;
 
-  CRYPTO_MUTEX method_mont_p_lock;
+  bssl::CRYPTO_MUTEX method_mont_p_lock;
   BN_MONT_CTX *method_mont_p;
 
-  int flags;
-  CRYPTO_refcount_t references;
+  bssl::CRYPTO_refcount_t references;
 };
 
 // dh_check_params_fast checks basic invariants on |dh|'s domain parameters. It
@@ -53,9 +53,6 @@ int dh_check_params_fast(const DH *dh);
 int dh_compute_key_padded_no_self_test(unsigned char *out,
                                        const BIGNUM *peers_key, DH *dh);
 
-
-#if defined(__cplusplus)
-}  // extern C
-#endif
+BSSL_NAMESPACE_END
 
 #endif  // OPENSSL_HEADER_CRYPTO_FIPSMODULE_DH_INTERNAL_H

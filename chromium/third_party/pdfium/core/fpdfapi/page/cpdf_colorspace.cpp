@@ -967,7 +967,7 @@ uint32_t CPDF_ICCBasedCS::v_Load(CPDF_Document* doc,
     base_cs_ = GetStockAlternateProfile(nComponents);
   }
 
-  // TODO(crbug.com/pdfium/2136): Use this data to clamp color components.
+  // TODO(crbug.com/42271155): Use this data to clamp color components.
   ranges_ = GetRanges(dict.Get(), nComponents);
   return nComponents;
 }

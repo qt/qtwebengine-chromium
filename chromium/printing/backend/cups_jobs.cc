@@ -6,13 +6,13 @@
 
 #include <cups/ipp.h>
 
+#include <algorithm>
 #include <array>
 #include <cstring>
 #include <memory>
 #include <string>
 #include <string_view>
 
-#include "base/containers/contains.h"
 #include "base/containers/fixed_flat_map.h"
 #include "base/logging.h"
 #include "base/notreached.h"
@@ -224,14 +224,17 @@ PrinterStatus::PrinterReason::Reason ToReason(std::string_view reason) {
 // Returns the Severity corresponding to `severity`.  Returns UNKNOWN_SEVERITY
 // if the strin gis not recognized.
 PSeverity ToSeverity(std::string_view severity) {
-  if (severity == kSeverityError)
+  if (severity == kSeverityError) {
     return PSeverity::kError;
+  }
 
-  if (severity == kSeverityWarn)
+  if (severity == kSeverityWarn) {
     return PSeverity::kWarning;
+  }
 
-  if (severity == kSeverityReport)
+  if (severity == kSeverityReport) {
     return PSeverity::kReport;
+  }
 
   return PSeverity::kUnknownSeverity;
 }
@@ -368,7 +371,8 @@ bool ParsePrinterInfo(ipp_t* response, PrinterInfo* printer_info) {
       std::vector<std::string> features;
       ParseCollection(attr, &features);
       printer_info->ipp_features = features;
-      printer_info->ipp_everywhere = base::Contains(features, kIppEverywhere);
+      printer_info->ipp_everywhere =
+          std::ranges::contains(features, kIppEverywhere);
     } else if (name == kDocumentFormatSupported) {
       ParseCollection(attr, &printer_info->document_formats);
     } else if (name == kOauthAuthorizationServerUri) {
@@ -469,7 +473,7 @@ CupsJob::CupsJob(const CupsJob& other) = default;
 CupsJob::~CupsJob() = default;
 
 bool CupsJob::ContainsStateReason(CupsJob::JobStateReason reason) const {
-  return base::Contains(state_reasons, ToJobStateReasonString(reason));
+  return std::ranges::contains(state_reasons, ToJobStateReasonString(reason));
 }
 
 PrinterInfo::PrinterInfo() = default;

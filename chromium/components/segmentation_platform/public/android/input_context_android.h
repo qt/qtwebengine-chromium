@@ -12,7 +12,7 @@
 #include "base/gtest_prod_util.h"
 #include "components/segmentation_platform/public/input_context.h"
 
-using base::android::JavaParamRef;
+using base::android::JavaRef;
 
 namespace segmentation_platform {
 
@@ -26,7 +26,7 @@ class InputContextAndroid {
 
   static void FromJavaParams(
       JNIEnv* env,
-      const jlong target,
+      const int64_t target,
       const base::android::JavaRef<jobjectArray>& jboolean_keys,
       const base::android::JavaRef<jbooleanArray>& jboolean_values,
       const base::android::JavaRef<jobjectArray>& jint_keys,

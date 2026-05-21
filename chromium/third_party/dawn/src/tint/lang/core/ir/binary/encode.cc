@@ -150,6 +150,9 @@ struct Encoder {
             wg_size_out.set_y(Value((*wg_size_in)[1]));
             wg_size_out.set_z(Value((*wg_size_in)[2]));
         }
+        if (auto subgroup_size_in = fn_in->SubgroupSize()) {
+            fn_out->set_subgroup_size(Value(*subgroup_size_in));
+        }
         for (auto* param_in : fn_in->Params()) {
             fn_out->add_parameters(Value(param_in));
         }
@@ -395,9 +398,6 @@ struct Encoder {
                 [&](const core::type::BindingArray* a) {
                     TypeBindingArray(*type_out.mutable_binding_array(), a);
                 },
-                [&](const core::type::ResourceBinding* a) {
-                    TypeResourceBinding(*type_out.mutable_resource_binding(), a);
-                },
                 [&](const core::type::DepthTexture* t) {
                     TypeDepthTexture(*type_out.mutable_depth_texture(), t);
                 },
@@ -438,6 +438,7 @@ struct Encoder {
                             TINT_ICE() << "invalid subgroup matrix kind: " << ToString(s->Kind());
                     }
                 },
+                [&](const core::type::Buffer* b) { TypeBuffer(*type_out.mutable_buffer(), b); },
                 TINT_ICE_ON_NO_MATCH);
 
             mod_out_.mutable_types()->Add(std::move(type_out));
@@ -528,8 +529,6 @@ struct Encoder {
             TINT_ICE_ON_NO_MATCH);
     }
 
-    void TypeResourceBinding(pb::TypeResourceBinding&, const core::type::ResourceBinding*) {}
-
     void TypeDepthTexture(pb::TypeDepthTexture& texture_out,
                           const core::type::DepthTexture* texture_in) {
         texture_out.set_dimension(TextureDimension(texture_in->Dim()));
@@ -581,6 +580,20 @@ struct Encoder {
         subgroup_matrix_out.set_sub_type(Type(subgroup_matrix_in->Type()));
         subgroup_matrix_out.set_columns(subgroup_matrix_in->Columns());
         subgroup_matrix_out.set_rows(subgroup_matrix_in->Rows());
+    }
+
+    void TypeBuffer(pb::TypeBuffer& buffer_out, const core::type::Buffer* buffer_in) {
+        tint::Switch(
+            buffer_in->Count(),  //
+            [&](const core::type::ConstantArrayCount* c) {
+                buffer_out.set_count(c->value);
+                if (c->value >= internal_limits::kMaxArrayElementCount) {
+                    err_ << "array count (" << c->value << ") must be less than "
+                         << internal_limits::kMaxArrayElementCount << "\n";
+                }
+            },
+            [&](const core::type::RuntimeArrayCount*) { buffer_out.set_count(0); },
+            TINT_ICE_ON_NO_MATCH);
     }
 
     [[maybe_unused]] void TypeBuitinStruct(pb::Type& builtin_struct_out,
@@ -1406,14 +1419,14 @@ struct Encoder {
                 return pb::BuiltinFn::subgroup_matrix_scalar_multiply;
             case core::BuiltinFn::kPrint:
                 return pb::BuiltinFn::print;
-            case core::BuiltinFn::kHasBinding:
-                return pb::BuiltinFn::has_binding;
-            case core::BuiltinFn::kGetBinding:
-                return pb::BuiltinFn::get_binding;
             case core::BuiltinFn::kHasResource:
                 return pb::BuiltinFn::has_resource;
             case core::BuiltinFn::kGetResource:
                 return pb::BuiltinFn::get_resource;
+            case core::BuiltinFn::kBufferView:
+                return pb::BuiltinFn::buffer_view;
+            case core::BuiltinFn::kBufferLength:
+                return pb::BuiltinFn::buffer_length;
             case core::BuiltinFn::kNone:
                 break;
         }
@@ -1427,25 +1440,19 @@ Result<std::unique_ptr<pb::Module>> EncodeToProto(const Module& mod_in) {
     GOOGLE_PROTOBUF_VERIFY_VERSION;
 
     pb::Module mod_out;
-    auto res = Encoder{mod_in, mod_out}.Encode();
-    if (res != Success) {
-        return res.Failure();
-    }
+    TINT_CHECK_RESULT((Encoder{mod_in, mod_out}.Encode()));
 
     return std::make_unique<pb::Module>(mod_out);
 }
 
 Result<Vector<std::byte, 0>> EncodeToBinary(const Module& mod_in) {
-    auto mod_out = EncodeToProto(mod_in);
-    if (mod_out != Success) {
-        return mod_out.Failure();
-    }
+    TINT_CHECK_RESULT_UNWRAP(mod_out, EncodeToProto(mod_in));
 
     Vector<std::byte, 0> buffer;
-    size_t len = mod_out.Get()->ByteSizeLong();
+    size_t len = mod_out->ByteSizeLong();
     buffer.Resize(len);
     if (len > 0) {
-        if (!mod_out.Get()->SerializeToArray(&buffer[0], static_cast<int>(len))) {
+        if (!mod_out->SerializeToArray(&buffer[0], static_cast<int>(len))) {
             return Failure{"failed to serialize protobuf"};
         }
     }

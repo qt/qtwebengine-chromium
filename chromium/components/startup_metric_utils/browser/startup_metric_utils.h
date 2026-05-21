@@ -156,6 +156,9 @@ class COMPONENT_EXPORT(STARTUP_METRIC_UTILS)
   // Returns the startup temperature if available.
   StartupTemperature GetStartupTemperature() const;
 
+  // Returns true if this is the first run of the browser.
+  bool IsFirstRun() const;
+
   // Returns the appropriate application start ticks for use in startup metrics.
   // Returns a null TimeTicks if a value has not been recorded yet.
   base::TimeTicks GetApplicationStartTicksForStartup() const;
@@ -197,6 +200,8 @@ class COMPONENT_EXPORT(STARTUP_METRIC_UTILS)
       base::TimeTicks begin_ticks,
       base::TimeTicks end_ticks);
 
+  void EmitBrowserWindowDisplayHistogram();
+
   // Mark as volatile to defensively make sure usage is thread-safe.
   // Note that at the time of this writing, access is only on the UI thread.
   volatile bool main_window_startup_interrupted_ = false;
@@ -214,6 +219,10 @@ class COMPONENT_EXPORT(STARTUP_METRIC_UTILS)
   bool is_privacy_sandbox_attestations_component_ready_recorded_ = false;
 
   bool is_privacy_sandbox_attestations_first_check_recorded_ = false;
+
+  bool is_first_run_ = false;
+
+  bool is_browser_window_display_metric_emitted_ = false;
 };
 
 COMPONENT_EXPORT(STARTUP_METRIC_UTILS)

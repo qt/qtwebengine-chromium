@@ -344,6 +344,34 @@ describe('OutlineQuickOpen', () => {
             {title: 'static async foo', subtitle: '()', lineNumber: 6, columnNumber: 15},
           ],
       );
+      assert.deepEqual(
+          javaScriptOutline(`class GoodClass {
+  a() { foo = bar; }
+  b() { foo = bar; }
+  c() { foo = bar; }
+}
+class BadClass {
+  a() { foo = bar.baz; }
+  b() { let foo = bar.baz; }
+  c() { foo = bar.baz; }
+}
+class LastClass {
+  d() { return 'hello world' }
+}
+`),
+          [
+            {title: 'class GoodClass', lineNumber: 0, columnNumber: 6},
+            {title: 'a', subtitle: '()', lineNumber: 1, columnNumber: 2},
+            {title: 'b', subtitle: '()', lineNumber: 2, columnNumber: 2},
+            {title: 'c', subtitle: '()', lineNumber: 3, columnNumber: 2},
+            {title: 'class BadClass', lineNumber: 5, columnNumber: 6},
+            {title: 'a', subtitle: '()', lineNumber: 6, columnNumber: 2},
+            {title: 'b', subtitle: '()', lineNumber: 7, columnNumber: 2},
+            {title: 'c', subtitle: '()', lineNumber: 8, columnNumber: 2},
+            {title: 'class LastClass', lineNumber: 10, columnNumber: 6},
+            {title: 'd', subtitle: '()', lineNumber: 11, columnNumber: 2},
+          ],
+      );
     });
 
     it('for private methods', () => {

@@ -28,6 +28,7 @@
 #include "chrome/browser/signin/bound_session_credentials/session_binding_helper.h"
 #include "chrome/common/renderer_configuration.mojom-shared.h"
 #include "components/signin/public/base/signin_switches.h"
+#include "components/unexportable_keys/background_task_origin.h"
 #include "components/unexportable_keys/service_error.h"
 #include "components/unexportable_keys/unexportable_key_id.h"
 #include "components/unexportable_keys/unexportable_key_loader.h"
@@ -116,8 +117,8 @@ class BoundSessionCookieControllerImplTest
       : key_id_(GenerateNewKey()) {
     storage_partition_.set_cookie_manager_for_browser_process(&cookie_manager_);
 
-    SetUpNetworkConnection(true,
-                           network::mojom::ConnectionType::CONNECTION_WIFI);
+    SetUpNetworkConnection(
+        true, net::NetworkChangeNotifier::ConnectionType::CONNECTION_WIFI);
 
     if (build_controller) {
       BuildBoundSessionCookieController(CreateDefaultBoundSessionParams(),
@@ -352,15 +353,17 @@ class BoundSessionCookieControllerImplTest
     bound_session_cookie_controller_.reset();
   }
 
-  void SetUpNetworkConnection(bool respond_synchronously,
-                              network::mojom::ConnectionType connection_type) {
+  void SetUpNetworkConnection(
+      bool respond_synchronously,
+      net::NetworkChangeNotifier::ConnectionType connection_type) {
     network::TestNetworkConnectionTracker* tracker =
         network::TestNetworkConnectionTracker::GetInstance();
     tracker->SetRespondSynchronously(respond_synchronously);
     tracker->SetConnectionType(connection_type);
   }
 
-  void SetConnectionType(network::mojom::ConnectionType connection_type) {
+  void SetConnectionType(
+      net::NetworkChangeNotifier::ConnectionType connection_type) {
     network::TestNetworkConnectionTracker::GetInstance()->SetConnectionType(
         connection_type);
     // Ensure that the network connection observers have been notified before
@@ -408,6 +411,8 @@ class BoundSessionCookieControllerImplTest
   unexportable_keys::UnexportableKeyTaskManager unexportable_key_task_manager_;
   unexportable_keys::UnexportableKeyServiceImpl unexportable_key_service_{
       unexportable_key_task_manager_,
+      unexportable_keys::BackgroundTaskOrigin::
+          kDeviceBoundSessionCredentialsPrototype,
       crypto::UnexportableKeyProvider::Config()};
   BoundSessionTestCookieManager cookie_manager_;
   content::TestStoragePartition storage_partition_;
@@ -968,15 +973,16 @@ TEST_F(BoundSessionCookieControllerImplTest,
 
   // Flip through different connection states and check that it doesn't affect
   // the fetcher state.
-  SetConnectionType(network::mojom::ConnectionType::CONNECTION_5G);
+  SetConnectionType(net::NetworkChangeNotifier::ConnectionType::CONNECTION_5G);
   EXPECT_FALSE(cookie_fetcher());
   EXPECT_TRUE(cookie_refresh_timer()->IsRunning());
 
-  SetConnectionType(network::mojom::ConnectionType::CONNECTION_NONE);
+  SetConnectionType(
+      net::NetworkChangeNotifier::ConnectionType::CONNECTION_NONE);
   EXPECT_FALSE(cookie_fetcher());
   EXPECT_TRUE(cookie_refresh_timer()->IsRunning());
 
-  SetConnectionType(network::mojom::ConnectionType::CONNECTION_5G);
+  SetConnectionType(net::NetworkChangeNotifier::ConnectionType::CONNECTION_5G);
   EXPECT_FALSE(cookie_fetcher());
   EXPECT_TRUE(cookie_refresh_timer()->IsRunning());
 }
@@ -991,17 +997,18 @@ TEST_F(BoundSessionCookieControllerImplTest,
   EXPECT_FALSE(cookie_refresh_timer()->IsRunning());
 
   // Switch to another online type doesn't change anything.
-  SetConnectionType(network::mojom::ConnectionType::CONNECTION_5G);
+  SetConnectionType(net::NetworkChangeNotifier::ConnectionType::CONNECTION_5G);
   EXPECT_FALSE(cookie_fetcher());
   EXPECT_FALSE(cookie_refresh_timer()->IsRunning());
 
   // Setting up an offline state.
-  SetConnectionType(network::mojom::ConnectionType::CONNECTION_NONE);
+  SetConnectionType(
+      net::NetworkChangeNotifier::ConnectionType::CONNECTION_NONE);
   EXPECT_FALSE(cookie_fetcher());
   EXPECT_FALSE(cookie_refresh_timer()->IsRunning());
 
   // Cookie fetcher should start immediately as the cookie is expired.
-  SetConnectionType(network::mojom::ConnectionType::CONNECTION_5G);
+  SetConnectionType(net::NetworkChangeNotifier::ConnectionType::CONNECTION_5G);
   EXPECT_TRUE(cookie_fetcher());
   EXPECT_EQ(cookie_fetcher_trigger(),
             BoundSessionRefreshCookieFetcher::Trigger::kConnectionChanged);
@@ -1017,7 +1024,8 @@ class BoundSessionCookieControllerImplNoDefaultControllerTest
 
 TEST_F(BoundSessionCookieControllerImplNoDefaultControllerTest,
        ScheduleCookieRefreshIfComingOnlineStartingOffline) {
-  SetUpNetworkConnection(true, network::mojom::ConnectionType::CONNECTION_NONE);
+  SetUpNetworkConnection(
+      true, net::NetworkChangeNotifier::ConnectionType::CONNECTION_NONE);
   BuildBoundSessionCookieController(CreateDefaultBoundSessionParams(),
                                     /*is_new_session=*/true);
 
@@ -1031,7 +1039,8 @@ TEST_F(BoundSessionCookieControllerImplNoDefaultControllerTest,
   EXPECT_FALSE(cookie_refresh_timer()->IsRunning());
 
   // Cookie fetcher should start immediately as the cookie is expired.
-  SetConnectionType(network::mojom::ConnectionType::CONNECTION_WIFI);
+  SetConnectionType(
+      net::NetworkChangeNotifier::ConnectionType::CONNECTION_WIFI);
   EXPECT_TRUE(cookie_fetcher());
   EXPECT_EQ(cookie_fetcher_trigger(),
             BoundSessionRefreshCookieFetcher::Trigger::kConnectionChanged);
@@ -1642,10 +1651,11 @@ TEST_F(BoundSessionCookieControllerImplTest,
 
   // Setting up an offline state and then online state to trigger on connection
   // changed.
-  SetConnectionType(network::mojom::ConnectionType::CONNECTION_NONE);
+  SetConnectionType(
+      net::NetworkChangeNotifier::ConnectionType::CONNECTION_NONE);
 
   // Cookie rotation should NOT start if the cookie rotation is stopped.
-  SetConnectionType(network::mojom::ConnectionType::CONNECTION_5G);
+  SetConnectionType(net::NetworkChangeNotifier::ConnectionType::CONNECTION_5G);
   EXPECT_EQ(cookie_fetcher(), nullptr);
 }
 

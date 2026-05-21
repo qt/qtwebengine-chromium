@@ -965,7 +965,7 @@ HeapEntry* V8HeapExplorer::AddEntry(Tagged<HeapObject> object) {
                       names_->GetName(Cast<String>(object)));
     }
   } else if (InstanceTypeChecker::IsSymbol(instance_type)) {
-    if (Cast<Symbol>(object)->is_private())
+    if (Cast<Symbol>(object)->is_any_private())
       return AddEntry(object, HeapEntry::kHidden, "private symbol");
     else
       return AddEntry(object, HeapEntry::kSymbol, "symbol");
@@ -1109,8 +1109,9 @@ HeapEntry* V8HeapExplorer::AddEntry(Tagged<HeapObject> object,
 
 HeapEntry* V8HeapExplorer::AddEntry(Address address, HeapEntry::Type type,
                                     const char* name, size_t size) {
-  if (v8_flags.heap_profiler_show_hidden_objects &&
-      type == HeapEntry::kHidden) {
+  if (type == HeapEntry::kHidden &&
+      (snapshot_->expose_internals() ||
+       v8_flags.heap_profiler_show_hidden_objects)) {
     type = HeapEntry::kNative;
   }
   SnapshotObjectId object_id = heap_object_map_->FindOrAddEntry(
@@ -1173,7 +1174,7 @@ const char* V8HeapExplorer::GetSystemEntryName(Tagged<HeapObject> object) {
 
   // Avoid undefined behavior for enum values not handled by the exhaustive
   // switch, since they're read from inside the sandbox.
-  SBXCHECK(false);
+  UNREACHABLE();
 }
 
 HeapEntry::Type V8HeapExplorer::GetSystemEntryType(Tagged<HeapObject> object) {
@@ -2439,7 +2440,7 @@ void V8HeapExplorer::ExtractWasmArrayReferences(Tagged<WasmArray> obj,
                                                 HeapEntry* entry) {
   const wasm::CanonicalValueType element_type =
       obj->map()->wasm_type_info()->element_type();
-  if (!element_type.is_reference()) return;
+  if (!element_type.is_ref()) return;
   Isolate* isolate = heap_->isolate();
   ReadOnlyRoots roots(isolate);
   for (uint32_t i = 0; i < obj->length(); i++) {

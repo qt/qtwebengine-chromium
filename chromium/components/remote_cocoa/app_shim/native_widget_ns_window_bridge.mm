@@ -60,7 +60,9 @@
 #include "ui/events/types/event_type.h"
 #include "ui/gfx/geometry/dip_util.h"
 #include "ui/gfx/geometry/size_conversions.h"
+#include "ui/gfx/image/image_skia_util_mac.h"
 #import "ui/gfx/mac/coordinate_conversion.h"
+#import "ui/gfx/mac/menu_text_elider_mac.h"
 #import "ui/gfx/mac/nswindow_frame_controls.h"
 #include "ui/gfx/native_ui_types.h"
 
@@ -530,10 +532,8 @@ void NativeWidgetNSWindowBridge::InitWindow(
   pending_restoration_data_ = params->state_restoration_data;
 
   if (display::Screen::Get()->IsHeadless()) {
-    headless_mode_window_ = std::make_optional<HeadlessModeWindow>();
+    [window_ setIsHeadless:YES];
   }
-
-  [window_ setIsHeadless:headless_mode_window_.has_value()];
 
   // Register for application hide notifications so that visibility can be
   // properly tracked. This is not done in the delegate so that the lifetime is
@@ -670,10 +670,41 @@ void NativeWidgetNSWindowBridge::SetSizeAndCenter(
   new_window_bounds.set_size(GetWindowSizeForClientSize(window_, content_size));
   SetBounds(new_window_bounds, minimum_content_size, std::nullopt);
 
-  // Note that this is not the precise center of screen, but it is the standard
-  // location for windows like dialogs to appear on screen for Mac.
-  // TODO(tapted): If there is a parent window, center in that instead.
-  [window_ center];
+  if (!parent_) {
+    // Note that this is not the precise center of screen, but it is the
+    // standard location for windows like dialogs to appear on screen for Mac.
+    [window_ center];
+  } else {
+    NSWindow* parent_window = parent_->ns_view().window;
+    NSRect parent_rect = [parent_window frame];
+    NSRect window_rect = [window_ frame];
+
+    // Clamp to the visible area of the screen where the parent window resides.
+    // This ensures the window stays within viewable bounds and respects
+    // the menu bar and dock.
+    NSScreen* screen = [parent_window screen];
+    if (screen) {
+      NSRect visible_frame = [screen visibleFrame];
+      parent_rect = NSIntersectionRect(parent_rect, visible_frame);
+
+      // Calculate the centered position relative to the parent's visible area.
+      CGFloat x = NSMidX(parent_rect) - window_rect.size.width / 2;
+      CGFloat y = NSMidY(parent_rect) - window_rect.size.height / 2;
+
+      // Ensure the child window stays completely within the visible frame,
+      // even if the parent's visible area is smaller than the child window.
+      x = std::max(x, NSMinX(visible_frame));
+      x = std::min(x, NSMaxX(visible_frame) - window_rect.size.width);
+
+      y = std::max(y, NSMinY(visible_frame));
+      y = std::min(y, NSMaxY(visible_frame) - window_rect.size.height);
+
+      [window_ setFrameOrigin:NSMakePoint(x, y)];
+    } else {
+      // Fallback if no screen is available.
+      [window_ center];
+    }
+  }
 }
 
 void NativeWidgetNSWindowBridge::DestroyContentView() {
@@ -795,40 +826,6 @@ void NativeWidgetNSWindowBridge::CloseWindowNow() {
 
 void NativeWidgetNSWindowBridge::SetVisibilityState(
     WindowVisibilityState new_state) {
-  // In headless mode the platform window is always hidden, so instead of
-  // changing its visibility state just maintain a local flag to track the
-  // expected visibility state and lie to the upper layer pretending the
-  // window did change its visibility and activation state.
-  if (headless_mode_window_) {
-    const bool new_visibility_state =
-        new_state != WindowVisibilityState::kHideWindow;
-    if (headless_mode_window_->visibility_state != new_visibility_state) {
-      headless_mode_window_->visibility_state = new_visibility_state;
-      base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
-          FROM_HERE,
-          base::BindOnce(
-              [](const base::WeakPtr<NativeWidgetNSWindowBridge>& bridge,
-                 bool visibility_state) {
-                if (bridge && bridge->host_) {
-                  bridge->host_->OnVisibilityChanged(visibility_state);
-                }
-              },
-              factory_.GetWeakPtr(), new_visibility_state));
-    }
-
-    if (new_state == WindowVisibilityState::kShowAndActivateWindow) {
-      base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
-          FROM_HERE,
-          base::BindOnce(
-              [](const base::WeakPtr<NativeWidgetNSWindowBridge>& bridge) {
-                if (bridge) {
-                  bridge->OnWindowKeyStatusChangedTo(/*is_key=*/true);
-                }
-              },
-              factory_.GetWeakPtr()));
-    }
-    return;
-  }
 
   // During session restore this method gets called from RestoreTabsToBrowser()
   // with new_state = kShowAndActivateWindow. We consume restoration data on our
@@ -1209,6 +1206,61 @@ void NativeWidgetNSWindowBridge::SetColorMode(
   [window_ setAppearance:appearance];
 }
 
+void NativeWidgetNSWindowBridge::BeginFileDrag(
+    mojom::FileDragDataPtr file_drag_data,
+    const gfx::PointF& mouse_location) {
+  if (!window_ || !bridged_view_) {
+    DLOG(WARNING) << "BeginFileDrag failed: window or bridged_view is null";
+    return;
+  }
+
+  NSURL* file_url = base::apple::FilePathToNSURL(file_drag_data->file_path);
+  if (!file_url) {
+    return;
+  }
+
+  NSDraggingItem* file_item =
+      [[NSDraggingItem alloc] initWithPasteboardWriter:file_url];
+
+  // Align to backing pixels for Retina displays.
+  NSPoint mouse_point = NSMakePoint(mouse_location.x(), mouse_location.y());
+  NSPoint current_position =
+      [bridged_view_
+          backingAlignedRect:NSMakeRect(mouse_point.x, mouse_point.y, 0, 0)
+                     options:NSAlignAllEdgesOutward]
+          .origin;
+
+  if (!file_drag_data->drag_image.isNull()) {
+    NSImage* image = gfx::NSImageFromImageSkia(file_drag_data->drag_image);
+    NSSize image_size = image.size;
+    gfx::Vector2d offset = file_drag_data->image_offset;
+    NSRect image_rect = NSMakeRect(current_position.x - offset.x(),
+                                   current_position.y - offset.y(),
+                                   image_size.width, image_size.height);
+    [file_item setDraggingFrame:image_rect contents:image];
+  } else {
+    // 16x16 placeholder corresponding to IconLoader::IconSize::SMALL.
+    NSRect placeholder_rect =
+        NSMakeRect(current_position.x - 8, current_position.y - 8, 16, 16);
+    [file_item setDraggingFrame:placeholder_rect contents:nil];
+  }
+
+  // Synthesize a drag event
+  NSEvent* dragEvent = [NSEvent mouseEventWithType:NSEventTypeLeftMouseDragged
+                                          location:current_position
+                                     modifierFlags:0
+                                         timestamp:NSApp.currentEvent.timestamp
+                                      windowNumber:window_.windowNumber
+                                           context:nil
+                                       eventNumber:0
+                                        clickCount:1
+                                          pressure:1.0];
+
+  [bridged_view_ beginDraggingSessionWithItems:@[ file_item ]
+                                         event:dragEvent
+                                        source:bridged_view_];
+}
+
 void NativeWidgetNSWindowBridge::OnWindowWillClose() {
   fullscreen_controller_.OnWindowWillClose();
   // Immersive full screen needs to be disabled synchronously when the window
@@ -1518,23 +1570,6 @@ void NativeWidgetNSWindowBridge::FullscreenControllerSetFrame(
 }
 
 void NativeWidgetNSWindowBridge::FullscreenControllerToggleFullscreen() {
-  // AppKit implicitly makes the fullscreen window visible, so avoid going
-  // fullscreen in headless mode. Instead, toggle the expected fullscreen state
-  // and fake the relevant callbacks for the fullscreen controller to
-  // believe the fullscreen state was toggled.
-  if (headless_mode_window_) {
-    headless_mode_window_->fullscreen_state =
-        !headless_mode_window_->fullscreen_state;
-    if (headless_mode_window_->fullscreen_state) {
-      fullscreen_controller_.OnWindowWillEnterFullscreen();
-      fullscreen_controller_.OnWindowDidEnterFullscreen();
-    } else {
-      fullscreen_controller_.OnWindowWillExitFullscreen();
-      fullscreen_controller_.OnWindowDidExitFullscreen();
-    }
-    return;
-  }
-
   bool is_key_window = [window_ isKeyWindow];
   [window_ toggleFullScreen:nil];
   // Ensure the transitioning window maintains focus.
@@ -1684,15 +1719,6 @@ void NativeWidgetNSWindowBridge::SetCanAppearInExistingFullscreenSpaces(
 }
 
 void NativeWidgetNSWindowBridge::SetMiniaturized(bool miniaturized) {
-  // In headless mode the platform window is always hidden and WebKit
-  // will not deminiaturize hidden windows. So instead of changing the window
-  // miniaturization state just lie to the upper layer pretending the window did
-  // change its state. We don't need to keep track of the requested state here
-  // because the host will do this.
-  if (headless_mode_window_) {
-    host_->OnWindowMiniaturizedChanged(miniaturized);
-    return;
-  }
 
   if (miniaturized) {
     // Calling performMiniaturize: will momentarily highlight the button, but
@@ -1774,6 +1800,9 @@ void NativeWidgetNSWindowBridge::MakeFirstResponder() {
 }
 
 void NativeWidgetNSWindowBridge::SetWindowTitle(const std::u16string& title) {
+  // Truncate long titles to avoid overflow in Dock menu and window title bar.
+  std::u16string truncated_title = gfx::ElideMenuItemTitle(title);
+
   // Delay setting the window title until after any menu tracking is complete.
   if (NSRunLoop.currentRunLoop.currentMode == NSEventTrackingRunLoopMode) {
     // Install one run loop trigger to handle all the pending titles.
@@ -1789,9 +1818,9 @@ void NativeWidgetNSWindowBridge::SetWindowTitle(const std::u16string& title) {
           });
     }
 
-    GetPendingWindowTitleMap()[window_] = title;
+    GetPendingWindowTitleMap()[window_] = truncated_title;
   } else {
-    window_.title = base::SysUTF16ToNSString(title);
+    window_.title = base::SysUTF16ToNSString(truncated_title);
 
     // In case there is an unfired run loop trigger, erase any pending title so
     // that the new title now being set doesn't get smashed.
@@ -2004,15 +2033,6 @@ void NativeWidgetNSWindowBridge::ShowAsModalSheet() {
   } else {
     std::move(begin_sheet_closure).Run();
   }
-}
-
-bool NativeWidgetNSWindowBridge::window_visible() const {
-  // In headless mode the platform window is always hidden, so instead of
-  // returning the actual platform window visibility state tracked by
-  // OnVisibilityChanged() callback, return the expected visibility state
-  // maintained by SetVisibilityState() call.
-  return headless_mode_window_ ? headless_mode_window_->visibility_state
-                               : window_visible_;
 }
 
 }  // namespace remote_cocoa

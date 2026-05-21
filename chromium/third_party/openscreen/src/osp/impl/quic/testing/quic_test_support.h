@@ -35,19 +35,19 @@ class MockServiceObserver : public ProtocolConnectionServiceObserver {
   MockServiceObserver& operator=(MockServiceObserver&&) noexcept = delete;
   ~MockServiceObserver() override;
 
-  MOCK_METHOD0(OnRunning, void());
-  MOCK_METHOD0(OnStopped, void());
-  MOCK_METHOD0(OnSuspended, void());
-
-  MOCK_METHOD1(OnMetrics, void(const NetworkMetrics& metrics));
-  MOCK_METHOD1(OnError, void(const Error& error));
+  MOCK_METHOD(void, OnRunning, (), (override));
+  MOCK_METHOD(void, OnStopped, (), (override));
+  MOCK_METHOD(void, OnSuspended, (), (override));
+  MOCK_METHOD(void, OnMetrics, (const NetworkMetrics& metrics), (override));
+  MOCK_METHOD(void, OnError, (const Error& error), (override));
 
   void OnIncomingConnection(
       std::unique_ptr<ProtocolConnection> connection) override {
     OnIncomingConnectionMock(connection);
   }
-  MOCK_METHOD1(OnIncomingConnectionMock,
-               void(std::unique_ptr<ProtocolConnection>& connection));
+  MOCK_METHOD(void,
+              OnIncomingConnectionMock,
+              (std::unique_ptr<ProtocolConnection> & connection));
 };
 
 class FakeQuicBridge {

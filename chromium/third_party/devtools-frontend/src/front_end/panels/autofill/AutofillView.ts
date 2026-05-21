@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import '../../ui/kit/kit.js';
 import '../../ui/components/adorners/adorners.js';
 import '../../ui/legacy/components/data_grid/data_grid.js';
 
@@ -198,11 +199,11 @@ const DEFAULT_VIEW: View = (input: ViewInput, _output: ViewOutput, target: HTMLE
                   <td>
                       ${field.autofillType}
                       ${field.fillingStrategy === FillingStrategy.AutocompleteAttribute ?
-                            html`<devtools-adorner title=${i18nString(UIStrings.autocompleteAttribute)} .data=${{name: field.fillingStrategy}}>
+                            html`<devtools-adorner .name=${field.fillingStrategy} title=${i18nString(UIStrings.autocompleteAttribute)}>
                               <span>${i18nString(UIStrings.attr)}</span>
                             </devtools-adorner>` :
                         field.fillingStrategy === FillingStrategy.AutofillInferred ?
-                            html`<devtools-adorner title=${i18nString(UIStrings.inferredByHeuristics)} .data=${{name: field.fillingStrategy}}>
+                            html`<devtools-adorner .name=${field.fillingStrategy} title=${i18nString(UIStrings.inferredByHeuristics)}>
                               <span>${i18nString(UIStrings.heur)}</span>
                             </devtools-adorner>` :
                             Lit.nothing}
@@ -237,14 +238,14 @@ const DEFAULT_VIEW: View = (input: ViewInput, _output: ViewOutput, target: HTMLE
                 jslog=${VisualLogging.toggle(input.autoOpenViewSetting.name).track({ change: true })}>
               ${i18nString(UIStrings.autoShow)}
             </devtools-checkbox>
-            <x-link href=${AUTOFILL_FEEDBACK_URL} class="feedback link" jslog=${VisualLogging.link('feedback').track({click: true})}>${i18nString(UIStrings.sendFeedback)}</x-link>
+            <devtools-link href=${AUTOFILL_FEEDBACK_URL} class="feedback link" jslogcontext="feedback">${i18nString(UIStrings.sendFeedback)}</devtools-link>
           </div>
           <div class="placeholder-container" jslog=${VisualLogging.pane('autofill-empty')}>
             <div class="empty-state">
               <span class="empty-state-header">${i18nString(UIStrings.noAutofill)}</span>
               <div class="empty-state-description">
                 <span>${i18nString(UIStrings.toStartDebugging)}</span>
-                <x-link href=${AUTOFILL_INFO_URL} class="link" jslog=${VisualLogging.link('learn-more').track({click: true})}>${i18nString(UIStrings.learnMore)}</x-link>
+                <devtools-link href=${AUTOFILL_INFO_URL} class="link" jslogcontext="learn-more">${i18nString(UIStrings.learnMore)}</devtools-link>
               </div>
             </div>
           </div>
@@ -279,7 +280,7 @@ const DEFAULT_VIEW: View = (input: ViewInput, _output: ViewOutput, target: HTMLE
                   ${i18nString(UIStrings.autoShow)}
                 </devtools-checkbox>
               </div>
-              <x-link href=${AUTOFILL_FEEDBACK_URL} class="feedback link" jslog=${VisualLogging.link('feedback').track({click: true})}>${i18nString(UIStrings.sendFeedback)}</x-link>
+              <devtools-link href=${AUTOFILL_FEEDBACK_URL} class="feedback link" jslogcontext="feedback">${i18nString(UIStrings.sendFeedback)}</devtools-link>
             </div>
             ${renderAddress()}
           </div>

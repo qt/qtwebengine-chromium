@@ -17,7 +17,16 @@ android_library("java") {
     "//chrome/browser/flags:java",
     "//chrome/browser/ui/android/toolbar:java",
     "//components/cached_flags:java",
+    "//ui/android:ui_no_recycler_view_java",
   ]
+  public_deps = [ ":enums_java" ]
+}
+
+android_library("enums_java") {
+  sources = [
+    "java/src/org/chromium/chrome/browser/tabstrip/StripVisibilityState.java",
+  ]
+  deps = [ "//third_party/androidx:androidx_annotation_annotation_java" ]
 }
 
 robolectric_library("junit") {
@@ -27,9 +36,11 @@ robolectric_library("junit") {
     "//base:base_java_test_support",
     "//base:base_junit_test_support",
     "//chrome/browser/browser_controls/android:java",
+    "//chrome/browser/flags:java",
     "//chrome/browser/ui/android/toolbar:java",
     "//chrome/test/android:chrome_java_unit_test_support",
     "//third_party/junit",
     "//third_party/mockito:mockito_java",
+    "//ui/android:ui_no_recycler_view_java",
   ]
 }

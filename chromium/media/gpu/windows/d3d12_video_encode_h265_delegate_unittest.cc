@@ -211,8 +211,9 @@ class D3D12VideoEncodeH265DelegateTest
           return S_OK;
         });
 
-    encoder_delegate_ =
-        std::make_unique<D3D12VideoEncodeH265Delegate>(video_device3_);
+    gpu::GpuDriverBugWorkarounds gpu_workarounds{};
+    encoder_delegate_ = std::make_unique<D3D12VideoEncodeH265Delegate>(
+        video_device3_, gpu_workarounds);
     encoder_delegate_->SetFactoriesForTesting(
         base::BindRepeating(&CreateVideoEncoderWrapper),
         base::BindRepeating(&CreateVideoProcessorWrapper));
@@ -351,7 +352,7 @@ TEST_F(D3D12VideoEncodeH265DelegateTest, EncodeFrame) {
         return EncoderStatus::Codes::kOk;
       });
   auto result_or_error = encoder_delegate_->Encode(
-      input_frame, 0, gfx::ColorSpace::CreateSRGB(), bitstream_buffer,
+      input_frame, gfx::ColorSpace::CreateSRGB(), bitstream_buffer,
       VideoEncoder::EncodeOptions());
   ASSERT_TRUE(result_or_error.has_value());
 
@@ -419,7 +420,7 @@ TEST_F(D3D12VideoEncodeH265DelegateTest, EncodeFramesAndVerifyKeyFrameFlag) {
           return EncoderStatus::Codes::kOk;
         });
     auto result_or_error = encoder_delegate_->Encode(
-        input_frame, 0, gfx::ColorSpace::CreateSRGB(), bitstream_buffer,
+        input_frame, gfx::ColorSpace::CreateSRGB(), bitstream_buffer,
         VideoEncoder::EncodeOptions());
     ASSERT_TRUE(result_or_error.has_value());
     Mock::VerifyAndClearExpectations(GetVideoEncoderWrapper());

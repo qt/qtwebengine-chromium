@@ -12,7 +12,6 @@
 #include "discovery/public/dns_sd_service_factory.h"
 #include "osp/public/osp_constants.h"
 #include "osp/public/service_info.h"
-#include "platform/base/macros.h"
 #include "util/osp_logging.h"
 
 namespace openscreen::osp {

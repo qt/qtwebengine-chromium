@@ -13,7 +13,6 @@
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/logging.h"
-#include "base/metrics/histogram_functions.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/task/single_thread_task_runner.h"
@@ -87,32 +86,34 @@ class VideoFrameHandleReleaserImpl final
   // mojom::MojoVideoFrameHandleReleaser implementation
   void ReleaseVideoFrame(
       const base::UnguessableToken& release_token,
-      const std::optional<gpu::SyncToken>& release_sync_token) final {
+      std::optional<gpu::SharedImageExportResult> release_export_result) final {
     DVLOG(3) << __func__ << "(" << release_token.ToString() << ")";
-    TRACE_EVENT2("media", "VideoFrameHandleReleaserImpl::ReleaseVideoFrame",
-                 "release_token", release_token.ToString(),
-                 "release_sync_token",
-                 release_sync_token
-                     ? (release_sync_token->ToDebugString() + ", has_data: " +
-                        (release_sync_token->HasData() ? "true" : "false"))
-                     : "null");
+    TRACE_EVENT2(
+        "media", "VideoFrameHandleReleaserImpl::ReleaseVideoFrame",
+        "release_token", release_token.ToString(), "release_export_result",
+        release_export_result
+            ? (release_export_result->ToDebugString() + ", has_data: " +
+               (release_export_result->HasData() ? "true" : "false"))
+            : "null");
     auto it = video_frames_.find(release_token);
     if (it == video_frames_.end()) {
       mojo::ReportBadMessage("Unknown |release_token|.");
       return;
     }
     if (it->second->HasReleaseMailboxCB()) {
-      if (!release_sync_token) {
+      if (!release_export_result) {
         mojo::ReportBadMessage(
             "A SyncToken is required to release frames that have a callback "
             "for releasing mailboxes.");
         return;
       }
-      // An empty *|release_sync_token| can be taken as a signal that the
+      // An empty |release_sync_token| can be taken as a signal that the
       // about-to-be-released VideoFrame was never used by the client.
       // Therefore, we should let that frame retain whatever SyncToken it has.
-      if (release_sync_token->HasData()) {
-        SimpleSyncTokenClient client(*release_sync_token);
+      gpu::SyncToken release_sync_token = it->second->shared_image()->EndExport(
+          std::move(*release_export_result));
+      if (release_sync_token.HasData()) {
+        SimpleSyncTokenClient client(release_sync_token);
         it->second->UpdateReleaseSyncToken(&client);
       }
     }
@@ -262,6 +263,9 @@ void MojoVideoDecoderService::Initialize(const VideoDecoderConfig& config,
   // to system instability. Note: This will break decoding entirely for codecs
   // which don't have software fallback, so we use a conservative limit. Most
   // platforms will self-limit and never reach this limit.
+  //
+  // UMA data as of Feb 2026 shows 99% of users have <= 24 active decoders
+  // across all platforms, so if needed this limit could be reduced.
   if (!config.is_encrypted() && g_num_active_mvd_instances >= 128) {
     OnDecoderInitialized(DecoderStatus::Codes::kTooManyDecoders);
     return;
@@ -302,13 +306,13 @@ void MojoVideoDecoderService::Initialize(const VideoDecoderConfig& config,
   auto gfx_cs = config.color_space_info().ToGfxColorSpace();
   codec_string_ = base::StringPrintf(
       "name=%s:codec=%s:profile=%d:size=%s:cs=[%d,%d,%d,%d]:hdrm=%d",
-      GetDecoderName(decoder_->GetDecoderType()).c_str(),
+      GetDecoderName(decoder_->GetDecoderType()),
       GetCodecName(config.codec()).c_str(), config.profile(),
       config.coded_size().ToString().c_str(),
       static_cast<int>(gfx_cs.GetPrimaryID()),
       static_cast<int>(gfx_cs.GetTransferID()),
       static_cast<int>(gfx_cs.GetMatrixID()),
-      static_cast<int>(gfx_cs.GetRangeID()), config.hdr_metadata().has_value());
+      static_cast<int>(gfx_cs.GetRangeID()), !config.hdr_metadata().IsEmpty());
 
   using Self = MojoVideoDecoderService;
   decoder_->Initialize(
@@ -353,8 +357,6 @@ void MojoVideoDecoderService::Decode(mojom::DecoderBufferPtr buffer,
   if (!is_active_instance_) {
     is_active_instance_ = true;
     g_num_active_mvd_instances++;
-    base::UmaHistogramExactLinear("Media.MojoVideoDecoder.ActiveInstances",
-                                  g_num_active_mvd_instances, 64);
     base::debug::SetCrashKeyString(
         GetNumVideoDecodersCrashKeyString(),
         base::NumberToString(g_num_active_mvd_instances));
@@ -418,9 +420,10 @@ void MojoVideoDecoderService::OnReaderRead(
     scoped_refptr<DecoderBuffer> buffer) {
   DVLOG(3) << __func__;
   if (trace_event) {
-    TRACE_EVENT_ASYNC_STEP_PAST1(
-        "media", kDecodeTraceName, trace_event.get(), "ReadDecoderBuffer",
-        "decoder_buffer", buffer ? buffer->AsHumanReadableString() : "null");
+    TRACE_EVENT_INSTANT("media", "ReadDecoderBuffer",
+                        perfetto::Track::FromPointer(trace_event.get()),
+                        "decoder_buffer",
+                        buffer ? buffer->AsHumanReadableString() : "null");
   }
 
   if (!buffer) {
@@ -453,8 +456,8 @@ void MojoVideoDecoderService::OnDecoderDecoded(
     media::DecoderStatus status) {
   DVLOG(3) << __func__;
   if (trace_event) {
-    TRACE_EVENT_ASYNC_STEP_PAST0("media", kDecodeTraceName, trace_event.get(),
-                                 "Decode");
+    TRACE_EVENT_INSTANT("media", "Decode",
+                        perfetto::Track::FromPointer(trace_event.get()));
     trace_event->EndTrace(status);
   }
 

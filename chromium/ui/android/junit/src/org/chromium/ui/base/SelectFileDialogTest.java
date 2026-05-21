@@ -517,7 +517,7 @@ public class SelectFileDialogTest {
         callCount = mOnActionCallback.getCallCount();
         selectFileDialog.selectFile(
                 intentAction,
-                new String[] {".xyz", "image/gif"},
+                new String[] {".this_is_not_a_real_extension", "image/gif"},
                 /* capture= */ false,
                 /* multiple= */ true,
                 /* defaultDirectory= */ null,
@@ -868,9 +868,7 @@ public class SelectFileDialogTest {
         // Test image extensions only.
         assertEquals(
                 SelectFileDialog.SELECT_FILE_DIALOG_SCOPE_IMAGES,
-                scopeForFileTypes(
-                        ".jpg", ".jpeg", ".png", ".gif", ".apng", ".tiff", ".tif", ".bmp", ".xcf",
-                        ".webp"));
+                scopeForFileTypes(".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"));
         // Test image extensions mixed with image MIME types.
         assertEquals(
                 SelectFileDialog.SELECT_FILE_DIALOG_SCOPE_IMAGES,
@@ -882,9 +880,7 @@ public class SelectFileDialogTest {
         // Video extensions only.
         assertEquals(
                 SelectFileDialog.SELECT_FILE_DIALOG_SCOPE_VIDEOS,
-                scopeForFileTypes(
-                        ".asf", ".avhcd", ".avi", ".flv", ".mov", ".mp4", ".mpeg", ".mpg", ".swf",
-                        ".wmv", ".webm", ".mkv", ".divx"));
+                scopeForFileTypes(".avi", ".mov", ".mp4", ".mpeg", ".webm", ".mkv"));
         // Video extensions and video MIME types.
         assertEquals(
                 SelectFileDialog.SELECT_FILE_DIALOG_SCOPE_VIDEOS,
@@ -925,7 +921,9 @@ public class SelectFileDialogTest {
         assertEquals("image/jpeg", SelectFileDialog.ensureMimeType(".jpg"));
         assertEquals("image/jpeg", SelectFileDialog.ensureMimeType("image/jpeg"));
         // Unknown extension, expect default response:
-        assertEquals("application/octet-stream", SelectFileDialog.ensureMimeType(".flv"));
+        assertEquals(
+                "application/octet-stream",
+                SelectFileDialog.ensureMimeType(".this_is_not_a_real_extension"));
 
         assertFalse(SelectFileDialog.isSupportedPhotoPickerTypes(new ArrayList<>()));
         assertFalse(SelectFileDialog.isSupportedPhotoPickerTypes(Arrays.asList("")));
@@ -1088,6 +1086,7 @@ public class SelectFileDialogTest {
         assertFalse(selectFileDialog.shouldShowAudioTypes());
 
         selectFileDialog.setFileTypesForTests(Arrays.asList("video/mp4"));
+
         assertTrue(selectFileDialog.acceptsSingleType());
         assertFalse(selectFileDialog.shouldShowImageTypes());
         assertTrue(selectFileDialog.shouldShowVideoTypes());
@@ -1095,6 +1094,7 @@ public class SelectFileDialogTest {
 
         selectFileDialog.setFileTypesForTests(Arrays.asList("video/mp4", "video/*"));
         // Note: video/mp4 is part of video/* so this counts as a single type.
+
         assertTrue(selectFileDialog.acceptsSingleType());
         assertFalse(selectFileDialog.shouldShowImageTypes());
         assertTrue(selectFileDialog.shouldShowVideoTypes());
@@ -1102,12 +1102,14 @@ public class SelectFileDialogTest {
 
         selectFileDialog.setFileTypesForTests(Arrays.asList("audio/wave", "audio/mpeg", "audio/*"));
         // Note: both audio/wave and audio/mpeg are part of audio/* so this counts as a single type.
+
         assertTrue(selectFileDialog.acceptsSingleType());
         assertFalse(selectFileDialog.shouldShowImageTypes());
         assertFalse(selectFileDialog.shouldShowVideoTypes());
         assertTrue(selectFileDialog.shouldShowAudioTypes());
 
         selectFileDialog.setFileTypesForTests(Arrays.asList("audio/wave", "audio/mpeg"));
+
         assertFalse(selectFileDialog.acceptsSingleType());
         assertFalse(selectFileDialog.shouldShowImageTypes());
         assertFalse(selectFileDialog.shouldShowVideoTypes());
@@ -1147,20 +1149,25 @@ public class SelectFileDialogTest {
         assertTrue(selectFileDialog.shouldShowAudioTypes());
 
         // Invalid extension
-        selectFileDialog.setFileTypesForTests(Arrays.asList(".xyz"));
+        selectFileDialog.setFileTypesForTests(Arrays.asList(".this_is_not_a_real_extension"));
+
         assertTrue(selectFileDialog.acceptsSingleType());
         assertFalse(selectFileDialog.shouldShowImageTypes());
         assertFalse(selectFileDialog.shouldShowVideoTypes());
         assertFalse(selectFileDialog.shouldShowAudioTypes());
 
         // Both are converted to the same MIME type
-        selectFileDialog.setFileTypesForTests(Arrays.asList("application/octet-stream", ".xyz"));
+        selectFileDialog.setFileTypesForTests(
+                Arrays.asList("application/octet-stream", ".this_is_not_a_real_extension"));
+
         assertTrue(selectFileDialog.acceptsSingleType());
         assertFalse(selectFileDialog.shouldShowImageTypes());
         assertFalse(selectFileDialog.shouldShowVideoTypes());
         assertFalse(selectFileDialog.shouldShowAudioTypes());
 
-        selectFileDialog.setFileTypesForTests(Arrays.asList(".pdf", ".xyz"));
+        selectFileDialog.setFileTypesForTests(
+                Arrays.asList(".pdf", ".this_is_not_a_real_extension"));
+
         assertFalse(selectFileDialog.acceptsSingleType());
         assertFalse(selectFileDialog.shouldShowImageTypes());
         assertFalse(selectFileDialog.shouldShowVideoTypes());
@@ -1181,21 +1188,21 @@ public class SelectFileDialogTest {
 
     @Test
     public void testConvertToSupportedMimeTypes() {
-        ShadowMimeTypeMap shadowMimeTypeMap = Shadows.shadowOf(MimeTypeMap.getSingleton());
-        shadowMimeTypeMap.addExtensionMimeTypeMapping("jpg", "image/jpeg");
-        shadowMimeTypeMap.addExtensionMimeTypeMapping("gif", "image/gif");
-        shadowMimeTypeMap.addExtensionMimeTypeMapping("pdf", "application/pdf");
-
+        // We use standard extensions here because ShadowMimeTypeMap.addExtensionMimeTypeMapping is
+        // ignored on SDK 36 and above.
         assertEquals(
                 SelectFileDialog.convertToSupportedMimeTypes(Arrays.asList("image/jpeg", ".jpg")),
                 Arrays.asList("image/jpeg"));
 
+        // No dot means it is not recognized as an extension.
         assertEquals(
                 SelectFileDialog.convertToSupportedMimeTypes(Arrays.asList("image/gif", "jpg")),
                 Arrays.asList("image/gif"));
 
+        // An extension that is definitely not known by the platform.
         assertEquals(
-                SelectFileDialog.convertToSupportedMimeTypes(Arrays.asList("image/gif", ".xyz")),
+                SelectFileDialog.convertToSupportedMimeTypes(
+                        Arrays.asList("image/gif", ".this_is_not_a_real_extension")),
                 Arrays.asList("image/gif", "application/octet-stream"));
 
         // Empty extensions are omitted.
@@ -1427,6 +1434,8 @@ public class SelectFileDialogTest {
         TestSelectFileDialog selectFileDialog = new TestSelectFileDialog(0);
         selectFileDialog.onIntentCompleted(
                 Activity.RESULT_OK,
-                new Intent(Intent.ACTION_VIEW, Uri.parse("content://com.android.xyz/xyz")));
+                new Intent(
+                        Intent.ACTION_VIEW,
+                        Uri.parse("content://com.android.this_is_not_a_real_extension/xyz")));
     }
 }

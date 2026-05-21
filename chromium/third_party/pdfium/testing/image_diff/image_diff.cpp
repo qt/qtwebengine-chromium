@@ -13,7 +13,6 @@
 #include <string.h>
 
 #include <algorithm>
-#include <cmath>
 #include <map>
 #include <string>
 #include <vector>
@@ -22,6 +21,7 @@
 #include "core/fxcrt/numerics/safe_conversions.h"
 #include "testing/image_diff/image_diff_png.h"
 #include "testing/utils/path_service.h"
+#include "testing/utils/pixel_diff_util.h"
 
 #if BUILDFLAG(IS_WIN)
 #include <windows.h>
@@ -146,33 +146,6 @@ void CountImageSizeMismatchAsPixelDifference(const Image& baseline,
   *pixels_different += (max_h - h) * max_w;
 }
 
-struct UnpackedPixel {
-  explicit UnpackedPixel(uint32_t packed)
-      : red(packed & 0xff),
-        green((packed >> 8) & 0xff),
-        blue((packed >> 16) & 0xff),
-        alpha((packed >> 24) & 0xff) {}
-
-  uint8_t red;
-  uint8_t green;
-  uint8_t blue;
-  uint8_t alpha;
-};
-
-uint8_t ChannelDelta(uint8_t baseline_channel, uint8_t actual_channel) {
-  // No casts are necessary because arithmetic operators implicitly convert
-  // `uint8_t` to `int` first. The final delta is always in the range 0 to 255.
-  return std::abs(baseline_channel - actual_channel);
-}
-
-uint8_t MaxPixelPerChannelDelta(const UnpackedPixel& baseline_pixel,
-                                const UnpackedPixel& actual_pixel) {
-  return std::max({ChannelDelta(baseline_pixel.red, actual_pixel.red),
-                   ChannelDelta(baseline_pixel.green, actual_pixel.green),
-                   ChannelDelta(baseline_pixel.blue, actual_pixel.blue),
-                   ChannelDelta(baseline_pixel.alpha, actual_pixel.alpha)});
-}
-
 float PercentageDifferent(const Image& baseline,
                           const Image& actual,
                           uint8_t max_pixel_per_channel_delta) {
@@ -189,8 +162,7 @@ float PercentageDifferent(const Image& baseline,
         continue;
       }
 
-      if (MaxPixelPerChannelDelta(UnpackedPixel(baseline_pixel),
-                                  UnpackedPixel(actual_pixel)) >
+      if (MaxPixelPerChannelDelta(baseline_pixel, actual_pixel) >
           max_pixel_per_channel_delta) {
         ++pixels_different;
       }

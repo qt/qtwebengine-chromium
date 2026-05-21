@@ -8,6 +8,7 @@
 #include <atomic>
 #include <cstring>
 #include <memory>
+#include <optional>
 #include <stack>
 #include <utility>
 #include <vector>
@@ -32,6 +33,11 @@ class ScopedTraceOperation {
   // Define the destructor to remove this item from the stack when it's
   // destroyed.
   virtual ~ScopedTraceOperation();
+
+  ScopedTraceOperation(const ScopedTraceOperation&) = delete;
+  ScopedTraceOperation(ScopedTraceOperation&&) noexcept = delete;
+  ScopedTraceOperation& operator=(const ScopedTraceOperation&) = delete;
+  ScopedTraceOperation& operator=(ScopedTraceOperation&&) = delete;
 
   // Getters the current Trace Hierarchy. If the traces_ stack hasn't been
   // created yet, return as if the empty root node is there.
@@ -68,6 +74,16 @@ class ScopedTraceOperation {
                             TraceId id,
                             Error::Code e);
 
+  // Traces a flow event.
+  static bool TraceFlow(
+      TraceCategory category,
+      const char* name,
+      const char* file,
+      uint32_t line,
+      uint64_t flow_id,
+      FlowType type,
+      std::optional<Clock::time_point> timestamp = std::nullopt);
+
  protected:
   // Sets the result of this trace log.
   // NOTE: this must be define in this class rather than TraceLogger so that it
@@ -103,8 +119,6 @@ class ScopedTraceOperation {
   // thread.
   static thread_local TraceStack* traces_;
   static thread_local ScopedTraceOperation* root_node_;
-
-  OSP_DISALLOW_COPY_AND_ASSIGN(ScopedTraceOperation);
 };
 
 // The class which does actual trace logging.
@@ -126,42 +140,51 @@ class TraceLoggerBase : public ScopedTraceOperation {
                   std::vector<TraceEvent::Argument> arguments,
                   TraceIdHierarchy ids);
 
+  TraceLoggerBase(const TraceLoggerBase&) = delete;
+  TraceLoggerBase(TraceLoggerBase&&) noexcept = delete;
+  TraceLoggerBase& operator=(const TraceLoggerBase&) = delete;
+  TraceLoggerBase& operator=(TraceLoggerBase&&) = delete;
+
  protected:
   // Set the result.
   void SetTraceResult(Error::Code error) override { event_.result = error; }
 
   TraceEvent event_;
-
- private:
-  OSP_DISALLOW_COPY_AND_ASSIGN(TraceLoggerBase);
 };
 
 class SynchronousTraceLogger : public TraceLoggerBase {
  public:
   using TraceLoggerBase::TraceLoggerBase;
 
-  ~SynchronousTraceLogger() override;
+  SynchronousTraceLogger(const SynchronousTraceLogger&) = delete;
+  SynchronousTraceLogger(SynchronousTraceLogger&&) noexcept = delete;
+  SynchronousTraceLogger& operator=(const SynchronousTraceLogger&) = delete;
+  SynchronousTraceLogger& operator=(SynchronousTraceLogger&&) = delete;
 
- private:
-  OSP_DISALLOW_COPY_AND_ASSIGN(SynchronousTraceLogger);
+  ~SynchronousTraceLogger() override;
 };
 
 class AsynchronousTraceLogger : public TraceLoggerBase {
  public:
   using TraceLoggerBase::TraceLoggerBase;
 
-  ~AsynchronousTraceLogger() override;
+  AsynchronousTraceLogger(const AsynchronousTraceLogger&) = delete;
+  AsynchronousTraceLogger(AsynchronousTraceLogger&&) noexcept = delete;
+  AsynchronousTraceLogger& operator=(const AsynchronousTraceLogger&) = delete;
+  AsynchronousTraceLogger& operator=(AsynchronousTraceLogger&&) = delete;
 
- private:
-  OSP_DISALLOW_COPY_AND_ASSIGN(AsynchronousTraceLogger);
+  ~AsynchronousTraceLogger() override;
 };
 
 // Inserts a fake element into the ScopedTraceOperation stack to set
 // the current TraceId Hierarchy manually.
 class TraceIdSetter final : public ScopedTraceOperation {
  public:
-  explicit TraceIdSetter(TraceIdHierarchy ids)
-      : ScopedTraceOperation(ids.current, ids.parent, ids.root) {}
+  explicit TraceIdSetter(TraceIdHierarchy ids);
+  TraceIdSetter(const TraceIdSetter&) = delete;
+  TraceIdSetter(TraceIdSetter&&) noexcept = delete;
+  TraceIdSetter& operator=(const TraceIdSetter&) = delete;
+  TraceIdSetter& operator=(TraceIdSetter&&) = delete;
   ~TraceIdSetter() final;
 
   // Creates a new TraceIdSetter to set the full TraceId Hierarchy to default
@@ -171,8 +194,6 @@ class TraceIdSetter final : public ScopedTraceOperation {
  private:
   // Implement abstract method for use in Macros.
   void SetTraceResult(Error::Code error) {}
-
-  OSP_DISALLOW_COPY_AND_ASSIGN(TraceIdSetter);
 };
 
 // This helper object allows us to delete objects allocated on the stack in a

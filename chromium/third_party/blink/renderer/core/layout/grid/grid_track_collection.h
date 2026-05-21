@@ -229,8 +229,10 @@ class CORE_EXPORT GridLayoutTrackCollection : public GridTrackCollectionBase {
   bool HasNonDefiniteTrack() const;
   bool IsDependentOnAvailableSize() const;
 
+  wtf_size_t FirstNonCollapsedLineIndex() const;
+
  protected:
-  friend class MasonryLayoutAlgorithmTest;
+  friend class GridLanesLayoutAlgorithmTest;
 
   struct Baselines {
     Vector<LayoutUnit, 16> major;
@@ -351,6 +353,16 @@ struct CORE_EXPORT GridSet {
   LayoutUnit fit_content_limit;
   LayoutUnit item_incurred_increase;
 
+  // Baseline tracking for grid-lanes layout on the stacking axis:
+  // - first_item_stacking_position: Position of the first item in this set,
+  //   used to decide whether this is the first item for baseline calculation
+  // - last_item_stacking_position: Position of the last item in this set,
+  //   used to decide whether this is the last item for baseline calculation
+  // - grid_lanes_last_baseline: The last baseline value for this set
+  std::optional<LayoutUnit> first_item_stacking_position;
+  std::optional<LayoutUnit> last_item_stacking_position;
+  std::optional<LayoutUnit> grid_lanes_last_baseline;
+
   bool is_infinitely_growable : 1;
 };
 
@@ -454,16 +466,10 @@ class CORE_EXPORT GridSizingTrackCollection final
   void SetMajorBaseline(wtf_size_t set_index, LayoutUnit candidate_baseline);
   void SetMinorBaseline(wtf_size_t set_index, LayoutUnit candidate_baseline);
 
-  // Return the index of the first set with an intrinsically sized track within
-  // an auto repeat definition.
-  wtf_size_t GetIntrinsicSizedRepeaterSetIndex() const {
-    return intrinsic_sized_repeater_set_index_;
-  }
-
  private:
   friend class GridLayoutAlgorithmTest;
   friend class GridTrackCollectionTest;
-  friend class MasonryLayoutAlgorithmTest;
+  friend class GridLanesLayoutAlgorithmTest;
 
   // These methods are internal implementations also used in testing.
   void BuildSets(const GridTrackList& explicit_track_list,
@@ -473,7 +479,6 @@ class CORE_EXPORT GridSizingTrackCollection final
   void InitializeSets(LayoutUnit grid_available_size = kIndefiniteSize);
 
   wtf_size_t non_collapsed_track_count_{0};
-  wtf_size_t intrinsic_sized_repeater_set_index_{kNotFound};
 
   // A vector of every set element that compose the entire collection's ranges;
   // track definitions from the same set are stored in consecutive positions,

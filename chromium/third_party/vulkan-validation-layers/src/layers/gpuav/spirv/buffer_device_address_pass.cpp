@@ -1,4 +1,4 @@
-/* Copyright (c) 2024-2025 LunarG, Inc.
+/* Copyright (c) 2024-2026 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -53,10 +53,10 @@ uint32_t BufferDeviceAddressPass::CreateFunctionCall(BasicBlock& block, Instruct
 
     uint32_t access_type_value = 0;
     if (opcode == spv::OpStore) {
-        access_type_value |= 1 << glsl::kInstBuffAddrAccessPayloadShiftIsWrite;
+        access_type_value |= 1 << glsl::kInst_BuffAddrAccess_PayloadShiftIsWrite;
     }
     if (meta.type_is_struct) {
-        access_type_value |= 1 << glsl::kInstBuffAddrAccessPayloadShiftIsStruct;
+        access_type_value |= 1 << glsl::kInst_BuffAddrAccess_PayloadShiftIsStruct;
     }
     const Constant& access_type = type_manager_.GetConstantUInt32(access_type_value);
     const uint32_t bool_type = type_manager_.GetTypeBool().Id();
@@ -180,13 +180,17 @@ bool BufferDeviceAddressPass::RequiresInstrumentation(const Function& function, 
 
 bool BufferDeviceAddressPass::Instrument() {
     // Can safely loop function list as there is no injecting of new Functions until linking time
-    for (const auto& function : module_.functions_) {
-        if (function->instrumentation_added_) continue;
-        for (auto block_it = function->blocks_.begin(); block_it != function->blocks_.end(); ++block_it) {
+    for (Function& function : module_.functions_) {
+        if (!function.called_from_target_) {
+            continue;
+        }
+        for (auto block_it = function.blocks_.begin(); block_it != function.blocks_.end(); ++block_it) {
             BasicBlock& current_block = **block_it;
 
             cf_.Update(current_block);
-            if (debug_disable_loops_ && cf_.in_loop) continue;
+            if (debug_disable_loops_ && cf_.in_loop) {
+                continue;
+            }
 
             if (current_block.IsLoopHeader()) {
                 continue;  // Currently can't properly handle injecting CFG logic into a loop header block
@@ -201,9 +205,13 @@ bool BufferDeviceAddressPass::Instrument() {
                 block_skip_list_.clear();
                 for (auto inst_it = block_instructions.begin(); inst_it != block_instructions.end(); ++inst_it) {
                     InstructionMeta meta;
-                    if (!RequiresInstrumentation(*function, *(inst_it->get()), meta)) continue;
+                    if (!RequiresInstrumentation(function, *(inst_it->get()), meta)) {
+                        continue;
+                    }
 
-                    if (!meta.pointer_inst->IsAccessChain()) continue;
+                    if (!meta.pointer_inst->IsAccessChain()) {
+                        continue;
+                    }
                     // OpAccesschain -> OpLoad/OpBitcast -> OpTypePointer (PSB) -> OpTypeStruct
                     std::vector<const Instruction*> access_chain_insts;
 
@@ -212,18 +220,30 @@ bool BufferDeviceAddressPass::Instrument() {
                     while (next_inst && next_inst->IsAccessChain()) {
                         access_chain_insts.push_back(next_inst);
                         const uint32_t access_chain_base_id = next_inst->Operand(0);
-                        next_inst = function->FindInstruction(access_chain_base_id);
+                        next_inst = function.FindInstruction(access_chain_base_id);
                     }
-                    if (access_chain_insts.empty() || !next_inst) continue;
+                    if (access_chain_insts.empty() || !next_inst) {
+                        continue;
+                    }
 
                     const Type* load_type_pointer = type_manager_.FindTypeById(next_inst->TypeId());
                     if (load_type_pointer && load_type_pointer->spv_type_ == SpvType::kPointer &&
                         load_type_pointer->inst_.StorageClass() == spv::StorageClassPhysicalStorageBuffer) {
                         const Type* struct_type = type_manager_.FindTypeById(load_type_pointer->inst_.Operand(1));
                         if (struct_type && struct_type->spv_type_ == SpvType::kStruct) {
-                            const uint32_t struct_offset =
-                                FindOffsetInStruct(struct_type->Id(), nullptr, false, access_chain_insts);
-                            if (struct_offset == 0) continue;
+                            uint32_t root_struct_id = struct_type->Id();
+
+                            // GLSL/HLSL will only ever a struct, but for Slang, we might have the first access be the pointer and
+                            // we actually need that outer struct, which "looks" an OpTypePointer with an ArrayStride attached to it
+                            const Instruction* last_access = access_chain_insts.back();
+                            if (!last_access->IsNonPtrAccessChain() && last_access->TypeId() == load_type_pointer->Id()) {
+                                root_struct_id = load_type_pointer->Id();
+                            }
+
+                            const uint32_t struct_offset = FindOffsetInStruct(root_struct_id, nullptr, false, access_chain_insts);
+                            if (struct_offset == 0) {
+                                continue;
+                            }
                             uint32_t inst_position = meta.target_instruction->GetPositionOffset();
                             block_skip_list_.insert(inst_position);
 
@@ -243,15 +263,19 @@ bool BufferDeviceAddressPass::Instrument() {
             for (auto inst_it = block_instructions.begin(); inst_it != block_instructions.end(); ++inst_it) {
                 InstructionMeta meta;
                 // Every instruction is analyzed by the specific pass and lets us know if we need to inject a function or not
-                if (!RequiresInstrumentation(*function, *(inst_it->get()), meta)) continue;
+                if (!RequiresInstrumentation(function, *(inst_it->get()), meta)) {
+                    continue;
+                }
 
-                if (IsMaxInstrumentationsCount()) continue;
+                if (IsMaxInstrumentationsCount()) {
+                    continue;
+                }
                 instrumentations_count_++;
 
                 if (!module_.settings_.safe_mode) {
                     CreateFunctionCall(current_block, &inst_it, meta);
                 } else {
-                    InjectConditionalData ic_data = InjectFunctionPre(*function.get(), block_it, inst_it);
+                    InjectConditionalData ic_data = InjectFunctionPre(function, block_it, inst_it);
                     ic_data.function_result_id = CreateFunctionCall(current_block, nullptr, meta);
                     InjectFunctionPost(current_block, ic_data);
                     // Skip the newly added valid and invalid block. Start searching again from newly split merge block

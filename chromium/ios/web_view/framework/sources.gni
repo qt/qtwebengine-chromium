@@ -216,10 +216,10 @@ ios_web_view_sources = [
   "//ios/web_view/internal/safe_browsing/web_view_safe_browsing_client_factory.mm",
   "//ios/web_view/internal/safe_browsing/web_view_safe_browsing_helper_factory.h",
   "//ios/web_view/internal/safe_browsing/web_view_safe_browsing_helper_factory.mm",
-  "//ios/web_view/internal/signin/account_capabilities_fetcher_factory_ios_web_view.h",
-  "//ios/web_view/internal/signin/account_capabilities_fetcher_factory_ios_web_view.mm",
   "//ios/web_view/internal/signin/account_capabilities_fetcher_ios_web_view.h",
   "//ios/web_view/internal/signin/account_capabilities_fetcher_ios_web_view.mm",
+  "//ios/web_view/internal/signin/account_fetcher_factory_ios_web_view.h",
+  "//ios/web_view/internal/signin/account_fetcher_factory_ios_web_view.mm",
   "//ios/web_view/internal/signin/cwv_identity.mm",
   "//ios/web_view/internal/signin/ios_web_view_signin_client.h",
   "//ios/web_view/internal/signin/ios_web_view_signin_client.mm",
@@ -298,6 +298,7 @@ ios_web_view_sources = [
 
 ios_web_view_deps = [
   "//base",
+  "//components/activity_reporter",
   "//components/affiliations/core/browser:affiliations",
   "//components/autofill/core/browser",
   "//components/autofill/core/common",
@@ -340,6 +341,7 @@ ios_web_view_deps = [
   "//components/password_manager/ios",
   "//components/plus_addresses/core/browser/settings",
   "//components/plus_addresses/core/browser/webdata",
+  "//components/plus_addresses/core/common:features",
   "//components/pref_registry",
   "//components/prefs",
   "//components/profile_metrics",

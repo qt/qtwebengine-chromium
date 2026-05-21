@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40285824): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "components/metrics/call_stacks/stack_sampling_recorder.h"
 
 #include <sys/file.h>
@@ -15,11 +10,13 @@
 #include <utility>
 
 #include "base/check.h"
+#include "base/compiler_specific.h"
 #include "base/containers/span.h"
 #include "base/files/file.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/scoped_refptr.h"
+#include "base/strings/string_view_util.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/platform_thread.h"
 #include "base/threading/thread.h"
@@ -257,9 +254,8 @@ static void LockFileAndPreventChange(base::FilePath path,
   base::File file(path, base::File::FLAG_CREATE_ALWAYS | base::File::FLAG_READ |
                             base::File::FLAG_WRITE);
   CHECK(file.IsValid());
-  constexpr char kPattern[] = "Not a valid proto";
-  CHECK_EQ(file.Write(0, kPattern, sizeof(kPattern)),
-           static_cast<int>(sizeof(kPattern)));
+  constexpr std::string_view kPattern = "Not a valid proto";
+  CHECK(file.WriteAndCheck(0, base::as_byte_span(kPattern)));
 
   // 2. Lock the file
   CHECK_EQ(HANDLE_EINTR(flock(file.GetPlatformFile(), LOCK_EX)), 0);
@@ -278,10 +274,9 @@ static void LockFileAndPreventChange(base::FilePath path,
   base::PlatformThreadBase::Sleep(base::Seconds(5));
 
   // 5. CHECK that the file still contains the original pattern.
-  char buffer[sizeof(kPattern) + 1];
-  CHECK_EQ(file.Read(0, buffer, sizeof(buffer)),
-           static_cast<int>(sizeof(kPattern)));
-  CHECK_EQ(std::string(buffer), std::string(kPattern));
+  uint8_t buffer[kPattern.size()];
+  CHECK(file.ReadAndCheck(0, buffer));
+  CHECK_EQ(kPattern, base::as_string_view(buffer));
 }
 
 TEST_F(StackSamplingRecorderTest, DoesNotWriteToLockedFile) {

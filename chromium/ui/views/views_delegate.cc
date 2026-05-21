@@ -10,11 +10,11 @@
 #include "build/build_config.h"
 #include "ui/accessibility/accessibility_features.h"
 #include "ui/base/mojom/window_show_state.mojom.h"
+#include "ui/views/accessibility/view_accessibility.h"
 #include "ui/views/widget/native_widget_private.h"
 #include "ui/views/window/default_frame_view.h"
 
 #if defined(USE_AURA)
-#include "ui/views/accessibility/tree/browser_views_ax_manager.h"
 #include "ui/views/touchui/touch_selection_menu_runner_views.h"
 #endif
 
@@ -117,15 +117,6 @@ void ViewsDelegate::OnBeforeWidgetInit(
 
 bool ViewsDelegate::WindowManagerProvidesTitleBar(bool maximized) {
   return false;
-}
-
-void ViewsDelegate::InitializeViewsAXManager() {
-#if BUILDFLAG(ENABLE_DESKTOP_AURA)
-  if (::features::IsAccessibilityTreeForViewsEnabled() &&
-      !browser_views_ax_manager_handle_) {
-    browser_views_ax_manager_handle_ = views::BrowserViewsAXManager::Create();
-  }
-#endif
 }
 
 #if BUILDFLAG(IS_MAC)

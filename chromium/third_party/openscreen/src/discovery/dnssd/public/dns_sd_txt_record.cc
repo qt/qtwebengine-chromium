@@ -7,8 +7,6 @@
 #include <cctype>
 #include <utility>
 
-#include "util/span_util.h"
-
 namespace openscreen::discovery {
 
 // static

@@ -1,7 +1,7 @@
-/* Copyright (c) 2015-2025 The Khronos Group Inc.
- * Copyright (c) 2015-2025 Valve Corporation
- * Copyright (c) 2015-2025 LunarG, Inc.
- * Copyright (C) 2015-2025 Google Inc.
+/* Copyright (c) 2015-2026 The Khronos Group Inc.
+ * Copyright (c) 2015-2026 Valve Corporation
+ * Copyright (c) 2015-2026 LunarG, Inc.
+ * Copyright (C) 2015-2026 Google Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,11 +24,9 @@
 #include "containers/custom_containers.h"
 #include "utils/lock_utils.h"
 
-#include <spirv-tools/libspirv.hpp>
-
-struct DeviceFeatures;
-struct DeviceExtensions;
-class APIVersion;
+namespace spirv {
+struct ResourceInterfaceVariable;
+}
 
 enum class ShaderObjectStage : uint32_t {
     VERTEX = 0u,
@@ -68,6 +66,8 @@ inline ShaderObjectStage VkShaderStageToShaderObjectStage(VkShaderStageFlagBits 
     }
     return ShaderObjectStage::LAST;
 }
+
+VkShaderStageFlagBits ExecutionModelToShaderStageFlagBits(uint32_t mode);
 
 class ValidationCache {
   public:
@@ -110,10 +110,9 @@ class ValidationCache {
     mutable std::shared_mutex lock_;
 };
 
-spv_target_env PickSpirvEnv(const APIVersion &api_version, bool spirv_1_4);
-
-void AdjustValidatorOptions(const DeviceExtensions &device_extensions, const DeviceFeatures &enabled_features,
-                            spv_target_env spirv_environment, spvtools::ValidatorOptions &out_options, uint32_t *out_hash,
-                            std::string &out_command);
-
 void DumpSpirvToFile(const std::string &file_name, const uint32_t *spirv, size_t spirv_dwords_count);
+
+bool ResourceTypeMatchesBinding(VkSpirvResourceTypeFlagsEXT resource_type,
+                                const spirv::ResourceInterfaceVariable& resource_variable);
+std::string DescribeResourceTypeMismatch(VkSpirvResourceTypeFlagsEXT resource_type,
+                                         const spirv::ResourceInterfaceVariable& resource_variable);

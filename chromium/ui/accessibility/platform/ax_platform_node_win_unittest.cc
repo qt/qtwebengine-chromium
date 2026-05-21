@@ -17,12 +17,12 @@
 
 #include "base/auto_reset.h"
 #include "base/check_deref.h"
-#include "base/containers/contains.h"
 #include "base/json/json_reader.h"
 #include "base/run_loop.h"
 #include "base/strings/string_util_win.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/metrics/histogram_tester.h"
+#include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
 #include "base/values.h"
 #include "base/win/atl.h"
@@ -3031,8 +3031,8 @@ TEST_F(AXPlatformNodeWinTest, UnlabeledImageAttributes) {
 
     std::vector<std::wstring> attribute_vector = base::SplitString(
         attributes, L";", base::KEEP_WHITESPACE, base::SPLIT_WANT_ALL);
-    EXPECT_TRUE(
-        base::Contains(attribute_vector, L"roledescription:Unlabeled image"));
+    EXPECT_TRUE(std::ranges::contains(attribute_vector,
+                                      L"roledescription:Unlabeled image"));
   }
 }
 
@@ -8053,7 +8053,7 @@ TEST_F(AXPlatformNodeWinTest, DISABLED_BulkFetch) {
   std::optional<base::Value> result_val =
       base::JSONReader::Read(response, base::JSON_ALLOW_TRAILING_COMMAS);
   ASSERT_TRUE(result_val);
-  const base::Value::Dict& result = result_val->GetDict();
+  const base::DictValue& result = result_val->GetDict();
   ASSERT_TRUE(result.contains("role"));
   ASSERT_EQ("scrollBar", CHECK_DEREF(result.FindString("role")));
 }
@@ -8203,6 +8203,26 @@ TEST_F(AXPlatformNodeWinTest, DormantLiveGhostDestroyed) {
   // Zero instances and no ghost nodes.
   ASSERT_EQ(AXPlatformNodeWin::GetCounts(),
             (AXPlatformNodeWin::Counts{0U, 0U, 0U, 0U}));
+}
+
+// Test for UIA's MathML Implementation.
+TEST_F(AXPlatformNodeWinTest, UiaMathMlFeatureFlag) {
+  // Verify flag is disabled by default.
+  EXPECT_FALSE(base::FeatureList::IsEnabled(features::kUiaMathMlSupport));
+
+  // Verify flag can be enabled.
+  {
+    base::test::ScopedFeatureList scoped_feature_list;
+    scoped_feature_list.InitAndEnableFeature(features::kUiaMathMlSupport);
+    EXPECT_TRUE(base::FeatureList::IsEnabled(features::kUiaMathMlSupport));
+  }
+
+  // Verify flag can be explicitly disabled.
+  {
+    base::test::ScopedFeatureList scoped_feature_list;
+    scoped_feature_list.InitAndDisableFeature(features::kUiaMathMlSupport);
+    EXPECT_FALSE(base::FeatureList::IsEnabled(features::kUiaMathMlSupport));
+  }
 }
 
 }  // namespace ui

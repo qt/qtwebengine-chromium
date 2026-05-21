@@ -300,6 +300,21 @@ describeWithEnvironment('TimelinePanel', function() {
     });
   });
 
+  describe('executeRecordAndReload', () => {
+    it('shows the timeline view that then starts a recording', async function() {
+      const uiView = UI.ViewManager.ViewManager.instance({forceNew: true});
+      const showViewStub = sinon.stub(uiView, 'showView');
+
+      sinon.stub(timeline, 'recordReload').callsFake(() => {
+        timeline.dispatchEventToListeners(Timeline.TimelinePanel.Events.RECORDING_COMPLETED, {traceIndex: 0});
+      });
+      sinon.stub(traceModel, 'parsedTrace').returns({} as Trace.TraceModel.ParsedTrace);
+
+      await Timeline.TimelinePanel.TimelinePanel.executeRecordAndReload();
+      sinon.assert.calledWith(showViewStub, 'timeline');
+    });
+  });
+
   describe('handleExternalRequest', function() {
     beforeEach(async () => {
       AIAssistance.ConversationHandler.ConversationHandler.removeInstance();

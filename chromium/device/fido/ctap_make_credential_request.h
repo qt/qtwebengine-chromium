@@ -13,16 +13,18 @@
 #include <vector>
 
 #include "base/component_export.h"
-#include "device/fido/authenticator_selection_criteria.h"
-#include "device/fido/fido_constants.h"
-#include "device/fido/fido_transport_protocol.h"
+#include "device/fido/ctap_request_common.h"
 #include "device/fido/json_request.h"
 #include "device/fido/pin.h"
 #include "device/fido/prf_input.h"
-#include "device/fido/public_key_credential_descriptor.h"
-#include "device/fido/public_key_credential_params.h"
-#include "device/fido/public_key_credential_rp_entity.h"
-#include "device/fido/public_key_credential_user_entity.h"
+#include "device/fido/public/authenticator_selection_criteria.h"
+#include "device/fido/public/fido_constants.h"
+#include "device/fido/public/fido_transport_protocol.h"
+#include "device/fido/public/public_key_credential_descriptor.h"
+#include "device/fido/public/public_key_credential_params.h"
+#include "device/fido/public/public_key_credential_rp_entity.h"
+#include "device/fido/public/public_key_credential_user_entity.h"
+#include "third_party/blink/public/mojom/webauthn/authenticator.mojom-shared.h"
 
 namespace cbor {
 class Value;
@@ -82,6 +84,11 @@ struct COMPONENT_EXPORT(DEVICE_FIDO) CtapMakeCredentialRequest {
   // prf indicates that the "prf" extension should be asserted to request that
   // the authenticator associate a PRF with the credential.
   bool prf = false;
+
+  std::optional<HMACSecret> hmac_secret_mc;
+
+  // The ephemeral key use to encrypt PIN material.
+  std::optional<pin::KeyAgreementResponse> pin_key_agreement;
 
   // prf_input contains the hashed salts for doing a PRF evaluation at
   // credential creation time. This is only possible when the authenticator
@@ -206,7 +213,7 @@ struct COMPONENT_EXPORT(DEVICE_FIDO) MakeCredentialOptions {
 
   // The set of hints passed by the relying party.
   // https://w3c.github.io/webauthn/#enum-hints.
-  std::vector<FidoTransportProtocol> hints;
+  std::vector<blink::mojom::Hint> hints;
 };
 
 // Serializes MakeCredential request parameter into CBOR encoded map with

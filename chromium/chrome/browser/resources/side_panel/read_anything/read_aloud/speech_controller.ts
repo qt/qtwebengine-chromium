@@ -32,6 +32,7 @@ export interface SpeechListener {
   onEngineStateChange(): void;
   onPreviewVoicePlaying(): void;
   onPlayingFromSelection(): void;
+  onWordBoundary(segments: Segment[]): void;
 }
 
 export class SpeechController {
@@ -176,6 +177,16 @@ export class SpeechController {
     }
   }
 
+  // When the view is hidden with Immersive Reading Mode enabled, we should
+  // stop speaking.
+  onReadingModeWillClose() {
+    // TODO: crbug.com/466967616 - Ensure Read Aloud resume honors word
+    // boundaries after ReadingModeWillClose is called.
+    // TODO: crbug.com/466967616 - Log when this is called when isSpeechActive
+    // is false, as this is likely indicative of a bug.
+    this.stopSpeech_(PauseActionSource.DEFAULT);
+  }
+
   onTabMuteStateChange(muted: boolean) {
     this.model_.setVolume(muted ? 0.0 : 1.0);
     this.onSpeechSettingsChange();
@@ -210,7 +221,8 @@ export class SpeechController {
 
   onHighlightGranularityChange(newGranularity: number) {
     // Rehighlight the new granularity.
-    if (newGranularity !== chrome.readingMode.noHighlighting) {
+    if (this.hasSpeechBeenTriggered() &&
+        newGranularity !== chrome.readingMode.noHighlighting) {
       this.highlightCurrentGranularity_(
           this.readAloudModel_.getCurrentTextSegments());
     }
@@ -299,6 +311,11 @@ export class SpeechController {
           // Ensure we're updating Read Aloud state if there's no text to
           // speak.
           this.onSpeechFinished_();
+
+          // Return to avoid speech getting stuck in an indeterminate state.
+          // It is preferable to end speech immediately after a play button
+          // press than a playback state with a spinner that never terminates.
+          return;
         }
       }
     }
@@ -440,18 +457,34 @@ export class SpeechController {
     // boundaries (if available) to resume at the beginning of the current
     // word.
     if (isInterrupted && this.wordBoundaries_.hasBoundaries()) {
+      const resumeBoundary = this.wordBoundaries_.getResumeBoundary();
       const utteranceTextForWordBoundary =
-          utteranceText.substring(this.wordBoundaries_.getResumeBoundary());
+          utteranceText.substring(resumeBoundary);
       // If we paused right at the end of the sentence, no need to speak the
       // ending punctuation.
       if (isInvalidHighlightForWordHighlighting(
               utteranceTextForWordBoundary.trim())) {
         this.wordBoundaries_.resetToDefaultState();
-        return this.skipCurrentPosition_(isInterrupted, isMovingBackward);
+        const skippedPosition =
+            this.skipCurrentPosition_(isInterrupted, isMovingBackward);
+        // If we paused at the end of a sentence that is the end of the
+        // available text, resume speech from the beginning. Otherwise, speech
+        // will abruptly end immediately after a play button press with nothing
+        // being spoken.
+        if (!skippedPosition &&
+            getReadAloudModel().getCurrentTextSegments().length === 0) {
+          getReadAloudModel().resetSpeechToBeginning();
+          return this.highlightAndPlayMessage_(isInterrupted, isMovingBackward);
+        }
+
+        return skippedPosition;
+
       } else {
+        this.notifyWordBoundary_(resumeBoundary);
         this.playText_(utteranceTextForWordBoundary);
       }
     } else {
+      this.notifyWordBoundary_(0);
       this.playText_(utteranceText);
     }
 
@@ -655,6 +688,13 @@ export class SpeechController {
 
         this.wordBoundaries_.updateBoundary(event.charIndex, event.charLength);
 
+        const {
+          speechUtteranceStartIndex,
+          previouslySpokenIndex,
+        } = this.wordBoundaries_.state;
+        const index = speechUtteranceStartIndex + previouslySpokenIndex;
+        this.notifyWordBoundary_(index);
+
         // No need to update the highlight on word boundary events if
         // highlighting is off or if sentence highlighting is used.
         // Therefore, we don't need to pass in axIds because these are
@@ -664,6 +704,13 @@ export class SpeechController {
             /*shouldUpdateSentenceHighlight= */ false);
       }
     };
+  }
+
+  private notifyWordBoundary_(index: number) {
+    const highlightSegments =
+        this.readAloudModel_.getHighlightForCurrentSegmentIndex(
+            index, /* highlightPhrases= */ false);
+    this.listeners_.forEach(l => l.onWordBoundary(highlightSegments));
   }
 
   private speakMessage_(message: SpeechSynthesisUtterance) {

@@ -28,6 +28,8 @@
 #ifndef SRC_DAWN_NATIVE_D3D11_COMMANDRECORDINGCONTEXT_D3D11_H_
 #define SRC_DAWN_NATIVE_D3D11_COMMANDRECORDINGCONTEXT_D3D11_H_
 
+#include <utility>
+
 #include "absl/container/flat_hash_set.h"
 #include "absl/container/inlined_vector.h"
 #include "dawn/common/Constants.h"
@@ -57,16 +59,18 @@ class CommandRecordingContextGuard : public ::dawn::detail::Guard<Ctx, Traits> {
   public:
     using Base = ::dawn::detail::Guard<Ctx, Traits>;
 
+    CommandRecordingContextGuard() = default;
     CommandRecordingContextGuard(CommandRecordingContextGuard&& rhs) = default;
+    CommandRecordingContextGuard& operator=(CommandRecordingContextGuard&& other) = default;
     CommandRecordingContextGuard(Ctx* ctx,
                                  typename Traits::MutexType& mutex,
                                  Defer* defer = nullptr)
-        : Base(ctx, mutex, defer) {
-    }
+        : Base(ctx, mutex, defer) {}
+    CommandRecordingContextGuard(Ctx* ctx, typename Traits::LockType&& lock, Defer* defer = nullptr)
+        : Base(ctx, std::move(lock), defer) {}
 
     CommandRecordingContextGuard(const CommandRecordingContextGuard& other) = delete;
     CommandRecordingContextGuard& operator=(const CommandRecordingContextGuard& other) = delete;
-    CommandRecordingContextGuard& operator=(CommandRecordingContextGuard&& other) = delete;
 };
 
 class CommandRecordingContext {
@@ -124,7 +128,10 @@ class CommandRecordingContext {
 // When enabled, it synchronizes access to the D3D11 context external to Dawn.
 class ScopedCommandRecordingContext : NonCopyable {
   public:
+    ScopedCommandRecordingContext() = default;
     ScopedCommandRecordingContext(CommandRecordingContext::Guard&& guard, bool lockD3D11Scope);
+    ScopedCommandRecordingContext(ScopedCommandRecordingContext&& other);
+    ScopedCommandRecordingContext& operator=(ScopedCommandRecordingContext&& other);
     ~ScopedCommandRecordingContext();
 
     Device* GetDevice() const;
@@ -189,14 +196,18 @@ class ScopedCommandRecordingContext : NonCopyable {
 
   private:
     CommandRecordingContext::Guard mGuard;
-    const bool mLockD3D11Scope = false;
+    bool mLockD3D11Scope = false;
 };
 
 // For using ID3D11DeviceContext directly. It swaps and resets ID3DDeviceContextState of
 // ID3D11DeviceContext for a scope. It is needed for sharing ID3D11Device between dawn and ANGLE.
 class ScopedSwapStateCommandRecordingContext : public ScopedCommandRecordingContext {
   public:
+    ScopedSwapStateCommandRecordingContext() = default;
     explicit ScopedSwapStateCommandRecordingContext(CommandRecordingContext::Guard&& guard);
+    ScopedSwapStateCommandRecordingContext(ScopedSwapStateCommandRecordingContext&& other);
+    ScopedSwapStateCommandRecordingContext& operator=(
+        ScopedSwapStateCommandRecordingContext&& other);
     ~ScopedSwapStateCommandRecordingContext();
 
     ID3D11Device* GetD3D11Device() const;

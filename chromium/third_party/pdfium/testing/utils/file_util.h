@@ -12,6 +12,9 @@
 
 #include "public/fpdfview.h"
 
+// Returns true if the path can be read from.
+bool CanReadFile(const char* filename);
+
 // Reads the entire contents of a file into a vector. Returns an empty vector on
 // failure. Note that this function assumes reading an empty file is not a valid
 // use case, and treats such an action as a failure.

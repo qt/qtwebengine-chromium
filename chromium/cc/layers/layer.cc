@@ -41,10 +41,6 @@
 #include "ui/gfx/geometry/rect_conversions.h"
 #include "ui/gfx/geometry/vector2d_conversions.h"
 
-#if BUILDFLAG(IS_CHROMEOS)
-#include "base/debug/dump_without_crashing.h"
-#endif
-
 namespace cc {
 
 struct SameSizeAsLayer : public base::RefCounted<SameSizeAsLayer>,
@@ -74,9 +70,6 @@ struct SameSizeAsLayer : public base::RefCounted<SameSizeAsLayer>,
   bool allow_remove_for_readd;
 #endif
   uint8_t bit_fields[2];
-#if BUILDFLAG(IS_CHROMEOS)
-  bool is_valid_to_destroy_;
-#endif
 };
 
 static_assert(sizeof(Layer) == sizeof(SameSizeAsLayer),
@@ -134,15 +127,6 @@ Layer::~Layer() {
 
   // Remove the parent reference from all children and dependents.
   RemoveAllChildren();
-#if BUILDFLAG(IS_CHROMEOS)
-  // `is_valid_to_destroy_` should never be false at this point.
-  // DCHECK to catch this issue in bots and reports the stack if this ever
-  // happened in production.
-  DCHECK(is_valid_to_destroy_);
-  if (!is_valid_to_destroy_) {
-    base::debug::DumpWithoutCrashing();
-  }
-#endif
 }
 
 Layer::LayerTreeInputs& Layer::EnsureLayerTreeInputs() {
@@ -1203,6 +1187,21 @@ void Layer::SetCaptureBounds(viz::RegionCaptureBounds bounds) {
   SetSubtreePropertyChanged();
 }
 
+void Layer::SetTrackedElementBounds(TrackedElementBounds bounds) {
+  DCHECK(IsPropertyChangeAllowed());
+  const auto& rare_inputs = inputs_.Read(*this).rare_inputs;
+  if (!rare_inputs && bounds.empty()) {
+    return;
+  }
+  if (rare_inputs && rare_inputs->tracked_element_bounds == bounds) {
+    return;
+  }
+  EnsureRareInputs().tracked_element_bounds = std::move(bounds);
+  SetPropertyTreesNeedRebuild();
+  SetNeedsCommit();
+  SetSubtreePropertyChanged();
+}
+
 void Layer::SetWheelEventRegion(Region wheel_event_region) {
   DCHECK(IsPropertyChangeAllowed());
   const auto& rare_inputs = inputs_.Read(*this).rare_inputs;
@@ -1227,6 +1226,19 @@ void Layer::SetXrHitTestOrder(std::vector<ElementId> xr_hit_test_order) {
   EnsureRareInputs().xr_hit_test_order = std::move(xr_hit_test_order);
 }
 #endif
+
+void Layer::SetCanvasChildId(ElementId id) {
+  DCHECK(IsPropertyChangeAllowed());
+  const auto& rare_inputs = inputs_.Read(*this).rare_inputs;
+  if (!rare_inputs && !id) {
+    return;
+  }
+  if (rare_inputs && rare_inputs->canvas_child_id == id) {
+    return;
+  }
+  EnsureRareInputs().canvas_child_id = id;
+  SetNeedsCommit();
+}
 
 RenderSurfaceReason Layer::GetRenderSurfaceReason() const {
   if (!IsAttached())
@@ -1494,7 +1506,9 @@ void Layer::PushDirtyPropertiesTo(LayerImpl* layer,
     layer->SetBounds(inputs.bounds);
 
     layer->SetOffsetToTransformParent(offset_to_transform_parent_.Read(*this));
-    layer->SetDrawsContent(draws_content());
+    bool has_canvas_child_id =
+        inputs.rare_inputs && inputs.rare_inputs->canvas_child_id;
+    layer->SetDrawsContent(draws_content() && !has_canvas_child_id);
     layer->SetHitTestOpaqueness(inputs.hit_test_opaqueness);
     // subtree_property_changed_ is propagated to all descendants while building
     // property trees. So, it is enough to check it only for the current layer.
@@ -1534,6 +1548,8 @@ void Layer::PushDirtyPropertiesTo(LayerImpl* layer,
       layer->SetNonCompositedScrollHitTestRects(
           inputs.rare_inputs->non_composited_scroll_hit_test_rects);
       layer->SetCaptureBounds(inputs.rare_inputs->capture_bounds);
+      layer->SetTrackedElementBounds(
+          inputs.rare_inputs->tracked_element_bounds);
       layer->SetWheelEventHandlerRegion(inputs.rare_inputs->wheel_event_region);
     } else {
       layer->ResetRareProperties();

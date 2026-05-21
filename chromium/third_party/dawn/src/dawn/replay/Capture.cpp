@@ -33,10 +33,19 @@
 
 namespace dawn::replay {
 
+Capture::~Capture() = default;
+
 std::unique_ptr<Capture> Capture::Create(CaptureStream& commandStream,
                                          size_t commandSize,
                                          CaptureStream& contentStream,
                                          size_t contentSize) {
+    return CaptureImpl::Create(commandStream, commandSize, contentStream, contentSize);
+}
+
+std::unique_ptr<CaptureImpl> CaptureImpl::Create(CaptureStream& commandStream,
+                                                 size_t commandSize,
+                                                 CaptureStream& contentStream,
+                                                 size_t contentSize) {
     std::vector<uint8_t> commands;
     commands.resize(commandSize);
     commandStream.read(reinterpret_cast<char*>(commands.data()), commandSize);
@@ -45,19 +54,19 @@ std::unique_ptr<Capture> Capture::Create(CaptureStream& commandStream,
     content.resize(contentSize);
     contentStream.read(reinterpret_cast<char*>(content.data()), contentSize);
 
-    return std::unique_ptr<Capture>(new Capture(std::move(commands), std::move(content)));
+    return std::unique_ptr<CaptureImpl>(new CaptureImpl(std::move(commands), std::move(content)));
 }
 
-Capture::Capture(std::vector<uint8_t> commands, std::vector<uint8_t> content)
+CaptureImpl::CaptureImpl(std::vector<uint8_t> commands, std::vector<uint8_t> content)
     : mCommands(std::move(commands)), mContent(std::move(content)) {}
 
-Capture::~Capture() {}
+CaptureImpl::~CaptureImpl() {}
 
-ReadHead Capture::GetCommandReadHead() const {
+ReadHead CaptureImpl::GetCommandReadHead() const {
     return ReadHead(mCommands);
 }
 
-ReadHead Capture::GetContentReadHead() const {
+ReadHead CaptureImpl::GetContentReadHead() const {
     return ReadHead(mContent);
 }
 

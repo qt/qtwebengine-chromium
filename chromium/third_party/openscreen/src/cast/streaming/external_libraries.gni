@@ -3,8 +3,7 @@
 # found in the LICENSE file.
 
 # NOTE: Only add *_dirs declarations if the libraries have been installed at
-# non-standard locations. See the [documentation](external_libraries.md) for
-# more details.
+# non-standard locations. See ../docs/external_libraries.md for more details.
 declare_args() {
   # Common path for external libraries, e.g., Homebrew's /opt/homebrew/lib.
   external_lib_dirs = []

@@ -30,6 +30,7 @@
 #include "chrome/browser/component_updater/crl_set_component_installer.h"
 #include "chrome/browser/component_updater/first_party_sets_component_installer.h"
 #include "chrome/browser/component_updater/pki_metadata_component_installer.h"
+#include "chrome/browser/enterprise/encryption/cache_encryption_provider_impl.h"
 #include "chrome/browser/net/chrome_mojo_proxy_resolver_factory.h"
 #include "chrome/browser/net/convert_explicitly_allowed_network_ports_pref.h"
 #include "chrome/browser/net/default_dns_over_https_config_source.h"
@@ -45,6 +46,7 @@
 #include "chrome/common/request_header_integrity/buildflags.h"
 #include "components/certificate_transparency/ct_known_logs.h"
 #include "components/embedder_support/user_agent_utils.h"
+#include "components/enterprise/encryption/cache/utils.h"
 #include "components/net_log/net_export_file_writer.h"
 #include "components/net_log/net_log_proxy_source.h"
 #include "components/os_crypt/sync/os_crypt.h"
@@ -528,7 +530,7 @@ SystemNetworkContextManager::GetURLLoaderFactory() {
 
   network::mojom::URLLoaderFactoryParamsPtr params =
       network::mojom::URLLoaderFactoryParams::New();
-  params->process_id = network::mojom::kBrowserProcessId;
+  params->process_id = network::OriginatingProcess::browser();
   params->is_orb_enabled = false;
   params->is_trusted = true;
 
@@ -874,6 +876,8 @@ void SystemNetworkContextManager::OnNetworkServiceCreated(
 
   UpdateIPv6ReachabilityOverrideEnabled();
 
+  UpdateTLS13EarlyDataEnabled();
+
 #if BUILDFLAG(IS_CHROMEOS)
   if (base::FeatureList::IsEnabled(features::kNetworkAnnotationMonitoring)) {
     // Create NetworkAnnotationMonitor.
@@ -955,7 +959,7 @@ void SystemNetworkContextManager::ConfigureDefaultNetworkContextParams(
   // TODO(eroman): Figure out why this doesn't work in single-process mode,
   // or if it does work, now.
   // Should be possible now that a private isolate is used.
-  // http://crbug.com/474654
+  // http://crbug.com/41166927
   if (!command_line.HasSwitch(switches::kWinHttpProxyResolver)) {
     if (command_line.HasSwitch(switches::kSingleProcess)) {
       LOG(ERROR) << "Cannot use V8 Proxy resolver in single process mode.";
@@ -1018,9 +1022,11 @@ SystemNetworkContextManager::GetNetExportFileWriter() {
 
 void SystemNetworkContextManager::UpdateTrustAnchorIDs(
     std::vector<std::vector<uint8_t>> trust_anchor_ids,
-    std::vector<std::vector<uint8_t>> mtc_trust_anchor_ids) {
+    std::vector<std::vector<uint8_t>> mtc_trust_anchor_ids,
+    int64_t mtc_update_time_seconds) {
   ssl_config_service_manager_.UpdateTrustAnchorIDs(
-      std::move(trust_anchor_ids), std::move(mtc_trust_anchor_ids));
+      std::move(trust_anchor_ids), std::move(mtc_trust_anchor_ids),
+      mtc_update_time_seconds);
 }
 
 // static

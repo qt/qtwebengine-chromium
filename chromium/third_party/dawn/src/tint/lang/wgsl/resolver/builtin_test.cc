@@ -285,8 +285,7 @@ TEST_F(ResolverBuiltinArrayTest, ArrayLength_Error_ArraySized) {
     EXPECT_EQ(r()->error(),
               R"(error: no matching call to 'arrayLength(ptr<private, array<i32, 4>, read_write>)'
 
-3 candidate functions:
- • 'arrayLength(resource_binding  ✗ ) -> u32'
+2 candidate functions:
  • 'arrayLength(ptr<storage, array<T>, R>  ✗ ) -> u32' where:
       ✗  'R' is 'read'
  • 'arrayLength(ptr<storage, array<T>, W>  ✗ ) -> u32' where:
@@ -2197,7 +2196,7 @@ class ResolverBuiltinTest_TextureOperation : public ResolverTestWithParam<Textur
     ast::Type GetCoordsType(core::type::TextureDimension dim, ast::Type scalar) {
         switch (dim) {
             case core::type::TextureDimension::k1d:
-                return ty(scalar);
+                return scalar;
             case core::type::TextureDimension::k2d:
             case core::type::TextureDimension::k2dArray:
                 return ty.vec2(scalar);

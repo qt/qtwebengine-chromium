@@ -4,7 +4,8 @@
 
 #include "components/favicon/core/core_favicon_service.h"
 
-#include "base/containers/contains.h"
+#include <algorithm>
+
 #include "components/favicon_base/favicon_util.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/image/image.h"
@@ -19,8 +20,9 @@ std::vector<int> CoreFaviconService::GetPixelSizesForFaviconScales(
   // NOTE: GetFaviconScales() always returns 1x on android.
   std::vector<float> scales = favicon_base::GetFaviconScales();
   std::vector<int> sizes_in_pixel;
-  for (float scale : scales)
+  for (float scale : scales) {
     sizes_in_pixel.push_back(std::ceil(size_in_dip * scale));
+  }
   return sizes_in_pixel;
 }
 
@@ -33,8 +35,9 @@ std::vector<SkBitmap> CoreFaviconService::ExtractSkBitmapsToStore(
   const std::vector<float> favicon_scales = favicon_base::GetFaviconScales();
   for (const gfx::ImageSkiaRep& rep : image_skia.image_reps()) {
     // Only save images with a supported sale.
-    if (base::Contains(favicon_scales, rep.scale()))
+    if (std::ranges::contains(favicon_scales, rep.scale())) {
       bitmaps.push_back(rep.GetBitmap());
+    }
   }
   return bitmaps;
 }

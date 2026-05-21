@@ -32,6 +32,9 @@ inline constexpr char kReceiverNamespace[] =
 inline constexpr char kBroadcastNamespace[] =
     "urn:x-cast:com.google.cast.broadcast";
 inline constexpr char kMediaNamespace[] = "urn:x-cast:com.google.cast.media";
+static constexpr char kSetupNamespace[] = "urn:x-cast:com.google.cast.setup";
+static constexpr char kDiscoveryNamespace[] =
+    "urn:x-cast:com.google.cast.receiver.discovery";
 
 // Sender and receiver IDs to use for platform messages.
 inline constexpr char kPlatformSenderId[] = "sender-0";
@@ -42,6 +45,14 @@ inline constexpr char kBroadcastId[] = "*";
 inline constexpr proto::CastMessage_ProtocolVersion
     kDefaultOutgoingMessageVersion =
         proto::CastMessage_ProtocolVersion_CASTV2_1_0;
+
+// Default device capabilities reported in DeviceInfo messages.
+// This value is a bitmask representing:
+// CAP_VIDEO_OUT (0x1) | CAP_AUDIO_OUT (0x4) | CAP_MASTER_OR_FIXED_VOLUME
+// (0x800) | CAP_ATTENUATION_OR_FIXED_VOLUME (0x1000)
+// See
+// https://developers.google.com/android/reference/com/google/android/gms/cast/CastDevice#constants
+constexpr int kDefaultDeviceCapabilities = 6149;
 
 // JSON message key strings.
 inline constexpr char kMessageKeyType[] = "type";
@@ -90,6 +101,7 @@ inline constexpr char kMessageKeyStepInterval[] = "stepInterval";
 inline constexpr char kMessageKeyUniversalAppId[] = "universalAppId";
 inline constexpr char kMessageKeyUserEq[] = "userEq";
 inline constexpr char kMessageKeyVolume[] = "volume";
+inline constexpr char kMessageKeyLaunchRequestId[] = "launchRequestId";
 
 // JSON message field value strings specific to application control messages.
 inline constexpr char kMessageValueAttenuation[] = "attenuation";
@@ -98,56 +110,98 @@ inline constexpr char kMessageValueInvalidSessionId[] = "INVALID_SESSION_ID";
 inline constexpr char kMessageValueInvalidCommand[] = "INVALID_COMMAND";
 inline constexpr char kMessageValueNotFound[] = "NOT_FOUND";
 inline constexpr char kMessageValueSystemError[] = "SYSTEM_ERROR";
+inline constexpr char kMessageValueUserAllowed[] = "USER_ALLOWED";
 
+// JSON message key strings specific to DEVICE_INFO messages.
+inline constexpr char kMessageKeyControlNotifications[] =
+    "controlNotifications";
+inline constexpr char kMessageKeyDeviceCapabilities[] = "deviceCapabilities";
+inline constexpr char kMessageKeyDeviceId[] = "deviceId";
+inline constexpr char kMessageKeyDeviceModel[] = "deviceModel";
+inline constexpr char kMessageKeyFriendlyName[] = "friendlyName";
+
+// JSON message key strings specific to eureka_info messages.
+inline constexpr char kMessageKeyEurekaInfoRequestId[] = "request_id";
+inline constexpr char kMessageKeyData[] = "data";
+inline constexpr char kMessageKeyDeviceInfo[] = "device_info";
+inline constexpr char kMessageKeyManufacturer[] = "manufacturer";
+inline constexpr char kMessageKeyProductName[] = "product_name";
+inline constexpr char kMessageKeySsdpUdn[] = "ssdp_udn";
+inline constexpr char kMessageKeyBuildInfo[] = "build_info";
+inline constexpr char kMessageKeyBuildType[] = "build_type";
+inline constexpr char kMessageKeyCastBuildRevision[] = "cast_build_revision";
+inline constexpr char kMessageKeySystemBuildNumber[] = "system_build_number";
+inline constexpr char kMessageKeyResponseCode[] = "response_code";
+inline constexpr char kMessageKeyResponseString[] = "response_string";
+
+// Represents known types of cast messages, intended to be used on the wire in
+// JSON messages as a serialized string. Values are subject to change and should
+// not be depended upon statically.
+//
+// For more information, see the section on "Messages and Namespaces" in
+// ../../docs/streaming_session_protocol.md.
 enum class CastMessageType {
+  kUnknown = 0,
+
   // Heartbeat messages.
-  kPing,
-  kPong,
+  kPing = 1,
+  kPong = 2,
 
   // RPC control/status messages used by Media Remoting. These occur at high
   // frequency, up to dozens per second at times, and should not be logged.
-  kRpc,
+  kRpc = 3,
 
-  kGetAppAvailability,
-  kGetStatus,
-
-  // Virtual connection request.
-  kConnect,
-
-  // Close virtual connection.
-  kCloseConnection,
+  // Virtual connection open and close requests.
+  kConnect = 4,
+  kCloseConnection = 5,
 
   // Application broadcast / precache.
-  kBroadcast,
+  kBroadcast = 6,
 
   // Session launch request.
-  kLaunch,
+  kLaunch = 7,
+
+  // Launch request succeeded.
+  kLaunchStatus = 8,
+
+  // Indicates that the launch request failed.
+  kLaunchError = 9,
 
   // Session stop request.
-  kStop,
+  kStop = 10,
 
-  kReceiverStatus,
-  kMediaStatus,
+  // Sent by the receiver whenever an invalid request is received.
+  kInvalidRequest = 11,
 
-  // Error from receiver.
-  kLaunchError,
+  // Request and reply for information about what applications are available.
+  kGetAppAvailability = 12,
 
-  kOffer,
-  kAnswer,
-  kCapabilitiesResponse,
-  kStatusResponse,
+  // Reply with information about the current state of the receiver.
+  kReceiverStatus = 13,
+  kMediaStatus = 14,
 
-  // The following values are part of the protocol but are not currently used.
-  kMultizoneStatus,
-  kInvalidPlayerState,
-  kLoadFailed,
-  kLoadCancelled,
-  kInvalidRequest,
-  kPresentation,
-  kGetCapabilities,
+  // Used for starting and negotiating a streaming session.
+  kOffer = 15,
+  kAnswer = 16,
+  kGetCapabilities = 17,
+  kCapabilitiesResponse = 18,
+  kGetStatus = 19,
+  kStatusResponse = 20,
 
-  kOther,  // Add new types above `kOther`.
-  kMaxValue = kOther,
+  // The following values are part of the protocol but are not currently
+  // supported anywhere.
+  kInvalidPlayerState = 21,
+  kLoadCancelled = 22,
+  kLoadFailed = 23,
+  kMultizoneStatus = 24,
+  kPresentation = 25,
+
+  // Necessary for setup, request for device information.
+  kGetDeviceInfo = 26,
+  kEurekaInfo = 27,
+
+  // Max value should be updated to the highest value of the enum.
+  kMaxValue = kEurekaInfo,
 };
 
 enum class AppAvailabilityResult {

@@ -9,7 +9,6 @@
 #include <string>
 #include <vector>
 
-#include "base/containers/contains.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/functional/bind.h"
@@ -62,9 +61,8 @@ std::string ExtractAlternativeStateNames(const std::string& country_code) {
 }  // namespace
 
 AlternativeStateNameMapUpdater::AlternativeStateNameMapUpdater(
-    PrefService* local_state,
     AddressDataManager* address_data_manager)
-    : address_data_manager_(address_data_manager), local_state_(local_state) {
+    : address_data_manager_(address_data_manager) {
   adm_observer_.Observe(address_data_manager_);
 }
 
@@ -122,23 +120,13 @@ void AlternativeStateNameMapUpdater::PopulateAlternativeStateNameMap(
     parsed_state_values_.insert({country, normalized_state});
   }
 
-  LoadStatesData(std::move(country_to_state_names_map), local_state_,
-                 std::move(callback));
+  LoadStatesData(std::move(country_to_state_names_map), std::move(callback));
 }
 
-// TODO(crbug.com/419316544): Remove unused `pref_service` and deprecate
-// `prefs::kAutofillStatesDataDir` following:
-// https://source.chromium.org/chromium/chromium/src/+/main:chrome/browser/prefs/README.md;l=66;drc=1d8dcb0b6e365c292fefaf7670df48fa83c7dff5
 void AlternativeStateNameMapUpdater::LoadStatesData(
     CountryToStateNamesListMapping country_to_state_names_map,
-    PrefService* pref_service,
     base::OnceClosure done_callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-
-  // Would be null in the case of tests.
-  if (!pref_service) {
-    return;
-  }
 
   const std::vector<std::string>& country_codes =
       CountryDataMap::GetInstance()->country_codes();
@@ -147,7 +135,8 @@ void AlternativeStateNameMapUpdater::LoadStatesData(
   std::erase_if(country_to_state_names_map,
                 [&country_codes](
                     const CountryToStateNamesListMapping::value_type& entry) {
-                  return !base::Contains(country_codes, entry.first.value());
+                  return !std::ranges::contains(country_codes,
+                                                entry.first.value());
                 });
 
   // If there is no valid country to be processed, return early.
@@ -164,7 +153,7 @@ void AlternativeStateNameMapUpdater::LoadStatesData(
   for (const auto& [country_code, states] : country_to_state_names_map) {
     // This is a security check to ensure that we only attempt to read files
     // that match to known countries.
-    if (!base::Contains(country_codes, country_code.value())) {
+    if (!std::ranges::contains(country_codes, country_code.value())) {
       continue;
     }
 
@@ -221,7 +210,7 @@ void AlternativeStateNameMapUpdater::ProcessLoadedStateFileContent(
       AlternativeStateNameMap::CanonicalStateName
           normalized_canonical_state_name(state_names[0].value());
 
-      for (size_t i = 0; i < stripped_state_values_from_profiles.size(); i++) {
+      for (size_t i = 0; i < stripped_state_values_from_profiles.size(); ++i) {
         if (match_found[i]) {
           continue;
         }

@@ -231,7 +231,7 @@ WebWindowFeatures GetWindowFeaturesFromString(const String& feature_string,
         // attributionsrc values are encoded in order to support embedded
         // special characters, such as '='.
         window_features.attribution_srcs->emplace_back(DecodeURLEscapeSequences(
-            original_case_value_string.ToString(), DecodeURLMode::kUTF8));
+            original_case_value_string, DecodeURLMode::kUTF8));
       }
     }
   }
@@ -259,7 +259,7 @@ static void MaybeLogWindowOpen(LocalFrame& opener_frame) {
 
   bool is_ad_frame = opener_frame.IsAdFrame();
   bool is_ad_script_in_stack =
-      ad_tracker->IsAdScriptInStack(AdTracker::StackType::kBottomAndTop);
+      ad_tracker->IsAdScriptInStack(AdTracker::StackType::kTopOnly);
 
   // Log to UKM.
   ukm::UkmRecorder* ukm_recorder = opener_frame.GetDocument()->UkmRecorder();
@@ -301,7 +301,7 @@ Frame* CreateNewWindow(LocalFrame& opener_frame,
     opener_window.AddConsoleMessage(MakeGarbageCollected<ConsoleMessage>(
         mojom::blink::ConsoleMessageSource::kSecurity,
         mojom::blink::ConsoleMessageLevel::kError,
-        "Not allowed to load local resource: " + url.ElidedString()));
+        StrCat({"Not allowed to load local resource: ", url.ElidedString()})));
     return nullptr;
   }
 
@@ -352,9 +352,9 @@ Frame* CreateNewWindow(LocalFrame& opener_frame,
     opener_window.AddConsoleMessage(MakeGarbageCollected<ConsoleMessage>(
         mojom::blink::ConsoleMessageSource::kSecurity,
         mojom::blink::ConsoleMessageLevel::kError,
-        "Blocked opening '" + url.ElidedString() +
-            "' in a new window because the request was made in a sandboxed "
-            "frame whose 'allow-popups' permission is not set."));
+        StrCat({"Blocked opening '", url.ElidedString(),
+                "' in a new window because the request was made in a sandboxed "
+                "frame whose 'allow-popups' permission is not set."})));
     return nullptr;
   }
 
@@ -395,12 +395,6 @@ Frame* CreateNewWindow(LocalFrame& opener_frame,
   page->SetWindowFeatures(features);
 
   frame.View()->SetCanHaveScrollbars(!features.is_popup);
-
-  if (!base::FeatureList::IsEnabled(features::kCombineNewWindowIPCs)) {
-    page->GetChromeClient().Show(frame, opener_frame,
-                                 request.GetNavigationPolicy(),
-                                 consumed_user_gesture);
-  }
 
   // GetWebView() may return nullptr in tests
   if (auto* web_view = page->GetChromeClient().GetWebView()) {

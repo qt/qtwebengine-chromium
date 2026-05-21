@@ -136,6 +136,13 @@ class POLICY_EXPORT CloudPolicyCore {
   void ConnectForTesting(std::unique_ptr<CloudPolicyService> service,
                          std::unique_ptr<CloudPolicyClient> client);
 
+  scoped_refptr<base::SequencedTaskRunner> GetTaskRunner() {
+    return task_runner_;
+  }
+
+  const std::string& policy_type() const { return policy_type_; }
+  const std::string& settings_entity_id() const { return settings_entity_id_; }
+
  private:
   // Updates the refresh scheduler on refresh delay changes.
   void UpdateRefreshDelayFromPref();

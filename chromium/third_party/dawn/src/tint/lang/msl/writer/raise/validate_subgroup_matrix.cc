@@ -51,7 +51,9 @@ struct State {
         auto info = core::ir::analysis::GatherSubgroupMatrixInfo(ir);
 
         for (auto& i : info.configs) {
-            if (i.columns != 8 || i.rows != 8) {
+            if ((i.direction == SubgroupMatrixDirection::kLeft && (i.M != 8 || i.K != 8)) ||
+                (i.direction == SubgroupMatrixDirection::kRight && (i.K != 8 || i.N != 8)) ||
+                (i.direction == SubgroupMatrixDirection::kResult && (i.M != 8 || i.N != 8))) {
                 diagnostics_.AddError(Source{})
                     << "subgroup_matrix requires dimensions of 8x8 for the selected device";
                 break;
@@ -74,14 +76,10 @@ struct State {
 }  // namespace
 
 Result<SuccessType> ValidateSubgroupMatrix(core::ir::Module& ir) {
-    auto result = ValidateAndDumpIfNeeded(ir, "msl.ValidateSubgroupMatrix",
-                                          tint::core::ir::Capabilities{
-                                              core::ir::Capability::kAllowResourceBinding,
-                                              core::ir::Capability::kAllow8BitIntegers,
-                                          });
-    if (result != Success) {
-        return result;
-    }
+    TINT_CHECK_RESULT(ValidateAndDumpIfNeeded(ir, "msl.ValidateSubgroupMatrix",
+                                              tint::core::ir::Capabilities{
+                                                  core::ir::Capability::kAllow8BitIntegers,
+                                              }));
 
     auto res = State{ir}.Process();
     if (res != Success) {

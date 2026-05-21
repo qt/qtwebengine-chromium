@@ -1,4 +1,4 @@
-/* Copyright (c) 2024-2025 LunarG, Inc.
+/* Copyright (c) 2024-2026 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -60,7 +60,8 @@ void DescriptorClassGeneralBufferPass::CreateFunctionCall(BasicBlock& block, Ins
     const uint32_t descriptor_offset_id =
         GetLastByte(*meta.descriptor_type, meta.access_chain_insts, meta.coop_mat_access, block, inst_it);
 
-    BindingLayout binding_layout = module_.set_index_to_bindings_layout_lut_[meta.descriptor_set][meta.descriptor_binding];
+    const auto& layout_lut = module_.interface_.instrumentation_dsl.set_index_to_bindings_layout_lut;
+    BindingLayout binding_layout = layout_lut[meta.descriptor_set][meta.descriptor_binding];
     const Constant& binding_layout_offset = type_manager_.GetConstantUInt32(binding_layout.start);
 
     const uint32_t inst_position = meta.target_instruction->GetPositionOffset();
@@ -188,19 +189,23 @@ void DescriptorClassGeneralBufferPass::PrintDebugInfo() const {
 
 // Created own Instrument() because need to control finding the largest offset in a given block
 bool DescriptorClassGeneralBufferPass::Instrument() {
-    if (module_.set_index_to_bindings_layout_lut_.empty()) {
+    if (module_.interface_.instrumentation_dsl.set_index_to_bindings_layout_lut.empty()) {
         return false;  // If there is no bindings, nothing to instrument
     }
 
     // Can safely loop function list as there is no injecting of new Functions until linking time
     for (const auto& function : module_.functions_) {
-        if (function->instrumentation_added_) continue;
+        if (!function.called_from_target_) {
+            continue;
+        }
 
-        for (auto block_it = function->blocks_.begin(); block_it != function->blocks_.end(); ++block_it) {
+        for (auto block_it = function.blocks_.begin(); block_it != function.blocks_.end(); ++block_it) {
             BasicBlock& current_block = **block_it;
 
             cf_.Update(current_block);
-            if (debug_disable_loops_ && cf_.in_loop) continue;
+            if (debug_disable_loops_ && cf_.in_loop) {
+                continue;
+            }
 
             auto& block_instructions = current_block.instructions_;
 
@@ -213,7 +218,9 @@ bool DescriptorClassGeneralBufferPass::Instrument() {
                 for (auto inst_it = block_instructions.begin(); inst_it != block_instructions.end(); ++inst_it) {
                     InstructionMeta meta;
                     // Every instruction is analyzed by the specific pass and lets us know if we need to inject a function or not
-                    if (!RequiresInstrumentation(*function, *(inst_it->get()), meta)) continue;
+                    if (!RequiresInstrumentation(function, *(inst_it->get()), meta)) {
+                        continue;
+                    }
 
                     if (meta.access_offset != 0) {
                         // set offset for the first loop of the block
@@ -230,7 +237,9 @@ bool DescriptorClassGeneralBufferPass::Instrument() {
             for (auto inst_it = block_instructions.begin(); inst_it != block_instructions.end(); ++inst_it) {
                 InstructionMeta meta;
                 // Every instruction is analyzed by the specific pass and lets us know if we need to inject a function or not
-                if (!RequiresInstrumentation(*function, *(inst_it->get()), meta)) continue;
+                if (!RequiresInstrumentation(function, *(inst_it->get()), meta)) {
+                    continue;
+                }
 
                 if (!module_.settings_.safe_mode && meta.access_offset != 0) {
                     const uint32_t block_highest_offset = block_highest_offset_map[meta.descriptor_id];
@@ -239,7 +248,9 @@ bool DescriptorClassGeneralBufferPass::Instrument() {
                     }
                 }
 
-                if (IsMaxInstrumentationsCount()) continue;
+                if (IsMaxInstrumentationsCount()) {
+                    continue;
+                }
                 instrumentations_count_++;
 
                 // inst_it is updated to the instruction after the new function call, it will not add/remove any Blocks

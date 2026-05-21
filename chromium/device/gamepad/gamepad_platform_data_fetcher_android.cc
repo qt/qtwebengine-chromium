@@ -26,7 +26,7 @@ using base::android::AttachCurrentThread;
 using base::android::CheckException;
 using base::android::ClearException;
 using base::android::ConvertJavaStringToUTF8;
-using base::android::JavaParamRef;
+using base::android::JavaRef;
 using base::android::ScopedJavaLocalRef;
 
 namespace device {
@@ -115,7 +115,7 @@ void GamepadPlatformDataFetcherAndroid::OnAddedToProvider() {
 
 void GamepadPlatformDataFetcherAndroid::SetDualRumbleVibrationActuator(
     int source_id) {
-  DCHECK(!base::Contains(vibration_actuators_, source_id));
+  DCHECK(!vibration_actuators_.contains(source_id));
   vibration_actuators_.emplace(
       source_id, std::make_unique<HapticGamepadAndroid>(source_id));
 }
@@ -196,20 +196,19 @@ void GamepadPlatformDataFetcherAndroid::ResetVibration(
                                   std::move(callback_runner));
 }
 
-static void JNI_GamepadList_SetGamepadData(
-    JNIEnv* env,
-    jlong data_fetcher,
-    jint index,
-    jboolean mapping,
-    jboolean connected,
-    const JavaParamRef<jstring>& devicename,
-    jint vendor_id,
-    jint product_id,
-    jlong timestamp,
-    const JavaParamRef<jfloatArray>& jaxes,
-    const JavaParamRef<jfloatArray>& jbuttons,
-    jint buttons_length,
-    jboolean supports_dual_rumble) {
+static void JNI_GamepadList_SetGamepadData(JNIEnv* env,
+                                           int64_t data_fetcher,
+                                           int32_t index,
+                                           bool mapping,
+                                           bool connected,
+                                           const JavaRef<jstring>& devicename,
+                                           int32_t vendor_id,
+                                           int32_t product_id,
+                                           int64_t timestamp,
+                                           const JavaRef<jfloatArray>& jaxes,
+                                           const JavaRef<jfloatArray>& jbuttons,
+                                           int32_t buttons_length,
+                                           bool supports_dual_rumble) {
   DCHECK(data_fetcher);
   GamepadPlatformDataFetcherAndroid* fetcher =
       reinterpret_cast<GamepadPlatformDataFetcherAndroid*>(data_fetcher);

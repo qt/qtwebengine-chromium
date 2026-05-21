@@ -12,6 +12,7 @@
 <translation id="2159915644201199628">Impossible de décoder l'image : "<ph name="IMAGE_NAME" />".</translation>
 <translation id="2350172092385603347">Localisation utilisée, mais les paramètres régionaux par défaut (default_locale) n'ont pas été indiqués dans le manifeste. </translation>
 <translation id="2576842806987913196">Un autre fichier CRX portant le même nom existe déjà.</translation>
+<translation id="2743583586211388067">L'accès à cette extension est bloqué en vertu de la règle de votre organisation sur les risques liés aux extensions.</translation>
 <translation id="2785530881066938471">Impossible de charger le fichier "<ph name="RELATIVE_PATH" />" pour le script de contenu, car ce fichier n'est pas codé en UTF-8.</translation>
 <translation id="2903070246402204397">L'administrateur a bloqué l'extension <ph name="EXTENSION_NAME" /> (ID : <ph name="EXTENSION_ID" />). <ph name="ADMIN_INFO" /></translation>
 <translation id="2988488679308982380">Impossible d'installer le package : "<ph name="ERROR_CODE" />"</translation>
@@ -33,9 +34,11 @@
 <translation id="5356315618422219272">Appview : <ph name="APPVIEW_TAG_NAME" /></translation>
 <translation id="5456409301717116725">Cette extension comprend le fichier clé <ph name="KEY_PATH" />. Vous ne voulez probablement pas poursuivre.</translation>
 <translation id="5486326529110362464">La valeur d'entrée de la clé privée est obligatoire.</translation>
+<translation id="5707185214361380026">Échec du chargement de l'extension depuis :</translation>
 <translation id="5972529113578162692">L'administrateur de cet ordinateur exige que l'extension <ph name="EXTENSION_NAME" /> soit installée. Cette extension ne pourra pas être désinstallée.</translation>
 <translation id="6027032947578871493">Produit inconnu <ph name="PRODUCT_ID" /> fourni par <ph name="VENDOR_NAME" /> (numéro de série : <ph name="SERIAL_NUMBER" />)</translation>
 <translation id="6068932090455285721"><ph name="PRODUCT_NAME" /> du fournisseur <ph name="VENDOR_ID" /></translation>
+<translation id="6220413761270491930">Erreur lors du chargement de l'extension</translation>
 <translation id="6322279351188361895">Échec de lecture de la clé privée</translation>
 <translation id="6391538222494443604">Le répertoire d'extensions est obligatoire.</translation>
 <translation id="641087317769093025">Impossible de décompresser l'extension.</translation>

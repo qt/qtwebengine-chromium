@@ -12,6 +12,7 @@
 <translation id="2159915644201199628">Nije moguće dekodirati sliku: „<ph name="IMAGE_NAME" />“</translation>
 <translation id="2350172092385603347">Korišćena je lokalizacija, ali parametar default_locale nije naveden u manifestu.</translation>
 <translation id="2576842806987913196">Već postoji CRX datoteka sa ovim nazivom.</translation>
+<translation id="2743583586211388067">Pristup ovom dodatku je blokiran u skladu sa smernicama organizacije u vezi sa rizikom od dodataka.</translation>
 <translation id="2785530881066938471">Učitavanje datoteke „<ph name="RELATIVE_PATH" />“ za skriptu sadržaja nije uspelo. Nema UTF-8 šifrovanje.</translation>
 <translation id="2903070246402204397">Administrator je blokirao <ph name="EXTENSION_NAME" /> (ID dodatka je „<ph name="EXTENSION_ID" />“). <ph name="ADMIN_INFO" /></translation>
 <translation id="2988488679308982380">Instalacija paketa nije bila moguća: „<ph name="ERROR_CODE" />“</translation>
@@ -33,9 +34,11 @@
 <translation id="5356315618422219272">Prikaz aplikacije: <ph name="APPVIEW_TAG_NAME" /></translation>
 <translation id="5456409301717116725">Ovaj dodatak sadrži datoteku ključa „<ph name="KEY_PATH" />“. Verovatno to ne želite.</translation>
 <translation id="5486326529110362464">Ulazna vrednost privatnog ključa mora da postoji.</translation>
+<translation id="5707185214361380026">Nije uspelo učitavanje dodatka iz:</translation>
 <translation id="5972529113578162692">Administrator ovog računara zahteva da dodatak <ph name="EXTENSION_NAME" /> bude instaliran. Ne možete da ga deinstalirate.</translation>
 <translation id="6027032947578871493">Nepoznati proizvod <ph name="PRODUCT_ID" /> prodavca <ph name="VENDOR_NAME" /> (serijski broj <ph name="SERIAL_NUMBER" />)</translation>
 <translation id="6068932090455285721"><ph name="PRODUCT_NAME" /> prodavca <ph name="VENDOR_ID" /></translation>
+<translation id="6220413761270491930">Greška pri učitavanju dodatka</translation>
 <translation id="6322279351188361895">Čitanje privatnog ključa nije uspelo.</translation>
 <translation id="6391538222494443604">Ulazni katalog mora da postoji.</translation>
 <translation id="641087317769093025">Nije moguće raspakovati dodatak</translation>

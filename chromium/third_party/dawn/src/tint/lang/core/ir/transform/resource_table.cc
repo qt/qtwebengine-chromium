@@ -61,8 +61,6 @@ struct State {
 
     /// Process the module.
     void Process() {
-        std::vector<core::ir::Var*> resource_bindings;
-
         Hashmap<const core::type::Type*, core::ir::Var*, 4> var_for_type;
         core::ir::Var* sb = nullptr;
         b.Append(ir.root_block, [&] {
@@ -171,7 +169,7 @@ struct State {
             auto* len_access = b.Access(ty.ptr<storage, u32, read>(), storage_buffer, 0_u);
             auto* num_elements = b.Load(len_access);
 
-            auto* r = b.Add(ty.u32(), u32(idx_iter->second), num_elements);
+            auto* r = b.Add(u32(idx_iter->second), num_elements);
 
             b.ExitIf(get_check, r);
         });
@@ -204,10 +202,7 @@ ResourceTableHelper::~ResourceTableHelper() = default;
 Result<SuccessType> ResourceTable(core::ir::Module& ir,
                                   const ResourceTableConfig& config,
                                   ResourceTableHelper* helper) {
-    auto result = ValidateAndDumpIfNeeded(ir, "core.ResourceTable");
-    if (result != Success) {
-        return result.Failure();
-    }
+    TINT_CHECK_RESULT(ValidateAndDumpIfNeeded(ir, "core.ResourceTable"));
 
     State{config, ir, helper}.Process();
 

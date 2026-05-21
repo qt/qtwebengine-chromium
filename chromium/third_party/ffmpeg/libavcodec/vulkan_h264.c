@@ -556,7 +556,7 @@ static int vk_h264_end_frame(AVCodecContext *avctx)
         rav[i] = hp->ref_src[i]->f;
     }
 
-    av_log(avctx, AV_LOG_DEBUG, "Decoding frame, %"SIZE_SPECIFIER" bytes, %i slices\n",
+    av_log(avctx, AV_LOG_DEBUG, "Decoding frame, %zu bytes, %i slices\n",
            vp->slices_size, hp->h264_pic_info.sliceCount);
 
     return ff_vk_decode_frame(avctx, pic->f, vp, rav, rvp);
@@ -584,7 +584,6 @@ const FFHWAccel ff_h264_vulkan_hwaccel = {
     .init                  = &ff_vk_decode_init,
     .update_thread_context = &ff_vk_update_thread_context,
     .decode_params         = &ff_vk_params_invalidate,
-    .flush                 = &ff_vk_decode_flush,
     .uninit                = &ff_vk_decode_uninit,
     .frame_params          = &ff_vk_frame_params,
     .priv_data_size        = sizeof(FFVulkanDecodeContext),

@@ -713,7 +713,12 @@ angle::Result TextureGL::copyImage(const gl::Context *context,
     const gl::InternalFormat &originalInternalFormatInfo =
         gl::GetInternalFormatInfo(internalFormat, type);
     nativegl::CopyTexImageImageFormat copyTexImageFormat =
-        nativegl::GetCopyTexImageImageFormat(functions, features, internalFormat, type);
+        nativegl::GetCopyTexImageImageFormat(functions, features, internalFormat);
+    const gl::InternalFormat &copyInternalFormatInfo =
+        gl::GetInternalFormatInfo(copyTexImageFormat.internalFormat, GL_UNSIGNED_BYTE);
+    nativegl::TexImageFormat initTexImageFormat =
+        nativegl::GetTexImageFormat(functions, features, internalFormat,
+                                    copyInternalFormatInfo.format, copyInternalFormatInfo.type);
 
     stateManager->bindTexture(getType(), mTextureID);
 
@@ -736,8 +741,9 @@ angle::Result TextureGL::copyImage(const gl::Context *context,
     // framebuffer.
     if (requiresInitialization)
     {
-        GLuint pixelBytes =
-            gl::GetInternalFormatInfo(copyTexImageFormat.internalFormat, type).pixelBytes;
+        const gl::InternalFormat &initFormatInfo =
+            gl::GetInternalFormatInfo(initTexImageFormat.format, initTexImageFormat.type);
+        GLuint pixelBytes = initFormatInfo.pixelBytes;
         angle::MemoryBuffer *zero;
         ANGLE_CHECK_GL_ALLOC(
             contextGL,
@@ -748,18 +754,11 @@ angle::Result TextureGL::copyImage(const gl::Context *context,
         ANGLE_TRY(stateManager->setPixelUnpackState(context, unpack));
         ANGLE_TRY(stateManager->setPixelUnpackBuffer(context, nullptr));
 
-        // getImplementationColorReadType aligns the type with ES client version
-        if (type == GL_HALF_FLOAT_OES && functions->standard == STANDARD_GL_DESKTOP)
-        {
-            type = GL_HALF_FLOAT;
-        }
-
         ANGLE_GL_TRY_ALWAYS_CHECK(
             context, functions->texImage2D(ToGLenum(target), static_cast<GLint>(level),
                                            copyTexImageFormat.internalFormat, sourceArea.width,
-                                           sourceArea.height, 0,
-                                           gl::GetUnsizedFormat(copyTexImageFormat.internalFormat),
-                                           type, zero->data()));
+                                           sourceArea.height, 0, initTexImageFormat.format,
+                                           initTexImageFormat.type, zero->data()));
     }
 
     // Clip source area to framebuffer and copy if remaining area is not empty.
@@ -785,6 +784,17 @@ angle::Result TextureGL::copyImage(const gl::Context *context,
                     ANGLE_TRY(setMaxLevel(context, attachedTextureLevel));
                 }
             }
+        }
+
+        bool isSelfCopy = false;
+        if (readBuffer && readBuffer->type() == GL_TEXTURE)
+        {
+            TextureGL *sourceTexture = GetImplAs<TextureGL>(readBuffer->getTexture());
+            const bool isSameCubeFace =
+                readBuffer->cubeMapFace() == gl::TextureTarget::InvalidEnum ||
+                readBuffer->cubeMapFace() == target;
+            isSelfCopy = sourceTexture && sourceTexture->mTextureID == mTextureID &&
+                         readBuffer->mipLevel() == static_cast<GLint>(level) && isSameCubeFace;
         }
 
         LevelInfoGL levelInfo =
@@ -832,20 +842,73 @@ angle::Result TextureGL::copyImage(const gl::Context *context,
             }
             else
             {
-                if (features.emulateCopyTexImage2D.enabled)
+                if (isSelfCopy)
                 {
-                    if (type == GL_HALF_FLOAT_OES && functions->standard == STANDARD_GL_DESKTOP)
-                    {
-                        type = GL_HALF_FLOAT;
-                    }
+                    // Avoid redefining the texture before the copy, as that would invalidate the
+                    // source attachment. Copy through a temporary texture first.
 
+                    GLuint tempTex = 0;
+                    ANGLE_GL_TRY(context, functions->genTextures(1, &tempTex));
+
+                    // Always use a 2D temp texture to keep the attachment complete (especially for
+                    // cube maps in ES, which require all faces to be defined).
+                    stateManager->bindTexture(gl::TextureType::_2D, tempTex);
+                    ANGLE_GL_TRY(context,
+                                 functions->texParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0));
+                    ANGLE_GL_TRY(context,
+                                 functions->texParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0));
+                    ANGLE_GL_TRY(context, functions->texParameteri(
+                                              GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST));
+                    ANGLE_GL_TRY(context, functions->texParameteri(
+                                              GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST));
+                    ANGLE_GL_TRY_ALWAYS_CHECK(
+                        context, functions->texImage2D(
+                                     GL_TEXTURE_2D, 0, copyTexImageFormat.internalFormat,
+                                     clippedArea.width, clippedArea.height, 0,
+                                     initTexImageFormat.format, initTexImageFormat.type, nullptr));
+                    ANGLE_GL_TRY(context, functions->copyTexSubImage2D(
+                                              GL_TEXTURE_2D, 0, 0, 0, clippedArea.x, clippedArea.y,
+                                              clippedArea.width, clippedArea.height));
+
+                    GLuint tempFBO = 0;
+                    ANGLE_GL_TRY(context, functions->genFramebuffers(1, &tempFBO));
+                    const GLenum readFramebufferTarget =
+                        stateManager->getHasSeparateFramebufferBindings() ? GL_READ_FRAMEBUFFER
+                                                                          : GL_FRAMEBUFFER;
+                    stateManager->bindFramebuffer(readFramebufferTarget, tempFBO);
+                    ANGLE_GL_TRY(context, functions->framebufferTexture2D(
+                                              readFramebufferTarget, GL_COLOR_ATTACHMENT0,
+                                              GL_TEXTURE_2D, tempTex, 0));
+
+                    // Redefine the destination texture after the temp framebuffer is set up.
+                    stateManager->bindTexture(getType(), mTextureID);
                     ANGLE_GL_TRY_ALWAYS_CHECK(
                         context,
-                        functions->texImage2D(
-                            ToGLenum(target), static_cast<GLint>(level),
-                            copyTexImageFormat.internalFormat, sourceArea.width, sourceArea.height,
-                            0, gl::GetUnsizedFormat(copyTexImageFormat.internalFormat), type,
-                            nullptr));
+                        functions->texImage2D(ToGLenum(target), static_cast<GLint>(level),
+                                              copyTexImageFormat.internalFormat, sourceArea.width,
+                                              sourceArea.height, 0, initTexImageFormat.format,
+                                              initTexImageFormat.type, nullptr));
+
+                    ANGLE_GL_TRY(context,
+                                 functions->copyTexSubImage2D(
+                                     ToGLenum(target), static_cast<GLint>(level), destOffset.x,
+                                     destOffset.y, 0, 0, clippedArea.width, clippedArea.height));
+
+                    stateManager->deleteFramebuffer(tempFBO);
+                    stateManager->deleteTexture(tempTex);
+
+                    // Restore the read framebuffer binding for the rest of this function.
+                    stateManager->bindFramebuffer(readFramebufferTarget,
+                                                  sourceFramebufferGL->getFramebufferID());
+                }
+                else if (features.emulateCopyTexImage2D.enabled)
+                {
+                    ANGLE_GL_TRY_ALWAYS_CHECK(
+                        context,
+                        functions->texImage2D(ToGLenum(target), static_cast<GLint>(level),
+                                              copyTexImageFormat.internalFormat, sourceArea.width,
+                                              sourceArea.height, 0, initTexImageFormat.format,
+                                              initTexImageFormat.type, nullptr));
                     ANGLE_GL_TRY_ALWAYS_CHECK(
                         context,
                         functions->copyTexSubImage2D(ToGLenum(target), static_cast<GLint>(level), 0,
@@ -1422,6 +1485,13 @@ angle::Result TextureGL::generateMipmap(const gl::Context *context)
     StateManagerGL *stateManager      = GetStateManagerGL(context);
     const angle::FeaturesGL &features = GetFeaturesGL(context);
 
+    bool recreateMipmapLevelsBeforeGenerate =
+        features.recreateMipmapLevelsBeforeGenerate.enabled && !mState.getImmutableFormat();
+    if (recreateMipmapLevelsBeforeGenerate)
+    {
+        ANGLE_TRY(allocateMipmapLevelsForGeneration(context));
+    }
+
     const GLuint effectiveBaseLevel = mState.getEffectiveBaseLevel();
     const GLuint maxLevel           = mState.getMipmapMaxLevel();
 
@@ -1438,34 +1508,19 @@ angle::Result TextureGL::generateMipmap(const gl::Context *context)
           nativegl::SupportsNativeRendering(functions, mState.getType(),
                                             baseLevelInfo.nativeInternalFormat))))
     {
-        nativegl::TexImageFormat texImageFormat = nativegl::GetTexImageFormat(
-            functions, features, baseLevelInternalFormat.internalFormat,
-            baseLevelInternalFormat.format, baseLevelInternalFormat.type);
-
         // Manually allocate the mip levels of this texture if they don't exist
-        GLuint levelCount = maxLevel - effectiveBaseLevel + 1;
-        for (GLuint levelIdx = 1; levelIdx < levelCount; levelIdx++)
+        // This might already be done above if recreateMipmapLevelsBeforeGenerate is in effect.
+        if (!recreateMipmapLevelsBeforeGenerate)
         {
-            gl::Extents levelSize(std::max(baseLevelDesc.size.width >> levelIdx, 1),
-                                  std::max(baseLevelDesc.size.height >> levelIdx, 1), 1);
-
-            const gl::ImageDesc &levelDesc =
-                mState.getImageDesc(gl::TextureTarget::_2D, effectiveBaseLevel + levelIdx);
-
-            if (levelDesc.size != levelSize || *levelDesc.format.info != baseLevelInternalFormat)
-            {
-                // Make sure no pixel unpack buffer is bound
-                stateManager->bindBuffer(gl::BufferBinding::PixelUnpack, 0);
-
-                ANGLE_GL_TRY_ALWAYS_CHECK(
-                    context, functions->texImage2D(
-                                 ToGLenum(getType()), effectiveBaseLevel + levelIdx,
-                                 texImageFormat.internalFormat, levelSize.width, levelSize.height,
-                                 0, texImageFormat.format, texImageFormat.type, nullptr));
-            }
+            ANGLE_TRY(allocateMipmapLevelsForGeneration(context));
         }
 
         // Use the blitter to generate the mips
+        const nativegl::TexImageFormat texImageFormat = nativegl::GetTexImageFormat(
+            functions, features, baseLevelInternalFormat.internalFormat,
+            baseLevelInternalFormat.format, baseLevelInternalFormat.type);
+        const GLuint levelCount = maxLevel - effectiveBaseLevel + 1;
+
         BlitGL *blitter = GetBlitGL(context);
         if (baseLevelInternalFormat.colorEncoding == GL_SRGB)
         {
@@ -1487,6 +1542,84 @@ angle::Result TextureGL::generateMipmap(const gl::Context *context)
                  getBaseLevelInfo());
 
     contextGL->markWorkSubmitted();
+    return angle::Result::Continue;
+}
+
+angle::Result TextureGL::allocateMipmapLevelsForGeneration(const gl::Context *context)
+{
+    const FunctionsGL *functions      = GetFunctionsGL(context);
+    StateManagerGL *stateManager      = GetStateManagerGL(context);
+    const angle::FeaturesGL &features = GetFeaturesGL(context);
+
+    const GLuint effectiveBaseLevel = mState.getEffectiveBaseLevel();
+    const GLuint maxLevel           = mState.getMipmapMaxLevel();
+
+    const gl::ImageDesc &baseLevelDesc                = mState.getBaseLevelDesc();
+    const gl::InternalFormat &baseLevelInternalFormat = *baseLevelDesc.format.info;
+
+    nativegl::TexImageFormat texImageFormat =
+        nativegl::GetTexImageFormat(functions, features, baseLevelInternalFormat.internalFormat,
+                                    baseLevelInternalFormat.format, baseLevelInternalFormat.type);
+
+    const bool is3D                = getType() == gl::TextureType::_3D;
+    const gl::TextureTarget target = getType() == gl::TextureType::CubeMap
+                                         ? gl::TextureTarget::CubeMapPositiveX
+                                         : NonCubeTextureTypeToTarget(getType());
+
+    // Manually allocate the mip levels of this texture if they don't exist
+    GLuint levelCount = maxLevel - effectiveBaseLevel + 1;
+    for (GLuint levelIdx = 1; levelIdx < levelCount; levelIdx++)
+    {
+        gl::Extents levelSize(
+            std::max(baseLevelDesc.size.width >> levelIdx, 1),
+            std::max(baseLevelDesc.size.height >> levelIdx, 1),
+            is3D ? std::max(baseLevelDesc.size.depth >> levelIdx, 1) : baseLevelDesc.size.depth);
+
+        const gl::ImageDesc &levelDesc = mState.getImageDesc(target, effectiveBaseLevel + levelIdx);
+
+        if (levelDesc.size != levelSize || *levelDesc.format.info != baseLevelInternalFormat)
+        {
+            // Make sure no pixel unpack buffer is bound
+            stateManager->bindBuffer(gl::BufferBinding::PixelUnpack, 0);
+
+            switch (getType())
+            {
+                case gl::TextureType::_2D:
+                    ANGLE_GL_TRY_ALWAYS_CHECK(
+                        context,
+                        functions->texImage2D(ToGLenum(getType()), effectiveBaseLevel + levelIdx,
+                                              texImageFormat.internalFormat, levelSize.width,
+                                              levelSize.height, 0, texImageFormat.format,
+                                              texImageFormat.type, nullptr));
+                    break;
+                case gl::TextureType::_3D:
+                case gl::TextureType::_2DArray:
+                case gl::TextureType::CubeMapArray:
+                    ANGLE_GL_TRY_ALWAYS_CHECK(
+                        context,
+                        functions->texImage3D(ToGLenum(getType()), effectiveBaseLevel + levelIdx,
+                                              texImageFormat.internalFormat, levelSize.width,
+                                              levelSize.height, levelSize.depth, 0,
+                                              texImageFormat.format, texImageFormat.type, nullptr));
+                    break;
+                case gl::TextureType::CubeMap:
+                    for (gl::TextureTarget face : gl::AllCubeFaceTextureTargets())
+                    {
+                        ANGLE_GL_TRY_ALWAYS_CHECK(
+                            context,
+                            functions->texImage2D(ToGLenum(face), effectiveBaseLevel + levelIdx,
+                                                  texImageFormat.internalFormat, levelSize.width,
+                                                  levelSize.height, 0, texImageFormat.format,
+                                                  texImageFormat.type, nullptr));
+                    }
+                    break;
+                default:
+                    // Cannot call glGenerateMipmap with any other texture type
+                    UNREACHABLE();
+                    break;
+            }
+        }
+    }
     return angle::Result::Continue;
 }
 
@@ -2295,6 +2428,43 @@ angle::Result TextureGL::initializeContents(const gl::Context *context,
     StateManagerGL *stateManager      = GetStateManagerGL(context);
     const angle::FeaturesGL &features = GetFeaturesGL(context);
 
+    const gl::ImageDesc &desc                    = mState.getImageDesc(imageIndex);
+    const gl::InternalFormat &internalFormatInfo = *desc.format.info;
+
+    // Clearing cube maps with EXT_clear_texture has inconsistent results. The drivers often clear
+    // the entire level when only one face is specified.
+    if (functions->clearTexImage && !internalFormatInfo.compressed &&
+        getType() != gl::TextureType::CubeMap &&
+        !features.disableClearTexImageForRobustInit.enabled)
+    {
+        nativegl::TexSubImageFormat nativeSubImageFormat = nativegl::GetTexSubImageFormat(
+            functions, features, internalFormatInfo.format, internalFormatInfo.type);
+
+        // Some drivers may use color mask state when clearing textures.
+        contextGL->getStateManager()->setColorMask(true, true, true, true);
+
+        // The largest GL data format is 16 bytes (RGBA32F)
+        static constexpr std::array<uint8_t, 16> data = {0};
+        CHECK(internalFormatInfo.pixelBytes <= data.size());
+        if (imageIndex.hasLayer())
+        {
+            ANGLE_GL_TRY(context, functions->clearTexSubImage(
+                                      mTextureID, imageIndex.getLevelIndex(), 0, 0,
+                                      imageIndex.getLayerIndex(), desc.size.width, desc.size.height,
+                                      imageIndex.getLayerCount(), nativeSubImageFormat.format,
+                                      nativeSubImageFormat.type, data.data()));
+        }
+        else
+        {
+            ANGLE_GL_TRY(context, functions->clearTexImage(mTextureID, imageIndex.getLevelIndex(),
+                                                           nativeSubImageFormat.format,
+                                                           nativeSubImageFormat.type, data.data()));
+        }
+
+        contextGL->markWorkSubmitted();
+        return angle::Result::Continue;
+    }
+
     GLenum nativeInternalFormat =
         getLevelInfo(imageIndex.getTarget(), imageIndex.getLevelIndex()).nativeInternalFormat;
     if (features.allowClearForRobustResourceInit.enabled &&
@@ -2317,8 +2487,6 @@ angle::Result TextureGL::initializeContents(const gl::Context *context,
     // Either the texture is not renderable or was incomplete when clearing, fall back to a data
     // upload
     ASSERT(nativegl::SupportsTexImage(getType()));
-    const gl::ImageDesc &desc                    = mState.getImageDesc(imageIndex);
-    const gl::InternalFormat &internalFormatInfo = *desc.format.info;
 
     gl::PixelUnpackState unpackState;
     unpackState.alignment = 1;

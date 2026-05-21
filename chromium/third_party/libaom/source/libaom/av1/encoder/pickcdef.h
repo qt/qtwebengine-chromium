@@ -251,10 +251,11 @@ void av1_cdef_search(struct AV1_COMP *cpi);
  * \param[in,out]  cm                 Pointer to top level common structure
  * \param[in]      skip_cdef          Flag to skip CDEF filtering
  * \param[in]      is_screen_content  Flag indicating screen content
+ * \param[in]      avoid_uv_cdef      Flag to avoid assigning UV CDEF strengths
  *
  */
 void av1_pick_cdef_from_qp(AV1_COMMON *const cm, int skip_cdef,
-                           int is_screen_content);
+                           int is_screen_content, bool avoid_uv_cdef);
 
 #ifdef __cplusplus
 }  // extern "C"

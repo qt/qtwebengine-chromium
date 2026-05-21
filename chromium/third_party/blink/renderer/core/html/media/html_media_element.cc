@@ -81,7 +81,6 @@
 #include "third_party/blink/renderer/core/html/media/media_source_attachment.h"
 #include "third_party/blink/renderer/core/html/media/media_source_handle.h"
 #include "third_party/blink/renderer/core/html/media/media_source_tracer.h"
-#include "third_party/blink/renderer/core/html/media/remote_playback_controller.h"
 #include "third_party/blink/renderer/core/html/time_ranges.h"
 #include "third_party/blink/renderer/core/html/track/audio_track.h"
 #include "third_party/blink/renderer/core/html/track/audio_track_list.h"
@@ -390,10 +389,11 @@ bool HTMLMediaElement::IsHLSURL(const KURL& url) {
   if (url.IsNull() || url.IsEmpty())
     return false;
 
-  if (!url.IsLocalFile() && !url.ProtocolIs("http") && !url.ProtocolIs("https"))
+  if (!url.IsLocalFile() && !url.ProtocolIsInHTTPFamily()) {
     return false;
+  }
 
-  return url.GetPath().ToString().EndsWith(".m3u8");
+  return url.GetPath().ends_with(".m3u8");
 }
 
 // static
@@ -4520,6 +4520,15 @@ bool HTMLMediaElement::IsInteractiveContent() const {
   return FastHasAttribute(html_names::kControlsAttr);
 }
 
+FocusgroupFlags HTMLMediaElement::NativeArrowKeyAxes() const {
+  // Media elements with controls use arrow keys for scrubbing (left/right)
+  // and volume adjustment (up/down).
+  if (ShouldShowControls()) {
+    return FocusgroupFlags::kInline | FocusgroupFlags::kBlock;
+  }
+  return HTMLElement::NativeArrowKeyAxes();
+}
+
 void HTMLMediaElement::BindMediaPlayerReceiver(
     mojo::PendingAssociatedReceiver<media::mojom::blink::MediaPlayer>
         receiver) {
@@ -4566,9 +4575,7 @@ void HTMLMediaElement::Trace(Visitor* visitor) const {
   visitor->Trace(media_player_receiver_set_);
   visitor->Trace(opener_document_);
   visitor->Trace(opener_context_observer_);
-  visitor->Trace(audio_output_device_controller_);
-  visitor->Trace(html_media_element_encrypted_media_);
-  visitor->Trace(remote_playback_controller_);
+  Supplementable<HTMLMediaElement>::Trace(visitor);
   HTMLElement::Trace(visitor);
   ExecutionContextLifecycleStateObserver::Trace(visitor);
 }
@@ -4721,9 +4728,9 @@ void HTMLMediaElement::RejectScheduledPlayPromises() {
   }
   RejectPlayPromisesInternal(
       DOMExceptionCode::kAbortError,
-      String::Format(
+      UNSAFE_TODO(String::Format(
           "The play() request was interrupted%s. https://goo.gl/LdLk22",
-          reason));
+          reason)));
 }
 
 void HTMLMediaElement::RejectPlayPromises(DOMExceptionCode code,

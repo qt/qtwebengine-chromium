@@ -40,6 +40,9 @@
         ],
         "Condition": "tint_build_tintd"
     },
+    "mesa": {
+        "Condition": "tint_build_mesa"
+    },
     "metal": {
         "IncludePatterns": [
             "Metal/Metal.h"
@@ -80,6 +83,18 @@
             "glslang/Public/ResourceLimits.h"
         ],
         "Condition": "tint_build_glsl_validator"
+    },
+    "vulkan-headers": {
+        "IncludePatterns": [
+            "vulkan/**"
+        ],
+        "Condition": "tint_build_fuzzer_vulkan_support"
+    },
+    "libvulkan": {
+        "IncludePatterns": [
+            "vulkan/**"
+        ],
+        "Condition": "tint_build_fuzzer_vulkan_support"
     },
     "gtest": {
         "IncludePatterns": [

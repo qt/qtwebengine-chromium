@@ -437,10 +437,11 @@ av_cold void ff_codec_close(AVCodecContext *avctx)
     if (avcodec_is_open(avctx)) {
         AVCodecInternal *avci = avctx->internal;
 
-        if (CONFIG_FRAME_THREAD_ENCODER &&
-            avci->frame_thread_encoder && avctx->thread_count > 1) {
+#if CONFIG_FRAME_THREAD_ENCODER
+        if (avci->frame_thread_encoder && avctx->thread_count > 1) {
             ff_frame_thread_encoder_free(avctx);
         }
+#endif
         if (HAVE_THREADS && avci->thread_ctx)
             ff_thread_free(avctx);
         if (avci->needs_close && ffcodec(avctx->codec)->close)
@@ -704,7 +705,8 @@ int avcodec_is_open(AVCodecContext *s)
     return !!s->internal;
 }
 
-int attribute_align_arg avcodec_receive_frame(AVCodecContext *avctx, AVFrame *frame)
+int attribute_align_arg avcodec_receive_frame_flags(AVCodecContext *avctx,
+                                               AVFrame *frame, unsigned flags)
 {
     av_frame_unref(frame);
 
@@ -712,8 +714,13 @@ int attribute_align_arg avcodec_receive_frame(AVCodecContext *avctx, AVFrame *fr
         return AVERROR(EINVAL);
 
     if (ff_codec_is_decoder(avctx->codec))
-        return ff_decode_receive_frame(avctx, frame);
+        return ff_decode_receive_frame(avctx, frame, flags);
     return ff_encode_receive_frame(avctx, frame);
+}
+
+int avcodec_receive_frame(AVCodecContext *avctx, AVFrame *frame)
+{
+    return avcodec_receive_frame_flags(avctx, frame, 0);
 }
 
 #define WRAP_CONFIG(allowed_type, field, var, field_type, sentinel_check)   \

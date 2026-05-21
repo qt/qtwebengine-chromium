@@ -27,7 +27,6 @@
 #include "api/audio/audio_frame_processor.h"
 #include "api/audio/audio_mixer.h"
 #include "api/audio/audio_processing.h"
-#include "api/audio_codecs/audio_codec_pair_id.h"
 #include "api/audio_codecs/audio_decoder_factory.h"
 #include "api/audio_codecs/audio_encoder_factory.h"
 #include "api/audio_codecs/audio_format.h"
@@ -102,16 +101,14 @@ class WebRtcVoiceEngine final : public VoiceEngineInterface {
       Call* call,
       const MediaConfig& config,
       const AudioOptions& options,
-      const CryptoOptions& crypto_options,
-      AudioCodecPairId codec_pair_id) override;
+      const CryptoOptions& crypto_options) override;
 
   std::unique_ptr<VoiceMediaReceiveChannelInterface> CreateReceiveChannel(
       const Environment& env,
       Call* call,
       const MediaConfig& config,
       const AudioOptions& options,
-      const CryptoOptions& crypto_options,
-      AudioCodecPairId codec_pair_id) override;
+      const CryptoOptions& crypto_options) override;
 
   const std::vector<Codec>& LegacySendCodecs() const override;
   const std::vector<Codec>& LegacyRecvCodecs() const override;
@@ -123,7 +120,7 @@ class WebRtcVoiceEngine final : public VoiceEngineInterface {
     return decoder_factory_.get();
   }
   std::vector<RtpHeaderExtensionCapability> GetRtpHeaderExtensions(
-      const webrtc::FieldTrialsView* field_trials) const override;
+      const FieldTrialsView* field_trials) const override;
 
   // Starts AEC dump using an existing file. A maximum file size in bytes can be
   // specified. When the maximum file size is reached, logging is stopped and
@@ -186,8 +183,7 @@ class WebRtcVoiceSendChannel final : public MediaChannelUtil,
                          const MediaConfig& config,
                          const AudioOptions& options,
                          const CryptoOptions& crypto_options,
-                         Call* call,
-                         AudioCodecPairId codec_pair_id);
+                         Call* call);
 
   WebRtcVoiceSendChannel() = delete;
   WebRtcVoiceSendChannel(const WebRtcVoiceSendChannel&) = delete;
@@ -226,7 +222,6 @@ class WebRtcVoiceSendChannel final : public MediaChannelUtil,
   RTCError SetRtpSendParameters(uint32_t ssrc,
                                 const RtpParameters& parameters,
                                 SetParametersCallback callback) override;
-
   void SetSend(bool send) override;
   bool SetAudioSend(uint32_t ssrc,
                     bool enable,
@@ -254,6 +249,7 @@ class WebRtcVoiceSendChannel final : public MediaChannelUtil,
                              const NetworkRoute& network_route) override;
   void OnReadyToSend(bool ready) override;
   bool GetStats(VoiceMediaSendInfo* info) override;
+  bool SetOptions(const AudioOptions& options) override;
 
   // Sets a frame transformer between encoder and packetizer, to transform
   // encoded frames before sending them out the network.
@@ -266,7 +262,6 @@ class WebRtcVoiceSendChannel final : public MediaChannelUtil,
   bool SendCodecHasNack() const override { return SenderNackEnabled(); }
 
  private:
-  bool SetOptions(const AudioOptions& options);
   bool SetSendCodecs(const std::vector<Codec>& codecs,
                      std::optional<Codec> preferred_codec);
   bool SetLocalSource(uint32_t ssrc, AudioSource* source);
@@ -307,9 +302,6 @@ class WebRtcVoiceSendChannel final : public MediaChannelUtil,
   std::optional<AudioSendStream::Config::SendCodecSpec> send_codec_spec_
       RTC_GUARDED_BY(worker_thread_);
 
-  // TODO(kwiberg): Per-SSRC codec pair IDs?
-  const AudioCodecPairId codec_pair_id_;
-
   // Per peer connection crypto options that last for the lifetime of the peer
   // connection.
   const CryptoOptions crypto_options_;
@@ -330,8 +322,7 @@ class WebRtcVoiceReceiveChannel final
                             const MediaConfig& config,
                             const AudioOptions& options,
                             const CryptoOptions& crypto_options,
-                            Call* call,
-                            AudioCodecPairId codec_pair_id);
+                            Call* call);
 
   WebRtcVoiceReceiveChannel() = delete;
   WebRtcVoiceReceiveChannel(const WebRtcVoiceReceiveChannel&) = delete;
@@ -409,7 +400,7 @@ class WebRtcVoiceReceiveChannel final
   void SetReceiveNonSenderRttEnabled(bool enabled) override;
 
  private:
-  bool SetOptions(const AudioOptions& options);
+  bool SetOptions(const AudioOptions& options) override;
   bool SetRecvCodecs(const std::vector<Codec>& codecs);
   bool SetLocalSource(uint32_t ssrc, AudioSource* source);
   bool MuteStream(uint32_t ssrc, bool mute);
@@ -446,7 +437,7 @@ class WebRtcVoiceReceiveChannel final
   bool playout_ RTC_GUARDED_BY(worker_thread_) = false;
   Call* const call_ = nullptr;
 
-  const MediaConfig::Audio audio_config_;
+  MediaConfig::Audio audio_config_;
 
   // Queue of unsignaled SSRCs; oldest at the beginning.
   std::vector<uint32_t> unsignaled_recv_ssrcs_ RTC_GUARDED_BY(worker_thread_);
@@ -481,9 +472,6 @@ class WebRtcVoiceReceiveChannel final
 
   std::optional<AudioSendStream::Config::SendCodecSpec> send_codec_spec_
       RTC_GUARDED_BY(worker_thread_);
-
-  // TODO(kwiberg): Per-SSRC codec pair IDs?
-  const AudioCodecPairId codec_pair_id_;
 
   // Per peer connection crypto options that last for the lifetime of the peer
   // connection.

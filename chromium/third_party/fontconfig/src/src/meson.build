@@ -22,6 +22,7 @@ fc_sources = files([
   'fccache.c',
   'fccfg.c',
   'fccharset.c',
+  'fcconffile.c',
   'fccompat.c',
   'fcdbg.c',
   'fcdefault.c',

@@ -85,6 +85,12 @@ if (!build_with_chromium) {
       "${googletest_dir}/googlemock/include",
       "${googletest_dir}/googletest/include",
     ]
+    if (dawn_standalone && is_clang) {
+      cflags = [
+        # gmock emits deprecated-copy-dtor warnings when using ::testing::Combine
+        "-Wno-deprecated-copy-dtor",
+      ]
+    }
   }
 
   static_library("gmock") {
@@ -298,7 +304,8 @@ dawn_test("dawn_unittests") {
     "${dawn_root}/src/dawn/utils:system_utils",
     "${dawn_root}/src/dawn/utils:test_utils",
     "${dawn_root}/src/dawn/utils:wgpu_utils",
-    "${dawn_root}/src/dawn/wire",
+    "${dawn_root}/src/dawn/wire:sources",
+    "${dawn_root}/src/dawn/wire:static",
     "${dawn_root}/src/utils/chromium_test_compat",
   ]
 
@@ -395,7 +402,6 @@ dawn_test("dawn_unittests") {
     "unittests/validation/DeviceValidationTests.cpp",
     "unittests/validation/DrawIndirectValidationTests.cpp",
     "unittests/validation/DrawVertexAndIndexBufferOOBValidationTests.cpp",
-    "unittests/validation/DynamicBindingArrayValidationTests.cpp",
     "unittests/validation/DynamicStateCommandValidationTests.cpp",
     "unittests/validation/ErrorScopeValidationTests.cpp",
     "unittests/validation/ExternalTextureTests.cpp",
@@ -419,6 +425,7 @@ dawn_test("dawn_unittests") {
     "unittests/validation/RenderBundleValidationTests.cpp",
     "unittests/validation/RenderPassDescriptorValidationTests.cpp",
     "unittests/validation/RenderPipelineValidationTests.cpp",
+    "unittests/validation/ResourceTableValidationTests.cpp",
     "unittests/validation/ResourceUsageTrackingTests.cpp",
     "unittests/validation/SamplerValidationTests.cpp",
     "unittests/validation/ShaderModuleValidationTests.cpp",
@@ -458,6 +465,7 @@ dawn_test("dawn_unittests") {
     "unittests/wire/WireOptionalTests.cpp",
     "unittests/wire/WireQueueTests.cpp",
     "unittests/wire/WireShaderModuleTests.cpp",
+    "unittests/wire/WireSpecificCommandTests.cpp",
     "unittests/wire/WireTest.cpp",
     "unittests/wire/WireTest.h",
   ]
@@ -531,7 +539,6 @@ source_set("test_infra_sources") {
     "${dawn_root}/src/dawn/utils:system_utils",
     "${dawn_root}/src/dawn/utils:test_utils",
     "${dawn_root}/src/dawn/utils:wgpu_utils",
-    "${dawn_root}/src/dawn/wire",
   ]
 
   public = [
@@ -549,6 +556,10 @@ source_set("test_infra_sources") {
 
   if (dawn_supports_glfw_for_windowing) {
     public_deps += [ "${dawn_root}/src/dawn/glfw" ]
+  }
+
+  if (dawn_enable_webgpu_on_webgpu) {
+    public_deps += [ "${dawn_root}/src/dawn/replay" ]
   }
 
   sources = [
@@ -596,7 +607,7 @@ source_set("end2end_tests_sources") {
     "${dawn_root}/src/dawn/utils:system_utils",
     "${dawn_root}/src/dawn/utils:test_utils",
     "${dawn_root}/src/dawn/utils:wgpu_utils",
-    "${dawn_root}/src/dawn/wire",
+    "${dawn_root}/src/dawn/wire:headers",
   ]
 
   sources = [
@@ -611,6 +622,7 @@ source_set("end2end_tests_sources") {
     "end2end/BindingArrayTests.cpp",
     "end2end/BufferHostMappedPointerTests.cpp",
     "end2end/BufferHostMappedPointerTests.h",
+    "end2end/BufferRobustnessTests.cpp",
     "end2end/BufferTests.cpp",
     "end2end/BufferZeroInitTests.cpp",
     "end2end/ClipDistancesTests.cpp",
@@ -627,6 +639,7 @@ source_set("end2end_tests_sources") {
     "end2end/CopyExternalTextureForBrowserTests.cpp",
     "end2end/CopyTests.cpp",
     "end2end/CopyTextureForBrowserTests.cpp",
+    "end2end/CreateDestroyTests.cpp",
     "end2end/CreatePipelineAsyncTests.cpp",
     "end2end/CullingTests.cpp",
     "end2end/DebugMarkerTests.cpp",
@@ -688,9 +701,11 @@ source_set("end2end_tests_sources") {
     "end2end/RenderPassLoadOpTests.cpp",
     "end2end/RenderPassTests.cpp",
     "end2end/RequiredBufferSizeInCopyTests.cpp",
+    "end2end/ResourceTableTests.cpp",
     "end2end/SamplerFilterAnisotropicTests.cpp",
     "end2end/SamplerTests.cpp",
     "end2end/ScissorTests.cpp",
+    "end2end/SelectNonShortCircuiting.cpp",
     "end2end/ShaderAtomicTests.cpp",
     "end2end/ShaderBuiltinPartialConstArgsErrorTests.cpp",
     "end2end/ShaderF16Tests.cpp",
@@ -775,6 +790,10 @@ source_set("end2end_tests_sources") {
     ]
   }
 
+  if (dawn_enable_webgpu_on_webgpu) {
+    sources += [ "end2end/CaptureAndReplayTests.cpp" ]
+  }
+
   if (dawn_enable_d3d11 || dawn_enable_d3d12 ||
       (dawn_enable_vulkan && is_chromeos) || dawn_enable_metal) {
     sources += [
@@ -809,7 +828,8 @@ source_set("white_box_tests_sources") {
     "${dawn_root}/src/dawn/utils:system_utils",
     "${dawn_root}/src/dawn/utils:test_utils",
     "${dawn_root}/src/dawn/utils:wgpu_utils",
-    "${dawn_root}/src/dawn/wire",
+    "${dawn_root}/src/dawn/wire:sources",
+    "${dawn_root}/src/dawn/wire:static",
   ]
 
   sources = [
@@ -822,11 +842,6 @@ source_set("white_box_tests_sources") {
     "white_box/WaitListEventTests.cpp",
   ]
   libs = []
-
-  if (dawn_enable_webgpu_on_webgpu) {
-    deps += [ "${dawn_root}/src/dawn/replay" ]
-    sources += [ "white_box/CaptureAndReplayTests.cpp" ]
-  }
 
   if (is_mac || is_ios) {
     sources += [ "white_box/SharedTextureMemoryTests_apple.mm" ]
@@ -962,7 +977,6 @@ dawn_test("dawn_perf_tests") {
     "${dawn_root}/src/dawn/utils:system_utils",
     "${dawn_root}/src/dawn/utils:test_utils",
     "${dawn_root}/src/dawn/utils:wgpu_utils",
-    "${dawn_root}/src/dawn/wire",
     "${dawn_root}/src/utils/chromium_test_compat",
   ]
 

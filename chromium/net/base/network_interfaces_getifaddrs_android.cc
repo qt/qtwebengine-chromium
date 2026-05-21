@@ -12,10 +12,6 @@
 #pragma allow_unsafe_buffers
 #endif
 
-#include "build/build_config.h"
-
-#if BUILDFLAG(IS_ANDROID)
-
 #include <errno.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
@@ -29,6 +25,7 @@
 #include <sys/utsname.h>
 #include <unistd.h>
 
+#include "base/logging.h"
 #include "base/notreached.h"
 #include "base/scoped_generic.h"
 
@@ -88,11 +85,19 @@ int set_addresses(struct ifaddrs* ifaddr,
                   void* data,
                   size_t len) {
   if (msg->ifa_family == AF_INET) {
+    if (len != sizeof(struct in_addr)) {
+      DLOG(ERROR) << "Received an invalid length for an IPv4 address: " << len;
+      return -1;
+    }
     sockaddr_in* sa = new sockaddr_in;
     sa->sin_family = AF_INET;
     memcpy(&sa->sin_addr, data, len);
     ifaddr->ifa_addr = reinterpret_cast<sockaddr*>(sa);
   } else if (msg->ifa_family == AF_INET6) {
+    if (len != sizeof(struct in6_addr)) {
+      DLOG(ERROR) << "Received an invalid length for an IPv6 address: " << len;
+      return -1;
+    }
     sockaddr_in6* sa = new sockaddr_in6;
     sa->sin6_family = AF_INET6;
     sa->sin6_scope_id = msg->ifa_index;
@@ -263,5 +268,3 @@ void Freeifaddrs(struct ifaddrs* addrs) {
 }
 
 }  // namespace net::internal
-
-#endif  // BUILDFLAG(IS_ANDROID)

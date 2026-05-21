@@ -33,8 +33,11 @@
 #include "src/tint/lang/core/enums.h"
 #include "src/tint/lang/core/fluent_types.h"
 #include "src/tint/lang/core/ir/builder.h"
+#include "src/tint/lang/core/ir/core_builtin_call.h"
+#include "src/tint/lang/core/ir/instruction.h"
 #include "src/tint/lang/core/ir/module.h"
 #include "src/tint/lang/core/ir/validator.h"
+#include "src/tint/lang/core/ir/value.h"
 #include "src/tint/lang/core/type/binding_array.h"
 #include "src/tint/lang/core/type/builtin_structs.h"
 #include "src/tint/lang/core/type/depth_multisampled_texture.h"
@@ -42,6 +45,7 @@
 #include "src/tint/lang/core/type/i8.h"
 #include "src/tint/lang/core/type/input_attachment.h"
 #include "src/tint/lang/core/type/multisampled_texture.h"
+#include "src/tint/lang/core/type/resource_table.h"
 #include "src/tint/lang/core/type/sampled_texture.h"
 #include "src/tint/lang/core/type/storage_texture.h"
 #include "src/tint/lang/core/type/texture.h"
@@ -49,7 +53,6 @@
 #include "src/tint/lang/spirv/ir/binary.h"
 #include "src/tint/lang/spirv/ir/builtin_call.h"
 #include "src/tint/lang/spirv/ir/literal_operand.h"
-#include "src/tint/lang/spirv/type/resource_binding.h"
 #include "src/tint/lang/spirv/type/sampled_image.h"
 #include "src/tint/utils/ice/ice.h"
 #include "src/tint/utils/internal_limits.h"
@@ -157,9 +160,9 @@ const core::type::Type* ReplacementType(core::type::Manager& ty, const core::typ
             }
             return nullptr;
         },
-        [&](const spirv::type::ResourceBinding* rb) -> const core::type::Type* {
+        [&](const core::type::ResourceTable* rb) -> const core::type::Type* {
             if (auto* replacement = ReplacementType(ty, rb->GetBindingType())) {
-                return ty.Get<spirv::type::ResourceBinding>(replacement);
+                return ty.Get<core::type::ResourceTable>(replacement);
             }
             return nullptr;
         },
@@ -384,12 +387,12 @@ struct State {
                 if (sm_ty->Type()->Is<core::type::I8>()) {
                     value = b.CallExplicit<spirv::ir::BuiltinCall>(
                                  ty.i8(), spirv::BuiltinFn::kSConvert, Vector{ty.i8()},
-                                 b.Call(ty.i32(), core::BuiltinFn::kClamp, value, -128_i, 127_i))
+                                 b.Clamp(value, -128_i, 127_i))
                                 ->Result();
                 } else if (sm_ty->Type()->Is<core::type::U8>()) {
                     value = b.CallExplicit<spirv::ir::BuiltinCall>(
                                  ty.u8(), spirv::BuiltinFn::kUConvert, Vector{ty.u8()},
-                                 b.Call(ty.u32(), core::BuiltinFn::kClamp, value, 0_u, 255_u))
+                                 b.Clamp(value, 0_u, 255_u))
                                 ->Result();
                 }
             });
@@ -548,9 +551,9 @@ struct State {
                 b.InsertBefore(builtin, [&] {
                     auto* e1 = b.Access(elty, v1, u32(i));
                     auto* e2 = b.Access(elty, v2, u32(i));
-                    auto* mul = b.Multiply(elty, e1, e2);
+                    auto* mul = b.Multiply(e1, e2);
                     if (sum) {
-                        sum = b.Add(elty, sum, mul);
+                        sum = b.Add(sum, mul);
                     } else {
                         sum = mul;
                     }
@@ -733,6 +736,14 @@ struct State {
         auto* coords = next_arg();
         auto* texture_ty = texture->Type()->As<spirv::type::Image>();
 
+        const bool is_depth_3d_cube_array = texture_ty->GetArrayed() == type::Arrayed::kArrayed &&
+                                            texture_ty->GetDepth() == type::Depth::kDepth &&
+                                            texture_ty->GetDim() == type::Dim::kCube;
+        const bool polyfill_depth_cube_array =
+            config.texture_sample_compare_depth_cube_array && is_depth_3d_cube_array &&
+            (builtin->Func() == core::BuiltinFn::kTextureSampleCompare ||
+             builtin->Func() == core::BuiltinFn::kTextureSampleCompareLevel);
+
         // Use OpSampledImage to create an OpTypeSampledImage object.
         auto* sampled_image = b.CallExplicit<spirv::ir::BuiltinCall>(
             ty.Get<type::SampledImage>(texture_ty), spirv::BuiltinFn::kOpSampledImage,
@@ -761,14 +772,20 @@ struct State {
                 operands.offset = next_arg();
                 break;
             case core::BuiltinFn::kTextureSampleCompare:
-                function = spirv::BuiltinFn::kImageSampleDrefImplicitLod;
+                function = polyfill_depth_cube_array
+                               ? spirv::BuiltinFn::kImageDrefGather
+                               : spirv::BuiltinFn::kImageSampleDrefImplicitLod;
                 depth = next_arg();
                 operands.offset = next_arg();
                 break;
             case core::BuiltinFn::kTextureSampleCompareLevel:
-                function = spirv::BuiltinFn::kImageSampleDrefExplicitLod;
+                function = polyfill_depth_cube_array
+                               ? spirv::BuiltinFn::kImageDrefGather
+                               : spirv::BuiltinFn::kImageSampleDrefExplicitLod;
                 depth = next_arg();
-                operands.lod = b.Constant(0_f);
+                if (!polyfill_depth_cube_array) {
+                    operands.lod = b.Constant(0_f);
+                }
                 operands.offset = next_arg();
                 break;
             case core::BuiltinFn::kTextureSampleGrad:
@@ -801,7 +818,10 @@ struct State {
 
         // Call the function.
         // If this is a depth comparison, the result is always f32, otherwise vec4f.
-        auto* result_ty = depth ? static_cast<const core::type::Type*>(ty.f32()) : ty.vec4<f32>();
+        auto* result_ty = (depth && !polyfill_depth_cube_array)
+                              ? static_cast<const core::type::Type*>(ty.f32())
+                              : ty.vec4f();
+
         core::ir::Instruction* result =
             b.Call<spirv::ir::BuiltinCall>(result_ty, function, std::move(function_args));
         result->InsertBefore(builtin);
@@ -811,6 +831,29 @@ struct State {
         if (!depth && texture_ty->GetDepth() == type::Depth::kDepth) {
             result = b.Access(ty.f32(), result, 0_u);
             result->InsertBefore(builtin);
+        }
+
+        if (polyfill_depth_cube_array) {
+            core::ir::Instruction* close_to_pcf_result = nullptr;
+            b.InsertAfter(result, [&] {
+                // This is an imperfect polyfill for builtin intrinsic to do PCF style shadows.
+                // See: crbug.com/467015399
+                // To do a complete polyfill we would have to properly do bilinear interpolation of
+                // the TextureGatherCompare result which we do not do as there is no trivial way to
+                // do it for a cubemap.
+
+                // We do a textureGatherCompare and then dot with a vec4f(0.25) to get the average
+                // result. This will give PCF-like shadows but they will not be as smooth as the
+                // result from the original TextureSampleCompare. We also only sample mip0 which is
+                // identical to TextureSampleCompareLevel but not TextureSampleCompare.
+                close_to_pcf_result =
+                    b.Call<spirv::ir::BuiltinCall>(ty.f32(), spirv::BuiltinFn::kDot, result,
+                                                   b.Splat(ty.vec4f(), b.Constant(0.25_f)));
+            });
+
+            close_to_pcf_result->SetResult(builtin->DetachResult());
+            builtin->Destroy();
+            return;
         }
 
         result->SetResult(builtin->DetachResult());
@@ -1093,7 +1136,7 @@ struct State {
 
         // Call the function.
         auto* texture_call = b.CallExplicit<spirv::ir::BuiltinCall>(
-            ty.vec3<u32>(), function, Vector{ty.u32()}, std::move(function_args));
+            ty.vec3u(), function, Vector{ty.u32()}, std::move(function_args));
         texture_call->InsertBefore(builtin);
 
         // Extract the third component to get the number of array layers.
@@ -1131,7 +1174,7 @@ struct State {
 
         auto* texture = builtin->Args()[0];
         // coords for input_attachment are always (0, 0)
-        auto* coords = b.Composite(ty.vec2<i32>(), 0_i, 0_i);
+        auto* coords = b.Composite(ty.vec2i(), 0_i, 0_i);
 
         // Start building the argument list for the builtin.
         // The first two operands are always the texture and then the coordinates.
@@ -1173,7 +1216,7 @@ struct State {
             auto* mask_max_subgroup_size =
                 b.Constant(core::u32(tint::internal_limits::kMaxSubgroupSize - 1));
             b.InsertBefore(builtin, [&] {
-                auto* clamp_via_masking_and = b.And<u32>(shuffle_id, mask_max_subgroup_size);
+                auto* clamp_via_masking_and = b.And(shuffle_id, mask_max_subgroup_size);
                 builtin->SetArg(1, clamp_via_masking_and->Result());
             });
         }
@@ -1370,12 +1413,12 @@ struct State {
             if (sm_ty->Type()->Is<core::type::I8>()) {
                 scalar = b.CallExplicit<spirv::ir::BuiltinCall>(
                               ty.i8(), spirv::BuiltinFn::kSConvert, Vector{ty.i8()},
-                              b.Call(ty.i32(), core::BuiltinFn::kClamp, scalar, -128_i, 127_i))
+                              b.Clamp(scalar, -128_i, 127_i))
                              ->Result();
             } else if (sm_ty->Type()->Is<core::type::U8>()) {
                 scalar = b.CallExplicit<spirv::ir::BuiltinCall>(
                               ty.u8(), spirv::BuiltinFn::kUConvert, Vector{ty.u8()},
-                              b.Call(ty.u32(), core::BuiltinFn::kClamp, scalar, 0_u, 255_u))
+                              b.Clamp(scalar, 0_u, 255_u))
                              ->Result();
             }
 
@@ -1389,15 +1432,12 @@ struct State {
 }  // namespace
 
 Result<SuccessType> BuiltinPolyfill(core::ir::Module& ir, PolyfillConfig config) {
-    auto result = ValidateAndDumpIfNeeded(ir, "spirv.BuiltinPolyfill",
-                                          core::ir::Capabilities{
-                                              core::ir::Capability::kAllow8BitIntegers,
-                                              core::ir::Capability::kAllowDuplicateBindings,
-                                              core::ir::Capability::kAllowNonCoreTypes,
-                                          });
-    if (result != Success) {
-        return result.Failure();
-    }
+    TINT_CHECK_RESULT(ValidateAndDumpIfNeeded(ir, "spirv.BuiltinPolyfill",
+                                              core::ir::Capabilities{
+                                                  core::ir::Capability::kAllow8BitIntegers,
+                                                  core::ir::Capability::kAllowDuplicateBindings,
+                                                  core::ir::Capability::kAllowNonCoreTypes,
+                                              }));
 
     State{ir, config}.Process();
 

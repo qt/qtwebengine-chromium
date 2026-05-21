@@ -356,9 +356,6 @@ void Renderer::ensureCapsInitialized() const
         mNativeLimitations.emulatedAstc = true;
     }
 
-    // Vulkan doesn't support ASTC 3D block textures, which are required by
-    // GL_OES_texture_compression_astc.
-    mNativeExtensions.textureCompressionAstcOES = false;
     // Enable KHR_texture_compression_astc_sliced_3d
     mNativeExtensions.textureCompressionAstcSliced3dKHR =
         mNativeExtensions.textureCompressionAstcLdrKHR &&
@@ -367,6 +364,11 @@ void Renderer::ensureCapsInitialized() const
     // Enable KHR_texture_compression_astc_hdr
     mNativeExtensions.textureCompressionAstcHdrKHR =
         mNativeExtensions.textureCompressionAstcLdrKHR && supportsAstcHdr();
+
+    // Enable GL_OES_texture_compression_astc
+    mNativeExtensions.textureCompressionAstcOES = getFeatures().supportsAstc3d.enabled &&
+                                                  mNativeExtensions.textureCompressionAstcHdrKHR &&
+                                                  mNativeExtensions.textureCompressionAstcLdrKHR;
 
     // Enable EXT_compressed_ETC1_RGB8_sub_texture
     mNativeExtensions.compressedETC1RGB8SubTextureEXT =
@@ -423,7 +425,7 @@ void Renderer::ensureCapsInitialized() const
     mNativeLimitations.multidrawEmulated   = false;
 
     // Enable EXT_base_instance
-    mNativeExtensions.baseInstanceEXT       = true;
+    mNativeExtensions.baseInstanceEXT = true;
 
     // Enable ANGLE_base_vertex_base_instance
     mNativeExtensions.baseVertexBaseInstanceANGLE              = true;
@@ -542,8 +544,14 @@ void Renderer::ensureCapsInitialized() const
         vk::GetTextureSRGBOverrideSupport(this, mNativeExtensions);
     mNativeExtensions.textureSRGBDecodeEXT = vk::GetTextureSRGBDecodeSupport(this);
 
-    // EXT_srgb_write_control requires image_format_list
-    mNativeExtensions.sRGBWriteControlEXT = getFeatures().supportsImageFormatList.enabled;
+    // Enable EXT_srgb_write_control if either of these conditions are met -
+    // - VK_KHR_swapchain_mutable_format is supported
+    // - VK_KHR_image_format_list is supported and exposeNonConformantExtensionsAndVersions is
+    // enabled
+    mNativeExtensions.sRGBWriteControlEXT =
+        getFeatures().supportsSwapchainMutableFormat.enabled ||
+        (getFeatures().supportsImageFormatList.enabled &&
+         getFeatures().exposeNonConformantExtensionsAndVersions.enabled);
 
     // Vulkan natively supports io interface block.
     mNativeExtensions.shaderIoBlocksOES = true;
@@ -1435,6 +1443,8 @@ void Renderer::ensureCapsInitialized() const
                 mNativePLSOptions.fragmentSyncType = ShFragmentSynchronizationType::NotSupported;
             }
         }
+
+        mNativePLSOptions.supportsNoncoherent = true;
     }
 
     // If framebuffer fetch is to be enabled/used, cap maxColorAttachments/maxDrawBuffers to

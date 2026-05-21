@@ -140,7 +140,7 @@ FcExprCreateString (FcConfig *config, const FcChar8 *s)
     FcExpr *e = FcConfigAllocExpr (config);
     if (e) {
 	e->op = FcOpString;
-	e->u.sval = FcStrdup (s);
+	e->u.sval = FcStrCopy (s);
     }
     return e;
 }
@@ -250,7 +250,7 @@ FcExprCreateConst (FcConfig *config, const FcChar8 *constant)
     FcExpr *e = FcConfigAllocExpr (config);
     if (e) {
 	e->op = FcOpConst;
-	e->u.constant = FcStrdup (constant);
+	e->u.constant = FcStrCopy (constant);
     }
     return e;
 }
@@ -1381,7 +1381,7 @@ _get_real_paths_from_prefix (FcConfigParse *parse, const FcChar8 *path, const Fc
 	retval = FcStrBuildFilename (parent, path, NULL);
 	FcStrFree (parent);
     } else {
-	retval = FcStrdup (path);
+	retval = FcStrCopy (path);
     }
     if (!e)
 	e = FcStrSetCreate();
@@ -2749,7 +2749,7 @@ FcPopValue (FcConfigParse *parse)
 
     switch ((int)vstack->tag) {
     case FcVStackString:
-	value.u.s = FcStrdup (vstack->u.string);
+	value.u.s = FcStrCopy (vstack->u.string);
 	if (value.u.s)
 	    value.type = FcTypeString;
 	break;

@@ -145,6 +145,9 @@ sharing_message::MessageType SharingPayloadCaseToMessageType(
     case components_sharing_message::SharingMessage::
         kOptimizationGuidePushNotification:
       return sharing_message::OPTIMIZATION_GUIDE_PUSH_NOTIFICATION;
+    case components_sharing_message::SharingMessage::
+        kOneTimeTokenBackendTickle:
+      return sharing_message::ONE_TIME_TOKEN_BACKEND_TICKLE;
   }
   // For proto3 enums unrecognized enum values are kept when parsing, and a new
   // payload case received over the network would not default to
@@ -160,6 +163,8 @@ sharing_message::MessageType SharingPayloadCaseToMessageType(
       return sharing_message::UNKNOWN_MESSAGE;
     case sync_pb::UnencryptedSharingMessage::kSendTabMessage:
       return sharing_message::SEND_TAB_TO_SELF_PUSH_NOTIFICATION;
+    case sync_pb::UnencryptedSharingMessage::kDesktopToMobilePromoMessage:
+      return sharing_message::DESKTOP_TO_MOBILE_PROMO_PUSH_NOTIFICATION;
   }
   // For proto3 enums unrecognized enum values are kept when parsing, and a new
   // payload case received over the network would not default to

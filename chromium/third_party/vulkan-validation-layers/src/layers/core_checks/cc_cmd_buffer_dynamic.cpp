@@ -1,7 +1,7 @@
-/* Copyright (c) 2015-2025 The Khronos Group Inc.
- * Copyright (c) 2015-2025 Valve Corporation
- * Copyright (c) 2015-2025 LunarG, Inc.
- * Copyright (C) 2015-2025 Google Inc.
+/* Copyright (c) 2015-2026 The Khronos Group Inc.
+ * Copyright (c) 2015-2026 Valve Corporation
+ * Copyright (c) 2015-2026 LunarG, Inc.
+ * Copyright (C) 2015-2026 Google Inc.
  * Modifications Copyright (C) 2020-2022 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,6 +20,7 @@
 #include <vulkan/vk_enum_string_helper.h>
 #include <vulkan/utility/vk_format_utils.h>
 #include <vulkan/vulkan_core.h>
+#include <cstdint>
 #include "core_checks/cc_state_tracker.h"
 #include "core_validation.h"
 #include "drawdispatch/drawdispatch_vuids.h"
@@ -37,6 +38,7 @@
 #include "state_tracker/pipeline_state.h"
 #include "utils/math_utils.h"
 #include "utils/vk_api_utils.h"
+#include "containers/container_utils.h"
 
 bool CoreChecks::ValidateDynamicStateIsSet(const LastBound& last_bound_state, const CBDynamicFlags& state_status_cb,
                                            CBDynamicState dynamic_state, const vvl::DrawDispatchVuid& vuid) const {
@@ -607,8 +609,8 @@ bool CoreChecks::ValidateDrawDynamicStatePipelineValue(const LastBound& last_bou
             DispatchGetPhysicalDeviceMultisamplePropertiesEXT(physical_device, cb_state.dynamic_state_value.rasterization_samples,
                                                               &multisample_prop);
 
-            if (SafeModulo(multisample_prop.maxSampleLocationGridSize.width,
-                           sample_locations->sampleLocationsInfo.sampleLocationGridSize.width) != 0) {
+            if (!IsIntegerMultipleOf(multisample_prop.maxSampleLocationGridSize.width,
+                                     sample_locations->sampleLocationsInfo.sampleLocationGridSize.width)) {
                 skip |= LogError(vuid.sample_locations_enable_07936, objlist, vuid.loc(),
                                  "VkMultisamplePropertiesEXT::maxSampleLocationGridSize.width (%" PRIu32
                                  ") with rasterization samples %s is not evenly divided by "
@@ -617,8 +619,8 @@ bool CoreChecks::ValidateDrawDynamicStatePipelineValue(const LastBound& last_bou
                                  string_VkSampleCountFlagBits(cb_state.dynamic_state_value.rasterization_samples),
                                  sample_locations->sampleLocationsInfo.sampleLocationGridSize.width);
             }
-            if (SafeModulo(multisample_prop.maxSampleLocationGridSize.height,
-                           sample_locations->sampleLocationsInfo.sampleLocationGridSize.height) != 0) {
+            if (!IsIntegerMultipleOf(multisample_prop.maxSampleLocationGridSize.height,
+                                     sample_locations->sampleLocationsInfo.sampleLocationGridSize.height)) {
                 skip |= LogError(vuid.sample_locations_enable_07937, objlist, vuid.loc(),
                                  "VkMultisamplePropertiesEXT::maxSampleLocationGridSize.height (%" PRIu32
                                  ") with rasterization samples %s is not evenly divided by "
@@ -782,7 +784,7 @@ bool CoreChecks::ValidateDrawDynamicStatePipelineViewportScissor(const LastBound
     }
 
     // If inheriting viewports, verify that not using more than inherited.
-    if (cb_sub_state.viewport.inherited_depths.size() != 0 && dyn_viewport) {
+    if (!cb_sub_state.viewport.inherited_depths.empty() && dyn_viewport) {
         const uint32_t viewport_count = viewport_state->viewportCount;
         const uint32_t max_inherited = uint32_t(cb_sub_state.viewport.inherited_depths.size());
         if (viewport_count > max_inherited) {
@@ -912,9 +914,10 @@ bool CoreChecks::ValidateDrawDynamicStateVertex(const LastBound& last_bound_stat
                 const uint32_t var_base_type_id = variable_ptr->base_type.ResultId();
                 const uint32_t attribute_type = spirv::GetFormatType(attrib->desc.format);
                 const uint32_t var_numeric_type = vert_spirv_state->GetNumericType(var_base_type_id);
+                const spirv::Instruction* var_base_type = vert_spirv_state->FindDef(var_base_type_id);
 
                 const bool attribute64 = vkuFormatIs64bit(attrib->desc.format);
-                const bool shader64 = vert_spirv_state->GetBaseTypeInstruction(var_base_type_id)->GetBitWidth() == 64;
+                const bool shader64 = vert_spirv_state->GetBaseTypeInstruction(var_base_type)->GetBitWidth() == 64;
 
                 // first type check before doing 64-bit matching
                 if ((attribute_type & var_numeric_type) == 0) {
@@ -974,7 +977,7 @@ bool CoreChecks::ValidateDrawDynamicStateVertex(const LastBound& last_bound_stat
 
         if (((bound_stages & (VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT | VK_SHADER_STAGE_GEOMETRY_BIT)) == 0) &&
             topology == VK_PRIMITIVE_TOPOLOGY_POINT_LIST) {
-            if (!vert_entrypoint->written_builtin_point_size && !enabled_features.maintenance5) {
+            if (!vert_entrypoint->written_built_in_point_size && !enabled_features.maintenance5) {
                 skip |= LogError(vuid.primitive_topology_point_size_10748, cb_state.Handle(), vuid.loc(),
                                  "The bound vertex shader (%s) has a PointSize that is not written to, but the bound topology "
                                  "is set to VK_PRIMITIVE_TOPOLOGY_POINT_LIST.",
@@ -1026,7 +1029,7 @@ bool CoreChecks::ValidateDrawDynamicStateFragment(const LastBound& last_bound_st
                 VkMultisamplePropertiesEXT multisample_prop = vku::InitStructHelper();
                 DispatchGetPhysicalDeviceMultisamplePropertiesEXT(physical_device, rasterization_samples, &multisample_prop);
                 const auto& gridSize = cb_state.dynamic_state_value.sample_locations_info.sampleLocationGridSize;
-                if (SafeModulo(multisample_prop.maxSampleLocationGridSize.width, gridSize.width) != 0) {
+                if (!IsIntegerMultipleOf(multisample_prop.maxSampleLocationGridSize.width, gridSize.width)) {
                     const LogObjectList objlist(cb_state.Handle(), frag_spirv_state->handle());
                     skip |= LogError(vuid.sample_locations_enable_07485, objlist, vuid.loc(),
                                      "VkMultisamplePropertiesEXT::maxSampleLocationGridSize.width (%" PRIu32
@@ -1036,7 +1039,7 @@ bool CoreChecks::ValidateDrawDynamicStateFragment(const LastBound& last_bound_st
                                      multisample_prop.maxSampleLocationGridSize.width,
                                      string_VkSampleCountFlagBits(rasterization_samples), gridSize.width);
                 }
-                if (SafeModulo(multisample_prop.maxSampleLocationGridSize.height, gridSize.height) != 0) {
+                if (!IsIntegerMultipleOf(multisample_prop.maxSampleLocationGridSize.height, gridSize.height)) {
                     const LogObjectList objlist(cb_state.Handle(), frag_spirv_state->handle());
                     skip |= LogError(vuid.sample_locations_enable_07486, objlist, vuid.loc(),
                                      "VkMultisamplePropertiesEXT::maxSampleLocationGridSize.height (%" PRIu32
@@ -1285,6 +1288,27 @@ bool CoreChecks::ValidateDrawDynamicStateValue(const LastBound& last_bound_state
         }
     }
 
+    if (enabled_features.multiviewPerViewViewports) {
+        const uint32_t view_mask = cb_state.GetViewMask();
+        if (view_mask != 0) {
+            const uint32_t msb = (uint32_t)MostSignificantBit(view_mask);
+            if (last_bound_state.IsDynamic(CB_DYNAMIC_STATE_VIEWPORT_WITH_COUNT) &&
+                msb >= cb_state.dynamic_state_value.viewport_count) {
+                skip |= LogError(vuid.viewport_multiview_12262, cb_state.Handle(), vuid.loc(),
+                                 "The current viewMask (0x%" PRIx32 ") most significant bit index (%" PRIu32
+                                 ") is not less than viewportCount (%" PRIu32 ") set with vkCmdSetViewportWithCount",
+                                 view_mask, msb, cb_state.dynamic_state_value.viewport_count);
+            }
+            if (last_bound_state.IsDynamic(CB_DYNAMIC_STATE_SCISSOR_WITH_COUNT) &&
+                msb >= cb_state.dynamic_state_value.scissor_count) {
+                skip |= LogError(vuid.scissor_multiview_12263, cb_state.Handle(), vuid.loc(),
+                                 "The current viewMask (0x%" PRIx32 ") most significant bit index (%" PRIu32
+                                 ") is not less than scissorCount (%" PRIu32 ") set with vkCmdSetScissorWithCount",
+                                 view_mask, msb, cb_state.dynamic_state_value.scissor_count);
+            }
+        }
+    }
+
     return skip;
 }
 
@@ -1317,7 +1341,7 @@ bool CoreChecks::ValidateDrawRenderingAttachmentLocation(const vvl::CommandBuffe
         uint32_t pipeline_color_location = pipeline_color_locations ? pipeline_color_locations[i] : i;
         if (pipeline_color_location != cb_state.rendering_attachments.color_locations[i]) {
             const LogObjectList objlist(cb_state.Handle(), pipeline_state.Handle());
-            std::stringstream ss;
+            std::ostringstream ss;
             ss << "The pipeline VkRenderingAttachmentLocationInfo::pColorAttachmentLocations[" << i << "] is "
                << pipeline_color_location;
             if (!explicit_pipeline) {
@@ -1372,7 +1396,7 @@ bool CoreChecks::ValidateDrawRenderingInputAttachmentIndex(const vvl::CommandBuf
         uint32_t pipeline_color_index = pipeline_color_indexes ? pipeline_color_indexes[i] : i;
         if (pipeline_color_index != cb_state.rendering_attachments.color_indexes[i]) {
             const LogObjectList objlist(cb_state.Handle(), pipeline_state.Handle());
-            std::stringstream ss;
+            std::ostringstream ss;
             ss << "The pipeline VkRenderingInputAttachmentIndexInfo::pColorAttachmentInputIndices[" << i << "] is "
                << pipeline_color_index;
             if (!explicit_pipeline) {
@@ -1391,7 +1415,7 @@ bool CoreChecks::ValidateDrawRenderingInputAttachmentIndex(const vvl::CommandBuf
 
     if (!EqualValuesOrBothNull(pipeline_depth_index, cb_state.rendering_attachments.depth_index)) {
         const LogObjectList objlist(cb_state.Handle(), pipeline_state.Handle());
-        std::stringstream ss;
+        std::ostringstream ss;
         ss << "The pipeline VkRenderingInputAttachmentIndexInfo::pDepthInputAttachmentIndex is "
            << string_AttachmentPointer(pipeline_depth_index);
         if (!explicit_pipeline) {
@@ -1408,7 +1432,7 @@ bool CoreChecks::ValidateDrawRenderingInputAttachmentIndex(const vvl::CommandBuf
 
     if (!EqualValuesOrBothNull(pipeline_stencil_index, cb_state.rendering_attachments.stencil_index)) {
         const LogObjectList objlist(cb_state.Handle(), pipeline_state.Handle());
-        std::stringstream ss;
+        std::ostringstream ss;
         ss << "The pipeline VkRenderingInputAttachmentIndexInfo::pStencilInputAttachmentIndex is "
            << string_AttachmentPointer(pipeline_stencil_index);
         if (!explicit_pipeline) {
@@ -1455,7 +1479,7 @@ bool CoreChecks::ValidateTraceRaysDynamicStateSetStatus(const LastBound& last_bo
 bool CoreChecks::ForbidInheritedViewportScissor(const vvl::CommandBuffer& cb_state, const char* vuid, const Location& loc) const {
     bool skip = false;
     auto& cb_sub_state = core::SubState(cb_state);
-    if (cb_sub_state.viewport.inherited_depths.size() != 0) {
+    if (!cb_sub_state.viewport.inherited_depths.empty()) {
         skip |= LogError(vuid, cb_state.Handle(), loc,
                          "commandBuffer must not have VkCommandBufferInheritanceViewportScissorInfoNV::viewportScissor2D enabled.");
     }

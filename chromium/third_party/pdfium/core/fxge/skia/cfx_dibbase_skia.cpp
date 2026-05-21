@@ -137,7 +137,7 @@ void ValidateScanlineSize(pdfium::span<const uint8_t> scanline,
 // Creates an `SkImage` from a `CFX_DIBBase`, transforming the source pixels
 // using `pixel_transform`.
 //
-// TODO(crbug.com/pdfium/2048): Consolidate with `CFX_DIBBase::ConvertBuffer()`.
+// TODO(crbug.com/42271060): Consolidate with `CFX_DIBBase::ConvertBuffer()`.
 template <size_t source_bits_per_pixel, typename PixelTransform>
 sk_sp<SkImage> CreateSkiaImageFromTransformedDib(
     const CFX_DIBBase& source,

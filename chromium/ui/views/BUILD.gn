@@ -41,6 +41,7 @@ aggregate_vector_icons("views_vector_icons") {
     "launch.icon",
     "linux_high_density.icon",
     "linux_low_density.icon",
+    "menu.icon",
     "menu_check.icon",
     "menu_close.icon",
     "menu_open.icon",
@@ -89,6 +90,7 @@ component("views") {
     "accessibility/ax_virtual_view.h",
     "accessibility/tree/view_accessibility_ax_tree_source.h",
     "accessibility/tree/widget_ax_manager.h",
+    "accessibility/tree/widget_ax_manager_observer.h",
     "accessibility/tree/widget_view_ax_cache.h",
     "accessibility/view_accessibility.h",
     "accessibility/view_accessibility_utils.h",
@@ -242,6 +244,7 @@ component("views") {
     "focus/native_view_focus_manager.h",
     "input_event_activation_protector.h",
     "interaction/element_tracker_views.h",
+    "interaction/element_tracker_widget_state.h",
     "interaction/interaction_sequence_views.h",
     "layout/animating_layout_manager.h",
     "layout/box_layout.h",
@@ -270,6 +273,7 @@ component("views") {
     "native_theme_delegate.h",
     "paint_info.h",
     "painter.h",
+    "property_effects.h",
     "rect_based_targeting_utils.h",
     "repeat_controller.h",
     "round_rect_painter.h",
@@ -477,6 +481,7 @@ component("views") {
     "focus/native_view_focus_manager.cc",
     "input_event_activation_protector.cc",
     "interaction/element_tracker_views.cc",
+    "interaction/element_tracker_widget_state.cc",
     "interaction/interaction_sequence_views.cc",
     "layout/animating_layout_manager.cc",
     "layout/box_layout.cc",
@@ -588,7 +593,7 @@ component("views") {
     "//ui/color:mixers",
     "//ui/compositor_extra",
     "//ui/display",
-    "//ui/gfx:native_widget_types",
+    "//ui/gfx:native_ui_types",
     "//ui/latency",
     "//ui/lottie",
     "//ui/native_theme",
@@ -786,7 +791,6 @@ component("views") {
       "accessibility/ax_virtual_view_wrapper.h",
       "accessibility/ax_widget_obj_wrapper.h",
       "accessibility/ax_window_obj_wrapper.h",
-      "accessibility/tree/browser_views_ax_manager.h",
       "accessibility/tree/views_ax_manager.h",
       "controls/native/native_view_host_aura.h",
       "corewm/tooltip.h",
@@ -815,7 +819,6 @@ component("views") {
       "accessibility/ax_virtual_view_wrapper.cc",
       "accessibility/ax_widget_obj_wrapper.cc",
       "accessibility/ax_window_obj_wrapper.cc",
-      "accessibility/tree/browser_views_ax_manager.cc",
       "accessibility/tree/views_ax_manager.cc",
       "controls/menu/menu_pre_target_handler_aura.cc",
       "controls/menu/menu_pre_target_handler_aura.h",
@@ -1002,6 +1005,7 @@ source_set("test_support") {
   testonly = true
   sources = [
     "accessibility/tree/view_accessibility_ax_tree_source_test_api.h",
+    "accessibility/tree/widget_ax_manager_test_api.cc",
     "accessibility/tree/widget_ax_manager_test_api.h",
     "animation/test/flood_fill_ink_drop_ripple_test_api.cc",
     "animation/test/flood_fill_ink_drop_ripple_test_api.h",
@@ -1303,6 +1307,7 @@ test("views_unittests") {
     "focus/focus_manager_unittest.cc",
     "focus/focus_traversal_unittest.cc",
     "interaction/element_tracker_views_unittest.cc",
+    "interaction/element_tracker_widget_state_unittest.cc",
     "interaction/interaction_sequence_views_unittest.cc",
     "interaction/interaction_test_util_views_unittest.cc",
     "interaction/interactive_views_test_unittest.cc",
@@ -1446,7 +1451,6 @@ test("views_unittests") {
       "accessibility/atomic_view_ax_tree_manager_unittest.cc",
       "accessibility/ax_virtual_view_unittest.cc",
       "accessibility/tree/view_accessibility_ax_tree_source_unittest.cc",
-      "accessibility/tree/widget_ax_manager_test_api.cc",
       "accessibility/tree/widget_ax_manager_unittest.cc",
       "accessibility/tree/widget_view_ax_cache_unittest.cc",
       "accessibility/view_accessibility_unittest.cc",
@@ -1531,10 +1535,6 @@ test("views_unittests") {
 
     if (enable_desktop_aura || is_chromeos) {
       sources += [ "touchui/touch_selection_menu_runner_views_unittest.cc" ]
-    }
-
-    if (!is_chromeos) {
-      sources += [ "accessibility/tree/browser_views_ax_manager_unittest.cc" ]
     }
 
     if (enable_desktop_aura) {

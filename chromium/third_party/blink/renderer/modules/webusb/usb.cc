@@ -52,12 +52,11 @@ void RejectWithTypeError(const String& error_details,
 UsbDeviceFilterPtr ConvertDeviceFilter(const USBDeviceFilter* filter,
                                        ScriptPromiseResolverBase* resolver) {
   auto mojo_filter = device::mojom::blink::UsbDeviceFilter::New();
-  mojo_filter->has_vendor_id = filter->hasVendorId();
-  if (mojo_filter->has_vendor_id)
+  if (filter->hasVendorId()) {
     mojo_filter->vendor_id = filter->vendorId();
-  mojo_filter->has_product_id = filter->hasProductId();
-  if (mojo_filter->has_product_id) {
-    if (!mojo_filter->has_vendor_id) {
+  }
+  if (filter->hasProductId()) {
+    if (!mojo_filter->vendor_id.has_value()) {
       RejectWithTypeError(
           "A filter containing a productId must also contain a vendorId.",
           resolver);
@@ -65,12 +64,11 @@ UsbDeviceFilterPtr ConvertDeviceFilter(const USBDeviceFilter* filter,
     }
     mojo_filter->product_id = filter->productId();
   }
-  mojo_filter->has_class_code = filter->hasClassCode();
-  if (mojo_filter->has_class_code)
+  if (filter->hasClassCode()) {
     mojo_filter->class_code = filter->classCode();
-  mojo_filter->has_subclass_code = filter->hasSubclassCode();
-  if (mojo_filter->has_subclass_code) {
-    if (!mojo_filter->has_class_code) {
+  }
+  if (filter->hasSubclassCode()) {
+    if (!mojo_filter->class_code.has_value()) {
       RejectWithTypeError(
           "A filter containing a subclassCode must also contain a classCode.",
           resolver);
@@ -78,9 +76,8 @@ UsbDeviceFilterPtr ConvertDeviceFilter(const USBDeviceFilter* filter,
     }
     mojo_filter->subclass_code = filter->subclassCode();
   }
-  mojo_filter->has_protocol_code = filter->hasProtocolCode();
-  if (mojo_filter->has_protocol_code) {
-    if (!mojo_filter->has_subclass_code) {
+  if (filter->hasProtocolCode()) {
+    if (!mojo_filter->subclass_code.has_value()) {
       RejectWithTypeError(
           "A filter containing a protocolCode must also contain a "
           "subclassCode.",
@@ -89,8 +86,9 @@ UsbDeviceFilterPtr ConvertDeviceFilter(const USBDeviceFilter* filter,
     }
     mojo_filter->protocol_code = filter->protocolCode();
   }
-  if (filter->hasSerialNumber())
+  if (filter->hasSerialNumber()) {
     mojo_filter->serial_number = filter->serialNumber();
+  }
   return mojo_filter;
 }
 
@@ -166,18 +164,20 @@ bool ShouldBlockUsbServiceCall(LocalDOMWindow* window,
 
 }  // namespace
 
+const char USB::kSupplementName[] = "USB";
+
 USB* USB::usb(NavigatorBase& navigator) {
-  USB* usb = navigator.GetUSB();
+  USB* usb = Supplement<NavigatorBase>::From<USB>(navigator);
   if (!usb) {
     usb = MakeGarbageCollected<USB>(navigator);
-    navigator.SetUSB(usb);
+    ProvideTo(navigator, usb);
   }
   return usb;
 }
 
 USB::USB(NavigatorBase& navigator)
-    : ExecutionContextLifecycleObserver(navigator.GetExecutionContext()),
-      navigator_base_(navigator),
+    : Supplement<NavigatorBase>(navigator),
+      ExecutionContextLifecycleObserver(navigator.GetExecutionContext()),
       service_(navigator.GetExecutionContext()),
       client_receiver_(this, navigator.GetExecutionContext()) {}
 
@@ -191,7 +191,7 @@ USB::~USB() {
 ScriptPromise<IDLSequence<USBDevice>> USB::getDevices(
     ScriptState* script_state,
     ExceptionState& exception_state) {
-  if (ShouldBlockUsbServiceCall(navigator_base_->DomWindow(),
+  if (ShouldBlockUsbServiceCall(GetSupplementable()->DomWindow(),
                                 GetExecutionContext(), &exception_state)) {
     return ScriptPromise<IDLSequence<USBDevice>>();
   }
@@ -218,7 +218,7 @@ ScriptPromise<USBDevice> USB::requestDevice(
     return EmptyPromise();
   }
 
-  if (ShouldBlockUsbServiceCall(navigator_base_->DomWindow(),
+  if (ShouldBlockUsbServiceCall(GetSupplementable()->DomWindow(),
                                 GetExecutionContext(), &exception_state)) {
     return EmptyPromise();
   }
@@ -385,7 +385,7 @@ void USB::AddedEventListener(const AtomicString& event_type,
   }
 
   auto* context = GetExecutionContext();
-  if (ShouldBlockUsbServiceCall(navigator_base_->DomWindow(), context,
+  if (ShouldBlockUsbServiceCall(GetSupplementable()->DomWindow(), context,
                                 nullptr)) {
     return;
   }
@@ -441,7 +441,7 @@ void USB::Trace(Visitor* visitor) const {
   visitor->Trace(client_receiver_);
   visitor->Trace(device_cache_);
   EventTarget::Trace(visitor);
-  visitor->Trace(navigator_base_);
+  Supplement<NavigatorBase>::Trace(visitor);
   ExecutionContextLifecycleObserver::Trace(visitor);
 }
 

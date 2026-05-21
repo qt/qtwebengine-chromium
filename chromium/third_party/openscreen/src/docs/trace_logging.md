@@ -15,7 +15,11 @@ when calling `gn gen` as part of building this library.
 ## Imports
 
 To use TraceLogging, import the following header file:
-  * *util/trace_logging.h*
+
+```c++
+#include "util/trace_logging.h"
+```
+
 This file will import all other Trace Logging dependencies.
 
 ## Trace IDs
@@ -44,7 +48,8 @@ Associating a Trace ID has the following benefits:
     current Trace was called.
 
 As an example:
-``` cpp
+
+``` c++
     public void DoThings() {
       TRACE_SCOPED(category, "outside");
       {
@@ -81,120 +86,201 @@ For asynchronous calls, the result must be set as part of the `TRACE_ASYNC_END`
 call. As with scoped traces, the result must be some Error::Code enum value.
 
 ## Tracing Functions
+
 All of the below functions rely on the Platform Layer's IsTraceLoggingEnabled()
 function. When logging is disabled, either for the specific category of trace
 logging which the Macro specifies or for TraceCategory::Any in all other cases,
 the below functions will be treated as a NoOp.
 
 ### Synchronous Tracing
-  ```c++
-  TRACE_SCOPED(category, name)
-  TRACE_SCOPED(category, name, traceId, parentId, rootId)
-  TRACE_SCOPED(category, name, traceIdHierarchy)
-  ```
-  If logging is enabled for the provided |category|, trace the current scope. The scope
-  should encompass the operation described by |name|. The latter two uses of this macro are
-  for manually providing the trace ID hierarchy; the first auto-generates a new trace ID for
-  this scope and sets its parent trace ID to that of the encompassing scope (if any).
 
-  ```c++
-  TRACE_DEFAULT_SCOPED(category)
-  TRACE_DEFAULT_SCOPED(category, traceId, parentId, rootId)
-  TRACE_DEFAULT_SCOPED(category, traceIdHierarchy)
-  ```
-  Same as `TRACE_SCOPED()`, but use the current function/method signature as the operation
-  name.
+#### Tracing the Current Scope
 
-  Both synchronous and asynchronous tracing can also be done with either one or two arguments provided
-  as strings.
+```c++
+TRACE_SCOPED(category, name)
+TRACE_SCOPED(category, name, traceId, parentId, rootId)
+TRACE_SCOPED(category, name, traceIdHierarchy)
+```
 
-  ```c++
-  TRACE_SCOPED1(category, name, argname, argval)
-  TRACE_SCOPED1(category, name, argname, argval, traceId, parentId, rootId)
-  TRACE_SCOPED1(category, name, argname, argval, traceIdHierarchy)
-  TRACE_DEFAULT_SCOPED1(category, argname, argval)
-  TRACE_DEFAULT_SCOPED1(category, argname, argval, traceId, parentId, rootId)
-  TRACE_DEFAULT_SCOPED1(category, argname, argval, traceIdHierarchy)
+If logging is enabled for the provided |category|, trace the current scope. The scope
+should encompass the operation described by |name|. The latter two uses of this macro are
+for manually providing the trace ID hierarchy; the first auto-generates a new trace ID for
+this scope and sets its parent trace ID to that of the encompassing scope (if any).
 
-  TRACE_SCOPED2(category, name, argname, argval, argname_two, argval_two)
-  TRACE_SCOPED2(category, name, argname, argval, argname_two, argval_two, traceId, parentId, rootId)
-  TRACE_SCOPED2(category, name, argname, argval, argname_two, argval_two, traceIdHierarchy)
-  TRACE_DEFAULT_SCOPED2(category, argname, argval, argname_two, argval_two)
-  TRACE_DEFAULT_SCOPED2(category, argname, argval, argname_two, argval_two, traceId, parentId, rootId)
-  TRACE_DEFAULT_SCOPED2(category, argname, argval, argname_two, argval_two, traceIdHierarchy)
-  ```
+#### Tracing the Current Scope (with default signatures)
+
+```c++
+TRACE_DEFAULT_SCOPED(category)
+TRACE_DEFAULT_SCOPED(category, traceId, parentId, rootId)
+TRACE_DEFAULT_SCOPED(category, traceIdHierarchy)
+```
+
+Same as `TRACE_SCOPED()`, but use the current function/method signature as the operation
+name.
+
+#### Tracing with Arguments
+
+Both synchronous and asynchronous tracing can also be done with either one or two arguments provided
+as strings.
+
+```c++
+TRACE_SCOPED1(category, name, argname, argval)
+TRACE_SCOPED1(category, name, argname, argval, traceId, parentId, rootId)
+TRACE_SCOPED1(category, name, argname, argval, traceIdHierarchy)
+TRACE_DEFAULT_SCOPED1(category, argname, argval)
+TRACE_DEFAULT_SCOPED1(category, argname, argval, traceId, parentId, rootId)
+TRACE_DEFAULT_SCOPED1(category, argname, argval, traceIdHierarchy)
+
+TRACE_SCOPED2(category, name, argname, argval, argname_two, argval_two)
+TRACE_SCOPED2(category, name, argname, argval, argname_two, argval_two, traceId, parentId, rootId)
+TRACE_SCOPED2(category, name, argname, argval, argname_two, argval_two, traceIdHierarchy)
+TRACE_DEFAULT_SCOPED2(category, argname, argval, argname_two, argval_two)
+TRACE_DEFAULT_SCOPED2(category, argname, argval, argname_two, argval_two, traceId, parentId, rootId)
+TRACE_DEFAULT_SCOPED2(category, argname, argval, argname_two, argval_two, traceIdHierarchy)
+```
 
 ### Asynchronous Tracing
-  ```c++
-  TRACE_ASYNC_START(category, name)
-  TRACE_ASYNC_START1(category, name, argname, argval)
-  TRACE_ASYNC_START2(category, name, argname, argval, argname_two, argval_two)
-  ```
-  If logging is enabled for the provided category, these functions will initiate
-  a new asynchronous function trace with name as provided. It will not end
-  until `TRACE_ASYNC_END` is called with the same Trace ID generated for this
-  async trace. When these calls are used, the Trace ID Hierarchy will be
-  determined automatically and the caller does not need to worry about it and,
-  as such, **these calls should be used in the majority of asynchronous tracing
-  cases**.
 
-  ```c++
-  TRACE_ASYNC_START(category, name)
-  TRACE_ASYNC_START1(category, name, argname, argval, traceId, parentId, rootId)
-  TRACE_ASYNC_START2(category, name, argname, argval, argname_two, argval_two, traceId, parentId, rootId)
-  ```
-  If logging is enabled for the provided category, these versions of the start macros
-  will initiate a new asynchronous function trace with name and full trace ID Hierarchy as
-  provided. It will not end until `TRACE_ASYNC_END` is called with the same
-  Trace ID provided for this async trace. Each of trace ID, parent ID, and
-  root ID is optional, so providing only a subset of these values is also
-  valid if the caller only desires to set specific ones.
+#### Tracing an Asynchronous Function or Task
 
-  ```c++
-  TRACE_ASYNC_START(category, name, traceIdHierarchy)
-  TRACE_ASYNC_START1(category, name, argname, argval, traceIdHierarchy)
-  TRACE_ASYNC_START2(category, name, argname, argval, argname_two, argval_two, traceIdHierarchy)
-  ```
-  This version of the start macro is intended for use in conjunction with the `TRACE_HIERARCHY` macro
-  (as described below). These versions of the start macro will initiate a new asynchronous
-  function trace with name and full Trace ID Hierarchy as provided. It will
-  not end until `TRACE_ASYNC_END` is called with the same Trace ID provided for
-  this async trace.
+```c++
+TRACE_ASYNC_START(category, name)
+TRACE_ASYNC_START1(category, name, argname, argval)
+TRACE_ASYNC_START2(category, name, argname, argval, argname_two, argval_two)
+```
 
-  ```c++
-  TRACE_ASYNC_END(category, id, result)
-  ```
-  This call will end a trace initiated by `TRACE_ASYNC_START` (as described
-  above) if logging is enabled for the associated category. The id is expected
-  to match that used by an `TRACE_ASYNC_START` call, and result is the same as
-  `TRACE_SET_RESULT`'s argument.
+If logging is enabled for the provided category, these functions will initiate
+a new asynchronous function trace with name as provided. It will not end
+until `TRACE_ASYNC_END` is called with the same Trace ID generated for this
+async trace. When these calls are used, the Trace ID Hierarchy will be
+determined automatically and the caller does not need to worry about it and,
+as such, **these calls should be used in the majority of asynchronous tracing
+cases**.
+
+#### Tracing with Explicit, Parameterized Hierarchy
+
+```c++
+TRACE_ASYNC_START(category, name)
+TRACE_ASYNC_START1(category, name, argname, argval, traceId, parentId, rootId)
+TRACE_ASYNC_START2(category, name, argname, argval, argname_two, argval_two, traceId, parentId, rootId)
+```
+
+If logging is enabled for the provided category, these versions of the start macros
+will initiate a new asynchronous function trace with name and full trace ID Hierarchy as
+provided. It will not end until `TRACE_ASYNC_END` is called with the same
+Trace ID provided for this async trace. Each of trace ID, parent ID, and
+root ID is optional, so providing only a subset of these values is also
+valid if the caller only desires to set specific ones.
+
+#### Tracing with the `TRACE_HIERARCHY` Macro
+
+```c++
+TRACE_ASYNC_START(category, name, traceIdHierarchy)
+TRACE_ASYNC_START1(category, name, argname, argval, traceIdHierarchy)
+TRACE_ASYNC_START2(category, name, argname, argval, argname_two, argval_two, traceIdHierarchy)
+```
+
+This version of the start macro is intended for use in conjunction with the `TRACE_HIERARCHY` macro
+(as described below). These versions of the start macro will initiate a new asynchronous
+function trace with name and full Trace ID Hierarchy as provided. It will
+not end until `TRACE_ASYNC_END` is called with the same Trace ID provided for
+this async trace.
+
+
+#### Ending an Asynchronous Trace
+
+```c++
+TRACE_ASYNC_END(category, id, result)
+```
+
+This call will end a trace initiated by `TRACE_ASYNC_START` (as described
+above) if logging is enabled for the associated category. The id is expected
+to match that used by an `TRACE_ASYNC_START` call, and result is the same as
+`TRACE_SET_RESULT`'s argument.
+
+### Flow Tracing
+
+Flow events are used to connect trace events across different threads, processes,
+or even machines. They share a `flow_id` which links them together visually in
+trace viewers (like Perfetto).
+
+#### Flow Macros: `TRACE_FLOW_BEGIN`, `TRACE_FLOW_STEP`, `TRACE_FLOW_END`
+
+```c++
+TRACE_FLOW_BEGIN(category, name, flow_id)
+TRACE_FLOW_STEP(category, name, flow_id)
+TRACE_FLOW_END(category, name, flow_id)
+```
+
+* `TRACE_FLOW_BEGIN`: Marks the start of a flow.
+* `TRACE_FLOW_STEP`: Marks an intermediate step in the flow.
+* `TRACE_FLOW_END`: Marks the end of the flow.
+
+The `flow_id` can be an integer, a `FrameId`, or any type that is convertible to
+`uint64_t` or has a `.value()` method returning a numeric type that is castable
+to `uint64_t`.
+
+#### Flow Tracing with Explicit Timestamps
+
+If you need to log a flow event that occurred in the past (e.g., retroactively
+tracing a capture event), use the `_WITH_TIME` variants.
+
+```c++
+TRACE_FLOW_BEGIN_WITH_TIME(category, name, flow_id, timestamp)
+TRACE_FLOW_STEP_WITH_TIME(category, name, flow_id, timestamp)
+TRACE_FLOW_END_WITH_TIME(category, name, flow_id, timestamp)
+```
+
+* `timestamp`: A `Clock::time_point` representing when the event occurred.
+
+#### Default Flow Macros
+
+```c++
+TRACE_FLOW_DEFAULT_BEGIN(category, flow_id)
+TRACE_FLOW_DEFAULT_STEP(category, flow_id)
+TRACE_FLOW_DEFAULT_END(category, flow_id)
+```
+
+These macros behave identically to the ones above but automatically use the
+current function name (`__PRETTY_FUNCTION__`) as the flow event name.
+
+For an example usage of flows for on tracking video/audio frame lifecycles, see
+[Frame Flow Tracing](../cast/docs/frame_flow_tracing.md).
 
 ### Other Tracing Macros
-  `TRACE_CURRENT_ID`
-    This macro returns the current Trace ID at this point in time.
 
-  `TRACE_ROOT_ID`
-    This macro returns the root Trace ID at this point in time.
+#### `TRACE_CURRENT_ID`
 
-  `TRACE_HIERARCHY`
-    This macro returns an instance of struct Trace ID Hierarchy containing the
-    current Trace ID Hierarchy. This is intended to be used with
-    `TRACE_SET_HIERARCHY` (described below) so that Trace ID Hierarchy can be
-    maintained when crossing thread or machine boundaries.
+This macro returns the current Trace ID at this point in time.
 
-  `TRACE_SET_HIERARCHY(ids)`
-    This macro sets the current Trace Id Hierarchy without initiating a scoped
-    trace. The set ids will cease to apply when the current scope ends. This is
-    intended to be used with `TRACE_HIERARCHY` (described above) so that Trace
-    ID Hierarchy can be maintained when crossing thread or machine boundaries.
+#### `TRACE_ROOT_ID`
 
-  `TRACE_SET_RESULT(result)`
-    Sets the current scoped trace's result to be the same as the Error::Code
-    argument provided.
+This macro returns the root Trace ID at this point in time.
+
+#### `TRACE_HIERARCHY`
+
+This macro returns an instance of struct Trace ID Hierarchy containing the
+current Trace ID Hierarchy. This is intended to be used with
+`TRACE_SET_HIERARCHY` (described below) so that Trace ID Hierarchy can be
+maintained when crossing thread or machine boundaries.
+
+#### `TRACE_SET_HIERARCHY(ids)`
+
+This macro sets the current Trace Id Hierarchy without initiating a scoped
+trace. The set ids will cease to apply when the current scope ends. This is
+intended to be used with `TRACE_HIERARCHY` (described above) so that Trace
+ID Hierarchy can be maintained when crossing thread or machine boundaries.
+
+#### `TRACE_SET_RESULT(result)`
+
+Sets the current scoped trace's result to be the same as the Error::Code
+argument provided.
 
 ### Example Code
+
 Synchronous Tracing:
-``` cpp
+
+``` c++
     public void DoThings(int important_value) {
       TRACE_SCOPED(category, "DoThings", "important_value", important_value);
 
@@ -210,7 +296,8 @@ This approach allows for asynchronous tracing when the function being traced can
 be associated with a known Trace ID. For instance, a packet ID, a request ID, or
 another ID which will live for the duration of the trace but will not need to be
 passed around separately.
-``` cpp
+
+``` c++
     public void DoThingsStart() {
       TRACE_ASYNC_START(category, "DoThings", kKnownId);
     }
@@ -223,7 +310,8 @@ passed around separately.
 Asynchronous tracing with unknown Trace ID (not recommended):
 This approach allows for asynchronous tracing even when no existing ID can be
 associated with the trace.
-``` cpp
+
+``` c++
     public TraceId DoThingsStart() {
       TRACE_ASYNC_START(category, "DoThings");
       return TRACE_CURRENT_ID;
@@ -235,16 +323,19 @@ associated with the trace.
 ```
 
 ## File Division
+
 The code for Trace Logging is divided up as follows:
-  * *util/trace_logging.h*: the macros Open Screen library code is expected to
+
+* *util/trace_logging.h*: the macros Open Screen library code is expected to
       use to log trace events.
-  * *platform/base/trace_logging_types.h*: the types/enums used in the platform
+* *platform/base/trace_logging_types.h*: the types/enums used in the platform
       API as well as internal library code.
-  * *util/trace_logging/*: the internal infrastructure backing the macros in
+* *util/trace_logging/*: the internal infrastructure backing the macros in
       *trace_logging.h*, and connecting it to the platform API.
-  * *platform/api/trace_logging_platform.h*: the platform implementation that is
+* *platform/api/trace_logging_platform.h*: the platform implementation that is
       used as the trace logging destination while tracing is active.
-This information is intended to be only eplanatory for embedders - only the one
+
+This information is intended to be only explanatory for embedders - only the one
 file mentioned above in Imports must be imported.
 
 ## Embedder-Specific Tracing Implementations

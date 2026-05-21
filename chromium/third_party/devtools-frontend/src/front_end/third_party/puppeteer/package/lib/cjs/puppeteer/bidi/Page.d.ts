@@ -5,10 +5,13 @@
  */
 import type Protocol from 'devtools-protocol';
 import * as Bidi from 'webdriver-bidi-protocol';
+import type { BluetoothEmulation } from '../api/BluetoothEmulation.js';
+import type { WindowId } from '../api/Browser.js';
 import type { CDPSession } from '../api/CDPSession.js';
+import type { DeviceRequestPrompt } from '../api/DeviceRequestPrompt.js';
 import type { WaitForOptions } from '../api/Frame.js';
 import type { HTTPResponse } from '../api/HTTPResponse.js';
-import type { Credentials, GeolocationOptions, MediaFeature, PageEvents, ReloadOptions, WaitTimeoutOptions } from '../api/Page.js';
+import type { Credentials, GeolocationOptions, HeapSnapshotOptions, MediaFeature, PageEvents, ReloadOptions, WaitTimeoutOptions } from '../api/Page.js';
 import { Page, type NewDocumentScriptEvaluation, type ScreenshotOptions } from '../api/Page.js';
 import { Coverage } from '../cdp/Coverage.js';
 import type { NetworkConditions } from '../cdp/NetworkManager.js';
@@ -44,6 +47,9 @@ export declare class BidiPage extends Page {
     readonly coverage: Coverage;
     _client(): BidiCdpSession;
     private constructor();
+    /**
+     * @internal
+     */
     setUserAgent(userAgentOrOptions: string | {
         userAgent?: string;
         userAgentMetadata?: Protocol.Emulation.UserAgentMetadata;
@@ -54,10 +60,12 @@ export declare class BidiPage extends Page {
     browser(): BidiBrowser;
     browserContext(): BidiBrowserContext;
     mainFrame(): BidiFrame;
+    emulateFocusedPage(enabled: boolean): Promise<void>;
     resize(_params: {
         contentWidth: number;
         contentHeight: number;
     }): Promise<void>;
+    windowId(): Promise<WindowId>;
     openDevTools(): Promise<Page>;
     focusedFrame(): Promise<BidiFrame>;
     frames(): BidiFrame[];
@@ -106,7 +114,6 @@ export declare class BidiPage extends Page {
     /**
      * @internal
      */
-    _extraHTTPHeaders: Record<string, string>;
     setExtraHTTPHeaders(headers: Record<string, string>): Promise<void>;
     /**
      * @internal
@@ -121,9 +128,11 @@ export declare class BidiPage extends Page {
     deleteCookie(...cookies: DeleteCookiesRequest[]): Promise<void>;
     removeExposedFunction(name: string): Promise<void>;
     metrics(): never;
+    captureHeapSnapshot(_options: HeapSnapshotOptions): Promise<void>;
     goBack(options?: WaitForOptions): Promise<HTTPResponse | null>;
     goForward(options?: WaitForOptions): Promise<HTTPResponse | null>;
-    waitForDevicePrompt(): never;
+    waitForDevicePrompt(options?: WaitTimeoutOptions): Promise<DeviceRequestPrompt>;
+    get bluetooth(): BluetoothEmulation;
 }
 export declare function bidiToPuppeteerCookie(bidiCookie: Bidi.Network.Cookie, returnCompositePartitionKey?: boolean): Cookie;
 /**

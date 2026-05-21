@@ -8,7 +8,6 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "ynnpack/base/build_config.h"
 #ifdef YNN_ENABLE_CPUINFO
 #include "ynnpack/base/log.h"
 #include <cpuinfo.h>
@@ -69,6 +68,7 @@ uint64_t get_supported_arch_flags() {
 #endif  // YNN_ARCH_X86
 #ifdef YNN_ARCH_ARM
     if (cpuinfo_has_arm_neon()) result |= arch_flag::neon;
+    if (cpuinfo_has_arm_neon_fma()) result |= arch_flag::neonfma;
     if (cpuinfo_has_arm_neon_dot()) result |= arch_flag::neondot;
     if (cpuinfo_has_arm_neon_fp16()) result |= arch_flag::neonfp16;
     if (cpuinfo_has_arm_neon_fp16_arith()) result |= arch_flag::neonfp16arith;

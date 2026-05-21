@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/modules/credentialmanagement/identity_provider.h"
 
+#include "third_party/blink/public/common/messaging/message_port_descriptor.h"
 #include "third_party/blink/public/mojom/webid/federated_auth_request.mojom-blink.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/web_v8_value_converter.h"
@@ -242,9 +243,6 @@ ScriptPromise<IDLUndefined> IdentityProvider::resolve(
       MakeGarbageCollected<ScriptPromiseResolver<IDLUndefined>>(script_state);
   auto promise = resolver->Promise();
 
-  auto* request =
-      CredentialManagerProxy::From(script_state)->FederatedAuthRequest();
-
   std::unique_ptr<base::Value> token_base_value;
   if (RuntimeEnabledFeatures::FedCmNonStringTokenEnabled()) {
     std::unique_ptr<WebV8ValueConverter> converter =
@@ -269,8 +267,37 @@ ScriptPromise<IDLUndefined> IdentityProvider::resolve(
     token_base_value = std::make_unique<base::Value>(token_string.Utf8());
   }
 
+  ExecutionContext* context = ExecutionContext::From(script_state);
+  std::optional<KURL> redirect_to;
+  if (options->redirect()) {
+    String url_string;
+    if (!token_value.ToString(url_string)) {
+      resolver->RejectWithDOMException(DOMExceptionCode::kDataError,
+                                       "Failed to convert value to string.");
+      return promise;
+    }
+
+    redirect_to = context->CompleteURL(url_string);
+    if (!redirect_to->IsValid()) {
+      resolver->RejectWithDOMException(DOMExceptionCode::kDataError,
+                                       "Invalid redirect URL.");
+      return promise;
+    }
+  }
+
+  if (!script_state->ContextIsValid()) {
+    // This can happen if converting the `token` parameter had side effects
+    // that destroyed the document. With an invalid context, we also can't
+    // reject the promise.
+    return promise;
+  }
+
+  // There must not be JavaScript execution between getting the request pointer
+  // and using it.
+  auto* request =
+      CredentialManagerProxy::From(script_state)->FederatedAuthRequest();
   request->ResolveTokenRequest(
-      account_id, std::move(*token_base_value),
+      account_id, redirect_to, std::move(*token_base_value),
       BindOnce(&OnResolveTokenRequest, WrapPersistent(resolver)));
 
   return promise;

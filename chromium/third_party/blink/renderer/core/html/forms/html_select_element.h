@@ -27,7 +27,6 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_HTML_FORMS_HTML_SELECT_ELEMENT_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_HTML_FORMS_HTML_SELECT_ELEMENT_H_
 
-#include "base/gtest_prod_util.h"
 #include "third_party/blink/public/mojom/input/focus_type.mojom-blink-forward.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/dom/events/simulated_click_options.h"
@@ -163,14 +162,22 @@ class CORE_EXPORT HTMLSelectElement final
   const ListItems& GetListItems() const;
 
   // NearestAncestorSelectNoNesting is called with <hr>, <option>, and
-  // <optgroup> elements to determine if they have an ancestor <select> which
-  // they are associated with. An ancestor <select> will not be returned in some
-  // cases, such as nested <option>s, in order to match the logic in
-  // RecalcListItems and OptionList. This method also returns an <optgroup> if
-  // there is an <optgroup> in between the provided element and the returned
-  // <select>.
-  static std::pair<HTMLSelectElement*, HTMLOptGroupElement*>
-  AssociatedSelectAndOptgroup(const Element&);
+  // <optgroup> elements to determine if they have an ancestor <select> or
+  // <datalist> which they are associated with. An ancestor <select> will not be
+  // returned in some cases, such as nested <option>s, in order to match the
+  // logic in RecalcListItems and OptionList. This method also returns an
+  // <optgroup> if there is an <optgroup> in between the provided element and
+  // the returned <select>.
+  struct SelectOptgroupDatalist {
+    STACK_ALLOCATED();
+
+   public:
+    HTMLSelectElement* select;
+    HTMLOptGroupElement* optgroup;
+    HTMLDataListElement* datalist;
+  };
+  static SelectOptgroupDatalist AssociatedSelectAndOptgroupAndDatalist(
+      const Element&);
 
   void AccessKeyAction(SimulatedClickCreationScope creation_scope) override;
   void SelectOptionByAccessKey(HTMLOptionElement*);
@@ -212,7 +219,7 @@ class CORE_EXPORT HTMLSelectElement final
   LayoutUnit ClientPaddingRight() const;
   void SelectOptionByPopup(int list_index);
   void SelectOptionByPopup(HTMLOptionElement* option);
-  void SelectMultipleOptionsByPopup(const Vector<int>& list_indices);
+  void SelectMultipleOptions(const Vector<int>& list_indices);
   // SelectOptionFromPopoverPickerOrBaseListbox is called when an option element
   // is clicked in the following modes:
   // - When UsesPopoverPickerElement() returns true
@@ -371,6 +378,7 @@ class CORE_EXPORT HTMLSelectElement final
   bool IsEnumeratable() const override { return true; }
   bool IsInteractiveContent() const override;
   bool IsLabelable() const override { return true; }
+  FocusgroupFlags NativeArrowKeyAxes() const final;
 
   FormControlState SaveFormControlState() const override;
   void RestoreFormControlState(const FormControlState&) override;
@@ -445,23 +453,31 @@ class CORE_EXPORT HTMLSelectElement final
 
   void DidChangeIsCanvasOrInCanvasSubtree() final;
 
+  // last_on_change_option_ is the currently selected option. It provides faster
+  // access to the currently selected option than iterating through each option
+  // element to see which one is selected. When this element has the multiple
+  // attribute, last_on_change_option_ is not used.
+  Member<HTMLOptionElement> last_on_change_option_;
+  Member<HTMLOptionElement> suggested_option_;
+  Member<SelectType> select_type_;
+  Member<SelectMutationObserver> descendants_observer_;
+  TreeOrderedList<HTMLSelectedContentElement> descendant_selectedcontents_;
+  TypeAhead type_ahead_;
   // list_items_ contains HTMLOptionElement, HTMLOptGroupElement, and
   // HTMLHRElement objects.
   mutable ListItems list_items_;
-  TypeAhead type_ahead_;
-  unsigned size_;
-  Member<HTMLOptionElement> last_on_change_option_;
-  Member<HTMLOptionElement> suggested_option_;
-  TreeOrderedList<HTMLSelectedContentElement> descendant_selectedcontents_;
-  bool uses_menu_list_ = true;
-  bool is_multiple_;
-  mutable bool should_recalc_list_items_;
-
-  Member<SelectType> select_type_;
-  int index_to_select_on_cancel_;
-
-  Member<SelectMutationObserver> descendants_observer_;
+  // size_ is the display size of the select element which is generated from the
+  // size attribute on this element.
+  unsigned size_ = 0;
+  // content_model_violations_count_ is incremented every time a descendant node
+  // is added which violates the content model, and decremented every time such
+  // a node is removed. It is only used when descendants_observer_ is
+  // initialized.
   unsigned content_model_violations_count_ = 0U;
+  int index_to_select_on_cancel_ = -1;
+  bool uses_menu_list_ = true;
+  bool is_multiple_ = false;
+  mutable bool should_recalc_list_items_ = false;
 
   friend class ListBoxSelectType;
   friend class MenuListSelectType;

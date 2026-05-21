@@ -929,6 +929,15 @@ class gemm_class {
   }
 };
 
+template <typename Scalar, bool is_unit_inc>
+const int gemm_class<Scalar, is_unit_inc>::a_regs[];
+
+template <typename Scalar, bool is_unit_inc>
+const int gemm_class<Scalar, is_unit_inc>::b_regs[];
+
+template <typename Scalar, bool is_unit_inc>
+const int gemm_class<Scalar, is_unit_inc>::c_regs[];
+
 // Compute kernel with max unroll support of:
 //   Single precision:
 //     max_a_unroll: 48, 32, 16, 8, 4, 2, 1

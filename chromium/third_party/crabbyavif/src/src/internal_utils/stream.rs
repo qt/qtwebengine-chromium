@@ -204,7 +204,9 @@ impl IStream<'_> {
     ) -> AvifResult<(u8, u32)> {
         let (version, flags) = self.read_version_and_flags()?;
         if version != enforced_version {
-            return AvifError::bmff_parse_failed("");
+            return AvifError::bmff_parse_failed(format!(
+                "Unexpected box version {version} instead of {enforced_version}"
+            ));
         }
         Ok((version, flags))
     }
@@ -307,15 +309,53 @@ impl IStream<'_> {
         }
         Ok(())
     }
+
+    #[cfg(feature = "avm")]
+    // Variable Length Coding.
+    pub(crate) fn read_uvlc(&mut self) -> AvifResult<u32> {
+        let mut num_bits = 0;
+        while !self.read_bool()? {
+            num_bits += 1;
+            if num_bits == 32 {
+                return Ok(0xFFFFFFFF);
+            }
+        }
+        Ok(if num_bits != 0 {
+            ((1 << num_bits) - 1) + self.read_bits(num_bits)?
+        } else {
+            0
+        })
+    }
+
+    #[cfg(feature = "avm")]
+    // Rice-Golomb coding with parameter n.
+    pub(crate) fn read_rg(&mut self, n: u32) -> AvifResult<u32> {
+        for q in 0..32 {
+            let rg_bit = self.read_bit()?;
+            if rg_bit == 0 {
+                let remainder = self.read_bits(n as usize)?;
+                return Ok((q << n) + remainder);
+            }
+        }
+        Ok(0xFFFFFFFF)
+    }
 }
 
 #[cfg(feature = "encoder")]
+pub type OStream = OStreamBigEndian; // Big endian by default.
+#[cfg(feature = "encoder")]
+pub type OStreamBigEndian = OStreamImpl<false>;
+#[cfg(feature = "encoder")]
+#[cfg(feature = "jpegxl")]
+pub type OStreamLittleEndian = OStreamImpl<true>;
+
+#[cfg(feature = "encoder")]
 #[derive(Default)]
-pub struct OStream {
+pub struct OStreamImpl<const LITTLE_ENDIAN: bool> {
     // The bytes written so far.
     pub data: Vec<u8>,
-    // If not zero, number of most significant bits already written in the last
-    // byte of self.data.
+    // If not zero, number of most (least if LITTLE_ENDIAN) significant bits
+    // already written in the last byte of self.data.
     num_bits: u8,
     // The positions in self.data where are written the 4-byte sizes of the
     // boxes that were started but not yet finished.
@@ -324,7 +364,7 @@ pub struct OStream {
 
 #[cfg(feature = "encoder")]
 #[allow(dead_code)]
-impl OStream {
+impl<const LITTLE_ENDIAN: bool> OStreamImpl<LITTLE_ENDIAN> {
     pub(crate) fn offset(&self) -> usize {
         assert_eq!(self.num_bits, 0);
         self.data.len()
@@ -344,6 +384,7 @@ impl OStream {
             return AvifError::unknown_error("");
         }
         let mut num_remaining_bits = num_bits;
+        let mut remaining_bits = value;
         while num_remaining_bits != 0 {
             if self.num_bits == 0 {
                 self.write_u8(0)?;
@@ -351,10 +392,17 @@ impl OStream {
             let byte = self.data.last_mut().unwrap();
             // Number of bits among num_bits that can be written in the last byte of self.data.
             let num_written_bits = std::cmp::min(8 - self.num_bits, num_remaining_bits);
-            // Write the most significant bits first (somewhat big endian).
-            let written_bits = (value >> (num_remaining_bits - num_written_bits))
-                & ((1u32 << num_written_bits) - 1);
-            *byte |= (written_bits as u8) << (8 - self.num_bits - num_written_bits);
+            if LITTLE_ENDIAN {
+                // Write the least significant bits first (somewhat little endian).
+                let written_bits = remaining_bits & ((1u32 << num_written_bits) - 1);
+                *byte |= (written_bits as u8) << self.num_bits;
+                remaining_bits >>= num_written_bits;
+            } else {
+                // Write the most significant bits first (somewhat big endian).
+                let written_bits = (remaining_bits >> (num_remaining_bits - num_written_bits))
+                    & ((1u32 << num_written_bits) - 1);
+                *byte |= (written_bits as u8) << (8 - self.num_bits - num_written_bits);
+            }
             num_remaining_bits -= num_written_bits;
             self.num_bits = (self.num_bits + num_written_bits) % 8;
         }
@@ -383,7 +431,11 @@ impl OStream {
     pub(crate) fn write_u16(&mut self, value: u16) -> AvifResult<()> {
         assert_eq!(self.num_bits, 0);
         self.try_reserve(2)?;
-        self.data.extend_from_slice(&value.to_be_bytes());
+        self.data.extend_from_slice(&if LITTLE_ENDIAN {
+            value.to_le_bytes()
+        } else {
+            value.to_be_bytes()
+        });
         Ok(())
     }
 
@@ -393,14 +445,22 @@ impl OStream {
             return AvifError::invalid_argument();
         }
         self.try_reserve(3)?;
-        self.data.extend_from_slice(&value.to_be_bytes()[1..]);
+        if LITTLE_ENDIAN {
+            self.data.extend_from_slice(&value.to_le_bytes()[..3]);
+        } else {
+            self.data.extend_from_slice(&value.to_be_bytes()[1..]);
+        };
         Ok(())
     }
 
     pub(crate) fn write_u32(&mut self, value: u32) -> AvifResult<()> {
         assert_eq!(self.num_bits, 0);
         self.try_reserve(4)?;
-        self.data.extend_from_slice(&value.to_be_bytes());
+        self.data.extend_from_slice(&if LITTLE_ENDIAN {
+            value.to_le_bytes()
+        } else {
+            value.to_be_bytes()
+        });
         Ok(())
     }
 
@@ -408,14 +468,22 @@ impl OStream {
         assert_eq!(self.num_bits, 0);
         let range = offset..offset + 4;
         check_slice_range(self.data.len(), &range)?;
-        self.data[range].copy_from_slice(&value.to_be_bytes());
+        self.data[range].copy_from_slice(&if LITTLE_ENDIAN {
+            value.to_le_bytes()
+        } else {
+            value.to_be_bytes()
+        });
         Ok(())
     }
 
     pub(crate) fn write_u64(&mut self, value: u64) -> AvifResult<()> {
         assert_eq!(self.num_bits, 0);
         self.try_reserve(8)?;
-        self.data.extend_from_slice(&value.to_be_bytes());
+        self.data.extend_from_slice(&if LITTLE_ENDIAN {
+            value.to_le_bytes()
+        } else {
+            value.to_be_bytes()
+        });
         Ok(())
     }
 
@@ -748,5 +816,28 @@ mod tests {
         // offset.
         assert_eq!(stream.write_slice_dedupe(4, &[3, 4, 5]), Ok(9));
         assert_eq!(stream.offset(), 12);
+    }
+
+    #[cfg(feature = "encoder")]
+    #[cfg(feature = "jpegxl")]
+    #[test]
+    fn write_little_endian() {
+        let mut stream = OStreamLittleEndian::default();
+        assert_eq!(stream.write_bits(0b1, 1), Ok(()));
+        assert_eq!(stream.write_bits(0b010, 3), Ok(()));
+        assert_eq!(stream.write_bits(0b000000000001, 12), Ok(()));
+        assert_eq!(stream.write_u32(3), Ok(()));
+        assert_eq!(stream.data.len(), 6);
+        assert_eq!(
+            stream.data,
+            vec![
+                0b1 | (0b010 << 1) | (0b0001 << (1 + 3)),
+                0b00000000,
+                3,
+                0,
+                0,
+                0
+            ]
+        );
     }
 }

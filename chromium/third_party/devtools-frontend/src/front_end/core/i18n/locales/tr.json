@@ -110,9 +110,6 @@
   "core/common/Revealer.ts | requestConditionsDrawer": {
     "message": "İstek koşulları çekmecesi"
   },
-  "core/common/Revealer.ts | securityPanel": {
-    "message": "Güvenlik paneli"
-  },
   "core/common/Revealer.ts | sourcesPanel": {
     "message": "Kaynak paneli"
   },
@@ -410,9 +407,6 @@
   "core/sdk/NetworkRequest.ts | notOnPath": {
     "message": "Yolu istek URL'sinin yoluyla tam olarak eşleşmediği veya onun bir üst dizini olmadığı için bu çerez engellendi."
   },
-  "core/sdk/NetworkRequest.ts | samePartyFromCrossPartyContext": {
-    "message": "\"SameParty\" özelliğine sahip olan bu çerez, isteğin cross-party olması nedeniyle engellendi. Kaynağın URL'sinin alanı ve kaynağın ilişkili çerçevelerinin/dokümanlarının alanları aynı First-Party Setinin içinde sahip veya üye olmadığı için istek cross-party sayıldı."
-  },
   "core/sdk/NetworkRequest.ts | sameSiteLax": {
     "message": "Bu çerez, \"SameSite=Lax\" özelliğine sahip olduğu halde isteğin farklı bir siteden yapılması ve üst düzey gezinme tarafından başlatılmış olmaması nedeniyle engellendi."
   },
@@ -454,12 +448,6 @@
   },
   "core/sdk/NetworkRequest.ts | thisSetcookieHadInvalidSyntax": {
     "message": "Bu Set-Cookie üstbilgisi, geçersiz söz dizimi içeriyordu."
-  },
-  "core/sdk/NetworkRequest.ts | thisSetcookieWasBlockedBecauseItHadTheSameparty": {
-    "message": "Set-Cookie üstbilgisi aracılığıyla çerez ayarlama girişimi, \"SameParty\" özelliğine sahip olduğu halde isteğin cross-party olması nedeniyle engellendi. Kaynağın URL'sinin alanı ve kaynağın ilişkili çerçevelerinin/dokümanlarının alanları aynı First-Party Setinin içinde sahip veya üye olmadığı için istek cross-party sayıldı."
-  },
-  "core/sdk/NetworkRequest.ts | thisSetcookieWasBlockedBecauseItHadTheSamepartyAttribute": {
-    "message": "Set-Cookie üstbilgisi aracılığıyla çerez ayarlama girişimi, \"SameParty\" özelliğine sahip olduğu halde başka çakışan özellikleri de olduğu için engellendi. Chrome, \"SameParty\" özelliğini kullanan çerezlerin aynı zamanda \"Secure\" özelliğini de kullanmasını ve \"SameSite=Strict\" ile kısıtlı olmamasını gerektirir."
   },
   "core/sdk/NetworkRequest.ts | thisSetcookieWasBlockedBecauseItHadTheSamesiteStrictLax": {
     "message": "Set-Cookie üstbilgisi aracılığıyla çerez ayarlama girişimi, \"{PH1}\" özelliğine sahip olduğu halde üst düzey gezinme harici siteler arası bir yanıttan geldiği için engellendi. URL şeması mevcut siteninkinden farklı olduğu için bu yanıt, siteler arası olarak kabul edildi."
@@ -1031,6 +1019,15 @@
   "entrypoints/main/GlobalAiButton.ts | aiAssistance": {
     "message": "Yapay Zeka Desteği"
   },
+  "entrypoints/main/GlobalAiButton.ts | gemini": {
+    "message": "Gemini"
+  },
+  "entrypoints/main/GlobalAiButton.ts | openAiAssistance": {
+    "message": "Yapay Zeka Desteği panelini aç"
+  },
+  "entrypoints/main/GlobalAiButton.ts | openGemini": {
+    "message": "Gemini panelini aç"
+  },
   "entrypoints/main/MainImpl.ts | aiModelDownloaded": {
     "message": "Yapay zeka modeli indirildi"
   },
@@ -1057,6 +1054,9 @@
   },
   "entrypoints/main/MainImpl.ts | focusDebuggee": {
     "message": "Sayfaya odaklanın"
+  },
+  "entrypoints/main/MainImpl.ts | getDevToolsMcp": {
+    "message": "DevTools MCP uygulamasını edinin"
   },
   "entrypoints/main/MainImpl.ts | help": {
     "message": "Yardım"
@@ -1298,9 +1298,6 @@
   "generated/Deprecation.ts | ChromeLoadTimesWasAlternateProtocolAvailable": {
     "message": "chrome.loadTimes() kullanımdan kaldırıldı. Onun yerine Navigation Timing 2'de standart API: nextHopProtocol kullanın."
   },
-  "generated/Deprecation.ts | CookieWithTruncatingChar": {
-    "message": "\\(0|r|n) karakteri içeren çerezler kısaltılmayıp reddedilecektir."
-  },
   "generated/Deprecation.ts | CrossOriginAccessBasedOnDocumentDomain": {
     "message": "document.domain ayarlayarak aynı kaynak politikasını esnetme işlevi kullanımdan kaldırılmış olup varsayılan olarak devre dışı olacaktır. Bu kullanımdan kaldırma uyarısı, document.domain ayarlamak suretiyle izin verilen bir çapraz kaynak erişimine yöneliktir."
   },
@@ -1454,9 +1451,6 @@
   "generated/Deprecation.ts | XMLHttpRequestSynchronousInNonWorkerOutsideBeforeUnload": {
     "message": "Son kullanıcı deneyimini olumsuz etkilemesi nedeniyle, ana iş parçacığında eşzamanlı XMLHttpRequest işleviyle ilgili destek sonlandırıldı. Daha fazla yardım için https://xhr.spec.whatwg.org/ adresini ziyaret edin."
   },
-  "generated/Deprecation.ts | XMLNoExternalEntities": {
-    "message": "XML ayrıştırmada harici olarak yüklenen varlıkların desteği sonlandırıldı ve bu varlıklar yakında bu tarayıcıdan kaldırılacak."
-  },
   "generated/Deprecation.ts | XSLT": {
     "message": "XSLTProcessor ve XSLT işleme talimatlarının desteği tüm tarayıcılarda sonlandırıldı. Bu özellikler yakında bu tarayıcıdan kaldırılacak."
   },
@@ -1475,17 +1469,11 @@
   "models/bindings/ContentProviderBasedProject.ts | unknownErrorLoadingFile": {
     "message": "Sayfa yüklenirken bilinmeyen hata oluştu"
   },
-  "models/bindings/DebuggerLanguagePlugins.ts | debugSymbolsIncomplete": {
-    "message": "{PH1} işlevi için hata ayıklama bilgileri eksik"
-  },
   "models/bindings/DebuggerLanguagePlugins.ts | errorInDebuggerLanguagePlugin": {
     "message": "Hata ayıklayıcı dil eklentisinde hata oluştu: {PH1}"
   },
   "models/bindings/DebuggerLanguagePlugins.ts | failedToLoadDebugSymbolsFor": {
     "message": "[{PH1}] {PH2} için hata ayıklama simgeleri yüklenemedi ({PH3})"
-  },
-  "models/bindings/DebuggerLanguagePlugins.ts | failedToLoadDebugSymbolsForFunction": {
-    "message": "\"{PH1}\" işlevi için hata ayıklama bilgisi yok"
   },
   "models/bindings/DebuggerLanguagePlugins.ts | loadedDebugSymbolsForButDidnt": {
     "message": "[{PH1}] {PH2} için hata ayıklama simgeleri yüklendi ancak hiç kaynak dosyası bulunamadı"
@@ -1586,9 +1574,6 @@
   "models/issues_manager/CookieIssue.ts | fileCrosSiteRedirectBug": {
     "message": "Hata bildirin"
   },
-  "models/issues_manager/CookieIssue.ts | firstPartySetsExplained": {
-    "message": "First-Party Sets ve SameParty özelliği"
-  },
   "models/issues_manager/CookieIssue.ts | howSchemefulSamesiteWorks": {
     "message": "Schemeful Same-Site Çalışma Şekli"
   },
@@ -1600,9 +1585,6 @@
   },
   "models/issues_manager/CorsIssue.ts | corsLocalNetworkAccess": {
     "message": "Yerel Ağ Erişimi"
-  },
-  "models/issues_manager/CorsIssue.ts | corsPrivateNetworkAccess": {
-    "message": "Özel Ağ Erişimi"
   },
   "models/issues_manager/CrossOriginEmbedderPolicyIssue.ts | coopAndCoep": {
     "message": "COOP ve COEP"
@@ -2107,6 +2089,9 @@
   },
   "models/trace/Styles.ts | signReply": {
     "message": "Yanıtı imzala"
+  },
+  "models/trace/Styles.ts | softLargestContentfulPaint": {
+    "message": "Soft Largest Contentful Paint"
   },
   "models/trace/Styles.ts | streamingCompileTask": {
     "message": "Derleme görevi akışı"
@@ -3086,14 +3071,20 @@
   "panels/ai_assistance/ai_assistance-meta.ts | aiAssistance": {
     "message": "Yapay Zeka Desteği"
   },
-  "panels/ai_assistance/ai_assistance-meta.ts | askAi": {
-    "message": "Yapay zekaya sorun"
-  },
   "panels/ai_assistance/ai_assistance-meta.ts | debugWithAi": {
     "message": "Yapay zeka ile hata ayıkla"
   },
+  "panels/ai_assistance/ai_assistance-meta.ts | debugWithGemini": {
+    "message": "Gemini ile hata ayıkla"
+  },
   "panels/ai_assistance/ai_assistance-meta.ts | enableAiAssistance": {
     "message": "Yapay zeka yardımını etkinleştir"
+  },
+  "panels/ai_assistance/ai_assistance-meta.ts | enableGemini": {
+    "message": "Gemini'ı etkinleştir"
+  },
+  "panels/ai_assistance/ai_assistance-meta.ts | gemini": {
+    "message": "Gemini"
   },
   "panels/ai_assistance/ai_assistance-meta.ts | geoRestricted": {
     "message": "Bu özellik bölgenizde kullanılamıyor."
@@ -3104,16 +3095,19 @@
   "panels/ai_assistance/ai_assistance-meta.ts | showAiAssistance": {
     "message": "Yapay zeka yardımını göster"
   },
+  "panels/ai_assistance/ai_assistance-meta.ts | showGemini": {
+    "message": "Gemini'ı göster"
+  },
   "panels/ai_assistance/ai_assistance-meta.ts | wrongLocale": {
     "message": "Bu özelliği kullanmak için Geliştirici Araçları Ayarları'nda dil tercihinizi İngilizce olarak ayarlayın."
   },
-  "panels/ai_assistance/components/ChatView.ts | inputTextAriaDescription": {
+  "panels/ai_assistance/components/ChatInput.ts | inputTextAriaDescription": {
     "message": "Sohbet başlatmak için yukarıda önerilen istemlerden birini de kullanabilirsiniz"
   },
-  "panels/ai_assistance/components/ChatView.ts | learnAbout": {
+  "panels/ai_assistance/components/ChatInput.ts | learnAbout": {
     "message": "Geliştirici Araçları'nda yapay zeka hakkında bilgi edinin"
   },
-  "panels/ai_assistance/components/ChatView.ts | revealContextDescription": {
+  "panels/ai_assistance/components/ChatInput.ts | revealContextDescription": {
     "message": "Seçili bağlam öğesini Geliştirici Araçları'nda göster"
   },
   "panels/ai_assistance/components/DisabledWidget.ts | notAvailableInIncognitoMode": {
@@ -3221,6 +3215,9 @@
   "panels/application/AppManifestView.ts | appIdNote": {
     "message": "Not: Manifest dosyasında id start_url belirtilmemiş, onun yerine kullanılmış. Mevcut kimlikle eşleşen bir Uygulama Kimliği belirtmek için id alanını {PH1} {PH2} olarak ayarlayın."
   },
+  "panels/application/AppManifestView.ts | appManifest": {
+    "message": "Manifest"
+  },
   "panels/application/AppManifestView.ts | avoidPurposeAnyAndMaskable": {
     "message": "\"any maskable\" öğesine ait \"purpose\" ile simge tanımlanması önerilmez. Çok fazla veya çok az dolgu nedeniyle bazı platformlarda yanlış görünebilir."
   },
@@ -3293,6 +3290,9 @@
   "panels/application/AppManifestView.ts | manifestCouldNotBeFetchedIsEmpty": {
     "message": "Manifest dosyası getirilemedi, boş veya ayrıştırılamadı"
   },
+  "panels/application/AppManifestView.ts | manifestDescription": {
+    "message": "Manifest, uygulamanızın telefon ana ekranlarında ve başlatıldığında nasıl görüneceğini tanımlar."
+  },
   "panels/application/AppManifestView.ts | manifestDisplayPropertyMustBeOne": {
     "message": "Manifest dosyasındaki \"display\" özelliği, \"standalone\", \"fullscreen\" veya \"minimal-ui\" değerlerinden biri olmalıdır"
   },
@@ -3317,6 +3317,9 @@
   "panels/application/AppManifestView.ts | newNoteUrl": {
     "message": "Yeni not URL'si"
   },
+  "panels/application/AppManifestView.ts | noManifestDetected": {
+    "message": "Manifest dosyası algılanmadı"
+  },
   "panels/application/AppManifestView.ts | noPlayStoreIdProvided": {
     "message": "Play Store kimliği sağlanmadı"
   },
@@ -3328,6 +3331,9 @@
   },
   "panels/application/AppManifestView.ts | noSuppliedIconIsAtLeastSpxSquare": {
     "message": "Sağlananlar arasında PNG, SVG veya WebP biçiminde, en az {PH1} piksel ölçüsünde bir kare şeklinde, amaç özelliği ayarlanmamış veya any olarak ayarlanmış bir simge yok."
+  },
+  "panels/application/AppManifestView.ts | onInvokeAlert": {
+    "message": "{PH1} bölümüne gidildi"
   },
   "panels/application/AppManifestView.ts | orientation": {
     "message": "Sayfa yönü"
@@ -3458,9 +3464,6 @@
   "panels/application/AppManifestView.ts | windowControlsOverlay": {
     "message": "Pencere Denetimi Yer Paylaşımı"
   },
-  "panels/application/ApplicationPanelSidebar.ts | appManifest": {
-    "message": "Manifest"
-  },
   "panels/application/ApplicationPanelSidebar.ts | application": {
     "message": "Uygulama"
   },
@@ -3530,9 +3533,6 @@
   "panels/application/ApplicationPanelSidebar.ts | manifest": {
     "message": "Manifest"
   },
-  "panels/application/ApplicationPanelSidebar.ts | manifestDescription": {
-    "message": "Manifest, uygulamanızın telefon ana ekranlarında ve başlatıldığında nasıl görüneceğini tanımlar."
-  },
   "panels/application/ApplicationPanelSidebar.ts | noCookies": {
     "message": "Çerez ayarlanmadı"
   },
@@ -3544,9 +3544,6 @@
   },
   "panels/application/ApplicationPanelSidebar.ts | noLocalStorage": {
     "message": "Yerel depolama alanı algılanmadı"
-  },
-  "panels/application/ApplicationPanelSidebar.ts | noManifestDetected": {
-    "message": "Manifest dosyası algılanmadı"
   },
   "panels/application/ApplicationPanelSidebar.ts | noSessionStorage": {
     "message": "Oturum depolama alanı algılanmadı"
@@ -3721,6 +3718,399 @@
   },
   "panels/application/DOMStorageItemsView.ts | domStorageItemsCleared": {
     "message": "DOM depolama öğeleri temizlendi"
+  },
+  "panels/application/DeviceBoundSessionsTreeElement.ts | deviceBoundSessions": {
+    "message": "Cihaza bağlı oturumlar"
+  },
+  "panels/application/DeviceBoundSessionsTreeElement.ts | deviceBoundSessionsCategoryDescription": {
+    "message": "Bu sayfada, cihaza bağlı oturumları ve ilişkili etkinlikleri görüntüleyebilirsiniz"
+  },
+  "panels/application/DeviceBoundSessionsTreeElement.ts | noSession": {
+    "message": "Oturum yok"
+  },
+  "panels/application/DeviceBoundSessionsTreeElement.ts | sessionWithErrors": {
+    "message": "{sessionName}, Oturumda hatalar var"
+  },
+  "panels/application/DeviceBoundSessionsTreeElement.ts | terminatedSession": {
+    "message": "{sessionName}, Oturum sonlandırıldı"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | allowedRefreshInitiators": {
+    "message": "İzin verilen yenileme başlatıcıları"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | boundCookieSetForbidden": {
+    "message": "Bağlı çerezlerin ayarlanamadığı bir bağlamda kayıt"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | cachedChallenge": {
+    "message": "Önbelleğe alınmış doğrulama"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | cantSetBoundCookie": {
+    "message": "Bağlı çerez ayarlanmasına izin verilmiyor"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | causedAnyRequestDeferrals": {
+    "message": "Bir isteğin ertelenmesine neden olma durumu"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | challenge": {
+    "message": "Meydan okuma"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | challengeResult": {
+    "message": "Meydan okuma sonucu"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | clearBrowsingData": {
+    "message": "Kullanıcı tarafından tarayıcı verisi kaldırma işlemi başlatıldı"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | cookieCravings": {
+    "message": "Çerezler"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | creation": {
+    "message": "Oluşturulma saati"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | deletionReason": {
+    "message": "Silinme nedeni"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | doNotClearLogOnPageReload": {
+    "message": "Sayfa yeniden yüklendiğinde/sayfadan gidildiğinde günlük temizlenmesin"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | emptyScopeSpecificationDomain": {
+    "message": "Kapsam belirtme alanı boş"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | emptyScopeSpecificationPath": {
+    "message": "Kapsam belirtme yolu boş"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | emptySessionConfig": {
+    "message": "Kayıt için oturum yapılandırması boş"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | error": {
+    "message": "Hata"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | eventDetails": {
+    "message": "Etkinlik ayrıntıları"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | eventResult": {
+    "message": "Etkinlik sonucu"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | events": {
+    "message": "Etkinlikler"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | expired": {
+    "message": "Süresi doldu"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | expiryDate": {
+    "message": "Son kullanma tarihi"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | failedToRestoreKey": {
+    "message": "Anahtar, diskten geri yüklenemedi"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | failedToUnwrapKey": {
+    "message": "Anahtar paketi açılamadı"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | fatalError": {
+    "message": "Önemli hata"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | federatedKeyThumbprintMismatch": {
+    "message": "Birleşik anahtarın parmak izi hatalıydı"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | federatedNotAuthorizedByProvider": {
+    "message": "Birleşik oturum, sağlayıcının .well-known dizini tarafından yetkilendirilmedi"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | federatedNotAuthorizedByRelyingParty": {
+    "message": "Birleşik oturum, güvenen tarafın .well-known dizini tarafından yetkilendirilmedi"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | fetchResult": {
+    "message": "Sonucu getir"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | includeSite": {
+    "message": "Siteyi dahil et"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | initializedService": {
+    "message": "Hizmet başlatıldı"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidChallenge": {
+    "message": "Doğrulama geçersiz"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidConfigJson": {
+    "message": "Oturum yapılandırma JSON dosyası geçersiz"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidCredentialsConfig": {
+    "message": "Kimlik bilgisi yapılandırması geçersiz"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidCredentialsCookie": {
+    "message": "Kimlik bilgisi geçersiz: Çerez geçersiz"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidCredentialsCookieCreationTime": {
+    "message": "Kimlik bilgisi geçersiz: Çerez oluşturma zamanı geçersiz"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidCredentialsCookieInvalidDomain": {
+    "message": "Kimlik bilgisi geçersiz: Çerez alanı geçersiz"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidCredentialsCookieName": {
+    "message": "Kimlik bilgisi geçersiz: Çerez adı geçersiz"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidCredentialsCookieParsing": {
+    "message": "Kimlik bilgisi geçersiz: Çerez ayrıştırılamadı"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidCredentialsCookiePrefix": {
+    "message": "Kimlik bilgisi geçersiz: Çerez öneki geçersiz"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidCredentialsCookieUnpermittedAttribute": {
+    "message": "Kimlik bilgisi geçersiz: Çerez özelliğine izin verilmiyor"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidCredentialsEmptyName": {
+    "message": "Kimlik bilgisi geçersiz: Ad alanı boş"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidCredentialsType": {
+    "message": "Kimlik bilgisi geçersiz: Çerez türünde değil veya boş"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidFederatedKey": {
+    "message": "Birleşik anahtar geçersiz"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidFederatedSessionProviderFailedToRestoreKey": {
+    "message": "Oturum sağlayıcı anahtarı geri yüklenemediği için birleşik oturum geçersiz"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidFederatedSessionProviderSessionMissing": {
+    "message": "Sağlayıcı oturumu bulunamadığından birleşik oturum geçersiz"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidFederatedSessionUrl": {
+    "message": "Birleşik sağlayıcı URL'si geçerli değil"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidFederatedSessionWrongProviderOrigin": {
+    "message": "Sağlayıcı kaynak uyuşmazlığı nedeniyle birleşik oturum geçersiz"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidFetcherUrl": {
+    "message": "Alıcı URL'si geçersiz"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidRefreshUrl": {
+    "message": "Yenileme URL'si geçersiz"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidScopeIncludeSite": {
+    "message": "Kapsamda geçersiz include_site"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidScopeOrigin": {
+    "message": "Kapsam kaynağı geçersiz"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidScopeRuleHostPattern": {
+    "message": "Kapsam kuralı ana makine kalıbı geçersiz"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidScopeRulePath": {
+    "message": "Kapsam kuralı yolu geçersiz"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidScopeSpecification": {
+    "message": "Geçersiz kapsam belirtme"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidScopeSpecificationType": {
+    "message": "Kapsam belirtme türü, dahil etme veya hariç tutma değil"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidSessionId": {
+    "message": "Oturum kimliği geçersiz"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidSessionParams": {
+    "message": "Oturum parametreleri geçersiz"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | keyError": {
+    "message": "Anahtar hatası"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | keyId": {
+    "message": "Kimlik"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | keySite": {
+    "message": "Site"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | mismatchedSessionId": {
+    "message": "Oturum kimliği eşleşmiyor"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | missingScope": {
+    "message": "Eksik kapsam"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | missingScopeIncludeSite": {
+    "message": "Kapsamda include_site eksik"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | missingScopeSpecificationType": {
+    "message": "Kapsam belirtme türü eksik"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | name": {
+    "message": "Ad"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | netError": {
+    "message": "Ağ hatası"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | no": {
+    "message": "Hayır"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | noCredentials": {
+    "message": "Kimlik bilgisi yok"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | noEvents": {
+    "message": "Henüz hiçbir etkinlik günlüğe kaydedilmedi."
+  },
+  "panels/application/DeviceBoundSessionsView.ts | noSessionId": {
+    "message": "Oturum kimliği yok"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | noSessionMatch": {
+    "message": "Eşleşen oturum kimliği yok"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | origin": {
+    "message": "Kaynak"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | persistentHttpError": {
+    "message": "Kalıcı HTTP hatası"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | preserveLog": {
+    "message": "Günlüğü sakla"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | proxyError": {
+    "message": "Proxy hatası"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | refresh": {
+    "message": "Yenile"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | refreshFatalError": {
+    "message": "Yenileme sırasında önemli hata"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | refreshInitiatorInvalidHostPattern": {
+    "message": "İzin verilen yenileme başlatıcısında geçersiz ana makine kalıbı var"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | refreshInitiatorNotString": {
+    "message": "İzin verilen yenileme başlatıcı, dize değil"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | refreshQuotaExceeded": {
+    "message": "Yenileme kotası aşıldı"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | refreshResult": {
+    "message": "Sonucu yenile"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | refreshUrl": {
+    "message": "Yenileme URL'si"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | refreshUrlSameSiteMismatch": {
+    "message": "Yenileme URL'sinde aynı site uyuşmazlığı"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | refreshed": {
+    "message": "Yenilendi"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | registrationAttemptedChallenge": {
+    "message": "Kayıt işlemi, doğrulama hatası yanıt kodu döndürdü"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | relyingPartyWellKnownHasRelyingOrigins": {
+    "message": "Güvenen tarafın .well-known içeriğinde relying_origins var"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | relyingPartyWellKnownMalformed": {
+    "message": "Güvenen tarafın .well-known içeriği hatalı"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | relyingPartyWellKnownUnavailable": {
+    "message": "Güvenen tarafın .well-known dizini kullanılamıyor"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | result": {
+    "message": "Sonuç"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | ruleHostPattern": {
+    "message": "Ana makine kalıbı"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | rulePathPrefix": {
+    "message": "Yol ön eki"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | ruleType": {
+    "message": "Kural türü"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | ruleTypeExclude": {
+    "message": "Hariç tut"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | ruleTypeInclude": {
+    "message": "Dahil et"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | scope": {
+    "message": "Kapsam"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | scopeOriginContainsPath": {
+    "message": "Kapsam kaynağı bir yol içeriyor"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | scopeOriginSameSiteMismatch": {
+    "message": "Kapsam kaynağında aynı site uyuşmazlığı"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | scopeRuleOriginScopedHostPatternMismatch": {
+    "message": "Kaynak kapsamlı oturumda ana makine kalıbı ile kaynak arasında uyuşmazlık var"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | scopeRuleSiteScopedHostPatternMismatch": {
+    "message": "Site kapsamlı oturumda ana makine kalıbı ile site arasında uyuşmazlık var"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | selectEventToViewDetails": {
+    "message": "Daha fazla ayrıntı görüntülemek için bir etkinlik satırı seçin."
+  },
+  "panels/application/DeviceBoundSessionsView.ts | serverError": {
+    "message": "Uç nokta geçici hatası"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | serverRequestedTermination": {
+    "message": "Sunucu, sonlandırma isteğinde bulundu"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | sessionConfig": {
+    "message": "Oturum yapılandırması"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | sessionDeletedDuringRefresh": {
+    "message": "Yenileme sırasında oturum silindi"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | sessionDetails": {
+    "message": "Oturum ayrıntıları"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | sessionId": {
+    "message": "Oturum kimliği"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | sessionProviderWellKnownHasProviderOrigin": {
+    "message": "Oturum sağlayıcının .well-known içeriğinde provider_origin var"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | sessionProviderWellKnownMalformed": {
+    "message": "Oturum sağlayıcının .well-known içeriği hatalı"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | sessionProviderWellKnownUnavailable": {
+    "message": "Oturum sağlayıcının .well-known dosyası kullanılamıyor"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | signingError": {
+    "message": "İmzalama hatası"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | signingQuotaExceeded": {
+    "message": "İmzalama kotası aşıldı"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | storagePartitionCleared": {
+    "message": "Depolama bölümünden kaldırıldı"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | subdomainRegistrationUnauthorized": {
+    "message": ".well-known, alt alan adına göre kaydı yetkilendirmedi"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | subdomainRegistrationWellKnownMalformed": {
+    "message": "Alt alan adı kaydının .well-known içeriği hatalı"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | subdomainRegistrationWellKnownUnavailable": {
+    "message": "Alt alan adı kaydının .well-known dizini kullanılamıyor"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | success": {
+    "message": "Başarılı"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | termination": {
+    "message": "Fesih"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | timestamp": {
+    "message": "Tarih"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | tooManyChallenges": {
+    "message": "Çok fazla doğrulama var"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | tooManyRelyingOriginLabels": {
+    "message": ".well-known dizininde çok fazla güvenen kaynak etiketi var"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | transientHttpError": {
+    "message": "Geçici HTTP hatası"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | type": {
+    "message": "Tür"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | unknown": {
+    "message": "Bilinmiyor"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | unreachable": {
+    "message": "Uç noktaya ulaşılamıyor"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | updatedSessionConfig": {
+    "message": "Oturum yapılandırması güncellendi"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | yes": {
+    "message": "Evet"
   },
   "panels/application/ExtensionStorageItemsView.ts | extensionStorageItems": {
     "message": "Uzantı Depolama Öğeleri"
@@ -5333,18 +5723,6 @@
   "panels/application/preloading/components/PreloadingGrid.ts | status": {
     "message": "Durum"
   },
-  "panels/application/preloading/components/PreloadingMismatchedHeadersGrid.ts | activationNavigationValue": {
-    "message": "Etkinleştirme gezinmesindeki değer"
-  },
-  "panels/application/preloading/components/PreloadingMismatchedHeadersGrid.ts | headerName": {
-    "message": "Başlık adı"
-  },
-  "panels/application/preloading/components/PreloadingMismatchedHeadersGrid.ts | initialNavigationValue": {
-    "message": "İlk gezinmedeki değer"
-  },
-  "panels/application/preloading/components/PreloadingMismatchedHeadersGrid.ts | missing": {
-    "message": "(eksik)"
-  },
   "panels/application/preloading/components/PreloadingString.ts | PrefetchEvictedAfterBrowsingDataRemoved": {
     "message": "Tarama verileri kaldırıldığı için önceden getirme işlemi iptal edildi."
   },
@@ -5621,6 +5999,9 @@
   "panels/application/preloading/components/RuleSetGrid.ts | status": {
     "message": "Durum"
   },
+  "panels/application/preloading/components/UsedPreloadingView.ts | activationNavigationValue": {
+    "message": "Etkinleştirme gezinmesindeki değer"
+  },
   "panels/application/preloading/components/UsedPreloadingView.ts | badgeFailure": {
     "message": "Başarısız"
   },
@@ -5651,11 +6032,20 @@
   "panels/application/preloading/components/UsedPreloadingView.ts | downgradedPrefetchUsed": {
     "message": "Başlangıç sayfası, bu sayfanın URL'sini önceden işlemeye çalıştı. Önceden işleme başarısız oldu, ancak sonuçta elde edilen yanıt gövdesi, önceden getirme olarak kullanılmaya devam etti."
   },
+  "panels/application/preloading/components/UsedPreloadingView.ts | headerName": {
+    "message": "Başlık adı"
+  },
+  "panels/application/preloading/components/UsedPreloadingView.ts | initialNavigationValue": {
+    "message": "İlk gezinmedeki değer"
+  },
   "panels/application/preloading/components/UsedPreloadingView.ts | learnMore": {
     "message": "Tahmine dayalı yükleme hakkında daha fazla bilgiyi developer.chrome.com adresinde bulabilirsiniz"
   },
   "panels/application/preloading/components/UsedPreloadingView.ts | mismatchedHeadersDetail": {
     "message": "Uyumsuz HTTP isteği başlıkları"
+  },
+  "panels/application/preloading/components/UsedPreloadingView.ts | missing": {
+    "message": "(eksik)"
   },
   "panels/application/preloading/components/UsedPreloadingView.ts | noPreloads": {
     "message": "Başlangıç sayfası, bu sayfanın URL'sini tahmine dayalı olarak yüklemeye çalışmadı."
@@ -5993,11 +6383,11 @@
   "panels/common/BadgeNotification.ts | manageSettings": {
     "message": "Ayarları yönet"
   },
+  "panels/common/BadgeNotification.ts | noThanks": {
+    "message": "Hayır, teşekkürler"
+  },
   "panels/common/BadgeNotification.ts | receiveBadges": {
     "message": "Rozetleri etkinleştir"
-  },
-  "panels/common/BadgeNotification.ts | remindMeLater": {
-    "message": "Daha sonra hatırlat"
   },
   "panels/common/BadgeNotification.ts | starterBadgeAwardMessageNoGdpProfile": {
     "message": "{PH2} için {PH1} rozetini kazandınız. Rozetinizi almak için profil oluşturun."
@@ -6007,6 +6397,9 @@
   },
   "panels/common/BadgeNotification.ts | viewProfile": {
     "message": "Profili görüntüle"
+  },
+  "panels/common/CopyChangesToPrompt.ts | responseCopiedToClipboard": {
+    "message": "Yanıt, panoya kopyalandı"
   },
   "panels/common/DOMLinkifier.ts | node": {
     "message": "<düğüm>"
@@ -6070,6 +6463,27 @@
   },
   "panels/common/GdpSignUpDialog.ts | termsOfService": {
     "message": "Hizmet Şartları"
+  },
+  "panels/common/GeminiRebrandPromoDialog.ts | detailAiCompanion": {
+    "message": "Web geliştirme için yapay zeka destekli yardımcınızla tanışın"
+  },
+  "panels/common/GeminiRebrandPromoDialog.ts | detailConsoleErrors": {
+    "message": "Konsol hatalarıyla ilgili anında doğru yanıtlar alın"
+  },
+  "panels/common/GeminiRebrandPromoDialog.ts | detailGenerateCode": {
+    "message": "Anında CSS ve JS snippet'leri oluşturun"
+  },
+  "panels/common/GeminiRebrandPromoDialog.ts | detailPerformance": {
+    "message": "Performans izlerinde sorunları otomatik olarak bulun"
+  },
+  "panels/common/GeminiRebrandPromoDialog.ts | dialogAriaLabel": {
+    "message": "Geliştirici Araçları'nda Gemini 3 Flash"
+  },
+  "panels/common/GeminiRebrandPromoDialog.ts | dismiss": {
+    "message": "Kapat"
+  },
+  "panels/common/GeminiRebrandPromoDialog.ts | getStarted": {
+    "message": "Başlat"
   },
   "panels/common/PersistenceUtils.ts | linkedToS": {
     "message": "Şuna bağlı: {PH1}"
@@ -6280,9 +6694,6 @@
   },
   "panels/console/ConsoleViewMessage.ts | Mxx": {
     "message": " M<XX>"
-  },
-  "panels/console/ConsoleViewMessage.ts | SeeIssueInCookieReport": {
-    "message": "Gizlilik ve güvenlik panelini açıp üçüncü taraf çerez raporunu göstermek için tıklayın"
   },
   "panels/console/ConsoleViewMessage.ts | assertionFailed": {
     "message": "Onaylama başarısız: "
@@ -6869,6 +7280,12 @@
   "panels/elements/CSSRuleValidator.ts | fontVariationSettingsWarning": {
     "message": "\"{PH1}\" ayarı için sağlanan değer ({PH2}), \"{PH5}\" yazı tipi ailesi için desteklenen aralığın [{PH3} - {PH4}] dışında."
   },
+  "panels/elements/CSSRuleValidator.ts | invalidAnchorPositioning": {
+    "message": "Bir bağlantı öğesi tanımlandı ancak öğe bağlantı konumlandırma yerine \"{POSITION}\" olarak konumlandırıldı."
+  },
+  "panels/elements/CSSRuleValidator.ts | invalidAnchorPositioningFix": {
+    "message": "Konumu \"sabit\" veya \"mutlak\" olarak ayarlayın."
+  },
   "panels/elements/CSSRuleValidator.ts | ruleViolatedByParentElementRuleFix": {
     "message": "Üst öğedeki {EXISTING_PARENT_ELEMENT_RULE} özelliğini {TARGET_PARENT_ELEMENT_RULE} olarak değiştirmeyi deneyin."
   },
@@ -6886,6 +7303,9 @@
   },
   "panels/elements/CSSRuleValidator.ts | ruleViolatedBySameElementRuleReason": {
     "message": "{REASON_PROPERTY_DECLARATION_CODE} özelliği, {AFFECTED_PROPERTY_DECLARATION_CODE} özelliğinin etkili olmasını engeller."
+  },
+  "panels/elements/CSSRuleValidator.ts | unusedAnchorPositioning": {
+    "message": "Bir bağlantı öğesi tanımlandı ancak öğe gizli."
   },
   "panels/elements/ClassesPaneWidget.ts | addNewClass": {
     "message": "Yeni sınıf ekle"
@@ -6905,6 +7325,9 @@
   "panels/elements/ColorSwatchPopoverIcon.ts | openShadowEditor": {
     "message": "Gölge düzenleyiciyi açar"
   },
+  "panels/elements/ComputedStyleWidget.ts | filterUpdateAriaText": {
+    "message": "Filtre uygulandı: {PH1}. Toplam sonuç: {PH2}"
+  },
   "panels/elements/ComputedStyleWidget.ts | group": {
     "message": "Grup"
   },
@@ -6912,7 +7335,7 @@
     "message": "Seçici kaynağına git"
   },
   "panels/elements/ComputedStyleWidget.ts | navigateToStyle": {
-    "message": "Stile git"
+    "message": "Stillere git"
   },
   "panels/elements/ComputedStyleWidget.ts | noMatchingProperty": {
     "message": "Eşleşen özellik yok"
@@ -7202,6 +7625,9 @@
   "panels/elements/ElementsTreeElement.ts | removeScrollbars": {
     "message": "Kaydırma çubuklarını kaldır"
   },
+  "panels/elements/ElementsTreeElement.ts | reveal": {
+    "message": "göster"
+  },
   "panels/elements/ElementsTreeElement.ts | scrollIntoView": {
     "message": "Görünüme kaydır"
   },
@@ -7234,6 +7660,9 @@
   },
   "panels/elements/ElementsTreeElement.ts | valueIsTooLargeToEdit": {
     "message": "<dize düzenlenemeyecek kadar büyük>"
+  },
+  "panels/elements/ElementsTreeElement.ts | viewSourceCode": {
+    "message": "Kaynak kodu göster"
   },
   "panels/elements/ElementsTreeElement.ts | wrapTheseItems": {
     "message": "Bu öğeleri sarmala"
@@ -7439,11 +7868,17 @@
   "panels/elements/StylePropertyTreeElement.ts | jumpToAnimationsPanel": {
     "message": "Animasyon paneline atlayın"
   },
+  "panels/elements/StylePropertyTreeElement.ts | openAnimationsPanel": {
+    "message": "Animasyonlar panelini aç"
+  },
   "panels/elements/StylePropertyTreeElement.ts | openColorPickerS": {
     "message": "Renk seçiciyi aç. {PH1}"
   },
   "panels/elements/StylePropertyTreeElement.ts | openInSourcesPanel": {
     "message": "Kaynak panelinde aç"
+  },
+  "panels/elements/StylePropertyTreeElement.ts | overriddenByAnimation": {
+    "message": "Animasyon stilleri tarafından geçersiz kılındı."
   },
   "panels/elements/StylePropertyTreeElement.ts | sIsNotDefined": {
     "message": "{PH1} tanımlı değil."
@@ -7492,9 +7927,6 @@
   },
   "panels/elements/StylesSidebarPane.ts | visibleSelectors": {
     "message": "{n,plural, =1{Aşağıda # görünür seçici listelenmektedir}other{Aşağıda # görünür seçici listelenmektedir}}"
-  },
-  "panels/elements/TopLayerContainer.ts | reveal": {
-    "message": "göster"
   },
   "panels/elements/components/AccessibilityTreeNode.ts | ignored": {
     "message": "Yoksayıldı"
@@ -7549,6 +7981,9 @@
   },
   "panels/elements/components/ElementsTreeExpandButton.ts | expand": {
     "message": "Genişlet"
+  },
+  "panels/elements/components/StylePropertyEditor.ts | denseLabel": {
+    "message": "Yoğun"
   },
   "panels/elements/components/StylePropertyEditor.ts | deselectButton": {
     "message": "Kaldır: {propertyName}: {propertyValue}"
@@ -9434,6 +9869,9 @@
   "panels/network/NetworkDataGridNode.ts | blockeds": {
     "message": "(engellendi: {PH1})"
   },
+  "panels/network/NetworkDataGridNode.ts | blocking": {
+    "message": "Engelleme"
+  },
   "panels/network/NetworkDataGridNode.ts | broken": {
     "message": "Chrome, bozuk olarak işaretlendiği için HTTP/3 bağlantısı kurmaya çalışmadı."
   },
@@ -9488,6 +9926,9 @@
   "panels/network/NetworkDataGridNode.ts | finished": {
     "message": "Tamamlandı"
   },
+  "panels/network/NetworkDataGridNode.ts | inBodyParserBlocking": {
+    "message": "Gövde içi ayrıştırıcı engelleme"
+  },
   "panels/network/NetworkDataGridNode.ts | initialPriorityToolTip": {
     "message": "{PH1}, İlk öncelik: {PH2}"
   },
@@ -9512,6 +9953,12 @@
   "panels/network/NetworkDataGridNode.ts | memoryCache": {
     "message": "(önbellek)"
   },
+  "panels/network/NetworkDataGridNode.ts | nonBlocking": {
+    "message": "Engellemeyen"
+  },
+  "panels/network/NetworkDataGridNode.ts | nonBlockingDynamic": {
+    "message": "Engellemeyen dinamik"
+  },
   "panels/network/NetworkDataGridNode.ts | origin": {
     "message": "kaynak"
   },
@@ -9529,6 +9976,9 @@
   },
   "panels/network/NetworkDataGridNode.ts | pendingq": {
     "message": "(beklemede)"
+  },
+  "panels/network/NetworkDataGridNode.ts | potentiallyBlocking": {
+    "message": "Potansiyel olarak engelleyici"
   },
   "panels/network/NetworkDataGridNode.ts | prefetchCache": {
     "message": "(ön getirme önbelleği)"
@@ -9604,6 +10054,9 @@
   },
   "panels/network/NetworkItemView.ts | cookies": {
     "message": "Çerezler"
+  },
+  "panels/network/NetworkItemView.ts | deviceBoundSessions": {
+    "message": "Cihaza bağlı oturumlar"
   },
   "panels/network/NetworkItemView.ts | directsocketMessages": {
     "message": "DirectSocket mesajları"
@@ -9933,7 +10386,7 @@
     "message": "Alan adı"
   },
   "panels/network/NetworkLogViewColumns.ts | endTime": {
-    "message": "Bitiş Zamanı"
+    "message": "Bitiş zamanı"
   },
   "panels/network/NetworkLogViewColumns.ts | hasOverrides": {
     "message": "Geçersiz kılmalar içeriyor"
@@ -9942,7 +10395,7 @@
     "message": "Başlatan"
   },
   "panels/network/NetworkLogViewColumns.ts | initiatorAddressSpace": {
-    "message": "Başlatıcı Adres Alanı"
+    "message": "Başlatıcı adres alanı"
   },
   "panels/network/NetworkLogViewColumns.ts | isAdRelated": {
     "message": "Reklamla İlgili"
@@ -9972,19 +10425,22 @@
     "message": "Protokol"
   },
   "panels/network/NetworkLogViewColumns.ts | remoteAddress": {
-    "message": "Uzak Adres"
+    "message": "Uzak adres"
   },
   "panels/network/NetworkLogViewColumns.ts | remoteAddressSpace": {
-    "message": "Uzak Adres Alanı"
+    "message": "Uzak adres alanı"
+  },
+  "panels/network/NetworkLogViewColumns.ts | renderBlocking": {
+    "message": "Oluşturma Engelleme"
   },
   "panels/network/NetworkLogViewColumns.ts | requestHeaders": {
-    "message": "İstek Başlıkları"
+    "message": "İstek üst bilgileri"
   },
   "panels/network/NetworkLogViewColumns.ts | responseHeaders": {
-    "message": "Yanıt Üst Bilgileri"
+    "message": "Yanıt başlıkları"
   },
   "panels/network/NetworkLogViewColumns.ts | responseTime": {
-    "message": "Yanıt Süresi"
+    "message": "Yanıt süresi"
   },
   "panels/network/NetworkLogViewColumns.ts | scheme": {
     "message": "Şema"
@@ -9996,7 +10452,7 @@
     "message": "Boyut"
   },
   "panels/network/NetworkLogViewColumns.ts | startTime": {
-    "message": "Başlangıç Zamanı"
+    "message": "Başlangıç zamanı"
   },
   "panels/network/NetworkLogViewColumns.ts | status": {
     "message": "Durum"
@@ -10008,7 +10464,7 @@
     "message": "Süre"
   },
   "panels/network/NetworkLogViewColumns.ts | totalDuration": {
-    "message": "Toplam Süre:"
+    "message": "Toplam süre"
   },
   "panels/network/NetworkLogViewColumns.ts | type": {
     "message": "Tür"
@@ -10112,26 +10568,14 @@
   "panels/network/NetworkSearchScope.ts | url": {
     "message": "URL"
   },
-  "panels/network/RequestConditionsDrawer.ts | addNetworkRequestBlockingPattern": {
-    "message": "Ağ isteği engelleme kalıbı ekle"
-  },
-  "panels/network/RequestConditionsDrawer.ts | addPattern": {
-    "message": "Kalıp ekle"
-  },
   "panels/network/RequestConditionsDrawer.ts | addPatternLabel": {
     "message": "Ağ isteği kısıtlama veya engelleme deseni ekle"
-  },
-  "panels/network/RequestConditionsDrawer.ts | addPatternToBlock": {
-    "message": "\"{PH1}\" düğmesini tıklayarak bir desen ekleyin."
   },
   "panels/network/RequestConditionsDrawer.ts | addRule": {
     "message": "Kural ekle"
   },
   "panels/network/RequestConditionsDrawer.ts | dAffected": {
     "message": "{PH1} öğe etkilendi"
-  },
-  "panels/network/RequestConditionsDrawer.ts | dBlocked": {
-    "message": "{PH1} engellendi"
   },
   "panels/network/RequestConditionsDrawer.ts | decreasePriority": {
     "message": "{PH1} girişini aşağı taşı"
@@ -10141,9 +10585,6 @@
   },
   "panels/network/RequestConditionsDrawer.ts | enableBlockingAndThrottling": {
     "message": "Engellemeyi ve kısıtlamayı etkinleştir"
-  },
-  "panels/network/RequestConditionsDrawer.ts | enableNetworkRequestBlocking": {
-    "message": "Ağ istek engellemeyi etkinleştir"
   },
   "panels/network/RequestConditionsDrawer.ts | enableThrottlingToggleLabel": {
     "message": "{PH1} URL kalıbını kısıtlayın veya engelleyin"
@@ -10159,9 +10600,6 @@
   },
   "panels/network/RequestConditionsDrawer.ts | learnMoreLabel": {
     "message": "URL kalıbı söz dizimi hakkında daha fazla bilgi"
-  },
-  "panels/network/RequestConditionsDrawer.ts | noNetworkRequestsBlocked": {
-    "message": "Engellenen ağ isteği yok"
   },
   "panels/network/RequestConditionsDrawer.ts | noPattern": {
     "message": "Kısıtlanan veya engellenen yok"
@@ -10197,10 +10635,7 @@
     "message": "İstek koşulları"
   },
   "panels/network/RequestConditionsDrawer.ts | textEditPattern": {
-    "message": "Eşleşen istekleri engellemek veya kısıtlamak için metin deseni; URLPattern söz dizimini kullanın."
-  },
-  "panels/network/RequestConditionsDrawer.ts | textPatternToBlockMatching": {
-    "message": "Eşleşen istekleri engellemek için metin şablonu; joker karakter olarak * kullanın"
+    "message": "Eşleşen istekleri engellemek veya kısıtlamak için metin deseni; URL kalıbı söz dizimini kullanın."
   },
   "panels/network/RequestCookiesView.ts | cookiesThatWereReceivedFromThe": {
     "message": "Sunucudan yanıtın \"set-cookie\" üst bilgisi içinde alınan çerezler"
@@ -10235,6 +10670,30 @@
   "panels/network/RequestCookiesView.ts | thisRequestHasNoCookies": {
     "message": "Bu istek çerez içermiyor."
   },
+  "panels/network/RequestDeviceBoundSessionsView.ts | deferralDecision": {
+    "message": "Erteleme kararı"
+  },
+  "panels/network/RequestDeviceBoundSessionsView.ts | deferred": {
+    "message": "Ertelendi (Yenileme)"
+  },
+  "panels/network/RequestDeviceBoundSessionsView.ts | inScopeRefreshNotAllowed": {
+    "message": "Ertelenmedi (İstek, oturum kapsamında ancak isteği başlatanın yenileme tetiklemesine izin verilmiyor)"
+  },
+  "panels/network/RequestDeviceBoundSessionsView.ts | inScopeRefreshNotYetNeeded": {
+    "message": "Ertelenmedi (İstek, oturum kapsamında ancak çerezler hâlâ mevcut)"
+  },
+  "panels/network/RequestDeviceBoundSessionsView.ts | notInScope": {
+    "message": "Ertelenmedi (İstek, oturum kapsamında değil)"
+  },
+  "panels/network/RequestDeviceBoundSessionsView.ts | proactiveRefreshAttempted": {
+    "message": "Ertelenmedi (Proaktif yenileme denendi)"
+  },
+  "panels/network/RequestDeviceBoundSessionsView.ts | proactiveRefreshNotPossible": {
+    "message": "Ertelenmedi (İstek, oturum kapsamında ancak proaktif yenileme mümkün değil)"
+  },
+  "panels/network/RequestDeviceBoundSessionsView.ts | sessionId": {
+    "message": "Oturum kimliği"
+  },
   "panels/network/RequestInitiatorView.ts | noInitiator": {
     "message": "Başlatıcı verisi yok"
   },
@@ -10261,9 +10720,6 @@
   },
   "panels/network/RequestPayloadView.ts | requestPayload": {
     "message": "İstek Yükü"
-  },
-  "panels/network/RequestPayloadView.ts | showMore": {
-    "message": "Diğerlerini göster"
   },
   "panels/network/RequestPayloadView.ts | unableToDecodeValue": {
     "message": "(değer kodu çözülemiyor)"
@@ -10529,6 +10985,9 @@
   "panels/network/ResourceWebSocketFrameView.ts | webSocketFrame": {
     "message": "Web Socket çerçevesi"
   },
+  "panels/network/ShowMoreDetailsWidget.ts | showMore": {
+    "message": "Diğerlerini göster"
+  },
   "panels/network/SignedExchangeInfoView.ts | certificate": {
     "message": "Sertifika"
   },
@@ -10674,7 +11133,7 @@
     "message": "Hazır başlıklar gösteriliyor. Bütün başlıkları görmek için önbelleği devre dışı bırakın."
   },
   "panels/network/components/RequestHeadersView.ts | earlyHintsHeaders": {
-    "message": "İlk İpucu Başlıkları"
+    "message": "İlk ipucu başlıkları"
   },
   "panels/network/components/RequestHeadersView.ts | fromDiskCache": {
     "message": "(disk önbelleğinden)"
@@ -10716,7 +11175,7 @@
     "message": "İstek URL'si"
   },
   "panels/network/components/RequestHeadersView.ts | responseHeaders": {
-    "message": "Yanıt Üst Bilgileri"
+    "message": "Yanıt başlıkları"
   },
   "panels/network/components/RequestHeadersView.ts | revealHeaderOverrides": {
     "message": "Üstbilgi geçersiz kılma tanımlarını göster"
@@ -10811,9 +11270,6 @@
   "panels/network/network-meta.ts | addNetworkRequestBlockingOrThrottlingPattern": {
     "message": "Ağ isteği engelleme veya kısıtlama deseni ekle"
   },
-  "panels/network/network-meta.ts | addNetworkRequestBlockingPattern": {
-    "message": "Ağ isteği engelleme kalıbı ekle"
-  },
   "panels/network/network-meta.ts | allowToGenerateHarWithSensitiveData": {
     "message": "Hassas verilerle HAR oluşturmaya izin ver"
   },
@@ -10865,9 +11321,6 @@
   "panels/network/network-meta.ts | networkConditions": {
     "message": "Ağ koşulları"
   },
-  "panels/network/network-meta.ts | networkRequestBlocking": {
-    "message": "Ağ isteği engelleme"
-  },
   "panels/network/network-meta.ts | networkRequestConditions": {
     "message": "İstek koşulları"
   },
@@ -10880,9 +11333,6 @@
   "panels/network/network-meta.ts | removeAllNetworkRequestBlockingOrThrottlingPatterns": {
     "message": "Tüm ağ isteği engelleme veya kısıtlama desenlerini kaldır"
   },
-  "panels/network/network-meta.ts | removeAllNetworkRequestBlockingPatterns": {
-    "message": "Tüm ağ isteği engelleme kalıplarını kaldır"
-  },
   "panels/network/network-meta.ts | resourceType": {
     "message": "kaynak türü"
   },
@@ -10894,9 +11344,6 @@
   },
   "panels/network/network-meta.ts | showNetworkConditions": {
     "message": "Ağ koşullarını göster"
-  },
-  "panels/network/network-meta.ts | showNetworkRequestBlocking": {
-    "message": "Ağ isteği engelleme aracını göster"
   },
   "panels/network/network-meta.ts | showRequestConditions": {
     "message": "İstek koşullarını göster"
@@ -11735,8 +12182,17 @@
   "panels/recorder/RecorderController.ts | numberOfRecordings": {
     "message": "kayıt"
   },
+  "panels/recorder/RecorderController.ts | recordingDeleted": {
+    "message": "Kayıt silindi"
+  },
   "panels/recorder/RecorderController.ts | recordingDescription": {
     "message": "Otomatik uçtan uca testler veya performans izleri oluşturmak için kayıtları kullanın."
+  },
+  "panels/recorder/RecorderController.ts | recordingExported": {
+    "message": "Kayıt dışa aktarıldı"
+  },
+  "panels/recorder/RecorderController.ts | recordingImported": {
+    "message": "Kayıt içe aktarıldı"
   },
   "panels/recorder/RecorderController.ts | replayRecording": {
     "message": "Kaydı tekrar oynat"
@@ -11824,6 +12280,12 @@
   },
   "panels/recorder/components/RecordingView.ts | cancelReplay": {
     "message": "Tekrar oynatma işlemini iptal et"
+  },
+  "panels/recorder/components/RecordingView.ts | codeSidebarClosed": {
+    "message": "Kod kenar çubuğu kapatıldı"
+  },
+  "panels/recorder/components/RecordingView.ts | codeSidebarOpened": {
+    "message": "Kod kenar çubuğu açıldı"
   },
   "panels/recorder/components/RecordingView.ts | default": {
     "message": "Varsayılan"
@@ -12155,174 +12617,6 @@
   "panels/search/SearchView.ts | typeAndPressSToSearch": {
     "message": "Yazın ve {PH1} tuşuna basarak arayın"
   },
-  "panels/security/CookieControlsView.ts | cardDisclaimer": {
-    "message": "Yalnızca Geliştirici Araçları açık olduğunda"
-  },
-  "panels/security/CookieControlsView.ts | cardTitle": {
-    "message": "Üçüncü taraf çerezlerini geçici olarak sınırlandırın"
-  },
-  "panels/security/CookieControlsView.ts | enableFlag": {
-    "message": "Bunu kullanmak için {PH1} değerini Varsayılan olarak ayarlayın"
-  },
-  "panels/security/CookieControlsView.ts | enrollGracePeriod": {
-    "message": "Bunu kullanmak için bu siteyi veya siteye yerleştirilmiş siteleri {PH1} içinde kaydedin"
-  },
-  "panels/security/CookieControlsView.ts | enterpriseDisclaimer": {
-    "message": "Kuruluşunuz bu sitede üçüncü taraf çerezi erişimini yönetiyor"
-  },
-  "panels/security/CookieControlsView.ts | enterpriseTooltip": {
-    "message": "Bu ayar, kuruluşunuz tarafından yönetilir"
-  },
-  "panels/security/CookieControlsView.ts | exceptions": {
-    "message": "İstisnalar"
-  },
-  "panels/security/CookieControlsView.ts | exceptionsExplanation": {
-    "message": "Üçüncü taraf çerezlerine erişim izni verilen senaryolar"
-  },
-  "panels/security/CookieControlsView.ts | gracePeriod": {
-    "message": "ek süre"
-  },
-  "panels/security/CookieControlsView.ts | gracePeriodExplanation": {
-    "message": "Bu site veya siteye yerleştirilmiş bir site {PH1} için kayıt yaptırdıysa üçüncü taraf çerezlerine erişebilir"
-  },
-  "panels/security/CookieControlsView.ts | gracePeriodTitle": {
-    "message": "Üçüncü taraf çerezi ek süresi"
-  },
-  "panels/security/CookieControlsView.ts | heuristicExplanation": {
-    "message": "Pop-up'lar veya yönlendirmeler gibi {PH1} söz konusu olduğunda, bu siteye yerleştirilmiş bir site, üçüncü taraf çerezlerine erişebilir"
-  },
-  "panels/security/CookieControlsView.ts | heuristicTitle": {
-    "message": "Buluşsal yöntemlere dayalı istisna"
-  },
-  "panels/security/CookieControlsView.ts | scenarios": {
-    "message": "önceden tanımlanmış senaryolar"
-  },
-  "panels/security/CookieControlsView.ts | siteReloadMessage": {
-    "message": "Güncellenen kontrollerinizi uygulamak için sayfayı yeniden yükleyin"
-  },
-  "panels/security/CookieControlsView.ts | tpcdHeuristicsGrants": {
-    "message": "#tpcd-heuristics-grants"
-  },
-  "panels/security/CookieControlsView.ts | tpcdMetadataGrants": {
-    "message": "#tpcd-metadata-grants"
-  },
-  "panels/security/CookieControlsView.ts | viewDetails": {
-    "message": "Ayrıntıları göster"
-  },
-  "panels/security/CookieControlsView.ts | viewExplanation": {
-    "message": "Chrome'da üçüncü taraf çerezleri sınırlandırılırsa bu sitenin nasıl performans göstereceğini test edin"
-  },
-  "panels/security/CookieControlsView.ts | viewTitle": {
-    "message": "Denetimler"
-  },
-  "panels/security/CookieReportView.ts | adCookieTypeString": {
-    "message": "Reklamcılık"
-  },
-  "panels/security/CookieReportView.ts | allowed": {
-    "message": "İzin verildi"
-  },
-  "panels/security/CookieReportView.ts | allowedByException": {
-    "message": "İstisna yapılarak izin verildi"
-  },
-  "panels/security/CookieReportView.ts | analyticsCookieTypeString": {
-    "message": "Analizler"
-  },
-  "panels/security/CookieReportView.ts | blocked": {
-    "message": "Engellendi"
-  },
-  "panels/security/CookieReportView.ts | body": {
-    "message": "Chrome'da üçüncü taraf çerezleri ve diğer çerezler sınırlandırılırsa bu site çalışmayabilir."
-  },
-  "panels/security/CookieReportView.ts | cdnCookieTypeString": {
-    "message": "CDN"
-  },
-  "panels/security/CookieReportView.ts | consentProviderCookieTypeString": {
-    "message": "İzin Sağlayıcı"
-  },
-  "panels/security/CookieReportView.ts | contentCookieTypeString": {
-    "message": "İçerik"
-  },
-  "panels/security/CookieReportView.ts | customerSuccessCookieTypeString": {
-    "message": "Müşteri Başarısı"
-  },
-  "panels/security/CookieReportView.ts | domain": {
-    "message": "Alan adı"
-  },
-  "panels/security/CookieReportView.ts | emptyReport": {
-    "message": "Hiç sorun kalmadı"
-  },
-  "panels/security/CookieReportView.ts | emptyReportExplanation": {
-    "message": "Üçüncü taraf çerezleriyle ilgili sorun bulunamadı"
-  },
-  "panels/security/CookieReportView.ts | gitHubResource": {
-    "message": "Üçüncü taraf sitesindeki {PH1} incelenmelidir"
-  },
-  "panels/security/CookieReportView.ts | gracePeriod": {
-    "message": "{PH1} gözden geçirin. Ek süre istisnası etkin."
-  },
-  "panels/security/CookieReportView.ts | guidance": {
-    "message": "rehberlik"
-  },
-  "panels/security/CookieReportView.ts | heuristics": {
-    "message": "Daha sonra işlem yapılması gerekiyor. Buluşsal yöntemlere dayalı istisna etkin."
-  },
-  "panels/security/CookieReportView.ts | hostingCookieTypeString": {
-    "message": "Barındırma"
-  },
-  "panels/security/CookieReportView.ts | learnMoreLink": {
-    "message": "Üçüncü taraf çerezlerinin nasıl kullanıldığı hakkında daha fazla bilgi"
-  },
-  "panels/security/CookieReportView.ts | marketingCookieTypeString": {
-    "message": "Pazarlama"
-  },
-  "panels/security/CookieReportView.ts | name": {
-    "message": "Ad"
-  },
-  "panels/security/CookieReportView.ts | other": {
-    "message": "Daha fazla bilgi için üçüncü taraf sitesiyle iletişime geçin"
-  },
-  "panels/security/CookieReportView.ts | otherCookieTypeString": {
-    "message": "Diğer"
-  },
-  "panels/security/CookieReportView.ts | platform": {
-    "message": "Platform"
-  },
-  "panels/security/CookieReportView.ts | recommendation": {
-    "message": "Öneri"
-  },
-  "panels/security/CookieReportView.ts | report": {
-    "message": "Üçüncü Taraf Çerezi Raporu"
-  },
-  "panels/security/CookieReportView.ts | reportedIssues": {
-    "message": "Bildirilen sorunları"
-  },
-  "panels/security/CookieReportView.ts | showRequestsWithThisCookie": {
-    "message": "Bu çerezi kullanan istekleri göster"
-  },
-  "panels/security/CookieReportView.ts | socialCookieTypeString": {
-    "message": "Sosyal"
-  },
-  "panels/security/CookieReportView.ts | status": {
-    "message": "Durum"
-  },
-  "panels/security/CookieReportView.ts | tagManagerCookieTypeString": {
-    "message": "Etiket Yöneticisi"
-  },
-  "panels/security/CookieReportView.ts | title": {
-    "message": "Üçüncü taraf çerezleri"
-  },
-  "panels/security/CookieReportView.ts | type": {
-    "message": "Tür"
-  },
-  "panels/security/CookieReportView.ts | unknown": {
-    "message": "Bilinmiyor"
-  },
-  "panels/security/CookieReportView.ts | utilityCookieTypeString": {
-    "message": "Yardımcı Program"
-  },
-  "panels/security/CookieReportView.ts | videoCookieTypeString": {
-    "message": "Video"
-  },
   "panels/security/SecurityModel.ts | cipherWithMAC": {
     "message": "{PH2} ile {PH1}"
   },
@@ -12623,12 +12917,6 @@
   "panels/security/SecurityPanel.ts | yourPageRequestedNonsecure": {
     "message": "Sayfanız güvenli olmayan, engellenmiş kaynaklar talep etti."
   },
-  "panels/security/SecurityPanelSidebar.ts | cookieReport": {
-    "message": "Üçüncü taraf çerezleri"
-  },
-  "panels/security/SecurityPanelSidebar.ts | flagControls": {
-    "message": "Denetimler"
-  },
   "panels/security/SecurityPanelSidebar.ts | mainOrigin": {
     "message": "Ana kaynak"
   },
@@ -12637,9 +12925,6 @@
   },
   "panels/security/SecurityPanelSidebar.ts | overview": {
     "message": "Genel bakış"
-  },
-  "panels/security/SecurityPanelSidebar.ts | privacy": {
-    "message": "Gizlilik"
   },
   "panels/security/SecurityPanelSidebar.ts | reloadToViewDetails": {
     "message": "Ayrıntıları görmek için yeniden yükleyin"
@@ -12653,14 +12938,8 @@
   "panels/security/SecurityPanelSidebar.ts | unknownCanceled": {
     "message": "Bilinmiyor / iptal edildi"
   },
-  "panels/security/security-meta.ts | PrivacyAndSecurity": {
-    "message": "Gizlilik ve güvenlik"
-  },
   "panels/security/security-meta.ts | security": {
     "message": "Güvenlik"
-  },
-  "panels/security/security-meta.ts | showPrivacyAndSecurity": {
-    "message": "Gizlilik ve güvenlik panelini göster"
   },
   "panels/security/security-meta.ts | showSecurity": {
     "message": "Güvenlik Panelini Göster"
@@ -12917,6 +13196,9 @@
   "panels/settings/AISettingsTab.ts | asYouTypeCodeSuggestions": {
     "message": "Konsol'da veya Kaynaklar panelinde yazarken kod önerileri alırsınız. Önerilerden birini kabul etmek için Sekme tuşuna basın."
   },
+  "panels/settings/AISettingsTab.ts | asYouTypeRelevantDataIsBeingSentToGoogle": {
+    "message": "Siz yazarken kod önerileri oluşturmak için alakalı veriler Google'a gönderilir. Kabul etmek için Sekme tuşuna basın."
+  },
   "panels/settings/AISettingsTab.ts | boostYourProductivity": {
     "message": "Yapay zeka ile üretkenliğinizi artırın"
   },
@@ -12937,6 +13219,12 @@
   },
   "panels/settings/AISettingsTab.ts | dataCollectionNoLogging": {
     "message": "Google, Google Hesabınızın yönetimine ve/veya bölgenize bağlı olarak veri toplamayabilir"
+  },
+  "panels/settings/AISettingsTab.ts | describeCodeInComment": {
+    "message": "Konsol veya Kaynaklar panelinde, ihtiyacınız olan kodu yorum olarak yazın ve Ctrl+I tuşlarına basarak kodu oluşturun."
+  },
+  "panels/settings/AISettingsTab.ts | describeCodeInCommentForMacOs": {
+    "message": "Konsol veya Kaynaklar panelinde, ihtiyacınız olan kodu yorum olarak yazın ve Cmd+I tuşlarına basarak kodu oluşturun."
   },
   "panels/settings/AISettingsTab.ts | enableAiAssistance": {
     "message": "Yapay zeka yardımını etkinleştir"
@@ -12969,10 +13257,10 @@
     "message": "Yapay zeka destekli analizlerle CSS stillerini, ağ etkinliğini, performans sorunlarını ve dosya kaynaklarını anlayın"
   },
   "panels/settings/AISettingsTab.ts | freestylerSendsData": {
-    "message": "İncelenen sayfanın; Web API'leri, ağ istekleri, dosyalar ve performans izleri aracılığıyla erişebildiği tüm kullanıcı sorguları ve veriler, açıklama oluşturmak için Google'a gönderilir. Bu veriler, özelliğin geliştirilmesi için inceleme uzmanları tarafından görüntülenebilir. Kişisel veya hassas bilgilerin yer aldığı sayfalarda kullanmayın."
+    "message": "Açıklama oluşturmak için sohbet mesajlarınız ve incelenen sayfanın Web API kullanarak görebildiği tüm verilerin yanı sıra seçtiğiniz dosyalar, ağ istekleri ve performans izleri gibi öğeler Google'a gönderilir. Bu veriler, özelliğin geliştirilmesi için inceleme uzmanları tarafından görüntülenebilir. Kişisel veya hassas bilgilerin yer aldığı sayfalarda kullanmayın."
   },
   "panels/settings/AISettingsTab.ts | freestylerSendsDataNoLogging": {
-    "message": "İncelenen sayfanın; Web API'leri, ağ istekleri, dosyalar ve performans izleri aracılığıyla erişebildiği tüm kullanıcı sorguları ve veriler, açıklama oluşturmak için Google'a gönderilir. Bu veriler, Google'ın yapay zeka modellerini iyileştirmek için kullanılmaz. Kuruluşunuz istediği zaman bu ayarları değiştirebilir."
+    "message": "Açıklama oluşturmak için sohbet mesajlarınız ve incelenen sayfanın Web API kullanarak görebildiği tüm verilerin yanı sıra seçtiğiniz dosyalar, ağ istekleri ve performans izleri gibi öğeler Google'a gönderilir. Bu veriler, Google'ın yapay zeka modellerini iyileştirmek için kullanılmaz. Kuruluşunuz istediği zaman bu ayarları değiştirebilir."
   },
   "panels/settings/AISettingsTab.ts | generatedAiAnnotationsSendData": {
     "message": "Not önerileri oluşturmak için performans iziniz Google'a gönderilir. Bu veriler, özelliğin geliştirilmesi için inceleme uzmanları tarafından görüntülenebilir."
@@ -12984,7 +13272,7 @@
     "message": "Otomatik olarak oluşturulan etiketlerle performans izinize not eklemenize yardımcı olur"
   },
   "panels/settings/AISettingsTab.ts | helpUnderstandCodeSuggestions": {
-    "message": "Kodunuzu tamamlama konusunda yardım alın"
+    "message": "Yapay zeka destekli önerilerle daha hızlı kod yazın"
   },
   "panels/settings/AISettingsTab.ts | helpUnderstandConsole": {
     "message": "Konsoldaki uyarıları ve hataları anlayıp düzeltmenize yardımcı olur"
@@ -13163,14 +13451,17 @@
   "panels/settings/SettingsScreen.ts | experiments": {
     "message": "Denemeler"
   },
+  "panels/settings/SettingsScreen.ts | experimentsFound": {
+    "message": "{n,plural, =1{# deneme bulundu}other{# deneme bulundu}}"
+  },
+  "panels/settings/SettingsScreen.ts | greenDevUnstable": {
+    "message": "Uyarı: Bu özelliklerin tümü prototip aşamasında olduğundan son derece tutarsızdır. Kullanıcı testi için tasarlanan bu özelliklere güvenilerek işlem yapılması önerilmez."
+  },
   "panels/settings/SettingsScreen.ts | learnMore": {
     "message": "Daha fazla bilgi"
   },
   "panels/settings/SettingsScreen.ts | noResults": {
     "message": "Filtreyle eşleşen deneme yok"
-  },
-  "panels/settings/SettingsScreen.ts | oneOrMoreSettingsHaveChanged": {
-    "message": "Bir veya daha fazla ayarda yapılan değişikliklerin etkinleşmesi için yeniden yükleme gerekiyor"
   },
   "panels/settings/SettingsScreen.ts | restoreDefaultsAndReload": {
     "message": "Varsayılanları geri getir ve yeniden yükle"
@@ -13184,17 +13475,14 @@
   "panels/settings/SettingsScreen.ts | settings": {
     "message": "Ayarlar"
   },
+  "panels/settings/SettingsScreen.ts | settingsChangedReloadDevTools": {
+    "message": "Ayarlar değişti. Uygulamak için Geliştirici Araçları'nı yeniden yükleyin."
+  },
   "panels/settings/SettingsScreen.ts | shortcuts": {
     "message": "Kısayollar"
   },
-  "panels/settings/SettingsScreen.ts | theseExperimentsAreParticularly": {
-    "message": "Uyarı: Bu denemeler oldukça tutarsız. Etkinleştirme riski size aittir."
-  },
   "panels/settings/SettingsScreen.ts | theseExperimentsCouldBeUnstable": {
     "message": "Uyarı: Bu denemeler tutarsız veya güvenilmez olabilir."
-  },
-  "panels/settings/SettingsScreen.ts | unstableExperiments": {
-    "message": "Tutarsız denemeler"
   },
   "panels/settings/WorkspaceSettingsTab.ts | addFolder": {
     "message": "Klasör ekle"
@@ -13418,6 +13706,9 @@
   "panels/settings/settings-meta.ts | experiments": {
     "message": "Denemeler"
   },
+  "panels/settings/settings-meta.ts | greenDevProtoTypes": {
+    "message": "GreenDev"
+  },
   "panels/settings/settings-meta.ts | ignoreList": {
     "message": "Yoksayılanlar listesi"
   },
@@ -13435,6 +13726,9 @@
   },
   "panels/settings/settings-meta.ts | showExperiments": {
     "message": "Denemeleri Göster"
+  },
+  "panels/settings/settings-meta.ts | showGreenDev": {
+    "message": "GreenDev'i göster"
   },
   "panels/settings/settings-meta.ts | showIgnoreList": {
     "message": "Yoksayılanlar listesini göster"
@@ -13588,6 +13882,12 @@
   },
   "panels/sources/CallStackSidebarPane.ts | debugFileNotFound": {
     "message": "\"{PH1}\" adlı hata ayıklama dosyası yüklenemedi."
+  },
+  "panels/sources/CallStackSidebarPane.ts | debugSymbolsIncomplete": {
+    "message": "{PH1} işlevi için hata ayıklama bilgileri eksik"
+  },
+  "panels/sources/CallStackSidebarPane.ts | failedToLoadDebugSymbolsForFunction": {
+    "message": "\"{PH1}\" işlevi için hata ayıklama bilgisi yok"
   },
   "panels/sources/CallStackSidebarPane.ts | notPaused": {
     "message": "Duraklatılmadı"
@@ -14708,8 +15008,20 @@
   "panels/timeline/ThreadAppender.ts | workletServiceS": {
     "message": "Açık artırma iş akışı hizmeti - {PH1}"
   },
+  "panels/timeline/TimelineController.ts | initializingTracing": {
+    "message": "İzleme başlatılıyor…"
+  },
+  "panels/timeline/TimelineController.ts | tracing": {
+    "message": "İzleniyor…"
+  },
   "panels/timeline/TimelineController.ts | tracingNotSupported": {
     "message": "Performans izleme kaydı bu tür hedef için desteklenmiyor"
+  },
+  "panels/timeline/TimelineController.ts | waitingForLoadEvent": {
+    "message": "Yükleme etkinliği bekleniyor…"
+  },
+  "panels/timeline/TimelineController.ts | waitingForLoadEventPlus5Seconds": {
+    "message": "Yükleme etkinliği bekleniyor (+5 sn.)…"
   },
   "panels/timeline/TimelineDetailsView.ts | bottomup": {
     "message": "Aşağıdan yukarıya"
@@ -14861,6 +15173,9 @@
   "panels/timeline/TimelinePanel.ts | close": {
     "message": "Kapat"
   },
+  "panels/timeline/TimelinePanel.ts | compressingTraceForDownload": {
+    "message": "Sıkıştırılıyor..."
+  },
   "panels/timeline/TimelinePanel.ts | cpu": {
     "message": "CPU:"
   },
@@ -14881,6 +15196,9 @@
   },
   "panels/timeline/TimelinePanel.ts | enableSelectorStats": {
     "message": "CSS seçici istatistiklerini etkinleştirin (yavaş)"
+  },
+  "panels/timeline/TimelinePanel.ts | encodingTraceForDownload": {
+    "message": "Kodlanıyor…"
   },
   "panels/timeline/TimelinePanel.ts | eventSelected": {
     "message": "{PH1} etkinliği seçildi"
@@ -14920,6 +15238,9 @@
   },
   "panels/timeline/TimelinePanel.ts | networkConditions": {
     "message": "Ağ koşulları"
+  },
+  "panels/timeline/TimelinePanel.ts | preparingTraceForDownload": {
+    "message": "Hazırlanıyor…"
   },
   "panels/timeline/TimelinePanel.ts | processed": {
     "message": "İşlendi"
@@ -15305,9 +15626,6 @@
   "panels/timeline/TimelineUIUtils.ts | layerRoot": {
     "message": "Katman kökü"
   },
-  "panels/timeline/TimelineUIUtils.ts | layoutForced": {
-    "message": "Düzen zorunlu kılındı"
-  },
   "panels/timeline/TimelineUIUtils.ts | layoutRoot": {
     "message": "Düzen kökü"
   },
@@ -15358,9 +15676,6 @@
   },
   "panels/timeline/TimelineUIUtils.ts | range": {
     "message": "Aralık"
-  },
-  "panels/timeline/TimelineUIUtils.ts | recalculationForced": {
-    "message": "Zorunlu kılınan yeniden hesaplama"
   },
   "panels/timeline/TimelineUIUtils.ts | relatedNode": {
     "message": "İlişkili düğüm"
@@ -17172,7 +17487,7 @@
     "message": "genişletildi"
   },
   "ui/legacy/components/data_grid/DataGrid.ts | headerOptions": {
-    "message": "Başlık Seçenekleri"
+    "message": "Üst bilgi seçenekleri"
   },
   "ui/legacy/components/data_grid/DataGrid.ts | levelS": {
     "message": "seviye {PH1}"
@@ -17181,7 +17496,7 @@
     "message": "Yenile"
   },
   "ui/legacy/components/data_grid/DataGrid.ts | resetColumns": {
-    "message": "Sütunları Sıfırla"
+    "message": "Sütunları sıfırla"
   },
   "ui/legacy/components/data_grid/DataGrid.ts | rowsS": {
     "message": "Satır: {PH1}"
@@ -17193,7 +17508,7 @@
     "message": "{PH1} {PH2}; gezinmek ve tablonun satırlarıyla etkileşime geçmek için yukarı ve aşağı ok tuşlarını, hücre bazında okuma için göz atma modunu kullanın."
   },
   "ui/legacy/components/data_grid/DataGrid.ts | sortByString": {
-    "message": "Sıralama Ölçütü"
+    "message": "Sıralama ölçütü"
   },
   "ui/legacy/components/data_grid/DataGrid.ts | sortableColumn": {
     "message": "Sıralanabilir sütun. Sıralama filtresi uygulamak için Enter tuşuna basın"
@@ -17459,14 +17774,14 @@
   "ui/legacy/components/quick_open/CommandMenu.ts | noCommandsFound": {
     "message": "Komut bulunamadı"
   },
-  "ui/legacy/components/quick_open/CommandMenu.ts | oneOrMoreSettingsHaveChanged": {
-    "message": "Bir veya daha fazla ayarda yapılan değişikliklerin etkinleşmesi için yeniden yükleme gerekiyor"
-  },
   "ui/legacy/components/quick_open/CommandMenu.ts | run": {
     "message": "Çalıştır"
   },
   "ui/legacy/components/quick_open/CommandMenu.ts | runCommand": {
     "message": "Komutu çalıştır"
+  },
+  "ui/legacy/components/quick_open/CommandMenu.ts | settingsChangedReloadDevTools": {
+    "message": "Ayarlar değişti. Uygulamak için Geliştirici Araçları'nı yeniden yükleyin."
   },
   "ui/legacy/components/quick_open/FilteredListWidget.ts | newFeature": {
     "message": "Bu yeni bir özelliktir"
@@ -17492,8 +17807,8 @@
   "ui/legacy/components/quick_open/quick_open-meta.ts | runCommand": {
     "message": "Komutu çalıştır"
   },
-  "ui/legacy/components/settings_ui/SettingsUI.ts | oneOrMoreSettingsHaveChanged": {
-    "message": "Bir veya daha fazla ayarda yapılan değişikliklerin etkinleşmesi için yeniden yükleme gerekiyor"
+  "ui/legacy/components/settings_ui/SettingsUI.ts | settingsChangedReloadDevTools": {
+    "message": "Ayarlar değişti. Uygulamak için Geliştirici Araçları'nı yeniden yükleyin."
   },
   "ui/legacy/components/settings_ui/SettingsUI.ts | srequiresReload": {
     "message": "*Yeniden yükleme gerektiriyor"

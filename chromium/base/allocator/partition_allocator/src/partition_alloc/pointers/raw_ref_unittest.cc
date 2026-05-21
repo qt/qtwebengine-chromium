@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "partition_alloc/pointers/raw_ref.h"
 
 #include <functional>
@@ -1028,6 +1023,12 @@ TEST(RawRef, CrossKindAssignment) {
 TEST(AsanBackupRefPtrImpl, RawRefGet) {
   base::debug::AsanService::GetInstance()->Initialize();
 
+#if PA_BUILDFLAG(USE_ASAN_BACKUP_REF_PTR_V2)
+  base::RawPtrAsanService::GetInstance().Configure(
+      true, {.enable_data_race_check = base::RawPtrAsanServiceOptions::kEnabled,
+             .enable_free_after_quarantined_check =
+                 base::RawPtrAsanServiceOptions::kEnabled});
+#else
   if (!base::RawPtrAsanService::GetInstance().IsEnabled()) {
     base::RawPtrAsanService::GetInstance().Configure(
         base::EnableDereferenceCheck(true), base::EnableExtractionCheck(true),
@@ -1040,6 +1041,7 @@ TEST(AsanBackupRefPtrImpl, RawRefGet) {
     ASSERT_TRUE(base::RawPtrAsanService::GetInstance()
                     .is_instantiation_check_enabled());
   }
+#endif  // PA_BUILDFLAG(USE_ASAN_BACKUP_REF_PTR_V2)
 
   auto ptr = ::std::make_unique<int>();
   raw_ref<int> safe_ref(*ptr);
@@ -1054,6 +1056,12 @@ TEST(AsanBackupRefPtrImpl, RawRefGet) {
 TEST(AsanBackupRefPtrImpl, RawRefOperatorStar) {
   base::debug::AsanService::GetInstance()->Initialize();
 
+#if PA_BUILDFLAG(USE_ASAN_BACKUP_REF_PTR_V2)
+  base::RawPtrAsanService::GetInstance().Configure(
+      true, {.enable_data_race_check = base::RawPtrAsanServiceOptions::kEnabled,
+             .enable_free_after_quarantined_check =
+                 base::RawPtrAsanServiceOptions::kEnabled});
+#else
   if (!base::RawPtrAsanService::GetInstance().IsEnabled()) {
     base::RawPtrAsanService::GetInstance().Configure(
         base::EnableDereferenceCheck(true), base::EnableExtractionCheck(true),
@@ -1066,6 +1074,7 @@ TEST(AsanBackupRefPtrImpl, RawRefOperatorStar) {
     ASSERT_TRUE(base::RawPtrAsanService::GetInstance()
                     .is_instantiation_check_enabled());
   }
+#endif  // PA_BUILDFLAG(USE_ASAN_BACKUP_REF_PTR_V2)
 
   auto ptr = ::std::make_unique<int>();
   raw_ref<int> safe_ref(*ptr);

@@ -11,7 +11,7 @@
 <translation id="1637811476055996098">Pilih File</translation>
 <translation id="1729654308190250600">Jangan mengosongkan bidang alamat email.</translation>
 <translation id="1758486001363313524">Lainnya...</translation>
-<translation id="1921819250265091946">hh</translation>
+<translation id="1921819250265091946">dd</translation>
 <translation id="1938124657309484470">Tanggal harus <ph name="MAXIMUM_DATE_OR_TIME" /> atau lebih awal.</translation>
 <translation id="1993104285338243655">Dialihkan ke pencerminan</translation>
 <translation id="2060505056492490888">'<ph name="DOT" />' digunakan pada posisi yang salah di '<ph name="INVALIDDOMAIN" />'.</translation>
@@ -20,6 +20,7 @@
 <translation id="2226276347425096477">Pendekkan teks ini menjadi <ph name="MAX_CHARACTERS" /> karakter atau kurang (saat ini Anda menggunakan <ph name="CURRENT_LENGTH" /> karakter).</translation>
 <translation id="2247351761944213033">Minggu <ph name="WEEKNUMBER" />, <ph name="YEAR" /></translation>
 <translation id="2277199496770840904">Lagu <ph name="NUMBER" /></translation>
+<translation id="2500270406326775625">URL data</translation>
 <translation id="2507943997699731163">Harap isi bidang ini.</translation>
 <translation id="2613802280814924224">Masukkan nilai yang valid. Nilai valid terdekatnya adalah <ph name="VALID_VALUE" />.</translation>
 <translation id="2653659639078652383">Kirim</translation>
@@ -31,7 +32,7 @@
 <translation id="310520048233152454">Masukkan URL.</translation>
 <translation id="3321030238473337787">Kecepatan pemutaran</translation>
 <translation id="3450233048674729344">Nilai harus lebih kecil atau sama dengan <ph name="MAXIMUM" />.</translation>
-<translation id="3732799496749320381">bb</translation>
+<translation id="3732799496749320381">mm</translation>
 <translation id="3754210790023674521">Keluar dari mode picture-in-picture</translation>
 <translation id="3757388668994797779"><ph name="QUANTITY" /> GB</translation>
 <translation id="3822383571486410024">Perpanjang teks ini hingga <ph name="MIN_CHARACTERS" /> karakter atau lebih (saat ini Anda menggunakan <ph name="CURRENT_LENGTH" /> karakter).</translation>

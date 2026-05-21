@@ -354,7 +354,8 @@ class QuicCryptoServerStreamTestWithFakeProofSource
         crypto_config_peer_(&server_crypto_config_) {}
 
   FakeProofSource* GetFakeProofSource() const {
-    return static_cast<FakeProofSource*>(crypto_config_peer_.GetProofSource());
+    return absl::down_cast<FakeProofSource*>(
+        crypto_config_peer_.GetProofSource());
   }
 
  protected:
@@ -373,7 +374,7 @@ TEST_F(QuicCryptoServerStreamTestWithFakeProofSource, MultipleChlo) {
   // first one from the list of supported versions.
   QuicTransportVersion transport_version = QUIC_VERSION_UNSUPPORTED;
   for (const ParsedQuicVersion& version : AllSupportedVersions()) {
-    if (version.handshake_protocol == PROTOCOL_QUIC_CRYPTO) {
+    if (!version.IsIetfQuic()) {
       transport_version = version.transport_version;
       break;
     }

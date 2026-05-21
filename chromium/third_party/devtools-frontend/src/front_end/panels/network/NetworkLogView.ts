@@ -42,6 +42,7 @@ import * as Platform from '../../core/platform/platform.js';
 import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
+import * as Annotations from '../../models/annotations/annotations.js';
 import * as Bindings from '../../models/bindings/bindings.js';
 import * as HAR from '../../models/har/har.js';
 import * as Logs from '../../models/logs/logs.js';
@@ -51,7 +52,6 @@ import * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as NetworkForward from '../../panels/network/forward/forward.js';
 import * as Sources from '../../panels/sources/sources.js';
 import * as Adorners from '../../ui/components/adorners/adorners.js';
-import * as Annotations from '../../ui/components/annotations/annotations.js';
 import * as Buttons from '../../ui/components/buttons/buttons.js';
 import * as RenderCoordinator from '../../ui/components/render_coordinator/render_coordinator.js';
 import * as DataGrid from '../../ui/legacy/components/data_grid/data_grid.js';
@@ -1451,17 +1451,14 @@ export class NetworkLogView extends Common.ObjectWrapper.eventMixin<EventTypes, 
   }
 
   private removeNodeAndMaybeAncestors(node: NetworkRequestNode): void {
-    let parent: NetworkNode|
-        (DataGrid.DataGrid.DataGridNode<DataGrid.ViewportDataGrid.ViewportDataGridNode<
-             DataGrid.SortableDataGrid.SortableDataGridNode<NetworkNode>>>|
-         null) = node.parent;
+    let parent = node.parent;
     if (!parent) {
       return;
     }
     parent.removeChild(node);
     while (parent && !parent.hasChildren() && parent.dataGrid && parent.dataGrid.rootNode() !== parent) {
       const grandparent = (parent.parent as NetworkNode);
-      grandparent.removeChild(parent);
+      grandparent.removeChild(parent as NetworkNode);
       parent = grandparent;
     }
   }
@@ -1725,11 +1722,8 @@ export class NetworkLogView extends Common.ObjectWrapper.eventMixin<EventTypes, 
         }
 
         UI.Context.Context.instance().setFlavor(SDK.NetworkRequest.NetworkRequest, request);
-        if (Root.Runtime.hostConfig.devToolsAiSubmenuPrompts?.enabled) {
           const action = UI.ActionRegistry.ActionRegistry.instance().getAction(openAiAssistanceId);
-          const submenu = contextMenu.footerSection().appendSubMenuItem(
-              action.title(), false, openAiAssistanceId,
-              Root.Runtime.hostConfig.devToolsAiAssistanceNetworkAgent?.featureName);
+          const submenu = contextMenu.footerSection().appendSubMenuItem(action.title(), false, openAiAssistanceId);
           submenu.defaultSection().appendAction(openAiAssistanceId, i18nString(UIStrings.startAChat));
           appendSubmenuPromptAction(
               submenu, action, i18nString(UIStrings.explainPurpose), 'What is the purpose of this request?',
@@ -1743,13 +1737,6 @@ export class NetworkLogView extends Common.ObjectWrapper.eventMixin<EventTypes, 
           appendSubmenuPromptAction(
               submenu, action, i18nString(UIStrings.assessSecurityHeaders), 'Are there any security headers present?',
               openAiAssistanceId + '.security');
-        } else if (Root.Runtime.hostConfig.devToolsAiDebugWithAi?.enabled) {
-          contextMenu.footerSection().appendAction(
-              openAiAssistanceId, undefined, false, undefined,
-              Root.Runtime.hostConfig.devToolsAiAssistanceNetworkAgent?.featureName);
-        } else {
-          contextMenu.footerSection().appendAction(openAiAssistanceId);
-        }
       }
       copyMenu.defaultSection().appendItem(
           i18nString(UIStrings.copyURL),
@@ -2764,11 +2751,9 @@ export class MoreFiltersDropDownUI extends Common.ObjectWrapper.ObjectWrapper<UI
     this.filterElement.setAttribute('jslog', `${VisualLogging.dropDown('more-filters').track({click: true})}`);
 
     this.activeFiltersCountAdorner = new Adorners.Adorner.Adorner();
+    this.activeFiltersCountAdorner.name = 'countWrapper';
     this.activeFiltersCount = document.createElement('span');
-    this.activeFiltersCountAdorner.data = {
-      name: 'countWrapper',
-      content: this.activeFiltersCount,
-    };
+    this.activeFiltersCountAdorner.append(this.activeFiltersCount);
     this.activeFiltersCountAdorner.classList.add('active-filters-count');
     this.updateActiveFiltersCount();
 

@@ -97,11 +97,11 @@ pdf_enable_fontations = false
 
 pdf_enable_xfa = true  # Set false to remove XFA support (implies JS support).
 pdf_enable_v8 = true  # Set false to remove Javascript support.
-pdf_is_standalone = true  # Set for a non-embedded build.
 is_component_build = false # Disable component build (Though it should work)
 ```
 
-For test applications like `pdfium_test` to build, one must set
+In order to minimize the build time for embedder applications, test executables
+like `pdfium_test` are not built by default. To build these, add the argument
 `pdf_is_standalone = true`.
 
 By default, the entire project builds with C++20.

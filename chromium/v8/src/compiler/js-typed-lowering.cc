@@ -379,8 +379,7 @@ class JSBinopReduction final {
     // Remove the inputs corresponding to context, effect, and control.
     NodeProperties::RemoveNonValueInputs(node_);
     // Remove the feedback vector input, if applicable.
-    if (JSOperator::IsBinaryWithFeedback(node_->opcode()) &&
-        !JSOperator::IsBinaryWithEmbeddedFeedback(node_->opcode())) {
+    if (JSOperator::IsBinaryWithFeedback(node_->opcode())) {
       node_->RemoveInput(JSBinaryOpNode::FeedbackVectorIndex());
     }
     // Finally, update the operator to the new one.
@@ -418,8 +417,7 @@ class JSBinopReduction final {
     node_->RemoveInput(NodeProperties::FirstContextIndex(node_));
 
     // Remove the feedback vector input, if applicable.
-    if (JSOperator::IsBinaryWithFeedback(node_->opcode()) &&
-        !JSOperator::IsBinaryWithEmbeddedFeedback(node_->opcode())) {
+    if (JSOperator::IsBinaryWithFeedback(node_->opcode())) {
       node_->RemoveInput(JSBinaryOpNode::FeedbackVectorIndex());
     }
     // Finally, update the operator to the new one.
@@ -1905,11 +1903,24 @@ void ReduceBuiltin(JSGraph* jsgraph, Node* node, Builtin builtin, int arity,
   static_assert(BuiltinArguments::kNewTargetIndex == 0);
   static_assert(BuiltinArguments::kTargetIndex == 1);
   static_assert(BuiltinArguments::kArgcIndex == 2);
-  static_assert(BuiltinArguments::kPaddingIndex == 3);
+
   node->InsertInput(zone, 1, new_target);
   node->InsertInput(zone, 2, target);
   node->InsertInput(zone, 3, argc_node);
-  node->InsertInput(zone, 4, jsgraph->PaddingConstant());
+
+#if V8_TARGET_ARCH_ARM64
+  // Make sure we insert required stack-alignment padding between extra
+  // arguments and JS arguments.
+  static_assert(BuiltinArguments::kOptionalPaddingIndex == 3);
+  static_assert(BuiltinArguments::kNumExtraArgs == 4);
+  // Just use an existing value as padding in order to avoid generation
+  // of unnecessary instructions.
+  node->InsertInput(zone, 4, argc_node);
+#else
+  // No padding required.
+  static_assert(BuiltinArguments::kNumExtraArgs == 3);
+#endif  // V8_TARGET_ARCH_ARM64
+
   int cursor = arity + kStub + BuiltinArguments::kNumExtraArgsWithReceiver;
 
   Address entry = Builtins::CppEntryOf(builtin);

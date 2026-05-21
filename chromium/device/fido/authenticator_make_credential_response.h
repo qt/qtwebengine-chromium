@@ -15,8 +15,8 @@
 #include "base/containers/flat_set.h"
 #include "base/containers/span.h"
 #include "device/fido/attestation_object.h"
-#include "device/fido/fido_constants.h"
-#include "device/fido/fido_transport_protocol.h"
+#include "device/fido/public/fido_constants.h"
+#include "device/fido/public/fido_transport_protocol.h"
 
 namespace device {
 
@@ -89,7 +89,8 @@ class COMPONENT_EXPORT(DEVICE_FIDO) AuthenticatorMakeCredentialResponse {
   // extension may be using the `hmac-secret` extension at the CTAP layer.
   bool prf_enabled = false;
 
-  // Contains the output of the `prf` extension.
+  // prf_results contains the output of the hmac-secret-mc or prf extension.
+  // The values have already been decrypted.
   std::optional<std::vector<uint8_t>> prf_results;
 };
 

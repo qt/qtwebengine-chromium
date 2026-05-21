@@ -134,7 +134,7 @@ absl::StatusOr<ChunkedObliviousHttpGateway> CreateChunkedObliviousHttpGateway(
       GetOhttpKeyConfig(
           /*key_id=*/1, EVP_HPKE_DHKEM_X25519_HKDF_SHA256, EVP_HPKE_HKDF_SHA256,
           EVP_HPKE_AES_128_GCM),
-      chunk_handler, quiche_random);
+      &chunk_handler, quiche_random);
 }
 
 TEST(ChunkedObliviousHttpGateway, ProvisionKeyAndDecapsulateFullRequest) {
@@ -233,14 +233,15 @@ TEST(ChunkedObliviousHttpGateway, InvalidKeyConfigReturnsInvalidArgument) {
             absl::StatusCode::kInvalidArgument);
 }
 
-TEST(ChunkedObliviousHttpGateway, ChunkHandlerOnChunkErrorPropagates) {
+TEST(ChunkedObliviousHttpGateway,
+     ChunkHandlerOnChunkErrorPropagatesAsInternalError) {
   class FailingChunkHandler : public ObliviousHttpChunkHandler {
    public:
     FailingChunkHandler() = default;
     ~FailingChunkHandler() override = default;
     absl::Status OnDecryptedChunk(
         absl::string_view /*decrypted_chunk*/) override {
-      return absl::InvalidArgumentError("Invalid data");
+      return absl::OutOfRangeError("Some custom supplied error");
     }
     absl::Status OnChunksDone() override {
       return absl::InvalidArgumentError("Invalid data");
@@ -254,10 +255,11 @@ TEST(ChunkedObliviousHttpGateway, ChunkHandlerOnChunkErrorPropagates) {
                                      &encapsulated_request_bytes));
 
   EXPECT_EQ(instance->DecryptRequest(encapsulated_request_bytes, true).code(),
-            absl::StatusCode::kInvalidArgument);
+            absl::StatusCode::kInternal);
 }
 
-TEST(ChunkedObliviousHttpGateway, ChunkHandlerOnChunksDoneErrorPropagates) {
+TEST(ChunkedObliviousHttpGateway,
+     ChunkHandlerOnChunksDoneErrorPropagatesAsInternalError) {
   class FailingChunkHandler : public ObliviousHttpChunkHandler {
    public:
     FailingChunkHandler() = default;
@@ -267,7 +269,7 @@ TEST(ChunkedObliviousHttpGateway, ChunkHandlerOnChunksDoneErrorPropagates) {
       return absl::OkStatus();
     }
     absl::Status OnChunksDone() override {
-      return absl::InvalidArgumentError("Invalid data");
+      return absl::OutOfRangeError("Some custom supplied error");
     }
   };
   FailingChunkHandler chunk_handler;
@@ -278,7 +280,36 @@ TEST(ChunkedObliviousHttpGateway, ChunkHandlerOnChunksDoneErrorPropagates) {
                                      &encapsulated_request_bytes));
 
   EXPECT_EQ(instance->DecryptRequest(encapsulated_request_bytes, true).code(),
-            absl::StatusCode::kInvalidArgument);
+            absl::StatusCode::kInternal);
+}
+
+TEST(ChunkedObliviousHttpGateway, DecryptZeroLengthNonFinalRequestChunkFails) {
+  TestChunkHandler chunk_handler;
+  // Contains the initial encapsulated request header and a zero-length
+  // encrypted request chunk.
+  std::string nonFinalZeroLengthEncryptedRequestChunk;
+  ASSERT_TRUE(
+      absl::HexStringToBytes("010020000100013d9dde87c236fcbcfa540087557a8653738"
+                             "0e4731385cdcfcc391f7948b9"
+                             "590b108495352919fa03b19a997bb5621b1480",
+                             &nonFinalZeroLengthEncryptedRequestChunk));
+
+  // The key used to generate the above request.
+  std::string privateKey;
+  ASSERT_TRUE(absl::HexStringToBytes(
+      "b77431ecfa8f4cfc30d6e467aafa06944dffe28cb9dd1409e33a3045f5adc8a1",
+      &privateKey));
+  auto gateway = ChunkedObliviousHttpGateway::Create(
+      privateKey,
+      GetOhttpKeyConfig(
+          /*key_id=*/1, EVP_HPKE_DHKEM_X25519_HKDF_SHA256, EVP_HPKE_HKDF_SHA256,
+          EVP_HPKE_AES_128_GCM),
+      &chunk_handler);
+
+  EXPECT_EQ(
+      gateway->DecryptRequest(nonFinalZeroLengthEncryptedRequestChunk, false)
+          .code(),
+      absl::StatusCode::kInvalidArgument);
 }
 
 TEST(ObliviousHttpGateway, TestDecryptingMultipleRequestsWithSingleInstance) {
@@ -335,7 +366,7 @@ TEST(ChunkedObliviousHttpGateway, TestInvalidHPKEKey) {
                 "Invalid HPKE key",
                 GetOhttpKeyConfig(70, EVP_HPKE_DHKEM_X25519_HKDF_SHA256,
                                   EVP_HPKE_HKDF_SHA256, EVP_HPKE_AES_256_GCM),
-                chunk_handler)
+                &chunk_handler)
                 .status()
                 .code(),
             absl::StatusCode::kInternal);
@@ -344,7 +375,7 @@ TEST(ChunkedObliviousHttpGateway, TestInvalidHPKEKey) {
                 /*hpke_private_key*/ "",
                 GetOhttpKeyConfig(70, EVP_HPKE_DHKEM_X25519_HKDF_SHA256,
                                   EVP_HPKE_HKDF_SHA256, EVP_HPKE_AES_256_GCM),
-                chunk_handler)
+                &chunk_handler)
                 .status()
                 .code(),
             absl::StatusCode::kInvalidArgument);

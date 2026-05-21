@@ -209,11 +209,6 @@ export class UserMetrics {
     });
   }
 
-  recordingAssertion(value: RecordingAssertion): void {
-    InspectorFrontendHostInstance.recordEnumeratedHistogram(
-        EnumeratedHistogram.RecordingAssertion, value, RecordingAssertion.MAX_VALUE);
-  }
-
   recordingToggled(value: RecordingToggled): void {
     InspectorFrontendHostInstance.recordEnumeratedHistogram(
         EnumeratedHistogram.RecordingToggled, value, RecordingToggled.MAX_VALUE);
@@ -224,34 +219,9 @@ export class UserMetrics {
         EnumeratedHistogram.RecordingReplayFinished, value, RecordingReplayFinished.MAX_VALUE);
   }
 
-  recordingReplaySpeed(value: RecordingReplaySpeed): void {
-    InspectorFrontendHostInstance.recordEnumeratedHistogram(
-        EnumeratedHistogram.RecordingReplaySpeed, value, RecordingReplaySpeed.MAX_VALUE);
-  }
-
   recordingReplayStarted(value: RecordingReplayStarted): void {
     InspectorFrontendHostInstance.recordEnumeratedHistogram(
         EnumeratedHistogram.RecordingReplayStarted, value, RecordingReplayStarted.MAX_VALUE);
-  }
-
-  recordingEdited(value: RecordingEdited): void {
-    InspectorFrontendHostInstance.recordEnumeratedHistogram(
-        EnumeratedHistogram.RecordingEdited, value, RecordingEdited.MAX_VALUE);
-  }
-
-  recordingExported(value: RecordingExported): void {
-    InspectorFrontendHostInstance.recordEnumeratedHistogram(
-        EnumeratedHistogram.RecordingExported, value, RecordingExported.MAX_VALUE);
-  }
-
-  recordingCodeToggled(value: RecordingCodeToggled): void {
-    InspectorFrontendHostInstance.recordEnumeratedHistogram(
-        EnumeratedHistogram.RecordingCodeToggled, value, RecordingCodeToggled.MAX_VALUE);
-  }
-
-  recordingCopiedToClipboard(value: RecordingCopiedToClipboard): void {
-    InspectorFrontendHostInstance.recordEnumeratedHistogram(
-        EnumeratedHistogram.RecordingCopiedToClipboard, value, RecordingCopiedToClipboard.MAX_VALUE);
   }
 
   lighthouseModeRun(type: LighthouseModeRun): void {
@@ -313,9 +283,44 @@ export class UserMetrics {
         'DevTools.Insights.TeaserGenerationTime', timeInMilliseconds);
   }
 
+  consoleInsightTeaserGeneratedMedium(timeInMilliseconds: number): void {
+    InspectorFrontendHostInstance.recordPerformanceHistogramMedium(
+        'DevTools.Insights.TeaserGenerationTimeMedium', timeInMilliseconds);
+  }
+
   consoleInsightTeaserFirstChunkGenerated(timeInMilliseconds: number): void {
     InspectorFrontendHostInstance.recordPerformanceHistogram(
         'DevTools.Insights.TeaserFirstChunkGenerationTime', timeInMilliseconds);
+  }
+
+  consoleInsightTeaserFirstChunkGeneratedMedium(timeInMilliseconds: number): void {
+    InspectorFrontendHostInstance.recordPerformanceHistogramMedium(
+        'DevTools.Insights.TeaserFirstChunkGenerationTimeMedium', timeInMilliseconds);
+  }
+
+  consoleInsightTeaserChunkToEndMedium(timeInMilliseconds: number): void {
+    InspectorFrontendHostInstance.recordPerformanceHistogramMedium(
+        'DevTools.Insights.TeaserChunkToEndMedium', timeInMilliseconds);
+  }
+
+  consoleInsightTeaserAbortedAfterFirstCharacter(timeInMilliseconds: number): void {
+    InspectorFrontendHostInstance.recordPerformanceHistogram(
+        'DevTools.Insights.TeaserAfterFirstCharacterAbortionTime', timeInMilliseconds);
+  }
+
+  consoleInsightTeaserAbortedBeforeFirstCharacter(timeInMilliseconds: number): void {
+    InspectorFrontendHostInstance.recordPerformanceHistogram(
+        'DevTools.Insights.TeaserBeforeFirstCharacterAbortionTime', timeInMilliseconds);
+  }
+
+  consoleInsightLongTeaserGenerated(timeInMilliseconds: number): void {
+    InspectorFrontendHostInstance.recordPerformanceHistogram(
+        'DevTools.Insights.LongTeaserGenerationTime', timeInMilliseconds);
+  }
+
+  consoleInsightShortTeaserGenerated(timeInMilliseconds: number): void {
+    InspectorFrontendHostInstance.recordPerformanceHistogram(
+        'DevTools.Insights.ShortTeaserGenerationTime', timeInMilliseconds);
   }
 }
 
@@ -531,7 +536,9 @@ export enum Action {
   AiCodeGenerationSuggestionAccepted = 196,
   InsightTeaserModelDownloadStarted = 197,
   InsightTeaserModelDownloadCompleted = 198,
-  MAX_VALUE = 199,
+  AiCodeGenerationError = 199,
+  AiCodeGenerationRequestTriggered = 200,
+  MAX_VALUE = 201,
   /* eslint-enable @typescript-eslint/naming-convention */
 }
 
@@ -803,7 +810,7 @@ export enum DevtoolsExperiments {
   'live-heap-profile' = 11,
   'protocol-monitor' = 13,
   'sampling-heap-profiler-timeline' = 17,
-  'show-option-tp-expose-internals-in-heap-snapshot' = 18,
+  'show-option-to-expose-internals-in-heap-snapshot' = 18,
   'timeline-invalidation-tracking' = 26,
   'timeline-show-all-events' = 27,
   'timeline-v8-runtime-call-stats' = 28,
@@ -899,7 +906,7 @@ export enum IssueCreated {
   'SharedArrayBufferIssue::TransferIssue' = 36,
   'SharedArrayBufferIssue::CreationIssue' = 37,
   LowTextContrastIssue = 41,
-  'CorsIssue::InsecurePrivateNetwork' = 42,
+  'CorsIssue::InsecureLocalNetwork' = 42,
   'CorsIssue::InvalidHeaders' = 44,
   'CorsIssue::WildcardOriginWithCredentials' = 45,
   'CorsIssue::PreflightResponseInvalid' = 46,
@@ -918,7 +925,6 @@ export enum IssueCreated {
   DeprecationIssue = 60,
   'ClientHintIssue::MetaTagAllowListInvalidOrigin' = 61,
   'ClientHintIssue::MetaTagModifiedHTML' = 62,
-  'CorsIssue::PreflightAllowPrivateNetworkError' = 63,
   'GenericIssue::CrossOriginPortalPostMessageError' = 64,
   'GenericIssue::FormLabelForNameError' = 65,
   'GenericIssue::FormDuplicateIdForInputError' = 66,
@@ -933,10 +939,6 @@ export enum IssueCreated {
   'GenericIssue::FormInputHasWrongButWellIntendedAutocompleteValueError' = 75,
   'StylesheetLoadingIssue::LateImportRule' = 76,
   'StylesheetLoadingIssue::RequestFailed' = 77,
-  'CorsIssue::PreflightMissingPrivateNetworkAccessId' = 78,
-  'CorsIssue::PreflightMissingPrivateNetworkAccessName' = 79,
-  'CorsIssue::PrivateNetworkAccessPermissionUnavailable' = 80,
-  'CorsIssue::PrivateNetworkAccessPermissionDenied' = 81,
   'CookieIssue::WarnThirdPartyPhaseout::ReadCookie' = 82,
   'CookieIssue::WarnThirdPartyPhaseout::SetCookie' = 83,
   'CookieIssue::ExcludeThirdPartyPhaseout::ReadCookie' = 84,
@@ -969,8 +971,9 @@ export enum IssueCreated {
   'CorsIssue::LocalNetworkAccessPermissionDenied' = 111,
   'SRIMessageSignatureIssue::ValidationFailedIntegrityMismatch' = 112,
   'ElementAccessibilityIssue::InteractiveContentSummaryDescendant' = 113,
+  'CorsIssue::InvalidLocalNetworkAccess' = 114,
   /* eslint-enable @typescript-eslint/naming-convention */
-  MAX_VALUE = 114,
+  MAX_VALUE = 115,
 }
 
 export const enum DeveloperResourceLoaded {

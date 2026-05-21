@@ -256,7 +256,8 @@ static unsigned int highbd_get_prediction_error(BLOCK_SIZE bsize,
 // for first pass test.
 static int get_search_range(int width, int height) {
   int sr = 0;
-  const int dim = AOMMIN(width, height);
+  int dim = AOMMIN(width, height);
+  dim = AOMMAX(dim, MI_SIZE);
 
   while ((dim << sr) < MAX_FULL_PEL_VAL) ++sr;
   return sr;

@@ -1,4 +1,4 @@
-/* Copyright (c) 2024-2025 LunarG, Inc.
+/* Copyright (c) 2024-2026 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -223,7 +223,7 @@ void DebugPrintfPass::CreateFunctionParams(uint32_t argument_id, const Type& arg
 }
 
 void DebugPrintfPass::CreateFunctionCall(BasicBlock& block, InstructionIt* inst_it, const InstructionMeta& meta) {
-    Function& block_func = block.function_;
+    Function& block_func = *block.function_;
     // need to call to get the underlying 4 IDs (simpler to pass in as 4 uint then a uvec4)
     GetStageInfo(block_func, block, *inst_it);
 
@@ -266,7 +266,7 @@ void DebugPrintfPass::CreateFunctionCall(BasicBlock& block, InstructionIt* inst_
         if (constant) {
             argument_inst = &constant->inst_;
         } else {
-            argument_inst = block.function_.FindInstruction(argument_id);
+            argument_inst = block_func.FindInstruction(argument_id);
         }
         assert(argument_inst);  // argument is either constant or found within function block
 
@@ -320,8 +320,8 @@ uint32_t DebugPrintfPass::CreateDescriptorSet() {
     new_struct_inst->Fill({struct_type_id, uint32_type.Id(), runtime_array_type_id});
     const Type& struct_type = type_manager_.AddType(std::move(new_struct_inst), SpvType::kStruct);
     module_.AddDecoration(struct_type_id, spv::DecorationBlock, {});
-    module_.AddMemberDecoration(struct_type_id, gpuav::kDebugPrintfOutputBufferDWordsCount, spv::DecorationOffset, {0});
-    module_.AddMemberDecoration(struct_type_id, gpuav::kDebugPrintfOutputBufferData, spv::DecorationOffset, {4});
+    module_.AddMemberDecoration(struct_type_id, gpuav::kDebugPrintf_OutputBuffer_DWordsCount, spv::DecorationOffset, {0});
+    module_.AddMemberDecoration(struct_type_id, gpuav::kDebugPrintf_OutputBuffer_Data, spv::DecorationOffset, {4});
 
     // create a storage buffer interface variable
     const Type& pointer_type = type_manager_.GetTypePointer(spv::StorageClassStorageBuffer, struct_type);
@@ -375,25 +375,26 @@ void DebugPrintfPass::CreateBufferWriteFunction(uint32_t argument_count, uint32_
         type_manager_.AddType(std::move(new_inst), SpvType::kFunction);
     }
 
-    auto& new_function = module_.functions_.emplace_back(std::make_unique<Function>(module_));
+    // We could be doing this at linking time, but since this is the last pass, can add here
+    Function& new_function = module_.functions_.emplace_back(module_);
     std::vector<uint32_t> function_param_ids;
     {
         auto new_inst = std::make_unique<Instruction>(5, spv::OpFunction);
         new_inst->Fill({void_type_id, function_id, spv::FunctionControlMaskNone, function_type_id});
-        new_function->pre_block_inst_.emplace_back(std::move(new_inst));
+        new_function.pre_block_inst_.emplace_back(std::move(new_inst));
 
         for (size_t i = 0; i < argument_count; i++) {
             const uint32_t new_id = module_.TakeNextId();
             auto param_inst = std::make_unique<Instruction>(3, spv::OpFunctionParameter);
             param_inst->Fill({uint32_type_id, new_id});
-            new_function->pre_block_inst_.emplace_back(std::move(param_inst));
+            new_function.pre_block_inst_.emplace_back(std::move(param_inst));
             function_param_ids.push_back(new_id);
         }
     }
 
-    BasicBlock& check_block = new_function->InsertNewBlockEnd();
-    BasicBlock& store_block = new_function->InsertNewBlockEnd();
-    BasicBlock& merge_block = new_function->InsertNewBlockEnd();
+    BasicBlock& check_block = new_function.InsertNewBlockEnd();
+    BasicBlock& store_block = new_function.InsertNewBlockEnd();
+    BasicBlock& merge_block = new_function.InsertNewBlockEnd();
 
     const Type& uint32_type = type_manager_.GetTypeInt(32, false);
     const uint32_t pointer_type_id = type_manager_.GetTypePointer(spv::StorageClassStorageBuffer, uint32_type).Id();
@@ -451,7 +452,7 @@ void DebugPrintfPass::CreateBufferWriteFunction(uint32_t argument_count, uint32_
         store_block.CreateInstruction(spv::OpAccessChain,
                                       {pointer_type_id, access_chain_id, output_buffer_variable_id, one_id, int_add_id});
 
-        const uint32_t shader_id = type_manager_.GetConstantUInt32(module_.settings_.shader_id).Id();
+        const uint32_t shader_id = type_manager_.GetConstantUInt32(module_.interface_.unique_shader_id).Id();
         store_block.CreateInstruction(spv::OpStore, {access_chain_id, shader_id});
     }
 
@@ -477,7 +478,7 @@ void DebugPrintfPass::CreateBufferWriteFunction(uint32_t argument_count, uint32_
 
     {
         auto new_inst = std::make_unique<Instruction>(1, spv::OpFunctionEnd);
-        new_function->post_block_inst_.emplace_back(std::move(new_inst));
+        new_function.post_block_inst_.emplace_back(std::move(new_inst));
     }
 }
 
@@ -494,9 +495,20 @@ bool DebugPrintfPass::Instrument() {
         return false;  // no printf strings found, early return
     }
 
-    for (const auto& function : module_.functions_) {
-        for (auto block_it = function->blocks_.begin(); block_it != function->blocks_.end(); ++block_it) {
+    for (Function& function : module_.functions_) {
+        if (!function.called_from_target_ && !function.AddedFromInstrumentation()) {
+            continue;
+        }
+
+        for (auto block_it = function.blocks_.begin(); block_it != function.blocks_.end(); ++block_it) {
             BasicBlock& current_block = **block_it;
+
+            // This is a silly hack, sorry
+            // We use to only add the |functions_| at parsing and linking.
+            // But in order to run debug printf on our own GLSL, we do this pass AFTER linking, which means the |functions_| list
+            // could have been expanded and now the |function_| reference in |block| is dangling, but just setting it here, before
+            // potentially updating the block is a simple-enough-fix
+            current_block.function_ = &function;
 
             cf_.Update(current_block);
             if (debug_disable_loops_ && cf_.in_loop) continue;
@@ -505,16 +517,16 @@ bool DebugPrintfPass::Instrument() {
             for (auto inst_it = block_instructions.begin(); inst_it != block_instructions.end(); ++inst_it) {
                 InstructionMeta meta;
                 if (!RequiresInstrumentation(*(inst_it->get()), meta)) continue;
-                if (!Validate(*(function.get()), meta)) continue;  // if not valid, don't attempt to instrument it
+                if (!Validate(function, meta)) continue;  // if not valid, don't attempt to instrument it
                 instrumentations_count_++;
 
                 // Save the OpString here so we can use it later
-                if (function->instrumentation_added_) {
+                if (function.AddedFromInstrumentation()) {
                     for (const auto& debug_inst : module_.debug_source_) {
                         const uint32_t string_id = (*inst_it)->Word(5);
                         if (debug_inst->Opcode() == spv::OpString && debug_inst->ResultId() == string_id) {
-                            internal_only_debug_printf_.emplace_back(
-                                InternalOnlyDebugPrintf{module_.settings_.shader_id, string_id, debug_inst->GetAsString(2)});
+                            internal_only_debug_printf_.emplace_back(InternalOnlyDebugPrintf{
+                                module_.interface_.unique_shader_id, string_id, debug_inst->GetAsString(2)});
                         }
                     }
                 }

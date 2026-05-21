@@ -5,7 +5,6 @@
 #ifndef COMPONENTS_SAFE_BROWSING_CONTENT_BROWSER_BASE_BLOCKING_PAGE_H_
 #define COMPONENTS_SAFE_BROWSING_CONTENT_BROWSER_BASE_BLOCKING_PAGE_H_
 
-#include <map>
 #include <string>
 #include <vector>
 
@@ -86,7 +85,7 @@ class BaseBlockingPage
       const BaseSafeBrowsingErrorUI::SBErrorDisplayOptions& display_options);
 
   // SecurityInterstitialPage methods:
-  void PopulateInterstitialStrings(base::Value::Dict& load_time_data) override;
+  void PopulateInterstitialStrings(base::DictValue& load_time_data) override;
   void OnInterstitialClosing() override {}
 
   // Called when the interstitial is going away. Intentionally do nothing in
@@ -100,7 +99,7 @@ class BaseBlockingPage
   // interstitial at a time.
   static UnsafeResourceMap* GetUnsafeResourcesMap();
 
-  static std::string GetMetricPrefix(
+  static std::string_view GetMetricPrefix(
       const UnsafeResourceList& unsafe_resources,
       BaseSafeBrowsingErrorUI::SBInterstitialReason interstitial_reason);
 

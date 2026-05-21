@@ -13,7 +13,7 @@
 #include "src/compiler/backend/gap-resolver.h"
 #include "src/compiler/node-matchers.h"
 #include "src/compiler/osr.h"
-#include "src/heap/mutable-page-metadata.h"
+#include "src/heap/mutable-page.h"
 
 #if V8_ENABLE_WEBASSEMBLY
 #include "src/wasm/wasm-linkage.h"
@@ -439,15 +439,6 @@ Condition FlagsConditionToCondition(FlagsCondition condition, ArchOpcode op) {
     const CRegister cr = cr0;                                             \
     __ cmp_instr(i.InputDoubleRegister(0), i.InputDoubleRegister(1), cr); \
     DCHECK_EQ(SetRC, i.OutputRCBit());                                    \
-  } while (0)
-
-#define ASSEMBLE_MODULO(div_instr, mul_instr)                        \
-  do {                                                               \
-    const Register scratch = kScratchReg;                            \
-    __ div_instr(scratch, i.InputRegister(0), i.InputRegister(1));   \
-    __ mul_instr(scratch, scratch, i.InputRegister(1));              \
-    __ sub(i.OutputRegister(), i.InputRegister(0), scratch, LeaveOE, \
-           i.OutputRCBit());                                         \
   } while (0)
 
 #define ASSEMBLE_FLOAT_MODULO()                                             \
@@ -956,10 +947,10 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
             }
           } else {
             JSDispatchHandle dispatch_handle = function->dispatch_handle();
-            size_t expected =
-                IsolateGroup::current()->js_dispatch_table()->GetParameterCount(
-                    dispatch_handle);
+            size_t expected = isolate()->js_dispatch_table().GetParameterCount(
+                dispatch_handle);
             if (num_arguments >= expected) {
+              __ RecordJSDispatchHandle(dispatch_handle, expected);
               __ CallJSDispatchEntry(dispatch_handle, expected);
             } else {
               __ AssertUnreachable(AbortReason::kJSSignatureMismatch);
@@ -1518,32 +1509,16 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       ASSEMBLE_FLOAT_BINOP_RC(fdiv, MiscField::decode(instr->opcode()));
       break;
     case kPPC_Mod32:
-      if (CpuFeatures::IsSupported(PPC_9_PLUS)) {
-        __ modsw(i.OutputRegister(), i.InputRegister(0), i.InputRegister(1));
-      } else {
-        ASSEMBLE_MODULO(divw, mullw);
-      }
+      __ modsw(i.OutputRegister(), i.InputRegister(0), i.InputRegister(1));
       break;
     case kPPC_Mod64:
-      if (CpuFeatures::IsSupported(PPC_9_PLUS)) {
-        __ modsd(i.OutputRegister(), i.InputRegister(0), i.InputRegister(1));
-      } else {
-        ASSEMBLE_MODULO(divd, mulld);
-      }
+      __ modsd(i.OutputRegister(), i.InputRegister(0), i.InputRegister(1));
       break;
     case kPPC_ModU32:
-      if (CpuFeatures::IsSupported(PPC_9_PLUS)) {
-        __ moduw(i.OutputRegister(), i.InputRegister(0), i.InputRegister(1));
-      } else {
-        ASSEMBLE_MODULO(divwu, mullw);
-      }
+      __ moduw(i.OutputRegister(), i.InputRegister(0), i.InputRegister(1));
       break;
     case kPPC_ModU64:
-      if (CpuFeatures::IsSupported(PPC_9_PLUS)) {
-        __ modud(i.OutputRegister(), i.InputRegister(0), i.InputRegister(1));
-      } else {
-        ASSEMBLE_MODULO(divdu, mulld);
-      }
+      __ modud(i.OutputRegister(), i.InputRegister(0), i.InputRegister(1));
       break;
     case kPPC_ModDouble:
       // TODO(bmeurer): We should really get rid of this special instruction,

@@ -13,7 +13,6 @@
 // Must come after all headers that specialize FromJniType() / ToJniType().
 #include "components/browser_ui/accessibility/android/accessibility_jni_headers/PageZoomMetrics_jni.h"
 
-using base::android::JavaParamRef;
 using base::android::JavaRef;
 
 namespace {
@@ -26,8 +25,8 @@ namespace browser_ui {
 
 static void JNI_PageZoomMetrics_LogZoomLevelUKM(
     JNIEnv* env,
-    const base::android::JavaParamRef<jobject>& j_web_contents,
-    jdouble new_zoom_level) {
+    const base::android::JavaRef<jobject>& j_web_contents,
+    double new_zoom_level) {
   content::WebContents* web_contents =
       content::WebContents::FromJavaWebContents(j_web_contents);
   DCHECK(web_contents);

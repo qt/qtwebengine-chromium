@@ -3,10 +3,10 @@
 
 /***************************************************************************
  *
- * Copyright (c) 2015-2025 The Khronos Group Inc.
- * Copyright (c) 2015-2025 Valve Corporation
- * Copyright (c) 2015-2025 LunarG, Inc.
- * Copyright (c) 2015-2025 Google Inc.
+ * Copyright (c) 2015-2026 The Khronos Group Inc.
+ * Copyright (c) 2015-2026 Valve Corporation
+ * Copyright (c) 2015-2026 LunarG, Inc.
+ * Copyright (c) 2015-2026 Google Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -136,6 +136,7 @@ vvl::Extension GetExtension(std::string extension) {
         {"VK_KHR_pipeline_binary", vvl::Extension::_VK_KHR_pipeline_binary},
         {"VK_KHR_surface_maintenance1", vvl::Extension::_VK_KHR_surface_maintenance1},
         {"VK_KHR_swapchain_maintenance1", vvl::Extension::_VK_KHR_swapchain_maintenance1},
+        {"VK_KHR_internally_synchronized_queues", vvl::Extension::_VK_KHR_internally_synchronized_queues},
         {"VK_KHR_cooperative_matrix", vvl::Extension::_VK_KHR_cooperative_matrix},
         {"VK_KHR_compute_shader_derivatives", vvl::Extension::_VK_KHR_compute_shader_derivatives},
         {"VK_KHR_video_decode_av1", vvl::Extension::_VK_KHR_video_decode_av1},
@@ -225,6 +226,7 @@ vvl::Extension GetExtension(std::string extension) {
         {"VK_EXT_sampler_filter_minmax", vvl::Extension::_VK_EXT_sampler_filter_minmax},
         {"VK_AMD_gpu_shader_int16", vvl::Extension::_VK_AMD_gpu_shader_int16},
         {"VK_AMDX_shader_enqueue", vvl::Extension::_VK_AMDX_shader_enqueue},
+        {"VK_EXT_descriptor_heap", vvl::Extension::_VK_EXT_descriptor_heap},
         {"VK_AMD_mixed_attachment_samples", vvl::Extension::_VK_AMD_mixed_attachment_samples},
         {"VK_AMD_shader_fragment_mask", vvl::Extension::_VK_AMD_shader_fragment_mask},
         {"VK_EXT_inline_uniform_block", vvl::Extension::_VK_EXT_inline_uniform_block},
@@ -245,6 +247,7 @@ vvl::Extension GetExtension(std::string extension) {
         {"VK_NV_representative_fragment_test", vvl::Extension::_VK_NV_representative_fragment_test},
         {"VK_EXT_filter_cubic", vvl::Extension::_VK_EXT_filter_cubic},
         {"VK_QCOM_render_pass_shader_resolve", vvl::Extension::_VK_QCOM_render_pass_shader_resolve},
+        {"VK_QCOM_cooperative_matrix_conversion", vvl::Extension::_VK_QCOM_cooperative_matrix_conversion},
         {"VK_EXT_global_priority", vvl::Extension::_VK_EXT_global_priority},
         {"VK_EXT_external_memory_host", vvl::Extension::_VK_EXT_external_memory_host},
         {"VK_AMD_buffer_marker", vvl::Extension::_VK_AMD_buffer_marker},
@@ -311,6 +314,7 @@ vvl::Extension GetExtension(std::string extension) {
         {"VK_EXT_acquire_drm_display", vvl::Extension::_VK_EXT_acquire_drm_display},
         {"VK_EXT_robustness2", vvl::Extension::_VK_EXT_robustness2},
         {"VK_EXT_custom_border_color", vvl::Extension::_VK_EXT_custom_border_color},
+        {"VK_EXT_texture_compression_astc_3d", vvl::Extension::_VK_EXT_texture_compression_astc_3d},
         {"VK_GOOGLE_user_type", vvl::Extension::_VK_GOOGLE_user_type},
         {"VK_NV_present_barrier", vvl::Extension::_VK_NV_present_barrier},
         {"VK_EXT_private_data", vvl::Extension::_VK_EXT_private_data},
@@ -440,10 +444,10 @@ vvl::Extension GetExtension(std::string extension) {
         {"VK_NV_partitioned_acceleration_structure", vvl::Extension::_VK_NV_partitioned_acceleration_structure},
         {"VK_EXT_device_generated_commands", vvl::Extension::_VK_EXT_device_generated_commands},
         {"VK_MESA_image_alignment_control", vvl::Extension::_VK_MESA_image_alignment_control},
+        {"VK_NV_push_constant_bank", vvl::Extension::_VK_NV_push_constant_bank},
         {"VK_EXT_ray_tracing_invocation_reorder", vvl::Extension::_VK_EXT_ray_tracing_invocation_reorder},
         {"VK_EXT_depth_clamp_control", vvl::Extension::_VK_EXT_depth_clamp_control},
         {"VK_OHOS_surface", vvl::Extension::_VK_OHOS_surface},
-        {"VK_OHOS_native_buffer", vvl::Extension::_VK_OHOS_native_buffer},
         {"VK_HUAWEI_hdr_vivid", vvl::Extension::_VK_HUAWEI_hdr_vivid},
         {"VK_NV_cooperative_matrix2", vvl::Extension::_VK_NV_cooperative_matrix2},
         {"VK_ARM_pipeline_opacity_micromap", vvl::Extension::_VK_ARM_pipeline_opacity_micromap},
@@ -458,8 +462,12 @@ vvl::Extension GetExtension(std::string extension) {
         {"VK_EXT_shader_64bit_indexing", vvl::Extension::_VK_EXT_shader_64bit_indexing},
         {"VK_EXT_custom_resolve", vvl::Extension::_VK_EXT_custom_resolve},
         {"VK_QCOM_data_graph_model", vvl::Extension::_VK_QCOM_data_graph_model},
+        {"VK_EXT_shader_long_vector", vvl::Extension::_VK_EXT_shader_long_vector},
         {"VK_SEC_pipeline_cache_incremental_mode", vvl::Extension::_VK_SEC_pipeline_cache_incremental_mode},
         {"VK_EXT_shader_uniform_buffer_unsized_array", vvl::Extension::_VK_EXT_shader_uniform_buffer_unsized_array},
+        {"VK_NV_compute_occupancy_priority", vvl::Extension::_VK_NV_compute_occupancy_priority},
+        {"VK_EXT_shader_subgroup_partitioned", vvl::Extension::_VK_EXT_shader_subgroup_partitioned},
+        {"VK_SEC_ubm_surface", vvl::Extension::_VK_SEC_ubm_surface},
         {"VK_KHR_acceleration_structure", vvl::Extension::_VK_KHR_acceleration_structure},
         {"VK_KHR_ray_tracing_pipeline", vvl::Extension::_VK_KHR_ray_tracing_pipeline},
         {"VK_KHR_ray_query", vvl::Extension::_VK_KHR_ray_query},
@@ -875,6 +883,10 @@ static const InstanceExtensionsInfoMap& GetInstanceInfoMap() {
         {vvl::Extension::_VK_OHOS_surface,
          Info(&InstanceExtensions::vk_ohos_surface, {{{&InstanceExtensions::vk_khr_surface, VK_KHR_SURFACE_EXTENSION_NAME}}})},
 #endif  // VK_USE_PLATFORM_OHOS
+#ifdef VK_USE_PLATFORM_UBM_SEC
+        {vvl::Extension::_VK_SEC_ubm_surface,
+         Info(&InstanceExtensions::vk_sec_ubm_surface, {{{&InstanceExtensions::vk_khr_surface, VK_KHR_SURFACE_EXTENSION_NAME}}})},
+#endif  // VK_USE_PLATFORM_UBM_SEC
 
     };
 
@@ -1178,6 +1190,9 @@ static const DeviceExtensionsInfoMap& GetDeviceInfoMap() {
                 {&DeviceExtensions::vk_khr_surface_maintenance1, VK_KHR_SURFACE_MAINTENANCE_1_EXTENSION_NAME},
                 {&DeviceExtensions::vk_khr_get_physical_device_properties2,
                  VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME}}})},
+        {vvl::Extension::_VK_KHR_internally_synchronized_queues,
+         Info(&DeviceExtensions::vk_khr_internally_synchronized_queues,
+              {{{&DeviceExtensions::vk_feature_version_1_1, "VK_VERSION_1_1"}}})},
         {vvl::Extension::_VK_KHR_cooperative_matrix,
          Info(&DeviceExtensions::vk_khr_cooperative_matrix, {{{&DeviceExtensions::vk_khr_get_physical_device_properties2,
                                                                VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME}}})},
@@ -1372,6 +1387,10 @@ static const DeviceExtensionsInfoMap& GetDeviceInfoMap() {
                 {&DeviceExtensions::vk_khr_maintenance5, VK_KHR_MAINTENANCE_5_EXTENSION_NAME},
                 {&DeviceExtensions::vk_khr_pipeline_library, VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME}}})},
 #endif  // VK_ENABLE_BETA_EXTENSIONS
+        {vvl::Extension::_VK_EXT_descriptor_heap,
+         Info(&DeviceExtensions::vk_ext_descriptor_heap,
+              {{{&DeviceExtensions::vk_khr_maintenance5, VK_KHR_MAINTENANCE_5_EXTENSION_NAME},
+                {&DeviceExtensions::vk_khr_buffer_device_address, VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME}}})},
         {vvl::Extension::_VK_AMD_mixed_attachment_samples, Info(&DeviceExtensions::vk_amd_mixed_attachment_samples, {})},
         {vvl::Extension::_VK_AMD_shader_fragment_mask, Info(&DeviceExtensions::vk_amd_shader_fragment_mask, {})},
         {vvl::Extension::_VK_EXT_inline_uniform_block,
@@ -1415,6 +1434,9 @@ static const DeviceExtensionsInfoMap& GetDeviceInfoMap() {
                                                                         VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME}}})},
         {vvl::Extension::_VK_EXT_filter_cubic, Info(&DeviceExtensions::vk_ext_filter_cubic, {})},
         {vvl::Extension::_VK_QCOM_render_pass_shader_resolve, Info(&DeviceExtensions::vk_qcom_render_pass_shader_resolve, {})},
+        {vvl::Extension::_VK_QCOM_cooperative_matrix_conversion,
+         Info(&DeviceExtensions::vk_qcom_cooperative_matrix_conversion,
+              {{{&DeviceExtensions::vk_khr_cooperative_matrix, VK_KHR_COOPERATIVE_MATRIX_EXTENSION_NAME}}})},
         {vvl::Extension::_VK_EXT_global_priority, Info(&DeviceExtensions::vk_ext_global_priority, {})},
         {vvl::Extension::_VK_EXT_external_memory_host,
          Info(&DeviceExtensions::vk_ext_external_memory_host,
@@ -1597,6 +1619,9 @@ static const DeviceExtensionsInfoMap& GetDeviceInfoMap() {
         {vvl::Extension::_VK_EXT_custom_border_color,
          Info(&DeviceExtensions::vk_ext_custom_border_color, {{{&DeviceExtensions::vk_khr_get_physical_device_properties2,
                                                                 VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME}}})},
+        {vvl::Extension::_VK_EXT_texture_compression_astc_3d,
+         Info(&DeviceExtensions::vk_ext_texture_compression_astc_3d, {{{&DeviceExtensions::vk_khr_get_physical_device_properties2,
+                                                                        VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME}}})},
         {vvl::Extension::_VK_GOOGLE_user_type, Info(&DeviceExtensions::vk_google_user_type, {})},
         {vvl::Extension::_VK_NV_present_barrier,
          Info(&DeviceExtensions::vk_nv_present_barrier,
@@ -1622,9 +1647,7 @@ static const DeviceExtensionsInfoMap& GetDeviceInfoMap() {
 #endif  // VK_ENABLE_BETA_EXTENSIONS
         {vvl::Extension::_VK_QCOM_tile_shading,
          Info(&DeviceExtensions::vk_qcom_tile_shading,
-              {{{&DeviceExtensions::vk_qcom_tile_properties, VK_QCOM_TILE_PROPERTIES_EXTENSION_NAME},
-                {&DeviceExtensions::vk_khr_get_physical_device_properties2,
-                 VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME}}})},
+              {{{&DeviceExtensions::vk_qcom_tile_properties, VK_QCOM_TILE_PROPERTIES_EXTENSION_NAME}}})},
         {vvl::Extension::_VK_NV_low_latency, Info(&DeviceExtensions::vk_nv_low_latency, {})},
 #ifdef VK_USE_PLATFORM_METAL_EXT
         {vvl::Extension::_VK_EXT_metal_objects, Info(&DeviceExtensions::vk_ext_metal_objects, {})},
@@ -2028,15 +2051,13 @@ static const DeviceExtensionsInfoMap& GetDeviceInfoMap() {
         {vvl::Extension::_VK_MESA_image_alignment_control,
          Info(&DeviceExtensions::vk_mesa_image_alignment_control, {{{&DeviceExtensions::vk_khr_get_physical_device_properties2,
                                                                      VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME}}})},
+        {vvl::Extension::_VK_NV_push_constant_bank, Info(&DeviceExtensions::vk_nv_push_constant_bank, {})},
         {vvl::Extension::_VK_EXT_ray_tracing_invocation_reorder,
          Info(&DeviceExtensions::vk_ext_ray_tracing_invocation_reorder,
               {{{&DeviceExtensions::vk_khr_ray_tracing_pipeline, VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME}}})},
         {vvl::Extension::_VK_EXT_depth_clamp_control,
          Info(&DeviceExtensions::vk_ext_depth_clamp_control, {{{&DeviceExtensions::vk_khr_get_physical_device_properties2,
                                                                 VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME}}})},
-#ifdef VK_USE_PLATFORM_OHOS
-        {vvl::Extension::_VK_OHOS_native_buffer, Info(&DeviceExtensions::vk_ohos_native_buffer, {})},
-#endif  // VK_USE_PLATFORM_OHOS
         {vvl::Extension::_VK_HUAWEI_hdr_vivid,
          Info(&DeviceExtensions::vk_huawei_hdr_vivid,
               {{{&DeviceExtensions::vk_khr_get_physical_device_properties2, VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME},
@@ -2090,6 +2111,8 @@ static const DeviceExtensionsInfoMap& GetDeviceInfoMap() {
         {vvl::Extension::_VK_QCOM_data_graph_model,
          Info(&DeviceExtensions::vk_qcom_data_graph_model,
               {{{&DeviceExtensions::vk_arm_data_graph, VK_ARM_DATA_GRAPH_EXTENSION_NAME}}})},
+        {vvl::Extension::_VK_EXT_shader_long_vector,
+         Info(&DeviceExtensions::vk_ext_shader_long_vector, {{{&DeviceExtensions::vk_feature_version_1_2, "VK_VERSION_1_2"}}})},
         {vvl::Extension::_VK_SEC_pipeline_cache_incremental_mode,
          Info(&DeviceExtensions::vk_sec_pipeline_cache_incremental_mode,
               {{{&DeviceExtensions::vk_khr_get_physical_device_properties2,
@@ -2098,6 +2121,12 @@ static const DeviceExtensionsInfoMap& GetDeviceInfoMap() {
          Info(&DeviceExtensions::vk_ext_shader_uniform_buffer_unsized_array,
               {{{&DeviceExtensions::vk_khr_get_physical_device_properties2,
                  VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME}}})},
+        {vvl::Extension::_VK_NV_compute_occupancy_priority,
+         Info(&DeviceExtensions::vk_nv_compute_occupancy_priority, {{{&DeviceExtensions::vk_khr_get_physical_device_properties2,
+                                                                      VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME}}})},
+        {vvl::Extension::_VK_EXT_shader_subgroup_partitioned,
+         Info(&DeviceExtensions::vk_ext_shader_subgroup_partitioned, {{{&DeviceExtensions::vk_khr_get_physical_device_properties2,
+                                                                        VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME}}})},
         {vvl::Extension::_VK_KHR_acceleration_structure,
          Info(&DeviceExtensions::vk_khr_acceleration_structure,
               {{{&DeviceExtensions::vk_feature_version_1_1, "VK_VERSION_1_1"},

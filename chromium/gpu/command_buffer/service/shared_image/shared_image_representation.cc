@@ -855,6 +855,10 @@ WebNNTensorRepresentation::BeginScopedAccess() {
       base::PassKey<WebNNTensorRepresentation>(), this, AccessMode::kWrite);
 }
 
+bool WebNNTensorRepresentation::is_thread_safe() const {
+  return backing()->is_thread_safe();
+}
+
 #if BUILDFLAG(IS_WIN)
 Microsoft::WRL::ComPtr<ID3D12Resource>
 WebNNTensorRepresentation::GetD3D12Buffer() const {
@@ -1133,6 +1137,21 @@ RasterImageRepresentation::BeginScopedWriteAccess(
 ///////////////////////////////////////////////////////////////////////////////
 // VideoImageRepresentation
 
+#if BUILDFLAG(IS_WIN)
+D3D11TextureAndArrayIndex::D3D11TextureAndArrayIndex(
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> texture,
+    size_t array_index)
+    : texture(std::move(texture)), array_index(array_index) {}
+
+D3D11TextureAndArrayIndex::D3D11TextureAndArrayIndex(
+    const D3D11TextureAndArrayIndex& other) = default;
+
+D3D11TextureAndArrayIndex::D3D11TextureAndArrayIndex(
+    D3D11TextureAndArrayIndex&& other) = default;
+
+D3D11TextureAndArrayIndex::~D3D11TextureAndArrayIndex() = default;
+#endif  // BUILDFLAG(IS_WIN)
+
 VideoImageRepresentation::VideoImageRepresentation(SharedImageManager* manager,
                                                    SharedImageBacking* backing,
                                                    MemoryTypeTracker* tracker)
@@ -1210,7 +1229,7 @@ VulkanImageRepresentation::ScopedAccess::ScopedAccess(
       end_semaphore_(end_semaphore) {}
 
 VulkanImageRepresentation::ScopedAccess::~ScopedAccess() {
-  representation()->EndScopedAccess(is_read_only_, end_semaphore_);
+  representation()->EndAccess(is_read_only_, end_semaphore_);
 
   auto* fence_helper = representation()->vulkan_device_queue_->GetFenceHelper();
   fence_helper->EnqueueSemaphoresCleanupForSubmittedWork(
@@ -1218,8 +1237,30 @@ VulkanImageRepresentation::ScopedAccess::~ScopedAccess() {
   fence_helper->EnqueueSemaphoreCleanupForSubmittedWork(end_semaphore_);
 }
 
+gpu::VulkanImage& VulkanImageRepresentation::GetVulkanImage() {
+  return *vulkan_image_;
+}
+
 gpu::VulkanImage& VulkanImageRepresentation::ScopedAccess::GetVulkanImage() {
-  return *representation()->vulkan_image_;
+  return representation()->GetVulkanImage();
+}
+
+std::unique_ptr<VulkanImageRepresentation::ScopedAccess>
+VulkanImageRepresentation::BeginScopedAccess(
+    AccessMode access_mode,
+    std::vector<VkSemaphore>& begin_semaphores,
+    std::vector<VkSemaphore>& end_semaphores) {
+  if (!BeginAccess(access_mode, begin_semaphores, end_semaphores)) {
+    return nullptr;
+  }
+
+  VkSemaphore end_semaphore = VK_NULL_HANDLE;
+  if (!end_semaphores.empty()) {
+    end_semaphore = end_semaphores.back();
+  }
+
+  return std::make_unique<ScopedAccess>(this, access_mode, begin_semaphores,
+                                        end_semaphore);
 }
 #endif
 

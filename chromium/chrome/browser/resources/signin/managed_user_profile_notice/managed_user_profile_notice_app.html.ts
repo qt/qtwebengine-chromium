@@ -21,8 +21,8 @@ ${html`
             picture-url="${this.pictureUrl_}"
             email="${this.email_}" account-name="${this.accountName_}"
             ?show-enterprise-badge="${this.showEnterpriseBadge_}">
-        ` : ''}
         </managed-user-profile-notice-value-prop>
+      ` : ''}
       ${this.showDisclosure_ ? html`
         <managed-user-profile-notice-disclosure id="disclosure"
             title="${this.disclosureTitle_}"
@@ -76,8 +76,9 @@ ${html`
         ?hidden="${this.showProcessing_}">
       ${this.proceedLabel_}
     </cr-button>
-    <cr-button id="cancel-button" @click="${this.onCancel_}"
-        ?hidden="${!this.allowCancel_()}">
+    <cr-button id="cancel-button"
+        class="${this.getCancelButtonClass_()}"
+        @click="${this.onCancel_}" ?hidden="${!this.allowCancel_()}">
       ${this.cancelLabel_}
     </cr-button>
   </div>

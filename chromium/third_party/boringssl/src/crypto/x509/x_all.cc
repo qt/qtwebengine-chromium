@@ -22,6 +22,7 @@
 #include <openssl/dsa.h>
 #include <openssl/evp.h>
 #include <openssl/mem.h>
+#include <openssl/pool.h>
 #include <openssl/rsa.h>
 #include <openssl/span.h>
 #include <openssl/stack.h>
@@ -31,19 +32,22 @@
 #include "internal.h"
 
 
+using namespace bssl;
+
 int X509_verify(X509 *x509, EVP_PKEY *pkey) {
-  if (X509_ALGOR_cmp(&x509->sig_alg, &x509->tbs_sig_alg)) {
+  auto *impl = FromOpaque(x509);
+  if (X509_ALGOR_cmp(&impl->sig_alg, &impl->tbs_sig_alg)) {
     OPENSSL_PUT_ERROR(X509, X509_R_SIGNATURE_ALGORITHM_MISMATCH);
     return 0;
   }
   // This uses the cached TBSCertificate encoding, if any.
-  bssl::ScopedCBB cbb;
+  ScopedCBB cbb;
   if (!CBB_init(cbb.get(), 128) || !x509_marshal_tbs_cert(cbb.get(), x509)) {
     return 0;
   }
-  return x509_verify_signature(
-      &x509->sig_alg, &x509->signature,
-      bssl::Span(CBB_data(cbb.get()), CBB_len(cbb.get())), pkey);
+  return x509_verify_signature(&impl->sig_alg, &impl->signature,
+                               Span(CBB_data(cbb.get()), CBB_len(cbb.get())),
+                               pkey);
 }
 
 int X509_REQ_verify(X509_REQ *req, EVP_PKEY *pkey) {
@@ -52,7 +56,7 @@ int X509_REQ_verify(X509_REQ *req, EVP_PKEY *pkey) {
 }
 
 int X509_sign(X509 *x, EVP_PKEY *pkey, const EVP_MD *md) {
-  bssl::ScopedEVP_MD_CTX ctx;
+  ScopedEVP_MD_CTX ctx;
   if (!EVP_DigestSignInit(ctx.get(), nullptr, md, nullptr, pkey)) {
     return 0;
   }
@@ -62,25 +66,27 @@ int X509_sign(X509 *x, EVP_PKEY *pkey, const EVP_MD *md) {
 int X509_sign_ctx(X509 *x, EVP_MD_CTX *ctx) {
   // Historically, this function called |EVP_MD_CTX_cleanup| on return. Some
   // callers rely on this to avoid memory leaks.
-  bssl::Cleanup cleanup = [&] { EVP_MD_CTX_cleanup(ctx); };
+  Cleanup cleanup = [&] { EVP_MD_CTX_cleanup(ctx); };
+
+  auto *impl = FromOpaque(x);
 
   // Fill in the two copies of AlgorithmIdentifier. Note one of these modifies
   // the TBSCertificate.
-  if (!x509_digest_sign_algorithm(ctx, &x->tbs_sig_alg) ||
-      !x509_digest_sign_algorithm(ctx, &x->sig_alg)) {
+  if (!x509_digest_sign_algorithm(ctx, &impl->tbs_sig_alg) ||
+      !x509_digest_sign_algorithm(ctx, &impl->sig_alg)) {
     return 0;
   }
 
   // Discard the cached encoding. (We just modified it.)
-  CRYPTO_BUFFER_free(x->buf);
-  x->buf = nullptr;
+  CRYPTO_BUFFER_free(impl->buf);
+  impl->buf = nullptr;
 
-  bssl::ScopedCBB cbb;
+  ScopedCBB cbb;
   if (!CBB_init(cbb.get(), 128) || !x509_marshal_tbs_cert(cbb.get(), x)) {
     return 0;
   }
-  return x509_sign_to_bit_string(
-      ctx, &x->signature, bssl::Span(CBB_data(cbb.get()), CBB_len(cbb.get())));
+  return x509_sign_to_bit_string(ctx, &impl->signature,
+                                 Span(CBB_data(cbb.get()), CBB_len(cbb.get())));
 }
 
 int X509_REQ_sign(X509_REQ *x, EVP_PKEY *pkey, const EVP_MD *md) {

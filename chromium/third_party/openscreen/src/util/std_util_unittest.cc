@@ -23,14 +23,6 @@ TEST(StdUtilTest, Data) {
   EXPECT_EQ(data(empty), empty.data());
 }
 
-TEST(StdUtilTest, Join) {
-  std::vector<std::string> medals({"bronze", "silver", "gold"});
-  EXPECT_EQ("bronzesilvergold", Join(medals, ""));
-  EXPECT_EQ("bronze,silver,gold", Join(medals, ","));
-  EXPECT_EQ("bronzeandsilverandgold", Join(medals, "and"));
-  EXPECT_EQ("", Join(std::vector<std::string>({""}), ","));
-}
-
 TEST(StdUtilTest, RemoveWhitespace) {
   std::string portland = "Portland";
   EXPECT_EQ("Portland", RemoveWhitespace(portland));

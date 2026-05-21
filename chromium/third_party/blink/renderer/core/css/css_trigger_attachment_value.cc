@@ -39,5 +39,19 @@ void CSSTriggerAttachmentValue::TraceAfterDispatch(
   CSSValue::TraceAfterDispatch(visitor);
 }
 
+const cssvalue::CSSTriggerAttachmentValue&
+CSSTriggerAttachmentValue::PopulateWithTreeScope(
+    const TreeScope* tree_scope) const {
+  auto* populated = MakeGarbageCollected<cssvalue::CSSTriggerAttachmentValue>(
+      &trigger_name_->PopulateWithTreeScope(tree_scope), enter_behavior_,
+      exit_behavior_);
+  populated->needs_tree_scope_population_ = false;
+  return *populated;
+}
+
+bool CSSTriggerAttachmentValue::HasRandomFunctions() const {
+  return trigger_name_ && trigger_name_->HasRandomFunctions();
+}
+
 }  // namespace cssvalue
 }  // namespace blink

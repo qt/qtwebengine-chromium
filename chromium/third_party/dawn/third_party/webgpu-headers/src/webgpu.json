@@ -30,7 +30,7 @@
           "name": "index"
         },
         {
-          "doc": "The buffer can be used as an Vertex buffer when using a render pipeline.\n",
+          "doc": "The buffer can be used as a Vertex buffer when using a render pipeline.\n",
           "name": "vertex"
         },
         {
@@ -253,12 +253,12 @@
           "type": "object.device"
         },
         {
-          "doc": "TODO\n",
+          "doc": "An error code explaining why the device was lost.\n",
           "name": "reason",
           "type": "enum.device_lost_reason"
         },
         {
-          "doc": "TODO\n",
+          "doc": "A @ref LocalizableHumanReadableMessageString describing why the device was lost.\n",
           "name": "message",
           "passed_with_ownership": false,
           "type": "out_string"
@@ -1447,6 +1447,18 @@
         {
           "doc": "TODO\n",
           "name": "request_adapter_WebXR_options"
+        },
+        {
+          "doc": "TODO\n",
+          "name": "texture_component_swizzle_descriptor"
+        },
+        {
+          "doc": "TODO\n",
+          "name": "external_texture_binding_layout"
+        },
+        {
+          "doc": "TODO\n",
+          "name": "external_texture_binding_entry"
         }
       ],
       "name": "s_type"
@@ -2577,7 +2589,7 @@
         {
           "args": [
             {
-              "doc": "TODO\n",
+              "doc": "The mapping mode (read or write).\n",
               "name": "mode",
               "type": "bitflag.map_mode"
             },
@@ -3518,6 +3530,23 @@
         }
       ],
       "name": "device"
+    },
+    {
+      "doc": "A sampleable 2D texture that may perform 0-copy YUV sampling internally. Creation of @ref WGPUExternalTexture is extremely implementation-dependent and not defined in this header.",
+      "methods": [
+        {
+          "args": [
+            {
+              "doc": "TODO\n",
+              "name": "label",
+              "type": "string_with_default_empty"
+            }
+          ],
+          "doc": "TODO\n",
+          "name": "set_label"
+        }
+      ],
+      "name": "external_texture"
     },
     {
       "doc": "TODO\n",
@@ -4582,6 +4611,14 @@
         },
         {
           "doc": "TODO\n",
+          "name": "get_texture_binding_view_dimension",
+          "returns": {
+            "doc": "TODO\n",
+            "type": "enum.texture_view_dimension"
+          }
+        },
+        {
+          "doc": "TODO\n",
           "name": "get_format",
           "returns": {
             "doc": "TODO\n",
@@ -5234,6 +5271,29 @@
       ],
       "name": "extent_3D",
       "type": "standalone"
+    },
+    {
+      "doc": "Chained in an @ref WGPUBindGroupEntry to set it to an @ref WGPUExternalTexture. This must have a corresponding @ref WGPUExternalTextureBindingLayout in the @ref WGPUBindGroupLayout.",
+      "extends": [
+        "bind_group_entry"
+      ],
+      "members": [
+        {
+          "doc": "TODO\n",
+          "name": "external_texture",
+          "type": "object.external_texture"
+        }
+      ],
+      "name": "external_texture_binding_entry",
+      "type": "extension"
+    },
+    {
+      "doc": "Chained in @ref WGPUBindGroupLayoutEntry to specify that the corresponding entries in an @ref WGPUBindGroup will contain an @ref WGPUExternalTexture.",
+      "extends": [
+        "bind_group_layout_entry"
+      ],
+      "name": "external_texture_binding_layout",
+      "type": "extension"
     },
     {
       "doc": "TODO\n",

@@ -21,7 +21,6 @@
 #include "core/fxcrt/check.h"
 #include "core/fxcrt/compiler_specific.h"
 #include "core/fxcrt/fx_system.h"
-#include "core/fxcrt/notreached.h"
 
 namespace {
 

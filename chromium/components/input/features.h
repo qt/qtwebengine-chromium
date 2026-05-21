@@ -23,6 +23,10 @@ extern const base::FeatureParam<bool> kTransferSequencesWithAbnormalDownTime;
 COMPONENT_EXPORT(INPUT)
 extern const base::FeatureParam<bool> kForwardEventsSeenOnBrowserToViz;
 
+// If enabled, the touch input state is speculatively transferred to Viz
+// before the synchronous Android system call to transfer the touch gesture.
+COMPONENT_EXPORT(INPUT) BASE_DECLARE_FEATURE(kInputVizardSpeculativeTransfer);
+
 // If enabled, Chrome will receive buffered/batched input from Android.
 // Specifically, Chrome will NOT call
 // https://developer.android.com/reference/kotlin/android/view/View#requestunbuffereddispatch.
@@ -56,9 +60,6 @@ BASE_DECLARE_FEATURE_PARAM(base::TimeDelta, kRendererHangWatcherDelay);
 //    events and "looks ahead" at the next event to improve prediction.
 // 2. It generates a synthetic scroll event if the queue is empty, keeping
 //    scrolling smooth even if input events are missed.
-// This feature depends on kRefactorCompositorThreadEventQueue being enabled
-// to function correctly, as the refactored event queue logic is necessary
-// for the new predictor input mapping and synthetic event generation.
 COMPONENT_EXPORT(INPUT)
 BASE_DECLARE_FEATURE(kUpdateScrollPredictorInputMapping);
 COMPONENT_EXPORT(INPUT)

@@ -656,6 +656,9 @@ resolve_nodes_1.pdf * * * *
 # Pixel tests
 #
 
+# TODO(crbug.com/475874968): Remove after the bug is fixed
+alpha_composite.in * * * gdi
+
 # TODO(crbug.com/40643646): Remove after associated bug is fixed
 bug_40643646.in * * * *
 
@@ -731,6 +734,9 @@ jpxdecode_without_colorspace.in * * * *
 
 # TODO(crbug.com/40661120): Remove after associated bug is fixed
 reset_button.in * * * *
+
+# TODO(crbug.com/479849565): Remove after associated bug is fixed
+bug_479849565.in * * * agg
 
 # xfa_specific
 

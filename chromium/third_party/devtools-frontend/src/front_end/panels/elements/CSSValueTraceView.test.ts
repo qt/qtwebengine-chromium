@@ -4,6 +4,7 @@
 
 import * as SDK from '../../core/sdk/sdk.js';
 import type * as Protocol from '../../generated/protocol.js';
+import * as ComputedStyle from '../../models/computed_style/computed_style.js';
 import {renderElementIntoDOM} from '../../testing/DOMHelpers.js';
 import {createTarget, stubNoopSettings} from '../../testing/EnvironmentHelpers.js';
 import {describeWithMockConnection, setMockConnectionResponseHandler} from '../../testing/MockConnection.js';
@@ -18,13 +19,14 @@ async function setUpStyles() {
   setMockConnectionResponseHandler('CSS.enable', () => ({}));
   setMockConnectionResponseHandler(
       'CSS.getEnvironmentVariables', () => ({} as Protocol.CSS.GetEnvironmentVariablesResponse));
-  const computedStyleModel = new Elements.ComputedStyleModel.ComputedStyleModel();
+  const computedStyleModel = new ComputedStyle.ComputedStyleModel.ComputedStyleModel();
   const cssModel = new SDK.CSSModel.CSSModel(createTarget());
   await cssModel.resumeModel();
   const domModel = cssModel.domModel();
   const node = new SDK.DOMModel.DOMNode(domModel);
   node.id = 0 as Protocol.DOM.NodeId;
   UI.Context.Context.instance().setFlavor(SDK.DOMModel.DOMNode, node);
+  computedStyleModel.node = node;
   const matchedStyles = await getMatchedStylesWithBlankRule({cssModel});
   const stylesPane = new Elements.StylesSidebarPane.StylesSidebarPane(computedStyleModel);
 
@@ -76,7 +78,7 @@ async function showTrace(
       property, null, matchedStyles, new Map(),
       Elements.StylePropertyTreeElement.getPropertyRenderers(
           property.name, property.ownerStyle, treeElement.parentPane(), matchedStyles, treeElement,
-          treeElement.getComputedStyles() ?? new Map()),
+          treeElement.getComputedStyles() ?? new Map(), treeElement.getComputedStyleExtraFields()),
       false, 0, false);
   return await viewFunction.nextInput;
 }

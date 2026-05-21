@@ -454,12 +454,6 @@ class Validator {
                                        const core::type::Type* type,
                                        const Source& source) const;
 
-    /// Validates a resource buffer type
-    /// @param t the resource buffer to validate
-    /// @param source the source of the resource buffer type
-    /// @returns true on success, false otherwise
-    bool ResourceBinding(const core::type::ResourceBinding* t, const Source& source) const;
-
     /// Validates a binding array type
     /// @param t the binding array to validate
     /// @param source the source of the binding array type
@@ -471,6 +465,12 @@ class Validator {
     /// @param source the source of the subgroup matrix type
     /// @returns true on success, false otherwise
     bool SubgroupMatrix(const core::type::SubgroupMatrix* t, const Source& source) const;
+
+    /// Validates buffer type
+    /// @param t the buffer type to validate
+    /// @param source the source of the buffer type
+    /// @returns true on success, false otherwise
+    bool Buffer(const core::type::Buffer* t, const Source& source) const;
 
     /// Validates a structure
     /// @param str the structure to validate
@@ -562,6 +562,11 @@ class Validator {
     /// @param call the builtin call to validate
     /// @returns true on success, false otherwise
     bool QuadBroadcast(const sem::Call* call) const;
+
+    /// Validates a bufferView builtin function
+    /// @param call the builtin call to validate
+    /// @returns true on success, false otherwise
+    bool BufferView(const sem::Call* call) const;
 
     /// Validates an optional builtin function and its required extensions and language features.
     /// @param call the builtin call to validate

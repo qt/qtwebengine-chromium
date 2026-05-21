@@ -19,12 +19,17 @@
 
 #include "../internal.h"
 
-#if defined(__cplusplus)
-extern "C" {
-#endif
 
+DECLARE_OPAQUE_STRUCT(dsa_st, DSAImpl)
 
-struct dsa_st {
+BSSL_NAMESPACE_BEGIN
+
+class DSAImpl : public dsa_st {
+ public:
+  static constexpr bool kAllowUniquePtr = true;
+
+  ~DSAImpl();
+
   BIGNUM *p;
   BIGNUM *q;
   BIGNUM *g;
@@ -33,20 +38,17 @@ struct dsa_st {
   BIGNUM *priv_key;
 
   // Normally used to cache montgomery values
-  CRYPTO_MUTEX method_mont_lock;
+  bssl::CRYPTO_MUTEX method_mont_lock;
   BN_MONT_CTX *method_mont_p;
   BN_MONT_CTX *method_mont_q;
-  CRYPTO_refcount_t references;
+  bssl::CRYPTO_refcount_t references;
   CRYPTO_EX_DATA ex_data;
 };
 
 // dsa_check_key performs cheap self-checks on |dsa|, and ensures it is within
 // DoS bounds. It returns one on success and zero on error.
-int dsa_check_key(const DSA *dsa);
+int dsa_check_key(const DSAImpl *dsa);
 
-
-#if defined(__cplusplus)
-}  // extern C
-#endif
+BSSL_NAMESPACE_END
 
 #endif  // OPENSSL_HEADER_CRYPTO_DSA_INTERNAL_H

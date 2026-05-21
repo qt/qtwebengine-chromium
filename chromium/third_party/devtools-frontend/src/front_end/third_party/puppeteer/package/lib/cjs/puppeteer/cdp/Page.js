@@ -58,6 +58,7 @@ var __disposeResources = (this && this.__disposeResources) || (function (Suppres
 });
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.CdpPage = void 0;
+exports.convertSameSiteFromPuppeteerToCdp = convertSameSiteFromPuppeteerToCdp;
 exports.convertCookiesPartitionKeyFromPuppeteerToCdp = convertCookiesPartitionKeyFromPuppeteerToCdp;
 const rxjs_js_1 = require("../../third_party/rxjs/rxjs.js");
 const CDPSession_js_1 = require("../api/CDPSession.js");
@@ -68,11 +69,13 @@ const EventEmitter_js_1 = require("../common/EventEmitter.js");
 const FileChooser_js_1 = require("../common/FileChooser.js");
 const NetworkManagerEvents_js_1 = require("../common/NetworkManagerEvents.js");
 const util_js_1 = require("../common/util.js");
+const environment_js_1 = require("../environment.js");
 const assert_js_1 = require("../util/assert.js");
 const Deferred_js_1 = require("../util/Deferred.js");
 const disposable_js_1 = require("../util/disposable.js");
 const ErrorLike_js_1 = require("../util/ErrorLike.js");
 const Binding_js_1 = require("./Binding.js");
+const BluetoothEmulation_js_1 = require("./BluetoothEmulation.js");
 const CdpSession_js_1 = require("./CdpSession.js");
 const Connection_js_1 = require("./Connection.js");
 const Coverage_js_1 = require("./Coverage.js");
@@ -92,6 +95,19 @@ function convertConsoleMessageLevel(method) {
             return 'warn';
         default:
             return method;
+    }
+}
+/**
+ * @internal
+ */
+function convertSameSiteFromPuppeteerToCdp(sameSite) {
+    switch (sameSite) {
+        case 'Strict':
+        case 'Lax':
+        case 'None':
+            return sameSite;
+        default:
+            return undefined;
     }
 }
 /**
@@ -118,6 +134,7 @@ class CdpPage extends Page_js_1.Page {
     }
     #closed = false;
     #targetManager;
+    #cdpBluetoothEmulation;
     #primaryTargetClient;
     #primaryTarget;
     #tabTargetClient;
@@ -144,6 +161,7 @@ class CdpPage extends Page_js_1.Page {
         (0, assert_js_1.assert)(this.#tabTargetClient, 'Tab target session is not defined.');
         this.#tabTarget = this.#tabTargetClient.target();
         (0, assert_js_1.assert)(this.#tabTarget, 'Tab target is not defined.');
+        this._tabId = this.#tabTarget._getTargetInfo().targetId;
         this.#primaryTarget = target;
         this.#targetManager = target._targetManager();
         this.#keyboard = new Input_js_1.CdpKeyboard(client);
@@ -154,6 +172,9 @@ class CdpPage extends Page_js_1.Page {
         this.#tracing = new Tracing_js_1.Tracing(client);
         this.#coverage = new Coverage_js_1.Coverage(client);
         this.#viewport = null;
+        // Use browser context's connection, as current Bluetooth emulation in Chromium is
+        // implemented on the browser context level, and not tight to the specific tab.
+        this.#cdpBluetoothEmulation = new BluetoothEmulation_js_1.CdpBluetoothEmulation(this.#primaryTargetClient.connection());
         const frameManagerEmitter = new EventEmitter_js_1.EventEmitter(this.#frameManager);
         frameManagerEmitter.on(FrameManagerEvents_js_1.FrameManagerEvent.FrameAttached, frame => {
             this.emit("frameattached" /* PageEvent.FrameAttached */, frame);
@@ -279,7 +300,7 @@ class CdpPage extends Page_js_1.Page {
         (0, assert_js_1.assert)(session instanceof CdpSession_js_1.CdpCDPSession);
         this.#frameManager.onAttachedToTarget(session.target());
         if (session.target()._getTargetInfo().type === 'worker') {
-            const worker = new WebWorker_js_1.CdpWebWorker(session, session.target().url(), session.target()._targetId, session.target().type(), this.#addConsoleMessage.bind(this), this.#handleException.bind(this), this.#frameManager.networkManager);
+            const worker = new WebWorker_js_1.CdpWebWorker(session, session.target().url(), session.target()._targetId, session.target().type(), this.#onConsoleAPI.bind(this), this.#handleException.bind(this), this.#frameManager.networkManager);
             this.#workers.set(session.id(), worker);
             this.emit("workercreated" /* PageEvent.WorkerCreated */, worker);
         }
@@ -303,12 +324,16 @@ class CdpPage extends Page_js_1.Page {
         }
     }
     async resize(params) {
-        const { windowId } = await this.#primaryTargetClient.send('Browser.getWindowForTarget');
+        const windowId = await this.windowId();
         await this.#primaryTargetClient.send('Browser.setContentsSize', {
-            windowId,
+            windowId: Number(windowId),
             width: params.contentWidth,
             height: params.contentHeight,
         });
+    }
+    async windowId() {
+        const { windowId } = await this.#primaryTargetClient.send('Browser.getWindowForTarget');
+        return windowId.toString();
     }
     async #onFileChooser(event) {
         const env_1 = { stack: [], error: void 0, hasError: false };
@@ -406,7 +431,7 @@ class CdpPage extends Page_js_1.Page {
             });
         }
         if (source !== 'worker') {
-            this.emit("console" /* PageEvent.Console */, new ConsoleMessage_js_1.ConsoleMessage(convertConsoleMessageLevel(level), text, [], [{ url, lineNumber }], undefined, stackTrace));
+            this.emit("console" /* PageEvent.Console */, new ConsoleMessage_js_1.ConsoleMessage(convertConsoleMessageLevel(level), text, [], [{ url, lineNumber }], undefined, stackTrace, this.#primaryTarget._targetId));
         }
     }
     mainFrame() {
@@ -449,6 +474,9 @@ class CdpPage extends Page_js_1.Page {
     async emulateNetworkConditions(networkConditions) {
         return await this.#frameManager.networkManager.emulateNetworkConditions(networkConditions);
     }
+    async emulateFocusedPage(enabled) {
+        return await this.#emulationManager.emulateFocus(enabled);
+    }
     setDefaultNavigationTimeout(timeout) {
         this._timeoutSettings.setDefaultNavigationTimeout(timeout);
     }
@@ -490,6 +518,8 @@ class CdpPage extends Page_js_1.Page {
                 partitionKey: cookie.partitionKey
                     ? cookie.partitionKey.topLevelSite
                     : undefined,
+                // TODO: remove sameParty as it is removed from Chrome.
+                sameParty: cookie.sameParty ?? false,
             };
         });
     }
@@ -536,6 +566,7 @@ class CdpPage extends Page_js_1.Page {
                     return {
                         ...cookieParam,
                         partitionKey: convertCookiesPartitionKeyFromPuppeteerToCdp(cookieParam.partitionKey),
+                        sameSite: convertSameSiteFromPuppeteerToCdp(cookieParam.sameSite),
                     };
                 }),
             });
@@ -597,6 +628,32 @@ class CdpPage extends Page_js_1.Page {
         const response = await this.#primaryTargetClient.send('Performance.getMetrics');
         return this.#buildMetricsObject(response.metrics);
     }
+    async captureHeapSnapshot(options) {
+        const { createWriteStream } = environment_js_1.environment.value.fs;
+        const stream = createWriteStream(options.path);
+        const streamPromise = new Promise((resolve, reject) => {
+            stream.on('error', reject);
+            stream.on('finish', resolve);
+        });
+        const client = this.#primaryTargetClient;
+        await client.send('HeapProfiler.enable');
+        await client.send('HeapProfiler.collectGarbage');
+        const handler = (event) => {
+            stream.write(event.chunk);
+        };
+        client.on('HeapProfiler.addHeapSnapshotChunk', handler);
+        try {
+            await client.send('HeapProfiler.takeHeapSnapshot', {
+                reportProgress: false,
+            });
+        }
+        finally {
+            client.off('HeapProfiler.addHeapSnapshotChunk', handler);
+            await client.send('HeapProfiler.disable');
+        }
+        stream.end();
+        await streamPromise;
+    }
     #emitMetrics(event) {
         this.emit("metrics" /* PageEvent.Metrics */, {
             title: event.title,
@@ -619,7 +676,34 @@ class CdpPage extends Page_js_1.Page {
         const values = event.args.map(arg => {
             return world.createCdpHandle(arg);
         });
-        this.#addConsoleMessage(convertConsoleMessageLevel(event.type), values, event.stackTrace);
+        if (!this.listenerCount("console" /* PageEvent.Console */)) {
+            values.forEach(arg => {
+                return arg.dispose();
+            });
+            return;
+        }
+        const textTokens = [];
+        // eslint-disable-next-line max-len -- The comment is long.
+        // eslint-disable-next-line @puppeteer/use-using -- These are not owned by this function.
+        for (const arg of values) {
+            textTokens.push((0, utils_js_1.valueFromJSHandle)(arg));
+        }
+        const stackTraceLocations = [];
+        if (event.stackTrace) {
+            for (const callFrame of event.stackTrace.callFrames) {
+                stackTraceLocations.push({
+                    url: callFrame.url,
+                    lineNumber: callFrame.lineNumber,
+                    columnNumber: callFrame.columnNumber,
+                });
+            }
+        }
+        let targetId;
+        if (world.environment.client instanceof CdpSession_js_1.CdpCDPSession) {
+            targetId = world.environment.client.target()._targetId;
+        }
+        const message = new ConsoleMessage_js_1.ConsoleMessage(convertConsoleMessageLevel(event.type), textTokens.join(' '), values, stackTraceLocations, undefined, event.stackTrace, targetId);
+        this.emit("console" /* PageEvent.Console */, message);
     }
     async #onBindingCalled(world, event) {
         let payload;
@@ -641,38 +725,6 @@ class CdpPage extends Page_js_1.Page {
         }
         const binding = this.#bindings.get(name);
         await binding?.run(context, seq, args, isTrivial);
-    }
-    #addConsoleMessage(eventType, args, stackTrace) {
-        if (!this.listenerCount("console" /* PageEvent.Console */)) {
-            args.forEach(arg => {
-                return arg.dispose();
-            });
-            return;
-        }
-        const textTokens = [];
-        // eslint-disable-next-line max-len -- The comment is long.
-        // eslint-disable-next-line @puppeteer/use-using -- These are not owned by this function.
-        for (const arg of args) {
-            const remoteObject = arg.remoteObject();
-            if (remoteObject.objectId) {
-                textTokens.push(arg.toString());
-            }
-            else {
-                textTokens.push((0, utils_js_1.valueFromRemoteObject)(remoteObject));
-            }
-        }
-        const stackTraceLocations = [];
-        if (stackTrace) {
-            for (const callFrame of stackTrace.callFrames) {
-                stackTraceLocations.push({
-                    url: callFrame.url,
-                    lineNumber: callFrame.lineNumber,
-                    columnNumber: callFrame.columnNumber,
-                });
-            }
-        }
-        const message = new ConsoleMessage_js_1.ConsoleMessage(convertConsoleMessageLevel(eventType), textTokens.join(' '), args, stackTraceLocations, undefined, stackTrace);
-        this.emit("console" /* PageEvent.Console */, message);
     }
     #onDialog(event) {
         const type = (0, util_js_1.validateDialogType)(event.type);
@@ -906,6 +958,9 @@ class CdpPage extends Page_js_1.Page {
      */
     async waitForDevicePrompt(options = {}) {
         return await this.mainFrame().waitForDevicePrompt(options);
+    }
+    get bluetooth() {
+        return this.#cdpBluetoothEmulation;
     }
 }
 exports.CdpPage = CdpPage;

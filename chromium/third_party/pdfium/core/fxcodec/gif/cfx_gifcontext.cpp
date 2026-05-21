@@ -214,7 +214,7 @@ GifDecoder::Status CFX_GifContext::LoadFrame(size_t frame_num) {
   DataVector<uint8_t> img_data;
   size_t read_marker = input_buffer_->GetPosition();
 
-  // TODO(crbug.com/pdfium/1793): This logic can be simplified a lot, but it
+  // TODO(crbug.com/42270805): This logic can be simplified a lot, but it
   // probably makes more sense to switch to a different GIF decoder altogether.
   if (decode_status_ == GIF_D_STATUS_IMG_DATA) {
     if (!ReadAllOrNone(pdfium::byte_span_from_ref(img_data_size))) {

@@ -961,26 +961,36 @@ int CheckJSDataViewBounds::MaxCallStackArgs() const { return 1; }
 void CheckJSDataViewBounds::SetValueLocationConstraints() {
   UseRegister(IndexInput());
   UseRegister(ByteLengthInput());
+  int element_size = compiler::ExternalArrayElementSize(element_type_);
+  if (element_size > 1) {
+    set_temporaries_needed(1);
+  }
 }
 void CheckJSDataViewBounds::GenerateCode(MaglevAssembler* masm,
                                          const ProcessingState& state) {
   USE(element_type_);
   Register index = ToRegister(IndexInput());
   Register byte_length = ToRegister(ByteLengthInput());
+  MaglevAssembler::TemporaryRegisterScope temps(masm);
+  Register limit = byte_length;
 
   int element_size = compiler::ExternalArrayElementSize(element_type_);
-  Label ok;
+
   if (element_size > 1) {
-    __ SubWord(byte_length, byte_length, Operand(element_size - 1));
-    __ MacroAssembler::Branch(&ok, ge, byte_length, Operand(zero_reg),
+    limit = temps.Acquire();
+    __ SubWord(limit, byte_length, Operand(element_size - 1));
+    Label limit_not_zero;
+    __ MacroAssembler::Branch(&limit_not_zero, ge, limit, Operand(zero_reg),
                               Label::Distance::kNear);
     __ EmitEagerDeopt(this, DeoptimizeReason::kOutOfBounds);
+    __ bind(&limit_not_zero);
   }
-  __ MacroAssembler::Branch(&ok, ult, index, Operand(byte_length),
+  Label index_no_oob;
+  __ MacroAssembler::Branch(&index_no_oob, ult, index, Operand(limit),
                             Label::Distance::kNear);
   __ EmitEagerDeopt(this, DeoptimizeReason::kOutOfBounds);
 
-  __ bind(&ok);
+  __ bind(&index_no_oob);
 }
 
 
@@ -1030,6 +1040,25 @@ void UnsafeFloat64ToHoleyFloat64::SetValueLocationConstraints() {
 
 void UnsafeFloat64ToHoleyFloat64::GenerateCode(MaglevAssembler* masm,
                                                const ProcessingState& state) {}
+
+#ifdef V8_ENABLE_UNDEFINED_DOUBLE
+void HoleyFloat64ConvertHoleToUndefined::SetValueLocationConstraints() {
+  UseRegister(ValueInput());
+  DefineSameAsFirst(this);
+  set_temporaries_needed(1);
+}
+void HoleyFloat64ConvertHoleToUndefined::GenerateCode(
+    MaglevAssembler* masm, const ProcessingState& state) {
+  DoubleRegister value = ToDoubleRegister(ValueInput());
+  Label done;
+
+  MaglevAssembler::TemporaryRegisterScope temps(masm);
+  Register scratch = temps.Acquire();
+  __ JumpIfNotHoleNan(value, scratch, &done);
+  __ Move(value, UndefinedNan());
+  __ bind(&done);
+}
+#endif  // V8_ENABLE_UNDEFINED_DOUBLE
 
 namespace {
 

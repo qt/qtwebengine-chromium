@@ -16,7 +16,7 @@ import * as IssueCounter from '../../ui/components/issue_counter/issue_counter.j
 import * as MarkdownView from '../../ui/components/markdown_view/markdown_view.js';
 import {Icon} from '../../ui/kit/kit.js';
 import * as UI from '../../ui/legacy/legacy.js';
-import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
+import {html, render} from '../../ui/lit/lit.js';
 
 import {AffectedBlockedByResponseView} from './AffectedBlockedByResponseView.js';
 import {AffectedCookiesView, AffectedRawCookieLinesView} from './AffectedCookiesView.js';
@@ -342,10 +342,8 @@ export class IssueView extends UI.TreeOutline.TreeElement {
     this.#issueKindIcon.classList.add('leading-issue-icon', 'extra-large');
     this.#aggregatedIssuesCount = document.createElement('span');
     const countAdorner = new Adorners.Adorner.Adorner();
-    countAdorner.data = {
-      name: 'countWrapper',
-      content: this.#aggregatedIssuesCount,
-    };
+    countAdorner.name = 'countWrapper';
+    countAdorner.append(this.#aggregatedIssuesCount);
     countAdorner.classList.add('aggregated-issues-count');
     header.appendChild(this.#issueKindIcon);
     header.appendChild(countAdorner);
@@ -454,12 +452,12 @@ export class IssueView extends UI.TreeOutline.TreeElement {
 
     const linkList = linkWrapper.listItemElement.createChild('ul', 'link-list');
     for (const description of this.#description.links) {
-      const link = UI.Fragment.html`<x-link class="link devtools-link" tabindex="0" href=${description.link}>${
-                       i18nString(UIStrings.learnMoreS, {PH1: description.linkTitle})}</x-link>` as UI.XLink.XLink;
-      link.setAttribute('jslog', `${VisualLogging.link('learn-more').track({click: true})}`);
-
       const linkListItem = linkList.createChild('li');
-      linkListItem.appendChild(link);
+      // eslint-disable-next-line @devtools/no-lit-render-outside-of-view
+      render(
+          html`<devtools-link class="link devtools-link" href=${description.link} jslogcontext="learn-more">${
+              i18nString(UIStrings.learnMoreS, {PH1: description.linkTitle})}</devtools-link>`,
+          linkListItem);
     }
     this.appendChild(linkWrapper);
   }

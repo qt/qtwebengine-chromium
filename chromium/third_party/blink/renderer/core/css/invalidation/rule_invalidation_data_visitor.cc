@@ -69,6 +69,7 @@ bool SupportsInvalidation(CSSSelector::PseudoType type) {
     case CSSSelector::kPseudoFocusVisible:
     case CSSSelector::kPseudoFocusWithin:
     case CSSSelector::kPseudoActive:
+    case CSSSelector::kPseudoActiveOption:
     case CSSSelector::kPseudoChecked:
     case CSSSelector::kPseudoEnabled:
     case CSSSelector::kPseudoFullPageMedia:
@@ -102,7 +103,6 @@ bool SupportsInvalidation(CSSSelector::PseudoType type) {
     case CSSSelector::kPseudoDir:
     case CSSSelector::kPseudoNot:
     case CSSSelector::kPseudoOverscrollAreaParent:
-    case CSSSelector::kPseudoOverscrollClientArea:
     case CSSSelector::kPseudoPlaceholder:
     case CSSSelector::kPseudoDetailsContent:
     case CSSSelector::kPseudoPermissionIcon:
@@ -135,7 +135,6 @@ bool SupportsInvalidation(CSSSelector::PseudoType type) {
     case CSSSelector::kPseudoFullScreen:
     case CSSSelector::kPseudoFullScreenAncestor:
     case CSSSelector::kPseudoFullscreen:
-    case CSSSelector::kPseudoPatching:
     case CSSSelector::kPseudoPaused:
     case CSSSelector::kPseudoPermissionGranted:
     case CSSSelector::kPseudoPictureInPicture:
@@ -156,12 +155,14 @@ bool SupportsInvalidation(CSSSelector::PseudoType type) {
     case CSSSelector::kPseudoMultiSelectFocus:
     case CSSSelector::kPseudoHostHasNonAutoAppearance:
     case CSSSelector::kPseudoOpen:
+    case CSSSelector::kPseudoOverscrollTarget:
     case CSSSelector::kPseudoDialogInTopLayer:
     case CSSSelector::kPseudoPicker:
     case CSSSelector::kPseudoPopoverInTopLayer:
     case CSSSelector::kPseudoPopoverOpen:
     case CSSSelector::kPseudoMenulistPopoverWithMenubarAnchor:
     case CSSSelector::kPseudoMenulistPopoverWithMenulistAnchor:
+    case CSSSelector::kPseudoSelectHasSlottedButton:
     case CSSSelector::kPseudoSlotted:
     case CSSSelector::kPseudoVideoPersistent:
     case CSSSelector::kPseudoVideoPersistentAncestor:
@@ -187,7 +188,9 @@ bool SupportsInvalidation(CSSSelector::PseudoType type) {
     case CSSSelector::kPseudoInterestSource:
     case CSSSelector::kPseudoInterestTarget:
     case CSSSelector::kPseudoHasSlotted:
-    case CSSSelector::kPseudoRouteMatch:
+    case CSSSelector::kPseudoLinkTo:
+    case CSSSelector::kPseudoToolFormActive:
+    case CSSSelector::kPseudoToolSubmitActive:
       return true;
     case CSSSelector::kPseudoUnknown:
     case CSSSelector::kPseudoLeftPage:
@@ -273,6 +276,7 @@ void RuleInvalidationDataVisitor<VisitorType>::InvalidationSetFeatures::Merge(
     const InvalidationSetFeatures& other) {
   classes.AppendVector(other.classes);
   attributes.AppendVector(other.attributes);
+  custom_pseudo_names.AppendVector(other.custom_pseudo_names);
   ids.AppendVector(other.ids);
   // Tag names that have been added to an invalidation set for an ID, a class,
   // or an attribute are called "emitted" tag names. Emitted tag names need to
@@ -303,8 +307,7 @@ bool RuleInvalidationDataVisitor<
     VisitorType>::InvalidationSetFeatures::HasFeatures() const {
   return !classes.empty() || !attributes.empty() || !ids.empty() ||
          !tag_names.empty() || !emitted_tag_names.empty() ||
-         invalidation_flags.InvalidateCustomPseudo() ||
-         invalidation_flags.InvalidatesParts();
+         !custom_pseudo_names.empty() || invalidation_flags.InvalidatesParts();
 }
 
 template <RuleInvalidationDataVisitorType VisitorType>
@@ -677,7 +680,7 @@ void RuleInvalidationDataVisitor<VisitorType>::
   switch (selector.GetPseudoType()) {
     case CSSSelector::kPseudoWebKitCustomElement:
     case CSSSelector::kPseudoBlinkInternalElement:
-      features.invalidation_flags.SetInvalidateCustomPseudo(true);
+      features.NarrowToCustomPseudo(selector.Value());
       return;
     case CSSSelector::kPseudoSlotted:
       features.invalidation_flags.SetInvalidatesSlotted(true);
@@ -1635,72 +1638,6 @@ RuleInvalidationDataVisitor<VisitorType>::InvalidationSetForSimpleSelector(
   }
   if (selector.Match() == CSSSelector::kPseudoClass) {
     switch (selector.GetPseudoType()) {
-      case CSSSelector::kPseudoEmpty:
-      case CSSSelector::kPseudoFirstChild:
-      case CSSSelector::kPseudoLastChild:
-      case CSSSelector::kPseudoOnlyChild:
-      case CSSSelector::kPseudoLink:
-      case CSSSelector::kPseudoVisited:
-      case CSSSelector::kPseudoWebkitAnyLink:
-      case CSSSelector::kPseudoAnyLink:
-      case CSSSelector::kPseudoAutofill:
-      case CSSSelector::kPseudoWebKitAutofill:
-      case CSSSelector::kPseudoAutofillPreviewed:
-      case CSSSelector::kPseudoAutofillSelected:
-      case CSSSelector::kPseudoHover:
-      case CSSSelector::kPseudoDrag:
-      case CSSSelector::kPseudoFocus:
-      case CSSSelector::kPseudoFocusVisible:
-      case CSSSelector::kPseudoFocusWithin:
-      case CSSSelector::kPseudoActive:
-      case CSSSelector::kPseudoChecked:
-      case CSSSelector::kPseudoEnabled:
-      case CSSSelector::kPseudoDefault:
-      case CSSSelector::kPseudoDisabled:
-      case CSSSelector::kPseudoOptional:
-      case CSSSelector::kPseudoPlaceholderShown:
-      case CSSSelector::kPseudoRequired:
-      case CSSSelector::kPseudoReadOnly:
-      case CSSSelector::kPseudoReadWrite:
-      case CSSSelector::kPseudoState:
-      case CSSSelector::kPseudoUserInvalid:
-      case CSSSelector::kPseudoUserValid:
-      case CSSSelector::kPseudoValid:
-      case CSSSelector::kPseudoInvalid:
-      case CSSSelector::kPseudoIndeterminate:
-      case CSSSelector::kPseudoTarget:
-      case CSSSelector::kPseudoTargetCurrent:
-      case CSSSelector::kPseudoTargetBefore:
-      case CSSSelector::kPseudoTargetAfter:
-      case CSSSelector::kPseudoLang:
-      case CSSSelector::kPseudoDir:
-      case CSSSelector::kPseudoFullScreen:
-      case CSSSelector::kPseudoFullScreenAncestor:
-      case CSSSelector::kPseudoFullscreen:
-      case CSSSelector::kPseudoPaused:
-      case CSSSelector::kPseudoPermissionGranted:
-      case CSSSelector::kPseudoPictureInPicture:
-      case CSSSelector::kPseudoPlaying:
-      case CSSSelector::kPseudoInRange:
-      case CSSSelector::kPseudoOutOfRange:
-      case CSSSelector::kPseudoDefined:
-      case CSSSelector::kPseudoOpen:
-      case CSSSelector::kPseudoPopoverOpen:
-      case CSSSelector::kPseudoVideoPersistent:
-      case CSSSelector::kPseudoVideoPersistentAncestor:
-      case CSSSelector::kPseudoXrOverlay:
-      case CSSSelector::kPseudoHasDatalist:
-      case CSSSelector::kPseudoMultiSelectFocus:
-      case CSSSelector::kPseudoModal:
-      case CSSSelector::kPseudoSelectorFragmentAnchor:
-      case CSSSelector::kPseudoActiveViewTransition:
-      case CSSSelector::kPseudoActiveViewTransitionType:
-      case CSSSelector::kPseudoInterestSource:
-      case CSSSelector::kPseudoInterestTarget:
-      case CSSSelector::kPseudoHasSlotted:
-      case CSSSelector::kPseudoRouteMatch:
-        return EnsurePseudoInvalidationSet(selector.GetPseudoType(), type,
-                                           position, in_nth_child);
       case CSSSelector::kPseudoFirstOfType:
       case CSSSelector::kPseudoLastOfType:
       case CSSSelector::kPseudoOnlyOfType:
@@ -1714,9 +1651,12 @@ RuleInvalidationDataVisitor<VisitorType>::InvalidationSetForSimpleSelector(
                    ? EnsurePseudoInvalidationSet(selector.GetPseudoType(), type,
                                                  position, in_nth_child)
                    : nullptr;
-      case CSSSelector::kPseudoPart:
       default:
         break;
+    }
+    if (CSSSelector::SupportsPseudoStateChange(selector.GetPseudoType())) {
+      return EnsurePseudoInvalidationSet(selector.GetPseudoType(), type,
+                                         position, in_nth_child);
     }
   }
   return nullptr;
@@ -1934,6 +1874,15 @@ void RuleInvalidationDataVisitor<VisitorType>::AddFeaturesToInvalidationSet(
         InvalidationSetToSelectorMap::SelectorFeatureType::kTagName,
         emitted_tag_name);
   }
+  for (const auto& custom_pseudo_name : features.custom_pseudo_names) {
+    if constexpr (is_builder()) {
+      invalidation_set->AddCustomPseudoName(custom_pseudo_name);
+    }
+    InvalidationSetToSelectorMap::RecordInvalidationSetEntry(
+        invalidation_set,
+        InvalidationSetToSelectorMap::SelectorFeatureType::kCustomPseudoName,
+        custom_pseudo_name);
+  }
   for (const auto& class_name : features.classes) {
     if constexpr (is_builder()) {
       invalidation_set->AddClass(class_name);
@@ -1950,11 +1899,6 @@ void RuleInvalidationDataVisitor<VisitorType>::AddFeaturesToInvalidationSet(
         invalidation_set,
         InvalidationSetToSelectorMap::SelectorFeatureType::kAttribute,
         attribute);
-  }
-  if (features.invalidation_flags.InvalidateCustomPseudo()) {
-    if constexpr (is_builder()) {
-      invalidation_set->SetCustomPseudoInvalid();
-    }
   }
 }
 

@@ -6,6 +6,7 @@
 
 #include "build/build_config.h"
 #include "chrome/browser/policy/developer_tools_policy_handler.h"
+#include "chrome/browser/web_applications/test/web_app_test_utils.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/prefs/pref_service.h"
@@ -46,8 +47,8 @@ class DevToolsAvailabilityCheckerTest : public testing::Test {
 };
 
 TEST_F(DevToolsAvailabilityCheckerTest, UrlAllowedByPolicy) {
-  base::Value::List allowlist;
-  allowlist.Append("*://allowed.com/*");
+  base::ListValue allowlist;
+  allowlist.Append("https://allowed.com/page");
   profile_->GetPrefs()->SetList(prefs::kDeveloperToolsAvailabilityAllowlist,
                                 std::move(allowlist));
 
@@ -57,7 +58,7 @@ TEST_F(DevToolsAvailabilityCheckerTest, UrlAllowedByPolicy) {
 }
 
 TEST_F(DevToolsAvailabilityCheckerTest, UrlBlockedByPolicy) {
-  base::Value::List blocklist;
+  base::ListValue blocklist;
   blocklist.Append("blocked.com");
   profile_->GetPrefs()->SetList(prefs::kDeveloperToolsAvailabilityBlocklist,
                                 std::move(blocklist));
@@ -68,12 +69,12 @@ TEST_F(DevToolsAvailabilityCheckerTest, UrlBlockedByPolicy) {
 }
 
 TEST_F(DevToolsAvailabilityCheckerTest, AllowlistTakesPrecedence) {
-  base::Value::List allowlist;
+  base::ListValue allowlist;
   allowlist.Append("example.com");
   profile_->GetPrefs()->SetList(prefs::kDeveloperToolsAvailabilityAllowlist,
                                 std::move(allowlist));
 
-  base::Value::List blocklist;
+  base::ListValue blocklist;
   blocklist.Append("example.com");
   profile_->GetPrefs()->SetList(prefs::kDeveloperToolsAvailabilityBlocklist,
                                 std::move(blocklist));
@@ -84,25 +85,86 @@ TEST_F(DevToolsAvailabilityCheckerTest, AllowlistTakesPrecedence) {
   EXPECT_TRUE(IsInspectionAllowed(profile_.get(), web_contents_.get()));
 }
 
-TEST_F(DevToolsAvailabilityCheckerTest, UrlNotCoveredByPolicies) {
-  base::Value::List allowlist;
+TEST_F(DevToolsAvailabilityCheckerTest,
+       UrlAllowedWhenNotOnAllowlistNorBlocklist) {
+  base::ListValue allowlist;
   allowlist.Append("allowed.com");
   profile_->GetPrefs()->SetList(prefs::kDeveloperToolsAvailabilityAllowlist,
                                 std::move(allowlist));
 
-  base::Value::List blocklist;
+  base::ListValue blocklist;
   blocklist.Append("blocked.com");
   profile_->GetPrefs()->SetList(prefs::kDeveloperToolsAvailabilityBlocklist,
                                 std::move(blocklist));
 
-  // Navigate to a URL not in either list. Default is allowed.
+  // When an allowlist is set, blocklist is set, and the URL is not on either
+  // list, so allowed.
   content::WebContentsTester::For(web_contents_.get())
       ->NavigateAndCommit(GURL("https://example.com/page"));
   EXPECT_TRUE(IsInspectionAllowed(profile_.get(), web_contents_.get()));
 }
 
+TEST_F(DevToolsAvailabilityCheckerTest,
+       UrlBlockedWhenNotOnAllowlistButOnBlocklist) {
+  base::ListValue allowlist;
+  allowlist.Append("allowed.com");
+  profile_->GetPrefs()->SetList(prefs::kDeveloperToolsAvailabilityAllowlist,
+                                std::move(allowlist));
+
+  base::ListValue blocklist;
+  blocklist.Append("example.com");
+  profile_->GetPrefs()->SetList(prefs::kDeveloperToolsAvailabilityBlocklist,
+                                std::move(blocklist));
+
+  // When an allowlist is set, blocklist is set, and the URL is on the blocklist
+  // but not the allowlist, so blocked.
+  content::WebContentsTester::For(web_contents_.get())
+      ->NavigateAndCommit(GURL("https://example.com/page"));
+  EXPECT_FALSE(IsInspectionAllowed(profile_.get(), web_contents_.get()));
+}
+
+TEST_F(DevToolsAvailabilityCheckerTest,
+       UrlAllowedWhenNotOnBlocklistAndAllowlistIsEmpty) {
+  base::ListValue blocklist;
+  blocklist.Append("blocked.com");
+  profile_->GetPrefs()->SetList(prefs::kDeveloperToolsAvailabilityBlocklist,
+                                std::move(blocklist));
+
+  // No allowlist is set, so fallback to default behavior, which is to allow
+  // URLs not on the blocklist.
+  content::WebContentsTester::For(web_contents_.get())
+      ->NavigateAndCommit(GURL("https://example.com/page"));
+  EXPECT_TRUE(IsInspectionAllowed(profile_.get(), web_contents_.get()));
+}
+
+#if !BUILDFLAG(IS_ANDROID)
+TEST_F(DevToolsAvailabilityCheckerTest,
+       UrlBlockedWhenNotOnAllowlistAndBlocklistIsEmpty) {
+  base::ListValue allowlist;
+  allowlist.Append("allowed.com");
+  profile_->GetPrefs()->SetList(prefs::kDeveloperToolsAvailabilityAllowlist,
+                                std::move(allowlist));
+
+  // When an allowlist is set and the blocklist is empty, any URL not on the
+  // allowlist is blocked.
+  content::WebContentsTester::For(web_contents_.get())
+      ->NavigateAndCommit(GURL("https://example.com/page"));
+  EXPECT_FALSE(IsInspectionAllowed(profile_.get(), web_contents_.get()));
+}
+#endif  // !BUILDFLAG(IS_ANDROID)
+
+TEST_F(DevToolsAvailabilityCheckerTest, DeveloperToolsDisallowedByPolicy) {
+  profile_->GetPrefs()->SetInteger(
+      prefs::kDevToolsAvailability,
+      static_cast<int>(
+          policy::DeveloperToolsPolicyHandler::Availability::kDisallowed));
+  content::WebContentsTester::For(web_contents_.get())
+      ->NavigateAndCommit(GURL("https://example.com/page"));
+  EXPECT_FALSE(IsInspectionAllowed(profile_.get(), web_contents_.get()));
+}
+
 TEST_F(DevToolsAvailabilityCheckerTest, ExtensionAllowedByPolicy) {
-  base::Value::List allowlist;
+  base::ListValue allowlist;
   allowlist.Append("abc");
   profile_->GetPrefs()->SetList(prefs::kDeveloperToolsAvailabilityAllowlist,
                                 std::move(allowlist));
@@ -113,7 +175,7 @@ TEST_F(DevToolsAvailabilityCheckerTest, ExtensionAllowedByPolicy) {
 }
 
 TEST_F(DevToolsAvailabilityCheckerTest, ExtensionBlockedByPolicy) {
-  base::Value::List blocklist;
+  base::ListValue blocklist;
   blocklist.Append("abc");
   profile_->GetPrefs()->SetList(prefs::kDeveloperToolsAvailabilityBlocklist,
                                 std::move(blocklist));
@@ -125,12 +187,12 @@ TEST_F(DevToolsAvailabilityCheckerTest, ExtensionBlockedByPolicy) {
 
 TEST_F(DevToolsAvailabilityCheckerTest,
        ExtensionNeitherAllowlistedNorBlocklisted) {
-  base::Value::List allowlist;
+  base::ListValue allowlist;
   allowlist.Append("a");
   profile_->GetPrefs()->SetList(prefs::kDeveloperToolsAvailabilityAllowlist,
                                 std::move(allowlist));
 
-  base::Value::List blocklist;
+  base::ListValue blocklist;
   blocklist.Append("b");
   profile_->GetPrefs()->SetList(prefs::kDeveloperToolsAvailabilityBlocklist,
                                 std::move(blocklist));
@@ -160,7 +222,7 @@ TEST_F(DevToolsAvailabilityCheckerTest,
       static_cast<int>(
           policy::DeveloperToolsPolicyHandler::Availability::kDisallowed));
 
-  base::Value::List allowlist;
+  base::ListValue allowlist;
   allowlist.Append("foo.com");
   profile_->GetPrefs()->SetList(prefs::kDeveloperToolsAvailabilityAllowlist,
                                 std::move(allowlist));
@@ -180,7 +242,7 @@ TEST_F(DevToolsAvailabilityCheckerTest,
       profile_.get(), static_cast<extensions::Extension*>(nullptr)));
 }
 
-TEST_F(DevToolsAvailabilityCheckerTest, NoPolicy) {
+TEST_F(DevToolsAvailabilityCheckerTest, NoPolicy_DefaultAllowed) {
   // By default, devtools are allowed.
   content::WebContentsTester::For(web_contents_.get())
       ->NavigateAndCommit(GURL("https://example.com/page"));
@@ -190,26 +252,22 @@ TEST_F(DevToolsAvailabilityCheckerTest, NoPolicy) {
 #if !BUILDFLAG(IS_ANDROID)
 
 TEST_F(DevToolsAvailabilityCheckerTest, WebAppAllowedByPolicy) {
-  base::Value::List allowlist;
-  allowlist.Append("*://allowed-app.com/*");
+  base::ListValue allowlist;
+  allowlist.Append("https://allowed-app.com");
   profile_->GetPrefs()->SetList(prefs::kDeveloperToolsAvailabilityAllowlist,
                                 std::move(allowlist));
 
-  const webapps::AppId app_id = "test_app_id";
-  auto web_app = std::make_unique<web_app::WebApp>(app_id);
-  web_app->SetStartUrl(GURL("https://allowed-app.com/"));
+  auto web_app = web_app::test::CreateWebApp(GURL("https://allowed-app.com"));
   EXPECT_TRUE(IsInspectionAllowed(profile_.get(), web_app.get()));
 }
 
 TEST_F(DevToolsAvailabilityCheckerTest, WebAppBlockedByPolicy) {
-  base::Value::List blocklist;
+  base::ListValue blocklist;
   blocklist.Append("blocked-app.com");
   profile_->GetPrefs()->SetList(prefs::kDeveloperToolsAvailabilityBlocklist,
                                 std::move(blocklist));
 
-  const webapps::AppId app_id = "test_app_id";
-  auto web_app = std::make_unique<web_app::WebApp>(app_id);
-  web_app->SetStartUrl(GURL("https://blocked-app.com/"));
+  auto web_app = web_app::test::CreateWebApp(GURL("https://blocked-app.com/"));
   EXPECT_FALSE(IsInspectionAllowed(profile_.get(), web_app.get()));
 }
 
@@ -219,9 +277,7 @@ TEST_F(DevToolsAvailabilityCheckerTest, WebAppDisallowedByPolicy) {
       static_cast<int>(
           policy::DeveloperToolsPolicyHandler::Availability::kDisallowed));
 
-  const webapps::AppId app_id = "test_app_id";
-  auto web_app = std::make_unique<web_app::WebApp>(app_id);
-  web_app->SetStartUrl(GURL("https://example.com/"));
+  auto web_app = web_app::test::CreateWebApp(GURL("https://example.com/"));
   EXPECT_FALSE(IsInspectionAllowed(profile_.get(), web_app.get()));
 }
 
@@ -231,9 +287,7 @@ TEST_F(DevToolsAvailabilityCheckerTest, WebAppAllowedWhenPolicyIsAllowed) {
       static_cast<int>(
           policy::DeveloperToolsPolicyHandler::Availability::kAllowed));
 
-  const webapps::AppId app_id = "test_app_id";
-  auto web_app = std::make_unique<web_app::WebApp>(app_id);
-  web_app->SetStartUrl(GURL("https://example.com/"));
+  auto web_app = web_app::test::CreateWebApp(GURL("https://example.com/"));
   EXPECT_TRUE(IsInspectionAllowed(profile_.get(), web_app.get()));
 }
 

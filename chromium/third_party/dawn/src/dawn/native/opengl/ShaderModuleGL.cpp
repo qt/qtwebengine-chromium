@@ -46,7 +46,7 @@
 #include "dawn/native/opengl/UtilsGL.h"
 #include "dawn/platform/DawnPlatform.h"
 #include "dawn/platform/tracing/TraceEvent.h"
-#include "tint/api/common/binding_point.h"
+#include "tint/tint.h"
 
 namespace dawn::native::opengl {
 namespace {
@@ -297,13 +297,6 @@ bool GenerateArrayLengthFromuniformData(
 
 }  // namespace
 
-std::string GetBindingName(BindGroupIndex group, BindingNumber bindingNumber) {
-    std::ostringstream o;
-    o << "dawn_binding_" << static_cast<uint32_t>(group) << "_"
-      << static_cast<uint32_t>(bindingNumber);
-    return o.str();
-}
-
 bool operator<(const CombinedSamplerElement& a, const CombinedSamplerElement& b) {
     return std::tie(a.group, a.index, a.shaderArraySize) <
            std::tie(b.group, b.index, b.shaderArraySize);
@@ -472,11 +465,11 @@ ResultOrError<GLuint> ShaderModule::CompileShader(
     req.tintOptions.disable_polyfill_integer_div_mod =
         GetDevice()->IsToggleEnabled(Toggle::DisablePolyfillsOnIntegerDivisonAndModulo);
 
-    req.tintOptions.enable_integer_range_analysis =
-        GetDevice()->IsToggleEnabled(Toggle::EnableIntegerRangeAnalysisInRobustness);
+    req.tintOptions.disable_integer_range_analysis =
+        !GetDevice()->IsToggleEnabled(Toggle::EnableIntegerRangeAnalysisInRobustness);
 
-    req.tintOptions.decompose_uniform_buffers =
-        GetDevice()->IsToggleEnabled(Toggle::DecomposeUniformBuffers);
+    req.tintOptions.use_uniform_buffers =
+        !GetDevice()->IsToggleEnabled(Toggle::DecomposeUniformBuffers);
 
     CacheResult<GLSLCompilation> compilationResult;
     DAWN_TRY_LOAD_OR_RUN(
@@ -511,14 +504,13 @@ ResultOrError<GLuint> ShaderModule::CompileShader(
             // overrides to have been substituted.
             if (r.stage == SingleShaderStage::Compute) {
                 // Validate workgroup size after program runs transforms.
+                // Subgroups are not supported on OpenGL backend.
                 Extent3D _;
-                DAWN_TRY_ASSIGN(_,
-                                ValidateComputeStageWorkgroupSize(
-                                    result->workgroup_info.x, result->workgroup_info.y,
-                                    result->workgroup_info.z, result->workgroup_info.storage_size,
-                                    /* usesSubgroupMatrix */ false,
-                                    /* maxSubgroupSize, GL backend not support */ 0, r.limits,
-                                    r.adapterSupportedLimits.UnsafeGetValue()));
+                DAWN_TRY_ASSIGN(_, ValidateComputeStageWorkgroupSize(
+                                       result->workgroup_info,
+                                       /*usesSubgroupMatrix=*/false,
+                                       /*maxSubgroupSize=*/0, r.limits,
+                                       r.adapterSupportedLimits.UnsafeGetValue()));
             }
 
             return GLSLCompilation{{std::move(result->glsl)}};

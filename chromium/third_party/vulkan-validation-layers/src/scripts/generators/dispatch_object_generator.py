@@ -1,10 +1,11 @@
 #!/usr/bin/python3 -i
 #
-# Copyright (c) 2015-2025 The Khronos Group Inc.
-# Copyright (c) 2015-2025 Valve Corporation
-# Copyright (c) 2015-2025 LunarG, Inc.
-# Copyright (c) 2015-2025 Google Inc.
+# Copyright (c) 2015-2026 The Khronos Group Inc.
+# Copyright (c) 2015-2026 Valve Corporation
+# Copyright (c) 2015-2026 LunarG, Inc.
+# Copyright (c) 2015-2026 Google Inc.
 # Copyright (C) 2025 Arm Limited.
+# Copyright (C) 2025-2026 Advanced Micro Devices, Inc. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -202,6 +203,8 @@ class DispatchObjectGenerator(BaseGenerator):
             'vkBindBufferMemory2KHR',
             'vkBindImageMemory2',
             'vkBindImageMemory2KHR',
+            # Needs special handling for VkResourceDescriptorDataEXT union
+            'vkWriteResourceDescriptorsEXT',
         )
 
         # List of all extension structs strings containing handles
@@ -211,6 +214,7 @@ class DispatchObjectGenerator(BaseGenerator):
             "VkGraphicsPipelineCreateInfo",
             "VkRayTracingPipelineCreateInfoKHR",
             "VkExecutionGraphPipelineCreateInfoAMDX",
+            "VkShaderDescriptorSetAndBindingMappingInfoEXT",
         ]
 
         self.extended_query_exts = (
@@ -229,6 +233,13 @@ class DispatchObjectGenerator(BaseGenerator):
         return name in self.vk.handles and not self.vk.handles[name].dispatchable
 
     def containsNonDispatchableObject(self, structName: str) -> bool:
+        # This function does not analyse possible conversions required in structures included in pNext chain.
+        # To be exact "conversion" field in following structure chain is not converted:
+        # VkDescriptorSetAndBindingMappingEXT.VkDescriptorMappingSource.VkSamplerCreateInfo->pNext<VkSamplerYcbcrConversionInfo>.VkSamplerYcbcrConversion
+        # Attempt to implement pNext analysis will require to O(n*n) enumerations, that seems too much time consuming.
+        # Thus apply this hack:
+        if structName in ["VkDescriptorSetAndBindingMappingEXT"] or structName.startswith("VkDescriptorMappingSource"):
+            return True
         struct = self.vk.structs[structName]
         for member in struct.members:
             if self.isNonDispatchable(member.type):
@@ -246,9 +257,9 @@ class DispatchObjectGenerator(BaseGenerator):
 
             /***************************************************************************
             *
-            * Copyright (c) 2015-2025 The Khronos Group Inc.
-            * Copyright (c) 2015-2025 Valve Corporation
-            * Copyright (c) 2015-2025 LunarG, Inc.
+            * Copyright (c) 2015-2026 The Khronos Group Inc.
+            * Copyright (c) 2015-2026 Valve Corporation
+            * Copyright (c) 2015-2026 LunarG, Inc.
             *
             * Licensed under the Apache License, Version 2.0 (the "License");
             * you may not use this file except in compliance with the License.
@@ -432,7 +443,7 @@ class DispatchObjectGenerator(BaseGenerator):
             ''')
         guard_helper = PlatformGuardHelper()
         for struct in [self.vk.structs[x] for x in self.ndo_extension_structs]:
-            (api_decls, api_pre, api_post) = self.uniquifyMembers(struct.members, 'safe_struct->', 0, False, False, False)
+            (api_decls, api_pre, api_post) = self.uniquifyMembers(struct.members, 'safe_struct->', 0, False, False, struct.name, None)
             # Only process extension structs containing handles
             if not api_pre:
                 continue
@@ -512,7 +523,7 @@ class DispatchObjectGenerator(BaseGenerator):
                     # Remove a single handle from the map
                     destroy_ndo_code += f'{param.name} = Erase({param.name});'
 
-            (api_decls, api_pre, api_post) = self.uniquifyMembers(command.params, '', 0, isCreate, isDestroy, True)
+            (api_decls, api_pre, api_post) = self.uniquifyMembers(command.params, '', 0, isCreate, isDestroy, None, None)
             api_post += create_ndo_code
             if isDestroy:
                 api_pre += destroy_ndo_code
@@ -602,15 +613,15 @@ class DispatchObjectGenerator(BaseGenerator):
         return cleanup
 
     #
-    # topLevel indicates if elements are passed directly into the function else they're below a ptr/struct
     # isCreate means that this is API creates or allocates NDOs
     # isDestroy indicates that this API destroys or frees NDOs
-    def uniquifyMembers(self, members: list[Member], prefix: str, arrayIndex: int, isCreate: bool, isDestroy: bool, topLevel: bool):
+    def uniquifyMembers(self, members: list[Member], prefix: str, arrayIndex: int, isCreate: bool, isDestroy: bool, parentStruct: str, selector: (str|None)):
         decls = ''
         pre_code = ''
         post_code = ''
         index = f'index{str(arrayIndex)}'
         arrayIndex += 1
+        topLevel = parentStruct is None
         # Process any NDOs in this structure and recurse for any sub-structs in this struct
         for member in members:
             # Handle NDOs
@@ -647,11 +658,17 @@ class DispatchObjectGenerator(BaseGenerator):
                             if not isDestroy:
                                 pre_code += f'{member.name} = Unwrap({member.name});\n'
                         else:
+                            extra_check = ''
+                            if (parentStruct == 'VkDescriptorImageInfo' and member.type == 'VkSampler'):
+                                extra_check = '&& has_sampler'
+                            elif (parentStruct == 'VkDescriptorImageInfo' and member.type == 'VkImageView'):
+                                extra_check = '&& has_image_view'
+
                             # Make temp copy of this var with the 'local' removed. It may be better to not pass in 'local_'
                             # as part of the string and explicitly print it
                             fix = str(prefix).strip('local_')
                             pre_code += f'''
-                                if ({fix}{member.name}) {{
+                                if ({fix}{member.name}{extra_check}) {{
                                     {prefix}{member.name} = Unwrap({fix}{member.name});
                                 }}'''
             # Handle Structs that contain NDOs at some level
@@ -676,6 +693,14 @@ class DispatchObjectGenerator(BaseGenerator):
                         else:
                             new_prefix = f'{prefix}{member.name}'
                         pre_code += f'if ({prefix}{member.name}) {{\n'
+
+                        # From https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/11356
+                        # We need special logic around VkDescriptorImageInfo to know if we can wrap the sampler/imageView or not
+                        if (member.type == 'VkDescriptorImageInfo'):
+                            pre_code += '// need for when updating VkDescriptorImageInfo\n'
+                            pre_code += f'bool has_sampler = {prefix}descriptorType == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER || {prefix}descriptorType == VK_DESCRIPTOR_TYPE_SAMPLER;\n'
+                            pre_code += f'bool has_image_view = {prefix}descriptorType != VK_DESCRIPTOR_TYPE_SAMPLER;\n\n'
+
                         if topLevel:
                             if deferred_name:
                                 pre_code += f'{new_prefix} = new {safe_type}[{member.length}];\n'
@@ -695,8 +720,12 @@ class DispatchObjectGenerator(BaseGenerator):
                         if process_pnext:
                             pre_code += f'UnwrapPnextChainHandles({new_prefix}[{index}].pNext);\n'
                         local_prefix = f'{new_prefix}[{index}].'
+
                         # Process sub-structs in this struct
-                        (tmp_decl, tmp_pre, tmp_post) = self.uniquifyMembers(struct.members, local_prefix, arrayIndex, isCreate, isDestroy, False)
+                        sel = None
+                        if hasattr(member, 'selector') and member.selector is not None:
+                            sel = prefix + member.selector
+                        (tmp_decl, tmp_pre, tmp_post) = self.uniquifyMembers(struct.members, local_prefix, arrayIndex, isCreate, isDestroy, struct.name, sel)
                         decls += tmp_decl
                         pre_code += tmp_pre
                         post_code += tmp_post
@@ -732,7 +761,10 @@ class DispatchObjectGenerator(BaseGenerator):
                             else:
                                 pre_code += f'*local_{prefix}{member.name} = *{member.name};\n'
                         # Process sub-structs in this struct
-                        (tmp_decl, tmp_pre, tmp_post) = self.uniquifyMembers(struct.members, new_prefix, arrayIndex, isCreate, isDestroy, False)
+                        sel = None
+                        if hasattr(member, 'selector') and member.selector is not None:
+                            sel = prefix + member.selector
+                        (tmp_decl, tmp_pre, tmp_post) = self.uniquifyMembers(struct.members, new_prefix, arrayIndex, isCreate, isDestroy, struct.name, sel)
                         decls += tmp_decl
                         pre_code += tmp_pre
                         post_code += tmp_post
@@ -742,18 +774,28 @@ class DispatchObjectGenerator(BaseGenerator):
                         if topLevel:
                             post_code += self.cleanUpLocalDeclarations(prefix, member.name, member.length, deferred_name)
                     else:
+                        if selector is not None:
+                            if len(member.selection) == 1:
+                                pre_code += "if (" + selector + " == " + member.selection[0] + ") {\n"
+                            else:
+                                pre_code += "if (IsValueIn(" + selector + "," + ",".join(member.selection) + ")) {\n"
                         # Update struct prefix
                         if topLevel:
                             sys.exit(1)
                         else:
                             new_prefix = f'{prefix}{member.name}.'
                         # Process sub-structs in this struct
-                        (tmp_decl, tmp_pre, tmp_post) = self.uniquifyMembers(struct.members, new_prefix, arrayIndex, isCreate, isDestroy, False)
+                        sel = None
+                        if hasattr(member, 'selector') and member.selector is not None:
+                            sel = prefix + member.selector
+                        (tmp_decl, tmp_pre, tmp_post) = self.uniquifyMembers(struct.members, new_prefix, arrayIndex, isCreate, isDestroy, struct.name, sel)
                         decls += tmp_decl
                         pre_code += tmp_pre
                         post_code += tmp_post
                         if process_pnext:
                             pre_code += f'UnwrapPnextChainHandles({prefix}{member.name}.pNext);\n'
+                        if selector is not None:
+                            pre_code += "}\n"
             elif member.type == 'VkObjectType' and member.name == 'objectType' and any(m.name == 'objectHandle' for m in members):
                 pre_code += '''
                     if (NotDispatchableHandle(objectType)) {

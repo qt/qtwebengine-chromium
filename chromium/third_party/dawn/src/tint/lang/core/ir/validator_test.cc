@@ -60,7 +60,7 @@ Function* IR_ValidatorTest::FragmentEntryPoint(const std::string& name) {
 }
 
 Function* IR_ValidatorTest::VertexEntryPoint(const std::string& name) {
-    auto* f = b.Function(name, ty.vec4<f32>(), Function::PipelineStage::kVertex);
+    auto* f = b.Function(name, ty.vec4f(), Function::PipelineStage::kVertex);
     f->SetReturnBuiltin(BuiltinValue::kPosition);
     return f;
 }
@@ -152,7 +152,7 @@ TEST_F(IR_ValidatorTest, RootBlock_LetWithAllowModuleScopeLets) {
 }
 
 TEST_F(IR_ValidatorTest, RootBlock_Construct) {
-    mod.root_block->Append(b.Construct(ty.vec2<f32>(), 1_f, 2_f));
+    mod.root_block->Append(b.Construct(ty.vec2f(), 1_f, 2_f));
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
@@ -166,7 +166,7 @@ TEST_F(IR_ValidatorTest, RootBlock_Construct) {
 }
 
 TEST_F(IR_ValidatorTest, RootBlock_ConstructWithAllowModuleScopeLets) {
-    mod.root_block->Append(b.Construct(ty.vec2<f32>(), 1_f, 2_f));
+    mod.root_block->Append(b.Construct(ty.vec2f(), 1_f, 2_f));
 
     auto res = ir::Validate(mod, Capabilities{Capability::kAllowModuleScopeLets});
     ASSERT_EQ(res, Success) << res.Failure();
@@ -188,6 +188,44 @@ TEST_F(IR_ValidatorTest, RootBlock_VarBlockMismatch) {
             R"(:2:38 error: var: instruction in root block does not have root block as parent
   %1:ptr<private, i32, read_write> = var undef
                                      ^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, RootBlock_ModuleScopeRuntimeExpression) {
+    auto* v = b.Var("v", ty.ptr(workgroup, ty.atomic(ty.u32())));
+    mod.root_block->Append(v);
+
+    auto* load = b.Call(ty.u32(), core::BuiltinFn::kAtomicLoad, v->Result(0));
+    mod.root_block->Append(load);
+
+    auto res = ir::Validate(mod, Capabilities{Capability::kAllowOverrides});
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            +R"(:3:12 error: atomicLoad: instruction is not evaluatable at pipeline creation time
+  %2:u32 = atomicLoad %v
+           ^^^^^^^^^^)"))
+        << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, RootBlock_VarWithRuntimeInitializer) {
+    auto* v = b.Var("v", ty.ptr(workgroup, ty.atomic(ty.u32())));
+    mod.root_block->Append(v);
+
+    // This will also cause the same error on atomicLoad as above, but this test is interested in
+    // the later error for the var.
+    auto* init = b.Call(ty.u32(), core::BuiltinFn::kAtomicLoad, v);
+    mod.root_block->Append(init);
+    mod.root_block->Append(b.Var("a", init));
+
+    auto res = ir::Validate(mod, Capabilities{Capability::kAllowOverrides});
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(res.Failure().reason,
+                testing::HasSubstr(
+                    R"(:4:39 error: var: instruction is not evaluatable at pipeline creation time
+  %a:ptr<function, u32, read_write> = var %2
+                                      ^^^
 )")) << res.Failure();
 }
 
@@ -280,6 +318,58 @@ TEST_F(IR_ValidatorTest, Construct_Array_WrongArgType) {
 )")) << res.Failure();
 }
 
+TEST_F(IR_ValidatorTest, Construct_Array_WrongArgCount) {
+    auto* f = b.Function("f", ty.void_());
+    b.Append(f->Block(), [&] {
+        b.Construct<array<u32, 4>>(1_u, 2_u);
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:3:24 error: construct: array has 4 elements, but construct provides 2 arguments
+    %2:array<u32, 4> = construct 1u, 2u
+                       ^^^^^^^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Construct_Vector_1arg_WrongType) {
+    auto* f = b.Function("f", ty.void_());
+    b.Append(f->Block(), [&] {
+        b.Construct<vec2u>(b.Zero<vec2f>());
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(R"(error: construct: no matching overload for vec2<u32> constructor
+    %2:vec2<u32> = construct vec2<f32>(0.0f)
+                   ^^^^^^^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Construct_Vector_2arg_WrongType) {
+    auto* f = b.Function("f", ty.void_());
+    b.Append(f->Block(), [&] {
+        b.Construct<vec2u>(b.Zero<f32>(), b.Zero<f32>());
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(R"(error: construct: no matching overload for vec2<u32> constructor
+    %2:vec2<u32> = construct 0.0f, 0.0f
+                   ^^^^^^^^^
+)"));
+}
+
 TEST_F(IR_ValidatorTest, Construct_Matrix_NoArgs) {
     auto* f = b.Function("f", ty.void_());
     b.Append(f->Block(), [&] {
@@ -305,8 +395,8 @@ TEST_F(IR_ValidatorTest, Construct_Matrix_Scalar) {
 TEST_F(IR_ValidatorTest, Construct_Matrix_ColumnVectors) {
     auto* f = b.Function("f", ty.void_());
     b.Append(f->Block(), [&] {
-        auto* v1 = b.Composite(ty.vec2<f32>(), 1_f, 2_f);
-        auto* v2 = b.Composite(ty.vec2<f32>(), 3_f, 4_f);
+        auto* v1 = b.Composite(ty.vec2f(), 1_f, 2_f);
+        auto* v2 = b.Composite(ty.vec2f(), 3_f, 4_f);
         b.Construct(ty.mat2x2<f32>(), v1, v2);
         b.Return(f);
     });
@@ -318,7 +408,7 @@ TEST_F(IR_ValidatorTest, Construct_Matrix_ColumnVectors) {
 TEST_F(IR_ValidatorTest, Construct_Matrix_MixedScalarVector) {
     auto* f = b.Function("f", ty.void_());
     b.Append(f->Block(), [&] {
-        b.Construct(ty.mat2x2<f32>(), 1_f, b.Composite(ty.vec2<f32>(), 2_f, 3_f));
+        b.Construct(ty.mat2x2<f32>(), 1_f, b.Composite(ty.vec2f(), 2_f, 3_f));
         b.Return(f);
     });
 
@@ -553,7 +643,7 @@ TEST_F(IR_ValidatorTest, Construct_TextureInStruct_WithCapability) {
         b.Return(f);
     });
 
-    auto res = ir::Validate(mod, Capabilities{Capability::kAllowPointersAndHandlesInStructures});
+    auto res = ir::Validate(mod, Capabilities{Capability::kMslAllowEntryPointInterface});
     ASSERT_EQ(res, Success) << res.Failure();
 }
 
@@ -564,7 +654,7 @@ TEST_F(IR_ValidatorTest, Construct_NonConstructible_WithStructCapability) {
         b.Return(f);
     });
 
-    auto res = ir::Validate(mod, Capabilities{Capability::kAllowPointersAndHandlesInStructures});
+    auto res = ir::Validate(mod, Capabilities{Capability::kMslAllowEntryPointInterface});
     ASSERT_NE(res, Success);
     EXPECT_THAT(res.Failure().reason, testing::HasSubstr(
                                           R"(:3:15 error: construct: type is not constructible
@@ -675,7 +765,7 @@ TEST_F(IR_ValidatorTest, Convert_ScalarToVec) {
     auto* p = b.FunctionParam("p", ty.f32());
     f->AppendParam(p);
     b.Append(f->Block(), [&] {
-        b.Convert(ty.vec2<f32>(), p);
+        b.Convert(ty.vec2f(), p);
         b.Return(f);
     });
 
@@ -710,10 +800,10 @@ TEST_F(IR_ValidatorTest, Convert_ScalarToMat) {
 
 TEST_F(IR_ValidatorTest, Convert_VecToVec) {
     auto* f = b.Function("f", ty.void_());
-    auto* p = b.FunctionParam("p", ty.vec2<u32>());
+    auto* p = b.FunctionParam("p", ty.vec2u());
     f->AppendParam(p);
     b.Append(f->Block(), [&] {
-        b.Convert(ty.vec2<f32>(), p);
+        b.Convert(ty.vec2f(), p);
         b.Return(f);
     });
 
@@ -723,10 +813,10 @@ TEST_F(IR_ValidatorTest, Convert_VecToVec) {
 
 TEST_F(IR_ValidatorTest, Convert_VecIdentity) {
     auto* f = b.Function("f", ty.void_());
-    auto* p = b.FunctionParam("p", ty.vec3<f32>());
+    auto* p = b.FunctionParam("p", ty.vec3f());
     f->AppendParam(p);
     b.Append(f->Block(), [&] {
-        b.Convert(ty.vec3<f32>(), p);
+        b.Convert(ty.vec3f(), p);
         b.Return(f);
     });
 
@@ -742,10 +832,10 @@ TEST_F(IR_ValidatorTest, Convert_VecIdentity) {
 
 TEST_F(IR_ValidatorTest, Convert_VecToVec_WidthMismatch) {
     auto* f = b.Function("f", ty.void_());
-    auto* p = b.FunctionParam("p", ty.vec2<u32>());
+    auto* p = b.FunctionParam("p", ty.vec2u());
     f->AppendParam(p);
     b.Append(f->Block(), [&] {
-        b.Convert(ty.vec4<f32>(), p);
+        b.Convert(ty.vec4f(), p);
         b.Return(f);
     });
 
@@ -761,7 +851,7 @@ TEST_F(IR_ValidatorTest, Convert_VecToVec_WidthMismatch) {
 
 TEST_F(IR_ValidatorTest, Convert_VecToScalar) {
     auto* f = b.Function("f", ty.void_());
-    auto* p = b.FunctionParam("p", ty.vec2<u32>());
+    auto* p = b.FunctionParam("p", ty.vec2u());
     f->AppendParam(p);
     b.Append(f->Block(), [&] {
         b.Convert(ty.f32(), p);
@@ -780,7 +870,7 @@ TEST_F(IR_ValidatorTest, Convert_VecToScalar) {
 
 TEST_F(IR_ValidatorTest, Convert_VecToMat) {
     auto* f = b.Function("f", ty.void_());
-    auto* p = b.FunctionParam("p", ty.vec2<u32>());
+    auto* p = b.FunctionParam("p", ty.vec2u());
     f->AppendParam(p);
     b.Append(f->Block(), [&] {
         b.Convert(ty.mat3x2<f32>(), p);
@@ -872,7 +962,7 @@ TEST_F(IR_ValidatorTest, Convert_MatToVec) {
     auto* p = b.FunctionParam("p", ty.mat4x4<f32>());
     f->AppendParam(p);
     b.Append(f->Block(), [&] {
-        b.Convert(ty.vec4<f32>(), p);
+        b.Convert(ty.vec4f(), p);
         b.Return(f);
     });
 
@@ -1070,6 +1160,28 @@ TEST_F(IR_ValidatorTest, Block_ParameterUsedInMultipleBlocks) {
 )")) << res.Failure();
 }
 
+TEST_F(IR_ValidatorTest, Block_Parameter_Void) {
+    auto* f = b.Function("my_func", ty.void_());
+
+    auto* p = b.BlockParam("my_param", ty.void_());
+    b.Append(f->Block(), [&] {
+        auto* l = b.Loop();
+        b.Append(l->Initializer(), [&] { b.NextIteration(l, nullptr); });
+        l->Body()->SetParams({p});
+        b.Append(l->Body(), [&] { b.Continue(l); });
+        b.Append(l->Continuing(), [&] { b.NextIteration(l, p); });
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(res.Failure().reason,
+                testing::HasSubstr(R"(:7:12 error: block parameter type cannot be void
+      $B3 (%my_param:void): {  # body
+           ^^^^^^^^^
+)")) << res.Failure();
+}
+
 TEST_F(IR_ValidatorTest, Instruction_AppendedDead) {
     auto* f = b.Function("my_func", ty.void_());
 
@@ -1164,6 +1276,24 @@ TEST_F(IR_ValidatorTest, Instruction_TooManyResultInstruction) {
 )")) << res.Failure();
 }
 
+TEST_F(IR_ValidatorTest, Instruction_VoidResultWithName) {
+    auto* f = b.Function("my_func", ty.void_());
+
+    b.Append(f->Block(), [&] {
+        auto* result = b.Call<void>(core::BuiltinFn::kWorkgroupBarrier);
+        mod.SetName(result, "result");
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(res.Failure().reason,
+                testing::HasSubstr(R"(:3:5 error: workgroupBarrier: void results must not have names
+    %result:void = workgroupBarrier
+    ^^^^^^^^^^^^)"))
+        << res.Failure();
+}
+
 TEST_F(IR_ValidatorTest, Instruction_DeadOperand) {
     auto* f = b.Function("my_func", ty.void_());
 
@@ -1222,7 +1352,9 @@ TEST_F(IR_ValidatorTest, Binary_LHS_Nullptr) {
     auto* f = b.Function("my_func", ty.void_());
 
     auto sb = b.Append(f->Block());
-    sb.Add(ty.i32(), nullptr, sb.Constant(2_i));
+    auto* bin = mod.CreateInstruction<ir::CoreBinary>(b.InstructionResult(ty.i32()), BinaryOp::kAdd,
+                                                      nullptr, b.Constant(2_i));
+    sb.Append(bin);
     sb.Return(f);
 
     auto res = ir::Validate(mod);
@@ -1238,7 +1370,10 @@ TEST_F(IR_ValidatorTest, Binary_RHS_Nullptr) {
     auto* f = b.Function("my_func", ty.void_());
 
     auto sb = b.Append(f->Block());
-    sb.Add(ty.i32(), sb.Constant(2_i), nullptr);
+
+    auto* bin = mod.CreateInstruction<ir::CoreBinary>(b.InstructionResult(ty.i32()), BinaryOp::kAdd,
+                                                      b.Constant(2_i), nullptr);
+    sb.Append(bin);
     sb.Return(f);
 
     auto res = ir::Validate(mod);
@@ -1272,7 +1407,7 @@ TEST_F(IR_ValidatorTest, Binary_MissingOperands) {
     auto* f = b.Function("my_func", ty.void_());
 
     auto sb = b.Append(f->Block());
-    auto* add = sb.Add(ty.i32(), sb.Constant(1_i), sb.Constant(2_i));
+    auto* add = sb.Add(sb.Constant(1_i), sb.Constant(2_i));
     add->ClearOperands();
     sb.Return(f);
 
@@ -1289,7 +1424,7 @@ TEST_F(IR_ValidatorTest, Binary_MissingResult) {
     auto* f = b.Function("my_func", ty.void_());
 
     auto sb = b.Append(f->Block());
-    auto* add = sb.Add(ty.i32(), sb.Constant(1_i), sb.Constant(2_i));
+    auto* add = sb.Add(sb.Constant(1_i), sb.Constant(2_i));
     add->ClearResults();
     sb.Return(f);
 
@@ -1336,10 +1471,9 @@ TEST_F(IR_ValidatorTest, Binary_LogicalAnd) {
 }
 
 TEST_F(IR_ValidatorTest, Binary_Valid) {
-    auto* i32 = ty.i32();
     auto* func = b.Function("foo", ty.void_());
     b.Append(func->Block(), [&] {
-        b.Add(i32, b.Constant(1_i), b.Constant(2_i));
+        b.Add(b.Constant(1_i), b.Constant(2_i));
         b.Return(func);
     });
 
@@ -1350,7 +1484,7 @@ TEST_F(IR_ValidatorTest, Binary_Valid) {
 TEST_F(IR_ValidatorTest, Binary_TooManyOperands) {
     auto* func = b.Function("foo", ty.void_());
     b.Append(func->Block(), [&] {
-        auto* add = b.Add(ty.i32(), b.Constant(1_i), b.Constant(2_i));
+        auto* add = b.Add(b.Constant(1_i), b.Constant(2_i));
         add->PushOperand(b.Constant(3_i));
         b.Return(func);
     });
@@ -1365,13 +1499,12 @@ TEST_F(IR_ValidatorTest, Binary_TooManyOperands) {
 }
 
 TEST_F(IR_ValidatorTest, Binary_OperandWrongType_Func) {
-    auto* i32 = ty.i32();
     auto* func = b.Function("foo", ty.void_());
     auto* other_func = b.Function("other", ty.void_());
     b.Append(other_func->Block(), [&] { b.Return(other_func); });
 
     b.Append(func->Block(), [&] {
-        b.Add(i32, b.Constant(1_i), other_func);
+        b.Add(b.Constant(1_i), other_func);
         b.Return(func);
     });
 
@@ -1530,8 +1663,8 @@ TEST_F(IR_ValidatorTest, Unary_OperandWrongType) {
 TEST_F(IR_ValidatorTest, Scoping_UseBeforeDecl) {
     auto* f = b.Function("my_func", ty.void_());
 
-    auto* y = b.Add<i32>(2_i, 3_i);
-    auto* x = b.Add<i32>(y, 1_i);
+    auto* y = b.Add(2_i, 3_i);
+    auto* x = b.Add(y, 1_i);
 
     f->Block()->Append(x);
     f->Block()->Append(y);
@@ -1573,6 +1706,34 @@ TEST_F(IR_ValidatorTest, Scoping_UseAfterNestedDecl_InTerminator) {
 )")) << res.Failure();
 }
 
+TEST_F(IR_ValidatorTest, Scoping_UseBeforeDecl_InControlFlow) {
+    auto* f = b.Function("my_func", ty.void_());
+    auto* decl = b.Let("decl", 42_u);
+    auto* if_ = b.If(true);
+    b.Append(if_->True(), [&] {
+        b.Let("use", decl);
+        b.ExitIf(if_);
+    });
+    f->Block()->Append(if_);
+    f->Block()->Append(decl);
+    f->Block()->Append(b.Return(f));
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(res.Failure().reason, testing::HasSubstr(R"(:5:24 error: let: %decl is not in scope
+        %use:u32 = let %decl
+                       ^^^^^
+
+:4:7 note: in block
+      $B2: {  # true
+      ^^^
+
+:9:5 note: %decl declared here
+    %decl:u32 = let 42u
+    ^^^^^^^^^
+)")) << res.Failure();
+}
+
 TEST_F(IR_ValidatorTest, OverrideWithoutCapability) {
     b.Append(mod.root_block, [&] { b.Override("a", 1_u); });
 
@@ -1588,7 +1749,7 @@ TEST_F(IR_ValidatorTest, OverrideWithoutCapability) {
 }
 
 TEST_F(IR_ValidatorTest, InstructionInRootBlockWithoutOverrideCap) {
-    b.Append(mod.root_block, [&] { b.Add(ty.u32(), 3_u, 2_u); });
+    b.Append(mod.root_block, [&] { b.Add(3_u, 2_u); });
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
@@ -1615,7 +1776,7 @@ TEST_F(IR_ValidatorTest, OverrideWithValue) {
     b.Append(mod.root_block, [&] {
         auto* z = b.Override(ty.u32());
         z->SetOverrideId(OverrideId{2});
-        auto* init = b.Add(ty.u32(), z, 2_u);
+        auto* init = b.Add(z, 2_u);
 
         b.Override("a", init);
     });
@@ -1625,7 +1786,7 @@ TEST_F(IR_ValidatorTest, OverrideWithValue) {
 }
 
 TEST_F(IR_ValidatorTest, OverrideWithInvalidType) {
-    b.Append(mod.root_block, [&] { b.Override(ty.vec3<u32>()); });
+    b.Append(mod.root_block, [&] { b.Override(ty.vec3u()); });
 
     auto res = ir::Validate(mod, core::ir::Capabilities{core::ir::Capability::kAllowOverrides});
     ASSERT_NE(res, Success);
@@ -1678,13 +1839,13 @@ TEST_F(IR_ValidatorTest, InstructionInRootBlockOnlyUsedInRootBlock) {
     b.Append(mod.root_block, [&] {
         auto* z = b.Override(ty.u32());
         z->SetOverrideId(OverrideId{2});
-        init = b.Add(ty.u32(), z, 2_u)->Result();
+        init = b.Add(z, 2_u)->Result();
         b.Override("a", init);
     });
 
     auto* f = b.Function("my_func", ty.void_());
     b.Append(f->Block(), [&] {
-        b.Add(ty.u32(), init, 2_u);
+        b.Add(init, 2_u);
         b.Return(f);
     });
 

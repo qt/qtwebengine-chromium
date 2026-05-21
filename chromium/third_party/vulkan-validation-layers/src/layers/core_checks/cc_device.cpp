@@ -1,6 +1,6 @@
-/* Copyright (c) 2015-2025 The Khronos Group Inc.
- * Copyright (c) 2015-2025 Valve Corporation
- * Copyright (c) 2015-2025 LunarG, Inc.
+/* Copyright (c) 2015-2026 The Khronos Group Inc.
+ * Copyright (c) 2015-2026 Valve Corporation
+ * Copyright (c) 2015-2026 LunarG, Inc.
  * Copyright (C) 2015-2025 Google Inc.
  * Modifications Copyright (C) 2020-2022 Advanced Micro Devices, Inc. All rights reserved.
  *
@@ -21,6 +21,7 @@
 
 #include <fstream>
 #include <vector>
+#include "utils/assert_utils.h"
 
 #if defined(__linux__) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__GNU__)
 #include <unistd.h>
@@ -37,6 +38,8 @@
 #include "generated/dispatch_functions.h"
 #include "error_message/error_strings.h"
 #include "utils/file_system_utils.h"
+#include "utils/spirv_tools_utils.h"
+#include "containers/container_utils.h"
 
 bool CoreChecks::ValidateDeviceQueueFamily(uint32_t queue_family, const Location &loc, const char *vuid,
                                            bool optional = false) const {
@@ -179,20 +182,14 @@ bool core::Instance::ValidateDeviceQueueCreateInfos(const vvl::PhysicalDevice &p
                                                     const VkDeviceQueueCreateInfo *infos, const Location &loc) const {
     bool skip = false;
 
-    struct create_flags {
-        // uint32_t is to represent the queue family index to allow for better error messages
-        uint32_t unprocted_index;
-        uint32_t protected_index;
-        create_flags(uint32_t a, uint32_t b) : unprocted_index(a), protected_index(b) {}
-    };
-    vvl::unordered_map<uint32_t, create_flags> queue_family_map;
+    vvl::unordered_map<uint32_t, std::pair<uint32_t, VkDeviceQueueCreateFlags>> queue_family_map;
     vvl::unordered_map<uint32_t, VkQueueGlobalPriority> global_priorities;
 
     std::vector<uint32_t> queue_counts;
     for (uint32_t i = 0; i < info_count; ++i) {
         const Location info_loc = loc.dot(Field::pQueueCreateInfos, i);
         const uint32_t requested_queue_family = infos[i].queueFamilyIndex;
-        const bool protected_create_bit = (infos[i].flags & VK_DEVICE_QUEUE_CREATE_PROTECTED_BIT) != 0;
+        const VkDeviceQueueCreateFlags flags = infos[i].flags;
 
         skip |= ValidateQueueFamilyIndex(pd_state, requested_queue_family, "VUID-VkDeviceQueueCreateInfo-queueFamilyIndex-00381",
                                          info_loc.dot(Field::queueFamilyIndex));
@@ -200,51 +197,17 @@ bool core::Instance::ValidateDeviceQueueCreateInfos(const vvl::PhysicalDevice &p
             continue;
         }
 
-        if (api_version == VK_API_VERSION_1_0) {
-            // Vulkan 1.0 didn't have protected memory so always needed unique info
-            create_flags flags = {requested_queue_family, vvl::kNoIndex32};
-            if (queue_family_map.emplace(requested_queue_family, flags).second == false) {
-                skip |= LogError("VUID-VkDeviceCreateInfo-queueFamilyIndex-02802", pd_state.Handle(),
-                                 info_loc.dot(Field::queueFamilyIndex),
-                                 "(%" PRIu32 ") is not unique and was also used in pCreateInfo->pQueueCreateInfos[%" PRIu32 "].",
-                                 requested_queue_family, queue_family_map.at(requested_queue_family).unprocted_index);
-            }
+        // Vulkan 1.1 and up can have 2 queues be same family index if they have different flags
+        auto it = queue_family_map.find(requested_queue_family);
+        if (it == queue_family_map.end()) {
+            queue_family_map.emplace(requested_queue_family, std::pair{i, flags});
         } else {
-            // Vulkan 1.1 and up can have 2 queues be same family index if one is protected and one isn't
-            auto it = queue_family_map.find(requested_queue_family);
-            if (it == queue_family_map.end()) {
-                // Add first time seeing queue family index and what the create flags were
-                create_flags new_flags = {vvl::kNoIndex32, vvl::kNoIndex32};
-                if (protected_create_bit) {
-                    new_flags.protected_index = requested_queue_family;
-                } else {
-                    new_flags.unprocted_index = requested_queue_family;
-                }
-                queue_family_map.emplace(requested_queue_family, new_flags);
-            } else {
-                // The queue family was seen, so now need to make sure the flags were different
-                if (protected_create_bit) {
-                    if (it->second.protected_index != vvl::kNoIndex32) {
-                        skip |= LogError("VUID-VkDeviceCreateInfo-queueFamilyIndex-02802", pd_state.Handle(),
-                                         info_loc.dot(Field::queueFamilyIndex),
-                                         "(%" PRIu32 ") is not unique and was also used in pCreateInfo->pQueueCreateInfos[%" PRIu32
-                                         "] which both have "
-                                         "VK_DEVICE_QUEUE_CREATE_PROTECTED_BIT.",
-                                         requested_queue_family, queue_family_map.at(requested_queue_family).protected_index);
-                    } else {
-                        it->second.protected_index = requested_queue_family;
-                    }
-                } else {
-                    if (it->second.unprocted_index != vvl::kNoIndex32) {
-                        skip |= LogError("VUID-VkDeviceCreateInfo-queueFamilyIndex-02802", pd_state.Handle(),
-                                         info_loc.dot(Field::queueFamilyIndex),
-                                         "(%" PRIu32 ") is not unique and was also used in pCreateInfo->pQueueCreateInfos[%" PRIu32
-                                         "].",
-                                         requested_queue_family, queue_family_map.at(requested_queue_family).unprocted_index);
-                    } else {
-                        it->second.unprocted_index = requested_queue_family;
-                    }
-                }
+            // The queue family was seen, so now need to make sure the flags were different
+            if (it->second.second == flags) {
+                skip |= LogError("VUID-VkDeviceCreateInfo-queueFamilyIndex-02802", pd_state.Handle(), info_loc,
+                                 "uses the same queueFamilyIndex (%" PRIu32
+                                 ") and flags (%s) as pCreateInfo->pQueueCreateInfos[%" PRIu32 "]",
+                                 requested_queue_family, string_VkDeviceQueueCreateFlags(flags).c_str(), it->second.first);
             }
         }
 
@@ -269,7 +232,7 @@ bool core::Instance::ValidateDeviceQueueCreateInfos(const vvl::PhysicalDevice &p
         const VkQueueFamilyProperties requested_queue_family_props = pd_state.queue_family_properties[requested_queue_family];
 
         // if using protected flag, make sure queue supports it
-        if (protected_create_bit && ((requested_queue_family_props.queueFlags & VK_QUEUE_PROTECTED_BIT) == 0)) {
+        if ((flags & VK_DEVICE_QUEUE_CREATE_PROTECTED_BIT) && ((requested_queue_family_props.queueFlags & VK_QUEUE_PROTECTED_BIT) == 0)) {
             skip |= LogError("VUID-VkDeviceQueueCreateInfo-flags-06449", pd_state.Handle(), info_loc.dot(Field::queueFamilyIndex),
                              "(%" PRIu32 ") does not have VK_QUEUE_PROTECTED_BIT supported, but pQueueCreateInfos[%" PRIu32
                              "].flags has VK_DEVICE_QUEUE_CREATE_PROTECTED_BIT.",
@@ -656,10 +619,15 @@ bool CoreChecks::PreCallValidateCreateCommandPool(VkDevice device, const VkComma
 bool CoreChecks::PreCallValidateDestroyCommandPool(VkDevice device, VkCommandPool commandPool,
                                                    const VkAllocationCallbacks *pAllocator, const ErrorObject &error_obj) const {
     bool skip = false;
-    // In case of DEVICE_LOST, all execution is considered over
-    if (is_device_lost) return skip;
+    if (is_device_lost) {
+        return skip;  // In case of DEVICE_LOST, all execution is considered over
+    }
+
     auto cp_state = Get<vvl::CommandPool>(commandPool);
-    if (!cp_state) return skip;
+    if (!cp_state) {
+        return skip;  // valid destroy null handles
+    }
+
     // Verify that command buffers in pool are complete (not in-flight)
     for (auto &entry : cp_state->commandBuffers) {
         auto cb_state = entry.second;
@@ -691,13 +659,15 @@ bool CoreChecks::PreCallValidateResetCommandPool(VkDevice device, VkCommandPool 
 
 // For given obj node, if it is use, flag a validation error and return callback result, else return false
 bool CoreChecks::ValidateObjectNotInUse(const vvl::StateObject *obj_node, const Location &loc, const char *error_code) const {
-    if (disabled[object_in_use]) return false;
-    // In case of DEVICE_LOST, all execution is considered over
-    if (is_device_lost) return false;
-    auto obj_struct = obj_node->Handle();
+    if (disabled[object_in_use]) {
+        return false;
+    } else if (is_device_lost) {
+        return false;  // In case of DEVICE_LOST, all execution is considered over
+    }
     bool skip = false;
 
-    const auto *used_handle = obj_node->InUse();
+    const VulkanTypedHandle &obj_struct = obj_node->Handle();
+    const VulkanTypedHandle *used_handle = obj_node->InUse();
     if (used_handle) {
         skip |= LogError(error_code, device, loc, "can't be called on %s that is currently in use by %s.",
                          FormatHandle(obj_struct).c_str(), FormatHandle(*used_handle).c_str());

@@ -7,6 +7,8 @@
 #ifndef FXBARCODE_BC_TWODIMWRITER_H_
 #define FXBARCODE_BC_TWODIMWRITER_H_
 
+#include <stdint.h>
+
 #include <memory>
 
 #include "core/fxcrt/fx_coordinates.h"

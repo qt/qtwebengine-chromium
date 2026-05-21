@@ -25,6 +25,7 @@
 
 #include <memory>
 
+#include "base/functional/callback.h"
 #include "base/gtest_prod_util.h"
 #include "base/time/time.h"
 #include "cc/input/event_listener_properties.h"
@@ -147,10 +148,14 @@ class CORE_EXPORT ChromeClient : public GarbageCollected<ChromeClient> {
   virtual void SetWindowRect(const gfx::Rect&, LocalFrame&) = 0;
 
 #if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
-  virtual void Minimize(LocalFrame&) = 0;
-  virtual void Maximize(LocalFrame&) = 0;
-  virtual void Restore(LocalFrame&) = 0;
-  virtual void SetResizable(bool resizable, LocalFrame&) = 0;
+  // Additional Windowing Controls API.
+  using WindowingControlsChangeCallback = base::OnceCallback<void(bool)>;
+  virtual void Minimize(LocalFrame&, WindowingControlsChangeCallback) = 0;
+  virtual void Maximize(LocalFrame&, WindowingControlsChangeCallback) = 0;
+  virtual void Restore(LocalFrame&, WindowingControlsChangeCallback) = 0;
+  virtual void SetResizable(bool resizable,
+                            LocalFrame&,
+                            WindowingControlsChangeCallback) = 0;
 #endif
 
   // For non-composited WebViews that exist to contribute to a "parent" WebView
@@ -234,8 +239,8 @@ class CORE_EXPORT ChromeClient : public GarbageCollected<ChromeClient> {
                                           LocalFrame& main_frame) = 0;
   virtual void RequestMainFrameOnCompositorAnimation(
       LocalFrame&,
-      cc::PropertyChangeForcesCommitCriteria
-          property_change_forces_commit_criteria) = 0;
+      cc::PropertyChangeForcesCommitCriteria criteria,
+      bool force_propagation) = 0;
 
   virtual std::unique_ptr<cc::ScopedPauseRendering> PauseRendering(
       LocalFrame& main_frame) = 0;
@@ -278,16 +283,6 @@ class CORE_EXPORT ChromeClient : public GarbageCollected<ChromeClient> {
                      network::mojom::blink::WebSandboxFlags,
                      const SessionStorageNamespaceId&,
                      bool& consumed_user_gesture);
-
-  // Show a previously created Page that was created via CreateWindow. This
-  // should only be called once the newly created window when it is ready to be
-  // shown. Under some circumstances CreateWindow's implementation may return a
-  // previously shown page. Calling this method should still work and the
-  // browser will discard the unnecessary show request.
-  virtual void Show(LocalFrame& frame,
-                    LocalFrame& opener_frame,
-                    NavigationPolicy navigation_policy,
-                    bool consumed_user_gesture) = 0;
 
   // For a scrollbar scroll action, injects a gesture event of |injected_type|
   // to be dispatched at a later point in time. |injected_type| is required to
@@ -563,7 +558,6 @@ class CORE_EXPORT ChromeClient : public GarbageCollected<ChromeClient> {
   virtual void OnMouseDown(Node&) {}
 
   virtual void DidUpdateBrowserControls() const {}
-  virtual void DidUpdateLoadProgress(float) {}
 
   virtual void DidUpdateMaxSafeAreaInsets(
       const gfx::InsetsF& max_safe_area_insets) const {}

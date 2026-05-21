@@ -32,7 +32,7 @@ libdrm_intel = library(
   dependencies : [dep_pciaccess, dep_threads, dep_rt, dep_valgrind, dep_atomic_ops],
   c_args : libdrm_c_args,
   gnu_symbol_visibility : 'hidden',
-  version : '1.0.0',
+  version : '1.@0@.0'.format(patch_ver),
   install : true,
 )
 
@@ -41,9 +41,7 @@ ext_libdrm_intel = declare_dependency(
   include_directories : [inc_drm, include_directories('.')],
 )
 
-if meson.version().version_compare('>= 0.54.0')
-  meson.override_dependency('libdrm_intel', ext_libdrm_intel)
-endif
+meson.override_dependency('libdrm_intel', ext_libdrm_intel)
 
 install_headers(
   'intel_bufmgr.h', 'intel_aub.h', 'intel_debug.h',

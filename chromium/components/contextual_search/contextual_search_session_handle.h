@@ -14,7 +14,9 @@
 #include "base/unguessable_token.h"
 #include "components/contextual_search/contextual_search_context_controller.h"
 #include "components/contextual_search/contextual_search_metrics_recorder.h"
+#include "components/lens/lens_overlay_invocation_source.h"
 #include "mojo/public/cpp/base/big_buffer.h"
+#include "third_party/lens_server_proto/modality_chip_props.pb.h"
 
 class GURL;
 class PrefService;
@@ -32,8 +34,6 @@ namespace contextual_search {
 using SessionId = base::UnguessableToken;
 class ContextualSearchService;
 using AddFileContextCallback =
-    base::OnceCallback<void(const ::base::UnguessableToken&)>;
-using AddTabContextCallback =
     base::OnceCallback<void(const ::base::UnguessableToken&)>;
 
 // RAII handle for managing the lifetime of a ComposeboxQueryController.
@@ -53,6 +53,10 @@ class ContextualSearchSessionHandle {
   base::WeakPtr<ContextualSearchSessionHandle> AsWeakPtr();
 
   base::UnguessableToken session_id() const { return session_id_; }
+
+  std::optional<lens::LensOverlayInvocationSource> invocation_source() const {
+    return invocation_source_;
+  }
 
   // Returns the ContextualSearchContextController reference held by this
   // handle or nullptr if the session is not valid.
@@ -78,28 +82,34 @@ class ContextualSearchSessionHandle {
   virtual std::optional<lens::proto::LensOverlaySuggestInputs>
   GetSuggestInputs() const;
 
-  // Adds a file to the context controller and starts the file upload flow.
-  virtual void AddFileContext(
+  // Generates a token and adds it to the list of uploaded context tokens. A
+  // followup call to 'StartFileContextUploadFlow` or
+  // `StartTabContextUploadFlow`, using the returned token, is required to start
+  // the upload with the contextual input data.
+  virtual base::UnguessableToken CreateContextToken();
+
+  // Adds a file to the context controller and starts the file upload flow. The
+  // file token must have been previously returned by `CreateContextToken`.
+  virtual void StartFileContextUploadFlow(
+      const base::UnguessableToken& file_token,
+      std::string file_name,
       std::string file_mime_type,
       mojo_base::BigBuffer file_bytes,
-      std::optional<lens::ImageEncodingOptions> image_options,
-      AddFileContextCallback callback);
-
-  // Adds a tab context to the context controller, generating a token and adding
-  // it to the list of uploaded context tokens. A followup call to
-  // `StartTabContextUploadFlow`, using the token returned in the callback,
-  // is required to start the upload with the
-  // contextual input data.
-  // TODO(crbug.com/461869881): Pass more metadata than just the tab id for
-  //  being able to return the list of attached tabs.
-  virtual void AddTabContext(int32_t tab_id, AddTabContextCallback callback);
+      std::optional<lens::ImageEncodingOptions> image_options);
 
   // Starts the tab context upload flow for the given file token using the
-  // tab context stored in the contextual input data.
+  // tab context stored in the contextual input data. The file token must have
+  // been previously returned by `CreateContextToken`.
   virtual void StartTabContextUploadFlow(
       const base::UnguessableToken& file_token,
       std::unique_ptr<lens::ContextualInputData> contextual_input_data,
       std::optional<lens::ImageEncodingOptions> image_options);
+
+  // Starts the Modality Chip upload flow for the given file token. The file
+  // token must have been previously returned by `CreateContextToken`.
+  virtual void StartModalityChipUploadFlow(
+      const base::UnguessableToken& file_token,
+      std::unique_ptr<lens::ModalityChipProps> modality_chip_props);
 
   // Removes file from context controller. Returns true if the file was found
   // and deleted.
@@ -110,7 +120,11 @@ class ContextualSearchSessionHandle {
   // controller, which may be shared with other session handles.
   void ClearFiles();
 
-  // Returns the search url for a new query for opening.
+  // Returns the search url for a new query for opening. If the request info
+  // contains file tokens, only those provided tokens are used. If the request
+  // info does not contain file tokens, the uploaded context tokens are moved to
+  // the request. In both cases, the files tokens that are used are considered
+  // submitted and will be cleared from the context controller.
   virtual void CreateSearchUrl(
       std::unique_ptr<contextual_search::ContextualSearchContextController::
                           CreateSearchUrlRequestInfo> search_url_request_info,
@@ -128,7 +142,8 @@ class ContextualSearchSessionHandle {
 
   // Returns the list of uploaded but not yet committed FileInfo for this
   // particular instance of the session.
-  std::vector<FileInfo> GetUploadedContextFileInfos() const;
+  // Gets a list of file infos for all uploaded context files.
+  virtual std::vector<FileInfo> GetUploadedContextFileInfos() const;
 
   // Returns the list of uploaded but not yet committed context tokens for this
   // particular instance of the session, editable for testing.
@@ -162,8 +177,15 @@ class ContextualSearchSessionHandle {
   friend class ContextualSearchService;
   friend class MockContextualSearchSessionHandle;
 
-  ContextualSearchSessionHandle(base::WeakPtr<ContextualSearchService> service,
-                                const SessionId& session_id);
+  ContextualSearchSessionHandle(
+      base::WeakPtr<ContextualSearchService> service,
+      const SessionId& session_id,
+      std::optional<lens::LensOverlayInvocationSource> invocation_source);
+
+  // Notifies the metrics recorder that a query has been submitted, providing
+  // information about the presence of tab and non-tab context.
+  void NotifyQuerySubmittedSessionState(
+      const std::vector<FileInfo>& file_infos);
 
   // The list of uploaded but not yet committed context tokens for this
   // particular instance of the session. This list is unique to this instance of
@@ -184,6 +206,9 @@ class ContextualSearchSessionHandle {
   // handle may outlive the service.
   const base::WeakPtr<ContextualSearchService> service_;
   const base::UnguessableToken session_id_;
+
+  // The invocation source to send with generated search URLs or query payloads.
+  const std::optional<lens::LensOverlayInvocationSource> invocation_source_;
 
   // This needs to be the last member to ensure all outstanding WeakPtrs are
   // invalidated before the rest of the members.

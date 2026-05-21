@@ -12,11 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import {findErrors, findWarnings} from './query_builder_utils';
+import {
+  findErrors,
+  findWarnings,
+  queryToRun,
+  isAQuery,
+  hashNodeQuery,
+} from './query_builder_utils';
 import {Query, QueryNode, NodeType} from '../query_node';
 import {QueryResponse} from '../../../components/query_table/queries';
 import {SqlSourceNode} from './nodes/sources/sql_source';
 import {Trace} from '../../../public/trace';
+import protos from '../../../protos';
 
 describe('query_builder_utils', () => {
   function createMockNode(nodeId: string): QueryNode {
@@ -58,9 +65,7 @@ describe('query_builder_utils', () => {
       const query: Query = {
         sql: 'SELECT * FROM table',
         textproto: '',
-        modules: [],
-        preambles: [],
-        columns: [],
+        standaloneSql: '',
       };
       const response = createMockQueryResponse();
 
@@ -83,9 +88,7 @@ describe('query_builder_utils', () => {
       const query: Query = {
         sql: 'SELECT * FROM table',
         textproto: '',
-        modules: [],
-        preambles: [],
-        columns: [],
+        standaloneSql: '',
       };
       const response = createMockQueryResponse({
         error: 'SQL syntax error',
@@ -113,9 +116,7 @@ describe('query_builder_utils', () => {
       const query: Query = {
         sql: 'SELECT * FROM table',
         textproto: '',
-        modules: [],
-        preambles: [],
-        columns: [],
+        standaloneSql: '',
       };
 
       const result = findErrors(query, undefined);
@@ -368,9 +369,7 @@ describe('query_builder_utils', () => {
       const query1: Query = {
         sql: 'SELECT * FROM table',
         textproto: '',
-        modules: [],
-        preambles: [],
-        columns: [],
+        standaloneSql: '',
       };
       expect(findErrors(query1, response1)).toBeUndefined();
       expect(findWarnings(response1, createMockNode('test'))).toBeUndefined();
@@ -390,6 +389,175 @@ describe('query_builder_utils', () => {
       });
       expect(findErrors(query1, response3)).toBeUndefined();
       expect(findWarnings(response3, node)).toBeDefined();
+    });
+  });
+
+  describe('queryToRun', () => {
+    it('should return "N/A" for undefined query', () => {
+      expect(queryToRun(undefined)).toBe('N/A');
+    });
+
+    it('should return the SQL string', () => {
+      const query: Query = {
+        sql: 'SELECT * FROM slice',
+        textproto: '',
+        standaloneSql: '',
+      };
+      expect(queryToRun(query)).toBe('SELECT * FROM slice');
+    });
+  });
+
+  describe('isAQuery', () => {
+    it('should return true for valid Query object', () => {
+      const query: Query = {
+        sql: 'SELECT * FROM slice',
+        textproto: '',
+        standaloneSql: '',
+      };
+      expect(isAQuery(query)).toBe(true);
+    });
+
+    it('should return false for undefined', () => {
+      expect(isAQuery(undefined)).toBe(false);
+    });
+
+    it('should return false for Error', () => {
+      const error = new Error('Something went wrong');
+      expect(isAQuery(error)).toBe(false);
+    });
+
+    it('should return false for object without sql property', () => {
+      const notAQuery = {textproto: ''};
+      expect(isAQuery(notAQuery as unknown as Query)).toBe(false);
+    });
+
+    it('should return false for null', () => {
+      expect(isAQuery(null as unknown as Query)).toBe(false);
+    });
+  });
+
+  describe('hashNodeQuery', () => {
+    function createMockNodeWithQuery(
+      sq: protos.PerfettoSqlStructuredQuery | undefined,
+    ): QueryNode {
+      return {
+        nodeId: 'test-node',
+        type: NodeType.kTable,
+        nextNodes: [],
+        finalCols: [],
+        getTitle: () => 'Test Node',
+        validate: () => true,
+        state: {},
+        serializeState: () => ({}),
+        nodeSpecificModify: () => null,
+        nodeDetails: () => ({content: null, message: ''}),
+        nodeInfo: () => null,
+        clone: () => createMockNodeWithQuery(sq),
+        getStructuredQuery: () => sq,
+      };
+    }
+
+    it('should return Error when node returns undefined from getStructuredQuery', () => {
+      const node = createMockNodeWithQuery(undefined);
+      const result = hashNodeQuery(node);
+      expect(result instanceof Error).toBe(true);
+      if (result instanceof Error) {
+        expect(result.message).toContain('returned undefined');
+      }
+    });
+
+    it('should return consistent hash for same query', () => {
+      const sq = new protos.PerfettoSqlStructuredQuery();
+      sq.table = new protos.PerfettoSqlStructuredQuery.Table();
+      sq.table.tableName = 'slice';
+
+      const node1 = createMockNodeWithQuery(sq);
+      const node2 = createMockNodeWithQuery(sq);
+
+      const hash1 = hashNodeQuery(node1);
+      const hash2 = hashNodeQuery(node2);
+
+      expect(hash1 instanceof Error).toBe(false);
+      expect(hash2 instanceof Error).toBe(false);
+      expect(hash1).toBe(hash2);
+    });
+
+    it('should return different hash for different table names', () => {
+      const sq1 = new protos.PerfettoSqlStructuredQuery();
+      sq1.table = new protos.PerfettoSqlStructuredQuery.Table();
+      sq1.table.tableName = 'slice';
+
+      const sq2 = new protos.PerfettoSqlStructuredQuery();
+      sq2.table = new protos.PerfettoSqlStructuredQuery.Table();
+      sq2.table.tableName = 'sched';
+
+      const node1 = createMockNodeWithQuery(sq1);
+      const node2 = createMockNodeWithQuery(sq2);
+
+      const hash1 = hashNodeQuery(node1);
+      const hash2 = hashNodeQuery(node2);
+
+      expect(hash1 instanceof Error).toBe(false);
+      expect(hash2 instanceof Error).toBe(false);
+      expect(hash1).not.toBe(hash2);
+    });
+
+    it('should detect changes in select columns', () => {
+      const sq1 = new protos.PerfettoSqlStructuredQuery();
+      const col1 = new protos.PerfettoSqlStructuredQuery.SelectColumn();
+      col1.columnName = 'id';
+      sq1.selectColumns = [col1];
+
+      const sq2 = new protos.PerfettoSqlStructuredQuery();
+      const col2 = new protos.PerfettoSqlStructuredQuery.SelectColumn();
+      col2.columnName = 'name'; // Different column
+      sq2.selectColumns = [col2];
+
+      const node1 = createMockNodeWithQuery(sq1);
+      const node2 = createMockNodeWithQuery(sq2);
+
+      const hash1 = hashNodeQuery(node1);
+      const hash2 = hashNodeQuery(node2);
+
+      expect(hash1 instanceof Error).toBe(false);
+      expect(hash2 instanceof Error).toBe(false);
+      expect(hash1).not.toBe(hash2);
+    });
+
+    it('should detect changes in limit values', () => {
+      const sq1 = new protos.PerfettoSqlStructuredQuery();
+      sq1.limit = 100;
+
+      const sq2 = new protos.PerfettoSqlStructuredQuery();
+      sq2.limit = 200; // Different limit
+
+      const node1 = createMockNodeWithQuery(sq1);
+      const node2 = createMockNodeWithQuery(sq2);
+
+      const hash1 = hashNodeQuery(node1);
+      const hash2 = hashNodeQuery(node2);
+
+      expect(hash1 instanceof Error).toBe(false);
+      expect(hash2 instanceof Error).toBe(false);
+      expect(hash1).not.toBe(hash2);
+    });
+
+    it('should handle nested queries', () => {
+      const innerSq = new protos.PerfettoSqlStructuredQuery();
+      innerSq.table = new protos.PerfettoSqlStructuredQuery.Table();
+      innerSq.table.tableName = 'slice';
+
+      const sq = new protos.PerfettoSqlStructuredQuery();
+      sq.innerQuery = innerSq;
+
+      const node = createMockNodeWithQuery(sq);
+      const hash = hashNodeQuery(node);
+
+      expect(hash instanceof Error).toBe(false);
+      expect(typeof hash).toBe('string');
+      if (typeof hash === 'string') {
+        expect(hash.length).toBeGreaterThan(0);
+      }
     });
   });
 });

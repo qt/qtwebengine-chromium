@@ -23,7 +23,6 @@
 #include "util/crypto/pem_helpers.h"
 #include "util/osp_logging.h"
 #include "util/read_file.h"
-#include "util/span_util.h"
 
 namespace openscreen::cast {
 
@@ -155,7 +154,7 @@ class CastAuthUtilTest : public ::testing::Test {
         response.set_signature(ByteViewToString(signatures.sha256));
         break;
     }
-    signed_data->assign(signatures.message.cbegin(), signatures.message.cend());
+    signed_data->assign(signatures.message.begin(), signatures.message.end());
     return response;
   }
 

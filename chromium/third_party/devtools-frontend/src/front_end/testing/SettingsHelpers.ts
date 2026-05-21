@@ -243,14 +243,16 @@ export const DEFAULT_SETTING_REGISTRATIONS_FOR_TEST = [
   createSettingValue(
       Common.Settings.SettingCategory.CONSOLE, 'console-insight-teasers-enabled', true,
       Common.Settings.SettingType.BOOLEAN),
+  createSettingValue(
+      Common.Settings.SettingCategory.NETWORK, 'device-bound-sessions-preserve-log', false,
+      Common.Settings.SettingType.BOOLEAN),
 ];
 
 export function setupSettings(reset: boolean) {
   // Create the appropriate settings needed to boot.
   Common.Settings.registerSettingsForTest(DEFAULT_SETTING_REGISTRATIONS_FOR_TEST.slice(0), reset);
-
   // Instantiate the storage.
-  const storage = new Common.Settings.SettingsStorage({}, Common.Settings.NOOP_STORAGE, 'test');
+  const storage = new Common.Settings.SettingsStorage({}, undefined, 'test');
   Common.Settings.Settings.instance({
     forceNew: reset,
     syncedStorage: storage,
@@ -270,7 +272,7 @@ export function setupSettingsHooks() {
 }
 
 export function createSettingsForTest(settingRegistrations = DEFAULT_SETTING_REGISTRATIONS_FOR_TEST.slice(0)) {
-  const storage = new Common.Settings.SettingsStorage({}, Common.Settings.NOOP_STORAGE);
+  const storage = new Common.Settings.SettingsStorage({});
   return new Common.Settings.Settings({
     syncedStorage: storage,
     globalStorage: storage,

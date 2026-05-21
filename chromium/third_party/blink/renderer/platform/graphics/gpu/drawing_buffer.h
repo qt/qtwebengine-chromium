@@ -34,6 +34,7 @@
 #include <limits>
 #include <memory>
 
+#include "base/byte_size.h"
 #include "base/containers/flat_set.h"
 #include "base/containers/span.h"
 #include "base/functional/function_ref.h"
@@ -298,7 +299,7 @@ class PLATFORM_EXPORT DrawingBuffer : public cc::TextureLayerClient,
       const gfx::ColorSpace& dst_color_space,
       WebGraphicsContext3DVideoFramePool::FrameReadyCallback callback);
 
-  base::ByteCount EstimatedSizeInBytes() const;
+  base::ByteSize EstimatedSizeInBytes() const;
   int SampleCount() const { return sample_count_; }
   bool ExplicitResolveOfMultisampleData() const {
     return anti_aliasing_mode_ == kAntialiasingModeMSAAExplicitResolve;
@@ -423,7 +424,7 @@ class PLATFORM_EXPORT DrawingBuffer : public cc::TextureLayerClient,
     void BeginAccess(const gpu::SyncToken& sync_token, bool readonly);
     gpu::SyncToken EndAccess();
     void ForceCleanUp();
-    base::ByteCount EstimatedSizeInBytes() const;
+    base::ByteSize EstimatedSizeInBytes() const;
 
     // The thread on which the ColorBuffer is created and the DrawingBuffer is
     // bound to.
@@ -707,6 +708,7 @@ class PLATFORM_EXPORT DrawingBuffer : public cc::TextureLayerClient,
   // DisallowChromiumImage in the case of OffscreenCanvas.
   ChromiumImageUsage chromium_image_usage_;
   bool ShouldUseChromiumImage();
+  bool IsSharedImageFormatMappable(viz::SharedImageFormat format);
 
   bool opengl_flip_y_extension_;
 

@@ -21,8 +21,8 @@
 #include "core/fxcrt/widestring.h"
 #include "core/fxge/cfx_face.h"
 
+class CFX_ReadOnlyVectorStream;
 class CFGAS_GEFont;
-class IFX_SeekableReadStream;
 
 #if BUILDFLAG(IS_WIN)
 struct FX_FONTSIGNATURE {
@@ -54,15 +54,18 @@ inline bool operator==(const FX_FONTDESCRIPTOR& left,
 
 #else  // BUILDFLAG(IS_WIN)
 
+// Represents metatdata about a font that isn't necessarily loaded yet.
 class CFGAS_FontDescriptor {
  public:
   CFGAS_FontDescriptor();
   ~CFGAS_FontDescriptor();
 
+  bool VerifyUnicode(wchar_t unicode);
+
   int32_t face_index_ = 0;
   uint32_t font_styles_ = 0;
   WideString face_name_;
-  RetainPtr<CFX_Face> face_;
+  RetainPtr<CFX_Face> face_;  // May be null until required.
   std::vector<WideString> family_names_;
   std::array<uint32_t, 4> usb_ = {};
   std::array<uint32_t, 2> csb_ = {};
@@ -104,6 +107,8 @@ class CFGAS_FontMgr {
                                    FX_CodePage wCodePage);
 
  private:
+  friend class CFGASFontMgr_LazyEnumeration_Test;
+
   RetainPtr<CFGAS_GEFont> GetFontByUnicodeImpl(wchar_t wUnicode,
                                                uint32_t dwFontStyles,
                                                const wchar_t* pszFontFamily,
@@ -123,15 +128,16 @@ class CFGAS_FontMgr {
   bool EnumFontsFromFontMapper();
   void RegisterFace(RetainPtr<CFX_Face> face,
                     int face_index,
-                    const WideString& wsFaceName);
-  void RegisterFaces(const RetainPtr<IFX_SeekableReadStream>& font_stream,
-                     const WideString& wsFaceName);
+                    const WideString& face_name);
+  void RegisterFaces(const RetainPtr<CFX_ReadOnlyVectorStream>& font_stream,
+                     const WideString& face_name);
   std::vector<CFGAS_FontDescriptorInfo> MatchFonts(FX_CodePage wCodePage,
                                                    uint32_t dwFontStyles,
                                                    const WideString& FontName,
                                                    wchar_t wcUnicode);
-  RetainPtr<CFGAS_GEFont> LoadFontInternal(const WideString& wsFaceName,
-                                           int32_t iFaceIndex);
+  RetainPtr<CFGAS_GEFont> LoadFontInternal(const WideString& face_name,
+                                           int32_t face_index);
+  void EnsureFontsEnumerated();
 #endif  // BUILDFLAG(IS_WIN)
 
   std::map<uint32_t, std::vector<RetainPtr<CFGAS_GEFont>>> hash_2fonts_;
@@ -140,6 +146,7 @@ class CFGAS_FontMgr {
 #if BUILDFLAG(IS_WIN)
   std::deque<FX_FONTDESCRIPTOR> font_faces_;
 #else
+  bool fonts_enumerated_ = false;
   std::vector<std::unique_ptr<CFGAS_FontDescriptor>> installed_fonts_;
   std::map<uint32_t, std::vector<CFGAS_FontDescriptorInfo>>
       hash_2candidate_list_;

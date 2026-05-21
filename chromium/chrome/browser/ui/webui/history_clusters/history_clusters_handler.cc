@@ -10,7 +10,6 @@
 #include <variant>
 #include <vector>
 
-#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/memory/weak_ptr.h"
@@ -390,13 +389,14 @@ void HistoryClustersHandler::RemoveVisits(
     {
       history::BrowsingHistoryService::HistoryEntry entry;
       entry.url = visit->raw_visit_data->url;
-      entry.all_timestamps.insert(visit->raw_visit_data->visit_time);
+      entry.all_timestamps[visit->raw_visit_data->url].insert(
+          visit->raw_visit_data->visit_time);
       items_to_remove.push_back(std::move(entry));
     }
     for (const auto& duplicate : visit->duplicates) {
       history::BrowsingHistoryService::HistoryEntry entry;
       entry.url = duplicate->url;
-      entry.all_timestamps.insert(duplicate->visit_time);
+      entry.all_timestamps[duplicate->url].insert(duplicate->visit_time);
       items_to_remove.push_back(std::move(entry));
     }
   }
@@ -431,7 +431,7 @@ void HistoryClustersHandler::RemoveVisitByUrlAndTime(
   history::BrowsingHistoryService::HistoryEntry entry;
   entry.url = url;
   base::Time visit_time = base::Time::FromMillisecondsSinceUnixEpoch(timestamp);
-  entry.all_timestamps.insert(visit_time);
+  entry.all_timestamps[url].insert(visit_time);
   browsing_history_service_->RemoveVisits({entry});
 }
 

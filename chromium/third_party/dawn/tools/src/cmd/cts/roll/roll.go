@@ -157,7 +157,7 @@ func (c *cmd) Run(ctx context.Context, cfg common.Config) error {
 		{name: "npm", path: c.flags.npmPath},
 		{name: "node", path: c.flags.nodePath},
 	} {
-		if _, err := os.Stat(tool.path); err != nil {
+		if _, err := cfg.OsWrapper.Stat(tool.path); err != nil {
 			return fmt.Errorf("failed to find path to %v: %v. %v", tool.name, err, tool.hint)
 		}
 	}
@@ -184,6 +184,7 @@ func (c *cmd) Run(ctx context.Context, cfg common.Config) error {
 	if err != nil {
 		return err
 	}
+	cfg.Querier = client
 
 	credCheckInput := common.CredCheckInputs{
 		// TODO(crbug.com/349798588): Re-enable this check once we figure out why
@@ -198,11 +199,11 @@ func (c *cmd) Run(ctx context.Context, cfg common.Config) error {
 	}
 
 	// Create a temporary directory for local checkouts
-	tmpDir, err := os.MkdirTemp("", "dawn-cts-roll")
+	tmpDir, err := cfg.OsWrapper.MkdirTemp("", "dawn-cts-roll")
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(tmpDir)
+	defer cfg.OsWrapper.RemoveAll(tmpDir)
 	ctsDir := filepath.Join(tmpDir, "cts")
 
 	// Construct the roller, and roll
@@ -212,7 +213,6 @@ func (c *cmd) Run(ctx context.Context, cfg common.Config) error {
 		auth:                options,
 		bb:                  bb,
 		parentSwarmingRunID: c.flags.parentSwarmingRunID,
-		client:              client,
 		git:                 gitInstance,
 		gerrit:              gerritInstance,
 		gitiles:             gitilesRepos{dawn: dawn},
@@ -231,7 +231,6 @@ type roller struct {
 	auth                auth.Options
 	bb                  *buildbucket.Buildbucket
 	parentSwarmingRunID string
-	client              *resultsdb.BigQueryClient
 	git                 *git.Git
 	gerrit              *gerrit.Gerrit
 	gitiles             gitilesRepos
@@ -494,7 +493,7 @@ func (r *roller) roll(ctx context.Context) error {
 
 		// Gather the build results
 		log.Println("gathering results...")
-		psResultsByExecutionMode, err = common.CacheUnsuppressedFailingResults(ctx, r.cfg, ps, r.flags.cacheDir, r.client, builds)
+		psResultsByExecutionMode, err = common.CacheUnsuppressedFailingResults(ctx, r.cfg, ps, r.flags.cacheDir, builds)
 		if err != nil {
 			return err
 		}

@@ -7,6 +7,8 @@
 #ifndef FXBARCODE_ONED_BC_ONEDUPCAWRITER_H_
 #define FXBARCODE_ONED_BC_ONEDUPCAWRITER_H_
 
+#include <stdint.h>
+
 #include <memory>
 
 #include "core/fxcrt/fx_string.h"

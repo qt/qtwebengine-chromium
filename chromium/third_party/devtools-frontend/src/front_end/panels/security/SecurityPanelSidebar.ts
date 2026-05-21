@@ -6,13 +6,10 @@
 import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
-import * as Root from '../../core/root/root.js';
 import * as Protocol from '../../generated/protocol.js';
 import type {Icon} from '../../ui/kit/kit.js';
 import * as UI from '../../ui/legacy/legacy.js';
 
-import {CookieControlsTreeElement} from './CookieControlsTreeElement.js';
-import {CookieReportTreeElement} from './CookieReportTreeElement.js';
 import lockIconStyles from './lockIcon.css.js';
 import {OriginTreeElement} from './OriginTreeElement.js';
 import {
@@ -29,18 +26,6 @@ const UIStrings = {
    * @description Section title for the the Security Panel's sidebar
    */
   security: 'Security',
-  /**
-   * @description Section title for the the Security Panel's sidebar
-   */
-  privacy: 'Privacy',
-  /**
-   * @description Sidebar element text in the Security panel
-   */
-  cookieReport: 'Third-party cookies',
-  /**
-   * @description Sidebar element text in the Security panel
-   */
-  flagControls: 'Controls',
   /**
    * @description Text in Security Panel of the Security panel
    */
@@ -76,8 +61,6 @@ export class SecurityPanelSidebar extends UI.Widget.VBox {
   readonly #originGroupTitles: Map<OriginGroup, {title: string, icon?: Icon}>;
   #originGroups: Map<OriginGroup, UI.TreeOutline.TreeElement>;
   securityOverviewElement: OriginTreeElement;
-  readonly #cookieControlsTreeElement: CookieControlsTreeElement|undefined;
-  readonly cookieReportTreeElement: CookieReportTreeElement|undefined;
   readonly #elementsByOrigin: Map<string, OriginTreeElement>;
   readonly #mainViewReloadMessage: UI.TreeOutline.TreeElement;
   #mainOrigin: string|null;
@@ -93,20 +76,6 @@ export class SecurityPanelSidebar extends UI.Widget.VBox {
     this.sidebarTree.registerRequiredCSS(lockIconStyles, sidebarStyles);
     this.sidebarTree.element.classList.add('security-sidebar');
     this.contentElement.appendChild(this.sidebarTree.element);
-
-    if (Root.Runtime.hostConfig.devToolsPrivacyUI?.enabled) {
-      const privacyTreeSection = this.#addSidebarSection(i18nString(UIStrings.privacy), 'privacy');
-      this.#cookieControlsTreeElement =
-          new CookieControlsTreeElement(i18nString(UIStrings.flagControls), 'cookie-flag-controls');
-      privacyTreeSection.appendChild(this.#cookieControlsTreeElement);
-      this.cookieReportTreeElement = new CookieReportTreeElement(i18nString(UIStrings.cookieReport), 'cookie-report');
-      privacyTreeSection.appendChild(this.cookieReportTreeElement);
-
-      // If this if the first time this setting is set, go to the controls tool
-      if (this.#securitySidebarLastItemSetting.get() === '') {
-        this.#securitySidebarLastItemSetting.set(this.#cookieControlsTreeElement.elemId);
-      }
-    }
 
     const securitySectionTitle = i18nString(UIStrings.security);
     const securityTreeSection = this.#addSidebarSection(securitySectionTitle, 'security');
@@ -171,18 +140,14 @@ export class SecurityPanelSidebar extends UI.Widget.VBox {
     this.showLastSelectedElement();
   }
 
+  // Used in web tests
+  elementsByOrigin(): Map<string, OriginTreeElement> {
+    return this.#elementsByOrigin;
+  }
+
   showLastSelectedElement(): void {
-    if (this.#cookieControlsTreeElement &&
-        this.#securitySidebarLastItemSetting.get() === this.#cookieControlsTreeElement.elemId) {
-      this.#cookieControlsTreeElement.select();
-      this.#cookieControlsTreeElement.showElement();
-    } else if (this.#securitySidebarLastItemSetting.get() === this.cookieReportTreeElement?.elemId) {
-      this.cookieReportTreeElement.select();
-      this.cookieReportTreeElement.showElement();
-    } else {
-      this.securityOverviewElement.select();
-      this.securityOverviewElement.showElement();
-    }
+    this.securityOverviewElement.select();
+    this.securityOverviewElement.showElement();
   }
 
   #addSidebarSection(title: string, jslogContext: string): UI.TreeOutline.TreeElement {
@@ -206,7 +171,6 @@ export class SecurityPanelSidebar extends UI.Widget.VBox {
 
   #createOriginGroupElement(originGroupTitle: string, originGroupIcon?: Icon): UI.TreeOutline.TreeElement {
     const originGroup = new UI.TreeOutline.TreeElement(originGroupTitle, true);
-    originGroup.selectable = false;
     originGroup.expand();
     originGroup.listItemElement.classList.add('security-sidebar-origins');
     if (originGroupIcon) {
@@ -319,18 +283,19 @@ export class SecurityPanelSidebar extends UI.Widget.VBox {
       const icon = isOverviewElement ?
           getSecurityStateIconForOverview(securityState, `lock-icon lock-icon-${securityState}`) :
           getSecurityStateIconForDetailedView(securityState, `security-property security-property-${securityState}`);
-      const elementTitle = isOverviewElement ? ((): Element => {
-        const title = document.createElement('span');
-        title.classList.add('title');
-        title.textContent = i18nString(UIStrings.overview);
-        return title;
-      })() : createHighlightedUrl(element.origin() ?? Platform.DevToolsPath.EmptyUrlString, securityState);
 
       element.setLeadingIcons([icon]);
-      if (element.listItemElement.lastChild) {
-        element.listItemElement.removeChild(element.listItemElement.lastChild);
+
+      if (isOverviewElement) {
+        element.title = i18nString(UIStrings.overview);
+      } else {
+        const elementTitle =
+            createHighlightedUrl(element.origin() ?? Platform.DevToolsPath.EmptyUrlString, securityState);
+        if (element.listItemElement.lastChild) {
+          element.listItemElement.removeChild(element.listItemElement.lastChild);
+        }
+        element.listItemElement.appendChild(elementTitle);
       }
-      element.listItemElement.appendChild(elementTitle);
     }
   }
 }

@@ -72,11 +72,20 @@ class ScrollTimelineTest : public RenderingTest {
     RenderingTest::SetUp();
   }
 
- public:
-  void SimulateFrame() {
+  void ServiceScriptedAnimations() {
     // Advance time by 100 ms.
     auto new_time = GetAnimationClock().CurrentTime() + base::Milliseconds(100);
     GetPage().Animator().ServiceScriptedAnimations(new_time);
+  }
+
+ public:
+  void SimulateFrame() {
+    ServiceScriptedAnimations();
+    if (RuntimeEnabledFeatures::RunSnapshotPostLayoutStateStepsEnabled()) {
+      UpdateAllLifecyclePhasesForTest();
+      // Needed to dispatch events in the next frame.
+      ServiceScriptedAnimations();
+    }
   }
 
   wtf_size_t TimelinesCount() const {
@@ -441,7 +450,7 @@ TEST_F(ScrollTimelineTest, ScheduleFrameOnlyWhenScrollOffsetChanges) {
 
   // Validate that no frame is scheduled when there is no scroll change.
   GetChromeClient().UnsetAnimationScheduled();
-  GetFrame().ScheduleNextServiceForScrollSnapshotClients();
+  GetFrame().ScheduleNextServiceForPostLayoutSnapshotClients();
   EXPECT_FALSE(GetChromeClient().AnimationScheduled());
 
   // Validate that frame is scheduled when scroll changes.
@@ -449,7 +458,7 @@ TEST_F(ScrollTimelineTest, ScheduleFrameOnlyWhenScrollOffsetChanges) {
   scrollable_area->SetScrollOffset(ScrollOffset(0, 30),
                                    mojom::blink::ScrollType::kProgrammatic,
                                    cc::ScrollSourceType::kNone);
-  GetFrame().ScheduleNextServiceForScrollSnapshotClients();
+  GetFrame().ScheduleNextServiceForPostLayoutSnapshotClients();
   EXPECT_TRUE(GetChromeClient().AnimationScheduled());
 }
 
@@ -1157,7 +1166,8 @@ TEST_F(ScrollTimelineTest, CompositedDeferredTimelineReattachment) {
   animation->play();
   UpdateAllLifecyclePhasesForTest();
 
-  EXPECT_EQ(animation->CheckCanStartAnimationOnCompositor(nullptr),
+  EXPECT_EQ(animation->CheckCanStartAnimationOnCompositor(
+                nullptr, StartOnCompositorReason::kGeneric),
             CompositorAnimations::kNoFailure);
 
   EXPECT_FALSE(animation->CompositorPending());

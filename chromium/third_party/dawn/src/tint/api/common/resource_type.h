@@ -63,6 +63,9 @@ enum class ResourceType : uint32_t {
     kTextureDepthCube,
     kTextureDepthCubeArray,
     kTextureDepthMultisampled2d,
+
+    kSampler,
+    kSampler_comparison,
 };
 TINT_REFLECT_ENUM_RANGE(tint::ResourceType, kEmpty, kTextureDepthMultisampled2d);
 

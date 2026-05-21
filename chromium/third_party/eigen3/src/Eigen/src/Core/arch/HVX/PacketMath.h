@@ -764,11 +764,19 @@ EIGEN_STRONG_INLINE void ptranspose(PacketBlock<Packet32f, 32>& kernel) {
 template <HVXPacketSize T>
 EIGEN_STRONG_INLINE float predux_hvx(const HVXPacket<T>& a) {
   const Index packet_size = unpacket_traits<HVXPacket<T>>::size;
+#if __HVX_ARCH__ >= 79
+  HVX_Vector vsum = Q6_Vsf_vadd_VsfVsf(a.Get(), Q6_V_vror_VR(a.Get(), sizeof(float)));
+  for (int i = 2; i < packet_size; i <<= 1) {
+    vsum = Q6_Vsf_vadd_VsfVsf(vsum, Q6_V_vror_VR(vsum, i * sizeof(float)));
+  }
+  return pfirst(HVXPacket<T>::Create(vsum));
+#else
   HVX_Vector vsum = Q6_Vqf32_vadd_VsfVsf(a.Get(), Q6_V_vror_VR(a.Get(), sizeof(float)));
   for (int i = 2; i < packet_size; i <<= 1) {
     vsum = Q6_Vqf32_vadd_Vqf32Vqf32(vsum, Q6_V_vror_VR(vsum, i * sizeof(float)));
   }
   return pfirst(HVXPacket<T>::Create(Q6_Vsf_equals_Vqf32(vsum)));
+#endif
 }
 template <>
 EIGEN_STRONG_INLINE float predux<Packet32f>(const Packet32f& a) {

@@ -11,9 +11,9 @@
 #include <unordered_map>
 
 #include "base/types/pass_key.h"
+#include "components/split_tabs/split_tab_id.h"
 #include "components/tab_groups/tab_group_id.h"
 #include "components/tabs/public/split_tab_data.h"
-#include "components/tabs/public/split_tab_id.h"
 #include "components/tabs/public/tab_collection.h"
 
 class TabStripModel;
@@ -55,7 +55,7 @@ class TabStripCollection : public TabCollection {
       size_t destination_index,
       std::optional<tab_groups::TabGroupId> new_group_id,
       bool new_pinned_state,
-      const std::set<TabCollection::Type>& retain_collection_types);
+      const TabCollection::TypeEnumSet retain_collection_types);
 
   // Removes the tab present at a recursive index in the collection and
   // returns the unique_ptr to the tab model. If there is no tab present
@@ -72,7 +72,7 @@ class TabStripCollection : public TabCollection {
   void InsertTabCollectionAt(
       std::unique_ptr<TabCollection> collection,
       int index,
-      int pinned,
+      bool pinned,
       std::optional<tab_groups::TabGroupId> parent_group);
 
   // Remove a tab collection and send the appropriate notifications.
@@ -106,6 +106,7 @@ class TabStripCollection : public TabCollection {
   void CreateSplit(split_tabs::SplitTabId split_id,
                    const std::vector<TabInterface*>& tabs,
                    split_tabs::SplitTabVisualData visual_data);
+  void ReverseSplit(split_tabs::SplitTabId split_id);
   void Unsplit(split_tabs::SplitTabId split_id);
   std::set<split_tabs::SplitTabId> ListSplits() const;
 
@@ -137,7 +138,7 @@ class TabStripCollection : public TabCollection {
   // in the collection.
   ChildrenPtrs GetTabsAndCollectionsForMove(
       const std::vector<int>& tab_indices,
-      const std::set<TabCollection::Type>& retain_collection_types);
+      const TabCollection::TypeEnumSet retain_collection_types);
 
   // Helper to centralize updates to `group_mapping_` and `split_mapping_`. If
   // `root_collection` is a group, the appropriate splits need to group need to
@@ -187,7 +188,7 @@ class TabStripCollection : public TabCollection {
   // recursive index, pinned state and group to insert.
   TabCollection::Position GetInsertionDetails(
       int index,
-      int pinned,
+      bool pinned,
       std::optional<tab_groups::TabGroupId> group);
 
   // Returns the parent collection and the direct child index within that

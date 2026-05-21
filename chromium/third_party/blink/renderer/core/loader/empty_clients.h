@@ -101,10 +101,12 @@ class CORE_EXPORT EmptyChromeClient : public ChromeClient {
   void ChromeDestroyed() override {}
   void SetWindowRect(const gfx::Rect&, LocalFrame&) override {}
 #if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
-  void Minimize(LocalFrame&) override {}
-  void Maximize(LocalFrame&) override {}
-  void Restore(LocalFrame&) override {}
-  void SetResizable(bool resizable, LocalFrame&) override {}
+  void Minimize(LocalFrame&, WindowingControlsChangeCallback) override {}
+  void Maximize(LocalFrame&, WindowingControlsChangeCallback) override {}
+  void Restore(LocalFrame&, WindowingControlsChangeCallback) override {}
+  void SetResizable(bool resizable,
+                    LocalFrame&,
+                    WindowingControlsChangeCallback) override {}
 #endif
   gfx::Rect RootWindowRect(LocalFrame&) override { return gfx::Rect(); }
   void DidAccessInitialMainDocument() override {}
@@ -114,10 +116,6 @@ class CORE_EXPORT EmptyChromeClient : public ChromeClient {
   void TakeFocus(mojom::blink::FocusType) override {}
   bool SupportsDraggableRegions() override { return false; }
   void DraggableRegionsChanged() override {}
-  void Show(LocalFrame& frame,
-            LocalFrame& opener_frame,
-            NavigationPolicy navigation_policy,
-            bool consumed_user_gesture) override {}
   void SetOverscrollBehavior(LocalFrame& frame,
                              const cc::OverscrollBehavior&) override {}
   void BeginLifecycleUpdates(LocalFrame& main_frame) override {}
@@ -135,8 +133,8 @@ class CORE_EXPORT EmptyChromeClient : public ChromeClient {
   void SetShouldThrottleFrameRate(bool flag, LocalFrame& main_frame) override {}
   void RequestMainFrameOnCompositorAnimation(
       LocalFrame&,
-      cc::PropertyChangeForcesCommitCriteria animation_forces_commit) override {
-  }
+      cc::PropertyChangeForcesCommitCriteria criteria,
+      bool force_propagation) override {}
   void StartDragging(LocalFrame*,
                      const WebDragData&,
                      DragOperationsMask,
@@ -368,7 +366,9 @@ class CORE_EXPORT EmptyLocalFrameClient : public LocalFrameClient {
       SourceLocation*,
       mojo::PendingRemote<mojom::blink::NavigationStateKeepAliveHandle>,
       bool is_container_initiated,
-      bool has_rel_opener) override;
+      bool has_rel_opener,
+      mojo::PendingReceiver<
+          mojom::blink::NavigationResumeDeferredCommitListener>) override;
 
   void DispatchWillSendSubmitEvent(HTMLFormElement*) override;
 

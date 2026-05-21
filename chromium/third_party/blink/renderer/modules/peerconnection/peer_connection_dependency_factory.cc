@@ -25,6 +25,7 @@
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/time/time.h"
+#include "base/trace_event/trace_event.h"
 #include "base/unguessable_token.h"
 #include "build/build_config.h"
 #include "components/webrtc/thread_wrapper.h"
@@ -279,10 +280,22 @@ class LocalNetworkAccessPermission final
     DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
     CHECK(RuntimeEnabledFeatures::LocalNetworkAccessWebRTCEnabled());
 
+    mojom::blink::PermissionName permission_name =
+        mojom::blink::PermissionName::LOCAL_NETWORK_ACCESS;
+    if (base::FeatureList::IsEnabled(
+            network::features::kLocalNetworkAccessChecksSplitPermissions)) {
+      network::mojom::IPAddressSpace target_address_space =
+          FromSocketAddress(candidate_address);
+      if (target_address_space == network::mojom::IPAddressSpace::kLoopback) {
+        permission_name = mojom::blink::PermissionName::LOOPBACK_NETWORK;
+      } else {
+        permission_name = mojom::blink::PermissionName::LOCAL_NETWORK;
+      }
+    }
+
     callback_ = std::move(callback);
     permission_service_->RequestPermission(
-        CreatePermissionDescriptor(
-            mojom::blink::PermissionName::LOCAL_NETWORK_ACCESS),
+        CreatePermissionDescriptor(permission_name),
         /*user_gesture=*/false,
         BindRepeating(
             &LocalNetworkAccessPermission::OnPermissionRequested,
@@ -420,8 +433,10 @@ class PeerConnectionStaticDeps {
     }
 
     if (!chrome_worker_thread_.IsRunning()) {
-      chrome_worker_thread_.StartWithOptions(
-          base::Thread::Options(base::ThreadType::kDefault));
+      chrome_worker_thread_.StartWithOptions(base::Thread::Options(
+          base::FeatureList::IsEnabled(features::kWebRtcUseMediaThreadTypes)
+              ? base::ThreadType::kAudioProcessing
+              : base::ThreadType::kDefault));
     }
     // To allow sending to the signaling/worker threads.
     webrtc::ThreadWrapper::EnsureForCurrentMessageLoop();
@@ -658,15 +673,20 @@ void WaitForEncoderSupportReady(
 
 }  // namespace
 
+// static
+const char PeerConnectionDependencyFactory::kSupplementName[] =
+    "PeerConnectionDependencyFactory";
+
 PeerConnectionDependencyFactory& PeerConnectionDependencyFactory::From(
     ExecutionContext& context) {
   CHECK(!context.IsContextDestroyed());
-  PeerConnectionDependencyFactory* supplement =
-      context.GetPeerConnectionDependencyFactory();
+  auto* supplement =
+      Supplement<ExecutionContext>::From<PeerConnectionDependencyFactory>(
+          context);
   if (!supplement) {
     supplement = MakeGarbageCollected<PeerConnectionDependencyFactory>(
         context, PassKey());
-    context.SetPeerConnectionDependencyFactory(supplement);
+    ProvideTo(context, supplement);
   }
   return *supplement;
 }
@@ -674,8 +694,8 @@ PeerConnectionDependencyFactory& PeerConnectionDependencyFactory::From(
 PeerConnectionDependencyFactory::PeerConnectionDependencyFactory(
     ExecutionContext& context,
     PassKey)
-    : ExecutionContextLifecycleObserver(&context),
-      execution_context_(context),
+    : Supplement(context),
+      ExecutionContextLifecycleObserver(&context),
       context_task_runner_(
           context.GetTaskRunner(TaskType::kInternalMediaRealTime)),
       network_manager_(nullptr),
@@ -692,7 +712,7 @@ PeerConnectionDependencyFactory::PeerConnectionDependencyFactory(
 }
 
 PeerConnectionDependencyFactory::PeerConnectionDependencyFactory()
-    : ExecutionContextLifecycleObserver(nullptr), execution_context_(nullptr) {}
+    : Supplement(nullptr), ExecutionContextLifecycleObserver(nullptr) {}
 
 PeerConnectionDependencyFactory::~PeerConnectionDependencyFactory() = default;
 
@@ -759,7 +779,7 @@ void PeerConnectionDependencyFactory::CreatePeerConnectionFactory() {
     // Note that MdnsResponderAdapter is created on the main thread to have
     // access to the connector to the service manager.
     mdns_responder =
-        std::make_unique<MdnsResponderAdapter>(*execution_context_);
+        std::make_unique<MdnsResponderAdapter>(*GetSupplementable());
   }
 #endif  // BUILDFLAG(ENABLE_MDNS)
   PostCrossThreadTask(
@@ -775,7 +795,12 @@ void PeerConnectionDependencyFactory::CreatePeerConnectionFactory() {
 
   // Wait for the worker thread, since `InitializeSignalingThread` needs to
   // refer to `worker_thread_`.
-  worker_thread_started_event.Wait();
+  {
+    TRACE_EVENT("latency",
+                "PeerConnectionDependencyFactory::CreatePeerConnectionFactory "
+                "- Wait for worker thread started");
+    worker_thread_started_event.Wait();
+  }
   CHECK(GetWorkerThread());
 
   // Only the JS main thread can establish mojo connection with a browser
@@ -798,7 +823,12 @@ void PeerConnectionDependencyFactory::CreatePeerConnectionFactory() {
           CreateMojoVideoEncoderMetricsProviderFactory(DomWindow()->GetFrame()),
           CrossThreadUnretained(&start_signaling_event)));
 
-  start_signaling_event.Wait();
+  {
+    TRACE_EVENT("latency",
+                "PeerConnectionDependencyFactory::CreatePeerConnectionFactory "
+                "- Wait for start signaling");
+    start_signaling_event.Wait();
+  }
 
   CHECK(pc_factory_);
   CHECK(socket_factory_);
@@ -1285,7 +1315,7 @@ PeerConnectionDependencyFactory::GetGpuFactories() {
 }
 
 void PeerConnectionDependencyFactory::Trace(Visitor* visitor) const {
-  visitor->Trace(execution_context_);
+  Supplement<ExecutionContext>::Trace(visitor);
   ExecutionContextLifecycleObserver::Trace(visitor);
   visitor->Trace(p2p_socket_dispatcher_);
   visitor->Trace(webrtc_video_perf_reporter_);

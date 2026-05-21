@@ -42,9 +42,11 @@ source_set("startup") {
     sources += [
       "automation_infobar_delegate.h",
       "google_api_keys_infobar_delegate.h",
+      "google_chrome_scheme_util.h",
       "infobar_utils.h",
       "launch_mode_recorder.h",
       "obsolete_system_infobar_delegate.h",
+      "profile_launch_observer.h",
       "startup_browser_creator.h",
       "startup_browser_creator_impl.h",
       "startup_tab_provider.h",
@@ -54,7 +56,10 @@ source_set("startup") {
       ":startup_tab",
       "//base",
       "//chrome/browser/prefs:util",
+      "//chrome/browser/profiles:profile",
+      "//chrome/browser/search_integrity",
       "//chrome/browser/sessions",
+      "//chrome/browser/ui/browser_window",
       "//components/infobars/content",
       "//components/signin/public/base:signin_buildflags",
     ]
@@ -79,6 +84,19 @@ source_set("startup") {
       "//chrome/browser/profiles:profile",
       "//chrome/browser/ui/profiles",
       "//components/keyed_service/core",
+    ]
+  }
+
+  if (is_win) {
+    sources += [
+      "startup_launch_infobar_delegate.h",
+      "startup_launch_infobar_manager_impl.h",
+    ]
+
+    public_deps += [
+      "//chrome/browser/startup",
+      "//chrome/browser/ui:browser_tab_strip",
+      "//chrome/browser/ui/tabs:tab_strip_model_observer",
     ]
   }
 
@@ -109,6 +127,7 @@ source_set("impl") {
     "//chrome/app:branded_strings",
     "//chrome/app:generated_resources",
     "//chrome/browser:browser_process",
+    "//chrome/browser/actor",
     "//chrome/browser/devtools",
     "//chrome/browser/infobars",
     "//chrome/browser/profiles",
@@ -117,6 +136,7 @@ source_set("impl") {
     "//chrome/browser/signin",
     "//chrome/browser/sync",
     "//chrome/browser/sync:factories",
+    "//chrome/browser/ui/dialogs",
     "//chrome/browser/ui/profiles",
     "//chrome/browser/webauthn",
     "//chrome/common:chrome_features",
@@ -155,9 +175,11 @@ source_set("impl") {
     sources += [
       "automation_infobar_delegate.cc",
       "google_api_keys_infobar_delegate.cc",
+      "google_chrome_scheme_util.cc",
       "infobar_utils.cc",
       "launch_mode_recorder.cc",
       "obsolete_system_infobar_delegate.cc",
+      "profile_launch_observer.cc",
       "startup_browser_creator.cc",
       "startup_browser_creator_impl.cc",
       "startup_tab_provider.cc",
@@ -170,7 +192,6 @@ source_set("impl") {
       "//build:buildflag_header_h",
       "//chrome/browser:global_features",
       "//chrome/browser:shell_integration",
-      "//chrome/browser/actor",
       "//chrome/browser/app_mode",
       "//chrome/browser/apps/app_service",
       "//chrome/browser/apps/platform_apps",
@@ -191,7 +212,6 @@ source_set("impl") {
       "//chrome/browser/ui:ui_features",
       "//chrome/browser/ui/browser_window",
       "//chrome/browser/ui/extensions",
-      "//chrome/browser/ui/startup/default_browser_prompt",
       "//chrome/browser/ui/startup/focus",
       "//chrome/browser/ui/tabs",
       "//chrome/browser/ui/tabs:tab_group",
@@ -242,6 +262,14 @@ source_set("impl") {
       deps += [ "//chrome/browser/ui/views/session_restore_infobar" ]
     }
 
+    if (is_win) {
+      sources += [
+        "startup_launch_infobar_delegate.cc",
+        "startup_launch_infobar_manager_impl.cc",
+      ]
+      deps += [ "//chrome/browser/startup" ]
+    }
+
     if (is_win && is_chrome_branded) {
       deps += [ "//chrome/browser/win/installer_downloader:controller" ]
     }
@@ -277,7 +305,10 @@ source_set("impl") {
       "first_run_service.cc",
       "web_app_info_recorder_utils.cc",
     ]
-    deps += [ "//chrome/browser/ui/web_applications" ]
+    deps += [
+      "//chrome/browser/ui/startup/default_browser_prompt",
+      "//chrome/browser/ui/web_applications",
+    ]
   }
 
   if (is_win) {
@@ -346,6 +377,7 @@ source_set("unit_tests") {
 
   if (!is_android) {
     sources = [
+      "google_chrome_scheme_util_unittest.cc",
       "launch_mode_recorder_unittest.cc",
       "startup_browser_creator_impl_unittest.cc",
       "startup_browser_creator_unittest.cc",
@@ -499,6 +531,11 @@ if (!is_android && !is_chromeos_device) {
     ]
     if (use_aura) {
       deps += [ "//ui/aura" ]
+    }
+
+    if (is_win) {
+      sources += [ "startup_launch_infobar_interactive_uitest.cc" ]
+      deps += [ "//chrome/browser/ui/views/infobars" ]
     }
   }
 }

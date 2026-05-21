@@ -15,8 +15,10 @@
 #include "content/browser/service_worker/service_worker_installed_scripts_sender.h"
 #include "content/browser/service_worker/service_worker_version.h"
 #include "content/browser/storage_partition_impl.h"
+#include "content/common/features.h"
 #include "third_party/blink/public/common/cache_storage/cache_storage_utils.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_fetch_response_callback.mojom.h"
+#include "third_party/perfetto/include/perfetto/tracing/track_event_args.h"
 
 namespace content {
 
@@ -32,37 +34,43 @@ ServiceWorkerCacheStorageMatcher::ServiceWorkerCacheStorageMatcher(
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK(!request_->blob);
-  TRACE_EVENT_WITH_FLOW0(
+  TRACE_EVENT(
       "ServiceWorker",
       "ServiceWorkerCacheStorageMatcher::ServiceWorkerCacheStorageMatcher",
-      TRACE_ID_LOCAL(this), TRACE_EVENT_FLAG_FLOW_OUT);
+      perfetto::Flow::FromPointer(this));
 }
 
 ServiceWorkerCacheStorageMatcher::~ServiceWorkerCacheStorageMatcher() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  TRACE_EVENT_WITH_FLOW0(
+  TRACE_EVENT(
       "ServiceWorker",
       "ServiceWorkerCacheStorageMatcher::~ServiceWorkerCacheStorageMatcher",
-      TRACE_ID_LOCAL(this), TRACE_EVENT_FLAG_FLOW_IN);
+      perfetto::TerminatingFlow::FromPointer(this));
 }
 
 void ServiceWorkerCacheStorageMatcher::Run() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  TRACE_EVENT_WITH_FLOW0("ServiceWorker",
-                         "ServiceWorkerCacheStorageMatcher::Run",
-                         TRACE_ID_LOCAL(this),
-                         TRACE_EVENT_FLAG_FLOW_IN | TRACE_EVENT_FLAG_FLOW_OUT);
+  TRACE_EVENT("ServiceWorker", "ServiceWorkerCacheStorageMatcher::Run",
+              perfetto::Flow::FromPointer(this));
   CHECK(cache_lookup_start_.is_null());
   cache_lookup_start_ = base::TimeTicks::Now();
-  // If `GetMainScriptResponse` is not set, it need to be set from the
-  // installed script.  Or, calling the fallback function may fail.
-  if (!version_->GetMainScriptResponse()) {
-    CHECK(ServiceWorkerVersion::IsInstalled(version_->status()));
-    CHECK(!installed_scripts_sender_);
-    installed_scripts_sender_ =
-        std::make_unique<ServiceWorkerInstalledScriptsSender>(version_.get());
-    installed_scripts_sender_->Start();
+
+  if (base::FeatureList::IsEnabled(
+          features::kServiceWorkerStaticRouterConsolidateMainScriptResponse)) {
+    // Ensure that the main script response is set before proceeding.
+    version_->EnsureMainScriptResponseSet(base::DoNothing());
+  } else {
+    // If `GetMainScriptResponse` is not set, it need to be set from the
+    // installed script.  Or, calling the fallback function may fail.
+    if (!version_->GetMainScriptResponse()) {
+      CHECK(ServiceWorkerVersion::IsInstalled(version_->status()));
+      CHECK(!installed_scripts_sender_);
+      installed_scripts_sender_ =
+          std::make_unique<ServiceWorkerInstalledScriptsSender>(version_.get());
+      installed_scripts_sender_->Start();
+    }
   }
+
   // Gets receiver.
   if (!version_->context()) {
     FailFallback();
@@ -114,10 +122,8 @@ void ServiceWorkerCacheStorageMatcher::Run() {
 void ServiceWorkerCacheStorageMatcher::DidMatch(
     blink::mojom::CacheStorage::MatchResult result) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  TRACE_EVENT_WITH_FLOW0("ServiceWorker",
-                         "ServiceWorkerCacheStorageMatcher::DidMatch",
-                         TRACE_ID_LOCAL(this),
-                         TRACE_EVENT_FLAG_FLOW_IN | TRACE_EVENT_FLAG_FLOW_OUT);
+  TRACE_EVENT("ServiceWorker", "ServiceWorkerCacheStorageMatcher::DidMatch",
+              perfetto::Flow::FromPointer(this));
   cache_lookup_duration_ = base::TimeTicks::Now() - cache_lookup_start_;
   base::UmaHistogramTimes(
       "ServiceWorker.StaticRouter.MainResource.CacheLookupDuration",
@@ -156,10 +162,8 @@ void ServiceWorkerCacheStorageMatcher::DidMatch(
 
 void ServiceWorkerCacheStorageMatcher::FailFallback() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  TRACE_EVENT_WITH_FLOW0("ServiceWorker",
-                         "ServiceWorkerCacheStorageMatcher::FailFallback",
-                         TRACE_ID_LOCAL(this),
-                         TRACE_EVENT_FLAG_FLOW_IN | TRACE_EVENT_FLAG_FLOW_OUT);
+  TRACE_EVENT("ServiceWorker", "ServiceWorkerCacheStorageMatcher::FailFallback",
+              perfetto::Flow::FromPointer(this));
 
   // `Run` method will be called in
   // `ServiceWorkerMainResourceLoader::StartRequest`.
@@ -188,23 +192,40 @@ void ServiceWorkerCacheStorageMatcher::RunCallback(
     blink::mojom::ServiceWorkerStreamHandlePtr body_as_stream,
     blink::mojom::ServiceWorkerFetchEventTimingPtr timing) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  TRACE_EVENT_WITH_FLOW0("ServiceWorker",
-                         "ServiceWorkerCacheStorageMatcher::RunCallback",
-                         TRACE_ID_LOCAL(this), TRACE_EVENT_FLAG_FLOW_IN);
+  TRACE_EVENT("ServiceWorker", "ServiceWorkerCacheStorageMatcher::RunCallback",
+              perfetto::TerminatingFlow::FromPointer(this));
   // Fetch dispatcher can be completed at this point due to a failure of
   // starting up a worker. In that case, let's simply ignore it.
   if (!fetch_callback_) {
     return;
   }
 
-  // Wait until `installed_scripts_sender_` updates the main script response.
-  if (installed_scripts_sender_ &&
-      installed_scripts_sender_->last_finished_reason() ==
-          ServiceWorkerInstalledScriptReader::FinishedReason::kNotFinished) {
-    installed_scripts_sender_->SetFinishCallback(base::BindOnce(
-        &ServiceWorkerCacheStorageMatcher::RunCallback,
-        weak_ptr_factory_.GetWeakPtr(), status, fetch_result,
-        std::move(response), std::move(body_as_stream), std::move(timing)));
+  if (base::FeatureList::IsEnabled(
+          features::kServiceWorkerStaticRouterConsolidateMainScriptResponse)) {
+    // Wait until the main script response is ready.
+    if (!version_->main_script_fetched()) {
+      version_->EnsureMainScriptResponseSet(base::BindOnce(
+          &ServiceWorkerCacheStorageMatcher::RunCallback,
+          weak_ptr_factory_.GetWeakPtr(), status, fetch_result,
+          std::move(response), std::move(body_as_stream), std::move(timing)));
+      return;
+    }
+  } else {
+    // Wait until `installed_scripts_sender_` updates the main script response.
+    if (installed_scripts_sender_ &&
+        installed_scripts_sender_->last_finished_reason() ==
+            ServiceWorkerInstalledScriptReader::FinishedReason::kNotFinished) {
+      installed_scripts_sender_->SetFinishCallback(base::BindOnce(
+          &ServiceWorkerCacheStorageMatcher::RunCallback,
+          weak_ptr_factory_.GetWeakPtr(), status, fetch_result,
+          std::move(response), std::move(body_as_stream), std::move(timing)));
+      return;
+    }
+  }
+
+  // Fall back if the main script response is not available.
+  if (!version_->GetMainScriptResponse()) {
+    FailFallback();
     return;
   }
 

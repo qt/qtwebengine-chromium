@@ -252,13 +252,6 @@ class NET_EXPORT ClientSocketPool : public LowerLayeredPool {
   // |proxy_auth_callback| will be invoked each time an auth challenge is seen
   // while establishing a tunnel. It will be invoked asynchronously, once for
   // each auth challenge seen.
-  //
-  // |fail_if_alias_requires_proxy_override| is used to determine whether all
-  // requests in a group will support failing with net error
-  // `ERR_PROXY_REQUIRED` if ProxyDelegate::ShouldOverrideProxyResolution
-  // returns true for resolved DNS records. This will only be enabled if every
-  // request in the group has this bit set to true; if any request has it set to
-  // false, it will be disabled for the entire group.
   virtual int RequestSocket(
       const GroupId& group_id,
       scoped_refptr<SocketParams> params,
@@ -269,7 +262,6 @@ class NET_EXPORT ClientSocketPool : public LowerLayeredPool {
       ClientSocketHandle* handle,
       CompletionOnceCallback callback,
       const ProxyAuthCallback& proxy_auth_callback,
-      bool fail_if_alias_requires_proxy_override,
       const NetLogWithSource& net_log) = 0;
 
   // RequestSockets is used to request that |num_sockets| be connected in the
@@ -289,7 +281,6 @@ class NET_EXPORT ClientSocketPool : public LowerLayeredPool {
       scoped_refptr<SocketParams> params,
       const std::optional<NetworkTrafficAnnotationTag>& proxy_annotation_tag,
       size_t num_sockets,
-      bool fail_if_alias_requires_proxy_override,
       CompletionOnceCallback callback,
       const NetLogWithSource& net_log) = 0;
 
@@ -373,6 +364,8 @@ class NET_EXPORT ClientSocketPool : public LowerLayeredPool {
     return AdditionalCapacity();
   }
 
+  SocketPoolState StateForTest() const { return State(); }
+
  protected:
   ClientSocketPool(size_t socket_soft_cap,
                    SocketPoolAdditionalCapacity additional_capacity,
@@ -385,7 +378,7 @@ class NET_EXPORT ClientSocketPool : public LowerLayeredPool {
                                                 const GroupId& group_id);
 
   // Utility method to log a GroupId with a NetLog event.
-  static base::Value::Dict NetLogGroupIdParams(const GroupId& group_id);
+  static base::DictValue NetLogGroupIdParams(const GroupId& group_id);
 
   std::unique_ptr<ConnectJob> CreateConnectJob(
       GroupId group_id,
@@ -409,9 +402,21 @@ class NET_EXPORT ClientSocketPool : public LowerLayeredPool {
 
   SocketPoolState State() const { return state_; }
 
+  // This should be called exactly once before each attempted socket allocation
+  // via `RequestSocket` or `RequestSockets`. Be sure not to over-invoke to
+  // prevent early capping of the socket pool.
   void UpdateStateBeforeAllocation();
 
+  // This should be called once after each successful socket released (and not
+  // reused) via `RequestSocket`, `RequestSockets`, `CancelRequest`,
+  // `ReleaseSocket`, `OnConnectJobComplete`, `CloseIdleSockets`, or
+  // `CloseIdleSocketsInGroup`. Be sure not to over-invoke to prevent early
+  // uncapping of the socket pool.
   void UpdateStateAfterRelease();
+
+  // This is used to reset the pool to the initial uncapped state when the
+  // socket pool is fully flushed out before later reuse.
+  void ResetState() { state_ = SocketPoolState::kUncapped; }
 
   const ProxyChain& GetProxyChain() const { return proxy_chain_; }
 

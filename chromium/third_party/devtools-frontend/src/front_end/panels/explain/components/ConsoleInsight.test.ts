@@ -5,16 +5,18 @@
 import * as Common from '../../../core/common/common.js';
 import * as Host from '../../../core/host/host.js';
 import type * as Platform from '../../../core/platform/platform.js';
+import {createConsoleInsightWidget} from '../../../testing/ConsoleInsightHelpers.js';
 import {
   assertScreenshot,
-  dispatchClickEvent,
-  getCleanTextContentFromElements,
-  raf,
   renderElementIntoDOM,
 } from '../../../testing/DOMHelpers.js';
 import {describeWithEnvironment, updateHostConfig} from '../../../testing/EnvironmentHelpers.js';
+import * as MarkdownView from '../../../ui/components/markdown_view/markdown_view.js';
+import * as Lit from '../../../ui/lit/lit.js';
 import * as Console from '../../console/console.js';
 import * as Explain from '../explain.js';
+
+type Insight = Extract<Explain.ViewInput['state'], {type: Explain.State.INSIGHT}>;
 
 describeWithEnvironment('ConsoleInsight', () => {
   let component: Explain.ConsoleInsight|undefined;
@@ -29,58 +31,21 @@ describeWithEnvironment('ConsoleInsight', () => {
   });
 
   afterEach(() => {
-    component?.remove();
+    component?.detach();
     Common.Settings.settingForTest('console-insights-enabled').set(true);
     Common.Settings.settingForTest('console-insights-onboarding-finished').set(true);
   });
 
-  function getTestAidaClient() {
-    return {
-      async *
-          doConversation() {
-            yield {explanation: 'test', metadata: {rpcGlobalId: 0}, completed: true};
-          },
-      registerClientEvent: sinon.spy(),
-    };
-  }
-
-  function getTestPromptBuilder() {
-    return {
-      async buildPrompt() {
-        return {
-          prompt: '',
-          sources: [
-            {
-              type: Console.PromptBuilder.SourceType.MESSAGE,
-              value: 'error message',
-            },
-          ],
-          isPageReloadRecommended: true,
-        };
-      },
-      getSearchQuery() {
-        return '';
-      },
-    };
-  }
-
-  async function drainMicroTasks() {
-    await new Promise(resolve => setTimeout(resolve, 0));
-  }
-
   it('shows opt-in teaser when setting is turned off', async () => {
     Common.Settings.settingForTest('console-insights-enabled').set(false);
-    component = new Explain.ConsoleInsight(
-        getTestPromptBuilder(), getTestAidaClient(), Host.AidaClient.AidaAccessPreconditions.AVAILABLE);
-    renderElementIntoDOM(component);
-    await drainMicroTasks();
-    assert.isNotNull(component.shadowRoot);
-    assert.deepEqual(
-        getCleanTextContentFromElements(component.shadowRoot, 'main'),
-        [
-          'Turn on Console insights in Settings to receive AI assistance for understanding and addressing console warnings and errors. Learn more',
-        ],
-    );
+    const {view, component} = await createConsoleInsightWidget();
+
+    assert.strictEqual(view.input.state.type, Explain.State.LOADING);
+
+    component.wasShown();
+    const nextInput = await view.nextInput;
+
+    assert.strictEqual(nextInput.state.type, Explain.State.SETTING_IS_NOT_TRUE);
   });
 
   it('shows opt-in teaser when blocked by age', async () => {
@@ -92,39 +57,33 @@ describeWithEnvironment('ConsoleInsight', () => {
         enabled: true,
       },
     });
-    component = new Explain.ConsoleInsight(
-        getTestPromptBuilder(), getTestAidaClient(), Host.AidaClient.AidaAccessPreconditions.AVAILABLE);
-    renderElementIntoDOM(component);
-    await drainMicroTasks();
-    assert.isNotNull(component.shadowRoot);
-    assert.deepEqual(
-        getCleanTextContentFromElements(component.shadowRoot, 'main'),
-        [
-          'Turn on Console insights in Settings to receive AI assistance for understanding and addressing console warnings and errors. Learn more',
-        ],
-    );
+
+    const {view, component} = await createConsoleInsightWidget();
+
+    assert.strictEqual(view.input.state.type, Explain.State.LOADING);
+
+    component.wasShown();
+    const nextInput = await view.nextInput;
+
+    assert.strictEqual(nextInput.state.type, Explain.State.SETTING_IS_NOT_TRUE);
   });
 
   it('generates an explanation when the user logs in', async () => {
-    component = new Explain.ConsoleInsight(
-        getTestPromptBuilder(), getTestAidaClient(), Host.AidaClient.AidaAccessPreconditions.NO_ACCOUNT_EMAIL);
-    renderElementIntoDOM(component);
-    await drainMicroTasks();
-    assert.isNotNull(component.shadowRoot);
-    assert.deepEqual(
-        getCleanTextContentFromElements(component.shadowRoot, 'main'),
-        [
-          'This feature is only available when you sign into Chrome with your Google account.',
-        ],
-    );
+    const {view, component, stubAidaCheckAccessPreconditions} = await createConsoleInsightWidget({
+      aidaAvailability: Host.AidaClient.AidaAccessPreconditions.NO_ACCOUNT_EMAIL,
+    });
 
-    const stub = sinon.stub(Host.AidaClient.AidaClient, 'checkAccessPreconditions')
-                     .returns(Promise.resolve(Host.AidaClient.AidaAccessPreconditions.AVAILABLE));
+    assert.strictEqual(view.input.state.type, Explain.State.NOT_LOGGED_IN);
+
+    component.wasShown();
+
+    stubAidaCheckAccessPreconditions(Host.AidaClient.AidaAccessPreconditions.AVAILABLE);
     Host.AidaClient.HostConfigTracker.instance().dispatchEventToListeners(
         Host.AidaClient.Events.AIDA_AVAILABILITY_CHANGED);
-    await drainMicroTasks();
-    assert.deepEqual(getCleanTextContentFromElements(component.shadowRoot, 'h2'), ['Explanation']);
-    stub.restore();
+
+    const nextInput = await view.nextInput;
+
+    assert.strictEqual(nextInput.state.type, Explain.State.INSIGHT);
   });
 
   it('shows opt-in teaser when setting is disabled via disabledCondition', async () => {
@@ -137,17 +96,15 @@ describeWithEnvironment('ConsoleInsight', () => {
         return {disabled: true, reasons: ['disabled for test' as Platform.UIString.LocalizedString]};
       },
     });
-    component = new Explain.ConsoleInsight(
-        getTestPromptBuilder(), getTestAidaClient(), Host.AidaClient.AidaAccessPreconditions.AVAILABLE);
-    renderElementIntoDOM(component);
-    await drainMicroTasks();
-    assert.isNotNull(component.shadowRoot);
-    assert.deepEqual(
-        getCleanTextContentFromElements(component.shadowRoot, 'main'),
-        [
-          'Turn on Console insights in Settings to receive AI assistance for understanding and addressing console warnings and errors. Learn more',
-        ],
-    );
+
+    const {view, component} = await createConsoleInsightWidget();
+
+    assert.strictEqual(view.input.state.type, Explain.State.LOADING);
+
+    component.wasShown();
+    const nextInput = await view.nextInput;
+
+    assert.strictEqual(nextInput.state.type, Explain.State.SETTING_IS_NOT_TRUE);
 
     setting.setRegistration({
       settingName: 'console-insights-enabled',
@@ -158,20 +115,19 @@ describeWithEnvironment('ConsoleInsight', () => {
 
   it('shows reminder on first run of console insights', async () => {
     Common.Settings.settingForTest('console-insights-onboarding-finished').set(false);
-    component = new Explain.ConsoleInsight(
-        getTestPromptBuilder(), getTestAidaClient(), Host.AidaClient.AidaAccessPreconditions.AVAILABLE);
-    renderElementIntoDOM(component);
-    await drainMicroTasks();
-    assert.isNotNull(component.shadowRoot);
-    assert.strictEqual(component.shadowRoot.querySelector('h2')?.innerText, 'Understand console messages with AI');
+    const {view, component} = await createConsoleInsightWidget();
 
-    dispatchClickEvent(component.shadowRoot.querySelector('.continue-button')!, {
-      bubbles: true,
-      composed: true,
-    });
-    await drainMicroTasks();
-    // Rating buttons are shown.
-    assert(component.shadowRoot.querySelector('.rating'));
+    assert.strictEqual(view.input.state.type, Explain.State.LOADING);
+
+    component.wasShown();
+    let nextInput = await view.nextInput;
+
+    assert.strictEqual(nextInput.state.type, Explain.State.CONSENT_REMINDER);
+
+    await view.input.callbacks.onConsentReminderConfirmed();
+    nextInput = await view.nextInput;
+
+    assert.strictEqual(nextInput.state.type, Explain.State.INSIGHT);
   });
 
   it('shows an error message on timeout', async () => {
@@ -192,14 +148,18 @@ describeWithEnvironment('ConsoleInsight', () => {
       };
     }
 
-    component = new Explain.ConsoleInsight(
-        getTestPromptBuilder(), getAidaClientWithTimeout(), Host.AidaClient.AidaAccessPreconditions.AVAILABLE);
-    renderElementIntoDOM(component);
-    await drainMicroTasks();
-    assert.isNotNull(component.shadowRoot);
-    assert.strictEqual(
-        component.shadowRoot.querySelector('.error-message')?.textContent,
-        'Generating a response took too long. Please try again.');
+    const {view, component} = await createConsoleInsightWidget({
+      aidaClient: getAidaClientWithTimeout(),
+    });
+
+    assert.strictEqual(view.input.state.type, Explain.State.LOADING);
+
+    component.wasShown();
+    const nextInput = await view.nextInput;
+
+    assert.strictEqual(nextInput.state.type, Explain.State.INSIGHT);
+    const insight = nextInput.state as Insight;
+    assert.isTrue(insight.timedOut);
   });
 
   const reportsRating = (positive: boolean, disallowLogging: boolean) => async () => {
@@ -209,18 +169,16 @@ describeWithEnvironment('ConsoleInsight', () => {
       },
     });
     const actionTaken = sinon.stub(Host.userMetrics, 'actionTaken');
-    const aidaClient = getTestAidaClient();
-    component = new Explain.ConsoleInsight(
-        getTestPromptBuilder(), aidaClient, Host.AidaClient.AidaAccessPreconditions.AVAILABLE);
-    renderElementIntoDOM(component);
-    await drainMicroTasks();
-    dispatchClickEvent(component.shadowRoot!.querySelector(`.rating [data-rating=${positive}]`)!, {
-      bubbles: true,
-      composed: true,
-    });
+    const {view, component, testAidaClient} = await createConsoleInsightWidget();
 
-    sinon.assert.calledOnce(aidaClient.registerClientEvent);
-    sinon.assert.match(aidaClient.registerClientEvent.firstCall.firstArg, sinon.match({
+    component.wasShown();
+    await view.nextInput;
+
+    await view.input.callbacks.onRating(positive);
+    await view.nextInput;
+
+    sinon.assert.calledOnce(testAidaClient.registerClientEvent);
+    sinon.assert.match(testAidaClient.registerClientEvent.firstCall.firstArg, sinon.match({
       corresponding_aida_rpc_global_id: 0,
       disable_user_content_logging: disallowLogging,
       do_conversation_client_event: {
@@ -231,59 +189,24 @@ describeWithEnvironment('ConsoleInsight', () => {
         actionTaken,
         positive ? Host.UserMetrics.Action.InsightRatedPositive : Host.UserMetrics.Action.InsightRatedNegative);
 
-    dispatchClickEvent(component.shadowRoot!.querySelector(`.rating [data-rating=${positive}]`)!, {
-      bubbles: true,
-      composed: true,
-    });
-    // Can only rate once.
-    sinon.assert.calledOnce(aidaClient.registerClientEvent);
+    await view.input.callbacks.onRating(positive);
+
+    sinon.assert.calledOnce(testAidaClient.registerClientEvent);
   };
 
-  describe('without logging', () => {
-    it('reports positive rating', reportsRating(true, true));
-    it('reports negative rating', reportsRating(false, true));
-  });
-
-  describe('with logging', () => {
-    it('reports positive rating', reportsRating(true, false));
-    it('reports negative rating', reportsRating(false, false));
-  });
-
-  it('has thumbs up/down buttons if logging is disabled', async () => {
-    updateHostConfig({
-      aidaAvailability: {
-        disallowLogging: true,
-      },
-      devToolsConsoleInsights: {
-        enabled: true,
-      },
-    });
-    component = new Explain.ConsoleInsight(
-        getTestPromptBuilder(), getTestAidaClient(), Host.AidaClient.AidaAccessPreconditions.AVAILABLE);
-    renderElementIntoDOM(component);
-    await drainMicroTasks();
-    const thumbsUpButton = component.shadowRoot!.querySelector('.rating [data-rating="true"]');
-    assert.isNotNull(thumbsUpButton);
-    const thumbsDownButton = component.shadowRoot!.querySelector('.rating [data-rating="false"]');
-    assert.isNotNull(thumbsDownButton);
-  });
-
   it('report if the user is not logged in', async () => {
-    component = new Explain.ConsoleInsight(
-        getTestPromptBuilder(), getTestAidaClient(), Host.AidaClient.AidaAccessPreconditions.NO_ACCOUNT_EMAIL);
-    renderElementIntoDOM(component);
-    await drainMicroTasks();
-    const content = component.shadowRoot!.querySelector('main')!.innerText.trim();
-    assert.strictEqual(content, 'This feature is only available when you sign into Chrome with your Google account.');
+    const {view} = await createConsoleInsightWidget({
+      aidaAvailability: Host.AidaClient.AidaAccessPreconditions.NO_ACCOUNT_EMAIL,
+    });
+
+    assert.strictEqual(view.input.state.type, Explain.State.NOT_LOGGED_IN);
   });
 
   it('report if the navigator is offline', async () => {
-    component = new Explain.ConsoleInsight(
-        getTestPromptBuilder(), getTestAidaClient(), Host.AidaClient.AidaAccessPreconditions.NO_INTERNET);
-    renderElementIntoDOM(component);
-    await drainMicroTasks();
-    const content = component.shadowRoot!.querySelector('main')!.innerText.trim();
-    assert.strictEqual(content, 'Check your internet connection and try again.');
+    const {view} = await createConsoleInsightWidget({
+      aidaAvailability: Host.AidaClient.AidaAccessPreconditions.NO_INTERNET,
+    });
+    assert.strictEqual(view.input.state.type, Explain.State.OFFLINE);
   });
 
   it('displays factuality metadata as related content', async () => {
@@ -309,17 +232,17 @@ describeWithEnvironment('ConsoleInsight', () => {
       };
     }
 
-    component = new Explain.ConsoleInsight(
-        getTestPromptBuilder(), getAidaClientWithMetadata(), Host.AidaClient.AidaAccessPreconditions.AVAILABLE);
-    renderElementIntoDOM(component);
-    await drainMicroTasks();
-    const details = component.shadowRoot!.querySelector('details');
-    assert.strictEqual(details!.querySelector('summary')!.textContent?.trim(), 'Sources and related content');
-    const xLinks = details!.querySelectorAll('x-link');
-    assert.strictEqual(xLinks[0].textContent?.trim(), 'https://www.firstSource.test/someInfo');
-    assert.strictEqual(xLinks[0].getAttribute('href'), 'https://www.firstSource.test/someInfo');
-    assert.strictEqual(xLinks[1].textContent?.trim(), 'https://www.anotherSource.test/page');
-    assert.strictEqual(xLinks[1].getAttribute('href'), 'https://www.anotherSource.test/page');
+    const {view, component} = await createConsoleInsightWidget({
+      aidaClient: getAidaClientWithMetadata(),
+    });
+    component.wasShown();
+    const nextInput = await view.nextInput;
+    assert.strictEqual(nextInput.state.type, Explain.State.INSIGHT);
+    const insight = nextInput.state as Insight;
+    assert.deepEqual(insight.relatedUrls, [
+      'https://www.firstSource.test/someInfo',
+      'https://www.anotherSource.test/page',
+    ]);
   });
 
   it('displays direct citations', async () => {
@@ -361,34 +284,25 @@ describeWithEnvironment('ConsoleInsight', () => {
       };
     }
 
-    component = new Explain.ConsoleInsight(
-        getTestPromptBuilder(), getAidaClientWithMetadata(), Host.AidaClient.AidaAccessPreconditions.AVAILABLE);
-    renderElementIntoDOM(component);
-    await drainMicroTasks();
+    const {view, component} = await createConsoleInsightWidget({
+      aidaClient: getAidaClientWithMetadata(),
+    });
+    component.wasShown();
+    let nextInput = await view.nextInput;
+    assert.strictEqual(nextInput.state.type, Explain.State.INSIGHT);
+    const insight = nextInput.state as Insight;
+    assert.deepEqual(insight.directCitationUrls, [
+      'https://www.wiki.test/directSource',
+      'https://www.world-fact.test/',
+    ]);
+    assert.deepEqual(insight.relatedUrls, [
+      'https://www.firstSource.test/someInfo',
+    ]);
 
-    const markdownView = component.shadowRoot!.querySelector('devtools-markdown-view');
-    assert.strictEqual(
-        getCleanTextContentFromElements(markdownView!.shadowRoot!, '.message')[0],
-        'This is not[1] a real answer[2], it is just a test.');
-    const details = component.shadowRoot!.querySelector('details');
-    assert.strictEqual(details!.querySelector('summary')!.textContent?.trim(), 'Sources and related content');
-    const directCitations = details!.querySelectorAll('ol x-link');
-    assert.lengthOf(directCitations, 2);
-    assert.strictEqual(directCitations[0].textContent?.trim(), 'https://www.wiki.test/directSource');
-    assert.strictEqual(directCitations[0].getAttribute('href'), 'https://www.wiki.test/directSource');
-    assert.strictEqual(directCitations[1].textContent?.trim(), 'https://www.world-fact.test/');
-    assert.strictEqual(directCitations[1].getAttribute('href'), 'https://www.world-fact.test/');
-    const relatedContent = details!.querySelectorAll('ul x-link');
-    assert.lengthOf(relatedContent, 1);
-    assert.strictEqual(relatedContent[0].textContent?.trim(), 'https://www.firstSource.test/someInfo');
-    assert.strictEqual(relatedContent[0].getAttribute('href'), 'https://www.firstSource.test/someInfo');
-
-    assert.isFalse(details?.hasAttribute('open'));
-    assert.isFalse(directCitations[0].classList.contains('highlighted'));
-    const link = markdownView!.shadowRoot?.querySelector('sup button') as HTMLElement;
-    link.click();
-    assert.isTrue(details?.hasAttribute('open'));
-    assert.isTrue(directCitations[0].classList.contains('highlighted'));
+    view.input.citationClickHandler(1);
+    nextInput = await view.nextInput;
+    assert.isTrue(nextInput.areReferenceDetailsOpen);
+    assert.strictEqual(nextInput.highlightedCitationIndex, 0);
   });
 
   it('displays direct citations in code blocks', async () => {
@@ -437,31 +351,25 @@ after
       };
     }
 
-    component = new Explain.ConsoleInsight(
-        getTestPromptBuilder(), getAidaClientWithMetadata(), Host.AidaClient.AidaAccessPreconditions.AVAILABLE);
-    renderElementIntoDOM(component);
-    await drainMicroTasks();
+    const {view, component} = await createConsoleInsightWidget({
+      aidaClient: getAidaClientWithMetadata(),
+    });
+    component.wasShown();
+    let nextInput = await view.nextInput;
+    assert.strictEqual(nextInput.state.type, Explain.State.INSIGHT);
+    const insight = nextInput.state as Insight;
 
-    const markdownView = component.shadowRoot!.querySelector('devtools-markdown-view');
-    const codeBlock = markdownView!.shadowRoot!.querySelector('devtools-code-block');
-    const citations = codeBlock!.shadowRoot!.querySelectorAll('button.citation');
-    assert.lengthOf(citations, 2);
-    assert.strictEqual(citations[0].textContent, '[1]');
-    assert.strictEqual(citations[1].textContent, '[2]');
+    assert.lengthOf(insight.directCitationUrls, 2);
+    assert.strictEqual(insight.directCitationUrls[0], 'https://www.wiki.test/directSource');
+    assert.strictEqual(insight.directCitationUrls[1], 'https://www.world-fact.test/');
+    assert.isFalse(nextInput.areReferenceDetailsOpen);
+    assert.strictEqual(nextInput.highlightedCitationIndex, -1);
 
-    const details = component.shadowRoot!.querySelector('details');
-    const directCitations = details!.querySelectorAll('ol x-link');
-    assert.lengthOf(directCitations, 2);
-    assert.strictEqual(directCitations[0].textContent?.trim(), 'https://www.wiki.test/directSource');
-    assert.strictEqual(directCitations[0].getAttribute('href'), 'https://www.wiki.test/directSource');
-    assert.strictEqual(directCitations[1].textContent?.trim(), 'https://www.world-fact.test/');
-    assert.strictEqual(directCitations[1].getAttribute('href'), 'https://www.world-fact.test/');
+    nextInput.citationClickHandler(1);
+    nextInput = await view.nextInput;
 
-    assert.isFalse(details?.hasAttribute('open'));
-    assert.isFalse(directCitations[0].classList.contains('highlighted'));
-    (citations[0] as HTMLElement).click();
-    assert.isTrue(details?.hasAttribute('open'));
-    assert.isTrue(directCitations[0].classList.contains('highlighted'));
+    assert.isTrue(nextInput.areReferenceDetailsOpen);
+    assert.strictEqual(nextInput.highlightedCitationIndex, 0);
   });
 
   it('displays training data citations', async () => {
@@ -503,21 +411,18 @@ after
       };
     }
 
-    component = new Explain.ConsoleInsight(
-        getTestPromptBuilder(), getAidaClientWithMetadata(), Host.AidaClient.AidaAccessPreconditions.AVAILABLE);
-    renderElementIntoDOM(component);
-    await drainMicroTasks();
+    const {view, component} = await createConsoleInsightWidget({
+      aidaClient: getAidaClientWithMetadata(),
+    });
+    component.wasShown();
+    const nextInput = await view.nextInput;
+    assert.strictEqual(nextInput.state.type, Explain.State.INSIGHT);
+    const insight = nextInput.state as Insight;
 
-    const details = component.shadowRoot!.querySelector('details');
-    assert.strictEqual(details!.querySelector('summary')!.textContent?.trim(), 'Sources and related content');
-    const xLinks = details!.querySelectorAll('x-link');
-    assert.lengthOf(xLinks, 3);
-    assert.strictEqual(xLinks[0].textContent?.trim(), 'https://www.firstSource.test/someInfo');
-    assert.strictEqual(xLinks[0].getAttribute('href'), 'https://www.firstSource.test/someInfo');
-    assert.strictEqual(xLinks[1].textContent?.trim(), 'https://www.training.test/');
-    assert.strictEqual(xLinks[1].getAttribute('href'), 'https://www.training.test/');
-    assert.strictEqual(xLinks[2].textContent?.trim(), 'https://www.github.com/chromedevtools/devtools-frontend');
-    assert.strictEqual(xLinks[2].getAttribute('href'), 'https://www.github.com/chromedevtools/devtools-frontend');
+    assert.lengthOf(insight.relatedUrls, 3);
+    assert.strictEqual(insight.relatedUrls[0], 'https://www.firstSource.test/someInfo');
+    assert.strictEqual(insight.relatedUrls[1], 'https://www.training.test/');
+    assert.strictEqual(insight.relatedUrls[2], 'https://www.github.com/chromedevtools/devtools-frontend');
   });
 
   it('deduplicates citation URLs', async () => {
@@ -574,353 +479,301 @@ after
       };
     }
 
-    component = new Explain.ConsoleInsight(
-        getTestPromptBuilder(), getAidaClientWithMetadata(), Host.AidaClient.AidaAccessPreconditions.AVAILABLE);
-    renderElementIntoDOM(component);
-    await drainMicroTasks();
+    const {view, component} = await createConsoleInsightWidget({
+      aidaClient: getAidaClientWithMetadata(),
+    });
+    component.wasShown();
+    const nextInput = await view.nextInput;
+    assert.strictEqual(nextInput.state.type, Explain.State.INSIGHT);
+    const insight = nextInput.state as Insight;
 
-    const details = component.shadowRoot!.querySelector('details');
-    assert.strictEqual(details!.querySelector('summary')!.textContent?.trim(), 'Sources and related content');
-    const xLinks = details!.querySelectorAll('x-link');
-    assert.lengthOf(xLinks, 4);
-    assert.strictEqual(xLinks[0].textContent?.trim(), 'https://www.world-fact-and-factuality.test/');
-    assert.strictEqual(xLinks[0].getAttribute('href'), 'https://www.world-fact-and-factuality.test/');
-    assert.strictEqual(xLinks[1].textContent?.trim(), 'https://www.all-three.test/');
-    assert.strictEqual(xLinks[1].getAttribute('href'), 'https://www.all-three.test/');
-    assert.strictEqual(xLinks[2].textContent?.trim(), 'https://www.training-and-factuality.test/');
-    assert.strictEqual(xLinks[2].getAttribute('href'), 'https://www.training-and-factuality.test/');
-    assert.strictEqual(xLinks[3].textContent?.trim(), 'https://www.factuality.test/');
-    assert.strictEqual(xLinks[3].getAttribute('href'), 'https://www.factuality.test/');
+    assert.lengthOf(insight.directCitationUrls, 2);
+    assert.lengthOf(insight.relatedUrls, 2);
+    assert.strictEqual(insight.directCitationUrls[0], 'https://www.world-fact-and-factuality.test/');
+    assert.strictEqual(insight.directCitationUrls[1], 'https://www.all-three.test/');
+    assert.strictEqual(insight.relatedUrls[0], 'https://www.training-and-factuality.test/');
+    assert.strictEqual(insight.relatedUrls[1], 'https://www.factuality.test/');
   });
 
-  it('renders the opt-in teaser', async () => {
-    Common.Settings.settingForTest('console-insights-enabled').set(false);
+  const DEFAULT_INPUT: Explain.ViewInput = {
+    state: {type: Explain.State.LOADING},
+    closing: false,
+    disableAnimations: true,
+    renderer: new MarkdownView.MarkdownView.MarkdownInsightRenderer(),
+    citationClickHandler: () => {},
+    noLogging: false,
+    areReferenceDetailsOpen: false,
+    highlightedCitationIndex: -1,
+    callbacks: {
+      onClose: () => {},
+      onAnimationEnd: () => {},
+      onCitationAnimationEnd: () => {},
+      onSearch: () => {},
+      onRating: (_isPositive: boolean) => undefined,
+      onReport: () => {},
+      onGoToSignIn: () => {},
+      onConsentReminderConfirmed: async () => {},
+      onToggleReferenceDetails: (_event: Event) => {},
+      onDisclaimerSettingsLink: () => {},
+      onReminderSettingsLink: () => {},
+      onEnableInsightsInSettingsLink: () => {},
+      onReferencesOpen: () => {},
+    }
+  };
 
-    const component = new Explain.ConsoleInsight(
-        getTestPromptBuilder(), getTestAidaClient(), Host.AidaClient.AidaAccessPreconditions.AVAILABLE);
+  const createViewOutput = (): Explain.ViewOutput => ({
+    headerRef: Lit.Directives.createRef<HTMLHeadingElement>(),
+    citationLinks: [],
+  });
 
+  function createTarget(width: string, height: string) {
     const container = document.createElement('div');
     container.style.cssText = containerCss;
-    component.style.width = '574px';
-    component.style.height = '64px';
-    container.appendChild(component);
+
+    const target = document.createElement('div');
+    target.style.width = width;
+    target.style.height = height;
+
+    container.appendChild(target);
     renderElementIntoDOM(container);
 
-    await drainMicroTasks();
+    return target;
+  }
+
+  it('renders the opt-in teaser', async () => {
+    const target = createTarget('574px', '64px');
+    Explain.DEFAULT_VIEW(
+        {
+          ...DEFAULT_INPUT,
+          state: {type: Explain.State.SETTING_IS_NOT_TRUE},
+        },
+        createViewOutput(), target);
+
     await assertScreenshot('explain/console_insight_optin.png');
   });
 
   it('renders the consent reminder', async () => {
-    function getPromptBuilderForConsentReminder() {
-      return {
-        getSearchQuery() {
-          return '';
+    const target = createTarget('574px', '271px');
+    Explain.DEFAULT_VIEW(
+        {
+          ...DEFAULT_INPUT,
+          state: {type: Explain.State.CONSENT_REMINDER},
         },
-        async buildPrompt() {
-          return {
-            prompt: '',
-            isPageReloadRecommended: false,
-            sources: [
-              {
-                type: Console.PromptBuilder.SourceType.MESSAGE,
-                value: 'Something went wrong\n\nSomething went wrong',
-              },
-              {
-                type: Console.PromptBuilder.SourceType.NETWORK_REQUEST,
-                value: `Request: https://example.com/data.html
+        createViewOutput(), target);
 
-Request headers:
-:authority: example.com
-:method: GET
-:path: https://example.com/data.json
-:scheme: https
-accept: */*
-accept-encoding: gzip, deflate, br
-accept-language: en-DE,en;q=0.9,de-DE;q=0.8,de;q=0.7,en-US;q=0.6
-referer: https://example.com/demo.html
-sec-ch-ua: "Not A(Brand";v="99", "Google Chrome";v="121", "Chromium";v="121"
-sec-ch-ua-arch: "arm"
-sec-ch-ua-bitness: "64"
-sec-ch-ua-full-version: "121.0.6116.0"
-sec-ch-ua-full-version-list: "Not A(Brand";v="99.0.0.0", "Google Chrome";v="121.0.6116.0", "Chromium";v="121.0.6116.0"
-sec-ch-ua-mobile: ?0
-sec-ch-ua-model: ""
-sec-ch-ua-platform: "macOS"
-sec-ch-ua-platform-version: "14.1.0"
-sec-ch-ua-wow64: ?0
-sec-fetch-dest: empty
-sec-fetch-mode: cors
-sec-fetch-site: same-origin
-user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36
-
-Response headers:
-accept-ch: Sec-CH-UA, Sec-CH-UA-Arch, Sec-CH-UA-Bitness, Sec-CH-UA-Full-Version, Sec-CH-UA-Full-Version-List, Sec-CH-UA-Mobile, Sec-CH-UA-Model, Sec-CH-UA-Platform, Sec-CH-UA-Platform-Version, Sec-CH-UA-WoW64
-content-length: 1646
-content-type: text/html; charset=UTF-8
-cross-origin-opener-policy-report-only: same-origin; report-to="gfe-static-content-corp"
-date: Fri, 10 Nov 2023 13:46:47 GMT
-permissions-policy: ch-ua=*, ch-ua-arch=*, ch-ua-bitness=*, ch-ua-full-version=*, ch-ua-full-version-list=*, ch-ua-mobile=*, ch-ua-model=*, ch-ua-platform=*, ch-ua-platform-version=*, ch-ua-wow64=*
-server: sffe
-strict-transport-security: max-age=31536000; includeSubdomains
-vary: Origin
-
-Response status: 404`,
-              },
-            ]
-          };
-        }
-      };
-    }
-
-    function getAidaClientForConsentReminder() {
-      return {
-        async *
-            doConversation() {
-              await new Promise(resolve => setTimeout(resolve, 2000));
-              yield {
-                explanation: `Some text with \`code\`. Some code:
-\`\`\`ts
-console.log('test');
-document.querySelector('test').style = 'black';
-\`\`\`
-Some text with \`code\`. Some code:
-\`\`\`ts
-console.log('test');
-document.querySelector('test').style = 'black';
-\`\`\`
-Some text with \`code\`. Some code:
-\`\`\`ts
-console.log('test');
-document.querySelector('test').style = 'black';
-\`\`\`
-`,
-                metadata: {},
-                completed: true,
-              };
-            },
-        registerClientEvent: () => Promise.resolve({}),
-      };
-    }
-
-    Common.Settings.Settings.instance().createLocalSetting('console-insights-onboarding-finished', false).set(false);
-
-    const component = new Explain.ConsoleInsight(
-        getPromptBuilderForConsentReminder(), getAidaClientForConsentReminder(),
-        Host.AidaClient.AidaAccessPreconditions.AVAILABLE);
-
-    const container = document.createElement('div');
-    container.style.cssText = containerCss;
-    component.style.width = '574px';
-    component.style.height = '271px';
-    container.appendChild(component);
-    renderElementIntoDOM(container);
-
-    await drainMicroTasks();
     await assertScreenshot('explain/console_insight_reminder.png');
   });
 
-  it('renders the insight', async () => {
-    function getPromptBuilderForInsight() {
-      return {
-        getSearchQuery() {
-          return '';
-        },
-        async buildPrompt() {
-          return {
-            prompt: '',
-            isPageReloadRecommended: false,
-            sources: [
+  const rendersInsight = (noLogging: boolean, golden: string) => async () => {
+    const target = createTarget('574px', '530px');
+    Explain.DEFAULT_VIEW(
+        {
+          ...DEFAULT_INPUT,
+          noLogging,
+          state: {
+            type: Explain.State.INSIGHT,
+            tokens: [
               {
-                type: Console.PromptBuilder.SourceType.MESSAGE,
-                value: 'Something went wrong\n\nSomething went wrong',
+                type: 'heading',
+                raw: '## Result\n\n',
+                depth: 2,
+                text: 'Result',
+                tokens: [{type: 'text', raw: 'Result', text: 'Result'}]
               },
               {
-                type: Console.PromptBuilder.SourceType.STACKTRACE,
-                value: 'Stacktrace line1\nStacketrace line2',
+                type: 'paragraph',
+                raw: 'Some text with `code`. Some code:\n',
+                text: 'Some text with `code`. Some code:',
+                tokens: [
+                  {type: 'text', raw: 'Some text with ', text: 'Some text with '},
+                  {type: 'codespan', raw: '`code`', text: 'code'},
+                  {type: 'text', raw: '. Some code:', text: '. Some code:'}
+                ]
               },
               {
-                type: Console.PromptBuilder.SourceType.RELATED_CODE,
-                value: 'RelatedCode',
+                type: 'code',
+                raw: '```ts\nconsole.log(\'test\');\ndocument.querySelector(\'test\').style = \'black\';\n```',
+                lang: 'ts',
+                text: 'console.log(\'test\');\ndocument.querySelector(\'test\').style = \'black\';'
               },
-              {
-                type: Console.PromptBuilder.SourceType.NETWORK_REQUEST,
-                value: `Request: https://example.com/data.html
-
-Request headers:
-:authority: example.com
-user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36
-
-Response headers:
-Response status: 404`,
+              {type: 'space', raw: '\n\n'}, {
+                type: 'code',
+                raw:
+                    '```\n<!DOCTYPE html>\n<div>Hello world</div>\n<script>\n  console.log(\'Hello World\');\n</script>\n```',
+                lang: '',
+                text: '<!DOCTYPE html>\n<div>Hello world</div>\n<script>\n  console.log(\'Hello World\');\n</script>'
               },
+              {type: 'space', raw: '\n\n'}, {
+                type: 'paragraph',
+                raw:
+                    'Links: [https://example.com](https://example.com)\nImages: ![https://example.com](https://example.com)\n',
+                text:
+                    'Links: [https://example.com](https://example.com)\nImages: ![https://example.com](https://example.com)',
+                tokens: [
+                  {type: 'text', raw: 'Links: ', text: 'Links: '}, {
+                    type: 'link',
+                    raw: '[https://example.com](https://example.com)',
+                    href: 'https://example.com',
+                    title: null,
+                    text: 'https://example.com',
+                    tokens: [{type: 'text', raw: 'https://example.com', text: 'https://example.com'}]
+                  },
+                  {type: 'text', raw: '\nImages: ', text: '\nImages: '}, {
+                    type: 'image',
+                    raw: '![https://example.com](https://example.com)',
+                    href: 'https://example.com',
+                    title: null,
+                    text: 'https://example.com'
+                  }
+                ]
+              }
             ],
-          };
+            validMarkdown: true,
+            explanation:
+                '## Result\n\nSome text with `code`. Some code:\n```ts\nconsole.log(\'test\');\ndocument.querySelector(\'test\').style = \'black\';\n```\n\n```\n<!DOCTYPE html>\n<div>Hello world</div>\n<script>\n  console.log(\'Hello World\');\n</script>\n```\n\nLinks: [https://example.com](https://example.com)\nImages: ![https://example.com](https://example.com)\n',
+            sources:
+                [
+                  {
+                    type: Console.PromptBuilder.SourceType.MESSAGE,
+                    value: 'Something went wrong\n\nSomething went wrong'
+                  },
+                  {type: Console.PromptBuilder.SourceType.STACKTRACE, value: 'Stacktrace line1\nStacketrace line2'},
+                  {type: Console.PromptBuilder.SourceType.RELATED_CODE, value: 'RelatedCode'}, {
+                    type: Console.PromptBuilder.SourceType.NETWORK_REQUEST,
+                    value:
+                        'Request: https://example.com/data.html\n\nRequest headers:\n:authority: example.com\nuser-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36\n\nResponse headers:\nResponse status: 404'
+                  }
+                ],
+            metadata: {},
+            isPageReloadRecommended: false,
+            completed: true,
+            directCitationUrls: [],
+            relatedUrls: []
+          }
         },
-      };
-    }
+        createViewOutput(), target);
 
-    function getAidaClientForInsight() {
-      return {
-        async *
-            doConversation() {
-              yield {
-                explanation: `## Result
+    await assertScreenshot(golden);
+  };
 
-Some text with \`code\`. Some code:
-\`\`\`ts
-console.log('test');
-document.querySelector('test').style = 'black';
-\`\`\`
+  describe('without logging', () => {
+    it('reports positive rating', reportsRating(true, true));
+    it('reports negative rating', reportsRating(false, true));
+    // formerly 'has thumbs up/down buttons if logging is disabled'
+    it('renders the insight', rendersInsight(true, 'explain/console_insight_no_logging.png'));
+  });
 
-\`\`\`
-<!DOCTYPE html>
-<div>Hello world</div>
-<script>
-  console.log('Hello World');
-</script>
-\`\`\`
-
-Links: [https://example.com](https://example.com)
-Images: ![https://example.com](https://example.com)
-`,
-                metadata: {},
-                completed: true,
-              };
-            },
-        registerClientEvent: () => Promise.resolve({}),
-      };
-    }
-
-    const component = new Explain.ConsoleInsight(
-        getPromptBuilderForInsight(), getAidaClientForInsight(), Host.AidaClient.AidaAccessPreconditions.AVAILABLE);
-    component.disableAnimations = true;
-
-    const container = document.createElement('div');
-    container.style.cssText = containerCss;
-    component.style.width = '574px';
-    component.style.height = '530px';
-    container.appendChild(component);
-    renderElementIntoDOM(container);
-
-    // Animation are hidden and started one by one so
-    // so we need multiple drains
-    await drainMicroTasks();
-    await drainMicroTasks();
-    await assertScreenshot('explain/console_insight.png');
+  describe('with logging', () => {
+    it('reports positive rating', reportsRating(true, false));
+    it('reports negative rating', reportsRating(false, false));
+    it('renders the insight', rendersInsight(false, 'explain/console_insight.png'));
   });
 
   it('renders insights with references', async () => {
-    function getPromptBuilderForInsight() {
-      return {
-        getSearchQuery() {
-          return '';
-        },
-        async buildPrompt() {
-          return {
-            prompt: '',
-            isPageReloadRecommended: false,
-            sources: [
+    const target = createTarget('576px', '463px');
+    Explain.DEFAULT_VIEW(
+        {
+          ...DEFAULT_INPUT,
+          areReferenceDetailsOpen: true,
+          state: {
+            type: Explain.State.INSIGHT,
+            tokens: [
               {
-                type: Console.PromptBuilder.SourceType.MESSAGE,
-                value: 'Something went wrong\n\nSomething went wrong',
+                type: 'heading',
+                raw: '## Result\n\n',
+                depth: 2,
+                text: 'Result',
+                tokens: [{type: 'text', raw: 'Result', text: 'Result'}]
               },
               {
-                type: Console.PromptBuilder.SourceType.STACKTRACE,
-                value: 'Stacktrace line1\nStacketrace line2',
-              },
-              {
-                type: Console.PromptBuilder.SourceType.RELATED_CODE,
-                value: 'RelatedCode',
-              },
-              {
-                type: Console.PromptBuilder.SourceType.NETWORK_REQUEST,
-                value: `Request: https://example.com/data.html
-
-Request headers:
-:authority: example.com
-user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36
-
-Response headers:
-Response status: 404`,
-              },
-            ],
-          };
-        },
-      };
-    }
-
-    function getAidaClientForInsight() {
-      return {
-        async *
-            doConversation() {
-              yield {
-                explanation: `## Result
-
-Here is a text which contains both direct and indirect citations.
-
-An indirect citation is a link to a reference which applies to the whole response.
-
-A direct citation is a link to a reference, but it only applies to a specific part of the response. Direct citations are numbered and are shown as a number within square brackets in the response text.
-`,
-                metadata: {
-                  attributionMetadata: {
-                    attributionAction: Host.AidaClient.RecitationAction.CITE,
-                    citations: [
-                      {
-                        startIndex: 20,
-                        endIndex: 50,
-                        uri: 'https://www.direct-citation.dev',
-                        sourceType: Host.AidaClient.CitationSourceType.WORLD_FACTS,
-                      },
-                      {
-                        startIndex: 170,
-                        endIndex: 176,
-                        uri: 'https://www.another-direct-citation.dev',
-                        sourceType: Host.AidaClient.CitationSourceType.WORLD_FACTS,
-                      },
-                    ],
+                type: 'paragraph',
+                raw: 'Here is a text which contains both direct[^1] and indirect citations.',
+                text: 'Here is a text which contains both direct[^1] and indirect citations.',
+                tokens: [
+                  {
+                    type: 'text',
+                    raw: 'Here is a text which contains both direct',
+                    text: 'Here is a text which contains both direct'
                   },
-                  factualityMetadata: {
-                    facts: [
-                      {
-                        sourceUri: 'https://www.indirect-citation.dev',
-                      },
-                      {
-                        sourceUri: 'https://www.the-whole-world.dev',
-                      },
-                      {
-                        sourceUri: 'https://www.even-more-content.dev',
-                      },
-                    ]
+                  {type: 'citation', raw: '[^1]', linkText: 1},
+                  {type: 'text', raw: ' and indirect citations.', text: ' and indirect citations.'}
+                ]
+              },
+              {type: 'space', raw: '\n\n'}, {
+                type: 'paragraph',
+                raw: 'An indirect citation is a link to a reference which applies to the whole response.',
+                text: 'An indirect citation is a link to a reference which applies to the whole response.',
+                tokens: [{
+                  type: 'text',
+                  raw: 'An indirect citation is a link to a reference which applies to the whole response.',
+                  text: 'An indirect citation is a link to a reference which applies to the whole response.'
+                }]
+              },
+              {type: 'space', raw: '\n\n'}, {
+                type: 'paragraph',
+                raw:
+                    'A direct citation[^2] is a link to a reference, but it only applies to a specific part of the response. Direct citations are numbered and are shown as a number within square brackets in the response text.\n',
+                text:
+                    'A direct citation[^2] is a link to a reference, but it only applies to a specific part of the response. Direct citations are numbered and are shown as a number within square brackets in the response text.',
+                tokens: [
+                  {type: 'text', raw: 'A direct citation', text: 'A direct citation'},
+                  {type: 'citation', raw: '[^2]', linkText: 2}, {
+                    type: 'text',
+                    raw:
+                        ' is a link to a reference, but it only applies to a specific part of the response. Direct citations are numbered and are shown as a number within square brackets in the response text.',
+                    text:
+                        ' is a link to a reference, but it only applies to a specific part of the response. Direct citations are numbered and are shown as a number within square brackets in the response text.'
                   }
-                },
-                completed: true,
-              };
+                ]
+              }
+            ],
+            validMarkdown: true,
+            explanation:
+                '## Result\n\nHere is a text which contains both direct and indirect citations.\n\nAn indirect citation is a link to a reference which applies to the whole response.\n\nA direct citation is a link to a reference, but it only applies to a specific part of the response. Direct citations are numbered and are shown as a number within square brackets in the response text.\n',
+            sources: [
+              {type: Console.PromptBuilder.SourceType.MESSAGE, value: 'Something went wrong\n\nSomething went wrong'},
+              {type: Console.PromptBuilder.SourceType.STACKTRACE, value: 'Stacktrace line1\nStacketrace line2'},
+              {type: Console.PromptBuilder.SourceType.RELATED_CODE, value: 'RelatedCode'}, {
+                type: Console.PromptBuilder.SourceType.NETWORK_REQUEST,
+                value:
+                    'Request: https://example.com/data.html\n\nRequest headers:\n:authority: example.com\nuser-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36\n\nResponse headers:\nResponse status: 404'
+              }
+            ],
+            metadata: {
+              attributionMetadata: {
+                attributionAction: Host.AidaClient.RecitationAction.CITE,
+                citations: [
+                  {
+                    startIndex: 20,
+                    endIndex: 50,
+                    uri: 'https://www.direct-citation.dev',
+                    sourceType: Host.AidaClient.CitationSourceType.WORLD_FACTS,
+                  },
+                  {
+                    startIndex: 170,
+                    endIndex: 176,
+                    uri: 'https://www.another-direct-citation.dev',
+                    sourceType: Host.AidaClient.CitationSourceType.WORLD_FACTS,
+                  }
+                ]
+              },
+              factualityMetadata: {
+                facts: [
+                  {sourceUri: 'https://www.indirect-citation.dev'}, {sourceUri: 'https://www.the-whole-world.dev'},
+                  {sourceUri: 'https://www.even-more-content.dev'}
+                ]
+              }
             },
-        registerClientEvent: () => Promise.resolve({}),
-      };
-    }
-
-    const component = new Explain.ConsoleInsight(
-        getPromptBuilderForInsight(), getAidaClientForInsight(), Host.AidaClient.AidaAccessPreconditions.AVAILABLE);
-
-    const container = document.createElement('div');
-    container.style.cssText = containerCss;
-    component.style.width = '576px';
-    component.style.height = '463px';
-    container.appendChild(component);
-    renderElementIntoDOM(container);
-    await raf();
-
-    const detailsElement = component.shadowRoot!.querySelector('details.references')!;
-    const transitioned = new Promise<void>(resolve => {
-      detailsElement.addEventListener('transitionend', () => {
-        resolve();
-      });
-    });
-    await raf();
-    detailsElement.querySelector('summary')!.click();
-    await transitioned;
+            isPageReloadRecommended: false,
+            completed: true,
+            directCitationUrls: ['https://www.direct-citation.dev', 'https://www.another-direct-citation.dev'],
+            relatedUrls: [
+              'https://www.indirect-citation.dev', 'https://www.the-whole-world.dev',
+              'https://www.even-more-content.dev'
+            ]
+          }
+        },
+        createViewOutput(), target);
 
     await assertScreenshot('explain/console_insight_references.png');
   });

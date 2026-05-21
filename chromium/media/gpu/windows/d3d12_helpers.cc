@@ -7,11 +7,31 @@
 #include "base/check_is_test.h"
 #include "base/logging.h"
 #include "media/base/video_codecs.h"
+#include "media/gpu/windows/d3d11_picture_buffer.h"
 #include "media/gpu/windows/format_utils.h"
 #include "media/gpu/windows/supported_profile_helpers.h"
 #include "third_party/microsoft_dxheaders/src/include/directx/d3dx12_core.h"
 
 namespace media {
+
+D3D12PictureBuffer::D3D12PictureBuffer(
+    const Microsoft::WRL::ComPtr<ID3D12Resource>& resource,
+    UINT subresource,
+    const D3D12FenceAndValue& fence_and_value)
+    : resource(resource),
+      subresource(subresource),
+      fence_and_value(fence_and_value) {}
+
+D3D12PictureBuffer::~D3D12PictureBuffer() = default;
+
+D3D12PictureBuffer::D3D12PictureBuffer(const D3D12PictureBuffer& other) =
+    default;
+D3D12PictureBuffer::D3D12PictureBuffer(D3D12PictureBuffer&& other) noexcept =
+    default;
+D3D12PictureBuffer& D3D12PictureBuffer::operator=(
+    const D3D12PictureBuffer& other) = default;
+D3D12PictureBuffer& D3D12PictureBuffer::operator=(
+    D3D12PictureBuffer&& other) noexcept = default;
 
 D3D12ReferenceFrameList::D3D12ReferenceFrameList(ComD3D12VideoDecoderHeap heap)
     : heap_(std::move(heap)) {
@@ -19,6 +39,16 @@ D3D12ReferenceFrameList::D3D12ReferenceFrameList(ComD3D12VideoDecoderHeap heap)
 }
 
 D3D12ReferenceFrameList::~D3D12ReferenceFrameList() = default;
+
+D3D12ReferenceFrameList::D3D12ReferenceFrameList(
+    const D3D12ReferenceFrameList& other) = default;
+
+void D3D12ReferenceFrameList::SetPictureBuffers(
+    base::span<scoped_refptr<D3D11PictureBuffer>> picture_buffers) {
+  for (size_t i = 0; i < picture_buffers.size(); i++) {
+    picture_buffers_[i] = picture_buffers[i].get();
+  }
+}
 
 void D3D12ReferenceFrameList::WriteTo(
     D3D12_VIDEO_DECODE_REFERENCE_FRAMES* dest) {
@@ -37,6 +67,28 @@ void D3D12ReferenceFrameList::emplace(size_t index,
   }
   resources_[index] = resource;
   subresources_[index] = subresource;
+}
+
+std::vector<D3D12_RESOURCE_BARRIER>
+D3D12ReferenceFrameList::GetTransitionsToDecodeState(
+    ID3D12Resource* current_output_resource,
+    UINT current_output_subresource) {
+  std::vector<D3D12_RESOURCE_BARRIER> barriers;
+  for (size_t i = 0; i < size_; i++) {
+    if (resources_[i] == current_output_resource &&
+        subresources_[i] == current_output_subresource) {
+      auto transitions = CreateD3D12TransitionBarriersForAllPlanes(
+          resources_[i], subresources_[i], D3D12_RESOURCE_STATE_COMMON,
+          D3D12_RESOURCE_STATE_VIDEO_DECODE_WRITE);
+      barriers.insert(barriers.end(), transitions.begin(), transitions.end());
+    } else if (picture_buffers_[i]->in_picture_use()) {
+      auto transitions = CreateD3D12TransitionBarriersForAllPlanes(
+          resources_[i], subresources_[i], D3D12_RESOURCE_STATE_COMMON,
+          D3D12_RESOURCE_STATE_VIDEO_DECODE_READ);
+      barriers.insert(barriers.end(), transitions.begin(), transitions.end());
+    }
+  }
+  return barriers;
 }
 
 ScopedD3D12ResourceMap::ScopedD3D12ResourceMap() = default;
@@ -166,5 +218,13 @@ GUID GetD3D12VideoDecodeGUID(VideoCodecProfile profile,
       return {};
   }
 }
+
+D3D11To12Fence::D3D11To12Fence(Microsoft::WRL::ComPtr<ID3D11Fence> d3d11_fence,
+                               Microsoft::WRL::ComPtr<ID3D12Fence> d3d12_fence)
+    : d3d11_fence_(std::move(d3d11_fence)),
+      d3d12_fence_(std::move(d3d12_fence)),
+      fence_value_(0) {}
+
+D3D11To12Fence::~D3D11To12Fence() = default;
 
 }  // namespace media

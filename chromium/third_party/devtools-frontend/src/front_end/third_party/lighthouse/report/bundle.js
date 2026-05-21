@@ -601,6 +601,10 @@ var De=.8999999999999999,Pe=.5,Re=.49999999999999994;function Ne(r){let e=Math.s
   --section-padding-vertical: 8px;
 }
 
+.lh-devtools :focus-visible {
+  outline: -webkit-focus-ring-color auto 1px;
+}
+
 .lh-container:has(.lh-sticky-header) {
   --sticky-header-buffer: calc(var(--topbar-height) + var(--sticky-header-height));
 }
@@ -2195,8 +2199,8 @@ details[open] .lh-clump-toggletext--hide { display: block;}
 */
 @media screen and (max-width: 535px) {
   .lh-tooltip {
-    min-width: 45vw;
-    padding: 3vw;
+    min-width: 45cqi;
+    padding: 3cqi;
   }
 }
 
@@ -2205,8 +2209,8 @@ details[open] .lh-clump-toggletext--hide { display: block;}
 */
 @container lh-container (max-width: 535px) {
   .lh-tooltip {
-    min-width: 45vw;
-    padding: 3vw;
+    min-width: 45cqi;
+    padding: 3cqi;
   }
 }
 
@@ -2342,6 +2346,10 @@ details[open] .lh-clump-toggletext--hide { display: block;}
   left: 6px;
 }
 
+.lh-meta__item:hover .lh-tooltip {
+  right: auto;
+  left: 6px;
+}
 /**
 * This media query is a temporary fallback for browsers that do not support \`@container query\`.
 * TODO: remove this media query when \`@container query\` is fully supported by browsers
@@ -2657,7 +2665,6 @@ details[open] .lh-clump-toggletext--hide { display: block;}
       border: none;
       padding: 0;
       font: inherit;
-      outline: inherit;
     }
     .lh-tools__button svg {
       fill: var(--tools-icon-color);

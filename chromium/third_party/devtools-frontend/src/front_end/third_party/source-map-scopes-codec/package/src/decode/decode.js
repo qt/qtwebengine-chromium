@@ -45,24 +45,29 @@ export function decode(sourceMap, options = DEFAULT_DECODE_OPTIONS) {
   return decodeMap(sourceMap, opts);
 }
 function decodeMap(sourceMap, options) {
-  if (!sourceMap.scopes || !sourceMap.names) return {
-    scopes: [],
-    ranges: []
-  };
+  if (!sourceMap.scopes || !sourceMap.names) {
+    return {
+      scopes: [],
+      ranges: [],
+      hasVariableAndBindingInfo: false
+    };
+  }
   return new Decoder(sourceMap.scopes, sourceMap.names, options).decode();
 }
 function decodeIndexMap(sourceMap, options) {
   const scopeInfo = {
     scopes: [],
-    ranges: []
+    ranges: [],
+    hasVariableAndBindingInfo: false
   };
   for (const section of sourceMap.sections){
-    const { scopes, ranges } = decode(section.map, {
+    const { scopes, ranges, hasVariableAndBindingInfo } = decode(section.map, {
       ...options,
       generatedOffset: section.offset
     });
     for (const scope of scopes)scopeInfo.scopes.push(scope);
     for (const range of ranges)scopeInfo.ranges.push(range);
+    scopeInfo.hasVariableAndBindingInfo ||= hasVariableAndBindingInfo;
   }
   return scopeInfo;
 }
@@ -94,6 +99,8 @@ class Decoder {
   #rangeStack = [];
   #flatOriginalScopes = [];
   #subRangeBindingsForRange = new Map();
+  #seenOriginalScopeVariables = false;
+  #seenGeneratedRangeBindings = false;
   constructor(scopes, names, options){
     this.#encodedScopes = scopes;
     this.#names = names;
@@ -104,13 +111,13 @@ class Decoder {
   decode() {
     const iter = new TokenIterator(this.#encodedScopes);
     while(iter.hasNext()){
-      if (iter.peek() === ",") {
-        iter.nextChar(); // Consume ",".
-        this.#scopes.push(null); // Add an EmptyItem;
-        continue;
-      }
       const tag = iter.nextUnsignedVLQ();
       switch(tag){
+        case Tag.EMPTY:
+          {
+            this.#scopes.push(null);
+            break;
+          }
         case Tag.ORIGINAL_SCOPE_START:
           {
             const item = {
@@ -134,6 +141,7 @@ class Decoder {
               variableIdxs.push(iter.nextSignedVLQ());
             }
             this.#handleOriginalScopeVariablesItem(variableIdxs);
+            this.#seenOriginalScopeVariables = true;
             break;
           }
         case Tag.ORIGINAL_SCOPE_END:
@@ -173,6 +181,7 @@ class Decoder {
               valueIdxs.push(iter.nextUnsignedVLQ());
             }
             this.#handleGeneratedRangeBindingsItem(valueIdxs);
+            this.#seenGeneratedRangeBindings = true;
             break;
           }
         case Tag.GENERATED_RANGE_SUBRANGE_BINDING:
@@ -187,6 +196,7 @@ class Decoder {
               ]);
             }
             this.#recordGeneratedSubRangeBindingItem(variableIndex, bindings);
+            this.#seenGeneratedRangeBindings = true;
             break;
           }
         case Tag.GENERATED_RANGE_CALL_SITE:
@@ -194,14 +204,20 @@ class Decoder {
             this.#handleGeneratedRangeCallSite(iter.nextUnsignedVLQ(), iter.nextUnsignedVLQ(), iter.nextUnsignedVLQ());
             break;
           }
+        case Tag.VENDOR_EXTENSION:
+          {
+            const _extensionNameIdx = iter.nextUnsignedVLQ();
+            break;
+          }
+        default:
+          {
+            this.#throwInStrictMode(`Encountered illegal item tag ${tag}`);
+            break;
+          }
       }
       // Consume any trailing VLQ and the the ","
       while(iter.hasNext() && iter.peek() !== ",")iter.nextUnsignedVLQ();
       if (iter.hasNext()) iter.nextChar();
-    }
-    if (iter.currentChar() === ",") {
-      // Handle trailing EmptyItem.
-      this.#scopes.push(null);
     }
     if (this.#scopeStack.length > 0) {
       this.#throwInStrictMode("Encountered ORIGINAL_SCOPE_START without matching END!");
@@ -211,11 +227,14 @@ class Decoder {
     }
     const info = {
       scopes: this.#scopes,
-      ranges: this.#ranges
+      ranges: this.#ranges,
+      hasVariableAndBindingInfo: this.#seenOriginalScopeVariables && this.#seenGeneratedRangeBindings
     };
     this.#scopes = [];
     this.#ranges = [];
     this.#flatOriginalScopes = [];
+    this.#seenOriginalScopeVariables = false;
+    this.#seenGeneratedRangeBindings = false;
     return info;
   }
   #throwInStrictMode(message) {
@@ -320,7 +339,6 @@ class Decoder {
       }
     }
     this.#rangeStack.push(range);
-    this.#subRangeBindingsForRange.clear();
   }
   #handleGeneratedRangeBindingsItem(valueIdxs) {
     const range = this.#rangeStack.at(-1);
@@ -337,11 +355,21 @@ class Decoder {
     }
   }
   #recordGeneratedSubRangeBindingItem(variableIndex, bindings) {
-    if (this.#subRangeBindingsForRange.has(variableIndex)) {
+    const range = this.#rangeStack.at(-1);
+    if (!range) {
+      this.#throwInStrictMode("Encountered GENERATED_RANGE_SUBRANGE_BINDING without surrounding GENERATED_RANGE_START");
+      return;
+    }
+    let subRangeBindings = this.#subRangeBindingsForRange.get(range);
+    if (!subRangeBindings) {
+      subRangeBindings = new Map();
+      this.#subRangeBindingsForRange.set(range, subRangeBindings);
+    }
+    if (subRangeBindings.has(variableIndex)) {
       this.#throwInStrictMode("Encountered multiple GENERATED_RANGE_SUBRANGE_BINDING items for the same variable");
       return;
     }
-    this.#subRangeBindingsForRange.set(variableIndex, bindings);
+    subRangeBindings.set(variableIndex, bindings);
   }
   #handleGeneratedRangeCallSite(sourceIndex, line, column) {
     const range = this.#rangeStack.at(-1);
@@ -381,7 +409,9 @@ class Decoder {
     }
   }
   #handleGeneratedRangeSubRangeBindings(range) {
-    for (const [variableIndex, bindings] of this.#subRangeBindingsForRange){
+    const subRangeBindings = this.#subRangeBindingsForRange.get(range);
+    if (!subRangeBindings) return;
+    for (const [variableIndex, bindings] of subRangeBindings){
       const value = range.values[variableIndex];
       const subRanges = [];
       range.values[variableIndex] = subRanges;

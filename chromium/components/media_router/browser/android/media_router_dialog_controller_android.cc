@@ -29,7 +29,7 @@
 #include "components/media_router/browser/android/jni_headers/BrowserMediaRouterDialogController_jni.h"
 
 using base::android::ConvertJavaStringToUTF8;
-using base::android::JavaParamRef;
+using base::android::JavaRef;
 using base::android::ScopedJavaLocalRef;
 using content::WebContents;
 
@@ -37,8 +37,8 @@ namespace media_router {
 
 void MediaRouterDialogControllerAndroid::OnSinkSelected(
     JNIEnv* env,
-    const JavaParamRef<jstring>& jsource_id,
-    const JavaParamRef<jstring>& jsink_id) {
+    const JavaRef<jstring>& jsource_id,
+    const JavaRef<jstring>& jsink_id) {
   auto start_presentation_context = std::move(start_presentation_context_);
   if (!start_presentation_context) {
     return;
@@ -81,7 +81,7 @@ void MediaRouterDialogControllerAndroid::OnSinkSelected(
 
 void MediaRouterDialogControllerAndroid::OnRouteClosed(
     JNIEnv* env,
-    const JavaParamRef<jstring>& jmedia_route_id) {
+    const JavaRef<jstring>& jmedia_route_id) {
   std::string media_route_id = ConvertJavaStringToUTF8(env, jmedia_route_id);
 
   MediaRouter* router = MediaRouterFactory::GetApiForBrowserContext(
@@ -128,7 +128,8 @@ MediaRouterDialogControllerAndroid::MediaRouterDialogControllerAndroid(
       MediaRouterDialogController(web_contents) {
   JNIEnv* env = base::android::AttachCurrentThread();
   java_dialog_controller_.Reset(Java_BrowserMediaRouterDialogController_create(
-      env, reinterpret_cast<jlong>(this), web_contents->GetJavaWebContents()));
+      env, reinterpret_cast<int64_t>(this),
+      web_contents->GetJavaWebContents()));
 }
 
 MediaRouterDialogControllerAndroid::~MediaRouterDialogControllerAndroid() =

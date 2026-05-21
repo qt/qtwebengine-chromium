@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cctype>
+#include <charconv>
 #include <cinttypes>
 #include <cstdio>
 #include <cstring>
@@ -14,28 +15,28 @@
 #include <iterator>
 #include <limits>
 #include <sstream>
+#include <string_view>
 #include <utility>
+
+#include "build/build_config.h"
+
+#if BUILDFLAG(IS_POSIX)
+#include <net/if.h>
+#endif
 
 namespace openscreen {
 
-IPAddress::IPAddress(Version version, const uint8_t* b) : version_(version) {
-  if (version_ == Version::kV4) {
-    bytes_ = {{b[0], b[1], b[2], b[3]}};
-  } else {
-    bytes_ = {{b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7], b[8], b[9],
-               b[10], b[11], b[12], b[13], b[14], b[15]}};
-  }
+IPAddress::IPAddress(Version version, std::span<const uint8_t> bytes)
+    : version_(version) {
+  assert(bytes.size() >= size());
+  std::copy_n(bytes.begin(), size(), bytes_.begin());
 }
 
 bool IPAddress::operator==(const IPAddress& o) const {
-  if (version_ != o.version_)
-    return false;
-
-  if (version_ == Version::kV4) {
-    return bytes_[0] == o.bytes_[0] && bytes_[1] == o.bytes_[1] &&
-           bytes_[2] == o.bytes_[2] && bytes_[3] == o.bytes_[3];
-  }
-  return bytes_ == o.bytes_;
+  return version_ == o.version_ &&
+         std::equal(bytes_.begin(), bytes_.begin() + size(),
+                    o.bytes_.begin()) &&
+         scope_id_ == o.scope_id_;
 }
 
 bool IPAddress::operator!=(const IPAddress& o) const {
@@ -43,52 +44,57 @@ bool IPAddress::operator!=(const IPAddress& o) const {
 }
 
 IPAddress::operator bool() const {
-  if (version_ == Version::kV4)
-    return bytes_[0] | bytes_[1] | bytes_[2] | bytes_[3];
-
-  for (const auto& byte : bytes_)
-    if (byte)
-      return true;
-
-  return false;
+  return std::any_of(bytes_.begin(), bytes_.begin() + size(),
+                     [](uint8_t byte) { return byte; });
 }
 
-void IPAddress::CopyToV4(uint8_t x[4]) const {
-  assert(version_ == Version::kV4);
-  std::memcpy(x, bytes_.data(), 4);
+void IPAddress::CopyTo(std::span<uint8_t> bytes) const {
+  assert(bytes.size() >= size());
+  std::copy_n(bytes_.begin(), size(), bytes.begin());
 }
 
-void IPAddress::CopyToV6(uint8_t x[16]) const {
-  assert(version_ == Version::kV6);
-  std::memcpy(x, bytes_.data(), 16);
+bool IPAddress::IsLinkLocal() const {
+  if (!IsV6()) {
+    return false;
+  }
+  // Link-local addresses start with fe80::/10
+  return (bytes_[0] == 0xfe) && ((bytes_[1] & 0xc0) == 0x80);
 }
 
 namespace {
 
-ErrorOr<IPAddress> ParseV4(const std::string& s) {
-  int octets[4];
-  int chars_scanned;
-  // Note: sscanf()'s parsing for %d allows leading whitespace; so the invalid
-  // presence of whitespace must be explicitly checked too.
-  if (std::any_of(s.begin(), s.end(), [](char c) { return std::isspace(c); }) ||
-      sscanf(s.c_str(), "%3d.%3d.%3d.%3d%n", &octets[0], &octets[1], &octets[2],
-             &octets[3], &chars_scanned) != 4 ||
-      chars_scanned != static_cast<int>(s.size()) ||
-      std::any_of(std::begin(octets), std::end(octets),
-                  [](int octet) { return octet < 0 || octet > 255; })) {
+ErrorOr<IPAddress> ParseV4(std::string_view s) {
+  uint8_t octets[4];
+  for (int i = 0; i < 4; ++i) {
+    if (i > 0) {
+      if (s.empty() || s.front() != '.') {
+        return Error::Code::kInvalidIPV4Address;
+      }
+      s.remove_prefix(1);
+    }
+    const auto result =
+        std::from_chars(s.data(), s.data() + s.size(), octets[i]);
+    if (result.ec != std::errc()) {
+      return Error::Code::kInvalidIPV4Address;
+    }
+    s.remove_prefix(result.ptr - s.data());
+  }
+
+  if (!s.empty()) {
     return Error::Code::kInvalidIPV4Address;
   }
+
   return IPAddress(octets[0], octets[1], octets[2], octets[3]);
 }
 
 // Returns the zero-expansion of a double-colon in `s` if `s` is a
 // well-formatted IPv6 address. If `s` is ill-formatted, returns *any* string
 // that is ill-formatted.
-std::string ExpandIPv6DoubleColon(const std::string& s) {
-  constexpr char kDoubleColon[] = "::";
+std::string ExpandIPv6DoubleColon(std::string_view s) {
+  constexpr std::string_view kDoubleColon = "::";
   const size_t double_colon_position = s.find(kDoubleColon);
   if (double_colon_position == std::string::npos) {
-    return s;  // Nothing to expand.
+    return std::string(s);  // Nothing to expand.
   }
   if (double_colon_position != s.rfind(kDoubleColon)) {
     return {};  // More than one occurrence of double colons is illegal.
@@ -118,28 +124,73 @@ std::string ExpandIPv6DoubleColon(const std::string& s) {
   return expanded.str();
 }
 
-ErrorOr<IPAddress> ParseV6(const std::string& s) {
-  const std::string scan_input = ExpandIPv6DoubleColon(s);
-  uint16_t hextets[8];
-  int chars_scanned;
-  // Note: sscanf()'s parsing for %x allows leading whitespace; so the invalid
-  // presence of whitespace must be explicitly checked too.
-  if (std::any_of(s.begin(), s.end(), [](char c) { return std::isspace(c); }) ||
-      sscanf(scan_input.c_str(),
-             "%4" SCNx16 ":%4" SCNx16 ":%4" SCNx16 ":%4" SCNx16 ":%4" SCNx16
-             ":%4" SCNx16 ":%4" SCNx16 ":%4" SCNx16 "%n",
-             &hextets[0], &hextets[1], &hextets[2], &hextets[3], &hextets[4],
-             &hextets[5], &hextets[6], &hextets[7], &chars_scanned) != 8 ||
-      chars_scanned != static_cast<int>(scan_input.size())) {
-    return Error::Code::kInvalidIPV6Address;
-  }
-  return IPAddress(hextets);
-}
-
 }  // namespace
 
+ErrorOr<IPAddress> ParseV6(std::string_view s) {
+  std::string_view address_part = s;
+  uint32_t scope_id = 0;
+
+  // Handle link-local addresses with scope ID, e.g., fe80::1%eth0
+  const size_t scope_pos = s.find('%');
+  if (scope_pos != std::string::npos) {
+    address_part = s.substr(0, scope_pos);
+    std::string_view scope_name = s.substr(scope_pos + 1);
+#if BUILDFLAG(IS_POSIX)
+    scope_id = if_nametoindex(std::string(scope_name).c_str());
+#endif
+    if (scope_id == 0) {
+      // If if_nametoindex failed or is not available, try parsing as a number.
+      unsigned int parsed_id = 0;
+      const auto result = std::from_chars(
+          scope_name.data(), scope_name.data() + scope_name.size(), parsed_id);
+
+      if (result.ec == std::errc() &&
+          result.ptr == scope_name.data() + scope_name.size() &&
+          parsed_id > 0) {
+        scope_id = parsed_id;
+      }
+    }
+
+    if (scope_id == 0) {
+      return Error::Code::kInvalidIPV6Address;
+    }
+  }
+
+  const std::string scan_input = ExpandIPv6DoubleColon(address_part);
+  std::string_view scan_view(scan_input);
+  uint16_t hextets[8];
+
+  for (int i = 0; i < 8; ++i) {
+    if (i > 0) {
+      if (scan_view.empty() || scan_view.front() != ':') {
+        return Error::Code::kInvalidIPV6Address;
+      }
+      scan_view.remove_prefix(1);
+    }
+    const auto result = std::from_chars(
+        scan_view.data(), scan_view.data() + scan_view.size(), hextets[i], 16);
+    if (result.ec != std::errc()) {
+      return Error::Code::kInvalidIPV6Address;
+    }
+    scan_view.remove_prefix(result.ptr - scan_view.data());
+  }
+
+  if (!scan_view.empty()) {
+    return Error::Code::kInvalidIPV6Address;
+  }
+
+  IPAddress address(hextets);
+  if (scope_id != 0) {
+    if (!address.IsLinkLocal()) {
+      return Error::Code::kInvalidIPV6Address;
+    }
+    address.scope_id_ = scope_id;
+  }
+  return address;
+}
+
 // static
-ErrorOr<IPAddress> IPAddress::Parse(const std::string& s) {
+ErrorOr<IPAddress> IPAddress::Parse(std::string_view s) {
   ErrorOr<IPAddress> v4 = ParseV4(s);
 
   return v4 ? std::move(v4) : ParseV6(s);
@@ -160,7 +211,7 @@ IPEndpoint::operator bool() const {
 }
 
 // static
-ErrorOr<IPEndpoint> IPEndpoint::Parse(const std::string& s) {
+ErrorOr<IPEndpoint> IPEndpoint::Parse(std::string_view s) {
   // Look for the colon that separates the IP address from the port number. Note
   // that this check also guards against the case where `s` is the empty string.
   const auto colon_pos = s.rfind(':');
@@ -190,14 +241,12 @@ ErrorOr<IPEndpoint> IPEndpoint::Parse(const std::string& s) {
     return Error(Error::Code::kParseError, "invalid address part");
   }
 
-  const char* const port_part = s.c_str() + colon_pos + 1;
-  int port, chars_scanned;
-  // Note: sscanf()'s parsing for %d allows leading whitespace. Thus, if the
-  // first char is not whitespace, a successful sscanf() parse here can only
-  // mean numerical chars contributed to the parsed integer.
-  if (std::isspace(port_part[0]) ||
-      sscanf(port_part, "%d%n", &port, &chars_scanned) != 1 ||
-      port_part[chars_scanned] != '\0' || port < 0 ||
+  const std::string_view port_part = s.substr(colon_pos + 1);
+  int port;
+  const auto result = std::from_chars(
+      port_part.data(), port_part.data() + port_part.size(), port);
+  if (result.ec != std::errc() ||
+      result.ptr != port_part.data() + port_part.size() || port < 0 ||
       port > std::numeric_limits<uint16_t>::max()) {
     return Error(Error::Code::kParseError, "invalid port part");
   }
@@ -221,7 +270,11 @@ bool IPAddress::operator<(const IPAddress& other) const {
   if (IsV4()) {
     return memcmp(bytes_.data(), other.bytes_.data(), 4) < 0;
   } else {
-    return memcmp(bytes_.data(), other.bytes_.data(), 16) < 0;
+    const int cmp = memcmp(bytes_.data(), other.bytes_.data(), 16);
+    if (cmp != 0) {
+      return cmp < 0;
+    }
+    return scope_id_ < other.scope_id_;
   }
 }
 
@@ -234,31 +287,38 @@ bool operator<(const IPEndpoint& a, const IPEndpoint& b) {
 }
 
 std::ostream& operator<<(std::ostream& out, const IPAddress& address) {
-  uint8_t values[16];
-  size_t len = 0;
   char separator;
   size_t values_per_separator;
   int value_width;
   if (address.IsV4()) {
     out << std::dec;
-    address.CopyToV4(values);
-    len = 4;
     separator = '.';
     values_per_separator = 1;
     value_width = 0;
   } else if (address.IsV6()) {
     out << std::hex << std::setfill('0') << std::right;
-    address.CopyToV6(values);
-    len = 16;
     separator = ':';
     values_per_separator = 2;
     value_width = 2;
   }
-  for (size_t i = 0; i < len; ++i) {
+  std::span<const uint8_t> bytes = address.bytes();
+  for (size_t i = 0; i < bytes.size(); ++i) {
     if (i > 0 && (i % values_per_separator == 0)) {
       out << separator;
     }
-    out << std::setw(value_width) << static_cast<int>(values[i]);
+    out << std::setw(value_width) << static_cast<int>(bytes[i]);
+  }
+  if (address.IsLinkLocal() && address.GetScopeId() != 0) {
+#if BUILDFLAG(IS_POSIX)
+    char ifname[IF_NAMESIZE];
+    if (if_indextoname(address.GetScopeId(), ifname)) {
+      out << '%' << ifname;
+    } else {
+      out << '%' << address.GetScopeId();
+    }
+#else
+    out << '%' << address.GetScopeId();
+#endif
   }
   return out;
 }

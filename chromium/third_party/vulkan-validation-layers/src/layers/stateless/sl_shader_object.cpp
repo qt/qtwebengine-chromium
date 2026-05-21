@@ -1,5 +1,6 @@
 /* Copyright (c) 2023-2024 Nintendo
- * Copyright (c) 2023-2025 LunarG, Inc.
+ * Copyright (c) 2023-2026 LunarG, Inc.
+ * Modifications Copyright (C) 2025-2026 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -97,18 +98,20 @@ bool Device::manual_PreCallValidateCreateShadersEXT(VkDevice device, uint32_t cr
     bool skip = false;
     const auto &error_obj = context.error_obj;
 
+    uint32_t linked_heap_stage = createInfoCount;
+    uint32_t linked_non_heap_stage = createInfoCount;
+
     for (uint32_t i = 0; i < createInfoCount; ++i) {
         const Location create_info_loc = error_obj.location.dot(Field::pCreateInfos, i);
-        const VkShaderCreateInfoEXT &create_info = pCreateInfos[i];
-        auto pCode = reinterpret_cast<std::uintptr_t>(create_info.pCode);
+        const VkShaderCreateInfoEXT& create_info = pCreateInfos[i];
 
         skip |= ValidateCreateShadersFlags(create_info.flags, create_info.stage, create_info_loc.dot(Field::flags));
 
         if (create_info.codeType == VK_SHADER_CODE_TYPE_SPIRV_EXT) {
-            if (SafeModulo(pCode, 4 * sizeof(unsigned char)) != 0) {
+            if (!IsPointerAligned(create_info.pCode, 4 * sizeof(unsigned char))) {
                 skip |= LogError("VUID-VkShaderCreateInfoEXT-pCode-08493", device, create_info_loc.dot(Field::codeType),
                                  "is VK_SHADER_CODE_TYPE_SPIRV_EXT, but pCode (%p) is not aligned to 4 bytes.", create_info.pCode);
-            } else if (SafeModulo(create_info.codeSize, 4) != 0) {
+            } else if (!IsIntegerMultipleOf(create_info.codeSize, 4)) {
                 skip |= LogError("VUID-VkShaderCreateInfoEXT-codeSize-08735", device, create_info_loc.dot(Field::codeSize),
                                  "(%" PRIu64 ") is not a multiple of 4. You might have forget to multiply by sizeof(uint32_t).",
                                  static_cast<uint64_t>(create_info.codeSize));
@@ -124,7 +127,7 @@ bool Device::manual_PreCallValidateCreateShadersEXT(VkDevice device, uint32_t cr
             }
 
         } else if (create_info.codeType == VK_SHADER_CODE_TYPE_BINARY_EXT) {
-            if (SafeModulo(pCode, 16 * sizeof(unsigned char)) != 0) {
+            if (!IsPointerAligned(create_info.pCode, 16 * sizeof(unsigned char))) {
                 skip |=
                     LogError("VUID-VkShaderCreateInfoEXT-pCode-08492", device, create_info_loc.dot(Field::codeType),
                              "is VK_SHADER_CODE_TYPE_BINARY_EXT, but pCode (%p) is not aligned to 16 bytes.", create_info.pCode);
@@ -200,7 +203,58 @@ bool Device::manual_PreCallValidateCreateShadersEXT(VkDevice device, uint32_t cr
                              "is VK_SHADER_STAGE_CLUSTER_CULLING_BIT_HUAWEI.");
         }
 
+        if ((create_info.flags & VK_SHADER_CREATE_DESCRIPTOR_HEAP_BIT_EXT) != 0) {
+            if (create_info.setLayoutCount != 0) {
+                skip |= LogError("VUID-VkShaderCreateInfoEXT-flags-11290", device, create_info_loc.dot(Field::flags),
+                                 "includes VK_SHADER_CREATE_DESCRIPTOR_HEAP_BIT_EXT (%s), but setLayoutCount is %" PRIu32 ".",
+                                 string_VkShaderCreateFlagsEXT(create_info.flags).c_str(), create_info.setLayoutCount);
+            } else if (create_info.pSetLayouts) {
+                skip |= LogError("VUID-VkShaderCreateInfoEXT-flags-11291", device, create_info_loc.dot(Field::flags),
+                                 "includes VK_SHADER_CREATE_DESCRIPTOR_HEAP_BIT_EXT (%s), but pSetLayouts is not NULL (0x%p).",
+                                 string_VkShaderCreateFlagsEXT(create_info.flags).c_str(), create_info.pSetLayouts);
+            }
+            if (create_info.pushConstantRangeCount != 0) {
+                skip |=
+                    LogError("VUID-VkShaderCreateInfoEXT-flags-11370", device, create_info_loc.dot(Field::flags),
+                             "includes VK_SHADER_CREATE_DESCRIPTOR_HEAP_BIT_EXT (%s), but pushConstantRangeCount is %" PRIu32 ".",
+                             string_VkShaderCreateFlagsEXT(create_info.flags).c_str(), create_info.pushConstantRangeCount);
+            } else if (create_info.pPushConstantRanges) {
+                skip |=
+                    LogError("VUID-VkShaderCreateInfoEXT-flags-11371", device, create_info_loc.dot(Field::flags),
+                             "includes VK_SHADER_CREATE_DESCRIPTOR_HEAP_BIT_EXT (%s), but pPushConstantRanges is not NULL (0x%p).",
+                             string_VkShaderCreateFlagsEXT(create_info.flags).c_str(), create_info.pPushConstantRanges);
+            }
+        }
+
+        if ((create_info.stage & linkedStages) != 0 && (create_info.flags & VK_SHADER_CREATE_LINK_STAGE_BIT_EXT) != 0) {
+            if ((create_info.flags & VK_SHADER_CREATE_DESCRIPTOR_HEAP_BIT_EXT) != 0) {
+                linked_heap_stage = i;
+            } else {
+                linked_non_heap_stage = i;
+            }
+        }
+
         skip |= ValidatePushConstantRange(create_info.pushConstantRangeCount, create_info.pPushConstantRanges, create_info_loc);
+
+        if (create_info.setLayoutCount > phys_dev_props.limits.maxBoundDescriptorSets) {
+            skip |= LogError("VUID-VkShaderCreateInfoEXT-setLayoutCount-12257", device, create_info_loc.dot(Field::setLayoutCount),
+                             "(%" PRIu32 ") exceeds the maxBoundDescriptorSets limit (%" PRIu32 ").", create_info.setLayoutCount,
+                             phys_dev_props.limits.maxBoundDescriptorSets);
+        }
+
+        if (const VkShaderDescriptorSetAndBindingMappingInfoEXT* mapping_info =
+                vku::FindStructInPNextChain<VkShaderDescriptorSetAndBindingMappingInfoEXT>(create_info.pNext)) {
+            skip |= ValidateShaderDescriptorSetAndBindingMappingInfo(*mapping_info, error_obj.location);
+        }
+    }
+
+    if (linked_heap_stage < createInfoCount && linked_non_heap_stage < createInfoCount) {
+        skip |= LogError(
+            "VUID-vkCreateShadersEXT-flags-11472", device,
+            error_obj.location.dot(Field::pCreateInfos, linked_heap_stage).dot(Field::flags),
+            "has both VK_SHADER_CREATE_LINK_STAGE_BIT_EXT and VK_SHADER_CREATE_DESCRIPTOR_HEAP_BIT_EXT, but pCreateInfos[%" PRIu32
+            "].flags has VK_SHADER_CREATE_LINK_STAGE_BIT_EXT, but not VK_SHADER_CREATE_DESCRIPTOR_HEAP_BIT_EXT.",
+            linked_non_heap_stage);
     }
 
     return skip;
@@ -212,8 +266,7 @@ bool Device::manual_PreCallValidateGetShaderBinaryDataEXT(VkDevice device, VkSha
     const auto &error_obj = context.error_obj;
 
     if (pData) {
-        auto ptr = reinterpret_cast<std::uintptr_t>(pData);
-        if (ptr % 16 != 0) {
+        if (!IsPointerAligned(pData, 16)) {
             skip |= LogError("VUID-vkGetShaderBinaryDataEXT-None-08499", shader, error_obj.location.dot(Field::pData),
                              "(%p) is not aligned to 16 bytes.", pData);
         }

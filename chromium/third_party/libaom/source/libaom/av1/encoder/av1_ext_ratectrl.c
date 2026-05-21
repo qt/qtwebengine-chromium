@@ -190,6 +190,7 @@ aom_codec_err_t av1_extrc_delete(AOM_EXT_RATECTRL *ext_ratectrl) {
       return AOM_CODEC_ERROR;
     }
     aom_free(ext_ratectrl->rc_firstpass_stats.frame_stats);
+    aom_free(ext_ratectrl->sb_params_list);
   }
   return av1_extrc_init(ext_ratectrl);
 }

@@ -33,11 +33,14 @@ DistilledPagePrefs::DistilledPagePrefs(PrefService* pref_service)
   pref_change_registrar_.Add(
       prefs::kTheme,
       base::BindRepeating(&DistilledPagePrefs::NotifyOnChangeTheme,
-                          weak_ptr_factory_.GetWeakPtr(),
-                          ThemeSettingsUpdateSource::kUserPreference));
+                          weak_ptr_factory_.GetWeakPtr()));
   pref_change_registrar_.Add(
       prefs::kFontScale,
       base::BindRepeating(&DistilledPagePrefs::NotifyOnChangeFontScaling,
+                          weak_ptr_factory_.GetWeakPtr()));
+  pref_change_registrar_.Add(
+      prefs::kLinksEnabled,
+      base::BindRepeating(&DistilledPagePrefs::NotifyOnChangeLinksEnabled,
                           weak_ptr_factory_.GetWeakPtr()));
 }
 
@@ -50,6 +53,7 @@ void DistilledPagePrefs::RegisterProfilePrefs(PrefRegistrySimple* registry) {
   registry->RegisterIntegerPref(
       prefs::kFont, static_cast<int32_t>(mojom::FontFamily::kSansSerif));
   registry->RegisterDoublePref(prefs::kFontScale, kDefaultFontScale);
+  registry->RegisterBooleanPref(prefs::kLinksEnabled, true);
   registry->RegisterBooleanPref(prefs::kReaderForAccessibility, false);
 }
 
@@ -61,24 +65,54 @@ void DistilledPagePrefs::SetFontFamily(mojom::FontFamily new_font_family) {
                                 weak_ptr_factory_.GetWeakPtr()));
 }
 
+bool DistilledPagePrefs::IsUserPrefFontAvailable(
+    mojom::FontFamily font_family) {
+#if !(BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS))
+  return true;
+#else
+  bool new_fonts_enabled = false;
+#if BUILDFLAG(IS_ANDROID)
+  new_fonts_enabled =
+      base::FeatureList::IsEnabled(dom_distiller::kReaderModeDistillInApp) &&
+      base::FeatureList::IsEnabled(dom_distiller::kReaderModeSupportNewFonts);
+#else  // IS_IOS
+  new_fonts_enabled =
+      base::FeatureList::IsEnabled(dom_distiller::kReaderModeSupportNewFonts);
+#endif
+  return new_fonts_enabled || font_family == mojom::FontFamily::kSansSerif ||
+         font_family == mojom::FontFamily::kSerif ||
+         font_family == mojom::FontFamily::kMonospace;
+#endif
+}
+
 mojom::FontFamily DistilledPagePrefs::GetFontFamily() {
   auto font_family =
       static_cast<mojom::FontFamily>(pref_service_->GetInteger(prefs::kFont));
-  if (mojom::IsKnownEnumValue(font_family))
-    return font_family;
+  auto default_font_family = mojom::FontFamily::kSansSerif;
+  if (!mojom::IsKnownEnumValue(font_family)) {
+    // Persisted data was incorrect, clean it up by storing the default.
+    SetFontFamily(default_font_family);
+    return default_font_family;
+  }
 
-  // Persisted data was incorrect, trying to clean it up by storing the
-  // default.
-  SetFontFamily(mojom::FontFamily::kSansSerif);
-  return mojom::FontFamily::kSansSerif;
+  if (IsUserPrefFontAvailable(font_family)) {
+    // The user's preference font is admissible.
+    return font_family;
+  }
+  return default_font_family;
 }
 
 void DistilledPagePrefs::SetUserPrefTheme(mojom::Theme new_theme) {
-  if (static_cast<mojom::Theme>(pref_service_->GetInteger(prefs::kTheme)) ==
-      new_theme) {
+  if (pref_service_->FindPreference(prefs::kTheme)->HasUserSetting() &&
+      static_cast<mojom::Theme>(pref_service_->GetInteger(prefs::kTheme)) ==
+          new_theme) {
     return;
   }
   pref_service_->SetInteger(prefs::kTheme, static_cast<int32_t>(new_theme));
+}
+
+void DistilledPagePrefs::ClearUserPrefTheme() {
+  pref_service_->ClearPref(prefs::kTheme);
 }
 
 void DistilledPagePrefs::SetDefaultTheme(mojom::Theme default_theme) {
@@ -88,8 +122,7 @@ void DistilledPagePrefs::SetDefaultTheme(mojom::Theme default_theme) {
   default_theme_ = default_theme;
   base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(&DistilledPagePrefs::NotifyOnChangeTheme,
-                                weak_ptr_factory_.GetWeakPtr(),
-                                ThemeSettingsUpdateSource::kSystem));
+                                weak_ptr_factory_.GetWeakPtr()));
 }
 
 mojom::Theme DistilledPagePrefs::GetTheme() {
@@ -106,6 +139,12 @@ mojom::Theme DistilledPagePrefs::GetTheme() {
   // default.
   SetUserPrefTheme(mojom::Theme::kLight);
   return mojom::Theme::kLight;
+}
+
+ThemeSettingsUpdateSource DistilledPagePrefs::GetThemeSettingsUpdateSource() {
+  return pref_service_->FindPreference(prefs::kTheme)->HasUserSetting()
+             ? ThemeSettingsUpdateSource::kUserPreference
+             : ThemeSettingsUpdateSource::kSystem;
 }
 
 void DistilledPagePrefs::SetUserPrefFontScaling(float scaling) {
@@ -150,6 +189,14 @@ float DistilledPagePrefs::GetFontScaling() {
   return scaling;
 }
 
+void DistilledPagePrefs::SetLinksEnabled(bool enabled) {
+  pref_service_->SetBoolean(prefs::kLinksEnabled, enabled);
+}
+
+bool DistilledPagePrefs::GetLinksEnabled() {
+  return pref_service_->GetBoolean(prefs::kLinksEnabled);
+}
+
 void DistilledPagePrefs::AddObserver(Observer* obs) {
   observers_.AddObserver(obs);
 }
@@ -180,17 +227,23 @@ void DistilledPagePrefs::NotifyOnChangeFontFamily() {
     observer.OnChangeFontFamily(new_font_family);
 }
 
-void DistilledPagePrefs::NotifyOnChangeTheme(
-    ThemeSettingsUpdateSource source) {
+void DistilledPagePrefs::NotifyOnChangeTheme() {
   mojom::Theme new_theme = GetTheme();
   for (Observer& observer : observers_)
-    observer.OnChangeTheme(new_theme, source);
+    observer.OnChangeTheme(new_theme, GetThemeSettingsUpdateSource());
 }
 
 void DistilledPagePrefs::NotifyOnChangeFontScaling() {
   float scaling = GetFontScaling();
   for (Observer& observer : observers_)
     observer.OnChangeFontScaling(scaling);
+}
+
+void DistilledPagePrefs::NotifyOnChangeLinksEnabled() {
+  bool enabled = GetLinksEnabled();
+  for (Observer& observer : observers_) {
+    observer.OnChangeLinksEnabled(enabled);
+  }
 }
 
 }  // namespace dom_distiller

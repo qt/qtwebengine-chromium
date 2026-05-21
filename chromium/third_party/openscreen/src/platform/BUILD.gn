@@ -186,7 +186,6 @@ openscreen_source_set("test") {
   testonly = true
   visibility += [ "../*" ]
   public = [
-    "test/byte_view_test_util.h",
     "test/fake_clock.h",
     "test/fake_task_runner.h",
     "test/fake_udp_socket.h",
@@ -196,7 +195,6 @@ openscreen_source_set("test") {
     "test/trace_logging_helpers.h",
   ]
   sources = [
-    "test/byte_view_test_util.cc",
     "test/fake_clock.cc",
     "test/fake_task_runner.cc",
     "test/fake_udp_socket.cc",
@@ -227,6 +225,10 @@ openscreen_source_set("test") {
     "../third_party/googletest:gmock",
     "../util",
   ]
+
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs = [ "//build/config/compiler:no_exit_time_destructors" ]
 }
 
 openscreen_source_set("unittests") {
@@ -238,7 +240,6 @@ openscreen_source_set("unittests") {
     "base/error_unittest.cc",
     "base/ip_address_unittest.cc",
     "base/location_unittest.cc",
-    "base/span_unittest.cc",
     "base/udp_packet_unittest.cc",
   ]
 

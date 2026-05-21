@@ -14,7 +14,6 @@
 #include <vector>
 
 #include "platform/base/error.h"
-#include "platform/base/macros.h"
 #include "platform/base/span.h"
 
 namespace openscreen {
@@ -23,8 +22,10 @@ namespace openscreen {
 // keys to other formats, or to extract a public key.
 class RSAPrivateKey {
  public:
-  RSAPrivateKey(RSAPrivateKey&& other) noexcept = default;
-  RSAPrivateKey& operator=(RSAPrivateKey&& other) = default;
+  RSAPrivateKey(const RSAPrivateKey&) = delete;
+  RSAPrivateKey(RSAPrivateKey&& other) noexcept;
+  RSAPrivateKey& operator=(const RSAPrivateKey& other) = delete;
+  RSAPrivateKey& operator=(RSAPrivateKey&& other);
   ~RSAPrivateKey();
 
   // Create a new random instance. Can return nullptr if initialization fails.
@@ -55,8 +56,6 @@ class RSAPrivateKey {
   RSAPrivateKey();
 
   bssl::UniquePtr<EVP_PKEY> key_;
-
-  OSP_DISALLOW_COPY_AND_ASSIGN(RSAPrivateKey);
 };
 
 }  // namespace openscreen

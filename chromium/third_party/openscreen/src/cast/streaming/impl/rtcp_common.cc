@@ -213,7 +213,7 @@ std::optional<RtcpReportBlock> RtcpReportBlock::ParseOne(ByteView buffer,
   for (int block = 0; block < report_count; ++block) {
     if (ConsumeField<uint32_t>(buffer) != ssrc) {
       // Skip-over report block meant for some other recipient.
-      buffer.remove_prefix(kRtcpReportBlockSize - sizeof(uint32_t));
+      buffer = buffer.subspan(kRtcpReportBlockSize - sizeof(uint32_t));
       continue;
     }
 

@@ -1,130 +1,115 @@
+#include <stddef.h>
 #include <string.h>
 #include <zlib.h> // For crc32_combine.
 #include "abstractfile.h"
 #include "common.h"
 #include <dmg/attribution.h>
 #include <dmg/dmg.h>
+#include "sizedbuf.h"
 
 typedef struct AttributionPreservingSentinelData {
-	char* sentinel;
+  SizedBuf* sentinelBuf;
 
-	ChecksumToken beforeRaw_UncompressedChkToken;
-	ChecksumToken raw_UncompressedChkToken;
-	ChecksumToken afterRaw_UncompressedChkToken;
-	int64_t beforeRaw_UncompressedLength;
-	// -1 if sentinel (raw block) not yet seen.
-	int64_t raw_UncompressedLength;
-	int64_t afterRaw_UncompressedLength;
+  ChecksumToken beforeRaw_UncompressedChkToken;
+  ChecksumToken raw_UncompressedChkToken;
+  ChecksumToken afterRaw_UncompressedChkToken;
+  int64_t beforeRaw_UncompressedLength;
+  // -1 if sentinel (raw block) not yet seen.
+  int64_t raw_UncompressedLength;
+  int64_t afterRaw_UncompressedLength;
 
-	ChecksumToken beforeRaw_CompressedChkToken;
-	ChecksumToken raw_CompressedChkToken;
-	ChecksumToken afterRaw_CompressedChkToken;
-	int64_t beforeRaw_CompressedLength;
-	// -1 if sentinel (raw block) not yet seen.
-	int64_t raw_CompressedLength;
-	int64_t afterRaw_CompressedLength;
+  ChecksumToken beforeRaw_CompressedChkToken;
+  ChecksumToken raw_CompressedChkToken;
+  ChecksumToken afterRaw_CompressedChkToken;
+  int64_t beforeRaw_CompressedLength;
+  // -1 if sentinel (raw block) not yet seen.
+  int64_t raw_CompressedLength;
+  int64_t afterRaw_CompressedLength;
 } AttributionPreservingSentinelData;
 
-char const *
-FindStrInBuf(char const * buf, size_t bufLen, char const * str)
-{
-  size_t index = 0;
-  while (index < bufLen) {
-    char const * result = strstr(buf + index, str);
-    if (result) {
-      return result;
-    }
-    while ((buf[index] != '\0') && (index < bufLen)) {
-      index++;
-    }
-    index++;
-  }
-  return NULL;
-}
-
 enum ShouldKeepRaw sentinelShouldKeepRaw(AbstractAttribution* attribution, const void* data, size_t len, const void* nextData, size_t nextLen) {
-	AttributionPreservingSentinelData* attributionData = (AttributionPreservingSentinelData*)attribution->data;
-	if (NULL != FindStrInBuf((char const*)data, len, (const char*)attributionData->sentinel)) {
-	  return KeepCurrentRaw;
-	}
+  AttributionPreservingSentinelData* attributionData = (AttributionPreservingSentinelData*)attribution->data;
+  const SizedBuf* sentinelBuf = attributionData->sentinelBuf;
+  if (NULL != memmem((const char*)data, len, sentinelBuf->data, sentinelBuf->len)) {
+    return KeepCurrentRaw;
+  }
 
-	// If we didn't find it in the data, check if it spans data + nextData
-	if (nextLen > 0) {
-	  char* combinedData = malloc(len + nextLen);
-	  memcpy(combinedData, data, len);
-	  memcpy(combinedData + len, nextData, nextLen);
-	  if (NULL != FindStrInBuf((char const*)combinedData, len + nextLen, (const char*)attributionData->sentinel)) {
-	    return KeepCurrentAndNextRaw;
-	  }
-	}
+  // If we didn't find it in the data, check if it spans data + nextData
+  if (nextLen > 0) {
+    char* combinedData = malloc(len + nextLen);
+    memcpy(combinedData, data, len);
+    memcpy(combinedData + len, nextData, nextLen);
+    if (NULL != memmem((const char*)combinedData, len + nextLen, sentinelBuf->data, sentinelBuf->len)) {
+      return KeepCurrentAndNextRaw;
+    }
+  }
 
-	return KeepNoneRaw;
+  return KeepNoneRaw;
 }
 
 void sentinelBeforeMainBlkx(AbstractAttribution* attribution, AbstractFile* abstractOut, ChecksumToken* dataForkToken) {
-
-	AttributionPreservingSentinelData* attributionData = (AttributionPreservingSentinelData*)attribution->data;
-	memcpy(&attributionData->beforeRaw_CompressedChkToken, dataForkToken, sizeof(ChecksumToken));
-	attributionData->beforeRaw_CompressedLength = abstractOut->tell(abstractOut);
+  AttributionPreservingSentinelData* attributionData = (AttributionPreservingSentinelData*)attribution->data;
+  memcpy(&attributionData->beforeRaw_CompressedChkToken, dataForkToken, sizeof(ChecksumToken));
+  attributionData->beforeRaw_CompressedLength = abstractOut->tell(abstractOut);
 }
 
 void sentinelObserveBuffers(AbstractAttribution* attribution, int didKeepRaw, const void* uncompressedData, size_t uncompressedLen, const void* compressedData, size_t compressedLen) {
-	AttributionPreservingSentinelData* attributionData = (AttributionPreservingSentinelData*)attribution->data;
+  AttributionPreservingSentinelData* attributionData = (AttributionPreservingSentinelData*)attribution->data;
 
-	if (didKeepRaw) {
-		// If this is our first time in, we need to set up `raw_*` and `afterRaw*`
-		// from scratch.
-		if (attributionData->afterRaw_UncompressedLength < 0) {
-		  // Just in case.
-		  memset(&attributionData->raw_UncompressedChkToken, 0, sizeof(ChecksumToken));
-		  memset(&attributionData->raw_CompressedChkToken, 0, sizeof(ChecksumToken));
+  if (didKeepRaw) {
+    // If this is our first time in, we need to set up `raw_*` and `afterRaw*`
+    // from scratch.
+    if (attributionData->afterRaw_UncompressedLength < 0) {
+      // Just in case.
+      memset(&attributionData->raw_UncompressedChkToken, 0, sizeof(ChecksumToken));
+      memset(&attributionData->raw_CompressedChkToken, 0, sizeof(ChecksumToken));
 
-		  CRCProxy(&attributionData->raw_UncompressedChkToken, uncompressedData, uncompressedLen);
-		  attributionData->raw_UncompressedLength = uncompressedLen;
-		  // printf("Adding to raw_UncompressedChkToken, now CRC32: %x, length: %llx\n", attributionData->raw_UncompressedChkToken.crc, attributionData->raw_UncompressedLength);
+      CRCProxy(&attributionData->raw_UncompressedChkToken, uncompressedData, uncompressedLen);
+      attributionData->raw_UncompressedLength = uncompressedLen;
+      // printf("Adding to raw_UncompressedChkToken, now CRC32: %x, length: %llx\n", attributionData->raw_UncompressedChkToken.crc, attributionData->raw_UncompressedLength);
 
-		  // Of course, the compressed data *should* be the uncompressed data.
-		  CRCProxy(&attributionData->raw_CompressedChkToken, compressedData, compressedLen);
-		  attributionData->raw_CompressedLength = compressedLen;
-		  // printf("Adding to raw_CompressedChkToken, now CRC32: %x, length: %llx\n", attributionData->raw_CompressedChkToken.crc, attributionData->raw_CompressedLength);
+      // Of course, the compressed data *should* be the uncompressed data.
+      CRCProxy(&attributionData->raw_CompressedChkToken, compressedData, compressedLen);
+      attributionData->raw_CompressedLength = compressedLen;
+      // printf("Adding to raw_CompressedChkToken, now CRC32: %x, length: %llx\n", attributionData->raw_CompressedChkToken.crc, attributionData->raw_CompressedLength);
 
-		  attributionData->afterRaw_UncompressedLength = 0;
-		  attributionData->afterRaw_CompressedLength = 0;
-		  // Just in case.
-		  memset(&attributionData->afterRaw_UncompressedChkToken, 0, sizeof(ChecksumToken));
-		  memset(&attributionData->afterRaw_CompressedChkToken, 0, sizeof(ChecksumToken));
-		}
-		// If this is our second time through, we just need to update the `raw*` values.
-		else {
-		  CRCProxy(&attributionData->raw_UncompressedChkToken, uncompressedData, uncompressedLen);
-		  attributionData->raw_UncompressedLength += uncompressedLen;
-		  // printf("Appending to raw_UncompressedChkToken, now CRC32: %x, length: %llx\n", attributionData->raw_UncompressedChkToken.crc, attributionData->raw_UncompressedLength);
+      attributionData->afterRaw_UncompressedLength = 0;
+      attributionData->afterRaw_CompressedLength = 0;
+      // Just in case.
+      memset(&attributionData->afterRaw_UncompressedChkToken, 0, sizeof(ChecksumToken));
+      memset(&attributionData->afterRaw_CompressedChkToken, 0, sizeof(ChecksumToken));
+    }
+    // If this is our second time through, we just need to update the `raw*` values.
+    else {
+      CRCProxy(&attributionData->raw_UncompressedChkToken, uncompressedData, uncompressedLen);
+      attributionData->raw_UncompressedLength += uncompressedLen;
+      // printf("Appending to raw_UncompressedChkToken, now CRC32: %x, length: %llx\n", attributionData->raw_UncompressedChkToken.crc, attributionData->raw_UncompressedLength);
 
-		  CRCProxy(&attributionData->raw_CompressedChkToken, compressedData, compressedLen);
-		  attributionData->raw_CompressedLength += compressedLen;
-		  // printf("Appending to raw_CompressedChkToken, now CRC32: %x, length: %llx\n", attributionData->raw_CompressedChkToken.crc, attributionData->raw_CompressedLength);
-		}
-	} else {
-		if (attributionData->afterRaw_UncompressedLength < 0) {
-			CRCProxy(&attributionData->beforeRaw_UncompressedChkToken, uncompressedData, uncompressedLen);
-			attributionData->beforeRaw_UncompressedLength += uncompressedLen;
-			// printf("Adding to beforeRaw_UncompressedChkToken, now CRC32: %x, length: %llx\n", attributionData->beforeRaw_UncompressedChkToken.crc, attributionData->beforeRaw_UncompressedLength);
-		} else {
-			CRCProxy(&attributionData->afterRaw_UncompressedChkToken, uncompressedData, uncompressedLen);
-			attributionData->afterRaw_UncompressedLength += uncompressedLen;
-			// printf("Adding to afterRaw_UncompressedChkToken, now CRC32: %x, length: %llx\n", attributionData->afterRaw_UncompressedChkToken.crc, attributionData->afterRaw_UncompressedLength);
-		}
+      CRCProxy(&attributionData->raw_CompressedChkToken, compressedData, compressedLen);
+      attributionData->raw_CompressedLength += compressedLen;
+      // printf("Appending to raw_CompressedChkToken, now CRC32: %x, length: %llx\n", attributionData->raw_CompressedChkToken.crc, attributionData->raw_CompressedLength);
+    }
+  } else {
+    if (attributionData->afterRaw_UncompressedLength < 0) {
+      CRCProxy(&attributionData->beforeRaw_UncompressedChkToken, uncompressedData, uncompressedLen);
+      attributionData->beforeRaw_UncompressedLength += uncompressedLen;
+      // printf("Adding to beforeRaw_UncompressedChkToken, now CRC32: %x, length: %llx\n", attributionData->beforeRaw_UncompressedChkToken.crc, attributionData->beforeRaw_UncompressedLength);
+    } else {
+      CRCProxy(&attributionData->afterRaw_UncompressedChkToken, uncompressedData, uncompressedLen);
+      attributionData->afterRaw_UncompressedLength += uncompressedLen;
+      // printf("Adding to afterRaw_UncompressedChkToken, now CRC32: %x, length: %llx\n", attributionData->afterRaw_UncompressedChkToken.crc, attributionData->afterRaw_UncompressedLength);
+    }
 
-		if (attributionData->afterRaw_CompressedLength < 0) {
-			CRCProxy(&attributionData->beforeRaw_CompressedChkToken, compressedData, compressedLen);
-			attributionData->beforeRaw_CompressedLength += compressedLen;
-			// printf("Adding to beforeRaw_CompressedChkToken, now CRC32: %x, length: %llx\n", attributionData->beforeRaw_CompressedChkToken.crc, attributionData->beforeRaw_CompressedLength);
-		} else {
-			CRCProxy(&attributionData->afterRaw_CompressedChkToken, compressedData, compressedLen);
-			attributionData->afterRaw_CompressedLength += compressedLen;
-			// printf("Adding to afterRaw_CompressedChkToken, now CRC32: %x, length: %llx\n", attributionData->afterRaw_CompressedChkToken.crc, attributionData->afterRaw_CompressedLength);
-		}
-	}
+    if (attributionData->afterRaw_CompressedLength < 0) {
+      CRCProxy(&attributionData->beforeRaw_CompressedChkToken, compressedData, compressedLen);
+      attributionData->beforeRaw_CompressedLength += compressedLen;
+      // printf("Adding to beforeRaw_CompressedChkToken, now CRC32: %x, length: %llx\n", attributionData->beforeRaw_CompressedChkToken.crc, attributionData->beforeRaw_CompressedLength);
+    } else {
+      CRCProxy(&attributionData->afterRaw_CompressedChkToken, compressedData, compressedLen);
+      attributionData->afterRaw_CompressedLength += compressedLen;
+      // printf("Adding to afterRaw_CompressedChkToken, now CRC32: %x, length: %llx\n", attributionData->afterRaw_CompressedChkToken.crc, attributionData->afterRaw_CompressedLength);
+    }
+  }
 }
 
 void sentinelAfterMainBlkx(AbstractAttribution* attribution, AbstractFile* abstractOut, ChecksumToken* dataForkToken, AttributionResource* attributionResource) {
@@ -184,30 +169,42 @@ void sentinelAfterMainBlkx(AbstractAttribution* attribution, AbstractFile* abstr
 }
 
 AbstractAttribution* createAbstractAttributionPreservingSentinel(const char* sentinel) {
-	AbstractAttribution* attribution;
-	attribution = (AbstractAttribution*) malloc(sizeof(AbstractAttribution));
+  SizedBuf* sentinelBuf = AllocBufCopyString(sentinel);
+  AbstractAttribution* ret = createAbstractAttributionPreservingSentinelBuf(sentinelBuf);
+  free(sentinelBuf);
+  return ret;
+}
 
-	AttributionPreservingSentinelData* data = malloc(sizeof(AttributionPreservingSentinelData));
-	memset(data, 0, sizeof(AttributionPreservingSentinelData));
-	data->sentinel = malloc(strlen(sentinel) + 1);
-	strcpy(data->sentinel, sentinel);
-	data->raw_UncompressedLength = -1;
-	data->afterRaw_UncompressedLength = -1;
-	data->raw_CompressedLength = -1;
-	data->afterRaw_CompressedLength = -1;
+AbstractAttribution* createAbstractAttributionPreservingSentinelBuf(const SizedBuf* sentinelBuf) {
+  AbstractAttribution* attribution = calloc(1, sizeof(AbstractAttribution));
 
-	attribution->data = data;
-	attribution->beforeMainBlkx = sentinelBeforeMainBlkx;
-	attribution->shouldKeepRaw = sentinelShouldKeepRaw;
-	attribution->observeBuffers = sentinelObserveBuffers;
-	attribution->afterMainBlkx = sentinelAfterMainBlkx;
-	return attribution;
+  AttributionPreservingSentinelData* data = calloc(1, sizeof(AttributionPreservingSentinelData));
+  data->sentinelBuf = AllocBufCopy(sentinelBuf);
+  data->raw_UncompressedLength = -1;
+  data->afterRaw_UncompressedLength = -1;
+  data->raw_CompressedLength = -1;
+  data->afterRaw_CompressedLength = -1;
+
+  attribution->data = data;
+  attribution->beforeMainBlkx = sentinelBeforeMainBlkx;
+  attribution->shouldKeepRaw = sentinelShouldKeepRaw;
+  attribution->observeBuffers = sentinelObserveBuffers;
+  attribution->afterMainBlkx = sentinelAfterMainBlkx;
+  return attribution;
 }
 
 uint32_t calculateMasterChecksum(ResourceKey* resources);
 
-int updateAttribution(AbstractFile* abstractIn, AbstractFile* abstractOut, const char* anchor, const char* data, size_t dataLen)
-{
+int updateAttribution(AbstractFile* abstractIn, AbstractFile* abstractOut, const char* anchor, const char* data, size_t dataLen) {
+  SizedBuf* sentinelBuf = AllocBufCopyString(anchor);
+  SizedBuf* dataBuf = AllocBufCopyBytes(data, dataLen);
+  int ret = updateAttributionFromBufs(abstractIn, abstractOut, sentinelBuf, dataBuf);
+  free(dataBuf);
+  free(sentinelBuf);
+  return ret;
+}
+
+int updateAttributionFromBufs(AbstractFile* abstractIn, AbstractFile* abstractOut, const SizedBuf* sentinelBuf, const SizedBuf* dataBuf) {
   // In an `attributable` DMG file:
   // - read `attribution` resource
   // - update bytes in BZ_RAW block in place
@@ -219,6 +216,7 @@ int updateAttribution(AbstractFile* abstractIn, AbstractFile* abstractOut, const
   // - update data fork checksum (compressed)
   // - update master checksum (uncompressed)
 
+  ASSERT(sentinelBuf->len >= dataBuf->len, "data too long!");
   off_t fileLength;
   UDIFResourceFile resourceFile;
 
@@ -228,9 +226,7 @@ int updateAttribution(AbstractFile* abstractIn, AbstractFile* abstractOut, const
   abstractIn->seek(abstractIn, fileLength - sizeof(UDIFResourceFile));
   readUDIFResourceFile(abstractIn, &resourceFile);
 
-  char* resourceXML;
-
-  resourceXML = malloc(resourceFile.fUDIFXMLLength + 1);
+  char* resourceXML = calloc(resourceFile.fUDIFXMLLength + 1, 1);
   ASSERT( abstractIn->seek(abstractIn, (off_t)(resourceFile.fUDIFXMLOffset)) == 0, "fseeko" );
   ASSERT( abstractIn->read(abstractIn, resourceXML, (size_t)resourceFile.fUDIFXMLLength) == (size_t)resourceFile.fUDIFXMLLength, "fread" );
   resourceXML[resourceFile.fUDIFXMLLength] = 0;
@@ -238,7 +234,6 @@ int updateAttribution(AbstractFile* abstractIn, AbstractFile* abstractOut, const
   ResourceKey* resources;
   resources = readResources(resourceXML, resourceFile.fUDIFXMLLength, true);
   ResourceKey* resource = getResourceByKey(resources, "plst");
-  unsigned char* mine = (unsigned char*)(resource->data->name);
   AttributionResource* attributionResource = (AttributionResource*)(resource->data->name);
 
   ASSERT(attributionResource->signature == ATTR_SIGNATURE, "bad attr signature!");
@@ -250,7 +245,6 @@ int updateAttribution(AbstractFile* abstractIn, AbstractFile* abstractOut, const
 
   // Step 1.  Replace bytes at anchor.
   ASSERT(abstractIn->seek(abstractIn, 0) == 0, "seek in");
-  size_t inLength = abstractIn->getLength(abstractIn);
   while (1) {
     unsigned char buffer[8192];
     size_t readLength = abstractIn->read(abstractIn, buffer, 8192);
@@ -261,37 +255,30 @@ int updateAttribution(AbstractFile* abstractIn, AbstractFile* abstractOut, const
   }
 
   ASSERT(abstractIn->seek(abstractIn, attributionResource->rawPos) == 0, "seek in");
-  char* rawBuffer = malloc(attributionResource->rawLength);
-  ASSERT(rawBuffer, "malloc rawBuffer");
-  ASSERT(abstractIn->read(abstractIn, rawBuffer, attributionResource->rawLength) == attributionResource->rawLength, "read raw in");
+  SizedBuf* rawBuf = ZAllocBuf(attributionResource->rawLength);
+  ASSERT(abstractIn->read(abstractIn, rawBuf->data, rawBuf->len) == rawBuf->len, "read raw in");
 
-  printf("Looking for anchor: '%s'\n", anchor);
+  printf("Looking for anchor.\n");
 
-  const char* rawAnchor = FindStrInBuf((const char*)rawBuffer, attributionResource->rawLength, anchor);
-  ASSERT(rawAnchor, "anchor position");
+  char* rawAnchor = memmem(rawBuf->data, rawBuf->len, sentinelBuf->data, sentinelBuf->len);
+  ASSERT(rawAnchor, "cannot find sentinel when replacing attribution");
 
-  int64_t anchorOffset = rawAnchor - rawBuffer;
-  printf("anchorOffset: 0x%llx\n", anchorOffset);
-
-  ASSERT(rawAnchor + dataLen <= rawBuffer + attributionResource->rawLength, "data too long!");
-  // Zero out the anchor area, in case the data is shorter than the anchor
-  // Note that we're taking the strlen of `rawAnchor` and not the `anchor`
-  // passed in. This ensures that the entire anchor is zero'ed, even if only
-  // a prefix of it was provided.
-  memset((void *)rawAnchor, 0, strlen(rawAnchor));
-  // Copy the new data into the same spot the anchor was in
-  memcpy((void *)rawAnchor, data, dataLen);
+  // Zero out the anchor area, in case the data is shorter than the anchor.
+  // We found the entire anchor in this buffer, so we know this memset "fits".
+  memset(rawAnchor, 0, sentinelBuf->len);
+  // Copy the new data into the same spot the anchor was in.
+  memcpy(rawAnchor, dataBuf->data, dataBuf->len);
 
   // Write the new block.
   ASSERT(abstractOut->seek(abstractOut, attributionResource->rawPos) == 0, "seek out");
-  ASSERT(abstractOut->write(abstractOut, rawBuffer, attributionResource->rawLength) == attributionResource->rawLength, "write data");
+  ASSERT(abstractOut->write(abstractOut, rawBuf->data, rawBuf->len) == attributionResource->rawLength, "write data");
 
   // New block checksum.
   ChecksumToken newRawToken;
   memset(&newRawToken, 0, sizeof(ChecksumToken));
-  CRCProxy(&newRawToken, (unsigned char*)rawBuffer, attributionResource->rawLength);
+  CRCProxy(&newRawToken, (unsigned char*)rawBuf->data, rawBuf->len);
 
-  free(rawBuffer);
+  free(rawBuf);
 
   // Step 2: update "attribution" resource.
   attributionResource->rawChecksum = newRawToken.crc;

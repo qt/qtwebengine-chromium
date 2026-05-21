@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 import '../../../ui/kit/kit.js';
-import './ControlButton.js';
 
 import * as i18n from '../../../core/i18n/i18n.js';
 import * as Badges from '../../../models/badges/badges.js';
@@ -15,6 +14,7 @@ import * as VisualLogging from '../../../ui/visual_logging/visual_logging.js';
 import * as Models from '../models/models.js';
 import * as Actions from '../recorder-actions/recorder-actions.js';
 
+import {ControlButton} from './ControlButton.js';
 import createRecordingViewStyles from './createRecordingView.css.js';
 
 const {html, Directives: {ref, createRef, repeat}} = Lit;
@@ -211,13 +211,13 @@ export const DEFAULT_VIEW = (input: ViewInput, output: ViewOutput, target: HTMLE
         />
         <label class="row-label" for="selector-attribute">
           <span>${i18nString(UIStrings.selectorAttribute)}</span>
-          <x-link
+          <devtools-link
             class="link" href="https://g.co/devtools/recorder#selector"
             title=${i18nString(UIStrings.learnMore)}
-            jslog=${VisualLogging.link('recorder-selector-help').track({click: true})}>
+            .jslogContext=${'recorder-selector-help'}>
             <devtools-icon name="help">
             </devtools-icon>
-          </x-link>
+          </devtools-link>
         </label>
         <input
           value=${selectorAttribute}
@@ -232,13 +232,13 @@ export const DEFAULT_VIEW = (input: ViewInput, output: ViewOutput, target: HTMLE
         />
         <label class="row-label">
           <span>${i18nString(UIStrings.selectorTypes)}</span>
-          <x-link
+          <devtools-link
             class="link" href="https://g.co/devtools/recorder#selector"
             title=${i18nString(UIStrings.learnMore)}
-            jslog=${VisualLogging.link('recorder-selector-help').track({click: true})}>
+            .jslogContext=${'recorder-selector-help'}>
             <devtools-icon name="help">
             </devtools-icon>
-          </x-link>
+          </devtools-link>
         </label>
         <div class="checkbox-container">
           ${repeat(selectorTypes, item => {
@@ -267,16 +267,19 @@ export const DEFAULT_VIEW = (input: ViewInput, output: ViewOutput, target: HTMLE
       </div>
       <div class="footer">
         <div class="controls">
-          <devtools-control-button
-            @click=${onRecordingStarted}
-            .label=${i18nString(UIStrings.startRecording)}
-            .shape=${'circle'}
+          <devtools-widget
+            class="control-button"
+            .widgetConfig=${UI.Widget.widgetConfig(ControlButton, {
+              label: i18nString(UIStrings.startRecording),
+              shape: 'circle',
+              onClick: onRecordingStarted,
+            })}
             jslog=${VisualLogging.action(Actions.RecorderActions.START_RECORDING).track({click: true})}
             title=${Models.Tooltip.getTooltipForActions(
               i18nString(UIStrings.startRecording),
               Actions.RecorderActions.START_RECORDING,
             )}
-          ></devtools-control-button>
+          ></devtools-widget>
         </div>
       </div>
     `,

@@ -11,6 +11,7 @@
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_vector.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/heap/visitor.h"
+#include "third_party/blink/renderer/platform/supplementable.h"
 #include "third_party/blink/renderer/platform/wtf/allocator/allocator.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 
@@ -21,23 +22,21 @@ class KURL;
 
 class DOMWindowLaunchQueue final
     : public GarbageCollected<DOMWindowLaunchQueue>,
-      public GarbageCollectedMixin {
+      public Supplement<LocalDOMWindow> {
  public:
-  static const unsigned kSupplementIndex;
+  static const char kSupplementName[];
 
-  explicit DOMWindowLaunchQueue();
+  explicit DOMWindowLaunchQueue(LocalDOMWindow& window);
 
   // IDL Interface.
   static LaunchQueue* launchQueue(LocalDOMWindow&);
 
-  static void UpdateLaunchFiles(LocalDOMWindow*,
-                                HeapVector<Member<FileSystemHandle>>);
-  // TODO(crbug.com/1250225): Unify UpdateLaunchFiles() into this method.
   static void EnqueueLaunchParams(
       LocalDOMWindow*,
       const KURL& launch_url,
       base::TimeTicks time_navigation_started_in_browser,
-      bool navigation_started);
+      bool navigation_started,
+      HeapVector<Member<FileSystemHandle>>);
 
   void Trace(Visitor*) const override;
 

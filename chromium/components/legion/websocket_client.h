@@ -14,6 +14,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/sequence_checker.h"
 #include "components/legion/legion_common.h"
+#include "components/legion/proto_utils/google_rpc_code.h"
 #include "components/legion/transport.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
@@ -34,12 +35,8 @@ class WebSocketClient : public Transport,
                         public network::mojom::WebSocketHandshakeClient,
                         public network::mojom::WebSocketClient {
  public:
-  using NetworkContextFactory =
-      base::RepeatingCallback<network::mojom::NetworkContext*()>;
-
   WebSocketClient(const GURL& service_url,
-                  NetworkContextFactory network_context_factory);
-
+                  network::mojom::NetworkContext* network_context);
   ~WebSocketClient() override;
 
   // Transport:
@@ -89,7 +86,7 @@ class WebSocketClient : public Transport,
 
   State state_ = State::kInitialized;
   const GURL service_url_;
-  const NetworkContextFactory network_context_factory_;
+  const raw_ptr<network::mojom::NetworkContext> network_context_;
   ResponseCallback response_callback_;
 
   std::vector<uint8_t> pending_read_data_;

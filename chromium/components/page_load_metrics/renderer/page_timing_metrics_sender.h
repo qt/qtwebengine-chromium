@@ -117,8 +117,14 @@ class PageTimingMetricsSender {
     return soft_navigation_metrics_->Clone();
   }
 
-  void UpdateSoftNavigationMetrics(
-      mojom::SoftNavigationMetricsPtr soft_navigation_metrics);
+  // Returns the start time of the current soft navigation, relative to
+  // (hard) navigation start.
+  base::TimeDelta GetSoftNavigationStartTime() {
+    return soft_navigation_metrics_->start_time;
+  }
+
+  void DidObserveSoftLargestContentfulPaint(
+      mojom::LargestContentfulPaintTimingPtr lcp);
 
   void SendCustomUserTimingMark(mojom::CustomUserTimingMarkPtr custom_timing);
 
@@ -138,7 +144,7 @@ class PageTimingMetricsSender {
   std::unique_ptr<base::OneShotTimer> timer_;
   mojom::PageLoadTimingPtr last_timing_;
   mojom::CpuTimingPtr last_cpu_timing_;
-  mojom::InputTimingPtr input_timing_delta_;
+  std::vector<mojom::EventTimingPtr> event_timings_;
   std::optional<blink::SubresourceLoadMetrics> subresource_load_metrics_;
 
   // The the sender keep track of metadata as it comes in, because the sender is

@@ -46,7 +46,7 @@ std::string SimpleFraction::ToString() const {
   if (denominator_ == 1) {
     return std::to_string(numerator_);
   }
-  return StringPrintf("%d/%d", numerator_, denominator_);
+  return StringFormat("{}/{}", numerator_, denominator_);
 }
 
 }  // namespace openscreen

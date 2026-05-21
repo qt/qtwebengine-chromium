@@ -4,9 +4,11 @@
 
 #include "services/network/public/cpp/sri_message_signatures.h"
 
+#include <algorithm>
+
 #include "base/base64.h"
-#include "base/containers/contains.h"
 #include "base/strings/escape.h"
+#include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
@@ -151,7 +153,7 @@ std::optional<mojom::SRIMessageSignatureComponentPtr> ParseComponent(
       }
     }
     return result;
-  } else if (base::Contains(kDerivedComponents, name)) {
+  } else if (std::ranges::contains(kDerivedComponents, name)) {
     // The `@status` derived component must not have any parameters (as it's
     // pulled from the response, not the request).
     if (name == "@status") {
@@ -328,7 +330,7 @@ std::string SerializeDerivedComponent(
     const net::URLRequest& url_request,
     const int response_status_code,
     const mojom::SRIMessageSignatureComponentPtr& component) {
-  DCHECK(base::Contains(kDerivedComponents, component->name));
+  DCHECK(std::ranges::contains(kDerivedComponents, component->name));
   DCHECK(url_request.url().is_valid());
 
   if (component->name == "@authority") {
@@ -707,7 +709,7 @@ std::optional<std::string> ConstructSignatureBase(
     //         produce an error.
     std::optional<std::string> component_value;
     if (component->name.starts_with('@')) {
-      if (!base::Contains(kDerivedComponents, component->name)) {
+      if (!std::ranges::contains(kDerivedComponents, component->name)) {
         return std::nullopt;
       }
       component_value = SerializeDerivedComponent(

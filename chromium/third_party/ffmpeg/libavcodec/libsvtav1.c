@@ -237,14 +237,18 @@ static int config_enc_params(EbSvtAv1EncConfiguration *param,
     } else if (svt_enc->qp > 0) {
         param->qp                   = svt_enc->qp;
         param->rate_control_mode    = 0;
+#if SVT_AV1_CHECK_VERSION(4, 0, 0)
+        param->aq_mode = 0;
+#else
         param->enable_adaptive_quantization = 0;
+#endif
     }
 
     desc = av_pix_fmt_desc_get(avctx->pix_fmt);
-    param->color_primaries          = avctx->color_primaries;
-    param->matrix_coefficients      = (desc->flags & AV_PIX_FMT_FLAG_RGB) ?
-                                      AVCOL_SPC_RGB : avctx->colorspace;
-    param->transfer_characteristics = avctx->color_trc;
+    param->color_primaries          = (enum EbColorPrimaries)avctx->color_primaries;
+    param->matrix_coefficients      = (enum EbMatrixCoefficients)((desc->flags & AV_PIX_FMT_FLAG_RGB) ?
+                                      AVCOL_SPC_RGB : avctx->colorspace);
+    param->transfer_characteristics = (enum EbTransferCharacteristics)avctx->color_trc;
 
     if (avctx->color_range != AVCOL_RANGE_UNSPECIFIED)
         param->color_range = avctx->color_range == AVCOL_RANGE_JPEG;

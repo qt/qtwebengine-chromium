@@ -51,6 +51,7 @@
 #include "third_party/blink/renderer/platform/graphics/platform_focus_ring.h"
 #include "third_party/blink/renderer/platform/graphics/skia/skia_utils.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
+#include "third_party/blink/renderer/platform/text/text_run.h"
 #include "third_party/blink/renderer/platform/transforms/affine_transform.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
@@ -82,6 +83,96 @@ SkColor4f DarkModeColor(GraphicsContext& context,
         SkColor4f::FromColor(auto_dark_mode.contrast_color));
   }
   return color;
+}
+
+InterpolationQuality ComputeInterpolationQuality(const gfx::SizeF& src,
+                                                 const gfx::SizeF& dest,
+                                                 bool is_data_complete) {
+  // Figure out if we should resample this image. We try to prune out some
+  // common cases where resampling won't give us anything, since it is much
+  // slower than drawing stretched.
+  const gfx::SizeF diff(std::abs(dest.width() - src.width()),
+                        std::abs(dest.height() - src.height()));
+  const bool width_nearly_equal =
+      diff.width() < std::numeric_limits<float>::epsilon();
+  const bool height_nearly_equal =
+      diff.height() < std::numeric_limits<float>::epsilon();
+  // We don't need to resample if the source and destination are the same.
+  if (width_nearly_equal && height_nearly_equal) {
+    return kInterpolationNone;
+  }
+
+  // Images smaller than this in either direction are considered "small" and
+  // are not resampled ever (see below).
+  static constexpr int kSmallImageSizeThreshold = 8;
+  if (src.width() <= kSmallImageSizeThreshold ||
+      src.height() <= kSmallImageSizeThreshold ||
+      dest.width() <= kSmallImageSizeThreshold ||
+      dest.height() <= kSmallImageSizeThreshold) {
+    // Small image detected.
+
+    auto nearly_integral = [](float value) {
+      return std::abs(value - std::floor(value)) <
+             std::numeric_limits<float>::epsilon();
+    };
+
+    // Resample in the case where the new size would be non-integral.
+    // This can cause noticeable breaks in repeating patterns, except
+    // when the source image is only one pixel wide in that dimension.
+    if ((!nearly_integral(dest.width()) &&
+         src.width() > 1 + std::numeric_limits<float>::epsilon()) ||
+        (!nearly_integral(dest.height()) &&
+         src.height() > 1 + std::numeric_limits<float>::epsilon())) {
+      return kInterpolationLow;
+    }
+
+    // Otherwise, don't resample small images. These are often used for
+    // borders and rules (think 1x1 images used to make lines).
+    return kInterpolationNone;
+  }
+
+  // The amount an image can be stretched in a single direction before we
+  // say that it is being stretched so much that it must be a line or
+  // background that doesn't need resampling.
+  static constexpr float kLargeStretch = 3.0f;
+  if (src.height() * kLargeStretch <= dest.height() ||
+      src.width() * kLargeStretch <= dest.width()) {
+    // Large image detected.
+
+    // Don't resample if it is being stretched a lot in only one direction.
+    // This is trying to catch cases where somebody has created a border
+    // (which might be large) and then is stretching it to fill some part
+    // of the page.
+    if (width_nearly_equal || height_nearly_equal) {
+      return kInterpolationNone;
+    }
+
+    // The image is growing a lot and in more than one direction. Resampling
+    // is slow and doesn't give us very much when growing a lot.
+    return kInterpolationLow;
+  }
+
+  // The percent change below which we will not resample. This usually means
+  // an off-by-one error on the web page, and just doing nearest neighbor
+  // sampling is usually good enough.
+  static constexpr float kFractionalChangeThreshold = 0.025f;
+  if ((diff.width() / src.width() < kFractionalChangeThreshold) &&
+      (diff.height() / src.height() < kFractionalChangeThreshold)) {
+    // It is disappointingly common on the web for image sizes to be off by
+    // one or two pixels. We don't bother resampling if the size difference
+    // is a small fraction of the original size.
+    return kInterpolationNone;
+  }
+
+  // When the image is not yet done loading, use linear. We don't cache the
+  // partially resampled images, and as they come in incrementally, it causes
+  // us to have to resample the whole thing every time.
+  if (!is_data_complete) {
+    return kInterpolationLow;
+  }
+
+  // Everything else gets resampled at default quality.
+  return GetDefaultInterpolationQuality();
 }
 
 }  // namespace
@@ -423,7 +514,8 @@ void GraphicsContext::DrawImage(
     const gfx::RectF* src_ptr,
     SkBlendMode op,
     RespectImageOrientationEnum should_respect_image_orientation,
-    Image::ImageClampingMode clamping_mode) {
+    Image::ImageClampingMode clamping_mode,
+    ImageNodeAnimationInfo image_node_animation_info) {
   const gfx::RectF src = src_ptr ? *src_ptr : gfx::RectF(image.Rect());
   cc::PaintFlags image_flags = ImmutableState()->FillFlags();
   image_flags.setBlendMode(op);
@@ -431,10 +523,10 @@ void GraphicsContext::DrawImage(
 
   SkSamplingOptions sampling = ComputeSamplingOptions(image, dest, src);
   DarkModeFilter* dark_mode_filter = GetDarkModeFilterForImage(auto_dark_mode);
-  ImageDrawOptions draw_options(dark_mode_filter, sampling,
-                                should_respect_image_orientation, clamping_mode,
-                                decode_mode, auto_dark_mode.enabled,
-                                paint_timing_info.image_may_be_lcp_candidate);
+  ImageDrawOptions draw_options(
+      dark_mode_filter, sampling, should_respect_image_orientation,
+      clamping_mode, decode_mode, auto_dark_mode.enabled,
+      paint_timing_info.image_may_be_lcp_candidate, image_node_animation_info);
   image.Draw(canvas_, image_flags, dest, src, draw_options);
   SetImagePainted(paint_timing_info.report_paint_timing);
 }
@@ -447,10 +539,12 @@ void GraphicsContext::DrawImageRRect(
     const gfx::RectF& src_rect,
     SkBlendMode op,
     RespectImageOrientationEnum respect_orientation,
-    Image::ImageClampingMode clamping_mode) {
+    Image::ImageClampingMode clamping_mode,
+    ImageNodeAnimationInfo image_node_animation_info) {
   if (!dest.IsRounded()) {
     DrawImage(image, decode_mode, auto_dark_mode, paint_timing_info,
-              dest.Rect(), &src_rect, op, respect_orientation, clamping_mode);
+              dest.Rect(), &src_rect, op, respect_orientation, clamping_mode,
+              image_node_animation_info);
     return;
   }
 
@@ -468,10 +562,10 @@ void GraphicsContext::DrawImageRRect(
   image_flags.setColor(SkColors::kBlack);
 
   DarkModeFilter* dark_mode_filter = GetDarkModeFilterForImage(auto_dark_mode);
-  ImageDrawOptions draw_options(dark_mode_filter, sampling, respect_orientation,
-                                clamping_mode, decode_mode,
-                                auto_dark_mode.enabled,
-                                paint_timing_info.image_may_be_lcp_candidate);
+  ImageDrawOptions draw_options(
+      dark_mode_filter, sampling, respect_orientation, clamping_mode,
+      decode_mode, auto_dark_mode.enabled,
+      paint_timing_info.image_may_be_lcp_candidate, image_node_animation_info);
 
   bool use_shader = (visible_src == src_rect) &&
                     (respect_orientation == kDoNotRespectImageOrientation ||
@@ -519,10 +613,8 @@ cc::PaintFlags::FilterQuality GraphicsContext::ComputeFilterQuality(
   } else if (image.IsLazyDecoded()) {
     resampling = GetDefaultInterpolationQuality();
   } else {
-    resampling = ComputeInterpolationQuality(
-        SkScalarToFloat(src.width()), SkScalarToFloat(src.height()),
-        SkScalarToFloat(dest.width()), SkScalarToFloat(dest.height()),
-        image.FirstFrameIsComplete());
+    resampling = ComputeInterpolationQuality(src.size(), dest.size(),
+                                             image.FirstFrameIsComplete());
 
     if (resampling == kInterpolationNone) {
       // FIXME: This is to not break tests (it results in the filter bitmap flag
@@ -547,11 +639,15 @@ void GraphicsContext::DrawImageTiled(
   image_flags.setBlendMode(op);
   SkSamplingOptions sampling = ImageSamplingOptions();
   DarkModeFilter* dark_mode_filter = GetDarkModeFilterForImage(auto_dark_mode);
-  ImageDrawOptions draw_options(dark_mode_filter, sampling, respect_orientation,
-                                Image::kClampImageToSourceRect,
-                                Image::kSyncDecode, auto_dark_mode.enabled,
-                                paint_timing_info.image_may_be_lcp_candidate);
-
+  ImageDrawOptions draw_options(
+      dark_mode_filter, sampling, respect_orientation,
+      Image::kClampImageToSourceRect, Image::kSyncDecode,
+      auto_dark_mode.enabled, paint_timing_info.image_may_be_lcp_candidate,
+      // DrawPattern didn't use image animation information.
+      // An minor edge case exists - tiled image is updated when change
+      // image animation with border-image: round. That is neither
+      // a new case nor an intended use case.
+      ImageNodeAnimationInfo());
   image.DrawPattern(*this, image_flags, dest_rect, tiling_info, draw_options);
   SetImagePainted(paint_timing_info.report_paint_timing);
 }

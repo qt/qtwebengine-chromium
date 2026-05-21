@@ -11,10 +11,8 @@
 #include "cast/common/certificate/date_time.h"
 #include "cast/common/public/parsed_certificate.h"
 #include "cast/common/public/trust_store.h"
-#include "platform/base/macros.h"
 #include "util/crypto/sha2.h"
 #include "util/osp_logging.h"
-#include "util/span_util.h"
 
 namespace openscreen::cast {
 namespace {
@@ -117,7 +115,9 @@ CastCRL::CastCRL(const proto::TbsCrl& tbs_crl,
   }
 }
 
-CastCRL::~CastCRL() {}
+CastCRL::CastCRL(CastCRL&&) noexcept = default;
+CastCRL& CastCRL::operator=(CastCRL&&) = default;
+CastCRL::~CastCRL() = default;
 
 // Verifies the revocation status of the certificate chain, at the specified
 // time.

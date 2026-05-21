@@ -45,7 +45,6 @@
 #include "src/tint/lang/core/type/matrix.h"
 #include "src/tint/lang/core/type/memory_view.h"
 #include "src/tint/lang/core/type/reference.h"
-#include "src/tint/lang/core/type/resource_binding.h"
 #include "src/tint/lang/core/type/sampled_texture.h"
 #include "src/tint/lang/core/type/storage_texture.h"
 
@@ -509,7 +508,7 @@ TEST_F(IR_ValidatorTest, StructMember_Pointer_WithCapability) {
     mod.root_block->Append(v);
 
     Capabilities caps;
-    caps.Add(Capability::kAllowPointersAndHandlesInStructures);
+    caps.Add(Capability::kMslAllowEntryPointInterface);
 
     auto res = ir::Validate(mod, caps);
     ASSERT_EQ(res, Success);
@@ -543,7 +542,7 @@ TEST_F(IR_ValidatorTest, StructMember_Texture_WithCapability) {
     mod.root_block->Append(v);
 
     Capabilities caps;
-    caps.Add(Capability::kAllowPointersAndHandlesInStructures);
+    caps.Add(Capability::kMslAllowEntryPointInterface);
 
     auto res = ir::Validate(mod, caps);
     ASSERT_EQ(res, Success);
@@ -575,7 +574,7 @@ TEST_F(IR_ValidatorTest, StructMember_Sampler_WithCapability) {
     mod.root_block->Append(v);
 
     Capabilities caps;
-    caps.Add(Capability::kAllowPointersAndHandlesInStructures);
+    caps.Add(Capability::kMslAllowEntryPointInterface);
 
     auto res = ir::Validate(mod, caps);
     ASSERT_EQ(res, Success);
@@ -975,32 +974,6 @@ TEST_F(IR_ValidatorTest, BindingArrayInvalidAddressSpace) {
   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^)"));
 }
 
-TEST_F(IR_ValidatorTest, ResourceBinding_WithoutCapabilityFails) {
-    b.Append(mod.root_block, [&] {
-        auto* var = b.Var("m", AddressSpace::kHandle, ty.Get<core::type::ResourceBinding>());
-        var->SetBindingPoint(0, 0);
-    });
-
-    auto res = ir::Validate(mod);
-    ASSERT_NE(res, Success);
-    EXPECT_THAT(
-        res.Failure().reason,
-        testing::HasSubstr(
-            R"(:2:3 error: var: resource_binding type can only be used with kAllowResourceBinding capability
-  %m:ptr<handle, resource_binding, read> = var undef @binding_point(0, 0)
-  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^)"));
-}
-
-TEST_F(IR_ValidatorTest, ResourceBinding_WithCapabilityPasses) {
-    b.Append(mod.root_block, [&] {
-        auto* var = b.Var("m", AddressSpace::kHandle, ty.Get<core::type::ResourceBinding>());
-        var->SetBindingPoint(0, 0);
-    });
-
-    auto res = ir::Validate(mod, Capabilities{Capability::kAllowResourceBinding});
-    ASSERT_EQ(res, Success) << res.Failure();
-}
-
 using Type_MultisampledTextureTypeAndDimension =
     IRTestParamHelper<std::tuple<std::tuple<
                                      /* type_allowed */ bool,
@@ -1254,7 +1227,7 @@ INSTANTIATE_TEST_SUITE_P(NonRefTypes,
                                           /* type_builder */
                                           testing::Values(TypeBuilder<i32>,
                                                           TypeBuilder<bool>,
-                                                          TypeBuilder<vec4<f32>>,
+                                                          TypeBuilder<vec4f>,
                                                           TypeBuilder<array<f32, 3>>)));
 
 INSTANTIATE_TEST_SUITE_P(RefTypes,
@@ -1264,7 +1237,7 @@ INSTANTIATE_TEST_SUITE_P(RefTypes,
                                           /* type_builder */
                                           testing::Values(RefTypeBuilder<i32>,
                                                           RefTypeBuilder<bool>,
-                                                          RefTypeBuilder<vec4<f32>>)));
+                                                          RefTypeBuilder<vec4f>)));
 
 TEST_F(IR_ValidatorTest, PointerToPointer) {
     auto* type = ty.ptr<function, ptr<function, i32>>();

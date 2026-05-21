@@ -29,6 +29,17 @@ enum FrameType {
   WINDOW_UPDATE,
 };
 
+// A metadata source that always fails to pack data.
+class FailingMetadataSource : public MetadataSource {
+ public:
+  size_t NumFrames(size_t /*max_frame_size*/) const override { return 1; }
+  std::pair<int64_t, bool> Pack(uint8_t* /*dest*/,
+                                size_t /*dest_len*/) override {
+    return {-1, false};
+  }
+  void OnFailure() override {}
+};
+
 }  // namespace
 
 TEST(OgHttp2SessionTest, ClientConstruction) {
@@ -1384,6 +1395,146 @@ TEST(OgHttp2SessionTest, ResetAndCloseStreamRaceWithIncomingData) {
   EXPECT_CALL(visitor, OnFrameSent(WINDOW_UPDATE, 0, _, 0x0, 0));
   EXPECT_EQ(0, session.Send());
   EXPECT_EQ(session.GetReceiveWindowSize(), kInitialFlowControlWindowSize);
+}
+
+TEST(OgHttp2SessionTest, FailingMetadataSourceDoesNotSend) {
+  TestVisitor visitor;
+  OgHttp2Session::Options options;
+  options.perspective = Perspective::kClient;
+  OgHttp2Session session(visitor, options);
+
+  // A failing metadata source should not cause any METADATA frames to be sent.
+  auto failing_source = std::make_unique<FailingMetadataSource>();
+  session.SubmitMetadata(1, std::move(failing_source));
+
+  EXPECT_CALL(visitor, OnBeforeFrameSent(SETTINGS, 0, _, 0x0));
+  EXPECT_CALL(visitor, OnFrameSent(SETTINGS, 0, _, 0x0, 0));
+  EXPECT_CALL(visitor, OnBeforeFrameSent(16 /*kMetadataFrameType*/, _, _, _))
+      .Times(0);
+
+  EXPECT_EQ(0, session.Send());
+  absl::string_view serialized = visitor.data();
+  EXPECT_THAT(serialized,
+              testing::StartsWith(spdy::kHttp2ConnectionHeaderPrefix));
+  serialized.remove_prefix(strlen(spdy::kHttp2ConnectionHeaderPrefix));
+  EXPECT_THAT(serialized, EqualsFrames({SpdyFrameType::SETTINGS}));
+}
+
+// Regression test for pending frame queue behavior in CloseStream().
+TEST(OgHttp2SessionTest, RstStreamCausesCloseStreamCrash) {
+  TestVisitor visitor;
+  OgHttp2Session::Options options;
+  options.perspective = Perspective::kServer;
+  OgHttp2Session session(visitor, options);
+
+  const std::string frames = TestFrameSequence()
+                                 .ClientPreface()
+                                 .Headers(1,
+                                          {{":method", "GET"},
+                                           {":scheme", "https"},
+                                           {":authority", "example.com"},
+                                           {":path", "/"}},
+                                          true)
+                                 .Headers(3,
+                                          {{":method", "GET"},
+                                           {":scheme", "https"},
+                                           {":authority", "example.com"},
+                                           {":path", "/"}},
+                                          true)
+                                 .Serialize();
+  // Process headers to create streams 1 and 3.
+  EXPECT_CALL(visitor, OnFrameHeader(0, 0, SETTINGS, 0));
+  EXPECT_CALL(visitor, OnSettingsStart());
+  EXPECT_CALL(visitor, OnSettingsEnd());
+  EXPECT_CALL(visitor, OnFrameHeader(1, _, HEADERS, 5));
+  EXPECT_CALL(visitor, OnBeginHeadersForStream(1));
+  EXPECT_CALL(visitor, OnHeaderForStream(1, _, _)).Times(4);
+  EXPECT_CALL(visitor, OnEndHeadersForStream(1));
+  EXPECT_CALL(visitor, OnEndStream(1));
+  EXPECT_CALL(visitor, OnFrameHeader(3, _, HEADERS, 5));
+  EXPECT_CALL(visitor, OnBeginHeadersForStream(3));
+  EXPECT_CALL(visitor, OnHeaderForStream(3, _, _)).Times(4);
+  EXPECT_CALL(visitor, OnEndHeadersForStream(3));
+  EXPECT_CALL(visitor, OnEndStream(3));
+  session.ProcessBytes(frames);
+
+  // Enqueue one frame for stream 1 and one for stream 3.
+  session.SubmitResponse(1, ToHeaders({{":status", "200"}}), false);
+  session.SubmitResponse(3, ToHeaders({{":status", "200"}}), false);
+
+  // Receive RST_STREAM for stream 1, followed by RST_STREAM for stream 3.
+  // The call to CloseStream(1) will null out the frame for stream 1 in frames_.
+  // The call to CloseStream(3) will iterate through frames_ and encounter the
+  // nullptr.
+  const std::string rst_frames = TestFrameSequence()
+                                     .RstStream(1, Http2ErrorCode::CANCEL)
+                                     .RstStream(3, Http2ErrorCode::CANCEL)
+                                     .Serialize();
+  EXPECT_CALL(visitor, OnFrameHeader(1, 4, RST_STREAM, 0));
+  EXPECT_CALL(visitor, OnRstStream(1, Http2ErrorCode::CANCEL));
+  EXPECT_CALL(visitor, OnCloseStream(1, Http2ErrorCode::CANCEL));
+  EXPECT_CALL(visitor, OnFrameHeader(3, 4, RST_STREAM, 0));
+  EXPECT_CALL(visitor, OnRstStream(3, Http2ErrorCode::CANCEL));
+  EXPECT_CALL(visitor, OnCloseStream(3, Http2ErrorCode::CANCEL));
+  session.ProcessBytes(rst_frames);
+}
+
+// Regression test for pending frame queue behavior in
+// PrepareForImmediateGoAway.
+TEST(OgHttp2SessionTest, NullFrameInQueueDuringImmediateGoAway) {
+  TestVisitor visitor;
+  OgHttp2Session::Options options;
+  options.perspective = Perspective::kServer;
+  OgHttp2Session session(visitor, options);
+
+  const std::string client_preface =
+      TestFrameSequence().ClientPreface().Serialize();
+  EXPECT_CALL(visitor, OnFrameHeader(0, 0, SETTINGS, 0));
+  EXPECT_CALL(visitor, OnSettingsStart());
+  EXPECT_CALL(visitor, OnSettingsEnd());
+  int64_t result = session.ProcessBytes(client_preface);
+  ASSERT_EQ(client_preface.size(), result);
+
+  const std::string stream_frames = TestFrameSequence()
+                                        .Headers(1,
+                                                 {{":method", "GET"},
+                                                  {":scheme", "https"},
+                                                  {":authority", "example.com"},
+                                                  {":path", "/"}},
+                                                 true)
+                                        .Serialize();
+  EXPECT_CALL(visitor, OnFrameHeader(1, _, HEADERS, 5));
+  EXPECT_CALL(visitor, OnBeginHeadersForStream(1));
+  EXPECT_CALL(visitor, OnHeaderForStream(1, _, _)).Times(4);
+  EXPECT_CALL(visitor, OnEndHeadersForStream(1));
+  EXPECT_CALL(visitor, OnEndStream(1));
+  result = session.ProcessBytes(stream_frames);
+  EXPECT_EQ(stream_frames.size(), result);
+
+  session.SubmitResponse(1, ToHeaders({{":status", "200"}}), false);
+
+  const std::string rst_stream_frame =
+      TestFrameSequence().RstStream(1, Http2ErrorCode::CANCEL).Serialize();
+  EXPECT_CALL(visitor, OnFrameHeader(1, 4, RST_STREAM, 0));
+  EXPECT_CALL(visitor, OnRstStream(1, Http2ErrorCode::CANCEL));
+  EXPECT_CALL(visitor, OnCloseStream(1, Http2ErrorCode::CANCEL));
+  result = session.ProcessBytes(rst_stream_frame);
+  EXPECT_EQ(rst_stream_frame.size(), result);
+
+  const std::string settings_frame =
+      TestFrameSequence()
+          .Settings({{Http2KnownSettingsId::ENABLE_PUSH, 2}})
+          .Serialize();
+  EXPECT_CALL(visitor, OnFrameHeader(0, 6, SETTINGS, 0));
+  EXPECT_CALL(visitor, OnSettingsStart());
+  EXPECT_CALL(
+      visitor,
+      OnInvalidFrame(0, Http2VisitorInterface::InvalidFrameError::kProtocol));
+  EXPECT_CALL(visitor,
+              OnConnectionError(
+                  Http2VisitorInterface::ConnectionError::kInvalidSetting));
+  result = session.ProcessBytes(settings_frame);
+  EXPECT_EQ(settings_frame.size(), result);
 }
 
 }  // namespace test

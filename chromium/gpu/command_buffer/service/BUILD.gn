@@ -87,7 +87,6 @@ source_set("service_sources") {
     "//gpu/ipc/common",
     "//ui/gfx",
     "//ui/gfx/geometry",
-    "//ui/gfx/ipc/color",
     "//ui/gl",
   ]
 
@@ -172,6 +171,8 @@ target(link_target_type, "gles2_sources") {
     "gles2_query_manager.h",
     "gpu_fence_manager.cc",
     "gpu_fence_manager.h",
+    "gpu_persistent_cache.cc",
+    "gpu_persistent_cache.h",
     "gpu_state_tracer.cc",
     "gpu_state_tracer.h",
     "gpu_task_scheduler_helper.cc",
@@ -326,13 +327,6 @@ target(link_target_type, "gles2_sources") {
     "webgpu_decoder.h",
   ]
 
-  if (is_android) {
-    sources += [
-      "abstract_texture_android.cc",
-      "abstract_texture_android.h",
-    ]
-  }
-
   if (use_dawn) {
     deps += [ "//gpu/webgpu:common" ]
     sources += [
@@ -346,8 +340,6 @@ target(link_target_type, "gles2_sources") {
       "dawn_service_memory_transfer_service.h",
       "dawn_service_serializer.cc",
       "dawn_service_serializer.h",
-      "gpu_persistent_cache.cc",
-      "gpu_persistent_cache.h",
       "shared_image/dawn_copy_strategy.cc",
       "shared_image/dawn_copy_strategy.h",
       "shared_image/dawn_fallback_image_representation.cc",
@@ -402,6 +394,7 @@ target(link_target_type, "gles2_sources") {
     "//skia:buildflags",
     "//third_party/angle:angle_image_util",
     "//third_party/angle:angle_version_info",
+    "//third_party/angle:translator",
     "//third_party/dawn/include/dawn:cpp_headers",
     "//third_party/dawn/src/dawn:proc",
     "//third_party/libyuv",
@@ -418,8 +411,6 @@ target(link_target_type, "gles2_sources") {
     "//ui/gl/init",
   ]
 
-  deps += [ "//third_party/angle:translator" ]
-
   if (use_ozone) {
     sources += [
       "shared_image/gl_ozone_image_representation.cc",
@@ -435,6 +426,12 @@ target(link_target_type, "gles2_sources") {
       "//ui/base:features",
       "//ui/ozone",
     ]
+    if (is_chromeos) {
+      deps += [
+        "//ash/constants",
+        "//ui/gfx/linux:drm",
+      ]
+    }
   }
 
   if (enable_vulkan) {

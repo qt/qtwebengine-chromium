@@ -22,6 +22,8 @@
 #include "../internal.h"
 
 
+using namespace bssl;
+
 static int null_init_key(EVP_CIPHER_CTX *ctx, const uint8_t *key,
                          const uint8_t *iv, int enc) {
   return 1;
@@ -50,4 +52,4 @@ static const EVP_CIPHER n_cipher = {
     /*ctrl=*/nullptr,
 };
 
-const EVP_CIPHER *EVP_enc_null(void) { return &n_cipher; }
+const EVP_CIPHER *EVP_enc_null() { return &n_cipher; }

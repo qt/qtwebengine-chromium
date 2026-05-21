@@ -140,7 +140,7 @@
 
 // Like UNSAFE_BUFFERS(), but indicates there is a TODO() task to
 // investigate safety,
-// TODO(crbug.com/pdfium/2155): remove all usage.
+// TODO(crbug.com/42271176): remove all usage.
 #define UNSAFE_TODO(...) UNSAFE_BUFFERS(__VA_ARGS__)
 
 // Annotates a function restricting its availability based on compile-time

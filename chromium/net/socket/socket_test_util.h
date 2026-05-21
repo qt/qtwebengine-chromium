@@ -41,6 +41,7 @@
 #include "net/socket/client_socket_pool.h"
 #include "net/socket/datagram_client_socket.h"
 #include "net/socket/socket_performance_watcher.h"
+#include "net/socket/socket_pool_additional_capacity.h"
 #include "net/socket/socket_tag.h"
 #include "net/socket/ssl_client_socket.h"
 #include "net/socket/transport_client_socket.h"
@@ -630,8 +631,8 @@ struct SSLSocketDataProvider {
   // Result for GetECHRetryConfigs().
   std::vector<uint8_t> ech_retry_configs;
 
-  // Result for GetServerTrustAnchorIDsForRetry().
-  std::vector<std::vector<uint8_t>> server_trust_anchor_ids_for_retry;
+  // Result for GetServerTrustAnchorIDs().
+  std::vector<std::vector<uint8_t>> server_trust_anchor_ids;
 
   std::optional<NextProtoVector> next_protos_expected_in_ssl_config;
   std::optional<SSLConfig::ApplicationSettings> expected_application_settings;
@@ -1064,7 +1065,7 @@ class MockSSLClientSocket : public AsyncSocket, public SSLClientSocket {
 
   // SSLClientSocket implementation.
   std::vector<uint8_t> GetECHRetryConfigs() override;
-  std::vector<std::vector<uint8_t>> GetServerTrustAnchorIDsForRetry() override;
+  std::vector<std::vector<uint8_t>> GetServerTrustAnchorIDs() override;
 
   // This MockSocket does not implement the manual async IO feature.
   void OnReadComplete(const MockRead& data) override;
@@ -1266,9 +1267,7 @@ class ClientSocketPoolTest {
     int rv = request->handle()->Init(
         group_id, socket_params, std::nullopt /* proxy_annotation_tag */,
         priority, SocketTag(), respect_limits, request->callback(),
-        ClientSocketPool::ProxyAuthCallback(),
-        /*fail_if_alias_requires_proxy_override=*/false, socket_pool,
-        NetLogWithSource());
+        ClientSocketPool::ProxyAuthCallback(), socket_pool, NetLogWithSource());
     if (rv != ERR_IO_PENDING)
       request_order_.push_back(request);
     return rv;
@@ -1381,7 +1380,6 @@ class MockTransportClientSocketPool : public TransportClientSocketPool {
       ClientSocketHandle* handle,
       CompletionOnceCallback callback,
       const ProxyAuthCallback& on_auth_callback,
-      bool fail_if_alias_requires_proxy_override,
       const NetLogWithSource& net_log) override;
   void SetPriority(const GroupId& group_id,
                    ClientSocketHandle* handle,
@@ -1549,6 +1547,20 @@ bool CanGetTaggedBytes();
 // |expected_tag| for our UID.  Return the count of received bytes.
 uint64_t GetTaggedBytes(int32_t expected_tag);
 #endif
+
+// This should be kept in sync with the field trial config's default pool.
+const SocketPoolAdditionalCapacity kFieldTrialPool =
+    SocketPoolAdditionalCapacity::CreateForTest(0.000001, 256, 0.01, 0.2);
+
+// The goal of this test is to walk a pool back and forth between being
+// capped and uncapped, tracking at what point the transition occurs
+// and using that data to validate expected behavior. We take this walk
+// about 100 times as there is randomization in the transition points.
+void ValidateAdditionalCapacityForSocketPool(
+    base::RepeatingCallback<SocketPoolState()> request_socket,
+    base::RepeatingCallback<void()> wait_for_socket_initialization,
+    base::RepeatingCallback<SocketPoolState()> release_socket,
+    base::RepeatingCallback<size_t()> sockets_in_use);
 
 }  // namespace net
 

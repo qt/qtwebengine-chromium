@@ -362,7 +362,8 @@ AV1LoopfilterLevel AV1RateControlRTC::GetLoopfilterLevel() const {
 }
 
 AV1CdefInfo AV1RateControlRTC::GetCdefInfo() const {
-  av1_pick_cdef_from_qp(&cpi_->common, 0, 0);
+  av1_pick_cdef_from_qp(&cpi_->common, /*skip_cdef=*/0, /*is_screen_content=*/0,
+                        /*avoid_uv_cdef=*/false);
   AV1CdefInfo cdef_level;
   cdef_level.cdef_strength_y = cpi_->common.cdef_info.cdef_strengths[0];
   cdef_level.cdef_strength_uv = cpi_->common.cdef_info.cdef_uv_strengths[0];

@@ -103,6 +103,8 @@ MaybeError Buffer::MapAtCreationImpl() {
 }
 
 MaybeError Buffer::MapAsyncImpl(wgpu::MapMode mode, size_t offset, size_t size) {
+    auto deviceGuard = GetDevice()->GetGuard();
+
     struct MapAsyncResult {
         WGPUMapAsyncStatus status;
         std::string message;
@@ -156,13 +158,15 @@ void* Buffer::GetMappedPointerImpl() {
     return mMappedData;
 }
 
-void Buffer::UnmapImpl(BufferState oldState) {
-    if (IsMappedState(oldState) && MapMode() == wgpu::MapMode::Write) {
-        CaptureContext* captureContext = ToBackend(GetDevice()->GetQueue())->GetCaptureContext();
-        if (captureContext != nullptr) {
-            [[maybe_unused]] auto result =
-                captureContext->CaptureUnmapBuffer(this, MapOffset(), mMappedData, MapSize());
-        }
+void Buffer::UnmapImpl(BufferState oldState, BufferState newState) {
+    auto deviceGuard = GetDevice()->GetGuard();
+
+    if (IsMappedState(oldState) && MapMode() == wgpu::MapMode::Write &&
+        newState != BufferState::Destroyed) {
+        // TODO(477349135): Optimize this by tracking the ranges. As it is we'll
+        // capture the entire buffer even if only a few bytes were updated. Instead
+        // of mNeedsCapture we could have mDirtySpans. When size is 0 there's nothing to do.
+        mNeedsCapture = true;
     }
 
     if (mInnerHandle) {
@@ -171,8 +175,8 @@ void Buffer::UnmapImpl(BufferState oldState) {
     mMappedData = nullptr;
 }
 
-void Buffer::DestroyImpl() {
-    BufferBase::DestroyImpl();
+void Buffer::DestroyImpl(DestroyReason reason) {
+    BufferBase::DestroyImpl(reason);
     auto& wgpu = ToBackend(GetDevice())->wgpu;
     wgpu.bufferDestroy(mInnerHandle);
 }
@@ -200,28 +204,51 @@ MaybeError Buffer::CaptureContentIfNeeded(CaptureContext& captureContext,
                                           bool newResource) {
     // TODO(451338754): If it's a new resource and we know the buffer is all zero then don't
     // capture.
-    bool unwritableOnPlayback = GetUsage() & wgpu::BufferUsage::MapWrite;
-    if (!newResource || unwritableOnPlayback) {
+    wgpu::BufferUsage usage = GetUsage();
+    if (!mNeedsCapture && !newResource) {
         return {};
     }
-    schema::RootCommandWriteBufferCmd cmd{{
-        .data = {{
-            .bufferId = id,
-            .bufferOffset = 0,
-            .size = GetSize(),
-        }},
-    }};
-    Serialize(captureContext, cmd);
+
+    // A MapRead buffer is never used as input since it's only allowed CopyDst
+    // so we don't need its contents.
+    if (usage & wgpu::BufferUsage::MapRead) {
+        return {};
+    }
+
+    mNeedsCapture = false;
+
     return AddContentToCapture(captureContext);
 }
 
 // TODO(451650604): We currently get at most 1mb at a time to keep memory usage down.
 // Revisit for speed later.
 MaybeError Buffer::AddContentToCapture(CaptureContext& captureContext) {
+    // TODO(473593119): Handle the unaligned trailing bytes.
+    // TODO(473568230): Support copies with unaligned size.
+    // copyBufferToBuffer requires 4 byte alignment for both size and offset which prevents
+    // us from copying the trailing bytes. writeBuffer has the same alignment requirements.
+    // so the user can't put bytes in via writeBuffer. mapAsync requires offset to be 8 byte
+    // aligned and size to be 4 bytes so the user can not set those last bytes with mapAsync.
+    // We can still access those bytes with copyBufferToTexture and copyTextureToBuffer though.
+    // For now, we just ignore the last 3 bytes.
+    uint64_t copyableSize = AlignDown(GetSize(), 4);
+    if (copyableSize == 0) {
+        return {};
+    }
+
     struct MapAsyncResult {
         WGPUMapAsyncStatus status;
         std::string message;
     } mapAsyncResult = {};
+
+    schema::RootCommandWriteBufferCmd cmd{{
+        .data = {{
+            .bufferId = captureContext.GetId(this),
+            .bufferOffset = 0,
+            .size = copyableSize,
+        }},
+    }};
+    Serialize(captureContext, cmd);
 
     WGPUBuffer srcBuffer = GetInnerHandle();
     WGPUBuffer copyBuffer = captureContext.GetCopyBuffer();
@@ -231,8 +258,9 @@ MaybeError Buffer::AddContentToCapture(CaptureContext& captureContext) {
     WGPUDevice innerDevice = device->GetInnerHandle();
     auto& wgpu = device->wgpu;
 
-    for (uint64_t offset = 0; offset < GetSize(); offset += CaptureContext::kCopyBufferSize) {
-        uint64_t copySize = std::min(CaptureContext::kCopyBufferSize, GetSize() - offset);
+    CaptureContext::ScopedContentWriter writer(captureContext);
+    for (uint64_t offset = 0; offset < copyableSize; offset += CaptureContext::kCopyBufferSize) {
+        uint64_t copySize = std::min(CaptureContext::kCopyBufferSize, copyableSize - offset);
 
         WGPUCommandEncoder encoder = wgpu.deviceCreateCommandEncoder(innerDevice, nullptr);
         wgpu.commandEncoderCopyBufferToBuffer(encoder, srcBuffer, offset, copyBuffer, 0, copySize);
@@ -255,8 +283,8 @@ MaybeError Buffer::AddContentToCapture(CaptureContext& captureContext) {
 
         // We read this back synchronously. I'm not sure we could do much more.
         WGPUFutureWaitInfo waitInfo = {};
-        waitInfo.future = wgpu.bufferMapAsync(copyBuffer, WGPUMapMode_Read, offset,
-                                              CaptureContext::kCopyBufferSize, innerCallbackInfo);
+        waitInfo.future =
+            wgpu.bufferMapAsync(copyBuffer, WGPUMapMode_Read, 0, copySize, innerCallbackInfo);
         wgpu.instanceWaitAny(device->GetInnerInstance(), 1, &waitInfo, UINT64_MAX);
 
         DAWN_ASSERT(mapAsyncResult.status == WGPUMapAsyncStatus_Success);
@@ -266,7 +294,7 @@ MaybeError Buffer::AddContentToCapture(CaptureContext& captureContext) {
         }
 
         const void* data = wgpu.bufferGetConstMappedRange(copyBuffer, 0, copySize);
-        captureContext.WriteContentBytes(data, copySize);
+        writer.WriteContentBytes(data, copySize);
         wgpu.bufferUnmap(copyBuffer);
     }
 

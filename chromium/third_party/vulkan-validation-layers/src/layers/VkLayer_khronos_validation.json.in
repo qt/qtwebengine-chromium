@@ -5,7 +5,7 @@
         "prefix": "vvl",
         "type": "GLOBAL",
         "library_path": "@JSON_LIBRARY_PATH@",
-        "api_version": "1.4.335",
+        "api_version": "1.4.343",
         "implementation_version": "1",
         "description": "Khronos Validation Layer",
         "introduction": "The main, comprehensive Khronos validation layer.\n\nVulkan is an Explicit API, enabling direct control over how GPUs actually work. By design, minimal error checking is done inside a Vulkan driver. Applications have full control and responsibility for correct operation. Any errors in how Vulkan is used can result in a crash. \n\nThe Khronos Validation Layer can be enabled to assist development by enabling developers to verify their applications correctly use the Vulkan API.",
@@ -764,6 +764,21 @@
                                             }
                                         },
                                         {
+                                            "key": "gpuav_mesh_shading",
+                                            "label": "Mesh Shading SPIR-V instructions",
+                                            "description": "Enable shader instrumentation on VK_EXT_mesh_shader",
+                                            "type": "BOOL",
+                                            "view": "DEBUG",
+                                            "default": true,
+                                            "dependence": {
+                                                "mode": "ALL",
+                                                "settings": [
+                                                    { "key": "gpuav_enable", "value": true },
+                                                    { "key": "gpuav_shader_instrumentation", "value": true }
+                                                ]
+                                            }
+                                        },
+                                        {
                                             "key": "gpuav_validate_ray_query",
                                             "label": "RayQuery SPIR-V instructions",
                                             "description": "Enable shader instrumentation on OpRayQueryInitializeKHR",
@@ -805,6 +820,24 @@
                                                 "settings": [
                                                     { "key": "gpuav_enable", "value": true },
                                                     { "key": "gpuav_shader_instrumentation", "value": true }
+                                                ]
+                                            }
+                                        },
+                                        {
+                                            "key": "gpuav_max_indices_count",
+                                            "label": "Maximum Indices",
+                                            "description": "Number of indices held in the buffer used to index commands and validation resources (Max number of draws/dispatches in a command buffer that can be tracked). Can be lowered to save memory.",
+                                            "type": "INT",
+                                            "view": "DEBUG",
+                                            "default": 8192,
+                                            "range": {
+                                                "min": 0,
+                                                "max": 65534
+                                            },
+                                            "dependence": {
+                                                "mode": "ALL",
+                                                "settings": [
+                                                    { "key": "gpuav_enable", "value": true }
                                                 ]
                                             }
                                         }

@@ -86,13 +86,13 @@ struct CC_EXPORT CommitState {
   bool is_viewport_mobile_optimized = false;
   bool may_throttle_if_undrawn_frames = true;
   bool prefers_reduced_motion = false;
+  bool prefer_efficient_scheduling = false;
   BrowserControlsParams browser_controls_params;
   std::array<EventListenerProperties, kEventListenerClassCount>
       event_listener_properties = {EventListenerProperties::kNone};
   float bottom_controls_shown_ratio = 0.f;
   float device_scale_factor = 1.f;
   float external_page_scale_factor = 1.f;
-  float load_progress = 0.f;
   float max_page_scale_factor = 1.f;
   float min_page_scale_factor = 1.f;
   float page_scale_factor = 1.f;
@@ -203,6 +203,7 @@ struct CC_EXPORT ThreadUnsafeCommitState {
   raw_ptr<MutatorHost> mutator_host;
   PropertyTrees property_trees;
   scoped_refptr<Layer> root_layer;
+  size_t num_layers = 0;
 };
 
 struct CC_EXPORT CommitTimestamps {

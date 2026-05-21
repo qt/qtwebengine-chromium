@@ -82,8 +82,8 @@ EIGEN_STRONG_INLINE Packet8cf pnegate(const Packet8cf& a) {
 template <>
 EIGEN_STRONG_INLINE Packet8cf pconj(const Packet8cf& a) {
   const __m512 mask = _mm512_castsi512_ps(_mm512_setr_epi32(
-      0x00000000, 0x80000000, 0x00000000, 0x80000000, 0x00000000, 0x80000000, 0x00000000, 0x80000000, 0x00000000,
-      0x80000000, 0x00000000, 0x80000000, 0x00000000, 0x80000000, 0x00000000, 0x80000000));
+      0x00000000, SIGN_MASK_I32, 0x00000000, SIGN_MASK_I32, 0x00000000, SIGN_MASK_I32, 0x00000000, SIGN_MASK_I32,
+      0x00000000, SIGN_MASK_I32, 0x00000000, SIGN_MASK_I32, 0x00000000, SIGN_MASK_I32, 0x00000000, SIGN_MASK_I32));
   return Packet8cf(pxor(a.v, mask));
 }
 
@@ -262,8 +262,9 @@ EIGEN_STRONG_INLINE Packet4cd pnegate(const Packet4cd& a) {
 }
 template <>
 EIGEN_STRONG_INLINE Packet4cd pconj(const Packet4cd& a) {
-  const __m512d mask = _mm512_castsi512_pd(_mm512_set_epi32(0x80000000, 0x0, 0x0, 0x0, 0x80000000, 0x0, 0x0, 0x0,
-                                                            0x80000000, 0x0, 0x0, 0x0, 0x80000000, 0x0, 0x0, 0x0));
+  const __m512d mask =
+      _mm512_castsi512_pd(_mm512_set_epi32(SIGN_MASK_I32, 0x0, 0x0, 0x0, SIGN_MASK_I32, 0x0, 0x0, 0x0, SIGN_MASK_I32,
+                                           0x0, 0x0, 0x0, SIGN_MASK_I32, 0x0, 0x0, 0x0));
   return Packet4cd(pxor(a.v, mask));
 }
 

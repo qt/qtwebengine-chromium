@@ -15,13 +15,15 @@
 #include "base/component_export.h"
 #include "base/containers/span.h"
 #include "crypto/sha2.h"
-#include "device/fido/cable/cable_discovery_data.h"
-#include "device/fido/fido_constants.h"
+#include "device/fido/ctap_request_common.h"
 #include "device/fido/json_request.h"
 #include "device/fido/large_blob.h"
 #include "device/fido/pin.h"
 #include "device/fido/prf_input.h"
-#include "device/fido/public_key_credential_descriptor.h"
+#include "device/fido/public/cable_discovery_data.h"
+#include "device/fido/public/fido_constants.h"
+#include "device/fido/public/public_key_credential_descriptor.h"
+#include "third_party/blink/public/mojom/webauthn/authenticator.mojom-shared.h"
 
 namespace cbor {
 class Value;
@@ -66,7 +68,7 @@ struct COMPONENT_EXPORT(DEVICE_FIDO) CtapGetAssertionOptions {
 
   // The set of hints passed by the relying party.
   // https://w3c.github.io/webauthn/#enum-hints.
-  std::vector<FidoTransportProtocol> hints;
+  std::vector<blink::mojom::Hint> hints;
 };
 
 // Object that encapsulates request parameters for AuthenticatorGetAssertion as
@@ -80,25 +82,6 @@ struct COMPONENT_EXPORT(DEVICE_FIDO) CtapGetAssertionRequest {
   struct ParseOpts {
     // reject_all_extensions makes parsing fail if any extensions are present.
     bool reject_all_extensions = false;
-  };
-
-  // HMACSecret contains the inputs to the hmac-secret extension:
-  // https://fidoalliance.org/specs/fido-v2.0-ps-20190130/fido-client-to-authenticator-protocol-v2.0-ps-20190130.html#sctn-hmac-secret-extension
-  struct HMACSecret {
-    HMACSecret(base::span<const uint8_t, kP256X962Length> public_key_x962,
-               base::span<const uint8_t> encrypted_salts,
-               base::span<const uint8_t> salts_auth,
-               std::optional<PINUVAuthProtocol> pin_protocol);
-    HMACSecret(const HMACSecret&);
-    ~HMACSecret();
-    HMACSecret& operator=(const HMACSecret&);
-
-    std::array<uint8_t, kP256X962Length> public_key_x962;
-    std::vector<uint8_t> encrypted_salts;
-    std::vector<uint8_t> salts_auth;
-    // pin_protocol is ignored during serialisation and the request's PIN
-    // protocol will be used instead.
-    std::optional<PINUVAuthProtocol> pin_protocol;
   };
 
   // Decodes a CTAP2 authenticatorGetAssertion request message. The request's

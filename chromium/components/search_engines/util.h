@@ -19,6 +19,7 @@
 #include "components/search_engines/keyword_web_data_service.h"
 #include "components/search_engines/template_url_service.h"
 #include "third_party/omnibox_proto/chrome_aim_entry_point.pb.h"
+#include "third_party/omnibox_proto/model_mode.pb.h"
 
 class KeywordWebDataService;
 class PrefService;
@@ -244,7 +245,6 @@ GURL GetUrlForAim(
 // info.
 // `request_id` (vsrid) is the visual search request id used by lens to obtain
 // the uploaded context.
-// `mime_type` (vit) is the type of the file that has been uploaded.
 // TODO(crbug.com/430070871): Make `lns_surface` a required parameter when
 // the server supports it.
 // TODO(crbug.com/446972028): Remove this method in favor of the one below that
@@ -256,7 +256,6 @@ GURL GetUrlForMultimodalSearch(
     const base::Time& query_start_time,
     const std::string& search_session_id,
     const std::unique_ptr<lens::LensOverlayRequestId> request_id,
-    const lens::MimeType mime_type,
     const std::optional<lens::LensOverlayInvocationSource> invocation_source =
         std::nullopt,
     const std::string& lns_surface = std::string(),

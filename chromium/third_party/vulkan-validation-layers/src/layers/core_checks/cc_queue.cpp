@@ -1,7 +1,7 @@
-/* Copyright (c) 2015-2025 The Khronos Group Inc.
- * Copyright (c) 2015-2025 Valve Corporation
- * Copyright (c) 2015-2025 LunarG, Inc.
- * Copyright (C) 2015-2024 Google Inc.
+/* Copyright (c) 2015-2026 The Khronos Group Inc.
+ * Copyright (c) 2015-2026 Valve Corporation
+ * Copyright (c) 2015-2026 LunarG, Inc.
+ * Copyright (C) 2015-2026 Google Inc.
  * Copyright (c) 2025 Arm Limited.
  * Modifications Copyright (C) 2020-2022 Advanced Micro Devices, Inc. All rights reserved.
  *
@@ -106,8 +106,9 @@ struct CommandBufferSubmitState {
                 barrier.dstQueueFamilyIndex != queue_state.queue_family_index) {
                 skip |= core.LogError("VUID-VkTensorMemoryBarrierARM-tensor-09757", cb_state.Handle(), loc,
                                       "Tensor (%s) used in barrier has sharing mode VK_SHARING_MODE_EXCLUSIVE but neither "
-                                      "srcQueueFamilyIndex (%d) or dstQueueFamilyIndex (%d) are VK_QUEUE_FAMILY_IGNORED or "
-                                      "the same queue family as this queue which is executing the barrier (%d)",
+                                      "srcQueueFamilyIndex (%" PRIu32 ") or dstQueueFamilyIndex (%" PRIu32
+                                      ") are VK_QUEUE_FAMILY_IGNORED or "
+                                      "the same queue family as this queue which is executing the barrier (%" PRIu32 ")",
                                       core.FormatHandle(barrier.tensor).c_str(), barrier.srcQueueFamilyIndex,
                                       barrier.dstQueueFamilyIndex, queue_state.queue_family_index);
             }
@@ -187,6 +188,7 @@ bool CoreChecks::PreCallValidateQueueSubmit(VkQueue queue, uint32_t submitCount,
         }
 
         bool suspended_render_pass_instance = false;
+        const VkRenderingInfo *last_rendering_info = nullptr;
         for (uint32_t i = 0; i < submit.commandBufferCount; i++) {
             const Location cb_loc = submit_loc.dot(Field::pCommandBuffers, i);
             auto cb_state = GetRead<vvl::CommandBuffer>(submit.pCommandBuffers[i]);
@@ -233,11 +235,24 @@ bool CoreChecks::PreCallValidateQueueSubmit(VkQueue queue, uint32_t submitCount,
                                      "resumes a render pass instance, but there is no suspended render pass instance.");
                 }
             }
+            if (cb_state->first_rendering_info.has_value() && last_rendering_info) {
+                const LogObjectList objlist(cb_state->Handle(), queue);
+                const VkRenderingInfo &rendering_info = *cb_state->first_rendering_info.value().ptr();
+                // TODO: VUID is being discussed https://gitlab.khronos.org/vulkan/vulkan/-/issues/4554
+                skip |= ValidateSuspendResumeMismatch("UNASSIGNED-RenderingInfo-SuspendResume-Mismatch", objlist, rendering_info,
+                                                      *last_rendering_info, cb_state->first_rendering_info_loc->Get());
+            }
+
             // Update suspension state.
             // NOTE: SuspendState::Empty means that command buffer does not change suspension state,
             // for example, it does not contain render pass instances
             if (cb_state->last_suspend_state != vvl::CommandBuffer::SuspendState::Empty) {
                 suspended_render_pass_instance = (cb_state->last_suspend_state == vvl::CommandBuffer::SuspendState::Suspended);
+            }
+            // Update rendering info.
+            // If command buffer does not begin rendering then keep current state unchanged.
+            if (cb_state->last_rendering_info.has_value()) {
+                last_rendering_info = cb_state->last_rendering_info.value().ptr();
             }
         }
         // Renderpass should not be in suspended state after the final cmdbuf
@@ -358,6 +373,7 @@ bool CoreChecks::ValidateQueueSubmit2(VkQueue queue, uint32_t submitCount, const
         }
 
         bool suspended_render_pass_instance = false;
+        const VkRenderingInfo *last_rendering_info = nullptr;
         for (uint32_t i = 0; i < submit.commandBufferInfoCount; i++) {
             const Location info_loc = submit_loc.dot(Struct::VkCommandBufferSubmitInfo, Field::pCommandBufferInfos, i);
             auto cb_state = GetRead<vvl::CommandBuffer>(submit.pCommandBufferInfos[i].commandBuffer);
@@ -407,11 +423,24 @@ bool CoreChecks::ValidateQueueSubmit2(VkQueue queue, uint32_t submitCount, const
                                      "resumes a render pass instance, but there is no suspended render pass instance.");
                 }
             }
+            if (cb_state->first_rendering_info.has_value() && last_rendering_info) {
+                const LogObjectList objlist(cb_state->Handle(), queue);
+                const VkRenderingInfo &rendering_info = *cb_state->first_rendering_info.value().ptr();
+                // TODO: VUID is being discussed https://gitlab.khronos.org/vulkan/vulkan/-/issues/4554
+                skip |= ValidateSuspendResumeMismatch("UNASSIGNED-RenderingInfo-SuspendResume-Mismatch", objlist, rendering_info,
+                                                      *last_rendering_info, cb_state->first_rendering_info_loc->Get());
+            }
+
             // Update suspension state.
-            // NOTE: SuspendState::Empty means that command buffer does not change suspension state,
+            // SuspendState::Empty means that command buffer does not change suspension state,
             // for example, it does not contain render pass instances
             if (cb_state->last_suspend_state != vvl::CommandBuffer::SuspendState::Empty) {
                 suspended_render_pass_instance = (cb_state->last_suspend_state == vvl::CommandBuffer::SuspendState::Suspended);
+            }
+            // Update rendering info.
+            // If command buffer does not begin rendering then keep current state unchanged.
+            if (cb_state->last_rendering_info.has_value()) {
+                last_rendering_info = cb_state->last_rendering_info.value().ptr();
             }
 
             skip |= ValidateRenderPassStripeSubmitInfo(queue, *cb_state, submit.pCommandBufferInfos[i].pNext, info_loc);
@@ -502,7 +531,7 @@ bool CoreChecks::ValidImageBufferQueue(const vvl::CommandBuffer &cb_state, const
         const LogObjectList objlist(cb_state.Handle(), object);
         skip |= LogError("VUID-vkQueueSubmit-pSubmits-04626", objlist, loc,
                          "%s contains %s which was not created allowing concurrent access to "
-                         "this queue family %d.",
+                         "this queue family %" PRIu32 ".",
                          FormatHandle(cb_state).c_str(), FormatHandle(object).c_str(), queueFamilyIndex);
     }
     return skip;
@@ -520,8 +549,9 @@ bool CoreChecks::ValidateQueueFamilyIndices(const Location &loc, const vvl::Comm
         const LogObjectList objlist(cb_state.Handle(), queue_state.Handle());
         const auto &vuid = GetQueueSubmitVUID(loc, vvl::SubmitError::kCmdWrongQueueFamily);
         skip |= LogError(vuid, objlist, loc,
-                         "Primary command buffer %s created in queue family %d is being submitted on %s "
-                         "from queue family %d.",
+                         "Primary command buffer %s created in queue family %" PRIu32
+                         " is being submitted on %s "
+                         "from queue family %" PRIu32 ".",
                          FormatHandle(cb_state).c_str(), pool->queueFamilyIndex, FormatHandle(queue_state.Handle()).c_str(),
                          queue_state.queue_family_index);
     }

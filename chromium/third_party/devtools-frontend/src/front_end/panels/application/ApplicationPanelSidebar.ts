@@ -37,6 +37,7 @@ import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
+import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
 import * as IssuesManager from '../../models/issues_manager/issues_manager.js';
@@ -51,6 +52,8 @@ import {BackForwardCacheTreeElement} from './BackForwardCacheTreeElement.js';
 import {BackgroundServiceModel} from './BackgroundServiceModel.js';
 import {BackgroundServiceView} from './BackgroundServiceView.js';
 import {BounceTrackingMitigationsTreeElement} from './BounceTrackingMitigationsTreeElement.js';
+import {DeviceBoundSessionsModel} from './DeviceBoundSessionsModel.js';
+import {RootTreeElement as DeviceBoundSessionsRootTreeElement} from './DeviceBoundSessionsTreeElement.js';
 import {type DOMStorage, DOMStorageModel, Events as DOMStorageModelEvents} from './DOMStorageModel.js';
 import {
   Events as ExtensionStorageModelEvents,
@@ -176,19 +179,6 @@ const UIStrings = {
    * @description Text that appears on a button for the manifest resource type filter.
    */
   manifest: 'Manifest',
-  /**
-   * @description Text in App Manifest View of the Application panel
-   */
-  noManifestDetected: 'No manifest detected',
-  /**
-   * @description Description text on manifests in App Manifest View of the Application panel which describes the app manifest view tab
-   */
-  manifestDescription:
-      'A manifest defines how your app appears on phone’s home screens and what the app looks like on launch.',
-  /**
-   * @description Text in App Manifest View of the Application panel
-   */
-  appManifest: 'Manifest',
   /**
    * @description Text in Application Panel Sidebar of the Application panel
    */
@@ -356,6 +346,8 @@ export class ApplicationPanelSidebar extends UI.Widget.VBox implements SDK.Targe
   periodicBackgroundSyncTreeElement: BackgroundServiceTreeElement;
   pushMessagingTreeElement: BackgroundServiceTreeElement;
   reportingApiTreeElement: ReportingApiTreeElement;
+  deviceBoundSessionsRootTreeElement: DeviceBoundSessionsRootTreeElement|undefined;
+  deviceBoundSessionsModel: DeviceBoundSessionsModel|undefined;
   preloadingSummaryTreeElement: PreloadingSummaryTreeElement|undefined;
   private readonly resourcesSection: ResourcesSection;
   private domStorageTreeElements: Map<DOMStorage, DOMStorageTreeElement>;
@@ -493,6 +485,13 @@ export class ApplicationPanelSidebar extends UI.Widget.VBox implements SDK.Targe
     backgroundServiceTreeElement.appendChild(this.pushMessagingTreeElement);
     this.reportingApiTreeElement = new ReportingApiTreeElement(panel);
     backgroundServiceTreeElement.appendChild(this.reportingApiTreeElement);
+
+    if (Root.Runtime.hostConfig.deviceBoundSessionsDebugging?.enabled) {
+      this.deviceBoundSessionsModel = new DeviceBoundSessionsModel();
+      this.deviceBoundSessionsRootTreeElement =
+          new DeviceBoundSessionsRootTreeElement(panel, this.deviceBoundSessionsModel);
+      backgroundServiceTreeElement.appendChild(this.deviceBoundSessionsRootTreeElement);
+    }
 
     const resourcesSectionTitle = i18nString(UIStrings.frames);
     const resourcesTreeElement = this.addSidebarSection(resourcesSectionTitle, 'frames');
@@ -773,6 +772,8 @@ export class ApplicationPanelSidebar extends UI.Widget.VBox implements SDK.Targe
     this.domains = {};
     this.cookieListTreeElement.removeChildren();
     this.interestGroupTreeElement.clearEvents();
+    this.deviceBoundSessionsModel?.clearVisibleSites();
+    this.deviceBoundSessionsModel?.clearEvents();
   }
 
   private frameNavigated(event: Common.EventTarget.EventTargetEvent<SDK.ResourceTreeModel.ResourceTreeFrame>): void {
@@ -804,6 +805,21 @@ export class ApplicationPanelSidebar extends UI.Widget.VBox implements SDK.Targe
       this.domains[domain] = true;
       const cookieDomainTreeElement = new CookieTreeElement(this.panel, frame, parsedURL);
       this.cookieListTreeElement.appendChild(cookieDomainTreeElement);
+
+      // Update device bound session visibility for new cookie domain.
+      if (this.deviceBoundSessionsModel) {
+        const target = frame.resourceTreeModel().target();
+        const networkAgent = target.networkAgent();
+        void networkAgent.invoke_fetchSchemefulSite({origin: domain}).then(response => {
+          if (response.getError() || !this.deviceBoundSessionsModel) {
+            return;
+          }
+          // Confirm the domain is still present first.
+          if (this.domains[domain]) {
+            this.deviceBoundSessionsModel.addVisibleSite(response.schemefulSite);
+          }
+        });
+      }
     }
   }
 
@@ -1156,10 +1172,7 @@ export class AppManifestTreeElement extends ApplicationPanelTreeElement {
     const icon = createIcon('document');
     this.setLeadingIcons([icon]);
     self.onInvokeElement(this.listItemElement, this.onInvoke.bind(this));
-    const emptyView = new UI.EmptyWidget.EmptyWidget(
-        i18nString(UIStrings.noManifestDetected), i18nString(UIStrings.manifestDescription));
-    const reportView = new UI.ReportView.ReportView(i18nString(UIStrings.appManifest));
-    this.view = new AppManifestView(emptyView, reportView, new Common.Throttler.Throttler(1000));
+    this.view = new AppManifestView();
     UI.ARIAUtils.setLabel(this.listItemElement, i18nString(UIStrings.onInvokeManifestAlert));
     const handleExpansion = (hasManifest: boolean): void => {
       this.setExpandable(hasManifest);
@@ -1181,11 +1194,30 @@ export class AppManifestTreeElement extends ApplicationPanelTreeElement {
   generateChildren(): void {
     const staticSections = this.view.getStaticSections();
     for (const section of staticSections) {
-      const sectionElement = section.getTitleElement();
-      const childTitle = section.title();
-      const sectionFieldElement = section.getFieldElement();
-      const child = new ManifestChildTreeElement(
-          this.resourcesPanel, sectionElement, childTitle, sectionFieldElement, section.jslogContext || '');
+      const childTitle = section.title;
+      const child = new ApplicationPanelTreeElement(this.resourcesPanel, childTitle, false, section.jslogContext || '');
+      child.onselect = (selectedByUser?: boolean): boolean => {
+        if (selectedByUser) {
+          this.showView(this.view);
+          this.view.scrollToSection(childTitle);
+        }
+        return true;
+      };
+
+      const icon = createIcon('document');
+      child.setLeadingIcons([icon]);
+
+      child.listItemElement.addEventListener('keydown', (event: Event) => {
+        if ((event as KeyboardEvent).key !== 'Tab' || (event as KeyboardEvent).shiftKey) {
+          return;
+        }
+
+        if (this.view.focusOnSection(childTitle)) {
+          event.consume(true);
+        }
+      });
+      UI.ARIAUtils.setLabel(
+          child.listItemElement, i18nString(UIStrings.beforeInvokeAlert, {PH1: child.listItemElement.title}));
       this.appendChild(child);
     }
   }
@@ -1193,58 +1225,6 @@ export class AppManifestTreeElement extends ApplicationPanelTreeElement {
   onInvoke(): void {
     this.view.getManifestElement().scrollIntoView();
     UI.ARIAUtils.LiveAnnouncer.alert(i18nString(UIStrings.onInvokeAlert, {PH1: this.listItemElement.title}));
-  }
-
-  showManifestView(): void {
-    this.showView(this.view);
-  }
-}
-
-export class ManifestChildTreeElement extends ApplicationPanelTreeElement {
-  #sectionElement: Element;
-  #sectionFieldElement: HTMLElement;
-  constructor(
-      storagePanel: ResourcesPanel, element: Element, childTitle: string, fieldElement: HTMLElement,
-      jslogContext: string) {
-    super(storagePanel, childTitle, false, jslogContext);
-    const icon = createIcon('document');
-    this.setLeadingIcons([icon]);
-    this.#sectionElement = element;
-    this.#sectionFieldElement = fieldElement;
-    self.onInvokeElement(this.listItemElement, this.onInvoke.bind(this));
-    this.listItemElement.addEventListener('keydown', this.onInvokeElementKeydown.bind(this));
-    UI.ARIAUtils.setLabel(
-        this.listItemElement, i18nString(UIStrings.beforeInvokeAlert, {PH1: this.listItemElement.title}));
-  }
-
-  override get itemURL(): Platform.DevToolsPath.UrlString {
-    return 'manifest://' + this.title as Platform.DevToolsPath.UrlString;
-  }
-
-  onInvoke(): void {
-    (this.parent as AppManifestTreeElement)?.showManifestView();
-    this.#sectionElement.scrollIntoView();
-    UI.ARIAUtils.LiveAnnouncer.alert(i18nString(UIStrings.onInvokeAlert, {PH1: this.listItemElement.title}));
-  }
-  // direct focus to the corresponding element
-  onInvokeElementKeydown(event: KeyboardEvent): void {
-    if (event.key !== 'Tab' || event.shiftKey) {
-      return;
-    }
-    const checkBoxElement = this.#sectionFieldElement.querySelector('.mask-checkbox');
-    let focusableElement: HTMLElement|null = this.#sectionFieldElement.querySelector('[tabindex="0"]');
-    if (checkBoxElement?.shadowRoot) {
-      focusableElement = checkBoxElement.shadowRoot.querySelector('input') || null;
-    } else if (!focusableElement) {
-      // special case for protocol handler section since it is a custom Element and has different structure than the others
-      focusableElement = this.#sectionFieldElement.querySelector('devtools-protocol-handlers-view')
-                             ?.shadowRoot?.querySelector('[tabindex="0"]') ||
-          null;
-    }
-    if (focusableElement) {
-      focusableElement?.focus();
-      event.consume(true);
-    }
   }
 }
 

@@ -22,7 +22,6 @@
 #include "content/browser/devtools/service_worker_devtools_agent_host.h"
 #include "content/browser/devtools/service_worker_devtools_manager.h"
 #include "content/browser/devtools/shared_worker_devtools_agent_host.h"
-#include "content/browser/indexed_db/indexed_db_internals.mojom-forward.h"
 #include "content/browser/indexed_db/indexed_db_internals.mojom.h"
 #include "content/browser/renderer_host/render_frame_host_impl.h"
 #include "content/browser/service_worker/service_worker_info.h"
@@ -116,7 +115,7 @@ IndexedDBInternalsUI::IndexedDBInternalsUI(WebUI* web_ui)
       "trusted-types static-types lit-html-desktop;");
   source->UseStringsJs();
   source->AddResourcePaths(kIndexedDbResources);
-  source->AddResourcePath("", IDR_INDEXED_DB_INDEXEDDB_INTERNALS_HTML);
+  source->SetDefaultResource(IDR_INDEXED_DB_INDEXEDDB_INTERNALS_HTML);
 }
 
 WEB_UI_CONTROLLER_TYPE_IMPL(IndexedDBInternalsUI)

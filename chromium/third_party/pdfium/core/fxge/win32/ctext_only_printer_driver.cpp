@@ -10,8 +10,6 @@
 #include <algorithm>
 
 #include "core/fxcrt/check_op.h"
-#include "core/fxcrt/compiler_specific.h"
-#include "core/fxcrt/fx_memcpy_wrappers.h"
 #include "core/fxcrt/fx_string.h"
 #include "core/fxcrt/fx_system.h"
 #include "core/fxcrt/notreached.h"
@@ -165,12 +163,14 @@ bool CTextOnlyPrinterDriver::DrawDeviceText(
     wsText += charpos.unicode_;
   }
   ByteString text = wsText.ToDefANSI();
-  auto text_span = text.span();
+  auto text_span = pdfium::as_bytes(text.span());
+  uint8_t buffer[1026];
+  auto [header_span, buffer_span] = pdfium::span(buffer).split_at<2>();
+  auto header_span16 = fxcrt::reinterpret_span<uint16_t>(header_span);
   while (!text_span.empty()) {
-    uint8_t buffer[1026];
     size_t send_len = std::min<size_t>(text_span.size(), 1024);
-    *(reinterpret_cast<uint16_t*>(buffer)) = static_cast<uint16_t>(send_len);
-    UNSAFE_TODO(FXSYS_memcpy(buffer + 2, text_span.data(), send_len));
+    header_span16[0] = static_cast<uint16_t>(send_len);
+    buffer_span.copy_prefix_from(text_span.first(send_len));
     ::GdiComment(dc_handle_, static_cast<UINT>(send_len + 2), buffer);
     text_span = text_span.subspan(send_len);
   }

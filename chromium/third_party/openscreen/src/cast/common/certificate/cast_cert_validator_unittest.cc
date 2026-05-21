@@ -12,7 +12,6 @@
 #include "cast/common/public/trust_store.h"
 #include "gtest/gtest.h"
 #include "openssl/pem.h"
-#include "platform/test/byte_view_test_util.h"
 #include "platform/test/paths.h"
 #include "util/crypto/pem_helpers.h"
 
@@ -89,10 +88,10 @@ void RunTest(Error::Code expected_result,
 
   // Test verification of some invalid signatures.
   EXPECT_FALSE(target_cert->VerifySignedData(
-      DigestAlgorithm::kSha256, ByteViewFromLiteral("bogus data"),
-      ByteViewFromLiteral("bogus signature")));
+      DigestAlgorithm::kSha256, ByteViewFromString("bogus data"),
+      ByteViewFromString("bogus signature")));
   EXPECT_FALSE(target_cert->VerifySignedData(
-      DigestAlgorithm::kSha256, ByteViewFromLiteral("bogus data"), ByteView()));
+      DigestAlgorithm::kSha256, ByteViewFromString("bogus data"), ByteView()));
   EXPECT_FALSE(target_cert->VerifySignedData(DigestAlgorithm::kSha256,
                                              ByteView(), ByteView()));
 

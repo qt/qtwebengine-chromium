@@ -37,18 +37,18 @@ constexpr char kEmptyJson[] = "{}";
 
 // Schema format string, that allows for specifying definitions,
 // properties, and required fields.
-constexpr char kSchemaFormat[] = R"({
+static constexpr char kSchemaFormat[] = R"({{
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://something/app_schema_data.h",
-  "definitions": {
-    %s
-  },
+  "definitions": {{
+    {}
+  }},
   "type": "object",
-  "properties": {
-    %s
-  },
-  "required": [%s]
-})";
+  "properties": {{
+    {}
+  }},
+  "required": [{}]
+}})";
 
 // Fields used for an appId containing schema
 constexpr char kAppIdDefinition[] = R"("app_id": {
@@ -66,7 +66,7 @@ constexpr char kInvalidAppIdDocument[] = R"({ "appId": "FooBar" })";
 std::string BuildSchema(const char* definitions,
                         const char* properties,
                         const char* required) {
-  return StringPrintf(kSchemaFormat, definitions, properties, required);
+  return StringFormat(kSchemaFormat, definitions, properties, required);
 }
 
 bool TestValidate(std::string_view document, std::string_view schema) {

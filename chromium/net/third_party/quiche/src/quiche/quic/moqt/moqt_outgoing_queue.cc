@@ -75,15 +75,16 @@ void MoqtOutgoingQueue::OpenNewGroup() {
 void MoqtOutgoingQueue::AddRawObject(MoqtObjectStatus status,
                                      quiche::QuicheMemSlice payload) {
   Location sequence{current_group_id_, queue_.back().size()};
-  bool fin = forwarding_preference_ == MoqtForwardingPreference::kSubgroup &&
-             status == MoqtObjectStatus::kEndOfGroup;
+  bool fin = status == MoqtObjectStatus::kEndOfGroup;
   queue_.back().push_back(CachedObject{
-      PublishedObjectMetadata{sequence, 0, "", status, publisher_priority_,
-                              clock_->ApproximateNow()},
+      PublishedObjectMetadata{
+          sequence, 0, "", status, default_publisher_priority(),
+          MoqtForwardingPreference::kSubgroup, clock_->ApproximateNow()},
       std::make_shared<quiche::QuicheMemSlice>(std::move(payload)), fin});
   for (MoqtObjectListener* listener : listeners_) {
     listener->OnNewObjectAvailable(sequence, /*subgroup=*/0,
-                                   publisher_priority_);
+                                   default_publisher_priority(),
+                                   MoqtForwardingPreference::kSubgroup);
   }
 }
 
@@ -92,11 +93,12 @@ std::optional<PublishedObject> MoqtOutgoingQueue::GetCachedObject(
   QUICHE_DCHECK_EQ(subgroup, 0u);
   if (group < first_group_in_queue()) {
     if (object == 0) {
-      return PublishedObject{PublishedObjectMetadata{
-                                 Location(group, object), /*subgroup=*/0, "",
-                                 MoqtObjectStatus::kEndOfGroup,
-                                 publisher_priority_, clock_->ApproximateNow()},
-                             quiche::QuicheMemSlice{}};
+      return PublishedObject{
+          PublishedObjectMetadata{
+              Location(group, object), /*subgroup=*/0, "",
+              MoqtObjectStatus::kEndOfGroup, default_publisher_priority(),
+              MoqtForwardingPreference::kSubgroup, clock_->ApproximateNow()},
+          quiche::QuicheMemSlice{}};
     }
     return std::nullopt;
   }
@@ -236,7 +238,7 @@ MoqtOutgoingQueue::FetchTask::GetNextObjectInner(PublishedObject& object) {
     // skipping it.
     object.metadata.location = objects_.front();
     object.metadata.subgroup = 0;
-    object.metadata.publisher_priority = queue_->publisher_priority_;
+    object.metadata.publisher_priority = queue_->default_publisher_priority();
     object.metadata.status = object.metadata.location.object == 0
                                  ? MoqtObjectStatus::kEndOfGroup
                                  : MoqtObjectStatus::kObjectDoesNotExist;

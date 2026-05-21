@@ -328,7 +328,7 @@ inline bool IsColMajor(const MatLayout& layout) {
 }
 
 inline std::ptrdiff_t FlatSize(const MatLayout& layout) {
-  const int outerdim =
+  const std::ptrdiff_t outerdim =
       layout.order == Order::kColMajor ? layout.cols : layout.rows;
   return layout.stride * outerdim;
 }
@@ -350,7 +350,7 @@ inline bool IsColMajor(const PMatLayout& layout) {
 }
 
 inline std::ptrdiff_t FlatSize(const PMatLayout& layout) {
-  const int outerdim =
+  const std::ptrdiff_t outerdim =
       layout.order == Order::kColMajor ? layout.cols : layout.rows;
   return layout.stride * outerdim;
 }

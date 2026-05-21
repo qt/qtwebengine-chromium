@@ -669,6 +669,9 @@ enum MetricName : uint32_t {
   kSdkVersion,
   kCertificateSerialNumber,
   kDecoderBypassBlockCount,
+  kDecoderCheck1SuccessCount,
+  kDecoderCheck1WarningCount,
+  kDecoderCheck1ErrorCount,
 };
 CHECK_TYPE(MetricName, 4, 4);
 

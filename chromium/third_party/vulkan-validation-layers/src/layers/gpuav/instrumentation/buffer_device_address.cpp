@@ -1,4 +1,4 @@
-/* Copyright (c) 2024-2025 LunarG, Inc.
+/* Copyright (c) 2024-2026 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,12 +13,12 @@
  * limitations under the License.
  */
 
-#include "gpuav/instrumentation/buffer_device_address.h"
-
 #include "gpuav/core/gpuav.h"
-#include "gpuav/resources/gpuav_shader_resources.h"
 #include "gpuav/resources/gpuav_state_trackers.h"
 #include "gpuav/resources/gpuav_vulkan_objects.h"
+#include "gpuav/shaders/gpuav_error_codes.h"
+#include "gpuav/shaders/gpuav_error_header.h"
+#include "gpuav/shaders/gpuav_shaders_constants.h"
 
 namespace gpuav {
 
@@ -35,15 +35,73 @@ void RegisterBufferDeviceAddressValidation(Validator& gpuav, CommandBufferSubSta
         return;
     }
 
-    cb.on_instrumentation_desc_set_update_functions.emplace_back(
-        [](CommandBufferSubState& cb, VkPipelineBindPoint, VkDescriptorBufferInfo& out_buffer_info, uint32_t& out_dst_binding) {
-            BufferDeviceAddressCbState& bda_cb_state = cb.shared_resources_cache.GetOrCreate<BufferDeviceAddressCbState>(cb);
-            out_buffer_info.buffer = bda_cb_state.bda_ranges_snapshot_ptr.buffer;
-            out_buffer_info.offset = bda_cb_state.bda_ranges_snapshot_ptr.offset;
-            out_buffer_info.range = bda_cb_state.bda_ranges_snapshot_ptr.size;
+    cb.on_instrumentation_error_logger_register_functions.emplace_back([](Validator& gpuav, CommandBufferSubState& cb,
+                                                                          const LastBound& last_bound) {
+        CommandBufferSubState::InstrumentationErrorLogger inst_error_logger = [](Validator& gpuav, const Location&,
+                                                                                 const uint32_t* error_record,
+                                                                                 std::string& out_error_msg,
+                                                                                 std::string& out_vuid_msg) {
+            using namespace glsl;
+            bool error_found = false;
+            if (GetErrorGroup(error_record) != kErrorGroup_InstBufferDeviceAddress) {
+                return error_found;
+            }
+            error_found = true;
 
-            out_dst_binding = glsl::kBindingInstBufferDeviceAddress;
-        });
+            std::ostringstream strm;
+
+            const uint32_t payload = error_record[kInst_LogError_ParameterOffset_2];
+            const bool is_write = ((payload >> kInst_BuffAddrAccess_PayloadShiftIsWrite) & 1) != 0;
+            const bool is_struct = ((payload >> kInst_BuffAddrAccess_PayloadShiftIsStruct) & 1) != 0;
+
+            const uint64_t address = *reinterpret_cast<const uint64_t*>(error_record + kInst_LogError_ParameterOffset_0);
+
+            const uint32_t error_sub_code = GetSubError(error_record);
+            switch (error_sub_code) {
+                case kErrorSubCode_BufferDeviceAddress_UnallocRef: {
+                    const char* access_type = is_write ? "written" : "read";
+                    const uint32_t byte_size = payload & kInst_BuffAddrAccess_PayloadMaskAccessInfo;
+                    strm << "Out of bounds access: " << byte_size << " bytes " << access_type << " at buffer device address 0x"
+                         << std::hex << address << '.';
+                    if (is_struct) {
+                        // Added because glslang currently has no way to seperate out the struct (Slang does as of 2025.6.2)
+                        strm << " This " << (is_write ? "write" : "read")
+                             << " corresponds to a full OpTypeStruct load. While not all members of the struct might be accessed, "
+                                "it is up "
+                                "to the source language or tooling to detect that and reflect it in the SPIR-V.";
+                    }
+                    out_vuid_msg = "VUID-RuntimeSpirv-PhysicalStorageBuffer64-11819";
+
+                } break;
+                case kErrorSubCode_BufferDeviceAddress_Alignment: {
+                    const char* access_type = is_write ? "OpStore" : "OpLoad";
+                    const uint32_t alignment = (payload & kInst_BuffAddrAccess_PayloadMaskAccessInfo);
+                    strm << "Unaligned pointer access: The " << access_type << " at buffer device address 0x" << std::hex << address
+                         << " is not aligned to the instruction Aligned operand of " << std::dec << alignment << '.';
+                    out_vuid_msg = "VUID-RuntimeSpirv-PhysicalStorageBuffer64-06315";
+
+                } break;
+                default:
+                    error_found = false;
+                    break;
+            }
+            out_error_msg += strm.str();
+            return error_found;
+        };
+
+        return inst_error_logger;
+    });
+
+    cb.on_instrumentation_desc_set_update_functions.emplace_back([](CommandBufferSubState& cb, VkPipelineBindPoint, const Location&,
+                                                                    VkDescriptorBufferInfo& out_buffer_info,
+                                                                    uint32_t& out_dst_binding) {
+        BufferDeviceAddressCbState& bda_cb_state = cb.shared_resources_cache.GetOrCreate<BufferDeviceAddressCbState>(cb);
+        out_buffer_info.buffer = bda_cb_state.bda_ranges_snapshot_ptr.buffer;
+        out_buffer_info.offset = bda_cb_state.bda_ranges_snapshot_ptr.offset;
+        out_buffer_info.range = bda_cb_state.bda_ranges_snapshot_ptr.size;
+
+        out_dst_binding = glsl::kBindingInstBufferDeviceAddress;
+    });
 
     cb.on_pre_cb_submission_functions.emplace_back([](Validator& gpuav, CommandBufferSubState& cb,
                                                       VkCommandBuffer per_submission_cb) {
@@ -69,35 +127,7 @@ void RegisterBufferDeviceAddressValidation(Validator& gpuav, CommandBufferSubSta
         vko::BufferRange bda_table_ptr = cb.gpu_resources_manager.GetHostCoherentBufferRange(sizeof(VkDeviceAddress));
         *(VkDeviceAddress*)bda_table_ptr.offset_mapped_ptr = bda_table.offset_address;
 
-        // Dispatch a copy command, copying the per CB submission BDA table pointer to the BDA table pointer created at
-        // "on_instrumentation_desc_set_update_functions" time, so that CB submission accesses correct BDA snapshot.
-        {
-            VkBufferMemoryBarrier barrier_write_after_read = vku::InitStructHelper();
-            barrier_write_after_read.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
-            barrier_write_after_read.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-            barrier_write_after_read.buffer = bda_cb_state->bda_ranges_snapshot_ptr.buffer;
-            barrier_write_after_read.offset = bda_cb_state->bda_ranges_snapshot_ptr.offset;
-            barrier_write_after_read.size = bda_cb_state->bda_ranges_snapshot_ptr.size;
-
-            DispatchCmdPipelineBarrier(per_submission_cb, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-                                       0, 0, nullptr, 1, &barrier_write_after_read, 0, nullptr);
-
-            VkBufferCopy copy;
-            copy.srcOffset = bda_table_ptr.offset;
-            copy.dstOffset = bda_cb_state->bda_ranges_snapshot_ptr.offset;
-            copy.size = sizeof(VkDeviceAddress);
-            DispatchCmdCopyBuffer(per_submission_cb, bda_table_ptr.buffer, bda_cb_state->bda_ranges_snapshot_ptr.buffer, 1, &copy);
-
-            VkBufferMemoryBarrier barrier_read_before_write = vku::InitStructHelper();
-            barrier_read_before_write.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-            barrier_read_before_write.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
-            barrier_read_before_write.buffer = bda_cb_state->bda_ranges_snapshot_ptr.buffer;
-            barrier_read_before_write.offset = bda_cb_state->bda_ranges_snapshot_ptr.offset;
-            barrier_read_before_write.size = bda_cb_state->bda_ranges_snapshot_ptr.size;
-
-            DispatchCmdPipelineBarrier(per_submission_cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0,
-                                       nullptr, 1, &barrier_read_before_write, 0, nullptr);
-        }
+        vko::CmdSynchronizedCopyBufferRange(per_submission_cb, bda_cb_state->bda_ranges_snapshot_ptr, bda_table_ptr);
     });
 }
 

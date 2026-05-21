@@ -80,6 +80,10 @@ impl FileTypeBox {
         self.has_brand_any(&[
             "avif",
             "avis",
+            #[cfg(feature = "avm")]
+            "av2f",
+            #[cfg(feature = "avm")]
+            "av2s",
             #[cfg(feature = "heic")]
             "heic",
             #[cfg(feature = "heic")]
@@ -88,28 +92,40 @@ impl FileTypeBox {
             "mif1",
             #[cfg(feature = "heic")]
             "msf1",
+            #[cfg(feature = "jpegxl")]
+            "hxlI",
+            #[cfg(feature = "jpegxl")]
+            "hxlS",
         ])
     }
 
     pub(crate) fn needs_meta(&self) -> bool {
         self.has_brand_any(&[
             "avif",
+            #[cfg(feature = "avm")]
+            "av2f",
             #[cfg(feature = "heic")]
             "heic",
             #[cfg(feature = "heic")]
             "heix",
             #[cfg(feature = "heic")]
             "mif1",
+            #[cfg(feature = "jpegxl")]
+            "hxlI",
         ])
     }
 
     pub(crate) fn needs_moov(&self) -> bool {
         self.has_brand_any(&[
             "avis",
+            #[cfg(feature = "avm")]
+            "av2s",
             #[cfg(feature = "heic")]
             "hevc",
             #[cfg(feature = "heic")]
             "msf1",
+            #[cfg(feature = "jpegxl")]
+            "hxlS",
         ])
     }
 
@@ -175,6 +191,55 @@ pub struct PixelInformation {
     pub planes: Vec<PlanePixelInformation>,
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct AlphaInformation {
+    pub is_premultiplied: bool,
+}
+
+#[cfg(feature = "jpegxl")]
+impl PixelInformation {
+    pub fn num_channels_with_idc(&self, channel_idc: ChannelIdc) -> usize {
+        self.planes
+            .iter()
+            .filter(|plane| plane.channel_idc == Some(channel_idc))
+            .count()
+    }
+    pub fn num_color_channels(&self) -> AvifResult<u32> {
+        if self.planes.iter().any(|plane| plane.channel_idc.is_some()) {
+            if self.planes.iter().any(|plane| plane.channel_idc.is_none()) {
+                return AvifError::not_implemented();
+            }
+            match (
+                self.num_channels_with_idc(ChannelIdc::FirstColorChannel),
+                self.num_channels_with_idc(ChannelIdc::SecondColorChannel),
+                self.num_channels_with_idc(ChannelIdc::ThirdColorChannel),
+                self.num_channels_with_idc(ChannelIdc::FourthColorChannel),
+            ) {
+                (1, 0, 0, 0) => Ok(1),
+                (1, 1, 1, 0) => Ok(3),
+                _ => AvifError::not_implemented(),
+            }
+        } else {
+            u32_from_usize(self.planes.len())
+        }
+    }
+    pub fn bit_depth(&self) -> AvifResult<u8> {
+        let depth = self
+            .planes
+            .first()
+            .ok_or_else(|| {
+                AvifError::bmff_parse_failed::<(), _>("Empty pixi property").unwrap_err()
+            })?
+            .depth;
+        if self.planes.iter().any(|plane| plane.depth != depth) {
+            return AvifError::bmff_parse_failed(format!(
+                "Not all pixi planes have the same depth {depth}"
+            ));
+        }
+        Ok(depth)
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Av1CodecConfiguration {
     pub seq_profile: u8,
@@ -189,6 +254,23 @@ pub struct Av1CodecConfiguration {
     pub raw_data: Vec<u8>,
 }
 
+#[cfg(feature = "avm")]
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Av2CodecConfiguration {
+    // TODO: b/437292541 - Match AV2-ISOBMFF once finalized.
+    pub seq_profile: u8,
+    pub seq_level_idx0: u8,
+    pub seq_tier_0: u8,
+    pub bitdepth_idx: u8,
+    pub monochrome: bool,
+    pub chroma_subsampling_x: u8,
+    pub chroma_subsampling_y: u8,
+    // conf_win
+    pub chroma_sample_position: ChromaSamplePosition,
+    // initial_presentation_delay and other fields
+    pub raw_data: Vec<u8>,
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct HevcCodecConfiguration {
     pub bitdepth: u8,
@@ -197,6 +279,15 @@ pub struct HevcCodecConfiguration {
     pub vps: Vec<u8>,
     pub sps: Vec<u8>,
     pub pps: Vec<u8>,
+}
+
+#[cfg(feature = "jpegxl")]
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct JpegXlCodecConfiguration {
+    pub have_animation: bool,
+    pub modular_16bit_buffers: bool,
+    pub xyb_encoded: bool,
+    pub level: u8,
 }
 
 impl Av1CodecConfiguration {
@@ -222,29 +313,69 @@ impl Av1CodecConfiguration {
     }
 }
 
+#[cfg(feature = "avm")]
+impl Av2CodecConfiguration {
+    pub(crate) fn depth(&self) -> u8 {
+        match self.bitdepth_idx {
+            0 => 10,
+            1 => 8,
+            2 => 12,
+            _ => unreachable!(),
+        }
+    }
+    pub(crate) fn pixel_format(&self) -> PixelFormat {
+        match (
+            self.monochrome,
+            self.chroma_subsampling_x,
+            self.chroma_subsampling_y,
+        ) {
+            (true, 1, 1) => PixelFormat::Yuv400,
+            (false, 1, 1) => PixelFormat::Yuv420,
+            (false, 1, 0) => PixelFormat::Yuv422,
+            (false, 0, 0) => PixelFormat::Yuv444,
+            _ => unreachable!(),
+        }
+    }
+}
+
 impl CodecConfiguration {
     pub(crate) fn depth(&self) -> Option<u8> {
         match self {
             Self::Av1(config) => Some(config.depth()),
+            #[cfg(feature = "avm")]
+            Self::Av2(config) => Some(config.depth()),
             Self::Hevc(config) => Some(config.bitdepth),
+            #[cfg(feature = "jpegxl")]
+            Self::JpegXl(_) => None,
         }
     }
 
     pub(crate) fn pixel_format(&self) -> Option<PixelFormat> {
         match self {
             Self::Av1(config) => Some(config.pixel_format()),
+            #[cfg(feature = "avm")]
+            Self::Av2(config) => Some(config.pixel_format()),
             Self::Hevc(config) => Some(config.pixel_format),
+            #[cfg(feature = "jpegxl")]
+            Self::JpegXl(_) => None,
         }
     }
 
     pub(crate) fn chroma_sample_position(&self) -> ChromaSamplePosition {
         match self {
             Self::Av1(config) => config.chroma_sample_position,
+            #[cfg(feature = "avm")]
+            Self::Av2(config) => config.chroma_sample_position,
             Self::Hevc(_) => {
                 // It is okay to always return ChromaSamplePosition::default() here since that is
                 // the only format that android_mediacodec returns.
                 // TODO: b/370549923 - Identify the correct chroma sample position from the codec
                 // configuration data.
+                ChromaSamplePosition::default()
+            }
+            #[cfg(feature = "jpegxl")]
+            Self::JpegXl(_) => {
+                // TODO: b/456440247 - Return None instead. The information should be fetched from pixi.
                 ChromaSamplePosition::default()
             }
         }
@@ -254,6 +385,8 @@ impl CodecConfiguration {
     pub(crate) fn raw_data(&self) -> Vec<u8> {
         match self {
             Self::Av1(config) => config.raw_data.clone(),
+            #[cfg(feature = "avm")]
+            Self::Av2(config) => unreachable!(),
             Self::Hevc(config) => {
                 // For HEVC, the codec specific data consists of the following 3 NAL units in
                 // order: VPS, SPS and PPS. Each unit should be preceded by a start code of
@@ -268,17 +401,23 @@ impl CodecConfiguration {
                 }
                 data
             }
+            #[cfg(feature = "jpegxl")]
+            Self::JpegXl(_) => unreachable!(),
         }
     }
 
     pub fn profile(&self) -> u8 {
         match self {
             Self::Av1(config) => config.seq_profile,
+            #[cfg(feature = "avm")]
+            Self::Av2(config) => config.seq_profile,
             Self::Hevc(_) => {
                 // TODO: b/370549923 - Identify the correct profile from the codec configuration
                 // data.
                 0
             }
+            #[cfg(feature = "jpegxl")]
+            Self::JpegXl(_) => unreachable!(),
         }
     }
 
@@ -293,7 +432,11 @@ impl CodecConfiguration {
     pub(crate) fn compression_format(&self) -> CompressionFormat {
         match self {
             Self::Av1(_) => CompressionFormat::Avif,
+            #[cfg(feature = "avm")]
+            Self::Av2(_) => CompressionFormat::Avif2,
             Self::Hevc(_) => CompressionFormat::Heic,
+            #[cfg(feature = "jpegxl")]
+            Self::JpegXl(_) => CompressionFormat::JpegXl,
         }
     }
 }
@@ -308,19 +451,18 @@ pub enum ColorInformation {
 #[derive(Clone, Debug, PartialEq)]
 pub enum CodecConfiguration {
     Av1(Av1CodecConfiguration),
+    #[cfg(feature = "avm")]
+    Av2(Av2CodecConfiguration),
     Hevc(HevcCodecConfiguration),
-}
-
-impl Default for CodecConfiguration {
-    fn default() -> Self {
-        Self::Av1(Av1CodecConfiguration::default())
-    }
+    #[cfg(feature = "jpegxl")]
+    JpegXl(JpegXlCodecConfiguration),
 }
 
 #[derive(Clone, Debug)]
 pub enum ItemProperty {
     ImageSpatialExtents(ImageSpatialExtents),
     PixelInformation(PixelInformation),
+    AlphaInformation(AlphaInformation),
     CodecConfiguration(CodecConfiguration),
     ColorInformation(ColorInformation),
     PixelAspectRatio(PixelAspectRatio),
@@ -720,6 +862,31 @@ fn parse_pixi(stream: &mut IStream) -> AvifResult<ItemProperty> {
     Ok(ItemProperty::PixelInformation(pixi))
 }
 
+fn parse_alpi(stream: &mut IStream) -> AvifResult<ItemProperty> {
+    // Section 12.1.11.2 of ISO/IEC 14496-12 8th ed DAM 2.
+    let (_, flags) = stream.read_and_enforce_version_and_flags(0)?;
+    let is_premultiplied = match flags & 0x3 {
+        0 => false,
+        1 => true,
+        // TODO: b/473502178 - Support color samples premultiplied by alpha in linear RGB space
+        2 => return AvifError::not_implemented(),
+        _ => return AvifError::bmff_parse_failed("Reserved premultiplication_mode in alpi box"),
+    };
+    if flags & 0x4 != 0 {
+        return AvifError::not_implemented();
+    }
+    let opaque_value = stream.read_u16()?; // unsigned int (16) opaque_value;
+    let transparent_value = stream.read_u16()?; // unsigned int (16) transparent_value;
+
+    // TODO: b/473502178 - Adapt the expected opaque_value to the alpha sample bit depth.
+    if opaque_value != 255 && transparent_value != 0 {
+        return AvifError::not_implemented();
+    }
+    Ok(ItemProperty::AlphaInformation(AlphaInformation {
+        is_premultiplied,
+    }))
+}
+
 #[allow(non_snake_case)]
 fn parse_av1C(stream: &mut IStream) -> AvifResult<ItemProperty> {
     Ok(ItemProperty::CodecConfiguration(CodecConfiguration::Av1(
@@ -795,6 +962,67 @@ impl Av1CodecConfiguration {
         // unsigned int(8) configOBUs[];
 
         Ok(av1C)
+    }
+}
+
+#[cfg(feature = "avm")]
+#[allow(non_snake_case)]
+fn parse_av2C(stream: &mut IStream) -> AvifResult<ItemProperty> {
+    Ok(ItemProperty::CodecConfiguration(CodecConfiguration::Av2(
+        Av2CodecConfiguration::parse(stream)?,
+    )))
+}
+
+#[cfg(feature = "avm")]
+impl Av2CodecConfiguration {
+    #[allow(non_snake_case)]
+    pub(crate) fn parse(stream: &mut IStream) -> AvifResult<Av2CodecConfiguration> {
+        // TODO: b/437292541 - Match write_av2_codec_config() once AV2-ISOBMFF is finalized.
+        let raw_data = stream.get_immutable_vec(stream.bytes_left()?)?;
+        // unsigned int (1) marker = 1;
+        let marker = stream.read_bits(1)?;
+        if marker != 1 {
+            return AvifError::bmff_parse_failed(format!("Invalid marker {marker} in av2C"));
+        }
+        // unsigned int (7) version = 1;
+        let version = stream.read_bits(7)?;
+        if version != 1 {
+            return AvifError::bmff_parse_failed(format!("Invalid version {version} in av2C"));
+        }
+        let av2C = Av2CodecConfiguration {
+            seq_profile: stream.read_bits(3)? as u8,
+            seq_level_idx0: stream.read_bits(5)? as u8,
+            seq_tier_0: stream.read_bits(1)? as u8,
+            bitdepth_idx: stream.read_bits(2)? as u8,
+            monochrome: stream.read_bool()?,
+            chroma_subsampling_x: stream.read_bits(1)? as u8,
+            chroma_subsampling_y: stream.read_bits(1)? as u8,
+            chroma_sample_position: stream.read_bits(3)?.into(),
+            raw_data,
+        };
+        if av2C.bitdepth_idx > 2 {
+            return AvifError::bmff_parse_failed(format!(
+                "Invalid bitdepth_idx {} in av2C",
+                av2C.bitdepth_idx
+            ));
+        }
+
+        // unsigned int(2) reserved = 0;
+        if stream.read_bits(2)? != 0 {
+            return AvifError::bmff_parse_failed("Invalid reserved bits in av2C");
+        }
+        // unsigned int(1) initial_presentation_delay_present;
+        if stream.read_bits(1)? == 1 {
+            // unsigned int(4) initial_presentation_delay_minus_one;
+            stream.skip_bits(4)?;
+        } else {
+            // unsigned int(4) reserved = 0;
+            if stream.read_bits(4)? != 0 {
+                return AvifError::bmff_parse_failed("Invalid reserved bits in av2C");
+            }
+        }
+
+        Ok(av2C)
     }
 }
 
@@ -878,6 +1106,36 @@ fn parse_hvcC(stream: &mut IStream) -> AvifResult<ItemProperty> {
             sps,
         },
     )))
+}
+
+#[allow(non_snake_case)]
+#[cfg(feature = "jpegxl")]
+fn parse_hxlC(stream: &mut IStream) -> AvifResult<ItemProperty> {
+    // unsigned int(3) version;
+    let version = stream.read_bits(3)? as u8;
+    if version != 0 {
+        return AvifError::bmff_parse_failed(format!(
+            "Unknown version({version}) in hxlC. Expected 0."
+        ));
+    }
+    // unsigned int(2) reserved = 0;
+    stream.skip_bits(2)?;
+    // unsigned int(1) have_animation;
+    let have_animation = stream.read_bool()?;
+    // unsigned int(1) modular_16bit_buffers;
+    let modular_16bit_buffers = stream.read_bool()?;
+    // unsigned int(1) xyb_encoded;
+    let xyb_encoded = stream.read_bool()?;
+    // unsigned int(8) level;
+    let level = stream.read_bits(3)? as u8;
+    Ok(ItemProperty::CodecConfiguration(
+        CodecConfiguration::JpegXl(JpegXlCodecConfiguration {
+            have_animation,
+            modular_16bit_buffers,
+            xyb_encoded,
+            level,
+        }),
+    ))
 }
 
 fn parse_colr(stream: &mut IStream) -> AvifResult<ItemProperty> {
@@ -1058,7 +1316,10 @@ fn parse_ipco(stream: &mut IStream, is_track: bool) -> AvifResult<Vec<ItemProper
         match header.box_type.as_str() {
             "ispe" => properties.push(parse_ispe(&mut sub_stream)?),
             "pixi" => properties.push(parse_pixi(&mut sub_stream)?),
+            "alpi" => properties.push(parse_alpi(&mut sub_stream)?),
             "av1C" => properties.push(parse_av1C(&mut sub_stream)?),
+            #[cfg(feature = "avm")]
+            "av2C" => properties.push(parse_av2C(&mut sub_stream)?),
             "colr" => properties.push(parse_colr(&mut sub_stream)?),
             "pasp" => properties.push(parse_pasp(&mut sub_stream)?),
             "auxC" if !is_track => properties.push(parse_auxC(&mut sub_stream)?),
@@ -1072,6 +1333,8 @@ fn parse_ipco(stream: &mut IStream, is_track: bool) -> AvifResult<Vec<ItemProper
             "clli" => properties.push(parse_clli(&mut sub_stream)?),
             #[cfg(feature = "heic")]
             "hvcC" => properties.push(parse_hvcC(&mut sub_stream)?),
+            #[cfg(feature = "jpegxl")]
+            "hxlC" => properties.push(parse_hxlC(&mut sub_stream)?),
             _ => properties.push(ItemProperty::Unknown(header.box_type)),
         }
     }

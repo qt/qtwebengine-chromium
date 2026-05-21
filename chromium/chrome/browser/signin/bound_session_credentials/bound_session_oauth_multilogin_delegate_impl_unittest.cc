@@ -4,6 +4,7 @@
 
 #include "chrome/browser/signin/bound_session_credentials/bound_session_oauth_multilogin_delegate_impl.h"
 
+#include "base/strings/strcat.h"
 #include "base/test/bind.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/protobuf_matchers.h"
@@ -94,8 +95,7 @@ TEST_F(BoundSessionOAuthMultiLoginDelegateImplTest,
               "isSecure": true,
               "isHttpOnly": true,
               "maxAge": 31536000,
-              "priority": "HIGH",
-              "sameParty": "1"
+              "priority": "HIGH"
             }
           ],
           "token_binding_directed_response": {}
@@ -127,8 +127,7 @@ TEST_F(BoundSessionOAuthMultiLoginDelegateImplTest,
               "isSecure": true,
               "isHttpOnly": true,
               "maxAge": 31536000,
-              "priority": "HIGH",
-              "sameParty": "1"
+              "priority": "HIGH"
             }
           ],
           "token_binding_directed_response": {},
@@ -186,8 +185,7 @@ TEST_F(BoundSessionOAuthMultiLoginDelegateImplTest,
               "isSecure": true,
               "isHttpOnly": true,
               "maxAge": 31536000,
-              "priority": "HIGH",
-              "sameParty": "1"
+              "priority": "HIGH"
             },
             {
               "name": "__Secure-Google-Cookie",
@@ -197,8 +195,7 @@ TEST_F(BoundSessionOAuthMultiLoginDelegateImplTest,
               "isSecure": true,
               "isHttpOnly": true,
               "maxAge": 31536000,
-              "priority": "HIGH",
-              "sameParty": "1"
+              "priority": "HIGH"
             }
           ],
           "token_binding_directed_response": {},
@@ -285,8 +282,7 @@ TEST_F(BoundSessionOAuthMultiLoginDelegateImplTest,
               "isSecure": true,
               "isHttpOnly": true,
               "maxAge": 31536000,
-              "priority": "HIGH",
-              "sameParty": "1"
+              "priority": "HIGH"
             }
           ],
           "token_binding_directed_response": {},
@@ -347,8 +343,7 @@ TEST_F(BoundSessionOAuthMultiLoginDelegateImplTest,
               "isSecure": true,
               "isHttpOnly": true,
               "maxAge": 31536000,
-              "priority": "HIGH",
-              "sameParty": "1"
+              "priority": "HIGH"
             },
             {
               "name": "__Secure-Google-Cookie",
@@ -358,8 +353,7 @@ TEST_F(BoundSessionOAuthMultiLoginDelegateImplTest,
               "isSecure": true,
               "isHttpOnly": true,
               "maxAge": 31536000,
-              "priority": "HIGH",
-              "sameParty": "1"
+              "priority": "HIGH"
             }
           ],
           "token_binding_directed_response": {},
@@ -437,8 +431,7 @@ TEST_F(BoundSessionOAuthMultiLoginDelegateImplTest,
               "isSecure": true,
               "isHttpOnly": true,
               "maxAge": 31536000,
-              "priority": "HIGH",
-              "sameParty": "1"
+              "priority": "HIGH"
             }
           ],
           "token_binding_directed_response": {},
@@ -500,8 +493,7 @@ TEST_F(BoundSessionOAuthMultiLoginDelegateImplTest,
               "isSecure": true,
               "isHttpOnly": true,
               "maxAge": 31536000,
-              "priority": "HIGH",
-              "sameParty": "1"
+              "priority": "HIGH"
             },
             {
               "domain": "GOOGLE_COM",
@@ -604,6 +596,58 @@ TEST_F(BoundSessionOAuthMultiLoginDelegateImplTest,
   histogram_tester.ExpectUniqueSample(
       "Signin.BoundSessionCredentials.OAuthMultilogin.RegisteredSessions",
       /*sample=*/2,
+      /*expected_bucket_count=*/1);
+}
+
+// This test verifies that `signin::BoundSessionOAuthMultiLoginDelegate` cannot
+// create youtube.com sessions.
+TEST_F(BoundSessionOAuthMultiLoginDelegateImplTest,
+       CannotCreateYoutubeBoundSession) {
+  base::HistogramTester histogram_tester;
+  Signin(/*wrapped_key=*/{1, 2, 3});
+
+  const std::string raw_data =
+      R"()]}'
+        {
+          "status": "OK",
+          "cookies":[],
+          "token_binding_directed_response": {},
+          "device_bound_session_info": [
+            {
+              "domain": "YOUTUBE_COM",
+              "is_device_bound": true,
+              "register_session_payload": {
+                "session_identifier": "id_youtube",
+                "credentials": [
+                  {
+                    "type": "cookie",
+                    "name": "__Secure-YOUTUBE-Cookie",
+                    "scope": {
+                      "domain": ".youtube.com",
+                      "path": "/"
+                    }
+                  }
+                ],
+                "refresh_url": "https://accounts.youtube.com/RotateBoundCookies"
+              }
+            }
+          ]
+        }
+      )";
+  const OAuthMultiloginResult result = CreateOAuthMultiloginResult(raw_data);
+
+  EXPECT_CALL(mock_bound_session_cookie_refresh_service(), StopCookieRotation)
+      .Times(0);
+  EXPECT_CALL(mock_bound_session_cookie_refresh_service(),
+              RegisterNewBoundSession)
+      .Times(0);
+
+  delegate().BeforeSetCookies(result);
+  delegate().OnCookiesSet();
+
+  histogram_tester.ExpectUniqueSample(
+      "Signin.BoundSessionCredentials.OAuthMultilogin.InvalidParams",
+      /*sample=*/1,
       /*expected_bucket_count=*/1);
 }
 

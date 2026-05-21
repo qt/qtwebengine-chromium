@@ -105,7 +105,6 @@
 #include "third_party/blink/renderer/platform/geometry/stroke_data.h"
 #include "third_party/blink/renderer/platform/graphics/bitmap_image.h"
 #include "third_party/blink/renderer/platform/graphics/blend_mode.h"
-#include "third_party/blink/renderer/platform/graphics/canvas_high_entropy_op_type.h"
 #include "third_party/blink/renderer/platform/graphics/canvas_resource_provider.h"
 #include "third_party/blink/renderer/platform/graphics/color.h"
 #include "third_party/blink/renderer/platform/graphics/filters/paint_filter_builder.h"
@@ -1615,9 +1614,6 @@ void Canvas2DRecorderContext::DrawPathInternal(
     return;
   }
 
-  HighEntropyCanvasOpType high_entropy_path_op_types =
-      path.HighEntropyPathOpTypes();
-
   if (path.IsArc()) {
     const auto& arc = path.arc();
     const SkRect oval =
@@ -1630,13 +1626,11 @@ void Canvas2DRecorderContext::DrawPathInternal(
     const bool closed = arc.closed;
     Draw<OverdrawOp::kNone>(
         /*draw_func=*/
-        [oval, start_degrees, sweep_degrees, closed,
-         high_entropy_path_op_types](MemoryManagedPaintCanvas* c,
-                                     const cc::PaintFlags* flags) {
+        [oval, start_degrees, sweep_degrees, closed](
+            MemoryManagedPaintCanvas* c, const cc::PaintFlags* flags) {
           cc::PaintFlags arc_paint_flags(*flags);
           arc_paint_flags.setArcClosed(closed);
           c->drawArc(oval, start_degrees, sweep_degrees, arc_paint_flags);
-          c->AddHighEntropyCanvasOpTypes(high_entropy_path_op_types);
         },
         NoOverdraw, bounds, paint_type,
         GetState().HasPattern(paint_type)
@@ -1651,10 +1645,9 @@ void Canvas2DRecorderContext::DrawPathInternal(
 
   Draw<OverdrawOp::kNone>(
       /*draw_func=*/
-      [sk_path, use_paint_cache, high_entropy_path_op_types](
-          MemoryManagedPaintCanvas* c, const cc::PaintFlags* flags) {
+      [sk_path, use_paint_cache](MemoryManagedPaintCanvas* c,
+                                 const cc::PaintFlags* flags) {
         c->drawPath(sk_path, *flags, use_paint_cache);
-        c->AddHighEntropyCanvasOpTypes(high_entropy_path_op_types);
       },
       NoOverdraw, bounds, paint_type,
       GetState().HasPattern(paint_type)
@@ -2139,7 +2132,29 @@ void Canvas2DRecorderContext::DrawImageInternal(
     image_flags.setImageFilter(nullptr);
   }
 
-  if (image_source->IsVideoElement()) {
+  // `image` is always present unless `image_source` is a video element or a
+  // VideoFrame; in which case a fast path may exist for drawing directly from
+  // the video into the canvas. The fast path is not always faster though (e.g.,
+  // when scaling), so sometimes the `image` path may still be used by video.
+  if (image) {
+    // We always use the image-orientation property on the canvas element
+    // because the alternative would result in complex rules depending on
+    // the source of the image.
+    RespectImageOrientationEnum respect_orientation =
+        RespectImageOrientationInternal(image_source);
+    gfx::RectF corrected_src_rect = src_rect;
+    if (respect_orientation == kRespectImageOrientation &&
+        !image->HasDefaultOrientation()) {
+      corrected_src_rect = image->CorrectSrcRectForImageOrientation(
+          image->SizeAsFloat(kRespectImageOrientation), src_rect);
+    }
+    image_flags.setAntiAlias(ShouldDrawImageAntialiased(dst_rect));
+    ImageDrawOptions draw_options;
+    draw_options.sampling_options = sampling;
+    draw_options.respect_orientation = respect_orientation;
+    draw_options.clamping_mode = Image::kDoNotClampImageToSourceRect;
+    image->Draw(c, image_flags, dst_rect, corrected_src_rect, draw_options);
+  } else if (image_source->IsVideoElement()) {
     c->save();
     c->clipRect(gfx::RectFToSkRect(dst_rect));
     c->translate(dst_rect.x(), dst_rect.y());
@@ -2148,7 +2163,7 @@ void Canvas2DRecorderContext::DrawImageInternal(
     c->translate(-src_rect.x(), -src_rect.y());
     HTMLVideoElement* video = static_cast<HTMLVideoElement*>(image_source);
     video->PaintCurrentFrame(
-        c, gfx::Rect(video->videoWidth(), video->videoHeight()), &image_flags);
+        c, gfx::Rect(video->videoWidth(), video->videoHeight()), image_flags);
   } else if (image_source->IsVideoFrame()) {
     VideoFrame* frame = static_cast<VideoFrame*>(image_source);
     auto media_frame = frame->frame();
@@ -2175,23 +2190,7 @@ void Canvas2DRecorderContext::DrawImageInternal(
     DrawVideoFrameIntoCanvas(std::move(media_frame), c, image_flags,
                              ignore_transformation);
   } else {
-    // We always use the image-orientation property on the canvas element
-    // because the alternative would result in complex rules depending on
-    // the source of the image.
-    RespectImageOrientationEnum respect_orientation =
-        RespectImageOrientationInternal(image_source);
-    gfx::RectF corrected_src_rect = src_rect;
-    if (respect_orientation == kRespectImageOrientation &&
-        !image->HasDefaultOrientation()) {
-      corrected_src_rect = image->CorrectSrcRectForImageOrientation(
-          image->SizeAsFloat(kRespectImageOrientation), src_rect);
-    }
-    image_flags.setAntiAlias(ShouldDrawImageAntialiased(dst_rect));
-    ImageDrawOptions draw_options;
-    draw_options.sampling_options = sampling;
-    draw_options.respect_orientation = respect_orientation;
-    draw_options.clamping_mode = Image::kDoNotClampImageToSourceRect;
-    image->Draw(c, image_flags, dst_rect, corrected_src_rect, draw_options);
+    NOTREACHED();
   }
 
   c->restoreToCount(initial_save_count);
@@ -2219,6 +2218,27 @@ void Canvas2DRecorderContext::drawImage(CanvasImageSource* image_source,
     return;
   }
 
+  if (!std::isfinite(dx) || !std::isfinite(dy) || !std::isfinite(dw) ||
+      !std::isfinite(dh) || !std::isfinite(sx) || !std::isfinite(sy) ||
+      !std::isfinite(sw) || !std::isfinite(sh)) {
+    return;
+  }
+
+  // clamp to float to avoid float cast overflow when used as SkScalar
+  AdjustRectForCanvas(sx, sy, sw, sh);
+  AdjustRectForCanvas(dx, dy, dw, dh);
+  float fsx = ClampTo<float>(sx);
+  float fsy = ClampTo<float>(sy);
+  float fsw = ClampTo<float>(sw);
+  float fsh = ClampTo<float>(sh);
+  float fdx = ClampTo<float>(dx);
+  float fdy = ClampTo<float>(dy);
+  float fdw = ClampTo<float>(dw);
+  float fdh = ClampTo<float>(dh);
+
+  gfx::RectF src_rect(fsx, fsy, fsw, fsh);
+  gfx::RectF dst_rect(fdx, fdy, fdw, fdh);
+
   scoped_refptr<Image> image;
   gfx::SizeF default_object_size(Width(), Height());
   SourceImageStatus source_image_status = kInvalidSourceImageStatus;
@@ -2228,8 +2248,20 @@ void Canvas2DRecorderContext::drawImage(CanvasImageSource* image_source,
       return;
     }
   } else if (image_source->IsVideoFrame()) {
-    if (!static_cast<VideoFrame*>(image_source)->frame()) {
+    auto frame = static_cast<VideoFrame*>(image_source)->frame();
+    if (!frame) {
       return;
+    }
+
+    // When resizing CPU backed frames, prefer to first create an accelerated
+    // image if possible since it's much faster to scale on the GPU.
+    if (src_rect.size() != dst_rect.size() && image_source->IsAccelerated() &&
+        !frame->HasSharedImage()) {
+      image = image_source->GetSourceImageForCanvas(&source_image_status,
+                                                    default_object_size);
+
+      // No need to check `image` here since if it's nullptr, we'll just fall
+      // back to drawing directly from the VideoFrame below.
     }
   } else {
     image = image_source->GetSourceImageForCanvas(&source_image_status,
@@ -2251,26 +2283,13 @@ void Canvas2DRecorderContext::drawImage(CanvasImageSource* image_source,
     }
   }
 
-  if (!std::isfinite(dx) || !std::isfinite(dy) || !std::isfinite(dw) ||
-      !std::isfinite(dh) || !std::isfinite(sx) || !std::isfinite(sy) ||
-      !std::isfinite(sw) || !std::isfinite(sh) || !dw || !dh || !sw || !sh) {
+  // The dest rect is filled in as zero for invalid images if unspecified, but
+  // the spec expects the code to throw during GetSourceImageForCanvas() above,
+  // so this must be checked here and not above when constructing `dst_rect`.
+  if (!dw || !dh || !sw || !sh) {
     return;
   }
 
-  // clamp to float to avoid float cast overflow when used as SkScalar
-  AdjustRectForCanvas(sx, sy, sw, sh);
-  AdjustRectForCanvas(dx, dy, dw, dh);
-  float fsx = ClampTo<float>(sx);
-  float fsy = ClampTo<float>(sy);
-  float fsw = ClampTo<float>(sw);
-  float fsh = ClampTo<float>(sh);
-  float fdx = ClampTo<float>(dx);
-  float fdy = ClampTo<float>(dy);
-  float fdw = ClampTo<float>(dw);
-  float fdh = ClampTo<float>(dh);
-
-  gfx::RectF src_rect(fsx, fsy, fsw, fsh);
-  gfx::RectF dst_rect(fdx, fdy, fdw, fdh);
   gfx::SizeF image_size = image_source->ElementSize(
       default_object_size, RespectImageOrientationInternal(image_source));
 
@@ -2349,8 +2368,8 @@ CanvasGradient* Canvas2DRecorderContext::createRadialGradient(
   if (r0 < 0 || r1 < 0) {
     exception_state.ThrowDOMException(
         DOMExceptionCode::kIndexSizeError,
-        String::Format("The %s provided is less than 0.",
-                       r0 < 0 ? "r0" : "r1"));
+        UNSAFE_TODO(String::Format("The %s provided is less than 0.",
+                                   r0 < 0 ? "r0" : "r1")));
     return nullptr;
   }
 
@@ -2433,14 +2452,15 @@ CanvasPattern* Canvas2DRecorderContext::createPattern(
     case kZeroSizeCanvasSourceImageStatus:
       exception_state.ThrowDOMException(
           DOMExceptionCode::kInvalidStateError,
-          String::Format("The canvas %s is 0.",
-                         image_source
-                                 ->ElementSize(default_object_size,
-                                               RespectImageOrientationInternal(
-                                                   image_source))
-                                 .width()
-                             ? "height"
-                             : "width"));
+          UNSAFE_TODO(String::Format(
+              "The canvas %s is 0.",
+              image_source
+                      ->ElementSize(
+                          default_object_size,
+                          RespectImageOrientationInternal(image_source))
+                      .width()
+                  ? "height"
+                  : "width")));
       return nullptr;
     case kZeroSizeImageSourceStatus:
       return nullptr;
@@ -2469,20 +2489,8 @@ CanvasPattern* Canvas2DRecorderContext::createPattern(
   }
 
   bool origin_clean = !WouldTaintCanvasOrigin(image_source);
-
-  HighEntropyCanvasOpType source_high_entropy_canvas_op_types =
-      HighEntropyCanvasOpType::kNone;
-  if ((image_source->IsCanvasElement() || image_source->IsOffscreenCanvas()) &&
-      image_for_rendering->IsStaticBitmapImage()) {
-    source_high_entropy_canvas_op_types =
-        static_cast<StaticBitmapImage*>(image_for_rendering.get())
-            ->HighEntropyCanvasOpTypes();
-  }
-
-  auto* pattern = MakeGarbageCollected<CanvasPattern>(
-      std::move(image_for_rendering), repeat_mode, origin_clean,
-      source_high_entropy_canvas_op_types);
-  return pattern;
+  return MakeGarbageCollected<CanvasPattern>(std::move(image_for_rendering),
+                                             repeat_mode, origin_clean);
 }
 
 namespace {

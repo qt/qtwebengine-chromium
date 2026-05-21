@@ -84,7 +84,7 @@ TEST_F(IR_EvaluatorTest, Unary) {
 }
 
 TEST_F(IR_EvaluatorTest, Binary) {
-    auto* inst = b.Add(mod.Types().i32(), 1_i, 2_i);
+    auto* inst = b.Add(1_i, 2_i);
     auto res = Eval(b, inst);
     ASSERT_EQ(res, Success);
 
@@ -247,7 +247,7 @@ TEST_F(IR_EvaluatorTest, ArrayBounds_NestedDynamicAndConstantOutOfBoundsAccess) 
 }
 
 TEST_F(IR_EvaluatorTest, ArrayBounds_NestedVecOverflowBoundsAccess) {
-    auto* arr = b.Var("arr", ty.ptr(storage, ty.array<vec3<u32>, 7>()));
+    auto* arr = b.Var("arr", ty.ptr(storage, ty.array<vec3u, 7>()));
     auto* inst = b.Access(ty.ptr<storage, u32>(), arr, 3_i, 3_i);
     auto res = Eval(b, inst);
 
@@ -257,7 +257,7 @@ TEST_F(IR_EvaluatorTest, ArrayBounds_NestedVecOverflowBoundsAccess) {
 }
 
 TEST_F(IR_EvaluatorTest, ArrayBounds_NestedVecBoundsAccessSuccess) {
-    auto* arr = b.Var("arr", ty.ptr(storage, ty.array<vec3<u32>, 7>()));
+    auto* arr = b.Var("arr", ty.ptr(storage, ty.array<vec3u, 7>()));
     auto* inst = b.Access(ty.ptr<storage, u32>(), arr, 3_i, 2_i);
     auto res = Eval(b, inst);
 
@@ -281,7 +281,7 @@ TEST_F(IR_EvaluatorTest, ConstructStruct_Access) {
 }
 
 TEST_F(IR_EvaluatorTest, ConstructVector_Swizzle) {
-    auto* obj = b.Construct(ty.vec3<i32>(), 1_i, 2_i, 3_i);
+    auto* obj = b.Construct(ty.vec3i(), 1_i, 2_i, 3_i);
     auto* inst = b.Swizzle(mod.Types().i32(), obj, {1});
     auto res = Eval(b, inst);
     ASSERT_EQ(res, Success);
@@ -294,7 +294,7 @@ TEST_F(IR_EvaluatorTest, ConstructVector_Swizzle) {
 }
 
 TEST_F(IR_EvaluatorTest, ConstructVector_Access) {
-    auto* obj = b.Construct(ty.vec3<i32>(), 1_i, 2_i, 3_i);
+    auto* obj = b.Construct(ty.vec3i(), 1_i, 2_i, 3_i);
     auto* inst = b.Access(mod.Types().i32(), obj, 1_u);
     auto res = Eval(b, inst);
     ASSERT_EQ(res, Success);
@@ -336,6 +336,22 @@ TEST_F(IR_EvaluatorTest, ConstExprIfSimple) {
     EXPECT_EQ(true, c->Value()->ValueAs<bool>());
 }
 
+TEST_F(IR_EvaluatorTest, ConstExprIfalse) {
+    auto* constexpr_if = b.ConstExprIf(true);
+    constexpr_if->SetResult(b.InstructionResult(ty.bool_()));
+    b.Append(constexpr_if->True(), [&] { b.ExitIf(constexpr_if, false); });
+    b.Append(constexpr_if->False(), [&] { b.ExitIf(constexpr_if, true); });
+    auto res = Eval(b, constexpr_if);
+    ASSERT_EQ(res, Success) << res.Failure();
+
+    auto* val = res.Get();
+    ASSERT_NE(val, nullptr);
+    auto* c = val->As<core::ir::Constant>();
+    ASSERT_NE(c, nullptr);
+    ASSERT_EQ(ty.bool_(), c->Type());
+    EXPECT_EQ(false, c->Value()->ValueAs<bool>());
+}
+
 TEST_F(IR_EvaluatorTest, BuiltinCall) {
     auto* inst = b.Call(ty.i32(), core::BuiltinFn::kAbs, -1_i);
     auto res = Eval(b, inst);
@@ -350,8 +366,8 @@ TEST_F(IR_EvaluatorTest, BuiltinCall) {
 
 TEST_F(IR_EvaluatorTest, MultiExpression) {
     auto* abs = b.Call(ty.i32(), core::BuiltinFn::kAbs, -1_i);
-    auto* mul = b.Multiply(ty.i32(), abs, 5_i);
-    auto* cons = b.Construct(ty.vec2<i32>(), mul, mul);
+    auto* mul = b.Multiply(abs, 5_i);
+    auto* cons = b.Construct(ty.vec2i(), mul, mul);
     auto* inst = b.Swizzle(ty.i32(), cons, {1});
 
     auto res = Eval(b, inst);
@@ -398,7 +414,7 @@ TEST_F(IR_EvaluatorTest, NonConstCallInsideUnary) {
 
 TEST_F(IR_EvaluatorTest, NonConstCallInsideBinaryRHS) {
     auto* dpdx = b.Call(ty.f32(), core::BuiltinFn::kDpdx, 2.0_f);
-    auto* inst = b.Add(ty.f32(), 1.0_f, dpdx);
+    auto* inst = b.Add(1.0_f, dpdx);
 
     auto res = Eval(b, inst);
     ASSERT_EQ(res, Success) << res.Failure();
@@ -409,7 +425,7 @@ TEST_F(IR_EvaluatorTest, NonConstCallInsideBinaryRHS) {
 
 TEST_F(IR_EvaluatorTest, NonConstCallInsideBinaryLHS) {
     auto* dpdx = b.Call(ty.f32(), core::BuiltinFn::kDpdx, 2.0_f);
-    auto* inst = b.Add(ty.f32(), dpdx, 1.0_f);
+    auto* inst = b.Add(dpdx, 1.0_f);
 
     auto res = Eval(b, inst);
     ASSERT_EQ(res, Success) << res.Failure();
@@ -419,8 +435,7 @@ TEST_F(IR_EvaluatorTest, NonConstCallInsideBinaryLHS) {
 }
 
 TEST_F(IR_EvaluatorTest, NonConstCallInsideSwizzle) {
-    auto* dpdx =
-        b.Call(ty.vec2<f32>(), core::BuiltinFn::kDpdx, b.Construct(ty.vec2<f32>(), 2.0_f, 2.0_f));
+    auto* dpdx = b.Call(ty.vec2f(), core::BuiltinFn::kDpdx, b.Construct(ty.vec2f(), 2.0_f, 2.0_f));
     auto* inst = b.Swizzle(ty.f32(), dpdx, {1});
 
     auto res = Eval(b, inst);
@@ -432,7 +447,7 @@ TEST_F(IR_EvaluatorTest, NonConstCallInsideSwizzle) {
 
 TEST_F(IR_EvaluatorTest, NonConstCallInsideConstruct) {
     auto* dpdx = b.Call(ty.f32(), core::BuiltinFn::kDpdx, 2.0_f);
-    auto* inst = b.Construct(ty.vec2<f32>(), dpdx, 2_f);
+    auto* inst = b.Construct(ty.vec2f(), dpdx, 2_f);
 
     auto res = Eval(b, inst);
     ASSERT_EQ(res, Success) << res.Failure();
@@ -464,8 +479,7 @@ TEST_F(IR_EvaluatorTest, NonConstCallInsideBitcast) {
 }
 
 TEST_F(IR_EvaluatorTest, NonConstCallInsideAccessObject) {
-    auto* dpdx =
-        b.Call(ty.vec2<f32>(), core::BuiltinFn::kDpdx, b.Construct(ty.vec2<f32>(), 2.0_f, 2.0_f));
+    auto* dpdx = b.Call(ty.vec2f(), core::BuiltinFn::kDpdx, b.Construct(ty.vec2f(), 2.0_f, 2.0_f));
     auto* inst = b.Access(ty.f32(), dpdx, 0_u);
 
     auto res = Eval(b, inst);

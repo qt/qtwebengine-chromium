@@ -1,3 +1,18 @@
+/*
+ * Copyright 2025 The Android Open Source Project
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package androidx.webgpu
 
 import androidx.test.filters.SmallTest
@@ -27,8 +42,8 @@ class ComputePassEncoderTest {
 
     // Create a minimal compute pipeline to be used by all tests
     val shaderModule = device.createShaderModule(
-      ShaderModuleDescriptor(
-        shaderSourceWGSL = ShaderSourceWGSL(
+      GPUShaderModuleDescriptor(
+        shaderSourceWGSL = GPUShaderSourceWGSL(
           """
                     @compute @workgroup_size(1) fn main() {}
                     """.trimIndent()
@@ -36,12 +51,12 @@ class ComputePassEncoderTest {
       )
     )
 
-    val layout = device.createPipelineLayout(PipelineLayoutDescriptor())
+    val layout = device.createPipelineLayout(GPUPipelineLayoutDescriptor())
 
     pipeline = device.createComputePipelineAndAwait(
-      ComputePipelineDescriptor(
+      GPUComputePipelineDescriptor(
         layout = layout,
-        compute = ComputeState(module = shaderModule, entryPoint = "main")
+        compute = GPUComputeState(module = shaderModule, entryPoint = "main")
       )
     )
   }
@@ -147,7 +162,7 @@ class ComputePassEncoderTest {
   @Test
   fun testDispatchWorkgroupsIndirectWithInvalidBuffer() {
     val invalidBuffer = device.createBuffer(
-      BufferDescriptor(
+      GPUBufferDescriptor(
         size = 12, // 3 * Int
         usage = BufferUsage.CopyDst  // Note: Missing BufferUsage.Indirect.
       )
@@ -174,7 +189,7 @@ class ComputePassEncoderTest {
   @Test
   fun testDispatchWorkgroupsIndirectWithValidBuffer() {
     val validBuffer = device.createBuffer(
-      BufferDescriptor(
+      GPUBufferDescriptor(
         size = 12,  // 3 * Int for X, Y, Z counts.
         usage = BufferUsage.Indirect or BufferUsage.CopyDst
       )

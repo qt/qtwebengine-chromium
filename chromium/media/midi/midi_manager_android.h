@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "base/android/scoped_java_ref.h"
+#include "base/containers/span.h"
 #include "base/memory/raw_ptr.h"
 #include "base/synchronization/lock.h"
 #include "base/time/time.h"
@@ -47,19 +48,16 @@ class MidiManagerAndroid final : public MidiManager,
                             base::TimeTicks timestamp) override;
 
   // MidiInputPortAndroid::Delegate implementation.
-  void OnReceivedData(MidiInputPortAndroid*,
-                      const uint8_t* data,
-                      size_t size,
-                      base::TimeTicks timestamp) override;
+  void OnReceivedData(MidiInputPortAndroid* port,
+                      base::span<const uint8_t> data,
+                      base::TimeTicks timestampp) override;
 
   // Called from the Java world.
   void OnInitialized(JNIEnv* env,
-                     const base::android::JavaParamRef<jobjectArray>& devices);
+                     const base::android::JavaRef<jobjectArray>& devices);
   void OnInitializationFailed(JNIEnv* env);
-  void OnAttached(JNIEnv* env,
-                  const base::android::JavaParamRef<jobject>& device);
-  void OnDetached(JNIEnv* env,
-                  const base::android::JavaParamRef<jobject>& device);
+  void OnAttached(JNIEnv* env, const base::android::JavaRef<jobject>& device);
+  void OnDetached(JNIEnv* env, const base::android::JavaRef<jobject>& device);
 
  private:
   void AddDevice(std::unique_ptr<MidiDeviceAndroid> device);
@@ -73,7 +71,6 @@ class MidiManagerAndroid final : public MidiManager,
   // released on the main thread.
   base::Lock lock_;
 
-  std::vector<std::unique_ptr<MidiDeviceAndroid>> devices_;
   // All ports held in |devices_|. Each device has ownership of ports, but we
   // can store pointers here because a device will keep its ports while it is
   // alive.
@@ -87,6 +84,12 @@ class MidiManagerAndroid final : public MidiManager,
   std::vector<raw_ptr<MidiOutputPortAndroid, VectorExperimental>>
       all_output_ports_;
   absl::flat_hash_map<MidiOutputPortAndroid*, size_t> output_port_to_index_;
+
+  // `devices_` must be declared after the port index maps so that it is
+  // destroyed first (in reverse declaration order). This ensures that MidiPorts
+  // are closed and stop receiving callbacks before the maps are destroyed.
+  // See https://crbug.com/490254128.
+  std::vector<std::unique_ptr<MidiDeviceAndroid>> devices_;
 
   base::android::ScopedJavaGlobalRef<jobject> raw_manager_;
 };

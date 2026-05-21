@@ -18,6 +18,7 @@
 #include "base/functional/bind.h"
 #include "base/functional/callback_forward.h"
 #include "base/gtest_prod_util.h"
+#include "base/memory/memory_pressure_listener.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/raw_ptr_exclusion.h"
 #include "base/memory/safe_ref.h"
@@ -91,7 +92,6 @@
 #include "third_party/perfetto/include/perfetto/tracing/track.h"
 
 #if BUILDFLAG(IS_ANDROID)
-#include "base/memory/memory_pressure_listener.h"
 #include "content/browser/renderer_host/android_spare_renderer_navigation_throttle.h"
 #include "content/public/browser/android/child_process_importance.h"
 #endif
@@ -199,12 +199,11 @@ class CONTENT_EXPORT RenderProcessHostImpl
       public mojom::RendererHost,
       public blink::mojom::DomStorageProvider,
       public memory_instrumentation::mojom::CoordinatorConnector,
-      public metrics::HistogramChildProcess
+      public metrics::HistogramChildProcess,
 #if BUILDFLAG(ALLOW_OOP_VIDEO_DECODER)
-    ,
-      public media::mojom::VideoDecoderTracker
+      public media::mojom::VideoDecoderTracker,
 #endif  // BUILDFLAG(ALLOW_OOP_VIDEO_DECODER)
-{
+      public base::MemoryPressureListener {
  public:
   // Special depth used when there are no RenderProcessHostPriorityClients.
   static const unsigned int kMaxFrameDepthForPriority;
@@ -258,7 +257,8 @@ class CONTENT_EXPORT RenderProcessHostImpl
   bool FastShutdownIfPossible(size_t page_count = 0,
                               bool skip_unload_handlers = false,
                               bool ignore_workers = false,
-                              bool ignore_keep_alive = false) override;
+                              bool ignore_keep_alive = false,
+                              bool ignore_pending_reuse = false) override;
   const base::Process& GetProcess() override;
   bool IsReady() override;
   BrowserContext* GetBrowserContext() override;
@@ -370,6 +370,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
 #endif
   void SetBatterySaverMode(bool battery_saver_mode_enabled) override;
   uint64_t GetPrivateMemoryFootprint() override;
+  bool IsOnlyHostingPrerenderedFramesOrEmpty() override;
 
   void PauseSocketManagerForRenderFrameHost(
       const GlobalRenderFrameHostId& render_frame_host_id) override;
@@ -738,9 +739,12 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // shutdown for potential reuse (see https://crbug.com/894253). The total
   // shutdown delay is the sum of the two timeouts. |site_info| should
   // correspond to the frame that triggered this shutdown delay.
-  void DelayProcessShutdown(const base::TimeDelta& subframe_shutdown_timeout,
-                            const base::TimeDelta& unload_handler_timeout,
-                            const SiteInfo& site_info) override;
+  //
+  // Returns a ScopedClosureRunner that when destroyed cancels the delay.
+  base::ScopedClosureRunner DelayProcessShutdown(
+      const base::TimeDelta& subframe_shutdown_timeout,
+      const base::TimeDelta& unload_handler_timeout,
+      const SiteInfo& site_info) override;
   bool IsProcessShutdownDelayedForTesting();
   // Remove the host from the delayed-shutdown tracker, if present. This does
   // not decrement |shutdown_delay_ref_count_|; if it was incremented by a
@@ -879,11 +883,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
       mojo::PendingReceiver<network::mojom::P2PSocketManager> receiver,
       GlobalRenderFrameHostId render_frame_host_id);
 
-#if BUILDFLAG(IS_ANDROID)
-  // Notifies the renderer process of memory pressure level.
-  void NotifyMemoryPressureToRenderer(base::MemoryPressureLevel level);
-#endif
-
 #if BUILDFLAG(ALLOW_OOP_VIDEO_DECODER)
   using VideoDecoderFactoryCreationCB = base::RepeatingCallback<void(
       mojo::PendingReceiver<media::mojom::InterfaceFactory>)>;
@@ -897,10 +896,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
   using VideoDecoderEventCB = base::RepeatingCallback<void(VideoDecoderEvent)>;
   static void SetVideoDecoderEventCBForTesting(VideoDecoderEventCB cb);
 #endif  // BUILDFLAG(ALLOW_OOP_VIDEO_DECODER)
-
-  // Returns whether the process is only hosting RFHs in prerendered pages
-  // or no RFHs at all.
-  bool IsOnlyHostingPrerenderedFramesOrEmpty();
 
   void GetBoundInterfacesForTesting(std::vector<std::string>& out);
 
@@ -1124,6 +1119,10 @@ class CONTENT_EXPORT RenderProcessHostImpl
       mojo::PendingRemote<memory_instrumentation::mojom::ClientProcess>
           client_process) override;
 
+  // base::MemoryPressureListener:
+  void OnMemoryPressure(
+      base::MemoryPressureLevel memory_pressure_level) override;
+
   // Generates a command line to be used to spawn a renderer and appends the
   // results to |*command_line|.
   void AppendRendererCommandLine(base::CommandLine* command_line);
@@ -1203,12 +1202,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // the RenderProcessHost is needed but the renderer process is not.
   bool HasOnlyNonLiveRenderFrameHosts();
 
-  // Helper method for CreateLockManager() which facilitates use of |bucket|
-  // instead of |origin| for binding |receiver|
-  void CreateLockManagerWithBucketInfo(
-      mojo::PendingReceiver<blink::mojom::LockManager> receiver,
-      storage::QuotaErrorOr<storage::BucketInfo> bucket);
-
   // Get an existing RenderProcessHost associated with the given browser
   // context, if possible.  The renderer process is chosen randomly from
   // suitable renderers that share the same context and type (determined by the
@@ -1274,7 +1267,11 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
   // Callback to unblock process shutdown after waiting for the delay timeout to
   // complete.
-  void CancelProcessShutdownDelay(const SiteInfo& site_info);
+  //
+  // |did_run_cancel_process_shutdown_delay| is a shared flag that ensures
+  // the cancellation logic runs exactly once.
+  void CancelProcessShutdownDelay(const SiteInfo& site_info,
+                                  bool& did_run_cancel_process_shutdown_delay);
 
   // Binds a TracedProcess interface in the renderer process. This is used to
   // communicate with the Tracing service.
@@ -1375,6 +1372,8 @@ class CONTENT_EXPORT RenderProcessHostImpl
 #if BUILDFLAG(IS_ANDROID)
   // Highest importance of all clients that contribute priority.
   ChildProcessImportance effective_importance_ = ChildProcessImportance::NORMAL;
+  // This is true if at least one of the priority clients is active.
+  bool has_active_clients_ = true;
 #endif
 
   // Clients that contribute priority to this process.
@@ -1664,6 +1663,9 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
   // Tracing track used to emit async event related to lifecycle.
   perfetto::NamedTrack tracing_track_;
+
+  std::optional<base::MemoryPressureListenerRegistration>
+      memory_pressure_listener_registration_;
 
   // A WeakPtrFactory which is reset every time ResetIPC() or Cleanup() is run.
   // Used to vend WeakPtrs which are invalidated any time the RenderProcessHost

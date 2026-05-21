@@ -568,7 +568,7 @@ class GSL_POINTER span {
   constexpr void copy_from(span<const element_type, extent> other)
     requires(!std::is_const_v<element_type>)
   {
-    if (std::is_constant_evaluated()) {
+    if consteval {
       // Comparing pointers to different objects at compile time yields
       // unspecified behavior, which would halt compilation. Instead,
       // unconditionally use a separate buffer in the constexpr context. This
@@ -583,10 +583,7 @@ class GSL_POINTER span {
           constexpr ~Holder() {}
           element_type value;
         };
-        // std::unique_ptr<T[]> isn't constexpr enough prior to C++23; another
-        // alternative is std::vector, but that requires including <vector> just
-        // for this edge case.
-        Holder* buffer = new Holder[extent];
+        auto buffer = std::make_unique<Holder[]>(extent);
         for (size_t i = 0; i < extent; ++i) {
           // SAFETY: `buffers` is allocated with `extent` elements, and the loop
           // body only executes if `i < extent`.
@@ -598,7 +595,6 @@ class GSL_POINTER span {
           (*this)[i] = UNSAFE_BUFFERS(buffer[i]).value;
           UNSAFE_BUFFERS(buffer[i]).value.~element_type();
         }
-        delete[] buffer;
       }
     } else {
       // Using `<=` to compare pointers to different allocations is UB;
@@ -617,11 +613,18 @@ class GSL_POINTER span {
              // overload above; if they don't, it's because the extent doesn't
              // match. Rejecting this here improves the resulting errors.
              N == dynamic_extent &&
-             std::convertible_to<R &&, span<const element_type>>)
+             (std::convertible_to<R &&, span<const element_type>> ||
+              std::convertible_to<R &&, span<const volatile element_type>>))
   constexpr void copy_from(R&& other) {
     // Note: The constructor `CHECK()`s that a dynamic-extent `other` has the
     // right size.
-    copy_from(span<const element_type, extent>(std::forward<R>(other)));
+    if constexpr (std::convertible_to<R&&, span<const volatile element_type>> &&
+                  !std::convertible_to<R&&, span<const element_type>>) {
+      copy_from(
+          span<const volatile element_type, extent>(std::forward<R>(other)));
+    } else {
+      copy_from(span<const element_type, extent>(std::forward<R>(other)));
+    }
   }
 
   // Like `copy_from()`, but may be more performant; however, the caller must
@@ -636,7 +639,7 @@ class GSL_POINTER span {
     // unspecified behavior, which would halt compilation. Instead implement in
     // terms of the guaranteed-safe behavior; performance is irrelevant in the
     // constexpr context.
-    if (std::is_constant_evaluated()) {
+    if consteval {
       copy_from(other);
       return;
     }
@@ -673,6 +676,19 @@ class GSL_POINTER span {
       return first(other.size()).copy_from(other);
     } else {
       return first<N>().copy_from(other);
+    }
+  }
+
+  // Performs a deep copy from a volatile source span. The spans must be the
+  // same size.
+  //
+  // (Not in `std::`; supports volatile memory access patterns.)
+  template <typename U>
+    requires(!std::is_const_v<element_type> &&
+             std::is_same_v<U, const volatile element_type>)
+  constexpr void copy_from(span<U, extent> other) {
+    for (size_t i = 0; i < extent; ++i) {
+      (*this)[i] = other[i];
     }
   }
 
@@ -1089,7 +1105,7 @@ class GSL_POINTER span<ElementType, dynamic_extent, InternalPtrType> {
     requires(!std::is_const_v<element_type>)
   {
     CHECK(size() == other.size());
-    if (std::is_constant_evaluated()) {
+    if consteval {
       // Comparing pointers to different objects at compile time yields
       // unspecified behavior, which would halt compilation. Instead,
       // unconditionally use a separate buffer in the constexpr context. This
@@ -1102,10 +1118,7 @@ class GSL_POINTER span<ElementType, dynamic_extent, InternalPtrType> {
         constexpr ~Holder() {}
         element_type value;
       };
-      // std::unique_ptr<T[]> isn't constexpr enough prior to C++23; another
-      // alternative is std::vector, but that requires including <vector> just
-      // for this edge case.
-      Holder* buffer = new Holder[other.size()];
+      auto buffer = std::make_unique<Holder[]>(other.size());
       for (size_t i = 0; i < other.size(); ++i) {
         // SAFETY: `buffers` is allocated with `other.size()` elements, and the
         // loop body only executes if `i < other.size()`.
@@ -1117,7 +1130,6 @@ class GSL_POINTER span<ElementType, dynamic_extent, InternalPtrType> {
         (*this)[i] = UNSAFE_BUFFERS(buffer[i]).value;
         UNSAFE_BUFFERS(buffer[i]).value.~element_type();
       }
-      delete[] buffer;
     } else {
       // Using `<=` to compare pointers to different allocations is UB;
       // reinterpret_cast is the workaround.
@@ -1127,6 +1139,20 @@ class GSL_POINTER span<ElementType, dynamic_extent, InternalPtrType> {
       } else {
         std::ranges::copy_backward(other, end());
       }
+    }
+  }
+
+  // Performs a deep copy from a volatile source span. The spans must be the
+  // same size.
+  //
+  // (Not in `std::`; supports volatile memory access patterns.)
+  template <typename U>
+    requires(!std::is_const_v<element_type> &&
+             std::is_same_v<U, const volatile element_type>)
+  constexpr void copy_from(span<U> other) {
+    CHECK(size() == other.size());
+    for (size_t i = 0; i < size(); ++i) {
+      (*this)[i] = other[i];
     }
   }
 
@@ -1141,7 +1167,7 @@ class GSL_POINTER span<ElementType, dynamic_extent, InternalPtrType> {
     // unspecified behavior, which would halt compilation. Instead implement in
     // terms of the guaranteed-safe behavior; performance is irrelevant in the
     // constexpr context.
-    if (std::is_constant_evaluated()) {
+    if consteval {
       copy_from(other);
       return;
     }

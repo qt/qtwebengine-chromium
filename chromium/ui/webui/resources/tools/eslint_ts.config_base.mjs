@@ -36,6 +36,10 @@ export const defaultConfig = [
       '@typescript-eslint/require-await' : 'error',
       '@typescript-eslint/no-unnecessary-type-assertion': 'error',
 
+      // https://google.github.io/styleguide/tsguide.html#export-type
+      '@typescript-eslint/consistent-type-exports': 'error',
+
+      '@webui-eslint/lit-element-structure': 'error',
       '@webui-eslint/lit-property-accessor': 'error',
       '@webui-eslint/polymer-property-declare': 'error',
       '@webui-eslint/polymer-property-class-member': 'error',
@@ -52,6 +56,9 @@ export const defaultConfig = [
       'eslint-plugin-lit/no-invalid-escape-sequences': 'error',
       'eslint-plugin-lit/no-invalid-html': 'error',
       'eslint-plugin-lit/no-private-properties': ['error', {'private': '_$'}],
+      // https://chromium.googlesource.com/chromium/src/+/HEAD/docs/webui/webui_lit_style_guide.md#Inline-Lambdas
+      '@webui-eslint/inline-event-handler': 'error',
+      '@webui-eslint/lit-element-template-structure': 'error',
     },
   },
 ];

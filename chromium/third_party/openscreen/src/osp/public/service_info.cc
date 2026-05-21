@@ -54,4 +54,8 @@ std::string ServiceInfo::ToString() const {
   return ss.str();
 }
 
+std::ostream& operator<<(std::ostream& out, const ServiceInfo& info) {
+  return out << info.ToString();
+}
+
 }  // namespace openscreen::osp

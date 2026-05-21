@@ -21,19 +21,22 @@
 #include <openssl/err.h>
 #include <openssl/mem.h>
 #include <openssl/nid.h>
+#include <openssl/span.h>
 
 #include "../../internal.h"
+#include "../../mem_internal.h"
 #include "../service_indicator/internal.h"
 #include "internal.h"
 
+
+using namespace bssl;
 
 void EVP_CIPHER_CTX_init(EVP_CIPHER_CTX *ctx) {
   OPENSSL_memset(ctx, 0, sizeof(EVP_CIPHER_CTX));
 }
 
-EVP_CIPHER_CTX *EVP_CIPHER_CTX_new(void) {
-  EVP_CIPHER_CTX *ctx = reinterpret_cast<EVP_CIPHER_CTX *>(
-      OPENSSL_malloc(sizeof(EVP_CIPHER_CTX)));
+EVP_CIPHER_CTX *EVP_CIPHER_CTX_new() {
+  EVP_CIPHER_CTX *ctx = New<EVP_CIPHER_CTX>();
   if (ctx) {
     EVP_CIPHER_CTX_init(ctx);
   }
@@ -53,7 +56,7 @@ int EVP_CIPHER_CTX_cleanup(EVP_CIPHER_CTX *c) {
 void EVP_CIPHER_CTX_free(EVP_CIPHER_CTX *ctx) {
   if (ctx) {
     EVP_CIPHER_CTX_cleanup(ctx);
-    OPENSSL_free(ctx);
+    Delete(ctx);
   }
 }
 
@@ -203,16 +206,6 @@ int EVP_DecryptInit_ex(EVP_CIPHER_CTX *ctx, const EVP_CIPHER *cipher,
   return EVP_CipherInit_ex(ctx, cipher, impl, key, iv, 0);
 }
 
-// CopyToPrefix copies a span of bytes from |from| into |to|. It aborts if there
-// is not enough space.
-//
-// TODO(crbug.com/404286922): Can we simplify this in a C++20 world (e.g.
-// std::ranges::copy)? Must preserve range checking on the destination span.
-static void CopyToPrefix(bssl::Span<const uint8_t> from,
-                         bssl::Span<uint8_t> to) {
-  OPENSSL_memcpy(to.first(from.size()).data(), from.data(), from.size());
-}
-
 // block_remainder returns the number of bytes to remove from |len| to get a
 // multiple of |ctx|'s block size.
 static size_t block_remainder(const EVP_CIPHER_CTX *ctx, size_t len) {
@@ -273,7 +266,7 @@ static int EVP_EncryptUpdate_ex_internal(EVP_CIPHER_CTX *ctx, uint8_t *out,
 
   // Ciphers that use blocks may write up to |block_size| extra bytes. Ensure
   // the output does not overflow |*out_len|.
-  bssl::Span<const uint8_t> in_span(in, in_len);
+  Span<const uint8_t> in_span(in, in_len);
   size_t block_size = ctx->cipher->block_size;
 
   if (in_span.empty()) {
@@ -282,15 +275,15 @@ static int EVP_EncryptUpdate_ex_internal(EVP_CIPHER_CTX *ctx, uint8_t *out,
 
   size_t buf_len = ctx->buf_len;
   assert(block_size <= sizeof(ctx->buf));
-  bssl::Span<uint8_t> out_span(out, max_out_len);
+  Span<uint8_t> out_span(out, max_out_len);
   if (buf_len != 0) {
     if (block_size - buf_len > in_span.size()) {
-      CopyToPrefix(in_span, bssl::Span(ctx->buf).subspan(buf_len));
+      CopyToPrefix(in_span, Span(ctx->buf).subspan(buf_len));
       ctx->buf_len += in_span.size();
       return 1;
     } else {
       size_t j = block_size - buf_len;
-      CopyToPrefix(in_span.first(j), bssl::Span(ctx->buf).subspan(buf_len));
+      CopyToPrefix(in_span.first(j), Span(ctx->buf).subspan(buf_len));
       if (out_span.size() < block_size) {
         OPENSSL_PUT_ERROR(CIPHER, CIPHER_R_BUFFER_TOO_SMALL);
         return 0;
@@ -371,7 +364,7 @@ static int EVP_EncryptFinal_ex2_internal(EVP_CIPHER_CTX *ctx, uint8_t *out,
     ctx->buf[i] = padding;
   }
 
-  bssl::Span<uint8_t> out_span(out, max_out_len);
+  Span<uint8_t> out_span(out, max_out_len);
   if (out_span.size() < block_size) {
     OPENSSL_PUT_ERROR(CIPHER, CIPHER_R_BUFFER_TOO_SMALL);
     return 0;
@@ -431,14 +424,14 @@ static int EVP_DecryptUpdate_ex_internal(EVP_CIPHER_CTX *ctx, uint8_t *out,
 
   // Ciphers that use blocks may write up to |block_size| extra bytes. Ensure
   // the output does not overflow |*out_len|.
-  bssl::Span<const uint8_t> in_span(in, in_len);
+  Span<const uint8_t> in_span(in, in_len);
   size_t block_size = ctx->cipher->block_size;
 
   if (in_span.empty()) {
     return 1;
   }
 
-  bssl::Span<uint8_t> out_span(out, max_out_len);
+  Span<uint8_t> out_span(out, max_out_len);
   if (ctx->flags & EVP_CIPH_NO_PADDING) {
     // Use the shared block handling logic from encryption.
     return EVP_EncryptUpdate_ex_internal(ctx, out_span.data(), out_len,
@@ -452,7 +445,7 @@ static int EVP_DecryptUpdate_ex_internal(EVP_CIPHER_CTX *ctx, uint8_t *out,
       OPENSSL_PUT_ERROR(CIPHER, CIPHER_R_BUFFER_TOO_SMALL);
       return 0;
     }
-    CopyToPrefix(bssl::Span(ctx->final).first(block_size), out_span);
+    CopyToPrefix(Span(ctx->final).first(block_size), out_span);
     ctx->final_used = 0;
     out_span = out_span.subspan(block_size);
   }
@@ -565,13 +558,13 @@ static int EVP_DecryptFinal_ex2_internal(EVP_CIPHER_CTX *ctx,
     }
   }
 
-  bssl::Span<uint8_t> out_span(out, max_out_len);
+  Span<uint8_t> out_span(out, max_out_len);
   size_t payload = ctx->cipher->block_size - padding;
   if (out_span.size() < payload) {
     OPENSSL_PUT_ERROR(CIPHER, CIPHER_R_BUFFER_TOO_SMALL);
     return 0;
   }
-  CopyToPrefix(bssl::Span(ctx->final).first(payload), out_span);
+  CopyToPrefix(Span(ctx->final).first(payload), out_span);
   out_span = out_span.subspan(payload);
 
   *out_len = max_out_len - out_span.size();

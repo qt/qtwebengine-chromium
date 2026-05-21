@@ -6,9 +6,9 @@
 
 #include "base/containers/flat_set.h"
 #include "base/notreached.h"
+#include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
 #include "build/build_config.h"
-#include "components/optimization_guide/core/hints/optimization_guide_decision.h"
 #include "components/optimization_guide/core/model_execution/feature_keys.h"
 #include "components/optimization_guide/core/optimization_guide_enums.h"
 #include "components/optimization_guide/core/optimization_guide_features.h"
@@ -122,6 +122,11 @@ std::string_view GetStringNameForModelExecutionFeature(
     case proto::ModelExecutionFeature::
         MODEL_EXECUTION_FEATURE_IOS_SMART_TAB_GROUPING:
       return "IosSmartTabGrouping";
+    case proto::ModelExecutionFeature::MODEL_EXECUTION_FEATURE_SKILLS:
+      return "Skills";
+    case proto::ModelExecutionFeature::
+        MODEL_EXECUTION_FEATURE_GEMINI_ANTISCAM_PROTECTION:
+      return "GeminiAntiscamProtection";
     case proto::ModelExecutionFeature::MODEL_EXECUTION_FEATURE_UNSPECIFIED:
       return "Unknown";
       // Must be in sync with the ModelExecutionFeature variant in
@@ -141,19 +146,6 @@ bool IsHostValidToFetchFromRemoteOptimizationGuide(const std::string& host) {
     return false;
   }
   return true;
-}
-
-std::string GetStringForOptimizationGuideDecision(
-    OptimizationGuideDecision decision) {
-  switch (decision) {
-    case OptimizationGuideDecision::kUnknown:
-      return "Unknown";
-    case OptimizationGuideDecision::kTrue:
-      return "True";
-    case OptimizationGuideDecision::kFalse:
-      return "False";
-  }
-  NOTREACHED();
 }
 
 optimization_guide::proto::OriginInfo GetClientOriginInfo() {

@@ -249,24 +249,29 @@ void ChromeClientImpl::SetWindowRect(const gfx::Rect& requested_rect,
 }
 
 #if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
-void ChromeClientImpl::Minimize(LocalFrame&) {
+void ChromeClientImpl::Minimize(LocalFrame&,
+                                WindowingControlsChangeCallback callback) {
   DCHECK(web_view_);
-  web_view_->Minimize();
+  web_view_->Minimize(std::move(callback));
 }
 
-void ChromeClientImpl::Maximize(LocalFrame&) {
+void ChromeClientImpl::Maximize(LocalFrame&,
+                                WindowingControlsChangeCallback callback) {
   DCHECK(web_view_);
-  web_view_->Maximize();
+  web_view_->Maximize(std::move(callback));
 }
 
-void ChromeClientImpl::Restore(LocalFrame&) {
+void ChromeClientImpl::Restore(LocalFrame&,
+                               WindowingControlsChangeCallback callback) {
   DCHECK(web_view_);
-  web_view_->Restore();
+  web_view_->Restore(std::move(callback));
 }
 
-void ChromeClientImpl::SetResizable(bool resizable, LocalFrame& frame) {
+void ChromeClientImpl::SetResizable(bool resizable,
+                                    LocalFrame& frame,
+                                    WindowingControlsChangeCallback callback) {
   DCHECK(web_view_);
-  web_view_->SetResizable(resizable);
+  web_view_->SetResizable(resizable, std::move(callback));
 }
 #endif  // !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
 
@@ -308,9 +313,15 @@ void ChromeClientImpl::TakeFocus(mojom::blink::FocusType type) {
 void ChromeClientImpl::SetKeyboardFocusURL(Element* new_focus_element) {
   DCHECK(web_view_);
   KURL focus_url;
+  bool is_mouse_focus =
+      new_focus_element && new_focus_element->GetDocument().LastFocusType() ==
+                               mojom::blink::FocusType::kMouse;
   if (new_focus_element && new_focus_element->IsLiveLink() &&
-      new_focus_element->ShouldHaveFocusAppearance())
+      new_focus_element->ShouldHaveFocusAppearance() &&
+      (!RuntimeEnabledFeatures::ClickFocusDoesntPersistStatusBubbleEnabled() ||
+       !is_mouse_focus)) {
     focus_url = new_focus_element->HrefURL();
+  }
   web_view_->SetKeyboardFocusURL(focus_url);
 }
 
@@ -414,39 +425,6 @@ void ChromeClientImpl::SetOverscrollBehavior(
   DCHECK(main_frame.IsOutermostMainFrame());
   main_frame.GetWidgetForLocalRoot()->SetOverscrollBehavior(
       overscroll_behavior);
-}
-
-void ChromeClientImpl::Show(LocalFrame& frame,
-                            LocalFrame& opener_frame,
-                            NavigationPolicy navigation_policy,
-                            bool user_gesture) {
-  DCHECK(web_view_);
-  const WebWindowFeatures& features = frame.GetPage()->GetWindowFeatures();
-  gfx::Rect bounds(features.x, features.y, features.width, features.height);
-
-  // The minimum size from popups opened from borderless apps differs from
-  // normal apps. When window.open is called, display-mode for the new frame is
-  // still undefined as the app hasn't loaded yet, thus opener frame is used.
-  int minimum_size =
-      navigation_policy == NavigationPolicy::kNavigationPolicyNewPopup &&
-              DisplayModeIsBorderless(opener_frame)
-          ? blink::kMinimumBorderlessWindowSize
-          : blink::kMinimumWindowSize;
-
-  // TODO(crbug.com/1515106): Refactor so that the limits only live browser-side
-  // instead of now partly being duplicated browser-side and renderer side.
-  const gfx::Rect rect_adjusted_for_minimum =
-      AdjustWindowRectForMinimum(bounds, minimum_size);
-  const gfx::Rect adjusted_rect = AdjustWindowRectForDisplay(
-      rect_adjusted_for_minimum, frame, minimum_size);
-  // Request the unadjusted rect if the browser may honor cross-screen bounds.
-  // Permission state is not readily available, so adjusted bounds are clamped
-  // to the same-screen, to retain legacy behavior of synchronous pending values
-  // and to avoid exposing other screen details to frames without permission.
-  // TODO(crbug.com/897300): Use permission state for better sync estimates or
-  // store unadjusted pending window rects if that will not break many sites.
-  web_view_->Show(opener_frame.GetLocalFrameToken(), navigation_policy,
-                  rect_adjusted_for_minimum, adjusted_rect, user_gesture);
 }
 
 bool ChromeClientImpl::ShouldReportDetailedMessageForSourceAndSeverity(
@@ -1205,12 +1183,11 @@ void ChromeClientImpl::SetShouldThrottleFrameRate(bool flag,
 
 void ChromeClientImpl::RequestMainFrameOnCompositorAnimation(
     LocalFrame& frame,
-    cc::PropertyChangeForcesCommitCriteria
-        property_change_forces_commit_criteria) {
+    cc::PropertyChangeForcesCommitCriteria criteria,
+    bool force_propagation) {
   WebFrameWidgetImpl* widget =
       WebLocalFrameImpl::FromFrame(frame)->LocalRootFrameWidget();
-  widget->RequestMainFrameOnCompositorAnimation(
-      property_change_forces_commit_criteria);
+  widget->RequestMainFrameOnCompositorAnimation(criteria, force_propagation);
 }
 
 void ChromeClientImpl::SetHasScrollEventHandlers(LocalFrame* frame,
@@ -1421,10 +1398,6 @@ gfx::Transform ChromeClientImpl::GetDeviceEmulationTransform() const {
 void ChromeClientImpl::DidUpdateBrowserControls() const {
   DCHECK(web_view_);
   web_view_->DidUpdateBrowserControls();
-}
-
-void ChromeClientImpl::DidUpdateLoadProgress(float progress) {
-  web_view_->DidUpdateLoadProgress(progress);
 }
 
 void ChromeClientImpl::DidUpdateMaxSafeAreaInsets(

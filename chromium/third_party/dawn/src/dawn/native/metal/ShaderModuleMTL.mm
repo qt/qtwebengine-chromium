@@ -302,10 +302,13 @@ ResultOrError<CacheResult<MslCompilation>> TranslateToMSL(
     req.tintOptions.entry_point_name = programmableStage.entryPoint;
     req.tintOptions.remapped_entry_point_name = device->GetIsolatedEntryPointName();
     req.tintOptions.disable_robustness = !device->IsRobustnessEnabled();
-    req.tintOptions.fixed_sample_mask = sampleMask;
     req.tintOptions.disable_workgroup_init = device->IsToggleEnabled(Toggle::DisableWorkgroupInit);
-    req.tintOptions.disable_demote_to_helper =
-        device->IsToggleEnabled(Toggle::DisableDemoteToHelper);
+    req.tintOptions.disable_polyfill_integer_div_mod =
+        device->IsToggleEnabled(Toggle::DisablePolyfillsOnIntegerDivisonAndModulo);
+    req.tintOptions.disable_integer_range_analysis =
+        !device->IsToggleEnabled(Toggle::EnableIntegerRangeAnalysisInRobustness);
+
+    req.tintOptions.fixed_sample_mask = sampleMask;
     req.tintOptions.emit_vertex_point_size =
         stage == SingleShaderStage::Vertex &&
         renderPipeline->GetPrimitiveTopology() == wgpu::PrimitiveTopology::PointList;
@@ -313,23 +316,34 @@ ResultOrError<CacheResult<MslCompilation>> TranslateToMSL(
     req.tintOptions.array_length_from_constants = std::move(arrayLengthFromConstants);
     req.tintOptions.pixel_local_attachments = std::move(pixelLocalAttachments);
     req.tintOptions.bindings = std::move(bindings);
-    req.tintOptions.disable_polyfill_integer_div_mod =
-        device->IsToggleEnabled(Toggle::DisablePolyfillsOnIntegerDivisonAndModulo);
-    req.tintOptions.scalarize_max_min_clamp = device->IsToggleEnabled(Toggle::ScalarizeMaxMinClamp);
-    req.tintOptions.disable_module_constant_f16 =
-        device->IsToggleEnabled(Toggle::MetalDisableModuleConstantF16);
-    req.tintOptions.polyfill_subgroup_broadcast_f16 =
-        device->IsToggleEnabled(Toggle::EnableSubgroupsIntelGen9);
-    req.tintOptions.polyfill_clamp_float = device->IsToggleEnabled(Toggle::MetalPolyfillClampFloat);
-    req.tintOptions.polyfill_unpack_2x16_snorm =
-        device->IsToggleEnabled(Toggle::MetalPolyfillUnpack2x16snorm);
-    req.tintOptions.polyfill_unpack_2x16_unorm =
-        device->IsToggleEnabled(Toggle::MetalPolyfillUnpack2x16unorm);
     req.tintOptions.vertex_pulling_config = std::move(vertexPullingTransformConfig);
-    req.tintOptions.enable_integer_range_analysis =
-        device->IsToggleEnabled(Toggle::EnableIntegerRangeAnalysisInRobustness);
+
+    // Set internal immediate constant offsets
+    if (HasImmediateConstants(&RenderImmediateConstants::clampFragDepth, pipelineImmediateMask)) {
+        uint32_t offsetStartBytes = GetImmediateByteOffsetInPipeline(
+            &RenderImmediateConstants::clampFragDepth, pipelineImmediateMask);
+        req.tintOptions.depth_range_offsets = {
+            offsetStartBytes, offsetStartBytes + kImmediateConstantElementByteSize};
+    }
+
     req.tintOptions.use_argument_buffers = useArgumentBuffers;
     req.tintOptions.group_to_argument_buffer_info = std::move(argumentBufferInfo);
+
+    req.tintOptions.workarounds.scalarize_max_min_clamp =
+        device->IsToggleEnabled(Toggle::ScalarizeMaxMinClamp);
+    req.tintOptions.workarounds.disable_module_constant_f16 =
+        device->IsToggleEnabled(Toggle::MetalDisableModuleConstantF16);
+    req.tintOptions.workarounds.polyfill_subgroup_broadcast_f16 =
+        device->IsToggleEnabled(Toggle::EnableSubgroupsIntelGen9);
+    req.tintOptions.workarounds.polyfill_clamp_float =
+        device->IsToggleEnabled(Toggle::MetalPolyfillClampFloat);
+    req.tintOptions.workarounds.polyfill_unpack_2x16_snorm =
+        device->IsToggleEnabled(Toggle::MetalPolyfillUnpack2x16snorm);
+    req.tintOptions.workarounds.polyfill_unpack_2x16_unorm =
+        device->IsToggleEnabled(Toggle::MetalPolyfillUnpack2x16unorm);
+
+    req.tintOptions.extensions.disable_demote_to_helper =
+        device->IsToggleEnabled(Toggle::DisableDemoteToHelper);
 
     req.limits = LimitsForCompilationRequest::Create(device->GetLimits().v1);
     req.adapterSupportedLimits = UnsafeUnserializedValue(
@@ -376,10 +390,8 @@ ResultOrError<CacheResult<MslCompilation>> TranslateToMSL(
                 // Validate workgroup size and workgroup storage size.
                 DAWN_TRY_ASSIGN(localSize,
                                 ValidateComputeStageWorkgroupSize(
-                                    result->workgroup_info.x, result->workgroup_info.y,
-                                    result->workgroup_info.z, result->workgroup_info.storage_size,
-                                    r.usesSubgroupMatrix, r.maxSubgroupSize, r.limits,
-                                    r.adapterSupportedLimits.UnsafeGetValue()));
+                                    result->workgroup_info, r.usesSubgroupMatrix, r.maxSubgroupSize,
+                                    r.limits, r.adapterSupportedLimits.UnsafeGetValue()));
             }
 
             auto msl = std::move(result->msl);
@@ -410,7 +422,7 @@ ResultOrError<CacheResult<MslCompilation>> TranslateToMSL(
                 r.tintOptions.remapped_entry_point_name,
                 result->needs_storage_buffer_sizes,
                 result->has_invariant_attribute,
-                std::move(result->workgroup_info.allocations),
+                std::move(result->workgroup_allocations),
                 localSize,
             }};
         },

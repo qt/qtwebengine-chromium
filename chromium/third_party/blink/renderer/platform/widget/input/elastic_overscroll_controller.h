@@ -121,6 +121,9 @@ class PLATFORM_EXPORT ElasticOverscrollController {
     // MomentumAnimated, and is initialized in EnterStateMomentumAnimated.
     gfx::Vector2dF momentum_animation_initial_stretch;
     gfx::Vector2dF momentum_animation_initial_velocity;
+
+    // Whether this entry is currently receiving momentum events.
+    bool is_in_momentum_phase = false;
   };
 
   // These methods that are "real" should only be called if the associated event
@@ -154,6 +157,10 @@ class PLATFORM_EXPORT ElasticOverscrollController {
       cc::ScrollElasticityHelper* helper);
 
   gfx::Vector2dF StretchAmount(cc::ElementId) const;
+
+  // Whether or not the given scroller can have an elastic overscroll effect
+  // applied to it.
+  bool CanOverscroll(cc::ElementId) const;
 
   // Gets an `OverscrollEntry`. Returns nullptr if it does not exist.
   const OverscrollEntry* GetEntry(cc::ElementId) const;

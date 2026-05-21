@@ -170,7 +170,6 @@ Checks: "-*,\
           -performance-for-range-copy,\
           -performance-inefficient-algorithm,\
           -performance-inefficient-string-concatenation,\
-          -performance-inefficient-vector-operation,\
           -performance-move-const-arg,\
           -performance-no-automatic-move,\
           -performance-noexcept-move-constructor,\
@@ -181,7 +180,6 @@ Checks: "-*,\
           portability-*,\
           -portability-template-virtual-member-function,\
           readability-*,\
-          -readability-avoid-const-params-in-decls,\
           -readability-avoid-nested-conditional-operator,\
           -readability-avoid-return-with-void-value,\
           -readability-braces-around-statements,\

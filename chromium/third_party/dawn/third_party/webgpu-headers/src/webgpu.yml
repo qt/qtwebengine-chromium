@@ -817,6 +817,15 @@ enums:
       - name: request_adapter_WebXR_options
         doc: |
           TODO
+      - name: texture_component_swizzle_descriptor
+        doc: |
+          TODO
+      - name: external_texture_binding_layout
+        doc: |
+          TODO
+      - name: external_texture_binding_entry
+        doc: |
+          TODO
   - name: sampler_binding_type
     doc: |
       TODO
@@ -1531,7 +1540,7 @@ bitflags:
           The buffer can be used as an Index buffer when doing indexed drawing in a render pipeline.
       - name: vertex
         doc: |
-          The buffer can be used as an Vertex buffer when using a render pipeline.
+          The buffer can be used as a Vertex buffer when using a render pipeline.
       - name: uniform
         doc: |
           The buffer can be bound to a shader as a uniform buffer.
@@ -2140,6 +2149,21 @@ structs:
           TODO
         type: uint32
         default: 1
+  - name: external_texture_binding_entry
+    doc: Chained in an @ref WGPUBindGroupEntry to set it to an @ref WGPUExternalTexture. This must have a corresponding @ref WGPUExternalTextureBindingLayout in the @ref WGPUBindGroupLayout.
+    type: extension
+    extends:
+      - bind_group_entry
+    members:
+      - name: external_texture
+        type: object.external_texture
+        doc: |
+          TODO
+  - name: external_texture_binding_layout
+    doc: Chained in @ref WGPUBindGroupLayoutEntry to specify that the corresponding entries in an @ref WGPUBindGroup will contain an @ref WGPUExternalTexture.
+    type: extension
+    extends:
+      - bind_group_layout_entry
   - name: fragment_state
     doc: |
       TODO
@@ -3482,11 +3506,11 @@ callbacks:
         passed_with_ownership: false
       - name: reason
         doc: |
-          TODO
+          An error code explaining why the device was lost.
         type: enum.device_lost_reason
       - name: message
         doc: |
-          TODO
+          A @ref LocalizableHumanReadableMessageString describing why the device was lost.
         type: out_string
         passed_with_ownership: false
   - name: pop_error_scope
@@ -3732,7 +3756,7 @@ objects:
         args:
           - name: mode
             doc: |
-              TODO
+              The mapping mode (read or write).
             type: bitflag.map_mode
           - name: offset
             doc: |
@@ -4489,6 +4513,17 @@ objects:
           Pops an error scope to the current thread's error scope stack,
           asynchronously returning the result. See @ref ErrorScopes.
         callback: callback.pop_error_scope
+      - name: set_label
+        doc: |
+          TODO
+        args:
+          - name: label
+            doc: |
+              TODO
+            type: string_with_default_empty
+  - name: external_texture
+    doc: A sampleable 2D texture that may perform 0-copy YUV sampling internally. Creation of @ref WGPUExternalTexture is extremely implementation-dependent and not defined in this header.
+    methods:
       - name: set_label
         doc: |
           TODO
@@ -5321,6 +5356,13 @@ objects:
           doc: |
             TODO
           type: enum.texture_dimension
+      - name: get_texture_binding_view_dimension
+        doc: |
+          TODO
+        returns:
+          doc: |
+            TODO
+          type: enum.texture_view_dimension
       - name: get_format
         doc: |
           TODO

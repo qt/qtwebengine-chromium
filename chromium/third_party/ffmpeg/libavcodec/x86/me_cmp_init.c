@@ -77,11 +77,9 @@ int ff_vsad16u_approx_sse2(MPVEncContext *v, const uint8_t *pix1, const uint8_t 
     int ff_hadamard8_diff16_ ## cpu(MPVEncContext *s, const uint8_t *src1,       \
                                     const uint8_t *src2, ptrdiff_t stride, int h);
 
-hadamard_func(mmxext)
 hadamard_func(sse2)
 hadamard_func(ssse3)
 
-#if HAVE_X86ASM
 static int nsse16_ssse3(MPVEncContext *c, const uint8_t *pix1, const uint8_t *pix2,
                         ptrdiff_t stride, int h)
 {
@@ -108,19 +106,11 @@ static int nsse8_ssse3(MPVEncContext *c, const uint8_t *pix1, const uint8_t *pix
         return score1 + FFABS(score2) * 8;
 }
 
-#endif /* HAVE_X86ASM */
-
 av_cold void ff_me_cmp_init_x86(MECmpContext *c, AVCodecContext *avctx)
 {
-#if HAVE_X86ASM
     int cpu_flags = av_get_cpu_flags();
 
     if (EXTERNAL_MMXEXT(cpu_flags)) {
-#if !HAVE_ALIGNED_STACK
-        c->hadamard8_diff[0] = ff_hadamard8_diff16_mmxext;
-        c->hadamard8_diff[1] = ff_hadamard8_diff_mmxext;
-#endif
-
         c->sad[1] = ff_sad8_mmxext;
 
         c->pix_abs[1][0] = ff_sad8_mmxext;
@@ -146,10 +136,8 @@ av_cold void ff_me_cmp_init_x86(MECmpContext *c, AVCodecContext *avctx)
         c->pix_abs[0][2] = ff_sad16_y2_sse2;
         c->pix_abs[0][3] = ff_sad16_xy2_sse2;
 
-#if HAVE_ALIGNED_STACK
         c->hadamard8_diff[0] = ff_hadamard8_diff16_sse2;
         c->hadamard8_diff[1] = ff_hadamard8_diff_sse2;
-#endif
         if (avctx->codec_id != AV_CODEC_ID_SNOW) {
             c->sad[0]        = ff_sad16_sse2;
 
@@ -179,10 +167,7 @@ av_cold void ff_me_cmp_init_x86(MECmpContext *c, AVCodecContext *avctx)
         c->nsse[1]           = nsse8_ssse3;
 
         c->sum_abs_dctelem   = ff_sum_abs_dctelem_ssse3;
-#if HAVE_ALIGNED_STACK
         c->hadamard8_diff[0] = ff_hadamard8_diff16_ssse3;
         c->hadamard8_diff[1] = ff_hadamard8_diff_ssse3;
-#endif
     }
-#endif
 }

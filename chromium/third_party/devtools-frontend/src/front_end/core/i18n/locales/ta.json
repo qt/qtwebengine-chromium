@@ -110,9 +110,6 @@
   "core/common/Revealer.ts | requestConditionsDrawer": {
     "message": "கோரிக்கை நிபந்தனைகள் டிராயர்"
   },
-  "core/common/Revealer.ts | securityPanel": {
-    "message": "பாதுகாப்புப் பேனல்"
-  },
   "core/common/Revealer.ts | sourcesPanel": {
     "message": "ஆதாரங்கள் பேனல்"
   },
@@ -410,9 +407,6 @@
   "core/sdk/NetworkRequest.ts | notOnPath": {
     "message": "கோரிக்கை url தடத்துடனோ அதன் முதன்மைக் கோப்பகத்தின் தடத்துடனோ இந்தக் குக்கீயின் தடம் துல்லியமாகப் பொருந்தவில்லை என்பதால் அது தடுக்கப்பட்டது."
   },
-  "core/sdk/NetworkRequest.ts | samePartyFromCrossPartyContext": {
-    "message": "\"SameParty\" பண்புக்கூறைக் கொண்டிருந்ததாலும் வேறொரு தளத்தில் இருந்து கோரிக்கை அனுப்பப்பட்டதாலும் இந்தக் குக்கீ தடுக்கப்பட்டது. இந்தக் கோரிக்கை வேற்று தளக் கோரிக்கையாகக் கருதப்பட்டது. ஏனெனில் இந்த உள்ளடக்கத்திற்கான URLலின் டொமைனும் உள்ளடக்கத்தில் இருக்கும் ஃபிரேம்கள்/ஆவணங்களின் டொமைன்களும் ஒரே ஃபர்ஸ்ட்-பார்ட்டி-செட்டின் உரிமையாளர் டொமைன்களாகவும் இல்லை, உறுப்பினர் டொமைன்களாகவும் இல்லை."
-  },
   "core/sdk/NetworkRequest.ts | sameSiteLax": {
     "message": "\"SameSite=Lax\" பண்புக்கூறைக் கொண்டிருந்ததாலும் வேறொரு தளத்தில் இருந்து கோரிக்கை அனுப்பப்பட்டதாலும் உயர்நிலை வழிச்செலுத்தல் மூலமாகத் துவக்கப்படாததாலும் இந்தக் குக்கீ தடுக்கப்பட்டது."
   },
@@ -454,12 +448,6 @@
   },
   "core/sdk/NetworkRequest.ts | thisSetcookieHadInvalidSyntax": {
     "message": "இந்த Set-Cookie தலைப்பில் தவறான தொடரியல் உள்ளது."
-  },
-  "core/sdk/NetworkRequest.ts | thisSetcookieWasBlockedBecauseItHadTheSameparty": {
-    "message": "\"SameParty\" பண்புக்கூறைக் கொண்டிருந்தாலும் கோரிக்கை வேற்று தளக் கோரிக்கையாக இருந்ததால் Set-Cookie தலைப்பு மூலம் குக்கீயை அமைக்கும் இந்த முயற்சி தடுக்கப்பட்டது. இந்தக் கோரிக்கை வேற்று தளக் கோரிக்கையாகக் கருதப்பட்டது. ஏனெனில் இந்த உள்ளடக்கத்திற்கான URLலின் டொமைனும் உள்ளடக்கத்தில் இருக்கும் ஃபிரேம்கள்/ஆவணங்களின் டொமைன்களும் ஒரே ஃபர்ஸ்ட்-பார்ட்டி-செட்டின் உரிமையாளர் டொமைன்களாகவும் இல்லை, உறுப்பினர் டொமைன்களாகவும் இல்லை."
-  },
-  "core/sdk/NetworkRequest.ts | thisSetcookieWasBlockedBecauseItHadTheSamepartyAttribute": {
-    "message": "\"SameParty\" பண்புக்கூறைக் கொண்டிருந்தாலும் முரண்பாடான பிற பண்புக்கூறுகளையும் கொண்டிருந்ததால் Set-Cookie தலைப்பு மூலம் குக்கீயை அமைக்கும் இந்த முயற்சி தடுக்கப்பட்டது. \"SameParty\" பண்புக்கூறைப் பயன்படுத்தும் மற்றும் \"Secure\" பண்புக்கூறு உள்ள குக்கீகள் Chromeக்குத் தேவை. அவை \"SameSite=Strict\" பண்பிற்குத் தடைசெய்வதாக இருக்கக்கூடாது."
   },
   "core/sdk/NetworkRequest.ts | thisSetcookieWasBlockedBecauseItHadTheSamesiteStrictLax": {
     "message": "\"{PH1}\" பண்புக்கூறைக் கொண்டிருந்தாலும் வேற்று தளப் பதிலில் (உயர்நிலை வழிச்செலுத்தலுக்குரிய பதிலாக அல்லாமல்) இருந்து பெறப்பட்டதால் Set-Cookie தலைப்பு மூலம் குக்கீயை அமைக்கும் இந்த முயற்சி தடுக்கப்பட்டது. URLலின் ஸ்கீமும் தற்போதைய தளத்தின் ஸ்கீமும் வெவ்வேறாக இருப்பதால் இந்தக் கோரிக்கை வேற்று தளக் கோரிக்கை எனக் கருதப்பட்டது."
@@ -1031,6 +1019,15 @@
   "entrypoints/main/GlobalAiButton.ts | aiAssistance": {
     "message": "AI உதவி"
   },
+  "entrypoints/main/GlobalAiButton.ts | gemini": {
+    "message": "Gemini"
+  },
+  "entrypoints/main/GlobalAiButton.ts | openAiAssistance": {
+    "message": "AI உதவிப் பேனலைத் திறக்கும்"
+  },
+  "entrypoints/main/GlobalAiButton.ts | openGemini": {
+    "message": "Gemini பேனலைத் திறக்கும்"
+  },
   "entrypoints/main/MainImpl.ts | aiModelDownloaded": {
     "message": "AI மாடல் பதிவிறக்கப்பட்டது"
   },
@@ -1057,6 +1054,9 @@
   },
   "entrypoints/main/MainImpl.ts | focusDebuggee": {
     "message": "ஃபோகஸ் பக்கம்"
+  },
+  "entrypoints/main/MainImpl.ts | getDevToolsMcp": {
+    "message": "DevTools MCP ஐப் பெறுங்கள்"
   },
   "entrypoints/main/MainImpl.ts | help": {
     "message": "உதவி"
@@ -1298,9 +1298,6 @@
   "generated/Deprecation.ts | ChromeLoadTimesWasAlternateProtocolAvailable": {
     "message": "chrome.loadTimes() நிறுத்தப்பட்டது, இதற்குப் பதிலாகப் பின்வரும் நிலையான APIயைப் பயன்படுத்தவும்: Navigation Timing 2ல் nextHopProtocol."
   },
-  "generated/Deprecation.ts | CookieWithTruncatingChar": {
-    "message": "\\(0|r|n) எழுத்து இருக்கும் குக்கீகள் துண்டிக்கப்படுவதற்குப் பதிலாக நிராகரிக்கப்படும்."
-  },
   "generated/Deprecation.ts | CrossOriginAccessBasedOnDocumentDomain": {
     "message": "document.domain ஐ அமைத்து அதே ஆரிஜின் கொள்கையைத் தளர்த்துவது நிறுத்தப்பட்டது. இயல்பாகவே இது முடக்கப்படும். இந்த நிறுத்த எச்சரிக்கை கிராஸ் ஆரிஜின் அணுகலுக்கானது. இது document.domain அமைப்பின் மூலம் இயக்கப்பட்டது."
   },
@@ -1454,9 +1451,6 @@
   "generated/Deprecation.ts | XMLHttpRequestSynchronousInNonWorkerOutsideBeforeUnload": {
     "message": "இறுதிப் பயனர் அனுபவத்தில் பாதிப்பை ஏற்படுத்தும் என்பதால் முதன்மைத் தொடரிழையில் ஒத்திசையும் XMLHttpRequest நிறுத்தப்பட்டது. கூடுதல் உதவிக்கு https://xhr.spec.whatwg.org/ தளத்தைப் பார்க்கவும்."
   },
-  "generated/Deprecation.ts | XMLNoExternalEntities": {
-    "message": "XML பார்ஸிங்கில் வெளிப்புறத்தில் ஏற்றப்படும் தரவு நிறுத்தப்பட்டுள்ளது, விரைவில் இந்த பிரவுசரில் இருந்து அகற்றப்படும்."
-  },
   "generated/Deprecation.ts | XSLT": {
     "message": "XSLTProcessor மற்றும் XSLT செயலாக்க வழிமுறைகள் எல்லா பிரவுசர்களாலும் நிறுத்தப்பட்டுள்ளன. இந்த அம்சங்கள் விரைவில் இந்த பிரவுசரில் இருந்து அகற்றப்படும்."
   },
@@ -1475,17 +1469,11 @@
   "models/bindings/ContentProviderBasedProject.ts | unknownErrorLoadingFile": {
     "message": "ஃபைலை ஏற்றும்போது அறியப்படாத பிழை ஏற்பட்டது"
   },
-  "models/bindings/DebuggerLanguagePlugins.ts | debugSymbolsIncomplete": {
-    "message": "{PH1} செயல்பாட்டுக்கான பிழைதிருத்தத் தகவல்கள் முழுமையாக இல்லை"
-  },
   "models/bindings/DebuggerLanguagePlugins.ts | errorInDebuggerLanguagePlugin": {
     "message": "பிழைதிருத்த மொழிச் செருநிரலில் பிழை ஏற்பட்டது: {PH1}"
   },
   "models/bindings/DebuggerLanguagePlugins.ts | failedToLoadDebugSymbolsFor": {
     "message": "{PH2} தளத்திற்கான பிழைதிருத்தக் குறியீடுகளை [{PH1}] ஆல் ஏற்ற முடியவில்லை ({PH3})"
-  },
-  "models/bindings/DebuggerLanguagePlugins.ts | failedToLoadDebugSymbolsForFunction": {
-    "message": "\"{PH1}\" செயல்பாட்டுக்கான பிழைதிருத்தத் தகவல்கள் எதுவுமில்லை"
   },
   "models/bindings/DebuggerLanguagePlugins.ts | loadedDebugSymbolsForButDidnt": {
     "message": "{PH2} தளத்திற்கான பிழைதிருத்தக் குறியீடுகளை [{PH1}] ஏற்றியுள்ளது. ஆனால் எந்த ஆதாரக் கோப்புகளையும் கண்டறியவில்லை"
@@ -1586,9 +1574,6 @@
   "models/issues_manager/CookieIssue.ts | fileCrosSiteRedirectBug": {
     "message": "பிழையைப் புகாரளி"
   },
-  "models/issues_manager/CookieIssue.ts | firstPartySetsExplained": {
-    "message": "First-Party Sets மற்றும் SameParty பண்புக்கூறு"
-  },
   "models/issues_manager/CookieIssue.ts | howSchemefulSamesiteWorks": {
     "message": "Schemeful Same-Site செயல்படும் விதம்"
   },
@@ -1600,9 +1585,6 @@
   },
   "models/issues_manager/CorsIssue.ts | corsLocalNetworkAccess": {
     "message": "லோக்கல் நெட்வொர்க் அணுகல்"
-  },
-  "models/issues_manager/CorsIssue.ts | corsPrivateNetworkAccess": {
-    "message": "தனிப்பட்ட நெட்வொர்க் அணுகல்"
   },
   "models/issues_manager/CrossOriginEmbedderPolicyIssue.ts | coopAndCoep": {
     "message": "COOP & COEP"
@@ -2107,6 +2089,9 @@
   },
   "models/trace/Styles.ts | signReply": {
     "message": "கையொப்பமிட்ட பதில்"
+  },
+  "models/trace/Styles.ts | softLargestContentfulPaint": {
+    "message": "சாஃப்ட் லார்ஜஸ்ட் கன்டென்ட்ஃபுல் பெயிண்ட்"
   },
   "models/trace/Styles.ts | streamingCompileTask": {
     "message": "ஸ்ட்ரீமிங்கைக் கம்பைல் செய்யும் பணி"
@@ -3086,14 +3071,20 @@
   "panels/ai_assistance/ai_assistance-meta.ts | aiAssistance": {
     "message": "AI உதவி"
   },
-  "panels/ai_assistance/ai_assistance-meta.ts | askAi": {
-    "message": "AIயிடம் கேட்கலாம்"
-  },
   "panels/ai_assistance/ai_assistance-meta.ts | debugWithAi": {
     "message": "AI மூலம் பிழைதிருத்து"
   },
+  "panels/ai_assistance/ai_assistance-meta.ts | debugWithGemini": {
+    "message": "Gemini மூலம் பிழைதிருத்து"
+  },
   "panels/ai_assistance/ai_assistance-meta.ts | enableAiAssistance": {
     "message": "AI உதவியை இயக்கு"
+  },
+  "panels/ai_assistance/ai_assistance-meta.ts | enableGemini": {
+    "message": "Geminiயை ஆன் செய்"
+  },
+  "panels/ai_assistance/ai_assistance-meta.ts | gemini": {
+    "message": "Gemini"
   },
   "panels/ai_assistance/ai_assistance-meta.ts | geoRestricted": {
     "message": "இந்த அம்சம் உங்கள் பிராந்தியத்தில் கிடைக்கவில்லை."
@@ -3104,16 +3095,19 @@
   "panels/ai_assistance/ai_assistance-meta.ts | showAiAssistance": {
     "message": "AI உதவியைக் காட்டு"
   },
+  "panels/ai_assistance/ai_assistance-meta.ts | showGemini": {
+    "message": "Geminiயைக் காட்டு"
+  },
   "panels/ai_assistance/ai_assistance-meta.ts | wrongLocale": {
     "message": "இந்த அம்சத்தைப் பயன்படுத்த, டெவெலப்பர் கருவிகள் அமைப்புகளில் உங்களின் விருப்ப மொழியை ஆங்கிலம் என்று அமைத்திடுங்கள்."
   },
-  "panels/ai_assistance/components/ChatView.ts | inputTextAriaDescription": {
+  "panels/ai_assistance/components/ChatInput.ts | inputTextAriaDescription": {
     "message": "உங்கள் உரையாடலைத் தொடங்க மேலே பரிந்துரைக்கப்பட்டுள்ள ப்ராம்ப்ட்டுகளில் ஏதேனும் ஒன்றையும் பயன்படுத்தலாம்"
   },
-  "panels/ai_assistance/components/ChatView.ts | learnAbout": {
+  "panels/ai_assistance/components/ChatInput.ts | learnAbout": {
     "message": "டெவெலப்பர் கருவிகளில் AI குறித்துத் தெரிந்துகொள்ளுங்கள்"
   },
-  "panels/ai_assistance/components/ChatView.ts | revealContextDescription": {
+  "panels/ai_assistance/components/ChatInput.ts | revealContextDescription": {
     "message": "தேர்ந்தெடுக்கப்பட்டதை டெவெலப்பர் கருவிகளில் காட்டு"
   },
   "panels/ai_assistance/components/DisabledWidget.ts | notAvailableInIncognitoMode": {
@@ -3221,6 +3215,9 @@
   "panels/application/AppManifestView.ts | appIdNote": {
     "message": "கவனத்திற்கு: மெனிஃபெஸ்ட்டில் id குறிப்பிடப்படவில்லை, அதற்குப் பதிலாக start_url பயன்படுத்தப்படும். தற்போதைய அடையாளத்துடன் பொருந்தும் ஓர் ஆப்ஸ் ஐடியைக் குறிப்பிட, id புலத்தை {PH1} {PH2} என்று அமைக்கவும்."
   },
+  "panels/application/AppManifestView.ts | appManifest": {
+    "message": "மெனிஃபெஸ்ட்"
+  },
   "panels/application/AppManifestView.ts | avoidPurposeAnyAndMaskable": {
     "message": "'purpose' 'any maskable' உடன் ஓர் ஐகானை அறிவிப்பது பரிந்துரைக்கப்படவில்லை. மிக அதிகமான அல்லது மிகக் குறைந்த இடைவெளி காரணமாகச் சில பிளாட்ஃபார்ம்களில் இது தவறாகத் தெரியக்கூடும்."
   },
@@ -3293,6 +3290,9 @@
   "panels/application/AppManifestView.ts | manifestCouldNotBeFetchedIsEmpty": {
     "message": "மெனிஃபெஸ்ட்டைப் பெறவோ பாகுபடுத்தவோ முடியவில்லை அல்லது அது காலியாக இருக்கக்கூடும்"
   },
+  "panels/application/AppManifestView.ts | manifestDescription": {
+    "message": "மொபைலின் முகப்புத் திரைகளில் உங்கள் ஆப்ஸ் காட்டப்படும் விதத்தையும், ஆப்ஸைத் தொடங்கும்போது அதன் தோற்றத்தையும் மெனிஃபெஸ்ட் வரையறுக்கிறது."
+  },
   "panels/application/AppManifestView.ts | manifestDisplayPropertyMustBeOne": {
     "message": "'standalone', 'fullscreen', 'minimal-ui' ஆகியவற்றில் ஏதேனும் ஒன்றாக மெனிஃபெஸ்ட் 'display' உடைமை இருக்க வேண்டும்"
   },
@@ -3317,6 +3317,9 @@
   "panels/application/AppManifestView.ts | newNoteUrl": {
     "message": "புதிய குறிப்பு URL"
   },
+  "panels/application/AppManifestView.ts | noManifestDetected": {
+    "message": "மெனிஃபெஸ்ட் எதுவும் கண்டறியப்படவில்லை"
+  },
   "panels/application/AppManifestView.ts | noPlayStoreIdProvided": {
     "message": "Play Store ஐடி வழங்கப்படவில்லை"
   },
@@ -3328,6 +3331,9 @@
   },
   "panels/application/AppManifestView.ts | noSuppliedIconIsAtLeastSpxSquare": {
     "message": "வழங்கப்பட்ட எந்தவொரு ஐகானும் PNG, SVG, WebP போன்ற வடிவமைப்பில் குறைந்தபட்சம் {PH1} சதுர பிக்சல்களுடன் இல்லை. purpose பண்புக்கூறு any என்று அமைக்கப்பட்டுள்ளது அல்லது அமைக்கப்படவே இல்லை."
+  },
+  "panels/application/AppManifestView.ts | onInvokeAlert": {
+    "message": "{PH1}க்குச் செல்கிறது"
   },
   "panels/application/AppManifestView.ts | orientation": {
     "message": "திசையமைப்பு"
@@ -3458,9 +3464,6 @@
   "panels/application/AppManifestView.ts | windowControlsOverlay": {
     "message": "Window Controls Overlay"
   },
-  "panels/application/ApplicationPanelSidebar.ts | appManifest": {
-    "message": "மெனிஃபெஸ்ட்"
-  },
   "panels/application/ApplicationPanelSidebar.ts | application": {
     "message": "ஆப்ஸ்"
   },
@@ -3530,9 +3533,6 @@
   "panels/application/ApplicationPanelSidebar.ts | manifest": {
     "message": "மெனிஃபெஸ்ட்"
   },
-  "panels/application/ApplicationPanelSidebar.ts | manifestDescription": {
-    "message": "மொபைலின் முகப்புத் திரைகளில் உங்கள் ஆப்ஸ் காட்டப்படும் விதத்தையும், ஆப்ஸைத் தொடங்கும்போது அதன் தோற்றத்தையும் மெனிஃபெஸ்ட் வரையறுக்கிறது."
-  },
   "panels/application/ApplicationPanelSidebar.ts | noCookies": {
     "message": "குக்கீகள் எதுவும் அமைக்கப்படவில்லை"
   },
@@ -3544,9 +3544,6 @@
   },
   "panels/application/ApplicationPanelSidebar.ts | noLocalStorage": {
     "message": "லோக்கல் சேமிப்பகம் எதுவும் கண்டறியப்படவில்லை"
-  },
-  "panels/application/ApplicationPanelSidebar.ts | noManifestDetected": {
-    "message": "மெனிஃபெஸ்ட் எதுவும் கண்டறியப்படவில்லை"
   },
   "panels/application/ApplicationPanelSidebar.ts | noSessionStorage": {
     "message": "அமர்வுச் சேமிப்பகம் எதுவும் கண்டறியப்படவில்லை"
@@ -3721,6 +3718,399 @@
   },
   "panels/application/DOMStorageItemsView.ts | domStorageItemsCleared": {
     "message": "DOM சேமிப்பகத் தரவு அழிக்கப்பட்டது"
+  },
+  "panels/application/DeviceBoundSessionsTreeElement.ts | deviceBoundSessions": {
+    "message": "சாதனத்துடன் பிணைக்கப்பட்ட அமர்வுகள்"
+  },
+  "panels/application/DeviceBoundSessionsTreeElement.ts | deviceBoundSessionsCategoryDescription": {
+    "message": "சாதனத்துடன் இணைக்கப்பட்ட அமர்வுகளையும் தொடர்புடைய நிகழ்வுகளையும் இந்தப் பக்கத்தில் பார்க்கலாம்"
+  },
+  "panels/application/DeviceBoundSessionsTreeElement.ts | noSession": {
+    "message": "அமர்வு இல்லை"
+  },
+  "panels/application/DeviceBoundSessionsTreeElement.ts | sessionWithErrors": {
+    "message": "{sessionName}, அமர்வில் பிழைகள் உள்ளன"
+  },
+  "panels/application/DeviceBoundSessionsTreeElement.ts | terminatedSession": {
+    "message": "{sessionName}, அமர்வு நிறுத்தப்பட்டது"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | allowedRefreshInitiators": {
+    "message": "புதுப்பிப்பைத் தொடங்க அனுமதிக்கப்படுபவர்கள்"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | boundCookieSetForbidden": {
+    "message": "வரம்பிடப்பட்ட குக்கீகளை அமைக்க முடியாத சூழலில் பதிவுசெய்தல்"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | cachedChallenge": {
+    "message": "தற்காலிகமாகச் சேமிக்கப்பட்ட சவால்"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | cantSetBoundCookie": {
+    "message": "இணைக்கப்பட்ட குக்கீயை அமைக்க அனுமதி இல்லை"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | causedAnyRequestDeferrals": {
+    "message": "ஏதேனும் கோரிக்கை ஒத்திவைப்புகளுக்குக் காரணமாக இருத்தல்"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | challenge": {
+    "message": "சவால்"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | challengeResult": {
+    "message": "சேலஞ்ச் முடிவு"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | clearBrowsingData": {
+    "message": "பயனர் தொடங்கும் பிரவுசர் தரவு அகற்றுதல்"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | cookieCravings": {
+    "message": "குக்கீகள்"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | creation": {
+    "message": "உருவாக்கிய நேரம்"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | deletionReason": {
+    "message": "நீக்குவதற்கான காரணம்"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | doNotClearLogOnPageReload": {
+    "message": "பக்கத்தை ரெஃப்ரெஷ் செய்யும்போது/செல்லும்போது பதிவு அழிக்கப்படாது"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | emptyScopeSpecificationDomain": {
+    "message": "வரம்பைக் குறிப்பிடும் டொமைன் காலியாக உள்ளது"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | emptyScopeSpecificationPath": {
+    "message": "வரம்பின் விவரக்குறிப்புப் பாதை காலியாக உள்ளது"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | emptySessionConfig": {
+    "message": "பதிவுசெய்தலுக்கான அமர்வு உள்ளமைவு இல்லை"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | error": {
+    "message": "பிழை"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | eventDetails": {
+    "message": "நிகழ்வு விவரங்கள்"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | eventResult": {
+    "message": "நிகழ்வு முடிவு"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | events": {
+    "message": "நிகழ்வுகள்"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | expired": {
+    "message": "காலாவதியானது"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | expiryDate": {
+    "message": "காலாவதித் தேதி"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | failedToRestoreKey": {
+    "message": "டிஸ்க்கில் இருந்து கீயை மீட்டெடுக்க முடியவில்லை"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | failedToUnwrapKey": {
+    "message": "குறியீட்டை அன்ராப் செய்ய முடியவில்லை"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | fatalError": {
+    "message": "பெரிய பிழை"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | federatedKeyThumbprintMismatch": {
+    "message": "கூட்டமைக்கப்பட்ட கீயில் தவறான தம்ப்ப்ரிண்ட் உள்ளது"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | federatedNotAuthorizedByProvider": {
+    "message": ".well-known மூலம் கூட்டமைக்கப்பட்ட அமர்வு வழங்குநரால் அங்கீகரிக்கப்படவில்லை"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | federatedNotAuthorizedByRelyingParty": {
+    "message": ".well-known மூலம் நம்பகமான தரப்பால் கூட்டமைக்கப்பட்ட அமர்வு அங்கீகரிக்கப்படவில்லை"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | fetchResult": {
+    "message": "முடிவைப் பெறு"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | includeSite": {
+    "message": "தளத்தைச் சேர்"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | initializedService": {
+    "message": "சேவை தொடங்கப்பட்டது"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidChallenge": {
+    "message": "தவறான சவால்"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidConfigJson": {
+    "message": "தவறான அமர்வு உள்ளமைவு JSON"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidCredentialsConfig": {
+    "message": "தவறான அனுமதிச் சான்றுகள் உள்ளமைவு"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidCredentialsCookie": {
+    "message": "தவறான அனுமதிச் சான்றுகள் - குக்கீ தவறானது"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidCredentialsCookieCreationTime": {
+    "message": "தவறான அனுமதிச் சான்றுகள் - குக்கீ உருவாக்கப்பட்ட நேரம் தவறாக உள்ளது"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidCredentialsCookieInvalidDomain": {
+    "message": "தவறான அனுமதிச் சான்றுகள் - குக்கீ செல்லாத டொமைன்"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidCredentialsCookieName": {
+    "message": "தவறான அனுமதிச் சான்றுகள் - குக்கீ பெயர் தவறானது"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidCredentialsCookieParsing": {
+    "message": "தவறான அனுமதிச் சான்றுகள் - குக்கீயைப் பாகுபடுத்த முடியவில்லை"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidCredentialsCookiePrefix": {
+    "message": "தவறான அனுமதிச் சான்றுகள் - குக்கீயின் தவறான முன்னொட்டு"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidCredentialsCookieUnpermittedAttribute": {
+    "message": "தவறான அனுமதிச் சான்றுகள் - குக்கீ பண்புக்கூறு அனுமதிக்கப்படவில்லை"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidCredentialsEmptyName": {
+    "message": "தவறான அனுமதிச் சான்றுகள் - பெயர் இல்லை"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidCredentialsType": {
+    "message": "தவறான அனுமதிச் சான்றுகள் - காலியாக உள்ளது அல்லது குக்கீ வகை இல்லை"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidFederatedKey": {
+    "message": "ஒருங்கிணைக்கப்பட்ட கீ தவறானது"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidFederatedSessionProviderFailedToRestoreKey": {
+    "message": "அமர்வு வழங்குநர் கீயை மீட்டெடுக்க முடியாததால் கூட்டமைக்கப்பட்ட அமர்வு தவறானது"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidFederatedSessionProviderSessionMissing": {
+    "message": "வழங்குநர் அமர்வு கண்டறியப்படாததால் கூட்டமைக்கப்பட்ட அமர்வு தவறானது"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidFederatedSessionUrl": {
+    "message": "கூட்டமைப்பு வழங்குநர் URL தவறானது"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidFederatedSessionWrongProviderOrigin": {
+    "message": "வழங்குநரின் ஆரிஜின் பொருந்தாததால் கூட்டமைக்கப்பட்ட அமர்வு தவறானது"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidFetcherUrl": {
+    "message": "தவறான ஃபெட்ச்சர் URL"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidRefreshUrl": {
+    "message": "தவறான புதுப்பிப்பு URL"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidScopeIncludeSite": {
+    "message": "வரம்பில் தவறான include_site"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidScopeOrigin": {
+    "message": "தவறான ஸ்கோப் ஆரிஜின்"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidScopeRuleHostPattern": {
+    "message": "வரம்பிற்கான விதியின் ஹோஸ்ட் பேட்டர்ன் தவறாக உள்ளது"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidScopeRulePath": {
+    "message": "தவறான ஸ்கோப் விதிப் பாதை"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidScopeSpecification": {
+    "message": "தவறான ஸ்கோப் விவரக்குறிப்பு"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidScopeSpecificationType": {
+    "message": "வரம்பின் விவரக்குறிப்பு வகை சேர்க்கும் அல்லது விலக்கும் வகையைச் சேர்ந்ததாக இல்லை"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidSessionId": {
+    "message": "தவறான அமர்வு ஐடி"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidSessionParams": {
+    "message": "தவறான அமர்வு அளவுருக்கள்"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | keyError": {
+    "message": "முக்கியப் பிழை"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | keyId": {
+    "message": "ஐடி"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | keySite": {
+    "message": "தளம்"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | mismatchedSessionId": {
+    "message": "அமர்வு ஐடி பொருந்தவில்லை"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | missingScope": {
+    "message": "வரம்பு இல்லை"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | missingScopeIncludeSite": {
+    "message": "வரம்பில் include_site விடுபட்டுள்ளது"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | missingScopeSpecificationType": {
+    "message": "வரம்பின் விவரக்குறிப்பு வகை இல்லை"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | name": {
+    "message": "பெயர்"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | netError": {
+    "message": "நெட்வொர்க் பிழை"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | no": {
+    "message": "இல்லை"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | noCredentials": {
+    "message": "அனுமதிச் சான்றுகள் இல்லை."
+  },
+  "panels/application/DeviceBoundSessionsView.ts | noEvents": {
+    "message": "இதுவரை எந்த நிகழ்வுகளும் பதிவுசெய்யப்படவில்லை."
+  },
+  "panels/application/DeviceBoundSessionsView.ts | noSessionId": {
+    "message": "அமர்வு ஐடி இல்லை"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | noSessionMatch": {
+    "message": "பொருந்தும் அமர்வு ஐடி இல்லை"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | origin": {
+    "message": "ஆரிஜின்"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | persistentHttpError": {
+    "message": "தொடர்ச்சியான HTTP பிழை"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | preserveLog": {
+    "message": "பதிவைச் சேமி"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | proxyError": {
+    "message": "ப்ராக்ஸி பிழை"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | refresh": {
+    "message": "ரெஃப்ரெஷ் செய்"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | refreshFatalError": {
+    "message": "ரெஃப்ரெஷ் செய்யும்போது கடுமையான பிழை ஏற்பட்டது"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | refreshInitiatorInvalidHostPattern": {
+    "message": "அனுமதிக்கப்பட்ட புதுப்பிப்புத் தொடக்கத்திற்கான ஹோஸ்ட் பேட்டர்ன் தவறாக உள்ளது"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | refreshInitiatorNotString": {
+    "message": "புதுப்பிப்பைத் தொடங்க அனுமதிக்கப்பட்டவர் ஒரு ஸ்ட்ரிங் இல்லை"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | refreshQuotaExceeded": {
+    "message": "புதுப்பிப்பு வரம்பைத் தாண்டிவிட்டது"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | refreshResult": {
+    "message": "முடிவைப் புதுப்பி"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | refreshUrl": {
+    "message": "URLலைப் புதுப்பி"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | refreshUrlSameSiteMismatch": {
+    "message": "ஒரே தளத்தில் பொருந்தாத URLலை ரெஃப்ரெஷ் செய்தல்"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | refreshed": {
+    "message": "புதுப்பிக்கப்பட்டது"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | registrationAttemptedChallenge": {
+    "message": "பதிவுசெய்தல் சவால் பிழைக்கான பதில் குறியீட்டை வழங்கியது"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | relyingPartyWellKnownHasRelyingOrigins": {
+    "message": "நம்பிக்கைக்குரிய தரப்பின் .well-known உள்ளடக்கத்தில் relying_origins உள்ளது"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | relyingPartyWellKnownMalformed": {
+    "message": "Relying party .well-known உள்ளடக்கம் தவறாக வடிவமைக்கப்பட்டுள்ளது"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | relyingPartyWellKnownUnavailable": {
+    "message": "நம்பிக்கைக்குரிய தரப்பு .well-known கிடைக்கவில்லை"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | result": {
+    "message": "முடிவு"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | ruleHostPattern": {
+    "message": "ஹோஸ்ட் பேட்டர்ன்"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | rulePathPrefix": {
+    "message": "பாதை முன்னொட்டு"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | ruleType": {
+    "message": "விதி வகை"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | ruleTypeExclude": {
+    "message": "தவிர்"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | ruleTypeInclude": {
+    "message": "சேர்"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | scope": {
+    "message": "ஸ்கோப்"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | scopeOriginContainsPath": {
+    "message": "வரம்பின் ஆரிஜினில் தடம் உள்ளது"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | scopeOriginSameSiteMismatch": {
+    "message": "ஒரே தளத்தில் பொருந்தாத ஆரிஜின்"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | scopeRuleOriginScopedHostPatternMismatch": {
+    "message": "ஆரிஜின் வரம்பிற்குட்பட்ட அமர்வில் ஹோஸ்ட் பேட்டர்னும் ஆரிஜினும் பொருந்தவில்லை"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | scopeRuleSiteScopedHostPatternMismatch": {
+    "message": "தள வரம்பிற்குட்பட்ட அமர்வில் ஹோஸ்ட் பேட்டர்னும் தளமும் பொருந்தவில்லை"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | selectEventToViewDetails": {
+    "message": "கூடுதல் விவரங்களைப் பார்க்க நிகழ்வு வரிசையைத் தேர்ந்தெடுக்கவும்."
+  },
+  "panels/application/DeviceBoundSessionsView.ts | serverError": {
+    "message": "எண்ட்பாயிண்ட் தற்காலிகப் பிழை"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | serverRequestedTermination": {
+    "message": "சேவையகம் நிறுத்துமாறு கேட்டுள்ளது"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | sessionConfig": {
+    "message": "அமர்வு உள்ளமைவு"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | sessionDeletedDuringRefresh": {
+    "message": "புதுப்பிப்பின்போது அமர்வு நீக்கப்பட்டது"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | sessionDetails": {
+    "message": "அமர்வு குறித்த விவரங்கள்"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | sessionId": {
+    "message": "அமர்வு ஐடி"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | sessionProviderWellKnownHasProviderOrigin": {
+    "message": "அமர்வின் வழங்குநர் .well-known உள்ளடக்கத்தில் provider_origin உள்ளது"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | sessionProviderWellKnownMalformed": {
+    "message": "அமர்வு வழங்குநரின் .well-known உள்ளடக்கம் தவறாக வடிவமைக்கப்பட்டுள்ளது"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | sessionProviderWellKnownUnavailable": {
+    "message": "அமர்வு வழங்குநர் .well-known கிடைக்கவில்லை"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | signingError": {
+    "message": "கையொப்பமிடுவதில் பிழை"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | signingQuotaExceeded": {
+    "message": "கையொப்பமிடுவதற்கான வரம்பைத் தாண்டிவிட்டது"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | storagePartitionCleared": {
+    "message": "சேமிப்பகப் பகிர்வில் இருந்து அகற்றப்பட்டது"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | subdomainRegistrationUnauthorized": {
+    "message": ".well-known துணை டொமைன் மூலம் பதிவுசெய்வதை அங்கீகரிக்கவில்லை"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | subdomainRegistrationWellKnownMalformed": {
+    "message": "துணை டொமைன் பதிவு .well-known உள்ளடக்கம் தவறாக வடிவமைக்கப்பட்டுள்ளது"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | subdomainRegistrationWellKnownUnavailable": {
+    "message": "துணை டொமைன் பதிவு .well-known கிடைக்கவில்லை"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | success": {
+    "message": "வெற்றி"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | termination": {
+    "message": "முடித்துவிடுதல்"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | timestamp": {
+    "message": "தேதி"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | tooManyChallenges": {
+    "message": "அதிகச் சவால்கள்"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | tooManyRelyingOriginLabels": {
+    "message": ".well-known ஃபைலில் அதிகப்படியான நம்பகமான ஆரிஜின் லேபிள்கள் உள்ளன"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | transientHttpError": {
+    "message": "தற்காலிக HTTP பிழை"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | type": {
+    "message": "வகை"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | unknown": {
+    "message": "தெரியவில்லை"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | unreachable": {
+    "message": "எண்ட்பாயிண்ட்டை அணுக முடியவில்லை"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | updatedSessionConfig": {
+    "message": "புதுப்பிக்கப்பட்ட அமர்வு உள்ளமைவு"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | yes": {
+    "message": "ஆம்"
   },
   "panels/application/ExtensionStorageItemsView.ts | extensionStorageItems": {
     "message": "நீட்டிப்புச் சேமிப்பக உள்ளடக்கங்கள்"
@@ -5333,18 +5723,6 @@
   "panels/application/preloading/components/PreloadingGrid.ts | status": {
     "message": "நிலை"
   },
-  "panels/application/preloading/components/PreloadingMismatchedHeadersGrid.ts | activationNavigationValue": {
-    "message": "செயல்பாட்டு வழிசெலுத்தலில் உள்ள மதிப்பு"
-  },
-  "panels/application/preloading/components/PreloadingMismatchedHeadersGrid.ts | headerName": {
-    "message": "தலைப்பின் பெயர்"
-  },
-  "panels/application/preloading/components/PreloadingMismatchedHeadersGrid.ts | initialNavigationValue": {
-    "message": "தொடக்க வழிசெலுத்தலில் உள்ள மதிப்பு"
-  },
-  "panels/application/preloading/components/PreloadingMismatchedHeadersGrid.ts | missing": {
-    "message": "(இல்லை)"
-  },
   "panels/application/preloading/components/PreloadingString.ts | PrefetchEvictedAfterBrowsingDataRemoved": {
     "message": "பிரவுசிங் தரவு அகற்றப்பட்டதால் ப்ரீஃபெட்ச் நிராகரிக்கப்பட்டது."
   },
@@ -5621,6 +5999,9 @@
   "panels/application/preloading/components/RuleSetGrid.ts | status": {
     "message": "நிலை"
   },
+  "panels/application/preloading/components/UsedPreloadingView.ts | activationNavigationValue": {
+    "message": "செயல்பாட்டு வழிசெலுத்தலில் உள்ள மதிப்பு"
+  },
   "panels/application/preloading/components/UsedPreloadingView.ts | badgeFailure": {
     "message": "தோல்வி"
   },
@@ -5651,11 +6032,20 @@
   "panels/application/preloading/components/UsedPreloadingView.ts | downgradedPrefetchUsed": {
     "message": "தொடக்கப் பக்கம் இந்தப் பக்கத்தின் URLலை ப்ரீரெண்டர் செய்ய முயற்சி செய்துள்ளது. ப்ரீரெண்டர் செய்ய முடியவில்லை, ஆனாலும் ரெஸ்பான்ஸ் பாடி ப்ரீஃபெட்ச்சாகப் பயன்படுத்தப்பட்டது."
   },
+  "panels/application/preloading/components/UsedPreloadingView.ts | headerName": {
+    "message": "தலைப்பின் பெயர்"
+  },
+  "panels/application/preloading/components/UsedPreloadingView.ts | initialNavigationValue": {
+    "message": "தொடக்க வழிசெலுத்தலில் உள்ள மதிப்பு"
+  },
   "panels/application/preloading/components/UsedPreloadingView.ts | learnMore": {
     "message": "யூக அடிப்படையிலான ஏற்றுதல் குறித்து developer.chrome.com தளத்தில் மேலும் தெரிந்துகொள்ளுங்கள்"
   },
   "panels/application/preloading/components/UsedPreloadingView.ts | mismatchedHeadersDetail": {
     "message": "பொருந்தாத HTTP கோரிக்கைத் தலைப்புகள்"
+  },
+  "panels/application/preloading/components/UsedPreloadingView.ts | missing": {
+    "message": "(இல்லை)"
   },
   "panels/application/preloading/components/UsedPreloadingView.ts | noPreloads": {
     "message": "இந்தப் பக்கத்தின் URLலை யூக அடிப்படையில் ஏற்றுவதற்குத் தொடக்கப் பக்கம் முயலவில்லை."
@@ -5993,11 +6383,11 @@
   "panels/common/BadgeNotification.ts | manageSettings": {
     "message": "அமைப்புகளை நிர்வகியுங்கள்"
   },
+  "panels/common/BadgeNotification.ts | noThanks": {
+    "message": "வேண்டாம்"
+  },
   "panels/common/BadgeNotification.ts | receiveBadges": {
     "message": "பேட்ஜ்களை ஆன் செய்"
-  },
-  "panels/common/BadgeNotification.ts | remindMeLater": {
-    "message": "பின்னர் நினைவூட்டு"
   },
   "panels/common/BadgeNotification.ts | starterBadgeAwardMessageNoGdpProfile": {
     "message": "நீங்கள் {PH2}க்கான {PH1} பேட்ஜைப் பெற்றுள்ளீர்கள்! உங்கள் பேட்ஜைக் கிளைம் செய்ய சுயவிவரத்தை உருவாக்குங்கள்."
@@ -6007,6 +6397,9 @@
   },
   "panels/common/BadgeNotification.ts | viewProfile": {
     "message": "சுயவிவரத்தைக் காட்டு"
+  },
+  "panels/common/CopyChangesToPrompt.ts | responseCopiedToClipboard": {
+    "message": "பதில் கிளிப்போர்டுக்கு நகலெடுக்கப்பட்டது"
   },
   "panels/common/DOMLinkifier.ts | node": {
     "message": "<கணு>"
@@ -6070,6 +6463,27 @@
   },
   "panels/common/GdpSignUpDialog.ts | termsOfService": {
     "message": "சேவை விதிமுறைகள்"
+  },
+  "panels/common/GeminiRebrandPromoDialog.ts | detailAiCompanion": {
+    "message": "இணைய டெவெலப்மெண்ட்டிற்கான AI மூலம் இயங்கும் கூட்டாளரைச் சந்தியுங்கள்"
+  },
+  "panels/common/GeminiRebrandPromoDialog.ts | detailConsoleErrors": {
+    "message": "கன்சோல் பிழைகளுக்கான உடனடி மற்றும் துல்லியமான பதில்களைப் பெறுங்கள்"
+  },
+  "panels/common/GeminiRebrandPromoDialog.ts | detailGenerateCode": {
+    "message": "யோசிக்கும்போதே CSS மற்றும் JS துணுக்குகளை உருவாக்கலாம்"
+  },
+  "panels/common/GeminiRebrandPromoDialog.ts | detailPerformance": {
+    "message": "செயல்திறன் டிரேஸ்களில் உள்ள சிக்கல்களைத் தானாகக் கண்டறியும்"
+  },
+  "panels/common/GeminiRebrandPromoDialog.ts | dialogAriaLabel": {
+    "message": "DevToolsஸில் Gemini 3 Flash"
+  },
+  "panels/common/GeminiRebrandPromoDialog.ts | dismiss": {
+    "message": "நிராகரி"
+  },
+  "panels/common/GeminiRebrandPromoDialog.ts | getStarted": {
+    "message": "தொடங்குங்கள்"
   },
   "panels/common/PersistenceUtils.ts | linkedToS": {
     "message": "{PH1} உடன் இணைக்கப்பட்டது"
@@ -6280,9 +6694,6 @@
   },
   "panels/console/ConsoleViewMessage.ts | Mxx": {
     "message": " M<XX>"
-  },
-  "panels/console/ConsoleViewMessage.ts | SeeIssueInCookieReport": {
-    "message": "தனியுரிமை மற்றும் பாதுகாப்பு பேனலைத் திறந்து மூன்றாம் தரப்புக் குக்கீ அறிக்கையைப் பார்க்க கிளிக் செய்யவும்"
   },
   "panels/console/ConsoleViewMessage.ts | assertionFailed": {
     "message": "அசர்ஷென் தோல்வியுற்றது: "
@@ -6869,6 +7280,12 @@
   "panels/elements/CSSRuleValidator.ts | fontVariationSettingsWarning": {
     "message": "“{PH5}” எழுத்து வடிவக் குடும்பத்திற்கான அனுமதிக்கப்படும் வரம்பை [{PH3}, {PH4}] விட “{PH1}” {PH2} அமைப்பிற்கான மதிப்பு அதிகமாக உள்ளது."
   },
+  "panels/elements/CSSRuleValidator.ts | invalidAnchorPositioning": {
+    "message": "ஆங்க்கர் வரையறுக்கப்பட்டுள்ளது, ஆனால் உறுப்பு ஆங்க்கர்-பொசிஷனிங் செய்யப்படவில்லை, \"{POSITION}\" என்று பொசிஷனிங் செய்யப்பட்டுள்ளது."
+  },
+  "panels/elements/CSSRuleValidator.ts | invalidAnchorPositioningFix": {
+    "message": "நிலையை \"நிலையானது\" அல்லது \"முற்றிலும் நிலையானது\" என அமைக்கவும்."
+  },
   "panels/elements/CSSRuleValidator.ts | ruleViolatedByParentElementRuleFix": {
     "message": "முதல்நிலை உறுப்பின் மீதுள்ள {EXISTING_PARENT_ELEMENT_RULE} பிராப்பர்ட்டியை {TARGET_PARENT_ELEMENT_RULE} என மாற்றி முயலவும்."
   },
@@ -6886,6 +7303,9 @@
   },
   "panels/elements/CSSRuleValidator.ts | ruleViolatedBySameElementRuleReason": {
     "message": "தாக்கத்தைப் பெறுவதில் இருந்து {AFFECTED_PROPERTY_DECLARATION_CODE} ஐ {REASON_PROPERTY_DECLARATION_CODE} பிராப்பர்ட்டி தடுக்கிறது."
+  },
+  "panels/elements/CSSRuleValidator.ts | unusedAnchorPositioning": {
+    "message": "ஆங்க்கர் வரையறுக்கப்பட்டுள்ளது, ஆனால் உறுப்பு மறைக்கப்பட்டுள்ளது."
   },
   "panels/elements/ClassesPaneWidget.ts | addNewClass": {
     "message": "புதிய கிளாஸைச் சேருங்கள்"
@@ -6905,6 +7325,9 @@
   "panels/elements/ColorSwatchPopoverIcon.ts | openShadowEditor": {
     "message": "ஷேடோ எடிட்டரைத் திறக்கும்"
   },
+  "panels/elements/ComputedStyleWidget.ts | filterUpdateAriaText": {
+    "message": "ஃபில்டர் பயன்படுத்தப்பட்டது: {PH1}. மொத்த முடிவுகள்: {PH2}"
+  },
   "panels/elements/ComputedStyleWidget.ts | group": {
     "message": "குழுவாக்கு"
   },
@@ -6912,7 +7335,7 @@
     "message": "தேர்வி ஆதாரத்திற்குச் செல்"
   },
   "panels/elements/ComputedStyleWidget.ts | navigateToStyle": {
-    "message": "ஸ்டைலுக்குச் செல்"
+    "message": "ஸ்டைல்களுக்குச் செல்லுதல்"
   },
   "panels/elements/ComputedStyleWidget.ts | noMatchingProperty": {
     "message": "பொருந்தும் பண்புகள் எதுவுமில்லை"
@@ -7202,6 +7625,9 @@
   "panels/elements/ElementsTreeElement.ts | removeScrollbars": {
     "message": "ஸ்க்ரோல்பார்களை அகற்று"
   },
+  "panels/elements/ElementsTreeElement.ts | reveal": {
+    "message": "காட்டு"
+  },
   "panels/elements/ElementsTreeElement.ts | scrollIntoView": {
     "message": "காட்டப்படும் வரை நகர்த்துக"
   },
@@ -7234,6 +7660,9 @@
   },
   "panels/elements/ElementsTreeElement.ts | valueIsTooLargeToEdit": {
     "message": "<மதிப்பு திருத்துவதற்கு மிகவும் பெரியதாக உள்ளது>"
+  },
+  "panels/elements/ElementsTreeElement.ts | viewSourceCode": {
+    "message": "மூலக் குறியீட்டைக் காட்டு"
   },
   "panels/elements/ElementsTreeElement.ts | wrapTheseItems": {
     "message": "உள்ளடக்கத்தை மடி"
@@ -7439,11 +7868,17 @@
   "panels/elements/StylePropertyTreeElement.ts | jumpToAnimationsPanel": {
     "message": "“அனிமேஷன்கள்” பேனலுக்குச் செல்"
   },
+  "panels/elements/StylePropertyTreeElement.ts | openAnimationsPanel": {
+    "message": "அனிமேஷன்கள் பேனலைத் திறக்க"
+  },
   "panels/elements/StylePropertyTreeElement.ts | openColorPickerS": {
     "message": "வண்ணத் தேர்வியைத் திறத்தல். {PH1}"
   },
   "panels/elements/StylePropertyTreeElement.ts | openInSourcesPanel": {
     "message": "ஆதாரங்கள் பேனலில் திற"
+  },
+  "panels/elements/StylePropertyTreeElement.ts | overriddenByAnimation": {
+    "message": "அனிமேஷன் ஸ்டைல்களால் மாற்றப்பட்டது."
   },
   "panels/elements/StylePropertyTreeElement.ts | sIsNotDefined": {
     "message": "{PH1} வரையறுக்கப்படவில்லை"
@@ -7492,9 +7927,6 @@
   },
   "panels/elements/StylesSidebarPane.ts | visibleSelectors": {
     "message": "{n,plural, =1{தெரியக்கூடிய # தேர்வி கீழே பட்டியலிடப்பட்டுள்ளது}other{தெரியக்கூடிய # தேர்விகள் கீழே பட்டியலிடப்பட்டுள்ளன}}"
-  },
-  "panels/elements/TopLayerContainer.ts | reveal": {
-    "message": "காட்டு"
   },
   "panels/elements/components/AccessibilityTreeNode.ts | ignored": {
     "message": "தவிர்க்கப்பட்டது"
@@ -7549,6 +7981,9 @@
   },
   "panels/elements/components/ElementsTreeExpandButton.ts | expand": {
     "message": "விரிவாக்கும்"
+  },
+  "panels/elements/components/StylePropertyEditor.ts | denseLabel": {
+    "message": "அடர்த்தியானது"
   },
   "panels/elements/components/StylePropertyEditor.ts | deselectButton": {
     "message": "{propertyName}: {propertyValue} ஐ அகற்று"
@@ -9434,6 +9869,9 @@
   "panels/network/NetworkDataGridNode.ts | blockeds": {
     "message": "(தடுக்கப்பட்டது:{PH1})"
   },
+  "panels/network/NetworkDataGridNode.ts | blocking": {
+    "message": "தடுக்கிறது"
+  },
   "panels/network/NetworkDataGridNode.ts | broken": {
     "message": "HTTP/3 இணைப்பு செயலிழந்துள்ளது எனக் குறிக்கப்பட்டுள்ளதால் Chrome அதனுடன் இணைப்பை ஏற்படுத்த முயலவில்லை."
   },
@@ -9488,6 +9926,9 @@
   "panels/network/NetworkDataGridNode.ts | finished": {
     "message": "முடிந்தது"
   },
+  "panels/network/NetworkDataGridNode.ts | inBodyParserBlocking": {
+    "message": "பகுதியில் உள்ள பாகுபடுத்தியைத் தடுத்தல்"
+  },
   "panels/network/NetworkDataGridNode.ts | initialPriorityToolTip": {
     "message": "{PH1}, ஆரம்பநிலை முன்னுரிமை: {PH2}"
   },
@@ -9512,6 +9953,12 @@
   "panels/network/NetworkDataGridNode.ts | memoryCache": {
     "message": "(தற்காலிக நினைவகம்)"
   },
+  "panels/network/NetworkDataGridNode.ts | nonBlocking": {
+    "message": "தடுக்காதது"
+  },
+  "panels/network/NetworkDataGridNode.ts | nonBlockingDynamic": {
+    "message": "தடுக்காத டைனமிக்"
+  },
   "panels/network/NetworkDataGridNode.ts | origin": {
     "message": "தோற்றம்"
   },
@@ -9529,6 +9976,9 @@
   },
   "panels/network/NetworkDataGridNode.ts | pendingq": {
     "message": "(நிலுவையிலுள்ளது)"
+  },
+  "panels/network/NetworkDataGridNode.ts | potentiallyBlocking": {
+    "message": "தடுக்கப்படக்கூடியது"
   },
   "panels/network/NetworkDataGridNode.ts | prefetchCache": {
     "message": "(ப்ரீஃபெட்ச் தற்காலிகச் சேமிப்பு)"
@@ -9604,6 +10054,9 @@
   },
   "panels/network/NetworkItemView.ts | cookies": {
     "message": "குக்கீகள்"
+  },
+  "panels/network/NetworkItemView.ts | deviceBoundSessions": {
+    "message": "சாதனத்துடன் பிணைக்கப்பட்ட அமர்வுகள்"
   },
   "panels/network/NetworkItemView.ts | directsocketMessages": {
     "message": "DirectSocket மெசேஜ்கள்"
@@ -9977,6 +10430,9 @@
   "panels/network/NetworkLogViewColumns.ts | remoteAddressSpace": {
     "message": "தொலைநிலை முகவரி இடம்"
   },
+  "panels/network/NetworkLogViewColumns.ts | renderBlocking": {
+    "message": "ரென்டரிங்கைத் தடுத்தல்"
+  },
   "panels/network/NetworkLogViewColumns.ts | requestHeaders": {
     "message": "கோரிக்கைத் தலைப்புகள்"
   },
@@ -10008,7 +10464,7 @@
     "message": "நேரம்"
   },
   "panels/network/NetworkLogViewColumns.ts | totalDuration": {
-    "message": "மொத்தக் கால அளவு"
+    "message": "மொத்தக் காலஅளவு"
   },
   "panels/network/NetworkLogViewColumns.ts | type": {
     "message": "உள்ளிடு"
@@ -10112,26 +10568,14 @@
   "panels/network/NetworkSearchScope.ts | url": {
     "message": "URL"
   },
-  "panels/network/RequestConditionsDrawer.ts | addNetworkRequestBlockingPattern": {
-    "message": "நெட்வொர்க் கோரிக்கைத் தடுப்புப் பேட்டர்னைச் சேர்க்கும்"
-  },
-  "panels/network/RequestConditionsDrawer.ts | addPattern": {
-    "message": "பேட்டர்னைச் சேர்க்கும்"
-  },
   "panels/network/RequestConditionsDrawer.ts | addPatternLabel": {
     "message": "நெட்வொர்க் கோரிக்கை த்ராட்லிங் அல்லது தடுத்தல் பேட்டர்னைச் சேர்க்கும்"
-  },
-  "panels/network/RequestConditionsDrawer.ts | addPatternToBlock": {
-    "message": "\"{PH1}\" பட்டனைக் கிளிக் செய்து பேட்டர்னைச் சேருங்கள்."
   },
   "panels/network/RequestConditionsDrawer.ts | addRule": {
     "message": "விதியைச் சேர்க்கலாம்"
   },
   "panels/network/RequestConditionsDrawer.ts | dAffected": {
     "message": "{PH1} மாற்றப்பட்டது"
-  },
-  "panels/network/RequestConditionsDrawer.ts | dBlocked": {
-    "message": "{PH1} தடுக்கப்பட்டன"
   },
   "panels/network/RequestConditionsDrawer.ts | decreasePriority": {
     "message": "{PH1} ஐக் கீழே நகர்த்தும்"
@@ -10141,9 +10585,6 @@
   },
   "panels/network/RequestConditionsDrawer.ts | enableBlockingAndThrottling": {
     "message": "தடுப்பு மற்றும் த்ராட்லிங்கை ஆன் செய்"
-  },
-  "panels/network/RequestConditionsDrawer.ts | enableNetworkRequestBlocking": {
-    "message": "நெட்வொர்க் கோரிக்கைத் தடையை இயக்கு"
   },
   "panels/network/RequestConditionsDrawer.ts | enableThrottlingToggleLabel": {
     "message": "{PH1} ஐ வரம்பிடலாம் அல்லது தடுக்கலாம்"
@@ -10159,9 +10600,6 @@
   },
   "panels/network/RequestConditionsDrawer.ts | learnMoreLabel": {
     "message": "URL பேட்டர்ன் தொடரியல் குறித்து மேலும் தெரிந்துகொள்ளலாம்"
-  },
-  "panels/network/RequestConditionsDrawer.ts | noNetworkRequestsBlocked": {
-    "message": "தடுக்கப்பட்ட நெட்வொர்க் கோரிக்கைகள் எதுவுமில்லை"
   },
   "panels/network/RequestConditionsDrawer.ts | noPattern": {
     "message": "எதுவும் வரம்பிடப்படவில்லை அல்லது தடுக்கப்படவில்லை"
@@ -10199,9 +10637,6 @@
   "panels/network/RequestConditionsDrawer.ts | textEditPattern": {
     "message": "பொருந்தும் கோரிக்கைகளைத் தடுக்க அல்லது த்ராட்லிங் செய்ய வார்த்தைகள் பேட்டர்னைப் பயன்படுத்தவும்; URL பேட்டர்ன் சின்டாக்ஸைப் பயன்படுத்தவும்."
   },
-  "panels/network/RequestConditionsDrawer.ts | textPatternToBlockMatching": {
-    "message": "பொருந்தும் கோரிக்கைகளைத் தடுப்பதற்கான உரை வடிவம்; வைல்டுகார்டுக்கு * என்பதைப் பயன்படுத்தவும்"
-  },
   "panels/network/RequestCookiesView.ts | cookiesThatWereReceivedFromThe": {
     "message": "பதிலின் 'set-cookie' தலைப்பில் சேவையகத்திலிருந்து பெறப்பட்ட குக்கீகள்"
   },
@@ -10235,6 +10670,30 @@
   "panels/network/RequestCookiesView.ts | thisRequestHasNoCookies": {
     "message": "இந்தக் கோரிக்கையில் குக்கீகள் இல்லை."
   },
+  "panels/network/RequestDeviceBoundSessionsView.ts | deferralDecision": {
+    "message": "ஒத்திவைத்தல் முடிவு"
+  },
+  "panels/network/RequestDeviceBoundSessionsView.ts | deferred": {
+    "message": "ஒத்திவைக்கப்பட்டது (ரெஃப்ரெஷ்)"
+  },
+  "panels/network/RequestDeviceBoundSessionsView.ts | inScopeRefreshNotAllowed": {
+    "message": "ஒத்திவைக்கப்படவில்லை (அமர்வு வரம்பிற்குள் கோரிக்கை உள்ளது, ஆனால் ரெஃப்ரெஷ் செய்யத் தொடங்குபவருக்கு அனுமதி இல்லை)"
+  },
+  "panels/network/RequestDeviceBoundSessionsView.ts | inScopeRefreshNotYetNeeded": {
+    "message": "ஒத்திவைக்கப்படவில்லை (அமர்வு வரம்பிற்குள் கோரிக்கை உள்ளது, ஆனால் குக்கீகள் இன்னும் உள்ளன)"
+  },
+  "panels/network/RequestDeviceBoundSessionsView.ts | notInScope": {
+    "message": "ஒத்திவைக்கப்படவில்லை (அமர்வின் வரம்பிற்குள் கோரிக்கை இல்லை)"
+  },
+  "panels/network/RequestDeviceBoundSessionsView.ts | proactiveRefreshAttempted": {
+    "message": "ஒத்திவைக்கப்படவில்லை (முன்கூட்டியே ரெஃப்ரெஷ் செய்ய முயன்றது)"
+  },
+  "panels/network/RequestDeviceBoundSessionsView.ts | proactiveRefreshNotPossible": {
+    "message": "ஒத்திவைக்கப்படவில்லை (அமர்வின் வரம்பிற்குள் கோரிக்கை உள்ளது, ஆனால் முன்கூட்டியே புதுப்பிக்க முடியாது)"
+  },
+  "panels/network/RequestDeviceBoundSessionsView.ts | sessionId": {
+    "message": "அமர்வு ஐடி"
+  },
   "panels/network/RequestInitiatorView.ts | noInitiator": {
     "message": "இனிஷியேட்டர் தரவு எதுவுமில்லை"
   },
@@ -10261,9 +10720,6 @@
   },
   "panels/network/RequestPayloadView.ts | requestPayload": {
     "message": "பேலோடைக் கோரு"
-  },
-  "panels/network/RequestPayloadView.ts | showMore": {
-    "message": "மேலும் காட்டு"
   },
   "panels/network/RequestPayloadView.ts | unableToDecodeValue": {
     "message": "(மதிப்பை டீகோடிங் செய்ய முடியவில்லை)"
@@ -10528,6 +10984,9 @@
   },
   "panels/network/ResourceWebSocketFrameView.ts | webSocketFrame": {
     "message": "WebSocket ஃப்ரேம்"
+  },
+  "panels/network/ShowMoreDetailsWidget.ts | showMore": {
+    "message": "மேலும் காட்டு"
   },
   "panels/network/SignedExchangeInfoView.ts | certificate": {
     "message": "சான்றிதழ்"
@@ -10811,9 +11270,6 @@
   "panels/network/network-meta.ts | addNetworkRequestBlockingOrThrottlingPattern": {
     "message": "நெட்வொர்க் கோரிக்கைத் தடுப்பு அல்லது த்ராட்லிங் பேட்டர்னைச் சேர்த்தல்"
   },
-  "panels/network/network-meta.ts | addNetworkRequestBlockingPattern": {
-    "message": "நெட்வொர்க் கோரிக்கைத் தடுப்புப் பேட்டர்னைச் சேர்க்கும்"
-  },
   "panels/network/network-meta.ts | allowToGenerateHarWithSensitiveData": {
     "message": "பாதுகாக்கப்பட வேண்டிய தனிப்பட்ட தரவுடன் சேர்த்து HAR ஐ உருவாக்க அனுமதி"
   },
@@ -10865,9 +11321,6 @@
   "panels/network/network-meta.ts | networkConditions": {
     "message": "நெட்வொர்க் நிலைகள்"
   },
-  "panels/network/network-meta.ts | networkRequestBlocking": {
-    "message": "நெட்வொர்க் கோரிக்கையைத் தடுத்தல்"
-  },
   "panels/network/network-meta.ts | networkRequestConditions": {
     "message": "கோரிக்கை நிபந்தனைகள்"
   },
@@ -10880,9 +11333,6 @@
   "panels/network/network-meta.ts | removeAllNetworkRequestBlockingOrThrottlingPatterns": {
     "message": "நெட்வொர்க் கோரிக்கைத் தடுப்பு அல்லது த்ராட்லிங் பேட்டர்ன்கள் எல்லாவற்றையும் அகற்று"
   },
-  "panels/network/network-meta.ts | removeAllNetworkRequestBlockingPatterns": {
-    "message": "நெட்வொர்க் கோரிக்கைகளைத் தடுக்கும் பேட்டர்ன்கள் அனைத்தையும் அகற்று"
-  },
   "panels/network/network-meta.ts | resourceType": {
     "message": "ஆதார வகை"
   },
@@ -10894,9 +11344,6 @@
   },
   "panels/network/network-meta.ts | showNetworkConditions": {
     "message": "நெட்வொர்க் நிலைகளைக் காட்டு"
-  },
-  "panels/network/network-meta.ts | showNetworkRequestBlocking": {
-    "message": "நெட்வொர்க் கோரிக்கைத் தடுப்பைக் காட்டு"
   },
   "panels/network/network-meta.ts | showRequestConditions": {
     "message": "கோரிக்கை நிபந்தனைகளைக் காட்டு"
@@ -11735,8 +12182,17 @@
   "panels/recorder/RecorderController.ts | numberOfRecordings": {
     "message": "ரெக்கார்டிங்குகள்"
   },
+  "panels/recorder/RecorderController.ts | recordingDeleted": {
+    "message": "ரெக்கார்டிங் நீக்கப்பட்டது"
+  },
   "panels/recorder/RecorderController.ts | recordingDescription": {
     "message": "தானாக இயங்கும் முழுமையான பரிசோதனைகள் அல்லது செயல்திறன் டிரேஸ்களை உருவாக்க ரெக்கார்டிங்குகளைப் பயன்படுத்தலாம்."
+  },
+  "panels/recorder/RecorderController.ts | recordingExported": {
+    "message": "ரெக்கார்டிங் பதிவிறக்கப்பட்டது"
+  },
+  "panels/recorder/RecorderController.ts | recordingImported": {
+    "message": "ரெக்கார்டிங் பதிவேற்றப்பட்டது"
   },
   "panels/recorder/RecorderController.ts | replayRecording": {
     "message": "ரெக்கார்டிங்கை மீண்டும் பிளே செய்"
@@ -11824,6 +12280,12 @@
   },
   "panels/recorder/components/RecordingView.ts | cancelReplay": {
     "message": "மீண்டும் பிளே செய்வதை ரத்துசெய்"
+  },
+  "panels/recorder/components/RecordingView.ts | codeSidebarClosed": {
+    "message": "குறியீடு பக்கப்பட்டி மூடப்பட்டது"
+  },
+  "panels/recorder/components/RecordingView.ts | codeSidebarOpened": {
+    "message": "குறியீடு பக்கப்பட்டி திறக்கப்பட்டது"
   },
   "panels/recorder/components/RecordingView.ts | default": {
     "message": "இயல்பு"
@@ -12155,174 +12617,6 @@
   "panels/search/SearchView.ts | typeAndPressSToSearch": {
     "message": "தேட, டைப் செய்து {PH1} அழுத்தவும்"
   },
-  "panels/security/CookieControlsView.ts | cardDisclaimer": {
-    "message": "டெவெலப்பர் கருவிகள் திறந்திருக்கும்போது மட்டும்"
-  },
-  "panels/security/CookieControlsView.ts | cardTitle": {
-    "message": "மூன்றாம் தரப்புக் குக்கீகளைத் தற்காலிகமாக வரம்பிடுதல்"
-  },
-  "panels/security/CookieControlsView.ts | enableFlag": {
-    "message": "இதைப் பயன்படுத்த, {PH1} ஐ இயல்பு என்று அமைக்கவும்"
-  },
-  "panels/security/CookieControlsView.ts | enrollGracePeriod": {
-    "message": "இதைப் பயன்படுத்த, {PH1} இல் இந்தத் தளத்தையோ உட்பொதிக்கபட்டுள்ள தளங்களையோ இயக்கவும்"
-  },
-  "panels/security/CookieControlsView.ts | enterpriseDisclaimer": {
-    "message": "இந்தத் தளத்திற்கான மூன்றாம் தரப்புக் குக்கீகளின் அணுகலை உங்கள் நிறுவனம் நிர்வகிக்கிறது"
-  },
-  "panels/security/CookieControlsView.ts | enterpriseTooltip": {
-    "message": "இந்த அமைப்பை உங்கள் நிறுவனம் நிர்வகிக்கிறது"
-  },
-  "panels/security/CookieControlsView.ts | exceptions": {
-    "message": "விதிவிலக்குகள்"
-  },
-  "panels/security/CookieControlsView.ts | exceptionsExplanation": {
-    "message": "மூன்றாம் தரப்புக் குக்கீகளுக்கு அணுகலை வழங்கும் சூழ்நிலைகள்"
-  },
-  "panels/security/CookieControlsView.ts | gracePeriod": {
-    "message": "சலுகைக் காலத்தில்"
-  },
-  "panels/security/CookieControlsView.ts | gracePeriodExplanation": {
-    "message": "இந்தத் தளம் அல்லது இதில் உள்ளமைக்கப்பட்டுள்ள தளம் {PH1} பதிவுசெய்யப்பட்டிருந்தால் அந்தத் தளம் மூன்றாம் தரப்புக் குக்கீகளை அணுகலாம்"
-  },
-  "panels/security/CookieControlsView.ts | gracePeriodTitle": {
-    "message": "மூன்றாம் தரப்புக் குக்கீகளுக்கான சலுகைக் காலம்"
-  },
-  "panels/security/CookieControlsView.ts | heuristicExplanation": {
-    "message": "பாப்-அப்கள், திசைதிருப்புதல்கள் போன்ற {PH1}, இந்தத் தளத்தில் உட்பொதிக்கப்பட்டுள்ள தளம் மூன்றாம் தரப்புக் குக்கீகளை அணுக முடியும்"
-  },
-  "panels/security/CookieControlsView.ts | heuristicTitle": {
-    "message": "ஹியுரிஸ்ட்டிக்ஸ் அடிப்படையிலான விதிவிலக்கு"
-  },
-  "panels/security/CookieControlsView.ts | scenarios": {
-    "message": "முன்கூட்டியே வரையறுக்கப்பட்ட சூழல்களில்"
-  },
-  "panels/security/CookieControlsView.ts | siteReloadMessage": {
-    "message": "புதுப்பிக்கப்பட்ட கட்டுப்பாடுகளைப் பயன்படுத்த, பக்கத்தை ரெஃப்ரெஷ் செய்யவும்"
-  },
-  "panels/security/CookieControlsView.ts | tpcdHeuristicsGrants": {
-    "message": "#tpcd-heuristics-grants"
-  },
-  "panels/security/CookieControlsView.ts | tpcdMetadataGrants": {
-    "message": "#tpcd-metadata-grants"
-  },
-  "panels/security/CookieControlsView.ts | viewDetails": {
-    "message": "விவரங்களைக் காட்டு"
-  },
-  "panels/security/CookieControlsView.ts | viewExplanation": {
-    "message": "மூன்றாம் தரப்புக் குக்கீகள் Chromeமில் கட்டுப்படுத்தப்பட்டு இருந்தால் இந்தத் தளம் எப்படிச் செயல்படும் என்று பரிசோதனை செய்து பார்க்கலாம்"
-  },
-  "panels/security/CookieControlsView.ts | viewTitle": {
-    "message": "கட்டுப்பாடுகள்"
-  },
-  "panels/security/CookieReportView.ts | adCookieTypeString": {
-    "message": "விளம்பரப்படுத்தல்"
-  },
-  "panels/security/CookieReportView.ts | allowed": {
-    "message": "அனுமதிக்கப்பட்டது"
-  },
-  "panels/security/CookieReportView.ts | allowedByException": {
-    "message": "விதிவிலக்கின் மூலம் அனுமதிக்கப்பட்டது"
-  },
-  "panels/security/CookieReportView.ts | analyticsCookieTypeString": {
-    "message": "பகுப்பாய்வுகள்"
-  },
-  "panels/security/CookieReportView.ts | blocked": {
-    "message": "தடுக்கப்பட்டது"
-  },
-  "panels/security/CookieReportView.ts | body": {
-    "message": "மூன்றாம் தரப்புக் குக்கீகள் மற்றும் பிற குக்கீகள் Chromeமில் வரம்பிடப்பட்டால் இந்தத் தளம் செயல்படாமல் போகக்கூடும்."
-  },
-  "panels/security/CookieReportView.ts | cdnCookieTypeString": {
-    "message": "CDN"
-  },
-  "panels/security/CookieReportView.ts | consentProviderCookieTypeString": {
-    "message": "ஒப்புதல் வழங்குநர்"
-  },
-  "panels/security/CookieReportView.ts | contentCookieTypeString": {
-    "message": "உள்ளடக்கம்"
-  },
-  "panels/security/CookieReportView.ts | customerSuccessCookieTypeString": {
-    "message": "வாடிக்கையாளர் வெற்றி"
-  },
-  "panels/security/CookieReportView.ts | domain": {
-    "message": "டொமைன்"
-  },
-  "panels/security/CookieReportView.ts | emptyReport": {
-    "message": "காட்டுவதற்கு எதுவும் இல்லை"
-  },
-  "panels/security/CookieReportView.ts | emptyReportExplanation": {
-    "message": "மூன்றாம் தரப்புக் குக்கீகளில் சிக்கல் எதுவும் கண்டறியப்படவில்லை"
-  },
-  "panels/security/CookieReportView.ts | gitHubResource": {
-    "message": "மூன்றாம் தரப்புத் தளத்தின் {PH1} ஐச் சரிபாருங்கள்"
-  },
-  "panels/security/CookieReportView.ts | gracePeriod": {
-    "message": "{PH1} ஐச் சரிபாருங்கள். சலுகைக் கால விதிவிலக்கு செயலில் உள்ளது."
-  },
-  "panels/security/CookieReportView.ts | guidance": {
-    "message": "வழிகாட்டல்"
-  },
-  "panels/security/CookieReportView.ts | heuristics": {
-    "message": "பின்னர் நடவடிக்கை தேவை. ஹியுரிஸ்ட்டிக்ஸ் அடிப்படையிலான விதிவிலக்கு செயலில் உள்ளது."
-  },
-  "panels/security/CookieReportView.ts | hostingCookieTypeString": {
-    "message": "ஹோஸ்டிங்"
-  },
-  "panels/security/CookieReportView.ts | learnMoreLink": {
-    "message": "மூன்றாம் தரப்புக் குக்கீகள் எப்படிப் பயன்படுத்தப்படுகின்றன என்பது குறித்து மேலும் தெரிந்துகொள்ளுங்கள்"
-  },
-  "panels/security/CookieReportView.ts | marketingCookieTypeString": {
-    "message": "மார்க்கெட்டிங்"
-  },
-  "panels/security/CookieReportView.ts | name": {
-    "message": "பெயர்"
-  },
-  "panels/security/CookieReportView.ts | other": {
-    "message": "கூடுதல் தகவல்களுக்கு மூன்றாம் தரப்புத் தளத்தைப் பார்க்கவும்"
-  },
-  "panels/security/CookieReportView.ts | otherCookieTypeString": {
-    "message": "மற்றவை"
-  },
-  "panels/security/CookieReportView.ts | platform": {
-    "message": "பிளாட்ஃபார்ம்"
-  },
-  "panels/security/CookieReportView.ts | recommendation": {
-    "message": "பரிந்துரை"
-  },
-  "panels/security/CookieReportView.ts | report": {
-    "message": "மூன்றாம் தரப்புக் குக்கீ அறிக்கை"
-  },
-  "panels/security/CookieReportView.ts | reportedIssues": {
-    "message": "புகாரளித்த சிக்கல்கள்"
-  },
-  "panels/security/CookieReportView.ts | showRequestsWithThisCookie": {
-    "message": "இந்தக் குக்கீயில் உள்ள கோரிக்கைகளைக் காட்டு"
-  },
-  "panels/security/CookieReportView.ts | socialCookieTypeString": {
-    "message": "சமூக ஊடகம்"
-  },
-  "panels/security/CookieReportView.ts | status": {
-    "message": "நிலை"
-  },
-  "panels/security/CookieReportView.ts | tagManagerCookieTypeString": {
-    "message": "குறிச்சொல் நிர்வாகி"
-  },
-  "panels/security/CookieReportView.ts | title": {
-    "message": "மூன்றாம் தரப்புக் குக்கீகள்"
-  },
-  "panels/security/CookieReportView.ts | type": {
-    "message": "வகை"
-  },
-  "panels/security/CookieReportView.ts | unknown": {
-    "message": "தெரியவில்லை"
-  },
-  "panels/security/CookieReportView.ts | utilityCookieTypeString": {
-    "message": "யூட்டிலிட்டி"
-  },
-  "panels/security/CookieReportView.ts | videoCookieTypeString": {
-    "message": "வீடியோ"
-  },
   "panels/security/SecurityModel.ts | cipherWithMAC": {
     "message": "{PH2} உடன் {PH1}"
   },
@@ -12623,12 +12917,6 @@
   "panels/security/SecurityPanel.ts | yourPageRequestedNonsecure": {
     "message": "தடுக்கப்பட்ட பாதுகாப்பற்ற ஆதாரங்களை உங்கள் பக்கம் கோரியது."
   },
-  "panels/security/SecurityPanelSidebar.ts | cookieReport": {
-    "message": "மூன்றாம் தரப்புக் குக்கீகள்"
-  },
-  "panels/security/SecurityPanelSidebar.ts | flagControls": {
-    "message": "கட்டுப்பாடுகள்"
-  },
   "panels/security/SecurityPanelSidebar.ts | mainOrigin": {
     "message": "முதன்மை ஆரிஜின்"
   },
@@ -12637,9 +12925,6 @@
   },
   "panels/security/SecurityPanelSidebar.ts | overview": {
     "message": "மேலோட்டப் பார்வை"
-  },
-  "panels/security/SecurityPanelSidebar.ts | privacy": {
-    "message": "தனியுரிமை"
   },
   "panels/security/SecurityPanelSidebar.ts | reloadToViewDetails": {
     "message": "விவரங்களைப் பார்க்க ரெஃப்ரெஷ் செய்க"
@@ -12653,14 +12938,8 @@
   "panels/security/SecurityPanelSidebar.ts | unknownCanceled": {
     "message": "தெரியவில்லை/ரத்துசெய்யப்பட்டது"
   },
-  "panels/security/security-meta.ts | PrivacyAndSecurity": {
-    "message": "தனியுரிமை மற்றும் பாதுகாப்பு"
-  },
   "panels/security/security-meta.ts | security": {
     "message": "பாதுகாப்பு"
-  },
-  "panels/security/security-meta.ts | showPrivacyAndSecurity": {
-    "message": "தனியுரிமை மற்றும் பாதுகாப்பைக் காட்டு"
   },
   "panels/security/security-meta.ts | showSecurity": {
     "message": "பாதுகாப்பைக் காட்டு"
@@ -12917,6 +13196,9 @@
   "panels/settings/AISettingsTab.ts | asYouTypeCodeSuggestions": {
     "message": "கன்சோல் அல்லது ஆதாரங்கள் பேனலில் நீங்கள் டைப் செய்யும்போதே கோடிங் பரிந்துரைகள் காட்டப்படும். அவற்றில் ஒன்றைப் பயன்படுத்த Tab அழுத்தவும்."
   },
+  "panels/settings/AISettingsTab.ts | asYouTypeRelevantDataIsBeingSentToGoogle": {
+    "message": "நீங்கள் டைப் செய்யும்போது, குறியீட்டுப் பரிந்துரைகளை உருவாக்க தொடர்புடைய தரவு Googleளுக்கு அனுப்பப்படுகிறது. ஏற்க Tab அழுத்தவும்."
+  },
   "panels/settings/AISettingsTab.ts | boostYourProductivity": {
     "message": "AI மூலம் உங்கள் பணிச் செயல்திறனை அதிகரித்தல்"
   },
@@ -12937,6 +13219,12 @@
   },
   "panels/settings/AISettingsTab.ts | dataCollectionNoLogging": {
     "message": "உங்கள் Google கணக்கு நிர்வாகம் மற்றும்/அல்லது பிராந்தியத்தைப் பொறுத்து தரவுச் சேகரிப்பை Google தவிர்க்கக்கூடும்"
+  },
+  "panels/settings/AISettingsTab.ts | describeCodeInComment": {
+    "message": "கன்சோல் அல்லது ஆதாரங்களில், உங்களுக்குத் தேவையான குறியீட்டை ஒரு கருத்தில் விவரித்துவிட்டு, அதை உருவாக்க Ctrl+I அழுத்தவும்."
+  },
+  "panels/settings/AISettingsTab.ts | describeCodeInCommentForMacOs": {
+    "message": "கன்சோல் அல்லது ஆதாரங்களில், உங்களுக்குத் தேவையான குறியீட்டை ஒரு கருத்தில் விவரித்துவிட்டு அதை உருவாக்க Cmd+I அழுத்தவும்."
   },
   "panels/settings/AISettingsTab.ts | enableAiAssistance": {
     "message": "AI உதவியை இயக்கு"
@@ -12969,10 +13257,10 @@
     "message": "AI மூலம் இயங்கும் புள்ளிவிவரங்களின் உதவியுடன் CSS ஸ்டைல்கள், நெட்வொர்க் செயல்பாடு, செயல்திறன் சிக்கல்கள், ஃபைல் ஆரிஜின்கள் ஆகியவற்றைப் புரிந்துகொள்ளலாம்"
   },
   "panels/settings/AISettingsTab.ts | freestylerSendsData": {
-    "message": "விளக்கங்களை உருவாக்குவதற்காக Web APIகள், நெட்வொர்க் கோரிக்கைகள், ஃபைல்கள், செயல்திறன் டிரேஸ்கள் ஆகியவற்றின் வழியாகப் பரிசோதனை செய்யப்பட்ட பக்கம் அணுகக்கூடிய எந்தப் பயனர் வினவலும் தரவும் Googleளுக்கு அனுப்பப்படுகின்றன. இந்த அம்சத்தை மேம்படுத்துவதற்காக இந்தத் தரவு மதிப்பாய்வாளர்களுக்குக் காட்டப்படலாம். தனிப்பட்ட அல்லது பாதுகாக்கவேண்டிய தகவல் இருக்கும் பக்கங்களில் பயன்படுத்த வேண்டாம்."
+    "message": "விளக்கங்களை உருவாக்க, உங்கள் உரையாடல் மெசேஜ்கள், Web APIகளைப் பயன்படுத்திப் பரிசோதனை செய்யப்பட்ட பக்கம் பார்க்கக்கூடிய தரவு, ஃபைல்கள், நெட்வொர்க் கோரிக்கைகள், செயல்திறன் டிரேஸ்கள் போன்ற நீங்கள் தேர்ந்தெடுக்கும் விஷயங்கள் Googleளுக்கு அனுப்பப்படும். இந்த அம்சத்தை மேம்படுத்துவதற்காக இந்தத் தரவு மதிப்பாய்வாளர்களுக்குக் காட்டப்படலாம். தனிப்பட்ட அல்லது பாதுகாக்கவேண்டிய தகவல் இருக்கும் பக்கங்களில் பயன்படுத்த வேண்டாம்."
   },
   "panels/settings/AISettingsTab.ts | freestylerSendsDataNoLogging": {
-    "message": "விளக்கங்களை உருவாக்குவதற்காக Web APIகள், நெட்வொர்க் கோரிக்கைகள், ஃபைல்கள், செயல்திறன் டிரேஸ்கள் ஆகியவற்றின் வழியாகப் பரிசோதனை செய்யப்பட்ட பக்கம் அணுகக்கூடிய எந்தப் பயனர் வினவலும் தரவும் Googleளுக்கு அனுப்பப்படுகின்றன. Google AI மாடல்களை மேம்படுத்த இந்தத் தரவு பயன்படுத்தப்படாது. எப்போது வேண்டுமானாலும் இந்த அமைப்புகளை உங்கள் நிறுவனம் மாற்றலாம்."
+    "message": "விளக்கங்களை உருவாக்க, உங்கள் உரையாடல் மெசேஜ்கள், Web APIகளைப் பயன்படுத்திப் பரிசோதனை செய்யப்பட்ட பக்கம் பார்க்கக்கூடிய தரவு, ஃபைல்கள், நெட்வொர்க் கோரிக்கைகள், செயல்திறன் டிரேஸ்கள் போன்ற நீங்கள் தேர்ந்தெடுக்கும் விஷயங்கள் Googleளுக்கு அனுப்பப்படும். Google AI மாடல்களை மேம்படுத்த இந்தத் தரவு பயன்படுத்தப்படாது. எப்போது வேண்டுமானாலும் இந்த அமைப்புகளை உங்கள் நிறுவனம் மாற்றலாம்."
   },
   "panels/settings/AISettingsTab.ts | generatedAiAnnotationsSendData": {
     "message": "குறிப்புகளுக்கான பரிந்துரைகளை உருவாக்குவதற்காக உங்கள் செயல்திறன் டிரேஸ் Googleளுக்கு அனுப்பப்படுகிறது. இந்த அம்சத்தை மேம்படுத்துவதற்காக இந்தத் தரவு மதிப்பாய்வாளர்களுக்குக் காட்டப்படலாம்."
@@ -12984,7 +13272,7 @@
     "message": "தானாக உருவாக்கப்படும் லேபிள்களுடன் உங்கள் செயல்திறன் டிரேஸைக் குறிப்பெடுக்க உதவும்"
   },
   "panels/settings/AISettingsTab.ts | helpUnderstandCodeSuggestions": {
-    "message": "கோடிங் எழுத உதவி பெறலாம்"
+    "message": "AI வழங்கும் பரிந்துரைகள் மூலம் விரைவாகக் கோடிங் செய்யுங்கள்"
   },
   "panels/settings/AISettingsTab.ts | helpUnderstandConsole": {
     "message": "கன்சோல் எச்சரிக்கைகள் மற்றும் பிழைகளைப் புரிந்துகொண்டு சரிசெய்ய உதவும்"
@@ -13163,14 +13451,17 @@
   "panels/settings/SettingsScreen.ts | experiments": {
     "message": "பரிசோதனைகள்"
   },
+  "panels/settings/SettingsScreen.ts | experimentsFound": {
+    "message": "{n,plural, =1{# பரிசோதனை கண்டறியப்பட்டது}other{# பரிசோதனைகள் கண்டறியப்பட்டன}}"
+  },
+  "panels/settings/SettingsScreen.ts | greenDevUnstable": {
+    "message": "எச்சரிக்கை: இந்த அம்சங்கள் அனைத்தும் முன்மாதிரி மற்றும் மிகவும் நிலையற்றவை. பயனர் பரிசோதனைக்காக அவை உள்ளன, அவற்றை நம்பியிருக்கும் வகையில் வடிவமைக்கப்படவில்லை."
+  },
   "panels/settings/SettingsScreen.ts | learnMore": {
     "message": "மேலும் அறிக"
   },
   "panels/settings/SettingsScreen.ts | noResults": {
     "message": "வடிப்பானுடன் பரிசோதனைகள் எதுவும் பொருந்தவில்லை"
-  },
-  "panels/settings/SettingsScreen.ts | oneOrMoreSettingsHaveChanged": {
-    "message": "ஒன்று அல்லது அதற்கு மேற்பட்ட அமைப்புகளில் மாற்றம் செய்யப்பட்டுள்ளதால் அவை செயல்படுத்தப்பட ரெஃப்ரெஷ் செய்ய வேண்டும்"
   },
   "panels/settings/SettingsScreen.ts | restoreDefaultsAndReload": {
     "message": "இயல்புகளை மீட்டெடுத்து ரெஃப்ரெஷ் செய்"
@@ -13184,17 +13475,14 @@
   "panels/settings/SettingsScreen.ts | settings": {
     "message": "அமைப்புகள்"
   },
+  "panels/settings/SettingsScreen.ts | settingsChangedReloadDevTools": {
+    "message": "அமைப்புகள் மாற்றப்பட்டுள்ளன செயல்படுத்த, டெவெலப்பர் கருவிகளை ரெஃப்ரெஷ் செய்யவும்."
+  },
   "panels/settings/SettingsScreen.ts | shortcuts": {
     "message": "ஷார்ட்கட்கள்"
   },
-  "panels/settings/SettingsScreen.ts | theseExperimentsAreParticularly": {
-    "message": "எச்சரிக்கை: இந்தப் பரிசோதனைகள் குறிப்பாக நிலையற்றவை. இவற்றை இயக்குவது உங்கள் விருப்பத்திற்குட்பட்டது."
-  },
   "panels/settings/SettingsScreen.ts | theseExperimentsCouldBeUnstable": {
     "message": "எச்சரிக்கை: இந்தப் பரிசோதனைகள் நிலையற்றவையாகவோ நம்பகமற்றவையாகவோ இருக்கலாம்."
-  },
-  "panels/settings/SettingsScreen.ts | unstableExperiments": {
-    "message": "நிலையற்ற பரிசோதனைகள்"
   },
   "panels/settings/WorkspaceSettingsTab.ts | addFolder": {
     "message": "ஃபோல்டரைச் சேர்"
@@ -13418,6 +13706,9 @@
   "panels/settings/settings-meta.ts | experiments": {
     "message": "பரிசோதனைகள்"
   },
+  "panels/settings/settings-meta.ts | greenDevProtoTypes": {
+    "message": "GreenDev"
+  },
   "panels/settings/settings-meta.ts | ignoreList": {
     "message": "தவிர்க்க வேண்டியவற்றின் பட்டியல்"
   },
@@ -13435,6 +13726,9 @@
   },
   "panels/settings/settings-meta.ts | showExperiments": {
     "message": "பரிசோதனைகளைக் காட்டு"
+  },
+  "panels/settings/settings-meta.ts | showGreenDev": {
+    "message": "GreenDevவைக் காட்டு"
   },
   "panels/settings/settings-meta.ts | showIgnoreList": {
     "message": "தவிர்க்க வேண்டியவற்றின் பட்டியலைக் காட்டு"
@@ -13588,6 +13882,12 @@
   },
   "panels/sources/CallStackSidebarPane.ts | debugFileNotFound": {
     "message": "\"{PH1}\" என்ற பிழைதிருத்த ஃபைலை ஏற்ற முடியவில்லை."
+  },
+  "panels/sources/CallStackSidebarPane.ts | debugSymbolsIncomplete": {
+    "message": "{PH1} செயல்பாட்டுக்கான பிழைதிருத்தத் தகவல்கள் முழுமையாக இல்லை"
+  },
+  "panels/sources/CallStackSidebarPane.ts | failedToLoadDebugSymbolsForFunction": {
+    "message": "\"{PH1}\" செயல்பாட்டுக்கான பிழைதிருத்தத் தகவல்கள் எதுவுமில்லை"
   },
   "panels/sources/CallStackSidebarPane.ts | notPaused": {
     "message": "இடைநிறுத்தப்படவில்லை"
@@ -14708,8 +15008,20 @@
   "panels/timeline/ThreadAppender.ts | workletServiceS": {
     "message": "ஏல ஒர்க்லெட் சேவை — {PH1}"
   },
+  "panels/timeline/TimelineController.ts | initializingTracing": {
+    "message": "டிரேஸ் செய்யத் தொடங்குகிறது…"
+  },
+  "panels/timeline/TimelineController.ts | tracing": {
+    "message": "டிரேஸ் செய்கிறது…"
+  },
   "panels/timeline/TimelineController.ts | tracingNotSupported": {
     "message": "இந்த வகையான இலக்கில் செயல்திறன் தடங்களை ரெக்கார்டு செய்ய முடியாது"
+  },
+  "panels/timeline/TimelineController.ts | waitingForLoadEvent": {
+    "message": "ஏற்ற நிகழ்வுக்காகக் காத்திருக்கிறது…"
+  },
+  "panels/timeline/TimelineController.ts | waitingForLoadEventPlus5Seconds": {
+    "message": "ஏற்ற நிகழ்வுக்காகக் காத்திருக்கிறது (+5 வினாடிகள்)…"
   },
   "panels/timeline/TimelineDetailsView.ts | bottomup": {
     "message": "கீழிருந்து மேல்"
@@ -14861,6 +15173,9 @@
   "panels/timeline/TimelinePanel.ts | close": {
     "message": "மூடுக"
   },
+  "panels/timeline/TimelinePanel.ts | compressingTraceForDownload": {
+    "message": "சுருக்குகிறது…"
+  },
   "panels/timeline/TimelinePanel.ts | cpu": {
     "message": "CPU:"
   },
@@ -14881,6 +15196,9 @@
   },
   "panels/timeline/TimelinePanel.ts | enableSelectorStats": {
     "message": "CSS தேர்விக்கான புள்ளிவிவரங்களை (குறைவு) இயக்குதல்"
+  },
+  "panels/timeline/TimelinePanel.ts | encodingTraceForDownload": {
+    "message": "என்கோடிங்…"
   },
   "panels/timeline/TimelinePanel.ts | eventSelected": {
     "message": "{PH1} நிகழ்வு தேர்ந்தெடுக்கப்பட்டது"
@@ -14920,6 +15238,9 @@
   },
   "panels/timeline/TimelinePanel.ts | networkConditions": {
     "message": "நெட்வொர்க் நிலைகள்"
+  },
+  "panels/timeline/TimelinePanel.ts | preparingTraceForDownload": {
+    "message": "தயாராகிறது…"
   },
   "panels/timeline/TimelinePanel.ts | processed": {
     "message": "செயலாக்கப்பட்டது"
@@ -15305,9 +15626,6 @@
   "panels/timeline/TimelineUIUtils.ts | layerRoot": {
     "message": "லேயர் ரூட்"
   },
-  "panels/timeline/TimelineUIUtils.ts | layoutForced": {
-    "message": "லே-அவுட் வலுக்கட்டாயமாக இயக்கப்பட்டது"
-  },
   "panels/timeline/TimelineUIUtils.ts | layoutRoot": {
     "message": "தளவமைப்பு ரூட்"
   },
@@ -15358,9 +15676,6 @@
   },
   "panels/timeline/TimelineUIUtils.ts | range": {
     "message": "வரம்பு"
-  },
-  "panels/timeline/TimelineUIUtils.ts | recalculationForced": {
-    "message": "மறு கணக்கீடு வலுக்கட்டாயமாக இயக்கப்பட்டது"
   },
   "panels/timeline/TimelineUIUtils.ts | relatedNode": {
     "message": "தொடர்புடைய நோடு"
@@ -17459,14 +17774,14 @@
   "ui/legacy/components/quick_open/CommandMenu.ts | noCommandsFound": {
     "message": "கட்டளைகள் எதுவுமில்லை"
   },
-  "ui/legacy/components/quick_open/CommandMenu.ts | oneOrMoreSettingsHaveChanged": {
-    "message": "ஒன்று அல்லது அதற்கு மேற்பட்ட அமைப்புகளில் மாற்றம் செய்யப்பட்டுள்ளதால் அவை செயல்படுத்தப்பட ரெஃப்ரெஷ் செய்ய வேண்டும்"
-  },
   "ui/legacy/components/quick_open/CommandMenu.ts | run": {
     "message": "இயக்கு"
   },
   "ui/legacy/components/quick_open/CommandMenu.ts | runCommand": {
     "message": "கட்டளையை இயக்கு"
+  },
+  "ui/legacy/components/quick_open/CommandMenu.ts | settingsChangedReloadDevTools": {
+    "message": "அமைப்புகள் மாற்றப்பட்டுள்ளன செயல்படுத்த, டெவெலப்பர் கருவிகளை ரெஃப்ரெஷ் செய்யவும்."
   },
   "ui/legacy/components/quick_open/FilteredListWidget.ts | newFeature": {
     "message": "இது ஒரு புதிய அம்சம்"
@@ -17492,8 +17807,8 @@
   "ui/legacy/components/quick_open/quick_open-meta.ts | runCommand": {
     "message": "கட்டளையை இயக்கு"
   },
-  "ui/legacy/components/settings_ui/SettingsUI.ts | oneOrMoreSettingsHaveChanged": {
-    "message": "ஒன்று அல்லது அதற்கு மேற்பட்ட அமைப்புகளில் மாற்றம் செய்யப்பட்டுள்ளதால் அவை செயல்படுத்தப்பட ரெஃப்ரெஷ் செய்ய வேண்டும்"
+  "ui/legacy/components/settings_ui/SettingsUI.ts | settingsChangedReloadDevTools": {
+    "message": "அமைப்புகள் மாற்றப்பட்டுள்ளன செயல்படுத்த, டெவெலப்பர் கருவிகளை ரெஃப்ரெஷ் செய்யவும்."
   },
   "ui/legacy/components/settings_ui/SettingsUI.ts | srequiresReload": {
     "message": "*ரெஃப்ரெஷ் செய்ய வேண்டும்"

@@ -356,7 +356,7 @@ TEST_P(AudioProcessorTestMultichannelAndFormat, TestStereoAudio) {
   std::unique_ptr<media::AudioBus> data_bus =
       media::AudioBus::Create(params_.channels(), params_.frames_per_buffer());
   data_bus->Zero();
-  std::ranges::generate(data_bus->channel_span(0),
+  std::ranges::generate(data_bus->channel(0),
                         [i = 0]() mutable { return (i++ % 11) * 0.1f - 0.5f; });
 
   // Test without and with audio processing enabled.
@@ -415,8 +415,8 @@ TEST_P(AudioProcessorTestMultichannelAndFormat, TestStereoAudio) {
               EXPECT_FALSE(new_volume.has_value());
             }
 
-            auto left_channel = processed_audio.channel_span(0);
-            auto right_channel = processed_audio.channel_span(1);
+            auto left_channel = processed_audio.channel(0);
+            auto right_channel = processed_audio.channel(1);
 
             const float left_channel_energy =
                 std::inner_product(left_channel.begin(), left_channel.end(),
@@ -428,6 +428,12 @@ TEST_P(AudioProcessorTestMultichannelAndFormat, TestStereoAudio) {
               // Mono output. Output channels are averaged.
               EXPECT_NE(left_channel_energy, 0);
               EXPECT_NE(right_channel_energy, 0);
+            } else if (use_apm) {
+              // Stereo output. Output channels might be independent, averaged
+              // or partly averaged, depending on adaptive remixing in APM. Only
+              // verify that remixing does not result in non-zero channel
+              // content being zeroed.
+              EXPECT_NE(left_channel_energy, 0);
             } else {
               // Stereo output. Output channels are independent.
               EXPECT_NE(left_channel_energy, 0);

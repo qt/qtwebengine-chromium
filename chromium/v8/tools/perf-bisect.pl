@@ -74,7 +74,7 @@ Options:
 I bisected the regressions at https://chromeperf.appspot.com/group_report?rev=85409 with:
 (the offending CL was obvious, but this was just to showcase this script)
 
-    perl bisect.pl --start b71cdae --end 54d255a --run "V8 --future cli.js -- ML" --run-dir v8-perf/v8-perf/benchmarks/JetStream2 --score-regex "Average-Score: (\d+)"
+    perl bisect.pl --start b71cdae --end 54d255a --run "V8 --future cli.js -- ML" --run-dir v8-perf/v8-perf/benchmarks/JetStream/v3.0-custom --score-regex "Average-Score: (\d+)"
 
 
 And that regression https://chromeperf.appspot.com/group_report?bug_id=1409635&project_id=chromium with:
@@ -178,19 +178,19 @@ if ($RUN_CMD_DIR ne "" && !-d $RUN_CMD_DIR) {
   usage();
 }
 if (!!$TOTAL_SCORE_REGEX + !!$AVERAGE_SCORE_REGEX +
-    !!$FIRST_SCORE_REGEX + !!$SCORE_REGEX) {
+    !!$FIRST_SCORE_REGEX + !!$SCORE_REGEX > 1) {
   say "Only one of --total-score, --average-score, " .
     "--first-score, --score-regex can be used at the same time.";
   usage();
 }
 if ($TOTAL_SCORE_REGEX && !$SCORE_REGEX) {
-  $SCORE_REGEX="Total-Score: (NUM)"
+  $SCORE_REGEX="Total-Score: +(NUM)"
 }
 if ($AVERAGE_SCORE_REGEX && !$SCORE_REGEX) {
-  $SCORE_REGEX="Average-Score: (NUM)"
+  $SCORE_REGEX="Average-Score: +(NUM)"
 }
 if ($FIRST_SCORE_REGEX && !$SCORE_REGEX) {
-  $SCORE_REGEX="First-Score: (NUM)"
+  $SCORE_REGEX="First-Score: +(NUM)"
 }
 if (!$PERL_TIME && !$SCORE_REGEX) {
   say "One of --perl-time and --score-regex must be specified.";
@@ -255,7 +255,7 @@ while (1) {
         if ($PERL_TIME) {
           push @{$scores{$bin}}, time() - $time;
         } else {
-          my $real_re = $re =~ s/NUM/\\d+(?:\\.\\d+)?/r;
+	  my $real_re = $SCORE_REGEX =~ s/NUM/\\d+(?:\\.\\d+)?/r;
           my ($score) = $out =~ /$real_re/;
           if (!defined $score) {
             say "\n==== Error:";
@@ -333,7 +333,7 @@ sub compile {
 
 sub get_middle_commit {
   my ($start, $end) = @_;
-  my $cmd = "git log --oneline $start..$end";
+  my $cmd = "git log --pretty=oneline $start..$end";
   # say "About to run: '$cmd'";
   # say "Current dir: ", getcwd();
   my @commits = map { s/ .*//r } split "\n", `$cmd`;

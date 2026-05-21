@@ -13,10 +13,9 @@ namespace openscreen::osp {
 
 quiche::QuicheIpAddress ToQuicheIpAddress(const IPAddress& address) {
   if (address.IsV4()) {
-    uint8_t address_8[IPAddress::kV4Size];
-    address.CopyToV4(address_8);
-    const uint32_t address_32 = (address_8[3] << 24) + (address_8[2] << 16) +
-                                (address_8[1] << 8) + (address_8[0]);
+    std::span<const uint8_t> bytes = address.bytes();
+    const uint32_t address_32 =
+        (bytes[3] << 24) + (bytes[2] << 16) + (bytes[1] << 8) + (bytes[0]);
     const in_addr result = {address_32};
     static_assert(sizeof(result) == IPAddress::kV4Size,
                   "Address size mismatch");
@@ -25,7 +24,7 @@ quiche::QuicheIpAddress ToQuicheIpAddress(const IPAddress& address) {
 
   if (address.IsV6()) {
     in6_addr result;
-    address.CopyToV6(result.s6_addr);
+    address.CopyTo(std::span<uint8_t>(result.s6_addr, 16));
     static_assert(sizeof(result) == IPAddress::kV6Size,
                   "Address size mismatch");
     return quiche::QuicheIpAddress(result);

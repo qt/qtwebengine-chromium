@@ -36,7 +36,7 @@ TEST_DEFAULT_TIMEZONE = 'America/Los_Angeles'
 TEXT_TESTS = ['javascript']
 
 # Timeout (in seconds) for individual test commands.
-# TODO(crbug.com/pdfium/1967): array_buffer.in is slow under MSan, so need a
+# TODO(crbug.com/42270974): array_buffer.in is slow under MSan, so need a
 # very generous 5 minute timeout for now.
 TEST_TIMEOUT = timedelta(minutes=5).total_seconds()
 
@@ -196,6 +196,11 @@ class TestRunner:
         help='Sets whether to use the oneshot renderer.')
 
     parser.add_argument(
+        '--render-premultiplied',
+        action='store_true',
+        help='Sets whether to render using premultiplied alpha.')
+
+    parser.add_argument(
         '--run-skia-gold',
         action='store_true',
         default=False,
@@ -305,8 +310,8 @@ class TestRunner:
       # Clear out and create top level gold output directory before starting
       skia_gold.clear_gold_output_dir(self.options.gold_output_dir)
 
-    # TODO(crbug.com/461544934): Check timezone behavior on other platforms.
-    if common.os_name() == 'linux':
+    # TODO(crbug.com/461544934): Check timezone behavior on Windows.
+    if common.os_name() != 'win':
       os.environ['TZ'] = TEST_DEFAULT_TIMEZONE
 
     with multiprocessing.Pool(
@@ -710,7 +715,7 @@ class _TestCaseRunner:
 
     return self.test_case.NewResult(result_types.PASS)
 
-  # TODO(crbug.com/pdfium/1656): Remove when ready to fully switch over to
+  # TODO(crbug.com/42270661): Remove when ready to fully switch over to
   # Skia Gold
   def TestPixel(self):
     # Remove any existing generated images from previous runs.
@@ -742,6 +747,9 @@ class _TestCaseRunner:
 
     if self.options.render_oneshot:
       cmd_to_run.append('--render-oneshot')
+
+    if self.options.render_premultiplied:
+      cmd_to_run.append('--render-premultiplied')
 
     if self.options.reverse_byte_order:
       cmd_to_run.append('--reverse-byte-order')

@@ -5,7 +5,6 @@
 #include "third_party/blink/renderer/modules/managed_device/navigator_managed_data.h"
 
 #include "services/network/public/mojom/permissions_policy/permissions_policy_feature.mojom-blink.h"
-#include "third_party/blink/public/common/features_generated.h"
 #include "third_party/blink/public/platform/browser_interface_broker_proxy.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
@@ -17,7 +16,6 @@
 #include "third_party/blink/renderer/core/inspector/console_message.h"
 #include "third_party/blink/renderer/modules/event_target_modules.h"
 #include "third_party/blink/renderer/platform/bindings/exception_code.h"
-#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 
 namespace blink {
 
@@ -40,35 +38,31 @@ constexpr char kDeviceAttributesNotAllowedByPermissionsPolicy[] =
 constexpr char kDeviceAttributesNotAllowedInChildFrames[] =
     "This API is allowed only in top level frames.";
 
-bool IsDeviceAttributesPermissionsPolicyFeatureEnabled() {
-  return RuntimeEnabledFeatures::DeviceAttributesPermissionPolicyEnabled();
-}
-
 bool AreDeviceAttributesAllowedByPermissionsPolicy(ExecutionContext* context) {
-  if (!IsDeviceAttributesPermissionsPolicyFeatureEnabled()) {
-    return true;
-  }
   return context->IsFeatureEnabled(
       network::mojom::PermissionsPolicyFeature::kDeviceAttributes);
 }
 
 }  // namespace
 
+const char NavigatorManagedData::kSupplementName[] = "NavigatorManagedData";
+
 NavigatorManagedData* NavigatorManagedData::managed(Navigator& navigator) {
   if (!navigator.DomWindow())
     return nullptr;
 
-  NavigatorManagedData* device_service = navigator.GetNavigatorManagedData();
+  NavigatorManagedData* device_service =
+      Supplement<Navigator>::From<NavigatorManagedData>(navigator);
   if (!device_service) {
     device_service = MakeGarbageCollected<NavigatorManagedData>(navigator);
-    navigator.SetNavigatorManagedData(device_service);
+    ProvideTo(navigator, device_service);
   }
   return device_service;
 }
 
 NavigatorManagedData::NavigatorManagedData(Navigator& navigator)
     : ActiveScriptWrappable<NavigatorManagedData>({}),
-      navigator_(navigator),
+      Supplement<Navigator>(navigator),
       device_api_service_(navigator.DomWindow()),
       managed_configuration_service_(navigator.DomWindow()),
       configuration_observer_(this, navigator.DomWindow()) {}
@@ -78,7 +72,7 @@ const AtomicString& NavigatorManagedData::InterfaceName() const {
 }
 
 ExecutionContext* NavigatorManagedData::GetExecutionContext() const {
-  return navigator_->DomWindow();
+  return GetSupplementable()->DomWindow();
 }
 
 bool NavigatorManagedData::HasPendingActivity() const {
@@ -90,7 +84,7 @@ bool NavigatorManagedData::HasPendingActivity() const {
 void NavigatorManagedData::Trace(Visitor* visitor) const {
   EventTarget::Trace(visitor);
   ActiveScriptWrappable::Trace(visitor);
-  visitor->Trace(navigator_);
+  Supplement<Navigator>::Trace(visitor);
 
   visitor->Trace(device_api_service_);
   visitor->Trace(managed_configuration_service_);

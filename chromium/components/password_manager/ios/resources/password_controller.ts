@@ -4,13 +4,13 @@
 
 import * as fillConstants from '//components/autofill/ios/form_util/resources/fill_constants.js';
 import * as fillUtil from '//components/autofill/ios/form_util/resources/fill_util.js';
-import {webFormElementToFormData} from '//components/autofill/ios/form_util/resources/fill_web_form.js';
+import {unownedFormElementsAndFieldSetsToFormData, webFormElementToFormData} from '//components/autofill/ios/form_util/resources/fill_web_form.js';
 import {getFormControlElements, getFormElementFromRendererId} from '//components/autofill/ios/form_util/resources/form_utils.js';
-import {CrWebApi, gCrWeb, gCrWebLegacy} from '//ios/web/public/js_messaging/resources/gcrweb.js';
+import {CrWebApi, gCrWeb} from '//ios/web/public/js_messaging/resources/gcrweb.js';
 import {isTextField, sendWebKitMessage} from '//ios/web/public/js_messaging/resources/utils.js';
 
 /**
- * @fileoverview Installs Passwords management functions on the gCrWebLegacy object.
+ * @fileoverview Installs Passwords management functions on the gCrWeb object.
  *
  * It scans the DOM, extracting and storing password forms and returns a JSON
  * string representing an array of objects, each of which represents an Password
@@ -52,7 +52,7 @@ const kFillResultForFailure: FillResult = {
 function findPasswordForms(): string {
   const formDataList: fillUtil.AutofillFormData[] = [];
   getPasswordFormDataList(formDataList);
-  return gCrWebLegacy.stringify(formDataList);
+  return fillUtil.stringify(formDataList);
 }
 
 /**
@@ -140,7 +140,7 @@ function getPasswordFormDataAsString(identifier: number): string {
   if (!formData) {
     return '{}';
   }
-  return gCrWebLegacy.stringify(formData);
+  return fillUtil.stringify(formData);
 }
 
 /**
@@ -400,8 +400,8 @@ function getPasswordFormDataFromUnownedElements(): object|null {
   if (unownedControlElements.length === 0) {
     return null;
   }
-  const unownedForm = new gCrWebLegacy['common'].JSONSafeObject();
-  const hasUnownedForm = gCrWebLegacy.fill.unownedFormElementsAndFieldSetsToFormData(
+  const unownedForm = new fillUtil.AutofillFormData();
+  const hasUnownedForm = unownedFormElementsAndFieldSetsToFormData(
       window, fieldsets, unownedControlElements, /* iframeElements= */[], false,
       unownedForm);
   return hasUnownedForm ? unownedForm : null;
@@ -420,7 +420,7 @@ function getPasswordFormData(
   return ok ? formData : null;
 }
 
-const passwordsApi = new CrWebApi();
+const passwordsApi = new CrWebApi('passwords');
 
 passwordsApi.addFunction('findPasswordForms', findPasswordForms);
 passwordsApi.addFunction('fillPasswordForm', fillPasswordForm);
@@ -431,4 +431,4 @@ passwordsApi.addFunction('getPasswordFormData', getPasswordFormData);
 passwordsApi.addFunction(
     'getPasswordFormDataAsString', getPasswordFormDataAsString);
 
-gCrWeb.registerApi('passwords', passwordsApi);
+gCrWeb.registerApi(passwordsApi);

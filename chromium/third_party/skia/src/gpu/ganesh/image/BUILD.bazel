@@ -1,4 +1,4 @@
-load("//bazel:skia_rules.bzl", "split_srcs_and_hdrs")
+load("//bazel:skia_rules.bzl", "skia_filegroup", "split_srcs_and_hdrs")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -9,6 +9,8 @@ licenses(["notice"])
 IMAGE_FILES = [
     "GrImageUtils.cpp",
     "GrImageUtils.h",
+    "GrMippedBitmap.cpp",
+    "GrMippedBitmap.h",
     "GrTextureGenerator.cpp",
     "SkImage_Ganesh.cpp",
     "SkImage_Ganesh.h",
@@ -29,4 +31,9 @@ split_srcs_and_hdrs(
     name = "image",
     files = IMAGE_FILES,
     visibility = ["//src/gpu/ganesh:__pkg__"],
+)
+
+skia_filegroup(
+    name = "android_srcs",
+    srcs = ["SkImage_GaneshFactories_Android.cpp"],
 )

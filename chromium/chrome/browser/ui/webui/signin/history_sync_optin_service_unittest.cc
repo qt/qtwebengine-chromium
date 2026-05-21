@@ -190,10 +190,12 @@ class HistorySyncOptinServiceTestBase : public testing::Test {
     if (with_managed_account_info_available) {
       UpdateAccountManagementInfo(account_info, identity_test_env_adaptor);
     }
-    account_info.full_name = "fullname";
-    account_info.given_name = "givenname";
-    account_info.locale = "en";
-    account_info.picture_url = "https://example.com";
+    account_info = AccountInfo::Builder(account_info)
+                       .SetFullName("fullname")
+                       .SetGivenName("givenname")
+                       .SetLocale("en")
+                       .SetAvatarUrl("https://example.com")
+                       .Build();
     identity_test_env_adaptor->identity_test_env()->UpdateAccountInfoForAccount(
         account_info);
     return account_info;
@@ -203,11 +205,11 @@ class HistorySyncOptinServiceTestBase : public testing::Test {
       AccountInfo& account_info,
       IdentityTestEnvironmentProfileAdaptor* identity_test_env_adaptor) {
     std::string hosted_domain;
-    if (account_info.email == kManagedEmail ||
-        account_info.email == kManagedEmail2) {
+    if (account_info.GetEmail() == kManagedEmail ||
+        account_info.GetEmail() == kManagedEmail2) {
       hosted_domain = "example.com";
     } else {
-      CHECK_EQ(account_info.email, kMainEmail);
+      CHECK_EQ(account_info.GetEmail(), kMainEmail);
     }
 
     account_info = AccountInfo::Builder(account_info)
@@ -416,7 +418,9 @@ TEST_P(HistorySyncOptinServiceTest,
             new_profile_adaptor.identity_test_env()
                 ->identity_manager()
                 ->FindExtendedAccountInfo(original_managed_account_info);
-        updated_info.full_name = "updated name";
+        updated_info = AccountInfo::Builder(updated_info)
+                           .SetFullName("updated name")
+                           .Build();
         new_profile_adaptor.identity_test_env()->UpdateAccountInfoForAccount(
             updated_info);
       });

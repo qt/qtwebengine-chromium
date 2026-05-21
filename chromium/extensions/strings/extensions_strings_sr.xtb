@@ -12,6 +12,7 @@
 <translation id="2159915644201199628">Није могуће декодирати слику: „<ph name="IMAGE_NAME" />“</translation>
 <translation id="2350172092385603347">Коришћена је локализација, али параметар default_locale није наведен у манифесту.</translation>
 <translation id="2576842806987913196">Већ постоји CRX датотека са овим називом.</translation>
+<translation id="2743583586211388067">Приступ овом додатку је блокиран у складу са смерницама организације у вези са ризиком од додатака.</translation>
 <translation id="2785530881066938471">Учитавање датотеке „<ph name="RELATIVE_PATH" />“ за скрипту садржаја није успело. Нема UTF-8 шифровање.</translation>
 <translation id="2903070246402204397">Администратор је блокирао <ph name="EXTENSION_NAME" /> (ИД додатка је „<ph name="EXTENSION_ID" />“). <ph name="ADMIN_INFO" /></translation>
 <translation id="2988488679308982380">Инсталација пакета није била могућа: „<ph name="ERROR_CODE" />“</translation>
@@ -33,9 +34,11 @@
 <translation id="5356315618422219272">Приказ апликације: <ph name="APPVIEW_TAG_NAME" /></translation>
 <translation id="5456409301717116725">Овај додатак садржи датотеку кључа „<ph name="KEY_PATH" />“. Вероватно то не желите.</translation>
 <translation id="5486326529110362464">Улазна вредност приватног кључа мора да постоји.</translation>
+<translation id="5707185214361380026">Није успело учитавање додатка из:</translation>
 <translation id="5972529113578162692">Администратор овог рачунара захтева да додатак <ph name="EXTENSION_NAME" /> буде инсталиран. Не можете да га деинсталирате.</translation>
 <translation id="6027032947578871493">Непознати производ <ph name="PRODUCT_ID" /> продавца <ph name="VENDOR_NAME" /> (серијски број <ph name="SERIAL_NUMBER" />)</translation>
 <translation id="6068932090455285721"><ph name="PRODUCT_NAME" /> продавца <ph name="VENDOR_ID" /></translation>
+<translation id="6220413761270491930">Грешка при учитавању додатка</translation>
 <translation id="6322279351188361895">Читање приватног кључа није успело.</translation>
 <translation id="6391538222494443604">Улазни каталог мора да постоји.</translation>
 <translation id="641087317769093025">Није могуће распаковати додатак</translation>

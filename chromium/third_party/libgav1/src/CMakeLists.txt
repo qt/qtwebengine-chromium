@@ -15,9 +15,8 @@
 # libgav1 requires modern CMake.
 cmake_minimum_required(VERSION 3.7.1 FATAL_ERROR)
 
-# libgav1 requires C++11.
-set(CMAKE_CXX_STANDARD 11)
-set(ABSL_CXX_STANDARD 11)
+# libgav1 requires C++17.
+set(CMAKE_CXX_STANDARD 17)
 # libgav1 requires C99.
 set(CMAKE_C_STANDARD 99)
 
@@ -144,7 +143,7 @@ else()
         " examples & tests and libgav1 when LIBGAV1_THREADPOOL_USE_STD_MUTEX is"
         " not defined. To continue, download the Abseil repository to"
         " third_party/abseil-cpp:\n  git \\\n    -C ${libgav1_root} \\\n"
-        "    clone -b 20220623.0 --depth 1 \\\n"
+        "    clone -b 20250512.1 --depth 1 \\\n"
         "    https://github.com/abseil/abseil-cpp.git third_party/abseil-cpp")
   endif()
 endif()

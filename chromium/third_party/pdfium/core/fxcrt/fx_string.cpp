@@ -33,7 +33,7 @@ namespace {
 
 // Appends a Unicode code point to a `ByteString` using UTF-8.
 //
-// TODO(crbug.com/pdfium/2041): Migrate to `ByteString`.
+// TODO(crbug.com/42271053): Migrate to `ByteString`.
 void AppendCodePointToByteString(char32_t code_point, ByteString& buffer) {
   if (code_point > pdfium::kMaximumSupplementaryCodePoint) {
     // Invalid code point above U+10FFFF.
@@ -65,8 +65,27 @@ void AppendCodePointToByteString(char32_t code_point, ByteString& buffer) {
   }
 }
 
+template <typename StringViewType>
+StringViewType ParseLeadingChars(StringViewType str) {
+  // Skip leading whitespaces, plus signs, and minus signs.
+  size_t start = 0;
+  size_t len = str.GetLength();
+  while (start < len &&
+         (str[start] == ' ' || str[start] == '+' || str[start] == '-')) {
+    ++start;
+  }
+
+  // Only use the minus sign directly in front of numbers.
+  if (start > 0 && str[start - 1] == '-') {
+    --start;
+  }
+
+  return str.Substr(start, len - start);
+}
+
 template <typename IntType, typename StringViewType>
 IntType StringToIntImpl(StringViewType str) {
+  str = ParseLeadingChars(str);
   if (str.IsEmpty()) {
     return 0;
   }
@@ -100,24 +119,18 @@ IntType StringToIntImpl(StringViewType str) {
 }
 
 // Intended to work for the cases where `ReturnType` is float or double, and
-// `InputType` is ByteStringView or WideStringView.
-template <class ReturnType, class InputType>
-ReturnType StringToFloatImpl(InputType strc) {
-  // Skip leading whitespaces.
-  size_t start = 0;
-  size_t len = strc.GetLength();
-  while (start < len && strc[start] == ' ') {
-    ++start;
+// `StringViewType` is ByteStringView or WideStringView.
+template <class ReturnType, class StringViewType>
+ReturnType StringToFloatImpl(StringViewType strc) {
+  strc = ParseLeadingChars(strc);
+  if (strc.IsEmpty()) {
+    return 0;
   }
 
-  InputType sub_strc = strc.Substr(start, len - start);
-
   ReturnType value;
-  auto result =
-      fast_float::from_chars(sub_strc.begin(), sub_strc.end(), value,
-                             static_cast<fast_float::chars_format>(
-                                 fast_float::chars_format::general |
-                                 fast_float::chars_format::allow_leading_plus));
+  auto result = fast_float::from_chars(
+      strc.begin(), strc.end(), value,
+      static_cast<fast_float::chars_format>(fast_float::chars_format::general));
 
   // Return 0 for parsing errors. Some examples of errors are an empty string
   // and a string that cannot be converted to `ReturnType`.

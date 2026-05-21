@@ -3,9 +3,9 @@
 
 /***************************************************************************
  *
- * Copyright (c) 2023-2025 The Khronos Group Inc.
- * Copyright (c) 2023-2025 Valve Corporation
- * Copyright (c) 2023-2025 LunarG, Inc.
+ * Copyright (c) 2023-2026 The Khronos Group Inc.
+ * Copyright (c) 2023-2026 Valve Corporation
+ * Copyright (c) 2023-2026 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -92,6 +92,8 @@ enum class Feature {
     colorWriteEnable,
     // VkPhysicalDeviceCommandBufferInheritanceFeaturesNV
     commandBufferInheritance,
+    // VkPhysicalDeviceComputeOccupancyPriorityFeaturesNV
+    computeOccupancyPriority,
     // VkPhysicalDeviceComputeShaderDerivativesFeaturesKHR
     computeDerivativeGroupLinear,
     // VkPhysicalDeviceComputeShaderDerivativesFeaturesKHR
@@ -114,6 +116,8 @@ enum class Feature {
     cooperativeMatrixTensorAddressing,
     // VkPhysicalDeviceCooperativeMatrix2FeaturesNV
     cooperativeMatrixWorkgroupScope,
+    // VkPhysicalDeviceCooperativeMatrixConversionFeaturesQCOM
+    cooperativeMatrixConversion,
     // VkPhysicalDeviceCooperativeMatrixFeaturesKHR, VkPhysicalDeviceCooperativeMatrixFeaturesNV
     cooperativeMatrix,
     // VkPhysicalDeviceCooperativeMatrixFeaturesKHR, VkPhysicalDeviceCooperativeMatrixFeaturesNV
@@ -186,6 +190,10 @@ enum class Feature {
     descriptorBufferPushDescriptors,
     // VkPhysicalDeviceDescriptorBufferTensorFeaturesARM
     descriptorBufferTensorDescriptors,
+    // VkPhysicalDeviceDescriptorHeapFeaturesEXT
+    descriptorHeap,
+    // VkPhysicalDeviceDescriptorHeapFeaturesEXT
+    descriptorHeapCaptureReplay,
     // VkPhysicalDeviceDescriptorIndexingFeatures, VkPhysicalDeviceVulkan12Features
     descriptorBindingPartiallyBound,
     // VkPhysicalDeviceDescriptorIndexingFeatures, VkPhysicalDeviceVulkan12Features
@@ -526,6 +534,8 @@ enum class Feature {
     descriptorBindingInlineUniformBlockUpdateAfterBind,
     // VkPhysicalDeviceInlineUniformBlockFeatures, VkPhysicalDeviceVulkan13Features
     inlineUniformBlock,
+    // VkPhysicalDeviceInternallySynchronizedQueuesFeaturesKHR
+    internallySynchronizedQueues,
     // VkPhysicalDeviceInvocationMaskFeaturesHUAWEI
     invocationMask,
     // VkPhysicalDeviceLegacyDitheringFeaturesEXT
@@ -712,6 +722,8 @@ enum class Feature {
     provokingVertexLast,
     // VkPhysicalDeviceProvokingVertexFeaturesEXT
     transformFeedbackPreservesProvokingVertex,
+    // VkPhysicalDevicePushConstantBankFeaturesNV
+    pushConstantBank,
     // VkPhysicalDeviceRGBA10X6FormatsFeaturesEXT
     formatRgba10x6WithoutYCbCrSampler,
     // VkPhysicalDeviceRasterizationOrderAttachmentAccessFeaturesEXT
@@ -878,6 +890,8 @@ enum class Feature {
     shaderIntegerDotProduct,
     // VkPhysicalDeviceShaderIntegerFunctions2FeaturesINTEL
     shaderIntegerFunctions2,
+    // VkPhysicalDeviceShaderLongVectorFeaturesEXT
+    longVector,
     // VkPhysicalDeviceShaderMaximalReconvergenceFeaturesKHR
     shaderMaximalReconvergence,
     // VkPhysicalDeviceShaderModuleIdentifierFeaturesEXT
@@ -894,6 +908,8 @@ enum class Feature {
     shaderSMBuiltins,
     // VkPhysicalDeviceShaderSubgroupExtendedTypesFeatures, VkPhysicalDeviceVulkan12Features
     shaderSubgroupExtendedTypes,
+    // VkPhysicalDeviceShaderSubgroupPartitionedFeaturesEXT
+    shaderSubgroupPartitioned,
     // VkPhysicalDeviceShaderSubgroupRotateFeatures, VkPhysicalDeviceVulkan14Features
     shaderSubgroupRotate,
     // VkPhysicalDeviceShaderSubgroupRotateFeatures, VkPhysicalDeviceVulkan14Features
@@ -942,6 +958,8 @@ enum class Feature {
     tensors,
     // VkPhysicalDeviceTexelBufferAlignmentFeaturesEXT
     texelBufferAlignment,
+    // VkPhysicalDeviceTextureCompressionASTC3DFeaturesEXT
+    textureCompressionASTC_3D,
     // VkPhysicalDeviceTextureCompressionASTCHDRFeatures, VkPhysicalDeviceVulkan13Features
     textureCompressionASTC_HDR,
     // VkPhysicalDeviceTileMemoryHeapFeaturesQCOM

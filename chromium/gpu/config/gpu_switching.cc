@@ -4,6 +4,8 @@
 
 #include "gpu/config/gpu_switching.h"
 
+#include <algorithm>
+
 #include "build/build_config.h"
 
 #if BUILDFLAG(IS_MAC)
@@ -13,7 +15,6 @@
 #include <vector>
 
 #include "base/command_line.h"
-#include "base/containers/contains.h"
 #include "gpu/config/gpu_driver_bug_workaround_type.h"
 #include "gpu/config/gpu_info.h"
 #include "ui/gl/gl_context.h"
@@ -38,8 +39,9 @@ typedef void* PlatformPixelFormatObj;
 PlatformPixelFormatObj g_discrete_pixel_format_obj = nullptr;
 
 void ForceDiscreteGPU() {
-  if (g_discrete_pixel_format_obj)
+  if (g_discrete_pixel_format_obj) {
     return;
+  }
 #if BUILDFLAG(IS_MAC)
   CGLPixelFormatAttribute attribs[1];
   attribs[0] = static_cast<CGLPixelFormatAttribute>(0);
@@ -49,14 +51,14 @@ void ForceDiscreteGPU() {
 #endif  // BUILDFLAG(IS_MAC)
 }
 
-}  // namespace anonymous
+}  // namespace
 
 bool SwitchableGPUsSupported(const GPUInfo& gpu_info,
                              const base::CommandLine& command_line) {
 #if BUILDFLAG(IS_MAC)
   if (command_line.HasSwitch(switches::kUseGL) &&
       (command_line.GetSwitchValueASCII(switches::kUseGL) !=
-           gl::kGLImplementationANGLEName)) {
+       gl::kGLImplementationANGLEName)) {
     return false;
   }
   // Always allow offline renderers on ARM-based macs.
@@ -90,10 +92,12 @@ bool SwitchableGPUsSupported(const GPUInfo& gpu_info,
 void InitializeSwitchableGPUs(
     const std::vector<int32_t>& driver_bug_workarounds) {
   gl::GLContext::SetSwitchableGPUsSupported();
-  if (base::Contains(driver_bug_workarounds, FORCE_HIGH_PERFORMANCE_GPU)) {
+  if (std::ranges::contains(driver_bug_workarounds,
+                            FORCE_HIGH_PERFORMANCE_GPU)) {
     gl::GLSurface::SetForcedGpuPreference(gl::GpuPreference::kHighPerformance);
     ForceDiscreteGPU();
-  } else if (base::Contains(driver_bug_workarounds, FORCE_LOW_POWER_GPU)) {
+  } else if (std::ranges::contains(driver_bug_workarounds,
+                                   FORCE_LOW_POWER_GPU)) {
     gl::GLSurface::SetForcedGpuPreference(gl::GpuPreference::kLowPower);
   }
 }

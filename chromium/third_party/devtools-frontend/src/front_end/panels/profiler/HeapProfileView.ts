@@ -144,7 +144,7 @@ export class HeapProfileView extends ProfileView implements UI.SearchableView.Se
 
     this.timelineOverview = new HeapTimelineOverview();
 
-    if (Root.Runtime.experiments.isEnabled('sampling-heap-profiler-timeline')) {
+    if (Root.Runtime.experiments.isEnabled(Root.ExperimentNames.ExperimentName.SAMPLING_HEAP_PROFILER_TIMELINE)) {
       this.timelineOverview.addEventListener(Events.IDS_RANGE_CHANGED, this.onIdsRangeChanged.bind(this));
       this.timelineOverview.show(this.element, this.element.firstChild);
       this.timelineOverview.start();
@@ -283,12 +283,6 @@ export class SamplingHeapProfileTypeBase extends
     UI.InspectorView.InspectorView.instance().setPanelWarnings('heap-profiler', warnings);
 
     this.recording = true;
-    const target = heapProfilerModel.target();
-    const animationModel = target.model(SDK.AnimationModel.AnimationModel);
-    if (animationModel) {
-      // TODO(b/406904348): Remove this once we correctly release animations on the backend.
-      await animationModel.releaseAllAnimations();
-    }
     this.startSampling();
   }
 
@@ -368,7 +362,7 @@ export class SamplingHeapProfileType extends SamplingHeapProfileTypeBase {
   }
 
   override hasTemporaryView(): boolean {
-    return Root.Runtime.experiments.isEnabled('sampling-heap-profiler-timeline');
+    return Root.Runtime.experiments.isEnabled(Root.ExperimentNames.ExperimentName.SAMPLING_HEAP_PROFILER_TIMELINE);
   }
 
   override startSampling(): void {
@@ -378,7 +372,7 @@ export class SamplingHeapProfileType extends SamplingHeapProfileTypeBase {
     }
 
     void heapProfilerModel.startSampling();
-    if (Root.Runtime.experiments.isEnabled('sampling-heap-profiler-timeline')) {
+    if (Root.Runtime.experiments.isEnabled(Root.ExperimentNames.ExperimentName.SAMPLING_HEAP_PROFILER_TIMELINE)) {
       this.updateTimer = window.setTimeout(() => {
         void this.updateStats();
       }, this.updateIntervalMs);

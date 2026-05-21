@@ -2482,7 +2482,7 @@ bool ObuParser::ParseMetadata(const uint8_t* data, size_t size) {
       }
       itut_t35.payload_size = i;
       if (!EnsureCurrentFrameIsNotNull() ||
-          !current_frame_->set_itut_t35(itut_t35, data)) {
+          !current_frame_->AddItutT35Metadata(itut_t35, data)) {
         return false;
       }
       // Skip all bits before the trailing bit.

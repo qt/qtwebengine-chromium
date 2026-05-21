@@ -92,6 +92,9 @@ RenderPassEncoder::RenderPassEncoder(DeviceBase* device,
         mMaxDrawCount = maxDrawCountInfo->maxDrawCount;
     }
     GetObjectTrackingList()->Track(this);
+    if (auto* resourceTable = mCommandEncoder->GetResourceTable()) {
+        mCommandBufferState.SetResourceTable(resourceTable);
+    }
 }
 
 // static
@@ -134,11 +137,11 @@ RenderPassEncoder::~RenderPassEncoder() {
     mEncodingContext = nullptr;
 }
 
-void RenderPassEncoder::DestroyImpl() {
+void RenderPassEncoder::DestroyImpl(DestroyReason reason) {
     mIndirectDrawMetadata.ClearIndexedIndirectBufferValidationInfo();
     mCommandBufferState.End();
 
-    RenderEncoderBase::DestroyImpl();
+    RenderEncoderBase::DestroyImpl(reason);
     // Ensure that the pass has exited. This is done for passes only since validation requires
     // they exit before destruction while bundles do not.
     mEncodingContext->EnsurePassExited(this);
@@ -251,7 +254,7 @@ void RenderPassEncoder::APISetViewport(float x,
 
                 const CombinedLimits& limits = GetDevice()->GetLimits();
                 uint32_t maxViewportSize = limits.v1.maxTextureDimension2D;
-                float maxViewportBounds = maxViewportSize * 2.0;
+                float maxViewportBounds = maxViewportSize * 2.0f;
 
                 DAWN_INVALID_IF(
                     width < 0 || height < 0,

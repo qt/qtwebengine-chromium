@@ -14,7 +14,9 @@
 #include "base/functional/callback.h"
 #include "base/no_destructor.h"
 #include "base/notimplemented.h"
+#include "base/strings/strcat.h"
 #include "build/build_config.h"
+#include "ui/accessibility/accessibility_features.h"
 #include "ui/accessibility/ax_action_data.h"
 #include "ui/accessibility/ax_role_properties.h"
 #include "ui/accessibility/ax_tree_data.h"
@@ -53,8 +55,14 @@ AXVirtualView* AXVirtualView::GetFromId(int32_t id) {
 
 AXVirtualView::AXVirtualView() : ViewAccessibility(nullptr) {
   GetIdMap()[ViewAccessibility::GetUniqueId()] = this;
-  ax_platform_node_ = ui::AXPlatformNode::Create(*this);
-  DCHECK(ax_platform_node_);
+  // When AccessibilityTreeForViews is enabled, entries in the platform
+  // accessibility tree are created from the WidgetAXManager serialization
+  // of that virtual node. Avoid creating one here as that would be a
+  // duplicate.
+  if (!ViewAccessibility::IsViewsAccessibilityTreeEnabled()) {
+    ax_platform_node_ = ui::AXPlatformNode::Create(*this);
+    DCHECK(ax_platform_node_);
+  }
   SetClassName(GetViewClassName());
 }
 
@@ -100,6 +108,8 @@ void AXVirtualView::AddChildViewAt(std::unique_ptr<AXVirtualView> view,
   added_view->OnViewHasNewAncestor(
       /* ancestor_focusable */ data().HasState(ax::mojom::State::kFocusable) ||
       has_focusable_ancestor());
+
+  AXUpdateNotifier::Get()->NotifyChildAdded(added_view, this);
 
   if (owner_view) {
     owner_view->NotifyAccessibilityEventDeprecated(
@@ -151,13 +161,15 @@ std::unique_ptr<AXVirtualView> AXVirtualView::RemoveChildView(
     return {};
   }
 
-  bool focus_changed = false;
+  bool active_descendant_removed = false;
   if (GetOwnerView()) {
     ViewAccessibility& view_accessibility =
         GetOwnerView()->GetViewAccessibility();
-    if (view_accessibility.FocusedVirtualChild() &&
-        Contains(view_accessibility.FocusedVirtualChild())) {
-      focus_changed = true;
+    if (ViewAccessibility* active_view =
+            view_accessibility.GetActiveDescendantView()) {
+      if (Contains(static_cast<AXVirtualView*>(active_view))) {
+        active_descendant_removed = true;
+      }
     }
   }
 
@@ -168,12 +180,14 @@ std::unique_ptr<AXVirtualView> AXVirtualView::RemoveChildView(
   child->virtual_parent_view_ = nullptr;
 
   if (GetOwnerView()) {
-    if (focus_changed) {
-      GetOwnerView()->GetViewAccessibility().OverrideFocus(nullptr);
+    if (active_descendant_removed) {
+      GetOwnerView()->GetViewAccessibility().ClearActiveDescendant();
     }
     GetOwnerView()->NotifyAccessibilityEventDeprecated(
         ax::mojom::Event::kChildrenChanged, true);
   }
+
+  AXUpdateNotifier::Get()->NotifyChildRemoved(child.get(), this);
 
   return child;
 }
@@ -209,6 +223,9 @@ const char* AXVirtualView::GetViewClassName() const {
 }
 
 gfx::NativeViewAccessible AXVirtualView::GetNativeObject() const {
+  if (ViewAccessibility::IsViewsAccessibilityTreeEnabled()) {
+    return ViewAccessibility::GetNativeObject();
+  }
   DCHECK(ax_platform_node_);
   return ax_platform_node_->GetNativeViewAccessible();
 }
@@ -550,10 +567,9 @@ ViewAXPlatformNodeDelegate* AXVirtualView::GetDelegate() const {
 #endif
 }
 
-AXVirtualViewWrapper* AXVirtualView::GetOrCreateWrapper(
-    views::AXAuraObjCache* cache) {
+AXAuraObjWrapper* AXVirtualView::GetOrCreateWrapper(AXAuraObjCache* cache) {
 #if defined(USE_AURA)
-  return static_cast<AXVirtualViewWrapper*>(cache->GetOrCreate(this));
+  return cache->GetOrCreate(this);
 #else
   return nullptr;
 #endif
@@ -663,41 +679,6 @@ void AXVirtualView::UpdateInvisibleState() {
   bool is_invisible = !parent_view_is_drawn_ || should_be_invisible_;
   SetState(ax::mojom::State::kInvisible, is_invisible);
   UpdateFocusableState();
-}
-
-void AXVirtualView::OnWidgetClosing(Widget* widget) {
-  // The RootView's ViewAccessibility should be the only registered
-  // WidgetObserver.
-  CHECK_EQ(GetOwnerView(), widget->GetRootView());
-  SetWidgetClosedRecursive(widget, true);
-}
-
-void AXVirtualView::OnWidgetDestroyed(Widget* widget) {
-  // The RootView's ViewAccessibility should be the only registered
-  // WidgetObserver.
-  CHECK(widget->GetRootView());
-  CHECK_EQ(GetOwnerView(), widget->GetRootView());
-  SetWidgetClosedRecursive(widget, true);
-}
-
-void AXVirtualView::OnWidgetUpdated(Widget* widget, Widget* old_widget) {
-  CHECK(widget);
-  DCHECK_EQ(widget, GetWidget());
-  if (widget == old_widget) {
-    return;
-  }
-
-  // There's a chance we are reparenting a view that was previously a root
-  // view in another widget, if so we need to remove it as an observer of the
-  // old widget.
-  if (old_widget && old_widget != widget) {
-    old_widget->RemoveObserver(this);
-  }
-
-  // If we have already marked `is_widget_closed_` as true, then there's a
-  // chance that the view was reparented to a non-closed widget. If so, we must
-  // update `is_widget_closed_` in case the new widget is not closed.
-  SetWidgetClosedRecursive(widget, widget->IsClosed());
 }
 
 void AXVirtualView::UpdateIgnoredState() {

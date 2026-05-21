@@ -103,6 +103,15 @@ class ObjectBase : public ErrorMonad {
     Ref<DeviceBase> mDevice;
 };
 
+// The reason why Destroy() and DestroyImpl() are called.
+enum class DestroyReason {
+    // The object will be delete (in the C++ sense) so no further references to it can be taken.
+    CppDestructor,
+    // Destroy is called before the object is going to be deleted, for example because the
+    // wgpu::Object::Destroy method was called, or because the parent object is being deleted.
+    EarlyDestroy,
+};
+
 // Generic object list with a mutex for tracking for destruction.
 class ApiObjectList {
   public:
@@ -113,7 +122,7 @@ class ApiObjectList {
     bool Untrack(ApiObjectBase* object);
 
     // Destroys and removes all the objects tracked in the list.
-    void Destroy();
+    void Destroy(DestroyReason reason);
 
     template <typename F>
     void ForEach(F fn) const {
@@ -156,7 +165,7 @@ class ApiObjectBase : public ObjectBase, public LinkNode<ApiObjectBase> {
     bool IsAlive() const;
 
     // This needs to be public because it can be called from the device owning the object.
-    void Destroy();
+    void Destroy(DestroyReason reason = DestroyReason::EarlyDestroy);
 
     // Dawn API
     void APISetLabel(StringView label);
@@ -181,10 +190,11 @@ class ApiObjectBase : public ObjectBase, public LinkNode<ApiObjectBase> {
     virtual ApiObjectList* GetObjectTrackingList();
 
     // Sub-classes may override this function multiple times. Whenever overriding this function,
-    // however, users should be sure to call their parent's version in the new override to make
-    // sure that all destroy functionality is kept. This function is guaranteed to only be
-    // called once through the exposed Destroy function.
-    virtual void DestroyImpl() = 0;
+    // however, users should be sure to call their parent's version in the new override with the
+    // same `reason` parameter to make sure that all destroy functionality is kept. This function
+    // is guaranteed to only be called once through the exposed Destroy function. However it is
+    // not called on error objects
+    virtual void DestroyImpl(DestroyReason reason) = 0;
 
     virtual void SetLabelImpl();
 

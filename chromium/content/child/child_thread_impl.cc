@@ -24,7 +24,7 @@
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/logging/logging_settings.h"
-#include "base/memory/memory_pressure_listener.h"
+#include "base/memory/memory_pressure_listener_registry.h"
 #include "base/memory/ptr_util.h"
 #include "base/message_loop/message_pump.h"
 #include "base/metrics/field_trial.h"
@@ -47,13 +47,12 @@
 #include "content/child/child_performance_coordinator.h"
 #include "content/child/child_process.h"
 #include "content/child/child_process_synthetic_trial_syncer.h"
-#include "content/child/memory_coordinator/child_memory_consumer_registry.h"
+#include "content/child/memory_coordinator/child_memory_coordinator.h"
 #include "content/common/child_process.mojom.h"
 #include "content/common/content_constants_internal.h"
 #include "content/common/features.h"
 #include "content/common/field_trial_recorder.mojom.h"
 #include "content/common/in_process_child_thread_params.h"
-#include "content/common/pseudonymization_salt.h"
 #include "content/public/child/child_thread.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_features.h"
@@ -439,10 +438,6 @@ class ChildThreadImpl::IOThreadState
   }
 #endif
 
-  void SetPseudonymizationSalt(uint32_t salt) override {
-    content::SetPseudonymizationSalt(salt);
-  }
-
 #if BUILDFLAG(IS_CHROMEOS)
   void ReinitializeLogging(mojom::LoggingSettingsPtr settings) override {
     logging::LoggingSettings logging_settings;
@@ -458,14 +453,12 @@ class ChildThreadImpl::IOThreadState
   }
 #endif
 
-#if BUILDFLAG(IS_ANDROID)
   void OnMemoryPressure(base::MemoryPressureLevel level) override {
     main_thread_task_runner_->PostTask(
         FROM_HERE,
         base::BindOnce(&ChildThreadImpl::OnMemoryPressureFromBrowserReceived,
                        weak_main_thread_, level));
   }
-#endif
 
   void SetBatterySaverMode(bool battery_saver_mode_enabled) override {
     if (battery_saver_mode_enabled) {
@@ -702,8 +695,8 @@ void ChildThreadImpl::Init(const Options& options) {
   BindHostReceiver(performance_coordinator_->InitializeAndPassReceiver());
 
   if (!IsInBrowserProcess()) {
-    // Connect the global ChildMemoryConsumerRegistry with the browser registry.
-    BindHostReceiver(ChildMemoryConsumerRegistry::BindAndPassReceiver());
+    // Connect the global ChildMemoryCoordinator with the browser registry.
+    BindHostReceiver(ChildMemoryCoordinator::BindAndPassReceiver());
   }
 
 #if BUILDFLAG(IS_POSIX)
@@ -915,18 +908,11 @@ bool ChildThreadImpl::IsInBrowserProcess() const {
   return static_cast<bool>(browser_process_io_runner_);
 }
 
-#if BUILDFLAG(IS_ANDROID)
 void ChildThreadImpl::OnMemoryPressureFromBrowserReceived(
     base::MemoryPressureLevel level) {
-  // Generate no memory pressure signals when --single-process is specified.
-  // Because we expect a signal for the browser process has been already
-  // generated.
-  if (IsInBrowserProcess()) {
-    return;
-  }
+  CHECK(!IsInBrowserProcess());
   // Forward the notification to the registry of MemoryPressureListeners.
-  base::MemoryPressureListener::NotifyMemoryPressure(level);
+  base::MemoryPressureListenerRegistry::NotifyMemoryPressure(level);
 }
-#endif
 
 }  // namespace content

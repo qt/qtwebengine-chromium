@@ -37,13 +37,15 @@ source_set("ios_chrome_passkey_client") {
     "//components/password_manager/ios",
     "//components/webauthn/ios",
     "//components/webauthn/ios:features",
+    "//components/webauthn/ios:passkey_types",
     "//ios/chrome/browser/credential_provider/model:buildflags",
     "//ios/chrome/browser/passwords/model",
     "//ios/chrome/browser/shared/model/application_context",
     "//ios/chrome/browser/shared/model/browser",
     "//ios/chrome/browser/shared/model/profile",
     "//ios/chrome/browser/signin/model",
-    "//ios/chrome/common/credential_provider:passkey_keychain_provider_chrome",
+    "//ios/chrome/browser/webauthn/public",
+    "//ios/chrome/common/credential_provider:passkey_keychain_provider_bridge_chrome",
     "//ios/web/public",
   ]
 

@@ -7,9 +7,11 @@
 #ifndef CORE_FXCODEC_JBIG2_JBIG2_IMAGE_H_
 #define CORE_FXCODEC_JBIG2_JBIG2_IMAGE_H_
 
+#include <stddef.h>
 #include <stdint.h>
 
 #include <memory>
+#include <optional>
 
 #include "core/fxcodec/jbig2/JBig2_Define.h"
 #include "core/fxcrt/compiler_specific.h"
@@ -43,23 +45,25 @@ class CJBig2_Image {
   int32_t height() const { return height_; }
   int32_t stride() const { return stride_; }
 
-  uint8_t* data() const { return data_.Get(); }
+  bool has_data() const { return static_cast<bool>(data_); }
 
-  int GetPixel(int32_t x, int32_t y) const;
-  void SetPixel(int32_t x, int32_t y, int v);
+  pdfium::span<const uint8_t> span() const;
+  pdfium::span<uint8_t> span();
 
-  // PRECONDITIONS: `y` must refer to a line within the image.
-  UNSAFE_BUFFER_USAGE uint8_t* GetLineUnsafe(int32_t y) const {
-    // SAFETY: propogated to caller via UNSAFE_BUFFER_USAGE.
-    return UNSAFE_BUFFERS(data() + y * stride_);
-  }
+  // Gets / Sets pixels at position `x` in `line`. Assumes `line` came from
+  // GetLine() from the same instance.
+  // - GetPixel() returns 0 if `x` is out of bounds.
+  // - SetPixel() is a no-op if `x` is out of bounds`.
+  int GetPixel(int32_t x, pdfium::span<const uint8_t> line) const;
+  void SetPixel(int32_t x, pdfium::span<uint8_t> line, int v);
 
-  uint8_t* GetLine(int32_t y) const {
-    // SAFETY: height_ valid lines in image.
-    return (y >= 0 && y < height_) ? UNSAFE_BUFFERS(GetLineUnsafe(y)) : nullptr;
-  }
+  // Returns an empty span if `y` is out of bounds, or if there is no data.
+  pdfium::span<const uint8_t> GetLine(int32_t y) const;
+  pdfium::span<uint8_t> GetLine(int32_t y);
+  pdfium::span<const uint32_t> GetLine32(int32_t y) const;
+  pdfium::span<uint32_t> GetLine32(int32_t y);
 
-  void CopyLine(int32_t hTo, int32_t hFrom);
+  void CopyLine(pdfium::span<uint8_t> dest, pdfium::span<const uint8_t> src);
   void Fill(bool v);
 
   bool ComposeFrom(int64_t x, int64_t y, CJBig2_Image* pSrc, JBig2ComposeOp op);
@@ -72,7 +76,7 @@ class CJBig2_Image {
   std::unique_ptr<CJBig2_Image> SubImage(int32_t x,
                                          int32_t y,
                                          int32_t w,
-                                         int32_t h);
+                                         int32_t h) const;
   void Expand(int32_t h, bool v);
 
   bool ComposeTo(CJBig2_Image* pDst, int64_t x, int64_t y, JBig2ComposeOp op);
@@ -83,16 +87,19 @@ class CJBig2_Image {
                          JBig2ComposeOp op);
 
  private:
-  void SubImageFast(int32_t x,
-                    int32_t y,
+  std::optional<size_t> GetLineOffset(int32_t y) const;
+
+  // SubImage() already checked `x` and `y` are valid.
+  void SubImageFast(uint32_t x,
+                    uint32_t y,
                     int32_t w,
                     int32_t h,
-                    CJBig2_Image* pImage);
-  void SubImageSlow(int32_t x,
-                    int32_t y,
+                    CJBig2_Image* image) const;
+  void SubImageSlow(uint32_t x,
+                    uint32_t y,
                     int32_t w,
                     int32_t h,
-                    CJBig2_Image* pImage);
+                    CJBig2_Image* image) const;
   bool ComposeToInternal(CJBig2_Image* pDst,
                          int64_t x_in,
                          int64_t y_in,

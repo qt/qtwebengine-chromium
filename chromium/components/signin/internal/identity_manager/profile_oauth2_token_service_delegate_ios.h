@@ -4,7 +4,6 @@
 #ifndef COMPONENTS_SIGNIN_INTERNAL_IDENTITY_MANAGER_PROFILE_OAUTH2_TOKEN_SERVICE_DELEGATE_IOS_H_
 #define COMPONENTS_SIGNIN_INTERNAL_IDENTITY_MANAGER_PROFILE_OAUTH2_TOKEN_SERVICE_DELEGATE_IOS_H_
 
-#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -66,7 +65,7 @@ class ProfileOAuth2TokenServiceIOSDelegate
   // DeviceAccountsProvider::Observer:
   void OnAccountsOnDeviceChanged() override;
   void OnAccountOnDeviceUpdated(
-      const DeviceAccountsProvider::AccountInfo& device_account) override;
+      const DeviceAccountsProvider::DeviceAccountInfo& device_account) override;
 
  protected:
   // Removes |account_id| from |accounts_|. Fires |OnRefreshTokenRevoked|

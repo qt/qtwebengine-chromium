@@ -165,8 +165,8 @@ void WriteBarrier::VerifySkipWriteBarrier(Tagged<HeapObject> host,
     if (mode == SKIP_WRITE_BARRIER) {
       CHECK(!WriteBarrier::IsRequired(host, value));
     } else if (mode == SKIP_WRITE_BARRIER_FOR_GC) {
-      CHECK(LocalHeap::Current()->heap()->IsInGC());
-      CHECK(LocalHeap::Current()->heap()->tracer()->IsInAtomicPause());
+      CHECK(Isolate::Current()->heap()->IsInGC());
+      CHECK(Isolate::Current()->heap()->tracer()->IsInAtomicPause());
     } else if (mode == UNSAFE_SKIP_WRITE_BARRIER) {
       // C++ write barriers should not need UNSAFE_SKIP_WRITE_BARRIER.
       UNREACHABLE();
@@ -255,17 +255,18 @@ void WriteBarrier::ForIndirectPointer(Tagged<HeapObject> host,
 }
 
 // static
-template <typename T, IndirectPointerTag kTag>
+template <typename T, IndirectPointerTagRange kTagRange>
 void WriteBarrier::ForIndirectPointer(HeapObjectLayout* host,
-                                      TrustedPointerMember<T, kTag>* slot,
+                                      TrustedPointerMember<T, kTagRange>* slot,
                                       Tagged<T> value, WriteBarrierMode mode) {
   // Indirect pointers are only used when the sandbox is enabled.
 #ifdef V8_ENABLE_SANDBOX
   // TODO(leszeks): Avoid the cast to Address here, pass a pointer to the actual
   // handle field.
-  ForIndirectPointer(Tagged(host),
-                     IndirectPointerSlot(reinterpret_cast<Address>(slot), kTag),
-                     value, mode);
+  ForIndirectPointer(
+      Tagged(host),
+      IndirectPointerSlot(reinterpret_cast<Address>(slot), kTagRange), value,
+      mode);
 #else
   UNREACHABLE();
 #endif

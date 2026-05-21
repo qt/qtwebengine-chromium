@@ -17,7 +17,6 @@
 #include "services/accessibility/android/test/android_accessibility_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/accessibility/ax_action_data.h"
-#include "ui/accessibility/ax_enums.mojom-shared.h"
 #include "ui/accessibility/ax_enums.mojom.h"
 #include "ui/accessibility/ax_role_properties.h"
 #include "ui/accessibility/platform/ax_android_constants.h"
@@ -1157,5 +1156,40 @@ TEST_F(AccessibilityNodeInfoDataWrapperTest, InvalidChromeRole) {
 
   ui::AXNodeData data = CallSerialize(wrapper);
   // This test makes sure that an invalid role name won't make Chrome crash.
+}
+
+// Regression test for crbug.com/501572586.
+TEST_F(AccessibilityNodeInfoDataWrapperTest, TypeConfusionRegression) {
+  AXNodeInfoData root;
+  root.id = 10;
+  AccessibilityNodeInfoDataWrapper root_wrapper(tree_source(), &root);
+  SetIdToWrapper(&root_wrapper);
+
+  // Add a Node and a Window as children.
+  // In a malicious scenario, CHILD_NODE_IDS might contain an ID that resolves
+  // to a Window.
+  SetProperty(root, AXIntListProperty::CHILD_NODE_IDS,
+              std::vector<int>({1, 2}));
+
+  AXNodeInfoData child_node;
+  child_node.id = 1;
+  AccessibilityNodeInfoDataWrapper child_node_wrapper(tree_source(),
+                                                      &child_node);
+  SetIdToWrapper(&child_node_wrapper);
+
+  mojom::AccessibilityWindowInfoData child_window;
+  child_window.window_id = 2;
+  AccessibilityWindowInfoDataWrapper child_window_wrapper(tree_source(),
+                                                          &child_window);
+  SetIdToWrapper(&child_window_wrapper);
+
+  std::vector<raw_ptr<AccessibilityInfoDataWrapper, VectorExperimental>>
+      children;
+  root_wrapper.GetChildren(&children);
+
+  // GetChildren should only return the node child.
+  ASSERT_EQ(1U, children.size());
+  EXPECT_EQ(1, children[0]->GetId());
+  EXPECT_TRUE(children[0]->IsNode());
 }
 }  // namespace ax::android

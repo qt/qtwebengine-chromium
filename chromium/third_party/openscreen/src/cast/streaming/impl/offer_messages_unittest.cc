@@ -707,4 +707,41 @@ TEST(OfferTest, FailsIfUnencrypted) {
                        Error::Code::kUnencryptedOffer);
 }
 
+TEST(OfferTest, ErrorOnMixedDscpValues) {
+  ExpectFailureOnParse(R"({
+    "castMode": "mirroring",
+    "supportedStreams": [
+      {
+        "index": 0,
+        "type": "video_source",
+        "codecName": "h264",
+        "rtpProfile": "cast",
+        "rtpPayloadType": 101,
+        "ssrc": 19088743,
+        "maxFrameRate": "60000/1000",
+        "timeBase": "1/90000",
+        "maxBitRate": 5000000,
+        "aesKey": "040d756791711fd3adb939066e6d8690",
+        "aesIvMask": "9ff0f022a959150e70a2d05a6c184aed",
+        "receiverRtcpDscp": 10
+      },
+      {
+        "index": 2,
+        "type": "audio_source",
+        "codecName": "opus",
+        "rtpProfile": "cast",
+        "rtpPayloadType": 96,
+        "ssrc": 4294967295,
+        "bitRate": 124000,
+        "timeBase": "1/48000",
+        "channels": 2,
+        "aesKey": "51027e4e2347cbcb49d57ef10177aebc",
+        "aesIvMask": "7f12a19be62a36c04ae4116caaeff6d1",
+        "receiverRtcpDscp": 20
+      }
+    ]
+  })",
+                       Error::Code::kJsonParseError);
+}
+
 }  // namespace openscreen::cast

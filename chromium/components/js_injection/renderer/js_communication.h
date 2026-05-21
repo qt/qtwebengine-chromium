@@ -41,9 +41,9 @@ class JsCommunication
   void SetJsObjects(
       std::vector<mojom::JsObjectPtr> js_object_ptrs,
       mojo::PendingAssociatedRemote<mojom::JsObjectsClient> client) override;
-  void AddDocumentStartScript(
-      mojom::DocumentStartJavaScriptPtr script_ptr) override;
-  void RemoveDocumentStartScript(int32_t script_id) override;
+  void AddPersistentJavaScript(
+      mojom::JavaScriptExecutablePtr script_ptr) override;
+  void RemovePersistentJavaScript(int32_t script_id) override;
 
   // RenderFrameObserver implementation
   void DidClearWindowObject() override;
@@ -51,26 +51,32 @@ class JsCommunication
                                 int32_t world_id) override;
   void OnDestruct() override;
 
-  void RunScriptsAtDocumentStart();
+  void RunScripts(mojom::DocumentInjectionTime injection_time);
 
   mojom::JsToBrowserMessaging* GetJsToJavaMessage(
-      const std::u16string& js_object_name);
+      const std::u16string& js_object_name,
+      int32_t world_id);
 
  private:
   class JsObjectInfo;
-  struct DocumentStartJavaScript;
+  struct JavaScriptExecutable;
+
+  static void RunScriptsInternal(
+      base::WeakPtr<JsCommunication> js_communication,
+      mojom::DocumentInjectionTime injection_time);
 
   void BindPendingReceiver(
       mojo::PendingAssociatedReceiver<mojom::JsCommunication> pending_receiver);
 
-  using JsObjectMap = std::map<std::u16string, std::unique_ptr<JsObjectInfo>>;
+  using JsObjectMap = std::map<std::pair<std::u16string, int32_t>,
+                               std::unique_ptr<JsObjectInfo>>;
   JsObjectMap js_objects_;
 
   // In some cases DidClearWindowObject will be called twice in a row, we need
   // to prevent doing multiple injection in that case.
   bool inside_did_clear_window_object_ = false;
 
-  std::vector<std::unique_ptr<DocumentStartJavaScript>> scripts_;
+  std::vector<std::unique_ptr<JavaScriptExecutable>> scripts_;
   std::vector<cppgc::WeakPersistent<JsBinding>> js_bindings_;
 
   // Associated with legacy IPC channel.
@@ -78,6 +84,7 @@ class JsCommunication
   mojo::AssociatedRemote<mojom::JsObjectsClient> client_remote_;
 
   base::WeakPtrFactory<JsCommunication> weak_ptr_factory_for_bindings_{this};
+  base::WeakPtrFactory<JsCommunication> weak_ptr_factory_{this};
 };
 
 }  // namespace js_injection

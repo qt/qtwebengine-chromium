@@ -99,7 +99,20 @@ export class BidiHTTPRequest extends HTTPRequest {
       });
       void httpRequest.finalizeInterceptions();
     });
+    this.#request.once('response', data => {
+      // Create new response with the initial data. Note: the data can be updated later
+      // on, when the `success` event is received.
+      this.#response = BidiHTTPResponse.from(
+        data,
+        this,
+        this.#frame.page().browser().cdpSupported,
+      );
+    });
     this.#request.once('success', data => {
+      // The `network.responseCompleted` event (mapped to `success` here)
+      // contains the most up-to-date and complete response data, including
+      // headers that might be missing from `network.responseStarted`
+      // (e.g., `Set-Cookie` for navigation requests in Chrome).
       this.#response = BidiHTTPResponse.from(
         data,
         this,
@@ -109,17 +122,6 @@ export class BidiHTTPRequest extends HTTPRequest {
     this.#request.on('authenticate', this.#handleAuthentication);
 
     this.#frame.page().trustedEmitter.emit(PageEvent.Request, this);
-
-    if (this.#hasInternalHeaderOverwrite) {
-      this.interception.handlers.push(async () => {
-        await this.continue(
-          {
-            headers: this.headers(),
-          },
-          0,
-        );
-      });
-    }
   }
 
   protected canBeIntercepted(): boolean {
@@ -165,14 +167,6 @@ export class BidiHTTPRequest extends HTTPRequest {
     return await this.#request.fetchPostData();
   }
 
-  get #hasInternalHeaderOverwrite(): boolean {
-    return Boolean(Object.keys(this.#extraHTTPHeaders).length);
-  }
-
-  get #extraHTTPHeaders(): Record<string, string> {
-    return this.#frame?.page()._extraHTTPHeaders ?? {};
-  }
-
   override headers(): Record<string, string> {
     // Callers should not be allowed to mutate internal structure.
     const headers: Record<string, string> = {};
@@ -181,7 +175,6 @@ export class BidiHTTPRequest extends HTTPRequest {
     }
     return {
       ...headers,
-      ...this.#extraHTTPHeaders,
     };
   }
 
@@ -213,19 +206,6 @@ export class BidiHTTPRequest extends HTTPRequest {
 
   override frame(): BidiFrame {
     return this.#frame;
-  }
-
-  override async continue(
-    overrides?: ContinueRequestOverrides,
-    priority?: number | undefined,
-  ): Promise<void> {
-    return await super.continue(
-      {
-        headers: this.#hasInternalHeaderOverwrite ? this.headers() : undefined,
-        ...overrides,
-      },
-      priority,
-    );
   }
 
   override async _continue(

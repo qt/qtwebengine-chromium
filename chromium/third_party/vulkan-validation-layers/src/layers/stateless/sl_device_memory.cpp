@@ -159,13 +159,13 @@ bool Device::manual_PreCallValidateCmdDecompressMemoryEXT(VkCommandBuffer comman
                                  region_loc.dot(Field::decompressedSize), "must not be zero.");
             }
 
-            if (mem_region.srcAddress & 0x3) {
+            if (!IsPointerAligned(mem_region.srcAddress, 4)) {
                 skip |=
                     LogError("VUID-VkDecompressMemoryRegionEXT-srcAddress-07685", commandBuffer, region_loc.dot(Field::srcAddress),
                              "(0x%" PRIx64 ") is not 4-byte aligned.", mem_region.srcAddress);
             }
 
-            if (mem_region.dstAddress & 0x3) {
+            if (!IsPointerAligned(mem_region.dstAddress, 4)) {
                 skip |=
                     LogError("VUID-VkDecompressMemoryRegionEXT-dstAddress-07687", commandBuffer, region_loc.dot(Field::dstAddress),
                              "(0x%" PRIx64 ") is not 4-byte aligned.", mem_region.dstAddress);
@@ -215,19 +215,19 @@ bool Device::manual_PreCallValidateCmdDecompressMemoryIndirectCountEXT(
                          decompressionMethod);
     }
 
-    if (indirectCommandsAddress % 4 != 0) {
+    if (!IsPointerAligned(indirectCommandsAddress, 4)) {
         skip |= LogError("VUID-vkCmdDecompressMemoryIndirectCountEXT-indirectCommandsAddress-07695", commandBuffer,
-                         error_obj.location.dot(Field::indirectCommandsAddress), "(0x%" PRIx64 ") must be a multiple of 4.",
+                         error_obj.location.dot(Field::indirectCommandsAddress), "(0x%" PRIx64 ") is not aligned to 4 bytes.",
                          indirectCommandsAddress);
     }
 
-    if (indirectCommandsCountAddress % 4 != 0) {
+    if (!IsPointerAligned(indirectCommandsCountAddress, 4)) {
         skip |= LogError("VUID-vkCmdDecompressMemoryIndirectCountEXT-indirectCommandsCountAddress-07698", commandBuffer,
-                         error_obj.location.dot(Field::indirectCommandsCountAddress), "(0x%" PRIx64 ") must be a multiple of 4.",
+                         error_obj.location.dot(Field::indirectCommandsCountAddress), "(0x%" PRIx64 ") is not aligned to 4 bytes.",
                          indirectCommandsCountAddress);
     }
 
-    if (stride % 4 != 0 || stride < sizeof(VkDecompressMemoryRegionEXT)) {
+    if (!IsIntegerMultipleOf(stride, 4) || stride < sizeof(VkDecompressMemoryRegionEXT)) {
         skip |= LogError(
             "VUID-vkCmdDecompressMemoryIndirectCountEXT-stride-11767", commandBuffer, error_obj.location.dot(Field::stride),
             "(%" PRIu32
@@ -305,6 +305,40 @@ bool Device::manual_PreCallValidateSetDeviceMemoryPriorityEXT(VkDevice device, V
         skip |= LogError("VUID-vkSetDeviceMemoryPriorityEXT-priority-06258", device, error_obj.location.dot(Field::priority),
                          "is %f.", priority);
     }
+    return skip;
+}
+
+bool Device::manual_PreCallValidateGetDynamicRenderingTilePropertiesQCOM(VkDevice device, const VkRenderingInfo *pRenderingInfo,
+                                                                         VkTilePropertiesQCOM *pProperties,
+                                                                         const Context &context) const {
+    bool skip = false;
+    if (const auto tile_memory_size = vku::FindStructInPNextChain<VkTileMemorySizeInfoQCOM>(pRenderingInfo->pNext)) {
+        const auto &error_obj = context.error_obj;
+        skip |= ValidateTileMemorySizeInfo(*tile_memory_size, error_obj.location);
+    }
+    return skip;
+}
+
+bool Device::ValidateTileMemorySizeInfo(const VkTileMemorySizeInfoQCOM &tile_memory_size_info, const Location &loc) const {
+    bool skip = false;
+    uint64_t largest_heap_size = 0;
+    uint32_t heap_index = 0;
+    for (uint32_t i = 0; i < phys_dev_mem_props.memoryHeapCount; i++) {
+        if (phys_dev_mem_props.memoryHeaps[i].flags & VK_MEMORY_HEAP_TILE_MEMORY_BIT_QCOM) {
+            if (phys_dev_mem_props.memoryHeaps[i].size > largest_heap_size) {
+                largest_heap_size = phys_dev_mem_props.memoryHeaps[i].size;
+                heap_index = i;
+            }
+        }
+    }
+    if (tile_memory_size_info.size > largest_heap_size) {
+        skip |= LogError("VUID-VkTileMemorySizeInfoQCOM-size-10729", device, loc.dot(Field::size),
+                         "(%" PRIu64
+                         ") must be less than or equal to %" PRIu64 ", found at memoryHeaps[%" PRIu32 "],"
+                         " the largest VK_MEMORY_HEAP_TILE_MEMORY_BIT_QCOM heap.",
+                         tile_memory_size_info.size, largest_heap_size, heap_index);
+    }
+
     return skip;
 }
 }  // namespace stateless

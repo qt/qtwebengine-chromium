@@ -123,16 +123,23 @@ export class SourceMapScopesInfo {
           sourceIndex < numSourceUrls;
       const isStackFrame = node.kind === Formatter.FormatterWorkerPool.ScopeKind.FUNCTION ||
           node.kind === Formatter.FormatterWorkerPool.ScopeKind.ARROW_FUNCTION;
-      // TODO(crbug.com/368222773): Instead of mapping `start`, we should report a number of candidates. e.g. for arrow functions we should
-      //     follow the spec and map the `=>` as the spec says that is where the original name (if any) for arrow functions can be found.
-      const name = node.kind === Formatter.FormatterWorkerPool.ScopeKind.FUNCTION ? startEntry?.name : undefined;
+      let name: string|undefined = undefined;
+      for (const offset of node.nameMappingLocations ?? []) {
+        const position = positionFromOffset(offset);
+        const entry = sourceMap.findEntryExact(position.line, position.column);
+        if (entry?.name !== undefined) {
+          // Only consider named mappings.
+          name = entry.name;
+          break;
+        }
+      }
 
       let scope: ScopesCodec.OriginalScope|undefined;
       if (canMapOriginalPosition) {
         scope = {
           start: {line: startEntry.sourceLineNumber, column: startEntry.sourceColumnNumber},
           end: {line: endEntry.sourceLineNumber, column: endEntry.sourceColumnNumber},
-          name,
+          name: name ?? node.name,
           isStackFrame,
           variables: [],
           children: [],
@@ -183,7 +190,8 @@ export class SourceMapScopesInfo {
   }
 
   isEmpty(): boolean {
-    return !this.#originalScopes.length && !this.#generatedRanges.length;
+    const noScopes = this.#originalScopes.every(scope => scope === null);
+    return noScopes && !this.#generatedRanges.length;
   }
 
   addOriginalScopesAtIndex(sourceIdx: number, scope: ScopesCodec.OriginalScope): void {
@@ -266,30 +274,6 @@ export class SourceMapScopesInfo {
       }
     }
 
-    return result;
-  }
-
-  /**
-   * Takes a V8 provided call frame and expands any inlined frames into virtual call frames.
-   *
-   * For call frames where nothing was inlined, the result contains only a single element,
-   * the provided frame but with the original name.
-   *
-   * For call frames where we are paused in inlined code, this function returns a list of
-   * call frames from "inner to outer". This is the call frame at index 0
-   * signifies the top of this stack trace fragment.
-   *
-   * The rest are "virtual" call frames and will have an "inlineFrameIndex" set in ascending
-   * order, so the condition `result[index] === result[index].inlineFrameIndex` always holds.
-   */
-  expandCallFrame(callFrame: CallFrame): CallFrame[] {
-    const {originalFunctionName, inlinedFunctions} =
-        this.findInlinedFunctions(callFrame.location().lineNumber, callFrame.location().columnNumber);
-    const result: CallFrame[] = [];
-    for (const [index, fn] of inlinedFunctions.entries()) {
-      result.push(callFrame.createVirtualCallFrame(index, fn.name));
-    }
-    result.push(callFrame.createVirtualCallFrame(result.length, originalFunctionName));
     return result;
   }
 

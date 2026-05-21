@@ -23,6 +23,7 @@
 #include "net/ssl/ssl_connection_status_flags.h"
 #include "net/test/cert_test_util.h"
 #include "net/test/test_data_directory.h"
+#include "net/third_party/quiche/src/quiche/quic/core/quic_versions.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 
 namespace net {
@@ -196,7 +197,11 @@ void FakeServiceEndpointRequest::ChangeRequestPriority(
 
 FakeServiceEndpointResolver::FakeServiceEndpointResolver() = default;
 
-FakeServiceEndpointResolver::~FakeServiceEndpointResolver() = default;
+FakeServiceEndpointResolver::~FakeServiceEndpointResolver() {
+  if (expect_all_fake_requests_consumed_) {
+    EXPECT_TRUE(requests_.empty());
+  }
+}
 
 base::WeakPtr<FakeServiceEndpointRequest>
 FakeServiceEndpointResolver::AddFakeRequest() {
@@ -293,6 +298,11 @@ ServiceEndpointBuilder& ServiceEndpointBuilder::set_alpns(
   return *this;
 }
 
+ServiceEndpointBuilder& ServiceEndpointBuilder::set_alpn(
+    quic::ParsedQuicVersion quic_version) {
+  return set_alpns({quic::AlpnForVersion(quic_version)});
+}
+
 ServiceEndpointBuilder& ServiceEndpointBuilder::set_ech_config_list(
     std::vector<uint8_t> ech_config_list) {
   endpoint_.metadata.ech_config_list = std::move(ech_config_list);
@@ -379,6 +389,11 @@ void FakeStreamSocket::DisconnectAfterIsConnectedCall(int count) {
   disconnect_after_is_connected_call_count_ = count;
 }
 
+StreamKeyBuilder::StreamKeyBuilder(std::string_view destination)
+    : destination_(url::SchemeHostPort(GURL(destination))) {}
+
+StreamKeyBuilder::~StreamKeyBuilder() = default;
+
 StreamKeyBuilder& StreamKeyBuilder::from_key(const HttpStreamKey& key) {
   destination_ = key.destination();
   privacy_mode_ = key.privacy_mode();
@@ -390,7 +405,7 @@ StreamKeyBuilder& StreamKeyBuilder::from_key(const HttpStreamKey& key) {
 HttpStreamKey StreamKeyBuilder::Build() const {
   return HttpStreamKey(destination_, privacy_mode_, SocketTag(),
                        NetworkAnonymizationKey(), secure_dns_policy_,
-                       disable_cert_network_fetches_);
+                       disable_cert_network_fetches_, alt_service_);
 }
 
 HttpStreamKey GroupIdToHttpStreamKey(

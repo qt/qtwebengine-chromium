@@ -1,3 +1,0 @@
-# Void parent level config to enable formatting.
-protoc/gen/*
-*/protoc/gen/*

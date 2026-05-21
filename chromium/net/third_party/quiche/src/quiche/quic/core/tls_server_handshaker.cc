@@ -251,8 +251,7 @@ TlsServerHandshaker::TlsServerHandshaker(
   QUIC_DVLOG(1) << "TlsServerHandshaker:  client_cert_mode initial value: "
                 << client_cert_mode();
 
-  QUICHE_DCHECK_EQ(PROTOCOL_TLS1_3,
-                   session->connection()->version().handshake_protocol);
+  QUICHE_DCHECK(session->connection()->version().IsIetfQuic());
 
   // Configure the SSL to be a server.
   SSL_set_accept_state(ssl());
@@ -345,10 +344,16 @@ bool TlsServerHandshaker::DisableResumption() {
 }
 
 bool TlsServerHandshaker::IsZeroRtt() const {
+  if (cached_ssl_info_.has_value()) {
+    return cached_ssl_info_->is_zero_rtt;
+  }
   return SSL_early_data_accepted(ssl());
 }
 
 bool TlsServerHandshaker::IsResumption() const {
+  if (cached_ssl_info_.has_value()) {
+    return cached_ssl_info_->is_resumption;
+  }
   return SSL_session_reused(ssl());
 }
 
@@ -449,6 +454,9 @@ void TlsServerHandshaker::OnConnectionClosed(
 }
 
 ssl_early_data_reason_t TlsServerHandshaker::EarlyDataReason() const {
+  if (cached_ssl_info_.has_value()) {
+    return cached_ssl_info_->early_data_reason;
+  }
   return TlsHandshaker::EarlyDataReason();
 }
 
@@ -538,13 +546,16 @@ bool TlsServerHandshaker::ProcessTransportParameters(
 
   // Notify QuicConnectionDebugVisitor.
   session()->connection()->OnTransportParametersReceived(client_params);
-
-  if (client_params.legacy_version_information.has_value() &&
-      CryptoUtils::ValidateClientHelloVersion(
-          client_params.legacy_version_information->version,
-          session()->connection()->version(), session()->supported_versions(),
-          error_details) != QUIC_NO_ERROR) {
-    return false;
+  if (GetQuicRestartFlag(quic_stop_parsing_legacy_version_info)) {
+    QUIC_RESTART_FLAG_COUNT_N(quic_stop_parsing_legacy_version_info, 2, 3);
+  } else {
+    if (client_params.legacy_version_information.has_value() &&
+        CryptoUtils::ValidateClientHelloVersion(
+            client_params.legacy_version_information->version,
+            session()->connection()->version(), session()->supported_versions(),
+            error_details) != QUIC_NO_ERROR) {
+      return false;
+    }
   }
 
   if (client_params.version_information.has_value() &&
@@ -575,12 +586,16 @@ TlsServerHandshaker::SetTransportParameters() {
   QUICHE_DCHECK(!result.success);
 
   server_params_.perspective = Perspective::IS_SERVER;
-  server_params_.legacy_version_information =
-      TransportParameters::LegacyVersionInformation();
-  server_params_.legacy_version_information->supported_versions =
-      CreateQuicVersionLabelVector(session()->supported_versions());
-  server_params_.legacy_version_information->version =
-      CreateQuicVersionLabel(session()->connection()->version());
+  if (GetQuicRestartFlag(quic_stop_sending_legacy_version_info)) {
+    QUIC_RESTART_FLAG_COUNT_N(quic_stop_sending_legacy_version_info, 3, 4);
+  } else {
+    server_params_.legacy_version_information =
+        TransportParameters::LegacyVersionInformation();
+    server_params_.legacy_version_information->supported_versions =
+        CreateQuicVersionLabelVector(session()->supported_versions());
+    server_params_.legacy_version_information->version =
+        CreateQuicVersionLabel(session()->connection()->version());
+  }
   server_params_.version_information =
       TransportParameters::VersionInformation();
   server_params_.version_information->chosen_version =
@@ -650,7 +665,7 @@ void TlsServerHandshaker::SetWriteSecret(
   if (level == ENCRYPTION_FORWARD_SECURE) {
     encryption_established_ = true;
     // Fill crypto_negotiated_params_:
-    const SSL_CIPHER* ssl_cipher = SSL_get_current_cipher(ssl());
+    const SSL_CIPHER* ssl_cipher = GetCipher();
     if (ssl_cipher) {
       crypto_negotiated_params_->cipher_suite =
           SSL_CIPHER_get_protocol_id(ssl_cipher);
@@ -996,15 +1011,13 @@ ssl_select_cert_result_t TlsServerHandshaker::EarlySelectCertCallback(
     crypto_negotiated_params_->sni =
         QuicHostnameUtils::NormalizeHostname(hostname);
     if (!ValidateHostname(hostname)) {
-      if (GetQuicReloadableFlag(quic_delay_connection_close_on_invalid_sni)) {
-        std::string error_details;
-        const bool success =
-            ProcessTransportParameters(client_hello, &error_details);
-        if (success) {
-          QUIC_CODE_COUNT(quic_tls_server_invalid_hostname_but_tp_succeeded);
-        } else {
-          QUIC_CODE_COUNT(quic_tls_server_invalid_hostname_and_tp_failed);
-        }
+      std::string error_details;
+      const bool success =
+          ProcessTransportParameters(client_hello, &error_details);
+      if (success) {
+        QUIC_CODE_COUNT(quic_tls_server_invalid_hostname_but_tp_succeeded);
+      } else {
+        QUIC_CODE_COUNT(quic_tls_server_invalid_hostname_and_tp_failed);
       }
       CloseConnection(QUIC_HANDSHAKE_FAILED_INVALID_HOSTNAME,
                       absl::StrCat("Invalid SNI provided: ", hostname));
@@ -1162,8 +1175,11 @@ void TlsServerHandshaker::OnSelectCertificateDone(
                  ProofSource::Chain> absl_nonnull& chain :
              local_config->chains) {
           if (!chain->certs.empty()) {
+            QUIC_CODE_COUNT(quic_tls_server_chain_with_certs_nonempty);
             tls_connection_.AddCertChain(chain->ToCryptoBuffers().value,
                                          chain->trust_anchor_id);
+          } else {
+            QUIC_CODE_COUNT(quic_tls_server_chain_with_certs_empty);
           }
         }
         select_cert_status_ = QUIC_SUCCESS;
@@ -1226,7 +1242,7 @@ bool TlsServerHandshaker::WillNotCallComputeSignature() const {
 }
 
 std::optional<uint16_t> TlsServerHandshaker::GetCiphersuite() const {
-  const SSL_CIPHER* cipher = SSL_get_pending_cipher(ssl());
+  const SSL_CIPHER* cipher = GetCipher();
   if (cipher == nullptr) {
     return std::nullopt;
   }
@@ -1338,6 +1354,21 @@ TlsServerHandshaker::SetApplicationSettings(absl::string_view alpn) {
 }
 
 SSL* TlsServerHandshaker::GetSsl() const { return ssl(); }
+
+void TlsServerHandshaker::ResetSsl() {
+  if (cached_ssl_info_.has_value()) {
+    QUIC_BUG(quic_bug_ssl_is_reset_again);
+    return;
+  }
+  cached_ssl_info_.emplace(CachedSSLInfo{
+      .is_resumption = IsResumption(),
+      .is_zero_rtt = IsZeroRtt(),
+      .early_data_reason = EarlyDataReason(),
+      .cipher = GetCipher(),
+  });
+  tls_connection_.ResetSsl();
+  ResetCryptoSubstreams();
+}
 
 bool TlsServerHandshaker::IsCryptoFrameExpectedForEncryptionLevel(
     EncryptionLevel level) const {

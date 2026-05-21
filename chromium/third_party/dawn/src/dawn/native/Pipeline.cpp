@@ -33,6 +33,7 @@
 
 #include "absl/container/flat_hash_set.h"
 #include "absl/strings/string_view.h"
+#include "dawn/common/Constants.h"
 #include "dawn/common/Enumerator.h"
 #include "dawn/native/BindGroupLayout.h"
 #include "dawn/native/Device.h"
@@ -81,7 +82,7 @@ uint32_t ComputeNumTextureSamplerCombinations(const dawn::native::EntryPointMeta
                                            return !sampledTextures.contains(nonSampledBindingPoint);
                                        });
     return numSamplerTexturePairs + numNonSampled + numSamplerExternalTexturePairs * 3 +
-           sampledExternalTextures.size();
+           uint32_t(sampledExternalTextures.size());
 }
 
 }  // namespace
@@ -89,7 +90,7 @@ uint32_t ComputeNumTextureSamplerCombinations(const dawn::native::EntryPointMeta
 ResultOrError<ShaderModuleEntryPoint> ValidateProgrammableStage(DeviceBase* device,
                                                                 const ShaderModuleBase* module,
                                                                 StringView entryPointName,
-                                                                uint32_t constantCount,
+                                                                size_t constantCount,
                                                                 const ConstantEntry* constants,
                                                                 const PipelineLayoutBase* layout,
                                                                 SingleShaderStage stage) {
@@ -274,6 +275,7 @@ PipelineBase::PipelineBase(DeviceBase* device,
         bool isFirstStage = mStageMask == wgpu::ShaderStage::None;
         mStageMask |= StageBit(shaderStage);
         mStages[shaderStage] = {module, entryPointName, &metadata, {}};
+
         auto& constants = mStages[shaderStage].constants;
         for (uint32_t i = 0; i < stage.constantCount; i++) {
             constants.emplace(stage.constants[i].key, stage.constants[i].value);
@@ -294,6 +296,8 @@ PipelineBase::PipelineBase(DeviceBase* device,
                 }
             }
         }
+
+        mUserImmdiateSlots |= metadata.immediateDataUsedSlots;
     }
 }
 
@@ -342,9 +346,18 @@ MaybeError PipelineBase::ValidateGetBindGroupLayout(BindGroupIndex groupIndex) {
     DAWN_TRY(GetDevice()->ValidateIsAlive());
     DAWN_TRY(GetDevice()->ValidateObject(this));
     DAWN_TRY(GetDevice()->ValidateObject(mLayout.Get()));
-    DAWN_INVALID_IF(groupIndex >= kMaxBindGroupsTyped,
-                    "Bind group layout index (%u) exceeds the maximum number of bind groups (%u).",
-                    groupIndex, kMaxBindGroups);
+
+    if (mLayout->UsesResourceTable()) {
+        DAWN_INVALID_IF(groupIndex >= kMaxBindGroupsTyped - BindGroupIndex(1),
+                        "Bind group layout index (%u) exceeds or equals the maximum number of bind "
+                        "groups (%u) - 1 (one slot reserved for the resource table).",
+                        groupIndex, kMaxBindGroups);
+    } else {
+        DAWN_INVALID_IF(groupIndex >= kMaxBindGroupsTyped,
+                        "Bind group layout index (%u) exceeds or equals the maximum number of bind "
+                        "groups (%u).",
+                        groupIndex, kMaxBindGroups);
+    }
     return {};
 }
 
@@ -439,6 +452,10 @@ void PipelineBase::SetImmediateMaskForTesting(ImmediateConstantMask immediateCon
 
 uint32_t PipelineBase::GetImmediateConstantSize() const {
     return static_cast<uint32_t>(mImmediateMask.count());
+}
+
+ImmediateConstantMask PipelineBase::GetUserImmediateSlots() const {
+    return mUserImmdiateSlots;
 }
 
 }  // namespace dawn::native

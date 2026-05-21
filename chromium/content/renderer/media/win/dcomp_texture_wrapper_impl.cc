@@ -5,6 +5,7 @@
 #include "content/renderer/media/win/dcomp_texture_wrapper_impl.h"
 
 #include "base/functional/callback.h"
+#include "base/functional/callback_helpers.h"
 #include "base/memory/ptr_util.h"
 #include "base/task/bind_post_task.h"
 #include "base/task/sequenced_task_runner.h"
@@ -50,8 +51,7 @@ class DCOMPTextureMailboxResources
     if (!last_sync_token_)
       return;
 
-    gpu::SharedImageInterface* sii = factory_->SharedImageInterface();
-    sii->DestroySharedImage(last_sync_token_.value(), std::move(shared_image_));
+    shared_image_->UpdateDestructionSyncToken(last_sync_token_.value());
   }
 
   scoped_refptr<gpu::ClientSharedImage> shared_image_;
@@ -171,8 +171,7 @@ void DCOMPTextureWrapperImpl::CreateVideoFrame(
     gpu::SharedImageInterface* sii = factory_->SharedImageInterface();
 
     // The SI backing this VideoFrame will be read by the display compositor and
-    // raster. The latter will be over GL if not using OOP-R. NOTE: GL usage can
-    // be eliminated once OOP-R ships definitively.
+    // raster.
     // TODO(crbug.com/40286368): Check the potential inconsistency between the
     // |usage| passed to NotifyMailboxAdded() here and the |usage| that
     // DCOMPTextureBacking's constructor uses to initialize
@@ -189,7 +188,6 @@ void DCOMPTextureWrapperImpl::CreateVideoFrame(
                             gfx::ColorSpace::TransferID::BT709),
             kTopLeft_GrSurfaceOrigin, kPremul_SkAlphaType,
             gpu::SHARED_IMAGE_USAGE_DISPLAY_READ |
-                gpu::SHARED_IMAGE_USAGE_GLES2_READ |
                 gpu::SHARED_IMAGE_USAGE_RASTER_READ,
             GL_TEXTURE_EXTERNAL_OES, "DCOMPTextureWrapperImpl");
 
@@ -213,53 +211,7 @@ void DCOMPTextureWrapperImpl::CreateVideoFrame(
   frame->set_color_space(shared_image->color_space());
   frame->metadata().dcomp_surface = true;
 
-  std::move(create_video_frame_cb).Run(frame, mailbox_);
-}
-
-void DCOMPTextureWrapperImpl::CreateVideoFrame(
-    const gfx::Size& natural_size,
-    gfx::GpuMemoryBufferHandle dx_handle,
-    CreateDXVideoFrameCB create_video_frame_cb) {
-  DCHECK(media_task_runner_->RunsTasksInCurrentSequence());
-  gpu::SharedImageInterface* sii = factory_->SharedImageInterface();
-
-  gpu::SharedImageUsageSet usage = gpu::SHARED_IMAGE_USAGE_RASTER_READ |
-                                   gpu::SHARED_IMAGE_USAGE_RASTER_WRITE |
-                                   gpu::SHARED_IMAGE_USAGE_DISPLAY_READ |
-                                   gpu::SHARED_IMAGE_USAGE_SCANOUT;
-
-  auto shared_image = sii->CreateSharedImage(
-      {viz::SinglePlaneFormat::kBGRA_8888, natural_size, gfx::ColorSpace(),
-       usage, "DCOMPTextureWrapperImpl"},
-      gpu::kNullSurfaceHandle, gfx::BufferUsage::GPU_READ,
-      std::move(dx_handle));
-  CHECK(shared_image);
-
-  gpu::Mailbox mailbox = shared_image->mailbox();
-  gpu::SyncToken sync_token = sii->GenVerifiedSyncToken();
-
-  auto video_frame_texture = media::VideoFrame::WrapMappableSharedImage(
-      shared_image, sync_token, base::NullCallback(), gfx::Rect(natural_size),
-      natural_size, base::TimeDelta::Min());
-  video_frame_texture->metadata().wants_promotion_hint = true;
-  video_frame_texture->metadata().allow_overlay = true;
-
-  video_frame_texture->AddDestructionObserver(base::BindPostTask(
-      media_task_runner_,
-      base::BindOnce(&DCOMPTextureWrapperImpl::OnDXVideoFrameDestruction,
-                     weak_factory_.GetWeakPtr(), sync_token,
-                     std::move(shared_image)),
-      FROM_HERE));
-
-  std::move(create_video_frame_cb).Run(video_frame_texture, mailbox);
-}
-
-void DCOMPTextureWrapperImpl::OnDXVideoFrameDestruction(
-    const gpu::SyncToken& sync_token,
-    scoped_refptr<gpu::ClientSharedImage> shared_image) {
-  DCHECK(media_task_runner_->RunsTasksInCurrentSequence());
-  gpu::SharedImageInterface* sii = factory_->SharedImageInterface();
-  sii->DestroySharedImage(sync_token, std::move(shared_image));
+  std::move(create_video_frame_cb).Run(frame);
 }
 
 void DCOMPTextureWrapperImpl::OnSharedImageMailboxBound(gpu::Mailbox mailbox) {

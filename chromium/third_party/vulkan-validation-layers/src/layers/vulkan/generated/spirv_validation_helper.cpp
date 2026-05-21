@@ -151,7 +151,8 @@ const std::unordered_multimap<uint32_t, RequiredSpirvInfo>& GetSpirvCapabilites(
         {spv::CapabilityGroupNonUniformShuffleRelative, {0, nullptr, nullptr, "(VkPhysicalDeviceVulkan11Properties::subgroupSupportedOperations & VK_SUBGROUP_FEATURE_SHUFFLE_RELATIVE_BIT) != 0"}},
         {spv::CapabilityGroupNonUniformClustered, {0, nullptr, nullptr, "(VkPhysicalDeviceVulkan11Properties::subgroupSupportedOperations & VK_SUBGROUP_FEATURE_CLUSTERED_BIT) != 0"}},
         {spv::CapabilityGroupNonUniformQuad, {0, nullptr, nullptr, "(VkPhysicalDeviceVulkan11Properties::subgroupSupportedOperations & VK_SUBGROUP_FEATURE_QUAD_BIT) != 0"}},
-        {spv::CapabilityGroupNonUniformPartitionedNV, {0, nullptr, nullptr, "(VkPhysicalDeviceVulkan11Properties::subgroupSupportedOperations & VK_SUBGROUP_FEATURE_PARTITIONED_BIT_NV) != 0"}},
+        {spv::CapabilityGroupNonUniformPartitionedEXT, {0, &DeviceFeatures::shaderSubgroupPartitioned, nullptr, ""}},
+        {spv::CapabilityGroupNonUniformPartitionedEXT, {0, nullptr, nullptr, "(VkPhysicalDeviceVulkan11Properties::subgroupSupportedOperations & VK_SUBGROUP_FEATURE_PARTITIONED_BIT_NV) != 0"}},
         {spv::CapabilitySampleMaskPostDepthCoverage, {0, nullptr, &DeviceExtensions::vk_ext_post_depth_coverage, ""}},
         {spv::CapabilityShaderNonUniform, {VK_API_VERSION_1_2, nullptr, nullptr, ""}},
         {spv::CapabilityShaderNonUniform, {0, nullptr, &DeviceExtensions::vk_ext_descriptor_indexing, ""}},
@@ -250,6 +251,7 @@ const std::unordered_multimap<uint32_t, RequiredSpirvInfo>& GetSpirvCapabilites(
         {spv::CapabilityTileImageDepthReadAccessEXT, {0, &DeviceFeatures::shaderTileImageDepthReadAccess, nullptr, ""}},
         {spv::CapabilityTileImageStencilReadAccessEXT, {0, &DeviceFeatures::shaderTileImageStencilReadAccess, nullptr, ""}},
         {spv::CapabilityCooperativeMatrixKHR, {0, &DeviceFeatures::cooperativeMatrix, nullptr, ""}},
+        {spv::CapabilityCooperativeMatrixConversionQCOM, {0, &DeviceFeatures::cooperativeMatrixConversion, nullptr, ""}},
 #ifdef VK_ENABLE_BETA_EXTENSIONS
         {spv::CapabilityShaderEnqueueAMDX, {0, &DeviceFeatures::shaderEnqueue, nullptr, ""}},
 #endif
@@ -276,8 +278,8 @@ const std::unordered_multimap<uint32_t, RequiredSpirvInfo>& GetSpirvCapabilites(
         {spv::CapabilityRayTracingClusterAccelerationStructureNV, {0, &DeviceFeatures::clusterAccelerationStructure, nullptr, ""}},
         {spv::CapabilityCooperativeVectorNV, {0, &DeviceFeatures::cooperativeVector, nullptr, ""}},
         {spv::CapabilityCooperativeVectorTrainingNV, {0, &DeviceFeatures::cooperativeVectorTraining, nullptr, ""}},
-        // Not found in current SPIR-V Headers
-        // {spv::CapabilityShaderInvocationReorderEXT, {0, nullptr, &DeviceExtensions::vk_ext_ray_tracing_invocation_reorder, ""}},
+        {spv::CapabilityPushConstantBanksNV, {0, &DeviceFeatures::pushConstantBank, nullptr, ""}},
+        {spv::CapabilityShaderInvocationReorderEXT, {0, nullptr, &DeviceExtensions::vk_ext_ray_tracing_invocation_reorder, ""}},
         {spv::CapabilityTileShadingQCOM, {0, &DeviceFeatures::tileShading, nullptr, ""}},
         {spv::CapabilityTensorsARM, {0, &DeviceFeatures::shaderTensorAccess, nullptr, ""}},
         {spv::CapabilityStorageTensorArrayDynamicIndexingARM, {0, &DeviceFeatures::shaderStorageTensorArrayDynamicIndexing, nullptr, ""}},
@@ -290,6 +292,8 @@ const std::unordered_multimap<uint32_t, RequiredSpirvInfo>& GetSpirvCapabilites(
         {spv::CapabilityFMAKHR, {0, &DeviceFeatures::shaderFmaFloat32, nullptr, ""}},
         {spv::CapabilityFMAKHR, {0, &DeviceFeatures::shaderFmaFloat64, nullptr, ""}},
         {spv::CapabilityShader64BitIndexingEXT, {0, &DeviceFeatures::shader64BitIndexing, nullptr, ""}},
+        {spv::CapabilityLongVectorEXT, {0, &DeviceFeatures::longVector, nullptr, ""}},
+        {spv::CapabilityDescriptorHeapEXT, {0, &DeviceFeatures::descriptorHeap, nullptr, ""}},
     };
     // clang-format on
     return spirv_capabilities;
@@ -330,6 +334,8 @@ const std::unordered_multimap<std::string_view, RequiredSpirvInfo>& GetSpirvExte
         {"SPV_NV_mesh_shader", {0, nullptr, &DeviceExtensions::vk_nv_mesh_shader, ""}},
         {"SPV_NV_viewport_array2", {0, nullptr, &DeviceExtensions::vk_nv_viewport_array2, ""}},
         {"SPV_NV_shader_subgroup_partitioned", {0, nullptr, &DeviceExtensions::vk_nv_shader_subgroup_partitioned, ""}},
+        {"SPV_NV_shader_subgroup_partitioned", {0, nullptr, &DeviceExtensions::vk_ext_shader_subgroup_partitioned, ""}},
+        {"SPV_EXT_shader_subgroup_partitioned", {0, nullptr, &DeviceExtensions::vk_ext_shader_subgroup_partitioned, ""}},
         {"SPV_NV_shader_invocation_reorder", {0, nullptr, &DeviceExtensions::vk_nv_ray_tracing_invocation_reorder, ""}},
         {"SPV_EXT_shader_viewport_index_layer", {VK_API_VERSION_1_2, nullptr, nullptr, ""}},
         {"SPV_EXT_shader_viewport_index_layer", {0, nullptr, &DeviceExtensions::vk_ext_shader_viewport_index_layer, ""}},
@@ -385,6 +391,7 @@ const std::unordered_multimap<std::string_view, RequiredSpirvInfo>& GetSpirvExte
         {"SPV_KHR_device_group", {0, nullptr, &DeviceExtensions::vk_khr_device_group, ""}},
         {"SPV_QCOM_image_processing", {0, nullptr, &DeviceExtensions::vk_qcom_image_processing, ""}},
         {"SPV_QCOM_image_processing2", {0, nullptr, &DeviceExtensions::vk_qcom_image_processing2, ""}},
+        {"SPV_QCOM_cooperative_matrix_conversion", {0, nullptr, &DeviceExtensions::vk_qcom_cooperative_matrix_conversion, ""}},
         {"SPV_EXT_mesh_shader", {0, nullptr, &DeviceExtensions::vk_ext_mesh_shader, ""}},
         {"SPV_KHR_ray_tracing_position_fetch", {0, nullptr, &DeviceExtensions::vk_khr_ray_tracing_position_fetch, ""}},
         {"SPV_EXT_shader_tile_image", {0, nullptr, &DeviceExtensions::vk_ext_shader_tile_image, ""}},
@@ -413,6 +420,7 @@ const std::unordered_multimap<std::string_view, RequiredSpirvInfo>& GetSpirvExte
         {"SPV_NV_linear_swept_spheres", {0, nullptr, &DeviceExtensions::vk_nv_ray_tracing_linear_swept_spheres, ""}},
         {"SPV_NV_cluster_acceleration_structure", {0, nullptr, &DeviceExtensions::vk_nv_cluster_acceleration_structure, ""}},
         {"SPV_NV_cooperative_vector", {0, nullptr, &DeviceExtensions::vk_nv_cooperative_vector, ""}},
+        {"SPV_NV_push_constant_bank", {0, nullptr, &DeviceExtensions::vk_nv_push_constant_bank, ""}},
         {"SPV_EXT_shader_invocation_reorder", {0, nullptr, &DeviceExtensions::vk_ext_ray_tracing_invocation_reorder, ""}},
         {"SPV_QCOM_tile_shading", {0, nullptr, &DeviceExtensions::vk_qcom_tile_shading, ""}},
         {"SPV_ARM_tensors", {0, nullptr, &DeviceExtensions::vk_arm_tensors, ""}},
@@ -420,6 +428,8 @@ const std::unordered_multimap<std::string_view, RequiredSpirvInfo>& GetSpirvExte
         {"SPV_ARM_graph", {0, nullptr, &DeviceExtensions::vk_arm_data_graph, ""}},
         {"SPV_KHR_untyped_pointers", {0, nullptr, &DeviceExtensions::vk_khr_shader_untyped_pointers, ""}},
         {"SPV_EXT_shader_64bit_indexing", {0, nullptr, &DeviceExtensions::vk_ext_shader_64bit_indexing, ""}},
+        {"SPV_EXT_long_vector", {0, nullptr, &DeviceExtensions::vk_ext_shader_long_vector, ""}},
+        {"SPV_EXT_descriptor_heap", {0, nullptr, &DeviceExtensions::vk_ext_descriptor_heap, ""}},
     };
     // clang-format on
     return spirv_extensions;
@@ -667,6 +677,8 @@ static inline const char* string_SpvCapability(uint32_t input_value) {
             return "BFloat16DotProductKHR";
         case spv::CapabilityBFloat16CooperativeMatrixKHR:
             return "BFloat16CooperativeMatrixKHR";
+        case spv::CapabilityDescriptorHeapEXT:
+            return "DescriptorHeapEXT";
         case spv::CapabilitySampleMaskOverrideCoverageNV:
             return "SampleMaskOverrideCoverageNV";
         case spv::CapabilityGeometryShaderPassthroughNV:
@@ -693,8 +705,8 @@ static inline const char* string_SpvCapability(uint32_t input_value) {
             return "ComputeDerivativeGroupQuadsKHR";
         case spv::CapabilityFragmentDensityEXT:
             return "FragmentDensityEXT";
-        case spv::CapabilityGroupNonUniformPartitionedNV:
-            return "GroupNonUniformPartitionedNV";
+        case spv::CapabilityGroupNonUniformPartitionedEXT:
+            return "GroupNonUniformPartitionedEXT";
         case spv::CapabilityShaderNonUniform:
             return "ShaderNonUniform";
         case spv::CapabilityRuntimeDescriptorArray:
@@ -753,6 +765,8 @@ static inline const char* string_SpvCapability(uint32_t input_value) {
             return "RayTracingOpacityMicromapEXT";
         case spv::CapabilityShaderInvocationReorderNV:
             return "ShaderInvocationReorderNV";
+        case spv::CapabilityShaderInvocationReorderEXT:
+            return "ShaderInvocationReorderEXT";
         case spv::CapabilityBindlessTextureNV:
             return "BindlessTextureNV";
         case spv::CapabilityRayQueryPositionFetchKHR:
@@ -769,6 +783,10 @@ static inline const char* string_SpvCapability(uint32_t input_value) {
             return "RayTracingSpheresGeometryNV";
         case spv::CapabilityRayTracingLinearSweptSpheresGeometryNV:
             return "RayTracingLinearSweptSpheresGeometryNV";
+        case spv::CapabilityPushConstantBanksNV:
+            return "PushConstantBanksNV";
+        case spv::CapabilityLongVectorEXT:
+            return "LongVectorEXT";
         case spv::CapabilityShader64BitIndexingEXT:
             return "Shader64BitIndexingEXT";
         case spv::CapabilityCooperativeMatrixReductionsNV:
@@ -1126,7 +1144,7 @@ static inline const char* SpvCapabilityRequirements(uint32_t capability) {
     {spv::CapabilityGroupNonUniformShuffleRelative, "(VkPhysicalDeviceVulkan11Properties::subgroupSupportedOperations == VK_SUBGROUP_FEATURE_SHUFFLE_RELATIVE_BIT)"},
     {spv::CapabilityGroupNonUniformClustered, "(VkPhysicalDeviceVulkan11Properties::subgroupSupportedOperations == VK_SUBGROUP_FEATURE_CLUSTERED_BIT)"},
     {spv::CapabilityGroupNonUniformQuad, "(VkPhysicalDeviceVulkan11Properties::subgroupSupportedOperations == VK_SUBGROUP_FEATURE_QUAD_BIT)"},
-    {spv::CapabilityGroupNonUniformPartitionedNV, "(VkPhysicalDeviceVulkan11Properties::subgroupSupportedOperations == VK_SUBGROUP_FEATURE_PARTITIONED_BIT_NV)"},
+    {spv::CapabilityGroupNonUniformPartitionedEXT, "VkPhysicalDeviceShaderSubgroupPartitionedFeaturesEXT::shaderSubgroupPartitioned OR (VkPhysicalDeviceVulkan11Properties::subgroupSupportedOperations == VK_SUBGROUP_FEATURE_PARTITIONED_BIT_NV)"},
     {spv::CapabilitySampleMaskPostDepthCoverage, "VK_EXT_post_depth_coverage"},
     {spv::CapabilityShaderNonUniform, "VK_VERSION_1_2 OR VK_EXT_descriptor_indexing"},
     {spv::CapabilityRuntimeDescriptorArray, "VkPhysicalDeviceVulkan12Features::runtimeDescriptorArray"},
@@ -1197,6 +1215,7 @@ static inline const char* SpvCapabilityRequirements(uint32_t capability) {
     {spv::CapabilityTileImageDepthReadAccessEXT, "VkPhysicalDeviceShaderTileImageFeaturesEXT::shaderTileImageDepthReadAccess"},
     {spv::CapabilityTileImageStencilReadAccessEXT, "VkPhysicalDeviceShaderTileImageFeaturesEXT::shaderTileImageStencilReadAccess"},
     {spv::CapabilityCooperativeMatrixKHR, "VkPhysicalDeviceCooperativeMatrixFeaturesKHR::cooperativeMatrix"},
+    {spv::CapabilityCooperativeMatrixConversionQCOM, "VkPhysicalDeviceCooperativeMatrixConversionFeaturesQCOM::cooperativeMatrixConversion"},
 #ifdef VK_ENABLE_BETA_EXTENSIONS
     {spv::CapabilityShaderEnqueueAMDX, "VkPhysicalDeviceShaderEnqueueFeaturesAMDX::shaderEnqueue"},
 #endif  // VK_ENABLE_BETA_EXTENSIONS
@@ -1220,6 +1239,8 @@ static inline const char* SpvCapabilityRequirements(uint32_t capability) {
     {spv::CapabilityRayTracingClusterAccelerationStructureNV, "VkPhysicalDeviceClusterAccelerationStructureFeaturesNV::clusterAccelerationStructure"},
     {spv::CapabilityCooperativeVectorNV, "VkPhysicalDeviceCooperativeVectorFeaturesNV::cooperativeVector"},
     {spv::CapabilityCooperativeVectorTrainingNV, "VkPhysicalDeviceCooperativeVectorFeaturesNV::cooperativeVectorTraining"},
+    {spv::CapabilityPushConstantBanksNV, "VkPhysicalDevicePushConstantBankFeaturesNV::pushConstantBank"},
+    {spv::CapabilityShaderInvocationReorderEXT, "VK_EXT_ray_tracing_invocation_reorder"},
     {spv::CapabilityTileShadingQCOM, "VkPhysicalDeviceTileShadingFeaturesQCOM::tileShading"},
     {spv::CapabilityTensorsARM, "VkPhysicalDeviceTensorFeaturesARM::shaderTensorAccess"},
     {spv::CapabilityStorageTensorArrayDynamicIndexingARM, "VkPhysicalDeviceTensorFeaturesARM::shaderStorageTensorArrayDynamicIndexing"},
@@ -1230,6 +1251,8 @@ static inline const char* SpvCapabilityRequirements(uint32_t capability) {
     {spv::CapabilityUntypedPointersKHR, "VkPhysicalDeviceShaderUntypedPointersFeaturesKHR::shaderUntypedPointers"},
     {spv::CapabilityFMAKHR, "VkPhysicalDeviceShaderFmaFeaturesKHR::shaderFmaFloat16 OR VkPhysicalDeviceShaderFmaFeaturesKHR::shaderFmaFloat32 OR VkPhysicalDeviceShaderFmaFeaturesKHR::shaderFmaFloat64"},
     {spv::CapabilityShader64BitIndexingEXT, "VkPhysicalDeviceShader64BitIndexingFeaturesEXT::shader64BitIndexing"},
+    {spv::CapabilityLongVectorEXT, "VkPhysicalDeviceShaderLongVectorFeaturesEXT::longVector"},
+    {spv::CapabilityDescriptorHeapEXT, "VkPhysicalDeviceDescriptorHeapFeaturesEXT::descriptorHeap"},
     };
 
     // VUs before catch unknown capabilities
@@ -1266,7 +1289,8 @@ static inline std::string SpvExtensionRequirements(std::string_view extension) {
     {"SPV_NV_geometry_shader_passthrough", {{vvl::Extension::_VK_NV_geometry_shader_passthrough}}},
     {"SPV_NV_mesh_shader", {{vvl::Extension::_VK_NV_mesh_shader}}},
     {"SPV_NV_viewport_array2", {{vvl::Extension::_VK_NV_viewport_array2}}},
-    {"SPV_NV_shader_subgroup_partitioned", {{vvl::Extension::_VK_NV_shader_subgroup_partitioned}}},
+    {"SPV_NV_shader_subgroup_partitioned", {{vvl::Extension::_VK_NV_shader_subgroup_partitioned}, {vvl::Extension::_VK_EXT_shader_subgroup_partitioned}}},
+    {"SPV_EXT_shader_subgroup_partitioned", {{vvl::Extension::_VK_EXT_shader_subgroup_partitioned}}},
     {"SPV_NV_shader_invocation_reorder", {{vvl::Extension::_VK_NV_ray_tracing_invocation_reorder}}},
     {"SPV_EXT_shader_viewport_index_layer", {{vvl::Version::_VK_VERSION_1_2}, {vvl::Extension::_VK_EXT_shader_viewport_index_layer}}},
     {"SPV_NVX_multiview_per_view_attributes", {{vvl::Extension::_VK_NVX_multiview_per_view_attributes}}},
@@ -1308,6 +1332,7 @@ static inline std::string SpvExtensionRequirements(std::string_view extension) {
     {"SPV_KHR_device_group", {{vvl::Version::_VK_VERSION_1_1}, {vvl::Extension::_VK_KHR_device_group}}},
     {"SPV_QCOM_image_processing", {{vvl::Extension::_VK_QCOM_image_processing}}},
     {"SPV_QCOM_image_processing2", {{vvl::Extension::_VK_QCOM_image_processing2}}},
+    {"SPV_QCOM_cooperative_matrix_conversion", {{vvl::Extension::_VK_QCOM_cooperative_matrix_conversion}}},
     {"SPV_EXT_mesh_shader", {{vvl::Extension::_VK_EXT_mesh_shader}}},
     {"SPV_KHR_ray_tracing_position_fetch", {{vvl::Extension::_VK_KHR_ray_tracing_position_fetch}}},
     {"SPV_EXT_shader_tile_image", {{vvl::Extension::_VK_EXT_shader_tile_image}}},
@@ -1333,6 +1358,7 @@ static inline std::string SpvExtensionRequirements(std::string_view extension) {
     {"SPV_NV_linear_swept_spheres", {{vvl::Extension::_VK_NV_ray_tracing_linear_swept_spheres}}},
     {"SPV_NV_cluster_acceleration_structure", {{vvl::Extension::_VK_NV_cluster_acceleration_structure}}},
     {"SPV_NV_cooperative_vector", {{vvl::Extension::_VK_NV_cooperative_vector}}},
+    {"SPV_NV_push_constant_bank", {{vvl::Extension::_VK_NV_push_constant_bank}}},
     {"SPV_EXT_shader_invocation_reorder", {{vvl::Extension::_VK_EXT_ray_tracing_invocation_reorder}}},
     {"SPV_QCOM_tile_shading", {{vvl::Extension::_VK_QCOM_tile_shading}}},
     {"SPV_ARM_tensors", {{vvl::Extension::_VK_ARM_tensors}}},
@@ -1340,6 +1366,8 @@ static inline std::string SpvExtensionRequirements(std::string_view extension) {
     {"SPV_ARM_graph", {{vvl::Extension::_VK_ARM_data_graph}}},
     {"SPV_KHR_untyped_pointers", {{vvl::Extension::_VK_KHR_shader_untyped_pointers}}},
     {"SPV_EXT_shader_64bit_indexing", {{vvl::Extension::_VK_EXT_shader_64bit_indexing}}},
+    {"SPV_EXT_long_vector", {{vvl::Extension::_VK_EXT_shader_long_vector}}},
+    {"SPV_EXT_descriptor_heap", {{vvl::Extension::_VK_EXT_descriptor_heap}}},
     };
 
     // VUs before catch unknown extensions
@@ -1411,7 +1439,7 @@ bool stateless::SpirvValidator::ValidateShaderCapabilitiesAndExtensions(const sp
                         has_support |=
                             ((phys_dev_props_core11.subgroupSupportedOperations & VK_SUBGROUP_FEATURE_CLUSTERED_BIT) != 0);
                         break;
-                    case spv::CapabilityGroupNonUniformPartitionedNV:
+                    case spv::CapabilityGroupNonUniformPartitionedEXT:
                         has_support |=
                             ((phys_dev_props_core11.subgroupSupportedOperations & VK_SUBGROUP_FEATURE_PARTITIONED_BIT_NV) != 0);
                         break;

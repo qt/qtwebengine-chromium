@@ -9,7 +9,7 @@ import * as Platform from '../../../core/platform/platform.js';
 import * as Root from '../../../core/root/root.js';
 import * as SDK from '../../../core/sdk/sdk.js';
 import * as Tracing from '../../../services/tracing/tracing.js';
-import * as Annotations from '../../../ui/components/annotations/annotations.js';
+import * as Annotations from '../../annotations/annotations.js';
 import * as SourceMapScopes from '../../source_map_scopes/source_map_scopes.js';
 import * as Trace from '../../trace/trace.js';
 import {
@@ -67,33 +67,6 @@ const greenDevAdditionalAnnotationsGuidelines = `
 - The annotationMessage should be descriptive and relevant to why the element or network request is being highlighted.
 `;
 
-const greenDevAdditionalWidgetGuidelines = `
-- **Visualizing Insights**: When discussing the breakdown of specific metrics or a performance problem,
-you must render the appropriate Insight Overview component. Use these tags on a new line within your response:
-  - For LCP breakdown: <ai-insight value="LCPBreakdown">
-  - For INP breakdown: <ai-insight value="INPBreakdown">
-  - For CLS culprits: <ai-insight value="CLSCulprits">
-  - For third parties: <ai-insight value="ThirdParties">
-  - For document latency: <ai-insight value="DocumentLatency">
-  - For DOM size: <ai-insight value="DOMSize">
-  - For duplicate JavaScript: <ai-insight value="DuplicatedJavaScript">
-  - For font display: <ai-insight value="FontDisplay">
-  - For forced reflow: <ai-insight value="ForcedReflow">
-  - For image delivery: <ai-insight value="ImageDelivery">
-  - For LCP discovery: <ai-insight value="LCPDiscovery">
-  - For legacy JavaScript: <ai-insight value="LegacyJavaScript">
-  - For network dependency tree: <ai-insight value="NetworkDependencyTree">
-  - For render blocking: <ai-insight value="RenderBlocking">
-  - For slow CSS selector: <ai-insight value="SlowCSSSelector">
-  - For viewport: <ai-insight value="Viewport">
-  - For modern HTTP: <ai-insight value="ModernHTTP">
-  - For cache: <ai-insight value="Cache">
-- Do not place the <ai-insight> tag inside markdown code blocks (backticks). Output the tag directly as raw text.
-- **Visualizing Network Request Details**: When discussing a specific network request, represent its details in a structured widget for improved readability and focus.
-Use this tag on a new line within your response, replacing \`EVENT_KEY\` (only the number, no letters prefix or -) with the actual trace event key:
-  - For network event details: <network-request-widget value="EVENT_KEY">
-`;
-
 /**
  * Preamble clocks in at ~1341 tokens.
  *   The prose is around 4.5 chars per token.
@@ -102,7 +75,6 @@ Use this tag on a new line within your response, replacing \`EVENT_KEY\` (only t
  * Check token length in https://aistudio.google.com/
  */
 const buildPreamble = (): string => {
-  const greenDevEnabled = Root.Runtime.hostConfig.devToolsGreenDevUi?.enabled;
   const annotationsEnabled = Annotations.AnnotationRepository.annotationsEnabled();
   return `You are an assistant, expert in web performance and highly skilled with Chrome DevTools.
 
@@ -157,7 +129,6 @@ Note: if the user asks a specific question about the trace (such as "What is my 
 - Be direct and to the point. Avoid unnecessary introductory phrases or filler content. Focus on delivering actionable advice efficiently.
 
 ${annotationsEnabled ? greenDevAdditionalAnnotationsGuidelines : ''}
-${greenDevEnabled ? greenDevAdditionalWidgetGuidelines : ''}
 
 ## Strict Constraints
 
@@ -736,6 +707,7 @@ export class PerformanceAgent extends AiAgent<AgentFocus> {
             nullable: false,
           }
         },
+        required: ['insightSetId', 'insightName']
       },
       displayInfoFromArgs: params => {
         return {
@@ -783,6 +755,7 @@ export class PerformanceAgent extends AiAgent<AgentFocus> {
             nullable: false,
           }
         },
+        required: ['eventKey']
       },
       displayInfoFromArgs: params => {
         return {title: lockedString('Looking at trace event…'), action: `getEventByKey('${params.eventKey}')`};
@@ -840,6 +813,7 @@ export class PerformanceAgent extends AiAgent<AgentFocus> {
             nullable: false,
           },
         },
+        required: ['min', 'max']
       },
       displayInfoFromArgs: args => {
         return {
@@ -897,6 +871,7 @@ export class PerformanceAgent extends AiAgent<AgentFocus> {
             nullable: false,
           },
         },
+        required: ['min', 'max']
       },
       displayInfoFromArgs: args => {
         return {
@@ -947,6 +922,7 @@ export class PerformanceAgent extends AiAgent<AgentFocus> {
             nullable: false,
           },
         },
+        required: ['eventKey']
       },
       displayInfoFromArgs: args => {
         return {title: lockedString('Looking at call tree…'), action: `getDetailedCallTree('${args.eventKey}')`};
@@ -1000,7 +976,9 @@ export class PerformanceAgent extends AiAgent<AgentFocus> {
               description: 'The message the annotation should show to the user.',
               nullable: false,
             },
+
           },
+          required: ['elementId', 'annotationMessage']
         },
         handler: async params => {
           return await this.addElementAnnotation(params.elementId, params.annotationMessage);
@@ -1031,6 +1009,7 @@ export class PerformanceAgent extends AiAgent<AgentFocus> {
               nullable: false,
             },
           },
+          required: ['eventKey', 'annotationMessage']
         },
         handler: async params => {
           return await this.addNetworkRequestAnnotation(params.eventKey, params.annotationMessage);
@@ -1062,6 +1041,7 @@ export class PerformanceAgent extends AiAgent<AgentFocus> {
             nullable: false,
           },
         },
+        required: ['scriptUrl', 'line', 'column']
       },
       displayInfoFromArgs: args => {
         return {
@@ -1108,7 +1088,7 @@ export class PerformanceAgent extends AiAgent<AgentFocus> {
 
     this.declareFunction<{url: string}, {content: string}>('getResourceContent', {
       description:
-          'Returns the content of the resource with the given url. Only use this for text resource types. Prefer getFunctionCode when possible.',
+          'Returns the content of the resource with the given url. Only use this for text resource types. This function is helpful for getting script contents in order to further analyze main thread activity and suggest code improvements. When analyzing the main thread activity, always call this function to get more detail. Always call this function when asked to provide specifics about what is happening in the code. Never ask permission to call this function, just do it.',
       parameters: {
         type: Host.AidaClient.ParametersTypes.OBJECT,
         description: '',
@@ -1120,6 +1100,7 @@ export class PerformanceAgent extends AiAgent<AgentFocus> {
             nullable: false,
           },
         },
+        required: ['url']
       },
       displayInfoFromArgs: args => {
         return {title: lockedString('Looking at resource content…'), action: `getResourceContent('${args.url}')`};
@@ -1174,6 +1155,7 @@ export class PerformanceAgent extends AiAgent<AgentFocus> {
               nullable: false,
             }
           },
+          required: ['eventKey']
         },
         displayInfoFromArgs: params => {
           return {title: lockedString('Selecting event…'), action: `selectEventByKey('${params.eventKey}')`};

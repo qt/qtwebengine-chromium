@@ -3,7 +3,8 @@
 // found in the LICENSE file.
 /* eslint-disable @devtools/no-lit-render-outside-of-view, @devtools/enforce-custom-element-definitions-location */
 
-import '../../../ui/legacy/legacy.js';
+import '../../../ui/kit/kit.js';
+import '../../legacy/legacy.js';
 
 import * as i18n from '../../../core/i18n/i18n.js';
 import * as Root from '../../../core/root/root.js';
@@ -15,7 +16,7 @@ export interface PreviewToggleData {
   name: string;
   helperText: string|null;
   feedbackURL: string|null;
-  experiment: Root.Runtime.ExperimentName;
+  experiment: Root.ExperimentNames.ExperimentName;
   learnMoreURL?: string;
   onChangeCallback?: (checked: boolean) => void;
 }
@@ -45,7 +46,7 @@ export class PreviewToggle extends HTMLElement {
   #helperText: string|null = null;
   #feedbackURL: string|null = null;
   #learnMoreURL: string|undefined;
-  #experiment = '';
+  #experiment: Root.ExperimentNames.ExperimentName|'' = '';
   #onChangeCallback?: (checked: boolean) => void;
 
   set data(data: PreviewToggleData) {
@@ -59,7 +60,7 @@ export class PreviewToggle extends HTMLElement {
   }
 
   #render(): void {
-    const checked = Root.Runtime.experiments.isEnabled(this.#experiment);
+    const checked = this.#experiment && Root.Runtime.experiments.isEnabled(this.#experiment);
     // Disabled until https://crbug.com/1079231 is fixed.
     // clang-format off
     render(
@@ -75,14 +76,14 @@ export class PreviewToggle extends HTMLElement {
           </devtools-checkbox>
         <div class="spacer"></div>
         ${this.#feedbackURL && !this.#helperText
-          ? html`<div class="feedback"><x-link class="x-link" href=${this.#feedbackURL}>${i18nString(UIStrings.shortFeedbackLink)}</x-link></div>`
+          ? html`<div class="feedback"><devtools-link class="devtools-link" href=${this.#feedbackURL} jslogContext=${'feedback'}>${i18nString(UIStrings.shortFeedbackLink)}</devtools-link></div>`
           : nothing}
         ${this.#learnMoreURL
-          ? html`<div class="learn-more"><x-link class="x-link" href=${this.#learnMoreURL}>${i18nString(UIStrings.learnMoreLink)}</x-link></div>`
+          ? html`<div class="learn-more"><devtools-link class="devtools-link" href=${this.#learnMoreURL} jslogContext=${'learn-more'}>${i18nString(UIStrings.learnMoreLink)}</devtools-link></div>`
           : nothing}
         <div class="helper">
           ${this.#helperText && this.#feedbackURL
-            ? html`<p>${this.#helperText} <x-link class="x-link" href=${this.#feedbackURL}>${i18nString(UIStrings.previewTextFeedbackLink)}</x-link></p>`
+            ? html`<p>${this.#helperText} <devtools-link class="devtools-link" href=${this.#feedbackURL} jslogContext=${'feedback'}>${i18nString(UIStrings.previewTextFeedbackLink)}</devtools-link></p>`
             : nothing}
         </div>
       </div>`,
@@ -95,7 +96,9 @@ export class PreviewToggle extends HTMLElement {
 
   #checkboxChanged(event: Event): void {
     const checked = (event.target as HTMLInputElement).checked;
-    Root.Runtime.experiments.setEnabled(this.#experiment, checked);
+    if (this.#experiment) {
+      Root.Runtime.experiments.setEnabled(this.#experiment, checked);
+    }
     this.#onChangeCallback?.(checked);
   }
 }

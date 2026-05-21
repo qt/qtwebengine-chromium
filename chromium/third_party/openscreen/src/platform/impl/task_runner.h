@@ -26,7 +26,7 @@ class TaskRunnerImpl : public TaskRunner {
 
   class TaskWaiter {
    public:
-    virtual ~TaskWaiter() = default;
+    virtual ~TaskWaiter();
 
     // These calls should be thread-safe.  The absolute minimum is that
     // OnTaskPosted must be safe to call from another thread while this is
@@ -48,9 +48,13 @@ class TaskRunnerImpl : public TaskRunner {
       ClockNowFunctionPtr now_function,
       TaskWaiter* event_waiter = nullptr,
       Clock::duration waiter_timeout = std::chrono::milliseconds(100));
+  TaskRunnerImpl(const TaskRunnerImpl&) = delete;
+  TaskRunnerImpl(TaskRunnerImpl&&) noexcept = delete;
+  TaskRunnerImpl& operator=(const TaskRunnerImpl&) = delete;
+  TaskRunnerImpl& operator=(TaskRunnerImpl&&) = delete;
 
   // TaskRunner overrides
-  ~TaskRunnerImpl();
+  ~TaskRunnerImpl() override;
   void PostPackagedTask(Task task) override;
   void PostPackagedTaskWithDelay(Task task, Clock::duration delay) override;
   bool IsRunningOnTaskRunner() override;
@@ -139,8 +143,6 @@ class TaskRunnerImpl : public TaskRunner {
   std::vector<TaskWithMetadata> running_tasks_;
 
   std::thread::id task_runner_thread_id_;
-
-  OSP_DISALLOW_COPY_AND_ASSIGN(TaskRunnerImpl);
 };
 }  // namespace openscreen
 

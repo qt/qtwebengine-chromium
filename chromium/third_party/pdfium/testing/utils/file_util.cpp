@@ -14,6 +14,15 @@
 #include "core/fxcrt/stl_util.h"
 #include "testing/utils/path_service.h"
 
+bool CanReadFile(const char* filename) {
+  FILE* file = fopen(filename, "rb");
+  if (!file) {
+    return false;
+  }
+  (void)fclose(file);
+  return true;
+}
+
 std::vector<uint8_t> GetFileContents(const char* filename) {
   FILE* file = fopen(filename, "rb");
   if (!file) {

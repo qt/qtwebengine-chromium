@@ -37,7 +37,6 @@ void OnGpuChannelEstablished(
       automatic_flushes, support_locking,
       gpu::SharedMemoryLimits::ForMailboxContext(),
       viz::command_buffer_metrics::ContextType::UNKNOWN,
-      /*enable_gpu_rasterization=*/true,
       /*lose_context_when_out_of_memory=*/false);
   context_provider->BindToCurrentSequence();
 
@@ -137,7 +136,7 @@ BrowserGpuVideoAcceleratorFactories::CreateVideoEncodeAccelerator() {
 }
 
 bool BrowserGpuVideoAcceleratorFactories::
-    ShouldUseGpuMemoryBuffersForVideoFrames(bool for_media_stream) const {
+    ShouldUseMappableSharedImagesForVideoFrames(bool for_media_stream) const {
   return false;
 }
 

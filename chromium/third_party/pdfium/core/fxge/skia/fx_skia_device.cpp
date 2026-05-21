@@ -77,7 +77,7 @@
 #include "third_party/skia/include/core/SkTileMode.h"
 #include "third_party/skia/include/core/SkTypeface.h"
 #include "third_party/skia/include/effects/SkDashPathEffect.h"
-#include "third_party/skia/include/effects/SkGradientShader.h"
+#include "third_party/skia/include/effects/SkGradient.h"
 #include "third_party/skia/include/pathops/SkPathOps.h"
 
 namespace {
@@ -284,9 +284,24 @@ SkBlendMode GetSkiaBlendMode(BlendMode blend_type) {
   }
 }
 
-// Clamps and scales a float in range [0.0, 1.0] to 0-255.
-uint8_t ClampFloatToByte(float f) {
-  return static_cast<uint8_t>(std::clamp(f, 0.0f, 1.0f) * 255.f + 0.5f);
+SkColor4f MakeColor4f(float r, float g, float b) {
+  r = std::clamp(r, 0.0f, 1.0f);
+  g = std::clamp(g, 0.0f, 1.0f);
+  b = std::clamp(b, 0.0f, 1.0f);
+
+  // For temporary compatibility with the previous implementation, we round
+  // the color components to a byte, and then redivide back to a normalized
+  // float. When we can update the expected images in the test suite, this
+  // rounding step should be eliminated, since it only throws away
+  // information from the PDF (and is slower).
+  auto legacy_round = [](float x) {
+    return std::floor(x * 255.f + 0.5f) * (1.0f / 255);
+  };
+  r = legacy_round(r);
+  g = legacy_round(g);
+  b = legacy_round(b);
+
+  return {r, g, b, 1};
 }
 
 // Add begin & end colors into `colors` array for each gradient transition.
@@ -295,7 +310,7 @@ uint8_t ClampFloatToByte(float f) {
 // has an Encode array, and the matching pair of encode values for `func` are
 // in decreasing order.
 bool AddColors(const CPDF_ExpIntFunc* func,
-               DataVector<SkColor>& colors,
+               DataVector<SkColor4f>& colors,
                bool is_encode_reversed) {
   if (func->InputCount() != 1) {
     return false;
@@ -313,24 +328,14 @@ bool AddColors(const CPDF_ExpIntFunc* func,
     std::swap(begin_values, end_values);
   }
 
-  colors.push_back(SkColorSetRGB(ClampFloatToByte(begin_values[0]),
-                                 ClampFloatToByte(begin_values[1]),
-                                 ClampFloatToByte(begin_values[2])));
-  colors.push_back(SkColorSetRGB(ClampFloatToByte(end_values[0]),
-                                 ClampFloatToByte(end_values[1]),
-                                 ClampFloatToByte(end_values[2])));
+  colors.push_back(
+      MakeColor4f(begin_values[0], begin_values[1], begin_values[2]));
+  colors.push_back(MakeColor4f(end_values[0], end_values[1], end_values[2]));
   return true;
 }
 
-// Scale a float in range [0.0, 1.0] to 0-255.
-uint8_t FloatToByte(float f) {
-  DCHECK(f >= 0);
-  DCHECK(f <= 1);
-  return static_cast<uint8_t>(f * 255.99f);
-}
-
 bool AddSamples(const CPDF_SampledFunc* func,
-                DataVector<SkColor>& colors,
+                DataVector<SkColor4f>& colors,
                 DataVector<float>& pos) {
   if (func->InputCount() != 1) {
     return false;
@@ -374,16 +379,14 @@ bool AddSamples(const CPDF_SampledFunc* func,
       float_colors[j] =
           colors_min[j] + (colors_max[j] - colors_min[j]) * interp;
     }
-    colors.push_back(SkColorSetRGB(FloatToByte(float_colors[0]),
-                                   FloatToByte(float_colors[1]),
-                                   FloatToByte(float_colors[2])));
+    colors.push_back({float_colors[0], float_colors[1], float_colors[2], 1});
     pos.push_back(static_cast<float>(i) / (sample_count - 1));
   }
   return true;
 }
 
 bool AddStitching(const CPDF_StitchFunc* func,
-                  DataVector<SkColor>& colors,
+                  DataVector<SkColor4f>& colors,
                   DataVector<float>& pos) {
   float bounds_start = func->GetDomain(0);
 
@@ -569,18 +572,21 @@ void SetupStrokePaint(SkPaint* stroke_paint,
                                         device_units[1].length()));
   const std::vector<float>& dash_array = stroke_options->dash_array();
   if (!dash_array.empty()) {
-    size_t count = (dash_array.size() + 1) / 2;
-    DataVector<float> intervals(count * 2);
-    // Set dash pattern
-    for (size_t i = 0; i < count; i++) {
-      float on = dash_array[i * 2];
-      if (on <= 0.000001f) {
-        on = 0.1f;
+    // `SkDashPathEffect` only takes even-sized interval arrays. Support
+    // odd-sized arrays by just doubling the size of `dash_array` and repeating
+    // its contents, e.g. [2, 1, 3] becomes [2, 1, 3, 2, 1, 3].
+    size_t count = dash_array.size();
+    bool is_even_sized = count % 2 == 0;
+    DataVector<float> intervals;
+    intervals.reserve(is_even_sized ? count : count * 2);
+    for (float dash_len : dash_array) {
+      if (dash_len <= 0.000001f) {
+        dash_len = 0.1f;
       }
-      float off = i * 2 + 1 == dash_array.size() ? on : dash_array[i * 2 + 1];
-      off = std::max(off, 0.0f);
-      intervals[i * 2] = on;
-      intervals[i * 2 + 1] = off;
+      intervals.push_back(dash_len);
+    }
+    if (!is_even_sized) {
+      intervals.insert(intervals.end(), intervals.begin(), intervals.end());
     }
     stroke_paint->setPathEffect(
         SkDashPathEffect::Make(intervals, stroke_options->dash_phase()));
@@ -648,7 +654,6 @@ RetainPtr<CFX_DIBitmap> MakeDebugBitmap(int width, int height, uint32_t color) {
 }
 
 bool HasRSX(pdfium::span<const TextCharPos> char_pos,
-            float* scaleXPtr,
             bool* oneAtATimePtr) {
   bool useRSXform = false;
   bool oneAtATime = false;
@@ -675,8 +680,20 @@ bool HasRSX(pdfium::span<const TextCharPos> char_pos,
     }
   }
   *oneAtATimePtr = oneAtATime;
-  *scaleXPtr = oneAtATime ? 1 : scaleX;
   return oneAtATime ? false : useRSXform;
+}
+
+SkFont SkFontFromCFXFont(const CFX_Font* cfx_font,
+                         float font_size,
+                         const CFX_TextRenderOptions& options) {
+  SkFont font;
+  font.setEmbolden(cfx_font->IsSubstFontBold());
+  font.setHinting(SkFontHinting::kNone);
+  font.setSkewX(tanf(cfx_font->GetSubstFontItalicAngle() * FXSYS_PI / 180.0));
+  font.setSize(SkTAbs(font_size));
+  font.setSubpixel(true);
+  font.setEdging(GetFontEdgingType(options));
+  return font;
 }
 
 }  // namespace
@@ -807,14 +824,8 @@ bool CFX_SkiaDeviceDriver::DrawDeviceText(
   paint.setAntiAlias(true);
   paint.setColor(color);
 
-  SkFont font;
+  SkFont font = SkFontFromCFXFont(pFont, font_size, options);
   font.setTypeface(typeface);
-  font.setEmbolden(pFont->IsSubstFontBold());
-  font.setHinting(SkFontHinting::kNone);
-  font.setSize(SkTAbs(font_size));
-  font.setSubpixel(true);
-  font.setSkewX(tanf(pFont->GetSubstFontItalicAngle() * FXSYS_PI / 180.0));
-  font.setEdging(GetFontEdgingType(options));
 
   SkAutoCanvasRestore scoped_save_restore(canvas_, /*doSave=*/true);
   const float horizontal_flip = font_size < 0 ? -1.f : 1.f;
@@ -873,9 +884,9 @@ bool CFX_SkiaDeviceDriver::DrawDeviceText(
   return true;
 }
 
-// TODO(crbug.com/pdfium/1999): Merge with `DrawDeviceText()` and refactor
+// TODO(crbug.com/42271005): Merge with `DrawDeviceText()` and refactor
 // common logic.
-// TODO(crbug.com/pdfium/1774): Sometimes the thickness of the glyphs is not
+// TODO(crbug.com/42270786): Sometimes the thickness of the glyphs is not
 // ideal. Improve text rendering results regarding different font weight.
 bool CFX_SkiaDeviceDriver::TryDrawText(pdfium::span<const TextCharPos> char_pos,
                                        const CFX_Font* pFont,
@@ -883,9 +894,8 @@ bool CFX_SkiaDeviceDriver::TryDrawText(pdfium::span<const TextCharPos> char_pos,
                                        float font_size,
                                        uint32_t color,
                                        const CFX_TextRenderOptions& options) {
-  float scaleX = 1;
   bool oneAtATime = false;
-  bool hasRSX = HasRSX(char_pos, &scaleX, &oneAtATime);
+  bool hasRSX = HasRSX(char_pos, &oneAtATime);
   if (oneAtATime) {
     return false;
   }
@@ -934,17 +944,10 @@ bool CFX_SkiaDeviceDriver::TryDrawText(pdfium::span<const TextCharPos> char_pos,
   skPaint.setAntiAlias(true);
   skPaint.setColor(color);
 
-  SkFont font;
+  SkFont font = SkFontFromCFXFont(pFont, font_size, options);
   if (pFont->HasFaceRec()) {  // exclude placeholder test fonts
     font.setTypeface(sk_ref_sp(pFont->GetDeviceCache()));
   }
-  font.setEmbolden(pFont->IsSubstFontBold());
-  font.setHinting(SkFontHinting::kNone);
-  font.setScaleX(scaleX);
-  font.setSkewX(tanf(pFont->GetSubstFontItalicAngle() * FXSYS_PI / 180.0));
-  font.setSize(SkTAbs(font_size));
-  font.setSubpixel(true);
-  font.setEdging(GetFontEdgingType(options));
 
   SkAutoCanvasRestore scoped_save_restore(canvas_, /*doSave=*/true);
   canvas_->concat(ToFlippedSkMatrix(matrix, horizontal_flip));
@@ -962,6 +965,8 @@ bool CFX_SkiaDeviceDriver::TryDrawText(pdfium::span<const TextCharPos> char_pos,
   for (size_t i = 0; i < char_details_.Count(); ++i) {
     const uint32_t font_glyph_width = pFont->GetGlyphWidth(glyphs[i]);
     const uint32_t pdf_glyph_width = widths[i];
+    float scaleX =
+        char_pos[i].glyph_adjust_ ? char_pos[i].adjust_matrix_[0] : 1;
     if (pdf_glyph_width > 0 && font_glyph_width > 0) {
       // Scale the glyph from its default width `pdf_glyph_width` to the
       // targeted width `pdf_glyph_width`.
@@ -1167,8 +1172,9 @@ bool CFX_SkiaDeviceDriver::DrawPath(const CFX_Path& cfx_path,
       //
       // Drawing it as a stroke normally already operates in the knockout way
       // but not for the AA pixels in some cases.
-      SkPath stroke_outline;
-      skpathutils::FillPathWithPaint(path, stroke_paint, &stroke_outline);
+      SkPathBuilder stroke_outline_builder;
+      skpathutils::FillPathWithPaint(path, stroke_paint, &stroke_outline_builder);
+      SkPath stroke_outline = stroke_outline_builder.detach();
       layer_paint.setColor(stroke_color);
       DrawPathImpl(stroke_outline, layer_paint);
 
@@ -1237,7 +1243,7 @@ bool CFX_SkiaDeviceDriver::DrawShading(const CPDF_ShadingPattern& pattern,
   }
   // TODO(caryclark) Respect Domain[0], Domain[1]. (Don't know what they do
   // yet.)
-  DataVector<SkColor> sk_colors;
+  DataVector<SkColor4f> sk_colors;
   DataVector<float> sk_pos;
   for (size_t j = 0; j < nFuncs; j++) {
     if (!pFuncs[j]) {
@@ -1284,9 +1290,8 @@ bool CFX_SkiaDeviceDriver::DrawShading(const CPDF_ShadingPattern& pattern,
     float end_y = pCoords->GetFloatAt(3);
     SkPoint pts[] = {{start_x, start_y}, {end_x, end_y}};
     skMatrix.mapPoints(pts);
-    paint.setShader(SkGradientShader::MakeLinear(
-        pts, sk_colors.data(), sk_pos.data(),
-        fxcrt::CollectionSize<int>(sk_colors), SkTileMode::kClamp));
+    paint.setShader(SkShaders::LinearGradient(
+        pts, {{sk_colors, sk_pos, SkTileMode::kClamp}, {}}));
     if (clipStart || clipEnd) {
       // if the gradient is horizontal or vertical, modify the draw rectangle
       if (pts[0].fX == pts[1].fX) {  // vertical
@@ -1323,23 +1328,20 @@ bool CFX_SkiaDeviceDriver::DrawShading(const CPDF_ShadingPattern& pattern,
     skMatrix.setIdentity();
   } else {
     CHECK_EQ(shading_type, kRadialShading);
-    float start_x = pCoords->GetFloatAt(0);
-    float start_y = pCoords->GetFloatAt(1);
+    SkPoint start = {pCoords->GetFloatAt(0), pCoords->GetFloatAt(1)};
     float start_r = pCoords->GetFloatAt(2);
-    float end_x = pCoords->GetFloatAt(3);
-    float end_y = pCoords->GetFloatAt(4);
+    SkPoint end = {pCoords->GetFloatAt(3), pCoords->GetFloatAt(4)};
     float end_r = pCoords->GetFloatAt(5);
-    SkPoint pts[] = {{start_x, start_y}, {end_x, end_y}};
 
-    paint.setShader(SkGradientShader::MakeTwoPointConical(
-        pts[0], start_r, pts[1], end_r, sk_colors.data(), sk_pos.data(),
-        fxcrt::CollectionSize<int>(sk_colors), SkTileMode::kClamp));
+    paint.setShader(SkShaders::TwoPointConicalGradient(
+        start, start_r, end, end_r,
+        {{sk_colors, sk_pos, SkTileMode::kClamp}, {}}));
     if (clipStart || clipEnd) {
       if (clipStart && start_r) {
-        skClip.addCircle(pts[0].fX, pts[0].fY, start_r);
+        skClip.addCircle(start.fX, start.fY, start_r);
       }
       if (clipEnd) {
-        skClip.addCircle(pts[1].fX, pts[1].fY, end_r, SkPathDirection::kCCW);
+        skClip.addCircle(end.fX, end.fY, end_r, SkPathDirection::kCCW);
       } else {
         skClip.setFillType(SkPathFillType::kInverseWinding);
       }

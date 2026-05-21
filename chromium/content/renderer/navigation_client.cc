@@ -4,6 +4,8 @@
 
 #include "content/renderer/navigation_client.h"
 
+#include <utility>
+
 #include "base/check.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
@@ -67,7 +69,6 @@ void NavigationClient::CommitNavigation(
     const blink::DocumentToken& document_token,
     const base::UnguessableToken& devtools_navigation_token,
     const base::Uuid& base_auction_nonce,
-    const std::optional<network::ParsedPermissionsPolicy>& permissions_policy,
     blink::mojom::PolicyContainerPtr policy_container,
     mojo::PendingRemote<blink::mojom::CodeCacheHost> code_cache_host,
     mojo::PendingRemote<blink::mojom::CodeCacheHost>
@@ -92,7 +93,7 @@ void NavigationClient::CommitNavigation(
       std::move(subresource_proxying_loader_factory),
       std::move(keep_alive_loader_factory),
       std::move(fetch_later_loader_factory), document_token,
-      devtools_navigation_token, base_auction_nonce, permissions_policy,
+      devtools_navigation_token, base_auction_nonce,
       std::move(policy_container), std::move(code_cache_host),
       std::move(code_cache_host_for_background), std::move(cookie_manager_info),
       std::move(storage_info), std::move(callback));
@@ -181,24 +182,24 @@ void NavigationClient::SetUpRendererInitiatedNavigation(
 
 void NavigationClient::ResetWithoutCancelling() {
   navigation_client_receiver_.ResetWithReason(
-      base::to_underlying(
+      std::to_underlying(
           mojom::NavigationClientDisconnectReason::kResetForSwap),
       "");
 }
 
 void NavigationClient::ResetForNewNavigation(bool is_duplicate_navigation) {
   navigation_client_receiver_.ResetWithReason(
-      base::to_underlying(is_duplicate_navigation
-                              ? mojom::NavigationClientDisconnectReason::
-                                    kResetForDuplicateNavigation
-                              : mojom::NavigationClientDisconnectReason::
-                                    kResetForNewNavigation),
+      std::to_underlying(is_duplicate_navigation
+                             ? mojom::NavigationClientDisconnectReason::
+                                   kResetForDuplicateNavigation
+                             : mojom::NavigationClientDisconnectReason::
+                                   kResetForNewNavigation),
       "");
 }
 
 void NavigationClient::ResetForAbort() {
   navigation_client_receiver_.ResetWithReason(
-      base::to_underlying(
+      std::to_underlying(
           mojom::NavigationClientDisconnectReason::kResetForAbort),
       "");
 }

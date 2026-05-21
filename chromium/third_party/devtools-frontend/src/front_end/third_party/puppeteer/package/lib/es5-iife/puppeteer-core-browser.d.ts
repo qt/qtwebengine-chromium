@@ -92,6 +92,33 @@ export declare interface ActionOptions {
 export declare type ActionResult = 'continue' | 'abort' | 'respond';
 
 /**
+ * @license
+ * Copyright 2025 Google Inc.
+ * SPDX-License-Identifier: Apache-2.0
+ */
+/**
+ * @public
+ * Emulated bluetooth adapter state.
+ */
+export declare type AdapterState = 'absent' | 'powered-off' | 'powered-on';
+
+/**
+ * @public
+ */
+export declare interface AddScreenParams {
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+    workAreaInsets?: WorkAreaInsets;
+    devicePixelRatio?: number;
+    rotation?: number;
+    colorDepth?: number;
+    label?: string;
+    isInternal?: boolean;
+}
+
+/**
  * @public
  */
 export declare interface AutofillData {
@@ -126,6 +153,83 @@ export declare type AwaitablePredicate<T> = (value: T) => Awaitable<boolean>;
  * @public
  */
 export declare type AwaitedLocator<T> = T extends Locator<infer S> ? S : never;
+
+/**
+ * Exposes the bluetooth emulation abilities.
+ *
+ * @remarks {@link https://webbluetoothcg.github.io/web-bluetooth/#simulated-bluetooth-adapter|Web Bluetooth specification}
+ * requires the emulated adapters should be isolated per top-level navigable. However,
+ * at the moment Chromium's bluetooth emulation implementation is tight to the browser
+ * context, not the page. This means the bluetooth emulation exposed from different pages
+ * of the same browser context would interfere their states.
+ *
+ * @example
+ *
+ * ```ts
+ * await page.bluetooth.emulateAdapter('powered-on');
+ * await page.bluetooth.simulatePreconnectedPeripheral({
+ *   address: '09:09:09:09:09:09',
+ *   name: 'SOME_NAME',
+ *   manufacturerData: [
+ *     {
+ *       key: 17,
+ *       data: 'AP8BAX8=',
+ *     },
+ *   ],
+ *   knownServiceUuids: ['12345678-1234-5678-9abc-def123456789'],
+ * });
+ * await page.bluetooth.disableEmulation();
+ * ```
+ *
+ * @experimental
+ * @public
+ */
+export declare interface BluetoothEmulation {
+    /**
+     * Emulate Bluetooth adapter. Required for bluetooth simulations
+     * See {@link https://webbluetoothcg.github.io/web-bluetooth/#bluetooth-simulateAdapter-command|bluetooth.simulateAdapter}.
+     *
+     * @param state - The desired bluetooth adapter state.
+     * @param leSupported - Mark if the adapter supports low-energy bluetooth.
+     *
+     * @experimental
+     * @public
+     */
+    emulateAdapter(state: AdapterState, leSupported?: boolean): Promise<void>;
+    /**
+     * Disable emulated bluetooth adapter.
+     * See {@link https://webbluetoothcg.github.io/web-bluetooth/#bluetooth-disableSimulation-command|bluetooth.disableSimulation}.
+     *
+     * @experimental
+     * @public
+     */
+    disableEmulation(): Promise<void>;
+    /**
+     * Simulated preconnected Bluetooth Peripheral.
+     * See {@link https://webbluetoothcg.github.io/web-bluetooth/#bluetooth-simulateconnectedperipheral-command|bluetooth.simulatePreconnectedPeripheral}.
+     *
+     * @param preconnectedPeripheral - The peripheral to simulate.
+     *
+     * @experimental
+     * @public
+     */
+    simulatePreconnectedPeripheral(preconnectedPeripheral: PreconnectedPeripheral): Promise<void>;
+}
+
+/**
+ * @public
+ * Represents the simulated bluetooth peripheral's manufacturer data.
+ */
+export declare interface BluetoothManufacturerData {
+    /**
+     * The company identifier, as defined by the {@link https://www.bluetooth.com/specifications/assigned-numbers/company-identifiers/|Bluetooth SIG}.
+     */
+    key: number;
+    /**
+     * The manufacturer-specific data as a base64-encoded string.
+     */
+    data: string;
+}
 
 /**
  * @public
@@ -256,6 +360,14 @@ export declare abstract class Browser extends EventEmitter<BrowserEvents> {
      */
     abstract newPage(options?: CreatePageOptions): Promise<Page>;
     /**
+     * Gets the specified window {@link WindowBounds | bounds}.
+     */
+    abstract getWindowBounds(windowId: WindowId): Promise<WindowBounds>;
+    /**
+     * Sets the specified window {@link WindowBounds | bounds}.
+     */
+    abstract setWindowBounds(windowId: WindowId, windowBounds: WindowBounds): Promise<void>;
+    /**
      * Gets all active {@link Target | targets}.
      *
      * In case of multiple {@link BrowserContext | browser contexts}, this returns
@@ -366,6 +478,26 @@ export declare abstract class Browser extends EventEmitter<BrowserEvents> {
      */
     deleteMatchingCookies(...filters: DeleteCookiesRequest[]): Promise<void>;
     /**
+     * Sets the permission for a specific origin in the default
+     * {@link BrowserContext}.
+     *
+     * @remarks
+     *
+     * Shortcut for
+     * {@link BrowserContext.setPermission |
+     * browser.defaultBrowserContext().setPermission()}.
+     *
+     * @param origin - The origin to set the permission for.
+     * @param permission - The permission descriptor.
+     * @param state - The state of the permission.
+     *
+     * @public
+     */
+    setPermission(origin: string, ...permissions: Array<{
+        permission: PermissionDescriptor_2;
+        state: PermissionState_2;
+    }>): Promise<void>;
+    /**
      * Installs an extension and returns the ID. In Chrome, this is only
      * available if the browser was created using `pipe: true` and the
      * `--enable-unsafe-extension-debugging` flag is set.
@@ -377,6 +509,26 @@ export declare abstract class Browser extends EventEmitter<BrowserEvents> {
      * `--enable-unsafe-extension-debugging` flag is set.
      */
     abstract uninstallExtension(id: string): Promise<void>;
+    /**
+     * Gets a list of {@link ScreenInfo | screen information objects}.
+     */
+    abstract screens(): Promise<ScreenInfo[]>;
+    /**
+     * Adds a new screen, returns the added {@link ScreenInfo | screen information object}.
+     *
+     * @remarks
+     *
+     * Only supported in headless mode.
+     */
+    abstract addScreen(params: AddScreenParams): Promise<ScreenInfo>;
+    /**
+     * Removes a screen.
+     *
+     * @remarks
+     *
+     * Only supported in headless mode. Fails if the primary screen id is specified.
+     */
+    abstract removeScreen(screenId: string): Promise<void>;
     /**
      * Whether Puppeteer is connected to this {@link Browser | browser}.
      *
@@ -496,8 +648,23 @@ export declare abstract class BrowserContext extends EventEmitter<BrowserContext
      * "https://example.com".
      * @param permissions - An array of permissions to grant. All permissions that
      * are not listed here will be automatically denied.
+     *
+     * @deprecated in favor of {@link BrowserContext.setPermission}.
      */
     abstract overridePermissions(origin: string, permissions: Permission[]): Promise<void>;
+    /**
+     * Sets the permission for a specific origin.
+     *
+     * @param origin - The origin to set the permission for.
+     * @param permission - The permission descriptor.
+     * @param state - The state of the permission.
+     *
+     * @public
+     */
+    abstract setPermission(origin: string | '*', ...permissions: Array<{
+        permission: PermissionDescriptor_2;
+        state: PermissionState_2;
+    }>): Promise<void>;
     /**
      * Clears all permission overrides for this
      * {@link BrowserContext | browser context}.
@@ -1052,6 +1219,17 @@ export declare interface ConnectOptions {
      */
     acceptInsecureCerts?: boolean;
     /**
+     * If specified, puppeteer looks for an open WebSocket at the well-known
+     * default user data directory for the specified channel and attempts to
+     * connect to it using ws://localhost:$ActivePort/devtools/browser. Only works
+     * for Chrome and when run in Node.js.
+     *
+     * This option is experimental when used with puppeteer.connect().
+     *
+     * @experimental
+     */
+    channel?: ChromeReleaseChannel;
+    /**
      * Experimental setting to disable monitoring network events by default. When
      * set to `false`, parts of Puppeteer that depend on network events would not
      * work such as HTTPRequest and HTTPResponse.
@@ -1151,6 +1329,7 @@ export declare class ConsoleMessage {
      * The array of locations on the stack of the console message.
      */
     stackTrace(): ConsoleMessageLocation[];
+
 
 }
 
@@ -1268,7 +1447,7 @@ export declare interface CookieData {
      */
     priority?: CookiePriority;
     /**
-     * True if cookie is SameParty. Supported only in Chrome.
+     * @deprecated Always set to false. Supported only in Chrome.
      */
     sameParty?: boolean;
     /**
@@ -1333,7 +1512,7 @@ export declare interface CookieParam {
      */
     priority?: CookiePriority;
     /**
-     * True if cookie is SameParty. Supported only in Chrome.
+     * @deprecated Always ignored.
      */
     sameParty?: boolean;
     /**
@@ -1390,7 +1569,7 @@ export declare type CookiePriority = 'Low' | 'Medium' | 'High';
  *
  * @public
  */
-export declare type CookieSameSite = 'Strict' | 'Lax' | 'None';
+export declare type CookieSameSite = 'Strict' | 'Lax' | 'None' | 'Default';
 
 /**
  * Represents the source scheme of the origin that originally set the cookie. A value of
@@ -1507,10 +1686,18 @@ export declare interface CoverageEntry {
 /**
  * @public
  */
-export declare type CreatePageOptions = {
-    type: 'tab';
+export declare type CreatePageOptions = ({
+    type?: 'tab';
 } | {
     type: 'window';
+    windowBounds?: WindowBounds;
+}) & {
+    /**
+     * Whether to create the page in the background.
+     *
+     * @defaultValue `false`
+     */
+    background?: boolean;
 };
 
 /**
@@ -1676,7 +1863,7 @@ export declare abstract class DeviceRequestPrompt {
     /**
      * Current list of selectable devices.
      */
-    abstract get devices(): DeviceRequestPromptDevice[];
+    readonly devices: DeviceRequestPromptDevice[];
     /**
      * Resolve to the first device in the prompt matching a filter.
      */
@@ -1696,7 +1883,7 @@ export declare abstract class DeviceRequestPrompt {
  *
  * @public
  */
-export declare class DeviceRequestPromptDevice {
+export declare interface DeviceRequestPromptDevice {
     /**
      * Device id during a prompt.
      */
@@ -1705,7 +1892,6 @@ export declare class DeviceRequestPromptDevice {
      * Device name as it appears in a prompt.
      */
     name: string;
-
 }
 
 /**
@@ -2897,7 +3083,7 @@ export declare abstract class Frame extends EventEmitter<FrameEvents> {
      * ```
      *
      * @param pageFunction - the function to evaluate in the frame context.
-     * @param options - options to configure the polling method and timeout.
+     * @param options - options to configure the polling method, timeout and signal.
      * @param args - arguments to pass to the `pageFunction`.
      * @returns the promise which resolve when the `pageFunction` returns a truthy value.
      */
@@ -3207,6 +3393,18 @@ export declare type HandleOr<T> = HandleFor<T> | JSHandle<T> | T;
  * @public
  */
 export declare type Handler<T = unknown> = (event: T) => void;
+
+/**
+ * Options for {@link Page.captureHeapSnapshot}.
+ *
+ * @public
+ */
+export declare interface HeapSnapshotOptions {
+    /**
+     * The file path to save the heap snapshot to.
+     */
+    path: string;
+}
 
 /**
  * Represents an HTTP request sent by a page.
@@ -3538,7 +3736,8 @@ export declare abstract class HTTPResponse {
      * The buffer might be re-encoded by the browser
      * based on HTTP-headers or other heuristics. If the browser
      * failed to detect the correct encoding, the buffer might
-     * be encoded incorrectly. See https://github.com/puppeteer/puppeteer/issues/6478.
+     * be encoded incorrectly. See
+     * https://github.com/puppeteer/puppeteer/issues/6478.
      */
     abstract content(): Promise<Uint8Array>;
     /**
@@ -3547,6 +3746,10 @@ export declare abstract class HTTPResponse {
     buffer(): Promise<Buffer>;
     /**
      * Promise which resolves to a text (utf8) representation of response body.
+     *
+     * @remarks
+     *
+     * This method will throw if the content is not utf-8 string
      */
     text(): Promise<string>;
     /**
@@ -4103,6 +4306,10 @@ export declare interface LaunchOptions extends ConnectOptions {
      * Additional command line arguments to pass to the browser instance.
      */
     args?: string[];
+    /**
+     * If provided, the browser will be closed when the signal is aborted.
+     */
+    signal?: AbortSignal;
 }
 
 /**
@@ -4217,7 +4424,7 @@ export declare abstract class Locator<T> extends EventEmitter<LocatorEvents> {
      * method is chosen based on the type. `contenteditable`, select, textarea and
      * input elements are supported.
      */
-    fill<ElementType extends Element>(this: Locator<ElementType>, value: string, options?: Readonly<ActionOptions>): Promise<void>;
+    fill<ElementType extends Element>(this: Locator<ElementType>, value: string, options?: Readonly<LocatorFillOptions>): Promise<void>;
     /**
      * Hovers over the located element.
      */
@@ -4250,6 +4457,19 @@ export declare enum LocatorEvent {
  */
 export declare interface LocatorEvents extends Record<EventType, unknown> {
     [LocatorEvent.Action]: undefined;
+}
+
+/**
+ * @public
+ */
+export declare interface LocatorFillOptions extends ActionOptions {
+    /**
+     * The number of characters to type before switching to a faster fill-out
+     * method.
+     *
+     * @defaultValue `100`
+     */
+    typingThreshold?: number;
 }
 
 /**
@@ -4658,6 +4878,7 @@ export declare interface Offset {
  */
 export declare abstract class Page extends EventEmitter<PageEvents> {
     
+
 
 
 
@@ -5433,6 +5654,10 @@ export declare abstract class Page extends EventEmitter<PageEvents> {
      */
     abstract metrics(): Promise<Metrics>;
     /**
+     * Captures a snapshot of the JavaScript heap and writes it to a file.
+     */
+    abstract captureHeapSnapshot(options: HeapSnapshotOptions): Promise<void>;
+    /**
      * The page's URL.
      *
      * @remarks
@@ -5515,6 +5740,8 @@ export declare abstract class Page extends EventEmitter<PageEvents> {
      * - `timeout`: Maximum wait time in milliseconds, defaults to `30` seconds, pass
      *   `0` to disable the timeout. The default value can be changed by using the
      *   {@link Page.setDefaultTimeout} method.
+     *
+     * - `signal`: A signal object that allows you to cancel a waitForRequest call.
      */
     waitForRequest(urlOrPredicate: string | AwaitablePredicate<HTTPRequest>, options?: WaitTimeoutOptions): Promise<HTTPRequest>;
     /**
@@ -5543,6 +5770,8 @@ export declare abstract class Page extends EventEmitter<PageEvents> {
      * - `timeout`: Maximum wait time in milliseconds, defaults to `30` seconds,
      *   pass `0` to disable the timeout. The default value can be changed by using
      *   the {@link Page.setDefaultTimeout} method.
+     *
+     * - `signal`: A signal object that allows you to cancel a waitForResponse call.
      */
     waitForResponse(urlOrPredicate: string | AwaitablePredicate<HTTPResponse>, options?: WaitTimeoutOptions): Promise<HTTPResponse>;
     /**
@@ -5990,6 +6219,12 @@ export declare abstract class Page extends EventEmitter<PageEvents> {
         encoding: 'base64';
     }): Promise<string>;
     screenshot(options?: Readonly<ScreenshotOptions>): Promise<Uint8Array>;
+    /**
+     * Emulates focus state of the page.
+     *
+     * @param enabled - Whether to emulate focus.
+     */
+    abstract emulateFocusedPage(enabled: boolean): Promise<void>;
 
     /**
      * Generates a PDF of the page with the `print` CSS media type.
@@ -6296,6 +6531,8 @@ export declare abstract class Page extends EventEmitter<PageEvents> {
      * - `timeout`: maximum time to wait for in milliseconds. Defaults to `30000`
      *   (30 seconds). Pass `0` to disable timeout. The default value can be changed
      *   by using the {@link Page.setDefaultTimeout} method.
+     *
+     * - `signal`: A signal object that allows you to cancel a waitForSelector call.
      */
     waitForSelector<Selector extends string>(selector: Selector, options?: WaitForSelectorOptions): Promise<ElementHandle<NodeFor<Selector>> | null>;
     /**
@@ -6380,7 +6617,22 @@ export declare abstract class Page extends EventEmitter<PageEvents> {
      * ```
      */
     abstract waitForDevicePrompt(options?: WaitTimeoutOptions): Promise<DeviceRequestPrompt>;
-
+    /**
+     * Resizes the browser window of this page so that the content area (excluding
+     * browser UI) has the specified width and height.
+     *
+     * @experimental
+     */
+    abstract resize(params: {
+        contentWidth: number;
+        contentHeight: number;
+    }): Promise<void>;
+    /**
+     * Returns the page's window id.
+     *
+     * @experimental
+     */
+    abstract windowId(): Promise<WindowId>;
 
 
     /**
@@ -6388,6 +6640,10 @@ export declare abstract class Page extends EventEmitter<PageEvents> {
      * method is only available in Chrome.
      */
     abstract openDevTools(): Promise<Page>;
+    /**
+     * {@inheritDoc BluetoothEmulation}
+     */
+    abstract get bluetooth(): BluetoothEmulation;
 }
 
 /**
@@ -6747,8 +7003,27 @@ export declare interface PDFOptions {
 
 /**
  * @public
+ * @deprecated in favor of {@link PermissionDescriptor}.
  */
 export declare type Permission = 'accelerometer' | 'ambient-light-sensor' | 'background-sync' | 'camera' | 'clipboard-read' | 'clipboard-sanitized-write' | 'clipboard-write' | 'geolocation' | 'gyroscope' | 'idle-detection' | 'keyboard-lock' | 'magnetometer' | 'microphone' | 'midi-sysex' | 'midi' | 'notifications' | 'payment-handler' | 'persistent-storage' | 'pointer-lock';
+
+/**
+ * @public
+ */
+declare interface PermissionDescriptor_2 {
+    name: string;
+    userVisibleOnly?: boolean;
+    sysex?: boolean;
+    panTiltZoom?: boolean;
+    allowWithoutSanitization?: boolean;
+}
+export { PermissionDescriptor_2 as PermissionDescriptor }
+
+/**
+ * @public
+ */
+declare type PermissionState_2 = 'granted' | 'denied' | 'prompt';
+export { PermissionState_2 as PermissionState }
 
 /**
  * @public
@@ -6762,6 +7037,17 @@ declare namespace PQuerySelector {
     export {
 
     }
+}
+
+/**
+ * @public
+ * A bluetooth peripheral to be simulated.
+ */
+export declare interface PreconnectedPeripheral {
+    address: string;
+    name: string;
+    manufacturerData: BluetoothManufacturerData[];
+    knownServiceUuids: string[];
 }
 
 /**
@@ -6907,14 +7193,27 @@ declare namespace Puppeteer_2 {
     export {
         Protocol,
         Session,
+        AdapterState,
+        BluetoothManufacturerData,
+        PreconnectedPeripheral,
+        BluetoothEmulation,
         BrowserContextOptions,
         TargetFilterCallback,
         Permission,
+        PermissionDescriptor_2 as PermissionDescriptor,
+        PermissionState_2 as PermissionState,
         WaitForTargetOptions,
         BrowserEvent,
         BrowserEvents,
         DebugInfo,
+        WindowState,
+        WindowBounds,
+        WindowId,
         CreatePageOptions,
+        ScreenOrientation_2 as ScreenOrientation,
+        ScreenInfo,
+        WorkAreaInsets,
+        AddScreenParams,
         Browser,
         BrowserContextEvent,
         BrowserContextEvents,
@@ -6984,6 +7283,7 @@ declare namespace Puppeteer_2 {
         PageEvents,
         NewDocumentScriptEvaluation,
         ReloadOptions,
+        HeapSnapshotOptions,
         Page,
         TargetType,
         Target,
@@ -6991,6 +7291,7 @@ declare namespace Puppeteer_2 {
         VisibilityOption,
         ActionOptions,
         LocatorClickOptions,
+        LocatorFillOptions,
         LocatorScrollOptions,
         LocatorEvent,
         LocatorEvents,
@@ -7026,6 +7327,7 @@ declare namespace Puppeteer_2 {
         ProtocolType,
         SupportedWebDriverCapability,
         SupportedWebDriverCapabilities,
+        ChromeReleaseChannel,
         ConnectOptions,
         ConsoleMessageLocation,
         ConsoleMessageType,
@@ -7076,7 +7378,6 @@ declare namespace Puppeteer_2 {
         Viewport,
         DownloadPolicy,
         DownloadBehavior,
-        ChromeReleaseChannel,
         LaunchOptions,
         BrowserLauncher,
         PuppeteerNode,
@@ -7422,6 +7723,37 @@ export declare interface ScreencastOptions {
 /**
  * @public
  */
+export declare interface ScreenInfo {
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+    availLeft: number;
+    availTop: number;
+    availWidth: number;
+    availHeight: number;
+    devicePixelRatio: number;
+    colorDepth: number;
+    orientation: ScreenOrientation_2;
+    isExtended: boolean;
+    isInternal: boolean;
+    isPrimary: boolean;
+    label: string;
+    id: string;
+}
+
+/**
+ * @public
+ */
+declare interface ScreenOrientation_2 {
+    angle: number;
+    type: string;
+}
+export { ScreenOrientation_2 as ScreenOrientation }
+
+/**
+ * @public
+ */
 export declare class ScreenRecorder extends PassThrough {
     
 
@@ -7608,6 +7940,35 @@ export declare interface SerializedAXNode {
     invalid?: string;
     orientation?: string;
     /**
+     * Whether the node is {@link https://www.w3.org/TR/wai-aria/#aria-busy | busy}.
+     */
+    busy?: boolean;
+    /**
+     * The {@link https://www.w3.org/TR/wai-aria/#aria-live | live} status of the
+     * node.
+     */
+    live?: string;
+    /**
+     * Whether the live region is
+     * {@link https://www.w3.org/TR/wai-aria/#aria-atomic | atomic}.
+     */
+    atomic?: boolean;
+    /**
+     * The {@link https://www.w3.org/TR/wai-aria/#aria-relevant | relevant}
+     * changes for the live region.
+     */
+    relevant?: string;
+    /**
+     * The {@link https://www.w3.org/TR/wai-aria/#aria-errormessage | error message}
+     * for the node.
+     */
+    errormessage?: string;
+    /**
+     * The {@link https://www.w3.org/TR/wai-aria/#aria-details | details} for the
+     * node.
+     */
+    details?: string;
+    /**
      * Url for link elements.
      */
     url?: string;
@@ -7615,6 +7976,7 @@ export declare interface SerializedAXNode {
      * Children of this node, if there are any.
      */
     children?: SerializedAXNode[];
+
 
     /**
      * Get an ElementHandle for this AXNode if available.
@@ -8139,6 +8501,37 @@ export declare abstract class WebWorker extends EventEmitter<Record<EventType, u
      */
     evaluateHandle<Params extends unknown[], Func extends EvaluateFunc<Params> = EvaluateFunc<Params>>(func: Func | string, ...args: Params): Promise<HandleFor<Awaited<ReturnType<Func>>>>;
     close(): Promise<void>;
+}
+
+/**
+ * @public
+ */
+export declare interface WindowBounds {
+    left?: number;
+    top?: number;
+    width?: number;
+    height?: number;
+    windowState?: WindowState;
+}
+
+/**
+ * @public
+ */
+export declare type WindowId = string;
+
+/**
+ * @public
+ */
+export declare type WindowState = 'normal' | 'minimized' | 'maximized' | 'fullscreen';
+
+/**
+ * @public
+ */
+export declare interface WorkAreaInsets {
+    top?: number;
+    left?: number;
+    bottom?: number;
+    right?: number;
 }
 
 export { }

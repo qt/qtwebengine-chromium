@@ -51,6 +51,8 @@ class Location {
   const void* program_counter_ = nullptr;
 };
 
+std::ostream& operator<<(std::ostream& out, const Location& location);
+
 const void* GetProgramCounter();
 
 #define CURRENT_LOCATION ::openscreen::Location::CreateFromHere()

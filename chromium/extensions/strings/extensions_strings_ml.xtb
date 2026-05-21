@@ -12,6 +12,7 @@
 <translation id="2159915644201199628">ചിത്രം ഡീകോഡ് ചെയ്യാൻ കഴിഞ്ഞില്ല: '<ph name="IMAGE_NAME" />'</translation>
 <translation id="2350172092385603347">പ്രാദേശികവൽക്കരണം ഉപയോഗിച്ചു, പക്ഷെ മാനിഫെസ്‌റ്റിൽ സ്ഥിര-ഭാഷ വ്യക്തമാക്കിയിട്ടില്ല.</translation>
 <translation id="2576842806987913196">ഇതേ പേരിൽ ഇതിനകം ഒരു CRX ഫയൽ നിലവിലുണ്ട്.</translation>
+<translation id="2743583586211388067">നിങ്ങളുടെ സ്ഥാപനത്തിന്റെ വിപുലീകരണ റിസ്ക് നയത്തിന് കീഴിൽ ഈ വിപുലീകരണത്തിലേക്കുള്ള ആക്സസ് ബ്ലോക്ക് ചെയ്തിരിക്കുന്നു.</translation>
 <translation id="2785530881066938471">ഉള്ളടക്ക സ്ക്രി‌പ്റ്റിന് '<ph name="RELATIVE_PATH" />' ഫയൽ ലോഡ് ചെയ്യാനായില്ല. അത് UTF-8 എൻകോഡ് ചെയ്‌‌തതല്ല.</translation>
 <translation id="2903070246402204397"><ph name="EXTENSION_NAME" /> (വിപുലീകരണ ഐഡി "<ph name="EXTENSION_ID" />") അഡ്‌മിനിസ്‌ട്രേറ്റർ ബ്ലോക്ക് ചെയ്‌തു. <ph name="ADMIN_INFO" /></translation>
 <translation id="2988488679308982380">പാക്കേജ് ഇൻസ്‌റ്റാൾ ചെയ്യാനായില്ല: '<ph name="ERROR_CODE" />'</translation>
@@ -33,9 +34,11 @@
 <translation id="5356315618422219272">ആപ്പ് കാഴ്‌‌ച: <ph name="APPVIEW_TAG_NAME" /></translation>
 <translation id="5456409301717116725">ഈ വിപുലീകരണത്തിൽ '<ph name="KEY_PATH" />' എന്ന കീ ഫയൽ ഉൾപ്പെടുന്നു. മിക്കവാറും നിങ്ങൾ ഇത് ചെയ്യാൻ താൽപ്പര്യപ്പെട്ടേക്കില്ല.</translation>
 <translation id="5486326529110362464">സ്വകാര്യ കീയുടെ ഇന്‍‌പുട്ട് മൂല്യം നിലവിലുണ്ടായിരിക്കണം.</translation>
+<translation id="5707185214361380026">ഇതിൽ നിന്ന് വിപുലീകരണം ലോഡ് ചെയ്യുന്നതിൽ പരാജയപ്പെട്ടു:</translation>
 <translation id="5972529113578162692">ഈ മെഷീനിന്‍റെ അഡ്‌മിനിസ്ട്രേറ്ററിന് <ph name="EXTENSION_NAME" /> ഇൻസ്‌റ്റാൾ ചെയ്യേണ്ടതുണ്ട്. ഇത് അൺഇൻസ്‌റ്റാൾ ചെയ്യാനാകില്ല.</translation>
 <translation id="6027032947578871493"><ph name="VENDOR_NAME" /> എന്നതിൽ നിന്നുള്ള അജ്ഞാത ഉൽപ്പന്നം <ph name="PRODUCT_ID" /> (സീരിയൽ നമ്പർ <ph name="SERIAL_NUMBER" />)</translation>
 <translation id="6068932090455285721"><ph name="VENDOR_ID" /> വെൻഡറിൽ നിന്നുള്ള <ph name="PRODUCT_NAME" /></translation>
+<translation id="6220413761270491930">വിപുലീകരണം ലോഡ് ചെയ്യുന്നതിൽ പിശക്</translation>
 <translation id="6322279351188361895">സ്വകാര്യ കീ റീഡുചെയ്യുന്നതിന് പരാജയപ്പെട്ടു.</translation>
 <translation id="6391538222494443604">ഇന്‍‌പുട്ട് ഡയറക്‌റ്ററി നിലവിലുണ്ടായിരിക്കണം.</translation>
 <translation id="641087317769093025">വിപുലീകരണം അൺസിപ്പ് ചെയ്യാൻ കഴിഞ്ഞില്ല</translation>

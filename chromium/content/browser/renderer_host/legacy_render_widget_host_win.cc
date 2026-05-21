@@ -4,6 +4,7 @@
 
 #include "content/browser/renderer_host/legacy_render_widget_host_win.h"
 
+#include <windows.h>
 #include <objbase.h>
 
 #include <memory>
@@ -12,7 +13,11 @@
 #include "base/check.h"
 #include "base/command_line.h"
 #include "base/feature_list.h"
+#include "base/functional/bind.h"
+#include "base/location.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/win/win_util.h"
+#include "base/win/wrapped_window_proc.h"
 #include "content/browser/accessibility/browser_accessibility_state_impl.h"
 #include "content/browser/renderer_host/direct_manipulation_helper_win.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
@@ -23,6 +28,7 @@
 #include "ui/accessibility/platform/ax_fragment_root_win.h"
 #include "ui/accessibility/platform/ax_platform.h"
 #include "ui/accessibility/platform/ax_system_caret_win.h"
+#include "ui/accessibility/platform/ax_unique_id.h"
 #include "ui/accessibility/platform/browser_accessibility_manager_win.h"
 #include "ui/accessibility/platform/browser_accessibility_win.h"
 #include "ui/accessibility/platform/one_shot_accessibility_tree_search.h"
@@ -35,6 +41,7 @@
 #include "ui/base/win/window_event_target.h"
 #include "ui/display/win/screen_win.h"
 #include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/win/hwnd_util.h"
 
 namespace content {
 
@@ -172,41 +179,21 @@ void LegacyRenderWidgetHostHWND::SetBounds(const gfx::Rect& bounds) {
   }
 }
 
-void LegacyRenderWidgetHostHWND::OnFinalMessage(HWND hwnd) {
-  if (host_) {
-    host_->OnLegacyWindowDestroyed();
-    host_ = nullptr;
-  }
-
-  // Re-enable flicks for just a moment
-  base::win::EnableFlicks(hwnd);
-
-  delete this;
-}
-
 LegacyRenderWidgetHostHWND::LegacyRenderWidgetHostHWND(
     RenderWidgetHostViewAura* host)
     : host_(host) {}
 
 LegacyRenderWidgetHostHWND::~LegacyRenderWidgetHostHWND() {
-  DCHECK(!::IsWindow(hwnd()));
+  // WindowImpl will clean up the hwnd value on WM_NCDESTROY.
+  DCHECK(!hwnd());
 }
 
 bool LegacyRenderWidgetHostHWND::InitOrDeleteSelf(HWND parent) {
-  // Need to use weak_ptr to guard against `this` from being deleted by
-  // Base::Create(), which used to be called in the constructor and caused
-  // heap-use-after-free crash (https://crbug.com/1194694).
-  auto weak_ptr = msg_handler_weak_factory_.GetWeakPtr();
-  RECT rect = {0};
-  Base::Create(parent, rect, L"Chrome Legacy Window",
-               WS_CHILDWINDOW | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
-               WS_EX_TRANSPARENT);
-  if (!weak_ptr) {
-    // Base::Create() runs nested windows message loops that could end up
-    // deleting `this`. Therefore, upon returning false here, `this` is already
-    // deleted.
-    return false;
-  }
+  set_window_style(WS_CHILDWINDOW | WS_CLIPCHILDREN | WS_CLIPSIBLINGS);
+  set_window_ex_style(WS_EX_TRANSPARENT);
+  set_window_class_name(ui::kLegacyRenderWidgetHostHwnd);
+  set_window_name(L"Chrome Legacy Window");
+  WindowImpl::Init(parent, gfx::Rect());
 
   // We create a system caret regardless of accessibility mode since not all
   // assistive software that makes use of a caret is classified as a screen
@@ -235,6 +222,12 @@ bool LegacyRenderWidgetHostHWND::InitOrDeleteSelf(HWND parent) {
     // ensure it's ready if asked for.
     ax_fragment_root_ = std::make_unique<ui::AXFragmentRootWin>(hwnd(), this);
   }
+
+  // Ensure that the window has a unique ID for accessibility purposes. This is
+  // used by assistive technologies to distinguish this window from others.
+  ::SetWindowLongPtr(
+      hwnd(), GWLP_ID,
+      static_cast<LONG_PTR>(int32_t(ui::AXUniqueId::Create().Get())));
 
   // Continue to send honey pot events until we have kWebContents to
   // ensure screen readers have the opportunity to enable.
@@ -369,8 +362,14 @@ LRESULT LegacyRenderWidgetHostHWND::OnKeyboardRange(UINT message,
   }
 
   bool msg_handled = false;
+  base::WeakPtr<LegacyRenderWidgetHostHWND> ref(
+      msg_handler_weak_factory_.GetWeakPtr());
   LRESULT ret = event_target->HandleKeyboardMessage(message, w_param, l_param,
                                                     &msg_handled);
+  // HandleKeyboardMessage() may result in |this| being deleted.
+  if (!ref) {
+    return 0;
+  }
   SetMsgHandled(msg_handled);
   return ret;
 }
@@ -407,8 +406,14 @@ LRESULT LegacyRenderWidgetHostHWND::OnMouseRange(UINT message,
   }
 
   bool msg_handled = false;
+  base::WeakPtr<LegacyRenderWidgetHostHWND> ref(
+      msg_handler_weak_factory_.GetWeakPtr());
   LRESULT ret =
       event_target->HandleMouseMessage(message, w_param, l_param, &msg_handled);
+  // HandleMouseMessage() may result in |this| being deleted.
+  if (!ref) {
+    return 0;
+  }
   SetMsgHandled(msg_handled);
   // If the parent did not handle non-client mouse messages, call
   // DefWindowProc() on the message with the parent window handle. This ensures
@@ -453,8 +458,14 @@ LRESULT LegacyRenderWidgetHostHWND::OnMouseLeave(UINT message,
   }
 
   bool msg_handled = false;
+  base::WeakPtr<LegacyRenderWidgetHostHWND> ref(
+      msg_handler_weak_factory_.GetWeakPtr());
   LRESULT ret =
       event_target->HandleMouseMessage(message, w_param, l_param, &msg_handled);
+  // HandleMouseMessage() may result in |this| being deleted.
+  if (!ref) {
+    return 0;
+  }
   SetMsgHandled(msg_handled);
   return ret;
 }
@@ -514,8 +525,15 @@ LRESULT LegacyRenderWidgetHostHWND::OnPointer(UINT message,
   }
 
   bool msg_handled = false;
+  base::WeakPtr<LegacyRenderWidgetHostHWND> ref(
+      msg_handler_weak_factory_.GetWeakPtr());
   LRESULT ret = event_target->HandlePointerMessage(message, w_param, l_param,
                                                    &msg_handled);
+  // HandlePointerMessage() may result in |this| being deleted.
+  if (!ref) {
+    return 0;
+  }
+
   SetMsgHandled(msg_handled);
 
   if (message == WM_POINTERDOWN) {
@@ -538,8 +556,14 @@ LRESULT LegacyRenderWidgetHostHWND::OnTouch(UINT message,
   }
 
   bool msg_handled = false;
+  base::WeakPtr<LegacyRenderWidgetHostHWND> ref(
+      msg_handler_weak_factory_.GetWeakPtr());
   LRESULT ret =
       event_target->HandleTouchMessage(message, w_param, l_param, &msg_handled);
+  // HandleTouchMessage() may result in |this| being deleted.
+  if (!ref) {
+    return 0;
+  }
   SetMsgHandled(msg_handled);
   return ret;
 }
@@ -553,8 +577,14 @@ LRESULT LegacyRenderWidgetHostHWND::OnInput(UINT message,
   }
 
   bool msg_handled = false;
+  base::WeakPtr<LegacyRenderWidgetHostHWND> ref(
+      msg_handler_weak_factory_.GetWeakPtr());
   LRESULT ret =
       event_target->HandleInputMessage(message, w_param, l_param, &msg_handled);
+  // HandleInputMessage() may result in |this| being deleted.
+  if (!ref) {
+    return 0;
+  }
   SetMsgHandled(msg_handled);
   return ret;
 }
@@ -568,8 +598,14 @@ LRESULT LegacyRenderWidgetHostHWND::OnScroll(UINT message,
   }
 
   bool msg_handled = false;
+  base::WeakPtr<LegacyRenderWidgetHostHWND> ref(
+      msg_handler_weak_factory_.GetWeakPtr());
   LRESULT ret = event_target->HandleScrollMessage(message, w_param, l_param,
                                                   &msg_handled);
+  // HandleScrollMessage() may result in |this| being deleted.
+  if (!ref) {
+    return 0;
+  }
   SetMsgHandled(msg_handled);
   return ret;
 }
@@ -583,8 +619,14 @@ LRESULT LegacyRenderWidgetHostHWND::OnNCHitTest(UINT message,
   }
 
   bool msg_handled = false;
+  base::WeakPtr<LegacyRenderWidgetHostHWND> ref(
+      msg_handler_weak_factory_.GetWeakPtr());
   LRESULT hit_test = event_target->HandleNcHitTestMessage(
       message, w_param, l_param, &msg_handled);
+  // HandleNcHitTestMessage() may result in |this| being deleted.
+  if (!ref) {
+    return HTNOWHERE;
+  }
   if (hit_test == HTNOWHERE) {
     // If the parent returns HTNOWHERE which can happen for popup windows, etc,
     // return HTCLIENT.
@@ -647,6 +689,15 @@ LRESULT LegacyRenderWidgetHostHWND::OnCreate(UINT message,
   return 0;
 }
 
+namespace {
+
+void UiaDisconnectProviderInTask(
+    Microsoft::WRL::ComPtr<IRawElementProviderSimple> provider) {
+  ::UiaDisconnectProvider(provider.Get());
+}
+
+}  // namespace
+
 LRESULT LegacyRenderWidgetHostHWND::OnDestroy(UINT message,
                                               WPARAM w_param,
                                               LPARAM l_param) {
@@ -662,7 +713,14 @@ LRESULT LegacyRenderWidgetHostHWND::OnDestroy(UINT message,
     // https://learn.microsoft.com/en-us/windows/win32/api/uiautomationcoreapi/nf-uiautomationcoreapi-uiadisconnectprovider.
     if (ax_platform.IsUiaProviderEnabled() &&
         base::FeatureList::IsEnabled(features::kUiaDisconnectRootProviders)) {
-      ::UiaDisconnectProvider(ax_fragment_root_->GetProvider());
+      // Post a task to disconnect the provider to avoid a potential re-entrancy
+      // issue -- UiaDisconnectProvider may make COM calls, which could result
+      // in a call to PeekMessage.
+      base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+          FROM_HERE,
+          base::BindOnce(&UiaDisconnectProviderInTask,
+                         Microsoft::WRL::ComPtr<IRawElementProviderSimple>(
+                             ax_fragment_root_->GetProvider())));
     }
 
     // Disassociate this window from MSAA clients that are observing events; see
@@ -670,6 +728,21 @@ LRESULT LegacyRenderWidgetHostHWND::OnDestroy(UINT message,
     ::UiaReturnRawElementProvider(hwnd(), 0, 0, nullptr);
   }
 
+  // Re-enable (http://crbug.com/506977)
+  base::win::EnableFlicks(hwnd());
+
+  return 0;
+}
+
+LRESULT LegacyRenderWidgetHostHWND::OnNCDestroy(UINT message,
+                                                WPARAM w_param,
+                                                LPARAM l_param) {
+  if (host_) {
+    host_->OnLegacyWindowDestroyed();
+    host_ = nullptr;
+  }
+
+  delete this;
   return 0;
 }
 

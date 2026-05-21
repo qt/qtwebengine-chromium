@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "base/time/time.h"
+#include "content/browser/preloading/prefetch/prefetch_key.h"
 #include "content/browser/preloading/prefetch/prefetch_servable_state.h"
 #include "content/browser/preloading/prefetch/prefetch_streaming_url_loader_common_types.h"
 #include "content/common/content_export.h"
@@ -17,9 +18,10 @@
 
 namespace content {
 
-enum class PrefetchPotentialCandidateServingResult;
 class NavigationHandle;
 class PrefetchContainer;
+enum class PrefetchPotentialCandidateCollectResult;
+enum class PrefetchPotentialCandidateServingResult;
 enum class PrefetchStatus;
 
 // All the structs in this file are "Logs" as defined in
@@ -93,6 +95,9 @@ struct CONTENT_EXPORT PrefetchMatchPrefetchAheadOfPrerenderDebugMetrics final {
   PrefetchMatchResolverAction match_resolver_action;
   int queue_size;
   std::optional<int> queue_index;
+  PrefetchPotentialCandidateCollectResult collect_result;
+  PrefetchKey prefetch_key_navigated;
+  PrefetchKey prefetch_key_ahead_of_prerender;
 };
 
 // Debug information of prefetch ahead of prerender at prefetch matching.

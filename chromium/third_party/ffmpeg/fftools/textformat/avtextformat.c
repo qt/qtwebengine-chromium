@@ -147,6 +147,7 @@ int avtext_context_open(AVTextFormatContext **ptctx, const AVTextFormatter *form
         goto fail;
     }
 
+    tctx->is_key_selected = options.is_key_selected;
     tctx->show_value_unit = options.show_value_unit;
     tctx->use_value_prefix = options.use_value_prefix;
     tctx->use_byte_value_binary_prefix = options.use_byte_value_binary_prefix;
@@ -289,8 +290,6 @@ void avtext_print_section_footer(AVTextFormatContext *tctx)
 
 void avtext_print_integer(AVTextFormatContext *tctx, const char *key, int64_t val, int flags)
 {
-    const AVTextFormatSection *section;
-
     av_assert0(tctx);
 
     if (tctx->show_optional_fields == SHOW_OPTIONAL_FIELDS_NEVER)
@@ -303,9 +302,7 @@ void avtext_print_integer(AVTextFormatContext *tctx, const char *key, int64_t va
 
     av_assert0(key && tctx->level >= 0 && tctx->level < SECTION_MAX_NB_LEVELS);
 
-    section = tctx->section[tctx->level];
-
-    if (section->show_all_entries || av_dict_get(section->entries_to_show, key, NULL, 0)) {
+    if (!tctx->is_key_selected || tctx->is_key_selected(tctx, key)) {
         tctx->formatter->print_integer(tctx, key, val);
         tctx->nb_item[tctx->level]++;
     }
@@ -460,7 +457,7 @@ int avtext_print_string(AVTextFormatContext *tctx, const char *key, const char *
         && !(tctx->formatter->flags & AV_TEXTFORMAT_FLAG_SUPPORTS_OPTIONAL_FIELDS))
         return 0;
 
-    if (section->show_all_entries || av_dict_get(section->entries_to_show, key, NULL, 0)) {
+    if (!tctx->is_key_selected || tctx->is_key_selected(tctx, key)) {
         if (flags & AV_TEXTFORMAT_PRINT_STRING_VALIDATE) {
             char *key1 = NULL, *val1 = NULL;
             ret = validate_string(tctx, &key1, key);
@@ -559,34 +556,6 @@ void avtext_print_data_hash(AVTextFormatContext *tctx, const char *key,
     len = snprintf(buf, sizeof(buf), "%s:", av_hash_get_name(tctx->hash));
     av_hash_final_hex(tctx->hash, (uint8_t *)&buf[len], (int)sizeof(buf) - len);
     avtext_print_string(tctx, key, buf, 0);
-}
-
-void avtext_print_integers(AVTextFormatContext *tctx, const char *key,
-                           uint8_t *data, int size, const char *format,
-                           int columns, int bytes, int offset_add)
-{
-    AVBPrint bp;
-    unsigned offset = 0;
-
-    if (!key || !data || !format || columns <= 0 || bytes <= 0)
-        return;
-
-    av_bprint_init(&bp, 0, AV_BPRINT_SIZE_UNLIMITED);
-    av_bprintf(&bp, "\n");
-    while (size) {
-        av_bprintf(&bp, "%08x: ", offset);
-        for (int i = 0, l = FFMIN(size, columns); i < l; i++) {
-            if      (bytes == 1) av_bprintf(&bp, format, *data);
-            else if (bytes == 2) av_bprintf(&bp, format, AV_RN16(data));
-            else if (bytes == 4) av_bprintf(&bp, format, AV_RN32(data));
-            data += bytes;
-            size--;
-        }
-        av_bprintf(&bp, "\n");
-        offset += offset_add;
-    }
-    avtext_print_string(tctx, key, bp.str, 0);
-    av_bprint_finalize(&bp, NULL);
 }
 
 static const char *writercontext_get_writer_name(void *p)

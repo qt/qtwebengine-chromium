@@ -682,9 +682,9 @@ FcSfntNameTranscode (FT_SfntName *sname)
     const char *fromcode;
 #if USE_ICONV
     iconv_t cd;
+    FcBool  redecoded = FcFalse;
 #endif
     FcChar8 *utf8;
-    FcBool   redecoded = FcFalse;
 
     for (i = 0; i < NUM_FC_FT_ENCODING; i++)
 	if (fcFtEncoding[i].platform_id == sname->platform_id &&

@@ -13,12 +13,14 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.robolectric.Shadows.shadowOf;
 
+import android.os.Build;
 import android.os.Looper;
 
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 import org.robolectric.annotation.Config;
@@ -87,6 +89,7 @@ public class ToastManagerTest {
 
         // Canceling lets the next queued one to show up immediately.
         toastManager.cancel(mToast);
+        triggerCallback(mAndroidToastObject);
         assertFalse("The current toast should have canceled", toastManager.isShowingForTesting());
         toastManager.requestShow(mToastNext);
         assertEquals(
@@ -136,6 +139,7 @@ public class ToastManagerTest {
 
         // The next toast shows only after the delay.
         waitForIdleUi();
+        triggerCallback(mAndroidToastObject);
         ShadowLooper.idleMainLooper(DURATION_BETWEEN_TOASTS_MS, TimeUnit.MILLISECONDS);
         verify(mAndroidToastObjectNext).show();
     }
@@ -157,6 +161,7 @@ public class ToastManagerTest {
 
         // The next toast shows only after the delay.
         waitForIdleUi();
+        triggerCallback(mAndroidToastObject);
         ShadowLooper.idleMainLooper(DURATION_BETWEEN_TOASTS_MS, TimeUnit.MILLISECONDS);
         verify(mAndroidToastObjectNext).show();
     }
@@ -191,9 +196,11 @@ public class ToastManagerTest {
 
         verify(androidToast1).show();
         waitForIdleUi();
+        triggerCallback(androidToast1);
         ShadowLooper.idleMainLooper(DURATION_BETWEEN_TOASTS_MS, TimeUnit.MILLISECONDS);
         verify(androidToast3).show(); // One with high priority comes before the next normal one.
         waitForIdleUi();
+        triggerCallback(androidToast3);
         ShadowLooper.idleMainLooper(DURATION_BETWEEN_TOASTS_MS, TimeUnit.MILLISECONDS);
         verify(androidToast2).show();
     }
@@ -249,6 +256,7 @@ public class ToastManagerTest {
         verify(mAndroidToastObjectNext, never()).show();
 
         // The next toast shows only after the current toast is done showing and the 500ms delay.
+        triggerCallback(mAndroidToastObject);
         ShadowLooper.idleMainLooper(DURATION_BETWEEN_TOASTS_MS, TimeUnit.MILLISECONDS);
         verify(mAndroidToastObjectNext).show();
     }
@@ -267,6 +275,7 @@ public class ToastManagerTest {
         toastManager.requestShow(mToast);
         verify(mAndroidToastObject).show();
         waitForIdleUi();
+        triggerCallback(mAndroidToastObject);
         ShadowLooper.idleMainLooper(DURATION_BETWEEN_TOASTS_MS, TimeUnit.MILLISECONDS);
         // The second toast should also show without the 500ms delay.
         toastManager.requestShow(mToastNext);
@@ -289,6 +298,7 @@ public class ToastManagerTest {
         verify(mAndroidToastObject).show();
 
         toastManager.cancel(mToast);
+        triggerCallback(mAndroidToastObject);
         assertFalse(
                 "The current toast should have been canceled", toastManager.isShowingForTesting());
         // The next toast should not show immediately.
@@ -297,5 +307,14 @@ public class ToastManagerTest {
         ShadowLooper.idleMainLooper(DURATION_BETWEEN_TOASTS_MS, TimeUnit.MILLISECONDS);
         // The next toast should show after the 500ms delay.
         verify(mAndroidToastObjectNext).show();
+    }
+
+    private void triggerCallback(android.widget.Toast mockToast) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            ArgumentCaptor<android.widget.Toast.Callback> callbackCaptor =
+                    ArgumentCaptor.forClass(android.widget.Toast.Callback.class);
+            verify(mockToast).addCallback(callbackCaptor.capture());
+            callbackCaptor.getValue().onToastHidden();
+        }
     }
 }

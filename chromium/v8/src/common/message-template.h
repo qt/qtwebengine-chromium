@@ -104,7 +104,19 @@ namespace internal {
   T(DefineDisallowed, "Cannot define property %, object is not extensible")    \
   T(DefineDisallowedFixedLayout,                                               \
     "Cannot define property %, object has fixed layout")                       \
-  T(DetachedOperation, "Cannot perform % on a detached ArrayBuffer")           \
+  T(TypedArrayDetachedErrorOperation,                                          \
+    "Cannot perform % on a detached ArrayBuffer")                              \
+  T(TypedArrayOOBErrorOperation,                                               \
+    "Cannot perform % out-of-bounds of the ArrayBuffer")                       \
+  T(TypedArrayValidateErrorOperation,                                          \
+    "Cannot perform % on a detached or out-of-bounds ArrayBuffer")             \
+  T(TypedArrayValidateWriteErrorOperation,                                     \
+    (v8_flags.js_immutable_arraybuffer                                         \
+         ? "Cannot perform % on a detached or out-of-bounds or immutable "     \
+           "ArrayBuffer"                                                       \
+         : "Cannot perform % on a detached or out-of-bounds ArrayBuffer"))     \
+  T(TypedArrayImmutableBufferErrorOperation,                                   \
+    "Cannot perform % on an immutable ArrayBuffer")                            \
   T(DoNotUse, "Do not use %; %")                                               \
   T(DuplicateTemplateProperty, "Object template has duplicate property '%'")   \
   T(ExtendsValueNotConstructor,                                                \
@@ -177,6 +189,7 @@ namespace internal {
   T(NonStringImportAttributeValue, "Import attribute value must be a string")  \
   T(NoSetterInCallback, "Cannot set property % of % which has only a getter")  \
   T(NotAnIterator, "% is not an iterator")                                     \
+  T(NotReadyForSyncExec, "Deferred module is not ready for sync execution")    \
   T(PromiseNewTargetUndefined,                                                 \
     "Promise constructor cannot be invoked without 'new'")                     \
   T(NotConstructor, "% is not a constructor")                                  \
@@ -716,6 +729,7 @@ namespace internal {
   T(WasmTrapStringOffsetOutOfBounds, "string offset out of bounds")            \
   T(WasmTrapResume, "resuming an invalid continuation")                        \
   T(WasmSuspendError, "trying to suspend without WebAssembly.promising")       \
+  T(WasmFXSuspendError, "WasmFX: unhandled suspend")                           \
   T(WasmTrapStringIsolatedSurrogate,                                           \
     "Failed to encode string as UTF-8: contains unpaired surrogate")           \
   T(WasmSuspendJSFrames, "trying to suspend JS frames")                        \

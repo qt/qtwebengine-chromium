@@ -75,6 +75,7 @@ class Device final : public DeviceBase {
     const VulkanGlobalInfo& GetGlobalInfo() const;
     VkDevice GetVkDevice() const;
     uint32_t GetGraphicsQueueFamily() const;
+    const VkDescriptorSetLayout& GetResourceTableLayout() const;
 
     MutexProtected<FencedDeleter>& GetFencedDeleter() const;
     FramebufferCache* GetFramebufferCache() const;
@@ -111,9 +112,9 @@ class Device final : public DeviceBase {
                                             const TextureCopy& dst,
                                             const Extent3D& copySizePixels) override;
 
-    // Return the fixed subgroup size to use for compute shaders on this device or 0 if none
-    // needs to be set.
-    uint32_t GetComputeSubgroupSize() const;
+    // Return the fixed subgroup size to use for compute shaders on this device or std::nullopt
+    // if none needs to be set.
+    std::optional<uint32_t> GetComputeSubgroupSize() const;
 
     uint32_t GetOptimalBytesPerRowAlignment() const override;
     uint64_t GetOptimalBufferToTextureCopyOffsetAlignment() const override;
@@ -125,6 +126,9 @@ class Device final : public DeviceBase {
     void SetLabelImpl() override;
     bool ReduceMemoryUsageImpl() override;
     void PerformIdleTasksImpl() override;
+
+    std::optional<DeviceGuard> UseGuardForCreateBindGroup() override;
+    std::optional<DeviceGuard> UseGuardForCreateBindGroupLayout() override;
 
     void OnDebugMessage(std::string message);
 
@@ -153,6 +157,8 @@ class Device final : public DeviceBase {
         const UnpackedPtr<PipelineLayoutDescriptor>& descriptor) override;
     ResultOrError<Ref<QuerySetBase>> CreateQuerySetImpl(
         const QuerySetDescriptor* descriptor) override;
+    ResultOrError<Ref<ResourceTableBase>> CreateResourceTableImpl(
+        const ResourceTableDescriptor* descriptor) override;
     ResultOrError<Ref<SamplerBase>> CreateSamplerImpl(const SamplerDescriptor* descriptor) override;
     ResultOrError<Ref<ShaderModuleBase>> CreateShaderModuleImpl(
         const UnpackedPtr<ShaderModuleDescriptor>& descriptor,
@@ -185,7 +191,7 @@ class Device final : public DeviceBase {
     void AppendDebugLayerMessages(ErrorData* error) override;
     void CheckDebugMessagesAfterDestruction() const;
 
-    void DestroyImpl() override;
+    void DestroyImpl(DestroyReason reason) override;
     MaybeError GetAHardwareBufferPropertiesImpl(void* handle, AHardwareBufferProperties* properties)
         const override;
 
@@ -196,6 +202,8 @@ class Device final : public DeviceBase {
     VulkanDeviceInfo mDeviceInfo = {};
     VkDevice mVkDevice = VK_NULL_HANDLE;
     uint32_t mMainQueueFamily = 0;
+
+    VkDescriptorSetLayout mResourceTableLayout = VK_NULL_HANDLE;
 
     // Entries can be appended without holding the device mutex.
     MutexProtected<SerialQueue<ExecutionSerial, Ref<DescriptorSetAllocator>>>

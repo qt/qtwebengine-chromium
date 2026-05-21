@@ -43,11 +43,26 @@ npm run auto-run -- --label title-change --example-urls <example-url-1> <example
 * `elements-multimodal`: tests the multimodal support for Elements entrypoint by providing screenshot input with the prompt.
 * `performance-main-thread`: tests the entrypoint via right clicking on an event in the Performance panel main thread.
 * `performance-insights`: tests the entrypoint via the "Ask AI" button shown on an individual Insight in the Performance panel sidebar.
+* `network`: tests the entrypoint via a left click on a request in the Network panel.
 * `patching`: tests the file patching flow. This mode is different
 because it automatically rates the results using assertions defined in
 tests. You need to manually add all workspace folders to your Chrome
 instance before running the tests. The resulting JSON files are not
 compatible with the eval UI.
+
+## Annotating Examples
+
+The auto-run script looks for a comment in the example page to know what to ask the AI.
+The supported format is:
+```text
+Prompt: [The prompt to run]
+Explanation: [The expected response]
+FollowupN: [Optional follow-up prompt(s) (multiple followups are supported); N is the order in which the followup prompt will be executed;]
+```
+If there is only one comment on the page, it is treated as the prompt.
+Then you can use `[Prompt] \n # [Explanation]`.
+
+If multiple comments are present, the script targets the one with an explicit `Prompt:` or `Explanation:`/`#`.
 
 ## Evaluating the results
 

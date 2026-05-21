@@ -256,6 +256,11 @@ enum {
 
 typedef struct {
   TX_TYPE_PRUNE_MODE prune_2d_txfm_mode;
+
+  // Limit the intra transform search type.
+  // 1 : Limit the intra transform search type to the ones in the table
+  // av1_derived_intra_tx_used_flag[INTRA_MODES].
+  // 2 : Limit the intra transform search type to the default transform.
   int fast_intra_tx_type_search;
 
   // INT_MAX: Disable fast search.
@@ -861,7 +866,9 @@ typedef struct MV_SPEED_FEATURES {
   SEARCH_METHODS search_method;
 
   // Enable the use of faster, less accurate mv search method
-  // 0: disable, 1: if bsize >= BLOCK_32X32, 2: based on bsize, SAD and qp
+  // 0: Disable
+  // 1 - 3: Disable for larger bsize
+  // 4: Based on bsize, SAD and qp
   // TODO(chiyotsai@google.com): Take the clip's resolution and mv activity into
   // account.
   int use_bsize_dependent_search_method;
@@ -956,11 +963,14 @@ typedef struct MV_SPEED_FEATURES {
   // 2: disable second MV
   int disable_second_mv;
 
-  // Skips full pixel search based on start mv of prior ref_mv_idx.
+  // Skips full pixel search based on closeness of start mv and ref mv
+  // of previous search.
   // 0: Disabled
-  // 1: Skips the full pixel search upto 4 neighbor full-pel MV positions.
-  // 2: Skips the full pixel search upto 8 neighbor full-pel MV positions.
-  int skip_fullpel_search_using_startmv;
+  // 1: Skips the full pixel search upto 4 neighbor full-pel start MV and ref MV
+  // positions.
+  // 2: Skips the full pixel search upto 8 neighbor full-pel start MV and ref MV
+  // positions.
+  int skip_fullpel_search_using_startmv_refmv;
 
   // Method to use for refining WARPED_CAUSAL motion vectors
   // TODO(rachelbarker): Can this be unified with OBMC in some way?
@@ -1222,6 +1232,11 @@ typedef struct INTER_MODE_SPEED_FEATURES {
   // encoder decisions are biased against local warp, favoring low complexity
   // modes.
   int bias_warp_mode_rd_scale_pct;
+
+  // Percentage of scaling used to increase the rd cost of obmc motion mode so
+  // that encoder decisions are biased against local obmc, favoring low
+  // complexity modes.
+  float bias_obmc_mode_rd_scale_pct;
 } INTER_MODE_SPEED_FEATURES;
 
 typedef struct INTERP_FILTER_SPEED_FEATURES {
@@ -1563,6 +1578,12 @@ typedef struct LOOP_FILTER_SPEED_FEATURES {
   // Control how the CDEF strength is determined.
   CDEF_PICK_METHOD cdef_pick_method;
 
+  // Decoder side speed feature for adaptive CDEF with strength reduction.
+  // Zero out values with low CDEF strengths (luma and/or chroma). This is
+  // done as CDEF is a relatively-expensive filter to compute during decode.
+  // This speed feature is only enabled in all intra mode.
+  bool zero_low_cdef_strengths;
+
   // Decoder side speed feature to add penalty for use of dual-sgr filters.
   // Takes values 0 - 10, 0 indicating no penalty and each additional level
   // adding a penalty of 1%
@@ -1577,7 +1598,14 @@ typedef struct LOOP_FILTER_SPEED_FEATURES {
   // search_switchable()
   int switchable_lr_with_bias_level;
 
-  // prune sgr ep using binary search like mechanism
+  // Enable fast search in self guided restoration
+  // 0 : Search over all 16 SGR projection parameters listed
+  //     in av1_sgr_params[SGRPROJ_PARAMS].
+  // 1 : Approximate search using binary search like mechanism,
+  //     a total of 8 SGR projection parameters are searched.
+  // 2 : Search only 'ep' values in
+  //     sgproj_ep_grp1_seed[SGRPROJ_EP_GRP1_SEARCH_COUNT],
+  //     a total of 4 SGR projection parameters are searched.
   int enable_sgr_ep_pruning;
 
   // Disable loop restoration for Chroma plane

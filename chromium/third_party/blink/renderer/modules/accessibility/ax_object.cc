@@ -32,6 +32,7 @@
 #include <ostream>
 
 #include "base/auto_reset.h"
+#include "base/debug/crash_logging.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/strings/string_util.h"
 #include "build/build_config.h"
@@ -50,6 +51,8 @@
 #include "third_party/blink/renderer/core/dom/element.h"
 #include "third_party/blink/renderer/core/dom/events/simulated_click_options.h"
 #include "third_party/blink/renderer/core/dom/focus_params.h"
+#include "third_party/blink/renderer/core/dom/focusgroup_flags.h"
+#include "third_party/blink/renderer/core/dom/indexed_pseudo_element.h"
 #include "third_party/blink/renderer/core/dom/shadow_root.h"
 #include "third_party/blink/renderer/core/dom/slot_assignment_engine.h"
 #include "third_party/blink/renderer/core/editing/editing_utilities.h"
@@ -103,12 +106,14 @@
 #include "third_party/blink/renderer/core/layout/layout_box_model_object.h"
 #include "third_party/blink/renderer/core/layout/layout_image.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
+#include "third_party/blink/renderer/core/overscroll/overscroll_area_tracker.h"
 #include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/core/page/focus_controller.h"
 #include "third_party/blink/renderer/core/page/focusgroup_controller_utils.h"
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/page/scrolling/top_document_root_scroller_controller.h"
 #include "third_party/blink/renderer/core/scroll/scroll_into_view_util.h"
+#include "third_party/blink/renderer/core/style/computed_style_constants.h"
 #include "third_party/blink/renderer/core/svg/svg_desc_element.h"
 #include "third_party/blink/renderer/core/svg/svg_element.h"
 #include "third_party/blink/renderer/core/svg/svg_g_element.h"
@@ -118,6 +123,7 @@
 #include "third_party/blink/renderer/modules/accessibility/ax_enums.h"
 #include "third_party/blink/renderer/modules/accessibility/ax_object-inl.h"
 #include "third_party/blink/renderer/platform/wtf/text/atomic_string.h"
+#include "third_party/blink/renderer/platform/wtf/text/string_to_number.h"
 #if AX_FAIL_FAST_BUILD()
 #include "third_party/blink/renderer/modules/accessibility/ax_debug_utils.h"
 #endif
@@ -254,7 +260,7 @@ void AddIntAttribute(const AXObject* obj,
                      int min_value = INT_MIN) {
   const AtomicString& value = obj->AriaAttribute(attr_name);
   if (!value.empty()) {
-    int value_as_int = value.ToInt();
+    int value_as_int = StringToInt(value).value_or(0);
     if (value_as_int >= min_value) {
       node_data->AddIntAttribute(node_data_attr, value_as_int);
     }
@@ -722,6 +728,21 @@ Node* AXObject::GetParentNodeForComputeParent(AXObjectCacheImpl& cache,
     }
   }
 
+  // Targets of toggle-overscroll actions are reparented under their
+  // corresponding ::-internal-overscroll-area on their overscroll container.
+  if (Element* element = DynamicTo<Element>(node)) {
+    if (PseudoElement* overscroll_area_parent =
+            element->GetPseudoElement(kPseudoIdOverscrollAreaParent)) {
+      return overscroll_area_parent;
+    }
+  }
+  if (PseudoElement* pseudo_element = DynamicTo<PseudoElement>(node);
+      pseudo_element &&
+      pseudo_element->GetPseudoId() == kPseudoIdOverscrollAreaParent) {
+    return pseudo_element->UltimateOriginatingElement()
+        .GetOverscrollContainer();
+  }
+
   // Use LayoutTreeBuilderTraversal::Parent(), which handles pseudo content.
   // This can return nullptr for a node that is never visited by
   // LayoutTreeBuilderTraversal's child traversal. For example, while an element
@@ -986,7 +1007,7 @@ bool AXObject::AriaIntAttribute(const QualifiedName& attribute,
     return false;
   }
 
-  int int_value = value.ToInt();
+  int int_value = StringToInt(value).value_or(0);
   int value_if_less_than_1 = 1;
 
   if (attribute == html_names::kAriaSetsizeAttr) {
@@ -1020,7 +1041,7 @@ bool AXObject::AriaFloatAttribute(const QualifiedName& attribute,
   }
 
   if (out_value) {
-    *out_value = value.ToFloat();
+    *out_value = StringToFloat(value).value_or(0);
   }
   return true;
 }
@@ -1184,10 +1205,19 @@ void AXObject::Serialize(ui::AXNodeData* node_data,
   SerializeAriaNotificationAttributes(
       AXObjectCache().RetrieveAriaNotifications(this), node_data);
 
+  // Over write ignored status when printing to PDF. All text that appears
+  // in the PDF should appear in the PDF's structured tree.
+  bool ignore = IsIgnored();
+  if (accessibility_mode.has_mode(ui::AXMode::kPDFPrinting)) {
+    if (node_data->role == ax::mojom::blink::Role::kStaticText) {
+      ignore = false;
+    }
+  }
+
   // Return early. The following attributes are unnecessary for ignored nodes.
   // Exception: focusable ignored nodes are fully serialized, so that reasonable
   // verbalizations can be made if they actually receive focus.
-  if (IsIgnored()) {
+  if (ignore) {
     node_data->AddState(ax::mojom::blink::State::kIgnored);
     if (!CanSetFocusAttribute()) {
       return;
@@ -1201,12 +1231,17 @@ void AXObject::Serialize(ui::AXNodeData* node_data,
 
   SerializeUnignoredAttributes(node_data, accessibility_mode, is_snapshot);
 
-  if (!accessibility_mode.has_mode(ui::AXMode::kExtendedProperties)) {
+  if (!accessibility_mode.has_mode(ui::AXMode::kExtendedProperties) &&
+      !accessibility_mode.has_mode(ui::AXMode::kPDFPrinting)) {
     // Return early. None of the following attributes are needed outside of
-    // screen reader mode.
+    // screen reader mode or PDF printing.
     return;
   }
 
+  // TODO(crbug.com/469328924): Not all of the attributes in
+  // SerializeScreenReaderAttributes are needed for PDF printing. Refactor this
+  // function (and maybe all of Serialize) to better separate out attributes
+  // needed printing and other modes.
   SerializeScreenReaderAttributes(node_data);
 
   if (accessibility_mode.has_mode(ui::AXMode::kPDFPrinting)) {
@@ -1770,6 +1805,14 @@ void AXObject::SerializeScreenReaderAttributes(ui::AXNodeData* node_data) const 
         ax::mojom::blink::IntAttribute::kActivedescendantId,
         active_descendant->AXObjectID());
   }
+
+  if (CheckedState() != ax::mojom::blink::CheckedState::kNone) {
+    node_data->SetCheckedState(CheckedState());
+  }
+
+  if (::features::IsAccessibilityTextChangeTypesEnabled()) {
+    SerializeTextChangeTypesAttributes(node_data);
+  }
 }
 
 String AXObject::KeyboardShortcut() const {
@@ -1853,10 +1896,6 @@ void AXObject::SerializeOtherScreenReaderAttributes(
 
   if (GetInvalidState() != ax::mojom::blink::InvalidState::kNone)
     node_data->SetInvalidState(GetInvalidState());
-
-  if (CheckedState() != ax::mojom::blink::CheckedState::kNone) {
-    node_data->SetCheckedState(CheckedState());
-  }
 
   if (node_data->role == ax::mojom::blink::Role::kListMarker) {
     SerializeListMarkerAttributes(node_data);
@@ -2458,12 +2497,14 @@ void AXObject::SerializeComputedDetailsRelation(
   }
 
   // Add aria-details for the element anchored to this object.
-  if (AXObject* positioned_obj = GetPositionedObjectForAnchor(node_data)) {
-    node_data->AddIntListAttribute(
-        ax::mojom::blink::IntListAttribute::kDetailsIds,
-        {static_cast<int32_t>(positioned_obj->AXObjectID())});
-    node_data->SetDetailsFrom(ax::mojom::blink::DetailsFrom::kCssAnchor);
-    return;
+  if (!RuntimeEnabledFeatures::NoAriaDetailsForAnchorPosEnabled()) {
+    if (AXObject* positioned_obj = GetPositionedObjectForAnchor(node_data)) {
+      node_data->AddIntListAttribute(
+          ax::mojom::blink::IntListAttribute::kDetailsIds,
+          {static_cast<int32_t>(positioned_obj->AXObjectID())});
+      node_data->SetDetailsFrom(ax::mojom::blink::DetailsFrom::kCssAnchor);
+      return;
+    }
   }
 
   // Add aria-details for a scroll marker pseudo-element.
@@ -2627,6 +2668,7 @@ AXObject* AXObject::GetInterestForTargetPopover() const {
 }
 
 AXObject* AXObject::GetPositionedObjectForAnchor(ui::AXNodeData* data) const {
+  CHECK(!RuntimeEnabledFeatures::NoAriaDetailsForAnchorPosEnabled());
   AXObject* positioned_obj = AXObjectCache().GetPositionedObjectForAnchor(this);
   if (!positioned_obj) {
     return nullptr;
@@ -2849,6 +2891,31 @@ void AXObject::SerializeTextInsertionDeletionOffsetAttributes(
   AXObjectCache().ClearTextOperationInNodeIdMap();
 }
 
+void AXObject::SerializeTextChangeTypesAttributes(
+    ui::AXNodeData* node_data) const {
+  ImeContext* ime_context = AXObjectCache().GetImeContext(this);
+  if (!ime_context) {
+    return;
+  }
+
+  if (ime_context->committed_text_length > 0) {
+    node_data->AddIntAttribute(
+        ax::mojom::blink::IntAttribute::kCommittedTextLength,
+        ime_context->committed_text_length);
+  } else if (ime_context->has_composition) {
+    node_data->AddBoolAttribute(
+        ax::mojom::blink::BoolAttribute::kHasComposition, true);
+    if (ime_context->ime_state ==
+        mojom::blink::ImeState::kTextSuggestionSelected) {
+      node_data->AddBoolAttribute(
+          ax::mojom::blink::BoolAttribute::kTextSuggestionSelectedByIME, true);
+    }
+  } else {
+    NOTREACHED();
+  }
+  AXObjectCache().ClearImeContext();
+}
+
 bool AXObject::IsAXNodeObject() const {
   return false;
 }
@@ -2900,10 +2967,16 @@ ax::mojom::blink::Role AXObject::ComputeFinalRoleForSerialization() const {
           element->GetExecutionContext()) &&
       (role_ == ax::mojom::blink::Role::kGenericContainer ||
        role_ == ax::mojom::blink::Role::kUnknown)) {
-    // GetFocusgroupOwnerOfItem both checks if the input is a focusgroup item
-    // and returns the focusgroup owner if so.
+    // Avoid calling GetFocusgroupOwnerOfItem here to prevent
+    // unnecessary style recalcs, and state-associated CHECKS.
+    // Calling IsKeyboardFocusableSlow is safe here because we are passing the
+    // update behavior for accessibility.
+    bool is_item =
+        element->IsKeyboardFocusableSlow(
+            Element::UpdateBehavior::kNoneForAccessibility) &&
+        element->GetFocusgroupData().behavior != FocusgroupBehavior::kOptOut;
     Element* focusgroup_owner =
-        FocusgroupControllerUtils::GetFocusgroupOwnerOfItem(element);
+        is_item ? focusgroup::FindFocusgroupOwner(element) : nullptr;
     if (focusgroup_owner) {
       AXObject* focusgroup_owner_axobj = AXObjectCache().Get(focusgroup_owner);
       if (focusgroup_owner_axobj) {
@@ -4142,7 +4215,7 @@ bool AXObject::ComputeIsIgnoredButIncludedInTree() {
   CHECK(!IsDetached());
 
   // Nothing inside an inactive scroll marker's tab is included in the tree.
-  if (InsideOriginatingElementForInactiveScrollMarkerInTabsMode()) {
+  if (InsideInactiveScrollMarkerTab()) {
     return false;
   }
 
@@ -5764,7 +5837,19 @@ ax::mojom::blink::Role AXObject::RawAriaRole() const {
 }
 
 ax::mojom::blink::Role AXObject::DetermineRawAriaRole() const {
-  const AtomicString& aria_role = AriaAttribute(html_names::kRoleAttr);
+  const Element* element = GetElement();
+  if (!element) {
+    return ax::mojom::blink::Role::kUnknown;
+  }
+  return DetermineRawAriaRole(*element);
+}
+
+// static
+ax::mojom::blink::Role AXObject::DetermineRawAriaRole(const Element& element) {
+  // Only consult the explicit role attribute so callers can opt into ARIA
+  // semantics without picking up any native or implicit roles.
+  const AtomicString& aria_role =
+      AXObject::AriaAttribute(element, html_names::kRoleAttr);
   if (aria_role.empty()) {
     return ax::mojom::blink::Role::kUnknown;
   }
@@ -6621,7 +6706,12 @@ bool AXObject::ShouldDestroyWhenDetachingFromParent() const {
   }
 
   // Image map children are entirely dependent on the parent image.
-  if (ParentObject() && IsA<HTMLImageElement>(ParentObject()->GetNode())) {
+  // Use ParentObjectIfPresent() because during detachment the parent may
+  // already be detached, and we should not destroy the child in that case
+  // since the parent's destruction will handle cleanup.
+  AXObject* parent = ParentObjectIfPresent();
+  if (parent && !parent->IsDetached() &&
+      IsA<HTMLImageElement>(parent->GetNode())) {
     return true;
   }
 
@@ -7965,8 +8055,7 @@ bool AXObject::SupportsNameFromContents(bool recursive,
       // objects should return false for now.
       // TODO(crbug.com/443106926): investigate whether other Group objects
       // should be eligible in the future.
-      if (!::features::IsAXObjectSupportsNameFromAddressContentEnabled() ||
-          !GetNode()->HasTagName(html_names::kAddressTag)) {
+      if (!GetNode()->HasTagName(html_names::kAddressTag)) {
         return false;
       }
       [[fallthrough]];
@@ -8214,6 +8303,8 @@ const AXObject* AXObject::LowestCommonAncestor(const AXObject& first,
 
 // Extra checks that only occur during serialization.
 void AXObject::PreSerializationConsistencyCheck() const{
+  SCOPED_CRASH_KEY_STRING256("AXObject", "Error",
+                             this->ToString().Utf8().c_str());
   CHECK(!IsDetached()) << "Do not serialize detached nodes: " << this;
   CHECK(AXObjectCache().IsFrozen());
   CHECK(!NeedsToUpdateCachedValues()) << "Stale values on: " << this;

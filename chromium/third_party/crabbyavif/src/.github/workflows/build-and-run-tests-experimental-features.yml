@@ -34,4 +34,4 @@ jobs:
       # TODO: Enable this for windows.
       if: runner.os != 'Windows'
       # Enable encoder and C API for better coverage.
-      run: cargo test --features aom,capi,sample_transform -- --skip test_conformance
+      run: cargo test --features aom,capi -- --skip test_conformance

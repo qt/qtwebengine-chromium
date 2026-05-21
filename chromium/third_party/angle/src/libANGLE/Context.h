@@ -836,6 +836,7 @@ class Context final : public egl::LabeledObject, angle::NonCopyable, public angl
 
     bool isWebGL() const { return mState.isWebGL(); }
     bool isWebGL1() const { return mState.isWebGL1(); }
+    bool isHardenedContext() const { return mHardenedContext; }
     const char *getRendererString() const { return mRendererString; }
 
     bool isValidBufferBinding(BufferBinding binding) const { return mValidBufferBindings[binding]; }
@@ -982,6 +983,16 @@ class Context final : public egl::LabeledObject, angle::NonCopyable, public angl
     GLint64 getInstancedVertexElementLimit() const;
     void onActiveTransformFeedbackChange();
 
+    bool retainIdUntilObjectDestroyed() const;
+
+    void onBufferDestroy(const Buffer *buffer) const;
+    void onTextureDestroy(const Texture *texture) const;
+    void onRenderbufferDestroy(const Renderbuffer *renderBuffer) const;
+    void onSamplerDestroy(const Sampler *sampler) const;
+    void onSyncDestroy(const Sync *sync) const;
+    void onFramebufferDestroy(const Framebuffer *framebuffer) const;
+    void onProgramPipelineDestroy(const ProgramPipeline *programPipeline) const;
+
   private:
     void initializeDefaultResources();
     void releaseSharedObjects();
@@ -1101,6 +1112,7 @@ class Context final : public egl::LabeledObject, angle::NonCopyable, public angl
     egl::Surface *mCurrentReadSurface;
     egl::Display *mDisplay;
     const bool mWebGLContext;
+    const bool mHardenedContext;
     bool mBufferAccessValidationEnabled;
     bool mRequiresRobustBehavior;
     const bool mExtensionsEnabled;
@@ -1148,6 +1160,7 @@ class Context final : public egl::LabeledObject, angle::NonCopyable, public angl
     OverlayType mOverlay;
 
     bool mIsDestroyed;
+    bool mDestroyedManagers;
 
     std::unique_ptr<Framebuffer> mDefaultFramebuffer;
 };

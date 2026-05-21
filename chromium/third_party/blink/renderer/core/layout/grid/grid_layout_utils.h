@@ -5,7 +5,11 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_LAYOUT_GRID_GRID_LAYOUT_UTILS_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_LAYOUT_GRID_GRID_LAYOUT_UTILS_H_
 
+#include "third_party/blink/renderer/core/style/grid_enums.h"
+#include "third_party/blink/renderer/core/style/grid_track_size.h"
+#include "third_party/blink/renderer/platform/fonts/font_baseline.h"
 #include "third_party/blink/renderer/platform/geometry/layout_unit.h"
+#include "third_party/blink/renderer/platform/wtf/hash_map.h"
 #include "third_party/blink/renderer/platform/wtf/wtf_size_t.h"
 
 namespace blink {
@@ -14,7 +18,9 @@ class BlockNode;
 class BoxFragmentBuilder;
 class ConstraintSpace;
 class GridLayoutTrackCollection;
+class GridSizingTrackCollection;
 class GridTrackList;
+class LogicalBoxFragment;
 
 enum class AxisEdge;
 struct BoxStrut;
@@ -22,6 +28,23 @@ struct GridItemData;
 struct LogicalSize;
 struct LogicalStaticPosition;
 struct MinMaxSizesResult;
+
+// Base class for accumulating baseline information across grid and grid-lanes
+// layouts. Provides a unified interface for handling baselines in both grid
+// axis and stacking axis.
+class BaselineAccumulator {
+ public:
+  virtual ~BaselineAccumulator() = default;
+
+  // Accumulates baseline information for a given item.
+  virtual void Accumulate(const GridItemData& item,
+                          const LogicalBoxFragment& fragment,
+                          const LayoutUnit block_offset,
+                          LayoutUnit item_stacking_position) = 0;
+
+  virtual std::optional<LayoutUnit> FirstBaseline() const = 0;
+  virtual std::optional<LayoutUnit> LastBaseline() const = 0;
+};
 
 // Update the provided `available_size`, `min_available_size`, and
 // `max_available_size` to their appropriate values.
@@ -44,14 +67,15 @@ wtf_size_t CalculateAutomaticRepetitions(
     LayoutUnit available_size,
     LayoutUnit min_available_size,
     LayoutUnit max_available_size,
-    const Vector<LayoutUnit>* intrinsic_repeat_track_sizes = nullptr);
+    const HashMap<GridTrackSize, LayoutUnit>* intrinsic_repeat_track_sizes =
+        nullptr);
 
-// Common out-of-flow positioning utilities shared between grid and masonry.
+// Common out-of-flow positioning utilities shared between grid and grid-lanes.
 
 // Computes the start offset and size for an out-of-flow item in a single
 // direction (either inline or block).
 //
-// `is_masonry_axis` indicates whether this is for masonry's stacking axis,
+// `is_grid_lanes_axis` indicates whether this is for gid lane's stacking axis,
 // which ignores grid placement and uses the full container size.
 void ComputeOutOfFlowOffsetAndSize(
     const GridItemData& out_of_flow_item,
@@ -60,7 +84,7 @@ void ComputeOutOfFlowOffsetAndSize(
     const LogicalSize& border_box_size,
     LayoutUnit* start_offset,
     LayoutUnit* size,
-    bool is_masonry_axis = false);
+    bool is_grid_lanes_axis = false);
 
 // Computes alignment offset for out-of-flow items.
 void AlignmentOffsetForOutOfFlow(AxisEdge inline_axis_edge,
@@ -75,8 +99,8 @@ void AlignmentOffsetForOutOfFlow(AxisEdge inline_axis_edge,
 // When `special_spanning_criteria` is true, always use the automatic minimum
 // size - this usually happens when an item spans at least one track with a min
 // track size of 'auto' or if an item spans more than one non-flexible track.
-// However, in masonry, we don't have this information when initially
-// calculating the virtual item contributions, so masonry needs this var to
+// However, in grid-lanes, we don't have this information when initially
+// calculating the virtual item contributions, so grid-lanes needs this var to
 // force this to both true and false to get both potential contributions for use
 // later when more information is known about the tracks a virtual item spans.
 //
@@ -106,6 +130,40 @@ LayoutUnit CalculateIntrinsicMinimumContribution(
 LayoutUnit ClampIntrinsicMinSize(LayoutUnit min_content_contribution,
                                  LayoutUnit min_clamp_size,
                                  LayoutUnit spanned_tracks_definite_max_size);
+
+// Returns the track baseline for a grid item based on its baseline-sharing
+// group.
+LayoutUnit GetTrackBaseline(const GridItemData& grid_item,
+                            const GridLayoutTrackCollection& track_collection);
+
+// Returns the baseline of an item from its fragment. Handles both first and
+// last baseline based on `is_last_baseline`.
+LayoutUnit GetLogicalBaseline(const LogicalBoxFragment& baseline_fragment,
+                              FontBaseline font_baseline,
+                              bool is_last_baseline);
+
+// Calculates and stores an item's baseline in the appropriate track.
+// `extra_margin` should include any margins and subgrid extra margins that need
+// to be added to the baseline.
+void StoreItemBaseline(const LogicalBoxFragment& baseline_fragment,
+                       GridTrackSizingDirection track_direction,
+                       FontBaseline font_baseline,
+                       LayoutUnit extra_margin,
+                       GridSizingTrackCollection& track_collection,
+                       GridItemData& item);
+
+// Computes the baseline offset for aligning a grid item within its
+// baseline-sharing group. Returns the offset needed to align the item's
+// baseline with its track's baseline, accounting for major/minor baseline
+// groups.
+LayoutUnit ComputeBaselineOffset(
+    const GridItemData& grid_item,
+    const GridLayoutTrackCollection& track_collection,
+    const LogicalBoxFragment& baseline_fragment,
+    const LogicalBoxFragment& fragment,
+    FontBaseline font_baseline,
+    GridTrackSizingDirection track_direction,
+    LayoutUnit available_size);
 
 }  // namespace blink
 

@@ -6,8 +6,8 @@
 
 #include "base/strings/strcat.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/on_device_translation/component_manager.h"
-#include "chrome/browser/on_device_translation/language_pack_util.h"
+#include "components/on_device_translation/component_manager.h"
+#include "components/on_device_translation/public/language_pack.h"
 
 using on_device_translation_internals::mojom::LanguagePackInfo;
 using on_device_translation_internals::mojom::LanguagePackInfoPtr;

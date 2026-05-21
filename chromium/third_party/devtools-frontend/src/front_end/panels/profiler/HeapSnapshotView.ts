@@ -1337,8 +1337,8 @@ export class HeapSnapshotProfileType extends
   }
 
   override customContent(): Element|null {
-    const showOptionToExposeInternalsInHeapSnapshot =
-        Root.Runtime.experiments.isEnabled('show-option-tp-expose-internals-in-heap-snapshot');
+    const showOptionToExposeInternalsInHeapSnapshot = Root.Runtime.experiments.isEnabled(
+        Root.ExperimentNames.ExperimentName.SHOW_OPTION_TO_EXPOSE_INTERNALS_IN_HEAP_SNAPSHOT);
     const exposeInternalsInHeapSnapshotCheckbox =
         SettingsUI.SettingsUI.createSettingCheckbox(i18nString(UIStrings.exposeInternals), this.exposeInternals);
     this.customContentInternal = exposeInternalsInHeapSnapshotCheckbox;
@@ -1368,15 +1368,6 @@ export class HeapSnapshotProfileType extends
     this.setProfileBeingRecorded(profile);
     this.addProfile(profile);
     profile.updateStatus(i18nString(UIStrings.snapshotting));
-
-    // Release all the animations before taking a heap snapshot.
-    // The animations are stored for replay in the animations panel and they might cause
-    // detached nodes to appear in snapshots. Because of this, we release
-    // all the animations first before taking a heap snapshot.
-    const animationModel = heapProfilerModel.target().model(SDK.AnimationModel.AnimationModel);
-    if (animationModel) {
-      await animationModel.releaseAllAnimations();
-    }
 
     await heapProfilerModel.takeHeapSnapshot({
       reportProgress: true,
@@ -1541,11 +1532,6 @@ export class TrackingHeapSnapshotProfileType extends
       return;
     }
 
-    const animationModel = heapProfilerModel.target().model(SDK.AnimationModel.AnimationModel);
-    if (animationModel) {
-      // TODO(b/406904348): Remove this once we correctly release animations on the backend.
-      await animationModel.releaseAllAnimations();
-    }
     void heapProfilerModel.startTrackingHeapObjects(this.recordAllocationStacksSettingInternal.get());
   }
 

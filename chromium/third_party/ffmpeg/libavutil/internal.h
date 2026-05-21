@@ -123,9 +123,6 @@ void avpriv_request_sample(void *avc,
                            const char *msg, ...) av_printf_format(2, 3);
 #endif
 
-#define PTRDIFF_SPECIFIER "td"
-#define SIZE_SPECIFIER "zu"
-
 #ifdef DEBUG
 #   define ff_dlog(ctx, ...) av_log(ctx, AV_LOG_DEBUG, __VA_ARGS__)
 #elif defined(CHROMIUM_NO_LOGGING)

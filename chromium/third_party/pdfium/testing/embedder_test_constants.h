@@ -7,32 +7,34 @@
 
 namespace pdfium {
 
-// MD5 hash for rendering annotation_stamp_with_ap.pdf with annotations.
-const char* AnnotationStampWithApChecksum();
+// Expectation file basename for rendering annotation_stamp_with_ap.pdf with
+// annotations.
+inline constexpr char kAnnotationStampWithApPng[] = "annotation_stamp_with_ap";
 
-// MD5 hash for rendering a 200x200 blank page.
-extern const char kBlankPage200By200Checksum[];
+// Expectation file basename for rendering a 200x200 blank page.
+inline constexpr char kBlankPage200x200Png[] = "blank_200x200";
 
-// MD5 hash for rendering a 612x792 blank page.
-extern const char kBlankPage612By792Checksum[];
+// Expectation file basename for rendering a 612x792 blank page.
+inline constexpr char kBlankPage612By792Png[] = "blank_612x792";
 
-// MD5 hash for rendering bug_890322.pdf.
-const char* Bug890322Checksum();
+// Expectation file basename for rendering bug_890322.pdf.
+inline constexpr char kBug890322Png[] = "bug_890322";
 
-// MD5 hash for rendering hello_world.pdf or bug_455199.pdf.
-const char* HelloWorldChecksum();
+// Expectation file basename for rendering hello_world.pdf or bug_455199.pdf.
+inline constexpr char kHelloWorldPng[] = "hello_world";
 
-// MD5 hash for rendering hello_world.pdf after removing "Goodbye, world!".
-const char* HelloWorldRemovedChecksum();
+// Expectation file basename for rendering hello_world.pdf after removing
+// "Goodbye, world!".
+inline constexpr char kHelloWorldRemovedPng[] = "hello_world_removed";
 
-// MD5 hash for rendering many_rectangles.pdf.
-const char* ManyRectanglesChecksum();
+// Expectation file basename for rendering many_rectangles.pdf.
+inline constexpr char kManyRectanglesPng[] = "many_rectangles";
 
-// MD5 hash for rendering rectangles.pdf.
-const char* RectanglesChecksum();
+// Expectation file basename for rendering rectangles.pdf.
+inline constexpr char kRectanglesPng[] = "rectangles";
 
-// MD5 hash for rendering text_form.pdf.
-const char* TextFormChecksum();
+// Expectation file basename for rendering text_form.pdf.
+inline constexpr char kTextFormPng[] = "text_form";
 
 }  // namespace pdfium
 

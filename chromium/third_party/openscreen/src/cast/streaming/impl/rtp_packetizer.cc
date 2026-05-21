@@ -109,10 +109,6 @@ ByteBuffer RtpPacketizer::GeneratePacket(const EncryptedFrame& frame,
     AppendField<uint16_t>(frame.new_playout_delay.count(), buffer);
   }
 
-  // Sanity-check the pointer math, to ensure the packet is being entirely
-  // populated, with no underrun or overrun.
-  OSP_CHECK_EQ(buffer.data() + data_chunk_size, packet.end());
-
   // Copy the encrypted payload data into the packet.
   auto data_chunk = frame.data.subspan(data_chunk_start, data_chunk_size);
   std::copy(data_chunk.begin(), data_chunk.end(), buffer.data());

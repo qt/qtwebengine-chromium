@@ -1,7 +1,7 @@
 /*
- * Copyright (c) 2015-2021 The Khronos Group Inc.
- * Copyright (c) 2015-2021 Valve Corporation
- * Copyright (c) 2015-2021 LunarG, Inc.
+ * Copyright (c) 2015-2026 The Khronos Group Inc.
+ * Copyright (c) 2015-2026 Valve Corporation
+ * Copyright (c) 2015-2026 LunarG, Inc.
  * Copyright (c) 2023-2024 RasterGrid Kft.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,9 +30,11 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdint>
 #include <exception>
 #include <iostream>
 #include <fstream>
+#include <map>
 #include <memory>
 #include <ostream>
 #include <set>
@@ -266,6 +268,9 @@ struct video_format_properties_chain;
 struct AppInstance;
 struct AppGpu;
 struct AppVideoProfile;
+struct AppDisplay;
+struct AppDisplayMode;
+struct AppDisplayPlane;
 
 void setup_phys_device_props2_chain(VkPhysicalDeviceProperties2 &start, std::unique_ptr<phys_device_props2_chain> &chain,
                                     AppInstance &inst, AppGpu &gpu, bool show_promoted_structs);
@@ -282,6 +287,9 @@ bool prepare_phys_device_props2_twocall_chain_vectors(std::unique_ptr<phys_devic
 
 bool is_video_format_same(const VkVideoFormatPropertiesKHR &format_a, const VkVideoFormatPropertiesKHR &format_b);
 std::vector<std::unique_ptr<AppVideoProfile>> enumerate_supported_video_profiles(AppGpu &gpu);
+
+std::vector<AppDisplayPlane> enumerate_display_planes(AppGpu &gpu);
+std::vector<AppDisplay> enumerate_displays(AppGpu &gpu, const std::vector<AppDisplayPlane> &all_planes);
 
 /* An ptional contains either a value or nothing. The optional asserts if a value is trying to be gotten but none exist.
  * The interface is taken from C++17's <optional> with many aspects removed.
@@ -440,6 +448,36 @@ struct AppVideoProfile {
             video_format_props_chains.clear();
         }
     }
+};
+
+struct AppDisplayPlane {
+    uint32_t global_index;
+    std::string name;
+    VkDisplayPlanePropertiesKHR properties;
+    std::vector<VkDisplayKHR> supported_displays;
+
+    AppDisplayPlane(AppGpu &gpu, uint32_t index, const VkDisplayPlanePropertiesKHR &in_prop);
+};
+
+struct AppDisplayMode {
+    VkDisplayModePropertiesKHR properties;
+
+    // key is a AppDisplayPlane::global_index value
+    std::map<uint32_t, VkDisplayPlaneCapabilitiesKHR> capabilities;
+
+    AppDisplayMode(AppGpu &gpu, const VkDisplayModePropertiesKHR &in_prop, const std::set<uint32_t> &supported_planes);
+};
+
+struct AppDisplay {
+    uint32_t global_index;
+
+    std::string name;
+
+    VkDisplayPropertiesKHR properties;
+    std::vector<AppDisplayMode> modes;
+
+    AppDisplay(AppGpu &gpu, uint32_t index, const VkDisplayPropertiesKHR &in_properties,
+               const std::vector<AppDisplayPlane> &all_planes);
 };
 
 class APIVersion {
@@ -699,6 +737,11 @@ struct AppInstance {
                 inst_extensions.push_back(ext.extensionName);
             }
 #endif
+#ifdef VK_USE_PLATFORM_DISPLAY
+            if (strcmp(VK_KHR_DISPLAY_EXTENSION_NAME, ext.extensionName) == 0) {
+                inst_extensions.push_back(ext.extensionName);
+            }
+#endif
             if (strcmp(VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME, ext.extensionName) == 0) {
                 inst_extensions.push_back(ext.extensionName);
             }
@@ -735,7 +778,8 @@ struct AppInstance {
 
 #if defined(VK_USE_PLATFORM_XCB_KHR) || defined(VK_USE_PLATFORM_XLIB_KHR) || defined(VK_USE_PLATFORM_WIN32_KHR) ||      \
     defined(VK_USE_PLATFORM_MACOS_MVK) || defined(VK_USE_PLATFORM_METAL_EXT) || defined(VK_USE_PLATFORM_WAYLAND_KHR) || \
-    defined(VK_USE_PLATFORM_DIRECTFB_EXT) || defined(VK_USE_PLATFORM_GGP) || defined(VK_USE_PLATFORM_SCREEN_QNX)
+    defined(VK_USE_PLATFORM_DIRECTFB_EXT) || defined(VK_USE_PLATFORM_GGP) || defined(VK_USE_PLATFORM_SCREEN_QNX) ||     \
+    defined(VK_USE_PLATFORM_DISPLAY)
 
 #define VULKANINFO_WSI_ENABLED
 #endif
@@ -1290,6 +1334,7 @@ void SetupWindowExtensions(AppInstance &inst) {
         inst.AddSurfaceExtension(surface_ext_qnx_screen);
     }
 #endif
+// TODO: add support for VK_KHR_display surfaces
 }
 
 // ---------- Surfaces -------------- //
@@ -1588,6 +1633,9 @@ struct AppGpu {
 
     std::vector<std::unique_ptr<AppVideoProfile>> video_profiles;
 
+    std::vector<AppDisplay> displays;
+    std::vector<AppDisplayPlane> display_planes;
+
     AppGpu(AppInstance &inst, uint32_t id, VkPhysicalDevice phys_device, bool show_promoted_structs)
         : inst(inst), id(id), phys_device(phys_device) {
         vkGetPhysicalDeviceProperties(phys_device, &props);
@@ -1814,6 +1862,13 @@ struct AppGpu {
 
         // Video //
         video_profiles = enumerate_supported_video_profiles(*this);
+
+        // Display //
+        display_planes = enumerate_display_planes(*this);
+        displays = enumerate_displays(*this, display_planes);
+
+        vkDestroyDevice(dev, nullptr);
+        dev = VK_NULL_HANDLE;
     }
     ~AppGpu() { vkDestroyDevice(dev, nullptr); }
 
@@ -1875,12 +1930,49 @@ struct AppGpu {
             return APIVersion(v).str();
         }
     }
+    const AppDisplay *FindDisplay(VkDisplayKHR handle) {
+        for (const auto &disp : displays) {
+            if (disp.properties.display == handle) {
+                return &disp;
+            }
+        }
+        return NULL;
+    }
 };
 
 std::vector<VkPhysicalDeviceToolPropertiesEXT> GetToolingInfo(AppGpu &gpu) {
     if (vkGetPhysicalDeviceToolPropertiesEXT == nullptr) return {};
     return GetVector<VkPhysicalDeviceToolPropertiesEXT>("vkGetPhysicalDeviceToolPropertiesEXT",
                                                         vkGetPhysicalDeviceToolPropertiesEXT, gpu.phys_device);
+}
+
+std::vector<VkCooperativeMatrixPropertiesKHR> GetCooperativeMatrixInfo(AppGpu &gpu) {
+    if (vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR == nullptr) return {};
+    return GetVector<VkCooperativeMatrixPropertiesKHR>("vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR",
+                                                       vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR, gpu.phys_device);
+}
+std::vector<VkTimeDomainKHR> GetTimeDomainInfo(AppGpu &gpu) {
+    if (vkGetPhysicalDeviceCalibrateableTimeDomainsKHR == nullptr) return {};
+    return GetVector<VkTimeDomainKHR>("vkGetPhysicalDeviceCalibrateableTimeDomainsKHR",
+                                      vkGetPhysicalDeviceCalibrateableTimeDomainsKHR, gpu.phys_device);
+}
+std::vector<VkPhysicalDeviceFragmentShadingRateKHR> GetFragmentShadingRateInfo(AppGpu &gpu) {
+    if (vkGetPhysicalDeviceFragmentShadingRatesKHR == nullptr) return {};
+    return GetVector<VkPhysicalDeviceFragmentShadingRateKHR>("vkGetPhysicalDeviceFragmentShadingRatesKHR",
+                                                             vkGetPhysicalDeviceFragmentShadingRatesKHR, gpu.phys_device);
+}
+// Returns vector where each index maps to VkSampleCountFlagBits
+std::vector<VkMultisamplePropertiesEXT> GetSampleLocationInfo(AppGpu &gpu) {
+    if (vkGetPhysicalDeviceMultisamplePropertiesEXT == nullptr) return {};
+    std::vector<VkMultisamplePropertiesEXT> result;
+    // 7 covers VK_SAMPLE_COUNT_1_BIT to 64_BIT
+    for (uint32_t i = 0; i < 7; i++) {
+        const VkSampleCountFlagBits sample_count = (VkSampleCountFlagBits)(1 << i);
+        VkMultisamplePropertiesEXT props = {VK_STRUCTURE_TYPE_MULTISAMPLE_PROPERTIES_EXT, nullptr};
+        vkGetPhysicalDeviceMultisamplePropertiesEXT(gpu.phys_device, sample_count, &props);
+        result.emplace_back(props);
+    }
+    return result;
 }
 
 // --------- Format Properties ----------//

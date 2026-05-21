@@ -1,0 +1,11 @@
+Name: uuid
+URL: https://crates.io/crates/uuid
+Version: 1.20.0
+Revision: c3346ddf2a78ecadefbadaa83d22e263342745ca
+Update Mechanism: Manual (https://crbug.com/449898466)
+License: Apache-2.0
+License File: //third_party/rust/chromium_crates_io/vendor/uuid-v1/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: A library to generate and parse UUIDs.

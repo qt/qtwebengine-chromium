@@ -8,6 +8,7 @@
 
 #include "content/public/renderer/v8_value_converter.h"
 #include "extensions/common/api/messaging/message.h"
+#include "extensions/common/api/messaging/messaging_util.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/manifest.h"
 #include "extensions/common/mojom/message_port.mojom-shared.h"
@@ -84,17 +85,17 @@ RequestResult TabsHooksDelegate::HandleSendRequest(
     const APISignature::V8ParseResult& parse_result) {
   const v8::LocalVector<v8::Value>& arguments = *parse_result.arguments;
   DCHECK_EQ(3u, arguments.size());
-  // tabs.sendRequest() is restricted to MV2, so it should never be called with
-  // a promise based request as they are restricted to MV3 and above.
-  DCHECK_NE(binding::AsyncResponseType::kPromise, parse_result.async_type);
 
   int tab_id = messaging_util::ExtractIntegerId(arguments[0]);
   v8::Local<v8::Value> v8_message = arguments[1];
   std::string error;
 
+  mojom::ChannelType channel_type = mojom::ChannelType::kSendRequest;
   std::unique_ptr<Message> message = messaging_util::MessageFromV8(
       script_context->v8_context(), v8_message,
-      messaging_util::GetSerializationFormat(*script_context), &error);
+      messaging_util::GetSerializationFormat(script_context->extension(),
+                                             channel_type),
+      &error);
   if (!message) {
     RequestResult result(RequestResult::INVALID_INVOCATION);
     result.error = std::move(error);
@@ -105,12 +106,19 @@ RequestResult TabsHooksDelegate::HandleSendRequest(
   if (!arguments[2]->IsNull())
     response_callback = arguments[2].As<v8::Function>();
 
-  messaging_service_->SendOneTimeMessage(
+  v8::Local<v8::Promise> promise = messaging_service_->SendOneTimeMessage(
       script_context, MessageTarget::ForTab(tab_id, messaging_util::kNoFrameId),
-      mojom::ChannelType::kSendRequest, *message, parse_result.async_type,
-      response_callback);
+      channel_type, *message, parse_result.async_type, response_callback);
+  DCHECK_EQ(parse_result.async_type == binding::AsyncResponseType::kPromise,
+            !promise.IsEmpty())
+      << "SendOneTimeMessage should only return a Promise for promise based "
+         "API calls, otherwise it should be empty";
 
-  return RequestResult(RequestResult::HANDLED);
+  RequestResult result(RequestResult::HANDLED);
+  if (parse_result.async_type == binding::AsyncResponseType::kPromise) {
+    result.return_value = promise;
+  }
+  return result;
 }
 
 RequestResult TabsHooksDelegate::HandleSendMessage(
@@ -131,9 +139,12 @@ RequestResult TabsHooksDelegate::HandleSendMessage(
   DCHECK(!v8_message.IsEmpty());
   std::string error;
 
+  mojom::ChannelType channel_type = mojom::ChannelType::kSendMessage;
   std::unique_ptr<Message> message = messaging_util::MessageFromV8(
       script_context->v8_context(), v8_message,
-      messaging_util::GetSerializationFormat(*script_context), &error);
+      messaging_util::GetSerializationFormat(script_context->extension(),
+                                             channel_type),
+      &error);
   if (!message) {
     RequestResult result(RequestResult::INVALID_INVOCATION);
     result.error = std::move(error);
@@ -147,8 +158,7 @@ RequestResult TabsHooksDelegate::HandleSendMessage(
   v8::Local<v8::Promise> promise = messaging_service_->SendOneTimeMessage(
       script_context,
       MessageTarget::ForTab(tab_id, options.frame_id, options.document_id),
-      mojom::ChannelType::kSendMessage, *message, parse_result.async_type,
-      response_callback);
+      channel_type, *message, parse_result.async_type, response_callback);
   DCHECK_EQ(parse_result.async_type == binding::AsyncResponseType::kPromise,
             !promise.IsEmpty())
       << "SendOneTimeMessage should only return a Promise for promise based "
@@ -181,7 +191,8 @@ RequestResult TabsHooksDelegate::HandleConnect(
       script_context,
       MessageTarget::ForTab(tab_id, options.frame_id, options.document_id),
       options.channel_name,
-      messaging_util::GetSerializationFormat(*script_context));
+      messaging_util::GetSerializationFormat(script_context->extension(),
+                                             mojom::ChannelType::kConnect));
   DCHECK(port);
 
   RequestResult result(RequestResult::HANDLED);

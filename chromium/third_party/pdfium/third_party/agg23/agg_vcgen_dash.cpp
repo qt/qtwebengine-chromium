@@ -29,6 +29,7 @@ namespace pdfium
 namespace agg
 {
 vcgen_dash::vcgen_dash() :
+    m_is_dash(true),
     m_total_dash_len(0),
     m_num_dashes(0),
     m_dash_start(0),
@@ -43,17 +44,17 @@ vcgen_dash::vcgen_dash() :
 }
 void vcgen_dash::remove_all_dashes()
 {
+    m_is_dash = true;
     m_total_dash_len = 0;
     m_num_dashes = 0;
     m_curr_dash_start = 0;
     m_curr_dash = 0;
 }
-void vcgen_dash::add_dash(float dash_len, float gap_len)
+void vcgen_dash::add_dash(float dash_len)
 {
-    if(m_num_dashes < max_dashes) {
-        m_total_dash_len += dash_len + gap_len;
+    if (m_num_dashes < max_dashes) {
+        m_total_dash_len += dash_len;
         m_dashes[m_num_dashes++] = dash_len;
-        m_dashes[m_num_dashes++] = gap_len;
     }
 }
 void vcgen_dash::dash_start(float ds)
@@ -73,22 +74,35 @@ void vcgen_dash::dash_start(float ds)
 void vcgen_dash::calc_dash_start(float ds)
 {
     DCHECK_GT(m_total_dash_len, 0);
-    ds -= floor(ds / m_total_dash_len) * m_total_dash_len;
+    float cycle_len = m_total_dash_len;
+    if (m_num_dashes % 2 == 1) {
+        // An odd-sized dash array completes a full cycle only after two passes.
+        // For example, [5 2 1] is treated as [5 on, 2 off, 1 on] followed by
+        // [5 off, 2 on, 1 off]. This doubles the total length of the pattern.
+        cycle_len *= 2;
+    }
+    ds -= floor(ds / cycle_len) * cycle_len;
     m_curr_dash = 0;
     m_curr_dash_start = 0;
+    m_is_dash = true;
     while(ds > 0) {
         if(ds > m_dashes[m_curr_dash]) {
             ds -= m_dashes[m_curr_dash];
-            ++m_curr_dash;
+            to_next_dash();
             m_curr_dash_start = 0;
-            if(m_curr_dash >= m_num_dashes) {
-                m_curr_dash = 0;
-            }
         } else {
             m_curr_dash_start = ds;
             ds = 0;
         }
     }
+}
+void vcgen_dash::to_next_dash()
+{
+    ++m_curr_dash;
+    if (m_curr_dash >= m_num_dashes) {
+        m_curr_dash = 0;
+    }
+    m_is_dash = !m_is_dash;
 }
 void vcgen_dash::remove_all()
 {
@@ -126,7 +140,7 @@ unsigned vcgen_dash::vertex(float* x, float* y)
             case initial:
                 rewind(0);
             case ready:
-                if(m_num_dashes < 2 || m_src_vertices.size() < 2) {
+                if (m_src_vertices.size() < 2) {
                     cmd = path_cmd_stop;
                     break;
                 }
@@ -143,15 +157,12 @@ unsigned vcgen_dash::vertex(float* x, float* y)
                 return path_cmd_move_to;
             case polyline: {
                     float dash_rest = m_dashes[m_curr_dash] - m_curr_dash_start;
-                    unsigned cmd = (m_curr_dash & 1) ?
-                                   path_cmd_move_to :
-                                   path_cmd_line_to;
+                    unsigned cmd = m_is_dash ?
+                                   path_cmd_line_to :
+                                   path_cmd_move_to;
                     if(m_curr_rest > dash_rest) {
                         m_curr_rest -= dash_rest;
-                        ++m_curr_dash;
-                        if(m_curr_dash >= m_num_dashes) {
-                            m_curr_dash = 0;
-                        }
+                        to_next_dash();
                         m_curr_dash_start = 0;
                         *x = m_v2->x - (m_v2->x - m_v1->x) * m_curr_rest / m_v1->dist;
                         *y = m_v2->y - (m_v2->y - m_v1->y) * m_curr_rest / m_v1->dist;

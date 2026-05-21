@@ -40,10 +40,10 @@
 #include "services/network/ad_auction/event_record_request_helper.h"
 #include "services/network/devtools_durable_msg.h"
 #include "services/network/keepalive_statistics_recorder.h"
+#include "services/network/local_network_access_url_loader_interceptor.h"
 #include "services/network/network_service.h"
 #include "services/network/observer_wrapper.h"
 #include "services/network/partial_decoder.h"
-#include "services/network/private_network_access_url_loader_interceptor.h"
 #include "services/network/public/cpp/cors/cors_error_status.h"
 #include "services/network/public/cpp/initiator_lock_compatibility.h"
 #include "services/network/public/cpp/orb/orb_api.h"
@@ -55,7 +55,6 @@
 #include "services/network/public/mojom/device_bound_sessions.mojom.h"
 #include "services/network/public/mojom/devtools_observer.mojom.h"
 #include "services/network/public/mojom/fetch_api.mojom.h"
-#include "services/network/public/mojom/ip_address_space.mojom-forward.h"
 #include "services/network/public/mojom/ip_address_space.mojom-shared.h"
 #include "services/network/public/mojom/network_context.mojom.h"
 #include "services/network/public/mojom/network_service.mojom.h"
@@ -109,6 +108,7 @@ class SharedDictionaryManager;
 class SharedResourceChecker;
 class SlopBucket;
 class TrustTokenUrlLoaderInterceptor;
+class DevtoolsDurableMessageWriter;
 
 class COMPONENT_EXPORT(NETWORK_SERVICE) URLLoader
     : public mojom::URLLoader,
@@ -185,7 +185,9 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) URLLoader
           accept_ch_frame_observer,
       bool shared_storage_writable_eligible,
       SharedResourceChecker& shared_resource_checker,
-      base::WeakPtr<DevtoolsDurableMessage> devtools_durable_message);
+      std::unique_ptr<DevtoolsDurableMessageWriter>
+          maybe_durable_message_writer,
+      mojo::ScopedDataPipeProducerHandle response_body_stream = {});
 
   URLLoader(const URLLoader&) = delete;
   URLLoader& operator=(const URLLoader&) = delete;
@@ -461,6 +463,9 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) URLLoader
   void MaybeNotifyEarlyResponseToDevtools(const net::HttpResponseHeaders&);
   void SetRawRequestHeadersAndNotify(net::HttpRawRequestHeaders);
   bool IsSharedDictionaryReadAllowed();
+  // TODO(crbug.com/447039330): This is temporary for the SyntheticResponse
+  // experiment and will be removed after standardization.
+  void PerformSyntheticResponseFallback();
   void DispatchOnRawRequest(
       std::vector<network::mojom::HttpRawHeaderPairPtr> headers);
   void DispatchOnRawResponse();
@@ -670,7 +675,7 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) URLLoader
   const std::optional<base::UnguessableToken> fetch_window_id_;
 
   // Must be below `client_security_state_`.
-  PrivateNetworkAccessUrlLoaderInterceptor private_network_access_interceptor_;
+  LocalNetworkAccessUrlLoaderInterceptor local_network_access_interceptor_;
 
   mojo::Remote<mojom::TrustedHeaderClient> header_client_;
 
@@ -702,9 +707,6 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) URLLoader
   ObserverWrapper<mojom::URLLoaderNetworkServiceObserver>
       url_loader_network_observer_;
   ObserverWrapper<mojom::DevToolsObserver> devtools_observer_;
-  ObserverWrapper<mojom::DeviceBoundSessionAccessObserver>
-      device_bound_session_observer_;
-
   const scoped_refptr<RefCountedDeviceBoundSessionAccessObserverRemote>
       device_bound_session_observer_shared_remote_;
 
@@ -783,8 +785,11 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) URLLoader
   // Permissions policy of the request.
   const std::optional<network::PermissionsPolicy> permissions_policy_;
 
-  // DevTools Durable Message instance, if enabled.
-  base::WeakPtr<DevtoolsDurableMessage> devtools_durable_message_;
+  const scoped_refptr<net::HttpResponseHeaders>
+      expected_response_headers_for_synthetic_response;
+
+  // DevTools Durable Message instances, if enabled.
+  std::unique_ptr<DevtoolsDurableMessageWriter> durable_message_writer_;
 
   // Keeps track of raw body sizes transmitted to DevTools.
   int64_t devtools_durable_message_raw_size_ = 0;

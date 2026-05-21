@@ -6,10 +6,11 @@
 
 #include <stddef.h>
 
+#include <utility>
+
 #include "base/check_op.h"
 #include "base/notreached.h"
 #include "base/trace_event/typed_macros.h"
-#include "base/types/cxx23_to_underlying.h"
 #include "ui/base/ui_base_features.h"
 #include "ui/events/gesture_event_details.h"
 
@@ -17,8 +18,8 @@ namespace ui {
 namespace {
 
 // A BitSet32 is used for tracking dropped gesture types.
-static_assert(base::to_underlying(EventType::kGestureTypeEnd) -
-                      base::to_underlying(EventType::kGestureTypeStart) <
+static_assert(std::to_underlying(EventType::kGestureTypeEnd) -
+                      std::to_underlying(EventType::kGestureTypeStart) <
                   32,
               "gesture type count too large");
 
@@ -130,8 +131,8 @@ DispositionHandlingInfo GetDispositionHandlingInfo(EventType type) {
 int GetGestureTypeIndex(EventType type) {
   DCHECK_GE(type, EventType::kGestureTypeStart);
   DCHECK_LE(type, EventType::kGestureTypeEnd);
-  return base::to_underlying(type) -
-         base::to_underlying(EventType::kGestureTypeStart);
+  return std::to_underlying(type) -
+         std::to_underlying(EventType::kGestureTypeStart);
 }
 
 bool IsTouchStartEvent(GestureEventDataPacket::GestureSource gesture_source) {
@@ -317,10 +318,11 @@ void TouchDispositionGestureFilter::FilterAndSendPacket(
   }
   int gesture_end_index = -1;
 
-  //  If we are in a scroll, there are no gestures, send an empty gesture scroll
-  //  update.
+  //  If we are in a scroll (there was a GestureScrollBegin, and the
+  //  corresponding touch move was not consumed), and there are no gestures,
+  //  send an empty gesture scroll update.
   if (base::FeatureList::IsEnabled(features::kSendEmptyGestureScrollUpdate) &&
-      needs_scroll_ending_event_ &&
+      (needs_scroll_ending_event_ && !scroll_begin_consumed_) &&
       packet.gesture_source() == GestureEventDataPacket::TOUCH_MOVE &&
       packet.gesture_count() == 0) {
     TRACE_EVENT("input", "EmptyGestureScrollUpdate");
@@ -439,6 +441,7 @@ void TouchDispositionGestureFilter::SendGesture(
       ending_event_motion_event_id_ = event.motion_event_id;
       ending_event_primary_tool_type_ = event.primary_tool_type;
       needs_scroll_ending_event_ = true;
+      scroll_begin_consumed_ = state_.current_touch_consumed();
       break;
     case EventType::kGestureScrollEnd:
       needs_scroll_ending_event_ = false;

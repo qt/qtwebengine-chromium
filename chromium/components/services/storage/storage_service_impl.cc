@@ -25,8 +25,6 @@ namespace storage {
 
 namespace {
 
-const char kSessionStorageDirectory[] = "Session Storage";
-
 // We don't use out-of-process Storage Service on Android, so we can avoid
 // pulling all the related code (including Directory mojom) into the build.
 #if !BUILDFLAG(IS_ANDROID)
@@ -51,27 +49,6 @@ std::unique_ptr<FilesystemProxy> CreateRestrictedFilesystemProxy(
 }
 #endif
 
-template <typename T>
-base::OnceClosure MakeDeferredDeleter(std::unique_ptr<T> object) {
-  return base::BindOnce(
-      [](scoped_refptr<base::SequencedTaskRunner> task_runner, T* object) {
-        task_runner->DeleteSoon(FROM_HERE, object);
-      },
-      base::SequencedTaskRunner::GetCurrentDefault(),
-      // NOTE: We release `object` immediately. In the case
-      // where this task never runs, we prefer to leak the
-      // object rather than potentially destroying it on the
-      // wrong sequence.
-      object.release());
-}
-
-template <typename T>
-void ShutDown(std::unique_ptr<T> object) {
-  if (T* ptr = object.get()) {
-    ptr->ShutDown(MakeDeferredDeleter(std::move(object)));
-  }
-}
-
 }  // namespace
 
 StorageServiceImpl::StorageServiceImpl(
@@ -80,20 +57,7 @@ StorageServiceImpl::StorageServiceImpl(
     : receiver_(this, std::move(receiver)),
       io_task_runner_(std::move(io_task_runner)) {}
 
-StorageServiceImpl::~StorageServiceImpl() {
-  // ShutDown storages before we destroy the service. We transfer ownership of
-  // the storages to the ShutDown function, which deletes them after ShutDown
-  // completes.
-  while (!local_storages_.empty()) {
-    auto node = local_storages_.extract(local_storages_.begin());
-    ShutDown(std::move(node.value()));
-  }
-
-  while (!session_storages_.empty()) {
-    auto node = session_storages_.extract(session_storages_.begin());
-    ShutDown(std::move(node.value()));
-  }
-}
+StorageServiceImpl::~StorageServiceImpl() = default;
 
 void StorageServiceImpl::EnableAggressiveDomStorageFlushing() {
   StorageAreaImpl::EnableAggressiveCommitDelay();
@@ -144,7 +108,6 @@ void StorageServiceImpl::BindLocalStorageControl(
 
   auto new_local_storage = std::make_unique<LocalStorageImpl>(
       path.value_or(base::FilePath()),
-      base::SequencedTaskRunner::GetCurrentDefault(),
       base::BindOnce(&StorageServiceImpl::ShutDownAndRemoveLocalStorage,
                      weak_ptr_factory_.GetWeakPtr()),
       std::move(receiver));
@@ -173,10 +136,6 @@ void StorageServiceImpl::BindSessionStorageControl(
 
   auto new_session_storage = std::make_unique<SessionStorageImpl>(
       path.value_or(base::FilePath()),
-      base::ThreadPool::CreateSequencedTaskRunner(
-          {base::MayBlock(), base::WithBaseSyncPrimitives(),
-           base::TaskShutdownBehavior::BLOCK_SHUTDOWN}),
-      base::SequencedTaskRunner::GetCurrentDefault(),
 #if BUILDFLAG(IS_ANDROID)
       // On Android there is no support for session storage restoring, and since
       // the restoring code is responsible for database cleanup, we must
@@ -186,7 +145,6 @@ void StorageServiceImpl::BindSessionStorageControl(
       path.has_value() ? SessionStorageImpl::BackingMode::kRestoreDiskState
                        : SessionStorageImpl::BackingMode::kNoDisk,
 #endif
-      std::string(kSessionStorageDirectory),
       base::OnceCallback<void(SessionStorageImpl*)>(
           base::BindOnce(&StorageServiceImpl::ShutDownAndRemoveSessionStorage,
                          weak_ptr_factory_.GetWeakPtr())),
@@ -204,27 +162,27 @@ void StorageServiceImpl::BindTestApi(
 
 void StorageServiceImpl::ShutDownAndRemoveSessionStorage(
     SessionStorageImpl* storage) {
-  if (!storage->GetStoragePath().empty()) {
-    persistent_session_storage_map_.erase(storage->GetStoragePath());
+  if (!storage->GetStoragePartitionDirectory().empty()) {
+    persistent_session_storage_map_.erase(
+        storage->GetStoragePartitionDirectory());
   }
 
   auto it = session_storages_.find(storage);
   if (it != session_storages_.end()) {
-    auto node = session_storages_.extract(it);
-    ShutDown(std::move(node.value()));
+    session_storages_.erase(it);
   }
 }
 
 void StorageServiceImpl::ShutDownAndRemoveLocalStorage(
     LocalStorageImpl* storage) {
-  if (!storage->GetStoragePath().empty()) {
-    persistent_local_storage_map_.erase(storage->GetStoragePath());
+  if (!storage->GetStoragePartitionDirectory().empty()) {
+    persistent_local_storage_map_.erase(
+        storage->GetStoragePartitionDirectory());
   }
 
   auto it = local_storages_.find(storage);
   if (it != local_storages_.end()) {
-    auto node = local_storages_.extract(it);
-    ShutDown(std::move(node.value()));
+    local_storages_.erase(it);
   }
 }
 

@@ -77,6 +77,8 @@ class OptionTextObserver : public MutationObserver::Delegate {
     option_->DidChangeTextContent();
   }
 
+  void Disconnect() { observer_->disconnect(); }
+
   void Trace(Visitor* visitor) const override {
     visitor->Trace(option_);
     visitor->Trace(observer_);
@@ -129,6 +131,7 @@ void HTMLOptionElement::Trace(Visitor* visitor) const {
   visitor->Trace(text_observer_);
   visitor->Trace(nearest_ancestor_select_);
   visitor->Trace(nearest_ancestor_optgroup_);
+  visitor->Trace(nearest_ancestor_datalist_);
   visitor->Trace(label_container_);
   HTMLElement::Trace(visitor);
 }
@@ -144,7 +147,7 @@ FocusableState HTMLOptionElement::SupportsFocus(
     bool base_with_picker =
         select->UsesMenuList() && popover && popover->popoverOpen();
     bool base_in_page =
-        RuntimeEnabledFeatures::CustomizableSelectInPageEnabled() &&
+        RuntimeEnabledFeatures::CustomizableSelectListboxEnabled() &&
         !select->UsesMenuList() && select->IsAppearanceBase();
     if (base_with_picker || base_in_page) {
       // If this option is being rendered as regular web content inside a
@@ -166,7 +169,7 @@ bool HTMLOptionElement::IsKeyboardFocusableSlow(
   if (!HTMLElement::IsKeyboardFocusableSlow(update_behavior)) {
     return false;
   }
-  if (!RuntimeEnabledFeatures::CustomizableSelectInPageEnabled() ||
+  if (!RuntimeEnabledFeatures::CustomizableSelectListboxEnabled() ||
       !OwnerSelectElement() || OwnerSelectElement()->UsesMenuList()) {
     return true;
   }
@@ -344,7 +347,8 @@ void HTMLOptionElement::setSelectedForBinding(bool selected) {
   is_dirty_ = true;
 }
 
-void HTMLOptionElement::SetSelectedState(bool selected) {
+void HTMLOptionElement::SetSelectedState(bool selected,
+                                         bool skip_mutation_observer_update) {
   if (is_selected_ == selected)
     return;
 
@@ -364,6 +368,11 @@ void HTMLOptionElement::SetSelectedState(bool selected) {
         cache->ListboxSelectedChildrenChanged(select);
       }
     }
+  }
+
+  if (RuntimeEnabledFeatures::OptionMutationObserverImprovementEnabled() &&
+      !skip_mutation_observer_update) {
+    UpdateMutationObserver(/*in_style_recalc=*/false);
   }
 }
 
@@ -392,8 +401,68 @@ void HTMLOptionElement::ChildrenChanged(const ChildrenChange& change) {
 
   // If an element is inserted, We need to use MutationObserver to detect
   // textContent changes.
-  if (change.type == ChildrenChangeType::kElementInserted && !text_observer_)
-    text_observer_ = MakeGarbageCollected<OptionTextObserver>(*this);
+  if (change.type == ChildrenChangeType::kElementInserted &&
+      !was_element_inserted_) {
+    was_element_inserted_ = true;
+    UpdateMutationObserver(/*in_style_recalc=*/false);
+  }
+}
+
+void HTMLOptionElement::UpdateMutationObserver(bool in_style_recalc) {
+  if (NeedsMutationObserver()) {
+    if (!text_observer_) {
+      if (in_style_recalc) {
+        update_label_task_ = PostCancellableTask(
+            *GetDocument().GetTaskRunner(TaskType::kDOMManipulation), FROM_HERE,
+            BindOnce(&HTMLOptionElement::DidChangeTextContent,
+                     WrapWeakPersistent(this)));
+      } else {
+        DidChangeTextContent();
+      }
+      text_observer_ = MakeGarbageCollected<OptionTextObserver>(*this);
+    }
+  } else if (text_observer_) {
+    text_observer_->Disconnect();
+    text_observer_ = nullptr;
+  }
+}
+
+bool HTMLOptionElement::NeedsMutationObserver() {
+  if (!was_element_inserted_) {
+    return false;
+  }
+
+  // This flag check runs after was_element_inserted_ in order to match the
+  // behavior before the flag was added, which was that a MutationObserver is
+  // always registered when an element is inserted.
+  if (!RuntimeEnabledFeatures::OptionMutationObserverImprovementEnabled()) {
+    return true;
+  }
+
+  HTMLSelectElement* select = OwnerSelectElement();
+  if (!select) {
+    return false;
+  }
+
+  if (select->UsesMenuList()) {
+    if (select->IsAppearanceBase() && select->SlottedButton()) {
+      // The author provided button is being rendered instead of the
+      // MenuListInnerElement, so we don't need to keep its text up to date.
+      return false;
+    }
+    // If this option is selected, then it is being rendered in the
+    // MenuListInnerElement.
+    return Selected();
+  } else {
+    if (!select->GetComputedStyle()) {
+      // If style recalc hasn't been done yet, then don't eagerly create a
+      // MutationObserver. Otherwise, in the base appearance case, we would
+      // create a MutationObserver and then quickly remove it as soon as style
+      // recalc is done.
+      return false;
+    }
+    return !select->IsAppearanceBase();
+  }
 }
 
 void HTMLOptionElement::DidChangeTextContent() {
@@ -407,6 +476,9 @@ void HTMLOptionElement::DidChangeTextContent() {
 }
 
 HTMLDataListElement* HTMLOptionElement::OwnerDataListElement() const {
+  if (RuntimeEnabledFeatures::CustomizableComboboxEnabled()) {
+    return nearest_ancestor_datalist_;
+  }
   return Traversal<HTMLDataListElement>::FirstAncestor(*this);
 }
 
@@ -489,13 +561,20 @@ void HTMLOptionElement::UpdateLabel() {
   }
 }
 
+void HTMLOptionElement::UpdateAncestors() {
+  HTMLSelectElement::SelectOptgroupDatalist ancestors =
+      HTMLSelectElement::AssociatedSelectAndOptgroupAndDatalist(*this);
+  nearest_ancestor_select_ = ancestors.select;
+  nearest_ancestor_optgroup_ = ancestors.optgroup;
+  nearest_ancestor_datalist_ = ancestors.datalist;
+}
+
 Node::InsertionNotificationRequest HTMLOptionElement::InsertedInto(
     ContainerNode& insertion_point) {
   auto return_value = HTMLElement::InsertedInto(insertion_point);
 
   HTMLSelectElement* old_ancestor_select = nearest_ancestor_select_;
-  std::tie(nearest_ancestor_select_, nearest_ancestor_optgroup_) =
-      HTMLSelectElement::AssociatedSelectAndOptgroup(*this);
+  UpdateAncestors();
 
   if (nearest_ancestor_select_ &&
       nearest_ancestor_select_ != old_ancestor_select) {
@@ -510,8 +589,8 @@ void HTMLOptionElement::RemovedFrom(ContainerNode& insertion_point) {
   HTMLElement::RemovedFrom(insertion_point);
 
   HTMLSelectElement* old_ancestor_select = nearest_ancestor_select_;
-  std::tie(nearest_ancestor_select_, nearest_ancestor_optgroup_) =
-      HTMLSelectElement::AssociatedSelectAndOptgroup(*this);
+  UpdateAncestors();
+
   if (nearest_ancestor_select_ != old_ancestor_select) {
     // We should only get here if we are being removed from a <select>
     CHECK(!nearest_ancestor_select_);
@@ -571,7 +650,7 @@ void HTMLOptionElement::DefaultEventHandlerInternal(Event& event) {
   }
 
   const bool appearance_base_in_page =
-      RuntimeEnabledFeatures::CustomizableSelectInPageEnabled() &&
+      RuntimeEnabledFeatures::CustomizableSelectListboxEnabled() &&
       !select->UsesMenuList() && select->IsAppearanceBase();
 
   if (!appearance_base_in_page && !select->PickerIsPopover()) {
@@ -601,19 +680,18 @@ void HTMLOptionElement::DefaultEventHandlerInternal(Event& event) {
       //  2. The mouseup on this <option> was within kEpsilon layout units
       //     (post zoom, page-relative) of the location of the mousedown. I.e.
       //     the mouse was not dragged between mousedown and mouseup.
-      std::optional<gfx::PointF> mouse_down_loc =
-          GetDocument().PopoverPickerMousedownLocation();
+      auto mouse_down_info = GetDocument().PopoverPickerPointerdown();
       constexpr float kEpsilon = 5;  // 5 pixels in any direction
-      bool mouse_moved = !mouse_down_loc.has_value() ||
-                         !mouse_down_loc->IsWithinDistance(
+      bool mouse_moved = !mouse_down_info.target ||
+                         !mouse_down_info.location.IsWithinDistance(
                              mouse_event->AbsoluteLocation(), kEpsilon);
       if (mouse_moved) {
         ChooseOption(event);
       }
-      GetDocument().SetPopoverPickerMousedownLocation(std::nullopt);
+      GetDocument().SetPopoverPickerPointerdown({.target = nullptr});
       return;
     } else if (event.type() == event_type_names::kMousedown) {
-      GetDocument().SetPopoverPickerMousedownLocation(std::nullopt);
+      GetDocument().SetPopoverPickerPointerdown({.target = nullptr});
     }
   }
 

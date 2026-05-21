@@ -69,7 +69,10 @@ class MockRecordHandler : public MdnsResponder::RecordHandler {
  public:
   void AddRecord(MdnsRecord record) { records_.push_back(record); }
 
-  MOCK_METHOD3(HasRecords, bool(const DomainName&, DnsType, DnsClass));
+  MOCK_METHOD(bool,
+              HasRecords,
+              (const DomainName&, DnsType, DnsClass),
+              (override));
 
   std::vector<MdnsRecord::ConstRef> GetRecords(const DomainName& name,
                                                DnsType type,
@@ -103,16 +106,20 @@ class MockMdnsSender : public MdnsSender {
  public:
   explicit MockMdnsSender(UdpSocket& socket) : MdnsSender(socket) {}
 
-  MOCK_METHOD1(SendMulticast, Error(const MdnsMessage& message));
-  MOCK_METHOD2(SendMessage,
-               Error(const MdnsMessage& message, const IPEndpoint& endpoint));
+  MOCK_METHOD(Error, SendMulticast, (const MdnsMessage& message), (override));
+  MOCK_METHOD(Error,
+              SendMessage,
+              (const MdnsMessage& message, const IPEndpoint& endpoint),
+              (override));
 };
 
 class MockProbeManager : public MdnsProbeManager {
  public:
-  MOCK_CONST_METHOD1(IsDomainClaimed, bool(const DomainName&));
-  MOCK_METHOD2(RespondToProbeQuery,
-               void(const MdnsMessage&, const IPEndpoint&));
+  MOCK_METHOD(bool, IsDomainClaimed, (const DomainName&), (const, override));
+  MOCK_METHOD(void,
+              RespondToProbeQuery,
+              (const MdnsMessage&, const IPEndpoint&),
+              (override));
 };
 
 class MdnsResponderTest : public testing::Test {

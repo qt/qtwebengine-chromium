@@ -4,6 +4,8 @@
 
 #include "ui/gfx/mojom/hdr_metadata_mojom_traits.h"
 
+#include "third_party/skia/include/private/SkHdrMetadata.h"
+
 namespace mojo {
 
 bool StructTraits<gfx::mojom::HdrMetadataCta861_3DataView,
@@ -42,15 +44,18 @@ bool StructTraits<gfx::mojom::HdrMetadataExtendedRangeDataView,
   return true;
 }
 
-bool StructTraits<gfx::mojom::HdrMetadataAgtmDataView, gfx::HdrMetadataAgtm>::
-    Read(gfx::mojom::HdrMetadataAgtmDataView data,
-         gfx::HdrMetadataAgtm* output) {
-  ArrayDataView<uint8_t> payload;
-  data.GetPayloadDataView(&payload);
-  if (!payload.is_null()) {
-    output->payload = SkData::MakeWithCopy(payload.data(), payload.size());
+std::optional<skhdr::AdaptiveGlobalToneMap>
+StructTraits<gfx::mojom::HDRMetadataDataView, gfx::HDRMetadata>::agtm(
+    const gfx::HDRMetadata& input) {
+  const auto* serialized_agtm = input.getSerializedAgtm();
+  if (!serialized_agtm) {
+    return std::nullopt;
   }
-  return true;
+  skhdr::AdaptiveGlobalToneMap agtm;
+  if (!agtm.parse(serialized_agtm)) {
+    return std::nullopt;
+  }
+  return agtm;
 }
 
 bool StructTraits<gfx::mojom::HDRMetadataDataView, gfx::HDRMetadata>::Read(
@@ -68,8 +73,15 @@ bool StructTraits<gfx::mojom::HDRMetadataDataView, gfx::HDRMetadata>::Read(
   if (!data.ReadExtendedRange(&output->extended_range)) {
     return false;
   }
-  if (!data.ReadAgtm(&output->agtm)) {
+
+  std::optional<skhdr::AdaptiveGlobalToneMap> agtm;
+  if (!data.ReadAgtm(&agtm)) {
     return false;
+  }
+  if (agtm) {
+    output->setSerializedAgtm(agtm->serialize());
+  } else {
+    output->setSerializedAgtm(nullptr);
   }
   return true;
 }

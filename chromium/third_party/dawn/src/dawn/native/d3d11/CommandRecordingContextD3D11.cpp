@@ -55,6 +55,29 @@ ScopedCommandRecordingContext::ScopedCommandRecordingContext(CommandRecordingCon
     DAWN_ASSERT(Get()->mIsOpen);
 }
 
+ScopedCommandRecordingContext::ScopedCommandRecordingContext(ScopedCommandRecordingContext&& other)
+    : mGuard(std::move(other.mGuard)), mLockD3D11Scope(other.mLockD3D11Scope) {
+    other.mLockD3D11Scope = false;
+}
+
+ScopedCommandRecordingContext& ScopedCommandRecordingContext::operator=(
+    ScopedCommandRecordingContext&& other) {
+    if (this != &other) {
+        // Release the current lock if we hold one
+        if (mLockD3D11Scope) {
+            DAWN_ASSERT(this->Get());
+            DAWN_ASSERT(this->Get()->mD3D11Multithread);
+            this->Get()->mD3D11Multithread->Leave();
+        }
+
+        // Move the guard and lock state
+        mGuard = std::move(other.mGuard);
+        mLockD3D11Scope = other.mLockD3D11Scope;
+        other.mLockD3D11Scope = false;
+    }
+    return *this;
+}
+
 ScopedCommandRecordingContext::~ScopedCommandRecordingContext() {
     if (mLockD3D11Scope) {
         DAWN_ASSERT(this->Get());
@@ -161,6 +184,7 @@ void ScopedCommandRecordingContext::WriteUniformBufferRange(uint32_t offset,
 
 MaybeError ScopedCommandRecordingContext::FlushUniformBuffer() const {
     if (Get()->mUniformBufferDirty) {
+        auto scopedUseUniformBuffer = Get()->mUniformBuffer->UseInternal();
         DAWN_TRY(Get()->mUniformBuffer->Write(this, 0, Get()->mUniformBufferData.data(),
                                               Get()->mUniformBufferData.size() * sizeof(uint32_t)));
         Get()->mUniformBufferDirty = false;
@@ -201,8 +225,32 @@ ScopedSwapStateCommandRecordingContext::ScopedSwapStateCommandRecordingContext(
                                                         &mPreviousState);
 }
 
+ScopedSwapStateCommandRecordingContext::ScopedSwapStateCommandRecordingContext(
+    ScopedSwapStateCommandRecordingContext&& other)
+    : ScopedCommandRecordingContext(std::move(other)),
+      mPreviousState(std::move(other.mPreviousState)) {}
+
+ScopedSwapStateCommandRecordingContext& ScopedSwapStateCommandRecordingContext::operator=(
+    ScopedSwapStateCommandRecordingContext&& other) {
+    if (this != &other) {
+        // Restore previous state if we have one
+        if (mPreviousState) {
+            Get()->mD3D11DeviceContext3->SwapDeviceContextState(mPreviousState.Get(), nullptr);
+        }
+
+        // Call base class move assignment
+        ScopedCommandRecordingContext::operator=(std::move(other));
+
+        // Move the previous state
+        mPreviousState = std::move(other.mPreviousState);
+    }
+    return *this;
+}
+
 ScopedSwapStateCommandRecordingContext::~ScopedSwapStateCommandRecordingContext() {
-    Get()->mD3D11DeviceContext3->SwapDeviceContextState(mPreviousState.Get(), nullptr);
+    if (mPreviousState) {
+        Get()->mD3D11DeviceContext3->SwapDeviceContextState(mPreviousState.Get(), nullptr);
+    }
 }
 
 ID3D11Device* ScopedSwapStateCommandRecordingContext::GetD3D11Device() const {

@@ -8,7 +8,7 @@ import * as Platform from '../../../core/platform/platform.js';
 import * as Root from '../../../core/root/root.js';
 import * as SDK from '../../../core/sdk/sdk.js';
 import type * as Protocol from '../../../generated/protocol.js';
-import * as Annotations from '../../../ui/components/annotations/annotations.js';
+import * as Annotations from '../../annotations/annotations.js';
 import {ChangeManager} from '../ChangeManager.js';
 import {debugLog} from '../debug.js';
 import {EvaluateAction, formatError, SideEffectError} from '../EvaluateAction.js';
@@ -219,7 +219,7 @@ export class NodeContext extends ConversationContext<SDK.DOMModel.DOMNode> {
         {title: 'Why does this element scroll?', jslogContext: 'scroll-why'},
       ];
     }
-    if (layoutProps.isContainer) {
+    if (layoutProps.containerType) {
       return [
         {title: 'What are container queries?', jslogContext: 'container-what'},
         {title: 'How do I use container-type?', jslogContext: 'container-how'},
@@ -275,17 +275,18 @@ export class StylingAgent extends AiAgent<SDK.DOMModel.DOMNode> {
     this.#changes = opts.changeManager || new ChangeManager();
     this.#execJs = opts.execJs ?? executeJsCode;
     this.#createExtensionScope = opts.createExtensionScope ?? ((changes: ChangeManager) => {
-                                   return new ExtensionScope(changes, this.id, this.context?.getItem() ?? null);
+                                   return new ExtensionScope(changes, this.sessionId, this.context?.getItem() ?? null);
                                  });
 
     this.declareFunction<{
-      elements: string[],
+      elements: number[],
       styleProperties: string[],
       explanation: string,
     }>('getStyles', {
       description:
           `Get computed and source styles for one or multiple elements on the inspected page for multiple elements at once by uid.
 
+**CRITICAL** An element uid is a number, not a selector.
 **CRITICAL** Use selectors to refer to elements in the text output. Do not use uids.
 **CRITICAL** Always provide the explanation argument to explain what and why you query.`,
       parameters: {
@@ -300,8 +301,8 @@ export class StylingAgent extends AiAgent<SDK.DOMModel.DOMNode> {
           },
           elements: {
             type: Host.AidaClient.ParametersTypes.ARRAY,
-            description: 'A list of element uids to get data for',
-            items: {type: Host.AidaClient.ParametersTypes.STRING, description: `An element uid.`},
+            description: 'A list of element uids to get data for. These are numbers, not selectors.',
+            items: {type: Host.AidaClient.ParametersTypes.INTEGER, description: `An element uid.`},
             nullable: false,
           },
           styleProperties: {
@@ -313,7 +314,8 @@ export class StylingAgent extends AiAgent<SDK.DOMModel.DOMNode> {
               description: 'A CSS style property name to retrieve. For example, \'background-color\'.'
             }
           },
-        }
+        },
+        required: ['explanation', 'elements', 'styleProperties']
       },
       displayInfoFromArgs: params => {
         return {
@@ -329,7 +331,7 @@ export class StylingAgent extends AiAgent<SDK.DOMModel.DOMNode> {
 
     this.declareFunction<{
       title: string,
-      thought: string,
+      explanation: string,
       code: string,
     }>('executeJavaScript', {
       description:
@@ -387,7 +389,7 @@ const data = {
 \`\`\`
 `,
           },
-          thought: {
+          explanation: {
             type: Host.AidaClient.ParametersTypes.STRING,
             description: 'Explain why you want to run this code',
           },
@@ -396,11 +398,12 @@ const data = {
             description: 'Provide a summary of what the code does. For example, "Checking related element styles".',
           },
         },
+        required: ['code', 'explanation', 'title']
       },
       displayInfoFromArgs: params => {
         return {
           title: params.title,
-          thought: params.thought,
+          thought: params.explanation,
           action: params.code,
         };
       },
@@ -436,6 +439,7 @@ const data = {
               nullable: false,
             },
           },
+          required: ['elementId', 'annotationMessage']
         },
         handler: async params => {
           return await this.addElementAnnotation(params.elementId, params.annotationMessage);
@@ -602,7 +606,7 @@ const data = {
     return this.context?.getItem() ?? null;
   }
 
-  async getStyles(elements: string[], properties: string[]): Promise<FunctionCallHandlerResult<unknown>> {
+  async getStyles(elements: number[], properties: string[]): Promise<FunctionCallHandlerResult<unknown>> {
     const result:
         Record<string, {computed: Record<string, string|undefined>, authored: Record<string, string|undefined>}> = {};
     for (const uid of elements) {

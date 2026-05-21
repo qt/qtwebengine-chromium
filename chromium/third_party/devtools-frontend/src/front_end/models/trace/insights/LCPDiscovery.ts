@@ -66,7 +66,7 @@ export function isLCPDiscoveryInsight(model: InsightModel): model is LCPDiscover
   return model.insightKey === 'LCPDiscovery';
 }
 export type LCPDiscoveryInsightModel = InsightModel<typeof UIStrings, {
-  lcpEvent?: Types.Events.LargestContentfulPaintCandidate,
+  lcpEvent?: Types.Events.AnyLargestContentfulPaintCandidate,
   /** The network request for the LCP image, if there was one. */
   lcpRequest?: Types.Events.SyntheticNetworkRequest,
   earliestDiscoveryTimeTs?: Types.Timing.Micro,
@@ -108,13 +108,13 @@ export function generateInsight(
     throw new Error('no frame metrics');
   }
 
-  const navMetrics = frameMetrics.get(context.navigationId);
+  const navMetrics = frameMetrics.get(context.navigation);
   if (!navMetrics) {
     throw new Error('no navigation metrics');
   }
   const metricScore = navMetrics.get(Handlers.ModelHandlers.PageLoadMetrics.MetricName.LCP);
   const lcpEvent = metricScore?.event;
-  if (!lcpEvent || !Types.Events.isLargestContentfulPaintCandidate(lcpEvent)) {
+  if (!lcpEvent || !Types.Events.isAnyLargestContentfulPaintCandidate(lcpEvent)) {
     return finalize({warnings: [InsightWarning.NO_LCP]});
   }
 
@@ -129,8 +129,6 @@ export function generateInsight(
   }
 
   const initiatorUrl = lcpRequest.args.data.initiator?.url;
-  // TODO(b/372319476): Explore using trace event HTMLDocumentParser::FetchQueuedPreloads to determine if the request
-  // is discovered by the preload scanner.
   const initiatedByMainDoc =
       lcpRequest?.args.data.initiator?.type === 'parser' && docRequest.args.data.url === initiatorUrl;
   const imgPreloadedOrFoundInHTML = lcpRequest?.args.data.isLinkPreload || initiatedByMainDoc;

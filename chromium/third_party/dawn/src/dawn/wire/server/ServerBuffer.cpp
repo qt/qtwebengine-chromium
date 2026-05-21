@@ -32,6 +32,7 @@
 
 #include <limits>
 #include <memory>
+#include <span>
 
 #include "dawn/common/Assert.h"
 #include "dawn/common/StringViewUtils.h"
@@ -56,14 +57,14 @@ WireResult Server::PreHandleBufferUnmap(const BufferUnmapCmd& cmd) {
     Known<WGPUBuffer> buffer;
     WIRE_TRY(Get(cmd.selfId, &buffer));
 
-    if (buffer->mappedAtCreation && !(buffer->usage & WGPUBufferUsage_MapWrite)) {
-        // This indicates the writeHandle is for mappedAtCreation only. Destroy on unmap
-        // writeHandle could have possibly been deleted if buffer is already destroyed so we
-        // don't assert it's non-null
-        buffer->writeHandle = nullptr;
-    }
-
-    buffer->mapWriteState = BufferMapWriteState::Unmapped;
+    buffer->mapState.Use([&](auto mapState) {
+        if (buffer->mappedAtCreation && !(buffer->usage & WGPUBufferUsage_MapWrite)) {
+            // This indicates the writeHandle is for mappedAtCreation only. Destroy on unmap
+            // writeHandle could have possibly been deleted if buffer is already destroyed so we
+            // don't assert it's non-null
+            mapState->writeHandle = nullptr;
+        }
+    });
 
     return WireResult::Success;
 }
@@ -74,9 +75,10 @@ WireResult Server::PreHandleBufferDestroy(const BufferDestroyCmd& cmd) {
     WIRE_TRY(Get(cmd.selfId, &buffer));
 
     // The buffer was destroyed. Clear the Read/WriteHandle.
-    buffer->readHandle = nullptr;
-    buffer->writeHandle = nullptr;
-    buffer->mapWriteState = BufferMapWriteState::Unmapped;
+    buffer->mapState.Use([](auto mapState) {
+        mapState->readHandle = nullptr;
+        mapState->writeHandle = nullptr;
+    });
 
     return WireResult::Success;
 }
@@ -118,7 +120,7 @@ WireResult Server::DoBufferMapAsync(Known<WGPUBuffer> buffer,
     userdata->offset = offset;
     userdata->size = size;
 
-    mProcs.bufferMapAsync(
+    mProcs->bufferMapAsync(
         buffer->handle, mode, offset, size,
         MakeCallbackInfo<WGPUBufferMapCallbackInfo, &Server::OnBufferMapAsyncCallback>(
             userdata.release()));
@@ -136,7 +138,7 @@ WireResult Server::DoDeviceCreateBuffer(Known<WGPUDevice> device,
     // Create and register the buffer object.
     Reserved<WGPUBuffer> buffer;
     WIRE_TRY(Allocate(&buffer, bufferHandle));
-    buffer->handle = mProcs.deviceCreateBuffer(device->handle, descriptor);
+    buffer->handle = mProcs->deviceCreateBuffer(device->handle, descriptor);
     buffer->usage = descriptor->usage;
     buffer->mappedAtCreation = (descriptor->mappedAtCreation != 0u);
 
@@ -155,58 +157,41 @@ WireResult Server::DoDeviceCreateBuffer(Known<WGPUDevice> device,
         return WireResult::FatalError;
     }
 
-    if (isWriteMode) {
-        if (buffer->handle == nullptr) {
-            DAWN_ASSERT(descriptor->mappedAtCreation);
-            // A null buffer indicates that mapping-at-creation failed inside createBuffer.
-            // - Unmark the buffer as allocated so we will skip freeing it.
-            buffer->state = AllocationState::Reserved;
-            // - Remember the buffer is an error so we will skip subsequent mapping operations.
-            buffer->mapWriteState = BufferMapWriteState::MapError;
-            return WireResult::Success;
-        }
-
-        MemoryTransferService::WriteHandle* writeHandle = nullptr;
-        // Deserialize metadata produced from the client to create a companion server handle.
-        if (!mMemoryTransferService->DeserializeWriteHandle(
-                writeHandleCreateInfo, static_cast<size_t>(writeHandleCreateInfoLength),
-                &writeHandle)) {
-            return WireResult::FatalError;
-        }
-        DAWN_ASSERT(writeHandle != nullptr);
-        buffer->writeHandle.reset(writeHandle);
-        writeHandle->SetDataLength(descriptor->size);
-
-        if (descriptor->mappedAtCreation) {
-            void* mapping = mProcs.bufferGetMappedRange(buffer->handle, 0, descriptor->size);
-            if (mapping == nullptr) {
-                DAWN_ASSERT(descriptor->size % 4 != 0);
-                // GetMappedRange can still fail if the buffer's size isn't aligned.
-                // - Remember the buffer is an error so we will skip subsequent mapping operations.
-                buffer->mapWriteState = BufferMapWriteState::MapError;
+    return buffer->mapState.Use([&](auto mapState) {
+        if (isWriteMode) {
+            if (buffer->handle == nullptr) {
+                DAWN_ASSERT(descriptor->mappedAtCreation);
+                // A null buffer indicates that mapping-at-creation failed inside createBuffer.
+                // Unmark the buffer as allocated so we will skip freeing it.
+                buffer->state = AllocationState::Reserved;
                 return WireResult::Success;
             }
-            DAWN_ASSERT(mapping != nullptr);
-            writeHandle->SetTarget(mapping);
 
-            buffer->mapWriteState = BufferMapWriteState::Mapped;
+            MemoryTransferService::WriteHandle* writeHandle = nullptr;
+            // Deserialize metadata produced from the client to create a companion server handle.
+            if (!mMemoryTransferService->DeserializeWriteHandle(
+                    writeHandleCreateInfo, static_cast<size_t>(writeHandleCreateInfoLength),
+                    &writeHandle)) {
+                return WireResult::FatalError;
+            }
+            DAWN_ASSERT(writeHandle != nullptr);
+            mapState->writeHandle.reset(writeHandle);
         }
-    }
 
-    if (isReadMode) {
-        MemoryTransferService::ReadHandle* readHandle = nullptr;
-        // Deserialize metadata produced from the client to create a companion server handle.
-        if (!mMemoryTransferService->DeserializeReadHandle(
-                readHandleCreateInfo, static_cast<size_t>(readHandleCreateInfoLength),
-                &readHandle)) {
-            return WireResult::FatalError;
+        if (isReadMode) {
+            MemoryTransferService::ReadHandle* readHandle = nullptr;
+            // Deserialize metadata produced from the client to create a companion server handle.
+            if (!mMemoryTransferService->DeserializeReadHandle(
+                    readHandleCreateInfo, static_cast<size_t>(readHandleCreateInfoLength),
+                    &readHandle)) {
+                return WireResult::FatalError;
+            }
+            DAWN_ASSERT(readHandle != nullptr);
+            mapState->readHandle.reset(readHandle);
         }
-        DAWN_ASSERT(readHandle != nullptr);
 
-        buffer->readHandle.reset(readHandle);
-    }
-
-    return WireResult::Success;
+        return WireResult::Success;
+    });
 }
 
 WireResult Server::DoBufferUpdateMappedData(Known<WGPUBuffer> buffer,
@@ -219,30 +204,48 @@ WireResult Server::DoBufferUpdateMappedData(Known<WGPUBuffer> buffer,
         return WireResult::FatalError;
     }
 
-    switch (buffer->mapWriteState) {
-        case BufferMapWriteState::Unmapped:
-            return WireResult::FatalError;
-        case BufferMapWriteState::MapError:
-            // The buffer is mapped but there was an error allocating mapped data.
-            // Do not perform the memcpy.
-            return WireResult::Success;
-        case BufferMapWriteState::Mapped:
-            break;
-    }
-    if (!buffer->writeHandle) {
-        // This check is performed after the check for the MapError state. It is permissible
-        // to Unmap and attempt to update mapped data of an error buffer.
-        return WireResult::FatalError;
-    }
+    return buffer->mapState.Use([&](auto mapState) {
+        uint8_t* mappedData =
+            static_cast<uint8_t*>(mProcs->bufferGetMappedRange(buffer->handle, offset, size));
 
-    // Deserialize the flush info and flush updated data from the handle into the target
-    // of the handle. The target is set via WriteHandle::SetTarget.
-    if (!buffer->writeHandle->DeserializeDataUpdate(
-            writeDataUpdateInfo, static_cast<size_t>(writeDataUpdateInfoLength),
-            static_cast<size_t>(offset), static_cast<size_t>(size))) {
-        return WireResult::FatalError;
-    }
-    return WireResult::Success;
+        // There are a few valid reasons why getting the mapped range would fail here:
+        //  - The buffer was implicitly unmapped because of a device.Destroy() call.
+        //  - The buffer was an error buffer created just to replace an OOM mappedAtCreation buffer.
+        // Unfortunately validating exactly that the failure is due to a valid reason and not
+        // another is difficult, so we return WireResult::Success even for misuses of the wire
+        // protocol (like a size being larger than the buffer's size, etc).
+        if (mappedData == nullptr) {
+            return WireResult::Success;
+        }
+
+        // TODO(https://issues.chromium.org/492456046): We would like to map only the `offset` and
+        // `size` here but the Chromium implementation of DeserializeDataUpdate uses `offset` to
+        // offset both the target data and it's shmem pointer. So the pointer passed in SetTarget
+        // must be for the start of the buffer. Fix this somehow when spanifying the interfaces but
+        // for now we need to duplicate the overflow check that's done in GetMappedRange.
+        mappedData -= offset;
+
+        // Note that offset + size was checked to not overflow in GetMappedRange above.
+        std::span<uint8_t> mappedRange = {mappedData, static_cast<size_t>(offset + size)};
+
+        // However it is easy to check for misuses of the wire protocol to UpdateMappedData without
+        // a WriteHandle.
+        if (!mapState->writeHandle) {
+            return WireResult::FatalError;
+        }
+
+        // Deserialize the flush info and flush updated data from the handle into the target
+        // of the handle. The target is set via WriteHandle::SetTarget/SetDataLength.
+        mapState->writeHandle->SetDataLength(mappedRange.size());
+        mapState->writeHandle->SetTarget(mappedRange.data());
+
+        if (!mapState->writeHandle->DeserializeDataUpdate(
+                writeDataUpdateInfo, static_cast<size_t>(writeDataUpdateInfoLength),
+                static_cast<size_t>(offset), static_cast<size_t>(size))) {
+            return WireResult::FatalError;
+        }
+        return WireResult::Success;
+    });
 }
 
 void Server::OnBufferMapAsyncCallback(MapUserdata* data,
@@ -255,7 +258,6 @@ void Server::OnBufferMapAsyncCallback(MapUserdata* data,
         return;
     }
 
-    bool isRead = (data->mode & WGPUMapMode_Read) != 0u;
     bool isSuccess = status == WGPUMapAsyncStatus_Success;
 
     ReturnBufferMapAsyncCallbackCmd cmd = {};
@@ -268,42 +270,39 @@ void Server::OnBufferMapAsyncCallback(MapUserdata* data,
     cmd.readDataUpdateInfoLength = 0;
     cmd.readDataUpdateInfo = nullptr;  // Skipped by skip_serialize.
 
-    const void* readData = nullptr;
-    size_t readDataUpdateInfoLength = 0;
-    if (isSuccess) {
-        if (isRead) {
-            // Get the serialization size of the message to initialize ReadHandle data.
-            readData = mProcs.bufferGetConstMappedRange(data->bufferObj, data->offset, data->size);
-            readDataUpdateInfoLength =
-                buffer->readHandle->SizeOfSerializeDataUpdate(data->offset, data->size);
-            cmd.readDataUpdateInfoLength = readDataUpdateInfoLength;
-        } else {
-            DAWN_ASSERT(data->mode & WGPUMapMode_Write);
-            // The in-flight map request returned successfully.
-            buffer->mapWriteState = BufferMapWriteState::Mapped;
-            // Set the target of the WriteHandle to the mapped buffer data.
-            // writeHandle Target always refers to the buffer base address.
-            // but we call getMappedRange exactly with the range of data that is potentially
-            // modified (i.e. we don't want getMappedRange(0, wholeBufferSize) if only a
-            // subset of the buffer is actually mapped) in case the implementation does some
-            // range tracking.
-            buffer->writeHandle->SetTarget(static_cast<uint8_t*>(mProcs.bufferGetMappedRange(
-                                               data->bufferObj, data->offset, data->size)) -
-                                           data->offset);
-        }
+    if (!isSuccess) {
+        SerializeCommand(cmd);
+        return;
     }
 
-    SerializeCommand(cmd,
-                     // Extensions to replace fields skipped by skip_serialize.
-                     CommandExtension{readDataUpdateInfoLength, [&](char* readHandleBuffer) {
-                                          if (isSuccess && isRead) {
-                                              // The in-flight map request returned
-                                              // successfully.
-                                              buffer->readHandle->SerializeDataUpdate(
-                                                  readData, data->offset, data->size,
-                                                  readHandleBuffer);
-                                          }
-                                      }});
+    switch (data->mode) {
+        case WGPUMapMode_Read: {
+            buffer->mapState.Use([&](auto mapState) {
+                const void* readData =
+                    mProcs->bufferGetConstMappedRange(data->bufferObj, data->offset, data->size);
+                size_t readDataUpdateInfoLength =
+                    mapState->readHandle->SizeOfSerializeDataUpdate(data->offset, data->size);
+                cmd.readDataUpdateInfoLength = readDataUpdateInfoLength;
+                SerializeCommand(
+                    cmd,
+                    // Extensions to replace fields skipped by skip_serialize.
+                    CommandExtension{readDataUpdateInfoLength, [&](char* readHandleBuffer) {
+                                         // The in-flight map request returned successfully.
+                                         mapState->readHandle->SerializeDataUpdate(
+                                             readData, data->offset, data->size, readHandleBuffer);
+                                     }});
+            });
+            break;
+        }
+        case WGPUMapMode_Write: {
+            SerializeCommand(cmd);
+            break;
+        }
+        default:
+            // If we are not one of the two possible modes, we should never succeed.
+            DAWN_UNREACHABLE();
+            break;
+    }
 }
 
 }  // namespace dawn::wire::server

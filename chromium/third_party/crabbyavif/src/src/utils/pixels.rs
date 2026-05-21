@@ -61,15 +61,6 @@ impl Pixels {
         }
     }
 
-    pub(crate) fn pixel_bit_size(&self) -> usize {
-        match self {
-            Pixels::Pointer(_) => 0,
-            Pixels::Pointer16(_) => 0,
-            Pixels::Buffer(_) => 8,
-            Pixels::Buffer16(_) => 16,
-        }
-    }
-
     pub(crate) fn has_data(&self) -> bool {
         match self {
             Pixels::Pointer(ptr) => !ptr.is_empty(),

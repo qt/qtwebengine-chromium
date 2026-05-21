@@ -39,13 +39,14 @@ using f16 = tint::core::f16;
 using f32 = tint::core::f32;
 using i32 = tint::core::i32;
 using i8 = tint::core::i8;
+using u16 = tint::core::u16;
 using u32 = tint::core::u32;
 using u64 = tint::core::u64;
 using u8 = tint::core::u8;
 using AFloat = tint::core::AFloat;
 using AInt = tint::core::AInt;
 
-// A sentinel type used by some template arguments to signal that the a type should be inferred.
+// A sentinel type used by some template arguments to signal that the type should be inferred.
 struct Infer {};
 
 /// A 'fluent' type helper used to construct an ast::Array or type::Array.

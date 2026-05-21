@@ -34,8 +34,9 @@
 namespace {
 
 #ifdef PDF_ENABLE_XFA
-bool SaveXFADocumentData(CPDFXFA_Context* context,
-                         std::vector<RetainPtr<IFX_SeekableStream>>* fileList) {
+bool SaveXFADocumentData(
+    CPDFXFA_Context* context,
+    std::vector<RetainPtr<IFX_SeekableStream>>* file_list) {
   if (!context) {
     return false;
   }
@@ -44,114 +45,114 @@ bool SaveXFADocumentData(CPDFXFA_Context* context,
     return true;
   }
 
-  CPDF_Document* pPDFDocument = context->GetPDFDoc();
-  if (!pPDFDocument) {
+  CPDF_Document* doc = context->GetPDFDoc();
+  if (!doc) {
     return false;
   }
 
-  RetainPtr<CPDF_Dictionary> pRoot = pPDFDocument->GetMutableRoot();
-  if (!pRoot) {
+  RetainPtr<CPDF_Dictionary> root = doc->GetMutableRoot();
+  if (!root) {
     return false;
   }
 
-  RetainPtr<CPDF_Dictionary> pAcroForm = pRoot->GetMutableDictFor("AcroForm");
-  if (!pAcroForm) {
+  RetainPtr<CPDF_Dictionary> acro_form = root->GetMutableDictFor("AcroForm");
+  if (!acro_form) {
     return false;
   }
 
-  RetainPtr<CPDF_Object> pXFA = pAcroForm->GetMutableObjectFor("XFA");
-  if (!pXFA) {
+  RetainPtr<CPDF_Object> xfa = acro_form->GetMutableObjectFor("XFA");
+  if (!xfa) {
     return true;
   }
 
-  CPDF_Array* pArray = pXFA->AsMutableArray();
-  if (!pArray) {
+  CPDF_Array* xfa_array = xfa->AsMutableArray();
+  if (!xfa_array) {
     return false;
   }
 
-  int size = fxcrt::CollectionSize<int>(*pArray);
-  int iFormIndex = -1;
-  int iDataSetsIndex = -1;
+  int size = fxcrt::CollectionSize<int>(*xfa_array);
+  int form_index = -1;
+  int datasets_index = -1;
   for (int i = 0; i < size - 1; i++) {
-    RetainPtr<const CPDF_Object> pPDFObj = pArray->GetObjectAt(i);
-    if (!pPDFObj->IsString()) {
+    RetainPtr<const CPDF_Object> xfa_obj = xfa_array->GetObjectAt(i);
+    if (!xfa_obj->IsString()) {
       continue;
     }
-    if (pPDFObj->GetString() == "form") {
-      iFormIndex = i + 1;
-    } else if (pPDFObj->GetString() == "datasets") {
-      iDataSetsIndex = i + 1;
+    if (xfa_obj->GetString() == "form") {
+      form_index = i + 1;
+    } else if (xfa_obj->GetString() == "datasets") {
+      datasets_index = i + 1;
     }
   }
 
-  RetainPtr<CPDF_Stream> pFormStream;
-  if (iFormIndex != -1) {
+  RetainPtr<CPDF_Stream> form_stream;
+  if (form_index != -1) {
     // Get form CPDF_Stream
-    RetainPtr<CPDF_Object> pFormPDFObj = pArray->GetMutableObjectAt(iFormIndex);
-    if (pFormPDFObj->IsReference()) {
-      RetainPtr<CPDF_Object> pFormDirectObj = pFormPDFObj->GetMutableDirect();
-      if (pFormDirectObj && pFormDirectObj->IsStream()) {
-        pFormStream.Reset(pFormDirectObj->AsMutableStream());
+    RetainPtr<CPDF_Object> form_obj = xfa_array->GetMutableObjectAt(form_index);
+    if (form_obj->IsReference()) {
+      RetainPtr<CPDF_Object> form_direct_obj = form_obj->GetMutableDirect();
+      if (form_direct_obj && form_direct_obj->IsStream()) {
+        form_stream.Reset(form_direct_obj->AsMutableStream());
       }
-    } else if (pFormPDFObj->IsStream()) {
-      pFormStream.Reset(pFormPDFObj->AsMutableStream());
+    } else if (form_obj->IsStream()) {
+      form_stream.Reset(form_obj->AsMutableStream());
     }
   }
 
-  RetainPtr<CPDF_Stream> pDataSetsStream;
-  if (iDataSetsIndex != -1) {
+  RetainPtr<CPDF_Stream> datasets_stream;
+  if (datasets_index != -1) {
     // Get datasets CPDF_Stream
-    RetainPtr<CPDF_Object> pDataSetsPDFObj =
-        pArray->GetMutableObjectAt(iDataSetsIndex);
-    if (pDataSetsPDFObj->IsReference()) {
-      CPDF_Reference* pDataSetsRefObj = pDataSetsPDFObj->AsMutableReference();
-      RetainPtr<CPDF_Object> pDataSetsDirectObj =
-          pDataSetsRefObj->GetMutableDirect();
-      if (pDataSetsDirectObj && pDataSetsDirectObj->IsStream()) {
-        pDataSetsStream.Reset(pDataSetsDirectObj->AsMutableStream());
+    RetainPtr<CPDF_Object> datasets_obj =
+        xfa_array->GetMutableObjectAt(datasets_index);
+    if (datasets_obj->IsReference()) {
+      CPDF_Reference* datasets_ref_obj = datasets_obj->AsMutableReference();
+      RetainPtr<CPDF_Object> datasets_direct_obj =
+          datasets_ref_obj->GetMutableDirect();
+      if (datasets_direct_obj && datasets_direct_obj->IsStream()) {
+        datasets_stream.Reset(datasets_direct_obj->AsMutableStream());
       }
-    } else if (pDataSetsPDFObj->IsStream()) {
-      pDataSetsStream.Reset(pDataSetsPDFObj->AsMutableStream());
+    } else if (datasets_obj->IsStream()) {
+      datasets_stream.Reset(datasets_obj->AsMutableStream());
     }
   }
   // L"datasets"
   {
-    RetainPtr<IFX_SeekableStream> pFileWrite =
+    RetainPtr<IFX_SeekableStream> file_write =
         pdfium::MakeRetain<CFX_MemoryStream>();
-    if (context->SaveDatasetsPackage(pFileWrite) && pFileWrite->GetSize() > 0) {
-      if (iDataSetsIndex != -1) {
-        if (pDataSetsStream) {
-          pDataSetsStream->InitStreamFromFile(pFileWrite);
+    if (context->SaveDatasetsPackage(file_write) && file_write->GetSize() > 0) {
+      if (datasets_index != -1) {
+        if (datasets_stream) {
+          datasets_stream->InitStreamFromFile(file_write);
         }
       } else {
-        auto data_stream = pPDFDocument->NewIndirect<CPDF_Stream>(
-            pFileWrite, pPDFDocument->New<CPDF_Dictionary>());
-        int iLast = fxcrt::CollectionSize<int>(*pArray) - 2;
-        pArray->InsertNewAt<CPDF_String>(iLast, "datasets");
-        pArray->InsertNewAt<CPDF_Reference>(iLast + 1, pPDFDocument,
-                                            data_stream->GetObjNum());
+        auto data_stream = doc->NewIndirect<CPDF_Stream>(
+            file_write, doc->New<CPDF_Dictionary>());
+        int last_index = fxcrt::CollectionSize<int>(*xfa_array) - 2;
+        xfa_array->InsertNewAt<CPDF_String>(last_index, "datasets");
+        xfa_array->InsertNewAt<CPDF_Reference>(last_index + 1, doc,
+                                               data_stream->GetObjNum());
       }
-      fileList->push_back(std::move(pFileWrite));
+      file_list->push_back(std::move(file_write));
     }
   }
   // L"form"
   {
-    RetainPtr<IFX_SeekableStream> pFileWrite =
+    RetainPtr<IFX_SeekableStream> file_write =
         pdfium::MakeRetain<CFX_MemoryStream>();
-    if (context->SaveFormPackage(pFileWrite) && pFileWrite->GetSize() > 0) {
-      if (iFormIndex != -1) {
-        if (pFormStream) {
-          pFormStream->InitStreamFromFile(pFileWrite);
+    if (context->SaveFormPackage(file_write) && file_write->GetSize() > 0) {
+      if (form_index != -1) {
+        if (form_stream) {
+          form_stream->InitStreamFromFile(file_write);
         }
       } else {
-        auto data_stream = pPDFDocument->NewIndirect<CPDF_Stream>(
-            pFileWrite, pPDFDocument->New<CPDF_Dictionary>());
-        int iLast = fxcrt::CollectionSize<int>(*pArray) - 2;
-        pArray->InsertNewAt<CPDF_String>(iLast, "form");
-        pArray->InsertNewAt<CPDF_Reference>(iLast + 1, pPDFDocument,
-                                            data_stream->GetObjNum());
+        auto data_stream = doc->NewIndirect<CPDF_Stream>(
+            file_write, doc->New<CPDF_Dictionary>());
+        int last_index = fxcrt::CollectionSize<int>(*xfa_array) - 2;
+        xfa_array->InsertNewAt<CPDF_String>(last_index, "form");
+        xfa_array->InsertNewAt<CPDF_Reference>(last_index + 1, doc,
+                                               data_stream->GetObjNum());
       }
-      fileList->push_back(std::move(pFileWrite));
+      file_list->push_back(std::move(file_write));
     }
   }
   return true;
@@ -159,20 +160,20 @@ bool SaveXFADocumentData(CPDFXFA_Context* context,
 #endif  // PDF_ENABLE_XFA
 
 bool DoDocSave(FPDF_DOCUMENT document,
-               FPDF_FILEWRITE* pFileWrite,
+               FPDF_FILEWRITE* file_write,
                FPDF_DWORD flags,
                std::optional<int> version) {
-  CPDF_Document* pPDFDoc = CPDFDocumentFromFPDFDocument(document);
-  if (!pPDFDoc) {
+  CPDF_Document* doc = CPDFDocumentFromFPDFDocument(document);
+  if (!doc) {
     return false;
   }
 
 #ifdef PDF_ENABLE_XFA
-  auto* context = static_cast<CPDFXFA_Context*>(pPDFDoc->GetExtension());
+  auto* context = static_cast<CPDFXFA_Context*>(doc->GetExtension());
   if (context) {
-    std::vector<RetainPtr<IFX_SeekableStream>> fileList;
-    context->SendPreSaveToXFADoc(&fileList);
-    SaveXFADocumentData(context, &fileList);
+    std::vector<RetainPtr<IFX_SeekableStream>> file_list;
+    context->SendPreSaveToXFADoc(&file_list);
+    SaveXFADocumentData(context, &file_list);
   }
 #endif  // PDF_ENABLE_XFA
 
@@ -180,17 +181,17 @@ bool DoDocSave(FPDF_DOCUMENT document,
     flags = 0;
   }
 
-  CPDF_Creator fileMaker(
-      pPDFDoc, pdfium::MakeRetain<CPDFSDK_FileWriteAdapter>(pFileWrite));
+  CPDF_Creator file_maker(
+      doc, pdfium::MakeRetain<CPDFSDK_FileWriteAdapter>(file_write));
   if (version.has_value()) {
-    fileMaker.SetFileVersion(version.value());
+    file_maker.SetFileVersion(version.value());
   }
   if (flags == FPDF_REMOVE_SECURITY) {
     flags = 0;
-    fileMaker.RemoveSecurity();
+    file_maker.RemoveSecurity();
   }
 
-  bool bRet = fileMaker.Create(static_cast<uint32_t>(flags));
+  bool create_result = file_maker.Create(static_cast<uint32_t>(flags));
 
 #ifdef PDF_ENABLE_XFA
   if (context) {
@@ -198,21 +199,21 @@ bool DoDocSave(FPDF_DOCUMENT document,
   }
 #endif  // PDF_ENABLE_XFA
 
-  return bRet;
+  return create_result;
 }
 
 }  // namespace
 
 FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDF_SaveAsCopy(FPDF_DOCUMENT document,
-                                                    FPDF_FILEWRITE* pFileWrite,
+                                                    FPDF_FILEWRITE* file_write,
                                                     FPDF_DWORD flags) {
-  return DoDocSave(document, pFileWrite, flags, {});
+  return DoDocSave(document, file_write, flags, {});
 }
 
 FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
 FPDF_SaveWithVersion(FPDF_DOCUMENT document,
-                     FPDF_FILEWRITE* pFileWrite,
+                     FPDF_FILEWRITE* file_write,
                      FPDF_DWORD flags,
                      int fileVersion) {
-  return DoDocSave(document, pFileWrite, flags, fileVersion);
+  return DoDocSave(document, file_write, flags, fileVersion);
 }

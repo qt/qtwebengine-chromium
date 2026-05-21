@@ -37,8 +37,10 @@
 #include "third_party/blink/renderer/core/css/css_layer_block_rule.h"
 #include "third_party/blink/renderer/core/css/css_media_rule.h"
 #include "third_party/blink/renderer/core/css/css_nested_declarations_rule.h"
+#include "third_party/blink/renderer/core/css/css_position_try_rule.h"
 #include "third_party/blink/renderer/core/css/css_property_names.h"
 #include "third_party/blink/renderer/core/css/css_property_rule.h"
+#include "third_party/blink/renderer/core/css/css_property_source_data.h"
 #include "third_party/blink/renderer/core/css/css_property_value_set.h"
 #include "third_party/blink/renderer/core/css/css_rule_list.h"
 #include "third_party/blink/renderer/core/css/css_scope_rule.h"
@@ -829,7 +831,10 @@ bool InspectorStyle::CheckRegisteredPropertySyntaxWithVarSubstitution(
   CustomProperty p(atomic_name, empty_registry);
 
   const CSSParserContext* parser_context = ParserContextForDocument(document);
-  const CSSValue* result = p.Parse(property.value, *parser_context, {});
+  CSSParserLocalContext local_context =
+      CSSParserLocalContext::CreateWithoutPropertyForInspector();
+  const CSSValue* result =
+      p.Parse(property.value, *parser_context, local_context);
   if (!result) {
     return false;
   }
@@ -844,7 +849,7 @@ bool InspectorStyle::CheckRegisteredPropertySyntaxWithVarSubstitution(
 
   // Now check the substitution result against the registered syntax.
   if (!registration->Syntax().Parse(computed_value->CssText(), *parser_context,
-                                    false)) {
+                                    local_context, false)) {
     return false;
   }
   return true;
@@ -992,8 +997,9 @@ InspectorStyle::LonghandProperties(
   if (!property.IsProperty() || !property.IsShorthand()) {
     return nullptr;
   }
-  const auto local_context =
-      CSSParserLocalContext().WithCurrentShorthand(property_id);
+  auto local_context =
+      CSSParserLocalContext::CreateWithoutPropertyForInspector()
+          .WithCurrentShorthand(property_id);
   HeapVector<CSSPropertyValue, 64> longhand_properties;
   if (To<Shorthand>(property).ParseShorthand(
           property_entry.important, stream,
@@ -1344,7 +1350,7 @@ CSSRule* InspectorStyleSheet::SetStyleText(
     }
 
     auto new_text =
-        String("@font-feature-values ") + old_prefix + text + old_suffix + "}";
+        StrCat({"@font-feature-values ", old_prefix, text, old_suffix, "}"});
 
     // @font-feature-values rules don't support text replacement. Instead, we
     // find the old rule's index in the style sheet, insert a new rule, and
@@ -1879,9 +1885,11 @@ void InspectorStyleSheet::ParseText(const String& text) {
           if (!registration) {
             continue;
           }
+          CSSParserLocalContext local_context =
+              CSSParserLocalContext::CreateWithoutPropertyForInspector();
           if (!registration->Syntax().Parse(property_source_data.value,
                                             *style_sheet->ParserContext(),
-                                            false)) {
+                                            local_context, false)) {
             property_source_data.parsed_ok = false;
           }
         }

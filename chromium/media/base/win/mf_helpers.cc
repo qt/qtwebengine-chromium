@@ -922,26 +922,21 @@ HRESULT GenerateSampleFromVideoFrame(
     Microsoft::WRL::ComPtr<ID3D11Texture2D>* staging_texture,
     DWORD buffer_alignment,
     IMFSample** sample_out) {
-  // A shared image sample cannot be created synchronously.  Use
-  // GenerateSampleFromSharedImageVideoFrame. Note that this is not true for
-  // mappable shared image since it has a GpuMemoryBufferHandle. So skipping the
-  // CHECK when frame has a mappable buffer.
-  if (!frame->HasMappableGpuBuffer()) {
-    CHECK(!frame->HasSharedImage());
-  }
+  // A shared image sample for a non-mappable SharedImage cannot be created
+  // synchronously; instead, GenerateSampleFromSharedImageVideoFrame should be
+  // used.
+  CHECK(!frame->HasSharedImage() || frame->HasMappableSharedImage());
 
   HRESULT hr;
   Microsoft::WRL::ComPtr<IMFSample> sample;
   hr = MFCreateSample(&sample);
   RETURN_ON_HR_FAILURE(hr, "Failed to create sample", hr);
 
-  if (frame->storage_type() ==
-          VideoFrame::StorageType::STORAGE_GPU_MEMORY_BUFFER &&
-      dxgi_device_manager != nullptr) {
+  if (frame->HasMappableSharedImage() && dxgi_device_manager != nullptr) {
     gfx::GpuMemoryBufferHandle buffer_handle =
         frame->GetGpuMemoryBufferHandle();
     if (buffer_handle.is_null()) {
-      LOG(ERROR) << "Failed to get GMB for input frame";
+      LOG(ERROR) << "Failed to get GMB handle for input frame";
       return MF_E_INVALID_STREAM_DATA;
     }
 
@@ -955,13 +950,14 @@ HRESULT GenerateSampleFromVideoFrame(
 
     Microsoft::WRL::ComPtr<ID3D11Device1> device1;
     hr = d3d_device.As(&device1);
-    RETURN_ON_HR_FAILURE(hr, "Failed to query ID3D11Device1", hr);
+    CHECK_EQ(hr, S_OK);
 
     Microsoft::WRL::ComPtr<ID3D11Texture2D> input_texture;
     hr = device1->OpenSharedResource1(
         buffer_handle.dxgi_handle().buffer_handle(),
         IID_PPV_ARGS(&input_texture));
-    RETURN_ON_HR_FAILURE(hr, "Failed to open shared GMB D3D texture", hr);
+    RETURN_ON_HR_FAILURE(
+        hr, "Failed to open shared D3D texture from GMB handle", hr);
 
     if (use_dxgi_buffer) {
       hr = InitializeSampleFromTexture(frame, input_texture.Get(), sample);
@@ -1041,7 +1037,7 @@ HRESULT GenerateSampleFromVideoFrame(
 
 void GenerateResourceOnSyncTokenReleased(
     scoped_refptr<VideoFrame> frame,
-    bool use_same_device,
+    Microsoft::WRL::ComPtr<ID3D11Device> encoder_device,
     scoped_refptr<CommandBufferHelper> command_buffer_helper,
     ResourceAvailableCB sample_available_cb) {
   TRACE_EVENT0("media", "GenerateResourceOnSyncTokenReleased");
@@ -1054,31 +1050,48 @@ void GenerateResourceOnSyncTokenReleased(
     return;                                                                \
   }
 
+  auto* shared_image_stub = command_buffer_helper->GetSharedImageStub();
+  if (!shared_image_stub) {
+    RETURN_ON_FAILURE_WITH_CALLBACK(E_FAIL, "Invalid shared image stub");
+  }
+
+  if (!shared_image_stub->shared_context_state()) {
+    RETURN_ON_FAILURE_WITH_CALLBACK(E_FAIL, "Invalid shared context state");
+  }
+
   Microsoft::WRL::ComPtr<ID3D11Device> shared_d3d11_device =
-      command_buffer_helper->GetSharedImageStub()
-          ->shared_context_state()
-          ->GetD3D11Device();
+      shared_image_stub->shared_context_state()->GetD3D11Device();
   HRESULT hr = shared_d3d11_device ? S_OK : E_FAIL;
   RETURN_ON_FAILURE_WITH_CALLBACK(hr, "Invalid shared d3d11 device");
+  bool use_same_device = (encoder_device.Get() == shared_d3d11_device.Get());
   gpu::SharedImageManager* shared_image_manager =
       command_buffer_helper->GetSharedImageManager();
   std::unique_ptr<gpu::VideoImageRepresentation> image_representation =
       shared_image_manager->ProduceVideo(
           shared_d3d11_device, frame->shared_image()->mailbox(),
           command_buffer_helper->GetMemoryTypeTracker());
+  RETURN_ON_FAILURE_WITH_CALLBACK(image_representation ? S_OK : E_FAIL,
+                                  "Failed to produce video");
+
   auto scoped_read_access = image_representation->BeginScopedReadAccess();
-  Microsoft::WRL::ComPtr<ID3D11Texture2D> input_texture =
+  gpu::D3D11TextureAndArrayIndex input_texture =
       scoped_read_access->GetD3D11Texture();
 
-  // If same device, pass the generated IMFSample directly, otherwise, create a
-  // shared handle for cross-device texture sharing.
-  if (use_same_device) {
+  D3D11_TEXTURE2D_DESC texture_desc;
+  input_texture.texture->GetDesc(&texture_desc);
+  bool is_texture_array = texture_desc.ArraySize > 1;
+  // Array index must be 0 if input is not texture array.
+  CHECK(is_texture_array || !input_texture.array_index);
+
+  // If same device, and input is not texture array, pass the generated
+  // IMFSample directly.
+  if (use_same_device && !is_texture_array) {
     // If this texture is NV12 and going to be fed directly to the encoder,
     // create a copy of it. Hardware encoders are not guaranteed to be done
     // with the texture when ProcessInput returns.
-    ComPtr<IMFSample> sample =
-        CreateSampleFromTexture(shared_d3d11_device, frame, input_texture,
-                                frame->format() == PIXEL_FORMAT_NV12);
+    ComPtr<IMFSample> sample = CreateSampleFromTexture(
+        shared_d3d11_device, frame, input_texture.texture,
+        frame->format() == PIXEL_FORMAT_NV12);
     RETURN_ON_FAILURE_WITH_CALLBACK(sample != nullptr ? S_OK : E_FAIL,
                                     "Failed to create MF sample");
     std::move(sample_available_cb)
@@ -1090,15 +1103,17 @@ void GenerateResourceOnSyncTokenReleased(
   TRACE_EVENT0("media", "CreateSharedHandleOnSyncTokenReleased");
   bool input_texture_has_been_copied = false;
   Microsoft::WRL::ComPtr<IDXGIResource1> dxgi_resource;
-  hr = input_texture.As(&dxgi_resource);
-  RETURN_ON_FAILURE_WITH_CALLBACK(hr, "Failed to get DXGI resource");
+  hr = input_texture.texture.As(&dxgi_resource);
+  CHECK_EQ(hr, S_OK);
   HANDLE shared_handle;
-  hr = dxgi_resource->CreateSharedHandle(nullptr, DXGI_SHARED_RESOURCE_READ,
-                                         nullptr, &shared_handle);
-  if (FAILED(hr)) {
+
+  // MFVP & HMFT is not expecting texture array as input.
+  if (!is_texture_array) {
+    hr = dxgi_resource->CreateSharedHandle(nullptr, DXGI_SHARED_RESOURCE_READ,
+                                           nullptr, &shared_handle);
+  }
+  if (FAILED(hr) || is_texture_array) {
     TRACE_EVENT0("media", "CopyTextureOnCreateSharedHandleFailed");
-    D3D11_TEXTURE2D_DESC texture_desc;
-    input_texture->GetDesc(&texture_desc);
     texture_desc.Usage = D3D11_USAGE_DEFAULT;
     texture_desc.BindFlags =
         D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
@@ -1126,10 +1141,11 @@ void GenerateResourceOnSyncTokenReleased(
                          static_cast<UINT>(frame->visible_rect().bottom()),
                          1};
     device_context->CopySubresourceRegion(shared_texture.Get(), 0, 0, 0, 0,
-                                          input_texture.Get(), 0, &src_box);
+                                          input_texture.texture.Get(),
+                                          input_texture.array_index, &src_box);
     Microsoft::WRL::ComPtr<IDXGIResource1> shared_dxgi_resource;
     hr = shared_texture.As(&shared_dxgi_resource);
-    CHECK(SUCCEEDED(hr));
+    CHECK_EQ(hr, S_OK);
     hr = shared_dxgi_resource->CreateSharedHandle(
         nullptr, DXGI_SHARED_RESOURCE_READ, nullptr, &shared_handle);
     RETURN_ON_FAILURE_WITH_CALLBACK(hr, "Failed to create shared handle");
@@ -1144,7 +1160,7 @@ void GenerateResourceOnSyncTokenReleased(
                             base::WaitableEvent::InitialState::NOT_SIGNALED);
   Microsoft::WRL::ComPtr<IDXGIDevice2> dxgi_device2;
   hr = shared_d3d11_device.As(&dxgi_device2);
-  RETURN_ON_FAILURE_WITH_CALLBACK(hr, "Failed to query dxgi device2");
+  CHECK_EQ(hr, S_OK);
   hr = dxgi_device2->EnqueueSetEvent(event.handle());
   if (SUCCEEDED(hr)) {
     event.Wait();
@@ -1166,14 +1182,15 @@ void GenerateResourceOnSyncTokenReleased(
 
 void GenerateResourceFromSharedImageVideoFrame(
     scoped_refptr<VideoFrame> frame,
-    bool use_same_device,
+    Microsoft::WRL::ComPtr<ID3D11Device> encoder_device,
     scoped_refptr<CommandBufferHelper> command_buffer_helper,
     ResourceAvailableCB sample_available_cb) {
   gpu::SyncToken acquire_sync_token = frame->acquire_sync_token();
   command_buffer_helper->WaitForSyncToken(
       acquire_sync_token,
       base::BindOnce(&GenerateResourceOnSyncTokenReleased, std::move(frame),
-                     use_same_device, std::move(command_buffer_helper),
+                     std::move(encoder_device),
+                     std::move(command_buffer_helper),
                      std::move(sample_available_cb)));
 }
 

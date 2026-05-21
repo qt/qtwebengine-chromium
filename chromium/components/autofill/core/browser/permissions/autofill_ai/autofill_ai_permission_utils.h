@@ -8,6 +8,7 @@
 #include <optional>
 #include <string>
 
+#include "components/autofill/core/browser/country_type.h"
 #include "components/autofill/core/browser/data_model/autofill_ai/entity_type.h"
 
 class PrefService;
@@ -16,9 +17,18 @@ namespace signin {
 class IdentityManager;
 }
 
+namespace syncer {
+class SyncService;
+}
+
+#if !BUILDFLAG(IS_FUCHSIA)
+class GoogleGroupsManager;
+#endif
+
 namespace autofill {
 
 class AutofillClient;
+class EntityDataManager;
 
 // An AutofillAI-related action that a user may take directly or indirectly
 // (e.g., IPH).
@@ -39,21 +49,39 @@ enum class AutofillAiAction {
   kListEntityInstancesInSettings,
   // Log data to the `ModelQualityLogsService`.
   kLogToMqls,
-  // Opt into (and out of) the AutofillAI feature.
+  // If AutofillAiAvailableByDefault is disabled: Opt into (and out of) the
+  // AutofillAI feature.
+  // If AutofillAiAvailableByDefault is enabled: Opt into online model runs and
+  // MQLS logging.
+  // TODO(crbug.com/440488776): Rename to kImproveAutofillAi once
+  // AutofillAiAvailableByDefault is launched.
   kOptIn,
+  // Used only if AutofillAiAvailableByDefault is enabled, it controls whether
+  // users can opt into Autofill AI features, such as identity docs and travel
+  // information. It returns false on high-level checks, such as address-pref
+  // being off.
+  kEnableOrDisable,
   // Trigger a run of the server classification model.
   kServerClassificationModel,
   // Access locally cached results from the server classification model.
   kUseCachedServerClassificationModelResults,
   // Whether the user can store entities in the Google Wallet server.
   kImportToWallet,
+  kMaxValue = kImportToWallet,
 };
 
 // Opt-in status for the AutofillAI feature.
+// TODO(crbug.com/440488776): Remove the following comment once default
+// availability is launched.
+// Note that the feature AutofillAiAvailableByDefault is currently in the
+// process of being launched. Once this is done, this enum will not represent
+// whether Autofill AI is available, rather whether online model calls
+// (Enhanced Autofill) are.
 //
 // These values are persisted to logs. Entries should not be renumbered and
 // numeric values should never be reused.
 // LINT.IfChange(AutofillAiOptInStatus)
+// GENERATED_JAVA_ENUM_PACKAGE: org.chromium.components.autofill.autofill_ai
 enum class AutofillAiOptInStatus {
   kOptedOut = 0,
   kOptedIn = 1,
@@ -66,7 +94,7 @@ enum class AutofillAiOptInStatus {
 // - Feature state (`kAutofillAiWithDataSchema`, `kAutofillAiServerModel`).
 // - Pref state (prefs for address Autofill, AutofillAI and the related policy
 //   prefs.)
-// - Account state (sign-in status, model execution capabilities).
+// - Account state (sign-in status).
 // - Whether the `action` can be performed for the `entity_type`.
 //   `entity_type` is only considered to kFilling, kIphForOptIn, kImport,
 //   kImportToWallet and must be non-empty in these cases.
@@ -79,27 +107,59 @@ bool MayPerformAutofillAiAction(
     std::optional<EntityType> entity_type = std::nullopt,
     std::string* debug_message = nullptr);
 
+bool MayPerformAutofillAiAction(
+#if !BUILDFLAG(IS_FUCHSIA)
+    const GoogleGroupsManager* google_groups_manager,
+#endif
+    const PrefService* prefs,
+    const EntityDataManager* edm,
+    const signin::IdentityManager* identity_manager,
+    const syncer::SyncService* sync_service,
+    bool is_wallet_storage_enabled,
+    bool is_off_the_record,
+    const GeoIpCountryCode& country_code,
+    AutofillAiAction action,
+    std::optional<EntityType> entity_type = std::nullopt,
+    std::string* debug_message = nullptr);
+
 // Returns the AutofillAI opt-in status for the profile and account tied to
 // `client`. Opt-in status is a profile pref, but keyed by (hashed) GAIA id. In
 // particular, it is always `false` for users without a signed-in primary
 // account.
+// TODO(crbug.com/440488776): Remove the following comment once default
+// availability is launched.
+// Note that the feature AutofillAiAvailableByDefault is currently in the
+// process of being launched. Once this is done, this method will not control
+// whether Autofill AI is available, rather whether online model calls
+// (Enhanced Autofill) are.
 [[nodiscard]] bool GetAutofillAiOptInStatus(const AutofillClient& client);
 [[nodiscard]] bool GetAutofillAiOptInStatus(
-    const PrefService* prefs,
-    const signin::IdentityManager* identity_manager);
-// Similar to `GetAutofillAiOptInStatus()` but always uses the pref that is
-// currently being deprecated (`prefs::kAutofillAiOptInStatus`). This method
-// should only be used at start-up time to migrate the old pref value to the new
-// one.
-[[nodiscard]] bool GetAutofillAiOptInStatusFromNonSyncingPref(
     const PrefService* prefs,
     const signin::IdentityManager* identity_manager);
 
 // Sets the AutofillAI opt-in status for the profile and account tied to
 // `client`. Returns `false` if the opt-in status may not be changed and `true`
 // otherwise.
+// TODO(crbug.com/440488776): Remove the following comment once default
+// availability is launched.
+// Note that the feature AutofillAiAvailableByDefault is currently in the
+// process of being launched. Once this is done, this method will not control
+// whether Autofill AI is available, rather whether online model calls
+// (Enhanced Autofill) are.
 bool SetAutofillAiOptInStatus(AutofillClient& client,
                               AutofillAiOptInStatus opt_in_status);
+bool SetAutofillAiOptInStatus(
+#if !BUILDFLAG(IS_FUCHSIA)
+    const GoogleGroupsManager* google_groups_manager,
+#endif
+    PrefService* prefs,
+    const EntityDataManager* edm,
+    const signin::IdentityManager* identity_manager,
+    const syncer::SyncService* sync_service,
+    bool is_wallet_storage_enabled,
+    bool is_off_the_record,
+    const GeoIpCountryCode& country_code,
+    AutofillAiOptInStatus opt_in_status);
 
 // Returns whether the user has ever explicitly opted in or out of Autofill AI.
 //

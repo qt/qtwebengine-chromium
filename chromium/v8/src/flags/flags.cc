@@ -15,6 +15,7 @@
 #include <optional>
 #include <set>
 #include <sstream>
+#include <unordered_map>
 
 #include "src/base/fpu.h"
 #include "src/base/hashing.h"
@@ -51,25 +52,7 @@ static_assert(sizeof(FlagValues) % kMinimumOSPageSize == 0);
 #include "src/flags/flag-definitions.h"  // NOLINT(build/include)
 #undef FLAG_MODE_DEFINE_DEFAULTS
 
-char FlagHelpers::NormalizeChar(char ch) { return ch == '_' ? '-' : ch; }
 
-int FlagHelpers::FlagNamesCmp(const char* a, const char* b) {
-  int i = 0;
-  char ac, bc;
-  do {
-    ac = NormalizeChar(a[i]);
-    bc = NormalizeChar(b[i]);
-    if (ac < bc) return -1;
-    if (ac > bc) return 1;
-    i++;
-  } while (ac != '\0');
-  DCHECK_EQ(bc, '\0');
-  return 0;
-}
-
-bool FlagHelpers::EqualNames(const char* a, const char* b) {
-  return FlagNamesCmp(a, b) == 0;
-}
 
 // Checks if two flag names are equal, allowing for the second name to have a
 // suffix starting with a white space character, e.g. "max_opt < 3". This is
@@ -322,11 +305,26 @@ constexpr size_t kNumFlags = arraysize(flags);
 
 base::Vector<Flag> Flags() { return base::ArrayVector(flags); }
 
-struct FlagLess {
-  bool operator()(const Flag* a, const Flag* b) const {
-    return FlagHelpers::FlagNamesCmp(a->name(), b->name()) < 0;
+consteval std::array<int, kNumFlags> GetSortedFlagIndices() {
+  constexpr const char* kFlagNames[] = {
+#define FLAG_MODE_APPLY_NAME(nam) #nam,
+#define FLAG_ALIAS(ftype, ctype, alias, nam) #alias,
+#include "src/flags/flag-definitions.h"  // NOLINT(build/include)
+#undef FLAG_ALIAS
+#undef FLAG_MODE_APPLY_NAME
+  };
+
+  static_assert(arraysize(kFlagNames) == kNumFlags);
+
+  std::array<int, kNumFlags> indices{};
+  for (size_t i = 0; i < kNumFlags; ++i) {
+    indices[i] = static_cast<int>(i);
   }
-};
+  std::sort(indices.begin(), indices.end(), [&](int i, int j) {
+    return FlagHelpers::FlagNamesCmp(kFlagNames[i], kFlagNames[j]) < 0;
+  });
+  return indices;
+}
 
 struct FlagNameGreater {
   bool operator()(const Flag* a, const char* b) const {
@@ -340,10 +338,11 @@ struct FlagNameGreater {
 class FlagMapByName {
  public:
   FlagMapByName() {
+    constexpr std::array<int, kNumFlags> sorted_indices =
+        GetSortedFlagIndices();
     for (size_t i = 0; i < kNumFlags; ++i) {
-      flags_[i] = &flags[i];
+      flags_[i] = &flags[sorted_indices[i]];
     }
-    std::sort(flags_.begin(), flags_.end(), FlagLess());
   }
 
   // Returns the greatest flag whose name is less than or equal to the given
@@ -527,7 +526,7 @@ uint32_t ComputeFlagListHash() {
         flag.PointsTo(&v8_flags.concurrent_sweeping) ||
         flag.PointsTo(&v8_flags.parallel_compaction) ||
         flag.PointsTo(&v8_flags.parallel_pointer_update) ||
-        flag.PointsTo(&v8_flags.parallel_weak_ref_clearing) ||
+        flag.PointsTo(&v8_flags.parallel_gc_clearing) ||
         flag.PointsTo(&v8_flags.memory_reducer) ||
         flag.PointsTo(&v8_flags.cppheap_concurrent_marking) ||
         flag.PointsTo(&v8_flags.cppheap_incremental_marking) ||
@@ -898,6 +897,7 @@ void FlagList::PrintHelp() {
        << "        type: " << Type2String(f.type()) << "  default: " << f
        << "\n";
   }
+  os.flush();
 }
 
 // static
@@ -906,6 +906,7 @@ void FlagList::PrintValues() {
   for (const Flag& f : flags) {
     os << f << "\n";
   }
+  os.flush();
 }
 
 namespace {
@@ -1014,6 +1015,7 @@ void FlagList::PrintFeatureFlagsJSON() {
 #endif  // V8_ENABLE_WEBASSEMBLY
 
   os << "}\n";
+  os.flush();
 
 #undef ADD_JS_INPROGRESS_FLAG
 #undef ADD_JS_STAGED_FLAG
@@ -1036,7 +1038,7 @@ class ImplicationProcessor {
 #define FLAG_MODE_APPLY_NAME(name) \
   auto& name = v8_flags.name;      \
   USE(name);
-#include "src/flags/flag-definitions.h"
+#include "src/flags/flag-definitions.h"  // NOLINT(build/include)
 #undef FLAG_MODE_APPLY_NAME
 
 #define FLAG_MODE_DEFINE_IMPLICATIONS
@@ -1047,6 +1049,18 @@ class ImplicationProcessor {
   }
 
  private:
+  void ResetFlagsImpliedBy(const Flag* implier_flag) {
+    const char* implier_flag_name = FlagName{implier_flag->name()}.name;
+    for (Flag* flag : implied_by_map_[implier_flag_name]) {
+      if (flag->IsDefault()) {
+        continue;
+      }
+      flag->Reset();
+      ResetFlagsImpliedBy(flag);
+    }
+    implied_by_map_.erase(implier_flag_name);
+  }
+
   // Called from {DEFINE_*_IMPLICATION} in flag-definitions.h.
   template <class T>
   bool TriggerImplication(bool premise, const char* premise_name,
@@ -1055,10 +1069,11 @@ class ImplicationProcessor {
                           bool weak_implication) {
     if (!premise) return false;
     Flag* conclusion_flag = FindImplicationFlagByName(conclusion_name);
+    const bool is_conclusion_value_change = conclusion_value->value() != value;
     if (!conclusion_flag->CheckFlagChange(
             weak_implication ? Flag::SetBy::kWeakImplication
                              : Flag::SetBy::kImplication,
-            conclusion_value->value() != value, premise_name)) {
+            is_conclusion_value_change, premise_name)) {
       return false;
     }
     if (V8_UNLIKELY(num_iterations_ >= kMaxNumIterations)) {
@@ -1069,7 +1084,15 @@ class ImplicationProcessor {
         cycle_ << FlagName{conclusion_flag->name()} << " = " << value;
       }
     }
-    *conclusion_value = value;
+    if (is_conclusion_value_change) {
+      *conclusion_value = value;
+      // Any implications by the conclusion flag are now invalid. Reset the
+      // flags previously implied by the conclusion flag. If they were also
+      // implied by some other flag, they will be reimplied in the next
+      // implication iteration.
+      ResetFlagsImpliedBy(conclusion_flag);
+      implied_by_map_[FlagName{premise_name}.name].push_back(conclusion_flag);
+    }
     return true;
   }
 
@@ -1142,6 +1165,8 @@ class ImplicationProcessor {
   // cycles in flags.
   uint32_t cycle_start_hash_;
   std::ostringstream cycle_;
+
+  std::unordered_map<std::string, std::vector<Flag*>> implied_by_map_;
 };
 
 }  // namespace
@@ -1184,15 +1209,21 @@ void FlagList::ResolveContradictionsWhenFuzzing() {
       CONTRADICTION(jit_fuzzing, max_lazy),
       CONTRADICTION(jitless, maglev_as_top_tier),
       CONTRADICTION(jitless, maglev_future),
-      CONTRADICTION(jitless, turbolev_future),
       CONTRADICTION(jitless, stress_concurrent_inlining),
       CONTRADICTION(jitless, stress_concurrent_inlining_attach_code),
       CONTRADICTION(jitless, stress_maglev),
+      CONTRADICTION(jitless, turbolev_future),
+      CONTRADICTION(jitless, turboshaft_wasm_in_js_inlining),
+      CONTRADICTION(jitless, verify_turboshaft),
+      CONTRADICTION(lite_mode, maglev_as_top_tier),
       CONTRADICTION(lite_mode, maglev_future),
       CONTRADICTION(lite_mode, predictable_gc_schedule),
       CONTRADICTION(lite_mode, stress_concurrent_inlining),
       CONTRADICTION(lite_mode, stress_concurrent_inlining_attach_code),
       CONTRADICTION(lite_mode, stress_maglev),
+      CONTRADICTION(lite_mode, turbolev_future),
+      CONTRADICTION(lite_mode, turboshaft_wasm_in_js_inlining),
+      CONTRADICTION(lite_mode, verify_turboshaft),
       CONTRADICTION(maglev_as_top_tier, stress_concurrent_inlining),
       CONTRADICTION(maglev_as_top_tier, stress_concurrent_inlining_attach_code),
       CONTRADICTION(maglev_as_top_tier, turbolev_future),
@@ -1224,6 +1255,16 @@ void FlagList::ResolveContradictionsWhenFuzzing() {
       RESET_WHEN_CORRECTNESS_FUZZING(turbo_stats),
       RESET_WHEN_CORRECTNESS_FUZZING(turbo_stats_nvp),
       RESET_WHEN_CORRECTNESS_FUZZING(turbo_stats_wasm),
+
+      // Don't use any asserting modes with differential fuzzing as it ignores
+      // crashes anyways and sometimes can't digest the output from these
+      // flags.
+      RESET_WHEN_CORRECTNESS_FUZZING(assert_types),
+      RESET_WHEN_CORRECTNESS_FUZZING(maglev_assert_types),
+      RESET_WHEN_CORRECTNESS_FUZZING(turboshaft_assert_types),
+#if V8_ENABLE_WEBASSEMBLY
+      RESET_WHEN_CORRECTNESS_FUZZING(wasm_assert_types),
+#endif  // V8_ENABLE_WEBASSEMBLY
 
       // https://crbug.com/369974230
       RESET_WHEN_FUZZING(expose_async_hooks),

@@ -70,6 +70,8 @@
 // not defined on ARM?
 #define YNN_CACHE_LINE_SIZE 64
 
+#define YNN_ALLOCATION_ALIGNMENT 64
+
 #ifdef _MSC_VER
 #define YNN_ALLOCA(T, N) reinterpret_cast<T*>(_alloca((N) * sizeof(T)))
 #else
@@ -82,6 +84,15 @@
 #define YNN_UNROLL _Pragma("GCC unroll 999")
 #else
 #define YNN_UNROLL
+#endif
+
+#if defined(__GNUC__) && !defined(__clang__)
+// This warning has a ton of false positives and often requires adding
+// initialization with non-trivial cost to silence it. Furthermore, it is
+// impossible to disable in the build, because it only exists in new versions of
+// GCC, old/other compilers error if you try to disable it via the command line,
+// and we can't detect compiler versions in bazel.
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #endif
 
 #endif  // XNNPACK_YNNPACK_BASE_BASE_H_

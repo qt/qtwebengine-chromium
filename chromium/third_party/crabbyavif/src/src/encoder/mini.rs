@@ -24,6 +24,11 @@ pub fn is_mini_compatible(enc: &Encoder) -> bool {
         return false;
     }
 
+    // TODO: b/456440247 - Implement with JPEG XL.
+    if enc.settings.codec_choice.actual() != CodecChoice::Aom {
+        return false;
+    }
+
     // TODO: b/434944440 - Return false if there is any sample transform recipe.
 
     // Check for maximum field values and maximum chunk sizes.
@@ -115,7 +120,7 @@ pub fn is_mini_compatible(enc: &Encoder) -> bool {
             if item.samples.len() != 1 || item.samples[0].data.len() > (1 << 28) {
                 return false;
             }
-            if !matches!(item.codec_configuration, CodecConfiguration::Av1(_)) {
+            if !matches!(item.codec_configuration, Some(CodecConfiguration::Av1(_))) {
                 return false;
             }
             continue; // The primary item can be stored in the MinimizedImageBox.
@@ -125,7 +130,7 @@ pub fn is_mini_compatible(enc: &Encoder) -> bool {
             if item.samples.len() != 1 || item.samples[0].data.len() >= (1 << 28) {
                 return false;
             }
-            if !matches!(item.codec_configuration, CodecConfiguration::Av1(_)) {
+            if !matches!(item.codec_configuration, Some(CodecConfiguration::Av1(_))) {
                 return false;
             }
             continue; // The alpha auxiliary item can be stored in the MinimizedImageBox.
@@ -135,7 +140,7 @@ pub fn is_mini_compatible(enc: &Encoder) -> bool {
             if item.samples.len() != 1 || item.samples[0].data.len() >= (1 << 28) {
                 return false;
             }
-            if !matches!(item.codec_configuration, CodecConfiguration::Av1(_)) {
+            if !matches!(item.codec_configuration, Some(CodecConfiguration::Av1(_))) {
                 return false;
             }
             continue; // The gainmap input image item can be stored in the MinimizedImageBox.
@@ -254,7 +259,10 @@ impl Encoder {
         let infe_type;
         let codec_config_type;
         let has_explicit_codec_types;
-        if matches!(color_item.codec_configuration, CodecConfiguration::Av1(_)) {
+        if matches!(
+            color_item.codec_configuration,
+            Some(CodecConfiguration::Av1(_))
+        ) {
             infe_type = "av01";
             codec_config_type = "av1C";
             has_explicit_codec_types = false;
@@ -533,21 +541,24 @@ impl Encoder {
 
         // Chunks
         if codec_config_size > 0 {
-            if let CodecConfiguration::Av1(config) = &color_item.codec_configuration {
+            if let Some(CodecConfiguration::Av1(config)) = &color_item.codec_configuration {
                 Item::write_av1_codec_config(config, stream)?; // unsigned int(8) main_item_codec_config[main_item_codec_config_size];
             } else {
                 return AvifError::unknown_error("Unexpected codec configuration");
             }
         }
         if has_alpha && !alpha_data.unwrap().is_empty() && alpha_codec_config_size != 0 {
-            if let CodecConfiguration::Av1(config) = &alpha_item.unwrap().codec_configuration {
+            if let Some(CodecConfiguration::Av1(config)) = &alpha_item.unwrap().codec_configuration
+            {
                 Item::write_av1_codec_config(config, stream)?; // unsigned int(8) alpha_item_codec_config[alpha_item_codec_config_size];
             } else {
                 return AvifError::unknown_error("Unexpected codec configuration");
             }
         }
         if has_hdr && has_gainmap && gainmap_codec_config_size != 0 {
-            if let CodecConfiguration::Av1(config) = &gainmap_item.unwrap().codec_configuration {
+            if let Some(CodecConfiguration::Av1(config)) =
+                &gainmap_item.unwrap().codec_configuration
+            {
                 Item::write_av1_codec_config(config, stream)?; // unsigned int(8) gainmap_item_codec_config[gainmap_item_codec_config_size];
             } else {
                 return AvifError::unknown_error("Unexpected codec configuration");

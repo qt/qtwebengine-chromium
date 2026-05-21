@@ -8,4 +8,6 @@ namespace openscreen {
 
 TraceLoggingPlatform::~TraceLoggingPlatform() = default;
 
+void TraceLoggingPlatform::LogFlow(TraceEvent event, FlowType type) {}
+
 }  // namespace openscreen

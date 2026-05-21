@@ -8,7 +8,6 @@
 
 #include <stdint.h>
 
-#include "core/fxcrt/compiler_specific.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace {
@@ -24,8 +23,10 @@ void CheckImageEq(CJBig2_Image* img1, CJBig2_Image* img2, int line) {
   EXPECT_EQ(img1->width(), img2->width());
   EXPECT_EQ(img1->height(), img2->height());
   for (int32_t y = 0; y < img1->height(); ++y) {
+    pdfium::span<const uint8_t> img1_line = img1->GetLine(y);
+    pdfium::span<const uint8_t> img2_line = img2->GetLine(y);
     for (int32_t x = 0; x < img1->width(); ++x) {
-      EXPECT_EQ(img1->GetPixel(x, y), img2->GetPixel(x, y))
+      EXPECT_EQ(img1->GetPixel(x, img1_line), img2->GetPixel(x, img2_line))
           << " at " << x << " " << y << " actual line " << line;
     }
   }
@@ -38,64 +39,74 @@ TEST(fxcodec, EmptyImage) {
   EXPECT_EQ(empty.width(), 0);
   EXPECT_EQ(empty.height(), 0);
 
+  // Out-of-bounds GetLine() returns empty.
+  pdfium::span<uint8_t> line0 = empty.GetLine(0);
+  pdfium::span<uint8_t> line1 = empty.GetLine(1);
+  EXPECT_TRUE(line0.empty());
+  EXPECT_TRUE(line1.empty());
+
   // Out-of-bounds SetPixel() is silent no-op.
-  empty.SetPixel(0, 0, true);
-  empty.SetPixel(1, 1, true);
+  empty.SetPixel(0, line0, true);
+  empty.SetPixel(1, line1, true);
 
   // Out-of-bounds GetPixel returns 0.
-  EXPECT_EQ(empty.GetPixel(0, 0), 0);
-  EXPECT_EQ(empty.GetPixel(1, 1), 0);
-
-  // Out-of-bounds GetLine() returns null.
-  EXPECT_EQ(empty.GetLine(0), nullptr);
-  EXPECT_EQ(empty.GetLine(1), nullptr);
+  EXPECT_EQ(empty.GetPixel(0, line0), 0);
+  EXPECT_EQ(empty.GetPixel(1, line1), 0);
 }
 
 TEST(fxcodec, JBig2ImageCreate) {
   CJBig2_Image img(kWidthPixels, kHeightLines);
   EXPECT_EQ(kWidthPixels, img.width());
   EXPECT_EQ(kHeightLines, img.height());
-  EXPECT_EQ(0, img.GetPixel(0, 0));
-  EXPECT_EQ(0, img.GetLine(0)[0]);
-  EXPECT_EQ(0, img.GetPixel(kWidthPixels - 1, kHeightLines - 1));
-  EXPECT_EQ(0, UNSAFE_TODO(img.GetLine(kHeightLines - 1)[kWidthBytes - 1]));
+  pdfium::span<uint8_t> line0 = img.GetLine(0);
+  EXPECT_EQ(0, img.GetPixel(0, line0));
+  ASSERT_EQ(static_cast<size_t>(kStrideBytes), line0.size());
+  EXPECT_EQ(0, line0[0]);
+  pdfium::span<uint8_t> line_last = img.GetLine(kHeightLines - 1);
+  ASSERT_EQ(static_cast<size_t>(kStrideBytes), line_last.size());
+  EXPECT_EQ(0, line_last[kWidthBytes - 1]);
 
-  img.SetPixel(0, 0, true);
-  img.SetPixel(kWidthPixels - 1, kHeightLines - 1, true);
-  EXPECT_EQ(1, img.GetPixel(0, 0));
-  EXPECT_EQ(1, img.GetPixel(kWidthPixels - 1, kHeightLines - 1));
-  EXPECT_EQ(0x80, img.GetLine(0)[0]);
-  EXPECT_EQ(0x01, UNSAFE_TODO(img.GetLine(kHeightLines - 1)[kWidthBytes - 1]));
+  img.SetPixel(0, line0, true);
+  img.SetPixel(kWidthPixels - 1, line_last, true);
+  EXPECT_EQ(1, img.GetPixel(0, line0));
+  EXPECT_EQ(1, img.GetPixel(kWidthPixels - 1, line_last));
+  EXPECT_EQ(0x80, line0[0]);
+  EXPECT_EQ(0x01, line_last[kWidthBytes - 1]);
 
   // Out-of-bounds SetPixel() is silent no-op.
-  img.SetPixel(-1, 1, true);
-  img.SetPixel(kWidthPixels, kHeightLines, true);
+  pdfium::span<uint8_t> line1 = img.GetLine(1);
+  img.SetPixel(-1, line1, true);
+  pdfium::span<uint8_t> line_oob = img.GetLine(kHeightLines);
+  img.SetPixel(kWidthPixels, line_oob, true);
 
   // Out-of-bounds GetPixel returns 0.
-  EXPECT_EQ(0, img.GetPixel(-1, -1));
-  EXPECT_EQ(0, img.GetPixel(kWidthPixels, kHeightLines));
+  EXPECT_EQ(0, img.GetPixel(-1, img.GetLine(-1)));
+  EXPECT_EQ(0, img.GetPixel(kWidthPixels, img.GetLine(kHeightLines)));
 
-  // Out-of-bounds GetLine() returns null.
-  EXPECT_FALSE(img.GetLine(-1));
-  EXPECT_FALSE(img.GetLine(kHeightLines));
+  // Out-of-bounds GetLine() returns empty.
+  EXPECT_TRUE(img.GetLine(-1).empty());
+  EXPECT_TRUE(img.GetLine(kHeightLines).empty());
 }
 
 TEST(fxcodec, JBig2ImageCreateTooBig) {
   CJBig2_Image img(kWidthPixels, kTooLargeHeightLines);
   EXPECT_EQ(0, img.width());
   EXPECT_EQ(0, img.height());
-  EXPECT_FALSE(img.data());
+  EXPECT_FALSE(img.has_data());
+  EXPECT_TRUE(img.span().empty());
 }
 
 TEST(fxcodec, JBig2ImageCreateExternal) {
   uint8_t buf[kHeightLines * kStrideBytes];
   CJBig2_Image img(kWidthPixels, kHeightLines, kStrideBytes, buf);
-  img.SetPixel(0, 0, true);
-  img.SetPixel(kWidthPixels - 1, kHeightLines - 1, false);
+  pdfium::span<uint8_t> line0 = img.GetLine(0);
+  pdfium::span<uint8_t> line_last = img.GetLine(kHeightLines - 1);
+  img.SetPixel(0, line0, true);
+  img.SetPixel(kWidthPixels - 1, line_last, false);
   EXPECT_EQ(kWidthPixels, img.width());
   EXPECT_EQ(kHeightLines, img.height());
-  EXPECT_TRUE(img.GetPixel(0, 0));
-  EXPECT_FALSE(img.GetPixel(kWidthPixels - 1, kHeightLines - 1));
+  EXPECT_TRUE(img.GetPixel(0, line0));
+  EXPECT_FALSE(img.GetPixel(kWidthPixels - 1, line_last));
 }
 
 TEST(fxcodec, JBig2ImageCreateExternalTooBig) {
@@ -103,7 +114,16 @@ TEST(fxcodec, JBig2ImageCreateExternalTooBig) {
   CJBig2_Image img(kWidthPixels, kTooLargeHeightLines, kStrideBytes, buf);
   EXPECT_EQ(0, img.width());
   EXPECT_EQ(0, img.height());
-  EXPECT_FALSE(img.data());
+  EXPECT_FALSE(img.has_data());
+  EXPECT_TRUE(img.span().empty());
+}
+
+TEST(fxcodec, JBig2ImageCreateExternalSizeButNoData) {
+  CJBig2_Image img(kWidthPixels, kHeightLines, kStrideBytes, {});
+  EXPECT_EQ(0, img.width());
+  EXPECT_EQ(0, img.height());
+  EXPECT_FALSE(img.has_data());
+  EXPECT_TRUE(img.span().empty());
 }
 
 TEST(fxcodec, JBig2ImageCreateExternalBadStride) {
@@ -111,55 +131,74 @@ TEST(fxcodec, JBig2ImageCreateExternalBadStride) {
   CJBig2_Image img(kWidthPixels, kTooLargeHeightLines, kStrideBytes - 1, buf);
   EXPECT_EQ(0, img.width());
   EXPECT_EQ(0, img.height());
-  EXPECT_FALSE(img.data());
+  EXPECT_FALSE(img.has_data());
+  EXPECT_TRUE(img.span().empty());
 }
 
 TEST(fxcodec, JBig2ImageExpand) {
   CJBig2_Image img(kWidthPixels, kHeightLines);
-  img.SetPixel(0, 0, true);
-  img.SetPixel(kWidthPixels - 1, kHeightLines - 1, false);
+  pdfium::span<uint8_t> line0 = img.GetLine(0);
+  pdfium::span<uint8_t> line_last = img.GetLine(kHeightLines - 1);
+  img.SetPixel(0, line0, true);
+  img.SetPixel(kWidthPixels - 1, line_last, false);
   img.Expand(kLargerHeightLines, true);
   EXPECT_EQ(kWidthPixels, img.width());
   EXPECT_EQ(kLargerHeightLines, img.height());
-  EXPECT_TRUE(img.GetPixel(0, 0));
-  EXPECT_FALSE(img.GetPixel(kWidthPixels - 1, kHeightLines - 1));
-  EXPECT_TRUE(img.GetPixel(kWidthPixels - 1, kLargerHeightLines - 1));
+  line0 = img.GetLine(0);
+  line_last = img.GetLine(kHeightLines - 1);
+  EXPECT_TRUE(img.GetPixel(0, line0));
+  EXPECT_FALSE(img.GetPixel(kWidthPixels - 1, line_last));
+  EXPECT_TRUE(
+      img.GetPixel(kWidthPixels - 1, img.GetLine(kLargerHeightLines - 1)));
 }
 
 TEST(fxcodec, JBig2ImageExpandTooBig) {
   CJBig2_Image img(kWidthPixels, kHeightLines);
-  img.SetPixel(0, 0, true);
-  img.SetPixel(kWidthPixels - 1, kHeightLines - 1, false);
+  pdfium::span<uint8_t> line0 = img.GetLine(0);
+  pdfium::span<uint8_t> line_last = img.GetLine(kHeightLines - 1);
+  img.SetPixel(0, line0, true);
+  img.SetPixel(kWidthPixels - 1, line_last, false);
   img.Expand(kTooLargeHeightLines, true);
   EXPECT_EQ(kWidthPixels, img.width());
   EXPECT_EQ(kHeightLines, img.height());
-  EXPECT_TRUE(img.GetPixel(0, 0));
-  EXPECT_FALSE(img.GetPixel(kWidthPixels - 1, kHeightLines - 1));
+  line0 = img.GetLine(0);
+  line_last = img.GetLine(kHeightLines - 1);
+  EXPECT_TRUE(img.GetPixel(0, line0));
+  EXPECT_FALSE(img.GetPixel(kWidthPixels - 1, line_last));
 }
 
 TEST(fxcodec, JBig2ImageExpandExternal) {
   uint8_t buf[kHeightLines * kStrideBytes];
   CJBig2_Image img(kWidthPixels, kHeightLines, kStrideBytes, buf);
-  img.SetPixel(0, 0, true);
-  img.SetPixel(kWidthPixels - 1, kHeightLines - 1, false);
+  pdfium::span<uint8_t> line0 = img.GetLine(0);
+  pdfium::span<uint8_t> line_last = img.GetLine(kHeightLines - 1);
+  img.SetPixel(0, line0, true);
+  img.SetPixel(kWidthPixels - 1, line_last, false);
   img.Expand(kLargerHeightLines, true);
   EXPECT_EQ(kWidthPixels, img.width());
   EXPECT_EQ(kLargerHeightLines, img.height());
-  EXPECT_TRUE(img.GetPixel(0, 0));
-  EXPECT_FALSE(img.GetPixel(kWidthPixels - 1, kHeightLines - 1));
-  EXPECT_TRUE(img.GetPixel(kWidthPixels - 1, kLargerHeightLines - 1));
+  line0 = img.GetLine(0);
+  line_last = img.GetLine(kHeightLines - 1);
+  EXPECT_TRUE(img.GetPixel(0, line0));
+  EXPECT_FALSE(img.GetPixel(kWidthPixels - 1, line_last));
+  EXPECT_TRUE(
+      img.GetPixel(kWidthPixels - 1, img.GetLine(kLargerHeightLines - 1)));
 }
 
 TEST(fxcodec, JBig2ImageExpandExternalTooBig) {
   uint8_t buf[kHeightLines * kStrideBytes];
   CJBig2_Image img(kWidthPixels, kHeightLines, kStrideBytes, buf);
-  img.SetPixel(0, 0, true);
-  img.SetPixel(kWidthPixels - 1, kHeightLines - 1, false);
+  pdfium::span<uint8_t> line0 = img.GetLine(0);
+  pdfium::span<uint8_t> line_last = img.GetLine(kHeightLines - 1);
+  img.SetPixel(0, line0, true);
+  img.SetPixel(kWidthPixels - 1, line_last, false);
   img.Expand(kTooLargeHeightLines, true);
   EXPECT_EQ(kWidthPixels, img.width());
   EXPECT_EQ(kHeightLines, img.height());
-  EXPECT_TRUE(img.GetPixel(0, 0));
-  EXPECT_FALSE(img.GetPixel(kWidthPixels - 1, kHeightLines - 1));
+  line0 = img.GetLine(0);
+  line_last = img.GetLine(kHeightLines - 1);
+  EXPECT_TRUE(img.GetPixel(0, line0));
+  EXPECT_FALSE(img.GetPixel(kWidthPixels - 1, line_last));
 }
 
 TEST(fxcodec, JBig2EmptyImage) {
@@ -174,7 +213,7 @@ TEST(fxcodec, JBig2EmptyImage) {
   auto sub2 = empty->SubImage(0, 0, 1, 1);
   EXPECT_EQ(1, sub2->width());
   EXPECT_EQ(1, sub2->height());
-  EXPECT_EQ(0, sub2->GetPixel(0, 0));
+  EXPECT_EQ(0, sub2->GetPixel(0, sub2->GetLine(0)));
 
   // Bad dimensions give an empty image.
   sub2 = empty->SubImage(0, 0, -1, -1);
@@ -329,18 +368,18 @@ TEST(fxcodec, JBig2CopyLine) {
   auto expected = std::make_unique<CJBig2_Image>(37, 3, 8, expected_pattern);
 
   // Shuffle.
-  img->CopyLine(2, 1);
-  img->CopyLine(1, 0);
-  img->CopyLine(0, 2);
+  img->CopyLine(img->GetLine(2), img->GetLine(1));
+  img->CopyLine(img->GetLine(1), img->GetLine(0));
+  img->CopyLine(img->GetLine(0), img->GetLine(2));
 
   // Clear top line via invalid |from| offset.
-  img->CopyLine(2, 3);
+  img->CopyLine(img->GetLine(2), img->GetLine(3));
 
   // Copies with invalid |to|s don't mess with things.
-  img->CopyLine(-1, 0);
-  img->CopyLine(4, 0);
-  img->CopyLine(-1, -1);
-  img->CopyLine(4, 4);
+  img->CopyLine(img->GetLine(-1), img->GetLine(0));
+  img->CopyLine(img->GetLine(4), img->GetLine(0));
+  img->CopyLine(img->GetLine(-1), img->GetLine(-1));
+  img->CopyLine(img->GetLine(4), img->GetLine(4));
 
   CheckImageEq(expected.get(), img.get(), __LINE__);
 }

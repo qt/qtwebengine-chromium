@@ -78,6 +78,69 @@ struct ArgumentBufferInfo {
 
 /// Configuration options used for generating MSL.
 struct Options {
+    struct RangeOffsets {
+        /// The offset of the min_depth immediate data
+        uint32_t min = 0;
+        /// The offset of the max_depth immediate data
+        uint32_t max = 0;
+
+        /// Reflect the fields of this class so that it can be used by tint::ForeachField()
+        TINT_REFLECT(RangeOffsets, min, max);
+        TINT_REFLECT_EQUALS(RangeOffsets);
+        TINT_REFLECT_HASH_CODE(RangeOffsets);
+    };
+
+    /// The set of options which control workarounds for driver issues.
+    struct Workarounds {
+        ///////////////////////////////////////////////////////////////////////////////////////////
+        // NOTE: When adding a new option here, it should also be added to the FuzzedOptions     //
+        // structure in writer_fuzz.cc.                                                          //
+        ///////////////////////////////////////////////////////////////////////////////////////////
+
+        /// Set to `true` to scalarize max min and clamp builtins.
+        bool scalarize_max_min_clamp = false;
+
+        /// Set to `true` to disable the module constant transform for f16
+        bool disable_module_constant_f16 = false;
+
+        /// Set to `true` to generate polyfill for `subgroupBroadcast(f16)`
+        bool polyfill_subgroup_broadcast_f16 = false;
+
+        /// Set to `true` to generate polyfill for `clamp(f16/f32)`
+        bool polyfill_clamp_float = false;
+
+        /// Set to `true` to polyfill `unpack2x16snorm()`.
+        bool polyfill_unpack_2x16_snorm = false;
+
+        /// Set to `true` to polyfill `unpack2x16unorm()`.
+        bool polyfill_unpack_2x16_unorm = false;
+
+        TINT_REFLECT(Workarounds,
+                     scalarize_max_min_clamp,
+                     disable_module_constant_f16,
+                     polyfill_subgroup_broadcast_f16,
+                     polyfill_clamp_float,
+                     polyfill_unpack_2x16_snorm,
+                     polyfill_unpack_2x16_unorm);
+        TINT_REFLECT_EQUALS(Workarounds);
+        TINT_REFLECT_HASH_CODE(Workarounds);
+    };
+
+    /// Any options which are controlled by the current Metal version.
+    struct Extensions {
+        ///////////////////////////////////////////////////////////////////////////////////////////
+        // NOTE: When adding a new option here, it should also be added to the FuzzedOptions     //
+        // structure in writer_fuzz.cc.                                                          //
+        ///////////////////////////////////////////////////////////////////////////////////////////
+
+        /// Set to `true` to disable demote to helper transform
+        bool disable_demote_to_helper = false;
+
+        TINT_REFLECT(Extensions, disable_demote_to_helper);
+        TINT_REFLECT_EQUALS(Extensions);
+        TINT_REFLECT_HASH_CODE(Extensions);
+    };
+
     /// Constructor
     Options();
     /// Destructor
@@ -87,6 +150,11 @@ struct Options {
     /// Copy assignment
     /// @returns this Options
     Options& operator=(const Options&);
+
+    ///////////////////////////////////////////////////////////////////////////////////////////
+    // NOTE: When adding a new option here, it should also be added to the FuzzedOptions     //
+    // structure in writer_fuzz.cc (if fuzzing is desired).                                  //
+    ///////////////////////////////////////////////////////////////////////////////////////////
 
     /// The entry point name to emit.
     std::string entry_point_name = {};
@@ -101,13 +169,10 @@ struct Options {
     bool disable_robustness = false;
 
     /// Set to `true` to enable integer range analysis in robustness transform.
-    bool enable_integer_range_analysis = true;
+    bool disable_integer_range_analysis = false;
 
     /// Set to `true` to disable workgroup memory zero initialization
     bool disable_workgroup_init = false;
-
-    /// Set to `true` to disable demote to helper transform
-    bool disable_demote_to_helper = false;
 
     /// Set to `true` to generate a [[point_size]] attribute which is set to 1.0
     /// for all vertex shaders in the module.
@@ -116,30 +181,14 @@ struct Options {
     /// Set to `true` to disable the polyfills on integer division and modulo.
     bool disable_polyfill_integer_div_mod = false;
 
-    /// Set to `true` to polyfill `unpack2x16snorm()`.
-    bool polyfill_unpack_2x16_snorm = false;
-
-    /// Set to `true` to polyfill `unpack2x16unorm()`.
-    bool polyfill_unpack_2x16_unorm = false;
-
-    /// Set to `true` to scalarize max min and clamp builtins.
-    bool scalarize_max_min_clamp = false;
-
-    /// Set to `true` to disable the module constant transform for f16
-    bool disable_module_constant_f16 = false;
-
-    /// Set to `true` to generate polyfill for `subgroupBroadcast(f16)`
-    bool polyfill_subgroup_broadcast_f16 = false;
-
-    /// Set to `true` to generate polyfill for `clamp(f16/f32)`
-    bool polyfill_clamp_float = false;
-
     /// Emit argument buffers
     bool use_argument_buffers = false;
 
-    /// The index to use when generating a UBO to receive storage buffer sizes.
-    /// Defaults to 30, which is the last valid buffer slot.
-    uint32_t buffer_size_ubo_index = 30;
+    /// Any workarounds to enable/disable.
+    Workarounds workarounds{};
+
+    /// Any used extensions
+    Extensions extensions{};
 
     /// The fixed sample mask to combine with fragment shader outputs.
     /// Defaults to 0xFFFFFFFF.
@@ -161,6 +210,9 @@ struct Options {
     /// Map of group id to argument buffer information
     std::unordered_map<uint32_t, ArgumentBufferInfo> group_to_argument_buffer_info;
 
+    /// Offsets of the minDepth and maxDepth push constants.
+    std::optional<RangeOffsets> depth_range_offsets = std::nullopt;
+
     /// The bindings.
     Bindings bindings;
 
@@ -173,25 +225,20 @@ struct Options {
                  remapped_entry_point_name,
                  strip_all_names,
                  disable_robustness,
-                 enable_integer_range_analysis,
+                 disable_integer_range_analysis,
                  disable_workgroup_init,
-                 disable_demote_to_helper,
                  emit_vertex_point_size,
                  disable_polyfill_integer_div_mod,
-                 polyfill_unpack_2x16_snorm,
-                 polyfill_unpack_2x16_unorm,
-                 scalarize_max_min_clamp,
-                 disable_module_constant_f16,
-                 polyfill_subgroup_broadcast_f16,
-                 polyfill_clamp_float,
                  use_argument_buffers,
-                 buffer_size_ubo_index,
+                 workarounds,
+                 extensions,
                  fixed_sample_mask,
                  pixel_local_attachments,
                  array_length_from_constants,
                  vertex_pulling_config,
                  immediate_binding_point,
                  group_to_argument_buffer_info,
+                 depth_range_offsets,
                  bindings,
                  substitute_overrides_config);
     TINT_REFLECT_EQUALS(Options);

@@ -11,7 +11,7 @@ import * as Root from '../root/root.js';
 
 import type {CSSModel} from './CSSModel.js';
 import {DebuggerModel, Events as DebuggerModelEvents} from './DebuggerModel.js';
-import {DeferredDOMNode, DOMModel, type DOMNode, Events as DOMModelEvents} from './DOMModel.js';
+import {DeferredDOMNode, DOMModel, type DOMNode, DOMNodeEvents, Events as DOMModelEvents} from './DOMModel.js';
 import {OverlayPersistentHighlighter} from './OverlayPersistentHighlighter.js';
 import type {RemoteObject} from './RemoteObject.js';
 import {SDKModel} from './SDKModel.js';
@@ -129,14 +129,25 @@ export class OverlayModel extends SDKModel<EventTypes> implements ProtocolProxyA
     }
 
     this.#persistentHighlighter = new OverlayPersistentHighlighter(this, {
-      onGridOverlayStateChanged: ({nodeId, enabled}) =>
-          this.dispatchEventToListeners(Events.PERSISTENT_GRID_OVERLAY_STATE_CHANGED, {nodeId, enabled}),
-      onFlexOverlayStateChanged: ({nodeId, enabled}) =>
-          this.dispatchEventToListeners(Events.PERSISTENT_FLEX_CONTAINER_OVERLAY_STATE_CHANGED, {nodeId, enabled}),
-      onContainerQueryOverlayStateChanged: ({nodeId, enabled}) =>
-          this.dispatchEventToListeners(Events.PERSISTENT_CONTAINER_QUERY_OVERLAY_STATE_CHANGED, {nodeId, enabled}),
-      onScrollSnapOverlayStateChanged: ({nodeId, enabled}) =>
-          this.dispatchEventToListeners(Events.PERSISTENT_SCROLL_SNAP_OVERLAY_STATE_CHANGED, {nodeId, enabled}),
+      onGridOverlayStateChanged: ({nodeId, enabled}) => {
+        this.#domModel.nodeForId(nodeId)?.dispatchEventToListeners(DOMNodeEvents.GRID_OVERLAY_STATE_CHANGED, {enabled});
+        this.dispatchEventToListeners(Events.PERSISTENT_GRID_OVERLAY_STATE_CHANGED, {nodeId, enabled});
+      },
+      onFlexOverlayStateChanged: ({nodeId, enabled}) => {
+        this.#domModel.nodeForId(nodeId)?.dispatchEventToListeners(
+            DOMNodeEvents.FLEX_CONTAINER_OVERLAY_STATE_CHANGED, {enabled});
+        this.dispatchEventToListeners(Events.PERSISTENT_FLEX_CONTAINER_OVERLAY_STATE_CHANGED, {nodeId, enabled});
+      },
+      onContainerQueryOverlayStateChanged: ({nodeId, enabled}) => {
+        this.#domModel.nodeForId(nodeId)?.dispatchEventToListeners(
+            DOMNodeEvents.CONTAINER_QUERY_OVERLAY_STATE_CHANGED, {enabled});
+        this.dispatchEventToListeners(Events.PERSISTENT_CONTAINER_QUERY_OVERLAY_STATE_CHANGED, {nodeId, enabled});
+      },
+      onScrollSnapOverlayStateChanged: ({nodeId, enabled}) => {
+        this.#domModel.nodeForId(nodeId)?.dispatchEventToListeners(
+            DOMNodeEvents.SCROLL_SNAP_OVERLAY_STATE_CHANGED, {enabled});
+        this.dispatchEventToListeners(Events.PERSISTENT_SCROLL_SNAP_OVERLAY_STATE_CHANGED, {nodeId, enabled});
+      },
     });
     this.#domModel.addEventListener(DOMModelEvents.NodeRemoved, () => {
       if (!this.#persistentHighlighter) {
@@ -523,8 +534,9 @@ export class OverlayModel extends SDKModel<EventTypes> implements ProtocolProxyA
       gridHighlightConfig: {},
       flexContainerHighlightConfig: {},
       flexItemHighlightConfig: {},
-      contrastAlgorithm: Root.Runtime.experiments.isEnabled('apca') ? Protocol.Overlay.ContrastAlgorithm.Apca :
-                                                                      Protocol.Overlay.ContrastAlgorithm.Aa,
+      contrastAlgorithm: Root.Runtime.experiments.isEnabled(Root.ExperimentNames.ExperimentName.APCA) ?
+          Protocol.Overlay.ContrastAlgorithm.Apca :
+          Protocol.Overlay.ContrastAlgorithm.Aa,
     };
 
     if (mode === 'all' || mode === 'content') {
@@ -779,6 +791,14 @@ export class OverlayModel extends SDKModel<EventTypes> implements ProtocolProxyA
   async hasStyleSheetText(url: Platform.DevToolsPath.UrlString): Promise<boolean> {
     return await this.#windowControls.initializeStyleSheetText(url);
   }
+
+  inspectPanelShowRequested({backendNodeId}: Protocol.Overlay.InspectPanelShowRequestedEvent): void {
+    this.dispatchEventToListeners(Events.INSPECT_PANEL_SHOW_REQUESTED, backendNodeId);
+  }
+
+  inspectedElementWindowRestored({backendNodeId}: Protocol.Overlay.InspectedElementWindowRestoredEvent): void {
+    this.dispatchEventToListeners(Events.INSPECTED_ELEMENT_WINDOW_RESTORED, backendNodeId);
+  }
 }
 
 export class WindowControls {
@@ -913,6 +933,8 @@ export const enum Events {
   PERSISTENT_FLEX_CONTAINER_OVERLAY_STATE_CHANGED = 'PersistentFlexContainerOverlayStateChanged',
   PERSISTENT_SCROLL_SNAP_OVERLAY_STATE_CHANGED = 'PersistentScrollSnapOverlayStateChanged',
   PERSISTENT_CONTAINER_QUERY_OVERLAY_STATE_CHANGED = 'PersistentContainerQueryOverlayStateChanged',
+  INSPECT_PANEL_SHOW_REQUESTED = 'InspectPanelShowRequested',
+  INSPECTED_ELEMENT_WINDOW_RESTORED = 'InspectedElementWindowRestored',
 }
 
 export interface ChangedNodeId {
@@ -929,6 +951,8 @@ export interface EventTypes {
   [Events.PERSISTENT_FLEX_CONTAINER_OVERLAY_STATE_CHANGED]: ChangedNodeId;
   [Events.PERSISTENT_SCROLL_SNAP_OVERLAY_STATE_CHANGED]: ChangedNodeId;
   [Events.PERSISTENT_CONTAINER_QUERY_OVERLAY_STATE_CHANGED]: ChangedNodeId;
+  [Events.INSPECT_PANEL_SHOW_REQUESTED]: number;
+  [Events.INSPECTED_ELEMENT_WINDOW_RESTORED]: number;
 }
 
 export interface Highlighter {

@@ -15,7 +15,7 @@ TEST(LocationTest, DefaultInitializedLocationIsNullptr) {
   const Location loc;
 
   EXPECT_EQ(nullptr, loc.program_counter());
-  EXPECT_EQ("pc:NULL", loc.ToString());
+  EXPECT_EQ("pc:nullptr", loc.ToString());
 }
 
 TEST(LocationTest, ExpresslyInitializedLocationIsValid) {

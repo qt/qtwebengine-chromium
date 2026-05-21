@@ -30,6 +30,7 @@ try_.defaults.set(
     orchestrator_cores = 2,
     orchestrator_siso_remote_jobs = siso.remote_jobs.HIGH_JOBS_FOR_CQ,
     service_account = try_constants.DEFAULT_SERVICE_ACCOUNT,
+    siso_keep_going = siso.KEEP_GOING,
     siso_project = siso.project.DEFAULT_UNTRUSTED,
     siso_remote_linking = True,
 )
@@ -58,10 +59,6 @@ try_.builder(
         ),
     executable = "recipe:compile_size_trybot",
     gn_args = gn_args.config(
-        args = {
-            # Disable clang modules to detect header size change in non-module build.
-            "use_clang_modules": False,
-        },
         configs = [
             "release_try_builder",
             "remoteexec",
@@ -139,20 +136,6 @@ try_.builder(
 )
 
 try_.builder(
-    name = "linux-trees-in-viz-rel",
-    mirrors = ["ci/linux-trees-in-viz-rel"],
-    gn_args = gn_args.config(
-        configs = [
-            "ci/linux-trees-in-viz-rel",
-            "try_builder",
-            "no_symbols",
-        ],
-    ),
-    contact_team_email = "chrome-compositor@google.com",
-    siso_remote_jobs = siso.remote_jobs.LOW_JOBS_FOR_CQ,
-)
-
-try_.builder(
     name = "linux-annotator-rel",
     mirrors = ["ci/linux-annotator-rel"],
     gn_args = gn_args.config(
@@ -203,6 +186,16 @@ try_.builder(
             "components/cast_streaming/.+",
             "third_party/cast_core/.+",
             "third_party/openscreen/.+",
+            r"ui/events/platform/platform_event_dispatcher\.h",
+            r"ui/gfx/client_native_pixmap\.h",
+            r"ui/gfx/client_native_pixmap_factory\.h",
+            r"ui/gl/gl_surface_egl\.h",
+            r"ui/ozone/common/gl_ozone_egl\.h",
+            "ui/ozone/platform/cast/.+",
+            r"ui/platform_window/stub/stub_window\.h",
+            r"ui/ozone/public/overlay_manager_ozone\.h",
+            r"ui/ozone/public/ozone_platform\.h",
+            r"ui/ozone/public/surface_factory_ozone\.h",
         ],
     ),
 )
@@ -436,8 +429,6 @@ try_.orchestrator_builder(
         "chromium.add_one_test_shard": 10,
         # crbug/940930
         "chromium.enable_cleandead": 100,
-        # TODO(crbug.com/442618066): ramp experiment and apply to more builders
-        "siso.keep_going_limited": 50,
     },
     main_list_view = "try",
     # TODO(crbug.com/40241638): Use orchestrator pool once overloaded test pools
@@ -472,22 +463,6 @@ try_.orchestrator_builder(
 try_.compilator_builder(
     name = "linux-full-remote-rel-compilator",
     contact_team_email = "chrome-build-team@google.com",
-)
-
-try_.builder(
-    name = "linux-rel-test-selection",
-    description_html = "Experimental " + linkify_builder("try", "linux-rel", "chromium") + " builder with smart tests selection. go/chrome-sts",
-    mirrors = builder_config.copy_from("linux-rel"),
-    gn_args = "try/linux-rel",
-    builderless = False,
-    contact_team_email = "chrome-sts@google.com",
-    experiments = {
-        "chromium_rts.rts": 100,
-    },
-    tryjob = try_.job(
-        experiment_percentage = 10,
-    ),
-    use_clang_coverage = True,
 )
 
 try_.builder(
@@ -955,7 +930,7 @@ try_.builder(
     ssd = True,
     contact_team_email = "chrome-build-team@google.com",
     execution_timeout = 6 * time.hour,
-    siso_keep_going = True,
+    siso_keep_going = 0,
 )
 
 try_.builder(
@@ -1042,6 +1017,15 @@ try_.builder(
     ),
 )
 
+try_.builder(
+    name = "linux-treesinviz-disabled-rel",
+    mirrors = [
+        "ci/linux-treesinviz-disabled-rel",
+    ],
+    gn_args = "ci/linux-treesinviz-disabled-rel",
+    contact_team_email = "chrome-gpu-team@google.com",
+)
+
 gpu.try_.optional_tests_builder(
     name = "linux_optional_gpu_tests_rel",
     branch_selector = branches.selector.LINUX_BRANCHES,
@@ -1093,34 +1077,7 @@ gpu.try_.optional_tests_builder(
     main_list_view = "try",
     max_concurrent_builds = 7,
     tryjob = try_.job(
-        location_filters = [
-            # Inclusion filters.
-            cq.location_filter(path_regexp = "chrome/browser/vr/.+"),
-            cq.location_filter(path_regexp = "content/browser/xr/.+"),
-            cq.location_filter(path_regexp = "content/test/data/gpu/.+"),
-            cq.location_filter(path_regexp = "content/test/gpu/.+"),
-            cq.location_filter(path_regexp = "gpu/.+"),
-            cq.location_filter(path_regexp = "media/audio/.+"),
-            cq.location_filter(path_regexp = "media/base/.+"),
-            cq.location_filter(path_regexp = "media/capture/.+"),
-            cq.location_filter(path_regexp = "media/filters/.+"),
-            cq.location_filter(path_regexp = "media/gpu/.+"),
-            cq.location_filter(path_regexp = "media/mojo/.+"),
-            cq.location_filter(path_regexp = "media/renderers/.+"),
-            cq.location_filter(path_regexp = "media/video/.+"),
-            cq.location_filter(path_regexp = "testing/buildbot/tryserver.chromium.linux.json"),
-            cq.location_filter(path_regexp = "testing/trigger_scripts/.+"),
-            cq.location_filter(path_regexp = "third_party/blink/renderer/modules/mediastream/.+"),
-            cq.location_filter(path_regexp = "third_party/blink/renderer/modules/webcodecs/.+"),
-            cq.location_filter(path_regexp = "third_party/blink/renderer/modules/webgl/.+"),
-            cq.location_filter(path_regexp = "third_party/blink/renderer/modules/webgpu/.+"),
-            cq.location_filter(path_regexp = "third_party/blink/renderer/platform/graphics/gpu/.+"),
-            cq.location_filter(path_regexp = "tools/clang/scripts/update.py"),
-            cq.location_filter(path_regexp = "ui/gl/.+"),
-
-            # Exclusion filters.
-            cq.location_filter(exclude = True, path_regexp = ".*\\.md"),
-        ],
+        location_filters = gpu.try_.optional_trybot_location_filters.LINUX,
     ),
 )
 
@@ -1206,3 +1163,16 @@ try_.builder(
     use_javascript_coverage = True,
 )
 ############### Coverage Builders End ##################
+
+try_.builder(
+    name = "linux-metadata-validator",
+    description_html = "Validate README.chromium files.",
+    executable = "recipe:security/metadata_validator",
+    builderless = True,
+    contact_team_email = "chops-security-core@google.com",
+    tryjob = try_.job(
+        location_filters = [
+            cq.location_filter(path_regexp = r".*/README\.(chromium|angle|pdfium|crashpad|skia|swarming|v8|webrtc|google|libaom)"),
+        ],
+    ),
+)

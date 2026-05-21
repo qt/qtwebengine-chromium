@@ -1,0 +1,15 @@
+[package]
+name = "avm-sys"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# When building tests, avoids errors such as
+#   rust-lld: error: undefined symbol: operator new[]
+link-cplusplus = "1"
+
+[build-dependencies]
+bindgen = "0.69.2"
+
+[features]
+avm = []

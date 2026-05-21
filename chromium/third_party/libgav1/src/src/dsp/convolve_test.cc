@@ -95,11 +95,6 @@ struct ConvolveTestParam {
   int height;
 };
 
-#if !LIBGAV1_CXX17
-constexpr int ConvolveTestParam::kBlockWidth[kNumBlockSizes];   // static.
-constexpr int ConvolveTestParam::kBlockHeight[kNumBlockSizes];  // static.
-#endif
-
 const char* GetConvolveDigest8bpp(int id) {
   // Entries containing 'XXXXX...' are skipped. See the test for details.
   static const char* const kDigest[ConvolveTestParam::kNumBlockSizes * 16] = {

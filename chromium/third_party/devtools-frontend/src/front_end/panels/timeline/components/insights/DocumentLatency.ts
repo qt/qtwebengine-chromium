@@ -2,18 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import './Checklist.js';
-
 import type {DocumentLatencyInsightModel} from '../../../../models/trace/insights/DocumentLatency.js';
 import type * as Trace from '../../../../models/trace/trace.js';
+import * as UI from '../../../../ui/legacy/legacy.js';
 import * as Lit from '../../../../ui/lit/lit.js';
 
 import {BaseInsightComponent} from './BaseInsightComponent.js';
+import {Checklist} from './Checklist.js';
 
 const {html} = Lit;
+const {widgetConfig} = UI.Widget;
 
 export class DocumentLatency extends BaseInsightComponent<DocumentLatencyInsightModel> {
-  static override readonly litTagName = Lit.StaticHtml.literal`devtools-performance-document-latency`;
   override internalName = 'document-latency';
 
   protected override hasAskAiSupport(): boolean {
@@ -30,15 +30,9 @@ export class DocumentLatency extends BaseInsightComponent<DocumentLatencyInsight
     }
 
     // clang-format off
-    return html`<devtools-performance-checklist .checklist=${this.model.data.checklist}></devtools-performance-checklist>`;
+    return html`<devtools-widget .widgetConfig=${widgetConfig(Checklist, {
+      checklist: this.model.data.checklist,
+    })}></devtools-widget>`;
     // clang-format on
   }
 }
-
-declare global {
-  interface HTMLElementTagNameMap {
-    'devtools-performance-document-latency': DocumentLatency;
-  }
-}
-
-customElements.define('devtools-performance-document-latency', DocumentLatency);

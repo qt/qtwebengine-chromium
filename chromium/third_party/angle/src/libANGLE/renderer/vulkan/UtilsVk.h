@@ -270,10 +270,15 @@ class UtilsVk : angle::NonCopyable
                                       const ConvertVertexParameters &params,
                                       const OffsetAndVertexCounts &additionalOffsetVertexCounts);
 
+    // For VK_QCOM_tile_memory_heap
+    angle::Result clearTextureNoFlush(ContextVk *contextVk,
+                                      vk::ImageHelper *dst,
+                                      const ClearTextureParameters &params);
+
     // EXT_clear_texture
     angle::Result clearTexture(ContextVk *contextVk,
                                vk::ImageHelper *dst,
-                               ClearTextureParameters &params);
+                               const ClearTextureParameters &params);
 
     angle::Result clearFramebuffer(ContextVk *contextVk,
                                    FramebufferVk *framebuffer,
@@ -287,6 +292,7 @@ class UtilsVk : angle::NonCopyable
                                    const BlitResolveParameters &params);
 
     angle::Result depthStencilBlitResolve(ContextVk *contextVk,
+                                          vk::RenderPassCommandBufferHelper *renderPassCommands,
                                           vk::ImageHelper *dstImage,
                                           const vk::ImageView &dstImageView,
                                           gl::LevelIndex dstImageLevel,
@@ -307,6 +313,11 @@ class UtilsVk : angle::NonCopyable
     angle::Result clearImage(ContextVk *contextVk,
                              vk::ImageHelper *dst,
                              const ClearImageParameters &params);
+
+    angle::Result copyImageFromTileMemory(ContextVk *contextVk,
+                                          const VkImageAspectFlags aspectFlags,
+                                          vk::ImageHelper *dstImage,
+                                          vk::ImageHelper *srcImage);
 
     angle::Result copyImage(ContextVk *contextVk,
                             vk::ImageHelper *dst,

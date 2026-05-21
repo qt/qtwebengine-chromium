@@ -721,7 +721,7 @@ EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC float half_to_float(__half_raw h) {
     o_bits = Eigen::numext::bit_cast<uint32_t>(Eigen::numext::bit_cast<float>(o_bits) - magic);
   }
 
-  o_bits |= (h.x & 0x8000) << 16;  // sign bit
+  o_bits |= (h.x & 0x8000u) << 16;  // sign bit
   return Eigen::numext::bit_cast<float>(o_bits);
 #endif
 }

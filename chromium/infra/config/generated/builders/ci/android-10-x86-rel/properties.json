@@ -10,7 +10,7 @@
             "builder_id": {
               "bucket": "ci",
               "builder": "android-10-x86-rel",
-              "project": "chromium-m144"
+              "project": "chromium-m146"
             },
             "builder_spec": {
               "builder_group": "chromium.android",
@@ -44,12 +44,12 @@
         {
           "bucket": "ci",
           "builder": "android-10-x86-rel",
-          "project": "chromium-m144"
+          "project": "chromium-m146"
         }
       ],
       "mirroring_builder_group_and_names": [
         {
-          "builder": "android-x86-rel",
+          "builder": "android-10-x86-rel",
           "group": "tryserver.chromium.android"
         }
       ],

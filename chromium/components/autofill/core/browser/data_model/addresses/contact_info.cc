@@ -13,8 +13,10 @@
 #include <utility>
 
 #include "base/check_op.h"
+#include "base/containers/adapters.h"
 #include "base/i18n/char_iterator.h"
 #include "base/notreached.h"
+#include "base/strings/strcat.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -118,13 +120,14 @@ std::set<std::u16string> GetNamePartVariants(std::u16string_view name_part) {
       continue;
     }
     std::vector<std::u16string> new_variants;
+    new_variants.reserve(variants.size() * 2);
     for (const std::u16string& variant : variants) {
       new_variants.push_back(base::CollapseWhitespace(
           base::JoinString({variant, sub_name}, kSpace), true));
       new_variants.push_back(base::CollapseWhitespace(
           base::JoinString({variant, sub_name.substr(0, 1)}, kSpace), true));
     }
-    variants.insert(new_variants.begin(), new_variants.end());
+    variants.insert_range(base::RangeAsRvalues(std::move(new_variants)));
   }
 
   // As a common case, also add the variant that just concatenates all of the
@@ -142,6 +145,28 @@ std::set<std::u16string> GetNamePartVariants(std::u16string_view name_part) {
   return variants;
 }
 
+bool MatchesCjkVariant(std::u16string_view full_name,
+                       const std::set<std::u16string>& given_name_variants,
+                       const std::set<std::u16string>& family_name_variants) {
+  // CJK names are formatted like this: Family Name + Given Name
+  // Note: CJK names typically do not have middle names in this structure.
+  for (const std::u16string& family : family_name_variants) {
+    for (const std::u16string& given : given_name_variants) {
+      if (base::CollapseWhitespace(base::StrCat({family, given}), true) ==
+          full_name) {
+        return true;
+      }
+      // Typically CJK names do not have separators, but this case should be
+      // supported as well.
+      if (base::CollapseWhitespace(base::JoinString({family, given}, kSpace),
+                                   true) == full_name) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 // Returns true if `full_name_2` is a variant of `full_name_1`.
 //
 // This function generates all variations of `full_name_1` and returns true if
@@ -154,12 +179,15 @@ std::set<std::u16string> GetNamePartVariants(std::u16string_view name_part) {
 // Note: Expects that `full_name` is already normalized for comparison.
 bool IsNormalizedNameVariantOf(std::u16string_view full_name_1,
                                std::u16string_view full_name_2) {
+  // This early return is just an optimization, the rest of the logic should
+  // handle this case as well.
+  if (full_name_1 == full_name_2) {
+    return true;
+  }
+
   data_util::NameParts name_1_parts = data_util::SplitName(full_name_1);
 
   // Build the variants of full_name_1`s given, middle and family names.
-  //
-  // TODO(rogerm): Figure out whether or not we should break apart a compound
-  // family name into variants (crbug.com/619051)
   const std::set<std::u16string> given_name_variants =
       GetNamePartVariants(name_1_parts.given);
   const std::set<std::u16string> middle_name_variants =
@@ -167,6 +195,11 @@ bool IsNormalizedNameVariantOf(std::u16string_view full_name_1,
   const std::set<std::u16string> family_name_variants = {name_1_parts.family,
                                                          u""};
 
+  if (HasCjkNameCharacteristics(base::UTF16ToUTF8(full_name_1)) &&
+      MatchesCjkVariant(full_name_2, given_name_variants,
+                        family_name_variants)) {
+    return true;
+  }
   // Iterate over all full name variants of profile 1 and see if any of them
   // match the full name from profile 2.
   for (const std::u16string& given_name : given_name_variants) {
@@ -199,8 +232,6 @@ bool IsNormalizedNameVariantOf(std::u16string_view full_name_1,
   return false;
 }
 
-// TODO(crbug.com/359768803): Make this a private method of `NameInfo` and
-// remove the country code arguments.
 bool AreNameComponentsMergeable(const NameInfo& name_1,
                                 const AddressCountryCode country_code_1,
                                 const NameInfo& name_2,
@@ -243,14 +274,13 @@ bool AreNameComponentsMergeable(const NameInfo& name_1,
   return result;
 }
 
-// TODO(crbug.com/359768803): Make this a private method of `NameInfo` and
-// remove the country code arguments.
 void MergeNameComponents(const NameInfo& new_name_info,
                          const AddressCountryCode new_country_code,
                          const NameInfo& old_name_info,
                          const AddressCountryCode old_country_code,
                          const FieldType name_type,
-                         AddressComponent& name_component) {
+                         AddressComponent& name_component,
+                         bool newer_was_more_recently_used) {
   DCHECK(name_type == NAME_FULL || name_type == ALTERNATIVE_FULL_NAME);
 
   const AddressCountryCode common_country_code =
@@ -284,7 +314,8 @@ void MergeNameComponents(const NameInfo& new_name_info,
   }
   // Try to apply a direct merging.
   if (name_component.MergeWithComponent(
-          *new_name_info.GetRootForType(name_type))) {
+          *new_name_info.GetRootForType(name_type),
+          newer_was_more_recently_used)) {
     return;
   }
   // If the name in `old_profile` is a variant of `new_profile` use the one in
@@ -336,6 +367,7 @@ bool NameInfo::MergeNames(const NameInfo& new_name_info,
                           const AddressCountryCode new_country_code,
                           const NameInfo& old_name_info,
                           const AddressCountryCode old_country_code,
+                          bool newer_was_more_recently_used,
                           NameInfo& result_name_info) {
   DCHECK(AreNamesMergeable(new_name_info, new_country_code, old_name_info,
                            old_country_code));
@@ -350,14 +382,15 @@ bool NameInfo::MergeNames(const NameInfo& new_name_info,
   // TODO(crbug.com/375383124): Update `MergeNames` to provide meaningful
   // return values.
   MergeNameComponents(new_name_info, new_country_code, old_name_info,
-                      old_country_code, NAME_FULL, *name_full);
+                      old_country_code, NAME_FULL, *name_full,
+                      newer_was_more_recently_used);
   if (new_name_info.IsAlternativeNameSupported() &&
       base::FeatureList::IsEnabled(
           features::kAutofillSupportPhoneticNameForJP)) {
     alternative_full_name = std::make_unique<AlternativeFullName>();
     MergeNameComponents(new_name_info, new_country_code, old_name_info,
                         old_country_code, ALTERNATIVE_FULL_NAME,
-                        *alternative_full_name);
+                        *alternative_full_name, newer_was_more_recently_used);
   }
   result_name_info =
       NameInfo(std::move(name_full), std::move(alternative_full_name));
@@ -397,12 +430,14 @@ bool NameInfo::AreAlternativeNamesMergeable(
                                     country_code_2, ALTERNATIVE_FULL_NAME);
 }
 
-bool NameInfo::MergeStructuredName(const NameInfo& newer) {
-  if (name_->MergeWithComponent(*newer.name_)) {
+bool NameInfo::MergeStructuredName(const NameInfo& newer,
+                                   bool newer_was_more_recently_used) {
+  if (name_->MergeWithComponent(*newer.name_, newer_was_more_recently_used)) {
     if (IsAlternativeNameSupported() && newer.IsAlternativeNameSupported() &&
         base::FeatureList::IsEnabled(
             features::kAutofillSupportPhoneticNameForJP)) {
-      return alternative_name_->MergeWithComponent(*newer.alternative_name_);
+      return alternative_name_->MergeWithComponent(
+          *newer.alternative_name_, newer_was_more_recently_used);
     }
     return true;
   }

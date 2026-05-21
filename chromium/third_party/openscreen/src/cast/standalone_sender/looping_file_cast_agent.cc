@@ -266,12 +266,12 @@ void LoopingFileCastAgent::OnReceiverMessagingOpened(bool success) {
   }
 
   static constexpr char kLaunchMessageTemplate[] =
-      R"({"type":"LAUNCH", "requestId":%d, "appId":"%s", "language": "en-US",
-       "supportedAppTypes":["WEB"]})";
+      R"({{"type":"LAUNCH", "requestId":{}, "appId":"{}", "language": "en-US",
+       "supportedAppTypes":["WEB"]}})";
   router_.Send(*platform_remote_connection_,
                MakeSimpleUTF8Message(
                    kReceiverNamespace,
-                   StringPrintf(kLaunchMessageTemplate, next_request_id_++,
+                   StringFormat(kLaunchMessageTemplate, next_request_id_++,
                                 GetStreamingAppId())));
 }
 
@@ -289,7 +289,8 @@ void LoopingFileCastAgent::CreateAndStartSession() {
       &message_port_,
       remote_connection_->local_id,
       remote_connection_->peer_id,
-      connection_settings_->use_android_rtp_hack};
+      connection_settings_->use_android_rtp_hack,
+      connection_settings_->enable_dscp};
   current_session_ = std::make_unique<SenderSession>(std::move(config));
   current_session_->SetStatsClient(this);
   OSP_CHECK(!message_port_.source_id().empty());
@@ -352,7 +353,7 @@ void LoopingFileCastAgent::OnStatisticsUpdated(
   // Only log every 10 times, or roughly every 5 seconds.
   constexpr int kLoggingInterval = 10;
   if ((num_times_on_statistics_updated_called_++ % kLoggingInterval) == 0) {
-    OSP_VLOG << __func__ << ": updated_stats=" << updated_stats.ToString();
+    OSP_VLOG << __func__ << ": updated_stats=" << updated_stats;
   }
   last_reported_statistics_ = std::make_optional<SenderStats>(updated_stats);
 }
@@ -387,8 +388,7 @@ void LoopingFileCastAgent::Shutdown() {
     current_session_.reset();
 
     if (last_reported_statistics_) {
-      OSP_LOG_INFO << "Last reported statistics="
-                   << last_reported_statistics_->ToString();
+      OSP_LOG_INFO << "Last reported statistics=" << *last_reported_statistics_;
     }
   }
   OSP_CHECK(message_port_.source_id().empty());
@@ -413,8 +413,8 @@ void LoopingFileCastAgent::Shutdown() {
   if (!app_session_id_.empty()) {
     OSP_LOG_INFO << "Stopping the Cast Receiver's Mirroring App...";
     static constexpr char kStopMessageTemplate[] =
-        R"({"type":"STOP", "requestId":%d, "sessionId":"%s"})";
-    std::string stop_json = StringPrintf(
+        R"({{"type":"STOP", "requestId":{}, "sessionId":"{}"}})";
+    std::string stop_json = StringFormat(
         kStopMessageTemplate, next_request_id_++, app_session_id_.c_str());
     router_.Send(
         VirtualConnection{kPlatformSenderId, kPlatformReceiverId,

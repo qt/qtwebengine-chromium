@@ -44,6 +44,7 @@
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
+#include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
 #include "third_party/blink/renderer/platform/wtf/cross_thread_functional.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
 #include "third_party/blink/renderer/platform/wtf/text/strcat.h"
@@ -104,6 +105,19 @@ OfflineAudioContext* OfflineAudioContext::Create(
     return nullptr;
   }
 
+  if (!audio_utilities::IsValidRenderQuantumSize(render_quantum_frames,
+                                                 sample_rate)) {
+    exception_state.ThrowDOMException(
+        DOMExceptionCode::kNotSupportedError,
+        ExceptionMessages::IndexOutsideRange(
+            "renderSizeHint", render_quantum_frames,
+            audio_utilities::MinRenderQuantumSize(),
+            ExceptionMessages::kInclusiveBound,
+            audio_utilities::MaxRenderQuantumSize(sample_rate),
+            ExceptionMessages::kInclusiveBound));
+    return nullptr;
+  }
+
   SCOPED_UMA_HISTOGRAM_TIMER("WebAudio.OfflineAudioContext.CreateTime");
   OfflineAudioContext* audio_context =
       MakeGarbageCollected<OfflineAudioContext>(
@@ -133,11 +147,12 @@ OfflineAudioContext* OfflineAudioContext::Create(
     const OfflineAudioContextOptions* options,
     ExceptionState& exception_state) {
   uint32_t render_quantum_frames = 128;
-  if (RuntimeEnabledFeatures::WebAudioConfigurableRenderQuantumEnabled() &&
+  if (RuntimeEnabledFeatures::WebAudioConfigurableRenderQuantumEnabled(
+          context) &&
       options->hasRenderSizeHint()) {
+    UseCounter::Count(context, WebFeature::kWebAudioRenderSizeHint);
     if (options->renderSizeHint()->IsUnsignedLong()) {
-      render_quantum_frames = audio_utilities::GetClampedRenderQuantumFrames(
-          options->renderSizeHint()->GetAsUnsignedLong());
+      render_quantum_frames = options->renderSizeHint()->GetAsUnsignedLong();
     }
   }
   return Create(context, options->numberOfChannels(), options->length(),

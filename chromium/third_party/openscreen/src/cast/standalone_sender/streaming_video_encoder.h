@@ -90,7 +90,7 @@ class StreamingVideoEncoder {
   // For full details on how to use these stats in an end-to-end system, see:
   // https://www.chromium.org/developers/design-documents/
   //     auto-throttled-screen-capture-and-mirroring
-  // and https://source.chromium.org/chromium/chromium/src/+/master:
+  // and https://source.chromium.org/chromium/chromium/src/+/main:
   //     media/cast/sender/performance_metrics_overlay.h
   struct Stats {
     // The Cast Streaming ID that was assigned to the frame.

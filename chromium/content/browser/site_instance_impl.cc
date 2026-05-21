@@ -4,11 +4,11 @@
 
 #include "content/browser/site_instance_impl.h"
 
+#include <algorithm>
 #include <string>
 #include <tuple>
 
 #include "base/check_is_test.h"
-#include "base/containers/contains.h"
 #include "base/debug/crash_logging.h"
 #include "base/debug/dump_without_crashing.h"
 #include "base/no_destructor.h"
@@ -95,7 +95,7 @@ class SiteInstanceImpl::DefaultSiteInstanceState {
   }
 
   bool ContainsSite(const GURL& site_url) {
-    return base::Contains(default_site_url_set_, site_url);
+    return default_site_url_set_.contains(site_url);
   }
 
  private:
@@ -339,8 +339,8 @@ scoped_refptr<SiteInstanceImpl> SiteInstanceImpl::CreateForTesting(
 // static
 bool SiteInstanceImpl::ShouldAssignSiteForUrlInfo(const UrlInfo& url_info) {
   // Only empty document schemes can leave SiteInstances unassigned.
-  if (!base::Contains(url::GetEmptyDocumentSchemes(),
-                      url_info.url.GetScheme())) {
+  if (!std::ranges::contains(url::GetEmptyDocumentSchemes(),
+                             url_info.url.GetScheme())) {
     return true;
   }
 
@@ -1514,7 +1514,8 @@ void SiteInstanceImpl::LockProcessIfNeeded() {
     if (process_lock.is_invalid()) {
       auto new_process_lock = ProcessLock::CreateAllowAnySite(
           storage_partition->GetConfig(), GetWebExposedIsolationInfo(),
-          /*cross_origin_isolation_key=*/std::nullopt);
+          /*cross_origin_isolation_key=*/std::nullopt,
+          GetBrowserContext()->UniqueId());
       process->SetProcessLock(GetIsolationContext(), new_process_lock);
     } else {
       CHECK(process_lock.AllowsAnySite())
@@ -1571,7 +1572,8 @@ void SiteInstanceImpl::LockProcessIfNeeded() {
       // all documents in the Browsing Instance with COOP and COEP.
       auto new_process_lock = ProcessLock::CreateAllowAnySite(
           storage_partition->GetConfig(), GetWebExposedIsolationInfo(),
-          /*cross_origin_isolation_key=*/std::nullopt);
+          /*cross_origin_isolation_key=*/std::nullopt,
+          GetBrowserContext()->UniqueId());
       process->SetProcessLock(GetIsolationContext(), new_process_lock);
     } else {
       CHECK(process_lock.AllowsAnySite())

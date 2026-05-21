@@ -1092,10 +1092,8 @@ void SurfaceAggregator::EmitSurfaceContent(
           dest_pass->CreateAndAppendDrawQuad<AggregatedRenderPassDrawQuad>();
       quad->SetNew(shared_quad_state, quad_rect, quad_visible_rect,
                    remapped_pass_id, kInvalidResourceId, gfx::RectF(),
-                   gfx::Size(), gfx::Vector2dF(1.0f, 1.0f), gfx::PointF(),
-                   tex_coord_rect,
-                   /*force_anti_aliasing_off=*/false,
-                   /* backdrop_filter_quality*/ 1.0f);
+                   gfx::Size(), tex_coord_rect,
+                   /*force_anti_aliasing_off=*/false);
     }
   }
 
@@ -1302,10 +1300,8 @@ void SurfaceAggregator::AddRenderPassHelper(
       render_pass->CreateAndAppendDrawQuad<AggregatedRenderPassDrawQuad>();
   quad->SetNew(shared_quad_state, current_output_rect, current_output_rect,
                quad_pass_id, kInvalidResourceId, gfx::RectF(), gfx::Size(),
-               gfx::Vector2dF(1.0f, 1.0f), gfx::PointF(),
                gfx::RectF(current_output_rect),
-               /*force_anti_aliasing_off=*/false,
-               /*backdrop_filter_quality*/ 1.0f);
+               /*force_anti_aliasing_off=*/false);
   dest_pass_list_->push_back(std::move(render_pass));
 }
 
@@ -1868,8 +1864,6 @@ gfx::Rect SurfaceAggregator::PrewalkRenderPass(
       // size of the RenderPassDrawQuad rect. Therefore when we find the damage
       // under the quad intersects quad render pass output rect, we extend the
       // damage rect to include the rpdq->rect.
-      // TODO(crbug.com/40244221): Work out how to correctly compute damage when
-      // offset backdrop filters may be involved.
 
       // For the pixel-moving foreground filters, all effects can be expanded
       // outside the RenderPassDrawQuad rect based on filter pixel movement.

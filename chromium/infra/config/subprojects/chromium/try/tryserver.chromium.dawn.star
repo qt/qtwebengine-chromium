@@ -34,6 +34,7 @@ try_.defaults.set(
         "chromium_tests.resultdb_module": 100,
     },
     service_account = gpu.try_.SERVICE_ACCOUNT,
+    siso_keep_going = siso.KEEP_GOING,
     siso_project = siso.project.DEFAULT_UNTRUSTED,
     siso_remote_jobs = siso.remote_jobs.LOW_JOBS_FOR_CQ,
 )
@@ -569,20 +570,6 @@ try_.builder(
         "ci/Dawn Linux x64 Release (Intel UHD 770)",
     ],
     gn_args = "ci/Dawn Linux x64 Builder",
-    pool = "luci.chromium.gpu.try",
-    builderless = True,
-    max_concurrent_builds = 1,
-    test_presentation = resultdb.test_presentation(
-        grouping_keys = ["status", "v.test_suite", "v.gpu"],
-    ),
-)
-
-try_.builder(
-    name = "dawn-try-linux-tsan-rel",
-    mirrors = [
-        "ci/Dawn Linux TSAN Release",
-    ],
-    gn_args = "ci/Dawn Linux TSAN Release",
     pool = "luci.chromium.gpu.try",
     builderless = True,
     max_concurrent_builds = 1,

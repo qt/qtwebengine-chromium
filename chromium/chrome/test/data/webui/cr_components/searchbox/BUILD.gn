@@ -16,9 +16,11 @@ build_webui_tests("build") {
     "searchbox_test.ts",
     "searchbox_test_utils.ts",
     "test_searchbox_browser_proxy.ts",
+    "placeholder_text_cycler_test.ts",
   ]
 
   ts_tsconfig_base = "tsconfig_base.json"
+  ts_composite = true
 
   ts_deps = [
     "//chrome/browser/resources/new_tab_page:build_ts",

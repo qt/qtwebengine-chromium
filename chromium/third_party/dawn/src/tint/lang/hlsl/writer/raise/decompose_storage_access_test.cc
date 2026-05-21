@@ -240,7 +240,7 @@ TEST_F(HlslWriterDecomposeStorageAccessTest, AccessRwByteAddressBuffer) {
 
     auto* sb = ty.Struct(mod.symbols.New("SB"), {
                                                     {mod.symbols.New("a"), ty.i32()},
-                                                    {mod.symbols.New("b"), ty.vec3<f32>()},
+                                                    {mod.symbols.New("b"), ty.vec3f()},
                                                 });
 
     auto* var = b.Var("v", storage, sb, core::Access::kReadWrite);
@@ -250,8 +250,8 @@ TEST_F(HlslWriterDecomposeStorageAccessTest, AccessRwByteAddressBuffer) {
     auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kFragment);
     b.Append(func->Block(), [&] {
         b.Let("a", b.Load(b.Access(ty.ptr(storage, ty.i32(), core::Access::kReadWrite), var, 0_u)));
-        b.Let("b", b.Load(b.Access(ty.ptr(storage, ty.vec3<f32>(), core::Access::kReadWrite), var,
-                                   1_u)));
+        b.Let("b",
+              b.Load(b.Access(ty.ptr(storage, ty.vec3f(), core::Access::kReadWrite), var, 1_u)));
         b.Return(func);
     });
 
@@ -1023,7 +1023,7 @@ TEST_F(HlslWriterDecomposeStorageAccessTest, ComplexStaticAccessChain) {
 
     auto* S1 = ty.Struct(mod.symbols.New("S1"), {
                                                     {mod.symbols.New("a"), ty.i32()},
-                                                    {mod.symbols.New("b"), ty.vec3<f32>()},
+                                                    {mod.symbols.New("b"), ty.vec3f()},
                                                     {mod.symbols.New("c"), ty.i32()},
                                                 });
     auto* S2 = ty.Struct(mod.symbols.New("S2"), {
@@ -1134,7 +1134,7 @@ TEST_F(HlslWriterDecomposeStorageAccessTest, ComplexDynamicAccessChain) {
 
     auto* S1 = ty.Struct(mod.symbols.New("S1"), {
                                                     {mod.symbols.New("a"), ty.i32()},
-                                                    {mod.symbols.New("b"), ty.vec3<f32>()},
+                                                    {mod.symbols.New("b"), ty.vec3f()},
                                                     {mod.symbols.New("c"), ty.i32()},
                                                 });
     auto* S2 = ty.Struct(mod.symbols.New("S2"), {
@@ -1260,7 +1260,7 @@ TEST_F(HlslWriterDecomposeStorageAccessTest, ComplexDynamicAccessChainDynamicAcc
 
     auto* S1 = ty.Struct(mod.symbols.New("S1"), {
                                                     {mod.symbols.New("a"), ty.i32()},
-                                                    {mod.symbols.New("b"), ty.vec3<f32>()},
+                                                    {mod.symbols.New("b"), ty.vec3f()},
                                                     {mod.symbols.New("c"), ty.i32()},
                                                 });
     auto* S2 = ty.Struct(mod.symbols.New("S2"), {
@@ -1369,7 +1369,7 @@ TEST_F(HlslWriterDecomposeStorageAccessTest, StorageAtomicStore) {
     };
 
     auto* sb = ty.Struct(mod.symbols.New("SB"), {
-                                                    {mod.symbols.New("padding"), ty.vec4<f32>()},
+                                                    {mod.symbols.New("padding"), ty.vec4f()},
                                                     {mod.symbols.New("a"), ty.atomic<i32>()},
                                                     {mod.symbols.New("b"), ty.atomic<u32>()},
                                                 });
@@ -1438,7 +1438,7 @@ TEST_F(HlslWriterDecomposeStorageAccessTest, StorageAtomicStoreDynamicAccessChai
 
     auto* S1 =
         ty.Struct(mod.symbols.New("SB"), {
-                                             {mod.symbols.New("padding"), ty.vec4<f32>()},
+                                             {mod.symbols.New("padding"), ty.vec4f()},
                                              {mod.symbols.New("a"), ty.array(ty.atomic<i32>(), 3)},
                                          });
     auto* S2 = ty.Struct(mod.symbols.New("S2"), {
@@ -1452,6 +1452,7 @@ TEST_F(HlslWriterDecomposeStorageAccessTest, StorageAtomicStoreDynamicAccessChai
     auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kFragment);
     auto index = b.FunctionParam(ty.u32());
     index->SetLocation(0);
+    index->SetInterpolation(core::Interpolation{core::InterpolationType::kFlat});
     func->SetParams({index});
     b.Append(func->Block(), [&] {
         auto* access = b.Access(ty.ptr<storage>(ty.atomic<i32>()), var, 0_u, index, 1_u, index);
@@ -1473,7 +1474,7 @@ $B1: {  # root
   %v:ptr<storage, S2, read_write> = var undef @binding_point(0, 0)
 }
 
-%foo = @fragment func(%3:u32 [@location(0)]):void {
+%foo = @fragment func(%3:u32 [@location(0), @interpolate(flat)]):void {
   $B2: {
     %4:ptr<storage, atomic<i32>, read_write> = access %v, 0u, %3, 1u, %3
     %5:void = atomicStore %4, 123i
@@ -1497,7 +1498,7 @@ $B1: {  # root
   %v:hlsl.byte_address_buffer<read_write> = var undef @binding_point(0, 0)
 }
 
-%foo = @fragment func(%3:u32 [@location(0)]):void {
+%foo = @fragment func(%3:u32 [@location(0), @interpolate(flat)]):void {
   $B2: {
     %4:u32 = mul %3, 32u
     %5:u32 = mul %3, 4u
@@ -1569,7 +1570,7 @@ TEST_F(HlslWriterDecomposeStorageAccessTest, StorageAtomicLoad) {
     };
 
     auto* sb = ty.Struct(mod.symbols.New("SB"), {
-                                                    {mod.symbols.New("padding"), ty.vec4<f32>()},
+                                                    {mod.symbols.New("padding"), ty.vec4f()},
                                                     {mod.symbols.New("a"), ty.atomic<i32>()},
                                                     {mod.symbols.New("b"), ty.atomic<u32>()},
                                                 });
@@ -1641,7 +1642,7 @@ TEST_F(HlslWriterDecomposeStorageAccessTest, StorageAtomicLoadDynamicAccessChain
 
     auto* S1 =
         ty.Struct(mod.symbols.New("SB"), {
-                                             {mod.symbols.New("padding"), ty.vec4<f32>()},
+                                             {mod.symbols.New("padding"), ty.vec4f()},
                                              {mod.symbols.New("a"), ty.array(ty.atomic<i32>(), 3)},
                                          });
     auto* S2 = ty.Struct(mod.symbols.New("S2"), {
@@ -1655,6 +1656,7 @@ TEST_F(HlslWriterDecomposeStorageAccessTest, StorageAtomicLoadDynamicAccessChain
     auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kFragment);
     auto index = b.FunctionParam(ty.u32());
     index->SetLocation(0);
+    index->SetInterpolation(core::Interpolation{core::InterpolationType::kFlat});
     func->SetParams({index});
     b.Append(func->Block(), [&] {
         auto* access = b.Access(ty.ptr<storage>(ty.atomic<i32>()), var, 0_u, index, 1_u, index);
@@ -1676,7 +1678,7 @@ $B1: {  # root
   %v:ptr<storage, S2, read_write> = var undef @binding_point(0, 0)
 }
 
-%foo = @fragment func(%3:u32 [@location(0)]):void {
+%foo = @fragment func(%3:u32 [@location(0), @interpolate(flat)]):void {
   $B2: {
     %4:ptr<storage, atomic<i32>, read_write> = access %v, 0u, %3, 1u, %3
     %5:i32 = atomicLoad %4
@@ -1701,7 +1703,7 @@ $B1: {  # root
   %v:hlsl.byte_address_buffer<read_write> = var undef @binding_point(0, 0)
 }
 
-%foo = @fragment func(%3:u32 [@location(0)]):void {
+%foo = @fragment func(%3:u32 [@location(0), @interpolate(flat)]):void {
   $B2: {
     %4:u32 = mul %3, 32u
     %5:u32 = mul %3, 4u
@@ -1778,7 +1780,7 @@ TEST_F(HlslWriterDecomposeStorageAccessTest, StorageAtomicSub) {
     };
 
     auto* sb = ty.Struct(mod.symbols.New("SB"), {
-                                                    {mod.symbols.New("padding"), ty.vec4<f32>()},
+                                                    {mod.symbols.New("padding"), ty.vec4f()},
                                                     {mod.symbols.New("a"), ty.atomic<i32>()},
                                                     {mod.symbols.New("b"), ty.atomic<u32>()},
                                                 });
@@ -1851,7 +1853,7 @@ TEST_F(HlslWriterDecomposeStorageAccessTest, StorageAtomicSubDynamicAccessChain)
 
     auto* S1 =
         ty.Struct(mod.symbols.New("SB"), {
-                                             {mod.symbols.New("padding"), ty.vec4<f32>()},
+                                             {mod.symbols.New("padding"), ty.vec4f()},
                                              {mod.symbols.New("a"), ty.array(ty.atomic<i32>(), 3)},
                                          });
     auto* S2 = ty.Struct(mod.symbols.New("S2"), {
@@ -1865,6 +1867,7 @@ TEST_F(HlslWriterDecomposeStorageAccessTest, StorageAtomicSubDynamicAccessChain)
     auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kFragment);
     auto index = b.FunctionParam(ty.u32());
     index->SetLocation(0);
+    index->SetInterpolation(core::Interpolation{core::InterpolationType::kFlat});
     func->SetParams({index});
     b.Append(func->Block(), [&] {
         auto* access = b.Access(ty.ptr<storage>(ty.atomic<i32>()), var, 0_u, index, 1_u, index);
@@ -1886,7 +1889,7 @@ $B1: {  # root
   %v:ptr<storage, S2, read_write> = var undef @binding_point(0, 0)
 }
 
-%foo = @fragment func(%3:u32 [@location(0)]):void {
+%foo = @fragment func(%3:u32 [@location(0), @interpolate(flat)]):void {
   $B2: {
     %4:ptr<storage, atomic<i32>, read_write> = access %v, 0u, %3, 1u, %3
     %5:i32 = atomicSub %4, 123i
@@ -1911,7 +1914,7 @@ $B1: {  # root
   %v:hlsl.byte_address_buffer<read_write> = var undef @binding_point(0, 0)
 }
 
-%foo = @fragment func(%3:u32 [@location(0)]):void {
+%foo = @fragment func(%3:u32 [@location(0), @interpolate(flat)]):void {
   $B2: {
     %4:u32 = mul %3, 32u
     %5:u32 = mul %3, 4u
@@ -1990,7 +1993,7 @@ TEST_F(HlslWriterDecomposeStorageAccessTest, StorageAtomicCompareExchangeWeak) {
     };
 
     auto* sb = ty.Struct(mod.symbols.New("SB"), {
-                                                    {mod.symbols.New("padding"), ty.vec4<f32>()},
+                                                    {mod.symbols.New("padding"), ty.vec4f()},
                                                     {mod.symbols.New("a"), ty.atomic<i32>()},
                                                     {mod.symbols.New("b"), ty.atomic<u32>()},
                                                 });
@@ -2076,7 +2079,7 @@ TEST_F(HlslWriterDecomposeStorageAccessTest, StorageAtomicCompareExchangeWeakDyn
 
     auto* S1 =
         ty.Struct(mod.symbols.New("SB"), {
-                                             {mod.symbols.New("padding"), ty.vec4<f32>()},
+                                             {mod.symbols.New("padding"), ty.vec4f()},
                                              {mod.symbols.New("a"), ty.array(ty.atomic<i32>(), 3)},
                                          });
     auto* S2 = ty.Struct(mod.symbols.New("S2"), {
@@ -2090,6 +2093,7 @@ TEST_F(HlslWriterDecomposeStorageAccessTest, StorageAtomicCompareExchangeWeakDyn
     auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kFragment);
     auto index = b.FunctionParam(ty.u32());
     index->SetLocation(0);
+    index->SetInterpolation(core::Interpolation{core::InterpolationType::kFlat});
     func->SetParams({index});
     b.Append(func->Block(), [&] {
         auto* access = b.Access(ty.ptr<storage>(ty.atomic<i32>()), var, 0_u, index, 1_u, index);
@@ -2117,7 +2121,7 @@ $B1: {  # root
   %v:ptr<storage, S2, read_write> = var undef @binding_point(0, 0)
 }
 
-%foo = @fragment func(%3:u32 [@location(0)]):void {
+%foo = @fragment func(%3:u32 [@location(0), @interpolate(flat)]):void {
   $B2: {
     %4:ptr<storage, atomic<i32>, read_write> = access %v, 0u, %3, 1u, %3
     %5:__atomic_compare_exchange_result_i32 = atomicCompareExchangeWeak %4, 123i, 345i
@@ -2147,7 +2151,7 @@ $B1: {  # root
   %v:hlsl.byte_address_buffer<read_write> = var undef @binding_point(0, 0)
 }
 
-%foo = @fragment func(%3:u32 [@location(0)]):void {
+%foo = @fragment func(%3:u32 [@location(0), @interpolate(flat)]):void {
   $B2: {
     %4:u32 = mul %3, 32u
     %5:u32 = mul %3, 4u
@@ -2251,7 +2255,7 @@ TEST_P(DecomposeBuiltinAtomic, IndirectAccess) {
     auto params = GetParam();
 
     auto* sb = ty.Struct(mod.symbols.New("SB"), {
-                                                    {mod.symbols.New("padding"), ty.vec4<f32>()},
+                                                    {mod.symbols.New("padding"), ty.vec4f()},
                                                     {mod.symbols.New("a"), ty.atomic<i32>()},
                                                     {mod.symbols.New("b"), ty.atomic<u32>()},
                                                 });
@@ -2394,6 +2398,7 @@ TEST_P(DecomposeBuiltinAtomic, DynamicAccessChain) {
     auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kFragment);
     auto index = b.FunctionParam(ty.u32());
     index->SetLocation(0);
+    index->SetInterpolation(core::Interpolation{core::InterpolationType::kFlat});
     func->SetParams({index});
     b.Append(func->Block(), [&] {
         auto* access = b.Access(ty.ptr<storage>(ty.atomic<u32>()), var, 0_u, index, 0_u, index);
@@ -2414,7 +2419,7 @@ $B1: {  # root
   %v:ptr<storage, S2, read_write> = var undef @binding_point(0, 0)
 }
 
-%foo = @fragment func(%3:u32 [@location(0)]):void {
+%foo = @fragment func(%3:u32 [@location(0), @interpolate(flat)]):void {
   $B2: {
     %4:ptr<storage, atomic<u32>, read_write> = access %v, 0u, %3, 0u, %3
     %5:u32 = )" +
@@ -2439,7 +2444,7 @@ $B1: {  # root
   %v:hlsl.byte_address_buffer<read_write> = var undef @binding_point(0, 0)
 }
 
-%foo = @fragment func(%3:u32 [@location(0)]):void {
+%foo = @fragment func(%3:u32 [@location(0), @interpolate(flat)]):void {
   $B2: {
     %4:u32 = mul %3, 12u
     %5:u32 = mul %3, 4u
@@ -2723,7 +2728,7 @@ TEST_F(HlslWriterDecomposeStorageAccessTest, StoreVector) {
     b.ir.root_block->Append(var);
     auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kFragment);
     b.Append(func->Block(), [&] {
-        b.Store(var, b.Composite(ty.vec3<f32>(), 2_f, 3_f, 4_f));
+        b.Store(var, b.Composite(ty.vec3f(), 2_f, 3_f, 4_f));
         b.Return(func);
     });
 
@@ -2769,7 +2774,7 @@ TEST_F(HlslWriterDecomposeStorageAccessTest, StoreVectorF16) {
     b.ir.root_block->Append(var);
     auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kFragment);
     b.Append(func->Block(), [&] {
-        b.Store(var, b.Composite(ty.vec3<f16>(), 2_h, 3_h, 4_h));
+        b.Store(var, b.Composite(ty.vec3h(), 2_h, 3_h, 4_h));
 
         b.Return(func);
     });
@@ -3499,7 +3504,7 @@ TEST_F(HlslWriterDecomposeStorageAccessTest, StoreStruct) {
 
     auto* Inner = ty.Struct(mod.symbols.New("Inner"), {
                                                           {mod.symbols.New("s"), ty.f32()},
-                                                          {mod.symbols.New("t"), ty.vec3<f32>()},
+                                                          {mod.symbols.New("t"), ty.vec3f()},
                                                       });
     auto* Outer = ty.Struct(mod.symbols.New("Outer"), {
                                                           {mod.symbols.New("x"), ty.f32()},
@@ -4115,7 +4120,7 @@ TEST_F(HlslWriterDecomposeStorageAccessTest, ArrayLengthMultipleStorageBuffers) 
     auto* SB2 = ty.Struct(mod.symbols.New("SB2"),
                           {
                               {mod.symbols.New("x"), ty.i32()},
-                              {mod.symbols.New("arr2"), ty.runtime_array(ty.vec4<f32>())},
+                              {mod.symbols.New("arr2"), ty.runtime_array(ty.vec4f())},
                           });
     auto* sb1 = b.Var("sb1", ty.ptr(storage, SB1));
     sb1->SetBindingPoint(0, 0);
@@ -4223,7 +4228,7 @@ TEST_F(HlslWriterDecomposeStorageAccessTest, AccessChainReused) {
 
     auto* sb = ty.Struct(mod.symbols.New("SB"), {
                                                     {mod.symbols.New("a"), ty.i32()},
-                                                    {mod.symbols.New("b"), ty.vec3<f32>()},
+                                                    {mod.symbols.New("b"), ty.vec3f()},
                                                 });
 
     auto* var = b.Var("v", storage, sb, core::Access::kReadWrite);
@@ -4232,7 +4237,7 @@ TEST_F(HlslWriterDecomposeStorageAccessTest, AccessChainReused) {
 
     auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kFragment);
     b.Append(func->Block(), [&] {
-        auto* x = b.Access(ty.ptr(storage, ty.vec3<f32>(), core::Access::kReadWrite), var, 1_u);
+        auto* x = b.Access(ty.ptr(storage, ty.vec3f(), core::Access::kReadWrite), var, 1_u);
         b.Let("b", b.LoadVectorElement(x, 1_u));
         b.Let("c", b.LoadVectorElement(x, 2_u));
         b.Return(func);

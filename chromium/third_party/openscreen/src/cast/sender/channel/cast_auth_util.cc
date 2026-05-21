@@ -18,7 +18,6 @@
 #include "platform/api/time.h"
 #include "platform/base/error.h"
 #include "util/osp_logging.h"
-#include "util/span_util.h"
 #include "util/string_util.h"
 
 namespace openscreen::cast {

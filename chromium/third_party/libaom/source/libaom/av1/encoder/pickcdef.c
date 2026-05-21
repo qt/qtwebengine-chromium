@@ -732,7 +732,7 @@ static inline void cdef_params_init(const YV12_BUFFER_CONFIG *frame,
 }
 
 void av1_pick_cdef_from_qp(AV1_COMMON *const cm, int skip_cdef,
-                           int is_screen_content) {
+                           int is_screen_content, bool avoid_uv_cdef) {
   const int bd = cm->seq_params->bit_depth;
   const int q =
       av1_ac_quant_QTX(cm->quant_params.base_qindex, 0, bd) >> (bd - 8);
@@ -796,7 +796,8 @@ void av1_pick_cdef_from_qp(AV1_COMMON *const cm, int skip_cdef,
   cdef_info->cdef_strengths[0] =
       predicted_y_f1 * CDEF_SEC_STRENGTHS + predicted_y_f2;
   cdef_info->cdef_uv_strengths[0] =
-      predicted_uv_f1 * CDEF_SEC_STRENGTHS + predicted_uv_f2;
+      avoid_uv_cdef ? 0
+                    : predicted_uv_f1 * CDEF_SEC_STRENGTHS + predicted_uv_f2;
 
   // mbmi->cdef_strength is already set in the encoding stage. We don't need to
   // set it again here.
@@ -824,15 +825,16 @@ void av1_pick_cdef_from_qp(AV1_COMMON *const cm, int skip_cdef,
 void av1_cdef_search(AV1_COMP *cpi) {
   AV1_COMMON *cm = &cpi->common;
   CDEF_CONTROL cdef_control = cpi->oxcf.tool_cfg.cdef_control;
+  const bool apply_adaptive_cdef =
+      cdef_control == CDEF_ADAPTIVE && cpi->oxcf.mode == ALLINTRA &&
+      (cpi->oxcf.rc_cfg.mode == AOM_Q || cpi->oxcf.rc_cfg.mode == AOM_CQ);
 
   assert(cdef_control != CDEF_NONE);
   // For CDEF_ADAPTIVE, turning off CDEF around qindex 32 was best for still
   // pictures
   if ((cdef_control == CDEF_REFERENCE &&
        cpi->ppi->rtc_ref.non_reference_frame) ||
-      (cdef_control == CDEF_ADAPTIVE && cpi->oxcf.mode == ALLINTRA &&
-       (cpi->oxcf.rc_cfg.mode == AOM_Q || cpi->oxcf.rc_cfg.mode == AOM_CQ) &&
-       cpi->oxcf.rc_cfg.cq_level <= 32)) {
+      (apply_adaptive_cdef && cpi->oxcf.rc_cfg.cq_level <= 32)) {
     CdefInfo *const cdef_info = &cm->cdef_info;
     cdef_info->nb_cdef_strengths = 1;
     cdef_info->cdef_bits = 0;
@@ -844,7 +846,8 @@ void av1_cdef_search(AV1_COMP *cpi) {
   // Indicate if external RC is used for testing
   const int rtc_ext_rc = cpi->rc.rtc_external_ratectrl;
   if (rtc_ext_rc) {
-    av1_pick_cdef_from_qp(cm, 0, 0);
+    av1_pick_cdef_from_qp(cm, /*skip_cdef=*/0, /*is_screen_content=*/0,
+                          /*avoid_uv_cdef=*/false);
     return;
   }
   CDEF_PICK_METHOD pick_method = cpi->sf.lpf_sf.cdef_pick_method;
@@ -854,8 +857,14 @@ void av1_cdef_search(AV1_COMP *cpi) {
             AOMMAX(cpi->sf.rt_sf.screen_content_cdef_filter_qindex_thresh,
                    cpi->rc.best_quality + 5) &&
         cpi->oxcf.tune_cfg.content == AOM_CONTENT_SCREEN;
-    av1_pick_cdef_from_qp(cm, cpi->sf.rt_sf.skip_cdef_sb,
-                          use_screen_content_model);
+
+    // For adaptive CDEF, do not apply CDEF to chroma channels.
+    // This is done to reduce decode time, as CDEF is a relatively-expensive
+    // filter to compute.
+    const bool avoid_uv_cdef = apply_adaptive_cdef;
+
+    av1_pick_cdef_from_qp(cm, cpi->sf.rt_sf.skip_cdef_sb != 0,
+                          use_screen_content_model, avoid_uv_cdef);
     return;
   }
   const CommonModeInfoParams *const mi_params = &cm->mi_params;
@@ -898,7 +907,25 @@ void av1_cdef_search(AV1_COMP *cpi) {
   const int max_signaling_bits =
       joint_strengths == 1 ? 0 : get_msb(joint_strengths - 1) + 1;
   int rdmult = cpi->td.mb.rdmult;
-  for (int i = 0; i <= 3; i++) {
+
+  // For adaptive CDEF, reduce primary and secondary CDEF strengths for
+  // qindexes up to 220.
+  const bool should_reduce_cdef_strengths =
+      apply_adaptive_cdef && cpi->oxcf.rc_cfg.cq_level <= 220;
+  // For adaptive CDEF with strength reduction, zero out CDEF strengths with
+  // low values (luma and/or chroma). This is done to reduce decode time, as
+  // CDEF is a relatively-expensive filter to compute.
+  const bool should_zero_cdef_strengths =
+      should_reduce_cdef_strengths && cpi->sf.lpf_sf.zero_low_cdef_strengths;
+  // If running adaptive CDEF with strength zeroing, let search derive at least
+  // two CDEF strengths (i.e. at least 1 CDEF signaling bit), unless search was
+  // explicitly set to search for 1 strength only (i.e. 0 CDEF signaling bits).
+  // Doing so will help find opportunities to zero out low strengths to reduce
+  // overall decode time.
+  const int min_signaling_bits =
+      (should_zero_cdef_strengths && max_signaling_bits > 0) ? 1 : 0;
+
+  for (int i = min_signaling_bits; i <= 3; i++) {
     if (i > max_signaling_bits) break;
     int best_lev0[CDEF_MAX_STRENGTHS] = { 0 };
     int best_lev1[CDEF_MAX_STRENGTHS] = { 0 };
@@ -948,18 +975,19 @@ void av1_cdef_search(AV1_COMP *cpi) {
   if (fast) {
     for (int j = 0; j < cdef_info->nb_cdef_strengths; j++) {
       const int luma_strength = cdef_info->cdef_strengths[j];
-      const int chroma_strength = cdef_info->cdef_uv_strengths[j];
       int pri_strength, sec_strength;
 
       STORE_CDEF_FILTER_STRENGTH(cdef_info->cdef_strengths[j], pick_method,
                                  luma_strength);
-      STORE_CDEF_FILTER_STRENGTH(cdef_info->cdef_uv_strengths[j], pick_method,
-                                 chroma_strength);
+      if (num_planes > 1) {
+        const int chroma_strength = cdef_info->cdef_uv_strengths[j];
+        STORE_CDEF_FILTER_STRENGTH(cdef_info->cdef_uv_strengths[j], pick_method,
+                                   chroma_strength);
+      }
     }
   }
 
-  // For CDEF_ADAPTIVE, set primary and secondary CDEF at reduced strength for
-  // qindexes 33 through 220.
+  // Perform CDEF strength reduction.
   // Note 1: for odd strengths, the 0.5 discarded by ">> 1" is a significant
   // part of the strength when the strength is small, and because there are
   // few strength levels, odd strengths are reduced significantly more than a
@@ -972,27 +1000,54 @@ void av1_cdef_search(AV1_COMP *cpi) {
   // resulting SSIMULACRA 2 scores were either exactly the same (at cpu-used 6),
   // or within noise level (at cpu-used 3). Given that there were no discernible
   // improvements, this special mapping was left out for reduced strength.
-  if (cdef_control == CDEF_ADAPTIVE && cpi->oxcf.mode == ALLINTRA &&
-      (cpi->oxcf.rc_cfg.mode == AOM_Q || cpi->oxcf.rc_cfg.mode == AOM_CQ) &&
-      cpi->oxcf.rc_cfg.cq_level <= 220) {
+  if (should_reduce_cdef_strengths) {
     for (int j = 0; j < cdef_info->nb_cdef_strengths; j++) {
       const int luma_strength = cdef_info->cdef_strengths[j];
-      const int chroma_strength = cdef_info->cdef_uv_strengths[j];
-
       const int new_pri_luma_strength =
           (luma_strength / CDEF_SEC_STRENGTHS) >> 1;
       const int new_sec_luma_strength =
           (luma_strength % CDEF_SEC_STRENGTHS) >> 1;
-      const int new_pri_chroma_strength =
-          (chroma_strength / CDEF_SEC_STRENGTHS) >> 1;
-      const int new_sec_chroma_strength =
-          (chroma_strength % CDEF_SEC_STRENGTHS) >> 1;
 
       cdef_info->cdef_strengths[j] =
           new_pri_luma_strength * CDEF_SEC_STRENGTHS + new_sec_luma_strength;
-      cdef_info->cdef_uv_strengths[j] =
-          new_pri_chroma_strength * CDEF_SEC_STRENGTHS +
-          new_sec_chroma_strength;
+
+      int new_pri_chroma_strength;
+      int new_sec_chroma_strength;
+
+      if (num_planes > 1) {
+        const int chroma_strength = cdef_info->cdef_uv_strengths[j];
+        new_pri_chroma_strength = (chroma_strength / CDEF_SEC_STRENGTHS) >> 1;
+        new_sec_chroma_strength = (chroma_strength % CDEF_SEC_STRENGTHS) >> 1;
+
+        cdef_info->cdef_uv_strengths[j] =
+            new_pri_chroma_strength * CDEF_SEC_STRENGTHS +
+            new_sec_chroma_strength;
+      }
+
+      // Zero out entries with low CDEF luma (and optional chroma) strengths.
+      // The low-strength thresholds were empirically derived from subjective
+      // testing and SSIMULACRA 2 scores. These strike a balance between
+      // perceptual quality gains and a reasonable single-threaded decode time
+      // increase (~10%) over --enable-cdef 0. There's an overall 0.18 point
+      // loss in SSIMULACRA 2 scores over no CDEF strength zeroing at speed 6,
+      // QP 30 on the CLIC 2020 dataset.
+      if (should_zero_cdef_strengths) {
+        const bool is_low_luma_strength =
+            new_pri_luma_strength <= 4 && new_sec_luma_strength <= 1;
+
+        if (is_low_luma_strength) {
+          cdef_info->cdef_strengths[j] = 0;
+        }
+        if (num_planes > 1) {
+          const bool is_low_chroma_strength =
+              new_pri_chroma_strength <= 4 && new_sec_chroma_strength <= 1;
+
+          if (is_low_luma_strength || is_low_chroma_strength) {
+            // Disable CDEF on chroma if we've disabled it on luma
+            cdef_info->cdef_uv_strengths[j] = 0;
+          }
+        }
+      }
     }
   }
 

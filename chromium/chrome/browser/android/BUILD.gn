@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//chrome/common/features.gni")
+
 source_set("tabs_public") {
   public = [ "tab_features.h" ]
 
@@ -10,7 +12,10 @@ source_set("tabs_public") {
     "//ui/base/unowned_user_data",
   ]
 
-  deps = [ "//content/public/browser" ]
+  deps = [
+    "//chrome/common:buildflags",
+    "//content/public/browser",
+  ]
 }
 
 source_set("tabs_impl") {
@@ -19,6 +24,7 @@ source_set("tabs_impl") {
   public_deps = [ "//chrome/browser:browser_public_dependencies" ]
   deps = [
     ":tabs_public",
+    "//chrome/browser/actor",
     "//chrome/browser/contextual_search",
     "//chrome/browser/sync",
     "//chrome/browser/ui/contextual_search",
@@ -29,4 +35,8 @@ source_set("tabs_impl") {
     "//components/tabs:public",
     "//content/public/browser",
   ]
+
+  if (enable_glic) {
+    deps += [ "//chrome/browser/glic" ]
+  }
 }

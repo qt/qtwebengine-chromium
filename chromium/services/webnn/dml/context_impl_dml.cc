@@ -13,7 +13,6 @@
 
 #include "base/bits.h"
 #include "base/check.h"
-#include "base/check_is_test.h"
 #include "base/compiler_specific.h"
 #include "base/containers/span.h"
 #include "base/strings/strcat.h"
@@ -31,19 +30,13 @@
 #include "services/webnn/public/cpp/supported_data_types.h"
 #include "services/webnn/public/cpp/supported_tensors.h"
 #include "services/webnn/public/mojom/webnn_tensor.mojom.h"
-#include "services/webnn/scoped_sequence.h"
+#include "services/webnn/scoped_gpu_sequence.h"
 #include "services/webnn/webnn_constant_operand.h"
 #include "services/webnn/webnn_context_impl.h"
 
 namespace webnn::dml {
 
 using Microsoft::WRL::ComPtr;
-
-namespace {
-
-ContextImplDml::BackendForTesting* g_backend_for_testing = nullptr;
-
-}  // namespace
 
 // The context properties follow the supported feature level on the platform.
 // https://learn.microsoft.com/en-us/windows/ai/directml/dml-feature-level-history
@@ -595,8 +588,7 @@ ContextImplDml::ContextImplDml(
     mojo::ScopedDataPipeProducerHandle read_tensor_producer,
     std::unique_ptr<CommandRecorder> command_recorder,
     const gpu::GpuFeatureInfo& gpu_feature_info,
-    gpu::CommandBufferId command_buffer_id,
-    std::unique_ptr<ScopedSequence> sequence,
+    std::unique_ptr<ScopedGpuSequence> gpu_sequence,
     scoped_refptr<gpu::MemoryTracker> memory_tracker,
     scoped_refptr<base::SingleThreadTaskRunner> owning_task_runner,
     gpu::SharedImageManager* shared_image_manager,
@@ -607,8 +599,7 @@ ContextImplDml::ContextImplDml(
                        std::move(options),
                        std::move(write_tensor_consumer),
                        std::move(read_tensor_producer),
-                       command_buffer_id,
-                       std::move(sequence),
+                       std::move(gpu_sequence),
                        std::move(memory_tracker),
                        std::move(owning_task_runner),
                        shared_image_manager,
@@ -626,12 +617,6 @@ base::WeakPtr<WebNNContextImpl> ContextImplDml::AsWeakPtr() {
   return weak_factory_.GetWeakPtr();
 }
 
-// static
-void ContextImplDml::SetBackendForTesting(
-    BackendForTesting* backend_for_testing) {
-  g_backend_for_testing = backend_for_testing;
-}
-
 void ContextImplDml::CreateGraphImpl(
     mojo::PendingAssociatedReceiver<mojom::WebNNGraph> receiver,
     mojom::GraphInfoPtr graph_info,
@@ -640,13 +625,6 @@ void ContextImplDml::CreateGraphImpl(
         constant_operands,
     base::flat_map<OperandId, WebNNTensorImpl*> constant_tensor_operands,
     WebNNContextImpl::CreateGraphImplCallback callback) {
-  if (g_backend_for_testing) {
-    g_backend_for_testing->CreateGraphImpl(std::move(receiver), this,
-                                           std::move(compute_resource_info),
-                                           std::move(callback));
-    return;
-  }
-
   GraphImplDml::CreateAndBuild(
       std::move(receiver), adapter_, weak_factory_.GetWeakPtr(),
       std::move(graph_info), std::move(compute_resource_info),
@@ -660,11 +638,6 @@ base::expected<scoped_refptr<WebNNTensorImpl>, mojom::ErrorPtr>
 ContextImplDml::CreateTensorImpl(
     mojo::PendingAssociatedReceiver<mojom::WebNNTensor> receiver,
     mojom::TensorInfoPtr tensor_info) {
-  if (g_backend_for_testing) {
-    return g_backend_for_testing->CreateTensorImpl(this, std::move(receiver),
-                                                   std::move(tensor_info));
-  }
-
   // DML requires resources to be in multiple of 4 bytes.
   // https://learn.microsoft.com/en-us/windows/ai/directml/dml-helper-functions#dmlcalcbuffertensorsize
   constexpr uint64_t kDMLBufferAlignment = 4ull;
@@ -982,7 +955,8 @@ void ContextImplDml::HandleContextLostOrCrash(std::string_view message_for_log,
     // device removal.
     // TODO(crbug.com/364445586): Move non-GPU backends like TFLite outside of
     // the GPU process.
-    DestroyAllContextsAndKillGpuProcess("device removed.");
+    OnLost("Device removed.");
+    DestroyAllContextsAndKillGpuProcess();
     return;
   }
 
@@ -1004,16 +978,6 @@ void ContextImplDml::HandleContextLostOrCrash(std::string_view message_for_log,
 
 CommandQueue* ContextImplDml::GetCommandQueue() const {
   return adapter_->command_queue();
-}
-
-void ContextImplDml::RemoveDeviceForTesting() {
-  CHECK_IS_TEST();
-
-  ComPtr<ID3D12Device5> d3d12_device_5;
-  CHECK_EQ(
-      adapter_->d3d12_device()->QueryInterface(IID_PPV_ARGS(&d3d12_device_5)),
-      S_OK);
-  d3d12_device_5->RemoveDevice();
 }
 
 }  // namespace webnn::dml

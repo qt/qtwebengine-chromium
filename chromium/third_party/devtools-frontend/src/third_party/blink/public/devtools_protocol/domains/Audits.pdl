@@ -34,8 +34,6 @@ experimental domain Audits
       ExcludeSameSiteNoneInsecure
       ExcludeSameSiteLax
       ExcludeSameSiteStrict
-      ExcludeInvalidSameParty
-      ExcludeSamePartyCrossPartyContext
       ExcludeDomainNonASCII
       ExcludeThirdPartyCookieBlockedInFirstPartySet
       ExcludeThirdPartyPhaseout
@@ -355,6 +353,15 @@ experimental domain Audits
       IncorrectDigestType
       IncorrectDigestLength
 
+  type ConnectionAllowlistError extends string
+    enum
+      InvalidHeader
+      MoreThanOneList
+      ItemNotInnerList
+      InvalidAllowlistItemType
+      ReportingEndpointNotToken
+      InvalidUrlPattern
+
   # Details for issues around "Attribution Reporting API" usage.
   # Explainer: https://github.com/WICG/attribution-reporting-api
   type AttributionReportingIssueDetails extends object
@@ -398,6 +405,11 @@ experimental domain Audits
       UnencodedDigestError error
       AffectedRequest request
 
+  type ConnectionAllowlistIssueDetails extends object
+    properties
+      ConnectionAllowlistError error
+      AffectedRequest request
+
   type GenericIssueErrorType extends string
     enum
       FormLabelForNameError
@@ -412,6 +424,9 @@ experimental domain Audits
       FormInputHasWrongButWellIntendedAutocompleteValueError
       ResponseWasBlockedByORB
       NavigationEntryMarkedSkippable
+      AutofillAndManualTextPolicyControlledFeaturesInfo
+      AutofillPolicyControlledFeatureInfo
+      ManualTextPolicyControlledFeatureInfo
 
   # Depending on the concrete errorType, different properties are set.
   type GenericIssueDetails extends object
@@ -708,6 +723,7 @@ experimental domain Audits
       ElementAccessibilityIssue
       SRIMessageSignatureIssue
       UnencodedDigestIssue
+      ConnectionAllowlistIssue
       UserReidentificationIssue
       PermissionElementIssue
 
@@ -741,6 +757,7 @@ experimental domain Audits
       optional ElementAccessibilityIssueDetails elementAccessibilityIssueDetails
       optional SRIMessageSignatureIssueDetails sriMessageSignatureIssueDetails
       optional UnencodedDigestIssueDetails unencodedDigestIssueDetails
+      optional ConnectionAllowlistIssueDetails connectionAllowlistIssueDetails
       optional UserReidentificationIssueDetails userReidentificationIssueDetails
       optional PermissionElementIssueDetails permissionElementIssueDetails
 

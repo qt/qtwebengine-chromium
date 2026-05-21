@@ -68,7 +68,7 @@ import { Mutex } from '../util/Mutex.js';
 import { Binding } from './Binding.js';
 import { CdpElementHandle } from './ElementHandle.js';
 import { CdpJSHandle } from './JSHandle.js';
-import { addPageBinding, CDP_BINDING_PREFIX, createEvaluationError, valueFromRemoteObject, } from './utils.js';
+import { addPageBinding, CDP_BINDING_PREFIX, createEvaluationError, valueFromPrimitiveRemoteObject, } from './utils.js';
 const ariaQuerySelectorBinding = new Binding('__ariaQuerySelector', ARIAQueryHandler.queryOne, '');
 const ariaQuerySelectorAllBinding = new Binding('__ariaQuerySelectorAll', (async (element, selector) => {
     const results = ARIAQueryHandler.queryAll(element, selector);
@@ -347,7 +347,7 @@ export class ExecutionContext extends EventEmitter {
                 throw createEvaluationError(exceptionDetails);
             }
             if (returnByValue) {
-                return valueFromRemoteObject(remoteObject);
+                return valueFromPrimitiveRemoteObject(remoteObject);
             }
             return this.#world.createCdpHandle(remoteObject);
         }
@@ -388,7 +388,7 @@ export class ExecutionContext extends EventEmitter {
             throw createEvaluationError(exceptionDetails);
         }
         if (returnByValue) {
-            return valueFromRemoteObject(remoteObject);
+            return valueFromPrimitiveRemoteObject(remoteObject);
         }
         return this.#world.createCdpHandle(remoteObject);
         async function convertArgumentAsync(context, arg) {

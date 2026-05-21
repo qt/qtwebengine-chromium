@@ -8,11 +8,6 @@
 
 namespace features {
 
-// Enables mitigation algorithm to prevent attempt of calibration from an
-// attacker.
-BASE_FEATURE(kComputePressureBreakCalibrationMitigation,
-             base::FEATURE_ENABLED_BY_DEFAULT);
-
 // Enables an extra set of concrete sensors classes based on Generic Sensor API,
 // which expose previously unexposed platform features, e.g. ALS or Magnetometer
 BASE_FEATURE(kGenericSensorExtraClasses, base::FEATURE_DISABLED_BY_DEFAULT);
@@ -32,6 +27,12 @@ BASE_FEATURE(kSerialPortConnected,
 // in the Finch configuration to manage the list of blocked devices.
 BASE_FEATURE(kWebUsbBlocklist,
              "WebUSBBlocklist",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
+// When enabled, WebUSB control transfers are blocked if they target a
+// protected interface class, even if the recipient is not set to interface
+// or endpoint. This protects devices which ignore this field.
+BASE_FEATURE(kWebUsbProtectedClassControlTransferBlock,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 // When enabled, accessing the navigator.hid attribute does not prevent the
@@ -63,12 +64,6 @@ BASE_FEATURE(kLocationProviderManager, base::FEATURE_ENABLED_BY_DEFAULT);
 #else
 BASE_FEATURE(kLocationProviderManager, base::FEATURE_DISABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
-
-#if BUILDFLAG(IS_CHROMEOS)
-// Enables crash key logging for USB device open operations on ChromeOS. See
-// crbug.com/332722607. Can be disabled as a kill switch if needed.
-BASE_FEATURE(kUsbDeviceLinuxOpenCrashKey, base::FEATURE_ENABLED_BY_DEFAULT);
-#endif  // BUILDFLAG(IS_CHROMEOS)
 
 #if BUILDFLAG(IS_ANDROID)
 // Enables registering & unregistering of the Battery Status Manager broadcast
@@ -144,5 +139,11 @@ BASE_FEATURE(kSerialSplitDtrAndRts, base::FEATURE_ENABLED_BY_DEFAULT);
 #if BUILDFLAG(IS_MAC)
 BASE_FEATURE(kHidReportRequestExactLength, base::FEATURE_ENABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(IS_MAC)
+
+#if BUILDFLAG(IS_APPLE) && BUILDFLAG(USE_BLINK)
+// Controls whether to use the ellipsoidal altitude from Core Location
+// instead of the default altitude attribute.
+BASE_FEATURE(kEllipsoidalAltitude, base::FEATURE_ENABLED_BY_DEFAULT);
+#endif  // BUILDFLAG(IS_APPLE) && BUILDFLAG(USE_BLINK)
 
 }  // namespace features

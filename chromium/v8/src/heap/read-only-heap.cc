@@ -9,9 +9,9 @@
 
 #include "src/common/globals.h"
 #include "src/common/ptr-compr-inl.h"
+#include "src/heap/base-page.h"
 #include "src/heap/heap-write-barrier-inl.h"
-#include "src/heap/memory-chunk-metadata.h"
-#include "src/heap/mutable-page-metadata.h"
+#include "src/heap/mutable-page.h"
 #include "src/heap/read-only-spaces.h"
 #include "src/init/isolate-group.h"
 #include "src/objects/heap-object-inl.h"
@@ -29,11 +29,6 @@ ReadOnlyHeap::~ReadOnlyHeap() {
   IsolateGroup::current()->code_pointer_table()->TearDownSpace(
       &code_pointer_space_);
 #endif
-  JSDispatchTable* jdt = IsolateGroup::current()->js_dispatch_table();
-#if V8_STATIC_DISPATCH_HANDLES_BOOL
-  jdt->DetachSpaceFromReadOnlySegments(&js_dispatch_table_space_);
-#endif  // V8_STATIC_DISPATCH_HANDLES_BOOL
-  jdt->TearDownSpace(&js_dispatch_table_space_);
 }
 
 // static
@@ -116,6 +111,10 @@ void ReadOnlyHeap::OnCreateHeapObjectsComplete(Isolate* isolate) {
       Heap::SweepingForcedFinalizationMode::kV8Only,
       CompleteSweepingReason::kReadOnly);
 
+  // Fix the free space maps, for free spaces that were created before the map
+  // existed.
+  read_only_space()->RepairFreeSpacesBeforeSerialization();
+
   InitFromIsolate(isolate);
 
 #ifdef VERIFY_HEAP
@@ -171,17 +170,6 @@ ReadOnlyHeap::ReadOnlyHeap(ReadOnlySpace* ro_space)
   IsolateGroup::current()->code_pointer_table()->InitializeSpace(
       &code_pointer_space_);
 #endif  // V8_ENABLE_SANDBOX
-  JSDispatchTable* jdt = IsolateGroup::current()->js_dispatch_table();
-  jdt->InitializeSpace(&js_dispatch_table_space_);
-  // To avoid marking trying to write to these read-only cells they are
-  // allocated black. Target code objects in the read-only dispatch table are
-  // read-only code objects.
-  js_dispatch_table_space_.set_allocate_black(true);
-#if V8_STATIC_DISPATCH_HANDLES_BOOL
-  jdt->AttachSpaceToReadOnlySegments(&js_dispatch_table_space_);
-  jdt->PreAllocateEntries(&js_dispatch_table_space_,
-                          JSBuiltinDispatchHandleRoot::kCount);
-#endif  // V8_STATIC_DISPATCH_HANDLES_BOOL
 }
 
 // static
@@ -246,14 +234,13 @@ Tagged<HeapObject> ReadOnlyHeapObjectIterator::Next() {
 }
 
 ReadOnlyPageObjectIterator::ReadOnlyPageObjectIterator(
-    const ReadOnlyPageMetadata* page,
-    SkipFreeSpaceOrFiller skip_free_space_or_filler)
+    const ReadOnlyPage* page, SkipFreeSpaceOrFiller skip_free_space_or_filler)
     : ReadOnlyPageObjectIterator(
           page, page == nullptr ? kNullAddress : page->GetAreaStart(),
           skip_free_space_or_filler) {}
 
 ReadOnlyPageObjectIterator::ReadOnlyPageObjectIterator(
-    const ReadOnlyPageMetadata* page, Address current_addr,
+    const ReadOnlyPage* page, Address current_addr,
     SkipFreeSpaceOrFiller skip_free_space_or_filler)
     : page_(page),
       current_addr_(current_addr),
@@ -284,7 +271,7 @@ Tagged<HeapObject> ReadOnlyPageObjectIterator::Next() {
   }
 }
 
-void ReadOnlyPageObjectIterator::Reset(const ReadOnlyPageMetadata* page) {
+void ReadOnlyPageObjectIterator::Reset(const ReadOnlyPage* page) {
   page_ = page;
   current_addr_ = page->GetAreaStart();
 }

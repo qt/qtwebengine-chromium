@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 /* eslint-disable @devtools/no-imperative-dom-api */
+import '../../ui/kit/kit.js';
 
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
@@ -374,9 +375,9 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
     if (!target?.classList.contains('network-fetch-timing-bar-clickable')) {
       return;
     }
-    const isChecked = target.ariaChecked === 'false';
-    target.ariaChecked = isChecked ? 'true' : 'false';
-    if (!isChecked) {
+    const isExpanded = target.ariaExpanded === 'true';
+    target.ariaExpanded = isExpanded ? 'false' : 'true';
+    if (!isExpanded) {
       Host.userMetrics.actionTaken(Host.UserMetrics.Action.NetworkPanelServiceWorkerRespondWith);
     }
   };
@@ -454,8 +455,8 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
             <tr>
               ${isClickable(range) ? html`<td
                   tabindex=0
-                  role=switch
-                  aria-checked=false
+                  role=button
+                  aria-expanded=false
                   @click=${onActivate}
                   @keydown=${onActivate}
                   class=network-fetch-timing-bar-clickable>
@@ -500,12 +501,12 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
           </tr>` : nothing}
        <tr class=network-timing-footer>
          <td colspan=1>
-           <x-link
+           <devtools-link
              href="https://developer.chrome.com/docs/devtools/network/reference/#timing-explanation"
              class=devtools-link
-             jslog=${VisualLogging.link().track({click: true, keydown:'Enter|Space'}).context('explanation')}>
+             jslogcontext="explanation">
                ${i18nString(UIStrings.explanation)}
-           </x-link>
+           </devtools-link>
          <td></td>
          <td class=${input.wasThrottled ? 'throttled' : ''} title=${ifDefined(throttledRequestTitle)}>
            ${input.wasThrottled ? html` <devtools-icon name=watch @click=${revealThrottled}></devtools-icon>` : nothing}
@@ -527,13 +528,8 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
        ${input.serverTimings.length === 0 ? html`
          <tr>
            <td colspan=3>
-             ${uiI18n.getFormatLocalizedString(str_, UIStrings.duringDevelopmentYouCanUseSToAdd, {PH1:
-                                                  UI.XLink.XLink.create(
-                                                    'https://web.dev/custom-metrics/#server-timing-api',
-                                                  i18nString(UIStrings.theServerTimingApi),
-                                                  undefined,
-                                                  undefined,
-                                                  'server-timing-api')})}
+${uiI18n.getFormatLocalizedStringTemplate(str_, UIStrings.duringDevelopmentYouCanUseSToAdd, {PH1:
+                                                  html`<devtools-link href="https://web.dev/custom-metrics/#server-timing-api" .jslogContext=${'server-timing-api'}>${i18nString(UIStrings.theServerTimingApi)}</devtools-link>`})}
            </td>
          </tr>` : nothing}
    </table>`,
@@ -587,21 +583,6 @@ export class RequestTimingView extends UI.Widget.VBox {
       timeRanges,
     };
     this.#view(input, {}, this.contentElement);
-  }
-
-  private onToggleFetchDetails(fetchDetailsElement: Element, event: Event): void {
-    if (!event.target) {
-      return;
-    }
-
-    const target = (event.target as Element);
-    if (target.classList.contains('network-fetch-timing-bar-clickable')) {
-      const expanded = target.getAttribute('aria-checked') === 'true';
-      target.setAttribute('aria-checked', String(!expanded));
-
-      fetchDetailsElement.classList.toggle('network-fetch-timing-bar-details-collapsed');
-      fetchDetailsElement.classList.toggle('network-fetch-timing-bar-details-expanded');
-    }
   }
 
   #fetchDetailsTree(): UI.TreeOutline.TreeOutlineInShadow|undefined {

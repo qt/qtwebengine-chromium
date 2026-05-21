@@ -54,6 +54,7 @@ bool XRCompositionLayer::forceMonoPresentation() const {
 
 void XRCompositionLayer::setForceMonoPresentation(bool value) {
   force_mono_presentation_ = value;
+  SetModified(true);
 }
 
 float XRCompositionLayer::opacity() const {
@@ -73,8 +74,10 @@ void XRCompositionLayer::destroy() const {
   NOTIMPLEMENTED();
 }
 
-void XRCompositionLayer::SetLayout(V8XRLayerLayout layout) {
-  layout_ = layout.AsEnum();
+void XRCompositionLayer::SetLayout(V8XRLayerLayout::Enum layout) {
+  // "default" must have been resolved.
+  CHECK_NE(layout, V8XRLayerLayout::Enum::kDefault);
+  layout_ = layout;
 }
 
 void XRCompositionLayer::SetMipLevels(uint16_t mipLevels) {
@@ -108,11 +111,6 @@ void XRCompositionLayer::OnFrameEnd() {
   XRFrameProvider* frame_provider = session()->xr()->frameProvider();
   frame_provider->SubmitLayer(layer_id(), drawing_context_,
                               drawing_context_->TextureWasQueried());
-
-  // Reset needs redraw state because texture was requested and submitted.
-  if (drawing_context_->TextureWasQueried()) {
-    SetNeedsRedraw(false);
-  }
 }
 
 XrLayerClient* XRCompositionLayer::LayerClient() {
@@ -128,11 +126,19 @@ XRCompositionLayer::CreateLayerData() const {
   layer_data->read_only_data->texture_width = textureWidth();
   layer_data->read_only_data->texture_height = textureHeight();
   layer_data->read_only_data->is_static = isStatic();
-  layer_data->read_only_data->layout = V8ToMojomLayerLayout(layout_);
+  if (layout_ == V8XRLayerLayout::Enum::kStereo) {
+    // We put the layers into a single texture. So the other side should treat
+    // it as left-right. See XRWebGLTextureArraySwapChain.
+    layer_data->read_only_data->layout =
+        device::mojom::blink::XRLayerLayout::kStereoLeftRight;
+  } else {
+    layer_data->read_only_data->layout = V8ToMojomLayerLayout(layout_);
+  }
   // Mutable data.
   layer_data->mutable_data = device::mojom::blink::XRLayerMutableData::New();
   layer_data->mutable_data->blend_texture_source_alpha =
       blendTextureSourceAlpha();
+  layer_data->mutable_data->force_mono_presentation = forceMonoPresentation();
   layer_data->mutable_data->opacity = opacity();
   layer_data->mutable_data->native_origin_information = NativeOrigin();
 

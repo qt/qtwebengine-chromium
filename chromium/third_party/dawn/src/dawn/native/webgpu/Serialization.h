@@ -30,6 +30,7 @@
 
 #include <webgpu/webgpu_cpp.h>
 
+#include <array>
 #include <cstdint>
 #include <string>
 #include <type_traits>
@@ -44,6 +45,7 @@ class CaptureContext;
 void WriteBytes(CaptureContext& context, const void* data, size_t size);
 
 void Serialize(CaptureContext& context, int32_t v);
+void Serialize(CaptureContext& context, uint8_t v);
 void Serialize(CaptureContext& context, uint16_t v);
 void Serialize(CaptureContext& context, uint32_t v);
 void Serialize(CaptureContext& context, uint64_t v);
@@ -64,6 +66,13 @@ template <typename T>
 void Serialize(CaptureContext& context, const std::vector<T>& v) {
     Serialize(context, v.size());
     for (const auto& elem : v) {
+        Serialize(context, elem);
+    }
+}
+
+template <typename T, size_t N>
+void Serialize(CaptureContext& context, const std::array<T, N>& a) {
+    for (const auto& elem : a) {
         Serialize(context, elem);
     }
 }

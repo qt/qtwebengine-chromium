@@ -31,20 +31,41 @@ void TextTraceLoggingPlatform::LogTrace(TraceEvent event,
                                         Clock::time_point end_time) {
   const auto total_runtime = (end_time - event.start_time);
   std::stringstream ss;
-  ss << "[TRACE" << " (" << std::dec << total_runtime << ")] "
-     << event.ToString();
+  ss << "[TRACE" << " (" << std::dec << total_runtime << ")] " << event;
   LogTraceMessage(ss.str());
 }
 
 void TextTraceLoggingPlatform::LogAsyncStart(TraceEvent event) {
   std::stringstream ss;
-  ss << "[ASYNC TRACE START]  " << event.ToString();
+  ss << "[ASYNC TRACE START]  " << event;
   LogTraceMessage(ss.str());
 }
 
 void TextTraceLoggingPlatform::LogAsyncEnd(TraceEvent event) {
   std::stringstream ss;
-  ss << "[ASYNC TRACE END] " << event.ToString();
+  ss << "[ASYNC TRACE END] " << event;
+  LogTraceMessage(ss.str());
+}
+
+void TextTraceLoggingPlatform::LogFlow(TraceEvent event, FlowType type) {
+  std::stringstream ss;
+  ss << "[FLOW";
+  if (!event.flow_ids.empty()) {
+    ss << " #" << std::hex << event.flow_ids[0] << std::dec;
+  }
+
+  switch (type) {
+    case FlowType::kFlowBegin:
+      ss << " BEGIN";
+      break;
+    case FlowType::kFlowStep:
+      ss << " STEP";
+      break;
+    case FlowType::kFlowEnd:
+      ss << " END";
+      break;
+  }
+  ss << "] " << event.ToString();
   LogTraceMessage(ss.str());
 }
 

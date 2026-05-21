@@ -15,19 +15,20 @@
 #ifndef OPENSSL_HEADER_TOOL_INTERNAL_H
 #define OPENSSL_HEADER_TOOL_INTERNAL_H
 
-#include <openssl/base.h>
-#include <openssl/span.h>
-
 #include <map>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
 
+#include <openssl/base.h>
+#include <openssl/span.h>
+
+
+BSSL_NAMESPACE_BEGIN
+
 struct FileCloser {
-  void operator()(FILE *file) {
-    fclose(file);
-  }
+  void operator()(FILE *file) { fclose(file); }
 };
 
 using ScopedFILE = std::unique_ptr<FILE, FileCloser>;
@@ -105,8 +106,9 @@ struct argument {
   const char *description;
 };
 
-bool ParseKeyValueArguments(std::map<std::string, std::string> *out_args, const
-    std::vector<std::string> &args, const struct argument *templates);
+bool ParseKeyValueArguments(std::map<std::string, std::string> *out_args,
+                            const std::vector<std::string> &args,
+                            const struct argument *templates);
 
 void PrintUsage(const struct argument *templates);
 
@@ -141,7 +143,6 @@ bool SHA512Sum(const std::vector<std::string> &args);
 bool SHA512256Sum(const std::vector<std::string> &args);
 bool Server(const std::vector<std::string> &args);
 bool Sign(const std::vector<std::string> &args);
-bool Speed(const std::vector<std::string> &args);
 
 // These values are DER encoded, RSA private keys.
 extern const uint8_t kDERRSAPrivate2048[];
@@ -151,5 +152,6 @@ extern const size_t kDERRSAPrivate3072Len;
 extern const uint8_t kDERRSAPrivate4096[];
 extern const size_t kDERRSAPrivate4096Len;
 
+BSSL_NAMESPACE_END
 
 #endif  // !OPENSSL_HEADER_TOOL_INTERNAL_H

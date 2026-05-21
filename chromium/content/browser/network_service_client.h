@@ -9,15 +9,14 @@
 #include <string>
 #include <vector>
 
-#include "base/memory/memory_pressure_listener.h"
 #include "base/unguessable_token.h"
 #include "build/build_config.h"
-#include "content/browser/network/socket_broker_impl.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/receiver_set.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "net/cert/cert_database.h"
+#include "services/network/public/cpp/socket_broker_impl.h"
 #include "services/network/public/mojom/network_change_manager.mojom.h"
 #include "services/network/public/mojom/network_service.mojom.h"
 #include "services/network/public/mojom/url_loader_network_service_observer.mojom.h"
@@ -38,8 +37,7 @@ class NetworkServiceClient
       public net::NetworkChangeNotifier::MaxBandwidthObserver,
       public net::NetworkChangeNotifier::IPAddressObserver,
 #endif
-      public net::CertDatabase::Observer,
-      public base::MemoryPressureListener {
+      public net::CertDatabase::Observer {
  public:
   NetworkServiceClient();
 
@@ -57,9 +55,6 @@ class NetworkServiceClient
   // net::CertDatabase::Observer implementation:
   void OnTrustStoreChanged() override;
   void OnClientCertStoreChanged() override;
-
-  void OnMemoryPressure(
-      base::MemoryPressureLevel memory_presure_level) override;
 
   // Called when there is a change in the count of media connections that
   // require low network latency.
@@ -111,6 +106,8 @@ class NetworkServiceClient
       mojo::PendingRemote<network::mojom::AuthChallengeResponder>
           auth_challenge_responder) override;
   void OnLocalNetworkAccessPermissionRequired(
+      network::mojom::TransportType type,
+      network::mojom::IPAddressSpace ip_address_space,
       OnLocalNetworkAccessPermissionRequiredCallback callback) override;
   void OnClearSiteData(
       const GURL& url,
@@ -122,8 +119,8 @@ class NetworkServiceClient
   void OnLoadingStateUpdate(network::mojom::LoadInfoPtr info,
                             OnLoadingStateUpdateCallback callback) override;
   void OnDataUseUpdate(int32_t network_traffic_annotation_id_hash,
-                       int64_t recv_bytes,
-                       int64_t sent_bytes) override;
+                       base::ByteSize recv_bytes,
+                       base::ByteSize sent_bytes) override;
   void OnSharedStorageHeaderReceived(
       const url::Origin& request_origin,
       std::vector<network::mojom::SharedStorageModifierMethodWithOptionsPtr>
@@ -136,17 +133,14 @@ class NetworkServiceClient
   void Clone(
       mojo::PendingReceiver<network::mojom::URLLoaderNetworkServiceObserver>
           listener) override;
-  void OnWebSocketConnectedToPrivateNetwork(
+  void OnWebSocketConnectedToLocalNetwork(
       const GURL& request_url,
       network::mojom::IPAddressSpace ip_address_space) override;
-  void OnUrlLoaderConnectedToPrivateNetwork(
+  void OnUrlLoaderConnectedToLocalNetwork(
       const GURL& request_url,
       network::mojom::IPAddressSpace response_address_space,
       network::mojom::IPAddressSpace client_address_space,
       network::mojom::IPAddressSpace target_address_space) override;
-
-  std::unique_ptr<base::MemoryPressureListenerRegistration>
-      memory_pressure_listener_registration_;
 
   std::unique_ptr<WebRtcConnectionsObserver> webrtc_connections_observer_;
 
@@ -160,7 +154,7 @@ class NetworkServiceClient
 #endif  // BUILDFLAG(IS_ANDROID)
 
 #if BUILDFLAG(IS_WIN)
-  SocketBrokerImpl socket_broker_;
+  network::SocketBrokerImpl socket_broker_;
 #endif  // BUILDFLAG(IS_WIN)
 
   mojo::ReceiverSet<network::mojom::URLLoaderNetworkServiceObserver>

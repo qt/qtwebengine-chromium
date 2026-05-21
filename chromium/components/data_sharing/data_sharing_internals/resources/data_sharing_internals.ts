@@ -4,7 +4,7 @@
 
 import 'chrome://resources/cr_elements/cr_tab_box/cr_tab_box.js';
 
-import {assert} from 'chrome://resources/js/assert.js';
+import {assert, assertNotReachedCase} from 'chrome://resources/js/assert.js';
 import {getRequiredElement} from 'chrome://resources/js/util.js';
 import type {Time} from 'chrome://resources/mojo/mojo/public/mojom/base/time.mojom-webui.js';
 
@@ -105,6 +105,8 @@ function roleTypeToString(role: MemberRole): string {
       return 'Invitee';
     case MemberRole.kFormerMember:
       return 'FormerMember';
+    default:
+      assertNotReachedCase(role);
   }
 }
 
@@ -114,7 +116,7 @@ function addMemberToGroup(member: GroupMember, group: HTMLUListElement) {
   appendTextChildToList(member.displayName, memberItem);
   appendTextChildToList(member.email, memberItem);
   appendTextChildToList(roleTypeToString(member.role), memberItem);
-  appendTextChildToList(member.avatarUrl.url, memberItem);
+  appendTextChildToList(member.avatarUrl, memberItem);
   appendTextChildToList(member.givenName, memberItem);
   memberlistItem.appendChild(memberItem);
   group.appendChild(memberlistItem);

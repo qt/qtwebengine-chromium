@@ -158,14 +158,6 @@ export class NetworkManager extends SDKModel<EventTypes> {
       void this.#networkAgent.invoke_setCacheDisabled({cacheDisabled: true});
     }
 
-    if (Root.Runtime.hostConfig.devToolsPrivacyUI?.enabled &&
-        Root.Runtime.hostConfig.thirdPartyCookieControls?.managedBlockThirdPartyCookies !== true &&
-        (Common.Settings.Settings.instance().createSetting('cookie-control-override-enabled', undefined).get() ||
-         Common.Settings.Settings.instance().createSetting('grace-period-mitigation-disabled', undefined).get() ||
-         Common.Settings.Settings.instance().createSetting('heuristic-mitigation-disabled', undefined).get())) {
-      this.cookieControlFlagsSettingChanged();
-    }
-
     void this.#networkAgent.invoke_enable({
       maxPostDataSize: MAX_EAGER_POST_REQUEST_BODY_LENGTH,
       enableDurableMessages: Root.Runtime.hostConfig.devToolsEnableDurableMessages?.enabled,
@@ -184,16 +176,6 @@ export class NetworkManager extends SDKModel<EventTypes> {
     Common.Settings.Settings.instance()
         .moduleSetting('cache-disabled')
         .addChangeListener(this.cacheDisabledSettingChanged, this);
-
-    Common.Settings.Settings.instance()
-        .createSetting('cookie-control-override-enabled', undefined)
-        .addChangeListener(this.cookieControlFlagsSettingChanged, this);
-    Common.Settings.Settings.instance()
-        .createSetting('grace-period-mitigation-disabled', undefined)
-        .addChangeListener(this.cookieControlFlagsSettingChanged, this);
-    Common.Settings.Settings.instance()
-        .createSetting('heuristic-mitigation-disabled', undefined)
-        .addChangeListener(this.cookieControlFlagsSettingChanged, this);
   }
 
   static forRequest(request: NetworkRequest): NetworkManager|null {
@@ -346,23 +328,6 @@ export class NetworkManager extends SDKModel<EventTypes> {
     void this.#networkAgent.invoke_setCacheDisabled({cacheDisabled: enabled});
   }
 
-  private cookieControlFlagsSettingChanged(): void {
-    const overridesEnabled =
-        Boolean(Common.Settings.Settings.instance().createSetting('cookie-control-override-enabled', undefined).get());
-    const gracePeriodEnabled = overridesEnabled ?
-        Boolean(
-            Common.Settings.Settings.instance().createSetting('grace-period-mitigation-disabled', undefined).get()) :
-        false;
-    const heuristicEnabled = overridesEnabled ?
-        Boolean(Common.Settings.Settings.instance().createSetting('heuristic-mitigation-disabled', undefined).get()) :
-        false;
-    void this.#networkAgent.invoke_setCookieControls({
-      enableThirdPartyCookieRestriction: overridesEnabled,
-      disableThirdPartyCookieMetadata: gracePeriodEnabled,
-      disableThirdPartyCookieHeuristics: heuristicEnabled,
-    });
-  }
-
   override dispose(): void {
     Common.Settings.Settings.instance()
         .moduleSetting('cache-disabled')
@@ -384,6 +349,10 @@ export class NetworkManager extends SDKModel<EventTypes> {
 
   async enableReportingApi(enable = true): Promise<Promise<Protocol.ProtocolResponseWithError>> {
     return await this.#networkAgent.invoke_enableReportingApi({enable});
+  }
+
+  async enableDeviceBoundSessions(enable = true): Promise<Promise<Protocol.ProtocolResponseWithError>> {
+    return await this.#networkAgent.invoke_enableDeviceBoundSessions({enable});
   }
 
   async loadNetworkResource(
@@ -414,6 +383,8 @@ export enum Events {
   ReportingApiReportAdded = 'ReportingApiReportAdded',
   ReportingApiReportUpdated = 'ReportingApiReportUpdated',
   ReportingApiEndpointsChangedForOrigin = 'ReportingApiEndpointsChangedForOrigin',
+  DeviceBoundSessionsAdded = 'DeviceBoundSessionsAdded',
+  DeviceBoundSessionEventOccurred = 'DeviceBoundSessionEventOccurred',
   /* eslint-enable @typescript-eslint/naming-convention */
 }
 
@@ -445,6 +416,8 @@ export interface EventTypes {
   [Events.ReportingApiReportAdded]: Protocol.Network.ReportingApiReport;
   [Events.ReportingApiReportUpdated]: Protocol.Network.ReportingApiReport;
   [Events.ReportingApiEndpointsChangedForOrigin]: Protocol.Network.ReportingApiEndpointsChangedForOriginEvent;
+  [Events.DeviceBoundSessionsAdded]: Protocol.Network.DeviceBoundSession[];
+  [Events.DeviceBoundSessionEventOccurred]: Protocol.Network.DeviceBoundSessionEventOccurredEvent;
 }
 
 /**
@@ -761,6 +734,7 @@ export class NetworkDispatcher implements ProtocolProxyApi.NetworkDispatcher {
     type,
     frameId,
     hasUserGesture,
+    renderBlockingBehavior,
   }: Protocol.Network.RequestWillBeSentEvent): void {
     let networkRequest = this.#requestsById.get(requestId);
     if (networkRequest) {
@@ -789,6 +763,9 @@ export class NetworkDispatcher implements ProtocolProxyApi.NetworkDispatcher {
       networkRequest = NetworkRequest.create(
           requestId, request.url as Platform.DevToolsPath.UrlString, documentURL as Platform.DevToolsPath.UrlString,
           frameId ?? null, loaderId, initiator, hasUserGesture);
+      if (renderBlockingBehavior) {
+        networkRequest.setRenderBlockingBehavior(renderBlockingBehavior);
+      }
       requestToManagerMap.set(networkRequest, this.#manager);
     }
     networkRequest.hasNetworkData = true;
@@ -1010,6 +987,7 @@ export class NetworkDispatcher implements ProtocolProxyApi.NetworkDispatcher {
     requestId,
     associatedCookies,
     headers,
+    deviceBoundSessionUsages,
     clientSecurityState,
     connectTiming,
     siteHasCookieInOtherPartition,
@@ -1024,10 +1002,11 @@ export class NetworkDispatcher implements ProtocolProxyApi.NetworkDispatcher {
         blockedRequestCookies.push({blockedReasons, cookie: Cookie.fromProtocolCookie(cookie)});
       }
     }
-    const extraRequestInfo = {
+    const extraRequestInfo: ExtraRequestInfo = {
       blockedRequestCookies,
       includedRequestCookies,
       requestHeaders: this.headersMapToHeadersArray(headers),
+      deviceBoundSessionUsages,
       clientSecurityState,
       connectTiming,
       siteHasCookieInOtherPartition,
@@ -1550,6 +1529,14 @@ export class NetworkDispatcher implements ProtocolProxyApi.NetworkDispatcher {
     this.#manager.dispatchEventToListeners(Events.ReportingApiEndpointsChangedForOrigin, data);
   }
 
+  deviceBoundSessionsAdded(_params: Protocol.Network.DeviceBoundSessionsAddedEvent): void {
+    this.#manager.dispatchEventToListeners(Events.DeviceBoundSessionsAdded, _params.sessions);
+  }
+
+  deviceBoundSessionEventOccurred(_params: Protocol.Network.DeviceBoundSessionEventOccurredEvent): void {
+    this.#manager.dispatchEventToListeners(Events.DeviceBoundSessionEventOccurred, _params);
+  }
+
   policyUpdated(): void {
   }
 
@@ -1893,10 +1880,10 @@ export class RequestConditions extends Common.ObjectWrapper.ObjectWrapper<Reques
             matchedNetworkConditions.push({ruleIds, urlPattern, conditions});
           }
         }
+      }
 
-        if (globalConditions) {
-          matchedNetworkConditions.push({conditions: globalConditions});
-        }
+      if (globalConditions) {
+        matchedNetworkConditions.push({conditions: globalConditions});
       }
 
       const promises: Array<Promise<unknown>> = [];
@@ -2716,13 +2703,6 @@ export interface Conditions {
   packetLoss?: number;
   packetQueueLength?: number;
   packetReordering?: boolean;
-  // TODO(crbug.com/1219425): In the future, it might be worthwhile to
-  // consider avoiding mixing up presentation state (e.g.: displayed
-  // titles) with behavioral state (e.g.: the throttling amounts). In
-  // this particular case, the title (along with other properties)
-  // doubles as both part of group of fields which (loosely) uniquely
-  // identify instances, as well as the literal string displayed in the
-  // UI, which leads to complications around persistance.
   // TODO(crbug.com/422682525): make this just a function because we use lazy string everywhere.
   title: string|(() => string);
   // Instances may be serialized to local storage, so localized titles

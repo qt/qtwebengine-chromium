@@ -267,6 +267,9 @@ DesktopWindowTreeHostWin::CreateDragDropClient() {
 }
 
 void DesktopWindowTreeHostWin::Close() {
+  // Do not generate synthesized events during shutdown.
+  dispatcher()->Shutdown();
+
   // Calling Hide() can detach the content window's layer, so store it
   // beforehand so we can access it below.
   auto* window_layer = content_window()->layer();
@@ -796,11 +799,13 @@ DesktopWindowTreeHostWin::RequestUnadjustedMovement() {
 
 void DesktopWindowTreeHostWin::LockMouse(aura::Window* window) {
   UpdateMouseLockRegion(window, true /*locked*/);
+  message_handler_->set_mouse_locked(true);
   WindowTreeHost::LockMouse(window);
 }
 
 void DesktopWindowTreeHostWin::UnlockMouse(aura::Window* window) {
   UpdateMouseLockRegion(window, false /*locked*/);
+  message_handler_->set_mouse_locked(false);
   WindowTreeHost::UnlockMouse(window);
 }
 

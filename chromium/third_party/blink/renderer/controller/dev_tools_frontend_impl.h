@@ -39,6 +39,7 @@
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/mojo/heap_mojo_associated_receiver.h"
 #include "third_party/blink/renderer/platform/mojo/heap_mojo_associated_remote.h"
+#include "third_party/blink/renderer/platform/supplementable.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 
 namespace blink {
@@ -50,11 +51,12 @@ class LocalFrame;
 // it's host (mojom.DevToolsFrontendHost) is destroyed.
 class DevToolsFrontendImpl final
     : public GarbageCollected<DevToolsFrontendImpl>,
+      public Supplement<LocalFrame>,
       public mojom::blink::DevToolsFrontend,
       public InspectorFrontendClient,
       public WidgetCreationObserver {
  public:
-  static const unsigned kSupplementIndex;
+  static const char kSupplementName[];
 
   static void BindMojoRequest(
       LocalFrame*,
@@ -86,9 +88,8 @@ class DevToolsFrontendImpl final
   void SetupDevToolsExtensionAPI(const String& extension_api) override;
 
   // InspectorFrontendClient implementation.
-  void SendMessageToEmbedder(base::Value::Dict) override;
+  void SendMessageToEmbedder(base::DictValue) override;
 
-  Member<LocalFrame> local_frame_;
   Member<DevToolsHost> devtools_host_;
   String api_script_;
   // The host_ must outlive the ExecutionContext of LocalFrame, so it should not

@@ -20,7 +20,7 @@
 #include "common/PackedEnums.h"
 #include "common/bitset_utils.h"
 #include "common/hash_utils.h"
-#include "common/vector_utils.h"
+#include "common/span.h"
 #include "libANGLE/Constants.h"
 #include "libANGLE/Error.h"
 #include "libANGLE/RefCountObject.h"
@@ -1184,6 +1184,7 @@ using ClipDistanceEnableBits = angle::BitSet32<IMPLEMENTATION_MAX_CLIP_DISTANCES
 
 template <typename T>
 using QueryTypeMap = angle::PackedEnumMap<QueryType, T>;
+using QueryTypeBitSet = angle::PackedEnumBitSet<QueryType, uint8_t>;
 
 constexpr size_t kBarrierVectorDefaultSize = 16;
 
@@ -1391,7 +1392,7 @@ struct hash<angle::BlobCacheKey>
     // Simple routine to hash four ints.
     size_t operator()(const angle::BlobCacheKey &key) const
     {
-        return angle::ComputeGenericHash(key.data(), key.size());
+        return angle::ComputeGenericHash(key);
     }
 };
 }  // namespace std

@@ -488,6 +488,8 @@ message UpdateDeviceInfoState {
 
   // Customized Serial Number Naming.
   string customized_serial_number_naming = 501;
+  // Whether or not to hide Google SKU.
+  bool hide_google_sku = 502;
 }
 
 // Calibration Component and status used in all calibration-related

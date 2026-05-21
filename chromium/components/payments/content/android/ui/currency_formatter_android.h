@@ -17,10 +17,9 @@ class CurrencyFormatter;
 // Forwarding calls to payments::CurrencyFormatter.
 class CurrencyFormatterAndroid {
  public:
-  CurrencyFormatterAndroid(
-      JNIEnv* env,
-      const base::android::JavaParamRef<jstring>& currency_code,
-      const base::android::JavaParamRef<jstring>& locale_name);
+  CurrencyFormatterAndroid(JNIEnv* env,
+                           const base::android::JavaRef<jstring>& currency_code,
+                           const base::android::JavaRef<jstring>& locale_name);
 
   CurrencyFormatterAndroid(const CurrencyFormatterAndroid&) = delete;
   CurrencyFormatterAndroid& operator=(const CurrencyFormatterAndroid&) = delete;
@@ -31,12 +30,12 @@ class CurrencyFormatterAndroid {
   void Destroy(JNIEnv* env);
 
   // Set the maximum number of fractional digits.
-  void SetMaxFractionalDigits(JNIEnv* env, jint jnum_fractional_digits);
+  void SetMaxFractionalDigits(JNIEnv* env, int32_t jnum_fractional_digits);
 
   // Refer to CurrencyFormatter::Format documentation.
   base::android::ScopedJavaLocalRef<jstring> Format(
       JNIEnv* env,
-      const base::android::JavaParamRef<jstring>& amount);
+      const base::android::JavaRef<jstring>& amount);
 
   base::android::ScopedJavaLocalRef<jstring> GetFormattedCurrencyCode(
       JNIEnv* env);

@@ -114,7 +114,7 @@ main (int argc, char **argv)
     int            brief = 0;
     int            quiet = 0;
     const FcChar8 *format = NULL;
-    const FcChar8 *format_optarg = NULL;
+    FcChar8       *format_optarg = NULL;
     int            nfont = 0;
     int            i;
     FcObjectSet   *os = 0;
@@ -138,7 +138,8 @@ main (int argc, char **argv)
 	    brief = 1;
 	    break;
 	case 'f':
-	    format_optarg = format = (FcChar8 *)strdup (optarg);
+	    format_optarg = FcStrCopy ((const FcChar8 *)optarg);
+	    format = (const FcChar8 *)format_optarg;
 	    break;
 	case 'q':
 	    quiet = 1;

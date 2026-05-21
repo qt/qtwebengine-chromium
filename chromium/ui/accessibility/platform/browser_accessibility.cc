@@ -10,13 +10,13 @@
 #include <iterator>
 
 #include "base/check.h"
-#include "base/containers/contains.h"
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
 #include "base/notimplemented.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "ui/accessibility/accessibility_features.h"
 #include "ui/accessibility/ax_constants.mojom.h"
 #include "ui/accessibility/ax_enums.mojom.h"
 #include "ui/accessibility/ax_node_id_forward.h"
@@ -1257,11 +1257,19 @@ std::optional<size_t> BrowserAccessibility::GetIndexInParent() const {
 
 gfx::AcceleratedWidget
 BrowserAccessibility::GetTargetForNativeAccessibilityEvent() {
-  AXPlatformTreeManagerDelegate* root_delegate =
-      manager()->GetDelegateFromRootManager();
-  if (!root_delegate)
+  // Views trees can use their manager's delegate because it always maps to a
+  // native widget, but web trees need the root manager's delegate so nested
+  // iframes get the right target.
+  AXPlatformTreeManagerDelegate* delegate =
+      features::IsAccessibilityTreeForViewsEnabled() && !IsWebContent()
+          ? manager()->delegate()
+          : manager()->GetDelegateFromRootManager();
+
+  if (!delegate) {
     return gfx::kNullAcceleratedWidget;
-  return root_delegate->AccessibilityGetAcceleratedWidget();
+  }
+
+  return delegate->AccessibilityGetAcceleratedWidget();
 }
 
 AXPlatformNode* BrowserAccessibility::GetTableCaption() const {
@@ -2001,6 +2009,7 @@ TextAttributeMap BrowserAccessibility::GetSpellingAndGrammarAttributes() const {
     const std::vector<int>& marker_ends =
         GetIntListAttribute(ax::mojom::IntListAttribute::kMarkerEnds);
 
+    CHECK_EQ(marker_types.size(), highlight_types.size());
     CHECK_EQ(marker_types.size(), marker_starts.size());
     CHECK_EQ(marker_types.size(), marker_ends.size());
 
@@ -2186,7 +2195,7 @@ TextAttributeMap BrowserAccessibility::ComputeTextAttributeMap(
 // static
 bool BrowserAccessibility::HasInvalidAttribute(
     const TextAttributeList& attributes) {
-  return base::Contains(attributes, "invalid", &TextAttribute::first);
+  return std::ranges::contains(attributes, "invalid", &TextAttribute::first);
 }
 
 static bool HasListAncestor(const BrowserAccessibility* node) {

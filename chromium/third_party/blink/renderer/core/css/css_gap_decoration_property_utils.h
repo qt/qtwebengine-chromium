@@ -23,10 +23,10 @@ enum class CSSGapDecorationPropertyType : int {
   kColor,
   kWidth,
   kStyle,
-  kEdgeEndInset,
-  kEdgeStartInset,
-  kInteriorStartInset,
-  kInteriorEndInset,
+  kEdgeInsetEnd,
+  kEdgeInsetStart,
+  kInteriorInsetStart,
+  kInteriorInsetEnd,
 };
 
 enum class CSSGapDecorationPropertyDirection : int {
@@ -63,6 +63,9 @@ class CORE_EXPORT CSSGapDecorationUtils {
   static CSSValueList* GetExpandedCSSValueListForGapData(
       const CSSValueList& list,
       const StyleResolverState& state);
+
+  static RuleBreak ResolveRuleBreakValue(const ComputedStyle& style,
+                                         GridTrackSizingDirection direction);
 };
 
 }  // namespace blink

@@ -235,11 +235,6 @@ class UnboundedQueue {
   size_t back_ = 0;
 };
 
-#if !LIBGAV1_CXX17
-template <typename T>
-constexpr size_t UnboundedQueue<T>::kBlockCapacity;
-#endif
-
 }  // namespace libgav1
 
 #endif  // LIBGAV1_SRC_UTILS_UNBOUNDED_QUEUE_H_

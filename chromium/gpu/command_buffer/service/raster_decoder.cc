@@ -119,6 +119,10 @@
 #include "gpu/command_buffer/service/drm_modifiers_filter_dawn.h"
 #endif  // BUILDFLAG(SKIA_USE_DAWN) && BUILDFLAG(IS_CHROMEOS)
 
+#if BUILDFLAG(IS_CHROMEOS)
+#include "ui/gfx/linux/drm_util_linux.h"  // nogncheck
+#endif                                    // BUILDFLAG(IS_CHROMEOS)
+
 // Local versions of the SET_GL_ERROR macros
 #define LOCAL_SET_GL_ERROR(error, function_name, msg) \
   ERRORSTATE_SET_GL_ERROR(error_state_.get(), error, function_name, msg)
@@ -482,8 +486,7 @@ class RasterDecoderImpl final : public RasterDecoder,
   ~RasterDecoderImpl() override;
 
   // RasterDecoder implementation.
-  ContextResult Initialize(bool enable_gpu_rasterization,
-                           bool lose_context_when_out_of_memory) override;
+  ContextResult Initialize(bool lose_context_when_out_of_memory) override;
   int GetRasterDecoderId() const override;
   int DecoderIdForTest() override;
   ServiceTransferCache* GetTransferCacheForTest() override;
@@ -560,6 +563,7 @@ class RasterDecoderImpl final : public RasterDecoder,
 
   gles2::ContextGroup* GetContextGroup() override;
   gles2::ErrorState* GetErrorState() override;
+  void BindFramebuffer(unsigned target, uint32_t service_id) const override;
 
   bool IsCompressedTextureFormat(unsigned format) override;
   bool ClearLevel(gles2::Texture* texture,
@@ -1047,7 +1051,6 @@ base::WeakPtr<DecoderContext> RasterDecoderImpl::AsWeakPtr() {
 }
 
 ContextResult RasterDecoderImpl::Initialize(
-    bool enable_gpu_rasterization,
     bool lose_context_when_out_of_memory) {
   TRACE_EVENT0("gpu", "RasterDecoderImpl::Initialize");
   DCHECK(shared_context_state_->IsCurrent(nullptr));
@@ -1142,10 +1145,11 @@ gl::GLSurface* RasterDecoderImpl::GetGLSurface() {
 Capabilities RasterDecoderImpl::GetCapabilities() {
   // TODO(enne): reconcile this with gles2_cmd_decoder's capability settings.
   Capabilities caps;
-  caps.gpu_memory_buffer_formats =
-      feature_info()->feature_flags().gpu_memory_buffer_formats;
+  caps.mappable_formats = feature_info()->feature_flags().mappable_formats;
   caps.texture_format_bgra8888 =
       feature_info()->feature_flags().ext_texture_format_bgra8888;
+  caps.disable_mac_swangle_rgbx =
+      feature_info()->feature_flags().disable_mac_swangle_rgbx;
   caps.texture_rg = feature_info()->feature_flags().ext_texture_rg;
   caps.max_texture_size = shared_context_state_->GetMaxTextureSize();
   caps.using_vulkan_context =
@@ -1234,7 +1238,7 @@ Capabilities RasterDecoderImpl::GetCapabilities() {
                                           caps.drm_formats_and_modifiers);
   }
 #endif  // BUILDFLAG(ENABLE_VULKAN)
-#if BUILDFLAG(SKIA_USE_DAWN)
+#if BUILDFLAG(SKIA_USE_DAWN) && BUILDFLAG(IS_CHROMEOS)
   else if (shared_context_state_->IsGraphiteDawnVulkan()) {
     auto adapter = shared_context_state_->dawn_context_provider()
                        ->GetDevice()
@@ -1245,6 +1249,19 @@ Capabilities RasterDecoderImpl::GetCapabilities() {
 #endif  // BUILDFLAG(SKIA_USE_DAWN)
   else {
     NOTREACHED();
+  }
+#endif  // BUILDFLAG(IS_CHROMEOS)
+
+#if BUILDFLAG(IS_CHROMEOS)
+  base::EraseIf(caps.drm_formats_and_modifiers, [&](const auto& format) {
+    auto drm_format = format.first;
+    return !ui::IsValidDrmFormat(drm_format) ||
+           !caps.mappable_formats.contains(
+               ui::GetSharedImageFormatFromFourCCFormat(drm_format));
+  });
+  if (caps.drm_formats_and_modifiers.empty()) {
+    gles2::PopulateEmptyDRMCaps(caps.mappable_formats,
+                                caps.drm_formats_and_modifiers);
   }
 #endif  // BUILDFLAG(IS_CHROMEOS)
 
@@ -1596,6 +1613,11 @@ gles2::ContextGroup* RasterDecoderImpl::GetContextGroup() {
 
 gles2::ErrorState* RasterDecoderImpl::GetErrorState() {
   return error_state_.get();
+}
+
+void RasterDecoderImpl::BindFramebuffer(unsigned target,
+                                        uint32_t service_id) const {
+  NOTREACHED();
 }
 
 bool RasterDecoderImpl::IsCompressedTextureFormat(unsigned format) {
@@ -2981,18 +3003,16 @@ error::Error RasterDecoderImpl::DoRasterCHROMIUM(GLuint raster_shm_id,
   } else {
     if (font_shm_size > 0) {
       // Deserialize fonts before raster.
-      volatile uint8_t* font_buffer_memory = GetSharedMemoryAs<uint8_t*>(
-          font_shm_id, font_shm_offset, font_shm_size);
-      if (!font_buffer_memory) {
+      base::span<volatile uint8_t> font_buffer =
+          GetSharedMemoryAsSpan(font_shm_id, font_shm_offset, font_shm_size);
+      if (font_buffer.empty()) {
         LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glRasterCHROMIUM",
                            "Can not read font buffer.");
         return error::kNoError;
       }
 
       std::vector<SkDiscardableHandleId> new_locked_handles;
-      if (!font_manager_->Deserialize(
-              UNSAFE_TODO(base::span(font_buffer_memory, font_shm_size)),
-              &new_locked_handles)) {
+      if (!font_manager_->Deserialize(font_buffer, &new_locked_handles)) {
         LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glRasterCHROMIUM",
                            "Invalid font buffer.");
         return error::kNoError;

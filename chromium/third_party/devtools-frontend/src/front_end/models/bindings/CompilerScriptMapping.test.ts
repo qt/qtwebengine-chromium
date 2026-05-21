@@ -557,17 +557,17 @@ describeWithMockConnection('CompilerScriptMapping', () => {
   });
 
   describe('translateRawFramesStep', () => {
-    it('returns false for builtin frames', () => {
+    it('returns false for builtin frames', async () => {
       const target = createTarget();
       const compilerScriptMapping = new Bindings.CompilerScriptMapping.CompilerScriptMapping(
           target.model(SDK.DebuggerModel.DebuggerModel)!, workspace, debuggerWorkspaceBinding);
 
-      assert.isFalse(compilerScriptMapping.translateRawFramesStep(
+      assert.isFalse(await compilerScriptMapping.translateRawFramesStep(
           [{lineNumber: -1, columnNumber: -1, functionName: 'Array.map'}], []));
     });
 
     it('translates a single frame using "proposal scopes" information', async () => {
-      Root.Runtime.experiments.enableForTest(Root.Runtime.ExperimentName.USE_SOURCE_MAP_SCOPES);
+      Root.Runtime.experiments.enableForTest(Root.ExperimentNames.ExperimentName.USE_SOURCE_MAP_SCOPES);
 
       const target = createTarget();
       const compilerScriptMapping = new Bindings.CompilerScriptMapping.CompilerScriptMapping(
@@ -594,7 +594,7 @@ describeWithMockConnection('CompilerScriptMapping', () => {
 
       const translatedFrames:
           Parameters<Bindings.CompilerScriptMapping.CompilerScriptMapping['translateRawFramesStep']>[1] = [];
-      assert.isTrue(compilerScriptMapping.translateRawFramesStep(
+      assert.isTrue(await compilerScriptMapping.translateRawFramesStep(
           [{
             scriptId: script.scriptId,
             url: script.sourceURL,
@@ -611,7 +611,7 @@ describeWithMockConnection('CompilerScriptMapping', () => {
                          url: undefined,
                        }]]);
 
-      Root.Runtime.experiments.disableForTest(Root.Runtime.ExperimentName.USE_SOURCE_MAP_SCOPES);
+      Root.Runtime.experiments.disableForTest(Root.ExperimentNames.ExperimentName.USE_SOURCE_MAP_SCOPES);
     });
 
     it('translates a single frame using "fallback" scope information (created from AST and mappigns)', async () => {
@@ -630,12 +630,10 @@ describeWithMockConnection('CompilerScriptMapping', () => {
             url: 'http://example.com/index.js.map',
             content: sourceMap,
           });
-      script.sourceMap()?.hasScopeInfo();  // Trigger source map processing.
-      await script.sourceMap()?.scopesFallbackPromiseForTest;
 
       const translatedFrames:
           Parameters<Bindings.CompilerScriptMapping.CompilerScriptMapping['translateRawFramesStep']>[1] = [];
-      assert.isTrue(compilerScriptMapping.translateRawFramesStep(
+      assert.isTrue(await compilerScriptMapping.translateRawFramesStep(
           [{
             scriptId: script.scriptId,
             url: script.sourceURL,
@@ -654,7 +652,7 @@ describeWithMockConnection('CompilerScriptMapping', () => {
     });
 
     it('expands inlined frames and populates UISourceCode', async () => {
-      Root.Runtime.experiments.enableForTest(Root.Runtime.ExperimentName.USE_SOURCE_MAP_SCOPES);
+      Root.Runtime.experiments.enableForTest(Root.ExperimentNames.ExperimentName.USE_SOURCE_MAP_SCOPES);
 
       const target = createTarget();
       const compilerScriptMapping = new Bindings.CompilerScriptMapping.CompilerScriptMapping(
@@ -705,7 +703,7 @@ describeWithMockConnection('CompilerScriptMapping', () => {
 
       const translatedFrames:
           Parameters<Bindings.CompilerScriptMapping.CompilerScriptMapping['translateRawFramesStep']>[1] = [];
-      assert.isTrue(compilerScriptMapping.translateRawFramesStep(
+      assert.isTrue(await compilerScriptMapping.translateRawFramesStep(
           [protocolCallFrame(`${script.sourceURL}:${script.scriptId}::0:5`)], translatedFrames));
 
       assert.deepEqual(translatedFrames[0].map(stringifyFrame), [
@@ -720,7 +718,7 @@ describeWithMockConnection('CompilerScriptMapping', () => {
       assert.strictEqual(translatedFrames[0][1].uiSourceCode, uiSourceCode);
       assert.strictEqual(translatedFrames[0][2].uiSourceCode, uiSourceCode);
 
-      Root.Runtime.experiments.disableForTest(Root.Runtime.ExperimentName.USE_SOURCE_MAP_SCOPES);
+      Root.Runtime.experiments.disableForTest(Root.ExperimentNames.ExperimentName.USE_SOURCE_MAP_SCOPES);
     });
   });
 });

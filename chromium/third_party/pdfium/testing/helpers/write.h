@@ -15,28 +15,37 @@ class SkPicture;
 class SkWStream;
 #endif  // PDF_ENABLE_SKIA
 
+struct BitmapAttributes {
+  int width;
+  int height;
+  int stride;
+  bool has_alpha;
+};
+
 std::string WritePpm(const char* pdf_name,
                      int num,
                      void* buffer_void,
-                     int stride,
-                     int width,
-                     int height);
+                     const BitmapAttributes& bitmap_attributes);
 void WriteText(FPDF_TEXTPAGE textpage, const char* pdf_name, int num);
 void WriteAnnot(FPDF_PAGE page, const char* pdf_name, int num);
-std::string WritePng(const char* pdf_name,
-                     int num,
-                     void* buffer,
-                     int stride,
-                     int width,
-                     int height);
+std::string WriteStraightAlphaBufferToPng(
+    const char* pdf_name,
+    int num,
+    void* buffer,
+    const BitmapAttributes& bitmap_attributes);
+#ifdef PDF_ENABLE_SKIA
+std::string WritePremultipliedAlphaBufferToPng(
+    const char* pdf_name,
+    int num,
+    void* buffer,
+    const BitmapAttributes& bitmap_attributes);
+#endif
 
 #ifdef _WIN32
 std::string WriteBmp(const char* pdf_name,
                      int num,
                      void* buffer,
-                     int stride,
-                     int width,
-                     int height);
+                     const BitmapAttributes& bitmap_attributes);
 void WriteEmf(FPDF_PAGE page, const char* pdf_name, int num);
 void WritePS(FPDF_PAGE page, const char* pdf_name, int num);
 #endif  // _WIN32

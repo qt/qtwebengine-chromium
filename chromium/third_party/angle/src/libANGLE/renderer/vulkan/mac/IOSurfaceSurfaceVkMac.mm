@@ -124,7 +124,7 @@ angle::Result IOSurfaceSurfaceVkMac::initializeImpl(DisplayVk *displayVk)
                                           mState.hasProtectedContent()));
 
     mColorRenderTarget.init(&mColorAttachment.image, &mColorAttachment.imageViews, nullptr, nullptr,
-                            {}, gl::LevelIndex(0), 0, 1, RenderTargetTransience::Default);
+                            gl::LevelIndex(0), 0, 1, RenderTargetTransience::Default);
 
     return angle::Result::Continue;
 }
@@ -134,7 +134,7 @@ egl::Error IOSurfaceSurfaceVkMac::unMakeCurrent(const gl::Context *context)
     ASSERT(context != nullptr);
     ContextVk *contextVk = vk::GetImpl(context);
     angle::Result result =
-        contextVk->flushAndSubmitCommands(nullptr, nullptr, RenderPassClosureReason::ContextChange);
+        contextVk->flushAndSubmitCommands(nullptr, nullptr, QueueSubmitReason::ContextChange);
     return angle::ToEGL(result, EGL_BAD_SURFACE);
 }
 

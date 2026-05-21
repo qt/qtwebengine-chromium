@@ -17,6 +17,7 @@
 #include "components/optimization_guide/core/optimization_guide_features.h"
 #include "components/optimization_guide/core/optimization_guide_logger.h"
 #include "components/optimization_guide/core/optimization_guide_switches.h"
+#include "components/optimization_guide/core/optimization_guide_util.h"
 #include "components/variations/net/variations_http_headers.h"
 #include "google_apis/gaia/gaia_constants.h"
 #include "net/base/url_util.h"
@@ -32,7 +33,6 @@ namespace optimization_guide {
 
 namespace {
 
-constexpr char kGoogleAPITypeName[] = "type.googleapis.com/";
 
 net::NetworkTrafficAnnotationTag GetNetworkTrafficAnnotation(
     ModelBasedCapabilityKey feature) {
@@ -312,6 +312,128 @@ net::NetworkTrafficAnnotationTag GetNetworkTrafficAnnotation(
     case ModelBasedCapabilityKey::kHistorySearch:
       // On-device only feature.
       NOTREACHED();
+    case ModelBasedCapabilityKey::kScamDetection:
+      return net::DefineNetworkTrafficAnnotation(
+          "scam_detection_model_execution",
+          R"(
+    semantics {
+      sender: "Safe Browsing Scam Detection"
+      description:
+        "Uses server-side AI model to extract the brand and intent of the page "
+        "from a web page to determine if the page is scammy."
+      trigger:
+        "User navigates to a suspicious web page."
+      destination: GOOGLE_OWNED_SERVICE
+      data:
+        "The text content of the suspicious page."
+      internal {
+        contacts {
+          email: "xinghuilu@chromium.org"
+        }
+        contacts {
+          email: "chrome-counter-abuse-alerts@google.com"
+        }
+      }
+      user_data {
+        type: WEB_CONTENT
+      }
+      last_reviewed: "2025-12-04"
+    }
+    policy {
+      cookies_allowed: NO
+      setting:
+        "Users can enable this feature via the enhanced protection setting "
+        "in Chrome Settings > Privacy and security > Security > Safe Browsing."
+        "This feature is disabled by default."
+      chrome_policy {
+        SafeBrowsingProtectionLevel {
+          SafeBrowsingProtectionLevel: 1
+        }
+      }
+    })");
+    case ModelBasedCapabilityKey::kSkills:
+      // TODO(xinyuqian): Update the email address to the team email once the
+      // feature is launched or ready for launch.
+      return net::DefineNetworkTrafficAnnotation("skills_model_execution", R"(
+      semantics {
+        sender: "Skills in Chrome"
+        description:
+          "Skills are page-aware, reusable AI workflows built on top of Gemini "
+          "in Chrome. They enable users to save, create, reuse, and discover "
+          "high-value AI workflows directly in the browser."
+        trigger:
+          "The user interacts with a feature that refines a skill. "
+        destination: GOOGLE_OWNED_SERVICE
+        data:
+          "The current page content or user-provided text relevant to skills."
+        internal {
+          contacts {
+            email: "xinyuqian@google.com"
+          }
+        }
+        user_data {
+          type: SENSITIVE_URL
+          type: WEB_CONTENT
+          type: USER_CONTENT
+        }
+        last_reviewed: "2026-01-29"
+      }
+      policy {
+        cookies_allowed: YES
+        cookies_store: "user"
+        setting:
+          "This feature can be disabled by turning off the relevant AI "
+          "feature in Chrome settings."
+        chrome_policy {
+          GeminiSettings {
+            GeminiSettings: 1
+          }
+        }
+      }
+    )");
+    case ModelBasedCapabilityKey::kGeminiAntiscamProtection:
+      return net::DefineNetworkTrafficAnnotation(
+          "gemini_antiscam_protection_model_execution",
+          R"(
+    semantics {
+      sender: "Gemini Antiscam Protection"
+      description:
+        "Uses server-side AI model to learn more about the scamminess of a "
+        "page."
+      trigger:
+        "User navigates to a suspicious web page and force request client side "
+        "detection ping is triggered."
+      destination: GOOGLE_OWNED_SERVICE
+      data:
+        "The URL and visible text content of the suspicious page the user is "
+        "currently visiting."
+      internal {
+        contacts {
+          email: "skrakowi@chromium.org"
+        }
+        contacts {
+          email: "chrome-counter-abuse-alerts@google.com"
+        }
+      }
+      user_data {
+        type: SENSITIVE_URL
+        type: WEB_CONTENT
+        type: USER_CONTENT
+      }
+      last_reviewed: "2026-01-28"
+    }
+    policy {
+      cookies_allowed: NO
+      setting:
+        "Users can enable this feature via the enhanced protection setting "
+        "in Chrome Settings > Privacy and security > Security > Safe Browsing."
+        "This feature is disabled by default."
+      chrome_policy {
+        SafeBrowsingProtectionLevel {
+          SafeBrowsingProtectionLevel: 1
+        }
+      }
+    })");
   }
 }
 
@@ -342,16 +464,22 @@ bool IsAccessTokenRequiredForFeature(ModelBasedCapabilityKey feature) {
     case ModelBasedCapabilityKey::kTest:
     case ModelBasedCapabilityKey::kHistorySearch:
     case ModelBasedCapabilityKey::kBlingPrototyping:
-    case ModelBasedCapabilityKey::kPasswordChangeSubmission:
     case ModelBasedCapabilityKey::kEnhancedCalendar:
     case ModelBasedCapabilityKey::kZeroStateSuggestions:
     case ModelBasedCapabilityKey::kWalletablePassExtraction:
     case ModelBasedCapabilityKey::kAmountExtraction:
     case ModelBasedCapabilityKey::kIosSmartTabGrouping:
+    case ModelBasedCapabilityKey::kSkills:
       return true;
     case ModelBasedCapabilityKey::kFormsClassifications:
       return !base::FeatureList::IsEnabled(
           features::kOptimizationGuideBypassFormsClassificationAuth);
+    case ModelBasedCapabilityKey::kScamDetection:
+    case ModelBasedCapabilityKey::kGeminiAntiscamProtection:
+      return false;
+    case ModelBasedCapabilityKey::kPasswordChangeSubmission:
+      return !base::FeatureList::IsEnabled(
+          features::kOptimizationGuideBypassPasswordChangeAuth);
   }
 }
 
@@ -404,12 +532,8 @@ void ModelExecutionFetcherImpl::ExecuteModel(
   model_execution_feature_ = feature;
   model_execution_callback_ = std::move(callback);
 
-  proto::ExecuteRequest execute_request;
-  execute_request.set_feature(ToModelExecutionFeatureProto(feature));
-  proto::Any* any_metadata = execute_request.mutable_request_metadata();
-  any_metadata->set_type_url(
-      base::StrCat({kGoogleAPITypeName, request_metadata.GetTypeName()}));
-  request_metadata.SerializeToString(any_metadata->mutable_value());
+  proto::ExecuteRequest execute_request =
+      ToExecuteRequest(feature, request_metadata);
   std::string serialized_request;
   execute_request.SerializeToString(&serialized_request);
 
@@ -508,11 +632,7 @@ void ModelExecutionFetcherImpl::OnURLLoadComplete(
                 ModelExecutionError::kGenericFailure)));
     return;
   }
-  base::UmaHistogramMediumTimes(
-      base::StrCat(
-          {"OptimizationGuide.ModelExecutionFetcher.FetchLatency.",
-           GetStringNameForModelExecutionFeature(*model_execution_feature_)}),
-      base::TimeTicks::Now() - fetch_start_time_);
+
   RecordRequestStatusHistogram(*model_execution_feature_,
                                FetcherRequestStatus::kSuccess);
   // This should be the last call, since the callback could be deleting `this`.

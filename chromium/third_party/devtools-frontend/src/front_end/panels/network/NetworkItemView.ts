@@ -8,10 +8,10 @@ import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
+import * as Annotations from '../../models/annotations/annotations.js';
 import type * as NetworkTimeCalculator from '../../models/network_time_calculator/network_time_calculator.js';
 import * as PanelCommon from '../../panels/common/common.js';
 import * as NetworkForward from '../../panels/network/forward/forward.js';
-import * as Annotations from '../../ui/components/annotations/annotations.js';
 import * as LegacyWrapper from '../../ui/components/legacy_wrapper/legacy_wrapper.js';
 import {Icon} from '../../ui/kit/kit.js';
 import type * as SourceFrame from '../../ui/legacy/components/source_frame/source_frame.js';
@@ -21,6 +21,7 @@ import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
 import * as NetworkComponents from './components/components.js';
 import {EventSourceMessagesView} from './EventSourceMessagesView.js';
 import {RequestCookiesView} from './RequestCookiesView.js';
+import {RequestDeviceBoundSessionsView} from './RequestDeviceBoundSessionsView.js';
 import {RequestInitiatorView} from './RequestInitiatorView.js';
 import {RequestPayloadView} from './RequestPayloadView.js';
 import {RequestPreviewView} from './RequestPreviewView.js';
@@ -115,6 +116,17 @@ const UIStrings = {
    */
   cookies: 'Cookies',
   /**
+   * @description Title of the Device Bound Sessions tab in the Network panel. A
+   * website may decide to create a session for a user, for example when the user
+   * logs in. They can use a protocol to make it a "device bound session". That
+   * means that when the session expires, it is only possible for it to be
+   * extended on the device it was created on. Thus the session is considered
+   * to be bound to that device. For more details on the protocol, see
+   * https://github.com/w3c/webappsec-dbsc/blob/main/README.md and
+   * https://w3c.github.io/webappsec-dbsc/.
+   */
+  deviceBoundSessions: 'Device bound sessions',
+  /**
    * @description Text in Network Item View of the Network panel
    */
   requestAndResponseCookies: 'Request and response cookies',
@@ -140,6 +152,7 @@ export class NetworkItemView extends UI.TabbedPane.TabbedPane {
   #payloadView: RequestPayloadView|null = null;
   readonly #responseView: RequestResponseView|undefined;
   #cookiesView: RequestCookiesView|null = null;
+  #deviceBoundSessionsView: RequestDeviceBoundSessionsView|null = null;
   #initialTab?: NetworkForward.UIRequestLocation.UIRequestTabs;
   readonly #firstTab: NetworkForward.UIRequestLocation.UIRequestTabs;
 
@@ -237,11 +250,11 @@ export class NetworkItemView extends UI.TabbedPane.TabbedPane {
         RequestTimingView.create(request, calculator), i18nString(UIStrings.requestAndResponseTimeline));
 
     if (request.trustTokenParams()) {
+      const trustTokensView = new NetworkComponents.RequestTrustTokensView.RequestTrustTokensView();
+      trustTokensView.request = request;
       this.appendTab(
           NetworkForward.UIRequestLocation.UIRequestTabs.TRUST_TOKENS, i18nString(UIStrings.trustTokens),
-          LegacyWrapper.LegacyWrapper.legacyWrapper(
-              UI.Widget.VBox, new NetworkComponents.RequestTrustTokensView.RequestTrustTokensView(request)),
-          i18nString(UIStrings.trustTokenOperationDetails));
+          trustTokensView, i18nString(UIStrings.trustTokenOperationDetails));
     }
 
     this.#initialTab = initialTab || this.#resourceViewTabSetting.get();
@@ -253,10 +266,10 @@ export class NetworkItemView extends UI.TabbedPane.TabbedPane {
     super.wasShown();
     this.#request.addEventListener(SDK.NetworkRequest.Events.REQUEST_HEADERS_CHANGED, this.requestHeadersChanged, this);
     this.#request.addEventListener(
-        SDK.NetworkRequest.Events.RESPONSE_HEADERS_CHANGED, this.maybeAppendCookiesPanel, this);
+        SDK.NetworkRequest.Events.RESPONSE_HEADERS_CHANGED, this.maybeAppendCookieResponsePanels, this);
     this.#request.addEventListener(
         SDK.NetworkRequest.Events.TRUST_TOKEN_RESULT_ADDED, this.maybeShowErrorIconInTrustTokenTabHeader, this);
-    this.maybeAppendCookiesPanel();
+    this.maybeAppendCookieResponsePanels();
     this.maybeShowErrorIconInTrustTokenTabHeader();
 
     // Only select the initial tab the first time the view is shown after construction.
@@ -283,7 +296,7 @@ export class NetworkItemView extends UI.TabbedPane.TabbedPane {
     this.#request.removeEventListener(
         SDK.NetworkRequest.Events.REQUEST_HEADERS_CHANGED, this.requestHeadersChanged, this);
     this.#request.removeEventListener(
-        SDK.NetworkRequest.Events.RESPONSE_HEADERS_CHANGED, this.maybeAppendCookiesPanel, this);
+        SDK.NetworkRequest.Events.RESPONSE_HEADERS_CHANGED, this.maybeAppendCookieResponsePanels, this);
     this.#request.removeEventListener(
         SDK.NetworkRequest.Events.TRUST_TOKEN_RESULT_ADDED, this.maybeShowErrorIconInTrustTokenTabHeader, this);
   }
@@ -291,6 +304,11 @@ export class NetworkItemView extends UI.TabbedPane.TabbedPane {
   private async requestHeadersChanged(): Promise<void> {
     this.maybeAppendCookiesPanel();
     void this.maybeAppendPayloadPanel();
+  }
+
+  private maybeAppendCookieResponsePanels(): void {
+    this.maybeAppendCookiesPanel();
+    this.maybeAppendDeviceBoundSessionsPanel();
   }
 
   private maybeAppendCookiesPanel(): void {
@@ -311,12 +329,24 @@ export class NetworkItemView extends UI.TabbedPane.TabbedPane {
     }
   }
 
+  private maybeAppendDeviceBoundSessionsPanel(): void {
+    const deviceBoundSessionsPresent = this.#request.getDeviceBoundSessionUsages().length > 0;
+    if (deviceBoundSessionsPresent && !this.#deviceBoundSessionsView) {
+      this.#deviceBoundSessionsView = new RequestDeviceBoundSessionsView(this.#request);
+      this.appendTab(
+          NetworkForward.UIRequestLocation.UIRequestTabs.DEVICE_BOUND_SESSIONS,
+          i18nString(UIStrings.deviceBoundSessions), this.#deviceBoundSessionsView,
+          i18nString(UIStrings.deviceBoundSessions));
+    }
+  }
+
   private async maybeAppendPayloadPanel(): Promise<void> {
     if (this.hasTab('payload')) {
       return;
     }
     if (this.#request.queryParameters || await this.#request.requestFormData()) {
-      this.#payloadView = new RequestPayloadView(this.#request);
+      this.#payloadView = new RequestPayloadView();
+      this.#payloadView.request = this.#request;
       this.appendTab(
           NetworkForward.UIRequestLocation.UIRequestTabs.PAYLOAD, i18nString(UIStrings.payload), this.#payloadView,
           i18nString(UIStrings.payload), /* userGesture=*/ void 0,

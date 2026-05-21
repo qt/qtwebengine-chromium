@@ -1996,6 +1996,49 @@ by ":". See the SVT-AV1 encoder user guide for a list of accepted parameters.
 
 @end table
 
+@section libsvtjpegxs
+
+SVT-JPEG-XS encoder wrapper.
+
+Requires the presence of the SVT-JPEG-XS headers and library during configuration.
+You need to explicitly configure the build with @code{--enable-libsvtjpegxs}.
+
+@subsection Options
+
+@table @option
+@item decomp_v
+Set vertical decomposition level
+@item decomp_h
+Set horizontal decomposition level
+
+@item quantization
+Set the quantization algorithm.
+@table @samp
+@item deadzone
+@item uniform
+@end table
+
+@item coding-signs
+Enable Signs handling strategy
+@table @samp
+@item disable
+@item fast
+@item full
+@end table
+
+@item coding-sigf
+Enable Significance coding
+
+@item coding-vpred
+Enable Vertical Prediction coding
+@table @samp
+@item disable
+@item no_residuals
+@item no_coeffs
+@end table
+
+@end table
+
 @section libjxl
 
 libjxl JPEG XL encoder wrapper.
@@ -3040,6 +3083,10 @@ Quantizer curve compression factor
 Normally, when forcing a I-frame type, the encoder can select any type
 of I-frame. This option forces it to choose an IDR-frame.
 
+@item x265-stats
+Specify the file name for 2-pass stats. This is set automatically when using
+the @option{-passlogfile} option.
+
 @item udu_sei @var{boolean}
 Import user data unregistered SEI if available into output. Default is 0 (off).
 
@@ -3413,11 +3460,96 @@ Maximum quantization parameter for B frame.
 
 @section MediaFoundation
 
-This provides wrappers to encoders (both audio and video) in the
-MediaFoundation framework. It can access both SW and HW encoders.
+The following wrappers for encoders in the MediaFoundation framework are
+available:
+
+@itemize
+@item h264_mf
+@item hevc_mf
+@item av1_mf
+@end itemize
+
+These support both software and hardware encoding.
+
 Video encoders can take input in either of nv12 or yuv420p form
 (some encoders support both, some support only either - in practice,
 nv12 is the safer choice, especially among HW encoders).
+
+Hardware-accelerated encoding requires D3D11, including hardware
+scaling capabilities through the scale_d3d11 filter.
+
+To list all available options for the MediaFoundation encoders, use:
+@command{ffmpeg -h encoder=<encoder>} e.g. @command{ffmpeg -h encoder=h264_mf}
+
+@subsection Options
+
+@table @option
+@item rate_control
+Select rate control mode. Available modes:
+
+@table @samp
+@item default
+Default mode
+@item cbr
+CBR mode
+@item pc_vbr
+Peak constrained VBR mode
+@item u_vbr
+Unconstrained VBR mode
+@item quality
+Quality mode
+@item ld_vbr
+Low delay VBR mode (requires Windows 8+)
+@item g_vbr
+Global VBR mode (requires Windows 8+)
+@item gld_vbr
+Global low delay VBR mode (requires Windows 8+)
+@end table
+
+@item scenario
+Select usage scenario. Available scenarios:
+
+@table @samp
+@item default
+Default scenario
+@item display_remoting
+Display remoting scenario
+@item video_conference
+Video conference scenario
+@item archive
+Archive scenario
+@item live_streaming
+Live streaming scenario
+@item camera_record
+Camera record scenario
+@item display_remoting_with_feature_map
+Display remoting with feature map scenario
+@end table
+
+@item quality
+Set encoding quality (0-100). -1 means default quality.
+
+@item hw_encoding
+Force hardware encoding (0-1). Default is 0 (disabled).
+
+@end table
+
+@subsection Examples
+
+Hardware encoding:
+@example
+ffmpeg -i input.mp4 -c:v h264_mf -hw_encoding 1 output.mp4
+@end example
+
+Hardware-accelerated decoding with hardware encoding:
+@example
+ffmpeg -hwaccel d3d11va -i input.mp4 -c:v h264_mf -hw_encoding 1 output.mp4
+@end example
+
+Hardware-accelerated decoding, HW scaling and encoding with quality setting:
+@example
+ffmpeg -hwaccel d3d11va -hwaccel_output_format d3d11 -i input.mp4 -vf scale_d3d11=1920:1080 -c:v hevc_mf -hw_encoding 1 -quality 80 output.mp4
+@end example
 
 @section Microsoft RLE
 

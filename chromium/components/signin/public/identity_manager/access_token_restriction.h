@@ -8,16 +8,19 @@
 #include <string>
 
 #include "base/containers/flat_set.h"
+#include "components/signin/public/base/oauth_consumer_id.h"
 
 // File that lists the Google cloud authenticated APIs (OAuth2 scopes) and
 // the consent level required to access them.
 namespace signin {
 
 enum class OAuth2ScopeRestriction {
-  kNoRestriction = 0,
-  kSignedIn = 1,
-  kExplicitConsent = 2,
-  kPrivilegedOAuth2Consumer = 3,
+  // The scope can be used with no restriction.
+  kNoRestriction,
+  // The scope can be used when the user is signed in to Chrome.
+  kSignedIn,
+  // The scope can only be used by a OAuth2 privileged consumer.
+  kPrivilegedOAuth2Consumer,
 };
 
 OAuth2ScopeRestriction GetOAuth2ScopeRestriction(const std::string& scope);
@@ -25,7 +28,7 @@ OAuth2ScopeRestriction GetOAuth2ScopeRestriction(const std::string& scope);
 // Returns true for set of consumers that have privileged access to Google APIs.
 // These consumers have access to all API scopes regardless of the user consent
 // level.
-bool IsPrivilegedOAuth2Consumer(const std::string& consumer_name);
+bool IsPrivilegedOAuth2Consumer(signin::OAuthConsumerId oauth_consumer_id);
 
 }  // namespace signin
 

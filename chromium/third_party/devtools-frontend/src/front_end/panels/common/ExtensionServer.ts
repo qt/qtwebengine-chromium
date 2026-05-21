@@ -1421,7 +1421,11 @@ export class ExtensionServer extends Common.ObjectWrapper.ObjectWrapper<EventTyp
     } else if (!this.extensionEnabled(port)) {
       result = this.status.E_FAILED('Permission denied');
     } else {
-      result = await handler(message, event.target as MessagePort);
+      try {
+        result = await handler(message, event.target as MessagePort);
+      } catch (e) {
+        result = this.status.E_FAILED(e.message);
+      }
     }
 
     if (result && message.requestId) {
@@ -1665,7 +1669,12 @@ class ExtensionServerPanelView extends UI.View.SimpleView {
     // used anywhere, since we override the `viewId()` method below.  Ideally we'd pass the
     // `name` as `viewId` to the constructor, but that doesn't work, since the `name` is not
     // necessarily in Kebab case.
-    const viewId = Platform.StringUtilities.toKebabCase(title);
+    //
+    // For non-ASCII titles (e.g., Chinese, Japanese, Arabic), the kebab-cased result may not
+    // pass isExtendedKebabCase validation, so we fall back to 'extension-panel'.
+    const kebabTitle = Platform.StringUtilities.toKebabCase(title);
+    const viewId =
+        Platform.StringUtilities.isExtendedKebabCase(kebabTitle) ? kebabTitle : 'extension-panel' as Lowercase<string>;
     super({title, viewId});
     this.name = name;
     this.panel = panel;

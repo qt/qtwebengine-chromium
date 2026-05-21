@@ -29,6 +29,7 @@
 #include "base/functional/function_ref.h"
 #include "base/gtest_prod_util.h"
 #include "base/i18n/rtl.h"
+#include "base/memory/memory_pressure_listener.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/raw_ref.h"
 #include "base/memory/scoped_refptr.h"
@@ -49,6 +50,7 @@
 #include "content/browser/browser_interface_broker_impl.h"
 #include "content/browser/buckets/bucket_context.h"
 #include "content/browser/can_commit_status.h"
+#include "content/browser/locks/lock_manager.h"
 #include "content/browser/renderer_host/back_forward_cache_impl.h"
 #include "content/browser/renderer_host/back_forward_cache_metrics.h"
 #include "content/browser/renderer_host/browsing_context_state.h"
@@ -331,7 +333,9 @@ class CONTENT_EXPORT RenderFrameHostImpl
       public network::mojom::TrustTokenAccessObserver,
       public network::mojom::SharedDictionaryAccessObserver,
       public network::mojom::DeviceBoundSessionAccessObserver,
-      public BucketContext {
+      public LockManager<storage::BucketId>::Observer,
+      public BucketContext,
+      public base::MemoryPressureListener {
  public:
   using JavaScriptDialogCallback =
       content::JavaScriptDialogManager::DialogClosedCallback;
@@ -355,6 +359,7 @@ class CONTENT_EXPORT RenderFrameHostImpl
 
   static RenderFrameHostImpl* FromID(GlobalRenderFrameHostId id);
   static RenderFrameHostImpl* FromID(int process_id, int routing_id);
+  static RenderFrameHostImpl* FromID(ChildProcessId process_id, int routing_id);
   // Returns the `RenderFrameHostImpl` with the given `blink::LocalFrameToken`,
   // or `nullptr` if no such `RenderFrameHostImpl` exists.
   //
@@ -366,8 +371,13 @@ class CONTENT_EXPORT RenderFrameHostImpl
   static RenderFrameHostImpl* FromFrameToken(
       const GlobalRenderFrameHostToken& frame_token,
       mojo::ReportBadMessageCallback* process_mismatch_callback = nullptr);
+  // TODO(crbug.com/379869738) Remove this method when usages are ported.
   static RenderFrameHostImpl* FromFrameToken(
       int process_id,
+      const blink::LocalFrameToken& frame_token,
+      mojo::ReportBadMessageCallback* process_mismatch_callback = nullptr);
+  static RenderFrameHostImpl* FromFrameToken(
+      ChildProcessId process_id,
       const blink::LocalFrameToken& frame_token,
       mojo::ReportBadMessageCallback* process_mismatch_callback = nullptr);
   // Returns the `RenderFrameHostImpl` with the given `blink::DocumentToken`, or
@@ -498,12 +508,13 @@ class CONTENT_EXPORT RenderFrameHostImpl
   const net::NetworkIsolationKey& GetNetworkIsolationKey() override;
   const net::IsolationInfo& GetIsolationInfoForSubresources() override;
   net::IsolationInfo GetPendingIsolationInfoForSubresources() override;
+  std::optional<base::UnguessableToken> GetNetworkRestrictionsID() override;
   gfx::NativeView GetNativeView() override;
   void AddMessageToConsole(blink::mojom::ConsoleMessageLevel level,
                            const std::string& message) override;
   void ExecuteJavaScriptMethod(const std::u16string& object_name,
                                const std::u16string& method_name,
-                               base::Value::List arguments,
+                               base::ListValue arguments,
                                JavaScriptResultCallback callback) override;
   void ExecuteJavaScript(const std::u16string& javascript,
                          JavaScriptResultCallback callback) override;
@@ -761,6 +772,9 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // SiteInstanceGroup::Observer
   void RenderProcessGone(SiteInstanceGroup* site_instance_group,
                          const ChildProcessTerminationInfo& info) override;
+
+  // LockObserver
+  void OnLockContention() override;
 
   // ui::AXActionHandlerBase:
   void PerformAction(const ui::AXActionData& data) override;
@@ -1370,9 +1384,6 @@ class CONTENT_EXPORT RenderFrameHostImpl
     // Transition to this state happens only from kActive and kPrerendering
     // states. Note that eviction from BackForwardCache does not wait for unload
     // handlers, and kInBackForwardCache moves to kReadyToBeDeleted.
-    // TODO(crbug.com/40187396): Omit unload handling on canceling
-    // prerendering, and making kPrerendering move to kReadyToBeDeleted
-    // directly.
     kRunningUnloadHandlers,
 
     // This state corresponds to when RenderFrameHost has completed running the
@@ -2642,16 +2653,9 @@ class CONTENT_EXPORT RenderFrameHostImpl
   void RecordWindowProxyUsageMetrics(
       const blink::FrameToken& target_frame_token,
       blink::mojom::WindowProxyAccessType access_type) override;
-  void InitializeCrashReportStorage(
+  void InitializeCrashReportContext(
       uint64_t length,
-      InitializeCrashReportStorageCallback callback) override;
-  void SetCrashReportStorageKey(
-      const std::string& key,
-      const std::string& value,
-      SetCrashReportStorageKeyCallback callback) override;
-  void RemoveCrashReportStorageKey(
-      const std::string& key,
-      RemoveCrashReportStorageKeyCallback callback) override;
+      InitializeCrashReportContextCallback callback) override;
 
   // blink::mojom::BackForwardCacheControllerHost:
   void EvictFromBackForwardCache(
@@ -2672,11 +2676,6 @@ class CONTENT_EXPORT RenderFrameHostImpl
                        blink::mojom::LocalMainFrameHost::UpdateTargetURLCallback
                            callback) override;
   void RequestClose() override;
-  void ShowCreatedWindow(const blink::LocalFrameToken& opener_frame_token,
-                         WindowOpenDisposition disposition,
-                         blink::mojom::WindowFeaturesPtr window_features,
-                         bool user_gesture,
-                         ShowCreatedWindowCallback callback) override;
   void SetWindowRect(const gfx::Rect& bounds,
                      SetWindowRectCallback callback) override;
   void DidFirstVisuallyNonEmptyPaint() override;
@@ -3080,6 +3079,9 @@ class CONTENT_EXPORT RenderFrameHostImpl
       blink::mojom::BucketHost::GetDirectoryCallback callback) override;
   storage::BucketClientInfo GetBucketClientInfo() const override;
 
+  // base::MemoryPressureListener:
+  void OnMemoryPressure(base::MemoryPressureLevel level) override {}
+
   // Returns false if this document not the initial empty document, or if the
   // current document's input stream has been opened with document.open(),
   // causing the document to lose its "initial empty document" status. For more
@@ -3369,7 +3371,6 @@ class CONTENT_EXPORT RenderFrameHostImpl
           keep_alive_loader_factory,
       mojo::PendingAssociatedRemote<blink::mojom::FetchLaterLoaderFactory>
           fetch_later_loader_factory,
-      const std::optional<network::ParsedPermissionsPolicy>& permissions_policy,
       blink::mojom::PolicyContainerPtr policy_container,
       const blink::DocumentToken& document_token,
       const base::UnguessableToken& devtools_navigation_token);
@@ -3463,6 +3464,8 @@ class CONTENT_EXPORT RenderFrameHostImpl
                            AttemptDuplicateRenderWidgetHost);
   FRIEND_TEST_ALL_PREFIXES(SecurityExploitBrowserTest,
                            BindToWebUIFromWebViaMojo);
+  FRIEND_TEST_ALL_PREFIXES(SecurityExploitBrowserTest,
+                           CreateNewWindowWithInaccessibleFile);
   FRIEND_TEST_ALL_PREFIXES(SitePerProcessBrowserTest,
                            RenderViewHostIsNotReusedAfterDelayedUnloadACK);
   FRIEND_TEST_ALL_PREFIXES(SitePerProcessBrowserTest,
@@ -3661,7 +3664,10 @@ class CONTENT_EXPORT RenderFrameHostImpl
       mojo::PendingRemote<blink::mojom::NavigationStateKeepAliveHandle>
           initiator_navigation_state_keep_alive_handle,
       mojo::PendingReceiver<mojom::NavigationRendererCancellationListener>
-          renderer_cancellation_listener) override;
+          renderer_cancellation_listener,
+      mojo::PendingReceiver<
+          blink::mojom::NavigationResumeDeferredCommitListener>
+          deferred_commit_resume_listener) override;
   void SubresourceResponseStarted(const url::SchemeHostPort& final_response_url,
                                   net::CertStatus cert_status) override;
   void ResourceLoadComplete(
@@ -3927,9 +3933,6 @@ class CONTENT_EXPORT RenderFrameHostImpl
 
   // Stores a snapshot of the inherited base URL from the initiator's
   // FrameLoadRequest, if this document inherited one (e.g., about:srcdoc).
-  // TODO(crbug.com/40060678): about:blank frames will also need to inherit base
-  // URLs, from the initiator rather than the parent. See
-  // https://crbug.com/1356658#c7.
   void SetInheritedBaseUrl(const GURL& inherited_base_url);
 
   // Called when a navigation commits successfully to |url_info->url|. This
@@ -3949,6 +3952,13 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // Clears any existing policy and constructs a new policy for this frame,
   // based on its parent frame and the parsed `header_policy`.
   void ResetPermissionsPolicy(
+      const network::ParsedPermissionsPolicy& header_policy);
+
+  // Verifies that the `header_policy` sent by the renderer for an Isolated Web
+  // App is valid, i.e. it does not contain any policies that are not present in
+  // the manifest.
+  // A return value of true means that the policy is valid.
+  bool VerifyIsolatedWebAppPermissionsPolicyIsSubsetOfManifest(
       const network::ParsedPermissionsPolicy& header_policy);
 
   // Runs |callback| for all the local roots immediately under this frame, i.e.
@@ -4069,6 +4079,7 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // Based on the termination |status| and |exit_code|, may generate a crash
   // report to be routed to the Reporting API.
   void MaybeGenerateCrashReport(base::TerminationStatus status, int exit_code);
+  base::DictValue ReadCrashReportAPIBody();
 
   // Bitfield values for recording navigation frame-type (main or subframe)
   // combined with whether a sudden termination disabler is present. Currently
@@ -4244,8 +4255,8 @@ class CONTENT_EXPORT RenderFrameHostImpl
   void SetPolicyContainerHost(
       scoped_refptr<PolicyContainerHost> policy_container_host);
 
-  // Initializes |private_network_request_policy_|. Constructor helper.
-  void InitializePrivateNetworkRequestPolicy();
+  // Initializes |local_network_access_request_policy_|. Constructor helper.
+  void InitializeLocalNetworkAccessRequestPolicy();
 
   // Returns true if this frame requires a proxy to talk to its parent.
   // Note: Using a proxy to talk to a parent does not imply that the parent
@@ -4611,7 +4622,7 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // The policy to apply to private network requests for subresources issued by
   // the last committed document. Set to a default value until a document
   // commits for the first time. The default value depends on whether certain
-  // feature flags are enabled, see |DerivePrivateNetworkRequestPolicy()|.
+  // feature flags are enabled, see |DeriveLocalNetworkAccessRequestPolicy()|.
   //
   // This property normally depends on the last committed origin and the state
   // of |ContentBrowserClient| at the time the navigation committed. Due to the
@@ -4621,8 +4632,9 @@ class CONTENT_EXPORT RenderFrameHostImpl
   //
   // TODO(crbug.com/40092527): Simplify the above comment when the
   // behavior it explains is fixed.
-  network::mojom::PrivateNetworkRequestPolicy private_network_request_policy_ =
-      network::mojom::PrivateNetworkRequestPolicy::kBlock;
+  network::mojom::LocalNetworkAccessRequestPolicy
+      local_network_access_request_policy_ =
+          network::mojom::LocalNetworkAccessRequestPolicy::kBlock;
 
   // Track the SiteInfo of the last site we committed successfully, as obtained
   // from SiteInfo::CreateInternal() called on the last committed UrlInfo.
@@ -5545,8 +5557,7 @@ class CONTENT_EXPORT RenderFrameHostImpl
 #if BUILDFLAG(IS_ANDROID)
   // Holds a reference to a pending remote WebAuthn RP ID validation while one
   // is ongoing. Destroying this object cancels the validation.
-  std::unique_ptr<WebAuthRequestSecurityChecker::RemoteValidation>
-      webauthn_remote_rp_id_validation_;
+  std::unique_ptr<webauthn::RemoteValidation> webauthn_remote_rp_id_validation_;
 #endif
 
   // Tracks the page that initiates Protected Audience auction. This is set
@@ -5583,6 +5594,9 @@ class CONTENT_EXPORT RenderFrameHostImpl
 
   // Tracing track used to emit async event related to lifecycle.
   const perfetto::NamedTrack tracing_track_;
+
+  base::MemoryPressureListenerRegistration
+      memory_pressure_listener_registration_;
 
   // WeakPtrFactories are the last members, to ensure they are destroyed before
   // all other fields of `this`.

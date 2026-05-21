@@ -730,6 +730,11 @@ ci.builder(
             "linux-jammy",
         ],
         per_test_modifications = {
+            "angle_unittests": targets.mixin(
+                args = [
+                    "--gtest_filter=-TestSuiteTest.RunFlakyTests:TestSuiteTest.RunMockTests",
+                ],
+            ),
             "browser_tests": targets.mixin(
                 swarming = targets.swarming(
                     shards = 160,
@@ -742,7 +747,7 @@ ci.builder(
             ),
             "interactive_ui_tests": targets.mixin(
                 swarming = targets.swarming(
-                    shards = 12,
+                    shards = 24,
                 ),
             ),
             "net_unittests": targets.mixin(
@@ -832,16 +837,17 @@ ci.builder(
             "retry_only_failed_tests",
         ],
         per_test_modifications = {
+            "absl_hardening_tests": targets.mixin(
+                args = [
+                    "--fail-fast",
+                ],
+            ),
             "angle_unittests": targets.mixin(
                 # crbug.com/41493162: angle_unittests has a high failure rate.
                 # Re-enable cq when the issue is fixed.
                 ci_only = True,
             ),
             "browser_tests": targets.mixin(
-                # Only retry the individual failed tests instead of rerunning entire
-                # shards.
-                # crbug.com/1473501
-                retry_only_failed_tests = True,
                 swarming = targets.swarming(
                     dimensions = {
                         "kvm": "1",
@@ -850,18 +856,11 @@ ci.builder(
                 ),
             ),
             "content_browsertests": targets.mixin(
-                # Only retry the individual failed tests instead of rerunning entire
-                # shards.
-                # crbug.com/1475852
-                retry_only_failed_tests = True,
                 swarming = targets.swarming(
                     shards = 6,
                 ),
             ),
             "interactive_ui_tests": targets.mixin(
-                # Only retry the individual failed tests instead of rerunning entire
-                # shards.
-                retry_only_failed_tests = True,
                 swarming = targets.swarming(
                     shards = 5,
                 ),
@@ -875,9 +874,6 @@ ci.builder(
                 ),
             ),
             "unit_tests": targets.mixin(
-                # Only retry the individual failed tests instead of rerunning entire
-                # shards.
-                retry_only_failed_tests = True,
                 swarming = targets.swarming(
                     shards = 2,
                 ),

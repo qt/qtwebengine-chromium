@@ -254,6 +254,27 @@ FcNameConstantWithObjectCheck (const FcChar8 *string, FcObject object, int *resu
     return FcFalse;
 }
 
+const FcChar8 *
+FcNameGetConstantNameFromObject (FcObject object, int value)
+{
+    int i;
+
+    if (object > FC_MAX_BASE_OBJECT)
+	return NULL;
+    for (i = 0; _FcBaseConstantObjects[object].values[i].name != NULL; i++) {
+	if (_FcBaseConstantObjects[object].values[i].value == value) {
+	    return _FcBaseConstantObjects[object].values[i].name;
+	}
+    }
+    return NULL;
+}
+
+const FcChar8 *
+FcNameGetConstantNameFrom (const char *object, int value)
+{
+    return FcNameGetConstantNameFromObject (FcObjectFromName ((const char *)object), value);
+}
+
 FcBool
 FcNameBool (const FcChar8 *v, FcBool *result)
 {
@@ -308,7 +329,7 @@ FcNameConvert (FcType type, const char *object, FcChar8 *string)
 	    v.u.i = atoi ((char *)string);
 	break;
     case FcTypeString:
-	v.u.s = FcStrdup (string);
+	v.u.s = FcStrCopy (string);
 	if (!v.u.s)
 	    v.type = FcTypeVoid;
 	break;

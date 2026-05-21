@@ -9,6 +9,7 @@
 #include "base/command_line.h"
 #include "base/containers/span.h"
 #include "base/functional/bind.h"
+#include "base/notreached.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/branding_buildflags.h"
 #include "build/build_config.h"
@@ -17,7 +18,6 @@
 #include "chrome/browser/sessions/session_tab_helper_factory.h"
 #include "chrome/browser/signin/signin_promo.h"
 #include "chrome/browser/ui/webui/metrics_handler.h"
-#include "chrome/browser/ui/webui/test_files_request_filter.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/grit/branded_strings.h"
@@ -132,15 +132,6 @@ void CreateAndAddWebUIDataSource(Profile* profile) {
   source->AddResourcePaths(kSupervisionResources);
 #endif  // BUILDFLAG(IS_CHROMEOS)
 
-  // Only add a filter when runing as test.
-  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
-  const bool is_running_test = command_line->HasSwitch(::switches::kTestName) ||
-                               command_line->HasSwitch(::switches::kTestType);
-  if (is_running_test) {
-    source->SetRequestFilter(test::GetTestShouldHandleRequest(),
-                             test::GetTestFilesRequestFilter());
-  }
-
 #if BUILDFLAG(IS_CHROMEOS)
   static constexpr webui::ResourcePath kResources[] = {
       {"account_manager_shared.css.js", IDR_ACCOUNT_MANAGER_SHARED_CSS_JS},
@@ -248,58 +239,58 @@ void CreateAndAddWebUIDataSource(Profile* profile) {
 #endif  // BUILDFLAG(IS_CHROMEOS)
 }
 
-// Returns whether |url| can be displayed in a chrome://chrome-signin web
+// Returns whether `url` can be displayed in a chrome://chrome-signin web
 // contents, depending on the signin reason that is encoded in the url.
+// For testing purposes on Windows, loading `chrome://chrome-signin/?reason=6`
+// (mapping `signin_metrics::Reason::kFetchLstOnly`) would allow to load the
+// page in a tab. On ChromeOS, any reason (or no reason) would work.
+// If the reason is not valid, the page should not be loaded.
 bool IsValidChromeSigninReason(const GURL& url) {
 #if BUILDFLAG(IS_CHROMEOS)
   return true;
-#else
+#else   // BUILDFLAG(IS_WIN)
   signin_metrics::Reason reason =
       signin::GetSigninReasonForEmbeddedPromoURL(url);
 
   switch (reason) {
-    case signin_metrics::Reason::kForcedSigninPrimaryAccount:
-    case signin_metrics::Reason::kReauthentication:
-      // Used by the profile picker.
-      return true;
     case signin_metrics::Reason::kFetchLstOnly:
-#if BUILDFLAG(IS_WIN)
       // Used by the Google Credential Provider for Windows.
       return true;
-#else
-      return false;
-#endif
+    case signin_metrics::Reason::kReauthentication:
     case signin_metrics::Reason::kSigninPrimaryAccount:
     case signin_metrics::Reason::kAddSecondaryAccount:
     case signin_metrics::Reason::kUnknownReason:
+      // This can happen if the page is loaded directly into a tab, which may
+      // not contain the right reason parameter. In this case, do not load the
+      // page instead of crashing. Check crbug.com/479741617.
       return false;
   }
-  NOTREACHED();
-#endif  // BUILDFLAG(IS_CHROMEOS)
+#endif  // BUILDFLAG(IS_WIN)
 }
 
 }  // namespace
 
 InlineLoginUI::InlineLoginUI(content::WebUI* web_ui) : WebDialogUI(web_ui) {
+  if (!IsValidChromeSigninReason(web_ui->GetWebContents()->GetVisibleURL())) {
+    // Do not load the page is the reason is not valid.
+    return;
+  }
+
   // Always instantiate the WebUIDataSource so that tests pulling deps from
   // from chrome://chrome-signin/gaia_auth_host/ can work.
   Profile* profile = Profile::FromWebUI(web_ui);
   CreateAndAddWebUIDataSource(profile);
 
-  if (!IsValidChromeSigninReason(web_ui->GetWebContents()->GetVisibleURL())) {
-    return;
-  }
-
 #if BUILDFLAG(IS_CHROMEOS)
   web_ui->AddMessageHandler(
       std::make_unique<ash::InlineLoginHandlerImpl>(base::BindRepeating(
-          &WebDialogUIBase::CloseDialog, weak_factory_.GetWeakPtr(),
-          base::Value::List() /* args */)));
+          &WebDialogUI::CloseDialog, weak_factory_.GetWeakPtr(),
+          base::ListValue() /* args */)));
   if (profile->IsChild()) {
     web_ui->AddMessageHandler(
         std::make_unique<ash::EduCoexistenceLoginHandler>(base::BindRepeating(
-            &WebDialogUIBase::CloseDialog, weak_factory_.GetWeakPtr(),
-            base::Value::List() /* args */)));
+            &WebDialogUI::CloseDialog, weak_factory_.GetWeakPtr(),
+            base::ListValue() /* args */)));
   }
 
 #else

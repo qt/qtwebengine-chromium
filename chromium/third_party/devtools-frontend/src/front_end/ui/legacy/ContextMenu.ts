@@ -221,12 +221,12 @@ export class Section {
 
   /**
    * Appends a standard clickable item to this section.
-   * @param label The text to display for the item.
+   * @param labelOrItem The text to display for the item, or a premade Item. In the latter case, `option` is ignored.
    * @param handler The function to execute when the item is clicked.
    * @param options Optional settings for the item.
    * @returns The newly created `Item`.
    */
-  appendItem(label: string, handler: () => void, options?: {
+  appendItem(labelOrItem: string|Item, handler: () => void, options?: {
     accelerator?: Host.InspectorFrontendHostAPI.AcceleratorDescriptor,
     isPreviewFeature?: boolean,
     disabled?: boolean,
@@ -235,11 +235,16 @@ export class Section {
     jslogContext?: string,
     featureName?: string,
   }): Item {
-    const item = new Item(
-        this.contextMenu, 'item', label, options?.isPreviewFeature, options?.disabled, undefined, options?.accelerator,
-        options?.tooltip, options?.jslogContext, options?.featureName);
-    if (options?.additionalElement) {
-      item.customElement = options?.additionalElement;
+    let item;
+    if (labelOrItem instanceof Item) {
+      item = labelOrItem;
+    } else {
+      item = new Item(
+          this.contextMenu, 'item', labelOrItem, options?.isPreviewFeature, options?.disabled, undefined,
+          options?.accelerator, options?.tooltip, options?.jslogContext, options?.featureName);
+      if (options?.additionalElement) {
+        item.customElement = options?.additionalElement;
+      }
     }
     this.items.push(item);
     if (this.contextMenu) {
@@ -787,8 +792,17 @@ export class ContextMenu extends SubMenu {
 
     const menuObject = this.buildMenuDescriptors();
     const ownerDocument = (this.eventTarget as HTMLElement).ownerDocument;
-    if (this.useSoftMenu || ContextMenu.useSoftMenu ||
-        Host.InspectorFrontendHost.InspectorFrontendHostInstance.isHostedMode()) {
+
+    let useSoftMenu = this.useSoftMenu || ContextMenu.useSoftMenu ||
+        Host.InspectorFrontendHost.InspectorFrontendHostInstance.isHostedMode();
+
+    // Allow force opening a Native menu when DevTools is under test.
+    // This allows opening DevTools on DevTools
+    if (!this.useSoftMenu && ContextMenu.useSoftMenu && this.event.altKey) {
+      useSoftMenu = false;
+    }
+
+    if (useSoftMenu) {
       this.softMenu = new SoftContextMenu(
           (menuObject as SoftContextMenuDescriptor[]), this.itemSelected.bind(this), this.keepOpen, undefined,
           this.onSoftMenuClosed, this.loggableParent);
@@ -1216,7 +1230,7 @@ export interface ProviderRegistration<T> {
   /** A function that asynchronously loads the provider instance. */
   loadProvider: () => Promise<Provider<T>>;
   /** Optional. The experiment that enables this provider. */
-  experiment?: Root.Runtime.ExperimentName;
+  experiment?: Root.ExperimentNames.ExperimentName;
 }
 
 export interface ContextMenuItemRegistration {
@@ -1227,5 +1241,5 @@ export interface ContextMenuItemRegistration {
   /** Optional. A number used for sorting items within the same location. Lower numbers appear first. */
   order?: number;
   /** Optional. The experiment that enables this item. */
-  experiment?: Root.Runtime.ExperimentName;
+  experiment?: Root.ExperimentNames.ExperimentName;
 }

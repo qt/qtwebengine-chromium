@@ -78,43 +78,32 @@ class SkCanvas;
 #endif  // defined(PDF_USE_SKIA)
 
 // These checks are here because core/ and public/ cannot depend on each other.
-static_assert(static_cast<int>(WindowsPrintMode::kEmf) == FPDF_PRINTMODE_EMF,
-              "WindowsPrintMode::kEmf value mismatch");
+static_assert(static_cast<int>(WindowsPrintMode::kEmf) == FPDF_PRINTMODE_EMF);
 static_assert(static_cast<int>(WindowsPrintMode::kTextOnly) ==
-                  FPDF_PRINTMODE_TEXTONLY,
-              "WindowsPrintMode::kTextOnly value mismatch");
+              FPDF_PRINTMODE_TEXTONLY);
 static_assert(static_cast<int>(WindowsPrintMode::kPostScript2) ==
-                  FPDF_PRINTMODE_POSTSCRIPT2,
-              "WindowsPrintMode::kPostScript2 value mismatch");
+              FPDF_PRINTMODE_POSTSCRIPT2);
 static_assert(static_cast<int>(WindowsPrintMode::kPostScript3) ==
-                  FPDF_PRINTMODE_POSTSCRIPT3,
-              "WindowsPrintMode::kPostScript3 value mismatch");
+              FPDF_PRINTMODE_POSTSCRIPT3);
 static_assert(static_cast<int>(WindowsPrintMode::kPostScript2PassThrough) ==
-                  FPDF_PRINTMODE_POSTSCRIPT2_PASSTHROUGH,
-              "WindowsPrintMode::kPostScript2PassThrough value mismatch");
+              FPDF_PRINTMODE_POSTSCRIPT2_PASSTHROUGH);
 static_assert(static_cast<int>(WindowsPrintMode::kPostScript3PassThrough) ==
-                  FPDF_PRINTMODE_POSTSCRIPT3_PASSTHROUGH,
-              "WindowsPrintMode::kPostScript3PassThrough value mismatch");
+              FPDF_PRINTMODE_POSTSCRIPT3_PASSTHROUGH);
 static_assert(static_cast<int>(WindowsPrintMode::kEmfImageMasks) ==
-                  FPDF_PRINTMODE_EMF_IMAGE_MASKS,
-              "WindowsPrintMode::kEmfImageMasks value mismatch");
+              FPDF_PRINTMODE_EMF_IMAGE_MASKS);
 static_assert(static_cast<int>(WindowsPrintMode::kPostScript3Type42) ==
-                  FPDF_PRINTMODE_POSTSCRIPT3_TYPE42,
-              "WindowsPrintMode::kPostScript3Type42 value mismatch");
+              FPDF_PRINTMODE_POSTSCRIPT3_TYPE42);
 static_assert(
     static_cast<int>(WindowsPrintMode::kPostScript3Type42PassThrough) ==
-        FPDF_PRINTMODE_POSTSCRIPT3_TYPE42_PASSTHROUGH,
-    "WindowsPrintMode::kPostScript3Type42PassThrough value mismatch");
+    FPDF_PRINTMODE_POSTSCRIPT3_TYPE42_PASSTHROUGH);
 #endif  // BUILDFLAG(IS_WIN)
 
 #if defined(PDF_USE_SKIA)
 // These checks are here because core/ and public/ cannot depend on each other.
 static_assert(static_cast<int>(CFX_DefaultRenderDevice::RendererType::kAgg) ==
-                  FPDF_RENDERERTYPE_AGG,
-              "CFX_DefaultRenderDevice::RendererType::kAGG value mismatch");
+              FPDF_RENDERERTYPE_AGG);
 static_assert(static_cast<int>(CFX_DefaultRenderDevice::RendererType::kSkia) ==
-                  FPDF_RENDERERTYPE_SKIA,
-              "CFX_DefaultRenderDevice::RendererType::kSkia value mismatch");
+              FPDF_RENDERERTYPE_SKIA);
 #endif  // defined(PDF_USE_SKIA)
 
 namespace {
@@ -128,19 +117,16 @@ void SetRendererType(FPDF_RENDERER_TYPE public_type) {
   // value might not be meaningful for a particular build configuration, which
   // would mean use of that value is an error for that build.
 
-  // AGG is always present in a build. |FPDF_RENDERERTYPE_SKIA| is valid to use
+  // AGG is always present in a build. `FPDF_RENDERERTYPE_SKIA` is valid to use
   // only if it is included in the build.
 #if defined(PDF_USE_SKIA)
   // This build configuration has the option for runtime renderer selection.
-  if (public_type == FPDF_RENDERERTYPE_AGG ||
-      public_type == FPDF_RENDERERTYPE_SKIA) {
-    CFX_DefaultRenderDevice::SetRendererType(
-        static_cast<CFX_DefaultRenderDevice::RendererType>(public_type));
-    return;
-  }
-  CHECK(false);
+  CHECK(public_type == FPDF_RENDERERTYPE_AGG ||
+        public_type == FPDF_RENDERERTYPE_SKIA);
+  CFX_DefaultRenderDevice::SetRendererType(
+      static_cast<CFX_DefaultRenderDevice::RendererType>(public_type));
 #else
-  // `FPDF_RENDERERTYPE_AGG` is used for fully AGG builds.
+  // AGG-only builds should always use `FPDF_RENDERERTYPE_AGG`.
   CHECK_EQ(public_type, FPDF_RENDERERTYPE_AGG);
 #endif
 }

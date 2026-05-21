@@ -57,6 +57,7 @@ class CPDF_Form final : public CPDF_PageObjectHolder,
                     const CFX_Matrix* pParentMatrix,
                     RecursionState* recursion_state);
 
+  // Never returns nullptr.
   RetainPtr<const CPDF_Stream> GetStream() const;
 
  private:

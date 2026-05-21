@@ -1,0 +1,20 @@
+# Copyright 2026 The Chromium Authors
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+source_set("utils") {
+  sources = [
+    "gemini_settings_metrics.h",
+    "gemini_settings_metrics.mm",
+  ]
+  deps = [ "//ui/base" ]
+}
+
+source_set("unit_tests") {
+  testonly = true
+  sources = [ "gemini_settings_metrics_unittest.mm" ]
+  deps = [
+    ":utils",
+    "//base/test:test_support",
+  ]
+}

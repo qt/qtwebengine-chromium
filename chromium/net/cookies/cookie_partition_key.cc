@@ -12,9 +12,11 @@
 #include "base/auto_reset.h"
 #include "base/feature_list.h"
 #include "base/logging.h"
+#include "base/strings/strcat.h"
 #include "base/types/optional_util.h"
 #include "net/base/cronet_buildflags.h"
 #include "net/base/features.h"
+#include "net/base/network_isolation_key.h"
 #include "net/base/network_isolation_partition.h"
 #include "net/cookies/cookie_constants.h"
 #include "net/cookies/cookie_util.h"
@@ -125,10 +127,8 @@ std::strong_ordering CookiePartitionKey::operator<=>(
   if (from_script_ || other.from_script_) {
     return from_script_ <=> other.from_script_;
   }
-  AncestorChainBit this_bit = GetAncestorChainBit();
-  AncestorChainBit other_bit = other.GetAncestorChainBit();
-  return std::tie(site_, nonce_, this_bit) <=>
-         std::tie(other.site_, other.nonce_, other_bit);
+  return std::tie(site_, nonce_, ancestor_chain_bit_) <=>
+         std::tie(other.site_, other.nonce_, other.ancestor_chain_bit_);
 }
 
 // static

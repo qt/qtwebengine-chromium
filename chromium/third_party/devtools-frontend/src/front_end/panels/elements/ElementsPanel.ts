@@ -40,9 +40,10 @@ import * as Platform from '../../core/platform/platform.js';
 import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import type * as Protocol from '../../generated/protocol.js';
+import * as Annotations from '../../models/annotations/annotations.js';
+import * as ComputedStyle from '../../models/computed_style/computed_style.js';
 import * as PanelCommon from '../../panels/common/common.js';
 import type * as Adorners from '../../ui/components/adorners/adorners.js';
-import * as Annotations from '../../ui/components/annotations/annotations.js';
 import * as Buttons from '../../ui/components/buttons/buttons.js';
 import * as TreeOutline from '../../ui/components/tree_outline/tree_outline.js';
 import * as UI from '../../ui/legacy/legacy.js';
@@ -52,7 +53,6 @@ import type {AXTreeNodeData} from './AccessibilityTreeUtils.js';
 import {AccessibilityTreeView} from './AccessibilityTreeView.js';
 import {ColorSwatchPopoverIcon} from './ColorSwatchPopoverIcon.js';
 import * as ElementsComponents from './components/components.js';
-import {ComputedStyleModel} from './ComputedStyleModel.js';
 import {ComputedStyleWidget} from './ComputedStyleWidget.js';
 import elementsPanelStyles from './elementsPanel.css.js';
 import {DOMTreeWidget, type ElementsTreeOutline} from './ElementsTreeOutline.js';
@@ -199,6 +199,8 @@ const createAccessibilityTreeToggleButton = (isActive: boolean): HTMLElement => 
 
 let elementsPanelInstance: ElementsPanel;
 
+export const DEFAULT_COMPUTED_STYLES_DEBOUNCE_MS = 100;
+
 export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.Searchable,
                                                              SDK.TargetManager.SDKModelObserver<SDK.DOMModel.DOMModel>,
                                                              UI.View.ViewLocationResolver {
@@ -240,6 +242,7 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
 
   private cssStyleTrackerByCSSModel: Map<SDK.CSSModel.CSSModel, SDK.CSSModel.CSSPropertyTracker>;
   #domTreeWidget: DOMTreeWidget;
+  #computedStyleModel: ComputedStyle.ComputedStyleModel.ComputedStyleModel;
 
   getTreeOutlineForTesting(): ElementsTreeOutline|undefined {
     return this.#domTreeWidget.getTreeOutlineForTesting();
@@ -263,7 +266,7 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
     this.mainContainer = document.createElement('div');
     this.domTreeContainer = document.createElement('div');
     const crumbsContainer = document.createElement('div');
-    if (Root.Runtime.experiments.isEnabled('full-accessibility-tree')) {
+    if (Root.Runtime.experiments.isEnabled(Root.ExperimentNames.ExperimentName.FULL_ACCESSIBILITY_TREE)) {
       this.initializeFullAccessibilityTreeView();
     }
     this.mainContainer.appendChild(this.domTreeContainer);
@@ -299,10 +302,21 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
 
     crumbsContainer.appendChild(this.breadcrumbs);
 
-    const computedStyleModel = new ComputedStyleModel();
-    this.stylesWidget = new StylesSidebarPane(computedStyleModel);
-    this.computedStyleWidget = new ComputedStyleWidget(computedStyleModel);
-    this.metricsWidget = new MetricsSidebarPane(computedStyleModel);
+    this.#computedStyleModel = new ComputedStyle.ComputedStyleModel.ComputedStyleModel(
+        UI.Context.Context.instance().flavor(SDK.DOMModel.DOMNode));
+    UI.Context.Context.instance().addFlavorChangeListener(SDK.DOMModel.DOMNode, event => {
+      this.#computedStyleModel.node = event.data;
+      this.evaluateTrackingComputedStyleUpdatesForNode();
+    });
+
+    UI.Context.Context.instance().addFlavorChangeListener(
+        StylesSidebarPane, this.evaluateTrackingComputedStyleUpdatesForNode, this);
+    UI.Context.Context.instance().addFlavorChangeListener(
+        ComputedStyleWidget, this.evaluateTrackingComputedStyleUpdatesForNode, this);
+
+    this.stylesWidget = new StylesSidebarPane(this.#computedStyleModel);
+    this.computedStyleWidget = new ComputedStyleWidget(this.#computedStyleModel);
+    this.metricsWidget = new MetricsSidebarPane(this.#computedStyleModel);
 
     Common.Settings.Settings.instance()
         .moduleSetting('sidebar-position')
@@ -342,6 +356,23 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
           Annotations.AnnotationType.ELEMENT_NODE, this.resolveInitialState.bind(this), this.#domTreeWidget.element);
     }
   }
+
+  // This is a debounced method because the user might be navigated from Styles tab to Computed Style tab and vice versa.
+  // For that case, we want to only run this function once.
+  private evaluateTrackingComputedStyleUpdatesForNode = Common.Debouncer.debounce((): void => {
+    const selectedNode = UI.Context.Context.instance().flavor(SDK.DOMModel.DOMNode);
+    if (!selectedNode) {
+      return;
+    }
+
+    const isComputedStyleWidgetVisible = Boolean(UI.Context.Context.instance().flavor(ComputedStyleWidget));
+    const isStylesTabVisible = Boolean(UI.Context.Context.instance().flavor(StylesSidebarPane));
+    const shouldTrackComputedStyleUpdates = isComputedStyleWidgetVisible ||
+        (isStylesTabVisible && Root.Runtime.hostConfig.devToolsAnimationStylesInStylesTab?.enabled);
+
+    void selectedNode.domModel()?.cssModel()?.trackComputedStyleUpdatesForNode(
+        shouldTrackComputedStyleUpdates ? selectedNode.id : undefined);
+  }, 100);
 
   private handleElementExpanded(): void {
     if (Annotations.AnnotationRepository.annotationsEnabled()) {
@@ -795,7 +826,7 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
     return this.#domTreeWidget.selectedDOMNode();
   }
 
-  selectDOMNode(node: SDK.DOMModel.DOMNode, focus?: boolean): void {
+  selectDOMNode(node: SDK.DOMModel.DOMNode|SDK.DOMModel.AdoptedStyleSheet, focus?: boolean): void {
     this.#domTreeWidget.selectDOMNode(node, focus);
   }
 
@@ -899,6 +930,18 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
     this.notFirstInspectElement = true;
   }
 
+  async revealAndSelectAdoptedStyleSheet(nodeToReveal: SDK.DOMModel.AdoptedStyleSheet, opts?: RevealAndSelectNodeOpts):
+      Promise<void> {
+    const {showPanel = true, focusNode = false} = opts ?? {};
+    this.omitDefaultSelection = true;
+
+    if (showPanel) {
+      await UI.ViewManager.ViewManager.instance().showView('elements', false, !focus);
+    }
+    this.selectDOMNode(nodeToReveal, focusNode);
+    delete this.omitDefaultSelection;
+  }
+
   private showUAShadowDOMChanged(): void {
     this.#domTreeWidget.reload();
   }
@@ -982,7 +1025,6 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
 
     const showMetricsWidgetInComputedPane = (): void => {
       this.metricsWidget.show(computedStylePanesWrapper.element, this.computedStyleWidget.element);
-      this.metricsWidget.toggleVisibility(true /* visible */);
       this.stylesWidget.removeEventListener(StylesSidebarPaneEvents.STYLES_UPDATE_COMPLETED, toggleMetricsWidget);
     };
 
@@ -993,14 +1035,18 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
       } else {
         this.metricsWidget.show(matchedStylePanesWrapper.element);
         if (!this.stylesWidget.hasMatchedStyles) {
-          this.metricsWidget.toggleVisibility(false /* invisible */);
+          this.metricsWidget.hideWidget();
         }
         this.stylesWidget.addEventListener(StylesSidebarPaneEvents.STYLES_UPDATE_COMPLETED, toggleMetricsWidget);
       }
     };
 
     const toggleMetricsWidget = (event: Common.EventTarget.EventTargetEvent<StylesUpdateCompletedEvent>): void => {
-      this.metricsWidget.toggleVisibility(event.data.hasMatchedStyles);
+      if (event.data.hasMatchedStyles) {
+        this.metricsWidget.showWidget();
+      } else {
+        this.metricsWidget.hideWidget();
+      }
     };
 
     const tabSelected = (event: Common.EventTarget.EventTargetEvent<UI.TabbedPane.EventData>): void => {
@@ -1306,10 +1352,12 @@ export class ContextMenuProvider implements
   }
 }
 
-export class DOMNodeRevealer implements
-    Common.Revealer.Revealer<SDK.DOMModel.DOMNode|SDK.DOMModel.DeferredDOMNode|SDK.RemoteObject.RemoteObject> {
-  reveal(node: SDK.DOMModel.DOMNode|SDK.DOMModel.DeferredDOMNode|SDK.RemoteObject.RemoteObject, omitFocus?: boolean):
-      Promise<void> {
+export class DOMNodeRevealer implements Common.Revealer.Revealer<
+    SDK.DOMModel.DOMNode|SDK.DOMModel.DeferredDOMNode|SDK.RemoteObject.RemoteObject|SDK.DOMModel.AdoptedStyleSheet> {
+  reveal(
+      node: SDK.DOMModel.DOMNode|SDK.DOMModel.DeferredDOMNode|SDK.RemoteObject.RemoteObject|
+      SDK.DOMModel.AdoptedStyleSheet,
+      omitFocus?: boolean): Promise<void> {
     const panel = ElementsPanel.instance();
     panel.pendingNodeReveal = true;
 
@@ -1329,7 +1377,7 @@ export class DOMNodeRevealer implements
 
     function revealPromise(
         resolve: () => void, reject: (arg0: Platform.UserVisibleError.UserVisibleError) => void): void {
-      if (node instanceof SDK.DOMModel.DOMNode) {
+      if (node instanceof SDK.DOMModel.DOMNode || node instanceof SDK.DOMModel.AdoptedStyleSheet) {
         onNodeResolved((node));
       } else if (node instanceof SDK.DOMModel.DeferredDOMNode) {
         (node).resolve(checkDeferredDOMNodeThenReveal);
@@ -1343,14 +1391,15 @@ export class DOMNodeRevealer implements
         }
       }
 
-      function onNodeResolved(resolvedNode: SDK.DOMModel.DOMNode): void {
+      function onNodeResolved(resolvedNode: SDK.DOMModel.DOMNode|SDK.DOMModel.AdoptedStyleSheet): void {
         panel.pendingNodeReveal = false;
 
         // A detached node could still have a parent and ownerDocument
         // properties, which means stepping up through the hierarchy to ensure
         // that the root node is the document itself. Any break implies
         // detachment.
-        let currentNode: SDK.DOMModel.DOMNode = resolvedNode;
+        let currentNode: SDK.DOMModel.DOMNode =
+            resolvedNode instanceof SDK.DOMModel.AdoptedStyleSheet ? resolvedNode.parent : resolvedNode;
         while (currentNode.parentNode) {
           currentNode = currentNode.parentNode;
         }
@@ -1364,7 +1413,11 @@ export class DOMNodeRevealer implements
         }
 
         if (resolvedNode) {
-          void panel.revealAndSelectNode(resolvedNode, {showPanel: true, focusNode: !omitFocus}).then(resolve);
+          const opts: RevealAndSelectNodeOpts = {showPanel: true, focusNode: !omitFocus};
+          const promise = resolvedNode instanceof SDK.DOMModel.AdoptedStyleSheet ?
+              panel.revealAndSelectAdoptedStyleSheet(resolvedNode, opts) :
+              panel.revealAndSelectNode(resolvedNode, opts);
+          void promise.then(resolve);
           return;
         }
         const msg = i18nString(UIStrings.nodeCannotBeFoundInTheCurrent);

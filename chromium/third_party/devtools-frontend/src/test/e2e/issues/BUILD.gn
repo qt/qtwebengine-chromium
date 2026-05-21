@@ -12,7 +12,7 @@ ts_e2e_library("issues") {
     "cookie-deprecation-metadata-issues.test.ts",
     "cookie-domain-attribute-non-ascii.test.ts",
     "cors-issues.test.ts",
-    "cors-private-network-issues.test.ts",
+    "cors-local-network-issues.test.ts",
     "deprecation-issues.test.ts",
     "expect-ct-issues.test.ts",
     "group-by-categories.test.ts",

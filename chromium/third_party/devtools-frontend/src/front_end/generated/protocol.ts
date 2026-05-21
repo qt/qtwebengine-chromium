@@ -771,8 +771,6 @@ export namespace Audits {
     ExcludeSameSiteNoneInsecure = 'ExcludeSameSiteNoneInsecure',
     ExcludeSameSiteLax = 'ExcludeSameSiteLax',
     ExcludeSameSiteStrict = 'ExcludeSameSiteStrict',
-    ExcludeInvalidSameParty = 'ExcludeInvalidSameParty',
-    ExcludeSamePartyCrossPartyContext = 'ExcludeSamePartyCrossPartyContext',
     ExcludeDomainNonASCII = 'ExcludeDomainNonASCII',
     ExcludeThirdPartyCookieBlockedInFirstPartySet = 'ExcludeThirdPartyCookieBlockedInFirstPartySet',
     ExcludeThirdPartyPhaseout = 'ExcludeThirdPartyPhaseout',
@@ -1129,6 +1127,15 @@ export namespace Audits {
     IncorrectDigestLength = 'IncorrectDigestLength',
   }
 
+  export const enum ConnectionAllowlistError {
+    InvalidHeader = 'InvalidHeader',
+    MoreThanOneList = 'MoreThanOneList',
+    ItemNotInnerList = 'ItemNotInnerList',
+    InvalidAllowlistItemType = 'InvalidAllowlistItemType',
+    ReportingEndpointNotToken = 'ReportingEndpointNotToken',
+    InvalidUrlPattern = 'InvalidUrlPattern',
+  }
+
   /**
    * Details for issues around "Attribution Reporting API" usage.
    * Explainer: https://github.com/WICG/attribution-reporting-api
@@ -1181,6 +1188,11 @@ export namespace Audits {
     request: AffectedRequest;
   }
 
+  export interface ConnectionAllowlistIssueDetails {
+    error: ConnectionAllowlistError;
+    request: AffectedRequest;
+  }
+
   export const enum GenericIssueErrorType {
     FormLabelForNameError = 'FormLabelForNameError',
     FormDuplicateIdForInputError = 'FormDuplicateIdForInputError',
@@ -1194,6 +1206,9 @@ export namespace Audits {
     FormInputHasWrongButWellIntendedAutocompleteValueError = 'FormInputHasWrongButWellIntendedAutocompleteValueError',
     ResponseWasBlockedByORB = 'ResponseWasBlockedByORB',
     NavigationEntryMarkedSkippable = 'NavigationEntryMarkedSkippable',
+    AutofillAndManualTextPolicyControlledFeaturesInfo = 'AutofillAndManualTextPolicyControlledFeaturesInfo',
+    AutofillPolicyControlledFeatureInfo = 'AutofillPolicyControlledFeatureInfo',
+    ManualTextPolicyControlledFeatureInfo = 'ManualTextPolicyControlledFeatureInfo',
   }
 
   /**
@@ -1552,6 +1567,7 @@ export namespace Audits {
     ElementAccessibilityIssue = 'ElementAccessibilityIssue',
     SRIMessageSignatureIssue = 'SRIMessageSignatureIssue',
     UnencodedDigestIssue = 'UnencodedDigestIssue',
+    ConnectionAllowlistIssue = 'ConnectionAllowlistIssue',
     UserReidentificationIssue = 'UserReidentificationIssue',
     PermissionElementIssue = 'PermissionElementIssue',
   }
@@ -1590,6 +1606,7 @@ export namespace Audits {
     elementAccessibilityIssueDetails?: ElementAccessibilityIssueDetails;
     sriMessageSignatureIssueDetails?: SRIMessageSignatureIssueDetails;
     unencodedDigestIssueDetails?: UnencodedDigestIssueDetails;
+    connectionAllowlistIssueDetails?: ConnectionAllowlistIssueDetails;
     userReidentificationIssueDetails?: UserReidentificationIssueDetails;
     permissionElementIssueDetails?: PermissionElementIssueDetails;
   }
@@ -2226,7 +2243,9 @@ export namespace Browser {
     IdleDetection = 'idleDetection',
     KeyboardLock = 'keyboardLock',
     LocalFonts = 'localFonts',
+    LocalNetwork = 'localNetwork',
     LocalNetworkAccess = 'localNetworkAccess',
+    LoopbackNetwork = 'loopbackNetwork',
     Midi = 'midi',
     MidiSysex = 'midiSysex',
     Nfc = 'nfc',
@@ -4531,7 +4550,6 @@ export namespace DOM {
     Picker = 'picker',
     PermissionIcon = 'permission-icon',
     OverscrollAreaParent = 'overscroll-area-parent',
-    OverscrollClientArea = 'overscroll-client-area',
   }
 
   /**
@@ -7479,11 +7497,26 @@ export namespace Extensions {
     Managed = 'managed',
   }
 
+  export interface TriggerActionRequest {
+    /**
+     * Extension id.
+     */
+    id: string;
+    /**
+     * A tab target ID to trigger the default extension action on.
+     */
+    targetId: string;
+  }
+
   export interface LoadUnpackedRequest {
     /**
      * Absolute file path.
      */
     path: string;
+    /**
+     * Enable the extension in incognito
+     */
+    enableInIncognito?: boolean;
   }
 
   export interface LoadUnpackedResponse extends ProtocolResponseWithError {
@@ -9998,6 +10031,17 @@ export namespace Network {
   }
 
   /**
+   * The render blocking behavior of a resource request.
+   */
+  export const enum RenderBlockingBehavior {
+    Blocking = 'Blocking',
+    InBodyParserBlocking = 'InBodyParserBlocking',
+    NonBlocking = 'NonBlocking',
+    NonBlockingDynamic = 'NonBlockingDynamic',
+    PotentiallyBlocking = 'PotentiallyBlocking',
+  }
+
+  /**
    * Post data entry for HTTP request
    */
   export interface PostDataEntry {
@@ -10242,21 +10286,14 @@ export namespace Network {
     PreflightInvalidAllowCredentials = 'PreflightInvalidAllowCredentials',
     PreflightMissingAllowExternal = 'PreflightMissingAllowExternal',
     PreflightInvalidAllowExternal = 'PreflightInvalidAllowExternal',
-    PreflightMissingAllowPrivateNetwork = 'PreflightMissingAllowPrivateNetwork',
-    PreflightInvalidAllowPrivateNetwork = 'PreflightInvalidAllowPrivateNetwork',
     InvalidAllowMethodsPreflightResponse = 'InvalidAllowMethodsPreflightResponse',
     InvalidAllowHeadersPreflightResponse = 'InvalidAllowHeadersPreflightResponse',
     MethodDisallowedByPreflightResponse = 'MethodDisallowedByPreflightResponse',
     HeaderDisallowedByPreflightResponse = 'HeaderDisallowedByPreflightResponse',
     RedirectContainsCredentials = 'RedirectContainsCredentials',
-    InsecurePrivateNetwork = 'InsecurePrivateNetwork',
-    InvalidPrivateNetworkAccess = 'InvalidPrivateNetworkAccess',
-    UnexpectedPrivateNetworkAccess = 'UnexpectedPrivateNetworkAccess',
+    InsecureLocalNetwork = 'InsecureLocalNetwork',
+    InvalidLocalNetworkAccess = 'InvalidLocalNetworkAccess',
     NoCorsRedirectModeNotFollow = 'NoCorsRedirectModeNotFollow',
-    PreflightMissingPrivateNetworkAccessId = 'PreflightMissingPrivateNetworkAccessId',
-    PreflightMissingPrivateNetworkAccessName = 'PreflightMissingPrivateNetworkAccessName',
-    PrivateNetworkAccessPermissionUnavailable = 'PrivateNetworkAccessPermissionUnavailable',
-    PrivateNetworkAccessPermissionDenied = 'PrivateNetworkAccessPermissionDenied',
     LocalNetworkAccessPermissionDenied = 'LocalNetworkAccessPermissionDenied',
   }
 
@@ -10659,11 +10696,6 @@ export namespace Network {
      */
     priority: CookiePriority;
     /**
-     * True if cookie is SameParty.
-     * @deprecated
-     */
-    sameParty: boolean;
-    /**
      * Cookie source scheme type.
      */
     sourceScheme: CookieSourceScheme;
@@ -10704,8 +10736,6 @@ export namespace Network {
     SchemefulSameSiteStrict = 'SchemefulSameSiteStrict',
     SchemefulSameSiteLax = 'SchemefulSameSiteLax',
     SchemefulSameSiteUnspecifiedTreatedAsLax = 'SchemefulSameSiteUnspecifiedTreatedAsLax',
-    SamePartyFromCrossPartyContext = 'SamePartyFromCrossPartyContext',
-    SamePartyConflictsWithOtherAttributes = 'SamePartyConflictsWithOtherAttributes',
     NameValuePairExceedsMaxSize = 'NameValuePairExceedsMaxSize',
     DisallowedCharacter = 'DisallowedCharacter',
     NoCookieContent = 'NoCookieContent',
@@ -10729,7 +10759,6 @@ export namespace Network {
     SchemefulSameSiteStrict = 'SchemefulSameSiteStrict',
     SchemefulSameSiteLax = 'SchemefulSameSiteLax',
     SchemefulSameSiteUnspecifiedTreatedAsLax = 'SchemefulSameSiteUnspecifiedTreatedAsLax',
-    SamePartyFromCrossPartyContext = 'SamePartyFromCrossPartyContext',
     NameValuePairExceedsMaxSize = 'NameValuePairExceedsMaxSize',
     PortMismatch = 'PortMismatch',
     SchemeMismatch = 'SchemeMismatch',
@@ -10858,10 +10887,6 @@ export namespace Network {
      * Cookie Priority.
      */
     priority?: CookiePriority;
-    /**
-     * True if cookie is SameParty.
-     */
-    sameParty?: boolean;
     /**
      * Cookie source scheme type.
      */
@@ -11214,7 +11239,7 @@ export namespace Network {
     remotePort?: integer;
   }
 
-  export const enum PrivateNetworkRequestPolicy {
+  export const enum LocalNetworkAccessRequestPolicy {
     Allow = 'Allow',
     BlockFromInsecureToMorePrivate = 'BlockFromInsecureToMorePrivate',
     WarnFromInsecureToMorePrivate = 'WarnFromInsecureToMorePrivate',
@@ -11241,7 +11266,7 @@ export namespace Network {
   export interface ClientSecurityState {
     initiatorIsSecureContext: boolean;
     initiatorIPAddressSpace: IPAddressSpace;
-    privateNetworkRequestPolicy: PrivateNetworkRequestPolicy;
+    localNetworkAccessRequestPolicy: LocalNetworkAccessRequestPolicy;
   }
 
   export const enum CrossOriginOpenerPolicyValue {
@@ -11345,6 +11370,319 @@ export namespace Network {
      * Name of the endpoint group.
      */
     groupName: string;
+  }
+
+  /**
+   * Unique identifier for a device bound session.
+   */
+  export interface DeviceBoundSessionKey {
+    /**
+     * The site the session is set up for.
+     */
+    site: string;
+    /**
+     * The id of the session.
+     */
+    id: string;
+  }
+
+  export const enum DeviceBoundSessionWithUsageUsage {
+    NotInScope = 'NotInScope',
+    InScopeRefreshNotYetNeeded = 'InScopeRefreshNotYetNeeded',
+    InScopeRefreshNotAllowed = 'InScopeRefreshNotAllowed',
+    ProactiveRefreshNotPossible = 'ProactiveRefreshNotPossible',
+    ProactiveRefreshAttempted = 'ProactiveRefreshAttempted',
+    Deferred = 'Deferred',
+  }
+
+  /**
+   * How a device bound session was used during a request.
+   */
+  export interface DeviceBoundSessionWithUsage {
+    /**
+     * The key for the session.
+     */
+    sessionKey: DeviceBoundSessionKey;
+    /**
+     * How the session was used (or not used).
+     */
+    usage: DeviceBoundSessionWithUsageUsage;
+  }
+
+  /**
+   * A device bound session's cookie craving.
+   */
+  export interface DeviceBoundSessionCookieCraving {
+    /**
+     * The name of the craving.
+     */
+    name: string;
+    /**
+     * The domain of the craving.
+     */
+    domain: string;
+    /**
+     * The path of the craving.
+     */
+    path: string;
+    /**
+     * The `Secure` attribute of the craving attributes.
+     */
+    secure: boolean;
+    /**
+     * The `HttpOnly` attribute of the craving attributes.
+     */
+    httpOnly: boolean;
+    /**
+     * The `SameSite` attribute of the craving attributes.
+     */
+    sameSite?: CookieSameSite;
+  }
+
+  export const enum DeviceBoundSessionUrlRuleRuleType {
+    Exclude = 'Exclude',
+    Include = 'Include',
+  }
+
+  /**
+   * A device bound session's inclusion URL rule.
+   */
+  export interface DeviceBoundSessionUrlRule {
+    /**
+     * See comments on `net::device_bound_sessions::SessionInclusionRules::UrlRule::rule_type`.
+     */
+    ruleType: DeviceBoundSessionUrlRuleRuleType;
+    /**
+     * See comments on `net::device_bound_sessions::SessionInclusionRules::UrlRule::host_pattern`.
+     */
+    hostPattern: string;
+    /**
+     * See comments on `net::device_bound_sessions::SessionInclusionRules::UrlRule::path_prefix`.
+     */
+    pathPrefix: string;
+  }
+
+  /**
+   * A device bound session's inclusion rules.
+   */
+  export interface DeviceBoundSessionInclusionRules {
+    /**
+     * See comments on `net::device_bound_sessions::SessionInclusionRules::origin_`.
+     */
+    origin: string;
+    /**
+     * Whether the whole site is included. See comments on
+     * `net::device_bound_sessions::SessionInclusionRules::include_site_` for more
+     * details; this boolean is true if that value is populated.
+     */
+    includeSite: boolean;
+    /**
+     * See comments on `net::device_bound_sessions::SessionInclusionRules::url_rules_`.
+     */
+    urlRules: DeviceBoundSessionUrlRule[];
+  }
+
+  /**
+   * A device bound session.
+   */
+  export interface DeviceBoundSession {
+    /**
+     * The site and session ID of the session.
+     */
+    key: DeviceBoundSessionKey;
+    /**
+     * See comments on `net::device_bound_sessions::Session::refresh_url_`.
+     */
+    refreshUrl: string;
+    /**
+     * See comments on `net::device_bound_sessions::Session::inclusion_rules_`.
+     */
+    inclusionRules: DeviceBoundSessionInclusionRules;
+    /**
+     * See comments on `net::device_bound_sessions::Session::cookie_cravings_`.
+     */
+    cookieCravings: DeviceBoundSessionCookieCraving[];
+    /**
+     * See comments on `net::device_bound_sessions::Session::expiry_date_`.
+     */
+    expiryDate: Network.TimeSinceEpoch;
+    /**
+     * See comments on `net::device_bound_sessions::Session::cached_challenge__`.
+     */
+    cachedChallenge?: string;
+    /**
+     * See comments on `net::device_bound_sessions::Session::allowed_refresh_initiators_`.
+     */
+    allowedRefreshInitiators: string[];
+  }
+
+  /**
+   * A unique identifier for a device bound session event.
+   */
+  export type DeviceBoundSessionEventId = OpaqueIdentifier<string, 'Protocol.Network.DeviceBoundSessionEventId'>;
+
+  /**
+   * A fetch result for a device bound session creation or refresh.
+   */
+  export const enum DeviceBoundSessionFetchResult {
+    Success = 'Success',
+    KeyError = 'KeyError',
+    SigningError = 'SigningError',
+    ServerRequestedTermination = 'ServerRequestedTermination',
+    InvalidSessionId = 'InvalidSessionId',
+    InvalidChallenge = 'InvalidChallenge',
+    TooManyChallenges = 'TooManyChallenges',
+    InvalidFetcherUrl = 'InvalidFetcherUrl',
+    InvalidRefreshUrl = 'InvalidRefreshUrl',
+    TransientHttpError = 'TransientHttpError',
+    ScopeOriginSameSiteMismatch = 'ScopeOriginSameSiteMismatch',
+    RefreshUrlSameSiteMismatch = 'RefreshUrlSameSiteMismatch',
+    MismatchedSessionId = 'MismatchedSessionId',
+    MissingScope = 'MissingScope',
+    NoCredentials = 'NoCredentials',
+    SubdomainRegistrationWellKnownUnavailable = 'SubdomainRegistrationWellKnownUnavailable',
+    SubdomainRegistrationUnauthorized = 'SubdomainRegistrationUnauthorized',
+    SubdomainRegistrationWellKnownMalformed = 'SubdomainRegistrationWellKnownMalformed',
+    SessionProviderWellKnownUnavailable = 'SessionProviderWellKnownUnavailable',
+    RelyingPartyWellKnownUnavailable = 'RelyingPartyWellKnownUnavailable',
+    FederatedKeyThumbprintMismatch = 'FederatedKeyThumbprintMismatch',
+    InvalidFederatedSessionUrl = 'InvalidFederatedSessionUrl',
+    InvalidFederatedKey = 'InvalidFederatedKey',
+    TooManyRelyingOriginLabels = 'TooManyRelyingOriginLabels',
+    BoundCookieSetForbidden = 'BoundCookieSetForbidden',
+    NetError = 'NetError',
+    ProxyError = 'ProxyError',
+    EmptySessionConfig = 'EmptySessionConfig',
+    InvalidCredentialsConfig = 'InvalidCredentialsConfig',
+    InvalidCredentialsType = 'InvalidCredentialsType',
+    InvalidCredentialsEmptyName = 'InvalidCredentialsEmptyName',
+    InvalidCredentialsCookie = 'InvalidCredentialsCookie',
+    PersistentHttpError = 'PersistentHttpError',
+    RegistrationAttemptedChallenge = 'RegistrationAttemptedChallenge',
+    InvalidScopeOrigin = 'InvalidScopeOrigin',
+    ScopeOriginContainsPath = 'ScopeOriginContainsPath',
+    RefreshInitiatorNotString = 'RefreshInitiatorNotString',
+    RefreshInitiatorInvalidHostPattern = 'RefreshInitiatorInvalidHostPattern',
+    InvalidScopeSpecification = 'InvalidScopeSpecification',
+    MissingScopeSpecificationType = 'MissingScopeSpecificationType',
+    EmptyScopeSpecificationDomain = 'EmptyScopeSpecificationDomain',
+    EmptyScopeSpecificationPath = 'EmptyScopeSpecificationPath',
+    InvalidScopeSpecificationType = 'InvalidScopeSpecificationType',
+    InvalidScopeIncludeSite = 'InvalidScopeIncludeSite',
+    MissingScopeIncludeSite = 'MissingScopeIncludeSite',
+    FederatedNotAuthorizedByProvider = 'FederatedNotAuthorizedByProvider',
+    FederatedNotAuthorizedByRelyingParty = 'FederatedNotAuthorizedByRelyingParty',
+    SessionProviderWellKnownMalformed = 'SessionProviderWellKnownMalformed',
+    SessionProviderWellKnownHasProviderOrigin = 'SessionProviderWellKnownHasProviderOrigin',
+    RelyingPartyWellKnownMalformed = 'RelyingPartyWellKnownMalformed',
+    RelyingPartyWellKnownHasRelyingOrigins = 'RelyingPartyWellKnownHasRelyingOrigins',
+    InvalidFederatedSessionProviderSessionMissing = 'InvalidFederatedSessionProviderSessionMissing',
+    InvalidFederatedSessionWrongProviderOrigin = 'InvalidFederatedSessionWrongProviderOrigin',
+    InvalidCredentialsCookieCreationTime = 'InvalidCredentialsCookieCreationTime',
+    InvalidCredentialsCookieName = 'InvalidCredentialsCookieName',
+    InvalidCredentialsCookieParsing = 'InvalidCredentialsCookieParsing',
+    InvalidCredentialsCookieUnpermittedAttribute = 'InvalidCredentialsCookieUnpermittedAttribute',
+    InvalidCredentialsCookieInvalidDomain = 'InvalidCredentialsCookieInvalidDomain',
+    InvalidCredentialsCookiePrefix = 'InvalidCredentialsCookiePrefix',
+    InvalidScopeRulePath = 'InvalidScopeRulePath',
+    InvalidScopeRuleHostPattern = 'InvalidScopeRuleHostPattern',
+    ScopeRuleOriginScopedHostPatternMismatch = 'ScopeRuleOriginScopedHostPatternMismatch',
+    ScopeRuleSiteScopedHostPatternMismatch = 'ScopeRuleSiteScopedHostPatternMismatch',
+    SigningQuotaExceeded = 'SigningQuotaExceeded',
+    InvalidConfigJson = 'InvalidConfigJson',
+    InvalidFederatedSessionProviderFailedToRestoreKey = 'InvalidFederatedSessionProviderFailedToRestoreKey',
+    FailedToUnwrapKey = 'FailedToUnwrapKey',
+    SessionDeletedDuringRefresh = 'SessionDeletedDuringRefresh',
+  }
+
+  /**
+   * Session event details specific to creation.
+   */
+  export interface CreationEventDetails {
+    /**
+     * The result of the fetch attempt.
+     */
+    fetchResult: DeviceBoundSessionFetchResult;
+    /**
+     * The session if there was a newly created session. This is populated for
+     * all successful creation events.
+     */
+    newSession?: DeviceBoundSession;
+  }
+
+  export const enum RefreshEventDetailsRefreshResult {
+    Refreshed = 'Refreshed',
+    InitializedService = 'InitializedService',
+    Unreachable = 'Unreachable',
+    ServerError = 'ServerError',
+    RefreshQuotaExceeded = 'RefreshQuotaExceeded',
+    FatalError = 'FatalError',
+    SigningQuotaExceeded = 'SigningQuotaExceeded',
+  }
+
+  /**
+   * Session event details specific to refresh.
+   */
+  export interface RefreshEventDetails {
+    /**
+     * The result of a refresh.
+     */
+    refreshResult: RefreshEventDetailsRefreshResult;
+    /**
+     * If there was a fetch attempt, the result of that.
+     */
+    fetchResult?: DeviceBoundSessionFetchResult;
+    /**
+     * The session display if there was a newly created session. This is populated
+     * for any refresh event that modifies the session config.
+     */
+    newSession?: DeviceBoundSession;
+    /**
+     * See comments on `net::device_bound_sessions::RefreshEventResult::was_fully_proactive_refresh`.
+     */
+    wasFullyProactiveRefresh: boolean;
+  }
+
+  export const enum TerminationEventDetailsDeletionReason {
+    Expired = 'Expired',
+    FailedToRestoreKey = 'FailedToRestoreKey',
+    FailedToUnwrapKey = 'FailedToUnwrapKey',
+    StoragePartitionCleared = 'StoragePartitionCleared',
+    ClearBrowsingData = 'ClearBrowsingData',
+    ServerRequested = 'ServerRequested',
+    InvalidSessionParams = 'InvalidSessionParams',
+    RefreshFatalError = 'RefreshFatalError',
+  }
+
+  /**
+   * Session event details specific to termination.
+   */
+  export interface TerminationEventDetails {
+    /**
+     * The reason for a session being deleted.
+     */
+    deletionReason: TerminationEventDetailsDeletionReason;
+  }
+
+  export const enum ChallengeEventDetailsChallengeResult {
+    Success = 'Success',
+    NoSessionId = 'NoSessionId',
+    NoSessionMatch = 'NoSessionMatch',
+    CantSetBoundCookie = 'CantSetBoundCookie',
+  }
+
+  /**
+   * Session event details specific to challenges.
+   */
+  export interface ChallengeEventDetails {
+    /**
+     * The result of a challenge.
+     */
+    challengeResult: ChallengeEventDetailsChallengeResult;
+    /**
+     * The challenge set.
+     */
+    challenge: string;
   }
 
   /**
@@ -11567,9 +11905,22 @@ export namespace Network {
     /**
      * Enable storing response bodies outside of renderer, so that these survive
      * a cross-process navigation. Requires maxTotalBufferSize to be set.
-     * Currently defaults to false.
+     * Currently defaults to false. This field is being deprecated in favor of the dedicated
+     * configureDurableMessages command, due to the possibility of deadlocks when awaiting
+     * Network.enable before issuing Runtime.runIfWaitingForDebugger.
      */
     enableDurableMessages?: boolean;
+  }
+
+  export interface ConfigureDurableMessagesRequest {
+    /**
+     * Buffer size in bytes to use when preserving network payloads (XHRs, etc).
+     */
+    maxTotalBufferSize?: integer;
+    /**
+     * Per-resource buffer size in bytes to use when preserving network payloads (XHRs, etc).
+     */
+    maxResourceBufferSize?: integer;
   }
 
   export interface GetAllCookiesResponse extends ProtocolResponseWithError {
@@ -11636,6 +11987,10 @@ export namespace Network {
      * Request body string, omitting files from multipart requests
      */
     postData: string;
+    /**
+     * True, if content was sent as base64.
+     */
+    base64Encoded: boolean;
   }
 
   export interface GetResponseBodyForInterceptionRequest {
@@ -11767,10 +12122,6 @@ export namespace Network {
      */
     priority?: CookiePriority;
     /**
-     * True if cookie is SameParty.
-     */
-    sameParty?: boolean;
-    /**
      * Cookie source scheme type.
      */
     sourceScheme?: CookieSourceScheme;
@@ -11872,6 +12223,27 @@ export namespace Network {
      * Whether to enable or disable events for the Reporting API
      */
     enable: boolean;
+  }
+
+  export interface EnableDeviceBoundSessionsRequest {
+    /**
+     * Whether to enable or disable events.
+     */
+    enable: boolean;
+  }
+
+  export interface FetchSchemefulSiteRequest {
+    /**
+     * The URL origin.
+     */
+    origin: string;
+  }
+
+  export interface FetchSchemefulSiteResponse extends ProtocolResponseWithError {
+    /**
+     * The corresponding schemeful site.
+     */
+    schemefulSite: string;
   }
 
   export interface LoadNetworkResourceRequest {
@@ -12139,6 +12511,10 @@ export namespace Network {
      * Whether the request is initiated by a user gesture. Defaults to false.
      */
     hasUserGesture?: boolean;
+    /**
+     * The render blocking behavior of the request.
+     */
+    renderBlockingBehavior?: RenderBlockingBehavior;
   }
 
   /**
@@ -12550,6 +12926,10 @@ export namespace Network {
      */
     connectTiming: ConnectTiming;
     /**
+     * How the request site's device bound sessions were used during this request.
+     */
+    deviceBoundSessionUsages?: DeviceBoundSessionWithUsage[];
+    /**
      * The client security state set for the request.
      */
     clientSecurityState?: ClientSecurityState;
@@ -12702,6 +13082,46 @@ export namespace Network {
      */
     origin: string;
     endpoints: ReportingApiEndpoint[];
+  }
+
+  /**
+   * Triggered when the initial set of device bound sessions is added.
+   */
+  export interface DeviceBoundSessionsAddedEvent {
+    /**
+     * The device bound sessions.
+     */
+    sessions: DeviceBoundSession[];
+  }
+
+  /**
+   * Triggered when a device bound session event occurs.
+   */
+  export interface DeviceBoundSessionEventOccurredEvent {
+    /**
+     * A unique identifier for this session event.
+     */
+    eventId: DeviceBoundSessionEventId;
+    /**
+     * The site this session event is associated with.
+     */
+    site: string;
+    /**
+     * Whether this event was considered successful.
+     */
+    succeeded: boolean;
+    /**
+     * The session ID this event is associated with. May not be populated for
+     * failed events.
+     */
+    sessionId?: string;
+    /**
+     * The below are the different session event type details. Exactly one is populated.
+     */
+    creationEventDetails?: CreationEventDetails;
+    refreshEventDetails?: RefreshEventDetails;
+    terminationEventDetails?: TerminationEventDetails;
+    challengeEventDetails?: ChallengeEventDetails;
   }
 }
 
@@ -13142,6 +13562,17 @@ export namespace Overlay {
     None = 'none',
   }
 
+  export interface InspectedElementAnchorConfig {
+    /**
+     * Identifier of the node to highlight.
+     */
+    nodeId?: DOM.NodeId;
+    /**
+     * Identifier of the backend node to highlight.
+     */
+    backendNodeId?: DOM.BackendNodeId;
+  }
+
   export interface GetHighlightObjectForTestRequest {
     /**
      * Id of the node to get highlight object for.
@@ -13367,6 +13798,13 @@ export namespace Overlay {
     containerQueryHighlightConfigs: ContainerQueryHighlightConfig[];
   }
 
+  export interface SetShowInspectedElementAnchorRequest {
+    /**
+     * Node identifier for which to show an anchor for.
+     */
+    inspectedElementAnchorConfig: InspectedElementAnchorConfig;
+  }
+
   export interface SetShowPaintRectsRequest {
     /**
      * True for showing paint rectangles
@@ -13453,6 +13891,26 @@ export namespace Overlay {
      * Viewport to capture, in device independent pixels (dip).
      */
     viewport: Page.Viewport;
+  }
+
+  /**
+   * Fired when user asks to show the Inspect panel.
+   */
+  export interface InspectPanelShowRequestedEvent {
+    /**
+     * Id of the node to show in the panel.
+     */
+    backendNodeId: DOM.BackendNodeId;
+  }
+
+  /**
+   * Fired when user asks to restore the Inspected Element floating window.
+   */
+  export interface InspectedElementWindowRestoredEvent {
+    /**
+     * Id of the node to restore the floating window for.
+     */
+    backendNodeId: DOM.BackendNodeId;
   }
 }
 
@@ -13734,7 +14192,9 @@ export namespace Page {
     LanguageDetector = 'language-detector',
     LanguageModel = 'language-model',
     LocalFonts = 'local-fonts',
+    LocalNetwork = 'local-network',
     LocalNetworkAccess = 'local-network-access',
+    LoopbackNetwork = 'loopback-network',
     Magnetometer = 'magnetometer',
     ManualText = 'manual-text',
     MediaPlaybackWhileNotVisible = 'media-playback-while-not-visible',
@@ -14575,6 +15035,7 @@ export namespace Page {
     SharedWorkerMessage = 'SharedWorkerMessage',
     SharedWorkerWithNoActiveClient = 'SharedWorkerWithNoActiveClient',
     WebLocks = 'WebLocks',
+    WebLocksContention = 'WebLocksContention',
     WebHID = 'WebHID',
     WebBluetooth = 'WebBluetooth',
     WebShare = 'WebShare',
@@ -16860,6 +17321,366 @@ export namespace ServiceWorker {
   }
 }
 
+export namespace SmartCardEmulation {
+
+  /**
+   * Indicates the PC/SC error code.
+   *
+   * This maps to:
+   * PC/SC Lite: https://pcsclite.apdu.fr/api/group__ErrorCodes.html
+   * Microsoft: https://learn.microsoft.com/en-us/windows/win32/secauthn/authentication-return-values
+   */
+  export const enum ResultCode {
+    Success = 'success',
+    RemovedCard = 'removed-card',
+    ResetCard = 'reset-card',
+    UnpoweredCard = 'unpowered-card',
+    UnresponsiveCard = 'unresponsive-card',
+    UnsupportedCard = 'unsupported-card',
+    ReaderUnavailable = 'reader-unavailable',
+    SharingViolation = 'sharing-violation',
+    NotTransacted = 'not-transacted',
+    NoSmartcard = 'no-smartcard',
+    ProtoMismatch = 'proto-mismatch',
+    SystemCancelled = 'system-cancelled',
+    NotReady = 'not-ready',
+    Cancelled = 'cancelled',
+    InsufficientBuffer = 'insufficient-buffer',
+    InvalidHandle = 'invalid-handle',
+    InvalidParameter = 'invalid-parameter',
+    InvalidValue = 'invalid-value',
+    NoMemory = 'no-memory',
+    Timeout = 'timeout',
+    UnknownReader = 'unknown-reader',
+    UnsupportedFeature = 'unsupported-feature',
+    NoReadersAvailable = 'no-readers-available',
+    ServiceStopped = 'service-stopped',
+    NoService = 'no-service',
+    CommError = 'comm-error',
+    InternalError = 'internal-error',
+    ServerTooBusy = 'server-too-busy',
+    Unexpected = 'unexpected',
+    Shutdown = 'shutdown',
+    UnknownCard = 'unknown-card',
+    Unknown = 'unknown',
+  }
+
+  /**
+   * Maps to the |SCARD_SHARE_*| values.
+   */
+  export const enum ShareMode {
+    Shared = 'shared',
+    Exclusive = 'exclusive',
+    Direct = 'direct',
+  }
+
+  /**
+   * Indicates what the reader should do with the card.
+   */
+  export const enum Disposition {
+    LeaveCard = 'leave-card',
+    ResetCard = 'reset-card',
+    UnpowerCard = 'unpower-card',
+    EjectCard = 'eject-card',
+  }
+
+  /**
+   * Maps to |SCARD_*| connection state values.
+   */
+  export const enum ConnectionState {
+    Absent = 'absent',
+    Present = 'present',
+    Swallowed = 'swallowed',
+    Powered = 'powered',
+    Negotiable = 'negotiable',
+    Specific = 'specific',
+  }
+
+  /**
+   * Maps to the |SCARD_STATE_*| flags.
+   */
+  export interface ReaderStateFlags {
+    unaware?: boolean;
+    ignore?: boolean;
+    changed?: boolean;
+    unknown?: boolean;
+    unavailable?: boolean;
+    empty?: boolean;
+    present?: boolean;
+    exclusive?: boolean;
+    inuse?: boolean;
+    mute?: boolean;
+    unpowered?: boolean;
+  }
+
+  /**
+   * Maps to the |SCARD_PROTOCOL_*| flags.
+   */
+  export interface ProtocolSet {
+    t0?: boolean;
+    t1?: boolean;
+    raw?: boolean;
+  }
+
+  /**
+   * Maps to the |SCARD_PROTOCOL_*| values.
+   */
+  export const enum Protocol {
+    T0 = 't0',
+    T1 = 't1',
+    Raw = 'raw',
+  }
+
+  export interface ReaderStateIn {
+    reader: string;
+    currentState: ReaderStateFlags;
+    currentInsertionCount: integer;
+  }
+
+  export interface ReaderStateOut {
+    reader: string;
+    eventState: ReaderStateFlags;
+    eventCount: integer;
+    atr: binary;
+  }
+
+  export interface ReportEstablishContextResultRequest {
+    requestId: string;
+    contextId: integer;
+  }
+
+  export interface ReportReleaseContextResultRequest {
+    requestId: string;
+  }
+
+  export interface ReportListReadersResultRequest {
+    requestId: string;
+    readers: string[];
+  }
+
+  export interface ReportGetStatusChangeResultRequest {
+    requestId: string;
+    readerStates: ReaderStateOut[];
+  }
+
+  export interface ReportBeginTransactionResultRequest {
+    requestId: string;
+    handle: integer;
+  }
+
+  export interface ReportPlainResultRequest {
+    requestId: string;
+  }
+
+  export interface ReportConnectResultRequest {
+    requestId: string;
+    handle: integer;
+    activeProtocol?: Protocol;
+  }
+
+  export interface ReportDataResultRequest {
+    requestId: string;
+    data: binary;
+  }
+
+  export interface ReportStatusResultRequest {
+    requestId: string;
+    readerName: string;
+    state: ConnectionState;
+    atr: binary;
+    protocol?: Protocol;
+  }
+
+  export interface ReportErrorRequest {
+    requestId: string;
+    resultCode: ResultCode;
+  }
+
+  /**
+   * Fired when |SCardEstablishContext| is called.
+   *
+   * This maps to:
+   * PC/SC Lite: https://pcsclite.apdu.fr/api/group__API.html#gaa1b8970169fd4883a6dc4a8f43f19b67
+   * Microsoft: https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardestablishcontext
+   */
+  export interface EstablishContextRequestedEvent {
+    requestId: string;
+  }
+
+  /**
+   * Fired when |SCardReleaseContext| is called.
+   *
+   * This maps to:
+   * PC/SC Lite: https://pcsclite.apdu.fr/api/group__API.html#ga6aabcba7744c5c9419fdd6404f73a934
+   * Microsoft: https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardreleasecontext
+   */
+  export interface ReleaseContextRequestedEvent {
+    requestId: string;
+    contextId: integer;
+  }
+
+  /**
+   * Fired when |SCardListReaders| is called.
+   *
+   * This maps to:
+   * PC/SC Lite: https://pcsclite.apdu.fr/api/group__API.html#ga93b07815789b3cf2629d439ecf20f0d9
+   * Microsoft: https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardlistreadersa
+   */
+  export interface ListReadersRequestedEvent {
+    requestId: string;
+    contextId: integer;
+  }
+
+  /**
+   * Fired when |SCardGetStatusChange| is called. Timeout is specified in milliseconds.
+   *
+   * This maps to:
+   * PC/SC Lite: https://pcsclite.apdu.fr/api/group__API.html#ga33247d5d1257d59e55647c3bb717db24
+   * Microsoft: https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetstatuschangea
+   */
+  export interface GetStatusChangeRequestedEvent {
+    requestId: string;
+    contextId: integer;
+    readerStates: ReaderStateIn[];
+    /**
+     * in milliseconds, if absent, it means "infinite"
+     */
+    timeout?: integer;
+  }
+
+  /**
+   * Fired when |SCardCancel| is called.
+   *
+   * This maps to:
+   * PC/SC Lite: https://pcsclite.apdu.fr/api/group__API.html#gaacbbc0c6d6c0cbbeb4f4debf6fbeeee6
+   * Microsoft: https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardcancel
+   */
+  export interface CancelRequestedEvent {
+    requestId: string;
+    contextId: integer;
+  }
+
+  /**
+   * Fired when |SCardConnect| is called.
+   *
+   * This maps to:
+   * PC/SC Lite: https://pcsclite.apdu.fr/api/group__API.html#ga4e515829752e0a8dbc4d630696a8d6a5
+   * Microsoft: https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardconnecta
+   */
+  export interface ConnectRequestedEvent {
+    requestId: string;
+    contextId: integer;
+    reader: string;
+    shareMode: ShareMode;
+    preferredProtocols: ProtocolSet;
+  }
+
+  /**
+   * Fired when |SCardDisconnect| is called.
+   *
+   * This maps to:
+   * PC/SC Lite: https://pcsclite.apdu.fr/api/group__API.html#ga4be198045c73ec0deb79e66c0ca1738a
+   * Microsoft: https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scarddisconnect
+   */
+  export interface DisconnectRequestedEvent {
+    requestId: string;
+    handle: integer;
+    disposition: Disposition;
+  }
+
+  /**
+   * Fired when |SCardTransmit| is called.
+   *
+   * This maps to:
+   * PC/SC Lite: https://pcsclite.apdu.fr/api/group__API.html#ga9a2d77242a271310269065e64633ab99
+   * Microsoft: https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardtransmit
+   */
+  export interface TransmitRequestedEvent {
+    requestId: string;
+    handle: integer;
+    data: binary;
+    protocol?: Protocol;
+  }
+
+  /**
+   * Fired when |SCardControl| is called.
+   *
+   * This maps to:
+   * PC/SC Lite: https://pcsclite.apdu.fr/api/group__API.html#gac3454d4657110fd7f753b2d3d8f4e32f
+   * Microsoft: https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardcontrol
+   */
+  export interface ControlRequestedEvent {
+    requestId: string;
+    handle: integer;
+    controlCode: integer;
+    data: binary;
+  }
+
+  /**
+   * Fired when |SCardGetAttrib| is called.
+   *
+   * This maps to:
+   * PC/SC Lite: https://pcsclite.apdu.fr/api/group__API.html#gaacfec51917255b7a25b94c5104961602
+   * Microsoft: https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetattrib
+   */
+  export interface GetAttribRequestedEvent {
+    requestId: string;
+    handle: integer;
+    attribId: integer;
+  }
+
+  /**
+   * Fired when |SCardSetAttrib| is called.
+   *
+   * This maps to:
+   * PC/SC Lite: https://pcsclite.apdu.fr/api/group__API.html#ga060f0038a4ddfd5dd2b8fadf3c3a2e4f
+   * Microsoft: https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardsetattrib
+   */
+  export interface SetAttribRequestedEvent {
+    requestId: string;
+    handle: integer;
+    attribId: integer;
+    data: binary;
+  }
+
+  /**
+   * Fired when |SCardStatus| is called.
+   *
+   * This maps to:
+   * PC/SC Lite: https://pcsclite.apdu.fr/api/group__API.html#gae49c3c894ad7ac12a5b896bde70d0382
+   * Microsoft: https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardstatusa
+   */
+  export interface StatusRequestedEvent {
+    requestId: string;
+    handle: integer;
+  }
+
+  /**
+   * Fired when |SCardBeginTransaction| is called.
+   *
+   * This maps to:
+   * PC/SC Lite: https://pcsclite.apdu.fr/api/group__API.html#gaddb835dce01a0da1d6ca02d33ee7d861
+   * Microsoft: https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardbegintransaction
+   */
+  export interface BeginTransactionRequestedEvent {
+    requestId: string;
+    handle: integer;
+  }
+
+  /**
+   * Fired when |SCardEndTransaction| is called.
+   *
+   * This maps to:
+   * PC/SC Lite: https://pcsclite.apdu.fr/api/group__API.html#gae8742473b404363e5c587f570d7e2f3b
+   * Microsoft: https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardendtransaction
+   */
+  export interface EndTransactionRequestedEvent {
+    requestId: string;
+    handle: integer;
+    disposition: Disposition;
+  }
+}
+
 export namespace Storage {
 
   export type SerializedStorageKey = string;
@@ -18391,6 +19212,10 @@ export namespace Target {
      * An array of browser context ids.
      */
     browserContextIds: Browser.BrowserContextID[];
+    /**
+     * The id of the default browser context if available.
+     */
+    defaultBrowserContextId?: Browser.BrowserContextID;
   }
 
   export interface CreateTargetRequest {
@@ -18447,6 +19272,16 @@ export namespace Target {
      * `background: false`. The life-time of the tab is limited to the life-time of the session.
      */
     hidden?: boolean;
+    /**
+     * If specified, the option is used to determine if the new target should
+     * be focused or not. By default, the focus behavior depends on the
+     * value of the background field. For example, background=false and focus=false
+     * will result in the target tab being opened but the browser window remain
+     * unchanged (if it was in the background, it will remain in the background)
+     * and background=false with focus=undefined will result in the window being focused.
+     * Using background: true and focus: true is not supported and will result in an error.
+     */
+    focus?: boolean;
   }
 
   export interface CreateTargetResponse extends ProtocolResponseWithError {
@@ -18816,6 +19651,13 @@ export namespace Tracing {
      * A list of supported tracing categories.
      */
     categories: string[];
+  }
+
+  export interface GetTrackEventDescriptorResponse extends ProtocolResponseWithError {
+    /**
+     * Base64-encoded serialized perfetto.protos.TrackEventDescriptor protobuf message.
+     */
+    descriptor: binary;
   }
 
   export interface RecordClockSyncMarkerRequest {

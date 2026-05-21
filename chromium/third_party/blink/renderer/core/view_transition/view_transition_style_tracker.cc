@@ -4,13 +4,14 @@
 
 #include "third_party/blink/renderer/core/view_transition/view_transition_style_tracker.h"
 
+#include <algorithm>
 #include <limits>
 #include <unordered_map>
 
 #include "base/check.h"
-#include "base/containers/contains.h"
 #include "cc/base/features.h"
 #include "components/viz/common/view_transition_element_resource_id.h"
+#include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/resources/grit/blink_resources.h"
 #include "third_party/blink/renderer/core/animation/element_animations.h"
 #include "third_party/blink/renderer/core/animation/property_handle.h"
@@ -70,6 +71,9 @@ namespace {
 
 const char* kDuplicateTagBaseError =
     "Unexpected duplicate view-transition-name: ";
+
+const char* kTagCollisionBaseError =
+    "Element cannot participate in multiple transitions: ";
 
 const CSSPropertyID kPropertiesToCapture[] = {
     CSSPropertyID::kBackdropFilter, CSSPropertyID::kColorScheme,
@@ -599,7 +603,7 @@ void ViewTransitionStyleTracker::AddTransitionElement(
                                });
   }
   // Find the existing name if one is there. If it is there, do nothing.
-  if (base::Contains(value, name, &std::pair<AtomicString, int>::first))
+  if (std::ranges::contains(value, name, &std::pair<AtomicString, int>::first))
     return;
   // Otherwise, insert a new sequence id with this name. We'll use the sequence
   // to sort later.
@@ -735,15 +739,14 @@ void ViewTransitionStyleTracker::AddTransitionElementsFromCSSRecursive(
   // (unless changed by something like z-index on the pseudo-elements).
   auto& root_object = root->GetLayoutObject();
   auto& root_style = root_object.StyleRef();
-
-  if ((root_style.Contain() & kContainsViewTransition) && element_ &&
-      (root_object.GetNode() != *element_)) {
-    // Having "contain: view-transition" on a descendant of the scoped element
-    // halts propagation of tag discovery into the descendant's subtree.
-    // If the scoped element itself has "contain: view-transition", the tag
+  if (element_ && (root_object.GetNode() != *element_) &&
+      (root_style.ViewTransitionScope() == EViewTransitionScope::kAuto)) {
+    // Having "view-transition-scope: auto" on a descendant of the scoped
+    // element halts propagation of tag discovery into the descendant's subtree.
+    // If the scoped element itself has "view-transition-scope: auto", the tag
     // discovery process proceeds normally.
-    // TODO(crbug.com/422522044): Should "contain: strict" include
-    // view-transition
+    // TODO(crbug.com/478214441): Handle "view-transition-scope: auto" on an
+    // element with "display: contents".
     return;
   }
 
@@ -873,6 +876,19 @@ bool ViewTransitionStyleTracker::FlattenAndVerifyElements(
       }
 
       AddConsoleError(message.ReleaseString(), std::move(nodes));
+      return false;
+    }
+
+    // TransitionForParticipant will not return our own transition, because
+    // VTST::IsTransitionElement() excludes kIdle and kCaptured states. So if
+    // it returns a transition, it is some other transition that is already
+    // using this element as a participant.
+    if (ViewTransitionUtils::TransitionForParticipant(*element)) {
+      StringBuilder message;
+      message.Append(kTagCollisionBaseError);
+      message.Append(name);
+      AddConsoleError(message.ReleaseString(),
+                      Vector<DOMNodeId>(element->GetDomNodeId()));
       return false;
     }
 
@@ -1095,17 +1111,18 @@ VectorOf<Element> ViewTransitionStyleTracker::GetTransitioningElements() const {
   return result;
 }
 
-const Vector<AtomicString>&
+const Vector<AtomicString>
 ViewTransitionStyleTracker::GetViewTransitionClassList(
     const AtomicString& name) const {
-  CHECK(element_data_map_.Contains(name));
+  if (!element_data_map_.Contains(name)) {
+    return Vector<AtomicString>();
+  }
   return element_data_map_.at(name)->class_list;
 }
 
 const AtomicString& ViewTransitionStyleTracker::GetContainingGroupName(
     const AtomicString& name) const {
-  if (!RuntimeEnabledFeatures::NestedViewTransitionEnabled() ||
-      state_ != State::kStarted) {
+  if (state_ != State::kStarted) {
     return g_null_atom;
   }
 
@@ -1252,9 +1269,15 @@ void ViewTransitionStyleTracker::PauseRendering() {
   DCHECK_EQ(state_, State::kCapturing);
 
   if (scope_snapshot_layer_) {
+    auto bounds = scope_snapshot_layer_->bounds();
+    auto paint_offset = scope_snapshot_layer_->paint_offset();
+
     auto resource_id = scope_snapshot_layer_->ViewTransitionResourceId();
     scope_snapshot_layer_ = cc::ViewTransitionContentLayer::Create(
         resource_id, /*is_live_content_layer=*/false);
+
+    scope_snapshot_layer_->SetBounds(bounds);
+    scope_snapshot_layer_->SetPaintOffset(paint_offset);
   }
 }
 
@@ -1576,10 +1599,8 @@ bool ViewTransitionStyleTracker::RunPostPrePaintStepsForElement(
     capture_property(id, css_property_builder);
   }
 
-  if (RuntimeEnabledFeatures::NestedViewTransitionEnabled()) {
-    for (CSSPropertyID id : kPropertiesToCaptureOnGroupChildren) {
-      capture_property(id, group_children_css_property_builder);
-    }
+  for (CSSPropertyID id : kPropertiesToCaptureOnGroupChildren) {
+    capture_property(id, group_children_css_property_builder);
   }
 
   auto css_properties = std::move(css_property_builder).Finish();
@@ -1744,14 +1765,12 @@ gfx::Transform ViewTransitionStyleTracker::ComputeTransformForParticipant(
       << first_fragment.PaintOffset();
   auto paint_properties = first_fragment.LocalBorderBoxProperties();
 
-  LayoutBox* scope_box = object.GetDocument().GetLayoutView();
-  if (RuntimeEnabledFeatures::ScopedViewTransitionsEnabled()) {
-    auto* scope = OriginatingElement();
-    scope_box = scope->IsDocumentElement()
-                    ? scope->GetDocument().GetLayoutView()
-                    : DynamicTo<LayoutBox>(scope->GetLayoutObject());
-    CHECK(scope_box);
-  }
+  auto* scope = OriginatingElement();
+  LayoutBox* scope_box = scope->IsDocumentElement()
+                             ? scope->GetDocument().GetLayoutView()
+                             : DynamicTo<LayoutBox>(scope->GetLayoutObject());
+  CHECK(scope_box);
+
   auto& scope_fragment = scope_box->FirstFragment();
   const auto& scope_properties = scope_fragment.LocalBorderBoxProperties();
 
@@ -1768,13 +1787,13 @@ gfx::Transform ViewTransitionStyleTracker::ComputeTransformForParticipant(
         gfx::Vector2dF(layout_inline->PhysicalLinesBoundingBox().offset));
   }
 
-  if (RuntimeEnabledFeatures::ScopedViewTransitionsEnabled() &&
-      !scope_box->IsLayoutView()) {
+  if (!scope_box->IsLayoutView()) {
+    DCHECK(RuntimeEnabledFeatures::ScopedViewTransitionsEnabled());
+
     // TODO(crbug.com/394052227): Should we force compositing on the scope?
     // If we do, its paint offset will always be zero.
 
     // Adjust for the scope element's borders and scrollbars.
-    // TODO(crbug.com/394052227): Is this correct in RTL / all writing modes?
     transform.Translate(-scope_box->ClientLeft(), -scope_box->ClientTop());
     transform.Translate(-gfx::Vector2dF(scope_fragment.PaintOffset()));
   }
@@ -1835,8 +1854,8 @@ PaintPropertyChangeType ViewTransitionStyleTracker::UpdateCaptureClip(
       element_data->clip_node =
           ClipPaintPropertyNode::Create(*current_clip, std::move(state));
 #if DCHECK_IS_ON()
-      element_data->clip_node->SetDebugName(element.DebugName() +
-                                            "ViewTransition");
+      element_data->clip_node->SetDebugName(
+          StrCat({element.DebugName(), "ViewTransition"}));
 #endif
       return PaintPropertyChangeType::kNodeAddedOrRemoved;
     }
@@ -2102,6 +2121,10 @@ ViewTransitionState ViewTransitionStyleTracker::GetViewTransitionState() const {
 
   // TODO(khushalsagar): Need to send offsets to retain positioning of
   // ::view-transition.
+
+  transition_state.delay_layer_tree_view_deletion_ =
+      base::FeatureList::IsEnabled(
+          blink::features::kDelayLayerTreeViewDeletionOnLocalSwap);
 
   return transition_state;
 }

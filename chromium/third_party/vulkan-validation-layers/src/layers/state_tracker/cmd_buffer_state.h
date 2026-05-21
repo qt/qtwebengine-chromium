@@ -1,9 +1,9 @@
-/* Copyright (c) 2015-2025 The Khronos Group Inc.
- * Copyright (c) 2015-2025 Valve Corporation
- * Copyright (c) 2015-2025 LunarG, Inc.
- * Copyright (C) 2015-2025 Google Inc.
+/* Copyright (c) 2015-2026 The Khronos Group Inc.
+ * Copyright (c) 2015-2026 Valve Corporation
+ * Copyright (c) 2015-2026 LunarG, Inc.
+ * Copyright (C) 2015-2026 Google Inc.
  * Copyright (C) 2025 Arm Limited.
- * Modifications Copyright (C) 2020 Advanced Micro Devices, Inc. All rights reserved.
+ * Modifications Copyright (C) 2020,2025-2026 Advanced Micro Devices, Inc. All rights reserved.
  * Modifications Copyright (C) 2022 RasterGrid Kft.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -27,8 +27,10 @@
 #include "state_tracker/bind_point.h"
 #include "state_tracker/query_state.h"
 #include "state_tracker/vertex_index_buffer_state.h"
+#include "error_message/error_location.h"
 #include "utils/sync_utils.h"
 #include "generated/dynamic_state_helper.h"
+#include "containers/range_map.h"
 
 struct Location;
 
@@ -36,6 +38,7 @@ namespace vvl {
 class Bindable;
 class Buffer;
 class CommandBufferSubState;
+class DeviceMemory;
 class DeviceState;
 class Pipeline;
 class Framebuffer;
@@ -57,13 +60,7 @@ static inline bool IsRecorded(CbState state) { return state == CbState::Recorded
 
 static inline bool IsRecording(CbState state) { return state == CbState::Recording || state == CbState::InvalidIncomplete; }
 
-// Submit time validation helper. Since CmdBeginRendering is itself an action command,
-// if the first detected action or sync command is CmdBeginRendering, it means there are
-// no other action commands before it.
-static inline bool HasActionOrSyncCommandBeforeBeginRendering(vvl::Func first_action_or_sync_command) {
-    return first_action_or_sync_command != vvl::Func::Empty &&
-           !IsValueIn(first_action_or_sync_command, {vvl::Func::vkCmdBeginRendering, vvl::Func::vkCmdBeginRenderingKHR});
-}
+bool HasActionOrSyncCommandBeforeBeginRendering(vvl::Func first_action_or_sync_command);
 
 enum class AttachmentSource {
     Empty = 0,
@@ -197,6 +194,7 @@ class CommandBuffer : public RefcountedStateObject, public SubStateManager<Comma
     VkCommandBufferUsageFlags begin_info_flags;
     bool has_inheritance;
     vku::safe_VkCommandBufferInheritanceInfo inheritance_info;
+    vku::safe_VkCommandBufferInheritanceDescriptorHeapInfoEXT inheritance_descriptor_heap_info;
 
     // since command buffers can only be destroyed by their command pool, this does not need to be a shared_ptr
     const vvl::CommandPool *command_pool;
@@ -434,13 +432,19 @@ class CommandBuffer : public RefcountedStateObject, public SubStateManager<Comma
     // True if the *first* render pass instance specifies VK_RENDERING_RESUMING_BIT
     bool resumes_render_pass_instance;
 
-    // The suspension state at the end of the command buffer, based on previous render pass instances.
-    // Regular render pass instances (without RESUMING/SUSPENDING) do not change the suspend state.
+    // During recording, this tracks the current suspension state of the command buffer.
+    // When recording ends, this is the suspension state at the end of the command buffer.
+    // Render pass instances without RESUMING/SUSPENDING do not modify the suspension state.
     enum class SuspendState { Empty, Suspended, Resumed };
     SuspendState last_suspend_state;
 
     // Used by submit time validation to check for invalild commands when render pass instance is suspended.
     vvl::Func first_action_or_sync_command;
+
+    // Rendering info from the first/last vkCmdBeginRendering.
+    std::optional<vku::safe_VkRenderingInfo> first_rendering_info;
+    std::unique_ptr<LocationCapture> first_rendering_info_loc;
+    std::optional<vku::safe_VkRenderingInfo> last_rendering_info;
 
     // This is null if we are outside a renderPass/rendering
     //
@@ -539,6 +543,8 @@ class CommandBuffer : public RefcountedStateObject, public SubStateManager<Comma
     bool conditional_rendering_inside_render_pass{false};
     uint32_t conditional_rendering_subpass{0};
 
+    std::shared_ptr<vvl::DeviceMemory> bound_tile_memory;
+
     // VK_EXT_descriptor_buffer
     struct DescriptorBuffer {
         struct BindingInfo {
@@ -555,6 +561,33 @@ class CommandBuffer : public RefcountedStateObject, public SubStateManager<Comma
             ever_bound = false;
         }
     } descriptor_buffer;
+
+    // VK_EXT_descriptor_heap
+    struct DescriptorHeap {
+        // Heap buffer area and for-implementation-reserved-area currently bound by vkCmdBindSamplerHeapEXT
+        bool sampler_bound;
+        vvl::range<VkDeviceAddress> sampler_range;
+        vvl::range<VkDeviceAddress> sampler_reserved;
+        // Heap buffer area and for-implementation-reserved-area currently bound by vkCmdBindResourceHeapEXT
+        bool resource_bound;
+        vvl::range<VkDeviceAddress> resource_range;
+        vvl::range<VkDeviceAddress> resource_reserved;
+        // Heap buffer push data assigned with vkCmdPushDataKHR ranges
+        std::vector<uint8_t> push_data{};
+
+        void Reset() {
+            sampler_bound = false;
+            sampler_reserved = {};
+            sampler_range = {};
+            resource_bound = false;
+            resource_reserved = {};
+            resource_range = {};
+            push_data.clear();
+        }
+    } descriptor_heap;
+
+    void SetDescriptorMode(vvl::DescriptorMode new_mode);
+    void InvalidateDescriptorMode(vvl::DescriptorMode invalidate_mode);
 
     mutable std::shared_mutex lock;
     ReadLockGuard ReadLock() const { return ReadLockGuard(lock); }
@@ -707,6 +740,7 @@ class CommandBuffer : public RefcountedStateObject, public SubStateManager<Comma
                           const VkDependencyInfo *dependency_info, const Location &loc);
     void RecordPushConstants(const vvl::PipelineLayout &pipeline_layout_state, VkShaderStageFlags stage_flags, uint32_t offset,
                              uint32_t size, const void *values);
+    void RecordCmdPushDataEXT(const VkPushDataInfoEXT& push_data_info, const Location& loc);
 
     void RecordBeginConditionalRendering(const Location &loc);
     void RecordEndConditionalRendering(const Location &loc);
@@ -749,6 +783,8 @@ class CommandBuffer : public RefcountedStateObject, public SubStateManager<Comma
     // used for non-color types
     uint32_t GetDynamicRenderingAttachmentIndex(AttachmentInfo::Type type) const;
 
+    uint32_t GetViewMask() const;
+
     bool HasExternalFormatResolveAttachment() const;
 
     inline void BindLastBoundPipeline(vvl::BindPoint bind_point, vvl::Pipeline *pipe_state) {
@@ -769,8 +805,8 @@ class CommandBuffer : public RefcountedStateObject, public SubStateManager<Comma
     // a label on the stack, and for the "end label" command it removes the top label.
     static void ReplayLabelCommands(const vvl::span<const LabelCommand> &label_commands, std::vector<std::string> &label_stack);
     // Computes debug region by replaying given commands on top initial label stack.
-    static std::string GetDebugRegionName(const std::vector<LabelCommand> &label_commands, uint32_t label_command_index,
-                                          const std::vector<std::string> &initial_label_stack = {});
+    static std::string GetDebugRegionName(const std::vector<LabelCommand>& label_commands, uint32_t label_command_index,
+                                          const std::vector<std::string>& initial_label_stack = {});
 
   private:
     void ResetCBState();

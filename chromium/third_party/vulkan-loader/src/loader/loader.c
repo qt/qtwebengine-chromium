@@ -973,6 +973,7 @@ VkResult loader_add_instance_extensions(const struct loader_instance *inst,
         res = VK_ERROR_OUT_OF_HOST_MEMORY;
         goto out;
     }
+    memset(ext_props, 0, count * sizeof(VkExtensionProperties));
 
     res = fp_get_props(NULL, &count, ext_props);
     if (res != VK_SUCCESS) {
@@ -3354,8 +3355,7 @@ VkResult prepend_if_manifest_file(const struct loader_instance *inst, const char
 
 // Add any files found in the search_path.  If any path in the search path points to a specific JSON, attempt to
 // only open that one JSON.  Otherwise, if the path is a folder, search the folder for JSON files.
-VkResult add_data_files(const struct loader_instance *inst, char *search_path, struct loader_string_list *out_files,
-                        bool use_first_found_manifest) {
+VkResult add_data_files(const struct loader_instance *inst, char *search_path, struct loader_string_list *out_files) {
     VkResult vk_result = VK_SUCCESS;
     char full_path[2048];
 #if !defined(_WIN32)
@@ -3442,9 +3442,6 @@ VkResult add_data_files(const struct loader_instance *inst, char *search_path, s
                 goto out;
             }
         }
-        if (use_first_found_manifest && out_files->count > 0) {
-            break;
-        }
     }
 
 out:
@@ -3463,7 +3460,6 @@ VkResult read_data_files_in_search_paths(const struct loader_instance *inst, enu
     size_t search_path_size = 0;
     char *search_path = NULL;
     char *cur_path_ptr = NULL;
-    bool use_first_found_manifest = false;
 #if COMMON_UNIX_PLATFORMS
     const char *relative_location = NULL;  // Only used on unix platforms
     size_t rel_size = 0;                   // unused in windows, dont declare so no compiler warnings are generated
@@ -3684,9 +3680,6 @@ VkResult read_data_files_in_search_paths(const struct loader_instance *inst, enu
                         memcpy(cur_path_ptr, relative_location, rel_size);
                         cur_path_ptr += rel_size;
                         *cur_path_ptr++ = PATH_SEPARATOR;
-                        if (manifest_type == LOADER_DATA_FILE_MANIFEST_DRIVER) {
-                            use_first_found_manifest = true;
-                        }
                     }
                     CFRelease(ref);
                 }
@@ -3781,7 +3774,7 @@ VkResult read_data_files_in_search_paths(const struct loader_instance *inst, enu
     }
 
     // Now, parse the paths and add any manifest files found in them.
-    vk_result = add_data_files(inst, search_path, out_files, use_first_found_manifest);
+    vk_result = add_data_files(inst, search_path, out_files);
 
     if (log_flags != 0 && out_files->count > 0) {
         loader_log(inst, log_flags, 0, "   Found the following files:");
@@ -4279,6 +4272,27 @@ VkResult get_override_layer_override_paths(struct loader_instance *inst, struct 
     return VK_SUCCESS;
 }
 
+void loader_remove_duplicate_layers(struct loader_instance *inst, struct loader_layer_list *layers) {
+    // Remove duplicate layers (that share the same layerName)
+    for (uint32_t i = 0; i < layers->count; ++i) {
+        bool has_duplicate = false;
+        uint32_t duplicate_index = 0;
+        for (uint32_t j = i + 1; j < layers->count; ++j) {
+            if (strcmp(layers->list[i].info.layerName, layers->list[j].info.layerName) == 0) {
+                has_duplicate = true;
+                duplicate_index = j;
+                break;
+            }
+        }
+        if (has_duplicate) {
+            loader_log(inst, VULKAN_LOADER_WARN_BIT, 0, "Removing layer %s (%s) because it is a duplicate of %s (%s)",
+                       layers->list[duplicate_index].info.layerName, layers->list[duplicate_index].manifest_file_name,
+                       layers->list[i].info.layerName, layers->list[i].manifest_file_name);
+            loader_remove_layer_in_list(inst, layers, duplicate_index);
+        }
+    }
+}
+
 VkResult loader_scan_for_layers(struct loader_instance *inst, struct loader_layer_list *instance_layers,
                                 const struct loader_envvar_all_filters *filters) {
     VkResult res = VK_SUCCESS;
@@ -4348,6 +4362,9 @@ VkResult loader_scan_for_layers(struct loader_instance *inst, struct loader_laye
             i--;
         }
     }
+
+    // Make sure no layers have the same layerName
+    loader_remove_duplicate_layers(inst, &regular_instance_layers);
 
     res = combine_settings_layers_with_regular_layers(inst, &settings_layers, &regular_instance_layers, instance_layers);
 
@@ -4448,6 +4465,9 @@ VkResult loader_scan_for_implicit_layers(struct loader_instance *inst, struct lo
             i--;
         }
     }
+
+    // Make sure no layers have the same layerName
+    loader_remove_duplicate_layers(inst, &regular_instance_layers);
 
     res = combine_settings_layers_with_regular_layers(inst, &settings_layers, &regular_instance_layers, instance_layers);
 
@@ -4718,7 +4738,7 @@ VkResult loader_enable_instance_layers(struct loader_instance *inst, const VkIns
         goto out;
     }
 
-    if (inst->settings.settings_active) {
+    if (inst->settings.settings_active && inst->settings.layer_configurations_active) {
         res = enable_correct_layers_from_settings(inst, layer_filters, pCreateInfo->enabledLayerCount,
                                                   pCreateInfo->ppEnabledLayerNames, &inst->instance_layer_list,
                                                   &inst->app_activated_layer_list, &inst->expanded_activated_layer_list);
@@ -5579,7 +5599,8 @@ VkResult loader_validate_layers(const struct loader_instance *inst, const uint32
                        "loader_validate_layers: Layer %d does not exist in the list of available layers", i);
             return VK_ERROR_LAYER_NOT_PRESENT;
         }
-        if (inst->settings.settings_active && prop->settings_control_value != LOADER_SETTINGS_LAYER_CONTROL_ON &&
+        if (inst->settings.settings_active && inst->settings.layer_configurations_active &&
+            prop->settings_control_value != LOADER_SETTINGS_LAYER_CONTROL_ON &&
             prop->settings_control_value != LOADER_SETTINGS_LAYER_CONTROL_DEFAULT) {
             loader_log(inst, VULKAN_LOADER_ERROR_BIT, 0,
                        "loader_validate_layers: Layer %d was explicitly prevented from being enabled by the loader settings file",
@@ -5618,7 +5639,7 @@ VkResult loader_validate_instance_extensions(struct loader_instance *inst, const
         goto out;
     }
 
-    if (inst->settings.settings_active) {
+    if (inst->settings.settings_active && inst->settings.layer_configurations_active) {
         res = enable_correct_layers_from_settings(inst, layer_filters, pCreateInfo->enabledLayerCount,
                                                   pCreateInfo->ppEnabledLayerNames, instance_layers, &active_layers,
                                                   &expanded_layers);
@@ -5994,8 +6015,9 @@ VKAPI_ATTR VkResult VKAPI_CALL terminator_CreateInstance(const VkInstanceCreateI
         // If the settings file has device_configurations, we need to raise the ApiVersion drivers use to 1.1 if the driver
         // supports 1.1 or higher. This allows 1.0 apps to use the device_configurations without the app having to set its own
         // ApiVersion to 1.1 on its own.
-        if (ptr_instance->settings.settings_active && ptr_instance->settings.device_configuration_count > 0 &&
-            icd_version >= VK_API_VERSION_1_1 && requested_version < VK_API_VERSION_1_1) {
+        if (ptr_instance->settings.settings_active && ptr_instance->settings.device_configurations_active &&
+            ptr_instance->settings.device_configuration_count > 0 && icd_version >= VK_API_VERSION_1_1 &&
+            requested_version < VK_API_VERSION_1_1) {
             if (NULL != pCreateInfo->pApplicationInfo) {
                 memcpy(&icd_app_info, pCreateInfo->pApplicationInfo, sizeof(VkApplicationInfo));
             }
@@ -7122,7 +7144,7 @@ VKAPI_ATTR VkResult VKAPI_CALL terminator_EnumeratePhysicalDevices(VkInstance in
         goto out;
     }
 
-    if (inst->settings.settings_active && inst->settings.device_configuration_count > 0) {
+    if (inst->settings.settings_active && inst->settings.device_configurations_active) {
         // Use settings file device_configurations if present
         if (NULL == pPhysicalDevices) {
             // take the minimum of the settings configurations count and number of terminators

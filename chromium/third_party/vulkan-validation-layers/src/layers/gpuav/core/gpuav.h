@@ -1,6 +1,6 @@
-/* Copyright (c) 2018-2025 The Khronos Group Inc.
- * Copyright (c) 2018-2025 Valve Corporation
- * Copyright (c) 2018-2025 LunarG, Inc.
+/* Copyright (c) 2018-2026 The Khronos Group Inc.
+ * Copyright (c) 2018-2026 Valve Corporation
+ * Copyright (c) 2018-2026 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -173,12 +173,6 @@ class Validator : public GpuShaderInstrumentor {
     void PreCallRecordCmdDispatchBaseKHR(VkCommandBuffer commandBuffer, uint32_t baseGroupX, uint32_t baseGroupY,
                                          uint32_t baseGroupZ, uint32_t groupCountX, uint32_t groupCountY, uint32_t groupCountZ,
                                          const RecordObject& record_obj) final;
-    void PreCallRecordDestroyAccelerationStructureKHR(VkDevice device, VkAccelerationStructureKHR accelerationStructure,
-                                                      const VkAllocationCallbacks* pAllocator,
-                                                      const RecordObject& record_obj) final;
-    void PostCallRecordGetAccelerationStructureDeviceAddressKHR(VkDevice device,
-                                                                const VkAccelerationStructureDeviceAddressInfoKHR* pInfo,
-                                                                const RecordObject& record_obj) final;
     void PreCallRecordCmdBuildAccelerationStructuresKHR(VkCommandBuffer commandBuffer, uint32_t infoCount,
                                                         const VkAccelerationStructureBuildGeometryInfoKHR* pInfos,
                                                         const VkAccelerationStructureBuildRangeInfoKHR* const* ppBuildRangeInfos,
@@ -264,7 +258,7 @@ class Validator : public GpuShaderInstrumentor {
     std::unique_ptr<vko::DescriptorSetManager> desc_set_manager_;
 
     // This is so universally used, that we decided currently to not be in vko::SharedResourcesCache
-    // This is just a buffer with a uint32_t value from [0, cts::indices_count - 1] so we can update prior to an action command
+    // This is just a buffer with a uint32_t value from [0, GpuAVSettings::indices_count - 1] so we can update prior to an action command
     // (draw/dispatch) to know where it came from
     vko::Buffer global_indices_buffer_;
     uint32_t indices_buffer_alignment_ = 0;

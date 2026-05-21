@@ -9,7 +9,6 @@
 
 #include "core/fpdfapi/parser/cpdf_stream.h"
 #include "core/fxcrt/fx_safe_types.h"
-#include "core/fxcrt/notreached.h"
 
 namespace {
 
@@ -57,9 +56,6 @@ void CPDF_ReadValidator::ResetErrors() {
 bool CPDF_ReadValidator::ReadBlockAtOffset(pdfium::span<uint8_t> buffer,
                                            FX_FILESIZE offset) {
   if (offset < 0) {
-    // TODO(crbug.com/42271016): Figure out if this should be a CHECK() or the
-    // DCHECK() removed.
-    DCHECK(false);
     return false;
   }
 
@@ -97,9 +93,6 @@ void CPDF_ReadValidator::ScheduleDownload(FX_FILESIZE offset, size_t size) {
   FX_SAFE_FILESIZE end_segment_offset = offset;
   end_segment_offset += size;
   if (!end_segment_offset.IsValid()) {
-    // TODO(crbug.com/42271016): Figure out if this should be a CHECK() or the
-    // DCHECK() removed.
-    DCHECK(false);
     return;
   }
   end_segment_offset =
@@ -108,9 +101,6 @@ void CPDF_ReadValidator::ScheduleDownload(FX_FILESIZE offset, size_t size) {
   FX_SAFE_SIZE_T segment_size = end_segment_offset;
   segment_size -= start_segment_offset;
   if (!segment_size.IsValid()) {
-    // TODO(crbug.com/42271016): Figure out if this should be a CHECK() or the
-    // DCHECK() removed.
-    DCHECK(false);
     return;
   }
   hints_->AddSegment(start_segment_offset, segment_size.ValueOrDie());
@@ -143,9 +133,6 @@ bool CPDF_ReadValidator::CheckDataRangeAndRequestIfUnavailable(
   // Increase checked range to allow CPDF_SyntaxParser read whole buffer.
   end_segment_offset += CPDF_Stream::kFileBufSize;
   if (!end_segment_offset.IsValid()) {
-    // TODO(crbug.com/42271016): Figure out if this should be a CHECK() or the
-    // DCHECK() removed.
-    DCHECK(false);
     return false;
   }
   end_segment_offset = std::min(
@@ -153,9 +140,6 @@ bool CPDF_ReadValidator::CheckDataRangeAndRequestIfUnavailable(
   FX_SAFE_SIZE_T segment_size = end_segment_offset;
   segment_size -= offset;
   if (!segment_size.IsValid()) {
-    // TODO(crbug.com/42271016): Figure out if this should be a CHECK() or the
-    // DCHECK() removed.
-    DCHECK(false);
     return false;
   }
 

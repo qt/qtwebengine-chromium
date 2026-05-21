@@ -5,7 +5,6 @@
 #include "components/variations/seed_reader_writer.h"
 
 #include "base/base64.h"
-#include "base/containers/contains.h"
 #include "base/files/file.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
@@ -14,6 +13,7 @@
 #include "base/memory/scoped_refptr.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram_functions.h"
+#include "base/strings/strcat.h"
 #include "base/strings/string_util.h"
 #include "base/task/bind_post_task.h"
 #include "base/task/sequenced_task_runner.h"
@@ -150,7 +150,9 @@ bool IsEligibleForSeedFileTrial(version_info::Channel channel,
     return false;
   }
   return channel == version_info::Channel::CANARY ||
-         channel == version_info::Channel::DEV;
+         channel == version_info::Channel::DEV ||
+         channel == version_info::Channel::BETA ||
+         channel == version_info::Channel::STABLE;
 }
 
 // Sets up the seed file experiment which only some clients are eligible for
@@ -220,7 +222,7 @@ void SetPermanentCountryVersion(PrefService* local_state,
   if (is_safe_seed) {
     local_state->SetString(pref_name, country_code);
   } else {
-    base::Value::List list_value;
+    base::ListValue list_value;
     list_value.Append(version);
     list_value.Append(country_code);
     local_state->SetList(pref_name, std::move(list_value));
@@ -856,7 +858,8 @@ StoreSeedResult SeedReaderWriter::ScheduleLocalStateWrite(
                                    &compressed_seed_data)) {
       return StoreSeedResult::kFailedGzip;
     }
-    seed_data = base::Base64Encode(compressed_seed_data);
+    seed_data = base::Base64EncodeEarlyStartup(
+        base::as_byte_span(compressed_seed_data));
   }
   local_state_->SetString(fields_prefs_->seed, seed_data);
   local_state_->SetString(fields_prefs_->signature, seed_info.signature);
@@ -899,7 +902,8 @@ void SeedReaderWriter::MigrateToLocalState() {
   if (success && !seed_file_data.empty()) {
     std::string seed_data = seed_file_data == kIdenticalToSafeSeedSentinel
                                 ? kIdenticalToSafeSeedSentinel
-                                : base::Base64Encode(seed_file_data);
+                                : base::Base64EncodeEarlyStartup(
+                                      base::as_byte_span(seed_file_data));
     local_state_->SetString(fields_prefs_->seed, seed_data);
   }
   DeleteOldSeedFile();

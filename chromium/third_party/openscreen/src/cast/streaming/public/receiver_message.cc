@@ -121,7 +121,7 @@ Error ReceiverError::ToError() const {
     return Error(*openscreen_code, description);
   }
 
-  std::string full_description = StringPrintf("Error code: %d, description: %s",
+  std::string full_description = StringFormat("Error code: {}, description: {}",
                                               code, description.c_str());
   return Error(Error::Code::kUnknownError, std::move(full_description));
 }

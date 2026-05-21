@@ -7,6 +7,7 @@ import './composebox_match.js';
 import {assert} from '//resources/js/assert.js';
 import {CrLitElement} from '//resources/lit/v3_0/lit.rollup.js';
 import type {AutocompleteMatch, AutocompleteResult} from '//resources/mojo/components/omnibox/browser/searchbox.mojom-webui.js';
+import {ToolMode} from '//resources/mojo/components/omnibox/composebox/composebox_query.mojom-webui.js';
 
 import {getCss} from './composebox_dropdown.css.js';
 import {getHtml} from './composebox_dropdown.html.js';
@@ -52,9 +53,10 @@ export class ComposeboxDropdownElement extends CrLitElement {
       maxSuggestions: {
         type: Number,
       },
-      inDeepSearchMode: {
-        type: Boolean,
+      toolMode: {
+        type: Number,
       },
+      overrideClampLineNum: {type: Number},
     };
   }
 
@@ -66,7 +68,8 @@ export class ComposeboxDropdownElement extends CrLitElement {
   // height. A value of 0 indicates that no suggestions should be shown.
   // A value of null or -1 indicates that all suggestions should be shown.
   accessor maxSuggestions: number|null = null;
-  accessor inDeepSearchMode: boolean = false;
+  accessor toolMode: ToolMode = ToolMode.kUnspecified;
+  accessor overrideClampLineNum: number = -1;
 
   //============================================================================
   // Public methods

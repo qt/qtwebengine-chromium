@@ -51,7 +51,7 @@ base::TimeDelta BackgroundSyncLauncher::GetSoonestWakeupDelta(
 void BackgroundSyncLauncher::FireBackgroundSyncEvents(
     BrowserContext* browser_context,
     blink::mojom::BackgroundSyncType sync_type,
-    const base::android::JavaParamRef<jobject>& j_runnable) {
+    const base::android::JavaRef<jobject>& j_runnable) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(browser_context);
 
@@ -61,14 +61,14 @@ void BackgroundSyncLauncher::FireBackgroundSyncEvents(
 void BackgroundSyncLauncher::FireBackgroundSyncEventsImpl(
     BrowserContext* browser_context,
     blink::mojom::BackgroundSyncType sync_type,
-    const base::android::JavaParamRef<jobject>& j_runnable) {
+    const base::android::JavaRef<jobject>& j_runnable) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(browser_context);
   if (sync_type == blink::mojom::BackgroundSyncType::PERIODIC)
     last_browser_wakeup_for_periodic_sync_ = base::Time::Now();
   base::RepeatingClosure done_closure = base::BarrierClosure(
       browser_context->GetLoadedStoragePartitionCount(),
-      base::BindOnce(base::android::RunRunnableAndroid,
+      base::BindOnce(jni_zero::RunRunnable,
                      base::android::ScopedJavaGlobalRef<jobject>(j_runnable)));
 
   browser_context->ForEachLoadedStoragePartition(

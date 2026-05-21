@@ -12,6 +12,7 @@
 <translation id="2159915644201199628">Ezin izan da deskodetu irudia: "<ph name="IMAGE_NAME" />"</translation>
 <translation id="2350172092385603347">Kokapena erabili da baina ez da "default_locale" elementua zehaztua manifestuan.</translation>
 <translation id="2576842806987913196">Badago izen hori duen CRX fitxategi bat.</translation>
+<translation id="2743583586211388067">Luzapen honetarako sarbidea blokeatuta dago, erakundearen luzapenen arriskuari buruzko gidalerroak direla eta.</translation>
 <translation id="2785530881066938471">Ezin izan da kargatu "<ph name="RELATIVE_PATH" />" fitxategia edukiaren scripta dela-eta. Ez du erabiltzen UTF-8 kodeketa.</translation>
 <translation id="2903070246402204397">Administratzaileak <ph name="EXTENSION_NAME" /> blokeatu du (luzapenaren identifikatzailea: "<ph name="EXTENSION_ID" />"). <ph name="ADMIN_INFO" /></translation>
 <translation id="2988488679308982380">Ezin izan da paketea instalatu: "<ph name="ERROR_CODE" />"</translation>
@@ -33,9 +34,11 @@
 <translation id="5356315618422219272">Aplikazio-ikuspegia: <ph name="APPVIEW_TAG_NAME" /></translation>
 <translation id="5456409301717116725">Luzapen honek "<ph name="KEY_PATH" />" karaktere-fitxategia du. Ziur aski ez duzu hori egin nahi.</translation>
 <translation id="5486326529110362464">Gako pribatua idatzi behar da.</translation>
+<translation id="5707185214361380026">Ezin izan da kargatu hemengo luzapena:</translation>
 <translation id="5972529113578162692">Gailuaren administratzaileak <ph name="EXTENSION_NAME" /> instalatzea eskatzen du. Ezin da desinstalatu.</translation>
 <translation id="6027032947578871493"><ph name="VENDOR_NAME" /> saltzailearen <ph name="PRODUCT_ID" /> produktu ezezaguna (<ph name="SERIAL_NUMBER" /> serie-zenbakia)</translation>
 <translation id="6068932090455285721"><ph name="VENDOR_ID" /> saltzailearen <ph name="PRODUCT_NAME" /></translation>
+<translation id="6220413761270491930">Errore bat gertatu da luzapena kargatzean</translation>
 <translation id="6322279351188361895">Ezin izan da irakurri gako pribatua.</translation>
 <translation id="6391538222494443604">Sarrerako direktorioa falta da.</translation>
 <translation id="641087317769093025">Ezin izan da luzapena deskonprimatu</translation>

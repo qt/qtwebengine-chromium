@@ -6,8 +6,15 @@ currently based on
 which uses the singular [main.star](./main.star) file to generate what used
 to be manual `*.cfg` files, such as `cr-buildbucket.cfg`.
 
+*** aside
+The `lucicfg` binary is included in [`depot_tools`](https://chromium.googlesource.com/chromium/tools/depot_tools.git),
+which you should already have as part of setting up Open Screen.
+***
+
 ## Editing main.star
+
 ### Validation
+
 When making edits to the main.star file, after your edits are complete
 validation can be done using:
 
@@ -18,6 +25,7 @@ lucicfg validate main.star
 Note that this validation is done as part of `git cl presubmit` as well.
 
 ### Generation
+
 Regeneration of the `generated` directory files can be done by directly
 executing main.star, which essentially runs:
 
@@ -26,6 +34,7 @@ lucicfg generate main.star
 ```
 
 ### Formatting
+
 Lucicfg has an autoformatter, that can be ran using:
 
 ```bash

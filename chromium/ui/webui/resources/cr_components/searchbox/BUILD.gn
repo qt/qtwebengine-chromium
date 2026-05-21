@@ -10,21 +10,25 @@ assert(!is_android && !is_ios)
 build_webui("build") {
   grd_prefix = "cr_components_searchbox"
   ts_files = [
+    "placeholder_text_cycler.ts",
+    "searchbox.html.ts",
+    "searchbox.ts",
     "searchbox_action.html.ts",
     "searchbox_action.ts",
     "searchbox_browser_proxy.ts",
     "searchbox_compose_button.html.ts",
     "searchbox_compose_button.ts",
+    "searchbox_contextual_entrypoint.html.ts",
     "searchbox_dropdown.html.ts",
     "searchbox_dropdown.ts",
     "searchbox_icon.html.ts",
     "searchbox_icon.ts",
     "searchbox_match.html.ts",
     "searchbox_match.ts",
+    "searchbox_recent_tab_chip.html.ts",
+    "searchbox_searchbox_dropdown.html.ts",
     "searchbox_thumbnail.html.ts",
     "searchbox_thumbnail.ts",
-    "searchbox.html.ts",
-    "searchbox.ts",
     "utils.ts",
   ]
   css_files = [
@@ -40,7 +44,7 @@ build_webui("build") {
 
   ts_out_dir = "$root_gen_dir/ui/webui/resources/tsc/cr_components/searchbox"
   ts_composite = true
-  ts_definitions = [ "//tools/typescript/definitions/metrics_private.d.ts" ]
+  ts_definitions = [ "//tools/typescript/definitions/chrome_histograms.d.ts" ]
   ts_deps = [
     "//third_party/lit/v3_0:build_ts",
     "//ui/webui/resources/cr_components/composebox:build_ts",

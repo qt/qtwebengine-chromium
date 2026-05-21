@@ -51,9 +51,10 @@ HTMLEmbedElement::HTMLEmbedElement(Document& document,
 
 const AttrNameToTrustedType& HTMLEmbedElement::GetCheckedAttributeTypes()
     const {
-  DEFINE_STATIC_LOCAL(AttrNameToTrustedType, attribute_map,
-                      ({{"src", std::pair{SpecificTrustedType::kScriptURL,
-                                          "HTMLEmbedElement"}}}));
+  DEFINE_STATIC_LOCAL(
+      AttrNameToTrustedType, attribute_map,
+      ({{"src", std::pair{SpecificTrustedType::kScriptURL,
+                          trusted_types_names::kHTMLEmbedElement}}}));
   return attribute_map;
 }
 
@@ -122,13 +123,18 @@ void HTMLEmbedElement::ParseAttribute(
       if (!image_loader_)
         image_loader_ = MakeGarbageCollected<HTMLImageLoader>(this);
       image_loader_->UpdateFromElement(ImageLoader::kUpdateIgnorePreviousError);
-    } else if (GetLayoutObject()) {
+    } else if (GetLayoutObject() ||
+               RuntimeEnabledFeatures::
+                   HTMLEmbedElementRepresentsNothingToActiveEnabled()) {
       if (!FastHasAttribute(html_names::kTypeAttr)) {
         UseCounter::Count(GetDocument(),
                           WebFeature::kEmbedElementWithoutTypeSrcChanged);
       }
       SetNeedsPluginUpdate(true);
-      ReattachOnPluginChangeIfNeeded();
+      const bool require_layout =
+          !RuntimeEnabledFeatures::
+              HTMLEmbedElementRepresentsNothingToActiveEnabled();
+      ReattachOnPluginChangeIfNeeded(require_layout);
     }
   } else {
     HTMLPlugInElement::ParseAttribute(params);
@@ -239,7 +245,8 @@ const V8UnionTrustedScriptURLOrUSVString* HTMLEmbedElement::src() {
 void HTMLEmbedElement::setSrc(const V8UnionTrustedScriptURLOrUSVString* value,
                               ExceptionState& exception_state) {
   String compliantValue = TrustedTypesCheckForScriptURL(
-      value, GetExecutionContext(), "HTMLEmbedElement", "src", exception_state);
+      value, GetExecutionContext(), trusted_types_names::kHTMLEmbedElement,
+      trusted_types_names::kSrc, exception_state);
   if (exception_state.HadException()) {
     return;
   }

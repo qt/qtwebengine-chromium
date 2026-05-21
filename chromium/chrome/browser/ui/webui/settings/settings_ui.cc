@@ -14,6 +14,7 @@
 
 #include "base/feature_list.h"
 #include "base/memory/ptr_util.h"
+#include "base/strings/strcat.h"
 #include "base/values.h"
 #include "build/branding_buildflags.h"
 #include "build/build_config.h"
@@ -31,14 +32,13 @@
 #include "chrome/browser/preloading/preloading_features.h"
 #include "chrome/browser/privacy_sandbox/privacy_sandbox_service.h"
 #include "chrome/browser/privacy_sandbox/privacy_sandbox_service_factory.h"
-#include "chrome/browser/privacy_sandbox/tracking_protection_onboarding_factory.h"
-#include "chrome/browser/privacy_sandbox/tracking_protection_settings_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/regional_capabilities/regional_capabilities_service_factory.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/signin/identity_manager_factory.h"
 #include "chrome/browser/ssl/https_upgrades_util.h"
+#include "chrome/browser/sync/sync_service_factory.h"
 #include "chrome/browser/ui/browser_element_identifiers.h"
 #include "chrome/browser/ui/hats/hats_service.h"
 #include "chrome/browser/ui/hats/hats_service_factory.h"
@@ -107,6 +107,7 @@
 #include "components/compose/core/browser/compose_features.h"
 #include "components/content_settings/core/common/features.h"
 #include "components/favicon_base/favicon_url_parser.h"
+#include "components/history/core/browser/features.h"
 #include "components/optimization_guide/core/optimization_guide_features.h"
 #include "components/password_manager/core/common/password_manager_features.h"
 #include "components/performance_manager/public/features.h"
@@ -114,7 +115,6 @@
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/prefs/pref_service.h"
 #include "components/privacy_sandbox/privacy_sandbox_features.h"
-#include "components/privacy_sandbox/tracking_protection_settings.h"
 #include "components/regional_capabilities/regional_capabilities_service.h"
 #include "components/safe_browsing/core/common/features.h"
 #include "components/safe_browsing/core/common/hashprefix_realtime/hash_realtime_utils.h"
@@ -178,6 +178,9 @@
 #include "chrome/browser/ui/webui/settings/settings_manage_profile_handler.h"
 #include "chrome/browser/ui/webui/settings/system_handler.h"
 #include "components/language/core/common/language_experiments.h"
+#if BUILDFLAG(GOOGLE_CHROME_BRANDING)
+#include "chrome/browser/ui/webui/settings/on_device_ai_settings_handler.h"
+#endif  // BUILDFLAG(GOOGLE_CHROME_BRANDING)
 #endif  // BUILDFLAG(IS_CHROMEOS)
 
 #if BUILDFLAG(IS_MAC)
@@ -253,6 +256,10 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
 #if BUILDFLAG(GOOGLE_CHROME_BRANDING) && !BUILDFLAG(IS_CHROMEOS)
   AddSettingsPageUIHandler(std::make_unique<MetricsReportingHandler>());
 #endif
+
+#if BUILDFLAG(GOOGLE_CHROME_BRANDING) && !BUILDFLAG(IS_CHROMEOS)
+  AddSettingsPageUIHandler(std::make_unique<OnDeviceAiSettingsHandler>());
+#endif  // BUILDFLAG(GOOGLE_CHROME_BRANDING) && !BUILDFLAG(IS_CHROMEOS)
   AddSettingsPageUIHandler(std::make_unique<OnStartupHandler>(profile));
   AddSettingsPageUIHandler(std::make_unique<PeopleHandler>(profile));
   AddSettingsPageUIHandler(std::make_unique<ProfileInfoHandler>(profile));
@@ -477,16 +484,6 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
 
   webui::SetupWebUIDataSource(html_source, kSettingsResources,
                               IDR_SETTINGS_SETTINGS_HTML);
-  // Add chrome://webui-test for cr-lottie test.
-  html_source->OverrideContentSecurityPolicy(
-      network::mojom::CSPDirectiveName::ConnectSrc,
-      "connect-src chrome://webui-test chrome://resources chrome://theme "
-      "'self';");
-  // Add TrustedTypes policy for cr-lottie.
-  html_source->OverrideContentSecurityPolicy(
-      network::mojom::CSPDirectiveName::TrustedTypes,
-      base::StrCat({webui::kDefaultTrustedTypesPolicies,
-                    " lottie-worker-script-loader;"}));
 
 #if !BUILDFLAG(OPTIMIZE_WEBUI)
   html_source->AddResourcePaths(kSettingsSharedResources);
@@ -514,12 +511,6 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
                           is_privacy_sandbox_restricted);
   html_source->AddBoolean("isPrivacySandboxRestrictedNoticeEnabled",
                           is_restricted_notice_enabled);
-
-  // Mode B UX
-  html_source->AddBoolean(
-      "is3pcdCookieSettingsRedesignEnabled",
-      TrackingProtectionSettingsFactory::GetForProfile(profile)
-          ->IsTrackingProtection3pcdEnabled());
 
   // Performance
   AddSettingsPageUIHandler(std::make_unique<PerformanceHandler>());
@@ -558,7 +549,17 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
       "enableLocalNetworkAccessSetting",
       base::FeatureList::IsEnabled(
           network::features::kLocalNetworkAccessChecks) &&
-          !network::features::kLocalNetworkAccessChecksWarn.Get());
+          !network::features::kLocalNetworkAccessChecksWarn.Get() &&
+          !base::FeatureList::IsEnabled(
+              network::features::kLocalNetworkAccessChecksSplitPermissions));
+
+  html_source->AddBoolean(
+      "enableLocalNetworkAccessSplitPermissions",
+      base::FeatureList::IsEnabled(
+          network::features::kLocalNetworkAccessChecks) &&
+          !network::features::kLocalNetworkAccessChecksWarn.Get() &&
+          base::FeatureList::IsEnabled(
+              network::features::kLocalNetworkAccessChecksSplitPermissions));
 
   // AI
   bool show_glic_section = false;
@@ -634,7 +635,7 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
       base::FeatureList::IsEnabled(browsing_data::features::kDbdRevampDesktop));
   html_source->AddBoolean(
       "enableBrowsingHistoryActorIntegrationM1",
-      browsing_data::features::IsBrowsingHistoryActorIntegrationM1Enabled());
+      history::IsBrowsingHistoryActorIntegrationM1Enabled());
 
   html_source->AddBoolean(
       "enableSupportForHomeAndWork",
@@ -644,6 +645,15 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
   html_source->AddBoolean(
       "replaceSyncPromosWithSignInPromos",
       base::FeatureList::IsEnabled(syncer::kReplaceSyncPromosWithSignInPromos));
+
+#if BUILDFLAG(GOOGLE_CHROME_BRANDING) && !BUILDFLAG(IS_CHROMEOS)
+  // On Device AI setting.
+  // TODO(crbug.com/466442880): Grey out toggle based on device capability and
+  // enterprise policy.
+  html_source->AddBoolean(
+      "showOnDeviceAiSettings",
+      base::FeatureList::IsEnabled(features::kShowOnDeviceAiSettings));
+#endif  // BUILDFLAG(GOOGLE_CHROME_BRANDING) && !BUILDFLAG(IS_CHROMEOS)
 
 #if BUILDFLAG(ENABLE_DICE_SUPPORT)
   html_source->AddBoolean("unoPhase2FollowUp", base::FeatureList::IsEnabled(
@@ -771,6 +781,14 @@ void SettingsUI::CreateBatchUploadPromoHandler(
     mojo::PendingRemote<batch_upload_promo::mojom::Page> pending_page,
     mojo::PendingReceiver<batch_upload_promo::mojom::PageHandler>
         pending_page_handler) {
+  Profile* profile = Profile::FromWebUI(web_ui());
+  CHECK(profile);
+
+  // Batch upload needs the sync service to be present in order to start.
+  if (!SyncServiceFactory::GetForProfile(profile)) {
+    return;
+  }
+
   batch_upload_promo_handler_ = std::make_unique<BatchUploadPromoHandler>(
       std::move(pending_page_handler), std::move(pending_page),
       Profile::FromWebUI(web_ui()), web_ui()->GetWebContents());
@@ -823,7 +841,7 @@ void SettingsUI::UpdateShowGlicState() {
   auto enablement = glic::GlicEnabling::EnablementForProfile(profile);
   const bool show_glic = enablement.ShouldShowSettingsPage();
 
-  base::Value::Dict update;
+  base::DictValue update;
   update.Set("showGlicSettings", show_glic);
   update.Set("glicDisallowedByAdmin", enablement.DisallowedByAdmin());
   if (show_glic) {

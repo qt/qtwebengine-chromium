@@ -919,6 +919,7 @@ bool MediaCodecVideoDecoder::QueueInput() {
       FlushCodec();
       return true;
     }
+    DVLOG(2) << "Deferring flush for unreleased codec outputs.";
     return false;
   }
 
@@ -1010,7 +1011,7 @@ bool MediaCodecVideoDecoder::QueueInput() {
              ? 3
              : 2))
       << "QueueInput(" << pending_buffer->AsHumanReadableString()
-      << ") status=" << status.message();
+      << ") status=" << static_cast<int>(status.code());
 
   switch (status.code()) {
     case CodecWrapper::QueueStatus::Codes::kOk:
@@ -1164,7 +1165,8 @@ void MediaCodecVideoDecoder::ForwardVideoFrame(
   // Attach the HDR metadata if the color space got this far and is still an HDR
   // color space.  Note that it might be converted to something else along the
   // way, often sRGB.  In that case, don't confuse things with HDR metadata.
-  if (frame->ColorSpace().IsHDR() && decoder_config_.hdr_metadata()) {
+  if (frame->ColorSpace().IsHDR() &&
+      !decoder_config_.hdr_metadata().IsEmpty()) {
     frame->set_hdr_metadata(decoder_config_.hdr_metadata());
   }
 

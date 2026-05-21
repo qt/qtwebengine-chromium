@@ -68,8 +68,8 @@ namespace webrtc {
 class VideoFrame;
 struct VideoFormat;
 
-webrtc::RTCError InvokeSetParametersCallback(SetParametersCallback& callback,
-                                             RTCError error);
+RTCError InvokeSetParametersCallback(SetParametersCallback& callback,
+                                     RTCError error);
 
 class VideoMediaSendChannelInterface;
 class VideoMediaReceiveChannelInterface;
@@ -344,7 +344,7 @@ struct MediaSenderInfo {
     return retval;
   }
   // Returns true if the media has been connected.
-  bool connected() const { return local_stats.size() > 0; }
+  bool connected() const { return !local_stats.empty(); }
   // Utility accessor for clients that make the assumption only one ssrc
   // exists per media.
   // This will eventually go away.
@@ -410,7 +410,7 @@ struct MediaReceiverInfo {
     return retval;
   }
   // Returns true if the media has been connected.
-  bool connected() const { return local_stats.size() > 0; }
+  bool connected() const { return !local_stats.empty(); }
   // Utility accessor for clients that make the assumption only one ssrc
   // exists per media.
   // This will eventually go away.
@@ -598,7 +598,7 @@ struct VideoSenderInfo : public MediaSenderInfo {
   std::optional<uint64_t> qp_sum;
   VideoContentType content_type = VideoContentType::UNSPECIFIED;
   // https://w3c.github.io/webrtc-stats/#dom-rtcoutboundrtpstreamstats-psnrsum
-  webrtc::EncodedImage::Psnr psnr_sum;
+  EncodedImage::Psnr psnr_sum;
   uint32_t psnr_measurements = 0;
   uint32_t frames_sent = 0;
   // https://w3c.github.io/webrtc-stats/#dom-rtcvideosenderstats-hugeframessent
@@ -909,6 +909,7 @@ class VoiceMediaSendChannelInterface : public MediaSendChannelInterface {
   virtual bool GetStats(VoiceMediaSendInfo* stats) = 0;
   virtual bool SenderNackEnabled() const = 0;
   virtual bool SenderNonSenderRttEnabled() const = 0;
+  virtual bool SetOptions(const AudioOptions& options) = 0;
 };
 
 class VoiceMediaReceiveChannelInterface : public MediaReceiveChannelInterface {
@@ -935,6 +936,7 @@ class VoiceMediaReceiveChannelInterface : public MediaReceiveChannelInterface {
   virtual void SetRtcpMode(enum RtcpMode mode) = 0;
   virtual void SetReceiveNackEnabled(bool enabled) = 0;
   virtual void SetReceiveNonSenderRttEnabled(bool enabled) = 0;
+  virtual bool SetOptions(const AudioOptions& options) = 0;
 };
 
 struct VideoSenderParameters : SenderParameters {
@@ -964,6 +966,7 @@ class VideoMediaSendChannelInterface : public MediaSendChannelInterface {
   virtual bool SetVideoSend(uint32_t ssrc,
                             const VideoOptions* options,
                             VideoSourceInterface<VideoFrame>* source) = 0;
+  virtual bool SetOptions(const VideoOptions& options) = 0;
   // Cause generation of a keyframe for `ssrc` on a sending channel.
   virtual void GenerateSendKeyFrame(uint32_t ssrc,
                                     const std::vector<std::string>& rids) = 0;

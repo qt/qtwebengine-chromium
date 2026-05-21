@@ -18,7 +18,7 @@ import type {CrActionMenuElement} from '//resources/cr_elements/cr_action_menu/c
 import {CrFeedbackOption} from '//resources/cr_elements/cr_feedback_buttons/cr_feedback_buttons.js';
 import type {CrLazyRenderLitElement} from '//resources/cr_elements/cr_lazy_render/cr_lazy_render_lit.js';
 import {I18nMixinLit} from '//resources/cr_elements/i18n_mixin_lit.js';
-import {assert, assertNotReached} from '//resources/js/assert.js';
+import {assert, assertNotReachedCase} from '//resources/js/assert.js';
 import {EventTracker} from '//resources/js/event_tracker.js';
 import {getFaviconForPageURL} from '//resources/js/icon.js';
 import {loadTimeData} from '//resources/js/load_time_data.js';
@@ -272,7 +272,7 @@ export class HistoryEmbeddingsElement extends HistoryEmbeddingsElementBase {
       case AnswerStatus.kExecutionFailure:
         return this.i18n('historyEmbeddingsAnswererErrorTryAgain');
       default:
-        assertNotReached();
+        assertNotReachedCase(this.searchResult_.answerStatus);
     }
   }
 
@@ -280,7 +280,7 @@ export class HistoryEmbeddingsElement extends HistoryEmbeddingsElementBase {
     if (!this.answerSource_) {
       return undefined;
     }
-    const sourceUrl = new URL(this.answerSource_.url.url);
+    const sourceUrl = new URL(this.answerSource_.url);
     const textDirectives = this.answerSource_.answerData?.answerTextDirectives;
     if (textDirectives && textDirectives.length > 0) {
       // Only the first directive is used for now until there's a way to show
@@ -294,7 +294,7 @@ export class HistoryEmbeddingsElement extends HistoryEmbeddingsElementBase {
 
   protected getFavicon_(item: SearchResultItem|undefined): string {
     return getFaviconForPageURL(
-        item?.url.url || '', /*isSyncedUrlForHistoryUi=*/ true);
+        item?.url || '', /*isSyncedUrlForHistoryUi=*/ true);
   }
 
   protected getHeadingText_(): string {
@@ -361,6 +361,8 @@ export class HistoryEmbeddingsElement extends HistoryEmbeddingsElementBase {
       case CrFeedbackOption.THUMBS_DOWN:
         this.browserProxy_.setUserFeedback(UserFeedback.kUserFeedbackNegative);
         return;
+      default:
+        assertNotReachedCase(e.detail.value);
     }
   }
 

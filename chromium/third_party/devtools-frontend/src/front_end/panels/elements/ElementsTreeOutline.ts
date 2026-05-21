@@ -47,7 +47,7 @@ import * as UI from '../../ui/legacy/legacy.js';
 import {html, nothing, render} from '../../ui/lit/lit.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
 
-import {AdoptedStyleSheetTreeElement} from './AdoptedStyleSheetTreeElement.js';
+import {AdoptedStyleSheetSetTreeElement, AdoptedStyleSheetTreeElement} from './AdoptedStyleSheetTreeElement.js';
 import {getElementIssueDetails} from './ElementIssueUtils.js';
 import {ElementsPanel} from './ElementsPanel.js';
 import {ElementsTreeElement, InitialChildrenLimit, isOpeningTag} from './ElementsTreeElement.js';
@@ -80,9 +80,10 @@ const str_ = i18n.i18n.registerUIStrings('panels/elements/ElementsTreeOutline.ts
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 const elementsTreeOutlineByDOMModel = new WeakMap<SDK.DOMModel.DOMModel, ElementsTreeOutline>();
 
-const populatedTreeElements = new Set<ElementsTreeElement>();
+const populatedTreeElements = new WeakSet<ElementsTreeElement>();
 
 export type View = typeof DEFAULT_VIEW;
+export {elementsTreeOutlineStyles};
 
 interface ViewInput {
   omitRootDOMNode: boolean;
@@ -95,6 +96,8 @@ interface ViewInput {
   preventTabOrder: boolean;
   deindentSingleNode: boolean;
   currentHighlightedNode: SDK.DOMModel.DOMNode|null;
+
+  selectedNode: SDK.DOMModel.DOMNode|null;
 
   onSelectedNodeChanged:
       (event: Common.EventTarget.EventTargetEvent<{node: SDK.DOMModel.DOMNode | null, focus: boolean}>) => void;
@@ -171,6 +174,9 @@ export const DEFAULT_VIEW = (input: ViewInput, output: ViewOutput, target: HTMLE
           (deepestExpandedParent ? treeElementByNode.get(deepestExpandedParent) :
                                    output.elementsTreeOutline.rootElement()) as ElementsTreeElement;
       treeElement = output.elementsTreeOutline.createTreeElementFor(input.currentHighlightedNode);
+    }
+    if (input.selectedNode) {
+      output.elementsTreeOutline.selectDOMNode(input.selectedNode);
     }
 
     output.highlightedTreeElement = treeElement;
@@ -269,8 +275,12 @@ export class DOMTreeWidget extends UI.Widget.Widget {
     this.performUpdate();
   }
 
-  selectDOMNode(node: SDK.DOMModel.DOMNode|null, focus?: boolean): void {
-    this.#viewOutput?.elementsTreeOutline?.selectDOMNode(node, focus);
+  selectDOMNode(node: SDK.DOMModel.DOMNode|SDK.DOMModel.AdoptedStyleSheet|null, focus?: boolean): void {
+    if (node instanceof SDK.DOMModel.AdoptedStyleSheet) {
+      this.#viewOutput?.elementsTreeOutline?.highlightAdoptedStyleSheet(node);
+    } else {
+      this.#viewOutput?.elementsTreeOutline?.selectDOMNode(node, focus);
+    }
   }
 
   highlightNodeAttribute(node: SDK.DOMModel.DOMNode, attribute: string): void {
@@ -320,6 +330,7 @@ export class DOMTreeWidget extends UI.Widget.Widget {
           deindentSingleNode: this.deindentSingleNode,
 
           currentHighlightedNode: this.#currentHighlightedNode,
+          selectedNode: this.selectedDOMNode(),
           onElementsTreeUpdated: this.onElementsTreeUpdated.bind(this),
           onSelectedNodeChanged: event => {
             this.#clearHighlightedNode();
@@ -372,7 +383,6 @@ export class DOMTreeWidget extends UI.Widget.Widget {
    */
   updateNodeAdorners(node: SDK.DOMModel.DOMNode): void {
     const element = this.#viewOutput.elementsTreeOutline?.findTreeElement(node);
-    void element?.updateStyleAdorners();
     void element?.updateAdorners();
   }
 
@@ -486,7 +496,7 @@ export class ElementsTreeOutline extends
   private treeElementBeingDragged?: ElementsTreeElement;
   private dragOverTreeElement?: ElementsTreeElement;
   private updateModifiedNodesTimeout?: number;
-  #topLayerContainerByParent = new Map<UI.TreeOutline.TreeElement, TopLayerContainer>();
+  #topLayerContainerByDocument = new WeakMap<SDK.DOMModel.DOMDocument, TopLayerContainer>();
   #issuesManager?: IssuesManager.IssuesManager.IssuesManager;
   #popupHelper?: UI.PopoverHelper.PopoverHelper;
   #nodeElementToIssues = new Map<Element, IssuesManager.Issue.Issue[]>();
@@ -597,7 +607,7 @@ export class ElementsTreeOutline extends
                 return html`
                   <div class="squiggles-content-item">
                   <devtools-icon .name=${issueKindIconName} @click=${openIssueEvent}></devtools-icon>
-                  <x-link class="link" @click=${openIssueEvent}>${i18nString(UIStrings.viewIssue)}</x-link>
+                  <devtools-link class="link" @click=${openIssueEvent}>${i18nString(UIStrings.viewIssue)}</devtools-link>
                   <span>${elementIssueDetails.tooltip}</span>
                   </div>`;})}
             </div>`, popover.contentElement);
@@ -906,6 +916,28 @@ export class ElementsTreeOutline extends
     }
   }
 
+  highlightAdoptedStyleSheet(adoptedStyleSheet: SDK.DOMModel.AdoptedStyleSheet): void {
+    const parentDOMNode =
+        !this.includeRootDOMNode && adoptedStyleSheet.parent === this.rootDOMNode && this.rootDOMNode ?
+        this.rootElement() :
+        this.createTreeElementFor(adoptedStyleSheet.parent);
+    if (!parentDOMNode) {
+      return;
+    }
+    const parentNode = parentDOMNode.firstChild();
+    if (!(parentNode && parentNode instanceof AdoptedStyleSheetSetTreeElement)) {
+      return;
+    }
+
+    for (const child of parentNode.children()) {
+      if (child instanceof AdoptedStyleSheetTreeElement && child.adoptedStyleSheet === adoptedStyleSheet) {
+        parentNode.expand();
+        child.highlight();
+        return;
+      }
+    }
+  }
+
   editing(): boolean {
     const node = this.selectedDOMNode();
     if (!node) {
@@ -954,8 +986,8 @@ export class ElementsTreeOutline extends
     this.dispatchEventToListeners(ElementsTreeOutline.Events.ElementsTreeUpdated, nodes);
   }
 
-  findTreeElement(node: SDK.DOMModel.DOMNode|SDK.DOMModel.AdoptedStyleSheet): ElementsTreeElement|null {
-    if (node instanceof SDK.DOMModel.AdoptedStyleSheet) {
+  findTreeElement(node: SDK.DOMModel.DOMNode|SDK.DOMModel.AdoptedStyleSheet[]): ElementsTreeElement|null {
+    if (node instanceof Array) {
       return null;
     }
     let treeElement = this.lookUpTreeElement(node);
@@ -1524,10 +1556,9 @@ export class ElementsTreeOutline extends
     domModel.addEventListener(SDK.DOMModel.Events.AttrRemoved, this.attributeRemoved, this);
     domModel.addEventListener(SDK.DOMModel.Events.CharacterDataModified, this.characterDataModified, this);
     domModel.addEventListener(SDK.DOMModel.Events.DocumentUpdated, this.documentUpdated, this);
+    domModel.addEventListener(SDK.DOMModel.Events.DocumentURLChanged, this.documentURLChanged, this);
     domModel.addEventListener(SDK.DOMModel.Events.ChildNodeCountUpdated, this.childNodeCountUpdated, this);
     domModel.addEventListener(SDK.DOMModel.Events.DistributedNodesChanged, this.distributedNodesChanged, this);
-    domModel.addEventListener(SDK.DOMModel.Events.TopLayerElementsChanged, this.topLayerElementsChanged, this);
-    domModel.addEventListener(SDK.DOMModel.Events.ScrollableFlagUpdated, this.scrollableFlagUpdated, this);
     domModel.addEventListener(
         SDK.DOMModel.Events.AffectedByStartingStylesFlagUpdated, this.affectedByStartingStylesFlagUpdated, this);
     domModel.addEventListener(SDK.DOMModel.Events.AdoptedStyleSheetsModified, this.adoptedStyleSheetsModified, this);
@@ -1541,10 +1572,9 @@ export class ElementsTreeOutline extends
     domModel.removeEventListener(SDK.DOMModel.Events.AttrRemoved, this.attributeRemoved, this);
     domModel.removeEventListener(SDK.DOMModel.Events.CharacterDataModified, this.characterDataModified, this);
     domModel.removeEventListener(SDK.DOMModel.Events.DocumentUpdated, this.documentUpdated, this);
+    domModel.removeEventListener(SDK.DOMModel.Events.DocumentURLChanged, this.documentURLChanged, this);
     domModel.removeEventListener(SDK.DOMModel.Events.ChildNodeCountUpdated, this.childNodeCountUpdated, this);
     domModel.removeEventListener(SDK.DOMModel.Events.DistributedNodesChanged, this.distributedNodesChanged, this);
-    domModel.removeEventListener(SDK.DOMModel.Events.TopLayerElementsChanged, this.topLayerElementsChanged, this);
-    domModel.removeEventListener(SDK.DOMModel.Events.ScrollableFlagUpdated, this.scrollableFlagUpdated, this);
     domModel.removeEventListener(
         SDK.DOMModel.Events.AffectedByStartingStylesFlagUpdated, this.affectedByStartingStylesFlagUpdated, this);
     domModel.removeEventListener(SDK.DOMModel.Events.AdoptedStyleSheetsModified, this.adoptedStyleSheetsModified, this);
@@ -1597,6 +1627,11 @@ export class ElementsTreeOutline extends
     if (node.parentNode && node.parentNode.firstChild === node.parentNode.lastChild) {
       this.addUpdateRecord(node.parentNode).childrenModified();
     }
+    this.updateModifiedNodesSoon();
+  }
+
+  private documentURLChanged(event: Common.EventTarget.EventTargetEvent<SDK.DOMModel.DOMDocument>): void {
+    this.addUpdateRecord(event.data).charDataModified();
     this.updateModifiedNodesSoon();
   }
 
@@ -1719,32 +1754,36 @@ export class ElementsTreeOutline extends
     });
   }
 
-  async createTopLayerContainer(parent: UI.TreeOutline.TreeElement, document: SDK.DOMModel.DOMDocument): Promise<void> {
+  createTopLayerContainer(parent: UI.TreeOutline.TreeElement, document: SDK.DOMModel.DOMDocument): void {
     if (!parent.treeOutline || !(parent.treeOutline instanceof ElementsTreeOutline)) {
       return;
     }
     const container = new TopLayerContainer(parent.treeOutline, document);
-    await container.throttledUpdateTopLayerElements();
-    if (container.currentTopLayerDOMNodes.size > 0) {
-      parent.appendChild(container);
-    }
-    this.#topLayerContainerByParent.set(parent, container);
+    this.#topLayerContainerByDocument.set(document, container);
+    parent.appendChild(container);
   }
 
-  private createElementTreeElement(node: SDK.DOMModel.DOMNode|SDK.DOMModel.AdoptedStyleSheet, isClosingTag?: boolean):
+  revealInTopLayer(node: SDK.DOMModel.DOMNode): void {
+    const document = node.ownerDocument;
+    if (!document) {
+      return;
+    }
+    const container = this.#topLayerContainerByDocument.get(document);
+    if (container) {
+      container.revealInTopLayer(node);
+    }
+  }
+
+  private createElementTreeElement(node: SDK.DOMModel.DOMNode|SDK.DOMModel.AdoptedStyleSheet[], isClosingTag?: boolean):
       UI.TreeOutline.TreeElement {
-    if (node instanceof SDK.DOMModel.AdoptedStyleSheet) {
-      return new AdoptedStyleSheetTreeElement(node);
+    if (node instanceof Array) {
+      return new AdoptedStyleSheetSetTreeElement(node);
     }
     const treeElement = new ElementsTreeElement(node, isClosingTag);
     treeElement.setExpandable(!isClosingTag && this.hasVisibleChildren(node));
     if (node.nodeType() === Node.ELEMENT_NODE && node.parentNode && node.parentNode.nodeType() === Node.DOCUMENT_NODE &&
         !node.parentNode.parentNode) {
       treeElement.setCollapsible(false);
-    }
-
-    if (node.hasAssignedSlot()) {
-      treeElement.createSlotLink(node.assignedSlot);
     }
 
     treeElement.selectable = Boolean(this.selectEnabled);
@@ -1767,8 +1806,12 @@ export class ElementsTreeOutline extends
     return treeElement.childAt(index) as ElementsTreeElement;
   }
 
-  private visibleChildren(node: SDK.DOMModel.DOMNode): Array<SDK.DOMModel.DOMNode|SDK.DOMModel.AdoptedStyleSheet> {
-    let visibleChildren = [...node.adoptedStyleSheetsForNode, ...ElementsTreeElement.visibleShadowRoots(node)];
+  private visibleChildren(node: SDK.DOMModel.DOMNode): Array<SDK.DOMModel.DOMNode|SDK.DOMModel.AdoptedStyleSheet[]> {
+    const visibleChildren: Array<SDK.DOMModel.DOMNode|SDK.DOMModel.AdoptedStyleSheet[]> = [];
+    if (node.adoptedStyleSheetsForNode.length) {
+      visibleChildren.push(node.adoptedStyleSheetsForNode);
+    }
+    visibleChildren.push(...ElementsTreeElement.visibleShadowRoots(node));
 
     const contentDocument = node.contentDocument();
     if (contentDocument) {
@@ -1805,7 +1848,7 @@ export class ElementsTreeOutline extends
       if (!this.showHTMLCommentsSetting.get()) {
         children = children.filter(n => n.nodeType() !== Node.COMMENT_NODE);
       }
-      visibleChildren = visibleChildren.concat(children);
+      visibleChildren.push(...children);
     }
 
     const afterPseudoElement = node.afterPseudoElement();
@@ -1894,13 +1937,10 @@ export class ElementsTreeOutline extends
   }
 
   insertChildElement(
-      treeElement: ElementsTreeElement|TopLayerContainer, child: SDK.DOMModel.DOMNode|SDK.DOMModel.AdoptedStyleSheet,
+      treeElement: ElementsTreeElement|TopLayerContainer, child: SDK.DOMModel.DOMNode|SDK.DOMModel.AdoptedStyleSheet[],
       index: number, isClosingTag?: boolean): UI.TreeOutline.TreeElement {
     const newElement = this.createElementTreeElement(child, isClosingTag);
     treeElement.insertChild(newElement, index);
-    if (child instanceof SDK.DOMModel.DOMDocument) {
-      void this.createTopLayerContainer(newElement, child);
-    }
     return newElement;
   }
 
@@ -1927,12 +1967,12 @@ export class ElementsTreeOutline extends
 
     const node = treeElement.node();
     const visibleChildren = this.visibleChildren(node);
-    const visibleChildrenSet = new Set<SDK.DOMModel.DOMNode|SDK.DOMModel.AdoptedStyleSheet>(visibleChildren);
+    const visibleChildrenSet = new Set<SDK.DOMModel.DOMNode|SDK.DOMModel.AdoptedStyleSheet[]>(visibleChildren);
 
     // Remove any tree elements that no longer have this node as their parent and save
     // all existing elements that could be reused. This also removes closing tag element.
-    const existingTreeElements =
-        new Map<SDK.DOMModel.DOMNode|SDK.DOMModel.AdoptedStyleSheet, UI.TreeOutline.TreeElement&ElementsTreeElement>();
+    const existingTreeElements = new Map<
+        SDK.DOMModel.DOMNode|SDK.DOMModel.AdoptedStyleSheet[], UI.TreeOutline.TreeElement&ElementsTreeElement>();
     for (let i = treeElement.childCount() - 1; i >= 0; --i) {
       const existingTreeElement = treeElement.childAt(i);
       if (!(existingTreeElement instanceof ElementsTreeElement)) {
@@ -1997,6 +2037,15 @@ export class ElementsTreeOutline extends
       this.insertChildElement(treeElement, node, treeElement.childCount(), true);
     }
 
+    if (node instanceof SDK.DOMModel.DOMDocument && !this.isXMLMimeType) {
+      let topLayerContainer = this.#topLayerContainerByDocument.get(node);
+      if (!topLayerContainer) {
+        topLayerContainer = new TopLayerContainer(this, node);
+        this.#topLayerContainerByDocument.set(node, topLayerContainer);
+      }
+      treeElement.appendChild(topLayerContainer);
+    }
+
     this.treeElementsBeingUpdated.delete(treeElement);
   }
 
@@ -2008,37 +2057,11 @@ export class ElementsTreeOutline extends
     }
   }
 
-  private async topLayerElementsChanged(): Promise<void> {
-    for (const [parent, container] of this.#topLayerContainerByParent) {
-      await container.throttledUpdateTopLayerElements();
-      if (container.currentTopLayerDOMNodes.size > 0 && container.parent !== parent) {
-        parent.appendChild(container);
-      }
-      container.hidden = container.currentTopLayerDOMNodes.size === 0;
-    }
-  }
-
-  private scrollableFlagUpdated(event: Common.EventTarget.EventTargetEvent<{node: SDK.DOMModel.DOMNode}>): void {
-    let {node} = event.data;
-    if (node.nodeName() === '#document') {
-      // We show the scroll badge of the document on the <html> element.
-      if (!node.ownerDocument?.documentElement) {
-        return;
-      }
-      node = node.ownerDocument.documentElement;
-    }
-    const treeElement = this.treeElementByNode.get(node);
-    if (treeElement && isOpeningTag(treeElement.tagTypeContext)) {
-      void treeElement.updateScrollAdorner();
-    }
-  }
-
   private affectedByStartingStylesFlagUpdated(event: Common.EventTarget.EventTargetEvent<{node: SDK.DOMModel.DOMNode}>):
       void {
     const {node} = event.data;
     const treeElement = this.treeElementByNode.get(node);
     if (treeElement && isOpeningTag(treeElement.tagTypeContext)) {
-      void treeElement.updateStyleAdorners();
       void treeElement.updateAdorners();
     }
   }

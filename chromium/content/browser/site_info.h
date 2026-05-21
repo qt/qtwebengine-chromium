@@ -65,7 +65,8 @@ class CONTENT_EXPORT SiteInfo {
       const WebExposedIsolationInfo& web_exposed_isolation_info,
       WebExposedIsolationLevel web_exposed_isolation_level,
       const std::optional<AgentClusterKey::CrossOriginIsolationKey>&
-          cross_origin_isolation_key);
+          cross_origin_isolation_key,
+      const std::string& browser_context_id);
 
   // Helper to create a SiteInfo for default SiteInstances.  Default
   // SiteInstances are used for non-isolated sites on platforms without strict
@@ -153,7 +154,8 @@ class CONTENT_EXPORT SiteInfo {
       bool does_site_request_dedicated_process_for_coop,
       bool requires_origin_keyed_process,
       bool is_sandboxed,
-      bool is_pdf);
+      bool is_pdf,
+      bool cross_origin_isolated_through_dip);
 
   // Exposes functionality of `GetSiteForURLInternal so tests can do effective
   // URL translation.
@@ -193,7 +195,8 @@ class CONTENT_EXPORT SiteInfo {
            bool is_jit_disabled,
            bool are_v8_optimizations_disabled,
            bool is_pdf,
-           bool is_fenced);
+           bool is_fenced,
+           const std::string& browser_context_id);
   SiteInfo() = delete;
   SiteInfo(const SiteInfo& rhs);
   ~SiteInfo();
@@ -515,6 +518,13 @@ class CONTENT_EXPORT SiteInfo {
   // here:
   // https://github.com/WICG/fenced-frame/blob/master/explainer/process_isolation.md.
   bool is_fenced_ = false;
+
+  // Unique id of the BrowserContext. SiteInfos associated with different
+  // BrowserContexts should be considered distinct security principals.
+  // This is a string, because it is initialized from
+  // BrowserContext::UniqueId() which returns string.
+  // TODO(crbug.com/466132514): use UnguessableToken instead.
+  std::string browser_context_id_;
 };
 
 CONTENT_EXPORT std::ostream& operator<<(std::ostream& out,

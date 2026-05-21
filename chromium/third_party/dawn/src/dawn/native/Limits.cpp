@@ -54,39 +54,46 @@
     X(v1, Maximum,                    maxComputeWorkgroupSizeZ,        64,          64,         64) \
     X(v1, Maximum,            maxComputeWorkgroupsPerDimension,     65535,       65535,      65535)
 
-// Tiers are 128MB, 256MB, 512MB, 1GB, 2GB-4, 4GB-4.
-//                                                 compat     tier0      tier1
-#define LIMITS_STORAGE_BUFFER_BINDING_SIZE(X)                                                        \
-    X(v1, Maximum, maxStorageBufferBindingSize, 134217728, 134217728, 268435456, 536870912, 1073741824, 2147483644, 4294967292)
+static constexpr uint64_t MiB = 1'048'576;
+static constexpr uint64_t GiB = 1'073'741'824;
 
-// Tiers are 256MB, 1GB, 2GB, 4GB.
-//                                    compat      tier0       tier1
-#define LIMITS_MAX_BUFFER_SIZE(X)                                                         \
-    X(v1, Maximum, maxBufferSize, 0x10000000, 0x10000000, 0x40000000, 0x80000000, 0x100000000)
+//                                                 compat      tier0      tier1      tier2    tier3        tier4        tier5
+#define LIMITS_STORAGE_BUFFER_BINDING_SIZE(X)                                                                                  \
+    X(v1, Maximum, maxStorageBufferBindingSize, 128 * MiB, 128 * MiB, 256 * MiB, 512 * MiB, 1 * GiB, 2 * GiB - 4, 4 * GiB - 4)
+
+//                                   compat      tier0    tier1    tier2        tier3
+#define LIMITS_MAX_BUFFER_SIZE(X)                                                      \
+    X(v1, Maximum, maxBufferSize, 256 * MiB, 256 * MiB, 1 * GiB, 2 * GiB, 4 * GiB - 4)
 
 // Tiers for limits related to resource bindings.
+// Note that changing these limits may require updating hard-coded constants common/Constants.h.
 // TODO(crbug.com/dawn/685): Define these better. For now, use two tiers where one
 // offers slightly better than default limits.
-//                                                                     compat      tier0       tier1
-#define LIMITS_RESOURCE_BINDINGS(X)                                                                   \
-    X(v1,     Maximum,   maxDynamicUniformBuffersPerPipelineLayout,         8,         8,         10) \
-    X(v1,     Maximum,   maxDynamicStorageBuffersPerPipelineLayout,         4,         4,          8) \
-    X(v1,     Maximum,            maxSampledTexturesPerShaderStage,        16,        16,         16) \
-    X(v1,     Maximum,                   maxSamplersPerShaderStage,        16,        16,         16) \
-    X(v1,     Maximum,            maxStorageTexturesPerShaderStage,         4,         4,          8) \
-    X(compat, Maximum,           maxStorageTexturesInFragmentStage,         4,         4,          8) \
-    X(compat, Maximum,             maxStorageTexturesInVertexStage,         0,         4,          8) \
-    X(v1,     Maximum,             maxUniformBuffersPerShaderStage,        12,        12,         12)
+//                                                                     compat      tier0       tier1       tier2
+#define LIMITS_RESOURCE_BINDINGS(X)                                                                              \
+    X(v1,     Maximum,   maxDynamicUniformBuffersPerPipelineLayout,         8,         8,         10,        10) \
+    X(v1,     Maximum,   maxDynamicStorageBuffersPerPipelineLayout,         4,         4,          8,         8) \
+    X(v1,     Maximum,            maxSampledTexturesPerShaderStage,        16,        16,         16,        48) \
+    X(v1,     Maximum,                   maxSamplersPerShaderStage,        16,        16,         16,        16) \
+    X(v1,     Maximum,            maxStorageTexturesPerShaderStage,         4,         4,          8,         8) \
+    X(compat, Maximum,           maxStorageTexturesInFragmentStage,         4,         4,          8,         8) \
+    X(compat, Maximum,             maxStorageTexturesInVertexStage,         0,         4,          8,         8) \
+    X(v1,     Maximum,             maxUniformBuffersPerShaderStage,        12,        12,         12,        12)
 
 // Tiers for limits related to storage buffer bindings. Should probably be merged with
 // LIMITS_RESOURCE_BINDINGS.
+//
+// TODO(crbug.com/363031535): Once the Metal backend uses argument buffers, it might be possible
+// to just merge tier1 and tier2 using 16 as the limit. Currently we can't do that because that
+// would result in all Metal devices dropping down to tier0.
+//
 // TODO(crbug.com/dawn/685): Define these better. For now, use two tiers where one
 // offers slightly better than default limits.
-//
-#define LIMITS_STORAGE_BUFFER_BINDINGS(X)                                                              \
-    X(v1,     Maximum,             maxStorageBuffersPerShaderStage,         8,         8,          10) \
-    X(compat, Maximum,            maxStorageBuffersInFragmentStage,         4,         8,          10) \
-    X(compat, Maximum,              maxStorageBuffersInVertexStage,         0,         8,          10)
+//                                                                     compat      tier0       tier1       tier2
+#define LIMITS_STORAGE_BUFFER_BINDINGS(X)                                                                        \
+    X(v1,     Maximum,             maxStorageBuffersPerShaderStage,         8,         8,         10,        16) \
+    X(compat, Maximum,            maxStorageBuffersInFragmentStage,         4,         8,         10,        16) \
+    X(compat, Maximum,              maxStorageBuffersInVertexStage,         0,         8,         10,        16)
 
 // TODO(crbug.com/dawn/685):
 // These limits aren't really tiered and could probably be grouped better.
@@ -108,7 +115,7 @@
 #define LIMITS_TEXTURE_DIMENSIONS(X) \
     X(v1, Maximum,                       maxTextureDimension1D,      4096,      8192,      16384) \
     X(v1, Maximum,                       maxTextureDimension2D,      4096,      8192,      16384) \
-    X(v1, Maximum,                       maxTextureDimension3D,      1024,      2048,       2048) \
+    X(v1, Maximum,                       maxTextureDimension3D,      2048,      2048,       2048) \
     X(v1, Maximum,                       maxTextureArrayLayers,       256,       256,       2048)
 
 // Tiered limits for immediate data sizes.
@@ -116,15 +123,15 @@
 #define LIMITS_IMMEDIATE_SIZE(X) \
   X(v1, Maximum, maxImmediateSize,      0,    kMaxImmediateDataBytes)
 
-// Limits for the dynamic binding array.
-//                                                                   compat  tier0
-#define LIMITS_DYNAMIC_BINDING_ARRAY(X) \
-  X(dynamicBindingArrayLimits, Maximum, maxDynamicBindingArraySize,       0,    50'000)
+// Limits for the resource table.
+//                                                                   compat     tier0
+#define LIMITS_RESOURCE_TABLE(X) \
+  X(resourceTableLimits, Maximum, maxResourceTableSize,                   0,    50'000)
 
 // TODO(crbug.com/dawn/685):
 // These limits don't have tiers yet. Define two tiers with the same values since the macros
 // in this file expect more than one tier.
-//                                                                                         compat      tier0      tier1
+//                                                                                         compat      tier0      tier1       tier2
 #define LIMITS_OTHER(X)                                                                                                             \
     X(v1,                              Maximum,                                     maxBindGroups,         4,         4,          4) \
     X(v1,                              Maximum,                    maxBindGroupsPlusVertexBuffers,        24,        24,         24) \
@@ -150,7 +157,7 @@
     X(LIMITS_INTER_STAGE_SHADER_VARIABLES) \
     X(LIMITS_TEXTURE_DIMENSIONS)           \
     X(LIMITS_IMMEDIATE_SIZE)               \
-    X(LIMITS_DYNAMIC_BINDING_ARRAY)        \
+    X(LIMITS_RESOURCE_TABLE)               \
     X(LIMITS_OTHER)
 
 #define LIMITS(X)                          \
@@ -164,7 +171,7 @@
     LIMITS_INTER_STAGE_SHADER_VARIABLES(X) \
     LIMITS_TEXTURE_DIMENSIONS(X)           \
     LIMITS_IMMEDIATE_SIZE(X)               \
-    LIMITS_DYNAMIC_BINDING_ARRAY(X)        \
+    LIMITS_RESOURCE_TABLE(X)               \
     LIMITS_OTHER(X)
 
 namespace dawn::native {
@@ -285,9 +292,9 @@ MaybeError ValidateAndUnpackLimitsIn(const Limits* chainedLimits,
         out->compat = *compatibilityModeLimits;
         out->compat.nextInChain = nullptr;
     }
-    if (auto* dynamicBindingArrayLimits = unpacked.Get<DynamicBindingArrayLimits>()) {
-        out->dynamicBindingArrayLimits = *dynamicBindingArrayLimits;
-        out->dynamicBindingArrayLimits.nextInChain = nullptr;
+    if (auto* resourceTableLimits = unpacked.Get<ResourceTableLimits>()) {
+        out->resourceTableLimits = *resourceTableLimits;
+        out->resourceTableLimits.nextInChain = nullptr;
     }
 
     // TODO(crbug.com/378361783): Add validation and default values to support requiring limits for
@@ -320,9 +327,9 @@ void UnpackLimitsIn(const Limits* chainedLimits, CombinedLimits* out) {
         out->compat = *compatibilityModeLimits;
         out->compat.nextInChain = nullptr;
     }
-    if (auto* dynamicBindingArrayLimits = unpacked.Get<DynamicBindingArrayLimits>()) {
-        out->dynamicBindingArrayLimits = *dynamicBindingArrayLimits;
-        out->dynamicBindingArrayLimits.nextInChain = nullptr;
+    if (auto* resourceTableLimits = unpacked.Get<ResourceTableLimits>()) {
+        out->resourceTableLimits = *resourceTableLimits;
+        out->resourceTableLimits.nextInChain = nullptr;
     }
 }
 
@@ -394,7 +401,9 @@ void ApplyLimitTiers(CombinedLimits* limits) {
 }
 
 #define DAWN_INTERNAL_LIMITS_MEMBER_ASSIGNMENT(type, name) \
-    { result.name = limits.name; }
+    {                                                      \
+        result.name = limits.name;                         \
+    }
 #define DAWN_INTERNAL_LIMITS_FOREACH_MEMBER_ASSIGNMENT(MEMBERS) \
     MEMBERS(DAWN_INTERNAL_LIMITS_MEMBER_ASSIGNMENT)
 LimitsForCompilationRequest LimitsForCompilationRequest::Create(const Limits& limits) {
@@ -435,6 +444,8 @@ void NormalizeLimits(CombinedLimits* limits) {
     limits->v1.maxUniformBuffersPerShaderStage =
         std::min(limits->v1.maxUniformBuffersPerShaderStage, kMaxUniformBuffersPerShaderStage);
     limits->v1.maxImmediateSize = std::min(limits->v1.maxImmediateSize, kMaxImmediateDataBytes);
+    limits->v1.maxBindingsPerBindGroup =
+        std::min(limits->v1.maxBindingsPerBindGroup, kMaxBindingsPerBindGroup);
 
     if (limits->v1.maxDynamicUniformBuffersPerPipelineLayout >
         kMaxDynamicUniformBuffersPerPipelineLayout) {
@@ -463,14 +474,17 @@ void NormalizeLimits(CombinedLimits* limits) {
         std::min(limits->v1.maxDynamicStorageBuffersPerPipelineLayout,
                  kMaxDynamicStorageBuffersPerPipelineLayout);
     // Compat limits.
-    limits->compat.maxStorageBuffersInVertexStage =
-        std::min(limits->compat.maxStorageBuffersInVertexStage, kMaxStorageBuffersPerShaderStage);
+    limits->compat.maxStorageBuffersInVertexStage = std::min(
+        limits->compat.maxStorageBuffersInVertexStage, limits->v1.maxStorageBuffersPerShaderStage);
     limits->compat.maxStorageTexturesInVertexStage =
-        std::min(limits->compat.maxStorageTexturesInVertexStage, kMaxStorageTexturesPerShaderStage);
+        std::min(limits->compat.maxStorageTexturesInVertexStage,
+                 limits->v1.maxStorageTexturesPerShaderStage);
     limits->compat.maxStorageBuffersInFragmentStage =
-        std::min(limits->compat.maxStorageBuffersInFragmentStage, kMaxStorageBuffersPerShaderStage);
-    limits->compat.maxStorageTexturesInFragmentStage = std::min(
-        limits->compat.maxStorageTexturesInFragmentStage, kMaxStorageTexturesPerShaderStage);
+        std::min(limits->compat.maxStorageBuffersInFragmentStage,
+                 limits->v1.maxStorageBuffersPerShaderStage);
+    limits->compat.maxStorageTexturesInFragmentStage =
+        std::min(limits->compat.maxStorageTexturesInFragmentStage,
+                 limits->v1.maxStorageTexturesPerShaderStage);
 
     // Additional enforcement for dependent limits.
     limits->v1.maxStorageBufferBindingSize =
@@ -560,10 +574,8 @@ MaybeError FillLimits(Limits* outputLimits,
     FillExtensionLimits(unpacked.Get<DawnHostMappedPointerLimits>(),
                         &CombinedLimits::hostMappedPointerLimits,
                         wgpu::FeatureName::HostMappedPointer);
-    FillExtensionLimits(unpacked.Get<DynamicBindingArrayLimits>(),
-                        &CombinedLimits::dynamicBindingArrayLimits,
-                        wgpu::FeatureName::ChromiumExperimentalBindless);
-
+    FillExtensionLimits(unpacked.Get<ResourceTableLimits>(), &CombinedLimits::resourceTableLimits,
+                        wgpu::FeatureName::ChromiumExperimentalSamplingResourceTable);
     return {};
 }
 

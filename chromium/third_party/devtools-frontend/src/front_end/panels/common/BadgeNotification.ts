@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import '../../ui/kit/kit.js';
+
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
@@ -11,6 +13,7 @@ import * as UIHelpers from '../../ui/helpers/helpers.js';
 import * as uiI18n from '../../ui/i18n/i18n.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import * as Lit from '../../ui/lit/lit.js';
+import {type LitTemplate, nothing} from '../../ui/lit/lit.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
 
 import badgeNotificationStyles from './badgeNotification.css.js';
@@ -50,9 +53,9 @@ const UIStrings = {
   starterBadgeAwardMessageNoGdpProfile:
       'You earned the {PH1} badge for the {PH2}! Create a profile to claim your badge.',
   /**
-   * @description Action title for snoozing the starter badge.
+   * @description Action title for dismissing the badge notification.
    */
-  remindMeLater: 'Remind me later',
+  noThanks: 'No thanks',
   /**
    * @description Action title for enabling the "Receive badges" setting
    */
@@ -65,7 +68,7 @@ const UIStrings = {
 
 const str_ = i18n.i18n.registerUIStrings('panels/common/BadgeNotification.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
-const i18nFormatString = uiI18n.getFormatLocalizedString.bind(undefined, str_);
+const i18nFormatStringTemplate = uiI18n.getFormatLocalizedStringTemplate.bind(undefined, str_);
 const lockedString = i18n.i18n.lockedString;
 
 const LEFT_OFFSET = 5;
@@ -80,7 +83,7 @@ export interface BadgeNotificationAction {
 }
 
 export interface BadgeNotificationProperties {
-  message: HTMLElement|string;
+  message: LitTemplate;
   jslogContext: string;
   imageUri: string;
   actions: BadgeNotificationAction[];
@@ -141,7 +144,7 @@ function revealBadgeSettings(): void {
 
 export class BadgeNotification extends UI.Widget.Widget {
   jslogContext = '';
-  message: HTMLElement|string = '';
+  message: LitTemplate = nothing;
   imageUri = '';
   actions: BadgeNotificationAction[] = [];
   isStarterBadge = false;
@@ -157,11 +160,17 @@ export class BadgeNotification extends UI.Widget.Widget {
     this.markAsRoot();
   }
 
-  async present(badge: Badges.Badge): Promise<void> {
-    if (badge.isStarterBadge) {
-      await this.#presentStarterBadge(badge);
-    } else {
-      this.#presentActivityBasedBadge(badge);
+  async present(badge: Badges.Badge, reason: Badges.BadgeTriggerReason): Promise<void> {
+    switch (reason) {
+      case Badges.BadgeTriggerReason.AWARD:
+        this.#presentActivityBasedBadge(badge);
+        return;
+      case Badges.BadgeTriggerReason.STARTER_BADGE_SETTINGS_NUDGE:
+        this.#presentStarterBadgeSettingsNudge(badge);
+        return;
+      case Badges.BadgeTriggerReason.STARTER_BADGE_PROFILE_NUDGE:
+        this.#presentStarterBadgeProfileNudge(badge);
+        return;
     }
   }
 
@@ -191,70 +200,51 @@ export class BadgeNotification extends UI.Widget.Widget {
     this.#autoCloseTimeout = window.setTimeout(this.#onAutoClose, AUTO_CLOSE_TIME_IN_MS);
   }
 
-  async #presentStarterBadge(badge: Badges.Badge): Promise<void> {
-    const getProfileResponse = await Host.GdpClient.GdpClient.instance().getProfile();
-    // The `getProfile` call failed and returned a `null`.
-    // For that case, we don't show anything.
-    if (!getProfileResponse) {
-      return;
-    }
-
-    const hasGdpProfile = Boolean(getProfileResponse.profile);
-    const receiveBadgesSettingEnabled = Badges.UserBadges.instance().isReceiveBadgesSettingEnabled();
-    const googleDeveloperProgramLink = UI.XLink.XLink.create(
-        'https://developers.google.com/program', lockedString('Google Developer Program'), 'badge-link', undefined,
-        'program-link');
-
-    // If the user already has a GDP profile and the receive badges setting enabled,
-    // starter badge behaves as if it's an activity based badge.
-    if (hasGdpProfile && receiveBadgesSettingEnabled) {
-      this.#presentActivityBasedBadge(badge);
-      return;
-    }
-
-    // If the user already has a GDP profile and the receive badges setting disabled,
-    // starter badge behaves as a nudge for opting into receiving badges.
-    if (hasGdpProfile && !receiveBadgesSettingEnabled) {
-      this.#show({
-        message: i18nFormatString(
-            UIStrings.starterBadgeAwardMessageSettingDisabled, {PH1: badge.title, PH2: googleDeveloperProgramLink}),
-        jslogContext: badge.jslogContext,
-        actions: [
-          {
-            label: i18nString(UIStrings.remindMeLater),
-            jslogContext: 'remind-me-later',
-            onClick: () => {
-              this.detach();
-              Badges.UserBadges.instance().snoozeStarterBadge();
-            },
-          },
-          {
-            label: i18nString(UIStrings.receiveBadges),
-            jslogContext: 'receive-badges',
-            onClick: () => {
-              this.detach();
-              revealBadgeSettings();
-            }
-          }
-        ],
-        imageUri: badge.imageUri,
-        isStarterBadge: true,
-      });
-      return;
-    }
-
-    // The user does not have a GDP profile, starter badge acts as a nudge for creating a GDP profile.
+  #presentStarterBadgeSettingsNudge(badge: Badges.Badge): void {
     this.#show({
-      message: i18nFormatString(
-          UIStrings.starterBadgeAwardMessageNoGdpProfile, {PH1: badge.title, PH2: googleDeveloperProgramLink}),
+      message: i18nFormatStringTemplate(UIStrings.starterBadgeAwardMessageSettingDisabled, {
+        PH1: badge.title,
+        PH2:
+            html`<devtools-link class="badge-link" href="https://developers.google.com/program" jslogcontext="program-link">${
+                lockedString('Google Developer Program')}</devtools-link>`
+      }),
       jslogContext: badge.jslogContext,
       actions: [
         {
-          label: i18nString(UIStrings.remindMeLater),
-          jslogContext: 'remind-me-later',
+          label: i18nString(UIStrings.noThanks),
+          jslogContext: 'no-thanks',
+          onClick: () => {
+            this.#onDismissClick();
+          },
+        },
+        {
+          label: i18nString(UIStrings.receiveBadges),
+          jslogContext: 'receive-badges',
           onClick: () => {
             this.detach();
-            Badges.UserBadges.instance().snoozeStarterBadge();
+            revealBadgeSettings();
+          }
+        }
+      ],
+      imageUri: badge.imageUri,
+      isStarterBadge: true,
+    });
+  }
+
+  #presentStarterBadgeProfileNudge(badge: Badges.Badge): void {
+    this.#show({
+      message: i18nFormatStringTemplate(UIStrings.starterBadgeAwardMessageNoGdpProfile, {
+        PH1: badge.title,
+        PH2: html`<devtools-link class="badge-link" href="https://developers.google.com/program" .jslogContext=${
+                 'program-link'}>${lockedString('Google Developer Program')}</devtools-link>`
+      }),
+      jslogContext: badge.jslogContext,
+      actions: [
+        {
+          label: i18nString(UIStrings.noThanks),
+          jslogContext: 'no-thanks',
+          onClick: () => {
+            this.#onDismissClick();
           },
         },
         {
@@ -276,7 +266,7 @@ export class BadgeNotification extends UI.Widget.Widget {
 
   #presentActivityBasedBadge(badge: Badges.Badge): void {
     this.#show({
-      message: i18nString(UIStrings.activityBasedBadgeAwardMessage, {PH1: badge.title}),
+      message: i18nFormatStringTemplate(UIStrings.activityBasedBadgeAwardMessage, {PH1: badge.title}),
       jslogContext: badge.jslogContext,
       actions: [
         {

@@ -89,7 +89,6 @@ Clock::time_point SDLPlayerBase::ResyncAndDeterminePresentationTime(
 }
 
 void SDLPlayerBase::OnFramesReady(int buffer_size) {
-  TRACE_DEFAULT_SCOPED(TraceCategory::kStandaloneReceiver);
   // Do not consume anything if there are too many frames in the pipeline
   // already.
   if (static_cast<int>(frames_to_render_.size()) > kMaxFramesInPipeline) {
@@ -100,6 +99,9 @@ void SDLPlayerBase::OnFramesReady(int buffer_size) {
   const Clock::time_point start_time = now_();
   buffer_.Resize(buffer_size);
   EncodedFrame frame = receiver_.ConsumeNextFrame(buffer_.AsByteBuffer());
+
+  TRACE_FLOW_STEP(TraceCategory::kStandaloneReceiver, "Frame.Received",
+                  frame.frame_id);
 
   // Create the tracking state for the frame in the player pipeline.
   OSP_CHECK_EQ(frames_to_render_.count(frame.frame_id), 0);
@@ -115,7 +117,6 @@ void SDLPlayerBase::OnFramesReady(int buffer_size) {
 }
 
 void SDLPlayerBase::OnFrameDecoded(FrameId frame_id, const AVFrame& frame) {
-  TRACE_DEFAULT_SCOPED(TraceCategory::kStandaloneReceiver);
   const auto it = frames_to_render_.find(frame_id);
   if (it == frames_to_render_.end()) {
     return;
@@ -186,8 +187,13 @@ void SDLPlayerBase::RenderAndSchedulePresentation() {
   const FrameId frame_id = it->first;
   current_frame_ = std::move(it->second);
   frames_to_render_.erase(it);
+
+  TRACE_FLOW_STEP(TraceCategory::kStandaloneReceiver, "Frame.Render.Begin",
+                  frame_id);
   const ErrorOr<Clock::time_point> presentation_time =
       RenderNextFrame(current_frame_);
+  TRACE_FLOW_STEP(TraceCategory::kStandaloneReceiver, "Frame.Render.End",
+                  frame_id);
   if (!presentation_time) {
     OnFatalError(presentation_time.error().message());
     return;

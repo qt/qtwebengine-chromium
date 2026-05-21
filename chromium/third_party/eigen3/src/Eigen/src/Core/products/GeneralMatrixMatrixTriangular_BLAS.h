@@ -141,6 +141,8 @@ EIGEN_BLAS_RANKUPDATE_R(float, float, ssyrk_)
 // EIGEN_BLAS_RANKUPDATE_C(dcomplex, double, double, zherk_)
 // EIGEN_BLAS_RANKUPDATE_C(scomplex, float,  float, cherk_)
 
+#undef EIGEN_BLAS_RANKUPDATE_SPECIALIZE
+#undef EIGEN_BLAS_RANKUPDATE_R
 }  // end namespace internal
 
 }  // end namespace Eigen

@@ -74,7 +74,6 @@
 #include "third_party/blink/renderer/platform/graphics/bitmap_image.h"
 #include "third_party/blink/renderer/platform/graphics/blend_mode.h"
 #include "third_party/blink/renderer/platform/graphics/canvas_deferred_paint_record.h"
-#include "third_party/blink/renderer/platform/graphics/canvas_high_entropy_op_type.h"
 #include "third_party/blink/renderer/platform/graphics/flush_reason.h"
 #include "third_party/blink/renderer/platform/graphics/gpu/shared_gpu_context.h"
 #include "third_party/blink/renderer/platform/graphics/gpu/webgpu_cpp.h"
@@ -174,15 +173,13 @@ CanvasRenderingContext2DSettings* BaseRenderingContext2D::getContextAttributes()
 }
 
 void BaseRenderingContext2D::DispatchContextLostEvent(TimerBase*) {
-  // If `need_dispatch_context_restored_` is `true`, the context has been
-  // restored already (e.g. by fixing a `kInvalidCanvasSize` context loss), but
-  // the oncontextrestored event was postponed until the oncontextlost event was
-  // dispatched first. This is happening now, so irrespective of how this
-  // function returns, `need_dispatch_context_restored_` should be cleared.
-  absl::Cleanup cleanup = [this] { need_dispatch_context_restored_ = false; };
+  CanvasRenderingContextHost* host = GetCanvasRenderingContextHost();
+  if (!host) {
+    return;
+  }
 
   Event* event = Event::CreateCancelable(event_type_names::kContextlost);
-  GetCanvasRenderingContextHost()->HostDispatchEvent(event);
+  host->HostDispatchEvent(event);
 
   UseCounter::Count(GetTopExecutionContext(),
                     WebFeature::kCanvasRenderingContext2DContextLostEvent);
@@ -194,7 +191,8 @@ void BaseRenderingContext2D::DispatchContextLostEvent(TimerBase*) {
     return;
   }
 
-  if (need_dispatch_context_restored_) {
+  if (context_lost_mode_ == CanvasRenderingContext::kInvalidCanvasSize &&
+      host->IsValidImageSize()) {
     // The context is already restored (an invalid canvas size was probably
     // fixed). We can send the restored event right away.
     dispatch_context_restored_event_timer_.StartOneShot(base::TimeDelta(),
@@ -293,15 +291,19 @@ void BaseRenderingContext2D::RestoreFromInvalidSizeIfNeeded() {
   DCHECK(!GetResourceProvider());
 
   if (host->IsValidImageSize()) {
-    if (dispatch_context_lost_event_timer_.IsActive()) {
-      // An oncontextlost event is still pending. We can't send the
-      // oncontextrestored right away because the oncontextlost callback could
-      // choose to prevent restoration. Thus, we need to delay queuing the
-      // restored event to after the lost event completed.
-      need_dispatch_context_restored_ = true;
-    } else {
+    // The size was restored. Fire a contextrestored event, but only if there's
+    // no pending contextlost. contextlost needs to run first and it will take
+    // care of running contextrestored if the size is still valid at that point.
+    if (!dispatch_context_lost_event_timer_.IsActive()) {
       dispatch_context_restored_event_timer_.StartOneShot(base::TimeDelta(),
                                                           FROM_HERE);
+    }
+  } else {
+    // The canvas was given another invalid size. Abort any pending
+    // contextrestored event, these would have to wait until the canvas is given
+    // a valid size.
+    if (dispatch_context_restored_event_timer_.IsActive()) {
+      dispatch_context_restored_event_timer_.Stop();
     }
   }
 }
@@ -388,7 +390,8 @@ ImageData* BaseRenderingContext2D::getImageDataInternal(
   } else if (!sw || !sh) {
     exception_state.ThrowDOMException(
         DOMExceptionCode::kIndexSizeError,
-        String::Format("The source %s is 0.", sw ? "height" : "width"));
+        UNSAFE_TODO(
+            String::Format("The source %s is 0.", sw ? "height" : "width")));
   }
 
   if (exception_state.HadException())
@@ -1107,8 +1110,8 @@ void BaseRenderingContext2D::DrawTextInternal(
   Draw<OverdrawOp::kNone>(
       /*draw_func=*/
       [font, text = std::move(text), direction, bidi_override, location,
-       run_start, run_end, canvas, &text_painter,
-       paint_type](MemoryManagedPaintCanvas* c, const cc::PaintFlags* flags) {
+       run_start, run_end, canvas, &text_painter](MemoryManagedPaintCanvas* c,
+                                                  const cc::PaintFlags* flags) {
         TextRun text_run(text, direction, bidi_override);
         // Font::DrawType::kGlyphsAndClusters is required for printing to PDF,
         // otherwise the character to glyph mapping will not be reversible,
@@ -1122,11 +1125,6 @@ void BaseRenderingContext2D::DrawTextInternal(
         Font::DrawType draw_type = (canvas && canvas->IsPrinting())
                                        ? Font::DrawType::kGlyphsAndClusters
                                        : Font::DrawType::kGlyphsOnly;
-        // Only fill and stroke are used for DrawTextInternal.
-        c->AddHighEntropyCanvasOpTypes(
-            paint_type == CanvasRenderingContext2DState::kFillPaintType
-                ? HighEntropyCanvasOpType::kFillText
-                : HighEntropyCanvasOpType::kStrokeText);
         text_painter.DrawWithBidiReorder(text_run, run_start, run_end, *font,
                                          Font::kUseFallbackIfFontNotReady, *c,
                                          location, *flags, draw_type);
@@ -1400,8 +1398,8 @@ GPUTexture* BaseRenderingContext2D::transferToGPUTexture(
   // A texture needs to exist on the GPU. If we aren't able to create an
   // accelerated SharedImage provider, we won't be able to transfer the canvas.
   // In that case, WebGPU access is not possible.
-  CanvasResourceProviderSharedImage* provider =
-      GetOrCreateResourceProvider()->AsSharedImageProvider();
+  Canvas2DResourceProviderSharedImage* provider =
+      GetOrCreateResourceProvider()->As2DSharedImageProvider();
   if (!provider || !provider->IsAccelerated()) {
     exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
                                       "Unable to transfer canvas to GPU.");
@@ -1464,8 +1462,8 @@ GPUTexture* BaseRenderingContext2D::transferToGPUTexture(
   // Note: This must be a CRPSI since this method would have bailed out earlier
   // otherwise.
   resource_provider_from_webgpu_access_ =
-      base::WrapUnique<CanvasResourceProviderSharedImage>(
-          owned_provider.release()->AsSharedImageProvider());
+      base::WrapUnique<Canvas2DResourceProviderSharedImage>(
+          owned_provider.release()->As2DSharedImageProvider());
 
   // The user isn't obligated to ever transfer back, which means this resource
   // provider might stick around for while. Jettison any unnecessary resources.
@@ -1522,7 +1520,7 @@ void BaseRenderingContext2D::transferBackFromGPUTexture(
 
   // Restore the canvas' resource provider back onto the canvas host,
   // surrendering our temporary ownership of the provider.
-  CanvasResourceProviderSharedImage* resource_provider =
+  Canvas2DResourceProviderSharedImage* resource_provider =
       resource_provider_from_webgpu_access_.get();
   ReplaceResourceProvider(std::move(resource_provider_from_webgpu_access_));
   resource_provider->SetDelegate(host);

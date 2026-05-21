@@ -304,7 +304,7 @@ int MdnsQuerier::RecordTrackerLruCache::Update(
       if (result.is_error()) {
         reporting_client_.OnRecoverableError(
             Error(Error::Code::kUpdateReceivedRecordFailure,
-                  result.error().ToString()));
+                  result.error().message()));
         continue;
       }
 

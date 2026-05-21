@@ -72,7 +72,6 @@ component("quiche") {
               "src/quiche/common/platform/default/quiche_platform_impl/quiche_flags_impl.h",
               "src/quiche/common/platform/default/quiche_platform_impl/quiche_time_utils_impl.cc",
               "src/quiche/common/platform/default/quiche_platform_impl/quiche_time_utils_impl.h",
-              "src/quiche/http2/hpack/hpack_static_table_entries.inc",
             ] + quiche_core_hdrs + quiche_core_srcs + binary_http_srcs +
             binary_http_hdrs + oblivious_http_srcs + oblivious_http_hdrs
 
@@ -256,6 +255,22 @@ if (build_epoll_based_tools) {
       "//net",
       "//third_party/boringssl",
       "//third_party/protobuf:protobuf_lite",
+    ]
+  }
+
+  static_library("masque_private_tokens") {
+    testonly = true
+    sources = masque_private_tokens_srcs + masque_private_tokens_hdrs
+
+    configs += [ ":quiche_internal_config" ]
+    public_configs = [ ":quiche_config" ]
+
+    deps = [ "//net" ]
+
+    public_deps = [
+      "//third_party/anonymous_tokens:crypto_utils",
+      "//third_party/anonymous_tokens:rsa_blinder",
+      "//third_party/anonymous_tokens:tokens_encodings",
     ]
   }
 
@@ -497,6 +512,8 @@ source_set("quiche_tests") {
     "src/quiche/common/quiche_random_test.cc",
     "src/quiche/common/quiche_simple_arena_test.cc",
     "src/quiche/common/quiche_socket_address_test.cc",
+    "src/quiche/common/quiche_status_utils_test.cc",
+    "src/quiche/common/quiche_string_tuple_test.cc",
     "src/quiche/common/quiche_text_utils_test.cc",
     "src/quiche/common/simple_buffer_allocator_test.cc",
     "src/quiche/common/structured_headers_generated_test.cc",
@@ -568,12 +585,13 @@ source_set("quiche_tests") {
     "src/quiche/http2/test_tools/http2_frame_builder_test.cc",
     "src/quiche/http2/test_tools/http2_random_test.cc",
     "src/quiche/http2/test_tools/random_decoder_test_base_test.cc",
-    "src/quiche/oblivious_http/buffers/oblivious_http_integration_test.cc",
+    "src/quiche/oblivious_http/buffers/oblivious_http_buffers_integration_test.cc",
     "src/quiche/oblivious_http/buffers/oblivious_http_request_test.cc",
     "src/quiche/oblivious_http/buffers/oblivious_http_response_test.cc",
     "src/quiche/oblivious_http/common/oblivious_http_header_key_config_test.cc",
     "src/quiche/oblivious_http/oblivious_http_client_test.cc",
     "src/quiche/oblivious_http/oblivious_http_gateway_test.cc",
+    "src/quiche/oblivious_http/oblivious_http_integration_test.cc",
     "src/quiche/quic/core/congestion_control/bandwidth_sampler_test.cc",
     "src/quiche/quic/core/congestion_control/bbr2_simulator_test.cc",
     "src/quiche/quic/core/congestion_control/bbr_sender_test.cc",
@@ -600,7 +618,6 @@ source_set("quiche_tests") {
     "src/quiche/quic/core/crypto/chacha20_poly1305_encrypter_test.cc",
     "src/quiche/quic/core/crypto/chacha20_poly1305_tls_decrypter_test.cc",
     "src/quiche/quic/core/crypto/chacha20_poly1305_tls_encrypter_test.cc",
-    "src/quiche/quic/core/crypto/channel_id_test.cc",
     "src/quiche/quic/core/crypto/client_proof_source_test.cc",
     "src/quiche/quic/core/crypto/crypto_framer_test.cc",
     "src/quiche/quic/core/crypto/crypto_handshake_message_test.cc",
@@ -900,31 +917,4 @@ source_set("blind_sign_auth_test_support") {
   ]
   public_deps =
       [ "//third_party/anonymous_tokens:anonymous_tokens_test_support" ]
-}
-
-if (is_android) {
-  import("//build/config/android/rules.gni")
-
-  proto_java_library("blind_sign_auth_proto_java") {
-    visibility = [
-      "//components/ip_protection/*",
-      "//net/third_party/quiche/*",
-    ]
-
-    proto_path = "src/"
-
-    sources = [
-      "src/quiche/blind_sign_auth/proto/any.proto",
-      "src/quiche/blind_sign_auth/proto/attestation.proto",
-      "src/quiche/blind_sign_auth/proto/auth_and_sign.proto",
-      "src/quiche/blind_sign_auth/proto/get_initial_data.proto",
-      "src/quiche/blind_sign_auth/proto/key_services.proto",
-      "src/quiche/blind_sign_auth/proto/proxy_layer.proto",
-      "src/quiche/blind_sign_auth/proto/public_metadata.proto",
-    ]
-
-    deps = [ "//third_party/anonymous_tokens:anonymous_tokens_java_proto" ]
-
-    import_dirs = [ "//third_party/anonymous_tokens/src/" ]
-  }
 }

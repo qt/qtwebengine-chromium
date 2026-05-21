@@ -115,7 +115,7 @@ void RecursivelyGenerateFrameEntries(
         Referrer(GURL(state.referrer.value_or(std::u16string())),
                  state.referrer_policy),
         state.initiator_origin, initiator_base_url, std::vector<GURL>(),
-        blink::PageState::CreateFromEncodedData(data), "GET", -1,
+        blink::PageState::CreateFromEncodedData(std::move(data)), "GET", -1,
         nullptr /* blob_url_loader_factory */,
         // TODO(crbug.com/40053667): We should restore the policy
         // container.
@@ -234,6 +234,33 @@ bool InSameTreePosition(FrameTreeNode* frame_tree_node,
     current_node = current_node->parent;
   }
   return true;
+}
+
+// Removes a given subframe `node` directly from its parent, updating any
+// necessary bookkeeping. Not for use with main frames.
+void RemoveTreeNodeFromParent(NavigationEntryImpl::TreeNode* node) {
+  CHECK(node->parent);
+  auto* frame_entry = node->frame_entry.get();
+  if (frame_entry && frame_entry->committed_origin()) {
+    // Normally default-isolated origins are tracked through their presence in
+    // session history, which is consulted whenever an origin newly requests
+    // isolation. If we remove a frame_entry, its origin won't be available
+    // to any future global walk if the same origin later wants to opt-in. So
+    // we add it to the non-opt-in list here to be spec compliant (unless it's
+    // currently opted-in, in which case this call will do nothing).
+    ChildProcessSecurityPolicyImpl::GetInstance()
+        ->AddDefaultIsolatedOriginIfNeeded(
+            frame_entry->site_instance()->GetIsolationContext(),
+            frame_entry->committed_origin().value(),
+            true /* global_ walk_or_frame_removal */);
+  }
+
+  NavigationEntryImpl::TreeNode* parent_node = node->parent;
+  auto it =
+      std::ranges::find(parent_node->children, node,
+                        &std::unique_ptr<NavigationEntryImpl::TreeNode>::get);
+  CHECK(it != parent_node->children.end());
+  parent_node->children.erase(it);
 }
 
 void RegisterOriginsRecursive(NavigationEntryImpl::TreeNode* node,
@@ -459,6 +486,8 @@ NavigationEntryImpl::NavigationEntryImpl(
       started_from_context_menu_(false),
       ssl_error_(false),
       should_skip_on_back_forward_ui_(false),
+      is_entry_created_by_ad_(false),
+      is_ad_entry_creator_(false),
       initial_navigation_entry_state_(
           is_initial_entry
               ? InitialNavigationEntryState::kInitialNotForSynchronousAboutBlank
@@ -606,7 +635,7 @@ blink::PageState NavigationEntryImpl::GetPageState() const {
 
   std::string encoded_data;
   blink::EncodePageState(exploded_state, &encoded_data);
-  return blink::PageState::CreateFromEncodedData(encoded_data);
+  return blink::PageState::CreateFromEncodedData(std::move(encoded_data));
 }
 
 const std::u16string& NavigationEntryImpl::GetTitleForDisplay() const {
@@ -797,6 +826,10 @@ int64_t NavigationEntryImpl::GetMainFrameDocumentSequenceNumber() const {
   return frame_tree_->frame_entry->document_sequence_number();
 }
 
+bool NavigationEntryImpl::IsPossiblySkippableAdEntryForTesting() const {
+  return is_possibly_skippable_ad_entry();
+}
+
 void NavigationEntryImpl::SetCanLoadLocalResources(bool allow) {
   can_load_local_resources_ = allow;
 }
@@ -886,7 +919,11 @@ NavigationEntryImpl::CloneAndReplaceInternal(
   copy->CloneDataFrom(*this);
   copy->replaced_entry_data_ = replaced_entry_data_;
   copy->should_skip_on_back_forward_ui_ = should_skip_on_back_forward_ui_;
+  copy->is_entry_created_by_ad_ = is_entry_created_by_ad_;
+  copy->is_ad_entry_creator_ = is_ad_entry_creator_;
   copy->initial_navigation_entry_state_ = initial_navigation_entry_state_;
+  copy->remove_extra_headers_on_cross_origin_redirect_ =
+      remove_extra_headers_on_cross_origin_redirect_;
 
   if (navigation_transition_data().cache_hit_or_miss_reason() ==
       NavigationTransitionData::CacheHitOrMissReason::kCacheHit) {
@@ -925,6 +962,7 @@ NavigationEntryImpl::ConstructCommonNavigationParams(
       (dest_url.IsAboutBlank() || dest_url.IsAboutSrcdoc())
           ? frame_entry.initiator_base_url()
           : std::nullopt;
+
   return blink::mojom::CommonNavigationParams::New(
       dest_url, frame_entry.initiator_origin(), initiator_base_url,
       std::move(dest_referrer), GetTransitionType(), navigation_type,
@@ -1005,8 +1043,7 @@ NavigationEntryImpl::ConstructCommitNavigationParams(
           false /* is_browser_initiated */, false /*has_ua_visual_transition*/,
           ukm::kInvalidSourceId /* document_ukm_source_id */, frame_policy,
           std::vector<std::string>() /* force_enabled_origin_trials */,
-          false /* origin_agent_cluster */,
-          true /* origin_agent_cluster_left_as_default */,
+          blink::mojom::AgentClusterKey::NewSiteKey(GURL()),
           std::vector<
               network::mojom::WebClientHintsType>() /* enabled_client_hints */,
           false /* is_cross_site_cross_browsing_context_group */,
@@ -1039,11 +1076,11 @@ NavigationEntryImpl::ConstructCommitNavigationParams(
           /*commit_target_frame_token=*/std::nullopt,
   /*is_initial_webui=*/
 #if !BUILDFLAG(IS_ANDROID)
-          GetContentClient()->browser()->IsInitialWebUIURL(frame_entry.url())
+          GetContentClient()->browser()->IsInitialWebUIURL(frame_entry.url()),
 #else
-          false
+          false,
 #endif
-      );
+          /*permissions_policy_override=*/std::nullopt);
 #if BUILDFLAG(IS_ANDROID)
   // `data_url_as_string` is saved in NavigationEntry but should only be used by
   // main frames, because loadData* navigations can only happen on the main
@@ -1176,7 +1213,8 @@ void NavigationEntryImpl::AddOrUpdateFrameEntry(
   for (const auto& child : parent_node->children) {
     if (child->frame_entry->frame_unique_name() == unique_name) {
       if (update_policy == UpdatePolicy::kReplace) {
-        RemoveEntryForFrame(frame_tree_node, false);
+        RemoveTreeNodeFromParent(child.get());
+        // `child` is now deleted.
         break;
       }
       // If the document of the FrameNavigationEntry is changing, we must clear
@@ -1273,7 +1311,7 @@ base::flat_map<std::string, bool> NavigationEntryImpl::GetSubframeUniqueNames(
 
 void NavigationEntryImpl::RemoveEntryForFrame(FrameTreeNode* frame_tree_node,
                                               bool only_if_different_position) {
-  DCHECK(!frame_tree_node->IsMainFrame());
+  CHECK(!frame_tree_node->IsMainFrame());
 
   NavigationEntryImpl::TreeNode* node = GetTreeNode(frame_tree_node);
   if (!node) {
@@ -1285,26 +1323,7 @@ void NavigationEntryImpl::RemoveEntryForFrame(FrameTreeNode* frame_tree_node,
   // FrameNavigationEntries and the FrameTree.
   if (!only_if_different_position ||
       !InSameTreePosition(frame_tree_node, node)) {
-    auto* frame_entry = node->frame_entry.get();
-    if (frame_entry && frame_entry->committed_origin()) {
-      // Normally default-isolated origins are tracked through their presence in
-      // session history, which is consulted whenever an origin newly requests
-      // isolation. If we remove a frame_entry, its origin won't be available
-      // to any future global walk if the same origin later wants to opt-in. So
-      // we add it to the non-opt-in list here to be spec compliant (unless it's
-      // currently opted-in, in which case this call will do nothing).
-      ChildProcessSecurityPolicyImpl::GetInstance()
-          ->AddDefaultIsolatedOriginIfNeeded(
-              frame_entry->site_instance()->GetIsolationContext(),
-              frame_entry->committed_origin().value(),
-              true /* global_ walk_or_frame_removal */);
-    }
-    NavigationEntryImpl::TreeNode* parent_node = node->parent;
-    auto it =
-        std::ranges::find(parent_node->children, node,
-                          &std::unique_ptr<NavigationEntryImpl::TreeNode>::get);
-    CHECK(it != parent_node->children.end());
-    parent_node->children.erase(it);
+    RemoveTreeNodeFromParent(node);
   }
 }
 

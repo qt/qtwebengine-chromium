@@ -14,6 +14,7 @@
 #include "cast/common/channel/connection_namespace_handler.h"
 #include "cast/common/channel/virtual_connection_router.h"
 #include "cast/common/public/cast_socket.h"
+#include "cast/common/public/receiver_info.h"
 #include "cast/receiver/channel/device_auth_namespace_handler.h"
 #include "cast/receiver/public/receiver_socket_factory.h"
 #include "platform/api/task_runner.h"
@@ -58,7 +59,7 @@ class ApplicationAgent final
 
     // Launches the application and returns true if successful. `app_id` is the
     // specific ID that was used to launch the app, and `app_params` is a
-    // pass-through for any arbitrary app-specfic structure (or null if not
+    // pass-through for any arbitrary app-specific structure (or null if not
     // provided). If the Application wishes to send/receive messages, it uses
     // the provided `message_port` and must call MessagePort::SetClient() before
     // any flow will occur.
@@ -81,7 +82,8 @@ class ApplicationAgent final
 
   ApplicationAgent(
       TaskRunner& task_runner,
-      DeviceAuthNamespaceHandler::CredentialsProvider& credentials_provider);
+      DeviceAuthNamespaceHandler::CredentialsProvider& credentials_provider,
+      const std::string& device_uuid);
 
   ~ApplicationAgent() final;
 
@@ -100,6 +102,8 @@ class ApplicationAgent final
   // (e.g., due to timeout of user activity, end of media playback, or fatal
   // errors).
   void StopApplicationIfRunning(Application* app);
+
+  void SetReceiverInfo(ReceiverInfo receiver_info);
 
  private:
   // ReceiverSocketFactory::Client overrides.
@@ -126,6 +130,8 @@ class ApplicationAgent final
   Json::Value HandlePing();
   Json::Value HandleGetAppAvailability(const Json::Value& request);
   Json::Value HandleGetStatus(const Json::Value& request);
+  Json::Value HandleDeviceInfo(const Json::Value& request);
+  Json::Value HandleEurekaInfo(const Json::Value& request);
   Json::Value HandleLaunch(const Json::Value& request, CastSocket* socket);
   Json::Value HandleStop(const Json::Value& request);
   Json::Value HandleInvalidCommand(const Json::Value& request);
@@ -142,10 +148,20 @@ class ApplicationAgent final
   // Stops the currently-running Application and launches the "idle screen."
   void GoIdle();
 
-  // Populates the given `message` object with the RECEIVER_STATUS fields,
+  // Populates the given `out` object with the RECEIVER_STATUS fields,
   // reflecting the currently-launched app (if any), and a fake volume level
   // status.
-  void PopulateReceiverStatus(Json::Value* message);
+  void PopulateReceiverStatus(Json::Value* out);
+
+  // Populates the given `out` object with the DEVICE_INFO fields,
+  // reflecting the currently-launched app (if any), and a fake volume level
+  // status.
+  void PopulateDeviceInfo(Json::Value* out);
+
+  // Populates the given `out` object with the eureka_info fields,
+  // reflecting the currently-launched app (if any), and a fake volume level
+  // status.
+  void PopulateEurekaInfo(Json::Value* out);
 
   // Broadcasts new RECEIVER_STATUS to all endpoints. This is called after an
   // Application LAUNCH or STOP.
@@ -162,6 +178,8 @@ class ApplicationAgent final
   CastSocketMessagePort message_port_;
   Application* launched_app_ = nullptr;
   std::string launched_via_app_id_;
+  std::string device_id_;
+  ReceiverInfo receiver_info_;
 };
 
 }  // namespace openscreen::cast

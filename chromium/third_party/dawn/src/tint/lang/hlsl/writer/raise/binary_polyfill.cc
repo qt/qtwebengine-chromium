@@ -118,15 +118,15 @@ struct State {
     void PreciseFloatMod(core::ir::Binary* binary) {
         auto* type = binary->Result()->Type();
         b.InsertBefore(binary, [&] {
-            auto* div = b.Divide(type, binary->LHS(), binary->RHS());
+            auto* div = b.Divide(binary->LHS(), binary->RHS());
 
             // Force to a `let` to get better generated HLSL
             auto* d = b.Let(type);
             d->SetValue(div->Result());
 
             auto* trunc = b.Call(type, core::BuiltinFn::kTrunc, d);
-            auto* mul = b.Multiply(type, trunc, binary->RHS());
-            auto* sub = b.Subtract(type, binary->LHS(), mul);
+            auto* mul = b.Multiply(trunc, binary->RHS());
+            auto* sub = b.Subtract(binary->LHS(), mul);
 
             binary->Result()->ReplaceAllUsesWith(sub->Result());
         });
@@ -137,16 +137,13 @@ struct State {
 }  // namespace
 
 Result<SuccessType> BinaryPolyfill(core::ir::Module& ir) {
-    auto result =
+    TINT_CHECK_RESULT(
         ValidateAndDumpIfNeeded(ir, "hlsl.BinaryPolyfill",
                                 core::ir::Capabilities{
                                     core::ir::Capability::kAllowClipDistancesOnF32ScalarAndVector,
                                     core::ir::Capability::kAllowDuplicateBindings,
                                     core::ir::Capability::kAllowNonCoreTypes,
-                                });
-    if (result != Success) {
-        return result.Failure();
-    }
+                                }));
 
     State{ir}.Process();
 

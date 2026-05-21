@@ -86,7 +86,6 @@ bcm_internal_headers = [
     "crypto/fipsmodule/mlkem/mlkem.cc.inc",
     "crypto/fipsmodule/rand/ctrdrbg.cc.inc",
     "crypto/fipsmodule/rand/rand.cc.inc",
-    "crypto/fipsmodule/rsa/blinding.cc.inc",
     "crypto/fipsmodule/rsa/padding.cc.inc",
     "crypto/fipsmodule/rsa/rsa.cc.inc",
     "crypto/fipsmodule/rsa/rsa_impl.cc.inc",
@@ -236,6 +235,35 @@ bcm_sources_nasm = [
     "gen/bcm/x86_64-mont5-win.asm",
 ]
 
+bench_sources = [
+    "bench/aead.cc",
+    "bench/aes.cc",
+    "bench/base64.cc",
+    "bench/curve25519.cc",
+    "bench/ecdh.cc",
+    "bench/ecdsa.cc",
+    "bench/hash.cc",
+    "bench/hash_to_curve.cc",
+    "bench/hrss.cc",
+    "bench/main.cc",
+    "bench/mldsa.cc",
+    "bench/mlkem.cc",
+    "bench/rand.cc",
+    "bench/rsa.cc",
+    "bench/rsakeygen.cc",
+    "bench/scrypt.cc",
+    "bench/selftest.cc",
+    "bench/siphash.cc",
+    "bench/slhdsa.cc",
+    "bench/spake2.cc",
+    "bench/trust_token.cc",
+    "bench/x509.cc",
+]
+
+bench_internal_headers = [
+    "bench/internal.h",
+]
+
 bssl_sources = [
     "tool/args.cc",
     "tool/ciphers.cc",
@@ -251,7 +279,6 @@ bssl_sources = [
     "tool/rand.cc",
     "tool/server.cc",
     "tool/sign.cc",
-    "tool/speed.cc",
     "tool/tool.cc",
     "tool/transport_common.cc",
 ]
@@ -587,6 +614,7 @@ crypto_headers = [
     "include/openssl/target.h",
     "include/openssl/thread.h",
     "include/openssl/time.h",
+    "include/openssl/tls_prf.h",
     "include/openssl/trust_token.h",
     "include/openssl/type_check.h",
     "include/openssl/x509.h",
@@ -597,6 +625,7 @@ crypto_headers = [
 ]
 
 crypto_internal_headers = [
+    "crypto/armv8_feature_parsing.h",
     "crypto/asn1/internal.h",
     "crypto/bcm_support.h",
     "crypto/bio/internal.h",
@@ -658,6 +687,11 @@ crypto_internal_headers = [
     "crypto/spake2plus/internal.h",
     "crypto/trust_token/internal.h",
     "crypto/x509/internal.h",
+    "gen/boringssl_prefix_symbols_internal_x86_64_win_asm.inc",
+    "gen/boringssl_prefix_symbols_internal_x86_win_asm.inc",
+    "include/openssl/prefix_symbols.h",
+    "include/openssl/prefix_symbols_internal_S.h",
+    "include/openssl/prefix_symbols_internal_c.h",
     "third_party/fiat/bedrock_unverified_bareminimum.c.inc",
     "third_party/fiat/bedrock_unverified_platform.c.inc",
     "third_party/fiat/curve25519_32.h",
@@ -901,6 +935,10 @@ crypto_test_data = [
     "crypto/pkcs8/test/unicode_password.p12",
     "crypto/pkcs8/test/windows.p12",
     "crypto/poly1305/poly1305_tests.txt",
+    "crypto/rsa/test/rsa16384.pem",
+    "crypto/rsa/test/rsa16384pub.pem",
+    "crypto/rsa/test/rsa16385.pem",
+    "crypto/rsa/test/rsa16385pub.pem",
     "crypto/rsa/test/rsa511.pem",
     "crypto/rsa/test/rsa511pub.pem",
     "crypto/rsa/test/rsa512.pem",
@@ -2263,6 +2301,9 @@ pki_test_data = [
     "pki/testdata/path_builder_unittest/key_id_prioritization/int_no_ski_c.pem",
     "pki/testdata/path_builder_unittest/key_id_prioritization/root.pem",
     "pki/testdata/path_builder_unittest/key_id_prioritization/target.pem",
+    "pki/testdata/path_builder_unittest/mtc/leaf.pem",
+    "pki/testdata/path_builder_unittest/mtc/mtc-ica.pem",
+    "pki/testdata/path_builder_unittest/mtc/mtc-leaf.pem",
     "pki/testdata/path_builder_unittest/multi-root-A-by-B.pem",
     "pki/testdata/path_builder_unittest/multi-root-B-by-C.pem",
     "pki/testdata/path_builder_unittest/multi-root-B-by-F.pem",
@@ -2779,6 +2820,10 @@ pki_test_data = [
     "pki/testdata/verify_unittest/lencr-root-x1-cross-signed.der",
     "pki/testdata/verify_unittest/lencr-root-x1.der",
     "pki/testdata/verify_unittest/mozilla_roots.der",
+    "pki/testdata/verify_unittest/mtc-leaf-b.pem",
+    "pki/testdata/verify_unittest/mtc-leaf-bitflip.pem",
+    "pki/testdata/verify_unittest/mtc-leaf-c.pem",
+    "pki/testdata/verify_unittest/mtc-leaf.pem",
     "pki/testdata/verify_unittest/self-issued.pem",
 ]
 
@@ -2801,11 +2846,13 @@ rust_bssl_crypto_sources = [
     "rust/bssl-crypto/src/mem.rs",
     "rust/bssl-crypto/src/mldsa.rs",
     "rust/bssl-crypto/src/mlkem.rs",
+    "rust/bssl-crypto/src/pkcs8.rs",
     "rust/bssl-crypto/src/rand.rs",
     "rust/bssl-crypto/src/rsa.rs",
     "rust/bssl-crypto/src/scoped.rs",
     "rust/bssl-crypto/src/slhdsa.rs",
     "rust/bssl-crypto/src/test_helpers.rs",
+    "rust/bssl-crypto/src/tls12_prf.rs",
     "rust/bssl-crypto/src/x25519.rs",
 ]
 

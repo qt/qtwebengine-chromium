@@ -1,6 +1,6 @@
-/* Copyright (c) 2015-2025 The Khronos Group Inc.
- * Copyright (c) 2015-2025 Valve Corporation
- * Copyright (c) 2015-2025 LunarG, Inc.
+/* Copyright (c) 2015-2026 The Khronos Group Inc.
+ * Copyright (c) 2015-2026 Valve Corporation
+ * Copyright (c) 2015-2026 LunarG, Inc.
  * Copyright (C) 2015-2025 Google Inc.
  * Modifications Copyright (C) 2020-2022 Advanced Micro Devices, Inc. All rights reserved.
  *
@@ -22,6 +22,7 @@
 
 #include <vulkan/vk_enum_string_helper.h>
 #include <vulkan/utility/vk_format_utils.h>
+#include <vulkan/vulkan_core.h>
 #include "core_checks/cc_state_tracker.h"
 #include "core_checks/cc_sync_vuid_maps.h"
 #include "core_checks/cc_vuid_maps.h"
@@ -350,17 +351,17 @@ bool CoreChecks::ValidateLayoutVsAttachmentDescription(const VkImageLayout first
                         (first_layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) ||
                         (first_layout == VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL))) {
             skip |= LogError("VUID-VkRenderPassCreateInfo2-pAttachments-02522", device, layout_loc,
-                             "(%s) is an invalid for pAttachments[%d] (first attachment to have LOAD_OP_CLEAR).",
+                             "(%s) is an invalid for pAttachments[%" PRIu32 "] (first attachment to have LOAD_OP_CLEAR).",
                              string_VkImageLayout(first_layout), attachment);
         } else if ((use_rp2 == false) && IsExtEnabled(extensions.vk_khr_maintenance2) &&
                    (first_layout == VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL)) {
             skip |= LogError("VUID-VkRenderPassCreateInfo-pAttachments-01566", device, layout_loc,
-                             "(%s) is an invalid for pAttachments[%d] (first attachment to have LOAD_OP_CLEAR).",
+                             "(%s) is an invalid for pAttachments[%" PRIu32 "] (first attachment to have LOAD_OP_CLEAR).",
                              string_VkImageLayout(first_layout), attachment);
         } else if ((use_rp2 == false) && ((first_layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL) ||
                                           (first_layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL))) {
             skip |= LogError("VUID-VkRenderPassCreateInfo-pAttachments-00836", device, layout_loc,
-                             "(%s) is an invalid for pAttachments[%d] (first attachment to have LOAD_OP_CLEAR).",
+                             "(%s) is an invalid for pAttachments[%" PRIu32 "] (first attachment to have LOAD_OP_CLEAR).",
                              string_VkImageLayout(first_layout), attachment);
         }
     }
@@ -371,17 +372,17 @@ bool CoreChecks::ValidateLayoutVsAttachmentDescription(const VkImageLayout first
                         (first_layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) ||
                         (first_layout == VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_STENCIL_READ_ONLY_OPTIMAL))) {
             skip |= LogError("VUID-VkRenderPassCreateInfo2-pAttachments-02523", device, layout_loc,
-                             "(%s) is an invalid for pAttachments[%d] (first attachment to have LOAD_OP_CLEAR).",
+                             "(%s) is an invalid for pAttachments[%" PRIu32 "] (first attachment to have LOAD_OP_CLEAR).",
                              string_VkImageLayout(first_layout), attachment);
         } else if ((use_rp2 == false) && IsExtEnabled(extensions.vk_khr_maintenance2) &&
                    (first_layout == VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_STENCIL_READ_ONLY_OPTIMAL)) {
             skip |= LogError("VUID-VkRenderPassCreateInfo-pAttachments-01567", device, layout_loc,
-                             "(%s) is an invalid for pAttachments[%d] (first attachment to have LOAD_OP_CLEAR).",
+                             "(%s) is an invalid for pAttachments[%" PRIu32 "] (first attachment to have LOAD_OP_CLEAR).",
                              string_VkImageLayout(first_layout), attachment);
         } else if ((use_rp2 == false) && ((first_layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL) ||
                                           (first_layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL))) {
             skip |= LogError("VUID-VkRenderPassCreateInfo-pAttachments-02511", device, layout_loc,
-                             "(%s) is an invalid for pAttachments[%d] (first attachment to have LOAD_OP_CLEAR).",
+                             "(%s) is an invalid for pAttachments[%" PRIu32 "] (first attachment to have LOAD_OP_CLEAR).",
                              string_VkImageLayout(first_layout), attachment);
         }
     }
@@ -420,21 +421,13 @@ bool CoreChecks::ValidateRenderPassLayoutAgainstFramebufferImageUsage(VkImageLay
                                                                       uint32_t attachment_index, const Location &rp_loc,
                                                                       const Location &attachment_reference_loc) const {
     bool skip = false;
-    const auto &image_view = image_view_state.Handle();
     const auto *image_state = image_view_state.image_state.get();
     if (!image_state) {
         return skip;  // validated at VUID-VkRenderPassBeginInfo-framebuffer-parameter
     }
-    const auto &image = image_state->Handle();
     const bool use_rp2 = rp_loc.function != Func::vkCmdBeginRenderPass;
-
-    auto image_usage = image_state->create_info.usage;
-    const auto stencil_usage_info = vku::FindStructInPNextChain<VkImageStencilUsageCreateInfo>(image_state->create_info.pNext);
-    if (stencil_usage_info) {
-        image_usage |= stencil_usage_info->stencilUsage;
-    }
-
     const char *vuid = kVUIDUndefined;
+    VkImageUsageFlags image_usage = image_view_state.inherited_usage;
 
     // Check for layouts that mismatch image usages in the framebuffer
     if (layout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL && !(image_usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)) {
@@ -476,17 +469,13 @@ bool CoreChecks::ValidateRenderPassLayoutAgainstFramebufferImageUsage(VkImageLay
     }
 
     if (skip) {
-        std::stringstream stencil_usage_message;
-        if (stencil_usage_info) {
-            stencil_usage_message << " (which includes " << string_VkImageUsageFlags(stencil_usage_info->stencilUsage)
-                                  << "from VkImageStencilUsageCreateInfo)";
-        }
-        const LogObjectList objlist(image, renderpass, framebuffer, image_view);
+        const LogObjectList objlist(image_state->Handle(), renderpass, framebuffer, image_view_state.Handle());
         return LogError(vuid, objlist, rp_loc,
-                        "(%s) was created with %s = %s, but %s pAttachments[%" PRIu32 "] (%s) usage is %s%s.",
+                        "(%s) was created with %s = %s, but %s pAttachments[%" PRIu32
+                        "] (%s) references an image not created with the required VkImageUsageFlags.\n%s.",
                         FormatHandle(renderpass).c_str(), attachment_reference_loc.Fields().c_str(), string_VkImageLayout(layout),
-                        FormatHandle(framebuffer).c_str(), attachment_index, FormatHandle(image_view).c_str(),
-                        string_VkImageUsageFlags(image_usage).c_str(), stencil_usage_message.str().c_str());
+                        FormatHandle(framebuffer).c_str(), attachment_index, FormatHandle(image_view_state.Handle()).c_str(),
+                        image_view_state.DescribeImageUsage(*this).c_str());
     }
 
     return skip;
@@ -497,29 +486,21 @@ bool CoreChecks::ValidateRenderPassStencilLayoutAgainstFramebufferImageUsage(VkI
                                                                              VkFramebuffer framebuffer, VkRenderPass renderpass,
                                                                              const Location &layout_loc) const {
     bool skip = false;
-    const auto &image_view = image_view_state.Handle();
-    const auto *image_state = image_view_state.image_state.get();
-    const auto &image = image_state->Handle();
-    const bool use_rp2 = layout_loc.function != Func::vkCmdBeginRenderPass;
-
+    const auto* image_state = image_view_state.image_state.get();
     if (!image_state) {
         return skip;  // validated at VUID-VkRenderPassBeginInfo-framebuffer-parameter
     }
-    auto image_usage = image_state->create_info.usage;
-    if (const auto stencil_usage_info =
-            vku::FindStructInPNextChain<VkImageStencilUsageCreateInfo>(image_state->create_info.pNext)) {
-        image_usage |= stencil_usage_info->stencilUsage;
-    }
 
-    if (IsImageLayoutStencilOnly(layout) && !(image_usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)) {
+    if (IsImageLayoutStencilOnly(layout) && !(image_view_state.inherited_usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)) {
+        const bool use_rp2 = layout_loc.function != Func::vkCmdBeginRenderPass;
         const char *vuid = use_rp2 ? "VUID-vkCmdBeginRenderPass2-stencilInitialLayout-02845"
                                    : "VUID-vkCmdBeginRenderPass-stencilInitialLayout-02843";
-        const LogObjectList objlist(image, renderpass, framebuffer, image_view);
+        const LogObjectList objlist(renderpass, framebuffer, image_view_state.Handle(), image_state->Handle());
         skip |= LogError(vuid, objlist, layout_loc,
-                         "is %s but the image attached to %s via %s"
-                         " was created with %s (not VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT).",
-                         string_VkImageLayout(layout), FormatHandle(framebuffer).c_str(), FormatHandle(image_view).c_str(),
-                         string_VkImageUsageFlags(image_usage).c_str());
+                         "is %s but %s attachment (%s) references an image which"
+                         " was not created with VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT.\n%s",
+                         string_VkImageLayout(layout), FormatHandle(framebuffer).c_str(),
+                         FormatHandle(image_view_state.Handle()).c_str(), image_view_state.DescribeImageUsage(*this).c_str());
     }
 
     return skip;
@@ -598,10 +579,8 @@ bool CoreChecks::ValidateFramebufferAndRenderPassLayouts(const vvl::CommandBuffe
         // If a separate layout is specified, look for that.
         const auto *attachment_desc_stencil_layout =
             vku::FindStructInPNextChain<VkAttachmentDescriptionStencilLayout>(render_pass_info->pAttachments[i].pNext);
-        if (const auto *attachment_description_stencil_layout =
-                vku::FindStructInPNextChain<VkAttachmentDescriptionStencilLayout>(render_pass_info->pAttachments[i].pNext);
-            attachment_description_stencil_layout) {
-            attachment_stencil_initial_layout = attachment_description_stencil_layout->stencilInitialLayout;
+        if (attachment_desc_stencil_layout) {
+            attachment_stencil_initial_layout = attachment_desc_stencil_layout->stencilInitialLayout;
         }
 
         std::shared_ptr<const CommandBufferImageLayoutMap> image_layout_map;
@@ -856,16 +835,16 @@ void CoreChecks::TransitionBeginRenderPassLayouts(vvl::CommandBuffer &cb_state, 
             vku::FindStructInPNextChain<VkAttachmentDescriptionStencilLayout>(rpci->pAttachments[i].pNext);
         if (attachment_description_stencil_layout) {
             const auto stencil_initial_layout = attachment_description_stencil_layout->stencilInitialLayout;
-            VkImageSubresourceRange sub_range = view_state->normalized_subresource_range;
+            VkImageSubresourceRange sub_range = view_state->GetRangeGeneratorRange(device_state->extensions);
             sub_range.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
             cb_state.TrackImageFirstLayout(*image_state, sub_range, 0, 0, initial_layout);
             sub_range.aspectMask = VK_IMAGE_ASPECT_STENCIL_BIT;
             cb_state.TrackImageFirstLayout(*image_state, sub_range, 0, 0, stencil_initial_layout);
         } else {
+            auto subresource_range = view_state->GetRangeGeneratorRange(device_state->extensions);
             // If layoutStencil is kInvalidLayout (meaning no separate depth/stencil layout), image view format has both depth
             // and stencil aspects, and subresource has only one of aspect out of depth or stencil, then the missing aspect will
             // also be transitioned and thus must be included explicitly
-            auto subresource_range = view_state->normalized_subresource_range;
             if (const VkFormat format = view_state->create_info.format; vkuFormatIsDepthAndStencil(format)) {
                 if (subresource_range.aspectMask & (VK_IMAGE_ASPECT_STENCIL_BIT | VK_IMAGE_ASPECT_DEPTH_BIT)) {
                     subresource_range.aspectMask |= VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;

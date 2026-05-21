@@ -83,7 +83,6 @@
             "crypto/fipsmodule/mlkem/mlkem.cc.inc",
             "crypto/fipsmodule/rand/ctrdrbg.cc.inc",
             "crypto/fipsmodule/rand/rand.cc.inc",
-            "crypto/fipsmodule/rsa/blinding.cc.inc",
             "crypto/fipsmodule/rsa/padding.cc.inc",
             "crypto/fipsmodule/rsa/rsa.cc.inc",
             "crypto/fipsmodule/rsa/rsa_impl.cc.inc",
@@ -486,6 +485,7 @@
             "include/openssl/target.h",
             "include/openssl/thread.h",
             "include/openssl/time.h",
+            "include/openssl/tls_prf.h",
             "include/openssl/trust_token.h",
             "include/openssl/type_check.h",
             "include/openssl/x509.h",
@@ -495,6 +495,7 @@
             "include/openssl/xwing.h"
         ],
         "internal_hdrs": [
+            "crypto/armv8_feature_parsing.h",
             "crypto/asn1/internal.h",
             "crypto/bio/internal.h",
             "crypto/bytestring/internal.h",
@@ -1012,7 +1013,7 @@
             "pki/testdata/verify_name_match_unittest/names/*.pem",
             "pki/testdata/verify_signed_data_unittest/*.pem",
             "pki/testdata/verify_unittest/*.der",
-            "pki/testdata/verify_unittest/self-issued.pem"
+            "pki/testdata/verify_unittest/*.pem"
         ]
     },
     "ssl_test": {
@@ -1052,7 +1053,6 @@
             "tool/rand.cc",
             "tool/server.cc",
             "tool/sign.cc",
-            "tool/speed.cc",
             "tool/tool.cc",
             "tool/transport_common.cc"
         ],
@@ -1067,6 +1067,35 @@
         // FuzzTest, this will be moot.
         "srcs": [
             "fuzz/*.cc"
+        ]
+    },
+    "bench": {
+        "internal_hdrs": [
+            "bench/internal.h"
+        ],
+        "srcs": [
+            "bench/aead.cc",
+            "bench/aes.cc",
+            "bench/base64.cc",
+            "bench/curve25519.cc",
+            "bench/ecdh.cc",
+            "bench/ecdsa.cc",
+            "bench/hash.cc",
+            "bench/hash_to_curve.cc",
+            "bench/hrss.cc",
+            "bench/main.cc",
+            "bench/mldsa.cc",
+            "bench/mlkem.cc",
+            "bench/rand.cc",
+            "bench/rsa.cc",
+            "bench/rsakeygen.cc",
+            "bench/scrypt.cc",
+            "bench/selftest.cc",
+            "bench/siphash.cc",
+            "bench/slhdsa.cc",
+            "bench/spake2.cc",
+            "bench/trust_token.cc",
+            "bench/x509.cc"
         ]
     },
     "rust_bssl_sys": {

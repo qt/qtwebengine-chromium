@@ -351,7 +351,7 @@ TEST(ParserDecodeTest, DecodeText) {
   EXPECT_EQ(L"🎨", PDF_DecodeText(ToSpan("\xFE\xFF\xD8\x3C\xDF\xA8")));
 }
 
-// https://crbug.com/pdfium/182
+// https://crbug.com/42270832
 TEST(ParserDecodeTest, DecodeTextWithUnicodeEscapes) {
   EXPECT_EQ(L"\x0020\x5370\x5237",
             PDF_DecodeText(ToSpan(

@@ -1,7 +1,7 @@
-/* Copyright (c) 2015-2025 The Khronos Group Inc.
- * Copyright (c) 2015-2025 Valve Corporation
- * Copyright (c) 2015-2025 LunarG, Inc.
- * Copyright (C) 2015-2024 Google Inc.
+/* Copyright (c) 2015-2026 The Khronos Group Inc.
+ * Copyright (c) 2015-2026 Valve Corporation
+ * Copyright (c) 2015-2026 LunarG, Inc.
+ * Copyright (C) 2015-2026 Google Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,8 +19,8 @@
 #include <vulkan/utility/vk_format_utils.h>
 #include "error_message/error_location.h"
 #include "stateless/stateless_validation.h"
-#include "generated/enum_flag_bits.h"
 #include "generated/dispatch_functions.h"
+#include "generated/enum_flag_bits.h"
 
 #include <bitset>
 
@@ -297,25 +297,28 @@ bool Device::manual_PreCallValidateQueuePresentKHR(VkQueue queue, const VkPresen
                              "(%" PRIu32 ") is not equal to %s (%" PRIu32 ").", present_timings_info->swapchainCount,
                              present_info_loc.dot(Field::swapchainCount).Fields().c_str(), pPresentInfo->swapchainCount);
         }
-        for (uint32_t i = 0; i < present_timings_info->swapchainCount; ++i) {
-            const auto &timing_info = present_timings_info->pTimingInfos[i];
-            const bool relative_time_flag = (timing_info.flags & VK_PRESENT_TIMING_INFO_PRESENT_AT_RELATIVE_TIME_BIT_EXT) != 0;
-            if (timing_info.targetTime != 0) {
-                if (!relative_time_flag && !enabled_features.presentAtAbsoluteTime) {
-                    skip |= LogError(
-                        "VUID-VkPresentTimingInfoEXT-targetTime-12236", device,
-                        present_info_loc.pNext(Struct::VkPresentTimingsInfoEXT, Field::pTimingInfos, i).dot(Field::targetTime),
-                        "is %" PRIu64 ", but flags are %s", timing_info.targetTime,
-                        string_VkPresentTimingInfoFlagsEXT(timing_info.flags).c_str());
-                }
-            } else if (relative_time_flag && !enabled_features.presentAtRelativeTime) {
-                skip |=
-                    LogError("VUID-VkPresentTimingInfoEXT-targetTime-12237", device,
-                             present_info_loc.pNext(Struct::VkPresentTimingsInfoEXT, Field::pTimingInfos, i).dot(Field::targetTime),
-                             "is %" PRIu64 ", but flags are %s", timing_info.targetTime,
-                             string_VkPresentTimingInfoFlagsEXT(timing_info.flags).c_str());
-            }
+    }
+
+    return skip;
+}
+
+bool Device::manual_PreCallValidateGetSwapchainTimeDomainPropertiesEXT(
+    VkDevice device, VkSwapchainKHR swapchain, VkSwapchainTimeDomainPropertiesEXT *pSwapchainTimeDomainProperties,
+    uint64_t *pTimeDomainsCounter, const Context &context) const {
+    bool skip = false;
+
+    const bool time_domains = pSwapchainTimeDomainProperties->pTimeDomains != nullptr;
+    const bool time_domain_ids = pSwapchainTimeDomainProperties->pTimeDomainIds != nullptr;
+    if (time_domains && time_domain_ids) {
+        if (pSwapchainTimeDomainProperties->timeDomainCount == 0) {
+            skip |= LogError(" VUID-VkSwapchainTimeDomainPropertiesEXT-pTimeDomains-12371", swapchain, context.error_obj.location,
+                             "pTimeDomains and pTimeDomainIds are not null, but timeDomainCount is 0.");
         }
+    } else if (time_domains || time_domain_ids) {
+        const char *msg = time_domains ? "pTimeDomains is not null, but pTimeDomainIds is null"
+                                       : "pTimeDomainIds is not null, but pTimeDomains is null";
+        skip |= LogError("VUID-VkSwapchainTimeDomainPropertiesEXT-pTimeDomains-12370", swapchain, context.error_obj.location, "%s",
+                         msg);
     }
 
     return skip;
@@ -624,6 +627,24 @@ bool Instance::manual_PreCallValidateCreateAndroidSurfaceKHR(VkInstance instance
     return skip;
 }
 #endif  // VK_USE_PLATFORM_ANDROID_KHR
+
+#ifdef VK_USE_PLATFORM_DIRECTFB_EXT
+bool Device::manual_PreCallValidateCreateDirectFBSurfaceEXT(VkInstance instance, const VkDirectFBSurfaceCreateInfoEXT* pCreateInfo,
+                                                            const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface,
+                                                            const Context& context) const {
+    bool skip = false;
+    const auto& error_obj = context.error_obj;
+    if (pCreateInfo->dfb == nullptr) {
+        skip |= LogError("VUID-VkDirectFBSurfaceCreateInfoEXT-dfb-04117", instance,
+                         error_obj.location.dot(Field::pCreateInfo).dot(Field::dfb), "is NULL.");
+    }
+    if (pCreateInfo->surface == nullptr) {
+        skip |= LogError("VUID-VkDirectFBSurfaceCreateInfoEXT-surface-04118", instance,
+                         error_obj.location.dot(Field::pCreateInfo).dot(Field::surface), "is NULL.");
+    }
+    return skip;
+}
+#endif  // VK_USE_PLATFORM_DIRECTFB_EXT
 
 bool Device::manual_PreCallValidateGetCalibratedTimestampsKHR(VkDevice device, uint32_t timestampCount,
                                                               const VkCalibratedTimestampInfoKHR *pTimestampInfos,

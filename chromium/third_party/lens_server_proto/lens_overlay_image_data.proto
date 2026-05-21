@@ -2,13 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-syntax = 'proto3';
+edition = "2023";
 
 option optimize_for = LITE_RUNTIME;
 
 package lens;
 
 import "lens_overlay_geometry.proto";
+
+option features.field_presence = IMPLICIT;
 
 // Data representing image. Contains image bytes or image retrieval identifier.
 message ImageData {
@@ -39,6 +41,9 @@ message ImageMetadata {
   // Required. Image height in pixels. Should reflect the actual size of
   // image_bytes.
   int32 height = 2;
+
+  // Optional. The file name of the image.
+  string file_name = 7;
 
   reserved 6;
 }

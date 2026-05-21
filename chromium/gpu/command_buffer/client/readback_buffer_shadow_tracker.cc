@@ -27,10 +27,13 @@ ReadbackBufferShadowTracker::Buffer::~Buffer() {
 uint32_t ReadbackBufferShadowTracker::Buffer::Alloc(int32_t* shm_id,
                                                     uint32_t* shm_offset,
                                                     bool* already_allocated) {
-  *already_allocated = readback_shm_address_ != nullptr;
-  if (!readback_shm_address_) {
-    readback_shm_address_ =
-        mapped_memory_->Alloc(size_, &shm_id_, &shm_offset_);
+  *already_allocated = !readback_buffer_.empty();
+  if (readback_buffer_.empty()) {
+    readback_buffer_ = mapped_memory_->Alloc(size_, &shm_id_, &shm_offset_);
+    if (readback_buffer_.empty()) {
+      shm_id_ = -1;
+      shm_offset_ = 0;
+    }
   }
   *shm_id = shm_id_;
   *shm_offset = shm_offset_;
@@ -38,31 +41,32 @@ uint32_t ReadbackBufferShadowTracker::Buffer::Alloc(int32_t* shm_id,
 }
 
 void ReadbackBufferShadowTracker::Buffer::Free() {
-  if (readback_shm_address_) {
-    mapped_memory_->FreePendingToken(readback_shm_address_,
+  if (!readback_buffer_.empty()) {
+    mapped_memory_->FreePendingToken(readback_buffer_.data(),
                                      helper_->InsertToken());
   }
-  readback_shm_address_ = nullptr;
+  readback_buffer_ = {};
 }
 
-void* ReadbackBufferShadowTracker::Buffer::MapReadbackShm(uint32_t offset,
-                                                          uint32_t map_size) {
+base::span<uint8_t> ReadbackBufferShadowTracker::Buffer::MapReadbackShm(
+    uint32_t offset,
+    uint32_t map_size) {
   DCHECK(!is_mapped_);
   if (serial_of_readback_data_ != serial_of_last_write_) {
-    return nullptr;
+    return {};
   }
-  if (!readback_shm_address_) {
-    return nullptr;
+  if (readback_buffer_.empty()) {
+    return {};
   }
   if (map_size > size_) {
-    return nullptr;
+    return {};
   }
   DCHECK_GE(size_, map_size);
   if (offset > size_ - map_size) {
-    return nullptr;
+    return {};
   }
   is_mapped_ = true;
-  return &UNSAFE_TODO(static_cast<uint8_t*>(readback_shm_address_)[offset]);
+  return readback_buffer_.subspan(offset, map_size);
 }
 
 bool ReadbackBufferShadowTracker::Buffer::UnmapReadbackShm() {

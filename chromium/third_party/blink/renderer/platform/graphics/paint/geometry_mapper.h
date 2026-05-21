@@ -50,6 +50,21 @@ class PLATFORM_EXPORT GeometryMapper {
       const TransformPaintPropertyNode& source,
       const TransformPaintPropertyNode& destination);
 
+  // The function is the same as gfx::Transform SourceToDestinationProjection
+  // but uses an out-param for the transform, and returns a bool indicating
+  // success
+  static bool SourceToDestinationProjection(
+      const TransformPaintPropertyNodeOrAlias& source,
+      const TransformPaintPropertyNodeOrAlias& destination,
+      gfx::Transform& projection) {
+    return SourceToDestinationProjection(source.Unalias(),
+                                         destination.Unalias(), projection);
+  }
+  static bool SourceToDestinationProjection(
+      const TransformPaintPropertyNode& source,
+      const TransformPaintPropertyNode& destination,
+      gfx::Transform& projection);
+
   // Same as SourceToDestinationProjection() except that it maps the rect
   // rather than returning the matrix.
   // |mapping_rect| is both input and output. Its type can be gfx::RectF,
@@ -149,6 +164,15 @@ class PLATFORM_EXPORT GeometryMapper {
   static bool LocalToAncestorVisualRect(
       const PropertyTreeState& local_state,
       const PropertyTreeState& ancestor_state,
+      FloatClipRect& mapping_rect,
+      OverlayScrollbarClipBehavior = kIgnoreOverlayScrollbarSize,
+      VisualRectFlags flags = kDefaultVisualRectFlags);
+  // Maps |local_state| to the local root's viewport using the GeometryMapper
+  // fast path. This stops at the remote boundary; callers must perform any
+  // remote-frame mapping (e.g. MapToVisualRectInRemoteRootFrame) to reach the
+  // embedder's viewport.
+  static bool LocalToLocalRootViewportRect(
+      const PropertyTreeState& local_state,
       FloatClipRect& mapping_rect,
       OverlayScrollbarClipBehavior = kIgnoreOverlayScrollbarSize,
       VisualRectFlags flags = kDefaultVisualRectFlags);

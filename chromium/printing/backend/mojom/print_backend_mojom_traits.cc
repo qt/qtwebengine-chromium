@@ -4,11 +4,12 @@
 
 #include "printing/backend/mojom/print_backend_mojom_traits.h"
 
+#include <algorithm>
 #include <set>
 #include <utility>
 
-#include "base/containers/contains.h"
 #include "base/logging.h"
+#include "base/notreached.h"
 #include "build/build_config.h"
 #include "ui/gfx/geometry/mojom/geometry.mojom-shared.h"
 #include "ui/gfx/geometry/mojom/geometry_mojom_traits.h"
@@ -345,8 +346,8 @@ bool StructTraits<printing::mojom::PrinterSemanticCapsAndDefaultsDataView,
     // If non-null `default_quality`, there should be a matching element in
     // `qualities` array.
     if (default_quality) {
-      if (!base::Contains(qualities, *default_quality,
-                          &printing::PageOutputQualityAttribute::name)) {
+      if (!std::ranges::contains(qualities, *default_quality,
+                                 &printing::PageOutputQualityAttribute::name)) {
         DLOG(ERROR) << "Non-null default quality, but page output qualities "
                        "does not contain default quality";
         return false;

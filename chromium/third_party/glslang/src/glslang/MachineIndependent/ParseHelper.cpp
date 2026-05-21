@@ -565,7 +565,7 @@ TIntermTyped* TParseContext::handleBracketDereference(const TSourceLoc& loc, TIn
     variableCheck(base);
 
     if (! base->isArray() && ! base->isMatrix() && ! base->isVector() && ! base->getType().isCoopMat() &&
-        ! base->isReference() && ! base->getType().isCoopVecNV()) {
+        ! base->isReference() && ! base->getType().isCoopVecOrLongVector()) {
         if (base->getAsSymbolNode())
             error(loc, " left of '[' is not of type array, matrix, or vector ", base->getAsSymbolNode()->getName().c_str(), "");
         else
@@ -996,7 +996,7 @@ TIntermTyped* TParseContext::handleDotDereference(const TSourceLoc& loc, TInterm
             const char* feature = ".length() on vectors and matrices";
             requireProfile(loc, ~EEsProfile, feature);
             profileRequires(loc, ~EEsProfile, 420, E_GL_ARB_shading_language_420pack, feature);
-        } else if (!base->getType().isCoopMat() && !base->getType().isCoopVecNV()) {
+        } else if (!base->getType().isCoopMat() && !base->getType().isCoopVecOrLongVector()) {
             bool enhanced = intermediate.getEnhancedMsgs();
             error(loc, "does not operate on this type:", field.c_str(), base->getType().getCompleteString(enhanced).c_str());
             return base;
@@ -1146,6 +1146,22 @@ TIntermTyped* TParseContext::handleDotSwizzle(const TSourceLoc& loc, TIntermType
     return result;
 }
 
+TIntermTyped* TParseContext::handleTypeCast(const TSourceLoc& loc, TType *castType, TIntermTyped *base)
+{
+    TIntermTyped *result = base;
+    requireExtensions(loc, 1, &E_GL_NV_explicit_typecast, "explicit typecast");
+    if (castType->isScalar() || castType->isVector() || castType->isMatrix() || castType->isReference()) {
+        if (base->getAsAggregate() && !base->getAsAggregate()->getSequence().empty() ) {
+            warn(loc, "typecast is unary operator and takes only a single expression","","");
+        }
+        result = addConstructor(loc, base, *castType);
+    }
+    else
+        error(loc, "type cast has to be either scalar, vector, matrix or buffer reference", "", "");
+
+
+    return result;
+}
 void TParseContext::blockMemberExtensionCheck(const TSourceLoc& loc, const TIntermTyped* base, int member, const TString& memberName)
 {
     // a block that needs extension checking is either 'base', or if arrayed,
@@ -1421,6 +1437,7 @@ TIntermTyped* TParseContext::handleFunctionCall(const TSourceLoc& loc, TFunction
                 if ((*fnCandidate)[0].type->getSampler().isMultiSample() && version <= 140)
                     requireExtensions(loc, 1, &E_GL_ARB_texture_multisample, fnCandidate->getName().c_str());
             }
+            bool hasLongVectorArg = false;
             if (arguments != nullptr) {
                 // Make sure qualifications work for these arguments.
                 TIntermAggregate* aggregate = arguments->getAsAggregate();
@@ -1516,6 +1533,10 @@ TIntermTyped* TParseContext::handleFunctionCall(const TSourceLoc& loc, TFunction
                         }
                     }
 
+                    if (argType.isLongVector()) {
+                        hasLongVectorArg = true;
+                    }
+
                     // TODO 4.5 functionality:  A shader will fail to compile
                     // if the value passed to the memargument of an atomic memory function does not correspond to a buffer or
                     // shared variable. It is acceptable to pass an element of an array or a single component of a vector to the
@@ -1558,6 +1579,12 @@ TIntermTyped* TParseContext::handleFunctionCall(const TSourceLoc& loc, TFunction
                     userFunctionCallCheck(loc, *call);
             }
 
+            if (hasLongVectorArg && fnCandidate->getBuiltInOp() != EOpNull) {
+                TType longVectorResultType(EbtVoid);
+                handleLongVectorBuiltin(loc, fnCandidate, &longVectorResultType, arguments);
+                result->setType(longVectorResultType);
+            }
+
             // Convert 'out' arguments.  If it was a constant folded built-in, it won't be an aggregate anymore.
             // Built-ins with a single argument aren't called with an aggregate, but they also don't have an output.
             // Also, build the qualifier list for user function calls, which are always called with an aggregate.
@@ -1574,7 +1601,7 @@ TIntermTyped* TParseContext::handleFunctionCall(const TSourceLoc& loc, TFunction
 
             handleVector2CoopMatConversionCall(loc, fnCandidate, result, arguments);
 
-            if (result->getAsTyped()->getType().isCoopVecNV() &&
+            if (result->getAsTyped()->getType().isCoopVecOrLongVector() &&
                !result->getAsTyped()->getType().isParameterized()) {
                 if (auto unaryNode = result->getAsUnaryNode())
                     result->setType(unaryNode->getOperand()->getAsTyped()->getType());
@@ -2179,6 +2206,12 @@ void TParseContext::handleVector2CoopMatConversionCall(const TSourceLoc& loc, co
   }
 }
 
+void TParseContext::handleLongVectorBuiltin(const TSourceLoc& loc, const TFunction* fnCandidate, TType* resultType, TIntermNode* arguments)
+{
+    if (!IsSupportedLongVectorBuiltin(fnCandidate, resultType, arguments)) {
+        error(loc, "can't resolve types (ambiguous long vector overload)", fnCandidate->getName().c_str(), "");
+    }
+}
 
 TIntermTyped* TParseContext::handleBuiltInFunctionCall(TSourceLoc loc, TIntermNode* arguments,
                                                        const TFunction& function)
@@ -2187,6 +2220,26 @@ TIntermTyped* TParseContext::handleBuiltInFunctionCall(TSourceLoc loc, TIntermNo
     TIntermTyped *result = intermediate.addBuiltInFunctionCall(loc, function.getBuiltInOp(),
                                                                function.getParamCount() == 1,
                                                                arguments, function.getType());
+
+    // EXT_descriptor_heap
+    // All the image atomic ops' first param is image variable.
+    if (extensionTurnedOn(E_GL_EXT_descriptor_heap) && function.getBuiltInOp() <= EOpImageAtomicStore &&
+        function.getBuiltInOp() >= EOpImageAtomicAdd) {
+        TIntermNode* imageNode = nullptr;
+        if (arguments->getAsAggregate() && arguments->getAsAggregate()->getSequence().size() > 0)
+            imageNode = arguments->getAsAggregate()->getSequence()[0];
+        else if (arguments->getAsUnaryNode())
+            imageNode = arguments->getAsUnaryNode();
+
+        if (imageNode && imageNode->getAsBinaryNode()) {
+            auto imageSymbol = imageNode->getAsBinaryNode()->getLeft();
+            if (imageSymbol && imageSymbol->getType().isImage()) {
+                imageSymbol->getQualifier().setUsedByAtomic();
+                result->getQualifier().setUsedByAtomic();
+            }
+        }
+    }
+
     if (result != nullptr && obeyPrecisionQualifiers())
         computeBuiltinPrecisions(*result, function);
 
@@ -2475,7 +2528,7 @@ TIntermTyped* TParseContext::handleLengthMethod(const TSourceLoc& loc, TFunction
             length = type.getMatrixCols();
         else if (type.isVector())
             length = type.getVectorSize();
-        else if (type.isCoopMat() || type.isCoopVecNV())
+        else if (type.isCoopMat() || type.isCoopVecOrLongVector())
             return intermediate.addBuiltInFunctionCall(loc, EOpArrayLength, true, intermNode, TType(EbtInt));
         else {
             // we should not get here, because earlier semantic checking should have prevented this path
@@ -3600,10 +3653,10 @@ void TParseContext::builtInOpCheck(const TSourceLoc& loc, const TFunction& fnCan
             error(loc, "second parameter must not have floate5m2 or floate4m3 basic type", "", "");
         }
 
-        if (!(op0Type.isScalar() || op0Type.isVector() || op0Type.isCoopMatKHR())) {
+        if (!(op0Type.isScalar() || op0Type.isVector() || op0Type.isLongVector() || op0Type.isCoopMatKHR())) {
             error(loc, "first parameter must be scalar, vector, or cooperative matrix", "", "");
         }
-        if (!(op1Type.isScalar() || op1Type.isVector() || op1Type.isCoopMatKHR())) {
+        if (!(op1Type.isScalar() || op1Type.isVector() || op1Type.isLongVector() || op1Type.isCoopMatKHR())) {
             error(loc, "second parameter must be scalar, vector, or cooperative matrix", "", "");
         }
         if (!(op0Type.sameElementShape(op1Type) || op0Type.sameCoopMatShape(op1Type))) {
@@ -4188,6 +4241,10 @@ void TParseContext::reservedErrorCheck(const TSourceLoc& loc, const TString& ide
     // "Identifiers starting with "gl_" are reserved for use by OpenGL, and may not be
     // declared in a shader; this results in a compile-time error."
     if (! symbolTable.atBuiltInLevel()) {
+        // The extension GL_EXT_conservative_depth allows us to declare "gl_FragDepth".
+        if (identifier == "gl_FragDepth" && extensionTurnedOn(E_GL_EXT_conservative_depth))
+            return;
+
         if (builtInName(identifier) && !extensionTurnedOn(E_GL_EXT_spirv_intrinsics))
             // The extension GL_EXT_spirv_intrinsics allows us to declare identifiers starting with "gl_".
             error(loc, "identifiers starting with \"gl_\" are reserved", identifier.c_str(), "");
@@ -5830,7 +5887,8 @@ TSymbol* TParseContext::redeclareBuiltinVariable(const TSourceLoc& loc, const TS
 
     bool nonEsRedecls = (!isEsProfile() && (version >= 130 || identifier == "gl_TexCoord"));
     bool    esRedecls = (isEsProfile() &&
-                         (version >= 320 || extensionsTurnedOn(Num_AEP_shader_io_blocks, AEP_shader_io_blocks)));
+                         (version >= 320 || extensionsTurnedOn(Num_AEP_shader_io_blocks, AEP_shader_io_blocks) ||
+                          (identifier == "gl_FragDepth" && extensionTurnedOn(E_GL_EXT_conservative_depth))));
     if (! esRedecls && ! nonEsRedecls)
         return nullptr;
 
@@ -6284,9 +6342,11 @@ void TParseContext::paramCheckFix(const TSourceLoc& loc, const TQualifier& quali
     paramCheckFixStorage(loc, qualifier.storage, type);
 }
 
-void TParseContext::nestedBlockCheck(const TSourceLoc& loc)
+void TParseContext::nestedBlockCheck(const TSourceLoc& loc, const bool allowedInnerStruct)
 {
-    if (structNestingLevel > 0 || blockNestingLevel > 0)
+    if ((!allowedInnerStruct && structNestingLevel > 0) ||
+        (allowedInnerStruct && structNestingLevel <= 0) ||
+        blockNestingLevel > 0)
         error(loc, "cannot nest a block definition inside a structure or block", "", "");
     ++blockNestingLevel;
 }
@@ -6368,7 +6428,8 @@ void TParseContext::structTypeCheck(const TSourceLoc& /*loc*/, TPublicType& publ
         const TSourceLoc& memberLoc = typeList[member].loc;
         if (memberQualifier.isAuxiliary() ||
             memberQualifier.isInterpolation() ||
-            (memberQualifier.storage != EvqTemporary && memberQualifier.storage != EvqGlobal))
+            (memberQualifier.storage != EvqTemporary && memberQualifier.storage != EvqGlobal &&
+             !memberQualifier.layoutDescriptorHeap && !memberQualifier.layoutDescriptorInnerBlock))
             error(memberLoc, "cannot use storage or interpolation qualifiers on structure members", typeList[member].type->getFieldName().c_str(), "");
         if (memberQualifier.isMemory())
             error(memberLoc, "cannot use memory qualifiers on structure members", typeList[member].type->getFieldName().c_str(), "");
@@ -6661,6 +6722,12 @@ void TParseContext::setLayoutQualifier(const TSourceLoc& loc, TPublicType& publi
             publicType.qualifier.layoutFormat = format;
             return;
         }
+    }
+    if (id == "descriptor_heap") {
+        requireExtensions(loc, 1, &E_GL_EXT_descriptor_heap, "descriptor_stride");
+        requireVulkan(loc, "descriptor_heap");
+        publicType.qualifier.layoutDescriptorHeap = true;
+        return;
     }
     if (id == "push_constant") {
         requireVulkan(loc, "push_constant");
@@ -7182,6 +7249,45 @@ void TParseContext::setLayoutQualifier(const TSourceLoc& loc, TPublicType& publi
         return;
     }
 
+    if (id == "bank") {
+        requireExtensions(loc, 1, &E_GL_NV_push_constant_bank, "bank");
+        if (nonLiteral)
+            error(loc, "needs a literal integer", id.c_str(), "");
+        else if (value < 0 || (unsigned int)value >= TQualifier::layoutBankEnd)
+            error(loc, "bank out of range", id.c_str(), "");
+        else
+            publicType.qualifier.layoutBank = value;
+        return;
+    }
+    if (id == "member_offset") {
+        requireExtensions(loc, 1, &E_GL_NV_push_constant_bank, "member_offset");
+        if (nonLiteral)
+            error(loc, "needs a literal integer", id.c_str(), "");
+        else if (value < 0)
+            error(loc, "must be equal or greater than 0", id.c_str(), "");
+        else
+            publicType.qualifier.layoutMemberOffset = value;
+        return;
+    }
+
+    if (id == "descriptor_stride") {
+        requireExtensions(loc, 1, &E_GL_EXT_descriptor_heap, "descriptor_stride");
+        requireVulkan(loc, "descriptor_stride");
+        if (!IsPow2(value))
+            error(loc, "must be a power of 2", "descriptor_stride", "");
+        else
+            publicType.qualifier.layoutDescriptorStride = uint32_t(value);
+        return;
+    }
+
+    if (id == "heap_offset") {
+        requireExtensions(loc, 1, &E_GL_EXT_descriptor_heap, "heap_offset");
+        requireExtensions(loc, 1, &E_GL_EXT_structured_descriptor_heap, "heap_offset");
+        requireVulkan(loc, "heap_offset");
+        publicType.qualifier.layoutHeapOffset = uint32_t(value);
+        return;
+    }
+
     switch (language) {
     case EShLangTessControl:
         if (id == "vertices") {
@@ -7422,6 +7528,14 @@ void TParseContext::mergeObjectLayoutQualifiers(TQualifier& dst, const TQualifie
             dst.layoutXfbOffset = src.layoutXfbOffset;
         if (src.hasAttachment())
             dst.layoutAttachment = src.layoutAttachment;
+        if (src.layoutDescriptorHeap)
+            dst.layoutDescriptorHeap = true;
+        if (src.layoutDescriptorInnerBlock)
+            dst.layoutDescriptorInnerBlock = true;
+        if (src.layoutDescriptorStride != TQualifier::layoutDescriptorStrideEnd)
+            dst.layoutDescriptorStride = src.layoutDescriptorStride;
+        if (src.layoutHeapOffset != 0)
+            dst.layoutHeapOffset = src.layoutHeapOffset;
         if (src.layoutPushConstant)
             dst.layoutPushConstant = true;
 
@@ -7453,6 +7567,10 @@ void TParseContext::mergeObjectLayoutQualifiers(TQualifier& dst, const TQualifie
         dst.layoutTileAttachmentQCOM |= src.layoutTileAttachmentQCOM;
         if (src.layoutHitObjectShaderRecordEXT)
             dst.layoutHitObjectShaderRecordEXT = true;
+        if (src.hasBank())
+            dst.layoutBank = src.layoutBank;
+        if (src.hasMemberOffset())
+            dst.layoutMemberOffset = src.layoutMemberOffset;
     }
 }
 
@@ -7708,7 +7826,7 @@ void TParseContext::layoutTypeCheck(const TSourceLoc& loc, const TType& type)
 
         // SPIR-V
         if (spvVersion.spv > 0) {
-            if (qualifier.isUniformOrBuffer()) {
+            if (qualifier.isUniformOrBuffer() && !intermediate.IsRequestedExtension(E_GL_EXT_descriptor_heap)) {
                 if (type.getBasicType() == EbtBlock && !qualifier.isPushConstant() &&
                        !qualifier.isShaderRecord() &&
                        !qualifier.hasAttachment() &&
@@ -7832,6 +7950,8 @@ static bool storageCanHaveLayoutInBlock(const enum TStorageQualifier storage)
     case EvqUniform:
     case EvqBuffer:
     case EvqShared:
+    case EvqSamplerHeap:
+    case EvqResourceHeap:
         return true;
     default:
         return false;
@@ -7967,6 +8087,21 @@ void TParseContext::layoutQualifierCheck(const TSourceLoc& loc, const TQualifier
     if (qualifier.storage == EvqHitAttr && qualifier.hasLayout()) {
         error(loc, "cannot apply layout qualifiers to hitAttributeNV variable", "hitAttributeNV", "");
     }
+    if (qualifier.hasBank()) {
+        if (!qualifier.isPushConstant())
+            error(loc, "can only be used with push_constant", "bank", "");
+    }
+    if (qualifier.hasMemberOffset()) {
+        if (!qualifier.isPushConstant())
+            error(loc, "can only be used with push_constant", "member_offset", "");
+    }
+
+    if (qualifier.layoutDescriptorStride != TQualifier::layoutDescriptorStrideEnd &&
+        !qualifier.layoutDescriptorHeap)
+        error(loc, "must specify 'descriptor_heap' to use 'descriptor_stride'", "descriptor_stride", "");
+    if (qualifier.layoutHeapOffset != 0 && !qualifier.layoutDescriptorHeap &&
+        qualifier.storage != EvqSamplerHeap && qualifier.storage != EvqResourceHeap)
+        error(loc, "must specify 'descriptor_heap' to use 'heap_offset'", "heap_offset", "");
 }
 
 // For places that can't have shader-level layout qualifiers
@@ -8298,12 +8433,16 @@ const TFunction* TParseContext::findFunction400(const TSourceLoc& loc, const TFu
             if (fromElementType == toElementType)
                 return true;
         }
+        if (TType::vectorAndLongVectorMatch(from, to))
+            return true;
         if (from.isArray() || to.isArray() || ! from.sameElementShape(to))
             return false;
         if (from.isCoopMat() && to.isCoopMat())
             return from.sameCoopMatBaseType(to);
         if (from.isCoopVecNV() && to.isCoopVecNV())
             return from.sameCoopVecBaseType(to);
+        if (from.isLongVector() && to.isLongVector())
+            return from.sameLongVectorBaseType(to);
         if (from.isTensorARM() && to.isTensorARM())
             return from.sameTensorBaseTypeARM(to);
         return intermediate.canImplicitlyPromote(from.getBasicType(), to.getBasicType());
@@ -8314,10 +8453,13 @@ const TFunction* TParseContext::findFunction400(const TSourceLoc& loc, const TFu
     // Assumes 'convertible' already said true.
     const auto better = [&](const TType& from, const TType& to1, const TType& to2) -> bool {
         // 1. exact match
-        if (from == to2)
-            return from != to1;
-        if (from == to1)
+        bool to2Matches = from == to2 || (from.isLongVector() && to2.getBasicType() == EbtLongVector);
+        bool to1Matches = from == to1 || (from.isLongVector() && to1.getBasicType() == EbtLongVector);
+        if (to2Matches)
+            return !to1Matches;
+        if (to1Matches)
             return false;
+
         if (extensionTurnedOn(E_GL_NV_gpu_shader5)) {
             // This map refers to the conversion table mentioned under the 
             // section "Modify Section 6.1, Function Definitions, p. 63" in NV_gpu_shader5 spec
@@ -8411,12 +8553,16 @@ const TFunction* TParseContext::findFunctionExplicitTypes(const TSourceLoc& loc,
             if (fromElementType == toElementType)
                 return true;
         }
+        if (TType::vectorAndLongVectorMatch(from, to))
+            return true;
         if (from.isArray() || to.isArray() || ! from.sameElementShape(to))
             return false;
         if (from.isCoopMat() && to.isCoopMat())
             return from.sameCoopMatBaseType(to);
         if (from.isCoopVecNV() && to.isCoopVecNV())
             return from.sameCoopVecBaseType(to);
+        if (from.isLongVector() && to.isLongVector())
+            return from.sameLongVectorBaseType(to);
         if (from.isTensorARM() && to.isTensorARM())
             return from.sameTensorBaseTypeARM(to);
         return intermediate.canImplicitlyPromote(from.getBasicType(), to.getBasicType());
@@ -8427,9 +8573,11 @@ const TFunction* TParseContext::findFunctionExplicitTypes(const TSourceLoc& loc,
     // Assumes 'convertible' already said true.
     const auto better = [this](const TType& from, const TType& to1, const TType& to2) -> bool {
         // 1. exact match
-        if (from == to2)
-            return from != to1;
-        if (from == to1)
+        bool to2Matches = from == to2 || (from.isLongVector() && to2.getBasicType() == EbtLongVector);
+        bool to1Matches = from == to1 || (from.isLongVector() && to1.getBasicType() == EbtLongVector);
+        if (to2Matches)
+            return !to1Matches;
+        if (to1Matches)
             return false;
 
         // 2. Promotion (integral, floating-point) is better
@@ -8722,6 +8870,11 @@ bool TParseContext::vkRelaxedRemapUniformVariable(const TSourceLoc& loc, TString
 
     // merge qualifiers
     mergeObjectLayoutQualifiers(updatedBlock->getWritableType().getQualifier(), type.getQualifier(), true);
+
+    // set default value for bank when no decoration is present. 
+    if (updatedBlock->getWritableType().getQualifier().isPushConstant() && !updatedBlock->getWritableType().getQualifier().hasBank()) {
+        updatedBlock->getWritableType().getQualifier().layoutBank = 0;
+    }
 
     return true;
 }
@@ -9072,7 +9225,15 @@ TIntermNode* TParseContext::declareVariable(const TSourceLoc& loc, TString& iden
 
         if (!publicType.typeParameters || !publicType.typeParameters->arraySizes || publicType.typeParameters->arraySizes->getNumDims() != 1) {
             error(loc, "expected two type parameters", identifier.c_str(), "");
-        } else if (publicType.typeParameters->arraySizes->getDimSize(0) <= 0) {
+        } else if (publicType.typeParameters->arraySizes->getDimNode(0) == nullptr && publicType.typeParameters->arraySizes->getDimSize(0) <= 0) {
+            error(loc, "expected positive number of components", identifier.c_str(), "");
+        }
+    } else if (type.isLongVector()) {
+        intermediate.setUseStorageBuffer();
+
+        if (!publicType.typeParameters || !publicType.typeParameters->arraySizes || publicType.typeParameters->arraySizes->getNumDims() != 1) {
+            error(loc, "expected two type parameters", identifier.c_str(), "");
+        } else if (publicType.typeParameters->arraySizes->getDimNode(0) == nullptr && publicType.typeParameters->arraySizes->getDimSize(0) <= 0) {
             error(loc, "expected positive number of components", identifier.c_str(), "");
         }
     } else if (type.isTensorARM()) {
@@ -9214,6 +9375,11 @@ TIntermNode* TParseContext::declareVariable(const TSourceLoc& loc, TString& iden
             return nullptr;
         }
         initNode = executeInitializer(loc, initializer, variable);
+    }
+
+    // EXT_descriptor_heap
+    if (!untypedHeapCheck(symbol, type, loc, identifier.c_str())) {
+        return nullptr;
     }
 
     // look for errors in layout qualifier use
@@ -10157,6 +10323,60 @@ void TParseContext::updateBindlessQualifier(TType& memberType)
     }
 }
 
+void TParseContext::descHeapBuiltinRemap(TType* type, bool isInnerBlock)
+{
+    if (type->isStruct()) {
+        TTypeList* types = type->getWritableStruct();
+        for (auto typeLoc : *types) {
+            descHeapBuiltinRemap(typeLoc.type, isInnerBlock);
+        }
+    }
+
+    auto* qualifier = &type->getQualifier();
+    if (type->getBasicType() == EbtSampler) {
+        if (type->isImage() || type->isTexture())
+            qualifier->builtIn = EbvResourceHeapEXT;
+        else
+            qualifier->builtIn = EbvSamplerHeapEXT;
+        qualifier->layoutDescriptorHeap = true;
+    } else if (qualifier->isUniformOrBuffer() || type->getBasicType() == EbtAccStruct) {
+        qualifier->builtIn = EbvResourceHeapEXT;
+        qualifier->layoutDescriptorHeap = true;
+        qualifier->layoutDescriptorInnerBlock = isInnerBlock;
+    }
+ }
+
+bool TParseContext::untypedHeapCheck(TSymbol* symbol, const TType& type, const TSourceLoc& loc, const char* name)
+{
+    // EXT_descriptor_heap
+    bool isHeapStruct =
+        (type.getQualifier().storage == EvqSamplerHeap || type.getQualifier().storage == EvqResourceHeap);
+
+    if (intermediate.IsRequestedExtension(E_GL_EXT_descriptor_heap) && spvVersion.vulkan > 0 &&
+        !type.getQualifier().hasSet() && !type.getQualifier().hasBinding()) {
+        if (type.getQualifier().layoutDescriptorHeap || isHeapStruct) {
+            if ((intermediate.isEsProfile() && intermediate.getVersion() < 310) ||
+                (!intermediate.isEsProfile() && intermediate.getVersion() < 420)) {
+                TString warnMsg = "layout(descriptor_heap) is turned on beyond version/profile limits.";
+                infoSink.info.message(EPrefixWarning, warnMsg.c_str());
+            }
+            if (IsAnonymous(symbol->getName()) &&
+                (type.getQualifier().isUniformOrBuffer() || type.getBasicType() == EbtBlock)) {
+                error(loc, "layout(descriptor_heap) decorated block should be explicitly "
+                    "declared with a run-time sized array type.", name, "");
+                return false;
+            }
+            if (!type.containsHeapArray()) {
+                error(loc, "layout(descriptor_heap) decorated variable could only be declared as an array.",
+                      name, "");
+                return false;
+            }
+            descHeapBuiltinRemap(&symbol->getWritableType(), isHeapStruct);
+        }
+    }
+    return true;
+}
+
 //
 // Do everything needed to add an interface block. Returns the declarator node if there's an instance declaration.
 //
@@ -10208,12 +10428,12 @@ TIntermNode* TParseContext::declareBlock(const TSourceLoc& loc, TTypeList& typeL
         }
 
         // For bindless texture, sampler can be declared as uniform/storage block member,
-        if (memberType.containsOpaque()) {
+        if (memberType.containsOpaque() && !extensionTurnedOn(E_GL_EXT_structured_descriptor_heap)) {
             if (memberType.containsSampler() && extensionTurnedOn(E_GL_ARB_bindless_texture))
                 updateBindlessQualifier(memberType);
             else
                 error(memberLoc, "member of block cannot be or contain a sampler, image, or atomic_uint type", typeList[member].type->getFieldName().c_str(), "");
-            }
+        }
 
         if (memberType.containsCoopMat())
             error(memberLoc, "member of block cannot be or contain a cooperative matrix type", typeList[member].type->getFieldName().c_str(), "");
@@ -10439,6 +10659,11 @@ TIntermNode* TParseContext::declareBlock(const TSourceLoc& loc, TTypeList& typeL
         return nullptr;
     }
 
+    // EXT_descriptor_heap
+    if (!untypedHeapCheck(&variable, blockType, loc, blockName->c_str())) {
+        return nullptr;
+    }
+
     // Check for general layout qualifier errors
     layoutObjectCheck(loc, variable);
 
@@ -10553,6 +10778,14 @@ void TParseContext::blockStageIoCheck(const TSourceLoc& loc, const TQualifier& q
     case EvqHitObjectAttrEXT:
         profileRequires(loc, ~EEsProfile, 460, E_GL_EXT_shader_invocation_reorder, "hitObjectAttributeEXT block");
         requireStage(loc, (EShLanguageMask)(EShLangRayGenMask | EShLangClosestHitMask | EShLangMissMask), "hitObjectAttributeEXT block");
+        break;
+    case EvqResourceHeap:
+        profileRequires(loc, ~EEsProfile, 460, E_GL_EXT_structured_descriptor_heap, "resourceheap block");
+        profileRequires(loc, ~EEsProfile, 460, E_GL_EXT_descriptor_heap, "resourceheap block");
+        break;
+    case EvqSamplerHeap:
+        profileRequires(loc, ~EEsProfile, 460, E_GL_EXT_structured_descriptor_heap, "samplerheap block");
+        profileRequires(loc, ~EEsProfile, 460, E_GL_EXT_descriptor_heap, "samplerheap block");
         break;
     default:
         error(loc, "only uniform, buffer, in, or out blocks are supported", blockName->c_str(), "");

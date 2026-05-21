@@ -12,7 +12,6 @@
 #include "discovery/common/config.h"
 #include "discovery/mdns/public/mdns_records.h"
 #include "platform/api/time.h"
-#include "platform/base/macros.h"
 #include "util/alarm.h"
 
 namespace openscreen {
@@ -73,7 +72,10 @@ class MdnsResponder {
                 const Config& config);
   ~MdnsResponder();
 
-  OSP_DISALLOW_COPY_AND_ASSIGN(MdnsResponder);
+  MdnsResponder(const MdnsResponder&) = delete;
+  MdnsResponder(MdnsResponder&&) noexcept = delete;
+  MdnsResponder& operator=(const MdnsResponder&) = delete;
+  MdnsResponder& operator=(MdnsResponder&&) = delete;
 
  private:
   // Class which handles processing and responding to queries segmented into
@@ -90,9 +92,8 @@ class MdnsResponder {
                    const Config& config);
     TruncatedQuery(const TruncatedQuery& other) = delete;
     TruncatedQuery(TruncatedQuery&& other) noexcept = delete;
-
     TruncatedQuery& operator=(const TruncatedQuery& other) = delete;
-    TruncatedQuery& operator=(TruncatedQuery&& other) noexcept = delete;
+    TruncatedQuery& operator=(TruncatedQuery&& other) = delete;
 
     // Sets the query associated with this instance. Must only be called if no
     // query has already been set, here or through the ctor.

@@ -4,8 +4,7 @@
 
 #include "components/supervised_user/core/browser/android/content_filters_observer_bridge.h"
 
-#include "base/test/scoped_feature_list.h"
-#include "components/supervised_user/core/common/features.h"
+#include "components/supervised_user/core/common/supervised_user_constants.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -14,22 +13,21 @@ namespace {
 
 class ContentFiltersObserverBridgeTest : public testing::Test {};
 
-TEST_F(ContentFiltersObserverBridgeTest,
-       WithFeatureDisabledCallbacksAreNotCalled) {
-  base::test::ScopedFeatureList scoped_feature_list;
-  scoped_feature_list.InitAndDisableFeature(
-      kPropagateDeviceContentFiltersToSupervisedUser);
+class MockObserver : public ContentFiltersObserverBridge::Observer {
+ public:
+  MOCK_METHOD(void, OnContentFiltersObserverChanged, (), (override));
+};
 
-  ContentFiltersObserverBridge bridge(
-      "test_setting", base::BindRepeating([]() {
-        CHECK(false) << "Callback called when feature is disabled";
-      }),
-      base::BindRepeating(
-          []() { CHECK(false) << "Callback called when feature is disabled"; }),
-      base::BindRepeating([]() { return false; }));
+TEST_F(ContentFiltersObserverBridgeTest, NotificationsAreSent) {
+  MockObserver observer;
+  EXPECT_CALL(observer, OnContentFiltersObserverChanged()).Times(2);
 
-  bridge.Init();
-  bridge.Shutdown();
+  ContentFiltersObserverBridge bridge(kBrowserContentFiltersSettingName);
+
+  bridge.AddObserver(&observer);
+  // Both settings will trigger notifications.
+  bridge.SetEnabledForTesting(true);
+  bridge.SetEnabledForTesting(false);
 }
 
 }  // namespace

@@ -12,6 +12,7 @@
 #include "base/functional/callback_helpers.h"
 #include "base/memory/ref_counted.h"
 #include "base/run_loop.h"
+#include "base/strings/strcat.h"
 #include "base/test/bind.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
@@ -105,7 +106,7 @@ class SharedStorageURLLoaderFactoryProxyTest
             network::mojom::CredentialsMode::kSameOrigin,
             net::SiteForCookies::FromOrigin(frame_origin_),
             *network::PermissionsPolicy::CreateFromParsedPolicy(
-                {}, {}, url::Origin::Create(script_url_)));
+                {}, url::Origin::Create(script_url_)));
   }
 
   // Attempts to make a request for `request`.

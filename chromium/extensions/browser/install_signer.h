@@ -6,6 +6,7 @@
 #define EXTENSIONS_BROWSER_INSTALL_SIGNER_H_
 
 #include <memory>
+#include <optional>
 #include <set>
 #include <string>
 #include <vector>
@@ -50,11 +51,11 @@ struct InstallSignature {
   InstallSignature(const InstallSignature& other);
   ~InstallSignature();
 
-  // Helper methods for serialization to/from a base::Value::Dict.
-  [[nodiscard]] base::Value::Dict ToDict() const;
+  // Helper methods for serialization to/from a base::DictValue.
+  [[nodiscard]] base::DictValue ToDict() const;
 
   static std::unique_ptr<InstallSignature> FromDict(
-      const base::Value::Dict& dict);
+      const base::DictValue& dict);
 };
 
 // Objects of this class encapsulate an operation to get a signature proving
@@ -97,7 +98,7 @@ class InstallSigner {
 
   // Called when `simple_loader_` has returned a result to parse the response,
   // and then call HandleSignatureResult with structured data.
-  void ParseFetchResponse(std::unique_ptr<std::string> response_body);
+  void ParseFetchResponse(std::optional<std::string> response_body);
 
   // Handles the result from a backend fetch.
   void HandleSignatureResult(const std::string& signature,

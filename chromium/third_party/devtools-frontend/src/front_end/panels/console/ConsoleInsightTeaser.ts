@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import '../../ui/components/tooltips/tooltips.js';
+import '../../ui/kit/kit.js';
 
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
@@ -11,6 +12,7 @@ import * as Root from '../../core/root/root.js';
 import * as Protocol from '../../generated/protocol.js';
 import * as AiAssistanceModel from '../../models/ai_assistance/ai_assistance.js';
 import * as Buttons from '../../ui/components/buttons/buttons.js';
+import type * as Tooltips from '../../ui/components/tooltips/tooltips.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import * as Lit from '../../ui/lit/lit.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
@@ -20,7 +22,7 @@ import consoleInsightTeaserStyles from './consoleInsightTeaser.css.js';
 import {ConsoleViewMessage} from './ConsoleViewMessage.js';
 import {PromptBuilder} from './PromptBuilder.js';
 
-const {render, html} = Lit;
+const {render, html, Directives: {ref}} = Lit;
 
 const BUILT_IN_AI_DOCUMENTATION = 'https://developer.chrome.com/docs/ai/built-in';
 
@@ -153,6 +155,10 @@ interface ViewInput {
   isForWarning: boolean;
 }
 
+interface ViewOutput {
+  tooltip?: Tooltips.Tooltip.Tooltip;
+}
+
 function renderNoModel(input: ViewInput): Lit.TemplateResult {
   // clang-format off
   return html`
@@ -162,14 +168,13 @@ function renderNoModel(input: ViewInput): Lit.TemplateResult {
           lockedString(UIStringsNotTranslate.getHelpForWarning) :
           lockedString(UIStringsNotTranslate.getHelpForError)}
         </h2>
-        <div>You can get quick answers from
-          <x-link
-            .jslog=${VisualLogging.link().track({click: true, keydown: 'Enter|Space'}).context('insights-teaser-built-in-ai-documentation')}
+        <div>You can get quick answers from <devtools-link
+            jslogcontext="insights-teaser-built-in-ai-documentation"
             class="link"
             href=${BUILT_IN_AI_DOCUMENTATION}
           >
             Chrome’s Built-in AI
-          </x-link>
+          </devtools-link>
           , without any data leaving your device.
         </div>
         <div>${lockedString(UIStringsNotTranslate.toUseDownload)}</div>
@@ -320,12 +325,12 @@ function renderFooter(input: ViewInput): Lit.TemplateResult {
       >
         <div class="info-tooltip-text">${lockedString(UIStringsNotTranslate.infoTooltipText)}</div>
         <div class="learn-more">
-          <x-link
+          <devtools-link
             class="devtools-link"
             title=${lockedString(UIStringsNotTranslate.learnMoreAboutAiSummaries)}
             href=${DATA_USAGE_URL}
-            jslog=${VisualLogging.link().track({click: true, keydown:'Enter|Space'}).context('explain.teaser.learn-more')}
-          >${lockedString(UIStringsNotTranslate.learnMoreAboutAiSummaries)}</x-link>
+            jslogcontext="explain.teaser.learn-more"
+          >${lockedString(UIStringsNotTranslate.learnMoreAboutAiSummaries)}</devtools-link>
         </div>
       </devtools-tooltip>
       ${renderDontShowCheckbox(input)}
@@ -348,7 +353,7 @@ function renderTeaser(input: ViewInput): Lit.TemplateResult {
   // clang-format on
 }
 
-export const DEFAULT_VIEW = (input: ViewInput, _output: undefined, target: HTMLElement): void => {
+export const DEFAULT_VIEW = (input: ViewInput, output: ViewOutput, target: HTMLElement): void => {
   if (input.isInactive) {
     render(Lit.nothing, target);
     return;
@@ -358,8 +363,11 @@ export const DEFAULT_VIEW = (input: ViewInput, _output: undefined, target: HTMLE
   render(html`
     <style>${consoleInsightTeaserStyles}</style>
     <devtools-tooltip
+      ${ref(element => {
+        output.tooltip = element as Tooltips.Tooltip.Tooltip;
+      })}
       id=${'teaser-' + input.uuid}
-      hover-delay=500
+      hover-delay=1000
       variant="rich"
       vertical-distance-increase=-6
       prefer-span-left
@@ -408,6 +416,8 @@ export class ConsoleInsightTeaser extends UI.Widget.Widget {
   #state: State;
   #eventListeners: Common.EventTarget.EventDescriptor[] = [];
   #isForWarning: boolean;
+  #callShowTooltip = false;
+  #startTime = 0;
 
   constructor(uuid: string, consoleViewMessage: ConsoleViewMessage, element?: HTMLElement, view?: View) {
     super(element);
@@ -421,6 +431,7 @@ export class ConsoleInsightTeaser extends UI.Widget.Widget {
     this.#boundOnSessionCreation = this.#onSessionCreation.bind(this);
     this.#builtInAi = AiAssistanceModel.BuiltInAi.BuiltInAi.instance();
     this.#state = this.#builtInAi.hasSession() ? State.READY : State.NO_MODEL;
+    this.#callShowTooltip = true;
     this.requestUpdate();
   }
 
@@ -484,8 +495,9 @@ export class ConsoleInsightTeaser extends UI.Widget.Widget {
   async #showFreDialog(): Promise<void> {
     const noLogging = Root.Runtime.hostConfig.aidaAvailability?.enterprisePolicyValue ===
         Root.Runtime.GenAiEnterprisePolicyValue.ALLOW_WITHOUT_LOGGING;
+    const iconName = AiAssistanceModel.AiUtils.getIconName();
     const result = await PanelCommon.FreDialog.show({
-      header: {iconName: 'smart-assistant', text: lockedString(UIStringsNotTranslate.freDisclaimerHeader)},
+      header: {iconName, text: lockedString(UIStringsNotTranslate.freDisclaimerHeader)},
       reminderItems: [
         {
           iconName: 'psychiatry',
@@ -499,13 +511,11 @@ export class ConsoleInsightTeaser extends UI.Widget.Widget {
         {
           iconName: 'warning',
           // clang-format off
-          content: html`<x-link
+          content: html`<devtools-link
             href=${CODE_SNIPPET_WARNING_URL}
             class="link devtools-link"
-            jslog=${VisualLogging.link('explain.teaser.code-snippets-explainer').track({
-              click: true
-            })}
-          >${lockedString(UIStringsNotTranslate.freDisclaimerTextUseWithCaution)}</x-link>`,
+            jslogcontext="explain.teaser.code-snippets-explainer"
+          >${lockedString(UIStringsNotTranslate.freDisclaimerTextUseWithCaution)}</devtools-link>`,
           // clang-format on
         }
       ],
@@ -572,11 +582,18 @@ export class ConsoleInsightTeaser extends UI.Widget.Widget {
     }
   }
 
-  abortTeaserGeneration(): void {
+  abortTeaserGeneration(): {okToRemove: boolean} {
     if (this.#abortController) {
       this.#abortController.abort();
     }
     if (this.#state === State.GENERATING || this.#state === State.PARTIAL_TEASER) {
+      if (this.#startTime) {
+        if (this.#mainText) {
+          Host.userMetrics.consoleInsightTeaserAbortedAfterFirstCharacter(performance.now() - this.#startTime);
+        } else {
+          Host.userMetrics.consoleInsightTeaserAbortedBeforeFirstCharacter(performance.now() - this.#startTime);
+        }
+      }
       this.#mainText = '';
       this.#state = State.READY;
       Host.userMetrics.actionTaken(Host.UserMetrics.Action.InsightTeaserGenerationAborted);
@@ -585,6 +602,7 @@ export class ConsoleInsightTeaser extends UI.Widget.Widget {
       clearTimeout(this.#timeoutId);
     }
     Common.EventTarget.removeEventListeners(this.#eventListeners);
+    return {okToRemove: this.#state !== State.TEASER};
   }
 
   setInactive(isInactive: boolean): void {
@@ -605,9 +623,10 @@ export class ConsoleInsightTeaser extends UI.Widget.Widget {
     this.#state = State.GENERATING;
     Host.userMetrics.actionTaken(Host.UserMetrics.Action.InsightTeaserGenerationStarted);
     this.#timeoutId = setTimeout(this.#setSlow.bind(this), SLOW_GENERATION_CUTOFF_MILLISECONDS);
-    const startTime = performance.now();
+    this.#startTime = performance.now();
     let teaserText = '';
     let firstChunkReceived = false;
+    let firstChunkTime = 0;
     try {
       for await (const chunk of this.#getOnDeviceInsight()) {
         teaserText += chunk;
@@ -616,7 +635,9 @@ export class ConsoleInsightTeaser extends UI.Widget.Widget {
         this.requestUpdate();
         if (!firstChunkReceived) {
           firstChunkReceived = true;
-          Host.userMetrics.consoleInsightTeaserFirstChunkGenerated(performance.now() - startTime);
+          firstChunkTime = performance.now();
+          Host.userMetrics.consoleInsightTeaserFirstChunkGenerated(firstChunkTime - this.#startTime);
+          Host.userMetrics.consoleInsightTeaserFirstChunkGeneratedMedium(firstChunkTime - this.#startTime);
         }
       }
     } catch (err) {
@@ -634,7 +655,15 @@ export class ConsoleInsightTeaser extends UI.Widget.Widget {
     }
 
     clearTimeout(this.#timeoutId);
-    Host.userMetrics.consoleInsightTeaserGenerated(performance.now() - startTime);
+    const duration = performance.now() - this.#startTime;
+    Host.userMetrics.consoleInsightTeaserGenerated(duration);
+    Host.userMetrics.consoleInsightTeaserGeneratedMedium(duration);
+    Host.userMetrics.consoleInsightTeaserChunkToEndMedium(performance.now() - firstChunkTime);
+    if (teaserText.length > 300) {
+      Host.userMetrics.consoleInsightLongTeaserGenerated(duration);
+    } else {
+      Host.userMetrics.consoleInsightShortTeaserGenerated(duration);
+    }
     this.#state = State.TEASER;
     this.#mainText = teaserText;
     Host.userMetrics.actionTaken(Host.UserMetrics.Action.InsightTeaserGenerationCompleted);
@@ -670,6 +699,7 @@ export class ConsoleInsightTeaser extends UI.Widget.Widget {
   }
 
   override performUpdate(): Promise<void>|void {
+    const output: ViewOutput = {};
     this.#view(
         {
           onTellMeMoreClick: this.#onTellMeMoreClick.bind(this),
@@ -686,7 +716,14 @@ export class ConsoleInsightTeaser extends UI.Widget.Widget {
           state: this.#state,
           isForWarning: this.#isForWarning,
         },
-        undefined, this.contentElement);
+        output, this.contentElement);
+    if (this.#callShowTooltip && output.tooltip?.hasAttribute('popover')) {
+      // The ConsoleInsightTeaser is created on hover, which means the tooltip's
+      // event listener is created after the hover event is received. We therefore
+      // explicitly call `showTooltip()`, otherwise the tooltip wouldn't show up.
+      output.tooltip.showTooltip();
+    }
+    this.#callShowTooltip = false;
   }
 
   override wasShown(): void {

@@ -28,8 +28,8 @@ import {
 import {expectCall} from '../../testing/ExpectStubCall.js';
 import {stubFileManager} from '../../testing/FileManagerHelpers.js';
 import {describeWithMockConnection} from '../../testing/MockConnection.js';
-import {MockStore} from '../../testing/MockSettingStorage.js';
 import {createNetworkPanelForMockConnection} from '../../testing/NetworkHelpers.js';
+import {setupSettingsHooks} from '../../testing/SettingsHelpers.js';
 import {SnapshotTester} from '../../testing/SnapshotTester.js';
 import * as Snackbars from '../../ui/components/snackbars/snackbars.js';
 import * as UI from '../../ui/legacy/legacy.js';
@@ -42,6 +42,8 @@ import * as AiAssistancePanel from './ai_assistance.js';
 const {urlString} = Platform.DevToolsPath;
 
 describeWithMockConnection('AI Assistance Panel', () => {
+  setupSettingsHooks();
+
   let viewManagerIsViewVisibleStub: sinon.SinonStub<[viewId: string], boolean>;
 
   function enableAllFeatureAndSetting() {
@@ -72,8 +74,13 @@ describeWithMockConnection('AI Assistance Panel', () => {
     viewManagerIsViewVisibleStub = sinon.stub(UI.ViewManager.ViewManager.instance(), 'isViewVisible');
     AiAssistanceModel.ConversationHandler.ConversationHandler.removeInstance();
     registerNoopActions([
-      'elements.toggle-element-search', 'timeline.record-reload', 'timeline.toggle-recording', 'timeline.show-history',
-      'components.collect-garbage'
+      'elements.toggle-element-search',
+      'timeline.record-reload',
+      'timeline.toggle-recording',
+      'timeline.show-history',
+      'components.collect-garbage',
+      'network.toggle-recording',
+      'network.clear',
     ]);
 
     UI.Context.Context.instance().setFlavor(Timeline.TimelinePanel.TimelinePanel, null);
@@ -81,16 +88,6 @@ describeWithMockConnection('AI Assistance Panel', () => {
     UI.Context.Context.instance().setFlavor(SDK.DOMModel.DOMNode, null);
     UI.Context.Context.instance().setFlavor(AiAssistanceModel.AIContext.AgentFocus, null);
     UI.Context.Context.instance().setFlavor(Workspace.UISourceCode.UISourceCode, null);
-
-    const mockStore = new MockStore();
-    const settingsStorage = new Common.Settings.SettingsStorage({}, mockStore);
-    Common.Settings.Settings.instance({
-      forceNew: true,
-      syncedStorage: settingsStorage,
-      globalStorage: settingsStorage,
-      localStorage: settingsStorage,
-      settingRegistrations: Common.SettingRegistration.getRegisteredSettings(),
-    });
   });
 
   afterEach(() => {
@@ -564,7 +561,7 @@ describeWithMockConnection('AI Assistance Panel', () => {
 
       assert.deepEqual(nextInput.props.messages, [
         {
-          entity: AiAssistancePanel.ChatMessageEntity.USER,
+          entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.USER,
           text: 'test',
           imageInput: undefined,
         },
@@ -573,7 +570,7 @@ describeWithMockConnection('AI Assistance Panel', () => {
             type: 'answer',
             text: 'test',
           }],
-          entity: AiAssistancePanel.ChatMessageEntity.MODEL,
+          entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.MODEL,
           rpcId: undefined,
         },
       ]);
@@ -605,7 +602,7 @@ describeWithMockConnection('AI Assistance Panel', () => {
       assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
       assert.deepEqual(nextInput.props.messages, [
         {
-          entity: AiAssistancePanel.ChatMessageEntity.USER,
+          entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.USER,
           text: 'test',
           imageInput: undefined,
         },
@@ -614,7 +611,7 @@ describeWithMockConnection('AI Assistance Panel', () => {
             type: 'answer',
             text: 'test',
           }],
-          entity: AiAssistancePanel.ChatMessageEntity.MODEL,
+          entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.MODEL,
           rpcId: undefined,
         },
       ]);
@@ -654,7 +651,7 @@ describeWithMockConnection('AI Assistance Panel', () => {
          assert(view.input.state === AiAssistancePanel.ViewState.CHAT_VIEW);
          assert.deepEqual(view.input.props.messages, [
            {
-             entity: AiAssistancePanel.ChatMessageEntity.USER,
+             entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.USER,
              text: 'test',
              imageInput: undefined,
            },
@@ -663,7 +660,7 @@ describeWithMockConnection('AI Assistance Panel', () => {
                type: 'answer',
                text: 'test',
              }],
-             entity: AiAssistancePanel.ChatMessageEntity.MODEL,
+             entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.MODEL,
              rpcId: undefined,
            },
          ]);
@@ -698,7 +695,7 @@ describeWithMockConnection('AI Assistance Panel', () => {
       assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
       assert.deepEqual(nextInput.props.messages, [
         {
-          entity: AiAssistancePanel.ChatMessageEntity.USER,
+          entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.USER,
           text: 'User question to Freestyler?',
           imageInput,
         },
@@ -707,7 +704,7 @@ describeWithMockConnection('AI Assistance Panel', () => {
             type: 'answer',
             text: 'test',
           }],
-          entity: AiAssistancePanel.ChatMessageEntity.MODEL,
+          entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.MODEL,
           rpcId: undefined,
         },
       ]);
@@ -721,7 +718,7 @@ describeWithMockConnection('AI Assistance Panel', () => {
       assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
       assert.deepEqual(nextInput.props.messages, [
         {
-          entity: AiAssistancePanel.ChatMessageEntity.USER,
+          entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.USER,
           text: 'User question to DrJones?',
           imageInput: undefined,
         },
@@ -730,7 +727,7 @@ describeWithMockConnection('AI Assistance Panel', () => {
             type: 'answer',
             text: 'test2',
           }],
-          entity: AiAssistancePanel.ChatMessageEntity.MODEL,
+          entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.MODEL,
           rpcId: undefined,
         },
       ]);
@@ -743,7 +740,7 @@ describeWithMockConnection('AI Assistance Panel', () => {
       assert.isTrue(nextInput.props.isReadOnly);
       assert.deepEqual(nextInput.props.messages, [
         {
-          entity: AiAssistancePanel.ChatMessageEntity.USER,
+          entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.USER,
           text: 'User question to Freestyler?',
           imageInput,
         },
@@ -752,7 +749,7 @@ describeWithMockConnection('AI Assistance Panel', () => {
             type: 'answer',
             text: 'test',
           }],
-          entity: AiAssistancePanel.ChatMessageEntity.MODEL,
+          entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.MODEL,
           rpcId: undefined,
         },
       ]);
@@ -792,7 +789,7 @@ describeWithMockConnection('AI Assistance Panel', () => {
       assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
       assert.deepEqual(nextInput.props.messages, [
         {
-          entity: AiAssistancePanel.ChatMessageEntity.USER,
+          entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.USER,
           text: 'User question to Freestyler?',
           imageInput: undefined,
         },
@@ -801,11 +798,11 @@ describeWithMockConnection('AI Assistance Panel', () => {
             type: 'answer',
             text: 'test',
           }],
-          entity: AiAssistancePanel.ChatMessageEntity.MODEL,
+          entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.MODEL,
           rpcId: undefined,
         },
         {
-          entity: AiAssistancePanel.ChatMessageEntity.USER,
+          entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.USER,
           text: 'Second question to Freestyler?',
           imageInput: undefined,
         },
@@ -814,7 +811,7 @@ describeWithMockConnection('AI Assistance Panel', () => {
             type: 'answer',
             text: 'test2',
           }],
-          entity: AiAssistancePanel.ChatMessageEntity.MODEL,
+          entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.MODEL,
           rpcId: undefined,
         },
       ]);
@@ -845,7 +842,7 @@ describeWithMockConnection('AI Assistance Panel', () => {
         assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
         assert.deepEqual(nextInput.props.messages, [
           {
-            entity: AiAssistancePanel.ChatMessageEntity.USER,
+            entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.USER,
             text: 'Tell me more',
             imageInput: undefined,
           },
@@ -854,7 +851,7 @@ describeWithMockConnection('AI Assistance Panel', () => {
               type: 'answer',
               text: 'test',
             }],
-            entity: AiAssistancePanel.ChatMessageEntity.MODEL,
+            entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.MODEL,
             rpcId: undefined,
           },
         ]);
@@ -948,7 +945,7 @@ describeWithMockConnection('AI Assistance Panel', () => {
       assert(currentView.state === AiAssistancePanel.ViewState.CHAT_VIEW);
       assert.deepEqual(currentView.props.messages, [
         {
-          entity: AiAssistancePanel.ChatMessageEntity.USER,
+          entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.USER,
           text: 'first question',
           imageInput: undefined,
         },
@@ -957,7 +954,7 @@ describeWithMockConnection('AI Assistance Panel', () => {
             type: 'answer',
             text: 'Thinking...',
           }],
-          entity: AiAssistancePanel.ChatMessageEntity.MODEL,
+          entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.MODEL,
           rpcId: undefined,
         },
       ]);
@@ -969,7 +966,7 @@ describeWithMockConnection('AI Assistance Panel', () => {
       assert(currentView.state === AiAssistancePanel.ViewState.CHAT_VIEW);
       assert.deepEqual(currentView.props.messages, [
         {
-          entity: AiAssistancePanel.ChatMessageEntity.USER,
+          entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.USER,
           text: 'first question',
           imageInput: undefined,
         },
@@ -978,12 +975,12 @@ describeWithMockConnection('AI Assistance Panel', () => {
             type: 'answer',
             text: 'Thinking...',
           }],
-          entity: AiAssistancePanel.ChatMessageEntity.MODEL,
+          entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.MODEL,
           rpcId: undefined,
           error: AiAssistanceModel.AiAgent.ErrorType.ABORT,
         },
         {
-          entity: AiAssistancePanel.ChatMessageEntity.USER,
+          entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.USER,
           text: 'interrupting prompt',
           imageInput: undefined,
         },
@@ -992,7 +989,7 @@ describeWithMockConnection('AI Assistance Panel', () => {
             type: 'answer',
             text: 'Interrupted and answered',
           }],
-          entity: AiAssistancePanel.ChatMessageEntity.MODEL,
+          entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.MODEL,
           rpcId: undefined,
         },
       ]);
@@ -1118,7 +1115,7 @@ describeWithMockConnection('AI Assistance Panel', () => {
       assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
       assert.deepEqual(nextInput.props.messages, [
         {
-          entity: AiAssistancePanel.ChatMessageEntity.USER,
+          entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.USER,
           text: 'test',
           imageInput: undefined,
         },
@@ -1127,7 +1124,7 @@ describeWithMockConnection('AI Assistance Panel', () => {
             type: 'answer',
             text: 'test',
           }],
-          entity: AiAssistancePanel.ChatMessageEntity.MODEL,
+          entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.MODEL,
           rpcId: undefined,
         },
       ]);
@@ -1154,7 +1151,7 @@ describeWithMockConnection('AI Assistance Panel', () => {
       assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
       assert.deepEqual(nextInput.props.messages, [
         {
-          entity: AiAssistancePanel.ChatMessageEntity.USER,
+          entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.USER,
           text: 'test',
           imageInput: undefined,
         },
@@ -1163,7 +1160,7 @@ describeWithMockConnection('AI Assistance Panel', () => {
             type: 'answer',
             text: 'test',
           }],
-          entity: AiAssistancePanel.ChatMessageEntity.MODEL,
+          entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.MODEL,
           rpcId: undefined,
         },
       ]);
@@ -1186,7 +1183,7 @@ describeWithMockConnection('AI Assistance Panel', () => {
       assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
       assert.deepEqual(nextInput.props.messages, [
         {
-          entity: AiAssistancePanel.ChatMessageEntity.USER,
+          entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.USER,
           text: 'User question to Freestyler?',
           imageInput: undefined,
         },
@@ -1195,7 +1192,7 @@ describeWithMockConnection('AI Assistance Panel', () => {
             type: 'answer',
             text: 'test',
           }],
-          entity: AiAssistancePanel.ChatMessageEntity.MODEL,
+          entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.MODEL,
           rpcId: undefined,
         },
       ]);
@@ -1208,7 +1205,7 @@ describeWithMockConnection('AI Assistance Panel', () => {
       assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
       assert.deepEqual(nextInput.props.messages, [
         {
-          entity: AiAssistancePanel.ChatMessageEntity.USER,
+          entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.USER,
           text: 'User question to DrJones?',
           imageInput: undefined,
         },
@@ -1217,7 +1214,7 @@ describeWithMockConnection('AI Assistance Panel', () => {
             type: 'answer',
             text: 'test2',
           }],
-          entity: AiAssistancePanel.ChatMessageEntity.MODEL,
+          entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.MODEL,
           rpcId: undefined,
         },
       ]);
@@ -1238,6 +1235,32 @@ describeWithMockConnection('AI Assistance Panel', () => {
       contextMenu = openHistoryContextMenu(view.input, 'User question to Freestyler?').contextMenu;
       const menuItem = findMenuItemWithLabel(contextMenu.defaultSection(), 'No past conversations');
       assert(menuItem);
+    });
+
+    it('should have empty chat state if context selection is enabled', async () => {
+      updateHostConfig({devToolsAiAssistanceContextSelectionAgent: {enabled: true}});
+      const {view} = await createAiAssistancePanel(
+          {aidaClient: mockAidaClient([[{explanation: 'test'}], [{explanation: 'test2'}]])});
+
+      assert(view.input.state === AiAssistancePanel.ViewState.CHAT_VIEW);
+      view.input.props.onTextSubmit('User question to Freestyler?');
+      const nextInput = await view.nextInput;
+      assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
+      assert.deepEqual(nextInput.props.messages, [
+        {
+          entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.USER,
+          text: 'User question to Freestyler?',
+          imageInput: undefined,
+        },
+        {
+          parts: [{
+            type: 'answer',
+            text: 'test',
+          }],
+          entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.MODEL,
+          rpcId: undefined,
+        },
+      ]);
     });
   });
 
@@ -1305,7 +1328,7 @@ describeWithMockConnection('AI Assistance Panel', () => {
       assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
       assert.deepEqual(nextInput.props.messages, [
         {
-          entity: AiAssistancePanel.ChatMessageEntity.USER,
+          entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.USER,
           text: 'test',
           imageInput: undefined,
         },
@@ -1314,7 +1337,7 @@ describeWithMockConnection('AI Assistance Panel', () => {
             type: 'answer',
             text: 'test',
           }],
-          entity: AiAssistancePanel.ChatMessageEntity.MODEL,
+          entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.MODEL,
           rpcId: undefined,
         },
       ]);
@@ -1330,7 +1353,7 @@ describeWithMockConnection('AI Assistance Panel', () => {
       assert.isFalse(nextInput.props.isReadOnly);
       assert.deepEqual(nextInput.props.messages, [
         {
-          entity: AiAssistancePanel.ChatMessageEntity.USER,
+          entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.USER,
           text: 'test',
           imageInput: undefined,
         },
@@ -1339,11 +1362,11 @@ describeWithMockConnection('AI Assistance Panel', () => {
             type: 'answer',
             text: 'test',
           }],
-          entity: AiAssistancePanel.ChatMessageEntity.MODEL,
+          entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.MODEL,
           rpcId: undefined,
         },
         {
-          entity: AiAssistancePanel.ChatMessageEntity.USER,
+          entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.USER,
           text: 'test2',
           imageInput: undefined,
         },
@@ -1352,7 +1375,7 @@ describeWithMockConnection('AI Assistance Panel', () => {
             type: 'answer',
             text: 'test2',
           }],
-          entity: AiAssistancePanel.ChatMessageEntity.MODEL,
+          entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.MODEL,
           rpcId: undefined,
         },
       ]);
@@ -1437,8 +1460,8 @@ describeWithMockConnection('AI Assistance Panel', () => {
     it('should copy the response to clipboard when copy button is clicked', async () => {
       enableAllFeatureAndSetting();
       const {view} = await createAiAssistancePanel();
-      const modelMessage: AiAssistancePanel.ModelChatMessage = {
-        entity: AiAssistancePanel.ChatMessageEntity.MODEL,
+      const modelMessage: AiAssistancePanel.ChatMessage.ModelChatMessage = {
+        entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.MODEL,
         parts: [{
           type: 'answer',
           text: 'test',
@@ -1627,12 +1650,12 @@ describeWithMockConnection('AI Assistance Panel', () => {
     assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
     assert.deepEqual(nextInput.props.messages, [
       {
-        entity: AiAssistancePanel.ChatMessageEntity.USER,
+        entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.USER,
         text: 'test',
         imageInput: undefined,
       },
       {
-        entity: AiAssistancePanel.ChatMessageEntity.MODEL,
+        entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.MODEL,
         parts: [],
         error: AiAssistanceModel.AiAgent.ErrorType.BLOCK,
       },
@@ -1780,231 +1803,54 @@ describeWithMockConnection('AI Assistance Panel', () => {
          });
     });
 
-    it('should disable the send button when the input is empty', async () => {
-      Common.Settings.moduleSetting('ai-assistance-enabled').set(true);
-      updateHostConfig({
-        devToolsFreestyler: {
-          enabled: true,
-        },
+    describe('removing context', () => {
+      it('should remove context when button is pressed', async () => {
+        enableAllFeatureAndSetting();
+        updateHostConfig({devToolsAiAssistanceContextSelectionAgent: {enabled: true}});
+        const {view} = await createAiAssistancePanel();
+
+        assert(view.input.state === AiAssistancePanel.ViewState.CHAT_VIEW);
+        assert.isNotNull(view.input.props.onContextRemoved);
+        view.input.props.onContextRemoved();
+
+        const nextInput = await view.nextInput;
+        assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
+        assert.isNull(nextInput.props.selectedContext);
       });
-
-      viewManagerIsViewVisibleStub.callsFake(viewName => viewName === 'elements');
-      const {panel, view} =
-          await createAiAssistancePanel({aidaAvailability: Host.AidaClient.AidaAccessPreconditions.AVAILABLE});
-
-      void panel.handleAction('freestyler.elements-floating-button');
-      let nextInput = await view.nextInput;
-      assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
-      assert.isTrue(nextInput.props.isTextInputEmpty);
-
-      assert(view.input.state === AiAssistancePanel.ViewState.CHAT_VIEW);
-
-      view.input.props.onTextInputChange('test');
-      nextInput = await view.nextInput;
-      assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
-      assert.isFalse(nextInput.props.isTextInputEmpty);
-
-      view.input.props.onTextInputChange('');
-      nextInput = await view.nextInput;
-      assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
-      assert.isTrue(nextInput.props.isTextInputEmpty);
-
-      view.input.props.onTextInputChange('test');
-      nextInput = await view.nextInput;
-      assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
-      assert.isFalse(nextInput.props.isTextInputEmpty);
-
-      view.input.props.onTextSubmit('test');
-      nextInput = await view.nextInput;
-      assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
-      assert.isTrue(nextInput.props.isTextInputEmpty);
-    });
-  });
-
-  describe('multimodal input', () => {
-    let target: SDK.Target.Target;
-    beforeEach(() => {
-      target = createTarget();
-      Common.Settings.moduleSetting('ai-assistance-enabled').set(true);
     });
 
-    function mockScreenshotModel() {
-      const screenCaptureModel = target.model(SDK.ScreenCaptureModel.ScreenCaptureModel);
-      assert.exists(screenCaptureModel);
-      return {
-        captureScreenshotStub:
-            sinon.stub(screenCaptureModel, 'captureScreenshot').returns(Promise.resolve('imageInput')),
-      };
-    }
+    describe('add context', () => {
+      it('should add context when button is pressed', async () => {
+        enableAllFeatureAndSetting();
+        updateHostConfig({devToolsAiAssistanceContextSelectionAgent: {enabled: true}});
 
-    it('multimodal related functions unavailable when multimodal is disabled', async () => {
-      updateHostConfig({
-        devToolsFreestyler: {
-          enabled: true,
-          multimodal: false,
-        },
+        const node = sinon.createStubInstance(SDK.DOMModel.DOMNode, {
+          nodeType: Node.ELEMENT_NODE,
+        });
+        UI.Context.Context.instance().setFlavor(SDK.DOMModel.DOMNode, node);
+        sinon.stub(AiAssistanceModel.StylingAgent.NodeContext.prototype, 'getSuggestions')
+            .returns(Promise.resolve([{title: 'test suggestion'}]));
+        const {view} = await createAiAssistancePanel({
+          aidaClient: mockAidaClient([
+            [{explanation: 'test'}],
+          ]),
+        });
+
+        assert(view.input.state === AiAssistancePanel.ViewState.CHAT_VIEW);
+        assert.isNotNull(view.input.props.onContextRemoved);
+        view.input.props.onContextRemoved();
+
+        let nextInput = await view.nextInput;
+
+        assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
+        assert.isNotNull(nextInput.props.onContextAdd);
+
+        nextInput.props.onContextAdd();
+        nextInput = await view.nextInput;
+
+        assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
+        assert.strictEqual(nextInput.props.selectedContext?.getItem(), node);
       });
-      viewManagerIsViewVisibleStub.callsFake(viewName => viewName === 'elements');
-      const {view} = await createAiAssistancePanel();
-
-      assert(view.input.state === AiAssistancePanel.ViewState.CHAT_VIEW);
-
-      assert.isFalse(view.input.props.multimodalInputEnabled);
-      assert.isFalse(view.input.props.uploadImageInputEnabled);
-      assert.notExists(view.input.props.onTakeScreenshot);
-      assert.notExists(view.input.props.onRemoveImageInput);
-      assert.notExists(view.input.props.onLoadImage);
-      assert.notExists(view.input.props.imageInput);
-    });
-
-    it('upload input function unavailable when multimodalUploadInput is disabled', async () => {
-      updateHostConfig({
-        devToolsFreestyler: {
-          enabled: true,
-          multimodal: true,
-          multimodalUploadInput: false,
-        },
-      });
-      viewManagerIsViewVisibleStub.callsFake(viewName => viewName === 'elements');
-      const {view} = await createAiAssistancePanel();
-
-      assert(view.input.state === AiAssistancePanel.ViewState.CHAT_VIEW);
-
-      assert.isTrue(view.input.props.multimodalInputEnabled);
-      assert.isFalse(view.input.props.uploadImageInputEnabled);
-      assert.exists(view.input.props.onTakeScreenshot);
-      assert.exists(view.input.props.onRemoveImageInput);
-      assert.notExists(view.input.props.onLoadImage);
-    });
-
-    it('adds screenshot as an image input and then removes it', async () => {
-      const {captureScreenshotStub} = mockScreenshotModel();
-      updateHostConfig({
-        devToolsFreestyler: {
-          enabled: true,
-          multimodal: true,
-        },
-      });
-      viewManagerIsViewVisibleStub.callsFake(viewName => viewName === 'elements');
-      const {view} = await createAiAssistancePanel();
-
-      assert(view.input.state === AiAssistancePanel.ViewState.CHAT_VIEW);
-      assert.isTrue(view.input.props.multimodalInputEnabled);
-
-      view.input.props.onTakeScreenshot?.();
-
-      let nextInput = await view.nextInput;
-      assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
-      assert.deepEqual(nextInput.props.imageInput, {
-        isLoading: false,
-        data: 'imageInput',
-        mimeType: 'image/jpeg',
-        inputType: AiAssistanceModel.AiAgent.MultimodalInputType.SCREENSHOT
-      });
-      expect(captureScreenshotStub.calledOnce);
-
-      view.input.props.onRemoveImageInput?.();
-      nextInput = await view.nextInput;
-      assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
-      assert.notExists(nextInput.props.imageInput);
-    });
-
-    it('uploads an image as an input and then removes it', async () => {
-      updateHostConfig({
-        devToolsFreestyler: {
-          enabled: true,
-          multimodal: true,
-          multimodalUploadInput: true,
-        },
-      });
-      viewManagerIsViewVisibleStub.callsFake(viewName => viewName === 'elements');
-      const {view} = await createAiAssistancePanel();
-      const blob = new Blob(['imageInput'], {type: 'image/jpeg'});
-
-      assert(view.input.state === AiAssistancePanel.ViewState.CHAT_VIEW);
-      assert.isTrue(view.input.props.multimodalInputEnabled);
-      assert.isTrue(view.input.props.uploadImageInputEnabled);
-
-      await view.input.props.onLoadImage?.(new File([blob], 'image.jpeg', {type: 'image/jpeg'}));
-
-      let nextInput = await view.nextInput;
-      assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
-      assert.deepEqual(nextInput.props.imageInput, {
-        isLoading: false,
-        data: btoa('imageInput'),
-        mimeType: 'image/jpeg',
-        inputType: AiAssistanceModel.AiAgent.MultimodalInputType.UPLOADED_IMAGE
-      });
-
-      view.input.props.onRemoveImageInput?.();
-      nextInput = await view.nextInput;
-      assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
-      assert.notExists(nextInput.props.imageInput);
-    });
-
-    it('sends image as input', async () => {
-      updateHostConfig({
-        devToolsFreestyler: {
-          enabled: true,
-          multimodal: true,
-        },
-      });
-      viewManagerIsViewVisibleStub.callsFake(viewName => viewName === 'elements');
-      const {view} = await createAiAssistancePanel({aidaClient: mockAidaClient([[{explanation: 'test'}]])});
-
-      assert(view.input.state === AiAssistancePanel.ViewState.CHAT_VIEW);
-      assert.isTrue(view.input.props.multimodalInputEnabled);
-
-      view.input.props.onTextSubmit(
-          'test', {inlineData: {data: 'imageInput', mimeType: 'image/jpeg'}},
-          AiAssistanceModel.AiAgent.MultimodalInputType.SCREENSHOT);
-
-      const nextInput = await view.nextInput;
-      assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
-
-      assert.deepEqual(nextInput.props.messages, [
-        {
-          entity: AiAssistancePanel.ChatMessageEntity.USER,
-          text: 'test',
-          imageInput: {inlineData: {data: 'imageInput', mimeType: 'image/jpeg'}}
-        },
-        {
-          parts: [{
-            type: 'answer',
-            text: 'test',
-          }],
-          entity: AiAssistancePanel.ChatMessageEntity.MODEL,
-          rpcId: undefined,
-        },
-      ]);
-    });
-
-    it('image input should be removed when primary target changed', async () => {
-      mockScreenshotModel();
-      updateHostConfig({
-        devToolsFreestyler: {
-          enabled: true,
-          multimodal: true,
-        },
-      });
-      viewManagerIsViewVisibleStub.callsFake(viewName => viewName === 'elements');
-      const {view} = await createAiAssistancePanel();
-
-      assert(view.input.state === AiAssistancePanel.ViewState.CHAT_VIEW);
-      assert.isUndefined(view.input.props.imageInput);
-      view.input.props.onTakeScreenshot?.();
-      let nextInput = await view.nextInput;
-      assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
-      assert.exists(nextInput.props.imageInput);
-
-      const resourceTreeModel = target.model(SDK.ResourceTreeModel.ResourceTreeModel);
-      resourceTreeModel?.dispatchEventToListeners(SDK.ResourceTreeModel.Events.PrimaryPageChanged, {
-        frame: sinon.createStubInstance(SDK.ResourceTreeModel.ResourceTreeFrame),
-        type: SDK.ResourceTreeModel.PrimaryPageChangeType.NAVIGATION
-      });
-      nextInput = await view.nextInput;
-      assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
-      assert.isUndefined(nextInput.props.imageInput);
     });
   });
 
@@ -2012,8 +1858,8 @@ describeWithMockConnection('AI Assistance Panel', () => {
     const snapshotTester = new SnapshotTester(this, import.meta);
 
     it('should generate correct markdown from a message object', function() {
-      const message: AiAssistancePanel.ModelChatMessage = {
-        entity: AiAssistancePanel.ChatMessageEntity.MODEL,
+      const message: AiAssistancePanel.ChatMessage.ModelChatMessage = {
+        entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.MODEL,
         parts: [
           {
             type: 'step',
@@ -2158,7 +2004,7 @@ describeWithMockConnection('AI Assistance Panel', () => {
       assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
       assert.deepEqual(nextInput.props.messages, [
         {
-          entity: AiAssistancePanel.ChatMessageEntity.USER,
+          entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.USER,
           text: 'User question to DrJones?',
           imageInput: undefined,
         },
@@ -2167,7 +2013,7 @@ describeWithMockConnection('AI Assistance Panel', () => {
             type: 'answer',
             text: 'test',
           }],
-          entity: AiAssistancePanel.ChatMessageEntity.MODEL,
+          entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.MODEL,
           rpcId: undefined,
         },
       ]);
@@ -2185,7 +2031,7 @@ describeWithMockConnection('AI Assistance Panel', () => {
       assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
       assert.deepEqual(nextInput.props.messages, [
         {
-          entity: AiAssistancePanel.ChatMessageEntity.USER,
+          entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.USER,
           text: 'User question to DrJones?',
           imageInput: undefined,
         },
@@ -2194,11 +2040,11 @@ describeWithMockConnection('AI Assistance Panel', () => {
             type: 'answer',
             text: 'test',
           }],
-          entity: AiAssistancePanel.ChatMessageEntity.MODEL,
+          entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.MODEL,
           rpcId: undefined,
         },
         {
-          entity: AiAssistancePanel.ChatMessageEntity.USER,
+          entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.USER,
           text: 'Follow-up question to DrJones?',
           imageInput: undefined,
         },
@@ -2207,7 +2053,7 @@ describeWithMockConnection('AI Assistance Panel', () => {
             type: 'answer',
             text: 'test3',
           }],
-          entity: AiAssistancePanel.ChatMessageEntity.MODEL,
+          entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.MODEL,
           rpcId: undefined,
         },
       ]);
@@ -2266,19 +2112,19 @@ describeWithMockConnection('AI Assistance Panel', () => {
 
       const lastMessage = nextInput.props.messages.at(-1);
       assert.exists(lastMessage);
-      assert.strictEqual(lastMessage.entity, AiAssistancePanel.ChatMessageEntity.MODEL);
-      const modelMessage = lastMessage as AiAssistancePanel.ModelChatMessage;
+      assert.strictEqual(lastMessage.entity, AiAssistancePanel.ChatMessage.ChatMessageEntity.MODEL);
+      const modelMessage = lastMessage as AiAssistancePanel.ChatMessage.ModelChatMessage;
       assert.lengthOf(modelMessage.parts, 3);
 
       const [part1, part2, part3] = modelMessage.parts;
       assert.strictEqual(part1.type, 'answer');
-      assert.strictEqual((part1 as AiAssistancePanel.AnswerPart).text, 'First part of answer');
+      assert.strictEqual((part1 as AiAssistancePanel.ChatMessage.AnswerPart).text, 'First part of answer');
 
       assert.strictEqual(part2.type, 'step');
-      assert.strictEqual((part2 as AiAssistancePanel.StepPart).step.title, 'Step 1');
+      assert.strictEqual((part2 as AiAssistancePanel.ChatMessage.StepPart).step.title, 'Step 1');
 
       assert.strictEqual(part3.type, 'answer');
-      assert.strictEqual((part3 as AiAssistancePanel.AnswerPart).text, 'Second part of answer');
+      assert.strictEqual((part3 as AiAssistancePanel.ChatMessage.AnswerPart).text, 'Second part of answer');
     });
 
     it('should update existing answer part when receiving consecutive answer chunks', async () => {
@@ -2311,13 +2157,13 @@ describeWithMockConnection('AI Assistance Panel', () => {
 
       const lastMessage = nextInput.props.messages.at(-1);
       assert.exists(lastMessage);
-      assert.strictEqual(lastMessage.entity, AiAssistancePanel.ChatMessageEntity.MODEL);
-      const modelMessage = lastMessage as AiAssistancePanel.ModelChatMessage;
+      assert.strictEqual(lastMessage.entity, AiAssistancePanel.ChatMessage.ChatMessageEntity.MODEL);
+      const modelMessage = lastMessage as AiAssistancePanel.ChatMessage.ModelChatMessage;
       assert.lengthOf(modelMessage.parts, 1);
 
       const part1 = modelMessage.parts[0];
       assert.strictEqual(part1.type, 'answer');
-      assert.strictEqual((part1 as AiAssistancePanel.AnswerPart).text, 'Part 1 updated');
+      assert.strictEqual((part1 as AiAssistancePanel.ChatMessage.AnswerPart).text, 'Part 1 updated');
     });
   });
 });

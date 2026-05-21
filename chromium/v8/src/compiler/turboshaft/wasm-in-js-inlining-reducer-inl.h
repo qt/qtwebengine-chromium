@@ -208,7 +208,7 @@ class WasmInJsInliningInterface {
       ValueType type = decoder->local_type(index);
       V<Any> op;
       if (!type.is_defaultable()) {
-        DCHECK(type.is_reference());
+        DCHECK(type.is_ref());
         op = __ RootConstant(RootIndex::kOptimizedOut);
       } else {
         op = DefaultValue(type);
@@ -987,8 +987,8 @@ class WasmInJsInliningInterface {
   void RefCast(FullDecoder* decoder, const Value& object, Value* result) {
     Bailout(decoder);
   }
-  void RefCastDesc(FullDecoder* decoder, const Value& object,
-                   const Value& descriptor, Value* result) {
+  void RefCastDescEq(FullDecoder* decoder, const Value& object,
+                     const Value& descriptor, Value* result) {
     Bailout(decoder);
   }
   void RefCastAbstract(FullDecoder* decoder, const Value& object,
@@ -1081,10 +1081,10 @@ class WasmInJsInliningInterface {
                 bool null_succeeds) {
     Bailout(decoder);
   }
-  void BrOnCastDesc(FullDecoder* decoder, wasm::HeapType target_type,
-                    const Value& object, const Value& descriptor,
-                    Value* value_on_branch, uint32_t br_depth,
-                    bool null_succeeds) {
+  void BrOnCastDescEq(FullDecoder* decoder, wasm::HeapType target_type,
+                      const Value& object, const Value& descriptor,
+                      Value* value_on_branch, uint32_t br_depth,
+                      bool null_succeeds) {
     Bailout(decoder);
   }
   void BrOnCastAbstract(FullDecoder* decoder, const Value& object,
@@ -1097,10 +1097,10 @@ class WasmInJsInliningInterface {
                     uint32_t br_depth, bool null_succeeds) {
     Bailout(decoder);
   }
-  void BrOnCastDescFail(FullDecoder* decoder, wasm::HeapType target_type,
-                        const Value& object, const Value& descriptor,
-                        Value* value_on_fallthrough, uint32_t br_depth,
-                        bool null_succeeds) {
+  void BrOnCastDescEqFail(FullDecoder* decoder, wasm::HeapType target_type,
+                          const Value& object, const Value& descriptor,
+                          Value* value_on_fallthrough, uint32_t br_depth,
+                          bool null_succeeds) {
     Bailout(decoder);
   }
   void BrOnCastFailAbstract(FullDecoder* decoder, const Value& object,
@@ -1344,7 +1344,8 @@ V<Any> WasmInJSInliningReducer<Next>::TryInlineJSWasmCallWrapperAndBody(
         << JSInliner::WasmFunctionNameForTrace(native_module, func_idx)
         << " of module " << module);
 
-  GraphBuilder builder(__ data()->isolate(), Asm().phase_zone(), Asm(), sig,
+  constexpr bool kInliningIntoJs = true;
+  GraphBuilder builder(Asm().phase_zone(), Asm(), sig, kInliningIntoJs,
                        inlined_function_data);
   return builder.BuildJSToWasmWrapperImpl(receiver_is_first_param, js_closure,
                                           js_context, arguments, frame_state,

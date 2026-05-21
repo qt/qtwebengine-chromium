@@ -5,11 +5,11 @@
 #ifndef UI_GL_GL_CONTEXT_H_
 #define UI_GL_GL_CONTEXT_H_
 
+#include <atomic>
 #include <map>
 #include <memory>
 #include <string>
 
-#include "base/atomicops.h"
 #include "base/cancelable_callback.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/ref_counted.h"
@@ -96,6 +96,7 @@ struct GL_EXPORT GLContextAttribs {
   bool robust_buffer_access = false;
   int client_major_es_version = 3;
   int client_minor_es_version = 0;
+  bool allow_es_version_fallback = true;
   bool can_skip_validation = false;
 
   // Use EXT_ANGLE_create_context_passthrough_shaders if it is available to tell
@@ -114,6 +115,10 @@ struct GL_EXPORT GLContextAttribs {
 
   // Allow the usage of client arrays in the created context
   bool allow_client_arrays = true;
+
+  // When the context is not a WebGL context, harden it anyway in case the
+  // renderer is compromised and the attacker is creating a non-WebGL context.
+  bool hardened_context = false;
 
   AngleContextVirtualizationGroup angle_context_virtualization_group_number =
       AngleContextVirtualizationGroup::kDefault;
@@ -337,7 +342,7 @@ class GL_EXPORT GLContext : public base::RefCounted<GLContext> {
 
   void MarkContextLost();
 
-  static base::subtle::Atomic32 total_gl_contexts_;
+  static std::atomic<int32_t> total_gl_contexts_;
 
   static bool switchable_gpus_supported_;
 

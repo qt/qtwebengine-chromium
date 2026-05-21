@@ -96,7 +96,7 @@ bool CFGAS_GEFont::LoadFontInternal(const wchar_t* pszFontFamily,
 
   font_->LoadSubst(csFontFamily, true, dwFontStyles, iWeight, 0, wCodePage,
                    false);
-  return font_->GetFace() && InitFont();
+  return font_->HasFace() && InitFont();
 }
 #endif  // BUILDFLAG(IS_WIN)
 
@@ -291,4 +291,22 @@ RetainPtr<CFGAS_GEFont> CFGAS_GEFont::GetSubstFont(int32_t iGlyphIndex) {
     return pdfium::WrapRetain(this);
   }
   return subst_fonts_[iGlyphIndex - 1];
+}
+
+bool CFGAS_GEFont::VerifyUnicode(wchar_t wcUnicode) {
+  RetainPtr<CFX_Face> face = GetDevFont()->GetFace();
+  if (!face) {
+    return false;
+  }
+
+  CFX_Face::CharMap charmap = face->GetCurrentCharMap();
+  if (!face->SelectCharMap(fxge::FontEncoding::kUnicode)) {
+    return false;
+  }
+
+  if (face->GetCharIndex(wcUnicode) == 0) {
+    face->SetCharMap(charmap);
+    return false;
+  }
+  return true;
 }

@@ -1,6 +1,6 @@
-/* Copyright (c) 2015-2025 The Khronos Group Inc.
- * Copyright (c) 2015-2025 Valve Corporation
- * Copyright (c) 2015-2025 LunarG, Inc.
+/* Copyright (c) 2015-2026 The Khronos Group Inc.
+ * Copyright (c) 2015-2026 Valve Corporation
+ * Copyright (c) 2015-2026 LunarG, Inc.
  * Copyright (C) 2015-2024 Google Inc.
  * Modifications Copyright (C) 2020 Advanced Micro Devices, Inc. All rights reserved.
  *
@@ -56,19 +56,18 @@ class Semaphore : public RefcountedStateObject {
     struct SwapchainWaitInfo {
         std::shared_ptr<vvl::Swapchain> swapchain;
         uint32_t image_index = vvl::kNoIndex32;  // image being presented
-        uint32_t acquire_counter_value = 0;   // value of vvl::Swapchain::acquire_count when the image was acquired
+        uint32_t acquire_counter_value = 0;      // value of vvl::Swapchain::acquire_request_count when the image was acquired
     };
 
     struct SemOp {
         OpType op_type;
         uint64_t payload;
-        SubmissionReference submit;  // Used only by binary semaphores
+        const Queue *queue;
         std::optional<Func> acquire_command;
 
-        SemOp(OpType op_type, const SubmissionReference &submit, uint64_t payload)
-            : op_type(op_type), payload(payload), submit(submit) {}
+        SemOp(OpType op_type, const Queue *queue, uint64_t payload) : op_type(op_type), payload(payload), queue(queue) {}
         SemOp(Func acquire_command, uint64_t payload)
-            : op_type(kBinaryAcquire), payload(payload), acquire_command(acquire_command) {}
+            : op_type(kBinaryAcquire), payload(payload), queue(nullptr), acquire_command(acquire_command) {}
     };
 
     struct TimePoint {
@@ -175,7 +174,7 @@ class Semaphore : public RefcountedStateObject {
     bool CanRetireTimelineWait(const vvl::Queue *current_queue, uint64_t payload) const;
 
     // Mark timepoints up to and including payload as completed (notify waiters) and remove them from timeline
-    void RetireTimePoint(uint64_t payload, OpType completed_op, SubmissionReference completed_submit);
+    void RetireTimePoint(uint64_t payload, OpType completed_op, const Queue *completed_op_queue);
 
     // Waits for the waiter. Unblock parameter must be true if the caller is a validation object and false otherwise.
     // (validation object has to use {Begin/End}BlockingOperation() when waiting for the timepoint)

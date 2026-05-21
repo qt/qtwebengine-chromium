@@ -54,6 +54,7 @@
 #include "chrome/browser/ui/ui_features.h"
 #include "chrome/browser/ui/webui/metrics_reporter/metrics_reporter.h"
 #include "chrome/browser/ui/webui/tab_search/tab_search_prefs.h"
+#include "chrome/browser/ui/webui/top_chrome/webui_contents_preload_manager.h"
 #include "chrome/browser/ui/webui/util/image_util.h"
 #include "chrome/browser/ui/webui/webui_embedding_context.h"
 #include "chrome/browser/user_education/tutorial_identifiers.h"
@@ -69,6 +70,7 @@
 #include "components/tabs/public/tab_interface.h"
 #include "components/user_education/common/tutorial/tutorial_identifier.h"
 #include "components/user_education/common/tutorial/tutorial_service.h"
+#include "third_party/abseil-cpp/absl/container/flat_hash_set.h"
 #include "ui/base/base_window.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/l10n/time_format.h"
@@ -121,8 +123,7 @@ void CreateTabGroupIfNotPresent(
     sessions::tab_restore::Tab* tab,
     std::set<tab_groups::TabGroupId>& tab_group_ids,
     std::vector<tab_search::mojom::TabGroupPtr>& tab_groups) {
-  if (tab->group.has_value() &&
-      !base::Contains(tab_group_ids, tab->group.value())) {
+  if (tab->group.has_value() && !tab_group_ids.contains(tab->group.value())) {
     tab_groups::TabGroupId tab_group_id = tab->group.value();
     const tab_groups::TabGroupVisualData* tab_group_visual_data =
         &tab->group_visual_data.value();
@@ -283,6 +284,9 @@ void TabSearchPageHandler::CloseTab(int32_t tab_id) {
 
   ++num_tabs_closed_;
 
+  Profile::FromWebUI(web_ui_)->GetPrefs()->SetBoolean(
+      tab_search_prefs::kTabSearchUsed, true);
+
   // CloseTab() can target the WebContents hosting Tab Search if the Tab Search
   // WebUI is open in a chrome browser tab rather than its bubble. In this case
   // CloseWebContentsAt() closes the WebContents hosting this
@@ -309,6 +313,8 @@ void TabSearchPageHandler::CloseWebUiTab() {
   // CloseWebContentsAt(). See (https://crbug.com/1175507).
   TabStripModel* const tab_strip_model = browser_->tab_strip_model();
   CHECK(tab_strip_model);
+  Profile::FromWebUI(web_ui_)->GetPrefs()->SetBoolean(
+      tab_search_prefs::kTabSearchUsed, true);
   const int index =
       tab_strip_model->GetIndexOfWebContents(web_ui_->GetWebContents());
   tab_strip_model->CloseWebContentsAt(
@@ -359,7 +365,7 @@ void TabSearchPageHandler::AcceptTabOrganization(
     return;
   }
 
-  std::unordered_set<int> tabs_tab_ids;
+  absl::flat_hash_set<int> tabs_tab_ids;
   for (tab_search::mojom::TabPtr& tab : tabs) {
     tabs_tab_ids.emplace(tab->tab_id);
   }
@@ -367,7 +373,7 @@ void TabSearchPageHandler::AcceptTabOrganization(
   std::vector<TabData::TabID> tab_ids_to_remove;
   for (const auto& tab_data : organization->tab_datas()) {
     if (!tab_data->tab()->GetContents() ||
-        !base::Contains(tabs_tab_ids, tab_data->tab_id())) {
+        !tabs_tab_ids.contains(tab_data->tab_id())) {
       tab_ids_to_remove.emplace_back(tab_data->tab_id());
     }
   }
@@ -725,11 +731,10 @@ void TabSearchPageHandler::GetTabOrganizationSession(
   TabOrganizationSession* session =
       organization_service_->GetSessionForBrowser(browser_);
   if (!session) {
-    session = organization_service_->CreateSessionForBrowser(
-        browser_, TabOrganizationEntryPoint::kTabSearch);
+    session = organization_service_->CreateSessionForBrowser(browser_);
   }
 
-  if (!base::Contains(listened_sessions_, session)) {
+  if (!std::ranges::contains(listened_sessions_, session)) {
     session->AddObserver(this);
     listened_sessions_.emplace_back(session);
   }
@@ -767,12 +772,10 @@ void TabSearchPageHandler::GetTabOrganizationModelStrategy(
 
 void TabSearchPageHandler::GetIsSplit(GetIsSplitCallback callback) {
   bool is_split = false;
-  if (base::FeatureList::IsEnabled(features::kSideBySide)) {
-    GURL url = web_ui_->GetWebContents()->GetURL();
-    if (url.spec() == chrome::kChromeUISplitViewNewTabPageURL) {
-      is_split = tabs::TabInterface::GetFromContents(web_ui_->GetWebContents())
-                     ->IsSplit();
-    }
+  GURL url = web_ui_->GetWebContents()->GetURL();
+  if (url.spec() == chrome::kChromeUISplitViewNewTabPageURL) {
+    is_split = tabs::TabInterface::GetFromContents(web_ui_->GetWebContents())
+                   ->IsSplit();
   }
   std::move(callback).Run(is_split);
 }
@@ -786,6 +789,9 @@ void TabSearchPageHandler::SwitchToTab(
   }
 
   called_switch_to_tab_ = true;
+
+  Profile::FromWebUI(web_ui_)->GetPrefs()->SetBoolean(
+      tab_search_prefs::kTabSearchUsed, true);
 
   details->tab->GetBrowserWindowInterface()->GetTabStripModel()->ActivateTabAt(
       details->GetIndex());
@@ -810,6 +816,10 @@ void TabSearchPageHandler::OpenRecentlyClosedEntry(int32_t session_id) {
   if (!tab_restore_service) {
     return;
   }
+
+  Profile::FromWebUI(web_ui_)->GetPrefs()->SetBoolean(
+      tab_search_prefs::kTabSearchUsed, true);
+
   tab_restore_service->RestoreEntryById(
       BrowserLiveTabContext::FindContextForWebContents(
           browser_->tab_strip_model()->GetActiveWebContents()),
@@ -825,22 +835,19 @@ void TabSearchPageHandler::RequestTabOrganization() {
   TabOrganizationSession* session =
       organization_service_->GetSessionForBrowser(browser_);
   if (!session) {
-    session = organization_service_->CreateSessionForBrowser(
-        browser_, TabOrganizationEntryPoint::kTabSearch);
+    session = organization_service_->CreateSessionForBrowser(browser_);
   } else if (session->IsComplete()) {
-    session = organization_service_->ResetSessionForBrowser(
-        browser_, TabOrganizationEntryPoint::kTabSearch);
+    session = organization_service_->ResetSessionForBrowser(browser_);
   }
 
-  if (!base::Contains(listened_sessions_, session)) {
+  if (!std::ranges::contains(listened_sessions_, session)) {
     session->AddObserver(this);
     listened_sessions_.emplace_back(session);
   }
 
   browser_->profile()->GetPrefs()->SetBoolean(
       tab_search_prefs::kTabOrganizationShowFRE, false);
-  organization_service_->StartRequest(browser_,
-                                      TabOrganizationEntryPoint::kTabSearch);
+  organization_service_->StartRequest(browser_);
 }
 
 void TabSearchPageHandler::RemoveTabFromOrganization(
@@ -882,8 +889,7 @@ void TabSearchPageHandler::RejectSession(int32_t session_id) {
     }
   }
 
-  organization_service_->ResetSessionForBrowser(
-      browser_, TabOrganizationEntryPoint::kTabSearch, nullptr);
+  organization_service_->ResetSessionForBrowser(browser_, nullptr);
 }
 
 void TabSearchPageHandler::ReplaceActiveSplitTab(int32_t replacement_tab_id) {
@@ -912,15 +918,13 @@ void TabSearchPageHandler::RestartSession() {
       current_session ? current_session->base_session_tab() : nullptr;
   // Don't notify observers to avoid a repaint
   TabOrganizationSession* session =
-      organization_service_->ResetSessionForBrowser(
-          browser_, TabOrganizationEntryPoint::kTabSearch, base_session_tab);
-  if (!base::Contains(listened_sessions_, session)) {
+      organization_service_->ResetSessionForBrowser(browser_, base_session_tab);
+  if (!std::ranges::contains(listened_sessions_, session)) {
     session->AddObserver(this);
     listened_sessions_.emplace_back(session);
   }
 
-  organization_service_->StartRequest(browser_,
-                                      TabOrganizationEntryPoint::kTabSearch);
+  organization_service_->StartRequest(browser_);
 
   restarting_ = false;
 
@@ -981,7 +985,7 @@ void TabSearchPageHandler::TriggerFeedback(int32_t session_id) {
           optimization_guide::proto::LogAiDataRequest::kTabOrganization)) {
     return;
   }
-  base::Value::Dict feedback_metadata;
+  base::DictValue feedback_metadata;
   feedback_metadata.Set("log_id", feedback_id);
   chrome::ShowFeedbackPage(
       browser_, feedback::kFeedbackSourceAI,
@@ -990,7 +994,7 @@ void TabSearchPageHandler::TriggerFeedback(int32_t session_id) {
       l10n_util::GetStringUTF8(IDS_TAB_ORGANIZATION_FEEDBACK_PLACEHOLDER),
       /*category_tag=*/"tab_organization",
       /*extra_diagnostics=*/std::string(),
-      /*autofill_metadata=*/base::Value::Dict(), std::move(feedback_metadata));
+      /*autofill_metadata=*/base::DictValue(), std::move(feedback_metadata));
 }
 
 void TabSearchPageHandler::TriggerSignIn() {
@@ -1396,7 +1400,7 @@ bool TabSearchPageHandler::AddRecentlyClosedTab(
   DedupKey dedup_id(recently_closed_tab->url, recently_closed_tab->group_id);
   // Ignore NTP entries, duplicate entries and tabs with invalid URLs such as
   // empty URLs.
-  if (base::Contains(tab_dedup_keys, dedup_id) ||
+  if (tab_dedup_keys.contains(dedup_id) ||
       recently_closed_tab->url == GURL(chrome::kChromeUINewTabPageURL) ||
       !recently_closed_tab->url.is_valid()) {
     return false;
@@ -1431,8 +1435,8 @@ tab_search::mojom::TabPtr TabSearchPageHandler::GetTab(
   tab_data->pinned = tab->IsPinned();
   tab_data->split = tab->IsSplit();
 
-  TabRendererData tab_renderer_data =
-      TabRendererData::FromTabInModel(tab_strip_model, index);
+  const TabRendererData tab_renderer_data =
+      TabRendererData::FromTabInterface(tab);
   tab_data->title = base::UTF16ToUTF8(tab_renderer_data.title);
   const auto& last_committed_url = tab_renderer_data.last_committed_url;
   // A visible URL is used when the a new tab is still loading.
@@ -1534,7 +1538,10 @@ void TabSearchPageHandler::OnTabStripModelChanged(
     TabStripModel* tab_strip_model,
     const TabStripModelChange& change,
     const TabStripSelectionChange& selection) {
+  const auto* preload_state =
+      WebUIContentsPreloadState::FromWebContents(web_ui_->GetWebContents());
   if (!IsWebContentsVisible() ||
+      (preload_state && preload_state->pending_request) ||
       browser_tab_strip_tracker_.is_processing_initial_browsers()) {
     return;
   }
@@ -1562,7 +1569,7 @@ void TabSearchPageHandler::OnTabStripModelChanged(
       // Recently closed entries appear first in the list.
       for (auto& entry : tab_restore_service->entries()) {
         if (entry->type == sessions::tab_restore::Type::TAB &&
-            base::Contains(tab_restore_ids, entry->id)) {
+            tab_restore_ids.contains(entry->id)) {
           // The associated tab group visual data for the recently closed tab is
           // already present at the client side from the initial GetProfileData
           // call.
@@ -1582,9 +1589,9 @@ void TabSearchPageHandler::OnTabStripModelChanged(
   ScheduleDebounce();
 }
 
-void TabSearchPageHandler::TabChangedAt(content::WebContents* contents,
-                                        int index,
-                                        TabChangeType change_type) {
+void TabSearchPageHandler::OnTabChangedAt(tabs::TabInterface* tab,
+                                          int index,
+                                          TabChangeType change_type) {
   if (!IsWebContentsVisible()) {
     return;
   }
@@ -1593,8 +1600,6 @@ void TabSearchPageHandler::TabChangedAt(content::WebContents* contents,
   if (change_type != TabChangeType::kAll) {
     return;
   }
-
-  tabs::TabInterface* tab = tabs::TabInterface::GetFromContents(contents);
 
   TRACE_EVENT0("browser", "TabSearchPageHandler:TabChangedAt");
   const bool is_mark_overlap = metrics_reporter_->HasLocalMark("TabUpdated");
@@ -1614,9 +1619,6 @@ void TabSearchPageHandler::TabChangedAt(content::WebContents* contents,
 }
 
 void TabSearchPageHandler::OnSplitTabChanged(const SplitTabChange& change) {
-  if (!base::FeatureList::IsEnabled(features::kSideBySide)) {
-    return;
-  }
   if (change.type != SplitTabChange::Type::kRemoved) {
     return;
   }
@@ -1770,7 +1772,7 @@ TabSearchPageHandler::GetMojoForTabOrganizationSession(
 
 void TabSearchPageHandler::OnTabOrganizationSessionUpdated(
     const TabOrganizationSession* session) {
-  if (restarting_ || !base::Contains(listened_sessions_, session)) {
+  if (restarting_ || !std::ranges::contains(listened_sessions_, session)) {
     return;
   }
 

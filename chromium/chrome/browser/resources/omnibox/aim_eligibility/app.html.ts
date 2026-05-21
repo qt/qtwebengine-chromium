@@ -44,13 +44,21 @@ export function getHtml(this: AimEligibilityAppElement) {
         <div class="check-label">Eligibility Response Source:</div>
         <div class="check-item">
           <span class="check-value">
-            ${this.eligibilityState_.serverResponseSource}
+            ${this.eligibilityState_.eligibilityResponseSource}
           </span>
         </div>
+        ${this.eligibilityState_.eligibilityResponseAuthType ? html`
+          <div class="check-label">Auth Type:</div>
+          <div class="check-item">
+            <span class="check-value">
+              ${this.eligibilityState_.eligibilityResponseAuthType}
+            </span>
+          </div>
+        ` : ''}
         <div class="check-label">Eligibility Response:</div>
         <div class="check-item">
           <input class="response-input ${this.inputState_}"
-              .value="${this.eligibilityState_.serverResponseBase64Encoded}"
+              .value="${this.eligibilityState_.eligibilityResponseBase64Encoded}"
               @input="${this.onResponseInput_}"
               placeholder="Base64 encoded server response">
           </input>
@@ -59,7 +67,7 @@ export function getHtml(this: AimEligibilityAppElement) {
               Request
             </cr-button>
             <cr-button
-                ?disabled="${!this.eligibilityState_.serverResponseBase64UrlEncoded}"
+                ?disabled="${!this.eligibilityState_.eligibilityResponseBase64Encoded}"
                 @click="${this.onViewResponseClick_}">
               View
             </cr-button>
@@ -72,6 +80,14 @@ export function getHtml(this: AimEligibilityAppElement) {
           </div>
         </div>
       ` : ''}
+      <div class="check-label">SearchboxConfig:</div>
+      <div class="check-item">
+        <cr-button
+            ?disabled="${!this.eligibilityState_.searchboxConfigBase64UrlEncoded}"
+            @click="${this.onViewSearchboxConfigClick_}">
+          View Demo
+        </cr-button>
+      </div>
     </div>
     <div class="footer">
       Last updated: ${this.getLastUpdatedTimestamp_()}

@@ -6,7 +6,6 @@
 #define PLATFORM_IMPL_UDP_SOCKET_POSIX_H_
 
 #include "platform/api/udp_socket.h"
-#include "platform/base/macros.h"
 #include "platform/impl/platform_client_posix.h"
 #include "platform/impl/socket_handle_posix.h"
 #include "util/weak_ptr.h"
@@ -28,7 +27,10 @@ class UdpSocketPosix : public UdpSocket {
                  const IPEndpoint& local_endpoint,
                  PlatformClientPosix* platform_client =
                      PlatformClientPosix::GetInstance());
-
+  UdpSocketPosix(const UdpSocketPosix&) = delete;
+  UdpSocketPosix(UdpSocketPosix&&) noexcept = delete;
+  UdpSocketPosix& operator=(const UdpSocketPosix&) = delete;
+  UdpSocketPosix& operator=(UdpSocketPosix&&) = delete;
   ~UdpSocketPosix() override;
 
   // Implementations of UdpSocket methods.
@@ -40,7 +42,7 @@ class UdpSocketPosix : public UdpSocket {
   void JoinMulticastGroup(const IPAddress& address,
                           NetworkInterfaceIndex ifindex) override;
   void SendMessage(ByteView data, const IPEndpoint& dest) override;
-  void SetDscp(DscpMode state) override;
+  void SetDscp(DscpMode mode) override;
 
   const SocketHandle& GetHandle() const;
 
@@ -79,8 +81,6 @@ class UdpSocketPosix : public UdpSocket {
   WeakPtrFactory<UdpSocketPosix> weak_factory_{this};
 
   PlatformClientPosix* const platform_client_;
-
-  OSP_DISALLOW_COPY_AND_ASSIGN(UdpSocketPosix);
 };
 
 }  // namespace openscreen

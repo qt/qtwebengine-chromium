@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "base/task/thread_pool/pooled_single_thread_task_runner_manager.h"
 
 #include <algorithm>
@@ -201,8 +196,7 @@ class WorkerThreadDelegate : public WorkerThread::Delegate {
         return false;
       }
     }
-    if (!task_tracker_->WillPostTaskNow(task,
-                                        transaction.traits().priority())) {
+    if (!task_tracker_->WillPostTaskNow(task, transaction.thread_type())) {
       return false;
     }
     transaction.PushImmediateTask(std::move(task));
@@ -289,8 +283,8 @@ class WorkerThreadDelegate : public WorkerThread::Delegate {
 
   bool CanRunNextTaskSource() EXCLUSIVE_LOCKS_REQUIRED(lock_) {
     return !priority_queue_.IsEmpty() &&
-           task_tracker_->CanRunPriority(
-               priority_queue_.PeekSortKey().priority());
+           task_tracker_->CanRunThreadType(
+               priority_queue_.PeekSortKey().thread_type());
   }
 
   const std::string thread_name_;
@@ -833,8 +827,8 @@ template <>
 WorkerThread*&
 PooledSingleThreadTaskRunnerManager::GetSharedWorkerThreadForTraits<
     WorkerThreadDelegate>(const TaskTraits& traits) {
-  return shared_worker_threads_[GetEnvironmentIndexForTraits(traits)]
-                               [TraitsToContinueOnShutdown(traits)];
+  return UNSAFE_TODO(shared_worker_threads_[GetEnvironmentIndexForTraits(
+      traits)])[TraitsToContinueOnShutdown(traits)];
 }
 
 #if BUILDFLAG(IS_WIN)
@@ -842,8 +836,8 @@ template <>
 WorkerThread*&
 PooledSingleThreadTaskRunnerManager::GetSharedWorkerThreadForTraits<
     WorkerThreadCOMDelegate>(const TaskTraits& traits) {
-  return shared_com_worker_threads_[GetEnvironmentIndexForTraits(traits)]
-                                   [TraitsToContinueOnShutdown(traits)];
+  return UNSAFE_TODO(shared_com_worker_threads_[GetEnvironmentIndexForTraits(
+      traits)])[TraitsToContinueOnShutdown(traits)];
 }
 #endif  // BUILDFLAG(IS_WIN)
 
@@ -875,13 +869,15 @@ void PooledSingleThreadTaskRunnerManager::ReleaseSharedWorkerThreads() {
   {
     CheckedAutoLock auto_lock(lock_);
     for (size_t i = 0; i < std::size(shared_worker_threads_); ++i) {
-      for (size_t j = 0; j < std::size(shared_worker_threads_[i]); ++j) {
-        local_shared_worker_threads[i][j] = shared_worker_threads_[i][j];
-        shared_worker_threads_[i][j] = nullptr;
+      for (size_t j = 0; j < std::size(UNSAFE_TODO(shared_worker_threads_[i]));
+           ++j) {
+        UNSAFE_TODO(local_shared_worker_threads[i][j]) =
+            UNSAFE_TODO(shared_worker_threads_[i][j]);
+        UNSAFE_TODO(shared_worker_threads_[i][j]) = nullptr;
 #if BUILDFLAG(IS_WIN)
-        local_shared_com_worker_threads[i][j] =
-            shared_com_worker_threads_[i][j];
-        shared_com_worker_threads_[i][j] = nullptr;
+        UNSAFE_TODO(local_shared_com_worker_threads[i][j]) =
+            UNSAFE_TODO(shared_com_worker_threads_[i][j]);
+        UNSAFE_TODO(shared_com_worker_threads_[i][j]) = nullptr;
 #endif
       }
     }

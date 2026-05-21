@@ -282,7 +282,7 @@ void CFDE_TextEditEngine::Insert(size_t idx,
   // we're skipping notify. This means we're setting the formatted text into the
   // engine. Otherwise, if you enter 123456789 for an SSN into a field
   // with a 9 character limit and we reformat to 123-45-6789 we'll truncate
-  // the 89 when inserting into the text edit. See https://crbug.com/pdfium/1089
+  // the 89 when inserting into the text edit. See https://crbug.com/41480151
   if (has_character_limit_ && text_length_ + length > character_limit_) {
     if (add_operation == RecordOperation::kSkipNotify) {
       // Raise the limit to allow subsequent changes to expanded text.

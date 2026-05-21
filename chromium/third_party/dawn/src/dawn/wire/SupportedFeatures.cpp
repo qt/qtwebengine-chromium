@@ -100,14 +100,11 @@ bool IsFeatureSupported(WGPUFeatureName feature) {
         case WGPUFeatureName_ANGLETextureSharing:
         case WGPUFeatureName_PixelLocalStorageCoherent:
         case WGPUFeatureName_PixelLocalStorageNonCoherent:
-        case WGPUFeatureName_Norm16TextureFormats:
         case WGPUFeatureName_Unorm16TextureFormats:
-        case WGPUFeatureName_Snorm16TextureFormats:
         case WGPUFeatureName_FramebufferFetch:
         case WGPUFeatureName_AdapterPropertiesMemoryHeaps:
         case WGPUFeatureName_AdapterPropertiesD3D:
         case WGPUFeatureName_AdapterPropertiesVk:
-        case WGPUFeatureName_R8UnormStorage:
         case WGPUFeatureName_StaticSamplers:
         case WGPUFeatureName_YCbCrVulkanSamplers:
         case WGPUFeatureName_ShaderModuleCompilationOptions:
@@ -123,10 +120,10 @@ bool IsFeatureSupported(WGPUFeatureName feature) {
         case WGPUFeatureName_TextureFormatsTier1:
         case WGPUFeatureName_TextureFormatsTier2:
         case WGPUFeatureName_TextureComponentSwizzle:
-        case WGPUFeatureName_ChromiumExperimentalBindless:
         case WGPUFeatureName_PrimitiveIndex:
         case WGPUFeatureName_AdapterPropertiesWGPU:
         case WGPUFeatureName_ChromiumExperimentalSamplingResourceTable:
+        case WGPUFeatureName_ChromiumExperimentalSubgroupSizeControl:
             return true;
     }
 

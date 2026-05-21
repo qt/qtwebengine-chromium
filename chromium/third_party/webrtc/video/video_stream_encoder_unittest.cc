@@ -772,7 +772,7 @@ class SimpleVideoStreamEncoderFactory {
       TaskQueueBase** encoder_queue_ptr = nullptr) {
     auto encoder_queue =
         time_controller_.GetTaskQueueFactory()->CreateTaskQueue(
-            "EncoderQueue", TaskQueueFactory::Priority::NORMAL);
+            "EncoderQueue", TaskQueueFactory::Priority::kNormal);
     if (encoder_queue_ptr)
       *encoder_queue_ptr = encoder_queue.get();
     return CreateWithEncoderQueue(std::move(zero_hertz_adapter),
@@ -937,7 +937,7 @@ class VideoStreamEncoderTest : public ::testing::Test {
       video_stream_encoder_->Stop();
 
     auto encoder_queue = env_.task_queue_factory().CreateTaskQueue(
-        "EncoderQueue", TaskQueueFactory::Priority::NORMAL);
+        "EncoderQueue", TaskQueueFactory::Priority::kNormal);
     TaskQueueBase* encoder_queue_ptr = encoder_queue.get();
     std::unique_ptr<FrameCadenceAdapterInterface> cadence_adapter =
         FrameCadenceAdapterInterface::Create(
@@ -2702,6 +2702,33 @@ TEST_F(VideoStreamEncoderTest,
   EXPECT_EQ(static_cast<uint32_t>(kMaxBitrateBps),
             fake_encoder_.config().simulcastStream[1].maxBitrate * 1000);
 
+  video_stream_encoder_->Stop();
+}
+
+TEST_F(VideoStreamEncoderTest,
+       ConfigureEncoderRequestsRefreshFrameOnScaleResolutionDownToChange) {
+  MockVideoSourceInterface mock_source;
+  video_stream_encoder_->SetSource(&mock_source,
+                                   DegradationPreference::DISABLED);
+
+  video_stream_encoder_->OnBitrateUpdatedAndWaitForManagedResources(
+      kTargetBitrate, kTargetBitrate, 0, 0, 0);
+
+  // Initial configuration.
+  VideoEncoderConfig config;
+  test::FillEncoderConfiguration(kVideoCodecVP8, 1, &config);
+  config.simulcast_layers[0].scale_resolution_down_to = {
+      .width = 640, .height = 360};  // Example resolution
+  video_stream_encoder_->ConfigureEncoder(config.Copy(), kMaxPayloadLength);
+
+  EXPECT_CALL(mock_source, RequestRefreshFrame).Times(1);
+
+  // Change scale_resolution_down_to.
+  config.simulcast_layers[0].scale_resolution_down_to = {
+      .width = 320, .height = 180};  // Different resolution
+  video_stream_encoder_->ConfigureEncoder(std::move(config), kMaxPayloadLength);
+
+  AdvanceTime(TimeDelta::Millis(0));
   video_stream_encoder_->Stop();
 }
 
@@ -10354,7 +10381,7 @@ TEST(VideoStreamEncoderFrameCadenceTest,
      RequestsRefreshFrameForEarlyZeroHertzKeyFrameRequest) {
   SimpleVideoStreamEncoderFactory factory;
   auto encoder_queue = factory.env().task_queue_factory().CreateTaskQueue(
-      "EncoderQueue", TaskQueueFactory::Priority::NORMAL);
+      "EncoderQueue", TaskQueueFactory::Priority::kNormal);
 
   auto adapter = FrameCadenceAdapterInterface::Create(
       &factory.env().clock(), encoder_queue.get(),

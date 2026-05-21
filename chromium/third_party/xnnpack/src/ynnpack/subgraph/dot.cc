@@ -57,8 +57,7 @@ auto make_dot_impl(dot_type type, bool consistent_arithmetic, bool transposed_a,
                    bool pack_b, size_t num_k_dims) {
   return [type, consistent_arithmetic, transposed_a, pack_b, num_k_dims](
              slinky::raw_buffer a, slinky::raw_buffer b,
-             slinky::buffer<const void, YNN_MAX_TENSOR_RANK> init_c,
-             slinky::raw_buffer c) -> index_t {
+             slinky::raw_buffer init_c, slinky::raw_buffer c) -> index_t {
     // If the dot has fewer than 3 reduction dimensions, we use this dummy
     // dimension instead.
     slinky::dim dummy_dim = slinky::dim(0, 0, 0, 0);
@@ -107,7 +106,7 @@ auto make_dot_impl(dot_type type, bool consistent_arithmetic, bool transposed_a,
     // this stride is a lie: it is only valid to increment b pointers by
     // `block_n` values at a time.
     assert(pack_b ? b_no.extent() == 1 || b_no.stride() % b_ni.extent() == 0
-                  : b_ni.stride() == b.elem_size);
+                  : b_ni.extent() == 1 || b_ni.stride() == b.elem_size);
     const index_t b_stride_n =
         pack_b ? b_no.stride() / b_ni.extent() : b_ni.stride();
     const index_t c_stride_m = c_m.stride();
@@ -159,7 +158,7 @@ auto make_dot_impl(dot_type type, bool consistent_arithmetic, bool transposed_a,
     assert(!b_k2.is_folded());
     assert(!b_k3.is_folded());
 
-    if (init_c.base() && init_c.base() != c.base && c_n.extent() > 1) {
+    if (init_c.base && init_c.base != c.base && c_n.extent() > 1) {
       if (init_c_n.stride() == 0) {
         // The initializer is broadcasted in the n dimension, which the kernel
         // cannot handle. We need to copy it to the output, and update the
@@ -515,26 +514,24 @@ auto make_transpose_a_impl(index_t tile_k) {
       };
 }
 
+}  // namespace
+
 // Packing means transposing
 // a(k, m, ...) => a([0, tile_k), m, k/tile_k, ...)
-uint32_t define_transpose_a(ynn_subgraph& subgraph, index_t tile_k,
-                            uint32_t input_a_id) {
+void define_transpose_a(ynn_subgraph& subgraph, ynn_node& node, index_t tile_k,
+                        uint32_t input_a_id, uint32_t output_id) {
   const ynn_value& a = subgraph.value(input_a_id);
-
-  ynn_value& packed_a = subgraph.new_internal_value();
-  packed_a.type = a.type;
-  uint32_t packed_a_id = packed_a.id;
+  ynn_value& output = subgraph.get_output_value(&output_id, a.type);
+  output.type = a.type;
 
   slinky::expr k = a.extent(0);
   slinky::expr m = a.extent(1);
+  output.extents = {slinky::ceil_div<slinky::expr>(k, tile_k), m};
+  output.extents.insert(output.extents.end(), a.extents.begin() + 2,
+                        a.extents.end());
 
-  packed_a.extents = {slinky::ceil_div<slinky::expr>(k, tile_k), m};
-  packed_a.extents.insert(packed_a.extents.end(), a.extents.begin() + 2,
-                          a.extents.end());
-
-  ynn_node node;
   node.inputs = {input_a_id};
-  node.outputs = {packed_a_id};
+  node.outputs = {output.id};
   node.op = ynn_node::transpose_a{};
   node.create = [tile_k](const ynn_node& node, ynn_runtime& runtime) {
     const ynn_runtime_value& input = runtime.value(node.inputs[0]);
@@ -574,8 +571,17 @@ uint32_t define_transpose_a(ynn_subgraph& subgraph, index_t tile_k,
     runtime.funcs.push_back(std::move(func));
     return ynn_status_success;
   };
+}
+
+namespace {
+
+uint32_t define_transpose_a(ynn_subgraph& subgraph, index_t tile_k,
+                            uint32_t input_a_id) {
+  ynn_node node;
+  ynn_value& output = subgraph.new_internal_value();
+  ynn::define_transpose_a(subgraph, node, tile_k, input_a_id, output.id);
   subgraph.add_node(std::move(node));
-  return packed_a_id;
+  return output.id;
 }
 
 std::tuple<slinky::expr, slinky::expr> choose_split_factors(
@@ -680,6 +686,9 @@ ynn_status always_alias_transpose(ynn_subgraph& subgraph, uint32_t& id) {
 }
 
 bool is_constant(const ynn_subgraph& subgraph, uint32_t id, int depth = 5) {
+  if (id == YNN_INVALID_VALUE_ID) {
+    return false;
+  }
   if (depth-- <= 0) {
     // We hit our limit for how far we look for constants.
     return false;
@@ -1025,11 +1034,14 @@ ynn_status ynn_define_dot(ynn_subgraph_t subgraph, size_t num_k_dims,
       split_n = {};
     }
 
-    std::vector<slinky::index_t> loop_order = {0, 1};
-    if (pack_b && !packed_b.is_static()) {
-      // Loop over n first so we don't redundantly compute the packing for each
-      // split of m.
-      std::swap(loop_order[0], loop_order[1]);
+    std::vector<slinky::index_t> loop_order;
+    if (output.rank() >= 2) {
+      loop_order = {0, 1};
+      if (pack_b && !packed_b.is_static()) {
+        // Loop over n first so we don't redundantly compute the packing for
+        // each split of m.
+        std::swap(loop_order[0], loop_order[1]);
+      }
     }
 
     slinky::expr splits[] = {split_n, split_m};

@@ -6,6 +6,7 @@
 
 #include <string.h>
 
+#include <algorithm>
 #include <cinttypes>
 #include <cstdlib>
 #include <iostream>

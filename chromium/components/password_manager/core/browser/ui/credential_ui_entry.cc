@@ -5,6 +5,7 @@
 #include "components/password_manager/core/browser/ui/credential_ui_entry.h"
 
 #include "base/i18n/time_formatting.h"
+#include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
@@ -75,8 +76,7 @@ CredentialUIEntry::CredentialUIEntry(const PasswordForm& form)
       note(form.GetNoteWithEmptyUniqueDisplayName()),
       blocked_by_user(form.blocked_by_user),
       last_used_time(form.date_last_used) {
-  if (form.GetPasswordBackup() &&
-      base::FeatureList::IsEnabled(features::kShowRecoveryPassword)) {
+  if (form.GetPasswordBackup()) {
     backup_password = {
         .value = form.GetPasswordBackup().value(),
         .creation_timestamp = form.GetPasswordBackupDateCreated().value()};
@@ -136,8 +136,7 @@ CredentialUIEntry::CredentialUIEntry(const std::vector<PasswordForm>& forms) {
     // TODO(crbug.com/407501259): instead of saving the last non-empty backup,
     // consider storing all backups in the credential UI entry and create a
     // separate card for each of them.
-    if (form.GetPasswordBackup() &&
-        base::FeatureList::IsEnabled(features::kShowRecoveryPassword)) {
+    if (form.GetPasswordBackup()) {
       backup_password = {
           .value = form.GetPasswordBackup().value(),
           .creation_timestamp = form.GetPasswordBackupDateCreated().value()};

@@ -81,7 +81,8 @@ TerminalParams TerminalParams::ForNetworkContext(
     DisableSecureDnsOption disable_secure_dns_option) {
   CHECK(network_context);
   CHECK(factory_params);
-  int process_id = factory_params->process_id;
+  // TODO(crbug.com/379869738) Remove GetUnsafeValue.
+  int process_id = factory_params->process_id.GetUnsafeValue();
   return TerminalParams(network_context, std::move(factory_params),
                         header_client_option, factory_override_option,
                         disable_secure_dns_option,
@@ -245,8 +246,11 @@ template <typename OutType, typename... FinishArgs>
 
   if (devtools_params) {
     auto [is_navigation, is_download] = GetIsNavigationAndDownload(type);
-    devtools_params->Run(is_navigation, is_download, factory_builder,
-                         factory_override_ptr);
+    devtools_params->Run(
+        is_navigation, is_download, factory_builder, factory_override_ptr,
+        terminal_params.header_client_option() == HeaderClientOption::kAllow
+            ? &header_client
+            : nullptr);
   }
 
   if (auto terminal_url_loader_factory =

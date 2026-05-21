@@ -4,6 +4,8 @@
 
 #include "chrome/browser/ui/webui/browser_command/browser_command_handler.h"
 
+#include <algorithm>
+
 #include "base/command_line.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/user_metrics.h"
@@ -88,7 +90,7 @@ BrowserCommandHandler::~BrowserCommandHandler() = default;
 void BrowserCommandHandler::CanExecuteCommand(
     browser_command::mojom::Command command_id,
     CanExecuteCommandCallback callback) {
-  if (!base::Contains(supported_commands_, command_id)) {
+  if (!std::ranges::contains(supported_commands_, command_id)) {
     std::move(callback).Run(false);
     return;
   }
@@ -158,7 +160,6 @@ void BrowserCommandHandler::CanExecuteCommand(
       can_execute = true;
       break;
     case Command::kOpenSplitView:
-      // What's new module is gated on the kSideBySide flag already.
       can_execute = true;
       break;
   }
@@ -168,7 +169,7 @@ void BrowserCommandHandler::CanExecuteCommand(
 void BrowserCommandHandler::ExecuteCommand(Command command_id,
                                            ClickInfoPtr click_info,
                                            ExecuteCommandCallback callback) {
-  if (!base::Contains(supported_commands_, command_id)) {
+  if (!std::ranges::contains(supported_commands_, command_id)) {
     std::move(callback).Run(false);
     return;
   }
@@ -373,10 +374,9 @@ void BrowserCommandHandler::OpenGlic() {
 
   auto* browser_window = webui::GetBrowserWindowInterface(web_contents_);
 
-  glic_service->window_controller().Toggle(
-      browser_window, /*prevent_close=*/false,
-      glic::mojom::InvocationSource::kWhatsNew,
-      /*prompt_suggestion=*/std::nullopt);
+  glic_service->ToggleUI(browser_window, /*prevent_close=*/false,
+                         glic::mojom::InvocationSource::kWhatsNew,
+                         /*prompt_suggestion=*/std::nullopt);
 #endif  // BUILDFLAG(ENABLE_GLIC)
 }
 

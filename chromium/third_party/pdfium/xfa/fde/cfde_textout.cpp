@@ -89,7 +89,7 @@ bool CFDE_TextOut::DrawString(CFX_RenderDevice* device,
 
         CFX_Font* font;
 #if !BUILDFLAG(IS_WIN)
-        FxFont.SetFace(pFxFont->GetFace());
+        FxFont.SetFaceFromFont(*pFxFont);
         FxFont.SetFontSpan(pFxFont->GetFontSpan());
         font = &FxFont;
 #else
@@ -109,7 +109,7 @@ bool CFDE_TextOut::DrawString(CFX_RenderDevice* device,
     pFxFont = pCurFont->GetDevFont();
     CFX_Font* font;
 #if !BUILDFLAG(IS_WIN)
-    FxFont.SetFace(pFxFont->GetFace());
+    FxFont.SetFaceFromFont(*pFxFont);
     FxFont.SetFontSpan(pFxFont->GetFontSpan());
     font = &FxFont;
 #else

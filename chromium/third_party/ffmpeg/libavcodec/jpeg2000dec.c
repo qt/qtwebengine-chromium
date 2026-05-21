@@ -1476,7 +1476,7 @@ static int jpeg2000_decode_packet(Jpeg2000DecoderContext *s, Jpeg2000Tile *tile,
                 }
                 if (tmp_length > cblk->data_allocated) {
                     avpriv_request_sample(s->avctx,
-                                        "Block with lengthinc greater than %"SIZE_SPECIFIER"",
+                                        "Block with lengthinc greater than %zu",
                                         cblk->data_allocated);
                     return AVERROR_PATCHWELCOME;
                 }
@@ -2071,7 +2071,7 @@ static int decode_cblk(const Jpeg2000DecoderContext *s, Jpeg2000CodingStyle *cod
                 return AVERROR_INVALIDDATA;
             }
             if (FFABS(cblk->data + cblk->data_start[term_cnt + 1] - 2 - t1->mqc.bp) > 0) {
-                av_log(s->avctx, AV_LOG_WARNING, "Mid mismatch %"PTRDIFF_SPECIFIER" in pass %d of %d\n",
+                av_log(s->avctx, AV_LOG_WARNING, "Mid mismatch %td in pass %d of %d\n",
                     cblk->data + cblk->data_start[term_cnt + 1] - 2 - t1->mqc.bp,
                     pass_cnt, cblk->npasses);
             }
@@ -2088,7 +2088,7 @@ static int decode_cblk(const Jpeg2000DecoderContext *s, Jpeg2000CodingStyle *cod
     }
 
     if (cblk->data + cblk->length - 2 > t1->mqc.bp) {
-        av_log(s->avctx, AV_LOG_WARNING, "End mismatch %"PTRDIFF_SPECIFIER"\n",
+        av_log(s->avctx, AV_LOG_WARNING, "End mismatch %td\n",
                cblk->data + cblk->length - 2 - t1->mqc.bp);
     }
 
@@ -2270,8 +2270,8 @@ static inline int tile_codeblocks(const Jpeg2000DecoderContext *s, Jpeg2000Tile 
                     band->coord[1][0] == band->coord[1][1])
                     continue;
 
-                if ((codsty->cblk_style & JPEG2000_CTSY_HTJ2K_F) && M_b >= 31) {
-                    avpriv_request_sample(s->avctx, "JPEG2000_CTSY_HTJ2K_F and M_b >= 31");
+                if (M_b >= 31) {
+                    avpriv_request_sample(s->avctx, "M_b >= 31");
                     return AVERROR_PATCHWELCOME;
                 }
 
@@ -2348,9 +2348,12 @@ static inline int tile_codeblocks(const Jpeg2000DecoderContext *s, Jpeg2000Tile 
             int h            = tile->comp[compno].coord[1][1] -                                   \
                                ff_jpeg2000_ceildiv(s->image_offset_y, s->cdy[compno]);            \
             int plane        = 0;                                                                 \
+            ptrdiff_t dstoffset = 0;                                                              \
                                                                                                   \
             if (planar)                                                                           \
                 plane = s->cdef[compno] ? s->cdef[compno]-1 : (s->ncomponents-1);                 \
+            else                                                                                  \
+                dstoffset = s->cdef[compno] ? s->cdef[compno] - 1 : compno;                       \
                                                                                                   \
             y    = tile->comp[compno].coord[1][0] -                                               \
                    ff_jpeg2000_ceildiv(s->image_offset_y, s->cdy[compno]);                        \
@@ -2360,7 +2363,7 @@ static inline int tile_codeblocks(const Jpeg2000DecoderContext *s, Jpeg2000Tile 
                                                                                                   \
                 x   = tile->comp[compno].coord[0][0] -                                            \
                       ff_jpeg2000_ceildiv(s->image_offset_x, s->cdx[compno]);                     \
-                dst = line + x * pixelsize + compno*!planar;                                      \
+                dst = line + x * pixelsize + dstoffset;                                           \
                                                                                                   \
                 if (codsty->transform == FF_DWT97) {                                              \
                     for (; x < w; x++) {                                                          \

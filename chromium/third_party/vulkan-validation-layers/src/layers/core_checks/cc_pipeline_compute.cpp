@@ -1,7 +1,7 @@
-/* Copyright (c) 2015-2025 The Khronos Group Inc.
- * Copyright (c) 2015-2025 Valve Corporation
- * Copyright (c) 2015-2025 LunarG, Inc.
- * Copyright (C) 2015-2025 Google Inc.
+/* Copyright (c) 2015-2026 The Khronos Group Inc.
+ * Copyright (c) 2015-2026 Valve Corporation
+ * Copyright (c) 2015-2026 LunarG, Inc.
+ * Copyright (C) 2015-2026 Google Inc.
  * Modifications Copyright (C) 2020-2022 Advanced Micro Devices, Inc. All rights reserved.
  * Modifications Copyright (C) 2022 RasterGrid Kft.
  *
@@ -44,13 +44,6 @@ bool CoreChecks::PreCallValidateCreateComputePipelines(VkDevice device, VkPipeli
         }
 
         skip |= ValidateComputePipelineDerivatives(pipeline_states, i, create_info_loc);
-        const Location flags_loc = pipeline->GetCreateFlagsLoc(create_info_loc);
-        skip |= ValidatePipelineCacheControlFlags(pipeline->create_flags, flags_loc,
-                                                  "VUID-VkComputePipelineCreateInfo-pipelineCreationCacheControl-02875");
-        skip |= ValidatePipelineIndirectBindableFlags(pipeline->create_flags, flags_loc,
-                                                      "VUID-VkComputePipelineCreateInfo-flags-09007");
-        skip |=
-            ValidatePipeline64BitIndexingFlags(pipeline->create_flags, flags_loc, "VUID-VkComputePipelineCreateInfo-flags-11798");
 
         if (const auto *pipeline_robustness_info =
                 vku::FindStructInPNextChain<VkPipelineRobustnessCreateInfo>(pCreateInfos[i].pNext)) {
@@ -64,6 +57,9 @@ bool CoreChecks::PreCallValidateCreateComputePipelines(VkDevice device, VkPipeli
             skip |= stateless_spirv_validator.Validate(
                 *chassis_state.stateless_data.pipeline_pnext_module, chassis_state.stateless_data,
                 create_info_loc.dot(Field::stage).pNext(Struct::VkShaderModuleCreateInfo, Field::pCode));
+        }
+        if (pipeline->descriptor_heap_embedded_samplers_count > 0) {
+            skip |= ValidateEmbeddedSamplersCount(pipeline->descriptor_heap_embedded_samplers_count, create_info_loc);
         }
     }
     return skip;

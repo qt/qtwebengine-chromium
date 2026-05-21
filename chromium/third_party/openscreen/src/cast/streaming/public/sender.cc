@@ -16,6 +16,7 @@
 #include "util/chrono_helpers.h"
 #include "util/osp_logging.h"
 #include "util/std_util.h"
+#include "util/string_util.h"
 #include "util/trace_logging.h"
 
 namespace openscreen::cast {
@@ -118,6 +119,21 @@ Sender::EnqueueFrameResult Sender::EnqueueFrame(const EncodedFrame& frame) {
   }
   OSP_CHECK(frame.data.data());
 
+  const auto capture_begin_time =
+      (frame.capture_begin_time > Clock::time_point::min())
+          ? frame.capture_begin_time
+          : Clock::now();
+
+  TRACE_FLOW_BEGIN_WITH_TIME(TraceCategory::kSender, "Frame.Capture",
+                             frame.frame_id, capture_begin_time);
+
+  if (frame.capture_end_time > Clock::time_point::min()) {
+    TRACE_FLOW_STEP_WITH_TIME(TraceCategory::kSender, "Frame.Capture.End",
+                              frame.frame_id, frame.capture_end_time);
+  }
+
+  TRACE_FLOW_STEP(TraceCategory::kSender, "Frame.Encode.End", frame.frame_id);
+
   // Check whether enqueuing the frame would exceed the design limit for the
   // span of FrameIds. Even if `num_frames_in_flight_` is less than
   // kMaxUnackedFrames, it's the span of FrameIds that is restricted.
@@ -152,6 +168,7 @@ Sender::EnqueueFrameResult Sender::EnqueueFrame(const EncodedFrame& frame) {
   if (slot.frame->dependency == EncodedFrame::Dependency::kKeyFrame) {
     last_enqueued_key_frame_id_ = slot.frame->frame_id;
   }
+  TRACE_FLOW_STEP(TraceCategory::kSender, "Frame.Enqueued", frame.frame_id);
 
   // Update the target playout delay, if necessary.
   if (slot.frame->new_playout_delay > milliseconds::zero()) {
@@ -190,9 +207,9 @@ Sender::EnqueueFrameResult Sender::EnqueueFrame(const EncodedFrame& frame) {
 }
 
 void Sender::CancelInFlightData() {
-  TRACE_SCOPED1(TraceCategory::kSender, "CancelInFlightData",
-                "frames_in_flight",
-                std::to_string(last_enqueued_frame_id_ - checkpoint_frame_id_));
+  TRACE_DEFAULT_SCOPED1(
+      TraceCategory::kSender, "frames_in_flight",
+      std::to_string(last_enqueued_frame_id_ - checkpoint_frame_id_));
 
   while (checkpoint_frame_id_ < last_enqueued_frame_id_) {
     ++checkpoint_frame_id_;
@@ -352,8 +369,8 @@ void Sender::OnCastReceiverFrameLogMessages(
 }
 
 void Sender::OnReceiverIndicatesPictureLoss() {
-  TRACE_SCOPED1(TraceCategory::kSender, "OnReceiverIndicatesPictureLoss",
-                "last_received_frame_id", picture_lost_at_frame_id_.ToString());
+  TRACE_DEFAULT_SCOPED1(TraceCategory::kSender, "last_received_frame_id",
+                        picture_lost_at_frame_id_.ToString());
   // The Receiver will continue the PLI notifications until it has received a
   // key frame. Thus, if a key frame is already in-flight, don't make a state
   // change that would cause this Sender to force another expensive key frame.
@@ -381,8 +398,8 @@ void Sender::OnReceiverIndicatesPictureLoss() {
 
 void Sender::OnReceiverCheckpoint(FrameId frame_id,
                                   milliseconds playout_delay) {
-  TRACE_SCOPED2(TraceCategory::kSender, "OnReceiverCheckpoint", "frame_id",
-                frame_id.ToString(), "playout_delay", ToString(playout_delay));
+  TRACE_DEFAULT_SCOPED2(TraceCategory::kSender, "frame_id", frame_id.ToString(),
+                        "playout_delay", ToString(playout_delay));
   if (frame_id > last_enqueued_frame_id_) {
     TRACE_SET_RESULT(Error::Code::kParameterOutOfRange);
     OSP_LOG_ERROR
@@ -401,6 +418,9 @@ void Sender::OnReceiverCheckpoint(FrameId frame_id,
       statistics_dispatcher_.DispatchAckEvent(
           config_.stream_type, rtp_timestamp, checkpoint_frame_id_);
       CancelPendingFrame(checkpoint_frame_id_, /*was_acked*/ true);
+
+      TRACE_FLOW_STEP(TraceCategory::kSender, "Frame.Acked",
+                      checkpoint_frame_id_);
     }
   }
   latest_expected_frame_id_ = std::max(latest_expected_frame_id_, frame_id);
@@ -415,8 +435,8 @@ void Sender::OnReceiverCheckpoint(FrameId frame_id,
 
 void Sender::OnReceiverHasFrames(std::vector<FrameId> acks) {
   OSP_DCHECK(!acks.empty() && AreElementsSortedAndUnique(acks));
-  TRACE_SCOPED1(TraceCategory::kSender, "OnReceiverHasFrames", "frame_ids",
-                Join(acks));
+  TRACE_DEFAULT_SCOPED1(TraceCategory::kSender, "frame_ids",
+                        string_util::Join(acks));
 
   if (acks.back() > last_enqueued_frame_id_) {
     TRACE_SET_RESULT(Error::Code::kParameterOutOfRange);
@@ -429,6 +449,7 @@ void Sender::OnReceiverHasFrames(std::vector<FrameId> acks) {
   }
 
   for (FrameId id : acks) {
+    TRACE_FLOW_STEP(TraceCategory::kSender, "Frame.Acked", id);
     PendingFrameSlot& slot = get_slot_for(id);
     if (slot.is_active_for_frame(id)) {
       const RtpTimeTicks rtp_timestamp = slot.frame->rtp_timestamp;
@@ -442,8 +463,8 @@ void Sender::OnReceiverHasFrames(std::vector<FrameId> acks) {
 }
 
 void Sender::OnReceiverIsMissingPackets(std::vector<PacketNack> nacks) {
-  TRACE_SCOPED1(TraceCategory::kSender, "OnReceiverIsMissingPackets",
-                "number_of_packets", std::to_string(nacks.size()));
+  TRACE_DEFAULT_SCOPED1(TraceCategory::kSender, "number_of_packets",
+                        std::to_string(nacks.size()));
   OSP_DCHECK(!nacks.empty() && AreElementsSortedAndUnique(nacks));
   OSP_CHECK_NE(rtcp_packet_arrival_time_, SenderPacketRouter::kNever);
 
@@ -580,8 +601,7 @@ Sender::ChosenPacketAndWhen Sender::ChooseKickstartPacket() {
 }
 
 void Sender::CancelPendingFrame(FrameId frame_id, bool was_acked) {
-  TRACE_SCOPED1(TraceCategory::kSender, "CancelPendingFrame", "frame_id",
-                frame_id.ToString());
+  TRACE_FLOW_END(TraceCategory::kSender, "Frame.Cancelled", frame_id);
 
   PendingFrameSlot& slot = get_slot_for(frame_id);
   if (!slot.is_active_for_frame(frame_id)) {

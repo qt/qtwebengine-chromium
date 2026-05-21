@@ -211,6 +211,7 @@ chromium-metrics-reviews@google.com.
   <int value="18" label="Autofill AI"/>
   <int value="19" label="Plus address update in browser process"/>
   <int value="20" label="Proactive password recovery"/>
+  <int value="21" label="Glic"/>
 </enum>
 
 <enum name="AutoSigninFirstRun">
@@ -299,12 +300,22 @@ chromium-metrics-reviews@google.com.
   <int value="9" label="Passkey stored in Windows Hello"/>
   <int value="10" label="Passkey stored in iCloud Keychain"/>
   <int value="11" label="Passkey stored in Chrome profile"/>
-  <int value="12" label="Passkey other source"/>
+  <int value="12" label="Passkey hybrid flow"/>
   <int value="13" label="Passkey from a security key"/>
-  <int value="14" label="Passkey hybrid flow"/>
+  <int value="14" label="Passkey hybrid or security key"/>
+  <int value="15" label="Passkey unknown source"/>
 </enum>
 
-<!-- LINT.ThenChange(//components/password_manager/core/browser/metrics/login_metrics.h:BrowserAssistedLoginType) -->
+<!-- LINT.ThenChange(//components/password_manager/core/browser/password_manager_metrics_util.h:BrowserAssistedLoginType) -->
+
+<enum name="ChangePasswordFormFinderError">
+  <int value="0" label="Failed to capture page content"/>
+  <int value="1" label="Failed to parse response"/>
+  <int value="2" label="No button to click"/>
+  <int value="3" label="Interruption detected (OTP, etc.)"/>
+  <int value="4" label="Failed to click button"/>
+  <int value="5" label="Form not found"/>
+</enum>
 
 <enum name="CharacterClassPresenceChange">
   <int value="0" label="No change"/>
@@ -795,6 +806,7 @@ chromium-metrics-reviews@google.com.
   <int value="8" label="Unsupported site"/>
   <int value="9" label="User has no saved passwords"/>
   <int value="10" label="Throttled"/>
+  <int value="11" label="Signup form"/>
 </enum>
 
 <!-- LINT.ThenChange(/chrome/browser/password_manager/chrome_password_change_service.h) -->
@@ -892,14 +904,20 @@ chromium-metrics-reviews@google.com.
   <int value="2" label="Open password checkup homepage"/>
 </enum>
 
+<!-- LINT.IfChange(PasswordCheckReferrer) -->
+
 <enum name="PasswordCheckReferrer">
   <int value="0" label="Safety Check"/>
   <int value="1" label="Password Settings"/>
   <int value="2" label="Phish Guard Dialog"/>
   <int value="3" label="Password Breach Dialog"/>
   <int value="4" label="More passwords to fix bubble"/>
-  <int value="5" label="Unsafe state bubble"/>
+  <int value="5" label="(obsolete) Unsafe state bubble"/>
+  <int value="6" label="Safety Check Magic Stack"/>
+  <int value="7" label="Safety Check Notification"/>
 </enum>
+
+<!-- LINT.ThenChange(//chrome/browser/resources/settings/autofill_page/password_manager_proxy.ts:PasswordCheckReferrer, //components/password_manager/core/browser/ui/password_check_referrer.h:PasswordCheckReferrer) -->
 
 <enum name="PasswordCheckResolutionAction">
   <int value="0" label="Opened a site to change password manually"/>
@@ -1105,7 +1123,7 @@ chromium-metrics-reviews@google.com.
     passwords in the account. Recorded only on Win/Mac/Linux.
   </int>
   <int value="4"
-      label="(obsolete)ExplicitlyTriggeredForSinglePasswordInDetailsInSettings">
+      label="kExplicitlyTriggeredForSinglePasswordInDetailsInSettings">
     The user explicitly asked to move a password to account store from password
     details page.
   </int>
@@ -1698,9 +1716,9 @@ chromium-metrics-reviews@google.com.
              are cleared to enforce the initial sync flow and download any
              potential passwords notes on the server"/>
   <int value="6"
-      label="Reading successful, but suspicious bulk deletions were detected.
-             To err on the side of safety, drop all password sync metadata
-             and start again."/>
+      label="(Obsolete) Reading successful, but suspicious bulk deletions
+             were detected. To err on the side of safety, drop all password
+             sync metadata and start again."/>
   <int value="7"
       label="Reading successful, but undecryptable passwords were detected.
              To err on the side of safety, drop all password sync metadata
@@ -1879,6 +1897,7 @@ chromium-metrics-reviews@google.com.
   <int value="6" label="Error - page error"/>
   <int value="7" label="No Response"/>
   <int value="8" label="Could not parse response"/>
+  <int value="9" label="User intervention needed"/>
 </enum>
 
 <!-- LINT.ThenChange(/chrome/browser/password_manager/password_change/password_change_submission_verifier.h:SubmissionOutcome)-->

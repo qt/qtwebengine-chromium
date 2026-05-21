@@ -87,6 +87,13 @@ static inline void get_log_var_4x4sub_blk(
 static int get_q(const AV1_COMP *cpi) {
   const GF_GROUP *gf_group = &cpi->ppi->gf_group;
   const FRAME_TYPE frame_type = gf_group->frame_type[cpi->gf_frame_index];
+
+  if (cpi->oxcf.rc_cfg.mode == AOM_Q) {
+    int cq_level = cpi->oxcf.rc_cfg.cq_level;
+    return (int)av1_convert_qindex_to_q(cq_level,
+                                        cpi->common.seq_params->bit_depth);
+  }
+
   const int q =
       (int)av1_convert_qindex_to_q(cpi->ppi->p_rc.avg_frame_qindex[frame_type],
                                    cpi->common.seq_params->bit_depth);

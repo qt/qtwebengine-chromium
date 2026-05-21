@@ -3,9 +3,9 @@
 
 /***************************************************************************
  *
- * Copyright (c) 2015-2025 The Khronos Group Inc.
- * Copyright (c) 2015-2025 Valve Corporation
- * Copyright (c) 2015-2025 LunarG, Inc.
+ * Copyright (c) 2015-2026 The Khronos Group Inc.
+ * Copyright (c) 2015-2026 Valve Corporation
+ * Copyright (c) 2015-2026 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -302,6 +302,8 @@ bool PreCallValidateSubmitDebugUtilsMessageEXT(VkInstance instance, VkDebugUtils
                                                VkDebugUtilsMessageTypeFlagsEXT messageTypes,
                                                const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
                                                const ErrorObject& error_obj) const override;
+bool PreCallValidateGetPhysicalDeviceDescriptorSizeEXT(VkPhysicalDevice physicalDevice, VkDescriptorType descriptorType,
+                                                       const ErrorObject& error_obj) const override;
 bool PreCallValidateGetPhysicalDeviceMultisamplePropertiesEXT(VkPhysicalDevice physicalDevice, VkSampleCountFlagBits samples,
                                                               VkMultisamplePropertiesEXT* pMultisampleProperties,
                                                               const ErrorObject& error_obj) const override;
@@ -392,5 +394,13 @@ bool PreCallValidateGetPhysicalDeviceCooperativeMatrixFlexibleDimensionsProperti
 bool PreCallValidateEnumeratePhysicalDeviceQueueFamilyPerformanceCountersByRegionARM(
     VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex, uint32_t* pCounterCount, VkPerformanceCounterARM* pCounters,
     VkPerformanceCounterDescriptionARM* pCounterDescriptions, const ErrorObject& error_obj) const override;
+#ifdef VK_USE_PLATFORM_UBM_SEC
+bool PreCallValidateCreateUbmSurfaceSEC(VkInstance instance, const VkUbmSurfaceCreateInfoSEC* pCreateInfo,
+                                        const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface,
+                                        const ErrorObject& error_obj) const override;
+bool PreCallValidateGetPhysicalDeviceUbmPresentationSupportSEC(VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex,
+                                                               struct ubm_device* ubm_device,
+                                                               const ErrorObject& error_obj) const override;
+#endif  // VK_USE_PLATFORM_UBM_SEC
 
 // NOLINTEND

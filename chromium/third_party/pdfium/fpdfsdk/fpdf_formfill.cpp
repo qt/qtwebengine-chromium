@@ -693,7 +693,7 @@ FORM_GetFocusedAnnot(FPDF_FORMHANDLE handle,
     return true;
   }
 
-  // TODO(crbug.com/pdfium/1482): Handle XFA case.
+  // TODO(crbug.com/42270486): Handle XFA case.
   if (cpdfsdk_annot->AsXFAWidget()) {
     return true;
   }

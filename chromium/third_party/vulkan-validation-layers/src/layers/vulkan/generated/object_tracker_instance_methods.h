@@ -3,10 +3,10 @@
 
 /***************************************************************************
  *
- * Copyright (c) 2015-2025 The Khronos Group Inc.
- * Copyright (c) 2015-2025 Valve Corporation
- * Copyright (c) 2015-2025 LunarG, Inc.
- * Copyright (c) 2015-2025 Google Inc.
+ * Copyright (c) 2015-2026 The Khronos Group Inc.
+ * Copyright (c) 2015-2026 Valve Corporation
+ * Copyright (c) 2015-2026 LunarG, Inc.
+ * Copyright (c) 2015-2026 Google Inc.
  * Copyright (c) 2015-2025 RasterGrid Kft.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -233,6 +233,11 @@ void PostCallRecordCreateSurfaceOHOS(VkInstance instance, const VkSurfaceCreateI
                                      const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface,
                                      const RecordObject& record_obj) override;
 #endif  // VK_USE_PLATFORM_OHOS
+#ifdef VK_USE_PLATFORM_UBM_SEC
+void PostCallRecordCreateUbmSurfaceSEC(VkInstance instance, const VkUbmSurfaceCreateInfoSEC* pCreateInfo,
+                                       const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface,
+                                       const RecordObject& record_obj) override;
+#endif  // VK_USE_PLATFORM_UBM_SEC
 
 void PostCallRecordDestroyInstance(VkInstance instance, const VkAllocationCallbacks* pAllocator,
                                    const RecordObject& record_obj) override;

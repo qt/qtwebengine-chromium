@@ -34,12 +34,12 @@
 #include "src/tint/lang/core/fluent_types.h"
 #include "src/tint/lang/core/number.h"
 #include "src/tint/lang/core/type/atomic.h"
+#include "src/tint/lang/core/type/buffer.h"
 #include "src/tint/lang/core/type/depth_multisampled_texture.h"
 #include "src/tint/lang/core/type/depth_texture.h"
 #include "src/tint/lang/core/type/external_texture.h"
 #include "src/tint/lang/core/type/input_attachment.h"
 #include "src/tint/lang/core/type/multisampled_texture.h"
-#include "src/tint/lang/core/type/resource_binding.h"
 #include "src/tint/lang/core/type/sampler.h"
 #include "src/tint/lang/core/type/string.h"
 #include "src/tint/lang/core/type/struct.h"
@@ -69,6 +69,7 @@ class Reference;
 class SampledTexture;
 class StorageTexture;
 class U8;
+class U16;
 class U32;
 class U64;
 class Vector;
@@ -156,6 +157,8 @@ class Manager final {
             return Get<core::type::I32>(std::forward<ARGS>(args)...);
         } else if constexpr (std::is_same_v<T, tint::core::u8>) {
             return Get<core::type::U8>(std::forward<ARGS>(args)...);
+        } else if constexpr (std::is_same_v<T, tint::core::u16>) {
+            return Get<core::type::U16>(std::forward<ARGS>(args)...);
         } else if constexpr (std::is_same_v<T, tint::core::u32>) {
             return Get<core::type::U32>(std::forward<ARGS>(args)...);
         } else if constexpr (std::is_same_v<T, tint::core::u64>) {
@@ -220,6 +223,9 @@ class Manager final {
 
     /// @returns a u8 type
     const core::type::U8* u8();
+
+    /// @returns a u16 type
+    const core::type::U16* u16();
 
     /// @returns a u32 type
     const core::type::U32* u32();
@@ -313,6 +319,14 @@ class Manager final {
     /// @returns a sampled texture type with the provided params
     const core::type::SampledTexture* sampled_texture(TextureDimension dim,
                                                       const core::type::Type* type);
+
+    /// @param dim the dimensionality of the texture
+    /// @param type the data type of the sampled texture
+    /// @param filterable the filterablity
+    /// @returns a sampled texture type with the provided params
+    const core::type::SampledTexture* sampled_texture(TextureDimension dim,
+                                                      const core::type::Type* type,
+                                                      TextureFilterable filterable);
 
     /// @param dim the dimensionality of the texture
     /// @param type the data type of the sampled texture
@@ -574,6 +588,13 @@ class Manager final {
         return subgroup_matrix(K, Get<T>(), C, R);
     }
 
+    /// @param n the size of the buffer
+    /// @returns the buffer
+    const core::type::Buffer* buffer(uint32_t n);
+
+    /// @returns the unsized buffer
+    const core::type::Buffer* unsized_buffer();
+
     /// @param elem_ty the array element type
     /// @param count the array element count
     /// @returns the array type
@@ -594,9 +615,6 @@ class Manager final {
             return array(Get<T>(), N);
         }
     }
-
-    /// @returns the resource binding type
-    const core::type::ResourceBinding* resource_binding();
 
     /// @param elem_ty the array element type
     /// @param count the array element count
@@ -658,6 +676,12 @@ class Manager final {
     /// @returns the sampler type
     const core::type::Sampler* sampler() {
         return Get<core::type::Sampler>(core::type::SamplerKind::kSampler);
+    }
+
+    /// @param filtering the sampler filtering parameter
+    /// @returns the sampler type
+    const core::type::Sampler* sampler(SamplerFiltering filtering) {
+        return Get<core::type::Sampler>(core::type::SamplerKind::kSampler, filtering);
     }
 
     /// @returns the comparison sampler type

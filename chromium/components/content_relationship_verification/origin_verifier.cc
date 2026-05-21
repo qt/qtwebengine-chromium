@@ -25,7 +25,6 @@
 
 using base::android::AppendJavaStringArrayToStringVector;
 using base::android::ConvertJavaStringToUTF8;
-using base::android::JavaParamRef;
 using base::android::JavaRef;
 using content_relationship_verification::RelationshipCheckResult;
 
@@ -45,10 +44,10 @@ OriginVerifier::~OriginVerifier() = default;
 
 bool OriginVerifier::VerifyOrigin(
     JNIEnv* env,
-    const JavaParamRef<jstring>& j_package_name,
-    const JavaParamRef<jobjectArray>& j_fingerprints,
-    const JavaParamRef<jstring>& j_origin,
-    const JavaParamRef<jstring>& j_relationship,
+    const JavaRef<jstring>& j_package_name,
+    const JavaRef<jobjectArray>& j_fingerprints,
+    const JavaRef<jstring>& j_origin,
+    const JavaRef<jstring>& j_relationship,
     const base::android::JavaRef<jobject>& jweb_contents) {
   if (!j_package_name || !j_fingerprints || !j_origin || !j_relationship) {
     return false;
@@ -87,14 +86,14 @@ void OriginVerifier::OnRelationshipCheckComplete(
   auto j_origin = base::android::ConvertUTF8ToJavaString(env, origin);
 
   Java_OriginVerifier_onOriginVerificationResult(env, jobject_, j_origin,
-                                                 static_cast<jint>(result));
+                                                 static_cast<int32_t>(result));
 }
 
 // static
-jlong OriginVerifier::Init(
+int64_t OriginVerifier::Init(
     JNIEnv* env,
-    const base::android::JavaParamRef<jobject>& obj,
-    const base::android::JavaParamRef<jobject>& jbrowser_context_handle) {
+    const base::android::JavaRef<jobject>& obj,
+    const base::android::JavaRef<jobject>& jbrowser_context_handle) {
   OriginVerifier* native_verifier =
       new OriginVerifier(env, obj, jbrowser_context_handle);
   return reinterpret_cast<intptr_t>(native_verifier);
@@ -104,10 +103,10 @@ void OriginVerifier::Destroy(JNIEnv* env) {
   delete this;
 }
 
-static jlong JNI_OriginVerifier_Init(
+static int64_t JNI_OriginVerifier_Init(
     JNIEnv* env,
-    const base::android::JavaParamRef<jobject>& obj,
-    const base::android::JavaParamRef<jobject>& jbrowser_context_handle) {
+    const base::android::JavaRef<jobject>& obj,
+    const base::android::JavaRef<jobject>& jbrowser_context_handle) {
   return OriginVerifier::Init(env, obj, jbrowser_context_handle);
 }
 

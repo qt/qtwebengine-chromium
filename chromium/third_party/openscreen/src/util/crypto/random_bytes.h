@@ -8,10 +8,12 @@
 #include <array>
 #include <cstdint>
 
+#include "platform/base/span.h"
+
 namespace openscreen {
 
 std::array<uint8_t, 16> GenerateRandomBytes16();
-void GenerateRandomBytes(uint8_t* out, int len);
+void GenerateRandomBytes(ByteBuffer out);
 
 }  // namespace openscreen
 

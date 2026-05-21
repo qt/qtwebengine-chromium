@@ -14,6 +14,7 @@
 #include "include/cppgc/macros.h"
 #include "include/v8-internal.h"
 #include "src/base/atomic-utils.h"
+#include "src/base/bit-field.h"
 #include "src/base/build_config.h"
 #include "src/base/enum-set.h"
 #include "src/base/flags.h"
@@ -355,6 +356,40 @@ const size_t kShortBuiltinCallsOldSpaceSizeThreshold = size_t{2} * GB;
 #define V8_UNDEFINED_DOUBLE_BOOL false
 #endif
 
+#ifdef V8_ENABLE_EXPERIMENTAL_TSA_BUILTINS
+#define V8_EXPERIMENTAL_TSA_BUILTINS_BOOL true
+#else
+#define V8_EXPERIMENTAL_TSA_BUILTINS_BOOL false
+#endif
+
+#ifdef V8_ENABLE_EXPERIMENTAL_TQ_TO_TSA
+#define V8_EXPERIMENTAL_TQ_TO_TSA_BOOL true
+#else
+#define V8_EXPERIMENTAL_TQ_TO_TSA_BOOL false
+#endif
+
+#ifdef V8_ENABLE_EXPERIMENTAL_TQ_TO_TSA
+#ifndef V8_ENABLE_EXPERIMENTAL_TSA_BUILTINS
+#error "tq-to-tsa is not supported without tsa builtins"
+#endif
+#define SELECT_TSA_LEVEL(NO_TSA_MACRO, TSA_MACRO, TQ_TO_TSA_MACRO, ...) \
+  EXPAND(TQ_TO_TSA_MACRO(__VA_ARGS__))
+#elif V8_ENABLE_EXPERIMENTAL_TSA_BUILTINS
+#define SELECT_TSA_LEVEL(NO_TSA_MACRO, TSA_MACRO, TQ_TO_TSA_MACRO, ...) \
+  EXPAND(TSA_MACRO(__VA_ARGS__))
+#else
+#define SELECT_TSA_LEVEL(NO_TSA_MACRO, TSA_MACRO, TQ_TO_TSA_MACRO, ...) \
+  EXPAND(NO_TSA_MACRO(__VA_ARGS__))
+#endif
+
+#ifdef V8_ENABLE_EXPERIMENTAL_TSA_BUILTINS
+// EXPAND is needed to work around MSVC's broken __VA_ARGS__ expansion.
+#define IF_TSA(TSA_MACRO, CSA_MACRO, ...) EXPAND(TSA_MACRO(__VA_ARGS__))
+#else
+// EXPAND is needed to work around MSVC's broken __VA_ARGS__ expansion.
+#define IF_TSA(TSA_MACRO, CSA_MACRO, ...) EXPAND(CSA_MACRO(__VA_ARGS__))
+#endif
+
 #define V8_STACK_ALLOCATED CPPGC_STACK_ALLOCATED
 
 // Superclass for classes only using static method functions.
@@ -537,6 +572,14 @@ using AtomicTagged_t = base::AtomicWord;
 
 #endif  // V8_COMPRESS_POINTERS
 
+// The name used for virtual address space reservations backing the pointer
+// tables. This name is mostly useful for debugging/inspecting and should be
+// visible in e.g. /proc/$pid/maps if the system supports setting names on
+// virtual memory ranges (PR_SET_VMA_ANON_NAME on Linux).
+// TODO(saelo): It might be nicer to have one name per table type, e.g.
+// v8-external-pointer-table, v8-trusted-pointer-table, etc.
+static const char* kPointerTableAddressSpaceName = "v8-pointer-table";
+
 //
 // JavaScript Dispatch Table
 //
@@ -695,6 +738,9 @@ constexpr int kSimd128Size = 16;
 
 // Half of 128 bit SIMD value size.
 constexpr int kSimd128HalfSize = kSimd128Size / 2;
+
+// Quarter of 128 bit SIMD value size.
+constexpr int kSimd128QuarterSize = kSimd128Size / 4;
 
 // 256 bit SIMD value size.
 constexpr int kSimd256Size = 32;
@@ -872,6 +918,21 @@ enum class CallApiCallbackMode {
 // This constant is used to indicate that feedback is embedded in the bytecode
 // itself.
 constexpr int kFeedbackIsEmbedded = -1;
+
+// This constant is used as an sentinel value for embedded feedback in
+// byteocode, indicating an uninitialized state.
+constexpr int kUninitializedEmbeddedFeedback = 0;
+
+// The bytecode operand index for embedded feedback.
+constexpr int kEmbeddedFeedbackOperandIndex = 1;
+
+// These constants are internal duplicates for v8::Intercepted enum values.
+constexpr uint8_t kInterceptedNo = 1;
+constexpr uint8_t kInterceptedYes = 0;
+constexpr size_t kInterceptedSize = 4;
+// Invalid pointer value used for passing the "not intercepted" result from
+// CallNamedInterceptorXXXX/CallIndexedInterceptorXXX builtins to caller.
+constexpr uint32_t kNotInterceptedSentinel = kHeapObjectTag;
 
 // This constant is used as an undefined value when passing source positions.
 constexpr int kNoSourcePosition = -1;
@@ -1147,7 +1208,7 @@ class MaybeObjectDirectHandle;
 using MaybeObjectIndirectHandle = MaybeObjectHandle;
 template <typename T>
 class MaybeWeak;
-class MutablePageMetadata;
+class MutablePage;
 class MessageLocation;
 class ModuleScope;
 class Name;
@@ -1191,6 +1252,7 @@ class RelocInfo;
 class Scope;
 class ScopeInfo;
 class Script;
+class SharedFunctionInfo;
 class SimpleNumberDictionary;
 class Smi;
 template <typename Config, class Allocator = FreeStoreAllocationPolicy>
@@ -1231,6 +1293,10 @@ using JSAnyNotNumber =
     Union<BigInt, String, Symbol, Boolean, Null, Undefined, JSReceiver>;
 using JSCallable =
     Union<JSBoundFunction, JSFunction, JSObject, JSProxy, JSWrappedFunction>;
+using JSAnyOrSharedFunctionInfo =
+    Union<Smi, HeapNumber, BigInt, String, Symbol, Boolean, Null, Undefined,
+          JSReceiver, SharedFunctionInfo>;
+
 // Object prototypes are either JSReceivers or null -- they are not allowed to
 // be any other primitive value.
 using JSPrototype = Union<JSReceiver, Null>;
@@ -1636,6 +1702,16 @@ static constexpr GCEpoch kInitialGCEpoch = GCEpoch(0);
 
 enum class AccessMode { ATOMIC, NON_ATOMIC };
 
+enum class TypedArrayAccessMode { kRead, kWrite };
+inline std::ostream& operator<<(std::ostream& os, TypedArrayAccessMode mode) {
+  switch (mode) {
+    case TypedArrayAccessMode::kRead:
+      return os << "kRead";
+    case TypedArrayAccessMode::kWrite:
+      return os << "kWrite";
+  }
+}
+
 enum MinimumCapacity {
   USE_DEFAULT_MINIMUM_CAPACITY,
   USE_CUSTOM_MINIMUM_CAPACITY
@@ -1808,22 +1884,30 @@ enum class ThreadKind { kMain, kBackground };
 // platform headers and libraries
 union IeeeDoubleLittleEndianArchType {
   double d;
-  struct {
-    unsigned int man_low : 32;
-    unsigned int man_high : 20;
-    unsigned int exp : 11;
-    unsigned int sign : 1;
-  } bits;
+  uint64_t bits;
+  using ManLowField = base::BitField<uint32_t, 0, 32, uint64_t>;
+  using ManHighField = ManLowField::Next<uint32_t, 20>;
+  using ExpField = ManHighField::Next<uint32_t, 11>;
+  using SignField = ExpField::Next<uint32_t, 1>;
+
+  uint32_t man_low() const { return ManLowField::decode(bits); }
+  uint32_t man_high() const { return ManHighField::decode(bits); }
+  uint32_t exp() const { return ExpField::decode(bits); }
+  uint32_t sign() const { return SignField::decode(bits); }
 };
 
 union IeeeDoubleBigEndianArchType {
   double d;
-  struct {
-    unsigned int sign : 1;
-    unsigned int exp : 11;
-    unsigned int man_high : 20;
-    unsigned int man_low : 32;
-  } bits;
+  uint64_t bits;
+  using ManLowField = base::BitField<uint32_t, 0, 32, uint64_t>;
+  using ManHighField = ManLowField::Next<uint32_t, 20>;
+  using ExpField = ManHighField::Next<uint32_t, 11>;
+  using SignField = ExpField::Next<uint32_t, 1>;
+
+  uint32_t man_low() const { return ManLowField::decode(bits); }
+  uint32_t man_high() const { return ManHighField::decode(bits); }
+  uint32_t exp() const { return ExpField::decode(bits); }
+  uint32_t sign() const { return SignField::decode(bits); }
 };
 
 #if V8_TARGET_LITTLE_ENDIAN
@@ -2409,19 +2493,17 @@ class CompareOperationFeedback {
 };
 
 class TypeOfFeedback {
-  enum {
-    kNumberFlag = 1,
-    kFunctionFlag = 1 << 1,
-    kStringFlag = 1 << 2,
-  };
 
  public:
   enum Result {
     kNone = 0,
-    kNumber = kNumberFlag,
-    kFunction = kFunctionFlag,
-    kString = kStringFlag,
-    kAny = kNumberFlag | kFunctionFlag | kStringFlag,
+    kSmi = 1,
+    kHeapNumber = 1 << 1,
+    kFunction = 1 << 2,
+    kString = 1 << 3,
+
+    kNumber = kHeapNumber | kSmi,
+    kAny = kSmi | kHeapNumber | kFunction | kString,
   };
 };
 
@@ -2591,6 +2673,24 @@ enum class CachedTieringDecision : int32_t {
 #define V8_ENABLE_SPARKPLUG_PLUS
 #endif
 
+#ifdef V8_ENABLE_SPARKPLUG_PLUS
+#define IF_SPARKPLUG_PLUS(V, ...) EXPAND(V(__VA_ARGS__))
+
+#define TYPED_STRICTEQUAL_STUB_LIST(V) \
+  V(None)                              \
+  V(SignedSmall)                       \
+  V(Number)                            \
+  V(InternalizedString)                \
+  V(String)                            \
+  V(Symbol)                            \
+  V(Receiver)                          \
+  V(Any)
+#else
+#define IF_SPARKPLUG_PLUS(V, ...)
+
+#define TYPED_STRICTEQUAL_STUB_LIST(V)
+#endif  // V8_ENABLE_SPARKPLUG_PLUS
+
 enum class SpeculationMode {
   kAllowSpeculation = 0,
   kDisallowBoundsCheckSpeculation = 1,
@@ -2642,29 +2742,6 @@ enum class AliasingKind {
   kCombine,
   // SIMD128 Registers are independent of every other size (e.g Riscv)
   kIndependent
-};
-
-#define FOR_EACH_ISOLATE_ADDRESS_NAME(C)                            \
-  C(Handler, handler)                                               \
-  C(CEntryFP, c_entry_fp)                                           \
-  C(CFunction, c_function)                                          \
-  C(Context, context)                                               \
-  C(Exception, exception)                                           \
-  C(TopmostScriptHavingContext, topmost_script_having_context)      \
-  C(PendingHandlerContext, pending_handler_context)                 \
-  C(PendingHandlerEntrypoint, pending_handler_entrypoint)           \
-  C(PendingHandlerConstantPool, pending_handler_constant_pool)      \
-  C(PendingHandlerFP, pending_handler_fp)                           \
-  C(PendingHandlerSP, pending_handler_sp)                           \
-  C(NumFramesAbovePendingHandler, num_frames_above_pending_handler) \
-  C(IsOnCentralStackFlag, is_on_central_stack_flag)                 \
-  C(JSEntrySP, js_entry_sp)
-
-enum IsolateAddressId {
-#define DECLARE_ENUM(CamelName, hacker_name) k##CamelName##Address,
-  FOR_EACH_ISOLATE_ADDRESS_NAME(DECLARE_ENUM)
-#undef DECLARE_ENUM
-      kIsolateAddressCount
 };
 
 // The reason for a WebAssembly trap.
@@ -2895,8 +2972,29 @@ enum class StringTransitionStrategy {
 
 class WasmCodePointer {
  public:
+  static constexpr uint32_t kWasmCodePointerTableEntrySize =
+      kSystemPointerSize + (V8_ENABLE_SANDBOX_BOOL ? kUInt64Size : 0);
+#ifdef V8_TARGET_ARCH_64_BIT
+  static constexpr uint32_t kIndexSpaceSize =
+      kCodePointerTableReservationSize / kWasmCodePointerTableEntrySize;
+#else   // V8_TARGET_ARCH_64_BIT
+  static constexpr uint32_t kIndexSpaceSize =
+      (kMaxUInt32 / kWasmCodePointerTableEntrySize) + 1;
+#endif  // V8_TARGET_ARCH_64_BIT
+
   WasmCodePointer() = default;
-  explicit constexpr WasmCodePointer(uint32_t value) : value_(value) {}
+  explicit constexpr WasmCodePointer(uint32_t value) : value_(value) {
+    // Most `WasmCodePointer`s are stored in trusted space (in
+    // `WasmInternalFunction` and `WasmDispatchTable`). A few rare pointers are
+    // stored in untrusted space, like feedback data. We need to be careful
+    // there to either validate the pointer before use or otherwise making sure
+    // that a manipulated code pointer does not cause a sandbox escape.
+    // This DCHECK does not protect against anything but catches such cases
+    // earlier.
+    // Calls via WasmCodePointer to already mask the value to avoid OOB reads.
+    DCHECK(value == static_cast<uint32_t>(-1)  // the "invalid" handle
+           || value < kIndexSpaceSize);
+  }
 
   uint32_t value() const { return value_; }
 

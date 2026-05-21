@@ -5,6 +5,7 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_FRAME_CACHED_PERMISSION_STATUS_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_FRAME_CACHED_PERMISSION_STATUS_H_
 
+#include "base/gtest_prod_util.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/task/single_thread_task_runner.h"
 #include "third_party/blink/public/mojom/permissions/permission.mojom-blink.h"
@@ -33,8 +34,11 @@ class ExecutionContext;
 //   permission elements, it unregisters itself from permission updates.
 class CORE_EXPORT CachedPermissionStatus final
     : public GarbageCollected<CachedPermissionStatus>,
-      public mojom::blink::PermissionObserver {
+      public mojom::blink::PermissionObserver,
+      public Supplement<ExecutionContext> {
  public:
+  static const char kSupplementName[];
+
   // Returns the supplement, creating one as needed.
   static CachedPermissionStatus* From(ExecutionContext* context);
 
@@ -60,7 +64,7 @@ class CORE_EXPORT CachedPermissionStatus final
 
   ~CachedPermissionStatus() override = default;
 
-  void Trace(Visitor* visitor) const;
+  void Trace(Visitor* visitor) const override;
 
   void SetPermissionStatusMap(PermissionStatusMap map) {
     permission_status_map_ = std::move(map);
@@ -120,8 +124,6 @@ class CORE_EXPORT CachedPermissionStatus final
   PermissionObserverReceiverSet& GetPermissionObserverReceiversForTesting() {
     return permission_observer_receivers_;
   }
-
-  Member<ExecutionContext> execution_context_;
 
   HeapMojoRemote<mojom::blink::PermissionService> permission_service_;
 

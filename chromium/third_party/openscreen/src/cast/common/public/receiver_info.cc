@@ -12,7 +12,6 @@
 
 #include "discovery/mdns/public/mdns_constants.h"
 #include "util/osp_logging.h"
-#include "util/span_util.h"
 #include "util/string_parse.h"
 
 namespace openscreen::cast {

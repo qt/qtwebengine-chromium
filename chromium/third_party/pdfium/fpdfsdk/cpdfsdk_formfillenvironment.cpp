@@ -877,7 +877,7 @@ void CPDFSDK_FormFillEnvironment::SendOnFocusChange(
     return;
   }
 
-  // TODO(crbug.com/pdfium/1482): Handle XFA case.
+  // TODO(crbug.com/42270486): Handle XFA case.
   if (pAnnot->AsXFAWidget()) {
     return;
   }

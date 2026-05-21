@@ -22,6 +22,10 @@ class TlsConnectionFactoryPosix;
 
 class TlsConnectionPosix : public TlsConnection {
  public:
+  TlsConnectionPosix(const TlsConnectionPosix&) = delete;
+  TlsConnectionPosix(TlsConnectionPosix&&) noexcept = delete;
+  TlsConnectionPosix& operator=(const TlsConnectionPosix&) = delete;
+  TlsConnectionPosix& operator=(TlsConnectionPosix&&) = delete;
   ~TlsConnectionPosix() override;
 
   // Sends any available bytes from this connection's buffer_.
@@ -68,8 +72,6 @@ class TlsConnectionPosix : public TlsConnection {
   TlsWriteBuffer buffer_;
 
   WeakPtrFactory<TlsConnectionPosix> weak_factory_{this};
-
-  OSP_DISALLOW_COPY_AND_ASSIGN(TlsConnectionPosix);
 };
 
 }  // namespace openscreen

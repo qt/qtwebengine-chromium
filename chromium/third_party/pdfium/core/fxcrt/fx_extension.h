@@ -12,8 +12,6 @@
 #include <time.h>
 #include <wctype.h>
 
-#include "build/build_config.h"
-#include "core/fxcrt/compiler_specific.h"
 #include "core/fxcrt/span.h"
 #include "core/fxcrt/widestring.h"
 
@@ -28,11 +26,6 @@
 #define FX_IsOdd(a) ((a) & 1)
 
 float FXSYS_wcstof(WideStringView pwsStr, size_t* pUsedLen);
-
-// PRECONDITIONS: `dstStr` and `srcStr` must point to `count` valid wchars.
-UNSAFE_BUFFER_USAGE wchar_t* FXSYS_wcsncpy(wchar_t* dstStr,
-                                           const wchar_t* srcStr,
-                                           size_t count);
 
 inline bool FXSYS_iswlower(int32_t c) {
   return u_islower(c);

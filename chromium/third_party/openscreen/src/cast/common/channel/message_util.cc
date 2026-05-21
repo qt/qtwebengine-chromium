@@ -169,32 +169,35 @@ std::string ToString(const CastMessage& message) {
   return ss.str();
 }
 
-constexpr EnumNameTable<CastMessageType, 25> kCastMessageTypeNames{
-    {{"PING", CastMessageType::kPing},
+constexpr EnumNameTable<CastMessageType, 28> kCastMessageTypeNames{
+    {{"UNKNOWN", CastMessageType::kUnknown},
+     {"PING", CastMessageType::kPing},
      {"PONG", CastMessageType::kPong},
      {"RPC", CastMessageType::kRpc},
-     {"GET_APP_AVAILABILITY", CastMessageType::kGetAppAvailability},
-     {"GET_STATUS", CastMessageType::kGetStatus},
      {"CONNECT", CastMessageType::kConnect},
      {"CLOSE", CastMessageType::kCloseConnection},
      {"APPLICATION_BROADCAST", CastMessageType::kBroadcast},
      {"LAUNCH", CastMessageType::kLaunch},
+     {"LAUNCH_STATUS", CastMessageType::kLaunchStatus},
+     {"LAUNCH_ERROR", CastMessageType::kLaunchError},
      {"STOP", CastMessageType::kStop},
+     {"INVALID_REQUEST", CastMessageType::kInvalidRequest},
+     {"GET_APP_AVAILABILITY", CastMessageType::kGetAppAvailability},
      {"RECEIVER_STATUS", CastMessageType::kReceiverStatus},
      {"MEDIA_STATUS", CastMessageType::kMediaStatus},
-     {"LAUNCH_ERROR", CastMessageType::kLaunchError},
      {"OFFER", CastMessageType::kOffer},
      {"ANSWER", CastMessageType::kAnswer},
-     {"CAPABILITIES_RESPONSE", CastMessageType::kCapabilitiesResponse},
-     {"STATUS_RESPONSE", CastMessageType::kStatusResponse},
-     {"MULTIZONE_STATUS", CastMessageType::kMultizoneStatus},
-     {"INVALID_PLAYER_STATE", CastMessageType::kInvalidPlayerState},
-     {"LOAD_FAILED", CastMessageType::kLoadFailed},
-     {"LOAD_CANCELLED", CastMessageType::kLoadCancelled},
-     {"INVALID_REQUEST", CastMessageType::kInvalidRequest},
-     {"PRESENTATION", CastMessageType::kPresentation},
      {"GET_CAPABILITIES", CastMessageType::kGetCapabilities},
-     {"OTHER", CastMessageType::kOther}}};
+     {"CAPABILITIES_RESPONSE", CastMessageType::kCapabilitiesResponse},
+     {"GET_STATUS", CastMessageType::kGetStatus},
+     {"STATUS_RESPONSE", CastMessageType::kStatusResponse},
+     {"INVALID_PLAYER_STATE", CastMessageType::kInvalidPlayerState},
+     {"LOAD_CANCELLED", CastMessageType::kLoadCancelled},
+     {"LOAD_FAILED", CastMessageType::kLoadFailed},
+     {"MULTIZONE_STATUS", CastMessageType::kMultizoneStatus},
+     {"PRESENTATION", CastMessageType::kPresentation},
+     {"GET_DEVICE_INFO", CastMessageType::kGetDeviceInfo},
+     {"eureka_info", CastMessageType::kEurekaInfo}}};
 
 const char* CastMessageTypeToString(CastMessageType type) {
   return GetEnumName(kCastMessageTypeNames, type).value("OTHER");

@@ -2,17 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40285824): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "components/policy/core/common/registry_dict.h"
 
 #include <memory>
 #include <optional>
 #include <utility>
 
+#include "base/compiler_specific.h"
 #include "base/json/json_reader.h"
 #include "base/logging.h"
 #include "base/numerics/byte_conversions.h"
@@ -54,7 +50,7 @@ std::optional<base::Value> ConvertRegistryValue(const base::Value& value,
   if (value.type() == schema.type()) {
     // Recurse for complex types.
     if (value.is_dict()) {
-      base::Value::Dict result;
+      base::DictValue result;
       for (auto entry : value.GetDict()) {
         std::optional<base::Value> converted =
             ConvertRegistryValue(entry.second, schema.GetProperty(entry.first));
@@ -64,7 +60,7 @@ std::optional<base::Value> ConvertRegistryValue(const base::Value& value,
       }
       return base::Value(std::move(result));
     } else if (value.is_list()) {
-      base::Value::List result;
+      base::ListValue result;
       for (const auto& entry : value.GetList()) {
         std::optional<base::Value> converted =
             ConvertRegistryValue(entry, schema.GetItems());
@@ -116,7 +112,7 @@ std::optional<base::Value> ConvertRegistryValue(const base::Value& value,
       // Lists are encoded as subkeys with numbered value in the registry
       // (non-numerical keys are ignored).
       if (value.is_dict()) {
-        base::Value::List result;
+        base::ListValue result;
         for (auto it : value.GetDict()) {
           if (!IsKeyNumerical(it.first)) {
             continue;
@@ -259,7 +255,7 @@ void RegistryDict::ReadRegistry(HKEY hive, const std::wstring& root) {
     switch (it.Type()) {
       case REG_EXPAND_SZ:
         if (auto expanded_path = base::win::ExpandEnvironmentVariables(
-                base::wcstring_view(it.Value()))) {
+                UNSAFE_TODO(base::wcstring_view(it.Value())))) {
           SetValue(name, base::Value(base::WideToUTF8(*expanded_path)));
           continue;
         }
@@ -317,7 +313,7 @@ std::optional<base::Value> RegistryDict::ConvertToJSON(
       schema.valid() ? schema.type() : base::Value::Type::DICT;
   switch (type) {
     case base::Value::Type::DICT: {
-      base::Value::Dict result;
+      base::DictValue result;
       for (RegistryDict::ValueMap::const_iterator entry(values_.begin());
            entry != values_.end(); ++entry) {
         SchemaList matching_schemas =
@@ -355,7 +351,7 @@ std::optional<base::Value> RegistryDict::ConvertToJSON(
       return base::Value(std::move(result));
     }
     case base::Value::Type::LIST: {
-      base::Value::List result;
+      base::ListValue result;
       Schema item_schema = schema.valid() ? schema.GetItems() : Schema();
       for (RegistryDict::KeyMap::const_iterator entry(keys_.begin());
            entry != keys_.end(); ++entry) {

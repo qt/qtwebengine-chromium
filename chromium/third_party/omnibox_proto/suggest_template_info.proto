@@ -29,6 +29,7 @@ message SuggestTemplateInfo {
   // The style of the suggestion.
   optional StandardSuggestStyle style = 1;
 
+  // Next ID: 11
   enum IconType {
     // Unspecified.
     ICON_TYPE_UNSPECIFIED = 0;
@@ -42,6 +43,21 @@ message SuggestTemplateInfo {
     TRENDING = 4;
     // A sub arrow right icon.
     SUB_ARROW_RIGHT = 5;
+    // A globe with a search loop icon, typically used for deep search.
+    //
+    GLOBE_WITH_SEARCH_LOOP = 6;
+    // Banana icon, typically used for nano banana suggestions.
+    // Uses the banana emoji.
+    BANANA = 7;
+    // Indicates the client should use the favicon from the page the suggestion
+    // is from.
+    FAVICON = 8;
+    // Notes spark icon, used for AIM More Threads suggestions.
+    //
+    NOTES_SPARK = 9;
+    // Draft spark icon, typically used for AIM canvas suggestions.
+    //
+    DRAFT_SPARK = 10;
   }
 
   // The icon type of the suggestion, this is typically the icon in front of

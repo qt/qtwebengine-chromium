@@ -620,6 +620,95 @@ TEST_F(LayerContextImplUpdateDisplayTreeTransformNodeTest,
 }
 
 TEST_F(LayerContextImplUpdateDisplayTreeTransformNodeTest,
+       UpdateDrawnElasticOverscroll) {
+  cc::LayerTreeImpl* active_tree =
+      layer_context_impl_->host_impl()->active_tree();
+
+  // Initial update with default (zero) overscroll.
+  auto update1 = CreateDefaultUpdate();
+  EXPECT_TRUE(
+      layer_context_impl_->DoUpdateDisplayTree(std::move(update1)).has_value());
+
+  // Create an element id for testing.
+  cc::ElementId element_id(123);
+
+  EXPECT_EQ(active_tree->property_trees()
+                ->transform_tree()
+                .drawn_elastic_overscroll()
+                .size(),
+            0u);
+  // Clear any initial draw-properties dirtiness from unrelated setup.
+  active_tree->clear_needs_update_draw_properties_for_testing();
+
+  // Update with default (zero) overscroll again (no change).
+  auto update2 = CreateDefaultUpdate();
+  EXPECT_TRUE(
+      layer_context_impl_->DoUpdateDisplayTree(std::move(update2)).has_value());
+  EXPECT_EQ(active_tree->property_trees()
+                ->transform_tree()
+                .drawn_elastic_overscroll()
+                .size(),
+            0u);
+  EXPECT_FALSE(active_tree->needs_update_draw_properties());
+
+  // Update to a new non-zero overscroll.
+  const gfx::Vector2dF kOverscroll1(10.f, 20.f);
+  auto tree_props = mojom::TransformTreeUpdate::New();
+  auto update3 = CreateDefaultUpdate();
+  tree_props->drawn_elastic_overscroll[element_id] = kOverscroll1;
+  update3->transform_tree_update = std::move(tree_props);
+  EXPECT_TRUE(
+      layer_context_impl_->DoUpdateDisplayTree(std::move(update3)).has_value());
+
+  const auto& drawn = active_tree->property_trees()
+                          ->transform_tree()
+                          .drawn_elastic_overscroll();
+  EXPECT_EQ(drawn.at(element_id), kOverscroll1);
+  EXPECT_TRUE(active_tree->needs_update_draw_properties());
+  active_tree->clear_needs_update_draw_properties_for_testing();
+
+  // Update again with the same non-zero overscroll (no change).
+  auto update_same = CreateDefaultUpdate();
+  tree_props = mojom::TransformTreeUpdate::New();
+  tree_props->drawn_elastic_overscroll[element_id] = kOverscroll1;
+  update_same->transform_tree_update = std::move(tree_props);
+  EXPECT_TRUE(layer_context_impl_->DoUpdateDisplayTree(std::move(update_same))
+                  .has_value());
+  EXPECT_EQ(drawn.at(element_id), kOverscroll1);
+  EXPECT_FALSE(active_tree->needs_update_draw_properties());
+
+  // Update to a different non-zero overscroll.
+  const gfx::Vector2dF kOverscroll2(-5.f, 15.f);
+  auto update4 = CreateDefaultUpdate();
+  tree_props = mojom::TransformTreeUpdate::New();
+  tree_props->drawn_elastic_overscroll[element_id] = kOverscroll2;
+  update4->transform_tree_update = std::move(tree_props);
+  EXPECT_TRUE(
+      layer_context_impl_->DoUpdateDisplayTree(std::move(update4)).has_value());
+  EXPECT_EQ(active_tree->property_trees()
+                ->transform_tree()
+                .drawn_elastic_overscroll()
+                .at(element_id),
+            kOverscroll2);
+  EXPECT_TRUE(active_tree->needs_update_draw_properties());
+  active_tree->clear_needs_update_draw_properties_for_testing();
+
+  // Update back to zero overscroll (removal).
+  auto update5 = CreateDefaultUpdate();
+  tree_props = mojom::TransformTreeUpdate::New();
+  // Don't add anything to drawn_elastic_overscroll, effectively clearing it.
+  update5->transform_tree_update = std::move(tree_props);
+  EXPECT_TRUE(
+      layer_context_impl_->DoUpdateDisplayTree(std::move(update5)).has_value());
+  EXPECT_EQ(active_tree->property_trees()
+                ->transform_tree()
+                .drawn_elastic_overscroll()
+                .size(),
+            0u);
+  EXPECT_TRUE(active_tree->needs_update_draw_properties());
+}
+
+TEST_F(LayerContextImplUpdateDisplayTreeTransformNodeTest,
        StickyPositionDataValid) {
   auto update = CreateDefaultUpdate();
   int scroll_node_id = AddScrollNode(update.get(), cc::kRootPropertyNodeId);
@@ -1359,7 +1448,7 @@ TEST_F(LayerContextImplUpdateDisplayTreeEffectNodeTest,
   int mask_layer_id =
       AddDefaultLayerToUpdate(update.get(), cc::mojom::LayerType::kTileDisplay);
   cc::ElementId mask_element_id(mask_layer_id);
-  update->layers.back()->element_id = mask_element_id;
+  SetLayerElementId(update->layers.back().get(), mask_element_id);
 
   // Create an EffectNode that references this layer.
   auto node_update = CreateDefaultSecondaryRootEffectNode();
@@ -1397,7 +1486,7 @@ TEST_F(LayerContextImplUpdateDisplayTreeEffectNodeTest,
   int mask_layer_id =
       AddDefaultLayerToUpdate(update.get(), cc::mojom::LayerType::kLayer);
   cc::ElementId mask_element_id(mask_layer_id);
-  update->layers.back()->element_id = mask_element_id;
+  SetLayerElementId(update->layers.back().get(), mask_element_id);
 
   auto node_update = CreateDefaultSecondaryRootEffectNode();
   node_update->backdrop_mask_element_id = mask_element_id;
@@ -1800,6 +1889,35 @@ TEST_P(LayerContextImplUpdateDisplayTreeEffectNodeWithBoolParamTest,
 
 INSTANTIATE_TEST_SUITE_P(
     NeedsEffectFor2dScaleTransform,
+    LayerContextImplUpdateDisplayTreeEffectNodeWithBoolParamTest,
+    ::testing::Bool(),
+    [](const testing::TestParamInfo<
+        LayerContextImplUpdateDisplayTreeEffectNodeWithBoolParamTest::
+            ParamType>& info) {
+      std::stringstream name;
+      name << (info.param ? "True" : "False");
+      return name.str();
+    });
+
+TEST_P(LayerContextImplUpdateDisplayTreeEffectNodeWithBoolParamTest,
+       OnlyDrawsVisibleContent) {
+  const bool only_draws_visible_content = GetParam();
+  auto update = CreateDefaultUpdate();
+  auto node_update = CreateDefaultSecondaryRootEffectNode();
+  node_update->only_draws_visible_content = only_draws_visible_content;
+  update->effect_nodes.push_back(std::move(node_update));
+
+  auto result = layer_context_impl_->DoUpdateDisplayTree(std::move(update));
+  ASSERT_TRUE(result.has_value());
+
+  cc::EffectNode* node_impl =
+      GetEffectNodeFromActiveTree(cc::kSecondaryRootPropertyNodeId);
+  ASSERT_TRUE(node_impl);
+  EXPECT_EQ(node_impl->only_draws_visible_content, only_draws_visible_content);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    OnlyDrawsVisibleContent,
     LayerContextImplUpdateDisplayTreeEffectNodeWithBoolParamTest,
     ::testing::Bool(),
     [](const testing::TestParamInfo<

@@ -34,6 +34,7 @@
 #include <memory>
 #include <utility>
 
+#include "base/byte_size.h"
 #include "base/compiler_specific.h"
 #include "base/feature_list.h"
 #include "base/logging.h"
@@ -893,7 +894,7 @@ void DrawingBuffer::ColorBuffer::BeginAccess(const gpu::SyncToken& sync_token,
       shared_image_texture_->BeginAccess(sync_token, readonly);
 }
 
-base::ByteCount DrawingBuffer::ColorBuffer::EstimatedSizeInBytes() const {
+base::ByteSize DrawingBuffer::ColorBuffer::EstimatedSizeInBytes() const {
   return shared_image->EstimatedSizeInBytes();
 }
 
@@ -1217,8 +1218,8 @@ bool DrawingBuffer::CopyToVideoFrame(
       .has_value();
 }
 
-base::ByteCount DrawingBuffer::EstimatedSizeInBytes() const {
-  base::ByteCount result;
+base::ByteSize DrawingBuffer::EstimatedSizeInBytes() const {
+  base::ByteSize result;
   if (back_color_buffer_) {
     result += back_color_buffer_->EstimatedSizeInBytes();
   }
@@ -1229,13 +1230,13 @@ base::ByteCount DrawingBuffer::EstimatedSizeInBytes() const {
     result += buffer->EstimatedSizeInBytes();
   }
   if (staging_texture_needed_ || SampleCount() > 0) {
-    result +=
-        base::ByteCount(color_buffer_format_.EstimatedSizeInBytes(size_)) *
-        (SampleCount() + staging_texture_needed_);
+    result += base::ByteSize(color_buffer_format_.EstimatedSizeInBytes(size_)) *
+              (SampleCount() + staging_texture_needed_);
   }
   if (HasDepthBuffer() || HasStencilBuffer()) {
     result += std::max(SampleCount(), 1) *
-              base::ByteCount(4 * size_.width() * size_.height());
+              base::ByteSize(base::checked_cast<uint64_t>(4 * size_.width() *
+                                                          size_.height()));
   }
   return result;
 }
@@ -1981,14 +1982,11 @@ scoped_refptr<DrawingBuffer::ColorBuffer> DrawingBuffer::CreateColorBuffer(
   // format matches shared image format. This is necessary for Graphite where
   // IOSurfaces are always used to allow sharing between ANGLE and Dawn.
   if (color_buffer_format_ == viz::SinglePlaneFormat::kRGBA_8888 &&
-      ContextProvider()->GetCapabilities().gpu_memory_buffer_formats.Has(
-          viz::SinglePlaneSharedImageFormatToBufferFormat(
-              viz::SinglePlaneFormat::kBGRA_8888))) {
+      ContextProvider()->GetCapabilities().texture_format_bgra8888) {
     color_buffer_format_ = viz::SinglePlaneFormat::kBGRA_8888;
   } else if (color_buffer_format_ == viz::SinglePlaneFormat::kRGBX_8888 &&
-             ContextProvider()->GetCapabilities().gpu_memory_buffer_formats.Has(
-                 viz::SinglePlaneSharedImageFormatToBufferFormat(
-                     viz::SinglePlaneFormat::kBGRX_8888))) {
+             ContextProvider()->GetCapabilities().texture_format_bgra8888 &&
+             !ContextProvider()->GetCapabilities().disable_mac_swangle_rgbx) {
     color_buffer_format_ = viz::SinglePlaneFormat::kBGRX_8888;
   }
 #endif  // BUILDFLAG(IS_MAC)
@@ -2018,16 +2016,13 @@ scoped_refptr<DrawingBuffer::ColorBuffer> DrawingBuffer::CreateColorBuffer(
       // Intel GPUs (i8xx) don't support RGBX overlays.
       if (color_buffer_format_ == viz::SinglePlaneFormat::kRGBX_8888 &&
           allow_bgrx &&
-          ContextProvider()->GetCapabilities().gpu_memory_buffer_formats.Has(
-              viz::SinglePlaneSharedImageFormatToBufferFormat(
-                  viz::SinglePlaneFormat::kBGRX_8888))) {
+          ContextProvider()->GetCapabilities().texture_format_bgra8888 &&
+          !ContextProvider()->GetCapabilities().disable_mac_swangle_rgbx) {
         color_buffer_format_ = viz::SinglePlaneFormat::kBGRX_8888;
       }
 #endif  // !BUILDFLAG(IS_ANDROID)
 
-      if (ContextProvider()->GetCapabilities().gpu_memory_buffer_formats.Has(
-              viz::SinglePlaneSharedImageFormatToBufferFormat(
-                  color_buffer_format_))) {
+      if (IsSharedImageFormatMappable(color_buffer_format_)) {
         usage = usage | gpu::SHARED_IMAGE_USAGE_SCANOUT;
         if (low_latency_enabled()) {
           usage = usage | gpu::SHARED_IMAGE_USAGE_CONCURRENT_READ_WRITE;
@@ -2184,6 +2179,32 @@ bool DrawingBuffer::ShouldUseChromiumImage() {
   }
   return low_latency_enabled() &&
          base::FeatureList::IsEnabled(features::kLowLatencyWebGLImageChromium);
+}
+
+bool DrawingBuffer::IsSharedImageFormatMappable(viz::SharedImageFormat format) {
+  const auto& caps = ContextProvider()->GetCapabilities();
+  if (format == viz::SinglePlaneFormat::kRGBA_8888) {
+    return true;
+  }
+  if (format == viz::SinglePlaneFormat::kRGBX_8888) {
+    return !caps.disable_mac_swangle_rgbx;
+  }
+  if (format == viz::SinglePlaneFormat::kBGRA_8888) {
+    return caps.texture_format_bgra8888;
+  }
+  if (format == viz::SinglePlaneFormat::kBGRX_8888) {
+    return caps.texture_format_bgra8888 && !caps.disable_mac_swangle_rgbx;
+  }
+  if (format == viz::SinglePlaneFormat::kRGBA_F16) {
+#if BUILDFLAG(IS_MAC)
+    return true;
+#else
+    return caps.texture_half_float_linear &&
+           !ContextProvider()->GetGpuFeatureInfo().IsWorkaroundEnabled(
+               gpu::DISABLE_HALF_FLOAT_FOR_GMB);
+#endif
+  }
+  return false;
 }
 
 }  // namespace blink

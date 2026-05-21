@@ -172,6 +172,9 @@ class Resolver {
     /// @returns a new u8, if the subgroup matrix extension is enabled, otherwise nullptr
     const core::type::U8* U8(const ast::Identifier* ident);
 
+    /// @returns nullptr since u16 is not enabled in WGSL.
+    const core::type::U16* U16(const ast::Identifier* ident);
+
     /// @returns a vector with the element type @p el of width @p n resolved from the identifier @p
     /// ident.
     const core::type::Vector* Vec(const ast::Identifier* ident,
@@ -202,10 +205,6 @@ class Resolver {
     /// the identifier is not templated.
     const core::type::Type* Array(const ast::Identifier* ident);
 
-    /// @returns a resource_binding, if the `chromium_experimental_dynamic_binding` extension is
-    /// enabled, otherwise nullptr
-    const core::type::ResourceBinding* ResourceBinding(const ast::Identifier* ident);
-
     /// @returns a binding_array resolved from the templated identifier @p ident.
     const core::type::BindingArray* BindingArray(const ast::Identifier* ident);
 
@@ -214,6 +213,9 @@ class Resolver {
 
     /// @returns a pointer resolved from the templated identifier @p ident.
     const core::type::Pointer* Ptr(const ast::Identifier* ident);
+
+    /// @returns a sampler resolved from the templated identifier @p ident
+    const core::type::Sampler* Sampler(const ast::Identifier* ident);
 
     /// @returns a sampled texture resolved from the templated identifier @p ident with the
     /// dimensions @p dim.
@@ -241,6 +243,9 @@ class Resolver {
     const core::type::SubgroupMatrix* SubgroupMatrix(const ast::Identifier* ident,
                                                      core::SubgroupMatrixKind kind);
 
+    /// @returns a buffer resolved from the templated identifier @p ident
+    const core::type::Buffer* Buffer(const ast::Identifier* ident);
+
     /// @returns @p ident cast to an ast::TemplatedIdentifier, if the identifier is templated and
     /// the number of templated arguments are between @p min_args and @p max_args.
     const ast::TemplatedIdentifier* TemplatedIdentifier(const ast::Identifier* ident,
@@ -258,13 +263,6 @@ class Resolver {
     /// sem::BuiltinEnumExpression<core::AddressSpace>, then an error diagnostic is raised and
     /// nullptr is returned.
     sem::BuiltinEnumExpression<core::AddressSpace>* AddressSpaceExpression(
-        const ast::Expression* expr);
-
-    /// @returns the call of Expression() cast to a
-    /// sem::BuiltinEnumExpression<core::type::TexelFormat>. If the sem::Expression is not a
-    /// sem::BuiltinEnumExpression<core::type::TexelFormat>, then an error diagnostic is raised and
-    /// nullptr is returned.
-    sem::BuiltinEnumExpression<core::TexelFormat>* TexelFormatExpression(
         const ast::Expression* expr);
 
     /// @returns the call of Expression() cast to a sem::BuiltinEnumExpression<core::Access>*.
@@ -440,6 +438,10 @@ class Resolver {
     /// @returns the workgroup size on success.
     tint::Result<sem::WorkgroupSize> WorkgroupAttribute(const ast::WorkgroupAttribute* attr);
 
+    /// Resolves the `@sugbroup_size` attribute @p attr
+    /// @returns the subgroup size on success.
+    tint::Result<uint32_t> SubgroupSizeAttribute(const ast::SubgroupSizeAttribute* attr);
+
     /// Resolves the `@diagnostic` attribute @p attr
     /// @returns true on success, false on failure
     bool DiagnosticAttribute(const ast::DiagnosticAttribute* attr);
@@ -474,8 +476,9 @@ class Resolver {
 
     /// Resolves and validates the expression used as the count parameter of an array.
     /// @param count_expr the expression used as the second template parameter to an array<>.
+    /// @param array indicates whether the count is for an array or buffer
     /// @returns the number of elements in the array.
-    const core::type::ArrayCount* ArrayCount(const ast::Expression* count_expr);
+    const core::type::ArrayCount* ArrayCount(const ast::Expression* count_expr, bool array = true);
 
     /// Builds and returns the semantic information for an array.
     /// @returns the semantic Array information, or nullptr if an error is raised.

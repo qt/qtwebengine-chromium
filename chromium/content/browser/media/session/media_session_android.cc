@@ -21,7 +21,7 @@
 
 namespace content {
 
-using base::android::JavaParamRef;
+using base::android::JavaRef;
 using base::android::ScopedJavaLocalRef;
 
 struct MediaSessionAndroid::JavaObjectGetter {
@@ -51,7 +51,7 @@ MediaSessionAndroid::~MediaSessionAndroid() {
 static ScopedJavaLocalRef<jobject>
 JNI_MediaSessionImpl_GetMediaSessionFromWebContents(
     JNIEnv* env,
-    const JavaParamRef<jobject>& j_contents_android) {
+    const JavaRef<jobject>& j_contents_android) {
   WebContents* contents = WebContents::FromJavaWebContents(j_contents_android);
   if (!contents)
     return ScopedJavaLocalRef<jobject>();
@@ -177,14 +177,14 @@ void MediaSessionAndroid::Stop(JNIEnv* env) {
   media_session_->Stop(MediaSession::SuspendType::kUI);
 }
 
-void MediaSessionAndroid::Seek(JNIEnv* env, const jlong millis) {
+void MediaSessionAndroid::Seek(JNIEnv* env, const int64_t millis) {
   DCHECK(media_session_);
   DCHECK_NE(millis, 0)
       << "Attempted to seek by a missing number of milliseconds";
   media_session_->Seek(base::Milliseconds(millis));
 }
 
-void MediaSessionAndroid::SeekTo(JNIEnv* env, const jlong millis) {
+void MediaSessionAndroid::SeekTo(JNIEnv* env, const int64_t millis) {
   DCHECK(media_session_);
   DCHECK_GE(millis, 0) << "Attempted to seek to a negative position";
   media_session_->SeekTo(base::Milliseconds(millis));

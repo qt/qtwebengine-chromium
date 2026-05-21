@@ -8,6 +8,7 @@ import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
+import * as GreenDev from '../../models/greendev/greendev.js';
 import * as Buttons from '../../ui/components/buttons/buttons.js';
 import {createIcon, type Icon} from '../kit/kit.js';
 import * as VisualLogging from '../visual_logging/visual_logging.js';
@@ -154,6 +155,7 @@ export class InspectorView extends VBox implements ViewLocationResolver {
   private focusRestorer?: WidgetFocusRestorer|null;
   private ownerSplitWidget?: SplitWidget;
   private reloadRequiredInfobar?: Infobar;
+  #debuggedTabReloadRequiredInfobar?: Infobar;
   #selectOverrideFolderInfobar?: Infobar;
   #resizeObserver: ResizeObserver;
   #toggleOrientationButton: ToolbarButton;
@@ -375,7 +377,7 @@ export class InspectorView extends VBox implements ViewLocationResolver {
         DockControllerEvents.DOCK_SIDE_CHANGED, this.#applyDrawerOrientationForDockSide, this);
     this.#applyDrawerOrientationForDockSide();
 
-    if (Root.Runtime.hostConfig.devToolsGreenDevUi?.enabled) {
+    if (GreenDev.Prototypes.instance().isEnabled('inDevToolsFloaty')) {
       Floaty.instance({
         forceNew: true,
         document: this.element.ownerDocument,
@@ -635,7 +637,7 @@ export class InspectorView extends VBox implements ViewLocationResolver {
   }
 
   displayDebuggedTabReloadRequiredWarning(message: string): void {
-    if (!this.reloadRequiredInfobar) {
+    if (!this.#debuggedTabReloadRequiredInfobar) {
       const infobar = new Infobar(
           InfobarType.INFO, message,
           [
@@ -653,9 +655,9 @@ export class InspectorView extends VBox implements ViewLocationResolver {
           undefined, 'reload-required');
       infobar.setParentView(this);
       this.attachInfobar(infobar);
-      this.reloadRequiredInfobar = infobar;
+      this.#debuggedTabReloadRequiredInfobar = infobar;
       infobar.setCloseCallback(() => {
-        delete this.reloadRequiredInfobar;
+        this.#debuggedTabReloadRequiredInfobar = undefined;
       });
 
       SDK.TargetManager.TargetManager.instance().addModelListener(
@@ -665,8 +667,8 @@ export class InspectorView extends VBox implements ViewLocationResolver {
   }
 
   removeDebuggedTabReloadRequiredWarning(): void {
-    if (this.reloadRequiredInfobar) {
-      this.reloadRequiredInfobar.dispose();
+    if (this.#debuggedTabReloadRequiredInfobar) {
+      this.#debuggedTabReloadRequiredInfobar.dispose();
       SDK.TargetManager.TargetManager.instance().removeModelListener(
           SDK.ResourceTreeModel.ResourceTreeModel, SDK.ResourceTreeModel.Events.PrimaryPageChanged,
           this.removeDebuggedTabReloadRequiredWarning, this);

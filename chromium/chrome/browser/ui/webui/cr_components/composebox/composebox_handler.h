@@ -24,11 +24,11 @@
 class Profile;
 class OmniboxController;
 
-class TopChromeWebUIController;
-
 class ComposeboxHandler : public composebox::mojom::PageHandler,
                           public ContextualSearchboxHandler {
  public:
+  using ClearSessionHandleCallback = base::RepeatingClosure;
+
   explicit ComposeboxHandler(
       mojo::PendingReceiver<composebox::mojom::PageHandler> pending_handler,
       mojo::PendingRemote<composebox::mojom::Page> pending_page,
@@ -36,17 +36,12 @@ class ComposeboxHandler : public composebox::mojom::PageHandler,
           pending_searchbox_handler,
       Profile* profile,
       content::WebContents* web_contents,
-      GetSessionHandleCallback get_session_callback);
+      GetSessionHandleCallback get_session_callback,
+      ClearSessionHandleCallback clear_session_callback);
   ~ComposeboxHandler() override;
-
-  void SetEmbedder(base::WeakPtr<TopChromeWebUIController::Embedder> embedder) {
-    embedder_ = embedder;
-  }
 
   // composebox::mojom::PageHandler:
   void FocusChanged(bool focused) override;
-  void SetDeepSearchMode(bool enabled) override;
-  void SetCreateImageMode(bool enabled, bool image_present) override;
 
   void HandleLensButtonClick() override;
   void HandleFileUpload(bool is_image) override;
@@ -69,8 +64,7 @@ class ComposeboxHandler : public composebox::mojom::PageHandler,
                    bool ctrl_key,
                    bool meta_key,
                    bool shift_key) override;
-  void ClearFiles() override;
-  void ShowContextMenu(const gfx::Point& point) override;
+  void ClearFiles(bool should_block_auto_suggested_tabs) override;
 
   // This is called from either the ComposeboxOmniboxClient when a match is
   // present in navigation or for the PageHandler's `SubmitQuery()` when there
@@ -82,24 +76,19 @@ class ComposeboxHandler : public composebox::mojom::PageHandler,
                    WindowOpenDisposition disposition,
                    omnibox::ChromeAimEntryPoint aim_entrypoint,
                    std::map<std::string, std::string> additional_params);
-
-  omnibox::ChromeAimToolsAndModels GetAimToolMode() const override;
-
-  // Called to update the suggested tab context chip in the compose box.
-  virtual void UpdateSuggestedTabContext(searchbox::mojom::TabInfoPtr tab_info);
-
-  // Returns true if there is a suggested tab context chip in the compose box.
-  bool has_suggested_tab_context() const { return has_suggested_tab_context_; }
-
   // SearchboxHandler:
   std::string AutocompleteIconToResourceName(
       const gfx::VectorIcon& icon) const override;
 
- protected:
-  // ContextualSearchboxHandler:
-  std::optional<lens::LensOverlayInvocationSource> GetInvocationSource()
-      const override;
+  virtual void ClearSessionHandle();
 
+ protected:
+  void OpenUrl(GURL url, const WindowOpenDisposition disposition) override;
+
+  FRIEND_TEST_ALL_PREFIXES(ComposeboxHandlerTest,
+                           OpenUrl_ResetsContextControllerObserver);
+
+ protected:
   ComposeboxHandler(
       mojo::PendingReceiver<composebox::mojom::PageHandler> pending_handler,
       mojo::PendingRemote<composebox::mojom::Page> pending_page,
@@ -108,16 +97,13 @@ class ComposeboxHandler : public composebox::mojom::PageHandler,
       Profile* profile,
       content::WebContents* web_contents,
       std::unique_ptr<OmniboxController> omnibox_controller,
-      GetSessionHandleCallback get_session_callback);
+      GetSessionHandleCallback get_session_callback,
+      ClearSessionHandleCallback clear_session_callback);
 
  private:
-  // The tool mode for the composebox, if any. These tool modes are disjoint
-  // and it's only possible for one mode to be set at one time.
-  omnibox::ChromeAimToolsAndModels aim_tool_mode_ =
-      omnibox::ChromeAimToolsAndModels::TOOL_MODE_UNSPECIFIED;
   raw_ptr<content::WebContents> web_contents_;
-  base::WeakPtr<TopChromeWebUIController::Embedder> embedder_;
-  bool has_suggested_tab_context_ = false;
+
+  ClearSessionHandleCallback clear_session_callback_;
 
   // These are located at the end of the list of member variables to ensure the
   // WebUI page is disconnected before other members are destroyed.

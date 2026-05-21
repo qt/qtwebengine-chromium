@@ -279,9 +279,11 @@ TEST(MdnsReaderTest, ReadAAAARecordRdata) {
       0x02, 0x02, 0xb3, 0xff, 0xfe, 0x1e, 0x83, 0x29,
   };
   // clang-format on
-  TestReadEntrySucceeds(kAAAARecordRdata, sizeof(kAAAARecordRdata),
-                        AAAARecordRdata(IPAddress(IPAddress::Version::kV6,
-                                                  kAAAARecordRdata + 2)));
+  TestReadEntrySucceeds(
+      kAAAARecordRdata, sizeof(kAAAARecordRdata),
+      AAAARecordRdata(IPAddress(
+          IPAddress::Version::kV6,
+          std::span(kAAAARecordRdata).subspan(2, IPAddress::kV6Size))));
 }
 
 TEST(MdnsReaderTest, ReadAAAARecordRdata_TooShort) {

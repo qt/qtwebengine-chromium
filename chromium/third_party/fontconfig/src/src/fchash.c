@@ -43,7 +43,7 @@ FcBool
 FcHashStrCopy (const void *src,
                void      **dest)
 {
-    *dest = FcStrdup (src);
+    *dest = FcStrCopy (src);
 
     return *dest != NULL;
 }

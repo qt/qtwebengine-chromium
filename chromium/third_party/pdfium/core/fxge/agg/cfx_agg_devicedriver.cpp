@@ -310,17 +310,45 @@ void RasterizeStroke(agg::rasterizer_scanline_aa* rasterizer,
   }
   width = std::max(width, unit);
   const std::vector<float>& dash_array = pGraphState->dash_array();
-  if (!dash_array.empty()) {
+
+  // If the dash pattern cycle is too small (< 0.1 device pixels), render as
+  // a solid line instead. This prevents performance issues in AGG while
+  // maintaining visual fidelity (such small dashes are invisible anyway).
+  bool should_apply_dash_pattern = !dash_array.empty();
+  if (should_apply_dash_pattern) {
+    float dash_cycle_len = 0.0f;
+    for (float val : dash_array) {
+      // Reject non-finite values (NaN, Infinity) per PDF spec
+      if (!std::isfinite(val)) {
+        should_apply_dash_pattern = false;
+        break;
+      }
+      // Clamp negatives per PDF spec (non-negative expected)
+      dash_cycle_len += std::max(0.0f, val);
+    }
+
+    // Minimum dash cycle length in device pixels.
+    // Based on empirical testing:
+    // - At 96 DPI: 0.1px ≈ 0.001 inches (imperceptible to human eye)
+    // - At 300 DPI: 0.1px ≈ 0.0003 inches (still imperceptible)
+    constexpr float kMinDashCycleThreshold = 0.1f;
+
+    // If the dash cycle length is less than this value, the gaps would
+    // be nearly invisible, but rendering them would cause significant
+    // performance overhead.
+    if (dash_cycle_len * scale < kMinDashCycleThreshold) {
+      should_apply_dash_pattern = false;
+    }
+  }
+
+  if (should_apply_dash_pattern) {
     using DashConverter = agg::conv_dash<agg::path_storage>;
     DashConverter dash(*path_data);
-    for (size_t i = 0; i < (dash_array.size() + 1) / 2; i++) {
-      float on = dash_array[i * 2];
-      if (on <= 0.000001f) {
-        on = 0.1f;
+    for (float dash_len : dash_array) {
+      if (dash_len <= 0.000001f) {
+        dash_len = 0.1f;
       }
-      float off = i * 2 + 1 == dash_array.size() ? on : dash_array[i * 2 + 1];
-      off = std::max(off, 0.0f);
-      dash.add_dash(fabs(on * scale), fabs(off * scale));
+      dash.add_dash(fabs(dash_len * scale));
     }
     dash.dash_start(pGraphState->dash_phase() * scale);
     using DashStroke = agg::conv_stroke<DashConverter>;

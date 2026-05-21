@@ -31,6 +31,7 @@
 #include "third_party/blink/renderer/core/css/css_font_face_source.h"
 #include "third_party/blink/renderer/core/css/css_font_selector.h"
 #include "third_party/blink/renderer/core/css/css_segmented_font_face.h"
+#include "third_party/blink/renderer/core/css/font_face.h"
 #include "third_party/blink/renderer/core/css/font_face_set_document.h"
 #include "third_party/blink/renderer/core/css/font_face_set_worker.h"
 #include "third_party/blink/renderer/core/css/font_size_functions.h"
@@ -58,6 +59,10 @@ void CSSFontFace::RemoveSegmentedFontFace(
     CSSSegmentedFontFace* segmented_font_face) {
   DCHECK(segmented_font_faces_.Contains(segmented_font_face));
   segmented_font_faces_.erase(segmented_font_face);
+}
+
+void CSSFontFace::UpdateRanges(HeapVector<UnicodeRange>&& ranges) {
+  ranges_ = MakeGarbageCollected<UnicodeRangeSet>(std::move(ranges));
 }
 
 void CSSFontFace::DidBeginLoad() {

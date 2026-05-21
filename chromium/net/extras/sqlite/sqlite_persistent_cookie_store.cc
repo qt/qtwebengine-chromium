@@ -10,7 +10,6 @@
 #include <optional>
 #include <set>
 #include <tuple>
-#include <unordered_set>
 
 #include "base/feature_list.h"
 #include "base/files/file_path.h"
@@ -20,13 +19,17 @@
 #include "base/logging.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/ref_counted.h"
+#include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/strings/strcat.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/synchronization/lock.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/thread_annotations.h"
 #include "base/time/time.h"
+#include "base/timer/elapsed_timer.h"
+#include "base/trace_event/trace_event.h"
 #include "base/types/optional_ref.h"
 #include "base/values.h"
 #include "build/build_config.h"
@@ -44,6 +47,7 @@
 #include "sql/meta_table.h"
 #include "sql/statement.h"
 #include "sql/transaction.h"
+#include "third_party/abseil-cpp/absl/container/flat_hash_set.h"
 #include "url/gurl.h"
 #include "url/third_party/mozilla/url_parse.h"
 
@@ -54,12 +58,12 @@ namespace {
 static constexpr int kHoursInOneWeek = 24 * 7;
 static constexpr int kHoursInOneYear = 24 * 365;
 
-base::Value::Dict CookieKeyedLoadNetLogParams(
+base::DictValue CookieKeyedLoadNetLogParams(
     const std::string& key,
     net::NetLogCaptureMode capture_mode) {
   if (!net::NetLogCaptureIncludesSensitive(capture_mode))
-    return base::Value::Dict();
-  base::Value::Dict dict;
+    return base::DictValue();
+  base::DictValue dict;
   dict.Set("key", key);
   return dict;
 }
@@ -371,7 +375,7 @@ class SQLitePersistentCookieStore::Backend
   bool MakeCookiesFromSQLStatement(
       std::vector<std::unique_ptr<CanonicalCookie>>& cookies,
       sql::Statement& statement,
-      std::unordered_set<std::string>& top_frame_site_keys_to_delete);
+      absl::flat_hash_set<std::string>& top_frame_site_keys_to_delete);
 
   // Batch a cookie addition.
   void AddCookie(const CanonicalCookie& cc);
@@ -399,10 +403,10 @@ class SQLitePersistentCookieStore::Backend
 
   class PendingOperation {
    public:
-    enum OperationType {
-      COOKIE_ADD,
-      COOKIE_UPDATEACCESS,
-      COOKIE_DELETE,
+    enum class OperationType {
+      kAdd,
+      kUpdateLastAccessTime,
+      kDelete,
     };
 
     PendingOperation(OperationType op, const CanonicalCookie& cc)
@@ -421,6 +425,8 @@ class SQLitePersistentCookieStore::Backend
   // key (eTLD+1) to only load for this domain.
   void LoadAndNotifyInBackground(base::optional_ref<const std::string> key,
                                  LoadedCallback loaded_callback);
+
+  void RecordLoadAndNotifyInBackgroundMetrics(base::TimeDelta elapsed);
 
   // Notifies the CookieMonster when loading completes for a specific domain key
   // or for all domain keys. Triggers the callback and passes it all cookies
@@ -448,7 +454,7 @@ class SQLitePersistentCookieStore::Backend
   bool LoadCookiesForDomains(const std::set<std::string>& key);
 
   void DeleteTopFrameSiteKeys(
-      const std::unordered_set<std::string>& top_frame_site_keys);
+      const absl::flat_hash_set<std::string>& top_frame_site_keys);
 
   // Batch a cookie operation (add or delete)
   void BatchOperation(PendingOperation::OperationType op,
@@ -493,25 +499,28 @@ class SQLitePersistentCookieStore::Backend
 
   // Crypto instance, or nullptr if encryption is disabled.
   std::unique_ptr<CookieCryptoDelegate> crypto_;
+
+  // If true, LoadAndNotifyInBackground has not yet been called.
+  bool first_load_and_notify_in_background_ = true;
 };
 
 namespace {
 
 // Possible values for the 'priority' column.
-enum DBCookiePriority {
-  kCookiePriorityLow = 0,
-  kCookiePriorityMedium = 1,
-  kCookiePriorityHigh = 2,
+enum class DBCookiePriority {
+  kLow = 0,
+  kMedium = 1,
+  kHigh = 2,
 };
 
 DBCookiePriority CookiePriorityToDBCookiePriority(CookiePriority value) {
   switch (value) {
-    case COOKIE_PRIORITY_LOW:
-      return kCookiePriorityLow;
-    case COOKIE_PRIORITY_MEDIUM:
-      return kCookiePriorityMedium;
-    case COOKIE_PRIORITY_HIGH:
-      return kCookiePriorityHigh;
+    case CookiePriority::COOKIE_PRIORITY_LOW:
+      return DBCookiePriority::kLow;
+    case CookiePriority::COOKIE_PRIORITY_MEDIUM:
+      return DBCookiePriority::kMedium;
+    case CookiePriority::COOKIE_PRIORITY_HIGH:
+      return DBCookiePriority::kHigh;
   }
 
   NOTREACHED();
@@ -519,12 +528,12 @@ DBCookiePriority CookiePriorityToDBCookiePriority(CookiePriority value) {
 
 CookiePriority DBCookiePriorityToCookiePriority(DBCookiePriority value) {
   switch (value) {
-    case kCookiePriorityLow:
-      return COOKIE_PRIORITY_LOW;
-    case kCookiePriorityMedium:
-      return COOKIE_PRIORITY_MEDIUM;
-    case kCookiePriorityHigh:
-      return COOKIE_PRIORITY_HIGH;
+    case DBCookiePriority::kLow:
+      return CookiePriority::COOKIE_PRIORITY_LOW;
+    case DBCookiePriority::kMedium:
+      return CookiePriority::COOKIE_PRIORITY_MEDIUM;
+    case DBCookiePriority::kHigh:
+      return CookiePriority::COOKIE_PRIORITY_HIGH;
   }
 
   NOTREACHED();
@@ -729,6 +738,8 @@ void SQLitePersistentCookieStore::Backend::Load(
 void SQLitePersistentCookieStore::Backend::LoadCookiesForKey(
     base::optional_ref<const std::string> key,
     LoadedCallback loaded_callback) {
+  TRACE_EVENT("net", "SQLitePersistentCookieStore::Backend::LoadCookiesForKey",
+              perfetto::Flow::FromPointer(this));
   if (crypto_) {
     crypto_->Init(base::BindOnce(&Backend::CryptoHasInitFromLoad, this,
                                  key.CopyAsOptional(),
@@ -750,12 +761,17 @@ void SQLitePersistentCookieStore::Backend::CryptoHasInitFromLoad(
 void SQLitePersistentCookieStore::Backend::LoadAndNotifyInBackground(
     base::optional_ref<const std::string> key,
     LoadedCallback loaded_callback) {
+  TRACE_EVENT("net",
+              "SQLitePersistentCookieStore::Backend::LoadAndNotifyInBackground",
+              perfetto::Flow::FromPointer(this));
   DCHECK(background_task_runner()->RunsTasksInCurrentSequence());
+  base::ElapsedTimer timer;
   bool success = false;
 
   if (InitializeDatabase()) {
     if (!key.has_value()) {
       ChainLoadCookies(std::move(loaded_callback));
+      RecordLoadAndNotifyInBackgroundMetrics(timer.Elapsed());
       return;
     }
 
@@ -769,11 +785,30 @@ void SQLitePersistentCookieStore::Backend::LoadAndNotifyInBackground(
   }
 
   FinishedLoadingCookies(std::move(loaded_callback), success);
+  RecordLoadAndNotifyInBackgroundMetrics(timer.Elapsed());
+}
+
+void SQLitePersistentCookieStore::Backend::
+    RecordLoadAndNotifyInBackgroundMetrics(base::TimeDelta elapsed) {
+  base::UmaHistogramTimes(
+      "Cookie.SQLitePersistentCookieStore.Backend.LoadAndNotifyInBackground2",
+      elapsed);
+  if (first_load_and_notify_in_background_) {
+    base::UmaHistogramTimes(
+        "Cookie.SQLitePersistentCookieStore.Backend."
+        "LoadAndNotifyInBackground.First",
+        elapsed);
+    first_load_and_notify_in_background_ = false;
+  }
 }
 
 void SQLitePersistentCookieStore::Backend::NotifyLoadCompleteInForeground(
     LoadedCallback loaded_callback,
     bool load_success) {
+  TRACE_EVENT(
+      "net",
+      "SQLitePersistentCookieStore::Backend::NotifyLoadCompleteInForeground",
+      perfetto::Flow::FromPointer(this));
   DCHECK(client_task_runner()->RunsTasksInCurrentSequence());
 
   std::vector<std::unique_ptr<CanonicalCookie>> cookies;
@@ -887,7 +922,7 @@ bool SQLitePersistentCookieStore::Backend::LoadCookiesForDomains(
   }
 
   std::vector<std::unique_ptr<CanonicalCookie>> cookies;
-  std::unordered_set<std::string> top_frame_site_keys_to_delete;
+  absl::flat_hash_set<std::string> top_frame_site_keys_to_delete;
   auto it = domains.begin();
   bool ok = true;
   for (; it != domains.end() && ok; ++it) {
@@ -923,7 +958,7 @@ bool SQLitePersistentCookieStore::Backend::LoadCookiesForDomains(
 }
 
 void SQLitePersistentCookieStore::Backend::DeleteTopFrameSiteKeys(
-    const std::unordered_set<std::string>& top_frame_site_keys) {
+    const absl::flat_hash_set<std::string>& top_frame_site_keys) {
   if (top_frame_site_keys.empty())
     return;
 
@@ -944,7 +979,7 @@ void SQLitePersistentCookieStore::Backend::DeleteTopFrameSiteKeys(
 bool SQLitePersistentCookieStore::Backend::MakeCookiesFromSQLStatement(
     std::vector<std::unique_ptr<CanonicalCookie>>& cookies,
     sql::Statement& statement,
-    std::unordered_set<std::string>& top_frame_site_keys_to_delete) {
+    absl::flat_hash_set<std::string>& top_frame_site_keys_to_delete) {
   DCHECK(background_task_runner()->RunsTasksInCurrentSequence());
   bool ok = true;
   while (statement.Step()) {
@@ -1252,17 +1287,17 @@ SQLitePersistentCookieStore::Backend::DoMigrateDatabaseSchema() {
 
 void SQLitePersistentCookieStore::Backend::AddCookie(
     const CanonicalCookie& cc) {
-  BatchOperation(PendingOperation::COOKIE_ADD, cc);
+  BatchOperation(PendingOperation::OperationType::kAdd, cc);
 }
 
 void SQLitePersistentCookieStore::Backend::UpdateCookieAccessTime(
     const CanonicalCookie& cc) {
-  BatchOperation(PendingOperation::COOKIE_UPDATEACCESS, cc);
+  BatchOperation(PendingOperation::OperationType::kUpdateLastAccessTime, cc);
 }
 
 void SQLitePersistentCookieStore::Backend::DeleteCookie(
     const CanonicalCookie& cc) {
-  BatchOperation(PendingOperation::COOKIE_DELETE, cc);
+  BatchOperation(PendingOperation::OperationType::kDelete, cc);
 }
 
 void SQLitePersistentCookieStore::Backend::BatchOperation(
@@ -1287,12 +1322,14 @@ void SQLitePersistentCookieStore::Backend::BatchOperation(
     PendingOperationsForKey& ops_for_key = iter_and_result.first->second;
     if (!iter_and_result.second) {
       // Insert failed -> already have ops.
-      if (po->op() == PendingOperation::COOKIE_DELETE) {
+      if (po->op() == PendingOperation::OperationType::kDelete) {
         // A delete op makes all the previous ones irrelevant.
         ops_for_key.clear();
-      } else if (po->op() == PendingOperation::COOKIE_UPDATEACCESS) {
+      } else if (po->op() ==
+                 PendingOperation::OperationType::kUpdateLastAccessTime) {
         if (!ops_for_key.empty() &&
-            ops_for_key.back()->op() == PendingOperation::COOKIE_UPDATEACCESS) {
+            ops_for_key.back()->op() ==
+                PendingOperation::OperationType::kUpdateLastAccessTime) {
           // If access timestamp is updated twice in a row, can dump the earlier
           // one.
           ops_for_key.pop_back();
@@ -1384,7 +1421,7 @@ void SQLitePersistentCookieStore::Backend::DoCommit() {
       }
 
       switch (po->op()) {
-        case PendingOperation::COOKIE_ADD:
+        case PendingOperation::OperationType::kAdd:
           add_statement.Reset(true);
           add_statement.BindTime(0, po->cc().CreationDate());
           add_statement.BindString(1, po->cc().Domain());
@@ -1415,7 +1452,8 @@ void SQLitePersistentCookieStore::Backend::DoCommit() {
           add_statement.BindBool(11, po->cc().IsPersistent());
           add_statement.BindBool(12, po->cc().IsPersistent());
           add_statement.BindInt(
-              13, CookiePriorityToDBCookiePriority(po->cc().Priority()));
+              13, static_cast<int>(
+                      CookiePriorityToDBCookiePriority(po->cc().Priority())));
           add_statement.BindInt(
               14, CookieSameSiteToDBCookieSameSite(po->cc().SameSite()));
           add_statement.BindInt(15, static_cast<int>(po->cc().SourceScheme()));
@@ -1432,7 +1470,7 @@ void SQLitePersistentCookieStore::Backend::DoCommit() {
           }
           break;
 
-        case PendingOperation::COOKIE_UPDATEACCESS:
+        case PendingOperation::OperationType::kUpdateLastAccessTime:
           update_access_statement.Reset(true);
           update_access_statement.BindTime(0, po->cc().LastAccessDate());
           update_access_statement.BindString(1, po->cc().Name());
@@ -1452,7 +1490,7 @@ void SQLitePersistentCookieStore::Backend::DoCommit() {
           }
           break;
 
-        case PendingOperation::COOKIE_DELETE:
+        case PendingOperation::OperationType::kDelete:
           delete_statement.Reset(true);
           delete_statement.BindString(0, po->cc().Name());
           delete_statement.BindString(1, po->cc().Domain());
@@ -1561,6 +1599,9 @@ void SQLitePersistentCookieStore::Backend::BackgroundDeleteAllInList(
 void SQLitePersistentCookieStore::Backend::FinishedLoadingCookies(
     LoadedCallback loaded_callback,
     bool success) {
+  TRACE_EVENT("loading",
+              "SQLitePersistentCookieStore::Backend::FinishedLoadingCookies",
+              perfetto::Flow::FromPointer(this));
   PostClientTask(FROM_HERE,
                  base::BindOnce(&Backend::NotifyLoadCompleteInForeground, this,
                                 std::move(loaded_callback), success));

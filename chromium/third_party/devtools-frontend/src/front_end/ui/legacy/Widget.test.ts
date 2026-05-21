@@ -3,13 +3,20 @@
 // found in the LICENSE file.
 
 import {renderElementIntoDOM} from '../../testing/DOMHelpers.js';
+import {describeWithEnvironment} from '../../testing/EnvironmentHelpers.js';
 import * as RenderCoordinator from '../components/render_coordinator/render_coordinator.js';
 
 import * as UI from './legacy.js';
 
 const {Widget} = UI.Widget;
 
-describe('Widget', () => {
+function checkFocus(id: string) {
+  const focused = UI.DOMUtilities.deepActiveElement(document);
+  const focusedId = focused ? focused.id : '';
+  assert.strictEqual(focusedId, id);
+}
+
+describeWithEnvironment('Widget', () => {
   it('monkey-patches `Element#appendChild()` to sanity-check that widgets are properly attached', () => {
     const div = document.createElement('div');
     renderElementIntoDOM(div);
@@ -93,7 +100,92 @@ describe('Widget', () => {
     });
   });
 
+  describe('parentWidget', () => {
+    it('returns the immediate parent widget', () => {
+      const parentWidget = new Widget();
+      const childWidget = new Widget();
+      childWidget.show(parentWidget.contentElement);
+      assert.strictEqual(childWidget.parentWidget(), parentWidget);
+    });
+
+    it('returns the distant parent widget', () => {
+      const parentWidget = new Widget();
+      const div = document.createElement('div');
+      parentWidget.contentElement.appendChild(div);
+      const childWidget = new Widget();
+      childWidget.show(div);
+      assert.strictEqual(childWidget.parentWidget(), parentWidget);
+    });
+  });
+
+  describe('show', () => {
+    it('calls `wasShown` and `onResize` in order', () => {
+      const parentWidget = new Widget();
+      const parentOnResize = sinon.spy(parentWidget, 'onResize');
+      const parentWasShown = sinon.spy(parentWidget, 'wasShown');
+      const childWidget = new Widget();
+      const childOnResize = sinon.spy(childWidget, 'onResize');
+      const childWasShown = sinon.spy(childWidget, 'wasShown');
+      childWidget.show(parentWidget.contentElement);
+      const div = document.createElement('div');
+      renderElementIntoDOM(div);
+      parentWidget.markAsRoot();
+
+      parentWidget.show(div);
+
+      sinon.assert.callOrder(parentWasShown, childWasShown, parentOnResize, childOnResize);
+      sinon.assert.calledOnce(childWasShown);
+      sinon.assert.calledOnce(parentWasShown);
+      sinon.assert.calledOnce(childOnResize);
+      sinon.assert.calledOnce(parentOnResize);
+    });
+
+    it('automatically detaches from any previous parent', () => {
+      const parentWidget1 = new Widget();
+      const parentWidget2 = new Widget();
+      const childWidget = new Widget();
+      const childWidgetOnDetach = sinon.spy(childWidget, 'onDetach');
+      const div = document.createElement('div');
+      renderElementIntoDOM(div);
+      parentWidget1.markAsRoot();
+      parentWidget1.show(div);
+      parentWidget2.markAsRoot();
+      parentWidget2.show(div);
+      childWidget.show(parentWidget1.contentElement);
+
+      childWidget.show(parentWidget2.contentElement);
+
+      sinon.assert.calledOnce(childWidgetOnDetach);
+    });
+  });
+
   describe('detach', () => {
+    it('calls `willHide`, `onDetach`, and `wasHidden` in order', () => {
+      const parentWidget = new Widget();
+      const parentOnDetach = sinon.spy(parentWidget, 'onDetach');
+      const parentWillHide = sinon.spy(parentWidget, 'willHide');
+      const parentWasHidden = sinon.spy(parentWidget, 'wasHidden');
+      const childWidget = new Widget();
+      const childOnDetach = sinon.spy(childWidget, 'onDetach');
+      const childWillHide = sinon.spy(childWidget, 'willHide');
+      const childWasHidden = sinon.spy(childWidget, 'wasHidden');
+      childWidget.show(parentWidget.contentElement);
+      const div = document.createElement('div');
+      renderElementIntoDOM(div);
+      parentWidget.markAsRoot();
+      parentWidget.show(div);
+
+      parentWidget.detach();
+
+      sinon.assert.callOrder(childWillHide, parentWillHide, parentOnDetach, childWasHidden, parentWasHidden);
+      sinon.assert.notCalled(childOnDetach);
+      sinon.assert.calledOnce(childWasHidden);
+      sinon.assert.calledOnce(childWillHide);
+      sinon.assert.calledOnce(parentOnDetach);
+      sinon.assert.calledOnce(parentWasHidden);
+      sinon.assert.calledOnce(parentWillHide);
+    });
+
     it('cancels pending updates', async () => {
       const widget = new Widget();
       const performUpdate = sinon.spy(widget, 'performUpdate');
@@ -352,6 +444,83 @@ describe('Widget', () => {
       // is not its own. Then it should focus the first child (child1).
       // child1 will then focus its default element.
       assert.strictEqual(document.activeElement, child1Input);
+    });
+
+    it('should remember focus correctly on widgets.', () => {
+      const container = document.createElement('div');
+      renderElementIntoDOM(container);
+
+      const outerInput = document.createElement('input');
+      outerInput.id = 'Outer';
+      const input1 = document.createElement('input');
+      input1.id = 'Input1';
+      const input2 = document.createElement('input');
+      input2.id = 'Input2';
+      const input3 = document.createElement('input');
+      input3.id = 'Input3';
+      const input4 = document.createElement('input');
+      input4.id = 'Input4';
+
+      container.appendChild(outerInput);
+
+      const mainWidget = new Widget();
+      mainWidget.markAsRoot();
+      mainWidget.show(container);
+
+      const widget1 = new Widget();
+      widget1.show(mainWidget.element);
+      widget1.element.appendChild(input1);
+      widget1.setDefaultFocusedElement(input1);
+
+      const widget2 = new Widget();
+      widget2.show(mainWidget.element);
+      widget2.element.appendChild(input2);
+      widget2.setDefaultFocusedElement(input2);
+
+      outerInput.focus();
+      checkFocus(outerInput.id);
+
+      widget1.focus();
+      checkFocus(input1.id);
+
+      input2.focus();
+      checkFocus(input2.id);
+
+      outerInput.focus();
+      checkFocus(outerInput.id);
+
+      mainWidget.focus();
+      checkFocus(input2.id);
+
+      outerInput.focus();
+      checkFocus(outerInput.id);
+
+      widget2.hideWidget();
+      mainWidget.focus();
+      checkFocus(input1.id);
+
+      const splitWidget = new UI.SplitWidget.SplitWidget(false, false);
+      splitWidget.show(mainWidget.element);
+
+      const widget3 = new Widget();
+      widget3.element.appendChild(input3);
+      widget3.setDefaultFocusedElement(input3);
+      splitWidget.setSidebarWidget(widget3);
+
+      const widget4 = new Widget();
+      widget4.element.appendChild(input4);
+      widget4.setDefaultFocusedElement(input4);
+      splitWidget.setMainWidget(widget4);
+      splitWidget.setDefaultFocusedChild(widget4);
+
+      splitWidget.focus();
+      checkFocus(input4.id);
+
+      widget3.focus();
+      checkFocus(input3.id);
+
+      mainWidget.focus();
+      checkFocus(input3.id);
     });
 
     it('gives focus an autofocus element of a child widget', () => {

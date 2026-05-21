@@ -995,6 +995,21 @@ void av1_get_ref_frames(RefFrameMapPair ref_frame_map_pairs[REF_FRAMES],
   // Initialize reference frame mappings.
   for (int i = 0; i < REF_FRAMES; ++i) remapped_ref_idx[i] = INVALID_IDX;
 
+  if (cpi->ppi->gf_group.use_ext_ref_frame_map[gf_index]) {
+    for (int rf = LAST_FRAME; rf < REF_FRAMES; ++rf) {
+      if (cpi->ppi->gf_group.ref_frame_list[gf_index][rf] != INVALID_IDX) {
+        remapped_ref_idx[rf - LAST_FRAME] =
+            (int)cpi->ppi->gf_group.ref_frame_list[gf_index][rf];
+      }
+    }
+    for (int i = 0; i < REF_FRAMES; ++i) {
+      if (remapped_ref_idx[i] == INVALID_IDX) {
+        remapped_ref_idx[i] = 0;
+      }
+    }
+    return;
+  }
+
 #if !CONFIG_REALTIME_ONLY
   if (cpi->use_ducky_encode &&
       cpi->ducky_encode_info.frame_info.gop_mode == DUCKY_ENCODE_GOP_MODE_RCL) {
@@ -1142,8 +1157,8 @@ void av1_get_ref_frames(RefFrameMapPair ref_frame_map_pairs[REF_FRAMES],
     // Continue if the current ref slot is already full.
     if (remapped_ref_idx[frame - LAST_FRAME] != INVALID_IDX) continue;
     // Find the next unmapped reference buffer
-    // in decreasing ouptut order relative to current picture.
-    int next_buf_max = 0;
+    // in decreasing output order relative to current picture.
+    int next_buf_max = -1;
     int next_disp_order = INT_MIN;
     for (buf_map_idx = n_bufs - 1; buf_map_idx >= 0; buf_map_idx--) {
       if (!buffer_map[buf_map_idx].used &&
@@ -1164,8 +1179,8 @@ void av1_get_ref_frames(RefFrameMapPair ref_frame_map_pairs[REF_FRAMES],
     // Continue if the current ref slot is already full.
     if (remapped_ref_idx[frame - LAST_FRAME] != INVALID_IDX) continue;
     // Find the next unmapped reference buffer
-    // in increasing ouptut order relative to current picture.
-    int next_buf_max = 0;
+    // in increasing output order relative to current picture.
+    int next_buf_max = -1;
     int next_disp_order = INT_MAX;
     for (buf_map_idx = n_bufs - 1; buf_map_idx >= 0; buf_map_idx--) {
       if (!buffer_map[buf_map_idx].used &&
@@ -1302,8 +1317,7 @@ int av1_encode_strategy(AV1_COMP *const cpi, size_t *const size,
     return -1;
   }
 
-  // TODO(sarahparker) finish bit allocation for one pass pyramid
-  if (has_no_stats_stage(cpi)) {
+  if (has_no_stats_stage(cpi) && !is_one_pass_rt_lag_params(cpi)) {
     gf_cfg->gf_max_pyr_height =
         AOMMIN(gf_cfg->gf_max_pyr_height, USE_ALTREF_FOR_ONE_PASS);
     gf_cfg->gf_min_pyr_height =
@@ -1494,6 +1508,21 @@ int av1_encode_strategy(AV1_COMP *const cpi, size_t *const size,
                                *frame_flags);
     if (use_rtc_reference_structure_one_layer(cpi))
       av1_set_rtc_reference_structure_one_layer(cpi, cpi->gf_frame_index == 0);
+  } else if (is_one_pass_rt_lag_params(cpi) && oxcf->rc_cfg.mode == AOM_CBR) {
+    // For realtime mode with lookahead in CBR: the current frame buffer_level
+    // is used to update the frame target_bandwidth, so we need to call
+    // av1_calc_i/pframe_target_size_one_pass_cbr() here for every frame.
+    int target;
+    const FRAME_UPDATE_TYPE cur_update_type =
+        gf_group->update_type[cpi->gf_frame_index];
+    if (cur_update_type == KF_UPDATE) {
+      target = av1_calc_iframe_target_size_one_pass_cbr(cpi);
+    } else {
+      target = av1_calc_pframe_target_size_one_pass_cbr(cpi, cur_update_type);
+    }
+    gf_group->bit_allocation[cpi->gf_frame_index] = target;
+    av1_rc_set_frame_target(cpi, target, cm->width, cm->height);
+    cpi->rc.base_frame_target = target;
   }
 #endif
 #if CONFIG_COLLECT_COMPONENT_TIMING

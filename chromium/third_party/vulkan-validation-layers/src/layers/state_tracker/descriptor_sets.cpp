@@ -1,7 +1,7 @@
-/* Copyright (c) 2015-2025 The Khronos Group Inc.
- * Copyright (c) 2015-2025 Valve Corporation
- * Copyright (c) 2015-2025 LunarG, Inc.
- * Copyright (C) 2015-2025 Google Inc.
+/* Copyright (c) 2015-2026 The Khronos Group Inc.
+ * Copyright (c) 2015-2026 Valve Corporation
+ * Copyright (c) 2015-2026 LunarG, Inc.
+ * Copyright (C) 2015-2026 Google Inc.
  * Copyright (c) 2025 Arm Limited.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -65,9 +65,9 @@ void vvl::DescriptorPool::Allocate(const VkDescriptorSetAllocateInfo *alloc_info
         available_counts_[it->first] -= ds_data.required_descriptors_by_type.at(it->first);
     }
 
-    const auto *variable_count_info = vku::FindStructInPNextChain<VkDescriptorSetVariableDescriptorCountAllocateInfo>(alloc_info->pNext);
-    const bool variable_count_valid =
-        variable_count_info && variable_count_info->descriptorSetCount == alloc_count;
+    const auto *variable_count_info =
+        vku::FindStructInPNextChain<VkDescriptorSetVariableDescriptorCountAllocateInfo>(alloc_info->pNext);
+    const bool variable_count_valid = variable_count_info && variable_count_info->descriptorSetCount == alloc_count;
 
     // Create tracking object for each descriptor set; insert into global map and the pool's set.
     for (uint32_t i = 0; i < alloc_count; i++) {
@@ -180,12 +180,12 @@ vvl::DescriptorClass vvl::DescriptorTypeToClass(VkDescriptorType type) {
             return DescriptorClass::InlineUniform;
         case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR:
         case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV:
+        case VK_DESCRIPTOR_TYPE_PARTITIONED_ACCELERATION_STRUCTURE_NV:
             return DescriptorClass::AccelerationStructure;
         case VK_DESCRIPTOR_TYPE_MUTABLE_EXT:
             return DescriptorClass::Mutable;
         case VK_DESCRIPTOR_TYPE_TENSOR_ARM:
             return DescriptorClass::Tensor;
-        case VK_DESCRIPTOR_TYPE_PARTITIONED_ACCELERATION_STRUCTURE_NV:
         case VK_DESCRIPTOR_TYPE_MAX_ENUM:
             break;
     }
@@ -196,15 +196,6 @@ using DescriptorSet = vvl::DescriptorSet;
 using DescriptorSetLayout = vvl::DescriptorSetLayout;
 using DescriptorSetLayoutDef = vvl::DescriptorSetLayoutDef;
 using DescriptorSetLayoutId = vvl::DescriptorSetLayoutId;
-
-// Canonical dictionary of DescriptorSetLayoutDef (without any handle/device specific information)
-vvl::DescriptorSetLayoutDict descriptor_set_layout_dict;
-
-static DescriptorSetLayoutId GetCanonicalId(const VkDescriptorSetLayoutCreateInfo *p_create_info, vvl::DeviceState &device_state) {
-    return descriptor_set_layout_dict.LookUp(DescriptorSetLayoutDef(device_state, p_create_info));
-}
-
-void ClearDescriptorSetLayoutCanonicalIdDict() { descriptor_set_layout_dict.Clear(); }
 
 std::string DescriptorSetLayoutDef::DescribeDifference(uint32_t index, const DescriptorSetLayoutDef &other) const {
     std::ostringstream ss;
@@ -233,40 +224,48 @@ std::string DescriptorSetLayoutDef::DescribeDifference(uint32_t index, const Des
     } else if (lhs_bindings.size() != rhs_bindings.size()) {
         ss << "binding count " << lhs_bindings.size() << " doesn't match " << rhs_bindings.size();
     } else {
+        bool found = false;
         for (uint32_t i = 0; i < lhs_bindings.size(); i++) {
+            if (found) {
+                break;
+            }
             const auto &l = lhs_bindings[i];
             const auto &r = rhs_bindings[i];
             if (l.binding != r.binding) {
                 ss << "VkDescriptorSetLayoutBinding::binding " << l.binding << " doesn't match " << r.binding;
-                break;
+                found = true;
             } else if (l.descriptorType != r.descriptorType) {
                 ss << "binding " << i << " descriptorType " << string_VkDescriptorType(l.descriptorType) << " doesn't match "
                    << string_VkDescriptorType(r.descriptorType);
-                break;
+                found = true;
             } else if (l.descriptorCount != r.descriptorCount) {
                 ss << "binding " << i << " descriptorCount " << l.descriptorCount << " doesn't match " << r.descriptorCount;
-                break;
+                found = true;
             } else if (l.stageFlags != r.stageFlags) {
                 ss << "binding " << i << " stageFlags " << string_VkShaderStageFlags(l.stageFlags) << " doesn't match "
                    << string_VkShaderStageFlags(r.stageFlags);
-                break;
+                found = true;
             } else if ((l.pImmutableSamplers && !r.pImmutableSamplers) || (!l.pImmutableSamplers && r.pImmutableSamplers)) {
                 ss << "binding " << i << " pImmutableSamplers doesn't match as one is null and one in non-null";
-                break;
+                found = true;
             } else if (l.pImmutableSamplers) {
                 for (uint32_t s = 0; s < l.descriptorCount; s++) {
                     if (l.pImmutableSamplers[s] != r.pImmutableSamplers[s]) {
                         ss << "binding " << i << " pImmutableSamplers[" << s << "] " << l.pImmutableSamplers[s] << " doesn't match "
                            << r.pImmutableSamplers[s];
+                        found = true;
                         break;
                     }
                 }
             } else if (GetMutableTypes(i) != other.GetMutableTypes(i)) {
                 // These have been sorted already so can direct compare
-                ss << "Mutable types doesn't match at binding " << i << "\n[" << PrintMutableTypes(i) << "]\ndoesn't match"
-                   << "\n[" << other.PrintMutableTypes(i) << "]";
+                ss << "Mutable types doesn't match at binding " << i << "\n[" << PrintMutableTypes(i) << "]\ndoesn't match" << "\n["
+                   << other.PrintMutableTypes(i) << "]";
+                found = true;
             }
         }
+        // If we got here, we failed IsBoundSetCompatible() but didn't find what was different, likely missing a case
+        assert(found);
     }
     ss << '\n';
     return ss.str();
@@ -437,8 +436,7 @@ const vvl::IndexRange &vvl::DescriptorSetLayoutDef::GetGlobalIndexRangeFromIndex
 
 // For the given binding, return the global index range (half open)
 // As start and end are often needed in pairs, get both with a single lookup.
-const vvl::IndexRange &vvl::DescriptorSetLayoutDef::GetGlobalIndexRangeFromBinding(
-    const uint32_t binding) const {
+const vvl::IndexRange &vvl::DescriptorSetLayoutDef::GetGlobalIndexRangeFromBinding(const uint32_t binding) const {
     uint32_t index = GetIndexFromBinding(binding);
     return GetGlobalIndexRangeFromIndex(index);
 }
@@ -514,7 +512,7 @@ const std::vector<VkDescriptorType> &vvl::DescriptorSetLayoutDef::GetMutableType
     return mutable_bindings_[index].types;
 }
 
-std::string vvl::DescriptorSetLayoutDef::DescribeDescriptorBufferSizeAndOffests(VkDevice device,
+std::string vvl::DescriptorSetLayoutDef::DescribeDescriptorBufferSizeAndOffsets(VkDevice device,
                                                                                 VkDescriptorSetLayout layout) const {
     std::ostringstream ss;
     if (flags_ & VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT) {
@@ -599,7 +597,7 @@ bool vvl::DescriptorSetLayout::IsCompatible(DescriptorSetLayout const *rh_ds_lay
 vvl::DescriptorSetLayout::DescriptorSetLayout(vvl::DeviceState &device_state, const VkDescriptorSetLayoutCreateInfo *pCreateInfo,
                                               const VkDescriptorSetLayout handle)
     : StateObject(handle, kVulkanObjectTypeDescriptorSetLayout),
-      layout_id_(GetCanonicalId(pCreateInfo, device_state)),
+      layout_id_(device_state.GetCanonicalId(pCreateInfo)),
       desc_set_layout_ci(pCreateInfo) {
     const bool is_descriptor_buffer = (pCreateInfo->flags & VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT) != 0;
     if (is_descriptor_buffer) {
@@ -1288,7 +1286,7 @@ void vvl::MutableDescriptor::WriteUpdate(DescriptorSet &set_state, const vvl::De
             break;
         case DescriptorClass::ImageSampler: {
             if (update.pImageInfo) {
-                const auto &image_info = update.pImageInfo[index];
+                const VkDescriptorImageInfo &image_info = update.pImageInfo[index];
                 if (!immutable_) {
                     ReplaceStatePtr(set_state, sampler_state_, dev_data.GetConstCastShared<vvl::Sampler>(image_info.sampler),
                                     is_bindless);
@@ -1301,7 +1299,8 @@ void vvl::MutableDescriptor::WriteUpdate(DescriptorSet &set_state, const vvl::De
         }
         case DescriptorClass::Image: {
             if (update.pImageInfo) {
-                const auto &image_info = update.pImageInfo[index];
+                // The VkSampler is ignored and may be garbage
+                const VkDescriptorImageInfo &image_info = update.pImageInfo[index];
                 image_layout_ = image_info.imageLayout;
                 ReplaceStatePtr(set_state, image_view_state_, dev_data.GetConstCastShared<vvl::ImageView>(image_info.imageView),
                                 is_bindless);
@@ -1310,7 +1309,7 @@ void vvl::MutableDescriptor::WriteUpdate(DescriptorSet &set_state, const vvl::De
         }
         case DescriptorClass::GeneralBuffer: {
             if (update.pBufferInfo) {
-                const auto &buffer_info = update.pBufferInfo[index];
+                const VkDescriptorBufferInfo &buffer_info = update.pBufferInfo[index];
                 offset_ = buffer_info.offset;
                 range_ = buffer_info.range;
                 // can be null if using nullDescriptors
@@ -1327,8 +1326,7 @@ void vvl::MutableDescriptor::WriteUpdate(DescriptorSet &set_state, const vvl::De
             assert(tensor_info);
             assert(index < tensor_info->tensorViewCount);
             const auto tensor_view_state = dev_data.GetConstCastShared<vvl::TensorView>(tensor_info->pTensorViews[index]);
-            const auto &tensor_state = tensor_view_state->tensor_state;
-            ReplaceStatePtr(set_state, tensor_state_, tensor_state, is_bindless);
+            ReplaceStatePtr(set_state, tensor_view_state_, tensor_view_state, is_bindless);
             break;
         }
         case DescriptorClass::TexelBuffer: {
@@ -1451,7 +1449,7 @@ void vvl::MutableDescriptor::CopyUpdate(DescriptorSet &set_state, const vvl::Dev
                     ReplaceStatePtr(set_state, buffer_view_state_, mutable_src.GetSharedBufferViewState(), is_bindless);
                 } break;
                 case DescriptorClass::Tensor: {
-                    ReplaceStatePtr(set_state, tensor_state_, mutable_src.GetSharedTensor(), is_bindless);
+                    ReplaceStatePtr(set_state, tensor_view_state_, mutable_src.GetSharedTensorView(), is_bindless);
                 } break;
                 case DescriptorClass::AccelerationStructure: {
                     if (mutable_src.IsKHR()) {
@@ -1477,7 +1475,7 @@ void vvl::MutableDescriptor::CopyUpdate(DescriptorSet &set_state, const vvl::Dev
             const auto tensor_desc = static_cast<const MutableDescriptor *>(&src);
             tensor_view_count_ = tensor_desc->GetTensorViewCount();
             tensor_views_ = tensor_desc->GetTensorViews();
-            ReplaceStatePtr(set_state, tensor_state_, std::shared_ptr<vvl::Tensor>(), is_bindless);
+            ReplaceStatePtr(set_state, tensor_view_state_, std::shared_ptr<vvl::TensorView>(), is_bindless);
         } break;
         case vvl::DescriptorClass::InlineUniform:
         case vvl::DescriptorClass::Invalid:
@@ -1501,6 +1499,8 @@ VkDeviceSize vvl::MutableDescriptor::GetEffectiveRange() const {
         return range_;
     }
 }
+
+std::shared_ptr<vvl::Tensor> vvl::MutableDescriptor::GetSharedTensor() const { return tensor_view_state_->tensor_state; }
 
 void vvl::MutableDescriptor::UpdateImageLayoutDrawState(vvl::CommandBuffer &cb_state) {
     const vvl::DescriptorClass active_class = ActiveClass();
@@ -1552,8 +1552,8 @@ bool vvl::MutableDescriptor::AddParent(StateObject *state_object) {
             }
             break;
         case DescriptorClass::Tensor:
-            if (tensor_state_) {
-                result |= tensor_state_->AddParent(state_object);
+            if (tensor_view_state_) {
+                result |= tensor_view_state_->AddParent(state_object);
             }
             break;
         case DescriptorClass::InlineUniform:
@@ -1582,8 +1582,8 @@ void vvl::MutableDescriptor::RemoveParent(StateObject *state_object) {
     if (acc_state_nv_) {
         acc_state_nv_->RemoveParent(state_object);
     }
-    if (tensor_state_) {
-        tensor_state_->RemoveParent(state_object);
+    if (tensor_view_state_) {
+        tensor_view_state_->RemoveParent(state_object);
     }
 }
 
@@ -1611,7 +1611,8 @@ bool vvl::MutableDescriptor::Invalid() const {
                 return !acc_state_nv_ || acc_state_nv_->Invalid();
             }
         case DescriptorClass::Tensor:
-            return !tensor_state_ || tensor_state_->Invalid();
+            return !tensor_view_state_ || tensor_view_state_->Invalid() || !tensor_view_state_->tensor_state ||
+                   tensor_view_state_->tensor_state->Invalid();
 
         case DescriptorClass::InlineUniform:
         case DescriptorClass::Mutable:
@@ -1622,7 +1623,7 @@ bool vvl::MutableDescriptor::Invalid() const {
 }
 
 std::string vvl::DslErrorSource::PrintMessage(const Logger &error_logger) const {
-    std::stringstream msg;
+    std::ostringstream msg;
     msg << "The VkDescriptorSetLayout was used to ";
     if (pipeline_layout_handle_ == VK_NULL_HANDLE) {
         msg << "allocate " << error_logger.FormatHandle(ds_handle_);
@@ -1647,11 +1648,13 @@ void vvl::TensorDescriptor::CopyUpdate(DescriptorSet &set_state, const DeviceSta
         const auto tensor_desc = static_cast<const MutableDescriptor *>(&src);
         tensor_view_count_ = tensor_desc->GetTensorViewCount();
         tensor_views_ = tensor_desc->GetTensorViews();
-        ReplaceStatePtr(set_state, tensor_state_, std::shared_ptr<vvl::Tensor>(), is_bindless);
+        ReplaceStatePtr(set_state, tensor_view_state_, std::shared_ptr<vvl::TensorView>(), is_bindless);
         return;
     }
     const auto tensor_desc = static_cast<const TensorDescriptor *>(&src);
     tensor_view_count_ = tensor_desc->tensor_view_count_;
     tensor_views_ = tensor_desc->tensor_views_;
-    ReplaceStatePtr(set_state, tensor_state_, std::shared_ptr<vvl::Tensor>(), is_bindless);
+    ReplaceStatePtr(set_state, tensor_view_state_, std::shared_ptr<vvl::TensorView>(), is_bindless);
 }
+
+const vvl::Tensor *vvl::TensorDescriptor::GetTensorState() const { return tensor_view_state_->tensor_state.get(); }

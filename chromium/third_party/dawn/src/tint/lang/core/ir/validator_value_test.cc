@@ -33,6 +33,7 @@
 
 #include "src/tint/lang/core/enums.h"
 #include "src/tint/lang/core/ir/builder.h"
+#include "src/tint/lang/core/ir/type/array_count.h"
 #include "src/tint/lang/core/ir/validator.h"
 #include "src/tint/lang/core/number.h"
 #include "src/tint/lang/core/type/abstract_float.h"
@@ -249,7 +250,7 @@ TEST_F(IR_ValidatorTest, Var_Private_InsideFunctionScopeWithCapability) {
         b.Return(f);
     });
 
-    auto res = ir::Validate(mod, Capabilities{Capability::kAllowPrivateVarsInFunctions});
+    auto res = ir::Validate(mod, Capabilities{Capability::kMslAllowEntryPointInterface});
     ASSERT_EQ(res, Success) << res.Failure();
 }
 
@@ -476,18 +477,24 @@ TEST_F(IR_ValidatorTest, Var_NonResourceWithBindingPoint) {
 }
 
 TEST_F(IR_ValidatorTest, Var_Uniform_NotConstructible) {
-    auto* v = b.Var<uniform, atomic<u32>>();
-    v->SetBindingPoint(0, 0);
-    mod.root_block->Append(v);
+    b.Append(mod.root_block, [&] {
+        auto* count = b.Override("count", ty.u32());
+        count->SetOverrideId({2});
+        auto* cnt = ty.Get<core::ir::type::ValueArrayCount>(count->Result());
+        auto* ary = ty.Get<core::type::Array>(ty.i32(), cnt, 0_u);
 
-    auto res = ir::Validate(mod);
+        auto* v = b.Var(ty.ptr(uniform, ary, read));
+        v->SetBindingPoint(0, 0);
+    });
+
+    auto res = ir::Validate(mod, Capabilities{Capability::kAllowOverrides});
     ASSERT_NE(res, Success);
     EXPECT_THAT(
         res.Failure().reason,
         testing::HasSubstr(
-            R"(:2:40 error: var: vars in the 'uniform' address space must be host-shareable and constructible
-  %1:ptr<uniform, atomic<u32>, read> = var undef @binding_point(0, 0)
-                                       ^^^
+            R"(:3:47 error: var: vars in the 'uniform' address space must be host-shareable and constructible or a buffer
+  %2:ptr<uniform, array<i32, %count>, read> = var undef @binding_point(0, 0)
+                                              ^^^
 )")) << res.Failure();
 }
 
@@ -501,10 +508,71 @@ TEST_F(IR_ValidatorTest, Var_Uniform_NotHostShareable) {
     EXPECT_THAT(
         res.Failure().reason,
         testing::HasSubstr(
-            R"(:2:33 error: var: vars in the 'uniform' address space must be host-shareable and constructible
+            R"(:2:33 error: var: vars in the 'uniform' address space must be host-shareable and constructible or a buffer
   %1:ptr<uniform, bool, read> = var undef @binding_point(0, 0)
                                 ^^^
 )")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Var_Immediate_NotHostShareable) {
+    auto* v = b.Var<immediate, bool>();
+    mod.root_block->Append(v);
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:2:35 error: var: vars in the 'immediate' address space must be host-shareable
+  %1:ptr<immediate, bool, read> = var undef
+                                  ^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Var_Immediate_Multiple_SameEntryPoint) {
+    auto* v1 = b.Var<immediate, u32>();
+    auto* v2 = b.Var<immediate, u32>();
+    mod.root_block->Append(v1);
+    mod.root_block->Append(v2);
+
+    auto* f = FragmentEntryPoint();
+    b.Append(f->Block(), [&] {
+        b.Let(v1->Result());
+        b.Let(v2->Result());
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:3:34 error: var: multiple user-declared immediate data variables referenced by entry point %f
+  %2:ptr<immediate, u32, read> = var undef
+                                 ^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Var_Immediate_Multiple_DifferentEntryPoints) {
+    auto* v1 = b.Var<immediate, u32>();
+    auto* v2 = b.Var<immediate, u32>();
+    mod.root_block->Append(v1);
+    mod.root_block->Append(v2);
+
+    auto* f1 = FragmentEntryPoint("f1");
+    b.Append(f1->Block(), [&] {
+        b.Let(v1->Result());
+        b.Return(f1);
+    });
+
+    auto* f2 = FragmentEntryPoint("f2");
+    b.Append(f2->Block(), [&] {
+        b.Let(v1->Result());
+        b.Return(f2);
+    });
+
+    auto res = ir::Validate(mod, Capabilities{Capability::kAllowMultipleEntryPoints});
+    ASSERT_EQ(res, Success) << res.Failure();
 }
 
 TEST_F(IR_ValidatorTest, Var_Storage_NotHostShareable) {
@@ -643,7 +711,7 @@ TEST_F(IR_ValidatorTest, Var_DuplicateBindingPoints_CapabilityOverride) {
 }
 
 TEST_F(IR_ValidatorTest, Var_MultipleIOAnnotations) {
-    auto* v = b.Var<AddressSpace::kIn, vec4<f32>>();
+    auto* v = b.Var<AddressSpace::kIn, vec4f>();
     v->SetBuiltin(BuiltinValue::kPosition);
     v->SetLocation(0);
     mod.root_block->Append(v);
@@ -683,7 +751,7 @@ TEST_F(IR_ValidatorTest, Var_Struct_MultipleIOAnnotations) {
 }
 
 TEST_F(IR_ValidatorTest, Var_MissingIOAnnotations) {
-    auto* v = b.Var<AddressSpace::kIn, vec4<f32>>();
+    auto* v = b.Var<AddressSpace::kIn, vec4f>();
     mod.root_block->Append(v);
 
     auto res = ir::Validate(mod);
@@ -846,21 +914,6 @@ TEST_F(IR_ValidatorTest, Var_TexelBuffer_NonHandleAddressSpace) {
             R"(:2:3 error: var: handle types can only be declared in the 'handle' address space
   %1:ptr<private, texel_buffer<rgba32float, read>, read> = var undef
   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-)")) << res.Failure();
-}
-
-TEST_F(IR_ValidatorTest, Var_ResourceBinding_NonHandleAddressSpace) {
-    auto* v = b.Var(ty.ptr(AddressSpace::kPrivate, ty.resource_binding(), read));
-    mod.root_block->Append(v);
-
-    auto res = ir::Validate(mod);
-    ASSERT_NE(res, Success);
-    EXPECT_THAT(
-        res.Failure().reason,
-        testing::HasSubstr(
-            R"(:2:3 error: var: handle types can only be declared in the 'handle' address space
-  %1:ptr<private, resource_binding, read> = var undef
-  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 )")) << res.Failure();
 }
 
@@ -1216,6 +1269,111 @@ TEST_F(IR_ValidatorTest, PointerToNonStructPixelLocal) {
     ASSERT_NE(res, Success);
     EXPECT_THAT(res.Failure().reason, testing::HasSubstr("pixel_local var must be of type struct"))
         << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Var_Atomic_Storage_Read) {
+    auto* v = b.Var(ty.ptr(storage, ty.atomic(ty.i32()), read));
+    v->SetBindingPoint(0, 0);
+    mod.root_block->Append(v);
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:2:40 error: var: atomic variables in 'storage' address space must have 'read_write' access mode
+  %1:ptr<storage, atomic<i32>, read> = var undef @binding_point(0, 0)
+                                       ^^^
+)"));
+}
+
+TEST_F(IR_ValidatorTest, Var_Atomic_Storage_ReadWrite) {
+    auto* v = b.Var(ty.ptr(storage, ty.atomic(ty.i32()), read_write));
+    v->SetBindingPoint(0, 0);
+    mod.root_block->Append(v);
+
+    auto res = ir::Validate(mod);
+    ASSERT_EQ(res, Success);
+}
+
+TEST_F(IR_ValidatorTest, Var_Atomic_Workgroup) {
+    auto* v = b.Var(ty.ptr(workgroup, ty.atomic(ty.i32()), read_write));
+    mod.root_block->Append(v);
+
+    auto res = ir::Validate(mod);
+    ASSERT_EQ(res, Success);
+}
+
+TEST_F(IR_ValidatorTest, Var_Atomic_Private) {
+    auto* v = b.Var(ty.ptr(private_, ty.atomic(ty.i32()), read_write));
+    mod.root_block->Append(v);
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:2:46 error: var: atomic variables must be in the 'workgroup' or 'storage' address space
+  %1:ptr<private, atomic<i32>, read_write> = var undef
+                                             ^^^
+)"));
+}
+
+TEST_F(IR_ValidatorTest, Var_Atomic_Function) {
+    auto* f = b.Function("my_func", ty.void_());
+    b.Append(f->Block(), [&] {
+        b.Var(ty.ptr(function, ty.atomic(ty.i32()), read_write));
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:3:49 error: var: atomic variables must be in the 'workgroup' or 'storage' address space
+    %2:ptr<function, atomic<i32>, read_write> = var undef
+                                                ^^^
+)"));
+}
+
+TEST_F(IR_ValidatorTest, Var_Struct_Atomic_Storage_Read) {
+    auto* str_ty =
+        ty.Struct(mod.symbols.New("MyStruct"), {
+                                                   {mod.symbols.New("a"), ty.atomic(ty.i32())},
+                                               });
+    auto* v = b.Var(ty.ptr(storage, str_ty, read));
+    v->SetBindingPoint(0, 0);
+    mod.root_block->Append(v);
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:6:37 error: var: atomic variables in 'storage' address space must have 'read_write' access mode
+  %1:ptr<storage, MyStruct, read> = var undef @binding_point(0, 0)
+                                    ^^^
+)"));
+}
+
+TEST_F(IR_ValidatorTest, Var_Struct_Atomic_Private) {
+    auto* str_ty =
+        ty.Struct(mod.symbols.New("MyStruct"), {
+                                                   {mod.symbols.New("a"), ty.atomic(ty.i32())},
+                                               });
+    auto* v = b.Var(ty.ptr(private_, str_ty, read_write));
+    mod.root_block->Append(v);
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:6:43 error: var: atomic variables must be in the 'workgroup' or 'storage' address space
+  %1:ptr<private, MyStruct, read_write> = var undef
+                                          ^^^
+)"));
 }
 
 }  // namespace tint::core::ir

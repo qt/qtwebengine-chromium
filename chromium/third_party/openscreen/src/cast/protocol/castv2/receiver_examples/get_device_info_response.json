@@ -1,0 +1,9 @@
+{
+    "type": "GET_DEVICE_INFO",
+    "requestId": 789,
+    "deviceId": "some-unique-device-id",
+    "friendlyName": "Living Room TV",
+    "deviceModel": "Chromecast",
+    "capabilities": 6149,
+    "controlNotifications": 1
+}

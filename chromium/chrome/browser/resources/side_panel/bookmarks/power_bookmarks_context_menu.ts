@@ -12,7 +12,7 @@ import '//resources/cr_elements/icons.html.js';
 import type {PriceTrackingBrowserProxy} from '//resources/cr_components/commerce/price_tracking_browser_proxy.js';
 import {PriceTrackingBrowserProxyImpl} from '//resources/cr_components/commerce/price_tracking_browser_proxy.js';
 import type {CrActionMenuElement} from '//resources/cr_elements/cr_action_menu/cr_action_menu.js';
-import {assert} from 'chrome://resources/js/assert.js';
+import {assert, assertNotReachedCase} from 'chrome://resources/js/assert.js';
 import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
 import type {DomRepeatEvent} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 import {afterNextRender, PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
@@ -69,6 +69,7 @@ export class PowerBookmarksContextMenuElement extends PolymerElement {
       priceTracked_: Boolean,
       priceTrackingEligible_: Boolean,
       isInSplitView_: Boolean,
+      incognitoCount_: Number,
     };
   }
 
@@ -80,15 +81,18 @@ export class PowerBookmarksContextMenuElement extends PolymerElement {
   declare private priceTracked_: boolean;
   declare private priceTrackingEligible_: boolean;
   declare private isInSplitView_: boolean;
+  declare private incognitoCount_: number;
 
   showAt(
       target: HTMLElement, bookmarks: BookmarksTreeNode[],
       priceTracked: boolean, priceTrackingEligible: boolean,
-      isInSplitView: boolean, onShown: Function = () => {}) {
+      isInSplitView: boolean, incognitoCount: number,
+      onShown: Function = () => {}) {
     this.bookmarks_ = bookmarks;
     this.priceTracked_ = priceTracked;
     this.priceTrackingEligible_ = priceTrackingEligible;
     this.isInSplitView_ = isInSplitView;
+    this.incognitoCount_ = incognitoCount;
     afterNextRender(this, () => {
       this.$.menu.showAt(target);
       onShown();
@@ -98,11 +102,12 @@ export class PowerBookmarksContextMenuElement extends PolymerElement {
   showAtPosition(
       event: MouseEvent, bookmarks: BookmarksTreeNode[], priceTracked: boolean,
       priceTrackingEligible: boolean, isInSplitView: boolean,
-      onShown: Function = () => {}) {
+      incognitoCount: number, onShown: Function = () => {}) {
     this.bookmarks_ = bookmarks;
     this.priceTracked_ = priceTracked;
     this.priceTrackingEligible_ = priceTrackingEligible;
     this.isInSplitView_ = isInSplitView;
+    this.incognitoCount_ = incognitoCount;
     const menuMargin = 20;
     const doc = document.scrollingElement!;
     const minX = doc.scrollLeft + menuMargin;
@@ -120,6 +125,14 @@ export class PowerBookmarksContextMenuElement extends PolymerElement {
 
   isOpen(): boolean {
     return this.$.menu.open;
+  }
+
+  close() {
+    this.$.menu.close();
+  }
+
+  anyBookmarkMatches(id: string): boolean {
+    return this.bookmarks_.some(bookmark => bookmark.id === id);
   }
 
   private getMenuItemsForBookmarks_(): MenuItem[] {
@@ -155,16 +168,15 @@ export class PowerBookmarksContextMenuElement extends PolymerElement {
         loadTimeData.getBoolean('isIncognitoModeAvailable')) {
       menuItems.push({
         id: MenuItemId.OPEN_INCOGNITO,
-        label: bookmarkCount < 2 ?
+        label: this.incognitoCount_ < 2 ?
             loadTimeData.getString('menuOpenIncognito') :
             loadTimeData.getStringF(
-                'menuOpenIncognitoWithCount', bookmarkCount),
-        disabled: bookmarkCount === 0,
+                'menuOpenIncognitoWithCount', this.incognitoCount_),
+        disabled: this.incognitoCount_ === 0,
       });
     }
 
-    if (loadTimeData.getBoolean('splitViewEnabled') && bookmarkCount === 1 &&
-        this.bookmarks_[0].url) {
+    if (bookmarkCount === 1 && this.bookmarks_[0].url) {
       menuItems.push({
         id: MenuItemId.OPEN_SPLIT_VIEW,
         label: loadTimeData.getString('menuOpenSplitView'),
@@ -394,6 +406,11 @@ export class PowerBookmarksContextMenuElement extends PolymerElement {
           }));
         }
         break;
+      case MenuItemId.DIVIDER:
+      case MenuItemId.EDIT:
+        break;
+      default:
+        assertNotReachedCase(event.model.item.id);
     }
     this.$.menu.close();
   }

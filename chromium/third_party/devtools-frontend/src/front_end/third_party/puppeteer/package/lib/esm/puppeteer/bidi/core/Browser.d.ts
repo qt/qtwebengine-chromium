@@ -54,6 +54,8 @@ export declare class Browser extends EventEmitter<{
     createUserContext(options: BrowserContextOptions): Promise<UserContext>;
     installExtension(path: string): Promise<string>;
     uninstallExtension(id: string): Promise<void>;
+    setClientWindowState(params: Bidi.Browser.SetClientWindowStateParameters): Promise<void>;
+    getClientWindowInfo(windowId: string): Promise<Bidi.Browser.ClientWindowInfo>;
     [disposeSymbol](): void;
 }
 //# sourceMappingURL=Browser.d.ts.map

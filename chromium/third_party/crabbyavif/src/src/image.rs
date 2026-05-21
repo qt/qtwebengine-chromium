@@ -340,7 +340,7 @@ impl Image {
         })
     }
 
-    #[cfg(feature = "libyuv")]
+    #[cfg(any(feature = "libyuv", feature = "jpegxl"))]
     pub(crate) fn plane_row_bytes(&self) -> AvifResult<[i32; 4]> {
         Ok(ALL_PLANES.map(|x| {
             if self.has_plane(x) {
@@ -351,14 +351,19 @@ impl Image {
         }))
     }
 
-    #[cfg(any(feature = "dav1d", feature = "libgav1"))]
-    pub(crate) fn clear_chroma_planes(&mut self) {
-        for plane in [Plane::U, Plane::V] {
+    #[cfg(any(feature = "dav1d", feature = "libgav1", feature = "avm"))]
+    pub(crate) fn free_planes(&mut self, planes: &[Plane]) {
+        for plane in planes {
             let plane = plane.as_usize();
             self.planes[plane] = None;
             self.row_bytes[plane] = 0;
             self.image_owns_planes[plane] = false;
         }
+    }
+
+    #[cfg(any(feature = "dav1d", feature = "libgav1"))]
+    pub(crate) fn clear_chroma_planes(&mut self) {
+        self.free_planes(&[Plane::U, Plane::V])
     }
 
     pub(crate) fn allocate_planes_with_default_values(
@@ -372,13 +377,6 @@ impl Image {
             let plane_index = plane.as_usize();
             let width = round2_usize(self.width(plane));
             let plane_size = checked_mul!(width, round2_usize(self.height(plane)))?;
-            if self.planes[plane_index].is_some()
-                && self.planes[plane_index].unwrap_ref().size() == plane_size
-                && (self.planes[plane_index].unwrap_ref().pixel_bit_size() == 0
-                    || self.planes[plane_index].unwrap_ref().pixel_bit_size() == pixel_size * 8)
-            {
-                continue;
-            }
             self.planes[plane_index] = Some(if self.depth == 8 {
                 Pixels::Buffer(Vec::new())
             } else {

@@ -1505,7 +1505,7 @@ template <typename T>
 constexpr T roundUpPow2(const T value, const T alignment)
 {
     ASSERT(gl::isPow2(alignment));
-    return (value + alignment - 1) & ~(alignment - 1);
+    return (value + (alignment - 1)) & ~(alignment - 1);
 }
 
 template <typename T>
@@ -1535,6 +1535,12 @@ angle::CheckedNumeric<T> CheckedRoundUp(const T value, const T alignment)
 inline constexpr unsigned int UnsignedCeilDivide(unsigned int value, unsigned int divisor)
 {
     unsigned int divided = value / divisor;
+    return (divided + ((value % divisor == 0) ? 0 : 1));
+}
+
+inline constexpr uint64_t UnsignedCeilDivide64(uint64_t value, uint64_t divisor)
+{
+    uint64_t divided = value / divisor;
     return (divided + ((value % divisor == 0) ? 0 : 1));
 }
 

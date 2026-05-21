@@ -2,15 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40285824): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "components/android_autofill/browser/android_autofill_features.h"
 
 #include <jni.h>
 
+#include "base/compiler_specific.h"
 #include "base/feature_list.h"
 
 // Must come after all headers that specialize FromJniType() / ToJniType().
@@ -24,7 +20,6 @@ const base::Feature* const kFeaturesExposedToJava[] = {
     &kAndroidAutofillLazyFrameworkWrapper,
     &kAutofillVirtualViewStructureAndroidPasskeyLongPress,
     &kAndroidAutofillForwardIframeOrigin,
-    &kAndroidAutofillUpdateContextForWebContents,
     &kAndroidAutofillImprovedVisibilityDetection};
 
 }  // namespace
@@ -46,7 +41,7 @@ BASE_FEATURE(kAndroidAutofillLazyFrameworkWrapper,
 // If enabled, the origin of a field is forwarded to the Autofill framework if
 // it differs from the origin of the main frame.
 BASE_FEATURE(kAndroidAutofillForwardIframeOrigin,
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 // If enabled, an additional custom "visible" attribute in each node's HtmlInfo
 // is set and sent to the framework.
@@ -63,8 +58,10 @@ BASE_FEATURE(kAndroidAutofillUpdateContextForWebContents,
 BASE_FEATURE(kAndroidAutofillSupportForHttpAuth,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
-static jlong JNI_AndroidAutofillFeatures_GetFeature(JNIEnv* env, jint ordinal) {
-  return reinterpret_cast<jlong>(kFeaturesExposedToJava[ordinal]);
+static int64_t JNI_AndroidAutofillFeatures_GetFeature(JNIEnv* env,
+                                                      int32_t ordinal) {
+  return reinterpret_cast<int64_t>(
+      UNSAFE_TODO(kFeaturesExposedToJava[ordinal]));
 }
 
 }  // namespace autofill::features

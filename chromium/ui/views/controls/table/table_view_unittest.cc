@@ -2407,6 +2407,36 @@ TEST_P(TableViewTest, MoveRowsWithMultipleSelectionAndSort) {
   VerifyTableViewAndAXOrder(kViewOrder);
 }
 
+// Regression test for crbug.com/472547108. The model size decreases but the
+// selection model was not updated, causing an out-of-bounds CHECK during
+// layout.
+TEST_P(TableViewTest, OnItemsChangedWithSmallerModel) {
+  // Enable sorting to ensure ModelToView checks bounds.
+  table_->ToggleSortOrder(0);
+  ASSERT_TRUE(table_->GetIsSorted());
+
+  // Select the last row.
+  table_->Select(3);
+  EXPECT_EQ(3u, table_->GetFirstSelectedRow());
+
+  // Shrink the model without notifying the table yet.
+  model_->SetObserver(nullptr);
+  model_->RemoveRows(2, 2);  // Removes row 2 and 3. Size is now 2.
+  model_->SetObserver(table_);
+  EXPECT_EQ(2u, model_->RowCount());
+
+  // Notify the table via OnItemsChanged.
+  // This simulates the behavior of TaskManagerTableModel before the fix.
+  table_->OnItemsChanged(0, 2);
+
+  // Triggering layout should not crash.
+  table_->DeprecatedLayoutImmediately();
+
+  // Verify that the selection is valid to avoid CHECK failure.
+  // Explicitly calling GetActiveCellBounds to trigger the potential CHECK path.
+  helper_->GetActiveCellBounds();
+}
+
 // Verifies we don't crash after removing the selected row when there is
 // sorting and the anchor/active index also match the selected row.
 TEST_P(TableViewTest, FocusAfterRemovingAnchor) {
@@ -2458,10 +2488,10 @@ TEST_P(TableViewTest, TableHeaderRowAccessibleViewFocusable) {
   RunPendingMessages();
 
   // If no table body row has selection the TableView itself is focused and
-  // there is no focused virtual view.
+  // there is no active descendant.
   EXPECT_TRUE(table_->HasFocus());
   EXPECT_FALSE(table_->header_row_is_active());
-  EXPECT_EQ(nullptr, table_->GetViewAccessibility().FocusedVirtualChild());
+  EXPECT_EQ(nullptr, table_->GetViewAccessibility().GetActiveDescendantView());
 
   // Hitting the up arrow key should give the header focus and make it active.
   PressKey(ui::VKEY_UP);
@@ -2469,7 +2499,7 @@ TEST_P(TableViewTest, TableHeaderRowAccessibleViewFocusable) {
   EXPECT_TRUE(table_->HasFocus());
   EXPECT_TRUE(table_->header_row_is_active());
   EXPECT_EQ(helper_->GetVirtualAccessibilityHeaderRow(),
-            table_->GetViewAccessibility().FocusedVirtualChild());
+            table_->GetViewAccessibility().GetActiveDescendantView());
 
   // Hitting the down arrow key should move focus back into the body.
   PressKey(ui::VKEY_DOWN);
@@ -2477,7 +2507,7 @@ TEST_P(TableViewTest, TableHeaderRowAccessibleViewFocusable) {
   EXPECT_TRUE(table_->HasFocus());
   EXPECT_FALSE(table_->header_row_is_active());
   EXPECT_NE(helper_->GetVirtualAccessibilityHeaderRow(),
-            table_->GetViewAccessibility().FocusedVirtualChild());
+            table_->GetViewAccessibility().GetActiveDescendantView());
 }
 
 // Ensure that the TableView's header columns are keyboard accessible.
@@ -2498,7 +2528,7 @@ TEST_P(TableViewTest, TableHeaderColumnAccessibleViewsFocusable) {
   EXPECT_TRUE(table_->HasFocus());
   EXPECT_TRUE(table_->header_row_is_active());
   EXPECT_EQ(helper_->GetVirtualAccessibilityHeaderRow(),
-            view_accessibility.FocusedVirtualChild());
+            view_accessibility.GetActiveDescendantView());
 
   // Navigating with arrow keys should move focus between TableView header
   // columns.
@@ -2506,19 +2536,19 @@ TEST_P(TableViewTest, TableHeaderColumnAccessibleViewsFocusable) {
   RunPendingMessages();
   ASSERT_EQ(0u, helper_->GetActiveVisibleColumnIndex());
   EXPECT_EQ(helper_->GetVirtualAccessibilityHeaderCell(0),
-            view_accessibility.FocusedVirtualChild());
+            view_accessibility.GetActiveDescendantView());
 
   PressKey(ui::VKEY_RIGHT);
   RunPendingMessages();
   ASSERT_EQ(1u, helper_->GetActiveVisibleColumnIndex());
   EXPECT_EQ(helper_->GetVirtualAccessibilityHeaderCell(1),
-            view_accessibility.FocusedVirtualChild());
+            view_accessibility.GetActiveDescendantView());
 
   PressKey(ui::VKEY_LEFT);
   RunPendingMessages();
   ASSERT_EQ(0u, helper_->GetActiveVisibleColumnIndex());
   EXPECT_EQ(helper_->GetVirtualAccessibilityHeaderCell(0),
-            view_accessibility.FocusedVirtualChild());
+            view_accessibility.GetActiveDescendantView());
 }
 
 class TableViewFocusTest : public TableViewTest {

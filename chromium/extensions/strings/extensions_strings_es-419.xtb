@@ -12,6 +12,7 @@
 <translation id="2159915644201199628">No se pudo decodificar la imagen "<ph name="IMAGE_NAME" />".</translation>
 <translation id="2350172092385603347">Se utiliza localización, pero default_locale no se especificó en el manifiesto.</translation>
 <translation id="2576842806987913196">Ya existe una archivo CRX con este nombre.</translation>
+<translation id="2743583586211388067">El acceso a esta extensión está bloqueado conforme a la política de riesgo de extensiones de tu organización.</translation>
 <translation id="2785530881066938471">No se pudo cargar el archivo "<ph name="RELATIVE_PATH" />" para la secuencia de comandos del contenido. No está codificado en UTF-8.</translation>
 <translation id="2903070246402204397">El administrador bloqueó la extensión <ph name="EXTENSION_NAME" /> (ID de extensión "<ph name="EXTENSION_ID" />"). <ph name="ADMIN_INFO" /></translation>
 <translation id="2988488679308982380">No se pudo instalar el paquete: '<ph name="ERROR_CODE" />'</translation>
@@ -33,9 +34,11 @@
 <translation id="5356315618422219272">Appview: <ph name="APPVIEW_TAG_NAME" /></translation>
 <translation id="5456409301717116725">Esta extensión incluye el archivo de clave "<ph name="KEY_PATH" />". Probablemente no desees incluir ese archivo.</translation>
 <translation id="5486326529110362464">Debe existir un valor de entrada para la clave privada.</translation>
+<translation id="5707185214361380026">Error al cargar la extensión desde:</translation>
 <translation id="5972529113578162692">El administrador de esta computadora requiere que <ph name="EXTENSION_NAME" /> esté instalada. No se puede desinstalar.</translation>
 <translation id="6027032947578871493">Producto desconocido <ph name="PRODUCT_ID" /> de <ph name="VENDOR_NAME" /> (número de serie <ph name="SERIAL_NUMBER" />)</translation>
 <translation id="6068932090455285721"><ph name="PRODUCT_NAME" /> del proveedor <ph name="VENDOR_ID" /></translation>
+<translation id="6220413761270491930">Error al cargar la extensión</translation>
 <translation id="6322279351188361895">Error al leer la clave privada.</translation>
 <translation id="6391538222494443604">Debe existir el directorio de entrada.</translation>
 <translation id="641087317769093025">No se pudo descomprimir la extensión.</translation>

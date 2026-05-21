@@ -16,10 +16,11 @@ import {
   type ResponseData,
   ResponseType
 } from './agents/AiAgent.js';
-import {FileAgent} from './agents/FileAgent.js';
-import {NetworkAgent} from './agents/NetworkAgent.js';
-import {PerformanceAgent} from './agents/PerformanceAgent.js';
-import {StylingAgent} from './agents/StylingAgent.js';
+import {ContextSelectionAgent} from './agents/ContextSelectionAgent.js';
+import {FileAgent, FileContext} from './agents/FileAgent.js';
+import {NetworkAgent, RequestContext} from './agents/NetworkAgent.js';
+import {PerformanceAgent, PerformanceTraceContext} from './agents/PerformanceAgent.js';
+import {NodeContext, StylingAgent} from './agents/StylingAgent.js';
 import {AiHistoryStorage, ConversationType, type SerializedConversation} from './AiHistoryStorage.js';
 import type {ChangeManager} from './ChangeManager.js';
 import {NetworkRequestFormatter} from './data_formatters/NetworkRequestFormatter.js';
@@ -54,18 +55,28 @@ export class AiConversation {
         undefined,
         undefined,
         serializedConversation.isExternal,
+        undefined,
     );
   }
 
   readonly id: string;
-  type: ConversationType;
+  // Handled in #updateAgent
+  #type!: ConversationType;
+  // Handled in #updateAgent
+  #agent!: AiAgent<unknown>;
+
   #isReadOnly: boolean;
   readonly history: ResponseData[];
   #isExternal: boolean;
 
   #aidaClient: Host.AidaClient.AidaClient;
   #changeManager: ChangeManager|undefined;
-  #agent: AiAgent<unknown>;
+  #origin?: string;
+
+  #contexts: Array<ConversationContext<unknown>> = [];
+
+  #performanceRecordAndReload?: () => Promise<Trace.TraceModel.ParsedTrace>;
+  #onInspectElement?: () => Promise<SDK.DOMModel.DOMNode|null>;
 
   constructor(
       type: ConversationType,
@@ -75,16 +86,20 @@ export class AiConversation {
       aidaClient: Host.AidaClient.AidaClient = new Host.AidaClient.AidaClient(),
       changeManager?: ChangeManager,
       isExternal = false,
+      performanceRecordAndReload?: () => Promise<Trace.TraceModel.ParsedTrace>,
+      onInspectElement?: () => Promise<SDK.DOMModel.DOMNode|null>,
   ) {
     this.#changeManager = changeManager;
     this.#aidaClient = aidaClient;
-    this.type = type;
-    this.#agent = this.#createAgent();
+    this.#performanceRecordAndReload = performanceRecordAndReload;
+    this.#onInspectElement = onInspectElement;
 
     this.id = id;
     this.#isReadOnly = isReadOnly;
     this.#isExternal = isExternal;
     this.history = this.#reconstructHistory(data);
+    // Needs to be last
+    this.#updateAgent(type);
   }
 
   get isReadOnly(): boolean {
@@ -107,6 +122,41 @@ export class AiConversation {
 
   get isEmpty(): boolean {
     return this.history.length === 0;
+  }
+
+  #setOriginIfEmpty(newOrigin: string|undefined): void {
+    if (!this.#origin) {
+      this.#origin = newOrigin;
+    }
+  }
+
+  setContext(updateContext: ConversationContext<unknown>|null): void {
+    if (!updateContext) {
+      this.#contexts = [];
+      if (isAiAssistanceContextSelectionAgentEnabled()) {
+        this.#updateAgent(ConversationType.NONE);
+      }
+
+      return;
+    }
+
+    this.#contexts = [updateContext];
+
+    if (isAiAssistanceContextSelectionAgentEnabled()) {
+      if (updateContext instanceof FileContext) {
+        this.#updateAgent(ConversationType.FILE);
+      } else if (updateContext instanceof NodeContext) {
+        this.#updateAgent(ConversationType.STYLING);
+      } else if (updateContext instanceof RequestContext) {
+        this.#updateAgent(ConversationType.NETWORK);
+      } else if (updateContext instanceof PerformanceTraceContext) {
+        this.#updateAgent(ConversationType.PERFORMANCE);
+      }
+    }
+  }
+
+  get selectedContext(): ConversationContext<unknown>|undefined {
+    return this.#contexts.at(0);
   }
 
   #reconstructHistory(historyWithoutImages: ResponseData[]): ResponseData[] {
@@ -204,47 +254,63 @@ export class AiConversation {
   serialize(): SerializedConversation {
     return {
       id: this.id,
-      history: this.history.map(item => {
-        if (item.type === ResponseType.USER_QUERY) {
-          return {...item, imageInput: undefined};
-        }
-        // Remove the `confirm()`-function because `structuredClone()` throws on functions
-        if (item.type === ResponseType.SIDE_EFFECT) {
-          return {...item, confirm: undefined};
-        }
-        return item;
-      }),
-      type: this.type,
+      history: this.history
+                   .map(item => {
+                     if (item.type === ResponseType.CONTEXT_CHANGE) {
+                       return null;
+                     }
+
+                     if (item.type === ResponseType.USER_QUERY) {
+                       return {...item, imageInput: undefined};
+                     }
+                     // Remove the `confirm()`-function because `structuredClone()` throws on functions
+                     if (item.type === ResponseType.SIDE_EFFECT) {
+                       return {...item, confirm: undefined};
+                     }
+                     return item;
+                   })
+                   .filter(history => !!history),
+      type: this.#type,
       isExternal: this.#isExternal,
     };
   }
 
-  #createAgent(): AiAgent<unknown> {
+  #updateAgent(type: ConversationType): void {
+    if (this.#type === type) {
+      return;
+    }
+
+    this.#type = type;
     const options = {
       aidaClient: this.#aidaClient,
       serverSideLoggingEnabled: isAiAssistanceServerSideLoggingEnabled(),
+      sessionId: this.id,
       changeManager: this.#changeManager,
+      performanceRecordAndReload: this.#performanceRecordAndReload,
+      onInspectElement: this.#onInspectElement,
     };
-    let agent: AiAgent<unknown>;
-    switch (this.type) {
+    switch (type) {
       case ConversationType.STYLING: {
-        agent = new StylingAgent(options);
+        this.#agent = new StylingAgent(options);
         break;
       }
       case ConversationType.NETWORK: {
-        agent = new NetworkAgent(options);
+        this.#agent = new NetworkAgent(options);
         break;
       }
       case ConversationType.FILE: {
-        agent = new FileAgent(options);
+        this.#agent = new FileAgent(options);
         break;
       }
       case ConversationType.PERFORMANCE: {
-        agent = new PerformanceAgent(options);
+        this.#agent = new PerformanceAgent(options);
+        break;
+      }
+      case ConversationType.NONE: {
+        this.#agent = new ContextSelectionAgent(options);
         break;
       }
     }
-    return agent;
   }
 
   #factsCache = new Map<ExtraContext, Host.AidaClient.RequestFact>();
@@ -326,24 +392,66 @@ Time: ${micros(time)}`;
   async *
       run(
           initialQuery: string,
-          options: {selected: ConversationContext<unknown>|null, signal?: AbortSignal, extraContext?: ExtraContext[]},
-          multimodalInput?: MultimodalInput,
+          options: {
+
+            signal?: AbortSignal,
+            extraContext?: ExtraContext[],
+            multimodalInput?: MultimodalInput,
+          } = {},
           ): AsyncGenerator<ResponseData, void, void> {
     if (options.extraContext) {
       await this.#createFactsForExtraContext(options.extraContext);
     }
-    for await (const data of this.#agent.run(initialQuery, options, multimodalInput)) {
+    this.#setOriginIfEmpty(this.selectedContext?.getOrigin());
+
+    if (this.isBlockedByOrigin) {
+      throw new Error('Cross-origin context data should not be included');
+    }
+
+    function shouldAddToHistory(data: ResponseData): boolean {
+      if (data.type === ResponseType.CONTEXT_CHANGE) {
+        return false;
+      }
+
       // We don't want to save partial responses to the conversation history.
       // TODO(crbug.com/463325400): We should save interleaved answers to the history as well.
-      if (data.type !== ResponseType.ANSWER || data.complete) {
+      if (data.type === ResponseType.ANSWER && !data.complete) {
+        return false;
+      }
+
+      return true;
+    }
+
+    for await (const data of this.#agent.run(
+        initialQuery,
+        {
+          signal: options.signal,
+          selected: this.selectedContext ?? null,
+        },
+        options.multimodalInput,
+        )) {
+      if (shouldAddToHistory(data)) {
         void this.addHistoryItem(data);
       }
       yield data;
     }
   }
 
+  /**
+   * Indicates whether the new conversation context is blocked due to cross-origin restrictions.
+   * This happens when the conversation's context has a different
+   * origin than the selected context.
+   */
+  get isBlockedByOrigin(): boolean {
+    return !this.#contexts.every(context => context.isOriginAllowed(this.#origin));
+  }
+
   get origin(): string|undefined {
-    return this.#agent.origin;
+    return this.#origin;
+  }
+
+  get type(): ConversationType {
+    return this.#type;
   }
 }
 
@@ -357,3 +465,7 @@ function isAiAssistanceServerSideLoggingEnabled(): boolean {
 type ExtraContext = SDK.DOMModel.DOMNode|SDK.NetworkRequest.NetworkRequest|
                     {event: Trace.Types.Events.Event, traceStartTime: Trace.Types.Timing.Micro}|
                     {insight: Trace.Insights.Types.InsightModel, trace: Trace.TraceModel.ParsedTrace};
+
+function isAiAssistanceContextSelectionAgentEnabled(): boolean {
+  return Boolean(Root.Runtime.hostConfig.devToolsAiAssistanceContextSelectionAgent?.enabled);
+}

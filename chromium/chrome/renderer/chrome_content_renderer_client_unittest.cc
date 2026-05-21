@@ -15,7 +15,6 @@
 #include "base/command_line.h"
 #include "base/values.h"
 #include "build/build_config.h"
-#include "chrome/common/privacy_budget/scoped_privacy_budget_config.h"
 #include "content/public/common/content_switches.h"
 #include "extensions/buildflags/buildflags.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -64,12 +63,12 @@ scoped_refptr<const extensions::Extension> CreateTestExtension(
       extensions::Extension::FROM_WEBSTORE:
       extensions::Extension::NO_FLAGS;
 
-  base::Value::Dict manifest;
+  base::DictValue manifest;
   manifest.Set("name", "NaCl Extension");
   manifest.Set("version", "1");
   manifest.Set("manifest_version", 2);
   if (is_hosted_app) {
-    base::Value::List url_list;
+    base::ListValue url_list;
     url_list.Append(app_url);
     manifest.SetByDottedPath(extensions::manifest_keys::kWebURLs,
                              std::move(url_list));

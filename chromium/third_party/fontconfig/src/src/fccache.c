@@ -222,7 +222,7 @@ FcDirCacheBasenameUUID (FcConfig *config, const FcChar8 *dir, FcChar8 cache_base
     if (sysroot)
 	target = FcStrBuildFilename (sysroot, dir, NULL);
     else
-	target = FcStrdup (dir);
+	target = FcStrCopy (dir);
     fuuid = FcStrBuildFilename (target, ".uuid", NULL);
     if ((fd = FcOpen ((char *)fuuid, O_RDONLY)) != -1) {
 	char    suuid[37];
@@ -355,7 +355,7 @@ FcDirCacheProcess (FcConfig *config, const FcChar8 *dir,
     if (sysroot)
 	d = FcStrBuildFilename (sysroot, dir, NULL);
     else
-	d = FcStrdup (dir);
+	d = FcStrCopy (dir);
     if (FcStatChecksum (d, &dir_stat) < 0) {
 	FcStrFree (d);
 	return FcFalse;
@@ -811,7 +811,7 @@ FcCacheTimeValid (FcConfig *config, FcCache *cache, struct stat *dir_stat)
 	if (sysroot)
 	    d = FcStrBuildFilename (sysroot, FcCacheDir (cache), NULL);
 	else
-	    d = FcStrdup (FcCacheDir (cache));
+	    d = FcStrCopy (FcCacheDir (cache));
 	if (FcStatChecksum (d, &dir_static) < 0) {
 	    FcStrFree (d);
 	    return FcFalse;
@@ -1616,7 +1616,7 @@ FcDirCacheClean (const FcChar8 *cache_dir, FcBool verbose)
 	    if (sysroot)
 		s = FcStrBuildFilename (sysroot, target_dir, NULL);
 	    else
-		s = FcStrdup (target_dir);
+		s = FcStrCopy (target_dir);
 	    if (stat ((char *)s, &target_stat) < 0) {
 		if (verbose || FcDebug() & FC_DBG_CACHE)
 		    printf ("%s: %s: missing directory: %s \n",

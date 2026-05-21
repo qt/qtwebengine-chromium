@@ -27,12 +27,14 @@
 #include "ui/compositor/overscroll/scroll_input_handler.h"
 #include "ui/events/event.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/geometry/linear_gradient.h"
 #include "ui/native_theme/native_theme.h"
 #include "ui/views/accessibility/view_accessibility.h"
 #include "ui/views/background.h"
 #include "ui/views/border.h"
 #include "ui/views/controls/focus_ring.h"
 #include "ui/views/metadata/type_conversion.h"
+#include "ui/views/property_effects.h"
 #include "ui/views/style/platform_style.h"
 #include "ui/views/view.h"
 #include "ui/views/view_utils.h"
@@ -41,6 +43,10 @@
 namespace views {
 
 namespace {
+
+constexpr float kGradientLeadingFadeStart = 0.0f;
+constexpr float kGradientPixelSize = 16.0f;
+constexpr float kGradientTrailingFadeEnd = 1.0f;
 
 // Returns the combined scroll amount given separate x and y offsets. This is
 // used in the "treat all scroll events as horizontal" case when there is both
@@ -561,13 +567,94 @@ View* ScrollView::SetCustomOverflowIndicator(OverflowIndicatorAlignment side,
   return indicator_ptr;
 }
 
+void ScrollView::SetOverflowGradientMask(GradientDirection direction) {
+  gradient_direction_ = direction;
+  UpdateGradientMask();
+}
+
+void ScrollView::UpdateGradientMask() {
+  if (gradient_direction_ == GradientDirection::kNone ||
+      (gradient_direction_ == GradientDirection::kHorizontal &&
+       !horiz_sb_->GetVisible()) ||
+      (gradient_direction_ == GradientDirection::kVertical &&
+       !vert_sb_->GetVisible())) {
+    return;
+  }
+
+  // Only one direction can be overflowed with a gradient at a time.
+  CHECK(!(horiz_sb_->GetVisible() && vert_sb_->GetVisible()));
+
+  if (!layer()) {
+    SetPaintToLayer();
+    layer()->SetFillsBoundsOpaquely(false);
+  }
+
+  bool should_show_leading = false;
+  bool should_show_trailing = false;
+
+  if (gradient_direction_ == GradientDirection::kVertical) {
+    should_show_leading = CurrentOffset().y() > vert_sb_->GetMinPosition();
+    should_show_trailing = CurrentOffset().y() < vert_sb_->GetMaxPosition();
+  } else if (gradient_direction_ == GradientDirection::kHorizontal) {
+    should_show_leading = CurrentOffset().x() > horiz_sb_->GetMinPosition();
+    should_show_trailing = CurrentOffset().x() < horiz_sb_->GetMaxPosition();
+  }
+
+  // Nothing to do if the state of leading and trailing gradients hasn't
+  // changed.
+  if (is_leading_gradient_visible_ == should_show_leading &&
+      is_trailing_gradient_visible_ == should_show_trailing) {
+    return;
+  }
+
+  is_leading_gradient_visible_ = should_show_leading;
+  is_trailing_gradient_visible_ = should_show_trailing;
+
+  const int total_size = gradient_direction_ == GradientDirection::kHorizontal
+                             ? width()
+                             : height();
+
+  // Skip setting up the gradient mask if there wont be any display of the view.
+  if (total_size == 0) {
+    return;
+  }
+
+  gfx::LinearGradient gradient_mask;
+  gradient_mask.set_angle(
+      gradient_direction_ == GradientDirection::kVertical ? 270 : 0);
+  gradient_mask.AddStep(kGradientLeadingFadeStart,
+                        should_show_leading ? 0 : 255);
+
+  // Get cutoffs for the gradient.
+  const float start_fade_end = kGradientPixelSize / total_size;
+  const float end_fade_start = (total_size - kGradientPixelSize) / total_size;
+
+  // If the cutoffs dont overlap, we can use the gradient mask.
+  if (start_fade_end < end_fade_start) {
+    gradient_mask.AddStep(start_fade_end, 255);
+    gradient_mask.AddStep(end_fade_start, 255);
+
+    // Otherwise provide a best effort gradient mask by placing 1 centered step.
+  } else {
+    gradient_mask.AddStep(0.5f, 255);
+  }
+
+  gradient_mask.AddStep(kGradientTrailingFadeEnd,
+                        should_show_trailing ? 0 : 255);
+
+  if (layer()->gradient_mask() != gradient_mask) {
+    layer()->SetGradientMask(gradient_mask);
+  }
+}
+
 void ScrollView::ClipHeightTo(int min_height, int max_height) {
-  if (min_height != min_height_ || max_height != max_height_) {
-    PreferredSizeChanged();
+  if (min_height == min_height_ && max_height == max_height_) {
+    return;
   }
 
   min_height_ = min_height;
   max_height_ = max_height;
+  PreferredSizeChanged();
 }
 
 int ScrollView::GetScrollBarLayoutWidth() const {
@@ -684,7 +771,14 @@ void ScrollView::Layout(PassKey) {
   const int contents_x = viewport_bounds.x();
   const int contents_y = viewport_bounds.y();
   if (viewport_bounds.IsEmpty()) {
-    // There's nothing to layout.
+    // If the ScrollView client has set bounds such that the viewport and its
+    // contents are empty it is important that viewport and contents bounds be
+    // updated to reflect this. This is necessary as nested contents will
+    // otherwise be unaware of changes to its bounds or visibility status.
+    contents_viewport_->SetBoundsRect(viewport_bounds);
+    if (contents_) {
+      contents_->DeprecatedLayoutImmediately();
+    }
     return;
   }
 
@@ -851,6 +945,22 @@ void ScrollView::Layout(PassKey) {
     const bool layout_needed = needs_layout();
     post_layout_callback_.Run(this);
     CHECK_EQ(layout_needed, needs_layout());
+  }
+
+  if (next_successful_frame_post_layout_callback_) {
+    // Layout should only occur to Widget parented Views.
+    views::Widget* const widget = GetWidget();
+    CHECK(widget);
+    widget->GetCompositor()->RequestSuccessfulPresentationTimeForNextFrame(
+        base::BindOnce(
+            [](base::WeakPtr<ScrollView> self, base::OnceClosure callback,
+               const viz::FrameTimingDetails& frame_timing_details) {
+              if (self) {
+                std::move(callback).Run();
+              }
+            },
+            weak_ptr_factory_.GetWeakPtr(),
+            std::move(next_successful_frame_post_layout_callback_)));
   }
 }
 
@@ -1361,28 +1471,42 @@ void ScrollView::PositionOverflowIndicators() {
 }
 
 void ScrollView::UpdateOverflowIndicatorVisibility(const gfx::PointF& offset) {
-  SetControlVisibility(more_content_top_.get(),
-                       !draw_border_ && !header_ && IsVerticalScrollEnabled() &&
-                           offset.y() > vert_sb_->GetMinPosition() &&
-                           draw_overflow_indicator_);
-  SetControlVisibility(
-      more_content_bottom_.get(),
-      !draw_border_ && IsVerticalScrollEnabled() && !horiz_sb_->GetVisible() &&
-          offset.y() < vert_sb_->GetMaxPosition() && draw_overflow_indicator_);
+  bool should_draw_vert_top =
+      !draw_border_ && !header_ && IsVerticalScrollEnabled() &&
+      offset.y() > vert_sb_->GetMinPosition() && draw_overflow_indicator_;
+  SetControlVisibility(more_content_top_.get(), should_draw_vert_top);
 
-  SetControlVisibility(more_content_left_.get(),
-                       !draw_border_ && IsHorizontalScrollEnabled() &&
-                           offset.x() > horiz_sb_->GetMinPosition() &&
-                           draw_overflow_indicator_);
-  SetControlVisibility(
-      more_content_right_.get(),
+  bool should_draw_vert_bottom =
+      !draw_border_ && IsVerticalScrollEnabled() && !horiz_sb_->GetVisible() &&
+      offset.y() < vert_sb_->GetMaxPosition() && draw_overflow_indicator_;
+  SetControlVisibility(more_content_bottom_.get(), should_draw_vert_bottom);
+
+  bool should_draw_horiz_leading =
+      !draw_border_ && IsHorizontalScrollEnabled() &&
+      offset.x() > horiz_sb_->GetMinPosition() && draw_overflow_indicator_;
+  SetControlVisibility(more_content_left_.get(), should_draw_horiz_leading);
+
+  bool should_draw_horiz_trailing =
       !draw_border_ && IsHorizontalScrollEnabled() && !vert_sb_->GetVisible() &&
-          offset.x() < horiz_sb_->GetMaxPosition() && draw_overflow_indicator_);
+      offset.x() < horiz_sb_->GetMaxPosition() && draw_overflow_indicator_;
+  SetControlVisibility(more_content_right_.get(), should_draw_horiz_trailing);
+
+  if (should_draw_vert_top || should_draw_vert_bottom ||
+      should_draw_horiz_leading || should_draw_horiz_trailing) {
+    UpdateGradientMask();
+  } else if (layer() && layer()->HasGradientMask()) {
+    layer()->SetGradientMask(gfx::LinearGradient::GetEmpty());
+  }
 }
 
 void ScrollView::RegisterPostLayoutCallback(
     base::RepeatingCallback<void(ScrollView*)> post_layout_callback) {
   post_layout_callback_ = post_layout_callback;
+}
+
+void ScrollView::RegisterNextSuccessfulFramePostLayoutCallback(
+    base::OnceClosure callback) {
+  next_successful_frame_post_layout_callback_ = std::move(callback);
 }
 
 View* ScrollView::GetContentsViewportForTest() const {

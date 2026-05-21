@@ -44,7 +44,7 @@
 // Linux.
 #if defined(__ANDROID__)
 static pid_t GetTid() { return gettid(); }
-#elif defined(__GLIBC__)
+#elif defined(__GLIBC__) && !defined(__GNU__)
 // The glibc wrapper for the gettid() system call was added in glibc 2.30.
 // Emulate it for older versions of glibc.
 #if __GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ >= 30)
@@ -54,7 +54,7 @@ static pid_t GetTid() { return gettid(); }
 
 static pid_t GetTid() { return static_cast<pid_t>(syscall(SYS_gettid)); }
 #endif  // glibc 2.30 or later.
-#endif  // defined(__GLIBC__)
+#endif  // defined(__GLIBC__) && !defined(__GNU__)
 
 namespace libgav1 {
 

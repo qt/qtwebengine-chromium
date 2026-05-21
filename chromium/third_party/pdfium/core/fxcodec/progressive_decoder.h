@@ -86,9 +86,7 @@ class ProgressiveDecoder final :
 
 #ifdef PDF_ENABLE_XFA_PNG
   // PngDecoderDelegate
-  bool PngReadHeader(int width,
-                     int height,
-                     double* gamma) override;
+  bool PngReadHeader(int width, int height, double* gamma) override;
   pdfium::span<uint8_t> PngAskScanlineBuf(int line) override;
   pdfium::span<uint8_t> PngAskImageBuf() override;
   void PngFinishedDecoding() override;

@@ -51,7 +51,7 @@ struct SerializedRectData {
 #pragma pack(pop)
 
 // Serializes a SkPicture representing a subframe as a custom data placeholder.
-sk_sp<SkData> SerializePictureAsRectData(SkPicture* picture, void* ctx) {
+SkSerialReturnType SerializePictureAsRectData(SkPicture* picture, void* ctx) {
   TRACE_EVENT0("paint_preview", "SerializePictureAsRectData");
   const PictureSerializationContext* context =
       reinterpret_cast<PictureSerializationContext*>(ctx);
@@ -75,7 +75,7 @@ sk_sp<SkData> SerializePictureAsRectData(SkPicture* picture, void* ctx) {
 // De-duplicates and subsets used typefaces and discards any unused typefaces.
 // If subsetting fails (or on Android) this returns data only for non-system
 // fonts. This means the resulting SkPicture is not portable across devices.
-sk_sp<SkData> SerializeTypeface(SkTypeface* typeface, void* ctx) {
+SkSerialReturnType SerializeTypeface(SkTypeface* typeface, void* ctx) {
   TRACE_EVENT0("paint_preview", "SerializeTypeface");
   TypefaceSerializationContext* context =
       reinterpret_cast<TypefaceSerializationContext*>(ctx);
@@ -113,22 +113,13 @@ sk_sp<SkData> SerializeTypeface(SkTypeface* typeface, void* ctx) {
   return subset_data;
 }
 
-static sk_sp<SkTypeface> DeserializeTypeface(const void* data,
-                                             size_t length,
-                                             void* ctx) {
-  TRACE_EVENT0("paint_preview", "DeserializeTypeface");
-  // TODO(bungeman,kjlubick) This should not be how the Skia deserial proc
-  // works.
-  SkStream* stream = *(reinterpret_cast<SkStream**>(const_cast<void*>(data)));
-  if (length < sizeof(stream)) {
-    return nullptr;
-  }
+static sk_sp<SkTypeface> DeserializeTypeface(SkStream& stream, void* ctx) {
   // The default implementation of SkPicture deserialization of SkTypeface
   // does not use a fallback (system) font manager, but this is necessary
   // on Android due to the above behavior w/r to system fonts. Thus, we
   // call the underlying SkTypeface::MakeDeserialize and pass in the
   // system font manager ourselves.
-  return SkTypeface::MakeDeserialize(stream, skia::DefaultFontMgr());
+  return SkTypeface::MakeDeserialize(&stream, skia::DefaultFontMgr());
 }
 
 static bool is_supported_codec(sk_sp<const SkData> data) {
@@ -140,7 +131,7 @@ static bool is_supported_codec(sk_sp<const SkData> data) {
          SkWebpDecoder::IsWebp(data->data(), data->size());
 }
 
-sk_sp<SkData> SerializeImage(SkImage* image, void* ctx) {
+SkSerialReturnType SerializeImage(SkImage* image, void* ctx) {
   TRACE_EVENT0("paint_preview", "SerializeImage");
   ImageSerializationContext* context =
       reinterpret_cast<ImageSerializationContext*>(ctx);
@@ -184,7 +175,6 @@ sk_sp<SkData> SerializeImage(SkImage* image, void* ctx) {
     }
     context->remaining_image_size -= encoded_data->size();
   }
-
   return encoded_data;
 }
 
@@ -325,7 +315,7 @@ SkDeserialProcs MakeDeserialProcs(DeserializationContext* ctx) {
   procs.fPictureProc = DeserializePictureAsRectData;
   procs.fPictureCtx = ctx;
   procs.fImageProc = DeserializeImage;
-  procs.fTypefaceProc = DeserializeTypeface;
+  procs.fTypefaceStreamProc = DeserializeTypeface;
   sktext::gpu::Slug::AddDeserialProcs(&procs, nullptr);
   return procs;
 }
@@ -335,7 +325,7 @@ SkDeserialProcs MakeDeserialProcs(LoadedFramesDeserialContext* ctx) {
   procs.fPictureProc = GetPictureFromDeserialContext;
   procs.fPictureCtx = ctx;
   procs.fImageProc = DeserializeImage;
-  procs.fTypefaceProc = DeserializeTypeface;
+  procs.fTypefaceStreamProc = DeserializeTypeface;
   return procs;
 }
 

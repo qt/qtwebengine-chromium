@@ -7,7 +7,6 @@
 
 #include <cstdint>
 
-#include "platform/base/macros.h"
 
 namespace openscreen {
 

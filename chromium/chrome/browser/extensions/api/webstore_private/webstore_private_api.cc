@@ -7,6 +7,7 @@
 #include <stddef.h>
 
 #include <memory>
+#include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -35,6 +36,7 @@
 #include "chrome/browser/extensions/install_tracker_factory.h"
 #include "chrome/browser/extensions/manifest_v2_experiment_manager.h"
 #include "chrome/browser/extensions/mv2_experiment_stage.h"
+#include "chrome/browser/policy/policy_ui_utils.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_observer.h"
 #include "chrome/browser/safe_browsing/safe_browsing_metrics_collector_factory.h"
@@ -46,6 +48,7 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/grit/generated_resources.h"
 #include "components/crx_file/id_util.h"
+#include "components/policy/core/common/cloud/cloud_policy_manager.h"
 #include "components/prefs/pref_service.h"
 #include "components/prefs/scoped_user_pref_update.h"
 #include "components/safe_browsing/buildflags.h"
@@ -55,6 +58,7 @@
 #include "components/supervised_user/core/browser/supervised_user_preferences.h"
 #include "components/supervised_user/core/common/features.h"
 #include "content/public/browser/gpu_feature_checker.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/api/management/management_api.h"
@@ -65,9 +69,11 @@
 #include "extensions/browser/extensions_browser_client.h"
 #include "extensions/browser/install_approval.h"
 #include "extensions/browser/install_tracker.h"
+#include "extensions/browser/pref_names.h"
 #include "extensions/browser/scoped_active_install.h"
 #include "extensions/buildflags/buildflags.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/extension_features.h"
 #include "extensions/common/manifest.h"
 #include "extensions/common/manifest_constants.h"
 #include "extensions/common/manifest_handlers/permissions_parser.h"
@@ -75,6 +81,13 @@
 #include "net/base/load_flags.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "url/gurl.h"
+
+#if !BUILDFLAG(IS_ANDROID)
+#include "chrome/browser/enterprise/identifiers/profile_id_service_factory.h"
+#include "components/enterprise/browser/identifiers/profile_id_service.h"
+#include "components/enterprise/browser/promotion/promotion_prefs.h"
+#include "components/enterprise/promotion_types.h"
+#endif  //! BUILDFLAG(IS_ANDROID)
 
 #if BUILDFLAG(SAFE_BROWSING_AVAILABLE)
 #include "chrome/browser/safe_browsing/safe_browsing_service.h"
@@ -124,7 +137,7 @@ class PendingApprovals : public ProfileObserver {
   // Remove pending approvals if the Profile is being destroyed.
   void OnProfileWillBeDestroyed(Profile* profile) override {
     std::erase_if(approvals_, [profile](const auto& approval) {
-      return approval->profile == profile;
+      return Profile::FromBrowserContext(approval->browser_context) == profile;
     });
     observation_.RemoveObservation(profile);
   }
@@ -139,7 +152,7 @@ class PendingApprovals : public ProfileObserver {
   // for the Profile.
   void MaybeRemoveObservation(Profile* profile) {
     for (const auto& entry : approvals_) {
-      if (entry->profile == profile) {
+      if (Profile::FromBrowserContext(entry->browser_context) == profile) {
         return;
       }
     }
@@ -154,7 +167,7 @@ class PendingApprovals : public ProfileObserver {
 };
 
 void PendingApprovals::PushApproval(std::unique_ptr<InstallApproval> approval) {
-  MaybeAddObservation(approval->profile);
+  MaybeAddObservation(Profile::FromBrowserContext(approval->browser_context));
   approvals_.push_back(std::move(approval));
 }
 
@@ -163,10 +176,12 @@ std::unique_ptr<InstallApproval> PendingApprovals::PopApproval(
     const std::string& id) {
   for (auto iter = approvals_.begin(); iter != approvals_.end(); ++iter) {
     if (iter->get()->extension_id == id &&
-        profile->IsSameOrParent(iter->get()->profile)) {
+        profile->IsSameOrParent(
+            Profile::FromBrowserContext(iter->get()->browser_context))) {
       std::unique_ptr<InstallApproval> approval = std::move(*iter);
       approvals_.erase(iter);
-      MaybeRemoveObservation(approval->profile);
+      MaybeRemoveObservation(
+          Profile::FromBrowserContext(approval->browser_context));
       return approval;
     }
   }
@@ -304,7 +319,7 @@ ExtensionInstallStatus AddExtensionToPendingList(
   ScopedDictPrefUpdate pending_requests_update(
       profile->GetPrefs(), prefs::kCloudExtensionRequestIds);
   DCHECK(!pending_requests_update->Find(id));
-  base::Value::Dict request_data;
+  base::DictValue request_data;
   request_data.Set(extension_misc::kExtensionRequestTimestamp,
                    ::base::TimeToValue(base::Time::Now()));
   if (!justification.empty()) {
@@ -385,6 +400,21 @@ bool IsAppLauncherEnabled() {
   return false;
 #endif
 }
+
+#if !BUILDFLAG(IS_ANDROID)
+api::webstore_private::PromotionType WebstorePromotionBannerPrefToApiResult(
+    enterprise::PromotionType pref) {
+  switch (pref) {
+    case enterprise::PromotionType::kUnspecified:
+      return api::webstore_private::PromotionType::kPromotionTypeUnspecified;
+    case enterprise::PromotionType::kChromeEnterpriseCore:
+      return api::webstore_private::PromotionType::kChromeEnterpriseCore;
+    case enterprise::PromotionType::kChromeEnterprisePremium:
+      return api::webstore_private::PromotionType::kChromeEnterprisePremium;
+  }
+  NOTREACHED();
+}
+#endif  // !BUILDFLAG(IS_ANDROID)
 
 }  // namespace
 
@@ -485,7 +515,7 @@ WebstorePrivateBeginInstallWithManifest3Function::Run() {
 void WebstorePrivateBeginInstallWithManifest3Function::OnWebstoreParseSuccess(
     const std::string& id,
     const SkBitmap& icon,
-    base::Value::Dict parsed_manifest) {
+    base::DictValue parsed_manifest) {
   CHECK_EQ(details().id, id);
   parsed_manifest_ = std::move(parsed_manifest);
   icon_ = icon;
@@ -516,10 +546,19 @@ void WebstorePrivateBeginInstallWithManifest3Function::OnWebstoreParseSuccess(
   }
 
   // Check the management policy before the installation process begins.
-  ExtensionInstallStatus install_status = GetWebstoreExtensionInstallStatus(
-      id, profile_, dummy_extension_->manifest()->type(),
+  GetWebstoreExtensionInstallStatus(
+      id, profile_, dummy_extension_->version(),
+      dummy_extension_->manifest()->type(),
       PermissionsParser::GetRequiredPermissions(dummy_extension_.get()),
-      dummy_extension_->manifest_version());
+      dummy_extension_->manifest_version(),
+      base::BindOnce(&WebstorePrivateBeginInstallWithManifest3Function::
+                         OnInstallStatusCheckDone,
+                     this));
+}
+
+void WebstorePrivateBeginInstallWithManifest3Function::OnInstallStatusCheckDone(
+    ExtensionInstallStatus install_status) {
+  content::WebContents* web_contents = GetSenderWebContents();
   if (install_status == kBlockedByPolicy) {
     ShowBlockedByPolicyDialog(
         dummy_extension_.get(), icon_, web_contents,
@@ -1010,19 +1049,16 @@ WebstorePrivateCompleteInstallFunction::Run() {
       InstallTrackerFactory::GetForBrowserContext(browser_context()),
       params->expected_id);
 
-  // Balanced in OnExtensionInstallSuccess() or OnExtensionInstallFailure().
-  AddRef();
-
   // The extension will install through the normal extension install flow, but
   // the allowlist entry will bypass the normal permissions install dialog.
   scoped_refptr<WebstoreInstaller> installer = new WebstoreInstaller(
       profile,
       base::BindOnce(
           &WebstorePrivateCompleteInstallFunction::OnExtensionInstallSuccess,
-          weak_ptr_factory_.GetWeakPtr()),
+          this),
       base::BindOnce(
           &WebstorePrivateCompleteInstallFunction::OnExtensionInstallFailure,
-          weak_ptr_factory_.GetWeakPtr()),
+          this),
       web_contents, params->expected_id, std::move(approval_),
       WebstoreInstaller::INSTALL_SOURCE_OTHER);
   installer->Start();
@@ -1035,9 +1071,6 @@ void WebstorePrivateCompleteInstallFunction::OnExtensionInstallSuccess(
   OnInstallSuccess(id);
   VLOG(1) << "Install success, sending response";
   Respond(NoArguments());
-
-  // Matches the AddRef in Run().
-  Release();
 }
 
 void WebstorePrivateCompleteInstallFunction::OnExtensionInstallFailure(
@@ -1050,9 +1083,6 @@ void WebstorePrivateCompleteInstallFunction::OnExtensionInstallFailure(
 
   VLOG(1) << "Install failed, sending response";
   Respond(Error(error));
-
-  // Matches the AddRef in Run().
-  Release();
 }
 
 void WebstorePrivateCompleteInstallFunction::OnInstallSuccess(
@@ -1332,10 +1362,18 @@ void WebstorePrivateGetExtensionStatusFunction::OnManifestParsed(
     return;
   }
 
-  ExtensionInstallStatus status = GetWebstoreExtensionInstallStatus(
-      extension_id, profile, dummy_extension->GetType(),
+  GetWebstoreExtensionInstallStatus(
+      extension_id, profile, dummy_extension->version(),
+      dummy_extension->GetType(),
       PermissionsParser::GetRequiredPermissions(dummy_extension.get()),
-      dummy_extension->manifest_version());
+      dummy_extension->manifest_version(),
+      base::BindOnce(
+          &WebstorePrivateGetExtensionStatusFunction::OnInstallStatusCheckDone,
+          this));
+}
+
+void WebstorePrivateGetExtensionStatusFunction::OnInstallStatusCheckDone(
+    ExtensionInstallStatus status) {
   api::webstore_private::ExtensionInstallStatus api_status =
       ConvertExtensionInstallStatusForAPI(status);
   Respond(ArgumentList(GetExtensionStatus::Results::Create(api_status)));
@@ -1383,5 +1421,124 @@ WebstorePrivateGetMV2DeprecationStatusFunction::Run() {
       api::webstore_private::GetMV2DeprecationStatus::Results::Create(
           api_status)));
 }
+
+#if !BUILDFLAG(IS_ANDROID)
+WebstorePrivateShouldShowEnterprisePromotionBannerFunction::
+    WebstorePrivateShouldShowEnterprisePromotionBannerFunction() = default;
+WebstorePrivateShouldShowEnterprisePromotionBannerFunction::
+    ~WebstorePrivateShouldShowEnterprisePromotionBannerFunction() = default;
+
+void WebstorePrivateShouldShowEnterprisePromotionBannerFunction::
+    SetFakePromotionEligibilityCheckerForTesting(
+        std::unique_ptr<enterprise_promotion::PromotionEligibilityChecker>
+            checker) {
+  promotion_eligibility_checker_ = std::move(checker);
+}
+
+ExtensionFunction::ResponseAction
+WebstorePrivateShouldShowEnterprisePromotionBannerFunction::Run() {
+  Profile* profile = Profile::FromBrowserContext(browser_context());
+  PrefService* prefs = profile->GetPrefs();
+
+  // To reduce server requests, use cache result if it is valid.
+  const base::Time expiration_time =
+      prefs->GetTime(pref_names::kEnterprisePromotionExpirationTime);
+  if (!expiration_time.is_null() && base::Time::Now() <= expiration_time) {
+    std::string promotion_type_string =
+        api::webstore_private::ToString(WebstorePromotionBannerPrefToApiResult(
+            static_cast<enterprise::PromotionType>(prefs->GetInteger(
+                enterprise_promotion::kEnterprisePromotionEligibility))));
+    return RespondNow(WithArguments(promotion_type_string));
+  }
+
+  // If multiples tags are opened at the same time without valid cache, only the
+  // first page will be checked and potential get banner.
+  enterprise::PromotionType default_pref =
+      enterprise::PromotionType::kUnspecified;
+  prefs->SetInteger(enterprise_promotion::kEnterprisePromotionEligibility,
+                    static_cast<int>(default_pref));
+  prefs->SetTime(pref_names::kEnterprisePromotionExpirationTime,
+                 base::Time::Now() + base::Days(1));
+
+  // A fake checker may be created ahead of time in test.
+  if (!promotion_eligibility_checker_) {
+    promotion_eligibility_checker_ = policy::CreatePromotionEligibilityChecker(
+        profile,
+        prefs->GetBoolean(pref_names::kHasDismissedEnterprisePromotion),
+        base::FeatureList::IsEnabled(
+            extensions_features::kEnableShouldShowPromotion));
+
+    // If checker can't be created, return the default response for the
+    // unspecified.
+    if (!promotion_eligibility_checker_) {
+      return RespondNow(WithArguments(api::webstore_private::ToString(
+          WebstorePromotionBannerPrefToApiResult(default_pref))));
+    }
+  }
+
+  promotion_eligibility_checker_->MaybeCheckPromotionEligibility(base::BindOnce(
+      &WebstorePrivateShouldShowEnterprisePromotionBannerFunction::
+          OnPromotionEligibilityDetermined,
+      this));
+
+  return RespondLater();
+}
+
+void WebstorePrivateShouldShowEnterprisePromotionBannerFunction::
+    OnPromotionEligibilityDetermined(
+        enterprise_management::GetUserEligiblePromotionsResponse response) {
+  enterprise::PromotionType pref_promotion_type;
+
+  switch (response.promotions().cws_privacy_details_promotion()) {
+    case enterprise_management::CHROME_ENTERPRISE_CORE:
+      pref_promotion_type = enterprise::PromotionType::kChromeEnterpriseCore;
+      break;
+    case enterprise_management::CHROME_ENTERPRISE_PREMIUM:
+      pref_promotion_type = enterprise::PromotionType::kChromeEnterprisePremium;
+      break;
+    default:
+      pref_promotion_type = enterprise::PromotionType::kUnspecified;
+      break;
+  }
+
+  PrefService* prefs =
+      Profile::FromBrowserContext(browser_context())->GetPrefs();
+  prefs->SetInteger(enterprise_promotion::kEnterprisePromotionEligibility,
+                    static_cast<int>(pref_promotion_type));
+  prefs->SetTime(pref_names::kEnterprisePromotionExpirationTime,
+                 base::Time::Now() + base::Days(1));
+
+  Respond(WithArguments(api::webstore_private::ToString(
+      WebstorePromotionBannerPrefToApiResult(pref_promotion_type))));
+}
+
+WebstorePrivateLogEnterprisePromoShownFunction::
+    WebstorePrivateLogEnterprisePromoShownFunction() = default;
+
+ExtensionFunction::ResponseAction
+WebstorePrivateLogEnterprisePromoShownFunction::Run() {
+  base::UmaHistogramEnumeration(
+      "Enterprise.CwsPromotionBannerEvent",
+      enterprise::CwsPromotionBannerEvent::kDisplayed);
+
+  return RespondNow(NoArguments());
+}
+
+WebstorePrivateOnEnterprisePromoClickFunction::
+    WebstorePrivateOnEnterprisePromoClickFunction() = default;
+
+ExtensionFunction::ResponseAction
+WebstorePrivateOnEnterprisePromoClickFunction::Run() {
+  PrefService* prefs =
+      Profile::FromBrowserContext(browser_context())->GetPrefs();
+  prefs->SetBoolean(pref_names::kHasDismissedEnterprisePromotion, true);
+  prefs->SetInteger(enterprise_promotion::kEnterprisePromotionEligibility,
+                    static_cast<int>(enterprise::PromotionType::kUnspecified));
+
+  base::UmaHistogramEnumeration("Enterprise.CwsPromotionBannerEvent",
+                                enterprise::CwsPromotionBannerEvent::kClicked);
+  return RespondNow(NoArguments());
+}
+#endif  // !BUILDFLAG(IS_ANDROID)
 
 }  // namespace extensions

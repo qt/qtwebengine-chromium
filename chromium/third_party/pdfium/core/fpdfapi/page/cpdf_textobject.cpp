@@ -346,7 +346,7 @@ float CPDF_TextObject::CalcPositionDataInternal(
   SetOriginalRect(CFX_FloatRect(min_x, min_y, max_x, max_y));
   CFX_FloatRect rect = GetTextMatrix().TransformRect(GetOriginalRect());
   if (TextRenderingModeIsStrokeMode(text_state().GetTextMode())) {
-    // TODO(crbug.com/pdfium/1840): Does the original rect need a similar
+    // TODO(crbug.com/42270854): Does the original rect need a similar
     // adjustment?
     const float half_width = graph_state().GetLineWidth() / 2;
     rect.Inflate(half_width, half_width);

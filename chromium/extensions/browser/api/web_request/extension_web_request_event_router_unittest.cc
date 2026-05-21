@@ -18,14 +18,32 @@ namespace {
 
 using RequestFilter = WebRequestEventRouter::RequestFilter;
 
-bool AreFiltersEqual(const RequestFilter& f1, const RequestFilter& f2) {
-  if (f1.tab_id != f2.tab_id || f1.window_id != f2.window_id) {
-    return false;
+::testing::AssertionResult AreFiltersEqual(
+    const RequestFilter& value,
+    const RequestFilter& expected_value) {
+  if (value.tab_id != expected_value.tab_id) {
+    return ::testing::AssertionFailure()
+           << "tab_id mismatch.\n  Expected: " << expected_value.tab_id
+           << "\n  Actual:   " << value.tab_id;
   }
-  if (f1.types != f2.types) {
-    return false;
+
+  if (value.window_id != expected_value.window_id) {
+    return ::testing::AssertionFailure()
+           << "window_id mismatch.\n  Expected: " << expected_value.window_id
+           << "\n  Actual:   " << value.window_id;
   }
-  return f1.urls.patterns() == f2.urls.patterns();
+
+  if (value.types != expected_value.types) {
+    return ::testing::AssertionFailure() << "types mismatch.";
+  }
+
+  if (value.urls != expected_value.urls) {
+    return ::testing::AssertionFailure()
+           << "URLPatternSet mismatch.\n  Expected: " << expected_value.urls
+           << "\n  Actual:   " << value.urls;
+  }
+
+  return ::testing::AssertionSuccess();
 }
 
 class WebRequestEventRouterTest : public testing::Test {
@@ -40,7 +58,7 @@ class WebRequestEventRouterTest : public testing::Test {
 
   // Helper to test the serialization and deserialization round trip.
   void TestRoundTrip(const RequestFilter& original) {
-    base::Value::Dict serialized = original.ToValue();
+    base::DictValue serialized = original.ToValue();
 
     RequestFilter deserialized;
     std::string error;
@@ -48,7 +66,7 @@ class WebRequestEventRouterTest : public testing::Test {
         << "Deserialization failed with error: " << error;
     EXPECT_TRUE(error.empty());
 
-    EXPECT_TRUE(AreFiltersEqual(original, deserialized));
+    EXPECT_TRUE(AreFiltersEqual(deserialized, original));
   }
 };
 
@@ -60,7 +78,7 @@ TEST_F(WebRequestEventRouterTest, RequestFilter_Empty) {
 
   // An empty filter should serialize to {"urls": []} because `ToValue()`
   // ensures the "urls" key is present.
-  base::Value::Dict expected = base::test::ParseJsonDict(R"({"urls": []})");
+  base::DictValue expected = base::test::ParseJsonDict(R"({"urls": []})");
   EXPECT_EQ(expected, filter.ToValue());
 
   TestRoundTrip(filter);
@@ -74,7 +92,7 @@ TEST_F(WebRequestEventRouterTest, RequestFilter_UrlsOnly) {
 
   // The order in the serialized list depends on the internal ordering
   // of `URLPattern` (lexicographical sort of the pattern string).
-  base::Value::Dict expected = base::test::ParseJsonDict(R"({
+  base::DictValue expected = base::test::ParseJsonDict(R"({
     "urls": [
       "*://www.google.com/*",
       "http://example.com/foo*"
@@ -94,7 +112,7 @@ TEST_F(WebRequestEventRouterTest, RequestFilter_Types) {
   filter.types.push_back(WebRequestResourceType::WEB_SOCKET);
 
   // NOTE: "urls": [] is always added by `ToValue()`.
-  base::Value::Dict expected = base::test::ParseJsonDict(R"({
+  base::DictValue expected = base::test::ParseJsonDict(R"({
     "urls": [],
     "types": ["script", "xmlhttprequest", "main_frame", "websocket"]
   })");
@@ -110,7 +128,7 @@ TEST_F(WebRequestEventRouterTest, RequestFilter_Ids) {
   filter.window_id = 101;
 
   // NOTE: "urls": [] is always added by `ToValue()`.
-  base::Value::Dict expected = base::test::ParseJsonDict(R"({
+  base::DictValue expected = base::test::ParseJsonDict(R"({
     "urls": [],
     "tabId": 42,
     "windowId": 101
@@ -129,7 +147,7 @@ TEST_F(WebRequestEventRouterTest, RequestFilter_Full) {
   filter.tab_id = 42;
   filter.window_id = 101;
 
-  base::Value::Dict expected = base::test::ParseJsonDict(R"({
+  base::DictValue expected = base::test::ParseJsonDict(R"({
     "urls": ["https://www.google.com/*"],
     "types": ["image", "stylesheet"],
     "tabId": 42,
@@ -142,7 +160,7 @@ TEST_F(WebRequestEventRouterTest, RequestFilter_Full) {
 
 // Test deserialization failure due to an invalid URL pattern.
 TEST_F(WebRequestEventRouterTest, RequestFilter_DeserializeInvalidUrl) {
-  base::Value::Dict input = base::test::ParseJsonDict(R"({
+  base::DictValue input = base::test::ParseJsonDict(R"({
     "urls": ["http://example.com/*", ":::invalid:::"]
   })");
 
@@ -154,7 +172,7 @@ TEST_F(WebRequestEventRouterTest, RequestFilter_DeserializeInvalidUrl) {
 
 // Test deserialization failure due to an invalid resource type string.
 TEST_F(WebRequestEventRouterTest, RequestFilter_DeserializeInvalidType) {
-  base::Value::Dict input = base::test::ParseJsonDict(R"({
+  base::DictValue input = base::test::ParseJsonDict(R"({
     "urls": [],
     "types": ["script", "bad_type"]
   })");
@@ -170,22 +188,22 @@ TEST_F(WebRequestEventRouterTest, RequestFilter_DeserializeWrongDataType) {
   std::string error;
 
   // Case 1: "urls" is not a list.
-  base::Value::Dict input_urls =
+  base::DictValue input_urls =
       base::test::ParseJsonDict(R"({"urls": "string"})");
   EXPECT_FALSE(filter.InitFromValue(input_urls, &error));
 
   // Case 2: "types" is not a list.
-  base::Value::Dict input_types =
+  base::DictValue input_types =
       base::test::ParseJsonDict(R"({"urls":[], "types": 123})");
   EXPECT_FALSE(filter.InitFromValue(input_types, &error));
 
   // Case 3: "tabId" is not an int.
-  base::Value::Dict input_tabid =
+  base::DictValue input_tabid =
       base::test::ParseJsonDict(R"({"urls":[], "tabId": "string"})");
   EXPECT_FALSE(filter.InitFromValue(input_tabid, &error));
 
   // Case 4: "windowId" is not an int.
-  base::Value::Dict input_windowid =
+  base::DictValue input_windowid =
       base::test::ParseJsonDict(R"({"urls":[], "windowId": "string"})");
   EXPECT_FALSE(filter.InitFromValue(input_windowid, &error));
 }
@@ -196,11 +214,11 @@ TEST_F(WebRequestEventRouterTest, RequestFilter_DeserializeMissingUrls) {
   std::string error;
 
   // Case 1: Empty dictionary.
-  base::Value::Dict input_empty = base::test::ParseJsonDict(R"({})");
+  base::DictValue input_empty = base::test::ParseJsonDict(R"({})");
   EXPECT_FALSE(filter.InitFromValue(input_empty, &error));
 
   // Case 2: Dictionary with other keys but missing "urls".
-  base::Value::Dict input_missing =
+  base::DictValue input_missing =
       base::test::ParseJsonDict(R"({"types": ["script"]})");
   RequestFilter filter_missing;
   EXPECT_FALSE(filter_missing.InitFromValue(input_missing, &error));

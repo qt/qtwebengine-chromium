@@ -1,0 +1,20 @@
+{
+  "type": "eureka_info",
+  "request_id": 789,
+  "response_code": 200,
+  "response_string": "OK",
+  "data": {
+    "name": "Living Room TV",
+    "version": 12,
+    "device_info": {
+      "manufacturer": "Google Inc.",
+      "product_name": "Chromecast",
+      "ssdp_udn": "some-unique-device-name"
+    },
+    "build_info": {
+      "build_type": 2,
+      "cast_build_revision": "1.56.275994",
+      "system_build_number": "275994"
+    }
+  }
+}

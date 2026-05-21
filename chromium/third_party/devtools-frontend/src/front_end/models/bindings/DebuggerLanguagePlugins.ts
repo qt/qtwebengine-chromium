@@ -58,16 +58,6 @@ const UIStrings = {
    * @example {File not found} PH3
    */
   failedToLoadDebugSymbolsFor: '[{PH1}] Failed to load debug symbols for {PH2} ({PH3})',
-  /**
-   * @description Error message that is displayed in UI debugging information cannot be found for a call frame
-   * @example {main} PH1
-   */
-  failedToLoadDebugSymbolsForFunction: 'No debug information for function "{PH1}"',
-  /**
-   * @description Error message that is displayed in UI when a file needed for debugging information for a call frame is missing
-   * @example {mainp.debug.wasm.dwp} PH1
-   */
-  debugSymbolsIncomplete: 'The debug information for function {PH1} is incomplete',
 } as const;
 const str_ = i18n.i18n.registerUIStrings('models/bindings/DebuggerLanguagePlugins.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -499,37 +489,12 @@ export class DebuggerLanguagePluginManager implements
     return this.callFrameByStopId.get(stopId);
   }
 
-  private expandCallFrames(callFrames: SDK.DebuggerModel.CallFrame[]): Promise<SDK.DebuggerModel.CallFrame[]> {
-    return Promise
-        .all(callFrames.map(async callFrame => {
-          const functionInfo = await this.getFunctionInfo(callFrame.script, callFrame.location());
-          if (functionInfo) {
-            if ('frames' in functionInfo && functionInfo.frames.length) {
-              return functionInfo.frames.map(({name}, index) => callFrame.createVirtualCallFrame(index, name));
-            }
-            if ('missingSymbolFiles' in functionInfo && functionInfo.missingSymbolFiles.length) {
-              const resources = functionInfo.missingSymbolFiles;
-              const details = i18nString(UIStrings.debugSymbolsIncomplete, {PH1: callFrame.functionName});
-              callFrame.missingDebugInfoDetails = {details, resources};
-            } else {
-              callFrame.missingDebugInfoDetails = {
-                details: i18nString(UIStrings.failedToLoadDebugSymbolsForFunction, {PH1: callFrame.functionName}),
-                resources: [],
-              };
-            }
-          }
-          return callFrame;
-        }))
-        .then(callFrames => callFrames.flat());
-  }
-
   modelAdded(debuggerModel: SDK.DebuggerModel.DebuggerModel): void {
     this.#debuggerModelToData.set(debuggerModel, new ModelData(debuggerModel, this.#workspace));
     debuggerModel.addEventListener(SDK.DebuggerModel.Events.GlobalObjectCleared, this.globalObjectCleared, this);
     debuggerModel.addEventListener(SDK.DebuggerModel.Events.ParsedScriptSource, this.parsedScriptSource, this);
     debuggerModel.addEventListener(SDK.DebuggerModel.Events.DebuggerResumed, this.debuggerResumed, this);
     debuggerModel.setEvaluateOnCallFrameCallback(this.evaluateOnCallFrame.bind(this));
-    debuggerModel.setExpandCallFramesCallback(this.expandCallFrames.bind(this));
   }
 
   modelRemoved(debuggerModel: SDK.DebuggerModel.DebuggerModel): void {
@@ -537,7 +502,6 @@ export class DebuggerLanguagePluginManager implements
     debuggerModel.removeEventListener(SDK.DebuggerModel.Events.ParsedScriptSource, this.parsedScriptSource, this);
     debuggerModel.removeEventListener(SDK.DebuggerModel.Events.DebuggerResumed, this.debuggerResumed, this);
     debuggerModel.setEvaluateOnCallFrameCallback(null);
-    debuggerModel.setExpandCallFramesCallback(null);
     const modelData = this.#debuggerModelToData.get(debuggerModel);
     if (modelData) {
       modelData.dispose();
@@ -792,26 +756,18 @@ export class DebuggerLanguagePluginManager implements
         const rawLocation = new SDK.DebuggerModel.Location(
             script.debuggerModel, script.scriptId, frame.lineNumber, frame.columnNumber, index);
         const uiLocation = await this.rawLocationToUILocation(rawLocation);
-        return {
-          uiSourceCode: uiLocation?.uiSourceCode,
-          url: uiLocation ? undefined : frame.url,
-          name,
-          line: uiLocation?.lineNumber ?? frame.lineNumber,
-          column: uiLocation?.columnNumber ?? frame.columnNumber,
-        };
+        return translatedFromUILocation(uiLocation, name, frame);
       });
 
       translatedFrames.push(await Promise.all(framePromises));
       return true;
     }
 
-    // Identity map the frame, then add the missing debug info details.
-    const mappedFrame: (typeof translatedFrames)[number][number] = {
-      url: frame.url,
-      name: frame.functionName,
-      line: frame.lineNumber,
-      column: frame.columnNumber,
-    };
+    // Translate the location only. We go through via "DebuggerWorkspaceBinding". It'll still try the plugin
+    // first, but this way, we'll get a UISourceCode for the raw script if the plugin fails to translate.
+    const uiLocation = await this.#debuggerWorkspaceBinding.rawLocationToUILocation(
+        new SDK.DebuggerModel.Location(script.debuggerModel, script.scriptId, frame.lineNumber, frame.columnNumber));
+    const mappedFrame = translatedFromUILocation(uiLocation, frame.functionName, frame);
 
     if ('missingSymbolFiles' in functionInfo && functionInfo.missingSymbolFiles.length) {
       translatedFrames.push([{
@@ -831,6 +787,27 @@ export class DebuggerLanguagePluginManager implements
     }
 
     return true;
+
+    function translatedFromUILocation(
+        uiLocation: Workspace.UISourceCode.UILocation|null, name: string|undefined,
+        fallback: StackTraceImpl.Trie.RawFrame): (typeof translatedFrames)[number][number] {
+      if (uiLocation) {
+        return {
+          uiSourceCode: uiLocation.uiSourceCode,
+          url: undefined,
+          name,
+          line: uiLocation.lineNumber,
+          column: uiLocation.columnNumber ?? -1,
+        };
+      }
+      return {
+        uiSourceCode: undefined,
+        url: fallback.url,
+        name: fallback.functionName,
+        line: fallback.lineNumber,
+        column: fallback.columnNumber,
+      };
+    }
   }
 
   scriptsForUISourceCode(uiSourceCode: Workspace.UISourceCode.UISourceCode): SDK.Script.Script[] {
@@ -920,15 +897,13 @@ export class DebuggerLanguagePluginManager implements
       // for the DebuggerModel again, which may disappear
       // in the meantime...
       void rawModuleHandle.addRawModulePromise.then(sourceFileURLs => {
-        if (!('missingSymbolFiles' in sourceFileURLs)) {
-          // The script might have disappeared meanwhile...
-          if (script.debuggerModel.scriptForId(script.scriptId) === script) {
-            const modelData = this.#debuggerModelToData.get(script.debuggerModel);
-            if (modelData) {  // The DebuggerModel could have disappeared meanwhile...
-              modelData.addSourceFiles(script, sourceFileURLs);
-              void this.#debuggerWorkspaceBinding.updateLocations(script);
-            }
+        // The script might have disappeared meanwhile...
+        if (script.debuggerModel.scriptForId(script.scriptId) === script) {
+          const modelData = this.#debuggerModelToData.get(script.debuggerModel);
+          if (modelData && Array.isArray(sourceFileURLs)) {  // The DebuggerModel could have disappeared meanwhile...
+            modelData.addSourceFiles(script, sourceFileURLs);
           }
+          void this.#debuggerWorkspaceBinding.updateLocations(script);
         }
       });
       return;

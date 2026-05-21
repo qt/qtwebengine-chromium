@@ -107,7 +107,7 @@ class PNGDiffer:
     return self._RunCommand(cmd)
 
   def _RunImageDiffCommand(self, image_diff):
-    # TODO(crbug.com/pdfium/1925): Diff mode ignores --reverse-byte-order.
+    # TODO(crbug.com/42270934): Diff mode ignores --reverse-byte-order.
     return self._RunCommand([
         self.pdfium_diff_path,
         '--subtract',
@@ -142,7 +142,7 @@ class PNGDiffer:
         if compare_error:
           page_diff.reason = str(compare_error)
 
-          # TODO(crbug.com/pdfium/1925): Compare and diff simultaneously.
+          # TODO(crbug.com/42270934): Compare and diff simultaneously.
           page_diff.diff_path = path_templates.GetDiffPath(page)
           if not self._RunImageDiffCommand(page_diff):
             print(f'WARNING: No diff for {page_diff.actual_path}')
@@ -201,7 +201,7 @@ class PNGDiffer:
 
       # Try to reuse expectations by removing intervening non-matches.
       #
-      # TODO(crbug.com/pdfium/1988): This can make mistakes due to a lack of
+      # TODO(crbug.com/42270995): This can make mistakes due to a lack of
       # global knowledge about other test configurations, which is why it just
       # creates backup files rather than immediately removing files.
       if last_match is not None:

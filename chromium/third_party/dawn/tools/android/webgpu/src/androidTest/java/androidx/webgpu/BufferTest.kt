@@ -1,3 +1,18 @@
+/*
+ * Copyright 2025 The Android Open Source Project
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package androidx.webgpu
 
 import androidx.test.filters.MediumTest
@@ -43,7 +58,7 @@ class BufferTest {
   @Test
   fun bufferMapTest() {
     device.createBuffer(
-      BufferDescriptor(
+      GPUBufferDescriptor(
         usage = BufferUsage.Vertex,
         size = 1024,
         mappedAtCreation = true
@@ -62,7 +77,7 @@ class BufferTest {
     //TODO(b/452516879): Catch a more specific exception type.
     assertThrows(Error::class.java) {
       device.createBuffer(
-        BufferDescriptor(
+        GPUBufferDescriptor(
           usage = BufferUsage.Vertex,
           size = 1024,
           mappedAtCreation = false
@@ -84,7 +99,7 @@ class BufferTest {
     val bufferUsage = BufferUsage.Vertex or BufferUsage.CopyDst
 
     val buffer = device.createBuffer(
-      BufferDescriptor(
+      GPUBufferDescriptor(
         usage = bufferUsage,
         size = bufferSize
       )
@@ -101,7 +116,7 @@ class BufferTest {
   @Test
   fun testDestroy() {
     val buffer = device.createBuffer(
-      BufferDescriptor(
+      GPUBufferDescriptor(
         usage = BufferUsage.MapRead,
         size = 16
       )
@@ -133,7 +148,7 @@ class BufferTest {
       .apply { asFloatBuffer().put(cpuData).rewind() }
 
     val gpuWriteBuffer = device.createBuffer(
-      BufferDescriptor(
+      GPUBufferDescriptor(
         size = bufferSize,
         usage = BufferUsage.CopyDst or BufferUsage.CopySrc
       )
@@ -142,7 +157,7 @@ class BufferTest {
     queue.writeBuffer(gpuWriteBuffer, 0, cpuDataBuffer)
 
     val gpuReadBuffer = device.createBuffer(
-      BufferDescriptor(
+      GPUBufferDescriptor(
         size = bufferSize,
         usage = BufferUsage.CopyDst or BufferUsage.MapRead
       )
@@ -182,7 +197,7 @@ class BufferTest {
   fun testMapAsyncUnmap() {
     val bufferSize = 16L
     val buffer = device.createBuffer(
-      BufferDescriptor(
+      GPUBufferDescriptor(
         usage = BufferUsage.MapRead or BufferUsage.CopyDst,
         size = bufferSize,
       )
@@ -218,7 +233,7 @@ class BufferTest {
       .apply { asFloatBuffer().put(initialData).rewind() }
 
     val buffer = device.createBuffer(
-      BufferDescriptor(
+      GPUBufferDescriptor(
         size = bufferSize,
         usage = BufferUsage.MapRead or BufferUsage.CopyDst
       )
@@ -254,7 +269,7 @@ class BufferTest {
   @Test
   fun testWriteMappedRangeFailsWhenNotMapped() {
     val buffer = device.createBuffer(
-      BufferDescriptor(size = 16, usage = BufferUsage.MapWrite)
+      GPUBufferDescriptor(size = 16, usage = BufferUsage.MapWrite)
     )
     val byteBuffer = ByteBuffer.allocateDirect(16)
 
@@ -268,7 +283,7 @@ class BufferTest {
   fun getMappedRangeWithDefaultValuesReturnsFullBuffer() {
     val bufferSize = 1024L
     device.createBuffer(
-      BufferDescriptor(
+      GPUBufferDescriptor(
         usage = BufferUsage.MapWrite,
         size = bufferSize,
         mappedAtCreation = true
@@ -288,7 +303,7 @@ class BufferTest {
     val bufferSize = 1024L
     val offset = 256L
     device.createBuffer(
-      BufferDescriptor(
+      GPUBufferDescriptor(
         usage = BufferUsage.MapWrite,
         size = bufferSize,
         mappedAtCreation = true
@@ -310,7 +325,7 @@ class BufferTest {
     val offset = 256L
     val size = 512L
     device.createBuffer(
-      BufferDescriptor(
+      GPUBufferDescriptor(
         usage = BufferUsage.MapWrite,
         size = bufferSize,
         mappedAtCreation = true
@@ -328,7 +343,7 @@ class BufferTest {
   fun getConstMappedRangeWithDefaultValuesReturnsFullBuffer() {
     val bufferSize = 1024L
     device.createBuffer(
-      BufferDescriptor(
+      GPUBufferDescriptor(
         usage = BufferUsage.MapRead,
         size = bufferSize,
         mappedAtCreation = true
@@ -347,7 +362,7 @@ class BufferTest {
     val bufferSize = 1024L
     val offset = 128L
     device.createBuffer(
-      BufferDescriptor(
+      GPUBufferDescriptor(
         usage = BufferUsage.MapRead,
         size = bufferSize,
         mappedAtCreation = true

@@ -10,7 +10,6 @@
 #include <string_view>
 
 #include "base/component_export.h"
-#include "base/gtest_prod_util.h"
 #include "base/types/expected.h"
 #include "base/types/pass_key.h"
 #include "third_party/liburlpattern/parse.h"
@@ -147,6 +146,14 @@ class SimpleUrlPatternMatcher {
   // Performs `test` method of URLPattern with a URL.
   // https://urlpattern.spec.whatwg.org/#dom-urlpattern-test
   bool Match(const GURL& url) const;
+
+  // Convenience method for testing against only the `host` component of the
+  // pattern. Used by Connection Allowlists
+  // (https://wicg.github.io/connection-allowlists/) to determine if host
+  // resolution requests for a given host are allowed. From a spec standpoint,
+  // this is equivalent to creating a new URLPattern using only the `host`
+  // component of this pattern, and testing against the new pattern instead.
+  bool HostOnlyMatch(const GURL& url) const;
 
  private:
   friend class SimpleUrlPatternMatcherTest;

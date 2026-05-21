@@ -233,7 +233,7 @@ CJS_Result CJS_Util::printd(CJS_Runtime* pRuntime,
       if (nFound == std::wstring::npos) {
         break;
       }
-      cFormat.replace(nFound, UNSAFE_TODO(wcslen(conversion.lpszJSMark)),
+      cFormat.replace(nFound, wcslen(conversion.lpszJSMark),
                       conversion.lpszCppMark);
     }
   }

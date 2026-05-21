@@ -11,16 +11,23 @@
 #include "base/functional/bind.h"
 #include "base/logging.h"
 #include "base/strings/stringprintf.h"
+#include "base/test/mock_log.h"
 #include "base/test/with_feature_override.h"
+#include "base/trace_event/trace_event.h"
 #include "mojo/public/cpp/test_support/test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/common/frame/frame_ad_evidence.h"
 #include "third_party/blink/public/common/input/web_mouse_event.h"
-#include "third_party/blink/public/mojom/content_extraction/ai_page_content.mojom-data-view.h"
+#include "third_party/blink/public/mojom/content_extraction/ai_page_content.mojom-shared.h"
+#include "third_party/blink/public/web/web_script_source.h"
+#include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_testing.h"
 #include "third_party/blink/renderer/core/accessibility/ax_context.h"
 #include "third_party/blink/renderer/core/accessibility/ax_object_cache.h"
+#include "third_party/blink/renderer/core/css/style_engine.h"
 #include "third_party/blink/renderer/core/dom/document.h"
+#include "third_party/blink/renderer/core/dom/document_lifecycle.h"
 #include "third_party/blink/renderer/core/dom/dom_node_ids.h"
+#include "third_party/blink/renderer/core/editing/editing_utilities.h"
 #include "third_party/blink/renderer/core/frame/frame_test_helpers.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
@@ -37,6 +44,7 @@
 #include "third_party/blink/renderer/core/layout/layout_object.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/layout/map_coordinates_flags.h"
+#include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/core/scroll/scrollable_area.h"
 #include "third_party/blink/renderer/core/style/computed_style.h"
 #include "third_party/blink/renderer/core/testing/page_test_base.h"
@@ -57,6 +65,8 @@
 
 namespace blink {
 using ClickabilityReason = mojom::blink::AIPageContentClickabilityReason;
+using InteractionDisabledReason =
+    mojom::blink::AIPageContentInteractionDisabledReason;
 
 namespace {
 
@@ -119,6 +129,30 @@ class AIPageContentAgentTest : public testing::Test {
               mojom::blink::AIPageContentAttributeType::kText);
     ASSERT_TRUE(attributes.text_info);
     EXPECT_EQ(attributes.text_info->text_content, expected_text);
+  }
+
+  bool TreeContainsTextSubstring(const mojom::blink::AIPageContentNode& node,
+                                 const String& substring) {
+    // Many tests only care that sensitive content does (or does not) appear
+    // anywhere in the extracted tree. Implement a small recursive helper to
+    // reduce coupling to the exact tree structure.
+    //
+    // Note: we intentionally check substrings rather than exact matches because
+    // extracted text nodes sometimes include newlines inserted by layout.
+    const auto& attributes = *node.content_attributes;
+    if (attributes.attribute_type ==
+            mojom::blink::AIPageContentAttributeType::kText &&
+        attributes.text_info &&
+        attributes.text_info->text_content.Contains(substring)) {
+      return true;
+    }
+
+    for (const auto& child : node.children_nodes) {
+      if (TreeContainsTextSubstring(*child, substring)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   void CheckTextSize(const mojom::blink::AIPageContentNode& node,
@@ -1436,6 +1470,24 @@ TEST_F(AIPageContentAgentTest, LandmarkSectionsWithAriaRoles) {
   CheckTextNode(*footer.children_nodes[0], "Footer");
 }
 
+TEST_F(AIPageContentAgentTest, LandmarkSectionsWithUppercaseAriaRoles) {
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      "<body>"
+      "  <div id='banner' role='BANNER'>Header</div>"
+      "</body>",
+      url_test_helpers::ToKURL("http://foobar.com"));
+
+  // ARIA role tokens are ASCII case-insensitive; APC should still annotate the
+  // landmark role even if authors use uppercase role names.
+  GetAIPageContent();
+
+  const auto* banner = FindNodeBySelector("#banner");
+  ASSERT_TRUE(banner);
+  CheckAnnotatedRoles(*banner,
+                      {mojom::blink::AIPageContentAnnotatedRole::kHeader});
+}
+
 TEST_F(AIPageContentAgentTest, RootScroller) {
   frame_test_helpers::LoadHTMLString(
       helper_.LocalMainFrame(),
@@ -1713,6 +1765,73 @@ TEST_F(AIPageContentAgentTest, ContentVisibilityHidden) {
   EXPECT_TRUE(hidden_container.children_nodes.empty());
 }
 
+TEST_F(AIPageContentAgentTest, ContentVisibilityHiddenActionable) {
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      "<body>"
+      "  <style>"
+      "    #hidden {"
+      "      content-visibility: hidden"
+      "    }"
+      "  </style>"
+      "  <div id=hidden>hidden text</div>visible text"
+      "</body>",
+      url_test_helpers::ToKURL("http://foobar.com"));
+
+  // Actionable mode exercises geometry and hit-testing paths used in
+  // production APC requests.
+  GetAIPageContentWithActionableElements();
+
+  const auto& root = ContentRootNode();
+  ASSERT_EQ(root.children_nodes.size(), 2u);
+
+  const auto& hidden_container = *root.children_nodes[0];
+  CheckContainerNode(hidden_container);
+  CheckAnnotatedRole(hidden_container,
+                     mojom::blink::AIPageContentAnnotatedRole::kContentHidden);
+  // Content-visibility hidden subtrees are represented but not expanded.
+  EXPECT_TRUE(hidden_container.children_nodes.empty());
+  // The container itself is laid out; actionable mode should capture its
+  // geometry without forcing layout on descendants.
+  EXPECT_TRUE(hidden_container.content_attributes->geometry);
+
+  const auto& visible_text_node = *root.children_nodes[1];
+  CheckTextNode(visible_text_node, "visible text");
+  ASSERT_TRUE(visible_text_node.content_attributes->geometry);
+  EXPECT_FALSE(visible_text_node.content_attributes->geometry
+                   ->visible_bounding_box.IsEmpty());
+}
+
+TEST_F(AIPageContentAgentTest, ContentVisibilityHiddenIframeActionable) {
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      "<body><style>iframe { content-visibility: hidden }</style>"
+      "<iframe srcdoc='<div>hidden iframe text</div>'></iframe>"
+      "  visible text</body>",
+      url_test_helpers::ToKURL("http://foobar.com"));
+
+  // Actionable mode exercises iframe geometry and traversal paths.
+  GetAIPageContentWithActionableElements();
+
+  const auto& root = ContentRootNode();
+  ASSERT_EQ(root.children_nodes.size(), 2u);
+
+  const auto& iframe_node = *root.children_nodes[0];
+  CheckIframeNode(iframe_node);
+  CheckAnnotatedRole(iframe_node,
+                     mojom::blink::AIPageContentAnnotatedRole::kContentHidden);
+  // The iframe container is laid out, but its subtree should not be traversed
+  // when display locks block layout/prepaint on children.
+  EXPECT_TRUE(iframe_node.children_nodes.empty());
+  ASSERT_TRUE(iframe_node.content_attributes->geometry);
+
+  const auto& visible_text_node = *root.children_nodes[1];
+  CheckTextNode(visible_text_node, "  visible text");
+  ASSERT_TRUE(visible_text_node.content_attributes->geometry);
+  EXPECT_FALSE(visible_text_node.content_attributes->geometry
+                   ->visible_bounding_box.IsEmpty());
+}
+
 TEST_F(AIPageContentAgentTest, ContentVisibilityAuto) {
   frame_test_helpers::LoadHTMLString(
       helper_.LocalMainFrame(),
@@ -1930,6 +2049,70 @@ TEST_F(AIPageContentAgentTest, HiddenUntilFoundOnIframe) {
   CheckTextNode(hidden_text_node, "hidden text");
 }
 
+#if DCHECK_IS_ON()
+TEST_F(AIPageContentAgentTest, AutoBuildRunsDuringDOMContentLoadedDispatch) {
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(), "<body><div>Auto build content</div></body>",
+      url_test_helpers::ToKURL("http://example.com"));
+
+  Document* document = helper_.LocalMainFrame()->GetFrame()->GetDocument();
+  ASSERT_TRUE(document);
+  LocalFrameView* view = document->View();
+  ASSERT_TRUE(view);
+
+  // Establish a stable lifecycle baseline so the auto-build checks are not
+  // influenced by unrelated pending layout or style updates.
+  view->UpdateAllLifecyclePhasesForTest();
+
+  auto* agent = AIPageContentAgent::GetOrCreateForTesting(*document);
+  ASSERT_TRUE(agent);
+  EXPECT_EQ(AIPageContentAgent::From(*document), agent);
+  base::test::MockLog log;
+  // Allow unrelated INFO logs; we only assert on the auto-build dump below.
+  EXPECT_CALL(log, Log(logging::LOGGING_INFO, testing::_, testing::_,
+                       testing::_, testing::_))
+      .Times(testing::AnyNumber());
+  // TODO(crbug.com/474330989): Re-enable the blink_unittests auto-build guard
+  // so this test can assert no auto-build during DOMContentLoaded.
+
+  // Simulate DOMContentLoaded dispatch still being in progress by forcing the
+  // parsing state to "in DCL".
+  document->SetParsingState(Document::kInDOMContentLoaded);
+
+  // Invoke the auto-build entry point directly to keep the test deterministic;
+  // it should run while DOMContentLoaded dispatch is in progress.
+  EXPECT_CALL(log, Log(logging::LOGGING_INFO, testing::_, testing::_,
+                       testing::_, testing::HasSubstr("<Root>")))
+      .Times(1);
+  log.StartCapturingLogs();
+  agent->RunAutoBuildAfterDOMContentLoadedForTesting();
+  test::RunPendingTasks();
+  log.StopCapturingLogs();
+  testing::Mock::VerifyAndClearExpectations(&log);
+
+  // Auto-build runs while parsing is still in the DOMContentLoaded phase.
+
+  // Once parsing is finished and lifecycle updates complete, auto-build should
+  // still run without triggering lifecycle DCHECKs.
+  document->SetParsingState(Document::kFinishedParsing);
+  view->UpdateAllLifecyclePhasesForTest();
+  test::RunPendingTasks();
+  WebViewImpl* web_view = document->GetPage()->GetChromeClient().GetWebView();
+  ASSERT_TRUE(web_view);
+  EXPECT_FALSE(web_view->GetPagePopup());
+
+  // Re-run the auto-build entry point now that parsing is finished. This should
+  // synchronously execute the auto-build path without crashing.
+  EXPECT_CALL(log, Log(logging::LOGGING_INFO, testing::_, testing::_,
+                       testing::_, testing::HasSubstr("<Root>")))
+      .Times(1);
+  log.StartCapturingLogs();
+  agent->RunAutoBuildAfterDOMContentLoadedForTesting();
+  test::RunPendingTasks();
+  log.StopCapturingLogs();
+}
+#endif  // #if DCHECK_IS_ON()
+
 TEST_F(AIPageContentAgentTest, LineBreak) {
   frame_test_helpers::LoadHTMLString(
       helper_.LocalMainFrame(),
@@ -2122,6 +2305,147 @@ TEST_F(AIPageContentAgentTest, FormWithTextInput) {
   CheckContainerNode(*text_input2.children_nodes[0]);
   EXPECT_EQ(text_input2.children_nodes[0]->children_nodes.size(), 1u);
   CheckTextNode(*text_input2.children_nodes[0]->children_nodes[0], "Ipsum");
+}
+
+TEST_F(AIPageContentAgentTest, AriaRequiredAndPlaceholderOnTextInput) {
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      "<body>"
+      "  <input id='input' type='text' aria-required='true' "
+      "aria-placeholder='Type here'>"
+      "</body>",
+      url_test_helpers::ToKURL("http://foobar.com"));
+
+  // ARIA required/placeholder should be surfaced for native text inputs when
+  // the native attributes are not present, so we pick up author-provided ARIA
+  // metadata without overriding native semantics.
+  GetAIPageContent();
+
+  const auto* input = FindNodeBySelector("#input");
+  ASSERT_TRUE(input);
+  CheckFormControlNode(*input, mojom::blink::FormControlType::kInputText);
+  EXPECT_TRUE(input->content_attributes->form_control_data->is_required);
+  EXPECT_EQ(input->content_attributes->form_control_data->placeholder,
+            "Type here");
+}
+
+TEST_F(AIPageContentAgentTest, AriaCheckedOnRoleCheckbox) {
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      "<body>"
+      "  <div id='checkbox' role='checkbox' aria-checked='true'>"
+      "    ARIA Checkbox"
+      "  </div>"
+      "</body>",
+      url_test_helpers::ToKURL("http://foobar.com"));
+
+  // ARIA-based controls should produce form control data when aria-checked is
+  // provided, enabling actionable extraction for custom widgets.
+  GetAIPageContent();
+
+  const auto* checkbox = FindNodeBySelector("#checkbox");
+  ASSERT_TRUE(checkbox);
+  CheckFormControlNode(*checkbox,
+                       mojom::blink::FormControlType::kInputCheckbox);
+  EXPECT_TRUE(checkbox->content_attributes->form_control_data->is_checked);
+}
+
+TEST_F(AIPageContentAgentTest, AriaRoleCheckboxWithoutProperties) {
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      "<body>"
+      "  <div id='checkbox' role='checkbox'>"
+      "    ARIA Checkbox"
+      "  </div>"
+      "</body>",
+      url_test_helpers::ToKURL("http://foobar.com"));
+
+  // An explicit ARIA role should be enough to surface form control metadata,
+  // even when no other ARIA state or property is provided.
+  GetAIPageContent();
+
+  const auto* checkbox = FindNodeBySelector("#checkbox");
+  ASSERT_TRUE(checkbox);
+  CheckFormControlNode(*checkbox,
+                       mojom::blink::FormControlType::kInputCheckbox);
+}
+
+TEST_F(AIPageContentAgentTest, AriaCheckedMixedOnRoleCheckbox) {
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      "<body>"
+      "  <div id='checkbox' role='checkbox' aria-checked='mixed'>"
+      "    ARIA Checkbox"
+      "  </div>"
+      "</body>",
+      url_test_helpers::ToKURL("http://foobar.com"));
+
+  // Keep aria-checked handling simple by treating "mixed" as a truthy state
+  // when the attribute is present, matching IsAriaAttributeTrue semantics.
+  GetAIPageContent();
+
+  const auto* checkbox = FindNodeBySelector("#checkbox");
+  ASSERT_TRUE(checkbox);
+  CheckFormControlNode(*checkbox,
+                       mojom::blink::FormControlType::kInputCheckbox);
+  EXPECT_TRUE(checkbox->content_attributes->form_control_data->is_checked);
+}
+
+TEST_F(AIPageContentAgentTest, AriaReadOnlyOnRoleTextbox) {
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      "<body>"
+      "  <div id='textbox' role='textbox' aria-readonly='true'>"
+      "    ARIA Textbox"
+      "  </div>"
+      "</body>",
+      url_test_helpers::ToKURL("http://foobar.com"));
+
+  // Readonly state should be exposed for ARIA-based textboxes so consumers can
+  // avoid actions which would try to edit locked content.
+  GetAIPageContent();
+
+  const auto* textbox = FindNodeBySelector("#textbox");
+  ASSERT_TRUE(textbox);
+  CheckFormControlNode(*textbox, mojom::blink::FormControlType::kInputText);
+  EXPECT_TRUE(textbox->content_attributes->form_control_data->is_readonly);
+}
+
+TEST_F(AIPageContentAgentTest, NativeReadOnlyTextInput) {
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      "<body>"
+      "  <input id='input' type='text' readonly>"
+      "</body>",
+      url_test_helpers::ToKURL("http://foobar.com"));
+
+  // Native readonly must be surfaced so consumers can avoid editing.
+  GetAIPageContent();
+
+  const auto* input = FindNodeBySelector("#input");
+  ASSERT_TRUE(input);
+  CheckFormControlNode(*input, mojom::blink::FormControlType::kInputText);
+  EXPECT_TRUE(input->content_attributes->form_control_data->is_readonly);
+}
+
+TEST_F(AIPageContentAgentTest, AriaCheckedDoesNotOverrideNativeCheckbox) {
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      "<body>"
+      "  <input id='native' type='checkbox' checked aria-checked='false'>"
+      "</body>",
+      url_test_helpers::ToKURL("http://foobar.com"));
+
+  // Native checked state must remain authoritative over aria-checked, matching
+  // the HTML-AAM rule that ARIA must not override strong native semantics.
+  GetAIPageContent();
+
+  const auto* native_checkbox = FindNodeBySelector("#native");
+  ASSERT_TRUE(native_checkbox);
+  CheckFormControlNode(*native_checkbox,
+                       mojom::blink::FormControlType::kInputCheckbox);
+  EXPECT_TRUE(
+      native_checkbox->content_attributes->form_control_data->is_checked);
 }
 
 TEST_F(AIPageContentAgentTest, FormWithSelect) {
@@ -2378,6 +2702,501 @@ TEST_F(AIPageContentAgentTest, FormWithPassword) {
       empty_password.content_attributes->form_control_data->redaction_decision,
       mojom::AIPageContentRedactionDecision::kUnredacted_EmptyPassword);
   EXPECT_EQ(empty_password.children_nodes.size(), 1u);
+}
+
+TEST_F(AIPageContentAgentTest, FormWithWebkitTextSecurityRedactsAndPersists) {
+  // This test covers a common custom-password pattern where authors use
+  // `-webkit-text-security` on a normal <input type="text"> to visually mask
+  // the value without using <input type="password">.
+  //
+  // Acceptance criteria:
+  // - The value is redacted when `-webkit-text-security` is not `none`.
+  // - After the style is removed (simulating JS toggling the masking), the
+  //   value remains redacted for subsequent extractions.
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      "<body>"
+      "  <form>"
+      "    <input id='masked' type='text' name='Enter secret' "
+      "style='-webkit-text-security: disc;' value='supersecret'>"
+      "  </form>"
+      "</body>",
+      url_test_helpers::ToKURL("http://foobar.com"));
+
+  GetAIPageContent();
+
+  const auto& root = ContentRootNode();
+  ASSERT_EQ(root.children_nodes.size(), 1u);
+  const auto& form = *root.children_nodes[0];
+  ASSERT_EQ(form.children_nodes.size(), 1u);
+
+  const auto& field = *form.children_nodes[0];
+  CheckFormControlNode(field, mojom::blink::FormControlType::kInputText);
+  EXPECT_EQ(field.content_attributes->form_control_data->field_name,
+            "Enter secret");
+  EXPECT_EQ(field.content_attributes->form_control_data->field_value, nullptr);
+  EXPECT_EQ(
+      field.content_attributes->form_control_data->redaction_decision,
+      mojom::AIPageContentRedactionDecision::kRedacted_CustomPassword_CSS);
+
+  // Now remove the masking style (simulating a "show password" eye icon).
+  Document* document = helper_.LocalMainFrame()->GetFrame()->GetDocument();
+  auto* input_element =
+      To<HTMLInputElement>(document->getElementById(AtomicString("masked")));
+  ASSERT_TRUE(input_element);
+  input_element->setAttribute(html_names::kStyleAttr,
+                              AtomicString("-webkit-text-security: none;"));
+
+  // Ensure the DOM is updated.
+  document->UpdateStyleAndLayout(DocumentUpdateReason::kTest);
+
+  // Extract again: the field should remain redacted since it was previously
+  // classified as password-like.
+  GetAIPageContent();
+
+  const auto& root2 = ContentRootNode();
+  ASSERT_EQ(root2.children_nodes.size(), 1u);
+  const auto& form2 = *root2.children_nodes[0];
+  ASSERT_EQ(form2.children_nodes.size(), 1u);
+  const auto& field2 = *form2.children_nodes[0];
+  CheckFormControlNode(field2, mojom::blink::FormControlType::kInputText);
+  EXPECT_EQ(field2.content_attributes->form_control_data->field_value, nullptr);
+  EXPECT_EQ(
+      field2.content_attributes->form_control_data->redaction_decision,
+      mojom::AIPageContentRedactionDecision::kRedacted_CustomPassword_CSS);
+}
+
+TEST_F(AIPageContentAgentTest, FormWithMaskedValuePatternRedactsAndPersists) {
+  // Some custom controls implement password-style masking in JavaScript by
+  // writing a value that contains mostly mask characters (e.g. bullets) while
+  // revealing the last typed character.
+  //
+  // Acceptance criteria:
+  // - A masked-value pattern is treated as password-like and redacted.
+  // - After the value is changed to an unmasked string, the field remains
+  //   redacted for subsequent extractions.
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      "<body>"
+      "  <form>"
+      "    <input id='jsmasked' type='text' name='Enter secret' "
+      "value='&#8226;&#8226;&#8226;&#8226;a'>"
+      "  </form>"
+      "</body>",
+      url_test_helpers::ToKURL("http://foobar.com"));
+
+  GetAIPageContent();
+
+  const auto& root = ContentRootNode();
+  ASSERT_EQ(root.children_nodes.size(), 1u);
+  const auto& form = *root.children_nodes[0];
+  ASSERT_EQ(form.children_nodes.size(), 1u);
+
+  const auto& field = *form.children_nodes[0];
+  CheckFormControlNode(field, mojom::blink::FormControlType::kInputText);
+  EXPECT_EQ(field.content_attributes->form_control_data->field_value, nullptr);
+  EXPECT_EQ(field.content_attributes->form_control_data->redaction_decision,
+            mojom::AIPageContentRedactionDecision::kRedacted_CustomPassword_JS);
+
+  // Now set an unmasked value; the field should remain redacted since it was
+  // previously classified as password-like.
+  Document* document = helper_.LocalMainFrame()->GetFrame()->GetDocument();
+  auto* input_element =
+      To<HTMLInputElement>(document->getElementById(AtomicString("jsmasked")));
+  ASSERT_TRUE(input_element);
+  input_element->SetValue("notmaskedanymore");
+
+  document->UpdateStyleAndLayout(DocumentUpdateReason::kTest);
+
+  GetAIPageContent();
+  const auto& root2 = ContentRootNode();
+  ASSERT_EQ(root2.children_nodes.size(), 1u);
+  const auto& form2 = *root2.children_nodes[0];
+  ASSERT_EQ(form2.children_nodes.size(), 1u);
+  const auto& field2 = *form2.children_nodes[0];
+  CheckFormControlNode(field2, mojom::blink::FormControlType::kInputText);
+  EXPECT_EQ(field2.content_attributes->form_control_data->field_value, nullptr);
+  EXPECT_EQ(field2.content_attributes->form_control_data->redaction_decision,
+            mojom::AIPageContentRedactionDecision::kRedacted_CustomPassword_JS);
+}
+
+TEST_F(AIPageContentAgentTest, FormWithAllMaskCharactersRedacts) {
+  // Some custom controls always fully mask the value, never revealing a
+  // character (e.g. "•••••"). This should still be treated as password-like.
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      "<body>"
+      "  <form>"
+      "    <input id='jsmasked' type='text' name='Enter secret' "
+      "value='&#8226;&#8226;&#8226;&#8226;&#8226;'>"
+      "  </form>"
+      "</body>",
+      url_test_helpers::ToKURL("http://foobar.com"));
+
+  GetAIPageContent();
+
+  const auto& root = ContentRootNode();
+  ASSERT_EQ(root.children_nodes.size(), 1u);
+  const auto& form = *root.children_nodes[0];
+  ASSERT_EQ(form.children_nodes.size(), 1u);
+
+  const auto& field = *form.children_nodes[0];
+  CheckFormControlNode(field, mojom::blink::FormControlType::kInputText);
+  EXPECT_EQ(field.content_attributes->form_control_data->field_value, nullptr);
+  EXPECT_EQ(field.content_attributes->form_control_data->redaction_decision,
+            mojom::AIPageContentRedactionDecision::kRedacted_CustomPassword_JS);
+}
+
+TEST_F(AIPageContentAgentTest, FormWithMaskedValuePatternWithSpaceNotRedacted) {
+  // Guardrail: if the value contains whitespace, treat it as non-password-like.
+  // A common rich-text pattern is a bullet used as a list marker.
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      "<body>"
+      "  <form>"
+      "    <input id='maybe' type='text' name='Enter secret' "
+      "value='&#8226;&#8226; secret'>"
+      "  </form>"
+      "</body>",
+      url_test_helpers::ToKURL("http://foobar.com"));
+
+  GetAIPageContent();
+
+  const auto& root = ContentRootNode();
+  ASSERT_EQ(root.children_nodes.size(), 1u);
+  const auto& form = *root.children_nodes[0];
+  ASSERT_EQ(form.children_nodes.size(), 1u);
+
+  const auto& field = *form.children_nodes[0];
+  CheckFormControlNode(field, mojom::blink::FormControlType::kInputText);
+  EXPECT_NE(field.content_attributes->form_control_data->field_value, nullptr);
+  EXPECT_EQ(field.content_attributes->form_control_data->redaction_decision,
+            mojom::AIPageContentRedactionDecision::kNoRedactionNecessary);
+}
+
+TEST_F(AIPageContentAgentTest, FormWithEarlyJSMaskedValueRedacts) {
+  // Guard against leaking initial characters as the user types into a custom
+  // JS-masked password field. Some implementations show "•b" for a 2-character
+  // password while the last typed character remains visible.
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      "<body>"
+      "  <form>"
+      "    <input id='early' type='text' name='Enter secret' value='&#8226;b'>"
+      "  </form>"
+      "</body>",
+      url_test_helpers::ToKURL("http://foobar.com"));
+
+  GetAIPageContent();
+
+  const auto& root = ContentRootNode();
+  ASSERT_EQ(root.children_nodes.size(), 1u);
+  const auto& form = *root.children_nodes[0];
+  ASSERT_EQ(form.children_nodes.size(), 1u);
+
+  const auto& field = *form.children_nodes[0];
+  CheckFormControlNode(field, mojom::blink::FormControlType::kInputText);
+  EXPECT_EQ(field.content_attributes->form_control_data->field_value, nullptr);
+  EXPECT_EQ(field.content_attributes->form_control_data->redaction_decision,
+            mojom::AIPageContentRedactionDecision::kRedacted_CustomPassword_JS);
+}
+
+TEST_F(AIPageContentAgentTest, CustomPasswordJSBecomesEmptyThenRedactsAgain) {
+  // Regression coverage: once a field is classified as a JS custom password
+  // field, it stays classified even if the value becomes empty and later
+  // becomes non-empty again.
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      "<body>"
+      "  <form>"
+      "    <input id='js' type='text' name='Enter secret' "
+      "value='&#8226;&#8226;&#8226;&#8226;a'>"
+      "  </form>"
+      "</body>",
+      url_test_helpers::ToKURL("http://foobar.com"));
+
+  GetAIPageContent();
+  const auto& root = ContentRootNode();
+  ASSERT_EQ(root.children_nodes.size(), 1u);
+  const auto& form = *root.children_nodes[0];
+  ASSERT_EQ(form.children_nodes.size(), 1u);
+  const auto& field = *form.children_nodes[0];
+  CheckFormControlNode(field, mojom::blink::FormControlType::kInputText);
+  EXPECT_EQ(field.content_attributes->form_control_data->field_value, nullptr);
+  EXPECT_EQ(field.content_attributes->form_control_data->redaction_decision,
+            mojom::AIPageContentRedactionDecision::kRedacted_CustomPassword_JS);
+
+  Document* document = helper_.LocalMainFrame()->GetFrame()->GetDocument();
+  auto* input_element =
+      To<HTMLInputElement>(document->getElementById(AtomicString("js")));
+  ASSERT_TRUE(input_element);
+  input_element->SetValue("");
+  document->UpdateStyleAndLayout(DocumentUpdateReason::kTest);
+
+  GetAIPageContent();
+  const auto& root2 = ContentRootNode();
+  ASSERT_EQ(root2.children_nodes.size(), 1u);
+  const auto& form2 = *root2.children_nodes[0];
+  ASSERT_EQ(form2.children_nodes.size(), 1u);
+  const auto& field2 = *form2.children_nodes[0];
+  CheckFormControlNode(field2, mojom::blink::FormControlType::kInputText);
+  EXPECT_EQ(field2.content_attributes->form_control_data->field_value, "");
+  EXPECT_EQ(
+      field2.content_attributes->form_control_data->redaction_decision,
+      mojom::AIPageContentRedactionDecision::kUnredacted_EmptyCustomPassword);
+
+  input_element->SetValue("notmaskedanymore");
+  document->UpdateStyleAndLayout(DocumentUpdateReason::kTest);
+
+  GetAIPageContent();
+  const auto& root3 = ContentRootNode();
+  ASSERT_EQ(root3.children_nodes.size(), 1u);
+  const auto& form3 = *root3.children_nodes[0];
+  ASSERT_EQ(form3.children_nodes.size(), 1u);
+  const auto& field3 = *form3.children_nodes[0];
+  CheckFormControlNode(field3, mojom::blink::FormControlType::kInputText);
+  EXPECT_EQ(field3.content_attributes->form_control_data->field_value, nullptr);
+  EXPECT_EQ(field3.content_attributes->form_control_data->redaction_decision,
+            mojom::AIPageContentRedactionDecision::kRedacted_CustomPassword_JS);
+}
+
+TEST_F(AIPageContentAgentTest, CustomPasswordJSPlainTextThenMaskedAgain) {
+  // Regression coverage: a JS custom password field may temporarily replace its
+  // value with plain text (e.g. "show password") and later resume masking. The
+  // value must remain redacted throughout.
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      "<body>"
+      "  <form>"
+      "    <input id='js' type='text' name='Enter secret' "
+      "value='&#8226;&#8226;&#8226;&#8226;a'>"
+      "  </form>"
+      "</body>",
+      url_test_helpers::ToKURL("http://foobar.com"));
+
+  Document* document = helper_.LocalMainFrame()->GetFrame()->GetDocument();
+  auto* input_element =
+      To<HTMLInputElement>(document->getElementById(AtomicString("js")));
+  ASSERT_TRUE(input_element);
+
+  GetAIPageContent();
+
+  input_element->SetValue("plain-text-temporary");
+  document->UpdateStyleAndLayout(DocumentUpdateReason::kTest);
+
+  GetAIPageContent();
+  const auto& root2 = ContentRootNode();
+  ASSERT_EQ(root2.children_nodes.size(), 1u);
+  const auto& form2 = *root2.children_nodes[0];
+  ASSERT_EQ(form2.children_nodes.size(), 1u);
+  const auto& field2 = *form2.children_nodes[0];
+  CheckFormControlNode(field2, mojom::blink::FormControlType::kInputText);
+  EXPECT_EQ(field2.content_attributes->form_control_data->field_value, nullptr);
+  EXPECT_EQ(field2.content_attributes->form_control_data->redaction_decision,
+            mojom::AIPageContentRedactionDecision::kRedacted_CustomPassword_JS);
+
+  input_element->SetValue(String::FromUTF8("••••z"));
+  document->UpdateStyleAndLayout(DocumentUpdateReason::kTest);
+
+  GetAIPageContent();
+  const auto& root3 = ContentRootNode();
+  ASSERT_EQ(root3.children_nodes.size(), 1u);
+  const auto& form3 = *root3.children_nodes[0];
+  ASSERT_EQ(form3.children_nodes.size(), 1u);
+  const auto& field3 = *form3.children_nodes[0];
+  CheckFormControlNode(field3, mojom::blink::FormControlType::kInputText);
+  EXPECT_EQ(field3.content_attributes->form_control_data->field_value, nullptr);
+  EXPECT_EQ(field3.content_attributes->form_control_data->redaction_decision,
+            mojom::AIPageContentRedactionDecision::kRedacted_CustomPassword_JS);
+}
+
+TEST_F(AIPageContentAgentTest, CustomPasswordCSSBecomesEmptyThenRedactsAgain) {
+  // Regression coverage: once a field is classified as a CSS custom password
+  // field, it stays classified even if the value becomes empty and later
+  // becomes non-empty again.
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      "<body>"
+      "  <form>"
+      "    <input id='css' type='text' name='Enter secret' "
+      "style='-webkit-text-security: disc;' value='supersecret'>"
+      "  </form>"
+      "</body>",
+      url_test_helpers::ToKURL("http://foobar.com"));
+
+  GetAIPageContent();
+  const auto& root = ContentRootNode();
+  ASSERT_EQ(root.children_nodes.size(), 1u);
+  const auto& form = *root.children_nodes[0];
+  ASSERT_EQ(form.children_nodes.size(), 1u);
+  const auto& field = *form.children_nodes[0];
+  CheckFormControlNode(field, mojom::blink::FormControlType::kInputText);
+  EXPECT_EQ(field.content_attributes->form_control_data->field_value, nullptr);
+  EXPECT_EQ(
+      field.content_attributes->form_control_data->redaction_decision,
+      mojom::AIPageContentRedactionDecision::kRedacted_CustomPassword_CSS);
+
+  Document* document = helper_.LocalMainFrame()->GetFrame()->GetDocument();
+  auto* input_element =
+      To<HTMLInputElement>(document->getElementById(AtomicString("css")));
+  ASSERT_TRUE(input_element);
+  input_element->SetValue("");
+  document->UpdateStyleAndLayout(DocumentUpdateReason::kTest);
+
+  GetAIPageContent();
+  const auto& root2 = ContentRootNode();
+  ASSERT_EQ(root2.children_nodes.size(), 1u);
+  const auto& form2 = *root2.children_nodes[0];
+  ASSERT_EQ(form2.children_nodes.size(), 1u);
+  const auto& field2 = *form2.children_nodes[0];
+  CheckFormControlNode(field2, mojom::blink::FormControlType::kInputText);
+  EXPECT_EQ(field2.content_attributes->form_control_data->field_value, "");
+  EXPECT_EQ(
+      field2.content_attributes->form_control_data->redaction_decision,
+      mojom::AIPageContentRedactionDecision::kUnredacted_EmptyCustomPassword);
+
+  input_element->setAttribute(html_names::kStyleAttr,
+                              AtomicString("-webkit-text-security: none;"));
+  input_element->SetValue("plain-text-temporary");
+  document->UpdateStyleAndLayout(DocumentUpdateReason::kTest);
+
+  GetAIPageContent();
+  const auto& root3 = ContentRootNode();
+  ASSERT_EQ(root3.children_nodes.size(), 1u);
+  const auto& form3 = *root3.children_nodes[0];
+  ASSERT_EQ(form3.children_nodes.size(), 1u);
+  const auto& field3 = *form3.children_nodes[0];
+  CheckFormControlNode(field3, mojom::blink::FormControlType::kInputText);
+  EXPECT_EQ(field3.content_attributes->form_control_data->field_value, nullptr);
+  EXPECT_EQ(
+      field3.content_attributes->form_control_data->redaction_decision,
+      mojom::AIPageContentRedactionDecision::kRedacted_CustomPassword_CSS);
+}
+
+TEST_F(AIPageContentAgentTest, CustomPasswordCSSPlainTextThenMaskedAgain) {
+  // Regression coverage: a CSS custom password field may temporarily disable
+  // masking (e.g. "show password") and later re-enable it. The value must
+  // remain redacted throughout.
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      "<body>"
+      "  <form>"
+      "    <input id='css' type='text' name='Enter secret' "
+      "style='-webkit-text-security: disc;' value='supersecret'>"
+      "  </form>"
+      "</body>",
+      url_test_helpers::ToKURL("http://foobar.com"));
+
+  Document* document = helper_.LocalMainFrame()->GetFrame()->GetDocument();
+  auto* input_element =
+      To<HTMLInputElement>(document->getElementById(AtomicString("css")));
+  ASSERT_TRUE(input_element);
+
+  GetAIPageContent();
+
+  input_element->setAttribute(html_names::kStyleAttr,
+                              AtomicString("-webkit-text-security: none;"));
+  input_element->SetValue("plain-text-temporary");
+  document->UpdateStyleAndLayout(DocumentUpdateReason::kTest);
+
+  GetAIPageContent();
+  const auto& root2 = ContentRootNode();
+  ASSERT_EQ(root2.children_nodes.size(), 1u);
+  const auto& form2 = *root2.children_nodes[0];
+  ASSERT_EQ(form2.children_nodes.size(), 1u);
+  const auto& field2 = *form2.children_nodes[0];
+  CheckFormControlNode(field2, mojom::blink::FormControlType::kInputText);
+  EXPECT_EQ(field2.content_attributes->form_control_data->field_value, nullptr);
+  EXPECT_EQ(
+      field2.content_attributes->form_control_data->redaction_decision,
+      mojom::AIPageContentRedactionDecision::kRedacted_CustomPassword_CSS);
+
+  input_element->setAttribute(html_names::kStyleAttr,
+                              AtomicString("-webkit-text-security: disc;"));
+  input_element->SetValue("supersecret2");
+  document->UpdateStyleAndLayout(DocumentUpdateReason::kTest);
+
+  GetAIPageContent();
+  const auto& root3 = ContentRootNode();
+  ASSERT_EQ(root3.children_nodes.size(), 1u);
+  const auto& form3 = *root3.children_nodes[0];
+  ASSERT_EQ(form3.children_nodes.size(), 1u);
+  const auto& field3 = *form3.children_nodes[0];
+  CheckFormControlNode(field3, mojom::blink::FormControlType::kInputText);
+  EXPECT_EQ(field3.content_attributes->form_control_data->field_value, nullptr);
+  EXPECT_EQ(
+      field3.content_attributes->form_control_data->redaction_decision,
+      mojom::AIPageContentRedactionDecision::kRedacted_CustomPassword_CSS);
+}
+
+TEST_F(
+    AIPageContentAgentTest,
+    DISABLED_ContentEditableWithMaskedValuePatternSingleLineRedactsAndPersists) {
+  // TODO(crbug.com/480179556): Treat contenteditable as a form control (or add
+  // a first-class editable field node) so we can attach structured redaction
+  // decisions and consistently skip editor/shadow subtrees for password-like
+  // contenteditables. This test covers a custom password control implemented
+  // with a contenteditable element. A common JS approach is to write mask
+  // characters (e.g. bullets) and reveal only the most recently typed
+  // character.
+  //
+  // Acceptance criteria:
+  // - The extracted content does not include the masked string.
+  // - After the field has been classified as password-like, it stays redacted
+  //   even if the page later writes an unmasked value.
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      "<body>"
+      "  <div id='ce' "
+      "contenteditable='true'>&#8226;&#8226;&#8226;&#8226;a</div>"
+      "</body>",
+      url_test_helpers::ToKURL("http://foobar.com"));
+
+  Document* document = helper_.LocalMainFrame()->GetFrame()->GetDocument();
+  auto* editable =
+      To<HTMLElement>(document->getElementById(AtomicString("ce")));
+  ASSERT_TRUE(editable);
+  ASSERT_TRUE(IsRichlyEditable(*editable));
+  ASSERT_EQ(RootEditableElement(*editable), editable);
+
+  GetAIPageContent();
+
+  const auto& root = ContentRootNode();
+  EXPECT_FALSE(TreeContainsTextSubstring(root, "a"));
+
+  editable->setInnerText("notmaskedanymore");
+
+  document->UpdateStyleAndLayout(DocumentUpdateReason::kTest);
+
+  GetAIPageContent();
+  const auto& root2 = ContentRootNode();
+  EXPECT_FALSE(TreeContainsTextSubstring(root2, "notmaskedanymore"));
+}
+
+TEST_F(
+    AIPageContentAgentTest,
+    DISABLED_ContentEditableMultilineWithBulletIsNotClassifiedAsCustomPassword) {
+  // TODO(crbug.com/480179556): When adding contenteditable custom password
+  // redaction, keep a single-line guardrail to avoid false positives for rich
+  // text editors. Guardrail against false positives: rich text editors often
+  // use bullet characters (•) as list markers in normal prose, and we must not
+  // treat these as password-like fields. We require contenteditable masking
+  // heuristics to apply only to single-line fields.
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      "<body>"
+      "  <div id='editor' contenteditable='true'>"
+      "    <div>&#8226; item</div>"
+      "    <div>more</div>"
+      "  </div>"
+      "</body>",
+      url_test_helpers::ToKURL("http://foobar.com"));
+
+  GetAIPageContent();
+
+  const auto& root = ContentRootNode();
+  EXPECT_TRUE(TreeContainsTextSubstring(root, "item"));
+  EXPECT_TRUE(TreeContainsTextSubstring(root, "more"));
 }
 
 TEST_F(AIPageContentAgentTest, InteractiveElementsTextArea) {
@@ -3629,7 +4448,10 @@ TEST_F(AIPageContentAgentTest, LabelWithForDescendant) {
   CheckTextNode(*label.children_nodes[1], "Check me!");
 }
 
-TEST_F(AIPageContentAgentTest, SVG) {
+TEST_F(AIPageContentAgentTest, SVGWithText) {
+  ScopedAIPageContentIncludeSVGSubtreeForTest scoped_feature(
+      /*enabled=*/true);
+
   frame_test_helpers::LoadHTMLString(
       helper_.LocalMainFrame(),
       "<body>"
@@ -3645,9 +4467,16 @@ TEST_F(AIPageContentAgentTest, SVG) {
 
   const auto& svg = *ContentRootNode().children_nodes[0];
   EXPECT_EQ(svg.content_attributes->attribute_type,
-            mojom::blink::AIPageContentAttributeType::kSVG);
-  ASSERT_TRUE(svg.content_attributes->svg_data);
-  EXPECT_EQ(svg.content_attributes->svg_data->inner_text, "Hello SVG Text!");
+            mojom::blink::AIPageContentAttributeType::kSvgRoot);
+  ASSERT_TRUE(svg.content_attributes->svg_root_data);
+  EXPECT_EQ(svg.content_attributes->svg_root_data->inner_text,
+            "Hello SVG Text!");
+
+  const auto& text_child = *svg.children_nodes[0];
+  EXPECT_EQ(text_child.content_attributes->attribute_type,
+            mojom::blink::AIPageContentAttributeType::kText);
+  // Note that whitespace is kept.
+  CheckTextNode(text_child, "      Hello SVG Text!    ");
 }
 
 TEST_F(AIPageContentAgentTest, SVGWithNoText) {
@@ -3666,9 +4495,73 @@ TEST_F(AIPageContentAgentTest, SVGWithNoText) {
 
   const auto& svg = *ContentRootNode().children_nodes[0];
   EXPECT_EQ(svg.content_attributes->attribute_type,
-            mojom::blink::AIPageContentAttributeType::kSVG);
-  ASSERT_TRUE(svg.content_attributes->svg_data);
-  EXPECT_FALSE(svg.content_attributes->svg_data->inner_text);
+            mojom::blink::AIPageContentAttributeType::kSvgRoot);
+  ASSERT_TRUE(svg.content_attributes->svg_root_data);
+  EXPECT_FALSE(svg.content_attributes->svg_root_data->inner_text);
+
+  // Only visible text nodes are extracted.
+  EXPECT_EQ(svg.children_nodes.size(), 0u);
+}
+
+TEST_F(AIPageContentAgentTest, SVGSubtreeContainersAreKept) {
+  ScopedAIPageContentIncludeSVGSubtreeForTest scoped_feature(
+      /*enabled=*/true);
+
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      "<body>"
+      "  <svg width='400' height='200'>"
+      "    <a href='example.html'>"
+      "      <image/>"
+      "      <rect width='10%' height='10%' fill='red'/>"
+      "      <text x='50%' y='50/%' font-size='24'>"
+      "        Hello SVG Text!"
+      "      </text>"
+      "    </a>"
+      "  </svg>"
+      "</body>",
+      url_test_helpers::ToKURL("http://foobar.com"));
+  auto& document = *helper_.LocalMainFrame()->GetFrame()->GetDocument();
+  document.getElementsByTagName(AtomicString("image"))
+      ->item(0)
+      ->setAttribute(html_names::kSrcAttr, AtomicString(kSmallImage));
+
+  GetAIPageContentWithActionableElements();
+
+  const auto& svg = *ContentRootNode().children_nodes[0];
+  EXPECT_EQ(svg.content_attributes->attribute_type,
+            mojom::blink::AIPageContentAttributeType::kSvgRoot);
+  ASSERT_TRUE(svg.content_attributes->svg_root_data);
+  EXPECT_EQ(svg.content_attributes->svg_root_data->inner_text,
+            "Hello SVG Text!");
+
+  ASSERT_EQ(svg.children_nodes.size(), 1u);
+  const auto& a_child = *svg.children_nodes[0];
+  EXPECT_EQ(a_child.content_attributes->attribute_type,
+            mojom::blink::AIPageContentAttributeType::kContainer);
+  ASSERT_TRUE(a_child.content_attributes->node_interaction_info);
+  EXPECT_FALSE(a_child.content_attributes->node_interaction_info
+                   ->clickability_reasons.empty());
+
+  ASSERT_EQ(a_child.children_nodes.size(), 3u);
+
+  const auto& image_child = *a_child.children_nodes[0];
+  EXPECT_EQ(image_child.content_attributes->attribute_type,
+            mojom::blink::AIPageContentAttributeType::kImage);
+
+  // Non-text, non-image elements are processed as generic containers.
+  const auto& rect_child = *a_child.children_nodes[1];
+  EXPECT_EQ(rect_child.content_attributes->attribute_type,
+            mojom::blink::AIPageContentAttributeType::kContainer);
+
+  const auto& text_child = *a_child.children_nodes[2];
+  EXPECT_EQ(text_child.content_attributes->attribute_type,
+            mojom::blink::AIPageContentAttributeType::kText);
+  // Note that whitespace is kept.
+  CheckTextNode(text_child, "        Hello SVG Text!      ");
+  ASSERT_TRUE(text_child.content_attributes->node_interaction_info);
+  EXPECT_TRUE(text_child.content_attributes->node_interaction_info
+                  ->clickability_reasons.empty());
 }
 
 TEST_F(AIPageContentAgentTest, Canvas) {
@@ -3739,6 +4632,10 @@ TEST_F(AIPageContentAgentTest, DisabledButton) {
   const auto& button = *root.children_nodes.at(0);
   CheckHitTestableButNotInteractive(button);
   EXPECT_TRUE(button.content_attributes->node_interaction_info->is_disabled);
+  EXPECT_THAT(
+      button.content_attributes->node_interaction_info
+          ->interaction_disabled_reasons,
+      testing::UnorderedElementsAre(InteractionDisabledReason::kDisabled));
 }
 
 TEST_F(AIPageContentAgentTest, InertButton) {
@@ -3848,6 +4745,10 @@ TEST_F(AIPageContentAgentTest, AriaDisabled) {
   CheckContainerNode(section);
   CheckHitTestableButNotInteractive(section);
   EXPECT_TRUE(section.content_attributes->node_interaction_info->is_disabled);
+  EXPECT_THAT(
+      section.content_attributes->node_interaction_info
+          ->interaction_disabled_reasons,
+      testing::UnorderedElementsAre(InteractionDisabledReason::kAriaDisabled));
 
   // The child is also not actionable.
   ASSERT_EQ(section.children_nodes.size(), 1u);
@@ -3855,6 +4756,10 @@ TEST_F(AIPageContentAgentTest, AriaDisabled) {
   CheckHitTestableButNotInteractive(input);
   // Parent element `aria-disable` value overrides child element's.
   EXPECT_TRUE(input.content_attributes->node_interaction_info->is_disabled);
+  EXPECT_THAT(
+      input.content_attributes->node_interaction_info
+          ->interaction_disabled_reasons,
+      testing::UnorderedElementsAre(InteractionDisabledReason::kAriaDisabled));
 }
 
 TEST_F(AIPageContentAgentTest, DisabledInheritance) {
@@ -3883,10 +4788,18 @@ TEST_F(AIPageContentAgentTest, DisabledInheritance) {
   CheckHitTestableButNotInteractive(fieldset);
   ASSERT_EQ(fieldset.children_nodes.size(), 1u);
   EXPECT_TRUE(fieldset.content_attributes->node_interaction_info->is_disabled);
+  EXPECT_THAT(
+      fieldset.content_attributes->node_interaction_info
+          ->interaction_disabled_reasons,
+      testing::UnorderedElementsAre(InteractionDisabledReason::kDisabled));
 
   const auto& button = *fieldset.children_nodes.at(0);
   CheckHitTestableButNotInteractive(button);
   EXPECT_TRUE(button.content_attributes->node_interaction_info->is_disabled);
+  EXPECT_THAT(
+      button.content_attributes->node_interaction_info
+          ->interaction_disabled_reasons,
+      testing::UnorderedElementsAre(InteractionDisabledReason::kDisabled));
 }
 
 TEST_F(AIPageContentAgentTest, Fieldset) {
@@ -4105,10 +5018,6 @@ TEST_F(AIPageContentAgentTest, ClickabilityReasonMouseHover) {
       div_node.content_attributes->node_interaction_info->clickability_reasons,
       testing::Contains(
           mojom::blink::AIPageContentClickabilityReason::kMouseHover));
-  EXPECT_THAT(
-      div_node.content_attributes->node_interaction_info->clickability_reasons,
-      testing::Contains(
-          mojom::blink::AIPageContentClickabilityReason::kMouseEvents));
 }
 
 TEST_F(AIPageContentAgentTest, ClickabilityReasonMouseClick) {
@@ -4131,10 +5040,6 @@ TEST_F(AIPageContentAgentTest, ClickabilityReasonMouseClick) {
       div_node.content_attributes->node_interaction_info->clickability_reasons,
       testing::Contains(
           mojom::blink::AIPageContentClickabilityReason::kMouseClick));
-  EXPECT_THAT(
-      div_node.content_attributes->node_interaction_info->clickability_reasons,
-      testing::Contains(
-          mojom::blink::AIPageContentClickabilityReason::kMouseEvents));
 }
 
 TEST_F(AIPageContentAgentTest, ClickabilityReasonKeyEvents) {
@@ -4237,7 +5142,6 @@ TEST_F(AIPageContentAgentTest, ClickabilityReasonMultipleReasons) {
       testing::UnorderedElementsAre(
           mojom::blink::AIPageContentClickabilityReason::kClickableControl,
           mojom::blink::AIPageContentClickabilityReason::kClickEvents,
-          mojom::blink::AIPageContentClickabilityReason::kMouseEvents,
           mojom::blink::AIPageContentClickabilityReason::kMouseHover,
           mojom::blink::AIPageContentClickabilityReason::kMouseClick,
           mojom::blink::AIPageContentClickabilityReason::kKeyEvents,
@@ -4697,6 +5601,121 @@ TEST_F(AIPageContentAgentTest, StructuralWrapperWithoutPaintGeometry) {
   EXPECT_FALSE(child_geometry.outer_bounding_box.IsEmpty());
 }
 
+TEST_F(AIPageContentAgentTest, InlinePreWrapGeometry) {
+  // Inline wrappers that rely on white-space:pre-wrap frequently delegate all
+  // actual painting to anonymous block fragments generated for line wrapping.
+  // The legacy outer-bounding-box path used AbsoluteBoundingBoxRect() on the
+  // LayoutInline host, so it produced an empty rect even though the wrapped
+  // text occupied multiple lines. Mapping via GeometryMapper keeps outer and
+  // visible boxes consistent in these inlines-with-block-descendants cases.
+  ScopedAIPageContentOuterBoxMapToAncestorSpaceForTest enable_outer_box_mapping(
+      true);
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      R"HTML(
+      <style>
+        body { margin: 0; font: 16px/16px Ahem; }
+        #prewrap-inline { white-space: pre-wrap; }
+      </style>
+      <body>
+        <span id="prewrap-inline">
+          <span>Label:</span> Wrapped inline text.
+        </span>
+      </body>)HTML",
+      url_test_helpers::ToKURL("http://example.com"));
+
+  LoadAhem();
+  GetAIPageContentWithActionableElements();
+
+  const auto* entry_node = FindNodeBySelector("#prewrap-inline");
+  ASSERT_TRUE(entry_node);
+  ASSERT_TRUE(entry_node->content_attributes);
+  ASSERT_TRUE(entry_node->content_attributes->geometry);
+
+  const auto& geometry = *entry_node->content_attributes->geometry;
+  EXPECT_FALSE(geometry.outer_bounding_box.IsEmpty());
+  EXPECT_FALSE(geometry.visible_bounding_box.IsEmpty());
+  EXPECT_EQ(geometry.outer_bounding_box, geometry.visible_bounding_box);
+}
+
+TEST_F(AIPageContentAgentTest, IframeOuterBoxNotViewportClipped) {
+  // Enable the experimental outer-box mapping so GeometryMapper is used for
+  // both the visible and unclipped bounds.
+  ScopedAIPageContentOuterBoxMapToAncestorSpaceForTest enable_outer_box_mapping(
+      true);
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      R"HTML(
+      <style>
+        body { margin: 0; }
+        iframe {
+          border: none;
+          width: 200px;
+          height: 150px;
+        }
+      </style>
+      <body>
+        <iframe id="offscreen-frame" srcdoc="
+          <style>
+            body { margin: 0; height: 800px; position: relative; font: 10px/10px Ahem; }
+            #deep {
+              position: absolute;
+              left: 20px;
+              top: -10px;
+              width: 50px;
+              height: 40px;
+              background: lightgreen;
+            }
+          </style>
+          <body>
+            <a id='deep' href='#'>Deep target</a>
+          </body>">
+        </iframe>
+      </body>)HTML",
+      url_test_helpers::ToKURL("http://example.com"));
+
+  Document* document = helper_.LocalMainFrame()->GetFrame()->GetDocument();
+  ASSERT_TRUE(document);
+  LocalFrameView* view = document->View();
+  ASSERT_TRUE(view);
+  test::RunPendingTasks();
+  view->UpdateAllLifecyclePhasesForTest();
+  auto* iframe_element = DynamicTo<HTMLIFrameElement>(
+      document->getElementById(AtomicString("offscreen-frame")));
+  ASSERT_TRUE(iframe_element);
+  LocalFrame* child_frame =
+      DynamicTo<LocalFrame>(iframe_element->ContentFrame());
+  ASSERT_TRUE(child_frame);
+  PageTestBase::LoadAhem(*child_frame);
+  if (LocalFrameView* child_view = child_frame->View()) {
+    test::RunPendingTasks();
+    child_view->UpdateAllLifecyclePhasesForTest();
+  }
+  Document* child_document = child_frame->GetDocument();
+  ASSERT_TRUE(child_document);
+
+  Element* deep = child_document->getElementById(AtomicString("deep"));
+  ASSERT_TRUE(deep);
+
+  GetAIPageContentWithActionableElements();
+
+  DOMNodeId deep_dom_node_id = DOMNodeIds::IdForNode(deep);
+  ASSERT_GE(deep_dom_node_id, 1);
+  const auto* deep_node = FindNodeByDomNodeId(deep_dom_node_id);
+  ASSERT_TRUE(deep_node);
+  ASSERT_TRUE(deep_node->content_attributes);
+  ASSERT_TRUE(deep_node->content_attributes->geometry);
+
+  // The element straddles the iframe's viewport top edge. When
+  // kSkipAncestorAndViewportClips is honored, MapToVisualRectInAncestorSpace
+  // skips that viewport clip so the outer box reports the true location in the
+  // embedder viewport, while the visible box remains clipped to the portion
+  // that is painted.
+  const auto& geometry = *deep_node->content_attributes->geometry;
+  EXPECT_EQ(geometry.outer_bounding_box, gfx::Rect(20, -10, 50, 40));
+  EXPECT_EQ(geometry.visible_bounding_box, gfx::Rect(20, 0, 50, 30));
+}
+
 TEST_F(AIPageContentAgentTest, InlineBlockFixedDescendantKeepsGeometry) {
   frame_test_helpers::LoadHTMLString(
       helper_.LocalMainFrame(),
@@ -4998,9 +6017,8 @@ TEST_F(AIPageContentAgentTest, IframeInlineTextClippedWhenViewportScrolled) {
   EXPECT_NEAR(iframe_style.ComputedFontSize(), 10.0f, 0.01f);
   EXPECT_NEAR(iframe_style.GetFont()->GetFontDescription().ComputedSize(),
               10.0f, 0.01f);
-  EXPECT_EQ(
-      AtomicString("Ahem"),
-      iframe_style.GetFont()->GetFontDescription().FirstFamily().FamilyName());
+  EXPECT_EQ(AtomicString("Ahem"),
+            iframe_style.GetFont()->GetFontDescription().Family().FamilyName());
 
   EXPECT_EQ(gfx::Rect(0, -15, 70, 40), geometry.outer_bounding_box);
   EXPECT_EQ(gfx::Rect(0, 0, 70, 25), geometry.visible_bounding_box);
@@ -5592,6 +6610,584 @@ TEST_F(AIPageContentAgentTest, LinkWithOverflowGeometry) {
   EXPECT_EQ(geometry.outer_bounding_box.width(), 20);
   EXPECT_EQ(geometry.visible_bounding_box.width(), 20);
   EXPECT_EQ(geometry.visible_bounding_box.height(), 20);
+}
+
+TEST_F(AIPageContentAgentTest, CursorNotAllowedButton) {
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      R"HTML(
+        <body>
+         <button style="cursor: not-allowed;">Text</button>
+        </body>
+      )HTML",
+      url_test_helpers::ToKURL("http://foobar.com"));
+
+  GetAIPageContentWithActionableElements();
+
+  const auto& root = ContentRootNode();
+  ASSERT_EQ(root.children_nodes.size(), 1u);
+  const auto& button = *root.children_nodes.at(0);
+  CheckHitTestableAndInteractive(button,
+                                 {ClickabilityReason::kClickableControl});
+  EXPECT_FALSE(button.content_attributes->node_interaction_info->is_disabled);
+  EXPECT_THAT(button.content_attributes->node_interaction_info
+                  ->interaction_disabled_reasons,
+              testing::UnorderedElementsAre(
+                  InteractionDisabledReason::kCursorNotAllowed));
+}
+
+TEST_F(AIPageContentAgentTest, MultipleInteractionDisabledReasons) {
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      R"HTML(
+        <body>
+         <button disabled aria-disabled=true style="cursor: not-allowed;">
+           Text
+         </button>
+        </body>
+      )HTML",
+      url_test_helpers::ToKURL("http://foobar.com"));
+
+  GetAIPageContentWithActionableElements();
+
+  const auto& root = ContentRootNode();
+  ASSERT_EQ(root.children_nodes.size(), 1u);
+  const auto& button = *root.children_nodes.at(0);
+  CheckHitTestableButNotInteractive(button);
+  EXPECT_TRUE(button.content_attributes->node_interaction_info->is_disabled);
+  EXPECT_THAT(button.content_attributes->node_interaction_info
+                  ->interaction_disabled_reasons,
+              testing::UnorderedElementsAre(
+                  InteractionDisabledReason::kDisabled,
+                  InteractionDisabledReason::kAriaDisabled,
+                  InteractionDisabledReason::kCursorNotAllowed));
+}
+
+TEST_F(AIPageContentAgentTest, ZeroSizeActionableElement) {
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      "<body>"
+      "  <div id='zero' style='width: 0; height: 0;' onclick='void(0)'></div>"
+      "</body>",
+      url_test_helpers::ToKURL("http://foobar.com"));
+
+  GetAIPageContentWithActionableElements();
+
+  const auto* zero_node = FindNodeBySelector("#zero");
+  // An actionable element with 0 size should still be included in the APC tree
+  // if it is visible, e.g. it doesn't have visibility: hidden.
+  ASSERT_TRUE(zero_node);
+  ASSERT_TRUE(zero_node->content_attributes->geometry);
+  EXPECT_TRUE(
+      zero_node->content_attributes->geometry->outer_bounding_box.IsEmpty());
+  EXPECT_TRUE(
+      zero_node->content_attributes->geometry->visible_bounding_box.IsEmpty());
+}
+
+TEST_F(AIPageContentAgentTest, ZeroSizeNonActionableElement) {
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      "<body>"
+      "  <div id='zero' style='width: 0; height: 0;'></div>"
+      "</body>",
+      url_test_helpers::ToKURL("http://foobar.com"));
+
+  GetAIPageContentWithActionableElements();
+
+  const auto* zero_node = FindNodeBySelector("#zero");
+  // A non-actionable element with 0 size should be excluded from the APC tree.
+  EXPECT_FALSE(zero_node);
+}
+
+TEST_F(AIPageContentAgentTest, ZeroSizeContainerWithVisibleChild) {
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      "<body>"
+      "  <div id='zero' style='width: 0; height: 0; position: fixed;'>"
+      "    <div id='visible' style='width: 10px; height: 10px;'>text</div>"
+      "  </div>"
+      "</body>",
+      url_test_helpers::ToKURL("http://foobar.com"));
+
+  GetAIPageContentWithActionableElements();
+
+  const auto* zero_node = FindNodeBySelector("#zero");
+  // A container with 0 size but visible children should be included.
+  ASSERT_TRUE(zero_node);
+  const auto* visible_node = FindNodeBySelector("#visible");
+  ASSERT_TRUE(visible_node);
+
+  // Verify that 'visible' is a child of 'zero' in the APC tree.
+  bool found = false;
+  for (const auto& child : zero_node->children_nodes) {
+    if (child->content_attributes->dom_node_id ==
+        visible_node->content_attributes->dom_node_id) {
+      found = true;
+      break;
+    }
+  }
+  EXPECT_TRUE(found);
+}
+
+class AIPageContentAgentTestTextEncoding : public AIPageContentAgentTest {
+ private:
+  // All of these tests assume the UTF-8 conversion feature is enabled.
+  ScopedAIPageContentConvertNodeTextToUtf8ForTest enable_utf8_conversion_{true};
+};
+
+TEST_F(AIPageContentAgentTestTextEncoding, TextContentCorrected) {
+  // Start with a basic valid UTF-16 string.
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      "<body>"
+      "  <p id='wrong'>Hello</p>"
+      "</body>",
+      url_test_helpers::ToKURL("http://foobar.com"));
+
+  auto& document = *helper_.LocalMainFrame()->GetFrame()->GetDocument();
+  auto* p = document.getElementById(AtomicString("wrong"));
+  // Confirm that on the Blink side, we have a valid UTF-16 string.
+  EXPECT_EQ(p->innerText(), String(u"Hello"));
+
+  // The only way to get an invalid UTF-16 string into the element is via
+  // Javascript, which isn't required to match surrogates. In this case, the
+  // unmatched surrogate is \uD83D. We also need to use a raw string so that the
+  // unicode character is interpreted by Javascript, not CPP.
+  helper_.LocalMainFrame()->ExecuteScript(WebScriptSource(
+      R"(document.getElementById('wrong').innerText = 'Hello\uD83D')"));
+
+  GetAIPageContentWithActionableElements();
+
+  auto* p_node = FindNodeBySelector("#wrong");
+  CheckTextNode(*p_node->children_nodes[0], String(u"Hello\uFFFD"));
+}
+
+TEST_F(AIPageContentAgentTestTextEncoding, ImageCaptionCorrected) {
+  // Start with a basic valid UTF-16 string.
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      "<body>"
+      "  <img id='wrong' alt='Hello'>"
+      "</body>",
+      url_test_helpers::ToKURL("http://foobar.com"));
+
+  auto& document = *helper_.LocalMainFrame()->GetFrame()->GetDocument();
+  auto* img = document.getElementById(AtomicString("wrong"));
+  // Put an actual image in the node.
+  img->setAttribute(html_names::kSrcAttr, AtomicString(kSmallImage));
+
+  // Confirm that on the Blink side, we have a valid UTF-16 string.
+  EXPECT_EQ(DynamicTo<HTMLImageElement>(img)->AltText(), String(u"Hello"));
+
+  // The only way to get an invalid UTF-16 string into the element is via
+  // Javascript, which isn't required to match surrogates. In this case, the
+  // unmatched surrogate is \uD83D. We also need to use a raw string so that the
+  // unicode character is interpreted by Javascript, not CPP.
+  helper_.LocalMainFrame()->ExecuteScript(WebScriptSource(
+      R"(document.getElementById('wrong').alt = 'Hello\uD83D')"));
+
+  GetAIPageContentWithActionableElements();
+
+  auto* image_node = FindNodeBySelector("#wrong");
+  CheckImageNode(*image_node, String(u"Hello\uFFFD"));
+}
+
+TEST_F(AIPageContentAgentTestTextEncoding, SVGRootCorrected) {
+  ScopedAIPageContentIncludeSVGSubtreeForTest scoped_feature(
+      /*enabled=*/true);
+
+  // Start with a basic valid UTF-16 string.
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      "<body>"
+      "  <svg id='wrongsvg' width='400' height='200'>"
+      "    <text id='wrongtext' x='50%' y='50%' font-size='24'>"
+      "      Hello SVG Text!"
+      "    </text>"
+      "  </svg>"
+      "</body>",
+      url_test_helpers::ToKURL("http://foobar.com"));
+
+  // The only way to get an invalid UTF-16 string into the element is via
+  // Javascript, which isn't required to match surrogates. In this case, the
+  // unmatched surrogate is \uD83D. We also need to use a raw string so that the
+  // unicode character is interpreted by Javascript, not CPP.
+  helper_.LocalMainFrame()->ExecuteScript(WebScriptSource(
+      R"(
+        document
+          .getElementById('wrongsvg')
+          .getElementById('wrongtext')
+          .textContent = '      Hello\uD83D    '
+      )"));
+
+  GetAIPageContentWithActionableElements();
+
+  const auto& svg = *ContentRootNode().children_nodes[0];
+  EXPECT_EQ(svg.content_attributes->attribute_type,
+            mojom::blink::AIPageContentAttributeType::kSvgRoot);
+  ASSERT_TRUE(svg.content_attributes->svg_root_data);
+  EXPECT_EQ(svg.content_attributes->svg_root_data->inner_text, u"Hello\uFFFD");
+
+  const auto& text_child = *svg.children_nodes[0];
+  EXPECT_EQ(text_child.content_attributes->attribute_type,
+            mojom::blink::AIPageContentAttributeType::kText);
+  // Note that whitespace is kept.
+  CheckTextNode(text_child, u"      Hello\uFFFD    ");
+}
+
+TEST_F(AIPageContentAgentTestTextEncoding, TableNameCorrected) {
+  // Start with a basic valid UTF-16 string.
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      "<body>"
+      "  <table>"
+      "     <caption id='wrong'>Hello</caption>"
+      "  </table>"
+      "</body>",
+      url_test_helpers::ToKURL("http://foobar.com"));
+
+  // The only way to get an invalid UTF-16 string into the element is via
+  // Javascript, which isn't required to match surrogates. In this case, the
+  // unmatched surrogate is \uD83D. We also need to use a raw string so that the
+  // unicode character is interpreted by Javascript, not CPP.
+  helper_.LocalMainFrame()->ExecuteScript(WebScriptSource(
+      R"(document.getElementById('wrong').innerText = 'Hello\uD83D')"));
+
+  GetAIPageContentWithActionableElements();
+
+  const auto& table = *ContentRootNode().children_nodes[0];
+  CheckTableNode(table, u"Hello\uFFFD");
+}
+
+TEST_F(AIPageContentAgentTestTextEncoding, FormNameCorrected) {
+  // Start with a basic valid UTF-16 string.
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      "<body>"
+      "  <form id='wrong' name='Hello'>"
+      "    <p>Greetings</p>"
+      "  </form>"
+      "</body>",
+      url_test_helpers::ToKURL("http://foobar.com"));
+
+  // The only way to get an invalid UTF-16 string into the element is via
+  // Javascript, which isn't required to match surrogates. In this case, the
+  // unmatched surrogate is \uD83D. We also need to use a raw string so that the
+  // unicode character is interpreted by Javascript, not CPP.
+  helper_.LocalMainFrame()->ExecuteScript(WebScriptSource(
+      R"(document.getElementById('wrong').name = 'Hello\uD83D')"));
+
+  GetAIPageContentWithActionableElements();
+
+  const auto& form = *ContentRootNode().children_nodes[0];
+  EXPECT_EQ(form.content_attributes->attribute_type,
+            mojom::blink::AIPageContentAttributeType::kForm);
+  EXPECT_EQ(form.content_attributes->form_data->form_name, u"Hello\uFFFD");
+}
+
+TEST_F(AIPageContentAgentTestTextEncoding,
+       AriaFormControlPlaceholderCorrected) {
+  // Start with a basic valid UTF-16 string.
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      "<body>"
+      "  <form>"
+      "    <input id='wrong' type='text' aria-required='true' "
+      "aria-placeholder='Hello'>"
+      "  </form>"
+      "</body>",
+      url_test_helpers::ToKURL("http://foobar.com"));
+
+  // The only way to get an invalid UTF-16 string into the element is via
+  // Javascript, which isn't required to match surrogates. In this case, the
+  // unmatched surrogate is \uD83D. We also need to use a raw string so that the
+  // unicode character is interpreted by Javascript, not CPP.
+  helper_.LocalMainFrame()->ExecuteScript(WebScriptSource(
+      R"(document.getElementById('wrong').ariaPlaceholder = 'Hello\uD83D')"));
+
+  GetAIPageContentWithActionableElements();
+
+  const auto* input = FindNodeBySelector("#wrong");
+  CheckFormControlNode(*input, mojom::blink::FormControlType::kInputText);
+  EXPECT_EQ(input->content_attributes->form_control_data->placeholder,
+            u"Hello\uFFFD");
+}
+
+TEST_F(AIPageContentAgentTestTextEncoding, TextFormControlValueCorrected) {
+  // Start with a basic valid UTF-16 string.
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      "<body>"
+      "  <form>"
+      "    <input id='wrong' type='text' name='Username' value='Hello'>"
+      "  </form>"
+      "</body>",
+      url_test_helpers::ToKURL("http://foobar.com"));
+
+  // The only way to get an invalid UTF-16 string into the element is via
+  // Javascript, which isn't required to match surrogates. In this case, the
+  // unmatched surrogate is \uD83D. We also need to use a raw string so that the
+  // unicode character is interpreted by Javascript, not CPP.
+  helper_.LocalMainFrame()->ExecuteScript(WebScriptSource(
+      R"(
+          let input = document.getElementById('wrong');
+          input.name = 'Username\uD83D';
+          input.value = 'Hello\uD83D';
+      )"));
+
+  GetAIPageContentWithActionableElements();
+
+  const auto* input = FindNodeBySelector("#wrong");
+  CheckFormControlNode(*input, mojom::blink::FormControlType::kInputText);
+  const mojom::blink::AIPageContentFormControlDataPtr& form_control_data =
+      input->content_attributes->form_control_data;
+  EXPECT_EQ(form_control_data->field_name, u"Username\uFFFD");
+  EXPECT_EQ(form_control_data->field_value, u"Hello\uFFFD");
+}
+
+TEST_F(AIPageContentAgentTestTextEncoding,
+       TextFormControlPlaceholderCorrected) {
+  // Start with a basic valid UTF-16 string.
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      "<body>"
+      "  <form>"
+      "    <input id='wrong' type='text' name='Username' placeholder='Hello'>"
+      "  </form>"
+      "</body>",
+      url_test_helpers::ToKURL("http://foobar.com"));
+
+  // The only way to get an invalid UTF-16 string into the element is via
+  // Javascript, which isn't required to match surrogates. In this case, the
+  // unmatched surrogate is \uD83D. We also need to use a raw string so that the
+  // unicode character is interpreted by Javascript, not CPP.
+  helper_.LocalMainFrame()->ExecuteScript(WebScriptSource(
+      R"(
+          let input = document.getElementById('wrong');
+          input.name = 'Username\uD83D';
+          input.placeholder = 'Hello\uD83D';
+      )"));
+
+  GetAIPageContentWithActionableElements();
+
+  const auto* input = FindNodeBySelector("#wrong");
+  CheckFormControlNode(*input, mojom::blink::FormControlType::kInputText);
+  const mojom::blink::AIPageContentFormControlDataPtr& form_control_data =
+      input->content_attributes->form_control_data;
+  EXPECT_EQ(form_control_data->field_name, u"Username\uFFFD");
+  EXPECT_EQ(form_control_data->placeholder, u"Hello\uFFFD");
+}
+
+TEST_F(AIPageContentAgentTestTextEncoding, SelectFormControlOptionsCorrected) {
+  // Start with a basic valid UTF-16 string.
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      "<body>"
+      "  <select id='container'>"
+      "    <option id='wrong' value='First'>Hello</option>"
+      "  </select>"
+      "</body>",
+      url_test_helpers::ToKURL("http://foobar.com"));
+
+  // The only way to get an invalid UTF-16 string into the element is via
+  // Javascript, which isn't required to match surrogates. In this case, the
+  // unmatched surrogate is \uD83D. We also need to use a raw string so that the
+  // unicode character is interpreted by Javascript, not CPP.
+  helper_.LocalMainFrame()->ExecuteScript(WebScriptSource(
+      R"(
+          let option = document.getElementById('wrong');
+          option.value = 'First\uD83D';
+          option.text = 'Hello\uD83D';
+      )"));
+
+  GetAIPageContentWithActionableElements();
+
+  const auto* select = FindNodeBySelector("#container");
+  CheckFormControlNode(*select, mojom::blink::FormControlType::kSelectOne);
+  const mojom::blink::AIPageContentFormControlDataPtr& form_control_data =
+      select->content_attributes->form_control_data;
+  EXPECT_EQ(form_control_data->select_options[0]->value, u"First\uFFFD");
+  EXPECT_EQ(form_control_data->select_options[0]->text, u"Hello\uFFFD");
+}
+
+TEST_F(AIPageContentAgentTestTextEncoding, MetadataCorrected) {
+  // Start with a basic valid UTF-16 string.
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      "<head>"
+      "  <meta id='wrong' name='Hello' content='World'>"
+      "</head>"
+      "<body>"
+      "</body>",
+      url_test_helpers::ToKURL("http://foobar.com"));
+
+  // The only way to get an invalid UTF-16 string into the element is via
+  // Javascript, which isn't required to match surrogates. In this case, the
+  // unmatched surrogate is \uD83D. We also need to use a raw string so that the
+  // unicode character is interpreted by Javascript, not CPP.
+  helper_.LocalMainFrame()->ExecuteScript(WebScriptSource(
+      R"(
+          let meta = document.getElementById('wrong');
+          meta.name = 'Hello\uD83D';
+          meta.content = 'World\uD83D';
+      )"));
+
+  auto options = GetAIPageContentOptionsForTest();
+  options.mode = mojom::blink::AIPageContentMode::kActionableElements;
+  options.max_meta_elements = 1;
+  GetAIPageContent(options);
+
+  const mojom::blink::AIPageContentMetaPtr& meta =
+      Content()->frame_data->meta_data[0];
+  EXPECT_EQ(meta->name, u"Hello\uFFFD");
+  EXPECT_EQ(meta->content, u"World\uFFFD");
+}
+
+TEST_F(AIPageContentAgentTestTextEncoding, AriaLabelCorrected) {
+  // Start with a basic valid UTF-16 string.
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      "<body>"
+      "  <button id='wrong' aria-label='Hello'></button>"
+      "</body>",
+      url_test_helpers::ToKURL("http://foobar.com"));
+
+  // The only way to get an invalid UTF-16 string into the element is via
+  // Javascript, which isn't required to match surrogates. In this case, the
+  // unmatched surrogate is \uD83D. We also need to use a raw string so that the
+  // unicode character is interpreted by Javascript, not CPP.
+  helper_.LocalMainFrame()->ExecuteScript(WebScriptSource(
+      R"(
+          let button = document.getElementById('wrong');
+          button.ariaLabel = 'Hello\uD83D';
+      )"));
+
+  GetAIPageContentWithActionableElements();
+
+  auto* button = FindNodeBySelector("#wrong");
+  EXPECT_EQ(button->content_attributes->label, u"Hello\uFFFD");
+}
+
+TEST_F(AIPageContentAgentTestTextEncoding, AriaLabeledByCorrected) {
+  // Start with a basic valid UTF-16 string.
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      "<body>"
+      "  <div id='wrong' style='display: none;'>Hello</div>"
+      "  <input id='on' type='text' aria-labelledby='wrong'>"
+      "</body>",
+      url_test_helpers::ToKURL("http://foobar.com"));
+
+  // The only way to get an invalid UTF-16 string into the element is via
+  // Javascript, which isn't required to match surrogates. In this case, the
+  // unmatched surrogate is \uD83D. We also need to use a raw string so that the
+  // unicode character is interpreted by Javascript, not CPP.
+  helper_.LocalMainFrame()->ExecuteScript(WebScriptSource(
+      R"(
+          let div = document.getElementById('wrong');
+          div.textContent = 'Hello\uD83D';
+      )"));
+
+  GetAIPageContentWithActionableElements();
+
+  auto* input = FindNodeBySelector("#on");
+  EXPECT_EQ(input->content_attributes->label, u"Hello\uFFFD");
+}
+
+TEST_F(AIPageContentAgentTestTextEncoding, FrameTitleCorrected) {
+  // Start with a basic valid UTF-16 string.
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      "<head>"
+      "  <title id='wrong'>Hello</title>"
+      "</head>"
+      "<body>"
+      "</body>",
+      url_test_helpers::ToKURL("http://foobar.com"));
+
+  // The only way to get an invalid UTF-16 string into the element is via
+  // Javascript, which isn't required to match surrogates. In this case, the
+  // unmatched surrogate is \uD83D. We also need to use a raw string so that the
+  // unicode character is interpreted by Javascript, not CPP.
+  helper_.LocalMainFrame()->ExecuteScript(WebScriptSource(
+      R"(
+          let title = document.getElementById('wrong');
+          title.textContent = 'Hello\uD83D';
+      )"));
+
+  GetAIPageContentWithActionableElements();
+
+  EXPECT_EQ(Content()->frame_data->title, u"Hello\uFFFD");
+}
+
+TEST_F(AIPageContentAgentTestTextEncoding,
+       FrameInteractionInfoSelectedTextCorrected) {
+  // Start with a basic valid UTF-16 string.
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      "<body>"
+      "  <p id='p1'>Paragraph 1</p>"
+      "  <p id='p2'>Paragraph 2</p>"
+      "</body>",
+      url_test_helpers::ToKURL("http://foobar.com"));
+
+  // The only way to get an invalid UTF-16 string into the element is via
+  // Javascript, which isn't required to match surrogates. In this case, the
+  // unmatched surrogate is \uD83D. We also need to use a raw string so that the
+  // unicode character is interpreted by Javascript, not CPP.
+  helper_.LocalMainFrame()->ExecuteScript(WebScriptSource(
+      R"(
+        const p1 = document.getElementById('p1');
+        p1.innerText = 'Hello\uD83D'
+        const p2 = document.getElementById('p2');
+
+        const range = new Range();
+        range.setStart(p1.childNodes[0], 0);
+        range.setEnd(p2.childNodes[0], 4);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+      )"));
+
+  GetAIPageContentWithActionableElements();
+
+  EXPECT_EQ(
+      Content()->frame_data->frame_interaction_info->selection->selected_text,
+      u"Hello\uFFFD\n\nPara");
+}
+
+TEST_F(AIPageContentAgentTestTextEncoding, FlagDisabled) {
+  ScopedAIPageContentConvertNodeTextToUtf8ForTest enable_utf8_conversion{false};
+  // Start with a basic valid UTF-16 string.
+  frame_test_helpers::LoadHTMLString(
+      helper_.LocalMainFrame(),
+      "<body>"
+      "  <p id='wrong'>Hello</p>"
+      "</body>",
+      url_test_helpers::ToKURL("http://foobar.com"));
+
+  auto& document = *helper_.LocalMainFrame()->GetFrame()->GetDocument();
+  auto* p = document.getElementById(AtomicString("wrong"));
+  // Confirm that on the Blink side, we have a valid UTF-16 string.
+  EXPECT_EQ(p->innerText(), String(u"Hello"));
+
+  // The only way to get an invalid UTF-16 string into the element is via
+  // Javascript, which isn't required to match surrogates. In this case, the
+  // unmatched surrogate is \uD83D. We also need to use a raw string so that the
+  // unicode character is interpreted by Javascript, not CPP.
+  helper_.LocalMainFrame()->ExecuteScript(WebScriptSource(
+      R"(document.getElementById('wrong').innerText = 'Hello\uD83D')"));
+
+  GetAIPageContentWithActionableElements();
+
+  auto* p_node = FindNodeBySelector("#wrong");
+  const auto& text_attributes = *p_node->children_nodes[0]->content_attributes;
+  EXPECT_EQ(text_attributes.attribute_type,
+            mojom::blink::AIPageContentAttributeType::kText);
+  ASSERT_TRUE(text_attributes.text_info);
+
+  // The last character should be 0xD83D.
+  EXPECT_EQ(text_attributes.text_info->text_content.Span16().back(), 0xD83D);
 }
 
 }  // namespace

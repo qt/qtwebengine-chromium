@@ -170,7 +170,7 @@ export const NativeFunctions = [
   {
     name: "set",
     signatures: [["key","value"]],
-    receivers: ["Map","WeakMap","CrashReportStorage"]
+    receivers: ["Map","WeakMap","CrashReportContext"]
   },
   {
     name: "set",
@@ -1493,7 +1493,7 @@ export const NativeFunctions = [
   {
     name: "item",
     signatures: [["index"]],
-    receivers: ["CSSRuleList","CSSStyleDeclaration","DOMRectList","DOMStringList","DOMTokenList","FileList","HTMLCollectionBase","HTMLCollectionOf","HTMLSelectElement","MediaList","MimeTypeArray","NamedNodeMap","NodeList","NodeListOf","Plugin","PluginArray","SpeechRecognitionResult","SpeechRecognitionResultList","StyleSheetList","TouchList","HTMLCollection","SpeechGrammarList"]
+    receivers: ["CSSRuleList","CSSStyleDeclaration","DOMRectList","DOMStringList","DOMTokenList","FileList","HTMLCollectionBase","HTMLCollectionOf","HTMLSelectElement","MediaList","MimeTypeArray","NamedNodeMap","NodeList","NodeListOf","Plugin","PluginArray","SpeechRecognitionResult","SpeechRecognitionResultList","StyleSheetList","TouchList","TimelineTriggerRangeList","HTMLCollection","SpeechGrammarList"]
   },
   {
     name: "item",
@@ -1575,7 +1575,7 @@ export const NativeFunctions = [
   {
     name: "delete",
     signatures: [["key"]],
-    receivers: ["Map","WeakMap"]
+    receivers: ["Map","WeakMap","CrashReportContext"]
   },
   {
     name: "delete",
@@ -1997,11 +1997,6 @@ export const NativeFunctions = [
     name: "remove",
     signatures: [["start","end"]],
     receivers: ["SourceBuffer"]
-  },
-  {
-    name: "remove",
-    signatures: [["key"]],
-    receivers: ["CrashReportStorage"]
   },
   {
     name: "remove",
@@ -3154,7 +3149,7 @@ export const NativeFunctions = [
   },
   {
     name: "initKeyboardEvent",
-    signatures: [["typeArg","?bubblesArg","?cancelableArg","?viewArg","?keyArg","?locationArg","?ctrlKey","?altKey","?shiftKey","?metaKey"],["type","?bubbles","?cancelable","?view","?keyIdentifier","?location","?ctrlKey","?altKey","?shiftKey","?metaKey"]]
+    signatures: [["typeArg","?bubblesArg","?cancelableArg","?viewArg","?keyArg","?locationArg","?ctrlKey","?altKey","?shiftKey","?metaKey"]]
   },
   {
     name: "setKeyframes",
@@ -3863,7 +3858,7 @@ export const NativeFunctions = [
   {
     name: "initialize",
     signatures: [["length"]],
-    receivers: ["CrashReportStorage"]
+    receivers: ["CrashReportContext"]
   },
   {
     name: "initialize",
@@ -6051,6 +6046,11 @@ export const NativeFunctions = [
   },
   {
     name: "respondWith",
+    signatures: [["agentResponse"]],
+    receivers: ["SubmitEvent"]
+  },
+  {
+    name: "respondWith",
     signatures: [["paymentAbortedResponse"]],
     receivers: ["AbortPaymentEvent"]
   },
@@ -6202,6 +6202,10 @@ export const NativeFunctions = [
   {
     name: "CSSMathProduct",
     signatures: [["...args"]]
+  },
+  {
+    name: "CSSMathRandom",
+    signatures: [["baseValue","min","max","?step"]]
   },
   {
     name: "CSSMathSum",
@@ -6596,6 +6600,14 @@ export const NativeFunctions = [
     signatures: [["html","?options"]]
   },
   {
+    name: "streamAppendHTMLUnsafe",
+    signatures: [["?options"]]
+  },
+  {
+    name: "streamHTMLUnsafe",
+    signatures: [["?options"]]
+  },
+  {
     name: "scrollIntoViewIfNeeded",
     signatures: [["?centerIfNeeded"]]
   },
@@ -6606,6 +6618,10 @@ export const NativeFunctions = [
   {
     name: "when",
     signatures: [["type","?options"]]
+  },
+  {
+    name: "Event",
+    signatures: [["type","?eventInitDict"]]
   },
   {
     name: "setFormControlRange",
@@ -6654,18 +6670,6 @@ export const NativeFunctions = [
   {
     name: "moveBefore",
     signatures: [["node","child"]]
-  },
-  {
-    name: "patchBetween",
-    signatures: [["prev_child","next_child"]]
-  },
-  {
-    name: "patchAfter",
-    signatures: [["ref"]]
-  },
-  {
-    name: "patchBefore",
-    signatures: [["ref"]]
   },
   {
     name: "QuotaExceededError",
@@ -6734,10 +6738,6 @@ export const NativeFunctions = [
     signatures: [["type","?options"]]
   },
   {
-    name: "AnimationEvent",
-    signatures: [["type","?eventInitDict"]]
-  },
-  {
     name: "AnimationPlaybackEvent",
     signatures: [["type","?eventInitDict"]]
   },
@@ -6766,10 +6766,6 @@ export const NativeFunctions = [
     signatures: [["type","?eventInitDict"]]
   },
   {
-    name: "FocusEvent",
-    signatures: [["type","?eventInitDict"]]
-  },
-  {
     name: "HashChangeEvent",
     signatures: [["type","?eventInitDict"]]
   },
@@ -6779,10 +6775,6 @@ export const NativeFunctions = [
   },
   {
     name: "InterestEvent",
-    signatures: [["type","?eventInitDict"]]
-  },
-  {
-    name: "KeyboardEvent",
     signatures: [["type","?eventInitDict"]]
   },
   {
@@ -6826,15 +6818,11 @@ export const NativeFunctions = [
     signatures: [["type","?eventInitDict"]]
   },
   {
-    name: "TouchEvent",
-    signatures: [["type","?eventInitDict"]]
-  },
-  {
-    name: "TransitionEvent",
-    signatures: [["type","?eventInitDict"]]
-  },
-  {
     name: "UIEvent",
+    signatures: [["type","?eventInitDict"]]
+  },
+  {
+    name: "WebMCPEvent",
     signatures: [["type","?eventInitDict"]]
   },
   {
@@ -7154,8 +7142,20 @@ export const NativeFunctions = [
     signatures: [["?options"]]
   },
   {
+    name: "deferPageSwap",
+    signatures: [["options"]]
+  },
+  {
     name: "NavigationCurrentEntryChangeEvent",
     signatures: [["type","eventInit"]]
+  },
+  {
+    name: "addRestoreCallback",
+    signatures: [["callback"]]
+  },
+  {
+    name: "addHandler",
+    signatures: [["handler"]]
   },
   {
     name: "updateCurrentEntry",
@@ -7202,8 +7202,8 @@ export const NativeFunctions = [
     signatures: [["options_bounds","children_updated"]]
   },
   {
-    name: "PatchEvent",
-    signatures: [["type","init"]]
+    name: "debugLog",
+    signatures: [["message"]]
   },
   {
     name: "allowsFeature",
@@ -7430,6 +7430,18 @@ export const NativeFunctions = [
     signatures: [["feature"]]
   },
   {
+    name: "LanguageModelToolCall",
+    signatures: [["init"]]
+  },
+  {
+    name: "LanguageModelToolSuccess",
+    signatures: [["init"]]
+  },
+  {
+    name: "LanguageModelToolError",
+    signatures: [["init"]]
+  },
+  {
     name: "registerAnimator",
     signatures: [["name","animatorCtor"]]
   },
@@ -7602,11 +7614,11 @@ export const NativeFunctions = [
   },
   {
     name: "drawElement",
-    signatures: [["element","x","y","?dwidth","?dheight"]]
+    signatures: [["element","dx","dy","?dwidth","?dheight"]]
   },
   {
     name: "drawElementImage",
-    signatures: [["element","x","y","?dwidth","?dheight"]]
+    signatures: [["element","dx","dy","?dwidth","?dheight"],["element","sx","sy","swidth","sheight","dx","dy","?dwidth","?dheight"]]
   },
   {
     name: "Path2D",
@@ -7800,6 +7812,10 @@ export const NativeFunctions = [
   },
   {
     name: "GamepadEvent",
+    signatures: [["type","?eventInitDict"]]
+  },
+  {
+    name: "GamepadRawInputChangeEvent",
     signatures: [["type","?eventInitDict"]]
   },
   {
@@ -8425,6 +8441,10 @@ export const NativeFunctions = [
     signatures: [["?descriptionInitDict"]]
   },
   {
+    name: "copyPayloadTo",
+    signatures: [["destination"]]
+  },
+  {
     name: "RtcTransport",
     signatures: [["name"]]
   },
@@ -8896,11 +8916,11 @@ export const NativeFunctions = [
   },
   {
     name: "texElementImage2D",
-    signatures: [["target","level","internalformat","format","type","element"],["target","level","internalformat","width","height","format","type","element"]]
+    signatures: [["target","level","internalformat","format","type","element"],["target","level","internalformat","width","height","format","type","element"],["target","level","internalformat","sx","sy","swidth","sheight","format","type","element"],["target","level","internalformat","sx","sy","swidth","sheight","width","height","format","type","element"]]
   },
   {
     name: "texElement2D",
-    signatures: [["target","level","internalformat","format","type","element"],["target","level","internalformat","width","height","format","type","element"]]
+    signatures: [["target","level","internalformat","format","type","element"],["target","level","internalformat","width","height","format","type","element"],["target","level","internalformat","sx","sy","swidth","sheight","format","type","element"],["target","level","internalformat","sx","sy","swidth","sheight","width","height","format","type","element"]]
   },
   {
     name: "drawingBufferStorage",
@@ -8933,6 +8953,10 @@ export const NativeFunctions = [
   {
     name: "getFramebufferPixelLocalStorageParameterWEBGL",
     signatures: [["plane","pname"]]
+  },
+  {
+    name: "mapSync",
+    signatures: [["mode","?offset","?size"]]
   },
   {
     name: "mapAsync",
@@ -9088,7 +9112,7 @@ export const NativeFunctions = [
   },
   {
     name: "copyElementImageToTexture",
-    signatures: [["source","destination"],["source","width","height","destination"]]
+    signatures: [["source","destination"],["source","width","height","destination"],["source","sx","sy","swidth","sheight","destination"]]
   },
   {
     name: "setIndexBuffer",

@@ -497,9 +497,6 @@ class CONTENT_EXPORT WebContentsDelegate {
                                base::OnceCallback<void()> on_confirm,
                                base::OnceCallback<void()> on_cancel);
 
-  // Notifies `BrowserView` about the resizable boolean having been set vith
-  // `window.setResizable(bool)` API.
-  virtual void OnWebApiWindowResizableChanged() {}
   // Returns the overall resizability of the `BrowserView` when considering
   // both the value set by the AWC API and browser's "native" resizability.
   virtual bool GetCanResize();
@@ -514,6 +511,7 @@ class CONTENT_EXPORT WebContentsDelegate {
   virtual void MinimizeFromWebAPI() {}
   virtual void MaximizeFromWebAPI() {}
   virtual void RestoreFromWebAPI() {}
+  virtual void SetResizableFromWebAPI(bool resizable) {}
 #endif  // !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
 
   // This returns the current state of the window, mappable to display-state
@@ -759,6 +757,17 @@ class CONTENT_EXPORT WebContentsDelegate {
   // Returns the result of the enter request.
   virtual PictureInPictureResult EnterPictureInPicture(
       WebContents* web_contents);
+
+  // Returns the bounds of the window that this `WebContents` is contained
+  // within, if it exists, `std::nullopt` otherwise.
+  //
+  // The exact rectangle returned is operating system dependent. Implementations
+  // should return the bounds of the native window as reported by the OS. This
+  // may or may not include window decorations rendered by the OS compositor,
+  // such as shadows. For example, Linux includes shadows in the window rect,
+  // whereas macOS does not. Callers should not make bounds assumptions
+  // regarding such visual effects.
+  virtual std::optional<gfx::Rect> GetWindowBoundsInScreen();
 
   // Updates the Picture-in-Picture controller with a signal that
   // Picture-in-Picture mode has ended.

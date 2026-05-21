@@ -3174,7 +3174,8 @@ IN_PROC_BROWSER_TEST_P(CrossOriginOpenerPolicyBrowserTest,
     SiteInstanceImpl* iframe_si = iframe_rfh->GetSiteInstance();
     EXPECT_TRUE(iframe_si->IsCrossOriginIsolated());
     EXPECT_TRUE(iframe_si->IsRelatedSiteInstance(main_si));
-    if (SiteIsolationPolicy::AreOriginKeyedProcessesEnabledByDefault()) {
+    if (SiteIsolationPolicy::AreOriginKeyedProcessesEnabledByDefault(
+            shell()->web_contents()->GetBrowserContext())) {
       // In this case, the main frame and the child frame have different
       // origins, so when OriginKeyedProcessesByDefault is enabled they will
       // be placed into different processes.
@@ -3626,7 +3627,8 @@ IN_PROC_BROWSER_TEST_P(CrossOriginOpenerPolicyBrowserTest,
   SiteInstanceImpl* iframe_si = iframe_rfh->GetSiteInstance();
   EXPECT_TRUE(iframe_si->IsCrossOriginIsolated());
   EXPECT_TRUE(iframe_si->IsRelatedSiteInstance(main_si));
-  if (SiteIsolationPolicy::AreOriginKeyedProcessesEnabledByDefault()) {
+  if (SiteIsolationPolicy::AreOriginKeyedProcessesEnabledByDefault(
+          shell()->web_contents()->GetBrowserContext())) {
     // The main frame and the child frame have different origins, so when
     // OriginKeyedProcessesByDefault is enabled they will be placed in different
     // processes.
@@ -3933,7 +3935,8 @@ IN_PROC_BROWSER_TEST_P(CrossOriginOpenerPolicyBrowserTest,
     // locked process back to an unlocked process, and hence require a process
     // swap.
     EXPECT_NE(rph_id_2, rph_id_3);
-  } else if (SiteIsolationPolicy::AreOriginKeyedProcessesEnabledByDefault()) {
+  } else if (SiteIsolationPolicy::AreOriginKeyedProcessesEnabledByDefault(
+                 shell()->web_contents()->GetBrowserContext())) {
     // With OriginKeyedProcessesByDefault, each unique origin will be placed in
     // a separate process.
     EXPECT_NE(rph_id_1, rph_id_2);
@@ -4321,10 +4324,10 @@ IN_PROC_BROWSER_TEST_P(ProcessReuseOnPrerenderCOOPSwapBrowserTest,
   // with new BrowsingInstance / SiteInstance, and a new process will be
   // assigned to it accordingly.
   ASSERT_TRUE(navigation_manager.WaitForRequestStart());
-  FrameTreeNodeId prerender_host_id =
+  PrerenderHostId prerender_host_id =
       prerender_helper().GetHostForUrl(prerender_page);
-  RenderFrameHostImpl* rfh_2 =
-      web_contents()->UnsafeFindFrameByFrameTreeNodeId(prerender_host_id);
+  auto* rfh_2 = static_cast<RenderFrameHostImpl*>(
+      prerender_helper().GetPrerenderedMainFrameHost(prerender_host_id));
   ASSERT_TRUE(rfh_2);
   scoped_refptr<SiteInstanceImpl> si_2 = rfh_2->GetSiteInstance();
   base::UnguessableToken bi_token_2 =
@@ -4343,8 +4346,8 @@ IN_PROC_BROWSER_TEST_P(ProcessReuseOnPrerenderCOOPSwapBrowserTest,
   // recreated.
   ASSERT_TRUE(navigation_manager.WaitForNavigationFinished());
   ASSERT_TRUE(navigation_manager.was_successful());
-  RenderFrameHostImpl* rfh_3 =
-      web_contents()->UnsafeFindFrameByFrameTreeNodeId(prerender_host_id);
+  auto* rfh_3 = static_cast<RenderFrameHostImpl*>(
+      prerender_helper().GetPrerenderedMainFrameHost(prerender_host_id));
   ASSERT_TRUE(rfh_3);
   scoped_refptr<SiteInstanceImpl> si_3 = rfh_3->GetSiteInstance();
   base::UnguessableToken bi_token_3 =

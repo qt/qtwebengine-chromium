@@ -13,10 +13,10 @@
 
 #include "base/component_export.h"
 #include "base/containers/span.h"
-#include "device/fido/fido_types.h"
-#include "device/fido/public_key_credential_descriptor.h"
-#include "device/fido/public_key_credential_rp_entity.h"
-#include "device/fido/public_key_credential_user_entity.h"
+#include "device/fido/public/fido_types.h"
+#include "device/fido/public/public_key_credential_descriptor.h"
+#include "device/fido/public/public_key_credential_rp_entity.h"
+#include "device/fido/public/public_key_credential_user_entity.h"
 #include "device/fido/virtual_fido_device.h"
 #include "device/fido/win/webauthn_api.h"
 #include "third_party/microsoft_webauthn/src/webauthn.h"
@@ -126,7 +126,7 @@ class COMPONENT_EXPORT(DEVICE_FIDO) FakeWinWebAuthnApi : public WinWebAuthnApi {
   }
 
   // WinWebAuthnApi:
-  bool IsAvailable() const override;
+  bool IsAvailable() override;
   bool SupportsSilentDiscovery() const override;
   HRESULT IsUserVerifyingPlatformAuthenticatorAvailable(
       BOOL* available) override;

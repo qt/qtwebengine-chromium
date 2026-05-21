@@ -12,7 +12,7 @@
 #include "components/payments/content/browser_binding/browser_bound_key_desktop.h"
 #include "crypto/signature_verifier.h"
 #include "crypto/unexportable_key.h"
-#include "device/fido/public_key_credential_params.h"
+#include "device/fido/public/public_key_credential_params.h"
 
 namespace {
 
@@ -106,7 +106,7 @@ void BrowserBoundKeyStoreDesktop::DeleteBrowserBoundKey(
   if (crypto::StatefulUnexportableKeyProvider* stateful_provider =
           key_provider_ ? key_provider_->AsStatefulUnexportableKeyProvider()
                         : nullptr) {
-    stateful_provider->DeleteSigningKeySlowly(bbk_id);
+    stateful_provider->DeleteWrappedKeysSlowly({bbk_id});
   }
 }
 

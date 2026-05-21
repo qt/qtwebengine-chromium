@@ -168,6 +168,8 @@ tint_add_target(tint_lang_wgsl_ast lib
   lang/wgsl/ast/struct_member_align_attribute.h
   lang/wgsl/ast/struct_member_size_attribute.cc
   lang/wgsl/ast/struct_member_size_attribute.h
+  lang/wgsl/ast/subgroup_size_attribute.cc
+  lang/wgsl/ast/subgroup_size_attribute.h
   lang/wgsl/ast/switch_statement.cc
   lang/wgsl/ast/switch_statement.h
   lang/wgsl/ast/templated_identifier.cc
@@ -176,6 +178,7 @@ tint_add_target(tint_lang_wgsl_ast lib
   lang/wgsl/ast/type.h
   lang/wgsl/ast/type_decl.cc
   lang/wgsl/ast/type_decl.h
+  lang/wgsl/ast/type_traits.h
   lang/wgsl/ast/unary_op_expression.cc
   lang/wgsl/ast/unary_op_expression.h
   lang/wgsl/ast/var.cc

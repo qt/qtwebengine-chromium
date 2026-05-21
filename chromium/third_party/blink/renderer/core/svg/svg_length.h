@@ -32,6 +32,7 @@
 
 namespace blink {
 
+class CSSParserContext;
 class Length;
 class QualifiedName;
 class SVGLengthContext;
@@ -59,7 +60,7 @@ class CORE_EXPORT SVGLength final : public SVGListablePropertyBase {
 
   explicit SVGLength(SVGLengthMode = SVGLengthMode::kOther);
   SVGLength(Initial, SVGLengthMode);
-  SVGLength(const CSSPrimitiveValue&, SVGLengthMode);
+  SVGLength(const CSSValue&, SVGLengthMode);
 
   void SetInitial(unsigned);
 
@@ -89,10 +90,11 @@ class CORE_EXPORT SVGLength final : public SVGListablePropertyBase {
   void SetValueAsNumber(float);
   void SetValueInSpecifiedUnits(float value);
 
-  const CSSPrimitiveValue& AsCSSPrimitiveValue() const { return *value_; }
+  const CSSValue& AsCSSValue() const { return *value_; }
 
   String ValueAsString() const override;
   SVGParsingError SetValueAsString(const String&);
+  SVGParsingError SetValueAsString(const String&, const CSSParserContext*);
 
   void NewValueSpecifiedUnits(CSSPrimitiveValue::UnitType,
                               float value_in_specified_units);
@@ -107,13 +109,21 @@ class CORE_EXPORT SVGLength final : public SVGListablePropertyBase {
     return value_->IsNumericLiteralValue() &&
            To<CSSNumericLiteralValue>(*value_).IsFontRelativeLength();
   }
-  bool IsCalculated() const { return value_->IsCalculated(); }
-  bool IsPercentage() const { return value_->IsPercentage(); }
+  bool IsCalculated() const {
+    return value_->IsPrimitiveValue() &&
+           To<CSSPrimitiveValue>(*value_).IsCalculated();
+  }
+  bool IsPercentage() const {
+    return value_->IsPrimitiveValue() &&
+           To<CSSPrimitiveValue>(*value_).IsPercentage();
+  }
   bool HasContainerRelativeUnits() const {
-    return value_->HasContainerRelativeUnits();
+    return value_->IsPrimitiveValue() &&
+           To<CSSPrimitiveValue>(*value_).HasContainerRelativeUnits();
   }
 
   bool IsNegativeNumericLiteral() const;
+  bool IsNumericValue() const { return value_->IsNumericLiteralValue(); }
 
   static bool NegativeValuesForbiddenForAnimatedLengthAttribute(
       const QualifiedName&);
@@ -134,7 +144,7 @@ class CORE_EXPORT SVGLength final : public SVGListablePropertyBase {
   AnimatedPropertyType GetType() const override { return ClassType(); }
 
  private:
-  Member<const CSSPrimitiveValue> value_;
+  Member<const CSSValue> value_;
   unsigned unit_mode_ : 2;
 };
 

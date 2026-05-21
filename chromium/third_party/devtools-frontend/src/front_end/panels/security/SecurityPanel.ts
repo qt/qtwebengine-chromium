@@ -15,8 +15,6 @@ import * as UI from '../../ui/legacy/legacy.js';
 import {html, render} from '../../ui/lit/lit.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
 
-import {CookieControlsView} from './CookieControlsView.js';
-import {CookieReportView} from './CookieReportView.js';
 import lockIconStyles from './lockIcon.css.js';
 import mainViewStyles from './mainView.css.js';
 import {ShowOriginEvent} from './OriginTreeElement.js';
@@ -555,8 +553,6 @@ const DEFAULT_VIEW: View = (input: ViewInput, output: ViewOutput, target: HTMLEl
       <devtools-widget
         slot="sidebar"
         .widgetConfig=${widgetConfig(SecurityPanelSidebar)}
-        @showCookieReport=${()=>output.setVisibleView(new CookieReportView())}
-        @showFlagControls=${() => output.setVisibleView(new CookieControlsView())}
         ${UI.Widget.widgetRef(SecurityPanelSidebar, e => {output.sidebar = e;})}>
       </devtools-widget>
   </devtools-split-view>`,
@@ -1617,19 +1613,3 @@ export interface OriginState {
 }
 
 export type Origin = Platform.DevToolsPath.UrlString;
-
-export class SecurityRevealer implements Common.Revealer.Revealer<CookieReportView> {
-  async reveal(): Promise<void> {
-    await UI.ViewManager.ViewManager.instance().showView('security');
-    const view = UI.ViewManager.ViewManager.instance().view('security');
-    if (view) {
-      const securityPanel = await view.widget();
-      if (securityPanel instanceof SecurityPanel && securityPanel.sidebar.cookieReportTreeElement) {
-        securityPanel.sidebar.cookieReportTreeElement.select(/* omitFocus=*/ false, /* selectedByUser=*/ true);
-      } else {
-        throw new Error(
-            'Expected securityPanel to be an instance of SecurityPanel with a cookieReportTreeElement in the sidebar');
-      }
-    }
-  }
-}

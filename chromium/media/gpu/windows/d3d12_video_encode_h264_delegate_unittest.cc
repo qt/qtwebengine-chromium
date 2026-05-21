@@ -184,8 +184,10 @@ class D3D12VideoEncodeH264DelegateTest
           return S_OK;
         });
 
-    encoder_delegate_ =
-        std::make_unique<D3D12VideoEncodeH264Delegate>(video_device3_, true);
+    gpu::GpuDriverBugWorkarounds gpu_workarounds{};
+    gpu_workarounds.disable_d3d12_h264_encoder_non_reference_frames = true;
+    encoder_delegate_ = std::make_unique<D3D12VideoEncodeH264Delegate>(
+        video_device3_, gpu_workarounds);
     encoder_delegate_->SetFactoriesForTesting(
         base::BindRepeating(&CreateVideoEncoderWrapper),
         base::BindRepeating(&CreateVideoProcessorWrapper));
@@ -359,7 +361,7 @@ TEST_F(D3D12VideoEncodeH264DelegateTest, EncodeFrame) {
         return EncoderStatus::Codes::kOk;
       });
   auto result_or_error = encoder_delegate_->Encode(
-      input_frame, 0, gfx::ColorSpace::CreateSRGB(), bitstream_buffer,
+      input_frame, gfx::ColorSpace::CreateSRGB(), bitstream_buffer,
       VideoEncoder::EncodeOptions());
   ASSERT_TRUE(result_or_error.has_value());
 
@@ -418,7 +420,7 @@ TEST_F(D3D12VideoEncodeH264DelegateTest, EncodeFramesAndVerifyKeyFrameFlag) {
           return EncoderStatus::Codes::kOk;
         });
     auto result_or_error = encoder_delegate_->Encode(
-        input_frame, 0, gfx::ColorSpace::CreateSRGB(), bitstream_buffer,
+        input_frame, gfx::ColorSpace::CreateSRGB(), bitstream_buffer,
         VideoEncoder::EncodeOptions());
     ASSERT_TRUE(result_or_error.has_value());
     Mock::VerifyAndClearExpectations(GetVideoEncoderWrapper());
@@ -458,7 +460,7 @@ TEST_F(D3D12VideoEncodeH264DelegateTest,
     EXPECT_CALL(*GetVideoEncoderWrapper(), GetEncoderOutputMetadata())
         .WillOnce(Return(GetEncoderOutputMetadataResourceMap(kStreamSize)));
     auto result_or_error = encoder_delegate_->Encode(
-        input_frame, 0, gfx::ColorSpace::CreateSRGB(), bitstream_buffer,
+        input_frame, gfx::ColorSpace::CreateSRGB(), bitstream_buffer,
         VideoEncoder::EncodeOptions());
     ASSERT_TRUE(result_or_error.has_value());
 
@@ -491,21 +493,21 @@ TEST_F(D3D12VideoEncodeH264DelegateTest, EncodeWithManualReferenceControl) {
   encode_opts.reference_buffers = {};
   encode_opts.update_buffer = 0;
   auto result_or_error =
-      encoder_delegate_->Encode(input_frame, 0, gfx::ColorSpace::CreateSRGB(),
+      encoder_delegate_->Encode(input_frame, gfx::ColorSpace::CreateSRGB(),
                                 bitstream_buffer, encode_opts);
   ASSERT_TRUE(result_or_error.has_value());
 
   encode_opts.reference_buffers = {0};
   encode_opts.update_buffer = std::nullopt;
   result_or_error =
-      encoder_delegate_->Encode(input_frame, 0, gfx::ColorSpace::CreateSRGB(),
+      encoder_delegate_->Encode(input_frame, gfx::ColorSpace::CreateSRGB(),
                                 bitstream_buffer, encode_opts);
   ASSERT_TRUE(result_or_error.has_value());
 
   encode_opts.reference_buffers = {0};
   encode_opts.update_buffer = 0;
   result_or_error =
-      encoder_delegate_->Encode(input_frame, 0, gfx::ColorSpace::CreateSRGB(),
+      encoder_delegate_->Encode(input_frame, gfx::ColorSpace::CreateSRGB(),
                                 bitstream_buffer, encode_opts);
   ASSERT_TRUE(result_or_error.has_value());
 }

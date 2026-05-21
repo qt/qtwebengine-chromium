@@ -1,8 +1,8 @@
 /***************************************************************************
  *
- * Copyright (c) 2015-2025 The Khronos Group Inc.
- * Copyright (c) 2015-2025 Valve Corporation
- * Copyright (c) 2015-2025 LunarG, Inc.
+ * Copyright (c) 2015-2026 The Khronos Group Inc.
+ * Copyright (c) 2015-2026 Valve Corporation
+ * Copyright (c) 2015-2026 LunarG, Inc.
  * Copyright (c) 2015-2024 Google Inc.
  * Copyright (c) 2023-2024 RasterGrid Kft.
  *
@@ -153,6 +153,9 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL GetInstanceProcAddr(VkInstance instance
     if (item != GetNameToFuncPtrMap().end()) {
         return reinterpret_cast<PFN_vkVoidFunction>(item->second.funcptr);
     }
+    // Only global functions can pass in nullptr as the instance parameter - and GetNameToFuncPtrMap contains all global functions
+    if (instance == nullptr) return nullptr;
+
     auto layer_data = vvl::dispatch::GetData(instance);
     auto& table = layer_data->instance_dispatch_table;
     if (!table.GetInstanceProcAddr) return nullptr;
@@ -417,15 +420,6 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateDevice(VkPhysicalDevice gpu, const VkDevice
         }
         vo->FinishDeviceSetup(modified_create_info.ptr(), record_obj.location);
     }
-
-    // Clear global dictionary that stores canonical ids of descriptor set layouts.
-    //
-    // NOTE: we also have the following global dicts related to pipeline layout that do not cause
-    // troubles yet, but in case of issues or part of effort of removing globals they should be considered:
-    //   pipeline_layout_set_layouts_dict
-    //   pipeline_layout_compat_dict
-    //   push_constant_ranges_dict
-    ClearDescriptorSetLayoutCanonicalIdDict();
 
     return result;
 }

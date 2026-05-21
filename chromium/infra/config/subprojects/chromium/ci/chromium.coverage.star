@@ -268,11 +268,6 @@ coverage_builder(
                     "android_10_emulator_gtests",
                     "android_10_isolated_scripts",
                 ],
-                mixins = targets.mixin(
-                    args = [
-                        "--use-persistent-shell",
-                    ],
-                ),
             ),
             "chromium_android_scripts",
             "gtests_once",
@@ -408,18 +403,12 @@ coverage_builder(
             ),
             # Keep this same as android-10-x86-rel
             "webview_instrumentation_test_apk_multiple_process_mode": targets.mixin(
-                args = [
-                    "--use-persistent-shell",
-                ],
                 swarming = targets.swarming(
                     shards = 18,
                 ),
             ),
             # Keep this same as android-10-x86-rel
             "webview_instrumentation_test_apk_single_process_mode": targets.mixin(
-                args = [
-                    "--use-persistent-shell",
-                ],
                 # Only multiple process tests run in CQ.
                 ci_only = True,
                 swarming = targets.swarming(
@@ -533,9 +522,6 @@ coverage_builder(
                 reason = "TODO(crbug.com/41440830): Fix permission issue when creating tmp files",
             ),
             "webview_instrumentation_test_apk_multiple_process_mode": targets.mixin(
-                args = [
-                    "--use-persistent-shell",
-                ],
                 swarming = targets.swarming(
                     # Shard number is increased for longer test execution time
                     # and added local coverage data merging time.
@@ -543,9 +529,6 @@ coverage_builder(
                 ),
             ),
             "webview_instrumentation_test_apk_single_process_mode": targets.mixin(
-                args = [
-                    "--use-persistent-shell",
-                ],
                 swarming = targets.swarming(
                     # Shard number is increased for longer test execution time
                     # and added local coverage data merging time.
@@ -857,17 +840,21 @@ coverage_builder(
             ),
             "components_browsertests": targets.mixin(
                 swarming = targets.swarming(
-                    shards = 4,
+                    shards = 8,
                 ),
             ),
-            "content_browsertests": targets.mixin(
-                args = [
-                    "--test-launcher-filter-file=../../testing/buildbot/filters/fuchsia.coverage.content_browsertests.filter",
-                    "--test-launcher-jobs=1",
-                ],
+            "components_unittests": targets.mixin(
                 swarming = targets.swarming(
-                    shards = 41,
+                    shards = 24,
                 ),
+            ),
+            "content_browsertests": targets.remove(
+                reason = [
+                    "The test suite is consistently failing after ",
+                    "29.20250815.6.1 due to the potential memory usage ",
+                    "increment and OOM restart.",
+                    "TODO: Reenable these test suite in code coverage builder.",
+                ],
             ),
             "content_unittests": targets.mixin(
                 swarming = targets.swarming(

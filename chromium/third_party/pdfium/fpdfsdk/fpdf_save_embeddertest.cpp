@@ -185,7 +185,7 @@ TEST_F(FPDFSaveEmbedderTest, Bug1409) {
   FPDF_PAGE saved_page = LoadSavedPage(0);
   ASSERT_TRUE(saved_page);
   ScopedFPDFBitmap bitmap = RenderSavedPage(saved_page);
-  EXPECT_EQ(pdfium::kBlankPage612By792Checksum, HashBitmap(bitmap.get()));
+  CompareBitmapToPng(bitmap.get(), pdfium::kBlankPage612By792Png);
   CloseSavedPage(saved_page);
   CloseSavedDocument();
 
@@ -254,8 +254,8 @@ TEST_F(FPDFSaveEmbedderTest, IncrementalSaveWithModifications) {
   EXPECT_EQ(0, count_text_objects(page.get()));
 
   // Add a new text object to modify the page.
-  ScopedFPDFPageObject text_object(FPDFPageObj_NewTextObj(
-      document(), "Arial", 12.0f));
+  ScopedFPDFPageObject text_object(
+      FPDFPageObj_NewTextObj(document(), "Arial", 12.0f));
   ScopedFPDFWideString text = GetFPDFWideString(L"Test Incremental Save");
   FPDFText_SetText(text_object.get(), text.get());
   FPDFPageObj_Transform(text_object.get(), 1, 0, 0, 1, 100, 100);
@@ -266,7 +266,8 @@ TEST_F(FPDFSaveEmbedderTest, IncrementalSaveWithModifications) {
 
   // Verify the saved document
   // Count occurrences of key markers
-  auto count_occurrences = [](const std::string& str, const std::string& substr) {
+  auto count_occurrences = [](const std::string& str,
+                              const std::string& substr) {
     size_t count = 0;
     size_t pos = 0;
     while ((pos = str.find(substr, pos)) != std::string::npos) {
@@ -279,9 +280,9 @@ TEST_F(FPDFSaveEmbedderTest, IncrementalSaveWithModifications) {
   // Should contain incremental save markers (original + incremental)
   std::string saved_content = GetString();
   EXPECT_EQ(2u, count_occurrences(saved_content, "trailer"));
-  // In incremental PDF saving, /Prev points to the previous xref table's offset.
-  // Since we're doing only one incremental save operation, there's only one
-  // /Prev entry pointing to the original PDF's xref table.
+  // In incremental PDF saving, /Prev points to the previous xref table's
+  // offset. Since we're doing only one incremental save operation, there's only
+  // one /Prev entry pointing to the original PDF's xref table.
   EXPECT_EQ(1u, count_occurrences(saved_content, "/Prev"));
   EXPECT_EQ(2u, count_occurrences(saved_content, "startxref"));
   EXPECT_EQ(2u, count_occurrences(saved_content, "%%EOF"));

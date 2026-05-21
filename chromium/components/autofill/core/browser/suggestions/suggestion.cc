@@ -146,8 +146,20 @@ std::string_view ConvertIconToPrintableString(Suggestion::Icon icon) {
       return "kPlusAddress";
     case Suggestion::Icon::kNoIcon:
       return "kNoIcon";
-    case Suggestion::Icon::kBnpl:
-      return "kBnpl";
+    case Suggestion::Icon::kBnplGeneric:
+      return "kBnplGeneric";
+    case Suggestion::Icon::kBnplAffirmLinked:
+      return "kBnplAffirmLinked";
+    case Suggestion::Icon::kBnplAffirmUnlinked:
+      return "kBnplAffirmUnlinked";
+    case Suggestion::Icon::kBnplZipLinked:
+      return "kBnplZipLinked";
+    case Suggestion::Icon::kBnplZipUnlinked:
+      return "kBnplZipUnlinked";
+    case Suggestion::Icon::kBnplKlarnaLinked:
+      return "kBnplKlarnaLinked";
+    case Suggestion::Icon::kBnplKlarnaUnlinked:
+      return "kBnplKlarnaUnlinked";
     case Suggestion::Icon::kSaveAndFill:
       return "kSaveAndFill";
     case Suggestion::Icon::kAndroidMessages:
@@ -263,10 +275,10 @@ Suggestion::AutofillProfilePayload::CreateJavaObject() const {
 
 Suggestion::IdentityCredentialPayload::IdentityCredentialPayload() = default;
 Suggestion::IdentityCredentialPayload::IdentityCredentialPayload(
-    GURL configURL,
+    GURL config_url,
     std::string account_id,
     const std::map<FieldType, std::u16string>& fields)
-    : config_url(std::move(configURL)),
+    : config_url(std::move(config_url)),
       account_id(std::move(account_id)),
       fields(fields) {}
 
@@ -291,12 +303,10 @@ Suggestion::PaymentsPayload::PaymentsPayload() = default;
 Suggestion::PaymentsPayload::PaymentsPayload(
     std::u16string main_text_content_description,
     bool should_display_terms_available,
-    Guid guid,
-    bool is_local_payments_method)
+    Guid guid)
     : main_text_content_description(main_text_content_description),
       should_display_terms_available(should_display_terms_available),
-      guid(std::move(guid)),
-      is_local_payments_method(is_local_payments_method) {}
+      guid(std::move(guid)) {}
 
 Suggestion::PaymentsPayload::PaymentsPayload(const PaymentsPayload&) = default;
 
@@ -314,9 +324,9 @@ Suggestion::PaymentsPayload::~PaymentsPayload() = default;
 base::android::ScopedJavaLocalRef<jobject>
 Suggestion::PaymentsPayload::CreateJavaObject() const {
   JNIEnv* env = base::android::AttachCurrentThread();
-  return Java_PaymentsPayload_Constructor(
-      env, main_text_content_description, should_display_terms_available,
-      guid.value(), is_local_payments_method);
+  return Java_PaymentsPayload_Constructor(env, main_text_content_description,
+                                          should_display_terms_available,
+                                          guid.value());
 }
 #endif  // BUILDFLAG(IS_ANDROID)
 

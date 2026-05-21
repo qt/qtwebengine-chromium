@@ -12,6 +12,7 @@
 <translation id="2159915644201199628">לא ניתן לפענח תמונה: '<ph name="IMAGE_NAME" />'</translation>
 <translation id="2350172092385603347">‏נעשה שימוש בהתאמה למקום, אך default_locale לא צוין במניפסט.</translation>
 <translation id="2576842806987913196">‏כבר קיים קובץ CRX בשם זה.</translation>
+<translation id="2743583586211388067">הגישה לתוסף הזה נחסמה בהתאם למדיניות הסיכונים של הארגון שלך בנוגע לתוספים.</translation>
 <translation id="2785530881066938471">‏אין אפשרות לטעון את הקובץ '<ph name="RELATIVE_PATH" />' עבור סקריפט תוכן. הוא לא בקידוד UTF-8.</translation>
 <translation id="2903070246402204397"><ph name="EXTENSION_NAME" /> (מזהה תוסף "<ph name="EXTENSION_ID" />") חסום על-ידי מנהל המערכת. <ph name="ADMIN_INFO" /></translation>
 <translation id="2988488679308982380">לא ניתן להתקין את החבילה: '<ph name="ERROR_CODE" />'</translation>
@@ -33,9 +34,11 @@
 <translation id="5356315618422219272">‏Appview‏: <ph name="APPVIEW_TAG_NAME" /></translation>
 <translation id="5456409301717116725">תוסף זה כולל את קובץ המפתח "<ph name="KEY_PATH" />". מומלץ לא לעשות זאת.</translation>
 <translation id="5486326529110362464">חייב להתקיים ערך קלט של מפתח פרטי.</translation>
+<translation id="5707185214361380026">נכשלה טעינת תוסף מ:</translation>
 <translation id="5972529113578162692">מנהל המערכת של מכשיר זה דורש התקנה של <ph name="EXTENSION_NAME" />. לא ניתן להסיר את ההתקנה.</translation>
 <translation id="6027032947578871493">מוצר לא ידוע <ph name="PRODUCT_ID" /> מהספק <ph name="VENDOR_NAME" /> (מספר סידורי <ph name="SERIAL_NUMBER" />)</translation>
 <translation id="6068932090455285721"><ph name="PRODUCT_NAME" /> מהספק <ph name="VENDOR_ID" /></translation>
+<translation id="6220413761270491930">אירעה שגיאה בטעינת תוסף</translation>
 <translation id="6322279351188361895">לא ניתן היה לקרוא את המפתח הפרטי.</translation>
 <translation id="6391538222494443604">ספריית קלט חייבת להתקיים.</translation>
 <translation id="641087317769093025">לא ניתן לבטל את הדחיסה של התוסף</translation>

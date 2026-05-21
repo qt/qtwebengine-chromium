@@ -9,6 +9,7 @@
 #include "base/strings/string_util.h"
 #include "content/public/renderer/v8_value_converter.h"
 #include "extensions/common/api/messaging/message.h"
+#include "extensions/common/api/messaging/messaging_util.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/manifest.h"
@@ -245,9 +246,12 @@ RequestResult ExtensionHooksDelegate::HandleSendRequest(
 
   v8::Local<v8::Value> v8_message = arguments[1];
 
+  mojom::ChannelType channel_type = mojom::ChannelType::kSendRequest;
   std::unique_ptr<Message> message = messaging_util::MessageFromV8(
       script_context->v8_context(), v8_message,
-      messaging_util::GetSerializationFormat(*script_context), &error);
+      messaging_util::GetSerializationFormat(script_context->extension(),
+                                             channel_type),
+      &error);
   if (!message) {
     RequestResult result(RequestResult::INVALID_INVOCATION);
     result.error = std::move(error);
@@ -258,16 +262,19 @@ RequestResult ExtensionHooksDelegate::HandleSendRequest(
   if (!arguments[2]->IsNull())
     response_callback = arguments[2].As<v8::Function>();
 
-  // extension.sendRequest() is restricted to MV2, so it should never be called
-  // with a promise based request as they are restricted to MV3 and above.
-  DCHECK_NE(binding::AsyncResponseType::kPromise, parse_result.async_type);
+  v8::Local<v8::Promise> promise = messaging_service_->SendOneTimeMessage(
+      script_context, MessageTarget::ForExtension(target_id), channel_type,
+      *message, parse_result.async_type, response_callback);
+  DCHECK_EQ(parse_result.async_type == binding::AsyncResponseType::kPromise,
+            !promise.IsEmpty())
+      << "SendOneTimeMessage should only return a Promise for promise based "
+         "API calls, otherwise it should be empty";
 
-  messaging_service_->SendOneTimeMessage(
-      script_context, MessageTarget::ForExtension(target_id),
-      mojom::ChannelType::kSendRequest, *message, parse_result.async_type,
-      response_callback);
-
-  return RequestResult(RequestResult::HANDLED);
+  RequestResult result(RequestResult::HANDLED);
+  if (parse_result.async_type == binding::AsyncResponseType::kPromise) {
+    result.return_value = promise;
+  }
+  return result;
 }
 
 RequestResult ExtensionHooksDelegate::HandleGetURL(

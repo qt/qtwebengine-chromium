@@ -440,6 +440,13 @@ class Renderer : angle::NonCopyable
                                            egl::ContextPriority dstContextPriority,
                                            SerialIndex index);
 
+    angle::Result insertOneOffSubmitDebugMarker(vk::ErrorContext *context,
+                                                vk::ProtectionType protectionType,
+                                                egl::ContextPriority priority,
+                                                QueueSubmitReason reason);
+    void insertSubmitDebugMarkerInCommandBuffer(PrimaryCommandBuffer &commandBuffer,
+                                                QueueSubmitReason reason);
+
     void handleDeviceLost();
     angle::Result finishResourceUse(vk::ErrorContext *context, const vk::ResourceUse &use);
     angle::Result finishQueueSerial(vk::ErrorContext *context, const QueueSerial &queueSerial);
@@ -544,6 +551,8 @@ class Renderer : angle::NonCopyable
         return mStagingBufferMemoryTypeIndex[coherency];
     }
     size_t getStagingBufferAlignment() const { return mStagingBufferAlignment; }
+
+    uint32_t getTileMemoyTypeIndex() const { return mTileMemoyTypeIndex; }
 
     uint32_t getVertexConversionBufferMemoryTypeIndex(MemoryHostVisibility hostVisibility) const
     {
@@ -650,10 +659,7 @@ class Renderer : angle::NonCopyable
 
     void requestAsyncCommandsAndGarbageCleanup(vk::ErrorContext *context);
 
-    VkDeviceSize getMaxMemoryAllocationSize() const
-    {
-        return mMaintenance3Properties.maxMemoryAllocationSize;
-    }
+    VkDeviceSize getMaxMemoryAllocationSize() const { return mMaxMemoryAllocationSize; }
 
     // Cleanup garbage and finish command batches from the queue if necessary in the event of an OOM
     // error.
@@ -701,14 +707,6 @@ class Renderer : angle::NonCopyable
     uint32_t getNativeVectorWidthHalf() const { return mNativeVectorWidthHalf; }
     uint32_t getPreferredVectorWidthDouble() const { return mPreferredVectorWidthDouble; }
     uint32_t getPreferredVectorWidthHalf() const { return mPreferredVectorWidthHalf; }
-
-    bool isVertexAttributeInstanceRateZeroDivisorAllowed() const
-    {
-        return !mFeatures.supportsVertexInputDynamicState.enabled ||
-               mVertexAttributeDivisorFeatures.vertexAttributeInstanceRateZeroDivisor == VK_TRUE;
-    }
-
-    uint32_t getMinCommandCountToSubmit() const { return mMinCommandCountToSubmit; }
 
     angle::Result onFrameBoundary(const gl::Context *contextGL);
 
@@ -768,6 +766,8 @@ class Renderer : angle::NonCopyable
                       const angle::FeatureOverrides &featureOverrides,
                       UseVulkanSwapchain useVulkanSwapchain,
                       angle::NativeWindowSystem nativeWindowSystem);
+    void initOpenCLFeatures(const vk::ExtensionNameList &extensions,
+                            const angle::FeatureOverrides &featureOverrides);
     void appBasedFeatureOverrides(const vk::ExtensionNameList &extensions);
     angle::Result initPipelineCache(vk::ErrorContext *context,
                                     vk::PipelineCache *pipelineCache,
@@ -926,6 +926,9 @@ class Renderer : angle::NonCopyable
     VkPhysicalDeviceExternalMemoryHostPropertiesEXT mExternalMemoryHostProperties;
     VkPhysicalDeviceBufferDeviceAddressFeaturesKHR mBufferDeviceAddressFeatures;
     VkPhysicalDeviceShaderAtomicInt64Features mShaderAtomicInt64Features;
+    VkPhysicalDeviceTileMemoryHeapFeaturesQCOM mTileMemoryHeapFeatures;
+    VkPhysicalDeviceTileMemoryHeapPropertiesQCOM mTileMemoryHeapProperties;
+    VkPhysicalDeviceTextureCompressionASTC3DFeaturesEXT mTextureCompressionASTC3DFeatures;
 
     uint32_t mLegacyDitheringVersion = 0;
 
@@ -970,6 +973,7 @@ class Renderer : angle::NonCopyable
     vk::ImageMemorySuballocator mImageMemorySuballocator;
 
     vk::MemoryProperties mMemoryProperties;
+    uint32_t mTileMemoyTypeIndex;
     VkDeviceSize mPreferredInitialBufferBlockSize;
     VkDeviceSize mPreferredLargeHeapBlockSize;
 
@@ -1106,6 +1110,9 @@ class Renderer : angle::NonCopyable
     // A placeholder descriptor set layout handle for layouts with no bindings.
     vk::DescriptorSetLayoutPtr mPlaceHolderDescriptorSetLayout;
 
+    // Allocation size limit for a single object.
+    VkDeviceSize mMaxMemoryAllocationSize;
+
     // Cached value for the buffer memory size limit.
     VkDeviceSize mMaxBufferMemorySizeLimit;
 
@@ -1117,10 +1124,6 @@ class Renderer : angle::NonCopyable
     uint32_t mNativeVectorWidthHalf;
     uint32_t mPreferredVectorWidthDouble;
     uint32_t mPreferredVectorWidthHalf;
-
-    // The number of minimum commands in the command buffer to prefer submit at FBO boundary or
-    // immediately submit when the device is idle after calling to flush.
-    uint32_t mMinCommandCountToSubmit;
 
     // The number of minimum write commands in the command buffer to trigger one submission of
     // pending commands at draw call time

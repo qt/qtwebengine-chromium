@@ -167,25 +167,26 @@ constexpr int kDefaultCanvasHeight = 150;
 constexpr int kUndefinedQualityValue = -1.0;
 constexpr int kMinimumAccelerated2dCanvasSize = 128 * 129;
 
-}  // namespace
-
 // Tracks whether canvases should start out with acceleration disabled.
 class DisabledAccelerationCounterSupplement final
     : public GarbageCollected<DisabledAccelerationCounterSupplement>,
-      public GarbageCollectedMixin {
+      public Supplement<Document> {
  public:
+  static const char kSupplementName[];
+
   static DisabledAccelerationCounterSupplement& From(Document& d) {
     DisabledAccelerationCounterSupplement* supplement =
-        d.GetDisabledAccelerationCounterSupplement();
+        Supplement<Document>::From<DisabledAccelerationCounterSupplement>(d);
     if (!supplement) {
       supplement =
           MakeGarbageCollected<DisabledAccelerationCounterSupplement>(d);
-      d.SetDisabledAccelerationCounterSupplement(supplement);
+      ProvideTo(d, supplement);
     }
     return *supplement;
   }
 
-  explicit DisabledAccelerationCounterSupplement(Document& d) : document_(d) {}
+  explicit DisabledAccelerationCounterSupplement(Document& d)
+      : Supplement<Document>(d) {}
 
   // Called when acceleration has been disabled on a canvas.
   void IncrementDisabledCount() {
@@ -199,8 +200,6 @@ class DisabledAccelerationCounterSupplement final
     return acceleration_disabled_;
   }
 
-  void Trace(Visitor* visitor) const override { visitor->Trace(document_); }
-
  private:
   void UpdateAccelerationDisabled() {
     if (acceleration_disabled_) {
@@ -209,37 +208,44 @@ class DisabledAccelerationCounterSupplement final
     if (acceleration_disabled_count_ < kDisableAccelerationThreshold) {
       return;
     }
-    if (acceleration_disabled_count_ * 100 / document_->GetNumberOfCanvases() >=
+    if (acceleration_disabled_count_ * 100 /
+            GetSupplementable()->GetNumberOfCanvases() >=
         kDisableAccelerationPercent) {
       acceleration_disabled_ = true;
     }
   }
-
-  Member<Document> document_;
 
   // Number of canvases with acceleration disabled.
   unsigned acceleration_disabled_count_ = 0;
   bool acceleration_disabled_ = false;
 };
 
+// static
+const char DisabledAccelerationCounterSupplement::kSupplementName[] =
+    "DisabledAccelerationCounterSupplement";
+
 // Tracks whether `transferToGPUTexture()` has been invoked on any canvas
 // element created within the associated Document.
 class TransferToGPUTextureInvokedSupplement final
     : public GarbageCollected<TransferToGPUTextureInvokedSupplement>,
-      public GarbageCollectedMixin {
+      public Supplement<Document> {
  public:
+  static constexpr char kSupplementName[] =
+      "TransferToGPUTextureInvokedSupplement";
+
   static TransferToGPUTextureInvokedSupplement& From(Document& d) {
     TransferToGPUTextureInvokedSupplement* supplement =
-        d.GetTransferToGPUTextureInvokedSupplement();
+        Supplement<Document>::From<TransferToGPUTextureInvokedSupplement>(d);
     if (!supplement) {
       supplement =
           MakeGarbageCollected<TransferToGPUTextureInvokedSupplement>(d);
-      d.SetTransferToGPUTextureInvokedSupplement(supplement);
+      ProvideTo(d, supplement);
     }
     return *supplement;
   }
 
-  explicit TransferToGPUTextureInvokedSupplement(Document& d) : document_(d) {}
+  explicit TransferToGPUTextureInvokedSupplement(Document& d)
+      : Supplement<Document>(d) {}
 
   void SetTransferToGPUTextureWasInvoked() {
     transfer_to_gpu_texture_was_invoked_ = true;
@@ -249,14 +255,9 @@ class TransferToGPUTextureInvokedSupplement final
     return transfer_to_gpu_texture_was_invoked_;
   }
 
-  void Trace(Visitor* visitor) const override { visitor->Trace(document_); }
-
  private:
-  Member<Document> document_;
   bool transfer_to_gpu_texture_was_invoked_ = false;
 };
-
-namespace {
 
 // Adapter for wrapping a CanvasResourceReleaseCallback into a
 // viz::ReleaseCallback
@@ -371,6 +372,9 @@ bool HTMLCanvasElement::PrepareTransferableResource(
     return false;
   }
 
+  // TODO(crbug.com/480074852): swap in paint records for element image
+  // placeholders.
+
   CanvasResource::ReleaseCallback release_callback;
   if (!frame->PrepareTransferableResource(out_resource, &release_callback,
                                           /*needs_verified_synctoken=*/false) ||
@@ -445,7 +449,11 @@ void HTMLCanvasElement::AttributeChanged(
   HTMLElement::AttributeChanged(params);
   if (RuntimeEnabledFeatures::CanvasDrawElementEnabled() &&
       params.name == html_names::kLayoutsubtreeAttr) {
-    setLayoutSubtree(!params.new_value.IsNull());
+    bool had_layoutsubtree = !params.old_value.IsNull();
+    bool has_layoutsubtree = !params.new_value.IsNull();
+    if (had_layoutsubtree != has_layoutsubtree) {
+      setLayoutSubtree(has_layoutsubtree);
+    }
   }
 }
 
@@ -496,10 +504,6 @@ void HTMLCanvasElement::setWidth(unsigned value,
 }
 
 void HTMLCanvasElement::setLayoutSubtree(bool value) {
-  if (layoutSubtree() == value) {
-    return;
-  }
-
   SetBooleanAttribute(html_names::kLayoutsubtreeAttr, value);
   SetNeedsStyleRecalc(
       kSubtreeStyleChange,
@@ -618,6 +622,8 @@ CanvasRenderingContext* HTMLCanvasElement::GetCanvasRenderingContextInternal(
 
   context_->RecordUKMCanvasRenderingAPI();
   context_->RecordUMACanvasRenderingAPI();
+  context_->MaybeRecordUKMCanvasAccessibility();
+
   // Since the |context_| is created, free the transparent image,
   // |transparent_image_| created for this canvas if it exists.
   if (transparent_image_.get()) {
@@ -755,6 +761,9 @@ void HTMLCanvasElement::PostFinalizeFrame(FlushReason reason) {
   // checks whether the `desynchronized` attribute is set on the context, but
   // only WebGL and Canvas2D have specific flows for low latency (for other
   // context types, setting the attribute is a no-op).
+  //
+  // TODO(crbug.com/480074852): don't paint if there are any element image
+  // placeholders in the command buffer.
   if (LowLatencyEnabled() && (IsWebGL() || IsRenderingContext2D()) &&
       frame_dispatcher_ && !dirty_rect_.IsEmpty()) {
     if (scoped_refptr<CanvasResource> canvas_resource =
@@ -900,7 +909,6 @@ void HTMLCanvasElement::OnWidthOrHeightAssigned() {
 
   if ((IsWebGL() && old_size != Size()) || IsWebGPU()) {
     context_->Reshape(width(), height());
-    UpdateMemoryUsage();
   }
 
   if (LayoutObject* layout_object = GetLayoutObject()) {
@@ -1630,6 +1638,13 @@ void HTMLCanvasElement::SetIsDisplayed(bool displayed) {
       rate_limiter_->Reset();
       rate_limiter_.reset(nullptr);
     }
+  }
+
+  if (is_displayed_ && context_) {
+    // `MaybeRecordUKMCanvasAccessibility` records the metric only once. Since
+    // there is no specific order between creating the `context_` and setting
+    // `is_displayed_`, the function is called in both places.
+    context_->MaybeRecordUKMCanvasAccessibility();
   }
 }
 

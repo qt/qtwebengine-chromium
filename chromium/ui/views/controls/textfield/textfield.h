@@ -83,7 +83,9 @@ class VIEWS_EXPORT Textfield : public View,
 
  public:
   enum MenuCommands {
-    kUndo = kLastTouchEditableCommandId + 1,
+    kUndo = std::to_underlying(
+                ui::TouchEditable::MenuCommands::kLastTouchEditableCommandId) +
+            1,
     kDelete,
     kLastCommandId = kDelete,
   };
@@ -381,8 +383,6 @@ class VIEWS_EXPORT Textfield : public View,
   // TextfieldModel::Delegate overrides:
   void OnCompositionTextConfirmedOrCleared() override;
   void OnTextChanged() override;
-  void WriteTextToClipboard(ui::ClipboardBuffer clipboard_buffer,
-                            const std::u16string_view& text) override;
 
   // ContextMenuController overrides:
   void ShowContextMenuForViewImpl(

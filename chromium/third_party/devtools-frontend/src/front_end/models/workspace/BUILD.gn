@@ -34,6 +34,7 @@ devtools_entrypoint("bundle") {
 
   visibility = [
     ":*",
+    "../../../mcp",
     "../../core/sdk:foundation_unittests",
     "../../core/sdk:foundation_unittests_node_typecheck",
     "../../core/sdk:unittests",
@@ -43,6 +44,8 @@ devtools_entrypoint("bundle") {
     "../../panels/ai_assistance/*",
     "../../panels/application/*",
     "../../panels/changes/*",
+    "../../panels/common/*",
+    "../../panels/console/*",
     "../../panels/coverage/*",
     "../../panels/elements/*",
     "../../panels/emulation/*",
@@ -89,6 +92,7 @@ devtools_entrypoint("meta") {
   visibility = [
     "../../../mcp/*",
     "../../entrypoints/*",
+    "../../panels/greendev/*",
   ]
 }
 

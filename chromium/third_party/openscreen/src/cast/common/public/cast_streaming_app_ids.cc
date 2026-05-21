@@ -5,7 +5,6 @@
 #include "cast/common/public/cast_streaming_app_ids.h"
 
 #include <array>
-
 #include "util/std_util.h"
 #include "util/string_util.h"
 
@@ -110,22 +109,22 @@ constexpr std::array<const char*, 90>
 
 }  // namespace
 
-bool IsCastStreamingAppId(const std::string& app_id) {
+bool IsCastStreamingAppId(std::string_view app_id) {
   return IsCastStreamingAudioOnlyAppId(app_id) ||
          IsCastStreamingAudioVideoAppId(app_id);
 }
 
-bool IsCastStreamingAudioVideoAppId(const std::string& app_id) {
+bool IsCastStreamingAudioVideoAppId(std::string_view app_id) {
   return string_util::EqualsIgnoreCase(app_id,
                                        GetCastStreamingAudioVideoAppId());
 }
 
-bool IsCastStreamingAudioOnlyAppId(const std::string& app_id) {
+bool IsCastStreamingAudioOnlyAppId(std::string_view app_id) {
   return string_util::EqualsIgnoreCase(app_id,
                                        GetCastStreamingAudioOnlyAppId());
 }
 
-bool IsCastStreamingReceiverAppId(const std::string& app_id) {
+bool IsCastStreamingReceiverAppId(std::string_view app_id) {
   if (string_util::EqualsIgnoreCase(app_id,
                                     GetCastStreamingAudioVideoAppId()) ||
       string_util::EqualsIgnoreCase(app_id, GetCastStreamingAudioOnlyAppId()) ||
@@ -141,7 +140,7 @@ bool IsCastStreamingReceiverAppId(const std::string& app_id) {
   }
 
   return ContainsIf(kRemoteDisplayAppStreamingAudioVideoAppIds,
-                    [app_id](const std::string& id) {
+                    [app_id](std::string_view id) {
                       return string_util::EqualsIgnoreCase(id, app_id);
                     });
 }

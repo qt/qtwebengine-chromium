@@ -105,6 +105,28 @@ FT_Long ScopedFXFTMMVar::GetAxisMax(size_t index) const {
   return axis_[index].maximum;
 }
 
+ScopedFXFTLibraryRec InitializeFreeType() {
+  FXFT_LibraryRec* ft_library = nullptr;
+  FT_Init_FreeType(&ft_library);
+  return ScopedFXFTLibraryRec(ft_library);
+}
+
+bool FreeTypeSetLcdFilterMode(FXFT_LibraryRec* ft_library) {
+  return FT_Library_SetLcdFilter(ft_library, FT_LCD_FILTER_DEFAULT) !=
+         FT_Err_Unimplemented_Feature;
+}
+
+bool FreeTypeVersionSupportsHinting(FXFT_LibraryRec* ft_library) {
+  FT_Int major;
+  FT_Int minor;
+  FT_Int patch;
+  FT_Library_Version(ft_library, &major, &minor, &patch);
+  // Freetype versions >= 2.8.1 support hinting even if subpixel rendering is
+  // disabled. https://sourceforge.net/projects/freetype/files/freetype2/2.8.1/
+  return major > 2 || (major == 2 && minor > 8) ||
+         (major == 2 && minor == 8 && patch >= 1);
+}
+
 int FXFT_unicode_from_adobe_name(const char* glyph_name) {
   /* If the name begins with `uni', then the glyph name may be a */
   /* hard-coded unicode character code.                          */

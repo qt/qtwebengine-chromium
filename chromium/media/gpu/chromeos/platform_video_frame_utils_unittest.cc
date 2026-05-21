@@ -11,7 +11,6 @@
 #include <utility>
 #include <vector>
 
-#include "base/containers/contains.h"
 #include "base/files/file.h"
 #include "base/files/file_path.h"
 #include "base/files/scoped_file.h"
@@ -113,7 +112,7 @@ TEST(PlatformVideoFrameUtilsTest, CreateNativePixmapDmaBuf) {
       CreateNativePixmapDmaBuf(video_frame.get());
   ASSERT_TRUE(native_pixmap);
   EXPECT_EQ(native_pixmap->GetSharedImageFormat(), *si_format);
-  EXPECT_EQ(native_pixmap->GetBufferFormatModifier(),
+  EXPECT_EQ(native_pixmap->GetFormatModifier(),
             video_frame->layout().modifier());
 
   // Verify the DMA Buf layouts are the same.
@@ -132,7 +131,7 @@ TEST(PlatformVideoFrameUtilsTest, CreateNativePixmapDmaBuf) {
 
 // TODO(b/230370976): remove this #if/#endif guard. To do so, we need to be able
 // to mock/fake the allocator used by CreatePlatformVideoFrame() and
-// CreateMappableVideoFrame() so that those functions return a
+// CreateMappableSharedImageVideoFrame() so that those functions return a
 // non-nullptr frame on platforms where allocating NV12 buffers is not
 // supported.
 #if BUILDFLAG(IS_CHROMEOS)
@@ -148,7 +147,7 @@ TEST(PlatformVideoFrameUtilsTest, CreateVideoFrame) {
 
   const VideoFrame::StorageType storage_types[] = {
       VideoFrame::STORAGE_DMABUFS,
-      VideoFrame::STORAGE_GPU_MEMORY_BUFFER,
+      VideoFrame::STORAGE_MAPPABLE_SHARED_IMAGE,
   };
   for (const auto& storage_type : storage_types) {
     scoped_refptr<VideoFrame> frame;
@@ -158,10 +157,10 @@ TEST(PlatformVideoFrameUtilsTest, CreateVideoFrame) {
             CreatePlatformVideoFrame(kPixelFormat, kCodedSize, kVisibleRect,
                                      kNaturalSize, kTimeStamp, kBufferUsage);
         break;
-      case VideoFrame::STORAGE_GPU_MEMORY_BUFFER:
-        frame = CreateMappableVideoFrame(kPixelFormat, kCodedSize, kVisibleRect,
-                                         kNaturalSize, kTimeStamp, kBufferUsage,
-                                         test_sii.get());
+      case VideoFrame::STORAGE_MAPPABLE_SHARED_IMAGE:
+        frame = CreateMappableSharedImageVideoFrame(
+            kPixelFormat, kCodedSize, kVisibleRect, kNaturalSize, kTimeStamp,
+            kBufferUsage, test_sii.get());
         break;
       default:
         NOTREACHED();
@@ -179,7 +178,7 @@ TEST(PlatformVideoFrameUtilsTest, CreateVideoFrame) {
       case VideoFrame::STORAGE_DMABUFS:
         EXPECT_FALSE(frame->NumDmabufFds() == 0);
         break;
-      case VideoFrame::STORAGE_GPU_MEMORY_BUFFER:
+      case VideoFrame::STORAGE_MAPPABLE_SHARED_IMAGE:
         EXPECT_FALSE(frame->GetGpuMemoryBufferHandle().is_null());
         break;
       default:

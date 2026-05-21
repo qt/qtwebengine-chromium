@@ -41,11 +41,14 @@
 #include "src/tint/lang/core/ir/loop.h"
 #include "src/tint/lang/core/ir/module.h"
 #include "src/tint/lang/core/ir/switch.h"
+#include "src/tint/lang/core/ir/swizzle.h"
 #include "src/tint/lang/core/ir/type/array_count.h"
 #include "src/tint/lang/core/ir/value.h"
 #include "src/tint/lang/core/type/pointer.h"
 #include "src/tint/lang/core/type/reference.h"
 #include "src/tint/lang/core/type/struct.h"
+#include "src/tint/lang/core/type/swizzle_view.h"
+#include "src/tint/lang/core/type/vector.h"
 #include "src/tint/lang/wgsl/ast/accessor_expression.h"
 #include "src/tint/lang/wgsl/ast/alias.h"
 #include "src/tint/lang/wgsl/ast/assignment_statement.h"
@@ -81,6 +84,7 @@
 #include "src/tint/lang/wgsl/ast/return_statement.h"
 #include "src/tint/lang/wgsl/ast/statement.h"
 #include "src/tint/lang/wgsl/ast/struct.h"
+#include "src/tint/lang/wgsl/ast/subgroup_size_attribute.h"
 #include "src/tint/lang/wgsl/ast/switch_statement.h"
 #include "src/tint/lang/wgsl/ast/templated_identifier.h"
 #include "src/tint/lang/wgsl/ast/unary_op_expression.h"
@@ -300,6 +304,14 @@ class Impl {
                     ir_func->SetWorkgroupSize(value_x,
                                               attr->y ? EmitValueExpression(attr->y) : one_const,
                                               attr->z ? EmitValueExpression(attr->z) : one_const);
+
+                    const auto subgroup_attr =
+                        ast::GetAttribute<ast::SubgroupSizeAttribute>(ast_func->attributes);
+                    if (subgroup_attr) {
+                        auto* subgroup_size = EmitValueExpression(subgroup_attr->subgroup_size);
+                        ir_func->SetSubgroupSize(subgroup_size);
+                    }
+
                     break;
                 }
                 default: {
@@ -471,13 +483,11 @@ class Impl {
         auto b = builder_.Append(current_block_);
         if (auto* v = std::get_if<core::ir::Value*>(&lhs)) {
             auto* load = b.Load(*v);
-            auto* ty = load->Result()->Type();
-            auto* inst = current_block_->Append(BinaryOp(ty, load->Result(), rhs, op));
+            auto* inst = current_block_->Append(BinaryOp(load->Result(), rhs, op));
             b.Store(*v, inst);
         } else if (auto ref = std::get_if<VectorRefElementAccess>(&lhs)) {
             auto* load = b.LoadVectorElement(ref->vector, ref->index);
-            auto* ty = load->Result()->Type();
-            auto* inst = b.Append(BinaryOp(ty, load->Result(), rhs, op));
+            auto* inst = b.Append(BinaryOp(load->Result(), rhs, op));
             b.StoreVectorElement(ref->vector, ref->index, inst);
         }
     }
@@ -777,8 +787,11 @@ class Impl {
             Hashmap<const ast::Expression*, ValueOrVecElAccess, 64> bindings_;
 
             void Bind(const ast::Expression* expr, core::ir::Value* value) {
-                // If this expression maps to sem::Load, insert a load instruction to get the result
-                if (impl.program_.Sem().Get<sem::Load>(expr)) {
+                auto* sem = impl.program_.Sem().Get<sem::Load>(expr);
+                // If this expression maps to sem::Load, insert a load instruction to get the
+                // result, unless the source is a swizzle view. The swizzle view's Load sem node is
+                // just a temporary wrapper to satisfy early type checking and can now be ignored.
+                if (sem && !sem->Source()->Type()->Is<core::type::SwizzleView>()) {
                     auto* load = impl.builder_.Load(value);
                     impl.current_block_->Append(load);
                     value = load->Result();
@@ -846,12 +859,15 @@ class Impl {
 
                 auto* sem = impl.program_.Sem().Get(expr)->Unwrap();
 
-                // The access result type should match the source result type. If the source is a
-                // pointer, we generate a pointer.
+                // The access result type should match the source result type.
                 const core::type::Type* ty =
                     sem->Type()->UnwrapRef()->Clone(impl.clone_ctx_.type_ctx);
-                if (auto* ptr = obj->Type()->As<core::type::Pointer>();
-                    ptr && !ty->Is<core::type::Pointer>()) {
+                // If the source is a swizzle view, generate the appropriate vector result type. If
+                // the source is a pointer, generate a pointer.
+                if (auto* swizzle_view = sem->Type()->As<core::type::SwizzleView>()) {
+                    ty = swizzle_view->StoreType()->Clone(impl.clone_ctx_.type_ctx);
+                } else if (auto* ptr = obj->Type()->As<core::type::Pointer>();
+                           ptr && !ty->Is<core::type::Pointer>()) {
                     ty = impl.builder_.ir.Types().ptr(ptr->AddressSpace(), ty, ptr->Access());
                 }
 
@@ -876,7 +892,16 @@ class Impl {
                         if (indices.Length() == 1) {
                             return impl.builder_.Constant(u32(indices[0]));
                         }
-                        auto* val = impl.builder_.Swizzle(ty, obj, std::move(indices));
+
+                        core::ir::Swizzle* val;
+                        // First load the object being swizzled if it's a memory view.
+                        if (obj->Type()->Is<core::type::MemoryView>()) {
+                            auto* load = impl.builder_.Load(obj);
+                            impl.current_block_->Append(load);
+                            obj = load->Result();
+                        }
+                        val = impl.builder_.Swizzle(ty, obj, std::move(indices));
+
                         impl.current_block_->Append(val);
                         Bind(expr, val->Result());
                         return nullptr;
@@ -913,8 +938,6 @@ class Impl {
             }
 
             void EmitBinary(const ast::BinaryExpression* b) {
-                auto* b_sem = impl.program_.Sem().Get(b);
-                auto* ty = b_sem->Type()->Clone(impl.clone_ctx_.type_ctx);
                 auto lhs = GetValue(b->lhs);
                 if (!lhs) {
                     return;
@@ -923,7 +946,7 @@ class Impl {
                 if (!rhs) {
                     return;
                 }
-                auto* inst = impl.BinaryOp(ty, lhs, rhs, b->op);
+                auto* inst = impl.BinaryOp(lhs, rhs, b->op);
                 if (!inst) {
                     return;
                 }
@@ -1084,12 +1107,19 @@ class Impl {
                     return std::nullopt;
                 }
 
+                if (memory_view->Is<core::type::SwizzleView>()) {
+                    return std::nullopt;
+                }
+
                 if (!memory_view->StoreType()->Is<core::type::Vector>()) {
                     return std::nullopt;
                 }
                 return tint::Switch(
                     access,
                     [&](const sem::Swizzle* s) -> std::optional<VectorRefElementAccess> {
+                        if (s->Indices().Length() != 1) {
+                            return std::nullopt;
+                        }
                         if (auto vec = GetValue(access->Object()->Declaration())) {
                             return VectorRefElementAccess{
                                 vec, impl.builder_.Constant(u32(s->Indices()[0]))};
@@ -1224,7 +1254,8 @@ class Impl {
             var,
             [&](const ast::Var* v) {
                 auto* ref = sem->Type()->As<core::type::Reference>();
-                auto* store_ty = RemapOverrideSizedArrayIfNeeded(ref->StoreType());
+                const core::type::Type* store_ty =
+                    RemapOverrideSizedArrayIfNeeded(ref->StoreType());
                 auto* ty = builder_.ir.Types().Get<core::type::Pointer>(ref->AddressSpace(),
                                                                         store_ty, ref->Access());
 
@@ -1259,6 +1290,14 @@ class Impl {
             [&](const ast::Let* l) {
                 auto init = EmitValueExpression(l->initializer);
                 if (!init) {
+                    return;
+                }
+
+                // If we've emitted a texture or a sampler to the let then we have
+                // `texture_and_sampler_let` enabled and we want to just strip the let and use the
+                // originating value.
+                if (init->Type()->IsAnyOf<core::type::Texture, core::type::Sampler>()) {
+                    scopes_.Set(l->name->symbol, init);
                     return;
                 }
 
@@ -1300,17 +1339,14 @@ class Impl {
             TINT_ICE_ON_NO_MATCH);
     }
 
-    core::ir::CoreBinary* BinaryOp(const core::type::Type* ty,
-                                   core::ir::Value* lhs,
-                                   core::ir::Value* rhs,
-                                   core::BinaryOp op) {
+    core::ir::CoreBinary* BinaryOp(core::ir::Value* lhs, core::ir::Value* rhs, core::BinaryOp op) {
         switch (op) {
             case core::BinaryOp::kAnd:
-                return builder_.And(ty, lhs, rhs);
+                return builder_.And(lhs, rhs);
             case core::BinaryOp::kOr:
-                return builder_.Or(ty, lhs, rhs);
+                return builder_.Or(lhs, rhs);
             case core::BinaryOp::kXor:
-                return builder_.Xor(ty, lhs, rhs);
+                return builder_.Xor(lhs, rhs);
             case core::BinaryOp::kEqual:
                 return builder_.Equal(lhs, rhs);
             case core::BinaryOp::kNotEqual:
@@ -1324,19 +1360,19 @@ class Impl {
             case core::BinaryOp::kGreaterThanEqual:
                 return builder_.GreaterThanEqual(lhs, rhs);
             case core::BinaryOp::kShiftLeft:
-                return builder_.ShiftLeft(ty, lhs, rhs);
+                return builder_.ShiftLeft(lhs, rhs);
             case core::BinaryOp::kShiftRight:
-                return builder_.ShiftRight(ty, lhs, rhs);
+                return builder_.ShiftRight(lhs, rhs);
             case core::BinaryOp::kAdd:
-                return builder_.Add(ty, lhs, rhs);
+                return builder_.Add(lhs, rhs);
             case core::BinaryOp::kSubtract:
-                return builder_.Subtract(ty, lhs, rhs);
+                return builder_.Subtract(lhs, rhs);
             case core::BinaryOp::kMultiply:
-                return builder_.Multiply(ty, lhs, rhs);
+                return builder_.Multiply(lhs, rhs);
             case core::BinaryOp::kDivide:
-                return builder_.Divide(ty, lhs, rhs);
+                return builder_.Divide(lhs, rhs);
             case core::BinaryOp::kModulo:
-                return builder_.Modulo(ty, lhs, rhs);
+                return builder_.Modulo(lhs, rhs);
             case core::BinaryOp::kLogicalAnd:
             case core::BinaryOp::kLogicalOr:
                 TINT_ICE() << "short circuit op should have already been handled";

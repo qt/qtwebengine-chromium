@@ -8,6 +8,7 @@
 #include <array>
 #include <optional>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #include "base/gtest_prod_util.h"
@@ -42,7 +43,17 @@ class PaintImageGenerator;
 class PaintWorkletInput;
 class TextureBacking;
 
-enum class ImageType { kPNG, kJPEG, kWEBP, kGIF, kICO, kBMP, kAVIF, kInvalid };
+enum class ImageType {
+  kPNG,
+  kJPEG,
+  kWEBP,
+  kGIF,
+  kICO,
+  kBMP,
+  kAVIF,
+  kJXL,
+  kInvalid
+};
 
 // An encoded image may include several auxiliary images within it. This enum
 // is used to index those images. Auxiliary images can have different sizes and
@@ -94,8 +105,8 @@ struct CC_PAINT_EXPORT ImageHeaderMetadata {
   // The subsampling format used for the chroma planes, e.g., YUV 4:2:0.
   YUVSubsampling yuv_subsampling = YUVSubsampling::kUnknown;
 
-  // The HDR metadata included with the image, if present.
-  std::optional<gfx::HDRMetadata> hdr_metadata;
+  // Any HDR metadata included with the image.
+  gfx::HDRMetadata hdr_metadata;
 
   // The visible size of the image (i.e., the area that contains meaningful
   // pixels).
@@ -175,6 +186,10 @@ class CC_PAINT_EXPORT PaintImage {
     FrameKey(ContentId content_id, size_t frame_index);
     bool operator==(const FrameKey& other) const;
     bool operator!=(const FrameKey& other) const;
+    auto operator<=>(const FrameKey& other) const {
+      return std::tie(content_id_, frame_index_) <=>
+             std::tie(other.content_id_, other.frame_index_);
+    }
 
     size_t hash() const { return hash_; }
     std::string ToString() const;
@@ -374,11 +389,11 @@ class CC_PAINT_EXPORT PaintImage {
     return gainmap_info_.value();
   }
 
-  std::optional<gfx::HDRMetadata> GetHDRMetadata() const {
+  gfx::HDRMetadata GetHDRMetadata() const {
     if (const auto* image_metadata = GetImageHeaderMetadata()) {
       return image_metadata->hdr_metadata;
     }
-    return std::nullopt;
+    return gfx::HDRMetadata();
   }
 
   std::string ToString() const;
@@ -435,7 +450,7 @@ class CC_PAINT_EXPORT PaintImage {
 
   // HDR metadata used by global tone map application and (potentially but not
   // yet) gain map application.
-  std::optional<gfx::HDRMetadata> hdr_metadata_;
+  gfx::HDRMetadata hdr_metadata_;
 
   sk_sp<TextureBacking> texture_backing_;
 

@@ -1107,7 +1107,11 @@ TEST_F(SavedPasswordsPresenterTest, DeleteAllDataWithPasskey) {
   EXPECT_CALL(completion_callback, Run(true)).Times(1);
   presenter().DeleteAllData(completion_callback.Get());
   RunUntilIdle();
-  EXPECT_TRUE(passkey_store().GetAllPasskeys().empty());
+  EXPECT_TRUE(
+      passkey_store()
+          .GetPasskeys(webauthn::PasskeyModel::AnyRp(),
+                       webauthn::PasskeyModel::ShadowedCredentials::kInclude)
+          .empty());
   EXPECT_TRUE(store().IsEmpty());
 }
 
@@ -2368,9 +2372,7 @@ TEST_F(SavedPasswordsPresenterMoveToAccountTest, MovesToAccount) {
   EXPECT_CALL(*profile_store(), RemoveLogin(_, form_1));
   EXPECT_CALL(*profile_store(), RemoveLogin(_, form_2));
 
-  presenter().MoveCredentialsToAccount(
-      credentials,
-      metrics_util::MoveToAccountStoreTrigger::kExplicitlyTriggeredInSettings);
+  presenter().MoveCredentialsToAccount(credentials);
 }
 
 TEST_F(SavedPasswordsPresenterMoveToAccountTest,
@@ -2403,9 +2405,7 @@ TEST_F(SavedPasswordsPresenterMoveToAccountTest,
   EXPECT_CALL(*account_store(), AddLogin).Times(0);
   EXPECT_CALL(*profile_store(), RemoveLogin(_, form_profile));
 
-  presenter().MoveCredentialsToAccount(
-      credentials,
-      metrics_util::MoveToAccountStoreTrigger::kExplicitlyTriggeredInSettings);
+  presenter().MoveCredentialsToAccount(credentials);
 }
 
 }  // namespace password_manager

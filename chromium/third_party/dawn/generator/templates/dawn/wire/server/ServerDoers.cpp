@@ -56,11 +56,14 @@ namespace dawn::wire::server {
                     //* If there is a return value, assign it.
                     {% if ret|length == 1 %}
                         *{{as_varName(ret[0].name)}} =
+                    {% elif method.returns and method.returns.type.name.canonical_case() == "status" %}
+                        WGPUStatus status =
                     {% else %}
                         //* Only one member should be a return value.
                         {{ assert(ret|length == 0) }}
+                        {{ assert(not method.returns) }}
                     {% endif %}
-                    mProcs.{{as_varName(type.name, method.name)}}(
+                    mProcs->{{as_varName(type.name, method.name)}}(
                         {%- for member in command.members if not member.is_return_value -%}
                             {{as_varName(member.name)}}
                             {%- if not loop.last -%}, {% endif %}
@@ -71,6 +74,15 @@ namespace dawn::wire::server {
                         //* object creation functions.
                         DAWN_ASSERT(*{{as_varName(ret[0].name)}} != nullptr);
                     {% endif %}
+
+                    //* The client is responsible for making sure what it does isn't an invalid API
+                    //* usage that will cause a WGPUStatus_Error.
+                    {% if method.returns and method.returns.type.name.canonical_case() == "status" %}
+                        if (status != WGPUStatus_Success) {
+                            return WireResult::FatalError;
+                        }
+                    {% endif %}
+
                     return WireResult::Success;
                 }
             {% endif %}
@@ -89,9 +101,11 @@ namespace dawn::wire::server {
                     if (data.state == AllocationState::Allocated) {
                         DAWN_ASSERT(data.handle != nullptr);
                         {% if type.name.get() == "device" %}
-                            //* Deregisters uncaptured error and device lost callbacks since
-                            //* they should not be forwarded if the device no longer exists on the wire.
-                            ClearDeviceCallbacks(data.handle);
+                            //* Destroy the device to ensure that the spontaneous callbacks, i.e.
+                            //* the uncaptured error and logging callbacks, are cleared, and the
+                            //* device lost callback is fired. This is important because once we
+                            //* deallocate the ObjectData, those callbacks reference freed memory.
+                            mProcs->deviceDestroy(data.handle);
                         {% endif %}
                         Release(data.handle);
                     }

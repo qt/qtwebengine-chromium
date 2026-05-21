@@ -56,6 +56,7 @@
 #include "third_party/blink/renderer/core/css/css_keyframes_rule.h"
 #include "third_party/blink/renderer/core/css/css_layer_block_rule.h"
 #include "third_party/blink/renderer/core/css/css_layer_statement_rule.h"
+#include "third_party/blink/renderer/core/css/css_math_function_value.h"
 #include "third_party/blink/renderer/core/css/css_media_rule.h"
 #include "third_party/blink/renderer/core/css/css_pending_substitution_value.h"
 #include "third_party/blink/renderer/core/css/css_primitive_value.h"
@@ -153,7 +154,6 @@
 #include "third_party/blink/renderer/core/view_transition/view_transition.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/fonts/font.h"
-#include "third_party/blink/renderer/platform/fonts/font_cache.h"
 #include "third_party/blink/renderer/platform/fonts/font_custom_platform_data.h"
 #include "third_party/blink/renderer/platform/fonts/shaping/shape_result_view.h"
 #include "third_party/blink/renderer/platform/geometry/layout_unit.h"
@@ -1676,8 +1676,7 @@ protocol::Response InspectorCSSAgent::getEnvironmentVariables(
                     UADefinedVariable::kTitlebarAreaY,
                     UADefinedVariable::kTitlebarAreaWidth,
                     UADefinedVariable::kTitlebarAreaHeight,
-                    UADefinedVariable::kPreferredTextScale,
-                    UADefinedVariable::kSafePrintableInset};
+                    UADefinedVariable::kPreferredTextScale};
   // LINT.ThenChange(//third_party/blink/renderer/core/css/style_environment_variables.h:UADefinedVariable)
 
   for (auto variable : variables) {
@@ -2450,8 +2449,7 @@ protocol::Response InspectorCSSAgent::resolveValues(
                             *property_registration);
   CustomProperty temporary_custom_property(temp_custom_property_name, document);
 
-  std::optional<CSSPropertyName> property_name =
-      CSSPropertyName(temp_custom_property_name);
+  std::optional<CSSPropertyName> property_name;
   if (property_name_str.has_value()) {
     property_name =
         CSSPropertyName::From(execution_context, *property_name_str);
@@ -2461,11 +2459,13 @@ protocol::Response InspectorCSSAgent::resolveValues(
     }
   }
 
-  if (CSSProperty::Get(property_name->Id()).IsShorthand()) {
+  if (property_name && CSSProperty::Get(property_name->Id()).IsShorthand()) {
     return protocol::Response::ServerError(
         "Property name should not be a shorthand.");
   }
 
+  CSSParserLocalContext local_context =
+      CSSParserLocalContext::CreateWithoutPropertyForInspector();
   *results = std::make_unique<protocol::Array<String>>();
   for (auto value : *values) {
     CSSVariableData* data =
@@ -2498,10 +2498,31 @@ protocol::Response InspectorCSSAgent::resolveValues(
       continue;
     }
 
+    const CSSValue* parsed_value = nullptr;
+    if (property_name.has_value()) {
+      if (property_name->IsCustomProperty()) {
+        CustomProperty custom_property(property_name->ToAtomicString(),
+                                       element->GetDocument());
+        // Unregistered custom properties should always be parsed against
+        // combined syntax.
+        parsed_value =
+            custom_property.IsRegistered()
+                ? custom_property.Parse(substituted->CssText(), *parser_context,
+                                        local_context)
+                : nullptr;
+      } else {
+        parsed_value = CSSParser::ParseSingleValue(
+            property_name->Id(), substituted->CssText(), parser_context);
+      }
+    }
+
     const CSSValue* computed_value = nullptr;
-    const CSSValue* parsed_value = CSSParser::ParseSingleValue(
-        property_name->Id(), substituted->CssText(), parser_context);
     if (parsed_value) {
+      DCHECK(property_name);
+      if (parsed_value->HasRandomFunctions()) {
+        (*results)->emplace_back(value);
+        continue;
+      }
       computed_value =
           StyleResolver::ComputeValue(element, *property_name, *parsed_value);
       if (String resolved_value = ResolvePercentagesValues(
@@ -2510,10 +2531,12 @@ protocol::Response InspectorCSSAgent::resolveValues(
         continue;
       }
     } else {
-      auto local_context = CSSParserLocalContext();
+      // Value cannot be parsed using specified property's syntax,  ignore
+      // property and try to parse using combined syntax as if null property was
+      // provided.
       parsed_value = temporary_custom_property.Parse(
           substituted->CssText(), *parser_context, local_context);
-      if (!parsed_value) {
+      if (!parsed_value || parsed_value->HasRandomFunctions()) {
         (*results)->emplace_back(value);
         continue;
       }
@@ -2554,8 +2577,9 @@ protocol::Response InspectorCSSAgent::getLonghandProperties(
   const CSSParserContext* parser_context =
       MakeGarbageCollected<CSSParserContext>(kHTMLStandardMode,
                                              SecureContextMode::kSecureContext);
-  const auto local_context =
-      CSSParserLocalContext().WithCurrentShorthand(property.PropertyID());
+  auto local_context =
+      CSSParserLocalContext::CreateWithoutPropertyForInspector()
+          .WithCurrentShorthand(property.PropertyID());
 
   HeapVector<CSSPropertyValue, 64> css_longhand_properties;
   const auto* shorthand = DynamicTo<Shorthand>(property);
@@ -2609,7 +2633,6 @@ void InspectorCSSAgent::CollectPlatformFontsForLayoutObject(
   if (DisplayLockUtilities::LockedAncestorPreventingPaint(*layout_object))
     return;
 
-  FontCachePurgePreventer preventer;
   DCHECK(layout_object->IsInLayoutNGInlineFormattingContext());
   InlineCursor cursor;
   cursor.MoveTo(*layout_object);

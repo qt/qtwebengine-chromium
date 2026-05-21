@@ -168,7 +168,9 @@ enum class PixFlowExitedReason {
   kCctWithGboardAsDefaultIme = 18,
   // Pix code was static and not supported.
   kStaticCode = 19,
-  kMaxValue = kStaticCode
+  // Pix code was copied within an iframe whose URL is not in the allowlist.
+  kIframeUrlNotAllowlisted = 20,
+  kMaxValue = kIframeUrlNotAllowlisted
 };
 // LINT.ThenChange(/tools/metrics/histograms/metadata/facilitated_payments/enums.xml:FacilitatedPayments.PixFlowExitedReason)
 
@@ -188,6 +190,30 @@ enum class PixAccountLinkingFlowExitedReason {
   kMaxValue = kUserSwitchedWebsite
 };
 // LINT.ThenChange(/tools/metrics/histograms/metadata/facilitated_payments/enums.xml:FacilitatedPayments.Pix.AccountLinking.FlowExitedReason)
+
+// This contains a subset of the variants in the Rust `PixQrCodeResult` enum, as
+// some values are not interesting for metrics, e.g. they'd be too noisy/spammy.
+// LINT.IfChange(PixCodeRustValidationResult)
+enum class PixCodeRustValidationResult {
+  // The input was successfully parsed as a dynamic Pix code.
+  kDynamic = 0,
+  // The input was successfully parsed as a static Pix code.
+  kStatic = 1,
+
+  // The input appears to be a EMV Merchant-Presented QR code, but the
+  // globally unique identifier is not the Pix identifier.
+  kNonPixMerchantPresentedCode = 2,
+  // The additional data field template data object is present but empty,
+  // which violates the EMV Merchant-Presented QR code
+  // requirements.
+  kEmptyAdditionalDataFieldTemplate = 3,
+  // The CRC data object was not the final data object in the input.
+  kNonFinalCrc = 4,
+  // The input is a Pix code, but of unknown type.
+  kUnknownPixCodeType = 5,
+  kMaxValue = kUnknownPixCodeType,
+};
+// LINT.ThenChange(/tools/metrics/histograms/metadata/facilitated_payments/enums.xml:FacilitatedPayments.Pix.PaymentCodeValidation.RustResult)
 
 // LINT.IfChange(PixCodeValidationResult)
 enum class PixCodeValidationResult {
@@ -246,10 +272,17 @@ void LogNonCardPaymentMethodsFopSelected(
     PaymentLinkFopSelectorAction payment_link_fop_selector_action,
     std::optional<PaymentLinkValidator::Scheme> scheme);
 
+// Logs the result of the Rust Pix code validator. Always logged, even when the
+// C++ validator is in use.
+void LogPaymentCodeRustValidationResult(PixCodeRustValidationResult result);
+
 // Log the result and latency for validating a payment code using
-// `data_decoder::DataDecoder`.
-void LogPaymentCodeValidationResultAndLatency(PixCodeValidationResult result,
-                                              base::TimeDelta duration);
+// `data_decoder::DataDecoder`, as well as whether the C++ validator agrees with
+// the Rust validator.
+void LogPaymentCodeValidationResultAndLatency(
+    PixCodeValidationResult result,
+    std::optional<PixCodeRustValidationResult> rust_result,
+    base::TimeDelta duration);
 
 // Log the result of whether the facilitated payments is available or not and
 // the check's latency.

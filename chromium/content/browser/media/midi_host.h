@@ -11,7 +11,6 @@
 #include <memory>
 #include <vector>
 
-#include "base/gtest_prod_util.h"
 #include "base/memory/raw_ptr.h"
 #include "base/synchronization/lock.h"
 #include "base/thread_annotations.h"
@@ -19,7 +18,7 @@
 #include "content/common/content_export.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/public/browser/child_process_id.h"
+#include "content/public/common/child_process_id.h"
 #include "media/midi/midi_manager.h"
 #include "media/midi/midi_service.mojom.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
@@ -33,8 +32,6 @@ class MidiMessageQueue;
 }  // namespace midi
 
 namespace content {
-
-class RenderFrameHost;
 
 class CONTENT_EXPORT MidiHost : public midi::MidiManagerClient,
                                 public midi::mojom::MidiSessionProvider,
@@ -50,7 +47,6 @@ class CONTENT_EXPORT MidiHost : public midi::MidiManagerClient,
   static void BindReceiver(
       ChildProcessId render_process_id,
       midi::MidiService* midi_service,
-      RenderFrameHost* host,
       mojo::PendingReceiver<midi::mojom::MidiSessionProvider> receiver);
 
   // MidiManagerClient implementation. These methods can be called on any thread
@@ -62,8 +58,7 @@ class CONTENT_EXPORT MidiHost : public midi::MidiManagerClient,
   void SetInputPortState(uint32_t port, midi::mojom::PortState state) override;
   void SetOutputPortState(uint32_t port, midi::mojom::PortState state) override;
   void ReceiveMidiData(uint32_t port,
-                       const uint8_t* data,
-                       size_t length,
+                       base::span<const uint8_t> data,
                        base::TimeTicks timestamp) override;
   void AccumulateMidiBytesSent(size_t n) override;
   void Detach() override;

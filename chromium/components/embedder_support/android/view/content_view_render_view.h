@@ -32,21 +32,21 @@ class ContentViewRenderView : public content::CompositorClient {
   void Destroy(JNIEnv* env);
   void SetCurrentWebContents(
       JNIEnv* env,
-      const base::android::JavaParamRef<jobject>& jweb_contents);
+      const base::android::JavaRef<jobject>& jweb_contents);
   void OnPhysicalBackingSizeChanged(
       JNIEnv* env,
-      const base::android::JavaParamRef<jobject>& jweb_contents,
-      jint width,
-      jint height);
+      const base::android::JavaRef<jobject>& jweb_contents,
+      int32_t width,
+      int32_t height);
   void SurfaceCreated(JNIEnv* env);
   void SurfaceDestroyed(JNIEnv* env);
   std::optional<int> SurfaceChanged(
       JNIEnv* env,
-      jint format,
-      jint width,
-      jint height,
-      const base::android::JavaParamRef<jobject>& surface,
-      const base::android::JavaParamRef<jobject>& browser_input_token);
+      int32_t format,
+      int32_t width,
+      int32_t height,
+      const base::android::JavaRef<jobject>& surface,
+      const base::android::JavaRef<jobject>& browser_input_token);
   void SetOverlayVideoMode(JNIEnv* env,
                            bool enabled);
 

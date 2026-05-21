@@ -133,7 +133,6 @@ class CORE_EXPORT HTMLInputElement
       bool,
       TextFieldEventBehavior = TextFieldEventBehavior::kDispatchNoEvent,
       WebAutofillState = WebAutofillState::kNotFilled);
-  void DispatchChangeEventIfNeeded();
   void DispatchInputAndChangeEventIfNeeded();
 
   // 'indeterminate' is a state independent of the checked state that causes the
@@ -387,6 +386,8 @@ class CORE_EXPORT HTMLInputElement
   bool IsKeyboardFocusableSlow(UpdateBehavior update_behavior =
                                    UpdateBehavior::kStyleAndLayout) const final;
 
+  bool IsBaseAppearanceCombobox() const;
+
  protected:
   void DefaultEventHandler(Event&) override;
   bool IsInnerEditorValueEmpty() const final;
@@ -408,6 +409,7 @@ class CORE_EXPORT HTMLInputElement
   bool IsEnumeratable() const final;
   bool IsInteractiveContent() const final;
   bool IsLabelable() const final;
+  FocusgroupFlags NativeArrowKeyAxes() const final;
   bool MatchesDefaultPseudoClass() const override;
   bool IsTextControl() const final { return IsTextField(); }
   int scrollWidth() override;
@@ -446,8 +448,8 @@ class CORE_EXPORT HTMLInputElement
 
   void ResetImpl() final;
 
-  EventDispatchHandlingState* PreDispatchEventHandler(Event&) final;
-  void PostDispatchEventHandler(Event&, EventDispatchHandlingState*) final;
+  EventDispatchHandlingState* LegacyPreActivationBehavior(Event&) final;
+  void RunActivationBehavior(Event&, EventDispatchHandlingState*) final;
 
   bool IsURLAttribute(const Attribute&) const final;
   bool HasLegalLinkAttribute(const QualifiedName&) const final;

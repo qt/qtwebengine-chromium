@@ -11,11 +11,10 @@
 #include <vector>
 
 #include "base/functional/callback.h"
+#include "base/memory/advanced_memory_safety_checks.h"
 #include "base/memory/safe_ref.h"
-#include "base/memory/safety_checks.h"
 #include "base/supports_user_data.h"
 #include "content/common/content_export.h"
-#include "content/public/browser/child_process_id.h"
 #include "content/public/browser/error_navigation_trigger.h"
 #include "content/public/browser/frame_tree_node_id.h"
 #include "content/public/browser/frame_type.h"
@@ -25,10 +24,10 @@
 #include "content/public/browser/preloading_trigger_type.h"
 #include "content/public/browser/reload_type.h"
 #include "content/public/browser/restore_type.h"
+#include "content/public/common/child_process_id.h"
 #include "content/public/common/referrer.h"
 #include "net/base/auth.h"
 #include "net/base/ip_endpoint.h"
-#include "net/base/isolation_info.h"
 #include "net/base/net_errors.h"
 #include "net/dns/public/resolve_error_info.h"
 #include "net/http/http_connection_info.h"
@@ -40,7 +39,6 @@
 #include "third_party/blink/public/mojom/lcp_critical_path_predictor/lcp_critical_path_predictor.mojom-forward.h"
 #include "third_party/blink/public/mojom/loader/referrer.mojom-forward.h"
 #include "third_party/blink/public/mojom/loader/transferrable_url_loader.mojom-forward.h"
-#include "third_party/blink/public/mojom/navigation/navigation_initiator_activation_and_ad_status.mojom.h"
 #include "third_party/blink/public/mojom/navigation/renderer_content_settings.mojom-forward.h"
 #include "third_party/perfetto/include/perfetto/tracing/traced_value_forward.h"
 #include "ui/base/page_transition_types.h"
@@ -54,6 +52,7 @@ class GURL;
 namespace net {
 class HttpRequestHeaders;
 class HttpResponseHeaders;
+class IsolationInfo;
 class SSLInfo;
 }  // namespace net
 
@@ -189,10 +188,6 @@ class CONTENT_EXPORT NavigationHandle : public base::SupportsUserData {
   //  * any other "explicit" URL navigations, e.g. bookmarks
   virtual bool IsRendererInitiated() = 0;
 
-  // The navigation initiator's user activation and ad status.
-  virtual blink::mojom::NavigationInitiatorActivationAndAdStatus
-  GetNavigationInitiatorActivationAndAdStatus() = 0;
-
   // Whether the previous document in this frame was same-origin with the new
   // one created by this navigation.
   //
@@ -280,10 +275,24 @@ class CONTENT_EXPORT NavigationHandle : public base::SupportsUserData {
   // redirects, then this must be called during DidRedirectNavigation().
   virtual void SetReferrer(blink::mojom::ReferrerPtr referrer) = 0;
 
-  // Whether the navigation was initiated by a user gesture. Note that this
-  // will return false for browser-initiated navigations.
-  // TODO(clamy): This should return true for browser-initiated navigations.
+  // Whether the navigation was initiated by a user gesture.
+  //
+  // Differences from `StartedWithTransientActivation()`:
+  // 1. This returns `true` for browser-initiated navigations.
+  // 2. For renderer-initiated navigations, this is filtered out during proxy
+  //    navigations, to prevent it from being exposed to the committed document.
   virtual bool HasUserGesture() = 0;
+
+  // Whether the navigation started with a transient user activation.
+  //
+  // Differences from `HasUserGesture()`:
+  // 1. This returns `false` for browser-initiated navigations.
+  // 2. For renderer-initiated navigations, this provides the raw, unfiltered
+  //    initiator state.
+  virtual bool StartedWithTransientActivation() = 0;
+
+  // Whether the (renderer initiated) navigation was started by an ad.
+  virtual bool StartedByAd() = 0;
 
   // Returns the page transition type.
   virtual ui::PageTransition GetPageTransition() = 0;
@@ -793,9 +802,8 @@ class CONTENT_EXPORT NavigationHandle : public base::SupportsUserData {
 
   // Allows the embedder to mark whether this navigation handle is being used
   // for advertising purposes. This is expected to be best-effort, and may be
-  // inaccurate. Notably, this defers from the status from
-  // `GetNavigationInitiatorActivationAndAdStatus()` as it can include other
-  // signals outside of the initiator.
+  // inaccurate. Notably, this defers from the status from `StartedByAd()` as it
+  // can include other signals outside of the initiator.
   virtual void SetIsAdTagged() = 0;
 
   // If the navigation is discarded without committing, returns the reason for
@@ -803,6 +811,32 @@ class CONTENT_EXPORT NavigationHandle : public base::SupportsUserData {
   virtual std::optional<NavigationDiscardReason>
   GetNavigationDiscardReason() = 0;
 
+  // NeedsUrlLoader() returns true if the navigation needs to use the
+  // NavigationURLLoader for loading the document.
+  //
+  // A few types of navigations don't make any network requests. They can be
+  // committed immediately in BeginNavigation(). They self-contain the data
+  // needed for commit:
+  // - about:blank: The renderer already knows how to load the empty document.
+  // - about:srcdoc: The data is stored in the iframe srcdoc attribute.
+  // - same-document: Only the history and URL are updated, no new document.
+  // - MHTML subframe: The data is in the archive, owned by the main frame.
+  //
+  // Note #1: Even though "data:" URLs don't generate actual network requests,
+  // including within MHTML subframes, they are still handled by the network
+  // stack. The reason is that a few of them can't always be handled otherwise.
+  // For instance:
+  //  - the ones resulting in downloads.
+  //  - the "invalid" ones. An error page is generated instead.
+  //  - the ones with an unsupported MIME type.
+  //  - the ones targeting the top-level frame on Android.
+  //
+  // Note #2: Even though "javascript:" URL and RendererDebugURL fit very well
+  // in this category, they don't use the NavigationRequest.
+  //
+  // Note #3: Navigations that do not use a URL loader do not send the usual
+  // set of callbacks to NavigationThrottle. Instead, they send a single
+  // separate callback, WillCommitWithoutUrlLoader().
   virtual bool NeedsUrlLoader() = 0;
 
   // Returns true if the navigation to the initial WebUI, which is used to
@@ -813,6 +847,11 @@ class CONTENT_EXPORT NavigationHandle : public base::SupportsUserData {
   // both NavigationRequest and MockNavigationHandle. It's not actually needed
   // outside of //content.
   virtual bool IsInitialWebUISyncNavigation() = 0;
+
+  // Different from `IsInitialWebUISyncNavigation()`, this also returns true if
+  // the navigation doesn't go from start -> commit synchronously (i.e. when the
+  // kInitialWebUISyncNavStartToCommit flag is disabled).
+  virtual bool IsInitialWebUINavigation() = 0;
 };
 
 }  // namespace content

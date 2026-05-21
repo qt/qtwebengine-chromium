@@ -13,7 +13,6 @@
 
 #include "base/check.h"
 #include "base/command_line.h"
-#include "base/containers/contains.h"
 #include "base/debug/crash_logging.h"
 #include "base/debug/dump_without_crashing.h"
 #include "base/functional/bind.h"
@@ -38,7 +37,7 @@
 #include "content/browser/bad_message.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/renderer_host/back_forward_cache_can_store_document_result.h"
-#include "content/browser/renderer_host/private_network_access_util.h"
+#include "content/browser/renderer_host/local_network_access_util.h"
 #include "content/browser/service_worker/payment_handler_support.h"
 #include "content/browser/service_worker/service_worker_client.h"
 #include "content/browser/service_worker/service_worker_consts.h"
@@ -72,6 +71,9 @@
 
 namespace content {
 namespace {
+
+// Timeout for the payment handler connection.
+constexpr base::TimeDelta kPaymentHandlerTimeout = base::Minutes(20);
 
 // Timeout for an installed worker to start.
 constexpr base::TimeDelta kStartInstalledWorkerTimeout = base::Seconds(60);
@@ -156,26 +158,6 @@ void OnOpenWindowFinished(
     error_msg.emplace("Something went wrong while trying to open the window.");
   }
   std::move(callback).Run(success, std::move(client_info), error_msg);
-}
-
-void DidShowPaymentHandlerWindow(
-    const GURL& url,
-    const blink::StorageKey& key,
-    const base::WeakPtr<ServiceWorkerContextCore>& context,
-    blink::mojom::ServiceWorkerHost::OpenPaymentHandlerWindowCallback callback,
-    bool success,
-    int render_process_id,
-    int render_frame_id) {
-  if (success) {
-    service_worker_client_utils::DidNavigate(
-        context, url, key,
-        base::BindOnce(&OnOpenWindowFinished, std::move(callback)),
-        GlobalRenderFrameHostId(render_process_id, render_frame_id));
-  } else {
-    OnOpenWindowFinished(std::move(callback),
-                         blink::ServiceWorkerStatusCode::kErrorFailed,
-                         nullptr /* client_info */);
-  }
 }
 
 void DidNavigateClient(
@@ -806,7 +788,7 @@ ServiceWorkerExternalRequestResult ServiceWorkerVersion::StartExternalRequest(
     return ServiceWorkerExternalRequestResult::kWorkerNotRunning;
   }
 
-  if (base::Contains(external_request_uuid_to_request_id_, request_uuid)) {
+  if (external_request_uuid_to_request_id_.contains(request_uuid)) {
     return ServiceWorkerExternalRequestResult::kBadRequestId;
   }
 
@@ -848,7 +830,15 @@ bool ServiceWorkerVersion::FinishRequestWithFetchCount(int request_id,
   // ServiceWorkerVersion::Request
   TRACE_EVENT_END("ServiceWorker", perfetto::Track::FromPointer(request),
                   "Handled", was_handled);
-  request_timeouts_.erase(request->timeout_iter);
+  if (base::FeatureList::IsEnabled(
+          features::kServiceWorkerOptionalTimeoutIterator)) {
+    if (request->timeout_iter.has_value()) {
+      request_timeouts_.erase(*request->timeout_iter);
+    }
+  } else {
+    // Equivalent to the previous, non-optional iterator behavior. Maybe unsafe.
+    request_timeouts_.erase(request->timeout_iter.value_or({}));
+  }
   inflight_requests_.Remove(request_id);
   // TODO(crbug.com/40864997): remove the following DCHECK when the cause
   // identified.
@@ -950,7 +940,7 @@ void ServiceWorkerVersion::AddControllee(
   CHECK(!service_worker_client->client_uuid().empty());
   // TODO(crbug.com/40657227): Change to DCHECK once we figure out the cause of
   // crash.
-  CHECK(!base::Contains(controllee_map_, uuid));
+  CHECK(!controllee_map_.contains(uuid));
 
   controllee_map_[uuid] = service_worker_client->AsWeakPtr();
   // Even if `context_` is invalid, `controllee_map_` should have `uuid`.
@@ -990,7 +980,7 @@ void ServiceWorkerVersion::RemoveControllee(const std::string& client_uuid) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   // TODO(crbug.com/40653867): Remove this once RemoveControllee() matches with
   // AddControllee().
-  if (!base::Contains(controllee_map_, client_uuid)) {
+  if (!controllee_map_.contains(client_uuid)) {
     return;
   }
 
@@ -1029,8 +1019,8 @@ void ServiceWorkerVersion::OnControlleeNavigationCommitted(
 void ServiceWorkerVersion::MoveControlleeToBackForwardCacheMap(
     const std::string& client_uuid) {
   DCHECK(IsBackForwardCacheEnabled());
-  CHECK(base::Contains(controllee_map_, client_uuid));
-  CHECK(!base::Contains(bfcached_controllee_map_, client_uuid));
+  CHECK(controllee_map_.contains(client_uuid));
+  CHECK(!bfcached_controllee_map_.contains(client_uuid));
   bfcached_controllee_map_[client_uuid] = controllee_map_[client_uuid];
   RemoveControllee(client_uuid);
 }
@@ -1040,14 +1030,14 @@ void ServiceWorkerVersion::RestoreControlleeFromBackForwardCacheMap(
   // TODO(crbug.com/40657227): Change these to DCHECK once we figure out the
   // cause of crash.
   CHECK(IsBackForwardCacheEnabled());
-  CHECK(!base::Contains(controllee_map_, client_uuid));
-  if (!base::Contains(bfcached_controllee_map_, client_uuid)) {
+  CHECK(!controllee_map_.contains(client_uuid));
+  if (!bfcached_controllee_map_.contains(client_uuid)) {
     // We are navigating to the page using BackForwardCache, which is being
     // evicted due to activation, postMessage or claim. In this case, we reload
     // the page without using BackForwardCache, so we can assume that
     // ContainerHost will be deleted soon.
     // TODO(crbug.com/40657227): Remove this CHECK once we fix the crash.
-    CHECK(base::Contains(controllees_to_be_evicted_, client_uuid));
+    CHECK(controllees_to_be_evicted_.contains(client_uuid));
     // TODO(crbug.com/40657227): Remove DumpWithoutCrashing once we confirm the
     // cause of the crash.
     BackForwardCacheCanStoreDocumentResult can_store;
@@ -1071,8 +1061,8 @@ void ServiceWorkerVersion::RemoveControlleeFromBackForwardCacheMap(
   // TODO(crbug.com/341322515): Investigate why sometimes
   // `bfcache_controllee_map_` does not contain the client.
   SCOPED_CRASH_KEY_BOOL("ServiceWorkerBfcache", "in_controllee_map",
-                        base::Contains(controllee_map_, client_uuid));
-  CHECK(base::Contains(bfcached_controllee_map_, client_uuid));
+                        controllee_map_.contains(client_uuid));
+  CHECK(bfcached_controllee_map_.contains(client_uuid));
   bfcached_controllee_map_.erase(client_uuid);
 }
 
@@ -1080,9 +1070,9 @@ void ServiceWorkerVersion::Uncontrol(const std::string& client_uuid) {
   if (!IsBackForwardCacheEnabled()) {
     RemoveControllee(client_uuid);
   } else {
-    if (base::Contains(controllee_map_, client_uuid)) {
+    if (controllee_map_.contains(client_uuid)) {
       RemoveControllee(client_uuid);
-    } else if (base::Contains(bfcached_controllee_map_, client_uuid)) {
+    } else if (bfcached_controllee_map_.contains(client_uuid)) {
       RemoveControlleeFromBackForwardCacheMap(client_uuid);
     } else {
       // It is possible that the controllee belongs to neither |controllee_map_|
@@ -1092,7 +1082,7 @@ void ServiceWorkerVersion::Uncontrol(const std::string& client_uuid) {
       // In this case, |controllees_to_be_evicted_| should contain the
       // controllee.
       // TODO(crbug.com/40657227): Remove this CHECK once we fix the crash.
-      CHECK(base::Contains(controllees_to_be_evicted_, client_uuid));
+      CHECK(controllees_to_be_evicted_.contains(client_uuid));
       controllees_to_be_evicted_.erase(client_uuid);
     }
   }
@@ -1359,6 +1349,18 @@ void ServiceWorkerVersion::SetDevToolsAttached(bool attached) {
 
 void ServiceWorkerVersion::SetMainScriptResponse(
     std::unique_ptr<MainScriptResponse> response) {
+  if (base::FeatureList::IsEnabled(
+          features::kServiceWorkerStaticRouterConsolidateMainScriptResponse)) {
+    main_script_fetched_ = true;
+    if (!response) {
+      main_script_response_callbacks_.Notify();
+      return;
+    }
+  } else {
+    // In the old code path, this should never be called with a null response.
+    CHECK(response);
+  }
+
   script_response_time_for_devtools_ = response->response_time;
   main_script_response_ = std::move(response);
 
@@ -1376,6 +1378,37 @@ void ServiceWorkerVersion::SetMainScriptResponse(
   if (context_) {
     context_->OnMainScriptResponseSet(version_id(), *main_script_response_);
   }
+
+  if (base::FeatureList::IsEnabled(
+          features::kServiceWorkerStaticRouterConsolidateMainScriptResponse)) {
+    main_script_response_callbacks_.Notify();
+  }
+}
+
+bool ServiceWorkerVersion::main_script_fetched() const {
+  return main_script_fetched_;
+}
+
+void ServiceWorkerVersion::EnsureMainScriptResponseSet(
+    base::OnceClosure callback) {
+  if (!base::FeatureList::IsEnabled(
+          features::kServiceWorkerStaticRouterConsolidateMainScriptResponse)) {
+    return;
+  }
+  if (main_script_fetched_) {
+    std::move(callback).Run();
+    return;
+  }
+
+  main_script_response_callbacks_.AddUnsafe(std::move(callback));
+
+  if (installed_scripts_sender_) {
+    return;
+  }
+
+  installed_scripts_sender_ =
+      std::make_unique<ServiceWorkerInstalledScriptsSender>(this);
+  installed_scripts_sender_->Start();
 }
 
 void ServiceWorkerVersion::SimulatePingTimeoutForTesting() {
@@ -1768,11 +1801,64 @@ void ServiceWorkerVersion::OpenPaymentHandlerWindow(
 
   PaymentHandlerSupport::ShowPaymentHandlerWindow(
       url, context_.get(),
-      base::BindOnce(&DidShowPaymentHandlerWindow, url, key_, context_),
+      base::BindOnce(&ServiceWorkerVersion::DidShowPaymentHandlerWindow,
+                     weak_factory_.GetWeakPtr(), url, key_, context_),
       base::BindOnce(
           &ServiceWorkerVersion::OpenWindow, weak_factory_.GetWeakPtr(), url,
           service_worker_client_utils::WindowType::PAYMENT_HANDLER_WINDOW),
       std::move(callback));
+}
+
+void ServiceWorkerVersion::DidShowPaymentHandlerWindow(
+    const GURL& url,
+    const blink::StorageKey& key,
+    const base::WeakPtr<ServiceWorkerContextCore>& context,
+    blink::mojom::ServiceWorkerHost::OpenPaymentHandlerWindowCallback callback,
+    bool success,
+    int render_process_id,
+    int render_frame_id) {
+  if (success) {
+    payment_handler_connected_ = true;
+    // Start the timeout timer for the payment handler connection.
+    payment_handler_timeout_timer_.Start(
+        FROM_HERE, kPaymentHandlerTimeout,
+        base::BindOnce(&ServiceWorkerVersion::OnPaymentHandlerTimeout,
+                       weak_factory_.GetWeakPtr()));
+    service_worker_client_utils::DidNavigate(
+        context, url, key,
+        base::BindOnce(&OnOpenWindowFinished, std::move(callback)),
+        GlobalRenderFrameHostId(render_process_id, render_frame_id));
+  } else {
+    OnOpenWindowFinished(std::move(callback),
+                         blink::ServiceWorkerStatusCode::kErrorFailed,
+                         nullptr /* client_info */);
+  }
+}
+
+void ServiceWorkerVersion::OnPaymentHandlerDisconnect() {
+  if (!payment_handler_connected_) {
+    return;
+  }
+  DisconnectPaymentHandler(/*is_timeout=*/false);
+}
+
+void ServiceWorkerVersion::OnPaymentHandlerTimeout() {
+  if (!payment_handler_connected_) {
+    return;
+  }
+  DisconnectPaymentHandler(/*is_timeout=*/true);
+}
+
+void ServiceWorkerVersion::DisconnectPaymentHandler(bool is_timeout) {
+  // Stop the timeout timer if it's running.
+  if (payment_handler_timeout_timer_.IsRunning()) {
+    payment_handler_timeout_timer_.Stop();
+  }
+
+  payment_handler_connected_ = false;
+  // Record UMA indicating whether the disconnect was due to a timeout.
+  base::UmaHistogramBoolean("ServiceWorker.PaymentHandler.DisconnectTimeout",
+                            is_timeout);
 }
 
 void ServiceWorkerVersion::PostMessageToClient(
@@ -2169,11 +2255,12 @@ ServiceWorkerVersion::BuildClientSecurityState() const {
 
   const PolicyContainerPolicies& policies = policy_container_host_->policies();
 
-  network::mojom::PrivateNetworkRequestPolicy private_network_request_policy =
-      DerivePrivateNetworkRequestPolicy(
-          policies.ip_address_space, policies.is_web_secure_context,
-          policies.allow_non_secure_local_network_access,
-          PrivateNetworkRequestContext::kWorker);
+  network::mojom::LocalNetworkAccessRequestPolicy
+      local_network_access_request_policy =
+          DeriveLocalNetworkAccessRequestPolicy(
+              policies.ip_address_space, policies.is_web_secure_context,
+              policies.allow_non_secure_local_network_access,
+              LocalNetworkAccessRequestContext::kWorker);
 
   // Check for policy overrides on LNA. For service workers, we apply
   // policy overrides based on the storage key's origin (which should be the
@@ -2188,11 +2275,12 @@ ServiceWorkerVersion::BuildClientSecurityState() const {
     if (browser_context) {
       ContentBrowserClient* client = GetContentClient()->browser();
       url::Origin origin = key_.origin();
-      ContentBrowserClient::PrivateNetworkRequestPolicyOverride
-          policy_override = client->ShouldOverridePrivateNetworkRequestPolicy(
-              browser_context, origin);
-      private_network_request_policy = OverrideLocalNetworkAccessPolicy(
-          private_network_request_policy, policy_override);
+      ContentBrowserClient::LocalNetworkAccessRequestPolicyOverride
+          policy_override =
+              client->ShouldOverrideLocalNetworkAccessRequestPolicy(
+                  browser_context, origin);
+      local_network_access_request_policy = OverrideLocalNetworkAccessPolicy(
+          local_network_access_request_policy, policy_override);
     }
   }
 
@@ -2200,7 +2288,7 @@ ServiceWorkerVersion::BuildClientSecurityState() const {
   // DeriveClientSecurityState
   return network::mojom::ClientSecurityState::New(
       policies.cross_origin_embedder_policy, policies.is_web_secure_context,
-      policies.ip_address_space, private_network_request_policy,
+      policies.ip_address_space, local_network_access_request_policy,
       policies.document_isolation_policy);
 }
 
@@ -2442,20 +2530,31 @@ void ServiceWorkerVersion::StartWorkerInternal() {
       outside_fetch_client_settings_object_.Clone();
 
   ContentBrowserClient* browser_client = GetContentClient()->browser();
-  params->user_agent = browser_client->GetUserAgentBasedOnPolicy(
-      context_->wrapper()->browser_context());
+  params->user_agent = browser_client->GetUserAgent();
   params->ua_metadata = browser_client->GetUserAgentMetadata();
   params->is_installed = IsInstalled(status_);
   params->script_url_to_skip_throttling = updated_script_url_;
   params->main_script_load_params = std::move(main_script_load_params_);
 
   if (IsInstalled(status())) {
-    DCHECK(!installed_scripts_sender_);
-    installed_scripts_sender_ =
-        std::make_unique<ServiceWorkerInstalledScriptsSender>(this);
-    params->installed_scripts_info =
-        installed_scripts_sender_->CreateInfoAndBind();
-    installed_scripts_sender_->Start();
+    if (base::FeatureList::IsEnabled(
+            features::
+                kServiceWorkerStaticRouterConsolidateMainScriptResponse)) {
+      if (!installed_scripts_sender_) {
+        installed_scripts_sender_ =
+            std::make_unique<ServiceWorkerInstalledScriptsSender>(this);
+        installed_scripts_sender_->Start();
+      }
+      params->installed_scripts_info =
+          installed_scripts_sender_->CreateInfoAndBind();
+    } else {
+      DCHECK(!installed_scripts_sender_);
+      installed_scripts_sender_ =
+          std::make_unique<ServiceWorkerInstalledScriptsSender>(this);
+      params->installed_scripts_info =
+          installed_scripts_sender_->CreateInfoAndBind();
+      installed_scripts_sender_->Start();
+    }
   }
 
   params->service_worker_receiver =
@@ -2488,10 +2587,10 @@ void ServiceWorkerVersion::StartWorkerInternal() {
         policy_container_host_->ip_address_space();
     client_security_state_->is_web_secure_context =
         policy_container_host_->policies().is_web_secure_context;
-    client_security_state_->private_network_request_policy =
-        DerivePrivateNetworkRequestPolicy(
+    client_security_state_->local_network_access_request_policy =
+        DeriveLocalNetworkAccessRequestPolicy(
             policy_container_host_->policies(),
-            PrivateNetworkRequestContext::kWorker);
+            LocalNetworkAccessRequestContext::kWorker);
   }
 
   embedded_worker_->Start(std::move(params),
@@ -2547,6 +2646,13 @@ void ServiceWorkerVersion::OnTimeoutTimer() {
       << static_cast<int>(running_status());
 
   if (!context_) {
+    return;
+  }
+
+  // Suppress timeout while a Payment Handler window is open.
+  if (base::FeatureList::IsEnabled(
+          features::kServiceWorkerSuppressTimeoutWhenPaymentWindowOpen) &&
+      payment_handler_connected_) {
     return;
   }
 
@@ -2613,6 +2719,14 @@ void ServiceWorkerVersion::OnTimeoutTimer() {
       break;
     }
     timed_out_infos.push_back(*it);
+    // Erase the entry from `request_timeouts_` and update `InflightRequest`
+    // accordingly.
+    if (base::FeatureList::IsEnabled(
+            features::kServiceWorkerOptionalTimeoutIterator)) {
+      InflightRequest* request = inflight_requests_.Lookup(it->id);
+      CHECK(request);
+      request->timeout_iter = std::nullopt;
+    }
     it = request_timeouts_.erase(it);
   }
 
@@ -3268,7 +3382,7 @@ void ServiceWorkerVersion::GetAssociatedInterface(
 
 bool ServiceWorkerVersion::BFCacheContainsControllee(
     const std::string& uuid) const {
-  return base::Contains(bfcached_controllee_map_, uuid);
+  return bfcached_controllee_map_.contains(uuid);
 }
 
 base::WeakPtr<ServiceWorkerVersion> ServiceWorkerVersion::GetWeakPtr() {

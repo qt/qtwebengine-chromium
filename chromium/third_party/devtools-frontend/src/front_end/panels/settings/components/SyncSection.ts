@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import '../../../ui/components/chrome_link/chrome_link.js';
 import '../../../ui/components/settings/settings.js';
 import '../../../ui/components/tooltips/tooltips.js';
+import '../../../ui/kit/kit.js';
 
 import * as Common from '../../../core/common/common.js';
 import * as Host from '../../../core/host/host.js';
@@ -180,12 +180,12 @@ const DEFAULT_VIEW = (input: ViewInput, output: ViewOutput, target: HTMLElement)
             <div class="plan-details">
               ${getGdpSubscriptionText(input.gdpProfile)}
               &nbsp;·&nbsp;
-              <x-link
-                .jslog=${VisualLogging.link().track({click: true, keydown: 'Enter|Space'}).context('view-profile')}
+              <devtools-link
+                jslogcontext="view-profile"
                 class="link"
                 href=${Host.GdpClient.GOOGLE_DEVELOPER_PROGRAM_PROFILE_LINK}>
                 ${i18nString(UIStrings.viewProfile)}
-              </x-link></div>
+              </devtools-link></div>
               ${hasReceiveBadgesCheckbox ? html`
                 <div class="setting-container" ${ref(el => {
                   output.highlightReceiveBadgesSetting = () => {

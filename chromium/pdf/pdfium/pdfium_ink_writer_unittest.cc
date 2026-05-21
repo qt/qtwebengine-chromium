@@ -85,7 +85,7 @@ std::unique_ptr<PdfInkBrush> CreateTestBrush() {
 using PDFiumInkWriterTest = PDFiumTestBase;
 
 TEST_P(PDFiumInkWriterTest, BasicWriteAndRead) {
-  TestClient client;
+  TestClient client(/*use_skia_renderer=*/GetParam());
   std::unique_ptr<PDFiumEngine> engine =
       InitializeEngine(&client, FILE_PATH_LITERAL("blank.pdf"));
   ASSERT_TRUE(engine);
@@ -115,7 +115,7 @@ TEST_P(PDFiumInkWriterTest, BasicWriteAndRead) {
 
   // Load `saved_pdf_data` into `saved_engine` and get a handle to the one and
   // only page.
-  TestClient saved_client;
+  TestClient saved_client(/*use_skia_renderer=*/GetParam());
   std::unique_ptr<PDFiumEngine> saved_engine =
       InitializeEngineFromData(&saved_client, std::move(saved_pdf_data));
   ASSERT_TRUE(saved_engine);
@@ -163,7 +163,7 @@ TEST_P(PDFiumInkWriterTest, BasicWriteAndRead) {
 }
 
 TEST_P(PDFiumInkWriterTest, WriteToCroppedPage) {
-  TestClient client;
+  TestClient client(/*use_skia_renderer=*/GetParam());
   std::unique_ptr<PDFiumEngine> engine =
       InitializeEngine(&client, FILE_PATH_LITERAL("hello_world_cropped.pdf"));
   ASSERT_TRUE(engine);
@@ -193,12 +193,12 @@ TEST_P(PDFiumInkWriterTest, WriteToCroppedPage) {
 
   base::FilePath expectation_path = GetInkTestDataFilePath(
       GetTestDataPathWithPlatformSuffix("ink_writer_cropped.png"));
-  CheckPdfRendering(saved_pdf_data, /*page_index=*/0, gfx::Size(135, 90),
-                    expectation_path);
+  CheckFuzzyPdfRendering(saved_pdf_data, /*page_index=*/0, gfx::Size(135, 90),
+                         expectation_path);
 
   // Load `saved_pdf_data` into `saved_engine` and get a handle to the one and
   // only page.
-  TestClient saved_client;
+  TestClient saved_client(/*use_skia_renderer=*/GetParam());
   std::unique_ptr<PDFiumEngine> saved_engine =
       InitializeEngineFromData(&saved_client, std::move(saved_pdf_data));
   ASSERT_TRUE(saved_engine);
@@ -231,7 +231,7 @@ TEST_P(PDFiumInkWriterTest, WriteToCroppedPage) {
 }
 
 TEST_P(PDFiumInkWriterTest, EmptyStroke) {
-  TestClient client;
+  TestClient client(/*use_skia_renderer=*/GetParam());
   std::unique_ptr<PDFiumEngine> engine =
       InitializeEngine(&client, FILE_PATH_LITERAL("blank.pdf"));
   ASSERT_TRUE(engine);
@@ -247,7 +247,7 @@ TEST_P(PDFiumInkWriterTest, EmptyStroke) {
 }
 
 TEST_P(PDFiumInkWriterTest, NoPage) {
-  TestClient client;
+  TestClient client(/*use_skia_renderer=*/GetParam());
   std::unique_ptr<PDFiumEngine> engine =
       InitializeEngine(&client, FILE_PATH_LITERAL("blank.pdf"));
   ASSERT_TRUE(engine);

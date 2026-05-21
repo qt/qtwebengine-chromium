@@ -4,8 +4,8 @@
 
 #include "extensions/browser/renderer_startup_helper.h"
 
-#include "base/containers/contains.h"
 #include "base/memory/raw_ptr.h"
+#include "base/test/scoped_feature_list.h"
 #include "components/crx_file/id_util.h"
 #include "content/public/test/mock_render_process_host.h"
 #include "content/public/test/test_browser_context.h"
@@ -21,6 +21,7 @@
 #include "extensions/common/mojom/renderer.mojom.h"
 #include "extensions/common/permissions/permissions_data.h"
 #include "mojo/public/cpp/bindings/associated_receiver_set.h"
+#include "third_party/blink/public/common/features.h"
 
 #if BUILDFLAG(IS_CHROMEOS)
 #include "chromeos/constants/chromeos_features.h"
@@ -225,34 +226,34 @@ class RendererStartupHelperTest : public ExtensionsTest {
   }
 
   scoped_refptr<const Extension> CreateExtension(const ExtensionId& id_input) {
-    base::Value::Dict manifest = base::Value::Dict()
-                                     .Set("name", "extension")
-                                     .Set("description", "an extension")
-                                     .Set("manifest_version", 2)
-                                     .Set("version", "0.1");
+    base::DictValue manifest = base::DictValue()
+                                   .Set("name", "extension")
+                                   .Set("description", "an extension")
+                                   .Set("manifest_version", 2)
+                                   .Set("version", "0.1");
     return CreateExtension(id_input, std::move(manifest));
   }
 
   scoped_refptr<const Extension> CreateTheme(const ExtensionId& id_input) {
-    base::Value::Dict manifest = base::Value::Dict()
-                                     .Set("name", "theme")
-                                     .Set("description", "a theme")
-                                     .Set("theme", base::Value::Dict())
-                                     .Set("manifest_version", 2)
-                                     .Set("version", "0.1");
+    base::DictValue manifest = base::DictValue()
+                                   .Set("name", "theme")
+                                   .Set("description", "a theme")
+                                   .Set("theme", base::DictValue())
+                                   .Set("manifest_version", 2)
+                                   .Set("version", "0.1");
     return CreateExtension(id_input, std::move(manifest));
   }
 
   scoped_refptr<const Extension> CreatePlatformApp(
       const ExtensionId& id_input) {
-    base::Value::Dict background = base::Value::Dict().Set(
-        "scripts", base::Value::List().Append("background.js"));
-    base::Value::Dict manifest =
-        base::Value::Dict()
+    base::DictValue background = base::DictValue().Set(
+        "scripts", base::ListValue().Append("background.js"));
+    base::DictValue manifest =
+        base::DictValue()
             .Set("name", "platform_app")
             .Set("description", "a platform app")
             .Set("app",
-                 base::Value::Dict().Set("background", std::move(background)))
+                 base::DictValue().Set("background", std::move(background)))
             .Set("manifest_version", 2)
             .Set("version", "0.1");
     return CreateExtension(id_input, std::move(manifest));
@@ -267,24 +268,23 @@ class RendererStartupHelperTest : public ExtensionsTest {
   }
 
   bool IsProcessInitialized(content::RenderProcessHost* rph) {
-    return base::Contains(helper_->process_mojo_map_, rph);
+    return helper_->process_mojo_map_.contains(rph);
   }
 
   bool IsExtensionLoaded(const Extension& extension) {
-    return base::Contains(helper_->extension_process_map_, extension.id());
+    return helper_->extension_process_map_.contains(extension.id());
   }
 
   bool IsExtensionLoadedInProcess(const Extension& extension,
                                   content::RenderProcessHost* rph) {
     return IsExtensionLoaded(extension) &&
-           base::Contains(helper_->extension_process_map_[extension.id()], rph);
+           helper_->extension_process_map_[extension.id()].contains(rph);
   }
 
   bool IsExtensionPendingActivationInProcess(const Extension& extension,
                                              content::RenderProcessHost* rph) {
-    return base::Contains(helper_->pending_active_extensions_, rph) &&
-           base::Contains(helper_->pending_active_extensions_[rph],
-                          extension.id());
+    return helper_->pending_active_extensions_.contains(rph) &&
+           helper_->pending_active_extensions_[rph].contains(extension.id());
   }
 
   std::unique_ptr<RendererStartupHelperInterceptor> helper_;
@@ -296,7 +296,7 @@ class RendererStartupHelperTest : public ExtensionsTest {
 
  private:
   scoped_refptr<const Extension> CreateExtension(const ExtensionId& id_input,
-                                                 base::Value::Dict manifest) {
+                                                 base::DictValue manifest) {
     return ExtensionBuilder()
         .SetManifest(std::move(manifest))
         .SetID(crx_file::id_util::GenerateId(id_input))
@@ -528,6 +528,54 @@ TEST_F(RendererStartupHelperTest, PlatformAppInIncognitoRenderer) {
   ASSERT_EQ(1u, helper_->num_loaded_extensions_in_incognito());
 }
 
+#if BUILDFLAG(IS_ANDROID)
+// Tests the process re-registration workflow when OnRenderProcessLaunched() is
+// called after the process has exited. This simulates:
+// 1. OnRenderProcessHostCreated() initializes process
+// 2. Process exits (e.g., OOM termination), clearing process_mojo_map_
+// 3. OnRenderProcessLaunched() is called later due to delayed callbacks
+// The process should be re-registered without crashing, and extensions should
+// not be re-loaded to avoid duplicate loading.
+TEST_F(RendererStartupHelperTest, ProcessReregistrationAfterExit) {
+  // Initialize render process via OnRenderProcessHostCreated.
+  EXPECT_FALSE(IsProcessInitialized(render_process_host_.get()));
+  SimulateRenderProcessCreated(render_process_host_.get());
+  base::RunLoop().RunUntilIdle();
+  EXPECT_TRUE(IsProcessInitialized(render_process_host_.get()));
+
+  // Enable extension.
+  helper_->clear_extensions();
+  EXPECT_FALSE(IsExtensionLoaded(*extension_));
+  AddExtensionToRegistry(extension_);
+  helper_->OnExtensionLoaded(*extension_);
+  EXPECT_TRUE(
+      IsExtensionLoadedInProcess(*extension_, render_process_host_.get()));
+  base::RunLoop().RunUntilIdle();
+  ASSERT_EQ(1u, helper_->num_loaded_extensions());
+
+  // Simulate process exiting.
+  // This clears the process from process_mojo_map_ via UntrackProcess().
+  SimulateRenderProcessTerminated(render_process_host_.get());
+
+  // Process should no longer be initialized.
+  EXPECT_FALSE(IsProcessInitialized(render_process_host_.get()));
+
+  // Simulate OnRenderProcessLaunched being called after process exit
+  // due to delayed callbacks. This should re-register the process
+  // without crashing.
+  helper_->clear_extensions();
+  helper_->OnRenderProcessLaunched(render_process_host_.get());
+  base::RunLoop().RunUntilIdle();
+
+  // Process should be initialized again via RegisterProcess().
+  EXPECT_TRUE(IsProcessInitialized(render_process_host_.get()));
+
+  // Verify that RegisterProcess() only re-registers the Mojo communication
+  // and does NOT re-load extensions (to avoid duplicate loading).
+  ASSERT_EQ(0u, helper_->num_loaded_extensions());
+}
+#endif  // BUILDFLAG(IS_ANDROID)
+
 #if BUILDFLAG(IS_CHROMEOS)
 class RendererStartupHelperTestCaptivePortalPopupWindow
     : public RendererStartupHelperTest {
@@ -566,5 +614,42 @@ TEST_F(RendererStartupHelperTestCaptivePortalPopupWindow,
   EXPECT_TRUE(IsExtensionLoaded(*extension_));
 }
 #endif
+
+TEST_F(RendererStartupHelperTest, InitializeProcessIdempotency) {
+  // 1. First call should initialize the process.
+  // render_process_host_ is already created in SetUp().
+  helper_->InitializeProcess(render_process_host_.get());
+  EXPECT_TRUE(IsProcessInitialized(render_process_host_.get()));
+
+  // 2. Second call should return early without creating duplicate state.
+  // This is now safe because of your "contains" check in InitializeProcess.
+  helper_->InitializeProcess(render_process_host_.get());
+  EXPECT_TRUE(IsProcessInitialized(render_process_host_.get()));
+}
+
+#if !BUILDFLAG(IS_ANDROID)
+TEST_F(RendererStartupHelperTest, SkipInitializationOnLaunchWithFeature) {
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitAndEnableFeature(
+      blink::features::kInitialWebUIWithoutExtensions);
+
+  // Use a new mock process to simulate a fresh launch.
+  auto new_process =
+      std::make_unique<content::MockRenderProcessHost>(browser_context());
+
+  new_process->SetIsForInitialWebUI(true);
+
+  // 1. Simulate process launch.
+  helper_->OnRenderProcessLaunched(new_process.get());
+
+  // VERIFY: The process should NOT be initialized yet.
+  EXPECT_FALSE(IsProcessInitialized(new_process.get()));
+
+  // 2. Manually calling InitializeProcess (as ReadyToCommitNavigation would)
+  // should still work.
+  helper_->InitializeProcess(new_process.get());
+  EXPECT_TRUE(IsProcessInitialized(new_process.get()));
+}
+#endif  // !BUILDFLAG(IS_ANDROID)
 
 }  // namespace extensions

@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD - style license that can be
 # found in the LICENSE file.
 
+import("//components/guest_view/buildflags/buildflags.gni")
+import("//extensions/buildflags/buildflags.gni")
 import("//ui/webui/resources/tools/build_webui.gni")
 import("//ui/webui/resources/tools/optimize_webui.gni")
 
@@ -13,12 +15,17 @@ build_webui("build") {
   static_files = [
     "glic.css",
     "glic.html",
+    "internals/glic_internals.html",
   ]
+
+  css_files = [ "internals/glic_internals_app.css" ]
 
   ts_files = [
     "app_router.ts",
     "browser_proxy.ts",
+    "glic_api/glic_api.ts",
     "glic_api_impl/client/glic_api_client.ts",
+    "glic_api_impl/client/image_utils.ts",
     "glic_api_impl/conversions.ts",
     "glic_api_impl/glic_api_injected_client.ts",
     "glic_api_impl/host/conversions.ts",
@@ -29,9 +36,10 @@ build_webui("build") {
     "glic_api_impl/host/types.ts",
     "glic_api_impl/post_message_transport.ts",
     "glic_api_impl/request_types.ts",
-    "glic_api/glic_api.ts",
     "glic_app_controller.ts",
     "icons.html.ts",
+    "internals/glic_internals_app.html.ts",
+    "internals/glic_internals_app.ts",
     "main.ts",
     "observable.ts",
     "timer.ts",
@@ -42,6 +50,7 @@ build_webui("build") {
   ts_deps = [
     "//chrome/browser/resources/glic/fre:build_ts",
     "//chrome/browser/resources/glic/shared:build_ts",
+    "//third_party/lit/v3_0:build_ts",
     "//ui/webui/resources/cr_elements:build_ts",
     "//ui/webui/resources/js:build_ts",
     "//ui/webui/resources/mojo:build_ts",
@@ -59,9 +68,9 @@ build_webui("build") {
   ]
   mojo_files = [
     "$root_gen_dir/chrome/browser/glic/host/glic.mojom-webui.ts",
+    "$root_gen_dir/chrome/common/actor_webui.mojom-webui.ts",
     "$root_gen_dir/components/content_settings/core/common/content_settings_types.mojom-webui.ts",
     "$root_gen_dir/third_party/blink/public/mojom/content_extraction/ai_page_content_metadata.mojom-webui.ts",
-    "$root_gen_dir/chrome/common/actor_webui.mojom-webui.ts",
   ]
 
   ts_definitions = [
@@ -79,6 +88,15 @@ build_webui("build") {
     "/shared/*|./shared/tsc/*",
     "/fre/*|./fre/tsc/*",
   ]
+
+  if (enable_guest_view && !enable_extensions_core) {
+    ts_deps += [ "//chrome/browser/resources/guest_view_shared:build_ts" ]
+
+    ts_path_mappings +=
+        [ "/shared/guest_view/*|" + rebase_path(
+              "$root_gen_dir/chrome/browser/resources/guest_view_shared/tsc/*",
+              target_gen_dir) ]
+  }
 
   ts_composite = true
 }

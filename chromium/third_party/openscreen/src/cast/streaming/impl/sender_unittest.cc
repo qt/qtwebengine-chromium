@@ -34,7 +34,6 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "platform/base/span.h"
-#include "platform/test/byte_view_test_util.h"
 #include "platform/test/fake_clock.h"
 #include "platform/test/fake_task_runner.h"
 #include "util/alarm.h"
@@ -428,7 +427,8 @@ class SenderTest : public testing::Test {
       EXPECT_EQ(sent_frame.referenced_frame_id,
                 received_frame.referenced_frame_id);
       EXPECT_EQ(sent_frame.rtp_timestamp, received_frame.rtp_timestamp);
-      ExpectByteViewsHaveSameBytes(sent_frame.data, received_frame.data);
+      EXPECT_THAT(sent_frame.data,
+                  testing::ElementsAreArray(received_frame.data));
     }
   }
 

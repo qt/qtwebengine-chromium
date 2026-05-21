@@ -7,16 +7,15 @@
 #include <algorithm>
 #include <memory>
 
-#include "base/containers/contains.h"
 #include "base/time/time.h"
 #include "ui/aura/test/aura_test_base.h"
 #include "ui/aura/test/test_windows.h"
 #include "ui/aura/window.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/layer_animator.h"
-#include "ui/compositor/scoped_animation_duration_scale_mode.h"
 #include "ui/gfx/animation/animation_container_element.h"
 #include "ui/gfx/geometry/vector2d.h"
+#include "ui/gfx/scoped_animation_duration_scale_mode.h"
 #include "ui/wm/core/transient_window_manager.h"
 #include "ui/wm/core/transient_window_stacking_client.h"
 #include "ui/wm/core/window_util.h"
@@ -143,8 +142,8 @@ TEST_F(WindowAnimationsTest, HideAnimationDetachLayers) {
   EXPECT_EQ(1, GetLayerZPosition(animating_window->layer()));
 
   {
-    ui::ScopedAnimationDurationScaleMode scale_mode(
-        ui::ScopedAnimationDurationScaleMode::FAST_DURATION);
+    gfx::ScopedAnimationDurationScaleMode scale_mode(
+        gfx::ScopedAnimationDurationScaleMode::FAST_DURATION);
     ui::Layer* animating_layer = animating_window->layer();
 
     animating_window->Hide();
@@ -156,9 +155,10 @@ TEST_F(WindowAnimationsTest, HideAnimationDetachLayers) {
     // Make sure the Hide animation create another layer, and both are in
     // the parent layer.
     EXPECT_NE(animating_window->layer(), animating_layer);
-    EXPECT_TRUE(base::Contains(parent->layer()->children(), animating_layer));
     EXPECT_TRUE(
-        base::Contains(parent->layer()->children(), animating_window->layer()));
+        std::ranges::contains(parent->layer()->children(), animating_layer));
+    EXPECT_TRUE(std::ranges::contains(parent->layer()->children(),
+                                      animating_window->layer()));
     // Current layer must be already hidden.
     EXPECT_FALSE(animating_window->layer()->visible());
 
@@ -177,7 +177,8 @@ TEST_F(WindowAnimationsTest, HideAnimationDetachLayers) {
 
     // Animating layer must be gone
     animating_layer->GetAnimator()->StopAnimating();
-    EXPECT_FALSE(base::Contains(parent->layer()->children(), animating_layer));
+    EXPECT_FALSE(
+        std::ranges::contains(parent->layer()->children(), animating_layer));
   }
 }
 
@@ -209,8 +210,8 @@ TEST_F(WindowAnimationsTest, HideAnimationDetachLayersWithTransientChildren) {
   EXPECT_EQ(3, GetWindowZPosition(transient2.get()));
 
   {
-    ui::ScopedAnimationDurationScaleMode scale_mode(
-        ui::ScopedAnimationDurationScaleMode::FAST_DURATION);
+    gfx::ScopedAnimationDurationScaleMode scale_mode(
+        gfx::ScopedAnimationDurationScaleMode::FAST_DURATION);
     ui::Layer* animating_layer = animating_window->layer();
 
     animating_window->Hide();
@@ -286,8 +287,8 @@ TEST_F(WindowAnimationsTest, NotifyHideCompleted) {
 // The rotation animation for hiding a window should not leak the animation
 // observer.
 TEST_F(WindowAnimationsTest, RotateHideNoLeak) {
-  ui::ScopedAnimationDurationScaleMode scale_mode(
-      ui::ScopedAnimationDurationScaleMode::FAST_DURATION);
+  gfx::ScopedAnimationDurationScaleMode scale_mode(
+      gfx::ScopedAnimationDurationScaleMode::FAST_DURATION);
 
   std::unique_ptr<aura::Window> window =
       aura::test::CreateTestWindow({.bounds = {100, 100}, .window_id = 0});
@@ -314,8 +315,8 @@ TEST_F(WindowAnimationsTest, RotateHideNoCrashZeroDuration) {
 }
 
 TEST_F(WindowAnimationsTest, RotateHideCreatesNewLayer) {
-  ui::ScopedAnimationDurationScaleMode scale_mode(
-      ui::ScopedAnimationDurationScaleMode::FAST_DURATION);
+  gfx::ScopedAnimationDurationScaleMode scale_mode(
+      gfx::ScopedAnimationDurationScaleMode::FAST_DURATION);
 
   std::unique_ptr<aura::Window> window =
       aura::test::CreateTestWindow({.bounds = {100, 100}, .window_id = 0});
@@ -335,8 +336,8 @@ TEST_F(WindowAnimationsTest, RotateHideCreatesNewLayer) {
 // The rotation animation for hiding a window should not crash when terminated
 // by LayerAnimator::StopAnimating().
 TEST_F(WindowAnimationsTest, RotateHideNoCrash) {
-  ui::ScopedAnimationDurationScaleMode scale_mode(
-      ui::ScopedAnimationDurationScaleMode::FAST_DURATION);
+  gfx::ScopedAnimationDurationScaleMode scale_mode(
+      gfx::ScopedAnimationDurationScaleMode::FAST_DURATION);
 
   std::unique_ptr<aura::Window> window =
       aura::test::CreateTestWindow({.bounds = {100, 100}, .window_id = 0});

@@ -19,6 +19,7 @@
 #include "base/functional/callback_helpers.h"
 #include "base/memory/ptr_util.h"
 #include "base/synchronization/waitable_event.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/trace_event/trace_event.h"
 #include "gpu/command_buffer/common/shared_image_trace_utils.h"
 #include "gpu/command_buffer/common/shared_image_usage.h"
@@ -456,9 +457,11 @@ std::unique_ptr<D3DImageBacking> D3DImageBacking::CreateFromD3D12Resource(
     const gfx::Size& size,
     gpu::SharedImageUsageSet usage,
     std::string debug_label,
-    Microsoft::WRL::ComPtr<ID3D12Resource> d3d12_resource) {
-  auto backing = base::WrapUnique(new D3DImageBacking(
-      mailbox, size, usage, std::move(debug_label), std::move(d3d12_resource)));
+    Microsoft::WRL::ComPtr<ID3D12Resource> d3d12_resource,
+    bool is_thread_safe) {
+  auto backing = base::WrapUnique(
+      new D3DImageBacking(mailbox, size, usage, std::move(debug_label),
+                          std::move(d3d12_resource), is_thread_safe));
   return backing;
 }
 
@@ -549,7 +552,8 @@ D3DImageBacking::D3DImageBacking(
     const gfx::Size& size,
     gpu::SharedImageUsageSet usage,
     std::string debug_label,
-    Microsoft::WRL::ComPtr<ID3D12Resource> d3d12_resource)
+    Microsoft::WRL::ComPtr<ID3D12Resource> d3d12_resource,
+    bool is_thread_safe)
     : ClearTrackingSharedImageBacking(mailbox,
                                       viz::SharedImageFormat(),
                                       size,
@@ -559,7 +563,7 @@ D3DImageBacking::D3DImageBacking(
                                       usage,
                                       std::move(debug_label),
                                       size.width(),
-                                      /*is_thread_safe=*/false),
+                                      is_thread_safe),
       d3d12_resource_(std::move(d3d12_resource)),
       texture_target_(0),
       array_slice_(0),
@@ -755,7 +759,8 @@ void D3DImageBacking::ReadbackToMemoryAsync(
 
   base::WaitableEvent copy_complete_event;
   Microsoft::WRL::ComPtr<IDXGIDevice2> dxgi_device;
-  texture_d3d11_device_.As(&dxgi_device);
+  const HRESULT hr = texture_d3d11_device_.As(&dxgi_device);
+  CHECK_EQ(hr, S_OK);
   dxgi_device->EnqueueSetEvent(copy_complete_event.handle());
 
   pending_copy_event_watcher_.emplace();
@@ -978,18 +983,19 @@ std::unique_ptr<VideoImageRepresentation> D3DImageBacking::ProduceVideo(
     SharedImageManager* manager,
     MemoryTypeTracker* tracker,
     VideoDevice device) {
+  D3D11TextureAndArrayIndex src_texture(d3d11_texture_, array_slice_);
   if (texture_d3d11_device_ != device) {
     // Readback is the only option for a caller cannot create a representation
     // for this shared image.  When the caller cannot use a shared device
     // (GL/Ganesh) create a copy since this is much more efficient than forcing
     // readback.
     return D3D11VideoImageCopyRepresentation::CreateFromD3D(
-        manager, this, tracker, device.Get(), d3d11_texture_.Get(),
-        debug_label(), texture_d3d11_device_.Get());
+        manager, this, tracker, device.Get(), src_texture, debug_label(),
+        texture_d3d11_device_.Get());
   }
 
-  return std::make_unique<D3D11VideoImageRepresentation>(
-      manager, this, tracker, device, d3d11_texture_);
+  return std::make_unique<D3D11VideoImageRepresentation>(manager, this, tracker,
+                                                         device, src_texture);
 }
 
 std::vector<scoped_refptr<gfx::D3DSharedFence>>
@@ -1554,11 +1560,6 @@ std::unique_ptr<DawnBufferRepresentation> D3DImageBacking::ProduceDawnBuffer(
     AutoLock auto_lock(this);
     // Persistently open the shared handle by caching it on this backing.
     if (!dawn_shared_buffer_memory_) {
-      Microsoft::WRL::ComPtr<ID3D12Device> dawn_d3d12_device;
-      if (backend_type == wgpu::BackendType::D3D12) {
-        dawn_d3d12_device = dawn::native::d3d12::GetD3D12Device(device.Get());
-      }
-
       dawn_shared_buffer_memory_ =
           CreateDawnSharedBufferMemory(device, d3d12_resource_);
 
@@ -1628,6 +1629,7 @@ wgpu::Buffer D3DImageBacking::BeginAccessDawnBuffer(
 }
 
 void D3DImageBacking::EndAccessDawnBuffer(const wgpu::Device& device,
+                                          wgpu::BackendType backend_type,
                                           wgpu::Buffer buffer) {
   AutoLock auto_lock(this);
   DCHECK(buffer);
@@ -1647,8 +1649,17 @@ void D3DImageBacking::EndAccessDawnBuffer(const wgpu::Device& device,
     fence.ExportInfo(&export_info);
     DCHECK_EQ(export_info.type, wgpu::SharedFenceType::DXGISharedHandle);
 
-    scoped_refptr<gfx::D3DSharedFence> signaled_fence =
-        gfx::D3DSharedFence::CreateFromUnownedHandle(shared_handle_info.handle);
+    scoped_refptr<gfx::D3DSharedFence> signaled_fence;
+    if (backend_type == wgpu::BackendType::D3D12) {
+      Microsoft::WRL::ComPtr<ID3D12Device> dawn_d3d12_device =
+          dawn::native::d3d12::GetD3D12Device(device.Get());
+      signaled_fence =
+          gfx::D3DSharedFence::CreateFromUnownedHandleAndOpenD3D12Fence(
+              dawn_d3d12_device.Get(), shared_handle_info.handle);
+    } else {
+      signaled_fence = gfx::D3DSharedFence::CreateFromUnownedHandle(
+          shared_handle_info.handle);
+    }
 
     if (signaled_fence) {
       signaled_fence->Update(signaled_value);

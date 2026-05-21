@@ -9,7 +9,6 @@
 
 #include <map>
 #include <optional>
-#include <set>
 #include <vector>
 
 #include "core/fxcrt/fx_string.h"
@@ -49,11 +48,23 @@ class CPDF_ToUnicodeMap {
   uint32_t GetMultiCharIndexIndicator() const;
   void SetCode(uint32_t srccode, WideString destcode);
 
-  // Inserts a new entry which hasn't not been inserted into `multimap_`
-  // before.
-  void InsertIntoMultimap(uint32_t code, uint32_t destcode);
+  // Inserts a new entry into `map_` and `reverse_map_`.
+  void InsertIntoMaps(uint32_t code, uint32_t destcode);
 
-  std::map<uint32_t, std::set<uint32_t>> multimap_;
+  // Key: charcode
+  // Value: unicode
+  // If there are multiple entries with the same key, this stores the lowest
+  // value.
+  std::map<uint32_t, uint32_t> map_;
+  // Key: unicode
+  // Value: charcode
+  // Since `map_` may encounter entries with the same key but different values,
+  // that situation does not cause a conflict in `reverse_map_`. Thus
+  // `reverse_map_` may have a different number of entries compared to `map_`.
+  // Similar to `map_`, if there is a key collision, then this stores the lowest
+  // value.
+  std::map<uint32_t, uint32_t> reverse_map_;
+
   UnownedPtr<const CPDF_CID2UnicodeMap> base_map_;
   std::vector<WideString> multi_char_vec_;
 };

@@ -75,6 +75,7 @@ class Instruction {
     spv::BuiltIn GetBuiltIn() const;
     uint32_t GetPositionOffset() const { return position_offset_; }
     bool IsArray() const;
+    bool IsVector() const;
     bool IsNonPtrAccessChain() const;
     bool IsAccessChain() const;
     // Helpers for OpTypeImage
@@ -91,13 +92,15 @@ class Instruction {
     bool operator==(Instruction const& other) const { return words_ == other.words_; }
     bool operator!=(Instruction const& other) const { return words_ != other.words_; }
 
+    uint32_t GetEntryPointInterfaceStart() const;
+
     // The following is only used for GPU-AV where we need to possibly update an Instruction
     Instruction(spirv_iterator it, uint32_t position_offset);
     // Assumes caller will fill remaining words
     Instruction(uint32_t length, spv::Op opcode);
     void Fill(const std::vector<uint32_t>& words);
     void UpdateWord(uint32_t index, uint32_t data);
-    void ToBinary(std::vector<uint32_t>& out);
+    void ToBinary(std::vector<uint32_t>& out) const;
     // Increments Length() as well
     void AppendWord(uint32_t word);
     void ReplaceResultId(uint32_t new_result_id);

@@ -150,6 +150,11 @@ wgpu::Status AdapterBase::APIGetInfo(AdapterInfo* info) const {
         hadError |= mInstance->ConsumedError(
             DAWN_VALIDATION_ERROR("Feature ChromiumExperimentalSubgroupMatrix is not available."));
     }
+    if (unpacked.Has<AdapterPropertiesExplicitComputeSubgroupSizeConfigs>() &&
+        !mSupportedFeatures.IsEnabled(wgpu::FeatureName::ChromiumExperimentalSubgroupSizeControl)) {
+        hadError |= mInstance->ConsumedError(DAWN_VALIDATION_ERROR(
+            "Feature ChromiumExperimentalExplicitComputeSubgroupSize is not available."));
+    }
     if (hadError) {
         return wgpu::Status::Error;
     }
@@ -159,6 +164,11 @@ wgpu::Status AdapterBase::APIGetInfo(AdapterInfo* info) const {
     }
 
     mPhysicalDevice->PopulateBackendProperties(unpacked, mTogglesState);
+    if (auto* explicitSubgroupSizeConfigs =
+            unpacked.Get<AdapterPropertiesExplicitComputeSubgroupSizeConfigs>()) {
+        DAWN_ASSERT(IsPowerOfTwo(explicitSubgroupSizeConfigs->minExplicitComputeSubgroupSize));
+        DAWN_ASSERT(IsPowerOfTwo(explicitSubgroupSizeConfigs->maxExplicitComputeSubgroupSize));
+    }
 
     // Allocate space for all strings.
     size_t allocSize = mPhysicalDevice->GetVendorName().length() +
@@ -191,6 +201,9 @@ wgpu::Status AdapterBase::APIGetInfo(AdapterInfo* info) const {
         mTogglesState.IsEnabled(Toggle::D3D12RelaxMinSubgroupSizeTo8)) {
         info->subgroupMinSize = std::min(info->subgroupMinSize, 8u);
     }
+
+    DAWN_ASSERT(info->subgroupMaxSize == 0 || IsPowerOfTwo(info->subgroupMaxSize));
+    DAWN_ASSERT(info->subgroupMinSize == 0 || IsPowerOfTwo(info->subgroupMinSize));
 
     return wgpu::Status::Success;
 }
@@ -444,6 +457,10 @@ wgpu::Status AdapterBase::APIGetFormatCapabilities(wgpu::TextureFormat format,
 
 const TogglesState& AdapterBase::GetTogglesState() const {
     return mTogglesState;
+}
+
+std::vector<const char*> AdapterBase::GetTogglesUsed() const {
+    return mTogglesState.GetEnabledToggleNames();
 }
 
 wgpu::FeatureLevel AdapterBase::GetFeatureLevel() const {

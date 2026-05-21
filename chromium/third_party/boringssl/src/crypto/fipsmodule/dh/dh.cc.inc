@@ -24,13 +24,16 @@
 #include <openssl/mem.h>
 
 #include "../../internal.h"
+#include "../../mem_internal.h"
 #include "../bn/internal.h"
 #include "../service_indicator/internal.h"
 #include "internal.h"
 
 
-DH *DH_new(void) {
-  DH *dh = reinterpret_cast<DH *>(OPENSSL_zalloc(sizeof(DH)));
+using namespace bssl;
+
+DH *DH_new() {
+  DHImpl *dh = NewZeroed<DHImpl>();
   if (dh == nullptr) {
     return nullptr;
   }
@@ -45,52 +48,73 @@ void DH_free(DH *dh) {
     return;
   }
 
-  if (!CRYPTO_refcount_dec_and_test_zero(&dh->references)) {
+  auto *impl = FromOpaque(dh);
+  if (!CRYPTO_refcount_dec_and_test_zero(&impl->references)) {
     return;
   }
 
-  BN_MONT_CTX_free(dh->method_mont_p);
-  BN_clear_free(dh->p);
-  BN_clear_free(dh->g);
-  BN_clear_free(dh->q);
-  BN_clear_free(dh->pub_key);
-  BN_clear_free(dh->priv_key);
-  CRYPTO_MUTEX_cleanup(&dh->method_mont_p_lock);
+  BN_MONT_CTX_free(impl->method_mont_p);
+  BN_clear_free(impl->p);
+  BN_clear_free(impl->g);
+  BN_clear_free(impl->q);
+  BN_clear_free(impl->pub_key);
+  BN_clear_free(impl->priv_key);
+  CRYPTO_MUTEX_cleanup(&impl->method_mont_p_lock);
 
-  OPENSSL_free(dh);
+  Delete(impl);
 }
 
-unsigned DH_bits(const DH *dh) { return BN_num_bits(dh->p); }
+unsigned DH_bits(const DH *dh) {
+  auto *impl = FromOpaque(dh);
+  return BN_num_bits(impl->p);
+}
 
-const BIGNUM *DH_get0_pub_key(const DH *dh) { return dh->pub_key; }
+const BIGNUM *DH_get0_pub_key(const DH *dh) {
+  auto *impl = FromOpaque(dh);
+  return impl->pub_key;
+}
 
-const BIGNUM *DH_get0_priv_key(const DH *dh) { return dh->priv_key; }
+const BIGNUM *DH_get0_priv_key(const DH *dh) {
+  auto *impl = FromOpaque(dh);
+  return impl->priv_key;
+}
 
-const BIGNUM *DH_get0_p(const DH *dh) { return dh->p; }
+const BIGNUM *DH_get0_p(const DH *dh) {
+  auto *impl = FromOpaque(dh);
+  return impl->p;
+}
 
-const BIGNUM *DH_get0_q(const DH *dh) { return dh->q; }
+const BIGNUM *DH_get0_q(const DH *dh) {
+  auto *impl = FromOpaque(dh);
+  return impl->q;
+}
 
-const BIGNUM *DH_get0_g(const DH *dh) { return dh->g; }
+const BIGNUM *DH_get0_g(const DH *dh) {
+  auto *impl = FromOpaque(dh);
+  return impl->g;
+}
 
 void DH_get0_key(const DH *dh, const BIGNUM **out_pub_key,
                  const BIGNUM **out_priv_key) {
+  auto *impl = FromOpaque(dh);
   if (out_pub_key != nullptr) {
-    *out_pub_key = dh->pub_key;
+    *out_pub_key = impl->pub_key;
   }
   if (out_priv_key != nullptr) {
-    *out_priv_key = dh->priv_key;
+    *out_priv_key = impl->priv_key;
   }
 }
 
 int DH_set0_key(DH *dh, BIGNUM *pub_key, BIGNUM *priv_key) {
+  auto *impl = FromOpaque(dh);
   if (pub_key != nullptr) {
-    BN_free(dh->pub_key);
-    dh->pub_key = pub_key;
+    BN_free(impl->pub_key);
+    impl->pub_key = pub_key;
   }
 
   if (priv_key != nullptr) {
-    BN_free(dh->priv_key);
-    dh->priv_key = priv_key;
+    BN_free(impl->priv_key);
+    impl->priv_key = priv_key;
   }
 
   return 1;
@@ -98,46 +122,49 @@ int DH_set0_key(DH *dh, BIGNUM *pub_key, BIGNUM *priv_key) {
 
 void DH_get0_pqg(const DH *dh, const BIGNUM **out_p, const BIGNUM **out_q,
                  const BIGNUM **out_g) {
+  auto *impl = FromOpaque(dh);
   if (out_p != nullptr) {
-    *out_p = dh->p;
+    *out_p = impl->p;
   }
   if (out_q != nullptr) {
-    *out_q = dh->q;
+    *out_q = impl->q;
   }
   if (out_g != nullptr) {
-    *out_g = dh->g;
+    *out_g = impl->g;
   }
 }
 
 int DH_set0_pqg(DH *dh, BIGNUM *p, BIGNUM *q, BIGNUM *g) {
-  if ((dh->p == nullptr && p == nullptr) ||
-      (dh->g == nullptr && g == nullptr)) {
+  auto *impl = FromOpaque(dh);
+  if ((impl->p == nullptr && p == nullptr) ||
+      (impl->g == nullptr && g == nullptr)) {
     return 0;
   }
 
   if (p != nullptr) {
-    BN_free(dh->p);
-    dh->p = p;
+    BN_free(impl->p);
+    impl->p = p;
   }
 
   if (q != nullptr) {
-    BN_free(dh->q);
-    dh->q = q;
+    BN_free(impl->q);
+    impl->q = q;
   }
 
   if (g != nullptr) {
-    BN_free(dh->g);
-    dh->g = g;
+    BN_free(impl->g);
+    impl->g = g;
   }
 
   // Invalidate the cached Montgomery parameters.
-  BN_MONT_CTX_free(dh->method_mont_p);
-  dh->method_mont_p = nullptr;
+  BN_MONT_CTX_free(impl->method_mont_p);
+  impl->method_mont_p = nullptr;
   return 1;
 }
 
 int DH_set_length(DH *dh, unsigned priv_length) {
-  dh->priv_length = priv_length;
+  auto *impl = FromOpaque(dh);
+  impl->priv_length = priv_length;
   return 1;
 }
 
@@ -151,45 +178,46 @@ int DH_generate_key(DH *dh) {
   int ok = 0;
   bool generate_new_key = false;
   BIGNUM *pub_key = nullptr, *priv_key = nullptr;
+  auto *impl = FromOpaque(dh);
 
-  bssl::UniquePtr<BN_CTX> ctx(BN_CTX_new());
+  UniquePtr<BN_CTX> ctx(BN_CTX_new());
   if (ctx == nullptr) {
     goto err;
   }
 
-  if (dh->priv_key == nullptr) {
+  if (impl->priv_key == nullptr) {
     priv_key = BN_new();
     if (priv_key == nullptr) {
       goto err;
     }
     generate_new_key = true;
   } else {
-    priv_key = dh->priv_key;
+    priv_key = impl->priv_key;
   }
 
-  if (dh->pub_key == nullptr) {
+  if (impl->pub_key == nullptr) {
     pub_key = BN_new();
     if (pub_key == nullptr) {
       goto err;
     }
   } else {
-    pub_key = dh->pub_key;
+    pub_key = impl->pub_key;
   }
 
-  if (!BN_MONT_CTX_set_locked(&dh->method_mont_p, &dh->method_mont_p_lock,
-                              dh->p, ctx.get())) {
+  if (!BN_MONT_CTX_set_locked(&impl->method_mont_p, &impl->method_mont_p_lock,
+                              impl->p, ctx.get())) {
     goto err;
   }
 
   if (generate_new_key) {
-    if (dh->q) {
+    if (impl->q) {
       // Section 5.6.1.1.4 of SP 800-56A Rev3 generates a private key uniformly
       // from [1, min(2^N-1, q-1)].
       //
       // Although SP 800-56A Rev3 now permits a private key length N,
-      // |dh->priv_length| historically was ignored when q is available. We
+      // |impl->priv_length| historically was ignored when q is available. We
       // continue to ignore it and interpret such a configuration as N = len(q).
-      if (!BN_rand_range_ex(priv_key, 1, dh->q)) {
+      if (!BN_rand_range_ex(priv_key, 1, impl->q)) {
         goto err;
       }
     } else {
@@ -197,24 +225,25 @@ int DH_generate_key(DH *dh) {
       // the (p-1)/2 subgroup. So, we use q = (p-1)/2. (If g generates a smaller
       // prime-order subgroup, q will still divide (p-1)/2.)
       //
-      // We set N from |dh->priv_length|. Section 5.6.1.1.4 of SP 800-56A Rev3
+      // We set N from |impl->priv_length|. Section 5.6.1.1.4 of SP 800-56A Rev3
       // says to reject N > len(q), or N > num_bits(p) - 1. However, this logic
       // originally aligned with PKCS#3, which allows num_bits(p). Instead, we
-      // clamp |dh->priv_length| before invoking the algorithm.
+      // clamp |impl->priv_length| before invoking the algorithm.
 
       // Compute M = min(2^N, q).
-      bssl::UniquePtr<BIGNUM> priv_key_limit(BN_new());
+      UniquePtr<BIGNUM> priv_key_limit(BN_new());
       if (priv_key_limit == nullptr) {
         goto err;
       }
-      if (dh->priv_length == 0 || dh->priv_length >= BN_num_bits(dh->p) - 1) {
+      if (impl->priv_length == 0 ||
+          impl->priv_length >= BN_num_bits(impl->p) - 1) {
         // M = q = (p - 1) / 2.
-        if (!BN_rshift1(priv_key_limit.get(), dh->p)) {
+        if (!BN_rshift1(priv_key_limit.get(), impl->p)) {
           goto err;
         }
       } else {
         // M = 2^N.
-        if (!BN_set_bit(priv_key_limit.get(), dh->priv_length)) {
+        if (!BN_set_bit(priv_key_limit.get(), impl->priv_length)) {
           goto err;
         }
       }
@@ -226,13 +255,13 @@ int DH_generate_key(DH *dh) {
     }
   }
 
-  if (!BN_mod_exp_mont_consttime(pub_key, dh->g, priv_key, dh->p, ctx.get(),
-                                 dh->method_mont_p)) {
+  if (!BN_mod_exp_mont_consttime(pub_key, impl->g, priv_key, impl->p, ctx.get(),
+                                 impl->method_mont_p)) {
     goto err;
   }
 
-  dh->pub_key = pub_key;
-  dh->priv_key = priv_key;
+  impl->pub_key = pub_key;
+  impl->priv_key = priv_key;
   ok = 1;
 
 err:
@@ -240,10 +269,10 @@ err:
     OPENSSL_PUT_ERROR(DH, ERR_R_BN_LIB);
   }
 
-  if (dh->pub_key == nullptr) {
+  if (impl->pub_key == nullptr) {
     BN_free(pub_key);
   }
-  if (dh->priv_key == nullptr) {
+  if (impl->priv_key == nullptr) {
     BN_free(priv_key);
   }
   return ok;
@@ -251,11 +280,13 @@ err:
 
 static int dh_compute_key(DH *dh, BIGNUM *out_shared_key,
                           const BIGNUM *peers_key, BN_CTX *ctx) {
+  auto *impl = FromOpaque(dh);
+
   if (!dh_check_params_fast(dh)) {
     return 0;
   }
 
-  if (dh->priv_key == nullptr) {
+  if (impl->priv_key == nullptr) {
     OPENSSL_PUT_ERROR(DH, DH_R_NO_PRIVATE_VALUE);
     return 0;
   }
@@ -266,17 +297,17 @@ static int dh_compute_key(DH *dh, BIGNUM *out_shared_key,
     return 0;
   }
 
-  bssl::BN_CTXScope scope(ctx);
+  BN_CTXScope scope(ctx);
   BIGNUM *p_minus_1 = BN_CTX_get(ctx);
   if (!p_minus_1 ||
-      !BN_MONT_CTX_set_locked(&dh->method_mont_p, &dh->method_mont_p_lock,
-                              dh->p, ctx)) {
+      !BN_MONT_CTX_set_locked(&impl->method_mont_p, &impl->method_mont_p_lock,
+                              impl->p, ctx)) {
     return 0;
   }
 
-  if (!BN_mod_exp_mont_consttime(out_shared_key, peers_key, dh->priv_key, dh->p,
-                                 ctx, dh->method_mont_p) ||
-      !BN_copy(p_minus_1, dh->p) || !BN_sub_word(p_minus_1, 1)) {
+  if (!BN_mod_exp_mont_consttime(out_shared_key, peers_key, impl->priv_key,
+                                 impl->p, ctx, impl->method_mont_p) ||
+      !BN_copy(p_minus_1, impl->p) || !BN_sub_word(p_minus_1, 1)) {
     OPENSSL_PUT_ERROR(DH, ERR_R_BN_LIB);
     return 0;
   }
@@ -291,13 +322,13 @@ static int dh_compute_key(DH *dh, BIGNUM *out_shared_key,
   return 1;
 }
 
-int dh_compute_key_padded_no_self_test(unsigned char *out,
-                                       const BIGNUM *peers_key, DH *dh) {
-  bssl::UniquePtr<BN_CTX> ctx(BN_CTX_new());
+int bssl::dh_compute_key_padded_no_self_test(unsigned char *out,
+                                             const BIGNUM *peers_key, DH *dh) {
+  UniquePtr<BN_CTX> ctx(BN_CTX_new());
   if (ctx == nullptr) {
     return -1;
   }
-  bssl::BN_CTXScope scope(ctx.get());
+  BN_CTXScope scope(ctx.get());
   int dh_size = DH_size(dh);
   BIGNUM *shared_key = BN_CTX_get(ctx.get());
   if (shared_key == nullptr ||
@@ -317,11 +348,11 @@ int DH_compute_key_padded(unsigned char *out, const BIGNUM *peers_key, DH *dh) {
 int DH_compute_key(unsigned char *out, const BIGNUM *peers_key, DH *dh) {
   boringssl_ensure_ffdh_self_test();
 
-  bssl::UniquePtr<BN_CTX> ctx(BN_CTX_new());
+  UniquePtr<BN_CTX> ctx(BN_CTX_new());
   if (ctx == nullptr) {
     return -1;
   }
-  bssl::BN_CTXScope scope(ctx.get());
+  BN_CTXScope scope(ctx.get());
   BIGNUM *shared_key = BN_CTX_get(ctx.get());
   if (shared_key == nullptr ||
       !dh_compute_key(dh, shared_key, peers_key, ctx.get())) {
@@ -370,16 +401,23 @@ err:
   return ret;
 }
 
-int DH_size(const DH *dh) { return BN_num_bytes(dh->p); }
+int DH_size(const DH *dh) {
+  auto *impl = FromOpaque(dh);
+  return BN_num_bytes(impl->p);
+}
 
-unsigned DH_num_bits(const DH *dh) { return BN_num_bits(dh->p); }
+unsigned DH_num_bits(const DH *dh) {
+  auto *impl = FromOpaque(dh);
+  return BN_num_bits(impl->p);
+}
 
 int DH_up_ref(DH *dh) {
-  CRYPTO_refcount_inc(&dh->references);
+  auto *impl = FromOpaque(dh);
+  CRYPTO_refcount_inc(&impl->references);
   return 1;
 }
 
-DH *DH_get_rfc7919_2048(void) {
+DH *DH_get_rfc7919_2048() {
   // This is the prime from https://tools.ietf.org/html/rfc7919#appendix-A.1,
   // which is specifically approved for FIPS in appendix D of SP 800-56Ar3.
   static const BN_ULONG kFFDHE2048Data[] = {
@@ -401,10 +439,10 @@ DH *DH_get_rfc7919_2048(void) {
       TOBN(0xadf85458, 0xa2bb4a9a), TOBN(0xffffffff, 0xffffffff),
   };
 
-  bssl::UniquePtr<BIGNUM> ffdhe2048_p(BN_new());
-  bssl::UniquePtr<BIGNUM> ffdhe2048_q(BN_new());
-  bssl::UniquePtr<BIGNUM> ffdhe2048_g(BN_new());
-  bssl::UniquePtr<DH> dh(DH_new());
+  UniquePtr<BIGNUM> ffdhe2048_p(BN_new());
+  UniquePtr<BIGNUM> ffdhe2048_q(BN_new());
+  UniquePtr<BIGNUM> ffdhe2048_g(BN_new());
+  UniquePtr<DH> dh(DH_new());
   if (!ffdhe2048_p || !ffdhe2048_q || !ffdhe2048_g || !dh) {
     return nullptr;
   }

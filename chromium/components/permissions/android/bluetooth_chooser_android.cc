@@ -21,7 +21,7 @@
 #include "components/permissions/android/jni_headers/BluetoothChooserDialog_jni.h"
 
 using base::android::AttachCurrentThread;
-using base::android::JavaParamRef;
+using base::android::JavaRef;
 using base::android::ScopedJavaLocalRef;
 
 namespace permissions {
@@ -141,8 +141,8 @@ void BluetoothChooserAndroid::AddOrUpdateDevice(
 
 void BluetoothChooserAndroid::OnDialogFinished(
     JNIEnv* env,
-    jint event_type,
-    const JavaParamRef<jstring>& device_id) {
+    int32_t event_type,
+    const JavaRef<jstring>& device_id) {
   // Values are defined in BluetoothChooserDialog as DIALOG_FINISHED constants.
   switch (event_type) {
     case 0:

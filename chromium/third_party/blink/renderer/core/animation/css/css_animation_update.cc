@@ -4,9 +4,33 @@
 
 #include "third_party/blink/renderer/core/animation/css/css_animation_update.h"
 
+#include "third_party/blink/renderer/core/css/css_keyframes_rule.h"
 #include "third_party/blink/renderer/core/style/computed_style.h"
 
 namespace blink {
+
+void NewCSSAnimation::UpdateVersion() {
+  style_rule_version = style_rule->Version();
+}
+
+void NewCSSAnimation::Trace(Visitor* visitor) const {
+  visitor->Trace(effect);
+  visitor->Trace(style_rule);
+  visitor->Trace(timeline);
+  visitor->Trace(trigger_attachments);
+}
+
+void UpdatedCSSAnimation::UpdateVersion() {
+  style_rule_version = style_rule->Version();
+}
+
+void UpdatedCSSAnimation::Trace(Visitor* visitor) const {
+  visitor->Trace(animation);
+  visitor->Trace(effect);
+  visitor->Trace(style_rule);
+  visitor->Trace(timeline);
+  visitor->Trace(trigger_attachments);
+}
 
 // Defined here, to avoid dependencies on ComputedStyle.h in the header file.
 CSSAnimationUpdate::CSSAnimationUpdate() = default;
@@ -29,8 +53,11 @@ void CSSAnimationUpdate::Copy(const CSSAnimationUpdate& update) {
   updated_compositor_keyframes_ = update.UpdatedCompositorKeyframes();
   changed_scroll_timelines_ = update.changed_scroll_timelines_;
   changed_view_timelines_ = update.changed_view_timelines_;
-  changed_deferred_timelines_ = update.changed_deferred_timelines_;
+  has_updated_deferred_timeline_map_ =
+      update.has_updated_deferred_timeline_map_;
+  updated_deferred_timeline_map_ = update.updated_deferred_timeline_map_;
   changed_timeline_attachments_ = update.changed_timeline_attachments_;
+  needs_named_trigger_update_ = update.needs_named_trigger_update_;
 }
 
 void CSSAnimationUpdate::Clear() {
@@ -46,8 +73,10 @@ void CSSAnimationUpdate::Clear() {
   updated_compositor_keyframes_.clear();
   changed_scroll_timelines_.clear();
   changed_view_timelines_.clear();
-  changed_deferred_timelines_.clear();
+  has_updated_deferred_timeline_map_ = false;
+  updated_deferred_timeline_map_ = CSSDeferredTimelineMap();
   changed_timeline_attachments_.clear();
+  needs_named_trigger_update_ = false;
 }
 
 void CSSAnimationUpdate::StartTransition(

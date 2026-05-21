@@ -4,6 +4,7 @@
 
 import * as Host from '../../../core/host/host.js';
 import * as Root from '../../../core/root/root.js';
+import type * as SDK from '../../../core/sdk/sdk.js';
 import {debugLog, isStructuredLogEnabled} from '../debug.js';
 
 export const enum ResponseType {
@@ -17,6 +18,7 @@ export const enum ResponseType {
   ERROR = 'error',
   QUERYING = 'querying',
   USER_QUERY = 'user-query',
+  CONTEXT_CHANGE = 'context-change'
 }
 
 export const enum ErrorType {
@@ -84,6 +86,11 @@ export interface SideEffectResponse {
   code?: string;
   confirm: (confirm: boolean) => void;
 }
+export interface ContextChangeResponse {
+  type: ResponseType.CONTEXT_CHANGE;
+  context: unknown;
+}
+
 interface SerializedSideEffectResponse extends Omit<SideEffectResponse, 'confirm'> {}
 
 export interface ActionResponse {
@@ -105,13 +112,13 @@ export interface UserQuery {
 }
 
 export type ResponseData = AnswerResponse|SuggestionsResponse|ErrorResponse|ActionResponse|SideEffectResponse|
-    ThoughtResponse|TitleResponse|QueryingResponse|ContextResponse|UserQuery;
+    ThoughtResponse|TitleResponse|QueryingResponse|ContextResponse|UserQuery|ContextChangeResponse;
 
 export type SerializedResponseData = AnswerResponse|SuggestionsResponse|ErrorResponse|ActionResponse|
     SerializedSideEffectResponse|ThoughtResponse|TitleResponse|QueryingResponse|ContextResponse|UserQuery;
 
 export type FunctionCallResponseData =
-    TitleResponse|ThoughtResponse|ActionResponse|SideEffectResponse|SuggestionsResponse;
+    TitleResponse|ThoughtResponse|ActionResponse|SideEffectResponse|SuggestionsResponse|ContextChangeResponse;
 
 export interface BuildRequestOptions {
   text: string;
@@ -125,7 +132,9 @@ export interface RequestOptions {
 export interface AgentOptions {
   aidaClient: Host.AidaClient.AidaClient;
   serverSideLoggingEnabled?: boolean;
+  sessionId?: string;
   confirmSideEffectForTest?: typeof Promise.withResolvers;
+  onInspectElement?: () => Promise<SDK.DOMModel.DOMNode|null>;
 }
 
 export interface ParsedAnswer {
@@ -199,10 +208,14 @@ export abstract class ConversationContext<T> {
 }
 
 export type FunctionCallHandlerResult<Result> = {
+  requiresApproval: true,
+}|{
   result: Result,
 }|{
-  requiresApproval: true,
-}|{error: string};
+  context: unknown,
+}|{
+  error: string,
+};
 
 export interface FunctionHandlerOptions {
   /**
@@ -270,7 +283,7 @@ export abstract class AiAgent<T> {
   abstract readonly userTier: string|undefined;
   abstract handleContextDetails(select: ConversationContext<T>|null): AsyncGenerator<ContextResponse, void, void>;
 
-  readonly #sessionId: string = crypto.randomUUID();
+  readonly #sessionId: string;
   readonly #aidaClient: Host.AidaClient.AidaClient;
   readonly #serverSideLoggingEnabled: boolean;
   readonly confirmSideEffect: typeof Promise.withResolvers;
@@ -285,19 +298,12 @@ export abstract class AiAgent<T> {
   }> = [];
 
   /**
-   * Might need to be part of history in case we allow chatting in
-   * historical conversations.
-   */
-  #origin?: string;
-
-  /**
    * `context` does not change during `AiAgent.run()`, ensuring that calls to JS
    * have the correct `context`. We don't want element selection by the user to
    * change the `context` during an `AiAgent.run()`.
    */
   protected context?: ConversationContext<T>;
 
-  #id: string = crypto.randomUUID();
   #history: Host.AidaClient.Content[] = [];
 
   #facts: Set<Host.AidaClient.RequestFact> = new Set<Host.AidaClient.RequestFact>();
@@ -305,6 +311,13 @@ export abstract class AiAgent<T> {
   constructor(opts: AgentOptions) {
     this.#aidaClient = opts.aidaClient;
     this.#serverSideLoggingEnabled = opts.serverSideLoggingEnabled ?? false;
+    // Disable logging for now.
+    // For context, see b/454563259#comment35.
+    // We should be able to remove this ~end of April.
+    if (Root.Runtime.hostConfig.devToolsGeminiRebranding?.enabled) {
+      this.#serverSideLoggingEnabled = false;
+    }
+    this.#sessionId = opts.sessionId ?? crypto.randomUUID();
     this.confirmSideEffect = opts.confirmSideEffectForTest ?? (() => Promise.withResolvers());
   }
 
@@ -393,12 +406,8 @@ export abstract class AiAgent<T> {
     return request;
   }
 
-  get id(): string {
-    return this.#id;
-  }
-
-  get origin(): string|undefined {
-    return this.#origin;
+  get sessionId(): string {
+    return this.#sessionId;
   }
 
   /**
@@ -496,15 +505,8 @@ export abstract class AiAgent<T> {
           multimodalInput?: MultimodalInput,
           ): AsyncGenerator<ResponseData, void, void> {
     await options.selected?.refresh();
-
     if (options.selected) {
-      // First context set on the agent determines its origin from now on.
-      if (this.#origin === undefined) {
-        this.#origin = options.selected.getOrigin();
-      }
-      if (options.selected.isOriginAllowed(this.#origin)) {
-        this.context = options.selected;
-      }
+      this.context = options.selected;
     }
 
     const enhancedQuery = await this.enhanceQuery(initialQuery, options.selected, multimodalInput?.type);
@@ -596,13 +598,28 @@ export abstract class AiAgent<T> {
 
       if (functionCall) {
         try {
-          const result = yield* this.#callFunction(functionCall.name, functionCall.args, {
-            ...options,
-            explanation: textResponse,
-          });
+          const result = yield*
+              this.#callFunction(
+                  functionCall.name,
+                  functionCall.args,
+                  {
+                    ...options,
+                    explanation: textResponse,
+                  },
+              );
+
           if (options.signal?.aborted) {
             yield this.#createErrorResponse(ErrorType.ABORT);
             break;
+          }
+
+          if ('context' in result) {
+            yield {
+              type: ResponseType.CONTEXT_CHANGE,
+              context: result.context,
+            };
+
+            return;
           }
           query = {
             functionResponse: {
@@ -611,7 +628,8 @@ export abstract class AiAgent<T> {
             },
           };
           request = this.buildRequest(query, Host.AidaClient.Role.ROLE_UNSPECIFIED);
-        } catch {
+        } catch (err) {
+          debugLog('Error handling function call', err);
           yield this.#createErrorResponse(ErrorType.UNKNOWN);
           break;
         }
@@ -624,6 +642,7 @@ export abstract class AiAgent<T> {
     if (isStructuredLogEnabled()) {
       window.dispatchEvent(new CustomEvent('aiassistancedone'));
     }
+    return;
   }
 
   async *
@@ -631,7 +650,7 @@ export abstract class AiAgent<T> {
           name: string,
           args: Record<string, unknown>,
           options?: FunctionHandlerOptions&{explanation?: string},
-          ): AsyncGenerator<FunctionCallResponseData, {result: unknown}> {
+          ): AsyncGenerator<FunctionCallResponseData, {result: unknown}|{context: unknown}> {
     const call = this.#functionDeclarations.get(name);
     if (!call) {
       throw new Error(`Function ${name} is not found.`);
@@ -720,7 +739,7 @@ export abstract class AiAgent<T> {
 
       result = await call.handler(args, {
         ...options,
-        approved: approvedRun,
+        approved: true,
       });
     }
 
@@ -740,6 +759,10 @@ export abstract class AiAgent<T> {
         output: result.error,
         canceled: false,
       };
+    }
+
+    if ('context' in result) {
+      return result as {context: unknown};
     }
 
     return result as {result: unknown};

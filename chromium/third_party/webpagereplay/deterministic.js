@@ -4,6 +4,7 @@
 
 'use strict';
 
+// Math.random
 (function () {
   var random_seed = 0.462;
   Math.random = function() {
@@ -23,6 +24,8 @@
     };
   }
 })();
+
+// Date
 (function () {
   var date_count = 0;
   var date_count_threshold = 25;
@@ -63,4 +66,51 @@
       return 420;
     return 480;
   };
+})();
+
+// navigator.onLine and associated events.
+(function () {
+  // Property
+  Object.defineProperty(navigator, "onLine", {
+    value: true,
+    configurable: true
+  });
+
+  // Event handler properties
+  ["online", "offline"].forEach(val => {
+    Object.defineProperty(window, "on" + val, {
+        set: function(value) { return false; },
+        get: function() { return null; },
+        configurable: false
+    });
+  });
+
+  // Event listeners
+  const originalAddEventListener = window.addEventListener;
+  window.addEventListener = function(type, listener, optionsOrUseCapture) {
+    if (type === "online" || type === "offline") {
+      return undefined;
+    }
+    return originalAddEventListener.call(
+        this, type, listener, optionsOrUseCapture);
+  };
+})();
+
+// navigator.connection and associated event.
+(function () {
+  class MockConnection extends EventTarget {
+    constructor() {
+      super();
+      this.effectiveType = '4g';
+      this.rtt = 100;
+      this.downlink = 5;
+      this.saveData = false;
+      this.onchange = null;
+    }
+  }
+
+  Object.defineProperty(navigator, "connection", {
+    value: new MockConnection(),
+    configurable: true
+  });
 })();

@@ -10,7 +10,6 @@
 #include <vector>
 
 #include "base/check.h"
-#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/notreached.h"
 #include "components/feature_engagement/internal/availability_model.h"
@@ -113,8 +112,9 @@ void FeatureConfigConditionValidator::NotifyIsShowing(
 
   switch (config.session_rate_impact.type) {
     case SessionRateImpact::Type::ALL:
-      for (const std::string& feature_name : all_feature_names)
+      for (const std::string& feature_name : all_feature_names) {
         ++times_shown_for_feature_[feature_name];
+      }
       break;
     case SessionRateImpact::Type::NONE:
       // Intentionally ignore, since no features should be impacted.
@@ -123,7 +123,7 @@ void FeatureConfigConditionValidator::NotifyIsShowing(
       DCHECK(config.session_rate_impact.affected_features.has_value());
       for (const std::string& feature_name :
            config.session_rate_impact.affected_features.value()) {
-        DCHECK(base::Contains(all_feature_names, feature_name));
+        DCHECK(std::ranges::contains(all_feature_names, feature_name));
         ++times_shown_for_feature_[feature_name];
       }
       break;
@@ -167,19 +167,22 @@ bool FeatureConfigConditionValidator::AvailabilityMeetsConditions(
     Comparator comparator,
     const AvailabilityModel& availability_model,
     uint32_t current_day) const {
-  if (comparator.type == ANY)
+  if (comparator.type == ANY) {
     return true;
+  }
 
   std::optional<uint32_t> availability_day =
       availability_model.GetAvailability(feature);
-  if (!availability_day.has_value())
+  if (!availability_day.has_value()) {
     return false;
+  }
 
   uint32_t days_available = current_day - availability_day.value();
 
   // Ensure that availability days never wrap around.
-  if (availability_day.value() > current_day)
+  if (availability_day.value() > current_day) {
     days_available = 0u;
+  }
 
   return comparator.MeetsCriteria(days_available);
 }
@@ -188,8 +191,9 @@ bool FeatureConfigConditionValidator::SessionRateMeetsConditions(
     const Comparator session_rate,
     const base::Feature& feature) const {
   const auto it = times_shown_for_feature_.find(feature.name);
-  if (it == times_shown_for_feature_.end())
+  if (it == times_shown_for_feature_.end()) {
     return session_rate.MeetsCriteria(0u);
+  }
   return session_rate.MeetsCriteria(it->second);
 }
 
@@ -208,8 +212,9 @@ bool FeatureConfigConditionValidator::IsBlocked(
         auto currently_showing_feature_config =
             configuration->GetFeatureConfigByName(currently_showing_feature);
         if (currently_showing_feature_config.blocking.type ==
-            Blocking::Type::NONE)
+            Blocking::Type::NONE) {
           continue;
+        }
         is_blocked = true;
       }
       return is_blocked;
@@ -217,8 +222,9 @@ bool FeatureConfigConditionValidator::IsBlocked(
     case BlockedBy::Type::EXPLICIT:
       for (const std::string& feature_name :
            *config.blocked_by.affected_features) {
-        if (base::Contains(currently_showing_features_, feature_name))
+        if (currently_showing_features_.contains(feature_name)) {
           return true;
+        }
       }
       return false;
     default:

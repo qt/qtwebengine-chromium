@@ -515,16 +515,12 @@ void QueryVideoProcessorCustomExtForHDR() {
   }
 
   Microsoft::WRL::ComPtr<IDXGIDevice> dxgi_device;
-  if (FAILED(d3d11_device.As(&dxgi_device))) {
-    DLOG(ERROR) << "Failed to retrieve DXGI device";
-    return;
-  }
+  HRESULT hr = d3d11_device.As(&dxgi_device);
+  CHECK_EQ(hr, S_OK);
 
   Microsoft::WRL::ComPtr<IDXGIAdapter> dxgi_adapter;
-  if (FAILED(dxgi_device->GetAdapter(&dxgi_adapter))) {
-    DLOG(ERROR) << "Failed to retrieve DXGI adapter";
-    return;
-  }
+  hr = dxgi_device->GetAdapter(&dxgi_adapter);
+  CHECK_EQ(hr, S_OK);
 
   DXGI_ADAPTER_DESC adapter_desc;
   if (FAILED(dxgi_adapter->GetDesc(&adapter_desc))) {
@@ -572,7 +568,7 @@ void QueryVideoProcessorCustomExtForHDR() {
   desc.Usage = D3D11_VIDEO_USAGE_PLAYBACK_NORMAL;
 
   Microsoft::WRL::ComPtr<ID3D11VideoProcessorEnumerator> d3d11_video_enumerator;
-  HRESULT hr = d3d11_video_device->CreateVideoProcessorEnumerator(
+  hr = d3d11_video_device->CreateVideoProcessorEnumerator(
       &desc, &d3d11_video_enumerator);
   if (FAILED(hr)) {
     LOG(ERROR) << "CreateVideoProcessorEnumerator failed: "
@@ -718,7 +714,13 @@ void InitializeDirectComposition(
     return;
   }
 
-  // Load DLL at runtime since older Windows versions don't have dcomp.
+  // Load DLL at runtime since older Windows versions don't have dcomp and dxgi.
+  HMODULE dxgi_module = ::GetModuleHandle(L"dxgi.dll");
+  if (!dxgi_module) {
+    LOG(ERROR) << "Failed to load dxgi.dll";
+    return;
+  }
+
   HMODULE dcomp_module = ::GetModuleHandle(L"dcomp.dll");
   if (!dcomp_module) {
     LOG(ERROR) << "Failed to load dcomp.dll";
@@ -736,10 +738,11 @@ void InitializeDirectComposition(
   }
 
   Microsoft::WRL::ComPtr<IDXGIDevice> dxgi_device;
-  d3d11_device.As(&dxgi_device);
+  HRESULT hr = d3d11_device.As(&dxgi_device);
+  CHECK_EQ(hr, S_OK);
 
   Microsoft::WRL::ComPtr<IDCompositionDesktopDevice> desktop_device;
-  HRESULT hr =
+  hr =
       create_device3_function(dxgi_device.Get(), IID_PPV_ARGS(&desktop_device));
   if (FAILED(hr)) {
     LOG(ERROR) << "DCompositionCreateDevice3 failed: "
@@ -761,6 +764,18 @@ void InitializeDirectComposition(
   g_d3d11_device = d3d11_device.Detach();
 
   if (features::UseCompositorClockVSyncInterval()) {
+    using PFN_DXGI_DISABLE_VBLANK_VIRTUALIZATION = HRESULT(WINAPI*)();
+    PFN_DXGI_DISABLE_VBLANK_VIRTUALIZATION dxgi_disable_vblank_virtualization =
+        reinterpret_cast<PFN_DXGI_DISABLE_VBLANK_VIRTUALIZATION>(
+            ::GetProcAddress(dxgi_module, "DXGIDisableVBlankVirtualization"));
+    CHECK(dxgi_disable_vblank_virtualization);
+
+    hr = dxgi_disable_vblank_virtualization();
+    if (FAILED(hr)) {
+      LOG(WARNING) << "Failed to disable VBlank virtualization: "
+                   << logging::SystemErrorCodeToString(hr);
+    }
+
     g_get_frame_id_function = reinterpret_cast<PFN_DCOMPOSITION_GET_FRAME_ID>(
         ::GetProcAddress(dcomp_module, "DCompositionGetFrameId"));
     CHECK(g_get_frame_id_function);
@@ -1070,11 +1085,11 @@ bool DXGISwapChainTearingSupported() {
       return false;
     }
     Microsoft::WRL::ComPtr<IDXGIDevice> dxgi_device;
-    d3d11_device.As(&dxgi_device);
-    DCHECK(dxgi_device);
+    HRESULT hr = d3d11_device.As(&dxgi_device);
+    CHECK_EQ(hr, S_OK);
     Microsoft::WRL::ComPtr<IDXGIAdapter> dxgi_adapter;
-    dxgi_device->GetAdapter(&dxgi_adapter);
-    DCHECK(dxgi_adapter);
+    hr = dxgi_device->GetAdapter(&dxgi_adapter);
+    CHECK_EQ(hr, S_OK);
     Microsoft::WRL::ComPtr<IDXGIFactory5> dxgi_factory;
     if (FAILED(dxgi_adapter->GetParent(IID_PPV_ARGS(&dxgi_factory)))) {
       LOG(ERROR) << "Not using swap chain tearing because failed to retrieve "

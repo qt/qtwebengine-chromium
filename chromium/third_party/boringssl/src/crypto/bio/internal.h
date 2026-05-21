@@ -35,10 +35,8 @@ typedef int socklen_t;
 #endif
 #endif  // !OPENSSL_NO_SOCK
 
-#if defined(__cplusplus)
-extern "C" {
-#endif
 
+DECLARE_OPAQUE_STRUCT(bio_st, Bio)
 
 struct bio_method_st {
   int type;
@@ -52,7 +50,10 @@ struct bio_method_st {
   long (*callback_ctrl)(BIO *, int, BIO_info_cb *);
 };
 
-struct bio_st {
+BSSL_NAMESPACE_BEGIN
+
+class Bio : public bio_st {
+ public:
   const BIO_METHOD *method;
   CRYPTO_EX_DATA ex_data;
 
@@ -71,11 +72,11 @@ struct bio_st {
   // num is a BIO-specific value. For example, in fd BIOs it's used to store a
   // file descriptor.
   int num;
-  CRYPTO_refcount_t references;
+  bssl::CRYPTO_refcount_t references;
   void *ptr;
   // next_bio points to the next |BIO| in a chain. This |BIO| owns a reference
   // to |next_bio|.
-  BIO *next_bio;  // used by filter BIOs
+  Bio *next_bio;  // used by filter BIOs
   uint64_t num_read, num_write;
 };
 
@@ -97,7 +98,7 @@ int bio_socket_nbio(int sock, int on);
 // bio_clear_socket_error clears the last system socket error.
 //
 // TODO(fork): remove all callers of this.
-void bio_clear_socket_error(void);
+void bio_clear_socket_error();
 
 // bio_sock_error returns the last socket error on |sock|.
 int bio_sock_error(int sock);
@@ -112,9 +113,7 @@ int bio_socket_should_retry(int return_value);
 // and |errno| indicates that it's non-fatal.
 int bio_errno_should_retry(int return_value);
 
+BSSL_NAMESPACE_END
 
-#if defined(__cplusplus)
-}  // extern C
-#endif
 
 #endif  // OPENSSL_HEADER_CRYPTO_BIO_INTERNAL_H

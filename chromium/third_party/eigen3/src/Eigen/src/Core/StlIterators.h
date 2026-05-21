@@ -335,10 +335,9 @@ class pointer_based_stl_iterator {
   typedef std::conditional_t<bool(is_lvalue), value_type*, const value_type*> pointer;
   typedef std::conditional_t<bool(is_lvalue), value_type&, const value_type&> reference;
 
-  pointer_based_stl_iterator() noexcept : m_ptr(0) {}
-  pointer_based_stl_iterator(XprType& xpr, Index index) noexcept : m_incr(xpr.innerStride()) {
-    m_ptr = xpr.data() + index * m_incr.value();
-  }
+  pointer_based_stl_iterator() noexcept : m_ptr(0), m_incr(XprType::InnerStrideAtCompileTime) {}
+  pointer_based_stl_iterator(XprType& xpr, Index index) noexcept
+      : m_ptr(xpr.data() + index * xpr.innerStride()), m_incr(xpr.innerStride()) {}
 
   pointer_based_stl_iterator(const non_const_iterator& other) noexcept : m_ptr(other.m_ptr), m_incr(other.m_incr) {}
 

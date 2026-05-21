@@ -112,6 +112,8 @@ void QuicConnectionImpl::OnServerPreferredAddressAvailable(
 
 void QuicConnectionImpl::OnPathDegrading() {}
 
+void QuicConnectionImpl::OnConfigNegotiated(const quic::QuicConfig& config) {}
+
 void QuicConnectionImpl::OnCryptoHandshakeComplete() {
   TRACE_SCOPED(TraceCategory::kQuic,
                "QuicConnectionImpl::OnCryptoHandshakeComplete");

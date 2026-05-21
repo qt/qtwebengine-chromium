@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 
+#include "base/containers/span.h"
 #include "base/functional/callback.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/raw_ptr.h"
@@ -136,6 +137,13 @@ class ProfileOAuth2TokenServiceDelegate {
       std::string_view challenge,
       std::string_view ephemeral_public_key,
       TokenBindingHelper::GenerateAssertionCallback callback) = 0;
+
+  // Adds a `wrapped_binding_key` that was copied from another token service.
+  // This ensures that this key is properly tracked in the token service this
+  // delegate belongs to.
+  virtual void AddBindingKeyToService(
+      base::span<const uint8_t> wrapped_binding_key) = 0;
+
 #endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
 
   // Returns a list of accounts for which a refresh token is maintained by
@@ -329,8 +337,9 @@ class ProfileOAuth2TokenServiceDelegate {
  private:
   FRIEND_TEST_ALL_PREFIXES(ProfileOAuth2TokenServiceDelegateTest,
                            FireRefreshTokenRevoked);
-  FRIEND_TEST_ALL_PREFIXES(MutableProfileOAuth2TokenServiceDelegateTest,
-                           RetryBackoff);
+  FRIEND_TEST_ALL_PREFIXES(
+      MutableProfileOAuth2TokenServiceDelegateAccessTokenFetchTest,
+      RetryBackoff);
   FRIEND_TEST_ALL_PREFIXES(ProfileOAuth2TokenServiceDelegateChromeOSTest,
                            BackOffIsTriggerredForTransientErrors);
   FRIEND_TEST_ALL_PREFIXES(ProfileOAuth2TokenServiceDelegateTest,

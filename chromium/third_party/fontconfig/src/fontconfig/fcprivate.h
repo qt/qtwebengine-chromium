@@ -31,6 +31,13 @@
  * into macros (sigh).
  */
 
+ #if ENABLE_FREETYPE
+ #define FT_FACE_CASE __v__.u.f = va_arg (va, FT_Face);
+ #else
+ #define FT_FACE_CASE
+ #endif
+
+
 #define FcPatternVapBuild(result, orig, va)                  \
     {                                                        \
 	FcPattern  *__p__ = (orig);                          \
@@ -70,7 +77,7 @@
 		__v__.u.c = va_arg (va, const FcCharSet *);  \
 		break;                                       \
 	    case FcTypeFTFace:                               \
-		__v__.u.f = va_arg (va, FT_Face);            \
+		FT_FACE_CASE                                 \
 		break;                                       \
 	    case FcTypeLangSet:                              \
 		__v__.u.l = va_arg (va, const FcLangSet *);  \

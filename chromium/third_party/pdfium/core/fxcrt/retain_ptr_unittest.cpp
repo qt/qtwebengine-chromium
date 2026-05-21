@@ -494,8 +494,9 @@ TEST(RetainPtr, SetContains) {
   EXPECT_EQ(the_set.end(), the_set.find(ptr2));
   EXPECT_TRUE(pdfium::Contains(the_set, ptr1));
   EXPECT_FALSE(pdfium::Contains(the_set, ptr2));
-#if !BUILDFLAG(IS_WIN) && \
-    (defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER))
+#if !BUILDFLAG(IS_WIN) &&                                       \
+    (defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER) || \
+     defined(UNDEFINED_SANITIZER))
   constexpr int kExpectedObj2RetainCount = 4;
   constexpr int kExpectedObj2ReleaseCount = 2;
 #else

@@ -205,7 +205,7 @@ TEST(fxcrt, FXSYSwcstof) {
                   FXSYS_wcstof(L"99999999999999999", &used_len));
   EXPECT_EQ(17u, used_len);
 
-  // For https://crbug.com/pdfium/1217
+  // For https://crbug.com/40643648
   EXPECT_FLOAT_EQ(0.0f, FXSYS_wcstof(L"e76", nullptr));
 
   // Overflow to infinity.

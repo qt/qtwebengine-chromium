@@ -23,6 +23,8 @@
 #include "components/password_manager/core/common/credential_manager_types.h"
 #include "services/metrics/public/cpp/ukm_source_id.h"
 
+class PrefService;
+
 namespace password_manager::metrics_util {
 
 // These values are persisted to logs. Entries should not be renumbered and
@@ -440,10 +442,10 @@ enum class AddCredentialFromSettingsUserInteractions {
 };
 
 // Metrics: PasswordManager.MoveToAccountStoreTrigger.
-// This must be kept in sync with the enum in move_single_password_dialog.ts (in
-// chrome/browser/resources/password_manager/dialogs/).
-// These values are persisted to logs. Entries should not be renumbered and
-// numeric values should never be reused.
+// This must be kept in sync with the enum in
+// `chrome/browser/resources/password_manager/sharing/metrics_utils.ts`. These
+// values are persisted to logs. Entries should not be renumbered and numeric
+// values should never be reused.
 enum class MoveToAccountStoreTrigger {
   // The user successfully logged in with a password from the profile store.
   kSuccessfulLoginWithProfileStorePassword = 0,
@@ -452,7 +454,7 @@ enum class MoveToAccountStoreTrigger {
   // The user explicitly asked to move multiple passwords at once in Settings.
   kExplicitlyTriggeredForMultiplePasswordsInSettings = 2,
   // Deprecated: kUserOptedInAfterSavingLocally = 3,
-  // Deprecated: kExplicitlyTriggeredForSinglePasswordInDetailsInSettings = 4,
+  kExplicitlyTriggeredForSinglePasswordInDetailsInSettings = 4,
   // The user clicked a link in a footer of the manage passwords bubble.
   kExplicitlyTriggeredInPasswordsManagementBubble = 5,
   kMaxValue = kExplicitlyTriggeredInPasswordsManagementBubble,
@@ -633,6 +635,7 @@ enum class PasswordDropdownDuplicateCredentialsType {
 // numeric values should never be reused.
 //
 // LINT.IfChange(BrowserAssistedLoginType)
+// GENERATED_JAVA_ENUM_PACKAGE: org.chromium.components.password_manager
 enum class BrowserAssistedLoginType {
   kFedCmPassive = 0,
   kFedCmActive = 1,
@@ -648,8 +651,10 @@ enum class BrowserAssistedLoginType {
   kPasskeyStoredInChromeProfile = 11,
   kPasskeyHybrid = 12,
   kPasskeySecurityKey = 13,
+  kPasskeyHybridOrSecurityKey = 14,
+  kPasskeyUnknown = 15,
 
-  kMaxValue = kPasskeySecurityKey,
+  kMaxValue = kPasskeyUnknown,
 };
 // LINT.ThenChange(//tools/metrics/histograms/metadata/password/enums.xml:BrowserAssistedLoginType)
 
@@ -731,10 +736,6 @@ void LogApplySyncChangesState(ApplySyncChangesState state);
 
 // Log submission events related to generation.
 void LogPasswordGenerationSubmissionEvent(PasswordSubmissionEvent event);
-
-// Log when password generation is available for a particular form.
-void LogPasswordGenerationAvailableSubmissionEvent(
-    PasswordSubmissionEvent event);
 
 // Log a user action on showing the autosignin first run experience.
 void LogAutoSigninPromoUserAction(AutoSigninPromoUserAction action);

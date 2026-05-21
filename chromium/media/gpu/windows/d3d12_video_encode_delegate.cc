@@ -194,8 +194,10 @@ D3D12VideoEncodeDelegate::GetSupportedProfiles(
 }
 
 D3D12VideoEncodeDelegate::D3D12VideoEncodeDelegate(
-    Microsoft::WRL::ComPtr<ID3D12VideoDevice3> video_device)
-    : video_device_(std::move(video_device)) {
+    Microsoft::WRL::ComPtr<ID3D12VideoDevice3> video_device,
+    const gpu::GpuDriverBugWorkarounds& gpu_workarounds)
+    : video_device_(std::move(video_device)),
+      gpu_workarounds_(gpu_workarounds) {
   CHECK(video_device_);
 }
 
@@ -267,15 +269,19 @@ bool D3D12VideoEncodeDelegate::UpdateRateControl(
 }
 
 EncoderStatus::Or<D3D12VideoEncodeDelegate::EncodeResult>
-D3D12VideoEncodeDelegate::Encode(
-    Microsoft::WRL::ComPtr<ID3D12Resource> input_frame,
-    UINT input_frame_subresource,
-    const gfx::ColorSpace& input_frame_color_space,
-    const BitstreamBuffer& bitstream_buffer,
-    const VideoEncoder::EncodeOptions& options) {
+D3D12VideoEncodeDelegate::Encode(D3D12PictureBuffer picture_buffer,
+                                 const gfx::ColorSpace& input_frame_color_space,
+                                 const BitstreamBuffer& bitstream_buffer,
+                                 const VideoEncoder::EncodeOptions& options) {
+  if (options.reference_buffers.size() > GetMaxNumOfManualRefBuffers()) {
+    return {EncoderStatus::Codes::kBadReferenceBuffer,
+            "Number of manual reference buffers exceeds that is supported by "
+            "encoder"};
+  }
+
   const gfx::ColorSpace& output_color_space =
       GetEncoderOutputColorSpaceFromInputColorSpace(input_frame_color_space);
-  if (D3D12_RESOURCE_DESC input_frame_desc = input_frame->GetDesc();
+  if (D3D12_RESOURCE_DESC input_frame_desc = picture_buffer.resource->GetDesc();
       input_frame_desc.Width != input_size_.Width ||
       input_frame_desc.Height != input_size_.Height ||
       input_frame_desc.Format != input_format_ ||
@@ -292,22 +298,34 @@ D3D12VideoEncodeDelegate::Encode(
           hr, "CreateCommittedResource for processed input frame failed",
           EncoderStatus::Codes::kSystemAPICallError);
     }
-    bool ok = video_processor_wrapper_->ProcessFrames(
-        input_frame.Get(), input_frame_subresource, input_frame_color_space,
+    if (picture_buffer.fence_and_value.first) {
+      if (!video_processor_wrapper_->Wait(picture_buffer.fence_and_value)) {
+        return {EncoderStatus::Codes::kSystemAPICallError,
+                "D3D12 video processor wait failed"};
+      }
+    }
+    auto fence_or_value = video_processor_wrapper_->ProcessFrames(
+        picture_buffer.resource.Get(), picture_buffer.subresource,
+        input_frame_color_space,
         gfx::Rect(0, 0, input_frame_desc.Width, input_frame_desc.Height),
         processed_input_frame_.Get(), 0, output_color_space,
         gfx::Rect(0, 0, input_size_.Width, input_size_.Height));
-    if (!ok) {
+    if (!fence_or_value.first) {
       return {EncoderStatus::Codes::kSystemAPICallError,
               "D3D12 video processor process frame failed"};
     }
 
-    input_frame = processed_input_frame_;
-    input_frame_subresource = 0;
+    picture_buffer = {processed_input_frame_, 0, fence_or_value};
   }
-
-  auto impl_result = EncodeImpl(input_frame.Get(), input_frame_subresource,
-                                options, output_color_space);
+  if (picture_buffer.fence_and_value.first) {
+    if (!video_encoder_wrapper_->Wait(picture_buffer.fence_and_value)) {
+      return {EncoderStatus::Codes::kSystemAPICallError,
+              "D3D12 video encoder wait failed"};
+    }
+  }
+  auto impl_result =
+      EncodeImpl(picture_buffer.resource.Get(), picture_buffer.subresource,
+                 options, output_color_space);
   if (!impl_result.is_ok()) {
     return std::move(impl_result);
   }
@@ -616,7 +634,7 @@ bool D3D12VideoEncodeDecodedPictureBuffers<
 }
 
 template <size_t maxDpbSize>
-D3D12PictureBuffer
+D3D12_VIDEO_ENCODER_RECONSTRUCTED_PICTURE
 D3D12VideoEncodeDecodedPictureBuffers<maxDpbSize>::GetCurrentFrame() const {
   // Make sure we have initialized.
   CHECK_GT(resources_.size(), 0u);

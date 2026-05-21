@@ -58,14 +58,6 @@ bool VerifyInitiatorOrigin(
   // matches the process lock. However, there are a couple of cases where this
   // doesn't yet work, which are documented and skipped below.
   if (initiator_origin.opaque()) {
-    // TODO(alexmos): This used to allow all opaque origins; this behavior is
-    // now behind a kill switch and should be removed once the rollout in M128
-    // is complete.
-    if (!base::FeatureList::IsEnabled(
-            features::kAdditionalOpaqueOriginEnforcements)) {
-      return true;
-    }
-
     // Reloads initiated from error pages may currently lead to a precursor
     // mismatch, since the error page loads with an opaque origin with the
     // original URL's origin as its precursor, which may not match the error
@@ -346,6 +338,22 @@ bool VerifyBeginNavigationCommonParams(
     return false;
 
   // Verification succeeded.
+  return true;
+}
+
+bool VerifyCreateNewWindowParams(const RenderFrameHostImpl& current_rfh,
+                                 const mojom::CreateNewWindowParams& params) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  RenderProcessHost* process = current_rfh.GetProcess();
+
+  // Verify `form_submission_post_data`.
+  auto* policy = ChildProcessSecurityPolicyImpl::GetInstance();
+  if (!policy->CanReadRequestBody(process, params.form_submission_post_data)) {
+    bad_message::ReceivedBadMessage(process,
+                                    bad_message::ILLEGAL_UPLOAD_PARAMS);
+    return false;
+  }
+
   return true;
 }
 

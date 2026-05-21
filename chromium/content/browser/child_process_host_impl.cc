@@ -24,8 +24,8 @@
 #include "base/task/single_thread_task_runner.h"
 #include "build/build_config.h"
 #include "content/common/content_constants_internal.h"
-#include "content/common/pseudonymization_salt.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/child_process_host.h"
 #include "content/public/browser/child_process_host_delegate.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/common/content_client.h"
@@ -39,7 +39,9 @@
 #include "base/linux_util.h"
 #elif BUILDFLAG(IS_MAC)
 #include "base/apple/foundation_util.h"
+#include "base/feature_list.h"
 #include "content/browser/mac_helpers.h"
+#include "content/common/features.h"
 #endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
 
 namespace content {
@@ -75,6 +77,14 @@ base::FilePath ChildProcessHost::GetChildPath(int flags) {
 
 #if BUILDFLAG(IS_MAC)
   std::string child_base_name = child_path.BaseName().value();
+
+  // An emergency override switch to re-allow third-party plugins;
+  // TODO(https://crbug.com/461717105): remove this.
+  if (base::FeatureList::IsEnabled(
+          features::kBlockThirdPartyInProcessPlugins) &&
+      flags == CHILD_PLUGIN) {
+    flags = CHILD_NORMAL;
+  }
 
   if (flags != CHILD_NORMAL && base::apple::AmIBundled()) {
     // This is a specialized helper, with the |child_path| at
@@ -254,18 +264,6 @@ void ChildProcessHostImpl::BindHostReceiver(
 }
 
 void ChildProcessHostImpl::OnChannelConnected(int32_t peer_pid) {
-  // Propagate the pseudonymization salt to all the child processes.
-  //
-  // Doing this as the first step in this method helps to minimize scenarios
-  // where child process runs code that depends on the pseudonymization salt
-  // before it has been set.  See also https://crbug.com/1479308#c5
-  //
-  // TODO(dullweber, lukasza): Figure out if it is possible to reset the salt
-  // at a regular interval (on the order of hours?).  The browser would need
-  // to be responsible for 1) deciding when the refresh happens and 2) pushing
-  // the updated salt to all the child processes.
-  child_process_->SetPseudonymizationSalt(GetPseudonymizationSalt());
-
   // We ignore the `peer_pid` argument, which ultimately comes over IPC from the
   // remote process, in favor of the PID already known by the browser after
   // launching the process. This is partly because IPC Channel is being phased
@@ -297,14 +295,6 @@ void ChildProcessHostImpl::DumpProfilingData(base::OnceClosure callback) {
 
 void ChildProcessHostImpl::SetProfilingFile(base::File file) {
   child_process_->SetProfilingFile(std::move(file));
-}
-#endif
-
-#if BUILDFLAG(IS_ANDROID)
-// Notifies the child process of memory pressure level.
-void ChildProcessHostImpl::NotifyMemoryPressureToChildProcess(
-    base::MemoryPressureLevel level) {
-  child_process()->OnMemoryPressure(level);
 }
 #endif
 

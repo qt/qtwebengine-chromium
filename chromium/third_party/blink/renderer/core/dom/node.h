@@ -40,11 +40,11 @@
 #include "third_party/blink/renderer/core/dom/events/event_target.h"
 #include "third_party/blink/renderer/core/dom/events/simulated_click_options.h"
 #include "third_party/blink/renderer/core/dom/mutation_observer_options.h"
-#include "third_party/blink/renderer/core/dom/node_rare_data.h"
 #include "third_party/blink/renderer/core/dom/tree_scope.h"
 #include "third_party/blink/renderer/core/style/computed_style_constants.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/graphics/dom_node_id.h"
+#include "third_party/blink/renderer/platform/heap/collection_support/heap_deque.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_map.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_set.h"
 #include "third_party/blink/renderer/platform/heap/custom_spaces.h"
@@ -67,6 +67,7 @@ class ContainerNode;
 class DOMNodeIds;
 class Document;
 class Element;
+class ElementRareDataVector;
 class Event;
 class EventDispatchHandlingState;
 class ExceptionState;
@@ -84,7 +85,6 @@ class MutationObserverRegistration;
 class NodeCloningData;
 class NodeList;
 class NodeListsNodeData;
-class NodeRareData;
 class Part;
 class QualifiedName;
 class RegisteredEventListener;
@@ -101,6 +101,8 @@ class V8UnionStringOrTrustedScript;
 class WebPluginContainerImpl;
 
 struct PhysicalRect;
+
+using PartsList = HeapDeque<Member<Part>>;
 
 const int kElementNamespaceTypeShift = 5;
 const int kNodeStyleChangeShift = 16;
@@ -225,8 +227,9 @@ class CORE_EXPORT Node : public EventTarget {
   Element* parentElement() const;
   ContainerNode* ParentElementOrShadowRoot() const;
   ContainerNode* ParentElementOrDocumentFragment() const;
-  Node* previousSibling() const { return previous_.Get(); }
-  bool HasPreviousSibling() const { return static_cast<bool>(previous_); }
+  inline Node* previousSibling() const;
+  Node* PreviousSiblingCircular() const { return previous_; }
+  bool HasPreviousSibling() const;
   Node* nextSibling() const { return next_.Get(); }
   bool HasNextSibling() const { return static_cast<bool>(next_); }
   NodeList* childNodes();
@@ -421,6 +424,7 @@ class CORE_EXPORT Node : public EventTarget {
   virtual bool IsScrollMarkerPseudoElement() const { return false; }
   virtual bool IsScrollMarkerGroupPseudoElement() const { return false; }
   virtual bool IsScrollButtonPseudoElement() const { return false; }
+  virtual bool IsIndexedPseudoElement() const { return false; }
   virtual bool IsInterestHintPseudoElement() const { return false; }
   virtual bool IsMediaControlElement() const { return false; }
   virtual bool IsMediaControls() const { return false; }
@@ -940,13 +944,72 @@ class CORE_EXPORT Node : public EventTarget {
   void RemoveAllEventListeners() override;
   void RemoveAllEventListenersRecursively();
 
-  // Handlers to do/undo actions on the target node before an event is
-  // dispatched to it and after the event has been dispatched.  The data pointer
-  // is handed back by the preDispatch and passed to postDispatch.
-  virtual EventDispatchHandlingState* PreDispatchEventHandler(Event&) {
+  // This is the Blink equivalent to the DOM Standard's legacy-pre-activation
+  // behavior [1]. It is mostly the same, except it is called under a broader
+  // set of conditions. Specifically, the spec only calls this hook for
+  // "activation events", which are "click" MouseEvents, and only radio button
+  // & checkbox `<input>` elements provide legacy-pre-activation behavior (see
+  // [2]). Blink limits this method to "click" and "textinput" events for
+  // internal non-standard reasons, but still only radio button & checkbox
+  // `<input>` provide this pre-activation behavior.
+  //
+  // NOTE: This method is considered a legacy hold-over. Do not add new
+  // overrides of it.
+  //
+  // This method's return value is passed to `RunActivationBehavior()`.
+  //
+  // [1]:
+  // https://dom.spec.whatwg.org/#eventtarget-legacy-pre-activation-behavior.
+  // [2]:
+  // https://html.spec.whatwg.org/#the-input-element:legacy-pre-activation-behavior
+  virtual EventDispatchHandlingState* LegacyPreActivationBehavior(Event&) {
     return nullptr;
   }
-  virtual void PostDispatchEventHandler(Event&, EventDispatchHandlingState*) {}
+  // This is the Blink equivalent of a small subset of the many per-element
+  // implementations of the "activation behavior" hook [1]. Concrete
+  // implementations of this method only represent a subset of the spec's
+  // activation behavior hooks, due to the quirky, all-too disjointed way that
+  // Blink implements activation behavior.
+  //
+  // Specifically, the HTML Standard reduces many kinds of user interactions to
+  // a synthetic click event [2] that gets dispatched on the activated element.
+  // This is because "click" MouseEvents (also called "activation events") are
+  // the only kind of event that, when dispatched, also run an element's
+  // activation behavior hook.
+  //
+  // Blink, on the other hand, kind of inverts this model. Blink responds to
+  // user interactions and their associated (non-click) events *directly*,
+  // without first firing a synthetic click at the activation target. During
+  // this, for all trusted events (not limited to "click" events), Blink runs
+  // the event target's `DefaultEventHandler()` implementation, and leaves it to
+  // subclasses to filter which events / interaction types it is interested in;
+  // these are the same events/interactions that the HTML Standard reduces to
+  // synthetic click events to trigger activation behavior. This means, much of
+  // what the spec refers to as "activation behavior", actually lives in the
+  // `DefaultEventHandler()` implementation.
+  //
+  // After Node subclasses handle these events, they ultimately delegate to
+  // the base class implementation of `Node::DefaultEventHandler()`. That
+  // implementation converts (only) click events into synthetic DOMActivate
+  // events, and fires *those* at the target. This is where more of what the
+  // spec calls "activation behavior" lives in Blink—inside subclass
+  // implementations of `DefaultEventHandler()` that specifically respond to
+  // DOMActivate events.
+  //
+  // The remaining portion of what the spec calls "activation behavior" lives
+  // exactly where it should, in this method below, which is only called for
+  // "activation events", which are "click" MouseEvents (and "textinput" events,
+  // for internal non-standard reasons).
+  //
+  // This method's consumes the `EventDispatchHandlingState` that the
+  // `LegacyPreActivationBehavior()` steps return.
+  //
+  // [1]:
+  // https://dom.spec.whatwg.org/#eventtarget-legacy-pre-activation-behavior.
+  // [2]: https://html.spec.whatwg.org/C#activation:fire-a-click-event
+  // [3]:
+  // https://html.spec.whatwg.org/C#the-input-element:legacy-pre-activation-behavior
+  virtual void RunActivationBehavior(Event&, EventDispatchHandlingState*) {}
 
   void DispatchScopedEvent(Event&);
 
@@ -1025,24 +1088,12 @@ class CORE_EXPORT Node : public EventTarget {
   void RegisterScrollTimeline(ScrollTimeline*);
   void UnregisterScrollTimeline(ScrollTimeline*);
 
-  void AddDOMPart(Part& part) {
-    DCHECK(!RuntimeEnabledFeatures::DOMPartsAPIMinimalEnabled());
-    EnsureRareData().AddDOMPart(part);
-  }
-  void RemoveDOMPart(Part& part) {
-    DCHECK(!RuntimeEnabledFeatures::DOMPartsAPIMinimalEnabled());
-    EnsureRareData().RemoveDOMPart(part);
-  }
-  PartsList* GetDOMParts() const {
-    return data_ ? data_->GetDOMParts() : nullptr;
-  }
-
-  DOMNodeId NodeID(base::PassKey<DOMNodeIds>) const {
-    return data_ ? data_->NodeId() : kInvalidDOMNodeId;
-  }
-  DOMNodeId& EnsureNodeID(base::PassKey<DOMNodeIds>) {
-    return EnsureRareData().NodeId();
-  }
+  // Defined in node-inl.h.
+  inline void AddDOMPart(Part& part);
+  inline void RemoveDOMPart(Part& part);
+  inline PartsList* GetDOMParts() const;
+  inline DOMNodeId NodeID(base::PassKey<DOMNodeIds>) const;
+  inline DOMNodeId& EnsureNodeID(base::PassKey<DOMNodeIds>);
 
   // For the imperative slot distribution API.
   void SetManuallyAssignedSlot(HTMLSlotElement* slot);
@@ -1060,7 +1111,7 @@ class CORE_EXPORT Node : public EventTarget {
       const ContainerNode* parent,
       const HeapVector<Member<V8UnionNodeOrStringOrTrustedScript>>& node_unions,
       Document& document,
-      const char* property_name,
+      const AtomicString& property_name,
       ExceptionState& exception_state);
 
   bool SelfOrAncestorHasDirAutoAttribute() const {
@@ -1160,9 +1211,14 @@ class CORE_EXPORT Node : public EventTarget {
     // ContainerTiming events.
     kSelfOrAncestorHasContainerTiming = 1u << 30,
 
+    // Whether this node is an Element that is a shadow host.
+    // Used to speed up GetShadowRoot(). This bit can be freed up if
+    // GetShadowRoot() can be inlined by the compiler; see crbug.com/465839474.
+    kHasShadowRootFlag = 1u << 31,
+
     kDefaultNodeFlags = kIsFinishedParsingChildrenFlag,
 
-    // 1 bit(s) remaining.
+    // 0 bit(s) remaining.
   };
 
   ALWAYS_INLINE bool GetFlag(NodeFlags mask) const {
@@ -1233,8 +1289,10 @@ class CORE_EXPORT Node : public EventTarget {
                                        Document& new_document);
 
   // |RareData| cannot be replaced or removed once assigned.
-  NodeRareData* RareData() const { return data_.Get(); }
-  NodeRareData& EnsureRareData() { return data_ ? *data_ : CreateRareData(); }
+  ElementRareDataVector* RareData() const { return data_.Get(); }
+  ElementRareDataVector& EnsureRareData() {
+    return data_ ? *data_ : CreateRareData();
+  }
 
   void SetHasCustomStyleCallbacks() {
     SetFlag(true, kHasCustomStyleCallbacksFlag);
@@ -1248,7 +1306,20 @@ class CORE_EXPORT Node : public EventTarget {
     SetFlag(value, kIsFinishedParsingChildrenFlag);
   }
 
+  void SetHasShadowRoot() { SetFlag(kHasShadowRootFlag); }
+  bool HasShadowRoot() const { return GetFlag(kHasShadowRootFlag); }
+
   void InvalidateIfHasEffectiveAppearance() const;
+
+  // Use when calling RareData().EnsureFoo() to make sure the RareData pointer
+  // is updated if needed, as all Set...() and Ensure...() in RareData can
+  // return a new, reallocated data_.
+  template <class T>
+  T& UnpackAndRefresh(std::pair<std::reference_wrapper<T>,
+                                ElementRareDataVector*> raredata_and_new_vec) {
+    data_ = raredata_and_new_vec.second;
+    return raredata_and_new_vec.first;
+  }
 
  private:
   static constexpr struct ParentNodeTag {
@@ -1273,7 +1344,7 @@ class CORE_EXPORT Node : public EventTarget {
   }
 
   // Used exclusively by |EnsureRareData|.
-  NodeRareData& CreateRareData();
+  ElementRareDataVector& CreateRareData();
 
   void MaybeAddNodeInsertedTraceEvent();
 
@@ -1293,10 +1364,16 @@ class CORE_EXPORT Node : public EventTarget {
   TaggedParentOrShadowHostNode parent_or_shadow_host_node_;
   // Compressed members and flags are after uncompressed members to minimize
   // padding.
+  //
+  // As a special case, previous_ on the first child of a node will return
+  // the last node (i.e., it is circular). previousSibling() knows this
+  // and will return nullptr. next_ has no similar behavior.
   Member<Node> previous_;
   Member<Node> next_;
   Member<LayoutObject> layout_object_;
-  Member<NodeRareData> data_;
+
+ protected:
+  Member<ElementRareDataVector> data_;
 };
 
 inline void Node::SetParentNode(ContainerNode* parent) {

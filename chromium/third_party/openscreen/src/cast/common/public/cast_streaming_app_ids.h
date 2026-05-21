@@ -6,21 +6,19 @@
 #define CAST_COMMON_PUBLIC_CAST_STREAMING_APP_IDS_H_
 
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace openscreen::cast {
 
 // Returns true only if `app_id` matches the Cast application ID for the
 // corresponding Chromium Cast Streaming receiver application.
-//
-// TODO(b/204583004): Use std::string_view instead of std::string following the
-// move to C++17 so that these comparisons can be made constexpr.
-bool IsCastStreamingAppId(const std::string& app_id);
-bool IsCastStreamingAudioVideoAppId(const std::string& app_id);
-bool IsCastStreamingAudioOnlyAppId(const std::string& app_id);
+bool IsCastStreamingAppId(std::string_view app_id);
+bool IsCastStreamingAudioVideoAppId(std::string_view app_id);
+bool IsCastStreamingAudioOnlyAppId(std::string_view app_id);
 
 // Returns true only if `app_id` matches any Cast Streaming app ID.
-bool IsCastStreamingReceiverAppId(const std::string& app_id);
+bool IsCastStreamingReceiverAppId(std::string_view app_id);
 
 // Returns all app IDs for Cast Streaming receivers.
 std::vector<std::string> GetCastStreamingAppIds();

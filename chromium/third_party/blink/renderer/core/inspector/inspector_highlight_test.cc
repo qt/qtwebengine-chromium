@@ -292,7 +292,7 @@ static std::string GetBackgroundColorFromElementInfo(Element* element) {
   auto status_to_json = crdtp::json::ConvertCBORToJSON(
       crdtp::SpanFrom(actual_value->Serialize()), &json_actual);
   EXPECT_TRUE(status_to_json.ok());
-  base::Value::Dict parsed_json_actual = ParseJson(json_actual).TakeDict();
+  base::DictValue parsed_json_actual = ParseJson(json_actual).TakeDict();
   auto* style = parsed_json_actual.FindDict("style");
   EXPECT_TRUE(style);
   auto* background_color = style->FindString("background-color-css-text");
@@ -480,6 +480,99 @@ TEST_F(InspectorHighlightTest, GridAreaNames) {
 
   Vector<String> expected_subgrid_area_names = {"a", "b", "c", "d", "e", "f"};
   CompareAreaNames(subgrid_area_names, expected_subgrid_area_names);
+}
+
+TEST_F(InspectorHighlightTest, FieldsetGrid) {
+  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+    <style>
+    #grid {
+      display: grid;
+      width: 200px;
+      height: 200px;
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: 1fr 1fr;
+    }
+    </style>
+    <fieldset id="grid">
+      <legend>legend</legend>
+      <div></div>
+      <div></div>
+      <div></div>
+      <div></div>
+    </fieldset>
+  )HTML");
+  GetDocument().View()->UpdateAllLifecyclePhasesForTest();
+  Node* grid = GetDocument().getElementById(AtomicString("grid"));
+  EXPECT_TRUE(grid);
+  auto info =
+      InspectorGridHighlight(grid, InspectorHighlight::DefaultGridConfig());
+  EXPECT_TRUE(info);
+  EXPECT_TRUE(info->get("gridBorder"));
+  EXPECT_EQ(2u, info->getArray("rowTrackSizes")->size());
+  EXPECT_EQ(2u, info->getArray("columnTrackSizes")->size());
+}
+
+TEST_F(InspectorHighlightTest, FieldsetFlex) {
+  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+    <style>
+    #flex {
+      display: flex;
+      width: 200px;
+      height: 200px;
+    }
+    </style>
+    <fieldset id="flex">
+      <legend>legend</legend>
+      <div></div>
+      <div></div>
+    </fieldset>
+  )HTML");
+  GetDocument().View()->UpdateAllLifecyclePhasesForTest();
+  Element* flex = GetDocument().getElementById(AtomicString("flex"));
+  EXPECT_TRUE(flex);
+  auto info = InspectorFlexContainerHighlight(
+      flex, InspectorHighlight::DefaultFlexContainerConfig());
+  EXPECT_TRUE(info);
+  EXPECT_TRUE(info->get("containerBorder"));
+  EXPECT_EQ(1u, info->getArray("lines")->size());
+}
+
+TEST_F(InspectorHighlightTest, OffsetPathHighlight) {
+  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      div {
+        width: 50px;
+        height: 50px;
+        offset-rotate: 0deg;
+        offset-path: circle(100px at 150px 150px);
+        offset-distance: 0;
+        position: relative;
+        left: 50px;
+        box-sizing: border-box;
+      }
+    </style>
+    <div>test</div>
+  )HTML");
+  GetDocument().View()->UpdateAllLifecyclePhasesForTest();
+  Element* element = GetDocument().QuerySelector(AtomicString("div"));
+  EXPECT_TRUE(element);
+
+  std::unique_ptr<protocol::DOM::BoxModel> model;
+  EXPECT_TRUE(InspectorHighlight::GetBoxModel(element, &model, false));
+
+  const auto& content_quad = *model->getContent();
+  EXPECT_NEAR(225, content_quad[0], 0.1);
+  EXPECT_NEAR(125, content_quad[1], 0.1);
+  EXPECT_NEAR(275, content_quad[2], 0.1);
+  EXPECT_NEAR(125, content_quad[3], 0.1);
+  EXPECT_NEAR(275, content_quad[4], 0.1);
+  EXPECT_NEAR(175, content_quad[5], 0.1);
+  EXPECT_NEAR(225, content_quad[6], 0.1);
+  EXPECT_NEAR(175, content_quad[7], 0.1);
 }
 
 }  // namespace blink

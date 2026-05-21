@@ -7,10 +7,9 @@ import type * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import type * as Protocol from '../../generated/protocol.js';
 import * as TextUtils from '../../models/text_utils/text_utils.js';
-import {renderElementIntoDOM} from '../../testing/DOMHelpers.js';
-import {createTarget, registerActions, updateHostConfig} from '../../testing/EnvironmentHelpers.js';
-import {spyCall} from '../../testing/ExpectStubCall.js';
-import {describeWithMockConnection, setMockConnectionResponseHandler} from '../../testing/MockConnection.js';
+import {assertScreenshot, renderElementIntoDOM} from '../../testing/DOMHelpers.js';
+import {createTarget, registerActions} from '../../testing/EnvironmentHelpers.js';
+import {describeWithMockConnection} from '../../testing/MockConnection.js';
 
 import * as Elements from './elements.js';
 
@@ -47,99 +46,84 @@ describe('ElementsTreeElement', () => {
       assert.deepEqual(result.entityRanges, expected.entityRanges);
     });
   });
+
+  it('renders gutter decorations correctly', async () => {
+    const target = document.createElement('div');
+    target.style.width = '100px';
+    target.style.height = '20px';
+    const style = document.createElement('style');
+    // FIXME: styles are currently external to ElementsTreeElement.
+    style.innerText = Elements.ElementsTreeOutline.elementsTreeOutlineStyles;
+    target.append(style);
+    renderElementIntoDOM(target, {
+      includeCommonStyles: true,
+    });
+    const decorations = [
+      {title: 'Decoration 1', color: 'red'},
+      {title: 'Decoration 2', color: 'blue'},
+    ];
+    const descendantDecorations = [
+      {title: 'Descendant 1', color: 'green'},
+    ];
+    Elements.ElementsTreeElement.DEFAULT_VIEW(
+        {
+          containerAdornerActive: false,
+          showAdAdorner: false,
+          showContainerAdorner: false,
+          showFlexAdorner: false,
+          flexAdornerActive: false,
+          showGridAdorner: false,
+          showGridLanesAdorner: false,
+          showMediaAdorner: false,
+          showPopoverAdorner: false,
+          showTopLayerAdorner: false,
+          gridAdornerActive: false,
+          popoverAdornerActive: false,
+          isSubgrid: false,
+          showViewSourceAdorner: false,
+          showScrollAdorner: false,
+          showScrollSnapAdorner: false,
+          scrollSnapAdornerActive: false,
+          showSlotAdorner: false,
+          showStartingStyleAdorner: false,
+          startingStyleAdornerActive: false,
+          onStartingStyleAdornerClick: () => {},
+          onSlotAdornerClick: () => {},
+          topLayerIndex: -1,
+          onViewSourceAdornerClick: () => {},
+          onGutterClick: () => {},
+          onContainerAdornerClick: () => {},
+          onFlexAdornerClick: () => {},
+          onGridAdornerClick: () => {},
+          onMediaAdornerClick: () => {},
+          onPopoverAdornerClick: () => {},
+          onScrollSnapAdornerClick: () => {},
+          onTopLayerAdornerClick: () => {},
+          isHovered: false,
+          isSelected: false,
+          showAiButton: false,
+          onAiButtonClick: () => {},
+          decorations,
+          descendantDecorations,
+          decorationsTooltip: 'Title',
+          indent: 20,
+        },
+        {}, target);
+    await assertScreenshot('elements/gutter_decorations.png');
+  });
 });
 
 describeWithMockConnection('ElementsTreeElement', () => {
-  let nodeIdCounter = 0;
-  function getTreeElement(model: SDK.DOMModel.DOMModel, treeOutline: Elements.ElementsTreeOutline.ElementsTreeOutline) {
-    const node = new SDK.DOMModel.DOMNode(model);
-    node.id = nodeIdCounter++ as Protocol.DOM.NodeId;
-    model.registerNode(node);
-    const treeElement = new Elements.ElementsTreeElement.ElementsTreeElement(node);
-    node.setAttributesPayload(['popover', 'manual']);
-    treeOutline.bindTreeElement(treeElement);
-    return treeElement;
-  }
-
-  async function getAdorner(treeElement: Elements.ElementsTreeElement.ElementsTreeElement) {
-    await treeElement.updateStyleAdorners();
-    const {adorners} = treeElement;
-    assert.exists(adorners);
-    assert.lengthOf(adorners, 1);
-    const {value} = adorners.values().next();
-    assert.exists(value);
-    assert.strictEqual(value.name, 'popover');
-    return value;
-  }
-
-  beforeEach(() => {
-    updateHostConfig({devToolsAllowPopoverForcing: {enabled: true}});
-    setMockConnectionResponseHandler('CSS.enable', () => ({}));
-    setMockConnectionResponseHandler(
-        'CSS.getComputedStyleForNode', () => ({} as Protocol.CSS.GetComputedStyleForNodeResponse));
-  });
-  it('popoverAdorner supports force-opening popovers', async () => {
-    const model = new SDK.DOMModel.DOMModel(createTarget());
-
-    const responseHandlerStub = sinon.stub<[Protocol.DOM.ForceShowPopoverRequest]>();
-    setMockConnectionResponseHandler('DOM.forceShowPopover', responseHandlerStub);
-
-    const treeElement = getTreeElement(model, new Elements.ElementsTreeOutline.ElementsTreeOutline());
-    const adorner = await getAdorner(treeElement);
-    adorner.dispatchEvent(new MouseEvent('click'));
-    sinon.assert.calledOnce(responseHandlerStub);
-    assert.isTrue(responseHandlerStub.args[0][0].enable);
-    assert.strictEqual(responseHandlerStub.args[0][0].nodeId, treeElement.node().id);
-
-    adorner.dispatchEvent(new MouseEvent('click'));
-    sinon.assert.calledTwice(responseHandlerStub);
-    assert.isFalse(responseHandlerStub.args[1][0].enable);
-    assert.strictEqual(responseHandlerStub.args[1][0].nodeId, treeElement.node().id);
-  });
-
-  it('popoverAdorner gets toggled off when a popover is force-closed by another forceShowPopover call', async () => {
-    const model = new SDK.DOMModel.DOMModel(createTarget());
-    const treeOutline = new Elements.ElementsTreeOutline.ElementsTreeOutline();
-    const treeElement1 = getTreeElement(model, treeOutline);
-    const treeElement2 = getTreeElement(model, treeOutline);
-
-    const adorner1 = await getAdorner(treeElement1);
-    const adorner2 = await getAdorner(treeElement2);
-
-    setMockConnectionResponseHandler(
-        'DOM.forceShowPopover', () => ({nodeIds: adorner2.isActive() ? [treeElement2.node().id] : []}));
-
-    const toggleStub2 = spyCall(adorner2, 'toggle');
-    adorner2.dispatchEvent(new MouseEvent('click'));
-    await toggleStub2;
-    assert.isTrue(adorner2.isActive());
-
-    const toggleStub = spyCall(adorner2, 'toggle');
-
-    adorner1.dispatchEvent(new MouseEvent('click'));
-    await toggleStub;
-    assert.isTrue(adorner1.isActive());
-    assert.isFalse(adorner2.isActive());
-  });
-});
-
-describeWithMockConnection('ElementsTreeElement ', () => {
   const DEFAULT_LAYOUT_PROPERTIES = {
     isFlex: false,
     isGrid: false,
     isSubgrid: false,
     isGridLanes: false,
-    isContainer: false,
+    containerType: undefined,
     hasScroll: false,
   };
 
   beforeEach(() => {
-    updateHostConfig({
-      devToolsAiSubmenuPrompts: {
-        enabled: true,
-      },
-    });
-
     registerActions([{
       actionId: 'freestyler.element-panel-context',
       title: () => 'Debug with AI' as Platform.UIString.LocalizedString,
@@ -217,13 +201,131 @@ describeWithMockConnection('ElementsTreeElement ', () => {
   });
 
   it('shows container submenu items', async () => {
-    const contextMenu =
-        await getContextMenuForElementWithLayoutProperties({...DEFAULT_LAYOUT_PROPERTIES, isContainer: true});
+    const contextMenu = await getContextMenuForElementWithLayoutProperties(
+        {...DEFAULT_LAYOUT_PROPERTIES, containerType: 'inline-size'});
     const debugWithAiItem = contextMenu.buildDescriptor().subItems?.find(item => item.label === 'Debug with AI');
     assert.exists(debugWithAiItem);
     assert.deepEqual(
         debugWithAiItem?.subItems?.map(item => item.label),
         ['Start a chat', 'Explain container queries', 'Explain container types', 'Explain container context']);
+  });
+  it('updates when persistent overlay state changes', async () => {
+    const target = createTarget();
+    const domModel = target.model(SDK.DOMModel.DOMModel);
+    assert.exists(domModel);
+    const node = new SDK.DOMModel.DOMNode(domModel);
+    const treeOutline = new Elements.ElementsTreeOutline.ElementsTreeOutline();
+    const treeElement = new Elements.ElementsTreeElement.ElementsTreeElement(node);
+    treeElement.treeOutline = treeOutline;
+
+    // Simulate binding to the tree
+    treeElement.onbind();
+
+    const performUpdateSpy = sinon.spy(treeElement, 'performUpdate');
+
+    // Trigger event
+    node.dispatchEventToListeners(SDK.DOMModel.DOMNodeEvents.GRID_OVERLAY_STATE_CHANGED, {enabled: true});
+
+    sinon.assert.calledOnce(performUpdateSpy);
+
+    // Simulate unbinding
+    treeElement.onunbind();
+    performUpdateSpy.resetHistory();
+
+    // Trigger event again
+    node.dispatchEventToListeners(SDK.DOMModel.DOMNodeEvents.GRID_OVERLAY_STATE_CHANGED, {enabled: false});
+
+    sinon.assert.notCalled(performUpdateSpy);
+  });
+
+  it('updates when persistent scroll snap overlay state changes', async () => {
+    const target = createTarget();
+    const domModel = target.model(SDK.DOMModel.DOMModel);
+    assert.exists(domModel);
+    const node = new SDK.DOMModel.DOMNode(domModel);
+    const treeOutline = new Elements.ElementsTreeOutline.ElementsTreeOutline();
+    const treeElement = new Elements.ElementsTreeElement.ElementsTreeElement(node);
+    treeElement.treeOutline = treeOutline;
+
+    // Simulate binding to the tree
+    treeElement.onbind();
+
+    const performUpdateSpy = sinon.spy(treeElement, 'performUpdate');
+
+    // Trigger event
+    node.dispatchEventToListeners(SDK.DOMModel.DOMNodeEvents.SCROLL_SNAP_OVERLAY_STATE_CHANGED, {enabled: true});
+
+    sinon.assert.calledOnce(performUpdateSpy);
+
+    // Simulate unbinding
+    treeElement.onunbind();
+    performUpdateSpy.resetHistory();
+
+    // Trigger event again
+    node.dispatchEventToListeners(SDK.DOMModel.DOMNodeEvents.SCROLL_SNAP_OVERLAY_STATE_CHANGED, {enabled: false});
+
+    sinon.assert.notCalled(performUpdateSpy);
+  });
+
+  it('initializes the slot adorner if the node has an assigned slot', async () => {
+    const target = createTarget();
+    const domModel = target.model(SDK.DOMModel.DOMModel);
+    assert.exists(domModel);
+    const node = new SDK.DOMModel.DOMNode(domModel);
+    const shortcut = {
+      deferredNode: {
+        resolve: (callback: (node: SDK.DOMModel.DOMNode) => void) => {
+          callback(node);
+        },
+        resolvePromise: () => Promise.resolve(node),
+        backendNodeId: () => 1,
+        highlight: () => {},
+      },
+    } as unknown as SDK.DOMModel.DOMNodeShortcut;
+    const treeOutline = new Elements.ElementsTreeOutline.ElementsTreeOutline();
+
+    sinon.stub(node, 'hasAssignedSlot').returns(true);
+    sinon.stub(node, 'assignedSlot').value(shortcut);
+
+    const treeElement = new Elements.ElementsTreeElement.ElementsTreeElement(node);
+    treeElement.treeOutline = treeOutline;
+    // Simulate binding to the tree
+    treeElement.onbind();
+
+    treeElement.performUpdate();
+
+    const adorner = treeElement.listItemElement.querySelector('devtools-adorner');
+    assert.exists(adorner);
+    assert.strictEqual(adorner.name, 'slot');
+  });
+
+  it('renders STARTING_STYLE adorner when enabled', async () => {
+    const target = createTarget();
+    const domModel = target.model(SDK.DOMModel.DOMModel);
+    assert.exists(domModel);
+    const cssModel = target.model(SDK.CSSModel.CSSModel);
+    assert.exists(cssModel);
+    const node = new SDK.DOMModel.DOMNode(domModel);
+    node.id = 1 as Protocol.DOM.NodeId;
+
+    const treeOutline = new Elements.ElementsTreeOutline.ElementsTreeOutline();
+
+    sinon.stub(node, 'affectedByStartingStyles').returns(true);
+
+    const treeElement = new Elements.ElementsTreeElement.ElementsTreeElement(node);
+    treeElement.treeOutline = treeOutline;
+    treeElement.onbind();
+    treeElement.performUpdate();
+
+    const adorner = treeElement.listItemElement.querySelector('.starting-style');
+    assert.exists(adorner);
+
+    const forceSpy = sinon.spy(cssModel, 'forceStartingStyle');
+    (adorner as HTMLElement).click();
+    sinon.assert.calledWith(forceSpy, node, true);
+
+    (adorner as HTMLElement).click();
+    sinon.assert.calledWith(forceSpy, node, false);
   });
 });
 
@@ -442,4 +544,48 @@ describeWithMockConnection('ElementsTreeElement highlighting', () => {
     domModel.dispatchEventToListeners(SDK.DOMModel.Events.AttrModified, {node: attrTestNode, name: 'attrFoo'});
     assert.strictEqual(await highlights, 1);
   });
+
+  it('edits a text node', async () => {
+    const longText = 'This is a long text that is longer than 80 characters to ensure that the text node is ' +
+        'not rendered inline and the parent element is expandable.';
+    const textNodePayload = createTextNodePayload(longText);
+    const textNode = SDK.DOMModel.DOMNode.create(domModel, textTestNode.ownerDocument, false, textNodePayload);
+    textTestNode.setChildrenPayload([textNodePayload]);
+    textNode.parentNode = textTestNode;
+
+    const setNodeValueSpy = sinon.spy(textNode, 'setNodeValue');
+    sinon.stub(SDK.OverlayModel.OverlayModel, 'hideDOMNodeHighlight');
+
+    const textNodeTreeElement = new Elements.ElementsTreeElement.ElementsTreeElement(textNode);
+    assert.exists(textNodeTreeElement);
+    textTestTreeElement.appendChild(textNodeTreeElement);
+
+    await textTestTreeElement.onpopulate();
+
+    treeOutline.selectDOMNode(textNode, true);
+
+    const textElementDOM = textNodeTreeElement.listItemElement.querySelector('.webkit-html-text-node') as HTMLElement;
+    assert.exists(textElementDOM);
+
+    // Start editing by calling ondblclick
+    const event = new MouseEvent('dblclick', {bubbles: true, cancelable: true});
+    Object.defineProperty(event, 'target', {value: textElementDOM});
+    assert.isFalse(textNodeTreeElement.ondblclick(event));
+
+    assert.isTrue(textNodeTreeElement.isEditing());
+
+    assert.strictEqual(textElementDOM.textContent, longText);
+
+    // The inplace editor is now active on textElementDOM.
+    textElementDOM.textContent = 'New Text';
+
+    // The commit is triggered by blur or enter.
+    textElementDOM.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter'}));
+
+    assert.isFalse(textNodeTreeElement.isEditing());
+
+    sinon.assert.calledOnce(setNodeValueSpy);
+    sinon.assert.calledWith(setNodeValueSpy, 'New Text');
+  });
+
 });

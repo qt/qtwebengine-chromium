@@ -4,6 +4,7 @@
 
 #import "components/autofill/ios/browser/autofill_driver_ios.h"
 
+#include <algorithm>
 #import <concepts>
 #import <functional>
 #import <optional>
@@ -12,7 +13,6 @@
 #import <variant>
 
 #import "base/check_deref.h"
-#import "base/containers/contains.h"
 #import "base/containers/to_vector.h"
 #import "base/feature_list.h"
 #import "base/functional/bind.h"
@@ -250,38 +250,42 @@ base::flat_set<FieldGlobalId> AutofillDriverIOS::ApplyFormAction(
     mojom::FormActionType action_type,
     mojom::ActionPersistence action_persistence,
     base::span<const FormFieldData> fields,
+    const FillId& fill_id,
+    bool supports_refill,
     const url::Origin& triggered_origin,
     const base::flat_map<FieldGlobalId, FieldType>& field_type_map,
     const Section& section_for_clear_form_on_ios) {
   switch (action_type) {
     case mojom::FormActionType::kUndo:
-      // TODO(crbug.com/40266549) Add Undo support on iOS.
-      return {};
     case mojom::FormActionType::kFill: {
       auto callback = [&section_for_clear_form_on_ios](
                           AutofillDriver& driver,
                           mojom::FormActionType action_type,
                           mojom::ActionPersistence action_persistence,
-                          const std::vector<FormFieldData::FillData>& fields) {
+                          const std::vector<FormFieldData::FillData>& fields,
+                          const FillId& fill_id, bool supports_refill) {
         web::WebFrame* frame = cast(&driver)->web_frame();
         if (frame) {
           [cast(&driver)->bridge_ fillData:fields
                                    section:section_for_clear_form_on_ios
-                                   inFrame:frame];
+                                   inFrame:frame
+                            withActionType:action_type];
         }
       };
 
       const url::Origin main_origin =
           client_->GetLastCommittedPrimaryMainFrameOrigin();
       if (IsAcrossIframesEnabled()) {
-        return router_->ApplyFormAction(callback, action_type,
-                                        action_persistence, fields, main_origin,
-                                        triggered_origin, field_type_map);
+        return router_->ApplyFormAction(
+            callback, action_type, action_persistence, fields, fill_id,
+            supports_refill, main_origin, triggered_origin, field_type_map);
       } else {
         callback(*this, action_type, action_persistence,
-                 base::ToVector(fields, [](const FormFieldData& field) {
-                   return FormFieldData::FillData(field);
-                 }));
+                 base::ToVector(fields,
+                                [](const FormFieldData& field) {
+                                  return FormFieldData::FillData(field);
+                                }),
+                 fill_id, supports_refill);
         return base::ToVector(fields, &FormFieldData::global_id);
       }
     }
@@ -346,8 +350,9 @@ void AutofillDriverIOS::ExtractFormWithField(
                 }
                 auto it =
                     std::ranges::find_if(*forms, [&](const FormData& form) {
-                      return base::Contains(form.fields(), field_renderer_id,
-                                            &FormFieldData::renderer_id);
+                      return std::ranges::contains(form.fields(),
+                                                   field_renderer_id,
+                                                   &FormFieldData::renderer_id);
                     });
                 std::move(renderer_form_handler)
                     .Run(it == forms->end() ? std::nullopt
@@ -356,8 +361,7 @@ void AutofillDriverIOS::ExtractFormWithField(
               field_renderer_id, std::move(renderer_form_handler));
 
           auto& source = static_cast<AutofillDriverIOS&>(request_target);
-          [source.bridge_ fetchFormsFiltered:NO
-                                    withName:std::u16string()
+          [source.bridge_ fetchFormsFiltered:std::nullopt
                                      inFrame:source.web_frame()
                            completionHandler:std::move(completion_handler)];
         },
@@ -426,8 +430,7 @@ void AutofillDriverIOS::ScanForms(bool immediately) {
                 : document_scan_batcher_.PushRequest(base::BindOnce(
                       callback, bridge_, web_frame()->AsWeakPtr()));
   } else {
-    [bridge_ fetchFormsFiltered:NO
-                       withName:std::u16string()
+    [bridge_ fetchFormsFiltered:std::nullopt
                         inFrame:web_frame()
               completionHandler:base::BindOnce(callback, bridge_,
                                                web_frame()->AsWeakPtr())];
@@ -446,8 +449,7 @@ void AutofillDriverIOS::FetchFormsFilteredByName(
     document_filtered_scan_batcher_.PushRequest(std::move(completion),
                                                 form_name);
   } else {
-    [bridge_ fetchFormsFiltered:YES
-                       withName:form_name
+    [bridge_ fetchFormsFiltered:form_name
                         inFrame:web_frame()
               completionHandler:std::move(completion)];
   }
@@ -714,11 +716,12 @@ void AutofillDriverIOS::OnAfterFormsSeen(
   if (updated_forms.empty()) {
     return;
   }
-  std::vector<raw_ptr<FormStructure, VectorExperimental>> form_structures;
+  std::vector<raw_ref<const FormStructure>> form_structures;
   form_structures.reserve(updated_forms.size());
   for (const FormGlobalId& form : updated_forms) {
-    if (FormStructure* form_structure = manager.FindCachedFormById(form)) {
-      form_structures.push_back(form_structure);
+    if (const FormStructure* form_structure =
+            manager.FindCachedFormById(form)) {
+      form_structures.emplace_back(*form_structure);
     }
   }
   if (web::WebFrame* frame = web_frame()) {
@@ -756,14 +759,12 @@ void AutofillDriverIOS::FormsRemoved(
     // a deletion.
     FormGlobalId synthetic_global_id = {.frame_token = local_frame_token_,
                                         .renderer_id = FormRendererId(0)};
-    if (FormStructure* form =
+    if (const FormStructure* form =
             GetAutofillManager().FindCachedFormById(synthetic_global_id)) {
-      std::set<FieldRendererId> form_fields;
-      std::ranges::transform(form->fields(),
-                             std::inserter(form_fields, form_fields.begin()),
-                             [](const std::unique_ptr<AutofillField>& field) {
-                               return field->renderer_id();
-                             });
+      base::flat_set<FieldRendererId> form_fields = base::ToVector(
+          form->fields(), [](const std::unique_ptr<AutofillField>& field) {
+            return field->renderer_id();
+          });
       // If the synthetic form fields are a subset of the removed fields, it
       // means that all the synthetic form fields were removed.
       const bool is_deleted =

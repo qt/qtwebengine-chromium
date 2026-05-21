@@ -11,7 +11,6 @@
 #include <vector>
 
 #include "base/base64url.h"
-#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/json/json_reader.h"
 #include "base/memory/ref_counted.h"
@@ -55,6 +54,7 @@ using ::testing::SizeIs;
 namespace {
 
 constexpr char kVersionListHeader[] = "Sec-CH-UA-Full-Version-List";
+constexpr char kPlatformHeader[] = "Sec-CH-UA-Platform";
 
 const char kGetTokenPairValidResponse[] =
     R"({
@@ -274,7 +274,7 @@ TEST_F(GaiaAuthFetcherTest, StartAuthCodeForOAuth2TokenExchangeSuccess) {
   EXPECT_EQ(google_apis::GetOmitCredentialsModeForGaiaRequests(),
             received_requests_.at(0).credentials_mode);
   std::string body = GetRequestBodyAsString(&received_requests_.at(0));
-  EXPECT_FALSE(base::Contains(body, "device_type=chrome"));
+  EXPECT_FALSE(body.contains("device_type=chrome"));
   EXPECT_TRUE(auth.HasPendingFetch());
 
   auth.TestOnURLLoadCompleteInternal(net::OK, net::HTTP_OK,
@@ -293,8 +293,8 @@ TEST_F(GaiaAuthFetcherTest, StartAuthCodeForOAuth2TokenExchangeDeviceId) {
   EXPECT_EQ(google_apis::GetOmitCredentialsModeForGaiaRequests(),
             received_requests_.at(0).credentials_mode);
   std::string body = GetRequestBodyAsString(&received_requests_.at(0));
-  EXPECT_TRUE(base::Contains(body, "device_type=chrome"));
-  EXPECT_TRUE(base::Contains(body, "device_id=device_ABCDE_1"));
+  EXPECT_TRUE(body.contains("device_type=chrome"));
+  EXPECT_TRUE(body.contains("device_id=device_ABCDE_1"));
 }
 
 TEST_F(GaiaAuthFetcherTest,
@@ -307,16 +307,18 @@ TEST_F(GaiaAuthFetcherTest,
           /*is_under_advanced_protection=*/false, /*is_bound_to_key=*/true)));
 
   TestGaiaAuthFetcher auth(&consumer, GetURLLoaderFactory());
-  auth.StartAuthCodeForOAuth2TokenExchange("auth_code", "version_list",
-                                           "registration_jwt");
+  auth.StartAuthCodeForOAuth2TokenExchange(
+      "auth_code", "registration_jwt",
+      {.full_version_list = "version_list", .platform = "platform"});
   ASSERT_EQ(received_requests_.size(), 1U);
   EXPECT_EQ(google_apis::GetOmitCredentialsModeForGaiaRequests(),
             received_requests_.at(0).credentials_mode);
   std::string body = GetRequestBodyAsString(&received_requests_.at(0));
-  EXPECT_TRUE(
-      base::Contains(body, "bound_token_registration_jwt=registration_jwt"));
+  EXPECT_TRUE(body.contains("bound_token_registration_jwt=registration_jwt"));
   EXPECT_THAT(received_requests_.at(0).headers.GetHeader(kVersionListHeader),
               Optional(std::string("version_list")));
+  EXPECT_THAT(received_requests_.at(0).headers.GetHeader(kPlatformHeader),
+              Optional(std::string("platform")));
   EXPECT_TRUE(auth.HasPendingFetch());
 
   auth.TestOnURLLoadCompleteInternal(net::OK, net::HTTP_OK,
@@ -326,7 +328,7 @@ TEST_F(GaiaAuthFetcherTest,
 
 TEST_F(
     GaiaAuthFetcherTest,
-    StartAuthCodeForOAuth2TokenExchangeBindingRegistrationTokenNoVersionHeader) {
+    StartAuthCodeForOAuth2TokenExchangeBindingRegistrationTokenNoUserAgentHeaders) {
   MockGaiaConsumer consumer;
   EXPECT_CALL(
       consumer,
@@ -335,14 +337,16 @@ TEST_F(
           /*is_under_advanced_protection=*/false, /*is_bound_to_key=*/true)));
 
   TestGaiaAuthFetcher auth(&consumer, GetURLLoaderFactory());
-  auth.StartAuthCodeForOAuth2TokenExchange("auth_code", "", "registration_jwt");
+  auth.StartAuthCodeForOAuth2TokenExchange(
+      "auth_code", "registration_jwt",
+      GaiaAuthFetcher::UserAgentHeadersParam());
   ASSERT_EQ(received_requests_.size(), 1U);
   EXPECT_EQ(google_apis::GetOmitCredentialsModeForGaiaRequests(),
             received_requests_.at(0).credentials_mode);
   std::string body = GetRequestBodyAsString(&received_requests_.at(0));
-  EXPECT_TRUE(
-      base::Contains(body, "bound_token_registration_jwt=registration_jwt"));
+  EXPECT_TRUE(body.contains("bound_token_registration_jwt=registration_jwt"));
   EXPECT_FALSE(received_requests_.at(0).headers.HasHeader(kVersionListHeader));
+  EXPECT_FALSE(received_requests_.at(0).headers.HasHeader(kPlatformHeader));
   EXPECT_TRUE(auth.HasPendingFetch());
 
   auth.TestOnURLLoadCompleteInternal(net::OK, net::HTTP_OK,

@@ -6,7 +6,6 @@
 
 #include <algorithm>
 
-#include "base/containers/contains.h"
 #include "base/logging.h"
 #include "components/user_education/common/ntp_promo/ntp_promo_identifier.h"
 #include "components/user_education/common/ntp_promo/ntp_promo_registry.h"
@@ -77,7 +76,7 @@ std::vector<NtpPromoIdentifier> NtpPromoOrderPolicy::OrderPendingPromos(
     const auto* spec = registry_->GetNtpPromoSpecification(id);
     CHECK(spec);
     for (const auto& after : spec->show_after()) {
-      if (base::Contains(ids, after)) {
+      if (std::ranges::contains(ids, after)) {
         show_after_map[id].insert(after);
       }
     }
@@ -115,13 +114,13 @@ std::vector<NtpPromoIdentifier> NtpPromoOrderPolicy::OrderPendingPromos(
   }
 
   // Sort promos by rank, and then by least-recently shown.
-  std::stable_sort(promos.begin(), promos.end(),
-                   [](const SortablePendingPromo& a,
-                      const SortablePendingPromo& b) {
-                     return a.rank < b.rank ||
-                            (a.rank == b.rank &&
-                             a.last_top_spot_session < b.last_top_spot_session);
-                   });
+  std::stable_sort(
+      promos.begin(), promos.end(),
+      [](const SortablePendingPromo& a, const SortablePendingPromo& b) {
+        return a.rank < b.rank ||
+               (a.rank == b.rank &&
+                a.last_top_spot_session < b.last_top_spot_session);
+      });
 
   // If the most-recently-shown top-ranked promo hasn't been shown long enough,
   // elevate it to the top of the list to be shown again. Essentially, this just

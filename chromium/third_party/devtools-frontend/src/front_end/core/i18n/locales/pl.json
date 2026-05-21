@@ -110,9 +110,6 @@
   "core/common/Revealer.ts | requestConditionsDrawer": {
     "message": "Panel warunków żądania"
   },
-  "core/common/Revealer.ts | securityPanel": {
-    "message": "Panel zabezpieczeń"
-  },
   "core/common/Revealer.ts | sourcesPanel": {
     "message": "Panel Źródła"
   },
@@ -410,9 +407,6 @@
   "core/sdk/NetworkRequest.ts | notOnPath": {
     "message": "Ten plik cookie został zablokowany, ponieważ jego ścieżka nie jest dokładnym dopasowaniem ścieżki adresu URL żądania ani jej katalogiem nadrzędnym."
   },
-  "core/sdk/NetworkRequest.ts | samePartyFromCrossPartyContext": {
-    "message": "Ten plik cookie został zablokowany, ponieważ miał atrybut „SameParty”, ale żądanie pochodziło z innego źródła. Żądanie zostało uznane za pochodzące z innego źródła, ponieważ domena adresu URL zasobu i domeny ramek lub dokumentów zawierających ten zasób nie są właścicielami ani elementami w tym samym zestawie źródeł własnych."
-  },
   "core/sdk/NetworkRequest.ts | sameSiteLax": {
     "message": "Ten plik cookie został zablokowany, ponieważ miał atrybut „SameSite=Lax”, a żądanie zostało wysłane z innej witryny i nie zostało zainicjowane przez nawigację najwyższego poziomu."
   },
@@ -454,12 +448,6 @@
   },
   "core/sdk/NetworkRequest.ts | thisSetcookieHadInvalidSyntax": {
     "message": "Ten nagłówek Set-Cookie ma nieprawidłową składnię."
-  },
-  "core/sdk/NetworkRequest.ts | thisSetcookieWasBlockedBecauseItHadTheSameparty": {
-    "message": "Próba umieszczenia pliku cookie za pomocą nagłówka Set-Cookie została zablokowana, ponieważ miał on atrybut „SameParty”, ale żądanie pochodziło z innego źródła. Żądanie zostało uznane za pochodzące z innego źródła, ponieważ domena adresu URL zasobu i domeny ramek lub dokumentów zawierających ten zasób nie są właścicielami ani elementami w tym samym zestawie źródeł własnych."
-  },
-  "core/sdk/NetworkRequest.ts | thisSetcookieWasBlockedBecauseItHadTheSamepartyAttribute": {
-    "message": "Próba umieszczenia pliku cookie za pomocą nagłówka Set-Cookie została zablokowana, ponieważ miał on atrybut „SameParty” oraz inne atrybuty powodujące konflikty. Chrome wymaga, aby pliki cookie z atrybutem „SameParty” miały również atrybut „Secure” i nie miały ograniczenia „SameSite=Strict”."
   },
   "core/sdk/NetworkRequest.ts | thisSetcookieWasBlockedBecauseItHadTheSamesiteStrictLax": {
     "message": "Próba umieszczenia pliku cookie za pomocą nagłówka Set-Cookie została zablokowana, ponieważ miał on atrybut „{PH1}”, ale pochodził z odpowiedzi z innej witryny, która nie była odpowiedzią na nawigację najwyższego poziomu. Ta odpowiedź jest uznawana za pochodzącą z innej witryny, ponieważ schemat adresu URL jest inny niż w przypadku bieżącej witryny."
@@ -1031,6 +1019,15 @@
   "entrypoints/main/GlobalAiButton.ts | aiAssistance": {
     "message": "Pomoc AI"
   },
+  "entrypoints/main/GlobalAiButton.ts | gemini": {
+    "message": "Gemini"
+  },
+  "entrypoints/main/GlobalAiButton.ts | openAiAssistance": {
+    "message": "Otwórz panel pomocy AI"
+  },
+  "entrypoints/main/GlobalAiButton.ts | openGemini": {
+    "message": "Otwórz panel Gemini"
+  },
   "entrypoints/main/MainImpl.ts | aiModelDownloaded": {
     "message": "Model AI został pobrany."
   },
@@ -1057,6 +1054,9 @@
   },
   "entrypoints/main/MainImpl.ts | focusDebuggee": {
     "message": "Zaznacz stronę"
+  },
+  "entrypoints/main/MainImpl.ts | getDevToolsMcp": {
+    "message": "Pobierz DevTools MCP"
   },
   "entrypoints/main/MainImpl.ts | help": {
     "message": "Pomoc"
@@ -1298,9 +1298,6 @@
   "generated/Deprecation.ts | ChromeLoadTimesWasAlternateProtocolAvailable": {
     "message": "Interfejs chrome.loadTimes() został wycofany. Użyj standaryzowanego interfejsu API: nextHopProtocol w Navigation Timing 2."
   },
-  "generated/Deprecation.ts | CookieWithTruncatingChar": {
-    "message": "Pliki cookie zawierające znak \\(0|r|n) będą odrzucane (nie będą skracane)."
-  },
   "generated/Deprecation.ts | CrossOriginAccessBasedOnDocumentDomain": {
     "message": "Złagodzenie zasady dotyczącej tej samej domeny przez ustawienie document.domain zostało wycofane i będzie domyślnie wyłączone. To ostrzeżenie o wycofaniu dotyczy dostępu z tej samej domeny, który był włączony przez ustawienie document.domain."
   },
@@ -1454,9 +1451,6 @@
   "generated/Deprecation.ts | XMLHttpRequestSynchronousInNonWorkerOutsideBeforeUnload": {
     "message": "Synchroniczny interfejs XMLHttpRequest w głównym wątku został wycofany z powodu negatywnego wpływu na sposób obsługi. Więcej informacji znajdziesz na stronie https://xhr.spec.whatwg.org/."
   },
-  "generated/Deprecation.ts | XMLNoExternalEntities": {
-    "message": "Elementy wczytywane zewnętrznie podczas analizowania XML-a zostały wycofane i wkrótce zostaną usunięte z tej przeglądarki."
-  },
   "generated/Deprecation.ts | XSLT": {
     "message": "Wszystkie przeglądarki wycofały obsługę XSLTProcessor i XSLT Processing Instructions. Te funkcje zostaną wkrótce usunięte z tej przeglądarki."
   },
@@ -1475,17 +1469,11 @@
   "models/bindings/ContentProviderBasedProject.ts | unknownErrorLoadingFile": {
     "message": "Nieznany błąd podczas ładowania pliku"
   },
-  "models/bindings/DebuggerLanguagePlugins.ts | debugSymbolsIncomplete": {
-    "message": "Dane debugowania na potrzeby funkcji {PH1} są niepełne"
-  },
   "models/bindings/DebuggerLanguagePlugins.ts | errorInDebuggerLanguagePlugin": {
     "message": "Błąd we wtyczce języka debugera: {PH1}"
   },
   "models/bindings/DebuggerLanguagePlugins.ts | failedToLoadDebugSymbolsFor": {
     "message": "[{PH1}] Nie udało się wczytać symboli debugowania dla: {PH2} ({PH3})"
-  },
-  "models/bindings/DebuggerLanguagePlugins.ts | failedToLoadDebugSymbolsForFunction": {
-    "message": "Brak danych debugowania dla funkcji „{PH1}”"
   },
   "models/bindings/DebuggerLanguagePlugins.ts | loadedDebugSymbolsForButDidnt": {
     "message": "[{PH1}] Wczytano symbole debugowania dla: {PH2}, ale nie znaleziono żadnych plików źródłowych"
@@ -1586,9 +1574,6 @@
   "models/issues_manager/CookieIssue.ts | fileCrosSiteRedirectBug": {
     "message": "Zgłoś błąd"
   },
-  "models/issues_manager/CookieIssue.ts | firstPartySetsExplained": {
-    "message": "First-Party Sets i atrybut SameParty"
-  },
   "models/issues_manager/CookieIssue.ts | howSchemefulSamesiteWorks": {
     "message": "Jak działa atrybut „Schemeful Same-Site”"
   },
@@ -1600,9 +1585,6 @@
   },
   "models/issues_manager/CorsIssue.ts | corsLocalNetworkAccess": {
     "message": "Dostęp przez sieć lokalną"
-  },
-  "models/issues_manager/CorsIssue.ts | corsPrivateNetworkAccess": {
-    "message": "Dostęp do sieci prywatnej"
   },
   "models/issues_manager/CrossOriginEmbedderPolicyIssue.ts | coopAndCoep": {
     "message": "COOP i COEP"
@@ -2107,6 +2089,9 @@
   },
   "models/trace/Styles.ts | signReply": {
     "message": "Podpisanie odpowiedzi"
+  },
+  "models/trace/Styles.ts | softLargestContentfulPaint": {
+    "message": "Miękkie największe wyrenderowanie treści"
   },
   "models/trace/Styles.ts | streamingCompileTask": {
     "message": "Przesyłanie zadania kompilacji"
@@ -2739,7 +2724,7 @@
     "message": "Spis treści"
   },
   "panels/accessibility/AccessibilityStrings.ts | controls": {
-    "message": "Ustawienia"
+    "message": "Elementy sterujące"
   },
   "panels/accessibility/AccessibilityStrings.ts | describedBy": {
     "message": "Opisane przez"
@@ -3086,14 +3071,20 @@
   "panels/ai_assistance/ai_assistance-meta.ts | aiAssistance": {
     "message": "Pomoc AI"
   },
-  "panels/ai_assistance/ai_assistance-meta.ts | askAi": {
-    "message": "Zapytaj AI"
-  },
   "panels/ai_assistance/ai_assistance-meta.ts | debugWithAi": {
     "message": "Debuguj z użyciem AI"
   },
+  "panels/ai_assistance/ai_assistance-meta.ts | debugWithGemini": {
+    "message": "Debuguj za pomocą Gemini"
+  },
   "panels/ai_assistance/ai_assistance-meta.ts | enableAiAssistance": {
     "message": "Włącz pomoc AI"
+  },
+  "panels/ai_assistance/ai_assistance-meta.ts | enableGemini": {
+    "message": "Włącz Gemini"
+  },
+  "panels/ai_assistance/ai_assistance-meta.ts | gemini": {
+    "message": "Gemini"
   },
   "panels/ai_assistance/ai_assistance-meta.ts | geoRestricted": {
     "message": "Ta funkcja jest niedostępna w Twoim regionie."
@@ -3104,16 +3095,19 @@
   "panels/ai_assistance/ai_assistance-meta.ts | showAiAssistance": {
     "message": "Pokaż pomoc AI"
   },
+  "panels/ai_assistance/ai_assistance-meta.ts | showGemini": {
+    "message": "Pokaż Gemini"
+  },
   "panels/ai_assistance/ai_assistance-meta.ts | wrongLocale": {
     "message": "Aby korzystać z tej funkcji, ustaw język angielski w ustawieniach Narzędzi deweloperskich."
   },
-  "panels/ai_assistance/components/ChatView.ts | inputTextAriaDescription": {
+  "panels/ai_assistance/components/ChatInput.ts | inputTextAriaDescription": {
     "message": "Możesz też użyć jednego z powyższych sugerowanych promptów, aby rozpocząć rozmowę"
   },
-  "panels/ai_assistance/components/ChatView.ts | learnAbout": {
+  "panels/ai_assistance/components/ChatInput.ts | learnAbout": {
     "message": "Dowiedz się więcej o AI w Narzędziach deweloperskich"
   },
-  "panels/ai_assistance/components/ChatView.ts | revealContextDescription": {
+  "panels/ai_assistance/components/ChatInput.ts | revealContextDescription": {
     "message": "Pokaż wybrany element kontekstu w Narzędziach deweloperskich"
   },
   "panels/ai_assistance/components/DisabledWidget.ts | notAvailableInIncognitoMode": {
@@ -3221,6 +3215,9 @@
   "panels/application/AppManifestView.ts | appIdNote": {
     "message": "Uwaga: w pliku manifestu nie określono pola id. Zamiast niego użyto pola start_url. Aby określić identyfikator aplikacji pasujący do bieżącej tożsamości, ustaw pole id na wartość {PH1} {PH2}."
   },
+  "panels/application/AppManifestView.ts | appManifest": {
+    "message": "Plik manifestu"
+  },
   "panels/application/AppManifestView.ts | avoidPurposeAnyAndMaskable": {
     "message": "Odradzamy deklarowanie ikony z wartością „purpose” dla: „any maskable”. Na niektórych platformach prawdopodobnie będzie ona wyglądać nieprawidłowo ze względu na za duże lub za małe dopełnienie."
   },
@@ -3293,6 +3290,9 @@
   "panels/application/AppManifestView.ts | manifestCouldNotBeFetchedIsEmpty": {
     "message": "Nie udało się pobrać pliku manifestu, jest on pusty lub nie można go przeanalizować"
   },
+  "panels/application/AppManifestView.ts | manifestDescription": {
+    "message": "Plik manifestu określa, jak aplikacja będzie wyświetlać się na ekranach głównych telefonu i jak będzie wyglądać po uruchomieniu."
+  },
   "panels/application/AppManifestView.ts | manifestDisplayPropertyMustBeOne": {
     "message": "Właściwość „display” w pliku manifestu musi wynosić „standalone”, „fullscreen” lub „minimal-ui”"
   },
@@ -3317,6 +3317,9 @@
   "panels/application/AppManifestView.ts | newNoteUrl": {
     "message": "URL nowej notatki"
   },
+  "panels/application/AppManifestView.ts | noManifestDetected": {
+    "message": "Nie wykryto pliku manifestu"
+  },
   "panels/application/AppManifestView.ts | noPlayStoreIdProvided": {
     "message": "Nie podano identyfikatora w Sklepie Play"
   },
@@ -3328,6 +3331,9 @@
   },
   "panels/application/AppManifestView.ts | noSuppliedIconIsAtLeastSpxSquare": {
     "message": "Żadna z podanych ikon nie jest kwadratem o boku długości co najmniej {PH1} piks. w formacie PNG, SVG lub WebP z atrybutem o nieustawionej wartości lub wartości any."
+  },
+  "panels/application/AppManifestView.ts | onInvokeAlert": {
+    "message": "Przewinięto do sekcji {PH1}"
   },
   "panels/application/AppManifestView.ts | orientation": {
     "message": "Orientacja"
@@ -3458,9 +3464,6 @@
   "panels/application/AppManifestView.ts | windowControlsOverlay": {
     "message": "Nakładka z elementami sterującymi okna"
   },
-  "panels/application/ApplicationPanelSidebar.ts | appManifest": {
-    "message": "Plik manifestu"
-  },
   "panels/application/ApplicationPanelSidebar.ts | application": {
     "message": "Aplikacja"
   },
@@ -3530,9 +3533,6 @@
   "panels/application/ApplicationPanelSidebar.ts | manifest": {
     "message": "Plik manifestu"
   },
-  "panels/application/ApplicationPanelSidebar.ts | manifestDescription": {
-    "message": "Plik manifestu określa, jak aplikacja będzie wyświetlać się na ekranach głównych telefonu i jak będzie wyglądać po uruchomieniu."
-  },
   "panels/application/ApplicationPanelSidebar.ts | noCookies": {
     "message": "Nie ustawiono plików cookie"
   },
@@ -3544,9 +3544,6 @@
   },
   "panels/application/ApplicationPanelSidebar.ts | noLocalStorage": {
     "message": "Nie wykryto lokalnego miejsca na dane"
-  },
-  "panels/application/ApplicationPanelSidebar.ts | noManifestDetected": {
-    "message": "Nie wykryto pliku manifestu"
   },
   "panels/application/ApplicationPanelSidebar.ts | noSessionStorage": {
     "message": "Nie wykryto pamięci sesji"
@@ -3721,6 +3718,399 @@
   },
   "panels/application/DOMStorageItemsView.ts | domStorageItemsCleared": {
     "message": "Wyczyszczono elementy pamięci DOM"
+  },
+  "panels/application/DeviceBoundSessionsTreeElement.ts | deviceBoundSessions": {
+    "message": "Sesje powiązane z urządzeniem"
+  },
+  "panels/application/DeviceBoundSessionsTreeElement.ts | deviceBoundSessionsCategoryDescription": {
+    "message": "Na tej stronie możesz wyświetlić sesje powiązane z urządzeniem i związane z nimi zdarzenia"
+  },
+  "panels/application/DeviceBoundSessionsTreeElement.ts | noSession": {
+    "message": "Brak sesji"
+  },
+  "panels/application/DeviceBoundSessionsTreeElement.ts | sessionWithErrors": {
+    "message": "{sessionName}, sesja zawiera błędy"
+  },
+  "panels/application/DeviceBoundSessionsTreeElement.ts | terminatedSession": {
+    "message": "{sessionName}, sesja została zakończona"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | allowedRefreshInitiators": {
+    "message": "Dozwoleni inicjatorzy odświeżania"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | boundCookieSetForbidden": {
+    "message": "Rejestracja w kontekście, w którym nie można ustawić powiązanych plików cookie"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | cachedChallenge": {
+    "message": "Test zabezpieczający w pamięci podręcznej"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | cantSetBoundCookie": {
+    "message": "Nie zezwolono na ustawienie powiązanego pliku cookie"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | causedAnyRequestDeferrals": {
+    "message": "Spowodował odroczenie dowolnego żądania"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | challenge": {
+    "message": "Zadanie"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | challengeResult": {
+    "message": "Wynik zadania"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | clearBrowsingData": {
+    "message": "Usuwanie danych przeglądarki zainicjowane przez użytkownika"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | cookieCravings": {
+    "message": "Pliki cookie"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | creation": {
+    "message": "Utworzenie"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | deletionReason": {
+    "message": "Powód usunięcia"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | doNotClearLogOnPageReload": {
+    "message": "Nie czyść logu po ponownym załadowaniu strony lub zmianie nawigacji."
+  },
+  "panels/application/DeviceBoundSessionsView.ts | emptyScopeSpecificationDomain": {
+    "message": "Pusta domena specyfikacji zakresu"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | emptyScopeSpecificationPath": {
+    "message": "Pusta ścieżka specyfikacji zakresu"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | emptySessionConfig": {
+    "message": "Pusta konfiguracja sesji na potrzeby rejestracji"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | error": {
+    "message": "Błąd"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | eventDetails": {
+    "message": "Szczegóły zdarzenia"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | eventResult": {
+    "message": "Wynik zdarzenia"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | events": {
+    "message": "Zdarzenia"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | expired": {
+    "message": "Ważność wygasła"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | expiryDate": {
+    "message": "Data ważności"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | failedToRestoreKey": {
+    "message": "Nie udało się przywrócić klucza z dysku"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | failedToUnwrapKey": {
+    "message": "Nie udało się rozpakować klucza"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | fatalError": {
+    "message": "Błąd krytyczny"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | federatedKeyThumbprintMismatch": {
+    "message": "Klucz sfederowany miał nieprawidłowy odcisk cyfrowy"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | federatedNotAuthorizedByProvider": {
+    "message": "Sesja sfederowana nie została autoryzowana przez katalog .well-known dostawcy"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | federatedNotAuthorizedByRelyingParty": {
+    "message": "Sesja sfederowana nie została autoryzowana przez katalog .well-known podmiotu zaufanego"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | fetchResult": {
+    "message": "Wynik pobierania"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | includeSite": {
+    "message": "Uwzględnij witrynę"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | initializedService": {
+    "message": "Usługa została zainicjowana"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidChallenge": {
+    "message": "Nieprawidłowe zadanie"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidConfigJson": {
+    "message": "Nieprawidłowy kod JSON konfiguracji sesji"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidCredentialsConfig": {
+    "message": "Nieprawidłowa konfiguracja danych logowania"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidCredentialsCookie": {
+    "message": "Nieprawidłowe dane logowania – nieprawidłowy plik cookie"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidCredentialsCookieCreationTime": {
+    "message": "Nieprawidłowe dane logowania – nieprawidłowy czas utworzenia pliku cookie"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidCredentialsCookieInvalidDomain": {
+    "message": "Nieprawidłowe dane logowania – nieprawidłowa domena pliku cookie"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidCredentialsCookieName": {
+    "message": "Nieprawidłowe dane logowania – nieprawidłowa nazwa pliku cookie"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidCredentialsCookieParsing": {
+    "message": "Nieprawidłowe dane logowania – nie udało się przeanalizować pliku cookie"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidCredentialsCookiePrefix": {
+    "message": "Nieprawidłowe dane logowania – nieprawidłowy prefiks pliku cookie"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidCredentialsCookieUnpermittedAttribute": {
+    "message": "Nieprawidłowe dane logowania – niedozwolony atrybut pliku cookie"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidCredentialsEmptyName": {
+    "message": "Nieprawidłowe dane logowania – pusta nazwa"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidCredentialsType": {
+    "message": "Nieprawidłowe dane logowania – puste lub inne niż plik cookie"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidFederatedKey": {
+    "message": "Nieprawidłowy klucz sfederowany"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidFederatedSessionProviderFailedToRestoreKey": {
+    "message": "Sesja sfederowana jest nieprawidłowa, ponieważ nie udało się przywrócić klucza dostawcy sesji"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidFederatedSessionProviderSessionMissing": {
+    "message": "Sesja sfederowana jest nieprawidłowa, ponieważ nie znaleziono sesji dostawcy"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidFederatedSessionUrl": {
+    "message": "Adres URL dostawcy sfederowanego jest nieprawidłowy"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidFederatedSessionWrongProviderOrigin": {
+    "message": "Sesja sfederowana jest nieprawidłowa z powodu niezgodności źródła dostawcy"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidFetcherUrl": {
+    "message": "Nieprawidłowy adres URL pobierania"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidRefreshUrl": {
+    "message": "Nieprawidłowy adres URL odświeżania"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidScopeIncludeSite": {
+    "message": "Nieprawidłowa opcja include_site w zakresie"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidScopeOrigin": {
+    "message": "Nieprawidłowe źródło zakresu"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidScopeRuleHostPattern": {
+    "message": "Nieprawidłowy wzorzec hosta reguły zakresu"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidScopeRulePath": {
+    "message": "Nieprawidłowa ścieżka reguły zakresu"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidScopeSpecification": {
+    "message": "Nieprawidłowa specyfikacja zakresu"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidScopeSpecificationType": {
+    "message": "Typ specyfikacji zakresu nie określa ani uwzględnienia, ani wykluczenia"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidSessionId": {
+    "message": "Nieprawidłowy identyfikator sesji"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | invalidSessionParams": {
+    "message": "Nieprawidłowe parametry sesji"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | keyError": {
+    "message": "Błąd klucza"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | keyId": {
+    "message": "Identyfikator"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | keySite": {
+    "message": "Witryna"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | mismatchedSessionId": {
+    "message": "Niezgodny identyfikator sesji"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | missingScope": {
+    "message": "Brak zakresu"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | missingScopeIncludeSite": {
+    "message": "Brak include_site w zakresie"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | missingScopeSpecificationType": {
+    "message": "Brak typu specyfikacji zakresu"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | name": {
+    "message": "Nazwa"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | netError": {
+    "message": "Błąd sieci"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | no": {
+    "message": "Nie"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | noCredentials": {
+    "message": "Brak danych uwierzytelniających"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | noEvents": {
+    "message": "Nie zapisano jeszcze żadnych zdarzeń."
+  },
+  "panels/application/DeviceBoundSessionsView.ts | noSessionId": {
+    "message": "Brak identyfikatora sesji"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | noSessionMatch": {
+    "message": "Brak pasującego identyfikatora sesji"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | origin": {
+    "message": "Źródło"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | persistentHttpError": {
+    "message": "Stały błąd HTTP"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | preserveLog": {
+    "message": "Zachowaj dziennik"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | proxyError": {
+    "message": "Błąd serwera proxy"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | refresh": {
+    "message": "Odśwież"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | refreshFatalError": {
+    "message": "Błąd krytyczny podczas odświeżania"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | refreshInitiatorInvalidHostPattern": {
+    "message": "Dozwolony inicjator odświeżania ma nieprawidłowy wzorzec hosta"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | refreshInitiatorNotString": {
+    "message": "Dozwolony inicjator odświeżania nie jest ciągiem znaków"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | refreshQuotaExceeded": {
+    "message": "Przekroczono limit odświeżania"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | refreshResult": {
+    "message": "Odśwież wynik"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | refreshUrl": {
+    "message": "Odśwież adres URL"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | refreshUrlSameSiteMismatch": {
+    "message": "Adres URL odświeżania w przypadku niezgodności w tej samej witrynie"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | refreshed": {
+    "message": "Odświeżono"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | registrationAttemptedChallenge": {
+    "message": "Rejestracja zwróciła kod odpowiedzi na błąd uwierzytelniania"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | relyingPartyWellKnownHasRelyingOrigins": {
+    "message": "Katalog .well-known strony zaufanej zawiera klucz relying_origins"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | relyingPartyWellKnownMalformed": {
+    "message": "Zawartość katalogu .well-known strony zaufanej jest nieprawidłowa"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | relyingPartyWellKnownUnavailable": {
+    "message": "Katalog .well-known strony zaufanej jest niedostępny"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | result": {
+    "message": "Wynik"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | ruleHostPattern": {
+    "message": "Wzorzec hosta"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | rulePathPrefix": {
+    "message": "Prefiks ścieżki"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | ruleType": {
+    "message": "Typ reguły"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | ruleTypeExclude": {
+    "message": "Wyklucz"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | ruleTypeInclude": {
+    "message": "Uwzględnij"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | scope": {
+    "message": "Zakres"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | scopeOriginContainsPath": {
+    "message": "Źródło zakresu zawiera ścieżkę"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | scopeOriginSameSiteMismatch": {
+    "message": "Źródło zakresu niezgodności Same-Site"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | scopeRuleOriginScopedHostPatternMismatch": {
+    "message": "Sesja ograniczona do źródła ma niezgodność między wzorcem hosta a źródłem"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | scopeRuleSiteScopedHostPatternMismatch": {
+    "message": "Sesja ograniczona do witryny ma niezgodność między wzorcem hosta a witryną"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | selectEventToViewDetails": {
+    "message": "Wybierz wiersz zdarzenia, aby wyświetlić więcej szczegółów."
+  },
+  "panels/application/DeviceBoundSessionsView.ts | serverError": {
+    "message": "Przejściowy błąd punktu końcowego"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | serverRequestedTermination": {
+    "message": "Serwer zażądał zakończenia"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | sessionConfig": {
+    "message": "Konfiguracja sesji"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | sessionDeletedDuringRefresh": {
+    "message": "Sesja została usunięta podczas odświeżania"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | sessionDetails": {
+    "message": "Szczegóły sesji"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | sessionId": {
+    "message": "Identyfikator sesji"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | sessionProviderWellKnownHasProviderOrigin": {
+    "message": "Katalog .well-known dostawcy sesji zawiera klucz provider_origin"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | sessionProviderWellKnownMalformed": {
+    "message": "Nieprawidłowa zawartość katalogu .well-known dostawcy sesji"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | sessionProviderWellKnownUnavailable": {
+    "message": "Katalog .well-known dostawcy sesji jest niedostępny"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | signingError": {
+    "message": "Błąd podpisywania"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | signingQuotaExceeded": {
+    "message": "Przekroczono limit podpisywania"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | storagePartitionCleared": {
+    "message": "Usunięto z partycji pamięci"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | subdomainRegistrationUnauthorized": {
+    "message": "Katalog .well-known nie autoryzował rejestracji przez subdomenę"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | subdomainRegistrationWellKnownMalformed": {
+    "message": "Rejestracja subdomeny: nieprawidłowa zawartość katalogu .well-known"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | subdomainRegistrationWellKnownUnavailable": {
+    "message": "Katalog .well-known do rejestracji subdomeny jest niedostępny"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | success": {
+    "message": "Powodzenie"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | termination": {
+    "message": "Zakończenie"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | timestamp": {
+    "message": "Data"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | tooManyChallenges": {
+    "message": "Zbyt wiele zadań"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | tooManyRelyingOriginLabels": {
+    "message": "Zbyt wiele etykiet zaufanych źródeł w katalogu .well-known"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | transientHttpError": {
+    "message": "Przejściowy błąd HTTP"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | type": {
+    "message": "Typ"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | unknown": {
+    "message": "Nieznany"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | unreachable": {
+    "message": "Punkt końcowy jest niedostępny"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | updatedSessionConfig": {
+    "message": "Zaktualizowano konfigurację sesji"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | yes": {
+    "message": "Tak"
   },
   "panels/application/ExtensionStorageItemsView.ts | extensionStorageItems": {
     "message": "Elementy w miejscu na rozszerzenia"
@@ -5333,18 +5723,6 @@
   "panels/application/preloading/components/PreloadingGrid.ts | status": {
     "message": "Stan"
   },
-  "panels/application/preloading/components/PreloadingMismatchedHeadersGrid.ts | activationNavigationValue": {
-    "message": "Wartość w nawigacji po aktywacji"
-  },
-  "panels/application/preloading/components/PreloadingMismatchedHeadersGrid.ts | headerName": {
-    "message": "Nazwa nagłówka"
-  },
-  "panels/application/preloading/components/PreloadingMismatchedHeadersGrid.ts | initialNavigationValue": {
-    "message": "Wartość w początkowej nawigacji"
-  },
-  "panels/application/preloading/components/PreloadingMismatchedHeadersGrid.ts | missing": {
-    "message": "(brak)"
-  },
   "panels/application/preloading/components/PreloadingString.ts | PrefetchEvictedAfterBrowsingDataRemoved": {
     "message": "Pobieranie z wyprzedzeniem zostało odrzucone, ponieważ dane przeglądania zostały usunięte."
   },
@@ -5621,6 +5999,9 @@
   "panels/application/preloading/components/RuleSetGrid.ts | status": {
     "message": "Stan"
   },
+  "panels/application/preloading/components/UsedPreloadingView.ts | activationNavigationValue": {
+    "message": "Wartość w nawigacji po aktywacji"
+  },
   "panels/application/preloading/components/UsedPreloadingView.ts | badgeFailure": {
     "message": "Niepowodzenie"
   },
@@ -5651,11 +6032,20 @@
   "panels/application/preloading/components/UsedPreloadingView.ts | downgradedPrefetchUsed": {
     "message": "Strona inicjująca próbowała wstępnie wyrenderować adres URL tej strony. Renderowanie wstępne się nie udało, ale mimo to treść odpowiedzi została użyta jako pobieranie z wyprzedzeniem."
   },
+  "panels/application/preloading/components/UsedPreloadingView.ts | headerName": {
+    "message": "Nazwa nagłówka"
+  },
+  "panels/application/preloading/components/UsedPreloadingView.ts | initialNavigationValue": {
+    "message": "Wartość w początkowej nawigacji"
+  },
   "panels/application/preloading/components/UsedPreloadingView.ts | learnMore": {
     "message": "Więcej informacji: ładowanie spekulacyjne na stronie developer.chrome.com"
   },
   "panels/application/preloading/components/UsedPreloadingView.ts | mismatchedHeadersDetail": {
     "message": "Niezgodne nagłówki żądania HTTP"
+  },
+  "panels/application/preloading/components/UsedPreloadingView.ts | missing": {
+    "message": "(brak)"
   },
   "panels/application/preloading/components/UsedPreloadingView.ts | noPreloads": {
     "message": "Strona inicjująca nie próbowała spekulacyjnie załadować adresu URL tej strony."
@@ -5993,11 +6383,11 @@
   "panels/common/BadgeNotification.ts | manageSettings": {
     "message": "Zarządzaj ustawieniami"
   },
+  "panels/common/BadgeNotification.ts | noThanks": {
+    "message": "Nie, dziękuję"
+  },
   "panels/common/BadgeNotification.ts | receiveBadges": {
     "message": "Włącz plakietki"
-  },
-  "panels/common/BadgeNotification.ts | remindMeLater": {
-    "message": "Przypomnij później"
   },
   "panels/common/BadgeNotification.ts | starterBadgeAwardMessageNoGdpProfile": {
     "message": "Zdobywasz plakietkę {PH1} za {PH2}. Utwórz profil, aby uzyskać plakietkę."
@@ -6007,6 +6397,9 @@
   },
   "panels/common/BadgeNotification.ts | viewProfile": {
     "message": "Wyświetl profil"
+  },
+  "panels/common/CopyChangesToPrompt.ts | responseCopiedToClipboard": {
+    "message": "Odpowiedź została skopiowana do schowka"
   },
   "panels/common/DOMLinkifier.ts | node": {
     "message": "<węzeł>"
@@ -6070,6 +6463,27 @@
   },
   "panels/common/GdpSignUpDialog.ts | termsOfService": {
     "message": "Warunkom korzystania z usługi"
+  },
+  "panels/common/GeminiRebrandPromoDialog.ts | detailAiCompanion": {
+    "message": "Oto Twój pomocnik AI do tworzenia stron internetowych"
+  },
+  "panels/common/GeminiRebrandPromoDialog.ts | detailConsoleErrors": {
+    "message": "Otrzymuj natychmiastowe, dokładne odpowiedzi na błędy w konsoli"
+  },
+  "panels/common/GeminiRebrandPromoDialog.ts | detailGenerateCode": {
+    "message": "Generuj fragmenty kodu CSS i JS na żądanie"
+  },
+  "panels/common/GeminiRebrandPromoDialog.ts | detailPerformance": {
+    "message": "Automatycznie wyszukuj problemy w śladach wydajności"
+  },
+  "panels/common/GeminiRebrandPromoDialog.ts | dialogAriaLabel": {
+    "message": "Gemini 3 Flash w Narzędziach deweloperskich"
+  },
+  "panels/common/GeminiRebrandPromoDialog.ts | dismiss": {
+    "message": "Zamknij"
+  },
+  "panels/common/GeminiRebrandPromoDialog.ts | getStarted": {
+    "message": "Rozpocznij"
   },
   "panels/common/PersistenceUtils.ts | linkedToS": {
     "message": "Połączono z {PH1}"
@@ -6280,9 +6694,6 @@
   },
   "panels/console/ConsoleViewMessage.ts | Mxx": {
     "message": " M<XX>"
-  },
-  "panels/console/ConsoleViewMessage.ts | SeeIssueInCookieReport": {
-    "message": "Kliknij, aby otworzyć panel prywatności i zabezpieczeń i wyświetlić raport dotyczący plików cookie innych firm"
   },
   "panels/console/ConsoleViewMessage.ts | assertionFailed": {
     "message": "Asercja się nie udała: "
@@ -6869,6 +7280,12 @@
   "panels/elements/CSSRuleValidator.ts | fontVariationSettingsWarning": {
     "message": "Wartość ustawienia „{PH1}” {PH2} jest spoza obsługiwanego zakresu [{PH3}, {PH4}] w przypadku rodziny czcionek „{PH5}”."
   },
+  "panels/elements/CSSRuleValidator.ts | invalidAnchorPositioning": {
+    "message": "Zdefiniowano kotwicę, ale element nie został zakotwiczony, tylko ustawiony na „{POSITION}”."
+  },
+  "panels/elements/CSSRuleValidator.ts | invalidAnchorPositioningFix": {
+    "message": "Ustaw pozycję na „fixed” lub „absolute”."
+  },
   "panels/elements/CSSRuleValidator.ts | ruleViolatedByParentElementRuleFix": {
     "message": "Spróbuj ustawić właściwość {EXISTING_PARENT_ELEMENT_RULE} elementu nadrzędnego na {TARGET_PARENT_ELEMENT_RULE}."
   },
@@ -6886,6 +7303,9 @@
   },
   "panels/elements/CSSRuleValidator.ts | ruleViolatedBySameElementRuleReason": {
     "message": "Właściwość {REASON_PROPERTY_DECLARATION_CODE} uniemożliwia działanie {AFFECTED_PROPERTY_DECLARATION_CODE}."
+  },
+  "panels/elements/CSSRuleValidator.ts | unusedAnchorPositioning": {
+    "message": "Zdefiniowano kotwicę, ale element jest ukryty."
   },
   "panels/elements/ClassesPaneWidget.ts | addNewClass": {
     "message": "Dodaj nową klasę"
@@ -6905,6 +7325,9 @@
   "panels/elements/ColorSwatchPopoverIcon.ts | openShadowEditor": {
     "message": "Otwórz edytor cieni"
   },
+  "panels/elements/ComputedStyleWidget.ts | filterUpdateAriaText": {
+    "message": "Zastosowano filtr: {PH1}. Wszystkie wyniki: {PH2}"
+  },
   "panels/elements/ComputedStyleWidget.ts | group": {
     "message": "Grupuj"
   },
@@ -6912,7 +7335,7 @@
     "message": "Przejdź do źródła selektora"
   },
   "panels/elements/ComputedStyleWidget.ts | navigateToStyle": {
-    "message": "Przejdź do stylu"
+    "message": "Przejdź do stylów"
   },
   "panels/elements/ComputedStyleWidget.ts | noMatchingProperty": {
     "message": "Brak pasujących właściwości"
@@ -7202,6 +7625,9 @@
   "panels/elements/ElementsTreeElement.ts | removeScrollbars": {
     "message": "Usuń paski przewijania"
   },
+  "panels/elements/ElementsTreeElement.ts | reveal": {
+    "message": "odkryj"
+  },
   "panels/elements/ElementsTreeElement.ts | scrollIntoView": {
     "message": "Przewiń, aby pokazać"
   },
@@ -7234,6 +7660,9 @@
   },
   "panels/elements/ElementsTreeElement.ts | valueIsTooLargeToEdit": {
     "message": "<wartość jest zbyt duża, aby ją edytować>"
+  },
+  "panels/elements/ElementsTreeElement.ts | viewSourceCode": {
+    "message": "Pokaż kod źródłowy"
   },
   "panels/elements/ElementsTreeElement.ts | wrapTheseItems": {
     "message": "Zapakuj te elementy"
@@ -7439,11 +7868,17 @@
   "panels/elements/StylePropertyTreeElement.ts | jumpToAnimationsPanel": {
     "message": "Przejdź do panelu Animacje"
   },
+  "panels/elements/StylePropertyTreeElement.ts | openAnimationsPanel": {
+    "message": "Otwórz panel animacji"
+  },
   "panels/elements/StylePropertyTreeElement.ts | openColorPickerS": {
     "message": "Otwórz selektor kolorów. {PH1}"
   },
   "panels/elements/StylePropertyTreeElement.ts | openInSourcesPanel": {
     "message": "Otwórz w panelu Źródła"
+  },
+  "panels/elements/StylePropertyTreeElement.ts | overriddenByAnimation": {
+    "message": "Zastąpiono stylami animacji."
   },
   "panels/elements/StylePropertyTreeElement.ts | sIsNotDefined": {
     "message": "Właściwość {PH1} jest niezdefiniowana"
@@ -7492,9 +7927,6 @@
   },
   "panels/elements/StylesSidebarPane.ts | visibleSelectors": {
     "message": "{n,plural, =1{# widoczny selektor wymieniony poniżej}few{# widoczne selektory wymienione poniżej}many{# widocznych selektorów wymienionych poniżej}other{# widocznego selektora wymienione poniżej}}"
-  },
-  "panels/elements/TopLayerContainer.ts | reveal": {
-    "message": "odkryj"
   },
   "panels/elements/components/AccessibilityTreeNode.ts | ignored": {
     "message": "Ignorowany"
@@ -7549,6 +7981,9 @@
   },
   "panels/elements/components/ElementsTreeExpandButton.ts | expand": {
     "message": "Rozwiń"
+  },
+  "panels/elements/components/StylePropertyEditor.ts | denseLabel": {
+    "message": "Gęste"
   },
   "panels/elements/components/StylePropertyEditor.ts | deselectButton": {
     "message": "Usuń {propertyName}: {propertyValue}"
@@ -9434,6 +9869,9 @@
   "panels/network/NetworkDataGridNode.ts | blockeds": {
     "message": "(zablokowano:{PH1})"
   },
+  "panels/network/NetworkDataGridNode.ts | blocking": {
+    "message": "Blokowanie"
+  },
   "panels/network/NetworkDataGridNode.ts | broken": {
     "message": "Przeglądarka Chrome nie próbowała nawiązać połączenia HTTP/3, ponieważ oznaczono je jako uszkodzone."
   },
@@ -9488,6 +9926,9 @@
   "panels/network/NetworkDataGridNode.ts | finished": {
     "message": "Zakończone"
   },
+  "panels/network/NetworkDataGridNode.ts | inBodyParserBlocking": {
+    "message": "Blokowanie parsera w treści"
+  },
   "panels/network/NetworkDataGridNode.ts | initialPriorityToolTip": {
     "message": "{PH1}, początkowy priorytet: {PH2}"
   },
@@ -9512,6 +9953,12 @@
   "panels/network/NetworkDataGridNode.ts | memoryCache": {
     "message": "(pamięć podręczna)"
   },
+  "panels/network/NetworkDataGridNode.ts | nonBlocking": {
+    "message": "Nieblokujące"
+  },
+  "panels/network/NetworkDataGridNode.ts | nonBlockingDynamic": {
+    "message": "Nieblokujące, dynamiczne"
+  },
   "panels/network/NetworkDataGridNode.ts | origin": {
     "message": "pochodzenie"
   },
@@ -9529,6 +9976,9 @@
   },
   "panels/network/NetworkDataGridNode.ts | pendingq": {
     "message": "(oczekuje)"
+  },
+  "panels/network/NetworkDataGridNode.ts | potentiallyBlocking": {
+    "message": "Potencjalnie blokujące"
   },
   "panels/network/NetworkDataGridNode.ts | prefetchCache": {
     "message": "(pamięć podręczna pobierania z wyprzedzeniem)"
@@ -9604,6 +10054,9 @@
   },
   "panels/network/NetworkItemView.ts | cookies": {
     "message": "Pliki cookie"
+  },
+  "panels/network/NetworkItemView.ts | deviceBoundSessions": {
+    "message": "Sesje powiązane z urządzeniem"
   },
   "panels/network/NetworkItemView.ts | directsocketMessages": {
     "message": "Komunikaty DirectSocket"
@@ -9933,7 +10386,7 @@
     "message": "Domena"
   },
   "panels/network/NetworkLogViewColumns.ts | endTime": {
-    "message": "Czas zakończenia"
+    "message": "Godzina zakończenia"
   },
   "panels/network/NetworkLogViewColumns.ts | hasOverrides": {
     "message": "Ma zastąpienia"
@@ -9977,6 +10430,9 @@
   "panels/network/NetworkLogViewColumns.ts | remoteAddressSpace": {
     "message": "Przestrzeń adresów zdalnych"
   },
+  "panels/network/NetworkLogViewColumns.ts | renderBlocking": {
+    "message": "Blokowanie renderowania"
+  },
   "panels/network/NetworkLogViewColumns.ts | requestHeaders": {
     "message": "Nagłówki żądania"
   },
@@ -9996,7 +10452,7 @@
     "message": "Rozmiar"
   },
   "panels/network/NetworkLogViewColumns.ts | startTime": {
-    "message": "Czas rozpoczęcia"
+    "message": "Godzina rozpoczęcia"
   },
   "panels/network/NetworkLogViewColumns.ts | status": {
     "message": "Stan"
@@ -10112,26 +10568,14 @@
   "panels/network/NetworkSearchScope.ts | url": {
     "message": "URL"
   },
-  "panels/network/RequestConditionsDrawer.ts | addNetworkRequestBlockingPattern": {
-    "message": "Dodaj wzór blokowania żądań sieciowych"
-  },
-  "panels/network/RequestConditionsDrawer.ts | addPattern": {
-    "message": "Dodaj wzorzec"
-  },
   "panels/network/RequestConditionsDrawer.ts | addPatternLabel": {
     "message": "Dodaj wzorzec ograniczania lub blokowania żądań sieciowych"
-  },
-  "panels/network/RequestConditionsDrawer.ts | addPatternToBlock": {
-    "message": "Dodaj wzorzec, klikając przycisk „{PH1}”."
   },
   "panels/network/RequestConditionsDrawer.ts | addRule": {
     "message": "Dodaj regułę"
   },
   "panels/network/RequestConditionsDrawer.ts | dAffected": {
     "message": "Dotyczy: {PH1}"
-  },
-  "panels/network/RequestConditionsDrawer.ts | dBlocked": {
-    "message": "Zablokowane: {PH1}"
   },
   "panels/network/RequestConditionsDrawer.ts | decreasePriority": {
     "message": "Przenieś {PH1} w dół"
@@ -10141,9 +10585,6 @@
   },
   "panels/network/RequestConditionsDrawer.ts | enableBlockingAndThrottling": {
     "message": "Włącz blokowanie i ograniczanie"
-  },
-  "panels/network/RequestConditionsDrawer.ts | enableNetworkRequestBlocking": {
-    "message": "Włącz blokowanie żądań sieciowych"
   },
   "panels/network/RequestConditionsDrawer.ts | enableThrottlingToggleLabel": {
     "message": "Ogranicz lub zablokuj {PH1}"
@@ -10159,9 +10600,6 @@
   },
   "panels/network/RequestConditionsDrawer.ts | learnMoreLabel": {
     "message": "Więcej informacji o składni wzorca adresu URL"
-  },
-  "panels/network/RequestConditionsDrawer.ts | noNetworkRequestsBlocked": {
-    "message": "Brak zablokowanych żądań sieciowych"
   },
   "panels/network/RequestConditionsDrawer.ts | noPattern": {
     "message": "Brak ograniczania lub blokowania"
@@ -10199,9 +10637,6 @@
   "panels/network/RequestConditionsDrawer.ts | textEditPattern": {
     "message": "Wzorzec tekstowy do blokowania lub ograniczania dopasowanych żądań. Użyj składni wzorca adresu URL."
   },
-  "panels/network/RequestConditionsDrawer.ts | textPatternToBlockMatching": {
-    "message": "Wzorzec tekstowy do blokowania dopasowanych żądań. Znak * służy jako symbol wieloznaczny."
-  },
   "panels/network/RequestCookiesView.ts | cookiesThatWereReceivedFromThe": {
     "message": "Pliki cookie, które zostały otrzymane z serwera w nagłówku „set-cookie” odpowiedzi"
   },
@@ -10235,6 +10670,30 @@
   "panels/network/RequestCookiesView.ts | thisRequestHasNoCookies": {
     "message": "To żądanie nie ma plików cookie."
   },
+  "panels/network/RequestDeviceBoundSessionsView.ts | deferralDecision": {
+    "message": "Decyzja o odroczeniu"
+  },
+  "panels/network/RequestDeviceBoundSessionsView.ts | deferred": {
+    "message": "Odroczone (odświeżanie)"
+  },
+  "panels/network/RequestDeviceBoundSessionsView.ts | inScopeRefreshNotAllowed": {
+    "message": "Nie odroczono (żądanie jest w zakresie sesji, ale inicjator nie może wywołać odświeżenia)"
+  },
+  "panels/network/RequestDeviceBoundSessionsView.ts | inScopeRefreshNotYetNeeded": {
+    "message": "Nie odroczono (żądanie jest w zakresie sesji, ale pliki cookie są nadal obecne)"
+  },
+  "panels/network/RequestDeviceBoundSessionsView.ts | notInScope": {
+    "message": "Nie odroczono (żądanie nie mieści się w zakresie sesji)"
+  },
+  "panels/network/RequestDeviceBoundSessionsView.ts | proactiveRefreshAttempted": {
+    "message": "Nie odroczono (podjęto próbę aktywnego odświeżenia)"
+  },
+  "panels/network/RequestDeviceBoundSessionsView.ts | proactiveRefreshNotPossible": {
+    "message": "Nie odroczono (żądanie jest w zakresie sesji, ale proaktywne odświeżanie nie jest możliwe)"
+  },
+  "panels/network/RequestDeviceBoundSessionsView.ts | sessionId": {
+    "message": "Identyfikator sesji"
+  },
   "panels/network/RequestInitiatorView.ts | noInitiator": {
     "message": "Brak danych inicjatora"
   },
@@ -10261,9 +10720,6 @@
   },
   "panels/network/RequestPayloadView.ts | requestPayload": {
     "message": "Ładunek żądania"
-  },
-  "panels/network/RequestPayloadView.ts | showMore": {
-    "message": "Pokaż więcej"
   },
   "panels/network/RequestPayloadView.ts | unableToDecodeValue": {
     "message": "(nie można zdekodować wartości)"
@@ -10528,6 +10984,9 @@
   },
   "panels/network/ResourceWebSocketFrameView.ts | webSocketFrame": {
     "message": "Ramka WebSocket"
+  },
+  "panels/network/ShowMoreDetailsWidget.ts | showMore": {
+    "message": "Pokaż więcej"
   },
   "panels/network/SignedExchangeInfoView.ts | certificate": {
     "message": "Certyfikat"
@@ -10811,9 +11270,6 @@
   "panels/network/network-meta.ts | addNetworkRequestBlockingOrThrottlingPattern": {
     "message": "Dodaj wzorzec blokowania lub ograniczania żądań sieciowych"
   },
-  "panels/network/network-meta.ts | addNetworkRequestBlockingPattern": {
-    "message": "Dodaj wzór blokowania żądań sieciowych"
-  },
   "panels/network/network-meta.ts | allowToGenerateHarWithSensitiveData": {
     "message": "Zezwól na wygenerowanie pliku HAR z danymi poufnymi"
   },
@@ -10865,9 +11321,6 @@
   "panels/network/network-meta.ts | networkConditions": {
     "message": "Stan sieci"
   },
-  "panels/network/network-meta.ts | networkRequestBlocking": {
-    "message": "Blokowanie żądań sieciowych"
-  },
   "panels/network/network-meta.ts | networkRequestConditions": {
     "message": "Warunki żądania"
   },
@@ -10880,9 +11333,6 @@
   "panels/network/network-meta.ts | removeAllNetworkRequestBlockingOrThrottlingPatterns": {
     "message": "Usuń wszystkie wzorce blokowania lub ograniczania żądań sieciowych"
   },
-  "panels/network/network-meta.ts | removeAllNetworkRequestBlockingPatterns": {
-    "message": "Usuń wszystkie wzorce blokowania żądań sieciowych"
-  },
   "panels/network/network-meta.ts | resourceType": {
     "message": "typ zasobu"
   },
@@ -10894,9 +11344,6 @@
   },
   "panels/network/network-meta.ts | showNetworkConditions": {
     "message": "Pokaż stan sieci"
-  },
-  "panels/network/network-meta.ts | showNetworkRequestBlocking": {
-    "message": "Pokaż blokowanie żądań sieciowych"
   },
   "panels/network/network-meta.ts | showRequestConditions": {
     "message": "Pokaż warunki żądania"
@@ -11735,8 +12182,17 @@
   "panels/recorder/RecorderController.ts | numberOfRecordings": {
     "message": "– liczba zarejestrowanych pozycji"
   },
+  "panels/recorder/RecorderController.ts | recordingDeleted": {
+    "message": "Nagranie zostało usunięte"
+  },
   "panels/recorder/RecorderController.ts | recordingDescription": {
     "message": "Używaj nagrań do tworzenia zautomatyzowanych testów kompleksowych lub śladów wydajności."
+  },
+  "panels/recorder/RecorderController.ts | recordingExported": {
+    "message": "Nagranie zostało wyeksportowane"
+  },
+  "panels/recorder/RecorderController.ts | recordingImported": {
+    "message": "Nagranie zostało zaimportowane"
   },
   "panels/recorder/RecorderController.ts | replayRecording": {
     "message": "Odtwórz ponownie nagranie"
@@ -11824,6 +12280,12 @@
   },
   "panels/recorder/components/RecordingView.ts | cancelReplay": {
     "message": "Anuluj odtwarzanie ponowne"
+  },
+  "panels/recorder/components/RecordingView.ts | codeSidebarClosed": {
+    "message": "Pasek boczny kodu został zamknięty"
+  },
+  "panels/recorder/components/RecordingView.ts | codeSidebarOpened": {
+    "message": "Otwarto pasek boczny kodu"
   },
   "panels/recorder/components/RecordingView.ts | default": {
     "message": "Wartość domyślna"
@@ -12155,174 +12617,6 @@
   "panels/search/SearchView.ts | typeAndPressSToSearch": {
     "message": "Aby wyszukać, wpisz i naciśnij {PH1}"
   },
-  "panels/security/CookieControlsView.ts | cardDisclaimer": {
-    "message": "Tylko wtedy, gdy Narzędzia deweloperskie są otwarte"
-  },
-  "panels/security/CookieControlsView.ts | cardTitle": {
-    "message": "Tymczasowo ogranicz pliki cookie innych firm"
-  },
-  "panels/security/CookieControlsView.ts | enableFlag": {
-    "message": "Aby z tego korzystać, ustaw {PH1} na wartość domyślną"
-  },
-  "panels/security/CookieControlsView.ts | enrollGracePeriod": {
-    "message": "Aby z tego korzystać, zarejestruj tę witrynę lub umieszczone w niej witryny, bo musi je obejmować {PH1}"
-  },
-  "panels/security/CookieControlsView.ts | enterpriseDisclaimer": {
-    "message": "Twoja organizacja zarządza dostępem do plików cookie innych firm w tej witrynie"
-  },
-  "panels/security/CookieControlsView.ts | enterpriseTooltip": {
-    "message": "Tym ustawieniem zarządza Twoja organizacja"
-  },
-  "panels/security/CookieControlsView.ts | exceptions": {
-    "message": "Wyjątki"
-  },
-  "panels/security/CookieControlsView.ts | exceptionsExplanation": {
-    "message": "Scenariusze przyznawania dostępu do plików cookie innych firm"
-  },
-  "panels/security/CookieControlsView.ts | gracePeriod": {
-    "message": "okres prolongaty"
-  },
-  "panels/security/CookieControlsView.ts | gracePeriodExplanation": {
-    "message": "Jeśli ta witryna lub umieszczona w niej witryna jest zarejestrowana w {PH1}, może uzyskiwać dostęp do plików cookie innych firm"
-  },
-  "panels/security/CookieControlsView.ts | gracePeriodTitle": {
-    "message": "Okres prolongaty dla plików cookie innych firm"
-  },
-  "panels/security/CookieControlsView.ts | heuristicExplanation": {
-    "message": "W przypadku elementów {PH1}, takich jak wyskakujące okienka lub przekierowania, witryna osadzona na tej stronie może uzyskiwać dostęp do plików cookie innych firm"
-  },
-  "panels/security/CookieControlsView.ts | heuristicTitle": {
-    "message": "Wyjątek oparty na heurystyce"
-  },
-  "panels/security/CookieControlsView.ts | scenarios": {
-    "message": "wstępnie zdefiniowane scenariusze"
-  },
-  "panels/security/CookieControlsView.ts | siteReloadMessage": {
-    "message": "Aby zastosować zaktualizowane ustawienia, załaduj ponownie stronę"
-  },
-  "panels/security/CookieControlsView.ts | tpcdHeuristicsGrants": {
-    "message": "#tpcd-heuristics-grants"
-  },
-  "panels/security/CookieControlsView.ts | tpcdMetadataGrants": {
-    "message": "#tpcd-metadata-grants"
-  },
-  "panels/security/CookieControlsView.ts | viewDetails": {
-    "message": "Wyświetl szczegóły"
-  },
-  "panels/security/CookieControlsView.ts | viewExplanation": {
-    "message": "Przetestuj, jak będzie działać ta witryna, jeśli w Chrome zostaną ograniczone pliki cookie innych firm"
-  },
-  "panels/security/CookieControlsView.ts | viewTitle": {
-    "message": "Ustawienia"
-  },
-  "panels/security/CookieReportView.ts | adCookieTypeString": {
-    "message": "Reklama"
-  },
-  "panels/security/CookieReportView.ts | allowed": {
-    "message": "Dozwolony"
-  },
-  "panels/security/CookieReportView.ts | allowedByException": {
-    "message": "Dozwolone na podstawie wyjątku"
-  },
-  "panels/security/CookieReportView.ts | analyticsCookieTypeString": {
-    "message": "Analityka"
-  },
-  "panels/security/CookieReportView.ts | blocked": {
-    "message": "Zablokowane"
-  },
-  "panels/security/CookieReportView.ts | body": {
-    "message": "Ta witryna może nie działać, jeśli w Chrome są ograniczone pliki cookie innych firm i inne pliki cookie."
-  },
-  "panels/security/CookieReportView.ts | cdnCookieTypeString": {
-    "message": "CDN"
-  },
-  "panels/security/CookieReportView.ts | consentProviderCookieTypeString": {
-    "message": "Dostawca zgody"
-  },
-  "panels/security/CookieReportView.ts | contentCookieTypeString": {
-    "message": "Treść"
-  },
-  "panels/security/CookieReportView.ts | customerSuccessCookieTypeString": {
-    "message": "Customer Success"
-  },
-  "panels/security/CookieReportView.ts | domain": {
-    "message": "Domena"
-  },
-  "panels/security/CookieReportView.ts | emptyReport": {
-    "message": "Nie ma ani okruszka"
-  },
-  "panels/security/CookieReportView.ts | emptyReportExplanation": {
-    "message": "Nie znaleziono problemów z plikami cookie innych firm"
-  },
-  "panels/security/CookieReportView.ts | gitHubResource": {
-    "message": "Sprawdź {PH1} z witryny innej firmy"
-  },
-  "panels/security/CookieReportView.ts | gracePeriod": {
-    "message": "Sprawdź {PH1}. Aktywny jest wyjątek dotyczący okresu prolongaty."
-  },
-  "panels/security/CookieReportView.ts | guidance": {
-    "message": "wskazówki"
-  },
-  "panels/security/CookieReportView.ts | heuristics": {
-    "message": "Wymagane późniejsze działanie. Wyjątek oparty na heurystyce jest aktywny."
-  },
-  "panels/security/CookieReportView.ts | hostingCookieTypeString": {
-    "message": "Hosting"
-  },
-  "panels/security/CookieReportView.ts | learnMoreLink": {
-    "message": "Więcej informacji o używaniu plików cookie innych firm"
-  },
-  "panels/security/CookieReportView.ts | marketingCookieTypeString": {
-    "message": "Marketing"
-  },
-  "panels/security/CookieReportView.ts | name": {
-    "message": "Nazwa"
-  },
-  "panels/security/CookieReportView.ts | other": {
-    "message": "Aby uzyskać więcej informacji, skontaktuj się z inną firmą"
-  },
-  "panels/security/CookieReportView.ts | otherCookieTypeString": {
-    "message": "Inne"
-  },
-  "panels/security/CookieReportView.ts | platform": {
-    "message": "Platforma"
-  },
-  "panels/security/CookieReportView.ts | recommendation": {
-    "message": "Rekomendacja"
-  },
-  "panels/security/CookieReportView.ts | report": {
-    "message": "Raport na temat plików cookie innych firm"
-  },
-  "panels/security/CookieReportView.ts | reportedIssues": {
-    "message": "zgłoszone problemy"
-  },
-  "panels/security/CookieReportView.ts | showRequestsWithThisCookie": {
-    "message": "Pokaż żądania z tym plikiem cookie"
-  },
-  "panels/security/CookieReportView.ts | socialCookieTypeString": {
-    "message": "Społecznościowe"
-  },
-  "panels/security/CookieReportView.ts | status": {
-    "message": "Stan"
-  },
-  "panels/security/CookieReportView.ts | tagManagerCookieTypeString": {
-    "message": "Menedżer tagów"
-  },
-  "panels/security/CookieReportView.ts | title": {
-    "message": "Pliki cookie innych firm"
-  },
-  "panels/security/CookieReportView.ts | type": {
-    "message": "Typ"
-  },
-  "panels/security/CookieReportView.ts | unknown": {
-    "message": "Nieznany"
-  },
-  "panels/security/CookieReportView.ts | utilityCookieTypeString": {
-    "message": "Narzędzie"
-  },
-  "panels/security/CookieReportView.ts | videoCookieTypeString": {
-    "message": "Wideo"
-  },
   "panels/security/SecurityModel.ts | cipherWithMAC": {
     "message": "{PH1} – {PH2}"
   },
@@ -12623,12 +12917,6 @@
   "panels/security/SecurityPanel.ts | yourPageRequestedNonsecure": {
     "message": "Twoja strona zażądała niebezpiecznych zasobów, które zostały zablokowane."
   },
-  "panels/security/SecurityPanelSidebar.ts | cookieReport": {
-    "message": "Pliki cookie innych firm"
-  },
-  "panels/security/SecurityPanelSidebar.ts | flagControls": {
-    "message": "Ustawienia"
-  },
   "panels/security/SecurityPanelSidebar.ts | mainOrigin": {
     "message": "Główne źródło"
   },
@@ -12637,9 +12925,6 @@
   },
   "panels/security/SecurityPanelSidebar.ts | overview": {
     "message": "Omówienie"
-  },
-  "panels/security/SecurityPanelSidebar.ts | privacy": {
-    "message": "Prywatność"
   },
   "panels/security/SecurityPanelSidebar.ts | reloadToViewDetails": {
     "message": "Załaduj ponownie, aby wyświetlić szczegóły"
@@ -12653,14 +12938,8 @@
   "panels/security/SecurityPanelSidebar.ts | unknownCanceled": {
     "message": "Nieznany/anulowany"
   },
-  "panels/security/security-meta.ts | PrivacyAndSecurity": {
-    "message": "Prywatność i bezpieczeństwo"
-  },
   "panels/security/security-meta.ts | security": {
     "message": "Zabezpieczenia"
-  },
-  "panels/security/security-meta.ts | showPrivacyAndSecurity": {
-    "message": "Pokaż Prywatność i bezpieczeństwo"
   },
   "panels/security/security-meta.ts | showSecurity": {
     "message": "Pokaż panel zabezpieczeń"
@@ -12917,6 +13196,9 @@
   "panels/settings/AISettingsTab.ts | asYouTypeCodeSuggestions": {
     "message": "Podczas pisania w panelu Konsola lub Źródła będziesz otrzymywać sugestie dotyczące kodu. Aby zaakceptować, naciśnij Tab."
   },
+  "panels/settings/AISettingsTab.ts | asYouTypeRelevantDataIsBeingSentToGoogle": {
+    "message": "Podczas pisania odpowiednie dane są wysyłane do Google w celu wygenerowania sugestii kodu. Aby zaakceptować, naciśnij Tab."
+  },
   "panels/settings/AISettingsTab.ts | boostYourProductivity": {
     "message": "Zwiększ produktywność dzięki AI"
   },
@@ -12937,6 +13219,12 @@
   },
   "panels/settings/AISettingsTab.ts | dataCollectionNoLogging": {
     "message": "Google może zrezygnować ze zbierania danych w zależności od sposobu zarządzania kontem Google lub regionu"
+  },
+  "panels/settings/AISettingsTab.ts | describeCodeInComment": {
+    "message": "W Konsoli lub Źródłach opisz potrzebny kod w komentarzu, a następnie naciśnij Ctrl+I, aby go wygenerować."
+  },
+  "panels/settings/AISettingsTab.ts | describeCodeInCommentForMacOs": {
+    "message": "W Konsoli lub Źródłach opisz potrzebny kod w komentarzu, a następnie naciśnij Cmd+I, aby go wygenerować."
   },
   "panels/settings/AISettingsTab.ts | enableAiAssistance": {
     "message": "Włącz pomoc AI"
@@ -12969,10 +13257,10 @@
     "message": "Poznaj style CSS, aktywność sieciową, wąskie gardła wydajności i źródła plików dzięki statystykom generowanym przez AI"
   },
   "panels/settings/AISettingsTab.ts | freestylerSendsData": {
-    "message": "Aby generować wyjaśnienia, wszystkie zapytania użytkowników oraz dane, do których sprawdzana strona może uzyskać dostęp przy użyciu interfejsów API, żądań sieciowych, plików i śladów wydajności, są wysyłane do Google. Dane te mogą być widoczne dla weryfikatorów, którzy pracują nad ulepszaniem tej funkcji. Nie używaj jej na stronach zawierających dane osobowe lub informacje poufne."
+    "message": "Aby generować wyjaśnienia, Twoje wiadomości na czacie, wszystkie dane, które sprawdzana strona może zobaczyć przy użyciu interfejsów API, oraz wybrane przez Ciebie elementy, takie jak pliki, żądania sieciowe i ślady wydajności, są wysyłane do Google. Dane te mogą być widoczne dla weryfikatorów, którzy pracują nad ulepszaniem tej funkcji. Nie używaj jej na stronach zawierających dane osobowe lub informacje poufne."
   },
   "panels/settings/AISettingsTab.ts | freestylerSendsDataNoLogging": {
-    "message": "Aby generować wyjaśnienia, wszystkie zapytania użytkowników oraz dane, do których sprawdzana strona może uzyskać dostęp przy użyciu interfejsów API, żądań sieciowych, plików i śladów wydajności, są wysyłane do Google. Te dane nie będą używane do ulepszania modeli AI Google. Organizacja może zmienić te ustawienia w dowolnym momencie."
+    "message": "Aby generować wyjaśnienia, Twoje wiadomości na czacie, wszystkie dane, które sprawdzana strona może zobaczyć przy użyciu interfejsów API, oraz wybrane przez Ciebie elementy, takie jak pliki, żądania sieciowe i ślady wydajności, są wysyłane do Google. Te dane nie będą używane do ulepszania modeli AI od Google. Organizacja może zmienić te ustawienia w dowolnym momencie."
   },
   "panels/settings/AISettingsTab.ts | generatedAiAnnotationsSendData": {
     "message": "Aby generować sugestie dotyczące adnotacji, ślad wydajności jest wysyłany do Google. Dane te mogą być widoczne dla weryfikatorów, którzy pracują nad ulepszaniem tej funkcji."
@@ -12984,7 +13272,7 @@
     "message": "Pomaga dodawać adnotacje do śladów wydajności za pomocą automatycznie generowanych etykiet"
   },
   "panels/settings/AISettingsTab.ts | helpUnderstandCodeSuggestions": {
-    "message": "Uzyskaj pomoc w dokończeniu kodu"
+    "message": "Pisz kod szybciej dzięki sugestiom opartym na AI"
   },
   "panels/settings/AISettingsTab.ts | helpUnderstandConsole": {
     "message": "Ułatwia zrozumienie i poprawienie ostrzeżeń i błędów w konsoli"
@@ -13163,14 +13451,17 @@
   "panels/settings/SettingsScreen.ts | experiments": {
     "message": "Eksperymenty"
   },
+  "panels/settings/SettingsScreen.ts | experimentsFound": {
+    "message": "{n,plural, =1{Znaleziono # eksperyment}few{Znaleziono # eksperymenty}many{Znaleziono # eksperymentów}other{Znaleziono # eksperymentu}}"
+  },
+  "panels/settings/SettingsScreen.ts | greenDevUnstable": {
+    "message": "Ostrzeżenie: wszystkie te funkcje są prototypowe i bardzo niestabilne. Są przeznaczone do testowania przez użytkowników, a nie do normalnego użytku."
+  },
   "panels/settings/SettingsScreen.ts | learnMore": {
     "message": "Więcej informacji"
   },
   "panels/settings/SettingsScreen.ts | noResults": {
     "message": "Brak eksperymentów pasujących do filtra"
-  },
-  "panels/settings/SettingsScreen.ts | oneOrMoreSettingsHaveChanged": {
-    "message": "Co najmniej 1 ustawienie zostało zmienione, a jego uwzględnienie wymaga ponownego załadowania"
   },
   "panels/settings/SettingsScreen.ts | restoreDefaultsAndReload": {
     "message": "Przywróć domyślne i załaduj ponownie"
@@ -13184,17 +13475,14 @@
   "panels/settings/SettingsScreen.ts | settings": {
     "message": "Ustawienia"
   },
+  "panels/settings/SettingsScreen.ts | settingsChangedReloadDevTools": {
+    "message": "Zmieniono ustawienia. Aby zastosować zmiany, załaduj ponownie Narzędzia deweloperskie."
+  },
   "panels/settings/SettingsScreen.ts | shortcuts": {
     "message": "Skróty"
   },
-  "panels/settings/SettingsScreen.ts | theseExperimentsAreParticularly": {
-    "message": "Ostrzeżenie: te eksperymenty są bardzo niestabilne. Włączasz je na własne ryzyko."
-  },
   "panels/settings/SettingsScreen.ts | theseExperimentsCouldBeUnstable": {
     "message": "Ostrzeżenie: te eksperymenty mogą być niestabilne lub zawodne."
-  },
-  "panels/settings/SettingsScreen.ts | unstableExperiments": {
-    "message": "Niestabilne eksperymenty"
   },
   "panels/settings/WorkspaceSettingsTab.ts | addFolder": {
     "message": "Dodaj folder"
@@ -13418,6 +13706,9 @@
   "panels/settings/settings-meta.ts | experiments": {
     "message": "Eksperymenty"
   },
+  "panels/settings/settings-meta.ts | greenDevProtoTypes": {
+    "message": "GreenDev"
+  },
   "panels/settings/settings-meta.ts | ignoreList": {
     "message": "Lista ignorowanych"
   },
@@ -13435,6 +13726,9 @@
   },
   "panels/settings/settings-meta.ts | showExperiments": {
     "message": "Pokaż eksperymenty"
+  },
+  "panels/settings/settings-meta.ts | showGreenDev": {
+    "message": "Pokaż GreenDev"
   },
   "panels/settings/settings-meta.ts | showIgnoreList": {
     "message": "Pokaż listę ignorowanych fragmentów kodu"
@@ -13588,6 +13882,12 @@
   },
   "panels/sources/CallStackSidebarPane.ts | debugFileNotFound": {
     "message": "Nie udało się wczytać pliku debugowania „{PH1}”."
+  },
+  "panels/sources/CallStackSidebarPane.ts | debugSymbolsIncomplete": {
+    "message": "Dane debugowania na potrzeby funkcji {PH1} są niepełne"
+  },
+  "panels/sources/CallStackSidebarPane.ts | failedToLoadDebugSymbolsForFunction": {
+    "message": "Brak danych debugowania dla funkcji „{PH1}”"
   },
   "panels/sources/CallStackSidebarPane.ts | notPaused": {
     "message": "Nie wstrzymano"
@@ -14708,8 +15008,20 @@
   "panels/timeline/ThreadAppender.ts | workletServiceS": {
     "message": "Usługa Worklet aukcji – {PH1}"
   },
+  "panels/timeline/TimelineController.ts | initializingTracing": {
+    "message": "Inicjuję śledzenie…"
+  },
+  "panels/timeline/TimelineController.ts | tracing": {
+    "message": "Śledzę…"
+  },
   "panels/timeline/TimelineController.ts | tracingNotSupported": {
     "message": "Rejestrowanie zrzutu wydajności nie jest obsługiwane w przypadku tego typu elementu docelowego"
+  },
+  "panels/timeline/TimelineController.ts | waitingForLoadEvent": {
+    "message": "Oczekuję na zdarzenie wczytania…"
+  },
+  "panels/timeline/TimelineController.ts | waitingForLoadEventPlus5Seconds": {
+    "message": "Czekam na zdarzenie wczytania (+5 s)…"
   },
   "panels/timeline/TimelineDetailsView.ts | bottomup": {
     "message": "Od dołu do góry"
@@ -14861,6 +15173,9 @@
   "panels/timeline/TimelinePanel.ts | close": {
     "message": "Zamknij"
   },
+  "panels/timeline/TimelinePanel.ts | compressingTraceForDownload": {
+    "message": "Kompresuję…"
+  },
   "panels/timeline/TimelinePanel.ts | cpu": {
     "message": "Procesor:"
   },
@@ -14881,6 +15196,9 @@
   },
   "panels/timeline/TimelinePanel.ts | enableSelectorStats": {
     "message": "Włącz statystyki selektora CSS (powolne)"
+  },
+  "panels/timeline/TimelinePanel.ts | encodingTraceForDownload": {
+    "message": "Koduję…"
   },
   "panels/timeline/TimelinePanel.ts | eventSelected": {
     "message": "Zdarzenie {PH1} zostało wybrane"
@@ -14920,6 +15238,9 @@
   },
   "panels/timeline/TimelinePanel.ts | networkConditions": {
     "message": "Stan sieci"
+  },
+  "panels/timeline/TimelinePanel.ts | preparingTraceForDownload": {
+    "message": "Przygotowuję…"
   },
   "panels/timeline/TimelinePanel.ts | processed": {
     "message": "Przetworzono"
@@ -14973,7 +15294,7 @@
     "message": "Powiększenie"
   },
   "panels/timeline/TimelinePanel.ts | tracing": {
-    "message": "Śledzenie…"
+    "message": "Śledzę…"
   },
   "panels/timeline/TimelineSelectorStatsView.ts | copyTable": {
     "message": "Skopiuj tabelę"
@@ -15305,9 +15626,6 @@
   "panels/timeline/TimelineUIUtils.ts | layerRoot": {
     "message": "Poziom główny warstwy"
   },
-  "panels/timeline/TimelineUIUtils.ts | layoutForced": {
-    "message": "Wymuszony układ"
-  },
   "panels/timeline/TimelineUIUtils.ts | layoutRoot": {
     "message": "Poziom główny układu"
   },
@@ -15358,9 +15676,6 @@
   },
   "panels/timeline/TimelineUIUtils.ts | range": {
     "message": "Zakres"
-  },
-  "panels/timeline/TimelineUIUtils.ts | recalculationForced": {
-    "message": "Wymuszono ponowne obliczenie"
   },
   "panels/timeline/TimelineUIUtils.ts | relatedNode": {
     "message": "Powiązany węzeł"
@@ -17193,7 +17508,7 @@
     "message": "{PH1} {PH2}. Użyj strzałek w górę i w dół do przechodzenia między wierszami tabeli i wchodzenia z nimi w interakcję. Aby odczytywać komórki pojedynczo, użyj trybu przeglądania."
   },
   "ui/legacy/components/data_grid/DataGrid.ts | sortByString": {
-    "message": "Sortuj według"
+    "message": "Sortuj w kolejności"
   },
   "ui/legacy/components/data_grid/DataGrid.ts | sortableColumn": {
     "message": "Kolumna sortowalna. Naciśnij Enter, aby zastosować filtr sortowania"
@@ -17459,14 +17774,14 @@
   "ui/legacy/components/quick_open/CommandMenu.ts | noCommandsFound": {
     "message": "Nie znaleziono poleceń"
   },
-  "ui/legacy/components/quick_open/CommandMenu.ts | oneOrMoreSettingsHaveChanged": {
-    "message": "Co najmniej 1 ustawienie zostało zmienione, a jego uwzględnienie wymaga ponownego załadowania"
-  },
   "ui/legacy/components/quick_open/CommandMenu.ts | run": {
     "message": "Uruchom"
   },
   "ui/legacy/components/quick_open/CommandMenu.ts | runCommand": {
     "message": "Uruchom polecenie"
+  },
+  "ui/legacy/components/quick_open/CommandMenu.ts | settingsChangedReloadDevTools": {
+    "message": "Zmieniono ustawienia. Aby zastosować zmiany, załaduj ponownie Narzędzia deweloperskie."
   },
   "ui/legacy/components/quick_open/FilteredListWidget.ts | newFeature": {
     "message": "To jest nowa funkcja"
@@ -17492,8 +17807,8 @@
   "ui/legacy/components/quick_open/quick_open-meta.ts | runCommand": {
     "message": "Uruchom polecenie"
   },
-  "ui/legacy/components/settings_ui/SettingsUI.ts | oneOrMoreSettingsHaveChanged": {
-    "message": "Co najmniej 1 ustawienie zostało zmienione, a jego uwzględnienie wymaga ponownego załadowania"
+  "ui/legacy/components/settings_ui/SettingsUI.ts | settingsChangedReloadDevTools": {
+    "message": "Zmieniono ustawienia. Aby zastosować zmiany, załaduj ponownie Narzędzia deweloperskie."
   },
   "ui/legacy/components/settings_ui/SettingsUI.ts | srequiresReload": {
     "message": "* Wymaga ponownego załadowania"

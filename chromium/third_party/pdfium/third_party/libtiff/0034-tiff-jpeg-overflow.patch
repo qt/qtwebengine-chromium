@@ -1,0 +1,25 @@
+commit 0f726d9477a11e15eb67ca349c03907f6cfb82a9
+Author: Mikhail Khachaiants <mkhachaiants@gmail.com>
+Date:   Mon Dec 1 22:26:34 2025 +0200
+
+    tif_jpeg: reject mismatched JPEG data precision to avoid write overflow
+    
+    Ensure TIFF BitsPerSample matches both BITS_IN_JSAMPLE and the JPEG
+    header data_precision for JPEG-compressed images. This prevents
+    under-sized scanline buffers that can lead to write buffer overflows
+    in jdcolor.c/null_convert when decoding malformed inputs.
+
+diff --git a/libtiff/tif_jpeg.c b/libtiff/tif_jpeg.c
+index aba5f99b..4d6370b5 100644
+--- a/libtiff/tif_jpeg.c
++++ b/libtiff/tif_jpeg.c
+@@ -1282,7 +1282,8 @@ int TIFFJPEGIsFullStripRequired(TIFF *tif)
+     sp->cinfo.d.data_precision = td->td_bitspersample;
+     sp->cinfo.d.bits_in_jsample = td->td_bitspersample;
+ #else
+-    if (sp->cinfo.d.data_precision != td->td_bitspersample)
++    if (td->td_bitspersample != BITS_IN_JSAMPLE ||
++        sp->cinfo.d.data_precision != td->td_bitspersample)
+     {
+         TIFFErrorExtR(tif, module, "Improper JPEG data precision");
+         return (0);

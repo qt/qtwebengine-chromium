@@ -4,10 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type {Protocol} from 'devtools-protocol';
+
 import type {CreatePageOptions} from '../api/Browser.js';
 import {
   WEB_PERMISSION_TO_PROTOCOL_PERMISSION,
   type Permission,
+  type PermissionDescriptor,
+  type PermissionState,
 } from '../api/Browser.js';
 import {BrowserContext} from '../api/BrowserContext.js';
 import type {Page} from '../api/Page.js';
@@ -17,7 +21,10 @@ import {assert} from '../util/assert.js';
 
 import type {CdpBrowser} from './Browser.js';
 import type {Connection} from './Connection.js';
-import {convertCookiesPartitionKeyFromPuppeteerToCdp} from './Page.js';
+import {
+  convertCookiesPartitionKeyFromPuppeteerToCdp,
+  convertSameSiteFromPuppeteerToCdp,
+} from './Page.js';
 import type {CdpTarget} from './Target.js';
 
 /**
@@ -83,6 +90,33 @@ export class CdpBrowserContext extends BrowserContext {
     });
   }
 
+  override async setPermission(
+    origin: string | '*',
+    ...permissions: Array<{
+      permission: PermissionDescriptor;
+      state: PermissionState;
+    }>
+  ): Promise<void> {
+    await Promise.all(
+      permissions.map(async permission => {
+        const protocolPermission: Protocol.Browser.PermissionDescriptor = {
+          name: permission.permission.name,
+          userVisibleOnly: permission.permission.userVisibleOnly,
+          sysex: permission.permission.sysex,
+          allowWithoutSanitization:
+            permission.permission.allowWithoutSanitization,
+          panTiltZoom: permission.permission.panTiltZoom,
+        };
+        await this.#connection.send('Browser.setPermission', {
+          origin: origin === '*' ? undefined : origin,
+          browserContextId: this.#id || undefined,
+          permission: protocolPermission,
+          setting: permission.state as Protocol.Browser.PermissionSetting,
+        });
+      }),
+    );
+  }
+
   override async clearPermissionOverrides(): Promise<void> {
     await this.#connection.send('Browser.resetPermissions', {
       browserContextId: this.#id || undefined,
@@ -116,6 +150,8 @@ export class CdpBrowserContext extends BrowserContext {
               hasCrossSiteAncestor: cookie.partitionKey.hasCrossSiteAncestor,
             }
           : undefined,
+        // TODO: remove sameParty as it is removed from Chrome.
+        sameParty: cookie.sameParty ?? false,
       };
     });
   }
@@ -129,6 +165,7 @@ export class CdpBrowserContext extends BrowserContext {
           partitionKey: convertCookiesPartitionKeyFromPuppeteerToCdp(
             cookie.partitionKey,
           ),
+          sameSite: convertSameSiteFromPuppeteerToCdp(cookie.sameSite),
         };
       }),
     });

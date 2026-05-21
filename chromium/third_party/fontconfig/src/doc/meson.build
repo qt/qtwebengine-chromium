@@ -24,6 +24,7 @@ doc_funcs_fncs = [
   'fcblanks',
   'fccache',
   'fccharset',
+  'fcconffile',
   'fcconfig',
   'fcconstant',
   'fcdircache',

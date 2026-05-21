@@ -1206,10 +1206,12 @@ static int parse_stream_params(struct AvxEncoderConfig *global,
   }
   config->use_16bit_internal |= config->cfg.g_bit_depth > AOM_BITS_8;
 
+#if CONFIG_REALTIME_ONLY
   if (global->usage == AOM_USAGE_REALTIME && config->cfg.g_lag_in_frames != 0) {
     aom_tools_warn("non-zero lag-in-frames option ignored in realtime mode.\n");
     config->cfg.g_lag_in_frames = 0;
   }
+#endif
 
   if (global->usage == AOM_USAGE_ALL_INTRA) {
     if (config->cfg.g_lag_in_frames != 0) {

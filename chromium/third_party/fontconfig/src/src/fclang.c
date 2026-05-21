@@ -24,7 +24,9 @@
 
 #include "fcint.h"
 
+#if ENABLE_FREETYPE
 #include "fcftint.h"
+#endif
 
 /* Objects MT-safe for readonly access. */
 
@@ -1057,5 +1059,7 @@ FcLangIsExclusiveFromOs2 (unsigned long os2ulUnicodeRange1, unsigned long os2ulU
 
 #define __fclang__
 #include "fcaliastail.h"
+#if ENABLE_FREETYPE
 #include "fcftaliastail.h"
+#endif
 #undef __fclang__

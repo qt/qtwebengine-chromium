@@ -373,6 +373,9 @@ static inline void decode_mbmi_block(AV1Decoder *const pbi,
                                      int mi_col, aom_reader *r,
                                      PARTITION_TYPE partition,
                                      BLOCK_SIZE bsize) {
+#if CONFIG_COLLECT_COMPONENT_TIMING
+  start_timing(pbi, decode_mbmi_block_time);
+#endif
   AV1_COMMON *const cm = &pbi->common;
   const SequenceHeader *const seq_params = cm->seq_params;
   const int bw = mi_size_wide[bsize];
@@ -396,6 +399,9 @@ static inline void decode_mbmi_block(AV1Decoder *const pbi,
       aom_internal_error(xd->error_info, AOM_CODEC_CORRUPT_FRAME,
                          "Invalid block size.");
   }
+#if CONFIG_COLLECT_COMPONENT_TIMING
+  end_timing(pbi, decode_mbmi_block_time);
+#endif
 }
 
 typedef struct PadBlock {
@@ -902,6 +908,9 @@ static inline void set_color_index_map_offset(MACROBLOCKD *const xd, int plane,
 static inline void decode_token_recon_block(AV1Decoder *const pbi,
                                             ThreadData *const td, aom_reader *r,
                                             BLOCK_SIZE bsize) {
+#if CONFIG_COLLECT_COMPONENT_TIMING
+  start_timing(pbi, decode_token_recon_block_time);
+#endif
   AV1_COMMON *const cm = &pbi->common;
   DecoderCodingBlock *const dcb = &td->dcb;
   MACROBLOCKD *const xd = &dcb->xd;
@@ -909,6 +918,9 @@ static inline void decode_token_recon_block(AV1Decoder *const pbi,
   MB_MODE_INFO *mbmi = xd->mi[0];
 
   if (!is_inter_block(mbmi)) {
+#if CONFIG_COLLECT_COMPONENT_TIMING
+    start_timing(pbi, decode_token_recon_block_intra_time);
+#endif
     int row, col;
     assert(bsize == get_plane_block_size(bsize, xd->plane[0].subsampling_x,
                                          xd->plane[0].subsampling_y));
@@ -948,8 +960,20 @@ static inline void decode_token_recon_block(AV1Decoder *const pbi,
         }
       }
     }
+#if CONFIG_COLLECT_COMPONENT_TIMING
+    end_timing(pbi, decode_token_recon_block_intra_time);
+#endif
   } else {
+#if CONFIG_COLLECT_COMPONENT_TIMING
+    start_timing(pbi, decode_token_recon_block_inter_time);
+#endif
+#if CONFIG_COLLECT_COMPONENT_TIMING
+    start_timing(pbi, predict_inter_block_time);
+#endif
     td->predict_inter_block_visit(cm, dcb, bsize);
+#if CONFIG_COLLECT_COMPONENT_TIMING
+    end_timing(pbi, predict_inter_block_time);
+#endif
     // Reconstruction
     if (!mbmi->skip_txfm) {
       int eobtotal = 0;
@@ -994,9 +1018,15 @@ static inline void decode_token_recon_block(AV1Decoder *const pbi,
                  blk_row += bh_var_tx) {
               for (blk_col = col >> ss_x; blk_col < unit_width;
                    blk_col += bw_var_tx) {
+#if CONFIG_COLLECT_COMPONENT_TIMING
+                start_timing(pbi, decode_reconstruct_tx_inter_time);
+#endif
                 decode_reconstruct_tx(cm, td, r, mbmi, plane, plane_bsize,
                                       blk_row, blk_col, block, max_tx_size,
                                       &eobtotal);
+#if CONFIG_COLLECT_COMPONENT_TIMING
+                end_timing(pbi, decode_reconstruct_tx_inter_time);
+#endif
                 block += step;
               }
             }
@@ -1005,9 +1035,15 @@ static inline void decode_token_recon_block(AV1Decoder *const pbi,
       }
     }
     td->cfl_store_inter_block_visit(cm, xd);
+#if CONFIG_COLLECT_COMPONENT_TIMING
+    end_timing(pbi, decode_token_recon_block_inter_time);
+#endif
   }
 
   av1_visit_palette(pbi, xd, r, set_color_index_map_offset);
+#if CONFIG_COLLECT_COMPONENT_TIMING
+  end_timing(pbi, decode_token_recon_block_time);
+#endif
 }
 
 static inline void set_inter_tx_size(MB_MODE_INFO *mbmi, int stride_log2,
@@ -1128,6 +1164,9 @@ static inline void parse_decode_block(AV1Decoder *const pbi,
                                       int mi_col, aom_reader *r,
                                       PARTITION_TYPE partition,
                                       BLOCK_SIZE bsize) {
+#if CONFIG_COLLECT_COMPONENT_TIMING
+  start_timing(pbi, parse_decode_block_time);
+#endif
   DecoderCodingBlock *const dcb = &td->dcb;
   MACROBLOCKD *const xd = &dcb->xd;
   decode_mbmi_block(pbi, dcb, mi_row, mi_col, r, partition, bsize);
@@ -1180,6 +1219,9 @@ static inline void parse_decode_block(AV1Decoder *const pbi,
   if (mbmi->skip_txfm) av1_reset_entropy_context(xd, bsize, num_planes);
 
   decode_token_recon_block(pbi, td, r, bsize);
+#if CONFIG_COLLECT_COMPONENT_TIMING
+  end_timing(pbi, parse_decode_block_time);
+#endif
 }
 
 static inline void set_offsets_for_pred_and_recon(AV1Decoder *const pbi,
@@ -2718,6 +2760,9 @@ static inline void set_decode_func_pointers(ThreadData *td,
 
 static inline void decode_tile(AV1Decoder *pbi, ThreadData *const td,
                                int tile_row, int tile_col) {
+#if CONFIG_COLLECT_COMPONENT_TIMING
+  start_timing(pbi, decode_tile_time);
+#endif
   TileInfo tile_info;
 
   AV1_COMMON *const cm = &pbi->common;
@@ -2741,9 +2786,25 @@ static inline void decode_tile(AV1Decoder *pbi, ThreadData *const td,
          mi_col += cm->seq_params->mib_size) {
       set_cb_buffer(pbi, dcb, &td->cb_buffer_base, num_planes, 0, 0);
 
+#if CONFIG_INSPECTION
+      const int start_bits = aom_reader_tell(td->bit_reader);
+#endif
       // Bit-stream parsing and decoding of the superblock
       decode_partition(pbi, td, mi_row, mi_col, td->bit_reader,
                        cm->seq_params->sb_size, 0x3);
+#if CONFIG_INSPECTION
+      const int end_bits = aom_reader_tell(td->bit_reader);
+#endif
+
+#if CONFIG_INSPECTION
+      if (pbi->sb_bits) {
+        const int mib_size = cm->seq_params->mib_size;
+        const int sb_cols = (cm->mi_params.mi_cols + mib_size - 1) / mib_size;
+        const int sb_row = mi_row / mib_size;
+        const int sb_col = mi_col / mib_size;
+        pbi->sb_bits[sb_row * sb_cols + sb_col] = end_bits - start_bits;
+      }
+#endif
 
       if (aom_reader_has_overflowed(td->bit_reader)) {
         aom_merge_corrupted_flag(&dcb->corrupted, 1);
@@ -2755,12 +2816,27 @@ static inline void decode_tile(AV1Decoder *pbi, ThreadData *const td,
   int corrupted =
       (check_trailing_bits_after_symbol_coder(td->bit_reader)) ? 1 : 0;
   aom_merge_corrupted_flag(&dcb->corrupted, corrupted);
+#if CONFIG_COLLECT_COMPONENT_TIMING
+  end_timing(pbi, decode_tile_time);
+#endif
 }
 
 static const uint8_t *decode_tiles(AV1Decoder *pbi, const uint8_t *data,
                                    const uint8_t *data_end, int start_tile,
                                    int end_tile) {
   AV1_COMMON *const cm = &pbi->common;
+#if CONFIG_INSPECTION
+  const int mib_size = cm->seq_params->mib_size;
+  const int sb_cols = (cm->mi_params.mi_cols + mib_size - 1) / mib_size;
+  const int sb_rows = (cm->mi_params.mi_rows + mib_size - 1) / mib_size;
+  const int required_size = sb_cols * sb_rows;
+  if (pbi->sb_bits_alloc_size < required_size) {
+    aom_free(pbi->sb_bits);
+    CHECK_MEM_ERROR(cm, pbi->sb_bits,
+                    (int *)aom_malloc(sizeof(*pbi->sb_bits) * required_size));
+    pbi->sb_bits_alloc_size = required_size;
+  }
+#endif
   ThreadData *const td = &pbi->td;
   CommonTileParams *const tiles = &cm->tiles;
   const int tile_cols = tiles->cols;
@@ -5288,6 +5364,9 @@ void av1_decode_tg_tiles_and_wrapup(AV1Decoder *pbi, const uint8_t *data,
   if (initialize_flag) setup_frame_info(pbi);
   const int num_planes = av1_num_planes(cm);
 
+#if CONFIG_COLLECT_COMPONENT_TIMING
+  start_timing(pbi, decode_tiles_time);
+#endif
   if (pbi->max_threads > 1 && !(tiles->large_scale && !pbi->ext_tile_debug) &&
       pbi->row_mt)
     *p_data_end =
@@ -5297,6 +5376,9 @@ void av1_decode_tg_tiles_and_wrapup(AV1Decoder *pbi, const uint8_t *data,
     *p_data_end = decode_tiles_mt(pbi, data, data_end, start_tile, end_tile);
   else
     *p_data_end = decode_tiles(pbi, data, data_end, start_tile, end_tile);
+#if CONFIG_COLLECT_COMPONENT_TIMING
+  end_timing(pbi, decode_tiles_time);
+#endif
 
   // If the bit stream is monochrome, set the U and V buffers to a constant.
   if (num_planes < 3) {
@@ -5312,11 +5394,17 @@ void av1_decode_tg_tiles_and_wrapup(AV1Decoder *pbi, const uint8_t *data,
   av1_alloc_cdef_sync(cm, &pbi->cdef_sync, pbi->num_workers);
 
   if (!cm->features.allow_intrabc && !tiles->single_tile_decoding) {
+#if CONFIG_COLLECT_COMPONENT_TIMING
+    start_timing(pbi, av1_loop_filter_frame_time);
+#endif
     if (cm->lf.filter_level[0] || cm->lf.filter_level[1]) {
       av1_loop_filter_frame_mt(&cm->cur_frame->buf, cm, &pbi->dcb.xd, 0,
                                num_planes, 0, pbi->tile_workers,
                                pbi->num_workers, &pbi->lf_row_sync, 0);
     }
+#if CONFIG_COLLECT_COMPONENT_TIMING
+    end_timing(pbi, av1_loop_filter_frame_time);
+#endif
 
     const int do_cdef =
         !pbi->skip_loop_filter && !cm->features.coded_lossless &&
@@ -5331,6 +5419,10 @@ void av1_decode_tg_tiles_and_wrapup(AV1Decoder *pbi, const uint8_t *data,
     // Frame border extension is not required in the decoder
     // as it happens in extend_mc_border().
     int do_extend_border_mt = 0;
+
+#if CONFIG_COLLECT_COMPONENT_TIMING
+    start_timing(pbi, cdef_and_lr_time);
+#endif
     if (!optimized_loop_restoration) {
       if (do_loop_restoration)
         av1_loop_restoration_save_boundary_lines(&pbi->common.cur_frame->buf,
@@ -5380,6 +5472,9 @@ void av1_decode_tg_tiles_and_wrapup(AV1Decoder *pbi, const uint8_t *data,
         }
       }
     }
+#if CONFIG_COLLECT_COMPONENT_TIMING
+    end_timing(pbi, cdef_and_lr_time);
+#endif
   }
 
   if (!pbi->dcb.corrupted) {

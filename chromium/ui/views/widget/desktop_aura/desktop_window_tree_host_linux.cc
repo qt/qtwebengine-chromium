@@ -59,13 +59,13 @@ class SwapWithNewSizeObserverHelper : public ui::CompositorObserver {
 
  private:
   // ui::CompositorObserver:
-#if BUILDFLAG(IS_OZONE_X11)
+#if BUILDFLAG(SUPPORTS_OZONE_X11)
   void OnCompositingCompleteSwapWithNewSize(ui::Compositor* compositor,
                                             const gfx::Size& size) override {
     DCHECK(compositor_observation_.IsObservingSource(compositor));
     callback_.Run(size);
   }
-#endif  // BUILDFLAG(IS_OZONE_X11)
+#endif  // BUILDFLAG(SUPPORTS_OZONE_X11)
 
   void OnCompositingShuttingDown(ui::Compositor* compositor) override {
     DCHECK(compositor_observation_.IsObservingSource(compositor));
@@ -346,6 +346,35 @@ DesktopWindowTreeHostLinux::GetKeyboardLayoutMap() {
     return linux_ui->GetKeyboardLayoutMap();
   }
   return WindowTreeHostPlatform::GetKeyboardLayoutMap();
+}
+
+bool DesktopWindowTreeHostLinux::SupportsMouseLock() {
+  auto* wayland_extension = ui::GetWaylandToplevelExtension(*platform_window());
+  if (!wayland_extension) {
+    return false;
+  }
+
+  return wayland_extension->SupportsPointerLock();
+}
+
+void DesktopWindowTreeHostLinux::LockMouse(aura::Window* window) {
+  DesktopWindowTreeHostPlatform::LockMouse(window);
+
+  if (SupportsMouseLock()) {
+    auto* wayland_extension =
+        ui::GetWaylandToplevelExtension(*platform_window());
+    wayland_extension->LockPointer(true /*enabled*/);
+  }
+}
+
+void DesktopWindowTreeHostLinux::UnlockMouse(aura::Window* window) {
+  DesktopWindowTreeHostPlatform::UnlockMouse(window);
+
+  if (SupportsMouseLock()) {
+    auto* wayland_extension =
+        ui::GetWaylandToplevelExtension(*platform_window());
+    wayland_extension->LockPointer(false /*enabled*/);
+  }
 }
 
 void DesktopWindowTreeHostLinux::OnCompleteSwapWithNewSize(

@@ -113,7 +113,7 @@ int RecordPaintCanvas::saveLayerAlphaf(const SkRect& bounds, float alpha) {
 int RecordPaintCanvas::saveLayerFilters(
     base::span<const sk_sp<PaintFilter>> filters,
     const PaintFlags& flags) {
-  push<SaveLayerFiltersOp>(filters, flags);
+  push<SaveLayerFiltersOp>(filters, /*backdrop_filter*/ nullptr, flags);
   return save_count_++;
 }
 
@@ -387,6 +387,10 @@ void RecordPaintCanvas::drawPicture(PaintRecord record) {
 void RecordPaintCanvas::drawPicture(PaintRecord record, bool local_ctm) {
   // TODO(enne): If this is small, maybe flatten it?
   push<DrawRecordOp>(std::move(record), local_ctm);
+}
+
+void RecordPaintCanvas::drawElementImagePlaceholder(ElementId placeholder_id) {
+  push<DrawRecordOp>(placeholder_id);
 }
 
 void RecordPaintCanvas::Annotate(AnnotationType type,

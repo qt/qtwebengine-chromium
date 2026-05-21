@@ -111,17 +111,12 @@ describeWithMockConnection('NameResolver', () => {
       scopes: '          {B        BBBBB   B        B   B         B   }',
     },
     {
-      name: 'computes identifiers with nested scopes, var lifting',
-      source: 'function f(x) { let outer = x; { var b = x; return b } }',
-      scopes: '          {B        BBBBB   B        B   B         B   }',
-    },
-    {
       name: 'computes identifiers in catch clause',
       source: 'function f(x) { try { } catch (e) { let a = e + x; } }',
       scopes: '          {                   <B            B   F  > }',
     },
     {
-      name: 'computes identifiers in catch clause',
+      name: 'computes identifiers in catch clause with return',
       source: 'function f(x) { try { } catch (e) { let a = e; return a; } }',
       scopes: '          {                       <     B   F         B  > }',
     },
@@ -427,7 +422,7 @@ describeWithMockConnection('NameResolver', () => {
 
   describe('Function name resolving from scopes', () => {
     it('resolves function scope name at scope start for a debugger frame', async () => {
-      Root.Runtime.experiments.enableForTest('use-source-map-scopes');
+      Root.Runtime.experiments.enableForTest(Root.ExperimentNames.ExperimentName.USE_SOURCE_MAP_SCOPES);
 
       const sourceMapUrl = 'file:///tmp/example.js.min.map';
       const sourceMapContent = JSON.stringify({
@@ -460,7 +455,7 @@ describeWithMockConnection('NameResolver', () => {
 
       const functionName = await SourceMapScopes.NamesResolver.resolveDebuggerFrameFunctionName(callFrame);
       assert.strictEqual(functionName, 'main');
-      Root.Runtime.experiments.disableForTest('use-source-map-scopes');
+      Root.Runtime.experiments.disableForTest(Root.ExperimentNames.ExperimentName.USE_SOURCE_MAP_SCOPES);
     });
   });
 

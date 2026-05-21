@@ -24,11 +24,12 @@
 #include "third_party/blink/renderer/platform/graphics/static_bitmap_image.h"
 #include "third_party/blink/renderer/platform/graphics/test/fake_gles2_interface.h"
 #include "third_party/blink/renderer/platform/graphics/test/fake_web_graphics_context_3d_provider.h"
-#include "third_party/blink/renderer/platform/graphics/test/gpu_memory_buffer_test_platform.h"
+#include "third_party/blink/renderer/platform/graphics/test/gpu_compositing_test_platform.h"
 #include "third_party/blink/renderer/platform/graphics/test/gpu_test_utils.h"
 #include "third_party/blink/renderer/platform/graphics/test/test_webgraphics_shared_image_interface_provider.h"
 #include "third_party/blink/renderer/platform/testing/task_environment.h"
 #include "third_party/blink/renderer/platform/wtf/functional.h"
+#include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/buffer_types.h"
 
 using testing::_;
@@ -38,6 +39,13 @@ using testing::Test;
 
 namespace blink {
 namespace {
+
+SkImageInfo GetSkImageInfo(CanvasResourceProvider* provider) {
+  return SkImageInfo::Make(
+      provider->Size().width(), provider->Size().height(),
+      viz::ToClosestSkColorType(provider->GetSharedImageFormat()),
+      provider->GetAlphaType(), provider->GetColorSpace().ToSkColorSpace());
+}
 
 constexpr int kMaxTextureSize = 1024;
 
@@ -94,12 +102,12 @@ class CanvasResourceProviderTest : public Test {
     test_context_provider_ = viz::TestContextProvider::CreateRaster();
     auto* test_raster = test_context_provider_->UnboundTestRasterInterface();
     test_raster->set_max_texture_size(kMaxTextureSize);
-    test_raster->set_supports_gpu_memory_buffer_format(
-        gfx::BufferFormat::RGBA_8888, true);
-    test_raster->set_supports_gpu_memory_buffer_format(
-        gfx::BufferFormat::BGRA_8888, true);
-    test_raster->set_supports_gpu_memory_buffer_format(
-        gfx::BufferFormat::RGBA_F16, true);
+    test_raster->set_supports_mappable_format(
+        viz::SinglePlaneFormat::kRGBA_8888, true);
+    test_raster->set_supports_mappable_format(
+        viz::SinglePlaneFormat::kBGRA_8888, true);
+    test_raster->set_supports_mappable_format(viz::SinglePlaneFormat::kRGBA_F16,
+                                              true);
 
     gpu::SharedImageCapabilities shared_image_caps;
     shared_image_caps.supports_scanout_shared_images = true;
@@ -107,8 +115,8 @@ class CanvasResourceProviderTest : public Test {
     test_context_provider_->SharedImageInterface()->SetCapabilities(
         shared_image_caps);
 
-    InitializeSharedGpuContextRaster(test_context_provider_.get(),
-                                     &image_decode_cache_);
+    InitializeSharedGpuContext(test_context_provider_.get(),
+                               &image_decode_cache_);
     context_provider_wrapper_ = SharedGpuContext::ContextProviderWrapper();
   }
 
@@ -135,7 +143,7 @@ class CanvasResourceProviderTest : public Test {
   ImageTrackingDecodeCache image_decode_cache_;
   scoped_refptr<viz::TestContextProvider> test_context_provider_;
   base::WeakPtr<WebGraphicsContext3DProviderWrapper> context_provider_wrapper_;
-  ScopedTestingPlatformSupport<GpuMemoryBufferTestPlatform> platform_;
+  ScopedTestingPlatformSupport<GpuCompositingTestPlatform> platform_;
 };
 
 TEST_F(CanvasResourceProviderTest,
@@ -147,7 +155,7 @@ TEST_F(CanvasResourceProviderTest,
   Canvas2DColorParams color_params(PredefinedColorSpace::kSRGB,
                                    CanvasPixelFormat::kUint8,
                                    /*has_alpha=*/true);
-  auto provider = CanvasResourceProvider::CreateSharedImageProvider(
+  auto provider = CanvasNon2DResourceProviderSharedImage::Create(
       gfx::Size(10, 10), color_params,
       CanvasResourceProvider::ShouldInitialize::kCallClear,
       context_provider_wrapper_, RasterMode::kGPU, shared_image_usage_flags);
@@ -195,26 +203,25 @@ TEST_F(CanvasResourceProviderTest, CanvasResourceProviderAcceleratedOverlay) {
   Canvas2DColorParams color_params(PredefinedColorSpace::kSRGB,
                                    CanvasPixelFormat::kUint8,
                                    /*has_alpha=*/true);
-  auto provider = CanvasResourceProvider::CreateSharedImageProvider(
+  auto provider = CanvasNon2DResourceProviderSharedImage::Create(
       kSize, color_params, CanvasResourceProvider::ShouldInitialize::kCallClear,
       context_provider_wrapper_, RasterMode::kGPU, shared_image_usage_flags);
 
   EXPECT_EQ(provider->Size(), kSize);
   EXPECT_TRUE(provider->IsValid());
   EXPECT_TRUE(provider->IsAccelerated());
-  EXPECT_TRUE(provider->SupportsDirectCompositing());
   EXPECT_TRUE(provider->IsSingleBuffered());
   // As it is an CanvasResourceProviderSharedImage and an accelerated canvas, it
   // will internally force it to RGBA8 on MacOS, or otherwise RGBA8 if not on
   // Windows
 #if BUILDFLAG(IS_MAC)
-  EXPECT_TRUE(provider->GetSkImageInfo() ==
+  EXPECT_TRUE(GetSkImageInfo(provider.get()) ==
               kInfo.makeColorType(kBGRA_8888_SkColorType));
 #elif !BUILDFLAG(IS_WIN)
-  EXPECT_TRUE(provider->GetSkImageInfo() ==
+  EXPECT_TRUE(GetSkImageInfo(provider.get()) ==
               kInfo.makeColorType(kRGBA_8888_SkColorType));
 #else
-  EXPECT_TRUE(provider->GetSkImageInfo() == kInfo);
+  EXPECT_TRUE(GetSkImageInfo(provider.get()) == kInfo);
 #endif
 }
 
@@ -226,18 +233,17 @@ TEST_F(CanvasResourceProviderTest, CanvasResourceProviderTexture) {
   Canvas2DColorParams color_params(PredefinedColorSpace::kSRGB,
                                    CanvasPixelFormat::kUint8,
                                    /*has_alpha=*/true);
-  auto provider = CanvasResourceProvider::CreateSharedImageProvider(
+  auto provider = CanvasNon2DResourceProviderSharedImage::Create(
       kSize, color_params, CanvasResourceProvider::ShouldInitialize::kCallClear,
       context_provider_wrapper_, RasterMode::kGPU, gpu::SharedImageUsageSet());
 
   EXPECT_EQ(provider->Size(), kSize);
   EXPECT_TRUE(provider->IsValid());
   EXPECT_TRUE(provider->IsAccelerated());
-  EXPECT_TRUE(provider->SupportsDirectCompositing());
   EXPECT_FALSE(provider->IsSingleBuffered());
   // As it is an CanvasResourceProviderSharedImage and an accelerated canvas, it
   // will internally force it to kRGBA8
-  EXPECT_EQ(provider->GetSkImageInfo(),
+  EXPECT_EQ(GetSkImageInfo(provider.get()),
             kInfo.makeColorType(kRGBA_8888_SkColorType));
 
   EXPECT_FALSE(provider->IsSingleBuffered());
@@ -254,19 +260,18 @@ TEST_F(CanvasResourceProviderTest, CanvasResourceProviderUnacceleratedOverlay) {
   Canvas2DColorParams color_params(PredefinedColorSpace::kSRGB,
                                    CanvasPixelFormat::kUint8,
                                    /*has_alpha=*/true);
-  auto provider = CanvasResourceProvider::CreateSharedImageProvider(
+  auto provider = CanvasNon2DResourceProviderSharedImage::Create(
       kSize, color_params, CanvasResourceProvider::ShouldInitialize::kCallClear,
       context_provider_wrapper_, RasterMode::kCPU, shared_image_usage_flags);
 
   EXPECT_EQ(provider->Size(), kSize);
   EXPECT_TRUE(provider->IsValid());
   EXPECT_FALSE(provider->IsAccelerated());
-  EXPECT_TRUE(provider->SupportsDirectCompositing());
 
   // We do not support single buffering for unaccelerated low latency canvas.
   EXPECT_FALSE(provider->IsSingleBuffered());
 
-  EXPECT_EQ(provider->GetSkImageInfo(), kInfo);
+  EXPECT_EQ(GetSkImageInfo(provider.get()), kInfo);
 
   EXPECT_FALSE(provider->IsSingleBuffered());
 }
@@ -281,13 +286,14 @@ std::unique_ptr<CanvasResourceProviderSharedImage> MakeCanvasResourceProvider(
   Canvas2DColorParams color_params(PredefinedColorSpace::kSRGB,
                                    CanvasPixelFormat::kUint8,
                                    /*has_alpha=*/true);
-  return CanvasResourceProvider::CreateSharedImageProvider(
+  return CanvasNon2DResourceProviderSharedImage::Create(
       gfx::Size(10, 10), color_params,
       CanvasResourceProvider::ShouldInitialize::kCallClear,
       context_provider_wrapper, raster_mode, shared_image_usage_flags);
 }
 
-scoped_refptr<CanvasResource> UpdateResource(CanvasResourceProvider* provider) {
+scoped_refptr<CanvasResource> UpdateResource(
+    CanvasResourceProviderSharedImage* provider) {
   provider->ProduceCanvasResource(FlushReason::kOther);
   // Resource updated after draw.
   provider->Canvas().clear(SkColors::kWhite);
@@ -296,20 +302,20 @@ scoped_refptr<CanvasResource> UpdateResource(CanvasResourceProvider* provider) {
 
 TEST_F(CanvasResourceProviderTest,
        CanvasResourceProviderSharedImageEndExternalWrite) {
-  // Set up this test to use OOP rasterization to be able to verify
+  // Set up this test to use GPU rasterization to be able to verify
   // conditions against the test raster interface.
   SharedGpuContext::Reset();
   auto raster_context_provider = viz::TestContextProvider::CreateRaster();
-  InitializeSharedGpuContextRaster(raster_context_provider.get(),
-                                   &image_decode_cache_,
-                                   SetIsContextLost::kSetToFalse);
+  InitializeSharedGpuContext(raster_context_provider.get(),
+                             &image_decode_cache_,
+                             SetIsContextLost::kSetToFalse);
 
   const gpu::SharedImageUsageSet shared_image_usage_flags =
       gpu::SHARED_IMAGE_USAGE_DISPLAY_READ | gpu::SHARED_IMAGE_USAGE_SCANOUT;
   Canvas2DColorParams color_params(PredefinedColorSpace::kSRGB,
                                    CanvasPixelFormat::kUint8,
                                    /*has_alpha=*/true);
-  auto provider = CanvasResourceProvider::CreateSharedImageProvider(
+  auto provider = CanvasNon2DResourceProviderSharedImage::Create(
       gfx::Size(10, 10), color_params,
       CanvasResourceProvider::ShouldInitialize::kCallClear,
       SharedGpuContext::ContextProviderWrapper(), RasterMode::kGPU,
@@ -350,7 +356,7 @@ TEST_F(CanvasResourceProviderTest,
   Canvas2DColorParams color_params(PredefinedColorSpace::kSRGB,
                                    CanvasPixelFormat::kUint8,
                                    /*has_alpha=*/true);
-  auto provider = CanvasResourceProvider::CreateSharedImageProvider(
+  auto provider = CanvasNon2DResourceProviderSharedImage::Create(
       kSize, color_params, CanvasResourceProvider::ShouldInitialize::kCallClear,
       context_provider_wrapper_, RasterMode::kGPU, shared_image_usage_flags);
 
@@ -361,10 +367,10 @@ TEST_F(CanvasResourceProviderTest,
   // As it is an CanvasResourceProviderSharedImage and an accelerated canvas, it
   // will internally force it to RGBA8, or BGRA8 on MacOS
 #if BUILDFLAG(IS_MAC)
-  EXPECT_TRUE(provider->GetSkImageInfo() ==
+  EXPECT_TRUE(GetSkImageInfo(provider.get()) ==
               kInfo.makeColorType(kBGRA_8888_SkColorType));
 #else
-  EXPECT_TRUE(provider->GetSkImageInfo() ==
+  EXPECT_TRUE(GetSkImageInfo(provider.get()) ==
               kInfo.makeColorType(kRGBA_8888_SkColorType));
 #endif
 
@@ -498,7 +504,7 @@ TEST_F(CanvasResourceProviderTest,
   Canvas2DColorParams color_params(PredefinedColorSpace::kSRGB,
                                    CanvasPixelFormat::kUint8,
                                    /*has_alpha=*/true);
-  auto provider = CanvasResourceProvider::CreateSharedImageProvider(
+  auto provider = CanvasNon2DResourceProviderSharedImage::Create(
       gfx::Size(10, 10), color_params,
       CanvasResourceProvider::ShouldInitialize::kCallClear,
       context_provider_wrapper_, RasterMode::kGPU, shared_image_usage_flags);
@@ -543,10 +549,7 @@ TEST_F(CanvasResourceProviderTest, Canvas2DResourceProviderBitmap) {
   EXPECT_EQ(provider->Size(), kSize);
   EXPECT_TRUE(provider->IsValid());
   EXPECT_FALSE(provider->IsAccelerated());
-  EXPECT_FALSE(provider->SupportsDirectCompositing());
-  EXPECT_TRUE(provider->GetSkImageInfo() == kInfo);
-
-  EXPECT_FALSE(provider->IsSingleBuffered());
+  EXPECT_TRUE(GetSkImageInfo(provider.get()) == kInfo);
 }
 
 TEST_F(CanvasResourceProviderTest,
@@ -556,7 +559,7 @@ TEST_F(CanvasResourceProviderTest,
           TestWebGraphicsSharedImageInterfaceProvider::Create();
 
   EXPECT_FALSE(
-      CanvasResourceProvider::CreateSharedImageProviderForSoftwareCompositor(
+      CanvasNon2DResourceProviderSharedImage::CreateForSoftwareCompositor(
           gfx::Size(10, 10),
           Canvas2DColorParams(PredefinedColorSpace::kSRGB,
                               CanvasPixelFormat::kUint8, /*has_alpha=*/true),
@@ -579,7 +582,7 @@ TEST_F(CanvasResourceProviderTest,
                                    CanvasPixelFormat::kUint8,
                                    /*has_alpha=*/true);
   auto provider =
-      CanvasResourceProvider::CreateSharedImageProviderForSoftwareCompositor(
+      CanvasNon2DResourceProviderSharedImage::CreateForSoftwareCompositor(
           kSize, color_params,
           CanvasResourceProvider::ShouldInitialize::kCallClear,
           test_web_shared_image_interface_provider.get());
@@ -587,8 +590,7 @@ TEST_F(CanvasResourceProviderTest,
   EXPECT_EQ(provider->Size(), kSize);
   EXPECT_TRUE(provider->IsValid());
   EXPECT_FALSE(provider->IsAccelerated());
-  EXPECT_TRUE(provider->SupportsDirectCompositing());
-  EXPECT_TRUE(provider->GetSkImageInfo() == kInfo);
+  EXPECT_TRUE(GetSkImageInfo(provider.get()) == kInfo);
 
   EXPECT_FALSE(provider->IsSingleBuffered());
 }
@@ -606,26 +608,25 @@ TEST_F(CanvasResourceProviderTest,
   Canvas2DColorParams color_params(PredefinedColorSpace::kSRGB,
                                    CanvasPixelFormat::kUint8,
                                    /*has_alpha=*/true);
-  auto provider = CanvasResourceProvider::CreateSharedImageProvider(
+  auto provider = CanvasNon2DResourceProviderSharedImage::Create(
       kSize, color_params, CanvasResourceProvider::ShouldInitialize::kCallClear,
       context_provider_wrapper_, RasterMode::kGPU, shared_image_usage_flags);
 
   EXPECT_EQ(provider->Size(), kSize);
   EXPECT_TRUE(provider->IsValid());
   EXPECT_TRUE(provider->IsAccelerated());
-  EXPECT_TRUE(provider->SupportsDirectCompositing());
   EXPECT_TRUE(provider->IsSingleBuffered());
   // As it is an CanvasResourceProviderSharedImage and an accelerated canvas, it
   // will internally force it to RGBA8 on MacOS, or otherwise RGBA8 if not on
   // Windows
 #if BUILDFLAG(IS_MAC)
-  EXPECT_TRUE(provider->GetSkImageInfo() ==
+  EXPECT_TRUE(GetSkImageInfo(provider.get()) ==
               kInfo.makeColorType(kBGRA_8888_SkColorType));
 #elif !BUILDFLAG(IS_WIN)
-  EXPECT_TRUE(provider->GetSkImageInfo() ==
+  EXPECT_TRUE(GetSkImageInfo(provider.get()) ==
               kInfo.makeColorType(kRGBA_8888_SkColorType));
 #else
-  EXPECT_TRUE(provider->GetSkImageInfo() == kInfo);
+  EXPECT_TRUE(GetSkImageInfo(provider.get()) == kInfo);
 #endif
 }
 
@@ -636,50 +637,50 @@ TEST_F(CanvasResourceProviderTest, DimensionsExceedMaxTextureSize_Bitmap) {
   auto provider = Canvas2DResourceProviderBitmap::CreateForTesting(
       gfx::Size(kMaxTextureSize - 1, kMaxTextureSize), color_params,
       CanvasResourceProvider::ShouldInitialize::kCallClear);
-  EXPECT_FALSE(provider->SupportsDirectCompositing());
+  EXPECT_TRUE(provider && provider->IsValid());
   provider = Canvas2DResourceProviderBitmap::CreateForTesting(
       gfx::Size(kMaxTextureSize, kMaxTextureSize), color_params,
       CanvasResourceProvider::ShouldInitialize::kCallClear);
-  EXPECT_FALSE(provider->SupportsDirectCompositing());
+  EXPECT_TRUE(provider && provider->IsValid());
   provider = Canvas2DResourceProviderBitmap::CreateForTesting(
       gfx::Size(kMaxTextureSize + 1, kMaxTextureSize), color_params,
       CanvasResourceProvider::ShouldInitialize::kCallClear);
-  EXPECT_FALSE(provider->SupportsDirectCompositing());
+  EXPECT_TRUE(provider && provider->IsValid());
 }
 
 TEST_F(CanvasResourceProviderTest, DimensionsExceedMaxTextureSize_SharedImage) {
   Canvas2DColorParams color_params(PredefinedColorSpace::kSRGB,
                                    CanvasPixelFormat::kUint8,
                                    /*has_alpha=*/true);
-  auto provider = CanvasResourceProvider::CreateSharedImageProvider(
+  auto provider = CanvasNon2DResourceProviderSharedImage::Create(
       gfx::Size(kMaxTextureSize - 1, kMaxTextureSize), color_params,
       CanvasResourceProvider::ShouldInitialize::kCallClear,
       context_provider_wrapper_, RasterMode::kGPU, gpu::SharedImageUsageSet());
-  EXPECT_TRUE(provider->SupportsDirectCompositing());
-  provider = CanvasResourceProvider::CreateSharedImageProvider(
+  EXPECT_TRUE(provider && provider->IsValid());
+  provider = CanvasNon2DResourceProviderSharedImage::Create(
       gfx::Size(kMaxTextureSize, kMaxTextureSize), color_params,
       CanvasResourceProvider::ShouldInitialize::kCallClear,
       context_provider_wrapper_, RasterMode::kGPU, gpu::SharedImageUsageSet());
-  EXPECT_TRUE(provider->SupportsDirectCompositing());
-  provider = CanvasResourceProvider::CreateSharedImageProvider(
+  EXPECT_TRUE(provider && provider->IsValid());
+  provider = CanvasNon2DResourceProviderSharedImage::Create(
       gfx::Size(kMaxTextureSize + 1, kMaxTextureSize), color_params,
       CanvasResourceProvider::ShouldInitialize::kCallClear,
       context_provider_wrapper_, RasterMode::kGPU, gpu::SharedImageUsageSet());
-  // The CanvasResourceProvider for SharedImage should not be created or valid
-  // if the texture size is greater than the maximum value
-  EXPECT_TRUE(!provider || !provider->IsValid());
+  // The CanvasResourceProvider for SharedImage should not be created
+  // if the texture size is greater than the maximum value.
+  EXPECT_FALSE(provider);
 }
 
 TEST_F(CanvasResourceProviderTest, FlushForImage) {
   Canvas2DColorParams color_params(PredefinedColorSpace::kSRGB,
                                    CanvasPixelFormat::kUint8,
                                    /*has_alpha=*/true);
-  auto src_provider = CanvasResourceProvider::CreateSharedImageProvider(
+  auto src_provider = CanvasNon2DResourceProviderSharedImage::Create(
       gfx::Size(10, 10), color_params,
       CanvasResourceProvider::ShouldInitialize::kCallClear,
       context_provider_wrapper_, RasterMode::kGPU, gpu::SharedImageUsageSet());
 
-  auto dst_provider = CanvasResourceProvider::CreateSharedImageProvider(
+  auto dst_provider = CanvasNon2DResourceProviderSharedImage::Create(
       gfx::Size(10, 10), color_params,
       CanvasResourceProvider::ShouldInitialize::kCallClear,
       context_provider_wrapper_, RasterMode::kGPU, gpu::SharedImageUsageSet());

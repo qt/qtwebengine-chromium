@@ -73,8 +73,6 @@ cc_component("cc") {
     "input/overscroll_behavior.h",
     "input/page_scale_animation.cc",
     "input/page_scale_animation.h",
-    "input/progress_bar_offset_manager.cc",
-    "input/progress_bar_offset_manager.h",
     "input/scroll_elasticity_helper.cc",
     "input/scroll_elasticity_helper.h",
     "input/scroll_snap_data.cc",
@@ -316,6 +314,8 @@ cc_component("cc") {
     "scheduler/begin_frame_tracker.h",
     "scheduler/commit_earlyout_reason.h",
     "scheduler/draw_result.h",
+    "scheduler/headless_scheduler_state_machine.cc",
+    "scheduler/headless_scheduler_state_machine.h",
     "scheduler/scheduler.cc",
     "scheduler/scheduler.h",
     "scheduler/scheduler_settings.cc",
@@ -471,6 +471,8 @@ cc_component("cc") {
     "trees/render_frame_metadata.h",
     "trees/render_frame_metadata_observer.h",
     "trees/scoped_abort_remaining_swap_promises.h",
+    "trees/scroll_elasticity_utils.cc",
+    "trees/scroll_elasticity_utils.h",
     "trees/scroll_node.cc",
     "trees/scroll_node.h",
     "trees/scroll_source_type.h",
@@ -489,6 +491,8 @@ cc_component("cc") {
     "trees/throttle_decider.h",
     "trees/trace_utils.cc",
     "trees/trace_utils.h",
+    "trees/tracked_element_bounds.cc",
+    "trees/tracked_element_bounds.h",
     "trees/transform_node.cc",
     "trees/transform_node.h",
     "trees/tree_synchronizer.cc",
@@ -519,7 +523,6 @@ cc_component("cc") {
     "//gpu/command_buffer/client:gles2_interface",
     "//gpu/command_buffer/client:raster_interface",
     "//gpu/ipc/client",
-    "//gpu/skia_bindings",
     "//gpu/vulkan:buildflags",
     "//media",  # For VideoLayerImpl.
     "//mojo/public/cpp/bindings:struct_traits",
@@ -735,7 +738,6 @@ cc_test_static_library("test_support") {
     "//gpu/ipc/client",
     "//gpu/ipc/common:test_support",
     "//gpu/ipc/service",
-    "//gpu/skia_bindings",
     "//media",
     "//services/viz/privileged/mojom",
     "//skia",
@@ -777,6 +779,8 @@ if (is_ios) {
 
 cc_test("cc_unittests") {
   use_xvfb = use_xvfb_in_this_config
+
+  fuzztests = [ "RTreeTest.BuildDoesNotCrash" ]
 
   sources = [
     "base/delayed_unique_notifier_unittest.cc",
@@ -863,8 +867,8 @@ cc_test("cc_unittests") {
     "paint/discardable_image_map_unittest.cc",
     "paint/display_item_list_unittest.cc",
     "paint/filter_operations_unittest.cc",
+    "paint/gpu_raster_pixeltest.cc",
     "paint/image_transfer_cache_entry_unittest.cc",
-    "paint/oop_pixeltest.cc",
     "paint/paint_cache_unittest.cc",
     "paint/paint_filter_unittest.cc",
     "paint/paint_flags_unittest.cc",
@@ -883,10 +887,10 @@ cc_test("cc_unittests") {
     "raster/raster_buffer_provider_unittest.cc",
     "raster/raster_source_unittest.cc",
     "raster/single_thread_task_graph_runner_unittest.cc",
-    "raster/staging_buffer_pool_unittest.cc",
     "raster/synchronous_task_graph_runner_unittest.cc",
     "raster/task_graph_work_queue_unittest.cc",
     "resources/resource_pool_unittest.cc",
+    "scheduler/headless_scheduler_state_machine_unittest.cc",
     "scheduler/scheduler_state_machine_unittest.cc",
     "scheduler/scheduler_unittest.cc",
     "slim/delayer_scheduler_unittest.cc",
@@ -1000,7 +1004,6 @@ cc_test("cc_unittests") {
     "//gpu/command_buffer/client:raster_interface",
     "//gpu/ipc:gl_in_process_context",
     "//gpu/ipc/client",
-    "//gpu/skia_bindings",
     "//media",
     "//mojo/core/embedder",
     "//mojo/public/cpp/bindings",

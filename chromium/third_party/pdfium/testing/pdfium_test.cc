@@ -173,6 +173,7 @@ struct Options {
   bool no_smoothtext = false;
   bool no_smoothimage = false;
   bool no_smoothpath = false;
+  bool render_premultiplied_alpha = false;
   bool reverse_byte_order = false;
   bool save_attachments = false;
   bool save_images = false;
@@ -563,6 +564,10 @@ bool ParseCommandLine(const std::vector<std::string>& args,
         fprintf(stderr, "Invalid --use-renderer argument\n");
         return false;
       }
+#if defined(PDF_ENABLE_SKIA)
+    } else if (cur_arg == "--render-premultiplied") {
+      options->render_premultiplied_alpha = true;
+#endif  // defined(PDF_ENABLE_SKIA)
 #ifdef PDF_ENABLE_V8
     } else if (cur_arg == "--disable-javascript") {
       options->disable_javascript = true;
@@ -765,6 +770,14 @@ bool ParseCommandLine(const std::vector<std::string>& args,
     }
   }
 
+#if defined(PDF_ENABLE_SKIA)
+  if (options->render_premultiplied_alpha &&
+      options->use_renderer_type != RendererType::kSkia) {
+    fprintf(stderr,
+            "Cannot use --render_premultiplied with selected renderer\n");
+    return false;
+  }
+#endif  // defined(PDF_ENABLE_SKIA)
   return true;
 }
 
@@ -970,16 +983,18 @@ class BitmapPageRenderer : public PageRenderer {
       std::string (*bitmap_writer)(const char* pdf_name,
                                    int num,
                                    void* buffer,
-                                   int stride,
-                                   int width,
-                                   int height)) {
+                                   const BitmapAttributes& bitmap_attributes)) {
     return [bitmap_writer](BitmapPageRenderer& renderer,
                            const std::string& name, int page_index, bool md5) {
-      int stride = FPDFBitmap_GetStride(renderer.bitmap());
+      const BitmapAttributes bitmap_attributes = {
+          .width = renderer.width(),
+          .height = renderer.height(),
+          .stride = FPDFBitmap_GetStride(renderer.bitmap()),
+          .has_alpha = !!FPDFPage_HasTransparency(renderer.page()),
+      };
       void* buffer = FPDFBitmap_GetBuffer(renderer.bitmap());
-      std::string image_file_name = bitmap_writer(
-          name.c_str(), page_index, buffer, /*stride=*/stride,
-          /*width=*/renderer.width(), /*height=*/renderer.height());
+      std::string image_file_name =
+          bitmap_writer(name.c_str(), page_index, buffer, bitmap_attributes);
       if (image_file_name.empty()) {
         return false;
       }
@@ -989,7 +1004,8 @@ class BitmapPageRenderer : public PageRenderer {
         OutputMD5Hash(image_file_name.c_str(),
                       UNSAFE_TODO(pdfium::span(
                           static_cast<const uint8_t*>(buffer),
-                          static_cast<size_t>(stride) * renderer.height())));
+                          static_cast<size_t>(bitmap_attributes.stride) *
+                              bitmap_attributes.height)));
       }
       return true;
     };
@@ -1014,16 +1030,25 @@ class BitmapPageRenderer : public PageRenderer {
                      int height,
                      int flags,
                      const std::function<void()>& idler,
+                     bool render_premultiplied_alpha,
                      PageWriter writer)
       : PageRenderer(page, /*width=*/width, /*height=*/height, /*flags=*/flags),
         idler_(idler),
+        render_premultiplied_alpha_(render_premultiplied_alpha),
         writer_(std::move(writer)) {}
 
   bool InitializeBitmap(void* first_scan) {
     bool alpha = FPDFPage_HasTransparency(page());
+    int format;
+    if (alpha) {
+      format = render_premultiplied_alpha_ ? FPDFBitmap_BGRA_Premul
+                                           : FPDFBitmap_BGRA;
+    } else {
+      format = FPDFBitmap_BGRx;
+    }
     bitmap_.reset(FPDFBitmap_CreateEx(
         /*width=*/width(), /*height=*/height(),
-        /*format=*/alpha ? FPDFBitmap_BGRA : FPDFBitmap_BGRx, first_scan,
+        /*format=*/format, first_scan,
         /*stride=*/width() * sizeof(uint32_t)));
     if (!bitmap()) {
       return false;
@@ -1042,6 +1067,7 @@ class BitmapPageRenderer : public PageRenderer {
 
  private:
   const std::function<void()>& idler_;
+  const bool render_premultiplied_alpha_;
   PageWriter writer_;
   ScopedFPDFBitmap bitmap_;
 };
@@ -1054,12 +1080,14 @@ class OneShotBitmapPageRenderer : public BitmapPageRenderer {
                             int height,
                             int flags,
                             const std::function<void()>& idler,
+                            bool render_premultiplied_alpha,
                             PageWriter writer)
       : BitmapPageRenderer(page,
                            /*width=*/width,
                            /*height=*/height,
                            /*flags=*/flags,
                            idler,
+                           render_premultiplied_alpha,
                            std::move(writer)) {}
 
   bool Start() override {
@@ -1085,6 +1113,7 @@ class ProgressiveBitmapPageRenderer : public BitmapPageRenderer {
                                 int height,
                                 int flags,
                                 const std::function<void()>& idler,
+                                bool render_premultiplied_alpha,
                                 PageWriter writer,
                                 const FPDF_COLORSCHEME* color_scheme)
       : BitmapPageRenderer(page,
@@ -1092,6 +1121,7 @@ class ProgressiveBitmapPageRenderer : public BitmapPageRenderer {
                            /*height=*/height,
                            /*flags=*/flags,
                            idler,
+                           render_premultiplied_alpha,
                            std::move(writer)),
         color_scheme_(color_scheme) {
     pause_.version = 1;
@@ -1103,6 +1133,7 @@ class ProgressiveBitmapPageRenderer : public BitmapPageRenderer {
       return false;
     }
 
+    original_bitmap_format_ = FPDFBitmap_GetFormat(bitmap());
     if (FPDF_RenderPageBitmapWithColorScheme_Start(
             bitmap(), page(), /*start_x=*/0, /*start_y=*/0, /*size_x=*/width(),
             /*size_y=*/height(), /*rotate=*/0, /*flags=*/flags(), color_scheme_,
@@ -1124,11 +1155,13 @@ class ProgressiveBitmapPageRenderer : public BitmapPageRenderer {
     BitmapPageRenderer::Finish(form);
     FPDF_RenderPage_Close(page());
     Idle();
+    CHECK_EQ(original_bitmap_format_, FPDFBitmap_GetFormat(bitmap()));
   }
 
  private:
   const FPDF_COLORSCHEME* color_scheme_;
   IFSDK_PAUSE pause_;
+  int original_bitmap_format_ = -1;
   bool to_be_continued_ = false;
 };
 
@@ -1182,6 +1215,7 @@ class GdiDisplayPageRenderer : public BitmapPageRenderer {
                            /*height=*/height,
                            /*flags=*/flags,
                            idler,
+                           /*render_premultiplied_alpha=*/false,
                            std::move(writer)) {}
 
   ~GdiDisplayPageRenderer() override {
@@ -1466,9 +1500,16 @@ bool PdfProcessor::ProcessPage(const int page_index) {
       writer = BitmapPageRenderer::WrapPageWriter(WritePpm);
       break;
 
-    case OutputFormat::kPng:
-      writer = BitmapPageRenderer::WrapPageWriter(WritePng);
+    case OutputFormat::kPng: {
+      auto func = WriteStraightAlphaBufferToPng;
+#ifdef PDF_ENABLE_SKIA
+      if (options().render_premultiplied_alpha) {
+        func = WritePremultipliedAlphaBufferToPng;
+      }
+#endif
+      writer = BitmapPageRenderer::WrapPageWriter(func);
       break;
+    }
 
 #ifdef _WIN32
     case OutputFormat::kBmp:
@@ -1476,13 +1517,13 @@ bool PdfProcessor::ProcessPage(const int page_index) {
       break;
 
     case OutputFormat::kEmf:
-      // TODO(crbug.com/pdfium/2054): Render directly to DC.
+      // TODO(crbug.com/42271066): Render directly to DC.
       writer = BitmapPageRenderer::WrapPageWriter(WriteEmf);
       break;
 
     case OutputFormat::kPs2:
     case OutputFormat::kPs3:
-      // TODO(crbug.com/pdfium/2054): Render directly to DC.
+      // TODO(crbug.com/42271066): Render directly to DC.
       writer = BitmapPageRenderer::WrapPageWriter(WritePS);
       break;
 #endif  // _WIN32
@@ -1554,11 +1595,12 @@ bool PdfProcessor::ProcessPage(const int page_index) {
     if (options().render_oneshot) {
       renderer = std::make_unique<OneShotBitmapPageRenderer>(
           page, /*width=*/width, /*height=*/height, /*flags=*/flags, idler(),
-          std::move(writer));
+          options().render_premultiplied_alpha, std::move(writer));
     } else {
       renderer = std::make_unique<ProgressiveBitmapPageRenderer>(
           page, /*width=*/width, /*height=*/height, /*flags=*/flags, idler(),
-          std::move(writer), options().forced_color ? &kColorScheme : nullptr);
+          options().render_premultiplied_alpha, std::move(writer),
+          options().forced_color ? &kColorScheme : nullptr);
     }
   }
 
@@ -1836,6 +1878,8 @@ constexpr char kUsageString[] =
 #else
     "  --use-renderer         - renderer to use, one of [agg | skia]\n"
 #endif  // _WIN32
+    "  --render-premultiplied - render image using premultiplied alpha when "
+    "the renderer is Skia\n"
 #else
 #ifdef _WIN32
     "  --use-renderer         - renderer to use, one of [agg | gdi]\n"

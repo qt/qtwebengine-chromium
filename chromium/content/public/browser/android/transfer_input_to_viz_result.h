@@ -20,7 +20,7 @@ enum class TransferInputToVizResult {
   kSelectionHandlesActive = 4,
   // Obsolete: kCanTriggerBackGesture = 5,
   kImeIsActive = 6,
-  kRequestedByEmbedder = 7,
+  // Obsolete: kRequestedByEmbedder = 7,
   kSystemServerDidNotTransfer = 8,
   kBrowserTokenChanged = 9,
   kMultipleBrowserWindowsOpen = 10,
@@ -30,7 +30,10 @@ enum class TransferInputToVizResult {
   kRIRDelegateConnectionNotSetup = 14,
   kSharedMemoryUnavailable = 15,
   kPositiveEventAndDownTimeDelta = 16,
-  kMaxValue = kPositiveEventAndDownTimeDelta,
+  // TODO(https://crbug.com/483269973): Investigate using InputEventObserver in
+  // Xr instead of blocking the transfer of input to viz.
+  kXrIsActive = 17,
+  kMaxValue = kXrIsActive,
 };
 // LINT.ThenChange(//tools/metrics/histograms/metadata/android/enums.xml:TransferInputToVizResult)
 

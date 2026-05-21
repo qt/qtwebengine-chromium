@@ -83,6 +83,7 @@ DOC_FUNCS_FNCS =		\
 	fcblanks.fncs		\
 	fccache.fncs		\
 	fccharset.fncs		\
+	fcconffile.fncs		\
 	fcconfig.fncs		\
 	fcconstant.fncs		\
 	fcdircache.fncs		\

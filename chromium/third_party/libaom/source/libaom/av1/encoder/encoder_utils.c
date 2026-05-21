@@ -9,6 +9,7 @@
  * PATENTS file, you can obtain it at www.aomedia.org/license/patent.
  */
 
+#include <assert.h>
 #include <string.h>
 
 #include "aom/aomcx.h"
@@ -1317,6 +1318,8 @@ void av1_finalize_encoded_frame(AV1_COMP *const cpi) {
 
   if (!cm->seq_params->reduced_still_picture_hdr &&
       encode_show_existing_frame(cm)) {
+    assert(cpi->existing_fb_idx_to_show >= 0 &&
+           cpi->existing_fb_idx_to_show < REF_FRAMES);
     RefCntBuffer *const frame_to_show =
         cm->ref_frame_map[cpi->existing_fb_idx_to_show];
 

@@ -27,6 +27,10 @@ class CFX_Matrix;
 class CFX_Path;
 struct CFX_TextRenderOptions;
 
+#if defined(PDF_USE_SKIA)
+class SkTypeface;
+#endif
+
 class CFX_GlyphCache final : public Retainable, public Observable {
  public:
   CONSTRUCT_VIA_MAKE_RETAIN;
@@ -46,10 +50,8 @@ class CFX_GlyphCache final : public Retainable, public Observable {
                     int dest_width,
                     int weight);
 
-  RetainPtr<CFX_Face> GetFace() { return face_; }
-
 #if defined(PDF_USE_SKIA)
-  CFX_TypeFace* GetDeviceCache(const CFX_Font* font);
+  SkTypeface* GetDeviceCache(const CFX_Font* font);
   static void InitializeGlobals();
   static void DestroyGlobals();
 #endif
@@ -70,12 +72,6 @@ class CFX_GlyphCache final : public Retainable, public Observable {
                                                const CFX_Matrix& matrix,
                                                int dest_width,
                                                FontAntiAliasingMode anti_alias);
-  std::unique_ptr<CFX_GlyphBitmap> RenderGlyph_Nativetext(
-      const CFX_Font* font,
-      uint32_t glyph_index,
-      const CFX_Matrix& matrix,
-      int dest_width,
-      FontAntiAliasingMode anti_alias);
   CFX_GlyphBitmap* LookUpGlyphBitmap(const CFX_Font* font,
                                      const CFX_Matrix& matrix,
                                      const ByteString& FaceGlyphsKey,
@@ -83,6 +79,7 @@ class CFX_GlyphCache final : public Retainable, public Observable {
                                      bool bFontStyle,
                                      int dest_width,
                                      FontAntiAliasingMode anti_alias);
+
   RetainPtr<CFX_Face> const face_;
   std::map<ByteString, SizeGlyphCache> size_map_;
   std::map<PathMapKey, std::unique_ptr<CFX_Path>> path_map_;

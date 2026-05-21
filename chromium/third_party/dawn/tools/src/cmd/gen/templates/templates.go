@@ -32,7 +32,6 @@ import (
 	"flag"
 	"fmt"
 	"math/rand"
-	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -190,13 +189,13 @@ func (i *intrinsicCache) Sem() (*sem.Sem, error) {
 		// Load the intrinsic definition file
 		defPath := filepath.Join(fileutils.DawnRoot(i.fsReader), i.path)
 
-		defSource, err := os.ReadFile(defPath)
+		defSource, err := i.fsReader.ReadFile(defPath)
 		if err != nil {
 			return nil, err
 		}
 
 		// Parse the definition file to produce an AST
-		ast, err := parser.Parse(string(defSource), i.path)
+		ast, err := parser.Parse(string(defSource), i.path, i.fsReader)
 		if err != nil {
 			return nil, err
 		}
@@ -324,7 +323,7 @@ func generate(tmplPath, outPath string, cache *genCache, writeFile WriteFile) er
 			return "", g.writeFile(relPath, content, g.commentPrefix)
 		},
 	}
-	t, err := template.FromFile(tmplPath)
+	t, err := template.FromFile(tmplPath, cache.fsReader)
 	if err != nil {
 		return err
 	}

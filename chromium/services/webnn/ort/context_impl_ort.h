@@ -6,6 +6,7 @@
 #define SERVICES_WEBNN_ORT_CONTEXT_IMPL_ORT_H_
 
 #include "base/memory/scoped_refptr.h"
+#include "base/task/cancelable_task_tracker.h"
 #include "mojo/public/cpp/bindings/pending_associated_receiver.h"
 #include "services/webnn/ort/device_allocator.h"
 #include "services/webnn/ort/environment.h"
@@ -29,14 +30,11 @@ class ContextImplOrt final : public WebNNContextImpl {
   static std::unique_ptr<WebNNContextImpl, OnTaskRunnerDeleter> Create(
       mojo::PendingReceiver<mojom::WebNNContext> receiver,
       base::WeakPtr<WebNNContextProviderImpl> context_provider,
-      const EpWorkarounds& ep_workarounds,
       mojom::CreateContextOptionsPtr options,
-      mojom::Device device_type,
       mojo::ScopedDataPipeConsumerHandle write_tensor_consumer,
       mojo::ScopedDataPipeProducerHandle read_tensor_producer,
       scoped_refptr<Environment> env,
-      gpu::CommandBufferId command_buffer_id,
-      std::unique_ptr<ScopedSequence> sequence,
+      std::unique_ptr<ScopedGpuSequence> gpu_sequence,
       scoped_refptr<gpu::MemoryTracker> memory_tracker,
       scoped_refptr<base::SingleThreadTaskRunner> owning_task_runner,
       gpu::SharedImageManager* shared_image_manager,
@@ -47,12 +45,11 @@ class ContextImplOrt final : public WebNNContextImpl {
                  base::WeakPtr<WebNNContextProviderImpl> context_provider,
                  const EpWorkarounds& ep_workarounds,
                  mojom::CreateContextOptionsPtr options,
-                 mojom::Device device_type,
+                 scoped_refptr<SessionOptions> session_options,
                  mojo::ScopedDataPipeConsumerHandle write_tensor_consumer,
                  mojo::ScopedDataPipeProducerHandle read_tensor_producer,
                  scoped_refptr<Environment> env,
-                 gpu::CommandBufferId command_buffer_id,
-                 std::unique_ptr<ScopedSequence> sequence,
+                 std::unique_ptr<ScopedGpuSequence> gpu_sequence,
                  scoped_refptr<gpu::MemoryTracker> memory_tracker,
                  scoped_refptr<base::SingleThreadTaskRunner> owning_task_runner,
                  gpu::SharedImageManager* shared_image_manager,
@@ -72,6 +69,13 @@ class ContextImplOrt final : public WebNNContextImpl {
   scoped_refptr<SessionOptions> session_options() const {
     return session_options_;
   }
+
+  base::CancelableTaskTracker& cancelable_task_tracker() {
+    return cancelable_task_tracker_;
+  }
+
+  void HandleContextLostOrCrash(const std::string& error_message,
+                                OrtErrorCode error_code);
 
  private:
   ~ContextImplOrt() override;
@@ -104,6 +108,9 @@ class ContextImplOrt final : public WebNNContextImpl {
   // The device allocator used for device tensor creation. May be nullptr if
   // device tensor is not supported.
   scoped_refptr<DeviceAllocator> device_allocator_;
+
+  // Cancels pending graph compilation tasks when destructing.
+  base::CancelableTaskTracker cancelable_task_tracker_;
 
   base::WeakPtrFactory<ContextImplOrt> weak_factory_{this};
 };

@@ -2,6 +2,52 @@ Skia Graphics Release Notes
 
 This file includes a list of high level updates for each milestone release.
 
+Milestone 146
+-------------
+  * `skgpu::graphite::ContextOptions.fClientWillExternallySynchronizeAllThreads` has been removed in
+    preparation for removing the legacy Vulkan Memory Allocator behavior.
+  * `GrContextOptions.fVulkanVMALargeHeapBlockSize` and `skgpu::graphite::ContextOptions.fVulkanVMALargeHeapBlockSize` have been removed in preparation for removing the legacy Vulkan Memory Allocator behavior.
+  * As an undocumented feature, `SK_FONT_FILE_PREFIX` could be defined to override how the Android fontmgr searched for system fonts. This has been removed as it was untested and believed to be unused.
+  * `SkSurfaces::WrapBackendTexture` no longer requires providing an `SkColorType`. A closest
+       compatible SkColorType will be chosen, so long as the backend texture's format is supported as
+       renderable.
+  * Graphite's InsertStatus now has an additional kOutOfOrderRecording to differentiate this
+      unrecoverable error from programming errors that would lead to kInvalidRecording. Out of order
+      recordings can currently arise "naturally" if prior dependent recordings failed due to resource
+      creation or update errors from the GPU driver.
+  * Add SkColorSpacePrimaries::operator==.
+  * SkDeserialProcs::fTypefaceProc has been replaced with SkDeserialProcs::fTypefaceStreamProc.
+  * The header `include/effects/SkGradientShader.h` and the functions that it declared have been removed.
+    The factory functions in `include/effects/SkGradient.h` should now be used to create gradient shaders.
+  * More public path utilities now take SkPathBuilder instead of SkPath. This allows the caller to avoid a potential extra copy of path data when calling these functions. This affects SkContourMeasure::getSegment, SkPathEffect::filterPath, SkPathMeasure::getSegment, and skpathutils::FillPathWithPaint.
+  * Add VK_ANDROID_EXTERNAL_MEMORY_ANDROID_HARDWARE_BUFFER_EXTENSION (and VK_EXT_QUEUE_FAMILY_FOREIGN
+    which it depends on) to VulkanPreferredFeatures when building for Android.
+
+* * *
+
+Milestone 145
+-------------
+  * Add `skhdr::Agtm` interface.
+
+    Provide an interface to to create SMPTE ST 2094-50 (also known as Adaptive
+    Global Tone Mapping) metadata. This interface includes parsing, serialization,
+    and tone mapping (via an SkColorFilter).
+
+    Add interface to set and get serialized AGTM metadata to `skhdr::Metadata`.
+  * Backend specific texture infos, e.g. `DawnTextureInfo`,
+    `VulkanTextureInfo`, and `MtlTextureInfo`'s `fSampleCount` field, and the
+    `ContextOptions::fInternalMultisampleCount` field are now `SampleCount`. A helper
+    function, `ToSampleCount(uint32_t) -> SampleCount` is provided if needing to convert a variable value vs. just updating a constant.
+  * `SkCodec::Options` now contains `fMaxDecodeMemory`. If Skia detects or estimates it would use more
+    than that amount of memory (in aggregate) for decoding the image, it will return nullptr instead
+    of attempting to decode it. Failures in this way will result in returning the new
+    `SkCodec::Result::kOutOfMemory`.
+  * Add the function `SkData::Equals`.
+
+    This function can compare two `SkData`s, even when both are nullptr.
+
+* * *
+
 Milestone 144
 -------------
   * `SkSerialProcs` now are expected to return a pointer-to-const data. This was implied before, but

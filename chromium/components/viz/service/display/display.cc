@@ -17,7 +17,6 @@
 #include <variant>
 
 #include "base/check.h"
-#include "base/containers/contains.h"
 #include "base/containers/flat_set.h"
 #include "base/debug/dump_without_crashing.h"
 #include "base/metrics/histogram_macros.h"
@@ -136,10 +135,6 @@ void RecordFDUsageUMA() {
 }
 #endif
 
-#if !BUILDFLAG(IS_MAC)
-constexpr base::TimeDelta kAllowedDeltaFromFuture = base::Milliseconds(16);
-#endif
-
 gfx::PresentationFeedback SanitizePresentationFeedback(
     const gfx::PresentationFeedback& feedback,
     base::TimeTicks draw_time) {
@@ -167,10 +162,13 @@ gfx::PresentationFeedback SanitizePresentationFeedback(
   // All |feedback.timestamp| on Mac are valid and should not be sanitized.
 #if !BUILDFLAG(IS_MAC)
   const auto now = base::TimeTicks::Now();
+  // In VSync mode sometimes the timestamps are snapped to the next vsync
+  // interval (such as in SkiaOutputDeviceDawn::Present), so they could be as
+  // much as `feedback.interval` in the future.
   const auto allowed_delta_from_future =
       ((feedback.flags & (gfx::PresentationFeedback::kHWClock |
                           gfx::PresentationFeedback::kVSync)) != 0)
-          ? kAllowedDeltaFromFuture
+          ? feedback.interval
           : base::TimeDelta();
   if (feedback.timestamp > now + allowed_delta_from_future) {
     return gfx::PresentationFeedback::Failure();
@@ -254,15 +252,25 @@ void Display::PresentationGroupTiming::AddPresentationHelper(
 
 void Display::PresentationGroupTiming::OnDraw(
     base::TimeTicks frame_time,
+    base::TimeDelta interval,
     base::TimeTicks draw_start_timestamp,
     base::flat_set<base::PlatformThreadId> animation_thread_ids,
     base::flat_set<base::PlatformThreadId> renderer_main_thread_ids,
-    HintSession::BoostType boost_type) {
+    HintSession::BoostType boost_type,
+    int64_t choreographer_vsync_id,
+    std::optional<PossibleDeadline> deadline,
+    std::optional<PossibleDeadline> preferred,
+    base::TimeTicks throttled_adjusted_frame_time) {
   frame_time_ = frame_time;
+  interval_ = interval;
   draw_start_timestamp_ = draw_start_timestamp;
   animation_thread_ids_ = std::move(animation_thread_ids);
   renderer_main_thread_ids_ = std::move(renderer_main_thread_ids);
   boost_type_ = boost_type;
+  choreographer_vsync_id_ = choreographer_vsync_id;
+  deadline_ = std::move(deadline);
+  preferred_ = std::move(preferred);
+  throttled_adjusted_frame_time_ = throttled_adjusted_frame_time;
 }
 
 void Display::PresentationGroupTiming::OnSwap(gfx::SwapTimings timings,
@@ -273,6 +281,19 @@ void Display::PresentationGroupTiming::OnSwap(gfx::SwapTimings timings,
     return;
 
   auto frame_latency = timings.swap_start - frame_time_;
+  if (throttled_adjusted_frame_time_ != base::TimeTicks() &&
+      base::FeatureList::IsEnabled(features::kEnableADPFIgnoreThrottledTime)) {
+    // Ignore the time spent between the swap throttled event and the next
+    // ScheduleBeginFrameDeadline.
+    // If frame rendering was throttled due to too many pending swaps,
+    // reporting a long frame duration (implying a heavy CPU workload) may
+    // mislead the system scheduler.
+    frame_latency = timings.swap_start - throttled_adjusted_frame_time_;
+    TRACE_EVENT_INSTANT(
+        "android.adpf", "AdjustFrameLatency", "delta_ms",
+        (throttled_adjusted_frame_time_ - frame_time_).InMillisecondsF(),
+        "latency_ms", frame_latency.InMillisecondsF());
+  }
   if (frame_latency < base::Seconds(0)) {
     LOG(ERROR) << "Frame latency is negative: "
                << frame_latency.InMillisecondsF() << " ms";
@@ -442,17 +463,24 @@ void Display::SetVisible(bool visible) {
 void Display::Resize(const gfx::Size& size) {
   disable_swap_until_resize_ = false;
 
-  if (size == current_surface_size_)
+  auto clamped_size_px = size;
+  auto max_texture_size = output_surface_->capabilities().max_texture_size;
+  if (max_texture_size > 0) {
+    clamped_size_px.SetToMin(gfx::Size(max_texture_size, max_texture_size));
+  }
+
+  if (clamped_size_px == current_surface_size_) {
     return;
+  }
 
   // This DCHECK should probably go at the top of the function, but mac
   // sometimes calls Resize() with 0x0 before it sets a real size. This will
   // early out before the DCHECK fails.
-  DCHECK(!size.IsEmpty());
+  DCHECK(!clamped_size_px.IsEmpty());
   TRACE_EVENT0("viz", "Display::Resize");
 
   swapped_since_resize_ = false;
-  current_surface_size_ = size;
+  current_surface_size_ = clamped_size_px;
 
   damage_tracker_->DisplayResized();
 }
@@ -737,117 +765,6 @@ void VisualDebuggerSync(gfx::OverlayTransform current_display_transform,
 
 }  // namespace
 
-void Display::MaybeLogQuadsProperties(
-    AggregatedRenderPass& last_render_pass,
-    const SurfaceDamageRectList* surface_damage_rect_list) {
-  // A restraint on how frequently we log quad infos in number of frames.
-  constexpr double kLogQuadInfoProbability = 1.0 / 20000;
-  if (!metrics_subsampler_.ShouldSample(kLogQuadInfoProbability)) {
-    return;
-  }
-  base::ElapsedTimer logging_timer;
-  int num_nonopaque_quads = 0;
-  int num_roundedcorners_quads = 0;
-  int num_transformation_quads = 0;
-  int num_nonaligned_quads = 0;
-  int num_nonpixelaligned_quads = 0;
-  int num_solid_quads = 0;
-  int num_scaled_quads = 0;
-  int num_failed_candidate = 0;
-
-  OverlayCandidateFactory::OverlayContext context;
-  context.is_delegated_context = true;
-  context.supports_clip_rect = true;
-  context.supports_out_of_window_clip_rect = true;
-  context.supports_arbitrary_transform = true;
-  context.supports_mask_filter = true;
-  context.transform_and_clip_rpdq = true;
-  context.supports_flip_rotate_transform = true;
-
-  SkM44 color_matrix;
-  // auto resource_provider = std::make_unique<DisplayResourceProviderSkia>();
-  base::flat_map<AggregatedRenderPassId,
-                 raw_ptr<cc::FilterOperations, CtnExperimental>>
-      render_pass_filters;
-  render_pass_filters[last_render_pass.id] = &(last_render_pass.filters);
-  OverlayCandidateFactory candidate_factory = OverlayCandidateFactory(
-      &last_render_pass, resource_provider_.get(), surface_damage_rect_list,
-      &color_matrix, gfx::RectF(), &render_pass_filters, context);
-
-  OverlayCandidate candidate;
-
-  for (auto* quad : last_render_pass.quad_list) {
-    auto result = candidate_factory.FromDrawQuad(quad, candidate);
-    if (result == OverlayCandidate::CandidateStatus::kFailNotAxisAligned ||
-        result ==
-            OverlayCandidate::CandidateStatus::kFailNotAxisAligned3dTransform ||
-        result ==
-            OverlayCandidate::CandidateStatus::kFailNotAxisAligned2dShear ||
-        result ==
-            OverlayCandidate::CandidateStatus::kFailNotAxisAligned2dRotation) {
-      num_nonaligned_quads++;
-    }
-
-    if (result != OverlayCandidate::CandidateStatus::kSuccess) {
-      num_failed_candidate++;
-    }
-
-    if (!candidate.rounded_corners.IsEmpty()) {
-      num_roundedcorners_quads++;
-    }
-    if (!candidate.is_opaque) {
-      num_nonopaque_quads++;
-    }
-    if (!std::holds_alternative<gfx::OverlayTransform>(candidate.transform) ||
-        std::get<gfx::OverlayTransform>(candidate.transform) !=
-            gfx::OVERLAY_TRANSFORM_NONE) {
-      num_transformation_quads++;
-    }
-    if (candidate.is_solid_color) {
-      num_solid_quads++;
-    }
-    auto rect = OverlayCandidate::DisplayRectInTargetSpace(candidate);
-    if (IsNearestRectWithinDistance(rect,
-                                    std::numeric_limits<float>::epsilon())) {
-      num_nonpixelaligned_quads++;
-    }
-    UMA_HISTOGRAM_ENUMERATION(
-        "Compositing.Display.Draw.LastPass.Quads.ColorSpacePrimaryID",
-        candidate.color_space.GetPrimaryID());
-    UMA_HISTOGRAM_ENUMERATION(
-        "Compositing.Display.Draw.LastPass.Quads.ColorSpaceTransferID",
-        candidate.color_space.GetTransferID());
-    gfx::RectF uv_rect = candidate.uv_rect;
-    candidate_factory.HandleClipAndSubsampling(candidate);
-    if (uv_rect != candidate.uv_rect) {
-      num_scaled_quads++;
-    }
-  }
-
-  UMA_HISTOGRAM_COUNTS_100("Compositing.Display.Draw.LastPass.Quads",
-                           last_render_pass.quad_list.size());
-  UMA_HISTOGRAM_COUNTS_100("Compositing.Display.Draw.LastPass.Quads.NonOpaque",
-                           num_nonopaque_quads);
-  UMA_HISTOGRAM_COUNTS_100(
-      "Compositing.Display.Draw.LastPass.Quads.RoundedCorners",
-      num_roundedcorners_quads);
-  UMA_HISTOGRAM_COUNTS_100("Compositing.Display.Draw.Quads.Transformations",
-                           num_transformation_quads);
-  UMA_HISTOGRAM_COUNTS_100("Compositing.Display.Draw.Quads.NonAligned",
-                           num_nonaligned_quads);
-  UMA_HISTOGRAM_COUNTS_100("Compositing.Display.Draw.Quads.NonPixelAligned",
-                           num_nonpixelaligned_quads);
-  UMA_HISTOGRAM_COUNTS_100("Compositing.Display.Draw.Quads.SolidColor",
-                           num_solid_quads);
-  UMA_HISTOGRAM_COUNTS_100("Compositing.Display.Draw.Quads.Scaled",
-                           num_scaled_quads);
-  UMA_HISTOGRAM_COUNTS_100("Compositing.Display.Draw.Quads.FailedCandidate",
-                           num_failed_candidate);
-
-  UMA_HISTOGRAM_COUNTS_1M("Compositing.Display.Draw.Quads.LoggingTimeUs",
-                          logging_timer.Elapsed().InMicroseconds());
-}
-
 void Display::StartTrackingOverdraw(int interval_length_in_seconds) {
   CHECK(!overdraw_tracker_);
 
@@ -957,8 +874,8 @@ bool Display::DrawAndSwap(const DrawAndSwapParams& params) {
   AggregatedFrame frame;
   {
     FrameIntervalDecider::ScopedAggregate scoped_interval_decider(
-        frame_interval_decider_->WrapAggregate(*surface_manager_,
-                                               params.frame_time));
+        frame_interval_decider_->WrapAggregate(
+            *surface_manager_, params.begin_frame_args.frame_time));
     gfx::Rect target_damage_bounding_rect;
     if (output_surface_->capabilities().supports_target_damage)
       target_damage_bounding_rect = renderer_->GetTargetDamageBoundingRect();
@@ -1035,12 +952,6 @@ bool Display::DrawAndSwap(const DrawAndSwapParams& params) {
   bool have_damage = false;
   auto& last_render_pass = *frame.render_pass_list.back();
 
-  // log quad types every so often if experiment and n-th frame
-  if (features::ShouldLogFrameQuadInfo()) {
-    MaybeLogQuadsProperties(last_render_pass,
-                            &(frame.surface_damage_rect_list_));
-  }
-
   // The CompositorFrame provided by the SurfaceAggregator includes the display
   // transform while |current_surface_size_| is the pre-transform size received
   // from the client.
@@ -1110,18 +1021,13 @@ bool Display::DrawAndSwap(const DrawAndSwapParams& params) {
     const auto& main_surfaces =
         surface_manager_->GetSurfacesReferencedByParent(current_surface_id_);
 
-    const bool interactive_only_adpf_renderer = base::FeatureList::IsEnabled(
-        features::kEnableInteractiveOnlyADPFRenderer);
     bool has_interactive_surface = false;
-    if (interactive_only_adpf_renderer) {
-      for (const auto& surface_id :
-           aggregator_->previous_contained_surfaces()) {
-        surface = surface_manager_->GetSurfaceForId(surface_id);
-        if (surface && surface->HasActiveFrame() &&
-            surface->GetActiveFrameMetadata().is_handling_interaction) {
-          has_interactive_surface = true;
-          break;
-        }
+    for (const auto& surface_id : aggregator_->previous_contained_surfaces()) {
+      surface = surface_manager_->GetSurfaceForId(surface_id);
+      if (surface && surface->HasActiveFrame() &&
+          surface->GetActiveFrameMetadata().is_handling_interaction) {
+        has_interactive_surface = true;
+        break;
       }
     }
 
@@ -1137,8 +1043,7 @@ bool Display::DrawAndSwap(const DrawAndSwapParams& params) {
         const bool is_for_main_frame =
             surface_id == current_surface_id_ ||
             main_surfaces.find(surface_id) != main_surfaces.end();
-        if (interactive_only_adpf_renderer &&
-            surface_id != current_surface_id_) {
+        if (surface_id != current_surface_id_) {
           const bool is_handling_interaction =
               surface->HasActiveFrame() &&
               surface->GetActiveFrameMetadata().is_handling_interaction;
@@ -1164,14 +1069,20 @@ bool Display::DrawAndSwap(const DrawAndSwapParams& params) {
       }
     }
 
-    HintSession::BoostType boost_type = HintSession::BoostType::kDefault;
-    if (IsScroll(frame.latency_info)) {
-      boost_type = HintSession::BoostType::kScrollBoost;
+    if (IsScroll(frame.latency_info) &&
+        base::FeatureList::IsEnabled(
+            features::kEnableADPFScrollNoRendererMain)) {
+      // Exclude renderer main thread(s) from the session during a scroll.
+      renderer_main_thread_ids.clear();
     }
+
     presentation_group_timing.OnDraw(
-        params.frame_time, draw_timer->start_time(),
-        std::move(animation_thread_ids), std::move(renderer_main_thread_ids),
-        boost_type);
+        params.begin_frame_args.frame_time, params.begin_frame_args.interval,
+        draw_timer->start_time(), std::move(animation_thread_ids),
+        std::move(renderer_main_thread_ids),
+        /*boost_type=*/HintSession::BoostType::kDefault,
+        params.choreographer_vsync_id.value_or(0), params.deadline,
+        params.preferred_deadline, params.throttled_adjusted_frame_time);
 
     bool has_interactive_frame = false;
     bool has_animated_frame = false;
@@ -1233,9 +1144,6 @@ bool Display::DrawAndSwap(const DrawAndSwapParams& params) {
       scheduler_->DidSwapBuffers();
     }
     pending_swaps_++;
-
-    UMA_HISTOGRAM_COUNTS_100("Compositing.Display.PendingSwaps",
-                             pending_swaps_);
 
     RecordFrameTypes(has_interactive_frame, has_animated_frame);
 
@@ -1308,12 +1216,9 @@ void Display::DidReceiveSwapBuffersAck(
         data->set_display_trace_id(params.swap_trace_id);
       });
 
-  // Both cases require full damage. That is, if buffers are recreated or
-  // non-simple overlays failed, a frame is expected to be sent again.
+  // Buffers being recreated require full damage. The frame is expected to be sent again.
   if (params.swap_response.result ==
-          gfx::SwapResult::SWAP_NAK_RECREATE_BUFFERS ||
-      params.swap_response.result ==
-          gfx::SwapResult::SWAP_NON_SIMPLE_OVERLAYS_FAILED) {
+      gfx::SwapResult::SWAP_NAK_RECREATE_BUFFERS) {
     aggregator_->SetFullDamageForSurface(current_surface_id_);
     damage_tracker_->SetRootSurfaceDamaged();
   }
@@ -1359,7 +1264,6 @@ void Display::DidReceiveSwapBuffersAck(
   // Check that the swap timings correspond with the timestamp from when
   // the swap was triggered. Note that not all output surfaces provide timing
   // information, hence the check for a valid swap_start.
-
   if (!timings.swap_start.is_null()) {
     DCHECK_LE(draw_start_timestamp, timings.swap_start);
     base::TimeDelta draw_start_to_swap_start =
@@ -1367,6 +1271,22 @@ void Display::DidReceiveSwapBuffersAck(
     UMA_HISTOGRAM_CUSTOM_MICROSECONDS_TIMES(
         "Compositing.Display.DrawToSwapUs", draw_start_to_swap_start,
         kDrawToSwapMin, kDrawToSwapMax, kDrawToSwapUsBuckets);
+  }
+
+  if (!timings.gpu_started_overlay.is_null()) {
+    DCHECK_LE(draw_start_timestamp, timings.gpu_started_overlay);
+    TRACE_EVENT_ASYNC_BEGIN_WITH_TIMESTAMP0("viz", "DrawToScheduleOverlay",
+                                            params.swap_trace_id,
+                                            draw_start_timestamp);
+    TRACE_EVENT_ASYNC_END_WITH_TIMESTAMP0("viz", "DrawToScheduleOverlay",
+                                          params.swap_trace_id,
+                                          timings.gpu_started_overlay);
+    base::TimeDelta draw_start_to_overlay_start =
+        timings.gpu_started_overlay - draw_start_timestamp;
+    UMA_HISTOGRAM_CUSTOM_MICROSECONDS_TIMES(
+        "Compositing.Display.DrawToScheduleOverlay",
+        draw_start_to_overlay_start, kDrawToSwapMin, kDrawToSwapMax,
+        kDrawToSwapUsBuckets);
   }
 
   if (!timings.viz_scheduled_draw.is_null()) {
@@ -1442,6 +1362,14 @@ void Display::DidReceivePresentationFeedback(
   }
 
   presentation_group_timing.OnPresent(copy_feedback);
+  if (scheduler_) {
+    scheduler_->OnPresentationFeedback(
+        copy_feedback, presentation_group_timing.choreographer_vsync_id(),
+        presentation_group_timing.frame_time(),
+        presentation_group_timing.interval(),
+        presentation_group_timing.deadline(),
+        presentation_group_timing.preferred());
+  }
   pending_presentation_group_timings_.pop_front();
 }
 

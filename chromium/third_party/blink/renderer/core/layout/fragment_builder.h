@@ -7,7 +7,7 @@
 
 #include "third_party/blink/renderer/core/animation/animation_trigger.h"
 #include "third_party/blink/renderer/core/core_export.h"
-#include "third_party/blink/renderer/core/dom/named_animation_trigger_map.h"
+#include "third_party/blink/renderer/core/dom/trigger_scoped_name.h"
 #include "third_party/blink/renderer/core/layout/anchor_map.h"
 #include "third_party/blink/renderer/core/layout/block_node.h"
 #include "third_party/blink/renderer/core/layout/break_appeal.h"
@@ -21,6 +21,7 @@
 #include "third_party/blink/renderer/core/layout/style_variant.h"
 #include "third_party/blink/renderer/core/style/computed_style.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_map.h"
+#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/text/writing_direction_mode.h"
 #include "third_party/blink/renderer/platform/wtf/allocator/allocator.h"
 
@@ -237,6 +238,8 @@ class CORE_EXPORT FragmentBuilder {
   void AddOutOfFlowChildCandidate(const BlockNode&,
                                   const LogicalStaticPosition&,
                                   bool allow_top_layer_nodes = false);
+  void AddOutOfFlowChildCandidate(const BlockNode& child,
+                                  const BlockBreakToken& child_break_token);
 
   // This should only be used for inline-level OOF-positioned nodes.
   // |inline_container_writing_direction| is the current writing mode direction
@@ -340,6 +343,7 @@ class CORE_EXPORT FragmentBuilder {
 
   void SetHasOutOfFlowInFragmentainerSubtree(
       bool has_out_of_flow_in_fragmentainer_subtree) {
+    DCHECK(!RuntimeEnabledFeatures::FragmentedOofInCbEnabled());
     has_out_of_flow_in_fragmentainer_subtree_ =
         has_out_of_flow_in_fragmentainer_subtree;
   }
@@ -406,8 +410,6 @@ class CORE_EXPORT FragmentBuilder {
 
   void SetIsBlockInInline() { is_block_in_inline_ = true; }
   void SetIsLineForParallelFlow() { is_line_for_parallel_flow_ = true; }
-
-  void SetHasBlockFragmentation() { has_block_fragmentation_ = true; }
 
   // Set for any node that establishes a fragmentation context, such as multicol
   // containers.
@@ -496,22 +498,10 @@ class CORE_EXPORT FragmentBuilder {
     // We should only calculate the block-size of the tallest piece of
     // unbreakable content during the initial column balancing pass, when we
     // haven't set a tentative fragmentainer block-size yet.
-    DCHECK(IsInitialColumnBalancingPass());
+    DCHECK(space_.IsInitialColumnBalancingPass());
 
     tallest_unbreakable_block_size_ =
         std::max(tallest_unbreakable_block_size_, unbreakable_block_size);
-  }
-
-  void SetIsInitialColumnBalancingPass() {
-    // Note that we have no dedicated flag for being in the initial column
-    // balancing pass here. We'll just bump tallest_unbreakable_block_size_ to
-    // 0, so that LayoutResult knows that we need to store unbreakable
-    // block-size.
-    DCHECK_EQ(tallest_unbreakable_block_size_, LayoutUnit::Min());
-    tallest_unbreakable_block_size_ = LayoutUnit();
-  }
-  bool IsInitialColumnBalancingPass() const {
-    return tallest_unbreakable_block_size_ >= LayoutUnit();
   }
 
   void SetHasRunningAnchorTransformAnimation() {
@@ -581,8 +571,9 @@ class CORE_EXPORT FragmentBuilder {
   void PropagateSizeDependentData();
 
   void PropagateNamedTriggers(const PhysicalFragment& child);
-  void CreateNamedTriggersForSelf();
-  GCedNamedAnimationTriggerMap& EnsureNamedTriggers();
+  TriggerScopedNameMap& EnsureNamedTriggers();
+  void SetNamedTrigger(const TriggerScopedName& trigger_scoped_name,
+                       const Element* trigger_owner);
 
   LayoutInputNode node_;
   const ConstraintSpace& space_;
@@ -603,7 +594,7 @@ class CORE_EXPORT FragmentBuilder {
   GCedHeapVector<Member<Element>>* snap_areas_ = nullptr;
   // Animation triggers belonging to the element to which this fragment belongs,
   // or an element in its subtree.
-  GCedNamedAnimationTriggerMap* named_triggers_ = nullptr;
+  TriggerScopedNameMap* named_triggers_ = nullptr;
   // [1] https://drafts.csswg.org/css-scroll-snap-2/#scroll-initial-target
   const LayoutObject* scroll_start_target_ = nullptr;
   AnchorMap* anchor_map_ = nullptr;
@@ -666,7 +657,6 @@ class CORE_EXPORT FragmentBuilder {
   bool has_descendant_that_depends_on_percentage_block_size_ = false;
   bool has_orthogonal_fallback_size_descendant_ = false;
   bool may_have_descendant_above_block_start_ = false;
-  bool has_block_fragmentation_ = false;
   bool is_fragmentation_context_root_ = false;
   bool is_hidden_for_paint_ = false;
   bool is_opaque_ = false;

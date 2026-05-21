@@ -60,6 +60,15 @@ AX_BASE_EXPORT bool IsAccessibilityPruneRedundantInlineConnectivityEnabled();
 AX_BASE_EXPORT BASE_DECLARE_FEATURE(kAccessibilityTextFormatting);
 AX_BASE_EXPORT bool IsAccessibilityTextFormattingEnabled();
 
+// Enables handling of occluding views belonging to overlaid "
+// "browser's UI.
+AX_BASE_EXPORT BASE_DECLARE_FEATURE(kAccessibilityHandleOccludingViews);
+AX_BASE_EXPORT bool IsAccessibilityHandleOccludingViewsEnabled();
+
+// Enables text change types for text changed events.
+AX_BASE_EXPORT BASE_DECLARE_FEATURE(kAccessibilityTextChangeTypes);
+AX_BASE_EXPORT bool IsAccessibilityTextChangeTypesEnabled();
+
 // Enables the addition of `labeledby` relationships in the accessibility tree.
 AX_BASE_EXPORT BASE_DECLARE_FEATURE(kAccessibilityLabeledBy);
 AX_BASE_EXPORT bool IsAccessibilityLabeledByEnabled();
@@ -77,11 +86,6 @@ AX_BASE_EXPORT bool IsViewsAccessibilitySerializeOnDataChangeEnabled();
 AX_BASE_EXPORT BASE_DECLARE_FEATURE(
     kAccessibilityPerformanceMeasurementExperiment);
 AX_BASE_EXPORT bool IsAccessibilityPerformanceMeasurementExperimentEnabled();
-
-// Use AXBitset to save boolean attributes in ui/accessibility instead of a
-// vector.
-AX_BASE_EXPORT BASE_DECLARE_FEATURE(kAccessibilityUseAXBitset);
-AX_BASE_EXPORT bool IsAccessibilityUseAXBitsetEnabled();
 
 enum class AccessibilityPerformanceMeasurementExperimentGroup {
   kAXModeComplete,
@@ -143,12 +147,6 @@ AX_BASE_EXPORT bool IsUseAXPositionForDocumentMarkersEnabled();
 AX_BASE_EXPORT BASE_DECLARE_FEATURE(kAXRandomizedStressTests);
 AX_BASE_EXPORT bool IsAXRandomizedStressTestsEnabled();
 
-// When enabled, allows the content of <address> tags to be used in
-// calculating their ancestors' accessible names.
-// TODO(crbug.com/443765360): Remove killswitch after stability period.
-AX_BASE_EXPORT BASE_DECLARE_FEATURE(kAXObjectSupportsNameFromAddressContent);
-AX_BASE_EXPORT bool IsAXObjectSupportsNameFromAddressContentEnabled();
-
 // Enable the experimental on-screen AXMode .
 // TODO(accessibility): Only turn on the experimental On-Screen mode for when
 // screen readers are not running. This is an experimental mode for now, so this
@@ -188,6 +186,12 @@ AX_BASE_EXPORT BASE_DECLARE_FEATURE(kUiaProvider);
 // side-effects on assistive technologies.
 // TODO(https://crbug.com/402375302): Remove in M139.
 AX_BASE_EXPORT BASE_DECLARE_FEATURE(kUiaEventOptimization);
+
+// Enables MathML support in Windows UI Automation (UIA) implementation by
+// adding a custom property for exposing mathematical content to assistive
+// technologies.
+AX_BASE_EXPORT BASE_DECLARE_FEATURE(kUiaMathMlSupport);
+AX_BASE_EXPORT bool IsUiaMathMlSupportEnabled();
 #endif  // BUILDFLAG(IS_WIN)
 
 #if BUILDFLAG(IS_CHROMEOS)
@@ -243,35 +247,14 @@ AX_BASE_EXPORT bool IsAccessibilityDisableTouchpadEnabled();
 AX_BASE_EXPORT BASE_DECLARE_FEATURE(kAccessibilityFlashScreenFeature);
 AX_BASE_EXPORT bool IsAccessibilityFlashScreenFeatureEnabled();
 
-// Controls whether the bounce keys feature is available.
-AX_BASE_EXPORT BASE_DECLARE_FEATURE(kAccessibilityBounceKeys);
-AX_BASE_EXPORT bool IsAccessibilityBounceKeysEnabled();
-
-// Controls whether the slow keys feature is available.
-AX_BASE_EXPORT BASE_DECLARE_FEATURE(kAccessibilitySlowKeys);
-AX_BASE_EXPORT bool IsAccessibilitySlowKeysEnabled();
-
-AX_BASE_EXPORT BASE_DECLARE_FEATURE(
-    kAccessibilityManifestV3AccessibilityCommon);
-AX_BASE_EXPORT bool IsAccessibilityManifestV3EnabledForAccessibilityCommon();
-
-AX_BASE_EXPORT BASE_DECLARE_FEATURE(kAccessibilityManifestV3BrailleIme);
-AX_BASE_EXPORT bool IsAccessibilityManifestV3EnabledForBrailleIme();
-
 AX_BASE_EXPORT BASE_DECLARE_FEATURE(kAccessibilityManifestV3ChromeVox);
 AX_BASE_EXPORT bool IsAccessibilityManifestV3EnabledForChromeVox();
-
-AX_BASE_EXPORT BASE_DECLARE_FEATURE(kAccessibilityManifestV3EnhancedNetworkTts);
-AX_BASE_EXPORT bool IsAccessibilityManifestV3EnabledForEnhancedNetworkTts();
 
 AX_BASE_EXPORT BASE_DECLARE_FEATURE(kAccessibilityManifestV3EspeakNGTts);
 AX_BASE_EXPORT bool IsAccessibilityManifestV3EnabledForEspeakNGTts();
 
 AX_BASE_EXPORT BASE_DECLARE_FEATURE(kAccessibilityManifestV3GoogleTts);
 AX_BASE_EXPORT bool IsAccessibilityManifestV3EnabledForGoogleTts();
-
-AX_BASE_EXPORT BASE_DECLARE_FEATURE(kAccessibilityManifestV3SelectToSpeak);
-AX_BASE_EXPORT bool IsAccessibilityManifestV3EnabledForSelectToSpeak();
 
 AX_BASE_EXPORT BASE_DECLARE_FEATURE(kAccessibilityManifestV3SwitchAccess);
 AX_BASE_EXPORT bool IsAccessibilityManifestV3EnabledForSwitchAccess();
@@ -358,6 +341,10 @@ AX_BASE_EXPORT bool IsReadAnythingReadAloudTSTextSegmentationEnabled();
 AX_BASE_EXPORT BASE_DECLARE_FEATURE(kReadAnythingOmniboxChip);
 AX_BASE_EXPORT bool IsReadAnythingOmniboxChipEnabled();
 
+// Enable the line focus feature for Read Anything.
+AX_BASE_EXPORT BASE_DECLARE_FEATURE(kReadAnythingLineFocus);
+AX_BASE_EXPORT bool IsReadAnythingLineFocusEnabled();
+
 // Enable images to be distilled via algorithm. Should be disabled by
 // default.
 AX_BASE_EXPORT BASE_DECLARE_FEATURE(kReadAnythingImagesViaAlgorithm);
@@ -375,6 +362,11 @@ AX_BASE_EXPORT bool IsReadAnythingDocsLoadMoreButtonEnabled();
 // Enable ReadabilityJS as the distillation source for Reading Mode.
 AX_BASE_EXPORT BASE_DECLARE_FEATURE(kReadAnythingWithReadability);
 AX_BASE_EXPORT bool IsReadAnythingWithReadabilityEnabled();
+
+// Enable links when the Readability distillation source for Reading Mode.
+// Intended for safer rolling out of the Readability flag.
+AX_BASE_EXPORT BASE_DECLARE_FEATURE(kReadAnythingWithReadabilityAllowLinks);
+AX_BASE_EXPORT bool IsReadAnythingWithReadabilityAllowLinksEnabled();
 
 // Write some ScreenAI library debug data in /tmp.
 AX_BASE_EXPORT BASE_DECLARE_FEATURE(kScreenAIDebugMode);

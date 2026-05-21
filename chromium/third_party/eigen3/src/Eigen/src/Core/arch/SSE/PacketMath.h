@@ -91,6 +91,8 @@ struct shuffle_mask {
   enum { mask = (s) << 6 | (r) << 4 | (q) << 2 | (p) };
 };
 
+#define SIGN_MASK_I32 static_cast<int32_t>(0x80000000)
+
 // TODO: change the implementation of all swizzle* ops from macro to template,
 #define vec4f_swizzle1(v, p, q, r, s) \
   Packet4f(_mm_castsi128_ps(_mm_shuffle_epi32(_mm_castps_si128(v), (shuffle_mask<p, q, r, s>::mask))))
@@ -183,6 +185,7 @@ struct packet_traits<float> : default_packet_traits {
     HasReciprocal = EIGEN_FAST_MATH,
     HasSin = EIGEN_FAST_MATH,
     HasCos = EIGEN_FAST_MATH,
+    HasTan = EIGEN_FAST_MATH,
     HasACos = 1,
     HasASin = 1,
     HasATan = 1,
@@ -216,6 +219,7 @@ struct packet_traits<double> : default_packet_traits {
     HasDiv = 1,
     HasSin = EIGEN_FAST_MATH,
     HasCos = EIGEN_FAST_MATH,
+    HasTan = EIGEN_FAST_MATH,
     HasTanh = EIGEN_FAST_MATH,
     HasErf = EIGEN_FAST_MATH,
     HasErfc = EIGEN_FAST_MATH,
@@ -558,7 +562,7 @@ EIGEN_STRONG_INLINE Packet4f paddsub<Packet4f>(const Packet4f& a, const Packet4f
 #ifdef EIGEN_VECTORIZE_SSE3
   return _mm_addsub_ps(a, b);
 #else
-  const Packet4f mask = _mm_castsi128_ps(_mm_setr_epi32(0x80000000, 0x0, 0x80000000, 0x0));
+  const Packet4f mask = _mm_castsi128_ps(_mm_setr_epi32(SIGN_MASK_I32, 0x0, SIGN_MASK_I32, 0x0));
   return padd(a, pxor(mask, b));
 #endif
 }
@@ -570,19 +574,19 @@ EIGEN_STRONG_INLINE Packet2d paddsub<Packet2d>(const Packet2d& a, const Packet2d
 #ifdef EIGEN_VECTORIZE_SSE3
   return _mm_addsub_pd(a, b);
 #else
-  const Packet2d mask = _mm_castsi128_pd(_mm_setr_epi32(0x0, 0x80000000, 0x0, 0x0));
+  const Packet2d mask = _mm_castsi128_pd(_mm_setr_epi32(0x0, SIGN_MASK_I32, 0x0, 0x0));
   return padd(a, pxor(mask, b));
 #endif
 }
 
 template <>
 EIGEN_STRONG_INLINE Packet4f pnegate(const Packet4f& a) {
-  const Packet4f mask = _mm_castsi128_ps(_mm_setr_epi32(0x80000000, 0x80000000, 0x80000000, 0x80000000));
+  const Packet4f mask = _mm_castsi128_ps(_mm_setr_epi32(SIGN_MASK_I32, SIGN_MASK_I32, SIGN_MASK_I32, SIGN_MASK_I32));
   return _mm_xor_ps(a, mask);
 }
 template <>
 EIGEN_STRONG_INLINE Packet2d pnegate(const Packet2d& a) {
-  const Packet2d mask = _mm_castsi128_pd(_mm_setr_epi32(0x0, 0x80000000, 0x0, 0x80000000));
+  const Packet2d mask = _mm_castsi128_pd(_mm_setr_epi32(0x0, SIGN_MASK_I32, 0x0, SIGN_MASK_I32));
   return _mm_xor_pd(a, mask);
 }
 template <>
@@ -1247,7 +1251,7 @@ EIGEN_STRONG_INLINE Packet4f pabs(const Packet4f& a) {
 }
 template <>
 EIGEN_STRONG_INLINE Packet2d pabs(const Packet2d& a) {
-  const __m128i mask = _mm_setr_epi32(0xFFFFFFFF, 0x7FFFFFFF, 0xFFFFFFFF, 0x7FFFFFFF);
+  const __m128i mask = _mm_setr_epi32(-1, 0x7FFFFFFF, -1, 0x7FFFFFFF);
   return _mm_castsi128_pd(_mm_and_si128(mask, _mm_castpd_si128(a)));
 }
 template <>

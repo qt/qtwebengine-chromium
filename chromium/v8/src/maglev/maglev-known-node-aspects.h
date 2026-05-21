@@ -9,6 +9,8 @@
 
 #include "src/base/logging.h"
 #include "src/maglev/maglev-ir.h"
+#include "src/maglev/maglev-node-type.h"
+#include "src/objects/contexts.h"
 
 namespace v8 {
 namespace internal {
@@ -87,7 +89,11 @@ class NodeInfo {
   ValueNode* get_or_set_##name(Function create) {                           \
     ValueNode* existing_alt = name();                                       \
     if (existing_alt != nullptr) return existing_alt;                       \
-    return set_##name(create());                                            \
+    ValueNode* new_alt = create();                                          \
+    if (new_alt) {                                                          \
+      return set_##name(new_alt);                                           \
+    }                                                                       \
+    return nullptr;                                                         \
   }
     ALTERNATIVES(API)
 #undef API
@@ -106,7 +112,6 @@ class NodeInfo {
           return float64();
         case UseRepresentation::kHoleyFloat64:
           return holey_float64();
-        case UseRepresentation::kShiftedInt53:
         case UseRepresentation::kUint32:
           UNREACHABLE();
       }
@@ -351,38 +356,6 @@ class KnownNodeAspects {
     return {};
   }
 
-  NodeType GetType(compiler::JSHeapBroker* broker, ValueNode* node) const {
-    // We first check the KnownNodeAspects in order to return the most precise
-    // type possible.
-    auto info = TryGetInfoFor(node);
-    if (info == nullptr) {
-      // If this node has no NodeInfo (or not known type in its NodeInfo), we
-      // fall back to its static type.
-      return node->GetStaticType(broker);
-    }
-    NodeType actual_type =
-        IntersectType(info->type(), node->GetStaticType(broker));
-    if (node->Is<ReturnedValue>()) {
-      // The returned value might be more precise than the one stored in the
-      // node info.
-      actual_type =
-          IntersectType(actual_type, GetType(broker, node->input_node(0)));
-    }
-#ifdef DEBUG
-    NodeType static_type = node->GetStaticType(broker);
-    // TODO(428667907): Ideally we should bail out early for the kNone type.
-    if (!NodeTypeIs(actual_type, static_type, NodeTypeIsVariant::kAllowNone)) {
-      // In case we needed a numerical alternative of a smi value, the type
-      // must generalize. In all other cases the node info type should reflect
-      // the actual type.
-      DCHECK(static_type == NodeType::kSmi &&
-             actual_type == NodeType::kNumber &&
-             !TryGetInfoFor(node)->alternative().has_none());
-    }
-#endif  // DEBUG
-    return actual_type;
-  }
-
   bool CheckType(compiler::JSHeapBroker* broker, ValueNode* node, NodeType type,
                  NodeType* current_type = nullptr) {
     NodeType static_type = node->GetStaticType(broker);
@@ -453,18 +426,6 @@ class KnownNodeAspects {
       any_map_for_any_node_is_unstable_ = true;
     }
     return false;
-  }
-
-  // Returns true if we statically know that {lhs} and {rhs} have disjoint
-  // types.
-  bool HaveDisjointTypes(compiler::JSHeapBroker* broker, ValueNode* lhs,
-                         ValueNode* rhs) {
-    return HasDisjointType(broker, lhs, GetType(broker, rhs));
-  }
-
-  bool HasDisjointType(compiler::JSHeapBroker* broker, ValueNode* lhs,
-                       NodeType rhs_type) {
-    return IsEmptyNodeType(IntersectType(GetType(broker, lhs), rhs_type));
   }
 
   void Merge(const KnownNodeAspects& other, Zone* zone);
@@ -638,13 +599,19 @@ class KnownNodeAspects {
   // Returns true if value was added to the cache, or false if the value updated
   // the cache.
   bool SetContextCachedValue(ValueNode* context, int offset, ValueNode* value) {
-    auto it = loaded_context_slots_.find({context, offset});
-    if (it == loaded_context_slots_.end()) {
-      loaded_context_slots_.insert({{context, offset}, value});
-      return true;
+    auto& target_map =
+        (offset == Context::OffsetOfElementAt(Context::PREVIOUS_INDEX))
+            ? loaded_context_constants_
+            : loaded_context_slots_;
+
+    auto [it, inserted] = target_map.insert({{context, offset}, value});
+
+    if (!inserted) {
+      it->second = value;
+      return false;
     }
-    it->second = value;
-    return false;
+
+    return true;
   }
   bool HasContextCacheValue(ValueNode* context, int offset,
                             ContextSlotMutability slot_mutability) {
@@ -697,6 +664,8 @@ class KnownNodeAspects {
     }
   }
 
+  void PrintLoadedProperties();
+
   explicit KnownNodeAspects(Zone* zone)
       : loaded_constant_properties_(zone),
         loaded_properties_(zone),
@@ -719,6 +688,48 @@ class KnownNodeAspects {
     NodeBase* node;
     uint32_t effect_epoch;
   };
+
+  // These can call GetTypeUnchecked directly. Other uses should ideally go
+  // through MaglevReducer::GetType or similar and add type assertions if
+  // v8_flags.maglev_assert_types is on.
+  // TODO(477184397): Consider unfriending.
+  template <typename U>
+  friend class MaglevReducer;
+  friend class RecomputeKnownNodeAspectsProcessor;
+  friend class MergePointInterpreterFrameState;
+
+  NodeType GetTypeUnchecked(compiler::JSHeapBroker* broker,
+                            ValueNode* node) const {
+    // We first check the KnownNodeAspects in order to return the most precise
+    // type possible.
+    auto info = TryGetInfoFor(node);
+    if (info == nullptr) {
+      // If this node has no NodeInfo (or not known type in its NodeInfo), we
+      // fall back to its static type.
+      return node->GetStaticType(broker);
+    }
+    NodeType actual_type =
+        IntersectType(info->type(), node->GetStaticType(broker));
+    if (node->Is<ReturnedValue>()) {
+      // The returned value might be more precise than the one stored in the
+      // node info.
+      actual_type = IntersectType(
+          actual_type, GetTypeUnchecked(broker, node->input_node(0)));
+    }
+#ifdef DEBUG
+    NodeType static_type = node->GetStaticType(broker);
+    // TODO(428667907): Ideally we should bail out early for the kNone type.
+    if (!NodeTypeIs(actual_type, static_type, NodeTypeIsVariant::kAllowNone)) {
+      // In case we needed a numerical alternative of a smi value, the type
+      // must generalize. In all other cases the node info type should reflect
+      // the actual type.
+      DCHECK(static_type == NodeType::kSmi &&
+             actual_type == NodeType::kNumber &&
+             !TryGetInfoFor(node)->alternative().has_none());
+    }
+#endif  // DEBUG
+    return actual_type;
+  }
 
   // Valid across side-effecting calls, as long as we install a dependency.
   LoadedPropertyMap loaded_constant_properties_;

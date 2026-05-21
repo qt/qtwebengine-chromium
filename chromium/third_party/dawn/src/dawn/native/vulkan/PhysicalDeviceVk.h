@@ -25,8 +25,8 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifndef SRC_DAWN_NATIVE_VULKAN_ADAPTERVK_H_
-#define SRC_DAWN_NATIVE_VULKAN_ADAPTERVK_H_
+#ifndef SRC_DAWN_NATIVE_VULKAN_PHYSICALDEVICEVK_H_
+#define SRC_DAWN_NATIVE_VULKAN_PHYSICALDEVICEVK_H_
 
 #include <memory>
 #include <vector>
@@ -71,7 +71,9 @@ class PhysicalDevice : public PhysicalDeviceBase {
     bool IsAndroidHuawei() const;
     bool IsSwiftshader() const;
 
-    uint32_t GetDefaultComputeSubgroupSize() const;
+    std::optional<uint32_t> GetDefaultComputeSubgroupSize() const;
+    std::vector<SubgroupMatrixConfig> EnumerateSubgroupMatrixConfigs(
+        const TogglesState& toggles) const;
 
     ResultOrError<PhysicalDeviceSurfaceCapabilities> GetSurfaceCapabilities(
         InstanceBase* instance,
@@ -100,7 +102,7 @@ class PhysicalDevice : public PhysicalDeviceBase {
         const TogglesState& deviceToggles,
         Ref<DeviceBase::DeviceLostEvent>&& lostEvent) override;
 
-    uint32_t FindDefaultComputeSubgroupSize() const;
+    std::optional<uint32_t> FindDefaultComputeSubgroupSize() const;
     bool CheckSemaphoreSupport(DeviceExt deviceExt,
                                VkExternalSemaphoreHandleTypeFlagBits handleType) const;
 
@@ -109,8 +111,6 @@ class PhysicalDevice : public PhysicalDeviceBase {
     void PopulateBackendFormatCapabilities(
         wgpu::TextureFormat format,
         UnpackedPtr<DawnFormatCapabilities>& capabilities) const override;
-    std::vector<SubgroupMatrixConfig> EnumerateSubgroupMatrixConfigs(
-        const TogglesState& toggles) const;
 
     // Sets core feature level as not being supported and stores `error` with
     // reason why core isn't supported.
@@ -120,7 +120,7 @@ class PhysicalDevice : public PhysicalDeviceBase {
     Ref<VulkanInstance> mVulkanInstance;
     VulkanDeviceInfo mDeviceInfo = {};
 
-    uint32_t mDefaultComputeSubgroupSize = 0;
+    std::optional<uint32_t> mDefaultComputeSubgroupSize;
     bool mSupportsCoreFeatureLevel = true;
     mutable std::unique_ptr<ErrorData> mCoreError;
 
@@ -131,4 +131,4 @@ class PhysicalDevice : public PhysicalDeviceBase {
 
 }  // namespace dawn::native::vulkan
 
-#endif  // SRC_DAWN_NATIVE_VULKAN_ADAPTERVK_H_
+#endif  // SRC_DAWN_NATIVE_VULKAN_PHYSICALDEVICEVK_H_

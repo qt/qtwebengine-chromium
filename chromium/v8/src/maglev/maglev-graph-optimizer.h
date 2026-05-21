@@ -66,7 +66,7 @@ class MaglevGraphOptimizer {
                            info->result_size());
   }
 
-  void AttachExceptionHandlerInfo(Node* node) {
+  void AttachExceptionHandlerInfo(NodeBase* node) {
     DCHECK(node->properties().can_throw());
     DCHECK(current_node()->properties().can_throw());
     DCHECK(!node->Is<CallKnownJSFunction>());
@@ -83,6 +83,19 @@ class MaglevGraphOptimizer {
   }
 
   ReduceResult EmitUnconditionalDeopt(DeoptimizeReason);
+  ReduceResult EmitThrow(Throw::Function function, ValueNode* input);
+
+  ProcessResult DeoptAndTruncate(DeoptimizeReason reason) {
+    ReduceResult result = EmitUnconditionalDeopt(reason);
+    CHECK(result.IsDoneWithAbort());
+    return ProcessResult::kTruncateBlock;
+  }
+  ProcessResult ThrowAndTruncate(Throw::Function function,
+                                 ValueNode* input = nullptr) {
+    ReduceResult result = EmitThrow(function, input);
+    CHECK(result.IsDoneWithAbort());
+    return ProcessResult::kTruncateBlock;
+  }
 
  private:
   MaglevReducer<MaglevGraphOptimizer> reducer_;
@@ -150,7 +163,9 @@ class MaglevGraphOptimizer {
   template <typename NodeT>
   ProcessResult ProcessCheckMaps(NodeT* node, ValueNode* object_map = nullptr);
 
-  ProcessResult EmitAbort(AbortReason);
+  MaybeReduceResult EnsureType(
+      ValueNode* node, NodeType type,
+      DeoptimizeReason reason = DeoptimizeReason::kWrongValue);
 };
 
 }  // namespace maglev

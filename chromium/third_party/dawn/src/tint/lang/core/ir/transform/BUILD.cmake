@@ -63,8 +63,8 @@ tint_add_target(tint_lang_core_ir_transform lib
   lang/core/ir/transform/conversion_polyfill.h
   lang/core/ir/transform/dead_code_elimination.cc
   lang/core/ir/transform/dead_code_elimination.h
-  lang/core/ir/transform/decompose_uniform_access.cc
-  lang/core/ir/transform/decompose_uniform_access.h
+  lang/core/ir/transform/decompose_access.cc
+  lang/core/ir/transform/decompose_access.h
   lang/core/ir/transform/demote_to_helper.cc
   lang/core/ir/transform/demote_to_helper.h
   lang/core/ir/transform/direct_variable_access.cc
@@ -86,10 +86,6 @@ tint_add_target(tint_lang_core_ir_transform lib
   lang/core/ir/transform/remove_uniform_vector_component_loads.h
   lang/core/ir/transform/rename_conflicts.cc
   lang/core/ir/transform/rename_conflicts.h
-  lang/core/ir/transform/resource_binding.cc
-  lang/core/ir/transform/resource_binding.h
-  lang/core/ir/transform/resource_binding_helper.cc
-  lang/core/ir/transform/resource_binding_helper.h
   lang/core/ir/transform/resource_table.cc
   lang/core/ir/transform/resource_table.h
   lang/core/ir/transform/resource_table_helper.cc
@@ -158,7 +154,7 @@ tint_add_target(tint_lang_core_ir_transform_test test
   lang/core/ir/transform/combine_access_instructions_test.cc
   lang/core/ir/transform/conversion_polyfill_test.cc
   lang/core/ir/transform/dead_code_elimination_test.cc
-  lang/core/ir/transform/decompose_uniform_access_test.cc
+  lang/core/ir/transform/decompose_access_test.cc
   lang/core/ir/transform/demote_to_helper_test.cc
   lang/core/ir/transform/direct_variable_access_test.cc
   lang/core/ir/transform/helper_test.h
@@ -170,6 +166,7 @@ tint_add_target(tint_lang_core_ir_transform_test test
   lang/core/ir/transform/remove_terminator_args_test.cc
   lang/core/ir/transform/remove_uniform_vector_component_loads_test.cc
   lang/core/ir/transform/rename_conflicts_test.cc
+  lang/core/ir/transform/resource_table_test.cc
   lang/core/ir/transform/robustness_test.cc
   lang/core/ir/transform/signed_integer_polyfill_test.cc
   lang/core/ir/transform/single_entry_point_test.cc

@@ -919,7 +919,7 @@ FcFontSetMatchInternal (FcFontSet **sets,
 	    char  *p;
 	    FcBool f = FcTrue;
 
-	    ss = s = strdup (env);
+	    ss = s = (char *)FcStrCopy ((const FcChar8 *)env);
 	    os = FcObjectSetCreate();
 	    while (f) {
 		size_t len;

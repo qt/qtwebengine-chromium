@@ -19,6 +19,7 @@
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/notreached.h"
+#include "base/rand_util.h"
 #include "base/task/common/task_annotator.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/time/time.h"
@@ -220,12 +221,6 @@ class SynchronousCompositorProxyRegistry
       if (io_thread_id_ != base::kInvalidThreadId) {
         renderer_threads.push_back(
             viz::Thread{io_thread_id_, viz::Thread::Type::kIO});
-      }
-      if (main_thread_id_ != base::kInvalidThreadId &&
-          base::FeatureList::IsEnabled(
-              ::features::kWebViewEnableADPFRendererMain)) {
-        renderer_threads.push_back(
-            viz::Thread{main_thread_id_, viz::Thread::Type::kMain});
       }
       proxy_->SetThreads(renderer_threads);
     }
@@ -602,32 +597,17 @@ void WidgetInputHandlerManager::ObserveGestureEventOnMainThread(
                                     std::move(observe_gesture_event_closure));
 }
 
-void WidgetInputHandlerManager::LogInputTimingUMA() {
-  bool should_emit_uma;
-  {
-    base::AutoLock lock(uma_data_lock_);
-    should_emit_uma = !uma_data_.have_emitted_uma;
-    uma_data_.have_emitted_uma = true;
-  }
-
-  if (!should_emit_uma)
-    return;
-
-  InitialInputTiming lifecycle_state = InitialInputTiming::kBeforeLifecycle;
-  if (!(suppressing_input_events_state_ &
-        (unsigned)SuppressingInputEventsBits::kDeferMainFrameUpdates)) {
-    if (suppressing_input_events_state_ &
-        (unsigned)SuppressingInputEventsBits::kDeferCommits) {
-      lifecycle_state = InitialInputTiming::kBeforeCommit;
-    } else if (suppressing_input_events_state_ &
-               (unsigned)SuppressingInputEventsBits::kHasNotPainted) {
-      lifecycle_state = InitialInputTiming::kBeforeFirstPaint;
-    } else {
-      lifecycle_state = InitialInputTiming::kAfterFirstPaint;
-    }
-  }
-
-  UMA_HISTOGRAM_ENUMERATION("PaintHolding.InputTiming4", lifecycle_state);
+void WidgetInputHandlerManager::PostHandwritingRadiusToInputThread(
+    int handwriting_radius) {
+  base::OnceClosure init_closure = base::BindOnce(
+      [](base::WeakPtr<WidgetInputHandlerManager> weak_ptr, int radius) {
+        if (weak_ptr && weak_ptr->input_handler_proxy_) {
+          weak_ptr->input_handler_proxy_->SetHandwritingRadiusOnInputThread(
+              radius);
+        }
+      },
+      weak_ptr_factory_.GetWeakPtr(), handwriting_radius);
+  InputThreadTaskRunner()->PostTask(FROM_HERE, std::move(init_closure));
 }
 
 void WidgetInputHandlerManager::RecordEventMetricsForPaintTiming(
@@ -728,13 +708,14 @@ void WidgetInputHandlerManager::DispatchEvent(
     std::unique_ptr<WebCoalescedInputEvent> event,
     mojom::blink::WidgetInputHandler::DispatchEventCallback callback) {
   WebInputEvent::Type event_type = event->Event().GetType();
+  if (base::ShouldRecordSubsampledMetric(0.1)) {
+    UMA_HISTOGRAM_ENUMERATION("Input.Blink.DispatchEvent.Type", event_type);
+  }
   bool event_is_mouse_or_pointer_move =
       event_type == WebInputEvent::Type::kMouseMove ||
       event_type == WebInputEvent::Type::kPointerMove;
   if (!event_is_mouse_or_pointer_move &&
       event_type != WebInputEvent::Type::kTouchMove) {
-    LogInputTimingUMA();
-
     // We only count it if the only reason we are suppressing is because we
     // haven't painted yet.
     if (suppressing_input_events_state_ ==

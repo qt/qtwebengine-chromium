@@ -1160,8 +1160,10 @@ Error Display::initialize()
         mDevice = nullptr;
     }
 
-    mState.singleThreadPool = angle::WorkerThreadPool::Create(1, ANGLEPlatformCurrent());
-    mState.multiThreadPool  = angle::WorkerThreadPool::Create(0, ANGLEPlatformCurrent());
+    mState.singleThreadPool = angle::WorkerThreadPool::Create(angle::ThreadPoolType::Synchronous, 0,
+                                                              ANGLEPlatformCurrent());
+    mState.multiThreadPool = angle::WorkerThreadPool::Create(angle::ThreadPoolType::Asynchronous, 0,
+                                                             ANGLEPlatformCurrent());
 
     if (kIsContextMutexEnabled)
     {
@@ -2422,9 +2424,6 @@ void Display::initializeFrontendFeatures()
     ANGLE_FEATURE_CONDITION(&mFrontendFeatures, emulatePixelLocalStorage, true);
 
     ANGLE_FEATURE_CONDITION(&mFrontendFeatures, forceMinimumMaxVertexAttributes, false);
-
-    // Reject shaders with undefined behavior.  In the compiler, this only applies to WebGL.
-    ANGLE_FEATURE_CONDITION(&mFrontendFeatures, rejectWebglShadersWithUndefinedBehavior, true);
 
     // When the IR is built, use it by default.
 #ifdef ANGLE_IR

@@ -76,6 +76,18 @@ MATCHER_P(HasBypassBlocksTotalCount, expected_value, "") {
   return arg.decoder_bypass_block_count == expected_value;
 }
 
+MATCHER_P(HasDecoderCheck1SuccessCount, expected_value, "") {
+  return arg.decoder_check1_success_count == expected_value;
+}
+
+MATCHER_P(HasDecoderCheck1WarningCount, expected_value, "") {
+  return arg.decoder_check1_warning_count == expected_value;
+}
+
+MATCHER_P(HasDecoderCheck1ErrorCount, expected_value, "") {
+  return arg.decoder_check1_error_count == expected_value;
+}
+
 // TODO(jrummell): These tests are a subset of those in aes_decryptor_unittest.
 // Refactor aes_decryptor_unittest.cc to handle AesDecryptor directly and
 // via CdmAdapter once CdmAdapter supports decrypting functionality. There
@@ -270,7 +282,7 @@ class CdmAdapterTestWithClearKeyCdm : public CdmAdapterTestBase {
   void CreateSessionAndExpect(EmeInitDataType data_type,
                               const std::vector<uint8_t>& key_id,
                               ExpectedResult expected_result) {
-    DCHECK(!key_id.empty());
+    CHECK(!key_id.empty());
 
     if (expected_result == SUCCESS) {
       EXPECT_CALL(cdm_client_, OnSessionMessage(IsNotEmpty(), _, _));
@@ -295,7 +307,7 @@ class CdmAdapterTestWithClearKeyCdm : public CdmAdapterTestBase {
   // that LoadSession() succeeds or generates an error.
   void LoadSessionAndExpect(const std::string& session_id,
                             ExpectedResult expected_result) {
-    DCHECK(!session_id.empty());
+    CHECK(!session_id.empty());
     ASSERT_EQ(expected_result, FAILURE) << "LoadSession not supported.";
 
     cdm_->LoadSession(CdmSessionType::kTemporary, session_id,
@@ -310,7 +322,7 @@ class CdmAdapterTestWithClearKeyCdm : public CdmAdapterTestBase {
                               const std::string& key,
                               ExpectedResult expected_result,
                               bool new_key_expected) {
-    DCHECK(!key.empty());
+    CHECK(!key.empty());
 
     if (expected_result == SUCCESS) {
       EXPECT_CALL(cdm_client_,
@@ -688,10 +700,20 @@ TEST_P(CdmAdapterTestWithMockCdm, RecordUMA) {
                                         /* expected_bucket_count= */ 1);
   }
 
+  // decoder check1 success, warning, error reports 1, 2, 3 respectively.
+  {
+    cdm_host_proxy_->ReportMetrics(cdm::kDecoderCheck1SuccessCount, 1);
+    cdm_host_proxy_->ReportMetrics(cdm::kDecoderCheck1WarningCount, 2);
+    cdm_host_proxy_->ReportMetrics(cdm::kDecoderCheck1ErrorCount, 3);
+  }
+
   // On destruction UKM should be logged containing the sum of all the reported
   // kDecoderBypassBlockCount values (and no license SDK version as one is not
   // set).
   EXPECT_CALL(*cdm_helper_, RecordUkm(AllOf(HasBypassBlocksTotalCount(111),
+                                            HasDecoderCheck1SuccessCount(1),
+                                            HasDecoderCheck1WarningCount(2),
+                                            HasDecoderCheck1ErrorCount(3),
                                             HasNoLicenseSdkVersion())));
 }
 

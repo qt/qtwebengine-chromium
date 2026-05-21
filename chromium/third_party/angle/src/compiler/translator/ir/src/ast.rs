@@ -27,7 +27,7 @@ pub trait Target {
     // variables, geometry/tessellation info, etc.
     fn global_scope(&mut self, ir_meta: &IRMeta);
 
-    fn begin_block(&mut self, ir_meta: &IRMeta, variables: &Vec<VariableId>) -> Self::BlockResult;
+    fn begin_block(&mut self, ir_meta: &IRMeta, variables: &[VariableId]) -> Self::BlockResult;
     fn merge_blocks(&mut self, blocks: Vec<Self::BlockResult>) -> Self::BlockResult;
 
     // Instructions
@@ -43,7 +43,7 @@ pub trait Target {
         block: &mut Self::BlockResult,
         result: RegisterId,
         id: TypedId,
-        indices: &Vec<u32>,
+        indices: &[u32],
     );
     fn index(
         &mut self,
@@ -72,7 +72,7 @@ pub trait Target {
         block: &mut Self::BlockResult,
         result: RegisterId,
         type_id: TypeId,
-        ids: &Vec<TypedId>,
+        ids: &[TypedId],
     );
     fn load(&mut self, block: &mut Self::BlockResult, result: RegisterId, pointer: TypedId);
     fn store(&mut self, block: &mut Self::BlockResult, pointer: TypedId, value: TypedId);
@@ -81,7 +81,7 @@ pub trait Target {
         block: &mut Self::BlockResult,
         result: Option<RegisterId>,
         function_id: FunctionId,
-        params: &Vec<TypedId>,
+        params: &[TypedId],
     );
     fn unary(
         &mut self,
@@ -103,7 +103,7 @@ pub trait Target {
         block: &mut Self::BlockResult,
         result: Option<RegisterId>,
         built_in_op: BuiltInOpCode,
-        args: &Vec<TypedId>,
+        args: &[TypedId],
     );
     fn texture(
         &mut self,
@@ -236,7 +236,7 @@ pub trait Target {
         &mut self,
         block: &mut Self::BlockResult,
         value: TypedId,
-        case_ids: &Vec<Option<ConstantId>>,
+        case_ids: &[Option<ConstantId>],
         case_blocks: Vec<Self::BlockResult>,
     );
 
@@ -266,31 +266,36 @@ impl Generator {
     }
 
     fn create_types<T: Target>(&self, target: &mut T) {
-        // TODO(http://anglebug.com/349994211): Don't declare types that have been eliminated (such
-        // as unused structs)
         self.ir.meta.all_types().iter().enumerate().for_each(|(id, type_info)| {
-            target.new_type(&self.ir.meta, TypeId { id: id as u32 }, type_info)
+            if !type_info.is_dead_code_eliminated() {
+                target.new_type(&self.ir.meta, TypeId { id: id as u32 }, type_info)
+            }
         });
     }
 
     fn create_constants<T: Target>(&self, target: &mut T) {
-        // TODO(http://anglebug.com/349994211): Don't declare constants that have been eliminated
-        // (such as constants created out of unused structs).  See for example:
-        // GLSLTest.StructUsedWithoutVariable/*
         self.ir.meta.all_constants().iter().enumerate().for_each(|(id, constant)| {
-            target.new_constant(&self.ir.meta, ConstantId { id: id as u32 }, constant)
+            if !constant.is_dead_code_eliminated {
+                target.new_constant(&self.ir.meta, ConstantId { id: id as u32 }, constant)
+            }
         });
     }
 
     fn create_variables<T: Target>(&self, target: &mut T) {
         self.ir.meta.all_variables().iter().enumerate().for_each(|(id, variable)| {
-            target.new_variable(&self.ir.meta, VariableId { id: id as u32 }, variable)
+            if !variable.is_dead_code_eliminated {
+                let variable_id = VariableId { id: id as u32 };
+                debug_assert!(!self.ir.meta.variable_needs_zero_initialization(variable_id));
+                target.new_variable(&self.ir.meta, variable_id, variable)
+            }
         });
     }
 
     fn create_functions<T: Target>(&self, target: &mut T) {
         self.ir.meta.all_functions().iter().enumerate().for_each(|(id, function)| {
-            target.new_function(&self.ir.meta, FunctionId { id: id as u32 }, function)
+            if self.ir.function_entries[id].is_some() {
+                target.new_function(&self.ir.meta, FunctionId { id: id as u32 }, function)
+            }
         });
     }
 
@@ -379,7 +384,7 @@ impl Generator {
                     result.unwrap().id,
                     id,
                     index,
-                    &self.ir.meta.get_type(id.type_id).get_struct_field(index),
+                    self.ir.meta.get_type(id.type_id).get_struct_field(index),
                 ),
                 &OpCode::AccessStructField(id, index) => {
                     let struct_type_id =
@@ -389,7 +394,7 @@ impl Generator {
                         result.unwrap().id,
                         id,
                         index,
-                        &self.ir.meta.get_type(struct_type_id).get_struct_field(index),
+                        self.ir.meta.get_type(struct_type_id).get_struct_field(index),
                     )
                 }
 

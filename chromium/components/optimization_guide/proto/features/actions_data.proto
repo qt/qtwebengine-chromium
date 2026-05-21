@@ -106,7 +106,7 @@ message ScrollAction {
 
   ScrollDirection direction = 2 [features = { field_presence: EXPLICIT }];
 
-  // The distance to scroll in pixels.
+  // The distance to scroll in DIPs.
   float distance = 3 [features = { field_presence: EXPLICIT }];
 
   int32 tab_id = 4 [features = { field_presence: EXPLICIT }];
@@ -252,9 +252,38 @@ message YieldToUserAction {
 }
 
 // Attempts to log in to the website.
-// Next ID: 2
+// Next ID: 3
 message AttemptLoginAction {
   int32 tab_id = 1 [features = { field_presence: EXPLICIT }];
+
+  // All of the login methods that the model knows about for this page.
+  // As it does not know in advance which account type will be selected by the
+  // user, the model provides everything it recognizes.
+  // If a password form target is not provided (or if no targets are provided at
+  // all), password form filling will still be done if a password credential is
+  // selected by the user, but submitting the form will need to be done by a
+  // follow up action.
+  repeated LoginTarget login_targets = 2;
+
+  // A target along with a type indicating how it is used to log in.
+  // Next ID: 3
+  message LoginTarget {
+    LoginType login_type = 1 [features = { field_presence: EXPLICIT }];
+
+    ActionTarget target = 2 [features = { field_presence: EXPLICIT }];
+
+    // Indicates how the target is used to log in.
+    enum LoginType {
+      // Unknown login type. This should not be used.
+      UNKNOWN_LOGIN_TYPE = 0;
+
+      // The target is used to submit a username/password form.
+      PASSWORD_FORM_SUBMIT = 1;
+
+      // The target is a "Sign in with Google" button.
+      FEDERATED_GOOGLE_SIGNIN = 2;
+    }
+  }
 }
 
 // Specifies a form by a set of fields (from different autofill sections) and
@@ -363,11 +392,16 @@ message PauseMediaAction {
 }
 
 // Seek media action seeks the media session to the given seek time in
-// microseconds from the beginning of the media. The seek time should be
+// milliseconds from the beginning of the media. The seek time should be
 // non-negative.
-// Next ID: 2
+// Next ID: 3
 message SeekMediaAction {
-  int64 seek_time_microseconds = 1 [features = { field_presence: EXPLICIT }];
+  int64 seek_time_microseconds = 1 [
+    deprecated = true,
+    features = { field_presence: EXPLICIT }
+  ];
+
+  int64 seek_time_milliseconds = 2 [features = { field_presence: EXPLICIT }];
 }
 
 // Controls media session in a tab.
@@ -387,9 +421,14 @@ message MediaControlAction {
   reserved 1;
 }
 
+// Loads the given URLs and extracts content from them.
+message LoadAndExtractContentAction {
+  repeated string urls = 1;
+}
+
 // All of the actions that can be taken.
 // Only one of these is allowed per action.
-// Next ID: 23
+// Next ID: 24
 message Action {
 
   oneof action {
@@ -436,6 +475,8 @@ message Action {
     MediaControlAction media_control = 21;
 
     AttemptFormFillingAction attempt_form_filling = 22;
+
+    LoadAndExtractContentAction load_and_extract_content = 23;
   }
 }
 

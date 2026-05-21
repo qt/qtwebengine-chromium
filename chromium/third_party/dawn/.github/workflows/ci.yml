@@ -1,10 +1,10 @@
 name: CI
 
 on:
-  push:
-    branches: [ "main" ]
-  pull_request:
+  # Only run on demand and when publishing a nightly release. (We don't rely on
+  # GitHub Actions to test PRs, because that all happens in Gerrit.)
   workflow_dispatch:
+  workflow_call:
 
 concurrency:
   # Use github.run_id on main branch
@@ -64,7 +64,10 @@ jobs:
             cpp_compiler: g++
             # The manylinux container is to ensure ABI compatibility with glibc 2.28.
             # This way, the continuous delivery process casts a wide net across many linux distros.
-            container: dockcross/manylinux_2_28-x64:latest
+            container: 
+              image: dockcross/manylinux_2_28-x64:latest
+              # Needed to run the "Free disk space on Linux host" step
+              options: --volume /:/host
         exclude:
           - os: macos-latest
             toolchain: msvc
@@ -103,8 +106,16 @@ jobs:
         with:
           winsdk-build-version: ${{ env.WIN10_SDK_BUILD_VERSION }}
 
+      - name: Free disk space on Linux host
+        if: matrix.container.image == 'dockcross/manylinux_2_28-x64:latest'
+        run: |
+          # Prevent runner from running out of disk space
+          rm -rf /host/usr/share/dotnet
+          rm -rf /host/usr/local/lib/android
+          rm -rf /host/opt/ghc
+
       - name: Set up dependencies on linux
-        if: matrix.container == 'dockcross/manylinux_2_28-x64:latest'
+        if: matrix.container.image == 'dockcross/manylinux_2_28-x64:latest'
         run: >
           dnf install -y mesa-libGL-devel libxcb libxcb-devel libX11-xcb libXcursor-devel libXrandr-devel libXinerama-devel libXi-devel libXext-devel libxkbcommon libxkbcommon-devel libxkbcommon-x11-devel mesa-vulkan-drivers wayland-protocols-devel wayland-devel
 
@@ -208,13 +219,14 @@ jobs:
         if: matrix.arch == 'arm64-v8a'
         run: |
           cmake --install ${{ matrix.output_dir }} --prefix dawn-headers
+          cmake -E tar cvzf dawn-headers-${{ github.sha }}.tar.gz dawn-headers/
 
       - name: Upload headers (from arm64-v8a build only)
         if: matrix.arch == 'arm64-v8a'
         uses: actions/upload-artifact@v4
         with:
           name: dawn-headers-${{ github.sha }}
-          path: dawn-headers/
+          path: dawn-headers-${{ github.sha }}.tar.gz
 
   mobile-apple:
     strategy:
@@ -225,19 +237,19 @@ jobs:
           - platform: ios
             arch: arm64
             toolchain_file: build-tools/apple.toolchain.cmake
-            cmake_args: -DPLATFORM=OS64 -DDEPLOYMENT_TARGET=13.0 -DENABLE_BITCODE=OFF -DENABLE_ARC=OFF -DENABLE_VISIBILITY=OFF
+            cmake_args: -DPLATFORM=OS64 -DDEPLOYMENT_TARGET=14.0 -DENABLE_BITCODE=OFF -DENABLE_ARC=OFF -DENABLE_VISIBILITY=OFF
             output_dir: out/ios_arm64
             library_path: src/dawn/native/libwebgpu_dawn.a
           - platform: ios
             arch: sim_arm64
             toolchain_file: build-tools/apple.toolchain.cmake
-            cmake_args: -DPLATFORM=SIMULATORARM64 -DDEPLOYMENT_TARGET=13.0 -DENABLE_BITCODE=OFF -DENABLE_ARC=OFF -DENABLE_VISIBILITY=OFF
+            cmake_args: -DPLATFORM=SIMULATORARM64 -DDEPLOYMENT_TARGET=14.0 -DENABLE_BITCODE=OFF -DENABLE_ARC=OFF -DENABLE_VISIBILITY=OFF
             output_dir: out/ios_sim_arm64
             library_path: src/dawn/native/libwebgpu_dawn.a
           - platform: ios
             arch: sim_x86_64
             toolchain_file: build-tools/apple.toolchain.cmake
-            cmake_args: -DPLATFORM=SIMULATOR64 -DDEPLOYMENT_TARGET=13.0 -DENABLE_BITCODE=OFF -DENABLE_ARC=OFF -DENABLE_VISIBILITY=OFF
+            cmake_args: -DPLATFORM=SIMULATOR64 -DDEPLOYMENT_TARGET=14.0 -DENABLE_BITCODE=OFF -DENABLE_ARC=OFF -DENABLE_VISIBILITY=OFF
             output_dir: out/ios_sim_x86_64
             library_path: src/dawn/native/libwebgpu_dawn.a
           - platform: macos

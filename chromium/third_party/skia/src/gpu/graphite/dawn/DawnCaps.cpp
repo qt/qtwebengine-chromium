@@ -100,7 +100,7 @@ DawnCaps::~DawnCaps() = default;
 
 bool DawnCaps::isTexturableIgnoreSampleCount(const TextureInfo& info) const {
     auto overrideDawnInfo = TextureInfoPriv::Get<DawnTextureInfo>(info);
-    overrideDawnInfo.fSampleCount = 1;
+    overrideDawnInfo.fSampleCount = SampleCount::k1;
     TextureInfo overrideInfo = TextureInfos::MakeDawn(overrideDawnInfo);
     return this->isTexturable(overrideInfo);
 }
@@ -224,7 +224,7 @@ TextureInfo DawnCaps::getDefaultAttachmentTextureInfo(AttachmentDesc desc,
     }
 
     DawnTextureInfo info;
-    info.fSampleCount = (uint8_t) desc.fSampleCount;
+    info.fSampleCount = desc.fSampleCount;
     info.fMipmapped   = Mipmapped::kNo;
     info.fFormat      = TextureFormatToDawnFormat(desc.fFormat);
     info.fUsage       = wgpu::TextureUsage::RenderAttachment;
@@ -258,7 +258,7 @@ TextureInfo DawnCaps::getDefaultSampledTextureInfo(SkColorType colorType,
     }
 
     DawnTextureInfo info;
-    info.fSampleCount = 1;
+    info.fSampleCount = SampleCount::k1;
     info.fMipmapped = mipmapped;
     info.fFormat = format;
     info.fViewFormat = format;
@@ -270,7 +270,7 @@ TextureInfo DawnCaps::getDefaultSampledTextureInfo(SkColorType colorType,
 TextureInfo DawnCaps::getTextureInfoForSampledCopy(const TextureInfo& textureInfo,
                                                    Mipmapped mipmapped) const {
     DawnTextureInfo info;
-    info.fSampleCount = 1;
+    info.fSampleCount = SampleCount::k1;
     info.fMipmapped = mipmapped;
     info.fFormat = TextureInfoPriv::Get<DawnTextureInfo>(textureInfo).getViewFormat();
     info.fUsage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst |
@@ -305,7 +305,7 @@ TextureInfo DawnCaps::getDefaultCompressedTextureInfo(SkTextureCompressionType c
     }
 
     DawnTextureInfo info;
-    info.fSampleCount = 1;
+    info.fSampleCount = SampleCount::k1;
     info.fMipmapped = mipmapped;
     info.fFormat = format;
     info.fViewFormat = format;
@@ -330,7 +330,7 @@ TextureInfo DawnCaps::getDefaultStorageTextureInfo(SkColorType colorType) const 
                                wgpu::TextureUsage::TextureBinding |
                                wgpu::TextureUsage::CopySrc;
     DawnTextureInfo info;
-    info.fSampleCount = 1;
+    info.fSampleCount = SampleCount::k1;
     info.fMipmapped = Mipmapped::kNo;
     info.fFormat = format;
     info.fViewFormat = format;
@@ -357,23 +357,16 @@ SkISize DawnCaps::getDepthAttachmentDimensions(const TextureInfo& textureInfo,
     return colorAttachmentDimensions;
 }
 
-const Caps::ColorTypeInfo* DawnCaps::getColorTypeInfo(SkColorType colorType,
-                                                      const TextureInfo& textureInfo) const {
+SkSpan<const Caps::ColorTypeInfo> DawnCaps::getColorTypeInfos(
+        const TextureInfo& textureInfo) const {
     auto dawnFormat = TextureInfoPriv::Get<DawnTextureInfo>(textureInfo).getViewFormat();
     if (dawnFormat == wgpu::TextureFormat::Undefined) {
         SkASSERT(false);
-        return nullptr;
+        return {};
     }
 
-    const FormatInfo& info = this->getFormatInfo(dawnFormat);
-    for (int i = 0; i < info.fColorTypeInfoCount; ++i) {
-        const ColorTypeInfo& ctInfo = info.fColorTypeInfos[i];
-        if (ctInfo.fColorType == colorType) {
-            return &ctInfo;
-        }
-    }
-
-    return nullptr;
+    const FormatInfo& formatInfo = this->getFormatInfo(dawnFormat);
+    return {formatInfo.fColorTypeInfos.get(), formatInfo.fColorTypeInfoCount};
 }
 
 bool DawnCaps::supportsWritePixels(const TextureInfo& textureInfo) const {
@@ -384,41 +377,6 @@ bool DawnCaps::supportsWritePixels(const TextureInfo& textureInfo) const {
 bool DawnCaps::supportsReadPixels(const TextureInfo& textureInfo) const {
     const auto& dawnInfo = TextureInfoPriv::Get<DawnTextureInfo>(textureInfo);
     return dawnInfo.fUsage & wgpu::TextureUsage::CopySrc;
-}
-
-std::pair<SkColorType, bool /*isRGBFormat*/> DawnCaps::supportedWritePixelsColorType(
-        SkColorType dstColorType,
-        const TextureInfo& dstTextureInfo,
-        SkColorType srcColorType) const {
-    const auto viewFormat = TextureInfoPriv::Get<DawnTextureInfo>(dstTextureInfo).getViewFormat();
-    const FormatInfo& info = this->getFormatInfo(viewFormat);
-    for (int i = 0; i < info.fColorTypeInfoCount; ++i) {
-        const auto& ctInfo = info.fColorTypeInfos[i];
-        if (ctInfo.fColorType == dstColorType) {
-            return {ctInfo.fTransferColorType, false};
-        }
-    }
-    return {kUnknown_SkColorType, false};
-}
-
-std::pair<SkColorType, bool /*isRGBFormat*/> DawnCaps::supportedReadPixelsColorType(
-        SkColorType srcColorType,
-        const TextureInfo& srcTextureInfo,
-        SkColorType dstColorType) const {
-    const auto viewFormat = TextureInfoPriv::Get<DawnTextureInfo>(srcTextureInfo).getViewFormat();
-
-    if (DawnFormatToCompressionType(viewFormat) != SkTextureCompressionType::kNone) {
-        return {kUnknown_SkColorType, false};
-    }
-
-    const FormatInfo& info = this->getFormatInfo(viewFormat);
-    for (int i = 0; i < info.fColorTypeInfoCount; ++i) {
-        const auto& ctInfo = info.fColorTypeInfos[i];
-        if (ctInfo.fColorType == srcColorType) {
-            return {ctInfo.fTransferColorType, false};
-        }
-    }
-    return {kUnknown_SkColorType, false};
 }
 
 void DawnCaps::initCaps(const DawnBackendContext& backendContext, const ContextOptions& options) {
@@ -648,24 +606,13 @@ void DawnCaps::initFormatTable(const wgpu::Device& device) {
     // Format: R8Unorm
     {
         info = &fFormatTable[GetFormatIndex(wgpu::TextureFormat::R8Unorm)];
-#if !defined(__EMSCRIPTEN__)
         info->fFlags = FormatInfo::kAllFlags;
-        if (!device.HasFeature(wgpu::FeatureName::R8UnormStorage)) {
+        if (!device.HasFeature(wgpu::FeatureName::TextureFormatsTier1)) {
             info->fFlags &= ~FormatInfo::kStorage_Flag;
         }
-#else
-        info->fFlags = FormatInfo::kAllFlags & ~FormatInfo::kStorage_Flag;
-#endif
         info->fColorTypeInfoCount = 3;
         info->fColorTypeInfos = std::make_unique<ColorTypeInfo[]>(info->fColorTypeInfoCount);
         int ctIdx = 0;
-        // Format: R8Unorm, Surface: kR8_unorm
-        {
-            auto& ctInfo = info->fColorTypeInfos[ctIdx++];
-            ctInfo.fColorType = kR8_unorm_SkColorType;
-            ctInfo.fTransferColorType = kR8_unorm_SkColorType;
-            ctInfo.fFlags = ColorTypeInfo::kUploadData_Flag | ColorTypeInfo::kRenderable_Flag;
-        }
         // Format: R8Unorm, Surface: kAlpha_8
         {
             auto& ctInfo = info->fColorTypeInfos[ctIdx++];
@@ -674,6 +621,13 @@ void DawnCaps::initFormatTable(const wgpu::Device& device) {
             ctInfo.fFlags = ColorTypeInfo::kUploadData_Flag | ColorTypeInfo::kRenderable_Flag;
             ctInfo.fReadSwizzle = skgpu::Swizzle("000r");
             ctInfo.fWriteSwizzle = skgpu::Swizzle("a000");
+        }
+        // Format: R8Unorm, Surface: kR8_unorm
+        {
+            auto& ctInfo = info->fColorTypeInfos[ctIdx++];
+            ctInfo.fColorType = kR8_unorm_SkColorType;
+            ctInfo.fTransferColorType = kR8_unorm_SkColorType;
+            ctInfo.fFlags = ColorTypeInfo::kUploadData_Flag | ColorTypeInfo::kRenderable_Flag;
         }
         // Format: R8Unorm, Surface: kGray_8
         {
@@ -934,13 +888,18 @@ void DawnCaps::initFormatTable(const wgpu::Device& device) {
     {
         info = &fFormatTable[GetFormatIndex(wgpu::TextureFormat::External)];
         info->fFlags = FormatInfo::kTexturable_Flag;
-        info->fColorTypeInfoCount = 1;
+        info->fColorTypeInfoCount = 2;
         info->fColorTypeInfos = std::make_unique<ColorTypeInfo[]>(info->fColorTypeInfoCount);
         int ctIdx = 0;
         // Format: External, Surface: kRGBA_8888
         {
             auto& ctInfo = info->fColorTypeInfos[ctIdx++];
             ctInfo.fColorType = kRGBA_8888_SkColorType;
+        }
+        // Format: External, Surface: kRGB_888x
+        {
+            auto& ctInfo = info->fColorTypeInfos[ctIdx++];
+            ctInfo.fColorType = kRGB_888x_SkColorType;
         }
     }
 #endif
@@ -1057,7 +1016,7 @@ uint32_t DawnCaps::getRenderPassDescKeyForPipeline(const RenderPassDesc& renderP
            loadResolveAttachmentKey;
 }
 
-static constexpr int kDawnGraphicsPipelineKeyData32Count = 4;
+static constexpr uint16_t kDawnGraphicsPipelineKeyData32Count = 4;
 
 UniqueKey DawnCaps::makeGraphicsPipelineKey(const GraphicsPipelineDesc& pipelineDesc,
                                             const RenderPassDesc& renderPassDesc) const {
@@ -1275,7 +1234,7 @@ void DawnCaps::buildKeyForTexture(SkISize dimensions,
     SkASSERT(static_cast<uint32_t>(dawnInfo.fUsage) < (1u << 28)); // usage is remaining 28 bits
 
     // We need two uint32_ts for dimensions, 1 for format, and 1 for the rest of the key;
-    int num32DataCnt = 2 + 1 + 1;
+    uint16_t num32DataCnt = 2 + 1 + 1;
     bool hasYcbcrInfo = false;
 #if !defined(__EMSCRIPTEN__)
     // If we are using ycbcr texture/sampling, more key information is needed.

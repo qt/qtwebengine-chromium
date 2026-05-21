@@ -190,7 +190,7 @@ class SkPictureSerializer {
       DCHECK(file.isValid());
 
       SkSerialProcs procs{
-          .fImageProc = [](SkImage* img, void*) -> sk_sp<SkData> {
+          .fImageProc = [](SkImage* img, void*) -> SkSerialReturnType {
             // Note: if the picture contains texture-backed (gpu) images, they
             // will fail to be read-back and therefore fail to be encoded unless
             // we can thread the correct GrDirectContext through to here.
@@ -295,7 +295,7 @@ void RunCallbackHelper(CallbackAndContext* callback_and_context,
 }
 
 void OnMicroBenchmarkCompleted(CallbackAndContext* callback_and_context,
-                               base::Value::Dict result) {
+                               base::DictValue result) {
   RunCallbackHelper(callback_and_context,
                     std::optional<base::Value>(std::move(result)));
 }

@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 import type {WebClientInitialState} from '../glic.mojom-webui.js';
-import type {ActorTaskPauseReason, ActorTaskState, ActorTaskStopReason, AdditionalContext, AdditionalContextPart, AnnotatedPageData, AutofillSuggestion, CaptureRegionErrorReason, CaptureRegionResult, ChromeVersion, ConversationInfo, Credential, DraggableArea, ErrorReasonTypes, ErrorWithReason, FocusedTabDataHasFocus, FocusedTabDataHasNoFocus, FormFillingRequest, GetPinCandidatesOptions, HostCapability, Journal, MetricUserInputReactionType, NavigationConfirmationRequest, NavigationConfirmationResponse, OnResponseStoppedDetails, OpenPanelInfo, OpenSettingsOptions, PageMetadata, PanelOpeningData, PanelState, PdfDocumentData, PinCandidate, Platform, ResumeActorTaskResult, Screenshot, ScrollToParams, SelectAutofillSuggestionsDialogRequest, SelectAutofillSuggestionsDialogResponse, SelectCredentialDialogRequest, SelectCredentialDialogResponse, TabContextOptions, TabContextResult, TabData, TaskOptions, UserConfirmationDialogRequest, UserConfirmationDialogResponse, UserProfileInfo, ViewChangedNotification, ViewChangeRequest, WebClientMode, ZeroStateSuggestions, ZeroStateSuggestionsOptions, ZeroStateSuggestionsV2} from '../glic_api/glic_api.js';
+import type {ActorTaskPauseReason, ActorTaskState, ActorTaskStopReason, AdditionalContext, AdditionalContextPart, AnnotatedPageData, AutofillSuggestion, CancelActionsResult, CaptureRegionErrorReason, CaptureRegionResult, ChromeVersion, ConversationInfo, CreateSkillRequest, Credential, DraggableArea, ErrorReasonTypes, ErrorWithReason, FocusedTabDataHasFocus, FocusedTabDataHasNoFocus, FormFillingRequest, GetPinCandidatesOptions, HostCapability, InvokeOptions, Journal, MetricUserInputReactionType, NavigationConfirmationRequest, NavigationConfirmationResponse, OnResponseStoppedDetails, OpenPanelInfo, OpenSettingsOptions, PageMetadata, PanelOpeningData, PanelState, PdfDocumentData, PinCandidate, PinTabsOptions, Platform, ResumeActorTaskResult, Screenshot, ScrollToParams, SelectAutofillSuggestionsDialogRequest, SelectAutofillSuggestionsDialogResponse, SelectCredentialDialogRequest, SelectCredentialDialogResponse, Skill, SkillPreview, TabContextOptions, TabContextResult, TabData, TaskOptions, UnpinTabsOptions, UpdateSkillRequest, UserConfirmationDialogRequest, UserConfirmationDialogResponse, UserProfileInfo, ViewChangedNotification, ViewChangeRequest, WebClientMode, ZeroStateSuggestions, ZeroStateSuggestionsOptions, ZeroStateSuggestionsV2} from '../glic_api/glic_api.js';
 
 /*
 This file defines messages sent over postMessage in-between the Glic WebUI
@@ -161,6 +161,15 @@ export declare type HostRequestTypes = ValidateRequestMap<{
     },
     response: {
       actionsResult: ArrayBuffer,
+    },
+    backgroundAllowed: true,
+  },
+  glicBrowserCancelActions: {
+    request: {
+      taskId: number,
+    },
+    response: {
+      result: CancelActionsResult,
     },
     backgroundAllowed: true,
   },
@@ -409,12 +418,6 @@ export declare type HostRequestTypes = ValidateRequestMap<{
     },
     backgroundAllowed: true,
   },
-  glicBrowserOnModelChanged: {
-    request: {
-      model: number,
-    },
-    backgroundAllowed: true,
-  },
   glicBrowserOnRecordUseCounter: {
     request: {
       counter: number,
@@ -457,6 +460,7 @@ export declare type HostRequestTypes = ValidateRequestMap<{
     backgroundAllowed: false,
     request: {
       tabIds: string[],
+      options?: PinTabsOptions,
     },
     response: {
       pinnedAll: boolean,
@@ -466,6 +470,7 @@ export declare type HostRequestTypes = ValidateRequestMap<{
     backgroundAllowed: true,
     request: {
       tabIds: string[],
+      options?: UnpinTabsOptions,
     },
     response: {
       unpinnedAll: boolean,
@@ -473,6 +478,36 @@ export declare type HostRequestTypes = ValidateRequestMap<{
   },
   glicBrowserUnpinAllTabs: {
     backgroundAllowed: false,
+    request: {
+      options?: UnpinTabsOptions,
+    },
+  },
+  glicBrowserCreateSkill: {
+    request: {
+      request: CreateSkillRequest,
+    },
+    response: {
+      modalOpened: boolean,
+    },
+  },
+  glicBrowserUpdateSkill: {
+    request: {
+      request: UpdateSkillRequest,
+    },
+    response: {
+      modalOpened: boolean,
+    },
+  },
+  glicBrowserShowManageSkillsUi: {
+    backgroundAllowed: true,
+  },
+  glicBrowserGetSkill: {
+    request: {
+      id: string,
+    },
+    response: {
+      skill?: Skill,
+    },
   },
   glicBrowserSubscribeToPinCandidates: {
     backgroundAllowed: false,
@@ -555,6 +590,14 @@ export declare type HostRequestTypes = ValidateRequestMap<{
     backgroundAllowed: true,
   },
   glicBrowserSetOnboardingCompleted: {
+    backgroundAllowed: true,
+  },
+  glicBrowserSubscribeToTabData: {
+    request: {
+      tabId: string,
+      observationId: number,
+      cancel: boolean,
+    },
     backgroundAllowed: true,
   },
 }>;
@@ -675,6 +718,32 @@ export declare type WebClientRequestTypes = ValidateRequestMap<{
       tabData: TabDataPrivate,
     },
   },
+  glicWebClientNotifySkillPreviewsChanged: {
+    request: {
+      skillPreviews: SkillPreview[],
+    },
+  },
+  glicWebClientNotifySkillPreviewChanged: {
+    request: {
+      skillPreview: SkillPreview,
+    },
+  },
+  glicWebClientNotifyContextualSkillPreviewsChanged: {
+    request: {
+      contextualSkillPreviews: SkillPreview[],
+    },
+  },
+  glicWebClientNotifySkillToInvokeChanged: {
+    request: {
+      skill: Skill,
+    },
+  },
+  glicWebClientNotifySkillDeleted: {
+    request: {
+      skillId: string,
+    },
+    backgroundAllowed: true,
+  },
   glicWebClientPinCandidatesChanged: {
     request: {
       candidates: PinCandidatePrivate[],
@@ -691,12 +760,6 @@ export declare type WebClientRequestTypes = ValidateRequestMap<{
     request: {
       taskId: number,
       state: ActorTaskState,
-    },
-    backgroundAllowed: true,
-  },
-  glicWebClientNotifyTabDataChanged: {
-    request: {
-      tabData: TabDataPrivate,
     },
     backgroundAllowed: true,
   },
@@ -765,6 +828,26 @@ export declare type WebClientRequestTypes = ValidateRequestMap<{
     },
     backgroundAllowed: true,
   },
+  glicWebClientNotifyActorTaskListRowClicked: {
+    request: {
+      taskId: number,
+    },
+    backgroundAllowed: true,
+  },
+  glicWebClientTabDataChanged: {
+    request: {
+      // If not present, the tab no longer exists and no more updates will be
+      // received.
+      tabData?: TabDataPrivate, observationId: number,
+    },
+    backgroundAllowed: true,
+  },
+  glicWebClientInvoke: {
+    request: {
+      options: InvokeOptionsPrivate,
+    },
+    backgroundAllowed: true,
+  },
 }>;
 
 
@@ -823,7 +906,7 @@ export const HOST_REQUEST_TYPES: HostRequestEnumNamesType&{MAX_VALUE: number} =
         OnResponseStopped: 41,
         OnSessionTerminated: 42,
         OnTurnCompleted: 43,
-        OnModelChanged: 44,
+        // Do not reuse deleted request ID: 44,
         ScrollTo: 45,
         SetSyntheticExperimentState: 46,
         OpenOsPermissionSettingsMenu: 47,
@@ -860,6 +943,12 @@ export const HOST_REQUEST_TYPES: HostRequestEnumNamesType&{MAX_VALUE: number} =
         OpenPasswordManagerSettingsPage: 78,
         LoadAndExtractContent: 79,
         SetOnboardingCompleted: 80,
+        SubscribeToTabData: 81,
+        CreateSkill: 82,
+        UpdateSkill: 83,
+        GetSkill: 84,
+        CancelActions: 85,
+        ShowManageSkillsUi: 86,
       };
       return {...result, MAX_VALUE: Math.max(...Object.values(result))};
     })();
@@ -951,6 +1040,7 @@ export type WebClientInitialStatePrivate =
       enableZeroStateSuggestions: boolean,
       enableCachedGetUserProfileInfo: boolean,
       hostCapabilities: HostCapability[],
+      rgbaToBmp: boolean,
     }>;
 
 // TabData format for postMessage transport.
@@ -1034,6 +1124,11 @@ export declare interface AdditionalContextPartPrivate extends
 export declare interface AdditionalContextPrivate extends
     Omit<AdditionalContext, 'parts'> {
   parts: AdditionalContextPartPrivate[];
+}
+
+export declare interface InvokeOptionsPrivate extends
+    Omit<InvokeOptions, 'context'> {
+  context?: AdditionalContextPrivate;
 }
 
 export declare interface CredentialPrivate extends Omit<Credential, 'getIcon'> {

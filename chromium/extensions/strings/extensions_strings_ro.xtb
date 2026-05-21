@@ -12,6 +12,7 @@
 <translation id="2159915644201199628">Imaginea nu a putut fi decodificată: „<ph name="IMAGE_NAME" />”</translation>
 <translation id="2350172092385603347">A fost utilizată localizarea, dar nu s-a specificat default_locale în manifest.</translation>
 <translation id="2576842806987913196">Există deja un fișier CRX cu acest nume.</translation>
+<translation id="2743583586211388067">Accesul la această extensie este blocat conform politicii organizației privind riscurile extensiilor.</translation>
 <translation id="2785530881066938471">Nu se poate încărca fișierul „<ph name="RELATIVE_PATH" />” pentru scriptul de conținut. Fișierul nu are codificare UTF-8.</translation>
 <translation id="2903070246402204397">Extensia <ph name="EXTENSION_NAME" /> (cu ID-ul „<ph name="EXTENSION_ID" />”) este blocată de administrator. <ph name="ADMIN_INFO" /></translation>
 <translation id="2988488679308982380">Nu s-a putut instala pachetul: „<ph name="ERROR_CODE" />”</translation>
@@ -33,9 +34,11 @@
 <translation id="5356315618422219272">Eticheta appview: <ph name="APPVIEW_TAG_NAME" /></translation>
 <translation id="5456409301717116725">Această extensie include fișierul cheie „<ph name="KEY_PATH" />”. Probabil că nu doriți să faceți asta.</translation>
 <translation id="5486326529110362464">Trebuie să existe o valoarea introdusă pentru cheia privată.</translation>
+<translation id="5707185214361380026">Nu s-a încărcat extensia de la:</translation>
 <translation id="5972529113578162692">Administratorul acestui computer solicită ca <ph name="EXTENSION_NAME" /> să fie instalată. Aceasta nu poate fi dezinstalată.</translation>
 <translation id="6027032947578871493">Produs necunoscut <ph name="PRODUCT_ID" /> de la <ph name="VENDOR_NAME" /> (numărul de serie <ph name="SERIAL_NUMBER" />)</translation>
 <translation id="6068932090455285721"><ph name="PRODUCT_NAME" /> de la furnizorul <ph name="VENDOR_ID" /></translation>
+<translation id="6220413761270491930">Eroare la încărcarea extensiei</translation>
 <translation id="6322279351188361895">Cheia privată nu a fost citită.</translation>
 <translation id="6391538222494443604">Directorul de intrare trebuie să existe.</translation>
 <translation id="641087317769093025">Extensia nu a putut fi dezarhivată</translation>

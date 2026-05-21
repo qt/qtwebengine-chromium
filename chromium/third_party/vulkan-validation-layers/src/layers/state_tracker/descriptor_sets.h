@@ -1,7 +1,7 @@
-/* Copyright (c) 2015-2025 The Khronos Group Inc.
- * Copyright (c) 2015-2025 Valve Corporation
- * Copyright (c) 2015-2025 LunarG, Inc.
- * Copyright (C) 2015-2025 Google Inc.
+/* Copyright (c) 2015-2026 The Khronos Group Inc.
+ * Copyright (c) 2015-2026 Valve Corporation
+ * Copyright (c) 2015-2026 LunarG, Inc.
+ * Copyright (C) 2015-2026 Google Inc.
  * Copyright (c) 2025 Arm Limited.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -33,10 +33,6 @@
 
 class CoreChecks;
 struct DeviceExtensions;
-
-// TODO: there was a problem that global state persisted between test runs on CI machines.
-// Ideally is too rework these dictionaries so they are not global and part of state tracker.
-void ClearDescriptorSetLayoutCanonicalIdDict();
 
 namespace vvl {
 class Sampler;
@@ -245,7 +241,7 @@ class DescriptorSetLayoutDef {
 
     std::string DescribeDifference(uint32_t index, const DescriptorSetLayoutDef &other) const;
 
-    std::string DescribeDescriptorBufferSizeAndOffests(VkDevice device, VkDescriptorSetLayout layout) const;
+    std::string DescribeDescriptorBufferSizeAndOffsets(VkDevice device, VkDescriptorSetLayout layout) const;
 
   private:
     VkDescriptorSetLayoutCreateFlags flags_;
@@ -400,8 +396,8 @@ class DescriptorSetLayout : public StateObject {
     using BindingTypeStats = DescriptorSetLayoutDef::BindingTypeStats;
     const BindingTypeStats &GetBindingTypeStats() const { return layout_id_->GetBindingTypeStats(); }
 
-    std::string DescribeDescriptorBufferSizeAndOffests(VkDevice device) const {
-        return layout_id_->DescribeDescriptorBufferSizeAndOffests(device, VkHandle());
+    std::string DescribeDescriptorBufferSizeAndOffsets(VkDevice device) const {
+        return layout_id_->DescribeDescriptorBufferSizeAndOffsets(device, VkHandle());
     }
 
   private:
@@ -538,13 +534,12 @@ class TensorDescriptor : public Descriptor {
     uint32_t GetTensorViewCount() const { return tensor_view_count_; }
     const VkTensorViewARM *GetTensorViews() const { return tensor_views_; }
     const vvl::TensorView *GetTensorViewState() const { return tensor_view_state_.get(); }
-    const vvl::Tensor *GetTensorState() const { return tensor_state_.get(); }
+    const vvl::Tensor *GetTensorState() const;
 
   private:
     uint32_t tensor_view_count_{0};
     const VkTensorViewARM *tensor_views_{VK_NULL_HANDLE};
-    std::shared_ptr<vvl::Tensor> tensor_state_;
-    std::shared_ptr<vvl::TensorView> tensor_view_state_;
+    std::shared_ptr<vvl::TensorView> tensor_view_state_{nullptr};
 };
 
 class ImageSamplerDescriptor : public ImageDescriptor {
@@ -677,8 +672,8 @@ class MutableDescriptor : public Descriptor {
     VkDeviceSize GetOffset() const { return offset_; }
     VkDeviceSize GetRange() const { return range_; }
     VkDeviceSize GetEffectiveRange() const;
+    std::shared_ptr<vvl::Tensor> GetSharedTensor() const;
     std::shared_ptr<vvl::BufferView> GetSharedBufferViewState() const { return buffer_view_state_; }
-    std::shared_ptr<vvl::Tensor> GetSharedTensor() const { return tensor_state_; }
     std::shared_ptr<vvl::TensorView> GetSharedTensorView() const { return tensor_view_state_; }
     VkAccelerationStructureKHR GetAccelerationStructureKHR() const { return acc_; }
     const vvl::AccelerationStructureKHR *GetAccelerationStructureStateKHR() const { return acc_state_.get(); }
@@ -733,7 +728,6 @@ class MutableDescriptor : public Descriptor {
     uint32_t tensor_view_count_{0};
     const VkTensorViewARM *tensor_views_{VK_NULL_HANDLE};
     std::shared_ptr<vvl::TensorView> tensor_view_state_;
-    std::shared_ptr<vvl::Tensor> tensor_state_;
 };
 
 // We will want to build this map and list of layouts once in order to record in the state tracker at PostCallRecord time.
@@ -850,6 +844,7 @@ struct DecodedTemplateUpdate {
     std::vector<VkWriteDescriptorSetInlineUniformBlock> inline_infos;
     std::vector<VkWriteDescriptorSetAccelerationStructureKHR> inline_infos_khr;
     std::vector<VkWriteDescriptorSetAccelerationStructureNV> inline_infos_nv;
+    std::vector<VkWriteDescriptorSetPartitionedAccelerationStructureNV> inline_infos_ptlas;
     DecodedTemplateUpdate(const DeviceState &device_data, VkDescriptorSet descriptorSet,
                           const DescriptorUpdateTemplate &template_state, const void *pData,
                           VkDescriptorSetLayout push_layout = VK_NULL_HANDLE);

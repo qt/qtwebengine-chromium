@@ -2817,7 +2817,8 @@ static enum xnn_status optimize_common_subgraphs_static_reshapes(
     // Replace the old shape with the new shape, filling any gaps from the input
     // shape.
     new_shape = node->params.static_reshape.new_shape;
-    XNN_RETURN_IF_ERROR(xnn_shape_fill_gaps(&input_value->shape, &new_shape));
+    XNN_RETURN_IF_ERROR(xnn_shape_fill_gaps(&input_value->shape, &new_shape),
+                        "Could not fill gaps for reshape[#%u].", node_id);
   } else if (node->type == xnn_node_type_static_expand_dims) {
     const struct xnn_shape* new_dims = &node->params.static_reshape.new_shape;
     new_shape.num_dims = input_value->shape.num_dims + new_dims->num_dims;
@@ -2865,19 +2866,32 @@ static enum xnn_status optimize_common_subgraphs_min_max_to_clamp(
     return xnn_status_success;
   }
 
-  // Check that `arg_value` is a static scalar value.
+  // `arg_value` must be a static scalar value, but we can swap the arguments to
+  // make that true.
   struct xnn_value* input_value = &subgraph->values[node->inputs[0]];
   struct xnn_value* arg_value = &subgraph->values[node->inputs[1]];
-  if (!xnn_value_is_const(arg_value->flags) &&
-      !(xnn_shape_multiply_all_dims(&arg_value->shape) == 1 &&
-        xnn_value_is_static(arg_value->allocation_type))) {
-    if (xnn_value_is_const(input_value->flags) ||
-        (xnn_shape_multiply_all_dims(&input_value->shape) == 1 &&
-         xnn_value_is_static(input_value->allocation_type))) {
+
+  const bool input_is_static_scalar =
+      xnn_value_is_const(input_value->flags) ||
+      (xnn_shape_multiply_all_dims(&input_value->shape) == 1 &&
+       xnn_value_is_static(input_value->allocation_type));
+  const bool arg_is_static_scalar =
+      xnn_value_is_const(arg_value->flags) ||
+      (xnn_shape_multiply_all_dims(&arg_value->shape) == 1 &&
+       xnn_value_is_static(arg_value->allocation_type));
+
+  if (input_is_static_scalar) {
+    if (!arg_is_static_scalar) {
       swap_value_pointers(&arg_value, &input_value);
-    } else {
-      return xnn_status_success;
     }
+  } else if (!arg_is_static_scalar) {
+    return xnn_status_success;
+  }
+
+  if (arg_value->shape.num_dims > input_value->shape.num_dims) {
+    // The min or max operator is broadcasting the input to match the scalar's
+    // rank, so we can't replace the operator.
+    return xnn_status_success;
   }
 
   // Extract the min/max argument.
@@ -3426,6 +3440,12 @@ static enum xnn_status optimize_common_subgraphs_binary_const_noop(
     }
   }
 
+  // If the constant shape isn't static, there could be a broadcast that
+  // prevents us from knowing the output shape.
+  if ((const_value->flags & XNN_VALUE_FLAG_SHAPE_IS_STATIC) == 0) {
+    return xnn_status_success;
+  }
+
   const enum xnn_binary_operator binary_operator = node->binary_operator;
   const bool const_is_zero = (const_value->flags & XNN_VALUE_FLAG_IS_ZERO) != 0;
   const bool const_is_one = (const_value->flags & XNN_VALUE_FLAG_IS_ONE) != 0;
@@ -3445,39 +3465,36 @@ static enum xnn_status optimize_common_subgraphs_binary_const_noop(
   }
 
   // Otherwise, if this is a `mul(x, 1.0)`, `div(x, 1.0)`, `add(x, 0.0)`, or
-  // `sub(x, 0.0)`. then skip this op.
+  // `sub(x, 0.0)`, then skip this op.
   else if ((const_is_one &&
             (binary_operator == xnn_binary_multiply ||
              (binary_operator == xnn_binary_divide && const_is_rhs))) ||
            (const_is_zero &&
             (binary_operator == xnn_binary_add ||
              (binary_operator == xnn_binary_subtract && const_is_rhs)))) {
-    if (short_circuit(subgraph, input_value->id, node->outputs[0])) {
-      xnn_log_info("Elided spurious %s[#%u](v%03u, %s).",
-                   binary_operator == xnn_binary_multiply ? "mul"
-                   : binary_operator == xnn_binary_divide ? "div"
-                   : binary_operator == xnn_binary_add    ? "add"
-                                                          : "sub",
-                   node->id, input_value->id, const_is_zero ? "0.0" : "1.0");
-      xnn_node_clear(node);
-      (*changes)++;
-    } else if (input_value->flags & XNN_VALUE_FLAG_SHAPE_IS_STATIC &&
-               const_value->flags & XNN_VALUE_FLAG_SHAPE_IS_STATIC) {
-      // If this node cannot be elided, and both input shapes are static, then
-      // try to replace it with a `copy` or `broadcast` of the input value.
-      struct xnn_shape* output_shape = &subgraph->values[node->outputs[0]].shape;
-      XNN_RETURN_IF_ERROR(
-          xnn_shape_binary_broadcast(&input_value->shape, &const_value->shape,
-                                     output_shape),
-          "Incompatible input shapes for %s[#%u](v%03u, %s).",
-          binary_operator == xnn_binary_multiply ? "mul"
-          : binary_operator == xnn_binary_divide ? "div"
-          : binary_operator == xnn_binary_add    ? "add"
-                                                 : "sub",
-          node->id, input_value->id, const_is_zero ? "0.0" : "1.0");
-
-      // If the output shape matches the input shape, just copy the input.
-      if (xnn_shape_match(&input_value->shape, output_shape)) {
+    // We can elide the operation if the constant is a scalar: the scalar is
+    // broadcasted to the shape of the input and the output has the same shape.
+    const bool constant_is_scalar =
+        xnn_shape_multiply_all_dims(&const_value->shape) == 1 &&
+        const_value->shape.num_dims <= input_value->shape.num_dims;
+    // We can elide the operation if the input value and the output value have
+    // the same shape.
+    const bool input_and_output_have_the_same_shape =
+        (input_value->flags & XNN_VALUE_FLAG_SHAPE_IS_STATIC) &&
+        xnn_shape_match(&input_value->shape, &output_value->shape);
+    if (constant_is_scalar || input_and_output_have_the_same_shape) {
+      // We try to elide the operation...
+      if (short_circuit(subgraph, input_value->id, node->outputs[0])) {
+        xnn_log_info("Elided spurious %s[#%u](v%03u, %s).",
+                     binary_operator == xnn_binary_multiply ? "mul"
+                     : binary_operator == xnn_binary_divide ? "div"
+                     : binary_operator == xnn_binary_add    ? "add"
+                                                            : "sub",
+                     node->id, input_value->id, const_is_zero ? "0.0" : "1.0");
+        xnn_node_clear(node);
+        (*changes)++;
+      } else {
+        // ... if it fails, input and output have the same shape so we can copy.
         XNN_RETURN_IF_ERROR(xnn_define_copy(subgraph, input_value->id,
                                             node->outputs[0], node->flags),
                             "Failed to create new `Copy` node.");
@@ -3490,28 +3507,8 @@ static enum xnn_status optimize_common_subgraphs_binary_const_noop(
                                                    : "sub",
             node->id, input_value->id, const_is_zero ? "0.0" : "1.0", node_id,
             input_value->id);
+        (*changes)++;
       }
-
-      // Otherwise, we need to broadcast the input to the output shape.
-      else {
-        XNN_RETURN_IF_ERROR(
-            xnn_define_static_broadcast(subgraph, output_shape->num_dims,
-                                        output_shape->dim, input_value->id,
-                                        node->outputs[0],
-                                        node->flags),
-            "Failed to create new `Broadcast` node.");
-        node = move_last_node_to(subgraph, node_id);
-        xnn_log_info(
-            "Replaced spurious %s[#%u](v%03u, %s) with "
-            "static_broadcast[#%u](v%03u).",
-            binary_operator == xnn_binary_multiply ? "mul"
-            : binary_operator == xnn_binary_divide ? "div"
-            : binary_operator == xnn_binary_add    ? "add"
-                                                   : "sub",
-            node->id, input_value->id, const_is_zero ? "0.0" : "1.0", node_id,
-            input_value->id);
-      }
-      (*changes)++;
     }
   }
 
@@ -3636,10 +3633,29 @@ static enum xnn_status optimize_common_subgraphs_iter(
                                       XNN_VALUE_FLAG_SHAPE_IS_STATIC) != 0;
     }
     if (all_input_shapes_are_static) {
-      for (int k = 0; k < node->num_outputs; k++) {
-        subgraph->values[node->outputs[k]].flags |=
-            XNN_VALUE_FLAG_SHAPE_IS_STATIC;
+      // Propagate static shapes for nodes for which we know how to do so.
+      switch (node->type) {
+        case xnn_node_type_unary_elementwise:
+          // Unary elementwise ops output always have the same shape as their
+          // input.
+          subgraph->values[node->outputs[0]].shape =
+              subgraph->values[node->inputs[0]].shape;
+          subgraph->values[node->outputs[0]].flags |=
+              XNN_VALUE_FLAG_SHAPE_IS_STATIC;
+          break;
+        case xnn_node_type_binary_elementwise:
+          // Compute the broadcasted output size of binary elementwise ops.
+          xnn_shape_binary_broadcast(&subgraph->values[node->inputs[0]].shape,
+                                     &subgraph->values[node->inputs[1]].shape,
+                                     &subgraph->values[node->outputs[0]].shape);
+          subgraph->values[node->outputs[0]].flags |=
+              XNN_VALUE_FLAG_SHAPE_IS_STATIC;
+          break;
+        default:
+          // We don't reshape outputs and don't mark their shapes as static.
+          break;
       }
+      // TODO: b/455537016 - expand to other know node types.
     }
 
     // Propagate constants through constant-preserving ops.
@@ -3725,6 +3741,9 @@ static enum xnn_status optimize_common_subgraphs_iter(
               node->params.static_reshape.new_shape;
           subgraph->values[node->outputs[0]].flags |=
               XNN_VALUE_FLAG_SHAPE_IS_STATIC;
+        } else {
+          // If the output shape isn't static, then there's nothing to optimize.
+          continue;
         }
         XNN_FALLTHROUGH
 
@@ -4008,6 +4027,23 @@ enum xnn_status xnn_subgraph_optimize_packed_lhs(xnn_subgraph_t subgraph,
           node->packed_input_datatype = xnn_datatype_pqint8;
           node->flags |= XNN_FLAG_INLINE_LHS_PACKING;
         }
+
+        if (input_datatype == xnn_datatype_fp32 &&
+            kernel_datatype == xnn_datatype_fp32 &&
+            output_datatype == xnn_datatype_fp32 &&
+            xnn_init_pf32_gemm_config() != NULL &&
+            !(optimization_flags & XNN_FLAG_NO_INLINED_LHS_PACKING)) {
+            // Note that there is currently no option to not use inlining for this
+            // iGEMM kernel.
+            xnn_log_debug("Setting assumed_datatype=%s for node #%u (%s).",
+                         xnn_datatype_to_string(xnn_datatype_pfp32), node_id,
+                         xnn_node_type_to_string(node->type));
+            node->packed_input_datatype = xnn_datatype_pfp32;
+            if(node->type == xnn_node_type_convolution_2d) {
+              node->flags |= XNN_FLAG_INLINE_LHS_PACKING;
+            }
+          }
+
         if (input_datatype == xnn_datatype_fp16 &&
             (kernel_datatype == xnn_datatype_fp16 ||
             kernel_datatype == xnn_datatype_fp32) &&
@@ -4022,7 +4058,8 @@ enum xnn_status xnn_subgraph_optimize_packed_lhs(xnn_subgraph_t subgraph,
           node->packed_input_datatype = xnn_datatype_pfp16;
           node->flags |= XNN_FLAG_INLINE_LHS_PACKING;
         }
-      } break;
+      }
+        break;
       default:
         break;
     }
@@ -4079,6 +4116,9 @@ enum xnn_status xnn_subgraph_optimize_packed_lhs(xnn_subgraph_t subgraph,
 }
 
 enum xnn_status xnn_subgraph_rewrite_for_row_sum(xnn_subgraph_t subgraph) {
+  // Count the number of consumers for each value.
+  xnn_subgraph_analyze_consumers_and_producers(subgraph);
+
   // Loop over the nodes in the subgraph.
   for (uint32_t node_id = 0; node_id < subgraph->num_nodes; node_id++) {
     struct xnn_node* node = &subgraph->nodes[node_id];

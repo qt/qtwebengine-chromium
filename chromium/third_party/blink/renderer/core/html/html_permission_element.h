@@ -7,6 +7,7 @@
 
 #include <optional>
 
+#include "base/gtest_prod_util.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/time/time.h"
@@ -107,7 +108,7 @@ class CORE_EXPORT HTMLPermissionElement
 
  protected:
   // blink::HTMLElement:
-  void AttributeChanged(const AttributeModificationParams& params) override;
+  void ParseAttribute(const AttributeModificationParams& params) override;
 
   // blink::Node:
   void DefaultEventHandler(Event&) override;
@@ -125,7 +126,7 @@ class CORE_EXPORT HTMLPermissionElement
                                   const AtomicString& language_string);
   virtual void UpdateAppearance();
 
-  void UpdateIcon(mojom::blink::PermissionName permission);
+  virtual void UpdateIcon(mojom::blink::PermissionName permission);
 
   // Update permission statuses and appearance based on the current statuses.
   virtual void UpdatePermissionStatusAndAppearance();
@@ -142,7 +143,11 @@ class CORE_EXPORT HTMLPermissionElement
     return permission_text_span_.Get();
   }
 
-  void SetPreciseLocation();
+  HTMLPermissionIconElement* permission_internal_icon() const {
+    return permission_internal_icon_.Get();
+  }
+
+  void SetPreciseLocation(bool);
 
   bool is_precise_location() const { return is_precise_location_; }
 
@@ -268,6 +273,9 @@ class CORE_EXPORT HTMLPermissionElement
 
     // This element is disabled because of the element's style.
     kInvalidStyle,
+
+    // The element's attribute changed.
+    kAttributeChanged,
   };
 
   // These values are used for histograms. Entries should not be renumbered and
@@ -284,8 +292,8 @@ class CORE_EXPORT HTMLPermissionElement
     kIntersectionWithViewportChanged = 6,
     kIntersectionVisibilityOutOfViewPortOrClipped = 7,
     kIntersectionVisibilityOccludedOrDistorted = 8,
-
-    kMaxValue = kIntersectionVisibilityOccludedOrDistorted,
+    kAttributeChanged = 9,
+    kMaxValue = kAttributeChanged,
   };
   // LINT.ThenChange(//tools/metrics/histograms/metadata/blink/enums.xml:PermissionElementUserInteractionDeniedReason)
 

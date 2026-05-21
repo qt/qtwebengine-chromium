@@ -17,9 +17,9 @@
 #include "base/files/file_path.h"
 #include "base/functional/callback.h"
 #include "base/functional/callback_forward.h"
+#include "base/functional/callback_helpers.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/raw_ptr.h"
-#include "base/sequence_checker.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "base/trace_event/memory_dump_provider.h"
@@ -32,10 +32,10 @@
 #include "components/services/storage/public/cpp/quota_error_or.h"
 #include "components/services/storage/public/mojom/blob_storage_context.mojom.h"
 #include "components/services/storage/public/mojom/file_system_access_context.mojom.h"
-#include "content/browser/indexed_db/blob_reader.h"
 #include "content/browser/indexed_db/indexed_db_data_loss_info.h"
 #include "content/browser/indexed_db/indexed_db_database_error.h"
 #include "content/browser/indexed_db/indexed_db_external_object.h"
+#include "content/browser/indexed_db/instance/blob_reader.h"
 #include "content/browser/indexed_db/status.h"
 #include "content/common/content_export.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
@@ -64,7 +64,7 @@ class Database;
 // `ResetBackingStore()`, which returns `this` to an uninitialized state.
 //
 // Each instance of this class is created and run on a unique thread pool
-// SequencedTaskRunner, i.e. the "bucket thread".
+// SequencedTaskRunner, i.e. the "bucket sequence".
 class CONTENT_EXPORT BucketContext
     : public blink::mojom::IDBFactory,
       public base::trace_event::MemoryDumpProvider {
@@ -90,8 +90,8 @@ class CONTENT_EXPORT BucketContext
 
   // This structure defines the interface between `BucketContext` and the
   // broader context that exists per Storage Partition (i.e. BrowserContext).
-  // TODO(crbug.com/40279485): for now these callbacks execute on the current
-  // sequence, but in the future they should be bound to the main IDB sequence.
+  // The callbacks are invoked on the bucket sequence, but almost all are bound
+  // to run on the main IDB sequence (see IndexedDBContextImpl).
   struct CONTENT_EXPORT Delegate {
     Delegate();
     Delegate(Delegate&&);
@@ -99,6 +99,8 @@ class CONTENT_EXPORT BucketContext
 
     Delegate(const Delegate&) = delete;
     Delegate& operator=(const Delegate&) = delete;
+
+    base::OnceClosure on_destroyed;
 
     // Called when the bucket context is ready to be destroyed. After this is
     // called, the bucket context will no longer accept new IDBFactory
@@ -143,12 +145,24 @@ class CONTENT_EXPORT BucketContext
 
   ~BucketContext() override;
 
+  // Calculate the usage of the bucket by directly examining the disk. Should be
+  // used in lieu of `GetUsage()` only when there is no live `BucketContext` for
+  // the given bucket.
+  static uint64_t ReadUsageFromDisk(
+      const storage::BucketLocator& bucket_locator,
+      const base::FilePath& data_path);
+
   // All `BucketContext` instances created during the lifetime of the returned
-  // object will use SQLite iff `use_sqlite` is true.
+  // object will use SQLite iff `use_sqlite` is true, unless overridden for a
+  // specific instance with `set_should_use_sqlite_for_testing()`.
   static base::AutoReset<std::optional<bool>> OverrideShouldUseSqliteForTesting(
       bool use_sqlite);
 
-  bool ShouldUseSqlite() const { return should_use_sqlite_; }
+  // Inserts an extra step during BackingStore teardown; used for testing
+  // crbug.com/340398745.
+  static void InsertTeardownStepForTesting(base::OnceClosure on_teardown);
+
+  bool ShouldUseSqlite();
 
   void QueueRunTasks();
 
@@ -166,17 +180,14 @@ class CONTENT_EXPORT BucketContext
   void StartMetadataRecording();
   std::vector<storage::mojom::IdbBucketMetadataPtr> StopMetadataRecording();
 
-  int64_t GetInMemorySize();
+  // Returns the current usage of the bucket, in bytes. `write_in_progress` is
+  // true iff the last readwrite transaction did not flush changes to disk
+  // (i.e., had relaxed durability).
+  uint64_t GetUsage(bool write_in_progress);
 
-  bool IsClosing() const {
-    DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-    return closing_stage_ != ClosingState::kNotClosing;
-  }
+  bool IsClosing() const { return closing_stage_ != ClosingState::kNotClosing; }
 
-  ClosingState closing_stage() const {
-    DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-    return closing_stage_;
-  }
+  ClosingState closing_stage() const { return closing_stage_; }
 
   void ReportOutstandingBlobs(bool blobs_outstanding);
 
@@ -201,29 +212,14 @@ class CONTENT_EXPORT BucketContext
   storage::BucketLocator bucket_locator() {
     return bucket_info_.ToBucketLocator();
   }
-  BackingStore* backing_store() {
-    DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-    return backing_store_.get();
-  }
-  const DBMap& GetDatabasesForTesting() const {
-    DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-    return databases_;
-  }
-  PartitionedLockManager& lock_manager() {
-    DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-    return *lock_manager_;
-  }
-  const PartitionedLockManager& lock_manager() const {
-    DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-    return *lock_manager_;
-  }
+  BackingStore* backing_store() { return backing_store_.get(); }
+  const DBMap& GetDatabasesForTesting() const { return databases_; }
+  PartitionedLockManager& lock_manager() { return *lock_manager_; }
+  const PartitionedLockManager& lock_manager() const { return *lock_manager_; }
 
   Delegate& delegate() { return delegate_; }
 
-  base::OneShotTimer* close_timer() {
-    DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-    return &close_timer_;
-  }
+  base::OneShotTimer* close_timer() { return &close_timer_; }
 
   base::WeakPtr<BucketContext> AsWeakPtr() {
     return weak_factory_.GetWeakPtr();
@@ -309,6 +305,10 @@ class CONTENT_EXPORT BucketContext
   FRIEND_TEST_ALL_PREFIXES(BucketContextTest, BucketSpaceDecay);
   FRIEND_TEST_ALL_PREFIXES(BucketContextTest, MetadataRecordingStateHistory);
 
+  // Overrides the backing store type for this instance only. Must be called
+  // right after object construction.
+  void SetShouldUseSqliteForTesting(bool use_sqlite);
+
   // The data structure that stores everything bound to the receiver. This will
   // be stored together with the receiver in the `mojo::ReceiverSet`.
   struct ReceiverContext {
@@ -376,15 +376,15 @@ class CONTENT_EXPORT BucketContext
 
   std::string SanitizeErrorMessage(const std::string& message);
 
-  SEQUENCE_CHECKER(sequence_checker_);
-
   const storage::BucketInfo bucket_info_;
 
   // Base directory for blobs and backing store files.
   const base::FilePath data_path_;
 
-  // True if the backing store is SQLite, or would be SQLite if it existed.
-  bool should_use_sqlite_ = false;
+  // True if the backing store is SQLite, or would be SQLite if it existed. This
+  // is lazily initialized based on flag state, or overridden with
+  // `set_should_use_sqlite_for_testing()`.
+  std::optional<bool> should_use_sqlite_;
 
   // True if there are blobs referencing this backing store that are still
   // alive. This is used as closing criteria for this object, see CanClose.
@@ -402,7 +402,6 @@ class CONTENT_EXPORT BucketContext
   // Databases in the backing store which are already loaded/represented by
   // Database objects. The backing store may have other databases which
   // have not yet been loaded.
-  uint32_t next_database_id_for_locks_ = 0;
   DBMap databases_;
   // This is the refcount for the number of BucketContextHandle's given out for
   // this bucket context using OpenReference. This is used as closing criteria

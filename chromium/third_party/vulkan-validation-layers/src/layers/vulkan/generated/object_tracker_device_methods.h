@@ -3,10 +3,10 @@
 
 /***************************************************************************
  *
- * Copyright (c) 2015-2025 The Khronos Group Inc.
- * Copyright (c) 2015-2025 Valve Corporation
- * Copyright (c) 2015-2025 LunarG, Inc.
- * Copyright (c) 2015-2025 Google Inc.
+ * Copyright (c) 2015-2026 The Khronos Group Inc.
+ * Copyright (c) 2015-2026 Valve Corporation
+ * Copyright (c) 2015-2026 LunarG, Inc.
+ * Copyright (c) 2015-2026 Google Inc.
  * Copyright (c) 2015-2025 RasterGrid Kft.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -869,6 +869,17 @@ bool PreCallValidateCmdInitializeGraphScratchMemoryAMDX(VkCommandBuffer commandB
                                                         VkDeviceAddress scratch, VkDeviceSize scratchSize,
                                                         const ErrorObject& error_obj) const override;
 #endif  // VK_ENABLE_BETA_EXTENSIONS
+bool PreCallValidateWriteSamplerDescriptorsEXT(VkDevice device, uint32_t samplerCount, const VkSamplerCreateInfo* pSamplers,
+                                               const VkHostAddressRangeEXT* pDescriptors,
+                                               const ErrorObject& error_obj) const override;
+bool PreCallValidateWriteResourceDescriptorsEXT(VkDevice device, uint32_t resourceCount,
+                                                const VkResourceDescriptorInfoEXT* pResources,
+                                                const VkHostAddressRangeEXT* pDescriptors,
+                                                const ErrorObject& error_obj) const override;
+bool PreCallValidateGetImageOpaqueCaptureDataEXT(VkDevice device, uint32_t imageCount, const VkImage* pImages,
+                                                 VkHostAddressRangeEXT* pDatas, const ErrorObject& error_obj) const override;
+bool PreCallValidateGetTensorOpaqueCaptureDataARM(VkDevice device, uint32_t tensorCount, const VkTensorARM* pTensors,
+                                                  VkHostAddressRangeEXT* pDatas, const ErrorObject& error_obj) const override;
 bool PreCallValidateGetImageDrmFormatModifierPropertiesEXT(VkDevice device, VkImage image,
                                                            VkImageDrmFormatModifierPropertiesEXT* pProperties,
                                                            const ErrorObject& error_obj) const override;
@@ -1383,13 +1394,6 @@ bool PreCallValidateUpdateIndirectExecutionSetShaderEXT(VkDevice device, VkIndir
                                                         uint32_t executionSetWriteCount,
                                                         const VkWriteIndirectExecutionSetShaderEXT* pExecutionSetWrites,
                                                         const ErrorObject& error_obj) const override;
-#ifdef VK_USE_PLATFORM_OHOS
-bool PreCallValidateAcquireImageOHOS(VkDevice device, VkImage image, int32_t nativeFenceFd, VkSemaphore semaphore, VkFence fence,
-                                     const ErrorObject& error_obj) const override;
-bool PreCallValidateQueueSignalReleaseImageOHOS(VkQueue queue, uint32_t waitSemaphoreCount, const VkSemaphore* pWaitSemaphores,
-                                                VkImage image, int32_t* pNativeFenceFd,
-                                                const ErrorObject& error_obj) const override;
-#endif  // VK_USE_PLATFORM_OHOS
 #ifdef VK_USE_PLATFORM_METAL_EXT
 bool PreCallValidateGetMemoryMetalHandleEXT(VkDevice device, const VkMemoryGetMetalHandleInfoEXT* pGetMetalHandleInfo,
                                             void** pHandle, const ErrorObject& error_obj) const override;

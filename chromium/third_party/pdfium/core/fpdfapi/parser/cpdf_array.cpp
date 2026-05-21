@@ -19,7 +19,6 @@
 #include "core/fxcrt/check.h"
 #include "core/fxcrt/containers/contains.h"
 #include "core/fxcrt/fx_stream.h"
-#include "core/fxcrt/notreached.h"
 
 CPDF_Array::CPDF_Array() = default;
 

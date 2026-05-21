@@ -1,7 +1,7 @@
-/* Copyright (c) 2015-2025 The Khronos Group Inc.
- * Copyright (c) 2015-2025 Valve Corporation
- * Copyright (c) 2015-2025 LunarG, Inc.
- * Copyright (C) 2015-2024 Google Inc.
+/* Copyright (c) 2015-2026 The Khronos Group Inc.
+ * Copyright (c) 2015-2026 Valve Corporation
+ * Copyright (c) 2015-2026 LunarG, Inc.
+ * Copyright (C) 2015-2026 Google Inc.
  * Modifications Copyright (C) 2020-2022 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,6 +17,7 @@
  * limitations under the License.
  */
 
+#include <sstream>
 #include <string>
 
 #include <vulkan/vk_enum_string_helper.h>
@@ -257,7 +258,9 @@ bool CoreChecks::PreCallValidateCreateBufferView(VkDevice device, const VkBuffer
 
     if (enabled_features.texelBufferAlignment) {
         VkDeviceSize texel_block_size = GetTexelBufferFormatSize(pCreateInfo->format);
+        bool texel_size_of_three = false;
         if ((texel_block_size % 3) == 0) {
+            texel_size_of_three = true;
             texel_block_size /= 3;
         }
         if (buffer_state.usage & VK_BUFFER_USAGE_2_STORAGE_TEXEL_BUFFER_BIT) {
@@ -265,18 +268,27 @@ bool CoreChecks::PreCallValidateCreateBufferView(VkDevice device, const VkBuffer
             if (phys_dev_props_core13.storageTexelBufferOffsetSingleTexelAlignment) {
                 alignment_requirement = std::min(alignment_requirement, texel_block_size);
             }
-            if (SafeModulo(pCreateInfo->offset, alignment_requirement) != 0) {
-                skip |= LogError("VUID-VkBufferViewCreateInfo-buffer-02750", objlist, create_info_loc.dot(Field::buffer),
-                                 "was created with VK_BUFFER_USAGE_2_STORAGE_TEXEL_BUFFER_BIT, so the offset (%" PRIuLEAST64
-                                 ") must be a multiple of the lesser of "
-                                 "storageTexelBufferOffsetAlignmentBytes (%" PRIuLEAST64
-                                 ") or, if storageTexelBufferOffsetSingleTexelAlignment "
-                                 "(%" PRId32
-                                 ") is VK_TRUE, the size of a texel of the requested format. "
-                                 "If the size of a texel is a multiple of three bytes, then the size of a "
-                                 "single component of format is used instead",
-                                 pCreateInfo->offset, phys_dev_props_core13.storageTexelBufferOffsetAlignmentBytes,
-                                 phys_dev_props_core13.storageTexelBufferOffsetSingleTexelAlignment);
+            if (!IsIntegerMultipleOf(pCreateInfo->offset, alignment_requirement)) {
+                std::ostringstream ss;
+                ss << "was created with VK_BUFFER_USAGE_2_STORAGE_TEXEL_BUFFER_BIT, so the offset (" << pCreateInfo->offset
+                   << ") must be a multiple of " << alignment_requirement << "\n";
+                if (phys_dev_props_core13.storageTexelBufferOffsetSingleTexelAlignment) {
+                    ss << "storageTexelBufferOffsetSingleTexelAlignment is VK_TRUE, so we take "
+                          "min(storageTexelBufferOffsetAlignmentBytes, texelBlockSize("
+                       << string_VkFormat(pCreateInfo->format) << ")) which is min("
+                       << phys_dev_props_core13.storageTexelBufferOffsetAlignmentBytes << ", " << texel_block_size << ")";
+                    if (texel_size_of_three) {
+                        ss << "\nThe size of a texel " << (texel_block_size * 3)
+                           << " was a multiple of three bytes, so the size of a single component of "
+                           << string_VkFormat(pCreateInfo->format) << " was used instead";
+                    }
+                } else {
+                    ss << "storageTexelBufferOffsetSingleTexelAlignment is VK_FALSE and storageTexelBufferOffsetAlignmentBytes is "
+                       << phys_dev_props_core13.storageTexelBufferOffsetAlignmentBytes;
+                }
+
+                skip |= LogError("VUID-VkBufferViewCreateInfo-buffer-02750", objlist, create_info_loc.dot(Field::buffer), "%s",
+                                 ss.str().c_str());
             }
         }
         if (buffer_state.usage & VK_BUFFER_USAGE_2_UNIFORM_TEXEL_BUFFER_BIT) {
@@ -284,20 +296,37 @@ bool CoreChecks::PreCallValidateCreateBufferView(VkDevice device, const VkBuffer
             if (phys_dev_props_core13.uniformTexelBufferOffsetSingleTexelAlignment) {
                 alignment_requirement = std::min(alignment_requirement, texel_block_size);
             }
-            if (SafeModulo(pCreateInfo->offset, alignment_requirement) != 0) {
-                skip |= LogError("VUID-VkBufferViewCreateInfo-buffer-02751", objlist, create_info_loc.dot(Field::buffer),
-                                 "was created with VK_BUFFER_USAGE_2_UNIFORM_TEXEL_BUFFER_BIT, so the offset (%" PRIuLEAST64
-                                 ") must be a multiple of the lesser of "
-                                 "uniformTexelBufferOffsetAlignmentBytes (%" PRIuLEAST64
-                                 ") or, if uniformTexelBufferOffsetSingleTexelAlignment "
-                                 "(%" PRId32
-                                 ") is VK_TRUE, the size of a texel of the requested format. "
-                                 "If the size of a texel is a multiple of three bytes, then the size of a "
-                                 "single component of format is used instead",
-                                 pCreateInfo->offset, phys_dev_props_core13.uniformTexelBufferOffsetAlignmentBytes,
-                                 phys_dev_props_core13.uniformTexelBufferOffsetSingleTexelAlignment);
+            if (!IsIntegerMultipleOf(pCreateInfo->offset, alignment_requirement)) {
+                std::ostringstream ss;
+                ss << "was created with VK_BUFFER_USAGE_2_UNIFORM_TEXEL_BUFFER_BIT, so the offset (" << pCreateInfo->offset
+                   << ") must be a multiple of " << alignment_requirement << "\n";
+                if (phys_dev_props_core13.uniformTexelBufferOffsetSingleTexelAlignment) {
+                    ss << "uniformTexelBufferOffsetSingleTexelAlignment is VK_TRUE, so we take "
+                          "min(uniformTexelBufferOffsetAlignmentBytes, texelBlockSize("
+                       << string_VkFormat(pCreateInfo->format) << ")) which is min("
+                       << phys_dev_props_core13.uniformTexelBufferOffsetAlignmentBytes << ", " << texel_block_size << ")";
+                    if (texel_size_of_three) {
+                        ss << "\nThe size of a texel " << (texel_block_size * 3)
+                           << " was a multiple of three bytes, so the size of a single component of "
+                           << string_VkFormat(pCreateInfo->format) << " was used instead";
+                    }
+                } else {
+                    ss << "uniformTexelBufferOffsetSingleTexelAlignment is VK_FALSE and uniformTexelBufferOffsetAlignmentBytes is "
+                       << phys_dev_props_core13.uniformTexelBufferOffsetAlignmentBytes;
+                }
+
+                skip |= LogError("VUID-VkBufferViewCreateInfo-buffer-02751", objlist, create_info_loc.dot(Field::buffer), "%s",
+                                 ss.str().c_str());
             }
         }
+    } else if (!IsIntegerMultipleOf(pCreateInfo->offset, phys_dev_props.limits.minTexelBufferOffsetAlignment)) {
+        const char* vuid = (buffer_state.usage & VK_BUFFER_USAGE_2_STORAGE_TEXEL_BUFFER_BIT)
+                               ? " VUID-VkBufferViewCreateInfo-buffer-02750"
+                               : " VUID-VkBufferViewCreateInfo-buffer-02751";
+        skip |= LogError(vuid, pCreateInfo->buffer, create_info_loc.dot(Field::offset),
+                         "(%" PRIuLEAST64
+                         ") must be a multiple of VkPhysicalDeviceLimits::minTexelBufferOffsetAlignment (%" PRIuLEAST64 ").",
+                         pCreateInfo->offset, phys_dev_props.limits.minTexelBufferOffsetAlignment);
     }
 
     // vkspec.html#resources-buffer-views-usage

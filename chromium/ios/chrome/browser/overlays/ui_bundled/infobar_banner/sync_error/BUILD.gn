@@ -49,6 +49,7 @@ source_set("unit_tests") {
     "//ios/chrome/browser/settings/model/sync/utils/test",
     "//ios/chrome/browser/shared/model/prefs:pref_names",
     "//ios/chrome/browser/shared/model/profile/test",
+    "//ios/chrome/browser/shared/public/commands",
     "//ios/chrome/common/ui/colors",
     "//ios/chrome/test:test_support",
     "//ios/web/public/test",
@@ -57,8 +58,4 @@ source_set("unit_tests") {
     "//third_party/ocmock",
     "//ui/base",
   ]
-
-  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
-  # enable the diagnostic by removing this line.
-  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }

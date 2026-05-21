@@ -27,7 +27,7 @@
 #include "content/public/android/content_app_jni/ContentChildProcessServiceDelegate_jni.h"
 
 using base::android::AttachCurrentThread;
-using base::android::JavaParamRef;
+using base::android::JavaRef;
 
 namespace content {
 
@@ -107,9 +107,9 @@ ChildProcessSurfaceManager* GetChildProcessSurfaceManager() {
 // processes such as renderers, plugins, etc.
 static void JNI_ContentChildProcessServiceDelegate_InternalInitChildProcess(
     JNIEnv* env,
-    const JavaParamRef<jobject>& service_impl,
-    jint cpu_count,
-    jlong cpu_features) {
+    const JavaRef<jobject>& service_impl,
+    int32_t cpu_count,
+    int64_t cpu_features) {
   InitChildProcessCommon(cpu_count, cpu_features);
 
   GetChildProcessSurfaceManager()->SetServiceImpl(service_impl);
@@ -122,9 +122,9 @@ static void JNI_ContentChildProcessServiceDelegate_InternalInitChildProcess(
 
 static void JNI_ContentChildProcessServiceDelegate_InitChildProcess(
     JNIEnv* env,
-    const JavaParamRef<jobject>& obj,
-    jint cpu_count,
-    jlong cpu_features) {
+    const JavaRef<jobject>& obj,
+    int32_t cpu_count,
+    int64_t cpu_features) {
   JNI_ContentChildProcessServiceDelegate_InternalInitChildProcess(
       env, obj, cpu_count, cpu_features);
 }
@@ -137,7 +137,7 @@ static void JNI_ContentChildProcessServiceDelegate_InitMemoryPressureListener(
 static void
 JNI_ContentChildProcessServiceDelegate_RetrieveFileDescriptorsIdsToKeys(
     JNIEnv* env,
-    const JavaParamRef<jobject>& obj) {
+    const JavaRef<jobject>& obj) {
   std::map<int, std::string> ids_to_keys;
   std::string file_switch_value =
       base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(

@@ -36,7 +36,7 @@ OpenScreenSessionBase::OpenScreenSessionBase(
                                 quic::kMaxAvailableStreamsMultiplier) -
                                1;
   this->config()->SetMaxBidirectionalStreamsToSend(max_streams);
-  if (VersionHasIetfQuicFrames(transport_version())) {
+  if (VersionIsIetfQuic(transport_version())) {
     this->config()->SetMaxUnidirectionalStreamsToSend(max_streams);
   }
 }

@@ -5,6 +5,7 @@
 #ifndef CHROME_BROWSER_UI_WEBUI_SEARCHBOX_OMNIBOX_COMPOSEBOX_HANDLER_H_
 #define CHROME_BROWSER_UI_WEBUI_SEARCHBOX_OMNIBOX_COMPOSEBOX_HANDLER_H_
 
+#include "base/memory/weak_ptr.h"
 #include "chrome/browser/ui/webui/cr_components/composebox/composebox_handler.h"
 
 class Profile;
@@ -23,17 +24,20 @@ class OmniboxComposeboxHandler : public ComposeboxHandler {
           pending_searchbox_handler,
       Profile* profile,
       content::WebContents* web_contents,
-      GetSessionHandleCallback get_session_callback);
+      GetSessionHandleCallback get_session_callback,
+      ClearSessionHandleCallback clear_session_callback);
 
   ~OmniboxComposeboxHandler() override;
 
   // composebox::mojom::PageHandler:
   void HandleFileUpload(bool is_image) override;
 
- protected:
-  // ContextualSearchboxHandler:
-  std::optional<lens::LensOverlayInvocationSource> GetInvocationSource()
-      const override;
+ private:
+  void OnAimEligibilityChanged();
+
+  base::CallbackListSubscription aim_eligibility_subscription_;
+
+  base::WeakPtrFactory<OmniboxComposeboxHandler> weak_ptr_factory_{this};
 };
 
 #endif  // CHROME_BROWSER_UI_WEBUI_SEARCHBOX_OMNIBOX_COMPOSEBOX_HANDLER_H_

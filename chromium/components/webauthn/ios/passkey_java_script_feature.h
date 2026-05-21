@@ -6,6 +6,8 @@
 #define COMPONENTS_WEBAUTHN_IOS_PASSKEY_JAVA_SCRIPT_FEATURE_H_
 
 #import "base/no_destructor.h"
+#import "components/webauthn/core/browser/passkey_model_utils.h"
+#import "components/webauthn/ios/passkey_request_params.h"
 #import "ios/web/public/js_messaging/java_script_feature.h"
 
 namespace webauthn {
@@ -24,10 +26,12 @@ class PasskeyJavaScriptFeature : public web::JavaScriptFeature {
   // spec:
   // https://www.w3.org/TR/webauthn-2/#iface-authenticatorattestationresponse
   struct AttestationData {
-    AttestationData(std::vector<uint8_t> attestation_object,
-                    std::vector<uint8_t> authenticator_data,
-                    std::vector<uint8_t> public_key_spki_der,
-                    std::string client_data_json);
+    AttestationData(
+        std::vector<uint8_t> attestation_object,
+        std::vector<uint8_t> authenticator_data,
+        std::vector<uint8_t> public_key_spki_der,
+        std::string client_data_json,
+        passkey_model_utils::ExtensionOutputData extension_output_data);
     AttestationData(AttestationData&& other);
     ~AttestationData();
 
@@ -35,16 +39,19 @@ class PasskeyJavaScriptFeature : public web::JavaScriptFeature {
     std::vector<uint8_t> authenticator_data;
     std::vector<uint8_t> public_key_spki_der;
     std::string client_data_json;
+    passkey_model_utils::ExtensionOutputData extension_output_data;
   };
 
   // Provides parameters for passkey assertion, as specified by the webauthn
   // spec:
   // https://www.w3.org/TR/webauthn-2/#iface-authenticatorassertionresponse
   struct AssertionData {
-    AssertionData(std::vector<uint8_t> signature,
-                  std::vector<uint8_t> authenticator_data,
-                  std::vector<uint8_t> user_handle,
-                  std::string client_data_json);
+    AssertionData(
+        std::vector<uint8_t> signature,
+        std::vector<uint8_t> authenticator_data,
+        std::vector<uint8_t> user_handle,
+        std::string client_data_json,
+        passkey_model_utils::ExtensionOutputData extension_output_data);
     AssertionData(AssertionData&& other);
     ~AssertionData();
 
@@ -52,14 +59,21 @@ class PasskeyJavaScriptFeature : public web::JavaScriptFeature {
     std::vector<uint8_t> authenticator_data;
     std::vector<uint8_t> user_handle;
     std::string client_data_json;
+    passkey_model_utils::ExtensionOutputData extension_output_data;
   };
 
   // This feature holds no state, so only a single static instance is ever
   // needed.
   static PasskeyJavaScriptFeature* GetInstance();
 
+  // Rejects the current attestation or registration request.
+  void RejectPasskeyRequest(web::WebFrame* web_frame,
+                            std::string_view request_id);
+
   // Yields the current attestation or registration request back to the OS.
-  void DeferToRenderer(web::WebFrame* web_frame, std::string_view request_id);
+  void DeferToRenderer(web::WebFrame* web_frame,
+                       std::string_view request_id,
+                       PasskeyRequestParams::RequestType request_type);
 
   // Resolves the attestation request with a valid passkey.
   void ResolveAttestationRequest(web::WebFrame* web_frame,

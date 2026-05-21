@@ -14,7 +14,7 @@
 #include <vector>
 
 #include "base/check_deref.h"
-#include "base/containers/contains.h"
+#include "base/containers/extend.h"
 #include "base/containers/to_vector.h"
 #include "base/memory/raw_ptr.h"
 #include "base/strings/strcat.h"
@@ -204,7 +204,7 @@ template <typename T>
 std::vector<T> Flattened(const std::vector<std::vector<T>>& xs) {
   std::vector<T> concat;
   for (const auto& x : xs) {
-    concat.insert(concat.end(), x.begin(), x.end());
+    base::Extend(concat, x);
   }
   return concat;
 }
@@ -459,7 +459,7 @@ class FormForestTestWithMockedTree : public FormForestTest {
       data.set_child_frames(std::move(child_frames));
 
       if (!form_info.name.empty()) {
-        CHECK(!base::Contains(forms_, form_info.name));
+        CHECK(!forms_.contains(form_info.name));
         forms_.emplace(form_info.name, data.global_id());
       }
       forms.push_back(data);

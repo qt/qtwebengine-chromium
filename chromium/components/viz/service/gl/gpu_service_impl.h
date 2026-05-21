@@ -27,6 +27,7 @@
 #include "components/viz/service/gl/exit_code.h"
 #include "components/viz/service/viz_service_export.h"
 #include "gpu/command_buffer/common/shm_count.h"
+#include "gpu/command_buffer/service/gpu_persistent_cache.h"
 #include "gpu/command_buffer/service/sequence_id.h"
 #include "gpu/config/gpu_info.h"
 #include "gpu/config/gpu_preferences.h"
@@ -200,7 +201,8 @@ class VIZ_SERVICE_EXPORT GpuServiceImpl
   void BindWebNNContextProvider(
       mojo::PendingReceiver<webnn::mojom::WebNNContextProvider>
           pending_receiver,
-      int client_id) override;
+      int client_id,
+      bool is_incognito) override;
 
   void GetVideoMemoryUsageStats(
       GetVideoMemoryUsageStatsCallback callback) override;
@@ -225,9 +227,6 @@ class VIZ_SERVICE_EXPORT GpuServiceImpl
   void OnBackgroundCleanup() override;
   void OnBackgrounded() override;
   void OnForegrounded() override;
-#if !BUILDFLAG(IS_ANDROID)
-  void OnMemoryPressure(base::MemoryPressureLevel level) override;
-#endif
 #if BUILDFLAG(IS_APPLE)
   void BeginCATransaction() override;
   void CommitCATransaction(CommitCATransactionCallback callback) override;
@@ -373,9 +372,9 @@ class VIZ_SERVICE_EXPORT GpuServiceImpl
   void SetHostProcessId(base::ProcessId pid);
 #endif
 
-  using VisibilityChangedCallback =
-      base::RepeatingCallback<void(bool /*visible*/)>;
-  void SetVisibilityChangedCallback(VisibilityChangedCallback);
+  using PriorityChangedCallback =
+      base::RepeatingCallback<void(base::Process::Priority /*priority*/)>;
+  void SetPriorityChangedCallback(PriorityChangedCallback);
 
  private:
   void InitializeWithHostInternal(
@@ -521,6 +520,8 @@ class VIZ_SERVICE_EXPORT GpuServiceImpl
 
   std::unique_ptr<webnn::WebNNContextProviderImpl> webnn_context_provider_;
 
+  gpu::GpuPersistentCacheCollection persistent_caches_;
+
   // An event that will be signalled when we shutdown. On some platforms it
   // comes from external sources.
   std::unique_ptr<base::WaitableEvent> owned_shutdown_event_;
@@ -538,7 +539,7 @@ class VIZ_SERVICE_EXPORT GpuServiceImpl
   // Should only be accessed on the IO thread after creation.
   mojo::Receiver<mojom::GpuService> receiver_{this};
 
-  VisibilityChangedCallback visibility_changed_callback_;
+  PriorityChangedCallback priority_changed_callback_;
 
   base::ProcessId host_process_id_ = base::kNullProcessId;
 

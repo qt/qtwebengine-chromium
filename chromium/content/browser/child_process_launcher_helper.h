@@ -5,7 +5,6 @@
 #ifndef CONTENT_BROWSER_CHILD_PROCESS_LAUNCHER_HELPER_H_
 #define CONTENT_BROWSER_CHILD_PROCESS_LAUNCHER_HELPER_H_
 
-#include <map>
 #include <memory>
 #include <optional>
 
@@ -252,7 +251,7 @@ class ChildProcessLauncherHelper
 #endif
 
 #if BUILDFLAG(IS_ANDROID)
-  void OnChildProcessStarted(JNIEnv* env, jint handle);
+  void OnChildProcessStarted(JNIEnv* env, int32_t handle);
 
   void OnSpareRendererPriorityGraduatedOnClientThread(bool is_alive);
 

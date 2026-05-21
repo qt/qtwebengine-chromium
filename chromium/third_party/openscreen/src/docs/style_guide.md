@@ -4,23 +4,23 @@ The Open Screen Library follows the [Chromium C++ coding style](https://chromium
 which, in turn, defers to the [Google C++ Style Guide](https://google.github.io/styleguide/cppguide.html).
 We also follow the [Chromium C++ Do's and Don'ts](https://sites.google.com/a/chromium.org/dev/developers/coding-style/cpp-dos-and-donts).
 
-C++17 is the maximum language level allowed in the library.  For C++11, C++14,
-and C++17 language and library features, we follow [C++ features in
-Chromium](https://chromium.googlesource.com/chromium/src/+/main/styleguide/c++/c++-features.md)
-guidelines with the following exceptions noted below.
+**C++20** is the maximum language level allowed in the library.  For modern
+C++ features, we follow the guidelines set in the style guide's
+[Modern C++ use in Chromium](https://chromium.googlesource.com/chromium/src/+/main/styleguide/c++/c++-features.md)
+document, with the exceptions noted below.
 
-In general Open Screen follows [You Aren't Gonna Need
-It](https://martinfowler.com/bliki/Yagni.html) principles.  This means we avoid
-adding generic classes, functions, or libraries that are only used in one place
-for one thing.  Once there are multiple usages of a function that can be handled
-in a generic way, that function is a candidate for our base libraries in `util/`
-and `platform/base`.
+In general Open Screen follows [You Aren't Gonna Need It](https://martinfowler.com/bliki/Yagni.html)
+principles.  This means we avoid adding generic classes, functions, or libraries
+that are only used in one place for one thing.  Once there are multiple usages of
+a function that can be handled in a generic way, that function is a candidate
+for our base libraries in `util/` and `platform/base`.
+
+[TOC]
 
 ## Disallowed Styles and Features
 
-Blink style is *not allowed* anywhere in the Open Screen Library.
-
-C++20-only features are currently *not allowed* in the Open Screen Library.
+[Blink style](https://chromium.googlesource.com/chromium/src/+/main/styleguide/c++/blink-c++.md)
+is *not allowed* anywhere in the Open Screen Library.
 
 GCC does not support designated initializers for non-trivial types.  This means
 that the `.member = value` struct initialization syntax is not supported unless
@@ -30,35 +30,42 @@ unions, complex constructors, etc.).
 ## Modifications to the Chromium C++ Guidelines
 
 - `<functional>` and `std::function` objects are allowed.
+
 - `<chrono>` is allowed and encouraged for representation of time.
-- Abseil types are allowed based on the allowed list in [DEPS](
-  https://chromium.googlesource.com/openscreen/+/refs/heads/master/DEPS).
+
+- Abseil types are allowed based on the allowed list in [DEPS](https://chromium.googlesource.com/openscreen/+/refs/heads/main/DEPS).
+
 - However, Abseil types **must not be used in public APIs**.  Public APIs are
   headers in targets with GN visibility outside the library or in public/ folders.
+
 - `<thread>` and `<mutex>` are allowed, but discouraged from general use as the
   library only needs to handle threading in very specific places;
   see [threading.md](threading.md).
+
 - Following YAGNI principles, only implement comparison operator overloads as
-  needed; for example, implementing operator< for use in an STL container does
+  needed; for example, implementing `operator<` for use in an STL container does
   not require implementing all comparison operators.
 
 ## Code Syntax
 
-- Braces are optional for single-line if statements; follow the style of
-  surrounding code.
+- Generally, braces are preferred for single-line if statements. Follow the
+  style of surrounding code.
+
 - Using-declarations are banned from headers.  Type aliases should not be
   included in headers, except at class scope when they form part of the class
   definition.
-    - Exception: Using-declarations for convenience may be put into a shared
-      header for internal library use.  These may only be included in
-      .cc files.
-    - Exception: if a class has an associated POD identifier (int/string), then
-      declare a type alias at namespace scope for that identifier instead of using
-      the POD type.  For example, if a class Foo has a string identifier, declare
-      `using FooId = std::string` in foo.h.
-    - Case by case exceptions may be made for readability/convenience,
-      e.g. as in `platform/base/span.h`.
 
+  - Exception: Using-declarations for convenience may be put into a shared
+    header for internal library use.  These may only be included in
+    .cc files.
+
+  - Exception: if a class has an associated POD identifier (int/string), then
+    declare a type alias at namespace scope for that identifier instead of using
+    the POD type.  For example, if a class Foo has a string identifier, declare
+    `using FooId = std::string` in foo.h.
+
+  - Case by case exceptions may be made for readability/convenience,
+    e.g. as in `platform/base/span.h`.
 
 ## Initialization
 
@@ -69,7 +76,7 @@ direct-initialization.
 
 Preferred:
 
-```
+```c++
 int x = 2;
 std::string foo = "Hello World";
 std::vector<int> v = {1, 2, 3};
@@ -79,7 +86,7 @@ MyStruct x = {true, 5.0};
 
 Discouraged:
 
-```
+```c++
 int x{2};
 std::string foo{"Hello World"};
 std::vector<int> v{1, 2, 3};
@@ -93,9 +100,12 @@ Use the following guidelines when deciding on copy and move semantics for
 objects:
 
 - Objects with data members greater than 32 bytes should be move-able.
+
 - Known large objects (I/O buffers, etc.) should be be move-only.
+
 - Variable length objects should be move-able
   (since they may be arbitrarily large in size) and, if possible, move-only.
+
 - Inherently non-copyable objects (like sockets) should be move-only.
 
 ### Default Copy and Move Operators
@@ -105,12 +115,11 @@ to declare the copy and move semantics of objects.  See
 [Stroustrup's C++ FAQ](http://www.stroustrup.com/C++11FAQ.html#default)
 for details on how to do that.
 
-Classes should prefer [member
-initialization](https://en.cppreference.com/w/cpp/language/data_members#Member_initialization)
-for POD members (as opposed to value initialization in the constructor).  Every POD
-member must be initialized by every constructor, of course, to prevent
-(https://en.cppreference.com/w/cpp/language/default_initialization)[default
-initialization] from setting them to indeterminate values.
+Classes should prefer [member initialization](https://en.cppreference.com/w/cpp/language/data_members#Member_initialization)
+for POD members (as opposed to value initialization in the constructor). Every
+POD member must be initialized by every constructor, of course, to prevent
+[default initialization](https://en.cppreference.com/w/cpp/language/default_initialization)
+from setting them to indeterminate values.
 
 ### User Defined Copy and Move Operators
 
@@ -171,25 +180,26 @@ Ref: [Test Behavior, Not Implementation](https://testing.googleblog.com/2013/08/
 ## Open Screen Library Features
 
 - For public API functions that return values or errors, please return
-  [`ErrorOr<T>`](https://chromium.googlesource.com/openscreen/+/master/platform/base/error.h).
+  [`ErrorOr<T>`](https://chromium.googlesource.com/openscreen/+/main/platform/base/error.h).
+
 - In the implementation of public APIs invoked by the embedder, use
-  `OSP_DCHECK(TaskRunner::IsRunningOnTaskRunner())` to catch thread safety
+  `OSP_CHECK(<TaskRunner>.IsRunningOnTaskRunner())` to catch thread safety
   problems early.
 
 ### Helpers for `std::chrono`
 
 One of the trickier parts of the Open Screen Library is using time and clock
-functionality provided by [`platform/api/time.h`](https://chromium.googlesource.com/openscreen/+/refs/heads/master/platform/api/time.h).
+functionality provided by [`platform/api/time.h`](https://chromium.googlesource.com/openscreen/+/refs/heads/main/platform/api/time.h).
 
 - When working extensively with `std::chrono` types in implementation code,
-  [`util/chrono_helpers.h`](https://chromium.googlesource.com/openscreen/+/refs/heads/master/util/chrono_helpers.h)
-  can be included for access to type aliases for
-  common `std::chrono` types, so they can just be referred to as `hours`,
-  `milliseconds`, etc. This header also includes helpful conversion functions,
-  such as `to_milliseconds` instead of
+  [`util/chrono_helpers.h`](https://chromium.googlesource.com/openscreen/+/refs/heads/main/util/chrono_helpers.h)
+  can be included for access to type aliases for common `std::chrono` types, so
+  they can just be referred to as `hours`, `milliseconds`, etc. This header also
+  includes helpful conversion functions, such as `to_milliseconds` instead of
   `std::chrono::duration_cast<std::chrono::milliseconds>`.
   `util/chrono_helpers.h` can only be used in library-internal code, and
   this is enforced by DEPS.
+
 - `Clock::duration` is defined currently as `std::chrono::microseconds`, and
   thus is generally not suitable as a time type (developers generally think in
   milliseconds). Prefer casting from explicit time types using
@@ -198,7 +208,7 @@ functionality provided by [`platform/api/time.h`](https://chromium.googlesource.
 
 ### OSP_CHECK and OSP_DCHECK
 
-These are provided in [`platform/api/logging.h`](https://chromium.googlesource.com/openscreen/+/refs/heads/master/platform/api/logging.h)
+These are provided in [`platform/api/logging.h`](https://chromium.googlesource.com/openscreen/+/refs/heads/main/platform/api/logging.h)
 and act as run-time assertions (i.e., they
 test an expression, and crash the program if it evaluates as false). They are
 not only useful in determining correctness, but also serve as inline

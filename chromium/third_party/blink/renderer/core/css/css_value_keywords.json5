@@ -787,8 +787,12 @@
     "max-content",
     "fit-content",
 
-    // contain-intrinsic-size
-    "from-element",
+    // frame-sizing
+    // "auto",
+    "content-width",
+    "content-height",
+    "content-block-size",
+    "content-inline-size",
 
     //
     // text-autospace
@@ -1161,6 +1165,7 @@
     "window-controls-overlay",
     "tabbed",
     "picture-in-picture",
+    "unframed",
 
     // (display-state:) media feature
     // normal
@@ -1229,14 +1234,15 @@
     "span",
 
     // grid-lanes-direction
-    // row
-    // row-reverse
-    // column
-    // column-reverse
-
-    // grid-lanes-fill
     // normal
-    // reverse
+    // row
+    // column
+    "fill-reverse",
+    "track-reverse",
+
+    // grid-lanes-pack
+    // normal
+    // dense
 
     // grid-template-{columns|rows}
     "minmax",
@@ -1291,28 +1297,26 @@
     "hanging",
     "mathematical",
 
-    // gap-rule-overlap
+    // rule-overlap
     "row-over-column",
     "column-over-row",
 
     // column-rule-break
     // none
     "intersection",
-    "spanning-item",
+    // normal
 
     // row-rule-break
     // none
     // intersection
-    // spanning-item
+    // normal
 
     // column-rule-visibility-items
-    // none
     // all
     "around",
     "between",
 
     // row-rule-visibility-items
-    // none
     // all
     // around
     // between
@@ -1481,6 +1485,10 @@
     "blur",
     "drop-shadow",
     "url",
+
+    // Route matching, such as @route, @navigation, and :link-to().
+    "url-pattern",
+    "navigation-param",
 
     // colors
     "rgb",
@@ -1656,7 +1664,6 @@
     "size",
     "block-size",
     "inline-size",
-    "view-transition",
 
     // @container
     // size
@@ -1813,21 +1820,16 @@
     // Layered @import rule
     "layer",
 
-    // if(route())
-    "route",
+    // if(navigation())
+    "navigation",
 
     // supports in import rule: @import supports()
     "supports",
     // @import scope()
     "scope",
 
-    // color-contrast()
-    "color-contrast",
-    "vs",
-    "AA",
-    "AA-large",
-    "AAA",
-    "AAA-large",
+    // contrast-color()
+    "contrast-color",
 
     // initial-letter
     "drop",
@@ -2010,13 +2012,12 @@
     "context-fill",
     "context-stroke",
 
-    // text-grow / text-shrink
+    // text-fit
+    "grow",
+    "shrink",
     "per-line",
+    "per-line-all",
     "consistent",
-    // "scale",
-    "font-size",
-    "scale-inline",
-    "letter-spacing",
 
     // media-progress()
     "media-progress",
@@ -2072,6 +2073,10 @@
     // block-ellipsis
     "no-ellipsis",
 
+    // text-indent
+    "each-line",
+    // "hanging",
+
     // text-justify
     // "auto",
     // "none",
@@ -2093,5 +2098,9 @@
 
     // counter-reset
     "reversed",
+
+    // https://drafts.csswg.org/css-conditional-5/#typedef-supports-named-feature-fn
+    "named-feature",
+    "align-content-on-display-block",
   ],
 }

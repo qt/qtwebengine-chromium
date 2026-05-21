@@ -29,7 +29,6 @@
 
 #include <limits>
 #include <string>
-#include <tuple>
 #include <utility>
 
 #include "src/tint/lang/core/constant/splat.h"
@@ -45,7 +44,6 @@
 #include "src/tint/lang/core/ir/construct.h"
 #include "src/tint/lang/core/ir/continue.h"
 #include "src/tint/lang/core/ir/convert.h"
-#include "src/tint/lang/core/ir/core_builtin_call.h"
 #include "src/tint/lang/core/ir/discard.h"
 #include "src/tint/lang/core/ir/exit_if.h"
 #include "src/tint/lang/core/ir/exit_loop.h"
@@ -72,6 +70,7 @@
 #include "src/tint/lang/core/ir/validator.h"
 #include "src/tint/lang/core/ir/var.h"
 #include "src/tint/lang/core/type/atomic.h"
+#include "src/tint/lang/core/type/binding_array.h"
 #include "src/tint/lang/core/type/depth_multisampled_texture.h"
 #include "src/tint/lang/core/type/depth_texture.h"
 #include "src/tint/lang/core/type/input_attachment.h"
@@ -80,17 +79,13 @@
 #include "src/tint/lang/core/type/reference.h"
 #include "src/tint/lang/core/type/sampler.h"
 #include "src/tint/lang/core/type/storage_texture.h"
-#include "src/tint/lang/core/type/texture.h"
 #include "src/tint/lang/core/type/type.h"
 #include "src/tint/lang/wgsl/ast/type.h"
 #include "src/tint/lang/wgsl/ir/builtin_call.h"
-#include "src/tint/lang/wgsl/ir/unary.h"
 #include "src/tint/lang/wgsl/program/program_builder.h"
 #include "src/tint/lang/wgsl/reserved_words.h"
 #include "src/tint/lang/wgsl/resolver/resolve.h"
 #include "src/tint/utils/containers/hashmap.h"
-#include "src/tint/utils/containers/predicates.h"
-#include "src/tint/utils/containers/reverse.h"
 #include "src/tint/utils/containers/transform.h"
 #include "src/tint/utils/containers/vector.h"
 #include "src/tint/utils/macros/scoped_assignment.h"
@@ -143,6 +138,10 @@ class State {
             // Suppress errors regarding non-uniform subgroups operations if requested, by adding a
             // diagnostic directive to the module.
             b.DiagnosticDirective(wgsl::DiagnosticSeverity::kOff, "subgroup_uniformity");
+        }
+        if (options.disable_unreachable_code_warning) {
+            // Suppress warnings regarding unreachable code
+            b.DiagnosticDirective(wgsl::DiagnosticSeverity::kOff, "chromium", "unreachable_code");
         }
 
         return Program{resolver::Resolve(b, options.allowed_features)};
@@ -307,6 +306,10 @@ class State {
                 auto wgsize = fn->WorkgroupSize().value();
                 attrs.Push(b.Stage(ast::PipelineStage::kCompute));
                 attrs.Push(b.WorkgroupSize(Expr(wgsize[0]), Expr(wgsize[1]), Expr(wgsize[2])));
+                if (fn->SubgroupSize().has_value()) {
+                    auto sgsize = fn->SubgroupSize().value();
+                    attrs.Push(b.SubgroupSize(Expr(sgsize)));
+                }
                 break;
             }
             case core::ir::Function::PipelineStage::kFragment:
@@ -823,6 +826,10 @@ class State {
                     obj_ty = arr->ElemType();
                     expr = b.IndexAccessor(expr, Expr(index));
                 },
+                [&](const core::type::BindingArray* arr) {
+                    obj_ty = arr->ElemType();
+                    expr = b.IndexAccessor(expr, Expr(index));
+                },
                 [&](const core::type::Struct* s) {
                     if (auto* c = index->As<core::ir::Constant>()) {
                         auto i = c->Value()->ValueAs<uint32_t>();
@@ -1050,10 +1057,6 @@ class State {
                 return b.ty.sampled_texture(t->Dim(), el);
             },
             [&](const core::type::StorageTexture* t) {
-                if (RequiresChromiumInternalGraphite(t)) {
-                    Enable(wgsl::Extension::kChromiumInternalGraphite);
-                }
-
                 return b.ty.storage_texture(t->Dim(), t->TexelFormat(), t->Access());
             },
             [&](const core::type::Sampler* s) { return b.ty.sampler(s->Kind()); },
@@ -1079,6 +1082,23 @@ class State {
                 Enable(wgsl::Extension::kChromiumExperimentalSubgroupMatrix);
                 auto el = Type(m->Type());
                 return b.ty.subgroup_matrix(m->Kind(), el, m->Columns(), m->Rows());
+            },  //
+            [&](const core::type::BindingArray* ba) {
+                auto el = Type(ba->ElemType());
+                if (ba->Count()->Is<core::type::RuntimeArrayCount>()) {
+                    TINT_IR_ICE(mod) << core::type::Array::kErrExpectedConstantCount;
+                }
+
+                if (auto* count = ba->Count()->As<core::type::ConstantArrayCount>()) {
+                    return b.ty.binding_array(el, u32(count->value));
+                }
+                TINT_IR_ICE(mod) << core::type::Array::kErrExpectedConstantCount;
+            },  //
+            [&](const core::type::Buffer* buf) {
+                if (buf->Size() == 0) {
+                    return b.ty.buffer();
+                }
+                return b.ty.buffer(buf->Size());
             },  //
             TINT_ICE_ON_NO_MATCH);
     }
@@ -1176,7 +1196,7 @@ class State {
             return name;
         });
 
-        return b.ty(n);
+        return b.ty.AsType(n);
     }
 
     bool ContainsBuiltinStruct(const core::type::Type* ty) {
@@ -1197,15 +1217,31 @@ class State {
     ////////////////////////////////////////////////////////////////////////////////////////////////
 
     bool IsWGSLSafe(std::string_view name) {
-        // Make sure the name starts with an alphabetic character and then only contains
-        // alphanumeric characters or underscores after that.
-        if (name.empty() || !std::isalpha(static_cast<unsigned char>(name[0])) ||
-            !std::all_of(name.begin(), name.end(),
+        if (name.empty()) {
+            return false;
+        }
+
+        // Make sure the name starts with an alphabetic character or an underscore.
+        if (name[0] == '_') {
+            // Single underscores or names with two leading underscores are not allowed.
+            if (name.length() == 1) {
+                return false;
+            } else if (name[1] == '_') {
+                return false;
+            }
+        } else if (!std::isalpha(static_cast<unsigned char>(name[0]))) {
+            return false;
+        }
+
+        // Every other character must be alphanumeric or an underscore.
+        if (!std::all_of(name.begin(), name.end(),
                          [](unsigned char c) {  //
                              return std::isalnum(c) || c == '_';
                          })) {
             return false;
         }
+
+        // Check for any kind of reserved identifier.
         return !IsReserved(name) && !IsKeyword(name) && !IsEnumName(name) && !IsTypeName(name);
     }
 
@@ -1368,12 +1404,6 @@ class State {
             default:
                 return false;
         }
-    }
-
-    /// @returns true if the storage texture type requires the kChromiumInternalGraphite extension
-    /// to be enabled.
-    bool RequiresChromiumInternalGraphite(const core::type::StorageTexture* tex) {
-        return tex->TexelFormat() == core::TexelFormat::kR8Unorm;
     }
 };
 

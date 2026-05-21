@@ -139,7 +139,7 @@ main (int argc, char **argv)
 	    brief = 1;
 	    break;
 	case 'f':
-	    format = (FcChar8 *)strdup (optarg);
+	    format = FcStrCopy ((const FcChar8 *)optarg);
 	    break;
 	case 'V':
 	    fprintf (stderr, "fontconfig version %d.%d.%d\n",

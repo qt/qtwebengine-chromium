@@ -82,7 +82,7 @@ struct State {
             auto* uint_ty = ty.MatchWidth(ty.u32(), type);
             auto* u32_val = b.Bitcast(uint_ty, val);
             auto* mask = b.MatchWidth(0x80000000_u, uint_ty);
-            auto* xor_res = b.Xor(uint_ty, u32_val, mask);
+            auto* xor_res = b.Xor(u32_val, mask);
             b.BitcastWithResult(unary->DetachResult(), xor_res->Result());
         });
         unary->Destroy();
@@ -100,7 +100,7 @@ struct State {
             auto* uint_ty = ty.MatchWidth(ty.u32(), type);
             auto* u32_val = b.Bitcast(uint_ty, val);
             auto* mask = b.MatchWidth(0x7FFFFFFF_u, uint_ty);
-            auto* and_res = b.And(uint_ty, u32_val, mask);
+            auto* and_res = b.And(u32_val, mask);
             b.BitcastWithResult(builtin->DetachResult(), and_res->Result());
         });
         builtin->Destroy();
@@ -110,11 +110,8 @@ struct State {
 }  // namespace
 
 Result<SuccessType> UnaryPolyfill(core::ir::Module& module, const UnaryPolyfillConfig& config) {
-    auto result =
-        ValidateAndDumpIfNeeded(module, "spirv.UnaryPolyfill", kPolyfillUnaryCapabilities);
-    if (result != Success) {
-        return result.Failure();
-    }
+    TINT_CHECK_RESULT(
+        ValidateAndDumpIfNeeded(module, "spirv.UnaryPolyfill", kPolyfillUnaryCapabilities));
 
     State{module, config}.Process();
 

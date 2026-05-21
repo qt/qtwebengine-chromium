@@ -123,10 +123,17 @@ static inline SEARCH_METHODS av1_get_default_mv_search_method(
   const int sf_blk_search_method = mv_sf->use_bsize_dependent_search_method;
   const int min_dim = AOMMIN(block_size_wide[bsize], block_size_high[bsize]);
   const int qband = x->qindex >> (QINDEX_BITS - 2);
-  const bool use_faster_search_method =
-      (sf_blk_search_method == 1 && min_dim >= 32) ||
-      (sf_blk_search_method >= 2 && min_dim >= 16 &&
-       x->content_state_sb.source_sad_nonrd <= kMedSad && qband < 3);
+  const int min_dim_th[4] = { 128, 64, 32, 16 };
+  bool use_faster_search_method = false;
+
+  if (sf_blk_search_method >= 1 && sf_blk_search_method <= 3) {
+    use_faster_search_method =
+        (min_dim >= min_dim_th[sf_blk_search_method - 1]);
+  } else if (sf_blk_search_method == 4) {
+    use_faster_search_method =
+        (min_dim >= min_dim_th[sf_blk_search_method - 1] &&
+         x->content_state_sb.source_sad_nonrd <= kMedSad && qband < 3);
+  }
 
   if (use_faster_search_method) {
     search_method = av1_get_faster_search_method(search_method);

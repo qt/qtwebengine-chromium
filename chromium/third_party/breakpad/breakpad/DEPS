@@ -32,27 +32,20 @@
 # you can still use the hooks mechanism for generating project files by calling
 # 'gclient runhooks' rather than 'gclient sync'.
 
+# We expect all git dependencies specified in this file to be in sync with git
+# submodules (gitlinks).
+git_dependencies = "SYNC"
+
 deps = {
   # Testing libraries and utilities.
+  # NB: Submodules do not support git tags, so we have to use the commit that
+  # matches the tag we want to track.
   "src/src/testing":
     "https://github.com/google/googletest.git" +
-      "@v1.16.0",
-
-  # Protobuf.
-  "src/src/third_party/protobuf/protobuf":
-    "https://github.com/google/protobuf.git" +
-      "@cb6dd4ef5f82e41e06179dcd57d3b1d9246ad6ac",
+      "@6910c9d9165801d8827d628cb72eb7ea9dd538c5",
 
   # Linux syscall support.
   "src/src/third_party/lss":
     "https://chromium.googlesource.com/linux-syscall-support/" +
       "@29164a80da4d41134950d76d55199ea33fbb9613",
 }
-
-hooks = [
-  {
-    # Keep the manifest up to date.
-    "action": ["src/src/tools/python/deps-to-manifest.py",
-               "src/DEPS", "src/default.xml"],
-  },
-]

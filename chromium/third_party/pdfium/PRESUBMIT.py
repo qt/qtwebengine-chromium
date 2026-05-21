@@ -464,20 +464,30 @@ def _CheckTestDuplicates(input_api, output_api):
 
 
 def _CheckPngNames(input_api, output_api):
-  """Checks that .png files have the right file name format, which must be in
-  the form:
+  """Checks that .png files have the right file name format.
+
+  For most directories, including those used for pixel tests, they must be in
+  the form of:
 
   NAME_expected(_gdi)?(_(agg|skia))?(_(linux|mac|win))?.pdf.\d+.png
 
   This must be the same format as the one in testing/corpus's PRESUBMIT.py.
+
+  For testing/resources/embedder_tests, they must be in the form of:
+
+  NAME(_gdi)?(_(agg|skia))?(_(linux|mac|win))?.png
   """
   expected_pattern = input_api.re.compile(
       r'.+_expected(_gdi)?(_(agg|skia))?(_(linux|mac|win))?\.pdf\.\d+.png')
+  expected_embedder_tests_pattern = input_api.re.compile(
+      r'.+(_gdi)?(_(agg|skia))?(_(linux|mac|win))?.png')
   results = []
   for f in input_api.AffectedFiles(include_deletes=False):
     if not f.LocalPath().endswith('.png'):
       continue
-    if expected_pattern.match(f.LocalPath()):
+    pattern = expected_embedder_tests_pattern if f.LocalPath().startswith(
+        'testing/resources/embedder_tests/') else expected_pattern
+    if pattern.match(f.LocalPath()):
       continue
     results.append(
         output_api.PresubmitError(

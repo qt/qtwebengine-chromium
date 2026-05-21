@@ -16,15 +16,15 @@
 namespace payments {
 namespace {
 
-using ::base::android::JavaParamRef;
 using ::base::android::ConvertJavaStringToUTF8;
+using ::base::android::JavaRef;
 
 }  // namespace
 
 CurrencyFormatterAndroid::CurrencyFormatterAndroid(
     JNIEnv* env,
-    const JavaParamRef<jstring>& currency_code,
-    const JavaParamRef<jstring>& locale_name) {
+    const JavaRef<jstring>& currency_code,
+    const JavaRef<jstring>& locale_name) {
   currency_formatter_ = std::make_unique<CurrencyFormatter>(
       ConvertJavaStringToUTF8(env, currency_code),
       ConvertJavaStringToUTF8(env, locale_name));
@@ -38,13 +38,13 @@ void CurrencyFormatterAndroid::Destroy(JNIEnv* env) {
 
 void CurrencyFormatterAndroid::SetMaxFractionalDigits(
     JNIEnv* env,
-    jint jmax_fractional_digits) {
+    int32_t jmax_fractional_digits) {
   currency_formatter_->SetMaxFractionalDigits(jmax_fractional_digits);
 }
 
 base::android::ScopedJavaLocalRef<jstring> CurrencyFormatterAndroid::Format(
     JNIEnv* env,
-    const JavaParamRef<jstring>& amount) {
+    const JavaRef<jstring>& amount) {
   std::u16string result =
       currency_formatter_->Format(ConvertJavaStringToUTF8(env, amount));
   return base::android::ConvertUTF16ToJavaString(env, result);
@@ -56,10 +56,10 @@ CurrencyFormatterAndroid::GetFormattedCurrencyCode(JNIEnv* env) {
       env, currency_formatter_->formatted_currency_code());
 }
 
-static jlong JNI_CurrencyFormatter_InitCurrencyFormatterAndroid(
+static int64_t JNI_CurrencyFormatter_InitCurrencyFormatterAndroid(
     JNIEnv* env,
-    const JavaParamRef<jstring>& currency_code,
-    const JavaParamRef<jstring>& locale_name) {
+    const JavaRef<jstring>& currency_code,
+    const JavaRef<jstring>& locale_name) {
   CurrencyFormatterAndroid* currency_formatter_android =
       new CurrencyFormatterAndroid(env, currency_code, locale_name);
   return reinterpret_cast<intptr_t>(currency_formatter_android);

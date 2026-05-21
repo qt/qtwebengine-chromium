@@ -44,6 +44,8 @@ source_set("omnibox") {
       "//components/omnibox/browser:mojo_bindings_shared",
       "//components/omnibox/browser:mojo_bindings_shared_cpp_sources",
       "//components/omnibox/common",
+      "//components/page_content_annotations/content",
+      "//components/page_content_annotations/core",
       "//components/search_engines",
       "//content/public/browser",
       "//services/network/public/mojom:url_loader_base",
@@ -183,7 +185,7 @@ source_set("test_support") {
 
   public_deps = [
     "//components/prefs:test_support",
-    "//ui/gfx:native_widget_types",
+    "//ui/gfx:native_ui_types",
     "//ui/gfx/range",
   ]
 
@@ -192,6 +194,14 @@ source_set("test_support") {
     "//components/omnibox/browser:test_support",
     "//testing/gmock",
   ]
+
+  if (!is_android) {
+    public += [ "test_omnibox_popup_file_selector.h" ]
+
+    sources += [ "test_omnibox_popup_file_selector.cc" ]
+
+    deps += [ "//chrome/browser/ui/views/location_bar" ]
+  }
 }
 
 if (!is_android) {
@@ -251,7 +261,6 @@ if (!is_android) {
     defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
     sources = [
       "alternate_nav_infobar_delegate_browsertest.cc",
-      "omnibox_context_menu_controller_browsertest.cc",
       "omnibox_search_aggregator_browsertest.cc",
     ]
     deps = [
@@ -263,6 +272,7 @@ if (!is_android) {
       "//chrome/browser/search_engines",
       "//chrome/browser/ui/contextual_search",
       "//chrome/browser/ui/location_bar",
+      "//chrome/browser/ui/omnibox:test_support",
       "//chrome/browser/ui/search",
       "//chrome/browser/ui/webui:webui_util",
       "//chrome/test:test_support",
@@ -289,6 +299,10 @@ if (!is_android) {
     # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
     # enable the diagnostic by removing this line.
     configs += [ "//build/config/compiler:no_exit_time_destructors" ]
+
+    if (!is_android) {
+      sources += [ "omnibox_context_menu_controller_browsertest.cc" ]
+    }
   }
 
   if (!is_chromeos_device) {

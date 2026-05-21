@@ -39,6 +39,7 @@
 
 #if BUILDFLAG(ENABLE_SUPERVISED_USERS)
 #include "components/supervised_user/core/browser/supervised_user_service_observer.h"
+#include "components/supervised_user/core/browser/supervised_user_url_filtering_service.h"
 #endif
 
 namespace signin {
@@ -47,7 +48,8 @@ class IdentityManager;
 
 namespace supervised_user {
 class SupervisedUserService;
-}
+class SupervisedUserUrlFilteringService;
+}  // namespace supervised_user
 
 namespace user_prefs {
 class PrefRegistrySyncable;
@@ -89,6 +91,7 @@ class CustomLinksCache {
 class MostVisitedSites :
 #if BUILDFLAG(ENABLE_SUPERVISED_USERS)
     public SupervisedUserServiceObserver,
+    public supervised_user::SupervisedUserUrlFilteringService::Observer,
 #endif
     public history::TopSitesObserver {
  public:
@@ -134,6 +137,8 @@ class MostVisitedSites :
       PrefService* prefs,
       signin::IdentityManager* identity_manager,
       supervised_user::SupervisedUserService* supervised_user_service,
+      supervised_user::SupervisedUserUrlFilteringService*
+          supervised_user_url_filtering_service,
       scoped_refptr<history::TopSites> top_sites,
       std::unique_ptr<PopularSites> popular_sites,
       std::unique_ptr<CustomLinksManager> custom_links,
@@ -167,6 +172,19 @@ class MostVisitedSites :
   // visited sites to return.
   virtual void AddMostVisitedURLsObserver(Observer* observer,
                                           size_t max_num_sites);
+
+  // Adds the observer and immediately fetches the current suggestions, but with
+  // a maximum number of non-custom sites. If |max_num_non_custom_sites| is
+  // unset, there is no limit to the number of non custom sites to be returned
+  // as long as the total number of sites does not exceed |max_num_sites|.
+  //
+  // Note: like |max_num_sites|, only observers that require the same
+  // |max_num_non_custom_sites| could observe the same MostVisitedSites
+  // instance. Otherwise, a new Instance should be created for the observer.
+  virtual void AddMostVisitedURLsObserver(
+      Observer* observer,
+      size_t max_num_sites,
+      std::optional<size_t> max_num_non_custom_sites);
 
   // Removes the observer.
   virtual void RemoveMostVisitedURLsObserver(Observer* observer);
@@ -315,8 +333,10 @@ class MostVisitedSites :
   void ClearBlockedUrls();
 
 #if BUILDFLAG(ENABLE_SUPERVISED_USERS)
-  //  SupervisedUserServiceObserver implementation.
+  //  SupervisedUserServiceObserver:
   void OnURLFilterChanged() override;
+  // SupervisedUserUrlFilteringService::Observer:
+  void OnUrlFilteringServiceChanged() override;
 #endif
 
   // Returns the score of a tile in |current_tiles_| identified by |url|, or
@@ -476,10 +496,16 @@ class MostVisitedSites :
   raw_ptr<PrefService> prefs_;
   raw_ptr<signin::IdentityManager> identity_manager_;
   raw_ptr<supervised_user::SupervisedUserService> supervised_user_service_;
+  raw_ptr<const supervised_user::SupervisedUserUrlFilteringService>
+      supervised_user_url_filtering_service_;
 #if BUILDFLAG(ENABLE_SUPERVISED_USERS)
   base::ScopedObservation<supervised_user::SupervisedUserService,
                           SupervisedUserServiceObserver>
       supervised_user_service_observation_{this};
+  base::ScopedObservation<
+      supervised_user::SupervisedUserUrlFilteringService,
+      supervised_user::SupervisedUserUrlFilteringService::Observer>
+      url_filtering_service_observation_{this};
 #endif
 
   scoped_refptr<history::TopSites> top_sites_;
@@ -495,7 +521,10 @@ class MostVisitedSites :
 
   // The maximum number of most visited sites to return.
   // Do not use directly. Use GetMaxNumSites() instead.
-  size_t max_num_sites_;
+  size_t max_num_sites_ = 0u;
+
+  // The maximum number of non-custom sites. Optional.
+  std::optional<size_t> max_num_non_custom_sites_ = std::nullopt;
 
   // Number of actions after custom link initialization. Set to -1 and not
   // incremented if custom links was not initialized during this session.

@@ -1,7 +1,8 @@
-/* Copyright (c) 2024-2025 The Khronos Group Inc.
- * Copyright (c) 2024-2025 Valve Corporation
- * Copyright (c) 2024-2025 LunarG, Inc.
+/* Copyright (c) 2024-2026 The Khronos Group Inc.
+ * Copyright (c) 2024-2026 Valve Corporation
+ * Copyright (c) 2024-2026 LunarG, Inc.
  * Copyright (c) 2025 Arm Limited.
+ * Modifications Copyright (C) 2025-2026 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -147,7 +148,7 @@ const std::string &GetCopyBufferImageDeviceVUID(const Location &loc, CopyError e
 
 const std::string &GetCopyBufferImageVUID(const Location &loc, CopyError error) {
     static const std::map<CopyError, std::array<Entry, 6>> errors{
-        {CopyError::ImageOffest_07971,
+        {CopyError::ImageOffset_07971,
          {{
              {Key(Func::vkCmdCopyBufferToImage), "VUID-vkCmdCopyBufferToImage-imageSubresource-07971"},
              {Key(Func::vkCmdCopyImageToBuffer), "VUID-vkCmdCopyImageToBuffer-imageSubresource-07971"},
@@ -156,7 +157,7 @@ const std::string &GetCopyBufferImageVUID(const Location &loc, CopyError error) 
              {Key(Struct::VkCopyMemoryToImageInfo), "VUID-VkCopyMemoryToImageInfo-imageSubresource-07971"},
              {Key(Struct::VkCopyImageToMemoryInfo), "VUID-VkCopyImageToMemoryInfo-imageSubresource-07971"},
          }}},
-        {CopyError::ImageOffest_07972,
+        {CopyError::ImageOffset_07972,
          {{
              {Key(Func::vkCmdCopyBufferToImage), "VUID-vkCmdCopyBufferToImage-imageSubresource-07972"},
              {Key(Func::vkCmdCopyImageToBuffer), "VUID-vkCmdCopyImageToBuffer-imageSubresource-07972"},
@@ -255,7 +256,7 @@ const std::string &GetCopyBufferImageVUID(const Location &loc, CopyError error) 
              {Key(Struct::VkCopyMemoryToImageInfo), "VUID-VkCopyMemoryToImageInfo-dstImage-07981"},
              {Key(Struct::VkCopyImageToMemoryInfo), "VUID-VkCopyImageToMemoryInfo-srcImage-07981"},
          }}},
-        {CopyError::ImageOffest_09104,
+        {CopyError::ImageOffset_09104,
          {{
              {Key(Func::vkCmdCopyBufferToImage), "VUID-vkCmdCopyBufferToImage-imageOffset-09104"},
              {Key(Func::vkCmdCopyImageToBuffer), "VUID-vkCmdCopyImageToBuffer-imageOffset-09104"},
@@ -699,6 +700,7 @@ const char *GetSpirvInterfaceVariableVUID(const Location &loc, SpirvInterfaceVar
                 loc.function == Func::vkCreateComputePipelines  ? "VUID-VkComputePipelineCreateInfo-layout-07991" :
                 loc.function == Func::vkCreateRayTracingPipelinesKHR ? "VUID-VkRayTracingPipelineCreateInfoKHR-layout-07991" :
                 loc.function == Func::vkCreateRayTracingPipelinesNV  ? "VUID-VkRayTracingPipelineCreateInfoNV-layout-07991" :
+                loc.function == Func::vkCreateDataGraphPipelinesARM  ? "VUID-VkDataGraphPipelineCreateInfoARM-layout-09934" :
                 loc.function == Func::vkCreateShadersEXT ? "VUID-VkShaderCreateInfoEXT-codeType-10385" :
                 kVUIDUndefined;
         case SpirvInterfaceVariableError::Inline_10391:
@@ -708,6 +710,30 @@ const char *GetSpirvInterfaceVariableVUID(const Location &loc, SpirvInterfaceVar
                 loc.function == Func::vkCreateRayTracingPipelinesKHR ? "VUID-VkRayTracingPipelineCreateInfoKHR-None-10391" :
                 loc.function == Func::vkCreateRayTracingPipelinesNV  ? "VUID-VkRayTracingPipelineCreateInfoNV-None-10391" :
                 loc.function == Func::vkCreateShadersEXT ? "VUID-VkShaderCreateInfoEXT-codeType-10386" :
+                kVUIDUndefined;
+        case SpirvInterfaceVariableError::DescriptorHeapMapping_11312:
+            return
+                loc.function == Func::vkCreateGraphicsPipelines ? "VUID-VkGraphicsPipelineCreateInfo-flags-11312" :
+                loc.function == Func::vkCreateComputePipelines  ? "VUID-VkComputePipelineCreateInfo-flags-11312" :
+                loc.function == Func::vkCreateRayTracingPipelinesKHR ? "VUID-VkRayTracingPipelineCreateInfoKHR-flags-11312" :
+                loc.function == Func::vkCreateRayTracingPipelinesNV  ? "VUID-VkRayTracingPipelineCreateInfoNV-flags-11312" :
+                loc.function == Func::vkCreateShadersEXT ? "VUID-VkShaderCreateInfoEXT-flags-11292" :
+                kVUIDUndefined;
+        case SpirvInterfaceVariableError::PushConstantStage_07987:
+            return
+                loc.function == Func::vkCreateGraphicsPipelines ? "VUID-VkGraphicsPipelineCreateInfo-layout-07987" :
+                loc.function == Func::vkCreateComputePipelines  ? "VUID-VkComputePipelineCreateInfo-layout-07987" :
+                loc.function == Func::vkCreateRayTracingPipelinesKHR ? "VUID-VkRayTracingPipelineCreateInfoKHR-layout-07987" :
+                loc.function == Func::vkCreateRayTracingPipelinesNV  ? "VUID-VkRayTracingPipelineCreateInfoNV-layout-07987" :
+                loc.function == Func::vkCreateShadersEXT ? "VUID-VkShaderCreateInfoEXT-codeType-10064" :
+                kVUIDUndefined;
+        case SpirvInterfaceVariableError::PushConstantRange_10069:
+            return
+                loc.function == Func::vkCreateGraphicsPipelines ? "VUID-VkGraphicsPipelineCreateInfo-layout-10069" :
+                loc.function == Func::vkCreateComputePipelines  ? "VUID-VkComputePipelineCreateInfo-layout-10069" :
+                loc.function == Func::vkCreateRayTracingPipelinesKHR ? "VUID-VkRayTracingPipelineCreateInfoKHR-layout-10069" :
+                loc.function == Func::vkCreateRayTracingPipelinesNV  ? "VUID-VkRayTracingPipelineCreateInfoNV-layout-10069" :
+                loc.function == Func::vkCreateShadersEXT ? "VUID-VkShaderCreateInfoEXT-codeType-10065" :
                 kVUIDUndefined;
     }
     return "UNASSIGNED-CoreChecks-unhandled-pipeline-interface-variable";

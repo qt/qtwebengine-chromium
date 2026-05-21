@@ -57,6 +57,8 @@ class SimpleMessagePort : public MessagePort {
     return posted_messages_;
   }
 
+  void clear() { posted_messages_.clear(); }
+
  private:
   MessagePort::Client* client_ = nullptr;
   std::string destination_id_;
