@@ -37,7 +37,8 @@ class CONTENT_EXPORT MediaDevicesDispatcherHost
   MediaDevicesDispatcherHost(
       const GlobalRenderFrameHostToken& main_frame_host_token,
       GlobalRenderFrameHostId render_frame_host_id,
-      MediaStreamManager* media_stream_manager);
+      MediaStreamManager* media_stream_manager,
+      bool is_outermost_main_frame);
 
   MediaDevicesDispatcherHost(const MediaDevicesDispatcherHost&) = delete;
   MediaDevicesDispatcherHost& operator=(const MediaDevicesDispatcherHost&) =
@@ -49,6 +50,7 @@ class CONTENT_EXPORT MediaDevicesDispatcherHost
       const GlobalRenderFrameHostToken& main_frame_host_token,
       GlobalRenderFrameHostId render_frame_host_id,
       MediaStreamManager* media_stream_manager,
+      bool is_outermost_main_frame,
       mojo::PendingReceiver<blink::mojom::MediaDevicesDispatcherHost> receiver);
 
   // blink::mojom::MediaDevicesDispatcherHost implementation.
@@ -202,6 +204,7 @@ class CONTENT_EXPORT MediaDevicesDispatcherHost
 
   // The following const fields can be accessed on any thread.
   const GlobalRenderFrameHostId render_frame_host_id_;
+  const bool is_outermost_main_frame_;
 
   // The following fields can only be accessed on the IO thread.
   const raw_ptr<MediaStreamManager> media_stream_manager_;
