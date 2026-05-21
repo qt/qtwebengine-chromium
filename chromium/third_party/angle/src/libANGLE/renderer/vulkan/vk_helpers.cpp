@@ -2921,22 +2921,25 @@ void RenderPassCommandBufferHelper::finalizeImageLayout(Context *context,
                                                         const ImageHelper *image,
                                                         UniqueSerial imageSiblingSerial)
 {
-    if (image->hasRenderPassUsageFlag(RenderPassUsage::RenderTargetAttachment))
+    // Do NOT gate this walk on image->hasRenderPassUsageFlag(RenderTargetAttachment).
+    // That flag is shared across all RenderPassAttachment slots pointing to the same
+    // ImageHelper.  finalizeColorImageLayoutAndLoadStore() resets it wholesale, so a
+    // prior call for a different sibling can leave the flag false even though *this*
+    // render pass still holds the image in mColorAttachments.  The per-slot hasImage()
+    // check below is the correct gate.
+    for (PackedAttachmentIndex index = kAttachmentIndexZero; index < mColorAttachmentsCount;
+         ++index)
     {
-        for (PackedAttachmentIndex index = kAttachmentIndexZero; index < mColorAttachmentsCount;
-             ++index)
+        if (mColorAttachments[index].hasImage(image, imageSiblingSerial))
         {
-            if (mColorAttachments[index].hasImage(image, imageSiblingSerial))
-            {
-                finalizeColorImageLayoutAndLoadStore(context, index);
-                mColorAttachments[index].reset();
-            }
-            else if (mColorResolveAttachments[index].hasImage(image, imageSiblingSerial))
-            {
-                finalizeColorImageLayout(context, mColorResolveAttachments[index].getImage(), index,
-                                         true);
-                mColorResolveAttachments[index].reset();
-            }
+            finalizeColorImageLayoutAndLoadStore(context, index);
+            mColorAttachments[index].reset();
+        }
+        else if (mColorResolveAttachments[index].hasImage(image, imageSiblingSerial))
+        {
+            finalizeColorImageLayout(context, mColorResolveAttachments[index].getImage(), index,
+                                     true);
+            mColorResolveAttachments[index].reset();
         }
     }
 
