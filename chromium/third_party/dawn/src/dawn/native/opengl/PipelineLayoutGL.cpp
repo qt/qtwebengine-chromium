@@ -49,6 +49,9 @@ PipelineLayout::PipelineLayout(Device* device,
 
         for (BindingIndex bindingIndex{0}; bindingIndex < bgl->GetBindingCount(); ++bindingIndex) {
             const BindingInfo& bindingInfo = bgl->GetBindingInfo(bindingIndex);
+            if (bindingInfo.visibility == wgpu::ShaderStage::None) {
+                continue;
+            }
             MatchVariant(
                 bindingInfo.bindingLayout,
                 [&](const BufferBindingInfo& layout) {
