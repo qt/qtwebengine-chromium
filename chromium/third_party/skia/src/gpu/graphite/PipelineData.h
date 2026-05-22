@@ -333,6 +333,23 @@ public:
 };
 
 class PipelineDataGatherer {
+    // Size limit for individual gradients (anything larger will be dropped)
+    static constexpr int kMaxGradientStops = 1024 * 1024; // ~5MB of data in the shader
+
+    // Size limit for the max buffer size. If a new draw would exceed this limit, we drop the draw.
+    // The float storage manager is used by all Devices in a Recorder and is reset at snap(),
+    // requiring a global flush to otherwise get a new buffer (which is undesirable). Instead, we
+    // assume that exceeding this limit happens in two situations:
+    //   1. Adversarial content, at which point correctness is not critical.
+    //   2. A truly bespoke application requiring 4GB of gradient color data should be having its
+    //      workload managed at the application level where it can snap Recordings.
+    //
+    // It is also likely that even if we accumulate this much CPU data, a GPU driver will fail to
+    // create a buffer for us to copy to, causing the snap() to fail.
+    static constexpr int kMaxStorageFloats =
+            static_cast<int>(std::numeric_limits<uint32_t>::max() / sizeof(float));
+    static_assert(std::numeric_limits<uint32_t>::max() / sizeof(float)
+                        <= (uint32_t) std::numeric_limits<int>::max());
 public:
     PipelineDataGatherer(Layout layout) : fUniformManager(layout) {}
 
@@ -423,14 +440,23 @@ public:
     // and the offset the data begins at. If it doesn't exist, it allocates the data for the
     // required number of stops and caches the start index, returning the data pointer
     // and index offset the data will begin at.
+    // If it was not possible to store the gradient data, a nullptr and negative offset
+    // are returned to signal the error state.
     std::pair<float*, int> allocateGradientData(int numStops, const SkGradientBaseShader* shader) {
+        if (numStops > kMaxGradientStops) {
+            return {nullptr, -1};
+        }
+
         int* existingOfffset = fGradientOffsetCache.find(shader);
         if (existingOfffset) {
             return std::make_pair(nullptr, *existingOfffset);
         }
-
         auto dataPair = this->allocateFloatData(numStops * 5);
-        fGradientOffsetCache.set(shader, dataPair.second);
+        // Only cache the storage if it was allocated successfully.
+        if (dataPair.first) {
+            SkASSERT(dataPair.second >= 0);
+            fGradientOffsetCache.set(shader, dataPair.second);
+        }
 
         return dataPair;
     }
@@ -440,6 +466,9 @@ private:
     // pointer and buffer index offset the data will begin at.
     std::pair<float*, int> allocateFloatData(int size) {
         int lastSize = fGradientStorage.size();
+        if (kMaxStorageFloats - size < lastSize) {
+            return {nullptr, -1}; // We've accumulated too much
+        }
         fGradientStorage.resize(lastSize + size);
         float* startPtr = fGradientStorage.begin() + lastSize;
 

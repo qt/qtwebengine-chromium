@@ -311,6 +311,9 @@ void add_conical_gradient_uniform_data(const ShaderCodeDictionary* dict,
 
 // Writes the color and offset data directly in the gatherer gradient buffer and returns the
 // offset the data begins at in the buffer.
+//
+// Returns a negative offset to signal failure, in which case the paint key must be poisoned
+// to drop the draw.
 static int write_color_and_offset_bufdata(int numStops,
                                            const SkPMColor4f* colors,
                                            const float* offsets,
@@ -318,6 +321,7 @@ static int write_color_and_offset_bufdata(int numStops,
                                            PipelineDataGatherer* gatherer) {
     auto [dstData, bufferOffset] = gatherer->allocateGradientData(numStops, shader);
     if (dstData) {
+         SkASSERT(bufferOffset >= 0);
         // Data doesn't already exist so we need to write it.
         // Writes all offset data, then color data. This way when binary searching through the
         // offsets, there is better cache locality.
@@ -415,16 +419,24 @@ void GradientShaderBlocks::AddBlock(const KeyContext& keyContext,
 
     int bufferOffset = 0;
     if (gradData.fNumStops > GradientData::kNumInternalStorageStops && keyContext.recorder()) {
+        bool hasStorage;
         if (gradData.fUseStorageBuffer) {
             bufferOffset = write_color_and_offset_bufdata(gradData.fNumStops,
                                                           gradData.fSrcColors,
                                                           gradData.fSrcOffsets,
                                                           gradData.fSrcShader,
                                                           gatherer);
+            hasStorage = bufferOffset >= 0;
         } else {
-            SkASSERT(gradData.fColorsAndOffsetsProxy);
             gatherer->add(gradData.fColorsAndOffsetsProxy,
                           {SkFilterMode::kNearest, SkTileMode::kClamp});
+            hasStorage = SkToBool(gradData.fColorsAndOffsetsProxy);
+        }
+
+        if (!hasStorage) {
+            builder->addBlock(BuiltInCodeSnippetID::kError);
+            SKGPU_LOG_W("Couldn't upload large gradient color stop data");
+            return;
         }
     }
 
