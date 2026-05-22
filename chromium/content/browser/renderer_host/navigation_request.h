@@ -417,7 +417,7 @@ class CONTENT_EXPORT NavigationRequest
   void SetCorsExemptRequestHeader(const std::string& header_name,
                                   const std::string& header_value) override;
   void SetLCPPNavigationHint(
-      const blink::mojom::LCPCriticalPathPredictorNavigationTimeHintPtr hint)
+      blink::mojom::LCPCriticalPathPredictorNavigationTimeHintPtr hint)
       override;
   const blink::mojom::LCPCriticalPathPredictorNavigationTimeHintPtr&
   GetLCPPNavigationHint() override;

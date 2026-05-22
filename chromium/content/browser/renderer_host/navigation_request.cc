@@ -9069,7 +9069,7 @@ void NavigationRequest::SetCorsExemptRequestHeader(
 }
 
 void NavigationRequest::SetLCPPNavigationHint(
-    const blink::mojom::LCPCriticalPathPredictorNavigationTimeHintPtr hint) {
+    blink::mojom::LCPCriticalPathPredictorNavigationTimeHintPtr hint) {
   DCHECK(WILL_START_REQUEST == state_ || WILL_REDIRECT_REQUEST == state_)
       << state_;
   commit_params_->lcpp_hint = std::move(hint);
