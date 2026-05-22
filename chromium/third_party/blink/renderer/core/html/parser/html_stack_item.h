@@ -44,19 +44,37 @@ class ContainerNode;
 // also saves a little bit of memory, as a side effect.)
 class HTMLStackItem final : public GarbageCollected<HTMLStackItem> {
  public:
-  enum ItemType { kItemForContextElement, kItemForDocumentFragmentNode };
+  // These enums used to be needed to disambiguate constructors.  They aren't
+  // needed any more, but they still help document the constructor calls more
+  // clearly.
+  enum DocumentFragmentItemType { kItemForDocumentFragmentNode };
+  enum ContextElementItemType { kItemForContextElement };
 
-  HTMLStackItem(ContainerNode* node, ItemType type)
-      : node_(node), token_name_(html_names::HTMLTag::kUnknown) {
-    switch (type) {
-      case kItemForDocumentFragmentNode:
-        is_document_fragment_node_ = true;
-        break;
-      case kItemForContextElement:
-        token_name_ = HTMLTokenName::FromLocalName(GetElement()->localName());
-        namespace_uri_ = GetElement()->namespaceURI();
-        is_document_fragment_node_ = false;
-        break;
+  HTMLStackItem(ContainerNode* node, DocumentFragmentItemType)
+      : node_(node),
+        token_name_(html_names::HTMLTag::kUnknown),
+        is_document_fragment_node_(true) {}
+
+  // You cannot call this constructor directly (but it must be public so that
+  // MakeGarbageCollected() can); use CreateForContextElement() below instead.
+  HTMLStackItem(base::PassKey<HTMLStackItem>,
+                Element* element,
+                ContextElementItemType)
+      : node_(element),
+        token_name_(HTMLTokenName::FromLocalName(element->localName())),
+        namespace_uri_(element->namespaceURI()),
+        num_token_attributes_(element->Attributes().size()),
+        is_document_fragment_node_(false) {
+    // We need to store the attributes because we sometimes make decisions
+    // based on attributes of the context elements, for example the encoding
+    // attribute of <mathml:annotation-xml> elements.
+    //
+    // We rely on Create() allocating extra memory past our end for the
+    // attributes.
+    const AttributeCollection element_attributes = element->Attributes();
+    auto attributes = TokenAttributesSpan();
+    for (wtf_size_t i = 0; i < element_attributes.size(); ++i) {
+      new (&attributes[i]) Attribute(element_attributes[i]);
     }
   }
 
@@ -98,6 +116,12 @@ class HTMLStackItem final : public GarbageCollected<HTMLStackItem> {
         base::PassKey<HTMLStackItem>(), node, token, namespace_uri);
   }
 
+  static HTMLStackItem* CreateForContextElement(Element* element) {
+    return MakeGarbageCollected<HTMLStackItem>(
+        AdditionalBytes(element->Attributes().size() * sizeof(Attribute)),
+        base::PassKey<HTMLStackItem>(), element, kItemForContextElement);
+  }
+
   Element* GetElement() const { return To<Element>(node_.Get()); }
   ContainerNode* GetNode() const { return node_.Get(); }
 
@@ -108,6 +132,13 @@ class HTMLStackItem final : public GarbageCollected<HTMLStackItem> {
   const AtomicString& LocalName() const { return token_name_.GetLocalName(); }
 
   const HTMLTokenName& GetTokenName() const { return token_name_; }
+
+  base::span<Attribute> TokenAttributesSpan() {
+    // SAFETY: Create() allocates num_token_attributes_ * sizeof(Attribute)
+    // extra bytes immediately after this object via AdditionalBytes.
+    return UNSAFE_BUFFERS(
+        base::span(TokenAttributesData(), num_token_attributes_));
+  }
 
   const base::span<Attribute> Attributes() {
     DCHECK(LocalName());
