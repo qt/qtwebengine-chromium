@@ -134,6 +134,7 @@ using device::BluetoothSocket;
                      channelID:(BluetoothRFCOMMChannelID)channelID;
 - (void)rfcommChannelOpened:(IOBluetoothUserNotification*)notification
                     channel:(IOBluetoothRFCOMMChannel*)rfcommChannel;
+- (void)stopListening;
 
 @end
 
@@ -162,8 +163,26 @@ using device::BluetoothSocket;
   [_rfcommNewChannelNotification unregister];
 }
 
+- (void)stopListening {
+  [_rfcommNewChannelNotification unregister];
+  _socket = nullptr;
+
+  // Keep self alive for a brief period to allow any already-enqueued
+  // notifications on the main run loop to fire safely (and become no-ops
+  // since _socket is now null) rather than hitting a deallocated object.
+  // See FB13705522.
+  __strong auto strongSelf = self;
+  dispatch_async(dispatch_get_main_queue(), ^{
+    (void)strongSelf;
+  });
+}
+
 - (void)rfcommChannelOpened:(IOBluetoothUserNotification*)notification
                     channel:(IOBluetoothRFCOMMChannel*)rfcommChannel {
+  if (!_socket) {
+    return;
+  }
+
   if (notification != _rfcommNewChannelNotification) {
     // This case is reachable if there are pre-existing RFCOMM channels open at
     // the time that the listener is created. In that case, each existing
@@ -196,6 +215,7 @@ using device::BluetoothSocket;
                            psm:(BluetoothL2CAPPSM)psm;
 - (void)l2capChannelOpened:(IOBluetoothUserNotification*)notification
                    channel:(IOBluetoothL2CAPChannel*)l2capChannel;
+- (void)stopListening;
 
 @end
 
@@ -224,8 +244,26 @@ using device::BluetoothSocket;
   [_l2capNewChannelNotification unregister];
 }
 
+- (void)stopListening {
+  [_l2capNewChannelNotification unregister];
+  _socket = nullptr;
+
+  // Keep self alive for a brief period to allow any already-enqueued
+  // notifications on the main run loop to fire safely (and become no-ops
+  // since _socket is now null) rather than hitting a deallocated object.
+  // See FB13705522.
+  __strong auto strongSelf = self;
+  dispatch_async(dispatch_get_main_queue(), ^{
+    (void)strongSelf;
+  });
+}
+
 - (void)l2capChannelOpened:(IOBluetoothUserNotification*)notification
                    channel:(IOBluetoothL2CAPChannel*)l2capChannel {
+  if (!_socket) {
+    return;
+  }
+
   if (notification != _l2capNewChannelNotification) {
     // This case is reachable if there are pre-existing L2CAP channels open at
     // the time that the listener is created. In that case, each existing
@@ -1017,7 +1055,9 @@ void BluetoothSocketMac::ReleaseListener() {
 
   [service_record_ removeServiceRecord];
   service_record_ = nil;
+  [rfcomm_connection_listener_ stopListening];
   rfcomm_connection_listener_ = nil;
+  [l2cap_connection_listener_ stopListening];
   l2cap_connection_listener_ = nil;
 
   // Destroying the listener above prevents the callback delegate from being
