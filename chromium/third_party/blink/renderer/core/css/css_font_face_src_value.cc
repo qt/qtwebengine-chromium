@@ -142,7 +142,8 @@ FontResource& CSSFontFaceSrcValue::Fetch(ExecutionContext* context,
   if (!fetched_ || fetched_->Options().world_for_csp != world_) {
     const CSSUrlData& url_data = src_value_->UrlData();
     const Referrer& referrer = url_data.GetReferrer();
-    ResourceRequest resource_request(url_data.ResolvedUrl());
+    ResourceRequest resource_request(url_data.ResolveUrl(*context));
+
     resource_request.SetReferrerPolicy(
         ReferrerUtils::MojoReferrerPolicyResolveDefault(
             referrer.referrer_policy));

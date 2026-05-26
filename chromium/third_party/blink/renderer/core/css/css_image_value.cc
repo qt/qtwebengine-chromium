@@ -52,7 +52,8 @@ FetchParameters CSSImageValue::PrepareFetch(
     CrossOriginAttributeValue cross_origin) const {
   const CSSUrlData& url_data = UrlData();
   const Referrer& referrer = url_data.GetReferrer();
-  ResourceRequest resource_request(url_data.ResolveUrl(document));
+  ResourceRequest resource_request(
+      url_data.ResolveUrl(*document.GetExecutionContext()));
   resource_request.SetReferrerPolicy(
       ReferrerUtils::MojoReferrerPolicyResolveDefault(
           referrer.referrer_policy));
