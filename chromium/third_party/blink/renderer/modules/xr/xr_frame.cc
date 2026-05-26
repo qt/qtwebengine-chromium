@@ -43,6 +43,9 @@ const char kSpacesSequenceTooLarge[] =
 
 const char kMismatchedBufferSizes[] = "Buffer sizes must be equal";
 
+const char kTransformsDetached[] =
+    "The transforms array was detached during fillPoses().";
+
 std::optional<uint64_t> GetPlaneId(
     const device::mojom::blink::XRNativeOriginInformation& native_origin) {
   if (native_origin.is_plane_id()) {
@@ -541,7 +544,16 @@ bool XRFrame::fillPoses(const HeapVector<Member<XRSpace>>& spaces,
   for (const auto& space : spaces) {
     auto [current_transform, remaining] =
         transforms_data.split_at(kFloatsPerTransform);
-    if (const XRPose* pose = space->getPose(base_space)) {
+    const XRPose* pose = space->getPose(base_space);
+    // getPose() can synchronously dispatch a reset event if the space requires
+    // updating, which could detach the buffer in a JavaScript listener.
+    if (transforms->IsDetached()) {
+      exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
+                                        kTransformsDetached);
+      return false;
+    }
+
+    if (pose) {
       current_transform.copy_from(pose->transform()->matrix()->AsSpan());
     } else {
       std::ranges::fill(current_transform, NAN);
