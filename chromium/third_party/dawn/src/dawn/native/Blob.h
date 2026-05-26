@@ -56,6 +56,8 @@ class Blob {
     Blob(Blob&&);
     Blob& operator=(Blob&&);
 
+    void Shrink(size_t extent);
+
     bool Empty() const;
     const uint8_t* Data() const;
     uint8_t* Data();

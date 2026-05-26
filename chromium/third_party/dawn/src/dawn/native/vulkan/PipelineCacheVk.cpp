@@ -28,6 +28,7 @@
 #include "dawn/native/vulkan/PipelineCacheVk.h"
 
 #include <memory>
+#include <utility>
 
 #include "dawn/native/Device.h"
 #include "dawn/native/Error.h"
@@ -89,6 +90,13 @@ MaybeError PipelineCache::SerializeToBlobImpl(Blob* blob) {
     DAWN_TRY(CheckVkSuccess(mDevice->fn.GetPipelineCacheData(mDevice->GetVkDevice(), mHandle,
                                                              &bufferSize, blob->Data()),
                             "GetPipelineCacheData"));
+
+    if (bufferSize < blob->Size()) {
+        // vkGetPipelineCacheData() returned less data than expected. Shrink the blob so
+        // uninitialized data isn't stored in cache.
+        blob->Shrink(bufferSize);
+    }
+
     mStoredDataSize = bufferSize;
 
     return {};
