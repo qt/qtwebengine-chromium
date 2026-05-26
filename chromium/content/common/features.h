@@ -161,6 +161,8 @@ CONTENT_EXPORT BASE_DECLARE_FEATURE(kContinueGestureOnLosingFocus);
 CONTENT_EXPORT BASE_DECLARE_FEATURE(kRemoveRendererProcessLimit);
 CONTENT_EXPORT BASE_DECLARE_FEATURE(
     kPartitionAllocSchedulerLoopQuarantineTaskObserverForBrowserUIThread);
+CONTENT_EXPORT BASE_DECLARE_FEATURE(kSanitizeLocationHeadersDuringNavigation);
+CONTENT_EXPORT BASE_DECLARE_FEATURE(kSanitizeOriginalUrlDuringNavigation);
 CONTENT_EXPORT BASE_DECLARE_FEATURE(kSendBeaconThrowForBlobWithNonSimpleType);
 CONTENT_EXPORT BASE_DECLARE_FEATURE(
     kServiceWorkerAvoidMainThreadForInitialization);
