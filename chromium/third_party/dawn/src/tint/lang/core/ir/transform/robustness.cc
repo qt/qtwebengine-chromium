@@ -372,9 +372,10 @@ struct State {
         // Helper for clamping the sample index.
         auto clamp_sample_index = [&](uint32_t idx) {
             auto* num_samples = b.Call(ty.u32(), core::BuiltinFn::kTextureNumSamples, args[0]);
-            auto* limit = b.Subtract(num_samples, 1_u);
-            call->SetOperand(CoreBuiltinCall::kArgsOperandOffset + idx,
-                             b.Min(CastToU32(args[idx]), limit)->Result());
+            auto* limit = b.Subtract(ty.u32(), num_samples, 1_u);
+            call->SetOperand(
+                CoreBuiltinCall::kArgsOperandOffset + idx,
+                b.Call(ty.u32(), core::BuiltinFn::kMin, CastToU32(args[idx]), limit)->Result());
         };
 
         // Select which arguments to clamp based on the function overload.
