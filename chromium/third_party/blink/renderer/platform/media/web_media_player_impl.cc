@@ -1006,8 +1006,9 @@ void WebMediaPlayerImpl::DoLoad(LoadType load_type,
   auto* mb_data_source = data_source.get();
   demuxer_manager_->SetDataSource(std::move(data_source));
 
-  mb_data_source->OnRedirect(WTF::BindRepeating(
-      &WebMediaPlayerImpl::OnDataSourceRedirected, weak_this_));
+  mb_data_source->SetTaintedCallback(WTF::BindRepeating(
+      &WebMediaPlayerImpl::OnDataSourceTainted, weak_this_));
+
   mb_data_source->SetPreload(preload_);
   mb_data_source->SetIsClientAudioElement(client_->IsAudioElement());
   mb_data_source->Initialize(WTF::BindOnce(
@@ -1616,7 +1617,7 @@ WebMediaPlayerImpl::GetPaintCanvasVideoRenderer() {
 }
 
 bool WebMediaPlayerImpl::WouldTaintOrigin() const {
-  return demuxer_manager_->WouldTaintOrigin();
+  return is_origin_tainted_ || demuxer_manager_->WouldTaintOrigin();
 }
 
 double WebMediaPlayerImpl::MediaTimeForTimeValue(double timeValue) const {
@@ -2861,13 +2862,11 @@ void WebMediaPlayerImpl::MultiBufferDataSourceInitialized(bool success) {
   DataSourceInitialized(success);
 }
 
-void WebMediaPlayerImpl::OnDataSourceRedirected() {
+void WebMediaPlayerImpl::OnDataSourceTainted(const media::DataSource*) {
   DVLOG(1) << __func__;
   DCHECK(main_task_runner_->BelongsToCurrentThread());
-
-  if (WouldTaintOrigin()) {
-    audio_source_provider_->TaintOrigin();
-  }
+  audio_source_provider_->TaintOrigin();
+  is_origin_tainted_ = true;
 }
 
 void WebMediaPlayerImpl::NotifyDownloading(bool is_downloading) {
