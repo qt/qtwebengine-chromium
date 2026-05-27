@@ -33,6 +33,7 @@
 #include "dawn/native/CommandEncoder.h"
 #include "dawn/native/CommandValidation.h"
 #include "dawn/native/Commands.h"
+#include "dawn/native/Device.h"
 #include "dawn/native/Format.h"
 #include "dawn/native/ObjectType_autogen.h"
 #include "dawn/native/Texture.h"
