@@ -24,6 +24,7 @@
 
 #include "third_party/blink/renderer/core/dom/shadow_root.h"
 #include "third_party/blink/renderer/core/layout/hit_test_location.h"
+#include "third_party/blink/renderer/core/layout/hit_test_result.h"
 #include "third_party/blink/renderer/core/layout/svg/svg_layout_info.h"
 #include "third_party/blink/renderer/core/layout/svg/svg_layout_support.h"
 #include "third_party/blink/renderer/core/layout/svg/transform_helper.h"
@@ -148,7 +149,8 @@ bool LayoutSVGViewportContainer::NodeAtPoint(
     HitTestPhase phase) {
   NOT_DESTROYED();
   // Respect the viewport clip which is in parent coordinates.
-  if (SVGLayoutSupport::IsOverflowHidden(*this)) {
+  if (SVGLayoutSupport::IsOverflowHidden(*this) &&
+      !result.GetHitTestRequest().IsHitTestVisualOverflow()) {
     TransformedHitTestLocation local_transformed_hit_location(
         hit_test_location, LocalSVGTransform());
 
