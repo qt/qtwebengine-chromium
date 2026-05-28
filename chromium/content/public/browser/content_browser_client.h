@@ -3011,7 +3011,8 @@ class CONTENT_EXPORT ContentBrowserClient {
   // Checks if file or directory pickers from the file system access web API
   // require a user gesture (transient activation). They usually do, but this
   // can be bypassed via admin policy.
-  virtual bool IsTransientActivationRequiredForShowFileOrDirectoryPicker(
+  [[nodiscard]] virtual bool
+  IsTransientActivationRequiredForShowFileOrDirectoryPicker(
       WebContents* web_contents);
 
   // Checks if `origin` should always receive a first-party StorageKey
