@@ -64,11 +64,17 @@ class PhysicalDevice : public PhysicalDeviceBase {
     bool IsAndroidQualcomm() const;
     bool IsAndroidARM() const;
     bool IsAndroidSamsung() const;
-    bool IsWindowsAMD() const;
-    bool IsIntelMesa() const;
-    bool IsAmdMesa() const;
     bool IsAndroidHuawei() const;
     bool IsSwiftshader() const;
+    bool IsWindowsAMD() const;
+
+    // Check using VkDriverId, which is available in Vk 1.2 or an extension.
+    bool IsIntelMesa() const;
+    bool IsAmdMesa() const;
+
+    // Assumes that we might be on the proprietary driver if VkDriverId is not available.
+    bool MayBeArmProprietary() const;
+    bool MayBeQualcommProprietary() const;
 
     uint32_t GetDefaultComputeSubgroupSize() const;
 

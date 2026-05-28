@@ -864,7 +864,7 @@ void PhysicalDevice::SetupBackendDeviceToggles(dawn::platform::Platform* platfor
     // Vulkan SPEC and drivers.
     deviceToggles->Default(Toggle::UseTemporaryBufferInCompressedTextureToTextureCopy, true);
 
-    if (IsAndroidQualcomm()) {
+    if (MayBeQualcommProprietary()) {
         // dawn:1564, dawn:1897: Recording a compute pass after a render pass in the same command
         // buffer frequently causes a crash on Qualcomm GPUs. To work around that bug, split the
         // command buffer any time we are about to record a compute pass when a render pass has
@@ -900,7 +900,7 @@ void PhysicalDevice::SetupBackendDeviceToggles(dawn::platform::Platform* platfor
         }
     }
 
-    if (IsAndroidARM()) {
+    if (MayBeArmProprietary()) {
         // dawn:1550: Resolving multiple color targets in a single pass fails on ARM GPUs. To
         // work around the issue, passes that resolve to multiple color targets will instead be
         // forced to store the multisampled targets and do the resolves as separate passes injected
@@ -911,9 +911,7 @@ void PhysicalDevice::SetupBackendDeviceToggles(dawn::platform::Platform* platfor
         // `unpack4x8unorm` methods can have issues on ARM. To work around the issue we re-write the
         // pack/unpack calls and do the packing manually.
         deviceToggles->Default(Toggle::PolyfillPackUnpack4x8Norm, true);
-    }
 
-    if (gpu_info::IsARM(GetVendorId())) {
         // chromium:387000529: Arm devices have issues passing texture handles as parameters to
         // functions for accesses without a sampler (TextureLoad).
         deviceToggles->Default(Toggle::VulkanDirectVariableAccessTransformHandle, true);
@@ -939,41 +937,45 @@ void PhysicalDevice::SetupBackendDeviceToggles(dawn::platform::Platform* platfor
     }
 
     if (IsIntelMesa()) {
+        // chromium:448873316: Non-scalar (vector) saturate from uniform fails.
+        deviceToggles->Default(Toggle::SaturateAsMinMaxF16, true);
+
         // Polyfill a clamp of `id` param in subgroupShuffle to follow spec limitations.
         // See crbug.com/435246627
         deviceToggles->Default(Toggle::SubgroupShuffleClamped, true);
-    }
 
-    if (IsIntelMesa() && gpu_info::IsIntelGen12LP(GetVendorId(), GetDeviceId())) {
-        // dawn:1688: Intel Mesa driver has a bug about reusing the VkDeviceMemory that was
-        // previously bound to a 2D VkImage. To work around that bug we have to disable the resource
-        // sub-allocation for 2D textures with CopyDst or RenderAttachment usage.
-        const gpu_info::DriverVersion kBuggyDriverVersion = {21, 3, 6, 0};
-        if (gpu_info::CompareIntelMesaDriverVersion(GetDriverVersion(), kBuggyDriverVersion) >= 0) {
-            deviceToggles->Default(
-                Toggle::DisableSubAllocationFor2DTextureWithCopyDstOrRenderAttachment, true);
+        if (gpu_info::IsIntelGen12LP(GetVendorId(), GetDeviceId())) {
+            // dawn:1688: Intel Mesa driver has a bug about reusing the VkDeviceMemory that was
+            // previously bound to a 2D VkImage. To work around that bug we have to disable the
+            // resource sub-allocation for 2D textures with CopyDst or RenderAttachment usage.
+            const gpu_info::DriverVersion kBuggyDriverVersion = {21, 3, 6, 0};
+            if (gpu_info::CompareIntelMesaDriverVersion(GetDriverVersion(), kBuggyDriverVersion) >= 0) {
+                deviceToggles->Default(
+                    Toggle::DisableSubAllocationFor2DTextureWithCopyDstOrRenderAttachment, true);
+            }
+
+            // chromium:1361662: Mesa driver has a bug clearing R8 mip-leveled textures on Intel
+            // Gen12 GPUs. Work around it by clearing the whole texture as soon as they are created.
+            const gpu_info::DriverVersion kFixedDriverVersion = {23, 1, 0, 0};
+            if (gpu_info::CompareIntelMesaDriverVersion(GetDriverVersion(), kFixedDriverVersion) < 0) {
+                deviceToggles->Default(Toggle::VulkanClearGen12TextureWithCCSAmbiguateOnCreation,
+                                       true);
+            }
         }
 
-        // chromium:1361662: Mesa driver has a bug clearing R8 mip-leveled textures on Intel Gen12
-        // GPUs. Work around it by clearing the whole texture as soon as they are created.
-        const gpu_info::DriverVersion kFixedDriverVersion = {23, 1, 0, 0};
-        if (gpu_info::CompareIntelMesaDriverVersion(GetDriverVersion(), kFixedDriverVersion) < 0) {
-            deviceToggles->Default(Toggle::VulkanClearGen12TextureWithCCSAmbiguateOnCreation, true);
-        }
-    }
-
-    if (IsIntelMesa() && (gpu_info::IsIntelGen12LP(GetVendorId(), GetDeviceId()) ||
-                          gpu_info::IsIntelGen12HP(GetVendorId(), GetDeviceId()))) {
-        // Intel Mesa driver has a bug where vkCmdCopyQueryPoolResults fails to write overlapping
-        // queries to a same buffer after the buffer is accessed by a compute shader with correct
-        // resource barriers, which may caused by flush and memory coherency issue on Intel Gen12
-        // GPUs. Workaround for it to clear the buffer before vkCmdCopyQueryPoolResults on Mesa
-        // driver version < 23.1.3.
-        const gpu_info::DriverVersion kBuggyDriverVersion = {21, 2, 0, 0};
-        const gpu_info::DriverVersion kFixedDriverVersion = {23, 1, 3, 0};
-        if (gpu_info::CompareIntelMesaDriverVersion(GetDriverVersion(), kBuggyDriverVersion) >= 0 &&
-            gpu_info::CompareIntelMesaDriverVersion(GetDriverVersion(), kFixedDriverVersion) < 0) {
-            deviceToggles->Default(Toggle::ClearBufferBeforeResolveQueries, true);
+        if (gpu_info::IsIntelGen12LP(GetVendorId(), GetDeviceId()) ||
+            gpu_info::IsIntelGen12HP(GetVendorId(), GetDeviceId())) {
+            // Intel Mesa driver has a bug where vkCmdCopyQueryPoolResults fails to write overlapping
+            // queries to a same buffer after the buffer is accessed by a compute shader with correct
+            // resource barriers, which may caused by flush and memory coherency issue on Intel Gen12
+            // GPUs. Workaround for it to clear the buffer before vkCmdCopyQueryPoolResults on Mesa
+            // driver version < 23.1.3.
+            const gpu_info::DriverVersion kBuggyDriverVersion = {21, 2, 0, 0};
+            const gpu_info::DriverVersion kFixedDriverVersion = {23, 1, 3, 0};
+            if (gpu_info::CompareIntelMesaDriverVersion(GetDriverVersion(), kBuggyDriverVersion) >= 0 &&
+                gpu_info::CompareIntelMesaDriverVersion(GetDriverVersion(), kFixedDriverVersion) < 0) {
+                deviceToggles->Default(Toggle::ClearBufferBeforeResolveQueries, true);
+            }
         }
     }
 
@@ -1008,7 +1010,7 @@ void PhysicalDevice::SetupBackendDeviceToggles(dawn::platform::Platform* platfor
     if (!GetDeviceInfo().HasExt(DeviceExt::ZeroInitializeWorkgroupMemory) ||
         GetDeviceInfo().zeroInitializeWorkgroupMemoryFeatures.shaderZeroInitializeWorkgroupMemory ==
             VK_FALSE ||
-        gpu_info::IsARM(GetVendorId()) || gpu_info::IsImgTec(GetVendorId())) {
+        gpu_info::IsARM(GetVendorId())) {
         deviceToggles->ForceSet(Toggle::VulkanUseZeroInitializeWorkgroupMemoryExtension, false);
     }
     // By default try to initialize workgroup memory with OpConstantNull according to the Vulkan
@@ -1160,6 +1162,24 @@ bool PhysicalDevice::IsWindowsAMD() const {
 #else
     return false;
 #endif
+}
+
+bool PhysicalDevice::MayBeArmProprietary() const {
+    if (!gpu_info::IsARM(GetVendorId())) {
+        return false;
+    }
+
+    return !mDeviceInfo.HasExt(DeviceExt::DriverProperties) ||
+           mDeviceInfo.driverProperties.driverID == VK_DRIVER_ID_ARM_PROPRIETARY;
+}
+
+bool PhysicalDevice::MayBeQualcommProprietary() const {
+    if (!gpu_info::IsQualcommPCI(GetVendorId())) {
+        return false;
+    }
+
+    return !mDeviceInfo.HasExt(DeviceExt::DriverProperties) ||
+           mDeviceInfo.driverProperties.driverID == VK_DRIVER_ID_QUALCOMM_PROPRIETARY;
 }
 
 uint32_t PhysicalDevice::FindDefaultComputeSubgroupSize() const {
