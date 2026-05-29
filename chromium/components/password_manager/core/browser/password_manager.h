@@ -249,7 +249,7 @@ class PasswordManager : public PasswordManagerInterface {
     return GetSubmittedManager();
   }
 
-  const std::map<autofill::FormSignature, FormPredictions>&
+  const std::map<std::pair<autofill::FormSignature, int>, FormPredictions>&
   GetServerPredictionsForTesting() const {
     return server_predictions_;
   }
@@ -467,7 +467,8 @@ class PasswordManager : public PasswordManagerInterface {
   std::vector<autofill::FormData> visible_forms_data_;
 
   // Server predictions for the forms on the page.
-  std::map<autofill::FormSignature, FormPredictions> server_predictions_;
+  std::map<std::pair<autofill::FormSignature, int>, FormPredictions>
+      server_predictions_;
 
   // Classification model predictions for the forms on the page, keyed by
   // the combination of the driver and the renderer id of the form, that allow
