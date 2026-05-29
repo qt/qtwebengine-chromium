@@ -266,6 +266,7 @@ class GLES2InterfaceForTests : public gpu::gles2::GLES2InterfaceStub,
   void DrawingBufferClientRestoreScissorTest() override {
     state_.scissor_enabled = saved_state_.scissor_enabled;
   }
+  void DrawingBufferClientRestoreRasterizerDiscard() override {}
   void DrawingBufferClientRestoreMaskAndClearValues() override {
     memcpy(state_.color_mask, saved_state_.color_mask,
            sizeof(state_.color_mask));

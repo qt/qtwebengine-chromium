@@ -7693,6 +7693,7 @@ void WebGLRenderingContextBase::DrawingBufferClientRestoreFramebufferBinding() {
   RestoreCurrentFramebuffer();
 }
 
+void WebGLRenderingContextBase::DrawingBufferClientRestoreRasterizerDiscard() {}
 void WebGLRenderingContextBase::
     DrawingBufferClientRestorePixelUnpackBufferBinding() {}
 void WebGLRenderingContextBase::
