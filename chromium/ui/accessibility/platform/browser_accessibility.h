@@ -42,6 +42,7 @@ class BrowserAccessibilityManager;
 // Web.
 class COMPONENT_EXPORT(AX_PLATFORM) BrowserAccessibility
     : public AXPlatformNodeDelegate {
+
  public:
   // Creates a platform specific BrowserAccessibility. Ownership passes to the
   // caller.
