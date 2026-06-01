@@ -59,6 +59,7 @@ namespace sh
 namespace
 {
 constexpr ImmutableString kFlippedPointCoordName    = ImmutableString("flippedPointCoord");
+constexpr ImmutableString kFlippedSamplePositionName = ImmutableString("flippedSamplePosition");
 constexpr ImmutableString kFlippedFragCoordName     = ImmutableString("flippedFragCoord");
 constexpr ImmutableString kDefaultUniformsBlockName = ImmutableString("defaultUniforms");
 
@@ -1005,13 +1006,13 @@ bool TranslatorSPIRV::translateImpl(TIntermBlock *root,
                 if (inputVarying.name == "gl_PointCoord")
                 {
                     usesPointCoord = true;
-                    break;
+                    continue;
                 }
 
                 if (inputVarying.name == "gl_FragCoord")
                 {
                     usesFragCoord = true;
-                    break;
+                    continue;
                 }
             }
 
@@ -1069,7 +1070,7 @@ bool TranslatorSPIRV::translateImpl(TIntermBlock *root,
                         ImmutableString("gl_SamplePosition"), getShaderVersion()));
                 if (!RotateAndFlipBuiltinVariable(this, root, GetMainSequence(root), swapXY, flipXY,
                                                   &getSymbolTable(), samplePositionBuiltin,
-                                                  kFlippedPointCoordName, pivot))
+                                                  kFlippedSamplePositionName, pivot))
                 {
                     return false;
                 }
