@@ -45,14 +45,10 @@ angle::Result VkImageImageSiblingVk::initImpl(DisplayVk *displayVk)
 {
     vk::Renderer *renderer = displayVk->getRenderer();
 
-    const angle::FormatID formatID = vk::GetFormatIDFromVkFormat(mVkImageInfo.format);
+    angle::FormatID formatID = vk::GetFormatIDFromVkFormat(mVkImageInfo.format);
     ANGLE_VK_CHECK(displayVk, formatID != angle::FormatID::NONE, VK_ERROR_FORMAT_NOT_SUPPORTED);
 
-    const vk::Format &vkFormat = renderer->getFormat(formatID);
-    const vk::ImageAccess imageAccess =
-        isRenderable(nullptr) ? vk::ImageAccess::Renderable : vk::ImageAccess::SampleOnly;
-    const angle::FormatID actualImageFormatID = vkFormat.getActualImageFormatID(imageAccess);
-    const angle::Format &format               = angle::Format::Get(actualImageFormatID);
+    const angle::Format &format = angle::Format::Get(formatID);
 
     angle::FormatID intendedFormatID;
     if (mInternalFormat != GL_NONE)
@@ -65,6 +61,7 @@ angle::Result VkImageImageSiblingVk::initImpl(DisplayVk *displayVk)
     }
     else
     {
+        const vk::Format &vkFormat = renderer->getFormat(formatID);
         intendedFormatID = vkFormat.getIntendedFormatID();
         mFormat          = gl::Format(format.glInternalFormat);
     }
@@ -73,7 +70,7 @@ angle::Result VkImageImageSiblingVk::initImpl(DisplayVk *displayVk)
     constexpr bool kIsRobustInitEnabled = false;
     mImage                              = new vk::ImageHelper();
     mImage->init2DWeakReference(displayVk, mVkImage.release(), getSize(), false, intendedFormatID,
-                                actualImageFormatID, mVkImageInfo.flags, mVkImageInfo.usage, 1,
+                                formatID, mVkImageInfo.flags, mVkImageInfo.usage, 1,
                                 kIsRobustInitEnabled);
 
     return angle::Result::Continue;
