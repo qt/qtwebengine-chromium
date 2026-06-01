@@ -785,6 +785,9 @@ void PasswordAutofillAgent::PasswordValueGatekeeper::ShowValue(
   if (element && !element.SuggestedValue().IsEmpty()) {
     element.SetAutofillValue(element.SuggestedValue());
   }
+  // WARNING: SetAutofillValue can trigger JS that detaches the frame.
+  // Do not add code here that assumes the frame is still valid without
+  // checking.
 }
 
 std::optional<PasswordSuggestionRequest>
@@ -802,6 +805,10 @@ PasswordAutofillAgent::CreateRequestForChangeInTextField(
 void PasswordAutofillAgent::NotifyPasswordManagerAboutUserFieldModification(
     const WebInputElement& element,
     FieldModificationType modification_type) {
+  // No need to post a notification if the frame has already detached.
+  if (!render_frame()) {
+    return;
+  }
   if (element.FormControlTypeForAutofill() == kInputPassword) {
     auto iter = password_to_username_.find(FieldRef(element));
     if ((iter != password_to_username_.end()) &&
@@ -1100,6 +1107,12 @@ void PasswordAutofillAgent::DoFillField(WebInputElement input,
                                         FieldPropertiesFlags flag) {
   CHECK(input);
   input.SetAutofillValue(WebString::FromUTF16(credential));
+  // No need to process changes if the frame has detached upon filling
+  // completion.
+  if (!render_frame()) {
+    return;
+  }
+
   field_data_manager().UpdateFieldDataMap(form_util::GetFieldRendererId(input),
                                           credential, flag);
 
@@ -1212,6 +1225,9 @@ PasswordAutofillAgent::CreateSuggestionRequest(
     const WebInputElement& user_input,
     AutofillSuggestionTriggerSource trigger_source,
     const SynchronousFormCache& form_cache) {
+  if (!render_frame()) {
+    return std::nullopt;
+  }
   base::UmaHistogramEnumeration("PasswordManager.SuggestionPopupTriggerSource",
                                 trigger_source);
   // TODO(crbug.com/408843433): Don't extract the data here but pass it in from
@@ -1260,7 +1276,7 @@ bool PasswordAutofillAgent::FindPasswordInfoForElement(
   DCHECK(username_element && password_element && password_info);
   username_element->Reset();
   password_element->Reset();
-  if (!element) {
+  if (!element || !render_frame()) {
     return false;
   }
   if (suggestion_banned_fields_.contains(GetFieldRendererId(element))) {
@@ -1370,6 +1386,9 @@ void PasswordAutofillAgent::MaybeCheckSafeBrowsingReputation(
     return;
 
   checked_safe_browsing_reputation_ = true;
+  if (!render_frame()) {
+    return;
+  }
   WebLocalFrame* frame = render_frame()->GetWebFrame();
   GURL frame_url = GURL(frame->GetDocument().Url());
   WebFormElement form_element = element.GetOwningFormForAutofill();
@@ -1386,6 +1405,9 @@ void PasswordAutofillAgent::ShowSuggestions(
 }
 
 bool PasswordAutofillAgent::FrameCanAccessPasswordManager() {
+  if (!render_frame()) {
+    return false;
+  }
   // about:blank or about:srcdoc frames should not be allowed to use password
   // manager.  See https://crbug.com/756587.
   WebLocalFrame* frame = render_frame()->GetWebFrame();
@@ -1460,6 +1482,9 @@ void PasswordAutofillAgent::SendPasswordForms(
     logger->LogBoolean(Logger::STRING_ONLY_VISIBLE, only_visible);
   }
 
+  if (!render_frame()) {
+    return;
+  }
   WebLocalFrame* frame = render_frame()->GetWebFrame();
 
   // Make sure that this security origin is allowed to use password manager.
@@ -1608,7 +1633,8 @@ void PasswordAutofillAgent::OnDestruct() {
 }
 
 bool PasswordAutofillAgent::IsPrerendering() const {
-  return render_frame()->GetWebFrame()->GetDocument().IsPrerendering();
+  return render_frame() &&
+         render_frame()->GetWebFrame()->GetDocument().IsPrerendering();
 }
 
 bool PasswordAutofillAgent::IsUsernameInputField(
@@ -1627,6 +1653,9 @@ void PasswordAutofillAgent::ReadyToCommitNavigation(
     logger->LogMessage(Logger::STRING_DID_START_PROVISIONAL_LOAD_METHOD);
   }
 
+  if (!render_frame()) {
+    return;
+  }
   WebLocalFrame* navigated_frame = render_frame()->GetWebFrame();
   if (navigated_frame->IsOutermostMainFrame()) {
     // This is a new navigation, so require a new user gesture before filling in
@@ -2199,6 +2228,7 @@ PasswordAutofillAgent::GetPasswordManagerDriver() {
 
   // Lazily bind this interface.
   if (!password_manager_driver_) {
+    CHECK(render_frame());
     render_frame()->GetRemoteAssociatedInterfaces()->GetInterface(
         &password_manager_driver_);
   }
