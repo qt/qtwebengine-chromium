@@ -38,6 +38,7 @@
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/origin_util.h"
+#include "content/public/common/page_visibility_state.h"
 #include "device/vr/buildflags/buildflags.h"
 #include "device/vr/public/cpp/features.h"
 #include "device/vr/public/cpp/session_mode.h"
@@ -553,6 +554,17 @@ void VRServiceImpl::RequestSession(
     RejectSession(std::move(callback), options->trace_id,
                   device::mojom::RequestSessionError::UNKNOWN_FAILURE,
                   "Missing user activation.");
+    return;
+  }
+
+  if (render_frame_host_->GetVisibilityState() !=
+      content::PageVisibilityState::kVisible) {
+    // Page visibility is verified blink-side, so this should never fail unless
+    // the requesting client is misbehaving or compromised. Treat non-visible
+    // page as unknown failure:
+    RejectSession(std::move(callback), options->trace_id,
+                  device::mojom::RequestSessionError::UNKNOWN_FAILURE,
+                  "Page is not visible.");
     return;
   }
 
