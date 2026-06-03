@@ -1262,6 +1262,8 @@ void Window::NotifyAddedToRootWindow() {
 
 void Window::NotifyWindowHierarchyChange(
     const WindowObserver::HierarchyChangeParams& params) {
+  ScopedDeleteBlocker blocker(this);
+
   params.target->NotifyWindowHierarchyChangeDown(params);
   switch (params.phase) {
     case WindowObserver::HierarchyChangeParams::HIERARCHY_CHANGING:
