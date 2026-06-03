@@ -171,6 +171,18 @@ void ManifestManagerHost::OnRequestManifestResponse(
           }
         }
 
+        if (manifest.note_taking && manifest.note_taking->new_note_url.is_valid() &&
+            !document_origin.IsSameOriginWith(manifest.note_taking->new_note_url)) {
+          return "Manifest note_taking new_note_url must be same-origin with the "
+                   "document.";
+        }
+
+        if (manifest.lock_screen && manifest.lock_screen->start_url.is_valid() &&
+            !document_origin.IsSameOriginWith(manifest.lock_screen->start_url)) {
+          return "Manifest lock_screen start_url must be same-origin with the "
+                 "document.";
+        }
+
         return nullptr;
       }();
 
