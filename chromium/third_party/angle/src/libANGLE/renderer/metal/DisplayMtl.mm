@@ -460,6 +460,7 @@ egl::Error DisplayMtl::makeCurrent(egl::Display *display,
 
 void DisplayMtl::generateExtensions(egl::DisplayExtensions *outExtensions) const
 {
+    outExtensions->createContextRobustness    = true;
     outExtensions->iosurfaceClientBuffer      = true;
     outExtensions->surfacelessContext         = true;
     outExtensions->noConfigContext            = true;
