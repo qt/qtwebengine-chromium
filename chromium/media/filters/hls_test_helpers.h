@@ -131,14 +131,6 @@ class MockHlsRenditionHost : public HlsRenditionHost {
  public:
   MockHlsRenditionHost();
   ~MockHlsRenditionHost() override;
-  MOCK_METHOD(void,
-              ReadKey,
-              (const hls::MediaSegment::EncryptionData&,
-               HlsDataSourceProvider::ReadCb));
-  MOCK_METHOD(void,
-              ReadManifest,
-              (const GURL&, HlsDataSourceProvider::ReadCb),
-              (override));
   MOCK_METHOD(
       void,
       ReadMediaSegment,
@@ -152,17 +144,9 @@ class MockHlsRenditionHost : public HlsRenditionHost {
 
   MOCK_METHOD(void, Quit, (HlsDemuxerStatus), (override));
 
-  MOCK_METHOD(void,
-              ReadStream,
-              (std::unique_ptr<HlsDataSourceStream>,
-               HlsDataSourceProvider::ReadCb),
-              (override));
-
   MOCK_METHOD(void, UpdateNetworkSpeed, (uint64_t), (override));
 
   MOCK_METHOD(void, SetEndOfStream, (bool), (override));
-
-  MOCK_METHOD(void, AbortPendingReads, (base::OnceClosure), (override));
 };
 
 class MockHlsRendition : public HlsRendition {
