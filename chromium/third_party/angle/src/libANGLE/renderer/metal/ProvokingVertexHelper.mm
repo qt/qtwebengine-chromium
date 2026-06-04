@@ -238,7 +238,6 @@ angle::Result ProvokingVertexHelper::preconditionIndexBuffer(ContextMtl *context
     ANGLE_CHECK_GL_MATH(context, checkedBufferSize.IsValid());
     ANGLE_TRY(mIndexBuffers.allocate(context, checkedBufferSize.ValueOrDie(), nullptr, &newBuffer,
                                      &newOffset));
-    uint indexCountEncoded     = (uint)indexCount;
     auto threadsPerThreadgroup = MTLSizeMake(MIN(primCount, 64u), 1, 1);
 
     mtl::ComputeCommandEncoder *encoder =
@@ -295,7 +294,6 @@ angle::Result ProvokingVertexHelper::generateIndexBuffer(ContextMtl *context,
     ANGLE_CHECK_GL_MATH(context, checkedBufferSize.IsValid());
     ANGLE_TRY(mIndexBuffers.allocate(context, checkedBufferSize.ValueOrDie(), nullptr, &newBuffer,
                                      &newIndexOffset));
-    uint indexCountEncoded     = static_cast<uint>(indexCount);
     uint firstVertexEncoded    = static_cast<uint>(first);
     uint indexOffsetEncoded    = static_cast<uint>(newIndexOffset);
     auto threadsPerThreadgroup = MTLSizeMake(MIN(primCount, 64u), 1, 1);
