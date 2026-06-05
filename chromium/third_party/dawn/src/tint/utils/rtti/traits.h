@@ -29,6 +29,7 @@
 #define SRC_TINT_UTILS_RTTI_TRAITS_H_
 
 #include <ostream>
+#include <sstream>
 #include <string>
 #include <tuple>
 #include <type_traits>
