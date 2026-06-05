@@ -9798,17 +9798,23 @@ void Element::CloneAttributesFrom(const Element& other) {
     element_data_ = other.element_data_->MakeUniqueCopy();
   }
 
-  for (const Attribute& attr : element_data_->Attributes()) {
-    AttributeChanged(
-        AttributeModificationParams(attr.GetName(), g_null_atom, attr.Value(),
-                                    AttributeModificationReason::kByCloning));
+  attribute_bloom_ = 0;
+  for (wtf_size_t i = 0; i < element_data_->Attributes().size(); ++i) {
+    // AttributeChanged() may run script (e.g. popover beforetoggle) which can
+    // mutate this element's attribute vector and reallocate its backing
+    // buffer. Copy the name and value out of the buffer before calling so the
+    // references passed via AttributeModificationParams remain valid.
+    const QualifiedName name = element_data_->Attributes().at(i).GetName();
+    const AtomicString value = element_data_->Attributes().at(i).Value();
+    attribute_bloom_ |= FilterForAttribute(name);
+     AttributeChanged(
+        AttributeModificationParams(name, g_null_atom, value,
+                                     AttributeModificationReason::kByCloning));
   }
 
   if (other.nonce() != g_null_atom) {
     setNonce(other.nonce());
   }
-
-  attribute_bloom_ = other.attribute_bloom_;
 }
 
 void Element::CreateUniqueElementData() {
