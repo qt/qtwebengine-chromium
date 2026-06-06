@@ -39,6 +39,7 @@
 #include "src/tint/lang/core/ir/transform/builtin_scalarize.h"
 #include "src/tint/lang/core/ir/transform/change_immediate_to_uniform.h"
 #include "src/tint/lang/core/ir/transform/conversion_polyfill.h"
+#include "src/tint/lang/core/ir/transform/collapse_subgroup_min_max.h"
 #include "src/tint/lang/core/ir/transform/demote_to_helper.h"
 #include "src/tint/lang/core/ir/transform/direct_variable_access.h"
 #include "src/tint/lang/core/ir/transform/multiplanar_external_texture.h"
@@ -251,6 +252,10 @@ Result<SuccessType> Raise(core::ir::Module& module, const Options& options) {
         raise::PixelLocalConfig config;
         config.options = options.pixel_local;
         RUN_TRANSFORM(raise::PixelLocal, module, config);
+    }
+
+    if (options.collapse_subgroup_min_max) {
+        RUN_TRANSFORM(core::ir::transform::CollapseSubgroupMinMax, module);
     }
 
     RUN_TRANSFORM(raise::BinaryPolyfill, module);

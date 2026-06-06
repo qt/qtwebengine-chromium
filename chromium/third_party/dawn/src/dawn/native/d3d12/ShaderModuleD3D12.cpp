@@ -357,6 +357,8 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
 
     req.hlsl.tintOptions.polyfill_reflect_vec2_f32 =
         device->IsToggleEnabled(Toggle::D3D12PolyfillReflectVec2F32);
+    req.hlsl.tintOptions.collapse_subgroup_min_max =
+        device->IsToggleEnabled(Toggle::CollapseSubgroupMinMax);
     req.hlsl.tintOptions.polyfill_dot_4x8_packed =
         device->IsToggleEnabled(Toggle::PolyFillPacked4x8DotProduct);
     req.hlsl.tintOptions.disable_polyfill_integer_div_mod =

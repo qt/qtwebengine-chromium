@@ -195,6 +195,9 @@ struct Options {
     /// Emit argument buffers
     bool use_argument_buffers = false;
 
+    /// Set to `true` to collapse nested subgroupMin and subgroupMax operations.
+    bool collapse_subgroup_min_max = false;
+
     /// The index to use when generating a UBO to receive storage buffer sizes.
     /// Defaults to 30, which is the last valid buffer slot.
     uint32_t buffer_size_ubo_index = 30;
@@ -242,7 +245,8 @@ struct Options {
                  vertex_pulling_config,
                  immediate_binding_point,
                  group_to_argument_buffer_info,
-                 bindings);
+                 bindings,
+                 collapse_subgroup_min_max);
 };
 
 }  // namespace tint::msl::writer

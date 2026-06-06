@@ -230,6 +230,9 @@ struct Options {
     /// Set to `true` to generate polyfill for f32 and f16 abs.
     bool polyfill_float_abs = false;
 
+    /// Set to `true` to collapse nested subgroupMin and subgroupMax operations.
+    bool collapse_subgroup_min_max = false;
+
     /// Offsets of the minDepth and maxDepth push constants.
     std::optional<RangeOffsets> depth_range_offsets = std::nullopt;
 
@@ -262,7 +265,8 @@ struct Options {
                  polyfill_float_negation,
                  polyfill_float_abs,
                  depth_range_offsets,
-                 spirv_version);
+                 spirv_version,
+                 collapse_subgroup_min_max);
 };
 
 }  // namespace tint::spirv::writer

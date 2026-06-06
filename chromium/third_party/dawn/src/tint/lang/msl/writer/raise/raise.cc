@@ -39,6 +39,7 @@
 #include "src/tint/lang/core/ir/transform/builtin_polyfill.h"
 #include "src/tint/lang/core/ir/transform/builtin_scalarize.h"
 #include "src/tint/lang/core/ir/transform/change_immediate_to_uniform.h"
+#include "src/tint/lang/core/ir/transform/collapse_subgroup_min_max.h"
 #include "src/tint/lang/core/ir/transform/conversion_polyfill.h"
 #include "src/tint/lang/core/ir/transform/demote_to_helper.h"
 #include "src/tint/lang/core/ir/transform/multiplanar_external_texture.h"
@@ -78,6 +79,10 @@ Result<RaiseResult> Raise(core::ir::Module& module, const Options& options) {
             return result.Failure();     \
         }                                \
     } while (false)
+
+    if (options.collapse_subgroup_min_max) {
+        RUN_TRANSFORM(core::ir::transform::CollapseSubgroupMinMax, module);
+    }
 
     RaiseResult raise_result;
 

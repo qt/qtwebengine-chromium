@@ -681,6 +681,11 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
     {Toggle::EnableShaderPrint,
      {"enable_shader_print", "Enable print functions to produce output on supported devices.",
       "https://crbug.com/433534277", ToggleStage::Device}},
+    {Toggle::CollapseSubgroupMinMax,
+     {"collapse_subgroup_min_max",
+      "Collapse redundant subgroup min and max operations (e.g., subgroupMin(subgroupMin(x))) into "
+      "a single operation. This works around a driver crash on some AMD GPUs.",
+      "https://crbug.com/508265321", ToggleStage::Device}},
     {Toggle::NoWorkaroundSampleMaskBecomesZeroForAllButLastColorTarget,
      {"no_workaround_sample_mask_becomes_zero_for_all_but_last_color_target",
       "MacOS 12.0+ Intel has a bug where the sample mask is only applied for the last color "

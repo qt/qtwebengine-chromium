@@ -34,6 +34,7 @@
 #include "src/tint/lang/core/ir/transform/binding_remapper.h"
 #include "src/tint/lang/core/ir/transform/block_decorated_structs.h"
 #include "src/tint/lang/core/ir/transform/builtin_polyfill.h"
+#include "src/tint/lang/core/ir/transform/collapse_subgroup_min_max.h"
 #include "src/tint/lang/core/ir/transform/builtin_scalarize.h"
 #include "src/tint/lang/core/ir/transform/combine_access_instructions.h"
 #include "src/tint/lang/core/ir/transform/conversion_polyfill.h"
@@ -175,6 +176,11 @@ Result<SuccessType> Raise(core::ir::Module& module, const Options& options) {
     if (!options.use_demote_to_helper_invocation_extensions) {
         // DemoteToHelper must come before any transform that introduces non-core instructions.
         RUN_TRANSFORM(core::ir::transform::DemoteToHelper, module);
+    }
+
+
+    if (options.collapse_subgroup_min_max) {
+        RUN_TRANSFORM(core::ir::transform::CollapseSubgroupMinMax, module);
     }
 
     raise::PolyfillConfig config = {.use_vulkan_memory_model = options.use_vulkan_memory_model,

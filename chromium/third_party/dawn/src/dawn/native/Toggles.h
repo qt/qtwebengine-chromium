@@ -163,6 +163,7 @@ enum class Toggle {
     UseSpirv14,
     MetalUseArgumentBuffers,
     EnableShaderPrint,
+    CollapseSubgroupMinMax,
 
     // Unresolved issues.
     NoWorkaroundSampleMaskBecomesZeroForAllButLastColorTarget,

@@ -505,6 +505,11 @@ void PhysicalDevice::SetupBackendDeviceToggles(dawn::platform::Platform* platfor
                                true);
     }
 
+    if (gpu_info::IsAMD(vendorId)) {
+        // crbug.com/508265321: Nested subgroupMin/Max operations cause a crash in the AMD driver.
+        deviceToggles->Default(Toggle::CollapseSubgroupMinMax, true);
+    }
+
     if (gpu_info::IsApple(vendorId)) {
         deviceToggles->Default(Toggle::MetalFillEmptyOcclusionQueriesWithZero, true);
 

@@ -240,6 +240,9 @@ struct Options {
     /// `unpack4xI8` and `unpack4xU8` builtins
     bool polyfill_pack_unpack_4x8 = false;
 
+    /// Set to `true` to collapse redundant subgroup min and max operations
+    bool collapse_subgroup_min_max = false;
+
     /// The downstream compiler which will be used
     Compiler compiler = Compiler::kDXC;
 
@@ -296,7 +299,8 @@ struct Options {
                  first_instance_offset,
                  num_workgroups_start_offset,
                  bindings,
-                 pixel_local);
+                 pixel_local,
+                 collapse_subgroup_min_max);
 };
 
 }  // namespace tint::hlsl::writer
