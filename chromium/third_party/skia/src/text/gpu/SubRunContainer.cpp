@@ -826,7 +826,7 @@ public:
             , fUseLCDText{useLCDText}
             , fAntiAliased{antiAliased}
             , fMatrixRange{matrixRange} {
-        SkASSERT(fVertexFiller.grMaskType() == MaskFormat::kA8);
+        SkASSERT_RELEASE(fVertexFiller.grMaskType() == MaskFormat::kA8);
     }
 
     static SubRunOwner Make(SkZip<const SkPackedGlyphID, const SkPoint> accepted,
