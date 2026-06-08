@@ -528,9 +528,6 @@ class TParseContext : angle::NonCopyable
 
     ShShaderOutput getOutputType() const { return mOutputType; }
 
-    size_t getMaxExpressionComplexity() const { return mMaxExpressionComplexity; }
-    size_t getMaxStatementDepth() const { return mMaxStatementDepth; }
-
     const ShCompileOptions &getCompileOptions() const { return mCompileOptions; }
 
     // TODO(jmadill): make this private
@@ -742,6 +739,8 @@ class TParseContext : angle::NonCopyable
     sh::GLenum mShaderType;    // vertex/fragment/geometry/etc shader
     ShShaderSpec mShaderSpec;  // The language specification compiler conforms to - GLES/WebGL/etc.
     ShCompileOptions mCompileOptions;  // Options passed to TCompiler
+    const ShBuiltInResources &mResources;  // Limits passed to TCompiler
+
     int mShaderVersion;
     TIntermBlock *mTreeRoot;  // root of parse tree being created
     int mLoopNestingLevel;    // 0 if outside all loops
@@ -771,29 +770,12 @@ class TParseContext : angle::NonCopyable
     TDirectiveHandler mDirectiveHandler;
     angle::pp::Preprocessor mPreprocessor;
     void *mScanner;
-    const size_t mMaxExpressionComplexity;
-    const size_t mMaxStatementDepth;
-    int mMinProgramTexelOffset;
-    int mMaxProgramTexelOffset;
-
-    int mMinProgramTextureGatherOffset;
-    int mMaxProgramTextureGatherOffset;
 
     // keep track of local group size declared in layout. It should be declared only once.
     bool mComputeShaderLocalSizeDeclared;
     sh::WorkGroupSize mComputeShaderLocalSize;
     // keep track of number of views declared in layout.
     int mNumViews;
-    int mMaxNumViews;
-    int mMaxImageUnits;
-    int mMaxCombinedTextureImageUnits;
-    int mMaxUniformLocations;
-    int mMaxUniformBufferBindings;
-    int mMaxVertexAttribs;
-    int mMaxAtomicCounterBindings;
-    int mMaxAtomicCounterBufferSize;
-    int mMaxShaderStorageBufferBindings;
-    int mMaxPixelLocalStoragePlanes;
 
     // keeps track whether we are declaring / defining a function
     bool mDeclaringFunction;
@@ -815,11 +797,8 @@ class TParseContext : angle::NonCopyable
     TLayoutPrimitiveType mGeometryShaderOutputPrimitiveType;
     int mGeometryShaderInvocations;
     int mGeometryShaderMaxVertices;
-    int mMaxGeometryShaderInvocations;
-    int mMaxGeometryShaderMaxVertices;
     unsigned int mGeometryInputArraySize;
 
-    int mMaxPatchVertices;
     int mTessControlShaderOutputVertices;
     TLayoutTessEvaluationType mTessEvaluationShaderInputPrimitiveType;
     TLayoutTessEvaluationType mTessEvaluationShaderInputVertexSpacingType;
