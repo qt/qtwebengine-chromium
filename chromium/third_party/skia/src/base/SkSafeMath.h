@@ -65,6 +65,7 @@ public:
         if (result > std::numeric_limits<int>::max() || result < std::numeric_limits<int>::min()) {
             fOK = false;
         }
+        return (int)result;
     }
 
     size_t alignUp(size_t x, size_t alignment) {
