@@ -383,6 +383,8 @@ void SetRuntimeFeaturesFromChromiumFeatures() {
            raw_ref(network::features::kReduceAcceptLanguage)},
           {"RelatedWebsitePartitionAPI",
            raw_ref(net::features::kRelatedWebsitePartitionAPI)},
+          {"WebSerialWorldIsolatedCache",
+           raw_ref(features::kWebSerialWorldIsolatedCache)},
 #if BUILDFLAG(IS_ANDROID)
           {"Serial", raw_ref(device::features::kBluetoothRfcommAndroid)},
 #endif
