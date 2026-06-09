@@ -2452,6 +2452,33 @@ bool ValidateFramebufferPixelLocalStorageRestoreANGLE(const Context *context,
         return false;
     }
 
+    // Security: PixelLocalStorage::restore() calls Context::beginPixelLocalStorage() directly
+    // without re-running ValidateBeginPixelLocalStorageANGLE. Standard GL framebuffer-mutation
+    // commands (e.g. glFramebufferTexture2D) are not blocked while PLS is interrupted, so an
+    // oversized attachment may have been injected. On the ImageLoadStore backend a dimension
+    // mismatch here leads to out-of-bounds storage-image writes from the translator-emitted
+    // imageStore(). Re-validate the dimension invariant before allowing restore() to re-begin PLS.
+    if (pls->interruptCount() == 1 && pls->activePlanesAtLastInterrupt() >= 1)
+    {
+        const FramebufferAttachment *firstAttachment =
+            framebuffer->getState().getFirstNonNullAttachment();
+        if (firstAttachment != nullptr)
+        {
+            const Extents fbExtents = framebuffer->getState().getAttachmentExtentsIntersection();
+            for (GLsizei i = 0; i < pls->activePlanesAtLastInterrupt(); ++i)
+            {
+                Extents planeExtents;
+                if (pls->getPlane(i).getTextureImageExtents(context, &planeExtents) &&
+                    planeExtents != fbExtents)
+                {
+                    ANGLE_VALIDATION_ERROR(GL_INVALID_OPERATION,
+                                           kPLSDimensionsDontMatchRenderingArea);
+                    return false;
+                }
+            }
+        }
+    }
+
     return true;
 }
 

@@ -149,6 +149,7 @@ class PixelLocalStorage
     const PixelLocalStoragePlaneVector &getPlanes() { return mPlanes; }
 
     size_t interruptCount() const { return mInterruptCount; }
+    GLsizei activePlanesAtLastInterrupt() const { return mActivePlanesAtInterrupt; }
 
     // ANGLE_shader_pixel_local_storage API.
     void deinitialize(Context *context, GLint plane) { mPlanes[plane].deinitialize(context); }
