@@ -11853,11 +11853,11 @@ VkResult VmaDeviceMemoryBlock::Map(VmaAllocator hAllocator, uint32_t count, void
 
     VmaMutexLock lock(m_MapAndBindMutex, hAllocator->m_UseMutex);
     const uint32_t oldTotalMapCount = m_MapCount + m_MappingHysteresis.GetExtraMapping();
-    m_MappingHysteresis.PostMap();
     if (oldTotalMapCount != 0)
     {
-        m_MapCount += count;
         VMA_ASSERT(m_pMappedData != VMA_NULL);
+        m_MappingHysteresis.PostMap();
+        m_MapCount += count;
         if (ppData != VMA_NULL)
         {
             *ppData = m_pMappedData;
@@ -11875,11 +11875,13 @@ VkResult VmaDeviceMemoryBlock::Map(VmaAllocator hAllocator, uint32_t count, void
             &m_pMappedData);
         if (result == VK_SUCCESS)
         {
+            VMA_ASSERT(m_pMappedData != VMA_NULL);
+            m_MappingHysteresis.PostMap();
+            m_MapCount = count;
             if (ppData != VMA_NULL)
             {
                 *ppData = m_pMappedData;
             }
-            m_MapCount = count;
         }
         return result;
     }
