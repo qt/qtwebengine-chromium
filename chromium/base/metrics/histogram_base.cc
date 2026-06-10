@@ -55,20 +55,35 @@ HistogramBase* DeserializeHistogramInfo(PickleIterator* iter) {
     return nullptr;
   }
 
+  HistogramBase* result;
   switch (type) {
     case HISTOGRAM:
-      return Histogram::DeserializeInfoImpl(iter);
+      result = Histogram::DeserializeInfoImpl(iter);
+      break;
     case LINEAR_HISTOGRAM:
-      return LinearHistogram::DeserializeInfoImpl(iter);
+      result = LinearHistogram::DeserializeInfoImpl(iter);
+      break;
     case BOOLEAN_HISTOGRAM:
-      return BooleanHistogram::DeserializeInfoImpl(iter);
+      result = BooleanHistogram::DeserializeInfoImpl(iter);
+      break;
     case CUSTOM_HISTOGRAM:
-      return CustomHistogram::DeserializeInfoImpl(iter);
+      result = CustomHistogram::DeserializeInfoImpl(iter);
+      break;
     case SPARSE_HISTOGRAM:
-      return SparseHistogram::DeserializeInfoImpl(iter);
+      result = SparseHistogram::DeserializeInfoImpl(iter);
+      break;
     default:
       return nullptr;
   }
+
+   if (result != nullptr &&
+      result->GetHistogramType() != static_cast<HistogramType>(type)) {
+    // If there's a type mismatch, this could be a DummyHistogram returned by
+    // FactoryGetInternal() due to invalid arguments. In this case, return
+    // nullptr to indicate an error.
+    return nullptr;
+  }
+  return result;
 }
 
 HistogramBase::CountAndBucketData::CountAndBucketData(Count32 count,
