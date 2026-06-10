@@ -1808,6 +1808,7 @@ NavigationRequest::NavigationRequest(
       embedder_shared_storage_context_(embedder_shared_storage_context),
       has_ad_auction_headers_attribute_(frame_tree_node->ad_auction_headers()),
       request_method_(common_params_->method),
+      original_url_(common_params_->url),
       prerender_host_id_(
           GetPrerenderHostRegistry().GetPrerenderHostIdForNavigation(this)) {
   TRACE_EVENT_WITH_FLOW1("navigation", "NavigationRequest::NavigationRequest",
@@ -1818,6 +1819,7 @@ NavigationRequest::NavigationRequest(
         !common_params_->initiator_base_url->is_empty());
   CHECK(!blink::IsRendererDebugURL(common_params_->url));
   CHECK(common_params_->method == "POST" || !common_params_->post_data);
+  CHECK_EQ(common_params_->url, original_url_);
   if (base::FeatureList::IsEnabled(
           features::kSanitizeOriginalUrlDuringNavigation)) {
     CHECK_EQ(common_params_->url.DeprecatedGetOriginAsURL(),
@@ -2777,6 +2779,7 @@ void NavigationRequest::OnFencedFrameURLMappingComplete(
   const GURL& mapped_url_value =
       properties->mapped_url()->GetValueIgnoringVisibility();
   common_params_->url = mapped_url_value;
+  original_url_ = mapped_url_value;
   if (base::FeatureList::IsEnabled(
           features::kSanitizeOriginalUrlDuringNavigation)) {
     // It is safe to convert GURL to an Origin and back in the code below
@@ -2834,9 +2837,9 @@ void NavigationRequest::BeginNavigationImpl() {
 
   if (!GetContentClient()->browser()->ShouldOverrideUrlLoading(
           frame_tree_node_->frame_tree_node_id(),
-          commit_params_->is_browser_initiated, commit_params_->original_url,
-          commit_params_->original_method, common_params_->has_user_gesture,
-          false, frame_tree_node_->IsOutermostMainFrame(),
+          commit_params_->is_browser_initiated, original_url_, request_method_,
+          common_params_->has_user_gesture, false,
+          frame_tree_node_->IsOutermostMainFrame(),
           frame_tree_node_->frame_tree().is_prerendering(),
           ui::PageTransitionFromInt(common_params_->transition),
           &should_override_url_loading)) {
@@ -5810,9 +5813,9 @@ void NavigationRequest::AddResourceTimingEntryForFailedSubframeNavigation(
 
   GetParentFrame()->AddResourceTimingEntryForFailedSubframeNavigation(
       frame_tree_node(), common_params().navigation_start,
-      commit_params().navigation_timing->redirect_end,
-      commit_params().original_url, common_params().url,
-      std::move(response_head), allow_response_details, status);
+      commit_params().navigation_timing->redirect_end, original_url_,
+      common_params().url, std::move(response_head), allow_response_details,
+      status);
 }
 
 void NavigationRequest::OnRedirectChecksComplete(
@@ -7309,8 +7312,8 @@ bool NavigationRequest::IsAllowedByCSPDirective(
     url = common_params_->url;
   }
   network::CSPCheckResult result = context->IsAllowedByCsp(
-      policies, directive, url, commit_params_->original_url,
-      has_followed_redirect, common_params_->source_location, disposition,
+      policies, directive, url, original_url_, has_followed_redirect,
+      common_params_->source_location, disposition,
       begin_params_->is_form_submission, is_opaque_fenced_frame);
   if (result.WouldBlockIfWildcardDoesNotMatchWs()) {
     GetContentClient()->browser()->LogWebFeatureForCurrentPage(
@@ -7464,6 +7467,7 @@ net::Error NavigationRequest::CheckContentSecurityPolicy(
       } else {
         commit_params_->original_url = common_params_->url;
       }
+      original_url_ = common_params_->url;
     }
   }
 

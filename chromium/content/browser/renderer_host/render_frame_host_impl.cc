@@ -17773,10 +17773,10 @@ void RenderFrameHostImpl::
                         request->WasInitiatedByLinkClick());
 
   SCOPED_CRASH_KEY_STRING256("VerifyDidCommit", "original_req_url",
-                             request->commit_params().original_url.spec());
-  SCOPED_CRASH_KEY_BOOL("VerifyDidCommit", "original_same_doc",
-                        request->commit_params().original_url.EqualsIgnoringRef(
-                            GetLastCommittedURL()));
+                             request->original_url().spec());
+  SCOPED_CRASH_KEY_BOOL(
+      "VerifyDidCommit", "original_same_doc",
+      request->original_url().EqualsIgnoringRef(GetLastCommittedURL()));
 
   SCOPED_CRASH_KEY_BOOL(
       "VerifyDidCommit", "on_initial_empty_doc",
