@@ -956,6 +956,7 @@ TEST_F(NavigationRequestTest, SanitizeRedirectsForCommitRelativeLocation) {
   // The original navigation URL should be sanitized to origin when
   // kSanitizeOriginalUrlDuringNavigation is enabled.
   EXPECT_EQ(GURL("https://a.com/"), commit_params->original_url);
+  EXPECT_EQ(start_url, request->original_url());
 }
 
 // Test to ensure that relative Location headers on non-standard schemes are
@@ -1025,6 +1026,7 @@ TEST_F(NavigationRequestTest, SanitizeRedirectsForCommitNonStandardRelative) {
   // The original navigation URL should be sanitized to origin when
   // kSanitizeOriginalUrlDuringNavigation is enabled.
   EXPECT_EQ(GURL("chrome-foo://history/"), commit_params->original_url);
+  EXPECT_EQ(start_url, request->original_url());
 }
 
 // Test to ensure that hostless non-standard schemes (like data:) are handled
@@ -1076,6 +1078,7 @@ TEST_F(NavigationRequestTest, SanitizeRedirectsForCommitHostlessNonStandard) {
   // The original navigation URL should be sanitized to origin when
   // kSanitizeOriginalUrlDuringNavigation is enabled.
   EXPECT_EQ(GURL("https://a.com/"), commit_params->original_url);
+  EXPECT_EQ(start_url, request->original_url());
 }
 
 // Test to ensure that SanitizeRedirectsForCommit is called when a navigation
@@ -1118,6 +1121,7 @@ TEST_F(NavigationRequestTest, SanitizeRedirectsForCommitErrorPage) {
   // The original navigation URL should be sanitized to origin when
   // kSanitizeOriginalUrlDuringNavigation is enabled.
   EXPECT_EQ(GURL("https://a.com/"), commit_params.original_url);
+  EXPECT_EQ(start_url, request->original_url());
 }
 
 TEST_F(NavigationRequestTest, AbortsDeletedNavigationInProgress) {
