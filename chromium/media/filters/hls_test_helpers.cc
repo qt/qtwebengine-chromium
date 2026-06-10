@@ -85,9 +85,10 @@ FileHlsDataSourceStreamFactory::CreateStream(std::string filename,
 MockDataSourceFactory::~MockDataSourceFactory() = default;
 MockDataSourceFactory::MockDataSourceFactory() = default;
 
-void MockDataSourceFactory::Create(const GURL&,
-                                   DataSource::CacheMode,
-                                   DataSource::DataSourceCb cb) {
+void MockDataSourceFactory::Create(
+    const GURL&,
+    DataSource::CacheMode,
+    base::OnceCallback<void(std::unique_ptr<CrossOriginDataSource>)> cb) {
   if (!next_mock_) {
     PregenerateNextMock();
     EXPECT_CALL(*next_mock_, Initialize)

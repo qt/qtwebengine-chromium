@@ -811,9 +811,11 @@ MultiBufferDataSource::Factory::Factory(
       base::DoNothing(), tick_clock);
 }
 
-void MultiBufferDataSource::Factory::Create(const GURL& uri,
-                                            DataSource::CacheMode cache_mode,
-                                            DataSourceCb cb) {
+void MultiBufferDataSource::Factory::Create(
+    const GURL& uri,
+    media::DataSource::CacheMode cache_mode,
+    base::OnceCallback<void(std::unique_ptr<media::CrossOriginDataSource>)>
+        cb) {
   DCHECK(main_task_runner_->BelongsToCurrentThread());
   auto download_cb =
 #if DCHECK_IS_ON()
@@ -833,7 +835,7 @@ void MultiBufferDataSource::Factory::Create(const GURL& uri,
 }
 
 void MultiBufferDataSource::Factory::OnUrlData(
-    DataSourceCb cb,
+    base::OnceCallback<void(std::unique_ptr<media::CrossOriginDataSource>)> cb,
     base::RepeatingCallback<void(bool)> download_cb,
     scoped_refptr<UrlData> data) {
   DCHECK(main_task_runner_->BelongsToCurrentThread());

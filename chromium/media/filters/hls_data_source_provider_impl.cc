@@ -53,7 +53,7 @@ void OnMultiBufferReadComplete(
 }  // namespace
 
 HlsDataSourceProviderImpl::HlsDataSourceProviderImpl(
-    std::unique_ptr<DataSource::Factory> factory)
+    std::unique_ptr<CrossOriginDataSource::Factory> factory)
     : data_source_factory_(std::move(factory)) {}
 
 HlsDataSourceProviderImpl::~HlsDataSourceProviderImpl() {
@@ -166,7 +166,7 @@ void HlsDataSourceProviderImpl::OnDataSourceCreated(
     DataSource::RangeMode range_mode,
     std::unique_ptr<HlsDataSourceStream> stream,
     ReadCb callback,
-    std::unique_ptr<DataSource> data_source) {
+    std::unique_ptr<CrossOriginDataSource> data_source) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   CHECK(data_source);
   auto stream_id = stream->stream_id();
@@ -192,17 +192,10 @@ void HlsDataSourceProviderImpl::OnDataSourceCreated(
   }
 
   auto pair = data_source_map_.try_emplace(stream_id, std::move(data_source));
-  // Cross origin data sources have an asynchronous initialize method which
-  // must be called after they're put into `data_source_map_`. Other types of
-  // data source (including the test framework ones) come from the factory ready
-  // to go, and don't have an async init process.
-  if (auto* cross_origin = pair.first->second->GetAsCrossOriginDataSource()) {
-    cross_origin->Initialize(base::BindPostTaskToCurrentDefault(base::BindOnce(
-        &HlsDataSourceProviderImpl::DataSourceInitialized,
-        weak_factory_.GetWeakPtr(), std::move(stream), std::move(callback))));
-  } else {
-    DataSourceInitialized(std::move(stream), std::move(callback), true);
-  }
+  pair.first->second->Initialize(
+      base::BindPostTaskToCurrentDefault(base::BindOnce(
+          &HlsDataSourceProviderImpl::DataSourceInitialized,
+          weak_factory_.GetWeakPtr(), std::move(stream), std::move(callback))));
 }
 
 void HlsDataSourceProviderImpl::DataSourceInitialized(

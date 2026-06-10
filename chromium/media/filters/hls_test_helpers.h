@@ -51,7 +51,6 @@ class MockDataSource : public CrossOriginDataSource {
               (double playback_rate),
               (override));
   MOCK_METHOD(void, OnMediaIsPlaying, (), (override));
-  CrossOriginDataSource* GetAsCrossOriginDataSource() override { return this; }
 };
 
 class MockHlsDataSourceProvider : public HlsDataSourceProvider {
@@ -193,13 +192,14 @@ class FileHlsDataSourceStreamFactory {
       bool taint_origin = false);
 };
 
-class MockDataSourceFactory : public DataSource::Factory {
+class MockDataSourceFactory : public CrossOriginDataSource::Factory {
  public:
   ~MockDataSourceFactory() override;
   MockDataSourceFactory();
   void Create(const GURL& uri,
               DataSource::CacheMode cache_mode,
-              DataSource::DataSourceCb cb) override;
+              base::OnceCallback<void(std::unique_ptr<CrossOriginDataSource>)>
+                  cb) override;
   void AddReadExpectation(size_t from, size_t to, int response);
   testing::NiceMock<MockDataSource>* PregenerateNextMock();
 
