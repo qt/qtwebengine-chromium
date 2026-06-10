@@ -127,6 +127,9 @@ class FileSystemAccessFileWriterImplTest : public testing::Test {
   void TearDown() override {
     manager_.reset();
 
+    ChildProcessSecurityPolicyImpl::GetInstance()->Remove(
+        ChildProcessId::FromUnsafeValue(kProcessId));
+
     task_environment_.RunUntilIdle();
     // TODO(crbug.com/40266589): Figure out what code is leaking open
     // files, and uncomment this to prevent further regressions.
@@ -290,6 +293,10 @@ class FileSystemAccessFileWriterImplTest : public testing::Test {
         file_system_context_, chrome_blob_context_,
         /*permission_context=*/permission_context(),
         /*off_the_record=*/false);
+    ChildProcessSecurityPolicyImpl::GetInstance()->AddForTesting(
+        ChildProcessId::FromUnsafeValue(kProcessId), &browser_context_);
+    ChildProcessSecurityPolicyImpl::GetInstance()->AddCommittedOrigin(
+        kProcessId, url::Origin::Create(kTestURL));
     manager_->BindReceiver(kBindingContext,
                            manager_remote_.BindNewPipeAndPassReceiver());
 
@@ -385,6 +392,7 @@ class FileSystemAccessFileWriterImplTest : public testing::Test {
   raw_ptr<storage::BlobStorageContext> blob_context_ = nullptr;
   scoped_refptr<FileSystemAccessManagerImpl> manager_;
   mojo::Remote<blink::mojom::FileSystemAccessManager> manager_remote_;
+  TestBrowserContext browser_context_;
 
   FileSystemURL test_file_url_;
   FileSystemURL test_swap_url_;
