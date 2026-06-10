@@ -2680,11 +2680,17 @@ void InitializeFeatures(const FunctionsGL *functions, angle::FeaturesGL *feature
 
     // BGRA formats do not appear to be accepted by the qualcomm driver despite the extension being
     // exposed.
+
     ANGLE_FEATURE_CONDITION(features, bgraTexImageFormatsBroken, IsQualcomm(vendor));
 
     // Recreate FBO upon flush/finish/fencesync under certain conditions to work around Qualcomm
     // driver bugs.
-    ANGLE_FEATURE_CONDITION(features, recreateFboUponFlush, isQualcomm);
+    // https://crbug.com/493747593
+    ANGLE_FEATURE_CONDITION(features, recreateFboUponFlush, false);
+
+    // https://crbug.com/520656244
+    ANGLE_FEATURE_CONDITION(features, reattachFboDepthStencilOnReallocation,
+                             !isMesa && isQualcomm && qualcommVersion < 878);
 
     // glGenerateMipmap may silently fail on mesa, leaving mips that are expected to be recreated to
     // match the base level in their original shape, hidden from ANGLE and its validation.
