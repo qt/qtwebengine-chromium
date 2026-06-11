@@ -33,6 +33,7 @@
 
 #include <optional>
 
+#include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/platform/bindings/script_wrappable.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_vector.h"
@@ -50,7 +51,8 @@ class Page;
 class PagePopup;
 class PagePopupClient;
 
-class PagePopupController : public ScriptWrappable, public Supplement<Page> {
+class CORE_EXPORT PagePopupController : public ScriptWrappable,
+                                        public Supplement<Page> {
   DEFINE_WRAPPERTYPEINFO();
 
  public:
