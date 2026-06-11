@@ -24,7 +24,6 @@ constexpr size_t kDefaultReadSize = 1024 * 16;
 void OnMultiBufferReadComplete(
     std::unique_ptr<HlsDataSourceStream> stream,
     HlsDataSourceProviderImpl::ReadCb callback,
-    base::OnceCallback<void(HlsDataSourceStream&)> update_metadata,
     int requested_read_size,
     uint64_t trace_key,
     int read_size) {
@@ -44,7 +43,6 @@ void OnMultiBufferReadComplete(
     default: {
       CHECK_GE(read_size, 0);
       stream->UnlockStreamPostWrite(read_size, 0 == read_size);
-      std::move(update_metadata).Run(*stream);
       std::move(callback).Run(std::move(stream));
     }
   }
@@ -79,25 +77,6 @@ void HlsDataSourceProviderImpl::ReadFromCombinedUrlQueue(SegmentQueue segments,
           base::BindOnce(&HlsDataSourceProviderImpl::OnStreamReleased,
                          weak_factory_.GetWeakPtr(), stream_id)));
   ReadFromExistingStream(std::move(stream), std::move(callback));
-}
-
-void HlsDataSourceProviderImpl::UpdateStreamMetadata(
-    HlsDataSourceStream::StreamId stream_id,
-    HlsDataSourceStream& stream) {
-  uint64_t usage = 0;
-  for (const auto& it : data_source_map_) {
-    usage += it.second->GetMemoryUsage();
-    would_taint_origin_ |= it.second->WouldTaintOrigin();
-    if (it.first == stream.stream_id()) {
-      if (it.second->DidRedirect()) {
-        stream.set_did_redirect();
-      }
-    }
-  }
-  stream.set_total_memory_usage(usage);
-  if (would_taint_origin_) {
-    stream.set_would_taint_origin();
-  }
 }
 
 void HlsDataSourceProviderImpl::ReadFromExistingStream(
@@ -150,15 +129,12 @@ void HlsDataSourceProviderImpl::ReadFromExistingStream(
 
   auto int_read_size = base::checked_cast<int>(read_size);
   auto* buffer_data = stream->LockStreamForWriting(int_read_size);
-  auto stream_id = stream->stream_id();
   uint64_t async_event_key = reinterpret_cast<std::uintptr_t>(this);
 
   it->second->Read(
       base::checked_cast<int64_t>(pos), int_read_size, buffer_data,
       base::BindOnce(
           &OnMultiBufferReadComplete, std::move(stream), std::move(callback),
-          base::BindOnce(&HlsDataSourceProviderImpl::UpdateStreamMetadata,
-                         weak_factory_.GetWeakPtr(), stream_id),
           int_read_size, async_event_key));
 }
 
@@ -216,6 +192,13 @@ void HlsDataSourceProviderImpl::DataSourceInitialized(
     would_taint_origin_ |= it->second->WouldTaintOrigin();
     if (would_taint_origin_) {
       stream->set_would_taint_origin();
+    }
+    if (it->second->DidRedirect()) {
+      stream->set_did_redirect();
+    }
+    const auto& response_uri = it->second->GetUrlAfterRedirects();
+    if (!response_uri.is_empty() && !response_uri.SchemeIs("data")) {
+      stream->TrackOrigin(url::Origin::Create(response_uri));
     }
   }
 

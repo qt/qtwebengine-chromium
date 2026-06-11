@@ -34,8 +34,6 @@ class MEDIA_EXPORT HlsDataSourceProviderImpl : public HlsDataSourceProvider {
   void AbortPendingReads(base::OnceClosure cb) override;
 
  private:
-  void UpdateStreamMetadata(HlsDataSourceStream::StreamId,
-                            HlsDataSourceStream& stream);
   void OnDataSourceCreated(DataSource::RangeMode range_mode,
                            std::unique_ptr<HlsDataSourceStream> stream,
                            ReadCb callback,

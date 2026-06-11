@@ -610,6 +610,25 @@ void HlsManifestDemuxerEngine::ParsePlaylist(
     return;
   }
   auto stream = std::move(m_stream).value();
+  switch (stream->SecurityInfo().response_origins.size()) {
+    // A single security origin is the norm, and acceptable.
+    case 1: {
+      break;
+    }
+    case 0: {
+      if (parse_info.uri.SchemeIs("data")) {
+        // Data URIs have no security origin. Any other url should have one.
+        break;
+      }
+      PERFETTO_FALLTHROUGH;
+    }
+    default: {
+      std::move(parse_complete_cb)
+          .Run({HlsDemuxerStatus::Codes::kInvalidManifest,
+                "Manifest was served over an insecure connection"});
+      return;
+    }
+  }
 
   // A four hour movie manifest is ~100Kb.
   if (stream->buffer_size() > 102400) {
@@ -648,11 +667,6 @@ void HlsManifestDemuxerEngine::ParsePlaylist(
                                     std::move(playlist).value());
     }
     case hls::Playlist::Kind::kMediaPlaylist: {
-      if (parse_info.allow_multivariant_playlist) {
-        // Only a root playlist is allowed to be multivariant, so if the root
-        // is only a media playlist, then this entire playback is not
-        // multivariant.
-      }
       auto playlist = ParseMediaPlaylistFromStringSource(
           stream->AsString(), parse_info.uri, (*m_info).version);
       if (!playlist.has_value()) {
