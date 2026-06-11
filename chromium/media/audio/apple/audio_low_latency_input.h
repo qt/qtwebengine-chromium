@@ -62,6 +62,7 @@
 
 namespace media {
 class AudioManagerApple;
+class AUCallbackProxy;
 
 class MEDIA_EXPORT AUAudioInputStream
     : public AgcAudioStream<AudioInputStream> {
@@ -110,6 +111,13 @@ class MEDIA_EXPORT AUAudioInputStream
   static void UpmixMonoToStereoInPlace(AudioBuffer* audio_buffer,
                                        int bytes_per_sample);
 
+  // Called by `data_callback_proxy_` on the real-time priority I/O thread from
+  // the audio unit.
+  OSStatus OnDataIsAvailable(AudioUnitRenderActionFlags* flags,
+                             const AudioTimeStamp* time_stamp,
+                             UInt32 bus_number,
+                             UInt32 number_of_frames);
+
  private:
   bool OpenAUHAL();
   bool OpenVoiceProcessingAU();
@@ -123,10 +131,6 @@ class MEDIA_EXPORT AUAudioInputStream
                                   UInt32 bus_number,
                                   UInt32 number_of_frames,
                                   AudioBufferList* io_data);
-  OSStatus OnDataIsAvailable(AudioUnitRenderActionFlags* flags,
-                             const AudioTimeStamp* time_stamp,
-                             UInt32 bus_number,
-                             UInt32 number_of_frames);
 
   // Pushes recorded data to consumer of the input audio stream.
   OSStatus Provide(UInt32 number_of_frames,
@@ -269,6 +273,13 @@ class MEDIA_EXPORT AUAudioInputStream
 
   // Callback to send statistics info.
   AudioManager::LogCallback log_callback_;
+
+  // Set to true if stopping the AudioUnit fails. Used to leak
+  // `data_callback_proxy_`.
+  bool stop_failed_ = false;
+
+  // Proxy to intercept callbacks and allow safe leak on teardown failure.
+  std::unique_ptr<AUCallbackProxy> data_callback_proxy_;
 };
 
 }  // namespace media
