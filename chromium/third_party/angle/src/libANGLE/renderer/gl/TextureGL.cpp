@@ -128,6 +128,26 @@ bool FormatHasBorderColorWorkarounds(GLenum format)
     }
 }
 
+angle::Result GetDepthOneFilledBuffer(const gl::Context *context,
+                                      size_t imageSize,
+                                      GLenum type,
+                                      angle::MemoryBuffer **bufferOut)
+{
+    ContextGL *contextGL               = GetImplAs<ContextGL>(context);
+    angle::MemoryBuffer *scratchBuffer = nullptr;
+    ANGLE_CHECK_GL_ALLOC(contextGL, context->getScratchBuffer(imageSize, &scratchBuffer));
+
+    angle::FixedVector<uint8_t, 16> pixelData = GetDepthOnePixel(type);
+    CHECK(imageSize % pixelData.size() == 0);
+    angle::Span<uint8_t> dest = scratchBuffer->first(imageSize);
+    for (size_t offset = 0; offset < dest.size(); offset += pixelData.size())
+    {
+        memcpy(&dest[offset], pixelData.data(), pixelData.size());
+    }
+    *bufferOut = scratchBuffer;
+    return angle::Result::Continue;
+}
+
 }  // anonymous namespace
 
 LUMAWorkaroundGL::LUMAWorkaroundGL() : LUMAWorkaroundGL(false, GL_NONE) {}
@@ -2372,9 +2392,9 @@ gl::TextureType TextureGL::getType() const
     return mState.getType();
 }
 
-angle::Result TextureGL::initializeContents(const gl::Context *context,
-                                            GLenum binding,
-                                            const gl::ImageIndex &imageIndex)
+angle::Result TextureGL::initializeContentsImpl(const gl::Context *context,
+                                                GLenum binding,
+                                                const gl::ImageIndex &imageIndex)
 {
     ContextGL *contextGL              = GetImplAs<ContextGL>(context);
     const FunctionsGL *functions      = GetFunctionsGL(context);
@@ -2497,6 +2517,38 @@ angle::Result TextureGL::initializeContents(const gl::Context *context,
     stateManager->bindBuffer(gl::BufferBinding::PixelUnpack, prevUnpackBuffer);
 
     contextGL->markWorkSubmitted();
+    return angle::Result::Continue;
+}
+
+angle::Result TextureGL::initializeContents(const gl::Context *context,
+                                            GLenum binding,
+                                            const gl::ImageIndex &imageIndex)
+{
+    ANGLE_TRY(initializeContentsImpl(context, binding, imageIndex));
+
+    if (hasEmulatedAlphaChannel(imageIndex))
+    {
+        ContextGL *contextGL         = GetImplAs<ContextGL>(context);
+        const FunctionsGL *functions = GetFunctionsGL(context);
+        GLenum nativeInternalFormat  = getNativeInternalFormat(imageIndex);
+
+        if (nativegl::SupportsNativeRendering(functions, mState.getType(), nativeInternalFormat))
+        {
+            BlitGL *blitter = GetBlitGL(context);
+            ANGLE_TRY(blitter->clearRenderableTextureAlphaToOne(
+                context, mTextureID, imageIndex.getTarget(), imageIndex.getLevelIndex()));
+            contextGL->markWorkSubmitted();
+        }
+        else
+        {
+            // For emulated alpha formats that are not renderable, they are compressed formats.
+            // Initializing them with zeroes already produces the correct values (e.g. opaque black
+            // for DXT1).
+            const gl::ImageDesc &desc = mState.getImageDesc(imageIndex);
+            CHECK(desc.format.info->compressed);
+        }
+    }
+
     return angle::Result::Continue;
 }
 
