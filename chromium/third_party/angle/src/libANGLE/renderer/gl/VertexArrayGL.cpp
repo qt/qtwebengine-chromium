@@ -524,7 +524,7 @@ angle::Result VertexArrayGL::streamAttributes(
                     // Validate if there is OOB access of the input buffer.
                     angle::CheckedNumeric<GLint64> inputRequiredSize;
                     inputRequiredSize = copySize;
-                    inputRequiredSize += static_cast<unsigned int>(binding.getOffset());
+                    inputRequiredSize += binding.getOffset();
                     ANGLE_CHECK(GetImplAs<ContextGL>(context),
                                 inputRequiredSize.IsValid() && inputRequiredSize.ValueOrDie() <=
                                                                    bindingBufferPointer->getSize(),
@@ -570,7 +570,7 @@ angle::Result VertexArrayGL::streamAttributes(
 
             ANGLE_TRY(callVertexAttribPointer(context, static_cast<GLuint>(idx), attrib,
                                               static_cast<GLsizei>(destStride),
-                                              static_cast<GLintptr>(vertexStartOffset)));
+                                              static_cast<uintptr_t>(vertexStartOffset)));
 
             // Update the state to track the streamed attribute
             mNativeState->attributes[idx].format = attrib.format;
@@ -579,7 +579,7 @@ angle::Result VertexArrayGL::streamAttributes(
             mNativeState->attributes[idx].bindingIndex   = static_cast<GLuint>(idx);
 
             mNativeState->bindings[idx].stride = static_cast<GLsizei>(destStride);
-            mNativeState->bindings[idx].offset = static_cast<GLintptr>(vertexStartOffset);
+            mNativeState->bindings[idx].offset = static_cast<uintptr_t>(vertexStartOffset);
             mArrayBuffers[idx].set(context, nullptr);
             mNativeState->bindings[idx].buffer = mStreamingArrayBuffer;
 
@@ -631,7 +631,7 @@ angle::Result VertexArrayGL::recoverForcedStreamingAttributesForDrawArraysInstan
 
         ANGLE_TRY(callVertexAttribPointer(context, static_cast<GLuint>(idx), attrib,
                                           static_cast<GLsizei>(binding.getStride()),
-                                          static_cast<GLintptr>(binding.getOffset())));
+                                          binding.getOffset()));
 
         // Restore the state to track their original buffers
         mNativeState->attributes[idx].format = attrib.format;
@@ -756,7 +756,7 @@ angle::Result VertexArrayGL::updateAttribPointer(const gl::Context *context, siz
         stateManager->bindBuffer(gl::BufferBinding::Array, 0);
         ANGLE_TRY(callVertexAttribPointer(context, static_cast<GLuint>(attribIndex), attrib,
                                           binding.getStride(),
-                                          reinterpret_cast<GLintptr>(attrib.pointer)));
+                                          reinterpret_cast<uintptr_t>(attrib.pointer)));
     }
 
     mNativeState->attributes[attribIndex].format = attrib.format;
@@ -781,7 +781,7 @@ angle::Result VertexArrayGL::callVertexAttribPointer(const gl::Context *context,
                                                      GLuint attribIndex,
                                                      const VertexAttribute &attrib,
                                                      GLsizei stride,
-                                                     GLintptr offset) const
+                                                     uintptr_t offset) const
 {
     const FunctionsGL *functions = GetFunctionsGL(context);
     const GLvoid *pointer        = reinterpret_cast<const GLvoid *>(offset);

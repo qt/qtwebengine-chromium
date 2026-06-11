@@ -4949,7 +4949,7 @@ angle::Result LineLoopHelper::getIndexBufferForElementArrayBuffer(ContextVk *con
                                                                   BufferVk *elementArrayBufferVk,
                                                                   gl::DrawElementsType glIndexType,
                                                                   int indexCount,
-                                                                  intptr_t elementArrayOffset,
+                                                                  uintptr_t elementArrayOffset,
                                                                   vk::BufferHelper **bufferOut,
                                                                   uint32_t *indexCountOut)
 {

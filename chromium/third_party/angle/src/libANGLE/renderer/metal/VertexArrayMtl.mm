@@ -156,7 +156,7 @@ size_t GetVertexCountWithConversion(BufferMtl *srcBuffer,
 {
     // Bytes usable for vertex data.
     GLint64 bytes = srcBuffer->size() -
-                    MIN(static_cast<GLintptr>(conversionBuffer->offset), binding.getOffset());
+                    MIN(static_cast<uintptr_t>(conversionBuffer->offset), binding.getOffset());
     if (bytes < srcFormatSize)
         return 0;
 
@@ -1129,7 +1129,7 @@ angle::Result VertexArrayMtl::convertVertexBufferCPU(ContextMtl *contextMtl,
     ANGLE_CHECK_GL_ALLOC(contextMtl, srcBytes);
     VertexConversionBufferMtl *vertexConverison =
         static_cast<VertexConversionBufferMtl *>(conversion);
-    srcBytes += MIN(binding.getOffset(), static_cast<GLintptr>(vertexConverison->offset));
+    srcBytes += MIN(binding.getOffset(), static_cast<uintptr_t>(vertexConverison->offset));
     SimpleWeakBufferHolderMtl conversionBufferHolder;
     ANGLE_TRY(StreamVertexData(contextMtl, &conversion->data, srcBytes, numVertices * targetStride,
                                0, numVertices, binding.getStride(),
@@ -1165,7 +1165,7 @@ angle::Result VertexArrayMtl::convertVertexBufferGPU(const gl::Context *glContex
         static_cast<VertexConversionBufferMtl *>(conversion);
     params.srcBuffer            = srcBuffer->getCurrentBuffer();
     params.srcBufferStartOffset = static_cast<uint32_t>(
-        MIN(static_cast<GLintptr>(vertexConversion->offset), binding.getOffset()));
+        MIN(static_cast<uintptr_t>(vertexConversion->offset), binding.getOffset()));
     params.srcStride           = binding.getStride();
     params.srcDefaultAlphaData = convertedFormat.defaultAlpha;
 
