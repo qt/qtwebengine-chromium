@@ -414,3 +414,4 @@ implicit(N: num, T: scalar) fn os_log(string, u32, u32, vec<N, T>)
 
 implicit(T, S: address_space, A: access) fn pointer_offset(ptr<S, T, A>, u32) -> ptr<S, T, A>
 
+fn volatile_zero() -> u32

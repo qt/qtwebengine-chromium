@@ -78,6 +78,7 @@ tint::core::ir::Instruction::Accesses GetSideEffects(BuiltinFn fn) {
         case BuiltinFn::kSimdgroupMultiplyAccumulate:
         case BuiltinFn::kOsLog:
         case BuiltinFn::kPointerOffset:
+        case BuiltinFn::kVolatileZero:
             break;
     }
     return core::ir::Instruction::Accesses{};

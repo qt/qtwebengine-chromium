@@ -164,6 +164,7 @@ enum class Toggle {
     MetalUseArgumentBuffers,
     EnableShaderPrint,
     CollapseSubgroupMinMax,
+    MetalFixU32DivMod,
 
     // Unresolved issues.
     NoWorkaroundSampleMaskBecomesZeroForAllButLastColorTarget,

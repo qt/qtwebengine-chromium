@@ -692,6 +692,10 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
       "target. If there are multiple color targets, all but the last one will use a sample mask "
       "of zero.",
       "https://crbug.com/dawn/1462", ToggleStage::Device}},
+    {Toggle::MetalFixU32DivMod,
+     {"metal_fix_u32_div_mod",
+      "Workaround a driver bug on Apple Silicon with u32 div and mod operations.",
+      "https://crbug.com/517225032", ToggleStage::Device}},
     {Toggle::NoWorkaroundIndirectBaseVertexNotApplied,
      {"no_workaround_indirect_base_vertex_not_applied",
       "MacOS Intel < Gen9 has a bug where indirect base vertex is not applied for "

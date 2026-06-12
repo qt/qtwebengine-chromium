@@ -254,7 +254,13 @@ Result<RaiseResult> Raise(core::ir::Module& module, const Options& options) {
 
     RUN_TRANSFORM(raise::ModuleScopeVars, module);
 
-    RUN_TRANSFORM(raise::BinaryPolyfill, module);
+    {
+        raise::BinaryPolyfillConfig config{
+            .fix_u32_div_mod = options.fix_u32_div_mod,
+        };
+        RUN_TRANSFORM(raise::BinaryPolyfill, module, config);
+    }
+
     RUN_TRANSFORM(raise::BuiltinPolyfill, module);
     // After 'BuiltinPolyfill' as that transform can introduce signed dot products.
     core::ir::transform::SignedIntegerPolyfillConfig signed_integer_cfg{
