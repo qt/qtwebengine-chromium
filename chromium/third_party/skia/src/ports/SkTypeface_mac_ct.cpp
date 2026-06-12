@@ -612,9 +612,9 @@ static SK_SFNT_ULONG get_font_type_tag(CTFontRef ctFont) {
 std::unique_ptr<SkStreamAsset> SkTypeface_Mac::onOpenStream(int* ttcIndex) const {
     *ttcIndex = 0;
 
-    fInitStream([this]{
+    SkAutoSharedMutexExclusive sm(fStreamMutex);
     if (fStream) {
-        return;
+        return fStream->duplicate();
     }
 
     SK_SFNT_ULONG fontType = get_font_type_tag(fFontRef.get());
@@ -712,12 +712,12 @@ std::unique_ptr<SkStreamAsset> SkTypeface_Mac::onOpenStream(int* ttcIndex) const
         ++entry;
     }
     fStream = std::make_unique<SkMemoryStream>(std::move(streamData));
-    });
     return fStream->duplicate();
 }
 
 std::unique_ptr<SkStreamAsset> SkTypeface_Mac::onOpenExistingStream(int* ttcIndex) const {
     *ttcIndex = 0;
+    SkAutoSharedMutexShared sm(fStreamMutex);
     return fStream ? fStream->duplicate() : nullptr;
 }
 
@@ -1229,7 +1229,7 @@ sk_sp<SkTypeface> SkTypeface_Mac::onMakeClone(const SkFontArguments& args) const
     if (!ctVariant) {
         return nullptr;
     }
-
+    SkAutoSharedMutexShared sm(fStreamMutex);
     return SkTypeface_Mac::Make(std::move(ctVariant), ctVariation.opsz,
                                 fStream ? fStream->duplicate() : nullptr);
 }
