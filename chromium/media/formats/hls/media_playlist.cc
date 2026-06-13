@@ -29,6 +29,7 @@
 namespace media::hls {
 
 struct MediaPlaylist::CtorArgs {
+  url::Origin security_origin;
   GURL uri;
   types::DecimalInteger version;
   bool independent_segments;
@@ -57,6 +58,7 @@ Playlist::Kind MediaPlaylist::GetKind() const {
 ParseStatus::Or<scoped_refptr<MediaPlaylist>> MediaPlaylist::Parse(
     std::string_view source,
     GURL playlist_uri,
+    url::Origin playlist_origin,
     types::DecimalInteger version,
     const MultivariantPlaylist* parent_playlist,
     TagRecorder* tag_recorder) {
@@ -501,9 +503,9 @@ ParseStatus::Or<scoped_refptr<MediaPlaylist>> MediaPlaylist::Parse(
 
     segments.push_back(base::MakeRefCounted<MediaSegment>(
         inf_tag->duration, media_sequence_number, discontinuity_sequence_number,
-        std::move(segment_uri), initialization_segment, encryption_data,
-        byterange, bitrate, discontinuity_tag.has_value(), gap_tag.has_value(),
-        new_init_segment, new_encryption_data));
+        std::move(segment_uri), playlist_origin, initialization_segment,
+        encryption_data, byterange, bitrate, discontinuity_tag.has_value(),
+        gap_tag.has_value(), new_init_segment, new_encryption_data));
     new_init_segment = false;
     new_encryption_data = false;
 
@@ -626,7 +628,8 @@ ParseStatus::Or<scoped_refptr<MediaPlaylist>> MediaPlaylist::Parse(
 
   return base::MakeRefCounted<MediaPlaylist>(
       base::PassKey<MediaPlaylist>(),
-      CtorArgs{.uri = std::move(playlist_uri),
+      CtorArgs{.security_origin = playlist_origin,
+               .uri = std::move(playlist_uri),
                .version = version,
                .independent_segments = independent_segments,
                .target_duration = target_duration,
@@ -645,7 +648,10 @@ ParseStatus::Or<scoped_refptr<MediaPlaylist>> MediaPlaylist::Parse(
 }
 
 MediaPlaylist::MediaPlaylist(base::PassKey<MediaPlaylist>, CtorArgs args)
-    : Playlist(std::move(args.uri), args.version, args.independent_segments),
+    : Playlist(std::move(args.security_origin),
+               std::move(args.uri),
+               args.version,
+               args.independent_segments),
       target_duration_(args.target_duration),
       partial_segment_info_(std::move(args.partial_segment_info)),
       segments_(std::move(args.segments)),

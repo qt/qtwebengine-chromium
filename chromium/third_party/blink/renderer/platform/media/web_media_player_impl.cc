@@ -475,6 +475,7 @@ WebMediaPlayerImpl::WebMediaPlayerImpl(
       isolate_(frame_->GetAgentGroupScheduler()->Isolate()),
       demuxer_manager_(std::make_unique<media::DemuxerManager>(
           this,
+          frame_->GetSecurityOrigin(),
           media_task_runner_,
           media_log_.get(),
           enable_instant_source_buffer_gc,

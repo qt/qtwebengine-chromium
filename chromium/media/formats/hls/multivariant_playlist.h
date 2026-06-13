@@ -17,6 +17,7 @@
 #include "media/formats/hls/types.h"
 #include "media/formats/hls/variable_dictionary.h"
 #include "url/gurl.h"
+#include "url/origin.h"
 
 namespace media::hls {
 
@@ -25,6 +26,7 @@ class VariantStream;
 class MEDIA_EXPORT MultivariantPlaylist final : public Playlist {
  public:
   MultivariantPlaylist(base::PassKey<MultivariantPlaylist>,
+                       url::Origin security_origin,
                        GURL uri,
                        types::DecimalInteger version,
                        bool independent_segments,
@@ -55,6 +57,7 @@ class MEDIA_EXPORT MultivariantPlaylist final : public Playlist {
   static ParseStatus::Or<scoped_refptr<MultivariantPlaylist>> Parse(
       std::string_view source,
       GURL uri,
+      url::Origin security_origin,
       types::DecimalInteger version,
       TagRecorder* tag_recorder = nullptr);
 

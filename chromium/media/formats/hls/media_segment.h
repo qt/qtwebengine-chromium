@@ -12,6 +12,7 @@
 #include "media/formats/hls/tags.h"
 #include "media/formats/hls/types.h"
 #include "url/gurl.h"
+#include "url/origin.h"
 
 namespace media::hls {
 
@@ -111,6 +112,7 @@ class MEDIA_EXPORT MediaSegment : public base::RefCounted<MediaSegment> {
                types::DecimalInteger media_sequence_number,
                types::DecimalInteger discontinuity_sequence_number,
                GURL uri,
+               url::Origin manifest_origin,
                scoped_refptr<InitializationSegment> initialization_segment,
                scoped_refptr<EncryptionData> encryption_data,
                std::optional<types::ByteRange> byte_range,
@@ -141,6 +143,10 @@ class MEDIA_EXPORT MediaSegment : public base::RefCounted<MediaSegment> {
   // the playlist URI. This is guaranteed to be valid and non-empty, unless
   // `gap` is true, in which case this URI should not be used.
   const GURL& GetUri() const { return uri_; }
+
+  // Get the origin of this manifest from which this segment was parsed.
+  // This is required to ensure that we aren't fetching disallowed resources.
+  const url::Origin& GetManifestOrigin() const { return manifest_origin_; }
 
   // Returns the initialization segment for this media segment, which may be
   // null if this segment has none. Subsequent media segments may also share the
@@ -196,6 +202,7 @@ class MEDIA_EXPORT MediaSegment : public base::RefCounted<MediaSegment> {
   types::DecimalInteger media_sequence_number_;
   types::DecimalInteger discontinuity_sequence_number_;
   GURL uri_;
+  url::Origin manifest_origin_;
   scoped_refptr<InitializationSegment> initialization_segment_;
 
   scoped_refptr<EncryptionData> encryption_data_;
