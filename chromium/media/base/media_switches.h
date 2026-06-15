@@ -324,6 +324,10 @@ MEDIA_EXPORT BASE_DECLARE_FEATURE(kPauseBackgroundTimer);
 MEDIA_EXPORT BASE_DECLARE_FEATURE(kPictureInPictureOcclusionTracking);
 MEDIA_EXPORT BASE_DECLARE_FEATURE(kPictureInPictureShowWindowAnimation);
 #endif  // !BUILDFLAG(IS_ANDROID)
+// Enables extended video bitstream validation for H.264 and H.265.
+// Remove after M149, once we're sure that this doesn't break anyone.
+MEDIA_EXPORT BASE_DECLARE_FEATURE(kExtendedVideoBitstreamValidation);
+
 MEDIA_EXPORT BASE_DECLARE_FEATURE(kPlatformAudioEncoder);
 MEDIA_EXPORT BASE_DECLARE_FEATURE(kEnableRtcpReporting);
 #if BUILDFLAG(ENABLE_PLATFORM_HEVC)

@@ -323,6 +323,11 @@ BASE_FEATURE(kPictureInPictureShowWindowAnimation,
              base::FEATURE_ENABLED_BY_DEFAULT);
 #endif  // !BUILDFLAG(IS_ANDROID)
 
+// Enables extended video bitstream validation for H.264 and H.265.
+BASE_FEATURE(kExtendedVideoBitstreamValidation,
+             "ExtendedVideoBitstreamValidation",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
 // Enables user control over muting tab audio from the tab strip.
 BASE_FEATURE(kEnableTabMuting,
              "EnableTabMuting",
