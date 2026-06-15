@@ -499,6 +499,7 @@ Called by update_bad_message_reasons.py.-->
   <int value="331" label="RFH_CRASH_REPORT_STORAGE_ALREADY_INITIALIZED"/>
   <int value="332" label="RFH_INVALID_DOCUMENT_SEQUENCE_NUMBER"/>
   <int value="333" label="RFH_NEW_ISOLATED_WEB_APP_PERMISSION_POLICIES"/>
+  <int value="334" label="SWSI_CROSS_ORIGIN_SCRIPT_URL"/>
 </enum>
 
 <enum name="BadMessageReasonExtensions">
