@@ -27,6 +27,7 @@
 #include "media/base/decoder_status.h"
 #include "media/base/video_codecs.h"
 #include "media/base/video_frame.h"
+#include "media/base/video_types.h"
 #include "media/gpu/accelerated_video_decoder.h"
 #include "media/gpu/chromeos/dmabuf_video_frame_pool.h"
 #include "media/gpu/chromeos/video_frame_resource.h"
@@ -416,6 +417,11 @@ bool V4L2StatelessVideoDecoderBackend::PumpDecodeTask() {
                    << base::strict_cast<int>(decoder_->GetBitDepth());
           return false;
         }
+        if (decoder_->GetChromaSampling() != VideoChromaSampling::k420) {
+          VLOGF(2) << "Unsupported chroma sampling: "
+                   << static_cast<int>(decoder_->GetChromaSampling());
+          return false;
+        }
 
         if (profile_ != decoder_->GetProfile()) {
           DVLOGF(3) << "Profile is changed: " << profile_ << " -> "
@@ -428,7 +434,8 @@ bool V4L2StatelessVideoDecoderBackend::PumpDecodeTask() {
           profile_ = decoder_->GetProfile();
         }
 
-        if (pic_size_ == decoder_->GetPicSize()) {
+        if (pic_size_ == decoder_->GetPicSize() &&
+            bit_depth_ == decoder_->GetBitDepth()) {
           // There is no need to do anything in V4L2 API when only a profile is
           // changed.
           DVLOGF(3) << "Only profile is changed. No need to do anything.";
@@ -628,6 +635,8 @@ void V4L2StatelessVideoDecoderBackend::OnChangeResolutionDone(
   }
 
   pic_size_ = decoder_->GetPicSize();
+  bit_depth_ = decoder_->GetBitDepth();
+
   client_->CompleteFlush();
   task_runner_->PostTask(
       FROM_HERE, base::BindOnce(&V4L2StatelessVideoDecoderBackend::DoDecodeWork,
@@ -724,6 +733,7 @@ bool V4L2StatelessVideoDecoderBackend::CreateDecoder() {
   DVLOGF(3);
 
   pic_size_ = gfx::Size();
+  bit_depth_ = kDefaultBitDepth;
 
   CHECK(input_queue_->SupportsRequests());
 
