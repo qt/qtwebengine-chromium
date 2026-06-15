@@ -1035,7 +1035,7 @@ void DedicatedWorkerHost::UpdateSubresourceLoaderFactories() {
           worker_process_host_->GetDeprecatedID(), storage_partition_impl,
           partition_domain, file_url_support_,
           /*filesystem_url_support=*/true, creator_render_frame_host,
-          storage_key_);
+          storage_key_, network::mojom::RequestDestination::kWorker);
 
   bool bypass_redirect_checks = false;
   subresource_loader_factories->pending_default_factory() =

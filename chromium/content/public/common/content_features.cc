@@ -436,6 +436,12 @@ BASE_FEATURE(kEnableServiceWorkersForChromeScheme,
              "EnableServiceWorkersForChromeScheme",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
+// Enforce same-origin check for shared worker script URLs.
+// See https://crbug.com/504073872.
+BASE_FEATURE(kEnforceSharedWorkerSameOriginCheck,
+             "EnforceSharedWorkerSameOriginCheck",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
 // Ensures the renderer is not dead when getting the process host for a site
 // instance.
 BASE_FEATURE(kEnsureExistingRendererAlive,

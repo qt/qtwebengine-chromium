@@ -360,6 +360,8 @@ enum BadMessageReason {
   RFH_CREATE_NEW_WINDOW_FROM_SANDBOXED_FRAME = 332,
   DT_DUPLICATE_CHILD_TARGET_CREATED = 333,
   RFH_MODAL_DIALOG_FROM_SANDBOXED_FRAME = 334,
+  SWSI_CROSS_ORIGIN_SCRIPT_URL = 335,
+
   // Please add new elements here. The naming convention is abbreviated class
   // name (e.g. RenderFrameHost becomes RFH) plus a unique description of the
   // reason. After making changes, you MUST update enums.xml by running:
