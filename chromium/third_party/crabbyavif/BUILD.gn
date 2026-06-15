@@ -14,6 +14,7 @@ rust_bindgen_generator("crabbyavif_dav1d_bindings") {
     "no-doc-comments",
     "generate=functions,types,vars,methods,constructors,destructors",
     "allowlist-function=dav1d_close",
+    "allowlist-function=dav1d_data_create",
     "allowlist-function=dav1d_data_unref",
     "allowlist-function=dav1d_data_wrap",
     "allowlist-function=dav1d_default_settings",
