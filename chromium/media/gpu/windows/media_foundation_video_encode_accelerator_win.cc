@@ -328,6 +328,18 @@ MediaFoundationVideoEncodeAccelerator::
   pending_input_queue_.clear();
 }
 
+void MediaFoundationVideoEncodeAccelerator::InitializeForTesting(
+    Client* client,
+    std::unique_ptr<MediaLog> media_log,
+    const gfx::Size& input_visible_size,
+    scoped_refptr<DXGIDeviceManager> dxgi_device_manager) {
+  client_ = client;
+  media_log_ = std::move(media_log);
+  state_ = kEncoding;
+  input_visible_size_ = input_visible_size;
+  dxgi_device_manager_ = std::move(dxgi_device_manager);
+}
+
 VideoEncodeAccelerator::SupportedProfiles
 MediaFoundationVideoEncodeAccelerator::GetSupportedProfiles() {
   TRACE_EVENT0("gpu,startup",
@@ -425,8 +437,9 @@ EncoderStatus MediaFoundationVideoEncodeAccelerator::Initialize(
   gop_length_ = config.gop_length.value_or(kDefaultGOPLength);
   low_latency_mode_ = config.require_low_delay;
 
-  if (config.HasTemporalLayer())
+  if (config.HasTemporalLayer()) {
     num_temporal_layers_ = config.spatial_layers.front().num_of_temporal_layers;
+  }
 
   input_since_keyframe_count_ = 0;
   zero_layer_counter_ = 0;
@@ -767,6 +780,22 @@ void MediaFoundationVideoEncodeAccelerator::QueueInput(
     scoped_refptr<media::VideoFrame> frame,
     const VideoEncoder::EncodeOptions& options,
     bool discard_output) {
+  if (frame && (frame->format() == PIXEL_FORMAT_NV12 ||
+                frame->format() == PIXEL_FORMAT_I420 ||
+                frame->format() == PIXEL_FORMAT_YV12 ||
+                frame->format() == PIXEL_FORMAT_NV21)) {
+    const gfx::Rect& visible_rect = frame->visible_rect();
+    if (visible_rect.x() % 2 != 0 || visible_rect.y() % 2 != 0 ||
+        visible_rect.width() % 2 != 0 || visible_rect.height() % 2 != 0) {
+      NotifyErrorStatus({EncoderStatus::Codes::kInvalidInputFrame,
+                         "Source visible_rect is not properly aligned for "
+                         "4:2:0 subsampled format."});
+      return;
+    }
+  } else {
+    NOTREACHED();
+  }
+
   PendingInput result;
   auto hr = MFCreateSample(&result.input_sample);
   if (FAILED(hr)) {

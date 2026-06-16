@@ -984,6 +984,15 @@ void GenerateSampleOnSyncTokenReleased(
       scoped_read_access->GetD3D11Texture();
 
   if (frame->format() == PIXEL_FORMAT_NV12) {
+    const gfx::Rect& visible_rect = frame->visible_rect();
+    if (visible_rect.x() % 2 != 0 || visible_rect.y() % 2 != 0 ||
+        visible_rect.width() % 2 != 0 || visible_rect.height() % 2 != 0) {
+      DLOG(ERROR) << "Source visible_rect is not properly aligned for 4:2:0 "
+                     "subsampled format.";
+      std::move(sample_available_cb)
+          .Run(std::move(frame), nullptr, E_INVALIDARG);
+      return;
+    }
     // If this texture is going to be fed directly to the encoder (NV12), create
     // a copy of it.  Hardware encoders are not guaranteed to be done with
     // the texture when ProcessInput is finished.

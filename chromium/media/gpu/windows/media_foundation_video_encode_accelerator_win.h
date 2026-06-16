@@ -107,6 +107,12 @@ class MEDIA_GPU_EXPORT MediaFoundationVideoEncodeAccelerator
  protected:
   ~MediaFoundationVideoEncodeAccelerator() override;
 
+  void InitializeForTesting(
+      Client* client,
+      std::unique_ptr<MediaLog> media_log,
+      const gfx::Size& input_visible_size,
+      scoped_refptr<DXGIDeviceManager> dxgi_device_manager);
+
  private:
   // Holds output buffers coming from the client ready to be filled.
   struct BitstreamBufferRef;
