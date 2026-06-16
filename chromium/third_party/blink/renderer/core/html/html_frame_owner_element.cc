@@ -209,12 +209,15 @@ Node::InsertionNotificationRequest HTMLFrameOwnerElement::InsertedInto(
   // move flow.
   if (GetDocument().StatePreservingAtomicMoveInProgress() && ContentFrame()) {
     // During a state-preserving atomic move, we must specifically inform all of
-    // `this`'s ancestor nodes of the new connected frame they are adopting.
+    // `this`'s new ancestor nodes, starting from `insertion_point`, of the new
+    // connected frame they are adopting. We also re-increment `this` to match
+    // the decrement performed in `RemovedFrom()` below.
     //
     // For the non-state-preserving atomic move case (i.e., when we're setting
     // up a full frame due to real insertion), this is done in
     // `HTMLFrameOwnerElement::SetContentFrame()` below.
-    for (ContainerNode* node = this; node;
+    IncrementConnectedSubframeCount();
+    for (ContainerNode* node = &insertion_point; node;
          node = node->ParentOrShadowHostNode()) {
       node->IncrementConnectedSubframeCount();
     }
