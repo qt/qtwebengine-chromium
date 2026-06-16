@@ -8913,6 +8913,8 @@ MaybeReduceResult MaglevGraphBuilder::TryReduceArrayIteratorPrototypeNext(
     FAIL("no elements protector");
   }
 
+  RETURN_IF_ABORT(BuildCheckMaps(iterated_object, base::VectorOf(maps)));
+
   // Load the [[NextIndex]] from the {iterator}.
   // We can assume index and length fit in Uint32.
   ValueNode* index =
