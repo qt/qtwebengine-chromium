@@ -138,6 +138,44 @@ void ManifestManagerHost::OnRequestManifestResponse(
                         valid_to_string(start_url_valid), "), id(",
                         valid_to_string(id_valid), "), and scope (",
                         valid_to_string(scope_valid), ")."}));
+      auto bad_message = [this, &manifest = *manifest]() -> const char* {
+        auto document_origin = page().GetMainDocument().GetLastCommittedOrigin();
+        if (!document_origin.IsSameOriginWith(manifest.start_url)) {
+          return "Manifest start_url must be same-origin with the document.";
+        }
+
+        if (!document_origin.IsSameOriginWith(manifest.id)) {
+          return "Manifest id must be same-origin with the document.";
+        }
+
+        if (!document_origin.IsSameOriginWith(manifest.scope)) {
+          return "Manifest scope must be same-origin with the document.";
+        }
+
+        if (manifest.share_target &&
+            !document_origin.IsSameOriginWith(manifest.share_target->action)) {
+          return "Manifest share_target must be same-origin with the document.";
+        }
+
+        for (const auto& file_handler : manifest.file_handlers) {
+          if (!document_origin.IsSameOriginWith(file_handler->action)) {
+            return "Manifest file_handlers must be same-origin with the document.";
+          }
+        }
+
+        for (const auto& protocol_handler : manifest.protocol_handlers) {
+          if (!document_origin.IsSameOriginWith(protocol_handler->url)) {
+            return "Manifest protocol_handlers must be same-origin with the "
+                   "document.";
+          }
+        }
+
+        return nullptr;
+      }();
+
+      if (bad_message) {
+          mojo::ReportBadMessage(bad_message);
+      }
     }
   }
   // Empty manifests means it failed to parse or an unresolvable problem like
