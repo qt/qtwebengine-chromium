@@ -120,10 +120,11 @@ class ClipPathPaintWorkletInput : public PaintWorkletInput {
       result_index = offsets_.size() - 2;
     }
 
+    float range = offsets_[result_index + 1] - offsets_[result_index];
     // Use offsets to calculate for intra-keyframe progress.
-    float local_progress =
-        (progress - offsets_[result_index]) /
-        (offsets_[result_index + 1] - offsets_[result_index]);
+    float local_progress = range == 0
+                               ? offsets_[result_index + 1]
+                               : (progress - offsets_[result_index]) / range;
     // Adjust for that keyframe's timing function
     // TODO(crbug.com/347958668): Correct limit direction for phase and
     // direction in order to make the correct evaluation at the boundary of a
