@@ -81,6 +81,13 @@ BASE_FEATURE(kSafeHidConnectionWinClose,
              "SafeHidConnectionWinClose",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
+// When enabled, UsbDeviceHandleWin will ensure that pending OVERLAPPED requests
+// are not deleted until the kernel has signaled completion, even if the
+// handle is closed.
+BASE_FEATURE(kSafeUsbDeviceHandleWinClose,
+             "SafeUsbDeviceHandleWinClose",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
 // Defines a feature parameter for the `kWinSystemLocationPermission` feature.
 // This parameter controls the polling interval (in milliseconds) for checking
 // the permission status. The default polling interval is set to 500
