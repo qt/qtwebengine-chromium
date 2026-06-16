@@ -673,24 +673,12 @@ FilePath GetHomeDir() {
   return FilePath(FILE_PATH_LITERAL("C:\\"));
 }
 
-File CreateAndOpenTemporaryFileInDir(const FilePath& dir,
-                                     FilePath* temp_file,
-                                     uint32_t additional_flags) {
+File CreateAndOpenTemporaryFileInDirWithFlags(const FilePath& dir,
+                                              FilePath* temp_file,
+                                              uint32_t flags) {
   ScopedBlockingCall scoped_blocking_call(FROM_HERE, BlockingType::MAY_BLOCK);
 
-  // Open the file with exclusive r/w/d access, and allow the caller to decide
-  // to mark it for deletion upon close after the fact.
-  uint32_t flags = File::FLAG_CREATE | File::FLAG_READ | File::FLAG_WRITE |
-                   File::FLAG_WIN_EXCLUSIVE_READ |
-                   File::FLAG_WIN_EXCLUSIVE_WRITE |
-                   File::FLAG_CAN_DELETE_ON_CLOSE | additional_flags;
-
-  // Use GUID instead of ::GetTempFileName() to generate unique file names.
-  // "Due to the algorithm used to generate file names, GetTempFileName can
-  // perform poorly when creating a large number of files with the same prefix.
-  // In such cases, it is recommended that you construct unique file names based
-  // on GUIDs."
-  // https://msdn.microsoft.com/library/windows/desktop/aa364991.aspx
+  flags |= File::FLAG_CREATE;
 
   FilePath temp_name;
   File file;
@@ -723,6 +711,16 @@ File CreateAndOpenTemporaryFileInDir(const FilePath& dir,
   }
 
   return file;
+}
+
+File CreateAndOpenTemporaryFileInDir(const FilePath& dir,
+                                     FilePath* temp_file,
+                                     uint32_t additional_flags) {
+  constexpr uint32_t default_flags =
+      File::FLAG_READ | File::FLAG_WRITE | File::FLAG_WIN_EXCLUSIVE_READ |
+      File::FLAG_WIN_EXCLUSIVE_WRITE | File::FLAG_CAN_DELETE_ON_CLOSE;
+  return CreateAndOpenTemporaryFileInDirWithFlags(
+      dir, temp_file, default_flags | additional_flags);
 }
 
 bool CreateTemporaryFileInDir(const FilePath& dir, FilePath* temp_file) {
