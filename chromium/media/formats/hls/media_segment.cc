@@ -77,6 +77,16 @@ void MediaSegment::EncryptionData::ImportKey(std::string_view key_content) {
   key_ = std::vector<uint8_t>(key_content.begin(), key_content.end());
 }
 
+void MediaSegment::EncryptionData::ImportKeySecurity(
+    hls::SecurityMetadata metadata) {
+  security_metadata_ = std::move(metadata);
+}
+
+const std::optional<hls::SecurityMetadata>&
+MediaSegment::EncryptionData::GetSecurityMetadata() const {
+  return security_metadata_;
+}
+
 MediaSegment::MediaSegment(
     base::TimeDelta duration,
     types::DecimalInteger media_sequence_number,

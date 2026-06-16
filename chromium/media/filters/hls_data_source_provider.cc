@@ -34,6 +34,11 @@ HlsDataSourceStream::~HlsDataSourceStream() {
   std::move(on_destructed_cb_).Run();
 }
 
+void HlsDataSourceStream::MergeSecurityMetadata(
+    const hls::SecurityMetadata& other) {
+  security_info_.MergeFrom(other);
+}
+
 void HlsDataSourceStream::TrackOrigin(const url::Origin& origin) {
   security_info_.response_origins.insert(origin);
 }

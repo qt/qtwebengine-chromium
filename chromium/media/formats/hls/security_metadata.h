@@ -33,6 +33,10 @@ struct MEDIA_EXPORT SecurityMetadata {
     return would_taint_origin && has_range_request;
   }
 
+  // Merge in other metadata, keeping the most strict flag from each, and
+  // combining the origins.
+  void MergeFrom(const SecurityMetadata& other);
+
   // Note: the range request isn't flagged as part of testing, because that
   // information comes from the MediaSegment configurations used to construct
   // the stream.

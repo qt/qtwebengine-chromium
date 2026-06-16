@@ -20,4 +20,12 @@ SecurityMetadata SecurityMetadata::CreateForTesting(std::string url,
   };
 }
 
+void SecurityMetadata::MergeFrom(const SecurityMetadata& other) {
+  would_taint_origin |= other.would_taint_origin;
+  did_redirect |= other.did_redirect;
+  has_range_request |= other.has_range_request;
+  response_origins.insert(std::begin(other.response_origins),
+                          std::end(other.response_origins));
+}
+
 }  // namespace media::hls

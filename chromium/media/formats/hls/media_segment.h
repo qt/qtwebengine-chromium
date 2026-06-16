@@ -9,6 +9,7 @@
 #include "base/memory/scoped_refptr.h"
 #include "base/time/time.h"
 #include "media/base/media_export.h"
+#include "media/formats/hls/security_metadata.h"
 #include "media/formats/hls/tags.h"
 #include "media/formats/hls/types.h"
 #include "url/gurl.h"
@@ -94,6 +95,10 @@ class MEDIA_EXPORT MediaSegment : public base::RefCounted<MediaSegment> {
     // When `uri_` is fetched, import the raw data.
     void ImportKey(std::string_view key_content);
 
+    // The security metadata for the request that gave us this key.
+    void ImportKeySecurity(hls::SecurityMetadata metadata);
+    const std::optional<hls::SecurityMetadata>& GetSecurityMetadata() const;
+
    private:
     friend class base::RefCounted<EncryptionData>;
     ~EncryptionData();
@@ -106,6 +111,9 @@ class MEDIA_EXPORT MediaSegment : public base::RefCounted<MediaSegment> {
 
     // Used for clear key AES128 and AES256 full segment encryption.
     std::vector<uint8_t> key_;
+
+    // Not all security keys come from web requests, so this isn't required.
+    std::optional<hls::SecurityMetadata> security_metadata_;
   };
 
   MediaSegment(base::TimeDelta duration,

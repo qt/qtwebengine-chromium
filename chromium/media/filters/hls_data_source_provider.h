@@ -116,6 +116,10 @@ class MEDIA_EXPORT HlsDataSourceStream {
     security_info_ = inf;
   }
 
+  // Merge another security metadata into the current one. This combines the
+  // origin sets and merges the security flags.
+  void MergeSecurityMetadata(const hls::SecurityMetadata& other);
+
   // A stream's origin is considered tainted if any backing data source involved
   // in this playback is tainted.
   void set_would_taint_origin() { security_info_.would_taint_origin = true; }
