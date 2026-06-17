@@ -473,7 +473,7 @@ void WebRequestAPI::OnListenerAdded(const EventListenerInfo& details) {
          !BrowserProcessContextData(process).HasControlledFrameCapability())) {
       AddMessageToConsoleForListener(details,
                                      blink::mojom::ConsoleMessageLevel::kError,
-                                     keys::kSecurityInfoAPINotAvailable);
+                                     keys_wra::kSecurityInfoAPINotAvailable);
       return;
     }
 
@@ -482,8 +482,8 @@ void WebRequestAPI::OnListenerAdded(const EventListenerInfo& details) {
         extension ? extensions_features::kWebRequestSecurityInfo
                   : blink::features::kControlledFrameWebRequestSecurityInfo;
     const char* error_key =
-        extension ? keys::kSecurityInfoFlagAbsentInExtensions
-                  : keys::kSecurityInfoFlagAbsentInControlledFrame;
+        extension ? keys_wra::kSecurityInfoFlagAbsentInExtensions
+                  : keys_wra::kSecurityInfoFlagAbsentInControlledFrame;
     if (!base::FeatureList::IsEnabled(feature)) {
       AddMessageToConsoleForListener(
           details, blink::mojom::ConsoleMessageLevel::kError, error_key);
@@ -510,7 +510,7 @@ void WebRequestAPI::OnListenerAdded(const EventListenerInfo& details) {
         return true;
       }
 
-      return event_name == keys::kOnAuthRequiredEvent &&
+      return event_name == keys_wra::kOnAuthRequiredEvent &&
              extension->permissions_data()->HasAPIPermission(
                  APIPermissionID::kWebRequestAuthProvider);
     };
@@ -523,7 +523,7 @@ void WebRequestAPI::OnListenerAdded(const EventListenerInfo& details) {
     if (is_blocking && !has_blocking_permission()) {
       AddMessageToConsoleForListener(details,
                                      blink::mojom::ConsoleMessageLevel::kError,
-                                     keys::kBlockingPermissionRequired);
+                                     keys_wra::kBlockingPermissionRequired);
       return;
     }
 
@@ -543,7 +543,7 @@ void WebRequestAPI::OnListenerAdded(const EventListenerInfo& details) {
             .is_empty()) {
       AddMessageToConsoleForListener(details,
                                      blink::mojom::ConsoleMessageLevel::kError,
-                                     keys::kHostPermissionsRequired);
+                                     keys_wra::kHostPermissionsRequired);
       return;
     }
   }

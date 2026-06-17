@@ -346,7 +346,7 @@ void ExternalPointerTableEntryPrinter::PrintIfInUse(
 
 // static
 void ExternalPointerTableEntryPrinter::PrintFooter() {
-  PrintF(stderr, "%s", entry_spacer.data());
+  PrintF(stderr, "%s", entry_spacer_EPT.data());
 }
 
 #endif  // OBJECT_PRINT

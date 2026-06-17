@@ -204,7 +204,7 @@ bool H265ToAnnexBBitstreamConverter::ConvertNalUnitStreamToByteStream(
     }
 
     const uint32_t start_code_len =
-        sizeof(kStartCodePrefix) + (first_nal_unit_in_access_unit_ ? 1 : 0);
+        sizeof(kStartCodePrefix2) + (first_nal_unit_in_access_unit_ ? 1 : 0);
     if (writer.remaining() < start_code_len + nal_unit_length) {
       return false;  // Error: too small output buffer
     }
