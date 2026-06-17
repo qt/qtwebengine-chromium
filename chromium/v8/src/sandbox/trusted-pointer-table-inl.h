@@ -65,12 +65,11 @@ void TrustedPointerTableEntry::OverwriteTag(IndirectPointerTag tag) {
 
   auto old_payload = payload_.load(std::memory_order_relaxed);
   auto new_payload = old_payload;
-  new_payload.SetTag(tag);
-  // Unpublishing entries is monotonic, so we don't need to loop here.
-  bool success = payload_.compare_exchange_strong(old_payload, new_payload,
-                                                  std::memory_order_relaxed);
-  DCHECK(success || old_payload.IsTaggedWith(kUnpublishedIndirectPointerTag));
-  USE(success);
+  do {
+    new_payload = old_payload;
+    new_payload.SetTag(tag);
+  } while (!payload_.compare_exchange_strong(old_payload, new_payload,
+                                             std::memory_order_relaxed));
 }
 
 bool TrustedPointerTableEntry::IsFreelistEntry() const {
@@ -84,18 +83,15 @@ uint32_t TrustedPointerTableEntry::GetNextFreelistEntryIndex() const {
 
 void TrustedPointerTableEntry::Mark() {
   auto old_payload = payload_.load(std::memory_order_relaxed);
-  DCHECK(old_payload.ContainsPointer());
-
-  auto new_payload = old_payload;
-  new_payload.SetMarkBit();
-
-  // We don't need to perform the CAS in a loop since it can only fail if a new
-  // value has been written into the entry. This, however, will also have set
-  // the marking bit.
-  bool success = payload_.compare_exchange_strong(old_payload, new_payload,
-                                                  std::memory_order_relaxed);
-  DCHECK(success || old_payload.HasMarkBitSet());
-  USE(success);
+  while (!old_payload.HasMarkBitSet()) {
+    DCHECK(old_payload.ContainsPointer());
+    auto new_payload = old_payload;
+    new_payload.SetMarkBit();
+    if (payload_.compare_exchange_strong(old_payload, new_payload,
+                                         std::memory_order_relaxed)) {
+      break;
+    }
+  }
 }
 
 void TrustedPointerTableEntry::Unmark() {
