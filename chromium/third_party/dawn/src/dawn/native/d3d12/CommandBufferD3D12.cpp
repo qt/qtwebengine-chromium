@@ -929,7 +929,7 @@ MaybeError CommandBuffer::RecordCommands(CommandRecordingContext* commandContext
                     }));
                 DAWN_TRY(RecordRenderPass(commandContext,
                                           descriptorHeapState.GetGraphicsBindingTracker(),
-                                          beginRenderPassCmd, passHasUAV));
+                                          beginRenderPassCmd, nextRenderPassNumber, passHasUAV));
 
                 nextRenderPassNumber++;
                 break;
@@ -1620,9 +1620,13 @@ void CommandBuffer::EmulateBeginRenderPass(CommandRecordingContext* commandConte
 MaybeError CommandBuffer::RecordRenderPass(CommandRecordingContext* commandContext,
                                            BindGroupStateTracker<RenderPipeline>* bindingTracker,
                                            BeginRenderPassCmd* renderPass,
+                                           PassIndex renderPassIndex,
                                            const bool passHasUAV) {
     Device* device = ToBackend(GetDevice());
     const bool useRenderPass = device->IsToggleEnabled(Toggle::UseD3D12RenderPass);
+
+    const IndirectDrawMetadata& metadata = GetIndirectDrawMetadata()[renderPassIndex];
+    IndirectDrawIndex indirectDrawIndex{0};
 
     // renderPassBuilder must be scoped to RecordRenderPass because any underlying
     // D3D12_RENDER_PASS_ENDING_ACCESS_RESOLVE_SUBRESOURCE_PARAMETERS structs must remain
@@ -1709,11 +1713,16 @@ MaybeError CommandBuffer::RecordRenderPass(CommandRecordingContext* commandConte
                 vertexBufferTracker.Apply(commandList, lastPipeline);
                 immediates.Apply(commandContext);
 
-                Buffer* buffer = ToBackend(draw->indirectBuffer.Get());
+                IndirectDrawMetadata::ValidatedIndirectDraw validatedDraw =
+                    metadata.GetValidatedIndirectDraw(draw, indirectDrawIndex++);
+
+                Buffer* indirectBuffer = ToBackend(validatedDraw.indirectBuffer.Get());
+                DAWN_ASSERT(indirectBuffer != nullptr);
+
                 ComPtr<ID3D12CommandSignature> signature =
                     lastPipeline->GetDrawIndirectCommandSignature();
-                commandList->ExecuteIndirect(signature.Get(), 1, buffer->GetD3D12Resource(),
-                                             draw->indirectOffset, nullptr, 0);
+                commandList->ExecuteIndirect(signature.Get(), 1, indirectBuffer->GetD3D12Resource(),
+                                             validatedDraw.indirectOffset, nullptr, 0);
                 break;
             }
 
@@ -1724,13 +1733,16 @@ MaybeError CommandBuffer::RecordRenderPass(CommandRecordingContext* commandConte
                 vertexBufferTracker.Apply(commandList, lastPipeline);
                 immediates.Apply(commandContext);
 
-                Buffer* buffer = ToBackend(draw->indirectBuffer.Get());
-                DAWN_ASSERT(buffer != nullptr);
+                IndirectDrawMetadata::ValidatedIndirectDraw validatedDraw =
+                    metadata.GetValidatedIndirectDraw(draw, indirectDrawIndex++);
+
+                Buffer* indirectBuffer = ToBackend(validatedDraw.indirectBuffer.Get());
+                DAWN_ASSERT(indirectBuffer != nullptr);
 
                 ComPtr<ID3D12CommandSignature> signature =
                     lastPipeline->GetDrawIndexedIndirectCommandSignature();
-                commandList->ExecuteIndirect(signature.Get(), 1, buffer->GetD3D12Resource(),
-                                             draw->indirectOffset, nullptr, 0);
+                commandList->ExecuteIndirect(signature.Get(), 1, indirectBuffer->GetD3D12Resource(),
+                                             validatedDraw.indirectOffset, nullptr, 0);
                 break;
             }
 

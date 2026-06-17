@@ -878,6 +878,10 @@ MaybeError EncodeIndirectDrawValidationCommands(DeviceBase* device,
             // Update the draw command to use the validated indirect buffer.
             // The drawCountBuffer doesn't need to be updated because if it exceeds the
             // maxDrawCount it will be clamped to maxDrawCount.
+            // TODO(crbug.com/495489174): This will suffer from the same problem with render bundles
+            // as we saw with regular draw{Indexed}Indirect calls. The same fix, storing the
+            // validated buffer and offset in the ValidatedIndirectDraw array and looking it up when
+            // the native call is made in the CommandBuffer backends.
             cmd->indirectBuffer = outputParamsBuffer.GetBuffer();
             cmd->indirectOffset = outputOffset;
 

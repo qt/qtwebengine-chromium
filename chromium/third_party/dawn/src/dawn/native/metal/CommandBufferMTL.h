@@ -88,7 +88,8 @@ class CommandBuffer final : public CommandBufferBase {
     MaybeError EncodeRenderPass(id<MTLRenderCommandEncoder> encoder,
                                 BeginRenderPassCmd* renderPassCmd,
                                 EmptyOcclusionQueries* emptyOcclusionQueries,
-                                const std::vector<MultiDrawExecutionData>& multiDrawExecutions);
+                                const std::vector<MultiDrawExecutionData>& multiDrawExecutions,
+                                PassIndex renderPassIndex);
 };
 
 }  // namespace dawn::native::metal

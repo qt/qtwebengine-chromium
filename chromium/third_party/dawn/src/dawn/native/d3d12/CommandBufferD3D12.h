@@ -62,6 +62,7 @@ class CommandBuffer final : public CommandBufferBase {
     MaybeError RecordRenderPass(CommandRecordingContext* commandContext,
                                 BindGroupStateTracker<RenderPipeline>* bindingTracker,
                                 BeginRenderPassCmd* renderPass,
+                                PassIndex renderPassIndex,
                                 bool passHasUAV);
     MaybeError SetupRenderPass(CommandRecordingContext* commandContext,
                                BeginRenderPassCmd* renderPass,

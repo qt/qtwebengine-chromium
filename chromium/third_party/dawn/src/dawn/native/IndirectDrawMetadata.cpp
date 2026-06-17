@@ -192,10 +192,11 @@ void IndirectDrawMetadata::SetValidatedIndirectDrawArgs(const IndirectDraw& draw
     validatedDraw.indirectBuffer = indirectBuffer;
     validatedDraw.indirectOffset = indirectOffset;
 
-    // TODO(crbug.com/495489174): Altering these values on the original draw command does not work
-    // for render bundles. A future change will remove these in favor of relying only on the
-    // mValidatedIndirectDraws array.
-    draw.cmd->indirectBuffer = indirectBuffer;
+    // TODO(crbug.com/495489174): Currently running without validation does not populate the
+    // validated indirect draws array. Setting the indirectBuffer of the command to null is used as
+    // a signifier that the validated array should be used. This should be replaced in the future
+    // with code that explicitly sets the validated indirect draw array in all cases.
+    draw.cmd->indirectBuffer = nullptr;
     draw.cmd->indirectOffset = indirectOffset;
 }
 
@@ -268,7 +269,6 @@ void IndirectDrawMetadata::AddIndexedIndirectDraw(wgpu::IndexFormat indexFormat,
             config, IndexedIndirectBufferValidationInfo(indirectBuffer));
         it = result.first;
     }
-
     IndirectDraw draw{};
     draw.validatedDrawIndex = mNextIndirectDrawIndex++;
     draw.inputBufferOffset = indirectOffset;
