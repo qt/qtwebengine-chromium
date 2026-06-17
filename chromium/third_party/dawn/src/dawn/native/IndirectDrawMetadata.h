@@ -46,6 +46,11 @@ namespace dawn::native {
 class RenderBundleBase;
 struct CombinedLimits;
 
+// The IndirectDrawIndex indicates the order in which an indirect draw is executed in a render
+// pass. It is tracked to enable association of validated buffer/offset data with the original
+// draw after draws are batched for validation.
+using IndirectDrawIndex = TypedInteger<struct IndirectDrawIndexT, uint64_t>;
+
 // In the unlikely scenario that indirect offsets used over a single buffer span more than
 // this length of the buffer, we split the validation work into multiple batches.
 uint64_t ComputeMaxIndirectValidationBatchOffsetRange(const CombinedLimits& limits);
@@ -62,6 +67,7 @@ class IndirectDrawMetadata : public NonCopyable {
     };
 
     struct IndirectDraw {
+        IndirectDrawIndex validatedDrawIndex;
         uint64_t inputBufferOffset;
         uint64_t numIndexBufferElements;
         uint64_t indexBufferOffsetInElements;
@@ -115,7 +121,8 @@ class IndirectDrawMetadata : public NonCopyable {
         // it's added to mBatch.
         void AddBatch(uint32_t maxDrawCallsPerIndirectValidationBatch,
                       uint64_t maxBatchOffsetRange,
-                      const IndirectValidationBatch& batch);
+                      const IndirectValidationBatch& batch,
+                      IndirectDrawIndex indirectDrawIndexOffset);
 
         const std::vector<IndirectValidationBatch>& GetBatches() const;
 
@@ -191,6 +198,8 @@ class IndirectDrawMetadata : public NonCopyable {
     absl::flat_hash_set<RenderBundleBase*> mAddedBundles;
 
     std::vector<IndirectMultiDraw> mMultiDraws;
+
+    IndirectDrawIndex mNextIndirectDrawIndex{0};
 
     uint64_t mMaxBatchOffsetRange;
     uint32_t mMaxDrawCallsPerBatch;

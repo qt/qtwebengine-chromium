@@ -103,12 +103,23 @@ void IndirectDrawMetadata::IndexedIndirectBufferValidationInfo::AddIndirectDraw(
     mBatches.insert(it, std::move(newBatch));
 }
 
+void AdjustValidatedDrawIndex(std::vector<IndirectDrawMetadata::IndirectDraw>& draws,
+                              std::vector<IndirectDrawMetadata::IndirectDraw>::iterator begin,
+                              IndirectDrawIndex indirectDrawIndexOffset) {
+    // Ensure that the validatedDrawIndex is properly offset for every newly inserted draw.
+    for (auto it = begin; it != draws.end(); ++it) {
+        it->validatedDrawIndex += indirectDrawIndexOffset;
+    }
+}
+
 void IndirectDrawMetadata::IndexedIndirectBufferValidationInfo::AddBatch(
     uint32_t maxDrawCallsPerIndirectValidationBatch,
     uint64_t maxBatchOffsetRange,
-    const IndirectValidationBatch& newBatch) {
+    const IndirectValidationBatch& newBatch,
+    IndirectDrawIndex indirectDrawIndexOffset) {
     auto it = mBatches.begin();
     while (it != mBatches.end()) {
+        // TODO(crbug.com/495489174): Investigate simplifying this.
         IndirectValidationBatch& batch = *it;
         uint64_t min = std::min(newBatch.minOffset, batch.minOffset);
         uint64_t max = std::max(newBatch.maxOffset, batch.maxOffset);
@@ -117,7 +128,10 @@ void IndirectDrawMetadata::IndexedIndirectBufferValidationInfo::AddBatch(
             // This batch fits within the limits of an existing batch. Merge it.
             batch.minOffset = min;
             batch.maxOffset = max;
-            batch.draws.insert(batch.draws.end(), newBatch.draws.begin(), newBatch.draws.end());
+
+            auto insertedDraws =
+                batch.draws.insert(batch.draws.end(), newBatch.draws.begin(), newBatch.draws.end());
+            AdjustValidatedDrawIndex(batch.draws, insertedDraws, indirectDrawIndexOffset);
             return;
         }
 
@@ -127,7 +141,11 @@ void IndirectDrawMetadata::IndexedIndirectBufferValidationInfo::AddBatch(
 
         ++it;
     }
-    mBatches.push_back(newBatch);
+    {
+        mBatches.push_back(newBatch);
+        IndirectValidationBatch& batch = mBatches.back();
+        AdjustValidatedDrawIndex(batch.draws, batch.draws.begin(), indirectDrawIndexOffset);
+    }
 }
 
 const std::vector<IndirectDrawMetadata::IndirectValidationBatch>&
@@ -168,13 +186,17 @@ void IndirectDrawMetadata::AddBundle(RenderBundleBase* bundle) {
     for (const auto& [config, validationInfo] :
          bundle->GetIndirectDrawMetadata().mIndexedIndirectBufferValidationInfo) {
         auto it = mIndexedIndirectBufferValidationInfo.lower_bound(config);
-        if (it != mIndexedIndirectBufferValidationInfo.end() && it->first == config) {
-            // We already have batches for the same config. Merge the new ones in.
-            for (const IndirectValidationBatch& batch : validationInfo.GetBatches()) {
-                it->second.AddBatch(mMaxDrawCallsPerBatch, mMaxBatchOffsetRange, batch);
-            }
-        } else {
-            mIndexedIndirectBufferValidationInfo.emplace_hint(it, config, validationInfo);
+        if (it == mIndexedIndirectBufferValidationInfo.end() || it->first != config) {
+            it = mIndexedIndirectBufferValidationInfo.emplace_hint(
+                it, config,
+                IndexedIndirectBufferValidationInfo(validationInfo.GetIndirectBuffer()));
+        }
+
+        // Merge the bundle's batches in.
+        for (const IndirectValidationBatch& batch : validationInfo.GetBatches()) {
+            it->second.AddBatch(mMaxDrawCallsPerBatch, mMaxBatchOffsetRange, batch,
+                                mNextIndirectDrawIndex);
+            mNextIndirectDrawIndex += IndirectDrawIndex(batch.draws.size());
         }
     }
 }
@@ -211,6 +233,7 @@ void IndirectDrawMetadata::AddIndexedIndirectDraw(wgpu::IndexFormat indexFormat,
     }
 
     IndirectDraw draw{};
+    draw.validatedDrawIndex = mNextIndirectDrawIndex++;
     draw.inputBufferOffset = indirectOffset;
     draw.numIndexBufferElements = numIndexBufferElements;
     draw.indexBufferOffsetInElements = indexBufferOffsetInElements;
@@ -232,6 +255,7 @@ void IndirectDrawMetadata::AddIndirectDraw(BufferBase* indirectBuffer,
     }
 
     IndirectDraw draw{};
+    draw.validatedDrawIndex = mNextIndirectDrawIndex++;
     draw.inputBufferOffset = indirectOffset;
     draw.numIndexBufferElements = 0;
     draw.cmd = cmd;
