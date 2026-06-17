@@ -1241,7 +1241,7 @@ void CommandEncoder::TrackQueryAvailability(QuerySetBase* querySet, uint32_t que
     querySet->SetQueryAvailability(queryIndex, true);
 }
 
-std::vector<IndirectDrawMetadata> CommandEncoder::AcquireIndirectDrawMetadata() {
+ityp::vector<PassIndex, IndirectDrawMetadata> CommandEncoder::AcquireIndirectDrawMetadata() {
     return mEncodingContext.AcquireIndirectDrawMetadata();
 }
 

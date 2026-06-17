@@ -102,7 +102,7 @@ const CommandBufferResourceUsage& CommandBufferBase::GetResourceUsages() const {
     return mResourceUsages;
 }
 
-const std::vector<IndirectDrawMetadata>& CommandBufferBase::GetIndirectDrawMetadata() {
+const ityp::vector<PassIndex, IndirectDrawMetadata>& CommandBufferBase::GetIndirectDrawMetadata() {
     return mIndirectDrawMetadata;
 }
 

@@ -134,6 +134,10 @@ constexpr PipelineCompatibilityToken kExplicitPCT = PipelineCompatibilityToken(0
 
 using Nanoseconds = TypedInteger<struct NanosecondsT, uint64_t>;
 
+// An identifier that indicates the index of a RenderPass or ComputePass in a command buffer.
+// Used to look up additional information related to the pass, such a resource usages.
+using PassIndex = TypedInteger<struct PassIndexT, uint32_t>;
+
 }  // namespace dawn::native
 
 #endif  // SRC_DAWN_NATIVE_INTEGERTYPES_H_

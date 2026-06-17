@@ -208,7 +208,7 @@ ComputePassUsages EncodingContext::AcquireComputePassUsages() {
     return std::move(mComputePassUsages);
 }
 
-std::vector<IndirectDrawMetadata> EncodingContext::AcquireIndirectDrawMetadata() {
+ityp::vector<PassIndex, IndirectDrawMetadata> EncodingContext::AcquireIndirectDrawMetadata() {
     DAWN_ASSERT(!mWereIndirectDrawMetadataAcquired);
     mWereIndirectDrawMetadataAcquired = true;
     return std::move(mIndirectDrawMetadata);

@@ -893,8 +893,8 @@ MaybeError CommandBuffer::RecordCommands(CommandRecordingContext* commandContext
     ID3D12GraphicsCommandList* commandList = commandContext->GetCommandList();
     descriptorHeapState.SetID3D12DescriptorHeaps(commandList);
 
-    size_t nextComputePassNumber = 0;
-    size_t nextRenderPassNumber = 0;
+    PassIndex nextComputePassNumber{0};
+    PassIndex nextRenderPassNumber{0};
 
     Command type;
     while (mCommands.NextCommandId(&type)) {
