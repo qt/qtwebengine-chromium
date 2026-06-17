@@ -79,6 +79,7 @@ DedicatedWorkerHost::DedicatedWorkerHost(
     DedicatedWorkerCreator creator,
     GlobalRenderFrameHostId ancestor_render_frame_host_id,
     const blink::StorageKey& creator_storage_key,
+    const blink::StorageKey& worker_storage_key,
     const url::Origin& renderer_origin,
     const net::IsolationInfo& isolation_info,
     network::mojom::ClientSecurityStatePtr creator_client_security_state,
@@ -92,10 +93,7 @@ DedicatedWorkerHost::DedicatedWorkerHost(
       ancestor_render_frame_host_id_(ancestor_render_frame_host_id),
       creator_origin_(creator_storage_key.origin()),
       renderer_origin_(renderer_origin),
-      // TODO(crbug.com/40051700): Calculate the worker origin based on
-      // the worker script URL (the worker's storage key should have an opaque
-      // origin if the worker script URL's scheme is data:).
-      storage_key_(creator_storage_key),
+      worker_storage_key_(worker_storage_key),
       isolation_info_(isolation_info),
       reporting_source_(base::UnguessableToken::Create()),
       creator_client_security_state_(std::move(creator_client_security_state)),
@@ -362,7 +360,7 @@ void DedicatedWorkerHost::StartScriptLoad(
       worker_process_host_->GetDeprecatedID(), token_, script_url,
       *nearest_ancestor_render_frame_host, creator_render_frame_host,
       nearest_ancestor_render_frame_host->ComputeSiteForCookies(),
-      creator_origin_, storage_key_,
+      creator_origin_, worker_storage_key_,
       nearest_ancestor_render_frame_host->GetIsolationInfoForSubresources(),
       std::move(client_security_state), credentials_mode,
       std::move(outside_fetch_client_settings_object),
@@ -608,9 +606,12 @@ DedicatedWorkerHost::CreateNetworkFactoryForSubresources(
     dip_reporter_->Clone(dip_reporter.InitWithNewPipeAndPassReceiver());
   }
 
+  // Use the creator's origin for `factory_params` to allow the worker to
+  // perform fetches that use the "Outside Settings" origin as the initiator
+  // (e.g., static imports in module workers).
   network::mojom::URLLoaderFactoryParamsPtr factory_params =
       URLLoaderFactoryParamsHelper::CreateForFrame(
-          ancestor_render_frame_host, GetStorageKey().origin(), isolation_info_,
+          ancestor_render_frame_host, creator_origin_, isolation_info_,
           worker_client_security_state_->Clone(), std::move(coep_reporter),
           std::move(dip_reporter), worker_process_host_,
           ancestor_render_frame_host->IsFeatureEnabled(
@@ -640,10 +641,14 @@ DedicatedWorkerHost::CreateNetworkFactoryForSubresources(
           std::move(factory_params),
           url_loader_factory::HeaderClientOption::kAllow,
           url_loader_factory::FactoryOverrideOption::kAllow),
+      // Use the worker's own origin for `ContentClientParams` so that the
+      // browser process (specifically `ContentBrowserClient`) correctly
+      // identifies the worker's origin for security checks and storage
+      // partitioning.
       url_loader_factory::ContentClientParams(
           worker_process_host_->GetBrowserContext(), frame,
-          worker_process_host_->GetDeprecatedID(), GetStorageKey().origin(),
-          isolation_info_,
+          worker_process_host_->GetDeprecatedID(),
+          GetWorkerStorageKey().origin(), isolation_info_,
           ukm::SourceIdObj::FromInt64(
               ancestor_render_frame_host->GetPageUkmSourceId()),
           bypass_redirect_checks),
@@ -746,7 +751,7 @@ void DedicatedWorkerHost::CreateWebSocketConnector(
       std::make_unique<WebSocketConnectorImpl>(
           ancestor_render_frame_host_id_.child_id,
           ancestor_render_frame_host_id_.frame_routing_id,
-          GetStorageKey().origin(),
+          GetWorkerStorageKey().origin(),
           ancestor_render_frame_host->GetIsolationInfoForSubresources()),
       std::move(receiver));
 }
@@ -765,7 +770,7 @@ void DedicatedWorkerHost::CreateWebTransportConnector(
   mojo::MakeSelfOwnedReceiver(
       std::make_unique<WebTransportConnectorImpl>(
           worker_process_host_->GetDeprecatedID(),
-          ancestor_render_frame_host->GetWeakPtr(), GetStorageKey().origin(),
+          ancestor_render_frame_host->GetWeakPtr(), GetWorkerStorageKey().origin(),
           isolation_info_.network_anonymization_key()),
       std::move(receiver));
 }
@@ -785,7 +790,7 @@ void DedicatedWorkerHost::BindCacheStorage(
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   BindCacheStorageInternal(
       std::move(receiver),
-      storage::BucketLocator::ForDefaultBucket(GetStorageKey()));
+      storage::BucketLocator::ForDefaultBucket(GetWorkerStorageKey()));
 }
 
 void DedicatedWorkerHost::CreateNestedDedicatedWorker(
@@ -797,7 +802,7 @@ void DedicatedWorkerHost::CreateNestedDedicatedWorker(
   mojo::MakeSelfOwnedReceiver(
       std::make_unique<DedicatedWorkerHostFactoryImpl>(
           worker_process_host_->GetDeprecatedID(), /*creator=*/token_,
-          ancestor_render_frame_host_id_, GetStorageKey(), isolation_info_,
+          ancestor_render_frame_host_id_, GetWorkerStorageKey(), isolation_info_,
           worker_client_security_state_->Clone(), creator_coep_reporter),
       std::move(receiver));
 }
@@ -827,7 +832,7 @@ void DedicatedWorkerHost::CreateBroadcastChannelProvider(
       storage_partition_impl->GetBroadcastChannelService();
   broadcast_channel_service->AddReceiver(
       std::make_unique<BroadcastChannelProvider>(broadcast_channel_service,
-                                                 GetStorageKey()),
+                                                 GetWorkerStorageKey()),
       std::move(receiver));
 }
 
@@ -847,7 +852,7 @@ void DedicatedWorkerHost::CreateBlobUrlStoreProvider(
       GetProcessHost()->GetStoragePartition());
 
   storage_partition_impl->GetBlobUrlRegistry()->AddReceiver(
-      GetStorageKey(), renderer_origin_, GetProcessHost()->GetDeprecatedID(),
+      GetWorkerStorageKey(), renderer_origin_, GetProcessHost()->GetDeprecatedID(),
       std::move(receiver),
       /*context_type_for_debugging=*/"Dedicated Worker",
       base::BindRepeating(
@@ -855,7 +860,7 @@ void DedicatedWorkerHost::CreateBlobUrlStoreProvider(
             if (!host) {
               return "destroyed DedicatedWorkerHost";
             }
-            return host->GetStorageKey().GetDebugString();
+            return host->GetWorkerStorageKey().GetDebugString();
           },
           weak_factory_.GetWeakPtr()),
       base::BindRepeating(
@@ -878,7 +883,7 @@ void DedicatedWorkerHost::CreateCodeCacheHost(
   RenderProcessHost* rph = GetProcessHost();
   code_cache_host_receivers_.Add(rph->GetDeprecatedID(),
                                  isolation_info_.network_isolation_key(),
-                                 GetStorageKey(), std::move(receiver));
+                                 GetWorkerStorageKey(), std::move(receiver));
 }
 
 void DedicatedWorkerHost::BindSerialService(
@@ -924,12 +929,12 @@ void DedicatedWorkerHost::GetFileSystemAccessManager(
   auto* manager = storage_partition_impl->GetFileSystemAccessManager();
   manager->BindReceiver(
       FileSystemAccessManagerImpl::BindingContext(
-          GetStorageKey(),
+          GetWorkerStorageKey(),
           // TODO(crbug.com/41473757): Obtain and use a better
           // URL for workers instead of the origin as source url.
           // This URL will be used for SafeBrowsing checks and for
           // the Quarantine Service.
-          GetStorageKey().origin().GetURL(), GetAncestorRenderFrameHostId(),
+          GetWorkerStorageKey().origin().GetURL(), GetAncestorRenderFrameHostId(),
           /*is_worker=*/true),
       std::move(receiver));
 }
@@ -939,7 +944,8 @@ void DedicatedWorkerHost::BindPressureService(
     mojo::PendingReceiver<blink::mojom::WebPressureManager> receiver) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
-  if (!network::IsOriginPotentiallyTrustworthy(creator_origin_)) {
+  if (!network::IsOriginPotentiallyTrustworthy(
+          GetWorkerStorageKey().origin())) {
     return;
   }
 
@@ -1035,7 +1041,7 @@ void DedicatedWorkerHost::UpdateSubresourceLoaderFactories() {
           worker_process_host_->GetDeprecatedID(), storage_partition_impl,
           partition_domain, file_url_support_,
           /*filesystem_url_support=*/true, creator_render_frame_host,
-          storage_key_, network::mojom::RequestDestination::kWorker);
+          worker_storage_key_, network::mojom::RequestDestination::kWorker);
 
   bool bypass_redirect_checks = false;
   subresource_loader_factories->pending_default_factory() =
@@ -1080,7 +1086,7 @@ void DedicatedWorkerHost::DidChangeBackForwardCacheDisablingFeatures(
 }
 
 blink::StorageKey DedicatedWorkerHost::GetBucketStorageKey() {
-  return GetStorageKey();
+  return GetWorkerStorageKey();
 }
 
 blink::mojom::PermissionStatus DedicatedWorkerHost::GetPermissionStatus(
@@ -1091,7 +1097,7 @@ blink::mojom::PermissionStatus DedicatedWorkerHost::GetPermissionStatus(
       ->GetPermissionStatusForWorker(
           content::PermissionDescriptorUtil::
               CreatePermissionDescriptorForPermissionType(permission_type),
-          GetProcessHost(), GetStorageKey().origin());
+          GetProcessHost(), GetWorkerStorageKey().origin());
 }
 
 void DedicatedWorkerHost::BindCacheStorageForBucket(

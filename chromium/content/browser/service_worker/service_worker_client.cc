@@ -610,7 +610,7 @@ std::optional<blink::StorageKey> GetStorageKeyFromDedicatedWorkerHost(
   auto* worker_host =
       worker_service->GetDedicatedWorkerHostFromToken(dedicated_worker_token);
   if (worker_host) {
-    return worker_host->GetStorageKey().WithOrigin(origin);
+    return worker_host->GetWorkerStorageKey().WithOrigin(origin);
   }
   return std::nullopt;
 }
@@ -624,7 +624,7 @@ std::optional<blink::StorageKey> GetStorageKeyFromSharedWorkerHost(
   auto* worker_host =
       worker_service->GetSharedWorkerHostFromToken(shared_worker_token);
   if (worker_host) {
-    return worker_host->GetStorageKey().WithOrigin(origin);
+    return worker_host->GetWorkerStorageKey().WithOrigin(origin);
   }
   return std::nullopt;
 }
