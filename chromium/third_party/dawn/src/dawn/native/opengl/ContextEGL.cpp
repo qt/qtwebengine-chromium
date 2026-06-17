@@ -49,6 +49,11 @@
 #define EGL_EXTENSIONS_ENABLED_ANGLE 0x345F
 #endif
 
+// https://chromium.googlesource.com/angle/angle/+/main/extensions/EGL_ANGLE_create_context_webgl_compatibility.txt
+#ifndef EGL_CONTEXT_HARDENED_ANGLE
+#define EGL_CONTEXT_HARDENED_ANGLE 0x34F8
+#endif
+
 namespace dawn::native::opengl {
 
 // static
@@ -147,6 +152,10 @@ MaybeError ContextEGL::Initialize(wgpu::BackendType backend,
         if (egl.HasExt(EGLExt::ANGLECreateContextExtensionsEnabled)) {
             AddAttrib(EGL_EXTENSIONS_ENABLED_ANGLE, EGL_FALSE);
         }
+    }
+
+    if (egl.HasExt(EGLExt::ANGLECreateContextWebGLCompatibility)) {
+        AddAttrib(EGL_CONTEXT_HARDENED_ANGLE, EGL_TRUE);
     }
 
     // The attrib list is finished with an EGL_NONE tag.
