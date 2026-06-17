@@ -177,12 +177,48 @@ IndirectDrawMetadata::GetIndirectMultiDraws() const {
     return mMultiDraws;
 }
 
+void IndirectDrawMetadata::SetValidatedIndirectDrawArgs(const IndirectDraw& draw,
+                                                        BufferBase* indirectBuffer,
+                                                        uint64_t indirectOffset) {
+    // The first time validated args are set ensure the array of args is large enough to store all
+    // of the args that will be needed.
+    if (mValidatedIndirectDraws.size() < mNextIndirectDrawIndex) {
+        mValidatedIndirectDraws.resize(mNextIndirectDrawIndex);
+    }
+    DAWN_ASSERT(draw.validatedDrawIndex < mValidatedIndirectDraws.size());
+
+    IndirectDrawMetadata::ValidatedIndirectDraw& validatedDraw =
+        mValidatedIndirectDraws[draw.validatedDrawIndex];
+    validatedDraw.indirectBuffer = indirectBuffer;
+    validatedDraw.indirectOffset = indirectOffset;
+
+    // TODO(crbug.com/495489174): Altering these values on the original draw command does not work
+    // for render bundles. A future change will remove these in favor of relying only on the
+    // mValidatedIndirectDraws array.
+    draw.cmd->indirectBuffer = indirectBuffer;
+    draw.cmd->indirectOffset = indirectOffset;
+}
+
+IndirectDrawMetadata::ValidatedIndirectDraw IndirectDrawMetadata::GetValidatedIndirectDraw(
+    DrawIndirectCmd* cmd,
+    IndirectDrawIndex indirectDrawIndex) const {
+    DAWN_ASSERT(cmd);
+    if (cmd->indirectBuffer != nullptr) {
+        return {
+            .indirectBuffer = cmd->indirectBuffer.Get(),
+            .indirectOffset = cmd->indirectOffset,
+        };
+    }
+    return mValidatedIndirectDraws[indirectDrawIndex];
+}
+
 void IndirectDrawMetadata::AddBundle(RenderBundleBase* bundle) {
     auto [_, inserted] = mAddedBundles.insert(bundle);
     if (!inserted) {
         return;
     }
 
+    IndirectDrawIndex bundleIndirectDrawCount{0};
     for (const auto& [config, validationInfo] :
          bundle->GetIndirectDrawMetadata().mIndexedIndirectBufferValidationInfo) {
         auto it = mIndexedIndirectBufferValidationInfo.lower_bound(config);
@@ -196,9 +232,10 @@ void IndirectDrawMetadata::AddBundle(RenderBundleBase* bundle) {
         for (const IndirectValidationBatch& batch : validationInfo.GetBatches()) {
             it->second.AddBatch(mMaxDrawCallsPerBatch, mMaxBatchOffsetRange, batch,
                                 mNextIndirectDrawIndex);
-            mNextIndirectDrawIndex += IndirectDrawIndex(batch.draws.size());
+            bundleIndirectDrawCount += IndirectDrawIndex(batch.draws.size());
         }
     }
+    mNextIndirectDrawIndex += bundleIndirectDrawCount;
 }
 
 void IndirectDrawMetadata::AddIndexedIndirectDraw(wgpu::IndexFormat indexFormat,
