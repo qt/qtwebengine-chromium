@@ -17,6 +17,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <limits.h>
 
 #include "base/bits.h"
 #include "base/check_op.h"

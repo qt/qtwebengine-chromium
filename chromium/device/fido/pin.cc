@@ -4,6 +4,7 @@
 
 #include "device/fido/pin.h"
 
+#include <climits>
 #include <numeric>
 #include <string>
 #include <utility>
