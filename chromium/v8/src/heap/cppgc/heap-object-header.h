@@ -354,7 +354,7 @@ uint16_t HeapObjectHeader::LoadEncoded() const {
   if constexpr (mode == AccessMode::kNonAtomic) {
     return half;
   }
-  return std::atomic_ref(const_cast<uint16_t&>(half)).load(memory_order);
+  return std::atomic_ref<uint16_t>(const_cast<uint16_t&>(half)).load(memory_order);
 }
 
 template <AccessMode mode, HeapObjectHeader::EncodedHalf part,

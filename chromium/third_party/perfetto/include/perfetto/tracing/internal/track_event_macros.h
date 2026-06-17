@@ -144,6 +144,7 @@
     PERFETTO_INTERNAL_STATIC_FOR_MSVC constexpr size_t PERFETTO_UID(           \
         kCatIndex_ADD_TO_PERFETTO_DEFINE_CATEGORIES_IF_FAILS_) =               \
         PERFETTO_GET_CATEGORY_INDEX(category);                                 \
+    (void)PERFETTO_UID(kCatIndex_ADD_TO_PERFETTO_DEFINE_CATEGORIES_IF_FAILS_); \
     if (::PERFETTO_TRACK_EVENT_NAMESPACE::internal::IsDynamicCategory(         \
             category)) {                                                       \
       tns::TrackEvent::CallIfEnabled(                                          \

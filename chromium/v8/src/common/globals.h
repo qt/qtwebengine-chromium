@@ -578,7 +578,7 @@ using AtomicTagged_t = base::AtomicWord;
 // virtual memory ranges (PR_SET_VMA_ANON_NAME on Linux).
 // TODO(saelo): It might be nicer to have one name per table type, e.g.
 // v8-external-pointer-table, v8-trusted-pointer-table, etc.
-static const char* kPointerTableAddressSpaceName = "v8-pointer-table";
+[[maybe_unused]] static const char* kPointerTableAddressSpaceName = "v8-pointer-table";
 
 //
 // JavaScript Dispatch Table
