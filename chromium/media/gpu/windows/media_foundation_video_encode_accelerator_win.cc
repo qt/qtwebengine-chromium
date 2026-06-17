@@ -199,6 +199,22 @@ bool IsOdd(int value) {
   return (value & 1) != 0;
 }
 
+// Returns true if the HRESULT indicates a timeout or abandoned mutex.
+bool IsKeyedMutexTimeout(HRESULT hr) {
+  return hr == HRESULT_FROM_WIN32(WAIT_TIMEOUT) ||
+         hr == HRESULT_FROM_WIN32(WAIT_ABANDONED);
+}
+
+HRESULT AcquireKeyedMutexSync(IDXGIKeyedMutex* keyed_mutex,
+                              uint64_t key,
+                              uint32_t timeout_ms) {
+  HRESULT hr = keyed_mutex->AcquireSync(key, timeout_ms);
+  if (hr == WAIT_TIMEOUT || hr == WAIT_ABANDONED) {
+    return HRESULT_FROM_WIN32(hr);
+  }
+  return hr;
+}
+
 }  // namespace
 
 // A proxy class that implements IMFAsyncCallback and routes the events back to
@@ -841,6 +857,11 @@ void MediaFoundationVideoEncodeAccelerator::QueueInput(
   }
 
   hr = PopulateInputSampleBuffer(result, std::move(frame));
+  if (IsKeyedMutexTimeout(hr)) {
+    DVLOG(1) << "Frame dropped because of keyed mutex timeout";
+    DropFrame(result.timestamp);
+    return;
+  }
   if (FAILED(hr)) {
     NotifyErrorStatus({EncoderStatus::Codes::kEncoderFailedEncode,
                        "Failed to populate input sample buffer"});
@@ -1908,9 +1929,7 @@ HRESULT MediaFoundationVideoEncodeAccelerator::ProcessInput(
 
     if (is_drop_frame) {
       DVLOG(3) << "Frame dropped by software rate control";
-      BitstreamBufferMetadata md =
-          BitstreamBufferMetadata::CreateForDropFrame(input.timestamp);
-      SendOutputBuffer(md, base::span<uint8_t>());
+      DropFrame(input.timestamp);
       VideoRateControlWrapper::FrameParams drop_frame_params{};
       drop_frame_params.frame_type =
           input.options.key_frame
@@ -2745,6 +2764,13 @@ void MediaFoundationVideoEncodeAccelerator::SendOutputBuffer(
   client_->BitstreamBufferReady(buffer_ref->id, metadata);
 }
 
+void MediaFoundationVideoEncodeAccelerator::DropFrame(
+    base::TimeDelta timestamp) {
+  BitstreamBufferMetadata md =
+      BitstreamBufferMetadata::CreateForDropFrame(timestamp);
+  SendOutputBuffer(md, base::span<uint8_t>());
+}
+
 HRESULT MediaFoundationVideoEncodeAccelerator::InitializeD3DVideoProcessing(
     ID3D11Texture2D* input_texture) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
@@ -2867,12 +2893,15 @@ HRESULT MediaFoundationVideoEncodeAccelerator::PerformD3DScaling(
       // hardware decoder acquired the mutex to decode into a different array
       // level then it still may block here temporarily.
       constexpr int kMaxSyncTimeMs = 100;
-      hr = keyed_mutex->AcquireSync(0, kMaxSyncTimeMs);
-      // Can't check for FAILED(hr) because AcquireSync may return e.g.
-      // WAIT_ABANDONED.
-      if (hr != S_OK && hr != WAIT_TIMEOUT) {
+      hr = AcquireKeyedMutexSync(keyed_mutex.Get(), 0, kMaxSyncTimeMs);
+
+      // If the lock is not acquired, the D3D runtime will silently fail the
+      // subsequent D3D operations, leaving the destination texture with
+      // uninitialized GPU memory. Compressing and outputting this memory can
+      // lead to a GPU memory disclosure.
+      if (FAILED(hr)) {
         LOG(ERROR) << "Failed to acquire mutex: " << PrintHr(hr);
-        return E_FAIL;
+        return hr;
       }
       release_keyed_mutex.emplace(std::move(keyed_mutex), 0);
     }
@@ -2990,12 +3019,15 @@ HRESULT MediaFoundationVideoEncodeAccelerator::PerformD3DCopy(
     hr = input_texture->QueryInterface(IID_PPV_ARGS(&keyed_mutex));
     if (SUCCEEDED(hr)) {
       constexpr int kMaxSyncTimeMs = 100;
-      hr = keyed_mutex->AcquireSync(0, kMaxSyncTimeMs);
-      // Can't check for FAILED(hr) because AcquireSync may return e.g.
-      // WAIT_ABANDONED.
-      if (hr != S_OK && hr != WAIT_TIMEOUT) {
+      hr = AcquireKeyedMutexSync(keyed_mutex.Get(), 0, kMaxSyncTimeMs);
+
+      // If the lock is not acquired, the D3D runtime will silently drop the
+      // subsequent CopySubresourceRegion command, leaving the destination
+      // texture with uninitialized GPU memory. Compressing and outputting this
+      // memory can lead to a GPU memory disclosure.
+      if (FAILED(hr)) {
         LOG(ERROR) << "Failed to acquire mutex: " << PrintHr(hr);
-        return E_FAIL;
+        return hr;
       }
       release_keyed_mutex.emplace(std::move(keyed_mutex), 0);
     }
@@ -3084,7 +3116,11 @@ void MediaFoundationVideoEncodeAccelerator::OnSharedImageSampleAvailable(
   DCHECK(it != pending_input_queue_.end());
 
   HRESULT hr = PopulateInputSampleBuffer(*it, std::move(frame));
-  if (FAILED(hr)) {
+  if (IsKeyedMutexTimeout(hr)) {
+    DVLOG(1) << "Frame dropped because of keyed mutex timeout";
+    DropFrame(it->timestamp);
+    pending_input_queue_.erase(it);
+  } else if (FAILED(hr)) {
     NotifyErrorStatus({EncoderStatus::Codes::kEncoderFailedEncode,
                        "Failed to populate input sample buffer"});
     return;

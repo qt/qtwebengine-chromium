@@ -190,6 +190,8 @@ class MEDIA_GPU_EXPORT MediaFoundationVideoEncodeAccelerator
   void SendOutputBuffer(const BitstreamBufferMetadata& metadata,
                         base::span<uint8_t> output_buffer_span);
 
+  void DropFrame(base::TimeDelta timestamp);
+
   // Processes the input video frame for the encoder.
   HRESULT ProcessInput(const PendingInput& input, bool& is_drop_frame);
 
