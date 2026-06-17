@@ -917,6 +917,9 @@ class CONTENT_EXPORT ContentBrowserClient {
   // https://w3c.github.io/ServiceWorker/#control-and-use-worker-client.
   virtual bool AllowSharedWorkerBlobURLFix(BrowserContext* context);
 
+  // Return whether data: URL web workers should have opaque origins.
+  virtual bool IsDataUrlInWebWorkerOpaqueOriginEnabled(BrowserContext* context);
+
   virtual bool IsDataSaverEnabled(BrowserContext* context);
 
   // Updates the given prefs for Service Worker and Shared Worker. The prefs
