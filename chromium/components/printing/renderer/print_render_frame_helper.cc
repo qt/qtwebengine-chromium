@@ -1379,7 +1379,7 @@ void PrintRenderFrameHelper::PrintWithParams(
                            mojom::SkiaDocumentType::kMSKP
                        ? DebugEvent::kSetPrintSettings1
                        : DebugEvent::kSetPrintSettings2);
-  SetPrintPagesParams(*settings);
+  SetPrintPagesParamsForPrinting(*settings);
   prep_frame_view_ =
       std::make_unique<PrepareFrameAndViewForPrint>(frame, plugin_node);
   prep_frame_view_->EnterPrintMode(*settings->params,
@@ -2156,7 +2156,7 @@ void PrintRenderFrameHelper::Print(blink::WebLocalFrame* frame,
                              mojom::SkiaDocumentType::kMSKP
                          ? DebugEvent::kSetPrintSettings3
                          : DebugEvent::kSetPrintSettings4);
-    SetPrintPagesParams(*print_settings);
+    SetPrintPagesParamsForPrinting(*print_settings);
   }
 
   // Render Pages for printing.
@@ -2234,6 +2234,9 @@ void PrintRenderFrameHelper::DidFinishPrinting(PrintingResult result) {
 void PrintRenderFrameHelper::Reset() {
   prep_frame_view_.reset();
   print_pages_params_.reset();
+#if BUILDFLAG(ENABLE_PRINT_PREVIEW)
+  preview_ui_id_ = -1;
+#endif
   notify_browser_of_print_failure_ = true;
   snapshotter_.reset();
 
@@ -2422,7 +2425,7 @@ bool PrintRenderFrameHelper::InitPrintSettings(blink::WebLocalFrame* frame,
                            mojom::SkiaDocumentType::kMSKP
                        ? DebugEvent::kSetPrintSettings5
                        : DebugEvent::kSetPrintSettings6);
-  SetPrintPagesParams(settings);
+  SetPrintPagesParamsForPrinting(settings);
   return true;
 }
 
@@ -2481,8 +2484,6 @@ bool PrintRenderFrameHelper::UpdatePrintSettings(
     return false;
   }
 
-  settings->params->preview_ui_id = job_settings->FindInt(kPreviewUIID).value();
-
   // Validate expected print preview settings.
   settings->params->is_first_request =
       job_settings->FindBool(kIsFirstRequest).value();
@@ -2498,7 +2499,8 @@ bool PrintRenderFrameHelper::UpdatePrintSettings(
                            mojom::SkiaDocumentType::kMSKP
                        ? DebugEvent::kSetPrintSettings7
                        : DebugEvent::kSetPrintSettings8);
-  SetPrintPagesParams(*settings);
+  SetPrintPagesParamsForPrintPreview(
+      *settings, job_settings->FindInt(kPreviewUIID).value());
   return true;
 }
 #endif  // BUILDFLAG(ENABLE_PRINT_PREVIEW)
@@ -2524,6 +2526,9 @@ mojom::PrintPagesParamsPtr PrintRenderFrameHelper::GetPrintSettingsFromUser(
   GetPrintManagerHost()->DidShowPrintDialog();
 
   print_pages_params_.reset();
+#if BUILDFLAG(ENABLE_PRINT_PREVIEW)
+  preview_ui_id_ = -1;
+#endif
 
   mojom::PrintPagesParamsPtr print_settings;
   GetPrintManagerHost()->ScriptedPrint(std::move(params), &print_settings);
@@ -2762,9 +2767,8 @@ bool PrintRenderFrameHelper::CheckForCancel() {
   const mojom::PrintParams& print_params = *print_pages_params_->params;
   bool cancel = false;
 
-  if (!GetPrintManagerHost()->CheckForCancel(print_params.preview_ui_id,
-                                             print_params.preview_request_id,
-                                             &cancel)) {
+  if (!GetPrintManagerHost()->CheckForCancel(
+          preview_ui_id_, print_params.preview_request_id, &cancel)) {
     cancel = true;
   }
 
@@ -3104,11 +3108,25 @@ void PrintRenderFrameHelper::PrintPreviewContext::CalculatePluginAttributes() {
                                   : DebugEvent::kPrintPreviewIsNotModifiable);
 }
 
-void PrintRenderFrameHelper::SetPrintPagesParams(
+void PrintRenderFrameHelper::SetPrintPagesParamsForPrinting(
     const mojom::PrintPagesParams& settings) {
   CHECK(PrintMsgPrintParamsIsValid(*settings.params));
   print_pages_params_ = settings.Clone();
+#if BUILDFLAG(ENABLE_PRINT_PREVIEW)
+  // Invalid ID since this is not for Print Preview.
+  preview_ui_id_ = -1;
+#endif
 }
+
+#if BUILDFLAG(ENABLE_PRINT_PREVIEW)
+void PrintRenderFrameHelper::SetPrintPagesParamsForPrintPreview(
+    const mojom::PrintPagesParams& settings,
+    int preview_ui_id) {
+  CHECK(PrintMsgPrintParamsIsValid(*settings.params));
+  print_pages_params_ = settings.Clone();
+  preview_ui_id_ = preview_ui_id;
+}
+#endif
 
 void PrintRenderFrameHelper::QuitScriptedPrintPreviewRunLoop() {
   closures_for_mojo_responses_->RunScriptedPrintPreviewQuitClosure();
