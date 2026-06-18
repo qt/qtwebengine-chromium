@@ -442,6 +442,7 @@ jumbo_component("base") {
       } else {
         # Empty implementation for all other cases.
         sources += [ "pointer/pointer_device_default.cc" ]
+      }
     }
   }
 
