@@ -14,6 +14,7 @@
 #include "compiler/translator/tree_ops/AddDefaultReturnStatements.h"
 #include "compiler/translator/tree_ops/DeclarePerVertexBlocks.h"
 #include "compiler/translator/tree_ops/RecordConstantPrecision.h"
+#include "compiler/translator/tree_ops/glsl/ExpandFragmentOutputsToVec4.h"
 #include "compiler/translator/tree_util/FindSymbolNode.h"
 #include "compiler/translator/tree_util/ReplaceClipCullDistanceVariable.h"
 #include "compiler/translator/tree_util/RunAtTheEndOfShader.h"
@@ -109,6 +110,13 @@ bool TranslatorESSL::translate(TIntermBlock *root,
     if (!RecordConstantPrecision(this, root, &getSymbolTable()))
     {
         return false;
+    }
+    if (compileOptions.expandFragmentOutputsToVec4)
+    {
+        if (!ExpandFragmentOutputsToVec4(this, root, &getSymbolTable()))
+        {
+            return false;
+        }
     }
 
     if (!sh::AddDefaultReturnStatements(this, root))

@@ -26,7 +26,7 @@
 
 // Version number for shader translation API.
 // It is incremented every time the API changes.
-#define ANGLE_SH_VERSION 380
+#define ANGLE_SH_VERSION 381
 
 enum ShShaderSpec
 {
@@ -472,6 +472,10 @@ struct ShCompileOptions
     // Do not preform any shader validation or perform any shader transformations. Shader state can
     // still be reflected.
     uint64_t skipAllValidationAndTransforms : 1;
+
+    // Whether ESSL300 fragment outputs should be expanded to vec4s.
+    uint64_t expandFragmentOutputsToVec4 : 1;
+
 
     ShCompileOptionsMetal metal;
     ShPixelLocalStorageOptions pls;

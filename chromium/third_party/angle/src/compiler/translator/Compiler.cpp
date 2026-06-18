@@ -64,6 +64,7 @@
 #include "compiler/translator/tree_util/BuiltIn.h"
 #include "compiler/translator/tree_util/FindSymbolNode.h"
 #include "compiler/translator/tree_util/IntermNodePatternMatcher.h"
+#include "compiler/translator/tree_util/IntermNode_util.h"
 #include "compiler/translator/tree_util/ReplaceShadowingVariables.h"
 #include "compiler/translator/tree_util/ReplaceVariable.h"
 #include "compiler/translator/util.h"
@@ -1243,6 +1244,9 @@ bool TCompiler::checkAndSimplifyAST(TIntermBlock *root,
 
     mValidateASTOptions.validateMultiDeclarations = true;
 
+    // Move declarations before functions to simplify transformations.
+    MoveDeclarationsBeforeFunctions(root);
+
     if (!SplitSequenceOperator(this, root, IntermNodePatternMatcher::kArrayLengthMethod,
                                &getSymbolTable()))
     {
@@ -1502,6 +1506,11 @@ bool TCompiler::compile(const char *const shaderStrings[],
     {
         // This should be harmless to do in all cases, but for the moment, do it only conditionally.
         compileOptions.flattenPragmaSTDGLInvariantAll = true;
+    }
+
+    if (mShaderType != GL_FRAGMENT_SHADER)
+    {
+        compileOptions.expandFragmentOutputsToVec4 = false;
     }
 
     TScopedPoolAllocator scopedAlloc;

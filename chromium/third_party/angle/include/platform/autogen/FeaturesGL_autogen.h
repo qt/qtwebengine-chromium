@@ -632,6 +632,12 @@ struct FeaturesGL : FeatureSetBase
         &members,
     };
 
+    FeatureInfo expandFragmentOutputsToVec4 = {
+        "expandFragmentOutputsToVec4",
+        FeatureCategory::OpenGLWorkarounds,
+        &members,
+    };
+
     FeatureInfo recreateMipmapLevelsBeforeGenerate = {
         "recreateMipmapLevelsBeforeGenerate",
         FeatureCategory::OpenGLWorkarounds,

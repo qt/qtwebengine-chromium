@@ -152,6 +152,11 @@ TIntermSwizzle *CreateSwizzle(TIntermTyped *reference, ArgsT... args)
 // branch.
 bool EndsInBranch(TIntermBlock *block);
 
+// Called on root, moves declarations before function definitions.  Done so that transformations
+// that need to do something with globals and append code for them in main() don't have to deal with
+// declarations after main.
+void MoveDeclarationsBeforeFunctions(TIntermBlock *root);
+
 }  // namespace sh
 
 #endif  // COMPILER_TRANSLATOR_INTERMNODEUTIL_H_
