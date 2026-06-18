@@ -166,7 +166,7 @@ RtcTransportDependencies::RtcTransportDependencies(ExecutionContext& context,
                     std::move(network_manager), std::move(socket_factory)));
           },
           MakeCrossThreadHandle(this),
-          CrossThreadPersistent(p2p_socket_dispatcher_.Get()),
+          CrossThreadPersistent<P2PSocketDispatcher>(p2p_socket_dispatcher_.Get()),
           context.GetTaskRunner(TaskType::kNetworking)));
 }
 

@@ -53,9 +53,11 @@
   if (!_allowedOrigin.IsSameOriginWith(newUrl)) {
     // Stops the redirect and returns to the original handler with the redirect
     // response.
+#if !BUILDFLAG(IS_QTWEBENGINE)
     LOG_POLICY(ERROR, EXTENSIBLE_SSO)
         << "[OktaEnterpriseSSO] URLSession request blocked due to "
            "cross-origin redirect.";
+#endif
     completionHandler(nil);
   } else {
     // Let the redirect through.
@@ -120,9 +122,11 @@ void URLSessionURLLoader::Start(
     mojo::PendingReceiver<network::mojom::URLLoader> loader,
     mojo::PendingRemote<network::mojom::URLLoaderClient> client_info_remote,
     base::TimeDelta timeout) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   VLOG_POLICY(2, EXTENSIBLE_SSO)
       << "[OktaEnterpriseSSO] Starting a URLSession request to "
       << request.url.spec();
+#endif
 
   client_.Bind(std::move(client_info_remote));
   receiver_.Bind(std::move(loader));
@@ -136,25 +140,31 @@ void URLSessionURLLoader::Start(
   request_start_ = base::TimeTicks::Now();
 
   if (!url_session_helper::IsOktaSSORequest(request)) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
     LOG_POLICY(WARNING, EXTENSIBLE_SSO)
         << "URLSessionURLLoader started for a non Okta SSO request.";
+#endif
     OnRequestFailed(SSORequestFailReason::kOther);
     return;
   }
 
   if (!request.request_initiator.has_value()) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
     LOG_POLICY(ERROR, EXTENSIBLE_SSO)
         << "[OktaEnterpriseSSO] URLSessionURLLoader expects the caller to "
            "verify that |request| "
            "contains a valid |request_initiator|.";
+#endif
     OnRequestFailed(SSORequestFailReason::kOther);
     return;
   }
 
   if (!request.request_initiator->IsSameOriginWith(request.url)) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
     LOG_POLICY(ERROR, EXTENSIBLE_SSO)
         << "[OktaEnterpriseSSO] URLSessionURLLoader cross origin request "
            "attempted.";
+#endif
     OnRequestFailed(SSORequestFailReason::kCorsViolation);
     return;
   }
@@ -189,9 +199,11 @@ void URLSessionURLLoader::Start(
         completionHandler:^(NSData* data, NSURLResponse* response,
                             NSError* error) {
           if (error) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
             LOG_POLICY(ERROR, EXTENSIBLE_SSO)
                 << "[OktaEnterpriseSSO] URLSession request failed with code: "
                 << error.code;
+#endif
             const SSORequestFailReason reason =
                 error.code == NSURLErrorTimedOut
                     ? SSORequestFailReason::kTimeout
@@ -201,10 +213,12 @@ void URLSessionURLLoader::Start(
                                           weak_ptr, reason));
           } else if (!response) {
             // Happens when the redirect is interrupted.
+#if !BUILDFLAG(IS_QTWEBENGINE)
             LOG_POLICY(ERROR, EXTENSIBLE_SSO)
                 << "[OktaEnterpriseSSO] URLSession completion handler received "
                    "no error but response was nil. This was most likely caused "
                    "by a blocked corss-origin redirect.";
+#endif
             task_runner->PostTask(
                 FROM_HERE,
                 base::BindOnce(&URLSessionURLLoader::OnRequestFailed, weak_ptr,
@@ -246,9 +260,11 @@ void URLSessionURLLoader::OnRequestComplete(NSURLResponse* response,
       head->headers->response_code() < 400) {
     // It might be the case that interrupted redirect returns the redirect
     // response.
+#if !BUILDFLAG(IS_QTWEBENGINE)
     LOG_POLICY(ERROR, EXTENSIBLE_SSO)
         << "[OktaEnterpriseSSO] URLSession request blocked due to "
            "cross-origin redirect.";
+#endif
     OnRequestFailed(SSORequestFailReason::kCorsViolation);
     return;
   }
@@ -256,9 +272,11 @@ void URLSessionURLLoader::OnRequestComplete(NSURLResponse* response,
   mojo::ScopedDataPipeConsumerHandle consumer_handle;
   if (ns_data && ns_data.length > 0) {
     if (ns_data.length > kDataSizeLimit.InBytes()) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
       LOG_POLICY(ERROR, EXTENSIBLE_SSO)
           << "[OktaEnterpriseSSO] URLSession response body too big. Received "
           << ns_data.length << " bytes.";
+#endif
       OnRequestFailed(SSORequestFailReason::kResponseTooBig);
       return;
     }
@@ -268,24 +286,30 @@ void URLSessionURLLoader::OnRequestComplete(NSURLResponse* response,
     int mojo_result =
         mojo::CreateDataPipe(data.size(), producer_handle, consumer_handle);
     if (mojo_result != MOJO_RESULT_OK) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
       LOG_POLICY(ERROR, EXTENSIBLE_SSO)
           << "[OktaEnterpriseSSO] Mojo data pipe creation failed with code: "
           << mojo_result;
+#endif
       OnRequestFailed(SSORequestFailReason::kOther);
       return;
     }
     mojo_result = producer_handle->WriteAllData(data);
     if (mojo_result != MOJO_RESULT_OK) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
       LOG_POLICY(ERROR, EXTENSIBLE_SSO)
           << "[OktaEnterpriseSSO] Writing to the mojo pipe failed with code "
           << mojo_result;
+#endif
       OnRequestFailed(SSORequestFailReason::kOther);
       return;
     }
   }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   VLOG_POLICY(2, EXTENSIBLE_SSO)
       << "[OktaEnterpriseSSO] URLSession request completed successfully";
+#endif
   RecordSuccessMetrics();
   client_->OnReceiveResponse(std::move(head), std::move(consumer_handle),
                              std::nullopt);

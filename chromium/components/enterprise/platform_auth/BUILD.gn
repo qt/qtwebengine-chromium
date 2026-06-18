@@ -26,6 +26,11 @@ component("enterprise_platform_auth") {
     "//services/network/public/mojom",
   ]
 
+  # TODO: We don't yet support policy logging.
+  if (is_qtwebengine) {
+    deps -= [ "//components/policy/core/common" ]
+  }
+
   defines = [ "IS_ENTERPRISE_PLATFORM_AUTH_IMPL" ]
 }
 

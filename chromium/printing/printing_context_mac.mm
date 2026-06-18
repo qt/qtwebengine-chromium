@@ -42,6 +42,7 @@
 
 namespace printing {
 
+#if BUILDFLAG(ENABLE_OOP_PRINTING_NO_OOP_BASIC_PRINT_DIALOG)
 // Not in an anonymous namespace so it can be friends with
 // base::ScopedAllowBlocking.
 base::FilePath GetAbsoluteSystemDestinationLocation(
@@ -53,6 +54,7 @@ base::FilePath GetAbsoluteSystemDestinationLocation(
   // ApplySystemDestination() will fail when it passes a symlink into macOS.
   return base::MakeAbsoluteFilePath(file_path);
 }
+#endif
 
 namespace {
 

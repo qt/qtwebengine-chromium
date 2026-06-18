@@ -372,7 +372,7 @@ base::DictValue PrintSettingsToJobSettingsDebug(const PrintSettings& settings) {
           .Set(kSettingPagesPerSheet, settings.pages_per_sheet());
 
   if (!settings.ranges().empty()) {
-    base::Value::List list;
+    base::ListValue list;
     for (auto&& range: settings.ranges())
       list.Append(base::DictValue()
                       .Set(kSettingPageRangeFrom, static_cast<int>(range.from + 1))

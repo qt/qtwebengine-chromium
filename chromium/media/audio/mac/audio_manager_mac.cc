@@ -64,7 +64,11 @@ bool IsCatapLoopbackAudioEnabledForDevice(const std::string& device_id) {
     return base::FeatureList::IsEnabled(kMacCatapLoopbackAudioForCast);
   }
   if (device_id == AudioDeviceDescription::kLoopbackAllDevicesId) {
+#if BUILDFLAG(SYSTEM_LOOPBACK_AS_AEC_REFERENCE)
     return base::FeatureList::IsEnabled(kSystemLoopbackAsAecReference);
+#else
+    return false;
+#endif
   }
   return base::FeatureList::IsEnabled(kMacCatapLoopbackAudioForScreenShare);
 }

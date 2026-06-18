@@ -291,7 +291,7 @@ if (gen_policy_templates_android && is_android && !is_qtwebengine) {
       ":policy_templates",
     ]
   }
-} else if (gen_policy_templates_mac && is_mac) {
+} else if (gen_policy_templates_mac && is_mac && !is_qtwebengine) {
   convert_plist("convert_mcx_plist") {
     source = "$policy_templates_base_dir/mac/app-Manifest.plist"
     output = "$target_gen_dir/$chrome_mac_bundle_id.manifest"

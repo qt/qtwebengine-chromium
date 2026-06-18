@@ -2927,8 +2927,15 @@ if (is_mac) {
     header = "app_plist_size_buildflags.h"
     header_dir = "base/apple"
 
-    plist_file = read_file("//chrome/app/app-Info.plist", "string")
-    flags = [ "APP_INFO_PLIST_FILE_SIZE=" + len(plist_file) ]
+    if (is_qtwebengine) {
+      # //chrome/app/app-Info.plist is not available in our repository.
+      # Use a sufficiently large hardcoded value instead.
+      # See https://crrev.com/c/7532543
+      flags = [ "APP_INFO_PLIST_FILE_SIZE=32768" ]
+    } else {
+      plist_file = read_file("//chrome/app/app-Info.plist", "string")
+      flags = [ "APP_INFO_PLIST_FILE_SIZE=" + len(plist_file) ]
+    }
   }
 }
 

@@ -155,7 +155,9 @@ std::vector<std::string> ParseAccessControlAllowHeaders(
     while (it.GetNext()) {
       allowed_headers.push_back(base::ToLowerASCII(it.value()));
     }
-  } else {
+  }
+#if !BUILDFLAG(IS_QTWEBENGINE)
+  else {
     LOG_POLICY(WARNING, EXTENSIBLE_SSO)
         << "[OktaEnterpriseSSO] The Access-Control-Allow-Origin header is "
            "missing from the SSO request's response. No headers will be "
@@ -168,6 +170,7 @@ std::vector<std::string> ParseAccessControlAllowHeaders(
            "empty. No headers will be "
            "propagated to the renderer process.";
   }
+#endif
 
   return allowed_headers;
 }
@@ -188,18 +191,22 @@ scoped_refptr<net::HttpResponseHeaders> ConvertNSHTTPURLResponseToHeaders(
   NSString* ns_allowed_origin =
       [http_response valueForHTTPHeaderField:@("access-control-allow-origin")];
   if (!ns_allowed_origin) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
     LOG_POLICY(ERROR, EXTENSIBLE_SSO)
         << "[OktaEnterpriseSSO] SSO URL request response rejected because the "
            "header access-control-allow-origin is missing.";
+#endif
     return nullptr;
   }
   const std::string allowed_origin = base::SysNSStringToUTF8(ns_allowed_origin);
   if (allowed_origin != "*" &&
       !request_initiator.IsSameOriginWith(GURL(allowed_origin))) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
     LOG_POLICY(ERROR, EXTENSIBLE_SSO)
         << "[OktaEnterpriseSSO] SSO URL request response rejected because the "
            "header access-control-allow-origin does not match the request "
            "initiator.";
+#endif
     return nullptr;
   }
 
@@ -231,9 +238,11 @@ scoped_refptr<net::HttpResponseHeaders> ConvertNSHTTPURLResponseToHeaders(
   std::optional<net::HttpStatusCode> status_code =
       net::TryToGetHttpStatusCode(http_response.statusCode);
   if (!status_code.has_value()) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
     LOG_POLICY(ERROR, EXTENSIBLE_SSO)
         << "[OktaEnterpriseSSO] SSO URL request response rejected because the "
            "status code is missing";
+#endif
     return nullptr;
   }
   const std::string status_line = base::JoinString(
@@ -309,9 +318,11 @@ network::mojom::URLResponseHeadPtr ConvertNSURLResponse(
     }
     response->headers = std::move(headers);
   } else {
+#if !BUILDFLAG(IS_QTWEBENGINE)
     LOG_POLICY(ERROR, EXTENSIBLE_SSO)
         << "[OktaEnterpriseSSO] SSO URL request response rejected because it "
            "was not a NSHTTPURLResponse";
+#endif
     return nullptr;
   }
 

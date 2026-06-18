@@ -52,7 +52,7 @@ GinPort::GinPort(v8::Local<v8::Context> context,
       context_invalidation_listener_(
           context,
           base::BindOnce(&GinPort::OnContextInvalidated,
-                         cppgc::WeakPersistent(this))) {}
+                         cppgc::WeakPersistent<GinPort>(this))) {}
 
 GinPort::~GinPort() = default;
 
