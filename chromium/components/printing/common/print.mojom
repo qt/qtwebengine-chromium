@@ -124,8 +124,6 @@ struct PrintParams {
   bool selection_only = false;
 
   // *** Parameters in this section are used only for Print Preview. ***
-  // The print preview ui associated with this request.
-  int32 preview_ui_id = -1;
   // The id of the preview request.
   int32 preview_request_id = 0;
   // True if this is the first preview request.
