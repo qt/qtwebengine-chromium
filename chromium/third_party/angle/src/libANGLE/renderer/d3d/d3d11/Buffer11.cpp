@@ -884,7 +884,14 @@ angle::Result Buffer11::getConstantBufferRangeStorage(const gl::Context *context
                     return a.second.lruCount < b.second.lruCount;
                 });
 
-            ASSERT(iter->second.storage != newStorage);
+            // Don't remove the newly added storage. This can only happen if it is the last entry
+            // since it has the most recent LRU value.
+            if (iter->second.storage == newStorage)
+            {
+                ASSERT(mConstantBufferRangeStoragesCache.size() == 1);
+                break;
+            }
+
             ASSERT(mConstantBufferStorageAdditionalSize >= iter->second.storage->getSize());
 
             mConstantBufferStorageAdditionalSize -= iter->second.storage->getSize();
@@ -951,7 +958,14 @@ angle::Result Buffer11::getStructuredBufferRangeSRV(const gl::Context *context,
                                              return a.second.lruCount < b.second.lruCount;
                                          });
 
-            ASSERT(iter->second.storage != newStorage);
+            // Don't remove the newly added storage. This can only happen if it is the last entry
+            // since it has the most recent LRU value.
+            if (iter->second.storage == newStorage)
+            {
+                ASSERT(mStructuredBufferRangeStoragesCache.size() == 1);
+                break;
+            }
+
             ASSERT(mStructuredBufferStorageAdditionalSize >= iter->second.storage->getSize());
 
             mStructuredBufferStorageAdditionalSize -= iter->second.storage->getSize();
