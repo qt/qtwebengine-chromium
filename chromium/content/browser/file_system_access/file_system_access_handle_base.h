@@ -137,6 +137,17 @@ class CONTENT_EXPORT FileSystemAccessHandleBase {
                               CallbackArgType)> no_permission_callback,
       CallbackArgType callback_arg);
 
+ enum class RenamePermission {
+    kDeny,
+    kAllowOverwrite,
+    kAllowRenameWithoutOverwrite,
+  };
+
+  RenamePermission GetRenamePermission(
+      const std::string& new_entry_name,
+      const bool has_transient_user_activation,
+      const storage::FileSystemURL destination_url);
+
  protected:
   virtual base::WeakPtr<FileSystemAccessHandleBase> AsWeakPtr() = 0;
 
@@ -157,20 +168,20 @@ class CONTENT_EXPORT FileSystemAccessHandleBase {
       FileSystemAccessTransferTokenImpl* resolved_token);
   void PrepareForMove(
       storage::FileSystemURL destination_url,
-      bool has_write_access_to_destination,
+      bool has_overwrite_permission,
       bool has_transient_user_activation,
       base::OnceCallback<void(blink::mojom::FileSystemAccessErrorPtr)>
           callback);
   void DidTakeMoveLocks(
       storage::FileSystemURL destination_url,
       bool has_transient_user_activation,
-      bool has_write_access_to_destination,
+      bool has_overwrite_permission,
       base::OnceCallback<void(blink::mojom::FileSystemAccessErrorPtr)> callback,
       std::vector<scoped_refptr<FileSystemAccessLockManager::LockHandle>>
           locks);
   void DidVerifySensitiveEntryAccessForMove(
       storage::FileSystemURL destination_url,
-      bool has_write_access_to_destination,
+      bool has_overwrite_permission,
       bool has_transient_user_activation,
       base::OnceCallback<void(blink::mojom::FileSystemAccessErrorPtr)> callback,
       std::vector<scoped_refptr<FileSystemAccessLockManager::LockHandle>> locks,

@@ -70,4 +70,17 @@ BASE_FEATURE_PARAM(size_t,
                    2 << 28  // 1/2GiB
 );
 
+// When enabled, rename in the local file system requires write permission to
+// its parent directory.
+BASE_FEATURE(kFileSystemAccessRenameRequiresParentWritePermission,
+             "kFileSystemAccessRenameRequiresParentWritePermission",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
+// Controls whether the rename permission check is restricted to the home
+// directory.
+BASE_FEATURE_PARAM(bool,
+                   kOnlyInHomedir,
+                   &kFileSystemAccessRenameRequiresParentWritePermission,
+                   "file_system_access_rename_requires_parent_write_permission",
+                   true);
 }  // namespace content::features
