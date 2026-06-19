@@ -57,6 +57,12 @@ size_t RowSizeForBufferFormat(size_t width, BufferFormat format, size_t plane);
     size_t plane,
     size_t* height_in_pixels);
 
+// Returns the width in pixels of the given zero-indexed |plane| of |format|.
+[[nodiscard]] COMPONENT_EXPORT(GFX) base::CheckedNumeric<size_t> PlaneWidthForBufferFormatChecked(
+    size_t width,
+    BufferFormat format,
+    size_t plane);
+
 // Returns the number of bytes used to the plane of a given |format|.
 COMPONENT_EXPORT(GFX)
 size_t PlaneSizeForBufferFormat(const Size& size,

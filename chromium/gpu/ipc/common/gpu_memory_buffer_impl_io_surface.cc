@@ -11,6 +11,7 @@
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
 #include "base/notimplemented.h"
+#include "base/numerics/safe_math.h"
 #include "components/viz/common/resources/shared_image_format_utils.h"
 #include "ui/gfx/buffer_format_util.h"
 #include "ui/gfx/mac/io_surface.h"
@@ -123,6 +124,31 @@ GpuMemoryBufferImplIOSurface::CreateFromHandleImpl(
   if (io_surface_width < size.width() || io_surface_height < size.height()) {
     DLOG(ERROR) << "IOSurface size does not match handle.";
     return nullptr;
+  }
+
+  // SECURITY: A malicious client can create an IOSurface whose top-level
+  // Width/Height match the claimed metadata but whose individual plane
+  // dimensions are smaller than the claimed SharedImageFormat implies.
+  // GetMemoryForPlane() computes span_length from the *claimed* format, so an
+  // undersized plane yields an OOB span. Validate per-plane geometry here,
+  // mirroring the check in IOSurfaceImageBackingFactory::CreateSharedImageGMBs.
+  const size_t expected_planes = NumberOfPlanesForLinearBufferFormat(format);
+  const size_t actual_planes = IOSurfaceGetPlaneCount(handle.io_surface().get());
+  if ((actual_planes ? actual_planes : 1u) != expected_planes) return nullptr;
+  for (size_t i = 0; i < expected_planes; ++i) {
+    base::CheckedNumeric<size_t> plane_size_width = PlaneWidthForBufferFormatChecked(
+      size.width(),
+      format,
+      i);
+    size_t plane_size_height;
+    if (!PlaneHeightForBufferFormatChecked(size.height(), format, i, &plane_size_height) ||
+        !plane_size_width.IsValid()) {
+        return nullptr;
+    }
+
+    if (IOSurfaceGetHeightOfPlane(handle.io_surface().get(), i) < plane_size_height ||
+        IOSurfaceGetWidthOfPlane(handle.io_surface().get(), i)  < plane_size_width.ValueOrDefault(0))
+      return nullptr;
   }
 #endif
 
