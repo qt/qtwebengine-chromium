@@ -292,7 +292,6 @@
 #define glMemoryBarrierEXT GLES2_GET_FUN(MemoryBarrierEXT)
 #define glMemoryBarrierByRegion GLES2_GET_FUN(MemoryBarrierByRegion)
 #define glGetMaxValueInBufferCHROMIUM GLES2_GET_FUN(GetMaxValueInBufferCHROMIUM)
-#define glEnableFeatureCHROMIUM GLES2_GET_FUN(EnableFeatureCHROMIUM)
 #define glMapBufferCHROMIUM GLES2_GET_FUN(MapBufferCHROMIUM)
 #define glUnmapBufferCHROMIUM GLES2_GET_FUN(UnmapBufferCHROMIUM)
 #define glMapBufferSubDataCHROMIUM GLES2_GET_FUN(MapBufferSubDataCHROMIUM)

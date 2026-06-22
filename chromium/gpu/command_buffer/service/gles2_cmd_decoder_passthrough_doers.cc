@@ -4149,12 +4149,6 @@ error::Error GLES2DecoderPassthroughImpl::DoGetMaxValueInBufferCHROMIUM(
   return error::kNoError;
 }
 
-error::Error GLES2DecoderPassthroughImpl::DoEnableFeatureCHROMIUM(
-    const char* feature) {
-  NOTIMPLEMENTED();
-  return error::kNoError;
-}
-
 error::Error GLES2DecoderPassthroughImpl::DoMapBufferRange(
     GLenum target,
     GLintptr offset,
