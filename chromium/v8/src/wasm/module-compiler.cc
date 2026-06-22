@@ -3185,6 +3185,13 @@ AsyncStreamingProcessor::AsyncStreamingProcessor(AsyncCompileJob* job)
       compilation_unit_builder_(nullptr) {}
 
 AsyncStreamingProcessor::~AsyncStreamingProcessor() {
+  // When we receive a ContextDisposedNotification before the stream ends,
+  // we might still have a running validation job. Terminate that before
+  // freeing {validate_functions_job_data_}.
+  if (validate_functions_job_handle_) {
+    validate_functions_job_handle_->Cancel();
+  }
+
   if (owns_cache_entry_) {
     GetWasmEngine()->StreamingCompilationFailed(prefix_hasher_.hash(),
                                                 job_->compile_imports_);
