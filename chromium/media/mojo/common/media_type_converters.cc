@@ -179,6 +179,11 @@ TypeConverter<scoped_refptr<media::DecoderBuffer>,
     buffer->set_decrypt_config(
         mojo_buffer->decrypt_config
             .To<std::unique_ptr<media::DecryptConfig>>());
+
+    if (!media::DecoderBuffer::DoSubsamplesMatch(*buffer)) {
+      DVLOG(1) << __func__ << ": Subsamples do not match buffer size";
+      return nullptr;
+    }
   }
 
   // TODO(dalecurtis): We intentionally do not deserialize the data section of
