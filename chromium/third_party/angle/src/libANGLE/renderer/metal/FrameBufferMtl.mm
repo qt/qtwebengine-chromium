@@ -1128,6 +1128,11 @@ angle::Result FramebufferMtl::prepareRenderPass(const gl::Context *context,
         desc.defaultWidth  = mState.getDefaultWidth();
         desc.defaultHeight = mState.getDefaultHeight();
     }
+    else
+    {
+        desc.defaultWidth  = 0;
+        desc.defaultHeight = 0;
+    }
 
     return angle::Result::Continue;
 }
