@@ -145,6 +145,16 @@ BASE_FEATURE(kUseSharedRebindServiceConnection,
              FEATURE_DISABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(IS_ANDROID)
 
+#if BUILDFLAG(IS_WIN)
+
+// Prevents base::DeletePathRecursively on Windows from traversing NTFS reparse
+// points (such as directory junctions). This protects against TOCTOU
+// vulnerabilities and prevents deleting files outside the target directory.
+BASE_FEATURE(kPreventReparsePointTraversal,
+             "PreventReparsePointTraversal",
+             FEATURE_ENABLED_BY_DEFAULT);
+#endif  // BUILDFLAG(IS_WIN)
+
 bool IsReducePPMsEnabled() {
   return g_is_reduce_ppms_enabled.load(std::memory_order_relaxed);
 }

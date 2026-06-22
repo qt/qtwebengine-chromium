@@ -51,6 +51,11 @@ BASE_EXPORT BASE_DECLARE_FEATURE_PARAM(int,
                                        kBackgroundThreadPoolFieldTrialConfig);
 #endif
 
+#if BUILDFLAG(IS_WIN)
+
+BASE_EXPORT BASE_DECLARE_FEATURE(kPreventReparsePointTraversal);
+#endif
+
 // Whether the ReducePPMs feature is enabled. Unlike
 // `FeatureList::IsEnabled(base::features::kReducePPMs)`, this can be called
 // racily with initializing the FeatureList (although the return value might not
