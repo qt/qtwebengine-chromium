@@ -168,6 +168,7 @@ void SDFTextLCDRenderStep::writeUniformsAndTextures(const DrawParams& params,
     // atlas, so an adjacent glyph may not actually have its own padding.
     //
     // NOTE: kLCDOffsetLimit is multiplied by 3 to account for the scale added to pixelGeometryDelta
+#if !defined(SK_DISABLE_SDF_TEXT)
     static constexpr float kLCDOffsetLimit = 3.f * (SK_DistanceFieldInset - 0.5f);
     float maxLCDOffset = params.transform().localAARadius(subRunData.bounds());
     if (maxLCDOffset < kLCDOffsetLimit) {
@@ -180,6 +181,8 @@ void SDFTextLCDRenderStep::writeUniformsAndTextures(const DrawParams& params,
             pixelGeometryDelta = -pixelGeometryDelta;
         }
     }
+#endif
+
     gatherer->writeHalf(pixelGeometryDelta);
 
     // compute and write gamma adjustment
