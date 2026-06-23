@@ -21,6 +21,8 @@
 
 #include "third_party/blink/renderer/core/css/style_rule.h"
 
+#include <limits>
+
 #include "base/compiler_specific.h"
 #include "third_party/blink/renderer/core/css/cascade_layer.h"
 #include "third_party/blink/renderer/core/css/css_container_rule.h"
@@ -74,6 +76,7 @@
 #include "third_party/blink/renderer/platform/heap/visitor.h"
 #include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
 #include "third_party/blink/renderer/platform/wtf/size_assertions.h"
+#include "third_party/blink/renderer/platform/wtf/wtf_size_t.h"
 
 namespace blink {
 
@@ -549,11 +552,14 @@ MutableCSSPropertyValueSet& StyleRule::MutableProperties() {
   return *To<MutableCSSPropertyValueSet>(properties_.Get());
 }
 
-void StyleRule::ReplaceRuleIfExists(StyleRuleBase* old_rule,
-                                    StyleRuleBase* new_rule) {
+wtf_size_t StyleRule::ReplaceChildRuleIfExists(StyleRuleBase* old_rule,
+                                               StyleRuleBase* new_rule,
+                                               wtf_size_t position_hint) {
   if (child_rules_) {
-    ReplaceStyleRuleInVector(old_rule, new_rule, *child_rules_);
+    return ReplaceStyleRuleInVector(old_rule, new_rule, position_hint,
+                                    *child_rules_);
   }
+  return std::numeric_limits<wtf_size_t>::max();  // Not found.
 }
 
 void StyleRule::WrapperInsertRule(CSSStyleSheet* parent_sheet,
@@ -816,9 +822,11 @@ StyleRuleGroup::StyleRuleGroup(const StyleRuleGroup& group_rule)
   }
 }
 
-void StyleRuleGroup::ReplaceRuleIfExists(StyleRuleBase* old_rule,
-                                         StyleRuleBase* new_rule) {
-  ReplaceStyleRuleInVector(old_rule, new_rule, child_rules_);
+wtf_size_t StyleRuleGroup::ReplaceChildRuleIfExists(StyleRuleBase* old_rule,
+                                                    StyleRuleBase* new_rule,
+                                                    wtf_size_t position_hint) {
+  return ReplaceStyleRuleInVector(old_rule, new_rule, position_hint,
+                                  child_rules_);
 }
 
 void StyleRuleGroup::WrapperInsertRule(CSSStyleSheet* parent_sheet,
