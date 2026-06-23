@@ -3378,6 +3378,7 @@
       // their ancestor select element is disabled.
       // https://github.com/w3c/csswg-drafts/issues/13383
       // https://issues.chromium.org/issues/490082172
+      // Enabled in M149, modified in M151, safe to remove in M153.
       name: "OptionDisablednessCheckAncestors",
       status: "stable",
     },

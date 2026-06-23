@@ -434,6 +434,19 @@ void HTMLSelectElement::ParseAttribute(
   }
 }
 
+void HTMLSelectElement::DisabledAttributeChanged() {
+  HTMLFormControlElementWithState::DisabledAttributeChanged();
+  if (RuntimeEnabledFeatures::OptionDisablednessCheckAncestorsEnabled()) {
+    for (auto& item : GetListItems()) {
+      // This will unnecessarily call PseudoStateChanged on <hr> elements, but
+      // that is preferable to checking whether the item is an option or
+      // optgroup.
+      item->PseudoStateChanged(CSSSelector::kPseudoDisabled);
+      item->PseudoStateChanged(CSSSelector::kPseudoEnabled);
+    }
+  }
+}
+
 bool HTMLSelectElement::MayTriggerVirtualKeyboard() const {
   return !IsAppearanceBase();
 }
