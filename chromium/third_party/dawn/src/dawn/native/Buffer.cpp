@@ -705,8 +705,9 @@ MaybeError BufferBase::Unmap() {
             break;
         case BufferState::Unmapped:
         case BufferState::HostMappedPersistent:
-        case BufferState::SharedMemoryNoAccess:
             break;
+        case BufferState::SharedMemoryNoAccess:
+            return DAWN_VALIDATION_ERROR("%s unmapped without shared memory access.", this);
         case BufferState::PendingMap:
         case BufferState::Destroyed:
             // Internal code should never be trying to unmap a pending or destroyed buffer.
