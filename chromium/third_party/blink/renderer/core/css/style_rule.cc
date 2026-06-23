@@ -549,6 +549,13 @@ MutableCSSPropertyValueSet& StyleRule::MutableProperties() {
   return *To<MutableCSSPropertyValueSet>(properties_.Get());
 }
 
+void StyleRule::ReplaceRuleIfExists(StyleRuleBase* old_rule,
+                                    StyleRuleBase* new_rule) {
+  if (child_rules_) {
+    ReplaceStyleRuleInVector(old_rule, new_rule, *child_rules_);
+  }
+}
+
 void StyleRule::WrapperInsertRule(CSSStyleSheet* parent_sheet,
                                   unsigned index,
                                   StyleRuleBase* rule) {
@@ -807,6 +814,11 @@ StyleRuleGroup::StyleRuleGroup(const StyleRuleGroup& group_rule)
   for (unsigned i = 0; i < child_rules_.size(); ++i) {
     child_rules_[i] = group_rule.child_rules_[i]->Copy();
   }
+}
+
+void StyleRuleGroup::ReplaceRuleIfExists(StyleRuleBase* old_rule,
+                                         StyleRuleBase* new_rule) {
+  ReplaceStyleRuleInVector(old_rule, new_rule, child_rules_);
 }
 
 void StyleRuleGroup::WrapperInsertRule(CSSStyleSheet* parent_sheet,

@@ -294,6 +294,7 @@ class CORE_EXPORT StyleRule : public StyleRuleBase {
   GCedHeapVector<Member<StyleRuleBase>>* ChildRules() {
     return child_rules_.Get();
   }
+  void ReplaceRuleIfExists(StyleRuleBase* old_rule, StyleRuleBase* new_rule);
   void EnsureChildRules() {
     // Allocate the child rule vector only when we need it,
     // since most rules won't have children (almost by definition).
@@ -389,6 +390,7 @@ class CORE_EXPORT StyleRuleGroup : public StyleRuleBase {
   }
   HeapVector<Member<StyleRuleBase>>& ChildRules() { return child_rules_; }
 
+  void ReplaceRuleIfExists(StyleRuleBase* old_rule, StyleRuleBase* new_rule);
   void WrapperInsertRule(CSSStyleSheet*, unsigned, StyleRuleBase*);
   void WrapperRemoveRule(CSSStyleSheet*, unsigned);
 
@@ -744,6 +746,38 @@ class CORE_EXPORT StyleRuleCustomMedia : public StyleRuleBase {
   using CustomMediaValue = std::variant<Member<const MediaQuerySet>, bool>;
   CustomMediaValue value_;
 };
+
+// Returns a "position hint", which is an index the caller may want to check
+// first during the next mutation.
+template <typename ChildRulesType>
+static wtf_size_t ReplaceStyleRuleInVector(const StyleRuleBase* old_rule,
+                                           StyleRuleBase* new_rule,
+                                           ChildRulesType& child_rules) {
+  for (wtf_size_t i = 0; i < child_rules.size(); ++i) {
+    StyleRuleBase* rule = child_rules[i].Get();
+    if (rule == old_rule) {
+      child_rules[i] = new_rule;
+      return i;
+    }
+    if (auto* style_rule_group = DynamicTo<StyleRuleGroup>(rule)) {
+      if (ReplaceStyleRuleInVector(old_rule, new_rule,
+                                   style_rule_group->ChildRules()) !=
+          std::numeric_limits<wtf_size_t>::max()) {
+        return 0;  // Dummy non-failure value.
+      }
+    } else if (auto* style_rule = DynamicTo<StyleRule>(rule);
+               style_rule && style_rule->ChildRules()) {
+      if (ReplaceStyleRuleInVector(old_rule, new_rule,
+                                   *style_rule->ChildRules()) !=
+          std::numeric_limits<wtf_size_t>::max()) {
+        return 0;  // Dummy non-failure value.
+      }
+    }
+  }
+
+  // Not found.
+  return std::numeric_limits<wtf_size_t>::max();
+}
 
 template <>
 struct DowncastTraits<StyleRule> {
