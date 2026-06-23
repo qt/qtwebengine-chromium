@@ -116,6 +116,8 @@ class NetworkHandler : public DevToolsDomainHandler,
                               bool is_webui,
                               const net::CanonicalCookie& cookie);
 
+  bool CanAccessCookie(const net::CanonicalCookie& cookie) const;
+
   void Wire(UberDispatcher* dispatcher) override;
   void SetRenderer(int render_process_id,
                    RenderFrameHostImpl* frame_host) override;

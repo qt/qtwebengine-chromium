@@ -1734,6 +1734,11 @@ bool NetworkHandler::CanAccessCookie(DevToolsAgentHostClient& client,
              is_webui);
 }
 
+bool NetworkHandler::CanAccessCookie(const net::CanonicalCookie& cookie) const {
+  return CanAccessCookie(CHECK_DEREF(client_.get()), host_ && host_->web_ui(),
+                         cookie);
+}
+
 void NetworkHandler::GetCookies(std::unique_ptr<Array<String>> protocol_urls,
                                 std::unique_ptr<GetCookiesCallback> callback) {
   if (!host_ || !storage_partition_) {
@@ -3034,9 +3039,15 @@ DispatchResponse NetworkHandler::SetRequestInterception(
     return Response::InternalError();
 
   if (!url_loader_interceptor_) {
-    url_loader_interceptor_ =
-        std::make_unique<DevToolsURLLoaderInterceptor>(base::BindRepeating(
-            &NetworkHandler::RequestIntercepted, weak_factory_.GetWeakPtr()));
+    url_loader_interceptor_ = std::make_unique<DevToolsURLLoaderInterceptor>(
+        base::BindRepeating(&NetworkHandler::RequestIntercepted,
+                            weak_factory_.GetWeakPtr()),
+        base::BindRepeating(
+            [](base::WeakPtr<NetworkHandler> handler,
+               const net::CanonicalCookie& cookie) {
+              return handler && handler->CanAccessCookie(cookie);
+            },
+            weak_factory_.GetWeakPtr()));
     url_loader_interceptor_->SetPatterns(interceptor_patterns, true);
     update_loader_factories_callback_.Run();
   } else {
