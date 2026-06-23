@@ -143,8 +143,8 @@ MaybeError BindGroup::InitializeImpl() {
                 }
 
                 writeImageInfo[numWrites].imageView = handle;
-                writeImageInfo[numWrites].imageLayout = VulkanImageLayout(
-                    view->GetTexture()->GetFormat(), wgpu::TextureUsage::TextureBinding);
+                writeImageInfo[numWrites].imageLayout =
+                    view->VulkanImageLayout(wgpu::TextureUsage::TextureBinding);
 
                 write.pImageInfo = &writeImageInfo[numWrites];
                 return true;

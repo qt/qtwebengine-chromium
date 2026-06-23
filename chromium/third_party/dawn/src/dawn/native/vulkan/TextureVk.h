@@ -54,7 +54,6 @@ ResultOrError<wgpu::TextureFormat> FormatFromVkFormat(const Device* device, VkFo
 VkImageUsageFlags VulkanImageUsage(const DeviceBase* device,
                                    wgpu::TextureUsage usage,
                                    const Format& format);
-VkImageLayout VulkanImageLayout(const Format& format, wgpu::TextureUsage usage);
 VkImageLayout VulkanImageLayoutForDepthStencilAttachment(const Format& format,
                                                          bool depthReadOnly,
                                                          bool stencilReadOnly);
@@ -108,6 +107,8 @@ class Texture : public TextureBase {
     virtual MaybeError OnAfterSubmit();
 
     void SetLabelHelper(const char* prefix);
+
+    VkImageLayout VulkanImageLayout(wgpu::TextureUsage usage) const;
 
     // Dawn API
     void SetLabelImpl() override;
@@ -320,6 +321,8 @@ class TextureView final : public TextureViewBase, public WeakRefSupport<TextureV
 
     bool IsYCbCr() const override;
     YCbCrVkDescriptor GetYCbCrVkDescriptor() const override;
+
+    VkImageLayout VulkanImageLayout(wgpu::TextureUsage usage) const;
 
   private:
     TextureView(TextureBase* texture, const UnpackedPtr<TextureViewDescriptor>& descriptor);
