@@ -105,11 +105,11 @@ public:
 
     int count() const { return SkCount(fLeftTop); }
 
+    SkMatrix viewDifference(const SkMatrix &positionMatrix) const;
+
 private:
     static std::tuple<bool, SkVector> CanUseDirect(const SkMatrix& creationMatrix,
                                                    const SkMatrix& positionMatrix);
-
-    SkMatrix viewDifference(const SkMatrix &positionMatrix) const;
 
     const skgpu::MaskFormat fMaskType;
     const bool fCanDrawDirect;
