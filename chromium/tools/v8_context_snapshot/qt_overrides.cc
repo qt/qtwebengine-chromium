@@ -14,11 +14,11 @@
 #include "gpu/vulkan/init/vulkan_factory.h"
 #endif
 
-#if BUILDFLAG(IS_LINUX) && BUILDFLAG(IS_OZONE_X11)
+#if BUILDFLAG(IS_LINUX) && BUILDFLAG(SUPPORTS_OZONE_X11)
 void* GetQtXDisplay() {
   return nullptr;
 }
-#endif  // if BUILDFLAG(IS_LINUX) && BUILDFLAG(IS_OZONE_X11)
+#endif  // if BUILDFLAG(IS_LINUX) && BUILDFLAG(SUPPORTS_OZONE_X11)
 
 namespace ui {
 class OzonePlatform;
