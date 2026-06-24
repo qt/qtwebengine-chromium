@@ -149,7 +149,6 @@ class CONTENT_EXPORT MediaStreamDispatcherHost
       RequestCapturedSurfaceControlPermissionCallback callback) override;
 #endif  // !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
 
-#if BUILDFLAG(ENABLE_SCREEN_CAPTURE)
   void ApplySubCaptureTarget(const base::UnguessableToken& session_id,
                              media::mojom::SubCaptureTargetType type,
                              const base::Token& sub_capture_target,
@@ -162,7 +161,6 @@ class CONTENT_EXPORT MediaStreamDispatcherHost
       uint32_t sub_capture_target_version,
       ApplySubCaptureTargetCallback callback,
       bool target_passed_validation);
-#endif  // BUILDFLAG(ENABLE_SCREEN_CAPTURE)
 
   void GetOpenDevice(int32_t page_request_id,
                      const base::UnguessableToken& session_id,

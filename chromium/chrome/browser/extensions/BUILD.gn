@@ -1537,10 +1537,6 @@ source_set("extensions") {
       public_deps += [
         "//chrome/browser/media/webrtc",
       ]
-      allow_circular_includes_from += [
-        # TODO(crbug.com/353284909): Remove this circular dependency.
-        "//chrome/browser/media/webrtc",
-      ]
     } else {
       sources +=
           [ "api/webrtc_logging_private/webrtc_logging_private_api_stub.cc" ]

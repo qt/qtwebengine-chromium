@@ -668,10 +668,12 @@ void MediaStreamDispatcherHost::FocusCapturedSurface(const std::string& label,
                                                      bool focus) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   media_stream_manager_->SetCapturedDisplaySurfaceFocus(
       label, focus,
       /*is_from_microtask=*/false,
       /*is_from_timer=*/false);
+#endif
 }
 
 
@@ -728,13 +730,13 @@ void MediaStreamDispatcherHost::RequestCapturedSurfaceControlPermission(
 }
 #endif  // !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
 
-#if BUILDFLAG(ENABLE_SCREEN_CAPTURE)
 void MediaStreamDispatcherHost::ApplySubCaptureTarget(
     const base::UnguessableToken& device_id,
     media::mojom::SubCaptureTargetType type,
     const base::Token& sub_capture_target,
     uint32_t sub_capture_version,
     ApplySubCaptureTargetCallback callback) {
+#if BUILDFLAG(ENABLE_SCREEN_CAPTURE)
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   const GlobalRenderFrameHostId captured_id =
@@ -755,6 +757,7 @@ void MediaStreamDispatcherHost::ApplySubCaptureTarget(
           &MediaStreamDispatcherHost::OnSubCaptureTargetValidationComplete,
           weak_factory_.GetWeakPtr(), device_id, type, sub_capture_target,
           sub_capture_version, std::move(callback)));
+#endif  // BUILDFLAG(ENABLE_SCREEN_CAPTURE)
 }
 
 void MediaStreamDispatcherHost::OnSubCaptureTargetValidationComplete(
@@ -764,6 +767,7 @@ void MediaStreamDispatcherHost::OnSubCaptureTargetValidationComplete(
     uint32_t sub_capture_version,
     ApplySubCaptureTargetCallback callback,
     bool target_passed_validation) {
+#if BUILDFLAG(ENABLE_SCREEN_CAPTURE)
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   CHECK(type == media::mojom::SubCaptureTargetType::kCropTarget ||
         type == media::mojom::SubCaptureTargetType::kRestrictionTarget);
@@ -776,8 +780,8 @@ void MediaStreamDispatcherHost::OnSubCaptureTargetValidationComplete(
 
   media_stream_manager_->video_capture_manager()->ApplySubCaptureTarget(
       session_id, type, target, sub_capture_version, std::move(callback));
-}
 #endif  // BUILDFLAG(ENABLE_SCREEN_CAPTURE)
+}
 
 void MediaStreamDispatcherHost::GetOpenDevice(
     int32_t page_request_id,

@@ -309,18 +309,20 @@ void MediaDevicesDispatcherHost::SetCaptureHandleConfig(
           render_frame_host_id_, std::move(config)));
 }
 
-#if BUILDFLAG(ENABLE_SCREEN_CAPTURE)
 void MediaDevicesDispatcherHost::CloseFocusWindowOfOpportunity(
     const std::string& label) {
+#if BUILDFLAG(ENABLE_SCREEN_CAPTURE)
   media_stream_manager_->SetCapturedDisplaySurfaceFocus(
       label, /*focus=*/true,
       /*is_from_microtask=*/true,
       /*is_from_timer=*/false);
+#endif  // BUILDFLAG(ENABLE_SCREEN_CAPTURE)
 }
 
 void MediaDevicesDispatcherHost::ProduceSubCaptureTargetId(
     media::mojom::SubCaptureTargetType type,
     ProduceSubCaptureTargetIdCallback callback) {
+#if BUILDFLAG(ENABLE_SCREEN_CAPTURE)
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   GetUIThreadTaskRunner({})->PostTaskAndReplyWithResult(
@@ -344,8 +346,8 @@ void MediaDevicesDispatcherHost::ProduceSubCaptureTargetId(
           },
           render_frame_host_id_, type),
       std::move(callback));
-}
 #endif  // BUILDFLAG(ENABLE_SCREEN_CAPTURE)
+}
 
 void MediaDevicesDispatcherHost::SetPreferredSinkId(
     const std::string& hashed_sink_id,

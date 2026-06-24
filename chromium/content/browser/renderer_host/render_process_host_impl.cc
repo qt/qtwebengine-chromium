@@ -3470,6 +3470,7 @@ void RenderProcessHostImpl::NotifyRendererOfLockedStateUpdate() {
     GetRendererInterface()->SetIsLockedToSite();
   }
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   // Only notify the renderer once to avoid reapplying static renderer
   // settings that are intended to be set once.
   // TODO(http://crbug.com/434735272): — Handle other settings that are
@@ -3479,6 +3480,7 @@ void RenderProcessHostImpl::NotifyRendererOfLockedStateUpdate() {
         this, process_lock.site_url());
     did_update_renderer_locked_state_ = true;
   }
+#endif
 }
 
 bool RenderProcessHostImpl::IsForGuestsOnly() {
@@ -5384,9 +5386,11 @@ void RenderProcessHostImpl::ProcessDied(
   // it has died.
   ResetIPC();
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   // Make sure we can call update the setting for the renderer process
   // when the process is respawned after a crash.
   did_update_renderer_locked_state_ = false;
+#endif
 
   UpdateProcessPriority();
 

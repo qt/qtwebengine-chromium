@@ -164,9 +164,11 @@ void DocumentPictureInPictureWindowControllerImpl::NotifyClosedAndStopObserving(
   child_contents_ = nullptr;
   child_contents_observer_.reset();
 
+#if BUILDFLAG(ENABLE_SCREEN_CAPTURE)
   if (auto* coordinator = PipScreenCaptureCoordinator::GetInstance()) {
     coordinator->OnPipClosed();
   }
+#endif
 
   WebContentsImpl* web_contents_impl = GetWebContentsImpl();
 
@@ -195,6 +197,7 @@ void DocumentPictureInPictureWindowControllerImpl::
     return;
   }
 
+#if BUILDFLAG(ENABLE_SCREEN_CAPTURE)
   if (auto* coordinator = PipScreenCaptureCoordinator::GetInstance()) {
     if (child_contents_) {
       coordinator->OnPipShown(
@@ -202,6 +205,7 @@ void DocumentPictureInPictureWindowControllerImpl::
           web_contents_impl->GetPrimaryMainFrame()->GetGlobalId());
     }
   }
+#endif
 }
 
 void DocumentPictureInPictureWindowControllerImpl::OnChildContentsDestroyed() {
