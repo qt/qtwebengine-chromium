@@ -202,9 +202,13 @@ HistoryService::HistoryService(
     syncer::DeviceInfoTracker* device_info_tracker,
     syncer::LocalDeviceInfoProvider* local_device_info_provider)
     : history_client_(std::move(history_client)),
+#if !BUILDFLAG(IS_QTWEBENGINE)
       visit_delegate_(std::move(visit_delegate)),
       device_info_tracker_(device_info_tracker),
       local_device_info_provider_(local_device_info_provider) {}
+#else
+      visit_delegate_(std::move(visit_delegate)) {}
+#endif
 
 HistoryService::~HistoryService() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
@@ -1518,6 +1522,7 @@ bool HistoryService::Init(
     base::Process::TerminateCurrentProcessImmediately(0);
   }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (device_info_tracker_) {
     device_info_tracker_observation_.Observe(device_info_tracker_);
 
@@ -1533,6 +1538,7 @@ bool HistoryService::Init(
 
     SendLocalDeviceOriginatorCacheGuidToBackend();
   }
+#endif
 
   if (history_client_) {
     history_client_->OnHistoryServiceCreated(this);

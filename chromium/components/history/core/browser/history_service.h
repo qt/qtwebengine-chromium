@@ -61,6 +61,8 @@ class FaviconServiceImpl;
 
 namespace syncer {
 class DataTypeControllerDelegate;
+class DeviceInfoTracker;
+class LocalDeviceInfoProvider;
 class SyncableService;
 }  // namespace syncer
 
