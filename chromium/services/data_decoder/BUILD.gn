@@ -58,6 +58,13 @@ source_set("lib") {
 
     deps += [ "//third_party/blink/public:blink" ]
   }
+
+  if (is_qtwebengine) {
+    deps -= [
+      "//components/facilitated_payments/core/mojom:pix_code_validator_mojom",
+      "//components/facilitated_payments/core/validation",
+    ]
+  }
 }
 
 source_set("tests") {

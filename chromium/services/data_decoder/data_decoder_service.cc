@@ -84,9 +84,13 @@ void DataDecoderService::BindCborParser(
 void DataDecoderService::BindPixCodeValidator(
     mojo::PendingReceiver<payments::facilitated::mojom::PixCodeValidator>
         receiver) {
+#if BUILDFLAG(IS_QTWEBENGINE)
+  LOG(FATAL) << "PixCodeValidator is not supported by Qt WebEngine.";
+#else
   mojo::MakeSelfOwnedReceiver(
       std::make_unique<payments::facilitated::PixCodeValidator>(),
       std::move(receiver));
+#endif
 }
 
 }  // namespace data_decoder

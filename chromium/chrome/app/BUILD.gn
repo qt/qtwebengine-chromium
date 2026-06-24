@@ -95,7 +95,7 @@ if (is_win) {
 
 grit_strings("generated_resources") {
   source = "generated_resources.grd"
-  gritdeps = "generated_resources.grd.gritdeps"
+#  gritdeps = "generated_resources.grd.gritdeps"
   defines = chrome_grit_defines + [
               "is_cfm=${is_cfm}",
               "enable_webui_ntp=$enable_webui_ntp",
