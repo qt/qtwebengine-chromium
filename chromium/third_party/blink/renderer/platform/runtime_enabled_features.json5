@@ -590,6 +590,13 @@
       origin_trial_feature_name: "AutoDarkMode",
     },
     {
+      // Pins a generic font-family on the autofill preview pseudo-elements so
+      // an author @font-face cannot oracle the previewed text.
+      // crbug.com/517710554.
+      name: "AutofillPreviewGenericFontFamily",
+      status: "stable",
+    },
+    {
       name: "AutomationControlled",
       base_feature: "none",
       public: true,

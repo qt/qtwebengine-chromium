@@ -589,6 +589,13 @@ input::-internal-input-suggested {
 input::-internal-input-suggested,
 textarea::-internal-input-suggested {
     font: -webkit-small-control !important;
+    /* font: -webkit-small-control resolves to Arial on every platform. Ideally
+       we'd keep Arial, but a concrete family is matched against author
+       @font-face, so a single-character unicode-range could disclose the
+       preview text; a generic family avoids that lookup. crbug.com/517710554. */
+    @supports blink-feature(AutofillPreviewGenericFontFamily) {
+      font-family: sans-serif !important;
+    }
     /* -webkit-small-control does not pin the font-feature-settings and we want
        previews to look consistent. */
     font-feature-settings: normal !important;
@@ -1941,6 +1948,11 @@ dialog:where(:modal) {
     text-align: center;
     white-space: nowrap;
     font: -webkit-small-control !important;
+    /* See input::-internal-input-suggested: pin a generic family so an author
+       @font-face can't detect the autofill preview text. */
+    @supports blink-feature(AutofillPreviewGenericFontFamily) {
+      font-family: sans-serif !important;
+    }
     font-feature-settings: normal !important;
   }
 
