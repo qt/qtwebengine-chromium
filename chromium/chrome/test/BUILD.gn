@@ -10455,8 +10455,10 @@ test("unit_tests") {
         "//chrome/browser/ui/save_to_drive",
         "//chrome/browser/ui/views/save_to_drive:unit_tests",
       ]
+      if (!is_qtwebengine) {
       allow_circular_includes_from +=
           [ "//chrome/browser/ui/views/save_to_drive:unit_tests" ]
+      }
     }
   }
 
