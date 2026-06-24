@@ -27,6 +27,8 @@ group("freetype") {
     # different when building PDFium during Chromium build and during
     # standalone-PDFium-build:
     "//:freetype_common",  # Building standalone PDFium
+    "//third_party:freetype_harfbuzz",
+    "//third_party/fontconfig:fontconfig",
     "//third_party/pdfium:freetype_common",  # Building Chromium
 
     # Other dependencies that are PDFium-related:

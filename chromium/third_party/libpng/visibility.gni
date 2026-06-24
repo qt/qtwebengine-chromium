@@ -52,7 +52,9 @@ visibility += [
 ]
 
 visibility += [
-  "//third_party/blink/renderer/platform/image-decoders:*"
+  "//skia/*",
+  "//third_party/blink/renderer/platform/image-decoders:*",
+  "//third_party/pdfium/third_party:*",
 ]
 
 # Test/tool-only dependencies.
