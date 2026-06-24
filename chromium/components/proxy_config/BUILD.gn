@@ -52,7 +52,7 @@ component("proxy_config") {
     ]
   }
 
-  if (!is_ios && !is_fuchsia) {
+  if (!is_ios && !is_fuchsia && !is_qtwebengine) {
     sources += [
       "proxy_override_rules_policy_handler.cc",
       "proxy_override_rules_policy_handler.h",

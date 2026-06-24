@@ -280,8 +280,8 @@ template("build_webui") {
   }
 
   # Determine whether the current invocation corresponds to an Ash WebUI.
-  is_ash_webui = false
   if (is_chromeos) {
+    is_ash_webui = false
     target_dir = get_label_info(":build_ts", "dir")
 
     foreach(prefix, ash_folders) {
@@ -543,7 +543,7 @@ template("build_webui") {
 
       # Enable by default on non-Ash WebUIs.
       enable_web_component_missing_deps = true
-      if (is_ash_webui) {
+      if (is_chromeos && is_ash_webui) {
         enable_web_component_missing_deps = false
       }
       if (defined(invoker.eslint_enable_web_component_missing_deps)) {

@@ -123,7 +123,7 @@ source_set("impl") {
   }
 }
 
-if (!is_android) {
+if (!is_android && !is_qtwebengine) {
   # This is not applicable to ChromeOS, but to desktop platforms.
   if (!is_chromeos_device && !is_chromeos) {
     source_set("interactive_ui_tests") {
