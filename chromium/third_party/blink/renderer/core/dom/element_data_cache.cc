@@ -49,9 +49,17 @@ ShareableElementData*
 ElementDataCache::CachedShareableElementDataWithAttributes(
     const StringImpl* tag_name,
     const Vector<Attribute, kAttributePrealloc>& attributes) {
+  unsigned hash = HashInts(tag_name->GetHash(), AttributeHash(attributes));
+  return CachedElementData(tag_name, attributes, hash);
+}
+
+ShareableElementData* ElementDataCache::CachedElementData(
+    const StringImpl* tag_name,
+    const Vector<Attribute, kAttributePrealloc>& attributes,
+    unsigned hash) {
   DCHECK(!attributes.empty());
 
-  unsigned hash = HashInts(tag_name->GetHash(), AttributeHash(attributes));
+  hash = EnsureValidHash(hash);
   ShareableElementDataCache::ValueType* it =
       shareable_element_data_cache_.insert(hash, std::pair(nullptr, nullptr))
           .stored_value;

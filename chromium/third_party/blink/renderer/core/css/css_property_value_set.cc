@@ -83,14 +83,7 @@ unsigned CSSPropertyValueSet::ComputeHash() const {
     AddIntToHash(hash, property.Value().Hash());
   }
 
-  static_assert((HashTraits<unsigned>::EmptyValue() ^ 0x80000000) !=
-                    HashTraits<unsigned>::DeletedValue(),
-                "We assume below that flipping the top bit will not turn "
-                "EmptyValue into DeletedValue or vice versa");
-  if (hash == HashTraits<unsigned>::EmptyValue() ||
-      hash == HashTraits<unsigned>::DeletedValue()) {
-    hash ^= 0x80000000;
-  }
+  hash = EnsureValidHash(hash);
 
   return hash;
 }
