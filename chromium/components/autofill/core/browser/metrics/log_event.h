@@ -183,9 +183,9 @@ struct ServerPredictionFieldLogEvent {
   size_t rank_in_field_signature_group = internal::IsRequired();
 #else
   std::optional<FieldType> server_type1;
-  FieldPrediction::Source prediction_source1;
+  FieldPredictionSource prediction_source1;
   std::optional<FieldType> server_type2;
-  FieldPrediction::Source prediction_source2;
+  FieldPredictionSource prediction_source2;
   bool server_type_prediction_is_override;
   size_t rank_in_field_signature_group;
 #endif

@@ -308,8 +308,10 @@ class FormStructure {
     std::optional<FormSignature> last_credit_card_form_submitted;
   };
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   base::flat_map<FieldGlobalId, AutofillServerPrediction> GetServerPredictions(
       base::span<const FieldGlobalId> field_ids) const;
+#endif
 
   base::flat_map<FieldGlobalId, FieldType> GetHeuristicPredictions(
       HeuristicSource source,

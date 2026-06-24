@@ -91,13 +91,21 @@ jumbo_static_library("browser") {
       "autofill_log_router_factory.h",
       "content_autofill_shared_storage_handler.cc",
       "content_autofill_shared_storage_handler.h",
+      "content_identity_credential_delegate.cc",
+      "content_identity_credential_delegate.h",
+      "email_verifier_delegate.cc",
+      "email_verifier_delegate.h",
+      "integrators/glic/autofill_annotations_provider_impl.cc",
+      "integrators/glic/autofill_annotations_provider_impl.h",
       "renderer_forms_from_browser_form.cc",
       "renderer_forms_from_browser_form.h",
+      "suggestions/identity_credential_suggestion_generator.cc",
+      "suggestions/identity_credential_suggestion_generator.h",
     ]
 
     deps -= [
+      "//components/autofill/core/browser/integrators/password_manager",
       "//components/credential_management:browser",
-      "//components/os_crypt/sync",
       "//components/webauthn/core/browser",
     ]
 

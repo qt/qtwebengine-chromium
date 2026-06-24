@@ -21,6 +21,7 @@
 #include "base/containers/to_vector.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
+#include "base/functional/callback_helpers.h"
 #include "base/i18n/case_conversion.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/user_metrics.h"
@@ -31,7 +32,9 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/types/zip.h"
 #include "build/build_config.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/browser/autofill_ai_form_rationalization.h"
+#endif
 #include "components/autofill/core/browser/autofill_trigger_source.h"
 #include "components/autofill/core/browser/autofill_type.h"
 #if !BUILDFLAG(IS_QTWEBENGINE)
@@ -44,9 +47,13 @@
 #include "components/autofill/core/browser/field_type_utils.h"
 #include "components/autofill/core/browser/field_types.h"
 #include "components/autofill/core/browser/filling/addresses/field_filling_address_util.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/browser/filling/autofill_ai/field_filling_entity_util.h"
+#endif
 #include "components/autofill/core/browser/filling/filling_product.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/browser/form_processing/autofill_ai/determine_attribute_types.h"
+#endif
 #include "components/autofill/core/browser/foundations/autofill_client.h"
 #include "components/autofill/core/browser/foundations/autofill_driver.h"
 #include "components/autofill/core/browser/foundations/browser_autofill_manager.h"
@@ -167,7 +174,6 @@ bool HasAutofillSugestionsForA11y(SuggestionType item_id) {
 }
 
 }  // namespace
-#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 int AutofillExternalDelegate::shortcut_test_suggestion_index_ = -1;
 
@@ -192,6 +198,7 @@ std::optional<AutofillProfile> GetProfileFromPayload(
   }
   return profile;
 }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 AutofillExternalDelegate::AutofillExternalDelegate(
     BrowserAutofillManager* manager)
@@ -288,7 +295,6 @@ void AutofillExternalDelegate::OnQuery(
 const AutofillField* AutofillExternalDelegate::GetQueriedField() const {
   return GetQueriedFormAndField().second;
 }
-#endif
 
 std::pair<const FormStructure*, const AutofillField*>
 AutofillExternalDelegate::GetQueriedFormAndField() const {
@@ -304,6 +310,7 @@ AutofillExternalDelegate::GetQueriedFormAndField() const {
 AutofillTriggerSource AutofillExternalDelegate::GetTriggerSource() const {
   return TriggerSourceFromSuggestionTriggerSource(trigger_source_);
 }
+#endif
 
 void AutofillExternalDelegate::OnSuggestionsReturned(
     FieldGlobalId field_id,
@@ -322,6 +329,7 @@ void AutofillExternalDelegate::OnSuggestionsReturned(
       /*is_update=*/false, AutofillSuggestionsIgnoreFocusLoss(false));
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 std::optional<AutofillProfile>
 AutofillExternalDelegate::GetProfileFromAddressSuggestion(
     const Suggestion& suggestion) const {
@@ -340,6 +348,7 @@ AutofillExternalDelegate::GetEntityInstance(
   return edm->GetEntityInstance(
       suggestion.GetPayload<Suggestion::AutofillAiPayload>().guid);
 }
+#endif
 
 void AutofillExternalDelegate::AttemptToDisplayAutofillSuggestions(
     std::vector<Suggestion> suggestions,

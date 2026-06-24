@@ -1008,6 +1008,7 @@ LogBuffer& operator<<(LogBuffer& buffer, const FormStructure& form) {
   return buffer;
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 base::flat_map<FieldGlobalId, AutofillServerPrediction>
 FormStructure::GetServerPredictions(
     base::span<const FieldGlobalId> field_ids) const {
@@ -1023,6 +1024,7 @@ FormStructure::GetServerPredictions(
   }
   return predictions;
 }
+#endif
 
 base::flat_map<FieldGlobalId, FieldType> FormStructure::GetHeuristicPredictions(
     HeuristicSource source,

@@ -22,8 +22,8 @@
 #include "build/build_config.h"
 #include "components/autofill/core/browser/autofill_trigger_source.h"
 #include "components/autofill/core/browser/crowdsourcing/votes_uploader.h"
-#include "components/autofill/core/browser/data_manager/addresses/account_name_email_strike_manager.h"
 #if !BUILDFLAG(IS_QTWEBENGINE)
+#include "components/autofill/core/browser/data_manager/addresses/account_name_email_strike_manager.h"
 #include "components/autofill/core/browser/data_manager/personal_data_manager.h"
 #endif
 #include "components/autofill/core/browser/field_types.h"
@@ -112,12 +112,14 @@ class BrowserAutofillManager : public AutofillManager {
     explicit MetricsState(BrowserAutofillManager* owner);
     ~MetricsState();
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
     // The address and credit card event loggers are used to emit key and funnel
     // metrics.
     autofill_metrics::AddressFormEventLogger address_form_event_logger;
     autofill_metrics::CreditCardFormEventLogger credit_card_form_event_logger;
     autofill_metrics::LoyaltyCardFormEventLogger loyalty_card_form_event_logger;
     autofill_metrics::OtpFormEventLogger otp_form_event_logger;
+#endif
 
     // Have we logged whether Autofill is enabled for this page load?
     bool has_logged_autofill_enabled = false;
@@ -278,8 +280,10 @@ class BrowserAutofillManager : public AutofillManager {
   void OnFocusOnFormFieldImpl(const FormData& form,
                               const FieldGlobalId& field_id) override;
   void OnDidAutofillFormImpl(const FormData& form) override;
+#if !BUILDFLAG(IS_QTWEBENGINE)
   void SuppressAutomaticRefillsImpl(const FillId& fill_id) override;
   void RequestRefillImpl(const FillId& fill_id) override;
+#endif
   void OnDidEndTextFieldEditingImpl() override;
   void OnHidePopupImpl() override;
   void OnSelectFieldOptionsDidChangeImpl(
@@ -335,12 +339,12 @@ class BrowserAutofillManager : public AutofillManager {
   // This reference is not stable over the lifetime of BrowserAutofillManager.
   virtual autofill_metrics::CreditCardFormEventLogger&
   GetCreditCardFormEventLogger();
-#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   // This reference is not stable over the lifetime of BrowserAutofillManager.
   autofill_metrics::OtpFormEventLogger& GetOtpFormEventLogger() {
     return metrics_->otp_form_event_logger;
   }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   // Returns an appropriate EventFormLogger, depending on the given `field`'s
   // type. May return nullptr.
@@ -643,6 +647,7 @@ class BrowserAutofillManager : public AutofillManager {
       const AutofillProfile& filled_profile,
       const FormGlobalId& form_id);
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Updates Autofill Ai's model cache after server predictions were loaded.
   void HandleLoadedServerPredictionsForAutofillAi(
       base::span<const raw_ref<FormStructure>> forms);
@@ -651,6 +656,7 @@ class BrowserAutofillManager : public AutofillManager {
   // to `form`'s fields, then runs rationalization and sectioning.
   void AddCachedAutofillAiPredictions(const AutofillAiModelCache& cache,
                                       FormStructure& form);
+#endif
 
   // Calls `OnDidIdentifyForms()` on all appropriate form event loggers,
   // depending on the form types of the `form_structure`.
@@ -696,7 +702,6 @@ class BrowserAutofillManager : public AutofillManager {
   // form_filler() instead, because tests inject test objects.
   std::unique_ptr<FormFiller> form_filler_ =
       std::make_unique<FormFiller>(*this);
-#endif
 
   std::unique_ptr<OtpManager> otp_manager_;
 
@@ -715,6 +720,7 @@ class BrowserAutofillManager : public AutofillManager {
   // Handles general Address on typing feature management, mainly the logic
   // behind its strike database.
   AddressOnTypingManager address_on_typing_manager_;
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
   base::WeakPtrFactory<BrowserAutofillManager> weak_ptr_factory_{this};
 };
 

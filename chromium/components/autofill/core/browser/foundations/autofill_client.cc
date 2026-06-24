@@ -226,11 +226,13 @@ void AutofillClient::TriggerAutofillAiSavePromptSurvey(
     const base::flat_set<EntityTypeName>& saved_entities) {
   NOTIMPLEMENTED();
 }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 bool AutofillClient::IsTabInActorMode() const {
   return false;
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 std::unique_ptr<device_reauth::DeviceAuthenticator>
 AutofillClient::GetDeviceAuthenticator(std::string histogram) {
   return nullptr;
@@ -240,7 +242,6 @@ std::unique_ptr<device_reauth::DeviceAuthenticator>
 AutofillClient::GetDeviceAuthenticator() {
   return GetDeviceAuthenticator("");
 }
-#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 void AutofillClient::ShowPlusAddressEmailOverrideNotification(
     const std::string& original_email,
@@ -255,6 +256,7 @@ bool AutofillClient::ShowAutofillFieldIphForFeature(
 void AutofillClient::HideAutofillFieldIph() {}
 
 void AutofillClient::NotifyIphFeatureUsed(AutofillClient::IphFeature feature) {}
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 std::optional<AutofillClient::SuggestionUiSessionId>
 AutofillClient::GetSessionIdForCurrentAutofillSuggestions() const {
@@ -297,7 +299,6 @@ void AutofillClient::set_test_addresses(
 base::span<const AutofillProfile> AutofillClient::GetTestAddresses() const {
   return {};
 }
-#endif
 
 PasswordFormClassification AutofillClient::ClassifyAsPasswordForm(
     AutofillManager& manager,
@@ -309,7 +310,6 @@ PasswordFormClassification AutofillClient::ClassifyAsPasswordForm(
 void AutofillClient::TriggerPlusAddressUserPerceptionSurvey(
     plus_addresses::hats::SurveyType survey_type) {}
 
-#if !BUILDFLAG(IS_QTWEBENGINE)
 const syncer::SyncService* AutofillClient::GetSyncService() const {
   return const_cast<const syncer::SyncService*>(
       const_cast<AutofillClient*>(this)->GetSyncService());
@@ -325,7 +325,6 @@ void AutofillClient::ShowEntityImportBubble(
     std::optional<EntityInstance> old_entity,
     bool save_is_synchronous,
     EntityImportPromptResultCallback prompt_closed_callback) {}
-#endif
 
 void AutofillClient::CloseEntityImportBubble() {
   NOTIMPLEMENTED();
@@ -351,6 +350,7 @@ one_time_tokens::OneTimeTokenService* AutofillClient::GetOneTimeTokenService()
     const {
   return nullptr;
 }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 bool AutofillClient::DocumentUsedWebOTP() {
   return false;
@@ -365,8 +365,10 @@ AutofillManager* AutofillClient::GetAutofillManagerForPrimaryMainFrame() {
   return nullptr;
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 OtpPhishGuardDelegate* AutofillClient::GetOtpPhishGuardDelegate() {
   return nullptr;
 }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 }  // namespace autofill

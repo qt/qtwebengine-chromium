@@ -90,9 +90,11 @@ ContentAutofillDriverFactory::ContentAutofillDriverFactory(
     content::WebContents* web_contents,
     ContentAutofillClient* client)
     : content::WebContentsObserver(web_contents), client_(*client) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   optimization_guide::AutofillAnnotationsProviderImpl::SetFor(
       web_contents,
       std::make_unique<optimization_guide::AutofillAnnotationsProviderImpl>());
+#endif
 }
 
 ContentAutofillDriverFactory::~ContentAutofillDriverFactory() {

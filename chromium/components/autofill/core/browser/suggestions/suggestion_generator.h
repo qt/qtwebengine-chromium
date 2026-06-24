@@ -110,6 +110,7 @@ class SuggestionGenerator {
   static_assert(kOrderedPrioritizedSources.size() ==
                 static_cast<size_t>(SuggestionDataSource::kMaxValue) + 1);
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Defines which lower-priority sources can be merged into a higher-priority
   // source (see `kOrderedPrioritizedSources` for more info about priorities).
   static constexpr auto kSupportedMerges = base::MakeFixedFlatMap<
@@ -150,6 +151,7 @@ class SuggestionGenerator {
        {SuggestionDataSource::kAutocomplete, {SuggestionDataSource::kPasskey}},
        {SuggestionDataSource::kAddressOnTyping,
         {SuggestionDataSource::kPasskey}}});
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   SuggestionGenerator() = default;
   virtual ~SuggestionGenerator() = default;

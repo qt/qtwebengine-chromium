@@ -223,6 +223,7 @@ Suggestion::PlusAddressPayload& Suggestion::PlusAddressPayload::operator=(
 
 Suggestion::PlusAddressPayload::~PlusAddressPayload() = default;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 Suggestion::AutofillAiPayload::AutofillAiPayload() = default;
 
 Suggestion::AutofillAiPayload::AutofillAiPayload(EntityInstance::EntityId guid)
@@ -240,6 +241,7 @@ Suggestion::AutofillAiPayload& Suggestion::AutofillAiPayload::operator=(
     AutofillAiPayload&&) = default;
 
 Suggestion::AutofillAiPayload::~AutofillAiPayload() = default;
+#endif
 
 Suggestion::AutofillProfilePayload::AutofillProfilePayload() = default;
 Suggestion::AutofillProfilePayload::AutofillProfilePayload(Guid guid)

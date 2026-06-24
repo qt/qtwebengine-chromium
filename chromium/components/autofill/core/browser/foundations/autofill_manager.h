@@ -352,6 +352,7 @@ class AutofillManager {
   virtual void TriggerFormExtractionInAllFrames(
       base::OnceCallback<void(bool success)> form_extraction_finished_callback);
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Returns server predictions for fields identified by `field_ids` in a form
   // identified by `form_id`. If the manager has no data about the form with
   // `form_id`, returns an empty map. If the form does not contain data about
@@ -363,7 +364,6 @@ class AutofillManager {
   // Returns predictions from a heuristic source for fields identified by
   // `field_ids` in a form identified by `form_id`. Returns an empty map if the
   // manager has no data about the form.
-#if !BUILDFLAG(IS_QTWEBENGINE)
   base::flat_map<FieldGlobalId, FieldType> GetHeuristicPredictionForForm(
       HeuristicSource source,
       FormGlobalId form_id,
@@ -373,7 +373,7 @@ class AutofillManager {
   // for Android (i.e., platform) Autofill.
   virtual CreditCardAccessManager* GetCreditCardAccessManager() = 0;
   virtual const CreditCardAccessManager* GetCreditCardAccessManager() const = 0;
-#endif
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   void AddObserver(Observer* observer) { observers_.AddObserver(observer); }
 
@@ -393,10 +393,12 @@ class AutofillManager {
   // Reparses all known forms.
   void ReparseKnownForms();
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // After subscribing, FieldClassificationModelHandler::OnModelUpdated() will
   // trigger ReparseKnownForms(). There may be a handler for Autofill and/or
   // Password Manager.
   void SubscribeToMlModelChanges(FieldClassificationModelHandler& handler);
+#endif
 
  protected:
   explicit AutofillManager(AutofillDriver* driver);
@@ -439,8 +441,10 @@ class AutofillManager {
       AutofillSuggestionTriggerSource trigger_source,
       std::optional<PasswordSuggestionRequest> password_request) = 0;
   virtual void OnDidAutofillFormImpl(const FormData& form) = 0;
+#if !BUILDFLAG(IS_QTWEBENGINE)
   virtual void SuppressAutomaticRefillsImpl(const FillId& fill_id) = 0;
   virtual void RequestRefillImpl(const FillId& fill_id) = 0;
+#endif
   virtual void OnHidePopupImpl() = 0;
   virtual void OnJavaScriptChangedAutofilledValueImpl(
       const FormData& form,
@@ -515,6 +519,7 @@ class AutofillManager {
       base::OnceCallback<void(AutofillManager&, const std::vector<FormData>&)>
           callback);
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Step 2 described above ParseFormsAsync().
   void RunMlModels(AsyncContext context,
                    base::OnceCallback<void(AsyncContext)> done_callback);
@@ -531,24 +536,24 @@ class AutofillManager {
       base::span<const FormData> forms,
       const AutofillCrowdsourcingManager::QueryResponse& response);
 
-#if !BUILDFLAG(IS_QTWEBENGINE)
   // Invoked by `AutofillCrowdsourcingManager`.
   void OnLoadedServerPredictions(
       base::span<const FormData> forms,
       base::TimeTicks form_seen_timestamp,
       std::optional<AutofillCrowdsourcingManager::QueryResponse> response);
-#endif
 
   // Emits the metrics that result from a server query response in
   // `OnLoadedServerPredictions()`.
   void LogServerQueryResponseMetrics(
       const std::vector<raw_ref<FormStructure>>& forms);
+#endif
 
   // Invoked when forms from OnFormsSeen() have been parsed to
   // |form_structures|.
   void OnFormsParsed(const std::vector<FormData>& forms,
                      base::TimeTicks form_seen_timestamp);
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Updates `form_structures_` with the information in `forms` and `context`,
   // if available. `context` is available when this function is called as a
   // result of a parsing operation, `reason` is an indicator of that.
@@ -562,7 +567,6 @@ class AutofillManager {
                        FormStructure::RetrieveFromCacheReason reason,
                        bool preserve_signatures);
 
-#if !BUILDFLAG(IS_QTWEBENGINE)
   std::unique_ptr<autofill_metrics::FormInteractionsUkmLogger>
   CreateFormInteractionsUkmLogger();
 #endif
@@ -597,9 +601,11 @@ class AutofillManager {
   // Observers that listen to updates of this instance.
   base::ObserverList<Observer> observers_;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Set by SubscribeToMlModelChanges().
   base::CallbackListSubscription autofill_model_change_subscription_;
   base::CallbackListSubscription password_manager_model_change_subscription_;
+#endif
 
   // DetermineHeuristicTypes() should only be run on the `parsing_task_runner_`.
   // The reply will be called on the main thread and should be a no-op if this

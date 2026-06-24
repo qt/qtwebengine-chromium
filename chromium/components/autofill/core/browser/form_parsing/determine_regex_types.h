@@ -37,7 +37,11 @@ class RegexPredictions {
   void ApplyTo(base::span<const std::unique_ptr<AutofillField>> fields) const;
 
  private:
+#if defined(IS_REQUIRED_SUPPORTED) && !BUILDFLAG(IS_QTWEBENGINE)
   HeuristicSource source_ = internal::IsRequired();
+#else
+  HeuristicSource source_;
+#endif
   base::flat_map<FieldGlobalId, FieldType> predictions_;
 };
 

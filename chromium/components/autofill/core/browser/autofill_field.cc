@@ -775,11 +775,12 @@ AutofillField::PredictionResult AutofillField::GetComputedPredictionResult()
               ? std::optional(AutofillPredictionSource::kHeuristics)
               : std::nullopt};
 #else
-  return {AutofillType(html_type_), std::nullopt};
+  return {MakeAutofillType(heuristic_type()), std::nullopt};
 #endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 const std::u16string& AutofillField::value_for_import() const {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   bool should_consider_value_for_import =
       IsSelectElement() || initial_value() != value();
   if (base::FeatureList::IsEnabled(
@@ -795,6 +796,9 @@ const std::u16string& AutofillField::value_for_import() const {
     return o->text;
   }
   return value();
+#else
+  return base::EmptyString16();
+#endif
 }
 
 FieldSignature AutofillField::GetFieldSignature() const {

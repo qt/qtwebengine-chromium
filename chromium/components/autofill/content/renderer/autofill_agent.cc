@@ -1542,7 +1542,7 @@ void AutofillAgent::ShowSuggestions(
   std::optional<FormAndField> form_and_field =
       form_util::FindFormAndFieldForFormControlElement(
           element, field_data_manager(),
-          GetCallTimerState(kQueryAutofillSuggestions), button_titles_cache(),
+          GetCallTimerState(CTS::kQueryAutofillSuggestions), button_titles_cache(),
           form_cache);
   if (!form_and_field) {
     return;
@@ -1694,7 +1694,7 @@ void AutofillAgent::OnDevToolsSessionConnectionChanged(bool attached) {
     form_cache_.Reset();
     ExtractFormsUnthrottled(
         /*callback=*/{},
-        GetCallTimerState(kOnDevToolsSessionConnectionChanged));
+        GetCallTimerState(CTS::kOnDevToolsSessionConnectionChanged));
   }
 
   // Registers listeners for text-producing events and emits a warning after the

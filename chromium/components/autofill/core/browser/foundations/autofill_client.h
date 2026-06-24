@@ -519,6 +519,7 @@ class AutofillClient {
       const PopupOpenArgs& open_args,
       base::WeakPtr<AutofillSuggestionDelegate> delegate) = 0;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Notifies the user via a patform specific UI that full form filling for plus
   // addresses has occurred (i.e. the filled email address was overridden by the
   // plus address). The UI provides the user with the option to undo the
@@ -527,6 +528,7 @@ class AutofillClient {
   virtual void ShowPlusAddressEmailOverrideNotification(
       const std::string& original_email,
       EmailOverrideUndoCallback email_override_undo_callback);
+#endif
 
   // Update the data list values shown by the Autofill suggestions, if visible.
   virtual void UpdateAutofillDataListValues(
@@ -568,7 +570,6 @@ class AutofillClient {
 
   // Triggers a survey to ask the user why they declined saving an address.
   virtual void TriggerDeclinedSaveAddressReasonSurvey();
-#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   // Triggers a survey after the user sees an Autofill AI suggestion and submits
   // a form. The triggering happens only if the uses sees an Autofill AI
@@ -587,6 +588,7 @@ class AutofillClient {
       bool prompt_accepted,
       EntityType entity_type,
       const base::flat_set<EntityTypeName>& saved_entities);
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   // Returns whether there is an active actor task for this client's tab (if
   // one exists).
@@ -608,7 +610,6 @@ class AutofillClient {
 #if !BUILDFLAG(IS_QTWEBENGINE)
   // If the context is secure.
   virtual bool IsContextSecure() const = 0;
-#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   // Returns whether Google Wallet storage is supported.
   virtual bool IsWalletStorageEnabled() const = 0;
@@ -620,6 +621,7 @@ class AutofillClient {
   // Returns true if all the conditions for enabling the upload of credit card
   // are satisfied.
   virtual bool IsCreditCardUploadEnabled() const;
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   // Returns a LogManager instance (for chrome://autofill-internals). Note that
   // the return value may change over the lifetime of an AutofillClient from
@@ -656,7 +658,6 @@ class AutofillClient {
   // platform is not supported.
   virtual std::unique_ptr<device_reauth::DeviceAuthenticator>
   GetDeviceAuthenticator();
-#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   // Same as `GetDeviceAuthenticator()` but also logs authentication results to
   // `histogram`.
@@ -677,7 +678,6 @@ class AutofillClient {
   // Notifies the IPH code that `feature` was used.
   virtual void NotifyIphFeatureUsed(AutofillClient::IphFeature feature);
 
-#if !BUILDFLAG(IS_QTWEBENGINE)
   // Stores test addresses provided by devtools and used to help developers
   // debug their forms with a list of well formatted addresses. Differently from
   // other `AutofillProfile`s/addresses, this list is stored in the client,
@@ -686,7 +686,6 @@ class AutofillClient {
 
   virtual base::span<const AutofillProfile> GetTestAddresses() const
       LIFETIME_BOUND;
-#endif
 
   // Returns the heuristics predictions for the renderer form to which
   // `field_id` belongs inside the form with `form_id`. The browser form with
@@ -704,7 +703,6 @@ class AutofillClient {
   virtual void TriggerPlusAddressUserPerceptionSurvey(
       plus_addresses::hats::SurveyType survey_type);
 
-#if !BUILDFLAG(IS_QTWEBENGINE)
   // Returns the service used in order to log metrics into MQLS.
   virtual optimization_guide::ModelQualityLogsUploaderService*
   GetMqlsUploadService();
@@ -742,6 +740,7 @@ class AutofillClient {
 
   // May return null on platforms where no OneTimeTokenService is supported.
   virtual one_time_tokens::OneTimeTokenService* GetOneTimeTokenService() const;
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   // Returns true if the primary main frame's document used the WebOTP API. This
   // exists only for the main frame because only the main frame has the
@@ -754,7 +753,6 @@ class AutofillClient {
 
   // Returns the AutofillManager instance for the current frame/tab.
   virtual AutofillManager* GetAutofillManagerForPrimaryMainFrame();
-#endif
 };
 
 }  // namespace autofill

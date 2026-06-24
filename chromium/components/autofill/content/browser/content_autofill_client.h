@@ -60,8 +60,10 @@ class ContentAutofillClient
   friend class content::WebContentsUserData<ContentAutofillClient>;
 
   ContentAutofillDriverFactory autofill_driver_factory_;
+#if !BUILDFLAG(IS_QTWEBENGINE)
   std::unique_ptr<PasswordManagerAutofillHelper>
       password_manager_autofill_helper_;
+#endif
 
   WEB_CONTENTS_USER_DATA_KEY_DECL();
 };
