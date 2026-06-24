@@ -840,17 +840,26 @@ jumbo_source_set("browser_sources") {
 
   if (is_qtwebengine) {
     sources -= [
+      "blocklist.cc",
+      "blocklist.h",
+      "blocklist_check.cc",
+      "blocklist_check.h",
+      "blocklist_state.h",
+      "blocklist_state_fetcher.cc",
+      "blocklist_state_fetcher.h",
       "null_app_sorting.cc",
       "null_app_sorting.h",
       "sandboxed_unpacker.cc",
       "sandboxed_unpacker.h",
       "uninstall_reason.h",
+      "unpacked_installer.cc",
       "update_observer.h",
       "zipfile_installer.cc",
       "zipfile_installer.h",
     ]
 
     public_deps -= [
+      "//components/safe_browsing/core/browser/db:v4_protocol_config",
       "//extensions/browser/install",
       "//extensions/browser/kiosk",
     ]
@@ -864,7 +873,11 @@ jumbo_source_set("browser_sources") {
       "//components/javascript_dialogs",
       "//components/permissions",
       "//components/pref_registry",
+      "//components/safe_browsing/core/browser/db:database_manager",
+      "//components/safe_browsing/core/browser/db:util",
+      "//components/safe_browsing/core/browser/db:v4_protocol_manager_util",
       "//components/safe_browsing/core/common",
+      "//components/safe_browsing/core/common/proto:crx_info_proto",
       "//components/sessions",
       "//components/supervised_user/core/common",
       "//components/sync",

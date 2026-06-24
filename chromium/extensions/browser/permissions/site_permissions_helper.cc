@@ -44,6 +44,7 @@ SitePermissionsHelper::SiteInteraction
 SitePermissionsHelper::GetSiteInteraction(
     const Extension& extension,
     content::WebContents* web_contents) const {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (!web_contents) {
     return SiteInteraction::kNone;
   }
@@ -82,6 +83,7 @@ SitePermissionsHelper::GetSiteInteraction(
           ->HasActiveTabAndCanAccess(extension, url)) {
     return SiteInteraction::kActiveTab;
   }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   return SiteInteraction::kNone;
 }

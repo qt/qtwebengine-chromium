@@ -265,6 +265,7 @@ ExtensionsBrowserClient::GetProtocolHandlerRegistry(
 void ExtensionsBrowserClient::CheckManagementPolicy(
     content::BrowserContext* context) {}
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 scoped_refptr<safe_browsing::SafeBrowsingDatabaseManager>
 ExtensionsBrowserClient::GetSafeBrowsingDatabaseManager() const {
   return nullptr;
@@ -274,6 +275,7 @@ std::optional<safe_browsing::V4ProtocolConfig>
 ExtensionsBrowserClient::GetV4ProtocolConfig() const {
   return std::nullopt;
 }
+#endif // !BUILDFLAG(IS_QTWEBENGINE)
 
 void ExtensionsBrowserClient::OnActiveTabPermissionGranted(
     const Extension* extension,
