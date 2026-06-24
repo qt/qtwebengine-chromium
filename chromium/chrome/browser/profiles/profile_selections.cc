@@ -5,6 +5,7 @@
 #include "chrome/browser/profiles/profile_selections.h"
 
 #include "base/memory/ptr_util.h"
+#include "base/notreached.h"
 #include "chrome/browser/profiles/profile.h"
 #include "components/profile_metrics/browser_profile_type.h"
 
