@@ -227,7 +227,6 @@ void CollectNPUInformation(GPUInfo* gpu_info) {
     return;
   }
 
-#if BUILDFLAG(USE_ML)
   // Query all three attribute types to find NPUs. Different NPUs may be
   // exposed through different attributes, so we need to check all of them.
   // Note that `CreateAdapterList()` returns the logical intersection of all
