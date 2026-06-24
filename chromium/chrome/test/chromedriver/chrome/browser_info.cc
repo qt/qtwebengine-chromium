@@ -135,8 +135,8 @@ Status BrowserInfo::ParseBrowserString(bool has_android_package,
       browser_string, "/", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
 
   if (browser_parts.size() != 2) {
-    return Status(kUnknownError,
-                  "unrecognized browser string: " + browser_string);
+    return Status(kUnknownError, base::StrCat({"unrecognized browser string: ",
+                                               browser_string}));
   }
 
   browser_info->browser_name = browser_parts[0];
