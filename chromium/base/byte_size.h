@@ -172,7 +172,7 @@ class BASE_EXPORT ByteSize : public internal::ByteSizeBase {
   // or use FromByteSizeDelta().
   template <typename T>
     requires std::signed_integral<T>
-  consteval explicit ByteSize(T bytes)
+  constexpr explicit ByteSize(T bytes)
       // The inherited constructor ensures `bytes` is also in range for int64_t.
       : ByteSizeBase(checked_cast<uint64_t>(bytes)) {}
 

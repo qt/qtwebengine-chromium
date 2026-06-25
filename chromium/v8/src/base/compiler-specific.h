@@ -134,6 +134,14 @@
 #define ALIGNAS(byte_alignment) __attribute__((aligned(byte_alignment)))
 #endif
 
+#if defined(V8_CC_MSVC) && !defined(__clang__)
+#define V8_PACKED_PUSH(...) __pragma( pack(push, 1) ) __VA_ARGS__
+#define V8_PACKED_POP __pragma( pack(pop) )
+#else
+#define V8_PACKED_PUSH(...)  __attribute__((__packed__)) __VA_ARGS__
+#define V8_PACKED_POP
+#endif
+
 // Functions called from GDB.
 // Forces the linker to not optimize out the function.
 #if V8_HAS_ATTRIBUTE_USED && V8_HAS_ATTRIBUTE_RETAIN && \

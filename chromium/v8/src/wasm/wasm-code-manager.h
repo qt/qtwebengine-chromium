@@ -254,11 +254,11 @@ class V8_EXPORT_PRIVATE WasmCode final {
         protected_instructions_data());
   }
 
-  struct __attribute__((packed)) EffectHandler {
+  V8_PACKED_PUSH(struct EffectHandler) {
     int call_offset;
     int tag_index;
     int handler_offset;
-  };
+  }; V8_PACKED_POP
   static_assert(sizeof(WasmCode::EffectHandler) == 3 * kIntSize);
 
   base::Vector<const EffectHandler> effect_handlers() const {

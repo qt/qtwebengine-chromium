@@ -1126,6 +1126,10 @@ IrregexpInterpreter::Result RawMatch(
       SET_PC_FROM_OFFSET(on_failure);
       DISPATCH();
     }
+// FIXME: Workaround for MSVC build error:
+//        fatal error C1054: compiler limit: initializers nested too deeply
+// NOTE: The bytecode is currently disabled for x64 and arm64: https://crbug.com/476966362
+#if !defined(V8_CC_MSVC)
     BYTECODE(SkipUntilOneOfMasked3, bc0_cp_offset, bc0_advance_by, bc0_table,
              bc1_cp_offset, bc1_on_failure, bc2_cp_offset, bc3_characters,
              bc3_mask, bc4_by, bc5_cp_offset, bc6_characters, bc6_mask,
@@ -1196,6 +1200,7 @@ IrregexpInterpreter::Result RawMatch(
 
       UNREACHABLE();
     }
+#endif
     BYTECODES_END()
 #if V8_USE_COMPUTED_GOTO
 // Lint gets confused a lot if we just use !V8_USE_COMPUTED_GOTO or ifndef

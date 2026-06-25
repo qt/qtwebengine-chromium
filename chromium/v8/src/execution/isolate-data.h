@@ -333,13 +333,16 @@ class IsolateData final {
   uint8_t has_lazy_closures_ = 0;
 
   // Ensure the following tables are kSystemPointerSize-byte aligned.
-  V8_NO_UNIQUE_ADDRESS uint8_t
-      tables_alignment_padding_[kTablesAlignmentPaddingSize];
+  // FIXME: If the static_assert fails, the union below must be reverted
+  static_assert(kTablesAlignmentPaddingSize == 0);
+  union {
+    uint8_t tables_alignment_padding_[4];
 
-  // A pointer to the static offsets vector (used to pass results from the
-  // irregexp engine to the rest of V8), or nullptr if the static offsets
-  // vector is currently in use.
-  int32_t* regexp_static_result_offsets_vector_ = nullptr;
+    // A pointer to the static offsets vector (used to pass results from the
+    // irregexp engine to the rest of V8), or nullptr if the static offsets
+    // vector is currently in use.
+    int32_t* regexp_static_result_offsets_vector_ = nullptr;
+  };
 
   // Tier 0 tables. See also builtin_entry_table_ and builtin_table_.
   Address builtin_tier0_entry_table_[Builtins::kBuiltinTier0Count] = {};

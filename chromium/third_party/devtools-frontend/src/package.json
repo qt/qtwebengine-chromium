@@ -104,5 +104,6 @@
     "stylelint": {
       "flat-cache": "6.1.12"
     }
-  }
+  },
+  "type": "module"
 }

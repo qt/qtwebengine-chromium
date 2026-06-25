@@ -943,24 +943,24 @@ class BASE_EXPORT GSL_OWNER Value {
   bool operator==(const DictValue& rhs) const;
   bool operator==(const ListValue& rhs) const;
 #else
-  BASE_EXPORT friend bool operator==(const Value& lhs, const Value::Dict& rhs);
-  friend bool operator==(const Value::Dict& lhs, const Value& rhs) {
+  BASE_EXPORT friend bool operator==(const Value& lhs, const DictValue& rhs);
+  friend bool operator==(const DictValue& lhs, const Value& rhs) {
     return rhs == lhs;
   }
-  friend bool operator!=(const Value& lhs, const Value::Dict& rhs) {
+  friend bool operator!=(const Value& lhs, const DictValue& rhs) {
     return !(lhs == rhs);
   }
-  friend bool operator!=(const Value::Dict& lhs, const Value& rhs) {
+  friend bool operator!=(const DictValue& lhs, const Value& rhs) {
     return !(lhs == rhs);
   }
-  BASE_EXPORT friend bool operator==(const Value& lhs, const Value::List& rhs);
-  friend bool operator==(const Value::List& lhs, const Value& rhs) {
+  BASE_EXPORT friend bool operator==(const Value& lhs, const ListValue& rhs);
+  friend bool operator==(const ListValue& lhs, const Value& rhs) {
     return rhs == lhs;
   }
-  friend bool operator!=(const Value& lhs, const Value::List& rhs) {
+  friend bool operator!=(const Value& lhs, const ListValue& rhs) {
     return !(lhs == rhs);
   }
-  friend bool operator!=(const Value::List& lhs, const Value& rhs) {
+  friend bool operator!=(const ListValue& lhs, const Value& rhs) {
     return !(lhs == rhs);
   }
 #endif

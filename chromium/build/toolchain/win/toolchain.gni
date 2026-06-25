@@ -107,8 +107,6 @@ template("msvc_toolchain") {
       if (host_os == "win") {
         # Flip the slashes so that copy/paste of the commands works.
         link = string_replace(link, "/", "\\")
-        # Add quotation marks so paths with whitespaces work.
-        link = "\"${link}\""
       }
       lib = "$link /lib"
       if (host_os != "win") {
@@ -602,7 +600,10 @@ template("msvc_toolchain") {
       rspfile = "$exename.rsp"
       pool = "//build/toolchain:link_pool($default_toolchain)"
 
-      command = "$linker_wrapper$link$cc_linkflags \"/OUT:$exename\" /nologo ${sys_lib_flags} \"/PDB:$pdbname\" \"@$rspfile\""
+      # FIXME: Workarounds duplicate symbol error while linking mksnapshot.exe
+      # Broken by: https://chromium-review.googlesource.com/c/v8/v8/+/6983284
+      # Later Fixed by: https://chromium-review.googlesource.com/c/v8/v8/+/7796095
+      command = "$linker_wrapper$link$cc_linkflags \"/OUT:$exename\" /nologo /FORCE:MULTIPLE ${sys_lib_flags} \"/PDB:$pdbname\" \"@$rspfile\""
 
       default_output_extension = ".exe"
       default_output_dir = "{{root_out_dir}}"

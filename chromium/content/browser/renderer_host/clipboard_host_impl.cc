@@ -941,7 +941,7 @@ void ClipboardHostImpl::ExtractText(
     clipboard->ReadText(clipboard_buffer, data_dst.get(), std::move(callback));
     return;
   }
-#if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN) && !BUILDFLAG(IS_QTWEBENGINE)
   if (clipboard->IsFormatAvailable(ui::ClipboardFormatType::PlainTextAType(),
                                    clipboard_buffer, data_dst.get())) {
     clipboard->ReadAsciiText(

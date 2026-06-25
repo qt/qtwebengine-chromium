@@ -180,10 +180,10 @@ void* ObjectAllocator::OutOfLineAllocateImpl(NormalPageSpace& space,
     void* result = TryAllocateLargeObject(page_backend_, large_space,
                                           stats_collector_, size, gcinfo);
     if (!result) {
-      garbage_collector_.RetryAllocate([&]() {
+      garbage_collector_.RetryAllocate(v8::base::FunctionRef<bool()>([&]() {
         return result = TryAllocateLargeObject(page_backend_, large_space,
                                                stats_collector_, size, gcinfo);
-      });
+      }));
     }
     if (!result) {
 #if defined(CPPGC_CAGED_HEAP)

@@ -567,7 +567,7 @@ bool QuicConfig::HasClientRequestedIndependentOption(
 
 const QuicTagVector& QuicConfig::ClientRequestedIndependentOptions(
     Perspective perspective) const {
-  static constexpr QuicTagVector no_options;
+  static QuicTagVector no_options;
   if (perspective == Perspective::IS_SERVER) {
     return HasReceivedConnectionOptions() ? ReceivedConnectionOptions()
                                           : no_options;

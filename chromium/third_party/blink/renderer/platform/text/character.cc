@@ -307,7 +307,7 @@ bool Character::IsEmojiComponent(UChar32 c) {
 
 namespace {
 
-consteval bool MaybeEmojiPresentationForAscii(unsigned char ch) {
+constexpr bool MaybeEmojiPresentationForAscii(unsigned char ch) {
   constexpr auto kCopyRightSign = 0xA9;
   constexpr auto kRegisteredSign = 0xAE;
   return ch == kCopyRightSign || ch == kRegisteredSign ||
@@ -315,7 +315,7 @@ consteval bool MaybeEmojiPresentationForAscii(unsigned char ch) {
 }
 
 template <std::size_t N, typename Function>
-consteval auto GenerateTable(Function&& f) {
+constexpr auto GenerateTable(Function&& f) {
   std::array<bool, N> arr;
   for (unsigned char i = 0; i < N; ++i) {
     arr[i] = f(i);

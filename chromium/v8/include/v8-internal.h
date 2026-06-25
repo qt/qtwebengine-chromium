@@ -490,7 +490,11 @@ struct TagRange {
   constexpr TagRange(Tag first, Tag last) : first(first), last(last) {
 #ifdef V8_ENABLE_CHECKS
     // This would typically be a DCHECK, but that's not available here.
+#if defined(_MSC_VER) && !defined(__clang__)
+    if (first > last) __assume(false);  // Invalid tag range.
+#else
     if (first > last) __builtin_unreachable();  // Invalid tag range.
+#endif
 #endif
   }
 

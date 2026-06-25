@@ -43,10 +43,12 @@ if (use_system_harfbuzz) {
       cflags += [ "/wd4334" ]
     }
 
-    # TODO(crbug.com/483020951): Replace this with `-Wno-array-bounds-member` if
-    # that gets implemented. Then patch harfbuzz and remove this completely.
-    # Upstream issue: https://github.com/harfbuzz/harfbuzz/issues/5738
-    cflags += [ "-Wno-array-bounds" ]
+    if (!is_win || is_clang) {
+      # TODO(crbug.com/483020951): Replace this with `-Wno-array-bounds-member` if
+      # that gets implemented. Then patch harfbuzz and remove this completely.
+      # Upstream issue: https://github.com/harfbuzz/harfbuzz/issues/5738
+      cflags += [ "-Wno-array-bounds" ]
+    }
   }
 
   component("harfbuzz-ng") {

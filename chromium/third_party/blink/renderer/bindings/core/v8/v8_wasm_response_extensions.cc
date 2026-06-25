@@ -254,9 +254,15 @@ class FetchDataLoaderForWasmStreaming final : public FetchDataLoader,
                 {
                   TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"),
                                "v8.wasm.compileDigestForConsume");
+#if !defined(COMPILER_MSVC)
                   CHECK(ComputeDigest(kHashAlgorithmSha256,
                                       caching_interface.GetWireBytes(),
                                       wire_bytes_digest));
+#else
+                  ComputeDigest(kHashAlgorithmSha256,
+                                      caching_interface.GetWireBytes(),
+                                      wire_bytes_digest);
+#endif
                 }
 
                 const bool digest_matches =

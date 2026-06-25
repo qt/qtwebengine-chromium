@@ -406,7 +406,7 @@ void LocalFrameView::ForAllNonThrottledLocalFrameViews(
     function(*this);
 }
 
-void LocalFrameView::ForAllNonThrottledLocalFrameViews(
+void LocalFrameView::ForAllNonThrottledLocalFrameViewsBool(
     base::FunctionRef<bool(LocalFrameView&)> function) {
   if (ShouldThrottleRendering()) {
     return;
@@ -414,7 +414,7 @@ void LocalFrameView::ForAllNonThrottledLocalFrameViews(
 
   if (function(*this)) {
     ForAllChildLocalFrameViews([&function](LocalFrameView& child_view) {
-      child_view.ForAllNonThrottledLocalFrameViews(function);
+      child_view.ForAllNonThrottledLocalFrameViewsBool(function);
     });
   }
 }
@@ -3174,7 +3174,7 @@ void LocalFrameView::PushPaintArtifactToCompositor(bool repainted) {
   }
 
   StackScrollTranslationVector scroll_translation_nodes;
-  ForAllNonThrottledLocalFrameViews([&scroll_translation_nodes](
+  ForAllNonThrottledLocalFrameViewsBool([&scroll_translation_nodes](
                                         LocalFrameView& frame_view) {
     // Skip scroll nodes from detached frames, or any subframe of a detached
     // frame.

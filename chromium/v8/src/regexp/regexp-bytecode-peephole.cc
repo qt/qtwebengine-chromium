@@ -751,6 +751,7 @@ void RegExpBytecodePeepholeSequences::DefineStandardSequences() {
         .IgnoreArgument(3, I(B::kAdvanceCpAndGoto, on_goto))
         .IgnoreArgument(2, I(B::kAndCheck4Chars, on_equal));
   }
+#if !defined(V8_CC_MSVC)
   // The original bytecode sequence for kSkipUntilOneOfMasked3 is:
   //
   // sequence offset name
@@ -833,6 +834,7 @@ void RegExpBytecodePeepholeSequences::DefineStandardSequences() {
         .IgnoreArgument(8, I(B::kAndCheckNot4Chars, on_not_equal))
         .EmitOffsetAfterSequence(T(fallthrough_jump_target));
   }
+#endif
 
 #undef I
 #undef T

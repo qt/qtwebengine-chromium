@@ -469,13 +469,17 @@ class FlatHashMapV2 {
     size_t probe_size = 0;
     const uint8_t* ctrl = ctrl_;
 
+#if PERFETTO_BUILDFLAG(PERFETTO_X64_CPU_OPT)
     // Prefetch control bytes (like Absl's prefetch_heap_block).
     // Use locality hint 3 (high temporal locality) for better L1 cache usage.
     __builtin_prefetch(ctrl_ + offset, 0, 3);
+#endif
 
     while (true) {
+#if PERFETTO_BUILDFLAG(PERFETTO_X64_CPU_OPT)
       // Prefetch slots at current probe offset (like Absl).
       __builtin_prefetch(slots_ + offset, 0, 3);
+#endif
 
       Group group(ctrl + offset);
 

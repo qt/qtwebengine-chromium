@@ -16,11 +16,11 @@ namespace v8::internal {
 // using namespace compiler::turboshaft;  // NOLINT(build/namespaces)
 
 class NumberBuiltinsAssemblerTS
-    : public TurboshaftBuiltinsAssembler<NumberBuiltinsReducer,
-                                         FeedbackCollectorReducer> {
+    : public TurboshaftBuiltinsAssembler<v8::internal::NumberBuiltinsReducer,
+                                         v8::internal::FeedbackCollectorReducer> {
  public:
-  using Base = TurboshaftBuiltinsAssembler<NumberBuiltinsReducer,
-                                           FeedbackCollectorReducer>;
+  using Base = TurboshaftBuiltinsAssembler<v8::internal::NumberBuiltinsReducer,
+                                           v8::internal::FeedbackCollectorReducer>;
 
   using Base::Asm;
   using Base::Base;

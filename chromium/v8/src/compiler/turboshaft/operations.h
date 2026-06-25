@@ -525,7 +525,7 @@ class InputsRepFactory {
   };
 };
 
-struct __attribute__((packed)) EffectDimensions {
+V8_PACKED_PUSH(struct EffectDimensions) {
   // Produced by loads, consumed by operations that should not move before loads
   // because they change memory.
   bool load_heap_memory : 1;
@@ -576,7 +576,7 @@ struct __attribute__((packed)) EffectDimensions {
   bool operator!=(EffectDimensions other) const {
     return bits() != other.bits();
   }
-};
+}; V8_PACKED_POP
 static_assert(sizeof(EffectDimensions) == sizeof(EffectDimensions::Bits));
 
 // Possible reorderings are restricted using two bit vectors: `produces` and
@@ -620,7 +620,7 @@ static_assert(sizeof(EffectDimensions) == sizeof(EffectDimensions::Bits));
 // they become more restricted in their movement. Note that calls are not the
 // most side-effectful operations, as they do not leave the heap in an
 // inconsistent state, so they do not need to be marked as raw heap access.
-struct __attribute__((packed)) OpEffects {
+V8_PACKED_PUSH(struct OpEffects) {
   EffectDimensions produces;
   EffectDimensions consumes;
 
@@ -842,7 +842,7 @@ struct __attribute__((packed)) OpEffects {
     // said check has been executed anyways.
     return IsSubsetOf(OpEffects().CanDependOnChecks());
   }
-};
+}; V8_PACKED_POP
 static_assert(sizeof(OpEffects) == sizeof(OpEffects::Bits));
 
 V8_INLINE size_t hash_value(OpEffects effects) {
@@ -2904,7 +2904,7 @@ struct ConstantOp : FixedArityOperationT<0, ConstantOp> {
 // When result_rep is RegisterRepresentation::Compressed(), then the load does
 // not decompress the value.
 struct LoadOp : OperationT<LoadOp> {
-  struct __attribute__((packed)) Kind {
+  V8_PACKED_PUSH(struct Kind) {
     // The `base` input is a tagged pointer to a HeapObject.
     bool tagged_base : 1;
     // The effective address might be unaligned. This is only set to true if
@@ -3037,7 +3037,7 @@ struct LoadOp : OperationT<LoadOp> {
              is_immutable == other.is_immutable &&
              is_atomic == other.is_atomic && trap_on_null == other.trap_on_null;
     }
-  };
+  }; V8_PACKED_POP
   Kind kind;
   MemoryRepresentation loaded_rep;
   RegisterRepresentation result_rep;

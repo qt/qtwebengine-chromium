@@ -1906,7 +1906,7 @@ void SchedulerStateMachine::SetShouldThrottleFrameRate(bool flag) {
 }
 
 void SchedulerStateMachine::SetRequestHighFramerate(bool flag) {
-  TRACE_EVENT("blink", __PRETTY_FUNCTION__);
+  TRACE_EVENT("blink", PRETTY_FUNCTION);
   if (flag) {
     high_framerate_requests_count_ += 1;
   } else {

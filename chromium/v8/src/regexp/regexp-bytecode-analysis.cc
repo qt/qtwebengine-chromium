@@ -40,7 +40,7 @@ void RegExpBytecodeAnalysis::Analyze() {
 }
 
 void RegExpBytecodeAnalysis::PrintBlock(int block_id) {
-  const char* kGrey = "\e[0;32m";
+  const char* kGrey = "\033[0;32m";
   const char* kReset = "\033[0m";
   const char* prefix = "-- ";
 

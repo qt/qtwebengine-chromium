@@ -105,7 +105,6 @@ ScrollJankV4FrameStage::List CalculateStagesImpl(
       }
       // If there were no issues, report the ordering of scroll start, scroll
       // updates and/or scroll end.
-      using enum FrameStageCalculationResult;
       return std::visit(
           // Note: We know, by construction, that `stages` contains each stage
           // type (start/updates/end) at most once.
@@ -114,24 +113,24 @@ ScrollJankV4FrameStage::List CalculateStagesImpl(
                 // It's not possible to have a start without updates because
                 // both originate from
                 // `EventMetrics::EventType::kFirstGestureScrollUpdate`.
-                return stages.size() == 2 ? kScrollStartThenUpdates
-                                          : kScrollStartThenUpdatesThenEnd;
+                return stages.size() == 2 ? ScrollJankV4FrameStage::FrameStageCalculationResult::kScrollStartThenUpdates
+                                          : ScrollJankV4FrameStage::FrameStageCalculationResult::kScrollStartThenUpdatesThenEnd;
               },
               [&stages](const ScrollJankV4FrameStage::ScrollUpdates& updates) {
                 // We know that `stages` doesn't contain any start. Otherwise,
                 // we'd have reported the `kScrollStartAfterUpdate` issue.
-                return stages.size() == 1 ? kScrollUpdatesOnly
-                                          : kScrollUpdatesThenEnd;
+                return stages.size() == 1 ? ScrollJankV4FrameStage::FrameStageCalculationResult::kScrollUpdatesOnly
+                                          : ScrollJankV4FrameStage::FrameStageCalculationResult::kScrollUpdatesThenEnd;
               },
               [&stages](const ScrollJankV4FrameStage::ScrollEnd& end) {
                 if (stages.size() == 1) {
-                  return kScrollEndOnly;
+                  return ScrollJankV4FrameStage::FrameStageCalculationResult::kScrollEndOnly;
                 }
                 // We know that `stages` contains [end, start, updates] in that
                 // order. Otherwise, we'd have reported one of the
                 // `kScrollEndThenUpdatesWithoutStart` or
                 // `kScrollStartAfterUpdate` issues.
-                return kScrollEndThenStartThenUpdates;
+                return ScrollJankV4FrameStage::FrameStageCalculationResult::kScrollEndThenStartThenUpdates;
               }},
           stages[0].stage);
     }();

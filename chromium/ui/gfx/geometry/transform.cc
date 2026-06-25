@@ -112,9 +112,15 @@ Transform Transform::ColMajor(base::span<const double, 16> a) {
 // static
 
 Transform Transform::ColMajorF(base::span<const float, 16> a) {
+#if !defined(_MSC_VER) || defined(__clang__)
   if (AllTrue(Float4{a[1], a[2], a[3], a[4]} == Float4{0, 0, 0, 0} &
               Float4{a[6], a[7], a[8], a[9]} == Float4{0, 0, 0, 0} &
               Float4{a[10], a[11], a[14], a[15]} == Float4{1, 0, 0, 1})) {
+#else
+  if (AllTrue(Double4{a[1], a[2], a[3], a[4]} == Double4{0, 0, 0, 0} &
+              Double4{a[6], a[7], a[8], a[9]} == Double4{0, 0, 0, 0} &
+              Double4{a[10], a[11], a[14], a[15]} == Double4{1, 0, 0, 1})) {
+#endif
     return Transform(a[0], a[5], a[12], a[13]);
   }
   return Transform(a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7], a[8], a[9],
