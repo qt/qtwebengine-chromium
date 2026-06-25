@@ -257,7 +257,7 @@ bool FFmpegAudioDecoder::OnNewFrame(const DecoderBuffer& buffer,
   // Translate unsupported into discrete layouts for discrete configurations;
   // ffmpeg does not have a labeled discrete configuration internally.
   ChannelLayout channel_layout = ChannelLayoutToChromeChannelLayout(
-#if LIBAVCODEC_VERSION_MAJOR > 68 // FIXME, guessed version
+#if LIBAVCODEC_VERSION_MAJOR >= 62
       codec_context_->ch_layout);
 #elif LIBAVCODEC_VERSION_MAJOR > 60
       codec_context_->ch_layout.u.mask, codec_context_->ch_layout.nb_channels);
@@ -481,7 +481,7 @@ int FFmpegAudioDecoder::GetAudioBuffer(struct AVCodecContext* s,
   ChannelLayout channel_layout =
       config_.channel_layout() == CHANNEL_LAYOUT_DISCRETE
           ? CHANNEL_LAYOUT_DISCRETE
-#if LIBAVCODEC_VERSION_MAJOR > 68 // FIXME, put guess
+#if LIBAVCODEC_VERSION_MAJOR >= 62
           : ChannelLayoutToChromeChannelLayout(s->ch_layout);
 #elif LIBAVCODEC_VERSION_MAJOR > 60
           : ChannelLayoutToChromeChannelLayout(s->ch_layout.u.mask,

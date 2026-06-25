@@ -429,9 +429,9 @@ bool AVCodecContextToAudioDecoderConfig(const AVCodecContext* codec_context,
 #endif
           ? CHANNEL_LAYOUT_DISCRETE
           : ChannelLayoutToChromeChannelLayout(
-#if LIBAVCODEC_VERSION_MAJOR > 68
-          : codec_context->ch_layout);
-#elif LIBAVCODEC_VERSION_MAJOR > 60
+#if LIBAVCODEC_VERSION_MAJOR >= 62
+                codec_context->ch_layout);
+#elif LIBAVCODEC_VERSION_MAJOR == 61
                 codec_context->ch_layout.u.mask,
                 codec_context->ch_layout.nb_channels);
 #else
