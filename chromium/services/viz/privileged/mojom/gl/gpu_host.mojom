@@ -15,7 +15,7 @@ import "third_party/blink/public/mojom/tokens/tokens.mojom";
 import "ui/gfx/mojom/gpu_extra_info.mojom";
 import "url/mojom/url.mojom";
 
-[EnableIf=is_win]
+[EnableIf=is_win&use_ml]
 import "services/webnn/public/mojom/ep_package_info.mojom";
 
 [EnableIf=is_win]
@@ -83,7 +83,7 @@ interface GpuHost {
 
   // Tells the GPU host to ensure the execution providers used by WebNN are
   // ready. Returns the package info of available execution providers.
-  [EnableIf=is_win]
+  [EnableIf=is_win&use_ml]
   EnsureWebNNExecutionProvidersReady()
       => (map<string, webnn.mojom.EpPackageInfo> ep_package_info);
 
@@ -91,5 +91,6 @@ interface GpuHost {
   // weights in the WebNN graph. Returns the open file handle if the file was
   // successfully created, otherwise return invalid file handle that will be
   // caught and prevent the graph from being built.
+  [EnableIf=use_ml]
   CreateWebNNWeightsFile() => (mojo_base.mojom.File? file);
 };

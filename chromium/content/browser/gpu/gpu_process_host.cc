@@ -1344,9 +1344,11 @@ bool GpuProcessHost::LaunchGpuProcess() {
   cmd_line->CopySwitchesFrom(browser_command_line, kSwitchNames);
   cmd_line->CopySwitchesFrom(browser_command_line,
                              switches::kGLSwitchesCopiedFromGpuProcessHost);
+#if BUILDFLAG(USE_ML)
   cmd_line->CopySwitchesFrom(
       browser_command_line,
       switches::GetWebNNSwitchesCopiedFromGpuProcessHost());
+#endif
 
   if (browser_command_line.HasSwitch(switches::kDisableFrameRateLimit))
     cmd_line->AppendSwitch(switches::kDisableGpuVsync);

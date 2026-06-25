@@ -23,6 +23,7 @@
 #include "base/values.h"
 #include "build/build_config.h"
 #include "components/discardable_memory/public/mojom/discardable_shared_memory_manager.mojom.h"
+#include "components/ml/buildflags.h"
 #include "components/persistent_cache/pending_backend.h"
 #include "components/viz/common/buildflags.h"
 #include "components/viz/host/viz_host_export.h"
@@ -289,11 +290,13 @@ class VIZ_HOST_EXPORT GpuHostImpl : public mojom::GpuHost,
                        const std::string& key,
                        const std::string& blob) override;
   void ClearGrShaderDiskCache() override;
+#if BUILDFLAG(USE_ML)
 #if BUILDFLAG(IS_WIN)
   void EnsureWebNNExecutionProvidersReady(
       EnsureWebNNExecutionProvidersReadyCallback cb) override;
 #endif
   void CreateWebNNWeightsFile(CreateWebNNWeightsFileCallback cb) override;
+#endif  // BUILDFLAG(USE_ML)
 
   // mojom::GpuLogging:
   void RecordLogMessage(int32_t severity,

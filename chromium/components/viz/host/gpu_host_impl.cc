@@ -30,7 +30,9 @@
 #include "gpu/ipc/host/gpu_disk_cache.h"
 #include "gpu/webgpu/dawn_commit_hash.h"
 #include "mojo/public/cpp/bindings/sync_call_restrictions.h"
+#if BUILDFLAG(USE_ML)
 #include "services/webnn/host/weights_file_provider.h"
+#endif
 #include "skia/buildflags.h"
 #include "skia/ext/skia_commit_hash.h"
 #include "ui/gfx/font_render_params.h"
@@ -40,7 +42,9 @@
 #endif
 
 #if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(USE_ML)
 #include "services/webnn/host/execution_provider_initializer.h"
+#endif
 #include "ui/gfx/win/rendering_window_manager.h"
 #elif BUILDFLAG(IS_MAC)
 #include "ui/accelerated_widget_mac/window_resize_helper_mac.h"
@@ -788,6 +792,7 @@ void GpuHostImpl::ClearGrShaderDiskCache() {
   }
 }
 
+#if BUILDFLAG(USE_ML)
 #if BUILDFLAG(IS_WIN)
 void GpuHostImpl::EnsureWebNNExecutionProvidersReady(
     EnsureWebNNExecutionProvidersReadyCallback cb) {
@@ -798,6 +803,7 @@ void GpuHostImpl::EnsureWebNNExecutionProvidersReady(
 void GpuHostImpl::CreateWebNNWeightsFile(CreateWebNNWeightsFileCallback cb) {
   webnn::CreateWeightsFile(std::move(cb));
 }
+#endif  // BUILDFLAG(USE_ML)
 
 void GpuHostImpl::RecordLogMessage(int32_t severity,
                                    const std::string& header,
