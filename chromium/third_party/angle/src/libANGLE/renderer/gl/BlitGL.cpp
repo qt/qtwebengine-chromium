@@ -159,6 +159,7 @@ angle::Result SetClearState(StateManagerGL *stateManager,
     }
 
     stateManager->setScissorTestEnabled(false);
+    stateManager->setRasterizerDiscardEnabled(false);
 
     return angle::Result::Continue;
 }
