@@ -382,7 +382,7 @@ class CORE_EXPORT HTMLSelectElement final
   void ChildrenChanged(const ChildrenChange& change) override;
   bool ChildrenChangedAllChildrenRemovedNeedsList() const override;
   void ParseAttribute(const AttributeModificationParams&) override;
-  void DisabledAttributeChanged() override;
+  void DisabledAttributeChanged(DisabledChangedReason) override;
   bool IsPresentationAttribute(const QualifiedName&) const override;
 
   LayoutObject* CreateLayoutObject(const ComputedStyle&) override;

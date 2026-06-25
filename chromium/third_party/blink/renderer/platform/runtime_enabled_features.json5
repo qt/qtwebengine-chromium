@@ -2348,6 +2348,17 @@
       status: "stable",
     },
     {
+      // Prevents the change event from being fired within
+      // HTMLFieldSetElement::ChildrenChanged because we aren't supposed to
+      // fire events during mutations like that.
+      // https://issues.chromium.org/issues/523756329
+      // https://issues.chromium.org/issues/523748081
+      // https://issues.chromium.org/issues/523737685
+      // Enabled in 151, safe to remove in 153.
+      name: "DisableFormControlChangeEventDuringMutation",
+      status: "stable",
+    },
+    {
       // Enables the ability to set seller nonces on the header response and
       // use bidNonce in bids.
       name: "FledgeSellerNonce",

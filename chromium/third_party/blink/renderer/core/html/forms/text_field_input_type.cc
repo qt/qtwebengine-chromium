@@ -33,6 +33,7 @@
 
 #include "third_party/blink/renderer/core/css_value_keywords.h"
 #include "third_party/blink/renderer/core/dom/events/event_dispatch_forbidden_scope.h"
+#include "third_party/blink/renderer/core/dom/events/scoped_event_queue.h"
 #include "third_party/blink/renderer/core/dom/focus_params.h"
 #include "third_party/blink/renderer/core/dom/shadow_root.h"
 #include "third_party/blink/renderer/core/editing/frame_selection.h"
@@ -56,6 +57,7 @@
 #include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
+#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 
 namespace blink {
@@ -450,23 +452,33 @@ void TextFieldInputType::ValueAttributeChanged() {
   UpdateView();
 }
 
-void TextFieldInputType::DisabledOrReadonlyAttributeChanged() {
-  if (SpinButtonElement* spin_button = GetSpinButtonElement())
-    spin_button->ReleaseCapture();
+void TextFieldInputType::DisabledOrReadonlyAttributeChanged(
+    DisabledChangedReason reason) {
+  if (SpinButtonElement* spin_button = GetSpinButtonElement()) {
+    bool avoid_dispatch =
+        RuntimeEnabledFeatures::
+            DisableFormControlChangeEventDuringMutationEnabled() &&
+        (GetElement().GetDocument().StatePreservingAtomicMoveInProgress() ||
+         reason == DisabledChangedReason::kFieldsetChildrenChanged);
+    SpinButtonElement::EventDispatch dispatch =
+        avoid_dispatch ? SpinButtonElement::kEventDispatchDisallowed
+                       : SpinButtonElement::kEventDispatchAllowed;
+    spin_button->ReleaseCapture(dispatch);
+  }
 }
 
-void TextFieldInputType::DisabledAttributeChanged() {
+void TextFieldInputType::DisabledAttributeChanged(DisabledChangedReason reason) {
   if (!HasCreatedShadowSubtree()) {
     return;
   }
-  DisabledOrReadonlyAttributeChanged();
+  DisabledOrReadonlyAttributeChanged(reason);
 }
 
 void TextFieldInputType::ReadonlyAttributeChanged() {
   if (!HasCreatedShadowSubtree()) {
     return;
   }
-  DisabledOrReadonlyAttributeChanged();
+  DisabledOrReadonlyAttributeChanged(DisabledChangedReason::kAttributeChanged);
 }
 
 bool TextFieldInputType::SupportsReadOnly() const {
