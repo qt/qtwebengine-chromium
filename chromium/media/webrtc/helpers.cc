@@ -19,12 +19,12 @@
 #include "third_party/webrtc/api/audio/audio_processing.h"
 #include "third_party/webrtc/api/audio/builtin_audio_processing_builder.h"
 #include "third_party/webrtc/api/audio/echo_canceller3_config.h"
-#include "third_party/webrtc/api/audio/neural_residual_echo_estimator_creator.h"
 #include "third_party/webrtc/modules/audio_processing/aec_dump/aec_dump_factory.h"
 #include "third_party/webrtc_overrides/environment.h"
 
 #if BUILDFLAG(BUILD_WITH_TFLITE_LIB)
 #include "components/optimization_guide/core/tflite_op_resolver.h"
+#include "third_party/webrtc/api/audio/neural_residual_echo_estimator_creator.h"
 #endif
 
 namespace media {

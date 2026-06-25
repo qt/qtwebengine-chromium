@@ -18,15 +18,22 @@
 #include "base/sequence_checker.h"
 #include "base/thread_annotations.h"
 #include "base/time/time.h"
+#include "components/optimization_guide/machine_learning_tflite_buildflags.h"
 #include "media/base/audio_parameters.h"
 #include "media/base/audio_processing.h"
 #include "media/base/audio_push_fifo.h"
 #include "media/webrtc/audio_delay_stats_reporter.h"
 #include "media/webrtc/webrtc_features.h"
+#if BUILDFLAG(BUILD_WITH_TFLITE_LIB)
 #include "third_party/tflite/src/tensorflow/lite/model_builder.h"
+#endif
 #include "third_party/webrtc/api/task_queue/task_queue_base.h"
 #include "third_party/webrtc/modules/audio_processing/include/audio_processing.h"
 #include "third_party/webrtc/modules/audio_processing/include/audio_processing_statistics.h"
+
+namespace tflite {
+class FlatBufferModel;
+}
 
 namespace media {
 class AudioBus;

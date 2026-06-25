@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//components/optimization_guide/features.gni")
 import("//build/config/cast.gni")
 import("//third_party/webrtc/webrtc.gni")
 
@@ -197,6 +198,11 @@ if ((is_linux || is_chromeos) && rtc_use_pipewire) {
     "//third_party/webrtc/modules/portal",
     "//third_party/webrtc/modules/video_capture:video_capture_internal_impl",
     "//third_party/webrtc/modules/video_capture:video_capture_module",
+  ]
+}
+if (!build_with_tflite_lib) {
+  webrtc_public_deps -= [
+    "//third_party/webrtc/api/audio:neural_residual_echo_estimator_creator",
   ]
 }
 
