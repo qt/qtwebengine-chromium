@@ -291,6 +291,8 @@ MaybeError RecordBufferTextureCopyWithTemporaryBuffer(CommandRecordingContext* r
     Ref<Buffer> tempBuffer = ToBackend(std::move(tempBufferBase));
     DAWN_ASSERT(tempBuffer->GetVA() % D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT == 0);
 
+    DAWN_TRY(tempBuffer->EnsureDataInitialized(recordingContext));
+
     BufferCopy tempBufferCopy;
     tempBufferCopy.buffer = tempBuffer;
     tempBufferCopy.offset = 0;
