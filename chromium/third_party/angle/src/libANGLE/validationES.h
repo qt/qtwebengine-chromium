@@ -98,6 +98,11 @@ bool ValidateWebGLVertexAttribPointer(const Context *context,
                                       const void *ptr,
                                       bool pureInteger);
 
+bool ValidateWebGLBufferBinding(const Context *context,
+                                angle::EntryPoint entryPoint,
+                                BufferBinding target,
+                                BufferID buffer);
+
 // Returns valid program if id is a valid program name
 // Errors INVALID_OPERATION if valid shader is given and returns NULL
 // Errors INVALID_VALUE otherwise and returns NULL
