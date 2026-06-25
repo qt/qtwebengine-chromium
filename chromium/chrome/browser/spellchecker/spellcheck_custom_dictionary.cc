@@ -533,11 +533,13 @@ void SpellcheckCustomDictionary::ApplyToSet(const Change& dictionary_change,
 
 void SpellcheckCustomDictionary::Apply(const Change& dictionary_change) {
   ApplyToSet(dictionary_change, &words_);
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (base::FeatureList::IsEnabled(
           syncer::kSpellcheckSeparateLocalAndAccountDictionaries) &&
       IsSyncing()) {
     ApplyToSet(dictionary_change, &account_words_);
   }
+#endif
 }
 
 void SpellcheckCustomDictionary::FixInvalidFile(
