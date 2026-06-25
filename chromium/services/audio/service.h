@@ -17,7 +17,6 @@
 #include "services/audio/public/mojom/debug_recording.mojom.h"
 #include "services/audio/public/mojom/device_notifications.mojom.h"
 #include "services/audio/public/mojom/log_factory_manager.mojom.h"
-#include "services/audio/public/mojom/ml_model_manager.mojom.h"
 #include "services/audio/public/mojom/system_info.mojom.h"
 #include "services/audio/public/mojom/testing_api.mojom.h"
 #include "services/audio/stream_factory.h"
@@ -25,6 +24,7 @@
 
 #if BUILDFLAG(CHROME_WIDE_ECHO_CANCELLATION)
 #include "services/audio/ml_model_manager.h"
+#include "services/audio/public/mojom/ml_model_manager.mojom.h"
 #endif
 
 namespace base {
