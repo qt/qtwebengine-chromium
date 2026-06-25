@@ -19,6 +19,9 @@
 #include "chrome/browser/profiles/profile.h"
 #if !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/profiles/profile_key.h"
+#else
+#include "components/os_crypt/async/browser/os_crypt_async.h"
+#include "components/os_crypt/async/browser/key_provider.h"
 #endif
 #include "chrome/browser/signin/identity_manager_factory.h"
 #include "components/gcm_driver/gcm_profile_service.h"
@@ -171,6 +174,10 @@ GCMProfileServiceFactory::BuildServiceInstanceForBrowserContext(
           {base::MayBlock(), base::TaskPriority::BEST_EFFORT,
            base::TaskShutdownBehavior::SKIP_ON_SHUTDOWN}));
   std::unique_ptr<GCMProfileService> service;
+#if BUILDFLAG(IS_QTWEBENGINE)
+  static auto os_crypt_async = std::make_unique<os_crypt_async::OSCryptAsync>(
+    std::vector<std::pair<size_t, std::unique_ptr<os_crypt_async::KeyProvider>>>{});
+#endif
 #if BUILDFLAG(IS_ANDROID)
   service = std::make_unique<GCMProfileService>(profile->GetPath(),
                                                 blocking_task_runner);
@@ -193,7 +200,7 @@ GCMProfileServiceFactory::BuildServiceInstanceForBrowserContext(
 #if !BUILDFLAG(IS_QTWEBENGINE)
       g_browser_process->os_crypt_async());
 #else
-      nullptr);
+      os_crypt_async.get());
 #endif
 #endif
 #if BUILDFLAG(ENABLE_OFFLINE_PAGES)

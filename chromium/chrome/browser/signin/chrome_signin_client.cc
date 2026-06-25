@@ -37,9 +37,11 @@
 #include "chrome/browser/signin/chrome_device_id_helper.h"
 #include "chrome/browser/signin/force_signin_verifier.h"
 #include "chrome/browser/signin/identity_manager_factory.h"
-#include "chrome/browser/signin/signin_hats_util.h"
-#include "chrome/browser/signin/signin_util.h"
 #if !BUILDFLAG(IS_QTWEBENGINE)
+#include "chrome/browser/signin/signin_hats_util.h"
+#endif
+#if !BUILDFLAG(IS_QTWEBENGINE)
+#include "chrome/browser/signin/signin_util.h"
 #include "chrome/browser/ui/hats/survey_config.h"
 #endif
 #include "chrome/common/buildflags.h"
@@ -190,13 +192,14 @@ std::string HatsSurveyTriggerForAccessPoint(
       return kHatsSurveyTriggerIdentitySigninInterceptProfileSeparation;
     case signin_metrics::AccessPoint::kUserManager:
       return kHatsSurveyTriggerIdentityProfilePickerAddProfileSignin;
-#endif  // BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_WIN)
+#endif  // BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_WIN) && !BUILDFLAG(IS_QTWEBENGINE)
     default:
       // No HaTS survey is defined for the rest of the access point.
       return std::string();
   }
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 class ChromeOAuthConsumerRegistry : public signin::OAuthConsumerRegistry {
  protected:
   signin::OAuthConsumer GetOAuthConsumerForEnterprisePlusAddress()
@@ -219,6 +222,7 @@ class ChromeOAuthConsumerRegistry : public signin::OAuthConsumerRegistry {
 #endif
   }
 };
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 }  // namespace
 
@@ -233,9 +237,13 @@ ChromeSigninClient::ChromeSigninClient(Profile* profile)
               profile->AsTestingProfile())
 #endif
               ),
+#if !BUILDFLAG(IS_QTWEBENGINE)
       profile_(profile),
       oauth_consumer_registry_(
           std::make_unique<ChromeOAuthConsumerRegistry>()) {
+#else
+      profile_(profile) {
+#endif
   // Makes sure to register groups on Startup if previously set.
   RegisterSyntheticTrialsFromPrefs();
 }
