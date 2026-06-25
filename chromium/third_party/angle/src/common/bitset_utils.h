@@ -700,6 +700,16 @@ class BitSetArray final
     constexpr value_type bits(size_t index) const;
     constexpr static size_t ArraySize() { return kArraySize; }
 
+#if !defined(ANGLE_IS_64_BIT_CPU)
+    constexpr uint64_t bits() const
+    {
+        static_assert(N < 64);
+        static_assert(priv::kDefaultBitSetSize == 32);
+        uint64_t result = mBaseBitSetArray[1].bits();
+        return (result << 32) | mBaseBitSetArray[0].bits();
+    }
+#endif
+
     // Produces a mask of ones up to the "x"th bit.
     constexpr static BitSetArray Mask(std::size_t x);
 
