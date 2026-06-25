@@ -2193,12 +2193,16 @@ RTCVideoEncoder::Impl::CreateNV12SharedImageFrame(
   CHECK(!input_buffers_free_.empty());
   TRACE_EVENT1("webrtc", "RTCVideoEncoder::Impl::CreateNV12SharedImageFrame",
                "visible_rect", visible_rect.ToString());
+
+  // ToI420() below may rescale the image. It will always output the
+  // resolution reported by VideoFrameBuffer.
+  const gfx::Size frame_size(frame_buffer.width(), frame_buffer.height());
+
   const int index = input_buffers_free_.back();
   scoped_refptr<gpu::ClientSharedImage>& nv12_shared_image =
       input_buffers_[index].nv12_shared_image;
-  if (!nv12_shared_image || nv12_shared_image->size() != visible_rect.size()) {
-    nv12_shared_image =
-        CreateClientSharedImage(gpu_factories_, visible_rect.size());
+  if (!nv12_shared_image || nv12_shared_image->size() != frame_size) {
+    nv12_shared_image = CreateClientSharedImage(gpu_factories_, frame_size);
     if (!nv12_shared_image) {
       NotifyErrorStatus({media::EncoderStatus::Codes::kSystemAPICallError,
                          "Failed to allocate shared image"});
@@ -2225,8 +2229,8 @@ RTCVideoEncoder::Impl::CreateNV12SharedImageFrame(
   uint8_t* dst_uv = mapping->GetMemoryForPlane(1).data();
   const size_t dst_y_stride = mapping->Stride(0);
   const size_t dst_uv_stride = mapping->Stride(1);
-  const size_t width = visible_rect.width();
-  const size_t height = visible_rect.height();
+  const size_t width = frame_size.width();
+  const size_t height = frame_size.height();
   if (libyuv::I420ToNV12(i420_buffer->DataY(), i420_buffer->StrideY(),
                          i420_buffer->DataU(), i420_buffer->StrideU(),
                          i420_buffer->DataV(), i420_buffer->StrideV(), dst_y,
@@ -2245,8 +2249,8 @@ RTCVideoEncoder::Impl::CreateNV12SharedImageFrame(
   TRACE_EVENT_END0("webrtc", "CreateNV12SharedImageFrame-GenVerifiedSyncToken");
   // The timestamp is set later in EncodeOneFrameWithNativeInput().
   auto frame = media::VideoFrame::WrapMappableSharedImage(
-      nv12_shared_image, sync_token, base::NullCallback(), visible_rect,
-      visible_rect.size(), base::TimeDelta());
+      nv12_shared_image, sync_token, base::NullCallback(),
+      gfx::Rect(frame_size), frame_size, base::TimeDelta());
   if (!frame) {
     NotifyErrorStatus({media::EncoderStatus::Codes::kEncoderFailedEncode,
                        "Failed to create video frame"});
