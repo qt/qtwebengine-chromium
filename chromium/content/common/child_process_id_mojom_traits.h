@@ -6,7 +6,7 @@
 #define CONTENT_COMMON_CHILD_PROCESS_ID_MOJOM_TRAITS_H_
 
 #include "content/common/web_contents_ns_view_bridge.mojom-shared.h"
-#include "content/public/common/child_process_id.h"
+#include "content/public/browser/child_process_id.h"
 
 namespace mojo {
 
