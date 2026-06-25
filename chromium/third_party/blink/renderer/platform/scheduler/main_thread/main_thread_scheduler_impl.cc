@@ -1104,6 +1104,7 @@ void MainThreadSchedulerImpl::WillBeginFrame(const viz::BeginFrameArgs& args) {
                               time_now);
       break;
     default:
+      break;
   }
   // Calls ::ApplyPerformanceState if something's changed.
   performance_helper_.Check(time_now);

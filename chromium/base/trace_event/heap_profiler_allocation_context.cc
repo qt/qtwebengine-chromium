@@ -23,7 +23,6 @@ bool operator==(const StackFrame& lhs, const StackFrame& rhs) {
 }
 
 Backtrace::Backtrace() = default;
-Backtrace::Backtrace(const Backtrace &) = default;
 
 Backtrace::Backtrace(const Backtrace&) = default;
 

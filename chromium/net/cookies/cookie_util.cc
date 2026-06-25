@@ -842,8 +842,9 @@ bool IsCookiePartitionedValid(
   return result;
 }
 
-void ParseRequestCookieLine(std::string_view header_value,
+void ParseRequestCookieLine(std::string_view header_value_view,
                             ParsedRequestCookies* parsed_cookies) {
+  const std::string header_value(header_value_view);
   std::string::const_iterator i = header_value.begin();
   while (i != header_value.end()) {
     // Here we are at the beginning of a cookie.

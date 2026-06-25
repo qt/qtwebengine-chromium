@@ -341,7 +341,7 @@ const CSSValue* AnchorName::CSSValueFromComputedStyleInternal(
 const CSSValue* AnchorScope::ParseSingleValue(
     CSSParserTokenStream& stream,
     const CSSParserContext& context,
-    const CSSParserLocalContext&) const {
+    CSSParserLocalContext& local_context) const {
   if (CSSValue* value =
           css_parsing_utils::ConsumeIdent<CSSValueID::kNone>(stream)) {
     return value;

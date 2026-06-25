@@ -1035,6 +1035,7 @@ void SerializeLayer(LayerImpl& layer,
       }
       default:
         // TODO(zmo): handle other types of LayerImpl.
+        break;
     }
     wire.general_properties = std::move(general);
   }

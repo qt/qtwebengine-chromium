@@ -1257,7 +1257,7 @@ StyleRuleBase* CSSParserImpl::CreateDeclarationsRule(
   // Create a nested declarations rule containing all declarations from
   // start_index to the end.
   HeapVector<CSSPropertyValue, 64> declarations(
-      base::span(parsed_properties_).subspan(start_index));
+      base::span<CSSPropertyValue>(parsed_properties_).subspan(start_index));
 
   // Create the selector for StyleRuleNestedDeclarations's inner StyleRule.
 
@@ -2544,7 +2544,7 @@ StyleRuleMixin* CSSParserImpl::ConsumeMixinRule(CSSParserTokenStream& stream) {
   fake_parent_rule->EnsureChildRules();
   return MakeGarbageCollected<StyleRuleMixin>(
       name, std::move(*parameters),
-      HeapVector{std::move(*fake_parent_rule->ChildRules())});
+      HeapVector<Member<StyleRuleBase>>(std::move(*fake_parent_rule->ChildRules())));
 }
 
 StyleRule* CSSParserImpl::ConsumeDeclarationListForMixins(

@@ -1586,7 +1586,7 @@ class State : angle::NonCopyable
     using DirtyObjectHandler = angle::Result (State::*)(const Context *context, Command command);
     using DirtyObjectHandlerArray = std::array<DirtyObjectHandler, state::DIRTY_OBJECT_MAX>;
 
-    static DirtyObjectHandlerArray MakeDirtyObjectHandlers()
+    static constexpr DirtyObjectHandlerArray MakeDirtyObjectHandlers()
     {
         // Work around C++'s lack of array element support in designated initializers
         // This function cannot be a lambda due to MSVC C++17 limitations b/330910097#comment5
@@ -1612,6 +1612,7 @@ class State : angle::NonCopyable
     {
         static constexpr DirtyObjectHandlerArray handlers = MakeDirtyObjectHandlers();
 
+#if defined(ANGLE_ENABLE_ASSERTS)
         // Fail with static_assert if any handler is missing.
         constexpr auto existEmptyHandler = []() constexpr {
             for (auto handler : handlers)
@@ -1624,7 +1625,9 @@ class State : angle::NonCopyable
             return false;
         };
 
-        // static_assert(!existEmptyHandler(), "MakeDirtyObjectHandlers missing a handler");
+        //static_assert(!existEmptyHandler(), "MakeDirtyObjectHandlers missing a handler");
+        ASSERT(!existEmptyHandler());
+#endif
 
         return (this->*handlers[dirtyObject])(context, command);
     }

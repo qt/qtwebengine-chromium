@@ -1450,7 +1450,8 @@ std::string_view DoubleToRadixStringView(double value, int radix,
       // make progress. Skip it instead.
       delta_is_positive = false;
     } else {
-      static_assert(base::Double(0.0).NextDouble() > 0);
+      // static_assert(base::Double(0.0).NextDouble() > 0);
+      DCHECK_GT(base::Double(0.0).NextDouble(), 0.0);
       delta = base::Double(0.0).NextDouble();
     }
   }

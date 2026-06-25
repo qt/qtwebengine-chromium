@@ -118,7 +118,7 @@ base::expected<CookieCraving, SessionError> CookieCraving::Create(
         SessionError{SessionError::kInvalidCredentialsCookieParsing});
   }
 
-  static constexpr auto kPermittedAttributes =
+  static const auto kPermittedAttributes =
       base::MakeFixedFlatSet<std::string>(
           {"domain", "path", "secure", "httponly", "samesite"});
   if (!parsed_cookie.ForEachAttribute(
