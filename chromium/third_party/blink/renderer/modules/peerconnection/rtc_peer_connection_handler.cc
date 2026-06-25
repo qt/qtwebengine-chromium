@@ -75,6 +75,7 @@
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 #include "third_party/blink/renderer/platform/wtf/thread_safe_ref_counted.h"
 #include "third_party/webrtc/api/data_channel_interface.h"
+#include "third_party/webrtc/api/jsep.h"
 #include "third_party/webrtc/api/rtc_event_log_output.h"
 #include "third_party/webrtc/api/units/time_delta.h"
 #include "third_party/webrtc/pc/session_description.h"
