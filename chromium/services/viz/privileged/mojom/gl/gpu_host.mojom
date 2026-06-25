@@ -15,22 +15,22 @@ import "third_party/blink/public/mojom/tokens/tokens.mojom";
 import "ui/gfx/mojom/gpu_extra_info.mojom";
 import "url/mojom/url.mojom";
 
-[EnableIf=is_win]
+[EnableIf=is_win&use_ml]
 import "services/webnn/public/mojom/ep_device_info.mojom";
 
-[EnableIf=is_win]
+[EnableIf=is_win&use_ml]
 import "services/webnn/public/mojom/ep_package_info.mojom";
 
-[EnableIf=is_win]
+[EnableIf=is_win&use_ml]
 import "services/webnn/public/mojom/webnn_model_loader.mojom";
 
-[EnableIf=is_win]
+[EnableIf=is_win&use_ml]
 import "services/webnn/public/mojom/webnn_compiler_context.mojom";
 
-[EnableIf=is_win]
+[EnableIf=is_win&use_ml]
 import "services/webnn/public/mojom/webnn_context_properties.mojom";
 
-[EnableIf=is_win]
+[EnableIf=is_win&use_ml]
 import "services/webnn/public/mojom/webnn_context_provider.mojom";
 
 [EnableIf=is_win]
@@ -98,7 +98,7 @@ interface GpuHost {
 
   // Tells the GPU host to ensure the execution providers used by WebNN are
   // ready. Returns the package info of available execution providers.
-  [EnableIf=is_win]
+  [EnableIf=is_win&use_ml]
   EnsureWebNNExecutionProvidersReady()
       => (map<string, webnn.mojom.EpPackageInfo> ep_package_info);
 
@@ -110,7 +110,7 @@ interface GpuHost {
   // here. The Browser forwards them to the Compiler process. If the Compiler
   // cannot be launched, the pipes are simply dropped (disconnecting the
   // peer endpoints).
-  [EnableIf=is_win]
+  [EnableIf=is_win&use_ml]
   RequestWebNNCompilerContext(
       webnn.mojom.CreateContextOptions context_options,
       webnn.mojom.ContextProperties context_properties,
@@ -126,5 +126,6 @@ interface GpuHost {
   //
   // TODO(crbug.com/364445586): Once the LiteRT MLDrift delegate moves from GPU
   // to the renderer process, this interface can be removed entirely.
+  [EnableIf=use_ml]
   CreateWebNNWeightsFile() => (mojo_base.mojom.File? file);
 };
