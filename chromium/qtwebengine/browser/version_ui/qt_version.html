@@ -6,7 +6,7 @@
     <title>Qt Version</title>
     <link rel="stylesheet" href="chrome://qt/qt_version.css">
   </head>
-  <body>
+  <body onload="showExampleInfo()">
     <script>
       function showLog() {
         var d = document.getElementById("log");
@@ -18,9 +18,24 @@
           d.style.display = "block";
           b.textContent = "Hide Log"
         }
-    }
+      }
+
+      function showExampleInfo() {
+        var searchParams = new URLSearchParams(window.location.search);
+        exampleName = searchParams.get("example")
+        if (exampleName !== null) {
+          var header = document.getElementById("example-header");
+          header.innerText = header.innerText.replace("@name@", exampleName);
+          var container = document.getElementById("example-container");
+          container.removeAttribute("hidden");
+        }
+      }
     </script>
     <div id="outer">
+      <div id="example-container" hidden>
+          <h1 id="example-header" class="example-info">Qt WebEngine @name@ example</h1>
+          <p class="example-info">This is an example application demonstrating how to use various Qt WebEngine APIs. It is not intended to be used as a standalone browser, and is neither maintained nor supported as one.</p>
+      </div>
       <table id="inner" cellpadding="0" cellspacing="0" border="0">
         <tr>
             <td class="label"><img alt="Qt" src="images/qt.png"/></td>
