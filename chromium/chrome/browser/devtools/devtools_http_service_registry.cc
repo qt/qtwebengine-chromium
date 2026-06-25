@@ -59,6 +59,7 @@ DevToolsHttpServiceRegistry::Service::~Service() = default;
 DevToolsHttpServiceRegistry::Service::Service(Service&&) = default;
 
 DevToolsHttpServiceRegistry::DevToolsHttpServiceRegistry() {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   services_.push_back(Service("aidaService",
                               {
                                   {"/v1/aida:codeComplete", "POST"},
@@ -67,6 +68,7 @@ DevToolsHttpServiceRegistry::DevToolsHttpServiceRegistry() {
                                   {"/v1/aida:doConversation", "POST"},
                               },
                               std::make_unique<AidaServiceHandler>()));
+#endif
   services_.push_back(
       Service("gdpService",
               {

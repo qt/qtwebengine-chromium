@@ -38,8 +38,8 @@
 #include "base/values.h"
 #include "base/version_info/channel.h"
 #include "build/build_config.h"
-#include "chrome/browser/about_flags.h"
 #if !BUILDFLAG(IS_QTWEBENGINE)
+#include "chrome/browser/about_flags.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/devtools/aida_service_handler.h"
 #endif  // !BUILDFLAG(IS_QTWEBENGINE)
@@ -48,8 +48,8 @@
 #include "chrome/browser/devtools/devtools_select_file_dialog.h"
 #include "chrome/browser/devtools/features.h"
 #include "chrome/browser/devtools/url_constants.h"
-#include "chrome/browser/lifetime/application_lifetime.h"
 #if !BUILDFLAG(IS_QTWEBENGINE)
+#include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/policy/profile_policy_connector.h"
 #endif  // !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/profiles/profile.h"
@@ -71,6 +71,7 @@
 #include "chrome/grit/generated_resources.h"
 #include "components/content_settings/core/common/features.h"
 #include "components/infobars/content/content_infobar_manager.h"
+#include "components/ml/buildflags.h"
 #if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/metrics/structured/structured_events.h"
 #include "components/metrics/structured/structured_metrics_client.h"
@@ -1803,7 +1804,7 @@ base::DictValue DevToolsUIBindings::GetHostConfigDictionary(Profile* profile) {
   PrefService* prefs = profile->GetPrefs();
 #else
   PrefService* prefs = g_browser_process->local_state();
-#endif
+#endif  // BUILDFLAG(IS_CHROMEOS)
   auto flags_storage =
       std::make_unique<flags_ui::PrefServiceFlagsStorage>(prefs);
 
@@ -1812,6 +1813,7 @@ base::DictValue DevToolsUIBindings::GetHostConfigDictionary(Profile* profile) {
   about_flags::GetCurrentFlagsState()->ConvertFlagsToSwitches(
       flags_storage.get(), &command_line, flags_ui::kAddSentinels,
       "enable-features", "disable-features");
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
   std::string enabled_by_flags =
       command_line.GetSwitchValueASCII("enable-features");
   std::string disabled_by_flags =
@@ -1819,6 +1821,7 @@ base::DictValue DevToolsUIBindings::GetHostConfigDictionary(Profile* profile) {
 
   base::DictValue response_dict;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   AidaClient::Availability availability = AidaClient::CanUseAida(profile);
 
   base::DictValue aida_availability;
@@ -1831,12 +1834,14 @@ base::DictValue DevToolsUIBindings::GetHostConfigDictionary(Profile* profile) {
   aida_availability.Set("enterprisePolicyValue",
                         static_cast<int>(availability.enterprise_policy_value));
   response_dict.Set("aidaAvailability", std::move(aida_availability));
+#endif
 
   version_info::Channel channel = chrome::GetChannel();
   if (channel != version_info::Channel::UNKNOWN) {
     response_dict.Set("channel", version_info::GetChannelString(channel));
   }
 
+#if BUILDFLAG(USE_ML) && !BUILDFLAG(IS_QTWEBENGINE)
   base::DictValue console_insights_dict;
   console_insights_dict.Set(
       "enabled",
@@ -1972,7 +1977,7 @@ base::DictValue DevToolsUIBindings::GetHostConfigDictionary(Profile* profile) {
     response_dict.Set("devToolsAiCodeGeneration",
                       std::move(ai_code_generation_dict));
   }
-
+#endif  // BUILDFLAG(USE_ML) && !BUILDFLAG(IS_QTWEBENGINE)
   if (base::FeatureList::IsEnabled(
           ::features::kDevToolsEnableDurableMessages)) {
     base::DictValue devtools_durable_message_dict;
@@ -1995,13 +2000,12 @@ base::DictValue DevToolsUIBindings::GetHostConfigDictionary(Profile* profile) {
 
   response_dict.Set("isOffTheRecord", profile->IsOffTheRecord());
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   base::DictValue devtools_privacy_ui_dict;
   devtools_privacy_ui_dict.Set(
       "enabled", base::FeatureList::IsEnabled(::features::kDevToolsPrivacyUI));
   response_dict.Set("devToolsPrivacyUI", std::move(devtools_privacy_ui_dict));
-#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
-#if !BUILDFLAG(IS_QTWEBENGINE)
   if (base::FeatureList::IsEnabled(features::kDevToolsPrivacyUI)) {
     base::DictValue third_party_cookie_controls_dict;
     third_party_cookie_controls_dict.Set(
@@ -2037,7 +2041,7 @@ base::DictValue DevToolsUIBindings::GetHostConfigDictionary(Profile* profile) {
     response_dict.Set("thirdPartyCookieControls",
                       std::move(third_party_cookie_controls_dict));
   }
-#endif
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
   base::DictValue origin_bound_cookies_dict;
   origin_bound_cookies_dict.Set(
       "portBindingEnabled",
@@ -2127,14 +2131,14 @@ base::DictValue DevToolsUIBindings::GetHostConfigDictionary(Profile* profile) {
   gdp_profiles_availability_dict.Set("enabled", true);
 #else
   gdp_profiles_availability_dict.Set("enabled", false);
-#endif
+#endif  // BUILDFLAG(GOOGLE_CHROME_BRANDING)
   gdp_profiles_availability_dict.Set(
       "enterprisePolicyValue",
       profile->GetPrefs()->GetInteger(
           prefs::kDevToolsGoogleDeveloperProgramProfileAvailability));
   response_dict.Set("devToolsGdpProfilesAvailability",
                     std::move(gdp_profiles_availability_dict));
-
+#endif
   response_dict.Set(
       "devToolsLiveEdit",
       base::DictValue().Set("enabled", base::FeatureList::IsEnabled(
@@ -2145,7 +2149,7 @@ base::DictValue DevToolsUIBindings::GetHostConfigDictionary(Profile* profile) {
       base::DictValue().Set(
           "enabled", base::FeatureList::IsEnabled(
                          ::features::kDevToolsIndividualRequestThrottling)));
-
+#if !BUILDFLAG(IS_QTWEBENGINE)
   base::DictValue device_bound_sessions_debugging;
   device_bound_sessions_debugging.Set(
       "enabled",
@@ -2153,6 +2157,7 @@ base::DictValue DevToolsUIBindings::GetHostConfigDictionary(Profile* profile) {
   response_dict.Set("deviceBoundSessionsDebugging",
                     std::move(device_bound_sessions_debugging));
 
+#if BUILDFLAG(USE_ML)
   base::DictValue prompt_api_dict;
   prompt_api_dict.Set("enabled", base::FeatureList::IsEnabled(
                                      ::features::kDevToolsAiPromptApi));
@@ -2179,19 +2184,19 @@ base::DictValue DevToolsUIBindings::GetHostConfigDictionary(Profile* profile) {
       features::kDevToolsConsoleInsightsTeasersAllowWithoutGpu.Get());
   response_dict.Set("devToolsConsoleInsightsTeasers",
                     std::move(console_insights_teasers_dict));
-#endif
-
+#endif  // BUILDFLAG(USE_ML)
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
   response_dict.Set("devToolsProtocolMonitor",
                     base::DictValue().Set(
                         "enabled", GetFeatureStateForDevTools(
                                        ::features::kDevToolsProtocolMonitor,
                                        enabled_by_flags, disabled_by_flags)));
-
+#if BUILDFLAG(USE_ML) && !BUILDFLAG(IS_QTWEBENGINE)
   response_dict.Set("devToolsGeminiRebranding",
                     base::DictValue().Set(
                         "enabled", base::FeatureList::IsEnabled(
                                        ::features::kDevToolsGeminiRebranding)));
-
+#endif  // BUILDFLAG(USE_ML) && !BUILDFLAG(IS_QTWEBENGINE)
   return response_dict;
 }
 
@@ -2346,18 +2351,19 @@ void DevToolsUIBindings::RecordNewBadgeUsage(const std::string& feature_name) {
     UserEducationService::MaybeNotifyNewBadgeFeatureUsed(
         web_contents()->GetBrowserContext(), *feature_to_register);
   }
-#endif
+#endif  // BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_QTWEBENGINE)
 }
 
 // static
 void DevToolsUIBindings::SetChromeFlagInternal(Profile* profile,
                                                const std::string& flag_name,
                                                bool value) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #if BUILDFLAG(IS_CHROMEOS)
   PrefService* prefs = profile->GetPrefs();
 #else
   PrefService* prefs = g_browser_process->local_state();
-#endif
+#endif  // BUILDFLAG(IS_CHROMEOS)
   auto flags_storage =
       std::make_unique<flags_ui::PrefServiceFlagsStorage>(prefs);
 
@@ -2374,6 +2380,7 @@ void DevToolsUIBindings::SetChromeFlagInternal(Profile* profile,
       flag_name + flags_ui::kMultiSeparatorChar + (value ? "1" : "2");
   about_flags::SetFeatureEntryEnabled(flags_storage.get(), internal_flag_name,
                                       true);
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 void DevToolsUIBindings::SetChromeFlag(const std::string& flag_name,
@@ -2382,7 +2389,9 @@ void DevToolsUIBindings::SetChromeFlag(const std::string& flag_name,
 }
 
 void DevToolsUIBindings::RequestRestart() {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   chrome::AttemptRestart();
+#endif
 }
 
 void DevToolsUIBindings::MaybeStartLogging() {
