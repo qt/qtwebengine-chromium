@@ -332,7 +332,7 @@ bool GURL::IsStandard() const {
 }
 
 bool GURL::IsCustom() const {
-  return url::CustomScheme::FindScheme(scheme_piece());
+  return url::CustomScheme::FindScheme(scheme());
 }
 
 bool GURL::IsAboutBlank() const {
