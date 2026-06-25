@@ -5,7 +5,6 @@
 #ifndef BASE_CONTAINERS_FLAT_MAP_H_
 #define BASE_CONTAINERS_FLAT_MAP_H_
 
-#include <concepts>
 #include <functional>
 #include <tuple>
 #include <type_traits>
@@ -124,7 +123,8 @@ struct GetFirst {
 //   const_reverse_iterator crend() const;
 //
 // Insert and accessor functions:
-//   mapped_type&         operator[](const K&);
+//   mapped_type&         operator[](const key_type&);
+//   mapped_type&         operator[](key_type&&);
 //   mapped_type&         operator[](K&&);
 //   mapped_type&         at(const K&);
 //   const mapped_type&   at(const K&) const;
@@ -133,15 +133,11 @@ struct GetFirst {
 //   iterator             insert(const_iterator hint, const value_type&);
 //   iterator             insert(const_iterator hint, value_type&&);
 //   void                 insert(InputIterator first, InputIterator last);
-//   pair<iterator, bool> insert_or_assign(const K&, M&&);
 //   pair<iterator, bool> insert_or_assign(K&&, M&&);
-//   iterator             insert_or_assign(const_iterator hint, const K&, M&&);
 //   iterator             insert_or_assign(const_iterator hint, K&&, M&&);
 //   pair<iterator, bool> emplace(Args&&...);
 //   iterator             emplace_hint(const_iterator, Args&&...);
-//   pair<iterator, bool> try_emplace(const K&, Args&&...);
 //   pair<iterator, bool> try_emplace(K&&, Args&&...);
-//   iterator             try_emplace(const_iterator hint, const K&, Args&&...);
 //   iterator             try_emplace(const_iterator hint, K&&, Args&&...);
 
 // Underlying type functions:
@@ -190,10 +186,6 @@ class flat_map : public ::base::internal::
   using tree = typename ::base::internal::
       flat_tree<Key, internal::GetFirst, Compare, Container>;
 
-  // Alias supporting heterogeneous lookup if `Compare` is transparent.
-  template <typename K>
-  using KeyT = typename tree::template KeyT<K>;
-
  public:
   using key_type = typename tree::key_type;
   using mapped_type = Mapped;
@@ -221,10 +213,10 @@ class flat_map : public ::base::internal::
   using tree::operator=;
 
   // Out-of-bound calls to at() will CHECK.
-  template <class K = Key>
-  mapped_type& at(const KeyT<K>& key);
-  template <class K = Key>
-  const mapped_type& at(const KeyT<K>& key) const;
+  template <class K>
+  mapped_type& at(const K& key);
+  template <class K>
+  const mapped_type& at(const K& key) const;
 
   // --------------------------------------------------------------------------
   // Map-specific insert operations.
@@ -234,36 +226,24 @@ class flat_map : public ::base::internal::
   // Assume that every operation invalidates iterators and references.
   // Insertion of one element can take O(size).
 
-  template <class K = Key>
-  mapped_type& operator[](const KeyT<K>& key);
-  template <class K = Key>
-    requires(std::same_as<K, std::remove_cvref_t<K>>)
-  mapped_type& operator[](KeyT<K>&& key);
+  mapped_type& operator[](const key_type& key);
+  mapped_type& operator[](key_type&& key);
+  template <class K>
+    requires(internal::IsTransparent<Compare>)
+  mapped_type& operator[](K&& key);
 
-  template <class K = Key, class M>
-  std::pair<iterator, bool> insert_or_assign(const KeyT<K>& key, M&& obj);
-  template <class K = Key, class M>
-    requires(std::same_as<K, std::remove_cvref_t<K>>)
-  std::pair<iterator, bool> insert_or_assign(KeyT<K>&& key, M&& obj);
-  template <class K = Key, class M>
-  iterator insert_or_assign(const_iterator hint, const KeyT<K>& key, M&& obj);
-  template <class K = Key, class M>
-    requires(std::same_as<K, std::remove_cvref_t<K>>)
-  iterator insert_or_assign(const_iterator hint, KeyT<K>&& key, M&& obj);
+  template <class K, class M>
+  std::pair<iterator, bool> insert_or_assign(K&& key, M&& obj);
+  template <class K, class M>
+  iterator insert_or_assign(const_iterator hint, K&& key, M&& obj);
 
-  template <class K = Key, class... Args>
-    requires(!std::convertible_to<K, const_iterator>)
-  std::pair<iterator, bool> try_emplace(const KeyT<K>& key, Args&&... args);
-  template <class K = Key, class... Args>
-    requires(std::same_as<K, std::remove_cvref_t<K>> &&
-             !std::convertible_to<K, const_iterator>)
-  std::pair<iterator, bool> try_emplace(KeyT<K>&& key, Args&&... args);
+  template <class K, class... Args>
+    requires(std::is_constructible_v<key_type, K &&>)
+  std::pair<iterator, bool> try_emplace(K&& key, Args&&... args);
 
-  template <class K = Key, class... Args>
-  iterator try_emplace(const_iterator hint, const KeyT<K>& key, Args&&... args);
-  template <class K = Key, class... Args>
-    requires(std::same_as<K, std::remove_cvref_t<K>>)
-  iterator try_emplace(const_iterator hint, KeyT<K>&& key, Args&&... args);
+  template <class K, class... Args>
+    requires(std::is_constructible_v<key_type, K &&>)
+  iterator try_emplace(const_iterator hint, K&& key, Args&&... args);
 
   // --------------------------------------------------------------------------
   // General operations.
@@ -280,7 +260,7 @@ class flat_map : public ::base::internal::
 
 template <class Key, class Mapped, class Compare, class Container>
 template <class K>
-auto flat_map<Key, Mapped, Compare, Container>::at(const KeyT<K>& key)
+auto flat_map<Key, Mapped, Compare, Container>::at(const K& key)
     -> mapped_type& {
   iterator found = tree::find(key);
   CHECK(found != tree::end());
@@ -289,7 +269,7 @@ auto flat_map<Key, Mapped, Compare, Container>::at(const KeyT<K>& key)
 
 template <class Key, class Mapped, class Compare, class Container>
 template <class K>
-auto flat_map<Key, Mapped, Compare, Container>::at(const KeyT<K>& key) const
+auto flat_map<Key, Mapped, Compare, Container>::at(const K& key) const
     -> const mapped_type& {
   const_iterator found = tree::find(key);
   CHECK(found != tree::cend());
@@ -300,8 +280,7 @@ auto flat_map<Key, Mapped, Compare, Container>::at(const KeyT<K>& key) const
 // Insert operations.
 
 template <class Key, class Mapped, class Compare, class Container>
-template <class K>
-auto flat_map<Key, Mapped, Compare, Container>::operator[](const KeyT<K>& key)
+auto flat_map<Key, Mapped, Compare, Container>::operator[](const key_type& key)
     -> mapped_type& {
   iterator found = tree::lower_bound(key);
   if (found == tree::end() || tree::key_comp()(key, found->first)) {
@@ -311,9 +290,7 @@ auto flat_map<Key, Mapped, Compare, Container>::operator[](const KeyT<K>& key)
 }
 
 template <class Key, class Mapped, class Compare, class Container>
-template <class K>
-  requires(std::same_as<K, std::remove_cvref_t<K>>)
-auto flat_map<Key, Mapped, Compare, Container>::operator[](KeyT<K>&& key)
+auto flat_map<Key, Mapped, Compare, Container>::operator[](key_type&& key)
     -> mapped_type& {
   iterator found = tree::lower_bound(key);
   if (found == tree::end() || tree::key_comp()(key, found->first)) {
@@ -323,25 +300,24 @@ auto flat_map<Key, Mapped, Compare, Container>::operator[](KeyT<K>&& key)
 }
 
 template <class Key, class Mapped, class Compare, class Container>
-template <class K, class M>
-auto flat_map<Key, Mapped, Compare, Container>::insert_or_assign(
-    const KeyT<K>& key,
-    M&& obj) -> std::pair<iterator, bool> {
-  auto result = tree::emplace_key_args(key, key, std::forward<M>(obj));
-  if (!result.second) {
-    result.first->second = std::forward<M>(obj);
+template <class K>
+  requires(internal::IsTransparent<Compare>)
+auto flat_map<Key, Mapped, Compare, Container>::operator[](K&& key)
+    -> mapped_type& {
+  iterator found = tree::lower_bound(key);
+  if (found == tree::end() || tree::key_comp()(key, found->first)) {
+    found = tree::unsafe_emplace(found, std::forward<K>(key), mapped_type());
   }
-  return result;
+  return found->second;
 }
 
 template <class Key, class Mapped, class Compare, class Container>
 template <class K, class M>
-  requires(std::same_as<K, std::remove_cvref_t<K>>)
-auto flat_map<Key, Mapped, Compare, Container>::insert_or_assign(KeyT<K>&& key,
+auto flat_map<Key, Mapped, Compare, Container>::insert_or_assign(K&& key,
                                                                  M&& obj)
     -> std::pair<iterator, bool> {
   auto result =
-      tree::emplace_key_args(key, std::move(key), std::forward<M>(obj));
+      tree::emplace_key_args(key, std::forward<K>(key), std::forward<M>(obj));
   if (!result.second) {
     result.first->second = std::forward<M>(obj);
   }
@@ -352,24 +328,9 @@ template <class Key, class Mapped, class Compare, class Container>
 template <class K, class M>
 auto flat_map<Key, Mapped, Compare, Container>::insert_or_assign(
     const_iterator hint,
-    const KeyT<K>& key,
+    K&& key,
     M&& obj) -> iterator {
-  auto result =
-      tree::emplace_hint_key_args(hint, key, key, std::forward<M>(obj));
-  if (!result.second) {
-    result.first->second = std::forward<M>(obj);
-  }
-  return result.first;
-}
-
-template <class Key, class Mapped, class Compare, class Container>
-template <class K, class M>
-  requires(std::same_as<K, std::remove_cvref_t<K>>)
-auto flat_map<Key, Mapped, Compare, Container>::insert_or_assign(
-    const_iterator hint,
-    KeyT<K>&& key,
-    M&& obj) -> iterator {
-  auto result = tree::emplace_hint_key_args(hint, key, std::move(key),
+  auto result = tree::emplace_hint_key_args(hint, key, std::forward<K>(key),
                                             std::forward<M>(obj));
   if (!result.second) {
     result.first->second = std::forward<M>(obj);
@@ -379,54 +340,30 @@ auto flat_map<Key, Mapped, Compare, Container>::insert_or_assign(
 
 template <class Key, class Mapped, class Compare, class Container>
 template <class K, class... Args>
-  requires(!std::convertible_to<
-           K,
-           typename flat_map<Key, Mapped, Compare, Container>::const_iterator>)
-auto flat_map<Key, Mapped, Compare, Container>::try_emplace(const KeyT<K>& key,
+  requires(std::is_constructible_v<
+           typename flat_map<Key, Mapped, Compare, Container>::key_type,
+           K &&>)
+auto flat_map<Key, Mapped, Compare, Container>::try_emplace(K&& key,
                                                             Args&&... args)
     -> std::pair<iterator, bool> {
   return tree::emplace_key_args(
-      key, std::piecewise_construct, std::forward_as_tuple(key),
+      key, std::piecewise_construct,
+      std::forward_as_tuple(std::forward<K>(key)),
       std::forward_as_tuple(std::forward<Args>(args)...));
 }
 
 template <class Key, class Mapped, class Compare, class Container>
 template <class K, class... Args>
-  requires(
-      std::same_as<K, std::remove_cvref_t<K>> &&
-      !std::convertible_to<
-          K,
-          typename flat_map<Key, Mapped, Compare, Container>::const_iterator>)
-auto flat_map<Key, Mapped, Compare, Container>::try_emplace(KeyT<K>&& key,
-                                                            Args&&... args)
-    -> std::pair<iterator, bool> {
-  return tree::emplace_key_args(
-      key, std::piecewise_construct, std::forward_as_tuple(std::move(key)),
-      std::forward_as_tuple(std::forward<Args>(args)...));
-}
-
-template <class Key, class Mapped, class Compare, class Container>
-template <class K, class... Args>
+  requires(std::is_constructible_v<
+           typename flat_map<Key, Mapped, Compare, Container>::key_type,
+           K &&>)
 auto flat_map<Key, Mapped, Compare, Container>::try_emplace(const_iterator hint,
-                                                            const KeyT<K>& key,
-                                                            Args&&... args)
-    -> iterator {
-  return tree::emplace_hint_key_args(
-             hint, key, std::piecewise_construct, std::forward_as_tuple(key),
-             std::forward_as_tuple(std::forward<Args>(args)...))
-      .first;
-}
-
-template <class Key, class Mapped, class Compare, class Container>
-template <class K, class... Args>
-  requires(std::same_as<K, std::remove_cvref_t<K>>)
-auto flat_map<Key, Mapped, Compare, Container>::try_emplace(const_iterator hint,
-                                                            KeyT<K>&& key,
+                                                            K&& key,
                                                             Args&&... args)
     -> iterator {
   return tree::emplace_hint_key_args(
              hint, key, std::piecewise_construct,
-             std::forward_as_tuple(std::move(key)),
+             std::forward_as_tuple(std::forward<K>(key)),
              std::forward_as_tuple(std::forward<Args>(args)...))
       .first;
 }
