@@ -1940,6 +1940,8 @@ dialog:where(:modal) {
     text-overflow: ellipsis;
     text-align: center;
     white-space: nowrap;
+    font: -webkit-small-control !important;
+    font-feature-settings: normal !important;
   }
 
   select:not(:-internal-list-box):not([multiple])::picker-icon {
