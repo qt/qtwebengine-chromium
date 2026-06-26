@@ -12,20 +12,27 @@
 
 #include <cstdint>
 
+#include "base/containers/span.h"
 #include "ui/events/devices/x11/events_devices_x11_export.h"
 
 namespace ui {
 
 EVENTS_DEVICES_X11_EXPORT
-inline void SetXinputMask(void* mask, unsigned int opcode) {
-  const auto bit = 1 << (opcode & 7);
-  static_cast<uint8_t*>(mask)[opcode / 8] |= bit;
+inline void SetXinputMask(base::span<uint8_t> mask, unsigned int opcode) {
+  size_t byte_index = opcode / 8;
+   const auto bit = 1 << (opcode & 7);
+  mask[byte_index] |= static_cast<uint8_t>(bit);
 }
 
 EVENTS_DEVICES_X11_EXPORT
-inline bool IsXinputMaskSet(const void* mask, unsigned int opcode) {
+inline bool IsXinputMaskSet(base::span<const uint8_t> mask,
+                            unsigned int opcode) {
+  size_t byte_index = opcode / 8;
+  if (byte_index >= mask.size()) {
+    return false;
+  }
   const auto bit = 1 << (opcode & 7);
-  return static_cast<const uint8_t*>(mask)[opcode / 8] & bit;
+  return mask[byte_index] & static_cast<uint8_t>(bit);
 }
 
 }  // namespace ui
