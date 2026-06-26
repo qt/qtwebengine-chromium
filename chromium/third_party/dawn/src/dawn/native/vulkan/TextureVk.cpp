@@ -1750,6 +1750,9 @@ MaybeError ImportedTextureBase::OnAfterSubmit() {
     // The submit succeeded, we can replace the previous external semaphore with the pending one.
     if (mExternalSemaphoreHandle != kNullExternalSemaphoreHandle) {
         device->GetExternalSemaphoreService()->CloseHandle(mExternalSemaphoreHandle);
+        // Set the handle to null after it's been closed so that we don't accidentally attempt to
+        // use or close it again if the ExportSemaphore() below fails.
+        mExternalSemaphoreHandle = kNullExternalSemaphoreHandle;
     }
 
     DAWN_TRY_ASSIGN(mExternalSemaphoreHandle,
