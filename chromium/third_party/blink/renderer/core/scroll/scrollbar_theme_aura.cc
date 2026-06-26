@@ -34,6 +34,7 @@
 #include "build/build_config.h"
 #include "cc/input/scrollbar.h"
 #include "third_party/blink/public/common/input/web_mouse_event.h"
+#include "third_party/blink/renderer/core/paint/paint_info.h"
 #include "third_party/blink/renderer/core/scroll/scrollbar.h"
 #include "third_party/blink/renderer/core/scroll/scrollbar_theme_fluent.h"
 #include "third_party/blink/renderer/core/scroll/scrollbar_theme_overlay.h"
@@ -227,9 +228,10 @@ int ScrollbarThemeAura::MinimumThumbLength(const Scrollbar& scrollbar) const {
 }
 
 void ScrollbarThemeAura::PaintTrackBackgroundAndButtons(
-    GraphicsContext& context,
+    const PaintInfo& paint_info,
     const Scrollbar& scrollbar,
     const gfx::Rect& rect) {
+  GraphicsContext& context = paint_info.context;
   if (rect.size() == scrollbar.FrameRect().size()) {
     // The non-nine-patch code path. The caller should use this code path if
     // - The nine-patch canvas is the same as the scrollbar rect;
@@ -237,7 +239,7 @@ void ScrollbarThemeAura::PaintTrackBackgroundAndButtons(
     // - There are tickmarks; OR
     // - Is painting non-composited scrollbars
     //   (from ScrollbarDisplayItem::Paint()).
-    ScrollbarTheme::PaintTrackBackgroundAndButtons(context, scrollbar, rect);
+    ScrollbarTheme::PaintTrackBackgroundAndButtons(paint_info, scrollbar, rect);
     return;
   }
 
@@ -259,11 +261,11 @@ void ScrollbarThemeAura::PaintTrackBackgroundAndButtons(
 
   gfx::Rect back_button_rect = BackButtonRect(scrollbar);
   if (back_button_rect.IsEmpty()) {
-    PaintTrackBackground(context, scrollbar, gfx::Rect(1, 1));
+    PaintTrackBackground(paint_info, scrollbar, gfx::Rect(1, 1));
     return;
   }
   back_button_rect.Offset(offset);
-  PaintButton(context, scrollbar, back_button_rect, kBackButtonStartPart);
+  PaintButton(paint_info, scrollbar, back_button_rect, kBackButtonStartPart);
 
   gfx::Rect forward_button_rect = back_button_rect;
   if (scrollbar.Orientation() == kVerticalScrollbar) {
@@ -273,7 +275,8 @@ void ScrollbarThemeAura::PaintTrackBackgroundAndButtons(
     forward_button_rect.Offset(back_button_rect.width() + aperture_track_space,
                                0);
   }
-  PaintButton(context, scrollbar, forward_button_rect, kForwardButtonEndPart);
+  PaintButton(paint_info, scrollbar, forward_button_rect,
+              kForwardButtonEndPart);
 
   gfx::Rect track_rect = back_button_rect;
   if (scrollbar.Orientation() == kVerticalScrollbar) {
@@ -283,12 +286,13 @@ void ScrollbarThemeAura::PaintTrackBackgroundAndButtons(
     track_rect.Offset(back_button_rect.width(), 0);
     track_rect.set_width(aperture_track_space);
   }
-  PaintTrackBackground(context, scrollbar, track_rect);
+  PaintTrackBackground(paint_info, scrollbar, track_rect);
 }
 
-void ScrollbarThemeAura::PaintTrackBackground(GraphicsContext& context,
+void ScrollbarThemeAura::PaintTrackBackground(const PaintInfo& paint_info,
                                               const Scrollbar& scrollbar,
                                               const gfx::Rect& rect) {
+  GraphicsContext& context = paint_info.context;
   if (rect.IsEmpty())
     return;
 
@@ -324,10 +328,11 @@ void ScrollbarThemeAura::PaintTrackBackground(GraphicsContext& context,
       scrollbar.GetColorProvider(color_scheme));
 }
 
-void ScrollbarThemeAura::PaintButton(GraphicsContext& gc,
+void ScrollbarThemeAura::PaintButton(const PaintInfo& paint_info,
                                      const Scrollbar& scrollbar,
                                      const gfx::Rect& rect,
                                      ScrollbarPart part) {
+  GraphicsContext& gc = paint_info.context;
   PartPaintingParams params =
       ButtonPartPaintingParams(scrollbar, scrollbar.CurrentPos(), part);
   if (!params.should_paint)
@@ -354,9 +359,10 @@ void ScrollbarThemeAura::PaintButton(GraphicsContext& gc,
       scrollbar.InForcedColorsMode(), scrollbar.GetColorProvider(color_scheme));
 }
 
-void ScrollbarThemeAura::PaintThumb(GraphicsContext& gc,
+void ScrollbarThemeAura::PaintThumb(const PaintInfo& paint_info,
                                     const Scrollbar& scrollbar,
                                     const gfx::Rect& rect) {
+  GraphicsContext& gc = paint_info.context;
   if (DrawingRecorder::UseCachedDrawingIfPossible(gc, scrollbar,
                                                   DisplayItem::kScrollbarThumb))
     return;
