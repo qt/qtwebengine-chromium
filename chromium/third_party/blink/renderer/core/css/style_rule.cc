@@ -626,6 +626,19 @@ StyleRuleBase* RenestGroupRule(T* group_rule, StyleRule* new_parent) {
   return MakeGarbageCollected<T>(*group_rule, std::move(new_child_rules));
 }
 
+HeapVector<CSSSelector> CloneSelectorListWithDummyFallback(
+    StyleRule* new_parent) {
+  if (new_parent) {
+    return CSSSelectorList::Copy(new_parent->FirstSelector());
+  }
+  // A StyleRule cannot have an empty selector; create a dummy.
+  HeapVector<CSSSelector> selectors;
+  selectors.emplace_back(/*parent_rule=*/nullptr, /*is_implicit=*/true);
+  selectors.back().SetLastInSelectorList(true);
+  selectors.back().SetLastInComplexSelector(true);
+  return selectors;
+}
+
 }  // namespace
 
 StyleRuleBase* StyleRuleBase::Renest(StyleRule* new_parent) {
@@ -688,6 +701,8 @@ StyleRuleBase* StyleRuleBase::Renest(StyleRule* new_parent) {
       return this;
     case kNestedDeclarations: {
       auto* nested_declarations_rule = To<StyleRuleNestedDeclarations>(this);
+      HeapVector<CSSSelector> selectors;
+      StyleRule* old_inner_rule = nested_declarations_rule->InnerStyleRule();
       // Nested declaration rules are different from regular nested style rules,
       // since they don't refer to their parent rule with any '&' selector.
       // Instead the outer selector list is *copied* parse-time. Now that we're
@@ -698,11 +713,10 @@ StyleRuleBase* StyleRuleBase::Renest(StyleRule* new_parent) {
       // by @scope rules, however, since they always just behave like
       // :where(:scope).
       if (nested_declarations_rule->NestingType() == CSSNestingType::kScope) {
-        return this;
+        selectors = CSSSelectorList::Copy(old_inner_rule->FirstSelector());
+      } else {
+        selectors = CloneSelectorListWithDummyFallback(new_parent);
       }
-      StyleRule* old_inner_rule = nested_declarations_rule->InnerStyleRule();
-      HeapVector<CSSSelector> selectors =
-          CSSSelectorList::Copy(new_parent->FirstSelector());
       auto* new_inner_rule = StyleRule::Create(
           selectors, old_inner_rule->Properties().ImmutableCopyIfNeeded());
       return MakeGarbageCollected<StyleRuleNestedDeclarations>(
