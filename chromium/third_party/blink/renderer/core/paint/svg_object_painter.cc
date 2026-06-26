@@ -19,7 +19,8 @@ namespace {
 bool ApplyPaintResource(
     const SvgContextPaints::ContextPaint& context_paint,
     const AffineTransform* additional_paint_server_transform,
-    cc::PaintFlags& flags) {
+    cc::PaintFlags& flags,
+    PaintFlags paint_flags) {
   SVGElementResourceClient* client =
       SVGResources::GetClient(context_paint.object);
   if (!client) {
@@ -35,7 +36,8 @@ bool ApplyPaintResource(
       context_paint.object.StyleRef(), DarkModeFilter::ElementRole::kSVG));
   if (!uri_resource->ApplyShader(
           *client, SVGResources::ReferenceBoxForEffects(context_paint.object),
-          additional_paint_server_transform, auto_dark_mode, flags)) {
+          additional_paint_server_transform, auto_dark_mode, flags,
+          paint_flags)) {
     return false;
   }
   return true;
@@ -152,7 +154,8 @@ bool SVGObjectPainter::PreparePaint(
     std::optional<AffineTransform> resolved_transform = ResolveContextTransform(
         initial_paint, additional_paint_server_transform);
     if (ApplyPaintResource(context_paint,
-                           base::OptionalToPtr(resolved_transform), flags)) {
+                           base::OptionalToPtr(resolved_transform), flags,
+                           paint_flags)) {
       flags.setColor(ScaleAlpha(SK_ColorBLACK, alpha));
       ApplyColorInterpolation(paint_flags, style, flags);
       return true;
