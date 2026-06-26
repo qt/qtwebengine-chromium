@@ -404,7 +404,7 @@ class PLATFORM_EXPORT Length {
 
   Length BlendSameTypes(const Length& from, double progress, ValueRange) const;
 
-  int CalculationHandle() const {
+  unsigned CalculationHandle() const {
     DCHECK(IsCalculated());
     return calculation_handle_;
   }
@@ -413,7 +413,7 @@ class PLATFORM_EXPORT Length {
 
   union {
     // If kType == kCalculated.
-    int calculation_handle_;
+    unsigned calculation_handle_;
 
     // Otherwise. Must be zero if not in use (e.g., for kAuto or kNone).
     float value_;
