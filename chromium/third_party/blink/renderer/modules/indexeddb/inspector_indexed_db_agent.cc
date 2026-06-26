@@ -101,6 +101,8 @@ namespace {
 
 const char kIndexedDBObjectGroup[] = "indexeddb";
 const char kNoDocumentError[] = "No document for given frame found";
+const char kSessionDetachedDuringOperation[] =
+    "DevTools session detached during operation.";
 
 base::expected<LocalFrame*, protocol::Response> ResolveFrame(
     InspectedFrames* inspected_frames,
@@ -639,8 +641,8 @@ class OpenCursorCallback final : public NativeEventListener {
 
   void Invoke(ExecutionContext*, Event* event) override {
     if (!agent_) {
-      request_callback_->sendFailure(protocol::Response::ServerError(
-          "DevTools session detached during operation."));
+      request_callback_->sendFailure(
+          protocol::Response::ServerError(kSessionDetachedDuringOperation));
       return;
     }
 
@@ -696,6 +698,11 @@ class OpenCursorCallback final : public NativeEventListener {
     }
 
     v8_inspector::V8InspectorSession* v8_session = agent_->v8_session();
+    if (!v8_session) {
+      request_callback_->sendFailure(
+          protocol::Response::ServerError(kSessionDetachedDuringOperation));
+      return;
+    }
     ScriptState::Scope scope(script_state_);
     v8::Local<v8::Context> context = script_state_->GetContext();
     v8_inspector::StringView object_group =
@@ -835,6 +842,20 @@ InspectorIndexedDBAgent::InspectorIndexedDBAgent(
 
 InspectorIndexedDBAgent::~InspectorIndexedDBAgent() = default;
 
+void InspectorIndexedDBAgent::Dispose() {
+  ReleaseObjectGroup();
+  v8_session_ = nullptr;
+  InspectorBaseAgent<protocol::IndexedDB::Metainfo>::Dispose();
+}
+
+void InspectorIndexedDBAgent::ReleaseObjectGroup() {
+  if (!v8_session_) {
+    return;
+  }
+  v8_session_->releaseObjectGroup(
+      ToV8InspectorStringView(kIndexedDBObjectGroup));
+}
+
 void InspectorIndexedDBAgent::Restore() {
   if (enabled_.Get()) {
     enable();
@@ -843,8 +864,7 @@ void InspectorIndexedDBAgent::Restore() {
 
 void InspectorIndexedDBAgent::DidCommitLoadForLocalFrame(LocalFrame* frame) {
   if (frame == inspected_frames_->Root()) {
-    v8_session_->releaseObjectGroup(
-        ToV8InspectorStringView(kIndexedDBObjectGroup));
+    ReleaseObjectGroup();
   }
 }
 
@@ -855,8 +875,7 @@ protocol::Response InspectorIndexedDBAgent::enable() {
 
 protocol::Response InspectorIndexedDBAgent::disable() {
   enabled_.Clear();
-  v8_session_->releaseObjectGroup(
-      ToV8InspectorStringView(kIndexedDBObjectGroup));
+  ReleaseObjectGroup();
   return protocol::Response::Success();
 }
 
