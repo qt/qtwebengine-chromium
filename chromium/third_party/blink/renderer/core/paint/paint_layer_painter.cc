@@ -392,12 +392,17 @@ PaintResult PaintLayerPainter::Paint(GraphicsContext& context,
         object.FirstFragment().LocalBorderBoxProperties(), paint_layer_,
         DisplayItem::kLayerChunk);
 
+    bool ensure_chunk = false;
     // When a reference filter applies to the layer, ensure a chunk is
     // generated so that the filter paints even if no other content is painted
     // by the layer (see `SVGContainerPainter::Paint`).
     auto* properties = object.FirstFragment().PaintProperties();
-    if (properties && properties->Filter() &&
-        properties->Filter()->HasReferenceFilter()) {
+    ensure_chunk |= properties && properties->Filter() &&
+                    properties->Filter()->HasReferenceFilter();
+    ensure_chunk |= properties && properties->Effect() &&
+                    properties->Effect()->HasReferenceFilter();
+
+    if (ensure_chunk) {
       context.GetPaintController().EnsureChunk();
     }
   }
