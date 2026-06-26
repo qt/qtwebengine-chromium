@@ -7,6 +7,7 @@
 
 #include "third_party/blink/renderer/modules/modules_export.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
+#include "third_party/blink/renderer/platform/wtf/functional.h"
 #include "third_party/webrtc/api/peer_connection_interface.h"
 
 namespace base {
@@ -17,8 +18,8 @@ namespace blink {
 
 class ExecutionContext;
 
-using RTCCertificateCallback =
-    base::OnceCallback<void(webrtc::scoped_refptr<webrtc::RTCCertificate>)>;
+using RTCCertificateCallback = CrossThreadOnceFunction<void(
+    webrtc::scoped_refptr<webrtc::RTCCertificate>)>;
 
 // Chromium's WebRTCCertificateGenerator implementation; uses the
 // PeerConnectionIdentityStore/SSLIdentity::Generate to generate the identity,
