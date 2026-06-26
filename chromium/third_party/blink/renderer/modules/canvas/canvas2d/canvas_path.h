@@ -144,7 +144,7 @@ class MODULES_EXPORT CanvasPath : public GarbageCollectedMixin {
 
   virtual ExecutionContext* GetTopExecutionContext() const = 0;
 
-  const Path& GetPath() const {
+  Path GetPath() const {
     UpdatePathFromLineOrArcIfNecessary();
     return path_builder_.CurrentPath();
   }

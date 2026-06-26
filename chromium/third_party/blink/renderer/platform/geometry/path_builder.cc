@@ -123,7 +123,7 @@ gfx::RectF PathBuilder::BoundingRect() const {
   return gfx::SkRectToRectF(builder_.getBounds());
 }
 
-const Path& PathBuilder::CurrentPath() const {
+Path PathBuilder::CurrentPath() const {
   if (!current_path_) {
     current_path_.emplace(builder_);
   }
