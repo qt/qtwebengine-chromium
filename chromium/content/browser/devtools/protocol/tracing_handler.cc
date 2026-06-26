@@ -235,23 +235,6 @@ StringToMemoryDumpLevelOfDetail(const std::string& str) {
   return {};
 }
 
-void AddPidsToProcessFilter(
-    const std::unordered_set<base::ProcessId>& included_process_ids,
-    perfetto::TraceConfig& trace_config) {
-  const std::string kDataSourceName = kTrackEventDataSourceName;
-  for (auto& data_source : *(trace_config.mutable_data_sources())) {
-    auto* source_config = data_source.mutable_config();
-    if (source_config->name() == kDataSourceName) {
-      for (auto& enabled_pid : included_process_ids) {
-        *data_source.add_producer_name_filter() = base::StrCat(
-            {tracing::mojom::kPerfettoProducerNamePrefix,
-             base::NumberToString(static_cast<uint32_t>(enabled_pid))});
-      }
-      break;
-    }
-  }
-}
-
 bool IsChromeDataSource(const std::string& data_source_name) {
   return base::StartsWith(data_source_name, "org.chromium.") ||
          data_source_name == "track_event";
@@ -1179,6 +1162,32 @@ void TracingHandler::FrameDeleted(FrameTreeNodeId frame_tree_node_id) {
   TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"),
                        "FrameDeletedInBrowser", TRACE_EVENT_SCOPE_THREAD,
                        "data", std::move(data));
+}
+
+// static
+void TracingHandler::AddPidsToProcessFilter(
+    const std::unordered_set<base::ProcessId>& included_process_ids,
+    perfetto::TraceConfig& trace_config) {
+  for (auto& data_source : *(trace_config.mutable_data_sources())) {
+    auto* source_config = data_source.mutable_config();
+    if (IsChromeDataSource(source_config->name())) {
+      if (data_source.producer_name_regex_filter_size() > 0) {
+        data_source.clear_producer_name_regex_filter();
+        data_source.clear_producer_name_filter();
+      }
+      std::unordered_set<std::string> existing_filters(
+          data_source.producer_name_filter().begin(),
+          data_source.producer_name_filter().end());
+      for (auto& enabled_pid : included_process_ids) {
+        std::string new_filter = base::StrCat(
+            {tracing::mojom::kPerfettoProducerNamePrefix,
+             base::NumberToString(static_cast<uint32_t>(enabled_pid))});
+        if (existing_filters.find(new_filter) == existing_filters.end()) {
+          *data_source.add_producer_name_filter() = std::move(new_filter);
+        }
+      }
+    }
+  }
 }
 
 // static
