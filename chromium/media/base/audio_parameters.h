@@ -141,6 +141,8 @@ class MEDIA_EXPORT ChannelLayoutConfig {
 
   int channels() const { return channels_; }
 
+  bool operator==(const ChannelLayoutConfig& other) const = default;
+
  private:
   ChannelLayout channel_layout_;  // Order of surround sound channels.
   int channels_;                  // Number of channels.
