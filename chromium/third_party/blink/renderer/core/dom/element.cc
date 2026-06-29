@@ -3763,6 +3763,11 @@ Node::InsertionNotificationRequest Element::InsertedInto(
   auto* parent = ParentOrShadowHostElement();
   if (parent && parent->IsCanvasOrInCanvasSubtree()) {
     SetIsCanvasOrInCanvasSubtree(true);
+  } else if (!parent && insertion_point.IsDocumentNode()) {
+    auto* owner = GetDocument().LocalOwner();
+    if (owner && owner->IsCanvasOrInCanvasSubtree()) {
+      SetIsCanvasOrInCanvasSubtree(true);
+    }
   }
 
   if (AnchorElementObserver* observer = GetAnchorElementObserver()) {
@@ -9111,7 +9116,14 @@ bool Element::ShouldStoreComputedStyle(const ComputedStyle& style) const {
 
 bool Element::IsInCanvasSubtree() const {
   auto* parent = ParentOrShadowHostElement();
-  return parent && parent->IsCanvasOrInCanvasSubtree();
+  if (parent) {
+    return parent->IsCanvasOrInCanvasSubtree();
+  }
+  if (!isConnected()) {
+    return false;
+  }
+  auto* owner = GetDocument().LocalOwner();
+  return owner && owner->IsCanvasOrInCanvasSubtree();
 }
 
 AtomicString Element::ComputeInheritedLanguage() const {
