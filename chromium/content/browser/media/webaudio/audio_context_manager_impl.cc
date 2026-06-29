@@ -16,6 +16,7 @@
 
 namespace content {
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 namespace {
 
 // Returns the time in milleseconds following these rules:
@@ -28,6 +29,7 @@ int64_t GetBucketedTimeInMilliseconds(const base::TimeDelta& time) {
 }
 
 }  // namespace
+#endif
 
 void AudioContextManagerImpl::Create(
     RenderFrameHost* render_frame_host,
