@@ -2912,6 +2912,14 @@ HRESULT MediaFoundationVideoEncodeAccelerator::PerformD3DCopy(
       return E_INVALIDARG;
     }
 
+    // Backport: read the description from the input texture to ensure
+    // the format is DXGI_FORMAT_NV12
+    if (input_desc.Format != DXGI_FORMAT_NV12) {
+      LOG(ERROR) << "Format mismatch: source format " << input_desc.Format
+                 << " is not DXGI_FORMAT_NV12";
+      return E_INVALIDARG;
+    }
+
     D3D11_BOX src_box = {static_cast<UINT>(visible_rect.x()),
                          static_cast<UINT>(visible_rect.y()),
                          0,
