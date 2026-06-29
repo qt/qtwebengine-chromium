@@ -858,6 +858,12 @@ int HTMLSelectElement::SelectedListIndex() const {
 }
 
 void HTMLSelectElement::SetSuggestedOption(HTMLOptionElement* option) {
+  if (RuntimeEnabledFeatures::CanvasDrawElementEnabled() &&
+      IsInCanvasSubtree()) {
+    // Hide suggested values when under canvas, to prevent leaking this
+    // information to javascript.
+    option = nullptr;
+  }
   if (suggested_option_ == option)
     return;
   SetAutofillState(option ? WebAutofillState::kPreviewed
@@ -865,6 +871,15 @@ void HTMLSelectElement::SetSuggestedOption(HTMLOptionElement* option) {
   suggested_option_ = option;
 
   select_type_->DidSetSuggestedOption(option);
+}
+
+void HTMLSelectElement::DidChangeIsCanvasOrInCanvasSubtree() {
+  if (RuntimeEnabledFeatures::CanvasDrawElementEnabled() &&
+      IsInCanvasSubtree()) {
+    // Hide suggested values when under canvas, to prevent leaking this
+    // information to javascript.
+    SetSuggestedOption(nullptr);
+  }
 }
 
 void HTMLSelectElement::OptionSelectionStateChanged(HTMLOptionElement* option,
