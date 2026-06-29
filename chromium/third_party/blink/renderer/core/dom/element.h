@@ -996,7 +996,7 @@ class CORE_EXPORT Element : public ContainerNode, public Animatable {
     return HasElementFlag(ElementFlags::kIsCanvasOrInCanvasSubtree);
   }
   // Called when `IsCanvasOrInCanvasSubtree()` has changed.
-  virtual void DidChangeIsCanvasOrInCanvasSubtree() {}
+  virtual void DidChangeIsCanvasOrInCanvasSubtree();
   // Like `IsCanvasOrInCanvasSubtree()`, but excludes the outermost <canvas>.
   bool IsInCanvasSubtree() const;
 
