@@ -22,6 +22,7 @@
 #include "base/base64.h"
 #include "base/base64url.h"
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/containers/flat_map.h"
 #include "base/containers/flat_set.h"
 #include "base/containers/span_reader.h"
@@ -1212,7 +1213,7 @@ class InterestGroupBrowserTest : public ContentBrowserTest {
         // not be modified in any way.
         EXPECT_EQ(group->bidding_browser_signals->join_count, final_join_count);
       } else if (groups_to_keep &&
-                 std::ranges::contains(*groups_to_keep, name)) {
+                 base::Contains(*groups_to_keep, name)) {
         // Interest groups that are excluded by name also should not be
         // modified.
         EXPECT_EQ(group->bidding_browser_signals->join_count, final_join_count);
@@ -19333,9 +19334,9 @@ IN_PROC_BROWSER_TEST_F(InterestGroupBrowserTest,
     // Use a second observer to wait until the last message is received.
     WebContentsConsoleObserver last_message_console_observer(
         shell()->web_contents());
-    if (std::ranges::contains(execution_targets_with_all_warnings,
+    if (base::Contains(execution_targets_with_all_warnings,
                               execution_target) ||
-        std::ranges::contains(execution_targets_with_join_warnings,
+        base::Contains(execution_targets_with_join_warnings,
                               execution_target)) {
       last_message_console_observer.SetPattern(WarningPermissionsPolicy(
           "join-ad-interest-group", "leaveAdInterestGroup"));
@@ -19376,7 +19377,7 @@ IN_PROC_BROWSER_TEST_F(InterestGroupBrowserTest,
     EXPECT_EQ("done", UpdateInterestGroupsInJS(execution_target));
     EXPECT_EQ(kSuccess, LeaveInterestGroup(origin, "cars", execution_target));
 
-    if (std::ranges::contains(execution_targets_with_all_warnings,
+    if (base::Contains(execution_targets_with_all_warnings,
                               execution_target)) {
       EXPECT_TRUE(last_message_console_observer.Wait());
       ASSERT_EQ(4u, console_observer.messages().size());
@@ -19392,7 +19393,7 @@ IN_PROC_BROWSER_TEST_F(InterestGroupBrowserTest,
       EXPECT_EQ(WarningPermissionsPolicy("join-ad-interest-group",
                                          "leaveAdInterestGroup"),
                 console_observer.GetMessageAt(3));
-    } else if (std::ranges::contains(execution_targets_with_join_warnings,
+    } else if (base::Contains(execution_targets_with_join_warnings,
                                      execution_target)) {
       EXPECT_TRUE(last_message_console_observer.Wait());
       ASSERT_EQ(3u, console_observer.messages().size());
@@ -19406,7 +19407,7 @@ IN_PROC_BROWSER_TEST_F(InterestGroupBrowserTest,
       EXPECT_EQ(WarningPermissionsPolicy("join-ad-interest-group",
                                          "leaveAdInterestGroup"),
                 console_observer.GetMessageAt(2));
-    } else if (std::ranges::contains(
+    } else if (base::Contains(
                    execution_targets_with_run_auction_warnings,
                    execution_target)) {
       EXPECT_TRUE(last_message_console_observer.Wait());
@@ -22655,7 +22656,7 @@ IN_PROC_BROWSER_TEST_F(InterestGroupBiddingAndAuctionServerBrowserTest,
     RenderFrameHost* execution_targets_with_message[] = {
         cross_origin_iframe, inner_cross_origin_iframe,
         same_origin_iframe_in_cross_origin_iframe};
-    if (std::ranges::contains(execution_targets_with_message,
+    if (base::Contains(execution_targets_with_message,
                               execution_target)) {
       EXPECT_TRUE(console_observer.Wait());
       EXPECT_EQ(WarningPermissionsPolicy("run-ad-auction",
@@ -23330,7 +23331,7 @@ IN_PROC_BROWSER_TEST_F(
         cross_origin_iframe, inner_cross_origin_iframe,
         same_origin_iframe_in_cross_origin_iframe,
         same_origin_iframe_in_cross_origin_iframe2};
-    if (std::ranges::contains(execution_targets_with_message,
+    if (base::Contains(execution_targets_with_message,
                               execution_target)) {
       EXPECT_EQ(
           "NotAllowedError: Failed to execute 'getInterestGroupAdAuctionData' "

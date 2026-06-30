@@ -5,6 +5,7 @@
 #import "components/autofill/ios/browser/autofill_driver_ios.h"
 
 #include <algorithm>
+#include "base/containers/contains.h"
 #import <concepts>
 #import <functional>
 #import <optional>
@@ -350,7 +351,7 @@ void AutofillDriverIOS::ExtractFormWithField(
                 }
                 auto it =
                     std::ranges::find_if(*forms, [&](const FormData& form) {
-                      return std::ranges::contains(form.fields(),
+                      return base::Contains(form.fields(),
                                                    field_renderer_id,
                                                    &FormFieldData::renderer_id);
                     });

@@ -13,6 +13,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/strings/strcat.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
@@ -115,7 +116,7 @@ class PrivateAggregationPendingContributionsTest : public testing::Test {
         ".SharedStorage.ReducedDelay"};
 
     for (std::string_view unexpected_suffix : kUnexpectedSuffixes) {
-      if (std::ranges::contains(expected_suffixes, unexpected_suffix)) {
+      if (base::Contains(expected_suffixes, unexpected_suffix)) {
         // Handles the case where a test might use one of these suffixes.
         continue;
       }

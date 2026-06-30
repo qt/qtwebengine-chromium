@@ -16,6 +16,7 @@
 
 #include "base/auto_reset.h"
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_macros.h"
@@ -1306,7 +1307,7 @@ bool DisplayManager::UpdateDisplaysWith(
   std::vector<size_t> updated_indices;
   UpdateNonPrimaryDisplayBoundsForLayout(&new_displays, &updated_indices);
   for (size_t updated_index : updated_indices) {
-    if (!std::ranges::contains(added_display_indices, updated_index)) {
+    if (!base::Contains(added_display_indices, updated_index)) {
       uint32_t metrics = DisplayObserver::DISPLAY_METRIC_BOUNDS |
                          DisplayObserver::DISPLAY_METRIC_WORK_AREA;
       if (display_changes.find(updated_index) != display_changes.end()) {
@@ -1949,7 +1950,7 @@ bool DisplayManager::UpdateDisplayBounds(int64_t display_id,
   display_info_[display_id].SetBounds(new_bounds);
   // Don't notify observers if the mirrored window has changed.
   if (IsInSoftwareMirrorMode() &&
-      std::ranges::contains(software_mirroring_display_list_, display_id,
+      base::Contains(software_mirroring_display_list_, display_id,
                             &Display::id)) {
     return false;
   }
@@ -2096,7 +2097,7 @@ void DisplayManager::CreateSoftwareMirroringDisplayInfo(
             layout_store()->GetRegisteredDisplayLayout(
                 CreateDisplayIdList(*display_info_list));
         source_id = layout.primary_id;
-        if (!std::ranges::contains(*display_info_list, source_id,
+        if (!base::Contains(*display_info_list, source_id,
                                    &ManagedDisplayInfo::id)) {
           // It is possible that primary display is removed in the new display
           // configuration.

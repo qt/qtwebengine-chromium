@@ -8,6 +8,7 @@
 #include <string_view>
 
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/no_destructor.h"
 #include "base/notreached.h"
 #include "base/strings/string_number_conversions.h"
@@ -179,12 +180,12 @@ void NetLog::UpdateObserverCaptureModes() {
 
 bool NetLog::HasObserver(ThreadSafeObserver* observer) {
   lock_.AssertAcquired();
-  return std::ranges::contains(observers_, observer);
+  return base::Contains(observers_, observer);
 }
 
 bool NetLog::HasCaptureModeObserver(ThreadSafeCaptureModeObserver* observer) {
   lock_.AssertAcquired();
-  return std::ranges::contains(capture_mode_observers_, observer);
+  return base::Contains(capture_mode_observers_, observer);
 }
 
 // static

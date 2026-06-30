@@ -16,6 +16,7 @@
 #include <limits>
 
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/fuchsia/fuchsia_component_connect.h"
 #include "base/fuchsia/fuchsia_logging.h"
 #include "base/fuchsia/mem_buffer_util.h"
@@ -972,7 +973,7 @@ void FrameImpl::AddBeforeLoadJavaScript(
   }
 
   // TODO(crbug.com/40707541): Only allow wildcards to be specified standalone.
-  if (std::ranges::contains(origins, kWildcardOrigin)) {
+  if (base::Contains(origins, kWildcardOrigin)) {
     script_injector_.AddScriptForAllOrigins(id, *script_as_string);
   } else {
     std::vector<url::Origin> origins_converted;

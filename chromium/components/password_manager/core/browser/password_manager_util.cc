@@ -11,6 +11,7 @@
 #include <tuple>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/memory/raw_ptr.h"
 #include "base/metrics/histogram_functions.h"
@@ -189,7 +190,7 @@ std::vector<PasswordForm> FindBestMatches(base::span<PasswordForm> matches) {
     } else {
       // Insert another credential only if the store is different as well as the
       // password value.
-      if (std::ranges::contains(
+      if (base::Contains(
               it->second, match.in_store,
               [](const auto& form) { return form.in_store; })) {
         continue;
@@ -427,7 +428,7 @@ bool IsUppercaseLetter(char16_t c) {
 bool IsSpecialSymbol(char16_t c) {
   // The static assert is intended to ensure that the underlying type of
   // `kSpecialSymbols` does not become a char. If that happened, the call to
-  // `std::ranges::contains` would lead to (silent) overflow.
+  // `base::Contains` would lead to (silent) overflow.
   static_assert(sizeof(decltype(kSpecialSymbols)::value_type) == sizeof(c));
   return kSpecialSymbols.contains(c);
 }

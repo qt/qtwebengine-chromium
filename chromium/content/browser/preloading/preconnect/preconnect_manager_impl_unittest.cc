@@ -8,6 +8,7 @@
 #include <map>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/format_macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
@@ -183,7 +184,7 @@ class MockNetworkContext : public network::TestNetworkContext {
 
  private:
   bool IsHangingHost(const GURL& url) const {
-    return std::ranges::contains(hanging_hosts_, url.GetHost());
+    return base::Contains(hanging_hosts_, url.GetHost());
   }
 
   using ResolveHostClientKey =

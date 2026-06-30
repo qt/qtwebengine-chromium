@@ -13,6 +13,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/run_loop.h"
 #include "base/scoped_observation.h"
@@ -673,7 +674,7 @@ class BaseAccountReconcilorTestTable : public AccountReconcilorTest {
       }
       cookies_after_reconcile = cookies_before_reconcile;
       for (Cookie& cookie : cookies_after_reconcile) {
-        if (std::ranges::contains(gaia_ids, cookie.gaia_id)) {
+        if (base::Contains(gaia_ids, cookie.gaia_id)) {
           cookie.is_valid = true;
           gaia_ids.erase(std::ranges::find(gaia_ids, cookie.gaia_id));
         } else {

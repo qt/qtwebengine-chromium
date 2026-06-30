@@ -8,6 +8,7 @@
 #include <limits>
 
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/functional/callback_helpers.h"
 #include "base/location.h"
 #include "base/memory/scoped_refptr.h"
@@ -247,7 +248,7 @@ void WebRtcAudioSink::Adapter::AddSink(webrtc::AudioTrackSinkInterface* sink) {
   SendLogMessage(
       base::StringPrintf("Adapter::AddSink({label=%s})", label_.c_str()));
   base::AutoLock auto_lock(lock_);
-  DCHECK(!std::ranges::contains(sinks_, sink));
+  DCHECK(!base::Contains(sinks_, sink));
   sinks_.push_back(sink);
 }
 

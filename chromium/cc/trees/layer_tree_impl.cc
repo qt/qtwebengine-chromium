@@ -15,6 +15,7 @@
 #include <utility>
 
 #include "base/containers/adapters.h"
+#include "base/containers/contains.h"
 #include "base/debug/crash_logging.h"
 #include "base/debug/dump_without_crashing.h"
 #include "base/json/json_writer.h"
@@ -1972,7 +1973,7 @@ void LayerTreeImpl::ReserveLayers(size_t count) {
 
 void LayerTreeImpl::AddLayer(std::unique_ptr<LayerImpl> layer) {
   DCHECK(layer);
-  DCHECK(!std::ranges::contains(layer_list_, layer));
+  DCHECK(!base::Contains(layer_list_, layer));
   layer_list_.push_back(std::move(layer));
   set_needs_update_draw_properties();
 }
@@ -2323,7 +2324,7 @@ void LayerTreeImpl::ProcessUIResourceRequestQueue() {
 }
 
 void LayerTreeImpl::RegisterPictureLayerImpl(PictureLayerImpl* layer) {
-  DCHECK(!std::ranges::contains(picture_layers_, layer));
+  DCHECK(!base::Contains(picture_layers_, layer));
   picture_layers_.push_back(layer);
 }
 

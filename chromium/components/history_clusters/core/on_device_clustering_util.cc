@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <iterator>
 
+#include "base/containers/contains.h"
 #include "base/time/time.h"
 #include "components/history_clusters/core/config.h"
 #include "components/history_clusters/core/history_clusters_util.h"
@@ -43,7 +44,7 @@ void MergeDuplicateVisitIntoCanonicalVisit(
     // This is an n^2 algorithm, but in practice the list of related
     // searches should be on the order of 10 elements long at maximum.
     // If that's not true we should replace this with a set structure.
-    if (!std::ranges::contains(canonical_searches, query)) {
+    if (!base::Contains(canonical_searches, query)) {
       canonical_searches.push_back(query);
     }
   }

@@ -8,6 +8,7 @@
 #include <string_view>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/memory/raw_ptr.h"
 #include "base/metrics/histogram_functions.h"
@@ -44,7 +45,7 @@ void RemoveModifiedHeadersBeforeMerge(
 void MergeRemovedHeaders(std::vector<std::string>* removed_headers_A,
                          const std::vector<std::string>& removed_headers_B) {
   for (auto& header : removed_headers_B) {
-    if (!std::ranges::contains(*removed_headers_A, header))
+    if (!base::Contains(*removed_headers_A, header))
       removed_headers_A->emplace_back(std::move(header));
   }
 }
@@ -485,11 +486,11 @@ void ThrottlingURLLoader::Start(
   }
 
   if (initiator_origin_trial_features &&
-      (std::ranges::contains(
+      (base::Contains(
            *initiator_origin_trial_features,
            static_cast<int>(
                mojom::OriginTrialFeature::kDeviceBoundSessionCredentials)) ||
-       std::ranges::contains(
+       base::Contains(
            *initiator_origin_trial_features,
            static_cast<int>(
                mojom::OriginTrialFeature::kDeviceBoundSessionCredentials2)))) {

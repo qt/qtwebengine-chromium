@@ -10,6 +10,7 @@
 #include <unordered_set>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/memory/raw_ptr.h"
 #include "base/stl_util.h"
 #include "base/time/clock.h"
@@ -1184,7 +1185,7 @@ void ReportingCacheImpl::ConsistencyCheckEndpoint(
        ++index_it) {
     endpoint_its_for_url.push_back(index_it->second);
   }
-  DCHECK(std::ranges::contains(endpoint_its_for_url, endpoint_it));
+  DCHECK(base::Contains(endpoint_its_for_url, endpoint_it));
 #endif  // DCHECK_IS_ON()
 }
 

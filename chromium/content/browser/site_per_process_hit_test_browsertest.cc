@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/json/json_reader.h"
@@ -2547,7 +2548,7 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessHitTestBrowserTest, ScrollEventToOOPIF) {
 
   // Verify that this a mouse wheel event was sent to the child frame renderer.
   EXPECT_TRUE(child_frame_monitor.EventWasReceived());
-  EXPECT_TRUE(std::ranges::contains(child_frame_monitor.events_received(),
+  EXPECT_TRUE(base::Contains(child_frame_monitor.events_received(),
                                     blink::WebInputEvent::Type::kMouseWheel));
 }
 
@@ -3250,7 +3251,7 @@ class TooltipMonitor : public RenderWidgetHostViewBase::TooltipObserver {
 
   void WaitUntil(const std::u16string& tooltip_text) {
     tooltip_text_wanted_ = tooltip_text;
-    if (std::ranges::contains(tooltips_received_, tooltip_text))
+    if (base::Contains(tooltips_received_, tooltip_text))
       return;
     run_loop_->Run();
   }
@@ -4800,7 +4801,7 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessMouseWheelHitTestBrowserTest,
 
   // Verify that this a mouse wheel event was sent to the child frame renderer.
   EXPECT_TRUE(child_frame_monitor.EventWasReceived());
-  EXPECT_TRUE(std::ranges::contains(child_frame_monitor.events_received(),
+  EXPECT_TRUE(base::Contains(child_frame_monitor.events_received(),
                                     blink::WebInputEvent::Type::kMouseWheel));
 
   // Kill the wheel target view process. This must reset the wheel_target_.
@@ -5299,7 +5300,7 @@ void SendTouchpadPinchSequenceWithExpectedTarget(
   root_view_aura->OnGestureEvent(&pinch_end);
   EXPECT_TRUE(target_monitor.EventWasReceived());
   EXPECT_TRUE(
-      std::ranges::contains(target_monitor.events_received(),
+      base::Contains(target_monitor.events_received(),
                             blink::WebInputEvent::Type::kGesturePinchEnd));
   EXPECT_EQ(nullptr, router_touchpad_gesture_target);
 }

@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_functions.h"
 #include "third_party/blink/public/platform/web_string.h"
@@ -75,7 +76,7 @@ void NewSessionCdmResultPromise::resolve(const std::string& session_id) {
   SessionInitStatus status = SessionInitStatus::UNKNOWN_STATUS;
   std::move(new_session_created_cb_).Run(session_id, &status);
 
-  if (!std::ranges::contains(expected_statuses_, status)) {
+  if (!base::Contains(expected_statuses_, status)) {
     reject(Exception::INVALID_STATE_ERROR, 0,
            "Cannot finish session initialization");
     return;

@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/containers/contains.h"
 #include "third_party/blink/renderer/core/dom/element_rare_data_vector.h"
 
 #include "third_party/blink/renderer/core/animation/element_animations.h"
@@ -833,7 +834,7 @@ ElementRareDataVector* ElementRareDataVector::AddDOMPart(Part& part) {
   auto [dom_parts_ptr, vec] =
       EnsureField<NodePartsListData>(FieldId::kDomParts);
   auto& dom_parts = dom_parts_ptr.get().parts_list_;
-  DCHECK(!std::ranges::contains(dom_parts, &part));
+  DCHECK(!base::Contains(dom_parts, &part));
   dom_parts.push_back(&part);
   return vec;
 }
@@ -844,7 +845,7 @@ void ElementRareDataVector::RemoveDOMPart(Part& part) {
       static_cast<NodePartsListData*>(GetField(FieldId::kDomParts));
   DCHECK(parts_data);
   PartsList& dom_parts = parts_data->parts_list_;
-  DCHECK(std::ranges::contains(dom_parts, &part));
+  DCHECK(base::Contains(dom_parts, &part));
   // Common case is that one node has one part:
   if (dom_parts.size() == 1) {
     DCHECK_EQ(dom_parts.front(), &part);

@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "net/base/ip_address.h"
 
 namespace net {
@@ -44,7 +45,7 @@ void TestNetworkErrorLoggingService::RemoveAllBrowsingData() {}
 
 bool TestNetworkErrorLoggingService::Header::MatchesAddressList(
     const AddressList& address_list) const {
-  return std::ranges::contains(address_list, received_ip_address,
+  return base::Contains(address_list, received_ip_address,
                                &IPEndPoint::address);
 }
 

@@ -15,6 +15,7 @@
 
 #include "base/check.h"
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/containers/map_util.h"
 #include "base/containers/queue.h"
 #include "base/debug/alias.h"
@@ -430,7 +431,7 @@ void FrameSinkManagerImpl::UnregisterFrameSinkHierarchy(
   CHECK(iter_child != frame_sink_source_map_.end());
 
   auto& child_mapping = iter_child->second;
-  DCHECK(std::ranges::contains(child_mapping.parent, parent_frame_sink_id));
+  DCHECK(base::Contains(child_mapping.parent, parent_frame_sink_id));
 
   // Delete `parent_frame_sink_id` from parent list of `child_frame_sink_id` in
   // `frame_sink_source_map_`.

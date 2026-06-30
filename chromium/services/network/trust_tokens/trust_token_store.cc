@@ -10,6 +10,7 @@
 #include <optional>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "services/network/public/cpp/is_potentially_trustworthy.h"
 #include "services/network/public/cpp/trust_token_parameterization.h"
@@ -133,7 +134,7 @@ bool TrustTokenStore::IsAssociated(const SuitableTrustTokenOrigin& issuer,
       persister_->GetToplevelConfig(top_level);
   if (!config)
     return false;
-  return std::ranges::contains(config->associated_issuers(),
+  return base::Contains(config->associated_issuers(),
                                issuer.Serialize());
 }
 
@@ -146,7 +147,7 @@ bool TrustTokenStore::SetAssociation(
     config = std::make_unique<TrustTokenToplevelConfig>();
   auto string_issuer = issuer.Serialize();
 
-  if (std::ranges::contains(config->associated_issuers(), string_issuer))
+  if (base::Contains(config->associated_issuers(), string_issuer))
     return true;
 
   if (config->associated_issuers_size() >=
@@ -177,7 +178,7 @@ void TrustTokenStore::PruneStaleIssuerState(
 
   google::protobuf::RepeatedPtrField<TrustToken> filtered_tokens;
   for (auto& token : *config->mutable_tokens()) {
-    if (std::ranges::contains(keys, token.signing_key(),
+    if (base::Contains(keys, token.signing_key(),
                               &mojom::TrustTokenVerificationKey::body)) {
       *filtered_tokens.Add() = std::move(token);
     }
@@ -315,7 +316,7 @@ bool TrustTokenStore::ClearDataForFilter(mojom::ClearDataFilterPtr filter) {
         // on |filter|'s domain list, or
         // - it is an origin match with anything on |filter|'s origin list.
         bool is_match =
-            std::ranges::contains(filter.origins, storage_key.origin());
+            base::Contains(filter.origins, storage_key.origin());
 
         // Computing the domain might be a little expensive, so
         // skip it if we know for sure the origin is a match because it
@@ -325,7 +326,7 @@ bool TrustTokenStore::ClearDataForFilter(mojom::ClearDataFilterPtr filter) {
               net::registry_controlled_domains::GetDomainAndRegistry(
                   storage_key.origin(),
                   net::registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES);
-          is_match = std::ranges::contains(filter.domains, etld1_for_origin);
+          is_match = base::Contains(filter.domains, etld1_for_origin);
         }
 
         switch (filter.type) {

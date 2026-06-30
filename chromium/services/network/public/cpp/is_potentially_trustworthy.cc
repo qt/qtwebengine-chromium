@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/no_destructor.h"
@@ -246,7 +247,7 @@ std::vector<std::string> ParseSecureOriginAllowlistFromCmdline() {
 
 bool IsAllowlisted(const std::vector<std::string>& allowlist,
                    const url::Origin& origin) {
-  if (std::ranges::contains(allowlist, origin.Serialize()))
+  if (base::Contains(allowlist, origin.Serialize()))
     return true;
 
   for (const std::string& origin_or_pattern : allowlist) {
@@ -274,8 +275,8 @@ bool IsSchemeConsideredAuthenticated(std::string_view scheme) {
   //   content::ContentClient::Schemes::secure_schemes
   // - url::AddLocalScheme
   // - url::AddSecureScheme
-  return std::ranges::contains(url::GetSecureSchemes(), scheme) ||
-         std::ranges::contains(url::GetLocalSchemes(), scheme);
+  return base::Contains(url::GetSecureSchemes(), scheme) ||
+         base::Contains(url::GetLocalSchemes(), scheme);
 }
 
 }  // namespace

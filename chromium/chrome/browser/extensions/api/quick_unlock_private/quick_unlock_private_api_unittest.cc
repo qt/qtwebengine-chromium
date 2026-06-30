@@ -14,6 +14,7 @@
 
 #include "ash/constants/ash_features.h"
 #include "ash/constants/ash_pref_names.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/memory/raw_ptr.h"
@@ -385,16 +386,16 @@ class QuickUnlockPrivateUnitTest
     EXPECT_EQ(HasFlag(expected_outcome, PIN_GOOD),
               errors.empty() && warnings.empty());
     EXPECT_EQ(HasFlag(expected_outcome, PIN_TOO_SHORT),
-              std::ranges::contains(errors, CredentialProblem::kTooShort));
+              base::Contains(errors, CredentialProblem::kTooShort));
     EXPECT_EQ(HasFlag(expected_outcome, PIN_TOO_LONG),
-              std::ranges::contains(errors, CredentialProblem::kTooLong));
+              base::Contains(errors, CredentialProblem::kTooLong));
     EXPECT_EQ(HasFlag(expected_outcome, PIN_WEAK_WARNING),
-              std::ranges::contains(warnings, CredentialProblem::kTooWeak));
+              base::Contains(warnings, CredentialProblem::kTooWeak));
     EXPECT_EQ(HasFlag(expected_outcome, PIN_WEAK_ERROR),
-              std::ranges::contains(errors, CredentialProblem::kTooWeak));
+              base::Contains(errors, CredentialProblem::kTooWeak));
     EXPECT_EQ(
         HasFlag(expected_outcome, PIN_CONTAINS_NONDIGIT),
-        std::ranges::contains(errors, CredentialProblem::kContainsNondigit));
+        base::Contains(errors, CredentialProblem::kContainsNondigit));
   }
 
   CredentialCheck CheckCredentialUsingPin(const std::string& pin) {

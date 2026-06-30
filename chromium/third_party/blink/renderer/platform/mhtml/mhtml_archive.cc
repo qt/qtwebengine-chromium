@@ -34,6 +34,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "base/i18n/time_formatting.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/strings/stringprintf.h"
@@ -270,7 +271,7 @@ bool MHTMLArchive::CanLoadArchive(const KURL& url) {
   // MHTML pages can only be loaded from local URLs, http/https URLs, and
   // content URLs(Android specific).  The latter is now allowed due to full
   // sandboxing enforcement on MHTML pages.
-  if (std::ranges::contains(url::GetLocalSchemes(), url.Protocol().Ascii()))
+  if (base::Contains(url::GetLocalSchemes(), url.Protocol().Ascii()))
     return true;
   if (url.ProtocolIsInHTTPFamily())
     return true;

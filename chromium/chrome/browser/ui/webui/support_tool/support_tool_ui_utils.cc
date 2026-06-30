@@ -14,6 +14,7 @@
 
 #include "base/base64url.h"
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/containers/to_value_list.h"
 #include "base/strings/string_util.h"
 #include "base/values.h"
@@ -140,7 +141,7 @@ base::DictValue GetDataCollectorItemForType(
   dict.Set(support_tool_ui::kDataCollectorName, GetDataCollectorName(type));
   dict.Set(support_tool_ui::kDataCollectorProtoEnum, type);
   dict.Set(support_tool_ui::kDataCollectorIncluded,
-           std::ranges::contains(module.included_data_collectors(), type));
+           base::Contains(module.included_data_collectors(), type));
   return dict;
 }
 

@@ -10,6 +10,7 @@
 #include <utility>
 #include <variant>
 
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/functional/callback_helpers.h"
 #include "base/location.h"
@@ -498,7 +499,7 @@ void RTCVideoDecoderAdapter::Impl::OnOutput(
     start_time_.reset();
   }
 
-  if (!std::ranges::contains(decode_timestamps_, timestamp)) {
+  if (!base::Contains(decode_timestamps_, timestamp)) {
     DVLOG(2) << "Discarding frame with timestamp " << timestamp;
     return;
   }

@@ -12,6 +12,7 @@
 #include <tuple>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/metrics/field_trial_params.h"
 #include "base/no_destructor.h"
 #include "base/rand_util.h"
@@ -422,7 +423,7 @@ scoped_refptr<ConfigurationList> GetEnabledConfigurations() {
 }
 
 bool HasEnabledConfiguration(const Configuration& config) {
-  return std::ranges::contains(
+  return base::Contains(
       GetEnabledConfigurations()->configs_by_decreasing_priority(), config);
 }
 

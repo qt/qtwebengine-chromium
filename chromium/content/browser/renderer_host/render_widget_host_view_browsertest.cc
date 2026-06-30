@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/location.h"
 #include "base/memory/raw_ptr.h"
@@ -884,7 +885,7 @@ IN_PROC_BROWSER_TEST_F(BFCachedRenderWidgetHostViewBrowserTest,
     const auto evicted_ids =
         static_cast<RenderWidgetHostImpl*>(rfh1->GetRenderWidgetHost())
             ->CollectSurfaceIdsForEviction();
-    ASSERT_TRUE(std::ranges::contains(evicted_ids, id_after_cached));
+    ASSERT_TRUE(base::Contains(evicted_ids, id_after_cached));
   }
 }
 

@@ -11,6 +11,7 @@
 
 #include "base/check.h"
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/memory_coordinator/memory_consumer.h"
 #include "content/public/common/child_process_id.h"
 #include "content/public/common/process_type.h"
@@ -41,7 +42,7 @@ void ChildMemoryConsumerRegistry::ConsumerGroup::OnUpdateMemoryLimit() {
 
 void ChildMemoryConsumerRegistry::ConsumerGroup::AddMemoryConsumer(
     base::RegisteredMemoryConsumer consumer) {
-  CHECK(!std::ranges::contains(memory_consumers_, consumer));
+  CHECK(!base::Contains(memory_consumers_, consumer));
   memory_consumers_.push_back(consumer);
 
   // Ensure the added consumer is up to date with the current memory limit

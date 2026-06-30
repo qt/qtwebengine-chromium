@@ -8,6 +8,7 @@
 #include <memory>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/strings/strcat.h"
 #include "base/strings/to_string.h"
@@ -94,7 +95,7 @@ bool ArePerformanceHintsCompatible(
     return true;
   }
   // Check if the adaptation model supports any of the base model's hints.
-  return std::ranges::contains(
+  return base::Contains(
       adaptation_metadata.supported_performance_hints(),
       base_spec.selected_performance_hint);
 }

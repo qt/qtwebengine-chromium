@@ -10,6 +10,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/memory/raw_ptr.h"
 #include "base/run_loop.h"
@@ -638,7 +639,7 @@ class EventFilterRecorder : public ui::EventHandler {
   }
 
   bool HasReceivedEvent(ui::EventType type) {
-    return std::ranges::contains(events_, type);
+    return base::Contains(events_, type);
   }
 
   bool LastTouchMayCauseScrolling() const {

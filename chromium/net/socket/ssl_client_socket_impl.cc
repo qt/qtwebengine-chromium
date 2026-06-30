@@ -14,6 +14,7 @@
 #include <string_view>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/containers/span.h"
 #include "base/containers/to_vector.h"
 #include "base/feature_list.h"
@@ -1544,7 +1545,7 @@ int SSLClientSocketImpl::ClientCertRequestCallback(SSL* ssl) {
     // If the key supports rsa_pkcs1_sha256, automatically add support for
     // rsa_pkcs1_sha256_legacy, for use with TLS 1.3. We convert here so that
     // not every `SSLPrivateKey` needs to implement it explicitly.
-    if (std::ranges::contains(preferences, SSL_SIGN_RSA_PKCS1_SHA256)) {
+    if (base::Contains(preferences, SSL_SIGN_RSA_PKCS1_SHA256)) {
       preferences.push_back(SSL_SIGN_RSA_PKCS1_SHA256_LEGACY);
     }
 

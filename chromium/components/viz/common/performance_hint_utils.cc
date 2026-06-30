@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/logging.h"
 #include "build/build_config.h"
 
@@ -30,7 +31,7 @@ bool CheckThreadIdsDoNotBelongToCurrentProcess(
   }
   static_assert(std::is_same_v<pid_t, base::PlatformThreadId::UnderlyingType>);
   for (const auto& tid : thread_ids_from_sandboxed_process) {
-    if (std::ranges::contains(privileged_thread_ids, tid.raw())) {
+    if (base::Contains(privileged_thread_ids, tid.raw())) {
       return false;
     }
   }

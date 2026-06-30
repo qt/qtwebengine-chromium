@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <forward_list>
 
+#include "base/containers/contains.h"
 #include "base/containers/fixed_flat_map.h"
 #include "base/containers/span.h"
 #include "base/strings/stringprintf.h"
@@ -149,7 +150,7 @@ base::flat_set<std::string> GetBrowsingDataLifetimePlatformUnsupportedTypes(
     std::for_each(data_types.begin(), data_types.end(),
                   [&unsupported_types](const base::Value& type) {
                     const std::string& type_string = type.GetString();
-                    if (std::ranges::contains(kUnsupportedTypes, type_string)) {
+                    if (base::Contains(kUnsupportedTypes, type_string)) {
                       unsupported_types.push_front(type_string);
                     }
                   });

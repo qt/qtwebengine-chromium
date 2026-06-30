@@ -10,6 +10,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
@@ -110,7 +111,7 @@ void GetContentRootNodes(const ui::AXTree& tree,
 void AddContentNodesToVector(const ui::AXNode* node,
                              std::vector<ui::AXNodeID>* content_node_ids) {
   const auto& role = node->GetRole();
-  if (std::ranges::contains(kContentRoles, role)) {
+  if (base::Contains(kContentRoles, role)) {
     // TODO(crbug.com/40922922): Remove when flag is no longer necessary. Skip
     // these roles if the flag is not enabled.
     if (!features::IsReadAnythingImagesViaAlgorithmEnabled() &&
@@ -133,7 +134,7 @@ void AddContentNodesToVector(const ui::AXNode* node,
     return;
   }
 
-  if (std::ranges::contains(kRolesToSkip, node->GetRole())) {
+  if (base::Contains(kRolesToSkip, node->GetRole())) {
     return;
   }
   for (auto iter = node->UnignoredChildrenBegin();
@@ -256,7 +257,7 @@ void AXTreeDistiller::ProcessScreen2xResult(
                         !content_node_ids_screen2x.empty());
   // Merge the results from the algorithm and from screen2x.
   for (ui::AXNodeID node_id : content_node_ids_screen2x) {
-    if (!std::ranges::contains(content_node_ids_algorithm, node_id)) {
+    if (!base::Contains(content_node_ids_algorithm, node_id)) {
       content_node_ids_algorithm.push_back(node_id);
     }
   }
@@ -269,7 +270,7 @@ void AXTreeDistiller::ProcessScreen2xResult(
   } else {
     bool added = false;
     for (ui::AXNodeID node_id : content_node_ids_algorithm) {
-      if (!std::ranges::contains(content_node_ids_screen2x, node_id)) {
+      if (!base::Contains(content_node_ids_screen2x, node_id)) {
         added = true;
         break;
       }

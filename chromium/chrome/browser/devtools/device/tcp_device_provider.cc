@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/location.h"
@@ -119,7 +120,7 @@ void TCPDeviceProvider::QueryDevices(SerialsCallback callback) {
     const std::pair<std::string,
                     AndroidDeviceManager::DeviceInfo::ConnectedState>
         host = {target.host(), AndroidDeviceManager::DeviceInfo::kUnknown};
-    if (std::ranges::contains(result, host)) {
+    if (base::Contains(result, host)) {
       continue;
     }
     result.push_back(host);

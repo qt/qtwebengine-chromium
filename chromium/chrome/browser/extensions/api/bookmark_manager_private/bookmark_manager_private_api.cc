@@ -12,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/i18n/file_util_icu.h"
 #include "base/i18n/time_formatting.h"
 #include "base/lazy_instance.h"
@@ -760,7 +761,7 @@ BookmarkManagerPrivateOpenInNewWindowFunction::RunOnReady() {
   std::vector<UrlAndId> url_and_ids;
   urls.reserve(nodes.size());
   for (const bookmarks::BookmarkNode* node : nodes) {
-    if (!std::ranges::contains(urls, node->url())) {
+    if (!base::Contains(urls, node->url())) {
       continue;  // The URL was filtered out; ignore this node.
     }
     UrlAndId url_and_id;

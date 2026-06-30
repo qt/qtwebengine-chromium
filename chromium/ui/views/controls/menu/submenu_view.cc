@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/numerics/safe_conversions.h"
 #include "ui/accessibility/ax_enums.mojom.h"
 #include "ui/accessibility/ax_node_data.h"
@@ -118,7 +119,7 @@ void SubmenuView::UpdateMenuPartSizes() {
       std::ranges::any_of(menu_items, &MenuItemView::HasSubmenu)) {
     trailing_padding_ +=
         config.arrow_size +
-        (std::ranges::contains(menu_items,
+        (base::Contains(menu_items,
                                MenuItemView::Type::kActionableSubMenu,
                                &MenuItemView::GetType)
              ? config.actionable_submenu_arrow_to_edge_padding

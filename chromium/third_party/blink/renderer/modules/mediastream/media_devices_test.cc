@@ -8,6 +8,7 @@
 #include <memory>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "build/build_config.h"
 #include "media/base/media_permission.h"
@@ -542,12 +543,12 @@ void VerifyAudioInputCapabilities(
     for (auto value : capabilities->echoCancellation()) {
       echo_cancellation.push_back(ToEchoCancellationMode(value));
     }
-    EXPECT_TRUE(std::ranges::contains(echo_cancellation,
+    EXPECT_TRUE(base::Contains(echo_cancellation,
                                       EchoCancellationMode::kBrowserDecides));
-    EXPECT_TRUE(std::ranges::contains(echo_cancellation,
+    EXPECT_TRUE(base::Contains(echo_cancellation,
                                       EchoCancellationMode::kDisabled));
 #if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
-    EXPECT_TRUE(std::ranges::contains(echo_cancellation,
+    EXPECT_TRUE(base::Contains(echo_cancellation,
                                       EchoCancellationMode::kRemoteOnly));
 #endif
     int effects = expected_capabilities->parameters.effects();
@@ -559,7 +560,7 @@ void VerifyAudioInputCapabilities(
     }
     if (EchoCanceller::IsSystemWideAecAvailable(effects)) {
       EXPECT_TRUE(
-          std::ranges::contains(echo_cancellation, EchoCancellationMode::kAll));
+          base::Contains(echo_cancellation, EchoCancellationMode::kAll));
     }
   }
 }

@@ -15,6 +15,7 @@
 
 #include "base/check_deref.h"
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/containers/fixed_flat_map.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/metrics_hashes.h"
@@ -1968,7 +1969,7 @@ std::vector<std::string> ReadAnythingAppController::GetSupportedFonts() {
 
 std::string ReadAnythingAppController::GetValidatedFontName(
     const std::string& font) const {
-  if (!std::ranges::contains(GetAllFonts(), font)) {
+  if (!base::Contains(GetAllFonts(), font)) {
     return GetAllFonts().front();
   }
   if (font == "Serif" || font == "Sans-serif") {

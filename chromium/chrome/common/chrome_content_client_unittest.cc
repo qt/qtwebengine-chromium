@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <string>
 
+#include "base/containers/contains.h"
 #include "base/memory/raw_ptr.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
@@ -65,7 +66,7 @@ TEST(ChromeContentClientTest, AdditionalSchemes) {
     SCOPED_TRACE(str);
     GURL url(str);
     EXPECT_TRUE(
-        std::ranges::contains(url::GetSecureSchemes(), url.GetScheme()));
+        base::Contains(url::GetSecureSchemes(), url.GetScheme()));
     EXPECT_TRUE(network::IsUrlPotentiallyTrustworthy(url));
   }
 

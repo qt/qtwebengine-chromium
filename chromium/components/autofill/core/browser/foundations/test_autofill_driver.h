@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/containers/flat_map.h"
 #include "base/functional/callback_forward.h"
 #include "base/memory/raw_ptr.h"
@@ -139,7 +140,7 @@ class TestAutofillDriverTemplate : public T {
     for (const auto& [id, type] : field_type_map) {
       if ((!field_type_map_filter_ ||
            field_type_map_filter_.Run(triggered_origin, id, type)) &&
-          std::ranges::contains(fields, id, &FormFieldData::global_id)) {
+          base::Contains(fields, id, &FormFieldData::global_id)) {
         result.push_back(id);
       }
     }

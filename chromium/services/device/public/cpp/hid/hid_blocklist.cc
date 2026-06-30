@@ -9,6 +9,7 @@
 #include <string_view>
 
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/no_destructor.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
@@ -289,7 +290,7 @@ bool HidBlocklist::IsKnownSecurityKey(uint16_t vendor_id, uint16_t product_id) {
   // bypass the blocklist to access FIDO HID capabilities. Devices in
   // kKnownSecurityKeys are considered FIDO for the purpose of this bypass, even
   // if the device has no FIDO collection.
-  return std::ranges::contains(kKnownSecurityKeys,
+  return base::Contains(kKnownSecurityKeys,
                                VendorProduct{vendor_id, product_id});
 }
 

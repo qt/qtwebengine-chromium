@@ -9,6 +9,7 @@
 
 #include "base/barrier_callback.h"
 #include "base/check_is_test.h"
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/memory/ptr_util.h"
@@ -122,14 +123,14 @@ class ProductSpecificationsUrlObserver
     // First remove any references to URLs that are no longer in the product
     // spec set.
     for (const auto& url : before.urls()) {
-      if (!std::ranges::contains(after.urls(), url)) {
+      if (!base::Contains(after.urls(), url)) {
         cache_->RemoveRef(url);
       }
     }
 
     // Now add any URLs that weren't previously referenced.
     for (const auto& url : after.urls()) {
-      if (!std::ranges::contains(before.urls(), url)) {
+      if (!base::Contains(before.urls(), url)) {
         cache_->AddRef(url);
       }
     }

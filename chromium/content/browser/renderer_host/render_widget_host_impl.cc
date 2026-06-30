@@ -16,6 +16,7 @@
 #include "base/auto_reset.h"
 #include "base/check.h"
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/debug/alias.h"
 #include "base/debug/dump_without_crashing.h"
 #include "base/files/file_path.h"
@@ -1878,7 +1879,7 @@ input::InputRouter* RenderWidgetHostImpl::input_router() {
 
 void RenderWidgetHostImpl::AddKeyPressEventCallback(
     const KeyPressEventCallback& callback) {
-  CHECK(!std::ranges::contains(key_press_event_callbacks_, callback));
+  CHECK(!base::Contains(key_press_event_callbacks_, callback));
   key_press_event_callbacks_.push_back(callback);
 }
 
@@ -1889,7 +1890,7 @@ void RenderWidgetHostImpl::RemoveKeyPressEventCallback(
 
 void RenderWidgetHostImpl::AddMouseEventCallback(
     const MouseEventCallback& callback) {
-  CHECK(!std::ranges::contains(mouse_event_callbacks_, callback));
+  CHECK(!base::Contains(mouse_event_callbacks_, callback));
   mouse_event_callbacks_.push_back(callback);
 }
 
@@ -1900,7 +1901,7 @@ void RenderWidgetHostImpl::RemoveMouseEventCallback(
 
 void RenderWidgetHostImpl::AddSuppressShowingImeCallback(
     const SuppressShowingImeCallback& callback) {
-  CHECK(!std::ranges::contains(suppress_showing_ime_callbacks_, callback));
+  CHECK(!base::Contains(suppress_showing_ime_callbacks_, callback));
   suppress_showing_ime_callbacks_.push_back(callback);
 }
 

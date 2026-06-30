@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/logging.h"
 #include "ui/gfx/linux/drm_util_linux.h"
 #include "ui/gfx/linux/gbm_buffer.h"
@@ -29,13 +30,13 @@ bool ForceUsingOpaqueFormatWorkaround(
       DRM_FORMAT_ARGB2101010, DRM_FORMAT_ABGR2101010, DRM_FORMAT_RGBA1010102,
       DRM_FORMAT_BGRA1010102};
   const bool is_high_bit_depth_format_with_alpha =
-      std::ranges::contains(kHighBitDepthARGBFormats, drm_fourcc);
+      base::Contains(kHighBitDepthARGBFormats, drm_fourcc);
   if (!is_high_bit_depth_format_with_alpha)
     return false;
 
   const std::vector<uint32_t>& supported_formats =
       drm_device->plane_manager()->GetSupportedFormats();
-  return !std::ranges::contains(supported_formats, drm_fourcc);
+  return !base::Contains(supported_formats, drm_fourcc);
 }
 
 }  // namespace

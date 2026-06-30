@@ -11,6 +11,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/containers/span.h"
 #include "base/feature_list.h"
 #include "base/hash/sha1.h"
@@ -195,7 +196,7 @@ std::string InferGuidForLegacyBookmark(
 }
 
 bool IsForbiddenTitleWithMaybeTrailingSpaces(const std::string& title) {
-  return std::ranges::contains(
+  return base::Contains(
       kForbiddenTitles,
       base::TrimWhitespaceASCII(title, base::TrimPositions::TRIM_TRAILING));
 }

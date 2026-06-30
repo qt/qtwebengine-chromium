@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <optional>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/no_destructor.h"
 #include "base/task/bind_post_task.h"
@@ -150,9 +151,9 @@ void ArCoreDevice::RequestSession(
   session_state_->request_session_trace_id_ = options->trace_id;
 
   const bool use_dom_overlay =
-      std::ranges::contains(options->required_features,
+      base::Contains(options->required_features,
                             device::mojom::XRSessionFeature::DOM_OVERLAY) ||
-      std::ranges::contains(options->optional_features,
+      base::Contains(options->optional_features,
                             device::mojom::XRSessionFeature::DOM_OVERLAY);
 
   session_state_->depth_options_ = std::move(options->depth_options);

@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "base/check_deref.h"
+#include "base/containers/contains.h"
 #include "base/containers/extend.h"
 #include "base/containers/flat_set.h"
 #include "base/feature_list.h"
@@ -820,7 +821,7 @@ Suggestion CreateBnplSuggestion(
 #if !BUILDFLAG(IS_ANDROID)
   using IssuerId = BnplIssuer::IssuerId;
   auto issuer_present = [&bnpl_issuers](IssuerId issuer_id) {
-    return std::ranges::contains(bnpl_issuers, issuer_id,
+    return base::Contains(bnpl_issuers, issuer_id,
                                  &BnplIssuer::issuer_id);
   };
   bool affirm_present = issuer_present(IssuerId::kBnplAffirm);
@@ -1470,7 +1471,7 @@ GetVirtualCreditCardsForStandaloneCvcField(
         it != usage_data.end()) {
       VirtualCardUsageData::VirtualCardLastFour virtual_card_last_four =
           it->virtual_card_last_four();
-      if (std::ranges::contains(
+      if (base::Contains(
               four_digit_combinations_in_dom,
               base::UTF16ToUTF8(virtual_card_last_four.value()))) {
         // Card has usage data on webpage and last four is present in DOM.

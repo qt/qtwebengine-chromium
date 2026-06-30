@@ -11,6 +11,7 @@
 #include <string>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
@@ -95,7 +96,7 @@ bool DoesStorageKeyMatchMask(
     storage::SpecialStoragePolicy* policy) {
   const std::vector<std::string>& schemes = url::GetWebStorageSchemes();
   bool is_web_scheme =
-      std::ranges::contains(schemes, storage_key.origin().scheme());
+      base::Contains(schemes, storage_key.origin().scheme());
 
   // If a websafe origin is unprotected, it matches iff UNPROTECTED_WEB.
   if ((origin_type_mask & BrowsingDataRemover::ORIGIN_TYPE_UNPROTECTED_WEB) &&

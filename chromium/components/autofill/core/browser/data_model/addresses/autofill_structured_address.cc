@@ -8,6 +8,7 @@
 #include <string>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/containers/fixed_flat_set.h"
 #include "base/feature_list.h"
 #include "base/strings/string_split.h"
@@ -208,7 +209,7 @@ void StreetAddressNode::CalculateAddressLines() {
 }
 
 bool StreetAddressNode::IsValueValid() const {
-  return !std::ranges::contains(address_lines_, std::u16string());
+  return !base::Contains(address_lines_, std::u16string());
 }
 
 std::u16string StreetAddressNode::GetValueForOtherSupportedType(

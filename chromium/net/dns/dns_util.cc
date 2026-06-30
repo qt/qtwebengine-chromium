@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram_macros.h"
@@ -58,7 +59,7 @@ DohProviderEntry::List GetDohProviderEntriesFromNameservers(
       // experiment if the provider feature flag is checked).
       if (entry->ip_addresses.contains(server.address()) &&
           base::FeatureList::IsEnabled(entry->feature.get()) &&
-          !std::ranges::contains(entries, entry)) {
+          !base::Contains(entries, entry)) {
         entries.push_back(entry);
       }
     }

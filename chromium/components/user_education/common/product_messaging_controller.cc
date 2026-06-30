@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/functional/callback.h"
 #include "base/logging.h"
 #include "base/notreached.h"
@@ -124,7 +125,7 @@ void ProductMessagingController::QueueRequiredNotice(
     std::initializer_list<RequiredNoticeId> blocked_by) {
   CHECK(notice_id);
   CHECK(!ready_to_start_callback.is_null());
-  CHECK(!std::ranges::contains(blocked_by, internal::kShowAfterAllNotices));
+  CHECK(!base::Contains(blocked_by, internal::kShowAfterAllNotices));
 
   // Cannot re-queue the current notice.
   if (current_notice_ == notice_id) {

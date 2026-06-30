@@ -11,6 +11,7 @@
 #include <memory>
 #include <string_view>
 
+#include "base/containers/contains.h"
 #include "base/strings/utf_offset_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -996,7 +997,7 @@ class ZwpTextInputV3TestWithCustomClient : public WaylandTestSimple {
       };
       base::UTF8ToUTF16AndAdjustOffsets(base::UTF16ToUTF8(surrounding_text),
                                         &offsets_for_adjustment);
-      if (std::ranges::contains(offsets_for_adjustment, std::u16string::npos)) {
+      if (base::Contains(offsets_for_adjustment, std::u16string::npos)) {
         LOG(DFATAL) << "The selection range for surrounding text is invalid.";
         return;
       }

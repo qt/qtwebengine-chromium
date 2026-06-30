@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "components/policy/core/common/schema.h"
@@ -139,7 +140,7 @@ bool PolicyErrorMap::HasError(const std::string& policy) {
     CheckReadyAndConvert();
     return map_.contains(policy);
   }
-  return std::ranges::contains(pending_, policy, &PendingError::policy_name);
+  return base::Contains(pending_, policy, &PendingError::policy_name);
 }
 
 bool PolicyErrorMap::HasFatalError(const std::string& policy) {
@@ -147,12 +148,12 @@ bool PolicyErrorMap::HasFatalError(const std::string& policy) {
       std::make_pair(policy, PolicyMap::MessageType::kError);
   if (IsReady()) {
     CheckReadyAndConvert();
-    return std::ranges::contains(
+    return base::Contains(
         map_, fatal_error, [](const std::pair<std::string, Data>& entry) {
           return std::make_pair(entry.first, entry.second.level);
         });
   }
-  return std::ranges::contains(pending_, fatal_error, [](const auto& entry) {
+  return base::Contains(pending_, fatal_error, [](const auto& entry) {
     return std::make_pair(entry->policy_name(), entry->level());
   });
 }

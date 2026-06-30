@@ -14,6 +14,7 @@
 
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/containers/unique_ptr_adapters.h"
 #include "base/functional/callback_helpers.h"
 #include "base/logging.h"
@@ -3063,7 +3064,7 @@ void TestRunner::AddLoadingFrame(blink::WebLocalFrame* frame) {
 
 void TestRunner::RemoveLoadingFrame(blink::WebLocalFrame* frame) {
   // We don't track frames that were started between tests.
-  if (!std::ranges::contains(loading_frames_, frame))
+  if (!base::Contains(loading_frames_, frame))
     return;
 
   // We had a DCHECK checking

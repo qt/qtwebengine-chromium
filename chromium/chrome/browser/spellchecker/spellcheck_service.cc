@@ -11,6 +11,7 @@
 #include <utility>
 
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/no_destructor.h"
@@ -354,7 +355,7 @@ void SpellcheckService::EnableFirstUserLanguageForSpellcheck(
   std::vector<std::string> accept_languages;
   l10n_util::GetAcceptLanguages(&accept_languages);
   for (const auto& user_language : user_languages) {
-    if (std::ranges::contains(accept_languages, user_language)) {
+    if (base::Contains(accept_languages, user_language)) {
       first_user_language = user_language;
       break;
     }
@@ -767,7 +768,7 @@ bool SpellcheckService::HasPrivateUseSubTag(const std::string& full_tag) {
 
   // Private use subtags are separated from the other subtags by the reserved
   // single-character subtag 'x'.
-  return std::ranges::contains(subtags, "x");
+  return base::Contains(subtags, "x");
 }
 
 // static
@@ -881,7 +882,7 @@ void SpellcheckService::OnAcceptLanguagesChanged() {
   std::vector<std::string> filtered_dictionaries;
 
   for (const auto& dictionary : dictionaries) {
-    if (std::ranges::contains(accept_languages, dictionary)) {
+    if (base::Contains(accept_languages, dictionary)) {
       filtered_dictionaries.push_back(dictionary);
     }
   }

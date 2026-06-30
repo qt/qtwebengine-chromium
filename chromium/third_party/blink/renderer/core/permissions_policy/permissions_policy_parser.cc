@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/metrics/histogram_macros.h"
 #include "net/http/structured_headers.h"
@@ -775,7 +776,7 @@ PermissionsPolicyParser::ParsePermissionsPolicyForTest(
 
 bool IsFeatureDeclared(network::mojom::PermissionsPolicyFeature feature,
                        const network::ParsedPermissionsPolicy& policy) {
-  return std::ranges::contains(
+  return base::Contains(
       policy, feature, &network::ParsedPermissionsPolicyDeclaration::feature);
 }
 

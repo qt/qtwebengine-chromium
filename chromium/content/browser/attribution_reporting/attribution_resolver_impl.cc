@@ -15,6 +15,7 @@
 
 #include "base/check.h"
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
@@ -85,7 +86,7 @@ DestinationLimitResult GetDestinationLimitResult(
   DestinationLimitResult result =
       sources_to_deactivate.empty()
           ? DestinationLimitResult::kAllowed
-          : (std::ranges::contains(
+          : (base::Contains(
                  sources_to_deactivate,
                  StoredSource::Id(RateLimitTable::kUnsetRecordId))
                  ? DestinationLimitResult::kNotAllowed
@@ -834,7 +835,7 @@ AttributionResolverImpl::MaybeCreateEventLevelReport(
   }
 
   if (event_trigger->dedup_key.has_value() &&
-      std::ranges::contains(source.dedup_keys(), *event_trigger->dedup_key)) {
+      base::Contains(source.dedup_keys(), *event_trigger->dedup_key)) {
     return CreateReportResult::Deduplicated();
   }
 
@@ -904,7 +905,7 @@ AttributionResolverImpl::MaybeCreateAggregatableAttributionReport(
   }
 
   if (dedup_key.has_value() &&
-      std::ranges::contains(source.aggregatable_dedup_keys(), *dedup_key)) {
+      base::Contains(source.aggregatable_dedup_keys(), *dedup_key)) {
     return CreateReportResult::Deduplicated();
   }
 

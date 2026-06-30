@@ -21,6 +21,7 @@
 #include <utility>
 
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/debug/alias.h"
 #include "base/debug/crash_logging.h"
 #include "base/debug/dump_without_crashing.h"
@@ -257,7 +258,7 @@ HistogramBase* Histogram::Factory::Build() {
         "DevTools.ExperimentEnabledAtLaunch",
         "DevTools.PanelShown",
     };
-    if (std::ranges::contains(kKnownBadHistogramsHashes, name_)) {
+    if (base::Contains(kKnownBadHistogramsHashes, name_)) {
       DEBUG_ALIAS_FOR_CSTR(hist_name, std::string(name_).c_str(), 32);
       debug::DumpWithoutCrashing();
     }

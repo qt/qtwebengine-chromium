@@ -7,6 +7,7 @@
 #include <algorithm>
 
 #include "base/check_is_test.h"
+#include "base/containers/contains.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/observer_list.h"
 #include "base/strings/string_number_conversions.h"
@@ -107,7 +108,7 @@ void SyntheticTrialRegistry::RegisterExternalExperimentsInternal(
     // If existing ids shouldn't be overridden, skip entries whose study names
     // are already registered.
     if (mode == kDoNotOverrideExistingIds) {
-      if (std::ranges::contains(synthetic_trial_groups_, trial_hash,
+      if (base::Contains(synthetic_trial_groups_, trial_hash,
                                 [](const SyntheticTrialGroup& group) {
                                   return group.id().name;
                                 })) {

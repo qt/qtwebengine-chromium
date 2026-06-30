@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "base/containers/map_util.h"
 #include "base/memory/ptr_util.h"
 #include "base/no_destructor.h"
@@ -217,7 +218,7 @@ bool PermissionsPolicy::IsFeatureEnabledForOrigin(
     bool override_default_policy_to_all) const {
   DCHECK(feature_list_->contains(feature));
   DCHECK(!override_default_policy_to_all ||
-         std::ranges::contains(kDefinedOptInFeatures, feature));
+         base::Contains(kDefinedOptInFeatures, feature));
 
   // 9.9.2: If policy’s inherited policy for feature is Disabled, return
   // "Disabled".
@@ -541,7 +542,7 @@ PermissionsPolicy::CreateFlexibleForFencedFrame(
     const network::PermissionsPolicyFeatureList& features) {
   network::PermissionsPolicyFeaturesBitset inherited_policies;
   for (const auto& [feature, default_value] : features) {
-    if (std::ranges::contains(network::kFencedFrameAllowedFeatures, feature) &&
+    if (base::Contains(network::kFencedFrameAllowedFeatures, feature) &&
         InheritedValueForFeature(subframe_origin, parent_policy,
                                  {feature, default_value}, container_policy)) {
       inherited_policies.Add(feature);

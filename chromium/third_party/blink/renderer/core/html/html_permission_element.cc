@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <optional>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/metrics/histogram_functions.h"
@@ -1550,7 +1551,7 @@ bool HTMLPermissionElement::IsStyleValid() {
     return false;
   }
 
-  if (std::ranges::contains(kInvalidDisplayStyles,
+  if (base::Contains(kInvalidDisplayStyles,
                             style->GetDisplayStyle().Display()) ||
       style->IsDisplayTableType()) {
     AuditsIssue::ReportPermissionElementIssue(

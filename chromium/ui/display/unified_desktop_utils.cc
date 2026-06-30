@@ -8,6 +8,7 @@
 #include <map>
 #include <set>
 
+#include "base/containers/contains.h"
 #include "base/containers/stack.h"
 #include "base/logging.h"
 #include "ui/display/types/display_constants.h"
@@ -202,7 +203,7 @@ bool BuildUnifiedDesktopMatrix(const DisplayIdList& ids_list,
                                const DisplayLayout& layout,
                                UnifiedDesktopLayoutMatrix* out_matrix) {
   // The primary display should be in the IDs list.
-  if (!std::ranges::contains(ids_list, layout.primary_id)) {
+  if (!base::Contains(ids_list, layout.primary_id)) {
     LOG(ERROR) << "The primary ID: " << layout.primary_id
                << " is not in the IDs list.";
     return false;
@@ -213,7 +214,7 @@ bool BuildUnifiedDesktopMatrix(const DisplayIdList& ids_list,
   for (const auto& id : ids_list) {
     if (id == layout.primary_id)
       continue;
-    if (!std::ranges::contains(layout.placement_list, id,
+    if (!base::Contains(layout.placement_list, id,
                                &DisplayPlacement::display_id)) {
       LOG(ERROR) << "Display with ID: " << id << " has no placement.";
       return false;
@@ -253,13 +254,13 @@ bool BuildUnifiedDesktopMatrix(const DisplayIdList& ids_list,
       LOG(ERROR) << "display_id must not be the same as parent_display_id";
       return false;
     }
-    if (!std::ranges::contains(ids_list, placement.display_id)) {
+    if (!base::Contains(ids_list, placement.display_id)) {
       LOG(ERROR) << "display_id: " << placement.display_id
                  << " is not in the id list: " << placement.ToString();
       return false;
     }
 
-    if (!std::ranges::contains(ids_list, placement.parent_display_id)) {
+    if (!base::Contains(ids_list, placement.parent_display_id)) {
       LOG(ERROR) << "parent_display_id: " << placement.parent_display_id
                  << " is not in the id list: " << placement.ToString();
       return false;

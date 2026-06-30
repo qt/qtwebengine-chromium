@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/memory/raw_ptr.h"
 #include "base/stl_util.h"
 #include "base/strings/strcat.h"
@@ -72,7 +73,7 @@ ExampleVector GetExamplesToShow(ExampleVector examples) {
     // from the list.
     if (!valid_examples.empty()) {
       std::erase_if(examples, [&](const auto& example) {
-        return !std::ranges::contains(valid_examples, example->example_title());
+        return !base::Contains(valid_examples, example->example_title());
       });
     }
   } else if (command_line->HasSwitch(kEnableExamples)) {

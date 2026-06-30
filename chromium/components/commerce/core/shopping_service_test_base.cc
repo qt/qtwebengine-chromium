@@ -8,6 +8,7 @@
 #include <optional>
 
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/containers/flat_map.h"
 #include "base/memory/ptr_util.h"
 #include "base/memory/ref_counted.h"
@@ -322,7 +323,7 @@ OptimizationMetadata MockOptGuideDecider::BuildDiscountsResponse(
 
   std::vector<DiscountClusterType> checked_cluster_types;
   for (const auto& info_to_check : infos) {
-    if (std::ranges::contains(checked_cluster_types,
+    if (base::Contains(checked_cluster_types,
                               info_to_check.cluster_type)) {
       continue;
     }

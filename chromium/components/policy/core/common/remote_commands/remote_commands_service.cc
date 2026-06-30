@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "base/check_is_test.h"
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
@@ -335,7 +336,7 @@ void RemoteCommandsService::EnqueueCommand(
   }
 
   // If the command is already fetched, ignore it.
-  if (std::ranges::contains(fetched_command_ids_, command.command_id())) {
+  if (base::Contains(fetched_command_ids_, command.command_id())) {
     RecordReceivedRemoteCommand(MetricReceivedRemoteCommand::kDuplicated);
     return;
   }

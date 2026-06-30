@@ -11,6 +11,7 @@
 #include "ash/lobster/lobster_controller.h"
 #include "base/check.h"
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "build/branding_buildflags.h"
 #include "chrome/browser/ash/input_method/editor_helpers.h"
@@ -85,12 +86,12 @@ MakoUntrustedUI::MakoUntrustedUI(content::WebUI* web_ui)
       [&](const webui::ResourcePath& resource_path) -> bool {
     // when lobster access is not granted, lobster resources are not allowed.
     if (lobster_service == nullptr &&
-        std::ranges::contains(kLobsterResourceIds, resource_path.id)) {
+        base::Contains(kLobsterResourceIds, resource_path.id)) {
       return false;
     }
     // when l10n is disabled, only EN-US resources are allowed.
     if (!should_use_l10n_strings &&
-        !std::ranges::contains(kEnUSResourceIds, resource_path.id)) {
+        !base::Contains(kEnUSResourceIds, resource_path.id)) {
       return false;
     }
     return true;

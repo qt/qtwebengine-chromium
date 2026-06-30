@@ -9,6 +9,7 @@
 #include <memory>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/functional/callback_helpers.h"
@@ -224,7 +225,7 @@ void HidService::RemoveProtectedReports(device::mojom::HidDeviceInfo& device,
     for (auto& report : collection->input_reports) {
       if ((is_fido && is_fido_allowed) ||
           !device.protected_input_report_ids.has_value() ||
-          !std::ranges::contains(*device.protected_input_report_ids,
+          !base::Contains(*device.protected_input_report_ids,
                                  report->report_id)) {
         input_reports.push_back(std::move(report));
       }
@@ -233,7 +234,7 @@ void HidService::RemoveProtectedReports(device::mojom::HidDeviceInfo& device,
     for (auto& report : collection->output_reports) {
       if ((is_fido && is_fido_allowed) ||
           !device.protected_output_report_ids.has_value() ||
-          !std::ranges::contains(*device.protected_output_report_ids,
+          !base::Contains(*device.protected_output_report_ids,
                                  report->report_id)) {
         output_reports.push_back(std::move(report));
       }
@@ -242,7 +243,7 @@ void HidService::RemoveProtectedReports(device::mojom::HidDeviceInfo& device,
     for (auto& report : collection->feature_reports) {
       if ((is_fido && is_fido_allowed) ||
           !device.protected_feature_report_ids.has_value() ||
-          !std::ranges::contains(*device.protected_feature_report_ids,
+          !base::Contains(*device.protected_feature_report_ids,
                                  report->report_id)) {
         feature_reports.push_back(std::move(report));
       }

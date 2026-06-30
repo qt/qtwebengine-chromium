@@ -9,6 +9,8 @@
 #include <algorithm>
 #include <iterator>
 
+#include "base/containers/contains.h"
+
 
 namespace device {
 namespace {
@@ -97,7 +99,7 @@ constexpr uint16_t kBlockedVendors[] = {
 }  // namespace
 
 bool GamepadIsExcluded(uint16_t vendor_id, uint16_t product_id) {
-  return std::ranges::contains(kBlockedVendors, vendor_id) ||
+  return base::Contains(kBlockedVendors, vendor_id) ||
          std::ranges::any_of(
              kBlockedDevices, [=](const VendorProductPair& item) {
                return vendor_id == item.vendor && product_id == item.product;

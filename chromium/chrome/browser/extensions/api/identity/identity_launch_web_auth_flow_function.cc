@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "base/check_is_test.h"
+#include "base/containers/contains.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/strings/stringprintf.h"
 #include "base/time/time.h"
@@ -238,7 +239,7 @@ void IdentityLaunchWebAuthFlowFunction::OnAuthFlowFailure(
 
 void IdentityLaunchWebAuthFlowFunction::OnAuthFlowURLChange(
     const GURL& redirect_url) {
-  if (!std::ranges::contains(final_url_domains_, redirect_url.Resolve("/"))) {
+  if (!base::Contains(final_url_domains_, redirect_url.Resolve("/"))) {
     return;
   }
   RecordHistogramFunctionResult(

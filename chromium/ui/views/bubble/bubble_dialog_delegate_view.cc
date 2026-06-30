@@ -13,6 +13,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/memory/ptr_util.h"
@@ -250,7 +251,7 @@ class BubbleDialogDelegate::AnchorViewObserver : public ViewObserver {
  private:
   void AddToAnchorVector() {
     auto& vector = GetAnchorVector(anchor_view_);
-    DCHECK(!std::ranges::contains(vector, parent_));
+    DCHECK(!base::Contains(vector, parent_));
     vector.push_back(parent_);
   }
 
@@ -932,7 +933,7 @@ void BubbleDialogDelegate::BubbleUmaLogger::LogMetric(
   }
 
   if (allowed_class_names_for_testing_.has_value()) {
-    if (!std::ranges::contains(allowed_class_names_for_testing_.value(),
+    if (!base::Contains(allowed_class_names_for_testing_.value(),
                                bubble_name.value())) {
       return;
     }

@@ -14,6 +14,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
@@ -508,7 +509,7 @@ signin::AccountsInCookieJarInfo GaiaCookieManagerService::ListAccounts() {
     // `ListAccounts()` doesn't mean a change has happened that requires adding
     // a new /ListAccounts request even if there is one in-flight.
     // Only trigger a request, if none is ongoing.
-    if (!std::ranges::contains(requests_, LIST_ACCOUNTS,
+    if (!base::Contains(requests_, LIST_ACCOUNTS,
                                &GaiaCookieRequest::request_type)) {
       TriggerListAccounts();
     }
@@ -555,7 +556,7 @@ void GaiaCookieManagerService::LogOutAllAccounts(
   DCHECK(completion_callback);
 
   // Verify a LOG_OUT isn't already queued.
-  if (std::ranges::contains(requests_, GaiaCookieRequestType::LOG_OUT,
+  if (base::Contains(requests_, GaiaCookieRequestType::LOG_OUT,
                             &GaiaCookieRequest::request_type)) {
     std::move(completion_callback)
         .Run(GoogleServiceAuthError(GoogleServiceAuthError::REQUEST_CANCELED));

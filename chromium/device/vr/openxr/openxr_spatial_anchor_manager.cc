@@ -10,6 +10,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/functional/callback_helpers.h"
 #include "base/types/expected.h"
 #include "device/vr/openxr/openxr_api_wrapper.h"
@@ -33,7 +34,7 @@ bool OpenXrSpatialAnchorManager::IsSupported(
   // XR_SPATIAL_COMPONENT_TYPE_ANCHOR_EXT, which is guaranteed to be supported
   // if the XR_SPATIAL_CAPABILITY_ANCHOR_EXT is supported, so that's all we need
   // to check.
-  return std::ranges::contains(capabilities, XR_SPATIAL_CAPABILITY_ANCHOR_EXT);
+  return base::Contains(capabilities, XR_SPATIAL_CAPABILITY_ANCHOR_EXT);
 }
 
 OpenXrSpatialAnchorManager::OpenXrSpatialAnchorManager(

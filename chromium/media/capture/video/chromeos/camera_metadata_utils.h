@@ -8,6 +8,7 @@
 #include <algorithm>
 
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "media/capture/capture_export.h"
 #include "media/capture/video/chromeos/mojom/camera_metadata.mojom.h"
 
@@ -101,7 +102,7 @@ CAPTURE_EXPORT cros::mojom::CameraMetadataEntryPtr BuildMetadataEntry(
 
   // Mojo uses int32_t as the underlying type of enum classes, but
   // the camera metadata expect uint8_t for them.
-  if (std::is_enum<T>::value && !std::ranges::contains(kInt32EnumTags, tag)) {
+  if (std::is_enum<T>::value && !base::Contains(kInt32EnumTags, tag)) {
     e->data.push_back(base::checked_cast<uint8_t>(value));
   } else {
     e->data.resize(sizeof(T));

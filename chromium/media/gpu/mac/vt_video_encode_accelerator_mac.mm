@@ -13,6 +13,7 @@
 #include "base/apple/bridging.h"
 #include "base/apple/foundation_util.h"
 #include "base/apple/osstatus_logging.h"
+#include "base/containers/contains.h"
 #include "base/containers/flat_map.h"
 #include "base/logging.h"
 #include "base/mac/mac_util.h"
@@ -231,7 +232,7 @@ bool IsHardwareEncoder(VTSessionRef compression_session) {
   if (VTSessionCopyProperty(
           compression_session, kVTCompressionPropertyKey_EncoderID,
           kCFAllocatorDefault, encoder_id.InitializeInto()) == noErr) {
-    if (std::ranges::contains(kRealtimeHardwareEncoderIDs,
+    if (base::Contains(kRealtimeHardwareEncoderIDs,
                               base::SysCFStringRefToUTF8(encoder_id.get()))) {
       DVLOG(1) << "But " << encoder_id.get() << " is a known hardware encoder";
       return true;
@@ -578,7 +579,7 @@ EncoderStatus VTVideoEncodeAccelerator::Initialize(
         << VideoPixelFormatToString(config.input_format);
     return {EncoderStatus::Codes::kEncoderInitializationError};
   }
-  if (!std::ranges::contains(GetSupportedVideoCodecProfiles(),
+  if (!base::Contains(GetSupportedVideoCodecProfiles(),
                              config.output_profile)) {
     MEDIA_LOG(ERROR, media_log) << "Output profile not supported= "
                                 << GetProfileName(config.output_profile);

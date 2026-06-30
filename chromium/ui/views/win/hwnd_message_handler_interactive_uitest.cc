@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <memory>
 
+#include "base/containers/contains.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/accelerators/accelerator.h"
 #include "ui/base/ime/mock_input_method.h"
@@ -168,7 +169,7 @@ TEST_F(HWNDMessageHandlerTest, GetOwnedWindows) {
 
   std::vector<HWND> owned_windows = parent_handler->GetOwnedWindows();
   ASSERT_EQ(1u, owned_windows.size());
-  EXPECT_TRUE(std::ranges::contains(owned_windows, child_handler->hwnd()));
+  EXPECT_TRUE(base::Contains(owned_windows, child_handler->hwnd()));
 
   child_handler->CloseNow();
   parent_handler->CloseNow();
@@ -208,9 +209,9 @@ TEST_F(HWNDMessageHandlerTest, GetOwnedWindows_Depth3) {
 
   std::vector<HWND> owned_windows = grandparent_handler->GetOwnedWindows();
   ASSERT_EQ(3u, owned_windows.size());
-  EXPECT_TRUE(std::ranges::contains(owned_windows, parent1_handler->hwnd()));
-  EXPECT_TRUE(std::ranges::contains(owned_windows, parent2_handler->hwnd()));
-  EXPECT_TRUE(std::ranges::contains(owned_windows, child_handler->hwnd()));
+  EXPECT_TRUE(base::Contains(owned_windows, parent1_handler->hwnd()));
+  EXPECT_TRUE(base::Contains(owned_windows, parent2_handler->hwnd()));
+  EXPECT_TRUE(base::Contains(owned_windows, child_handler->hwnd()));
 
   child_handler->CloseNow();
   parent2_handler->CloseNow();

@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_util.h"
@@ -261,9 +262,9 @@ bool OpenXrPlatformHelper::IsArBlendModeSupported(XrInstance instance) {
   std::vector<XrEnvironmentBlendMode> environment_blend_modes =
       OpenXrApiWrapper::GetSupportedBlendModes(instance, system);
 
-  return std::ranges::contains(environment_blend_modes,
+  return base::Contains(environment_blend_modes,
                                XR_ENVIRONMENT_BLEND_MODE_ADDITIVE) ||
-         std::ranges::contains(environment_blend_modes,
+         base::Contains(environment_blend_modes,
                                XR_ENVIRONMENT_BLEND_MODE_ALPHA_BLEND);
 }
 

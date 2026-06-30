@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "base/strings/string_number_conversions.h"
 #include "components/offline_pages/core/offline_page_client_policy.h"
 #include "components/offline_pages/core/offline_page_item.h"
@@ -20,11 +21,11 @@ PageCriteria::PageCriteria(PageCriteria&&) = default;
 
 bool MeetsCriteria(const PageCriteria& criteria, const ClientId& client_id) {
   if (criteria.client_ids &&
-      !std::ranges::contains(criteria.client_ids.value(), client_id)) {
+      !base::Contains(criteria.client_ids.value(), client_id)) {
     return false;
   }
   if (criteria.client_namespaces &&
-      !std::ranges::contains(criteria.client_namespaces.value(),
+      !base::Contains(criteria.client_namespaces.value(),
                              client_id.name_space)) {
     return false;
   }
@@ -84,7 +85,7 @@ bool MeetsCriteria(const PageCriteria& criteria, const OfflinePageItem& item) {
   }
 
   if (criteria.offline_ids &&
-      !std::ranges::contains(criteria.offline_ids.value(), item.offline_id)) {
+      !base::Contains(criteria.offline_ids.value(), item.offline_id)) {
     return false;
   }
 

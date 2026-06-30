@@ -29,6 +29,7 @@
 #include <limits>
 
 #include "base/auto_reset.h"
+#include "base/containers/contains.h"
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/common/security_context/insecure_request_policy.h"
 #include "third_party/blink/public/mojom/security_context/insecure_request_policy.mojom-blink.h"
@@ -1126,7 +1127,7 @@ void HTMLFormElement::CollectListedElements(
         if (elements_for_autofill) {
           elements_for_autofill->push_back(listed_element);
         }
-      } else if (std::ranges::contains(nested_forms, listed_element->Form())) {
+      } else if (base::Contains(nested_forms, listed_element->Form())) {
         elements_for_autofill->push_back(listed_element);
       }
     }

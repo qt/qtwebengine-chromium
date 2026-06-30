@@ -13,6 +13,7 @@
 #include <string_view>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/containers/fixed_flat_map.h"
 #include "base/containers/fixed_flat_set.h"
 #include "base/logging.h"
@@ -432,8 +433,8 @@ void ExtractMediaTypes(const CupsOptionProvider& printer,
 bool CollateCapable(const CupsOptionProvider& printer) {
   std::vector<std::string_view> values =
       printer.GetSupportedOptionValueStrings(kIppCollate);
-  return std::ranges::contains(values, kCollated) &&
-         std::ranges::contains(values, kUncollated);
+  return base::Contains(values, kCollated) &&
+         base::Contains(values, kUncollated);
 }
 
 bool CollateDefault(const CupsOptionProvider& printer) {
@@ -456,7 +457,7 @@ bool PinSupported(const CupsOptionProvider& printer) {
 
   std::vector<std::string_view> values =
       printer.GetSupportedOptionValueStrings(kIppPinEncryption);
-  return std::ranges::contains(values, kPinEncryptionNone);
+  return base::Contains(values, kPinEncryptionNone);
 }
 
 // Returns the number of IPP attributes added to `caps` (not necessarily in

@@ -7,6 +7,7 @@
 #include <algorithm>
 
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/containers/to_vector.h"
 #include "components/autofill/core/browser/foundations/test_autofill_driver.h"
 
@@ -31,7 +32,7 @@ TestAutofillDriverFactory::~TestAutofillDriverFactory() {
 }
 
 bool TestAutofillDriverFactory::IsOwned(TestAutofillDriver& driver) const {
-  return std::ranges::contains(drivers_, &driver,
+  return base::Contains(drivers_, &driver,
                                &ToPointer<TestAutofillDriver>);
 }
 

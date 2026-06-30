@@ -8,6 +8,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/location.h"
 #include "content/public/browser/browser_context.h"
@@ -27,7 +28,7 @@ namespace {
 
 // Only websafe state is considered browsing data.
 bool HasStorageScheme(const url::Origin& origin) {
-  return std::ranges::contains(url::GetWebStorageSchemes(), origin.scheme());
+  return base::Contains(url::GetWebStorageSchemes(), origin.scheme());
 }
 
 void GetUsageInfoCallback(LocalStorageHelper::FetchCallback callback,

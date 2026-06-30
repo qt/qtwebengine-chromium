@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/logging.h"
 #include "base/metrics/field_trial_params.h"
@@ -540,7 +541,7 @@ bool ShouldUseAdpfForSoc(std::string_view soc_allowlist,
                          std::string_view soc) {
   std::vector<std::string_view> allowlist = base::SplitStringPiece(
       soc_allowlist, "|", base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
-  return std::ranges::contains(allowlist, soc);
+  return base::Contains(allowlist, soc);
 }
 #endif  // BUILDFLAG(IS_ANDROID)
 

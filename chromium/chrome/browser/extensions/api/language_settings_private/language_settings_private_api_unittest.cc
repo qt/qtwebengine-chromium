@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "base/check_deref.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_refptr.h"
@@ -540,7 +541,7 @@ TEST_F(LanguageSettingsPrivateApiTest, GetInputMethodListsTest) {
     // Check tags contain input method's display name
     const base::Value* ime_name_ptr = input_method.Find("displayName");
     EXPECT_TRUE(
-        std::ranges::contains(*ime_tags_ptr, CHECK_DEREF(ime_name_ptr)));
+        base::Contains(*ime_tags_ptr, CHECK_DEREF(ime_name_ptr)));
 
     // Check tags contain input method's language codes' display names
     const base::ListValue* ime_language_codes_ptr =

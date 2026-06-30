@@ -8,6 +8,7 @@
 #include <memory>
 
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/metrics/histogram_macros.h"
@@ -317,7 +318,7 @@ ContentSetting CookieSettings::GetContentSetting(
 
 bool CookieSettings::IsThirdPartyCookiesAllowedScheme(
     std::string_view scheme) const {
-  return std::ranges::contains(
+  return base::Contains(
       ContentSettingsRegistry::GetInstance()
           ->Get(ContentSettingsType::COOKIES)
           ->third_party_cookie_allowed_secondary_schemes(),

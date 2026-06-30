@@ -9,6 +9,7 @@
 #include <tuple>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
@@ -79,7 +80,7 @@ class MediaDeviceSaltDatabaseTest : public testing::TestWithParam<bool> {
 
   StorageKeyMatcher CreateMatcherForKeys(std::vector<blink::StorageKey> keys) {
     return base::BindLambdaForTesting([keys](const blink::StorageKey& key) {
-      return std::ranges::contains(keys, key);
+      return base::Contains(keys, key);
     });
   }
 

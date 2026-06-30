@@ -11,6 +11,7 @@
 #include <type_traits>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/containers/span.h"
 #include "base/logging.h"
 #include "base/numerics/byte_conversions.h"
@@ -139,7 +140,7 @@ gfx::Size CalculateSizeInMmForGnome(const gfx::Size& dimensions,
   // https://gitlab.gnome.org/GNOME/mutter/-/blob/main/src/backends/meta-monitor-manager.c
   constexpr std::pair<int, int> kBadSizes[] = {
       {16, 9}, {16, 10}, {160, 90}, {160, 100}, {1600, 900}, {1600, 1000}};
-  if (std::ranges::contains(kBadSizes, std::pair(width_mm, height_mm))) {
+  if (base::Contains(kBadSizes, std::pair(width_mm, height_mm))) {
     width_mm--;
   }
   return {width_mm, height_mm};

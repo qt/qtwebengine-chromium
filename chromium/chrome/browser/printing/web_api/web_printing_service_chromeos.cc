@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/containers/map_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
@@ -105,7 +106,7 @@ bool ValidateAdvancedCapability(
   }
   // `requested_capability` is guaranteed to be a string -- it's set this way in
   // StructTraits<>.
-  return std::ranges::contains(printer_capability->values,
+  return base::Contains(printer_capability->values,
                                requested_capability->GetString(),
                                &AdvancedCapabilityValue::name);
 }
@@ -127,7 +128,7 @@ bool ValidateAttributesAndUpdateIfNecessary(
     return false;
   }
   if (IsDuplexModeKnown(pjt_attributes.duplex_mode()) &&
-      !std::ranges::contains(printer_attributes.duplex_modes,
+      !base::Contains(printer_attributes.duplex_modes,
                              pjt_attributes.duplex_mode())) {
     return false;
   }
@@ -136,7 +137,7 @@ bool ValidateAttributesAndUpdateIfNecessary(
     return false;
   }
   if (!pjt_attributes.dpi_size().IsZero() &&
-      !std::ranges::contains(printer_attributes.dpis,
+      !base::Contains(printer_attributes.dpis,
                              pjt_attributes.dpi_size())) {
     return false;
   }

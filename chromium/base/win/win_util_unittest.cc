@@ -14,6 +14,7 @@
 #include <string_view>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/files/file_path.h"
 #include "base/process/process.h"
 #include "base/process/process_handle.h"
@@ -105,7 +106,7 @@ TEST(BaseWinUtilTest, TestGetLoadedModulesSnapshot) {
   ASSERT_NE(static_cast<HMODULE>(nullptr), new_dll.get());
   ASSERT_TRUE(GetLoadedModulesSnapshot(::GetCurrentProcess(), &snapshot));
   ASSERT_GT(snapshot.size(), original_snapshot_size);
-  ASSERT_TRUE(std::ranges::contains(snapshot, new_dll.get()));
+  ASSERT_TRUE(base::Contains(snapshot, new_dll.get()));
 }
 
 TEST(BaseWinUtilTest, TestUint32ToInvalidHandle) {

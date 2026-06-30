@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/types/expected.h"
@@ -46,7 +47,7 @@ void DesktopMediaPickerController::Show(
     const Params& params,
     const std::vector<DesktopMediaList::Type>& sources,
     DoneCallback done_callback) {
-  DCHECK(!std::ranges::contains(sources, DesktopMediaList::Type::kNone));
+  DCHECK(!base::Contains(sources, DesktopMediaList::Type::kNone));
   DCHECK(!done_callback_);
 
   done_callback_ = std::move(done_callback);

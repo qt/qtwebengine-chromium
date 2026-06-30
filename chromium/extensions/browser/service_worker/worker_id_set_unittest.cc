@@ -8,6 +8,7 @@
 #include <memory>
 #include <string>
 
+#include "base/containers/contains.h"
 #include "content/public/common/child_process_id.h"
 #include "extensions/browser/extensions_test.h"
 #include "extensions/common/extension_id.h"
@@ -56,7 +57,7 @@ class VectorWorkerIdListImpl {
   }
 
   bool Contains(const WorkerId& worker_id) const {
-    return std::ranges::contains(workers_, worker_id);
+    return base::Contains(workers_, worker_id);
   }
 
  private:

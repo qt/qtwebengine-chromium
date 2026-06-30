@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "services/network/public/cpp/permissions_policy/permissions_policy_declaration.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -36,7 +37,7 @@ class TestDocumentSubresourceFilter : public WebDocumentSubresourceFilter {
                            network::mojom::RequestDestination,
                            subresource_filter::ScopedRule* out_rule) override {
     String resource_path = KURL(resource_url).GetPath().ToString();
-    if (!std::ranges::contains(queried_subresource_paths_, resource_path)) {
+    if (!base::Contains(queried_subresource_paths_, resource_path)) {
       queried_subresource_paths_.push_back(resource_path);
     }
     String resource_string = resource_url.GetString();

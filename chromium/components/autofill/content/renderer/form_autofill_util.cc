@@ -19,6 +19,7 @@
 #include "base/check_deref.h"
 #include "base/check_op.h"
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/containers/flat_map.h"
 #include "base/containers/flat_set.h"
 #include "base/containers/span.h"
@@ -1435,14 +1436,14 @@ FormFieldData* SearchForFormControlByName(
   if (it == end ||
       std::ranges::find(it + 1, end, field_name, get_field_name) != end) {
     auto ShadowHostHasTargetName = [&](const auto& p) {
-      return std::ranges::contains(p.second.shadow_host_name_attributes,
+      return base::Contains(p.second.shadow_host_name_attributes,
                                    field_name) ||
-             std::ranges::contains(p.second.shadow_host_id_attributes,
+             base::Contains(p.second.shadow_host_id_attributes,
                                    field_name);
     };
     it = std::ranges::find_if(fields, ShadowHostHasTargetName);
     if (it != end) {
-      label_source = std::ranges::contains(
+      label_source = base::Contains(
                          it->second.shadow_host_name_attributes, field_name)
                          ? LabelSource::kForShadowHostName
                          : LabelSource::kForShadowHostId;
@@ -2456,7 +2457,7 @@ FindFormAndFieldForFormControlElement(
 
   // This is not reachable if the following holds:
   // ```
-  // std::ranges::contains(
+  // base::Contains(
   //   GetOwnedFormControls(element.GetOwningFormForAutofill()), element)
   // ```
   // It's not clear if that condition is true. See crbug.com/347059988 for the
@@ -2500,7 +2501,7 @@ FindFormAndFieldForFormControlElement(
   WebFormElement assoc_form_element = element.Form();  // nocheck
 
   // clang-format off
-  SCOPED_CRASH_KEY_BOOL("Autofill", "invariant", std::ranges::contains(GetOwnedFormControls(element.GetDocument(), element.GetOwningFormForAutofill()), element));
+  SCOPED_CRASH_KEY_BOOL("Autofill", "invariant", base::Contains(GetOwnedFormControls(element.GetDocument(), element.GetOwningFormForAutofill()), element));
   SCOPED_CRASH_KEY_STRING256("Autofill", "url", url.spec());
   SCOPED_CRASH_KEY_BOOL("Autofill", "ExtractFormData_succeeded", extract_form_data_succeeded);
   SCOPED_CRASH_KEY_NUMBER("Autofill", "extracted_form_size", form->fields().size());
@@ -2518,7 +2519,7 @@ FindFormAndFieldForFormControlElement(
 #define SCOPED_CRASH_KEYS_FOR_FORM(prefix, f)                                                                                  \
   SCOPED_CRASH_KEY_BOOL("Autofill", #prefix "_form_non_null", !!f);                                                            \
   SCOPED_CRASH_KEY_BOOL("Autofill", #prefix "_form_connected", f && is_connected(f));                                          \
-  SCOPED_CRASH_KEY_BOOL("Autofill", #prefix "_form_owns_element", f && std::ranges::contains(get_form_control_elements(f), element)); \
+  SCOPED_CRASH_KEY_BOOL("Autofill", #prefix "_form_owns_element", f && base::Contains(get_form_control_elements(f), element)); \
   SCOPED_CRASH_KEY_BOOL("Autofill", #prefix "_form_in_shadow_dom", f && !!f.OwnerShadowHost());                                \
   SCOPED_CRASH_KEY_BOOL("Autofill", #prefix "_form_in_same_dom", f && element.OwnerShadowHost() == f.OwnerShadowHost());       \
   SCOPED_CRASH_KEY_BOOL("Autofill", #prefix "_form_is_top_level", is_top_level(f));                                            \

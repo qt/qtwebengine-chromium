@@ -9,6 +9,7 @@
 #include <limits>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/strings/stringprintf.h"
 #include "media/base/limits.h"
 #include "media/base/video_types.h"
@@ -405,11 +406,11 @@ class CandidateFormat {
     }
 
     if (basic_constraint_set.resize_mode.HasIdeal()) {
-      if (!std::ranges::contains(basic_constraint_set.resize_mode.Ideal(),
+      if (!base::Contains(basic_constraint_set.resize_mode.Ideal(),
                                  WebMediaStreamTrack::kResizeModeNone)) {
         track_fitness_without_rescale += 1.0;
       }
-      if (!std::ranges::contains(basic_constraint_set.resize_mode.Ideal(),
+      if (!base::Contains(basic_constraint_set.resize_mode.Ideal(),
                                  WebMediaStreamTrack::kResizeModeRescale)) {
         track_fitness_with_rescale += 1.0;
       }

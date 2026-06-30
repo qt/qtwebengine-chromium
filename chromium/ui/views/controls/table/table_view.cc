@@ -13,6 +13,7 @@
 #include <utility>
 
 #include "base/auto_reset.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/i18n/rtl.h"
@@ -495,13 +496,13 @@ void TableView::SetSortDescriptors(const SortDescriptors& sort_descriptors) {
 }
 
 bool TableView::IsColumnVisible(int id) const {
-  return std::ranges::contains(
+  return base::Contains(
       visible_columns_, id,
       [](const VisibleColumn& column) { return column.column.id; });
 }
 
 bool TableView::HasColumn(int id) const {
-  return std::ranges::contains(columns_, id, &ui::TableColumn::id);
+  return base::Contains(columns_, id, &ui::TableColumn::id);
 }
 
 bool TableView::GetHasFocusIndicator() const {

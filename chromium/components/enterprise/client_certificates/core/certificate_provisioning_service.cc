@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/memory/raw_ptr.h"
@@ -499,7 +500,7 @@ void CertificateProvisioningServiceImpl::OnIdentitiesDeleted(
       << "Identities successfully deleted from store.";
 
   if (cached_identity_ &&
-      std::ranges::contains(identity_names, cached_identity_->name)) {
+      base::Contains(identity_names, cached_identity_->name)) {
     if (cached_identity_->certificate) {
       context_delegate_->OnClientCertificateDeleted(
           cached_identity_->certificate);

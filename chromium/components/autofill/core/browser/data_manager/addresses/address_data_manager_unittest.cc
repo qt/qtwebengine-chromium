@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/run_loop.h"
 #include "base/scoped_observation.h"
@@ -607,7 +608,7 @@ TEST_F(AddressDataManagerTest, AddProfile_CrazyCharacters) {
   }
   ASSERT_EQ(profiles.size(), address_data_manager().GetProfiles().size());
   for (size_t i = 0; i < profiles.size(); ++i) {
-    EXPECT_TRUE(std::ranges::contains(
+    EXPECT_TRUE(base::Contains(
         profiles, *address_data_manager().GetProfiles()[i]));
   }
 }

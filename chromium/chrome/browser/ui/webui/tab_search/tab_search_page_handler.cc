@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "base/base64.h"
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/metrics/histogram_functions.h"
@@ -734,7 +735,7 @@ void TabSearchPageHandler::GetTabOrganizationSession(
     session = organization_service_->CreateSessionForBrowser(browser_);
   }
 
-  if (!std::ranges::contains(listened_sessions_, session)) {
+  if (!base::Contains(listened_sessions_, session)) {
     session->AddObserver(this);
     listened_sessions_.emplace_back(session);
   }
@@ -840,7 +841,7 @@ void TabSearchPageHandler::RequestTabOrganization() {
     session = organization_service_->ResetSessionForBrowser(browser_);
   }
 
-  if (!std::ranges::contains(listened_sessions_, session)) {
+  if (!base::Contains(listened_sessions_, session)) {
     session->AddObserver(this);
     listened_sessions_.emplace_back(session);
   }
@@ -919,7 +920,7 @@ void TabSearchPageHandler::RestartSession() {
   // Don't notify observers to avoid a repaint
   TabOrganizationSession* session =
       organization_service_->ResetSessionForBrowser(browser_, base_session_tab);
-  if (!std::ranges::contains(listened_sessions_, session)) {
+  if (!base::Contains(listened_sessions_, session)) {
     session->AddObserver(this);
     listened_sessions_.emplace_back(session);
   }
@@ -1772,7 +1773,7 @@ TabSearchPageHandler::GetMojoForTabOrganizationSession(
 
 void TabSearchPageHandler::OnTabOrganizationSessionUpdated(
     const TabOrganizationSession* session) {
-  if (restarting_ || !std::ranges::contains(listened_sessions_, session)) {
+  if (restarting_ || !base::Contains(listened_sessions_, session)) {
     return;
   }
 

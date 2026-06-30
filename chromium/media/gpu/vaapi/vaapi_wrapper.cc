@@ -26,6 +26,7 @@
 
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/containers/fixed_flat_set.h"
 #include "base/cpu.h"
 #include "base/environment.h"
@@ -810,9 +811,9 @@ bool IsVAProfileSupported(VAProfile va_profile, bool is_encoding) {
         VAProfileVP9Profile0,
         VAProfileAV1Profile0,
     };
-    return std::ranges::contains(kSupportableEncoderProfiles, va_profile);
+    return base::Contains(kSupportableEncoderProfiles, va_profile);
   }
-  return std::ranges::contains(GetProfileCodecMap(), va_profile,
+  return base::Contains(GetProfileCodecMap(), va_profile,
                                &ProfileCodecMap::value_type::second);
 }
 
@@ -912,7 +913,7 @@ std::vector<VAEntrypoint> GetEntryPointsForProfile(const base::Lock* va_lock,
   std::vector<VAEntrypoint> entrypoints;
   std::ranges::copy_if(va_entrypoints, std::back_inserter(entrypoints),
                        [&kAllowedEntryPoints, mode](VAEntrypoint entry_point) {
-                         return std::ranges::contains(kAllowedEntryPoints[mode],
+                         return base::Contains(kAllowedEntryPoints[mode],
                                                       entry_point);
                        });
   return entrypoints;
@@ -972,7 +973,7 @@ bool GetRequiredAttribs(const base::Lock* va_lock,
   constexpr VAProfile kSupportedH264VaProfilesForEncoding[] = {
       VAProfileH264ConstrainedBaseline, VAProfileH264Main, VAProfileH264High};
   // VAConfigAttribEncPackedHeaders is H.264 specific.
-  if (std::ranges::contains(kSupportedH264VaProfilesForEncoding, profile)) {
+  if (base::Contains(kSupportedH264VaProfilesForEncoding, profile)) {
     // Encode with Packed header if the driver supports.
     VAConfigAttrib attrib{};
     attrib.type = VAConfigAttribEncPackedHeaders;
@@ -1402,7 +1403,7 @@ const VASupportedImageFormats& VASupportedImageFormats::Get() {
 
 bool VASupportedImageFormats::IsImageFormatSupported(
     const VAImageFormat& va_image_format) const {
-  return std::ranges::contains(supported_formats_, va_image_format.fourcc,
+  return base::Contains(supported_formats_, va_image_format.fourcc,
                                &VAImageFormat::fourcc);
 }
 
@@ -1482,7 +1483,7 @@ bool IsLowPowerEncSupported(VAProfile va_profile) {
       VAProfileVP9Profile0,
       VAProfileAV1Profile0,
   };
-  if (!std::ranges::contains(kSupportedLowPowerEncodeProfiles, va_profile))
+  if (!base::Contains(kSupportedLowPowerEncodeProfiles, va_profile))
     return false;
 
   if ((IsGen95Gpu() || IsGen9Gpu()) &&
@@ -2042,7 +2043,7 @@ bool VaapiWrapper::IsVppFormatSupported(uint32_t va_fourcc) {
   if (!profile_info)
     return false;
 
-  return std::ranges::contains(profile_info->pixel_formats, va_fourcc);
+  return base::Contains(profile_info->pixel_formats, va_fourcc);
 }
 
 // static
@@ -3459,7 +3460,7 @@ VaapiWrapper::CreateScopedVASurfaces(
   VA_SUCCESS_OR_RETURN(va_res, VaapiFunctions::kVACreateSurfaces_Allocating,
                        std::vector<std::unique_ptr<ScopedVASurface>>{});
 
-  DCHECK(!std::ranges::contains(va_surface_ids, VA_INVALID_ID))
+  DCHECK(!base::Contains(va_surface_ids, VA_INVALID_ID))
       << "Invalid VA surface id after vaCreateSurfaces";
 
   DCHECK(!visible_size.has_value() || !visible_size->IsEmpty());

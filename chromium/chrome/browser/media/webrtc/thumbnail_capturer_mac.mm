@@ -19,6 +19,7 @@
 #include "base/apple/scoped_cftyperef.h"
 #include "base/barrier_closure.h"
 #include "base/containers/adapters.h"
+#include "base/containers/contains.h"
 #include "base/containers/flat_map.h"
 #include "base/feature_list.h"
 #include "base/functional/callback.h"
@@ -294,7 +295,7 @@ void ScreenshotManagerCapturer::SelectSources(
   // thumbnails in the view are captured first.
   bool new_sources_added = false;
   for (ThumbnailCapturer::SourceId source_id : base::Reversed(ids)) {
-    if (!std::ranges::contains(selected_sources_, source_id)) {
+    if (!base::Contains(selected_sources_, source_id)) {
       capture_queue_.push_front(source_id);
       new_sources_added = true;
     }
@@ -327,7 +328,7 @@ void ScreenshotManagerCapturer::OnRecurrentCaptureTimer() {
   for (size_t i = 0; i < sources_to_capture; ++i) {
     ThumbnailCapturer::SourceId source_id = capture_queue_.front();
     capture_queue_.pop_front();
-    if (!std::ranges::contains(selected_sources_, source_id)) {
+    if (!base::Contains(selected_sources_, source_id)) {
       continue;
     }
     CaptureSource(source_id);

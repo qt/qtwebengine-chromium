@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <array>
 
+#include "base/containers/contains.h"
 #include "base/files/file_util.h"
 #include "base/format_macros.h"
 #include "base/path_service.h"
@@ -441,7 +442,7 @@ TEST(ExtensionTest, IgnoredUnrecognizedKeysAreNotManifestFeatures) {
 
   for (const auto& [key, value] : manifest_features->GetAllFeatures()) {
     EXPECT_FALSE(
-        std::ranges::contains(manifest_keys::kIgnoredUnrecognizedKeys, key));
+        base::Contains(manifest_keys::kIgnoredUnrecognizedKeys, key));
   }
 }
 

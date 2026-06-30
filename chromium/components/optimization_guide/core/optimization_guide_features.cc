@@ -10,6 +10,7 @@
 
 #include "base/byte_count.h"
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/containers/enum_set.h"
 #include "base/feature_list.h"
 #include "base/logging.h"
@@ -168,7 +169,7 @@ bool IsOnDeviceModelBackgroundDownloadEnabledForFeature(
   std::vector<std::string_view> allowed_features =
       base::SplitStringPiece(allowed_features_string, ",",
                              base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
-  return std::ranges::contains(allowed_features, GetVariantName(feature));
+  return base::Contains(allowed_features, GetVariantName(feature));
 }
 
 BASE_FEATURE(kOptimizationGuideIconView, base::FEATURE_DISABLED_BY_DEFAULT);

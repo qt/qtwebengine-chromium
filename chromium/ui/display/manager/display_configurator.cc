@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/logging.h"
@@ -54,7 +55,7 @@ struct DisplayState {
 bool IsDisplayIdInDisplayStateList(
     int64_t display_id,
     const DisplayConfigurator::DisplayStateList& display_list) {
-  return std::ranges::contains(display_list, display_id,
+  return base::Contains(display_list, display_id,
                                &DisplaySnapshot::display_id);
 }
 

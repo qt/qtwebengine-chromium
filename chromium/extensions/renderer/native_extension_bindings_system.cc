@@ -10,6 +10,7 @@
 
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
@@ -424,7 +425,7 @@ bool ShouldCollectJSStackTrace(const APIRequestHandler::Request& request) {
           extensions_features::kIncludeJSCallStackInExtensionApiRequest)) {
     return false;
   }
-  if (!std::ranges::contains(kApiMethods, request.method_name)) {
+  if (!base::Contains(kApiMethods, request.method_name)) {
     return false;
   }
   return true;

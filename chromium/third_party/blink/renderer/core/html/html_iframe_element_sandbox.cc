@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "third_party/blink/renderer/core/html/fenced_frame/html_fenced_frame_element.h"
 #include "third_party/blink/renderer/core/html/html_frame_owner_element.h"
 #include "third_party/blink/renderer/core/html/html_iframe_element.h"
@@ -39,7 +40,7 @@ constexpr char kAllowSameSiteNoneCookiesSandboxToken[] =
     "allow-same-site-none-cookies";
 
 bool IsTokenSupported(const AtomicString& token) {
-  if (std::ranges::contains(kSupportedSandboxTokens, token)) {
+  if (base::Contains(kSupportedSandboxTokens, token)) {
     return true;
   }
   return token == kAllowSameSiteNoneCookiesSandboxToken &&

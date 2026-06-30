@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/containers/flat_map.h"
 #include "base/features.h"
 #include "base/memory/ptr_util.h"
@@ -189,7 +190,7 @@ std::string_view GetFeatureName(std::string_view feature) {
 bool ContainsFeature(
     const std::vector<ScopedFeatureList::FeatureWithStudyGroup>& feature_vector,
     std::string_view feature_name) {
-  return std::ranges::contains(
+  return base::Contains(
       feature_vector, feature_name,
       [](const ScopedFeatureList::FeatureWithStudyGroup& a) {
         return a.feature_name;

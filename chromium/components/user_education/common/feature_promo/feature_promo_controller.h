@@ -14,6 +14,7 @@
 
 #include "base/auto_reset.h"
 #include "base/callback_list.h"
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/functional/callback.h"
 #include "base/functional/callback_forward.h"
@@ -165,9 +166,9 @@ class FeaturePromoController {
                      Args... additional_status) const {
     const FeaturePromoStatus actual = GetPromoStatus(iph_feature);
     const std::initializer_list<FeaturePromoStatus> list{additional_status...};
-    DCHECK(!std::ranges::contains(list, FeaturePromoStatus::kNotRunning));
+    DCHECK(!base::Contains(list, FeaturePromoStatus::kNotRunning));
     return actual == FeaturePromoStatus::kBubbleShowing ||
-           std::ranges::contains(list, actual);
+           base::Contains(list, actual);
   }
 
   // Starts a promo with the settings for skipping any logging or filtering

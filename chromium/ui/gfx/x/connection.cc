@@ -13,6 +13,7 @@
 #include "base/auto_reset.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/memory/ptr_util.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/no_destructor.h"
@@ -352,7 +353,7 @@ std::string Connection::GetWmName() const {
 bool Connection::WmSupportsHint(Atom atom) const {
   if (WmSupportsEwmh()) {
     auto supported = root_props_->GetAsSpan<Atom>(GetAtom("_NET_SUPPORTED"));
-    return std::ranges::contains(supported, atom);
+    return base::Contains(supported, atom);
   }
   return false;
 }

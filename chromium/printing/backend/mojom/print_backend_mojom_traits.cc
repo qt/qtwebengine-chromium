@@ -8,6 +8,7 @@
 #include <set>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/logging.h"
 #include "base/notreached.h"
 #include "build/build_config.h"
@@ -346,7 +347,7 @@ bool StructTraits<printing::mojom::PrinterSemanticCapsAndDefaultsDataView,
     // If non-null `default_quality`, there should be a matching element in
     // `qualities` array.
     if (default_quality) {
-      if (!std::ranges::contains(qualities, *default_quality,
+      if (!base::Contains(qualities, *default_quality,
                                  &printing::PageOutputQualityAttribute::name)) {
         DLOG(ERROR) << "Non-null default quality, but page output qualities "
                        "does not contain default quality";

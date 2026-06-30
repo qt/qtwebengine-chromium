@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/no_destructor.h"
@@ -474,7 +475,7 @@ bool SimpleFeature::IsIdInList(const HashedExtensionId& hashed_id,
   if (!IsValidHashedExtensionId(hashed_id))
     return false;
 
-  return std::ranges::contains(list, hashed_id.value());
+  return base::Contains(list, hashed_id.value());
 }
 
 bool SimpleFeature::MatchesManifestLocation(
@@ -499,14 +500,14 @@ bool SimpleFeature::MatchesSessionTypes(
   if (session_types_.empty())
     return true;
 
-  if (std::ranges::contains(session_types_, session_type))
+  if (base::Contains(session_types_, session_type))
     return true;
 
   // AUTOLAUNCHED_KIOSK session type is subset of KIOSK - accept auto-lauched
   // kiosk session if kiosk session is allowed. This is the only exception to
   // rejecting session type that is not present in |session_types_|
   return session_type == mojom::FeatureSessionType::kAutolaunchedKiosk &&
-         std::ranges::contains(session_types_,
+         base::Contains(session_types_,
                                mojom::FeatureSessionType::kKiosk);
 }
 
@@ -614,7 +615,7 @@ Feature::Availability SimpleFeature::GetEnvironmentAvailability(
     int context_id,
     bool check_developer_mode) const {
   base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
-  if (!platforms_.empty() && !std::ranges::contains(platforms_, platform))
+  if (!platforms_.empty() && !base::Contains(platforms_, platform))
     return CreateAvailability(AvailabilityResult::kInvalidPlatform);
 
   if (channel_ && *channel_ < GetCurrentChannel()) {
@@ -686,7 +687,7 @@ Feature::Availability SimpleFeature::GetManifestAvailability(
   Manifest::Type type_to_check =
       (type == Manifest::Type::kUserScript) ? Manifest::Type::kExtension : type;
   if (!extension_types_.empty() &&
-      !std::ranges::contains(extension_types_, type_to_check)) {
+      !base::Contains(extension_types_, type_to_check)) {
     return CreateAvailability(AvailabilityResult::kInvalidType, type);
   }
 
@@ -728,7 +729,7 @@ Feature::Availability SimpleFeature::GetContextAvailability(
   // extension API calls, since there's no guarantee that the extension is
   // "active" in current renderer process when the API permission check is
   // done.
-  if (contexts_ && !std::ranges::contains(*contexts_, context))
+  if (contexts_ && !base::Contains(*contexts_, context))
     return CreateAvailability(AvailabilityResult::kInvalidContext, context);
 
   // TODO(kalman): Consider checking |matches_| regardless of context type.

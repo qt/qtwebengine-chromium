@@ -14,6 +14,7 @@
 #include "base/android/scoped_hardware_buffer_handle.h"
 #include "base/base64.h"
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/containers/span.h"
 #include "base/functional/callback_helpers.h"
 #include "base/logging.h"
@@ -142,7 +143,7 @@ class NdkVideoEncoderAcceleratorTest
     pixel_format_ = args.pixel_format;
 
     auto profiles = MakeNdkAccelerator()->GetSupportedProfiles();
-    bool codec_supported = std::ranges::contains(
+    bool codec_supported = base::Contains(
         profiles, profile_, &VideoEncodeAccelerator::SupportedProfile::profile);
 
     if (!codec_supported) {

@@ -8,6 +8,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/unguessable_token.h"
 #include "content/browser/browser_main_loop.h"
@@ -76,7 +77,7 @@ void ActiveMediaSessionController::MediaSessionActionsChanged(
         MediaSessionActionToKeyCode(action);
     if (!action_key_code.has_value())
       continue;
-    if (!std::ranges::contains(actions, action))
+    if (!base::Contains(actions, action))
       media_keys_listener_manager->StopWatchingMediaKey(*action_key_code, this,
                                                         request_id_);
   }

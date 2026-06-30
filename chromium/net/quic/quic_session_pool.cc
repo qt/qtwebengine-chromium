@@ -13,6 +13,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
@@ -1553,7 +1554,7 @@ quic::ParsedQuicVersion QuicSessionPool::SelectQuicVersion(
   // https://datatracker.ietf.org/doc/html/rfc9460#name-interaction-with-alt-svc
   if (known_quic_version.IsKnown()) {
     std::string expected_alpn = quic::AlpnForVersion(known_quic_version);
-    if (std::ranges::contains(metadata.supported_protocol_alpns,
+    if (base::Contains(metadata.supported_protocol_alpns,
                               quic::AlpnForVersion(known_quic_version))) {
       return known_quic_version;
     }

@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "base/lazy_instance.h"
 #include "base/strings/pattern.h"
 #include "content/common/url_schemes.h"
@@ -24,7 +25,7 @@ bool OriginCanAccessServiceWorkers(const GURL& url) {
     return true;
   }
 
-  if (std::ranges::contains(GetServiceWorkerSchemes(), url.GetScheme())) {
+  if (base::Contains(GetServiceWorkerSchemes(), url.GetScheme())) {
     return true;
   }
 

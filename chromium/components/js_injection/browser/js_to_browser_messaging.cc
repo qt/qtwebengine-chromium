@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "base/memory/raw_ptr.h"
 #include "components/back_forward_cache/back_forward_cache_disable.h"
 #include "components/js_injection/browser/web_message.h"
@@ -37,7 +38,7 @@ namespace {
 // this case we want to let developer to know that local files are not safe,
 // so we still pass "null".
 std::string GetOriginString(const url::Origin& source_origin) {
-  return std::ranges::contains(url::GetLocalSchemes(), source_origin.scheme())
+  return base::Contains(url::GetLocalSchemes(), source_origin.scheme())
              ? "null"
              : source_origin.Serialize();
 }

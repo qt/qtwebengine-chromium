@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "third_party/blink/renderer/core/event_type_names.h"
 #include "third_party/blink/renderer/core/frame/web_feature.h"
 #include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
@@ -24,7 +25,7 @@ const Vector<AtomicString>& MouseButtonEventTypes() {
 }
 
 bool IsMouseButtonEventType(const AtomicString& event_type) {
-  return std::ranges::contains(MouseButtonEventTypes(), event_type);
+  return base::Contains(MouseButtonEventTypes(), event_type);
 }
 
 bool IsPointerEventType(const AtomicString& event_type) {

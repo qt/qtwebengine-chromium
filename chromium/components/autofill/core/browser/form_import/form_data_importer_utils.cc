@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "base/strings/utf_string_conversions.h"
 #include "components/autofill/core/browser/data_manager/addresses/address_data_manager.h"
 #include "components/autofill/core/browser/data_quality/addresses/profile_requirement_utils.h"
@@ -23,7 +24,7 @@ bool IsOriginPartOfDeletionInfo(const std::optional<url::Origin>& origin,
     return false;
   }
   return deletion_info.IsAllHistory() ||
-         std::ranges::contains(deletion_info.deleted_rows(), *origin,
+         base::Contains(deletion_info.deleted_rows(), *origin,
                                [](const history::URLRow& url_row) {
                                  return url::Origin::Create(url_row.url());
                                });

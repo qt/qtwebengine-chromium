@@ -4,6 +4,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/platform_thread.h"
@@ -1782,14 +1783,14 @@ IN_PROC_BROWSER_TEST_F(BackForwardCacheBrowserTest,
       "BackForwardCache.HistoryNavigationOutcome."
       "BlocklistedFeature");
   EXPECT_TRUE(
-      std::ranges::contains(blocklist_values, sample, &base::Bucket::min));
+      base::Contains(blocklist_values, sample, &base::Bucket::min));
 
   std::vector<base::Bucket> all_sites_blocklist_values =
       histogram_tester().GetAllSamples(
           "BackForwardCache.AllSites.HistoryNavigationOutcome."
           "BlocklistedFeature");
 
-  EXPECT_TRUE(std::ranges::contains(all_sites_blocklist_values, sample,
+  EXPECT_TRUE(base::Contains(all_sites_blocklist_values, sample,
                                     &base::Bucket::min));
 }
 

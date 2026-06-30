@@ -9,6 +9,7 @@
 #include <string_view>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/containers/span.h"
 #include "base/run_loop.h"
 #include "base/task/single_thread_task_runner.h"
@@ -111,7 +112,7 @@ MATCHER_P2(IsAdvertisementContent,
            expected_uuid_formatted_client_eid,
            "") {
 #if BUILDFLAG(IS_MAC)
-  return std::ranges::contains(*arg->service_uuids(),
+  return base::Contains(*arg->service_uuids(),
                                expected_uuid_formatted_client_eid);
 
 #elif BUILDFLAG(IS_WIN)

@@ -8,6 +8,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/debug/alias.h"
 #include "base/logging.h"
 #include "base/memory/unsafe_shared_memory_region.h"
@@ -74,7 +75,7 @@ void OutputDeviceBacking::RegisterClient(Client* client) {
 }
 
 void OutputDeviceBacking::UnregisterClient(Client* client) {
-  DCHECK(std::ranges::contains(clients_, client));
+  DCHECK(base::Contains(clients_, client));
   std::erase(clients_, client);
   ClientResized();
 }

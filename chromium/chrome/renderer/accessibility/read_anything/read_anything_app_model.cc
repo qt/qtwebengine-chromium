@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/strings/stringprintf.h"
@@ -782,7 +783,7 @@ ui::AXNode* ReadAnythingAppModel::GetAXNode(
 }
 
 bool ReadAnythingAppModel::NodeIsContentNode(ui::AXNodeID ax_node_id) const {
-  return std::ranges::contains(content_node_ids_, ax_node_id);
+  return base::Contains(content_node_ids_, ax_node_id);
 }
 
 void ReadAnythingAppModel::AdjustTextSize(int increment) {
@@ -1067,7 +1068,7 @@ void ReadAnythingAppModel::ProcessGeneratedEvents(
         break;
       case ui::AXEventGenerator::Event::EXPANDED:
         if (features::IsReadAnythingReadAloudEnabled()) {
-          if (std::ranges::contains(content_node_ids_, event.node_id)) {
+          if (base::Contains(content_node_ids_, event.node_id)) {
             redraw_required_ = true;
           } else {
             requires_distillation_ = true;

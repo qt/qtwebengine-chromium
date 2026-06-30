@@ -15,6 +15,7 @@
 #include "base/barrier_closure.h"
 #include "base/byte_size.h"
 #include "base/check_deref.h"
+#include "base/containers/contains.h"
 #include "base/containers/flat_set.h"
 #include "base/containers/to_value_list.h"
 #include "base/debug/crash_logging.h"
@@ -2702,7 +2703,7 @@ base::ListValue SiteSettingsHandler::PopulateFileSystemGrantData() {
     for (auto& path_info : grantObj.directory_read_grants) {
       const std::string file_path_string =
           FilePathToValue(path_info.path).GetString();
-      if (std::ranges::contains(directory_edit_grants_file_paths,
+      if (base::Contains(directory_edit_grants_file_paths,
                                 file_path_string)) {
         continue;
       }
@@ -2731,7 +2732,7 @@ base::ListValue SiteSettingsHandler::PopulateFileSystemGrantData() {
     for (auto& path_info : grantObj.file_read_grants) {
       const std::string file_path_string =
           FilePathToValue(path_info.path).GetString();
-      if (std::ranges::contains(file_edit_grants_file_paths,
+      if (base::Contains(file_edit_grants_file_paths,
                                 file_path_string)) {
         continue;
       }

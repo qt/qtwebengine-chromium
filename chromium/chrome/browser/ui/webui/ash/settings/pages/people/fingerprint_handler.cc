@@ -9,6 +9,7 @@
 
 #include "ash/constants/ash_features.h"
 #include "ash/constants/ash_pref_names.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
@@ -208,7 +209,7 @@ void FingerprintHandler::HandleStartEnroll(const base::ListValue& args) {
     std::string fingerprint_name = l10n_util::GetStringFUTF8(
         IDS_SETTINGS_PEOPLE_LOCK_SCREEN_NEW_FINGERPRINT_DEFAULT_NAME,
         base::NumberToString16(i));
-    if (!std::ranges::contains(fingerprints_labels_, fingerprint_name)) {
+    if (!base::Contains(fingerprints_labels_, fingerprint_name)) {
       fp_service_->StartEnrollSession(user_id_, fingerprint_name);
       break;
     }

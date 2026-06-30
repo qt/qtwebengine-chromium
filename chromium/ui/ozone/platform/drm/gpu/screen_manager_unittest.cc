@@ -15,6 +15,7 @@
 #include <utility>
 
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/functional/callback_helpers.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -1725,7 +1726,7 @@ TEST_F(ScreenManagerTest, CloningPlanesOnModeset) {
       controllers_to_enable, {display::ModesetFlag::kTestModeset,
                               display::ModesetFlag::kCommitModeset}));
 
-  EXPECT_TRUE(std::ranges::contains(drm_->plane_manager()
+  EXPECT_TRUE(base::Contains(drm_->plane_manager()
                                         ->GetCrtcStateForCrtcId(crtc_id)
                                         .modeset_framebuffers,
                                     buffer));
@@ -1767,11 +1768,11 @@ TEST_F(ScreenManagerTest, CloningMultiplePlanesOnModeset) {
       controllers_to_enable, {display::ModesetFlag::kTestModeset,
                               display::ModesetFlag::kCommitModeset}));
 
-  EXPECT_TRUE(std::ranges::contains(drm_->plane_manager()
+  EXPECT_TRUE(base::Contains(drm_->plane_manager()
                                         ->GetCrtcStateForCrtcId(crtc_id)
                                         .modeset_framebuffers,
                                     primary));
-  EXPECT_TRUE(std::ranges::contains(drm_->plane_manager()
+  EXPECT_TRUE(base::Contains(drm_->plane_manager()
                                         ->GetCrtcStateForCrtcId(crtc_id)
                                         .modeset_framebuffers,
                                     overlay));
@@ -1806,7 +1807,7 @@ TEST_F(ScreenManagerTest, ModesetWithClonedPlanesNoOverlays) {
   ASSERT_TRUE(screen_manager_->ConfigureDisplayControllers(
       controllers_to_enable, {display::ModesetFlag::kTestModeset,
                               display::ModesetFlag::kCommitModeset}));
-  ASSERT_TRUE(std::ranges::contains(drm_->plane_manager()
+  ASSERT_TRUE(base::Contains(drm_->plane_manager()
                                         ->GetCrtcStateForCrtcId(crtc_id)
                                         .modeset_framebuffers,
                                     buffer));
@@ -1851,11 +1852,11 @@ TEST_F(ScreenManagerTest, ModesetWithClonedPlanesWithOverlaySucceeding) {
       controllers_to_enable, {display::ModesetFlag::kTestModeset,
                               display::ModesetFlag::kCommitModeset}));
 
-  EXPECT_TRUE(std::ranges::contains(drm_->plane_manager()
+  EXPECT_TRUE(base::Contains(drm_->plane_manager()
                                         ->GetCrtcStateForCrtcId(crtc_id)
                                         .modeset_framebuffers,
                                     primary));
-  EXPECT_TRUE(std::ranges::contains(drm_->plane_manager()
+  EXPECT_TRUE(base::Contains(drm_->plane_manager()
                                         ->GetCrtcStateForCrtcId(crtc_id)
                                         .modeset_framebuffers,
                                     overlay));
@@ -1901,11 +1902,11 @@ TEST_F(ScreenManagerTest, ModesetWithClonedPlanesWithOverlayFailing) {
       controllers_to_enable, {display::ModesetFlag::kTestModeset,
                               display::ModesetFlag::kCommitModeset}));
 
-  EXPECT_TRUE(std::ranges::contains(drm_->plane_manager()
+  EXPECT_TRUE(base::Contains(drm_->plane_manager()
                                         ->GetCrtcStateForCrtcId(crtc_id)
                                         .modeset_framebuffers,
                                     primary));
-  EXPECT_FALSE(std::ranges::contains(drm_->plane_manager()
+  EXPECT_FALSE(base::Contains(drm_->plane_manager()
                                          ->GetCrtcStateForCrtcId(crtc_id)
                                          .modeset_framebuffers,
                                      overlay));
@@ -1952,11 +1953,11 @@ TEST_F(ScreenManagerTest, ModesetWithNewBuffersOnModifiersChange) {
       controllers_to_enable, {display::ModesetFlag::kTestModeset,
                               display::ModesetFlag::kCommitModeset}));
 
-  EXPECT_FALSE(std::ranges::contains(drm_->plane_manager()
+  EXPECT_FALSE(base::Contains(drm_->plane_manager()
                                          ->GetCrtcStateForCrtcId(crtc_id)
                                          .modeset_framebuffers,
                                      primary));
-  EXPECT_FALSE(std::ranges::contains(drm_->plane_manager()
+  EXPECT_FALSE(base::Contains(drm_->plane_manager()
                                          ->GetCrtcStateForCrtcId(crtc_id)
                                          .modeset_framebuffers,
                                      overlay));

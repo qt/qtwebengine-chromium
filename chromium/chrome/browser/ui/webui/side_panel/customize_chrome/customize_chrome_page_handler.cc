@@ -8,6 +8,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/metrics/field_trial_params.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
@@ -641,9 +642,9 @@ void CustomizeChromePageHandler::UpdateModulesSettings() {
           l10n_util::GetStringUTF8(description_message_id.value());
     }
     module_settings->enabled =
-        !std::ranges::contains(disabled_module_ids, module_settings->id);
+        !base::Contains(disabled_module_ids, module_settings->id);
     module_settings->visible =
-        !std::ranges::contains(hidden_module_ids, module_settings->id);
+        !base::Contains(hidden_module_ids, module_settings->id);
     modules_settings.push_back(std::move(module_settings));
   }
   page_->SetModulesSettings(

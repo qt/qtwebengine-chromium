@@ -14,6 +14,7 @@
 #include "ash/constants/ash_features.h"
 #include "ash/shell.h"
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/memory/raw_ptr.h"
 #include "components/exo/buffer.h"
@@ -157,7 +158,7 @@ class WaylandDmabufFeedback {
           scanout_modifier_entries.emplace(it->first, it->second);
         } else {
           for (const auto& [table_index, modifier] : modifier_entries) {
-            if (std::ranges::contains(display_formats_and_modifiers.at(format),
+            if (base::Contains(display_formats_and_modifiers.at(format),
                                       modifier)) {
               scanout_modifier_entries.emplace(table_index, modifier);
             }

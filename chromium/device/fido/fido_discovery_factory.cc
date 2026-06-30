@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "base/notreached.h"
 #include "build/build_config.h"
 #include "components/device_event_log/device_event_log.h"
@@ -92,7 +93,7 @@ std::vector<std::unique_ptr<FidoDiscoveryBase>> FidoDiscoveryFactory::Create(
         std::vector<std::unique_ptr<FidoDiscoveryBase>> ret;
         const bool have_v2_discovery_data =
             cable_data_.has_value() &&
-            std::ranges::contains(*cable_data_, CableDiscoveryData::Version::V2,
+            base::Contains(*cable_data_, CableDiscoveryData::Version::V2,
                                   &CableDiscoveryData::version);
         if (qr_generator_key_.has_value() || have_v2_discovery_data) {
           ret.emplace_back(std::make_unique<cablev2::Discovery>(

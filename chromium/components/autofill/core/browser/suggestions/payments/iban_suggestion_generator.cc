@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "base/containers/to_vector.h"
 #include "base/functional/function_ref.h"
 #include "base/strings/string_util.h"
@@ -176,7 +177,7 @@ void IbanSuggestionGenerator::FetchSuggestionData(
   // assume the IBAN has been filled, and don't show any suggestions.
   if (!trigger_autofill_field ||
       (!trigger_autofill_field->value().empty() &&
-       std::ranges::contains(ibans, trigger_autofill_field->value(),
+       base::Contains(ibans, trigger_autofill_field->value(),
                              &Iban::value))) {
     callback({SuggestionDataSource::kIban, {}});
     return;

@@ -11,6 +11,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/containers/fixed_flat_map.h"
 #include "base/feature_list.h"
 #include "base/functional/callback_helpers.h"
@@ -2699,7 +2700,7 @@ bool WebRequestEventRouter::ListenerMatchesRequest(
 
   const std::vector<WebRequestResourceType>& types = listener.filter.types;
   if (!types.empty() &&
-      !std::ranges::contains(types, request.web_request_type)) {
+      !base::Contains(types, request.web_request_type)) {
     return false;
   }
 

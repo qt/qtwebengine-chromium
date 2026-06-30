@@ -27,6 +27,7 @@
 #include <tuple>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/functional/callback_helpers.h"
@@ -875,7 +876,7 @@ void MidiManagerWin::ReflectActiveDeviceList(
 
   // Find new ports from active ports and append them to known ports.
   for (auto& port : *active_ports) {
-    if (!std::ranges::contains(
+    if (!base::Contains(
             *known_ports, *port,
             [](const auto& candidate) -> T& { return *candidate; })) {
       size_t index = known_ports->size();

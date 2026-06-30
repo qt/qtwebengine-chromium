@@ -10,6 +10,7 @@
 #include <string>
 
 #include "base/auto_reset.h"
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/memory/weak_ptr.h"
 #include "base/metrics/histogram_functions.h"
@@ -70,7 +71,7 @@ class FixedCandidateSelector : public webui::PreloadCandidateSelector {
 
   // webui::PreloadCandidateSelector:
   void Init(const std::vector<GURL>& preloadable_urls) override {
-    DCHECK(std::ranges::contains(preloadable_urls, webui_url_));
+    DCHECK(base::Contains(preloadable_urls, webui_url_));
   }
   std::optional<GURL> GetURLToPreload(
       const webui::PreloadContext& context) const override {

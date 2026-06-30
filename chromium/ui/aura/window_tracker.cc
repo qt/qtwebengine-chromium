@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "ui/aura/window.h"
 
 namespace aura {
@@ -22,7 +23,7 @@ WindowTracker::~WindowTracker() {
 }
 
 void WindowTracker::Add(Window* window) {
-  if (std::ranges::contains(windows_, window)) {
+  if (base::Contains(windows_, window)) {
     return;
   }
 
@@ -52,7 +53,7 @@ Window* WindowTracker::Pop() {
 }
 
 bool WindowTracker::Contains(Window* window) const {
-  return std::ranges::contains(windows_, window);
+  return base::Contains(windows_, window);
 }
 
 void WindowTracker::OnWindowDestroying(Window* window) {

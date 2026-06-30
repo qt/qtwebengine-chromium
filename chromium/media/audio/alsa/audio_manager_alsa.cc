@@ -10,6 +10,7 @@
 #include <array>
 
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/logging.h"
 #include "base/memory/free_deleter.h"
 #include "base/metrics/histogram.h"
@@ -221,7 +222,7 @@ void AudioManagerAlsa::AddAlsaDeviceFromSwitch(const char* switch_name,
             switch_name);
     // Only append the specified device if it is not already present on the
     // list.
-    if (!std::ranges::contains(
+    if (!base::Contains(
             *device_names, switch_device_name,
             [](const auto& device_name) { return device_name.unique_id; })) {
       AudioDeviceName name;

@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "base/barrier_closure.h"
+#include "base/containers/contains.h"
 #include "base/debug/crash_logging.h"
 #include "base/files/file_util.h"
 #include "base/memory/ref_counted.h"
@@ -245,7 +246,7 @@ void AddSiteToSiteGroups(
   if (inserted) {
     it->second.etld_plus_one = etld_plus_one;
     it->second.sites.push_back(CreateSiteInfo(site, site_set));
-  } else if (!std::ranges::contains(it->second.sites, site,
+  } else if (!base::Contains(it->second.sites, site,
                                     &developer::SiteInfo::site)) {
     it->second.sites.push_back(CreateSiteInfo(site, site_set));
   }

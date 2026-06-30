@@ -13,6 +13,7 @@
 #include "base/auto_reset.h"
 #include "base/check_op.h"
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/logging.h"
@@ -711,7 +712,7 @@ void PermissionRequestManager::Deny(const PromptOptions& prompt_options) {
   // trapped in request loops where the website automatically navigates
   // cross-origin (e.g. to another subdomain) to be able to prompt again after
   // a rejection.
-  if (std::ranges::contains(requests_, ContentSettingsType::NOTIFICATIONS,
+  if (base::Contains(requests_, ContentSettingsType::NOTIFICATIONS,
                             &PermissionRequest::GetContentSettingsType)) {
     is_notification_prompt_cooldown_active_ = true;
   }

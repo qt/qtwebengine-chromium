@@ -8,6 +8,7 @@
 #include <ranges>
 
 #include "base/check_deref.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "components/autofill/core/browser/data_manager/payments/payments_data_manager.h"
 #include "components/autofill/core/browser/data_manager/personal_data_manager.h"
@@ -70,7 +71,7 @@ AutofillOfferManager::GetCardLinkedOffersMap(
     for (const CreditCard* card : cards) {
       // If card has an offer, add the card's guid id to the map. There is
       // currently a one-to-one mapping between cards and offer data.
-      if (std::ranges::contains(offer->GetEligibleInstrumentIds(),
+      if (base::Contains(offer->GetEligibleInstrumentIds(),
                                 card->instrument_id())) {
         card_linked_offers_map[card->guid()] = offer;
       }

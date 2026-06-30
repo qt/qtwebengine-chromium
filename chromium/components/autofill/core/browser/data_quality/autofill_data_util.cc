@@ -10,6 +10,7 @@
 #include <string_view>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/i18n/char_iterator.h"
 #include "base/no_destructor.h"
 #include "base/strings/string_split.h"
@@ -523,7 +524,7 @@ const char* GetIssuerNetworkForBasicCardIssuerNetwork(
 
 bool IsValidBasicCardIssuerNetwork(std::string_view basic_card_issuer_network) {
 #if !BUILDFLAG(IS_QTWEBENGINE)
-  return std::ranges::contains(kPaymentRequestData, basic_card_issuer_network,
+  return base::Contains(kPaymentRequestData, basic_card_issuer_network,
                                &PaymentRequestData::basic_card_issuer_network);
 #else
   return false;

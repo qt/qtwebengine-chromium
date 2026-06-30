@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "net/http/http_util.h"
 #include "services/network/public/mojom/timing_allow_origin.mojom-forward.h"
 
@@ -39,7 +40,7 @@ mojom::TimingAllowOriginPtr ParseTimingAllowOrigin(const std::string& value) {
 bool TimingAllowOriginCheck(const mojom::TimingAllowOriginPtr& tao,
                             const url::Origin& origin) {
   return tao && (tao->which() == mojom::TimingAllowOrigin::Tag::kAll ||
-                 ::std::ranges::contains(tao->get_serialized_origins(),
+                 ::base::Contains(tao->get_serialized_origins(),
                                          origin.Serialize()));
 }
 

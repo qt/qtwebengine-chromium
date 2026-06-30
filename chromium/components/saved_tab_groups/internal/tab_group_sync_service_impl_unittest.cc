@@ -8,6 +8,7 @@
 #include <iterator>
 #include <memory>
 
+#include "base/containers/contains.h"
 #include "base/functional/callback_helpers.h"
 #include "base/memory/raw_ptr.h"
 #include "base/strings/string_util.h"
@@ -483,7 +484,7 @@ TEST_F(TabGroupSyncServiceImplTest, GetDeletedGroupIdsUsingPrefs) {
 
   auto deleted_ids = tab_group_sync_service_->GetDeletedGroupIds();
   EXPECT_EQ(1u, deleted_ids.size());
-  EXPECT_TRUE(std::ranges::contains(deleted_ids, local_group_id_1_));
+  EXPECT_TRUE(base::Contains(deleted_ids, local_group_id_1_));
 
   // Now close out the group from tab model and notify service.
   // The entry should be cleaned up from prefs.

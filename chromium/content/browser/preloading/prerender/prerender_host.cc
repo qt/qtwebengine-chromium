@@ -9,6 +9,7 @@
 #include <optional>
 
 #include "base/check_is_test.h"
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/no_destructor.h"
@@ -749,7 +750,7 @@ void PrerenderHost::ReadyToCommitNavigation(
         base::FeatureList::IsEnabled(
             blink::features::kPrerender2CrossOriginIframes);
     if (is_prerender_2_cross_origin_iframes_enabled &&
-        std::ranges::contains(
+        base::Contains(
             parsed_headers->supports_loading_mode,
             network::mojom::LoadingMode::kPrerenderCrossOriginFrames)) {
       allow_cross_origin_subframe_navigation_ = true;

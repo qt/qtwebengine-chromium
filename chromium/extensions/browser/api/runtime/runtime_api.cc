@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/lazy_instance.h"
 #include "base/location.h"
@@ -166,38 +167,38 @@ bool ExtensionContextMatchesFilter(
     const api::runtime::ExtensionContext& context,
     const api::runtime::ContextFilter& filter) {
   if (filter.context_types &&
-      !std::ranges::contains(*filter.context_types, context.context_type)) {
+      !base::Contains(*filter.context_types, context.context_type)) {
     return false;
   }
   if (filter.context_ids &&
-      !std::ranges::contains(*filter.context_ids, context.context_id)) {
+      !base::Contains(*filter.context_ids, context.context_id)) {
     return false;
   }
   if (filter.tab_ids &&
-      !std::ranges::contains(*filter.tab_ids, context.tab_id)) {
+      !base::Contains(*filter.tab_ids, context.tab_id)) {
     return false;
   }
   if (filter.window_ids &&
-      !std::ranges::contains(*filter.window_ids, context.window_id)) {
+      !base::Contains(*filter.window_ids, context.window_id)) {
     return false;
   }
   if (filter.document_ids &&
       (!context.document_id ||
-       !std::ranges::contains(*filter.document_ids, *context.document_id))) {
+       !base::Contains(*filter.document_ids, *context.document_id))) {
     return false;
   }
   if (filter.frame_ids &&
-      !std::ranges::contains(*filter.frame_ids, context.frame_id)) {
+      !base::Contains(*filter.frame_ids, context.frame_id)) {
     return false;
   }
   if (filter.document_urls &&
       (!context.document_url ||
-       !std::ranges::contains(*filter.document_urls, *context.document_url))) {
+       !base::Contains(*filter.document_urls, *context.document_url))) {
     return false;
   }
   if (filter.document_origins &&
       (!context.document_origin ||
-       !std::ranges::contains(*filter.document_origins,
+       !base::Contains(*filter.document_origins,
                               *context.document_origin))) {
     return false;
   }
@@ -820,7 +821,7 @@ ExtensionFunction::ResponseAction RuntimeGetContextsFunction::Run() {
   // Minor optimization: only construct the context if there's a chance it will
   // match the filter.
   if (!filter.context_types ||
-      std::ranges::contains(*filter.context_types,
+      base::Contains(*filter.context_types,
                             api::runtime::ContextType::kBackground)) {
     if (std::optional<api::runtime::ExtensionContext> worker =
             GetWorkerContext()) {

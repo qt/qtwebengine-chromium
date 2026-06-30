@@ -8,6 +8,7 @@
 #include <limits>
 #include <optional>
 
+#include "base/containers/contains.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "net/base/mime_util.h"
@@ -71,7 +72,7 @@ ManifestIconSelector::FindBestMatchingIcon(
   int best_delta = std::numeric_limits<int>::min();
 
   for (const auto& icon : icons) {
-    if (!std::ranges::contains(icon.purpose, params.purpose) ||
+    if (!base::Contains(icon.purpose, params.purpose) ||
         !IsIconTypeSupported(icon,
                              params.limited_image_types_for_installable_icon)) {
       continue;

@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "base/containers/fixed_flat_map.h"
 #include "base/containers/flat_set.h"
 #include "base/containers/span.h"
@@ -198,7 +199,7 @@ VideoEffectStatus GetStatus(bool is_supported, bool is_enabled) {
 
 void LogCaptureDeviceEffects(mojom::PhotoStatePtr photo_state) {
   const bool has_background_blur =
-      std::ranges::contains(photo_state->supported_background_blur_modes,
+      base::Contains(photo_state->supported_background_blur_modes,
                             mojom::BackgroundBlurMode::BLUR);
   const bool background_blur_enabled =
       photo_state->background_blur_mode != mojom::BackgroundBlurMode::OFF;
@@ -215,9 +216,9 @@ void LogCaptureDeviceEffects(mojom::PhotoStatePtr photo_state) {
 
   const bool has_eye_gaze_correction =
 
-      std::ranges::contains(photo_state->supported_eye_gaze_correction_modes,
+      base::Contains(photo_state->supported_eye_gaze_correction_modes,
                             mojom::EyeGazeCorrectionMode::ON) ||
-      std::ranges::contains(photo_state->supported_eye_gaze_correction_modes,
+      base::Contains(photo_state->supported_eye_gaze_correction_modes,
                             mojom::EyeGazeCorrectionMode::STARE);
   const bool eye_gaze_correction_enabled =
       photo_state->current_eye_gaze_correction_mode !=

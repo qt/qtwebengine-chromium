@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "services/network/public/cpp/integrity_policy.h"
 #include "services/network/public/cpp/request_destination.h"
 #include "services/network/public/mojom/integrity_algorithm.mojom-blink.h"
@@ -53,10 +54,10 @@ void SendReport(ExecutionContext* context,
 }
 
 bool ShouldBlockOrReport(const network::IntegrityPolicy& integrity_policy) {
-  return (std::ranges::contains(
+  return (base::Contains(
               integrity_policy.blocked_destinations,
               ::network::mojom::blink::IntegrityPolicy::Destination::kScript) &&
-          std::ranges::contains(
+          base::Contains(
               integrity_policy.sources,
               ::network::mojom::blink::IntegrityPolicy::Source::kInline));
 }

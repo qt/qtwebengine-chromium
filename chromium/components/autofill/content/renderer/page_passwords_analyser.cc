@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/lazy_instance.h"
 #include "base/memory/raw_ptr.h"
 #include "base/strings/strcat.h"
@@ -209,7 +210,7 @@ std::vector<FormInputCollection> ExtractFormsForAnalysis(
       // to be username or password fields.
       if (input.TagName() == "INPUT" &&
           (!input.HasAttribute("type") ||
-           std::ranges::contains(kTypeAttributes,
+           base::Contains(kTypeAttributes,
                                  input.GetAttribute("type").Utf8()))) {
         form_input_collections.back().AddInput(input);
         inputs_with_forms.insert(input);

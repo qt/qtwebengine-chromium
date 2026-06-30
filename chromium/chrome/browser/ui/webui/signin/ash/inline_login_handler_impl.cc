@@ -15,6 +15,7 @@
 #include "base/base64.h"
 #include "base/check.h"
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/functional/callback_helpers.h"
 #include "base/logging.h"
 #include "base/memory/raw_ptr.h"
@@ -351,7 +352,7 @@ void InlineLoginHandlerImpl::HandleDialogClose(const base::ListValue& args) {
 void InlineLoginHandlerImpl::OnGetAccountsToCompleteLogin(
     const CompleteLoginParams& params,
     const std::vector<::account_manager::Account>& accounts) {
-  bool is_new_account = !std::ranges::contains(
+  bool is_new_account = !base::Contains(
       accounts, params.gaia_id.ToString(),
       [](const account_manager::Account& account) { return account.key.id(); });
 

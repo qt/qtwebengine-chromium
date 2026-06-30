@@ -11,6 +11,7 @@
 #include <string_view>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "components/contextual_search/contextual_search_session_handle.h"
 #include "components/contextual_search/contextual_search_types.h"
 #include "components/contextual_search/pref_names.h"
@@ -220,7 +221,7 @@ template <typename T, typename U>
 bool AreItemsAllowed(const T& items, const U& allowed_items) {
   return std::all_of(items.begin(), items.end(),
                      [&allowed_items](const auto& item) {
-                       return std::ranges::contains(allowed_items, item);
+                       return base::Contains(allowed_items, item);
                      });
 }
 
@@ -377,7 +378,7 @@ void InputStateModel::UpdateDisabledTools() {
     bool incompatible_with_model =
         state_.active_model != omnibox::ModelMode::MODEL_MODE_UNSPECIFIED &&
         active_model_rule && !active_model_rule->allow_all_tools() &&
-        !std::ranges::contains(active_model_rule->allowed_tools(), tool);
+        !base::Contains(active_model_rule->allowed_tools(), tool);
 
     const omnibox::ToolRule* tool_rule = GetToolRule(rule_set_, tool);
     bool incompatible_with_inputs =
@@ -387,7 +388,7 @@ void InputStateModel::UpdateDisabledTools() {
                           tool_rule->allowed_input_types()));
 
     if (incompatible_with_model || incompatible_with_inputs ||
-        std::ranges::contains(permanently_disabled_tools_, tool)) {
+        base::Contains(permanently_disabled_tools_, tool)) {
       state_.disabled_tools.push_back(tool);
     }
   }
@@ -410,7 +411,7 @@ void InputStateModel::UpdateDisabledModels() {
     bool incompatible_with_tool =
         state_.active_tool != omnibox::ToolMode::TOOL_MODE_UNSPECIFIED &&
         (!model_rule || (!model_rule->allow_all_tools() &&
-                         !std::ranges::contains(model_rule->allowed_tools(),
+                         !base::Contains(model_rule->allowed_tools(),
                                                 state_.active_tool)));
 
     bool incompatible_with_inputs =
@@ -481,18 +482,18 @@ void InputStateModel::UpdateDisabledInputTypes() {
     bool incompatible_with_model =
         state_.active_model != omnibox::ModelMode::MODEL_MODE_UNSPECIFIED &&
         active_model_rule && !active_model_rule->allow_all_input_types() &&
-        !std::ranges::contains(active_model_rule->allowed_input_types(),
+        !base::Contains(active_model_rule->allowed_input_types(),
                                input_type);
 
     bool incompatible_with_tool =
         state_.active_tool != omnibox::ToolMode::TOOL_MODE_UNSPECIFIED &&
         active_tool_rule && !active_tool_rule->allow_all_input_types() &&
-        !std::ranges::contains(active_tool_rule->allowed_input_types(),
+        !base::Contains(active_tool_rule->allowed_input_types(),
                                input_type);
 
     if (input_limit_reached || incompatible_with_model ||
         incompatible_with_tool ||
-        std::ranges::contains(permanently_disabled_input_types_, input_type)) {
+        base::Contains(permanently_disabled_input_types_, input_type)) {
       state_.disabled_input_types.push_back(input_type);
     }
   }

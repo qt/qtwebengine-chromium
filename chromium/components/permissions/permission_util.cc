@@ -8,6 +8,7 @@
 #include <memory>
 
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
@@ -425,12 +426,12 @@ bool PermissionUtil::IsGuardContentSetting(ContentSettingsType type) {
 }
 
 bool PermissionUtil::DoesSupportTemporaryGrants(ContentSettingsType type) {
-  return std::ranges::contains(content_settings::GetTypesWithTemporaryGrants(),
+  return base::Contains(content_settings::GetTypesWithTemporaryGrants(),
                                type);
 }
 
 bool PermissionUtil::DoesStoreTemporaryGrantsInHcsm(ContentSettingsType type) {
-  return std::ranges::contains(
+  return base::Contains(
       content_settings::GetTypesWithTemporaryGrantsInHcsm(), type);
 }
 

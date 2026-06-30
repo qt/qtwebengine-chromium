@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <string>
 
+#include "base/containers/contains.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/strings/string_number_conversions.h"
@@ -89,7 +90,7 @@ bool TokenManager::GenerateTestClientToken() {
 base::UnguessableToken TokenManager::GetTokenForTrustedClient(
     cros::mojom::CameraClientType type) {
   base::AutoLock l(client_token_map_lock_);
-  if (!std::ranges::contains(kTrustedClientTypes, type)) {
+  if (!base::Contains(kTrustedClientTypes, type)) {
     return base::UnguessableToken();
   }
   auto& token_set = client_token_map_[type];

@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "ui/base/x/x11_util.h"
 #include "ui/gfx/x/visual_manager.h"
 #include "ui/gl/gl_surface_egl.h"
@@ -45,7 +46,7 @@ void GetPlatformExtraDisplayAttribs(EGLenum platform_type,
   // ANGLE_NULL and SwiftShader backends don't use the visual,
   // and may run without X11 where we can't get it anyway.
   if ((platform_type != EGL_PLATFORM_ANGLE_TYPE_NULL_ANGLE) &&
-      !std::ranges::contains(
+      !base::Contains(
           *attributes, EGL_PLATFORM_ANGLE_DEVICE_TYPE_SWIFTSHADER_ANGLE)) {
     x11::VisualId visual_id;
     x11::Connection::Get()->GetOrCreateVisualManager().ChooseVisualForWindow(

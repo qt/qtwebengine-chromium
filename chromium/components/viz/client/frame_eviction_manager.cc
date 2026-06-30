@@ -7,6 +7,7 @@
 #include <algorithm>
 
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/location.h"
 #include "base/system/sys_info.h"
@@ -49,7 +50,7 @@ void FrameEvictionManager::RemoveFrame(FrameEvictionManagerClient* frame) {
 }
 
 void FrameEvictionManager::LockFrame(FrameEvictionManagerClient* frame) {
-  if (std::ranges::contains(unlocked_frames_, frame,
+  if (base::Contains(unlocked_frames_, frame,
                             [](const auto& p) { return p.first; })) {
     DCHECK(locked_frames_.find(frame) == locked_frames_.end());
     unlocked_frames_.remove_if([&](const auto& p) { return p.first == frame; });

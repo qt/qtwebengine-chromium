@@ -8,6 +8,7 @@
 #include <optional>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/strings/strcat.h"
@@ -532,7 +533,7 @@ void PolicyMap::MergeFrom(const PolicyMap& other) {
 #if !BUILDFLAG(IS_CHROMEOS)
     // Skip precedence metapolicies since they have already been merged into the
     // current PolicyMap.
-    if (std::ranges::contains(metapolicy::kPrecedence,
+    if (base::Contains(metapolicy::kPrecedence,
                               policy_and_entry.first)) {
       continue;
     }

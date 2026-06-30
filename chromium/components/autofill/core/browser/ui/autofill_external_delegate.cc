@@ -16,6 +16,7 @@
 #include "base/check.h"
 #include "base/check_deref.h"
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/containers/fixed_flat_set.h"
 #include "base/containers/to_vector.h"
 #include "base/feature_list.h"
@@ -121,7 +122,7 @@ const Suggestion* FindTestSuggestion(AutofillClient& client,
     base::span<const AutofillProfile> test_addresses =
         client.GetTestAddresses();
 
-    return guid && std::ranges::contains(test_addresses, guid->value(),
+    return guid && base::Contains(test_addresses, guid->value(),
                                          &AutofillProfile::guid);
   };
   for (const Suggestion& suggestion : suggestions) {
@@ -1227,7 +1228,7 @@ void AutofillExternalDelegate::DidAcceptAddressSuggestion(
           autofill_trigger_field &&
           autofill_trigger_field->Type().GetGroups().contains(
               FieldTypeGroup::kEmail) &&
-          std::ranges::contains(shown_suggestion_types_,
+          base::Contains(shown_suggestion_types_,
                                 SuggestionType::kFillExistingPlusAddress);
       if (const AutofillPlusAddressDelegate* plus_address_delegate =
               manager_->client().GetPlusAddressDelegate();
@@ -1394,7 +1395,7 @@ void AutofillExternalDelegate::DidAcceptPaymentsSuggestion(
     default:
       NOTREACHED();  // Should be handled elsewhere
   }
-  if (std::ranges::contains(shown_suggestion_types_,
+  if (base::Contains(shown_suggestion_types_,
                             SuggestionType::kScanCreditCard)) {
     AutofillMetrics::LogScanCreditCardPromptMetric(
         suggestion.type == SuggestionType::kScanCreditCard

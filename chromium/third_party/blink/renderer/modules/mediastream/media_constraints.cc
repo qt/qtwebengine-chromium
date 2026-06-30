@@ -34,6 +34,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "base/memory/scoped_refptr.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
@@ -571,7 +572,7 @@ bool MediaTrackConstraintSetPlatform::HasMandatoryOutsideSet(
     String& found_name) const {
   for (auto* const constraint : AllConstraints()) {
     if (constraint->HasMandatory()) {
-      if (!std::ranges::contains(good_names, constraint->GetName())) {
+      if (!base::Contains(good_names, constraint->GetName())) {
         found_name = constraint->GetName();
         return true;
       }

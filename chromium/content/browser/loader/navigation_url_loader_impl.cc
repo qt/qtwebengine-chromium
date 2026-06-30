@@ -13,6 +13,7 @@
 
 #include "base/check_is_test.h"
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/debug/crash_logging.h"
 #include "base/debug/dump_without_crashing.h"
 #include "base/feature_list.h"
@@ -684,7 +685,7 @@ void NavigationURLLoaderImpl::Start() {
     // Requests to WebUI scheme won't get redirected to/from other schemes
     // or be intercepted, so we just let it go here.
     std::string scheme = request_info_->common_params->url.GetScheme();
-    if (std::ranges::contains(URLDataManagerBackend::GetWebUISchemes(),
+    if (base::Contains(URLDataManagerBackend::GetWebUISchemes(),
                               scheme)) {
       FrameTreeNode* frame_tree_node =
           FrameTreeNode::GloballyFindByID(frame_tree_node_id_);

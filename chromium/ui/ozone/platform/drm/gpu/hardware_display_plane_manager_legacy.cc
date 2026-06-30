@@ -11,6 +11,7 @@
 #include <utility>
 
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/logging.h"
 #include "base/posix/eintr_wrapper.h"
@@ -153,7 +154,7 @@ bool HardwareDisplayPlaneManagerLegacy::TestSeamlessMode(
 bool HardwareDisplayPlaneManagerLegacy::DisableOverlayPlanes(
     HardwareDisplayPlaneList* plane_list) {
   // We're never going to ship legacy pageflip with overlays enabled.
-  DCHECK(!std::ranges::contains(plane_list->old_plane_list,
+  DCHECK(!base::Contains(plane_list->old_plane_list,
                                 static_cast<uint32_t>(DRM_PLANE_TYPE_OVERLAY),
                                 &HardwareDisplayPlane::type));
   return true;

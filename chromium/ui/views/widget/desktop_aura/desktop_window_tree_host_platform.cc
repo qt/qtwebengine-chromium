@@ -9,6 +9,7 @@
 #include <string>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/memory/raw_ptr.h"
 #include "base/notimplemented.h"
@@ -1014,7 +1015,7 @@ void DesktopWindowTreeHostPlatform::OnCloseRequest() {
 
 void DesktopWindowTreeHostPlatform::OnAcceleratedWidgetAvailable(
     gfx::AcceleratedWidget widget) {
-  DCHECK(!std::ranges::contains(open_windows(), widget));
+  DCHECK(!base::Contains(open_windows(), widget));
   open_windows().push_front(widget);
   aura::WindowTreeHostPlatform::OnAcceleratedWidgetAvailable(widget);
 }

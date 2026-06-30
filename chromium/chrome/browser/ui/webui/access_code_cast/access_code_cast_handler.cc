@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <numeric>
 
+#include "base/containers/contains.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/rand_util.h"
 #include "base/strings/string_number_conversions.h"
@@ -382,7 +383,7 @@ void AccessCodeCastHandler::OnRouteResponse(MediaCastMode cast_mode,
 
 bool AccessCodeCastHandler::HasActiveRoute(const MediaSink::Id& sink_id) {
   return GetMediaRouter() &&
-         std::ranges::contains(GetMediaRouter()->GetCurrentRoutes(), sink_id,
+         base::Contains(GetMediaRouter()->GetCurrentRoutes(), sink_id,
                                &MediaRoute::media_sink_id);
 }
 

@@ -12,6 +12,7 @@
 
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/functional/callback_helpers.h"
 #include "base/location.h"
@@ -1990,7 +1991,7 @@ bool RTCVideoEncoder::Impl::NeedConvertToMemoryFrame(
       STORAGE_OWNED_MEMORY,
       STORAGE_SHMEM,
   };
-  if (!std::ranges::contains(kStorageTypeSupportedByMojo, storage_type)) {
+  if (!base::Contains(kStorageTypeSupportedByMojo, storage_type)) {
     // We need to convert to I420 memory frame if mojo doesn't support it.
     return true;
   }
@@ -2257,7 +2258,7 @@ void RTCVideoEncoder::Impl::EncodeOneFrame(FrameChunk frame_chunk) {
   frame->set_timestamp(timestamp);
 
   if (!failed_timestamp_match_) {
-    DCHECK(!std::ranges::contains(submitted_frames_, timestamp,
+    DCHECK(!base::Contains(submitted_frames_, timestamp,
                                   &FrameInfo::media_timestamp_));
     submitted_frames_.emplace_back(timestamp, frame_chunk.timestamp,
                                    frame_chunk.render_time_ms,
@@ -2388,7 +2389,7 @@ void RTCVideoEncoder::Impl::DoNativeEncodeWithNativeInput(
   frame->set_timestamp(base::Microseconds(frame_chunk.timestamp_us));
 
   if (!failed_timestamp_match_) {
-    DCHECK(!std::ranges::contains(submitted_frames_, frame->timestamp(),
+    DCHECK(!base::Contains(submitted_frames_, frame->timestamp(),
                                   &FrameInfo::media_timestamp_));
     submitted_frames_.emplace_back(frame->timestamp(), frame_chunk.timestamp,
                                    frame_chunk.render_time_ms,

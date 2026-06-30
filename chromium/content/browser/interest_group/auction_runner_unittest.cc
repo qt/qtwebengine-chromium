@@ -21,6 +21,7 @@
 
 #include "base/base64.h"
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/containers/flat_set.h"
 #include "base/feature_list.h"
 #include "base/functional/callback_helpers.h"
@@ -22852,26 +22853,26 @@ TEST_P(AuctionRunnerBiddingAndScoringDebugReportingAPIEnabledTest,
     RunAuctionAndWait(kSellerUrl, std::move(bidders));
 
     double highest_scoring_other_bid = 0.0;
-    if (std::ranges::contains(result_.report_urls,
+    if (base::Contains(result_.report_urls,
                               "https://reporting.example.com/"
                               "?highestScoringOtherBid=1&"
                               "highestScoringOtherBidCurrency=???&"
                               "bidCurrency=USD&bid=3",
                               &GURL::spec) ||
-        std::ranges::contains(result_.report_urls,
+        base::Contains(result_.report_urls,
                               "https://reporting.example.com/"
                               "?highestScoringOtherBid=10&"
                               "highestScoringOtherBidCurrency=EUR&"
                               "bidCurrency=USD&bid=3",
                               &GURL::spec)) {
       highest_scoring_other_bid = 1;
-    } else if (std::ranges::contains(result_.report_urls,
+    } else if (base::Contains(result_.report_urls,
                                      "https://reporting.example.com/"
                                      "?highestScoringOtherBid=2&"
                                      "highestScoringOtherBidCurrency=???&"
                                      "bidCurrency=USD&bid=3",
                                      &GURL::spec) ||
-               std::ranges::contains(result_.report_urls,
+               base::Contains(result_.report_urls,
                                      "https://reporting.example.com/"
                                      "?highestScoringOtherBid=20&"
                                      "highestScoringOtherBidCurrency=EUR&"
@@ -23100,26 +23101,26 @@ TEST_P(AuctionRunnerBiddingAndScoringDebugReportingAPIEnabledTest,
     EXPECT_EQ(2u, result_.debug_win_report_urls.size());
     EXPECT_EQ(2u, result_.report_urls.size());
     double highest_scoring_other_bid = 0.0;
-    if (std::ranges::contains(result_.report_urls,
+    if (base::Contains(result_.report_urls,
                               "https://reporting.example.com/"
                               "?highestScoringOtherBid=1&"
                               "highestScoringOtherBidCurrency=???&"
                               "bidCurrency=USD&bid=3",
                               &GURL::spec) ||
-        std::ranges::contains(result_.report_urls,
+        base::Contains(result_.report_urls,
                               "https://reporting.example.com/"
                               "?highestScoringOtherBid=10&"
                               "highestScoringOtherBidCurrency=EUR&"
                               "bidCurrency=USD&bid=3",
                               &GURL::spec)) {
       highest_scoring_other_bid = 1;
-    } else if (std::ranges::contains(result_.report_urls,
+    } else if (base::Contains(result_.report_urls,
                                      "https://reporting.example.com/"
                                      "?highestScoringOtherBid=2&"
                                      "highestScoringOtherBidCurrency=???&"
                                      "bidCurrency=USD&bid=3",
                                      &GURL::spec) ||
-               std::ranges::contains(result_.report_urls,
+               base::Contains(result_.report_urls,
                                      "https://reporting.example.com/"
                                      "?highestScoringOtherBid=20&"
                                      "highestScoringOtherBidCurrency=EUR&"

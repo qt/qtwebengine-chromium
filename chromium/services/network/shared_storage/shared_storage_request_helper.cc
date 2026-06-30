@@ -11,6 +11,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/notreached.h"
@@ -273,7 +274,7 @@ void SharedStorageRequestHelper::UpdateSharedStorageWritableEligible(
   // takes precedence.
   if (GetSecSharedStorageWritableHeader(modified_headers)) {
     shared_storage_writable_eligible_ = true;
-  } else if (std::ranges::contains(removed_headers,
+  } else if (base::Contains(removed_headers,
                                    kSecSharedStorageWritableHeader)) {
     shared_storage_writable_eligible_ = false;
   }

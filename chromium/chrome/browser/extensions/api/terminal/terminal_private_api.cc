@@ -15,6 +15,7 @@
 #include "ash/constants/ash_pref_names.h"
 #include "ash/webui/settings/public/constants/routes.mojom.h"
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/containers/fixed_flat_map.h"
 #include "base/containers/fixed_flat_set.h"
 #include "base/containers/flat_set.h"
@@ -771,7 +772,7 @@ ExtensionFunction::ResponseAction TerminalPrivateGetPrefsFunction::Run() {
 
   for (const auto& path : params->paths) {
     // Ignore non-allowed paths.
-    if (!std::ranges::contains(*kPrefsReadAllowList, path)) {
+    if (!base::Contains(*kPrefsReadAllowList, path)) {
       LOG(WARNING) << "Ignoring non-allowed GetPrefs path=" << path;
       continue;
     }

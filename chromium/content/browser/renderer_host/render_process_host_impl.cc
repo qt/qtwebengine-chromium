@@ -21,6 +21,7 @@
 #include "base/clang_profiling_buildflags.h"
 #include "base/command_line.h"
 #include "base/containers/adapters.h"
+#include "base/containers/contains.h"
 #include "base/containers/flat_map.h"
 #include "base/containers/map_util.h"
 #include "base/debug/alias.h"
@@ -3413,7 +3414,7 @@ bool RenderProcessHostImpl::HostHasNotBeenUsed() {
 }
 
 bool RenderProcessHostImpl::IsSpare() const {
-  return std::ranges::contains(
+  return base::Contains(
       SpareRenderProcessHostManagerImpl::Get().GetSpares(), this);
 }
 

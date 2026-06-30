@@ -8,6 +8,7 @@
 #include <memory>
 #include <string>
 
+#include "base/containers/contains.h"
 #include "base/containers/flat_map.h"
 #include "base/feature_list.h"
 #include "base/notreached.h"
@@ -470,7 +471,7 @@ bool IsTypeEnabledForCountry(FieldType field_type,
   return std::ranges::any_of(
       it->second, [field_type](const FieldTypeDescription& description) {
         return description.field_type == field_type ||
-               std::ranges::contains(description.children, field_type);
+               base::Contains(description.children, field_type);
       });
 }
 

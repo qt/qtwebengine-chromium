@@ -13,6 +13,7 @@
 #include "ash/webui/network_ui/network_health_resource_provider.h"
 #include "ash/webui/network_ui/traffic_counters_resource_provider.h"
 #include "ash/webui/settings/public/constants/routes.mojom.h"
+#include "base/containers/contains.h"
 #include "base/containers/span.h"
 #include "base/functional/bind.h"
 #include "base/metrics/histogram_functions.h"
@@ -673,13 +674,13 @@ bool IsPartOfDetailsSubpage(mojom::SearchResultType type,
       const mojom::Setting& setting = id.setting;
       switch (details_subpage) {
         case mojom::Subpage::kEthernetDetails:
-          return std::ranges::contains(GetEthernetDetailsSettings(), setting);
+          return base::Contains(GetEthernetDetailsSettings(), setting);
         case mojom::Subpage::kWifiDetails:
-          return std::ranges::contains(GetWifiDetailsSettings(), setting);
+          return base::Contains(GetWifiDetailsSettings(), setting);
         case mojom::Subpage::kCellularDetails:
-          return std::ranges::contains(GetCellularDetailsSettings(), setting);
+          return base::Contains(GetCellularDetailsSettings(), setting);
         case mojom::Subpage::kTetherDetails:
-          return std::ranges::contains(GetTetherDetailsSettings(), setting);
+          return base::Contains(GetTetherDetailsSettings(), setting);
         default:
           return false;
       }

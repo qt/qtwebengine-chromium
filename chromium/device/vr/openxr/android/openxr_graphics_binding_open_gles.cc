@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "components/viz/common/resources/shared_image_format.h"
 #include "device/vr/android/xr_image_transport_base.h"
 #include "device/vr/openxr/openxr_api_wrapper.h"
@@ -192,7 +193,7 @@ int64_t OpenXrGraphicsBindingOpenGLES::GetSwapchainFormat(
   // still return it anyway as that will cause an error with creating the
   // swapchain, which is better than arbitrarily returning a type that the
   // runtime supports, but we don't.
-  if (!std::ranges::contains(swapchain_formats, kSwapchainFormat)) {
+  if (!base::Contains(swapchain_formats, kSwapchainFormat)) {
     LOG(ERROR) << "No matching supported swapchain formats with OpenXr Runtime";
   }
 

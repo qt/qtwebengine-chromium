@@ -19,6 +19,7 @@
 #include <string_view>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/logging.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
@@ -737,7 +738,7 @@ void InputMethodUtil::GetLanguageCodesFromInputMethodIds(
     DCHECK(!input_method->language_codes().empty());
     const std::string language_code = input_method->language_codes().at(0);
     // Add it if it's not already present.
-    if (!std::ranges::contains(*out_language_codes, language_code)) {
+    if (!base::Contains(*out_language_codes, language_code)) {
       out_language_codes->push_back(language_code);
     }
   }

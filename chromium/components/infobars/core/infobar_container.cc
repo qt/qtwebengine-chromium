@@ -8,6 +8,7 @@
 
 #include "base/auto_reset.h"
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/metrics/histogram_base.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/metrics_hashes.h"
@@ -124,7 +125,7 @@ void InfoBarContainer::OnManagerWillBeDestroyed(
 void InfoBarContainer::AddInfoBar(InfoBar* infobar,
                                   size_t position,
                                   bool animate) {
-  DCHECK(!std::ranges::contains(infobars_, infobar));
+  DCHECK(!base::Contains(infobars_, infobar));
   DCHECK_LE(position, infobars_.size());
   infobars_.insert(infobars_.begin() + position, infobar);
   PlatformSpecificAddInfoBar(infobar, position);

@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cstdint>
 
+#include "base/containers/contains.h"
 #include "base/functional/callback_helpers.h"
 #include "base/logging.h"
 #include "base/metrics/field_trial_params.h"
@@ -261,7 +262,7 @@ void TrainingDataCollectorImpl::OnHistogramSignalUpdated(
       // Process both enum histograms with their corresponding accepted enum ids
       // and value histograms with no enum ids.
       if (accepted_enum_ids.empty() ||
-          std::ranges::contains(accepted_enum_ids, sample)) {
+          base::Contains(accepted_enum_ids, sample)) {
         const SegmentInfo* info = segment_info_database_->GetCachedSegmentInfo(
             segment_id, model_source);
         OnUmaUpdatedReportForSegmentInfo(param, info);

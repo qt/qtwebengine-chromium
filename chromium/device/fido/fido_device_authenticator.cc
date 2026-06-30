@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_functions.h"
@@ -589,9 +590,9 @@ void FidoDeviceAuthenticator::GetPINToken(
          ClientPinAvailability::kNotSupported);
   DCHECK_NE(permissions.size(), 0u);
   DCHECK(
-      !((std::ranges::contains(permissions,
+      !((base::Contains(permissions,
                                pin::Permissions::kMakeCredential)) ||
-        std::ranges::contains(permissions, pin::Permissions::kGetAssertion)) ||
+        base::Contains(permissions, pin::Permissions::kGetAssertion)) ||
       rp_id);
 
   GetEphemeralKey(base::BindOnce(

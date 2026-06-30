@@ -5,6 +5,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "base/test/bind.h"
 #include "base/test/scoped_feature_list.h"
 #include "components/guest_contents/browser/guest_contents_handle.h"
@@ -87,7 +88,7 @@ TEST_F(GuestContentsHostImplTest, Attach) {
   run_loop.Run();
 
   EXPECT_EQ(guest_web_contents()->GetOuterWebContents(), outer_web_contents());
-  EXPECT_TRUE(std::ranges::contains(outer_web_contents()->GetInnerWebContents(),
+  EXPECT_TRUE(base::Contains(outer_web_contents()->GetInnerWebContents(),
                                     guest_web_contents()));
 }
 

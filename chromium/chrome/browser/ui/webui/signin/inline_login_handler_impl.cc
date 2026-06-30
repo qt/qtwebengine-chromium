@@ -11,6 +11,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/not_fatal_until.h"
@@ -115,7 +116,7 @@ credential_provider::UiExitCodes ValidateSigninEmail(
       GetEmailDomainsFromParameter(email_domains_parameter);
   std::string email_domain = gaia::ExtractDomainName(signin_email);
 
-  return std::ranges::contains(all_email_domains, email_domain)
+  return base::Contains(all_email_domains, email_domain)
              ? credential_provider::kUiecSuccess
              : credential_provider::kUiecInvalidEmailDomain;
 }

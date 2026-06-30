@@ -16,6 +16,7 @@
 
 #include "base/check.h"
 #include "base/check_deref.h"
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/i18n/case_conversion.h"
@@ -351,7 +352,7 @@ void AnnotateFieldsWithSignatures(
 // fields, both of which are cached in the Document.
 bool HasPasswordField(const WebLocalFrame& frame) {
   auto ContainsPasswordField = [&](const auto& fields) {
-    return std::ranges::contains(
+    return base::Contains(
         fields, blink::mojom::FormControlType::kInputPassword,
         &WebFormControlElement::FormControlTypeForAutofill);
   };

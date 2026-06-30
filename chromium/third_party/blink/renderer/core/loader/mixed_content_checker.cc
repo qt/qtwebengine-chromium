@@ -31,6 +31,7 @@
 #include <algorithm>
 #include <optional>
 
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/metrics/field_trial_params.h"
 #include "build/build_config.h"
@@ -284,7 +285,7 @@ static void MeasureStricterVersionOfIsMixedContent(Frame& frame,
           WebFeature::kMixedContentInNonHTTPSFrameThatRestrictsMixedContent);
     }
   } else if (!IsUrlPotentiallyTrustworthy(url) &&
-             std::ranges::contains(url::GetSecureSchemes(),
+             base::Contains(url::GetSecureSchemes(),
                                    origin->Protocol().Ascii())) {
     UseCounter::Count(
         source->GetDocument(),

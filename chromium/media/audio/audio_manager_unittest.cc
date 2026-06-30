@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/environment.h"
 #include "base/functional/bind.h"
 #include "base/logging.h"
@@ -368,7 +369,7 @@ TEST_F(AudioManagerTest, EnumerateInputDevicesAlsaWithInputDeviceSwitch) {
   AudioDeviceDescriptions device_descriptions;
   device_info_accessor_->GetAudioInputDeviceDescriptions(&device_descriptions);
   CheckDeviceDescriptions(device_descriptions);
-  EXPECT_TRUE(std::ranges::contains(device_descriptions, "switch-input-device",
+  EXPECT_TRUE(base::Contains(device_descriptions, "switch-input-device",
                                     [](const auto& device_description) {
                                       return device_description.unique_id;
                                     }));
@@ -393,7 +394,7 @@ TEST_F(AudioManagerTest, EnumerateOutputDevicesAlsaWithOutputDeviceSwitch) {
   AudioDeviceDescriptions device_descriptions;
   device_info_accessor_->GetAudioOutputDeviceDescriptions(&device_descriptions);
   CheckDeviceDescriptions(device_descriptions);
-  EXPECT_TRUE(std::ranges::contains(device_descriptions, "switch-output-device",
+  EXPECT_TRUE(base::Contains(device_descriptions, "switch-output-device",
                                     [](const auto& device_description) {
                                       return device_description.unique_id;
                                     }));

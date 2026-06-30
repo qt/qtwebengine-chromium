@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <string_view>
 
+#include "base/containers/contains.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/metrics/histogram_tester.h"
@@ -1018,7 +1019,7 @@ TEST_P(NonMergeableSettingVisibleTypesTest, DifferingTypesLegacy) {
   for (FieldType t : a.GetUserVisibleTypes()) {
     // If a type of the same `FieldTypeGroup` was already set, ignore it, to
     // avoid constructing conflicting substructures.
-    if (!std::ranges::contains(type_differences.differing_types,
+    if (!base::Contains(type_differences.differing_types,
                                GroupTypeOfFieldType(t),
                                &GroupTypeOfFieldType)) {
       a.SetRawInfo(t, u"same");

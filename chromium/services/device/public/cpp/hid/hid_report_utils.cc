@@ -5,6 +5,7 @@
 #include "services/device/public/cpp/hid/hid_report_utils.h"
 
 #include <algorithm>
+#include "base/containers/contains.h"
 
 namespace device {
 
@@ -101,7 +102,7 @@ const mojom::HidCollectionInfo* FindCollectionWithReport(
   // `report_type`, or nullptr if it is not in any collection.
   auto find_it = std::ranges::find_if(
       device.collections, [report_id, report_type](const auto& collection) {
-        return std::ranges::contains(ReportsForType(*collection, report_type),
+        return base::Contains(ReportsForType(*collection, report_type),
                                      report_id,
                                      &mojom::HidReportDescription::report_id);
       });

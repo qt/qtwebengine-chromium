@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/containers/contains.h"
 #include "components/services/storage/dom_storage/sqlite/local_storage_sqlite.h"
 
 #include "base/byte_size.h"
@@ -289,7 +290,7 @@ DbStatus LocalStorageSqlite::DeleteStorageKeysFromSession(
     // `kLocalStorageSessionId`.
     CHECK_EQ(map.session_ids().size(), 1u);
     CHECK_EQ(map.session_ids()[0], kLocalStorageSessionId);
-    DCHECK(std::ranges::contains(metadata_to_delete, map.storage_key()));
+    DCHECK(base::Contains(metadata_to_delete, map.storage_key()));
 
     ASSIGN_OR_RETURN(std::optional<int64_t> map_id,
                      FindMapId(map.storage_key()));

@@ -15,6 +15,7 @@
 
 #include "base/big_endian.h"
 #include "base/check_is_test.h"
+#include "base/containers/contains.h"
 #include "base/containers/span.h"
 #include "base/containers/span_reader.h"
 #include "base/containers/span_writer.h"
@@ -252,7 +253,7 @@ OptRecordRdata::UnknownOpt::CreateForTesting(uint16_t code,
 OptRecordRdata::UnknownOpt::UnknownOpt(uint16_t code,
                                        base::span<const uint8_t> data)
     : Opt(data), code_(code) {
-  CHECK(!std::ranges::contains(kOptsWithDedicatedClasses, code));
+  CHECK(!base::Contains(kOptsWithDedicatedClasses, code));
 }
 
 uint16_t OptRecordRdata::UnknownOpt::GetCode() const {

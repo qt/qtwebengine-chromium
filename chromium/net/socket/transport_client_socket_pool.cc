@@ -12,6 +12,7 @@
 #include "base/barrier_closure.h"
 #include "base/check_op.h"
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/format_macros.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
@@ -1674,10 +1675,10 @@ void TransportClientSocketPool::Group::SanityCheck() const {
       ConnectJob* job = pointer.value()->job();
       DCHECK(job);
       // The request's job is not in |unassigned_jobs_|
-      DCHECK(!std::ranges::contains(unassigned_jobs_, job));
+      DCHECK(!base::Contains(unassigned_jobs_, job));
       // The request's job is in |jobs_|
       DCHECK(
-          std::ranges::contains(jobs_, job, &std::unique_ptr<ConnectJob>::get));
+          base::Contains(jobs_, job, &std::unique_ptr<ConnectJob>::get));
       // The same job is not assigned to any other request with a job.
       RequestQueue::Pointer pointer2 =
           unbound_requests_.GetNextTowardsLastMin(pointer);
@@ -1699,14 +1700,14 @@ void TransportClientSocketPool::Group::SanityCheck() const {
     // Check that all unassigned jobs are in |jobs_|
     ConnectJob* job = *it;
     DCHECK(
-        std::ranges::contains(jobs_, job, &std::unique_ptr<ConnectJob>::get));
+        base::Contains(jobs_, job, &std::unique_ptr<ConnectJob>::get));
     // Check that there are no duplicated entries in |unassigned_jobs_|
     for (auto it2 = std::next(it); it2 != unassigned_jobs_.end(); ++it2) {
       DCHECK_NE(job, *it2);
     }
 
     // Check that no |unassigned_jobs_| are in |bound_requests_|.
-    DCHECK(!std::ranges::contains(bound_requests_, job,
+    DCHECK(!base::Contains(bound_requests_, job,
                                   [](const BoundRequest& bound_request) {
                                     return bound_request.connect_job.get();
                                   }));
@@ -1976,7 +1977,7 @@ TransportClientSocketPool::Group::FindUnboundRequestWithJob(
       return pointer;
   }
   // If a request with the job was not found, it must be in |unassigned_jobs_|.
-  DCHECK(std::ranges::contains(unassigned_jobs_, job));
+  DCHECK(base::Contains(unassigned_jobs_, job));
   return RequestQueue::Pointer();
 }
 

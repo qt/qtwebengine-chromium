@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "base/barrier_callback.h"
+#include "base/containers/contains.h"
 #include "components/commerce/core/commerce_feature_list.h"
 #include "components/commerce/core/commerce_utils.h"
 #include "components/commerce/core/compare/candidate_product.h"
@@ -546,7 +547,7 @@ void ClusterManager::OnGetComparableProducts(
   const std::vector<UrlInfo> url_infos = get_open_url_infos_cb_.Run();
   for (const auto& kv : entry_point_info.similar_candidate_products) {
     // If the product Id cannot be clustered, skip it.
-    if (!std::ranges::contains(cluster_product_ids, kv.second)) {
+    if (!base::Contains(cluster_product_ids, kv.second)) {
       continue;
     }
 

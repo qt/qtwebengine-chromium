@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "base/memory/raw_ptr.h"
 #include "components/crx_file/id_util.h"
 #include "content/public/test/test_utils.h"
@@ -36,7 +37,7 @@ struct FakeContext {
 bool HasFeature(FeatureCache& cache,
                 const FakeContext& context,
                 const std::string& feature) {
-  return std::ranges::contains(
+  return base::Contains(
       cache.GetAvailableFeatures(context.context_type, context.extension,
                                  context.url, TestContextData()),
       feature);

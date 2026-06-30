@@ -5,6 +5,7 @@
 #include <algorithm>
 
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/test/scoped_feature_list.h"
@@ -113,7 +114,7 @@ class SubresourceFilterAbusiveTest
   bool DidSendConsoleMessage(const std::string& message) {
     const auto& messages =
         content::RenderFrameHostTester::For(main_rfh())->GetConsoleMessages();
-    return std::ranges::contains(messages, message);
+    return base::Contains(messages, message);
   }
 
  protected:

@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <string>
 
+#include "base/containers/contains.h"
 #include "base/strings/escape.h"
 #include "base/strings/string_util.h"
 #include "base/strings/to_string.h"
@@ -24,9 +25,9 @@ namespace webid {
 namespace {
 
 bool IsRequestingDefaultPermissions(const std::vector<std::string>& fields) {
-  return std::ranges::contains(fields, webid::kDefaultFieldName) &&
-         std::ranges::contains(fields, webid::kDefaultFieldEmail) &&
-         std::ranges::contains(fields, webid::kDefaultFieldPicture);
+  return base::Contains(fields, webid::kDefaultFieldName) &&
+         base::Contains(fields, webid::kDefaultFieldEmail) &&
+         base::Contains(fields, webid::kDefaultFieldPicture);
 }
 
 }  // namespace

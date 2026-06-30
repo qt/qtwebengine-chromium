@@ -32,6 +32,7 @@
 #include <algorithm>
 
 #include "base/auto_reset.h"
+#include "base/containers/contains.h"
 #include "third_party/blink/public/mojom/input/focus_type.mojom-blink.h"
 #include "third_party/blink/renderer/core/css/check_pseudo_has_argument_context.h"
 #include "third_party/blink/renderer/core/css/check_pseudo_has_cache_scope.h"
@@ -3329,7 +3330,7 @@ bool SelectorChecker::CheckPseudoElement(const SelectorCheckingContext& context,
       // contained in the pseudo-element's classes (pseudo_ident_list).
       return std::ranges::all_of(base::span(selector.IdentList()).subspan(1ul),
                                  [&](const AtomicString& class_from_selector) {
-                                   return std::ranges::contains(
+                                   return base::Contains(
                                        pseudo_ident_list, class_from_selector);
                                  });
     }

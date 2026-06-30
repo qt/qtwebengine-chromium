@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <ostream>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/logging.h"
 #include "base/run_loop.h"
@@ -178,7 +179,7 @@ TEST_F(WindowsSpellCheckerTest, RetrieveSpellcheckLanguages) {
   RunUntilResultReceived();
 
   ASSERT_LE(1u, spellcheck_languages_.size());
-  ASSERT_TRUE(std::ranges::contains(spellcheck_languages_, "en-US"));
+  ASSERT_TRUE(base::Contains(spellcheck_languages_, "en-US"));
 }
 
 TEST_F(WindowsSpellCheckerTest, RetrieveSpellcheckLanguagesFakeDictionaries) {

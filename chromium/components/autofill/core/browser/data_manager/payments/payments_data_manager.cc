@@ -9,6 +9,7 @@
 #include <variant>
 
 #include "base/android/device_info.h"
+#include "base/containers/contains.h"
 #include "base/containers/extend.h"
 #include "base/containers/span.h"
 #include "base/containers/to_vector.h"
@@ -2283,7 +2284,7 @@ void PaymentsDataManager::CacheIfLinkedBnplPaymentInstrument(
   // Ensures the server does not return any duplicate issuers. Should never
   // happen, but servers should never be trusted and responses must be handled
   // gracefully.
-  if (std::ranges::contains(
+  if (base::Contains(
           linked_bnpl_issuers_,
           ConvertToBnplIssuerIdEnum(bnpl_issuer_details.issuer_id()),
           &BnplIssuer::issuer_id)) {
@@ -2402,7 +2403,7 @@ void PaymentsDataManager::CacheIfBnplPaymentInstrumentCreationOption(
   // Ensures the server does not return any duplicate issuers. Should never
   // happen, but servers should never be trusted and responses must be handled
   // gracefully.
-  if (std::ranges::contains(unlinked_bnpl_issuers_,
+  if (base::Contains(unlinked_bnpl_issuers_,
                             ConvertToBnplIssuerIdEnum(bnpl_issuer.issuer_id()),
                             &BnplIssuer::issuer_id)) {
     return;

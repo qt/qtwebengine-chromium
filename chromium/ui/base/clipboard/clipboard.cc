@@ -12,6 +12,7 @@
 #include <variant>
 
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/json/json_reader.h"
 #include "base/memory/ptr_util.h"
 #include "base/no_destructor.h"
@@ -374,7 +375,7 @@ base::PlatformThreadId Clipboard::GetAndValidateThreadID() {
   // was allowlisted to use the clipboard. This is a CHECK rather than a DCHECK
   // to catch incorrect usage in production (e.g. https://crbug.com/872737).
   CHECK(AllowedThreads().empty() ||
-        std::ranges::contains(AllowedThreads(), id));
+        base::Contains(AllowedThreads(), id));
 
   return id;
 }

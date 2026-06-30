@@ -11,6 +11,7 @@
 
 #include "base/check_op.h"
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/containers/flat_set.h"
 #include "base/containers/span.h"
 #include "base/files/file_path.h"
@@ -945,7 +946,7 @@ void ClientSideDetectionHost::OnPromptAdded() {
       permissions::PermissionRequestManager::FromWebContents(web_contents());
   CHECK(permission_request_manager);
 
-  if (std::ranges::contains(permission_request_manager->Requests(),
+  if (base::Contains(permission_request_manager->Requests(),
                             permissions::RequestType::kNotifications,
                             &permissions::PermissionRequest::request_type)) {
     MaybeStartPreClassification(

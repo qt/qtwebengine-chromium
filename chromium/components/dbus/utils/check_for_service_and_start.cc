@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/functional/callback.h"
 #include "base/logging.h"
 #include "components/dbus/utils/name_has_owner.h"
@@ -77,7 +78,7 @@ void OnListActivatableNamesResponse(scoped_refptr<dbus::Bus> bus,
     return;
   }
 
-  if (std::ranges::contains(activatable_names, name)) {
+  if (base::Contains(activatable_names, name)) {
     StartServiceByName(bus, name, std::move(callback));
   } else {
     // The service is not activatable

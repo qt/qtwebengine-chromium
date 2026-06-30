@@ -8,6 +8,7 @@
 #include <optional>
 #include <string>
 
+#include "base/containers/contains.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/extensions/api/passwords_private/passwords_private_event_router.h"
@@ -437,7 +438,7 @@ void TestPasswordsPrivateDelegate::SendPasswordExceptionsList() {
 
 bool TestPasswordsPrivateDelegate::IsCredentialPresentInInsecureCredentialsList(
     const api::passwords_private::PasswordUiEntry& credential) {
-  return std::ranges::contains(insecure_credentials_, credential.id,
+  return base::Contains(insecure_credentials_, credential.id,
                                &api::passwords_private::PasswordUiEntry::id);
 }
 

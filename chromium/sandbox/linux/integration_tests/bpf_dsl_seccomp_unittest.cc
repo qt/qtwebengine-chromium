@@ -34,6 +34,7 @@
 #include <linux/futex.h>
 
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/memory/raw_ptr.h"
 #include "base/posix/eintr_wrapper.h"
@@ -1071,7 +1072,7 @@ class EqualityStressTest {
     // would fit this requirement. But on the off-chance that it happens
     // to collide, we double-check.
     while (
-        std::ranges::contains(arg_value.tests, mismatched, &Tests::k_value)) {
+        base::Contains(arg_value.tests, mismatched, &Tests::k_value)) {
       ++mismatched;
     }
     // Now verify that we see the expected return value from system calls,

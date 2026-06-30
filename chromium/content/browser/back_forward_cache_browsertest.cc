@@ -11,6 +11,7 @@
 #include <unordered_map>
 
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/functional/callback_helpers.h"
 #include "base/location.h"
 #include "base/memory/raw_ptr.h"
@@ -317,7 +318,7 @@ std::string BackForwardCacheBrowserTest::DepictFrameTree(FrameTreeNode* node) {
 bool BackForwardCacheBrowserTest::HistogramContainsIntValue(
     base::HistogramBase::Sample32 sample,
     std::vector<base::Bucket> histogram_values) {
-  return std::ranges::contains(histogram_values, static_cast<int>(sample),
+  return base::Contains(histogram_values, static_cast<int>(sample),
                                &base::Bucket::min);
 }
 

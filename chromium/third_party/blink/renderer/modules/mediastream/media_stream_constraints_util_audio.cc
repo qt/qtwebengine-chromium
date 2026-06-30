@@ -10,6 +10,7 @@
 #include <tuple>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/strings/string_number_conversions.h"
 #include "build/build_config.h"
 #include "media/audio/audio_features.h"
@@ -1005,13 +1006,13 @@ class ProcessingBasedContainer {
     // If the device parameters indicate that system echo cancellation is
     // available, add support for it to `echo_cancellation_modes`.
     if (EchoCanceller::IsPlatformAecAvailable(device_parameters.effects())) {
-      if (!std::ranges::contains(echo_cancellation_modes,
+      if (!base::Contains(echo_cancellation_modes,
                                  EchoCancellationMode::kBrowserDecides)) {
         echo_cancellation_modes.push_back(
             EchoCancellationMode::kBrowserDecides);
       }
       if (ShouldSupportExtendedEchoCancellationModes(api) &&
-          !std::ranges::contains(echo_cancellation_modes,
+          !base::Contains(echo_cancellation_modes,
                                  EchoCancellationMode::kAll)) {
         echo_cancellation_modes.push_back(EchoCancellationMode::kAll);
       }

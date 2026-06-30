@@ -7,6 +7,7 @@
 #include <tuple>
 
 #include "base/base64.h"
+#include "base/containers/contains.h"
 #include "base/files/file_path.h"
 #include "base/memory/raw_ref.h"
 #include "base/notreached.h"
@@ -462,7 +463,7 @@ constexpr std::string_view kHandledPaths[] = {
 std::unique_ptr<net::test_server::HttpResponse>
 ServeCSPSandboxedWithAllowSameSiteNoneCookies(
     const net::test_server::HttpRequest& request) {
-  if (!std::ranges::contains(kHandledPaths, request.relative_url)) {
+  if (!base::Contains(kHandledPaths, request.relative_url)) {
     return nullptr;
   }
 

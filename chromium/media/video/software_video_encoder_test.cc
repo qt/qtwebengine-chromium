@@ -7,6 +7,7 @@
 #include <memory>
 #include <string>
 
+#include "base/containers/contains.h"
 #include "base/containers/heap_array.h"
 #include "base/feature_list.h"
 #include "base/functional/callback_helpers.h"
@@ -929,7 +930,7 @@ TEST_P(SVCVideoEncoderTest, EncodeClipTemporalSvcWithEnablingDrop) {
     size_t encoded_frame_index = 0;
     size_t decoded_frame_index = 0;
     for (size_t i = 0; i < frames_to_encode.size(); ++i) {
-      if (std::ranges::contains(dropped_frame_indices, i)) {
+      if (base::Contains(dropped_frame_indices, i)) {
         // Dropped
         continue;
       }

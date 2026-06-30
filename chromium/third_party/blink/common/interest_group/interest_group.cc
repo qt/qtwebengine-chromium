@@ -15,6 +15,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/containers/span.h"
 #include "base/feature_list.h"
 #include "base/numerics/byte_conversions.h"
@@ -628,7 +629,7 @@ std::string DEPRECATED_KAnonKeyForAdBid(
     const InterestGroup& group,
     const std::string& ad_url_from_gurl_spec) {
   DCHECK(group.ads);
-  DCHECK(std::ranges::contains(
+  DCHECK(base::Contains(
       *group.ads, ad_url_from_gurl_spec,
       [](const blink::InterestGroup::Ad& ad) { return ad.render_url(); }))
       << "No such ad: " << ad_url_from_gurl_spec;
@@ -683,7 +684,7 @@ std::string DEPRECATED_KAnonKeyForAdNameReporting(
     base::optional_ref<const std::string>
         selected_buyer_and_seller_reporting_id) {
   DCHECK(group.ads);
-  DCHECK(std::ranges::contains(*group.ads, ad))
+  DCHECK(base::Contains(*group.ads, ad))
       << "No such ad: " << ad.render_url();
   DCHECK(group.bidding_url);
   return InternalPlainTextKAnonKeyForAdNameReporting(

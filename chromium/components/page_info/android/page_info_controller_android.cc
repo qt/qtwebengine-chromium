@@ -11,6 +11,7 @@
 #include "base/android/jni_array.h"
 #include "base/android/jni_string.h"
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/notimplemented.h"
 #include "components/content_settings/core/browser/host_content_settings_map.h"
@@ -220,7 +221,7 @@ void PageInfoControllerAndroid::SetPermissionInfo(
   bool requested_notifications = false;
 
   for (const auto& permission : permission_info_list) {
-    if (std::ranges::contains(permissions_to_display, permission.type)) {
+    if (base::Contains(permissions_to_display, permission.type)) {
       std::optional<PermissionSetting> setting_to_display =
           GetSettingToDisplay(permission);
       if (setting_to_display) {

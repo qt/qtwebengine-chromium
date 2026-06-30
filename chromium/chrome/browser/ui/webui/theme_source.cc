@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <string_view>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/metrics/histogram_functions.h"
@@ -321,7 +322,7 @@ std::optional<std::string> ThemeSource::GenerateColorsCss(
   css_string.append(css_header);
 
   for (const auto& def : definitions) {
-    if (!std::ranges::contains(color_id_sets, def.name)) {
+    if (!base::Contains(color_id_sets, def.name)) {
       continue;
     }
 

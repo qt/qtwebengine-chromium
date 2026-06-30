@@ -13,6 +13,7 @@
 
 #include "base/check_deref.h"
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/memory/raw_ptr.h"
 #include "base/notimplemented.h"
 #include "base/notreached.h"
@@ -210,7 +211,7 @@ bool FormFetcherImpl::IsMovingBlocked(const signin::GaiaIdHash& destination,
       if (form.username_value != username) {
         continue;
       }
-      if (std::ranges::contains(form.moving_blocked_for_list, destination)) {
+      if (base::Contains(form.moving_blocked_for_list, destination)) {
         return true;
       }
     }

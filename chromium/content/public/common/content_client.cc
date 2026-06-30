@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <string_view>
 
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/no_destructor.h"
@@ -195,7 +196,7 @@ bool ContentClient::ShouldIgnoreDuplicateNavs(
       }());
 
   const url::Origin navigation_origin = url::Origin::Create(url);
-  return std::ranges::contains(*target_origin_ignorelist, navigation_origin);
+  return base::Contains(*target_origin_ignorelist, navigation_origin);
 }
 
 bool ContentClient::IsFilePickerAllowedForCrossOriginSubframe(

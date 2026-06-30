@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "ui/base/x/x11_util.h"
 #include "ui/base/x/x11_xrandr_interval_only_vsync_provider.h"
 #include "ui/gfx/frame_data.h"
@@ -96,7 +97,7 @@ void NativeViewGLSurfaceEGLX11::OnEvent(const x11::Event& x11_event) {
   // When ANGLE is used for EGL, it creates an X11 child window. Expose events
   // from this window need to be forwarded to this class.
   auto* expose = x11_event.As<x11::ExposeEvent>();
-  if (!expose || !std::ranges::contains(children_, expose->window)) {
+  if (!expose || !base::Contains(children_, expose->window)) {
     return;
   }
 

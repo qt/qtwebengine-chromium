@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <memory>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/metrics/histogram_macros.h"
@@ -715,7 +716,7 @@ bool V4L2StatelessVideoDecoderBackend::IsSupportedProfile(
     for (const auto& entry : profiles)
       supported_profiles_.push_back(entry.profile);
   }
-  return std::ranges::contains(supported_profiles_, profile);
+  return base::Contains(supported_profiles_, profile);
 }
 
 bool V4L2StatelessVideoDecoderBackend::CreateDecoder() {

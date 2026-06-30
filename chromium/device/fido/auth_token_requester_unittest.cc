@@ -9,6 +9,7 @@
 #include <optional>
 #include <string>
 
+#include "base/containers/contains.h"
 #include "base/containers/span.h"
 #include "base/logging.h"
 #include "base/memory/scoped_refptr.h"
@@ -100,7 +101,7 @@ class TestAuthTokenRequesterDelegate : public AuthTokenRequester::Delegate {
       FidoAuthenticator* authenticator,
       AuthTokenRequester::Result result,
       std::optional<pin::TokenResponse> response) override {
-    if (!std::ranges::contains(
+    if (!base::Contains(
             std::vector<AuthTokenRequester::Result>{
                 AuthTokenRequester::Result::
                     kPreTouchAuthenticatorResponseInvalid,

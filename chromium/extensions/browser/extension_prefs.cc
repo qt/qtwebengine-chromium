@@ -15,6 +15,7 @@
 
 #include "base/check.h"
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/containers/flat_set.h"
 #include "base/json/values_util.h"
 #include "base/observer_list.h"
@@ -1432,7 +1433,7 @@ bool ExtensionPrefs::IsExternalExtensionUninstalled(
     const ExtensionId& id) const {
   ExtensionIdList uninstalled_ids;
   GetUserExtensionPrefIntoContainer(kExternalUninstalls, &uninstalled_ids);
-  return std::ranges::contains(uninstalled_ids, id);
+  return base::Contains(uninstalled_ids, id);
 }
 
 bool ExtensionPrefs::ClearExternalExtensionUninstalled(const ExtensionId& id) {

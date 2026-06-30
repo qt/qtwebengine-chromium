@@ -8,6 +8,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/strings/string_util.h"
 #include "content/browser/bluetooth/bluetooth_blocklist.h"
 #include "content/browser/bluetooth/bluetooth_metrics.h"
@@ -151,7 +152,7 @@ void WebBluetoothServiceImpl::ScanningClient::SendEvent(
       if (std::ranges::none_of(
               filter->services.value(),
               [&filtered_event](const BluetoothUUID& filter_uuid) {
-                return std::ranges::contains(filtered_event->uuids,
+                return base::Contains(filtered_event->uuids,
                                              filter_uuid);
               })) {
         continue;

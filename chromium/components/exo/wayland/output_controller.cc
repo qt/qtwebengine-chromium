@@ -12,6 +12,7 @@
 #include <algorithm>
 
 #include "ash/shell.h"
+#include "base/containers/contains.h"
 #include "components/exo/wayland/output_configuration_change.h"
 #include "components/exo/wayland/wayland_display_output.h"
 #include "components/exo/wayland/wl_output.h"
@@ -156,7 +157,7 @@ bool OutputController::ProcessDisplayChangesForAuraOutputManager(
        configuration_change.display_metrics_changes) {
     // Added displays may appear in both added and changed lists, ensure added
     // outputs are not represented in both added and changed lists.
-    if (!std::ranges::contains(configuration_change.added_displays,
+    if (!base::Contains(configuration_change.added_displays,
                                change.display.get())) {
       output_config_change.changed_outputs.emplace_back(
           GetWaylandDisplayOutput(change.display->id()),

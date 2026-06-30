@@ -5,6 +5,7 @@
 #include "components/segmentation_platform/internal/database/signal_sample_view.h"
 
 #include <algorithm>
+#include "base/containers/contains.h"
 
 namespace segmentation_platform {
 
@@ -12,7 +13,7 @@ bool SignalSampleView::Query::IsFeatureMatching(
     const SignalDatabase::DbEntry& sample) const {
   return sample.type == type && sample.name_hash == metric_hash &&
          start <= sample.time && end >= sample.time &&
-         (enum_ids.empty() || std::ranges::contains(enum_ids, sample.value));
+         (enum_ids.empty() || base::Contains(enum_ids, sample.value));
 }
 
 SignalSampleView::Query::Query(proto::SignalType type,

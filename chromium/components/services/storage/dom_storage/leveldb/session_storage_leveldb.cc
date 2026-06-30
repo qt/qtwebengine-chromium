@@ -10,6 +10,7 @@
 #include <string_view>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/string_view_util.h"
@@ -252,7 +253,7 @@ DbStatus SessionStorageLevelDB::DeleteStorageKeysFromSession(
   for (const DomStorageDatabase::MapLocator& map : maps_to_delete) {
     // A valid `map` must be in `storage_keys` and `session_id`.
     CHECK(map.session_ids().empty());
-    DCHECK(std::ranges::contains(metadata_to_delete, map.storage_key()));
+    DCHECK(base::Contains(metadata_to_delete, map.storage_key()));
 
     DB_RETURN_IF_ERROR(
         batch->DeletePrefixed(GetMapPrefix(map.map_id().value())));

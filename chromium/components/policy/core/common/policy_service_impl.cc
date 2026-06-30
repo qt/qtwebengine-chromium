@@ -12,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/containers/flat_set.h"
 #include "base/functional/bind.h"
 #include "base/location.h"
@@ -239,7 +240,7 @@ void PolicyServiceImpl::RemoveProviderUpdateObserver(
 bool PolicyServiceImpl::HasProvider(
     ConfigurationPolicyProvider* provider) const {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  return std::ranges::contains(providers_, provider);
+  return base::Contains(providers_, provider);
 }
 
 const PolicyMap& PolicyServiceImpl::GetPolicies(

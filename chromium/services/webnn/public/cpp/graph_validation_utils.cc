@@ -13,6 +13,7 @@
 
 #include "base/check.h"
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/notreached.h"
 #include "base/numerics/checked_math.h"
 #include "base/numerics/safe_conversions.h"
@@ -206,7 +207,7 @@ ValidateReduceAxesAndInferOutput(base::span<const uint32_t> input_dimensions,
     }
   } else {
     for (size_t i = 0; i < input_rank; i++) {
-      if (!std::ranges::contains(axes, i)) {
+      if (!base::Contains(axes, i)) {
         output_shape.push_back(input_dimensions[i]);
       }
     }

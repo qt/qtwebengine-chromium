@@ -8,6 +8,7 @@
 #include <set>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/logging.h"
@@ -87,7 +88,7 @@ void OAuthMultiloginTokenFetcher::OnTokenRequestComplete(
     const OAuthMultiloginTokenRequest* request,
     OAuthMultiloginTokenRequest::Result result) {
   CoreAccountId account_id = request->account_id();
-  CHECK(std::ranges::contains(account_params_, account_id,
+  CHECK(base::Contains(account_params_, account_id,
                               &AccountParams::account_id));
   size_t num_erased = std::erase_if(
       token_requests_,

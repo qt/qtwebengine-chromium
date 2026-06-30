@@ -13,6 +13,7 @@
 
 #include "base/bits.h"
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/strings/string_number_conversions.h"
 #include "build/build_config.h"
@@ -388,7 +389,7 @@ VP8VaapiVideoEncoderDelegate::PrepareEncodeJob(EncodeJob& encode_job) {
   }
 
   DCHECK(!picture->frame_hdr->IsKeyframe() ||
-         !std::ranges::contains(ref_frames_used, true));
+         !base::Contains(ref_frames_used, true));
 
   if (!SubmitFrameParameters(encode_job, current_params_, picture,
                              reference_frames_, ref_frames_used)) {

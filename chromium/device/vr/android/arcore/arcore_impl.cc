@@ -9,6 +9,7 @@
 
 #include "base/android/jni_android.h"
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/containers/span.h"
 #include "base/functional/bind.h"
 #include "base/metrics/histogram_macros.h"
@@ -771,7 +772,7 @@ bool ArCoreImpl::ConfigureDepthSensing(
   // are allowed to return any supported depth usage.
   const auto& usage_preference = depth_sensing_config->depth_usage_preference;
   if (!usage_preference.empty() &&
-      !std::ranges::contains(usage_preference,
+      !base::Contains(usage_preference,
                              device::mojom::XRDepthUsage::kCPUOptimized)) {
     return false;
   }
@@ -787,7 +788,7 @@ bool ArCoreImpl::ConfigureDepthSensing(
     const auto format_it = std::ranges::find_if(
         format_preference.begin(), format_preference.end(),
         [](const device::mojom::XRDepthDataFormat& format) {
-          return std::ranges::contains(kSupportedDepthFormats, format);
+          return base::Contains(kSupportedDepthFormats, format);
         });
 
     if (format_it != format_preference.end()) {
@@ -804,7 +805,7 @@ bool ArCoreImpl::ConfigureDepthSensing(
   // not a reason to reject the session, but only expose it as a part of the
   // configuration if it matches what the site has asked for.
   std::optional<mojom::XRDepthType> depth_type;
-  if (std::ranges::contains(depth_sensing_config->depth_type_request,
+  if (base::Contains(depth_sensing_config->depth_type_request,
                             mojom::XRDepthType::kSmooth)) {
     depth_type = mojom::XRDepthType::kSmooth;
   }
@@ -1444,7 +1445,7 @@ ArCoreImpl::GetMojoFromInputSources(
 
   for (const auto& input_source_state : input_state) {
     if (input_source_state && input_source_state->description) {
-      if (std::ranges::contains(input_source_state->description->profiles,
+      if (base::Contains(input_source_state->description->profiles,
                                 profile_name)) {
         // Input source represented by input_state matches the profile, find
         // the transform and grab input source id.

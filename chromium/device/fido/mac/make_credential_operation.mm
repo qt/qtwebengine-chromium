@@ -12,6 +12,7 @@
 #include "base/apple/foundation_util.h"
 #include "base/apple/osstatus_logging.h"
 #include "base/apple/scoped_cftyperef.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
@@ -43,7 +44,7 @@ MakeCredentialOperation::MakeCredentialOperation(
 MakeCredentialOperation::~MakeCredentialOperation() = default;
 
 void MakeCredentialOperation::Run() {
-  if (!std::ranges::contains(
+  if (!base::Contains(
           request_.public_key_credential_params.public_key_credential_params(),
           static_cast<int>(CoseAlgorithmIdentifier::kEs256),
           &PublicKeyCredentialParams::CredentialInfo::algorithm)) {

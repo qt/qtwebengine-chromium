@@ -14,6 +14,7 @@
 
 #include "base/check.h"
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/containers/flat_map.h"
 #include "base/containers/map_util.h"
 #include "base/containers/span.h"
@@ -84,7 +85,7 @@ std::vector<std::u16string> GetStandardFormatsFromMimeTypes(
          mime_type == kMimeTypeLinuxText || mime_type == kMimeTypeLinuxString ||
          mime_type == kMimeTypeUtf8PlainText ||
          mime_type == kMimeTypeLinuxUtf8String) &&
-        !std::ranges::contains(types, kMimeTypePlainText16)) {
+        !base::Contains(types, kMimeTypePlainText16)) {
       types.push_back(kMimeTypePlainText16);
       continue;
     }
@@ -493,7 +494,7 @@ bool ClipboardOzone::IsFormatAvailable(
     return false;
 
   auto available_types = async_clipboard_ozone_->RequestMimeTypes(buffer);
-  return std::ranges::contains(available_types, format.GetName());
+  return base::Contains(available_types, format.GetName());
 }
 
 void ClipboardOzone::Clear(ClipboardBuffer buffer) {
@@ -526,7 +527,7 @@ void ClipboardOzone::OnReadAvailableTypes(
   std::vector<std::u16string> types =
       GetStandardFormatsFromMimeTypes(available_types);
 
-  if (std::ranges::contains(
+  if (base::Contains(
           available_types,
           ClipboardFormatType::DataTransferCustomType().GetName())) {
     async_clipboard_ozone_->ReadClipboardDataAsync(

@@ -11,6 +11,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/memory/raw_ptr.h"
 #include "base/run_loop.h"
@@ -1804,13 +1805,13 @@ TEST_F(ContextualTasksServiceImplTest, GetTabsAssociatedWithTask) {
   std::vector<SessionID> tabs_for_task1 =
       service_->GetTabsAssociatedWithTask(task1.GetTaskId());
   ASSERT_EQ(2u, tabs_for_task1.size());
-  EXPECT_TRUE(std::ranges::contains(tabs_for_task1, tab_id1));
-  EXPECT_TRUE(std::ranges::contains(tabs_for_task1, tab_id2));
+  EXPECT_TRUE(base::Contains(tabs_for_task1, tab_id1));
+  EXPECT_TRUE(base::Contains(tabs_for_task1, tab_id2));
 
   std::vector<SessionID> tabs_for_task2 =
       service_->GetTabsAssociatedWithTask(task2.GetTaskId());
   ASSERT_EQ(1u, tabs_for_task2.size());
-  EXPECT_TRUE(std::ranges::contains(tabs_for_task2, tab_id3));
+  EXPECT_TRUE(base::Contains(tabs_for_task2, tab_id3));
 
   // Test with a task that has no associated tabs.
   ContextualTask task3 = service_->CreateTask();
@@ -1837,9 +1838,9 @@ TEST_F(ContextualTasksServiceImplTest,
       service_->GetContextualTaskForTab(tab_id);
   ASSERT_TRUE(current_task.has_value());
   EXPECT_EQ(task1.GetTaskId(), current_task->GetTaskId());
-  EXPECT_TRUE(std::ranges::contains(
+  EXPECT_TRUE(base::Contains(
       service_->GetTabsAssociatedWithTask(task1.GetTaskId()), tab_id));
-  EXPECT_FALSE(std::ranges::contains(
+  EXPECT_FALSE(base::Contains(
       service_->GetTabsAssociatedWithTask(task2.GetTaskId()), tab_id));
 
   // Associate same tab with task2.
@@ -1847,9 +1848,9 @@ TEST_F(ContextualTasksServiceImplTest,
   current_task = service_->GetContextualTaskForTab(tab_id);
   ASSERT_TRUE(current_task.has_value());
   EXPECT_EQ(task2.GetTaskId(), current_task->GetTaskId());
-  EXPECT_TRUE(std::ranges::contains(
+  EXPECT_TRUE(base::Contains(
       service_->GetTabsAssociatedWithTask(task2.GetTaskId()), tab_id));
-  EXPECT_FALSE(std::ranges::contains(
+  EXPECT_FALSE(base::Contains(
       service_->GetTabsAssociatedWithTask(task1.GetTaskId()), tab_id));
 }
 

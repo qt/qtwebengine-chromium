@@ -11,6 +11,7 @@
 
 #include "base/command_line.h"
 #include "base/containers/lru_cache.h"
+#include "base/containers/contains.h"
 #include "base/containers/span.h"
 #include "base/debug/alias.h"
 #include "base/feature_list.h"
@@ -177,10 +178,10 @@ void ScriptSetIntersect(UChar32 codepoint, std::vector<UScriptCode>& result) {
     return;
   }
 
-  CHECK(!std::ranges::contains(extensions, USCRIPT_INHERITED));
+  CHECK(!base::Contains(extensions, USCRIPT_INHERITED));
 
   std::erase_if(result, [&](auto script) {
-    return !std::ranges::contains(extensions, script);
+    return !base::Contains(extensions, script);
   });
 }
 

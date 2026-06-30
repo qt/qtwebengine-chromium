@@ -9,6 +9,7 @@
 
 #include "base/check.h"
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/debug/stack_trace.h"
 #include "base/sequence_token.h"
 #include "base/synchronization/lock_subtle.h"
@@ -96,7 +97,7 @@ bool SequenceCheckerImpl::CalledOnValidSequence(
   if (!is_valid) {
 #if DCHECK_IS_ON()
     for (uintptr_t lock : subtle::GetTrackedLocksHeldByCurrentThread()) {
-      if (std::ranges::contains(locks_, lock)) {
+      if (base::Contains(locks_, lock)) {
         is_valid = true;
         break;
       }
@@ -148,7 +149,7 @@ bool SequenceCheckerImpl::CalledOnValidSequence(
   // `locks_` must contain locks held at binding time and for all calls to
   // `CalledOnValidSequence` that returned true afterwards.
   std::erase_if(locks_, [](uintptr_t lock_ptr) {
-    return !std::ranges::contains(subtle::GetTrackedLocksHeldByCurrentThread(),
+    return !base::Contains(subtle::GetTrackedLocksHeldByCurrentThread(),
                                   lock_ptr);
   });
 #endif  // DCHECK_IS_ON()

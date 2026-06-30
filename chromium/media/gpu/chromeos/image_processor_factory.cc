@@ -8,6 +8,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
@@ -61,7 +62,7 @@ std::unique_ptr<ImageProcessor> CreateVaapiImageProcessorWithInputCandidates(
       VaapiWrapper::GetVppSupportedFormats();
   std::optional<PixelLayoutCandidate> chosen_input_candidate;
   for (const auto& input_candidate : input_candidates) {
-    if (std::ranges::contains(vpp_supported_formats, input_candidate.fourcc) &&
+    if (base::Contains(vpp_supported_formats, input_candidate.fourcc) &&
         VaapiWrapper::IsVppResolutionAllowed(input_candidate.size)) {
       chosen_input_candidate = input_candidate;
       break;
@@ -141,7 +142,7 @@ std::unique_ptr<ImageProcessor> CreateV4L2ImageProcessorWithInputCandidates(
     const Fourcc input_fourcc = input_candidate.fourcc;
     const gfx::Size& input_size = input_candidate.size;
 
-    if (!std::ranges::contains(supported_input_pixfmts,
+    if (!base::Contains(supported_input_pixfmts,
                                input_fourcc.ToV4L2PixFmt()))
       continue;
 

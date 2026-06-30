@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/containers/span.h"
 #include "base/functional/bind.h"
 #include "base/memory/ptr_util.h"
@@ -89,7 +90,7 @@ bool IsFormatSupported(VideoPixelFormat format) {
       // Compressed format.
       PIXEL_FORMAT_MJPEG,
   };
-  return std::ranges::contains(supported_formats, format);
+  return base::Contains(supported_formats, format);
 }
 
 }  // namespace

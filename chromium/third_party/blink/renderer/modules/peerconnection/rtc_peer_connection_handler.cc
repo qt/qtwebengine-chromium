@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/memory/scoped_refptr.h"
@@ -2007,7 +2008,7 @@ void RTCPeerConnectionHandler::OnModifyTransceivers(
   // removed transceivers are reflected as "stopped" in JavaScript.
   Vector<uintptr_t> removed_transceivers;
   for (auto transceiver_id : previous_transceiver_ids_) {
-    if (!std::ranges::contains(ids, transceiver_id)) {
+    if (!base::Contains(ids, transceiver_id)) {
       removed_transceivers.emplace_back(transceiver_id);
       rtp_transceivers_.erase(FindTransceiver(transceiver_id));
     }

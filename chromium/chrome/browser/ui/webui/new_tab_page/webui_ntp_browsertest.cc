@@ -6,6 +6,7 @@
 #include <set>
 #include <string>
 
+#include "base/containers/contains.h"
 #include "base/stl_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/test/mock_callback.h"
@@ -173,7 +174,7 @@ IN_PROC_BROWSER_TEST_F(WebUiNtpBrowserTest, SpareRenderer) {
 
   // Check spare was taken.
   EXPECT_TRUE(
-      std::ranges::contains(spare_ids_before_navigation,
+      base::Contains(spare_ids_before_navigation,
                             ntp->GetPrimaryMainFrame()->GetProcess()->GetID()));
 
   // No processes should be unnecessarily terminated.

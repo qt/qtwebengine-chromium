@@ -12,6 +12,7 @@
 #include "base/auto_reset.h"
 #include "base/check_op.h"
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/memory/raw_ptr.h"
 #include "base/task/single_thread_task_runner.h"
@@ -376,7 +377,7 @@ void PasswordGenerationAgent::GeneratedPasswordAccepted(
     }
     password_agent_->TrackAutofilledElement(password_element);
   }
-  CHECK(std::ranges::contains(current_generation_item_->password_elements_,
+  CHECK(base::Contains(current_generation_item_->password_elements_,
                               current_generation_item_->generation_element_));
 
   std::optional<FormData> presaved_form_data =

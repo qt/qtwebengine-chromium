@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/metrics/field_trial_params.h"
 #include "base/time/time.h"
@@ -82,7 +83,7 @@ BASE_FEATURE(kAndroidOpenIncognitoAsWindow, base::FEATURE_DISABLED_BY_DEFAULT);
 bool IsWebFeedEnabledForLocale(const std::string& country) {
   const std::vector<std::string> launched_countries = {"AU", "CA", "GB",
                                                        "NZ", "US", "ZA"};
-  return std::ranges::contains(launched_countries, country) &&
+  return base::Contains(launched_countries, country) &&
          !base::FeatureList::IsEnabled(kWebFeedKillSwitch);
 }
 

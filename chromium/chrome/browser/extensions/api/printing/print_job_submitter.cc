@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/functional/callback_helpers.h"
@@ -77,7 +78,7 @@ bool IsUserConfirmationRequired(content::BrowserContext* browser_context,
       Profile::FromBrowserContext(browser_context)
           ->GetPrefs()
           ->GetList(prefs::kPrintingAPIExtensionsAllowlist);
-  return !std::ranges::contains(list, base::Value(extension_id));
+  return !base::Contains(list, base::Value(extension_id));
 }
 
 }  // namespace

@@ -7,6 +7,7 @@
 #include <algorithm>
 
 #include "base/barrier_closure.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/functional/callback_helpers.h"
@@ -137,7 +138,7 @@ TEST_P(SessionStorageAreaImplTest, BasicUsage) {
   std::vector<blink::mojom::KeyValuePtr> data;
   EXPECT_TRUE(test::GetAllSync(storage_area.get(), &data));
   ASSERT_EQ(1ul, data.size());
-  EXPECT_TRUE(std::ranges::contains(
+  EXPECT_TRUE(base::Contains(
       data, blink::mojom::KeyValue::New(StdStringToUint8Vector("key1"),
                                         StdStringToUint8Vector("data1"))));
 
@@ -249,7 +250,7 @@ TEST_P(SessionStorageAreaImplTest, Cloning) {
   std::vector<blink::mojom::KeyValuePtr> data;
   EXPECT_TRUE(test::GetAllSync(storage_area1.get(), &data));
   ASSERT_EQ(1ul, data.size());
-  EXPECT_TRUE(std::ranges::contains(
+  EXPECT_TRUE(base::Contains(
       data, blink::mojom::KeyValue::New(StdStringToUint8Vector("key1"),
                                         StdStringToUint8Vector("data1"))));
 
@@ -257,10 +258,10 @@ TEST_P(SessionStorageAreaImplTest, Cloning) {
   data.clear();
   EXPECT_TRUE(test::GetAllSync(storage_area2.get(), &data));
   ASSERT_EQ(2ul, data.size());
-  EXPECT_TRUE(std::ranges::contains(
+  EXPECT_TRUE(base::Contains(
       data, blink::mojom::KeyValue::New(StdStringToUint8Vector("key1"),
                                         StdStringToUint8Vector("data1"))));
-  EXPECT_TRUE(std::ranges::contains(
+  EXPECT_TRUE(base::Contains(
       data, blink::mojom::KeyValue::New(StdStringToUint8Vector("key2"),
                                         StdStringToUint8Vector("data2"))));
 

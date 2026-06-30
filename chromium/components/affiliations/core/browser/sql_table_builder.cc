@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "base/containers/adapters.h"
+#include "base/containers/contains.h"
 #include "base/logging.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/strings/strcat.h"
@@ -152,7 +153,7 @@ void SQLTableBuilder::RenameColumn(const std::string& old_name,
   // Check there is no index in the current version that references |old_name|.
   DCHECK(std::ranges::none_of(indices_, [&old_name](const Index& index) {
     return index.max_version == kInvalidVersion &&
-           std::ranges::contains(index.columns, old_name);
+           base::Contains(index.columns, old_name);
   }));
   // Migrating a foreign key can be supported but the index on it is to be
   // updated.
@@ -188,7 +189,7 @@ void SQLTableBuilder::DropColumn(const std::string& name) {
   // Check there is no index in the current version that references |old_name|.
   DCHECK(std::ranges::none_of(indices_, [&name](const Index& index) {
     return index.max_version == kInvalidVersion &&
-           std::ranges::contains(index.columns, name);
+           base::Contains(index.columns, name);
   }));
   if (sealed_version_ != kInvalidVersion &&
       column->min_version <= sealed_version_) {

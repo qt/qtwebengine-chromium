@@ -7,6 +7,7 @@
 #include <algorithm>
 
 #include "base/check_is_test.h"
+#include "base/containers/contains.h"
 #include "base/notreached.h"
 #include "components/sync_preferences/pref_model_associator_client.h"
 #include "components/sync_preferences/syncable_prefs_database.h"
@@ -29,7 +30,7 @@ base::ListValue MergeListValues(const base::ListValue& local_value,
                                 const base::ListValue& server_value) {
   base::ListValue result = server_value.Clone();
   for (const auto& value : local_value) {
-    if (!std::ranges::contains(result, value)) {
+    if (!base::Contains(result, value)) {
       result.Append(value.Clone());
     }
   }

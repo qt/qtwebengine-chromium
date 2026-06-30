@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "chrome/browser/ui/webui/top_chrome/webui_contents_preload_manager.h"
 #include "chrome/browser/ui/webui/top_chrome/webui_contents_warmup_level.h"
 #include "chrome/common/webui_url_utils.h"
@@ -72,7 +73,7 @@ void WebUIContentsWarmupLevelRecorder::AfterContentsCreation(
   CHECK(pre_condition_) << "You must call BeforeContentsCreation()";
   CHECK(web_contents);
 
-  if (std::ranges::contains(
+  if (base::Contains(
           pre_condition_->spare_process_ids,
           web_contents->GetPrimaryMainFrame()->GetProcess()->GetID())) {
     level_ = WebUIContentsWarmupLevel::kSpareRenderer;

@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "base/metrics/histogram_macros.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/shadow_root.h"
@@ -394,7 +395,7 @@ void MediaVideoVisibilityTracker::ElementDidMoveToNewDocument() {
 
 void MediaVideoVisibilityTracker::Invoke(ExecutionContext* context,
                                          Event* event) {
-  DCHECK(std::ranges::contains(FullscreenEventTypes(), event->type()));
+  DCHECK(base::Contains(FullscreenEventTypes(), event->type()));
 
   // Video is not loaded yet.
   if (VideoElement().getReadyState() < HTMLMediaElement::kHaveMetadata) {

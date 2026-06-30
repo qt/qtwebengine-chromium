@@ -11,6 +11,7 @@
 
 #include "ash/constants/ash_features.h"
 #include "ash/constants/ash_pref_names.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "chrome/browser/ash/login/quick_unlock/auth_token.h"
 #include "chrome/browser/ash/login/quick_unlock/pin_backend.h"
@@ -102,7 +103,7 @@ bool AreModesEqual(const QuickUnlockModeList& a, const QuickUnlockModeList& b) {
   // This is a slow comparison algorithm, but the number of entries in |a| and
   // |b| will always be very low (0-3 items) so it doesn't matter.
   for (auto mode : a) {
-    if (!std::ranges::contains(b, mode)) {
+    if (!base::Contains(b, mode)) {
       return false;
     }
   }
@@ -167,7 +168,7 @@ bool IsPinDifficultEnough(const std::string& pin) {
     return true;
 
   // Check if it is on the list of most common PINs.
-  if (std::ranges::contains(kMostCommonPins, pin)) {
+  if (base::Contains(kMostCommonPins, pin)) {
     return false;
   }
 

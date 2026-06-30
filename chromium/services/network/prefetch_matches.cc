@@ -18,6 +18,7 @@
 
 #include "base/check.h"
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/containers/fixed_flat_map.h"
 #include "base/containers/fixed_flat_set.h"
 #include "base/containers/span.h"
@@ -519,7 +520,7 @@ struct FieldMatcher {
 };
 
 template <Fields f>
-constexpr bool kFieldIsIgnored = std::ranges::contains(kIgnoredFields, f);
+constexpr bool kFieldIsIgnored = base::Contains(kIgnoredFields, f);
 
 // This is the implementation of FieldMatcher that completely ignores the
 // contents of the field. Fields which should use this implementation should be

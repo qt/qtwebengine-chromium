@@ -12,6 +12,7 @@
 #include <string>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
@@ -630,7 +631,7 @@ bool BluetoothAdapterBlueZ::IsExtendedAdvertisementsAvailable() const {
   // Based on the implementation of kernel bluez, if the controller supports Ext
   // Advertisement, it must support HardwareOffload.
   // (net/bluetooth/mgmt.c:get_supported_adv_flags)
-  return std::ranges::contains(
+  return base::Contains(
       properties->supported_features.value(),
       bluetooth_advertising_manager::kSupportedFeaturesHardwareOffload);
 }
@@ -1666,7 +1667,7 @@ BluetoothAdapterBlueZ::GetLowEnergyScanSessionHardwareOffloadingStatus() {
     return LowEnergyScanSessionHardwareOffloadingStatus::kUndetermined;
   }
 
-  return std::ranges::contains(properties->supported_features.value(),
+  return base::Contains(properties->supported_features.value(),
                                bluetooth_advertisement_monitor_manager::
                                    kSupportedFeaturesControllerPatterns)
              ? LowEnergyScanSessionHardwareOffloadingStatus::kSupported

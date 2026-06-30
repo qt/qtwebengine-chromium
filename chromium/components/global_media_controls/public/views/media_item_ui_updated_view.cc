@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "base/metrics/histogram_functions.h"
 #include "components/global_media_controls/media_view_utils.h"
 #include "components/global_media_controls/public/format_duration.h"
@@ -603,7 +604,7 @@ void MediaItemUIUpdatedView::MediaActionButtonPressed(views::Button* button) {
 
   // Make the screen reader announce the button text for accessibility since
   // there are only visual changes outside these buttons when they are clicked.
-  if (std::ranges::contains(kProgressRowMediaActions,
+  if (base::Contains(kProgressRowMediaActions,
                             static_cast<MediaSessionAction>(button->GetID()))) {
     GetViewAccessibility().AnnouncePolitely(button->GetTooltipText());
   }
@@ -633,13 +634,13 @@ void MediaItemUIUpdatedView::UpdateMediaActionButtonsVisibility() {
       should_show = false;
     }
 
-    if (std::ranges::contains(
+    if (base::Contains(
             kProgressRowMediaActions,
             static_cast<MediaSessionAction>(button->GetID()))) {
       if (is_live_) {
         // For live media, the seek progress buttons are always hidden and the
         // other buttons are visible if their media actions are supported.
-        if (std::ranges::contains(
+        if (base::Contains(
                 kProgressRowSeekMediaActions,
                 static_cast<MediaSessionAction>(button->GetID()))) {
           should_show = false;

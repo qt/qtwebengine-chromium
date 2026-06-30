@@ -8,6 +8,7 @@
 #include <set>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/location.h"
 #include "base/memory/ptr_util.h"
@@ -256,7 +257,7 @@ bool URLDataManagerBackend::CheckURLIsValid(const GURL& url) {
          url.SchemeIs(kChromeUIUntrustedScheme) ||
          (GetContentClient()->browser()->GetAdditionalWebUISchemes(
               &additional_schemes),
-          std::ranges::contains(additional_schemes, url.GetScheme())));
+          base::Contains(additional_schemes, url.GetScheme())));
 
   if (!url.is_valid()) {
     NOTREACHED();

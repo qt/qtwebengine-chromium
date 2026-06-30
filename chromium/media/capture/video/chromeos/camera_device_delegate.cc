@@ -13,6 +13,7 @@
 
 #include "ash/constants/ash_features.h"
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/no_destructor.h"
@@ -1306,7 +1307,7 @@ gfx::Size CameraDeviceDelegate::GetBlobResolution(
   // resolution specified through Mojo API as a fallback. If it fails too,
   // use the largest resolution as default.
   if (new_blob_resolution.has_value() &&
-      std::ranges::contains(blob_resolutions, *new_blob_resolution)) {
+      base::Contains(blob_resolutions, *new_blob_resolution)) {
     return *new_blob_resolution;
   }
 
@@ -1317,7 +1318,7 @@ gfx::Size CameraDeviceDelegate::GetBlobResolution(
     auto specified_capture_resolution =
         camera_app_device->GetStillCaptureResolution();
     if (!specified_capture_resolution.IsEmpty() &&
-        std::ranges::contains(blob_resolutions, specified_capture_resolution)) {
+        base::Contains(blob_resolutions, specified_capture_resolution)) {
       return specified_capture_resolution;
     }
   }
@@ -1791,7 +1792,7 @@ void CameraDeviceDelegate::DoGetPhotoState(
       cros::mojom::CameraMetadataTag::ANDROID_CONTROL_AE_AVAILABLE_MODES);
   bool support_manual_exposure_time = false;
   if (ae_available_modes.size() > 1 && result_metadata_.ae_mode) {
-    support_manual_exposure_time = std::ranges::contains(
+    support_manual_exposure_time = base::Contains(
         ae_available_modes,
         static_cast<uint8_t>(
             cros::mojom::AndroidControlAeMode::ANDROID_CONTROL_AE_MODE_OFF));
@@ -1830,7 +1831,7 @@ void CameraDeviceDelegate::DoGetPhotoState(
       cros::mojom::CameraMetadataTag::ANDROID_CONTROL_AF_AVAILABLE_MODES);
   bool support_manual_focus_distance = false;
   if (af_available_modes.size() > 1 && result_metadata_.af_mode) {
-    support_manual_focus_distance = std::ranges::contains(
+    support_manual_focus_distance = base::Contains(
         af_available_modes,
         static_cast<uint8_t>(
             cros::mojom::AndroidControlAfMode::ANDROID_CONTROL_AF_MODE_OFF));

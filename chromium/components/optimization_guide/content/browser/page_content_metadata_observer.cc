@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "components/optimization_guide/content/browser/media_transcript_provider.h"
 #include "components/optimization_guide/content/browser/page_content_proto_util.h"
 #include "content/public/browser/navigation_handle.h"
@@ -104,7 +105,7 @@ void PageContentMetadataObserver::RenderFrameCreated(
 
   if (base::FeatureList::IsEnabled(
           media::kMediaTrasncriptsFlagInPageMetadata)) {
-    if (std::ranges::contains(names_, kHasMediaTranscripts)) {
+    if (base::Contains(names_, kHasMediaTranscripts)) {
       MediaTranscriptObserver::GetOrCreateForCurrentDocument(render_frame_host)
           ->AddOwner(weak_ptr_factory_.GetWeakPtr());
     }

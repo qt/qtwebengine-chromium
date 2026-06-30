@@ -15,6 +15,7 @@
 #include <utility>
 
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/functional/callback.h"
 #include "base/logging.h"
 #include "base/memory/raw_ref.h"
@@ -346,7 +347,7 @@ void WaylandWindowDragController::OnDragEnter(WaylandWindow* window,
   // TODO(crbug.com/40704369): Exo does not support custom mime types. In this
   // case, |data_offer_| will hold an empty mime_types list and, at this point,
   // it's safe just to skip the offer checks and requests here.
-  if (!std::ranges::contains(data_offer_->mime_types(),
+  if (!base::Contains(data_offer_->mime_types(),
                              kMimeTypeChromiumWindow)) {
     DVLOG(1) << "OnEnter. No valid mime type found.";
     return;

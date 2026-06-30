@@ -8,6 +8,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/dcheck_is_on.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
@@ -84,7 +85,7 @@ std::vector<blink::PermissionType> GetRequiredPermissionsForFeatures(
     auto feature_permission =
         content::XrPermissionResults::GetPermissionFor(required_feature);
     if (feature_permission &&
-        !std::ranges::contains(permissions, *feature_permission)) {
+        !base::Contains(permissions, *feature_permission)) {
       permissions.push_back(*feature_permission);
     }
   }
@@ -93,7 +94,7 @@ std::vector<blink::PermissionType> GetRequiredPermissionsForFeatures(
     auto feature_permission =
         content::XrPermissionResults::GetPermissionFor(optional_feature);
     if (feature_permission &&
-        !std::ranges::contains(permissions, *feature_permission)) {
+        !base::Contains(permissions, *feature_permission)) {
       permissions.push_back(*feature_permission);
     }
   }
@@ -815,9 +816,9 @@ void VRServiceImpl::DoRequestSession(SessionRequestData request) {
   }
 
   bool use_dom_overlay =
-      std::ranges::contains(runtime_options->required_features,
+      base::Contains(runtime_options->required_features,
                             device::mojom::XRSessionFeature::DOM_OVERLAY) ||
-      std::ranges::contains(runtime_options->optional_features,
+      base::Contains(runtime_options->optional_features,
                             device::mojom::XRSessionFeature::DOM_OVERLAY);
 
   if (use_dom_overlay) {

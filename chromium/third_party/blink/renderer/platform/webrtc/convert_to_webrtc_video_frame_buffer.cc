@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "base/containers/span.h"
 #include "base/logging.h"
 #include "base/numerics/safe_conversions.h"
@@ -266,7 +267,7 @@ bool CanConvertToWebRtcVideoFrameBuffer(const media::VideoFrame* frame) {
   // Currently accept I420, I420A, NV12 formats in a mapped frame,
   // or a SharedImage-backed frame.
   return (frame->IsMappable() &&
-          std::ranges::contains(
+          base::Contains(
               GetPixelFormatsMappableToWebRtcVideoFrameBuffer(),
               frame->format())) ||
          frame->HasSharedImage();

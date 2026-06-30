@@ -9,6 +9,7 @@
 #include <ostream>
 
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/memory/raw_ptr.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
@@ -40,7 +41,7 @@ struct TestCase {
     for (const auto& language : expected_languages) {
       if (!language.empty()) {
         dictionary.language = language;
-        dictionary.used_for_spellcheck = std::ranges::contains(
+        dictionary.used_for_spellcheck = base::Contains(
             expected_languages_used_for_spellcheck, language);
         expected_dictionaries.push_back(dictionary);
       }

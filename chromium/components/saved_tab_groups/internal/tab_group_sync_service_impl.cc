@@ -9,6 +9,7 @@
 #include <optional>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/functional/callback_helpers.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/observer_list.h"
@@ -917,7 +918,7 @@ bool TabGroupSyncServiceImpl::ShouldExposeSavedTabGroupInList(
     }
   }
 
-  if (std::ranges::contains(
+  if (base::Contains(
           shared_tab_groups_waiting_for_collaboration_, group.saved_guid(),
           [](const auto& entry) { return std::get<1>(entry); })) {
     // The shared tab group should not be returned while its collaboration is

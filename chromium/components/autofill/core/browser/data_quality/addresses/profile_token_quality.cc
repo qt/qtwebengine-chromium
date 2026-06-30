@@ -11,6 +11,7 @@
 #include "base/check.h"
 #include "base/check_deref.h"
 #include "base/containers/circular_deque.h"
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/rand_util.h"
 #include "base/strings/levenshtein_distance.h"
@@ -153,7 +154,7 @@ bool ProfileTokenQuality::AddObservationsForFilledForm(
         GetFormSignatureHash(form_structure.form_signature());
     if (auto observations = observations_.find(stored_type);
         observations != observations_.end() &&
-        std::ranges::contains(
+        base::Contains(
             observations->second, hash,
             [](const Observation& o) { return o.form_hash; })) {
       // An observation for the `stored_type` and `hash` was already collected.
@@ -263,7 +264,7 @@ ObservationType ProfileTokenQuality::GetObservationTypeFromField(
     const std::vector<const AutofillProfile*>& other_profiles,
     const std::string& app_locale) const {
   CHECK(field.autofill_source_profile_guid() == profile_->guid());
-  DCHECK(!std::ranges::contains(
+  DCHECK(!base::Contains(
       other_profiles, profile_->guid(),
       [](const AutofillProfile* p) { return p->guid(); }));
 

@@ -12,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/files/file_path.h"
 #include "base/path_service.h"
 #include "base/strings/strcat.h"
@@ -426,7 +427,7 @@ StorageKeyPolicyMatcherFunctionUtility::MakeMatcherFunction(
   return base::BindRepeating(
       [](std::vector<url::Origin> origins_to_match,
          const blink::StorageKey& storage_key, SpecialStoragePolicy* policy) {
-        return std::ranges::contains(origins_to_match, storage_key.origin());
+        return base::Contains(origins_to_match, storage_key.origin());
       },
       origins_to_match);
 }

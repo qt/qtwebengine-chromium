@@ -7,6 +7,7 @@
 #include <algorithm>
 
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "device/vr/openxr/openxr_interaction_profiles.h"
 #include "device/vr/openxr/openxr_util.h"
 #include "device/vr/public/mojom/openxr_interaction_profile_type.mojom.h"
@@ -62,7 +63,7 @@ std::vector<std::string> OpenXRPathHelper::GetInputProfiles(
 
   bool can_use_hand_joint_profile =
       hand_joints_enabled &&
-      std::ranges::contains(kHandProfiles, interaction_profile);
+      base::Contains(kHandProfiles, interaction_profile);
 
   const auto& input_profiles_map = GetOpenXrInputProfilesMap();
   if (input_profiles_map.contains(interaction_profile)) {

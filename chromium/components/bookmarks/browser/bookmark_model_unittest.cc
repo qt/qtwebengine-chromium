@@ -19,6 +19,7 @@
 #include "base/base_paths.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/logging.h"
 #include "base/memory/raw_ptr.h"
@@ -1615,7 +1616,7 @@ TEST_F(BookmarkModelTest, MostRecentlyModifiedFolders) {
   model_->Remove(folder->parent()->children().front().get(),
                  bookmarks::metrics::BookmarkEditSource::kOther, FROM_HERE);
   most_recent_folders = GetMostRecentlyModifiedUserFolders(model_.get());
-  EXPECT_FALSE(std::ranges::contains(most_recent_folders, folder));
+  EXPECT_FALSE(base::Contains(most_recent_folders, folder));
 }
 
 // Make sure MostRecentlyAddedEntries stays in sync.
@@ -3639,7 +3640,7 @@ class BookmarkModelFaviconTest : public testing::Test,
   }
 
   bool WasNodeUpdated(const BookmarkNode* node) {
-    return std::ranges::contains(updated_nodes_, node);
+    return base::Contains(updated_nodes_, node);
   }
 
   void ClearUpdatedNodes() { updated_nodes_.clear(); }

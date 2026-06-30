@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/containers/fixed_flat_map.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
@@ -258,7 +259,7 @@ Status ParseMobileEmulation(const base::Value& option,
     std::vector<std::string> supported_platforms =
         MobileDevice::GetReducedUserAgentPlatforms();
     if (!mobile_device.user_agent.has_value() &&
-        !std::ranges::contains(supported_platforms, client_hints.platform)) {
+        !base::Contains(supported_platforms, client_hints.platform)) {
       std::string supported_platforms_str =
           base::JoinString(supported_platforms, ", ");
       return Status(kInvalidArgument,

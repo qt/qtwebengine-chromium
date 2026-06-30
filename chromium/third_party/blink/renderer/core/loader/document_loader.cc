@@ -35,6 +35,7 @@
 #include <utility>
 
 #include "base/auto_reset.h"
+#include "base/containers/contains.h"
 #include "base/containers/flat_map.h"
 #include "base/containers/to_vector.h"
 #include "base/debug/crash_logging.h"
@@ -3391,7 +3392,7 @@ void DocumentLoader::RecordAcceptLanguageAndContentLanguageMetric() {
             kContentLanguageMatchesPrimaryAcceptLanguage);
   }
 
-  if (std::ranges::contains(accept_languages, content_language)) {
+  if (base::Contains(accept_languages, content_language)) {
     base::UmaHistogramEnumeration(language_histogram_name,
                                   AcceptLanguageAndContentLanguageUsage::
                                       kContentLanguageMatchesAnyAcceptLanguage);

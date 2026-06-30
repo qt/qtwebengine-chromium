@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "base/containers/fixed_flat_set.h"
 #include "base/notimplemented.h"
 #include "base/notreached.h"
@@ -541,7 +542,7 @@ std::vector<AXPlatformNode*> AXPlatformNodeDelegate::GetTargetNodesForRelation(
   for (int32_t target_id : target_ids) {
     AXPlatformNode* target = GetFromNodeID(target_id);
     if (IsValidRelationTarget(target) &&
-        !std::ranges::contains(nodes, target)) {
+        !base::Contains(nodes, target)) {
       nodes.push_back(target);
     }
   }

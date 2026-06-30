@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/location.h"
@@ -214,14 +215,14 @@ bool UpdateClientImpl::IsUpdating(const std::string& id) const {
 
   for (const auto& task : tasks_) {
     const auto ids = task->GetIds();
-    if (std::ranges::contains(ids, id)) {
+    if (base::Contains(ids, id)) {
       return true;
     }
   }
 
   for (const auto& task : task_queue_) {
     const auto ids = task->GetIds();
-    if (std::ranges::contains(ids, id)) {
+    if (base::Contains(ids, id)) {
       return true;
     }
   }

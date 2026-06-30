@@ -32,6 +32,7 @@
 #include <set>
 
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/memory/values_equivalent.h"
 #include "base/notreached.h"
 #include "base/strings/to_string.h"
@@ -570,7 +571,7 @@ ResolvedFontFeatures FontDescription::ResolveFontFeatures() const {
     const wtf_size_t resolved_size = merged_features.size();
     merged_features.reserve(resolved_size + resolved_font_features_.size());
     for (const auto& descriptor_feature : resolved_font_features_) {
-      if (!std::ranges::contains(
+      if (!base::Contains(
               base::span{merged_features}.first(resolved_size),
               descriptor_feature.tag, &FontFeatureValue::tag)) {
         merged_features.emplace_back(descriptor_feature);

@@ -21,6 +21,7 @@
 #include "base/base_switches.h"
 #include "base/check_op.h"
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/containers/flat_set.h"
 #include "base/debug/crash_logging.h"
 #include "base/feature_list.h"
@@ -1051,7 +1052,7 @@ void WebContentsImpl::WebContentsTreeNode::DetachInnerWebContents(
 bool WebContentsImpl::WebContentsTreeNode::IsUnownedInnerWebContents(
     WebContents* inner_web_contents) const {
   CHECK_EQ(inner_web_contents->GetOuterWebContents(), current_web_contents_);
-  return std::ranges::contains(unowned_inner_web_contents_, inner_web_contents);
+  return base::Contains(unowned_inner_web_contents_, inner_web_contents);
 }
 
 void WebContentsImpl::WebContentsTreeNode::DetachUnownedInnerWebContents(
@@ -6052,7 +6053,7 @@ std::string WebContentsImpl::DumpAccessibilityTree(
   // This only runs during integration tests, or if a developer is
   // using an inspection tool, e.g. chrome://accessibility.
   ui::AXTreeManager::AlwaysFailFast();
-  DCHECK(std::ranges::contains(AXInspectFactory::SupportedApis(), api_type));
+  DCHECK(base::Contains(AXInspectFactory::SupportedApis(), api_type));
   std::unique_ptr<ui::AXTreeFormatter> formatter =
       AXInspectFactory::CreateFormatter(api_type);
 
@@ -6087,7 +6088,7 @@ void WebContentsImpl::RecordAccessibilityEvents(
         ax_mgr->GetBrowserAccessibilityRoot()
             ->GetTargetForNativeAccessibilityEvent();
 
-    DCHECK(std::ranges::contains(AXInspectFactory::SupportedApis(), api_type));
+    DCHECK(base::Contains(AXInspectFactory::SupportedApis(), api_type));
     event_recorder_ = content::AXInspectFactory::CreateRecorder(
         api_type, ax_mgr, pid, ui::AXTreeSelector(widget));
     event_recorder_->ListenToEvents(*callback);

@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/memory/raw_ptr.h"
@@ -770,8 +771,8 @@ TEST_P(MediaDevicesDispatcherHostTest,
   // Verify that both added devices are present and only those.
   ASSERT_EQ(audio_output_devices.size(), 2u);
 
-  EXPECT_TRUE(std::ranges::contains(audio_output_devices, hmac_device_info1));
-  EXPECT_TRUE(std::ranges::contains(audio_output_devices, hmac_device_info2));
+  EXPECT_TRUE(base::Contains(audio_output_devices, hmac_device_info1));
+  EXPECT_TRUE(base::Contains(audio_output_devices, hmac_device_info2));
 }
 
 TEST_P(MediaDevicesDispatcherHostTest, SubscribeDeviceChange) {

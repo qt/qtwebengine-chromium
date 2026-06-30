@@ -13,6 +13,7 @@
 #include <utility>
 
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/files/file_path.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
@@ -5850,7 +5851,7 @@ ObjectData kInnerObject{10, {"getInnerId"}};
 class MockInnerObject : public blink::mojom::RemoteObject {
  public:
   void HasMethod(const std::string& name, HasMethodCallback callback) override {
-    std::move(callback).Run(std::ranges::contains(kInnerObject.methods, name));
+    std::move(callback).Run(base::Contains(kInnerObject.methods, name));
   }
   void GetMethods(GetMethodsCallback callback) override {
     std::move(callback).Run(kInnerObject.methods);
@@ -5876,7 +5877,7 @@ class MockObject : public blink::mojom::RemoteObject {
       mojo::PendingReceiver<blink::mojom::RemoteObject> receiver)
       : receiver_(this, std::move(receiver)) {}
   void HasMethod(const std::string& name, HasMethodCallback callback) override {
-    std::move(callback).Run(std::ranges::contains(kMainObject.methods, name));
+    std::move(callback).Run(base::Contains(kMainObject.methods, name));
   }
 
   void GetMethods(GetMethodsCallback callback) override {

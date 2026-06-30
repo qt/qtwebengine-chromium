@@ -9,6 +9,7 @@
 #include <optional>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/memory/ptr_util.h"
@@ -62,12 +63,12 @@ std::optional<Fourcc> PickRenderableFourcc(
     const std::vector<Fourcc>& candidates,
     std::optional<Fourcc> preferred_fourcc) {
   if (preferred_fourcc &&
-      std::ranges::contains(candidates, *preferred_fourcc) &&
-      std::ranges::contains(renderable_fourccs, *preferred_fourcc)) {
+      base::Contains(candidates, *preferred_fourcc) &&
+      base::Contains(renderable_fourccs, *preferred_fourcc)) {
     return preferred_fourcc;
   }
   for (const auto& value : renderable_fourccs) {
-    if (std::ranges::contains(candidates, value))
+    if (base::Contains(candidates, value))
       return value;
   }
   return std::nullopt;

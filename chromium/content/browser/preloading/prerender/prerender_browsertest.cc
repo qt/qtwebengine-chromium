@@ -10,6 +10,7 @@
 #include "base/barrier_closure.h"
 #include "base/base_switches.h"
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/containers/flat_map.h"
 #include "base/containers/flat_set.h"
 #include "base/feature_list.h"
@@ -8783,7 +8784,7 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, MultipleNewTabPrerendering) {
     PrerenderHostId host_id = prerender_helper()->AddPrerender(
         prerendering_url, /*eagerness=*/std::nullopt, "_blank");
 
-    EXPECT_FALSE(std::ranges::contains(prerender_host_ids, host_id));
+    EXPECT_FALSE(base::Contains(prerender_host_ids, host_id));
     prerender_host_ids.push_back(host_id);
 
     // Make sure that prerendering in a new tab creates new WebContentsImpl, not
@@ -8793,7 +8794,7 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, MultipleNewTabPrerendering) {
     ASSERT_TRUE(prerender_web_contents);
     EXPECT_NE(prerender_web_contents, web_contents_impl());
     ExpectWebContentsIsForNewTabPrerendering(*prerender_web_contents);
-    EXPECT_FALSE(std::ranges::contains(prerender_web_contents_list,
+    EXPECT_FALSE(base::Contains(prerender_web_contents_list,
                                        prerender_web_contents));
     prerender_web_contents_list.push_back(prerender_web_contents);
   }

@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "base/barrier_closure.h"
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/json/json_writer.h"
@@ -155,7 +156,7 @@ MakeCredentialStatus IsCandidateAuthenticatorPostTouch(
         continue;
       }
 
-      if (std::ranges::contains(*supported_algorithms, algo.algorithm)) {
+      if (base::Contains(*supported_algorithms, algo.algorithm)) {
         at_least_one_common_algorithm = true;
         break;
       }

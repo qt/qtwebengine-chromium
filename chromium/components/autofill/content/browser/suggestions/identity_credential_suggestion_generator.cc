@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "base/containers/to_vector.h"
 #include "base/notreached.h"
 #include "base/strings/utf_string_conversions.h"
@@ -28,21 +29,21 @@ std::map<FieldType, std::u16string> CreateFederatedProfileFields(
   std::map<FieldType, std::u16string> fields;
 
   if (!account->email.empty() &&
-      std::ranges::contains(
+      base::Contains(
           account->identity_provider->disclosure_fields,
           content::IdentityRequestDialogDisclosureField::kEmail)) {
     fields[EMAIL_ADDRESS] = base::UTF8ToUTF16(account->email);
   }
 
   if (!account->name.empty() &&
-      std::ranges::contains(
+      base::Contains(
           account->identity_provider->disclosure_fields,
           content::IdentityRequestDialogDisclosureField::kName)) {
     fields[NAME_FULL] = base::UTF8ToUTF16(account->name);
   }
 
   if (!account->phone.empty() &&
-      std::ranges::contains(
+      base::Contains(
           account->identity_provider->disclosure_fields,
           content::IdentityRequestDialogDisclosureField::kPhoneNumber)) {
     fields[PHONE_HOME_WHOLE_NUMBER] = base::UTF8ToUTF16(account->phone);

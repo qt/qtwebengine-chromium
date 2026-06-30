@@ -7,6 +7,7 @@
 #include <algorithm>
 
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/memory/raw_ptr.h"
 #include "base/run_loop.h"
 #include "base/test/task_environment.h"
@@ -159,7 +160,7 @@ class WMStateWaiter : public X11PropertyChangeWaiter {
     std::vector<x11::Atom> hints;
     if (x11::Connection::Get()->GetArrayProperty(
             xwindow(), x11::GetAtom("_NET_WM_STATE"), &hints)) {
-      return std::ranges::contains(hints, x11::GetAtom(hint_)) !=
+      return base::Contains(hints, x11::GetAtom(hint_)) !=
              wait_till_set_;
     }
     return true;

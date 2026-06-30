@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/strcat.h"
@@ -300,7 +301,7 @@ bool NtpPromoController::ShouldShowPromo(const NtpPromoIdentifier& id,
   }
 
   // If the promo is suppressed via Finch, don't show it (ie. a kill switch).
-  if (std::ranges::contains(params_.suppress_list, id)) {
+  if (base::Contains(params_.suppress_list, id)) {
     return false;
   }
 

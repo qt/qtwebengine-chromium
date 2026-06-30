@@ -19,6 +19,7 @@
 #include "base/barrier_callback.h"
 #include "base/check.h"
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/containers/flat_set.h"
 #include "base/containers/span.h"
 #include "base/containers/to_vector.h"
@@ -642,7 +643,7 @@ void DeleteUnacceptedVirtualAuthenticatorCreds(
       if (registration.second.user && registration.second.rp &&
           registration.second.rp->id == relying_party_id &&
           registration.second.user->id == user_id &&
-          !std::ranges::contains(all_accepted_credentials_ids,
+          !base::Contains(all_accepted_credentials_ids,
                                  registration.first)) {
         credential_ids_to_remove.push_back(registration.first);
       }

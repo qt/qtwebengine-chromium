@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/files/file_path.h"
 #include "base/functional/callback_helpers.h"
 #include "base/memory/raw_ptr.h"
@@ -198,8 +199,8 @@ TEST_F(ClipboardHostImplTest, ReadAvailableTypes_TextUriList) {
       IsFormatAvailable(ui::ClipboardFormatType::DataTransferCustomType()));
   EXPECT_TRUE(IsFormatAvailable(ui::ClipboardFormatType::PlainTextType()));
   mojo_clipboard()->ReadAvailableTypes(ui::ClipboardBuffer::kCopyPaste, &types);
-  EXPECT_TRUE(std::ranges::contains(types, u"text/plain"));
-  EXPECT_TRUE(std::ranges::contains(types, u"text/uri-list"));
+  EXPECT_TRUE(base::Contains(types, u"text/plain"));
+  EXPECT_TRUE(base::Contains(types, u"text/uri-list"));
 }
 
 TEST_F(ClipboardHostImplTest, GetSequenceNumber) {
@@ -985,7 +986,7 @@ TEST_F(ClipboardHostImplTest,
   // Verify: With permission allowed, the call completes successfully.
   // TestClipboard should return standard formats like "text/plain".
   const auto& formats = future.Get();
-  EXPECT_TRUE(std::ranges::contains(formats, u"text/plain"));
+  EXPECT_TRUE(base::Contains(formats, u"text/plain"));
 }
 
 TEST_F(ClipboardHostImplTest, ReadUnsanitizedCustomFormat_WithUserActivation) {

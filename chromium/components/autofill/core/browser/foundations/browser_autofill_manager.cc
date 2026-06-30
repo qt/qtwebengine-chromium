@@ -30,6 +30,7 @@
 #include "base/check_op.h"
 #include "base/command_line.h"
 #include "base/containers/adapters.h"
+#include "base/containers/contains.h"
 #include "base/containers/extend.h"
 #include "base/containers/flat_map.h"
 #include "base/containers/map_util.h"
@@ -835,7 +836,7 @@ void ReorderWebauthnFallbackToFooter(std::vector<Suggestion>& suggestions) {
 
   // Without "Manage" suggestions, ensure a separator for the footer exists.
   if (!has_other_management_items &&
-      !std::ranges::contains(suggestions, SuggestionType::kSeparator,
+      !base::Contains(suggestions, SuggestionType::kSeparator,
                              &Suggestion::type)) {
     suggestions.emplace(new_pos, SuggestionType::kSeparator);
   }
@@ -2424,7 +2425,7 @@ void BrowserAutofillManager::DidShowSuggestions(
     return;
   }
 
-  if (std::ranges::contains(shown_suggestion_types, FillingProduct::kCreditCard,
+  if (base::Contains(shown_suggestion_types, FillingProduct::kCreditCard,
                             GetFillingProductFromSuggestionType) &&
       IsCreditCardFidoAuthenticationEnabled()) {
     GetCreditCardAccessManager()->PrepareToFetchCreditCard();

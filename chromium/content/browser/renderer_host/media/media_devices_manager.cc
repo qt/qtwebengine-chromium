@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/location.h"
@@ -1527,7 +1528,7 @@ void MediaDevicesManager::MaybeStopRemovedInputDevices(
        current_snapshot_[static_cast<size_t>(type)]) {
     // If a device was removed, notify the MediaStreamManager to stop all
     // streams using that device.
-    if (!std::ranges::contains(new_snapshot, old_device_info.device_id,
+    if (!base::Contains(new_snapshot, old_device_info.device_id,
                                &blink::WebMediaDeviceInfo::device_id)) {
       stop_removed_input_device_cb_.Run(type, old_device_info);
 

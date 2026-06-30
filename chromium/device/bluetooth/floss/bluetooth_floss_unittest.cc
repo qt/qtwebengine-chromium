@@ -4,6 +4,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "base/logging.h"
 #include "base/memory/raw_ptr.h"
 #include "base/run_loop.h"
@@ -904,7 +905,7 @@ TEST_F(BluetoothFlossTest, StartLowEnergyScanSessionWithScanResult) {
 
   // Simulate a scan result event
   GetScanResult();
-  EXPECT_FALSE(std::ranges::contains(delegate.devices_found_, kTestDeviceAddr));
+  EXPECT_FALSE(base::Contains(delegate.devices_found_, kTestDeviceAddr));
 
   base::RunLoop run_loop;
   // Because of the workaround in BluetoothAdapterFloss::AdvertisementFound
@@ -917,9 +918,9 @@ TEST_F(BluetoothFlossTest, StartLowEnergyScanSessionWithScanResult) {
   GetAdvFound();
   run_loop.Run();
   // The device found should only affect the scanner that causes it.
-  EXPECT_TRUE(std::ranges::contains(delegate.devices_found_, kTestDeviceAddr));
+  EXPECT_TRUE(base::Contains(delegate.devices_found_, kTestDeviceAddr));
   EXPECT_FALSE(
-      std::ranges::contains(delegate2.devices_found_, kTestDeviceAddr));
+      base::Contains(delegate2.devices_found_, kTestDeviceAddr));
 
   // Check that the scanned device is in the devices_ map so clients can
   // access the device.

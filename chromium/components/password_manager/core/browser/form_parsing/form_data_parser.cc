@@ -15,6 +15,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/i18n/case_conversion.h"
 #include "base/memory/raw_ptr.h"
@@ -865,7 +866,7 @@ void ParseUsingBaseHeuristics(
     for (auto it = processed_fields.begin(); it != processed_fields.end();
          ++it) {
       if ((it->is_password || it->is_predicted_as_password) &&
-          std::ranges::contains(password_ids, it->field->renderer_id())) {
+          base::Contains(password_ids, it->field->renderer_id())) {
         first_relevant_password = it;
         break;
       }

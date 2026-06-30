@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/memory/scoped_refptr.h"
@@ -82,7 +83,7 @@ void SharedMemoryVirtualDeviceMojoAdapter::RequestFrameBuffer(
     return;
   }
 
-  if (!std::ranges::contains(known_buffer_ids_, buffer_id)) {
+  if (!base::Contains(known_buffer_ids_, buffer_id)) {
     if (video_frame_handler_.is_bound()) {
       media::mojom::VideoBufferHandlePtr buffer_handle =
           media::mojom::VideoBufferHandle::NewUnsafeShmemRegion(
@@ -120,7 +121,7 @@ void SharedMemoryVirtualDeviceMojoAdapter::OnFrameReadyInBuffer(
     ::media::mojom::VideoFrameInfoPtr frame_info) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   // Unknown buffer ID.
-  if (!std::ranges::contains(known_buffer_ids_, buffer_id)) {
+  if (!base::Contains(known_buffer_ids_, buffer_id)) {
     return;
   }
 

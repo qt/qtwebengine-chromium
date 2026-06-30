@@ -12,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/format_macros.h"
 #include "base/memory/ptr_util.h"
 #include "base/memory/raw_ptr.h"
@@ -540,11 +541,11 @@ TEST_F(TreeSynchronizerTest, SyncSimpleTreeThenDestroy) {
 
   ASSERT_EQ(3u, layer_impl_destruction_list.size());
 
-  EXPECT_TRUE(std::ranges::contains(layer_impl_destruction_list,
+  EXPECT_TRUE(base::Contains(layer_impl_destruction_list,
                                     old_tree_root_layer_id));
-  EXPECT_TRUE(std::ranges::contains(layer_impl_destruction_list,
+  EXPECT_TRUE(base::Contains(layer_impl_destruction_list,
                                     old_tree_first_child_layer_id));
-  EXPECT_TRUE(std::ranges::contains(layer_impl_destruction_list,
+  EXPECT_TRUE(base::Contains(layer_impl_destruction_list,
                                     old_tree_second_child_layer_id));
 }
 

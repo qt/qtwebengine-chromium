@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/time/time.h"
@@ -176,10 +177,10 @@ AcceptCHFrameInterceptor::NeedsObserverCheck(
   bool needs_observer_check = false;
   for (const auto& h : hints) {
     const bool is_in_hints =
-        std::ranges::contains(enabled_client_hints_->hints, h);
+        base::Contains(enabled_client_hints_->hints, h);
     const bool is_in_not_allowed_hints =
         features::kAcceptCHFrameOffloadNotAllowedHints.Get() &&
-        std::ranges::contains(enabled_client_hints_->not_allowed_hints, h);
+        base::Contains(enabled_client_hints_->not_allowed_hints, h);
     const bool is_valid_for_offload = is_in_hints || is_in_not_allowed_hints;
     if (is_in_not_allowed_hints && !is_in_hints) {
       base::UmaHistogramEnumeration(

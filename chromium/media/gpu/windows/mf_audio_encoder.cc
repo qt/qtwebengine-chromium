@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/containers/heap_array.h"
 #include "base/functional/bind.h"
 #include "base/logging.h"
@@ -76,7 +77,7 @@ EncoderStatus::Codes ValidateInputOptions(const AudioEncoder::Options& options,
   if (options.codec != AudioCodec::kAAC)
     return EncoderStatus::Codes::kEncoderUnsupportedCodec;
 
-  if (!std::ranges::contains(kSupportedSampleRates, options.sample_rate)) {
+  if (!base::Contains(kSupportedSampleRates, options.sample_rate)) {
     return EncoderStatus::Codes::kEncoderUnsupportedConfig;
   }
 
@@ -95,7 +96,7 @@ EncoderStatus::Codes ValidateInputOptions(const AudioEncoder::Options& options,
   }
 
   *bitrate = options.bitrate.value_or(kDefaultBitrate);
-  if (!std::ranges::contains(kSupportedBitrates, *bitrate)) {
+  if (!base::Contains(kSupportedBitrates, *bitrate)) {
     return EncoderStatus::Codes::kEncoderUnsupportedConfig;
   }
 

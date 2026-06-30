@@ -16,6 +16,7 @@
 #include "base/check_op.h"
 #include "base/command_line.h"
 #include "base/containers/adapters.h"
+#include "base/containers/contains.h"
 #include "base/debug/dump_without_crashing.h"
 #include "base/feature_list.h"
 #include "base/format_macros.h"
@@ -2053,7 +2054,7 @@ bool TemplateURL::KeepSearchTermsInURL(const GURL& url,
   std::vector<std::string> query_params;
   if (keep_search_intent_params && !data().search_intent_params.empty()) {
     for (net::QueryIterator it(url); !it.IsAtEnd(); it.Advance()) {
-      if (!std::ranges::contains(data().search_intent_params, it.GetKey())) {
+      if (!base::Contains(data().search_intent_params, it.GetKey())) {
         continue;
       }
       query_params.push_back(base::StrCat({it.GetKey(), "=", it.GetValue()}));
@@ -2131,7 +2132,7 @@ void TemplateURL::EncodeSearchTerms(
     std::u16string* encoded_terms,
     std::u16string* encoded_original_query) const {
   std::vector<std::string> encodings(input_encodings());
-  if (!std::ranges::contains(encodings, "UTF-8")) {
+  if (!base::Contains(encodings, "UTF-8")) {
     encodings.push_back("UTF-8");
   }
   for (auto i = encodings.begin(); i != encodings.end(); ++i) {

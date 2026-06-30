@@ -24,6 +24,7 @@
 #include "base/check_op.h"
 #include "base/compiler_specific.h"
 #include "base/containers/circular_deque.h"
+#include "base/containers/contains.h"
 #include "base/containers/flat_set.h"
 #include "base/containers/linked_list.h"
 #include "base/debug/debugger.h"
@@ -799,7 +800,7 @@ void HostResolverManager::InitializeJobKeyAndIPAddress(
       out_job_key.host.HasScheme()) {
     static constexpr std::string_view kSchemesForHttpsQuery[] = {
         url::kHttpScheme, url::kHttpsScheme, url::kWsScheme, url::kWssScheme};
-    if (std::ranges::contains(kSchemesForHttpsQuery,
+    if (base::Contains(kSchemesForHttpsQuery,
                               out_job_key.host.GetScheme())) {
       effective_types.Put(DnsQueryType::HTTPS);
     }

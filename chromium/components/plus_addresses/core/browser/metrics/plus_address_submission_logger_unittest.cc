@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/strings/strcat.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
@@ -135,7 +136,7 @@ class PlusAddressSubmissionLoggerTest
   }
 
   bool VerifyPlusAddress(const std::string& plus_address) {
-    return std::ranges::contains(plus_addresses_, plus_address);
+    return base::Contains(plus_addresses_, plus_address);
   }
 
   signin::IdentityTestEnvironment& identity_env() { return identity_test_env_; }

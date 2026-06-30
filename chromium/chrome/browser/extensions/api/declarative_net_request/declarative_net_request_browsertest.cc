@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "base/auto_reset.h"
+#include "base/containers/contains.h"
 #include "base/containers/to_value_list.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
@@ -2697,7 +2698,7 @@ IN_PROC_BROWSER_TEST_P(DeclarativeNetRequestBrowserTest, RendererCacheCleared) {
           extensions_features::kForceWebRequestProxyForTest);
   EXPECT_EQ(
       expect_request_seen,
-      std::ranges::contains(
+      base::Contains(
           ruleset_manager_observer()->GetAndResetRequestSeen(), observed_url));
 
   // Another request to |url| should not cause a network request for
@@ -2706,7 +2707,7 @@ IN_PROC_BROWSER_TEST_P(DeclarativeNetRequestBrowserTest, RendererCacheCleared) {
   NavigateToURL(url);
   EXPECT_EQ(content::PAGE_TYPE_NORMAL, GetPageType());
   EXPECT_TRUE(WasFrameWithScriptLoaded(GetPrimaryMainFrame()));
-  EXPECT_FALSE(std::ranges::contains(
+  EXPECT_FALSE(base::Contains(
       ruleset_manager_observer()->GetAndResetRequestSeen(), observed_url));
 
   // Now block requests to script.js.
@@ -2720,7 +2721,7 @@ IN_PROC_BROWSER_TEST_P(DeclarativeNetRequestBrowserTest, RendererCacheCleared) {
   NavigateToURL(url);
   EXPECT_EQ(content::PAGE_TYPE_NORMAL, GetPageType());
   EXPECT_FALSE(WasFrameWithScriptLoaded(GetPrimaryMainFrame()));
-  EXPECT_TRUE(std::ranges::contains(
+  EXPECT_TRUE(base::Contains(
       ruleset_manager_observer()->GetAndResetRequestSeen(), observed_url));
 
   // Disable the extension.
@@ -2736,7 +2737,7 @@ IN_PROC_BROWSER_TEST_P(DeclarativeNetRequestBrowserTest, RendererCacheCleared) {
   EXPECT_TRUE(WasFrameWithScriptLoaded(GetPrimaryMainFrame()));
   EXPECT_EQ(
       expect_request_seen,
-      std::ranges::contains(
+      base::Contains(
           ruleset_manager_observer()->GetAndResetRequestSeen(), observed_url));
 }
 

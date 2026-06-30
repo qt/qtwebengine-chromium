@@ -16,6 +16,7 @@
 #include "base/android/scoped_hardware_buffer_fence_sync.h"
 #include "base/android/scoped_hardware_buffer_handle.h"
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/containers/flat_set.h"
 #include "base/debug/crash_logging.h"
 #include "base/debug/dump_without_crashing.h"
@@ -204,7 +205,7 @@ constexpr viz::SharedImageFormat kSupportedFormats[7]{
 // static mechanism like this. We probably need something like
 // gpu::SharedImageCapabilities.texture_target_exception_list.
 bool AHardwareBufferSupportedFormat(viz::SharedImageFormat format) {
-  return std::ranges::contains(kSupportedFormats, format);
+  return base::Contains(kSupportedFormats, format);
 }
 
 // Returns the corresponding AHardwareBuffer format.

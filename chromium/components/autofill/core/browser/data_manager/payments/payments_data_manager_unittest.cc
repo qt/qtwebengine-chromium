@@ -15,6 +15,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/containers/to_vector.h"
 #include "base/memory/raw_ptr.h"
 #include "base/run_loop.h"
@@ -924,7 +925,7 @@ TEST_F(PaymentsDataManagerTest, AddCreditCard_CrazyCharacters) {
 
   ASSERT_EQ(cards.size(), payments_data_manager().GetCreditCards().size());
   for (size_t i = 0; i < cards.size(); ++i) {
-    EXPECT_TRUE(std::ranges::contains(
+    EXPECT_TRUE(base::Contains(
         cards, *payments_data_manager().GetCreditCards()[i]));
   }
 }

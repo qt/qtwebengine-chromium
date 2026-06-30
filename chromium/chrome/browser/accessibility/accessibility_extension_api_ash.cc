@@ -17,6 +17,7 @@
 #include "ash/public/cpp/event_rewriter_controller.h"
 #include "ash/public/cpp/window_tree_host_lookup.h"
 #include "ash/webui/settings/public/constants/routes_util.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/json/json_writer.h"
 #include "base/notreached.h"
@@ -1273,7 +1274,7 @@ AccessibilityPrivateUpdateSwitchAccessBubbleFunction::Run() {
        *(params->actions)) {
     std::string action = accessibility_private::ToString(extension_action);
     // Check that this action is not already in our actions list.
-    if (std::ranges::contains(actions_to_show, action)) {
+    if (base::Contains(actions_to_show, action)) {
       continue;
     }
     actions_to_show.push_back(action);

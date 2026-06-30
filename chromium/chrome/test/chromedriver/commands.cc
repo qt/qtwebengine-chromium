@@ -11,6 +11,7 @@
 #include <list>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/location.h"
@@ -340,7 +341,7 @@ void ExecuteSessionCommandOnSessionThread(
           if (status_tmp.IsError()) {
             status.AddDetails("failed to check if window was closed: " +
                               status_tmp.message());
-          } else if (!std::ranges::contains(tab_view_ids, session->window)) {
+          } else if (!base::Contains(tab_view_ids, session->window)) {
             status = Status(kOk);
           }
         }

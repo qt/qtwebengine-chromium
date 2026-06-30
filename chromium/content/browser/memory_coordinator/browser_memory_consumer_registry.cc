@@ -9,6 +9,7 @@
 
 #include "base/check.h"
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 
 namespace content {
 
@@ -45,7 +46,7 @@ void BrowserMemoryConsumerRegistry::ConsumerGroup::OnUpdateMemoryLimit() {
 
 void BrowserMemoryConsumerRegistry::ConsumerGroup::AddMemoryConsumer(
     base::RegisteredMemoryConsumer consumer) {
-  CHECK(!std::ranges::contains(memory_consumers_, consumer));
+  CHECK(!base::Contains(memory_consumers_, consumer));
   memory_consumers_.push_back(consumer);
 
   // Ensure the added consumer is up to date with the current memory limit

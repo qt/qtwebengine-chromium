@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
 #include "base/notreached.h"
@@ -310,7 +311,7 @@ void Manifest::ValidateManifest(std::vector<InstallWarning>* warnings) const {
     if (!manifest_feature_provider->GetFeature(item.first)) {
       // There are a set of keys that are not handled by Chrome, but that we
       // explicitly allow. Don't add a warning for those keys.
-      if (std::ranges::contains(keys::kIgnoredUnrecognizedKeys, item.first)) {
+      if (base::Contains(keys::kIgnoredUnrecognizedKeys, item.first)) {
         continue;
       }
 

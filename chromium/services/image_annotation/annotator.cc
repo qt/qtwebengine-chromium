@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "base/base64.h"
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/json/json_reader.h"
@@ -1096,9 +1097,9 @@ std::string Annotator::ComputePreferredLanguage(
 
   // If the page language is a server language and it's in the list of accept
   // languages or top languages for this user, return that.
-  if (std::ranges::contains(server_languages_, page_language) &&
-      (std::ranges::contains(accept_languages, page_language) ||
-       std::ranges::contains(top_languages, page_language))) {
+  if (base::Contains(server_languages_, page_language) &&
+      (base::Contains(accept_languages, page_language) ||
+       base::Contains(top_languages, page_language))) {
     return page_language;
   }
 
@@ -1108,8 +1109,8 @@ std::string Annotator::ComputePreferredLanguage(
   // top language and a server language.
   if (!top_languages.empty()) {
     for (const std::string& accept_language : accept_languages) {
-      if (std::ranges::contains(server_languages_, accept_language) &&
-          std::ranges::contains(top_languages, accept_language)) {
+      if (base::Contains(server_languages_, accept_language) &&
+          base::Contains(top_languages, accept_language)) {
         return accept_language;
       }
     }
@@ -1118,14 +1119,14 @@ std::string Annotator::ComputePreferredLanguage(
   // Sometimes the top languages are empty. Try any accept language that's
   // a server language.
   for (const std::string& accept_language : accept_languages) {
-    if (std::ranges::contains(server_languages_, accept_language)) {
+    if (base::Contains(server_languages_, accept_language)) {
       return accept_language;
     }
   }
 
   // If that still fails, try any top language that's a server language.
   for (const std::string& top_language : top_languages) {
-    if (std::ranges::contains(server_languages_, top_language)) {
+    if (base::Contains(server_languages_, top_language)) {
       return top_language;
     }
   }
@@ -1192,7 +1193,7 @@ void Annotator::OnServerLangsResponseReceived(
     new_server_languages.push_back(lang.GetString());
   }
 
-  if (!std::ranges::contains(new_server_languages, "en")) {
+  if (!base::Contains(new_server_languages, "en")) {
     DVLOG(1) << "Server langs don't even include 'en', rejecting";
     return;
   }

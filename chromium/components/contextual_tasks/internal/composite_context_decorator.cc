@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/task/single_thread_task_runner.h"
 #include "components/contextual_tasks/internal/fallback_title_context_decorator.h"
@@ -26,7 +27,7 @@ constexpr contextual_tasks::ContextualTaskContextSource kEarlyDecorators[] = {
 };
 
 bool IsEarlyDecorator(contextual_tasks::ContextualTaskContextSource source) {
-  return std::ranges::contains(kEarlyDecorators, source);
+  return base::Contains(kEarlyDecorators, source);
 }
 }  // namespace
 

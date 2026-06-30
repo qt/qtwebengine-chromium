@@ -12,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/containers/small_map.h"
 #include "base/functional/bind.h"
 #include "base/memory/ptr_util.h"
@@ -517,7 +518,7 @@ void ControllerPresentationServiceDelegateImpl::ReconnectPresentation(
   if (local_presentation_manager->IsLocalPresentation(presentation_id)) {
     auto* route = local_presentation_manager->GetRoute(presentation_id);
 
-    if (!route || !std::ranges::contains(presentation_urls,
+    if (!route || !base::Contains(presentation_urls,
                                          route->media_source().url())) {
       return;
     }
@@ -628,7 +629,7 @@ void ControllerPresentationServiceDelegateImpl::OnPresentationResponse(
     mojom::RoutePresentationConnectionPtr connection,
     const RouteRequestResult& result) {
   if (!result.route() ||
-      !std::ranges::contains(presentation_request.presentation_urls,
+      !base::Contains(presentation_request.presentation_urls,
                              result.presentation_url())) {
     return;
   }

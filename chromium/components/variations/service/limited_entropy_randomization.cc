@@ -11,6 +11,7 @@
 #include <limits>
 
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/debug/crash_logging.h"
 #include "base/debug/dump_without_crashing.h"
 #include "base/logging.h"
@@ -111,7 +112,7 @@ const Layer* FindLayerForStudy(const LayerByIdMap& layer_by_id_map,
   }
   const Layer* layer = iter->second;
   for (const uint32_t member_id : layer_member_ids) {
-    if (!std::ranges::contains(layer->members(), member_id,
+    if (!base::Contains(layer->members(), member_id,
                                &Layer::LayerMember::id)) {
       SCOPED_CRASH_KEY_NUMBER(SR_CRASH_KEY, "ref_member_id", member_id);
       LogSeedRejectionReason(

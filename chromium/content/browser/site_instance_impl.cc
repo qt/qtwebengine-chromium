@@ -9,6 +9,7 @@
 #include <tuple>
 
 #include "base/check_is_test.h"
+#include "base/containers/contains.h"
 #include "base/debug/crash_logging.h"
 #include "base/debug/dump_without_crashing.h"
 #include "base/no_destructor.h"
@@ -339,7 +340,7 @@ scoped_refptr<SiteInstanceImpl> SiteInstanceImpl::CreateForTesting(
 // static
 bool SiteInstanceImpl::ShouldAssignSiteForUrlInfo(const UrlInfo& url_info) {
   // Only empty document schemes can leave SiteInstances unassigned.
-  if (!std::ranges::contains(url::GetEmptyDocumentSchemes(),
+  if (!base::Contains(url::GetEmptyDocumentSchemes(),
                              url_info.url.GetScheme())) {
     return true;
   }

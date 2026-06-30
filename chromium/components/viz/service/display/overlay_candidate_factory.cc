@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <variant>
 
+#include "base/containers/contains.h"
 #include "build/build_config.h"
 #include "cc/base/math_util.h"
 #include "components/viz/common/quads/aggregated_render_pass_draw_quad.h"
@@ -356,7 +357,7 @@ OverlayCandidate::CandidateStatus OverlayCandidateFactory::FromDrawQuadResource(
         resource_provider_->IsLowLatencyRendering(resource_id);
 
     if (!context_.is_delegated_context &&
-        !std::ranges::contains(kOverlayFormats, candidate.format)) {
+        !base::Contains(kOverlayFormats, candidate.format)) {
       return CandidateStatus::kFailFormat;
     }
   }

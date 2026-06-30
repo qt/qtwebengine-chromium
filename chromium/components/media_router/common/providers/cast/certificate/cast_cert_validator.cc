@@ -13,6 +13,7 @@
 #include <utility>
 
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/containers/span.h"
 #include "base/logging.h"
 #include "base/path_service.h"
@@ -165,7 +166,7 @@ void DetermineDeviceCertificatePolicy(
   for (const auto& cert : result_path->certs) {
     if (cert->has_policy_oids()) {
       const std::vector<bssl::der::Input>& policies = cert->policy_oids();
-      if (std::ranges::contains(policies, AudioOnlyPolicyOid())) {
+      if (base::Contains(policies, AudioOnlyPolicyOid())) {
         audio_only = true;
         break;
       }

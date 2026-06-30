@@ -11,6 +11,7 @@
 #include <string>
 #include <string_view>
 
+#include "base/containers/contains.h"
 #include "base/no_destructor.h"
 #include "components/optimization_guide/core/model_execution/multimodal_message.h"
 #include "components/optimization_guide/core/model_execution/substitution.h"
@@ -156,7 +157,7 @@ bool SafetyConfig::IsTextInUnsupportedOrUndeterminedLanguage(
     return true;
   }
 
-  if (!std::ranges::contains(allowed_languages, safety_info->language->code)) {
+  if (!base::Contains(allowed_languages, safety_info->language->code)) {
     // Unsupported language.
     return true;
   }

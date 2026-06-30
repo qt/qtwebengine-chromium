@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <string>
 
+#include "base/containers/contains.h"
 #include "base/files/file_path.h"
 #include "base/functional/callback_helpers.h"
 #include "base/strings/utf_string_conversions.h"
@@ -125,20 +126,20 @@ TEST_F(FileSystemChooserTest, AcceptsMimeTypes) {
   ASSERT_EQ(2u, dialog_params_.file_types->extensions.size());
   EXPECT_EQ(1, dialog_params_.file_type_index);
 
-  EXPECT_TRUE(std::ranges::contains(dialog_params_.file_types->extensions[0],
+  EXPECT_TRUE(base::Contains(dialog_params_.file_types->extensions[0],
                                     FILE_PATH_LITERAL("text")));
-  EXPECT_TRUE(std::ranges::contains(dialog_params_.file_types->extensions[0],
+  EXPECT_TRUE(base::Contains(dialog_params_.file_types->extensions[0],
                                     FILE_PATH_LITERAL("txt")));
 
-  EXPECT_TRUE(std::ranges::contains(dialog_params_.file_types->extensions[1],
+  EXPECT_TRUE(base::Contains(dialog_params_.file_types->extensions[1],
                                     FILE_PATH_LITERAL("gif")));
-  EXPECT_TRUE(std::ranges::contains(dialog_params_.file_types->extensions[1],
+  EXPECT_TRUE(base::Contains(dialog_params_.file_types->extensions[1],
                                     FILE_PATH_LITERAL("jpg")));
-  EXPECT_TRUE(std::ranges::contains(dialog_params_.file_types->extensions[1],
+  EXPECT_TRUE(base::Contains(dialog_params_.file_types->extensions[1],
                                     FILE_PATH_LITERAL("jpeg")));
-  EXPECT_TRUE(std::ranges::contains(dialog_params_.file_types->extensions[1],
+  EXPECT_TRUE(base::Contains(dialog_params_.file_types->extensions[1],
                                     FILE_PATH_LITERAL("png")));
-  EXPECT_TRUE(std::ranges::contains(dialog_params_.file_types->extensions[1],
+  EXPECT_TRUE(base::Contains(dialog_params_.file_types->extensions[1],
                                     FILE_PATH_LITERAL("tiff")));
 
   ASSERT_EQ(2u,
@@ -202,9 +203,9 @@ TEST_F(FileSystemChooserTest, AcceptsExtensionsAndMimeTypes) {
             FILE_PATH_LITERAL("text"));
   EXPECT_EQ(dialog_params_.file_types->extensions[0][1],
             FILE_PATH_LITERAL("jpg"));
-  EXPECT_TRUE(std::ranges::contains(dialog_params_.file_types->extensions[0],
+  EXPECT_TRUE(base::Contains(dialog_params_.file_types->extensions[0],
                                     FILE_PATH_LITERAL("gif")));
-  EXPECT_TRUE(std::ranges::contains(dialog_params_.file_types->extensions[0],
+  EXPECT_TRUE(base::Contains(dialog_params_.file_types->extensions[0],
                                     FILE_PATH_LITERAL("jpeg")));
   EXPECT_EQ(1, std::ranges::count(dialog_params_.file_types->extensions[0],
                                   FILE_PATH_LITERAL("jpg")));

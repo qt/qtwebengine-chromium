@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "base/memory/ptr_util.h"
 #include "base/metrics/field_trial_params.h"
 #include "content/browser/preloading/prerender/prerender_final_status.h"
@@ -38,13 +39,13 @@ bool ShouldFetchKeepAliveCancelPrerenderingOnMixedContent() {
 }
 
 bool IsSecureScheme(const std::string& scheme) {
-  return std::ranges::contains(url::GetSecureSchemes(), scheme);
+  return base::Contains(url::GetSecureSchemes(), scheme);
 }
 
 // Should return the same value as `SecurityOrigin::IsLocal()` and
 // `blink::SchemeRegistry::ShouldTreatURLSchemeAsCorsEnabled()`.
 bool ShouldTreatURLSchemeAsCorsEnabled(const GURL& url) {
-  return std::ranges::contains(url::GetCorsEnabledSchemes(), url.GetScheme());
+  return base::Contains(url::GetCorsEnabledSchemes(), url.GetScheme());
 }
 
 // Should return the same value as the resource URL checks result from

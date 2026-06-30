@@ -12,6 +12,7 @@
 #include <unordered_map>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/memory/raw_ptr_exclusion.h"
 #include "base/trace_event/trace_event.h"
 #include "base/trace_event/trace_id_helper.h"
@@ -201,7 +202,7 @@ void TaskGraphWorkQueue::ScheduleTasks(NamespaceToken token, TaskGraph* graph) {
       continue;
 
     // Skip if already running.
-    if (std::ranges::contains(task_namespace.running_tasks, node.task.get(),
+    if (base::Contains(task_namespace.running_tasks, node.task.get(),
                               &CategorizedTask::second)) {
       continue;
     }
@@ -231,12 +232,12 @@ void TaskGraphWorkQueue::ScheduleTasks(NamespaceToken token, TaskGraph* graph) {
       continue;
 
     // Skip if already running.
-    if (std::ranges::contains(task_namespace.running_tasks, node.task.get(),
+    if (base::Contains(task_namespace.running_tasks, node.task.get(),
                               &CategorizedTask::second)) {
       continue;
     }
 
-    DCHECK(!std::ranges::contains(task_namespace.completed_tasks,
+    DCHECK(!base::Contains(task_namespace.completed_tasks,
                                   node.task.get()));
     node.task->state().DidCancel();
     task_namespace.completed_tasks.push_back(node.task);
@@ -343,7 +344,7 @@ bool TaskGraphWorkQueue::DecrementNodeDependencies(
       TaskNamespace::Vector& ready_to_run_namespaces =
           ready_to_run_namespaces_[node.category];
 
-      DCHECK(!std::ranges::contains(ready_to_run_namespaces, task_namespace));
+      DCHECK(!base::Contains(ready_to_run_namespaces, task_namespace));
       // TODO(paint-dev): The following line could be:
       //   if (rebuild_heap) {
       //     ready_to_run_namspaces.push_heap();

@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <optional>
 
+#include "base/containers/contains.h"
 #include "base/containers/fixed_flat_map.h"
 #include "base/containers/map_util.h"
 #include "base/containers/to_vector.h"
@@ -75,7 +76,7 @@ bool ValidateDefaultAgainstSupported(const std::optional<T>& enum_default,
     return true;
   } else if (enum_default && !enum_supported.empty()) {
     // If both are non-empty, then the latter must contain the former.
-    return std::ranges::contains(enum_supported, *enum_default);
+    return base::Contains(enum_supported, *enum_default);
   } else {
     // If only one is populated, then there are some values that we don't
     // support.

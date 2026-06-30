@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "base/check_is_test.h"
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
@@ -951,7 +952,7 @@ EmbeddedWorkerInstance::CreateFactoryBundle(
     // redirects to data: URLs in ServiceWorkerGlobalScope
     // (https://crbug.com/1334249).
     if (scheme != url::kDataScheme &&
-        !std::ranges::contains(GetServiceWorkerSchemes(), scheme)) {
+        !base::Contains(GetServiceWorkerSchemes(), scheme)) {
       continue;
     }
 

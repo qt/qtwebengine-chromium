@@ -15,6 +15,7 @@
 
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/files/file_util.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
@@ -634,7 +635,7 @@ void DevToolsHttpHandler::OnJsonRequest(
   std::vector<std::string_view> query_components = base::SplitStringPiece(
       query, "&", base::KEEP_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
 
-  bool for_tab = std::ranges::contains(query_components, "for_tab");
+  bool for_tab = base::Contains(query_components, "for_tab");
 
   if (command == "list") {
     DevToolsManager* manager = DevToolsManager::GetInstance();

@@ -8,6 +8,7 @@
 #include <cinttypes>
 #include <limits>
 
+#include "base/containers/contains.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/strings/to_string.h"
 #include "base/trace_event/common/trace_event_common.h"
@@ -57,7 +58,7 @@ bool VerifyParameterValues(const T& value,
                            String error_message_base_base,
                            Vector<T> supported_values,
                            String* js_error_message) {
-  if (std::ranges::contains(supported_values, value)) {
+  if (base::Contains(supported_values, value)) {
     return true;
   }
 

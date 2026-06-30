@@ -16,6 +16,7 @@
 #include "base/apple/osstatus_logging.h"
 #include "base/apple/scoped_cftyperef.h"
 #include "base/callback_list.h"
+#include "base/containers/contains.h"
 #include "base/containers/flat_map.h"
 #include "base/containers/to_vector.h"
 #include "base/functional/bind.h"
@@ -309,9 +310,9 @@ bool IsNotAcceptableIntermediate(const bssl::ParsedCertificate* cert,
   // actually care about.
   if (cert->has_extended_key_usage() &&
       CFEqual(policy_oid, kSecPolicyAppleSSL) &&
-      !std::ranges::contains(cert->extended_key_usage(),
+      !base::Contains(cert->extended_key_usage(),
                              bssl::der::Input(bssl::kAnyEKU)) &&
-      !std::ranges::contains(cert->extended_key_usage(),
+      !base::Contains(cert->extended_key_usage(),
                              bssl::der::Input(bssl::kServerAuth))) {
     return true;
   }

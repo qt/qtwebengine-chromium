@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/functional/bind.h"
@@ -139,7 +140,7 @@ base::DictValue GetPdfCapabilities(
           .WithNameMaybeBasedOnSize(/*custom_display_name=*/"",
                                     /*vendor_id=*/"")
           .Build();
-  if (!std::ranges::contains(kPdfMedia, default_media.size_name)) {
+  if (!base::Contains(kPdfMedia, default_media.size_name)) {
     default_media =
         cloud_devices::printer::MediaBuilder()
             .WithStandardName(locale == "en-US" ? MediaSize::NA_LETTER

@@ -14,6 +14,7 @@
 
 #include "base/barrier_closure.h"
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/location.h"
@@ -260,7 +261,7 @@ void UsbServiceImpl::OnDeviceList(
   // Look for new and existing devices.
   for (auto& device : *devices) {
     // Ignore devices that have failed enumeration previously.
-    if (std::ranges::contains(ignored_devices_, device.get(),
+    if (base::Contains(ignored_devices_, device.get(),
                               &ScopedLibusbDeviceRef::get)) {
       continue;
     }

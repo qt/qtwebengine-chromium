@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/live_node_list_base.h"
 
@@ -17,7 +18,7 @@ static_assert(kNumNodeListInvalidationTypes <= sizeof(unsigned) * 8,
 void LiveNodeListRegistry::Add(const LiveNodeListBase* list,
                                NodeListInvalidationType type) {
   Entry entry = {list, MaskForInvalidationType(type)};
-  DCHECK(!std::ranges::contains(data_, entry));
+  DCHECK(!base::Contains(data_, entry));
   data_.push_back(entry);
   mask_ |= entry.second;
 }

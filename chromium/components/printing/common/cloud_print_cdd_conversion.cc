@@ -11,6 +11,7 @@
 #include <utility>
 
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/memory/ptr_util.h"
 #include "base/notreached.h"
 #include "base/strings/string_number_conversions.h"
@@ -312,7 +313,7 @@ void StoreMarginsUnique(const printing::PaperMargins& margins_um,
   printer::Margins printer_margins(
       margins_um.top_margin_um, margins_um.right_margin_um,
       margins_um.bottom_margin_um, margins_um.left_margin_um);
-  if (!std::ranges::contains(margins_storage, printer_margins)) {
+  if (!base::Contains(margins_storage, printer_margins)) {
     margins_storage.emplace_back(std::move(printer_margins));
   }
 }
