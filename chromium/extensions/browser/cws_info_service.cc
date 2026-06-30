@@ -9,6 +9,7 @@
 #include <string>
 #include <string_view>
 
+#include "base/containers/contains.h"
 #include "base/containers/fixed_flat_map.h"
 #include "base/containers/queue.h"
 #include "base/features.h"
@@ -186,7 +187,7 @@ base::DictValue GetDictFromStoreMetadataProto(const StoreMetadata* metadata) {
 
     const auto& proto_labels = metadata->labels();
     for (const auto* label : kLabels) {
-      dict.Set(label, std::ranges::contains(proto_labels, label));
+      dict.Set(label, base::Contains(proto_labels, label));
     }
   }
 

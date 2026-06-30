@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/notreached.h"
@@ -115,7 +116,7 @@ bool PDFiumOnDemandSearchifier::IsPageScheduled(uint32_t page_index) const {
     return true;
   }
 
-  return std::ranges::contains(pages_queue_, page_index);
+  return base::Contains(pages_queue_, page_index);
 }
 
 void PDFiumOnDemandSearchifier::SchedulePage(uint32_t page_index) {

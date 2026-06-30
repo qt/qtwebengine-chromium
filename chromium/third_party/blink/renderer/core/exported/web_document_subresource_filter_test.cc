@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/containers/contains.h"
 #include "third_party/blink/public/platform/web_document_subresource_filter.h"
 
 #include <algorithm>
@@ -36,7 +37,7 @@ class TestDocumentSubresourceFilter : public WebDocumentSubresourceFilter {
                            network::mojom::RequestDestination,
                            subresource_filter::ScopedRule* out_rule) override {
     String resource_path = KURL(resource_url).GetPath().ToString();
-    if (!std::ranges::contains(queried_subresource_paths_, resource_path)) {
+    if (!base::Contains(queried_subresource_paths_, resource_path)) {
       queried_subresource_paths_.push_back(resource_path);
     }
     String resource_string = resource_url.GetString();

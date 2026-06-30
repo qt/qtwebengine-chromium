@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/numerics/checked_math.h"
 #include "base/strings/string_util.h"
 #include "base/strings/string_view_util.h"
@@ -148,7 +149,7 @@ InputReader::ReadTypeAndArgument() {
   // during `static_cast<CBORType>`, it's safer to validate the type beforehand.
   uint8_t type_byte = (*first_byte & cbor::constants::kMajorTypeMask) >>
                       cbor::constants::kMajorTypeBitShift;
-  if (!std::ranges::contains(kAcceptedCBORTypes, type_byte,
+  if (!base::Contains(kAcceptedCBORTypes, type_byte,
                              &std::to_underlying<CBORType>)) {
     return std::nullopt;
   }

@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/debug/dump_without_crashing.h"
 #include "base/feature_list.h"
 #include "base/strings/string_util.h"
@@ -228,7 +229,7 @@ bool ValidateNonEmptyValuesForImportedProfile(const AutofillProfile& profile,
 bool IsMinimumAddress(const AutofillProfile& profile, LogBuffer* log_buffer) {
   const std::vector<std::string>& country_codes =
       CountryDataMap::GetInstance()->country_codes();
-  if (!std::ranges::contains(
+  if (!base::Contains(
           country_codes,
           base::UTF16ToUTF8(profile.GetRawInfo(ADDRESS_HOME_COUNTRY)))) {
     return false;
@@ -238,7 +239,7 @@ bool IsMinimumAddress(const AutofillProfile& profile, LogBuffer* log_buffer) {
   return std::ranges::none_of(
       kMinimumAddressRequirementViolations,
       [&](AddressImportRequirement address_requirement_violation) {
-        return std::ranges::contains(address_requirements,
+        return base::Contains(address_requirements,
                                      address_requirement_violation);
       });
 }

@@ -12,6 +12,7 @@
 #include <string>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/location.h"
@@ -1901,7 +1902,7 @@ class TextureLayerUpdateAfterPaintEventTest : public LayerTreeTest,
   }
 
   void CommitCompleteOnThread(LayerTreeHostImpl* host_impl) override {
-    EXPECT_TRUE(std::ranges::contains(
+    EXPECT_TRUE(base::Contains(
         host_impl->sync_tree()->LayersThatShouldPushProperties(),
         host_impl->sync_tree()->LayerById(texture_layer_id_)));
     EXPECT_TRUE(static_cast<TextureLayerImpl*>(

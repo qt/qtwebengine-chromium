@@ -20,6 +20,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/containers/fixed_flat_set.h"
 #include "base/containers/heap_array.h"
 #include "base/features.h"
@@ -1635,7 +1636,7 @@ void MediaFoundationVideoEncodeAccelerator::SetSWRateControl() {
 #endif  // BUILDFLAG(ENABLE_PLATFORM_HEVC)
       VideoCodec::kAV1,
   };
-  if (!std::ranges::contains(kCodecsHaveSWBRC, codec_)) {
+  if (!base::Contains(kCodecsHaveSWBRC, codec_)) {
     return;
   }
 

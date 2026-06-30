@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "base/logging.h"
 #include "third_party/boringssl/src/pki/parser.h"
 
@@ -194,7 +195,7 @@ QwacEkuStatus Has2QwacEku(const bssl::ParsedCertificate* cert) {
   if (!cert->has_extended_key_usage()) {
     return QwacEkuStatus::kNotQwac;
   }
-  if (!std::ranges::contains(cert->extended_key_usage(),
+  if (!base::Contains(cert->extended_key_usage(),
                              bssl::der::Input(kIdKpTlsBinding))) {
     return QwacEkuStatus::kNotQwac;
   }

@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <queue>
 
+#include "base/containers/contains.h"
 #include "base/logging.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_tokenizer.h"
@@ -398,7 +399,7 @@ VectorDatabaseInMemory::MakeUrlDataIterator(
           continue;
         }
         if (!url_id_filter_.empty() &&
-            !std::ranges::contains(url_id_filter_, iterator_->url_id)) {
+            !base::Contains(url_id_filter_, iterator_->url_id)) {
           iterator_++;
           continue;
         }

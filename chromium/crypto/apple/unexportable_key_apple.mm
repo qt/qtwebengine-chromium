@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/containers/contains.h"
 #include "crypto/unexportable_key.h"
 
 #import <CoreFoundation/CoreFoundation.h>
@@ -409,7 +410,7 @@ std::unique_ptr<KeyClass> GenerateKeySlowlyImpl(
                                                 base::BlockingType::WILL_BLOCK);
 
   // The Secure Enclave only supports elliptic curve keys.
-  if (!std::ranges::contains(acceptable_algorithms,
+  if (!base::Contains(acceptable_algorithms,
                              SignatureVerifier::ECDSA_SHA256)) {
     return nullptr;
   }
@@ -567,7 +568,7 @@ std::optional<SignatureVerifier::SignatureAlgorithm>
 UnexportableKeyProviderApple::SelectAlgorithm(
     base::span<const SignatureVerifier::SignatureAlgorithm>
         acceptable_algorithms) {
-  return std::ranges::contains(acceptable_algorithms,
+  return base::Contains(acceptable_algorithms,
                                SignatureVerifier::ECDSA_SHA256)
              ? std::optional(SignatureVerifier::ECDSA_SHA256)
              : std::nullopt;

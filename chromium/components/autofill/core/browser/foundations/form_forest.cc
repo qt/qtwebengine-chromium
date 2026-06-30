@@ -16,6 +16,7 @@
 
 #include "base/check.h"
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/containers/flat_set.h"
 #include "base/containers/span.h"
 #include "base/containers/stack.h"
@@ -204,7 +205,7 @@ void FormForest::UpdateTreeOfRendererForm(FormData* form,
     *old_form = std::move(*form);
     form = old_form;
   } else {
-    DCHECK(!std::ranges::contains(frame->child_forms, form->renderer_id(),
+    DCHECK(!base::Contains(frame->child_forms, form->renderer_id(),
                                   &FormData::renderer_id));
     form->set_fields({});
     child_frames_changed = false;

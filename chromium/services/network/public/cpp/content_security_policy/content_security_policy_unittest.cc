@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "base/memory/raw_ref.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
@@ -108,7 +109,7 @@ class CSPContextTest : public CSPContext {
   }
 
   bool SchemeShouldBypassCSP(std::string_view scheme) override {
-    return std::ranges::contains(scheme_to_bypass_, scheme);
+    return base::Contains(scheme_to_bypass_, scheme);
   }
 
  private:

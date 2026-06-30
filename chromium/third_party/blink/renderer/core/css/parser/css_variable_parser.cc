@@ -8,6 +8,7 @@
 #include <optional>
 
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "third_party/blink/renderer/core/css/css_attr_type.h"
 #include "third_party/blink/renderer/core/css/css_syntax_component.h"
 #include "third_party/blink/renderer/core/css/css_syntax_definition.h"
@@ -772,7 +773,7 @@ StringView CSSVariableParser::StripTrailingWhitespaceAndComments(
   // (i.e. not CSSOM, where we just get a string), we know we can't
   // have unfinished comments, so consider piping that knowledge all
   // the way through here.
-  if (text.Is8Bit() && !std::ranges::contains(text.Span8(), '/')) {
+  if (text.Is8Bit() && !base::Contains(text.Span8(), '/')) {
     // No comments, so we can strip whitespace only.
     // SAFETY: empty strings short-circuited in &&-expression means that
     // the last character is valid.

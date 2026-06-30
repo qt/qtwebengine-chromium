@@ -7,6 +7,7 @@
 #include <algorithm>
 
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/metrics/field_trial_params.h"
 #include "base/no_destructor.h"
@@ -281,8 +282,8 @@ bool IsApplicationLocaleSupportedByJourneys(
   // primary language subtag, e.g. "en" from "en-US" to match any element of
   // the list.
   return allowlist.empty() ||
-         std::ranges::contains(allowlist, application_locale) ||
-         std::ranges::contains(allowlist,
+         base::Contains(allowlist, application_locale) ||
+         base::Contains(allowlist,
                                l10n_util::GetLanguage(application_locale));
 }
 

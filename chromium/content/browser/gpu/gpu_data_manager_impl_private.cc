@@ -5,6 +5,7 @@
 
 #include "content/browser/gpu/gpu_data_manager_impl_private.h"
 
+#include "base/containers/contains.h"
 #include "base/notreached.h"
 #include "build/build_config.h"
 
@@ -1177,7 +1178,7 @@ void GpuDataManagerImplPrivate::UpdateGpuFeatureInfo(
       // GPU mode to Vulkan as well.
       // TODO(crbug.com/511049071): add a dedicated
       // HARDWARE_MODE_GRAPHITE_OR_VULKAN
-      DCHECK(!std::ranges::contains(fallback_modes_,
+      DCHECK(!base::Contains(fallback_modes_,
                                     gpu::GpuMode::HARDWARE_VULKAN));
       gpu_mode_ = gpu::GpuMode::HARDWARE_VULKAN;
     } else {
@@ -1388,7 +1389,7 @@ void GpuDataManagerImplPrivate::UpdateGpuPreferences(
     // However, the browser process shouldn't fall back from HARDWARE_GRAPHITE
     // to HARDWARE_VULKAN after a crash.
     DCHECK(
-        !std::ranges::contains(fallback_modes_, gpu::GpuMode::HARDWARE_VULKAN));
+        !base::Contains(fallback_modes_, gpu::GpuMode::HARDWARE_VULKAN));
   }
 
   bool has_software_mode = false;

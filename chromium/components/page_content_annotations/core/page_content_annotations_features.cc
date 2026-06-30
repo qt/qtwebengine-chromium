@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "base/containers/contains.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/field_trial_params.h"
 #include "base/numerics/safe_conversions.h"
@@ -72,8 +73,8 @@ bool IsSupportedLocale(const std::string& locale,
 
   // Otherwise, the locale or the primary language subtag must match an element
   // of the allowlist.
-  return std::ranges::contains(supported, locale) ||
-         std::ranges::contains(supported, l10n_util::GetLanguage(locale));
+  return base::Contains(supported, locale) ||
+         base::Contains(supported, l10n_util::GetLanguage(locale));
 }
 
 bool IsSupportedCountry(const std::string& country_code,

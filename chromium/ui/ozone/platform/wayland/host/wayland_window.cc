@@ -13,6 +13,7 @@
 #include <utility>
 
 #include "base/auto_reset.h"
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/logging.h"
@@ -223,7 +224,7 @@ void WaylandWindow::RemoveBubble(WaylandBubble* window) {
 }
 
 void WaylandWindow::ActivateBubble(WaylandBubble* window) {
-  CHECK(!window || std::ranges::contains(child_bubbles_, window));
+  CHECK(!window || base::Contains(child_bubbles_, window));
   CHECK(!window || (window->AsWaylandBubble() &&
                     window->AsWaylandBubble()->activatable()));
   if (active_bubble_ == window) {

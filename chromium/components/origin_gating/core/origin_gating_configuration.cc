@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 
 namespace origin_gating {
@@ -74,7 +75,7 @@ OriginGatingConfiguration::OriginGatingConfiguration(
     : predicates_(predicates), use_site_keyed_cache_(use_site_keyed_cache) {
   CHECK(std::ranges::none_of(predicates, [](const PredicateConfiguration& pc) {
     const DecisionSource* source = std::get_if<DecisionSource>(&pc.predicate());
-    return source && std::ranges::contains(kForbiddenPredicates, *source);
+    return source && base::Contains(kForbiddenPredicates, *source);
   }));
 }
 

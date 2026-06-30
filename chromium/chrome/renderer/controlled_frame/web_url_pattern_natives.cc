@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "base/containers/to_value_list.h"
 #include "extensions/renderer/script_context.h"
 #include "third_party/blink/public/common/safe_url_pattern.h"
@@ -36,7 +37,7 @@ bool WouldBeValidMatchPattern(const blink::SafeUrlPattern& safe_url_pattern) {
       protocol_part.type == liburlpattern::PartType::kFixed;
   const bool protocol_allowed =
       protocol_is_fixed &&
-      std::ranges::contains(kAllowedProtocols, protocol_part.value);
+      base::Contains(kAllowedProtocols, protocol_part.value);
   if (!protocol_is_wildcard && !protocol_allowed) {
     return false;
   }

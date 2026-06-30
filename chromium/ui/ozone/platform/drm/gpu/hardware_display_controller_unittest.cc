@@ -14,6 +14,7 @@
 #include <string>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/files/file_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
@@ -1443,7 +1444,7 @@ TEST_F(HardwareDisplayControllerTest, PageflipAfterModeset) {
   EXPECT_TRUE(ModesetWithPlanes(planes));
 
   for (const auto& plane : planes) {
-    EXPECT_TRUE(std::ranges::contains(drm_->plane_manager()
+    EXPECT_TRUE(base::Contains(drm_->plane_manager()
                                           ->GetCrtcStateForCrtcId(primary_crtc_)
                                           .modeset_framebuffers,
                                       plane.buffer));
@@ -1468,7 +1469,7 @@ TEST_F(HardwareDisplayControllerTest, PageflipBeforeModeset) {
 
   EXPECT_TRUE(ModesetWithPlanes(planes));
   for (const auto& plane : planes) {
-    EXPECT_TRUE(std::ranges::contains(drm_->plane_manager()
+    EXPECT_TRUE(base::Contains(drm_->plane_manager()
                                           ->GetCrtcStateForCrtcId(primary_crtc_)
                                           .modeset_framebuffers,
                                       plane.buffer));
@@ -1481,7 +1482,7 @@ TEST_F(HardwareDisplayControllerTest, PageflipBeforeModeset) {
                    ->GetCrtcStateForCrtcId(primary_crtc_)
                    .modeset_framebuffers.empty());
   for (const auto& plane : planes) {
-    EXPECT_TRUE(std::ranges::contains(drm_->plane_manager()
+    EXPECT_TRUE(base::Contains(drm_->plane_manager()
                                           ->GetCrtcStateForCrtcId(primary_crtc_)
                                           .modeset_framebuffers,
                                       plane.buffer));
@@ -1498,7 +1499,7 @@ TEST_F(HardwareDisplayControllerTest, MultiplePlanesModeset) {
                 .modeset_framebuffers.size(),
             2UL);
   for (const auto& plane : modeset_planes) {
-    EXPECT_TRUE(std::ranges::contains(drm_->plane_manager()
+    EXPECT_TRUE(base::Contains(drm_->plane_manager()
                                           ->GetCrtcStateForCrtcId(primary_crtc_)
                                           .modeset_framebuffers,
                                       plane.buffer));

@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/containers/flat_set.h"
 #include "base/debug/crash_logging.h"
 #include "base/debug/dump_without_crashing.h"
@@ -54,10 +55,10 @@ static bool LayerHasValidPropertyTreeIndices(const LayerImpl* layer) {
 
 static bool LayerWillPushProperties(const LayerTreeImpl* tree,
                                     const LayerImpl* layer) {
-  return std::ranges::contains(tree->LayersThatShouldPushProperties(), layer) ||
+  return base::Contains(tree->LayersThatShouldPushProperties(), layer) ||
          // TODO(crbug.com/40335690): Stop always pushing PictureLayerImpl
          // properties.
-         std::ranges::contains(tree->picture_layers(), layer);
+         base::Contains(tree->picture_layers(), layer);
 }
 #endif
 

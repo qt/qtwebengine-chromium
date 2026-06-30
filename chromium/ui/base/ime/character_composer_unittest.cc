@@ -10,6 +10,7 @@
 #include <memory>
 #include <string>
 
+#include "base/containers/contains.h"
 #include "base/strings/utf_string_conversions.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/events/event.h"
@@ -411,7 +412,7 @@ TEST_F(CharacterComposerTest, MainTableIsCorrectlyOrdered) {
           EXPECT_LT(previous_key, key) << index;
         previous_key = key;
         // Verify that the internal link is valid.
-        EXPECT_TRUE(std::ranges::contains(subtrees, value)) << index;
+        EXPECT_TRUE(base::Contains(subtrees, value)) << index;
         index += 2;
       }
       // Check the leaf subtable.

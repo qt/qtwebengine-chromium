@@ -43,6 +43,7 @@
 #include "third_party/blink/renderer/platform/wtf/text/atomic_string.h"
 #include "third_party/blink/renderer/platform/wtf/text/atomic_string_hash.h"
 #include "third_party/blink/renderer/platform/wtf/text/character_visitor.h"
+#include "base/containers/contains.h"
 
 namespace blink {
 
@@ -367,7 +368,7 @@ void AtomicHTMLToken::InitializeAttributes(
         continue;
       }
     } else {
-      if (std::ranges::contains(attributes_, name.LocalName(),
+      if (base::Contains(attributes_, name.LocalName(),
                                 &Attribute::LocalName)) {
         duplicate_attribute_ = true;
         continue;

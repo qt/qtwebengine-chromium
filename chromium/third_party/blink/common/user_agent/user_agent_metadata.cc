@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/containers/contains.h"
 #include "third_party/blink/public/common/user_agent/user_agent_metadata.h"
 
 #include <algorithm>
@@ -196,7 +197,7 @@ std::optional<UserAgentMetadata> UserAgentMetadata::Demarshal(
 
 // static
 bool UserAgentMetadata::IsValidFormFactor(std::string_view form_factor) {
-  return std::ranges::contains(kValidFormFactors, form_factor);
+  return base::Contains(kValidFormFactors, form_factor);
 }
 
 bool UserAgentBrandVersion::operator==(const UserAgentBrandVersion& a) const {

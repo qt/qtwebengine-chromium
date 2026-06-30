@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/lazy_instance.h"
 #include "extensions/browser/api/api_resource.h"
@@ -323,7 +324,7 @@ void UDPSocket::JoinGroup(const std::string& address,
   }
 
   std::string normalized_address = ip.ToString();
-  if (std::ranges::contains(multicast_groups_, normalized_address)) {
+  if (base::Contains(multicast_groups_, normalized_address)) {
     std::move(callback).Run(net::ERR_ADDRESS_INVALID);
     return;
   }
@@ -343,7 +344,7 @@ void UDPSocket::LeaveGroup(const std::string& address,
   }
 
   std::string normalized_address = ip.ToString();
-  if (!std::ranges::contains(multicast_groups_, normalized_address)) {
+  if (!base::Contains(multicast_groups_, normalized_address)) {
     std::move(callback).Run(net::ERR_ADDRESS_INVALID);
     return;
   }

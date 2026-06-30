@@ -11,6 +11,7 @@
 #include "base/barrier_closure.h"
 #include "base/check_op.h"
 #include "base/containers/adapters.h"
+#include "base/containers/contains.h"
 #include "base/functional/callback_helpers.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros_local.h"
@@ -549,7 +550,7 @@ void PageContentAnnotationsService::OnZeroSuggestResponseUpdated(
   std::vector<std::string> related_searches;
   for (const auto& result : suggest_results) {
     // Suggestions with HIVEMIND subtype are considered "related searches".
-    if (std::ranges::contains(result.subtypes,
+    if (base::Contains(result.subtypes,
                               omnibox::SuggestSubtype::SUBTYPE_HIVEMIND)) {
       related_searches.push_back(
           base::UTF16ToUTF8(base::CollapseWhitespace(result.suggestion, true)));

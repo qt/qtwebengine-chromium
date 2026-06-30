@@ -7,6 +7,7 @@
 #include <string_view>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/scoped_run_loop_timeout.h"
 #include "base/test/test_timeouts.h"
@@ -185,7 +186,7 @@ class ChromeURLDataManagerWebUITrustedTypesTest
 
   void CheckNoTrustedTypesViolation(std::string_view url) {
     std::unique_ptr<base::test::ScopedRunLoopTimeout> timeout;
-    if (std::ranges::contains(kSlowChromeUrls, url)) {
+    if (base::Contains(kSlowChromeUrls, url)) {
       timeout = std::make_unique<base::test::ScopedRunLoopTimeout>(
           FROM_HERE, GetSlowTestTimeout());
     }
@@ -206,7 +207,7 @@ class ChromeURLDataManagerWebUITrustedTypesTest
 
   void CheckTrustedTypesEnabled(std::string_view url) {
     std::unique_ptr<base::test::ScopedRunLoopTimeout> timeout;
-    if (std::ranges::contains(kSlowChromeUrls, url)) {
+    if (base::Contains(kSlowChromeUrls, url)) {
       timeout = std::make_unique<base::test::ScopedRunLoopTimeout>(
           FROM_HERE, GetSlowTestTimeout());
     }

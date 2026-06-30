@@ -7,6 +7,7 @@
 #include <algorithm>
 
 #include "base/barrier_closure.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/memory/ptr_util.h"
@@ -207,7 +208,7 @@ TEST_P(SessionStorageNamespaceImplTest, MetadataLoad) {
   std::vector<blink::mojom::KeyValuePtr> data =
       test::GetAllSync(storage_area_1.get());
   EXPECT_EQ(1ul, data.size());
-  EXPECT_TRUE(std::ranges::contains(
+  EXPECT_TRUE(base::Contains(
       data, blink::mojom::KeyValue::New(StdStringToUint8Vector("key1"),
                                         StdStringToUint8Vector("data1"))));
 
@@ -245,10 +246,10 @@ TEST_P(SessionStorageNamespaceImplTest, MetadataLoadWithMapOperations) {
   std::vector<blink::mojom::KeyValuePtr> data =
       test::GetAllSync(storage_area_1.get());
   EXPECT_EQ(2ul, data.size());
-  EXPECT_TRUE(std::ranges::contains(
+  EXPECT_TRUE(base::Contains(
       data, blink::mojom::KeyValue::New(StdStringToUint8Vector("key1"),
                                         StdStringToUint8Vector("data1"))));
-  EXPECT_TRUE(std::ranges::contains(
+  EXPECT_TRUE(base::Contains(
       data, blink::mojom::KeyValue::New(StdStringToUint8Vector("key2"),
                                         StdStringToUint8Vector("data2"))));
 
@@ -301,10 +302,10 @@ TEST_P(SessionStorageNamespaceImplTest, CloneBeforeBind) {
   std::vector<blink::mojom::KeyValuePtr> data =
       test::GetAllSync(storage_area_2.get());
   EXPECT_EQ(2ul, data.size());
-  EXPECT_TRUE(std::ranges::contains(
+  EXPECT_TRUE(base::Contains(
       data, blink::mojom::KeyValue::New(StdStringToUint8Vector("key1"),
                                         StdStringToUint8Vector("data1"))));
-  EXPECT_TRUE(std::ranges::contains(
+  EXPECT_TRUE(base::Contains(
       data, blink::mojom::KeyValue::New(StdStringToUint8Vector("key2"),
                                         StdStringToUint8Vector("data2"))));
 
@@ -398,13 +399,13 @@ TEST_P(SessionStorageNamespaceImplTest, CloneAfterBind) {
   std::vector<blink::mojom::KeyValuePtr> data =
       test::GetAllSync(storage_area_n2_o1.get());
   EXPECT_EQ(1ul, data.size());
-  EXPECT_TRUE(std::ranges::contains(
+  EXPECT_TRUE(base::Contains(
       data, blink::mojom::KeyValue::New(StdStringToUint8Vector("key1"),
                                         StdStringToUint8Vector("data1"))));
 
   data = test::GetAllSync(storage_area_n2_o2.get());
   EXPECT_EQ(1ul, data.size());
-  EXPECT_TRUE(std::ranges::contains(
+  EXPECT_TRUE(base::Contains(
       data, blink::mojom::KeyValue::New(StdStringToUint8Vector("key2"),
                                         StdStringToUint8Vector("data2"))));
 

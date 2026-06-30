@@ -12,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/i18n/file_util_icu.h"
 #include "base/i18n/time_formatting.h"
@@ -910,7 +911,7 @@ BookmarkManagerPrivateOpenInNewWindowFunction::RunOnReady() {
 
   // Drop entries whose URL was filtered out by the incognito check above.
   std::erase_if(url_and_ids, [&urls](const UrlAndId& url_and_id) {
-    return !std::ranges::contains(urls, url_and_id.url);
+    return !base::Contains(urls, url_and_id.url);
   });
   DCHECK_EQ(urls.size(), url_and_ids.size());
 

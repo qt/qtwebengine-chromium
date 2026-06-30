@@ -10,6 +10,7 @@
 
 #include "base/check_is_test.h"
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/numerics/safe_conversions.h"
 #include "content/browser/devtools/devtools_instrumentation.h"
@@ -696,7 +697,7 @@ PreloadingDecider::GetMergedSpeculationTagsFromSuitableCandidates(
   // Iterate through all suitable candidates and merge their tags.
   for (const auto& candidate_pair : suitable_candidates) {
     for (const auto& tag : candidate_pair.second->tags) {
-      if (!std::ranges::contains(merged_tags, tag)) {
+      if (!base::Contains(merged_tags, tag)) {
         merged_tags.push_back(tag);
       }
     }

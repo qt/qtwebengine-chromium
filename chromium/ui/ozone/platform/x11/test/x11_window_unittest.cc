@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/containers/contains.h"
 #include "ui/ozone/platform/x11/x11_window.h"
 
 #include <algorithm>
@@ -159,7 +160,7 @@ class WMStateWaiter : public X11PropertyChangeWaiter {
     std::vector<x11::Atom> hints;
     if (x11::Connection::Get()->GetArrayProperty(
             xwindow(), x11::GetAtom("_NET_WM_STATE"), &hints)) {
-      return std::ranges::contains(hints, x11::GetAtom(hint_)) !=
+      return base::Contains(hints, x11::GetAtom(hint_)) !=
              wait_till_set_;
     }
     return true;

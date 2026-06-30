@@ -12,6 +12,7 @@
 #include <type_traits>
 
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/functional/callback_helpers.h"
 #include "base/notreached.h"
@@ -372,7 +373,7 @@ XrResult OpenXrApiWrapper::InitializeSystem() {
       view_config_types.data()));
 
   for (const auto& view_config_type : kSecondaryViewConfigurations) {
-    if (std::ranges::contains(view_config_types, view_config_type)) {
+    if (base::Contains(view_config_types, view_config_type)) {
       OpenXrViewConfiguration view_config;
       RETURN_IF_XR_FAILED(InitializeViewConfig(view_config_type, view_config));
       secondary_view_configs_.emplace(view_config_type, std::move(view_config));
@@ -410,7 +411,7 @@ OpenXrApiWrapper::PickEnvironmentBlendModeForSession(
 
   switch (session_mode) {
     case device::mojom::XRSessionMode::kImmersiveVr:
-      if (std::ranges::contains(supported_blend_modes,
+      if (base::Contains(supported_blend_modes,
                                 XR_ENVIRONMENT_BLEND_MODE_OPAQUE))
         blend_mode_ = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
       break;
@@ -418,10 +419,10 @@ OpenXrApiWrapper::PickEnvironmentBlendModeForSession(
       // Prefer Alpha Blend when both Alpha Blend and Additive modes are
       // supported. This only concerns video see through devices with an
       // Additive compatibility mode
-      if (std::ranges::contains(supported_blend_modes,
+      if (base::Contains(supported_blend_modes,
                                 XR_ENVIRONMENT_BLEND_MODE_ALPHA_BLEND)) {
         blend_mode_ = XR_ENVIRONMENT_BLEND_MODE_ALPHA_BLEND;
-      } else if (std::ranges::contains(supported_blend_modes,
+      } else if (base::Contains(supported_blend_modes,
                                        XR_ENVIRONMENT_BLEND_MODE_ADDITIVE)) {
         blend_mode_ = XR_ENVIRONMENT_BLEND_MODE_ADDITIVE;
       }
@@ -503,7 +504,7 @@ XrResult OpenXrApiWrapper::EnableSupportedFeatures(
   for (const auto& feature : requested_features) {
     bool is_enabled = false;
     bool is_required =
-        std::ranges::contains(session_options_->required_features, feature);
+        base::Contains(session_options_->required_features, feature);
 
     switch (feature) {
       case mojom::XRSessionFeature::REF_SPACE_LOCAL_FLOOR:
@@ -700,9 +701,9 @@ XrResult OpenXrApiWrapper::InitSession(
   // session prior to any swap chain images being activated because the
   // associated shared images need to be created with WebGPU-specific flags.
   const bool webgpu_session =
-      std::ranges::contains(session_options_->required_features,
+      base::Contains(session_options_->required_features,
                             device::mojom::XRSessionFeature::WEBGPU) ||
-      std::ranges::contains(session_options_->optional_features,
+      base::Contains(session_options_->optional_features,
                             device::mojom::XRSessionFeature::WEBGPU);
   graphics_binding_->OnSessionCreated(local_space_, webgpu_session);
 
@@ -714,9 +715,9 @@ XrResult OpenXrApiWrapper::InitSession(
   RETURN_IF_XR_FAILED(CreateSwapchain());
 
   bool enable_hand_tracking =
-      std::ranges::contains(session_options_->required_features,
+      base::Contains(session_options_->required_features,
                             device::mojom::XRSessionFeature::HAND_INPUT) ||
-      std::ranges::contains(session_options_->optional_features,
+      base::Contains(session_options_->optional_features,
                             device::mojom::XRSessionFeature::HAND_INPUT);
 
   RETURN_IF_XR_FAILED(OpenXRInputHelper::CreateOpenXRInputHelper(

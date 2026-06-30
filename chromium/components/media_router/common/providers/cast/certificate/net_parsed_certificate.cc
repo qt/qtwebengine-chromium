@@ -7,6 +7,7 @@
 #include <algorithm>
 
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/strings/string_view_util.h"
 #include "crypto/evp.h"
 #include "net/cert/time_conversions.h"
@@ -192,7 +193,7 @@ bool NetParsedCertificate::HasPolicyOid(const openscreen::ByteView& oid) const {
     return false;
   }
   const std::vector<bssl::der::Input>& policies = cert_->policy_oids();
-  return std::ranges::contains(policies, bssl::der::Input(oid));
+  return base::Contains(policies, bssl::der::Input(oid));
 }
 
 void NetParsedCertificate::SetNotBeforeTimeForTesting(time_t not_before) {

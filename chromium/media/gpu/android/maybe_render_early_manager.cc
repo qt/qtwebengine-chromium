@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/task/sequenced_task_runner.h"
@@ -38,7 +39,7 @@ class GpuMaybeRenderEarlyImpl {
         &GpuMaybeRenderEarlyImpl::OnImageUnused, weak_factory_.GetWeakPtr()));
 
     DCHECK(
-        !std::ranges::contains(images_, codec_image_holder->codec_image_raw()));
+        !base::Contains(images_, codec_image_holder->codec_image_raw()));
     images_.push_back(codec_image_holder->codec_image_raw());
 
     // Add |image| to our current image group.  This makes sure that any overlay
@@ -55,7 +56,7 @@ class GpuMaybeRenderEarlyImpl {
  private:
   void OnImageUnused(CodecImage* image) {
     // |image| is no longer used, so try to render a new image speculatively.
-    DCHECK(std::ranges::contains(images_, image));
+    DCHECK(base::Contains(images_, image));
     // Remember that |image_group_| might not be the same one that |image|
     // belongs to.
     std::erase(images_, image);

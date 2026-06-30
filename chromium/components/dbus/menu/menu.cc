@@ -9,6 +9,7 @@
 #include <memory>
 #include <set>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/i18n/rtl.h"
@@ -556,7 +557,7 @@ void DbusMenu::WriteMenuItem(const MenuItem* item,
   struct_writer.OpenArray("{sv}", &properties_writer);
   for (const auto& property : item->properties) {
     if (property_filter.empty() ||
-        std::ranges::contains(property_filter, property.first)) {
+        base::Contains(property_filter, property.first)) {
       dbus::MessageWriter dict_entry_writer(nullptr);
       properties_writer.OpenDictEntry(&dict_entry_writer);
       dict_entry_writer.AppendString(property.first);

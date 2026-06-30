@@ -9,6 +9,7 @@
 #include <optional>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/containers/span.h"
 #include "base/memory/raw_ptr.h"
 #include "base/strings/strcat.h"
@@ -257,7 +258,7 @@ class FilterTabControllerTest : public testing::Test {
     for (const auto& slice : kAllRetentionSlices) {
       std::string name = base::StrCat(
           {"MultistepFilter.ApplicationOutcome.ByRetention.", slice});
-      if (std::ranges::contains(expected_slices, slice)) {
+      if (base::Contains(expected_slices, slice)) {
         histogram_tester.ExpectUniqueSample(name, expected_outcome,
                                             expected_count);
       } else {
@@ -276,7 +277,7 @@ class FilterTabControllerTest : public testing::Test {
           {"MultistepFilter.Acceptance.InitialCue.ByRetention.", slice});
       std::string overall_name =
           base::StrCat({"MultistepFilter.Acceptance.ByRetention.", slice});
-      if (std::ranges::contains(expected_slices, slice)) {
+      if (base::Contains(expected_slices, slice)) {
         histogram_tester.ExpectUniqueSample(initial_name, expected_decision,
                                             expected_count);
         histogram_tester.ExpectUniqueSample(overall_name, expected_decision,

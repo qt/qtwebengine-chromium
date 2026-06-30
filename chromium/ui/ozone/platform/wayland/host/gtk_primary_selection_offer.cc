@@ -8,6 +8,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "base/files/file_util.h"
 #include "ui/base/clipboard/clipboard_constants.h"
 
@@ -27,7 +28,7 @@ GtkPrimarySelectionOffer::~GtkPrimarySelectionOffer() {
 }
 
 base::ScopedFD GtkPrimarySelectionOffer::Receive(const std::string& mime_type) {
-  if (!std::ranges::contains(mime_types(), mime_type)) {
+  if (!base::Contains(mime_types(), mime_type)) {
     return base::ScopedFD();
   }
 

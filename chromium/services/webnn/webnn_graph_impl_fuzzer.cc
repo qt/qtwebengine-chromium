@@ -17,6 +17,7 @@
 
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/containers/flat_map.h"
 #include "base/containers/span.h"
 #include "base/debug/asan_service.h"
@@ -2525,7 +2526,7 @@ std::optional<ReduceDescriptors> SetUpReduceDescriptors(
   std::vector<uint32_t> axes;
   for (uint32_t i = 0; i < params.num_axes; ++i) {
     uint32_t axis = params.axes[i] % params.rank;
-    if (!std::ranges::contains(axes, axis)) {
+    if (!base::Contains(axes, axis)) {
       axes.push_back(axis);
     }
   }
@@ -4178,7 +4179,7 @@ void WebNNGraphImplFuzzerImpl<BaseFixture>::LayerNormalization(
   std::vector<uint32_t> axes;
   for (uint32_t i = 0; i < params.num_axes; ++i) {
     uint32_t axis = params.axes[i] % params.rank;
-    if (!std::ranges::contains(axes, axis)) {
+    if (!base::Contains(axes, axis)) {
       axes.push_back(axis);
     }
   }
@@ -5054,7 +5055,7 @@ void WebNNGraphImplFuzzerImpl<BaseFixture>::Reverse(ReverseParams params,
   std::vector<uint32_t> axes;
   for (uint32_t i = 0; i < params.num_axes; ++i) {
     uint32_t axis = params.axes[i] % params.rank;
-    if (!std::ranges::contains(axes, axis)) {
+    if (!base::Contains(axes, axis)) {
       axes.push_back(axis);
     }
   }

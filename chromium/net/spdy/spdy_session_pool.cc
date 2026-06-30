@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/containers/span.h"
 #include "base/functional/bind.h"
 #include "base/metrics/histogram_macros.h"
@@ -905,7 +906,7 @@ bool SpdySessionPool::OnHostResolutionCompleteShared(
   // If there are no associated ALPN protocols, it is TCP-based and thus would
   // have been eligible for connecting with HTTP/2.
   if (!metadata.supported_protocol_alpns.empty() &&
-      !std::ranges::contains(metadata.supported_protocol_alpns, "h2")) {
+      !base::Contains(metadata.supported_protocol_alpns, "h2")) {
     return false;
   }
   for (const auto& address : ip_endpoints) {

@@ -10,6 +10,7 @@
 #include <memory>
 #include <string>
 
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/format_macros.h"
@@ -4334,11 +4335,11 @@ IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, QueryWithHostPermission) {
 
     std::optional<int> first_tab_id = first_tab_info.GetDict().FindInt("id");
     ASSERT_TRUE(first_tab_id);
-    EXPECT_TRUE(std::ranges::contains(expected_tabs_ids, *first_tab_id));
+    EXPECT_TRUE(base::Contains(expected_tabs_ids, *first_tab_id));
 
     std::optional<int> third_tab_id = third_tab_info.GetDict().FindInt("id");
     ASSERT_TRUE(third_tab_id);
-    EXPECT_TRUE(std::ranges::contains(expected_tabs_ids, *third_tab_id));
+    EXPECT_TRUE(base::Contains(expected_tabs_ids, *third_tab_id));
   }
 }
 

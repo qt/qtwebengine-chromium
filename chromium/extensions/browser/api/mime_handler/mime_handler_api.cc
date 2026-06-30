@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/strings/strcat.h"
@@ -110,7 +111,7 @@ MimeHandlerAbortAndFallbackToNativeHandlerFunction::
 
 ExtensionFunction::ResponseAction
 MimeHandlerAbortAndFallbackToNativeHandlerFunction::Run() {
-  if (std::ranges::contains(MimeTypesHandler::GetMIMETypeAllowlist(),
+  if (base::Contains(MimeTypesHandler::GetMIMETypeAllowlist(),
                             extension_id())) {
     return RespondNow(
         Error("abortAndFallbackToNativeHandler is not available "

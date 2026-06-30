@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/containers/to_vector.h"
 #include "base/notreached.h"
 #include "base/strings/strcat.h"
@@ -326,7 +327,7 @@ std::vector<ProfileValueDifference> GetProfileDifferenceForUi(
                      EMAIL_ADDRESS, PHONE_HOME_WHOLE_NUMBER});
 
   std::erase_if(differences_for_ui, [](const ProfileValueDifference& diff) {
-    return !std::ranges::contains(kPriorityOrder, diff.type);
+    return !base::Contains(kPriorityOrder, diff.type);
   });
 
   auto get_priority = [](FieldType type) -> size_t {

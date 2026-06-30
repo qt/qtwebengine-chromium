@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "base/base_paths.h"
+#include "base/containers/contains.h"
 #include "base/files/file_path.h"
 #include "base/json/json_file_value_serializer.h"
 #include "base/path_service.h"
@@ -273,7 +274,7 @@ void EnsureOnlyPermittedFlagsNeverExpire() {
 
   for (const auto& entry : metadata) {
     if (entry.second.expiry_milestone == -1 &&
-        !std::ranges::contains(listed_flags, entry.first)) {
+        !base::Contains(listed_flags, entry.first)) {
       missing_flags.push_back(entry.first);
     }
   }

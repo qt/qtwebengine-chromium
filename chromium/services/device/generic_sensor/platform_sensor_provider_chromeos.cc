@@ -9,6 +9,7 @@
 #include <map>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/strings/string_number_conversions.h"
@@ -552,7 +553,7 @@ void PlatformSensorProviderChromeOS::DetermineLightSensor() {
 
   for (const auto& sensor : sensors_) {
     if (sensor.second.ignored ||
-        !std::ranges::contains(sensor.second.types,
+        !base::Contains(sensor.second.types,
                                mojom::SensorType::AMBIENT_LIGHT))
       continue;
 

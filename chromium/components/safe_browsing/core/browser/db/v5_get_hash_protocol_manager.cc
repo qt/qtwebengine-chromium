@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/strings/strcat.h"
@@ -419,7 +420,7 @@ V5GetHashProtocolManager::DetermineMostSevereThreatForLocalChecks(
       // full hash (based on a local list match of the prefix).
       SBThreatType result_sb_threat_type =
           v5_search_hashes_util::MapFullHashDetailToSbThreatType(detail);
-      if (std::ranges::contains(relevant_sb_threat_types,
+      if (base::Contains(relevant_sb_threat_types,
                                 result_sb_threat_type)) {
         filtered_details.push_back(&detail);
       }

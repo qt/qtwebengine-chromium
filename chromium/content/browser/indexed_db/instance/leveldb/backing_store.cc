@@ -20,6 +20,7 @@
 
 #include "base/check.h"
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/containers/span.h"
 #include "base/dcheck_is_on.h"
 #include "base/files/file.h"
@@ -3056,7 +3057,7 @@ StatusOr<IndexedDBKey> BackingStore::Transaction::GetFirstPrimaryKeyForIndexKey(
 StatusOr<bool> BackingStore::DatabaseExists(std::u16string_view database_name) {
   return GetDatabaseNames().transform(
       [&](const std::vector<std::u16string>& names) {
-        return std::ranges::contains(names, database_name);
+        return base::Contains(names, database_name);
       });
 }
 

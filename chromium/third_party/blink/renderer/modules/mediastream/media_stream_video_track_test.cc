@@ -11,6 +11,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/functional/callback.h"
 #include "base/functional/callback_helpers.h"
 #include "base/memory/ptr_util.h"
@@ -1395,7 +1396,7 @@ class MediaStreamVideoTrackCaptureVersionTest
   void ExpectCalls(const std::vector<CaptureVersionCb*>& expected_callbacks) {
     for (CaptureVersionCb& callback : callbacks_) {
       const int times =
-          std::ranges::contains(expected_callbacks, &callback) ? 1 : 0;
+          base::Contains(expected_callbacks, &callback) ? 1 : 0;
       EXPECT_CALL(callback, Call()).Times(times);
     }
   }

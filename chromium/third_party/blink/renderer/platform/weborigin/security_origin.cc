@@ -36,6 +36,7 @@
 #include <string_view>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "net/base/schemeful_site.h"
 #include "net/base/url_util.h"
@@ -129,7 +130,7 @@ static bool ShouldTreatAsOpaqueOrigin(const KURL& url) {
             relevant_url.ProtocolIs("ftp")) &&
            relevant_url.Host().empty()));
 
-  if (std::ranges::contains(url::GetNoAccessSchemes(),
+  if (base::Contains(url::GetNoAccessSchemes(),
                             relevant_url.Protocol().Ascii()))
     return true;
 
@@ -138,7 +139,7 @@ static bool ShouldTreatAsOpaqueOrigin(const KURL& url) {
     // A temporary exception is made for non-standard local schemes.
     // TODO: Migrate "content:" and "externalfile:" to be standard schemes, and
     // remove the local scheme exception.
-    if (std::ranges::contains(url::GetLocalSchemes(),
+    if (base::Contains(url::GetLocalSchemes(),
                               relevant_url.Protocol().Ascii()))
       return false;
 
@@ -494,7 +495,7 @@ bool SecurityOrigin::CanDisplay(const KURL& url) const {
            SecurityPolicy::IsOriginAccessToURLAllowed(this, url);
   }
 
-  if (std::ranges::contains(url::GetLocalSchemes(), protocol.Ascii())) {
+  if (base::Contains(url::GetLocalSchemes(), protocol.Ascii())) {
     return CanLoadLocalResources() ||
            SecurityPolicy::IsOriginAccessToURLAllowed(this, url);
   }
@@ -540,7 +541,7 @@ void SecurityOrigin::BlockLocalAccessFromLocalOrigin() {
 }
 
 bool SecurityOrigin::IsLocal() const {
-  return std::ranges::contains(url::GetLocalSchemes(), protocol_.Ascii());
+  return base::Contains(url::GetLocalSchemes(), protocol_.Ascii());
 }
 
 bool SecurityOrigin::IsLocalhost() const {

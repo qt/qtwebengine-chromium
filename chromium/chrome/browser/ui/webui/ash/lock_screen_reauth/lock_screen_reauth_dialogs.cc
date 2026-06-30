@@ -10,6 +10,7 @@
 
 #include "ash/constants/webui_url_constants.h"
 #include "base/check_deref.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/json/json_writer.h"
@@ -515,7 +516,7 @@ bool LockScreenStartReauthDialog::Matches(content::WebContents* web_contents) {
   // are open in the user's active session. We use NavigationController objects
   // for comparison because `LoginHandler` uses them as the source of
   // proxy-related notifications.
-  return std::ranges::contains(webui()->GetWebContents()->GetInnerWebContents(),
+  return base::Contains(webui()->GetWebContents()->GetInnerWebContents(),
                                web_contents);
 }
 

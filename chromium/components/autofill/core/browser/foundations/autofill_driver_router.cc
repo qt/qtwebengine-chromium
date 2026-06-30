@@ -18,6 +18,7 @@
 #include "base/check.h"
 #include "base/check_deref.h"
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/containers/flat_set.h"
 #include "base/containers/span.h"
 #include "base/containers/to_vector.h"
@@ -257,7 +258,7 @@ void AutofillDriverRouter::CaretMovedInFormField(
   form_forest_.UpdateTreeOfRendererForm(std::move(form), source);
 
   const FormData& browser_form = form_forest_.GetBrowserForm(form_id);
-  if (!std::ranges::contains(browser_form.fields(), field_id,
+  if (!base::Contains(browser_form.fields(), field_id,
                              &FormFieldData::global_id)) {
     // To avoid very large flattened forms, UpdateTreeOfRendererForm() may have
     // cut the tree into two and, as a result, may have lost some fields. We
@@ -282,7 +283,7 @@ void AutofillDriverRouter::TextFieldValueChanged(
   TriggerFormExtractionExcept(source);
 
   const FormData& browser_form = form_forest_.GetBrowserForm(form_id);
-  if (!std::ranges::contains(browser_form.fields(), field_id,
+  if (!base::Contains(browser_form.fields(), field_id,
                              &FormFieldData::global_id)) {
     // To avoid very large flattened forms, UpdateTreeOfRendererForm() may have
     // cut the tree into two and, as a result, may have lost some fields. We
@@ -305,7 +306,7 @@ void AutofillDriverRouter::TextFieldDidScroll(
   TriggerFormExtractionExcept(source);
 
   const FormData& browser_form = form_forest_.GetBrowserForm(form_id);
-  if (!std::ranges::contains(browser_form.fields(), field_id,
+  if (!base::Contains(browser_form.fields(), field_id,
                              &FormFieldData::global_id)) {
     // To avoid very large flattened forms, UpdateTreeOfRendererForm() may have
     // cut the tree into two and, as a result, may have lost some fields. We
@@ -328,7 +329,7 @@ void AutofillDriverRouter::SelectControlSelectionChanged(
   TriggerFormExtractionExcept(source);
 
   const FormData& browser_form = form_forest_.GetBrowserForm(form_id);
-  if (!std::ranges::contains(browser_form.fields(), field_id,
+  if (!base::Contains(browser_form.fields(), field_id,
                              &FormFieldData::global_id)) {
     // To avoid very large flattened forms, UpdateTreeOfRendererForm() may have
     // cut the tree into two and, as a result, may have lost some fields. We
@@ -358,7 +359,7 @@ void AutofillDriverRouter::AskForValuesToFill(
   TriggerFormExtractionExcept(source);
 
   const FormData& browser_form = form_forest_.GetBrowserForm(form_id);
-  if (!std::ranges::contains(browser_form.fields(), field_id,
+  if (!base::Contains(browser_form.fields(), field_id,
                              &FormFieldData::global_id)) {
     // To avoid very large flattened forms, UpdateTreeOfRendererForm() may have
     // cut the tree into two and, as a result, may have lost some fields. We
@@ -443,7 +444,7 @@ void AutofillDriverRouter::FocusOnFormField(
   TriggerFormExtractionExcept(source);
 
   const FormData& browser_form = form_forest_.GetBrowserForm(form_id);
-  if (!std::ranges::contains(browser_form.fields(), field_id,
+  if (!base::Contains(browser_form.fields(), field_id,
                              &FormFieldData::global_id)) {
     // To avoid very large flattened forms, UpdateTreeOfRendererForm() may have
     // cut the tree into two and, as a result, may have lost some fields. We
@@ -489,7 +490,7 @@ void AutofillDriverRouter::FormWithEmailVerificationTokenSubmitted(
   form_forest_.UpdateTreeOfRendererForm(std::move(form), source);
 
   const FormData& browser_form = form_forest_.GetBrowserForm(form_id);
-  if (!std::ranges::contains(browser_form.fields(), field_id,
+  if (!base::Contains(browser_form.fields(), field_id,
                              &FormFieldData::global_id)) {
     // To avoid very large flattened forms, UpdateTreeOfRendererForm() may have
     // cut the tree into two and, as a result, may have lost some fields. We
@@ -513,7 +514,7 @@ void AutofillDriverRouter::DidDetectJavaScriptAutofill(
   form_forest_.UpdateTreeOfRendererForm(std::move(form), source);
 
   const FormData& browser_form = form_forest_.GetBrowserForm(form_id);
-  if (!std::ranges::contains(browser_form.fields(), trigger_field_id,
+  if (!base::Contains(browser_form.fields(), trigger_field_id,
                              &FormFieldData::global_id)) {
     // To avoid very large flattened forms, UpdateTreeOfRendererForm() may have
     // cut the tree into two and, as a result, may have lost some fields. We
@@ -537,7 +538,7 @@ void AutofillDriverRouter::SelectFieldOptionsDidChange(
   TriggerFormExtractionExcept(source);
 
   const FormData& browser_form = form_forest_.GetBrowserForm(form_id);
-  if (!std::ranges::contains(browser_form.fields(), field_id,
+  if (!base::Contains(browser_form.fields(), field_id,
                              &FormFieldData::global_id)) {
     // To avoid very large flattened forms, UpdateTreeOfRendererForm() may have
     // cut the tree into two and, as a result, may have lost some fields. We
@@ -562,7 +563,7 @@ void AutofillDriverRouter::JavaScriptChangedAutofilledValue(
   TriggerFormExtractionExcept(source);
 
   const FormData& browser_form = form_forest_.GetBrowserForm(form_id);
-  if (!std::ranges::contains(browser_form.fields(), field_id,
+  if (!base::Contains(browser_form.fields(), field_id,
                              &FormFieldData::global_id)) {
     // To avoid very large flattened forms, UpdateTreeOfRendererForm() may have
     // cut the tree into two and, as a result, may have lost some fields. We

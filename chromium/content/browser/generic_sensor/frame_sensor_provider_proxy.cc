@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/no_destructor.h"
 #include "base/notreached.h"
@@ -137,7 +138,7 @@ void FrameSensorProviderProxy::GetSensor(device::mojom::SensorType type,
 
     // Check our global static cache to see if we already know the hardware is
     // missing.
-    if (std::ranges::contains(GetUnavailableSensorsCache(), type)) {
+    if (base::Contains(GetUnavailableSensorsCache(), type)) {
       return;
     }
 
@@ -204,7 +205,7 @@ void FrameSensorProviderProxy::OnHardwareCheckCompleted(
     device::mojom::SensorInitParamsPtr params) {
   if (result != device::mojom::SensorCreationResult::SUCCESS) {
     if (result == device::mojom::SensorCreationResult::ERROR_NOT_AVAILABLE) {
-      if (!std::ranges::contains(GetUnavailableSensorsCache(), type)) {
+      if (!base::Contains(GetUnavailableSensorsCache(), type)) {
         GetUnavailableSensorsCache().push_back(type);
       }
     }
@@ -241,7 +242,7 @@ void FrameSensorProviderProxy::OnHardwareCheckForBlockedSensor(
     device::mojom::SensorCreationResult result,
     device::mojom::SensorInitParamsPtr params) {
   if (result == device::mojom::SensorCreationResult::ERROR_NOT_AVAILABLE) {
-    if (!std::ranges::contains(GetUnavailableSensorsCache(), type)) {
+    if (!base::Contains(GetUnavailableSensorsCache(), type)) {
       GetUnavailableSensorsCache().push_back(type);
     }
     // No need to update PSCS since requested_sensor_has_hardware_ defaults to

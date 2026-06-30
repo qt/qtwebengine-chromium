@@ -7,6 +7,7 @@
 #include <algorithm>
 
 #include "base/base64.h"
+#include "base/containers/contains.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/time/time.h"
@@ -80,9 +81,9 @@ void SimpleScanRunner::Start(std::vector<std::string> mime_types,
   success_ = false;
 
   bool should_use_virtual_usb_printer = false;
-  if (std::ranges::contains(mime_types_, kTestingMimeType)) {
+  if (base::Contains(mime_types_, kTestingMimeType)) {
     should_use_virtual_usb_printer = true;
-  } else if (!std::ranges::contains(mime_types_, kScannerImageMimeTypePng)) {
+  } else if (!base::Contains(mime_types_, kScannerImageMimeTypePng)) {
     std::move(callback_).Run(std::nullopt, kUnsupportedMimeTypesError);
     return;
   }

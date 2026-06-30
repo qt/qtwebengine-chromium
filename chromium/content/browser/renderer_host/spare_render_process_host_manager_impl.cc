@@ -9,6 +9,7 @@
 
 #include "base/byte_size.h"
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/debug/dump_without_crashing.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory_coordinator/utils.h"
@@ -918,7 +919,7 @@ void SpareRenderProcessHostManagerImpl::ReleaseSpare(
 
 void SpareRenderProcessHostManagerImpl::RenderProcessReady(
     RenderProcessHost* host) {
-  CHECK(std::ranges::contains(spare_rphs_, host));
+  CHECK(base::Contains(spare_rphs_, host));
 
   CHECK(process_startup_timer_);
   UMA_HISTOGRAM_TIMES("BrowserRenderProcessHost.SpareProcessStartupTime",

@@ -10,6 +10,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/containers/span.h"
 #include "base/functional/callback_helpers.h"
 #include "base/metrics/histogram_functions.h"
@@ -734,7 +735,7 @@ bool ContextualSearchboxHandler::IsSmartTabSharingActive() const {
   }
   if (input_state_model_) {
     const auto& state = input_state_model_->GetInputState();
-    if (std::ranges::contains(state.disabled_input_types,
+    if (base::Contains(state.disabled_input_types,
                               omnibox::InputType::INPUT_TYPE_BROWSER_TAB)) {
       return false;
     }

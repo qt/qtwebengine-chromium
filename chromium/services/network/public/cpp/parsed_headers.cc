@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/containers/flat_set.h"
 #include "base/feature_list.h"
 #include "build/build_config.h"
@@ -124,14 +125,14 @@ mojom::ParsedHeadersPtr PopulateParsedHeaders(
   network::mojom::SupportsLoadingModePtr result =
       network::ParseSupportsLoadingMode(*headers);
   if (!result.is_null()) {
-    if (std::ranges::contains(
+    if (base::Contains(
             result->supported_modes,
             network::mojom::LoadingMode::kCredentialedPrerender)) {
       parsed_headers->supports_loading_mode.push_back(
           network::mojom::LoadingMode::kCredentialedPrerender);
     }
 
-    if (std::ranges::contains(
+    if (base::Contains(
             result->supported_modes,
             network::mojom::LoadingMode::kPrerenderCrossOriginFrames)) {
       parsed_headers->supports_loading_mode.push_back(

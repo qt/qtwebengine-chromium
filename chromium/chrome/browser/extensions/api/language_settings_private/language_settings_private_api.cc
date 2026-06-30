@@ -13,6 +13,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/containers/flat_set.h"
 #include "base/feature_list.h"
 #include "base/strings/string_split.h"
@@ -160,7 +161,7 @@ std::vector<std::string> GetSortedThirdPartyIMEs(
     for (const InputMethodDescriptor& descriptor : descriptors) {
       const std::string& id = descriptor.id();
       if (!ime_set.contains(id) &&
-          std::ranges::contains(descriptor.language_codes(), language)) {
+          base::Contains(descriptor.language_codes(), language)) {
         ime_list.push_back(id);
         ime_set.insert(id);
       }

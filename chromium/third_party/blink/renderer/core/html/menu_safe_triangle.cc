@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <array>
 
+#include "base/containers/contains.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/flat_tree_traversal.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
@@ -33,7 +34,7 @@ constexpr base::TimeDelta kSafeTriangleDuration = base::Milliseconds(1000);
 
 bool IsInclusiveFlatTreeAncestorOf(Node* possible_ancestor,
                                    Node* possible_descendant) {
-  return std::ranges::contains(
+  return base::Contains(
       FlatTreeTraversal::InclusiveAncestorsOf(*possible_descendant),
       *possible_ancestor);
 }

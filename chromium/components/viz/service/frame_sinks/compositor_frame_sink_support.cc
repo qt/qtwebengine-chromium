@@ -11,6 +11,7 @@
 #include <variant>
 
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/containers/map_util.h"
 #include "base/debug/crash_logging.h"
 #include "base/debug/stack_trace.h"
@@ -1282,7 +1283,7 @@ const FrameSinkId& CompositorFrameSinkSupport::GetFrameSinkId() const {
 
 void CompositorFrameSinkSupport::AttachCaptureClient(
     CapturableFrameSink::Client* client) {
-  DCHECK(!std::ranges::contains(capture_clients_, client));
+  DCHECK(!base::Contains(capture_clients_, client));
   capture_clients_.push_back(client);
   if (client->IsVideoCaptureStarted()) {
     OnClientCaptureStarted();

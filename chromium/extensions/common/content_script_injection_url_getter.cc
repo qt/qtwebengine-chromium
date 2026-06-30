@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "base/containers/flat_set.h"
 #include "base/notreached.h"
 #include "base/trace_event/typed_macros.h"
@@ -61,7 +62,7 @@ GURL ContentScriptInjectionUrlGetter::Get(
         TRACE_EVENT_INSTANT("extensions",
                             "ContentScriptInjectionUrlGetter::Get/"
                             "should_consider_origin: origin-always");
-        result = std::ranges::contains(kAllowedSchemesToMatchOriginAsFallback,
+        result = base::Contains(kAllowedSchemesToMatchOriginAsFallback,
                                        document_url.GetScheme());
         break;
       }

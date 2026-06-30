@@ -14,6 +14,7 @@
 #include <utility>
 
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/numerics/safe_conversions.h"
@@ -168,7 +169,7 @@ void RequestManager::SetUpStreamsAndBuffers(
   auto request_keys = GetMetadataEntryAsSpan<int32_t>(
       static_metadata,
       cros::mojom::CameraMetadataTag::ANDROID_REQUEST_AVAILABLE_REQUEST_KEYS);
-  zero_shutter_lag_supported_ = std::ranges::contains(
+  zero_shutter_lag_supported_ = base::Contains(
       request_keys,
       static_cast<int32_t>(
           cros::mojom::CameraMetadataTag::ANDROID_CONTROL_ENABLE_ZSL));

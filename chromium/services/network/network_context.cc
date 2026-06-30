@@ -20,6 +20,7 @@
 #include "base/check.h"
 #include "base/check_op.h"
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/containers/extend.h"
 #include "base/containers/flat_set.h"
 #include "base/containers/to_vector.h"
@@ -4084,7 +4085,7 @@ void NetworkContext::OnInvalidationFiltersLoaded(
         loaded_filters);
     filters_to_save.append_range(pending_additions_);
     std::erase_if(filters_to_save, [&](const auto& filter) {
-      return std::ranges::contains(pending_removals_, filter);
+      return base::Contains(pending_removals_, filter);
     });
     std::ranges::sort(filters_to_save, std::less<>());
     auto [first, last] =
@@ -4097,8 +4098,8 @@ void NetworkContext::OnInvalidationFiltersLoaded(
   // memory.
   std::vector<net::HttpCache::InvalidationFilter> filters_to_register_logically;
   for (auto& filter : loaded_filters) {
-    if (!std::ranges::contains(pending_removals_, filter) &&
-        !std::ranges::contains(pending_additions_, filter)) {
+    if (!base::Contains(pending_removals_, filter) &&
+        !base::Contains(pending_additions_, filter)) {
       filters_to_register_logically.push_back(std::move(filter));
     }
   }

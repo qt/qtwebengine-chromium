@@ -25,6 +25,7 @@
 #include "base/check.h"
 #include "base/check_deref.h"
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/containers/flat_map.h"
 #include "base/containers/flat_set.h"
 #include "base/containers/map_util.h"
@@ -827,7 +828,7 @@ void ReorderWebAuthnSuggestionsToFooter(std::vector<Suggestion>& suggestions) {
   // Without "Manage" suggestions, ensure a separator for the footer exists
   // if standard suggestions precede the WebAuthn items.
   if (!has_other_management_items && manage_pos != suggestions.begin() &&
-      !std::ranges::contains(suggestions, SuggestionType::kSeparator,
+      !base::Contains(suggestions, SuggestionType::kSeparator,
                              &Suggestion::type)) {
     suggestions.emplace(manage_pos, SuggestionType::kSeparator);
   }
@@ -2414,7 +2415,7 @@ void BrowserAutofillManager::DidShowSuggestions(
     return;
   }
 
-  if (std::ranges::contains(shown_suggestion_types, FillingProduct::kCreditCard,
+  if (base::Contains(shown_suggestion_types, FillingProduct::kCreditCard,
                             GetFillingProductFromSuggestionType) &&
       IsCreditCardFidoAuthenticationEnabled()) {
     GetCreditCardAccessManager()->PrepareToFetchCreditCard();
@@ -2609,7 +2610,7 @@ void BrowserAutofillManager::OnDidDetectJavaScriptAutofillImpl(
     // Otherwise ensure all modified fields were address fields and that the
     // trigger field was prefix completed.
     return address_fields_count == field_modifications.size() &&
-           std::ranges::contains(
+           base::Contains(
                field_modifications,
                JavaScriptFieldModification(
                    trigger_field_id,

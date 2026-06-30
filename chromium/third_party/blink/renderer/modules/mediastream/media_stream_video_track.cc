@@ -8,6 +8,7 @@
 #include <string>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/location.h"
 #include "base/metrics/histogram_functions.h"
@@ -960,7 +961,7 @@ MediaStreamVideoTrack::CreateFromComponent(
 
 static void AddSinkInternal(Vector<WebMediaStreamSink*>* sinks,
                             WebMediaStreamSink* sink) {
-  DCHECK(!std::ranges::contains(*sinks, sink));
+  DCHECK(!base::Contains(*sinks, sink));
   sinks->push_back(sink);
 }
 

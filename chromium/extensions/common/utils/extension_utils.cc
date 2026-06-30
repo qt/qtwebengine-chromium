@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "extensions/common/extension.h"
@@ -30,7 +31,7 @@ bool IsExtensionAllowlistedByCommandLine(const Extension& extension) {
       base::SplitStringPiece(allowlisted_extension_ids, ",",
                              base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
 
-  return std::ranges::contains(allowlist, extension.id());
+  return base::Contains(allowlist, extension.id());
 }
 
 }  // namespace extensions

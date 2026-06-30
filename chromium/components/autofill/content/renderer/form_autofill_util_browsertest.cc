@@ -12,6 +12,7 @@
 #include <variant>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/containers/extend.h"
 #include "base/containers/fixed_flat_map.h"
 #include "base/containers/map_util.h"
@@ -3294,7 +3295,7 @@ TEST_P(FormFillAndPreviewTest, FillForm) {
 
   // Verify state of form after filling.
   for (const auto& [id, fill_value] : kFillValuesById) {
-    bool is_active = std::ranges::contains(kActiveFieldIds, id);
+    bool is_active = base::Contains(kActiveFieldIds, id);
     EXPECT_THAT(GetFormControlElementById(id),
                 test::WebFormControlElementEq({
                     // Use `fill_value` for filled fields and the initial value
@@ -3372,7 +3373,7 @@ TEST_P(FormFillAndPreviewTest, PreviewForm) {
 
   // Verify state of form after previewing.
   for (const auto& [id, preview_value] : kPreviewValuesById) {
-    bool is_active = std::ranges::contains(kActiveFieldIds, id);
+    bool is_active = base::Contains(kActiveFieldIds, id);
     EXPECT_THAT(
         GetFormControlElementById(id),
         test::WebFormControlElementEq({

@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <memory>
 
+#include "base/containers/contains.h"
 #include "base/debug/crash_logging.h"
 #include "base/logging.h"
 #include "base/no_destructor.h"
@@ -133,7 +134,7 @@ std::unique_ptr<GbmBuffer> GBMSupportX11::CreateBuffer(
     LOG(ERROR) << "Can't create buffer -- gbm  device is missing.";
     return nullptr;
   }
-  if (!std::ranges::contains(supported_configs_,
+  if (!base::Contains(supported_configs_,
                              BufferUsageAndSIFormat(usage, format))) {
     LOG(ERROR) << "Can't create buffer -- unsupported config: usage="
                << gfx::BufferUsageToString(usage)

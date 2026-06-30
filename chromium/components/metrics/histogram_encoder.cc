@@ -8,6 +8,7 @@
 #include <memory>
 #include <string_view>
 
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/metrics/field_trial_params.h"
 #include "base/metrics/histogram.h"
@@ -56,7 +57,7 @@ bool EncodeHistogramDelta(
   uint64_t name_hash = base::HashMetricName(histogram_name);
   // Note: When the feature is disabled, `kHistogramDenylistParam`'s default
   // value is used.
-  if (std::ranges::contains(GetHistogramDenylist(), name_hash)) {
+  if (base::Contains(GetHistogramDenylist(), name_hash)) {
     return false;
   }
 

@@ -11,6 +11,7 @@
 
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/containers/span.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
@@ -716,7 +717,7 @@ VideoCaptureDeviceClient::CreateReadyFrameFromExternalBuffer(
   }
 
   // Register the buffer with the receiver if it is new.
-  if (!std::ranges::contains(buffer_ids_known_by_receiver_, buffer_id)) {
+  if (!base::Contains(buffer_ids_known_by_receiver_, buffer_id)) {
     media::mojom::VideoBufferHandlePtr buffer_handle =
         buffer_pool_->GetVideoBufferHandle(buffer_id);
     receiver_->OnNewBuffer(buffer_id, std::move(buffer_handle));
@@ -790,7 +791,7 @@ VideoCaptureDeviceClient::ReserveOutputBuffer(const gfx::Size& frame_size,
 
   CHECK_NE(VideoCaptureBufferPool::kInvalidId, buffer_id);
 
-  if (!std::ranges::contains(buffer_ids_known_by_receiver_, buffer_id)) {
+  if (!base::Contains(buffer_ids_known_by_receiver_, buffer_id)) {
     media::mojom::VideoBufferHandlePtr buffer_handle =
         buffer_pool_->GetVideoBufferHandle(buffer_id);
     receiver_->OnNewBuffer(buffer_id, std::move(buffer_handle));

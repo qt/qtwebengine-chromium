@@ -8,6 +8,7 @@
 #include <memory>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/task/single_thread_task_runner.h"
 #include "services/network/public/mojom/fetch_api.mojom-blink.h"
@@ -66,7 +67,7 @@ bool VaryHeaderContainsAsterisk(const Response* response) {
     Vector<StringView> fields = StringView(vary_header).SplitSkippingEmpty(',');
     StringView (StringView::*strip_whitespace)() const =
         &StringView::StripWhiteSpace;
-    return std::ranges::contains(fields, "*", strip_whitespace);
+    return base::Contains(fields, "*", strip_whitespace);
   }
   return false;
 }

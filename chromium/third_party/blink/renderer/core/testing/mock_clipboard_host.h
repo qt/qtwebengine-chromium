@@ -14,6 +14,7 @@
 #include "third_party/blink/public/common/tokens/tokens.h"
 #include "third_party/blink/public/mojom/clipboard/clipboard.mojom-blink.h"
 #include "third_party/skia/include/core/SkBitmap.h"
+#include "base/containers/contains.h"
 
 namespace blink {
 
@@ -41,7 +42,7 @@ class MockClipboardHost : public mojom::blink::ClipboardHost {
   // the corresponding data is empty. Used to test reader behavior when the
   // OS clipboard advertises a format but returns no data.
   void AddFormatWithoutDataForTesting(const String& mime_type) {
-    if (!std::ranges::contains(forced_formats_for_testing_, mime_type)) {
+    if (!base::Contains(forced_formats_for_testing_, mime_type)) {
       forced_formats_for_testing_.push_back(mime_type);
     }
   }

@@ -9,6 +9,7 @@
 
 #include "base/check.h"
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/files/file_path.h"
 #include "base/metrics/field_trial.h"
 #include "base/strings/string_util.h"
@@ -236,7 +237,7 @@ void FillSuggestions(
 
     const std::u16string& suggestion = suggestions_list[language][index];
     // Only add the suggestion if it's unique.
-    if (!std::ranges::contains(*optional_suggestions, suggestion)) {
+    if (!base::Contains(*optional_suggestions, suggestion)) {
       optional_suggestions->push_back(suggestion);
     }
     if (optional_suggestions->size() >= kMaxSuggestions) {

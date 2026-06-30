@@ -11,6 +11,7 @@
 
 #include "base/cancelable_callback.h"
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/notreached.h"
@@ -287,7 +288,7 @@ PwgRasterSettings PwgRasterConverter::GetBitmapSettings(
   const auto& types = raster_capability.value().document_types_supported;
   result.use_color =
       use_color ||
-      !std::ranges::contains(
+      !base::Contains(
           types, cloud_devices::printer::PwgDocumentTypeSupported::SGRAY_8);
 
   return result;

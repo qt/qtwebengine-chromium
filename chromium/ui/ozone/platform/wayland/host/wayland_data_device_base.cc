@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/logging.h"
 #include "base/task/task_traits.h"
 #include "base/task/thread_pool.h"
@@ -46,7 +47,7 @@ PlatformClipboard::Data WaylandDataDeviceBase::ReadSelectionData(
     return {};
   }
 
-  if (!std::ranges::contains(GetAvailableMimeTypes(), mime_type)) {
+  if (!base::Contains(GetAvailableMimeTypes(), mime_type)) {
     return {};
   }
 
@@ -74,7 +75,7 @@ void WaylandDataDeviceBase::RequestSelectionData(
     return;
   }
 
-  if (!std::ranges::contains(GetAvailableMimeTypes(), mime_type)) {
+  if (!base::Contains(GetAvailableMimeTypes(), mime_type)) {
     std::move(callback).Run({});
     return;
   }

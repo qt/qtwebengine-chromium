@@ -27,6 +27,7 @@
 #include "components/leveldb_proto/public/proto_database_provider.h"
 #include "components/session_proto_db/session_proto_storage.h"
 #include "third_party/leveldatabase/src/include/leveldb/options.h"
+#include "base/containers/contains.h"
 
 namespace {
 const char kOrphanedDataCountHistogramName[] =
@@ -274,7 +275,7 @@ void SessionProtoDB<T>::PerformMaintenance(
               // substring of said keys and hasn't been explicitly marked
               // not to be removed in keys_to_keep.
               return key.contains(key_substring_to_match) &&
-                     !std::ranges::contains(keys_to_keep, key);
+                     !base::Contains(keys_to_keep, key);
             },
             keys_to_keep, key_substring_to_match),
         base::BindOnce(&SessionProtoDB::OnPerformMaintenance,

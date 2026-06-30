@@ -9,6 +9,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "base/functional/callback.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
@@ -172,10 +173,10 @@ void AudioServiceImpl::GetDevices(
   cras_audio_handler_->GetAudioDevices(&devices);
 
   bool accept_input = !(filter && filter->stream_types) ||
-                      std::ranges::contains(*filter->stream_types,
+                      base::Contains(*filter->stream_types,
                                             api::audio::StreamType::kInput);
   bool accept_output = !(filter && filter->stream_types) ||
-                       std::ranges::contains(*filter->stream_types,
+                       base::Contains(*filter->stream_types,
                                              api::audio::StreamType::kOutput);
 
   for (const auto& device : devices) {

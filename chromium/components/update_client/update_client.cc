@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/functional/bind.h"
@@ -223,13 +224,13 @@ bool UpdateClientImpl::IsUpdating(const std::string& id) const {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   for (const auto& task : tasks_) {
-    if (std::ranges::contains(task->ids(), id)) {
+    if (base::Contains(task->ids(), id)) {
       return true;
     }
   }
 
   for (const auto& task : task_queue_) {
-    if (std::ranges::contains(task->ids(), id)) {
+    if (base::Contains(task->ids(), id)) {
       return true;
     }
   }

@@ -15,6 +15,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "third_party/abseil-cpp/absl/container/flat_hash_map.h"
 #include "base/containers/flat_set.h"
 #include "base/functional/bind.h"
@@ -244,7 +245,7 @@ void PolicyServiceImpl::RemoveProviderUpdateObserver(
 bool PolicyServiceImpl::HasProvider(
     ConfigurationPolicyProvider* provider) const {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  return std::ranges::contains(providers_, provider);
+  return base::Contains(providers_, provider);
 }
 
 const PolicyMap& PolicyServiceImpl::GetPolicies(
@@ -626,7 +627,7 @@ void PolicyServiceImpl::MaybeNotifyPolicyDomainStatusChange(
   // Check if POLICY_DOMAIN_CHROME has just become initialized and we haven't
   // cached the startup chrome policy map.
   if (!initial_snapshot_taken_ &&
-      std::ranges::contains(updated_domains, POLICY_DOMAIN_CHROME) &&
+      base::Contains(updated_domains, POLICY_DOMAIN_CHROME) &&
       policy_domain_status_[POLICY_DOMAIN_CHROME] ==
           PolicyDomainStatus::kPolicyReady) {
     VLOG_POLICY(1, POLICY_PROCESSING)

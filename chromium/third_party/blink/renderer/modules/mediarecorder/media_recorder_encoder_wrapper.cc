@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "base/numerics/safe_conversions.h"
 #include "media/base/decoder_buffer.h"
 #include "media/base/video_encoder_metrics_provider.h"
@@ -61,7 +62,7 @@ MediaRecorderEncoderWrapper::MediaRecorderEncoderWrapper(
       media::VideoCodec::kHEVC,
 #endif
   };
-  CHECK(std::ranges::contains(kSupportedCodecs, codec_));
+  CHECK(base::Contains(kSupportedCodecs, codec_));
   options_.latency_mode = media::VideoEncoder::LatencyMode::Quality;
   options_.bitrate = media::Bitrate::VariableBitrate(
       bits_per_second, base::ClampMul(bits_per_second, 2u).RawValue());

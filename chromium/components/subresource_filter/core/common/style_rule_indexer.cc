@@ -7,6 +7,7 @@
 #include <algorithm>
 
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/logging.h"
 #include "components/subresource_filter/core/common/indexed_ruleset.h"
 #include "components/subresource_filter/core/common/style_rule_bloom_filter.h"
@@ -34,7 +35,7 @@ BuildNameToRules(
     if (!indices.empty()) {
       // Ensure that if the implicit rule is in the list, that it goes to
       // `first_index`.
-      bool has_implicit = std::ranges::contains(
+      bool has_implicit = base::Contains(
           indices, StyleRuleIndexer::kImplicitStyleRuleIndex);
       first_index =
           has_implicit ? StyleRuleIndexer::kImplicitStyleRuleIndex : indices[0];

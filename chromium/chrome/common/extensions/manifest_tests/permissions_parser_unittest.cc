@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/containers/contains.h"
 #include "extensions/common/manifest_handlers/permissions_parser.h"
 
 #include <algorithm>
@@ -250,7 +251,7 @@ TEST_F(PermissionsParserTest, ChromeFavicon) {
     InstallWarning expected_warning(ErrorUtils::FormatErrorMessage(
         manifest_errors::kInvalidPermissionScheme, permissions_key,
         kFaviconPattern));
-    return std::ranges::contains(extension.install_warnings(),
+    return base::Contains(extension.install_warnings(),
                                  expected_warning);
   };
 

@@ -13,6 +13,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/lazy_instance.h"
@@ -109,7 +110,7 @@ void IdentityAPI::EraseStaleGaiaIdsForAllExtensions() {
     if (!gaia_id) {
       continue;
     }
-    if (!std::ranges::contains(accounts, *gaia_id, &CoreAccountInfo::gaia)) {
+    if (!base::Contains(accounts, *gaia_id, &CoreAccountInfo::gaia)) {
       EraseGaiaIdForExtension(extension_id);
     }
   }

@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/containers/contains.h"
 #include "third_party/blink/public/common/manifest/manifest_icon_selector.h"
 
 #include <algorithm>
@@ -71,7 +72,7 @@ ManifestIconSelector::FindBestMatchingIcon(
   int best_delta = std::numeric_limits<int>::min();
 
   for (const auto& icon : icons) {
-    if (!std::ranges::contains(icon.purpose, params.purpose) ||
+    if (!base::Contains(icon.purpose, params.purpose) ||
         !IsIconTypeSupported(icon,
                              params.limited_image_types_for_installable_icon)) {
       continue;

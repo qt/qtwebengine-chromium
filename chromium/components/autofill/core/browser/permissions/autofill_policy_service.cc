@@ -9,6 +9,7 @@
 
 #include "base/check.h"
 #include "base/check_deref.h"
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/values.h"
@@ -145,7 +146,7 @@ bool EvaluatePolicyList(const base::ListValue& policy_list,
             : parsed_entry->pattern.Matches(url);
 
     return matches_url &&
-           std::ranges::contains(parsed_entry->categories, category);
+           base::Contains(parsed_entry->categories, category);
   });
 }
 
@@ -202,7 +203,7 @@ bool AutofillPolicyService::IsAutofillTypeBlockedByPolicy(
   return std::ranges::any_of(
       blocked_patterns_cache_, [&](const BlockedPatternEntry& entry) {
         return entry.pattern.Matches(url) &&
-               std::ranges::contains(entry.blocked_categories, category);
+               base::Contains(entry.blocked_categories, category);
       });
 }
 

@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <optional>
 
+#include "base/containers/contains.h"
 #include "services/network/public/cpp/permissions_policy/fenced_frame_permissions_policies.h"
 #include "services/network/public/cpp/permissions_policy/permissions_policy.h"
 #include "services/network/public/cpp/web_sandbox_flags.h"
@@ -254,7 +255,7 @@ void SecurityContextInit::ApplyPermissionsPolicy(
 
         // Warn if a disallowed permissions policy is attempted to be enabled.
         for (const auto& policy : container_policy) {
-          if (!std::ranges::contains(network::kFencedFrameAllowedFeatures,
+          if (!base::Contains(network::kFencedFrameAllowedFeatures,
                                      policy.feature)) {
             bool is_isolated_context =
                 execution_context_ && execution_context_->IsIsolatedContext();

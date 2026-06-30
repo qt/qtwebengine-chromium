@@ -17,6 +17,7 @@
 #include "third_party/blink/public/platform/modules/webrtc/webrtc_logging.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
+#include "base/containers/contains.h"
 
 namespace media {
 struct AudioGlitchInfo;
@@ -57,8 +58,8 @@ class MediaStreamAudioDeliverer {
     DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
     DCHECK(consumer);
     base::AutoLock auto_lock(consumers_lock_);
-    DCHECK(!std::ranges::contains(consumers_, consumer));
-    DCHECK(!std::ranges::contains(pending_consumers_, consumer));
+    DCHECK(!base::Contains(consumers_, consumer));
+    DCHECK(!base::Contains(pending_consumers_, consumer));
     pending_consumers_.push_back(consumer);
     SendLogMessage(
         String::Format("%s => (number of consumer: active=%u, pending=%u)",

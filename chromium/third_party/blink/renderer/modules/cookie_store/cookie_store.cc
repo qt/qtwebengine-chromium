@@ -10,6 +10,7 @@
 #include <optional>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "net/base/features.h"
 #include "net/cookies/cookie_inclusion_status.h"
 #include "net/cookies/cookie_util.h"
@@ -199,7 +200,7 @@ network::mojom::blink::RestrictedCanonicalCookieParamsPtr ToCookieParams(
   // insecure origins. file:// are excluded too for consistency with
   // document.cookie.
   if (!network::IsUrlPotentiallyTrustworthy(GURL(cookie_url)) ||
-      std::ranges::contains(url::GetLocalSchemes(),
+      base::Contains(url::GetLocalSchemes(),
                             cookie_url.Protocol().Ascii())) {
     exception_state.ThrowTypeError(
         "Cannot modify a secure cookie on insecure origin");

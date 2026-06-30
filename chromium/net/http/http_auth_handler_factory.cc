@@ -10,6 +10,7 @@
 #include <set>
 #include <string_view>
 
+#include "base/containers/contains.h"
 #include "base/memory/ptr_util.h"
 #include "base/strings/string_util.h"
 #include "build/build_config.h"
@@ -262,7 +263,7 @@ bool HttpAuthHandlerRegistryFactory::IsSchemeAllowed(
   if (http_auth_preferences() && http_auth_preferences()->allowed_schemes()) {
     return http_auth_preferences()->allowed_schemes()->contains(scheme);
   }
-  return std::ranges::contains(kDefaultAuthSchemes, scheme);
+  return base::Contains(kDefaultAuthSchemes, scheme);
 }
 
 #if BUILDFLAG(USE_KERBEROS) && !BUILDFLAG(IS_ANDROID) && BUILDFLAG(IS_POSIX)

@@ -8,6 +8,7 @@
 #include <optional>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/strings/escape.h"
 #include "net/base/features.h"
@@ -215,7 +216,7 @@ std::vector<RegistrationFetcherParam> RegistrationFetcherParam::CreateIfValid(
   }
 
   SchemefulSite site(request_url);
-  if (std::ranges::contains(restricted_sites, site) &&
+  if (base::Contains(restricted_sites, site) &&
       !base::FeatureList::IsEnabled(
           features::kDeviceBoundSessionsForRestrictedSites)) {
     return params;

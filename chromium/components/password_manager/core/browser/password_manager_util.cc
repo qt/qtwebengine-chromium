@@ -11,6 +11,7 @@
 #include <tuple>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/memory/raw_ptr.h"
 #include "base/metrics/histogram_functions.h"
@@ -327,7 +328,7 @@ std::vector<StoredCredential> FindBestMatches(
     } else {
       // Insert another credential only if the store is different as well as the
       // password value.
-      if (std::ranges::contains(
+      if (base::Contains(
               it->second, match.in_store,
               [](const auto& form) { return form.in_store; })) {
         continue;

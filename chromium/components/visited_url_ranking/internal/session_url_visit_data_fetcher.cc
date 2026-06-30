@@ -11,6 +11,7 @@
 #include <variant>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/time/time.h"
 #include "components/sessions/core/session_types.h"
 #include "components/sync_sessions/open_tabs_ui_delegate.h"
@@ -125,13 +126,13 @@ void SessionURLVisitDataFetcher::FetchURLVisitData(
   for (const sync_sessions::SyncedSession* session : sessions) {
     if (local_session &&
         local_session->GetSessionName() == session->GetSessionName()) {
-      if (!std::ranges::contains(fetcher_sources, Source::kLocal)) {
+      if (!base::Contains(fetcher_sources, Source::kLocal)) {
         continue;
       }
       AddAggregateVisitDataFromSession(
           local_session, Source::kLocal, options.begin_time,
           url_visit_tab_data_map, config.deduplication_helper);
-    } else if (std::ranges::contains(fetcher_sources, Source::kForeign)) {
+    } else if (base::Contains(fetcher_sources, Source::kForeign)) {
       AddAggregateVisitDataFromSession(
           session, Source::kForeign, options.begin_time, url_visit_tab_data_map,
           config.deduplication_helper);

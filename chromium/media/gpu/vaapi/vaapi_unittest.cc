@@ -19,6 +19,7 @@
 
 #include "base/bits.h"
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/containers/span.h"
 #include "base/cpu.h"
 #include "base/files/file.h"
@@ -326,7 +327,7 @@ TEST_F(VaapiTest, GetSupportedDecodeProfiles) {
     const auto va_profile = ConvertToVAProfile(profile.profile);
     ASSERT_TRUE(va_profile.has_value());
 
-    EXPECT_TRUE(std::ranges::contains(va_info.at(*va_profile), VAEntrypointVLD))
+    EXPECT_TRUE(base::Contains(va_info.at(*va_profile), VAEntrypointVLD))
         << " profile: " << GetProfileName(profile.profile)
         << ", va profile: " << vaProfileStr(*va_profile);
     EXPECT_TRUE(VaapiWrapper::IsDecodeSupported(*va_profile))
@@ -354,11 +355,11 @@ TEST_F(VaapiTest, GetSupportedEncodeProfiles) {
     // Check if VaapiWrapper reports a profile that is not supported by
     // VaapiVideoEncodeAccelerator.
     ASSERT_TRUE(
-        std::ranges::contains(kSupportableVideoEncoderProfiles, va_profile));
+        base::Contains(kSupportableVideoEncoderProfiles, va_profile));
 
     EXPECT_TRUE(
-        std::ranges::contains(va_info.at(*va_profile), VAEntrypointEncSlice) ||
-        std::ranges::contains(va_info.at(*va_profile), VAEntrypointEncSliceLP))
+        base::Contains(va_info.at(*va_profile), VAEntrypointEncSlice) ||
+        base::Contains(va_info.at(*va_profile), VAEntrypointEncSliceLP))
         << " profile: " << GetProfileName(profile.profile)
         << ", va profile: " << vaProfileStr(*va_profile);
   }
@@ -426,7 +427,7 @@ TEST_F(VaapiTest, VaapiProfileProtected) {
   if (impl == VAImplementation::kIntelIHD) {
     const auto va_info = RetrieveVAInfoOutput();
 
-    EXPECT_TRUE(std::ranges::contains(va_info.at(VAProfileProtected),
+    EXPECT_TRUE(base::Contains(va_info.at(VAProfileProtected),
                                       VAEntrypointProtectedContent))
         << ", va profile: " << vaProfileStr(VAProfileProtected);
   } else {
@@ -442,10 +443,10 @@ TEST_F(VaapiTest, VaapiProfilesJPEG) {
   const auto va_info = RetrieveVAInfoOutput();
 
   EXPECT_EQ(VaapiWrapper::IsDecodeSupported(VAProfileJPEGBaseline),
-            std::ranges::contains(va_info.at(VAProfileJPEGBaseline),
+            base::Contains(va_info.at(VAProfileJPEGBaseline),
                                   VAEntrypointVLD));
   EXPECT_EQ(VaapiWrapper::IsJpegEncodeSupported(),
-            std::ranges::contains(va_info.at(VAProfileJPEGBaseline),
+            base::Contains(va_info.at(VAProfileJPEGBaseline),
                                   VAEntrypointEncPicture));
 }
 
@@ -463,7 +464,7 @@ TEST_F(VaapiTest, DefaultEntrypointIsSupported) {
                                                profile_and_entrypoints.first);
       const auto& supported_entrypoints = profile_and_entrypoints.second;
       EXPECT_TRUE(
-          std::ranges::contains(supported_entrypoints, default_entrypoint))
+          base::Contains(supported_entrypoints, default_entrypoint))
           << "Default VAEntrypoint " << vaEntrypointStr(default_entrypoint)
           << " (VaapiWrapper mode = " << wrapper_mode
           << ") is not supported for "
@@ -575,7 +576,7 @@ TEST_F(VaapiTest, LowQualityEncodingSetting) {
       const VAEntrypoint entrypoint =
           VaapiWrapper::GetDefaultVaEntryPoint(codec_mode, va_profile);
       ASSERT_TRUE(
-          std::ranges::contains(profile_and_entrypoints.second, entrypoint));
+          base::Contains(profile_and_entrypoints.second, entrypoint));
 
       VAConfigAttrib attrib{};
       attrib.type = VAConfigAttribEncQualityRange;

@@ -7,6 +7,7 @@
 #include <algorithm>
 
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/memory/raw_ptr.h"
 #include "base/no_destructor.h"
 #include "ui/base/metadata/metadata_types.h"
@@ -25,7 +26,7 @@ MetaDataCache* MetaDataCache::GetInstance() {
 
 void MetaDataCache::AddClassMetaData(
     std::unique_ptr<ClassMetaData> class_data) {
-  DCHECK(!std::ranges::contains(class_data_cache_, class_data->GetUniqueName(),
+  DCHECK(!base::Contains(class_data_cache_, class_data->GetUniqueName(),
                                 &ClassMetaData::GetUniqueName));
   class_data_cache_.push_back(class_data.release());
 }

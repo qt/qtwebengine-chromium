@@ -10,6 +10,7 @@
 
 #include "base/barrier_callback.h"
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/containers/to_vector.h"
 #include "base/feature_list.h"
 #include "base/memory/ref_counted_memory.h"
@@ -124,7 +125,7 @@ class XClipboardHelper::TargetList {
 
   bool ContainsText() const {
     for (const auto& atom : GetTextAtomsFrom()) {
-      if (std::ranges::contains(target_list_, atom)) {
+      if (base::Contains(target_list_, atom)) {
         return true;
       }
     }
@@ -133,7 +134,7 @@ class XClipboardHelper::TargetList {
 
   bool ContainsFormat(const ClipboardFormatType& format_type) const {
     x11::Atom atom = x11::GetAtom(format_type.GetName().c_str());
-    return std::ranges::contains(target_list_, atom);
+    return base::Contains(target_list_, atom);
   }
 
  private:

@@ -7,6 +7,8 @@
 #include <algorithm>
 
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
+#include "base/containers/span.h"
 #include "base/logging.h"
 #include "base/notreached.h"
 #include "third_party/blink/renderer/platform/text/character.h"
@@ -280,7 +282,7 @@ ScriptData::RunExtensionLookups ICUScriptData::GetSafeToExtendExistingRun(
     }
 
     const UScriptCode* end = &codes[std::min<size_t>(count, codes.size())];
-    if (std::ranges::contains(codes.data(), end, script)) {
+    if (base::Contains(base::span(codes.data(), end), script)) {
       bits->set(ch);
     }
   }
@@ -517,7 +519,7 @@ bool ScriptRunIterator::MergeSets() {
 
   // Neither is common or inherited. If current is a singleton,
   // just see if it exists in the next set. This is the common case.
-  bool have_priority = std::ranges::contains(*next_set_, priority_script);
+  bool have_priority = base::Contains(*next_set_, priority_script);
   if (current_set_it == current_end) {
     return have_priority;
   }

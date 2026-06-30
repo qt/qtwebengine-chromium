@@ -9,6 +9,7 @@
 #include <array>
 #include <string>
 
+#include "base/containers/contains.h"
 #include "base/stl_util.h"
 #include "base/token.h"
 #include "media/cdm/cdm_type.h"
@@ -46,7 +47,7 @@ inline bool IsPlayReadyHwSecureKeySystem(const std::string& key_system) {
 }
 
 inline bool IsPlayReadyKeySystem(const std::string& name) {
-  return std::ranges::contains(kPlayReadyKeySystems, name);
+  return base::Contains(kPlayReadyKeySystems, name);
 }
 
 #endif  // COMPONENTS_CDM_COMMON_PLAYREADY_CDM_COMMON_H_

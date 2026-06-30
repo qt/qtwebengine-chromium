@@ -9,6 +9,7 @@
 #include <string_view>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/strings/string_util.h"
 #include "net/base/features.h"
 #include "third_party/simdutf/simdutf.h"
@@ -25,7 +26,7 @@ bool SimdutfBase64Decode(std::string_view input,
       return false;
     }
     if (std::ranges::any_of(input, [](char c) {
-          return std::ranges::contains(base::kInfraAsciiWhitespace, c);
+          return base::Contains(base::kInfraAsciiWhitespace, c);
         })) {
       return false;
     }

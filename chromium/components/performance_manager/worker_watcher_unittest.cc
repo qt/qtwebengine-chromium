@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <string>
 
+#include "base/containers/contains.h"
 #include "base/memory/weak_ptr.h"
 #include "base/strings/stringprintf.h"
 #include "components/performance_manager/public/graph/frame_node.h"
@@ -45,9 +46,9 @@ GURL GenerateUniqueDomainUrl() {
 // correctly hooked up together.
 bool IsWorkerClient(base::WeakPtr<WorkerNode> worker_node,
                     base::WeakPtr<FrameNode> client_frame_node) {
-  return std::ranges::contains(worker_node->GetClientFrames(),
+  return base::Contains(worker_node->GetClientFrames(),
                                client_frame_node.get()) &&
-         std::ranges::contains(client_frame_node->GetChildWorkerNodes(),
+         base::Contains(client_frame_node->GetChildWorkerNodes(),
                                worker_node.get());
 }
 
@@ -55,9 +56,9 @@ bool IsWorkerClient(base::WeakPtr<WorkerNode> worker_node,
 // correctly hooked up together.
 bool IsWorkerClient(base::WeakPtr<WorkerNode> worker_node,
                     base::WeakPtr<WorkerNode> client_worker_node) {
-  return std::ranges::contains(worker_node->GetClientWorkers(),
+  return base::Contains(worker_node->GetClientWorkers(),
                                client_worker_node.get()) &&
-         std::ranges::contains(client_worker_node->GetChildWorkers(),
+         base::Contains(client_worker_node->GetChildWorkers(),
                                worker_node.get());
 }
 

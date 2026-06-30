@@ -17,6 +17,7 @@
 
 #include "base/check.h"
 #include "base/check_deref.h"
+#include "base/containers/contains.h"
 #include "base/containers/flat_set.h"
 #include "base/containers/span.h"
 #include "base/containers/to_vector.h"
@@ -1688,7 +1689,7 @@ void AutofillExternalDelegate::DidAcceptPaymentsSuggestion(
     default:
       NOTREACHED();  // Should be handled elsewhere
   }
-  if (std::ranges::contains(shown_suggestion_types_,
+  if (base::Contains(shown_suggestion_types_,
                             SuggestionType::kScanCreditCard)) {
     AutofillMetrics::LogScanCreditCardPromptMetric(
         suggestion.type == SuggestionType::kScanCreditCard

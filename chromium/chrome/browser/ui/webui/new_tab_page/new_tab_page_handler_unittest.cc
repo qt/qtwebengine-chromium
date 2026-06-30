@@ -11,6 +11,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/hash/hash.h"
 #include "base/json/json_writer.h"
 #include "base/json/values_util.h"
@@ -1394,7 +1395,7 @@ TEST_F(NewTabPageHandlerModuleRemovalTest,
   // Assert.
   EXPECT_EQ(1u, removed_modules.size());
   EXPECT_TRUE(
-      std::ranges::contains(removed_modules, ntp_modules::kDriveModuleId));
+      base::Contains(removed_modules, ntp_modules::kDriveModuleId));
 }
 
 TEST_F(NewTabPageHandlerTest, SetModulesDisabledTrueDisabledAndTrueUserAction) {

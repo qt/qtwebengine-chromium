@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "content/browser/bad_message.h"
 #include "content/browser/renderer_host/frame_tree_node.h"
 #include "content/browser/renderer_host/page_impl.h"
@@ -27,7 +28,7 @@ bool IsScriptToolExposedToOrigin(
   if (accessing_origin.IsSameOriginWith(tool_owner_origin)) {
     return true;
   }
-  return std::ranges::contains(exposed_origins, accessing_origin);
+  return base::Contains(exposed_origins, accessing_origin);
 }
 
 bool IsScriptToolOwnerRequestedByOrigin(
@@ -37,7 +38,7 @@ bool IsScriptToolOwnerRequestedByOrigin(
   if (caller_origin.IsSameOriginWith(tool_owner_origin)) {
     return true;
   }
-  return std::ranges::contains(from_origins, tool_owner_origin);
+  return base::Contains(from_origins, tool_owner_origin);
 }
 
 bool IsWebMCPEnabled(RenderFrameHost& rfh) {

@@ -10,6 +10,7 @@
 
 #include "base/check.h"
 #include "base/check_deref.h"
+#include "base/containers/contains.h"
 #include "base/containers/to_vector.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
@@ -68,7 +69,7 @@ std::optional<password_manager::PasswordForm> GetCorrespondingPasswordForm(
       credential_ui_entries, [&payload](const CredentialUIEntry& ui_entry) {
         return ui_entry.username == payload.username &&
                ui_entry.password == payload.password &&
-               std::ranges::contains(
+               base::Contains(
                    ui_entry.GetAffiliatedDomains(), payload.signon_realm,
                    &CredentialUIEntry::DomainInfo::signon_realm);
       });

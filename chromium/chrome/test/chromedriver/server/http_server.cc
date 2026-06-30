@@ -5,6 +5,7 @@
 #include "chrome/test/chromedriver/server/http_server.h"
 
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/strings/string_util.h"
 #include "base/task/single_thread_task_runner.h"
 #include "net/base/ip_endpoint.h"
@@ -133,7 +134,7 @@ bool RequestIsSafeToServe(const net::HttpServerRequestInfo& info,
                           const std::vector<std::string>& allowed_origins) {
   if (!whitelisted_ips.empty()) {
     const net::IPAddress& peer_address = info.peer.address();
-    if (!std::ranges::contains(whitelisted_ips, peer_address)) {
+    if (!base::Contains(whitelisted_ips, peer_address)) {
       LOG(WARNING) << "unauthorized access from " << info.peer.ToString();
       return false;
     }

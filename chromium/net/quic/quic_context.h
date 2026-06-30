@@ -14,6 +14,7 @@
 #include "net/third_party/quiche/src/quiche/quic/core/crypto/quic_crypto_client_config.h"
 #include "net/third_party/quiche/src/quiche/quic/core/quic_connection.h"
 #include "url/scheme_host_port.h"
+#include "base/containers/contains.h"
 
 namespace net {
 
@@ -57,7 +58,7 @@ AllSupportedQuicVersions() {
       quic::AllSupportedVersions();
   quic::ParsedQuicVersionVector filtered_versions;
   for (const auto& version : all_supported_versions) {
-    if (!std::ranges::contains(obsolete_versions, version)) {
+    if (!base::Contains(obsolete_versions, version)) {
       filtered_versions.push_back(version);
     }
   }

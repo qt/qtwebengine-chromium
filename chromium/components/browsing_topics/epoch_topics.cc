@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "base/hash/legacy_hash.h"
 #include "base/json/values_util.h"
 #include "base/logging.h"
@@ -237,7 +238,7 @@ void EpochTopics::ClearTopic(Topic topic) {
     SemanticTree semantic_tree;
     std::vector<Topic> top_topic_ancestors =
         semantic_tree.GetAncestorTopics(top_topic_and_domains.topic());
-    if (std::ranges::contains(top_topic_ancestors, topic)) {
+    if (base::Contains(top_topic_ancestors, topic)) {
       top_topic_and_domains = TopicAndDomains();
     }
   }

@@ -18,6 +18,7 @@
 #include "base/check_deref.h"
 #include "base/check_op.h"
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/containers/extend.h"
 #include "base/containers/flat_map.h"
 #include "base/containers/flat_set.h"
@@ -96,9 +97,9 @@ enum class AutofillAiUiSection {
 // Note that an AutofillField may have multiple AttributeTypes of distinct
 // EntityTypes assigned. That is, it may happen that both of the following are
 // true:
-//   std::ranges::contains(assignment.Find(EntityType(kVehicle)),
+//   base::Contains(assignment.Find(EntityType(kVehicle)),
 //                  {field, AttributeType(kVehicleOwner));
-//   std::ranges::contains(assignment.Find(EntityType(kDriversLicense)),
+//   base::Contains(assignment.Find(EntityType(kDriversLicense)),
 //                  {field, AttributeType(kDriversLicenseName));
 class AttributeTypeAssignment {
  public:

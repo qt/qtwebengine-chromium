@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "base/auto_reset.h"
+#include "base/containers/contains.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/functional/bind.h"
@@ -650,7 +651,7 @@ void FileSystemChooseEntryFunction::BuildFileTypeInfo(
       // If we still need to find suggested_extension, hunt for it inside the
       // extensions returned from GetFileTypesFromAcceptOption.
       if (need_suggestion &&
-          std::ranges::contains(extensions, suggested_extension)) {
+          base::Contains(extensions, suggested_extension)) {
         need_suggestion = false;
       }
     }

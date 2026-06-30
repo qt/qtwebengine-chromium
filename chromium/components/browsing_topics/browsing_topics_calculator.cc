@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/rand_util.h"
 #include "base/task/sequenced_task_runner.h"
@@ -325,7 +326,7 @@ void BrowsingTopicsCalculator::DeriveTopTopics(
       uint64_t padded_topic_index_decision = GenerateRandUint64();
       padded_topic = semantic_tree.GetRandomTopic(taxonomy_version,
                                                   padded_topic_index_decision);
-    } while (std::ranges::contains(top_topics, padded_topic));
+    } while (base::Contains(top_topics, padded_topic));
 
     top_topics.emplace_back(std::move(padded_topic));
   }

@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "base/logging.h"
 #include "base/notreached.h"
 #include "base/strings/strcat.h"
@@ -113,7 +114,7 @@ bool UIElementWithMetaData::SetPropertiesFromString(const std::string& text) {
     // based on the allowed values specified in the metadata.
     auto valid_values = member->GetValidValues();
     if (!valid_values.empty() &&
-        !std::ranges::contains(valid_values,
+        !base::Contains(valid_values,
                                base::UTF8ToUTF16(property_value))) {
       // Ignore the value.
       continue;

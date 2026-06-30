@@ -10,6 +10,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/containers/flat_set.h"
 #include "base/containers/span.h"
 #include "base/i18n/case_conversion.h"
@@ -201,7 +202,7 @@ void FindWordsFromCategoryInForm(
   }
 
   if (fields_found > 0 && fields_found <= 2)
-    if (!std::ranges::contains(*username_predictions, chosen_field_renderer_id))
+    if (!base::Contains(*username_predictions, chosen_field_renderer_id))
       username_predictions->push_back(chosen_field_renderer_id);
 }
 

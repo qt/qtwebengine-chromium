@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
@@ -780,7 +781,7 @@ bool DoesCSPDisallowRemoteCode(const std::string& extension_id,
 }
 
 bool IsExtensionAllowedToUseChromeResources(const std::string& extension_id) {
-  return std::ranges::contains(kExtensionsAllowedToUseChromeResources,
+  return base::Contains(kExtensionsAllowedToUseChromeResources,
                                extension_id);
 }
 

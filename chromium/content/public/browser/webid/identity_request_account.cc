@@ -6,6 +6,7 @@
 
 #include <optional>
 
+#include "base/containers/contains.h"
 #include "content/public/browser/webid/identity_request_dialog_controller.h"
 #include "third_party/blink/public/common/webid/login_status_account.h"
 
@@ -75,7 +76,7 @@ void IdentityRequestAccount::ComputeIdpClaimedLoginStates(
       continue;
     }
     const bool is_approved =
-        std::ranges::contains(*account->approved_clients, client_id);
+        base::Contains(*account->approved_clients, client_id);
     account->idp_claimed_login_state =
         is_approved ? IdentityRequestAccount::LoginState::kSignIn
                     : IdentityRequestAccount::LoginState::kSignUp;

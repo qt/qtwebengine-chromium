@@ -13,6 +13,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/containers/extend.h"
 #include "base/containers/flat_set.h"
 #include "base/containers/to_vector.h"
@@ -221,7 +222,7 @@ int CountNonEmptyMetadata(const MemorySearchResult& result) {
 
 // Returns whether the result has Autofill as a source.
 bool IsAutofillSourced(const MemorySearchResult& result) {
-  return std::ranges::contains(result.sources, MemoryEntrySourceType::kAutofill,
+  return base::Contains(result.sources, MemoryEntrySourceType::kAutofill,
                                &MemoryEntrySource::type);
 }
 

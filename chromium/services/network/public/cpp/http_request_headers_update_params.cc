@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "services/network/public/cpp/http_request_headers_update_params.h"
+#include "base/containers/contains.h"
 
 namespace network {
 
@@ -32,7 +33,7 @@ void HttpRequestHeadersUpdateParams::MergeFrom(
     // modified_headers.RemoveHeader(removed_header);
     // modified_cors_exempt_headers.RemoveHeader(removed_header);
     // ```
-    if (!std::ranges::contains(removed_headers, removed_header)) {
+    if (!base::Contains(removed_headers, removed_header)) {
       removed_headers.emplace_back(std::move(removed_header));
     }
   }

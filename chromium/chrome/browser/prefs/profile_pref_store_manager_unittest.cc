@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/files/file_enumerator.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
@@ -60,7 +61,7 @@ class RegistryVerifier : public PrefStore::Observer {
 
   // PrefStore::Observer implementation
   void OnPrefValueChanged(std::string_view key) override {
-    EXPECT_TRUE(std::ranges::contains(*pref_registry_, key,
+    EXPECT_TRUE(base::Contains(*pref_registry_, key,
                                       &PrefValueMap::Map::value_type::first))
         << "Unregistered key " << key << " was changed.";
   }

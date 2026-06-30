@@ -10,6 +10,7 @@
 #include <string>
 
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/files/file_path.h"
 #include "base/functional/bind.h"
 #include "base/json/json_reader.h"
@@ -76,7 +77,7 @@ bool RenderersAreBeingProfiled(
         base::kNullProcessHandle)
       continue;
     base::ProcessId pid = iter.GetCurrentValue()->GetProcess().Pid();
-    if (std::ranges::contains(profiled_pids, pid)) {
+    if (base::Contains(profiled_pids, pid)) {
       return true;
     }
   }
@@ -810,7 +811,7 @@ void TestDriver::WaitForProfilingToStartForBrowserUIThread() {
     Supervisor::GetInstance()->GetProfiledPids(std::move(callback));
     run_loop.Run();
 
-    if (std::ranges::contains(profiled_pids, base::GetCurrentProcId())) {
+    if (base::Contains(profiled_pids, base::GetCurrentProcId())) {
       break;
     }
   }

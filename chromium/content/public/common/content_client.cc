@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <string_view>
 
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/metrics/histogram_functions.h"
@@ -219,7 +220,7 @@ bool ContentClient::IsUrlInIgnoreDuplicateNavsOrigins(const GURL& url) const {
         return origins;
       }());
 
-  return std::ranges::contains(*target_origin_ignorelist,
+  return base::Contains(*target_origin_ignorelist,
                                url::Origin::Create(url));
 }
 

@@ -59,6 +59,7 @@
 
 #if BUILDFLAG(IS_ANDROID)
 #include "gpu/command_buffer/client/internal/mappable_buffer_ahb.h"
+#include "base/containers/contains.h"
 #endif
 
 namespace gpu {
@@ -322,7 +323,7 @@ TYPED_TEST_P(MappableBufferTest, Map) {
   // Use a multiple of 4 for both dimensions to support compressed formats.
   const gfx::Size kBufferSize(4, 4);
 
-  if (!std::ranges::contains(TestFixture::usages(),
+  if (!base::Contains(TestFixture::usages(),
                              gfx::BufferUsage::GPU_READ_CPU_READ_WRITE)) {
     GTEST_SKIP();
   }
@@ -390,7 +391,7 @@ TYPED_TEST_P(MappableBufferTest, PersistentMap) {
   // Use a multiple of 4 for both dimensions to support compressed formats.
   const gfx::Size kBufferSize(4, 4);
 
-  if (!std::ranges::contains(TestFixture::usages(),
+  if (!base::Contains(TestFixture::usages(),
                              gfx::BufferUsage::GPU_READ_CPU_READ_WRITE)) {
     GTEST_SKIP();
   }

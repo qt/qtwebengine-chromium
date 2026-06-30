@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "base/numerics/byte_conversions.h"
 #include "build/build_config.h"
 #include "mojo/public/cpp/base/big_buffer.h"
@@ -82,11 +83,11 @@ Vector<String> MockClipboardHost::ReadStandardFormatNames() {
   if (!png_.empty())
     types.push_back(ui::kMimeTypePng);
   for (auto& it : custom_data_) {
-    CHECK(!std::ranges::contains(types, it.key));
+    CHECK(!base::Contains(types, it.key));
     types.push_back(it.key);
   }
   for (const String& fmt : forced_formats_for_testing_) {
-    if (!std::ranges::contains(types, fmt)) {
+    if (!base::Contains(types, fmt)) {
       types.push_back(fmt);
     }
   }

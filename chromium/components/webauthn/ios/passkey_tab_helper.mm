@@ -5,6 +5,7 @@
 #import "components/webauthn/ios/passkey_tab_helper.h"
 
 #import "base/check_deref.h"
+#import "base/containers/contains.h"
 #import "base/containers/span.h"
 #import "base/debug/dump_without_crashing.h"
 #import "base/functional/callback.h"
@@ -504,7 +505,7 @@ void PasskeyTabHelper::HandleSignalAllAcceptedCredentials(
   }
 
   bool passkey_in_list =
-      std::ranges::contains(params.all_accepted_credential_ids,
+      base::Contains(params.all_accepted_credential_ids,
                             base::as_byte_span(passkey_it->credential_id()));
   if ((passkey_in_list && !passkey_it->hidden()) ||
       (!passkey_in_list && passkey_it->hidden())) {

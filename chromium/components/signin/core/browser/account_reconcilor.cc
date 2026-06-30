@@ -11,6 +11,7 @@
 #include <set>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
@@ -597,7 +598,7 @@ void AccountReconcilor::OnAccountsInCookieUpdated(
 
   if (!primary_account.empty() &&
       delegate_->ShouldAbortReconcileIfPrimaryHasError() &&
-      !std::ranges::contains(chrome_accounts, primary_account)) {
+      !base::Contains(chrome_accounts, primary_account)) {
     VLOG(1) << "Primary account has error, abort.";
     DCHECK(is_reconcile_started_);
     AbortReconcile();

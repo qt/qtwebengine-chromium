@@ -11,6 +11,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/containers/flat_set.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
@@ -788,7 +789,7 @@ void FeedStream::UploadActionsComplete(UploadActionsTask::Result result) {
 }
 
 bool FeedStream::WasUrlRecentlyNavigatedFromFeed(const GURL& url) {
-  return std::ranges::contains(recent_feed_navigations_, url);
+  return base::Contains(recent_feed_navigations_, url);
 }
 
 void FeedStream::InvalidateContentCacheFor(StreamKind stream_kind) {

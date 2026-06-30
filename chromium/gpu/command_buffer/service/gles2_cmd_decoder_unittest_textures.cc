@@ -10,6 +10,7 @@
 
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/containers/span.h"
 #include "base/strings/string_number_conversions.h"
 #include "gpu/command_buffer/common/gles2_cmd_format.h"
@@ -3666,7 +3667,7 @@ class GLES2DecoderCompressedFormatsTest : public GLES2DecoderManualInitTest {
     auto data_span = UNSAFE_BUFFERS(base::span<const GLint>(
         result->GetData(), static_cast<size_t>(result->GetNumResults())));
     for (GLenum format : formats) {
-      EXPECT_TRUE(std::ranges::contains(data_span, static_cast<GLint>(format)));
+      EXPECT_TRUE(base::Contains(data_span, static_cast<GLint>(format)));
     }
 
     EXPECT_EQ(GL_NO_ERROR, GetGLError());

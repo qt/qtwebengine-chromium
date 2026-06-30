@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "base/check_deref.h"
+#include "base/containers/contains.h"
 #include "cc/base/tiling_data.h"
 #include "cc/debug/layer_tree_debug_state.h"
 #include "cc/layers/append_quads_context.h"
@@ -188,7 +189,7 @@ TEST_F(TileBasedLayerImplTest,
   const auto& layers =
       host_impl()->pending_tree()->LayersThatShouldPushProperties();
   ASSERT_EQ(layers.size(), 1u);
-  EXPECT_TRUE(std::ranges::contains(layers, raw_layer));
+  EXPECT_TRUE(base::Contains(layers, raw_layer));
 }
 
 // Verifies that calling `SetIsBackdropFilterMask` with the same value as it

@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <ranges>
 
+#include "base/containers/contains.h"
 #include "base/logging.h"
 #include "base/numerics/checked_math.h"
 #include "base/numerics/safe_conversions.h"
@@ -67,7 +68,7 @@ bool VerifyGpuMemoryBufferHandle(
   VideoPixelFormat kSupportedFormats[] = {
       PIXEL_FORMAT_I420,   PIXEL_FORMAT_YV12, PIXEL_FORMAT_NV12,
       PIXEL_FORMAT_P010LE, PIXEL_FORMAT_ARGB, PIXEL_FORMAT_XR30};
-  if (!std::ranges::contains(kSupportedFormats, pixel_format)) {
+  if (!base::Contains(kSupportedFormats, pixel_format)) {
     LOG(ERROR) << "Unsupported: " << pixel_format;
     return false;
   }

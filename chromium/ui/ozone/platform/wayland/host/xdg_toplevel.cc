@@ -12,6 +12,7 @@
 #include <optional>
 
 #include "base/bit_cast.h"
+#include "base/containers/contains.h"
 #include "base/logging.h"
 #include "base/notimplemented.h"
 #include "base/notreached.h"
@@ -84,7 +85,7 @@ bool CheckIfWlArrayHasValue(struct wl_array* wl_array, uint32_t value) {
   auto span =
       UNSAFE_BUFFERS(base::span(reinterpret_cast<uint32_t*>(wl_array->data),
                                 wl_array->size / sizeof(uint32_t)));
-  return std::ranges::contains(span, value);
+  return base::Contains(span, value);
 }
 
 }  // namespace

@@ -9,6 +9,7 @@
 #include <optional>
 
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/debug/dump_without_crashing.h"
 #include "base/memory/safe_ref.h"
 #include "base/no_destructor.h"
@@ -57,7 +58,7 @@ WebUIDomains GetWebUIDomains(const GURL& url) {
 // to share a process whilst maintaining independent SiteURLs to allow for
 // WebUIType differentiation.
 bool IsWebUIAndUsesTLDForProcessLockURL(const GURL& url) {
-  if (!std::ranges::contains(URLDataManagerBackend::GetWebUISchemes(),
+  if (!base::Contains(URLDataManagerBackend::GetWebUISchemes(),
                              url.scheme())) {
     return false;
   }
@@ -551,7 +552,7 @@ bool SiteInfo::IsGuest() const {
 }
 
 bool SiteInfo::IsWebUI() const {
-  return std::ranges::contains(URLDataManagerBackend::GetWebUISchemes(),
+  return base::Contains(URLDataManagerBackend::GetWebUISchemes(),
                                site_url_.scheme());
 }
 
@@ -770,7 +771,7 @@ bool SiteInfo::ShouldLockProcessToSite(
   // Most WebUI processes should be locked on all platforms.  The only exception
   // is NTP, handled via the separate callout to the embedder.
   const auto& webui_schemes = URLDataManagerBackend::GetWebUISchemes();
-  if (std::ranges::contains(webui_schemes, site_url_.scheme())) {
+  if (base::Contains(webui_schemes, site_url_.scheme())) {
     return GetContentClient()->browser()->DoesWebUIUrlRequireProcessLock(
         site_url_);
   }

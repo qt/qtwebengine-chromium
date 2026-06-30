@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/memory/ptr_util.h"
 #include "base/notimplemented.h"
 #include "base/time/time.h"
@@ -207,9 +208,9 @@ ScreenInfos Screen::GetScreenInfosNearestDisplay(int64_t nearest_id) const {
   int64_t primary_id = primary.id();
   int64_t current_id = nearest_id;
   const bool has_primary =
-      std::ranges::contains(displays, primary_id, &Display::id);
+      base::Contains(displays, primary_id, &Display::id);
   const bool has_nearest =
-      std::ranges::contains(displays, nearest_id, &Display::id);
+      base::Contains(displays, nearest_id, &Display::id);
   if (!has_primary)
     primary_id = has_nearest ? nearest_id : displays[0].id();
   if (!has_nearest)

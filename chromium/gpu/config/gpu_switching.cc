@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "build/build_config.h"
 
 #if BUILDFLAG(IS_MAC)
@@ -92,11 +93,11 @@ bool SwitchableGPUsSupported(const GPUInfo& gpu_info,
 void InitializeSwitchableGPUs(
     const std::vector<int32_t>& driver_bug_workarounds) {
   gl::GLContext::SetSwitchableGPUsSupported();
-  if (std::ranges::contains(driver_bug_workarounds,
+  if (base::Contains(driver_bug_workarounds,
                             FORCE_HIGH_PERFORMANCE_GPU)) {
     gl::GLSurface::SetForcedGpuPreference(gl::GpuPreference::kHighPerformance);
     ForceDiscreteGPU();
-  } else if (std::ranges::contains(driver_bug_workarounds,
+  } else if (base::Contains(driver_bug_workarounds,
                                    FORCE_LOW_POWER_GPU)) {
     gl::GLSurface::SetForcedGpuPreference(gl::GpuPreference::kLowPower);
   }

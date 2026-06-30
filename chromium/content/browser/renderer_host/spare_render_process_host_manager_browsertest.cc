@@ -6,6 +6,7 @@
 #include <utility>
 
 #include "base/callback_list.h"
+#include "base/containers/contains.h"
 #include "base/memory_coordinator/utils.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_amount_of_physical_memory_override.h"
@@ -523,7 +524,7 @@ class SpareRendererContentBrowserClient
                       const SecurityPrincipal& security_principal) override {
     const auto& spares = SpareRenderProcessHostManagerImpl::Get().GetSpares();
     if (!spares.empty()) {
-      return std::ranges::contains(spares, process_host);
+      return base::Contains(spares, process_host);
     }
     return true;
   }

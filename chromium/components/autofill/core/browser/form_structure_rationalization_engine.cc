@@ -16,6 +16,7 @@
 
 #include "base/check.h"
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/containers/flat_map.h"
 #include "base/containers/span.h"
 #include "base/feature.h"
@@ -159,7 +160,7 @@ namespace internal {
 bool IsEnvironmentConditionFulfilled(ParsingContext& context,
                                      const EnvironmentCondition& env) {
   if (!env.country_list.empty() &&
-      !std::ranges::contains(env.country_list, context.client_country)) {
+      !base::Contains(env.country_list, context.client_country)) {
     return false;
   }
 

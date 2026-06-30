@@ -10,6 +10,7 @@
 
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/containers/fixed_flat_map.h"
 #include "base/files/file_path.h"
 #include "base/memory/raw_span.h"
@@ -640,7 +641,7 @@ bool EpDeviceSupportsOfflineCompilation(const OrtEpDevice* ep_device) {
     return false;
   }
   uint32_t device_id = ort_api->HardwareDevice_DeviceId(hardware_device);
-  if (!std::ranges::contains(support_it->device_ids, device_id)) {
+  if (!base::Contains(support_it->device_ids, device_id)) {
     VLOG(2) << "[WebNN] [" << ep_name
             << "] does not support offline compilation for device ID: 0x"
             << std::hex << device_id;
@@ -983,7 +984,7 @@ bool Environment::IsEpDevice(const OrtEpDevice* device,
                              base::span<const std::string_view> ep_names) {
   const OrtApi* ort_api = PlatformFunctions::GetInstance()->ort_api();
   std::string_view ep_name = ort_api->EpDevice_EpName(device);
-  return std::ranges::contains(ep_names, ep_name);
+  return base::Contains(ep_names, ep_name);
 }
 
 base::span<const OrtEpDevice* const> Environment::GetRegisteredEpDevices()

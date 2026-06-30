@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "ash/public/cpp/shell_window_ids.h"
+#include "base/containers/contains.h"
 #include "base/no_destructor.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/views/chrome_web_dialog_view.h"
@@ -93,7 +94,7 @@ SystemWebDialogDelegate* SystemWebDialogDelegate::FindInstance(
 
 // static
 bool SystemWebDialogDelegate::HasInstance(const GURL& url) {
-  return std::ranges::contains(*GetInstances(), url,
+  return base::Contains(*GetInstances(), url,
                                [](const SystemWebDialogDelegate* instance) {
                                  return instance->GetDialogContentURL();
                                });

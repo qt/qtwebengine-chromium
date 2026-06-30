@@ -15,6 +15,7 @@
 
 #include "base/check.h"
 #include "base/check_deref.h"
+#include "base/containers/contains.h"
 #include "base/containers/extend.h"
 #include "base/containers/flat_set.h"
 #include "base/containers/span.h"
@@ -412,7 +413,7 @@ void AutofillAiManager::OnAfterLoadedServerPredictions(
 void AutofillAiManager::OnPrefetchContextComplete(
     const AutofillAiPersonalContextAccessManager& manager,
     std::optional<base::span<const EntityInstance>> entities) {
-  if (!std::ranges::contains(client_->GetAutofillSuggestions(),
+  if (!base::Contains(client_->GetAutofillSuggestions(),
                              SuggestionType::kFetchingAmbientData,
                              &Suggestion::type)) {
     return;
@@ -675,7 +676,7 @@ bool AutofillAiManager::ShouldDisplayIph(const FormStructure& form,
   std::map<EntityType, DenseSet<AttributeType>> attributes_in_form;
   for (auto [entity, fields_and_types] : RationalizeAndDetermineAttributeTypes(
            form.fields(), focused_field->section())) {
-    if (std::ranges::contains(fields_and_types, focused_field->global_id(),
+    if (base::Contains(fields_and_types, focused_field->global_id(),
                               [](const AutofillFieldWithAttributeType& f) {
                                 return f.field->global_id();
                               }) &&

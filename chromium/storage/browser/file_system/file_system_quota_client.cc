@@ -13,6 +13,7 @@
 #include "base/barrier_callback.h"
 #include "base/barrier_closure.h"
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/containers/span.h"
 #include "base/feature_list.h"
 #include "base/files/file.h"
@@ -226,7 +227,7 @@ std::vector<FileSystemType> FileSystemQuotaClient::GetFileSystemTypes() const {
       file_system_context_->GetFileSystemTypes();
   std::vector<FileSystemType> fs_types;
   for (auto fs_type : kTemporaryAndPersistentAndSyncable) {
-    if (std::ranges::contains(backend_types, fs_type)) {
+    if (base::Contains(backend_types, fs_type)) {
       fs_types.push_back(fs_type);
     }
   }

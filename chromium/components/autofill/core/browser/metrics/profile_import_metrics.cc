@@ -13,6 +13,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/i18n/case_conversion.h"
 #include "base/i18n/char_iterator.h"
 #include "base/metrics/histogram_functions.h"
@@ -223,16 +224,16 @@ void LogAddressFormImportRequirementMetric(const AutofillProfile& profile) {
     LogAddressFormImportRequirementMetric(requirement);
   }
 
-  bool is_zip_missing = std::ranges::contains(
+  bool is_zip_missing = base::Contains(
       requirements,
       AddressProfileImportRequirementMetric::kZipRequirementViolated);
-  bool is_state_missing = std::ranges::contains(
+  bool is_state_missing = base::Contains(
       requirements,
       AddressProfileImportRequirementMetric::kStateRequirementViolated);
-  bool is_city_missing = std::ranges::contains(
+  bool is_city_missing = base::Contains(
       requirements,
       AddressProfileImportRequirementMetric::kCityRequirementViolated);
-  bool is_line1_missing = std::ranges::contains(
+  bool is_line1_missing = base::Contains(
       requirements,
       AddressProfileImportRequirementMetric::kLine1RequirementViolated);
   const auto metric =

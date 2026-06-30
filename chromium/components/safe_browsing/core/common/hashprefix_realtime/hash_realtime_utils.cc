@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/strings/strcat.h"
 #include "build/branding_buildflags.h"
@@ -112,7 +113,7 @@ bool IsHashRealTimeLookupEligibleInLocation(
     std::optional<std::string> latest_country) {
   return (
       !latest_country.has_value() ||
-      !std::ranges::contains(GetExcludedCountries(), latest_country.value()));
+      !base::Contains(GetExcludedCountries(), latest_country.value()));
 }
 bool IsHashRealTimeLookupEligibleInSessionAndLocation(
     std::optional<std::string> latest_country) {

@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/no_destructor.h"
 #include "base/observer_list.h"
 #include "base/strings/stringprintf.h"
@@ -177,7 +178,7 @@ void AppWindowRegistry::DevToolsAgentHostDetached(
 }
 
 void AppWindowRegistry::AddAppWindowToList(AppWindow* app_window) {
-  if (std::ranges::contains(app_windows_, app_window))
+  if (base::Contains(app_windows_, app_window))
     return;
   app_windows_.push_back(app_window);
 }

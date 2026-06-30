@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <memory>
 
+#include "base/containers/contains.h"
 #include "base/containers/span.h"
 #include "base/containers/to_vector.h"
 #include "components/password_manager/core/browser/password_form.h"
@@ -80,7 +81,7 @@ bool FakeFormFetcher::IsMovingBlocked(const signin::GaiaIdHash& destination,
       if (form.username_value != username) {
         continue;
       }
-      if (std::ranges::contains(form.moving_blocked_for_list, destination)) {
+      if (base::Contains(form.moving_blocked_for_list, destination)) {
         return true;
       }
     }

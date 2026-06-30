@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/run_loop.h"
 #include "base/test/bind.h"
 #include "chrome/browser/profiles/profile.h"
@@ -172,7 +173,7 @@ TEST_F(ProfilePreloadCandidateSelectorTest, IgnorePresentWebUI) {
                      SiteEngagementService::GetMaxPoints());
 
   // By default no WebUI is present, selects either URL1 or URL2.
-  EXPECT_TRUE(std::ranges::contains(GetAllPreloableURLs(),
+  EXPECT_TRUE(base::Contains(GetAllPreloableURLs(),
                                     *GetURLToPreload(profile())));
 
   // If URL1 is present, selects URL2.
@@ -288,7 +289,7 @@ TEST_F(ProfilePreloadCandidateSelectorTest, IgnoreDisabledWebUIs) {
                      SiteEngagementService::GetMaxPoints() - 1);
 
   // By default no WebUI is present, selects either URL1 or URL2.
-  EXPECT_TRUE(std::ranges::contains(GetAllPreloableURLs(),
+  EXPECT_TRUE(base::Contains(GetAllPreloableURLs(),
                                     *GetURLToPreload(profile())));
 
   // If URL1 is disabled, selects URL2.

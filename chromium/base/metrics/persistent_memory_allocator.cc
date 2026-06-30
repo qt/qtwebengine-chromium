@@ -13,6 +13,7 @@
 
 #include "base/bits.h"
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/containers/span.h"
 #include "base/debug/alias.h"
 #include "base/debug/crash_logging.h"
@@ -442,7 +443,7 @@ PersistentMemoryAllocator::PersistentMemoryAllocator(Memory memory,
   } else {
     if (shared_meta()->size == 0 ||
         (shared_meta()->version != kGlobalVersion &&
-         !std::ranges::contains(kOldCompatibleVersions,
+         !base::Contains(kOldCompatibleVersions,
                                 shared_meta()->version)) ||
         shared_meta()->freeptr.load(std::memory_order_relaxed) == 0 ||
         shared_meta()->tailptr == 0 || shared_meta()->queue.cookie == 0 ||

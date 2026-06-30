@@ -15,6 +15,7 @@
 #include <tuple>
 
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/functional/callback.h"
 #include "base/functional/callback_helpers.h"
 #include "base/logging.h"
@@ -720,7 +721,7 @@ TEST_P(VP9VaapiVideoEncoderDelegateTest,
   size_t frame_num = 0;
   for (size_t i = 0; i < kEncodeFrames; ++i) {
     base::TimeDelta timestamp = base::Milliseconds(i);
-    const bool drop_frame = std::ranges::contains(kDropFrameIndices, i);
+    const bool drop_frame = base::Contains(kDropFrameIndices, i);
     for (size_t sid = 0; sid < num_spatial_layers; ++sid) {
       const bool is_keyframe = (frame_num == 0 && sid == 0);
       const bool end_of_picture = sid == num_spatial_layers - 1;

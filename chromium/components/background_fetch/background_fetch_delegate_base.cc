@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/notreached.h"
@@ -431,7 +432,7 @@ bool BackgroundFetchDelegateBase::IsGuidOutstanding(
     return false;
   }
 
-  return std::ranges::contains(
+  return base::Contains(
       job_details_iter->second.fetch_description->outstanding_guids, guid);
 }
 

@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "base/notimplemented.h"
 #include "base/notreached.h"
 #include "base/strings/string_util.h"
@@ -225,7 +226,7 @@ std::vector<AXPropertyNode> AXTreeFormatterBase::PropertyFilterNodesFor(
 
     // Filter out if doesn't match line index (if specified).
     if (!property_node.line_indexes.empty() &&
-        !std::ranges::contains(property_node.line_indexes, line_index)) {
+        !base::Contains(property_node.line_indexes, line_index)) {
       continue;
     }
 

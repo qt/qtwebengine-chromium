@@ -14,6 +14,7 @@
 #include <utility>
 
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/containers/flat_set.h"
 #include "base/files/platform_file.h"
 #include "base/functional/bind.h"
@@ -145,7 +146,7 @@ bool ResetPlanePropsIfUnused(
   // current frames must be checked, not just the current |plane_list| as
   // the plane might have migrated to another CRTC.
   for (HardwareDisplayPlaneList* plane_list : plane_lists) {
-    if (std::ranges::contains(plane_list->plane_list, plane)) {
+    if (base::Contains(plane_list->plane_list, plane)) {
       return false;
     }
   }

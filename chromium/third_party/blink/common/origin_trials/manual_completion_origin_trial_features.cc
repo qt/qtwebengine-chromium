@@ -9,6 +9,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "third_party/blink/public/common/origin_trials/origin_trials.h"
 #include "third_party/blink/public/mojom/origin_trials/origin_trial_feature.mojom-shared.h"
 
@@ -27,7 +28,7 @@ bool FeatureHasExpiryGracePeriod(blink::mojom::OriginTrialFeature feature) {
       blink::mojom::OriginTrialFeature::kRTCEncodedFrameSetMetadata,
       blink::mojom::OriginTrialFeature::kXSLT,
   };
-  return std::ranges::contains(kHasExpiryGracePeriod, feature);
+  return base::Contains(kHasExpiryGracePeriod, feature);
 }
 
 }  // namespace blink::origin_trials

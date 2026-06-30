@@ -7,6 +7,7 @@
 #include <algorithm>
 
 #include "base/check_deref.h"
+#include "base/containers/contains.h"
 #include "base/containers/to_vector.h"
 #include "base/functional/callback_helpers.h"
 #include "base/json/json_reader.h"
@@ -992,7 +993,7 @@ TEST_F(SiteSettingsHelperTest, AutomaticFullscreenVisibility) {
 
   // Automatic Fullscreen is visible for non-origin-specific lists.
   auto types = GetVisiblePermissionCategories();
-  EXPECT_TRUE(std::ranges::contains(types, type));
+  EXPECT_TRUE(base::Contains(types, type));
 
   constexpr char kDefault[] = "https://www.default.com:443";
   constexpr char kAllowed[] = "https://www.allowed.com:443";
@@ -1005,7 +1006,7 @@ TEST_F(SiteSettingsHelperTest, AutomaticFullscreenVisibility) {
   EXPECT_EQ(SiteSettingSource::kDefault, source);
   EXPECT_EQ(CONTENT_SETTING_BLOCK, content_setting);
   types = GetVisiblePermissionCategories(kDefault, &profile);
-  EXPECT_FALSE(std::ranges::contains(types, type));
+  EXPECT_FALSE(base::Contains(types, type));
 
   // Simulate allowing Automatic Fullscreen through enterprise policy.
   auto policy_provider = std::make_unique<content_settings::MockProvider>();
@@ -1023,7 +1024,7 @@ TEST_F(SiteSettingsHelperTest, AutomaticFullscreenVisibility) {
   EXPECT_EQ(SiteSettingSource::kPolicy, source);
   EXPECT_EQ(CONTENT_SETTING_ALLOW, content_setting);
   types = GetVisiblePermissionCategories(kAllowed, &profile);
-  EXPECT_TRUE(std::ranges::contains(types, type));
+  EXPECT_TRUE(base::Contains(types, type));
 }
 
 #if BUILDFLAG(IS_CHROMEOS)
@@ -1035,7 +1036,7 @@ TEST_F(SiteSettingsHelperTest, WebPrintingVisibility) {
   const ContentSettingsType type = ContentSettingsType::WEB_PRINTING;
 
   // Web Printing is visible for non-origin-specific lists.
-  EXPECT_TRUE(std::ranges::contains(GetVisiblePermissionCategories(), type));
+  EXPECT_TRUE(base::Contains(GetVisiblePermissionCategories(), type));
 
   constexpr char kDefault[] = "https://www.default.com:443";
   constexpr char kAllowed[] = "https://www.allowed.com:443";
@@ -1043,11 +1044,11 @@ TEST_F(SiteSettingsHelperTest, WebPrintingVisibility) {
       "isolated-app://aerugqztij5biqquuk3mfwpsaibuegaqcitgfchwuosuofdjabzqaaic";
 
   // Web Printing is not visible for sites with the default source.
-  EXPECT_FALSE(std::ranges::contains(
+  EXPECT_FALSE(base::Contains(
       GetVisiblePermissionCategories(kDefault, &profile), type));
 
   // Web Printing is always visible for IWA origins.
-  EXPECT_TRUE(std::ranges::contains(
+  EXPECT_TRUE(base::Contains(
       GetVisiblePermissionCategories(kIwa, &profile), type));
 
   // Simulate allowing Web Printing through enterprise policy.
@@ -1061,7 +1062,7 @@ TEST_F(SiteSettingsHelperTest, WebPrintingVisibility) {
       std::move(policy_provider), ProviderType::kPolicyProvider);
 
   // Web Printing is visible for origins with non-default sources.
-  EXPECT_TRUE(std::ranges::contains(
+  EXPECT_TRUE(base::Contains(
       GetVisiblePermissionCategories(kAllowed, &profile), type));
 }
 #endif

@@ -14,6 +14,7 @@
 #include <utility>
 
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/files/file_enumerator.h"
 #include "base/files/file_util.h"
 #include "base/logging.h"
@@ -254,7 +255,7 @@ bool VideoCaptureDeviceFactoryV4L2::HasUsableFormats(int fd,
   v4l2_fmtdesc fmtdesc = {};
   fmtdesc.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
   for (; DoIoctl(fd, VIDIOC_ENUM_FMT, &fmtdesc) == 0; ++fmtdesc.index) {
-    if (std::ranges::contains(usable_fourccs, fmtdesc.pixelformat)) {
+    if (base::Contains(usable_fourccs, fmtdesc.pixelformat)) {
       return true;
     }
   }

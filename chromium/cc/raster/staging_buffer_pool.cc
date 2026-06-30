@@ -9,6 +9,7 @@
 #include <string>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/strings/stringprintf.h"
 #include "base/task/sequenced_task_runner.h"
@@ -161,7 +162,7 @@ bool StagingBufferPool::OnMemoryDump(
     for (const StagingBuffer* buffer : buffers_) {
       buffer->OnMemoryDump(
           pmd, buffer->format,
-          std::ranges::contains(free_buffers_, buffer,
+          base::Contains(free_buffers_, buffer,
                                 &std::unique_ptr<StagingBuffer>::get));
     }
   }

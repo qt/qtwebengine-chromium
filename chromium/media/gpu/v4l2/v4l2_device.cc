@@ -21,6 +21,7 @@
 #include <set>
 
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/logging.h"
 #include "base/not_fatal_until.h"
@@ -423,7 +424,7 @@ bool V4L2Device::CanCreateEGLImageFrom(const Fourcc fourcc) const {
 #endif
   };
 
-  return std::ranges::contains(kEGLImageDrmFmtsSupported,
+  return base::Contains(kEGLImageDrmFmtsSupported,
                                V4L2PixFmtToDrmFormat(fourcc.ToV4L2PixFmt()));
 }
 
@@ -563,7 +564,7 @@ V4L2Device::EnumerateSupportedDecodeProfiles(
                                 V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE);
 
   for (uint32_t pixelformat : v4l2_codecs_as_pix_fmts) {
-    if (!std::ranges::contains(pixelformats, pixelformat)) {
+    if (!base::Contains(pixelformats, pixelformat)) {
       continue;
     }
 
@@ -1026,7 +1027,7 @@ std::string V4L2Device::GetDevicePathFor(Type type, uint32_t pixfmt) {
   const Devices& devices = GetDevicesForType(type);
 
   for (const auto& device : devices) {
-    if (std::ranges::contains(device.second, pixfmt)) {
+    if (base::Contains(device.second, pixfmt)) {
       return device.first;
     }
   }

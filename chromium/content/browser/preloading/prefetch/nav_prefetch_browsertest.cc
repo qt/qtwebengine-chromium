@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/containers/contains.h"
 #include "base/location.h"
 #include "base/memory/weak_ptr.h"
 #include "base/run_loop.h"
@@ -913,7 +914,7 @@ IN_PROC_BROWSER_TEST_P(PrefetchActivationBeaconBrowserTest,
   nav_observer.Wait();
   EXPECT_EQ(nav_observer.last_committed_url(), prefetch_url);
   EXPECT_TRUE(beacon_seen);
-  EXPECT_TRUE(std::ranges::contains(
+  EXPECT_TRUE(base::Contains(
       mock_client.logged_features(),
       blink::mojom::WebFeature::kPrefetchAndPrerenderActivationBeacon));
 }

@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "device/vr/openxr/openxr_spatial_capability_configuration_base.h"
 #include "device/vr/openxr/openxr_spatial_framework_manager.h"
 #include "device/vr/openxr/openxr_spatial_plane_manager.h"
@@ -32,7 +33,7 @@ bool SupportsPlaneBasedHitTest(
   // To check for plane based hit test, we'll need to check for the
   // XR_SPATIAL_COMPONENT_TYPE_RAYCAST_RESULT_ANDROID component on
   // XR_SPATIAL_CAPABILITY_PLANE_TRACKING_EXT, which is not guaranteed.
-  if (!std::ranges::contains(capabilities,
+  if (!base::Contains(capabilities,
                              XR_SPATIAL_CAPABILITY_PLANE_TRACKING_EXT)) {
     return false;
   }
@@ -41,7 +42,7 @@ bool SupportsPlaneBasedHitTest(
       GetSupportedComponentTypes(xrEnumerateSpatialCapabilityComponentTypesEXT,
                                  instance, system,
                                  XR_SPATIAL_CAPABILITY_PLANE_TRACKING_EXT);
-  return std::ranges::contains(
+  return base::Contains(
       plane_tracking_components,
       XR_SPATIAL_COMPONENT_TYPE_RAYCAST_RESULT_ANDROID);
 }
@@ -56,7 +57,7 @@ bool SupportsDepthBasedHitTest(
   // XR_SPATIAL_COMPONENT_TYPE_RAYCAST_RESULT_ANDROID, which is guaranteed to be
   // supported if the XR_SPATIAL_CAPABILITY_DEPTH_RAYCAST_ANDROID is supported,
   // so that's all we need to check for it.
-  return std::ranges::contains(capabilities,
+  return base::Contains(capabilities,
                                XR_SPATIAL_CAPABILITY_DEPTH_RAYCAST_ANDROID);
 }
 }  // namespace

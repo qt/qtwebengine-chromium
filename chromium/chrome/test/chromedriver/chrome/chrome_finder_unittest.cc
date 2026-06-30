@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/files/file_path.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
@@ -21,7 +22,7 @@ namespace {
 
 bool PathIn(const std::vector<base::FilePath>& list,
             const base::FilePath& path) {
-  return std::ranges::contains(list, path);
+  return base::Contains(list, path);
 }
 
 void AssertFound(const base::FilePath& found,

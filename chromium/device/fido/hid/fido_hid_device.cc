@@ -11,6 +11,7 @@
 
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/containers/fixed_flat_set.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
@@ -451,7 +452,7 @@ void FidoHidDevice::MessageReceived(FidoHidMessage message) {
   constexpr FidoHidDeviceCommand kValidCommands[] = {
       FidoHidDeviceCommand::kMsg, FidoHidDeviceCommand::kCbor,
       FidoHidDeviceCommand::kWink, FidoHidDeviceCommand::kError};
-  if (!std::ranges::contains(kValidCommands, cmd)) {
+  if (!base::Contains(kValidCommands, cmd)) {
     FIDO_LOG(ERROR) << "Unknown CTAPHID command: " << static_cast<int>(cmd)
                     << " " << base::HexEncode(response);
     Transition(State::kDeviceError);

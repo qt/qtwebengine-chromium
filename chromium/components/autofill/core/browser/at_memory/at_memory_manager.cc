@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/containers/extend.h"
 #include "base/containers/span.h"
 #include "base/containers/to_vector.h"
@@ -424,7 +425,7 @@ Suggestion::Icon GetIcon(const MemorySearchResult& search_result) {
 // Autofill (no mixed sources).
 bool IsMemorySearchResultAutofillSourced(const MemorySearchResult& entry) {
   const bool is_autofill_sourced =
-      std::ranges::contains(entry.sources, MemoryEntrySourceType::kAutofill,
+      base::Contains(entry.sources, MemoryEntrySourceType::kAutofill,
                             &MemoryEntrySource::type);
   // Mixing Autofill with other sources is currently not in scope, and this
   // DCHECK acts as a temporary way to catch violations of this assumption.
@@ -1023,7 +1024,7 @@ void AtMemoryManager::MaybeAppendPersonalContextNotice(
   if (!owner_->client().ShouldShowPersonalContextAtMemoryNotice()) {
     return;
   }
-  if (std::ranges::contains(suggestions, SuggestionType::kPersonalContextNotice,
+  if (base::Contains(suggestions, SuggestionType::kPersonalContextNotice,
                             &Suggestion::type)) {
     return;
   }

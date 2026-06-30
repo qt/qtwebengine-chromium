@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/containers/contains.h"
 #include "third_party/blink/public/common/custom_handlers/protocol_handler_utils.h"
 
 #include <algorithm>
@@ -113,7 +114,7 @@ bool IsValidCustomHandlerScheme(std::string_view scheme,
         "http",        "https",  "file",
         "ms-settings", "chrome", "chrome-extension",
         "isolated-app"};
-    if (std::ranges::contains(kProtocolBlocklist, lower_scheme)) {
+    if (base::Contains(kProtocolBlocklist, lower_scheme)) {
       return false;
     }
     return true;
@@ -127,7 +128,7 @@ bool IsValidCustomHandlerScheme(std::string_view scheme,
       "webcal",  "wtai",   "xmpp"};
 
   std::string lower_scheme = base::ToLowerASCII(scheme);
-  if (std::ranges::contains(kProtocolSafelist, lower_scheme)) {
+  if (base::Contains(kProtocolSafelist, lower_scheme)) {
     return true;
   }
   if (lower_scheme == "ftp" || lower_scheme == "ftps" ||

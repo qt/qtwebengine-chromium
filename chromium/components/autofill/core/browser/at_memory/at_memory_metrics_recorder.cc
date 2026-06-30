@@ -9,6 +9,7 @@
 #include <string_view>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/notreached.h"
 #include "base/strings/strcat.h"
@@ -177,7 +178,7 @@ std::string_view MemoryDataTypeToCategoryString(MemoryDataType type) {
 std::string_view GetQueryDatatypeCategory(const MemorySearchResults& result) {
   std::optional<std::string_view> category;
   for (const MemorySearchResult& entry : result.entries) {
-    if (std::ranges::contains(entry.sources, MemoryEntrySourceType::kAutofill,
+    if (base::Contains(entry.sources, MemoryEntrySourceType::kAutofill,
                               &MemoryEntrySource::type)) {
       continue;
     }
@@ -447,7 +448,7 @@ void AtMemoryMetricsRecorder::OnQueryResponseReceived(
 
   for (const auto& suggestion : result.entries) {
     auto* quality_suggestion = quality->add_suggestions();
-    bool has_autofill_source = std::ranges::contains(
+    bool has_autofill_source = base::Contains(
         suggestion.sources, MemoryEntrySourceType::kAutofill,
         &MemoryEntrySource::type);
     quality_suggestion->set_source(

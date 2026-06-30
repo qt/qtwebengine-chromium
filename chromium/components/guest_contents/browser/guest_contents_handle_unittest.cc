@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "base/location.h"
 #include "base/test/scoped_feature_list.h"
 #include "content/public/common/content_features.h"
@@ -107,7 +108,7 @@ TEST_F(GuestContentsHandleTest, AttachAndDetach) {
   handle->AttachToOuterWebContents(&outer_delegate_rfh());
   EXPECT_EQ(guest_web_contents()->GetOuterWebContents(),
             outer_web_contents().get());
-  EXPECT_TRUE(std::ranges::contains(outer_web_contents()->GetInnerWebContents(),
+  EXPECT_TRUE(base::Contains(outer_web_contents()->GetInnerWebContents(),
                                     guest_web_contents().get()));
 
   handle->DetachFromOuterWebContents();
@@ -123,7 +124,7 @@ TEST_F(GuestContentsHandleTest, DestroyGuestContents) {
   handle->AttachToOuterWebContents(&outer_delegate_rfh());
   EXPECT_EQ(guest_web_contents()->GetOuterWebContents(),
             outer_web_contents().get());
-  EXPECT_TRUE(std::ranges::contains(outer_web_contents()->GetInnerWebContents(),
+  EXPECT_TRUE(base::Contains(outer_web_contents()->GetInnerWebContents(),
                                     guest_web_contents().get()));
 
   // Destroy the guest WebContents while it is still attached to the outer

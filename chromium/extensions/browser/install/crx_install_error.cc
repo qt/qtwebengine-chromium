@@ -7,6 +7,7 @@
 #include <algorithm>
 
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "extensions/browser/install/sandboxed_unpacker_failure_reason.h"
 
 namespace extensions {
@@ -79,7 +80,7 @@ bool CrxInstallError::IsCrxVerificationFailedError() const {
   }
   const SandboxedUnpackerFailureReason unpacker_failure_reason =
       sandbox_failure_detail();
-  return std::ranges::contains(kVerificationFailureReasons,
+  return base::Contains(kVerificationFailureReasons,
                                unpacker_failure_reason);
 }
 

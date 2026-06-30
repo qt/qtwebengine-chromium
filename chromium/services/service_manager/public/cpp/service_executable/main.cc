@@ -7,6 +7,7 @@
 #include "base/at_exit.h"
 #include "base/base_switches.h"
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/debug/debugger.h"
 #include "base/debug/stack_trace.h"
 #include "base/feature_list.h"
@@ -51,7 +52,7 @@ void WaitForDebuggerIfNecessary() {
         break;
       }
     }
-    if (apps_to_debug.empty() || std::ranges::contains(apps_to_debug, app)) {
+    if (apps_to_debug.empty() || base::Contains(apps_to_debug, app)) {
 #if BUILDFLAG(IS_WIN)
       std::wstring appw = base::UTF8ToWide(app);
       std::wstring message = base::UTF8ToWide(

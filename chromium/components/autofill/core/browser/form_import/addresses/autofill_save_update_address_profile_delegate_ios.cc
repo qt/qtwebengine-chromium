@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/types/optional_util.h"
@@ -120,7 +121,7 @@ std::u16string AutofillSaveUpdateAddressProfileDelegateIOS::GetSubtitle() {
   // Based of hypothesis in crbug.com/477044258, `GetProfileDifferenceForUi` is
   // returning empty.
   DUMP_WILL_BE_CHECK(!differences.empty());
-  bool address_updated = std::ranges::contains(
+  bool address_updated = base::Contains(
       differences, ADDRESS_HOME_ADDRESS, &ProfileValueDifference::type);
   return GetProfileDescription(
       original_profile_.value(), locale_,

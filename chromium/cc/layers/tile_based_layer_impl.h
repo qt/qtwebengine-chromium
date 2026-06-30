@@ -27,6 +27,7 @@
 #include "components/viz/common/resources/resource_id.h"
 #include "ui/gfx/geometry/rect_conversions.h"
 #include "ui/gfx/geometry/size_f.h"
+#include "base/containers/contains.h"
 
 namespace cc {
 
@@ -121,7 +122,7 @@ class CC_EXPORT TileBasedLayerImpl : public LayerImpl {
   }
 
   bool LastAppendQuadsScalesContains(float scale) const {
-    return std::ranges::contains(last_append_quads_scales_, scale);
+    return base::Contains(last_append_quads_scales_, scale);
   }
 
   // Invokes `functor` for each visible tile in `coverage_rect`.

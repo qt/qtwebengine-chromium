@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "base/containers/map_util.h"
 #include "base/containers/to_vector.h"
 #include "build/build_config.h"
@@ -155,7 +156,7 @@ bool FakeIwaRuntimeDataProvider::IsManagedInstallPermitted(
     return true;
   }
 #endif
-  return std::ranges::contains(managed_allowlist_, web_bundle_id,
+  return base::Contains(managed_allowlist_, web_bundle_id,
                                &web_package::SignedWebBundleId::id);
 }
 
@@ -166,13 +167,13 @@ bool FakeIwaRuntimeDataProvider::IsManagedUpdatePermitted(
     return true;
   }
 #endif
-  return std::ranges::contains(managed_allowlist_, web_bundle_id,
+  return base::Contains(managed_allowlist_, web_bundle_id,
                                &web_package::SignedWebBundleId::id);
 }
 
 bool FakeIwaRuntimeDataProvider::IsBundleBlocklisted(
     std::string_view web_bundle_id) const {
-  return std::ranges::contains(blocklist_, web_bundle_id,
+  return base::Contains(blocklist_, web_bundle_id,
                                &web_package::SignedWebBundleId::id);
 }
 

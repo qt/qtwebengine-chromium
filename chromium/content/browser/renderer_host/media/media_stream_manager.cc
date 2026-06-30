@@ -15,6 +15,7 @@
 
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
@@ -437,9 +438,9 @@ bool ChangeSourceSupported(const MediaStreamDevices& devices) {
     }
   }
 
-  if (!std::ranges::contains(devices, MediaStreamType::DISPLAY_VIDEO_CAPTURE,
+  if (!base::Contains(devices, MediaStreamType::DISPLAY_VIDEO_CAPTURE,
                              &MediaStreamDevice::type) &&
-      !std::ranges::contains(devices,
+      !base::Contains(devices,
                              MediaStreamType::DISPLAY_VIDEO_CAPTURE_THIS_TAB,
                              &MediaStreamDevice::type)) {
     return false;  // Not an API call that supports share-this-tab-instead.

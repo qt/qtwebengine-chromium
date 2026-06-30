@@ -7,6 +7,7 @@
 #include <algorithm>
 
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/not_fatal_until.h"
 #include "content/browser/devtools/devtools_instrumentation.h"
 #include "content/browser/renderer_host/render_frame_host_impl.h"
@@ -29,7 +30,7 @@ namespace content {
 namespace {
 
 url::Origin MaybeTreatLocalOriginAsOpaque(const url::Origin& origin) {
-  if (std::ranges::contains(url::GetLocalSchemes(), origin.scheme()) &&
+  if (base::Contains(url::GetLocalSchemes(), origin.scheme()) &&
       !base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kAllowFileAccessFromFiles)) {
     // For local origins we should use an opaque origin unless

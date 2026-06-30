@@ -9,6 +9,7 @@
 #include "ash/public/cpp/shelf_item.h"
 #include "ash/public/cpp/shelf_model.h"
 #include "ash/public/cpp/shelf_types.h"
+#include "base/containers/contains.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/ash/shelf/app_shortcut_shelf_item_controller.h"
 #include "chrome/browser/ui/ash/shelf/chrome_shelf_controller.h"
@@ -74,7 +75,7 @@ bool AppManagementShelfDelegate::IsPolicyPinned(
   std::vector<std::string> policy_pinned_apps =
       ChromeShelfPrefs::GetAppsPinnedByPolicy(
           shelf_controller_helper_->profile());
-  return std::ranges::contains(policy_pinned_apps, app_id);
+  return base::Contains(policy_pinned_apps, app_id);
 }
 
 void AppManagementShelfDelegate::SetPinned(const std::string& app_id,

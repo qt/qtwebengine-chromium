@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
@@ -277,7 +278,7 @@ bool BlobURLStoreImpl::BlobUrlIsValid(const GURL& url,
     // opaque origin under the circumstances described in the crbug, remove the
     // ALLOW_OPAQUE_ORIGIN_STORAGE_KEY_MISMATCH workaround here.
     valid_origin = storage_key_origin.opaque() ||
-                   std::ranges::contains(url::GetLocalSchemes(),
+                   base::Contains(url::GetLocalSchemes(),
                                          storage_key_origin.scheme()) ||
                    validity_check_behavior_ ==
                        BlobURLValidityCheckBehavior::

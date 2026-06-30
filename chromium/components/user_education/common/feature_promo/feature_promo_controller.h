@@ -13,6 +13,7 @@
 #include "components/user_education/common/feature_promo/feature_promo_specification.h"
 #include "components/user_education/common/user_education_context.h"
 #include "components/user_education/common/user_education_data.h"
+#include "base/containers/contains.h"
 
 namespace user_education {
 
@@ -139,9 +140,9 @@ class FeaturePromoController {
                      Args... additional_status) const {
     const FeaturePromoStatus actual = GetPromoStatus(iph_feature);
     const std::initializer_list<FeaturePromoStatus> list{additional_status...};
-    DCHECK(!std::ranges::contains(list, FeaturePromoStatus::kNotRunning));
+    DCHECK(!base::Contains(list, FeaturePromoStatus::kNotRunning));
     return actual == FeaturePromoStatus::kBubbleShowing ||
-           std::ranges::contains(list, actual);
+           base::Contains(list, actual);
   }
 
   // Starts a promo with the settings for skipping any logging or filtering

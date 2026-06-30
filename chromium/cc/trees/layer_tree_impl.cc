@@ -15,6 +15,7 @@
 #include <utility>
 
 #include "base/containers/adapters.h"
+#include "base/containers/contains.h"
 #include "base/debug/crash_logging.h"
 #include "base/debug/dump_without_crashing.h"
 #include "base/json/json_writer.h"
@@ -2403,7 +2404,7 @@ void LayerTreeImpl::NotifyLayerHasAnimatedImagesChanged(
     layer_list_.RemovePictureLayerWithAnimatedImages(layer);
   }
   DCHECK_EQ(has_animated_images,
-            std::ranges::contains(layer_list_.PictureLayersWithAnimatedImages(),
+            base::Contains(layer_list_.PictureLayersWithAnimatedImages(),
                                   layer));
 }
 
@@ -2421,7 +2422,7 @@ void LayerTreeImpl::NotifyLayerHasPaintWorkletsChanged(PictureLayerImpl* layer,
   } else {
     layer_list_.RemovePictureLayerWithWorklet(layer);
   }
-  DCHECK_EQ(has_worklets, std::ranges::contains(
+  DCHECK_EQ(has_worklets, base::Contains(
                               layer_list_.PictureLayersWithWorklets(), layer));
 }
 

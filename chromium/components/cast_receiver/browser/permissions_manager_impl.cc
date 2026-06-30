@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "content/public/browser/web_contents.h"
 
 namespace cast_receiver {
@@ -64,7 +65,7 @@ const std::string& PermissionsManagerImpl::GetAppId() const {
 blink::mojom::PermissionStatus PermissionsManagerImpl::GetPermissionStatus(
     blink::PermissionType permission,
     const GURL& url) const {
-  if (!std::ranges::contains(permissions_, permission)) {
+  if (!base::Contains(permissions_, permission)) {
     return blink::mojom::PermissionStatus::DENIED;
   }
 
@@ -73,7 +74,7 @@ blink::mojom::PermissionStatus PermissionsManagerImpl::GetPermissionStatus(
     return blink::mojom::PermissionStatus::GRANTED;
   }
 
-  if (std::ranges::contains(additional_origins_, url_origin)) {
+  if (base::Contains(additional_origins_, url_origin)) {
     return blink::mojom::PermissionStatus::GRANTED;
   }
 

@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/webui/resource_path.h"
 #include "url/gurl.h"
@@ -23,13 +24,13 @@ TEST(WebUIUtilDesktopTest,
                                          url_to_code_cache_pairs);
 
   EXPECT_EQ(3u, url_to_code_cache_pairs.size());
-  EXPECT_TRUE(std::ranges::contains(
+  EXPECT_TRUE(base::Contains(
       url_to_code_cache_pairs,
       std::pair<GURL, int>(GURL("chrome://test/resource_1.js"), 1)));
-  EXPECT_TRUE(std::ranges::contains(
+  EXPECT_TRUE(base::Contains(
       url_to_code_cache_pairs,
       std::pair<GURL, int>(GURL("chrome://test/resource_2.js"), 2)));
-  EXPECT_TRUE(std::ranges::contains(
+  EXPECT_TRUE(base::Contains(
       url_to_code_cache_pairs,
       std::pair<GURL, int>(GURL("chrome://test/path/resource_3.js"), 3)));
 }

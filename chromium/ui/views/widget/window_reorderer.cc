@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/dcheck_is_on.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_occlusion_tracker.h"
@@ -170,7 +171,7 @@ void WindowReorderer::ReorderChildWindows() {
       }
       aura::Window* child = parent_window->children()[live_idx];
 
-      if (!std::ranges::contains(expected, child)) {
+      if (!base::Contains(expected, child)) {
         live_idx++;
         continue;
       }

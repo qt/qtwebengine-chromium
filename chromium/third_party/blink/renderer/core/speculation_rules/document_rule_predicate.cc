@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_union_urlpatterninit_usvstring.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_url_pattern_init.h"
 #include "third_party/blink/renderer/core/css/parser/css_parser.h"
@@ -447,7 +448,7 @@ DocumentRulePredicate* DocumentRulePredicate::Parse(
         // "document", then return null.
         String relative_to;
         if (!input->GetString("relative_to", &relative_to) ||
-            !std::ranges::contains(kKnownRelativeToValues, relative_to)) {
+            !base::Contains(kKnownRelativeToValues, relative_to)) {
           SetParseErrorMessage(
               out_error,
               StrCat({"Unrecognized \"relative_to\" value: ",

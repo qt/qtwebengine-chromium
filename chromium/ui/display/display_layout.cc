@@ -14,6 +14,7 @@
 
 #include "base/check.h"
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/values.h"
@@ -522,7 +523,7 @@ void DisplayLayout::ApplyToDisplayList(Displays* display_list,
 bool DisplayLayout::Validate(const DisplayIdList& list,
                              const DisplayLayout& layout) {
   // The primary display should be in the list.
-  if (!std::ranges::contains(list, layout.primary_id)) {
+  if (!base::Contains(list, layout.primary_id)) {
     DISPLAY_LOG(ERROR) << "The primary id: " << layout.primary_id
                        << " is not in the id list.";
     return false;
@@ -560,13 +561,13 @@ bool DisplayLayout::Validate(const DisplayIdList& list,
       DISPLAY_LOG(ERROR) << "display_id must not be same as parent_display_id";
       return false;
     }
-    if (!std::ranges::contains(list, placement.display_id)) {
+    if (!base::Contains(list, placement.display_id)) {
       DISPLAY_LOG(ERROR) << "display_id is not in the id list:"
                          << placement.ToString();
       return false;
     }
 
-    if (!std::ranges::contains(list, placement.parent_display_id)) {
+    if (!base::Contains(list, placement.parent_display_id)) {
       DISPLAY_LOG(ERROR) << "parent_display_id is not in the id list:"
                          << placement.ToString();
       return false;
@@ -615,10 +616,10 @@ bool DisplayLayout::HasSamePlacementList(const DisplayLayout& layout) const {
 
 void DisplayLayout::RemoveDisplayPlacements(const DisplayIdList& list) {
   std::erase_if(placement_list, [&list](const DisplayPlacement& placement) {
-    return std::ranges::contains(list, placement.display_id);
+    return base::Contains(list, placement.display_id);
   });
   for (DisplayPlacement& placement : placement_list) {
-    if (std::ranges::contains(list, placement.parent_display_id)) {
+    if (base::Contains(list, placement.parent_display_id)) {
       placement.parent_display_id = primary_id;
     }
   }

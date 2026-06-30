@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "ui/ozone/platform/wayland/gpu/wayland_gl_egl_utility.h"
+#include "base/containers/contains.h"
 
 #include <algorithm>
 
@@ -49,7 +50,7 @@ WaylandGLEGLUtility::~WaylandGLEGLUtility() = default;
 void WaylandGLEGLUtility::GetAdditionalEGLAttributes(
     EGLenum platform_type,
     std::vector<EGLAttrib>* display_attributes) {
-  if (std::ranges::contains(*display_attributes,
+  if (base::Contains(*display_attributes,
                             EGL_PLATFORM_ANGLE_DEVICE_TYPE_SWIFTSHADER_ANGLE)) {
     display_attributes->push_back(
         EGL_PLATFORM_ANGLE_NATIVE_PLATFORM_TYPE_ANGLE);

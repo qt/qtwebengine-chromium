@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "base/base64.h"
+#include "base/containers/contains.h"
 #include "base/logging.h"
 #include "base/strings/escape.h"
 #include "base/strings/stringprintf.h"
@@ -150,10 +151,10 @@ TEST_P(SBProtocolManagerUtilUrlParsingTest, UrlParsing) {
   EXPECT_EQ(hosts[0], "b.c");
   EXPECT_EQ(hosts[1], "a.b.c");
 
-  EXPECT_TRUE(std::ranges::contains(paths, "/1/2.html?param=1"));
-  EXPECT_TRUE(std::ranges::contains(paths, "/1/2.html"));
-  EXPECT_TRUE(std::ranges::contains(paths, "/1/"));
-  EXPECT_TRUE(std::ranges::contains(paths, "/"));
+  EXPECT_TRUE(base::Contains(paths, "/1/2.html?param=1"));
+  EXPECT_TRUE(base::Contains(paths, "/1/2.html"));
+  EXPECT_TRUE(base::Contains(paths, "/1/"));
+  EXPECT_TRUE(base::Contains(paths, "/"));
 
   url = GURL("http://a.b.c.d.e.f.g/1.html");
   SBProtocolManagerUtil::GenerateHostsToCheck(url, &hosts);
@@ -165,15 +166,15 @@ TEST_P(SBProtocolManagerUtilUrlParsingTest, UrlParsing) {
   EXPECT_EQ(hosts[2], "d.e.f.g");
   EXPECT_EQ(hosts[3], "c.d.e.f.g");
   EXPECT_EQ(hosts[4], "a.b.c.d.e.f.g");
-  EXPECT_TRUE(std::ranges::contains(paths, "/1.html"));
-  EXPECT_TRUE(std::ranges::contains(paths, "/"));
+  EXPECT_TRUE(base::Contains(paths, "/1.html"));
+  EXPECT_TRUE(base::Contains(paths, "/"));
 
   url = GURL("http://a.b/saw-cgi/eBayISAPI.dll/");
   SBProtocolManagerUtil::GeneratePathsToCheck(url, &paths);
   EXPECT_EQ(paths.size(), 3u);
-  EXPECT_TRUE(std::ranges::contains(paths, "/saw-cgi/eBayISAPI.dll/"));
-  EXPECT_TRUE(std::ranges::contains(paths, "/saw-cgi/"));
-  EXPECT_TRUE(std::ranges::contains(paths, "/"));
+  EXPECT_TRUE(base::Contains(paths, "/saw-cgi/eBayISAPI.dll/"));
+  EXPECT_TRUE(base::Contains(paths, "/saw-cgi/"));
+  EXPECT_TRUE(base::Contains(paths, "/"));
 
   url = GURL("http://maps.google.example.com/1");
   SBProtocolManagerUtil::GenerateHostsToCheck(url, &hosts);

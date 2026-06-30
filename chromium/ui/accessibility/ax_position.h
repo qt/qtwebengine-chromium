@@ -42,6 +42,7 @@
 #include "ui/accessibility/ax_tree_id.h"
 #include "ui/accessibility/ax_tree_manager.h"
 #include "ui/gfx/utf16_indexing.h"
+#include "base/containers/contains.h"
 
 namespace ui {
 
@@ -767,7 +768,7 @@ class AXPosition {
       case AXPositionKind::TEXT_POSITION: {
         const std::vector<int32_t>& word_starts =
             text_position->GetWordStartOffsets();
-        return std::ranges::contains(word_starts,
+        return base::Contains(word_starts,
                                      int32_t{text_position->text_offset_});
       }
     }
@@ -794,7 +795,7 @@ class AXPosition {
       case AXPositionKind::TEXT_POSITION: {
         const std::vector<int32_t>& word_ends =
             text_position->GetWordEndOffsets();
-        return std::ranges::contains(word_ends,
+        return base::Contains(word_ends,
                                      int32_t{text_position->text_offset_});
       }
     }
@@ -962,7 +963,7 @@ class AXPosition {
         if (format_starts.size() <= 1) {
           return GetFormatStartBoundaryType() != AXBoundaryType::kNone;
         }
-        if (!std::ranges::contains(format_starts,
+        if (!base::Contains(format_starts,
                                    int32_t{text_position->text_offset_})) {
           return false;
         }
@@ -1026,7 +1027,7 @@ class AXPosition {
         if (format_ends.size() <= 1) {
           return GetFormatEndBoundaryType() != AXBoundaryType::kNone;
         }
-        if (!std::ranges::contains(format_ends,
+        if (!base::Contains(format_ends,
                                    int32_t{text_position->text_offset_})) {
           return false;
         }
@@ -1065,7 +1066,7 @@ class AXPosition {
         const std::vector<int32_t>& sentence_starts =
             text_position->GetAnchor()->GetIntListAttribute(
                 ax::mojom::IntListAttribute::kSentenceStarts);
-        return std::ranges::contains(sentence_starts,
+        return base::Contains(sentence_starts,
                                      int32_t{text_position->text_offset_});
       }
     }
@@ -1093,7 +1094,7 @@ class AXPosition {
         const std::vector<int32_t>& sentence_ends =
             text_position->GetAnchor()->GetIntListAttribute(
                 ax::mojom::IntListAttribute::kSentenceEnds);
-        return std::ranges::contains(sentence_ends,
+        return base::Contains(sentence_ends,
                                      int32_t{text_position->text_offset_});
       }
     }

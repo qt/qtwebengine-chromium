@@ -24,6 +24,7 @@
  */
 
 #include "third_party/blink/renderer/core/style/filter_operations.h"
+#include "base/containers/contains.h"
 
 #include <algorithm>
 #include <numeric>
@@ -93,7 +94,7 @@ bool FilterOperations::HasFilterThatMovesPixels() const {
 }
 
 bool FilterOperations::HasReferenceFilter() const {
-  return std::ranges::contains(operations_,
+  return base::Contains(operations_,
                                FilterOperation::OperationType::kReference,
                                &FilterOperation::GetType);
 }

@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <optional>
 
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/no_destructor.h"
@@ -70,7 +71,7 @@ bool ParseDictFormat(extensions::Extension* extension,
 
   // Extensions from allow list are allowed to register as any mime type.
   const bool is_legacy_extension =
-      std::ranges::contains(kMIMETypeHandlersAllowlist, extension->id());
+      base::Contains(kMIMETypeHandlersAllowlist, extension->id());
 
   for (const auto [mime_type, entry_value] : dict) {
     auto config = ConfigType::FromValue(entry_value);
@@ -85,7 +86,7 @@ bool ParseDictFormat(extensions::Extension* extension,
       continue;
     }
     if (!is_legacy_extension &&
-        !std::ranges::contains(MimeTypesHandler::GetPublicAllowedMIMETypeList(),
+        !base::Contains(MimeTypesHandler::GetPublicAllowedMIMETypeList(),
                                mime_type)) {
       extension->AddInstallWarning(extensions::InstallWarning(
           base::StrCat({"mime_types_handler: ignoring unsupported "
@@ -174,7 +175,7 @@ std::vector<std::string> MimeTypesHandler::GetSupportedMimeTypes() const {
 }
 
 bool MimeTypesHandler::IsPluginExtension() const {
-  return std::ranges::contains(kMIMETypeHandlersAllowlist, extension_id_);
+  return base::Contains(kMIMETypeHandlersAllowlist, extension_id_);
 }
 
 GURL MimeTypesHandler::GetHandlerUrl(const std::string& mime_type) const {

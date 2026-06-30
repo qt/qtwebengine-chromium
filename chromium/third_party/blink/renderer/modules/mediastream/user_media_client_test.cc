@@ -12,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/memory/ptr_util.h"
@@ -2248,8 +2249,8 @@ TEST_F(UserMediaClientTest, RestrictOwnAudioTrackCapabilities) {
   ASSERT_TRUE(track->getCapabilities()->hasRestrictOwnAudio());
   Vector<bool> restrict_own_audio_capabilities =
       track->getCapabilities()->restrictOwnAudio();
-  EXPECT_TRUE(std::ranges::contains(restrict_own_audio_capabilities, false));
-  EXPECT_EQ(std::ranges::contains(restrict_own_audio_capabilities, true),
+  EXPECT_TRUE(base::Contains(restrict_own_audio_capabilities, false));
+  EXPECT_EQ(base::Contains(restrict_own_audio_capabilities, true),
             media::IsRestrictOwnAudioSupported());
 }
 
@@ -2298,13 +2299,13 @@ TEST_F(UserMediaClientTest,
   EXPECT_TRUE(track1->getCapabilities()->hasVoiceIsolation());
   Vector<bool> voice_isolation_capabilities1 =
       track1->getCapabilities()->voiceIsolation();
-  EXPECT_TRUE(std::ranges::contains(voice_isolation_capabilities1, false));
-  EXPECT_TRUE(std::ranges::contains(voice_isolation_capabilities1, true));
+  EXPECT_TRUE(base::Contains(voice_isolation_capabilities1, false));
+  EXPECT_TRUE(base::Contains(voice_isolation_capabilities1, true));
   EXPECT_TRUE(track2->getCapabilities()->hasVoiceIsolation());
   Vector<bool> voice_isolation_capabilities2 =
       track2->getCapabilities()->voiceIsolation();
-  EXPECT_TRUE(std::ranges::contains(voice_isolation_capabilities2, false));
-  EXPECT_TRUE(std::ranges::contains(voice_isolation_capabilities2, true));
+  EXPECT_TRUE(base::Contains(voice_isolation_capabilities2, false));
+  EXPECT_TRUE(base::Contains(voice_isolation_capabilities2, true));
 
   // 3. Apply "false" exact to cloned track.
   // This should FAIL because it conflicts with Track 1's "true" exact.
@@ -2400,13 +2401,13 @@ TEST_F(UserMediaClientTest,
   EXPECT_TRUE(track1->getCapabilities()->hasVoiceIsolation());
   Vector<bool> voice_isolation_capabilities1 =
       track1->getCapabilities()->voiceIsolation();
-  EXPECT_TRUE(std::ranges::contains(voice_isolation_capabilities1, false));
-  EXPECT_TRUE(std::ranges::contains(voice_isolation_capabilities1, true));
+  EXPECT_TRUE(base::Contains(voice_isolation_capabilities1, false));
+  EXPECT_TRUE(base::Contains(voice_isolation_capabilities1, true));
   EXPECT_TRUE(track2->getCapabilities()->hasVoiceIsolation());
   Vector<bool> voice_isolation_capabilities2 =
       track2->getCapabilities()->voiceIsolation();
-  EXPECT_TRUE(std::ranges::contains(voice_isolation_capabilities2, false));
-  EXPECT_TRUE(std::ranges::contains(voice_isolation_capabilities2, true));
+  EXPECT_TRUE(base::Contains(voice_isolation_capabilities2, false));
+  EXPECT_TRUE(base::Contains(voice_isolation_capabilities2, true));
 
   // Stop tracks and GC to ensure a clean slate.
   blink::MediaStreamTrackPlatform::GetTrack(WebMediaStreamTrack(component1))

@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "components/url_pattern/simple_url_pattern_matcher.h"
 #include "url/gurl.h"
 
@@ -56,7 +57,7 @@ bool ConnectionAllowlistSubsumes(const ConnectionAllowlist& required,
   // required allowlist. An empty candidate allowlist permits no network
   // endpoints and is therefore trivially subsumed (it is maximally strict).
   for (const auto& entry : candidate.allowlist) {
-    if (!std::ranges::contains(required.allowlist, entry)) {
+    if (!base::Contains(required.allowlist, entry)) {
       return false;
     }
   }

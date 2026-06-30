@@ -10,6 +10,7 @@
 #include <optional>
 #include <string>
 
+#include "base/containers/contains.h"
 #include "base/containers/fixed_flat_map.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
@@ -766,7 +767,7 @@ void PolicyProvider::OnPreferenceChanged(const std::string& name) {
     }
   }
 
-  if (std::ranges::contains(kManagedPrefs, name)) {
+  if (base::Contains(kManagedPrefs, name)) {
     ReadManagedContentSettings(true);
     ReadManagedDefaultSettings();
   }

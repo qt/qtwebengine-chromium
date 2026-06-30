@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/containers/span.h"
 #include "base/strings/strcat.h"
 #include "base/strings/utf_string_conversions.h"
@@ -101,7 +102,7 @@ void VerifyAcceptanceRetentionHistograms(
         {"MultistepFilter.Acceptance.InitialCue.ByRetention.", slice});
     std::string overall_name =
         base::StrCat({"MultistepFilter.Acceptance.ByRetention.", slice});
-    if (std::ranges::contains(expected_slices, slice)) {
+    if (base::Contains(expected_slices, slice)) {
       histogram_tester.ExpectUniqueSample(initial_name, expected_decision,
                                           expected_count);
       histogram_tester.ExpectUniqueSample(overall_name, expected_decision,
@@ -121,7 +122,7 @@ void VerifyApplicationOutcomeRetentionHistograms(
   for (const auto& slice : kAllRetentionSlices) {
     std::string name = base::StrCat(
         {"MultistepFilter.ApplicationOutcome.ByRetention.", slice});
-    if (std::ranges::contains(expected_slices, slice)) {
+    if (base::Contains(expected_slices, slice)) {
       histogram_tester.ExpectUniqueSample(name, expected_outcome,
                                           expected_count);
     } else {

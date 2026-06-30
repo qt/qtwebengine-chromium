@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <memory>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/synchronization/atomic_flag.h"
@@ -96,7 +97,7 @@ void OffloadingVideoDecoder::Initialize(const VideoDecoderConfig& config,
   const bool disable_offloading =
       config.is_encrypted() ||
       config.coded_size().width() < min_offloading_width_ ||
-      !std::ranges::contains(supported_codecs_, config.codec());
+      !base::Contains(supported_codecs_, config.codec());
 
   if (initialized_) {
     initialized_ = false;

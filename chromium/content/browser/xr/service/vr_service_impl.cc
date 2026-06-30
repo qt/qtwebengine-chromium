@@ -8,6 +8,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/containers/to_vector.h"
 #include "base/dcheck_is_on.h"
 #include "base/feature_list.h"
@@ -89,7 +90,7 @@ std::vector<blink::PermissionType> GetRequiredPermissionsForFeatures(
     auto feature_permission =
         content::XrPermissionResults::GetPermissionFor(required_feature);
     if (feature_permission &&
-        !std::ranges::contains(permissions, *feature_permission)) {
+        !base::Contains(permissions, *feature_permission)) {
       permissions.push_back(*feature_permission);
     }
   }
@@ -98,7 +99,7 @@ std::vector<blink::PermissionType> GetRequiredPermissionsForFeatures(
     auto feature_permission =
         content::XrPermissionResults::GetPermissionFor(optional_feature);
     if (feature_permission &&
-        !std::ranges::contains(permissions, *feature_permission)) {
+        !base::Contains(permissions, *feature_permission)) {
       permissions.push_back(*feature_permission);
     }
   }

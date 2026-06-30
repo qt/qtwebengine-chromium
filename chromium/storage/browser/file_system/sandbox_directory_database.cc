@@ -13,6 +13,7 @@
 #include <set>
 
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/containers/span.h"
 #include "base/containers/stack.h"
 #include "base/files/file_enumerator.h"
@@ -298,7 +299,7 @@ bool DatabaseCheckHelper::ScanDirectory() {
       if (!path_.AppendRelativePath(absolute_file_path, &relative_file_path))
         return false;
 
-      if (std::ranges::contains(kExcludes, relative_file_path))
+      if (base::Contains(kExcludes, relative_file_path))
         continue;
 
       if (find_info.IsDirectory()) {

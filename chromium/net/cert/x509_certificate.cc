@@ -13,6 +13,7 @@
 #include <string_view>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/containers/span.h"
 #include "base/containers/to_vector.h"
 #include "base/logging.h"
@@ -428,7 +429,7 @@ bool X509Certificate::IsIssuedByEncoded(
     if (!GetNormalizedCertIssuer(cert.get(), &normalized_cert_issuer)) {
       return false;
     }
-    if (std::ranges::contains(normalized_issuers, normalized_cert_issuer))
+    if (base::Contains(normalized_issuers, normalized_cert_issuer))
       return true;
   }
   return false;
@@ -463,7 +464,7 @@ bool X509Certificate::VerifyHostname(
 
   // Fully handle all cases where |hostname| contains an IP address.
   if (host_info.IsIPAddress()) {
-    return std::ranges::contains(cert_san_ip_addrs,
+    return base::Contains(cert_san_ip_addrs,
                                  base::as_string_view(host_info.AddressSpan()));
   }
 

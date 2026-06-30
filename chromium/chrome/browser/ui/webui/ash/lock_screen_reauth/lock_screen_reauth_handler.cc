@@ -10,6 +10,7 @@
 #include "ash/constants/ash_features.h"
 #include "ash/constants/ash_login_pref_names.h"
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/notreached.h"
 #include "base/uuid.h"
@@ -433,7 +434,7 @@ void LockScreenReauthHandler::HandleOnPasswordTyped(
 
 void LockScreenReauthHandler::OnPasswordTyped(const std::string& password) {
   if (scraped_saml_passwords_.empty() ||
-      std::ranges::contains(scraped_saml_passwords_, password)) {
+      base::Contains(scraped_saml_passwords_, password)) {
     OnPasswordConfirmed(password);
     return;
   }

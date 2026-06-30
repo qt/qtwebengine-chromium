@@ -9,6 +9,7 @@
 
 #include "base/atomic_sequence_num.h"
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/memory/ptr_util.h"
 #include "base/task/common/task_annotator.h"
@@ -490,7 +491,7 @@ bool GpuChannelHost::ConnectionTracker::AddObserverIfNotAlreadyLost(
   if (!is_connected()) {
     return false;
   }
-  CHECK(!std::ranges::contains(observer_list_, obs));
+  CHECK(!base::Contains(observer_list_, obs));
   observer_list_.push_back(obs);
   return true;
 }

@@ -13,6 +13,7 @@
 #include <string>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/strings/string_util.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/values.h"
@@ -92,7 +93,7 @@ class SpellcheckLanguagePolicyHandlersTest
 
       for (const auto& language : languages_list->GetList()) {
         EXPECT_TRUE(language.is_string());
-        EXPECT_TRUE(std::ranges::contains(expected, language.GetString()));
+        EXPECT_TRUE(base::Contains(expected, language.GetString()));
       }
     } else {
       EXPECT_FALSE(is_spellcheck_enabled_pref_set);

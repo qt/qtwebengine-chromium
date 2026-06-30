@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <string>
 
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/test/scoped_feature_list.h"
@@ -144,9 +145,9 @@ TEST_F(MimeTypesHandlerTest, LoadLegacy) {
 TEST(MimeTypesHandlerUnitTest, PublicAllowedMIMETypeList) {
   const auto& list = MimeTypesHandler::GetPublicAllowedMIMETypeList();
   EXPECT_FALSE(list.empty());
-  EXPECT_TRUE(std::ranges::contains(list, kPdfMimeType));
+  EXPECT_TRUE(base::Contains(list, kPdfMimeType));
   // Inline subresource types must NOT be in the list.
-  EXPECT_FALSE(std::ranges::contains(list, "image/png"));
+  EXPECT_FALSE(base::Contains(list, "image/png"));
 }
 
 TEST_F(MimeTypesHandlerTest, DictFormatParsing) {

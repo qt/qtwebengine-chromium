@@ -16,6 +16,7 @@
 #include "base/check.h"
 #include "base/check_deref.h"
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/containers/fixed_flat_map.h"
 #include "base/i18n/language_tag.h"
 #include "base/i18n/tag_converters.h"
@@ -2300,7 +2301,7 @@ std::vector<std::string> ReadAnythingAppController::GetSupportedFonts() {
 std::string ReadAnythingAppController::GetValidatedFontName(
     const std::string& font) const {
   std::string validated_font = font;
-  if (!std::ranges::contains(model_.supported_fonts(), validated_font)) {
+  if (!base::Contains(model_.supported_fonts(), validated_font)) {
     validated_font = model_.supported_fonts().front();
   }
   if (validated_font == "Serif" || validated_font == "Sans-serif") {

@@ -11,6 +11,7 @@
 
 #include "base/check.h"
 #include "base/check_deref.h"
+#include "base/containers/contains.h"
 #include "base/containers/map_util.h"
 #include "base/containers/to_vector.h"
 #include "base/feature_list.h"
@@ -452,7 +453,7 @@ void AutofillAiPersonalContextAccessManagerImpl::ProcessPrefetchedEntities(
   for (ParsedEntity& entity : parsed_entities) {
     if (const EntityInstance* e_instance =
             std::get_if<EntityInstance>(&entity.instance)) {
-      if (std::ranges::contains(requested_types, e_instance->type())) {
+      if (base::Contains(requested_types, e_instance->type())) {
         prefetched_proto_cache_.emplace(e_instance->guid(),
                                         std::move(entity.proto));
         entities.push_back(std::move(*e_instance));
@@ -460,7 +461,7 @@ void AutofillAiPersonalContextAccessManagerImpl::ProcessPrefetchedEntities(
     } else {
       const SpiiEntityPresenceSignal signal =
           std::get<SpiiEntityPresenceSignal>(entity.instance);
-      if (std::ranges::contains(requested_types, signal)) {
+      if (base::Contains(requested_types, signal)) {
         CachePresenceSignal(signal);
       }
     }

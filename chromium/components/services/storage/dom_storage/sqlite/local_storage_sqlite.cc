@@ -5,6 +5,7 @@
 #include "components/services/storage/dom_storage/sqlite/local_storage_sqlite.h"
 
 #include "base/byte_size.h"
+#include "base/containers/contains.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/strings/stringprintf.h"
@@ -304,7 +305,7 @@ DbStatus LocalStorageSqlite::DeleteStorageKeysFromSession(
   for (const MapLocator& map : maps_to_delete) {
     // A valid `map` must be in `metadata_to_delete`.
     CHECK_EQ(map.session_ids().size(), 0u);
-    DCHECK(std::ranges::contains(metadata_to_delete, map.storage_key()));
+    DCHECK(base::Contains(metadata_to_delete, map.storage_key()));
 
     ASSIGN_OR_RETURN(std::optional<int64_t> map_id,
                      FindMapId(map.storage_key()));

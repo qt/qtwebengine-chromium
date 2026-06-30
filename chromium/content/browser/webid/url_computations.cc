@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <string>
 
+#include "base/containers/contains.h"
 #include "base/strings/escape.h"
 #include "base/strings/string_util.h"
 #include "base/strings/to_string.h"
@@ -24,9 +25,9 @@ using RpMode = blink::mojom::RpMode;
 namespace {
 
 bool IsRequestingDefaultPermissions(const std::vector<std::string>& fields) {
-  return std::ranges::contains(fields, kDefaultFieldName) &&
-         std::ranges::contains(fields, kDefaultFieldEmail) &&
-         std::ranges::contains(fields, kDefaultFieldPicture);
+  return base::Contains(fields, kDefaultFieldName) &&
+         base::Contains(fields, kDefaultFieldEmail) &&
+         base::Contains(fields, kDefaultFieldPicture);
 }
 
 }  // namespace

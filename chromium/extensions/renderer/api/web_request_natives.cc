@@ -10,6 +10,7 @@
 #include <string>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/values.h"
@@ -201,7 +202,7 @@ void WebRequestNatives::GetMatchingListeners(
       continue;
     }
     if (!filter.types.empty() &&
-        !std::ranges::contains(filter.types, request_type)) {
+        !base::Contains(filter.types, request_type)) {
       continue;
     }
     matches.push_back(v8::Integer::New(isolate, listener_id));

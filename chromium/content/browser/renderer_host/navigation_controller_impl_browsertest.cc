@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/functional/bind.h"
@@ -16975,7 +16976,7 @@ IN_PROC_BROWSER_TEST_P(NavigationControllerBrowserTest,
   EXPECT_TRUE(NavigateToURL(shell(), first_url));
   curr_spare_ids = spare_manager.GetSpareIds();
   curr_host = shell()->web_contents()->GetPrimaryMainFrame()->GetProcess();
-  EXPECT_FALSE(std::ranges::contains(curr_spare_ids, curr_host->GetID()));
+  EXPECT_FALSE(base::Contains(curr_spare_ids, curr_host->GetID()));
 
   // No process swap when navigating away from the initial blank page.
   EXPECT_EQ(prev_host, curr_host);
@@ -17010,7 +17011,7 @@ IN_PROC_BROWSER_TEST_P(NavigationControllerBrowserTest,
   EXPECT_NE(prev_host, curr_host);
   // If present, the spare RenderProcessHost should have been be used.
   if (!prev_spare_ids.empty()) {
-    EXPECT_TRUE(std::ranges::contains(prev_spare_ids, curr_host->GetID()));
+    EXPECT_TRUE(base::Contains(prev_spare_ids, curr_host->GetID()));
   }
   // A new spare should be warmed-up in site-per-process mode.
   if (AreAllSitesIsolatedForTesting()) {
@@ -17032,7 +17033,7 @@ IN_PROC_BROWSER_TEST_P(NavigationControllerBrowserTest,
   EXPECT_NE(prev_host, curr_host);
   // If present, the spare RenderProcessHost should have been used.
   if (!prev_spare_ids.empty()) {
-    EXPECT_TRUE(std::ranges::contains(prev_spare_ids, curr_host->GetID()));
+    EXPECT_TRUE(base::Contains(prev_spare_ids, curr_host->GetID()));
   }
   // A new spare should be warmed-up in site-per-process mode.
   if (AreAllSitesIsolatedForTesting()) {

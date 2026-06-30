@@ -8,6 +8,7 @@
 #include <optional>
 #include <string>
 
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/i18n/rtl.h"
 #include "base/metrics/histogram_functions.h"
@@ -312,7 +313,7 @@ void SodaInstaller::UnregisterLanguages(PrefService* global_prefs) {
 }
 
 bool SodaInstaller::IsLanguageEnabled(std::string_view language) {
-  return std::ranges::contains(GetLiveCaptionEnabledLanguages(), language);
+  return base::Contains(GetLiveCaptionEnabledLanguages(), language);
 }
 
 bool SodaInstaller::IsSodaLanguageDownloading(

@@ -20,6 +20,7 @@
 #include "base/bits.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/containers/span.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
@@ -981,7 +982,7 @@ void V4L2VideoEncodeAccelerator::EncodeTask(scoped_refptr<VideoFrame> frame,
         PIXEL_FORMAT_NV12,
     };
     const bool is_expected_format =
-        std::ranges::contains(kExpectedFormats, frame->format());
+        base::Contains(kExpectedFormats, frame->format());
     if (!is_expected_format) {
       SetErrorState(
           {EncoderStatus::Codes::kInvalidInputFrame,

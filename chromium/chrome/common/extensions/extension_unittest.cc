@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/containers/contains.h"
 #include "extensions/common/extension.h"
 
 #include <stddef.h>
@@ -444,7 +445,7 @@ TEST(ExtensionTest, IgnoredUnrecognizedKeysAreNotManifestFeatures) {
 
   for (const auto& [key, value] : manifest_features->GetAllFeatures()) {
     EXPECT_FALSE(
-        std::ranges::contains(manifest_keys::kIgnoredUnrecognizedKeys, key));
+        base::Contains(manifest_keys::kIgnoredUnrecognizedKeys, key));
   }
 }
 

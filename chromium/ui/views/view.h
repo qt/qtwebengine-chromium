@@ -62,6 +62,7 @@
 #include "ui/views/paint_info.h"
 #include "ui/views/view_targeter.h"
 #include "ui/views/views_export.h"
+#include "base/containers/contains.h"
 
 class InfoBarView;
 class OmniboxPopupPresenter;
@@ -525,7 +526,7 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
     CHECK(!view->owned_by_client())
         << "This should only be called if the client doesn't already have "
            "ownership of |view|.";
-    DCHECK(std::ranges::contains(children_, view));
+    DCHECK(base::Contains(children_, view));
     RemoveChildView(view);
     return base::WrapUnique(view);
   }

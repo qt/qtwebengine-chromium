@@ -10,6 +10,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/containers/flat_map.h"
 #include "base/containers/flat_set.h"
 #include "base/json/json_reader.h"
@@ -88,7 +89,7 @@ bool ValidateVendorItem(const std::string& name,
       continue;
     }
 
-    return std::ranges::contains(capability.values, value,
+    return base::Contains(capability.values, value,
                                  &printing::AdvancedCapabilityValue::name);
   }
 
@@ -356,7 +357,7 @@ bool CheckSettingsAndCapabilitiesCompatibility(
     return false;
   }
 
-  if (!std::ranges::contains(capabilities.duplex_modes,
+  if (!base::Contains(capabilities.duplex_modes,
                              settings.duplex_mode())) {
     return false;
   }
@@ -375,7 +376,7 @@ bool CheckSettingsAndCapabilitiesCompatibility(
     return false;
   }
 
-  if (!std::ranges::contains(capabilities.dpis, settings.dpi_size())) {
+  if (!base::Contains(capabilities.dpis, settings.dpi_size())) {
     return false;
   }
 
@@ -398,7 +399,7 @@ bool CheckSettingsAndCapabilitiesCompatibility(
   // the value is not the default.
   if (settings.print_scaling() !=
       printing::mojom::PrintScalingType::kUnknownPrintScalingType) {
-    const bool uses_supported_print_scaling = std::ranges::contains(
+    const bool uses_supported_print_scaling = base::Contains(
         capabilities.print_scaling_types, settings.print_scaling());
     base::UmaHistogramBoolean("Extensions.Printing.UsesSupportedPrintScaling",
                               uses_supported_print_scaling);

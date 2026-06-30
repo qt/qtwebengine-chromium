@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "base/containers/to_vector.h"
 #include "base/functional/bind.h"
 #include "base/strings/string_util.h"
@@ -218,7 +219,7 @@ void JavaScriptAutofillTracker::DetectJavaScriptAutofill(
   // enforced, which is that at least one field should be prefix-completed, in
   // order to reduce IPC noise and false positives.
   if (field_modifications.size() < kJsAutofillMinFieldsChanged &&
-      !std::ranges::contains(
+      !base::Contains(
           field_modifications,
           mojom::JavaScriptModificationType::kPrefixCompletion,
           &mojom::JavaScriptFieldModification::modification_type)) {

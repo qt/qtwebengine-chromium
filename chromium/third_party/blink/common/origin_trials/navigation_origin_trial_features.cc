@@ -9,6 +9,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "third_party/blink/public/common/origin_trials/origin_trials.h"
 #include "third_party/blink/public/mojom/origin_trials/origin_trial_feature.mojom-shared.h"
 
@@ -23,7 +24,7 @@ bool FeatureEnabledForNavigation(blink::mojom::OriginTrialFeature feature) {
       blink::mojom::OriginTrialFeature::kOriginTrialsSampleAPINavigation,
       blink::mojom::OriginTrialFeature::kTextFragmentIdentifiers,
   };
-  return std::ranges::contains(kEnabledForNavigation, feature);
+  return base::Contains(kEnabledForNavigation, feature);
 }
 
 }  // namespace origin_trials

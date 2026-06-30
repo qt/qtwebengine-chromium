@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "services/device/public/cpp/hid/hid_report_utils.h"
+#include "base/containers/contains.h"
 
 #include <algorithm>
 
@@ -26,7 +27,7 @@ const std::vector<mojom::HidReportDescriptionPtr>& ReportsForType(
 bool CollectionContainsReport(const mojom::HidCollectionInfo& collection,
                               uint8_t report_id,
                               HidReportType report_type) {
-  return std::ranges::contains(ReportsForType(collection, report_type),
+  return base::Contains(ReportsForType(collection, report_type),
                                report_id,
                                &mojom::HidReportDescription::report_id);
 }
@@ -109,7 +110,7 @@ const mojom::HidCollectionInfo* FindCollectionWithReport(
   // `report_type`, or nullptr if it is not in any collection.
   auto find_it = std::ranges::find_if(
       device.collections, [report_id, report_type](const auto& collection) {
-        return std::ranges::contains(ReportsForType(*collection, report_type),
+        return base::Contains(ReportsForType(*collection, report_type),
                                      report_id,
                                      &mojom::HidReportDescription::report_id);
       });

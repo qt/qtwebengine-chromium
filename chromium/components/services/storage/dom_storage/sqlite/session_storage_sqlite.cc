@@ -4,6 +4,7 @@
 
 #include "components/services/storage/dom_storage/sqlite/session_storage_sqlite.h"
 
+#include "base/containers/contains.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/strings/stringprintf.h"
 #include "base/task/sequenced_task_runner.h"
@@ -214,7 +215,7 @@ DbStatus SessionStorageSqlite::DeleteStorageKeysFromSession(
   for (const MapLocator& map_locator : maps_to_delete) {
     // The map's storage key must be in `metadata_to_delete`.
     DCHECK(
-        std::ranges::contains(metadata_to_delete, map_locator.storage_key()));
+        base::Contains(metadata_to_delete, map_locator.storage_key()));
 
     // The map must be unreferenced with no sessions remaining.
     CHECK(map_locator.session_ids().empty());

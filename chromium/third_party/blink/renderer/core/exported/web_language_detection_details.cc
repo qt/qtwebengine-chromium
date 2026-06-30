@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/containers/contains.h"
 #include "third_party/blink/public/web/web_language_detection_details.h"
 
 #include <algorithm>
@@ -106,7 +107,7 @@ void MatchTargetLanguageWithAcceptLanguages(
                           kXmlLangMatchesPrimaryAcceptLanguage
                     : AcceptLanguageAndXmlHtmlLangUsage::
                           kHtmlLangMatchesPrimaryAcceptLanguage);
-  } else if (std::ranges::contains(accept_languages, target_language,
+  } else if (base::Contains(accept_languages, target_language,
                                    &GetLanguageCode)) {
     base::UmaHistogramEnumeration(
         language_histogram_name,

@@ -10,6 +10,7 @@
 
 #include "base/apple/foundation_util.h"
 #include "base/base64.h"
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/no_destructor.h"
 #include "base/numerics/ranges.h"
@@ -1211,7 +1212,7 @@ bool NativeWidgetMacNSWindowHost::DispatchMonitorEvent(
   for (auto* event_monitor : event_monitors_snapshot) {
     // Ensure `event_monitor` was not removed from `event_monitors_` by a
     // previous call to NativeWidgetMacEventMonitorOnEvent.
-    if (!std::ranges::contains(event_monitors_, event_monitor)) {
+    if (!base::Contains(event_monitors_, event_monitor)) {
       continue;
     }
     event_monitor->client_->NativeWidgetMacEventMonitorOnEvent(

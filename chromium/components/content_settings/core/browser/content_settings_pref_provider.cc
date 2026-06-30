@@ -12,6 +12,7 @@
 #include <string>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/metrics/histogram_macros.h"
@@ -270,7 +271,7 @@ bool PrefProvider::SetWebsiteSetting(
   // If mojom::SessionModel is ONE_TIME, we know for sure that a one time
   // permission has been set by the One Time Provider.
   if (constraints.session_model() == mojom::SessionModel::ONE_TIME) {
-    DCHECK(std::ranges::contains(GetTypesWithTemporaryGrantsInHcsm(),
+    DCHECK(base::Contains(GetTypesWithTemporaryGrantsInHcsm(),
                                  content_type));
 
     mojom::SessionModel session_model;

@@ -24,6 +24,7 @@
 
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/containers/fixed_flat_set.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
@@ -320,7 +321,7 @@ std::string GetDeviceModelId(const std::string& device_id) {
 
 bool DevicesInfoContainsDeviceId(const DevicesInfo& devices_info,
                                  const std::string& device_id) {
-  return std::ranges::contains(devices_info, device_id,
+  return base::Contains(devices_info, device_id,
                                [](const VideoCaptureDeviceInfo& device_info) {
                                  return device_info.descriptor.device_id;
                                });

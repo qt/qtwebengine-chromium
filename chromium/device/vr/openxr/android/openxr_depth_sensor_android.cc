@@ -10,6 +10,7 @@
 #include <memory>
 #include <set>
 
+#include "base/containers/contains.h"
 #include "base/containers/fixed_flat_map.h"
 #include "base/containers/flat_set.h"
 #include "base/feature_list.h"
@@ -299,7 +300,7 @@ OpenXrDepthSensorAndroid::OpenXrDepthSensorAndroid(
   const auto& usage_preferences = depth_options.usage_preferences;
   const bool can_support_depth =
       usage_preferences.empty() ||
-      std::ranges::contains(usage_preferences,
+      base::Contains(usage_preferences,
                             mojom::XRDepthUsage::kCPUOptimized);
 
   if (can_support_depth) {
@@ -465,7 +466,7 @@ XrResult OpenXrDepthSensorAndroid::Initialize() {
       kResolutionPreferences.begin(), kResolutionPreferences.end(),
       [&supported_resolutions](
           const XrDepthCameraResolutionANDROID& resolution) {
-        return std::ranges::contains(supported_resolutions, resolution);
+        return base::Contains(supported_resolutions, resolution);
       });
 
   if (it == kResolutionPreferences.end()) {

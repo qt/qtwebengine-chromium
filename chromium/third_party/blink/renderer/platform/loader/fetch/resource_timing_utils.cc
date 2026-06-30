@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "base/notreached.h"
 #include "base/time/time.h"
 #include "resource_response.h"
@@ -60,7 +61,7 @@ mojom::blink::ResourceTimingInfoPtr CreateResourceTimingInfo(
         response->HttpHeaderField(http_names::kServerTiming));
     info->cache_state = response->CacheState();
     // Use SecurityOrigin::Create to handle cases like blob:https://.
-    info->is_secure_transport = std::ranges::contains(
+    info->is_secure_transport = base::Contains(
         url::GetSecureSchemes(),
         SecurityOrigin::Create(response->ResponseUrl())->Protocol().Ascii());
     info->timing = response->GetResourceLoadTiming()

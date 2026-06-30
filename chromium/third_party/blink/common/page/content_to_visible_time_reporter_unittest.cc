@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/containers/contains.h"
 #include "third_party/blink/public/common/page/content_to_visible_time_reporter.h"
 
 #include <algorithm>
@@ -114,7 +115,7 @@ class ContentToVisibleTimeReporterTest
         kBfcacheRestoreHistogram};
     std::vector<std::string> unexpected_histograms;
     for (const char* histogram : kAllHistograms) {
-      if (!std::ranges::contains(histograms_with_values, histogram))
+      if (!base::Contains(histograms_with_values, histogram))
         unexpected_histograms.push_back(histogram);
     }
     ExpectTotalSamples(unexpected_histograms, 0);

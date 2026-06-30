@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "base/base64url.h"
+#include "base/containers/contains.h"
 #include "base/notreached.h"
 #include "base/strings/escape.h"
 #include "base/strings/stringprintf.h"
@@ -39,7 +40,7 @@ void AddToSubresourceFilterMetadata(
     ThreatMetadata* subresource_filter_metadata,
     const V5::FullHash::FullHashDetail& detail) {
   SubresourceFilterLevel level =
-      std::ranges::contains(detail.attributes(), V5::ThreatAttribute::CANARY)
+      base::Contains(detail.attributes(), V5::ThreatAttribute::CANARY)
           ? SubresourceFilterLevel::WARN
           : SubresourceFilterLevel::ENFORCE;
   if (detail.threat_type() == V5::ThreatType::ABUSIVE_EXPERIENCE_VIOLATION) {
@@ -63,7 +64,7 @@ void AddToSubresourceFilterMetadata(
 
 int GetThreatSeverity(const V5::FullHash::FullHashDetail& detail) {
   bool is_canary =
-      std::ranges::contains(detail.attributes(), V5::ThreatAttribute::CANARY);
+      base::Contains(detail.attributes(), V5::ThreatAttribute::CANARY);
   if (detail.threat_type() == V5::ThreatType::SOCIAL_ENGINEERING && is_canary) {
     // SUSPICIOUS threat type.
     return 7;
@@ -153,7 +154,7 @@ ThreatResult& ThreatResult::operator=(const ThreatResult&) = default;
 SBThreatType MapFullHashDetailToSbThreatType(
     const V5::FullHash::FullHashDetail& detail) {
   if (detail.threat_type() == V5::ThreatType::SOCIAL_ENGINEERING &&
-      std::ranges::contains(detail.attributes(), V5::ThreatAttribute::CANARY)) {
+      base::Contains(detail.attributes(), V5::ThreatAttribute::CANARY)) {
     return SBThreatType::SB_THREAT_TYPE_SUSPICIOUS_SITE;
   }
   // LINT.IfChange(ThreatTypeMap)

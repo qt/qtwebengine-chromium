@@ -7,6 +7,7 @@
 #include <algorithm>
 
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "components/browser_actuator/public/transport_handler_factory.h"
 
 namespace browser_actuator {
@@ -24,7 +25,7 @@ void TransportHandlerFactoryRegistryImpl::RegisterFactory(
   DCHECK(factory);
   for (PayloadType payload_type : factory->GetSupportedPayloadTypes()) {
     auto& registered_factories = factories_[payload_type];
-    if (!std::ranges::contains(registered_factories, factory)) {
+    if (!base::Contains(registered_factories, factory)) {
       registered_factories.push_back(factory);
     }
   }

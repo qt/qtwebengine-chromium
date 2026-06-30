@@ -11,6 +11,7 @@
 
 #include "base/check.h"
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/functional/callback.h"
 #include "base/functional/function_ref.h"
 #include "base/strings/string_util.h"
@@ -198,7 +199,7 @@ void IbanSuggestionGenerator::GenerateSuggestions(
   // assume the IBAN has been filled, and don't show any suggestions.
   if (!trigger_autofill_field ||
       (!trigger_autofill_field->value().empty() &&
-       std::ranges::contains(ibans, trigger_autofill_field->value(),
+       base::Contains(ibans, trigger_autofill_field->value(),
                              &Iban::value))) {
     callback({SuggestionDataSource::kIban, {}});
     return;

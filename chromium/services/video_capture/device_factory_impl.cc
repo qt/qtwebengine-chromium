@@ -8,6 +8,7 @@
 #include <sstream>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/notimplemented.h"
 #if BUILDFLAG(IS_CHROMEOS)
@@ -50,7 +51,7 @@ static void TranslateDeviceInfos(
       }
       translated_format.frame_size = format.frame_size;
       translated_format.frame_rate = format.frame_rate;
-      if (std::ranges::contains(translated_device_info.supported_formats,
+      if (base::Contains(translated_device_info.supported_formats,
                                 translated_format)) {
         continue;
       }

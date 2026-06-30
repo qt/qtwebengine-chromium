@@ -8,6 +8,7 @@
 #include <optional>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/files/file_path.h"
 #include "content/browser/tracing/background_tracing_agent_client_impl.h"
 #include "content/common/child_process.mojom.h"
@@ -110,7 +111,7 @@ BackgroundTracingManagerImpl::GetAllScenarios() const {
     new_scenario->description = scenario->description();
     new_scenario->is_local_scenario = scenario->is_local_scenario();
     new_scenario->is_enabled =
-        std::ranges::contains(enabled_scenarios_, scenario);
+        base::Contains(enabled_scenarios_, scenario);
     new_scenario->current_state = scenario->current_state();
     return new_scenario;
   };

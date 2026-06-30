@@ -9,6 +9,7 @@
 #include <unordered_map>
 
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/debug/dump_without_crashing.h"
 #include "cc/base/features.h"
 #include "components/viz/common/view_transition_element_resource_id.h"
@@ -578,7 +579,7 @@ void ViewTransitionStyleTracker::AddTransitionElement(
                                });
   }
   // Find the existing name if one is there. If it is there, do nothing.
-  if (std::ranges::contains(value, name, &std::pair<AtomicString, int>::first))
+  if (base::Contains(value, name, &std::pair<AtomicString, int>::first))
     return;
   // Otherwise, insert a new sequence id with this name. We'll use the sequence
   // to sort later.

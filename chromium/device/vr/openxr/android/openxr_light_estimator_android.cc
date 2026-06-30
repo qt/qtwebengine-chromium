@@ -10,6 +10,7 @@
 #include <set>
 
 #include "base/bit_cast.h"
+#include "base/containers/contains.h"
 #include "base/containers/flat_set.h"
 #include "base/containers/span.h"
 #include "base/feature_list.h"
@@ -321,7 +322,7 @@ void OpenXrLightEstimatorAndroidFactory::CheckAndUpdateEnabledState(
     return;
   }
 
-  if (!std::ranges::contains(formats, kRequiredColorFormat)) {
+  if (!base::Contains(formats, kRequiredColorFormat)) {
     return;
   }
 
@@ -344,7 +345,7 @@ void OpenXrLightEstimatorAndroidFactory::CheckAndUpdateEnabledState(
 
   // Select our preferred resolution if we can, otherwise select the first
   // resolution that is within our bounds of accepted resolutions.
-  if (std::ranges::contains(resolutions, kPreferredCubeMapResolution)) {
+  if (base::Contains(resolutions, kPreferredCubeMapResolution)) {
     selected_resolution_ = kPreferredCubeMapResolution;
   } else {
     auto it = std::ranges::find_if(resolutions, [](uint32_t resolution) {

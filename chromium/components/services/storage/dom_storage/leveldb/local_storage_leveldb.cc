@@ -7,6 +7,7 @@
 #include <algorithm>
 
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_view_util.h"
 #include "base/types/expected_macros.h"
@@ -320,7 +321,7 @@ DbStatus LocalStorageLevelDB::DeleteStorageKeysFromSession(
   for (const MapLocator& map : maps_to_delete) {
     // A valid `map` must be in `storage_keys`.
     CHECK_EQ(map.session_ids().size(), 0u);
-    DCHECK(std::ranges::contains(metadata_to_delete, map.storage_key()));
+    DCHECK(base::Contains(metadata_to_delete, map.storage_key()));
 
     DB_RETURN_IF_ERROR(batch->DeletePrefixed(GetMapPrefix(map.storage_key())));
   }

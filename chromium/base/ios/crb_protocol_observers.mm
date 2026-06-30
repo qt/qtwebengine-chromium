@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/notreached.h"
 
 @interface CRBProtocolObservers () {
@@ -106,7 +107,7 @@ id Iterator::GetNext() {
   DCHECK(observer);
   DCHECK([observer conformsToProtocol:self.protocol]);
 
-  if (std::ranges::contains(_observers, observer)) {
+  if (base::Contains(_observers, observer)) {
     return;
   }
 

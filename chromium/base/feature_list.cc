@@ -16,6 +16,7 @@
 #include "base/check_is_test.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/containers/span.h"
 #include "base/debug/crash_logging.h"
 #include "base/debug/dump_without_crashing.h"
@@ -1099,10 +1100,10 @@ bool FeatureList::IsFeatureEnabled(const Feature& feature) const {
         static_cast<const FeatureWithCountryRestriction&>(feature);
     switch (restricted_feature.default_state) {
       case FEATURE_DISABLED_FOR_COUNTRIES:
-        return !std::ranges::contains(restricted_feature.countries,
+        return !base::Contains(restricted_feature.countries,
                                       variation_country_);
       case FEATURE_ENABLED_FOR_COUNTRIES:
-        return std::ranges::contains(restricted_feature.countries,
+        return base::Contains(restricted_feature.countries,
                                      variation_country_);
       default:
         NOTREACHED();
