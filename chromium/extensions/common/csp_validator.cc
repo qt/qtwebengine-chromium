@@ -44,6 +44,8 @@ namespace {
 
 const char kDefaultSrc[] = "default-src";
 const char kScriptSrc[] = "script-src";
+const char kScriptSrcElem[] = "script-src-elem";
+const char kScriptSrcAttr[] = "script-src-attr";
 const char kObjectSrc[] = "object-src";
 const char kFrameSrc[] = "frame-src";
 const char kChildSrc[] = "child-src";
@@ -489,7 +491,8 @@ class ExtensionCSPEnforcer : public CSPEnforcer {
       : CSPEnforcer(std::move(manifest_key),
                     true,
                     base::BindRepeating(&GetSecureDirectiveValues, options)) {
-    secure_directives_.emplace_back(std::vector<std::string>({kScriptSrc}));
+    secure_directives_.emplace_back(std::vector<std::string>(
+        {kScriptSrc, kScriptSrcElem, kScriptSrcAttr, kWorkerSrc, kChildSrc}));
     if (!allow_insecure_object_src)
       secure_directives_.emplace_back(std::vector<std::string>({kObjectSrc}));
   }
@@ -501,7 +504,9 @@ class ExtensionCSPEnforcer : public CSPEnforcer {
   std::string GetDefaultCSPValue(const DirectiveStatus& status) override {
     if (status.Matches(kObjectSrc))
       return kObjectSrcDefaultDirective;
-    DCHECK(status.Matches(kScriptSrc));
+    DCHECK(status.Matches(kScriptSrc) || status.Matches(kScriptSrcElem) ||
+           status.Matches(kScriptSrcAttr) || status.Matches(kWorkerSrc) ||
+           status.Matches(kChildSrc));
     return kScriptSrcDefaultDirective;
   }
 };
@@ -514,7 +519,8 @@ class AppSandboxPageCSPEnforcer : public CSPEnforcer {
                     base::BindRepeating(&GetAppSandboxSecureDirectiveValues)) {
     secure_directives_.emplace_back(
         std::vector<std::string>({kChildSrc, kFrameSrc}));
-    secure_directives_.emplace_back(std::vector<std::string>({kScriptSrc}));
+    secure_directives_.emplace_back(std::vector<std::string>(
+        {kScriptSrc, kScriptSrcElem, kScriptSrcAttr, kWorkerSrc}));
   }
 
   AppSandboxPageCSPEnforcer(const AppSandboxPageCSPEnforcer&) = delete;
@@ -525,7 +531,8 @@ class AppSandboxPageCSPEnforcer : public CSPEnforcer {
   std::string GetDefaultCSPValue(const DirectiveStatus& status) override {
     if (status.Matches(kChildSrc))
       return kAppSandboxSubframeSrcDefaultDirective;
-    DCHECK(status.Matches(kScriptSrc));
+    DCHECK(status.Matches(kScriptSrc) || status.Matches(kScriptSrcElem) ||
+           status.Matches(kScriptSrcAttr) || status.Matches(kWorkerSrc));
     return kAppSandboxScriptSrcDefaultDirective;
   }
 };
