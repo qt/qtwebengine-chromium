@@ -232,7 +232,8 @@ unsigned DnsRecordParser::ReadName(const void* const vpos,
         if (out) {
           if (!out->empty())
             out->append(".");
-          out->append_range(packet_.subspan(offset, label_len));
+          auto span = packet_.subspan(offset, label_len);
+          out->append(span.begin(), span.end());
           CHECK_LE(out->size(), dns_protocol::kMaxCharNameLength);
         }
         offset += label_len;

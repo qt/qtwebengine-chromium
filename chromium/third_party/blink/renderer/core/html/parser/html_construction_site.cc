@@ -1633,11 +1633,14 @@ bool HTMLConstructionSite::PreprocessInsertionTask(
       child_element->TagQName().NamespaceURI(),
       child_element->TagQName().LocalName());
 
-  auto result = std::find_if(
-      candidates->begin(), candidates->end(), [&](Element* candidate) {
-        return candidate->FastGetAttribute(html_names::kContentnameAttr) ==
-               content_name;
-      });
+  auto result = candidates->end();
+  for (auto it = candidates->begin(); it != candidates->end(); ++it) {
+    if ((*it)->FastGetAttribute(html_names::kContentnameAttr) ==
+        content_name) {
+      result = it;
+      break;
+    }
+  }
 
   if (result.AtEnd()) {
     return true;

@@ -39,7 +39,10 @@ std::vector<std::u16string_view> SplitBySeparators(std::u16string_view label) {
           base::SplitStringPieceUsingSubstr(component, separator,
                                             base::TRIM_WHITESPACE,
                                             base::SPLIT_WANT_NONEMPTY);
-      new_components.append_range(subcomponents);
+      new_components.insert(
+        new_components.end(),
+        subcomponents.begin(),
+        subcomponents.end());
     }
     components = std::move(new_components);
   }
