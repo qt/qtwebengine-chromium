@@ -17,11 +17,6 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 
-#if defined(USE_SYSTEM_MINIZIP)
-#include <minizip/ioapi.h>
-#include <minizip/unzip.h>
-#include <minizip/zip.h>
-#else
 #include "third_party/zlib/contrib/minizip/unzip.h"
 #include "third_party/zlib/contrib/minizip/zip.h"
 #if defined(OS_WIN)
@@ -29,7 +24,6 @@
 #elif defined(OS_POSIX)
 #include "third_party/zlib/contrib/minizip/ioapi.h"
 #endif  // defined(OS_POSIX)
-#endif  // defined(USE_SYSTEM_MINIZIP)
 
 namespace {
 

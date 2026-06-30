@@ -19,11 +19,7 @@
 #include "base/numerics/safe_conversions.h"
 #include "base/time/time.h"
 
-#if defined(USE_SYSTEM_MINIZIP)
-#include <minizip/unzip.h>
-#else
 #include "third_party/zlib/contrib/minizip/unzip.h"
-#endif
 
 namespace zip {
 

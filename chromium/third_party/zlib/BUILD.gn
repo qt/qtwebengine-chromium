@@ -505,11 +505,16 @@ shim_headers("minizip_shim") {
   ]
 }
 
+config("use_system_minizip") {
+  defines = [ "USE_SYSTEM_MINIZIP=1" ]
+}
+
 source_set("system_minizip") {
   deps = [
     ":minizip_shim",
   ]
   libs = [ "minizip" ]
+  public_configs = [ ":use_system_minizip" ]
 }
 
 group("minizip") {

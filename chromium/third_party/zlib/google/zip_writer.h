@@ -13,13 +13,8 @@
 #include "build/build_config.h"
 #include "third_party/zlib/google/zip.h"
 
-#if defined(USE_SYSTEM_MINIZIP)
-#include <minizip/unzip.h>
-#include <minizip/zip.h>
-#else
 #include "third_party/zlib/contrib/minizip/unzip.h"
 #include "third_party/zlib/contrib/minizip/zip.h"
-#endif
 
 namespace zip {
 namespace internal {

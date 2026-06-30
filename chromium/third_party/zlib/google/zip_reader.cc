@@ -24,14 +24,10 @@
 #include "third_party/zlib/google/redact.h"
 #include "third_party/zlib/google/zip_internal.h"
 
-#if defined(USE_SYSTEM_MINIZIP)
-#include <minizip/unzip.h>
-#else
 #include "third_party/zlib/contrib/minizip/unzip.h"
 #if defined(OS_WIN)
 #include "third_party/zlib/contrib/minizip/iowin32.h"
 #endif  // defined(OS_WIN)
-#endif  // defined(USE_SYSTEM_MINIZIP)
 
 #if defined(OS_POSIX)
 #include <sys/stat.h>

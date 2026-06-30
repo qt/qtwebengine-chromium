@@ -16,13 +16,8 @@
 #include <windows.h>
 #endif
 
-#if defined(USE_SYSTEM_MINIZIP)
-#include <minizip/unzip.h>
-#include <minizip/zip.h>
-#else
 #include "third_party/zlib/contrib/minizip/unzip.h"
 #include "third_party/zlib/contrib/minizip/zip.h"
-#endif
 
 namespace base {
 class FilePath;
