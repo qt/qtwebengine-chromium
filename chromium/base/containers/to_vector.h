@@ -30,7 +30,7 @@ template <typename U = void,
                                           U>>
   requires(std::ranges::input_range<Range>)
 constexpr std::vector<T> ToVector(Range&& range) {
-  return {std::from_range, std::forward<Range>(range)};
+  return std::vector<T>(range.begin(), range.end());
 }
 
 // Maps a container to a std::vector<> with respect to the provided projection.
