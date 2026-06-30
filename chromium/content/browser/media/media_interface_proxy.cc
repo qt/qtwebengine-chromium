@@ -19,6 +19,7 @@
 #include "base/unguessable_token.h"
 #include "build/build_config.h"
 #include "content/browser/media/cdm_storage_common.h"
+#include "content/browser/media/media_web_contents_observer.h"
 #include "content/browser/renderer_host/render_frame_host_delegate.h"
 #include "content/browser/renderer_host/render_frame_host_impl.h"
 #include "content/public/browser/media_service.h"
@@ -376,6 +377,11 @@ void MediaInterfaceProxy::CreateMediaFoundationRenderer(
         std::move(media_log_remote), std::move(receiver),
         std::move(renderer_extension_receiver),
         std::move(client_extension_remote));
+
+    // `MediaFoundationRenderer` bypasses the browser's audio service.
+    // Authorize the frame for audibility bypass claims.
+    AudibilityBypassAuthorization::GetOrCreateForCurrentDocument(
+        &render_frame_host());
   }
 }
 #endif  // BUILDFLAG(IS_WIN)
