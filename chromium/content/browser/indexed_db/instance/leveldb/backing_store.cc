@@ -4509,7 +4509,8 @@ Status BackingStore::Transaction::WriteNewBlobs(BlobWriteCallback callback) {
                                 backing_store_->GetBlobFileName(
                                     database_id(), entry.blob_number()),
                                 BackingStore::ShouldSyncOnCommit(durability_),
-                                last_modified, write_result_callback);
+                                last_modified, entry.size(),
+                                write_result_callback);
           break;
         }
         case IndexedDBExternalObject::ObjectType::kFileSystemAccessHandle: {
