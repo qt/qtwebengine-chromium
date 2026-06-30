@@ -377,10 +377,6 @@ class CONTENT_EXPORT AuthenticatorCommonImpl : public AuthenticatorCommon {
       blink::mojom::WebAuthnDOMExceptionDetailsPtr error,
       blink::mojom::GetAssertionAuthenticatorResponsePtr response);
 
-  void UpdateChallengeFromUrl(
-      ClientDataJsonParams params,
-      std::optional<base::span<const uint8_t>> challenge);
-
   // Get an identifier for the current request. Callbacks that might span a
   // cancelation must hold one of these values to check whether they're still
   // pertinent when called.
