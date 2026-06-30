@@ -230,8 +230,8 @@ bool ContentSecurityPolicy::IsNonceableElement(const Element* element) {
 
   // To prevent an attacker from hijacking an existing nonce via a dangling
   // markup injection, we walk through the attributes of each nonced script
-  // element: if their names or values contain "<script" or "<style", we won't
-  // apply the nonce when loading script.
+  // element: if their names or values contain "<script", "<style", or "<link",
+  // we won't apply the nonce when loading script.
   //
   // See http://blog.innerht.ml/csp-2015/#danglingmarkupinjection for an example
   // of the kind of attack this is aimed at mitigating.
@@ -242,13 +242,16 @@ bool ContentSecurityPolicy::IsNonceableElement(const Element* element) {
   if (nonceable) {
     static const char kScriptString[] = "<SCRIPT";
     static const char kStyleString[] = "<STYLE";
+    static const char kLinkString[] = "<LINK";
     for (const Attribute& attr : element->Attributes()) {
       const AtomicString& name = attr.LocalName();
       const AtomicString& value = attr.Value();
       if (name.FindIgnoringASCIICase(kScriptString) != kNotFound ||
           name.FindIgnoringASCIICase(kStyleString) != kNotFound ||
+          name.FindIgnoringASCIICase(kLinkString) != kNotFound ||
           value.FindIgnoringASCIICase(kScriptString) != kNotFound ||
-          value.FindIgnoringASCIICase(kStyleString) != kNotFound) {
+          value.FindIgnoringASCIICase(kStyleString) != kNotFound ||
+          value.FindIgnoringASCIICase(kLinkString) != kNotFound) {
         nonceable = false;
         break;
       }
