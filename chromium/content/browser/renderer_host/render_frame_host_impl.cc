@@ -11410,10 +11410,16 @@ void RenderFrameHostImpl::SubresourceResponseStarted(
 void RenderFrameHostImpl::ResourceLoadComplete(
     blink::mojom::ResourceLoadInfoPtr resource_load_info) {
   GlobalRequestID global_request_id;
+  GURL original_url = resource_load_info->original_url;
   const bool is_frame_request =
       blink::IsRequestDestinationFrame(resource_load_info->request_destination);
   if (main_frame_request_ids_.first == resource_load_info->request_id) {
     global_request_id = main_frame_request_ids_.second;
+    // With kSanitizeOriginalUrlDuringNavigation enabled, the renderer only has
+    // access to the sanitized original origin for privacy reasons. We restore
+    // the actual original URL here in the browser so that observers (like
+    // tests) see the correct full URLs.
+    original_url = document_associated_data_->original_url();
   } else if (is_frame_request) {
     // The load complete message for the main resource arrived before
     // |DidCommitProvisionalLoad()|. We save the load info so
@@ -11422,7 +11428,7 @@ void RenderFrameHostImpl::ResourceLoadComplete(
     deferred_main_frame_load_info_ = std::move(resource_load_info);
     return;
   }
-  delegate_->ResourceLoadComplete(this, global_request_id,
+  delegate_->ResourceLoadComplete(this, global_request_id, original_url,
                                   std::move(resource_load_info));
 }
 
@@ -16027,6 +16033,15 @@ void RenderFrameHostImpl::DidCommitNewDocument(
   holding_blocking_idb_lock_count_ = 0;
 
   TakeNewDocumentPropertiesFromNavigation(navigation_request);
+
+  // Store the unsanitized original URL of the navigation in the
+  // document-associated data. The renderer only receives a sanitized version
+  // (e.g., origin-only) of the original URL when the
+  // `kSanitizeOriginalUrlDuringNavigation` feature is enabled, but browser-side
+  // observers still expect the full unsanitized original URL after the load
+  // completes (and after the RFH loses access to the navigation request).
+  document_associated_data_->set_original_url(
+      navigation_request->original_url());
 
   // Set embedded documents' cross-origin-opener-policy from their top level:
   //  - Use top level's policy if they are same-origin.

@@ -1008,7 +1008,7 @@ TEST_F(MetricsWebContentsObserverTest, OnLoadedResource_MainFrame) {
   const auto request_id = navigation_simulator->GetGlobalRequestID();
 
   observer()->ResourceLoadComplete(
-      web_contents()->GetPrimaryMainFrame(), request_id,
+      web_contents()->GetPrimaryMainFrame(), request_id, main_resource_url,
       *CreateResourceLoadInfo(main_resource_url,
                               network::mojom::RequestDestination::kFrame));
   EXPECT_EQ(1u, loaded_resources().size());
@@ -1020,7 +1020,7 @@ TEST_F(MetricsWebContentsObserverTest, OnLoadedResource_MainFrame) {
   // Deliver a second main frame resource. This one should be ignored, since the
   // specified |request_id| is no longer associated with any tracked page loads.
   observer()->ResourceLoadComplete(
-      web_contents()->GetPrimaryMainFrame(), request_id,
+      web_contents()->GetPrimaryMainFrame(), request_id, main_resource_url,
       *CreateResourceLoadInfo(main_resource_url,
                               network::mojom::RequestDestination::kFrame));
   EXPECT_EQ(1u, loaded_resources().size());
@@ -1034,6 +1034,7 @@ TEST_F(MetricsWebContentsObserverTest, OnLoadedResource_Subresource) {
   GURL loaded_resource_url("http://www.other.com/");
   observer()->ResourceLoadComplete(
       web_contents()->GetPrimaryMainFrame(), content::GlobalRequestID(),
+      loaded_resource_url,
       *CreateResourceLoadInfo(loaded_resource_url,
                               network::mojom::RequestDestination::kScript));
 
@@ -1054,9 +1055,10 @@ TEST_F(MetricsWebContentsObserverTest,
       web_contents(), GURL(kDefaultTestUrl2));
 
   DCHECK(!old_rfh->IsActive());
+  GURL other_url("http://www.other.com/");
   observer()->ResourceLoadComplete(
-      old_rfh, content::GlobalRequestID(),
-      *CreateResourceLoadInfo(GURL("http://www.other.com/"),
+      old_rfh, content::GlobalRequestID(), other_url,
+      *CreateResourceLoadInfo(other_url,
                               network::mojom::RequestDestination::kScript));
 
   EXPECT_TRUE(loaded_resources().empty());

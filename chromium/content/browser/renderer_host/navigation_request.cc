@@ -1822,8 +1822,12 @@ NavigationRequest::NavigationRequest(
   CHECK_EQ(common_params_->url, original_url_);
   if (base::FeatureList::IsEnabled(
           features::kSanitizeOriginalUrlDuringNavigation)) {
+    // TODO(crbug.com/495463654): We need to get the origin of the original_url
+    // here because the NavigationRequestTest helpers directly set original_url
+    // without triggering paths that may sanitize it. This will no longer be an
+    // issue once original_url is converted to be an original_origin.
     CHECK_EQ(common_params_->url.DeprecatedGetOriginAsURL(),
-            commit_params_->original_url);
+            commit_params_->original_url.DeprecatedGetOriginAsURL());
   } else {
     CHECK_EQ(common_params_->url, commit_params_->original_url);
   }

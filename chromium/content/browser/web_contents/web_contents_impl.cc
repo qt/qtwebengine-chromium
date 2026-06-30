@@ -8118,6 +8118,7 @@ void WebContentsImpl::ViewSource(RenderFrameHostImpl* frame) {
 void WebContentsImpl::ResourceLoadComplete(
     RenderFrameHostImpl* render_frame_host,
     const GlobalRequestID& request_id,
+    const GURL& original_url,
     blink::mojom::ResourceLoadInfoPtr resource_load_info) {
   OPTIONAL_TRACE_EVENT2("content", "WebContentsImpl::ResourceLoadComplete",
                         "render_frame_host", render_frame_host, "request_id",
@@ -8125,7 +8126,7 @@ void WebContentsImpl::ResourceLoadComplete(
   const blink::mojom::ResourceLoadInfo& resource_load_info_ref =
       *resource_load_info;
   observers_.NotifyObservers(&WebContentsObserver::ResourceLoadComplete,
-                             render_frame_host, request_id,
+                             render_frame_host, request_id, original_url,
                              resource_load_info_ref);
 }
 

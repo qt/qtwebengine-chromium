@@ -822,7 +822,8 @@ class CONTENT_EXPORT WebContentsImpl
   void ResourceLoadComplete(
       RenderFrameHostImpl* render_frame_host,
       const GlobalRequestID& request_id,
-      blink::mojom::ResourceLoadInfoPtr resource_load_information) override;
+      const GURL& original_url,
+      blink::mojom::ResourceLoadInfoPtr resource_load_info) override;
   void OnCookiesAccessed(RenderFrameHostImpl*,
                          const CookieAccessDetails& details) override;
   void OnTrustTokensAccessed(RenderFrameHostImpl*,
