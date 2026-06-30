@@ -6234,8 +6234,7 @@ void RenderFrameImpl::BeginNavigationInternal(
               : nullptr,
           info->impression, renderer_before_unload_start,
           renderer_before_unload_end, initiator_activation_and_ad_status,
-          info->is_container_initiated, info->storage_access_api_status,
-          info->has_rel_opener);
+          info->is_container_initiated, info->has_rel_opener);
 
   bool current_frame_has_download_sandbox_flag = !frame_->IsAllowedToDownload();
   bool has_download_sandbox_flag =

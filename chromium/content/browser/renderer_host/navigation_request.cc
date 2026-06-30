@@ -151,6 +151,7 @@
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "net/base/url_util.h"
 #include "net/cookies/cookie_access_result.h"
+#include "net/cookies/cookie_setting_override.h"
 #include "net/filter/source_stream_type.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_status_code.h"
@@ -1210,20 +1211,28 @@ net::StorageAccessApiStatus ShouldLoadWithStorageAccess(
   //
   // Note: `begin_params` and `common_params` are not trusted, so we have to
   // check the frame token.
-  switch (begin_params.storage_access_api_status) {
-    case net::StorageAccessApiStatus::kNone:
-      return net::StorageAccessApiStatus::kNone;
-    case net::StorageAccessApiStatus::kAccessViaAPI:
-      return common_params.initiator_origin &&
-                     common_params.initiator_origin->IsSameOriginWith(
-                         response_url) &&
-                     begin_params.initiator_frame_token &&
-                     begin_params.initiator_frame_token ==
-                         previous_document_rfh->GetFrameToken() &&
-                     !did_encounter_cross_origin_redirect
-                 ? begin_params.storage_access_api_status
-                 : net::StorageAccessApiStatus::kNone;
+  // If a document has storage access, and initiates a same-origin navigation in
+  // the same frame toward a document from the same origin, the `has storage
+  // access` bit is inherited.
+  if (!previous_document_rfh->document_associated_data()
+           .cookie_setting_overrides()
+           .Has(net::CookieSettingOverride::kStorageAccessGrantEligible)) {
+    // Frame was missing the grant eligible override, so there's no access to
+    // carry over.
+    return net::StorageAccessApiStatus::kNone;
   }
+  if (begin_params.initiator_frame_token !=
+      previous_document_rfh->GetFrameToken()) {
+    // Navigation was not self-initiated.
+    return net::StorageAccessApiStatus::kNone;
+  }
+  if (!common_params.initiator_origin ||
+      !common_params.initiator_origin->IsSameOriginWith(response_url) ||
+      did_encounter_cross_origin_redirect) {
+    // Navigation is not fully same-origin.
+    return net::StorageAccessApiStatus::kNone;
+  }
+  return net::StorageAccessApiStatus::kAccessViaAPI;
 }
 
 // The sampling rate for UKM.
@@ -1262,7 +1271,7 @@ std::unique_ptr<NavigationRequest> NavigationRequest::CreateBrowserInitiated(
           kDidNotStartWithTransientActivation,
       is_pdf, is_embedder_initiated_fenced_frame_navigation,
       /*is_container_initiated=*/false, /*has_rel_opener=*/false,
-      net::StorageAccessApiStatus::kNone, embedder_shared_storage_context);
+      embedder_shared_storage_context);
   // It is only possible for a null NavigationRequest to be returned if an
   // initiator_frame_token is provided.
   CHECK(request);
@@ -1290,7 +1299,6 @@ std::unique_ptr<NavigationRequest> NavigationRequest::Create(
     bool is_embedder_initiated_fenced_frame_navigation,
     bool is_container_initiated,
     bool has_rel_opener,
-    net::StorageAccessApiStatus storage_access_api_status,
     std::optional<std::u16string> embedder_shared_storage_context) {
   TRACE_EVENT1("navigation", "NavigationRequest::Create", "browser_initiated",
                browser_initiated);
@@ -1312,7 +1320,7 @@ std::unique_ptr<NavigationRequest> NavigationRequest::Create(
       base::TimeTicks() /* renderer_before_unload_start */,
       base::TimeTicks() /* renderer_before_unload_end */,
       initiator_activation_and_ad_status, is_container_initiated,
-      storage_access_api_status, has_rel_opener);
+      has_rel_opener);
 
   // Shift-Reload forces bypassing caches and service workers.
   if (common_params->navigation_type ==
