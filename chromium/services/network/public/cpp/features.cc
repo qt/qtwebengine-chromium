@@ -675,4 +675,11 @@ BASE_FEATURE_PARAM(bool,
                    "url_loader",
                    false);
 
+// When enabled, the network service will prohibit modifications to the Origin
+// header in FollowRedirect.
+BASE_FEATURE(kBlockOriginHeaderModificationOnRedirect,
+             "BlockOriginHeaderModificationOnRedirect",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
+
 }  // namespace network::features
