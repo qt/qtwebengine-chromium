@@ -51,15 +51,10 @@ bool CFFL_CheckBox::OnChar(CPDFSDK_Widget* pWidget,
       CPDFSDK_PageView* pPageView = pWidget->GetPageView();
       DCHECK(pPageView);
 
-      ObservedPtr<CPDFSDK_Widget> pObserved(widget_);
-      if (form_filler_->OnButtonUp(pObserved, pPageView, nFlags)) {
-        if (!pObserved) {
-          widget_ = nullptr;
-        }
-        return true;
-      }
-      if (!pObserved) {
-        widget_ = nullptr;
+      // If OnButtonUp() destroys `observed` (the owning CPDFSDK_Widget), its
+      // destructor has already destroyed `this`.
+      ObservedPtr<CPDFSDK_Widget> observed(widget_);
+      if (form_filler_->OnButtonUp(observed, pPageView, nFlags) || !observed) {
         return true;
       }
 
