@@ -747,6 +747,12 @@ void BindSocketManager(
 }
 #endif
 
+void BindImageCaptureImpl(
+    RenderFrameHost* frame_host,
+    mojo::PendingReceiver<media::mojom::ImageCapture> receiver) {
+  ImageCaptureImpl::Create(frame_host, std::move(receiver));
+}
+
 void BindDevicePostureProvider(
     RenderFrameHost* frame_host,
     mojo::PendingReceiver<blink::mojom::DevicePostureProvider> receiver) {
@@ -1009,7 +1015,7 @@ void PopulateFrameBinders(RenderFrameHostImpl* host, mojo::BinderMap* map) {
                           base::Unretained(host)));
 
   map->Add<media::mojom::ImageCapture>(
-      base::BindRepeating(&ImageCaptureImpl::Create, base::Unretained(host)));
+      base::BindRepeating(&BindImageCaptureImpl, base::Unretained(host)));
 
   map->Add<media::mojom::InterfaceFactory>(base::BindRepeating(
       &RenderFrameHostImpl::BindMediaInterfaceFactoryReceiver,
