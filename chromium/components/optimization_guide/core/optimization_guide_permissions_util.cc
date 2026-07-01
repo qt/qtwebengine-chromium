@@ -9,17 +9,23 @@
 #include "base/feature_list.h"
 #include "components/optimization_guide/core/optimization_guide_features.h"
 #include "components/optimization_guide/core/optimization_guide_switches.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/unified_consent/url_keyed_data_collection_consent_helper.h"
+#endif
 #include "google_apis/google_api_keys.h"
 
 namespace {
 
 bool IsUserConsentedToAnonymousDataCollectionAndAllowedToFetchFromRemoteService(
     PrefService* pref_service) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   std::unique_ptr<unified_consent::UrlKeyedDataCollectionConsentHelper> helper =
       unified_consent::UrlKeyedDataCollectionConsentHelper::
           NewAnonymizedDataCollectionConsentHelper(pref_service);
   return helper->IsEnabled();
+#else
+  return false;
+#endif
 }
 
 }  // namespace

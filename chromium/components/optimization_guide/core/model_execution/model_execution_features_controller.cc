@@ -143,6 +143,7 @@ bool ModelExecutionFeaturesController::
     return true;
   }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   std::optional<EnterprisePolicyPref> enterprise_policy =
       metadata->enterprise_policy();
   if (!enterprise_policy) {
@@ -155,6 +156,9 @@ bool ModelExecutionFeaturesController::
 
   return enterprise_policy->GetValue(browser_context_profile_service_) ==
          model_execution::prefs::ModelExecutionEnterprisePolicyValue::kAllow;
+#else
+  return false;
+#endif
 }
 
 prefs::FeatureOptInState ModelExecutionFeaturesController::GetPrefState(
