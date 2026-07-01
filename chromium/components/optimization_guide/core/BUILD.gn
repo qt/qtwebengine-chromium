@@ -200,6 +200,12 @@ source_set("core_util") {
     "./*",
     "//services/on_device_model/android/*",
   ]
+
+  if (is_qtwebengine) {
+    deps -= [
+      "//components/unified_consent",
+    ]
+  }
 }
 
 source_set("model_execution") {
@@ -268,6 +274,12 @@ source_set("model_execution") {
       "//components/private_ai",
       "//components/private_ai:proto",
       "//components/variations",
+    ]
+  }
+
+  if (is_qtwebengine) {
+    deps -= [
+      "//components/policy/core/common",
     ]
   }
 }
@@ -403,6 +415,12 @@ source_set("ondevice") {
         "//services/on_device_model/android:mojom",
       ]
     }
+  }
+
+  if (is_qtwebengine) {
+    deps -= [
+      "//components/policy/core/common",
+    ]
   }
 }
 
