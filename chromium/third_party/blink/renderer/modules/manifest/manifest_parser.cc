@@ -4,11 +4,14 @@
 
 #include "third_party/blink/renderer/modules/manifest/manifest_parser.h"
 
+#include <unicode/uchar.h>
+
 #include <string>
 
 #include "base/compiler_specific.h"
 #include "base/feature_list.h"
 #include "base/metrics/histogram_functions.h"
+#include "base/strings/string_util.h"
 #include "net/base/mime_util.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "services/network/public/cpp/permissions_policy/origin_with_possible_wildcards.h"
@@ -39,6 +42,7 @@
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
+#include "third_party/blink/renderer/platform/wtf/text/code_point_iterator.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_utf8_adaptor.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_view.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
@@ -1671,6 +1675,19 @@ bool ManifestParser::ParseFileHandlerAcceptExtension(const JSONValue* extension,
     AddErrorInfo(
         "property 'accept' file extension ignored, must start with a '.'.");
     return false;
+  }
+
+  // TODO(crbug.com/530303003): This check for control and format characters is
+  // duplicated across manifest parsing, IPC validation, and PWA display.
+  // Consider consolidating it into a shared helper in
+  // //base/strings/string_util.h.
+  for (UChar32 c : *output) {
+    if (base::IsUnicodeControl(c) || u_charType(c) == U_FORMAT_CHAR) {
+      AddErrorInfo(
+          "property 'accept' file extension ignored, contains invalid "
+          "control or format characters.");
+      return false;
+    }
   }
 
   return true;
