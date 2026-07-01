@@ -21,6 +21,7 @@ class CFWL_Caret final : public CFWL_Widget, public CFX_Timer::CallbackIface {
   ~CFWL_Caret() override;
 
   // CFWL_Widget:
+  void PreFinalize() override;
   FWL_Type GetClassID() const override;
   void DrawWidget(CFGAS_GEGraphics* pGraphics,
                   const CFX_Matrix& matrix) override;
