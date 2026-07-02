@@ -27,10 +27,8 @@
 
 #include "dawn/native/QuerySet.h"
 
-#include <set>
-
+#include "dawn/common/Range.h"
 #include "dawn/native/Device.h"
-#include "dawn/native/Features.h"
 #include "dawn/native/ObjectType_autogen.h"
 #include "dawn/native/ValidationUtils_autogen.h"
 
@@ -76,12 +74,16 @@ MaybeError ValidateQuerySetDescriptor(DeviceBase* device, const QuerySetDescript
     return {};
 }
 
+uint32_t ToQueryStorageSize(QueryIndex count) {
+    return uint32_t{count} * kSingleQueryStorageSize;
+}
+
 QuerySetBase::QuerySetBase(DeviceBase* device, const QuerySetDescriptor* descriptor)
     : ApiObjectBase(device, descriptor->label),
       mQueryType(descriptor->type),
       mQueryCount(descriptor->count),
-      mState(QuerySetState::Available) {
-    mQueryAvailability.resize(descriptor->count);
+      mState(QuerySetState::Available),
+      mQueryAvailability(QueryIndex{descriptor->count}) {
     GetObjectTrackingList()->Track(this);
 }
 
@@ -122,15 +124,24 @@ wgpu::QueryType QuerySetBase::GetQueryType() const {
     return mQueryType;
 }
 
-uint32_t QuerySetBase::GetQueryCount() const {
+QueryIndex QuerySetBase::GetQueryCount() const {
     return mQueryCount;
 }
 
-const std::vector<bool>& QuerySetBase::GetQueryAvailability() const {
-    return mQueryAvailability;
+bool QuerySetBase::IsQueryAvailable(QueryIndex index) const {
+    return mQueryAvailability[index];
 }
 
-void QuerySetBase::SetQueryAvailability(uint32_t index, bool available) {
+bool QuerySetBase::AreAllQueriesAvailable(QueryIndex first, QueryIndex count) const {
+    for (QueryIndex i : Range(first, first + count)) {
+        if (!mQueryAvailability[i]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void QuerySetBase::SetQueryAvailability(QueryIndex index, bool available) {
     mQueryAvailability[index] = available;
 }
 
@@ -149,7 +160,7 @@ wgpu::QueryType QuerySetBase::APIGetType() const {
 }
 
 uint32_t QuerySetBase::APIGetCount() const {
-    return mQueryCount;
+    return uint32_t{mQueryCount};
 }
 
 }  // namespace dawn::native

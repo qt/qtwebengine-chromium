@@ -1044,18 +1044,18 @@ MaybeError CommandBuffer::Execute() {
                 QuerySet* querySet = ToBackend(cmd->querySet.Get());
                 Buffer* destination = ToBackend(cmd->destination.Get());
 
-                size_t size = cmd->queryCount * sizeof(uint64_t);
+                size_t size = ToQueryStorageSize(cmd->queryCount);
                 DAWN_TRY(
                     destination->EnsureDataInitializedAsDestination(cmd->destinationOffset, size));
 
-                std::vector<uint64_t> values(cmd->queryCount);
-                auto availability = querySet->GetQueryAvailability();
+                ityp::vector<QueryIndex, uint64_t> values(cmd->queryCount);
 
-                for (uint32_t i = 0; i < cmd->queryCount; ++i) {
-                    if (!availability[cmd->firstQuery + i]) {
+                for (QueryIndex i : Range(cmd->queryCount)) {
+                    if (!querySet->IsQueryAvailable(cmd->firstQuery + i)) {
                         values[i] = 0;
                         continue;
                     }
+
                     uint32_t query = querySet->Get(cmd->firstQuery + i);
                     GLuint value;
                     DAWN_GL_TRY(gl, GetQueryObjectuiv(query, GL_QUERY_RESULT, &value));

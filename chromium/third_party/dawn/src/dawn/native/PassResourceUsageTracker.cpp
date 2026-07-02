@@ -274,7 +274,7 @@ RenderPassResourceUsage RenderPassResourceUsageTracker::AcquireResourceUsage() {
 }
 
 void RenderPassResourceUsageTracker::TrackQueryAvailability(QuerySetBase* querySet,
-                                                            uint32_t queryIndex) {
+                                                            QueryIndex queryIndex) {
     // The query availability only needs to be tracked again on render passes for checking
     // query overwrite on render pass and resetting query sets on the Vulkan backend.
     DAWN_ASSERT(querySet != nullptr);

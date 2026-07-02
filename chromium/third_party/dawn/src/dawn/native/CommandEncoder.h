@@ -64,7 +64,7 @@ class CommandEncoder final : public ApiObjectBase {
     ityp::vector<PassIndex, IndirectDrawMetadata> AcquireIndirectDrawMetadata();
 
     void TrackUsedQuerySet(QuerySetBase* querySet);
-    void TrackQueryAvailability(QuerySetBase* querySet, uint32_t queryIndex);
+    void TrackQueryAvailability(QuerySetBase* querySet, QueryIndex queryIndex);
 
     // Dawn API
     ComputePassEncoder* APIBeginComputePass(const ComputePassDescriptor* descriptor);

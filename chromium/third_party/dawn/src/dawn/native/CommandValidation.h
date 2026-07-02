@@ -50,7 +50,7 @@ MaybeError ValidateSyncScopeResourceUsage(const SyncScopeResourceUsage& usage);
 
 MaybeError ValidateTimestampQuery(const DeviceBase* device,
                                   const QuerySetBase* querySet,
-                                  uint32_t queryIndex,
+                                  QueryIndex queryIndex,
                                   Feature requiredFeature = Feature::TimestampQuery);
 
 MaybeError ValidatePassTimestampWrites(const DeviceBase* device,

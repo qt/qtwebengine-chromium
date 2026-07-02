@@ -84,7 +84,7 @@ class CommandBuffer final : public CommandBufferBase {
     // track which results should be explicitly zero'ed as a workaround. Use of empty queries
     // *should* mostly be a degenerate scenario, so this std::set shouldn't be performance-critical.
     // The set is passed as nullptr to `EncodeRenderPass` if the workaround is not in use.
-    using EmptyOcclusionQueries = std::set<std::pair<QuerySet*, uint32_t>>;
+    using EmptyOcclusionQueries = std::set<std::pair<QuerySet*, QueryIndex>>;
     MaybeError EncodeRenderPass(id<MTLRenderCommandEncoder> encoder,
                                 BeginRenderPassCmd* renderPassCmd,
                                 EmptyOcclusionQueries* emptyOcclusionQueries,

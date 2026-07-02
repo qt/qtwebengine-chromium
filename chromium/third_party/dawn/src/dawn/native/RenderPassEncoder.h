@@ -106,7 +106,7 @@ class RenderPassEncoder final : public RenderEncoderBase {
   private:
     void DestroyImpl() override;
 
-    void TrackQueryAvailability(QuerySetBase* querySet, uint32_t queryIndex);
+    void TrackQueryAvailability(QuerySetBase* querySet, QueryIndex queryIndex);
 
     // For render and compute passes, the encoding context is borrowed from the command encoder.
     // Keep a reference to the encoder to make sure the context isn't freed.
@@ -117,7 +117,7 @@ class RenderPassEncoder final : public RenderEncoderBase {
 
     // The resources for occlusion query
     Ref<QuerySetBase> mOcclusionQuerySet;
-    uint32_t mCurrentOcclusionQueryIndex = 0;
+    QueryIndex mCurrentOcclusionQueryIndex = QueryIndex(0);
     bool mOcclusionQueryActive = false;
 
     // This is the hardcoded value in the WebGPU spec.

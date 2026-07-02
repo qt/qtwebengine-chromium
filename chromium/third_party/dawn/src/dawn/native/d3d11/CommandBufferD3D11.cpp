@@ -486,13 +486,10 @@ MaybeError CommandBuffer::Execute(const ScopedSwapStateCommandRecordingContext* 
             case Command::ResolveQuerySet: {
                 ResolveQuerySetCmd* cmd = mCommands.NextCommand<ResolveQuerySetCmd>();
                 QuerySet* querySet = ToBackend(cmd->querySet.Get());
-                uint32_t firstQuery = cmd->firstQuery;
-                uint32_t queryCount = cmd->queryCount;
                 Buffer* destination = ToBackend(cmd->destination.Get());
-                uint64_t destinationOffset = cmd->destinationOffset;
 
-                DAWN_TRY(querySet->Resolve(commandContext, firstQuery, queryCount, destination,
-                                           destinationOffset));
+                DAWN_TRY(querySet->Resolve(commandContext, cmd->firstQuery, cmd->queryCount,
+                                           destination, cmd->destinationOffset));
                 destination->MarkUsedInPendingCommands();
                 break;
             }

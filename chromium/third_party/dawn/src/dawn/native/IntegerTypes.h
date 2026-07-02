@@ -32,6 +32,7 @@
 
 #include "dawn/common/Constants.h"
 #include "dawn/common/TypedInteger.h"
+#include "dawn/native/dawn_platform.h"
 
 namespace dawn::ityp {
 template <typename Index, typename Value, size_t Size>
@@ -102,6 +103,10 @@ constexpr VertexAttributeLocation kMaxVertexAttributesTyped =
 using VertexAttributeMask = ityp::bitset<VertexAttributeLocation, kMaxVertexAttributes>;
 template <typename Value>
 using PerVertexAttribute = ityp::array<VertexAttributeLocation, Value, kMaxVertexAttributes>;
+
+// Indices of queries in a QuerySet.
+using QueryIndex = TypedInteger<struct QueryIndexT, uint32_t>;
+constexpr QueryIndex kQuerySetIndexUndefinedTyped = QueryIndex{wgpu::kQuerySetIndexUndefined};
 
 // Serials are 64bit integers that are incremented by one each time to produce unique values.
 // Some serials (like queue serials) are compared numerically to know which one is before

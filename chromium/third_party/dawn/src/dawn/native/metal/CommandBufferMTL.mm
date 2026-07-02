@@ -141,15 +141,17 @@ void SetSampleBufferAttachments(PassDescriptor* descriptor, BeginPass* cmd) {
     SampleBufferAttachment<PassDescriptor> sampleBufferAttachment;
     sampleBufferAttachment.SetSampleBuffer(descriptor,
                                            ToBackend(querySet)->GetCounterSampleBuffer());
-    uint32_t beginningOfPassWriteIndex = cmd->timestampWrites.beginningOfPassWriteIndex;
+
+    QueryIndex beginningOfPassWriteIndex = cmd->timestampWrites.beginningOfPassWriteIndex;
     sampleBufferAttachment.SetStartSampleIndex(
-        descriptor, beginningOfPassWriteIndex != wgpu::kQuerySetIndexUndefined
-                        ? NSUInteger(beginningOfPassWriteIndex)
+        descriptor, beginningOfPassWriteIndex != kQuerySetIndexUndefinedTyped
+                        ? NSUInteger{beginningOfPassWriteIndex}
                         : MTLCounterDontSample);
-    uint32_t endOfPassWriteIndex = cmd->timestampWrites.endOfPassWriteIndex;
+
+    QueryIndex endOfPassWriteIndex = cmd->timestampWrites.endOfPassWriteIndex;
     sampleBufferAttachment.SetEndSampleIndex(descriptor,
-                                             endOfPassWriteIndex != wgpu::kQuerySetIndexUndefined
-                                                 ? NSUInteger(endOfPassWriteIndex)
+                                             endOfPassWriteIndex != kQuerySetIndexUndefinedTyped
+                                                 ? NSUInteger{endOfPassWriteIndex}
                                                  : MTLCounterDontSample);
 }
 
@@ -1077,7 +1079,8 @@ MaybeError CommandBuffer::FillCommands(CommandRecordingContext* commandContext) 
                 for (const auto& [querySet, queryIndex] : emptyOcclusionQueries) {
                     [commandContext->EnsureBlit()
                         fillBuffer:querySet->GetVisibilityBuffer()
-                             range:NSMakeRange(queryIndex * sizeof(uint64_t), sizeof(uint64_t))
+                             range:NSMakeRange(ToQueryStorageSize(queryIndex),
+                                               kSingleQueryStorageSize)
                              value:0u];
                 }
                 nextRenderPassNumber++;
@@ -1323,16 +1326,16 @@ MaybeError CommandBuffer::FillCommands(CommandRecordingContext* commandContext) 
                 Buffer* destination = ToBackend(cmd->destination.Get());
 
                 destination->EnsureDataInitializedAsDestination(
-                    commandContext, cmd->destinationOffset, cmd->queryCount * sizeof(uint64_t));
+                    commandContext, cmd->destinationOffset, ToQueryStorageSize(cmd->queryCount));
 
                 if (querySet->GetQueryType() == wgpu::QueryType::Occlusion) {
                     destination->TrackUsage();
                     [commandContext->EnsureBlit()
                            copyFromBuffer:querySet->GetVisibilityBuffer()
-                             sourceOffset:NSUInteger(cmd->firstQuery * sizeof(uint64_t))
+                             sourceOffset:NSUInteger(ToQueryStorageSize(cmd->firstQuery))
                                  toBuffer:destination->GetMTLBuffer()
                         destinationOffset:NSUInteger(cmd->destinationOffset)
-                                     size:NSUInteger(cmd->queryCount * sizeof(uint64_t))];
+                                     size:NSUInteger(ToQueryStorageSize(cmd->queryCount))];
                 } else {
                     destination->TrackUsage();
                     if (GetDevice()->IsToggleEnabled(
@@ -1341,7 +1344,8 @@ MaybeError CommandBuffer::FillCommands(CommandRecordingContext* commandContext) 
                     }
                     [commandContext->EnsureBlit()
                           resolveCounters:querySet->GetCounterSampleBuffer()
-                                  inRange:NSMakeRange(cmd->firstQuery, cmd->queryCount)
+                                  inRange:NSMakeRange(uint32_t{cmd->firstQuery},
+                                                      uint32_t{cmd->queryCount})
                         destinationBuffer:destination->GetMTLBuffer()
                         destinationOffset:NSUInteger(cmd->destinationOffset)];
                 }
@@ -1450,7 +1454,7 @@ MaybeError CommandBuffer::EncodeComputePass(CommandRecordingContext* commandCont
         encoder = commandContext->BeginCompute();
 
         if (computePassCmd->timestampWrites.beginningOfPassWriteIndex !=
-            wgpu::kQuerySetIndexUndefined) {
+            kQuerySetIndexUndefinedTyped) {
             DAWN_ASSERT(ToBackend(GetDevice())->UseCounterSamplingAtCommandBoundary());
 
             [encoder
@@ -1473,7 +1477,7 @@ MaybeError CommandBuffer::EncodeComputePass(CommandRecordingContext* commandCont
                 // counter sampling at stage boundary.
                 if (ToBackend(GetDevice())->UseCounterSamplingAtCommandBoundary() &&
                     computePassCmd->timestampWrites.endOfPassWriteIndex !=
-                        wgpu::kQuerySetIndexUndefined) {
+                        kQuerySetIndexUndefinedTyped) {
                     DAWN_ASSERT(!ToBackend(GetDevice())->UseCounterSamplingAtStageBoundary());
 
                     [encoder
@@ -1620,7 +1624,7 @@ MaybeError CommandBuffer::EncodeRenderPass(
     // Simulate timestamp write at the beginning of render pass by
     // sampleCountersInBuffer if it does not support counter sampling at stage boundary.
     if (ToBackend(GetDevice())->UseCounterSamplingAtCommandBoundary() &&
-        renderPassCmd->timestampWrites.beginningOfPassWriteIndex != wgpu::kQuerySetIndexUndefined) {
+        renderPassCmd->timestampWrites.beginningOfPassWriteIndex != kQuerySetIndexUndefinedTyped) {
         DAWN_ASSERT(!ToBackend(GetDevice())->UseCounterSamplingAtStageBoundary());
 
         [encoder
@@ -1873,7 +1877,7 @@ MaybeError CommandBuffer::EncodeRenderPass(
                 // counter sampling at stage boundary.
                 if (ToBackend(GetDevice())->UseCounterSamplingAtCommandBoundary() &&
                     renderPassCmd->timestampWrites.endOfPassWriteIndex !=
-                        wgpu::kQuerySetIndexUndefined) {
+                        kQuerySetIndexUndefinedTyped) {
                     DAWN_ASSERT(!ToBackend(GetDevice())->UseCounterSamplingAtStageBoundary());
 
                     [encoder
@@ -1947,7 +1951,7 @@ MaybeError CommandBuffer::EncodeRenderPass(
                 BeginOcclusionQueryCmd* cmd = mCommands.NextCommand<BeginOcclusionQueryCmd>();
 
                 [encoder setVisibilityResultMode:MTLVisibilityResultModeBoolean
-                                          offset:cmd->queryIndex * sizeof(uint64_t)];
+                                          offset:ToQueryStorageSize(cmd->queryIndex)];
                 didDrawInCurrentOcclusionQuery = false;
                 break;
             }
@@ -1956,7 +1960,7 @@ MaybeError CommandBuffer::EncodeRenderPass(
                 EndOcclusionQueryCmd* cmd = mCommands.NextCommand<EndOcclusionQueryCmd>();
 
                 [encoder setVisibilityResultMode:MTLVisibilityResultModeDisabled
-                                          offset:cmd->queryIndex * sizeof(uint64_t)];
+                                          offset:ToQueryStorageSize(cmd->queryIndex)];
                 if (emptyOcclusionQueries) {
                     // Empty occlusion queries aren't filled to zero on Apple GPUs.
                     // Keep track of them so we can clear them if necessary.

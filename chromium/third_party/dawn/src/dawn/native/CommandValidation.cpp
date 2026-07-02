@@ -168,7 +168,7 @@ MaybeError ValidateSyncScopeResourceUsage(const SyncScopeResourceUsage& scope) {
 
 MaybeError ValidateTimestampQuery(const DeviceBase* device,
                                   const QuerySetBase* querySet,
-                                  uint32_t queryIndex,
+                                  QueryIndex queryIndex,
                                   Feature requiredFeature) {
     DAWN_TRY(device->ValidateObject(querySet));
 
@@ -201,12 +201,13 @@ MaybeError ValidatePassTimestampWrites(const DeviceBase* device,
                     "The type of %s is not %s.", querySet, wgpu::QueryType::Timestamp);
 
     if (unpacked->beginningOfPassWriteIndex != wgpu::kQuerySetIndexUndefined) {
-        DAWN_INVALID_IF(unpacked->beginningOfPassWriteIndex >= querySet->GetQueryCount(),
-                        "beginningOfPassWriteIndex (%u) exceeds the number of queries (%u) in %s.",
-                        unpacked->beginningOfPassWriteIndex, querySet->GetQueryCount(), querySet);
+        DAWN_INVALID_IF(
+            QueryIndex(unpacked->beginningOfPassWriteIndex) >= querySet->GetQueryCount(),
+            "beginningOfPassWriteIndex (%u) exceeds the number of queries (%u) in %s.",
+            unpacked->beginningOfPassWriteIndex, querySet->GetQueryCount(), querySet);
     }
     if (unpacked->endOfPassWriteIndex != wgpu::kQuerySetIndexUndefined) {
-        DAWN_INVALID_IF(unpacked->endOfPassWriteIndex >= querySet->GetQueryCount(),
+        DAWN_INVALID_IF(QueryIndex(unpacked->endOfPassWriteIndex) >= querySet->GetQueryCount(),
                         "endOfPassWriteIndex (%u) exceeds the number of queries (%u) in %s.",
                         unpacked->endOfPassWriteIndex, querySet->GetQueryCount(), querySet);
     }

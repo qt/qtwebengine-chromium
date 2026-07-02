@@ -28,12 +28,11 @@
 #ifndef SRC_DAWN_NATIVE_PASSRESOURCEUSAGETRACKER_H_
 #define SRC_DAWN_NATIVE_PASSRESOURCEUSAGETRACKER_H_
 
-#include <vector>
-
 #include "absl/container/flat_hash_map.h"
-#include "dawn/native/PassResourceUsage.h"
-
 #include "absl/container/flat_hash_set.h"
+#include "dawn/native/PassResourceUsage.h"
+#include "dawn/common/ityp_vector.h"
+#include "dawn/native/IntegerTypes.h"
 #include "dawn/native/dawn_platform.h"
 
 namespace dawn::native {
@@ -44,7 +43,7 @@ class ExternalTextureBase;
 class QuerySetBase;
 class TextureBase;
 
-using QueryAvailabilityMap = absl::flat_hash_map<QuerySetBase*, std::vector<bool>>;
+using QueryAvailabilityMap = absl::flat_hash_map<QuerySetBase*, ityp::vector<QueryIndex, bool>>;
 
 // Helper class to build SyncScopeResourceUsages
 class SyncScopeUsageTracker {
@@ -105,7 +104,7 @@ class RenderPassResourceUsageTracker : public SyncScopeUsageTracker {
 
     RenderPassResourceUsageTracker& operator=(RenderPassResourceUsageTracker&&);
 
-    void TrackQueryAvailability(QuerySetBase* querySet, uint32_t queryIndex);
+    void TrackQueryAvailability(QuerySetBase* querySet, QueryIndex queryIndex);
     const QueryAvailabilityMap& GetQueryAvailabilityMap() const;
 
     RenderPassResourceUsage AcquireResourceUsage();

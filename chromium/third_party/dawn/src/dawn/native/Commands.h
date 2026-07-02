@@ -95,8 +95,8 @@ struct TimestampWrites {
     ~TimestampWrites();
 
     Ref<QuerySetBase> querySet;
-    uint32_t beginningOfPassWriteIndex = wgpu::kQuerySetIndexUndefined;
-    uint32_t endOfPassWriteIndex = wgpu::kQuerySetIndexUndefined;
+    QueryIndex beginningOfPassWriteIndex = kQuerySetIndexUndefinedTyped;
+    QueryIndex endOfPassWriteIndex = kQuerySetIndexUndefinedTyped;
 };
 
 struct BeginComputePassCmd {
@@ -112,7 +112,7 @@ struct BeginOcclusionQueryCmd {
     ~BeginOcclusionQueryCmd();
 
     Ref<QuerySetBase> querySet;
-    uint32_t queryIndex;
+    QueryIndex queryIndex;
 };
 
 struct RenderPassColorAttachmentInfo {
@@ -298,7 +298,7 @@ struct EndOcclusionQueryCmd {
     ~EndOcclusionQueryCmd();
 
     Ref<QuerySetBase> querySet;
-    uint32_t queryIndex;
+    QueryIndex queryIndex;
 };
 
 struct EndRenderPassCmd {
@@ -336,8 +336,8 @@ struct ResolveQuerySetCmd {
     ~ResolveQuerySetCmd();
 
     Ref<QuerySetBase> querySet;
-    uint32_t firstQuery;
-    uint32_t queryCount;
+    QueryIndex firstQuery;
+    QueryIndex queryCount;
     Ref<BufferBase> destination;
     uint64_t destinationOffset;
 };
@@ -423,7 +423,7 @@ struct WriteTimestampCmd {
     ~WriteTimestampCmd();
 
     Ref<QuerySetBase> querySet;
-    uint32_t queryIndex;
+    QueryIndex queryIndex;
 };
 
 // This needs to be called before the CommandIterator is freed so that the Ref<> present in

@@ -64,7 +64,7 @@ MaybeError QuerySet::Initialize() {
     createInfo.pNext = nullptr;
     createInfo.flags = 0;
     createInfo.queryType = VulkanQueryType(GetQueryType());
-    createInfo.queryCount = std::max(GetQueryCount(), uint32_t(1u));
+    createInfo.queryCount = std::max(uint32_t{GetQueryCount()}, 1u);
 
     Device* device = ToBackend(GetDevice());
     DAWN_TRY(CheckVkOOMThenSuccess(

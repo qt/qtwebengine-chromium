@@ -39,7 +39,7 @@ ResultOrError<Ref<QuerySet>> QuerySet::Create(Device* device,
                                               const QuerySetDescriptor* descriptor) {
     Ref<QuerySet> querySet = AcquireRef(new QuerySet(device, descriptor));
 
-    if (querySet->mQueries.size() > 0) {
+    if (!querySet->mQueries.empty()) {
         const OpenGLFunctions& gl = device->GetGL();
         DAWN_GL_TRY(gl, GenQueries(descriptor->count, querySet->mQueries.data()));
     }
@@ -48,19 +48,20 @@ ResultOrError<Ref<QuerySet>> QuerySet::Create(Device* device,
 }
 
 QuerySet::QuerySet(Device* device, const QuerySetDescriptor* descriptor)
-    : QuerySetBase(device, descriptor), mQueries(descriptor->count) {}
+    : QuerySetBase(device, descriptor), mQueries(GetQueryCount()) {}
 
 QuerySet::~QuerySet() = default;
 
 void QuerySet::DestroyImpl() {
     const OpenGLFunctions& gl = ToBackend(GetDevice())->GetGL();
-    if (mQueries.size() > 0) {
-        DAWN_GL_TRY_IGNORE_ERRORS(gl, DeleteQueries(mQueries.size(), mQueries.data()));
+    if (!mQueries.empty()) {
+        DAWN_GL_TRY_IGNORE_ERRORS(gl,
+                                  DeleteQueries(uint32_t{mQueries.size()}, mQueries.data()));
     }
     QuerySetBase::DestroyImpl();
 }
 
-GLuint QuerySet::Get(uint32_t index) const {
+GLuint QuerySet::Get(QueryIndex index) const {
     return mQueries[index];
 }
 

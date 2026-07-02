@@ -44,11 +44,11 @@ class QuerySet final : public QuerySetBase {
     static ResultOrError<Ref<QuerySet>> Create(Device* device,
                                                const QuerySetDescriptor* descriptor);
 
-    void BeginQuery(ID3D11DeviceContext* d3d11DeviceContext, uint32_t query);
-    void EndQuery(ID3D11DeviceContext* d3d11DeviceContext, uint32_t query);
+    void BeginQuery(ID3D11DeviceContext* d3d11DeviceContext, QueryIndex query);
+    void EndQuery(ID3D11DeviceContext* d3d11DeviceContext, QueryIndex query);
     MaybeError Resolve(const ScopedSwapStateCommandRecordingContext* commandContext,
-                       uint32_t firstQuery,
-                       uint32_t queryCount,
+                       QueryIndex firstQuery,
+                       QueryIndex queryCount,
                        Buffer* destination,
                        uint64_t offset);
 
@@ -62,7 +62,7 @@ class QuerySet final : public QuerySetBase {
     void DestroyImpl() override;
     void SetLabelImpl() override;
 
-    std::vector<ComPtr<ID3D11Predicate>> mPredicates;
+    ityp::vector<QueryIndex, ComPtr<ID3D11Predicate>> mPredicates;
 };
 
 }  // namespace dawn::native::d3d11
