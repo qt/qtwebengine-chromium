@@ -2357,7 +2357,11 @@ LRESULT HWNDMessageHandler::OnInputEvent(UINT message,
 }
 
 void HWNDMessageHandler::OnMove(const gfx::Point& point) {
+  auto ref = msg_handler_weak_factory_.GetWeakPtr();
   delegate_->HandleMove();
+  if (!ref) {
+    return;
+  }
   SetMsgHandled(FALSE);
 }
 
