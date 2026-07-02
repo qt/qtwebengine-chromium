@@ -8,6 +8,8 @@
 #include "base/check_op.h"
 #include "base/notreached.h"
 
+#include <limits>
+
 namespace ui {
 namespace gfx {
 
