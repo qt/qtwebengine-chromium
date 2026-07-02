@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/compiler/compiler.gni")
+
 declare_args() {
   # WIP attempt to replace `libpng` with Rust `png` crate.
   # See https://crbug.com/40278281 for more details.
@@ -10,4 +12,24 @@ declare_args() {
   # shipped) or 2) change back to `false` before branchpoint (if not
   # ready for Beta/Stable yet).
   enable_rust_png = true
+}
+
+declare_args() {
+  skia_symbol_level = symbol_level
+}
+
+skia_remove_configs = []
+skia_add_configs = []
+
+if (skia_symbol_level != symbol_level) {
+  skia_remove_configs += [ "//build/config/compiler:default_symbols" ]
+  if (skia_symbol_level == 0) {
+    skia_add_configs += [ "//build/config/compiler:no_symbols" ]
+  } else if (skia_symbol_level == 1) {
+    skia_add_configs += [ "//build/config/compiler:minimal_symbols" ]
+  } else if (skia_symbol_level == 2) {
+    skia_add_configs += [ "//build/config/compiler:symbols" ]
+  } else {
+    assert(false)
+  }
 }
