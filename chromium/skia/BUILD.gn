@@ -508,6 +508,9 @@ component("skia") {
   ]
   all_dependent_configs = [ ":skia_config" ]
 
+  configs -= skia_remove_configs
+  configs += skia_add_configs
+
   deps += [
     ":skcms",
     ":skia_opts",
@@ -728,6 +731,9 @@ template("skia_source_set") {
                     # not needed and is deprecated in C++17
       ]
     }
+
+    configs -= skia_remove_configs
+    configs += skia_add_configs
   }
 }
 
