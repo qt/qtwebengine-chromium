@@ -548,7 +548,7 @@ class ProxyResolverV8::Context {
     holder_ = std::make_unique<ContextHolder>();
     holder_->context = this;
     v8::Local<v8::External> v8_holder = v8::External::New(
-        isolate_, holder_.get(), gin::kProxyResolverV8ContextTag);
+        isolate_, holder_.get());
     holder_->v8_this.Reset(isolate_, v8_holder);
     holder_->v8_this.SetWeak(holder_.get(), OnExternalGC,
                              v8::WeakCallbackType::kParameter);
@@ -920,7 +920,7 @@ class ProxyResolverV8::Context {
       const v8::FunctionCallbackInfo<v8::Value>& args) {
     auto* holder = static_cast<ContextHolder*>(
         v8::External::Cast(*args.Data())
-            ->Value(gin::kProxyResolverV8ContextTag));
+            ->Value());
     return holder ? holder->context : nullptr;
   }
 
