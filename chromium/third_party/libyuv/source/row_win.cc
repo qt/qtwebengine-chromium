@@ -105,10 +105,12 @@ extern "C" {
 #if defined(HAS_ARGBTOYMATRIXROW_AVX2)
 
 #if defined(__clang__) || defined(__GNUC__)
+#define LIBYUV_ATTRIBUTE(x) __attribute__(x)
 #define LIBYUV_TARGET_AVX2 __attribute__((target("avx2")))
 #define LIBYUV_TARGET_AVX512BW \
   __attribute__((target("avx512bw,avx512vl,avx512f")))
 #else
+#define LIBYUV_ATTRIBUTE(x)
 #define LIBYUV_TARGET_AVX2
 #define LIBYUV_TARGET_AVX512BW
 #endif
@@ -364,7 +366,7 @@ void RGB24ToARGBRow_AVX512BW(const uint8_t* src_rgb24, uint8_t* dst_argb, int wi
 #endif
 
 #ifdef HAS_ARGBTOUVMATRIXROW_AVX2
-LIBYUV_TARGET_AVX2 __attribute__((no_sanitize("cfi-icall")))
+LIBYUV_TARGET_AVX2 LIBYUV_ATTRIBUTE((no_sanitize("cfi-icall")))
 void ARGBToUVMatrixRow_AVX2(const uint8_t* src_argb,
                             int src_stride_argb,
                             uint8_t* dst_u,
