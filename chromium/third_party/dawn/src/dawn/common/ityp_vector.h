@@ -42,6 +42,8 @@ template <typename Index, typename Value>
 class vector : public std::vector<Value> {
     using I = UnderlyingType<Index>;
     using Base = std::vector<Value>;
+    using Reference = std::vector<Value>::reference;
+    using ConstReference = std::vector<Value>::const_reference;
 
   private:
     // Disallow access to base constructors and untyped index/size-related operators.
@@ -76,19 +78,19 @@ class vector : public std::vector<Value> {
         return *this;
     }
 
-    Value& operator[](Index i) {
+    Reference operator[](Index i) {
         return Base::operator[](static_cast<I>(i));
     }
 
-    constexpr const Value& operator[](Index i) const {
+    constexpr ConstReference operator[](Index i) const {
         return Base::operator[](static_cast<I>(i));
     }
 
-    Value& at(Index i) {
+    Reference at(Index i) {
         return Base::at(static_cast<I>(i));
     }
 
-    constexpr const Value& at(Index i) const {
+    constexpr ConstReference at(Index i) const {
         return Base::at(static_cast<I>(i));
     }
 
