@@ -415,7 +415,8 @@ interface PrintManagerHost {
   // gets true if the preview corresponding to `preview_ui_id` and `request_id`
   // has been cancelled.
   [EnableIf=enable_print_preview, Sync]
-  CheckForCancel(int32 preview_ui_id, int32 request_id) => (bool cancel);
+  CheckForCancel(mojo_base.mojom.UnguessableToken preview_ui_id, int32 request_id)
+      => (bool cancel);
 
   [EnableIf=enable_print_preview]
   MetafileReadyForPrinting(DidPreviewDocumentParams params, int32 request_id);

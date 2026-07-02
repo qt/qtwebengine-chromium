@@ -116,7 +116,7 @@ PrintPreviewDataService::PrintPreviewDataService() = default;
 PrintPreviewDataService::~PrintPreviewDataService() = default;
 
 void PrintPreviewDataService::GetDataEntry(
-    int32_t preview_ui_id,
+    const base::UnguessableToken& preview_ui_id,
     int index,
     scoped_refptr<base::RefCountedMemory>* data_bytes) const {
   *data_bytes = nullptr;
@@ -126,7 +126,7 @@ void PrintPreviewDataService::GetDataEntry(
 }
 
 void PrintPreviewDataService::SetDataEntry(
-    int32_t preview_ui_id,
+    const base::UnguessableToken& preview_ui_id,
     int index,
     scoped_refptr<base::RefCountedMemory> data_bytes) {
   if (!base::Contains(data_store_map_, preview_ui_id))
@@ -135,6 +135,7 @@ void PrintPreviewDataService::SetDataEntry(
                                                          std::move(data_bytes));
 }
 
-void PrintPreviewDataService::RemoveEntry(int32_t preview_ui_id) {
+void PrintPreviewDataService::RemoveEntry(
+    const base::UnguessableToken& preview_ui_id) {
   data_store_map_.erase(preview_ui_id);
 }
