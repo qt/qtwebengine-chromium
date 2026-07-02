@@ -437,23 +437,34 @@ BASE_FEATURE(kNoVarySearchIgnoreUnrecognizedKeys,
 BASE_FEATURE(kEnforceOneRfc6962CtPolicy, base::FEATURE_DISABLED_BY_DEFAULT);
 
 BASE_FEATURE(kDiskCacheBackendExperiment, base::FEATURE_DISABLED_BY_DEFAULT);
+#if BUILDFLAG(ENABLE_DISK_CACHE_SQL_BACKEND)
 constexpr base::FeatureParam<DiskCacheBackend>::Option
     kDiskCacheBackendOptions[] = {
         {DiskCacheBackend::kDefault, "default"},
         {DiskCacheBackend::kSimple, "simple"},
         {DiskCacheBackend::kBlockfile, "blockfile"},
-#if BUILDFLAG(ENABLE_DISK_CACHE_SQL_BACKEND)
         {DiskCacheBackend::kSql, "sql"},
-#endif  // ENABLE_DISK_CACHE_SQL_BACKEND
 };
+#else
+constexpr base::FeatureParam<DiskCacheBackend>::Option
+    kDiskCacheBackendOptions[] = {
+        {DiskCacheBackend::kDefault, "default"},
+        {DiskCacheBackend::kSimple, "simple"},
+        {DiskCacheBackend::kBlockfile, "blockfile"},
+};
+#endif
+
+#if BUILDFLAG(ENABLE_DISK_CACHE_SQL_BACKEND)
 const base::FeatureParam<DiskCacheBackend> kDiskCacheBackendParam{
     &kDiskCacheBackendExperiment, "backend",
-#if BUILDFLAG(ENABLE_DISK_CACHE_SQL_BACKEND)
     DiskCacheBackend::kSql,
-#else   // ENABLE_DISK_CACHE_SQL_BACKEND
-    DiskCacheBackend::kDefault,
-#endif  // ENABLE_DISK_CACHE_SQL_BACKEND
     &kDiskCacheBackendOptions};
+#else   // ENABLE_DISK_CACHE_SQL_BACKEND
+const base::FeatureParam<DiskCacheBackend> kDiskCacheBackendParam{
+    &kDiskCacheBackendExperiment, "backend",
+    DiskCacheBackend::kDefault,
+    &kDiskCacheBackendOptions};
+#endif  // ENABLE_DISK_CACHE_SQL_BACKEND
 
 #if BUILDFLAG(ENABLE_DISK_CACHE_SQL_BACKEND)
 BASE_FEATURE_PARAM(int,
@@ -525,14 +536,16 @@ BASE_FEATURE(kHstsTopLevelNavigationsOnly, base::FEATURE_DISABLED_BY_DEFAULT);
 BASE_FEATURE(kHttpCacheMappedFileFlushWin, base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 
-BASE_FEATURE(kHttpCacheNoVarySearch,
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
     BUILDFLAG(IS_CHROMEOS)
+BASE_FEATURE(kHttpCacheNoVarySearch,
              base::FEATURE_ENABLED_BY_DEFAULT
-#else
-             base::FEATURE_DISABLED_BY_DEFAULT
-#endif
 );
+#else
+BASE_FEATURE(kHttpCacheNoVarySearch,
+             base::FEATURE_DISABLED_BY_DEFAULT
+);
+#endif
 
 BASE_FEATURE_PARAM(size_t,
                    kHttpCacheNoVarySearchCacheMaxEntries,

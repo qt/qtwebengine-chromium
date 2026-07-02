@@ -66,10 +66,11 @@ BASE_FEATURE(kUseRoundedPointConversion, base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kHdrAgtm, base::FEATURE_DISABLED_BY_DEFAULT);
 
-BASE_FEATURE(kTransparentIconWorkaround,
 #if BUILDFLAG(IS_WIN)
+BASE_FEATURE(kTransparentIconWorkaround,
              base::FEATURE_ENABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kTransparentIconWorkaround,
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(IS_WIN)
 }  // namespace features

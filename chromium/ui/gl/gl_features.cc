@@ -120,13 +120,14 @@ constexpr base::FeatureParam<base::TimeDelta> kGLCompileShaderDelay = {
 
 // Controls whether the GPU process falls back to software if GLES3 is not
 // supported.
-BASE_FEATURE(kFallbackToSWIfGLES3NotSupported,
 #if BUILDFLAG(IS_WIN)
+BASE_FEATURE(kFallbackToSWIfGLES3NotSupported,
              // TODO(https://crbug.com/444049511): Currently disabled on
              // Windows for D3D9 users that are still on ES 2. Enable once
              // crbug.com/40874754 is fixed, deprecating D3D9 usage.
              base::FEATURE_DISABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kFallbackToSWIfGLES3NotSupported,
              base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
 

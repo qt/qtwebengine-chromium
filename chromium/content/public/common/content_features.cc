@@ -354,13 +354,15 @@ BASE_FEATURE(kWebRtcHWEncoding,
 
 // Enables a discard operation on WebContents to free associated resources.
 // Eliminates the need to destroy the WebContents object to free its resources.
-BASE_FEATURE(kWebContentsDiscard,
 #if BUILDFLAG(IS_ANDROID)
+BASE_FEATURE(kWebContentsDiscard,
              base::FEATURE_ENABLED_BY_DEFAULT
-#else
-             base::FEATURE_DISABLED_BY_DEFAULT
-#endif
 );
+#else
+BASE_FEATURE(kWebContentsDiscard,
+             base::FEATURE_DISABLED_BY_DEFAULT
+);
+#endif
 
 // Enables fast-shutdown to ignore workers during urgent discards on certain
 // platforms.
@@ -849,13 +851,15 @@ BASE_FEATURE_PARAM(base::TimeDelta,
 // soft process limit and behaves just like a process-per-site policy for all
 // sites, with an additional restriction that a process may only be reused while
 // the number of main frames in that process stays below a threshold.
-BASE_FEATURE(kProcessPerSiteUpToMainFrameThreshold,
 #if BUILDFLAG(IS_ANDROID)
+BASE_FEATURE(kProcessPerSiteUpToMainFrameThreshold,
              base::FEATURE_DISABLED_BY_DEFAULT
-#else
-             base::FEATURE_ENABLED_BY_DEFAULT
-#endif
 );
+#else
+BASE_FEATURE(kProcessPerSiteUpToMainFrameThreshold,
+             base::FEATURE_ENABLED_BY_DEFAULT
+);
+#endif
 
 // Specifies the threshold for `kProcessPerSiteUpToMainFrameThreshold` feature.
 const base::FeatureParam<int> kProcessPerSiteMainFrameThreshold{

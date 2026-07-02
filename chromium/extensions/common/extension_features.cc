@@ -112,13 +112,15 @@ BASE_FEATURE(kExtensionProtocolHandlers, base::FEATURE_DISABLED_BY_DEFAULT);
 
 BASE_FEATURE(kExtensionsManifestV3Only, base::FEATURE_DISABLED_BY_DEFAULT);
 
-BASE_FEATURE(kExtensionsMenuAccessControl,
 #if BUILDFLAG(IS_ANDROID)
+BASE_FEATURE(kExtensionsMenuAccessControl,
              base::FEATURE_ENABLED_BY_DEFAULT
-#else
-             base::FEATURE_DISABLED_BY_DEFAULT
-#endif
 );
+#else
+BASE_FEATURE(kExtensionsMenuAccessControl,
+             base::FEATURE_DISABLED_BY_DEFAULT
+);
+#endif
 
 BASE_FEATURE(kExtensionsMenuAccessControlWithPermittedSites,
              "ExtensionsMenuAccessControlWithPermittedSitesName",

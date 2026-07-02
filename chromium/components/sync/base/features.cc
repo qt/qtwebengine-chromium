@@ -32,19 +32,22 @@ BASE_FEATURE(kSyncContextualTask, base::FEATURE_DISABLED_BY_DEFAULT);
 BASE_FEATURE(kSyncGeminiThread, base::FEATURE_DISABLED_BY_DEFAULT);
 
 #if !BUILDFLAG(IS_CHROMEOS)
-BASE_FEATURE(kUnoPhase2FollowUp,
 #if BUILDFLAG(IS_ANDROID)
+BASE_FEATURE(kUnoPhase2FollowUp,
              base::FEATURE_ENABLED_BY_DEFAULT
-#else
-             base::FEATURE_DISABLED_BY_DEFAULT
-#endif
 );
+#else
+BASE_FEATURE(kUnoPhase2FollowUp,
+             base::FEATURE_DISABLED_BY_DEFAULT
+);
+#endif
 #endif  // !BUILDFLAG(IS_CHROMEOS)
 
-BASE_FEATURE(kSyncAutofillWalletCredentialData,
 #if BUILDFLAG(IS_IOS)
+BASE_FEATURE(kSyncAutofillWalletCredentialData,
              base::FEATURE_DISABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kSyncAutofillWalletCredentialData,
              base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
 
@@ -58,32 +61,38 @@ BASE_FEATURE(kSyncShowBookmarksLimitExceededError,
 BASE_FEATURE(kSyncResetBookmarksInitialMergeLimitExceededError,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
-BASE_FEATURE(kSyncEnableContactInfoDataTypeForCustomPassphraseUsers,
 #if BUILDFLAG(IS_IOS) || BUILDFLAG(IS_ANDROID)
+BASE_FEATURE(kSyncEnableContactInfoDataTypeForCustomPassphraseUsers,
              base::FEATURE_ENABLED_BY_DEFAULT
-#else
-             base::FEATURE_DISABLED_BY_DEFAULT
-#endif
 );
+#else
+BASE_FEATURE(kSyncEnableContactInfoDataTypeForCustomPassphraseUsers,
+             base::FEATURE_DISABLED_BY_DEFAULT
+);
+#endif
 
 BASE_FEATURE(kSyncEnableContactInfoDataTypeForDasherUsers,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
-BASE_FEATURE(kSeparateLocalAndAccountSearchEngines,
 #if BUILDFLAG(IS_CHROMEOS)
+BASE_FEATURE(kSeparateLocalAndAccountSearchEngines,
              base::FEATURE_DISABLED_BY_DEFAULT
+);
 #else
+BASE_FEATURE(kSeparateLocalAndAccountSearchEngines,
              base::FEATURE_ENABLED_BY_DEFAULT
+);
 #endif  // BUILDFLAG(IS_CHROMEOS)
-);
 
-BASE_FEATURE(kReplaceSyncPromosWithSignInPromos,
 #if BUILDFLAG(IS_IOS) || BUILDFLAG(IS_ANDROID)
+BASE_FEATURE(kReplaceSyncPromosWithSignInPromos,
              base::FEATURE_ENABLED_BY_DEFAULT
-#else
-             base::FEATURE_DISABLED_BY_DEFAULT
-#endif
 );
+#else
+BASE_FEATURE(kReplaceSyncPromosWithSignInPromos,
+             base::FEATURE_DISABLED_BY_DEFAULT
+);
+#endif
 BASE_FEATURE_PARAM(bool,
                    kExplicitSigninForExtensions,
                    &kReplaceSyncPromosWithSignInPromos,
@@ -110,15 +119,17 @@ const base::FeatureParam<int> kAwaitSyncServiceStartupInBrowserTimeoutSeconds{
     /*name=*/"AwaitSyncServiceStartupInBrowserTimeoutSeconds",
     kAwaitSyncServiceStartupInBrowserTimeoutDefaultValue};
 
-BASE_FEATURE(kSyncSupportAlwaysSyncingPriorityPreferences,
 #if BUILDFLAG(IS_CHROMEOS)
              // TODO(crbug.com/418991364): Enable by default once prefs account
              // storage is launched on ChromeOS.
+BASE_FEATURE(kSyncSupportAlwaysSyncingPriorityPreferences,
              base::FEATURE_DISABLED_BY_DEFAULT
-#else
-             base::FEATURE_ENABLED_BY_DEFAULT
-#endif  // BUILDFLAG(IS_CHROMEOS)
 );
+#else
+BASE_FEATURE(kSyncSupportAlwaysSyncingPriorityPreferences,
+             base::FEATURE_ENABLED_BY_DEFAULT
+);
+#endif  // BUILDFLAG(IS_CHROMEOS)
 
 BASE_FEATURE(kSyncWalletFlightReservations, base::FEATURE_DISABLED_BY_DEFAULT);
 
@@ -135,13 +146,15 @@ BASE_FEATURE(kSearchEngineAvoidFaviconOnlyCommits,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 #if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
-BASE_FEATURE(kReadingListEnableSyncTransportModeUponSignIn,
 #if BUILDFLAG(IS_CHROMEOS)
+BASE_FEATURE(kReadingListEnableSyncTransportModeUponSignIn,
              base::FEATURE_DISABLED_BY_DEFAULT
-#else
-             base::FEATURE_ENABLED_BY_DEFAULT
-#endif
 );
+#else
+BASE_FEATURE(kReadingListEnableSyncTransportModeUponSignIn,
+             base::FEATURE_ENABLED_BY_DEFAULT
+);
+#endif
 
 bool IsReadingListAccountStorageEnabled() {
   return base::FeatureList::IsEnabled(
@@ -157,13 +170,15 @@ BASE_FEATURE(kMigrateAccountPrefs, base::FEATURE_ENABLED_BY_DEFAULT);
 BASE_FEATURE(kSyncReadingListBatchUploadSelectedItems,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
-BASE_FEATURE(kSeparateLocalAndAccountThemes,
 #if BUILDFLAG(IS_CHROMEOS)
+BASE_FEATURE(kSeparateLocalAndAccountThemes,
              base::FEATURE_DISABLED_BY_DEFAULT
-#else
-             base::FEATURE_ENABLED_BY_DEFAULT
-#endif  // BUILDFLAG(IS_CHROMEOS)
 );
+#else
+BASE_FEATURE(kSeparateLocalAndAccountThemes,
+             base::FEATURE_ENABLED_BY_DEFAULT
+);
+#endif  // BUILDFLAG(IS_CHROMEOS)
 
 BASE_FEATURE(kThemesBatchUpload, base::FEATURE_ENABLED_BY_DEFAULT);
 

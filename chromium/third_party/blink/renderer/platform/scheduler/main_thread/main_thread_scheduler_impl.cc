@@ -271,14 +271,17 @@ perfetto::StaticString RenderingPrioritizationStateToString(
   }
 }
 
+#if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kBusyLoopOnRendererMain,
              "BusyLoopOnMainThread",
-#if BUILDFLAG(IS_ANDROID)
              base::FEATURE_ENABLED_BY_DEFAULT
-#else   // BUILDFLAG(IS_ANDROID)
-             base::FEATURE_DISABLED_BY_DEFAULT
-#endif  // BUILDFLAG(IS_ANDROID)
 );
+#else   // BUILDFLAG(IS_ANDROID)
+BASE_FEATURE(kBusyLoopOnRendererMain,
+             "BusyLoopOnMainThread",
+             base::FEATURE_DISABLED_BY_DEFAULT
+);
+#endif  // BUILDFLAG(IS_ANDROID)
 BASE_FEATURE_PARAM(base::TimeDelta,
                    kBusyLoopTime,
                    &kBusyLoopOnRendererMain,

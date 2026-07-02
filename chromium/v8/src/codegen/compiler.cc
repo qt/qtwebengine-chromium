@@ -2682,13 +2682,17 @@ MaybeHandle<SharedFunctionInfo> BackgroundCompileTask::FinalizeScript(
       // compilation (HasUncompiledData). Function here are all user defined
       // functions and should not have a builtin_id.
       DCHECK(!shared->HasBuiltinId());
+#if V8_ENABLE_WEBASSEMBLY
       DCHECK(shared->HasBytecodeArray() ||
              shared->HasUncompiledData(isolate)
-#if V8_ENABLE_WEBASSEMBLY
              // compiled data for 'use asm' functions
              || shared->HasAsmWasmData()
-#endif
       );
+#else
+      DCHECK(shared->HasBytecodeArray() ||
+             shared->HasUncompiledData(isolate)
+      );
+#endif
     }
   }
 #endif

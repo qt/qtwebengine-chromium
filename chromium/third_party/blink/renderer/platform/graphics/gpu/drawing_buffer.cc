@@ -87,13 +87,15 @@ namespace {
 // (when enabled) or with an empty SyncToken (when disabled). Enabling this
 // feature would prevent flickering in some cases where desynchronized canvas
 // are periodically refreshed on Windows.
-BASE_FEATURE(kUseNonEmptySyncTokenForLowLatencyCanvas,
 #if BUILDFLAG(IS_WIN)
+BASE_FEATURE(kUseNonEmptySyncTokenForLowLatencyCanvas,
              base::FEATURE_ENABLED_BY_DEFAULT
-#else
-             base::FEATURE_DISABLED_BY_DEFAULT
-#endif
 );
+#else
+BASE_FEATURE(kUseNonEmptySyncTokenForLowLatencyCanvas,
+             base::FEATURE_DISABLED_BY_DEFAULT
+);
+#endif
 
 const float kResourceAdjustedRatio = 0.5;
 

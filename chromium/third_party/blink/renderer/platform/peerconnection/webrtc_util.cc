@@ -25,10 +25,11 @@ namespace blink {
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || \
     BUILDFLAG(IS_ANDROID)
 // Enables H.264 CBP encode acceleration.
-BASE_FEATURE(kPlatformH264CbpEncoding,
 #if BUILDFLAG(IS_WIN)
+BASE_FEATURE(kPlatformH264CbpEncoding,
              base::FEATURE_DISABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kPlatformH264CbpEncoding,
              base::FEATURE_ENABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(IS_WIN)
 #endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) ||

@@ -101,15 +101,17 @@ base::flat_map<PrerenderHostId, FrameTreeNodeId>& GetPrerenderHostIdMap() {
 // The fact that the 2nd SiteInstance attempts to reuse the same
 // RenderProcessHost as the 1st SiteInstance is what makes it important to
 // carefully choose the RenderProcessHost for the 1st SiteInstance.
-BASE_FEATURE(kCreatePrerenderSiteInstanceWithURL,
 #if BUILDFLAG(IS_ANDROID)
+BASE_FEATURE(kCreatePrerenderSiteInstanceWithURL,
              // TODO(crbug.com/444530329): Fix incompatibility with the
              // Android-only `kProcessReuseOnPrerenderCOOPSwap` feature.
              base::FEATURE_DISABLED_BY_DEFAULT
-#else
-             base::FEATURE_ENABLED_BY_DEFAULT
-#endif
 );
+#else
+BASE_FEATURE(kCreatePrerenderSiteInstanceWithURL,
+             base::FEATURE_ENABLED_BY_DEFAULT
+);
+#endif
 
 base::OnceCallback<void(PrerenderHostId)>& GetHostCreationCallback() {
   static base::NoDestructor<base::OnceCallback<void(PrerenderHostId)>>

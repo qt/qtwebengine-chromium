@@ -825,13 +825,15 @@ const base::FeatureParam<std::string> kMediaFoundationClearKeyCdmPathForTesting{
 #endif  // BUILDFLAG(IS_WIN)
 
 // Enables the On-Device Web Speech feature on supported devices.
-BASE_FEATURE(kOnDeviceWebSpeech,
 #if BUILDFLAG(IS_CHROMEOS)
+BASE_FEATURE(kOnDeviceWebSpeech,
              base::FEATURE_DISABLED_BY_DEFAULT
-#else
-             base::FEATURE_ENABLED_BY_DEFAULT
-#endif  // BUILDFLAG(IS_CHROMEOS)
 );
+#else
+BASE_FEATURE(kOnDeviceWebSpeech,
+             base::FEATURE_ENABLED_BY_DEFAULT
+);
+#endif  // BUILDFLAG(IS_CHROMEOS)
 
 // Enables on-device speech recognition using on-device Gemini Nano.
 BASE_FEATURE(kOnDeviceWebSpeechGeminiNano, base::FEATURE_DISABLED_BY_DEFAULT);
@@ -1209,13 +1211,15 @@ BASE_FEATURE(kEnableArmHwdrm, base::FEATURE_ENABLED_BY_DEFAULT);
 
 #if BUILDFLAG(ENABLE_OPENH264)
 // Run-time feature for OpenH264 software encoder.
-BASE_FEATURE(kOpenH264SoftwareEncoder,
 #if BUILDFLAG(IS_ANDROID)
+BASE_FEATURE(kOpenH264SoftwareEncoder,
              base::FEATURE_DISABLED_BY_DEFAULT
-#else
-             base::FEATURE_ENABLED_BY_DEFAULT
-#endif
 );
+#else
+BASE_FEATURE(kOpenH264SoftwareEncoder,
+             base::FEATURE_ENABLED_BY_DEFAULT
+);
+#endif
 #endif  // BUILDFLAG(ENABLE_OPENH264)
 
 #if BUILDFLAG(IS_WIN)

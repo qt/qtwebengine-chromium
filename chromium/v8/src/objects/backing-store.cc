@@ -329,11 +329,13 @@ std::unique_ptr<BackingStore> BackingStore::TryAllocateAndPartiallyCommitMemory(
 #ifdef V8_COMPRESS_POINTERS_IN_MULTIPLE_CAGES
 #ifdef V8_ENABLE_SANDBOX
   CHECK_WITH_MSG(isolate || Sandbox::current(),
-#else
-  CHECK_WITH_MSG(isolate || IsolateGroup::current(),
-#endif
                  "One must enter an v8::Isolate before allocating resizable "
                  "array backing stores");
+#else
+  CHECK_WITH_MSG(isolate || IsolateGroup::current(),
+                 "One must enter an v8::Isolate before allocating resizable "
+                 "array backing stores");
+#endif
 #endif
 
 #ifdef V8_ENABLE_SANDBOX

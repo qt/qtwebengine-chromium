@@ -137,13 +137,15 @@ BASE_FEATURE(kPreventDuplicateImageDecodes, base::FEATURE_DISABLED_BY_DEFAULT);
 BASE_FEATURE(kInitImageDecodeLastUseTime, base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Enabled on Android, after a field trial showed improvements.
-BASE_FEATURE(kThrottleMainFrameTo60Hz,
 #if BUILDFLAG(IS_ANDROID)
+BASE_FEATURE(kThrottleMainFrameTo60Hz,
              base::FEATURE_ENABLED_BY_DEFAULT
-#else
-             base::FEATURE_DISABLED_BY_DEFAULT
-#endif
 );
+#else
+BASE_FEATURE(kThrottleMainFrameTo60Hz,
+             base::FEATURE_DISABLED_BY_DEFAULT
+);
+#endif
 
 #if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kThrottleMainFrameTo60HzWebView,

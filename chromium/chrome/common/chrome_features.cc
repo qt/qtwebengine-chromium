@@ -811,10 +811,11 @@ BASE_FEATURE(kGlicWarming, base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Killswitch that controls whether the guest WebContents visibility state is
 // set to hidden when the Glic panel is warming.
-BASE_FEATURE(kGlicGuestContentsVisibilityState,
 #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
+BASE_FEATURE(kGlicGuestContentsVisibilityState,
              base::FEATURE_ENABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kGlicGuestContentsVisibilityState,
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(IS_MAC) ||  BUILDFLAG(IS_LINUX)
 
@@ -1486,13 +1487,15 @@ BASE_FEATURE(kSafetyHubExtensionsOffStoreTrigger,
 
 BASE_FEATURE(kSafetyHubThreeDotDetails, base::FEATURE_ENABLED_BY_DEFAULT);
 
-BASE_FEATURE(kSafetyHubDisruptiveNotificationRevocation,
 #if BUILDFLAG(IS_ANDROID)
+BASE_FEATURE(kSafetyHubDisruptiveNotificationRevocation,
              base::FEATURE_ENABLED_BY_DEFAULT
-#else
-             base::FEATURE_DISABLED_BY_DEFAULT
-#endif
 );
+#else
+BASE_FEATURE(kSafetyHubDisruptiveNotificationRevocation,
+             base::FEATURE_DISABLED_BY_DEFAULT
+);
+#endif
 
 constexpr base::FeatureParam<int>
     kSafetyHubDisruptiveNotificationRevocationExperimentVersion{
@@ -1639,13 +1642,15 @@ BASE_FEATURE(kProcessPerSiteSkipEnterpriseUsers,
 // Note: The "ProcessPerSiteUpToMainFrameThreshold" feature is defined in
 // //content.
 
-BASE_FEATURE(kProcessPerSiteForDSE,
 #if BUILDFLAG(IS_ANDROID)
+BASE_FEATURE(kProcessPerSiteForDSE,
              base::FEATURE_DISABLED_BY_DEFAULT
-#else
-             base::FEATURE_ENABLED_BY_DEFAULT
-#endif
 );
+#else
+BASE_FEATURE(kProcessPerSiteForDSE,
+             base::FEATURE_ENABLED_BY_DEFAULT
+);
+#endif
 
 // Consider the default search engine (DSE) warmup page as a search results page
 // (SRP), for the purpose of applying the "process per site for DSE SRP" policy

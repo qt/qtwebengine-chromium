@@ -166,9 +166,6 @@ base::FilePath MediaStorageUtil::FindDevicePathById(
   }
 
   DCHECK(
-#if BUILDFLAG(IS_CHROMEOS)
-      type == StorageInfo::MTP_OR_PTP ||
-#endif
       type == StorageInfo::REMOVABLE_MASS_STORAGE_WITH_DCIM ||
       type == StorageInfo::REMOVABLE_MASS_STORAGE_NO_DCIM);
   return base::FilePath(FindRemovableStorageLocationById(device_id));

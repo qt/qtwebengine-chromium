@@ -1934,26 +1934,30 @@ BASE_FEATURE(kPrefetchFontLookupTables,
 
 // Launch mouse hover feature only on Desktop. Note that Android Desktop mode is
 // currently out of scope.
-BASE_FEATURE(kPreloadingEagerHoverHeuristics,
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
     BUILDFLAG(IS_CHROMEOS)
+BASE_FEATURE(kPreloadingEagerHoverHeuristics,
              base::FEATURE_ENABLED_BY_DEFAULT
-#else
-             base::FEATURE_DISABLED_BY_DEFAULT
-#endif
 );
+#else
+BASE_FEATURE(kPreloadingEagerHoverHeuristics,
+             base::FEATURE_DISABLED_BY_DEFAULT
+);
+#endif
 BASE_FEATURE_PARAM(base::TimeDelta,
                    kPreloadingEagerHoverHeuristicsDwellTime,
                    &kPreloadingEagerHoverHeuristics,
                    "hover_dwell_time",
                    base::Milliseconds(10));
-BASE_FEATURE(kPreloadingEagerViewportHeuristics,
 #if BUILDFLAG(IS_ANDROID)
+BASE_FEATURE(kPreloadingEagerViewportHeuristics,
              base::FEATURE_ENABLED_BY_DEFAULT
-#else
-             base::FEATURE_DISABLED_BY_DEFAULT
-#endif
 );
+#else
+BASE_FEATURE(kPreloadingEagerViewportHeuristics,
+             base::FEATURE_DISABLED_BY_DEFAULT
+);
+#endif
 BASE_FEATURE_PARAM(base::TimeDelta,
                    kPreloadingEagerViewportHeuristicsPresentTime,
                    &kPreloadingEagerViewportHeuristics,
@@ -1994,13 +1998,15 @@ BASE_FEATURE_PARAM(int,
                    "prerender_moderate_threshold",
                    50);
 
-BASE_FEATURE(kPreloadingModerateViewportHeuristics,
 #if BUILDFLAG(IS_ANDROID)
+BASE_FEATURE(kPreloadingModerateViewportHeuristics,
              base::FEATURE_ENABLED_BY_DEFAULT
-#else
-             base::FEATURE_DISABLED_BY_DEFAULT
-#endif
 );
+#else
+BASE_FEATURE(kPreloadingModerateViewportHeuristics,
+             base::FEATURE_DISABLED_BY_DEFAULT
+);
+#endif
 
 // Firing pagehide events for intended prerender cancellation. See
 // crbug.com/353628449 for more details.
@@ -2465,10 +2471,11 @@ BASE_FEATURE(kUnloadBlocklisted, base::FEATURE_DISABLED_BY_DEFAULT);
 // are marked urgent, and thus unthtrottled.
 //
 // Enabled on Android, since a field trial showed benefits.
-BASE_FEATURE(kUrgentMainFrameForInput,
 #if BUILDFLAG(IS_ANDROID)
+BASE_FEATURE(kUrgentMainFrameForInput,
              base::FEATURE_ENABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kUrgentMainFrameForInput,
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 
