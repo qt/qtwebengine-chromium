@@ -225,7 +225,7 @@ if (libyuv_use_neon) {
 
     public_configs = [ ":libyuv_config" ]
 
-    if (current_cpu == "arm64") {
+    if (current_cpu == "arm64" && !is_qtwebengine) {
       # The -march arguments below are incompatible with libc++ modules.
       use_libcxx_modules = false
 
