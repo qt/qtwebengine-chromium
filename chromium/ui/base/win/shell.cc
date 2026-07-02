@@ -30,6 +30,7 @@
 namespace ui::win {
 
 BASE_FEATURE(kManuallyParsePathForShellExecute,
+             "ManuallyParsePathForShellExecute",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 namespace {
