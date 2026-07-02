@@ -1370,6 +1370,7 @@ MaybeError CommandBuffer::FillCommands(CommandRecordingContext* commandContext) 
                                    withBarrier:YES];
                 }
 
+                UpdateQueryAvailability(cmd);
                 break;
             }
 
@@ -1488,6 +1489,7 @@ MaybeError CommandBuffer::EncodeComputePass(CommandRecordingContext* commandCont
                                                               .endOfPassWriteIndex)
                                    withBarrier:YES];
                 }
+                UpdateQueryAvailability(computePassCmd->timestampWrites);
 
                 commandContext->EndCompute();
                 return {};
@@ -1580,6 +1582,7 @@ MaybeError CommandBuffer::EncodeComputePass(CommandRecordingContext* commandCont
                                   atSampleIndex:NSUInteger(cmd->queryIndex)
                                     withBarrier:YES];
 
+                UpdateQueryAvailability(cmd);
                 break;
             }
 
@@ -1889,6 +1892,7 @@ MaybeError CommandBuffer::EncodeRenderPass(
                                    withBarrier:YES];
                 }
 
+                UpdateQueryAvailability(renderPassCmd->timestampWrites);
                 return {};
             }
 
@@ -1975,6 +1979,8 @@ MaybeError CommandBuffer::EncodeRenderPass(
                         }
                     }
                 }
+
+                UpdateQueryAvailability(cmd);
                 break;
             }
 
@@ -1986,6 +1992,7 @@ MaybeError CommandBuffer::EncodeRenderPass(
                                   atSampleIndex:NSUInteger(cmd->queryIndex)
                                     withBarrier:YES];
 
+                UpdateQueryAvailability(cmd);
                 break;
             }
 

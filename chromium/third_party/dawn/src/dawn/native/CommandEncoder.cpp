@@ -1214,17 +1214,6 @@ void CommandEncoder::TrackUsedQuerySet(QuerySetBase* querySet) {
     mUsedQuerySets.insert(querySet);
 }
 
-void CommandEncoder::TrackQueryAvailability(QuerySetBase* querySet, QueryIndex queryIndex) {
-    DAWN_ASSERT(querySet != nullptr);
-
-    if (GetDevice()->IsValidationEnabled()) {
-        TrackUsedQuerySet(querySet);
-    }
-
-    // Set the query at queryIndex to available for resolving in query set.
-    querySet->SetQueryAvailability(queryIndex, true);
-}
-
 ityp::vector<PassIndex, IndirectDrawMetadata> CommandEncoder::AcquireIndirectDrawMetadata() {
     return mEncodingContext.AcquireIndirectDrawMetadata();
 }
@@ -1266,15 +1255,10 @@ Ref<ComputePassEncoder> CommandEncoder::BeginComputePass(const ComputePassDescri
                     descriptor->timestampWrites->beginningOfPassWriteIndex};
                 QueryIndex endOfPassWriteIndex{descriptor->timestampWrites->endOfPassWriteIndex};
 
+                TrackUsedQuerySet(querySet);
                 cmd->timestampWrites.querySet = querySet;
                 cmd->timestampWrites.beginningOfPassWriteIndex = beginningOfPassWriteIndex;
                 cmd->timestampWrites.endOfPassWriteIndex = endOfPassWriteIndex;
-                if (beginningOfPassWriteIndex != kQuerySetIndexUndefinedTyped) {
-                    TrackQueryAvailability(querySet, beginningOfPassWriteIndex);
-                }
-                if (endOfPassWriteIndex != kQuerySetIndexUndefinedTyped) {
-                    TrackQueryAvailability(querySet, endOfPassWriteIndex);
-                }
             }
             return {};
         },
@@ -1493,19 +1477,18 @@ Ref<RenderPassEncoder> CommandEncoder::BeginRenderPass(const RenderPassDescripto
                     descriptor->timestampWrites->beginningOfPassWriteIndex};
                 QueryIndex endOfPassWriteIndex{descriptor->timestampWrites->endOfPassWriteIndex};
 
+                TrackUsedQuerySet(querySet);
                 cmd->timestampWrites.querySet = querySet;
                 cmd->timestampWrites.beginningOfPassWriteIndex = beginningOfPassWriteIndex;
                 cmd->timestampWrites.endOfPassWriteIndex = endOfPassWriteIndex;
+
+                // The render pass usage tracker contains data about written queries. This is
+                // necessary on Vulkan to be able to reset queries before the start of render passes
+                // (it can only be done outside of a render pass).
                 if (beginningOfPassWriteIndex != kQuerySetIndexUndefinedTyped) {
-                    TrackQueryAvailability(querySet, beginningOfPassWriteIndex);
-                    // Track the query availability with true on render pass again for rewrite
-                    // validation and query reset on Vulkan
                     usageTracker.TrackQueryAvailability(querySet, beginningOfPassWriteIndex);
                 }
                 if (endOfPassWriteIndex != kQuerySetIndexUndefinedTyped) {
-                    TrackQueryAvailability(querySet, endOfPassWriteIndex);
-                    // Track the query availability with true on render pass again for rewrite
-                    // validation and query reset on Vulkan
                     usageTracker.TrackQueryAvailability(querySet, endOfPassWriteIndex);
                 }
             }
@@ -2108,10 +2091,9 @@ void CommandEncoder::APIResolveQuerySet(QuerySetBase* querySet,
                                                  destinationOffset));
 
                 DAWN_TRY(ValidateCanUseAs(destination, wgpu::BufferUsage::QueryResolve));
-
-                TrackUsedQuerySet(querySet);
             }
 
+            TrackUsedQuerySet(querySet);
             mTopLevelBuffers.insert(destination);
 
             ResolveQuerySetCmd* cmd =
@@ -2179,7 +2161,7 @@ void CommandEncoder::APIWriteTimestamp(QuerySetBase* querySet, uint32_t queryInd
                 DAWN_TRY(ValidateTimestampQuery(GetDevice(), querySet, queryIndex));
             }
 
-            TrackQueryAvailability(querySet, queryIndex);
+            TrackUsedQuerySet(querySet);
 
             WriteTimestampCmd* cmd =
                 allocator->Allocate<WriteTimestampCmd>(Command::WriteTimestamp);

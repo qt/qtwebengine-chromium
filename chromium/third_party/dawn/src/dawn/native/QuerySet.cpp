@@ -141,8 +141,8 @@ bool QuerySetBase::AreAllQueriesAvailable(QueryIndex first, QueryIndex count) co
     return true;
 }
 
-void QuerySetBase::SetQueryAvailability(QueryIndex index, bool available) {
-    mQueryAvailability[index] = available;
+void QuerySetBase::MarkQueryAvailable(QueryIndex index) {
+    mQueryAvailability[index] = true;
 }
 
 MaybeError QuerySetBase::ValidateCanUseInSubmitNow() const {

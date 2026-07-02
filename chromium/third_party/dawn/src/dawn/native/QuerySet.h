@@ -34,8 +34,6 @@
 #include "dawn/native/IntegerTypes.h"
 #include "dawn/native/ObjectBase.h"
 
-#include "dawn/native/dawn_platform.h"
-
 namespace dawn::native {
 
 MaybeError ValidateQuerySetDescriptor(DeviceBase* device, const QuerySetDescriptor* descriptor);
@@ -54,7 +52,7 @@ class QuerySetBase : public ApiObjectBase {
 
     bool IsQueryAvailable(QueryIndex index) const;
     bool AreAllQueriesAvailable(QueryIndex first, QueryIndex count) const;
-    void SetQueryAvailability(QueryIndex index, bool available);
+    void MarkQueryAvailable(QueryIndex index);
 
     MaybeError ValidateCanUseInSubmitNow() const;
 

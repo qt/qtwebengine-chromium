@@ -43,7 +43,10 @@
 
 namespace dawn::native {
 
+struct BeginComputePassCmd;
 struct BeginRenderPassCmd;
+struct EndOcclusionQueryCmd;
+struct WriteTimestampCmd;
 struct CopyTextureToBufferCmd;
 struct BufferCopy;
 struct TextureCopy;
@@ -104,6 +107,12 @@ bool IsFullBufferOverwrittenInTextureToBufferCopy(const TextureCopy& source,
 std::array<float, 4> ConvertToFloatColor(dawn::native::Color color);
 std::array<int32_t, 4> ConvertToSignedIntegerColor(dawn::native::Color color);
 std::array<uint32_t, 4> ConvertToUnsignedIntegerColor(dawn::native::Color color);
+
+// Helper functions that must be called by backends to update the tracking of available queries in
+// QuerySets.
+void UpdateQueryAvailability(const WriteTimestampCmd* cmd);
+void UpdateQueryAvailability(const EndOcclusionQueryCmd* cmd);
+void UpdateQueryAvailability(const TimestampWrites& writes);
 
 }  // namespace dawn::native
 
