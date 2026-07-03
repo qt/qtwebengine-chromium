@@ -2886,6 +2886,26 @@ void RenderWidgetHostImpl::StartDragging(
     }
   }
 
+  // Propagate the FilterURL results back into `drag_data` so that the DevTools
+  // intercept path (Input.dragIntercepted) sees the same filtered values as the
+  // OS-drag path. Without this, a CDP client following the documented
+  // dragIntercepted -> dispatchDragEvent round-trip would replay the
+  // pre-filter renderer-supplied URLs into DragTargetDrop.
+  for (auto& item : drag_data->items) {
+    if (!item->is_string()) {
+      continue;
+    }
+    auto& s = item->get_string();
+    if (s->string_type == ui::kMimeTypeUriList) {
+      s->string_data = base::UTF8ToUTF16(filtered_data.url.spec());
+    } else if (s->string_type == ui::kMimeTypeHtml) {
+      s->base_url = filtered_data.html_base_url;
+    } else if (s->string_type == ui::kMimeTypeDownloadUrl &&
+               !filtered_data.download_metadata) {
+      s->string_data.clear();
+    }
+  }
+
   // Filter out any paths that the renderer didn't have access to. This prevents
   // the following attack on a malicious renderer:
   // 1. StartDragging IPC sent with renderer-specified filesystem paths that it
