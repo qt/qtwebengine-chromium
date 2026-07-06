@@ -951,6 +951,7 @@ TString Decorate(const ImmutableString &string)
 
 TString DecorateVariableIfNeeded(const TVariable &variable)
 {
+    const TQualifier qualifier = variable.getType().getQualifier();
     if (variable.symbolType() == SymbolType::AngleInternal ||
         variable.symbolType() == SymbolType::BuiltIn || variable.symbolType() == SymbolType::Empty)
     {
@@ -964,7 +965,7 @@ TString DecorateVariableIfNeeded(const TVariable &variable)
     // For user defined variables, combine variable name with unique id
     // so variables of the same name in different scopes do not get overwritten.
     else if (variable.symbolType() == SymbolType::UserDefined &&
-             variable.getType().getQualifier() == EvqTemporary)
+             (qualifier == EvqTemporary || qualifier == EvqGlobal || qualifier == EvqConst))
     {
         return Decorate(variable.name()) + str(variable.uniqueId().get());
     }
