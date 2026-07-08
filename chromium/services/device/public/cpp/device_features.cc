@@ -63,6 +63,13 @@ BASE_FEATURE(kWebUsbEnforceStandardRequestAllowlist,
              "WebUsbEnforceStandardRequestAllowlist",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
+// When enabled, WebUSB rejects claiming interfaces that share endpoints with
+// already claimed interfaces, and avoids overwriting endpoint mapping entries.
+// See crbug.com/513167952.
+BASE_FEATURE(kWebUsbHardenEndpointAliasing,
+             "WebUsbHardenEndpointAliasing",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
 // When enabled, accessing the navigator.hid attribute does not prevent the
 // frame from entering the back forward cache.
 BASE_FEATURE(kWebHidAttributeAllowsBackForwardCache,
