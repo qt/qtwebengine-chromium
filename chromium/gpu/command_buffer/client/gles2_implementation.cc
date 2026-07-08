@@ -340,10 +340,6 @@ GLES2Implementation::~GLES2Implementation() {
     DeleteBuffers(std::size(reserved_ids_), &reserved_ids_[0]);
   }
 
-  // Release remaining BufferRange mem; This is when a MapBufferRange() is
-  // called but not the UnmapBuffer() pair.
-  ClearMappedBufferRangeMap();
-
   // Release remaining BufferMap mem; This is when a MapBufferSubData() is
   // called but not the UnmapBufferSubData() pair.
   ClearMappedBufferMap();
@@ -2423,8 +2419,6 @@ void GLES2Implementation::BufferDataHelper(GLenum target,
     GLuint id = GetBoundBufferHelper(target);
     readback_buffer_shadow_tracker_->GetOrCreateBuffer(id, size);
   }
-
-  RemoveMappedBufferRangeByTarget(target);
 
   // If there is no data just send BufferData
   if (size == 0 || !data) {
@@ -5498,8 +5492,6 @@ void GLES2Implementation::DeleteBuffersHelper(GLsizei n,
     if (buffers[ii] == bound_pixel_unpack_transfer_buffer_id_) {
       bound_pixel_unpack_transfer_buffer_id_ = 0;
     }
-
-    RemoveMappedBufferRangeById(buffers[ii]);
   }
 }
 
@@ -5897,54 +5889,6 @@ GLuint GLES2Implementation::GetBoundBufferHelper(GLenum target) {
   return static_cast<GLuint>(id);
 }
 
-void GLES2Implementation::RemoveMappedBufferRangeByTarget(GLenum target) {
-  GLuint buffer = GetBoundBufferHelper(target);
-  RemoveMappedBufferRangeById(buffer);
-}
-
-void GLES2Implementation::RemoveMappedBufferRangeById(GLuint buffer) {
-  if (buffer > 0) {
-    auto iter = mapped_buffer_range_map_.find(buffer);
-    if (iter != mapped_buffer_range_map_.end() && iter->second.shm_memory) {
-      if (iter->second.shm_id != 0) {
-        // This was a normal transfer buffer allocation.
-        mapped_memory_->FreePendingToken(iter->second.shm_memory,
-                                         helper_->InsertToken());
-      } else {
-        // This was a shadow copy for readback. It's owned by the
-        // readback_buffer_shadow_tracker_, so we just need to unmap it.
-        auto* shadow_buffer =
-            readback_buffer_shadow_tracker_->GetBuffer(iter->first);
-        if (shadow_buffer) {
-          shadow_buffer->UnmapReadbackShm();
-        }
-      }
-      mapped_buffer_range_map_.erase(iter);
-    }
-  }
-}
-
-void GLES2Implementation::ClearMappedBufferRangeMap() {
-  for (auto& buffer_range : mapped_buffer_range_map_) {
-    if (buffer_range.second.shm_memory) {
-      if (buffer_range.second.shm_id != 0) {
-        // This was a normal transfer buffer allocation.
-        mapped_memory_->FreePendingToken(buffer_range.second.shm_memory,
-                                         helper_->InsertToken());
-      } else {
-        // This was a shadow copy for readback. It's owned by the
-        // readback_buffer_shadow_tracker_, so we just need to unmap it.
-        auto* shadow_buffer =
-            readback_buffer_shadow_tracker_->GetBuffer(buffer_range.first);
-        if (shadow_buffer) {
-          shadow_buffer->UnmapReadbackShm();
-        }
-      }
-    }
-  }
-  mapped_buffer_range_map_.clear();
-}
-
 void GLES2Implementation::ClearMappedBufferMap() {
   for (auto& buffer : mapped_buffers_) {
     if (buffer.second.shm_memory) {
@@ -5963,153 +5907,6 @@ void GLES2Implementation::ClearMappedTextureMap() {
     }
   }
   mapped_textures_.clear();
-}
-
-void* GLES2Implementation::MapBufferRange(GLenum target,
-                                          GLintptr offset,
-                                          GLsizeiptr size,
-                                          GLbitfield access) {
-  GPU_CLIENT_SINGLE_THREAD_CHECK();
-  GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glMapBufferRange("
-                     << GLES2Util::GetStringEnum(target) << ", " << offset
-                     << ", " << size << ", " << access << ")");
-  if (!ValidateSize("glMapBufferRange", size) ||
-      !ValidateOffset("glMapBufferRange", offset)) {
-    return nullptr;
-  }
-
-  GLuint buffer = GetBoundBufferHelper(target);
-
-  void* mem = nullptr;
-
-  // Early return if we have a valid shadow copy for readback
-  if (access == GL_MAP_READ_BIT) {
-    // This will return an incorrect result if the client does the following:
-    // * Writes into a buffer
-    // * Issues query (GL_READBACK_SHADOW_COPIES_UPDATED_CHROMIUM)
-    // * Writes into the buffer using transform feedback (but doesn't issue
-    //   InvalidateReadbackBufferShadowDataCHROMIUM correctly)
-    // * Waits on the query
-    // * Reads from the buffer (may return results from before the transfom
-    //   feedback operation).
-    // Therefore, if (and only if) a client uses the
-    // GL_READBACK_SHADOW_COPIES_UPDATED_CHROMIUM query, it must also correctly
-    // use InvalidateReadbackBufferShadowDataCHROMIUM. WebGL (at the time of
-    // this writing) is expected to be the only client which uses
-    // GL_READBACK_SHADOW_COPIES_UPDATED_CHROMIUM.
-    if (auto* buffer_object =
-            readback_buffer_shadow_tracker_->GetBuffer(buffer)) {
-      mem = buffer_object->MapReadbackShm(offset, size);
-      if (!mem) {
-        // (If there's no valid shadow copy, warn and fall back to usual logic.)
-        SendErrorMessage(
-            "performance warning: READ-usage buffer was read back without "
-            "waiting on a fence. This caused a graphics pipeline stall.",
-            0);
-      }
-    }
-  }
-
-  // Usual, round-trip path if we're not doing a shadow-copy readback
-  int32_t shm_id = 0;
-  unsigned int shm_offset = 0;
-  if (!mem) {
-    mem = mapped_memory_->Alloc(size, &shm_id, &shm_offset);
-    auto result = GetResultAs<cmds::MapBufferRange::Result>();
-    if (!mem || !result) {
-      SetGLError(GL_OUT_OF_MEMORY, "glMapBufferRange", "out of memory");
-      return nullptr;
-    }
-
-    *result = 0;
-    helper_->MapBufferRange(target, offset, size, access, shm_id, shm_offset,
-                            GetResultShmId(), result.offset());
-    // TODO(zmo): For write only mode with MAP_INVALID_*_BIT, we should
-    // consider an early return without WaitForCmd(). crbug.com/465804.
-    if (!WaitForCmd()) {
-      return nullptr;
-    }
-    if (*result) {
-      const GLbitfield kInvalidateBits =
-          GL_MAP_INVALIDATE_BUFFER_BIT | GL_MAP_INVALIDATE_RANGE_BIT;
-      if ((access & kInvalidateBits) != 0) {
-        // We do not read back from the buffer, therefore, we set the client
-        // side memory to zero to avoid uninitialized data.
-        memset(mem, 0, size);
-      }
-    } else {
-      mapped_memory_->Free(mem);
-      mem = nullptr;
-    }
-  }
-
-  // Track this mapping regardless of which path was taken above.
-  if (mem) {
-    DCHECK_NE(0u, buffer);
-    // glMapBufferRange fails on an already mapped buffer.
-    DCHECK(mapped_buffer_range_map_.find(buffer) ==
-           mapped_buffer_range_map_.end());
-    auto iter = mapped_buffer_range_map_.insert(std::make_pair(
-        buffer,
-        MappedBuffer(access, shm_id, mem, shm_offset, target, offset, size)));
-    DCHECK(iter.second);
-  }
-
-  GPU_CLIENT_LOG("  returned " << mem);
-  CheckGLError();
-  return mem;
-}
-
-GLboolean GLES2Implementation::UnmapBuffer(GLenum target) {
-  GPU_CLIENT_SINGLE_THREAD_CHECK();
-  GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glUnmapBuffer("
-                     << GLES2Util::GetStringEnum(target) << ")");
-  switch (target) {
-    case GL_ARRAY_BUFFER:
-    case GL_ATOMIC_COUNTER_BUFFER:
-    case GL_ELEMENT_ARRAY_BUFFER:
-    case GL_COPY_READ_BUFFER:
-    case GL_COPY_WRITE_BUFFER:
-    case GL_DISPATCH_INDIRECT_BUFFER:
-    case GL_DRAW_INDIRECT_BUFFER:
-    case GL_PIXEL_PACK_BUFFER:
-    case GL_PIXEL_UNPACK_BUFFER:
-    case GL_SHADER_STORAGE_BUFFER:
-    case GL_TRANSFORM_FEEDBACK_BUFFER:
-    case GL_UNIFORM_BUFFER:
-      break;
-    default:
-      SetGLError(GL_INVALID_ENUM, "glUnmapBuffer", "invalid target");
-      return GL_FALSE;
-  }
-  GLuint buffer = GetBoundBufferHelper(target);
-  if (buffer == 0) {
-    SetGLError(GL_INVALID_OPERATION, "glUnmapBuffer", "no buffer bound");
-    return GL_FALSE;
-  }
-  auto iter = mapped_buffer_range_map_.find(buffer);
-  if (iter == mapped_buffer_range_map_.end()) {
-    SetGLError(GL_INVALID_OPERATION, "glUnmapBuffer", "buffer is unmapped");
-    return GL_FALSE;
-  }
-
-  bool was_mapped_by_readback_tracker = false;
-  if (auto* buffer_object =
-          readback_buffer_shadow_tracker_->GetBuffer(buffer)) {
-    was_mapped_by_readback_tracker = buffer_object->UnmapReadbackShm();
-  }
-  if (!was_mapped_by_readback_tracker) {
-    helper_->UnmapBuffer(target);
-    InvalidateReadbackBufferShadowDataCHROMIUM(GetBoundBufferHelper(target));
-  }
-  RemoveMappedBufferRangeById(buffer);
-
-  // TODO(zmo): There is a rare situation that data might be corrupted and
-  // GL_FALSE should be returned. We lose context on that sitatuon, so we
-  // don't have to WaitForCmd().
-  GPU_CLIENT_LOG("  returned " << GL_TRUE);
-  CheckGLError();
-  return GL_TRUE;
 }
 
 void* GLES2Implementation::MapTexSubImage2DCHROMIUM(GLenum target,
@@ -7482,6 +7279,42 @@ void GLES2Implementation::SetActiveURLCHROMIUM(const char* url) {
                     base::CheckMin(len, kMaxStrLen).ValueOrDie());
   helper_->SetActiveURLCHROMIUM(kResultBucketId);
   helper_->SetBucketSize(kResultBucketId, 0);
+}
+
+void GLES2Implementation::GetBufferSubDataCHROMIUM(GLenum target,
+                                                   GLintptr offset,
+                                                   GLsizeiptr size,
+                                                   void* data) {
+  GPU_CLIENT_SINGLE_THREAD_CHECK();
+  GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glGetBufferSubDataCHROMIUM("
+                     << GLES2Util::GetStringEnum(target) << ", " << offset
+                     << ", " << size << ", " << data << ")");
+  if (!ValidateSize("glGetBufferSubDataCHROMIUM", size) ||
+      !ValidateOffset("glGetBufferSubDataCHROMIUM", offset)) {
+    return;
+  }
+
+  int32_t shm_id = 0;
+  unsigned int shm_offset = 0;
+  void* span_buffer =
+      mapped_memory_->Alloc(size, &shm_id, &shm_offset);
+  if (!span_buffer) {
+    SetGLError(GL_OUT_OF_MEMORY, "glGetBufferSubDataCHROMIUM", "out of memory");
+    return;
+  }
+
+  // Zero-initialize the buffer. The GPU process will not write to the buffer in
+  // case of an error.
+  memset(span_buffer, 0, size);
+
+  helper_->GetBufferSubDataCHROMIUM(target, offset, size, shm_id, shm_offset);
+
+  if (!WaitForCmd()) {
+    return;
+  }
+
+  UNSAFE_TODO(memcpy(data, span_buffer, size));
+  mapped_memory_->Free(span_buffer);
 }
 
 // Include the auto-generated part of this file. We split this because it means

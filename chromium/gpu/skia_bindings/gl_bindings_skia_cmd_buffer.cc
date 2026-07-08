@@ -167,8 +167,6 @@ sk_sp<GrGLInterface> CreateGLES2InterfaceBindings(
   functions->fFinish =
       gles_bind(&GLES2Interface::Finish, impl, context_support);
   functions->fFlush = gles_bind(&GLES2Interface::Flush, impl, context_support);
-  functions->fFlushMappedBufferRange =
-      gles_bind(&GLES2Interface::FlushMappedBufferRange, impl, context_support);
   functions->fFrontFace =
       gles_bind(&GLES2Interface::FrontFace, impl, context_support);
   functions->fGenBuffers =
@@ -224,8 +222,6 @@ sk_sp<GrGLInterface> CreateGLES2InterfaceBindings(
       gles_bind(&GLES2Interface::LineWidth, impl, context_support);
   functions->fLinkProgram =
       gles_bind(&GLES2Interface::LinkProgram, impl, context_support);
-  functions->fMapBufferRange =
-      gles_bind(&GLES2Interface::MapBufferRange, impl, context_support);
   functions->fMapBufferSubData = gles_bind(
       &GLES2Interface::MapBufferSubDataCHROMIUM, impl, context_support);
   functions->fMapTexSubImage2D = gles_bind(

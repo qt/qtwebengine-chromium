@@ -674,9 +674,6 @@ class GLES2_IMPL_EXPORT GLES2Implementation : public GLES2Interface,
   void FailGLError(GLenum /* error */) { }
 #endif
 
-  void RemoveMappedBufferRangeByTarget(GLenum target);
-  void RemoveMappedBufferRangeById(GLuint buffer);
-  void ClearMappedBufferRangeMap();
   void ClearMappedBufferMap();
   void ClearMappedTextureMap();
 
@@ -804,10 +801,6 @@ class GLES2_IMPL_EXPORT GLES2Implementation : public GLES2Interface,
 
   typedef std::map<const void*, MappedBuffer> MappedBufferMap;
   MappedBufferMap mapped_buffers_;
-
-  // TODO(zmo): Consolidate |mapped_buffers_| and |mapped_buffer_range_map_|.
-  typedef std::unordered_map<GLuint, MappedBuffer> MappedBufferRangeMap;
-  MappedBufferRangeMap mapped_buffer_range_map_;
 
   typedef std::map<const void*, MappedTexture> MappedTextureMap;
   MappedTextureMap mapped_textures_;

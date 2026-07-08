@@ -296,9 +296,6 @@
 #define glUnmapBufferCHROMIUM GLES2_GET_FUN(UnmapBufferCHROMIUM)
 #define glMapBufferSubDataCHROMIUM GLES2_GET_FUN(MapBufferSubDataCHROMIUM)
 #define glUnmapBufferSubDataCHROMIUM GLES2_GET_FUN(UnmapBufferSubDataCHROMIUM)
-#define glMapBufferRange GLES2_GET_FUN(MapBufferRange)
-#define glUnmapBuffer GLES2_GET_FUN(UnmapBuffer)
-#define glFlushMappedBufferRange GLES2_GET_FUN(FlushMappedBufferRange)
 #define glMapTexSubImage2DCHROMIUM GLES2_GET_FUN(MapTexSubImage2DCHROMIUM)
 #define glUnmapTexSubImage2DCHROMIUM GLES2_GET_FUN(UnmapTexSubImage2DCHROMIUM)
 #define glGetRequestableExtensionsCHROMIUM \
@@ -331,6 +328,7 @@
 #define glFlushDriverCachesCHROMIUM GLES2_GET_FUN(FlushDriverCachesCHROMIUM)
 #define glGetLastFlushIdCHROMIUM GLES2_GET_FUN(GetLastFlushIdCHROMIUM)
 #define glSetActiveURLCHROMIUM GLES2_GET_FUN(SetActiveURLCHROMIUM)
+#define glGetBufferSubDataCHROMIUM GLES2_GET_FUN(GetBufferSubDataCHROMIUM)
 #define glContextVisibilityHintCHROMIUM \
   GLES2_GET_FUN(ContextVisibilityHintCHROMIUM)
 #define glGetGraphicsResetStatusKHR GLES2_GET_FUN(GetGraphicsResetStatusKHR)
