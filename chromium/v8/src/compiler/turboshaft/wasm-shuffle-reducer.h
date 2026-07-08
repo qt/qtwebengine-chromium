@@ -243,12 +243,12 @@ class WasmShuffleReducer : public Next {
   base::SmallVector<DeinterleaveLoadShuffle, 8> deinterleave_load_shuffles_;
 
   void AddCombinedLoad(const LoadOp& load, OpIndex og_index) {
-    combined_loads_.emplace_back(&load, og_index);
+    combined_loads_.emplace_back(DeinterleaveLoad{&load, og_index});
   }
 
   void AddDeinterleavedShuffle(const Simd128ShuffleOp& shuffle,
                                OpIndex og_index, uint8_t result_index) {
-    deinterleave_load_shuffles_.emplace_back(&shuffle, og_index, result_index);
+    deinterleave_load_shuffles_.emplace_back(DeinterleaveLoadShuffle{&shuffle, og_index, result_index});
   }
 
   std::optional<const DeinterleaveLoadShuffle*> IsDeinterleaveLoadShuffle(

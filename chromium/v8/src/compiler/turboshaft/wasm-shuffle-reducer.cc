@@ -74,7 +74,7 @@ void DemandedElementAnalysis::RecordOp(const Operation* op, LaneBitSet lanes) {
   } else if (auto* binop = op->TryCast<Simd128BinopOp>()) {
     AddBinaryOp(*binop, lanes);
   } else if (auto* shuffle = op->TryCast<Simd128ShuffleOp>()) {
-    demanded_elements_.emplace_back(shuffle, lanes);
+    demanded_elements_.emplace_back(std::pair<const Operation*, LaneBitSet>{shuffle, lanes});
   }
 }
 
@@ -296,8 +296,8 @@ void WasmShuffleAnalyzer::AddLoadMultipleCandidate(
   DCHECK_NE(even_shuffle, odd_shuffle);
 
   if (CouldLoadPair(left, right)) {
-    deinterleave_load_candidates_.emplace_back(kind, left, right, even_shuffle,
-                                               odd_shuffle);
+    deinterleave_load_candidates_.emplace_back(DeinterleaveLoadCandidate{kind, left, right, even_shuffle,
+                                               odd_shuffle});
   }
 }
 
