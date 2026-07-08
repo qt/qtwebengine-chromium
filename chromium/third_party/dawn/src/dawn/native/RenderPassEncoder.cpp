@@ -353,32 +353,37 @@ void RenderPassEncoder::APIExecuteBundles(uint32_t count, RenderBundleBase* cons
                 }
             }
 
+            // Always reset state
             mCommandBufferState = CommandBufferStateTracker{};
 
-            ExecuteBundlesCmd* cmd =
-                allocator->Allocate<ExecuteBundlesCmd>(Command::ExecuteBundles);
-            cmd->count = count;
+            if (count) {
+                ExecuteBundlesCmd* cmd =
+                    allocator->Allocate<ExecuteBundlesCmd>(Command::ExecuteBundles);
+                cmd->count = count;
 
-            Ref<RenderBundleBase>* bundles = allocator->AllocateData<Ref<RenderBundleBase>>(count);
-            for (uint32_t i = 0; i < count; ++i) {
-                bundles[i] = renderBundles[i];
+                Ref<RenderBundleBase>* bundles =
+                    allocator->AllocateData<Ref<RenderBundleBase>>(count);
+                for (uint32_t i = 0; i < count; ++i) {
+                    bundles[i] = renderBundles[i];
 
-                const RenderPassResourceUsage& usages = bundles[i]->GetResourceUsage();
-                for (uint32_t j = 0; j < usages.buffers.size(); ++j) {
-                    mUsageTracker.BufferUsedAs(usages.buffers[j], usages.bufferSyncInfos[j].usage,
-                                               usages.bufferSyncInfos[j].shaderStages);
+                    const RenderPassResourceUsage& usages = bundles[i]->GetResourceUsage();
+                    for (uint32_t j = 0; j < usages.buffers.size(); ++j) {
+                        mUsageTracker.BufferUsedAs(usages.buffers[j],
+                                                   usages.bufferSyncInfos[j].usage,
+                                                   usages.bufferSyncInfos[j].shaderStages);
+                    }
+
+                    for (uint32_t j = 0; j < usages.textures.size(); ++j) {
+                        mUsageTracker.AddRenderBundleTextureUsage(usages.textures[j],
+                                                                  usages.textureSyncInfos[j]);
+                    }
+
+                    if (IsValidationEnabled()) {
+                        mIndirectDrawMetadata.AddBundle(renderBundles[i]);
+                    }
+
+                    mDrawCount += bundles[i]->GetDrawCount();
                 }
-
-                for (uint32_t j = 0; j < usages.textures.size(); ++j) {
-                    mUsageTracker.AddRenderBundleTextureUsage(usages.textures[j],
-                                                              usages.textureSyncInfos[j]);
-                }
-
-                if (IsValidationEnabled()) {
-                    mIndirectDrawMetadata.AddBundle(renderBundles[i]);
-                }
-
-                mDrawCount += bundles[i]->GetDrawCount();
             }
 
             return {};
