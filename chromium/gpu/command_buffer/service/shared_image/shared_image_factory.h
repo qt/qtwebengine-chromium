@@ -11,6 +11,7 @@
 
 #include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
+#include "base/memory/weak_ptr.h"
 
 #if defined(__GNUC__) && __GNUC__ < 11
 #include "base/containers/flat_set.h"
@@ -162,7 +163,11 @@ class GPU_GLES2_EXPORT SharedImageFactory {
   SharedContextState* shared_context_state() { return context_state_.get(); }
   const scoped_refptr<SharedImageCopyManager>& copy_manager();
 
+  base::WeakPtr<SharedImageFactory> GetWeakPtr();
+
  private:
+  friend class CompoundImageBacking;
+
   bool IsSharedBetweenThreads(gpu::SharedImageUsageSet usage);
 
   SharedImageRepresentationFactoryRef* GetFactoryRef(
@@ -229,6 +234,7 @@ class GPU_GLES2_EXPORT SharedImageFactory {
   gpu::GpuDriverBugWorkarounds workarounds_;
 
   raw_ptr<SharedImageBackingFactory> backing_factory_for_testing_ = nullptr;
+  base::WeakPtrFactory<SharedImageFactory> weak_ptr_factory_{this};
 };
 
 class GPU_GLES2_EXPORT SharedImageRepresentationFactory {
