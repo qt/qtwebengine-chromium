@@ -870,6 +870,14 @@
                 "Reattach FBO depth and stencil attachments when they are reallocated."
             ],
             "issue": "http://crbug.com/520656244"
+        },
+        {
+            "name": "split_level_0_pbo_full_sub_image_2D",
+            "category": "Workarounds",
+            "description": [
+                "Split full-image level 0 PBO uploads via TexSubImage2D into two calls to work around driver bugs."
+            ],
+            "issue": "http://crbug.com/496807874"
         }
     ]
 }

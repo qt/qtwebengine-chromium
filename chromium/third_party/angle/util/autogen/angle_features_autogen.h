@@ -302,6 +302,7 @@ enum class Feature
     SkipPipelineCacheSerialization,
     SkipVSConstantRegisterZero,
     SlowDownMonolithicPipelineCreationForTesting,
+    SplitLevel0PboFullSubImage2D,
     SrgbBlendingBroken,
     Supports16BitInputOutput,
     Supports16BitPushConstant,

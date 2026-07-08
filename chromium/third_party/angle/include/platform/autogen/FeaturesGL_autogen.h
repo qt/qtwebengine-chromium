@@ -668,6 +668,12 @@ struct FeaturesGL : FeatureSetBase
         &members,
     };
 
+    FeatureInfo splitLevel0PboFullSubImage2D = {
+        "splitLevel0PboFullSubImage2D",
+        FeatureCategory::OpenGLWorkarounds,
+        &members,
+    };
+
 };
 
 inline FeaturesGL::FeaturesGL()  = default;
