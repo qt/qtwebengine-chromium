@@ -648,14 +648,14 @@ BASE_FEATURE(kRestrictOrientationLockToPhones,
 // See https://crbug.com/495463654.
 BASE_FEATURE(kSanitizeLocationHeadersDuringNavigation,
              "kSanitizeLocationHeadersDuringNavigation",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Controls whether the `original_url` contains the full URL or just the
 // sanitized origin when sent to the renderer on commit.
 // See https://crbug.com/495463654.
 BASE_FEATURE(kSanitizeOriginalUrlDuringNavigation,
              "kSanitizeOriginalUrlDuringNavigation",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 #if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kServiceWorkerAvoidMainThreadForInitialization,
