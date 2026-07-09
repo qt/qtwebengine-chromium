@@ -910,7 +910,7 @@ class V8_EXPORT_PRIVATE LateLoadEliminationReducer : public Next {
                 abort();
               }
             } else if (compare_rep == RegisterRepresentation::Tagged() &&
-                       !v8_flags.turbolev
+                       !v8_flags.turbolev) {
               // We are trying to replace a Tagged value by a different Tagged
               // value. This is generally wrong, but there is one exception: we
               // are allowed to replace a string map by a different string map
