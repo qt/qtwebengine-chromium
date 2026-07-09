@@ -17,6 +17,7 @@
 #include "content/public/common/content_client.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "net/base/net_errors.h"
+#include "services/network/public/cpp/features.h"
 #include "services/network/public/mojom/trust_tokens.mojom.h"
 
 namespace content {
@@ -36,8 +37,15 @@ void HandleFileUploadRequest(
                         (async ? base::File::FLAG_ASYNC : 0);
   ChildProcessSecurityPolicy* cpsp = ChildProcessSecurityPolicy::GetInstance();
   for (const auto& file_path : file_paths) {
-    if (process_id != network::mojom::kBrowserProcessId &&
-        !cpsp->CanReadFile(process_id, file_path)) {
+    bool access_denied = false;
+    if (base::FeatureList::IsEnabled(
+            network::features::kBrowserInitiatedFileUploadValidation) &&
+        process_id == network::mojom::kBrowserProcessId) {
+      access_denied = !cpsp->CanReadFileForBrowserUpload(file_path);
+    } else if (process_id != network::mojom::kBrowserProcessId) {
+      access_denied = !cpsp->CanReadFile(process_id, file_path);
+    }
+    if (access_denied) {
       task_runner->PostTask(
           FROM_HERE, base::BindOnce(std::move(callback), net::ERR_ACCESS_DENIED,
                                     std::vector<base::File>()));

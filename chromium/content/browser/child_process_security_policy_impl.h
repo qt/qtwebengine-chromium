@@ -14,6 +14,7 @@
 
 #include "base/containers/flat_map.h"
 #include "base/containers/flat_set.h"
+#include "base/files/file_path.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/ref_counted.h"
@@ -21,6 +22,7 @@
 #include "base/synchronization/lock.h"
 #include "base/thread_annotations.h"
 #include "base/time/time.h"
+#include "base/unguessable_token.h"
 #include "content/browser/can_commit_status.h"
 #include "content/browser/isolated_origin_util.h"
 #include "content/browser/isolation_context.h"
@@ -29,6 +31,7 @@
 #include "content/public/browser/child_process_security_policy.h"
 #include "content/public/common/bindings_policy.h"
 #include "storage/common/file_system/file_system_types.h"
+#include "third_party/abseil-cpp/absl/container/flat_hash_map.h"
 #include "url/origin.h"
 
 class GURL;
@@ -163,6 +166,12 @@ class CONTENT_EXPORT ChildProcessSecurityPolicyImpl
   void GrantRequestScheme(int child_id, const std::string& scheme) override;
   bool CanRequestURL(int child_id, const GURL& url) override;
   bool CanReadFile(int child_id, const base::FilePath& file) override;
+  void GrantFileForBrowserUpload(const base::UnguessableToken& owner_token,
+                                 const base::FilePath& file) override;
+  void RevokeFileForBrowserUpload(
+      const base::UnguessableToken& owner_token) override;
+  bool CanReadFileForBrowserUpload(const base::FilePath& file) override;
+
   bool CanCreateReadWriteFile(int child_id,
                               const base::FilePath& file) override;
   bool CanReadFileSystem(int child_id,
@@ -1082,6 +1091,17 @@ class CONTENT_EXPORT ChildProcessSecurityPolicyImpl
   // improvement, and with it the BrowsingInstance cleanup here can also be
   // improved.
   base::TimeDelta browsing_instance_cleanup_delay_;
+
+  // Tracks files that the browser process has granted permission to the
+  // network service to upload on the user's behalf.
+  //
+  // Each file path maps to a list of tokens representing the active requests
+  // that have been granted access to this file. A token is added when a request
+  // is created, and it is removed from all associated file paths when the
+  // request is destroyed. Access is allowed as long as the file is present in
+  // this map.
+  absl::flat_hash_map<base::FilePath, std::vector<base::UnguessableToken>>
+      browser_granted_files_ GUARDED_BY(lock_);
 };
 
 }  // namespace content
