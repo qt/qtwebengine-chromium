@@ -989,6 +989,8 @@ void GenerateSampleOnSyncTokenReleased(
     // the texture when ProcessInput is finished.
     D3D11_TEXTURE2D_DESC texture_desc;
     input_texture->GetDesc(&texture_desc);
+    texture_desc.Width = static_cast<UINT>(frame->visible_rect().width());
+    texture_desc.Height = static_cast<UINT>(frame->visible_rect().height());
     texture_desc.Usage = D3D11_USAGE_DEFAULT;
     texture_desc.BindFlags = D3D11_BIND_VIDEO_ENCODER;
     texture_desc.ArraySize = 1;
