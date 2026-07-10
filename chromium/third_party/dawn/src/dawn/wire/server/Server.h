@@ -145,7 +145,7 @@ struct CreatePipelineAsyncUserData : CallbackUserdata {
     ObjectHandle device;
     ObjectHandle eventManager;
     WGPUFuture future;
-    ObjectId pipelineObjectID;
+    ObjectHandle pipeline;
 };
 
 struct RequestAdapterUserdata : CallbackUserdata {
@@ -153,7 +153,7 @@ struct RequestAdapterUserdata : CallbackUserdata {
 
     ObjectHandle eventManager;
     WGPUFuture future;
-    ObjectId adapterObjectId;
+    ObjectHandle adapter;
 };
 
 struct RequestDeviceUserdata : CallbackUserdata {
@@ -161,7 +161,7 @@ struct RequestDeviceUserdata : CallbackUserdata {
 
     ObjectHandle eventManager;
     WGPUFuture future;
-    ObjectId deviceObjectId;
+    ObjectHandle device;
     WGPUFuture deviceLostFuture;
 };
 

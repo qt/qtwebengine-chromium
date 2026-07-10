@@ -28,6 +28,8 @@
 #ifndef SRC_DAWN_UTILS_TERRIBLECOMMANDBUFFER_H_
 #define SRC_DAWN_UTILS_TERRIBLECOMMANDBUFFER_H_
 
+#include <span>
+
 #include "dawn/wire/Wire.h"
 #include "partition_alloc/pointers/raw_ptr.h"
 
@@ -46,6 +48,10 @@ class TerribleCommandBuffer : public dawn::wire::CommandSerializer {
     bool Flush() override;
     bool Empty();
 
+    // The following APIs should only be used for testing purposes.
+    size_t GetOffsetForTesting() const;
+    void SetOffsetForTesting(size_t offset);
+    std::span<const char> GetContentSubrange(size_t startOffset, size_t endOffset);
   private:
     raw_ptr<dawn::wire::CommandHandler> mHandler = nullptr;
     size_t mOffset = 0;
