@@ -3737,6 +3737,18 @@
       ]
     },
     {
+      "id": 482,
+      "cr_bugs": [496807874],
+      "description": "Split full-image level PBO uploads via TexSubImage2D into two calls to work around driver bugs.",
+      "os": {
+        "type": "android"
+      },
+      "gl_vendor": "Imagination.*",
+      "features": [
+        "split_level_0_pbo_full_sub_image_2d"
+      ]
+    },
+    {
       "id": 484,
       "cr_bugs": [529867799],
       "description": "Pack large row length separately when packing into a pixel pack buffer to work around Mali driver bug.",
