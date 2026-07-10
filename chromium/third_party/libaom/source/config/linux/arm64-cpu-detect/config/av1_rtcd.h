@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, Alliance for Open Media. All rights reserved.
+ * Copyright (c) 2017, Alliance for Open Media. All rights reserved.
  *
  * This source code is subject to the terms of the BSD 2 Clause License and
  * the Alliance for Open Media Patent License 1.0. If the BSD 2 Clause License
@@ -176,10 +176,6 @@ void av1_convolve_y_sr_intrabc_c(const uint8_t *src, int src_stride, uint8_t *ds
 void av1_convolve_y_sr_intrabc_neon(const uint8_t *src, int src_stride, uint8_t *dst, int dst_stride, int w, int h, const InterpFilterParams *filter_params_y, const int subpel_y_qn);
 #define av1_convolve_y_sr_intrabc av1_convolve_y_sr_intrabc_neon
 
-int av1_denoiser_filter_c(const uint8_t *sig, int sig_stride, const uint8_t *mc_avg, int mc_avg_stride, uint8_t *avg, int avg_stride, int increase_denoising, BLOCK_SIZE bs, int motion_magnitude);
-int av1_denoiser_filter_neon(const uint8_t *sig, int sig_stride, const uint8_t *mc_avg, int mc_avg_stride, uint8_t *avg, int avg_stride, int increase_denoising, BLOCK_SIZE bs, int motion_magnitude);
-#define av1_denoiser_filter av1_denoiser_filter_neon
-
 void av1_dist_wtd_convolve_2d_c(const uint8_t *src, int src_stride, uint8_t *dst, int dst_stride, int w, int h, const InterpFilterParams *filter_params_x, const InterpFilterParams *filter_params_y, const int subpel_x_qn, const int subpel_y_qn, ConvolveParams *conv_params);
 void av1_dist_wtd_convolve_2d_neon(const uint8_t *src, int src_stride, uint8_t *dst, int dst_stride, int w, int h, const InterpFilterParams *filter_params_x, const InterpFilterParams *filter_params_y, const int subpel_x_qn, const int subpel_y_qn, ConvolveParams *conv_params);
 void av1_dist_wtd_convolve_2d_neon_dotprod(const uint8_t *src, int src_stride, uint8_t *dst, int dst_stride, int w, int h, const InterpFilterParams *filter_params_x, const InterpFilterParams *filter_params_y, const int subpel_x_qn, const int subpel_y_qn, ConvolveParams *conv_params);
@@ -198,7 +194,9 @@ RTCD_EXTERN void (*av1_dist_wtd_convolve_x)(const uint8_t *src, int src_stride, 
 
 void av1_dist_wtd_convolve_y_c(const uint8_t *src, int src_stride, uint8_t *dst, int dst_stride, int w, int h, const InterpFilterParams *filter_params_y, const int subpel_y_qn, ConvolveParams *conv_params);
 void av1_dist_wtd_convolve_y_neon(const uint8_t *src, int src_stride, uint8_t *dst, int dst_stride, int w, int h, const InterpFilterParams *filter_params_y, const int subpel_y_qn, ConvolveParams *conv_params);
-#define av1_dist_wtd_convolve_y av1_dist_wtd_convolve_y_neon
+void av1_dist_wtd_convolve_y_neon_dotprod(const uint8_t *src, int src_stride, uint8_t *dst, int dst_stride, int w, int h, const InterpFilterParams *filter_params_y, const int subpel_y_qn, ConvolveParams *conv_params);
+void av1_dist_wtd_convolve_y_neon_i8mm(const uint8_t *src, int src_stride, uint8_t *dst, int dst_stride, int w, int h, const InterpFilterParams *filter_params_y, const int subpel_y_qn, ConvolveParams *conv_params);
+RTCD_EXTERN void (*av1_dist_wtd_convolve_y)(const uint8_t *src, int src_stride, uint8_t *dst, int dst_stride, int w, int h, const InterpFilterParams *filter_params_y, const int subpel_y_qn, ConvolveParams *conv_params);
 
 void av1_dr_prediction_z1_c(uint8_t *dst, ptrdiff_t stride, int bw, int bh, const uint8_t *above, const uint8_t *left, int upsample_above, int dx, int dy);
 void av1_dr_prediction_z1_neon(uint8_t *dst, ptrdiff_t stride, int bw, int bh, const uint8_t *above, const uint8_t *left, int upsample_above, int dx, int dy);
@@ -221,7 +219,8 @@ void av1_filter_intra_edge_neon(uint8_t *p, int sz, int strength);
 
 void av1_filter_intra_predictor_c(uint8_t *dst, ptrdiff_t stride, TX_SIZE tx_size, const uint8_t *above, const uint8_t *left, int mode);
 void av1_filter_intra_predictor_neon(uint8_t *dst, ptrdiff_t stride, TX_SIZE tx_size, const uint8_t *above, const uint8_t *left, int mode);
-#define av1_filter_intra_predictor av1_filter_intra_predictor_neon
+void av1_filter_intra_predictor_neon_i8mm(uint8_t *dst, ptrdiff_t stride, TX_SIZE tx_size, const uint8_t *above, const uint8_t *left, int mode);
+RTCD_EXTERN void (*av1_filter_intra_predictor)(uint8_t *dst, ptrdiff_t stride, TX_SIZE tx_size, const uint8_t *above, const uint8_t *left, int mode);
 
 void av1_fwd_txfm2d_16x16_c(const int16_t *input, int32_t *output, int stride, TX_TYPE tx_type, int bd);
 void av1_fwd_txfm2d_16x16_neon(const int16_t *input, int32_t *output, int stride, TX_TYPE tx_type, int bd);
@@ -291,8 +290,8 @@ void av1_get_horver_correlation_full_c(const int16_t *diff, int stride, int w, i
 void av1_get_horver_correlation_full_neon(const int16_t *diff, int stride, int w, int h, float *hcorr, float *vcorr);
 #define av1_get_horver_correlation_full av1_get_horver_correlation_full_neon
 
-void av1_get_nz_map_contexts_c(const uint8_t *const levels, const int16_t *const scan, const uint16_t eob, const TX_SIZE tx_size, const TX_CLASS tx_class, int8_t *const coeff_contexts);
-void av1_get_nz_map_contexts_neon(const uint8_t *const levels, const int16_t *const scan, const uint16_t eob, const TX_SIZE tx_size, const TX_CLASS tx_class, int8_t *const coeff_contexts);
+void av1_get_nz_map_contexts_c(const uint8_t *const levels, const int16_t *const scan, const int eob, const TX_SIZE tx_size, const TX_CLASS tx_class, int8_t *const coeff_contexts);
+void av1_get_nz_map_contexts_neon(const uint8_t *const levels, const int16_t *const scan, const int eob, const TX_SIZE tx_size, const TX_CLASS tx_class, int8_t *const coeff_contexts);
 #define av1_get_nz_map_contexts av1_get_nz_map_contexts_neon
 
 void av1_highbd_inv_txfm_add_c(const tran_low_t *input, uint8_t *dest, int stride, const TxfmParam *txfm_param);
@@ -304,6 +303,9 @@ void av1_highbd_iwht4x4_16_add_c(const tran_low_t *input, uint8_t *dest, int des
 
 void av1_highbd_iwht4x4_1_add_c(const tran_low_t *input, uint8_t *dest, int dest_stride, int bd);
 #define av1_highbd_iwht4x4_1_add av1_highbd_iwht4x4_1_add_c
+
+void av1_interp_cubic_rate_dist_c(const double *p1, const double *p2, double x, double rate_dist_f[2]);
+#define av1_interp_cubic_rate_dist av1_interp_cubic_rate_dist_c
 
 void av1_inv_txfm2d_add_16x16_c(const int32_t *input, uint16_t *output, int stride, TX_TYPE tx_type, int bd);
 #define av1_inv_txfm2d_add_16x16 av1_inv_txfm2d_add_16x16_c
@@ -509,22 +511,16 @@ static void setup_rtcd_internal(void)
     (void)flags;
 
     av1_block_error = av1_block_error_neon;
-#if 0
     if (flags & HAS_SVE) av1_block_error = av1_block_error_sve;
-#endif
     av1_block_error_lp = av1_block_error_lp_neon;
-#if 0
     if (flags & HAS_SVE) av1_block_error_lp = av1_block_error_lp_sve;
-#endif
     av1_convolve_2d_scale = av1_convolve_2d_scale_neon;
     if (flags & HAS_NEON_DOTPROD) av1_convolve_2d_scale = av1_convolve_2d_scale_neon_dotprod;
     if (flags & HAS_NEON_I8MM) av1_convolve_2d_scale = av1_convolve_2d_scale_neon_i8mm;
     av1_convolve_2d_sr = av1_convolve_2d_sr_neon;
     if (flags & HAS_NEON_DOTPROD) av1_convolve_2d_sr = av1_convolve_2d_sr_neon_dotprod;
     if (flags & HAS_NEON_I8MM) av1_convolve_2d_sr = av1_convolve_2d_sr_neon_i8mm;
-#if 0
     if (flags & HAS_SVE2) av1_convolve_2d_sr = av1_convolve_2d_sr_sve2;
-#endif
     av1_convolve_x_sr = av1_convolve_x_sr_neon;
     if (flags & HAS_NEON_DOTPROD) av1_convolve_x_sr = av1_convolve_x_sr_neon_dotprod;
     if (flags & HAS_NEON_I8MM) av1_convolve_x_sr = av1_convolve_x_sr_neon_i8mm;
@@ -537,19 +533,20 @@ static void setup_rtcd_internal(void)
     av1_dist_wtd_convolve_x = av1_dist_wtd_convolve_x_neon;
     if (flags & HAS_NEON_DOTPROD) av1_dist_wtd_convolve_x = av1_dist_wtd_convolve_x_neon_dotprod;
     if (flags & HAS_NEON_I8MM) av1_dist_wtd_convolve_x = av1_dist_wtd_convolve_x_neon_i8mm;
+    av1_dist_wtd_convolve_y = av1_dist_wtd_convolve_y_neon;
+    if (flags & HAS_NEON_DOTPROD) av1_dist_wtd_convolve_y = av1_dist_wtd_convolve_y_neon_dotprod;
+    if (flags & HAS_NEON_I8MM) av1_dist_wtd_convolve_y = av1_dist_wtd_convolve_y_neon_i8mm;
+    av1_filter_intra_predictor = av1_filter_intra_predictor_neon;
+    if (flags & HAS_NEON_I8MM) av1_filter_intra_predictor = av1_filter_intra_predictor_neon_i8mm;
     av1_get_crc32c_value = av1_get_crc32c_value_c;
     if (flags & HAS_ARM_CRC32) av1_get_crc32c_value = av1_get_crc32c_value_arm_crc32;
     av1_resize_and_extend_frame = av1_resize_and_extend_frame_neon;
     if (flags & HAS_NEON_DOTPROD) av1_resize_and_extend_frame = av1_resize_and_extend_frame_neon_dotprod;
     if (flags & HAS_NEON_I8MM) av1_resize_and_extend_frame = av1_resize_and_extend_frame_neon_i8mm;
     av1_wedge_sign_from_residuals = av1_wedge_sign_from_residuals_neon;
-#if 0
     if (flags & HAS_SVE) av1_wedge_sign_from_residuals = av1_wedge_sign_from_residuals_sve;
-#endif
     av1_wedge_sse_from_residuals = av1_wedge_sse_from_residuals_neon;
-#if 0
     if (flags & HAS_SVE) av1_wedge_sse_from_residuals = av1_wedge_sse_from_residuals_sve;
-#endif
 }
 #endif
 

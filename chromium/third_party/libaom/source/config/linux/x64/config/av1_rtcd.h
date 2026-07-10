@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, Alliance for Open Media. All rights reserved.
+ * Copyright (c) 2017, Alliance for Open Media. All rights reserved.
  *
  * This source code is subject to the terms of the BSD 2 Clause License and
  * the Alliance for Open Media Patent License 1.0. If the BSD 2 Clause License
@@ -170,10 +170,6 @@ RTCD_EXTERN void (*av1_convolve_y_sr)(const uint8_t *src, int src_stride, uint8_
 void av1_convolve_y_sr_intrabc_c(const uint8_t *src, int src_stride, uint8_t *dst, int dst_stride, int w, int h, const InterpFilterParams *filter_params_y, const int subpel_y_qn);
 #define av1_convolve_y_sr_intrabc av1_convolve_y_sr_intrabc_c
 
-int av1_denoiser_filter_c(const uint8_t *sig, int sig_stride, const uint8_t *mc_avg, int mc_avg_stride, uint8_t *avg, int avg_stride, int increase_denoising, BLOCK_SIZE bs, int motion_magnitude);
-int av1_denoiser_filter_sse2(const uint8_t *sig, int sig_stride, const uint8_t *mc_avg, int mc_avg_stride, uint8_t *avg, int avg_stride, int increase_denoising, BLOCK_SIZE bs, int motion_magnitude);
-#define av1_denoiser_filter av1_denoiser_filter_sse2
-
 void av1_dist_wtd_convolve_2d_c(const uint8_t *src, int src_stride, uint8_t *dst, int dst_stride, int w, int h, const InterpFilterParams *filter_params_x, const InterpFilterParams *filter_params_y, const int subpel_x_qn, const int subpel_y_qn, ConvolveParams *conv_params);
 void av1_dist_wtd_convolve_2d_ssse3(const uint8_t *src, int src_stride, uint8_t *dst, int dst_stride, int w, int h, const InterpFilterParams *filter_params_x, const InterpFilterParams *filter_params_y, const int subpel_x_qn, const int subpel_y_qn, ConvolveParams *conv_params);
 void av1_dist_wtd_convolve_2d_avx2(const uint8_t *src, int src_stride, uint8_t *dst, int dst_stride, int w, int h, const InterpFilterParams *filter_params_x, const InterpFilterParams *filter_params_y, const int subpel_x_qn, const int subpel_y_qn, ConvolveParams *conv_params);
@@ -295,8 +291,8 @@ void av1_get_horver_correlation_full_sse4_1(const int16_t *diff, int stride, int
 void av1_get_horver_correlation_full_avx2(const int16_t *diff, int stride, int w, int h, float *hcorr, float *vcorr);
 RTCD_EXTERN void (*av1_get_horver_correlation_full)(const int16_t *diff, int stride, int w, int h, float *hcorr, float *vcorr);
 
-void av1_get_nz_map_contexts_c(const uint8_t *const levels, const int16_t *const scan, const uint16_t eob, const TX_SIZE tx_size, const TX_CLASS tx_class, int8_t *const coeff_contexts);
-void av1_get_nz_map_contexts_sse2(const uint8_t *const levels, const int16_t *const scan, const uint16_t eob, const TX_SIZE tx_size, const TX_CLASS tx_class, int8_t *const coeff_contexts);
+void av1_get_nz_map_contexts_c(const uint8_t *const levels, const int16_t *const scan, const int eob, const TX_SIZE tx_size, const TX_CLASS tx_class, int8_t *const coeff_contexts);
+void av1_get_nz_map_contexts_sse2(const uint8_t *const levels, const int16_t *const scan, const int eob, const TX_SIZE tx_size, const TX_CLASS tx_class, int8_t *const coeff_contexts);
 #define av1_get_nz_map_contexts av1_get_nz_map_contexts_sse2
 
 void av1_highbd_inv_txfm_add_c(const tran_low_t *input, uint8_t *dest, int stride, const TxfmParam *txfm_param);
@@ -310,6 +306,10 @@ RTCD_EXTERN void (*av1_highbd_iwht4x4_16_add)(const tran_low_t *input, uint8_t *
 
 void av1_highbd_iwht4x4_1_add_c(const tran_low_t *input, uint8_t *dest, int dest_stride, int bd);
 #define av1_highbd_iwht4x4_1_add av1_highbd_iwht4x4_1_add_c
+
+void av1_interp_cubic_rate_dist_c(const double *p1, const double *p2, double x, double rate_dist_f[2]);
+void av1_interp_cubic_rate_dist_sse2(const double *p1, const double *p2, double x, double rate_dist_f[2]);
+#define av1_interp_cubic_rate_dist av1_interp_cubic_rate_dist_sse2
 
 void av1_inv_txfm2d_add_16x16_c(const int32_t *input, uint16_t *output, int stride, TX_TYPE tx_type, int bd);
 #define av1_inv_txfm2d_add_16x16 av1_inv_txfm2d_add_16x16_c
