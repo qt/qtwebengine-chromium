@@ -10,6 +10,7 @@
 #include "base/containers/contains.h"
 #include "base/containers/flat_set.h"
 #include "base/functional/bind.h"
+#include "base/strings/string_util.h"
 #include "base/trace_event/trace_event.h"
 #include "content/browser/bad_message.h"
 #include "content/browser/devtools/devtools_manager.h"
@@ -19,6 +20,7 @@
 #include "content/browser/devtools/render_frame_devtools_agent_host.h"
 #include "content/public/browser/devtools_external_agent_proxy_delegate.h"
 #include "content/public/browser/devtools_manager_delegate.h"
+#include "mojo/public/cpp/bindings/message.h"
 #include "third_party/inspector_protocol/crdtp/cbor.h"
 #include "third_party/inspector_protocol/crdtp/dispatch.h"
 #include "third_party/inspector_protocol/crdtp/json.h"
@@ -606,6 +608,30 @@ void DevToolsSession::ApplySessionStateUpdates(
   if (!session_state_cookie_)
     session_state_cookie_ = blink::mojom::DevToolsSessionState::New();
   for (auto& entry : updates->entries) {
+    // SECURITY: A compromised renderer can supply arbitrary entries here.
+    // session_state_cookie_ is forwarded verbatim to a *different* renderer
+    // process on cross-process navigation (see AttachToAgent). Entries under
+    // the "Page." domain prefix populate InspectorPageAgent fields including
+    // scripts_to_evaluate_on_load_ (Page.7/), enabled_ (Page.2/), and
+    // bypass_csp_enabled_ (Page.6/). Allowing a renderer to set these on a
+    // future cross-origin renderer is a Site-Isolation bypass / UXSS.
+    //
+    // The browser is the only entity entitled to control script injection
+    // into renderers. Reject any attempt by a renderer to write Page-domain
+    // state. Legitimate Page state is set by the *browser-side* PageHandler
+    // in response to client commands and persisted there — the renderer
+    // never needs to round-trip it.
+    //
+    // TODO(security): replace this denylist with an allowlist of keys the
+    // renderer is permitted to persist (e.g. "v8.0/"), or stop forwarding
+    // renderer-supplied state across processes entirely.
+    if (base::StartsWith(entry.first, "Page.",
+                         base::CompareCase::SENSITIVE)) {
+      mojo::ReportBadMessage(
+          "DevToolsSessionHost: renderer attempted to set Page-domain "
+          "session state (potential UXSS via cross-process reattach)");
+      return;
+    }
     if (entry.second.has_value())
       session_state_cookie_->entries[entry.first] = std::move(*entry.second);
     else
