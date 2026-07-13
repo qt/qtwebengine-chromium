@@ -539,9 +539,19 @@ void AtlasTextOp::onPrepareDraws(GrMeshDrawTarget* target) {
 
     for (const Geometry* geo = fHead; geo != nullptr; geo = geo->fNext) {
         const sktext::gpu::AtlasSubRun& subRun = geo->fSubRun;
-        SkASSERTF((int) subRun.vertexStride(geo->fDrawMatrix) == vertexStride,
-                  "subRun stride: %d vertex buffer stride: %d\n",
-                  (int)subRun.vertexStride(geo->fDrawMatrix), vertexStride);
+
+        int strideCheck = SkToInt(subRun.vertexStride(geo->fDrawMatrix));
+        if (strideCheck != vertexStride) {
+            // We (unexpectedly) have buffers of different sizes between CPU and GPU. Bail out.
+            /* SKIA_LOG_D is not in 140-based skia; replaced with release assert in next commit
+            SKIA_LOG_D(
+                    "Warning: stride mismatch detected (subrun stride: %d vertex buffer stride: "
+                    "%d). Aborting draw.\n",
+                    strideCheck,
+                    vertexStride);
+            */
+            return;
+        }
 
         const int subRunEnd = subRun.glyphCount();
         auto regenerateDelegate = [&](sktext::gpu::GlyphVector* glyphs,
