@@ -461,7 +461,7 @@ class GPU_GLES2_EXPORT GLES2DecoderPassthroughImpl
                                           uint32_t shm_id,
                                           uint32_t shm_offset,
                                           uint32_t image_size = 0,
-                                          unsigned int* size = nullptr);
+                                          unsigned int* res_size = nullptr);
 
   // Checks to see if the inserted fence has completed.
   void ProcessDescheduleUntilFinished();

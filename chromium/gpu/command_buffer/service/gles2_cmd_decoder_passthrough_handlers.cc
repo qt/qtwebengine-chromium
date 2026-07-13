@@ -15,7 +15,7 @@ error::Error GLES2DecoderPassthroughImpl::ValidateAndGetTexImageData(
     uint32_t shm_id,
     uint32_t shm_offset,
     uint32_t image_size,
-    unsigned int* size
+    unsigned int* res_size
     ) {
   // When no unpack buffer is bound, only allow actual pointers to data, or
   // nullptr (used to zero-initialize TexImage* and a GL error with non-empty
@@ -33,17 +33,25 @@ error::Error GLES2DecoderPassthroughImpl::ValidateAndGetTexImageData(
       return error::kInvalidArguments;
     }
 
+    // Workaround for simplicity reason. size defaults to nullptr,
+    // but the methods that are called down the chain expect a valid
+    // pointer, so we give them one.
+    unsigned int size = 0;
     // data comes from shmem
-    *size = 0;
     const uint8_t* data =
-        GetSharedMemoryAndSizeAs<const uint8_t*>(shm_id, shm_offset, 0, size);
+        GetSharedMemoryAndSizeAs<const uint8_t*>(shm_id, shm_offset, 0, &size);
+
+    if (res_size) {
+      *res_size = size;
+    }
+
     if (!data) {
       return error::kOutOfBounds;
     }
-    if (image_size > *size) {
+    if (image_size > size) {
       return error::kOutOfBounds;
     }
-    *data_out = UNSAFE_TODO({data, *size});
+    *data_out = UNSAFE_TODO({data, size});
     return error::kNoError;
   }
 
