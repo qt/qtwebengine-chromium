@@ -213,25 +213,19 @@ char* CommandAllocator::AllocateInNewBlock(uint32_t commandId,
         return nullptr;
     }
 
-    if (!GetNewBlock(requestedBlockSize)) [[unlikely]] {
-        return nullptr;
-    }
+    AppendNewBlock(requestedBlockSize);
     return Allocate(commandId, commandSize, commandAlignment);
 }
 
-bool CommandAllocator::GetNewBlock(size_t minimumSize) {
+void CommandAllocator::AppendNewBlock(size_t minimumSize) {
     // Allocate blocks doubling sizes each time, to a maximum of 16k (or at least minimumSize).
     mLastAllocationSize = std::max(minimumSize, std::min(mLastAllocationSize * 2, size_t(16384)));
 
-    auto block = std::unique_ptr<char[]>(new (std::nothrow) char[mLastAllocationSize]);
-    if (block == nullptr) [[unlikely]] {
-        return false;
-    }
+    auto block = std::unique_ptr<char[]>(new char[mLastAllocationSize]);
 
     mCurrentPtr = AlignPtr(block.get(), alignof(uint32_t));
     mEndPtr = block.get() + mLastAllocationSize;
     mBlocks.push_back({mLastAllocationSize, std::move(block)});
-    return true;
 }
 
 void CommandAllocator::ResetPointers() {
