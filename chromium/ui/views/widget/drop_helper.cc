@@ -17,6 +17,7 @@
 #include "ui/base/dragdrop/mojom/drag_drop_types.mojom.h"
 #include "ui/compositor/layer_tree_owner.h"
 #include "ui/views/view.h"
+#include "ui/views/view_tracker.h"
 #include "ui/views/widget/widget.h"
 
 namespace views {
@@ -62,9 +63,15 @@ int DropHelper::OnDragOver(const OSExchangeData& data,
       CalculateTargetViewImpl(root_view_location, data, true, &deepest_view_);
 
   if (view != target_view_) {
+    // Keep track of the target view to guard against potential UaF.
+    ViewTracker target_tracker(view);
     // Target changed. Notify old drag exited, then new drag entered.
     NotifyDragExit();
-    target_view_ = view;
+    if (!target_tracker.view()) {
+      target_view_ = nullptr;
+      return ui::DragDropTypes::DRAG_NONE;
+    }
+    target_view_ = target_tracker.view();
     NotifyDragEntered(data, root_view_location, drag_operation);
   }
 
