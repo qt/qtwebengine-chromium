@@ -239,6 +239,7 @@ void GenerateTextureBuiltinFromUniformData(
 
 bool GenerateArrayLengthFromuniformData(const BindingInfoArray& moduleBindingInfo,
                                         const PipelineLayout* layout,
+                                        SingleShaderStage stage,
                                         tint::glsl::writer::Bindings& bindings) {
     const PipelineLayout::BindingIndexInfo& indexInfo = layout->GetBindingIndexInfo();
 
@@ -247,6 +248,12 @@ bool GenerateArrayLengthFromuniformData(const BindingInfoArray& moduleBindingInf
         for (const auto& [binding, shaderBindingInfo] : moduleBindingInfo[group]) {
             BindingIndex bindingIndex = bgl->GetBindingIndex(binding);
             const BindingInfo& bindingInfo = bgl->GetBindingInfo(bindingIndex);
+
+            // Skip bindings that aren't visible to this stage.
+            if (!(bindingInfo.visibility & StageBit(stage))) {
+                continue;
+            }
+
 
             // TODO(crbug.com/408010433): capturing binding directly in lambda is C++20
             // extension in cmake
@@ -487,7 +494,7 @@ ResultOrError<GLuint> ShaderModule::CompileShader(
 
     if (GetDevice()->IsToggleEnabled(Toggle::GLUseArrayLengthFromUniform)) {
         *needsSSBOLengthUniformBuffer =
-            GenerateArrayLengthFromuniformData(moduleBindingInfo, layout, bindings);
+            GenerateArrayLengthFromuniformData(moduleBindingInfo, layout, stage, bindings);
         if (*needsSSBOLengthUniformBuffer) {
             req.tintOptions.use_array_length_from_uniform = true;
             bindings.array_length_from_uniform.ubo_binding = {kMaxBindGroups + 2, 0};
