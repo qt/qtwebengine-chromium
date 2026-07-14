@@ -312,7 +312,8 @@ export class SearchboxIconElement extends PolymerElement {
       return url;
     }
 
-    return `//image?staticEncode=true&encodeType=webp&url=${url}`;
+    return `//image?staticEncode=true&encodeType=webp&url=${
+        encodeURIComponent(url)}`;
   }
 
   private computeIconSrc_(): string {
