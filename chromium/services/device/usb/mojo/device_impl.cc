@@ -323,16 +323,29 @@ void DeviceImpl::Close(CloseCallback callback) {
 
 void DeviceImpl::SetConfiguration(uint8_t value,
                                   SetConfigurationCallback callback) {
+  if (device_state_change_in_progress_) {
+    mojo::ReportBadMessage("Device state change in progress.");
+    std::move(callback).Run(false);
+    return;
+  }
   if (!device_handle_) {
     std::move(callback).Run(false);
     return;
   }
 
-  device_handle_->SetConfiguration(value, std::move(callback));
+  device_state_change_in_progress_ = true;
+  device_handle_->SetConfiguration(
+      value, base::BindOnce(&DeviceImpl::OnSetConfigurationComplete,
+                            weak_factory_.GetWeakPtr(), std::move(callback)));
 }
 
 void DeviceImpl::ClaimInterface(uint8_t interface_number,
                                 ClaimInterfaceCallback callback) {
+  if (device_state_change_in_progress_) {
+    mojo::ReportBadMessage("Device state change in progress.");
+    std::move(callback).Run(mojom::UsbClaimInterfaceResult::kFailure);
+    return;
+  }
   if (!device_handle_) {
     std::move(callback).Run(mojom::UsbClaimInterfaceResult::kFailure);
     return;
@@ -367,6 +380,11 @@ void DeviceImpl::ClaimInterface(uint8_t interface_number,
 
 void DeviceImpl::ReleaseInterface(uint8_t interface_number,
                                   ReleaseInterfaceCallback callback) {
+  if (device_state_change_in_progress_) {
+    mojo::ReportBadMessage("Device state change in progress.");
+    std::move(callback).Run(false);
+    return;
+  }
   if (!device_handle_) {
     std::move(callback).Run(false);
     return;
@@ -379,6 +397,11 @@ void DeviceImpl::SetInterfaceAlternateSetting(
     uint8_t interface_number,
     uint8_t alternate_setting,
     SetInterfaceAlternateSettingCallback callback) {
+  if (device_state_change_in_progress_) {
+    mojo::ReportBadMessage("Device state change in progress.");
+    std::move(callback).Run(false);
+    return;
+  }
   if (!device_handle_) {
     std::move(callback).Run(false);
     return;
@@ -389,12 +412,20 @@ void DeviceImpl::SetInterfaceAlternateSetting(
 }
 
 void DeviceImpl::Reset(ResetCallback callback) {
+  if (device_state_change_in_progress_) {
+    mojo::ReportBadMessage("Device state change in progress.");
+    std::move(callback).Run(false);
+    return;
+  }
   if (!device_handle_) {
     std::move(callback).Run(false);
     return;
   }
 
-  device_handle_->ResetDevice(std::move(callback));
+  device_state_change_in_progress_ = true;
+  device_handle_->ResetDevice(base::BindOnce(&DeviceImpl::OnResetComplete,
+                                             weak_factory_.GetWeakPtr(),
+                                             std::move(callback)));
 }
 
 void DeviceImpl::ClearHalt(UsbTransferDirection direction,
@@ -565,6 +596,17 @@ void DeviceImpl::OnInterfaceClaimed(ClaimInterfaceCallback callback,
                                     bool success) {
   std::move(callback).Run(success ? mojom::UsbClaimInterfaceResult::kSuccess
                                   : mojom::UsbClaimInterfaceResult::kFailure);
+}
+
+void DeviceImpl::OnSetConfigurationComplete(SetConfigurationCallback callback,
+                                            bool success) {
+  device_state_change_in_progress_ = false;
+  std::move(callback).Run(success);
+}
+
+void DeviceImpl::OnResetComplete(ResetCallback callback, bool success) {
+  device_state_change_in_progress_ = false;
+  std::move(callback).Run(success);
 }
 
 void DeviceImpl::OnClientConnectionError() {
