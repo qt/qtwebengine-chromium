@@ -1,5 +1,5 @@
 /*
- *  Copyright (c) 2025 The WebM project authors. All Rights Reserved.
+ *  Copyright (c) 2017 The WebM project authors. All Rights Reserved.
  *
  *  Use of this source code is governed by a BSD-style license
  *  that can be found in the LICENSE file in the root of the source
@@ -66,12 +66,6 @@ void vp9_fht4x4_c(const int16_t *input, tran_low_t *output, int stride, int tx_t
 
 void vp9_fht8x8_c(const int16_t *input, tran_low_t *output, int stride, int tx_type);
 #define vp9_fht8x8 vp9_fht8x8_c
-
-void vp9_filter_by_weight16x16_c(const uint8_t *src, int src_stride, uint8_t *dst, int dst_stride, int src_weight);
-#define vp9_filter_by_weight16x16 vp9_filter_by_weight16x16_c
-
-void vp9_filter_by_weight8x8_c(const uint8_t *src, int src_stride, uint8_t *dst, int dst_stride, int src_weight);
-#define vp9_filter_by_weight8x8 vp9_filter_by_weight8x8_c
 
 void vp9_fwht4x4_c(const int16_t *input, tran_low_t *output, int stride);
 #define vp9_fwht4x4 vp9_fwht4x4_c

@@ -4,7 +4,7 @@
 
 import("//build/config/android/config.gni")
 import("//build/config/arm.gni")
-import("//build/config/chromeos/ui_mode.gni")
+import("//build/config/chrome_build.gni")
 import("//build/config/linux/pkg_config.gni")
 import("//build/shim_headers.gni")
 import("//testing/test.gni")
@@ -28,22 +28,18 @@ if (current_cpu == "x86") {
 } else if (current_cpu == "arm") {
   if (is_chromeos) {
     # ChromeOS gets highbd vp9 but other arm targets do not.
+    # TODO(thakis): ChromeOS no longer ships a 32-bit arm build, remove this.
     cpu_arch_full = "arm-neon-highbd"
-  } else if (arm_use_neon) {
-    cpu_arch_full = "arm-neon"
-  } else if (is_android) {
-    cpu_arch_full = "arm-neon-cpu-detect"
   } else {
-    cpu_arch_full = "arm"
+    cpu_arch_full = "arm-neon"
   }
 } else if (current_cpu == "arm64" || current_cpu == "arm64e") {
-  if (is_win || is_chromeos || is_mac || is_ios) {
-    # This is necessary for CrOS and macOS as they reuse the Linux
-    # configuration, of which there are two (see the later definition of
-    # os_category).
-    cpu_arch_full = "arm64-highbd"
-  } else {
+  # We support vp9 profile 2 for SW decoding on all platforms except mobile
+  # Android or Fuchsia.
+  if ((is_android && !is_desktop_android) || is_fuchsia) {
     cpu_arch_full = "arm64"
+  } else {
+    cpu_arch_full = "arm64-highbd"
   }
 } else if (current_cpu == "riscv64") {
   cpu_arch_full = "generic"
@@ -331,11 +327,9 @@ if (current_cpu == "arm" || current_cpu == "arm64" || current_cpu == "arm64e") {
       sources = libvpx_srcs_arm_neon_neon
       deps = [ ":libvpx_arm_neon_headers" ]
     } else if (cpu_arch_full == "arm-neon-highbd") {
+      # TODO(thakis): ChromeOS no longer ships a 32-bit arm build, remove this.
       sources = libvpx_srcs_arm_neon_highbd_neon
       deps = [ ":libvpx_arm_neon_highbd_headers" ]
-    } else if (cpu_arch_full == "arm-neon-cpu-detect") {
-      sources = libvpx_srcs_arm_neon_cpu_detect_neon
-      deps = [ ":libvpx_arm_neon_cpu_detect_headers" ]
     } else if (cpu_arch_full == "arm64") {
       sources = libvpx_srcs_arm64_neon
       deps = [ ":libvpx_arm64_headers" ]
@@ -418,14 +412,11 @@ if (current_cpu == "arm64" || current_cpu == "arm64e") {
 }
 
 if (current_cpu == "arm") {
-  if (cpu_arch_full == "arm-neon") {
-    arm_assembly_sources = libvpx_srcs_arm_neon_assembly
-  } else if (cpu_arch_full == "arm-neon-highbd") {
+  if (cpu_arch_full == "arm-neon-highbd") {
+    # TODO(thakis): ChromeOS no longer ships a 32-bit arm build, remove this.
     arm_assembly_sources = libvpx_srcs_arm_neon_highbd_assembly
-  } else if (cpu_arch_full == "arm-neon-cpu-detect") {
-    arm_assembly_sources = libvpx_srcs_arm_neon_cpu_detect_assembly
   } else {
-    arm_assembly_sources = libvpx_srcs_arm_assembly
+    arm_assembly_sources = libvpx_srcs_arm_neon_assembly
   }
 }
 
@@ -459,8 +450,7 @@ if (current_cpu == "arm" && arm_assembly_sources != []) {
     sources = get_target_outputs(":convert_arm_assembly")
     configs -= [ "//build/config/compiler:compiler_arm_fpu" ]
     configs += [ ":libvpx_config" ]
-    if (cpu_arch_full == "arm-neon" || cpu_arch_full == "arm-neon-cpu-detect" ||
-        cpu_arch_full == "arm-neon-highbd") {
+    if (cpu_arch_full == "arm-neon" || cpu_arch_full == "arm-neon-highbd") {
       asmflags = [ "-mfpu=neon" ]
 
       # allow asm files to include generated sources which match the source
@@ -480,16 +470,8 @@ source_set("libvpx_x86_64_headers") {
   sources = libvpx_srcs_x86_64_headers
 }
 
-source_set("libvpx_arm_headers") {
-  sources = libvpx_srcs_arm_headers
-}
-
 source_set("libvpx_arm_neon_headers") {
   sources = libvpx_srcs_arm_neon_headers
-}
-
-source_set("libvpx_arm_neon_cpu_detect_headers") {
-  sources = libvpx_srcs_arm_neon_cpu_detect_headers
 }
 
 source_set("libvpx_arm64_headers") {
@@ -542,17 +524,12 @@ static_library("bundled_libvpx") {
     public_deps = [ ":libvpx_mips_headers" ]
   } else if (current_cpu == "arm") {
     if (is_chromeos) {
+      # TODO(thakis): ChromeOS no longer ships a 32-bit arm build, remove this.
       sources = libvpx_srcs_arm_neon_highbd
       public_deps = [ ":libvpx_arm_neon_highbd_headers" ]
-    } else if (arm_use_neon) {
+    } else {
       sources = libvpx_srcs_arm_neon
       public_deps = [ ":libvpx_arm_neon_headers" ]
-    } else if (is_android) {
-      sources = libvpx_srcs_arm_neon_cpu_detect
-      public_deps = [ ":libvpx_arm_neon_cpu_detect_headers" ]
-    } else {
-      sources = libvpx_srcs_arm
-      public_deps = [ ":libvpx_arm_headers" ]
     }
   } else if (current_cpu == "arm64" || current_cpu == "arm64e") {
     if (is_chromeos || is_win || is_mac || is_ios) {
@@ -590,8 +567,7 @@ static_library("bundled_libvpx") {
     ]
   }
   if (cpu_arch_full == "arm-neon-highbd" || cpu_arch_full == "arm-neon" ||
-      cpu_arch_full == "arm-neon-cpu-detect" || current_cpu == "arm64" ||
-      current_cpu == "arm64e") {
+      current_cpu == "arm64" || current_cpu == "arm64e") {
     deps += [ ":libvpx_intrinsics_neon" ]
   }
   if (current_cpu == "arm64" || current_cpu == "arm64e") {
