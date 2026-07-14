@@ -99,6 +99,10 @@ enum SRIMessageSignatureError {
   kValidationFailedInvalidLength,
   kValidationFailedSignatureMismatch,
   kValidationFailedIntegrityMismatch,
+  kSignatureBaseUnknownDerivedComponent,
+  kSignatureBaseMissingHeader,
+  kSignatureBaseInvalidUnencodedDigest,
+  kSignatureBaseUnsupportedComponent,
 };
 
 // Represents an issue we'll deliver to devtools to help developers
