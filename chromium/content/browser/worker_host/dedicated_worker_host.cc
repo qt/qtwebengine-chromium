@@ -44,6 +44,7 @@
 #include "content/public/browser/permission_controller.h"
 #include "content/public/browser/permission_descriptor_util.h"
 #include "content/public/browser/service_worker_context.h"
+#include "content/public/browser/site_isolation_policy.h"
 #include "content/public/common/content_client.h"
 #include "mojo/public/cpp/bindings/self_owned_receiver.h"
 #include "mojo/public/cpp/system/message_pipe.h"
@@ -435,6 +436,16 @@ void DedicatedWorkerHost::DidStartScriptLoad(
     DCHECK(result->main_script_load_params->response_head->parsed_headers);
     if (base::FeatureList::IsEnabled(
             features::kPrivateNetworkAccessForWorkers)) {
+      if (SiteIsolationPolicy::ShouldUrlUseApplicationIsolationLevel(
+              ancestor_render_frame_host->GetBrowserContext(),
+              result->final_response_url)) {
+        GetContentClient()->browser()->EnsureRequiredHeadersForIsolatedApp(
+            ancestor_render_frame_host->GetBrowserContext(),
+            result->final_response_url,
+            result->main_script_load_params->response_head.get(),
+            /*frame_tree_node=*/std::nullopt);
+      }
+
       worker_client_security_state_ =
           network::mojom::ClientSecurityState::New();
       worker_client_security_state_->ip_address_space = CalculateIPAddressSpace(

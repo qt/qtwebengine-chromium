@@ -325,6 +325,12 @@ ContentBrowserClient::GetPermissionsPolicyForIsolatedWebApp(
   return network::ParsedPermissionsPolicy();
 }
 
+void ContentBrowserClient::EnsureRequiredHeadersForIsolatedApp(
+    BrowserContext* browser_context,
+    const GURL& url,
+    network::mojom::URLResponseHead* response_head,
+    const std::optional<FrameTreeNodeId>& frame_tree_node) {}
+
 bool ContentBrowserClient::ShouldTryToUseExistingProcessHost(
     BrowserContext* browser_context,
     const GURL& url) {
