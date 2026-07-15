@@ -236,6 +236,12 @@ struct FeaturesGL : FeatureSetBase
         &members,
     };
 
+    FeatureInfo resetBaseLevelForASTCSubImage = {
+        "resetBaseLevelForASTCSubImage",
+        FeatureCategory::OpenGLWorkarounds,
+        &members,
+    };
+
     FeatureInfo limitMax3dArrayTextureSizeTo1024 = {
         "limitMax3dArrayTextureSizeTo1024",
         FeatureCategory::OpenGLWorkarounds,
