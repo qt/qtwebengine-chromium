@@ -13,6 +13,7 @@
 #include "gpu/command_buffer/common/shared_image_usage.h"
 #include "gpu/command_buffer/service/memory_tracking.h"
 #include "gpu/command_buffer/service/shared_image/shared_image_backing.h"
+#include "gpu/command_buffer/service/shared_image/shared_image_factory.h"
 #include "gpu/command_buffer/service/shared_image/shared_image_manager.h"
 #include "gpu/command_buffer/service/shared_image/shared_image_representation.h"
 #include "gpu/command_buffer/service/shared_image/shared_memory_image_backing.h"
@@ -27,6 +28,7 @@ namespace gpu {
 class D3DImageBackingFactoryTest;
 class SharedImageBackingFactory;
 class SharedImageCopyManager;
+class SharedImageFactoryRef;
 
 // TODO(kylechar): Merge with OzoneImageBacking::AccessStream enum.
 enum class SharedImageAccessStream {
@@ -215,7 +217,7 @@ class GPU_GLES2_EXPORT CompoundImageBacking : public SharedImageBacking {
       SharedImageUsageSet usage,
       std::string debug_label,
       std::unique_ptr<SharedImageBacking> shm_backing,
-      base::WeakPtr<SharedImageFactory> shared_image_factory,
+      scoped_refptr<SharedImageFactoryRef> shared_image_factory,
       base::WeakPtr<SharedImageBackingFactory> gpu_backing_factory,
       scoped_refptr<SharedImageCopyManager> copy_manager,
       std::optional<gfx::BufferUsage> buffer_usage = std::nullopt);
@@ -268,11 +270,9 @@ class GPU_GLES2_EXPORT CompoundImageBacking : public SharedImageBacking {
   // This is required for CompoundImageBacking to be able to query an
   // appropriate SharedImageBackingFactory dynamically based on clients
   // required usage(Produce*) which typically happens after the backing
-  // creation time. WeakPtr since backings can outlive SharedImageFactory.
-  // Note that CompoundImageBacking is not thread-safe at this moment and
-  // we would need to switch WeakPtr to something else if we make it
-  // thread-safe.
-  base::WeakPtr<SharedImageFactory> shared_image_factory_;
+  // creation time. This uses a thread-safe ref-holder to safely access the
+  // factory from any thread.
+  scoped_refptr<SharedImageFactoryRef> shared_image_factory_;
 
   uint32_t latest_content_id_ = 1;
 

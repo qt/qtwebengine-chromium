@@ -10,8 +10,10 @@
 #include <vector>
 
 #include "base/memory/raw_ptr.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/synchronization/lock.h"
 
 #if defined(__GNUC__) && __GNUC__ < 11
 #include "base/containers/flat_set.h"
@@ -44,6 +46,42 @@ class SharedImageCopyManager;
 class D3DImageBackingFactory;
 struct GpuFeatureInfo;
 struct GpuPreferences;
+
+class SharedImageFactory;
+
+// A thread-safe reference holder for SharedImageFactory. This allows
+// CompoundImageBacking to safely access the factory from any thread without
+// risking a use-after-free.
+class GPU_GLES2_EXPORT SharedImageFactoryRef
+    : public base::RefCountedThreadSafe<SharedImageFactoryRef> {
+ public:
+  explicit SharedImageFactoryRef(SharedImageFactory* factory);
+
+  // Called by SharedImageFactory in its destructor to safely invalidate the
+  // pointer.
+  void Invalidate() {
+    base::AutoLock lock(lock_);
+    factory_ = nullptr;
+  }
+
+  // Executes the provided callback with the factory if it's still valid.
+  // The callback is executed while holding the lock, ensuring the factory
+  // is not destroyed during the operation.
+  template <typename F>
+  void Execute(F callback) {
+    base::AutoLock lock(lock_);
+    if (factory_) {
+      callback(factory_);
+    }
+  }
+
+ private:
+  friend class base::RefCountedThreadSafe<SharedImageFactoryRef>;
+  ~SharedImageFactoryRef();
+
+  base::Lock lock_;
+  raw_ptr<SharedImageFactory> factory_ GUARDED_BY(lock_);
+};
 
 class GPU_GLES2_EXPORT SharedImageFactory {
  public:
@@ -164,6 +202,7 @@ class GPU_GLES2_EXPORT SharedImageFactory {
   const scoped_refptr<SharedImageCopyManager>& copy_manager();
 
   base::WeakPtr<SharedImageFactory> GetWeakPtr();
+  scoped_refptr<SharedImageFactoryRef> GetFactoryRef();
 
  private:
   friend class CompoundImageBacking;
@@ -234,6 +273,8 @@ class GPU_GLES2_EXPORT SharedImageFactory {
   gpu::GpuDriverBugWorkarounds workarounds_;
 
   raw_ptr<SharedImageBackingFactory> backing_factory_for_testing_ = nullptr;
+
+  scoped_refptr<SharedImageFactoryRef> factory_ref_;
   base::WeakPtrFactory<SharedImageFactory> weak_ptr_factory_{this};
 };
 

@@ -444,7 +444,7 @@ std::unique_ptr<SharedImageBacking> CompoundImageBacking::Create(
   return base::WrapUnique(new CompoundImageBacking(
       mailbox, format, size, color_space, surface_origin, alpha_type, usage,
       std::move(debug_label), std::move(shm_backing),
-      shared_image_factory->GetWeakPtr(), gpu_backing_factory->GetWeakPtr(),
+      shared_image_factory->GetFactoryRef(), gpu_backing_factory->GetWeakPtr(),
       std::move(copy_manager)));
 }
 
@@ -484,7 +484,7 @@ std::unique_ptr<SharedImageBacking> CompoundImageBacking::Create(
   return base::WrapUnique(new CompoundImageBacking(
       mailbox, format, size, color_space, surface_origin, alpha_type, usage,
       std::move(debug_label), std::move(shm_backing),
-      shared_image_factory->GetWeakPtr(), gpu_backing_factory->GetWeakPtr(),
+      shared_image_factory->GetFactoryRef(), gpu_backing_factory->GetWeakPtr(),
       std::move(copy_manager), std::move(buffer_usage)));
 }
 
@@ -564,7 +564,7 @@ CompoundImageBacking::CompoundImageBacking(
     SharedImageUsageSet usage,
     std::string debug_label,
     std::unique_ptr<SharedImageBacking> shm_backing,
-    base::WeakPtr<SharedImageFactory> shared_image_factory,
+    scoped_refptr<SharedImageFactoryRef> shared_image_factory,
     base::WeakPtr<SharedImageBackingFactory> gpu_backing_factory,
     scoped_refptr<SharedImageCopyManager> copy_manager,
     std::optional<gfx::BufferUsage> buffer_usage)
