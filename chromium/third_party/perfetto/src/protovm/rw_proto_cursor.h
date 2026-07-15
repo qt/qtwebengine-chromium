@@ -43,6 +43,10 @@ class RwProtoCursor {
 
   RwProtoCursor();
   explicit RwProtoCursor(Node* node, Allocator* allocator);
+
+  const Node* GetNode() const { return node_; }
+  bool IsAtRoot() const { return holding_map_and_node_.first == nullptr; }
+
   StatusOr<bool> HasField(uint32_t field_id);
   StatusOr<void> EnterField(uint32_t field_id);
   StatusOr<void> EnterRepeatedFieldAt(uint32_t field_id, uint32_t index);
