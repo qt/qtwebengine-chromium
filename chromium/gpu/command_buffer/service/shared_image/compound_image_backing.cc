@@ -4,6 +4,7 @@
 
 #include "gpu/command_buffer/service/shared_image/compound_image_backing.h"
 
+#include "base/check_is_test.h"
 #include "base/functional/bind.h"
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
@@ -581,6 +582,7 @@ CompoundImageBacking::CompoundImageBacking(
                          std::move(buffer_usage)),
       shared_image_factory_(std::move(shared_image_factory)),
       copy_manager_(std::move(copy_manager)) {
+  CHECK(gpu_backing_factory);
   DCHECK(shm_backing);
   DCHECK_EQ(size, shm_backing->size());
   elements_[0].backing = std::move(shm_backing);
@@ -592,10 +594,11 @@ CompoundImageBacking::CompoundImageBacking(
 
   // CreateBackingFromBackingFactory will be called on demand. Hence this is
   // lazy backing creation.
-  elements_[1].create_callback =
-      base::BindOnce(&CompoundImageBacking::CreateBackingFromBackingFactory,
-                     base::Unretained(this), std::move(gpu_backing_factory),
-                     std::move(debug_label), GetGpuSharedImageUsage(usage));
+  SharedImageBackingType factory_type = gpu_backing_factory->GetBackingType();
+  elements_[1].create_callback = base::BindOnce(
+      &CompoundImageBacking::LazyCreateBacking, base::Unretained(this),
+      factory_type, std::move(gpu_backing_factory),
+      GetGpuSharedImageUsage(usage), std::move(debug_label));
   elements_[1].access_streams =
       base::Difference(AccessStreamSet::All(), kMemoryStreamSet);
 }
@@ -957,16 +960,15 @@ SharedImageBacking* CompoundImageBacking::GetOrAllocateBacking(
 }
 
 void CompoundImageBacking::CreateBackingFromBackingFactory(
-    base::WeakPtr<SharedImageBackingFactory> factory,
+    SharedImageBackingFactory* backing_factory,
     std::string debug_label,
     SharedImageUsageSet usage,
     std::unique_ptr<SharedImageBacking>& backing) {
-  if (!factory) {
-    DLOG(ERROR) << "Can't allocate backing after image has been destroyed";
-    return;
-  }
+  // This method assumes the caller has already ensured the factory is alive
+  // and synchronized (e.g. by holding the SharedImageFactoryRef lock).
+  CHECK(backing_factory);
 
-  backing = factory->CreateSharedImage(
+  backing = backing_factory->CreateSharedImage(
       mailbox(), format(), kNullSurfaceHandle, size(), color_space(),
       surface_origin(), alpha_type(), usage, std::move(debug_label),
       /*is_thread_safe=*/false);
@@ -985,12 +987,40 @@ void CompoundImageBacking::CreateBackingFromBackingFactory(
   // Update peak GPU memory tracking with the new estimated size.
   size_t estimated_size = 0;
   for (auto& element : elements_) {
-    if (element.backing)
+    if (element.backing) {
       estimated_size += element.backing->GetEstimatedSize();
+    }
   }
 
   AutoLock auto_lock(this);
   UpdateEstimatedSize(estimated_size);
+}
+
+void CompoundImageBacking::LazyCreateBacking(
+    SharedImageBackingType factory_type,
+    base::WeakPtr<SharedImageBackingFactory> test_factory,
+    SharedImageUsageSet usage,
+    std::string debug_label,
+    std::unique_ptr<SharedImageBacking>& backing) {
+  // This method provides a thread-safe way to lazily create a backing.
+  // It uses the factory type to re-identify the correct factory under a lock,
+  // avoiding the use of thread-affine WeakPtrs in production.
+  if (shared_image_factory_) {
+    shared_image_factory_->Execute([&](SharedImageFactory* factory) {
+      // Find the factory by type while holding the lock to ensure its lifetime.
+      auto* bf = factory->GetFactoryByType(factory_type);
+      if (bf) {
+        CreateBackingFromBackingFactory(bf, std::move(debug_label), usage,
+                                        backing);
+      }
+    });
+  } else if (test_factory) {
+    // Fallback for tests where SharedImageFactoryRef is not present.
+    // These tests are currently single-threaded.
+    CHECK_IS_TEST();
+    CreateBackingFromBackingFactory(test_factory.get(), std::move(debug_label),
+                                    usage, backing);
+  }
 }
 
 bool CompoundImageBacking::HasLatestContent(ElementHolder& element) {
