@@ -260,6 +260,7 @@ class GPU_GLES2_EXPORT CompoundImageBacking : public SharedImageBacking {
   void CreateBackingFromBackingFactory(
       base::WeakPtr<SharedImageBackingFactory> factory,
       std::string debug_label,
+      SharedImageUsageSet usage,
       std::unique_ptr<SharedImageBacking>& backing);
 
   void OnCopyToGpuMemoryBufferComplete(bool success);

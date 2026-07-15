@@ -595,7 +595,7 @@ CompoundImageBacking::CompoundImageBacking(
   elements_[1].create_callback =
       base::BindOnce(&CompoundImageBacking::CreateBackingFromBackingFactory,
                      base::Unretained(this), std::move(gpu_backing_factory),
-                     std::move(debug_label));
+                     std::move(debug_label), GetGpuSharedImageUsage(usage));
   elements_[1].access_streams =
       base::Difference(AccessStreamSet::All(), kMemoryStreamSet);
 }
@@ -959,6 +959,7 @@ SharedImageBacking* CompoundImageBacking::GetOrAllocateBacking(
 void CompoundImageBacking::CreateBackingFromBackingFactory(
     base::WeakPtr<SharedImageBackingFactory> factory,
     std::string debug_label,
+    SharedImageUsageSet usage,
     std::unique_ptr<SharedImageBacking>& backing) {
   if (!factory) {
     DLOG(ERROR) << "Can't allocate backing after image has been destroyed";
@@ -967,9 +968,8 @@ void CompoundImageBacking::CreateBackingFromBackingFactory(
 
   backing = factory->CreateSharedImage(
       mailbox(), format(), kNullSurfaceHandle, size(), color_space(),
-      surface_origin(), alpha_type(),
-      GetGpuSharedImageUsage(SharedImageUsageSet(usage())),
-      std::move(debug_label), /*is_thread_safe=*/false);
+      surface_origin(), alpha_type(), usage, std::move(debug_label),
+      /*is_thread_safe=*/false);
   if (!backing) {
     DLOG(ERROR) << "Failed to allocate GPU backing";
     return;
