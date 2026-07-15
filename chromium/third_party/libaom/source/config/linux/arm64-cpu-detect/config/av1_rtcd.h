@@ -511,16 +511,22 @@ static void setup_rtcd_internal(void)
     (void)flags;
 
     av1_block_error = av1_block_error_neon;
+#if HAVE_SVE
     if (flags & HAS_SVE) av1_block_error = av1_block_error_sve;
+#endif
     av1_block_error_lp = av1_block_error_lp_neon;
+#if HAVE_SVE
     if (flags & HAS_SVE) av1_block_error_lp = av1_block_error_lp_sve;
+#endif
     av1_convolve_2d_scale = av1_convolve_2d_scale_neon;
     if (flags & HAS_NEON_DOTPROD) av1_convolve_2d_scale = av1_convolve_2d_scale_neon_dotprod;
     if (flags & HAS_NEON_I8MM) av1_convolve_2d_scale = av1_convolve_2d_scale_neon_i8mm;
     av1_convolve_2d_sr = av1_convolve_2d_sr_neon;
     if (flags & HAS_NEON_DOTPROD) av1_convolve_2d_sr = av1_convolve_2d_sr_neon_dotprod;
     if (flags & HAS_NEON_I8MM) av1_convolve_2d_sr = av1_convolve_2d_sr_neon_i8mm;
+#if HAVE_SVE2
     if (flags & HAS_SVE2) av1_convolve_2d_sr = av1_convolve_2d_sr_sve2;
+#endif
     av1_convolve_x_sr = av1_convolve_x_sr_neon;
     if (flags & HAS_NEON_DOTPROD) av1_convolve_x_sr = av1_convolve_x_sr_neon_dotprod;
     if (flags & HAS_NEON_I8MM) av1_convolve_x_sr = av1_convolve_x_sr_neon_i8mm;
@@ -544,9 +550,13 @@ static void setup_rtcd_internal(void)
     if (flags & HAS_NEON_DOTPROD) av1_resize_and_extend_frame = av1_resize_and_extend_frame_neon_dotprod;
     if (flags & HAS_NEON_I8MM) av1_resize_and_extend_frame = av1_resize_and_extend_frame_neon_i8mm;
     av1_wedge_sign_from_residuals = av1_wedge_sign_from_residuals_neon;
+#if HAVE_SVE
     if (flags & HAS_SVE) av1_wedge_sign_from_residuals = av1_wedge_sign_from_residuals_sve;
+#endif
     av1_wedge_sse_from_residuals = av1_wedge_sse_from_residuals_neon;
+#if HAVE_SVE
     if (flags & HAS_SVE) av1_wedge_sse_from_residuals = av1_wedge_sse_from_residuals_sve;
+#endif
 }
 #endif
 

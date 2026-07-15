@@ -1650,7 +1650,9 @@ static void setup_rtcd_internal(void)
     if (flags & HAS_NEON_DOTPROD) aom_convolve8_vert = aom_convolve8_vert_neon_dotprod;
     if (flags & HAS_NEON_I8MM) aom_convolve8_vert = aom_convolve8_vert_neon_i8mm;
     aom_get_blk_sse_sum = aom_get_blk_sse_sum_neon;
+#if HAVE_SVE
     if (flags & HAS_SVE) aom_get_blk_sse_sum = aom_get_blk_sse_sum_sve;
+#endif
     aom_get_var_sse_sum_16x16_dual = aom_get_var_sse_sum_16x16_dual_neon;
     if (flags & HAS_NEON_DOTPROD) aom_get_var_sse_sum_16x16_dual = aom_get_var_sse_sum_16x16_dual_neon_dotprod;
     aom_get_var_sse_sum_8x8_quad = aom_get_var_sse_sum_8x8_quad_neon;
@@ -1827,11 +1829,17 @@ static void setup_rtcd_internal(void)
     aom_sub_pixel_variance8x8 = aom_sub_pixel_variance8x8_neon;
     if (flags & HAS_NEON_DOTPROD) aom_sub_pixel_variance8x8 = aom_sub_pixel_variance8x8_neon_dotprod;
     aom_sum_squares_2d_i16 = aom_sum_squares_2d_i16_neon;
+#if HAVE_SVE
     if (flags & HAS_SVE) aom_sum_squares_2d_i16 = aom_sum_squares_2d_i16_sve;
+#endif
     aom_sum_squares_i16 = aom_sum_squares_i16_neon;
+#if HAVE_SVE
     if (flags & HAS_SVE) aom_sum_squares_i16 = aom_sum_squares_i16_sve;
+#endif
     aom_sum_sse_2d_i16 = aom_sum_sse_2d_i16_neon;
+#if HAVE_SVE
     if (flags & HAS_SVE) aom_sum_sse_2d_i16 = aom_sum_sse_2d_i16_sve;
+#endif
     aom_var_2d_u8 = aom_var_2d_u8_neon;
     if (flags & HAS_NEON_DOTPROD) aom_var_2d_u8 = aom_var_2d_u8_neon_dotprod;
     aom_variance128x128 = aom_variance128x128_neon;
@@ -1865,7 +1873,9 @@ static void setup_rtcd_internal(void)
     aom_variance8x8 = aom_variance8x8_neon;
     if (flags & HAS_NEON_DOTPROD) aom_variance8x8 = aom_variance8x8_neon_dotprod;
     aom_vector_var = aom_vector_var_neon;
+#if HAVE_SVE
     if (flags & HAS_SVE) aom_vector_var = aom_vector_var_sve;
+#endif
 }
 #endif
 
