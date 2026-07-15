@@ -590,9 +590,12 @@ CompoundImageBacking::CompoundImageBacking(
   }
   elements_[0].content_id_ = latest_content_id_;
 
-  elements_[1].create_callback = base::BindOnce(
-      &CompoundImageBacking::LazyCreateBacking, base::Unretained(this),
-      std::move(gpu_backing_factory), std::move(debug_label));
+  // CreateBackingFromBackingFactory will be called on demand. Hence this is
+  // lazy backing creation.
+  elements_[1].create_callback =
+      base::BindOnce(&CompoundImageBacking::CreateBackingFromBackingFactory,
+                     base::Unretained(this), std::move(gpu_backing_factory),
+                     std::move(debug_label));
   elements_[1].access_streams =
       base::Difference(AccessStreamSet::All(), kMemoryStreamSet);
 }
@@ -739,7 +742,7 @@ std::unique_ptr<DawnImageRepresentation> CompoundImageBacking::ProduceDawn(
     wgpu::BackendType backend_type,
     std::vector<wgpu::TextureFormat> view_formats,
     scoped_refptr<SharedContextState> context_state) {
-  auto* backing = GetBacking(SharedImageAccessStream::kDawn);
+  auto* backing = GetOrAllocateBacking(SharedImageAccessStream::kDawn);
   if (!backing)
     return nullptr;
 
@@ -755,7 +758,7 @@ std::unique_ptr<DawnImageRepresentation> CompoundImageBacking::ProduceDawn(
 std::unique_ptr<GLTextureImageRepresentation>
 CompoundImageBacking::ProduceGLTexture(SharedImageManager* manager,
                                        MemoryTypeTracker* tracker) {
-  auto* backing = GetBacking(SharedImageAccessStream::kGL);
+  auto* backing = GetOrAllocateBacking(SharedImageAccessStream::kGL);
   if (!backing)
     return nullptr;
 
@@ -770,7 +773,7 @@ CompoundImageBacking::ProduceGLTexture(SharedImageManager* manager,
 std::unique_ptr<GLTexturePassthroughImageRepresentation>
 CompoundImageBacking::ProduceGLTexturePassthrough(SharedImageManager* manager,
                                                   MemoryTypeTracker* tracker) {
-  auto* backing = GetBacking(SharedImageAccessStream::kGL);
+  auto* backing = GetOrAllocateBacking(SharedImageAccessStream::kGL);
   if (!backing)
     return nullptr;
 
@@ -788,7 +791,7 @@ CompoundImageBacking::ProduceSkiaGanesh(
     SharedImageManager* manager,
     MemoryTypeTracker* tracker,
     scoped_refptr<SharedContextState> context_state) {
-  auto* backing = GetBacking(SharedImageAccessStream::kSkia);
+  auto* backing = GetOrAllocateBacking(SharedImageAccessStream::kSkia);
   if (!backing)
     return nullptr;
 
@@ -806,7 +809,7 @@ CompoundImageBacking::ProduceSkiaGraphite(
     SharedImageManager* manager,
     MemoryTypeTracker* tracker,
     scoped_refptr<SharedContextState> context_state) {
-  auto* backing = GetBacking(SharedImageAccessStream::kSkia);
+  auto* backing = GetOrAllocateBacking(SharedImageAccessStream::kSkia);
   if (!backing) {
     return nullptr;
   }
@@ -823,7 +826,7 @@ CompoundImageBacking::ProduceSkiaGraphite(
 std::unique_ptr<OverlayImageRepresentation>
 CompoundImageBacking::ProduceOverlay(SharedImageManager* manager,
                                      MemoryTypeTracker* tracker) {
-  auto* backing = GetBacking(SharedImageAccessStream::kOverlay);
+  auto* backing = GetOrAllocateBacking(SharedImageAccessStream::kOverlay);
   if (!backing)
     return nullptr;
 
@@ -924,7 +927,7 @@ CompoundImageBacking::GetElementWithLatestContent() {
   return nullptr;
 }
 
-SharedImageBacking* CompoundImageBacking::GetBacking(
+SharedImageBacking* CompoundImageBacking::GetOrAllocateBacking(
     SharedImageAccessStream stream) {
   ElementHolder* best_match = nullptr;
   ElementHolder* any_match = nullptr;
@@ -953,7 +956,7 @@ SharedImageBacking* CompoundImageBacking::GetBacking(
   return target_element->GetBacking();
 }
 
-void CompoundImageBacking::LazyCreateBacking(
+void CompoundImageBacking::CreateBackingFromBackingFactory(
     base::WeakPtr<SharedImageBackingFactory> factory,
     std::string debug_label,
     std::unique_ptr<SharedImageBacking>& backing) {
