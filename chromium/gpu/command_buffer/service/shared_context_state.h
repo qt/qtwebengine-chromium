@@ -145,7 +145,7 @@ class GPU_GLES2_EXPORT SharedContextState
   bool IsGLInitialized() const { return !!feature_info_; }
 
   void FlushAndSubmit(bool sync_to_cpu);
-  void FlushWriteAccess(SkiaImageRepresentation::ScopedWriteAccess* access);
+  bool FlushWriteAccess(SkiaImageRepresentation::ScopedWriteAccess* access);
   void SubmitIfNecessary(std::vector<GrBackendSemaphore> signal_semaphores,
                          bool need_graphite_submit);
 
@@ -317,7 +317,7 @@ class GPU_GLES2_EXPORT SharedContextState
                           const GpuDriverBugWorkarounds& workarounds,
                           GpuProcessShmCount* use_shader_cache_shm_count);
 
-  void FlushGraphiteRecorder();
+  bool FlushGraphiteRecorder();
 
   std::optional<error::ContextLostReason> GetResetStatus(bool needs_gl);
 
