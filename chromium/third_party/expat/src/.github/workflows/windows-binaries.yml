@@ -5,7 +5,7 @@
 #                      \___/_/\_\ .__/ \__,_|\__|
 #                               |_| XML parser
 #
-# Copyright (c) 2025 Sebastian Pipping <sebastian@pipping.org>
+# Copyright (c) 2025-2026 Sebastian Pipping <sebastian@pipping.org>
 # Licensed under the MIT license:
 #
 # Permission is  hereby granted,  free of charge,  to any  person obtaining
@@ -67,12 +67,12 @@ jobs:
     steps:
     - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
-    - uses: microsoft/setup-msbuild@6fb02220983dee41ce7ae257b6f4d8f9bf5ed4ce  # v2
+    - uses: microsoft/setup-msbuild@30375c66a4eea26614e0d39710365f22f8b0af57  # v3.0.0
 
     - name: Install Inno Setup
       shell: pwsh
       run: |-
-        Invoke-WebRequest -Uri https://files.jrsoftware.org/is/6/innosetup-6.1.2.exe -OutFile D:\\is.exe
+        Invoke-WebRequest -Uri https://github.com/jrsoftware/issrc/releases/download/is-6_1_2/innosetup-6.1.2.exe -OutFile D:\\is.exe
         Start-Process -FilePath D:\\is.exe -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -Wait
 
     - name: 'Add Inno Setup compiler to ${PATH}'
@@ -113,7 +113,7 @@ jobs:
         sed "${inno_sed_args[@]}" win32/expat.iss > win64/expat.iss
         ! grep 'win32\\bin' win64/expat.iss  # i.e. assert success
         grep win32 win64/expat.iss  # purely informational
-    
+
     - name: Build installer (and the Expat binaries that go into it)
       env:
         expat_platform: ${{ matrix.expat_platform }}
@@ -151,7 +151,7 @@ jobs:
         ( cd app && 7z a -tzip -mx=9 ../"${zip_name}" . )
 
     - name: Offer binaries for download
-      uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f  # v7.0.0
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
       with:
         name: expat_${{ matrix.expat_platform }}_${{ github.sha }}
         path: expat/${{ matrix.expat_platform }}/expat-win*bin-*.*.*.*

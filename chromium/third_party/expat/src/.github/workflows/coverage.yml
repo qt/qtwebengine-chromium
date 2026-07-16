@@ -5,7 +5,7 @@
 #                      \___/_/\_\ .__/ \__,_|\__|
 #                               |_| XML parser
 #
-# Copyright (c) 2021-2026 Sebastian Pipping <sebastian@pipping.org>
+# Copyright (c) 2021-2025 Sebastian Pipping <sebastian@pipping.org>
 # Copyright (c) 2023      Joyce Brum <joycebrum@google.com>
 # Copyright (c) 2024      Dag-Erling Smørgrav <des@des.dev>
 # Copyright (c) 2026      Rosen Penev <rosenp@gmail.com>
@@ -85,7 +85,7 @@ jobs:
         exec ./.ci.sh
 
     - name: Store coverage .info and HTML report
-      uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f  # v7.0.0
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
       with:
         name: coverage
         path: expat/coverage__*/

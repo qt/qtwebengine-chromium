@@ -46,18 +46,41 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runs-on: windows-2025
+          - runs-on: windows-2022
             cmake_build_type: Debug
             cmake_generator: Visual Studio 17 2022
             cmake_platform: Win32
             expat_char_type: char
             expat_dll: libexpatd.dll
+            expat_sln: expat.sln
           - runs-on: windows-2022
             cmake_build_type: Debug
             cmake_generator: Visual Studio 17 2022
             cmake_platform: x64
             expat_char_type: wchar_t
             expat_dll: libexpatwd.dll
+            expat_sln: expat.sln
+          - runs-on: windows-11-arm
+            cmake_build_type: Debug
+            cmake_generator: Visual Studio 17 2022
+            cmake_platform: ARM64
+            expat_char_type: wchar_t
+            expat_dll: libexpatwd.dll
+            expat_sln: expat.sln
+          - runs-on: windows-2025-vs2026
+            cmake_build_type: Debug
+            cmake_generator: Visual Studio 18 2026
+            cmake_platform: Win32
+            expat_char_type: char
+            expat_dll: libexpatd.dll
+            expat_sln: expat.slnx
+          - runs-on: windows-2025-vs2026
+            cmake_build_type: Debug
+            cmake_generator: Visual Studio 18 2026
+            cmake_platform: x64
+            expat_char_type: wchar_t
+            expat_dll: libexpatwd.dll
+            expat_sln: expat.slnx
     defaults:
       run:
         shell: bash
@@ -65,7 +88,7 @@ jobs:
     steps:
     - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
-    - uses: microsoft/setup-msbuild@6fb02220983dee41ce7ae257b6f4d8f9bf5ed4ce  # v2
+    - uses: microsoft/setup-msbuild@30375c66a4eea26614e0d39710365f22f8b0af57  # v3.0.0
 
     - name: Configure
       env:
@@ -91,6 +114,7 @@ jobs:
     - name: Build
       env:
         cmake_build_type: ${{ matrix.cmake_build_type }}
+        expat_sln: ${{ matrix.expat_sln }}
       run: |-
         msbuild_args=(
           -m
@@ -98,7 +122,7 @@ jobs:
         )
         set -x
         cd expat/build
-        MSBuild.exe "${msbuild_args[@]}" expat.sln
+        MSBuild.exe "${msbuild_args[@]}" "${expat_sln}"
 
     - name: Run tests
       env:
