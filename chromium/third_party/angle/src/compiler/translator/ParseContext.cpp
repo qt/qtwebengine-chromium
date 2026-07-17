@@ -325,6 +325,31 @@ bool IsWholeArrayFragDataUsed(TIntermTyped *node)
     // TIntermTernary here for a whole-array use of gl_FragData.
     return false;
 }
+
+unsigned int GetTypeComponentCount(const TType &type)
+{
+    unsigned int components = 0;
+    if (type.getBasicType() == EbtInterfaceBlock)
+    {
+        for (const TField *field : type.getInterfaceBlock()->fields())
+        {
+            components += GetTypeComponentCount(*field->type());
+        }
+    }
+    else if (type.getStruct())
+    {
+        for (const TField *field : type.getStruct()->fields())
+        {
+            components += GetTypeComponentCount(*field->type());
+        }
+    }
+    else
+    {
+        components = static_cast<unsigned int>(type.getNominalSize()) * type.getSecondarySize();
+    }
+    components *= type.getArraySizeProduct();
+    return components;
+}
 }  // namespace
 
 // This tracks each binding point's current default offset for inheritance of subsequent
@@ -400,6 +425,7 @@ TParseContext::TParseContext(TSymbolTable &symt,
       mComputeShaderLocalSizeDeclared(false),
       mComputeShaderLocalSize(-1),
       mNumViews(-1),
+      mNumOutputVaryingComponents(0),
       mDeclaringFunction(false),
       mMaxFragDataArrayIndexUsed(0),
       mGeometryShaderInputPrimitiveType(EptUndefined),
@@ -1746,6 +1772,7 @@ bool TParseContext::declareVariable(const TSourceLoc &line,
         error(line, "redefinition", identifier);
         return false;
     }
+    addAndCheckOutputVaryings(**variable, line);
 
     if (!checkIsNonVoid(line, identifier, type->getBasicType()))
         return false;
@@ -5476,6 +5503,7 @@ TIntermDeclaration *TParseContext::addInterfaceBlock(
                 error(field->line(), "redefinition of an interface block member name",
                       field->name());
             }
+            addAndCheckOutputVaryings(*fieldVariable, field->line());
         }
     }
     else
@@ -5487,6 +5515,7 @@ TIntermDeclaration *TParseContext::addInterfaceBlock(
         {
             error(instanceLine, "redefinition of an interface block instance name", instanceName);
         }
+        addAndCheckOutputVaryings(*instanceVariable, instanceLine);
     }
 
     TIntermSymbol *blockSymbol = new TIntermSymbol(instanceVariable);
@@ -8333,6 +8362,44 @@ bool TParseContext::postParseChecks()
     }
 
     return success;
+}
+
+void TParseContext::addAndCheckOutputVaryings(const TVariable &variable, const TSourceLoc &line)
+{
+    if (mShaderType != GL_VERTEX_SHADER)
+    {
+        return;
+    }
+
+    if (!mCompileOptions.limitOutputVaryingsTo256)
+    {
+        return;
+    }
+
+    if (variable.symbolType() == SymbolType::BuiltIn)
+    {
+        return;
+    }
+
+    if (!IsVaryingOut(variable.getType().getQualifier()))
+    {
+        return;
+    }
+
+    angle::CheckedNumeric<unsigned int> checkedNum = mNumOutputVaryingComponents;
+    checkedNum += GetTypeComponentCount(variable.getType());
+    mNumOutputVaryingComponents =
+        checkedNum.ValueOrDefault(std::numeric_limits<unsigned int>::max());
+
+    // The cap to 256 vec4s = 1024 components seems somewhat arbitrary, but this is intended as a
+    // workaround for a specific driver bug, and this limit being much
+    // higher than the device limits (mResources.MaxVertexOutputVectors *
+    // 4), it avoids regressing both tests and applications.
+    if (mNumOutputVaryingComponents > 1024)
+    {
+        error(line, "Too many declared shader output varying components for this device",
+              variable.name());
+    }
 }
 
 //

@@ -589,6 +589,7 @@ class TParseContext : angle::NonCopyable
                          const ImmutableString &identifier,
                          const TType *type,
                          TVariable **variable);
+    void addAndCheckOutputVaryings(const TVariable &variable, const TSourceLoc &line);
 
     void checkNestingLevel(const TSourceLoc &line);
 
@@ -813,6 +814,9 @@ class TParseContext : angle::NonCopyable
     sh::WorkGroupSize mComputeShaderLocalSize;
     // keep track of number of views declared in layout.
     int mNumViews;
+
+    // Current count of declared output varying components.
+    unsigned int mNumOutputVaryingComponents;
 
     // keeps track whether we are declaring / defining a function
     bool mDeclaringFunction;

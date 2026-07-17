@@ -686,6 +686,11 @@ struct FeaturesGL : FeatureSetBase
         &members,
     };
 
+    FeatureInfo limitOutputVaryingsTo256AtCompileTime = {
+        "limitOutputVaryingsTo256AtCompileTime",
+        FeatureCategory::OpenGLWorkarounds,
+        &members,
+    };
 };
 
 inline FeaturesGL::FeaturesGL()  = default;
