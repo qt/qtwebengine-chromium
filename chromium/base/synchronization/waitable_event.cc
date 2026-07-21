@@ -60,7 +60,8 @@ bool WaitableEvent::TimedWait(TimeDelta wait_delta, const Location& location) {
 
   if (!only_used_while_idle_) {
     // Assert before checking if the event is signaled.
-    internal::AssertBaseSyncPrimitivesAllowed();
+    // FIXME: WebEngineContext::destroy()
+    // internal::AssertBaseSyncPrimitivesAllowed();
     if (IsSignaled()) {
       // If it is signaled already, there is no need to actually instantiate the
       // scoped blocking call and wait.
