@@ -4,6 +4,8 @@
 
 #include "third_party/blink/renderer/platform/widget/input/prediction/predictor_factory.h"
 
+#include <climits>
+
 #include "third_party/blink/public/common/features.h"
 #include "ui/base/prediction/empty_predictor.h"
 #include "ui/base/prediction/kalman_predictor.h"
