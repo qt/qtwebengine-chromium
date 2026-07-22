@@ -1262,7 +1262,12 @@ void Window::NotifyAddedToRootWindow() {
 
 void Window::NotifyWindowHierarchyChange(
     const WindowObserver::HierarchyChangeParams& params) {
-  ScopedDeleteBlocker blocker(this);
+
+  // Block deletion of old_parent and new_parent across all target
+  // sub-tree callbacks to ensure neither parent is destroyed before
+  // NotifyWindowHierarchyChangeUp() runs.
+  ScopedDeleteBlocker old_blocker(params.old_parent);
+  ScopedDeleteBlocker new_blocker(params.new_parent);
 
   params.target->NotifyWindowHierarchyChangeDown(params);
   switch (params.phase) {
@@ -1294,6 +1299,8 @@ void Window::NotifyWindowHierarchyChangeUp(
 
 void Window::NotifyWindowHierarchyChangeAtReceiver(
     const WindowObserver::HierarchyChangeParams& params) {
+  ScopedDeleteBlocker blocker(this);
+
   WindowObserver::HierarchyChangeParams local_params = params;
   local_params.receiver = this;
 
