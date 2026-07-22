@@ -1879,21 +1879,27 @@ void DocumentLoader::ProcessDataBuffer(BodyData* data) {
   if (data)
     CommitData(*data);
 
-  // Process data received in reentrant invocations. Note that the invocations
-  // of CommitData() may queue more data in reentrant invocations, so iterate
-  // until it's empty.
-  DCHECK(data_buffer_->empty() || decoded_data_buffer_->empty());
-  for (const auto& span : *data_buffer_) {
-    EncodedBodyData body_data(span);
-    CommitData(body_data);
+  // Process data received in reentrant invocations. Note that
+  // - invocations of `CommitData()` may queue more data in reentrant
+  //   invocations, so iterate until the buffers are completely consumed
+  // - for any given instance of `DocumentLoader`, only one of `data_buffer_`
+  //   or `decoded_data_buffer_` will ever be used.
+  while (!data_buffer_->empty()) {
+    scoped_refptr<SharedBuffer> data_buffer =
+        std::exchange(data_buffer_, SharedBuffer::Create());
+    for (const auto& span : *data_buffer) {
+      EncodedBodyData body_data(span);
+      CommitData(body_data);
+    }
   }
-  for (auto& decoded_data : *decoded_data_buffer_) {
-    CommitData(decoded_data);
+  while (!decoded_data_buffer_->empty()) {
+    std::unique_ptr<Vector<DecodedBodyData>> decoded_data_buffer =
+        std::exchange(decoded_data_buffer_,
+                       std::make_unique<Vector<DecodedBodyData>>());
+    for (auto& decoded_data : *decoded_data_buffer) {
+      CommitData(decoded_data);
+    }
   }
-
-  // All data has been consumed, so flush the buffer.
-  data_buffer_->Clear();
-  decoded_data_buffer_->clear();
 }
 
 void DocumentLoader::StopLoading() {
