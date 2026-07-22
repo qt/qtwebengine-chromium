@@ -362,6 +362,8 @@ config("compiler") {
     configs += [ "//build/config/aix:compiler" ]
   } else if (current_os == "zos") {
     configs += [ "//build/config/zos:compiler" ]
+  } else if (is_ohos) {
+    configs += [ "//build/config/ohos:compiler" ]
   }
 
   configs += [
@@ -1816,6 +1818,8 @@ config("runtime_library") {
     configs += [ "//build/config/mac:runtime_library" ]
   } else if (is_android) {
     configs += [ "//build/config/android:runtime_library" ]
+  } else if (is_ohos) {
+    configs += [ "//build/config/ohos:runtime_library" ]
   }
 
   if (is_component_build) {
