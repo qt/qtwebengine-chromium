@@ -1532,7 +1532,7 @@ if (!running_modularize) {
 group("chromium_builder_perf") {
   testonly = true
 
-  if (!is_ios && !is_android && !is_castos && !is_cronet_build) {
+  if (!is_ios && !is_android && !is_castos && !is_cronet_build && !is_ohos) {
     data_deps = [
       "//components/tracing:tracing_perftests",
       "//gpu:command_buffer_perftests",
@@ -1583,7 +1583,7 @@ group("chromium_builder_perf") {
   }
 }
 
-if (!is_ios && !is_android && !is_castos && !is_cronet_build) {
+if (!is_ios && !is_android && !is_castos && !is_cronet_build && !is_ohos) {
   group("chromium_builder_asan") {
     testonly = true
 

@@ -1,0 +1,27 @@
+# Copyright 2024 The Huawei Authors. All rights reserved.
+# Copyright (C) 2026 The Qt Company Ltd.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+assert(is_ohos)
+
+import("//build/config/clang/clang.gni")
+
+declare_args() {
+  # OHOS musl sysroot. Pass this in gn args (QtToolchainHelpers OHOS branch),
+  # e.g. "$HOME/Library/OpenHarmony/Sdk/23/native/sysroot".
+  musl_sysroot = ""
+
+  # OHOS NDK API level, used for sysroot/path calculations.
+  arm32_ndk_api_level = 21
+  arm64_ndk_api_level = 21
+}
+
+assert(musl_sysroot != "",
+       "musl_sysroot must point to the OHOS native SDK sysroot, e.g. " +
+           "\"\$HOME/Library/OpenHarmony/Sdk/23/native/sysroot\".")
+
+# Single source of truth for the SDK location, reusing the gn args already
+# passed by this build.
+ohos_toolchain_root = clang_base_path
+ohos_sysroot = musl_sysroot

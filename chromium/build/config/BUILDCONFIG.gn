@@ -295,6 +295,8 @@ if (target_os == "android") {
   assert(
       false,
       "emscripten is not a supported target_os. It is available only as secondary toolchain.")
+} else if (target_os == "ohos") {
+  _default_toolchain = "//build/toolchain/ohos:ohos_clang_$target_cpu"
 } else {
   assert(false, "Unsupported target_os: $target_os")
 }
@@ -337,6 +339,8 @@ is_win = current_os == "win" || current_os == "winuwp"
 
 is_apple = is_ios || is_mac || is_watchos
 is_posix = !is_win && !is_fuchsia
+
+is_ohos = current_os == "ohos"
 
 # =============================================================================
 # TARGET DEFAULTS

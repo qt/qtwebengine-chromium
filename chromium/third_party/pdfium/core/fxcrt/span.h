@@ -19,6 +19,9 @@
 // - removed any references to base::cstring_view<>.
 // - Added reinterpret_span() helper.
 // - DCHECK() verbose logging message not supported and removed.
+// - Added internal::LexicographicalCompareThreeWay() and use it in place
+//   of std::lexicographical_compare_three_way(), which is missing from
+//   the OHOS musl SDK's libc++.
 
 // This file intentionally uses the `CHECK()` macro instead of the `CHECK_op()`
 // macros, as `CHECK()` generates significantly less code and is more likely to
@@ -453,6 +456,33 @@ constexpr auto as_byte_span(
       reinterpret_cast<ByteType*>(s.data()), s.size_bytes()));
 }
 
+// The OHOS musl SDK's libc++ lacks std::lexicographical_compare_three_way
+// (and it is not covered by -fexperimental-library), so span's three-way
+// comparison is routed through this local helper.
+template <class InputIterator1, class InputIterator2>
+constexpr auto LexicographicalCompareThreeWay(InputIterator1 first1,
+                                              InputIterator1 last1,
+                                              InputIterator2 first2,
+                                              InputIterator2 last2) {
+#if defined(__MUSL__)
+  using Ret = decltype(*first1 <=> *first2);
+  for (; first1 != last1 && first2 != last2; ++first1, ++first2) {
+    if (auto c = *first1 <=> *first2; c != 0) {
+      return c;
+    }
+  }
+  if (first1 != last1) {
+    return Ret::greater;
+  }
+  if (first2 != last2) {
+    return Ret::less;
+  }
+  return Ret::equivalent;
+#else
+  return std::lexicographical_compare_three_way(first1, last1, first2, last2);
+#endif
+}
+
 }  // namespace internal
 
 // [span]: class `span` (non-dynamic `Extent`s)
@@ -813,7 +843,7 @@ class GSL_POINTER span {
   {
     const auto const_lhs = span<const element_type>(lhs);
     const auto const_rhs = span<const element_type>(rhs);
-    return std::lexicographical_compare_three_way(
+    return internal::LexicographicalCompareThreeWay(
         const_lhs.begin(), const_lhs.end(), const_rhs.begin(), const_rhs.end());
   }
   friend constexpr auto operator<=>(span lhs,
@@ -834,7 +864,7 @@ class GSL_POINTER span {
       span<OtherElementType, OtherExtent, OtherInternalPtrType> rhs) {
     const auto const_lhs = span<const element_type>(lhs);
     const auto const_rhs = span<const OtherElementType, OtherExtent>(rhs);
-    return std::lexicographical_compare_three_way(
+    return internal::LexicographicalCompareThreeWay(
         const_lhs.begin(), const_lhs.end(), const_rhs.begin(), const_rhs.end());
   }
 
@@ -1268,7 +1298,7 @@ class GSL_POINTER span<ElementType, dynamic_extent, InternalPtrType> {
   {
     const auto const_lhs = span<const element_type>(lhs);
     const auto const_rhs = span<const element_type>(rhs);
-    return std::lexicographical_compare_three_way(
+    return internal::LexicographicalCompareThreeWay(
         const_lhs.begin(), const_lhs.end(), const_rhs.begin(), const_rhs.end());
   }
   friend constexpr auto operator<=>(span lhs,
@@ -1288,7 +1318,7 @@ class GSL_POINTER span<ElementType, dynamic_extent, InternalPtrType> {
       span<OtherElementType, OtherExtent, OtherInternalPtrType> rhs) {
     const auto const_lhs = span<const element_type>(lhs);
     const auto const_rhs = span<const OtherElementType, OtherExtent>(rhs);
-    return std::lexicographical_compare_three_way(
+    return internal::LexicographicalCompareThreeWay(
         const_lhs.begin(), const_lhs.end(), const_rhs.begin(), const_rhs.end());
   }
 
