@@ -228,6 +228,7 @@ enum class Feature
     LimitMaxDrawBuffersForTesting,
     LimitMaxMSAASamplesTo4,
     LimitMaxStorageBufferSize,
+    LimitMaxVisibilityQueryOffset,
     LimitOutputVaryingsTo256AtCompileTime,
     LimitSampleCountTo2,
     LimitWebglMaxTextureSizeTo4096,

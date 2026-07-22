@@ -155,6 +155,7 @@ class DisplayMtl : public DisplayImpl
     mtl::StateCache &getStateCache() { return mStateCache; }
     mtl::LibraryCache &getLibraryCache() { return mLibraryCache; }
     uint32_t getMaxColorTargetBits() { return mMaxColorTargetBits; }
+    uint32_t getMaxVisibilityQueryOffset() const { return mMaxVisibilityQueryOffset; }
     bool hasFragmentMemoryBarriers() const { return mHasFragmentMemoryBarriers; }
 
     id<MTLLibrary> getDefaultShadersLib();
@@ -220,6 +221,7 @@ class DisplayMtl : public DisplayImpl
     mutable gl::Limitations mNativeLimitations;
     mutable ShPixelLocalStorageOptions mNativePLSOptions;
     mutable uint32_t mMaxColorTargetBits = 0;
+    mutable uint32_t mMaxVisibilityQueryOffset = 0;
     mutable bool mHasFragmentMemoryBarriers;
 
     angle::FeaturesMtl mFeatures;

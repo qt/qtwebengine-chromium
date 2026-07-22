@@ -228,6 +228,7 @@ constexpr PackedEnumMap<Feature, const char *> kFeatureNames = {{
     {Feature::LimitMaxDrawBuffersForTesting, "limitMaxDrawBuffersForTesting"},
     {Feature::LimitMaxMSAASamplesTo4, "limitMaxMSAASamplesTo4"},
     {Feature::LimitMaxStorageBufferSize, "limitMaxStorageBufferSize"},
+    {Feature::LimitMaxVisibilityQueryOffset, "limitMaxVisibilityQueryOffset"},
     {Feature::LimitOutputVaryingsTo256AtCompileTime, "limitOutputVaryingsTo256AtCompileTime"},
     {Feature::LimitSampleCountTo2, "limitSampleCountTo2"},
     {Feature::LimitWebglMaxTextureSizeTo4096, "limitWebglMaxTextureSizeTo4096"},

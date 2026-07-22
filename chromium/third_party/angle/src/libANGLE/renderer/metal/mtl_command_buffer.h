@@ -553,6 +553,7 @@ class RenderCommandEncoder final : public CommandEncoder
                                                                      uint32_t baseInstance);
 
     RenderCommandEncoder &setVisibilityResultMode(MTLVisibilityResultMode mode, size_t offset);
+    MTLVisibilityResultMode getVisibilityResultMode() const;
 
     RenderCommandEncoder &useResource(const BufferRef &resource,
                                       MTLResourceUsage usage,
