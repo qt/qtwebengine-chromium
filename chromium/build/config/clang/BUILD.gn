@@ -249,6 +249,12 @@ template("clang_lib") {
         } else {
           assert(false)  # Unhandled cpu type
         }
+      } else if (is_ohos) {
+        if (current_cpu == "arm64") {
+          _dir = "aarch64-linux-ohos"
+        } else {
+          assert(false)  # Unhandled cpu type
+        }
       } else {
         assert(false)  # Unhandled target platform
       }

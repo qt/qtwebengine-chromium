@@ -15,7 +15,10 @@
 #include "partition_alloc/build_config.h"
 #include "partition_alloc/buildflags.h"
 
-#if PA_BUILDFLAG(IS_ANDROID) || PA_BUILDFLAG(IS_LINUX)
+// <sys/ifunc.h> is not available in every libc (e.g. the musl-based OHOS
+// SDK), so only enable HW capability detection when the header is present.
+#if (PA_BUILDFLAG(IS_ANDROID) || PA_BUILDFLAG(IS_LINUX)) && \
+    __has_include(<sys/ifunc.h>)
 #define HAS_HW_CAPS
 #endif
 

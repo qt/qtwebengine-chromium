@@ -727,7 +727,7 @@ if (is_clang_or_gcc || is_msvc || is_mingw) {
         "partition_alloc_base/time/time_conversion_posix.cc",
       ]
 
-      if (is_linux || is_chromeos) {
+      if (is_linux || is_chromeos || is_ohos) {
         sources += [ "partition_alloc_base/debug/stack_trace_linux.cc" ]
       }
 

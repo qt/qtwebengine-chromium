@@ -140,7 +140,7 @@ if (use_arm_neon_optimizations) {
     defines = [ "CRC32_ARMV8_CRC32" ]
     if (is_android) {
       defines += [ "ARMV8_OS_ANDROID" ]
-    } else if (is_linux || is_chromeos) {
+    } else if (is_linux || is_chromeos || is_ohos) {
       defines += [ "ARMV8_OS_LINUX" ]
     } else if (is_mac) {
       defines += [ "ARMV8_OS_MACOS" ]
@@ -160,7 +160,9 @@ if (use_arm_neon_optimizations) {
 
     include_dirs = [ "." ]
 
-    if (!is_win && !is_clang) {
+    # OHOS clang 15 miscompiles crc32_simd.c's per-function CRC target
+    # attributes, so pass -march explicitly (as done for GCC) for OHOS too.
+    if ((!is_win && !is_clang) || is_ohos) {
       assert(!use_thin_lto,
              "ThinLTO fails mixing different module-level targets")
       if (current_cpu == "arm64") {

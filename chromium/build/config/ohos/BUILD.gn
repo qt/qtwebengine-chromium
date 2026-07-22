@@ -1,0 +1,100 @@
+# Copyright 2024 The Huawei Authors. All rights reserved.
+# Copyright (C) 2026 The Qt Company Ltd.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/config/ohos/config.gni")
+
+assert(is_ohos)
+
+# Included by reference in //build/config/compiler:compiler.
+config("compiler") {
+  cflags = [
+    "-ffunction-sections",
+    "-fno-short-enums",
+  ]
+
+  cflags_cc = [ "-fexperimental-library" ]
+
+  defines = [
+    "OSOHOS",
+    "OS_OHOS",
+
+    # The NDK has these but doesn't advertise them; define them here.
+    "HAVE_SYS_UIO_H",
+
+    # musl libc markers.
+    "__MUSL__",
+    "_LIBCPP_HAS_MUSL_LIBC",
+    "__BUILD_LINUX_WITH_CLANG",
+  ]
+
+  ldflags = [
+    "-Wl,--exclude-libs=libgcc.a",
+    "-Wl,--no-undefined",
+    "-Wl,--exclude-libs=libunwind_llvm.a",
+
+    # Don't allow visible symbols from libraries that contain assembly code
+    # with symbols that aren't hidden properly. http://crbug.com/448386
+    "-Wl,--exclude-libs=libvpx_assembly_arm.a",
+  ]
+
+  # Compiler target triple.
+  if (current_cpu == "arm64") {
+    abi_target = "aarch64-linux-ohos"
+  } else {
+    assert(false, "Only arm64 is wired up; add this current_cpu.")
+  }
+
+  cflags += [ "--target=$abi_target" ]
+  ldflags += [ "--target=$abi_target" ]
+
+  # Send the same flags to the assembler.
+  asmflags = cflags
+}
+
+# Included by reference in //build/config/compiler:runtime_library.
+config("runtime_library") {
+  libs = []
+  ldflags = []
+
+  defines = [
+    "__MUSL__",
+    "_LIBCPP_HAS_MUSL_LIBC",
+    "__BUILD_LINUX_WITH_CLANG",
+  ]
+
+  # LLVM toolchain version directory (OHOS SDK 23 ships clang 15.0.4).
+  llvm_version = "15.0.4"
+
+  if (current_cpu == "arm64") {
+    dynamic_linker = "/lib/ld-musl-aarch64.so.1"
+
+    ldflags += [
+      "-Wl,-z,max-page-size=4096",
+      "-Wl,--hash-style=gnu",
+    ]
+
+    # musl sysroot libs + toolchain libs (libc++_static.a, libc++abi.a) +
+    # per-triple compiler-rt dir.
+    ldflags += [ "-L" + rebase_path("$ohos_sysroot/usr/lib/aarch64-linux-ohos",
+                                    root_build_dir) ]
+    ldflags +=
+        [ "-L" + rebase_path("$ohos_toolchain_root/lib/aarch64-linux-ohos",
+                             root_build_dir) ]
+    ldflags += [ "-L" + rebase_path(
+                     "$ohos_toolchain_root/lib/clang/$llvm_version/lib/aarch64-linux-ohos",
+                     root_build_dir) ]
+
+    libclang_rt_file = "$ohos_toolchain_root/lib/clang/$llvm_version/lib/aarch64-linux-ohos/libclang_rt.builtins.a"
+  } else {
+    assert(false, "Only arm64 is wired up; add this current_cpu.")
+  }
+
+  ldflags += [ "-Wl,--dynamic-linker,$dynamic_linker" ]
+
+  libs += [
+    rebase_path(libclang_rt_file),
+    "c++abi",
+  ]
+}

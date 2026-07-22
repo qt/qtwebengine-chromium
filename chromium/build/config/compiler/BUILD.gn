@@ -333,6 +333,8 @@ config("compiler") {
     configs += [ "//build/config/win:compiler" ]
   } else if (is_android) {
     configs += [ "//build/config/android:compiler" ]
+  } else if (is_ohos) {
+    configs += [ "//build/config/ohos:compiler" ]
   } else if (is_linux || is_chromeos) {
     configs += [ "//build/config/linux:compiler" ]
   } else if (is_mac) {
@@ -1411,7 +1413,7 @@ config("compiler_cpu_abi") {
         cflags += [ "-mtune=$arm_tune" ]
       }
     } else if (current_cpu == "arm64") {
-      if (is_clang && !is_android && !is_fuchsia && !is_chromeos_device) {
+      if (is_clang && !is_android && !is_fuchsia && !is_chromeos_device && !is_ohos) {
         cflags += [ "--target=aarch64-linux-gnu" ]
         ldflags += [ "--target=aarch64-linux-gnu" ]
       }
@@ -2052,6 +2054,8 @@ config("runtime_library") {
     configs += [ "//build/config/mac:runtime_library" ]
   } else if (is_android) {
     configs += [ "//build/config/android:runtime_library" ]
+  } else if (is_ohos) {
+    configs += [ "//build/config/ohos:runtime_library" ]
   }
 
   if (is_component_build) {
