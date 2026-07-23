@@ -5,9 +5,10 @@
 #include "components/input/render_widget_host_view_input.h"
 
 #include "base/notreached.h"
+
 #include "components/input/render_widget_host_input_event_router.h"
 #include "ui/gfx/geometry/dip_util.h"
-
+#include "ui/events/gesture_detection/filtered_gesture_provider.h"
 namespace input {
 
 RenderWidgetHostViewInput::RenderWidgetHostViewInput() = default;
@@ -369,6 +370,11 @@ bool RenderWidgetHostViewInput::TransformPointToTargetCoordSpace(
   *transformed_point = gfx::ConvertPointToDips(
       transformed_point_in_physical_pixels, device_scale_factor);
   return true;
+}
+
+scoped_refptr<ui::FilteredGestureProvider>
+RenderWidgetHostViewInput::GetGestureProvider() {
+  return nullptr;
 }
 
 }  // namespace input

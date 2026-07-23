@@ -160,7 +160,9 @@ TouchDispositionGestureFilter::TouchDispositionGestureFilter(
   DCHECK(client_);
 }
 
-TouchDispositionGestureFilter::~TouchDispositionGestureFilter() {
+TouchDispositionGestureFilter::~TouchDispositionGestureFilter() = default;
+void TouchDispositionGestureFilter::Shutdown() {
+  client_ = nullptr;
 }
 
 TouchDispositionGestureFilter::PacketResult
@@ -243,7 +245,7 @@ void TouchDispositionGestureFilter::SendAckedEvents(
   // Dispatch all packets corresponding to ack'ed touches, as well as
   // any pending timeout-based packets.
   bool touch_packet_for_current_ack_handled = false;
-  while (!IsEmpty() && (!Head().empty() || sequences_.size() != 1)) {
+  while (!IsEmpty() && client_ && (!Head().empty() || sequences_.size() != 1)) {
     if (Head().empty())
       PopGestureSequence();
     GestureSequence& sequence = Head();
@@ -288,7 +290,7 @@ void TouchDispositionGestureFilter::SendAckedEvents(
 
     FilterAndSendPacket(packet);
   }
-  DCHECK(touch_packet_for_current_ack_handled);
+  DCHECK(touch_packet_for_current_ack_handled || !client_);
 }
 
 bool TouchDispositionGestureFilter::IsEmpty() const {
@@ -441,6 +443,9 @@ void TouchDispositionGestureFilter::SendGesture(
       break;
     default:
       break;
+  }
+  if (!client_) {
+    return;
   }
   client_->ForwardGestureEvent(event);
 }
