@@ -4,15 +4,19 @@
 
 import("//build/config/buildflags_paint_preview.gni")
 import("//build/config/chrome_build.gni")
+import("//build/config/features.gni")
+import("//build/config/freetype/freetype.gni")
 import("//build/config/ui.gni")
-import("//third_party/harfbuzz/harfbuzz.gni")
+import("//testing/libfuzzer/fuzzer_test.gni")
+import("//third_party/harfbuzz-ng/harfbuzz.gni")
 
 if (use_system_harfbuzz) {
   import("//build/config/linux/pkg_config.gni")
   pkg_config("harfbuzz_from_pkgconfig") {
     visibility = [
       "//third_party/freetype",
-      "//third_party/harfbuzz",
+      "//third_party/harfbuzz-ng",
+      "//third_party:freetype_harfbuzz",
     ]
     packages = [
       "harfbuzz",
@@ -20,10 +24,16 @@ if (use_system_harfbuzz) {
     ]
   }
 
-  component("harfbuzz") {
+  component("harfbuzz-ng") {
     public_configs = [ ":harfbuzz_from_pkgconfig" ]
   }
+} else if (use_qt_harfbuzz) {
+  # see root BUILD.gn
+  component("harfbuzz-ng") {
+  }
 } else {
+
+  if (enable_rust && !is_qtwebengine) {
   import("//build/rust/rust_bindgen_generator.gni")
   import("//build/rust/rust_static_library.gni")
 
@@ -63,6 +73,7 @@ if (use_system_harfbuzz) {
       "//third_party/rust/skrifa/v0_42:lib",
     ]
   }
+  } # if (enable_rust && !is_qtwebengine)
 
   config("harfbuzz_config") {
     include_dirs = [
@@ -74,7 +85,7 @@ if (use_system_harfbuzz) {
   config("harfbuzz_warnings") {
     cflags = []
 
-    if (is_win) {
+    if (is_win && !is_mingw) {
       # Result of 32-bit shift implicitly converted to 64 bits.
       cflags += [ "/wd4334" ]
     }
@@ -85,7 +96,7 @@ if (use_system_harfbuzz) {
     cflags += [ "-Wno-array-bounds" ]
   }
 
-  component("harfbuzz") {
+  component("harfbuzz-ng") {
     public = [
       "src/src/hb-blob.h",
       "src/src/hb-buffer.h",
@@ -186,7 +197,6 @@ if (use_system_harfbuzz) {
       "src/src/hb-fontations.h",
       "src/src/hb-free-pool.hh",
       "src/src/hb-geometry.hh",
-      "src/src/hb-harfrust.cc",
       "src/src/hb-icu.cc",
       "src/src/hb-iter.hh",
       "src/src/hb-kbts.cc",
@@ -356,6 +366,10 @@ if (use_system_harfbuzz) {
       "src/src/hb.hh",
     ]
 
+    if (enable_rust && !is_qtwebengine) {
+      sources += [ "hb-harfrust.cc" ]
+    }
+
     # The following sources are explictly not used.
     # They are referenced to aid in detecting previously uncategorized files.
     unused_sources = [
@@ -464,12 +478,10 @@ if (use_system_harfbuzz) {
       "HAVE_OT",
       "HAVE_ICU",
       "HAVE_ICU_BUILTIN",
-      "HAVE_FONTATIONS",
       "HB_NO_MMAP",
       "HB_NO_RESOURCE_FORK",
-      "HAVE_HARFRUST",
 
-      # Use assignment to empty value to work around a build failure.
+     # Use assignment to empty value to work around a build failure.
       "HB_NO_PAINT=",
 
       # Size reductions by disabling parts that we do not currently require:
@@ -518,6 +530,13 @@ if (use_system_harfbuzz) {
       "HB_NO_PRAGMA_GCC_DIAGNOSTIC_WARNING",
     ]
 
+    if (enable_rust && !is_qtwebengine) {
+       defines += [
+          "HAVE_FONTATIONS",
+          "HAVE_HARFRUST",
+      ]
+    }
+
     if (!is_win && !is_mac) {
       # Needed for HarfBuzz mutex implementation, see hb-mutex.hh
       defines += [ "HAVE_PTHREAD" ]
@@ -538,6 +557,13 @@ if (use_system_harfbuzz) {
       }
     }
 
+    if (use_system_freetype) {
+      configs += [ "//third_party/freetype:freetype_from_pkgconfig" ]
+    } else if (use_qt_freetype) {
+      configs += [ qt_freetype_config ]
+    } else {
+      configs += [ "//third_party/freetype:freetype_component_config" ]
+    }
     configs -= [ "//build/config/compiler:chromium_code" ]
     configs += [
       "//build/config/compiler:no_chromium_code",
@@ -556,11 +582,14 @@ if (use_system_harfbuzz) {
     public_configs = [ ":harfbuzz_config" ]
 
     deps = [
-      ":harfbuzz_rust",
       "//third_party/icu:icuuc",
-      "//third_party/rust/harfrust/v0_8:lib",
     ]
-
+    if (enable_rust && !is_qtwebengine) {
+      deps += [
+        ":harfbuzz_rust",
+        "//third_party/rust/harfrust/v0_8:lib",
+      ]
+    }
     if (use_glib) {
       configs += [ "//build/config/linux:glib" ]
       public += [ "src/src/hb-glib.h" ]
@@ -571,13 +600,11 @@ if (use_system_harfbuzz) {
 
 # Not all checkouts have a //base directory.
 if (build_with_chromium) {
-  import("//testing/libfuzzer/fuzzer_test.gni")
-
   fuzzer_test("hb_shape_fuzzer") {
     sources = [ "fuzz/hb_shape_fuzzer.cc" ]
     deps = [
       "//base",
-      "//third_party/harfbuzz",
+      "//third_party/harfbuzz-ng",
     ]
     seed_corpus = "fuzz/seed_corpus"
   }
@@ -586,7 +613,7 @@ if (build_with_chromium) {
     sources = [ "fuzz/hb_subset_fuzzer.cc" ]
     deps = [
       "//base",
-      "//third_party/harfbuzz",
+      "//third_party/harfbuzz-ng",
     ]
     seed_corpus = "fuzz/seed_corpus"
   }
