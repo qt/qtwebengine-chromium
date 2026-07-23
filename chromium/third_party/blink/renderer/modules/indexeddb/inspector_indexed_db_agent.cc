@@ -697,7 +697,7 @@ class OpenCursorCallback final : public NativeEventListener {
       return;
     }
 
-    v8_inspector::V8InspectorSession* v8_session = agent_->v8_session();
+    V8SessionHolder v8_session = agent_->V8Session();
     if (!v8_session) {
       request_callback_->sendFailure(
           protocol::Response::ServerError(kSessionDetachedDuringOperation));
@@ -834,25 +834,22 @@ class DataLoader final : public ExecutableWithDatabase<RequestDataCallback> {
 
 // static
 InspectorIndexedDBAgent::InspectorIndexedDBAgent(
-    InspectedFrames* inspected_frames,
-    v8_inspector::V8InspectorSession* v8_session)
+    InspectedFrames* inspected_frames)
     : inspected_frames_(inspected_frames),
-      v8_session_(v8_session),
       enabled_(&agent_state_, /*default_value=*/false) {}
 
 InspectorIndexedDBAgent::~InspectorIndexedDBAgent() = default;
 
 void InspectorIndexedDBAgent::Dispose() {
   ReleaseObjectGroup();
-  v8_session_ = nullptr;
   InspectorBaseAgent<protocol::IndexedDB::Metainfo>::Dispose();
 }
 
 void InspectorIndexedDBAgent::ReleaseObjectGroup() {
-  if (!v8_session_) {
+  if (!V8Session()) {
     return;
   }
-  v8_session_->releaseObjectGroup(
+  V8Session()->releaseObjectGroup(
       ToV8InspectorStringView(kIndexedDBObjectGroup));
 }
 

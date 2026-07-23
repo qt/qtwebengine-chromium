@@ -190,14 +190,14 @@ DevToolsSession::~DevToolsSession() {
 void DevToolsSession::ConnectToV8(v8_inspector::V8Inspector* inspector,
                                   int context_group_id) {
   const auto& cbor = v8_session_state_cbor_.Get();
-  v8_session_ = inspector->connectShared(
+  v8_session_ = V8SessionHolder(inspector->connectShared(
       context_group_id, this,
       v8_inspector::StringView(cbor.data(), cbor.size()),
       client_is_trusted_ ? v8_inspector::V8Inspector::kFullyTrusted
                          : v8_inspector::V8Inspector::kUntrusted,
       session_waits_for_debugger_
           ? v8_inspector::V8Inspector::kWaitingForDebugger
-          : v8_inspector::V8Inspector::kNotWaitingForDebugger);
+          : v8_inspector::V8Inspector::kNotWaitingForDebugger));
 }
 
 bool DevToolsSession::IsDetached() {
@@ -207,7 +207,7 @@ bool DevToolsSession::IsDetached() {
 void DevToolsSession::Append(InspectorAgent* agent) {
   agents_.push_back(agent);
   agent->Init(agent_->probe_sink_.Get(), inspector_backend_dispatcher_.get(),
-              &session_state_);
+              &session_state_, v8_session_);
 }
 
 void DevToolsSession::Detach() {

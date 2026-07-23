@@ -326,50 +326,46 @@ void WebDevToolsAgentImpl::AttachSession(DevToolsSession* session,
   session->ConnectToV8(main_thread_debugger->GetV8Inspector(),
                        context_group_id);
 
-  InspectorDOMAgent* dom_agent = session->CreateAndAppend<InspectorDOMAgent>(
-      isolate, inspected_frames, session->V8Session());
+  InspectorDOMAgent* dom_agent =
+      session->CreateAndAppend<InspectorDOMAgent>(isolate, inspected_frames);
 
   session->CreateAndAppend<InspectorLayerTreeAgent>(inspected_frames, this);
 
   InspectorNetworkAgent* network_agent =
-      session->CreateAndAppend<InspectorNetworkAgent>(inspected_frames, nullptr,
-                                                      session->V8Session());
+      session->CreateAndAppend<InspectorNetworkAgent>(inspected_frames,
+                                                      nullptr);
 
   auto* css_agent = session->CreateAndAppend<InspectorCSSAgent>(
       dom_agent, inspected_frames, network_agent,
       resource_content_loader_.Get(), resource_container_.Get());
 
   InspectorDOMDebuggerAgent* dom_debugger_agent =
-      session->CreateAndAppend<InspectorDOMDebuggerAgent>(isolate, dom_agent,
-                                                          session->V8Session());
+      session->CreateAndAppend<InspectorDOMDebuggerAgent>(isolate, dom_agent);
 
-  session->CreateAndAppend<InspectorEventBreakpointsAgent>(
-      session->V8Session());
+  session->CreateAndAppend<InspectorEventBreakpointsAgent>();
 
   session->CreateAndAppend<InspectorPerformanceAgent>(inspected_frames);
 
   session->CreateAndAppend<InspectorDOMSnapshotAgent>(inspected_frames,
                                                       dom_debugger_agent);
 
-  session->CreateAndAppend<InspectorAnimationAgent>(inspected_frames, css_agent,
-                                                    session->V8Session());
+  session->CreateAndAppend<InspectorAnimationAgent>(inspected_frames, css_agent);
 
   session->CreateAndAppend<InspectorMemoryAgent>(inspected_frames);
 
   auto* page_agent = session->CreateAndAppend<InspectorPageAgent>(
       inspected_frames, this, resource_content_loader_.Get(),
-      session->V8Session(), session->script_to_evaluate_on_load());
+      session->script_to_evaluate_on_load());
 
   session->CreateAndAppend<InspectorLogAgent>(
       &inspected_frames->Root()->GetPage()->GetConsoleMessageStorage(),
-      inspected_frames->Root()->GetPerformanceMonitor(), session->V8Session());
+      inspected_frames->Root()->GetPerformanceMonitor());
 
   InspectorOverlayAgent* overlay_agent =
       session->CreateAndAppend<InspectorOverlayAgent>(
-          web_local_frame_impl_.Get(), inspected_frames, session->V8Session(),
-          dom_agent);
+          web_local_frame_impl_.Get(), inspected_frames, dom_agent);
 
-  session->CreateAndAppend<InspectorIOAgent>(isolate, session->V8Session());
+  session->CreateAndAppend<InspectorIOAgent>(isolate);
 
   session->CreateAndAppend<InspectorAuditsAgent>(
       network_agent,

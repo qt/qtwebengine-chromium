@@ -86,8 +86,7 @@ class CORE_EXPORT InspectorNetworkAgent final
   // TODO(horo): Extract the logic for frames and for workers into different
   // classes.
   InspectorNetworkAgent(InspectedFrames*,
-                        WorkerOrWorkletGlobalScope*,
-                        v8_inspector::V8InspectorSession*);
+                        WorkerOrWorkletGlobalScope*);
   ~InspectorNetworkAgent() override;
   void Trace(Visitor*) const override;
 
@@ -355,7 +354,6 @@ class CORE_EXPORT InspectorNetworkAgent final
   Member<InspectedFrames> inspected_frames_;
   // This is null while inspecting frames.
   Member<WorkerOrWorkletGlobalScope> worker_or_worklet_global_scope_;
-  v8_inspector::V8InspectorSession* v8_session_;
   Member<NetworkResourcesData> resources_data_;
   const base::UnguessableToken devtools_token_;
 

@@ -173,7 +173,6 @@ class CORE_EXPORT InspectorOverlayAgent final
       protocol::Overlay::HighlightConfig*);
   InspectorOverlayAgent(WebLocalFrameImpl*,
                         InspectedFrames*,
-                        v8_inspector::V8InspectorSession*,
                         InspectorDOMAgent*);
   InspectorOverlayAgent(const InspectorOverlayAgent&) = delete;
   InspectorOverlayAgent& operator=(const InspectorOverlayAgent&) = delete;
@@ -337,7 +336,6 @@ class CORE_EXPORT InspectorOverlayAgent final
   bool resize_timer_active_;
   HeapTaskRunnerTimer<InspectorOverlayAgent> resize_timer_;
   bool disposed_;
-  v8_inspector::V8InspectorSession* v8_session_;
   Member<InspectorDOMAgent> dom_agent_;
   Member<FrameOverlay> frame_overlay_;
   Member<InspectTool> inspect_tool_;

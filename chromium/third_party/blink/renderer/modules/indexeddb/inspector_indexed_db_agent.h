@@ -48,11 +48,9 @@ class InspectedFrames;
 class MODULES_EXPORT InspectorIndexedDBAgent final
     : public InspectorBaseAgent<protocol::IndexedDB::Metainfo> {
  public:
-  InspectorIndexedDBAgent(InspectedFrames*, v8_inspector::V8InspectorSession*);
+  InspectorIndexedDBAgent(InspectedFrames*);
   ~InspectorIndexedDBAgent() override;
   void Trace(Visitor*) const override;
-
-  v8_inspector::V8InspectorSession* v8_session() { return v8_session_; }
 
   void Dispose() override;
   void Restore() override;
@@ -116,8 +114,6 @@ class MODULES_EXPORT InspectorIndexedDBAgent final
   void ReleaseObjectGroup();
 
   Member<InspectedFrames> inspected_frames_;
-  // This is null after `InspectorIndexedDBAgent` is disposed.
-  raw_ptr<v8_inspector::V8InspectorSession, DanglingUntriaged> v8_session_;
   InspectorAgentState::Boolean enabled_;
 };
 

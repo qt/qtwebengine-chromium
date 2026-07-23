@@ -2640,7 +2640,7 @@ protocol::Response InspectorNetworkAgent::searchInResponseBody(
   if (!response.IsSuccess())
     return response;
 
-  auto results = v8_session_->searchInTextByLines(
+  auto results = V8Session()->searchInTextByLines(
       ToV8InspectorStringView(content), ToV8InspectorStringView(query),
       case_sensitive.value_or(false), is_regex.value_or(false));
   *matches = std::make_unique<
@@ -2706,11 +2706,9 @@ String InspectorNetworkAgent::NavigationInitiatorInfo(LocalFrame* frame) {
 
 InspectorNetworkAgent::InspectorNetworkAgent(
     InspectedFrames* inspected_frames,
-    WorkerOrWorkletGlobalScope* worker_or_worklet_global_scope,
-    v8_inspector::V8InspectorSession* v8_session)
+    WorkerOrWorkletGlobalScope* worker_or_worklet_global_scope)
     : inspected_frames_(inspected_frames),
       worker_or_worklet_global_scope_(worker_or_worklet_global_scope),
-      v8_session_(v8_session),
       resources_data_(MakeGarbageCollected<NetworkResourcesData>(
           kDefaultTotalBufferSize,
           kDefaultResourceBufferSize)),

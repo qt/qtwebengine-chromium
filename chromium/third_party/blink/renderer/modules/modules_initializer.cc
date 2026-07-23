@@ -304,8 +304,7 @@ void ModulesInitializer::InitInspectorAgentSession(
     InspectorDOMAgent* dom_agent,
     InspectedFrames* inspected_frames,
     Page* page) const {
-  session->CreateAndAppend<InspectorIndexedDBAgent>(inspected_frames,
-                                                    session->V8Session());
+  session->CreateAndAppend<InspectorIndexedDBAgent>(inspected_frames);
   session->CreateAndAppend<DeviceOrientationInspectorAgent>(inspected_frames);
   session->CreateAndAppend<InspectorDOMStorageAgent>(inspected_frames);
   session->CreateAndAppend<InspectorAccessibilityAgent>(inspected_frames,
