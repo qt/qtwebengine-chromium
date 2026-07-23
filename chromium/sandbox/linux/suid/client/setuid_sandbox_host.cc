@@ -145,6 +145,20 @@ base::FilePath SetuidSandboxHost::GetSandboxBinaryPath() {
       sandbox_binary = base::FilePath(devel_sandbox_path);
     }
   }
+  if (sandbox_binary.empty()) {
+    // Look for system install Chromium sandbox launcher.
+    // Debian, old Ubuntu path:
+    base::FilePath sandbox_candidate = base::FilePath("/usr/lib/chromium/chrome-sandbox");
+    if (base::PathExists(sandbox_candidate))
+      sandbox_binary = sandbox_candidate;
+
+    if (sandbox_binary.empty()) {
+      // Ubuntu snap-path:
+      sandbox_candidate = base::FilePath("/snap/chromium/current/usr/lib/chromium-browser/chrome-sandbox");
+      if (base::PathExists(sandbox_candidate))
+        sandbox_binary = sandbox_candidate;
+    }
+  }
 
   return sandbox_binary;
 }
