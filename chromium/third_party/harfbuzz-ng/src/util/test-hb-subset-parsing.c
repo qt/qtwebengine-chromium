@@ -101,7 +101,7 @@ test_parse_instancing_spec (void)
 
 
 int
-main (int _argc, char ** _argv)
+main (int argc, char **argv)
 {
   test_parse_instancing_spec();
 

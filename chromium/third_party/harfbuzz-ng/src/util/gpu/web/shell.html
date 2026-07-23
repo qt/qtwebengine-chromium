@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>HarfBuzz GPU Demo</title>
+<script>
+if (location.pathname.indexOf('webgpu') !== -1)
+  document.title = 'HarfBuzz WebGPU Demo';
+else
+  document.title = 'HarfBuzz WebGL Demo';
+</script>
+<style>
+  body { margin: 0; background: #fff; overflow: hidden; touch-action: none; }
+  #loading { position: fixed; inset: 0; z-index: 100;
+             display: flex; justify-content: center; align-items: center;
+             background: #fff; color: #999; font: 32px monospace; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+  #fps { position: fixed; top: 8px; right: 12px; color: #999;
+         font: 14px monospace; pointer-events: none; z-index: 1; }
+  #help { position: fixed; bottom: 12px; left: 12px; color: #999;
+          font: 12px monospace; pointer-events: none; z-index: 1;
+          line-height: 1.6; }
+  #controls { position: fixed; top: 8px; left: 12px; z-index: 1;
+              display: flex; gap: 6px; }
+  @media (hover: none) { #controls { display: none; }
+                         #help-desktop { display: none; } }
+  @media (hover: hover)  { #help-mobile { display: none; } }
+  #controls label { color: #fff; font: 12px monospace; cursor: pointer;
+                    padding: 4px 8px; border: 1px solid #888; border-radius: 4px;
+                    background: rgba(128,128,128,0.5);
+                    text-shadow: 0 1px 2px rgba(0,0,0,0.8); }
+  #controls label:hover { border-color: #ccc; background: rgba(128,128,128,0.7); }
+  #controls input[type=file] { display: none; }
+  #controls button { color: #fff; font: 12px monospace; cursor: pointer;
+                     padding: 4px 8px; border: 1px solid #888; border-radius: 4px;
+                     background: rgba(128,128,128,0.5);
+                     text-shadow: 0 1px 2px rgba(0,0,0,0.8); }
+  #controls button:hover { border-color: #ccc; background: rgba(128,128,128,0.7); }
+  #controls select { color: #fff; font: 12px monospace; cursor: pointer;
+                     padding: 3px 4px; border: 1px solid #888; border-radius: 4px;
+                     background: rgba(128,128,128,0.5);
+                     text-shadow: 0 1px 2px rgba(0,0,0,0.8); }
+  #drop-overlay { display: none; position: fixed; inset: 0; z-index: 10;
+                  background: rgba(0,0,0,0.6); color: #fff;
+                  font: 24px monospace; justify-content: center;
+                  align-items: center; }
+  #text-modal { display: none; position: fixed; inset: 0; z-index: 20;
+                background: rgba(0,0,0,0.7); justify-content: center;
+                align-items: center; }
+  #text-modal-inner { background: #333; border: 1px solid #666; border-radius: 8px;
+                      padding: 16px; width: 90vw; max-width: 1600px; }
+  #text-modal textarea { width: 100%; height: 70vh; background: #222; color: #ccc;
+                         border: 1px solid #555; border-radius: 4px;
+                         font: 14px monospace; padding: 8px; resize: vertical;
+                         outline: none; box-sizing: border-box; }
+  #text-modal textarea:focus { border-color: #999; }
+  #text-modal-buttons { margin-top: 10px; text-align: right; }
+  #text-modal-buttons button { color: #fff; font: 13px monospace; cursor: pointer;
+                               padding: 6px 16px; border: 1px solid #888;
+                               border-radius: 4px; background: rgba(128,128,128,0.5);
+                               margin-left: 8px; }
+  #text-modal-buttons button:hover { border-color: #ccc; background: rgba(128,128,128,0.7); }
+  #help-modal { display: none; position: fixed; inset: 0; z-index: 20;
+                background: rgba(0,0,0,0.7); justify-content: center;
+                align-items: center; }
+  #help-modal pre { background: #333; color: #ccc; font: 14px monospace;
+                    padding: 24px 32px; border-radius: 8px; border: 1px solid #666;
+                    line-height: 1.8; }
+  /* Embed mode (?embed=1): hide UI chrome; host page drives
+   * the demo via postMessage. */
+  html.embed #controls,
+  html.embed #fps,
+  html.embed #help,
+  html.embed #help-mobile,
+  html.embed #text-btn { display: none !important; }
+</style>
+</head>
+<body>
+<div id="loading">loading</div>
+<div id="fps"></div>
+<div id="controls">
+  <label>font <input type="file" id="font-input" accept=".ttf,.otf"></label>
+  <button id="text-btn">text</button>
+  <select id="backend-sel">
+    <option value="index.html">WebGL</option>
+    <option value="webgpu.html">WebGPU</option>
+  </select>
+</div>
+<div id="drop-overlay">drop font file</div>
+<div id="text-modal">
+  <div id="text-modal-inner">
+    <textarea id="text-area"></textarea>
+    <div id="text-modal-buttons">
+      <button id="text-cancel">cancel</button>
+      <button id="text-apply">apply</button>
+    </div>
+  </div>
+</div>
+<div id="help-modal"><pre>
+Keyboard:                        Mouse:
+  space     toggle animation       drag          pan
+  b         dark mode              scroll        zoom
+                                   right-drag    rotate
+  s         stem darkening         click         toggle animation
+  d         debug heatmap          dblclick      reset view
+  r         reset view             middle-drag   zoom
+  =/-       zoom in/out
+  [ ] { }   stretch              Touch:
+  arrows    pan                    drag          pan
+  h j k l   pan (vim)             pinch         zoom
+  /         clean screen           3-finger      rotate
+  ?         this help              tap           animate
+
+Shortcuts:                       Text editor:
+  t         edit text              Ctrl+Enter    apply
+  f         load font              Esc           cancel
+  w         switch backend
+  R         reload page                  <a href="https://github.com/harfbuzz/harfbuzz" style="color:#88f">HarfBuzz</a>
+</pre></div>
+<div id="help">
+<span id="help-desktop">drag: pan · scroll: zoom · click: animate · dblclick: reset · right-drag: rotate<br>
+space: animate · b: dark mode · s: stem · d: debug · r: reset · ?: help</span>
+<span id="help-mobile">drag: pan · pinch: zoom/rotate · 3-finger: 3D rotate<br>
+tap: animate · dbl-tap+drag: zoom · long-press: reset</span>
+</div>
+<canvas id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
+<script>
+  var canvas = document.getElementById('canvas');
+  function resizeCanvas () {
+    var dpr = window.devicePixelRatio || 1;
+    var width = Math.round(canvas.clientWidth * dpr);
+    var height = Math.round(canvas.clientHeight * dpr);
+    /* Skip zero-sized updates -- iframe-hosted case runs
+     * this at parse time before layout, and installing a
+     * 0x0 drawing buffer then leaves GL stuck at 0x0 even
+     * after the canvas later gets a real size.  Leaving
+     * canvas.width / .height alone keeps the default 300x150
+     * buffer until ResizeObserver fires with real dims. */
+    if (!width || !height) return;
+    if (canvas.width !== width)
+      canvas.width = width;
+    if (canvas.height !== height)
+      canvas.height = height;
+  }
+  function requestRedraw () {
+    if (typeof _web_request_redraw === 'function')
+      _web_request_redraw();
+  }
+  function handleResume () {
+    resizeCanvas();
+    requestRedraw();
+  }
+  resizeCanvas();
+  window.addEventListener('resize', resizeCanvas);
+  /* When embedded in an iframe, script executes before the
+   * iframe has done layout, so clientWidth/clientHeight
+   * are 0 and resizeCanvas() above installs a 0x0 GL
+   * backbuffer.  A plain 'resize' window event never fires
+   * just because the iframe sized itself, so watch the
+   * canvas with ResizeObserver and pick up its first real
+   * size whenever it appears. */
+  if (typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(function () {
+      resizeCanvas();
+      /* Also dispatch a window resize: emscripten's GLFW
+       * port listens for that to re-fire its framebuffer
+       * size callback into wasm, which re-sets glViewport
+       * and forces a redraw at the correct size. */
+      window.dispatchEvent(new Event('resize'));
+      requestRedraw();
+    }).observe(canvas);
+  }
+  window.addEventListener('focus', handleResume);
+  window.addEventListener('pageshow', handleResume);
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden)
+      handleResume();
+  });
+  canvas.addEventListener('webglcontextrestored', handleResume);
+
+  /* Backend selector */
+  var isWebGPU = location.pathname.indexOf('webgpu') !== -1;
+  var backendSel = document.getElementById('backend-sel');
+  if (isWebGPU)
+    backendSel.value = 'webgpu.html';
+  backendSel.addEventListener('change', function () {
+    backendSel.blur();
+    location.href = backendSel.value + location.search;
+  });
+
+  /* Early WebGL2 availability check */
+  if (!isWebGPU && !canvas.getContext('webgl2')) {
+    var el = document.getElementById('loading');
+    el.innerHTML = 'WebGL2 not available.<br>' +
+                   'Check that hardware acceleration is enabled in your browser settings.<br>' +
+                   '<a href="https://webglreport.com/?v=2" style="color:#88f">WebGL2 support status</a>';
+    el.style.font = '18px sans-serif';
+    el.style.color = '#666';
+    el.style.textAlign = 'center';
+    el.style.flexDirection = 'column';
+    window._webglError = true;
+  }
+
+  /* Early WebGPU availability check */
+  if (isWebGPU && !navigator.gpu) {
+    var el = document.getElementById('loading');
+    var html = 'WebGPU not available in this browser.<br>' +
+               '<a href="https://github.com/gpuweb/gpuweb/wiki/Implementation-Status" ' +
+               'style="color:#88f">Browser support status</a>';
+    if (navigator.userAgent.indexOf('Linux') !== -1 &&
+        navigator.userAgent.indexOf('Chrome') !== -1)
+      html += '<br><br>On Linux Chrome, try restarting with:<br>' +
+              '<code style="font-size:13px">google-chrome --enable-unsafe-webgpu --ozone-platform=x11 ' +
+              '--use-angle=vulkan --enable-features=Vulkan,VulkanFromANGLE</code>';
+    el.innerHTML = html;
+    el.style.font = '18px sans-serif';
+    el.style.color = '#666';
+    el.style.textAlign = 'center';
+    el.style.flexDirection = 'column';
+    window._webgpuError = true;
+  }
+
+  var fpsEl = document.getElementById('fps');
+  var frames = 0, lastTime = performance.now();
+  (function fpsLoop () {
+    requestAnimationFrame(fpsLoop);
+    frames++;
+    var now = performance.now();
+    if (now - lastTime >= 1000) {
+      fpsEl.textContent = Math.round(frames * 1000 / (now - lastTime)) + ' fps';
+      frames = 0;
+      lastTime = now;
+    }
+  })();
+
+  /* Multi-touch: 2-finger pinch → zoom, 3-finger drag → 3D rotate. */
+  var pinchDist = 0;
+  var pinchAngle = 0;
+  var pinchCX = 0, pinchCY = 0;
+  var gestureX = 0, gestureY = 0;
+  var pinchActive = false;
+  var singlePanActive = false;
+  var threeFingerActive = false;
+  var skipNextPinchMove = false;
+  var longPressTimer = null;
+  var longPressFired = false;
+  var lastTapTime = 0;
+  var doubleTapZoom = false;
+  var doubleTapY = 0;
+  function swallowTouch (e) {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+  }
+  if (!isWebGPU) canvas.addEventListener('touchstart', function (e) {
+    if (e.touches.length === 1) {
+      var now = performance.now();
+      if (now - lastTapTime < 300) {
+        /* Double-tap: start zoom drag.
+         * Undo animation toggle from first tap. */
+        e.preventDefault();
+        if (typeof _web_toggle_animation === 'function')
+          _web_toggle_animation();
+        doubleTapZoom = true;
+        doubleTapY = e.touches[0].clientY;
+        lastTapTime = 0;
+        if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+      } else {
+        lastTapTime = now;
+        longPressX = e.touches[0].clientX;
+        longPressY = e.touches[0].clientY;
+        longPressTimer = setTimeout(function () {
+          longPressTimer = null;
+          longPressFired = true;
+          if (typeof _web_reset === 'function') _web_reset();
+        }, 500);
+      }
+    } else if (longPressTimer) {
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+    }
+    if (e.touches.length === 2) {
+      swallowTouch(e);
+      pinchActive = true;
+      singlePanActive = false;
+      var t = e.touches;
+      pinchDist = Math.hypot(t[1].clientX - t[0].clientX,
+                             t[1].clientY - t[0].clientY);
+      pinchAngle = Math.atan2(t[1].clientY - t[0].clientY,
+                              t[1].clientX - t[0].clientX);
+      pinchCX = (t[0].clientX + t[1].clientX) / 2;
+      pinchCY = (t[0].clientY + t[1].clientY) / 2;
+      gestureX = pinchCX;
+      gestureY = pinchCY;
+      if (typeof _web_cancel_gesture === 'function')
+        _web_cancel_gesture();
+      canvas.dispatchEvent(new MouseEvent('mouseup', {
+        button: 0, clientX: pinchCX, clientY: pinchCY
+      }));
+      skipNextPinchMove = false;
+    } else if (e.touches.length >= 3) {
+      swallowTouch(e);
+      pinchActive = false;
+      singlePanActive = false;
+      threeFingerActive = true;
+      skipNextPinchMove = false;
+      var t = e.touches;
+      var cx = (t[0].clientX + t[1].clientX + t[2].clientX) / 3;
+      var cy = (t[0].clientY + t[1].clientY + t[2].clientY) / 3;
+      gestureX = cx;
+      gestureY = cy;
+      if (typeof _web_cancel_gesture === 'function')
+        _web_cancel_gesture();
+      canvas.dispatchEvent(new MouseEvent('mouseup', {
+        button: 0, clientX: cx, clientY: cy
+      }));
+      /* Synthesize right-button press at centroid */
+      canvas.dispatchEvent(new MouseEvent('mousedown', {
+        button: 2, clientX: cx, clientY: cy
+      }));
+    }
+  }, {passive: false, capture: true});
+  var longPressX = 0, longPressY = 0;
+  if (!isWebGPU) canvas.addEventListener('touchmove', function (e) {
+    if (singlePanActive && e.touches.length === 1) {
+      swallowTouch(e);
+      gestureX = e.touches[0].clientX;
+      gestureY = e.touches[0].clientY;
+      canvas.dispatchEvent(new MouseEvent('mousemove', {
+        clientX: gestureX, clientY: gestureY
+      }));
+      return;
+    }
+    if (longPressTimer && e.touches.length === 1) {
+      var dx = e.touches[0].clientX - longPressX;
+      var dy = e.touches[0].clientY - longPressY;
+      if (dx*dx + dy*dy > 100) { clearTimeout(longPressTimer); longPressTimer = null; }
+    }
+    if (doubleTapZoom && e.touches.length === 1) {
+      swallowTouch(e);
+      var dy = e.touches[0].clientY - doubleTapY;
+      doubleTapY = e.touches[0].clientY;
+      canvas.dispatchEvent(new WheelEvent('wheel', {
+        deltaY: dy * 5,
+        clientX: e.touches[0].clientX,
+        clientY: e.touches[0].clientY
+      }));
+      return;
+    }
+    if (e.touches.length >= 3 && threeFingerActive) {
+      swallowTouch(e);
+      pinchActive = false;
+      var t = e.touches;
+      var cx = (t[0].clientX + t[1].clientX + t[2].clientX) / 3;
+      var cy = (t[0].clientY + t[1].clientY + t[2].clientY) / 3;
+      gestureX = cx;
+      gestureY = cy;
+      canvas.dispatchEvent(new MouseEvent('mousemove', {
+        clientX: cx, clientY: cy
+      }));
+      return;
+    }
+    if (e.touches.length === 2) {
+      swallowTouch(e);
+      pinchActive = true;
+      var t = e.touches;
+      var cx = (t[0].clientX + t[1].clientX) / 2;
+      var cy = (t[0].clientY + t[1].clientY) / 2;
+      var dist = Math.hypot(t[1].clientX - t[0].clientX,
+                            t[1].clientY - t[0].clientY);
+      var angle = Math.atan2(t[1].clientY - t[0].clientY,
+                             t[1].clientX - t[0].clientX);
+      if (skipNextPinchMove) {
+        pinchDist = dist;
+        pinchAngle = angle;
+        pinchCX = cx;
+        pinchCY = cy;
+        gestureX = cx;
+        gestureY = cy;
+        skipNextPinchMove = false;
+        return;
+      }
+      var dAngle = angle - pinchAngle;
+      if (dAngle > Math.PI) dAngle -= 2 * Math.PI;
+      if (dAngle < -Math.PI) dAngle += 2 * Math.PI;
+      var factor = pinchDist > 0 ? dist / pinchDist : 1;
+      if (typeof _web_pinch === 'function')
+        _web_pinch(cx - pinchCX, cy - pinchCY,
+                   factor, dAngle,
+                   cx, cy, canvas.clientWidth, canvas.clientHeight);
+      else {
+        /* Fallback: zoom only via wheel */
+        var delta = (factor - 1) * 5;
+        canvas.dispatchEvent(new WheelEvent('wheel', { deltaY: -delta * 120 }));
+      }
+      pinchDist = dist;
+      pinchAngle = angle;
+      pinchCX = cx; pinchCY = cy;
+      gestureX = cx;
+      gestureY = cy;
+    }
+  }, {passive: false, capture: true});
+  if (!isWebGPU) canvas.addEventListener('touchend', function (e) {
+    var pinchEnding = pinchActive && e.touches.length < 2;
+    var singlePanEnding = singlePanActive && e.touches.length === 0;
+    if (threeFingerActive || pinchEnding || singlePanEnding ||
+        skipNextPinchMove ||
+        e.touches.length >= 2 || doubleTapZoom)
+      swallowTouch(e);
+    if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+    if (longPressFired) {
+      longPressFired = false;
+      e.preventDefault(); /* Don't let GLFW see this as a click */
+    }
+    doubleTapZoom = false;
+    if (threeFingerActive && e.touches.length < 3) {
+      threeFingerActive = false;
+      var releaseX = gestureX, releaseY = gestureY;
+      if (e.touches.length === 2) {
+        var t = e.touches;
+        releaseX = (t[0].clientX + t[1].clientX) / 2;
+        releaseY = (t[0].clientY + t[1].clientY) / 2;
+        pinchDist = Math.hypot(t[1].clientX - t[0].clientX,
+                               t[1].clientY - t[0].clientY);
+        pinchAngle = Math.atan2(t[1].clientY - t[0].clientY,
+                                t[1].clientX - t[0].clientX);
+        pinchCX = releaseX;
+        pinchCY = releaseY;
+        gestureX = releaseX;
+        gestureY = releaseY;
+        pinchActive = true;
+        skipNextPinchMove = true;
+      } else {
+        pinchActive = false;
+        skipNextPinchMove = false;
+      }
+      if (typeof _web_cancel_gesture === 'function')
+        _web_cancel_gesture();
+      canvas.dispatchEvent(new MouseEvent('mouseup', {
+        button: 2, clientX: releaseX, clientY: releaseY
+      }));
+    } else if (pinchEnding) {
+      pinchActive = false;
+      skipNextPinchMove = false;
+      if (e.touches.length === 1) {
+        /* Hand single-finger pan off from the remaining touch point. */
+        singlePanActive = true;
+        gestureX = e.touches[0].clientX;
+        gestureY = e.touches[0].clientY;
+        canvas.dispatchEvent(new MouseEvent('mousemove', {
+          clientX: gestureX,
+          clientY: gestureY
+        }));
+        canvas.dispatchEvent(new MouseEvent('mousedown', {
+          button: 0,
+          clientX: gestureX,
+          clientY: gestureY
+        }));
+      }
+    } else if (singlePanEnding) {
+      singlePanActive = false;
+      if (typeof _web_cancel_gesture === 'function')
+        _web_cancel_gesture();
+      canvas.dispatchEvent(new MouseEvent('mouseup', {
+        button: 0, clientX: gestureX, clientY: gestureY
+      }));
+    } else if (e.touches.length < 2) {
+      skipNextPinchMove = false;
+    }
+  }, {passive: false, capture: true});
+  if (!isWebGPU) canvas.addEventListener('touchcancel', function (e) {
+    var handledGesture = threeFingerActive || pinchActive ||
+                         singlePanActive ||
+                         skipNextPinchMove ||
+                         e.touches.length >= 2 || doubleTapZoom;
+    if (handledGesture)
+      swallowTouch(e);
+    if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+    longPressFired = false;
+    doubleTapZoom = false;
+    pinchActive = false;
+    if (singlePanActive) {
+      singlePanActive = false;
+      if (typeof _web_cancel_gesture === 'function')
+        _web_cancel_gesture();
+      canvas.dispatchEvent(new MouseEvent('mouseup', {
+        button: 0, clientX: gestureX, clientY: gestureY
+      }));
+    }
+    skipNextPinchMove = false;
+    if (threeFingerActive) {
+      threeFingerActive = false;
+      if (typeof _web_cancel_gesture === 'function')
+        _web_cancel_gesture();
+      canvas.dispatchEvent(new MouseEvent('mouseup', {
+        button: 2, clientX: gestureX, clientY: gestureY
+      }));
+    }
+  }, {passive: false, capture: true});
+
+  /* Block Emscripten/GLFW from eating key events while the text modal is open.
+   * Registered before Module so it runs before Emscripten's capture-phase handlers. */
+  var textModalEl = document.getElementById('text-modal');
+  function blockKeysIfModal(e) {
+    if (textModalEl.style.display !== 'flex') {
+      if (e.key === '?') {
+        if (e.type === 'keydown') {
+          var hm = document.getElementById('help-modal');
+          hm.style.display = hm.style.display === 'flex' ? 'none' : 'flex';
+        }
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        return;
+      }
+      if (e.key === '/') {
+        if (e.type === 'keydown') {
+          var h = document.getElementById('help');
+          var fp = document.getElementById('fps');
+          var c = document.getElementById('controls');
+          var hidden = h.style.display === 'none';
+          h.style.display = hidden ? '' : 'none';
+          fp.style.display = hidden ? '' : 'none';
+          if (c) c.style.display = hidden ? '' : 'none';
+        }
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        return;
+      }
+      if (e.key === 'Escape') {
+        var hm = document.getElementById('help-modal');
+        if (hm.style.display === 'flex') {
+          hm.style.display = 'none';
+          e.stopImmediatePropagation();
+          return;
+        }
+      }
+      if (e.key === 'R') {
+        location.reload();
+        return;
+      }
+      if (e.key === 't') {
+        e.preventDefault();
+        if (e.type === 'keydown')
+          document.getElementById('text-btn').click();
+        e.stopImmediatePropagation();
+        return;
+      }
+      if (e.type === 'keydown' && e.key === 'f') {
+        document.getElementById('font-input').click();
+        e.stopImmediatePropagation();
+      }
+      if (e.type === 'keydown' && e.key === 'w') {
+        var sel = document.getElementById('backend-sel');
+        sel.value = sel.value === 'webgpu.html' ? 'index.html' : 'webgpu.html';
+        location.href = sel.value;
+        e.stopImmediatePropagation();
+      }
+      return;
+    }
+    if (e.key === 'Escape') { textModalEl.style.display = 'none'; e.stopImmediatePropagation(); return; }
+    if (e.key === 'Enter' && (e.shiftKey || e.ctrlKey || e.metaKey)) {
+      document.getElementById('text-apply').click();
+      e.stopImmediatePropagation(); return;
+    }
+    e.stopImmediatePropagation();
+  }
+  window.addEventListener('keydown', blockKeysIfModal, true);
+  window.addEventListener('keyup', blockKeysIfModal, true);
+  window.addEventListener('keypress', blockKeysIfModal, true);
+
+  /* URL parameters: forwarded to C main() as argv so main can
+   * apply them before first frame (no default-demo flash). */
+  var urlParams = new URLSearchParams(location.search);
+  var moduleArgs = [];
+  var urlText = urlParams.get('text');
+  var urlFont = urlParams.get('font');
+  if (urlText) moduleArgs.push('--text=' + urlText);
+  if (urlFont) moduleArgs.push('--font=' + urlFont);
+
+  /* Embed mode: hide the demo's own chrome (font picker,
+   * text button, backend selector, help overlays) so a host
+   * page embedding this in an iframe can drive it purely
+   * through postMessage.  The canvas-only view keeps the
+   * FPS counter and the loading overlay. */
+  /* Any presence of ?embed (with or without a value, except
+   * explicit =0 / =false) turns on embed mode. */
+  var embedMode = urlParams.has('embed') &&
+                  urlParams.get('embed') !== '0' &&
+                  urlParams.get('embed') !== 'false';
+  if (embedMode) {
+    document.documentElement.classList.add('embed');
+  }
+
+  var Module = {
+    canvas: canvas,
+    arguments: moduleArgs,
+    onRuntimeInitialized: function () {
+      if (!window._webgpuError && !window._webglError) {
+        document.getElementById('loading').style.display = 'none';
+        document.body.style.background = '#222';
+      }
+      console.log('HarfBuzz GPU Demo loaded');
+
+      /* Font file input */
+      var fontInput = document.getElementById('font-input');
+      fontInput.addEventListener('change', function () {
+        if (fontInput.files.length)
+          loadFontFile(fontInput.files[0]);
+      });
+
+      /* Drag and drop */
+      var overlay = document.getElementById('drop-overlay');
+      document.addEventListener('dragover', function (e) {
+        e.preventDefault();
+        overlay.style.display = 'flex';
+      });
+      document.addEventListener('dragleave', function (e) {
+        if (e.relatedTarget === null)
+          overlay.style.display = 'none';
+      });
+      document.addEventListener('drop', function (e) {
+        e.preventDefault();
+        overlay.style.display = 'none';
+        if (e.dataTransfer.files.length)
+          loadFontFile(e.dataTransfer.files[0]);
+      });
+
+      /* Text editor modal */
+      var textModal = document.getElementById('text-modal');
+      var textArea = document.getElementById('text-area');
+      var textBtn = document.getElementById('text-btn');
+
+      var textOnOpen = '';
+      textBtn.addEventListener('click', function () {
+        var ptr = _web_get_text();
+        textOnOpen = UTF8ToString(ptr);
+        textArea.value = textOnOpen;
+        textModal.style.display = 'flex';
+        textArea.focus();
+      });
+
+      document.getElementById('text-cancel').addEventListener('click', function () {
+        textModal.style.display = 'none';
+      });
+
+      document.getElementById('text-apply').addEventListener('click', function () {
+        var text = textArea.value.trim();
+        if (!text) { textModal.style.display = 'none'; return; }
+        if (text !== textOnOpen) {
+          applyText(text);
+          /* Reflect custom text in the URL so it's copy/pasteable. */
+          var url = new URL(location.href);
+          url.searchParams.set('text', text);
+          history.replaceState(null, '', url.toString());
+        }
+        textModal.style.display = 'none';
+      });
+
+
+      /* Prevent mouse events on the modal from reaching the canvas/GLFW. */
+      textModal.addEventListener('mousedown', function (e) { e.stopPropagation(); });
+      textModal.addEventListener('mouseup', function (e) { e.stopPropagation(); });
+      textModal.addEventListener('click', function (e) { e.stopPropagation(); });
+
+      function loadFontFile(file) {
+        var reader = new FileReader();
+        reader.onload = function () {
+          var data = new Uint8Array(reader.result);
+          var buf = _malloc(data.length);
+          HEAPU8.set(data, buf);
+          _web_load_font(buf, data.length);
+          _free(buf);
+        };
+        reader.readAsArrayBuffer(file);
+      }
+
+      function applyText(text) {
+        var len = lengthBytesUTF8(text) + 1;
+        var buf = _malloc(len);
+        stringToUTF8(text, buf, len);
+        _web_set_text(buf);
+        _free(buf);
+        requestRedraw();
+      }
+
+      function applyFontBytes(bytes) {
+        var data = new Uint8Array(bytes);
+        var buf = _malloc(data.length);
+        HEAPU8.set(data, buf);
+        _web_load_font(buf, data.length);
+        _free(buf);
+      }
+
+      function applyVariations(settings) {
+        var len = lengthBytesUTF8(settings) + 1;
+        var buf = _malloc(len);
+        stringToUTF8(settings, buf, len);
+        _web_set_variations(buf);
+        _free(buf);
+        requestRedraw();
+      }
+
+      function applyFeatures(settings) {
+        var len = lengthBytesUTF8(settings) + 1;
+        var buf = _malloc(len);
+        stringToUTF8(settings, buf, len);
+        _web_set_features(buf);
+        _free(buf);
+        requestRedraw();
+      }
+
+      function applyPalette(idx) {
+        _web_set_palette(idx >>> 0);
+        requestRedraw();
+      }
+
+      /* Embed-mode message protocol: host page drives the
+       * demo with { kind: 'text', value }  and
+       * { kind: 'font', bytes: ArrayBuffer }.  No origin
+       * check -- hb-gpu-demo is read-only w.r.t. the host. */
+      window.addEventListener('message', function (e) {
+        var d = e.data;
+        if (!d || typeof d !== 'object') return;
+        if (d.kind === 'text' && typeof d.value === 'string')
+          applyText(d.value);
+        else if (d.kind === 'font' && d.bytes)
+          applyFontBytes(d.bytes);
+        else if (d.kind === 'variations' && typeof d.value === 'string')
+          applyVariations(d.value);
+        else if (d.kind === 'palette' && typeof d.value === 'number')
+          applyPalette(d.value);
+        else if (d.kind === 'features' && typeof d.value === 'string')
+          applyFeatures(d.value);
+        else if (d.kind === 'dark' && typeof d.value === 'boolean')
+          _web_set_dark(d.value ? 1 : 0);
+      });
+
+      /* Tell any parent frame we're ready to receive
+       * messages.  Host may have queued them during load. */
+      if (window.parent && window.parent !== window)
+        window.parent.postMessage({ kind: 'ready' }, '*');
+
+      /* ?text= is applied pre-main via Module.arguments; here we
+       * handle the async ?font= fetch.  Text (if any) is re-applied
+       * after the font loads.
+       *
+       * For WebGPU, init_demo is async -- wait for the C side to
+       * signal readiness before calling exported functions. */
+      function startFontFetch () {
+        if (!urlFont) return;
+        fetch(urlFont)
+          .then(function (r) {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.arrayBuffer();
+          })
+          .then(function (ab) {
+            var data = new Uint8Array(ab);
+            var buf = _malloc(data.length);
+            HEAPU8.set(data, buf);
+            _web_load_font(buf, data.length);
+            _free(buf);
+            if (urlText) applyText(urlText);
+          })
+          .catch(function (err) {
+            console.warn('?font= fetch failed: ' + err.message);
+          });
+      }
+      if (isWebGPU) {
+        window._webDemoReady = startFontFetch;
+      } else {
+        startFontFetch ();
+      }
+    }
+  };
+</script>
+{{{ SCRIPT }}}
+</body>
+</html>

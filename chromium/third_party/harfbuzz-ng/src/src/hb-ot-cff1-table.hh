@@ -234,16 +234,16 @@ struct Encoding
     return_trace (true);
   }
 
-  unsigned int get_size () const
+  size_t get_size () const
   {
-    unsigned int size = min_size;
+    size_t size = min_size;
     switch (table_format ())
     {
-    case 0: hb_barrier (); size += u.format0.get_size (); break;
-    case 1: hb_barrier (); size += u.format1.get_size (); break;
+    case 0: hb_barrier (); size = hb_unsigned_add_saturate (size, u.format0.get_size ()); break;
+    case 1: hb_barrier (); size = hb_unsigned_add_saturate (size, u.format1.get_size ()); break;
     }
     if (has_supplement ())
-      size += suppEncData ().get_size ();
+      size = hb_unsigned_add_saturate (size, suppEncData ().get_size ());
     return size;
   }
 
@@ -262,7 +262,7 @@ struct Encoding
 
   void get_supplement_codes (hb_codepoint_t sid, hb_vector_t<hb_codepoint_t> &codes) const
   {
-    codes.resize (0);
+    codes.clear ();
     if (has_supplement ())
       suppEncData().get_codes (sid, codes);
   }
@@ -326,7 +326,7 @@ struct Charset0
 
   void collect_glyph_to_sid_map (glyph_to_sid_map_t *mapping, unsigned int num_glyphs) const
   {
-    mapping->resize (num_glyphs, false);
+    mapping->resize_dirty  (num_glyphs);
     for (hb_codepoint_t gid = 1; gid < num_glyphs; gid++)
       mapping->arrayZ[gid] = {sids[gid - 1], gid};
   }
@@ -344,7 +344,7 @@ struct Charset0
     return 0;
   }
 
-  static unsigned int get_size (unsigned int num_glyphs)
+  static size_t get_size (unsigned int num_glyphs)
   {
     assert (num_glyphs > 0);
     return UnsizedArrayOf<HBUINT16>::get_size (num_glyphs - 1);
@@ -426,7 +426,7 @@ struct Charset1_2 {
 
   void collect_glyph_to_sid_map (glyph_to_sid_map_t *mapping, unsigned int num_glyphs) const
   {
-    mapping->resize (num_glyphs, false);
+    mapping->resize_dirty  (num_glyphs);
     hb_codepoint_t gid = 1;
     if (gid >= num_glyphs)
       return;
@@ -459,7 +459,7 @@ struct Charset1_2 {
     return 0;
   }
 
-  unsigned int get_size (unsigned int num_glyphs) const
+  size_t get_size (unsigned int num_glyphs) const
   {
     int glyph = (int) num_glyphs;
     unsigned num_ranges = 0;
@@ -475,7 +475,7 @@ struct Charset1_2 {
     return get_size_for_ranges (num_ranges);
   }
 
-  static unsigned int get_size_for_ranges (unsigned int num_ranges)
+  static size_t get_size_for_ranges (unsigned int num_ranges)
   {
     return UnsizedArrayOf<Charset_Range<TYPE> >::get_size (num_ranges);
   }
@@ -563,13 +563,13 @@ struct Charset
     return_trace (true);
   }
 
-  unsigned int get_size (unsigned int num_glyphs) const
+  size_t get_size (unsigned int num_glyphs) const
   {
     switch (format)
     {
-    case 0: hb_barrier (); return min_size + u.format0.get_size (num_glyphs);
-    case 1: hb_barrier (); return min_size + u.format1.get_size (num_glyphs);
-    case 2: hb_barrier (); return min_size + u.format2.get_size (num_glyphs);
+    case 0: hb_barrier (); return hb_unsigned_add_saturate (min_size, u.format0.get_size (num_glyphs));
+    case 1: hb_barrier (); return hb_unsigned_add_saturate (min_size, u.format1.get_size (num_glyphs));
+    case 2: hb_barrier (); return hb_unsigned_add_saturate (min_size, u.format2.get_size (num_glyphs));
     default:return 0;
     }
   }

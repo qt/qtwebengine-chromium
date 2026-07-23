@@ -128,6 +128,7 @@ hb_subset_input_t::hb_subset_input_t ()
     HB_TAG ('v', 'c', 'h', 'w'),
     HB_TAG ('h', 'a', 'l', 't'),
     HB_TAG ('v', 'h', 'a', 'l'),
+    HB_TAG ('p', 'a', 'l', 't'),
 
     //private
     HB_TAG ('H', 'a', 'r', 'f'),
@@ -868,7 +869,7 @@ hb_subset_input_override_name_table (hb_subset_input_t  *input,
         src = hb_utf8_t::next (src, src_end, &unicode, replacement);
         if (unicode >= 0x0080u)
         {
-          printf ("Non-ascii character detected, ignored...This API supports ascii characters only for mac platform\n");
+          // Non-ascii character detected, ignored...
           return false;
         }
       }

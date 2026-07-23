@@ -41,15 +41,8 @@ HB_BEGIN_DECLS
  * @path_start_y: Y component of the start of current path
  * @current_x: X component of current point
  * @current_y: Y component of current point
- * @slant_xy: (Since: 11.0.0): Slanting factor for synthetic oblique
  *
  * Current drawing state.
- *
- * The @slant_xy is a slanting factor for synthetic oblique. If the font's
- * oblique angle is not 0, this factor is used to slant the drawing. For
- * fonts with uniform x and y scales, this factor is calculated as
- * tan(oblique_angle). For fonts with non-uniform scales, this factor is
- * calculated as tan(oblique_angle) * x_scale / y_scale, or 0 if y_scale is 0.
  *
  * Since: 4.0.0
  **/
@@ -62,8 +55,6 @@ typedef struct hb_draw_state_t {
   float current_x;
   float current_y;
 
-  float slant_xy;
-
   /*< private >*/
   hb_var_num_t   reserved1;
   hb_var_num_t   reserved2;
@@ -71,6 +62,7 @@ typedef struct hb_draw_state_t {
   hb_var_num_t   reserved4;
   hb_var_num_t   reserved5;
   hb_var_num_t   reserved6;
+  hb_var_num_t   reserved7;
 } hb_draw_state_t;
 
 /**
@@ -78,7 +70,7 @@ typedef struct hb_draw_state_t {
  *
  * The default #hb_draw_state_t at the start of glyph drawing.
  */
-#define HB_DRAW_STATE_DEFAULT {0, 0.f, 0.f, 0.f, 0.f, 0.f, {0.}, {0.}, {0.}, {0.}, {0.}, {0.}}
+#define HB_DRAW_STATE_DEFAULT {0, 0.f, 0.f, 0.f, 0.f, {0}, {0}, {0}, {0}, {0}, {0}, {0}}
 
 
 /**
@@ -341,6 +333,58 @@ hb_draw_cubic_to (hb_draw_funcs_t *dfuncs, void *draw_data,
 HB_EXTERN void
 hb_draw_close_path (hb_draw_funcs_t *dfuncs, void *draw_data,
 		    hb_draw_state_t *st);
+
+
+/* Shape helpers.
+ *
+ * Emit common primitives (tapered line, rectangle, circle) into
+ * any pen.  The helpers are thin wrappers over the individual
+ * move_to / line_to / cubic_to / close_path calls: callers can
+ * always hand-roll the same shapes if they need a variation.
+ *
+ * For rect / circle the @stroke_width parameter selects between
+ * filled and stroked: a positive finite value is the stroke
+ * width of the outline; NaN means "filled" (no stroke).
+ */
+
+/**
+ * hb_draw_line_cap_t:
+ * @HB_DRAW_LINE_CAP_BUTT:   No cap; the line ends exactly at
+ *   its endpoint.
+ * @HB_DRAW_LINE_CAP_SQUARE: Square cap; the line is extended
+ *   past its endpoint by half the local stroke width.  Useful
+ *   for composing closed shapes from line segments (e.g. a
+ *   rectangle made from four lines).
+ *
+ * End-cap shape for hb_draw_line().
+ *
+ * Since: 14.2.0
+ **/
+typedef enum {
+  HB_DRAW_LINE_CAP_BUTT   = 0,
+  HB_DRAW_LINE_CAP_SQUARE = 1,
+} hb_draw_line_cap_t;
+
+HB_EXTERN void
+hb_draw_line (hb_draw_funcs_t *dfuncs, void *draw_data,
+	      hb_draw_state_t *st,
+	      float x0, float y0, float w0,
+	      float x1, float y1, float w1,
+	      hb_draw_line_cap_t cap);
+
+HB_EXTERN void
+hb_draw_rectangle (hb_draw_funcs_t *dfuncs, void *draw_data,
+		   hb_draw_state_t *st,
+		   float x, float y,
+		   float w, float h,
+	      float stroke_width);
+
+HB_EXTERN void
+hb_draw_circle (hb_draw_funcs_t *dfuncs, void *draw_data,
+		hb_draw_state_t *st,
+		float cx, float cy,
+		float r,
+		float stroke_width);
 
 
 HB_END_DECLS

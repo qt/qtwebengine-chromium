@@ -29,6 +29,7 @@
 
 #include "view-options.hh"
 #include "output-options.hh"
+#include "helper-image-output.hh"
 #ifdef HAVE_CAIRO_FT
 #  include "helper-cairo-ft.hh"
 #endif
@@ -36,6 +37,7 @@
 #include <cairo.h>
 #include <hb.h>
 #include <hb-cairo.h>
+#include <hb-ot.h>
 
 #include "helper-cairo-ansi.hh"
 #ifdef CAIRO_HAS_SVG_SURFACE
@@ -46,8 +48,7 @@
 #endif
 #ifdef CAIRO_HAS_PS_SURFACE
 #  include <cairo-ps.h>
-#  if CAIRO_VERSION >= CAIRO_VERSION_ENCODE(1,6,0)
-#    define HAS_EPS 1
+#  define HAS_EPS 1
 
 static cairo_surface_t *
 _cairo_eps_surface_create_for_stream (cairo_write_func_t  write_func,
@@ -63,9 +64,6 @@ _cairo_eps_surface_create_for_stream (cairo_write_func_t  write_func,
   return surface;
 }
 
-#  else
-#    undef HAS_EPS
-#  endif
 #endif
 #ifdef CAIRO_HAS_SCRIPT_SURFACE
 #   include <cairo-script.h>
@@ -122,33 +120,38 @@ helper_cairo_create_scaled_font (const font_options_t *font_opts,
   font_options = cairo_font_options_create ();
   cairo_font_options_set_hint_style (font_options, CAIRO_HINT_STYLE_NONE);
   cairo_font_options_set_hint_metrics (font_options, CAIRO_HINT_METRICS_OFF);
+#if CAIRO_VERSION >= CAIRO_VERSION_ENCODE(1,18,0)
+  /* Pick draw vs paint mode.  --paint wins over --draw;
+   * otherwise auto-detect: route mono fonts through the
+   * cheaper outline path (NO_COLOR) and color fonts through
+   * the paint pipeline (cairo's default color mode). */
+  hb_face_t *hb_face = hb_font_get_face (font);
+  bool font_has_color = hb_ot_color_has_paint (hb_face) ||
+			hb_ot_color_has_layers (hb_face) ||
+			hb_ot_color_has_png (hb_face);
+  bool use_paint = view_opts->force_paint ? true
+		 : view_opts->force_draw  ? false
+		 : font_has_color;
+  if (!use_paint)
+    cairo_font_options_set_color_mode (font_options, CAIRO_COLOR_MODE_NO_COLOR);
+#endif
 #ifdef CAIRO_COLOR_PALETTE_DEFAULT
   cairo_font_options_set_color_palette (font_options, view_opts->palette);
 #endif
 #ifdef HAVE_CAIRO_FONT_OPTIONS_GET_CUSTOM_PALETTE_COLOR
-  if (view_opts->custom_palette)
+  if (view_opts->custom_palette_entries)
   {
-    char **entries = g_strsplit (view_opts->custom_palette, ",", -1);
-    unsigned idx = 0;
-    for (unsigned i = 0; entries[i]; i++)
+    for (unsigned i = 0; i < view_opts->custom_palette_entries->len; i++)
     {
-      const char *p = strchr (entries[i], '=');
-      if (!p)
-        p = entries[i];
-      else
-      {
-	sscanf (entries[i], "%u", &idx);
-        p++;
-      }
-
-      unsigned fr, fg, fb, fa;
-      fr = fg = fb = fa = 0;
-      if (parse_color (p, fr, fg,fb, fa))
-	cairo_font_options_set_custom_palette_color (font_options, idx, fr / 255., fg / 255., fb / 255., fa / 255.);
-
-      idx++;
+      auto &entry =
+        g_array_index (view_opts->custom_palette_entries,
+                       typename view_options_t::custom_palette_entry_t, i);
+      cairo_font_options_set_custom_palette_color (font_options, entry.index,
+                                                   entry.color.r / 255.,
+                                                   entry.color.g / 255.,
+                                                   entry.color.b / 255.,
+                                                   entry.color.a / 255.);
     }
-    g_strfreev (entries);
   }
 #endif
 
@@ -192,19 +195,12 @@ helper_cairo_scaled_font_has_color (cairo_scaled_font_t *scaled_font)
          hb_ot_color_has_paint (face);
 }
 
-
-enum class image_protocol_t {
-  NONE = 0,
-  ITERM2,
-  KITTY,
-};
-
 struct finalize_closure_t {
   void (*callback)(finalize_closure_t *);
   cairo_surface_t *surface;
   cairo_write_func_t write_func;
   void *closure;
-  image_protocol_t protocol;
+  helper_image_protocol_t protocol;
 };
 static cairo_user_data_key_t finalize_closure_key;
 
@@ -227,7 +223,7 @@ _cairo_ansi_surface_create_for_stream (cairo_write_func_t write_func,
 				       double width,
 				       double height,
 				       cairo_content_t content,
-				       image_protocol_t protocol HB_UNUSED)
+				       helper_image_protocol_t protocol HB_UNUSED)
 {
   cairo_surface_t *surface;
   int w = ceil (width);
@@ -282,11 +278,8 @@ finalize_png (finalize_closure_t *closure)
 {
   cairo_status_t status;
   GByteArray *bytes = nullptr;
-  GString *string;
-  gchar *base64;
-  size_t base64_len;
 
-  if (closure->protocol == image_protocol_t::NONE)
+  if (closure->protocol == helper_image_protocol_t::NONE)
   {
     status = cairo_surface_write_to_png_stream (closure->surface,
 						closure->write_func,
@@ -304,54 +297,13 @@ finalize_png (finalize_closure_t *closure)
     fail (false, "Failed to write output: %s",
 	  cairo_status_to_string (status));
 
-  if (closure->protocol == image_protocol_t::NONE)
+  if (closure->protocol == helper_image_protocol_t::NONE)
     return;
-
-  base64 = g_base64_encode (bytes->data, bytes->len);
-  base64_len = strlen (base64);
-
-  string = g_string_new (NULL);
-  if (closure->protocol == image_protocol_t::ITERM2)
-  {
-    /* https://iterm2.com/documentation-images.html */
-    g_string_printf (string, "\033]1337;File=inline=1;size=%zu:%s\a\n",
-		     base64_len, base64);
-  }
-  else if (closure->protocol == image_protocol_t::KITTY)
-  {
-#define CHUNK_SIZE 4096
-    /* https://sw.kovidgoyal.net/kitty/graphics-protocol.html */
-    for (size_t pos = 0; pos < base64_len; pos += CHUNK_SIZE)
-    {
-      size_t len = base64_len - pos;
-
-      if (pos == 0)
-	g_string_append (string, "\033_Ga=T,f=100,m=");
-      else
-	g_string_append (string, "\033_Gm=");
-
-      if (len > CHUNK_SIZE)
-      {
-	g_string_append (string, "1;");
-	g_string_append_len (string, base64 + pos, CHUNK_SIZE);
-      }
-      else
-      {
-	g_string_append (string, "0;");
-	g_string_append_len (string, base64 + pos, len);
-      }
-
-      g_string_append (string, "\033\\");
-    }
-    g_string_append (string, "\n");
-#undef CHUNK_SIZE
-  }
-
-  closure->write_func (closure->closure, (unsigned char *) string->str, string->len);
+  helper_image_write_png_data (bytes->data, bytes->len,
+			       closure->write_func, closure->closure,
+			       closure->protocol);
 
   g_byte_array_unref (bytes);
-  g_free (base64);
-  g_string_free (string, TRUE);
 }
 
 static cairo_surface_t *
@@ -360,7 +312,7 @@ _cairo_png_surface_create_for_stream (cairo_write_func_t write_func,
 				      double width,
 				      double height,
 				      cairo_content_t content,
-				      image_protocol_t protocol)
+				      helper_image_protocol_t protocol)
 {
   cairo_surface_t *surface;
   int w = ceil (width);
@@ -409,7 +361,7 @@ _cairo_script_surface_create_for_stream (cairo_write_func_t write_func,
 				         double width,
 				         double height,
 				         cairo_content_t content,
-				         image_protocol_t protocol HB_UNUSED)
+				         helper_image_protocol_t protocol HB_UNUSED)
 {
   cairo_device_t *script = cairo_script_create_for_stream (write_func, closure);
   cairo_surface_t *surface = cairo_script_surface_create (script, content, width, height);
@@ -419,30 +371,11 @@ _cairo_script_surface_create_for_stream (cairo_write_func_t write_func,
 
 #endif
 
-static cairo_status_t
-stdio_write_func (void                *closure,
-		  const unsigned char *data,
-		  unsigned int         size)
-{
-  FILE *fp = (FILE *) closure;
-
-  while (size) {
-    size_t ret = fwrite (data, 1, size, fp);
-    size -= ret;
-    data += ret;
-    if (size && ferror (fp))
-      fail (false, "Failed to write output: %s", strerror (errno));
-  }
-
-  return CAIRO_STATUS_SUCCESS;
-}
-
 static const char *helper_cairo_supported_formats[] =
 {
-  "ansi",
-  #ifdef CAIRO_HAS_PNG_FUNCTIONS
+#ifdef CAIRO_HAS_PNG_FUNCTIONS
   "png",
-  #endif
+#endif
   #ifdef CAIRO_HAS_SVG_SURFACE
   "svg",
   #endif
@@ -458,6 +391,7 @@ static const char *helper_cairo_supported_formats[] =
   #ifdef CAIRO_HAS_SCRIPT_SURFACE
   "script",
   #endif
+  "ansi",
   nullptr
 };
 
@@ -478,51 +412,18 @@ helper_cairo_create_context (double w, double h,
 				    double width,
 				    double height,
 				    cairo_content_t content,
-				    image_protocol_t protocol) = nullptr;
+				    helper_image_protocol_t protocol) = nullptr;
 
-  image_protocol_t protocol = image_protocol_t::NONE;
+  helper_image_protocol_t protocol = helper_image_protocol_t::NONE;
   const char *extension = out_opts->output_format;
-  if (!extension) {
-#if HAVE_ISATTY
-    if (isatty (fileno (out_opts->out_fp)))
-    {
+  if (!extension)
+    extension = helper_image_get_implicit_output_format (out_opts->out_fp,
 #ifdef CAIRO_HAS_PNG_FUNCTIONS
-      const char *name;
-      /* https://gitlab.com/gnachman/iterm2/-/issues/7154 */
-      if ((name = getenv ("LC_TERMINAL")) != nullptr &&
-	  0 == g_ascii_strcasecmp (name, "iTerm2"))
-      {
-	extension = "png";
-	protocol = image_protocol_t::ITERM2;
-      }
-      else if ((name = getenv ("TERM_PROGRAM")) != nullptr &&
-	  0 == g_ascii_strcasecmp (name, "WezTerm"))
-      {
-	extension = "png";
-	protocol = image_protocol_t::ITERM2;
-      }
-      else if ((name = getenv ("TERM")) != nullptr &&
-	       0 == g_ascii_strcasecmp (name, "xterm-kitty"))
-      {
-	extension = "png";
-	protocol = image_protocol_t::KITTY;
-      }
-      else
-	extension = "ansi";
+							 "png",
 #else
-      extension = "ansi";
+							 "ansi",
 #endif
-    }
-    else
-#endif
-    {
-#ifdef CAIRO_HAS_PNG_FUNCTIONS
-      extension = "png";
-#else
-      extension = "ansi";
-#endif
-    }
-  }
+							 &protocol);
   if (0)
     ;
     else if (0 == g_ascii_strcasecmp (extension, "ansi"))
@@ -554,30 +455,69 @@ helper_cairo_create_context (double w, double h,
 
 
   unsigned int fr, fg, fb, fa, br, bg, bb, ba;
-  const char *color;
-  br = bg = bb = ba = 255;
-  color = view_opts->back ? view_opts->back : DEFAULT_BACK;
-  parse_color (color, br, bg, bb, ba);
-  fr = fg = fb = 0; fa = 255;
-  color = view_opts->fore ? view_opts->fore : DEFAULT_FORE;
-  parse_color (color, fr, fg, fb, fa);
+  br = view_opts->background_color.r;
+  bg = view_opts->background_color.g;
+  bb = view_opts->background_color.b;
+  ba = view_opts->background_color.a;
+  fr = view_opts->foreground_color.r;
+  fg = view_opts->foreground_color.g;
+  fb = view_opts->foreground_color.b;
+  fa = view_opts->foreground_color.a;
+  bool foreground_has_color = false;
+  bool foreground_has_alpha = false;
+  bool stroke_has_color = false;
+  bool stroke_has_alpha = false;
+  using rgba_color_t = typename view_options_t::rgba_color_t;
+
+  if (view_opts->foreground_use_palette &&
+      view_opts->foreground_palette &&
+      view_opts->foreground_palette->len)
+  {
+    auto &first = g_array_index (view_opts->foreground_palette,
+				 rgba_color_t, 0);
+    fr = first.r;
+    fg = first.g;
+    fb = first.b;
+    fa = first.a;
+    foreground_has_color = view_opts->foreground_palette->len > 1;
+    for (unsigned i = 0; i < view_opts->foreground_palette->len; i++)
+    {
+      auto &c = g_array_index (view_opts->foreground_palette,
+			       rgba_color_t, i);
+      foreground_has_color |= c.r != c.g || c.g != c.b;
+      foreground_has_alpha |= c.a != 255;
+    }
+  }
+  else
+  {
+    foreground_has_color = fr != fg || fg != fb;
+    foreground_has_alpha = fa != 255;
+  }
+
+  if (view_opts->stroke_enabled)
+  {
+    auto &stroke = view_opts->stroke_color;
+    stroke_has_color = stroke.r != stroke.g || stroke.g != stroke.b;
+    stroke_has_alpha = stroke.a != 255;
+  }
 
   if (content == CAIRO_CONTENT_ALPHA)
   {
     if (view_opts->show_extents ||
-	br != bg || bg != bb ||
-	fr != fg || fg != fb)
+			br != bg || bg != bb ||
+			foreground_has_color ||
+			stroke_has_color)
       content = CAIRO_CONTENT_COLOR;
   }
-  if (ba != 255)
+  if (ba != 255 || foreground_has_alpha || stroke_has_alpha)
     content = CAIRO_CONTENT_COLOR_ALPHA;
 
   cairo_surface_t *surface;
   FILE *f = out_opts->out_fp;
   if (constructor)
-    surface = constructor (stdio_write_func, f, w, h);
+    surface = constructor (helper_image_stdio_write_func, f, w, h);
   else if (constructor2)
-    surface = constructor2 (stdio_write_func, f, w, h, content, protocol);
+    surface = constructor2 (helper_image_stdio_write_func, f, w, h, content, protocol);
   else
     fail (false, "Unknown output format `%s'; supported formats are: %s%s",
 	  extension,
@@ -594,7 +534,7 @@ helper_cairo_create_context (double w, double h,
       cairo_set_source_rgba (cr, 1., 1., 1., br / 255.);
       cairo_paint (cr);
       cairo_set_source_rgba (cr, 1., 1., 1.,
-			     (fr / 255.) * (fa / 255.) + (br / 255) * (1 - (fa / 255.)));
+			     (fr / 255.) * (fa / 255.) + (br / 255.) * (1 - (fa / 255.)));
       break;
     default:
     case CAIRO_CONTENT_COLOR:

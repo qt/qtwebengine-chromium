@@ -48,7 +48,9 @@ struct output_options_t
     if (supported_formats)
     {
       char *items = g_strjoinv ("/", const_cast<char **> (supported_formats));
-      text = g_strdup_printf ("Set output format\n\n    Supported output formats are: %s", items);
+      text = g_strdup_printf ("Set output format (default: %s)\n\n    Supported output formats are: %s",
+			      supported_formats[0],
+			      items);
       g_free (items);
       parser->free_later ((char *) text);
     }
@@ -97,6 +99,14 @@ struct output_options_t
       setmode (fileno (stdout), O_BINARY);
 #endif
       out_fp = stdout;
+#if HAVE_ISATTY
+      if (refuse_tty && isatty (fileno (stdout)))
+      {
+	g_set_error (error, G_OPTION_ERROR, G_OPTION_ERROR_FAILED,
+		     "Refusing to write to a terminal. Use --output-file / -o, or pipe.");
+	return;
+      }
+#endif
     }
     if (!out_fp)
     {
@@ -111,6 +121,7 @@ struct output_options_t
   char *output_format = nullptr;
 
   bool explicit_output_format = false;
+  bool refuse_tty = false;
   FILE *out_fp = nullptr;
 };
 
