@@ -74,7 +74,7 @@ BASE_FEATURE_PARAM(size_t,
 // its parent directory.
 BASE_FEATURE(kFileSystemAccessRenameRequiresParentWritePermission,
              "kFileSystemAccessRenameRequiresParentWritePermission",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Controls whether the rename permission check is restricted to the home
 // directory.
@@ -82,5 +82,5 @@ BASE_FEATURE_PARAM(bool,
                    kOnlyInHomedir,
                    &kFileSystemAccessRenameRequiresParentWritePermission,
                    "file_system_access_rename_requires_parent_write_permission",
-                   true);
+                   false);
 }  // namespace content::features
