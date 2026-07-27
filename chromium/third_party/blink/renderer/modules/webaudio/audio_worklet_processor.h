@@ -153,6 +153,8 @@ class MODULES_EXPORT AudioWorkletProcessor : public ScriptWrappable {
 
   AudioWorkletProcessorErrorState error_state_ =
       AudioWorkletProcessorErrorState::kNoError;
+
+  const bool is_denormal_enabler_enabled_;
 };
 
 }  // namespace blink
