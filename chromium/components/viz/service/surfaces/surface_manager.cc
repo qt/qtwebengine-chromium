@@ -731,7 +731,7 @@ void SurfaceManager::AggregatedFrameSinksChanged() {
 }
 
 void SurfaceManager::CommitFramesInRangeRecursively(
-    const SurfaceRange& range,
+    SurfaceRange range,
     const CommitPredicate& predicate) {
   // Technically we need only latest active surface, but because activation will
   // happen during commit, it's impossible to predict which one will be active,
