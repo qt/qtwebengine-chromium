@@ -7,6 +7,7 @@
 
 #include "src/codec/SkPngCodec.h"
 
+#include "include/codec/SkCodecAnimation.h"
 #include "include/codec/SkEncodedOrigin.h"
 #include "include/codec/SkPngChunkReader.h"
 #include "include/codec/SkPngDecoder.h"
@@ -1061,6 +1062,25 @@ std::unique_ptr<SkCodec> SkPngCodec::MakeFromStream(std::unique_ptr<SkStream> st
 std::unique_ptr<SkCodec> SkPngCodec::onDecodeGainmap(std::unique_ptr<SkStream> stream,
                                                      SkCodec::Result* result) {
     return SkPngCodec::MakeFromStream(std::move(stream), result, fPngChunkReader.get());
+}
+
+bool SkPngCodec::onGetFrameInfo(int index, FrameInfo* info) const {
+    SkASSERT(info);
+
+    // These are hard-coded values to avoid crash in Blink.
+    // This forces APNGs to render as static images.
+    info->fRequiredFrame = SkCodec::kNoFrame;
+    info->fDuration = 0;
+    info->fFullyReceived = true;
+
+    info->fAlphaType = this->getInfo().alphaType();
+    info->fHasAlphaWithinBounds = (this->getInfo().alphaType() != kOpaque_SkAlphaType);
+
+    info->fDisposalMethod = SkCodecAnimation::DisposalMethod::kKeep;
+    info->fBlend = SkCodecAnimation::Blend::kSrc;
+    info->fFrameRect = this->bounds();
+
+    return true;
 }
 
 namespace SkPngDecoder {

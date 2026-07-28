@@ -6,6 +6,7 @@
 
 #include "base/notreached.h"
 #include "build/build_config.h"
+#include "skia/buildflags.h"
 
 #if BUILDFLAG(IS_WIN)
 #include <basetsd.h>  // Included before jpeglib.h because of INT32 clash
@@ -14,6 +15,8 @@
 
 #include "jpeglib.h"  // for JPEG_MAX_DIMENSION
 #include "third_party/libwebp/src/src/webp/encode.h"  // for WEBP_MAX_DIMENSION
+
+#include "third_party/skia/include/encode/SkPngEncoder.h"
 
 namespace blink {
 
@@ -29,8 +32,14 @@ bool ImageEncoder::Encode(
     const SkPixmap& src,
     SkPngRustEncoder::CompressionLevel compression_level) {
   VectorWStream dst_stream(dst);
+#if BUILDFLAG(SKIA_BUILD_RUST_PNG)
   SkPngRustEncoder::Options options = {.fCompressionLevel = compression_level};
   return SkPngRustEncoder::Encode(&dst_stream, src, options);
+#else
+  const int zlib_level = SkPngRustEncoder::ConvertToZLibLevel(compression_level);
+  SkPngEncoder::Options options = {.fZLibLevel = zlib_level};
+  return SkPngEncoder::Encode(&dst_stream, src, options);
+#endif
 }
 
 bool ImageEncoder::Encode(Vector<unsigned char>* dst,
@@ -83,9 +92,16 @@ std::unique_ptr<ImageEncoder> ImageEncoder::Create(
     const SkPixmap& src,
     SkPngRustEncoder::CompressionLevel compression_level) {
   std::unique_ptr<ImageEncoder> image_encoder(new ImageEncoder(dst));
+#if BUILDFLAG(SKIA_BUILD_RUST_PNG)
   SkPngRustEncoder::Options options = {.fCompressionLevel = compression_level};
   image_encoder->encoder_ =
       SkPngRustEncoder::Make(&image_encoder->dst_, src, options);
+#else
+  const int zlib_level = SkPngRustEncoder::ConvertToZLibLevel(compression_level);
+  SkPngEncoder::Options options = {.fZLibLevel = zlib_level};
+  image_encoder->encoder_ =
+      SkPngEncoder::Make(&image_encoder->dst_, src, options);
+#endif
   if (!image_encoder->encoder_) {
     return nullptr;
   }

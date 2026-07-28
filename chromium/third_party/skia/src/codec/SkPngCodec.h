@@ -33,6 +33,8 @@ public:
     // FIXME (scroggo): Temporarily needed by AutoCleanPng.
     void setIdatLength(size_t len) { fIdatLength = len; }
 
+    bool onGetFrameInfo(int, FrameInfo*) const override;
+
     ~SkPngCodec() override;
 
 protected:

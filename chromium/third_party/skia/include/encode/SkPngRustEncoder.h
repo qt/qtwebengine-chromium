@@ -80,6 +80,17 @@ struct Options {
     const SkGainmapInfo* fGainmapInfo = nullptr;
 };
 
+static inline int ConvertToZLibLevel(CompressionLevel level) {
+  switch (level) {
+  case CompressionLevel::kLow:
+    return 1;
+  case CompressionLevel::kMedium:
+    return 6;
+  case CompressionLevel::kHigh:
+    return 9;
+  }
+}
+
 /**
  *  Encode the |src| pixels to the |dst| stream.
  *  |options| may be used to control the encoding behavior.
