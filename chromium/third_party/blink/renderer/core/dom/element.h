@@ -1428,7 +1428,13 @@ class CORE_EXPORT Element : public ContainerNode, public Animatable {
   CustomElementDefinition* GetCustomElementDefinition() const;
 
   // Scoped Custom Elements
-  CustomElementRegistry* customElementRegistry() const;
+  //
+  // Returns the custom element registry associated with this element.
+  // See TreeScope::customElementRegistry() for the rule about when to
+  // pass `script_state` (in short: any caller that will hand the registry
+  // to script must pass it).
+  CustomElementRegistry* customElementRegistry(
+      ScriptState* script_state = nullptr) const;
   void SetCustomElementRegistry(CustomElementRegistry*);
 
   // https://dom.spec.whatwg.org/#concept-element-is-value

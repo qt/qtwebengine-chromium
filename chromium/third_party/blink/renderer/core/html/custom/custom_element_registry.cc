@@ -27,6 +27,8 @@
 #include "third_party/blink/renderer/core/html/custom/custom_element_upgrade_sorter.h"
 #include "third_party/blink/renderer/core/html_element_type_helpers.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
+#include "third_party/blink/renderer/platform/bindings/script_state.h"
+#include "third_party/blink/renderer/platform/bindings/dom_wrapper_world.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
 #include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
 #include "third_party/blink/renderer/platform/wtf/text/strcat.h"
@@ -80,11 +82,13 @@ CustomElementRegistry* CustomElementRegistry::Create(
     ScriptState* script_state) {
   DCHECK(RuntimeEnabledFeatures::ScopedCustomElementRegistryEnabled());
   return MakeGarbageCollected<CustomElementRegistry>(
-      LocalDOMWindow::From(script_state));
+      LocalDOMWindow::From(script_state), script_state->World().GetWorldId());
 }
 
-CustomElementRegistry::CustomElementRegistry(const LocalDOMWindow* owner)
+CustomElementRegistry::CustomElementRegistry(const LocalDOMWindow* owner,
+                                             int32_t world_id)
     : element_definition_is_running_(false),
+      world_id_(world_id),
       owner_(owner),
       upgrade_candidates_(MakeGarbageCollected<UpgradeCandidateMap>()),
       associated_documents_(MakeGarbageCollected<AssociatedDocumentSet>()) {}

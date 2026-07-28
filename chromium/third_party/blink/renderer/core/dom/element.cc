@@ -241,6 +241,7 @@
 #include "third_party/blink/renderer/core/xlink_names.h"
 #include "third_party/blink/renderer/core/xml_names.h"
 #include "third_party/blink/renderer/platform/bindings/dom_data_store.h"
+#include "third_party/blink/renderer/platform/bindings/dom_wrapper_world.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/v8_dom_activity_logger.h"
 #include "third_party/blink/renderer/platform/bindings/v8_dom_wrapper.h"
@@ -6532,7 +6533,8 @@ CustomElementDefinition* Element::GetCustomElementDefinition() const {
   return nullptr;
 }
 
-CustomElementRegistry* Element::customElementRegistry() const {
+CustomElementRegistry* Element::customElementRegistry(
+    ScriptState* script_state) const {
   DCHECK(RuntimeEnabledFeatures::ScopedCustomElementRegistryEnabled());
   // TODO(crbug.com/429140221) Need to evaluate if storing registry
   // in element whenever needed is too memory consuming. For now
@@ -6540,11 +6542,16 @@ CustomElementRegistry* Element::customElementRegistry() const {
   // scope's registry if not explicitly set.
   if (const ElementRareDataVector* data = GetElementRareData()) {
     if (auto* registry = data->GetCustomElementRegistry()) {
+      // A null script_state indicates an internal call that bypasses the
+      // world check.
+      if (script_state && script_state->World().GetWorldId() != registry->GetWorldId()) {
+          return nullptr;
+      }
       return registry;
     }
   }
 
-  return GetTreeScope().customElementRegistry();
+  return GetTreeScope().customElementRegistry(script_state);
 }
 
 void Element::SetCustomElementRegistry(CustomElementRegistry* registry) {

@@ -180,8 +180,7 @@ dictionary SetHTMLUnsafeOptions {
     [CEReactions, RuntimeEnabled=HeadingOffset] attribute boolean headingReset;
 
     // Scoped Custom Element Registries
-    [RuntimeEnabled=ScopedCustomElementRegistry] readonly attribute CustomElementRegistry? customElementRegistry;
-
+    [CallWith=ScriptState, RuntimeEnabled=ScopedCustomElementRegistry] readonly attribute CustomElementRegistry? customElementRegistry;
     // Declarative document updates
     [RuntimeEnabled=DocumentPatching] readonly attribute PatchStatus? currentPatch;
 };

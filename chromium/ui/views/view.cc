@@ -3518,6 +3518,8 @@ bool View::UpdateParentLayers() {
 void View::OrphanLayers() {
   if (layer()) {
     if (ui::Layer* parent = layer()->parent()) {
+     base::WeakPtr<ui::Layer> weak_parent = layer()->parent()->AsWeakPtr();
+ii
       for (ui::Layer* layer : GetLayersInOrder()) {
         // TODO(http://b/319941708): Please remove the below crash keys once the
         // the crash is fixed. It seems one of the layers returned by

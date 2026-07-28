@@ -14,6 +14,7 @@
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/dom/element_rare_data_field.h"
 #include "third_party/blink/renderer/core/html/custom/custom_element_definition.h"
+#include "third_party/blink/renderer/platform/bindings/dom_wrapper_world.h"
 #include "third_party/blink/renderer/platform/bindings/script_wrappable.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_map.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_set.h"
@@ -41,7 +42,7 @@ class CORE_EXPORT CustomElementRegistry final : public ScriptWrappable,
  public:
   static CustomElementRegistry* Create(ScriptState*);
 
-  explicit CustomElementRegistry(const LocalDOMWindow*);
+  CustomElementRegistry(const LocalDOMWindow*, int32_t world_id);
   CustomElementRegistry(const CustomElementRegistry&) = delete;
   CustomElementRegistry& operator=(const CustomElementRegistry&) = delete;
   ~CustomElementRegistry() override = default;
@@ -80,6 +81,8 @@ class CORE_EXPORT CustomElementRegistry final : public ScriptWrappable,
 
   bool IsGlobalRegistry() const;
 
+  int32_t GetWorldId() const { return world_id_; }
+  
   void AssociatedWith(Document& document);
 
   void initialize(V8UnionElementOrShadowRoot* element_or_shadowroot) {}
@@ -97,6 +100,7 @@ class CORE_EXPORT CustomElementRegistry final : public ScriptWrappable,
                          HeapVector<Member<Element>>*);
 
   bool element_definition_is_running_;
+  int32_t world_id_ = DOMWrapperWorld::kInvalidWorldId;
 
   using ConstructorMap = HeapHashMap<Member<V8CustomElementConstructor>,
                                      Member<CustomElementDefinition>,
