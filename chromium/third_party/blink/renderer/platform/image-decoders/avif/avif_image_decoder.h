@@ -8,14 +8,89 @@
 #include <memory>
 #include <vector>
 
+#include "media/media_buildflags.h"
+
 #include "third_party/blink/renderer/platform/allow_discouraged_type.h"
 #include "third_party/blink/renderer/platform/image-decoders/image_decoder.h"
 #include "third_party/blink/renderer/platform/wtf/functional.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
-#include "third_party/crabbyavif/src/include/avif/avif.h"
 #include "third_party/skia/include/core/SkImageInfo.h"
 #include "ui/gfx/color_space.h"
 #include "ui/gfx/geometry/point.h"
+
+#if BUILDFLAG(ENABLE_CRABBYAVIF)
+#include "third_party/crabbyavif/src/include/avif/avif.h"
+#else
+#include "third_party/libavif/src/include/avif/avif.h"
+
+namespace crabbyavif {
+enum avifResult {
+  AVIF_RESULT_OK = ::AVIF_RESULT_OK,
+  AVIF_RESULT_UNKNOWN_ERROR = ::AVIF_RESULT_UNKNOWN_ERROR,
+  AVIF_RESULT_INVALID_FTYP = ::AVIF_RESULT_INVALID_FTYP,
+  AVIF_RESULT_NO_CONTENT = ::AVIF_RESULT_NO_CONTENT,
+  AVIF_RESULT_NO_YUV_FORMAT_SELECTED = ::AVIF_RESULT_NO_YUV_FORMAT_SELECTED,
+  AVIF_RESULT_REFORMAT_FAILED = ::AVIF_RESULT_REFORMAT_FAILED,
+  AVIF_RESULT_UNSUPPORTED_DEPTH = ::AVIF_RESULT_UNSUPPORTED_DEPTH,
+  AVIF_RESULT_ENCODE_COLOR_FAILED = ::AVIF_RESULT_ENCODE_COLOR_FAILED,
+  AVIF_RESULT_ENCODE_ALPHA_FAILED = ::AVIF_RESULT_ENCODE_ALPHA_FAILED,
+  AVIF_RESULT_BMFF_PARSE_FAILED = ::AVIF_RESULT_BMFF_PARSE_FAILED,
+  AVIF_RESULT_MISSING_IMAGE_ITEM = ::AVIF_RESULT_MISSING_IMAGE_ITEM,
+  AVIF_RESULT_DECODE_COLOR_FAILED = ::AVIF_RESULT_DECODE_COLOR_FAILED,
+  AVIF_RESULT_DECODE_ALPHA_FAILED = ::AVIF_RESULT_DECODE_ALPHA_FAILED,
+  AVIF_RESULT_COLOR_ALPHA_SIZE_MISMATCH = ::AVIF_RESULT_COLOR_ALPHA_SIZE_MISMATCH,
+  AVIF_RESULT_ISPE_SIZE_MISMATCH = ::AVIF_RESULT_ISPE_SIZE_MISMATCH,
+  AVIF_RESULT_NO_CODEC_AVAILABLE = ::AVIF_RESULT_NO_CODEC_AVAILABLE,
+  AVIF_RESULT_NO_IMAGES_REMAINING = ::AVIF_RESULT_NO_IMAGES_REMAINING,
+  AVIF_RESULT_INVALID_EXIF_PAYLOAD = ::AVIF_RESULT_INVALID_EXIF_PAYLOAD,
+  AVIF_RESULT_INVALID_IMAGE_GRID = ::AVIF_RESULT_INVALID_IMAGE_GRID,
+  AVIF_RESULT_INVALID_CODEC_SPECIFIC_OPTION = ::AVIF_RESULT_INVALID_CODEC_SPECIFIC_OPTION,
+  AVIF_RESULT_TRUNCATED_DATA = ::AVIF_RESULT_TRUNCATED_DATA,
+  AVIF_RESULT_IO_NOT_SET = ::AVIF_RESULT_IO_NOT_SET,
+  AVIF_RESULT_IO_ERROR = ::AVIF_RESULT_IO_ERROR,
+  AVIF_RESULT_WAITING_ON_IO = ::AVIF_RESULT_WAITING_ON_IO,
+  AVIF_RESULT_INVALID_ARGUMENT = ::AVIF_RESULT_INVALID_ARGUMENT,
+  AVIF_RESULT_NOT_IMPLEMENTED = ::AVIF_RESULT_NOT_IMPLEMENTED,
+  AVIF_RESULT_OUT_OF_MEMORY = ::AVIF_RESULT_OUT_OF_MEMORY,
+  AVIF_RESULT_CANNOT_CHANGE_SETTING = ::AVIF_RESULT_CANNOT_CHANGE_SETTING,
+  AVIF_RESULT_INCOMPATIBLE_IMAGE = ::AVIF_RESULT_INCOMPATIBLE_IMAGE,
+  AVIF_RESULT_ENCODE_GAIN_MAP_FAILED = ::AVIF_RESULT_ENCODE_GAIN_MAP_FAILED,
+  AVIF_RESULT_DECODE_GAIN_MAP_FAILED = ::AVIF_RESULT_DECODE_GAIN_MAP_FAILED,
+  AVIF_RESULT_INVALID_TONE_MAPPED_IMAGE = ::AVIF_RESULT_INVALID_TONE_MAPPED_IMAGE,
+};
+
+enum avifPixelFormat {
+  AVIF_PIXEL_FORMAT_NONE = ::AVIF_PIXEL_FORMAT_NONE,
+  AVIF_PIXEL_FORMAT_YUV444 = ::AVIF_PIXEL_FORMAT_YUV444,
+  AVIF_PIXEL_FORMAT_YUV422 = ::AVIF_PIXEL_FORMAT_YUV422,
+  AVIF_PIXEL_FORMAT_YUV420 = ::AVIF_PIXEL_FORMAT_YUV420,
+  AVIF_PIXEL_FORMAT_YUV400 = ::AVIF_PIXEL_FORMAT_YUV400,
+};
+
+enum avifRange {
+  AVIF_RANGE_LIMITED = ::AVIF_RANGE_LIMITED,
+  AVIF_RANGE_FULL = ::AVIF_RANGE_FULL,
+};
+
+enum avifChannelIndex {
+  AVIF_CHAN_Y = ::AVIF_CHAN_Y,
+  AVIF_CHAN_U = ::AVIF_CHAN_U,
+  AVIF_CHAN_V = ::AVIF_CHAN_V,
+  AVIF_CHAN_A = ::AVIF_CHAN_A,
+};
+
+constexpr static const int CRABBY_AVIF_TRUE = 1;
+constexpr static const int CRABBY_AVIF_FALSE = 0;
+constexpr static const uint32_t AVIF_STRICT_PIXI_REQUIRED = (1 << 0);
+constexpr static const uint32_t AVIF_STRICT_CLAP_VALID = (1 << 1);
+constexpr static const uint32_t AVIF_IMAGE_CONTENT_GAIN_MAP = (1 << 2);
+constexpr static const int32_t CRABBY_AVIF_REPETITION_COUNT_INFINITE = -1;
+constexpr static const int32_t CRABBY_AVIF_REPETITION_COUNT_UNKNOWN = -2;
+constexpr static const uint32_t AVIF_TRANSFORM_CLAP = (1 << 1);
+constexpr static const uint32_t AVIF_TRANSFORM_IROT = (1 << 2);
+constexpr static const uint32_t AVIF_TRANSFORM_IMIR = (1 << 3);
+}  // namespace crabbyavif
+#endif  // BUILDFLAG(ENABLE_CRABBYAVIF)
 
 namespace blink {
 
@@ -81,6 +156,7 @@ class PLATFORM_EXPORT AVIFImageDecoder final : public ImageDecoder {
   void Decode(wtf_size_t) override;
   bool CanReusePreviousFrameBuffer(wtf_size_t) const override;
 
+#if BUILDFLAG(ENABLE_CRABBYAVIF)
   // Implements crabbyavif::avifIOReadFunc, the |read| function in the
   // crabbyavif::avifIO struct.
   static crabbyavif::avifResult ReadFromSegmentReader(
@@ -89,6 +165,14 @@ class PLATFORM_EXPORT AVIFImageDecoder final : public ImageDecoder {
       uint64_t offset,
       size_t size,
       crabbyavif::avifROData* out);
+#else
+  // Implements avifIOReadFunc, the |read| function in the avifIO struct.
+  static avifResult ReadFromSegmentReader(avifIO* io,
+                                          uint32_t read_flags,
+                                          uint64_t offset,
+                                          size_t size,
+                                          avifROData* out);
+#endif
 
   // Creates |decoder_| if not yet created and decodes the size and frame count.
   bool UpdateDemuxer();
@@ -105,7 +189,11 @@ class PLATFORM_EXPORT AVIFImageDecoder final : public ImageDecoder {
   // whether |image| was rendered successfully. On return, the in/out argument
   // |*to_row| may be decremented in case of subsampled chroma needing more
   // data.
+#if BUILDFLAG(ENABLE_CRABBYAVIF)
   bool RenderImage(const crabbyavif::avifImage* image,
+#else
+  bool RenderImage(const avifImage* image,
+#endif
                    int from_row,
                    int* to_row,
                    ImageFrame* buffer);
@@ -117,7 +205,11 @@ class PLATFORM_EXPORT AVIFImageDecoder final : public ImageDecoder {
   // Returns decoder_->image or decoder_->image->gainMap->image depending on
   // aux_image_. May be nullptr if requesting the gain map image
   // (cc::AuxImage::kGainmap) but no gain map is present.
+#if BUILDFLAG(ENABLE_CRABBYAVIF)
   crabbyavif::avifImage* GetDecoderImage() const;
+#else
+  avifImage* GetDecoderImage() const;
+#endif
 
   bool have_parsed_current_data_ = false;
   // The image width and height (before cropping, if any) from the container.
@@ -153,22 +245,37 @@ class PLATFORM_EXPORT AVIFImageDecoder final : public ImageDecoder {
   // A copy of decoder_->image with the width, height, and plane buffers
   // adjusted to those of the clean aperture. Used only when the image has a
   // 'clap' (clean aperture) property.
+#if BUILDFLAG(ENABLE_CRABBYAVIF)
   std::unique_ptr<crabbyavif::avifImage,
                   decltype(&crabbyavif::crabby_avifImageDestroy)>
       cropped_image_{nullptr, crabbyavif::crabby_avifImageDestroy};
+#else
+  std::unique_ptr<avifImage, decltype(&avifImageDestroy)> cropped_image_{
+      nullptr, avifImageDestroy};
+#endif
   // Set by a successful DecodeImage() call to either decoder_->image or
   // cropped_image_.get() depending on whether the image has a 'clap' (clean
   // aperture) property.
+#if BUILDFLAG(ENABLE_CRABBYAVIF)
   raw_ptr<const crabbyavif::avifImage, DanglingUntriaged> decoded_image_ =
       nullptr;
+#else
+  raw_ptr<const avifImage, DanglingUntriaged> decoded_image_ = nullptr;
+#endif
   // The declaration order of the next three fields is important. decoder_
   // points to avif_io_, and avif_io_ points to avif_io_data_. The destructor
   // must destroy them in that order.
   AvifIOData avif_io_data_;
+#if BUILDFLAG(ENABLE_CRABBYAVIF)
   crabbyavif::avifIO avif_io_ = {};
   std::unique_ptr<crabbyavif::avifDecoder,
                   decltype(&crabbyavif::crabby_avifDecoderDestroy)>
       decoder_{nullptr, crabbyavif::crabby_avifDecoderDestroy};
+#else
+  avifIO avif_io_ = {};
+  std::unique_ptr<avifDecoder, decltype(&avifDecoderDestroy)> decoder_{
+      nullptr, avifDecoderDestroy};
+#endif
 
   const AnimationOption animation_option_;
 

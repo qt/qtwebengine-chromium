@@ -23,6 +23,7 @@
 #include "build/build_config.h"
 #include "cc/base/math_util.h"
 #include "media/base/video_color_space.h"
+#include "media/media_buildflags.h"
 #include "skia/ext/cicp.h"
 #include "third_party/blink/renderer/platform/image-decoders/fast_shared_buffer_reader.h"
 #include "third_party/blink/renderer/platform/image-decoders/image_animation.h"
@@ -30,7 +31,6 @@
 #include "third_party/blink/renderer/platform/image-decoders/rw_buffer.h"
 #include "third_party/blink/renderer/platform/wtf/cross_thread_functional.h"
 #include "third_party/blink/renderer/platform/wtf/text/atomic_string.h"
-#include "third_party/crabbyavif/src/include/avif/avif.h"
 #include "third_party/libyuv/include/libyuv.h"
 #include "third_party/skia/include/core/SkColorSpace.h"
 #include "third_party/skia/include/core/SkTypes.h"
@@ -42,6 +42,22 @@
 #error Blink assumes a little-endian target.
 #endif
 
+#if BUILDFLAG(ENABLE_CRABBYAVIF)
+#include "third_party/crabbyavif/src/include/avif/avif.h"
+#else
+#include "third_party/libavif/src/include/avif/avif.h"
+
+namespace crabbyavif {
+const char *crabby_avifResultToString(crabbyavif::avifResult res) {
+  return avifResultToString(static_cast<::avifResult>(res));
+}
+
+const char *crabby_avifResultToString(::avifResult res) {
+  return avifResultToString(res);
+}
+};
+#endif  // BUILDFLAG(ENABLE_CRABBYAVIF)
+
 namespace blink {
 
 namespace {
@@ -51,7 +67,11 @@ namespace {
 // known.
 constexpr uint64_t kMaxAvifFileSize = 0x10000000;  // 256 MB
 
+#if BUILDFLAG(ENABLE_CRABBYAVIF)
 const char* AvifDecoderErrorMessage(const crabbyavif::avifDecoder* decoder) {
+#else
+const char* AvifDecoderErrorMessage(const avifDecoder* decoder) {
+#endif
   // decoder->diag.error is a char array that stores a null-terminated C string.
   return *decoder->diag.error != '\0' ? decoder->diag.error
                                       : "(no error message)";
@@ -59,9 +79,15 @@ const char* AvifDecoderErrorMessage(const crabbyavif::avifDecoder* decoder) {
 
 // Builds a gfx::ColorSpace from the ITU-T H.273 (CICP) color description.
 gfx::ColorSpace GetColorSpace(
+#if BUILDFLAG(ENABLE_CRABBYAVIF)
     crabbyavif::avifColorPrimaries color_primaries,
     crabbyavif::avifTransferCharacteristics transfer_characteristics,
     crabbyavif::avifMatrixCoefficients matrix_coefficients,
+#else
+    avifColorPrimaries color_primaries,
+    avifTransferCharacteristics transfer_characteristics,
+    avifMatrixCoefficients matrix_coefficients,
+#endif
     crabbyavif::avifRange yuv_range,
     bool grayscale) {
   // (As of ISO/IEC 23000-22:2019 Amendment 2) MIAF Section 7.3.6.4 says:
@@ -86,6 +112,7 @@ gfx::ColorSpace GetColorSpace(
   // and these are the most reasonable defaults to choose. We also advocate that
   // all AVIF decoders choose these defaults:
   // https://github.com/AOMediaCodec/av1-avif/issues/84
+#if BUILDFLAG(ENABLE_CRABBYAVIF)
   const auto primaries =
       color_primaries == crabbyavif::AVIF_COLOR_PRIMARIES_UNSPECIFIED
           ? crabbyavif::AVIF_COLOR_PRIMARIES_BT709
@@ -100,6 +127,19 @@ gfx::ColorSpace GetColorSpace(
        matrix_coefficients == crabbyavif::AVIF_MATRIX_COEFFICIENTS_UNSPECIFIED)
           ? crabbyavif::AVIF_MATRIX_COEFFICIENTS_BT601
           : matrix_coefficients;
+#else
+  const auto primaries = color_primaries == AVIF_COLOR_PRIMARIES_UNSPECIFIED
+                             ? AVIF_COLOR_PRIMARIES_BT709
+                             : color_primaries;
+  const auto transfer =
+      transfer_characteristics == AVIF_TRANSFER_CHARACTERISTICS_UNSPECIFIED
+          ? AVIF_TRANSFER_CHARACTERISTICS_SRGB
+          : transfer_characteristics;
+  const auto matrix =
+      (grayscale || matrix_coefficients == AVIF_MATRIX_COEFFICIENTS_UNSPECIFIED)
+          ? AVIF_MATRIX_COEFFICIENTS_BT601
+          : matrix_coefficients;
+#endif
   const auto range = yuv_range == crabbyavif::AVIF_RANGE_FULL
                          ? gfx::ColorSpace::RangeID::FULL
                          : gfx::ColorSpace::RangeID::LIMITED;
@@ -117,11 +157,15 @@ gfx::ColorSpace GetColorSpace(
 
 // Builds a gfx::ColorSpace from the ITU-T H.273 (CICP) color description in the
 // image.
+#if BUILDFLAG(ENABLE_CRABBYAVIF)
 gfx::ColorSpace GetColorSpace(const crabbyavif::avifImage* image) {
+#else
+gfx::ColorSpace GetColorSpace(const avifImage* image) {
+#endif  // BUILDFLAG(ENABLE_CRABBYAVIF)
   const bool grayscale =
-      image->yuvFormat == crabbyavif::AVIF_PIXEL_FORMAT_YUV400;
+      static_cast<crabbyavif::avifPixelFormat>(image->yuvFormat) == crabbyavif::AVIF_PIXEL_FORMAT_YUV400;
   return GetColorSpace(image->colorPrimaries, image->transferCharacteristics,
-                       image->matrixCoefficients, image->yuvRange, grayscale);
+                       image->matrixCoefficients, static_cast<crabbyavif::avifRange>(image->yuvRange), grayscale);
 }
 
 // |y_size| is the width or height of the Y plane. Returns the width or height
@@ -144,8 +188,13 @@ float FractionToFloat(auto numerator, uint32_t denominator) {
 // need to specify it in SkGainmapInfo, and using the base image's color space
 // may be more accurate if the profile cannot be exactly represented as a
 // SkColorSpace object.
+#if BUILDFLAG(ENABLE_CRABBYAVIF)
 sk_sp<SkColorSpace> GetAltImageColorSpace(const crabbyavif::avifImage& image) {
   const crabbyavif::avifGainMap* gain_map = image.gainMap;
+#else
+sk_sp<SkColorSpace> GetAltImageColorSpace(const avifImage& image) {
+  const avifGainMap* gain_map = image.gainMap;
+#endif
   if (!gain_map) {
     return nullptr;
   }
@@ -180,7 +229,11 @@ sk_sp<SkColorSpace> GetAltImageColorSpace(const crabbyavif::avifImage& image) {
       color_space = SkColorSpace::Make(with_srgb);
     }
   } else if (gain_map->altColorPrimaries !=
+#if BUILDFLAG(ENABLE_CRABBYAVIF)
              crabbyavif::AVIF_COLOR_PRIMARIES_UNSPECIFIED) {
+#else
+             AVIF_COLOR_PRIMARIES_UNSPECIFIED) {
+#endif
     if (image.icc.size == 0 &&
         image.colorPrimaries == gain_map->altColorPrimaries) {
       // Same as base image, no need to specify it.
@@ -189,7 +242,7 @@ sk_sp<SkColorSpace> GetAltImageColorSpace(const crabbyavif::avifImage& image) {
     const bool grayscale = (gain_map->altPlaneCount == 1);
     const gfx::ColorSpace alt_color_space = GetColorSpace(
         gain_map->altColorPrimaries, gain_map->altTransferCharacteristics,
-        gain_map->altMatrixCoefficients, gain_map->altYUVRange, grayscale);
+        gain_map->altMatrixCoefficients, static_cast<crabbyavif::avifRange>(gain_map->altYUVRange), grayscale);
     color_space = alt_color_space.GetAsFullRangeRGB().ToSkColorSpace();
   }
 
@@ -345,7 +398,11 @@ void AVIFImageDecoder::DecodeToYUV() {
     }
     return;
   }
+#if BUILDFLAG(ENABLE_CRABBYAVIF)
   const crabbyavif::avifImage* image = decoded_image_;
+#else
+  const avifImage* image = decoded_image_;
+#endif
 
   DCHECK(!image->alphaPlane);
   static_assert(
@@ -456,11 +513,19 @@ bool AVIFImageDecoder::FrameIsReceivedAtIndex(wtf_size_t index) const {
   if (IsAllDataReceived()) {
     return true;
   }
+#if BUILDFLAG(ENABLE_CRABBYAVIF)
   crabbyavif::avifExtent data_extent;
   if (crabbyavif::crabby_avifDecoderNthImageMaxExtent(
           decoder_.get(), index, &data_extent) != crabbyavif::AVIF_RESULT_OK) {
     return false;
   }
+#else
+  avifExtent data_extent;
+  if (avifDecoderNthImageMaxExtent(
+          decoder_.get(), index, &data_extent) != AVIF_RESULT_OK) {
+    return false;
+  }
+#endif
   return data_extent.size == 0 ||
          data_extent.offset + data_extent.size <= data_->size();
 }
@@ -493,10 +558,18 @@ bool AVIFImageDecoder::MatchesAVIFSignature(
   // bytes, major brand 4 bytes, minor version 4 bytes, and 4 bytes * 32
   // compatible brands).
   std::array<uint8_t, 144> buffer;
+#if BUILDFLAG(ENABLE_CRABBYAVIF)
   crabbyavif::avifROData input;
+#else
+  avifROData input;
+#endif
   input.size = std::min(buffer.size(), fast_reader.size());
   input.data = fast_reader.GetConsecutiveData(0, input.size, buffer).data();
+#if BUILDFLAG(ENABLE_CRABBYAVIF)
   return crabbyavif::crabby_avifPeekCompatibleFileType(&input);
+#else
+  return avifPeekCompatibleFileType(&input);
+#endif
 }
 
 gfx::ColorSpace AVIFImageDecoder::GetColorSpaceForTesting() const {
@@ -532,10 +605,16 @@ void AVIFImageDecoder::InitializeNewFrame(wtf_size_t index) {
   // For AVIFs, the frame always fills the entire image.
   buffer.SetOriginalFrameRect(gfx::Rect(Size()));
 
+#if BUILDFLAG(ENABLE_CRABBYAVIF)
   crabbyavif::avifImageTiming timing;
   auto ret = crabbyavif::crabby_avifDecoderNthImageTiming(decoder_.get(), index,
                                                           &timing);
   DCHECK_EQ(ret, crabbyavif::AVIF_RESULT_OK);
+#else
+  avifImageTiming timing;
+  auto ret = avifDecoderNthImageTiming(decoder_.get(), index, &timing);
+  DCHECK_EQ(ret, AVIF_RESULT_OK);
+#endif
   buffer.SetTimestamp(base::Seconds(timing.pts));
   buffer.SetDuration(base::Seconds(timing.duration));
 }
@@ -559,9 +638,15 @@ void AVIFImageDecoder::Decode(wtf_size_t index) {
     DCHECK_LT(decoder_->imageIndex + 1, decoder_->imageCount);
     for (frame_index = decoder_->imageIndex + 1;
          frame_index + 1 < decoder_->imageCount; ++frame_index) {
+#if BUILDFLAG(ENABLE_CRABBYAVIF)
       crabbyavif::avifExtent data_extent;
       auto rv = crabbyavif::crabby_avifDecoderNthImageMaxExtent(
           decoder_.get(), frame_index + 1, &data_extent);
+#else
+      avifExtent data_extent;
+      auto rv = static_cast<crabbyavif::avifResult>(avifDecoderNthImageMaxExtent(decoder_.get(), frame_index + 1,
+                                                                                 &data_extent));
+#endif
       if (rv != crabbyavif::AVIF_RESULT_OK) {
         DVLOG(1) << "crabbyavif::crabby_avifDecoderNthImageMaxExtent("
                  << frame_index + 1
@@ -589,12 +674,22 @@ void AVIFImageDecoder::Decode(wtf_size_t index) {
     SetFailed();
     return;
   }
+#if BUILDFLAG(ENABLE_CRABBYAVIF)
   const crabbyavif::avifImage* image = decoded_image_;
+#else
+  const avifImage* image = decoded_image_;
+#endif
 
   // ImageDecoder::SizeCalculationMayOverflow(), called by UpdateDemuxer()
   // before being here, made sure the image height fits in an int.
+#if BUILDFLAG(ENABLE_CRABBYAVIF)
   int displayable_height = static_cast<int>(
       crabbyavif::crabby_avifDecoderDecodedRowCount(decoder_.get()));
+#else
+  int displayable_height =
+      static_cast<int>(avifDecoderDecodedRowCount(decoder_.get()));
+#endif
+
   if (image == cropped_image_.get()) {
     displayable_height -= clap_origin_.y();
     displayable_height =
@@ -665,6 +760,7 @@ bool AVIFImageDecoder::CanReusePreviousFrameBuffer(wtf_size_t index) const {
   return true;
 }
 
+#if BUILDFLAG(ENABLE_CRABBYAVIF)
 // static
 crabbyavif::avifResult AVIFImageDecoder::ReadFromSegmentReader(
     crabbyavif::avifIO* io,
@@ -672,9 +768,21 @@ crabbyavif::avifResult AVIFImageDecoder::ReadFromSegmentReader(
     uint64_t offset,
     size_t size,
     crabbyavif::avifROData* out) {
+#else
+// static
+avifResult AVIFImageDecoder::ReadFromSegmentReader(avifIO* io,
+                                                   uint32_t read_flags,
+                                                   uint64_t offset,
+                                                   size_t size,
+                                                   avifROData* out) {
+#endif
   if (read_flags != 0) {
     // Unsupported read_flags
+#if BUILDFLAG(ENABLE_CRABBYAVIF)
     return crabbyavif::AVIF_RESULT_IO_ERROR;
+#else
+    return AVIF_RESULT_IO_ERROR;
+#endif
   }
 
   AvifIOData* io_data = static_cast<AvifIOData*>(io->data);
@@ -682,8 +790,13 @@ crabbyavif::avifResult AVIFImageDecoder::ReadFromSegmentReader(
   // Sanitize/clamp incoming request
   if (offset > io_data->reader->size()) {
     // The offset is past the end of the buffer or available data.
+#if BUILDFLAG(ENABLE_CRABBYAVIF)
     return io_data->all_data_received ? crabbyavif::AVIF_RESULT_IO_ERROR
                                       : crabbyavif::AVIF_RESULT_WAITING_ON_IO;
+#else
+    return io_data->all_data_received ? AVIF_RESULT_IO_ERROR
+                                      : AVIF_RESULT_WAITING_ON_IO;
+#endif
   }
 
   // It is more convenient to work with a variable of the size_t type. Since
@@ -692,7 +805,11 @@ crabbyavif::avifResult AVIFImageDecoder::ReadFromSegmentReader(
   const size_t available_size = io_data->reader->size() - position;
   if (size > available_size) {
     if (!io_data->all_data_received) {
+#if BUILDFLAG(ENABLE_CRABBYAVIF)
       return crabbyavif::AVIF_RESULT_WAITING_ON_IO;
+#else
+      return AVIF_RESULT_WAITING_ON_IO;
+#endif
     }
     size = available_size;
   }
@@ -702,7 +819,11 @@ crabbyavif::avifResult AVIFImageDecoder::ReadFromSegmentReader(
   base::span<const uint8_t> data = io_data->reader->GetSomeData(position);
   if (data.size() >= size) {
     out->data = data.data();
+#if BUILDFLAG(ENABLE_CRABBYAVIF)
     return crabbyavif::AVIF_RESULT_OK;
+#else
+    return AVIF_RESULT_OK;
+#endif
   }
 
   io_data->buffer.clear();
@@ -717,7 +838,11 @@ crabbyavif::avifResult AVIFImageDecoder::ReadFromSegmentReader(
   }
 
   out->data = io_data->buffer.data();
+#if BUILDFLAG(ENABLE_CRABBYAVIF)
   return crabbyavif::AVIF_RESULT_OK;
+#else
+  return AVIF_RESULT_OK;
+#endif
 }
 
 bool AVIFImageDecoder::UpdateDemuxer() {
@@ -732,7 +857,11 @@ bool AVIFImageDecoder::UpdateDemuxer() {
   have_parsed_current_data_ = true;
 
   if (!decoder_) {
+#if BUILDFLAG(ENABLE_CRABBYAVIF)
     decoder_.reset(crabbyavif::crabby_avifDecoderCreate());
+#else
+    decoder_.reset(avifDecoderCreate());
+#endif
     if (!decoder_) {
       return false;
     }
@@ -746,12 +875,21 @@ bool AVIFImageDecoder::UpdateDemuxer() {
     decoder_->maxThreads = 2;
 
     if (animation_option_ != AnimationOption::kUnspecified &&
+#if BUILDFLAG(ENABLE_CRABBYAVIF)
         crabbyavif::crabby_avifDecoderSetSource(
             decoder_.get(),
             animation_option_ == AnimationOption::kPreferAnimation
                 ? crabbyavif::AVIF_DECODER_SOURCE_TRACKS
                 : crabbyavif::AVIF_DECODER_SOURCE_PRIMARY_ITEM) !=
             crabbyavif::AVIF_RESULT_OK) {
+#else
+        avifDecoderSetSource(
+            decoder_.get(),
+            animation_option_ == AnimationOption::kPreferAnimation
+                ? AVIF_DECODER_SOURCE_TRACKS
+                : AVIF_DECODER_SOURCE_PRIMARY_ITEM) !=
+            AVIF_RESULT_OK) {
+#endif
       return false;
     }
 
@@ -779,13 +917,21 @@ bool AVIFImageDecoder::UpdateDemuxer() {
     avif_io_.write = nullptr;
     avif_io_.persistent = crabbyavif::CRABBY_AVIF_FALSE;
     avif_io_.data = &avif_io_data_;
+#if BUILDFLAG(ENABLE_CRABBYAVIF)
     crabbyavif::crabby_avifDecoderSetIO(decoder_.get(), &avif_io_);
+#else
+    avifDecoderSetIO(decoder_.get(), &avif_io_);
+#endif
   }
 
   // If all data is received, there is no point in decoding progressively.
   decoder_->allowProgressive = !IsAllDataReceived();
 
+#if BUILDFLAG(ENABLE_CRABBYAVIF)
   auto ret = crabbyavif::crabby_avifDecoderParse(decoder_.get());
+#else
+  auto ret = static_cast<crabbyavif::avifResult>(avifDecoderParse(decoder_.get()));
+#endif
   if (ret == crabbyavif::AVIF_RESULT_WAITING_ON_IO) {
     return true;
   }
@@ -823,8 +969,13 @@ bool AVIFImageDecoder::UpdateDemuxer() {
   }
 
   DCHECK_GT(decoder_->imageCount, 0);
+#if BUILDFLAG(ENABLE_CRABBYAVIF)
   progressive_ =
       decoder_->progressiveState == crabbyavif::AVIF_PROGRESSIVE_STATE_ACTIVE;
+#else
+  progressive_ =
+      decoder_->progressiveState == AVIF_PROGRESSIVE_STATE_ACTIVE;
+#endif
   // If the image is progressive, decoder_->imageCount is the number of
   // progressive frames, but there is only one still image.
   decoded_frame_count_ = progressive_ ? 1 : decoder_->imageCount;
@@ -846,12 +997,17 @@ bool AVIFImageDecoder::UpdateDemuxer() {
   // Assert that after crabbyavif::crabby_avifDecoderParse() returns
   // crabbyavif::AVIF_RESULT_OK, decoder_->image->yuvFormat (the same as
   // container->yuvFormat) is one of the four YUV formats in AV1.
-  CHECK(container->yuvFormat >= crabbyavif::AVIF_PIXEL_FORMAT_YUV444 &&
-        container->yuvFormat <= crabbyavif::AVIF_PIXEL_FORMAT_YUV400)
+  CHECK(static_cast<unsigned>(container->yuvFormat) >= crabbyavif::AVIF_PIXEL_FORMAT_YUV444 &&
+        static_cast<unsigned>(container->yuvFormat) <= crabbyavif::AVIF_PIXEL_FORMAT_YUV400)
       << "Invalid YUV format: " << container->yuvFormat;
-  avif_yuv_format_ = container->yuvFormat;
+  avif_yuv_format_ = static_cast<crabbyavif::avifPixelFormat>(container->yuvFormat);
+#if BUILDFLAG(ENABLE_CRABBYAVIF)
   crabbyavif::avifPixelFormatInfo format_info;
   crabbyavif::crabby_avifGetPixelFormatInfo(container->yuvFormat, &format_info);
+#else
+  avifPixelFormatInfo format_info;
+  avifGetPixelFormatInfo(container->yuvFormat, &format_info);
+#endif
   chroma_shift_x_ = format_info.chromaShiftX;
   chroma_shift_y_ = format_info.chromaShiftY;
 
@@ -877,7 +1033,7 @@ bool AVIFImageDecoder::UpdateDemuxer() {
       }
       uint32_t data_color_space = profile->GetProfile()->data_color_space;
       const bool is_mono =
-          container->yuvFormat == crabbyavif::AVIF_PIXEL_FORMAT_YUV400;
+          static_cast<crabbyavif::avifPixelFormat>(container->yuvFormat) == crabbyavif::AVIF_PIXEL_FORMAT_YUV400;
       if (is_mono) {
         if (data_color_space != skcms_Signature_Gray &&
             data_color_space != skcms_Signature_RGB) {
@@ -894,10 +1050,16 @@ bool AVIFImageDecoder::UpdateDemuxer() {
         return false;
       }
       SetEmbeddedColorProfile(std::move(profile));
+#if BUILDFLAG(ENABLE_CRABBYAVIF)
     } else if (container->colorPrimaries !=
                    crabbyavif::AVIF_COLOR_PRIMARIES_UNSPECIFIED ||
                container->transferCharacteristics !=
                    crabbyavif::AVIF_TRANSFER_CHARACTERISTICS_UNSPECIFIED) {
+#else
+    } else if (container->colorPrimaries != AVIF_COLOR_PRIMARIES_UNSPECIFIED ||
+               container->transferCharacteristics !=
+                   AVIF_TRANSFER_CHARACTERISTICS_UNSPECIFIED) {
+#endif
       gfx::ColorSpace frame_cs = GetColorSpace(container);
 
       sk_sp<SkColorSpace> sk_color_space =
@@ -963,10 +1125,17 @@ bool AVIFImageDecoder::UpdateDemuxer() {
   allow_decode_to_yuv_ =
       avif_yuv_format_ != crabbyavif::AVIF_PIXEL_FORMAT_YUV400 &&
       !decoder_->alphaPresent && decoded_frame_count_ == 1 &&
+#if BUILDFLAG(ENABLE_CRABBYAVIF)
       container->matrixCoefficients !=
           crabbyavif::AVIF_MATRIX_COEFFICIENTS_YCGCO_RE &&
       container->matrixCoefficients !=
           crabbyavif::AVIF_MATRIX_COEFFICIENTS_YCGCO_RO &&
+#else
+      container->matrixCoefficients !=
+          AVIF_MATRIX_COEFFICIENTS_YCGCO_RE &&
+      container->matrixCoefficients !=
+          AVIF_MATRIX_COEFFICIENTS_YCGCO_RO &&
+#endif
       GetColorSpace(container).ToSkYUVColorSpace(container->depth,
                                                  &yuv_color_space_) &&
       // TODO(crbug.com/911246): Support color space transforms for YUV decodes.
@@ -987,12 +1156,21 @@ bool AVIFImageDecoder::UpdateDemuxer() {
   // If the image is cropped, pass the size of the cropped image (the clean
   // aperture) to SetSize().
   if (container->transformFlags & crabbyavif::AVIF_TRANSFORM_CLAP) {
+#if BUILDFLAG(ENABLE_CRABBYAVIF)
     crabbyavif::avifCropRect crop_rect;
     crabbyavif::avifDiagnostics diag;
     crabbyavif::avifBool valid_clap =
         crabbyavif::crabby_avifCropRectConvertCleanApertureBox(
             &crop_rect, &container->clap, container->width, container->height,
             container->yuvFormat, &diag);
+#else
+    avifCropRect crop_rect;
+    avifDiagnostics diag;
+    avifBool valid_clap =
+        avifCropRectConvertCleanApertureBox(
+            &crop_rect, &container->clap, container->width, container->height,
+            container->yuvFormat, &diag);
+#endif
     if (!valid_clap) {
       DVLOG(1) << "Invalid 'clap' property: " << diag.error
                << "; showing the full image.";
@@ -1015,8 +1193,12 @@ bool AVIFImageDecoder::UpdateDemuxer() {
 }
 
 crabbyavif::avifResult AVIFImageDecoder::DecodeImage(wtf_size_t index) {
+#if BUILDFLAG(ENABLE_CRABBYAVIF)
   const auto ret =
       crabbyavif::crabby_avifDecoderNthImage(decoder_.get(), index);
+#else
+  const auto ret = static_cast<crabbyavif::avifResult>(avifDecoderNthImage(decoder_.get(), index));
+#endif
   if (ret != crabbyavif::AVIF_RESULT_OK &&
       ret != crabbyavif::AVIF_RESULT_WAITING_ON_IO) {
     DVLOG(1) << "crabbyavif::crabby_avifDecoderNthImage(" << index
@@ -1040,7 +1222,7 @@ crabbyavif::avifResult AVIFImageDecoder::DecodeImage(wtf_size_t index) {
     return crabbyavif::AVIF_RESULT_UNKNOWN_ERROR;
   }
   // Frame YUV format must be equal to container YUV format.
-  if (image->yuvFormat != avif_yuv_format_) {
+  if (static_cast<crabbyavif::avifPixelFormat>(image->yuvFormat) != avif_yuv_format_) {
     DVLOG(1) << "Frame YUV format must be equal to container YUV format";
     return crabbyavif::AVIF_RESULT_UNKNOWN_ERROR;
   }
@@ -1060,21 +1242,37 @@ crabbyavif::avifResult AVIFImageDecoder::DecodeImage(wtf_size_t index) {
 
 void AVIFImageDecoder::CropDecodedImage() {
   DCHECK_NE(decoded_image_, cropped_image_.get());
+#if BUILDFLAG(ENABLE_CRABBYAVIF)
   if (!cropped_image_) {
     cropped_image_.reset(crabbyavif::crabby_avifImageCreateEmpty());
   }
   crabbyavif::avifCropRect rect;
+#else
+  if (!cropped_image_) {
+    cropped_image_.reset(avifImageCreateEmpty());
+  }
+  avifCropRect rect;
+#endif
   rect.x = clap_origin_.x();
   rect.y = clap_origin_.y();
   rect.width = Size().width();
   rect.height = Size().height();
+#if BUILDFLAG(ENABLE_CRABBYAVIF)
   const crabbyavif::avifResult result = crabbyavif::crabby_avifImageSetViewRect(
       cropped_image_.get(), decoded_image_, &rect);
+#else
+  const crabbyavif::avifResult result = static_cast<crabbyavif::avifResult>(avifImageSetViewRect(
+      cropped_image_.get(), decoded_image_, &rect));
+#endif
   CHECK_EQ(result, crabbyavif::AVIF_RESULT_OK);
   decoded_image_ = cropped_image_.get();
 }
 
+#if BUILDFLAG(ENABLE_CRABBYAVIF)
 bool AVIFImageDecoder::RenderImage(const crabbyavif::avifImage* image,
+#else
+bool AVIFImageDecoder::RenderImage(const avifImage* image,
+#endif
                                    int from_row,
                                    int* to_row,
                                    ImageFrame* buffer) {
@@ -1111,7 +1309,7 @@ bool AVIFImageDecoder::RenderImage(const crabbyavif::avifImage* image,
 
   const bool use_libyuv_bilinear_upsampling =
       !decode_to_half_float_ &&
-      image->yuvFormat == crabbyavif::AVIF_PIXEL_FORMAT_YUV420;
+      static_cast<crabbyavif::avifPixelFormat>(image->yuvFormat) == crabbyavif::AVIF_PIXEL_FORMAT_YUV420;
   const bool save_top_row = use_libyuv_bilinear_upsampling && from_row > 0;
   const bool postpone_bottom_row =
       use_libyuv_bilinear_upsampling &&
@@ -1134,6 +1332,7 @@ bool AVIFImageDecoder::RenderImage(const crabbyavif::avifImage* image,
   }
 
   // Focus |image| on rows [from_row, *to_row).
+#if BUILDFLAG(ENABLE_CRABBYAVIF)
   std::unique_ptr<crabbyavif::avifImage,
                   decltype(&crabbyavif::crabby_avifImageDestroy)>
       view(nullptr, crabbyavif::crabby_avifImageDestroy);
@@ -1150,6 +1349,22 @@ bool AVIFImageDecoder::RenderImage(const crabbyavif::avifImage* image,
 
   crabbyavif::avifRGBImage rgb_image;
   crabbyavif::crabby_avifRGBImageSetDefaults(&rgb_image, image);
+#else
+  std::unique_ptr<avifImage, decltype(&avifImageDestroy)>
+      view(nullptr, avifImageDestroy);
+  if (from_row > 0 || static_cast<uint32_t>(*to_row) < image->height) {
+    const avifCropRect rect = {
+        0, static_cast<uint32_t>(from_row), image->width,
+        static_cast<uint32_t>(*to_row - from_row)};
+    view.reset(avifImageCreateEmpty());
+    const avifResult result = avifImageSetViewRect(view.get(), image, &rect);
+    CHECK_EQ(result, AVIF_RESULT_OK);
+    image = view.get();
+  }
+
+  avifRGBImage rgb_image;
+  avifRGBImageSetDefaults(&rgb_image, image);
+#endif
 
   if (decode_to_half_float_) {
     rgb_image.depth = 16;
@@ -1159,7 +1374,11 @@ bool AVIFImageDecoder::RenderImage(const crabbyavif::avifImage* image,
     rgb_image.rowBytes = image->width * sizeof(uint64_t);
     // When decoding to half float, the pixel ordering is always RGBA on all
     // platforms.
+#if BUILDFLAG(ENABLE_CRABBYAVIF)
     rgb_image.format = crabbyavif::AVIF_RGB_FORMAT_RGBA;
+#else
+    rgb_image.format = AVIF_RGB_FORMAT_RGBA;
+#endif
   } else {
     rgb_image.depth = 8;
     rgb_image.pixels = reinterpret_cast<uint8_t*>(buffer->GetAddr(0, from_row));
@@ -1169,11 +1388,19 @@ bool AVIFImageDecoder::RenderImage(const crabbyavif::avifImage* image,
     static_assert(SK_B32_SHIFT == 16 - SK_R32_SHIFT);
     static_assert(SK_G32_SHIFT == 8);
     static_assert(SK_A32_SHIFT == 24);
+#if BUILDFLAG(ENABLE_CRABBYAVIF)
 #if SK_B32_SHIFT
     rgb_image.format = crabbyavif::AVIF_RGB_FORMAT_RGBA;
 #else
     rgb_image.format = crabbyavif::AVIF_RGB_FORMAT_BGRA;
-#endif
+#endif  // SK_B32_SHIFT
+#else
+#if SK_B32_SHIFT
+    rgb_image.format = AVIF_RGB_FORMAT_RGBA;
+#else
+    rgb_image.format = AVIF_RGB_FORMAT_BGRA;
+#endif  // SK_B32_SHIFT
+#endif  // BUILDFLAG(ENABLE_CRABBYAVIF)
   }
   rgb_image.alphaPremultiplied = buffer->PremultiplyAlpha();
   rgb_image.maxThreads = decoder_->maxThreads;
@@ -1183,8 +1410,12 @@ bool AVIFImageDecoder::RenderImage(const crabbyavif::avifImage* image,
     UNSAFE_TODO(memcpy(previous_last_decoded_row_.data(), rgb_image.pixels,
                        rgb_image.rowBytes));
   }
+#if BUILDFLAG(ENABLE_CRABBYAVIF)
   const crabbyavif::avifResult result =
       crabbyavif::crabby_avifImageYUVToRGB(image, &rgb_image);
+#else
+  const auto result = static_cast<crabbyavif::avifResult>(avifImageYUVToRGB(image, &rgb_image));
+#endif
   if (save_top_row) {
     UNSAFE_TODO(memcpy(rgb_image.pixels, previous_last_decoded_row_.data(),
                        rgb_image.rowBytes));
@@ -1234,7 +1465,11 @@ bool AVIFImageDecoder::GetGainmapInfoAndData(
   if (!decoder_->image->gainMap) {
     return false;
   }
+#if BUILDFLAG(ENABLE_CRABBYAVIF)
   const crabbyavif::avifGainMap& gain_map = *decoder_->image->gainMap;
+#else
+  const avifGainMap& gain_map = *decoder_->image->gainMap;
+#endif
   if (gain_map.baseHdrHeadroom.d == 0 || gain_map.alternateHdrHeadroom.d == 0) {
     DVLOG(1) << "Invalid gainmap metadata: a denominator value is zero";
     return false;
@@ -1298,7 +1533,11 @@ bool AVIFImageDecoder::GetGainmapInfoAndData(
   return true;
 }
 
+#if BUILDFLAG(ENABLE_CRABBYAVIF)
 crabbyavif::avifImage* AVIFImageDecoder::GetDecoderImage() const {
+#else
+avifImage* AVIFImageDecoder::GetDecoderImage() const {
+#endif
   if (aux_image_ == cc::AuxImage::kGainmap) {
     if (!decoder_->image->gainMap) {
       DVLOG(1) << "Attempted to access gain map image, but gainMap is nullptr";

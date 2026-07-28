@@ -86,7 +86,11 @@ component("image_decoders") {
       "avif/avif_image_decoder.h",
     ]
 
-    deps += [ "//third_party/crabbyavif" ]
+    if (enable_crabbyavif) {
+      deps += [ "//third_party/crabbyavif" ]
+    } else {
+      deps += [ "//third_party/libavif" ]
+    }
   }
 
   if (enable_jxl_decoder) {
