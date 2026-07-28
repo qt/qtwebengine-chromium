@@ -18,12 +18,13 @@
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkColorType.h"
 #include "third_party/skia/include/core/SkUnPreMultiply.h"
+#include "third_party/skia/include/encode/SkPngEncoder.h"
+#include "third_party/skia/include/encode/SkPngRustEncoder.h"
 #include "ui/gfx/codec/vector_wstream.h"
 #include "ui/gfx/geometry/size.h"
 
 #if BUILDFLAG(SKIA_BUILD_RUST_PNG)
 #include "third_party/skia/include/codec/SkPngRustDecoder.h"
-#include "third_party/skia/include/encode/SkPngRustEncoder.h"
 #endif
 
 namespace gfx {
@@ -180,7 +181,8 @@ SkBitmap PNGCodec::Decode(base::span<const uint8_t> input) {
 
 namespace {
 
-void AddComments(SkPngRustEncoder::Options& options,
+template<typename T>
+void AddComments(T& options,
                  const std::vector<PNGCodec::Comment>& comments) {
   std::vector<const char*> comment_pointers;
   std::vector<size_t> comment_sizes;
@@ -202,12 +204,21 @@ std::optional<std::vector<uint8_t>> EncodeSkPixmap(
   std::vector<uint8_t> output;
   VectorWStream dst(&output);
 
+#if BUILDFLAG(SKIA_BUILD_RUST_PNG)
   SkPngRustEncoder::Options options;
   AddComments(options, comments);
   options.fCompressionLevel = compression_level;
   if (!SkPngRustEncoder::Encode(&dst, src, options)) {
     return std::nullopt;
   }
+#else
+  SkPngEncoder::Options options;
+  AddComments(options, comments);
+  options.fZLibLevel = SkPngRustEncoder::ConvertToZLibLevel(compression_level);
+  if (!SkPngEncoder::Encode(&dst, src, options)) {
+    return std::nullopt;
+  }
+#endif
 
   return output;
 }

@@ -47,7 +47,9 @@
 #include <objbase.h>
 // clang-format on
 
+#include "skia/buildflags.h"
 #include "third_party/skia/include/docs/SkXPSDocument.h"
+#include "third_party/skia/include/encode/SkPngEncoder.h"
 #include "third_party/skia/include/encode/SkPngRustEncoder.h"
 #endif  // BUILDFLAG(IS_WIN)
 
@@ -407,9 +409,15 @@ sk_sp<SkDocument> MakeXpsDocument(SkWStream* stream) {
   }
 
   SkXPS::Options opts;
+#if BUILDFLAG(SKIA_BUILD_RUST_PNG)
   opts.pngEncoder = [](SkWStream* dst, const SkPixmap& src) {
     return SkPngRustEncoder::Encode(dst, src, {});
   };
+#else
+  opts.pngEncoder = [](SkWStream* dst, const SkPixmap& src) {
+    return SkPngEncoder::Encode(dst, src, {});
+  };
+#endif
   return SkXPS::MakeDocument(stream, factory, opts);
 }
 #endif

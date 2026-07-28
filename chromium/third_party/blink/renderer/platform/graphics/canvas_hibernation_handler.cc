@@ -34,7 +34,11 @@
 #include "third_party/blink/renderer/platform/wtf/functional.h"
 #include "third_party/blink/renderer/platform/wtf/hash_set.h"
 #include "third_party/skia/include/codec/SkCodec.h"
+#if BUILDFLAG(SKIA_BUILD_RUST_PNG)
 #include "third_party/skia/include/codec/SkPngRustDecoder.h"
+#else
+#include "third_party/skia/include/codec/SkPngDecoder.h"
+#endif
 #include "third_party/skia/include/core/SkAlphaType.h"
 #include "third_party/skia/include/core/SkData.h"
 #include "third_party/skia/include/core/SkImage.h"
@@ -335,13 +339,22 @@ sk_sp<SkImage> CanvasHibernationHandler::GetImage() {
     }
   }
 
+#if BUILDFLAG(SKIA_BUILD_RUST_PNG)
   CHECK(SkPngRustDecoder::IsPng(png_data->data(), png_data->size()));
+#else
+  CHECK(SkPngDecoder::IsPng(png_data->data(), png_data->size()));
+#endif
 
   base::TimeTicks before = base::TimeTicks::Now();
   // Note: not discarding the encoded image.
   sk_sp<SkImage> image = nullptr;
+#if BUILDFLAG(SKIA_BUILD_RUST_PNG)
   std::unique_ptr<SkCodec> codec = SkPngRustDecoder::Decode(
       std::make_unique<SkMemoryStream>(std::move(png_data)), nullptr);
+#else
+  std::unique_ptr<SkCodec> codec = SkPngDecoder::Decode(
+      std::make_unique<SkMemoryStream>(std::move(png_data)), nullptr);
+#endif
   if (codec) {
     image = std::get<0>(codec->getImage());
   }

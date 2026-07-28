@@ -395,15 +395,15 @@ component("skia") {
 
   if (enable_rust_png) {
     deps += [ ":rust_png_ffi" ]
- #   public += skia_encode_rust_png_public
+    public += skia_encode_rust_png_public
     public += skia_encode_png_public
     sources += skia_codec_rust_png
     sources += skia_encode_rust_png_srcs
   } else {
- #   public += skia_encode_rust_png_public
- #   public += skia_encode_png_public
-   # sources += skia_codec_libpng_srcs
-  #  sources += skia_encode_libpng_srcs
+    deps += [ "//third_party/libpng" ]
+    public += skia_encode_png_public
+    sources += skia_codec_libpng_srcs
+    sources += skia_encode_libpng_srcs
   }
 
   if (skia_support_xmp) {

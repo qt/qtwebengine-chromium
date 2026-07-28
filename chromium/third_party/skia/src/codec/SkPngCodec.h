@@ -39,6 +39,8 @@ public:
 
     bool onGetGainmapInfo(SkGainmapInfo*) override;
 
+    bool onGetFrameInfo(int, FrameInfo*) const override;
+
     ~SkPngCodec() override;
 
 protected:

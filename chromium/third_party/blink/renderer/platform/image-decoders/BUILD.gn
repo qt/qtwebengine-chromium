@@ -93,19 +93,16 @@ component("image_decoders") {
     }
   }
 
+  if (!enable_rust_png) {
+    deps += [ "//third_party/libpng" ]
+  }
+
   if (enable_jxl_decoder) {
     sources += [
       "jxl/jxl_image_decoder.cc",
       "jxl/jxl_image_decoder.h",
     ]
     deps += [ "//third_party/rust/jxl/v0_3/wrapper:jxl_rs" ]
-  }
-
-  if (enable_rust_png) {
-#    sources += [
-#      "png/skia_png_rust_image_decoder.cc",
-#      "png/skia_png_rust_image_decoder.h",
-#    ]
   }
 }
 

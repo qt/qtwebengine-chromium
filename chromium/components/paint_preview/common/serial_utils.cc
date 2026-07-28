@@ -9,13 +9,18 @@
 #include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
 #include "components/paint_preview/common/subset_font.h"
+#include "skia/buildflags.h"
 #include "skia/ext/codec_utils.h"
 #include "skia/ext/font_utils.h"
 #include "third_party/skia/include/codec/SkBmpDecoder.h"
 #include "third_party/skia/include/codec/SkCodec.h"
 #include "third_party/skia/include/codec/SkGifDecoder.h"
 #include "third_party/skia/include/codec/SkJpegDecoder.h"
+#if BUILDFLAG(SKIA_BUILD_RUST_PNG)
 #include "third_party/skia/include/codec/SkPngRustDecoder.h"
+#else
+#include "third_party/skia/include/codec/SkPngDecoder.h"
+#endif
 #include "third_party/skia/include/codec/SkWebpDecoder.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkData.h"
@@ -126,7 +131,11 @@ static bool is_supported_codec(sk_sp<const SkData> data) {
   CHECK(data);
   return SkBmpDecoder::IsBmp(data->data(), data->size()) ||
          SkGifDecoder::IsGif(data->data(), data->size()) ||
+#if BUILDFLAG(SKIA_BUILD_RUST_PNG)
          SkPngRustDecoder::IsPng(data->data(), data->size()) ||
+#else
+         SkPngDecoder::IsPng(data->data(), data->size()) ||
+#endif
          SkJpegDecoder::IsJpeg(data->data(), data->size()) ||
          SkWebpDecoder::IsWebp(data->data(), data->size());
 }
@@ -193,10 +202,16 @@ sk_sp<SkImage> DeserializeImage(const void* bytes, size_t length, void*) {
         codec->getInfo().makeAlphaType(kPremul_SkAlphaType);
     return std::get<0>(codec->getImage(targetInfo));
   };
+#if BUILDFLAG(SKIA_BUILD_RUST_PNG)
   if (SkPngRustDecoder::IsPng(bytes, length)) {
     return get_image(SkPngRustDecoder::Decode(
         std::make_unique<SkMemoryStream>(std::move(data)), nullptr));
   }
+#else
+  if (SkPngDecoder::IsPng(bytes, length)) {
+    return get_image(SkPngDecoder::Decode(data, nullptr));
+  }
+#endif
   if (SkBmpDecoder::IsBmp(bytes, length)) {
     return get_image(SkBmpDecoder::Decode(data, nullptr));
   }

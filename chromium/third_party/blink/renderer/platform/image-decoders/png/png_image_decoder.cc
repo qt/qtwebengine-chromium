@@ -4,7 +4,10 @@
 
 #include "third_party/blink/renderer/platform/image-decoders/png/png_image_decoder.h"
 
+#include "base/feature_list.h"
+#include "skia/buildflags.h"
 #include "third_party/blink/renderer/platform/wtf/text/atomic_string.h"
+#include "third_party/skia/include/codec/SkPngDecoder.h"
 #include "third_party/skia/include/codec/SkPngRustDecoder.h"
 #include "third_party/skia/include/core/SkStream.h"
 
@@ -24,8 +27,13 @@ const AtomicString& PngImageDecoder::MimeType() const {
 std::unique_ptr<SkCodec> PngImageDecoder::OnCreateSkCodec(
     std::unique_ptr<SkStream> stream,
     SkCodec::Result* result) {
+#if BUILDFLAG(SKIA_BUILD_RUST_PNG)
   std::unique_ptr<SkCodec> codec =
       SkPngRustDecoder::Decode(std::move(stream), result);
+#else
+  std::unique_ptr<SkCodec> codec =
+      SkPngDecoder::Decode(std::move(stream), result);
+#endif
   return codec;
 }
 

@@ -69,6 +69,7 @@
 #include "third_party/skia/include/core/SkStream.h"
 #include "third_party/skia/include/docs/SkMultiPictureDocument.h"
 #include "third_party/skia/include/docs/SkXPSDocument.h"
+#include "third_party/skia/include/encode/SkPngEncoder.h"
 #include "third_party/skia/include/encode/SkPngRustEncoder.h"
 #include "ui/events/base_event_utils.h"
 #include "ui/gfx/ca_layer_result.h"
@@ -592,7 +593,11 @@ static sk_sp<SkDocument> MakeXPSDocument(SkWStream* s) {
 
   SkXPS::Options opts;
   opts.pngEncoder = [](SkWStream* dst, const SkPixmap& src) {
+#if BUILDFLAG(SKIA_BUILD_RUST_PNG)
     return SkPngRustEncoder::Encode(dst, src, {});
+#else
+    return SkPngEncoder::Encode(dst, src, {});
+#endif
   };
   return SkXPS::MakeDocument(s, factory.Get(), opts);
 }
