@@ -28,6 +28,7 @@
 #if BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_LINUX)
 #include "third_party/skia/include/ports/SkFontConfigInterface.h"
 #include "third_party/skia/include/ports/SkFontMgr_FontConfigInterface.h"
+#include "third_party/skia/include/ports/SkFontScanner_FreeType.h"
 #include "third_party/skia/include/ports/SkFontScanner_Fontations.h"
 #endif
 

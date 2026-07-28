@@ -5,7 +5,11 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_FONTS_OPENTYPE_FONT_FORMAT_CHECK_H_
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_FONTS_OPENTYPE_FONT_FORMAT_CHECK_H_
 
+#include "skia/buildflags.h"
+
+#if BUILDFLAG(SKIA_USE_FONTATIONS)
 #include "third_party/blink/renderer/platform/fonts/opentype/format_check.rs.h"
+#endif
 #include "third_party/blink/renderer/platform/platform_export.h"
 #include "third_party/blink/renderer/platform/wtf/allocator/allocator.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
@@ -48,7 +52,12 @@ class PLATFORM_EXPORT FontFormatCheck {
   enum class COLRVersion { kCOLRV0, kCOLRV1, kNoCOLR };
 
  private:
+#if BUILDFLAG(SKIA_USE_FONTATIONS)
   rust::Box<font_format_check::FontFormatInfo> format_info_;
+#else
+  TableTagsVector table_tags_;
+  COLRVersion colr_version_ = COLRVersion::kNoCOLR;
+#endif
 };
 
 }  // namespace blink

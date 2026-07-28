@@ -11,6 +11,7 @@ import("//build/config/ml.gni")
 import("//build/config/ui.gni")
 import("//build/nocompile.gni")
 import("//media/media_options.gni")
+import("//skia/features.gni")
 import("//testing/libfuzzer/fuzzer_test.gni")
 import("//testing/test.gni")
 import("//third_party/blink/public/public_features.gni")
@@ -181,6 +182,7 @@ group("make_platform_generated") {
   ]
 }
 
+if (skia_use_fontations) {
 rust_static_library("font_format_check") {
   allow_unsafe = true  # Needed for FFI that underpins the `cxx` crate.
   crate_root = "fonts/opentype/format_check.rs"
@@ -191,6 +193,7 @@ rust_static_library("font_format_check") {
     "//third_party/rust/read_fonts/v0_37:lib",
     "//third_party/rust/skrifa/v0_40:lib",
   ]
+}
 }
 
 import("//build/config/pch.gni")
@@ -1876,6 +1879,12 @@ jumbo_component("platform") {
     "//ui/gl:buildflags",
     "//ui/native_theme",
   ]
+
+  if (!skia_use_fontations) {
+    deps -= [
+      ":font_format_check",
+    ]
+  }
 
   if (!use_ml) {
     deps -= [
