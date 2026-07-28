@@ -97,6 +97,13 @@ component("image_decoders") {
     deps += [ "//third_party/libpng" ]
   }
 
+  if (!enable_rust) {
+    sources -= [
+      "bmp/bmp_rust_image_decoder.cc",
+      "bmp/bmp_rust_image_decoder.h",
+    ]
+  }
+
   if (enable_jxl_decoder) {
     sources += [
       "jxl/jxl_image_decoder.cc",

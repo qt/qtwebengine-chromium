@@ -356,7 +356,9 @@
 #include "third_party/blink/renderer/core/view_transition/view_transition_supplement.h"
 #include "third_party/blink/renderer/core/view_transition/view_transition_utils.h"
 #include "third_party/blink/renderer/core/xml/parser/xml_document_parser.h"
+#if BUILDFLAG(ENABLE_RUST)
 #include "third_party/blink/renderer/core/xml/parser/xml_document_parser_rs.h"
+#endif
 #include "third_party/blink/renderer/core/xml_names.h"
 #include "third_party/blink/renderer/core/xmlns_names.h"
 #include "third_party/blink/renderer/platform/bindings/dom_data_store.h"
@@ -3588,17 +3590,22 @@ DocumentParser* Document::CreateParser() {
     // length of documents on average.
     data_->xml_parser_start_time_ = base::TimeTicks::Now();
 
+#if BUILDFLAG(ENABLE_RUST)
     if (RuntimeEnabledFeatures::XMLRustForNonXsltEnabled()) {
       data_->using_rust_xml_parser_ = true;
       return MakeGarbageCollected<XMLDocumentParserRs>(*this, View());
     }
+#endif
   }
 
+#if BUILDFLAG(ENABLE_RUST)
   // FIXME: this should probably pass the frame instead
   if (RuntimeEnabledFeatures::XMLParsingRustEnabled()) {
     data_->using_rust_xml_parser_ = true;
     return MakeGarbageCollected<XMLDocumentParserRs>(*this, View());
-  } else {
+  } else
+#endif
+  {
     return MakeGarbageCollected<XMLDocumentParser>(*this, View());
   }
 }

@@ -236,6 +236,7 @@ blink_python_runner("make_deprecation_info") {
   ]
 }
 
+if (enable_rust) {
 rust_static_library("xml_ffi") {
   allow_unsafe = true  # Needed for FFI that underpins the `cxx` crate.
   crate_root = "xml/parser/xml_ffi.rs"
@@ -249,6 +250,7 @@ rust_static_library("xml_ffi") {
     "//third_party/rust/cxx/v1:lib",
     "//third_party/rust/xml/v1:lib",
   ]
+}
 }
 
 jumbo_component("core") {
@@ -442,6 +444,19 @@ jumbo_component("core") {
     "//ui/strings",
   ]
 
+  if (!enable_rust) {
+    deps -= [
+      ":xml_ffi",
+      "//third_party/rust/xml/v1:lib",
+    ]
+    sources -= rebase_path([
+      "parser/xml_document_parser_rs.cc",
+      "parser/xml_document_parser_rs.h",
+      "parser/xml_ffi_callbacks.cc",
+      "parser/xml_ffi_callbacks.h",
+    ], "", "xml")
+  }
+
   if (is_mac) {
     deps += [ "//ui/base/mojom" ]
   }
@@ -526,6 +541,12 @@ blink_core_sources("core_hot") {
     "//third_party/blink/renderer/core/exported",
     "//third_party/blink/renderer/core/probe",
   ]
+
+  if (!enable_rust) {
+    deps -= [
+      ":xml_ffi",
+    ]
+  }
 
   if (enable_vectorized_html_scanning) {
     deps += [ "//third_party/highway:libhwy" ]

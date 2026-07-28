@@ -526,6 +526,15 @@ component("skia") {
     ":skia_core_public_headers",
   ]
 
+  if (!enable_rust) {
+    deps -= [
+      ":rust_common_ffi",
+    ]
+    public_deps -= [
+      ":rust_bmp_ffi",
+    ]
+  }
+
   if (use_blink) {
     deps += [ "//third_party:jpeg" ]
 
