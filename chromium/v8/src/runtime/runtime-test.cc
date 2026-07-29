@@ -229,7 +229,8 @@ RUNTIME_FUNCTION(Runtime_DeoptimizeFunction) {
   }
 
   if (function->HasAttachedOptimizedCode(isolate)) {
-    Deoptimizer::DeoptimizeFunction(*function, LazyDeoptimizeReason::kTesting);
+    Deoptimizer::DeoptimizeFunction(*function, LazyDeoptimizeReason::kTesting,
+                                    function->code(isolate));
   }
 
   return ReadOnlyRoots(isolate).undefined_value();
@@ -246,7 +247,8 @@ RUNTIME_FUNCTION(Runtime_DeoptimizeNow) {
   if (function.is_null()) return CrashUnlessFuzzing(isolate);
 
   if (function->HasAttachedOptimizedCode(isolate)) {
-    Deoptimizer::DeoptimizeFunction(*function, LazyDeoptimizeReason::kTesting);
+    Deoptimizer::DeoptimizeFunction(*function, LazyDeoptimizeReason::kTesting,
+                                    function->code(isolate));
   }
 
   return ReadOnlyRoots(isolate).undefined_value();
