@@ -937,9 +937,6 @@ void PhysicalDevice::SetupBackendDeviceToggles(dawn::platform::Platform* platfor
     }
 
     if (IsIntelMesa()) {
-        // chromium:448873316: Non-scalar (vector) saturate from uniform fails.
-        deviceToggles->Default(Toggle::SaturateAsMinMaxF16, true);
-
         // Polyfill a clamp of `id` param in subgroupShuffle to follow spec limitations.
         // See crbug.com/435246627
         deviceToggles->Default(Toggle::SubgroupShuffleClamped, true);
@@ -1174,7 +1171,7 @@ bool PhysicalDevice::MayBeArmProprietary() const {
 }
 
 bool PhysicalDevice::MayBeQualcommProprietary() const {
-    if (!gpu_info::IsQualcommPCI(GetVendorId())) {
+    if (!gpu_info::IsQualcomm_PCI(GetVendorId())) {
         return false;
     }
 
