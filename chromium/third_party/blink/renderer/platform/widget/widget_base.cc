@@ -683,7 +683,11 @@ void WidgetBase::OnCommitRequested() {
 }
 
 void WidgetBase::DidBeginMainFrame() {
+  base::WeakPtr<WidgetBase> weak_this = weak_ptr_factory_.GetWeakPtr();
   UpdateTextInputState();
+  if (!weak_this) {
+    return;
+  }
   client_->DidBeginMainFrame();
 }
 
@@ -1295,6 +1299,7 @@ void WidgetBase::ClearTextInputState() {
 }
 
 void WidgetBase::ShowVirtualKeyboardOnElementFocus() {
+  base::WeakPtr<WidgetBase> weak_this = weak_ptr_factory_.GetWeakPtr();
 #if BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_IOS_TVOS)
   // On ChromeOS, virtual keyboard is triggered only when users leave the
   // mouse button or the finger and a text input element is focused at that
@@ -1306,6 +1311,9 @@ void WidgetBase::ShowVirtualKeyboardOnElementFocus() {
 #else
   ShowVirtualKeyboard();
 #endif
+  if (!weak_this) {
+    return;
+  }
 
 // TODO(rouslan): Fix ChromeOS and Windows 8 behavior of autofill popup with
 // virtual keyboard.
