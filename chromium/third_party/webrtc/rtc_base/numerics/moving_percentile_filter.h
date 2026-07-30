@@ -67,7 +67,7 @@ MovingPercentileFilter<T>::MovingPercentileFilter(float percentile,
     : percentile_filter_(percentile),
       samples_stored_(0),
       window_size_(window_size) {
-  RTC_CHECK_GT(window_size, 0);
+  RTC_CHECK_GT((uint32_t)window_size, 0);
 }
 
 template <typename T>
