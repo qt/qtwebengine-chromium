@@ -448,6 +448,12 @@ void WindowEventDispatcher::UpdateCapture(Window* old_capture,
   // Block the deletion of the root window, its host thus this dispatcher.
   Window::ScopedDeleteBlocker root_window_blocker(window());
 
+  std::unique_ptr<Window::ScopedDeleteBlocker> new_capture_blocker;
+  if (new_capture) {
+    new_capture_blocker =
+        std::make_unique<Window::ScopedDeleteBlocker>(new_capture);
+  }
+
   if (old_capture && old_capture->GetRootWindow() == window() &&
       old_capture->delegate()) {
     // Send a capture changed event with the most recent mouse screen location.

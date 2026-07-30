@@ -8,6 +8,7 @@
 #include <set>
 
 #include "base/memory/raw_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "ui/aura/client/capture_client.h"
 #include "ui/views/views_export.h"
@@ -58,7 +59,7 @@ class VIEWS_EXPORT DesktopCaptureClient : public aura::client::CaptureClient {
   using ClientSet = std::set<base::WeakPtr<DesktopCaptureClient>, Comparator>;
 
   raw_ptr<aura::Window> root_;
-  raw_ptr<aura::Window> capture_window_ = nullptr;
+  base::WeakPtr<aura::Window> capture_window_;
 
   // The global set of DesktopCaptureClients.
   static ClientSet* clients_;
