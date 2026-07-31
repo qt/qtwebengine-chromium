@@ -48,6 +48,12 @@ class Sampler;
 class State;
 class Texture;
 
+enum class EnsureInitializedLevels
+{
+    BaseOnly,
+    AllEnabledLevels,
+};
+
 constexpr GLuint kInitialMaxLevel = 1000;
 
 bool IsMipmapFiltered(GLenum minFilterMode);
@@ -686,7 +692,7 @@ class Texture final : public RefCountObject<TextureID>,
     GLuint getNativeID() const;
 
     // Needed for robust resource init.
-    angle::Result ensureInitialized(const Context *context);
+    angle::Result ensureInitialized(const Context *context, EnsureInitializedLevels levels);
     InitState initState(GLenum binding, const ImageIndex &imageIndex) const override;
     InitState initState() const { return mState.mInitState; }
     void setInitState(GLenum binding, const ImageIndex &imageIndex, InitState initState) override;
