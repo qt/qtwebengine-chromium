@@ -1503,6 +1503,10 @@ FINAL_STAGE(store_ffff, NoCtx) {
 #endif
 }
 
+#if defined(__GNUC__) && defined(USING_NEON_F16C) && !(defined(__aarch64__) || defined(__ARM64__) || defined(_M_ARM64))
+#pragma GCC pop_options
+#endif
+
 #if SKCMS_HAS_MUSTTAIL
 
     SI void exec_stages(StageFn* stages, const void** contexts, const char* src, char* dst, int i) {
@@ -1526,10 +1530,6 @@ FINAL_STAGE(store_ffff, NoCtx) {
         }
     }
 
-#endif
-
-#if defined(__GNUC__) && defined(USING_NEON_F16C) && !(defined(__aarch64__) || defined(__ARM64__) || defined(_M_ARM64))
-#pragma GCC pop_options
 #endif
 
 // NOLINTNEXTLINE(misc-definitions-in-headers)
