@@ -21,6 +21,7 @@
 #include "libANGLE/renderer/gl/FunctionsGL.h"
 #include "libANGLE/renderer/gl/StateManagerGL.h"
 #include "libANGLE/renderer/gl/renderergl_utils.h"
+#include "libANGLE/renderer/renderer_utils.h"
 
 using namespace gl;
 
@@ -58,11 +59,6 @@ bool SameAttribPointer(const VertexAttributeGL &a, const VertexAttribute &b)
 bool IsVertexAttribPointerSupported(size_t attribIndex, const VertexAttribute &attrib)
 {
     return (attribIndex == attrib.bindingIndex && attrib.relativeOffset == 0);
-}
-
-GLuint GetAdjustedDivisor(GLuint numViews, GLuint divisor)
-{
-    return numViews * divisor;
 }
 
 static angle::Result ValidateStateHelperGetIntegerv(const gl::Context *context,
@@ -388,7 +384,8 @@ void VertexArrayGL::computeStreamingAttributeSizes(
         // and how much slack space at the beginning of the buffer will be required by determining
         // the attribute with the largest data size.
         size_t typeSize        = ComputeVertexAttributeTypeSize(attrib);
-        GLuint adjustedDivisor = GetAdjustedDivisor(mAppliedNumViews, binding.getDivisor());
+        GLuint adjustedDivisor =
+            GetMultiviewAdjustedDivisor(mAppliedNumViews, binding.getDivisor());
         size_t streamedVertexCount = ComputeVertexBindingElementCount(
             adjustedDivisor, indexRange.vertexCount(), instanceCount);
         if (applyExtraOffsetWorkaroundForInstancedAttributes && adjustedDivisor > 0)
@@ -468,7 +465,8 @@ angle::Result VertexArrayGL::streamAttributes(
 
             const auto &binding = bindings[attrib.bindingIndex];
 
-            GLuint adjustedDivisor = GetAdjustedDivisor(mAppliedNumViews, binding.getDivisor());
+            GLuint adjustedDivisor =
+                GetMultiviewAdjustedDivisor(mAppliedNumViews, binding.getDivisor());
             // streamedVertexCount is only going to be modified by
             // shiftInstancedArrayDataWithOffset workaround, otherwise it's const
             size_t streamedVertexCount = ComputeVertexBindingElementCount(
@@ -891,8 +889,8 @@ angle::Result VertexArrayGL::updateBindingBuffer(const gl::Context *context, siz
 
 angle::Result VertexArrayGL::updateBindingDivisor(const gl::Context *context, size_t bindingIndex)
 {
-    GLuint adjustedDivisor =
-        GetAdjustedDivisor(mAppliedNumViews, mState.getVertexBinding(bindingIndex).getDivisor());
+    GLuint adjustedDivisor = GetMultiviewAdjustedDivisor(
+        mAppliedNumViews, mState.getVertexBinding(bindingIndex).getDivisor());
     if (mNativeState->bindings[bindingIndex].divisor == adjustedDivisor)
     {
         return angle::Result::Continue;
