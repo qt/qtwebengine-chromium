@@ -2927,7 +2927,9 @@ void AsyncCompileJob::StartForegroundTask() {
 
   auto new_task = std::make_unique<CompileTask>(this, true);
   pending_foreground_task_ = new_task.get();
-  foreground_task_runner_->PostTask(std::move(new_task));
+  // Foreground compilation can invoke JavaScript callbacks and must not run
+  // nested inside an API interrupt.
+  foreground_task_runner_->PostNonNestableTask(std::move(new_task));
 }
 
 void AsyncCompileJob::ExecuteForegroundTaskImmediately() {
