@@ -455,12 +455,12 @@ struct Bits128 {
   }
 
   friend V8_INLINE constexpr bool operator!=(Bits128 lhs, uint64_t rhs)
-      __attribute__((const)) {
+      V8_CONST {
     return lhs.low != rhs || lhs.high != 0;
   }
 
   friend V8_INLINE constexpr bool operator!=(Bits128 lhs, int rhs)
-      __attribute__((const)) {
+      V8_CONST {
     return lhs.low != static_cast<uint64_t>(rhs) || lhs.high != 0;
   }
 };
