@@ -68,6 +68,21 @@ std::optional<VertexFiller> VertexFiller::MakeFromBuffer(SkReadBuffer &buffer,
     SkSpan<SkPoint> leftTop = MakePointsFromBuffer(buffer, alloc);
     if (leftTop.empty()) { return std::nullopt; }
 
+    // SECURITY: creationBounds is later trusted by AtlasTextOp::Make() to size
+    // the GrClip decision and the dst-read copy (setupDstProxyView). A
+    // compromised renderer can serialize a tiny creationBounds with leftTop[]
+    // glyph positions far outside it, causing glyph fragments to sample stale
+    // padding of a recycled kApprox dst-copy scratch texture. Reject any Slug
+    // whose declared bounds do not enclose every glyph origin.
+    for (const SkPoint& p : leftTop) {
+        if (!buffer.validate(creationBounds.fLeft <= p.fX &&
+                             creationBounds.fTop  <= p.fY &&
+                             p.fX <= creationBounds.fRight &&
+                             p.fY <= creationBounds.fBottom)) {
+            return std::nullopt;
+        }
+    }
+
     SkASSERT(buffer.isValid());
     return VertexFiller{maskType, creationMatrix, creationBounds, leftTop, canDrawDirect};
 }
