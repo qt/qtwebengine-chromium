@@ -347,7 +347,11 @@ class LiftoffRegister {
   }
 
   constexpr Simd128Register simd128() const {
+#if defined(_MSC_VER)
+    V8_ASSUME(is_simd128());
+#else
     DCHECK(is_simd128());
+#endif
     return Simd128Register::from_code(code_ - kAfterMaxLiftoffFpRegCode);
   }
 
