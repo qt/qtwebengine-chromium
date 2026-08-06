@@ -1945,7 +1945,7 @@ config("clang_warning_suppression") {
 #
 # See also: https://crbug.com/40891132#comment10
 config("sanitize_c_array_bounds") {
-  if (!is_ubsan && is_clang && !(is_asan && target_cpu == "x86")) {
+  if (!is_ubsan && is_clang && !(is_asan && target_cpu == "x86") && !is_qtwebengine) {
     cflags = [
       "-fsanitize=array-bounds",
       "-fsanitize-trap=array-bounds",
