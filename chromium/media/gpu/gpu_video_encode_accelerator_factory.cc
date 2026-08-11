@@ -192,7 +192,7 @@ std::vector<VEAFactoryFunction> GetVEAFactoryFunctions(
 #if BUILDFLAG(IS_MAC)
   vea_factory_functions->push_back(base::BindRepeating(&CreateVTVEA));
 #endif
-#if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN) && BUILDFLAG(USE_DAWN)
   vea_factory_functions->push_back(
       base::BindRepeating(&CreateD3D12VEA, gpu_workarounds, gpu_device));
   vea_factory_functions->push_back(base::BindRepeating(
