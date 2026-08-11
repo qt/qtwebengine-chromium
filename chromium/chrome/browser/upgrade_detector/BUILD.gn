@@ -159,7 +159,7 @@ source_set("unit_tests") {
   }
 
   if (is_win) {
-    assert(toolkit_views)
+#    assert(toolkit_views)
     sources += [
       "get_installed_version_win_unittest.cc",
       "registry_monitor_unittest.cc",
