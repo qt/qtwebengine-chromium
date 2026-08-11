@@ -118,7 +118,7 @@ content::WebContents* GetWebContents(content::GlobalRenderFrameHostId rfh_id) {
 
 }  // namespace
 
-#if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN) && !BUILDFLAG(IS_QTWEBENGINE)
 class PrintJob::PdfConversionState {
  public:
   PdfConversionState(const gfx::Size& page_size,
