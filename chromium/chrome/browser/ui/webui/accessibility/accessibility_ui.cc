@@ -206,7 +206,7 @@ void SetProcessModeBools(ui::AXMode ax_mode, base::DictValue& data) {
   data.Set(kScreenReader, ax_mode.has_mode(ui::AXMode::kScreenReader));
 }
 
-#if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN) && !BUILDFLAG(IS_QTWEBENGINE)
 // Sets values in `data` for the platform node counts in `counts`.
 void SetNodeCounts(const ui::AXPlatformNodeWin::Counts& counts,
                    base::DictValue& data) {
@@ -364,7 +364,7 @@ void HandleAccessibilityRequestCallback(
 #endif  // !BUILDFLAG(IS_ANDROID)
   data.Set(kBrowsersField, std::move(browser_list));
 
-#if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN) && !BUILDFLAG(IS_QTWEBENGINE)
   SetNodeCounts(ui::AXPlatformNodeWin::GetCounts(), data);
 #endif
 
@@ -1088,7 +1088,7 @@ void AccessibilityUIMessageHandler::OnUpdateDisplayTimer() {
       content::BrowserAccessibilityState::GetInstance()->GetAccessibilityMode(),
       data);
 
-#if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN) && !BUILDFLAG(IS_QTWEBENGINE)
   SetNodeCounts(ui::AXPlatformNodeWin::GetCounts(), data);
 #endif  // BUILDFLAG(IS_WIN)
 
