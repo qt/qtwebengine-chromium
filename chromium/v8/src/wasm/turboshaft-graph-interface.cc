@@ -3749,11 +3749,9 @@ class TurboshaftGraphBuildingInterface : public WasmGraphBuilderBase {
 
     BindBlockAndGeneratePhis(decoder, block->false_or_loop_or_catch_block,
                              nullptr, &block->exception);
-    V<NativeContext> native_context = instance_cache_.native_context();
     V<WasmTagObject> caught_tag = V<WasmTagObject>::Cast(
         CallBuiltinThroughJumptable<BuiltinCallDescriptor::WasmGetOwnProperty>(
-            decoder, native_context,
-            {block->exception, LOAD_ROOT(wasm_exception_tag_symbol)}));
+            decoder, {block->exception, LOAD_ROOT(wasm_exception_tag_symbol)}));
     // TODO(14616): Support shared tags.
     V<FixedArray> instance_tags =
         LOAD_IMMUTABLE_INSTANCE_FIELD(trusted_instance_data(false), TagsTable,
@@ -3783,7 +3781,7 @@ class TurboshaftGraphBuildingInterface : public WasmGraphBuilderBase {
 
       IF (UNLIKELY(caught_tag_undefined)) {
         V<Object> tag_object = __ Load(
-            native_context, LoadOp::Kind::TaggedBase(),
+            instance_cache_.native_context(), LoadOp::Kind::TaggedBase(),
             MemoryRepresentation::TaggedPointer(),
             NativeContext::OffsetOfElementAt(Context::WASM_JS_TAG_INDEX));
         V<Object> js_tag = __ Load(tag_object, LoadOp::Kind::TaggedBase(),
@@ -3883,11 +3881,9 @@ class TurboshaftGraphBuildingInterface : public WasmGraphBuilderBase {
       BrOrRet(decoder, catch_case.br_imm.depth);
       return;
     }
-    V<NativeContext> native_context = instance_cache_.native_context();
     V<WasmTagObject> caught_tag = V<WasmTagObject>::Cast(
         CallBuiltinThroughJumptable<BuiltinCallDescriptor::WasmGetOwnProperty>(
-            decoder, native_context,
-            {block->exception, LOAD_ROOT(wasm_exception_tag_symbol)}));
+            decoder, {block->exception, LOAD_ROOT(wasm_exception_tag_symbol)}));
     // TODO(14616): Support shared tags.
     V<FixedArray> instance_tags =
         LOAD_IMMUTABLE_INSTANCE_FIELD(trusted_instance_data(false), TagsTable,
@@ -3917,7 +3913,7 @@ class TurboshaftGraphBuildingInterface : public WasmGraphBuilderBase {
 
       IF (UNLIKELY(caught_tag_undefined)) {
         V<Object> tag_object = __ Load(
-            native_context, LoadOp::Kind::TaggedBase(),
+            instance_cache_.native_context(), LoadOp::Kind::TaggedBase(),
             MemoryRepresentation::TaggedPointer(),
             NativeContext::OffsetOfElementAt(Context::WASM_JS_TAG_INDEX));
         V<Object> js_tag = __ Load(tag_object, LoadOp::Kind::TaggedBase(),
@@ -8478,8 +8474,7 @@ class TurboshaftGraphBuildingInterface : public WasmGraphBuilderBase {
                            base::Vector<Value> values) {
     V<FixedArray> exception_values_array = V<FixedArray>::Cast(
         CallBuiltinThroughJumptable<BuiltinCallDescriptor::WasmGetOwnProperty>(
-            decoder, instance_cache_.native_context(),
-            {exception, LOAD_ROOT(wasm_exception_values_symbol)}));
+            decoder, {exception, LOAD_ROOT(wasm_exception_values_symbol)}));
 
     int index = 0;
     for (Value& value : values) {

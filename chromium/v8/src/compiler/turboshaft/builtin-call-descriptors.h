@@ -731,7 +731,7 @@ struct BuiltinCallDescriptor {
     using results_t = std::tuple<V<Object>>;
 
     static constexpr bool kNeedsFrameState = false;
-    static constexpr bool kNeedsContext = true;
+    static constexpr bool kNeedsContext = false;
     static constexpr Operator::Properties kProperties = Operator::kNoThrow;
     static constexpr OpEffects kEffects = base_effects.CanReadHeapMemory();
   };
