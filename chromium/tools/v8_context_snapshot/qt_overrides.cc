@@ -43,6 +43,9 @@ int GetAvailablePointerTypes() {
 int GetAvailableHoverTypes() {
   return HOVER_TYPE_NONE;
 }
+std::pair<int, int> GetAvailablePointerAndHoverTypesImpl() {
+  return {POINTER_TYPE_NONE, HOVER_TYPE_NONE};
+}
 gfx::Image& ResourceBundle::GetNativeImageNamed(int resource_id) {
   return GetImageNamed(resource_id);
 }
