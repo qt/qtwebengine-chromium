@@ -86,6 +86,10 @@ jumbo_component("platform") {
     "inspect/ax_tree_indexer.h",
   ]
 
+  jumbo_excluded_sources = [
+    "ax_platform_node.cc",
+  ]
+
   configs += [
     "//build/config/compiler:wexit_time_destructors",
     "//build/config/compiler:wglobal_constructors",
