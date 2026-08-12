@@ -1522,6 +1522,16 @@
     "includes": [9500],
   },
 
+  "<(SHARED_INTERMEDIATE_DIR)/qtwebengine/browser/extensions/resources/resources.grd": {
+    "META": {"sizes": {"includes": [20],}},
+    "includes": [9505],
+  },
+
+  "qtwebengine/browser/qt_webengine_resources.grd": {
+    "includes": [9510],
+    "structures": [9515],
+  },
+
   "remoting/resources/remoting_strings.grd": {
     "messages": [9520],
   },
