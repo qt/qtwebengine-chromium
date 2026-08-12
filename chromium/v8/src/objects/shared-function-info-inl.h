@@ -641,6 +641,26 @@ Tagged<ScopeInfo> SharedFunctionInfo::GetOuterScopeInfo() const {
   return info->OuterScopeInfo();
 }
 
+Tagged<ScopeInfo> SharedFunctionInfo::TryGetOuterScopeInfo() const {
+  // Unlike HasOuterScopeInfo()/GetOuterScopeInfo(), this loads and type-checks
+  // each tagged field exactly once, using acquire semantics. That avoids a
+  // TOCTOU data race with the main thread compiling this function
+  // concurrently, which transitions
+  // raw_outer_scope_info_or_feedback_metadata from an outer ScopeInfo to
+  // FeedbackMetadata. Returns the empty ScopeInfo if there is no outer one.
+  Tagged<ScopeInfo> info = scope_info(kAcquireLoad);
+  if (!info->IsEmpty()) {
+    if (!info->HasOuterScopeInfo()) return GetReadOnlyRoots().empty_scope_info();
+    return info->OuterScopeInfo();
+  }
+  if (Tagged<ScopeInfo> outer_scope_info;
+      TryCast<ScopeInfo>(raw_outer_scope_info_or_feedback_metadata(kAcquireLoad),
+                         &outer_scope_info)) {
+    return outer_scope_info;
+  }
+  return GetReadOnlyRoots().empty_scope_info();
+}
+
 void SharedFunctionInfo::set_outer_scope_info(Tagged<HeapObject> value,
                                               WriteBarrierMode mode) {
   DCHECK(!is_compiled());
