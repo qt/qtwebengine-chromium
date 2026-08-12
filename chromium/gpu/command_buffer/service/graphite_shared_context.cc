@@ -164,6 +164,12 @@ GraphiteSharedContext::makePrecompileContext() {
   return graphite_context_->makePrecompileContext();
 }
 
+void GraphiteSharedContext::set_simulated_insert_status(
+    skgpu::graphite::InsertStatus status) {
+  AutoLock auto_lock(this);
+  simulated_insert_status_ = status;
+}
+
 bool GraphiteSharedContext::insertRecording(
     const skgpu::graphite::InsertRecordingInfo& info) {
   AutoLock auto_lock(this);
@@ -194,7 +200,7 @@ bool GraphiteSharedContext::InsertRecordingImpl(
   // graphite::Context.
   std::optional<skgpu::graphite::InsertRecordingInfo> info_copy;
   if (info.fFinishedProc && task_runner) {
-    info_copy = info;
+    info_copy = *info_ptr;
     info_copy->fFinishedContext = new RecordingContext{
         info.fFinishedProc, info.fFinishedContext, std::move(task_runner)};
 
@@ -211,6 +217,12 @@ bool GraphiteSharedContext::InsertRecordingImpl(
       context->old_finished_proc(context->old_context, result);
     };
 
+    info_ptr = &info_copy.value();
+  }
+
+  if (simulated_insert_status_ != skgpu::graphite::InsertStatus::kSuccess) {
+    info_copy = *info_ptr;
+    info_copy->fSimulatedStatus = simulated_insert_status_;
     info_ptr = &info_copy.value();
   }
 

@@ -9,6 +9,7 @@
 
 #include "gpu/command_buffer/service/shared_context_state.h"
 
+#include "base/debug/crash_logging.h"
 #include "base/debug/dump_without_crashing.h"
 #include "base/immediate_crash.h"
 #include "base/metrics/histogram_functions.h"
@@ -850,16 +851,21 @@ bool SharedContextState::FlushGraphiteRecorder() {
   return true;
 }
 
-void SharedContextState::FlushAndSubmit(bool sync_to_cpu) {
+bool SharedContextState::FlushAndSubmit(bool sync_to_cpu) {
   if (graphite_shared_context()) {
-    FlushGraphiteRecorder();
+    bool flush_succeeded = FlushGraphiteRecorder();
+    // We submit any pending GPU work despite insertRecording failing since the
+    // caller can expect any resources used to be eventually released when the
+    // submitted work is done on the GPU.
     graphite_shared_context()->submit(sync_to_cpu
                                           ? skgpu::graphite::SyncToCpu::kYes
                                           : skgpu::graphite::SyncToCpu::kNo);
+    return flush_succeeded;
   } else if (gr_context()) {
-    gr_context()->flushAndSubmit(sync_to_cpu ? GrSyncCpu::kYes
-                                             : GrSyncCpu::kNo);
+    gr_context()->flush();
+    return gr_context()->submit(sync_to_cpu ? GrSyncCpu::kYes : GrSyncCpu::kNo);
   }
+  return true;
 }
 
 bool SharedContextState::FlushWriteAccess(
@@ -896,7 +902,7 @@ bool SharedContextState::FlushWriteAccess(
   return success;
 }
 
-void SharedContextState::SubmitIfNecessary(
+bool SharedContextState::SubmitIfNecessary(
     std::vector<GrBackendSemaphore> signal_semaphores,
     bool need_graphite_submit) {
   if (graphite_shared_context() && need_graphite_submit) {
@@ -908,33 +914,35 @@ void SharedContextState::SubmitIfNecessary(
     // and DrDC is not enabled.
     CHECK(signal_semaphores.empty());
     graphite_shared_context()->submit(skgpu::graphite::SyncToCpu::kNo);
-    return;
+    return true;
   }
 
-  // Do nothing here if there is no context.
+  // Do nothing here if there is no Skia Ganesh GrContext.
   if (!gr_context()) {
-    return;
+    return true;
   }
 
   // Note that when DrDc is enabled, we need to call
   // AddVulkanCleanupTaskForSkiaFlush() on gpu main thread and do skia flush.
   // This will ensure that vulkan memory allocated on gpu main thread will be
   // cleaned up.
+  SCOPED_CRASH_KEY_BOOL("gpu", "DrDcEnabled", is_drdc_enabled_);
+  SCOPED_CRASH_KEY_NUMBER("gpu", "SignalSemaphores", signal_semaphores.size());
   if (!signal_semaphores.empty() || is_drdc_enabled_) {
-    // NOTE: The Graphite SharedImage representation does not set semaphores,
-    // and we are not enabling DrDC with Graphite.
-    CHECK(gr_context());
     GrFlushInfo flush_info = {
         .fNumSemaphores = signal_semaphores.size(),
         .fSignalSemaphores = signal_semaphores.data(),
     };
     gpu::AddVulkanCleanupTaskForSkiaFlush(vk_context_provider(), &flush_info);
 
-    auto result = gr_context()->flush(flush_info);
-    DCHECK_EQ(result, GrSemaphoresSubmitted::kYes);
+    if (gr_context()->flush(flush_info) != GrSemaphoresSubmitted::kYes) {
+      base::debug::DumpWithoutCrashing();
+      return false;
+    }
   }
 
   bool sync_cpu = gpu::ShouldVulkanSyncCpuForSkiaSubmit(vk_context_provider());
+  SCOPED_CRASH_KEY_BOOL("gpu", "SubmitSyncCpu", sync_cpu);
 
   // If DrDc is enabled, submit the gr_context() to ensure correct ordering
   // of vulkan commands between raster and display compositor.
@@ -946,10 +954,12 @@ void SharedContextState::SubmitIfNecessary(
   const bool need_submit =
       sync_cpu || !signal_semaphores.empty() || is_drdc_enabled_;
 
-  if (need_submit) {
-    CHECK(gr_context());
-    gr_context()->submit(sync_cpu ? GrSyncCpu::kYes : GrSyncCpu::kNo);
+  if (need_submit &&
+      !gr_context()->submit(sync_cpu ? GrSyncCpu::kYes : GrSyncCpu::kNo)) {
+    base::debug::DumpWithoutCrashing();
+    return false;
   }
+  return true;
 }
 
 bool SharedContextState::MakeCurrent(gl::GLSurface* surface, bool needs_gl) {
