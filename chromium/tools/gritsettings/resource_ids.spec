@@ -1613,8 +1613,7 @@
   },
 
   "qtwebengine/browser/qt_webengine_resources.grd": {
-    "includes": [10060],
-    "structures": [10140],
+    "includes": [8420],
   },
 
   # This file is generated during the build.
@@ -1623,22 +1622,22 @@
     # In debug build, devtools frontend sources are not bundled and therefore
     # includes a lot of individual resources
     "META": {"sizes": {"includes": [4000],}},
-    "includes": [11060],
+    "includes": [10040],
   },
 
   # This file is generated during the build.
   "<(SHARED_INTERMEDIATE_DIR)/resources/inspector_overlay/inspector_overlay_resources.grd": {
     "META": {"sizes": {"includes": [50],}},
-    "includes": [12080],
+    "includes": [10060],
   },
 
   "<(SHARED_INTERMEDIATE_DIR)/third_party/blink/public/strings/permission_element_generated_strings.grd": {
     "META": {"sizes": {"messages": [2000],}},
-    "messages": [12120],
+    "messages": [10080],
   },
 
   "third_party/search_engines_data/resources_internal/search_engines_scaled_resources.grd": {
-    "structures": [12200],
+    "structures": [10100],
   },
 
   "third_party/search_engines_data/resources_internal/search_engine_descriptions_strings.grd": {
