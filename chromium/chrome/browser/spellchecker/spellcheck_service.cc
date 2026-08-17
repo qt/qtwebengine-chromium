@@ -834,7 +834,11 @@ void SpellcheckService::InitForAllRenderers() {
            content::RenderProcessHost::AllHostsIterator());
        !i.IsAtEnd(); i.Advance()) {
     content::RenderProcessHost* process = i.GetCurrentValue();
+#if !BUILDFLAG(IS_QTWEBENGINE)
     if (process && process->GetProcess().Handle())
+#else
+    if (process)
+#endif
       InitForRenderer(process);
   }
 }
