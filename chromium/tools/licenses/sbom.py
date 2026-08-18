@@ -120,17 +120,22 @@ class ExtendedSpdxJsonWriter(spdx_writer._SPDXJSONWriter):
       if metadata_name in pkg.extra_metadata:
         pkg_content[json_name] = pkg.extra_metadata[metadata_name]
 
-    # Add any existing CPE info as a comment, since it is not all in the correct format
+    # Add non CPE 2.2/2.3 info as a comment, since it is not all in the correct format
     if 'CPEPrefix' in pkg.extra_metadata:
       cpe = pkg.extra_metadata['CPEPrefix']
-      if cpe == 'unknown':
-        comment = "Chromium authors declared this package to have an unknown CPE"
+      if cpe.startswith('cpe:2.3:'):
+        pkg_content['externalRefs'] = [ { 'referenceCategory': 'SECURITY', 'referenceType' : 'cpe23Type', 'referenceLocator':  cpe } ]
+      elif cpe.startswith('cpe:/'):
+        pkg_content['externalRefs'] = [ { 'referenceCategory': 'SECURITY', 'referenceType' : 'cpe22Type', 'referenceLocator':  cpe } ]
       else:
-        comment = ("Chromium authors declared this package to have the CPE prefix '%s'" % cpe)
+        if cpe == 'unknown':
+          comment = "Chromium authors declared this package to have an unknown CPE"
+        else:
+          comment = ("Chromium authors declared this package to have the CPE prefix '%s'" % cpe)
 
-      if 'comment' in pkg_content:
-        comment = pkg_content['comment'] + '\n' + comment
-      pkg_content['comment'] = comment
+        if 'comment' in pkg_content:
+          comment = pkg_content['comment'] + '\n' + comment
+        pkg_content['comment'] = comment
 
     self.content['packages'].append(pkg_content)
     if need_to_add_license:
