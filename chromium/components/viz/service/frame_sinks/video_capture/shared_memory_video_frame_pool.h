@@ -48,6 +48,7 @@ class VIZ_SERVICE_EXPORT SharedMemoryVideoFramePool : public VideoFramePool {
       const media::VideoFrame& frame) override;
 
   size_t GetNumberOfReservedFrames() const override;
+  void InvalidateBuffers() override;
 
  private:
   using PooledBuffer = base::MappedReadOnlyRegion;
@@ -61,6 +62,7 @@ class VIZ_SERVICE_EXPORT SharedMemoryVideoFramePool : public VideoFramePool {
   // |utilized_buffers_| and place the PooledBuffer back into
   // |available_buffers_|.
   void OnFrameWrapperDestroyed(const media::VideoFrame* frame,
+                               uint32_t frame_pool_generation,
                                base::WritableSharedMemoryMapping mapping);
 
   // Returns true if a shared memory failure can be logged. This is a rate
@@ -81,6 +83,9 @@ class VIZ_SERVICE_EXPORT SharedMemoryVideoFramePool : public VideoFramePool {
 
   // The time at which the last shared memory allocation or mapping failed.
   base::TimeTicks last_fail_log_time_;
+  // Each frame is assigned a generation id. When this counter is increased
+  // all existing frames will be considered invalid.
+  uint32_t pool_generation_ = 0;
 
   // The amount of time that should have elapsed between log warnings about
   // shared memory allocation/mapping failures.

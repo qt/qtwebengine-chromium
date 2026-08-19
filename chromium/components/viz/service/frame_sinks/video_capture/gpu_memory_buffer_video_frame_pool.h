@@ -41,6 +41,7 @@ class VIZ_SERVICE_EXPORT GpuMemoryBufferVideoFramePool : public VideoFramePool {
       const media::VideoFrame& frame) override;
 
   size_t GetNumberOfReservedFrames() const override;
+  void InvalidateBuffers() override;
 
  private:
   void RecreateVideoFramePool();
