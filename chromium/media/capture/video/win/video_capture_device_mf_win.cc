@@ -2863,4 +2863,8 @@ bool CreateMFSensorActivityMonitor(
   return true;
 }
 
+void VideoCaptureDeviceMFWin::InvalidateBuffers() {
+  client_->InvalidateBuffers();
+}
+
 }  // namespace media

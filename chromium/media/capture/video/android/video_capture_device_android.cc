@@ -788,3 +788,11 @@ void VideoCaptureDeviceAndroid::DoSetPhotoOptions(
 }
 
 }  // namespace media
+
+
+void VideoCaptureDeviceAndroid::InvalidateBuffers() {
+  base::AutoLock lock(lock_);
+  if (client_) {
+    client_->InvalidateBuffers();
+  }
+}

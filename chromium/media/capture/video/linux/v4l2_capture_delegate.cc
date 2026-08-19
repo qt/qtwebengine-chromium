@@ -1444,4 +1444,8 @@ bool V4L2CaptureDelegate::BufferTracker::Init(int fd,
   return true;
 }
 
+void V4L2CaptureDelegate::InvalidateBuffers() {
+  client_->InvalidateBuffers();
+}
+
 }  // namespace media

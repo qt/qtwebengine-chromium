@@ -407,4 +407,11 @@ VideoFrameMetadata VideoCaptureDeviceApple::GetVideoFrameMetadata() {
   return metadata;
 }
 
+void VideoCaptureDeviceApple::InvalidateBuffers() {
+  DCHECK(task_runner_->BelongsToCurrentThread());
+  if (client_) {
+    client_->InvalidateBuffers();
+  }
+}
+
 }  // namespace media
