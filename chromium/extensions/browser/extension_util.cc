@@ -14,6 +14,7 @@
 #include "components/crx_file/id_util.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/child_process_security_policy.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/storage_partition_config.h"
@@ -541,6 +542,19 @@ bool AnyCurrentlyInstalledExtensionIsFromWebstore(
                              [](const auto& extension_ptr) {
                                return ExtensionIsFromWebstore(*extension_ptr);
                              });
+}
+
+const GURL& GetURLForExtensionPermissionCheck(content::RenderFrameHost* rfh) {
+  // Avoid `CHECK_NE(lifecycle_state(), LifecycleStateImpl::kSpeculative)` in
+  // `content::RenderFrameHost::IsErrorDocument()` by checking for an empty
+  // `GURL` first.
+  if (!rfh || rfh->GetLastCommittedURL().is_empty()) {
+    return GURL::EmptyGURL();
+  }
+  if (rfh->IsErrorDocument()) {
+    return GURL::EmptyGURL();
+  }
+  return rfh->GetLastCommittedURL();
 }
 
 }  // namespace util

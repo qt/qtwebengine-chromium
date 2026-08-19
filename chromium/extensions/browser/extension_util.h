@@ -9,7 +9,6 @@
 #include <vector>
 
 #include "base/functional/callback.h"
-#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "extensions/buildflags/buildflags.h"
 #include "extensions/common/extension_id.h"
@@ -174,6 +173,16 @@ bool IsAppLaunchableWithoutEnabling(const ExtensionId& extension_id,
 // webstore, otherwise false.
 bool AnyCurrentlyInstalledExtensionIsFromWebstore(
     content::BrowserContext* context);
+
+// Returns the last committed `GURL` of `rfh` for extension permission and
+// authorization checks. Returns an empty `GURL` if:
+// - `rfh` is null,
+// - `rfh` has an empty committed `GURL`, or
+// - `rfh` is displaying an error document.
+//
+// For tab-level or `content::WebContents`-level checks, pass the primary main
+// frame (e.g. `web_contents->GetPrimaryMainFrame()`).
+const GURL& GetURLForExtensionPermissionCheck(content::RenderFrameHost* rfh);
 
 }  // namespace util
 }  // namespace extensions

@@ -507,7 +507,8 @@ WebRequestAPI::ProxyDecision WebRequestAPI::MaybeProxyURLLoaderFactoryInternal(
     if (WebViewGuest::IsGuest(frame)) {
       content::RenderFrameHost* embedder =
           frame->GetOutermostMainFrameOrEmbedder();
-      const auto& embedder_url = embedder->GetLastCommittedURL();
+      const GURL& embedder_url =
+          util::GetURLForExtensionPermissionCheck(embedder);
       if (embedder_url.SchemeIs(content::kChromeUIScheme)) {
         auto* feature = FeatureProvider::GetAPIFeature("webRequestInternal");
         if (feature
@@ -698,7 +699,8 @@ bool WebRequestAPI::IsAvailableToWebViewEmbedderFrame(
   Feature::Availability availability =
       ExtensionAPI::GetSharedInstance()->IsAvailable(
           "webRequestInternal", /*extension=*/nullptr,
-          mojom::ContextType::kWebPage, embedder_frame->GetLastCommittedURL(),
+          mojom::ContextType::kWebPage,
+          util::GetURLForExtensionPermissionCheck(embedder_frame),
           CheckAliasStatus::ALLOWED, util::GetBrowserContextId(browser_context),
           BrowserFrameContextData(embedder_frame));
   return availability.is_available();

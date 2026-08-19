@@ -536,7 +536,7 @@ void MessageService::OpenChannelToExtension(
 
         // Check that the web page URL matches.
         is_externally_connectable = externally_connectable->matches.MatchesURL(
-            source_render_frame_host->GetLastCommittedURL());
+            util::GetURLForExtensionPermissionCheck(source_render_frame_host));
       }
     } else {
       // Default behaviour. Any extension or content script, no webpages.
