@@ -259,6 +259,9 @@ struct [[clang::lto_visibility_public]] CreateTargetResult {
   base::win::ScopedProcessInformation process_info;
   DWORD last_error = ERROR_SUCCESS;
   ResultCode result_code = SBOX_ALL_OK;
+
+  void* base_address;
+  std::wstring exe_path;
 };
 
 // This class configures provides callbacks for implementing parallel launch.

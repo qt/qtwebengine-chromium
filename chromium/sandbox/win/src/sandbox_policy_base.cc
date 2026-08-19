@@ -647,6 +647,8 @@ ResultCode PolicyBase::InitProcess(HANDLE process_handle,
   DCHECK(config()->IsConfigured());
 
   auto target = std::make_unique<TargetProcess>(process_handle);
+  target->SetBaseAddress(base_address_);
+  target->SetExeName(exe_name_);
 
   if (config()->GetJobLevel() <= JobLevel::kLimitedUser) {
     if (!job_.IsValid()) {
@@ -692,7 +694,8 @@ ResultCode PolicyBase::InitProcess(HANDLE process_handle,
   IntegrityLevel delayed_integrity_level = config()->delayed_integrity_level();
   static_assert(sizeof(g_shared_delayed_integrity_level) ==
                 sizeof(delayed_integrity_level));
-  ret = target->TransferVariable(&delayed_integrity_level,
+  ret = target->TransferVariable("g_shared_delayed_integrity_level",
+                                 &delayed_integrity_level,
                                  &g_shared_delayed_integrity_level,
                                  sizeof(g_shared_delayed_integrity_level));
   if (SBOX_ALL_OK != ret)
@@ -708,7 +711,8 @@ ResultCode PolicyBase::InitProcess(HANDLE process_handle,
 
   static_assert(sizeof(g_shared_delayed_mitigations) ==
                 sizeof(delayed_mitigations));
-  ret = target->TransferVariable(&delayed_mitigations,
+  ret = target->TransferVariable("g_shared_delayed_mitigations",
+                                 &delayed_mitigations,
                                  &g_shared_delayed_mitigations,
                                  sizeof(g_shared_delayed_mitigations));
   if (SBOX_ALL_OK != ret)
@@ -717,7 +721,8 @@ ResultCode PolicyBase::InitProcess(HANDLE process_handle,
   MitigationFlags startup_mitigations = config()->GetProcessMitigations();
   static_assert(sizeof(g_shared_startup_mitigations) ==
                 sizeof(startup_mitigations));
-  ret = target->TransferVariable(&startup_mitigations,
+  ret = target->TransferVariable("g_shared_startup_mitigations",
+                                 &startup_mitigations,
                                  &g_shared_startup_mitigations,
                                  sizeof(g_shared_startup_mitigations));
   if (SBOX_ALL_OK != ret)
@@ -792,7 +797,8 @@ bool PolicyBase::SetupHandleCloser(TargetProcess& target) {
   }
 
   static_assert(sizeof(g_handle_closer_info) == sizeof(handle_closer));
-  ResultCode rc = target.TransferVariable(&handle_closer, &g_handle_closer_info,
+  ResultCode rc = target.TransferVariable("g_handle_closer_info",
+                                          &handle_closer, &g_handle_closer_info,
                                           sizeof(g_handle_closer_info));
 
   return (SBOX_ALL_OK == rc);

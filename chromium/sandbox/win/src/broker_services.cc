@@ -613,6 +613,15 @@ CreateTargetResult BrokerServicesBase::CreateTarget(
       std::get<std::unique_ptr<StartupInformationHelper>>(target_info).get(),
       result.process_info, result.last_error);
 
+  result.exe_path = exe_path;
+  result.base_address = GetProcessBaseAddress(result.process_info.process_handle());
+  DCHECK(result.base_address);
+  if (!result.base_address) {
+    result.last_error = ::GetLastError();
+    ::TerminateProcess(result.process_info.process_handle(), 0);
+    result.result_code = SBOX_ERROR_CANNOT_FIND_BASE_ADDRESS;
+  }
+
   broker_services_delegate_->AfterTargetProcessCreateOnCreationThread(
       trace_id, result.process_info.process_id());
 
@@ -623,6 +632,9 @@ void BrokerServicesBase::FinishSpawnTarget(
     std::unique_ptr<PolicyBase> policy_base,
     SpawnTargetCallback result_callback,
     CreateTargetResult target_result) {
+  policy_base->SetBaseAddress(target_result.base_address);
+  policy_base->SetExeName(target_result.exe_path);
+
   ResultCode result = FinishSpawnTargetImpl(
       target_result.result_code, std::move(policy_base),
       target_result.process_info, target_result.last_error);

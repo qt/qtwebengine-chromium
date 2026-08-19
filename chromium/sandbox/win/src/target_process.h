@@ -47,14 +47,32 @@ class TargetProcess {
   // Returns the handle to the target process.
   HANDLE Process() const { return process_handle_.get(); }
 
+  // Returns the address of the target main exe. This is used by the
+  // interceptions framework.
+  HMODULE MainModule() const {
+    return reinterpret_cast<HMODULE>(base_address_);
+  }
+
+  // Returns the name of the executable.
+  const wchar_t* Name() const { return exe_name_.c_str(); }
+
   // Returns the process id.
   DWORD ProcessId() const { return process_id_; }
 
   // Transfers variable at `local_address` of `size` bytes from broker to
   // `target_address` of target.
-  ResultCode TransferVariable(const void* local_address,
+  ResultCode TransferVariable(const char* name,
+                              const void* local_address,
                               void* target_address,
                               size_t size);
+
+  void SetBaseAddress(void* address) {
+    base_address_ = address;
+  }
+
+  void SetExeName(std::wstring exe_path) {
+    exe_name_ = exe_path;
+  }
 
  private:
   // Verify the target process looks the same as the broker process.
@@ -67,6 +85,15 @@ class TargetProcess {
   base::win::ScopedHandle shared_section_;
   // Reference to the IPC subsystem.
   std::unique_ptr<SharedMemIPCServer> ipc_server_;
+
+  // Base address of the main executable
+  //
+  // `base_address_` is not a raw_ptr<void>, because pointer to address in
+  // another process could be confused as a pointer to PartitionMalloc memory,
+  // causing ref-counting mismatch.  See also https://crbug.com/1173374.
+  RAW_PTR_EXCLUSION void* base_address_ = nullptr;
+  // Full name of the target executable.
+  std::wstring exe_name_;
 };
 
 }  // namespace sandbox

@@ -225,6 +225,14 @@ class PolicyBase final : public TargetPolicy {
   // Returns the list of handles being shared with the target process.
   const base::HandlesToInheritVector& GetHandlesBeingShared();
 
+  void SetBaseAddress(void* address) {
+    base_address_ = address;
+  }
+
+  void SetExeName(std::wstring exe_path) {
+    exe_name_ = exe_path;
+  }
+
  private:
   // BrokerServicesBase is allowed to set shared backing fields for TargetConfig.
   friend class sandbox::BrokerServicesBase;
@@ -273,6 +281,10 @@ class PolicyBase final : public TargetPolicy {
 
   // The policy takes ownership of a target as it is applied to it.
   std::unique_ptr<TargetProcess> target_;
+
+  // Qt WebEngine
+  RAW_PTR_EXCLUSION void* base_address_ = nullptr;
+  std::wstring exe_name_;
 };
 
 }  // namespace sandbox
