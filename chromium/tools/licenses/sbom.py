@@ -6,9 +6,10 @@ import os
 import sys
 import json
 import argparse
+import collections
 import dataclasses
 import licenses as license_tools
-from typing import Any, DefaultDict
+from typing import Any, Callable, DefaultDict, Tuple
 import spdx_writer
 import pathlib
 import subprocess
@@ -83,6 +84,7 @@ DIRECTORIES_TO_SKIP_BECAUSE_THEY_HAVE_VARIOUS_PARSING_ISSUES = [
 class ExtendedPackage(spdx_writer._Package):
   extra_metadata: DefaultDict[str, Any]
 
+
 class ExtendedSpdxJsonWriter(spdx_writer._SPDXJSONWriter):
   def __init__(self, root: str, root_package: ExtendedPackage, link_prefix: str,
                doc_name: str, doc_namespace: str):
@@ -150,6 +152,157 @@ class ExtendedSpdxJsonWriter(spdx_writer._SPDXJSONWriter):
       'relatedSpdxElement': child_id,
     })
 
+  def add_tool_package(self, tool_pkg: ExtendedPackage):
+    tool_pkg_id = self.add_package(tool_pkg)
+    self.add_dependency(self.root_package_id, tool_pkg_id)
+
+class _CdxJsonWriter():
+  """Writes CDX data in JSON format.
+
+  """
+
+  def __init__(self, root: str, root_package: spdx_writer._Package, link_prefix: str,
+               doc_name: str, doc_namespace: str, author_name: str,
+               author_url: str, read_file: Callable[[str], str]):
+    self.root = root
+    self.root_package_id = root_package.package_spdx_id
+    self.link_prefix = link_prefix
+
+    self.read_file = read_file
+
+    self.content = {
+        'bomFormat': 'CycloneDX',
+        'specVersion': '1.6',
+        '$schema': 'http://cyclonedx.org/schema/bom-1.6.schema.json',
+        'version': 1,
+        'metadata' : {
+          'authors': [ { 'name' : 'Google' }, { 'name' : author_name } ],
+          'component': {
+            'name': doc_name,
+            'bom-ref': self.root_package_id,
+            'type': 'framework',
+          },
+          'tools': {
+            'components': [],
+          },
+          'supplier': {
+            'name': author_name,
+            'url': [ author_url ],
+          },
+          'manufacturer': {
+            'name': author_name,
+            'url': [ author_url ],
+          },
+        },
+        'dependencies': [],
+        'components': [],
+    }
+
+    # Used to make sure that there are no duplicate ids.
+    self.existing_package_ids = collections.defaultdict(int)  # 'packageId': num
+    self.existing_license_ids = collections.defaultdict(int)  # 'licenseId': num
+
+    # Add the root package to make sure that its ID isn't taken.
+    self.add_package(root_package)
+
+  def write(self) -> str:
+    """Returns a JSON string for the current state of the writer."""
+    return json.dumps(self.content, indent=4)
+
+  def _get_dedup_id(self, elem_id: str, id_dict: DefaultDict[str, int]) -> str:
+    """Returns a unique id given a dictionary with existing ids.
+
+    IDs are case sensitive, so this method ignores casing for uniqueness.
+
+    Args:
+      elem_id: the requested id to use for the element.
+      id_dict: dictionary holding already used ids.
+
+    Returns:
+      When the elem_id is already unique, return elem_id.
+      When the elem_id has been used, return elem_id + '-[next num]'.
+    """
+    suffix = id_dict[elem_id]
+    id_dict[elem_id] += 1
+    return f'{elem_id}-{suffix}' if suffix > 0 else elem_id
+
+  def _get_package_id(self, pkg: spdx_writer._Package) -> str:
+    """Makes sure that there are no pkg id duplicates."""
+    return self._get_dedup_id(pkg.package_spdx_id, self.existing_package_ids)
+
+  def _get_license_id(self, pkg: spdx_writer._Package) -> Tuple[str, bool]:
+    """Handles license deduplication.
+
+    If there are two packages with the same name but different license files,
+    handle deduping the names.
+    """
+    license_id = self._get_dedup_id(pkg.license_spdx_id,
+                                    self.existing_license_ids)
+    return license_id
+
+  def add_package(self, pkg: spdx_writer._Package):
+    """Writes a package to the file (package metadata)."""
+    pkg_id = self._get_package_id(pkg)
+    if OVERRIDE_LICENSE_FILE_METADATA_KEY in pkg.extra_metadata:
+      logger.info("Allowing known license ID without file for package %s" % (pkg.name))
+      # The filename is an SPDX license expression
+      license_entry = {
+          'acknowledgement': 'concluded',
+          'expression': pkg.file
+      }
+    else:
+      license_id = self._get_license_id(pkg)
+      license_entry = { 'license': {
+          'acknowledgement': 'concluded',
+          'name': license_id,
+          'text': { 'content': self.read_file(pkg.file) },
+      }}
+
+    if 'CPEPrefix' in pkg.extra_metadata:
+      cpeprefix = pkg.extra_metadata['CPEPrefix']
+    else:
+      cpeprefix = 'unknown'
+
+    if 'Version' in pkg.extra_metadata:
+      version = pkg.extra_metadata['Version']
+    else:
+      version = 'N/A'
+
+    self.content['components'].append({
+        'bom-ref': pkg_id,
+        'name': pkg.name,
+        'cpe': cpeprefix,
+        'version': version,
+        'type': 'library',
+        'licenses': [ license_entry ],
+    })
+
+    return pkg_id
+
+  def add_dependency(self, parent_id, child_id):
+    self.content['dependencies'].append({
+        'ref': parent_id,
+        'dependsOn' : [
+          child_id,
+        ]
+    })
+
+  def add_tool_package(self, tool_pkg: ExtendedPackage):
+    tool_pkg_id = self.add_package(tool_pkg)
+    self.content['metadata']['tools']['components'].append({
+      'name' : tool_pkg.name,
+      'type' : 'application',
+      'version' : tool_pkg.extra_metadata['Version']
+    })
+
+class ExtendedCdxJsonWriter(_CdxJsonWriter):
+  def __init__(self, root: str, root_package: ExtendedPackage, link_prefix: str,
+               doc_name: str, doc_namespace: str):
+    read_file = lambda x: pathlib.Path(x).read_text(encoding='utf-8')
+    author_name = 'TheQtCompany'
+    author_url = 'https://qt.io'
+    super().__init__(root, root_package, link_prefix, doc_name, doc_namespace, author_name, author_url, read_file)
+
 def GetDirectoryRevisionInfo(d):
   git_rev_list_result = subprocess.check_output(
       FIND_BASELINE_COMMIT_GIT_COMMAND + [d],
@@ -189,6 +342,7 @@ def CleanupLicenseMetadata(dep_metadata):
     dep_metadata['License File'] = None
     raise license_tools.LicenseError("Dependency has %d licenses, expected exactly 1" % num_licenses)
 
+
 def IsChromiumSubmoduleGitHistoryAvailable():
   baseline_cmd_result = subprocess.run(
       FIND_BASELINE_COMMIT_GIT_COMMAND + ['.'],
@@ -196,6 +350,7 @@ def IsChromiumSubmoduleGitHistoryAvailable():
       capture_output=True,
       encoding='utf-8')
   return baseline_cmd_result.returncode == 0 and baseline_cmd_result.stdout.strip()
+
 
 def GetTargetMetadatas(gn_binary: str, gn_out_dir: str, gn_target: str):
   optional_keys = list(CHROMIUM_TO_SPDX_KEY.keys()) + ['Short Name', 'CPEPrefix']
@@ -249,7 +404,8 @@ def GetTargetMetadatas(gn_binary: str, gn_out_dir: str, gn_target: str):
 
   return metadatas
 
-def CreateSpdxText(targets_and_metadatas, package_id: str, doc_namespace: str, gn_version: str):
+
+def CreateSbomText(targets_and_metadatas, writer_type, package_id: str, doc_namespace: str, gn_version: str):
   root_license = os.path.join(ROOT, 'LICENSE')
   root = os.path.dirname(ROOT)
   link_prefix = ''
@@ -259,7 +415,7 @@ def CreateSpdxText(targets_and_metadatas, package_id: str, doc_namespace: str, g
     return 'QtWebEngine-Chromium-' + package_id + '-' + s
 
   root_pkg = ExtendedPackage(make_pkg_name("Internal-Components"), root_license, {})
-  writer = ExtendedSpdxJsonWriter(root, root_pkg, link_prefix, doc_name, doc_namespace)
+  writer = writer_type(root, root_pkg, link_prefix, doc_name, doc_namespace)
 
   already_added_packages = dict()
   for top_level_target, metadatas in targets_and_metadatas:
@@ -284,15 +440,38 @@ def CreateSpdxText(targets_and_metadatas, package_id: str, doc_namespace: str, g
           already_added_packages[child_pkg_key] = child_pkg_id
         writer.add_dependency(top_level_pkg_id, already_added_packages[child_pkg_key])
 
-
   # Manually add GN package
   gn_license = os.path.join(os.path.dirname(ROOT), 'gn', 'LICENSE')
   gn_metadata = GN_BASE_METADATA.copy()
   gn_metadata['Version'] = gn_version
-  gn_pkg_id = writer.add_package(ExtendedPackage(make_pkg_name('GN'), gn_license, gn_metadata))
-  writer.add_dependency(writer.root_package_id, gn_pkg_id)
+  gn_name = make_pkg_name('GN')
+  gn_pkg = ExtendedPackage(gn_name, gn_license, gn_metadata)
+  writer.add_tool_package(gn_pkg)
 
   return writer.write()
+
+
+def GetSbomWriterType(sbom_format, output_file):
+  """Heuristically detects format from optional passed format and output file extension
+  """
+  if sbom_format:
+    if sbom_format == 'CYDX_V1_6':
+      return ExtendedCdxJsonWriter
+    elif sbom_format == 'SPDX_V2_JSON':
+      return ExtendedSpdxJsonWriter
+
+    print(f"Unknown SBOM format: {sbom_format}")
+    sys.exit(1)
+
+  if output_file.endswith('.cdx.json'):
+    return ExtendedCdxJsonWriter
+  elif output_file.endswith('.spdx.json'):
+    return ExtendedSpdxJsonWriter
+
+  logging.warning(f"SBOM format autodetect from SBOM extension failed, "
+                   "defaulting to SPDX JSON: {output_file}")
+  return ExtendedSpdxJsonWriter
+
 
 def main():
   parser = argparse.ArgumentParser()
@@ -303,6 +482,7 @@ def main():
   parser.add_argument('--gn-version', required=True, help="GN version.")
   parser.add_argument('--package-id', required=True, help="Camelcase package id. This is used for several purposes")
   parser.add_argument('--namespace', required=True, help="Namespace of the document")
+  parser.add_argument('--sbom-format', required=False, help="SBOM format. One of SPDX_V2_JSON, CYDX_V1_6. Optional, defaults to detection based on filename extension and SPDX if unknown.")
   parser.add_argument('--verbose', action="store_true", help="Verbose output")
   parser.add_argument('output_file')
   args = parser.parse_args()
@@ -317,10 +497,11 @@ def main():
 
   targets_and_metadatas = [(t, GetTargetMetadatas(args.gn_binary, b, t)) for b, t in zip(build_dir_list, gn_target_list)]
 
-  spdx_text = CreateSpdxText(targets_and_metadatas, args.package_id, args.namespace, args.gn_version)
+  writer_type = GetSbomWriterType(args.sbom_format, args.output_file)
+  sbom_text = CreateSbomText(targets_and_metadatas, writer_type, args.package_id, args.namespace, args.gn_version)
 
   with open(args.output_file, 'w', encoding='utf-8') as f:
-    f.write(spdx_text)
+    f.write(sbom_text)
 
 if __name__ == '__main__':
   sys.exit(main())
