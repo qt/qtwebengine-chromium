@@ -254,6 +254,12 @@ struct FeaturesGL : FeatureSetBase
         &members,
     };
 
+    FeatureInfo recreateTextureOnTexImage3dDepthIncrease = {
+        "recreateTextureOnTexImage3dDepthIncrease",
+        FeatureCategory::OpenGLWorkarounds,
+        &members,
+    };
+
     FeatureInfo limitMax3dArrayTextureSizeTo1024 = {
         "limitMax3dArrayTextureSizeTo1024",
         FeatureCategory::OpenGLWorkarounds,

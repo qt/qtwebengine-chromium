@@ -278,6 +278,7 @@ enum class Feature
     RecreateFboUponFlush,
     RecreateImmutableTextureOnBaseLevelIncrease,
     RecreateMipmapLevelsBeforeGenerate,
+    RecreateTextureOnTexImage3dDepthIncrease,
     RecycleVkEvent,
     RegenerateStructNames,
     RejectWebglShadersWithUndefinedBehavior,

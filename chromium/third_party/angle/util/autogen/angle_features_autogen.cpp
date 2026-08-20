@@ -278,6 +278,7 @@ constexpr PackedEnumMap<Feature, const char *> kFeatureNames = {{
     {Feature::RecreateFboUponFlush, "recreateFboUponFlush"},
     {Feature::RecreateImmutableTextureOnBaseLevelIncrease, "recreateImmutableTextureOnBaseLevelIncrease"},
     {Feature::RecreateMipmapLevelsBeforeGenerate, "recreateMipmapLevelsBeforeGenerate"},
+    {Feature::RecreateTextureOnTexImage3dDepthIncrease, "recreateTextureOnTexImage3dDepthIncrease"},
     {Feature::RecycleVkEvent, "recycleVkEvent"},
     {Feature::RegenerateStructNames, "regenerateStructNames"},
     {Feature::RejectWebglShadersWithUndefinedBehavior, "rejectWebglShadersWithUndefinedBehavior"},
