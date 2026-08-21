@@ -292,7 +292,6 @@ void I422ToRGB24Row_NEON(const uint8_t* src_y,
                          int width) {
   asm volatile(
       YUVTORGB_SETUP
-      "vmov.u8     d6, #255                      \n"
       "1:          \n"  //
       READYUV422
       "subs        %[width], %[width], #8        \n" YUVTORGB RGBTORGB8
@@ -323,7 +322,6 @@ void I422ToRGB565Row_NEON(const uint8_t* src_y,
                           int width) {
   asm volatile(
       YUVTORGB_SETUP
-      "vmov.u8     d6, #255                      \n"
       "1:          \n"  //
       READYUV422
       "subs        %[width], %[width], #8        \n" YUVTORGB RGBTORGB8
@@ -495,7 +493,6 @@ void NV12ToRGB24Row_NEON(const uint8_t* src_y,
                          int width) {
   asm volatile(
       YUVTORGB_SETUP
-      "vmov.u8     d6, #255                      \n"
       "1:          \n"  //
       READNV12 YUVTORGB RGBTORGB8
       "subs        %[width], %[width], #8        \n"
@@ -517,7 +514,6 @@ void NV21ToRGB24Row_NEON(const uint8_t* src_y,
                          int width) {
   asm volatile(
       YUVTORGB_SETUP
-      "vmov.u8     d6, #255                      \n"
       "1:          \n"  //
       READNV21 YUVTORGB RGBTORGB8
       "subs        %[width], %[width], #8        \n"
@@ -539,7 +535,6 @@ void NV12ToRGB565Row_NEON(const uint8_t* src_y,
                           int width) {
   asm volatile(
       YUVTORGB_SETUP
-      "vmov.u8     d6, #255                      \n"
       "1:          \n"  //
       READNV12 YUVTORGB RGBTORGB8
       "subs        %[width], %[width], #8        \n" ARGBTORGB565
@@ -1064,7 +1059,7 @@ void MergeAR64Row_NEON(const uint16_t* src_r,
         "+r"(width)      // %5
       : "r"(shift),      // %6
         "r"(mask)        // %7
-      : "memory", "cc", "q0", "q1", "q2", "q3", "q15");
+      : "memory", "cc", "q0", "q1", "q2", "q3", "q14", "q15");
 }
 
 void MergeXR64Row_NEON(const uint16_t* src_r,
@@ -1101,7 +1096,7 @@ void MergeXR64Row_NEON(const uint16_t* src_r,
         "+r"(width)      // %4
       : "r"(shift),      // %5
         "r"(mask)        // %6
-      : "memory", "cc", "q0", "q1", "q2", "q3", "q15");
+      : "memory", "cc", "q0", "q1", "q2", "q3", "q14", "q15");
 }
 
 void MergeARGB16To8Row_NEON(const uint16_t* src_r,
@@ -1895,7 +1890,7 @@ void ARGBToUV444MatrixRow_NEON(const uint8_t* src_argb,
         "r"(&c->kRGBToV),   // %5
         "r"(&c->kAddUV)     // %6
       : "cc", "memory", "q0", "q1", "q2", "q3", "q4", "q5", "q6", "q7", "q8",
-        "q10", "q11", "q12");
+        "q10", "q11", "q12", "q13");
 }
 
 void ARGBToUV444Row_NEON(const uint8_t* src_argb,
