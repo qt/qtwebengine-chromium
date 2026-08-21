@@ -217,6 +217,9 @@ def main(argv):
   args_list.add('--osx-architectures',
                     help='delimited list of architectures for universal build',
                     type=str)
+  args_list.add('--osx-deployment-target',
+                    help='The minimum macOS version to build for.',
+                    type=str)
   args_list.add('--gcc-legacy-support', action='store_true',
                     help='Support gcc9 compilation')
 
@@ -593,7 +596,8 @@ def WriteGNNinja(path, platform, host, options, args_list):
         cflags.append('-std=gnu++20')
 
     elif platform.is_darwin():
-      min_mac_version_flag = '-mmacosx-version-min=10.9'
+      min_mac_version = options.osx_deployment_target or '10.9'
+      min_mac_version_flag = '-mmacosx-version-min=' + min_mac_version
       cflags.append(min_mac_version_flag)
       ldflags.append(min_mac_version_flag)
       if options.osx_architectures:
