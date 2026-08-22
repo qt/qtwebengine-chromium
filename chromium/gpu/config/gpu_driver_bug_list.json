@@ -3794,6 +3794,15 @@
       ]
     },
     {
+      "id": 489,
+      "cr_bugs": [530045332],
+      "description": "Lose context when 3D texture depth increases on Qualcomm GPUs",
+      "gl_vendor": "Qualcomm.*",
+      "features": [
+        "lose_gl_context_when_increase_texture_3d_depth"
+      ]
+    },
+    {
       "id": 491,
       "cr_bugs": [548085797],
       "description": "Limit max texture image units to 13 on PowerVR GPUs.",
