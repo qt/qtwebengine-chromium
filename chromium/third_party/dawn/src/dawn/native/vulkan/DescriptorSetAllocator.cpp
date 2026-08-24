@@ -29,6 +29,8 @@
 
 #include <utility>
 
+#include "dawn/common/GPUInfo.h"
+#include "dawn/native/PhysicalDevice.h"
 #include "dawn/native/Queue.h"
 #include "dawn/native/vulkan/BindGroupLayoutVk.h"
 #include "dawn/native/vulkan/DeviceVk.h"
@@ -191,15 +193,25 @@ MaybeError DescriptorSetAllocator::AllocateDescriptorPool(BindGroupLayout* layou
     allocateInfo.pSetLayouts = AsVkArray(layouts.data());
 
     std::vector<VkDescriptorSet> sets(mMaxSets);
-    MaybeError result =
-        CheckVkSuccess(device->fn.AllocateDescriptorSets(device->GetVkDevice(), &allocateInfo,
-                                                         AsVkArray(sets.data())),
-                       "AllocateDescriptorSets");
+    VkResult vkResult = VkResult::WrapUnsafe(
+        INJECT_ERROR_OR_RUN(device->fn.AllocateDescriptorSets(device->GetVkDevice(), &allocateInfo,
+                                                              AsVkArray(sets.data())),
+                            VK_FAKE_ERROR_FOR_TESTING));
+    MaybeError result = CheckVkSuccessImpl(vkResult, "AllocateDescriptorSets");
     if (result.IsError()) {
-        // On an error we can destroy the pool immediately because no command references it.
-        device->fn.DestroyDescriptorPool(device->GetVkDevice(), descriptorPool, nullptr);
-        DAWN_TRY(std::move(result));
+        // TODO(crbug.com/549311485): On Imagination (PowerVR) drivers, when AllocateDescriptorSets
+        // fails with host or device OOM, the driver's chunk allocation path publishes the chunk
+        // before allocation and fails to unpublish on error. Calling vkDestroyDescriptorPool
+        // dereferences the dangling freed meminfo pointer and crashes (UAF read / wild free).
+        bool isCorruptedImaginationPool =
+            gpu_info::IsImgTec(device->GetPhysicalDevice()->GetVendorId()) &&
+            (vkResult == VK_ERROR_OUT_OF_HOST_MEMORY || vkResult == VK_ERROR_OUT_OF_DEVICE_MEMORY);
+        if (!isCorruptedImaginationPool) {
+            // On an error we can destroy the pool immediately because no command references it.
+            device->fn.DestroyDescriptorPool(device->GetVkDevice(), descriptorPool, nullptr);
+        }
     }
+    DAWN_TRY(std::move(result));
 
     std::vector<SetIndex> freeSetIndices;
     freeSetIndices.reserve(mMaxSets);
