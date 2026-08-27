@@ -1273,8 +1273,9 @@ int ConfiguredProxyResolutionService::DidFinishResolvingProxy(
       // If the ProxyResolver crashed, force it to be re-initialized for the
       // next request by resetting the proxy config. If there are other pending
       // requests, trigger the recreation immediately so those requests retry.
-      if (pending_requests_.size() > 1)
+      if (!pending_requests_.empty()) {
         ApplyProxyConfigIfAvailable();
+      }
     }
   }
 
