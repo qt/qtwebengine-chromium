@@ -397,8 +397,6 @@ export class PdfViewerElement extends PdfViewerBaseElement {
   private hasSearchifyText_: boolean = false;
 
   constructor() {
-    PdfHelpBubbleProxyImpl.createConnectedInstance();
-
     super();
 
     // TODO(dpapad): Add tests after crbug.com/40142584 is fixed.
@@ -945,6 +943,7 @@ export class PdfViewerElement extends PdfViewerBaseElement {
         || this.pdfInk2Enabled_
         // </if>
     ) {
+      PdfHelpBubbleProxyImpl.createConnectedInstance();
       this.updateComplete.then(() => {
         if (hasGlic) {
           const summarizeBtn =
