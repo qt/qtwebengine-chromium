@@ -5676,6 +5676,11 @@ GLES2DecoderImpl::HandleGetFramebufferPixelLocalStorageParameterfvANGLE(
   Result* result = GetSharedMemoryAs<Result*>(
       c.params_shm_id, c.params_shm_offset, checked_size);
   GLfloat* params = result ? result->GetData() : nullptr;
+  if (!validators_->framebuffer_pixel_local_storage_parameter.IsValid(pname)) {
+    LOCAL_SET_GL_ERROR_INVALID_ENUM(
+        "glGetFramebufferPixelLocalStorageParameterfvANGLE", pname, "pname");
+    return error::kNoError;
+  }
   if (params == nullptr) {
     return error::kOutOfBounds;
   }
@@ -5721,6 +5726,11 @@ GLES2DecoderImpl::HandleGetFramebufferPixelLocalStorageParameterivANGLE(
   Result* result = GetSharedMemoryAs<Result*>(
       c.params_shm_id, c.params_shm_offset, checked_size);
   GLint* params = result ? result->GetData() : nullptr;
+  if (!validators_->framebuffer_pixel_local_storage_parameter.IsValid(pname)) {
+    LOCAL_SET_GL_ERROR_INVALID_ENUM(
+        "glGetFramebufferPixelLocalStorageParameterivANGLE", pname, "pname");
+    return error::kNoError;
+  }
   if (params == nullptr) {
     return error::kOutOfBounds;
   }

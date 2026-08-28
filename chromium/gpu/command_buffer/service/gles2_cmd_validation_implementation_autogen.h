@@ -251,6 +251,19 @@ static const GLenum valid_framebuffer_attachment_parameter_table_es3[] = {
     GL_FRAMEBUFFER_ATTACHMENT_TEXTURE_LAYER,
 };
 
+static const GLenum valid_framebuffer_pixel_local_storage_parameter_table[] = {
+    GL_MAX_PIXEL_LOCAL_STORAGE_PLANES_ANGLE,
+    GL_MAX_COMBINED_DRAW_BUFFERS_AND_PIXEL_LOCAL_STORAGE_PLANES_ANGLE,
+    GL_PIXEL_LOCAL_STORAGE_ACTIVE_PLANES_ANGLE,
+    GL_PIXEL_LOCAL_FORMAT_ANGLE,
+    GL_PIXEL_LOCAL_TEXTURE_NAME_ANGLE,
+    GL_PIXEL_LOCAL_TEXTURE_LEVEL_ANGLE,
+    GL_PIXEL_LOCAL_TEXTURE_LAYER_ANGLE,
+    GL_PIXEL_LOCAL_CLEAR_VALUE_FLOAT_ANGLE,
+    GL_PIXEL_LOCAL_CLEAR_VALUE_INT_ANGLE,
+    GL_PIXEL_LOCAL_CLEAR_VALUE_UNSIGNED_INT_ANGLE,
+};
+
 static const GLenum valid_framebuffer_target_table[] = {
     GL_FRAMEBUFFER,
 };
@@ -1273,6 +1286,9 @@ Validators::Validators()
           valid_framebuffer_attachment_parameter_table,
           std::size(valid_framebuffer_attachment_parameter_table)),
       framebuffer_parameter(),
+      framebuffer_pixel_local_storage_parameter(
+          valid_framebuffer_pixel_local_storage_parameter_table,
+          std::size(valid_framebuffer_pixel_local_storage_parameter_table)),
       framebuffer_target(valid_framebuffer_target_table,
                          std::size(valid_framebuffer_target_table)),
       g_l_state(valid_g_l_state_table, std::size(valid_g_l_state_table)),
