@@ -407,8 +407,6 @@ export class PdfViewerElement extends PdfViewerBaseElement {
   private hasSearchifyText_: boolean = false;
 
   constructor() {
-    PdfHelpBubbleProxyImpl.createConnectedInstance();
-
     super();
 
     // TODO(dpapad): Add tests after crbug.com/1111459 is fixed.
@@ -931,6 +929,8 @@ export class PdfViewerElement extends PdfViewerBaseElement {
 
     // <if expr="enable_pdf_ink2">
     if (this.pdfInk2Enabled_) {
+      PdfHelpBubbleProxyImpl.createConnectedInstance();
+
       this.updateComplete.then(() => {
         this.registerHelpBubble(
             'PdfHelpBubbleHandlerFactory::kPdfInkSignaturesDrawElementId',
