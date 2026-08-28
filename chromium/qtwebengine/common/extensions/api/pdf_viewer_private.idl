@@ -15,4 +15,37 @@ namespace pdfViewerPrivate {
     SEARCHIFIED
   };
 
+  enum SaveToDriveErrorType {
+    NO_ERROR,
+    UNKNOWN_ERROR,
+    QUOTA_EXCEEDED,
+    OFFLINE,
+    OAUTH_ERROR,
+    ACCOUNT_CHOOSER_CANCELED,
+    PARENT_FOLDER_SELECTION_FAILED
+  };
+
+  enum SaveToDriveStatus {
+    NOT_STARTED,
+    INITIATED,
+    ACCOUNT_CHOOSER_SHOWN,
+    ACCOUNT_SELECTED,
+    ACCOUNT_ADD_SELECTED,
+    ACCOUNT_ADDED,
+    FETCH_OAUTH,
+    FETCH_PARENT_FOLDER,
+    UPLOAD_STARTED,
+    UPLOAD_IN_PROGRESS,
+    UPLOAD_COMPLETED,
+    UPLOAD_RETRIED,
+    UPLOAD_FAILED
+  };
+
+  dictionary SaveToDriveProgress {
+    SaveToDriveStatus status;
+    SaveToDriveErrorType errorType;
+    DOMString? driveItemId;
+    long? fileSizeBytes;
+    long? uploadedBytes;
+  };
 };

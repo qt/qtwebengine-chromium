@@ -46,6 +46,8 @@ static void AddCommonStrings(base::DictValue* dict) {
       {"tooltipZoomIn", IDS_PDF_TOOLTIP_ZOOM_IN},
       {"tooltipZoomOut", IDS_PDF_TOOLTIP_ZOOM_OUT},
       {"twoUpViewEnable", IDS_PDF_TWO_UP_VIEW_ENABLE},
+      {"glicSummarize", IDS_PDF_GLIC_SUMMARIZE},
+      {"glicSummarizeTooltip", IDS_PDF_GLIC_SUMMARIZE_TOOLTIP},
   };
   for (const auto& resource : kPdfResources)
     dict->Set(resource.name, l10n_util::GetStringUTF16(resource.id));
