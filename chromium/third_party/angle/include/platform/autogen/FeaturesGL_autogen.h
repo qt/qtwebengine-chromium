@@ -709,6 +709,13 @@ struct FeaturesGL : FeatureSetBase
         FeatureCategory::OpenGLWorkarounds,
         &members,
     };
+
+    FeatureInfo finishBeforeBlitFramebufferMultiAttachment = {
+        "finishBeforeBlitFramebufferMultiAttachment",
+        FeatureCategory::OpenGLWorkarounds,
+        &members,
+    };
+
 };
 
 inline FeaturesGL::FeaturesGL()  = default;

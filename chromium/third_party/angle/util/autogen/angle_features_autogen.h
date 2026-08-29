@@ -168,6 +168,7 @@ enum class Feature
     ExplicitlyEnablePerSampleShading,
     ExposeES32ForTesting,
     ExposeNonConformantExtensionsAndVersions,
+    FinishBeforeBlitFramebufferMultiAttachment,
     FinishDoesNotCauseQueriesToBeAvailable,
     FlushAfterEndingTransformFeedback,
     FlushAfterStreamVertexData,
