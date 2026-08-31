@@ -248,6 +248,12 @@ struct FeaturesGL : FeatureSetBase
         &members,
     };
 
+    FeatureInfo useTempForNonZeroBaseLevelGenMipmapUsingCopyImageSubData = {
+        "useTempForNonZeroBaseLevelGenMipmapUsingCopyImageSubData",
+        FeatureCategory::OpenGLWorkarounds,
+        &members,
+    };
+
     FeatureInfo limitMax3dArrayTextureSizeTo1024 = {
         "limitMax3dArrayTextureSizeTo1024",
         FeatureCategory::OpenGLWorkarounds,
