@@ -743,7 +743,7 @@ DEFINE_EXPERIMENTAL_FEATURE(
     "strings.")
 
 #ifdef V8_TARGET_ARCH_64_BIT
-DEFINE_BOOL(additive_safe_int_feedback, true,
+DEFINE_BOOL(additive_safe_int_feedback, false,
             "Enable the use of AdditiveSafeInteger feedback")
 // Additive safe ints are only used by TurboFan.
 DEFINE_NEG_IMPLICATION(jitless, additive_safe_int_feedback)
