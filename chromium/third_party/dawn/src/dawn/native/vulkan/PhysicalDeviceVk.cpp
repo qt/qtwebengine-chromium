@@ -890,6 +890,12 @@ void PhysicalDevice::SetupBackendDeviceToggles(dawn::platform::Platform* platfor
         deviceToggles->Default(Toggle::VulkanDirectVariableAccessTransformHandle, true);
     }
 
+    if (MayBeImaginationProprietary()) {
+        // crbug.com/540087398 - Driver bug miscomputes mip sizes for NPOT depth/stencil textures.
+        // TODO(https://crbug.com/540087398): Limit this to old drivers once there's a driver fix.
+        deviceToggles->Default(Toggle::VulkanDisallowNPOTDepthStencilMipmaps, true);
+    }
+
     // AMD mesa front end optimizer bug for unary negation and abs.
     // Fixed in 25.3 - See crbug.com/448294721 and crbug.com/500099471
     if (IsAmdMesa()) {
@@ -1177,6 +1183,15 @@ bool PhysicalDevice::MayBeQualcommProprietary() const {
 
     return !mDeviceInfo.HasExt(DeviceExt::DriverProperties) ||
            mDeviceInfo.driverProperties.driverID == VK_DRIVER_ID_QUALCOMM_PROPRIETARY;
+}
+
+bool PhysicalDevice::MayBeImaginationProprietary() const {
+    if (!gpu_info::IsImgTec(GetVendorId())) {
+        return false;
+    }
+
+    return !mDeviceInfo.HasExt(DeviceExt::DriverProperties) ||
+           mDeviceInfo.driverProperties.driverID == VK_DRIVER_ID_IMAGINATION_PROPRIETARY;
 }
 
 uint32_t PhysicalDevice::FindDefaultComputeSubgroupSize() const {

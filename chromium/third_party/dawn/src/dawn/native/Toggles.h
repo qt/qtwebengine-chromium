@@ -165,6 +165,7 @@ enum class Toggle {
     EnableShaderPrint,
     CollapseSubgroupMinMax,
     MetalFixU32DivMod,
+    VulkanDisallowNPOTDepthStencilMipmaps,
 
     // Unresolved issues.
     NoWorkaroundSampleMaskBecomesZeroForAllButLastColorTarget,

@@ -75,6 +75,7 @@ class PhysicalDevice : public PhysicalDeviceBase {
     // Assumes that we might be on the proprietary driver if VkDriverId is not available.
     bool MayBeArmProprietary() const;
     bool MayBeQualcommProprietary() const;
+    bool MayBeImaginationProprietary() const;
 
     uint32_t GetDefaultComputeSubgroupSize() const;
 
