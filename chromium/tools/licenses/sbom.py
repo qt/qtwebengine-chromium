@@ -254,24 +254,33 @@ class _CdxJsonWriter():
           'text': { 'content': self.read_file(pkg.file) },
       }}
 
-    if 'CPEPrefix' in pkg.extra_metadata:
-      cpeprefix = pkg.extra_metadata['CPEPrefix']
-    else:
-      cpeprefix = 'unknown'
-
-    if 'Version' in pkg.extra_metadata:
-      version = pkg.extra_metadata['Version']
-    else:
-      version = 'N/A'
-
-    self.content['components'].append({
+    pkg_content = {
         'bom-ref': pkg_id,
         'name': pkg.name,
-        'cpe': cpeprefix,
-        'version': version,
         'type': 'library',
         'licenses': [ license_entry ],
-    })
+    }
+
+    if 'Version' in pkg.extra_metadata:
+      pkg_content['version'] = pkg.extra_metadata['Version']
+    if 'URL' in pkg.extra_metadata:
+      url = pkg.extra_metadata['URL']
+      pkg_content['externalReferences'] = [ { 'url': url, 'type': 'website' } ]
+    if 'CpeString' in pkg.extra_metadata:
+      pkg_content['cpe'] = pkg.extra_metadata['CpeString']
+
+    pedigree_notes = []
+    if 'Comment' in pkg.extra_metadata:
+      pedigree_notes.append(pkg.extra_metadata['Comment'])
+    if 'Source Info' in pkg.extra_metadata:
+      pedigree_notes.append(pkg.extra_metadata['Source Info'])
+    if 'CpeComment' in pkg.extra_metadata:
+      pedigree_notes.append(pkg.extra_metadata['CpeComment'])
+
+    if pedigree_notes:
+      pkg_content['pedigree'] = { 'notes': '\n'.join(pedigree_notes) }
+
+    self.content['components'].append(pkg_content)
 
     return pkg_id
 
