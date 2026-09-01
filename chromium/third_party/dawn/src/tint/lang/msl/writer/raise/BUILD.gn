@@ -65,6 +65,8 @@ if (tint_build_msl_writer) {
       "shader_io.h",
       "simd_ballot.cc",
       "simd_ballot.h",
+      "switch_return.cc",
+      "switch_return.h",
     ]
     deps = [
       "${dawn_root}/src/utils:utils",

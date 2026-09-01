@@ -49,6 +49,7 @@ cc_library(
     "raise.cc",
     "shader_io.cc",
     "simd_ballot.cc",
+    "switch_return.cc",
   ],
   hdrs = [
     "argument_buffers.h",
@@ -61,6 +62,7 @@ cc_library(
     "raise.h",
     "shader_io.h",
     "simd_ballot.h",
+    "switch_return.h",
   ],
   deps = [
     "//src/tint/api/common",

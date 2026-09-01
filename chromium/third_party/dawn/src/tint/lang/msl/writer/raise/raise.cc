@@ -68,6 +68,7 @@
 #include "src/tint/lang/msl/writer/raise/packed_vec3.h"
 #include "src/tint/lang/msl/writer/raise/shader_io.h"
 #include "src/tint/lang/msl/writer/raise/simd_ballot.h"
+#include "src/tint/lang/msl/writer/raise/switch_return.h"
 
 namespace tint::msl::writer {
 
@@ -276,6 +277,8 @@ Result<RaiseResult> Raise(core::ir::Module& module, const Options& options) {
 
     raise::ModuleConstantConfig module_const_config{options.disable_module_constant_f16};
     RUN_TRANSFORM(raise::ModuleConstant, module, module_const_config);
+
+    RUN_TRANSFORM(raise::SwitchReturn, module);
 
     // These transforms need to be run last as various transforms introduce terminator arguments,
     // naming conflicts, and expressions that need to be explicitly not inlined.
