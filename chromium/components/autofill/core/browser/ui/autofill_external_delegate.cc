@@ -387,6 +387,7 @@ void AutofillExternalDelegate::AttemptToDisplayAutofillSuggestions(
   }
 
   if (!query_field_.is_focusable() || !manager_->driver().CanShowAutofillUi()) {
+    manager_->client().HideAutofillSuggestions(SuggestionHidingReason::kStaleData);
     return;
   }
 
