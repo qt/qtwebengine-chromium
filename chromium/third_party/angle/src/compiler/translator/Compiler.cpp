@@ -1098,7 +1098,7 @@ bool TCompiler::checkAndSimplifyAST(TIntermBlock *root,
     // Clamping uniform array bounds needs to happen after validateLimitations pass.
     if (compileOptions.clampIndirectArrayBounds)
     {
-        if (!ClampIndirectIndices(this, root, &mSymbolTable))
+        if (!ClampIndirectIndices(this, root, &mSymbolTable, mExtensionBehavior))
         {
             return false;
         }
