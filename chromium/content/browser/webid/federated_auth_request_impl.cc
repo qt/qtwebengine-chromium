@@ -1580,16 +1580,18 @@ void FederatedAuthRequestImpl::ShowModalDialog(DialogType dialog_type,
   // the popup window is open. When using the active flow the dialog may
   // still be up in some cases, but we do not expect that browser automation
   // needs to interact with the account chooser in this case.
-  if (dialog_type_ != kNone) {
+  if (dialog_type_ != kNone && dialog_type_ != dialog_type) {
     // This call ensures that we send a dialogClosed event if an account
     // chooser or mismatch dialog is open.
     devtools_instrumentation::DidCloseFedCmDialog(render_frame_host());
   }
   // TODO(crbug.com/336815315): Should we notify browser automation of this
   // dialog?
+  if (dialog_type_ != dialog_type) {
+    UMA_HISTOGRAM_ENUMERATION("Blink.FedCm.Popup.DialogType", dialog_type);
+  }
   dialog_type_ = dialog_type;
   config_url_ = idp_config_url;
-  UMA_HISTOGRAM_ENUMERATION("Blink.FedCm.Popup.DialogType", dialog_type_);
 
   WebContents* web_contents = request_dialog_controller_->ShowModalDialog(
       url_to_show, rp_mode_,
@@ -2463,6 +2465,11 @@ void FederatedAuthRequestImpl::LoginToIdP(bool can_append_hints,
     // needed.
     MaybeAppendQueryParameters(it->second, &login_url);
   }
+  if (dialog_type_ == kLoginToIdpPopup) {
+    ShowModalDialog(kLoginToIdpPopup, idp_config_url, login_url);
+    return;
+  }
+
   permission_delegate_->AddIdpSigninStatusObserver(this);
 
   account_ids_before_login_.clear();

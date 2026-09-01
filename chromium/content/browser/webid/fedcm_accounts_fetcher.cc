@@ -271,9 +271,13 @@ void FedCmAccountsFetcher::OnAccountsResponseReceived(
   const std::optional<bool> old_idp_signin_status =
       permission_delegate_->GetIdpSigninStatus(
           url::Origin::Create(idp_config_url));
+  base::WeakPtr<FedCmAccountsFetcher> weak_this = weak_ptr_factory_.GetWeakPtr();
   webid::UpdateIdpSigninStatusForAccountsEndpointResponse(
       *render_frame_host_, idp_config_url, status,
       idp_info->has_failing_idp_signin_status, permission_delegate_);
+  if (!weak_this) {
+    return;
+  }
 
   if (status.parse_status != IdpNetworkRequestManager::ParseStatus::kSuccess) {
     std::pair<FederatedAuthRequestResult, TokenStatus> resultAndTokenStatus =
