@@ -123,21 +123,17 @@ class ExtendedSpdxJsonWriter(spdx_writer._SPDXJSONWriter):
         pkg_content[json_name] = pkg.extra_metadata[metadata_name]
 
     # Add non CPE 2.2/2.3 info as a comment, since it is not all in the correct format
-    if 'CPEPrefix' in pkg.extra_metadata:
-      cpe = pkg.extra_metadata['CPEPrefix']
-      if cpe.startswith('cpe:2.3:'):
-        pkg_content['externalRefs'] = [ { 'referenceCategory': 'SECURITY', 'referenceType' : 'cpe23Type', 'referenceLocator':  cpe } ]
-      elif cpe.startswith('cpe:/'):
-        pkg_content['externalRefs'] = [ { 'referenceCategory': 'SECURITY', 'referenceType' : 'cpe22Type', 'referenceLocator':  cpe } ]
-      else:
-        if cpe == 'unknown':
-          comment = "Chromium authors declared this package to have an unknown CPE"
-        else:
-          comment = ("Chromium authors declared this package to have the CPE prefix '%s'" % cpe)
-
-        if 'comment' in pkg_content:
-          comment = pkg_content['comment'] + '\n' + comment
-        pkg_content['comment'] = comment
+    if 'CpeSpdxType' in pkg.extra_metadata:
+      pkg_content['externalRefs'] = [ {
+        'referenceCategory': 'SECURITY',
+        'referenceType' : pkg.extra_metadata['CpeSpdxType'],
+        'referenceLocator':  pkg.extra_metadata['CpeString']
+      } ]
+    elif 'CpeComment' in pkg.extra_metadata:
+      comment = pkg.extra_metadata['CpeComment']
+      if 'comment' in pkg_content:
+        comment = pkg_content['comment'] + '\n' + comment
+      pkg_content['comment'] = comment
 
     self.content['packages'].append(pkg_content)
     if need_to_add_license:
@@ -343,6 +339,28 @@ def CleanupLicenseMetadata(dep_metadata):
     raise license_tools.LicenseError("Dependency has %d licenses, expected exactly 1" % num_licenses)
 
 
+def CleanupCpeMetadata(dep_metadata):
+  # Transform 'CPEPrefix' field into something usable. One of:
+  # - actual CPE -> fields 'CpeString' + 'CpeSpdxType'
+  # - when it cannot be used, CPE-related comment -> 'CpeComment'
+  cpe_prefix = dep_metadata.get('CPEPrefix', None)
+  if not cpe_prefix:
+    return
+
+  if cpe_prefix.startswith('cpe:2.3:'):
+    dep_metadata['CpeSpdxType'] = 'cpe23Type'
+    dep_metadata['CpeString'] = cpe_prefix
+  elif cpe_prefix.startswith('cpe:/'):
+    dep_metadata['CpeSpdxType'] = 'cpe22Type'
+    dep_metadata['CpeString'] = cpe_prefix
+  elif cpe_prefix == 'unknown':
+    dep_metadata['CpeComment'] = "Chromium authors declared this package to have an unknown CPE"
+  else:
+    assert False, f'Invalid cpe value: {cpe_prefix}'
+    dep_metadata['CpeComment'] = (
+        "Chromium authors declared this package to have the CPE prefix '%s'" % cpe)
+
+
 def IsChromiumSubmoduleGitHistoryAvailable():
   baseline_cmd_result = subprocess.run(
       FIND_BASELINE_COMMIT_GIT_COMMAND + ['.'],
@@ -382,6 +400,7 @@ def GetTargetMetadatas(gn_binary: str, gn_out_dir: str, gn_target: str):
       git_revision_info = GetDirectoryRevisionInfo(d) if can_include_git_info else None
       for dep_metadata in dir_metadata:
         CleanupLicenseMetadata(dep_metadata)
+        CleanupCpeMetadata(dep_metadata)
 
         if git_revision_info:
           dep_metadata['Source Info'] = git_revision_info
