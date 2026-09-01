@@ -15,6 +15,7 @@ import pathlib
 import subprocess
 import datetime
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +55,7 @@ PACKAGES_TO_OVERRIDE_LICENSE_FILE_WITH_ID = [
 
 # Command to find the first "Baseline" git commit in src/3rdparty
 FIND_BASELINE_COMMIT_GIT_COMMAND = \
-  ['git', 'rev-list', '-n1', '--first-parent', '--grep=^BASELINE: Update Chromium', 'HEAD', '--']
+  ['git', 'rev-list', '-n1', '--first-parent', '--grep=^BASELINE: Update Chromium', 'HEAD', '--', '.']
 
 # Hardcoded metadata for GN
 GN_BASE_METADATA = {
@@ -308,17 +309,35 @@ class ExtendedCdxJsonWriter(_CdxJsonWriter):
     author_url = 'https://qt.io'
     super().__init__(root, root_package, link_prefix, doc_name, doc_namespace, author_name, author_url, read_file)
 
-def GetDirectoryRevisionInfo(d):
-  git_rev_list_result = subprocess.check_output(
-      FIND_BASELINE_COMMIT_GIT_COMMAND + [d],
-      cwd=ROOT,
-      encoding='utf-8')
-  commit_sha = git_rev_list_result.strip()
-  git_log_result = subprocess.check_output(
-      ['git', 'log', '--oneline', f'{commit_sha}..HEAD', '--', d],
-      cwd=ROOT,
-      encoding='utf-8')
-  num_revisions = git_log_result.count('\n')
+CACHED_BASELINE = None
+
+def GetBaselineCommit(d):
+  global CACHED_BASELINE
+  if not CACHED_BASELINE:
+    git_rev_list_result = subprocess.check_output(
+        FIND_BASELINE_COMMIT_GIT_COMMAND,
+        cwd=ROOT,
+        encoding='utf-8')
+    CACHED_BASELINE = git_rev_list_result.strip()
+  return CACHED_BASELINE
+
+CACHED_COMMIT_LOG = None
+
+def GetDirectoryRevisionInfo(baseline_commit, d):
+  global CACHED_COMMIT_LOG
+  if not CACHED_COMMIT_LOG:
+    git_log_result = subprocess.check_output(
+        ['git', 'log', '--oneline', f'{baseline_commit}..HEAD', '--name-only', '--', '.'],
+        cwd=ROOT,
+        encoding='utf-8')
+    # Split on hashes to get each commit in a separate array element
+    CACHED_COMMIT_LOG = re.split('^(?=[a-fA-F0-9]{4})', git_log_result, flags=re.MULTILINE)
+
+  num_revisions = 0
+  for entry in CACHED_COMMIT_LOG:
+    if ('\nchromium/' + d) in entry:
+      num_revisions += 1
+
   if num_revisions == 0:
     return ''
   plural = '' if num_revisions == 1 else 's'
@@ -372,7 +391,7 @@ def CleanupCpeMetadata(dep_metadata):
 
 def IsChromiumSubmoduleGitHistoryAvailable():
   baseline_cmd_result = subprocess.run(
-      FIND_BASELINE_COMMIT_GIT_COMMAND + ['.'],
+      FIND_BASELINE_COMMIT_GIT_COMMAND,
       cwd=ROOT,
       capture_output=True,
       encoding='utf-8')
@@ -391,7 +410,9 @@ def GetTargetMetadatas(gn_binary: str, gn_out_dir: str, gn_target: str):
   # to invoke git.
   can_include_git_info = IsChromiumSubmoduleGitHistoryAvailable()
   if not can_include_git_info:
-      logger.warning("Could not find git history for '%s', git revision info will be missing" % os.path.join(ROOT, '..'))
+    logger.warning("Could not find git history for '%s', git revision info will be missing" % os.path.join(ROOT, '..'))
+  else:
+    baseline_commit = GetBaselineCommit('.')
 
   metadatas = {}
   for d in third_party_dirs:
@@ -406,7 +427,7 @@ def GetTargetMetadatas(gn_binary: str, gn_out_dir: str, gn_target: str):
       if not dir_metadata:
         logger.warning("Parsing '%s' returned nothing" % d)
       metadatas[d] = dir_metadata
-      git_revision_info = GetDirectoryRevisionInfo(d) if can_include_git_info else None
+      git_revision_info = GetDirectoryRevisionInfo(baseline_commit, d) if can_include_git_info else None
       for dep_metadata in dir_metadata:
         CleanupLicenseMetadata(dep_metadata)
         CleanupCpeMetadata(dep_metadata)
