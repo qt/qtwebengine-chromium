@@ -628,15 +628,43 @@ GLuint TextureState::getEnabledLevelCount() const
     Optional<Extents> expectedSize;
     for (size_t enabledLevel = baseLevel; enabledLevel <= maxLevel; ++enabledLevel, ++levelCount)
     {
-        // Note: for cube textures, we only check the first face.
+        // For cube textures, expect other faces to match the first face.
         TextureTarget target     = TextureTypeToTarget(mType, 0);
         size_t descIndex         = GetImageDescIndex(target, enabledLevel);
         const Extents &levelSize = mImageDescs[descIndex].size;
+        const Format &levelFormat = mImageDescs[descIndex].format;
 
         if (levelSize.empty())
         {
             break;
         }
+
+        // The cube map face checks are done for non-base levels only, because texture completeness
+        // rules already require base-level to be complete, and this function is used to know if any
+        // _additional_ levels are compatible with base.
+        if (enabledLevel != baseLevel && mType == gl::TextureType::CubeMap)
+        {
+            bool otherFacesValid                    = true;
+            angle::EnumIterator<TextureTarget> face = kCubeMapTextureTargetMin;
+            for (++face; face != kAfterCubeMapTextureTargetMax; ++face)
+            {
+                size_t otherFaceDescIndex          = GetImageDescIndex(*face, enabledLevel);
+                const Extents &otherFaceLevelSize  = mImageDescs[otherFaceDescIndex].size;
+                const Format &otherFaceLevelFormat = mImageDescs[otherFaceDescIndex].format;
+
+                if (otherFaceLevelSize != levelSize ||
+                    !Format::SameSized(otherFaceLevelFormat, levelFormat))
+                {
+                    otherFacesValid = false;
+                    break;
+                }
+            }
+            if (!otherFacesValid)
+            {
+                break;
+            }
+        }
+
         if (expectedSize.valid())
         {
             Extents newSize = expectedSize.value();
