@@ -2577,6 +2577,22 @@ void TParseContext::functionCallRValueLValueErrorCheck(const TFunction *fnCandid
     }
 }
 
+void TParseContext::functionCallFragDataCheck(const TFunction *fnCandidate,
+                                              TIntermAggregate *fnCall)
+{
+    for (size_t i = 0; i < fnCandidate->getParamCount(); ++i)
+    {
+        TIntermTyped *argument = (*fnCall->getSequence())[i]->getAsTyped();
+        if (argument->getType().getQualifier() == EvqFragData)
+        {
+            // The whole array is passed to the function.  For validation purposes, assume all
+            // indices are accessed in the function.
+            ASSERT(argument->getType().isArray());
+            mMaxFragDataArrayIndexUsed = argument->getType().getOutermostArraySize() - 1;
+        }
+    }
+}
+
 void TParseContext::checkInvariantVariableQualifier(bool invariant,
                                                     const TQualifier qualifier,
                                                     const TSourceLoc &invariantLocation)
@@ -8036,6 +8052,8 @@ TIntermTyped *TParseContext::addNonConstructorFunctionCallImpl(TFunctionLookup *
 
             // Some built-in functions have out parameters too.
             functionCallRValueLValueErrorCheck(fnCandidate, callNode);
+
+            functionCallFragDataCheck(fnCandidate, callNode);
 
             // See if we can constant fold a built-in. Note that this may be possible
             // even if it is not const-qualified.
