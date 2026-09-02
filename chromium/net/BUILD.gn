@@ -1453,6 +1453,7 @@ jumbo_component("net") {
       "proxy_resolution/win/proxy_config_service_win.h",
       "proxy_resolution/win/proxy_resolver_winhttp.cc",
       "proxy_resolution/win/proxy_resolver_winhttp.h",
+      "proxy_resolution/win/proxy_resolver_winhttp_test_hooks.h",
       "proxy_resolution/win/windows_system_proxy_resolution_request.cc",
       "proxy_resolution/win/windows_system_proxy_resolution_request.h",
       "proxy_resolution/win/windows_system_proxy_resolution_service.cc",
