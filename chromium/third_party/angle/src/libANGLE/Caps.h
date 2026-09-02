@@ -152,6 +152,10 @@ struct Limitations
     // PVRTC1 textures must be squares.
     bool squarePvrtc1 = false;
 
+    // Some backends don't apply robust init when glCopyTexImage2D reads out of bounds of source
+    // framebuffer, whose read attachment is a different mip of the same texture being redefined.
+    bool noRobustInitOnOOBCopyTexImageSameTexture = false;
+
     // ETC1 texture support is emulated.
     bool emulatedEtc1 = false;
 
