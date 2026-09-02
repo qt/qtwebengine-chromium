@@ -1363,6 +1363,18 @@ angle::Result TextureVk::copyImage(const gl::Context *context,
 
     if (isSelfCopy)
     {
+        // The front-end is unable to stage a robust init clear during self-copies because that
+        // would clear the source (which is the same as destination) before the copy.  That has to
+        // be done by the front-end.
+        // Do this even though we do not implement self copy, to prevent that stale bytes get read
+        // somehow.
+        if (mImage && (context->isWebGL() || contextVk->isRobustResourceInitEnabled()))
+        {
+            ANGLE_TRY(mImage->stageRobustResourceClearWithFormat(
+                contextVk, index, newImageSize, vkFormat.getIntendedFormat(),
+                vkFormat.getActualImageFormat(getRequiredImageAccess())));
+        }
+
         UNIMPLEMENTED();
         return angle::Result::Continue;
     }
