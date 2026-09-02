@@ -2243,12 +2243,12 @@ bool OutputHLSL::visitUnary(Visit visit, TIntermUnary *node)
     return true;
 }
 
-ImmutableString OutputHLSL::samplerNamePrefixFromStruct(TIntermTyped *node)
+TString OutputHLSL::samplerNamePrefixFromStruct(TIntermTyped *node)
 {
     if (node->getAsSymbolNode())
     {
         ASSERT(node->getAsSymbolNode()->variable().symbolType() != SymbolType::Empty);
-        return node->getAsSymbolNode()->getName();
+        return DecorateVariableIfNeeded(node->getAsSymbolNode()->variable());
     }
     TIntermBinary *nodeBinary = node->getAsBinaryNode();
     switch (nodeBinary->getOp())
@@ -2257,9 +2257,9 @@ ImmutableString OutputHLSL::samplerNamePrefixFromStruct(TIntermTyped *node)
         {
             int index = nodeBinary->getRight()->getAsConstantUnion()->getIConst(0);
 
-            std::stringstream prefixSink = sh::InitializeStream<std::stringstream>();
+            TStringStream prefixSink = sh::InitializeStream<TStringStream>();
             prefixSink << samplerNamePrefixFromStruct(nodeBinary->getLeft()) << "_" << index;
-            return ImmutableString(prefixSink.str());
+            return prefixSink.str();
         }
         case EOpIndexDirectStruct:
         {
@@ -2267,14 +2267,14 @@ ImmutableString OutputHLSL::samplerNamePrefixFromStruct(TIntermTyped *node)
             int index           = nodeBinary->getRight()->getAsConstantUnion()->getIConst(0);
             const TField *field = s->fields()[index];
 
-            std::stringstream prefixSink = sh::InitializeStream<std::stringstream>();
+            TStringStream prefixSink = sh::InitializeStream<TStringStream>();
             prefixSink << samplerNamePrefixFromStruct(nodeBinary->getLeft()) << "_"
                        << field->name();
-            return ImmutableString(prefixSink.str());
+            return prefixSink.str();
         }
         default:
             UNREACHABLE();
-            return kEmptyImmutableString;
+            return "";
     }
 }
 
@@ -2627,8 +2627,8 @@ bool OutputHLSL::visitAggregate(Visit visit, TIntermAggregate *node)
                 {
                     const TType &argType = typedArg->getType();
                     TVector<const TVariable *> samplerSymbols;
-                    ImmutableString structName = samplerNamePrefixFromStruct(typedArg);
-                    std::string namePrefix     = "angle_";
+                    TString structName     = samplerNamePrefixFromStruct(typedArg);
+                    std::string namePrefix = "angle";
                     namePrefix += structName.data();
                     argType.createSamplerSymbols(ImmutableString(namePrefix), "", &samplerSymbols,
                                                  nullptr, mSymbolTable);
