@@ -33,12 +33,12 @@ void OnMultiBufferReadComplete(
     case DataSource::kReadError: {
       stream->UnlockStreamPostWrite(0, true);
       return std::move(callback).Run(
-          HlsDataSourceProvider::ReadStatus::Codes::kError);
+          HlsDemuxerStatus::Codes::kNetworkReadError);
     }
     case DataSource::kAborted: {
       stream->UnlockStreamPostWrite(0, true);
       return std::move(callback).Run(
-          HlsDataSourceProvider::ReadStatus::Codes::kAborted);
+          HlsDemuxerStatus::Codes::kNetworkReadAborted);
     }
     default: {
       CHECK_GE(read_size, 0);
@@ -113,7 +113,7 @@ void HlsDataSourceProviderImpl::ReadFromExistingStream(
   auto it = data_source_map_.find(stream->stream_id());
   if (it == data_source_map_.end()) {
     TRACE_EVENT_NESTABLE_ASYNC_END0("media", "HLS::ReadExistingStream", this);
-    std::move(callback).Run(ReadStatus::Codes::kError);
+    std::move(callback).Run(HlsDemuxerStatus::Codes::kNetworkReadError);
     return;
   }
 
@@ -161,7 +161,7 @@ void HlsDataSourceProviderImpl::OnDataSourceCreated(
 
   if (stream->SecurityInfo().HasIncompatibleRangeAndOrigin()) {
     std::move(callback).Run(
-        {ReadStatus::Codes::kError,
+        {HlsDemuxerStatus::Codes::kNetworkReadError,
          "Range requests are not allowed for cross-origin content"});
     TRACE_EVENT_END("media", perfetto::Track::FromPointer(this));
     return;
@@ -182,7 +182,7 @@ void HlsDataSourceProviderImpl::DataSourceInitialized(
     auto it = data_source_map_.find(stream->stream_id());
     CHECK(it != data_source_map_.end());
     data_source_map_.erase(it);
-    std::move(callback).Run(ReadStatus::Codes::kStopped);
+    std::move(callback).Run(HlsDemuxerStatus::Codes::kNetworkReadStopped);
     TRACE_EVENT_END("media", perfetto::Track::FromPointer(this));
     return;
   }
@@ -204,7 +204,7 @@ void HlsDataSourceProviderImpl::DataSourceInitialized(
 
   if (stream->SecurityInfo().HasIncompatibleRangeAndOrigin()) {
     std::move(callback).Run(
-        {ReadStatus::Codes::kError,
+        {HlsDemuxerStatus::Codes::kNetworkReadError,
          "Range requests are not allowed for cross-origin content"});
     TRACE_EVENT_END("media", perfetto::Track::FromPointer(this));
     return;

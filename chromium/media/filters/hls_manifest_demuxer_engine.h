@@ -215,8 +215,7 @@ class MEDIA_EXPORT HlsManifestDemuxerEngine : public ManifestDemuxer::Engine,
   // memory state and origin tainting.
   void UpdateHlsDataSourceStats(
       HlsDataSourceProvider::ReadCb cb,
-      HlsDataSourceProvider::ReadStatus::Or<
-          std::unique_ptr<HlsDataSourceStream>> result);
+      HlsDataSourceProvider::ReadResult result);
 
   // Helper to bind `UpdateHlsDataSourceStats` around a response CB.
   HlsDataSourceProvider::ReadCb BindStatsUpdate(
