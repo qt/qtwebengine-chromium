@@ -3907,17 +3907,19 @@ void Element::SetIsCanvasOrInCanvasSubtree(bool value) {
   }
   SetElementFlag(ElementFlags::kIsCanvasOrInCanvasSubtree, value);
   DidChangeIsCanvasOrInCanvasSubtree();
+  if (const ElementRareDataVector* rare_data = GetElementRareData()) {
+    for (PseudoElement* pseudo_element : rare_data->GetPseudoElements()) {
+      pseudo_element->SetIsCanvasOrInCanvasSubtree(value);
+    }
+  }
 }
 
 void Element::DidChangeIsCanvasOrInCanvasSubtree() {
   if (auto* layout_object = GetLayoutObject()) {
     layout_object->SetNeedsPaintPropertyUpdate();
-    if (layout_object->HasLayer()) {
-      To<LayoutBoxModelObject>(layout_object)->Layer()->SetNeedsRepaint();
-    }
     ObjectPaintInvalidator(*layout_object)
-        .InvalidateDisplayItemClient(*layout_object,
-                                     PaintInvalidationReason::kUncacheable);
+        .SlowSetPaintingLayerNeedsRepaintAndInvalidateDisplayItemClient(
+            *layout_object, PaintInvalidationReason::kUncacheable);
   }
 }
 
