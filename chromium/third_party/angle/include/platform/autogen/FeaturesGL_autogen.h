@@ -680,6 +680,12 @@ struct FeaturesGL : FeatureSetBase
         &members,
     };
 
+    FeatureInfo flushBeforeGenerateMipmap = {
+        "flushBeforeGenerateMipmap",
+        FeatureCategory::OpenGLWorkarounds,
+        &members,
+    };
+
     FeatureInfo splitLevel0PboFullSubImage2D = {
         "splitLevel0PboFullSubImage2D",
         FeatureCategory::OpenGLWorkarounds,

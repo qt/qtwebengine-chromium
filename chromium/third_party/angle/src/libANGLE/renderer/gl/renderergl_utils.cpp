@@ -2792,6 +2792,10 @@ void InitializeFeatures(const FunctionsGL *functions, angle::FeaturesGL *feature
     // coverage each time FBO changes.
     ANGLE_FEATURE_CONDITION(features, resetSampleCoverageOnFBOChange, isQualcomm);
 
+    // Forces a flush before generating a mipmap, which avoids a bad state in the IMG driver if
+    // the texture's base level is still bound to an active FBO.
+    ANGLE_FEATURE_CONDITION(features, flushBeforeGenerateMipmap, IsPowerVR(vendor));
+
     // Some drivers have compilation issues when shaders declare too many output varyings.
     // crbug.com/529991907
     ANGLE_FEATURE_CONDITION(features, limitOutputVaryingsTo256AtCompileTime, IsPowerVR(vendor));
