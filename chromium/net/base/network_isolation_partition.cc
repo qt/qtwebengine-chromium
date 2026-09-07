@@ -17,6 +17,8 @@ std::string NetworkIsolationPartitionToDebugString(
       return "protected audience seller worklet partition";
     case NetworkIsolationPartition::kFedCmUncredentialedRequests:
       return "fedcm uncredentialed requests";
+    case NetworkIsolationPartition::kSharedWorkerSameSiteCookiesNone:
+      return "shared worker same site cookies none";
   }
 }
 
