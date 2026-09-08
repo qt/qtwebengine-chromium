@@ -13,6 +13,22 @@
 
 namespace v8::internal {
 
+const char* ToString(Script::CompilationKind type) {
+  switch (type) {
+    case Script::CompilationKind::kHost:
+      return "host";
+    case Script::CompilationKind::kDirectEval:
+      return "direct-eval";
+    case Script::CompilationKind::kIndirectEval:
+      return "indirect-eval";
+    case Script::CompilationKind::kFunctionConstructor:
+      return "function-constructor";
+    case Script::CompilationKind::kWrapped:
+      return "wrapped";
+  }
+  UNREACHABLE();
+}
+
 template <typename IsolateT>
 MaybeHandle<SharedFunctionInfo> Script::FindSharedFunctionInfo(
     DirectHandle<Script> script, IsolateT* isolate,

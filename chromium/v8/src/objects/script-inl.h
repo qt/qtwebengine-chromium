@@ -57,7 +57,16 @@ ACCESSORS(Script, compiled_lazy_function_positions, Tagged<Object>,
           kCompiledLazyFunctionPositionsOffset)
 
 bool Script::is_wrapped() const {
-  return IsFixedArray(eval_from_shared_or_wrapped_arguments());
+  bool is_wrapped = compilation_kind() == CompilationKind::kWrapped;
+  DCHECK_EQ(is_wrapped, IsFixedArray(eval_from_shared_or_wrapped_arguments()));
+  return is_wrapped;
+}
+
+LanguageMode Script::outer_language_mode() const {
+  return OuterLanguageModeBit::decode(flags());
+}
+void Script::set_outer_language_mode(LanguageMode mode) {
+  set_flags(OuterLanguageModeBit::update(flags(), mode));
 }
 
 bool Script::has_eval_from_shared() const {
@@ -77,6 +86,7 @@ Tagged<SharedFunctionInfo> Script::eval_from_shared() const {
 
 void Script::set_wrapped_arguments(Tagged<FixedArray> value,
                                    WriteBarrierMode mode) {
+  DCHECK_EQ(compilation_kind(), CompilationKind::kWrapped);
   DCHECK(!has_eval_from_shared());
   set_eval_from_shared_or_wrapped_arguments(value, mode);
 }
@@ -131,11 +141,18 @@ void Script::set_flags(uint32_t new_flags) {
   TaggedField<Smi>::Relaxed_Store(*this, kFlagsOffset, Smi::FromInt(new_flags));
 }
 
-Script::CompilationType Script::compilation_type() const {
-  return CompilationTypeBit::decode(flags());
+Script::CompilationKind Script::compilation_kind() const {
+  return CompilationKindBits::decode(flags());
 }
-void Script::set_compilation_type(CompilationType type) {
-  set_flags(CompilationTypeBit::update(flags(), type));
+void Script::set_compilation_kind(CompilationKind kind) {
+  set_flags(CompilationKindBits::update(flags(), kind));
+}
+
+Script::CompilationType Script::compilation_type() const {
+  return (compilation_kind() == CompilationKind::kHost ||
+          compilation_kind() == CompilationKind::kWrapped)
+             ? CompilationType::kHost
+             : CompilationType::kEval;
 }
 Script::CompilationState Script::compilation_state() {
   return CompilationStateBit::decode(flags());

@@ -58,6 +58,15 @@ class Script : public TorqueGeneratedScript<Script, Struct> {
   // Script compilation state.
   enum class CompilationState { kInitial = 0, kCompiled = 1 };
 
+  // Script compilation kinds.
+  enum class CompilationKind {
+    kHost = 0,
+    kDirectEval = 1,
+    kIndirectEval = 2,
+    kFunctionConstructor = 3,
+    kWrapped = 4,
+  };
+
   // [type]: the script type.
   DECL_PRIMITIVE_ACCESSORS(type, Type)
 
@@ -72,6 +81,16 @@ class Script : public TorqueGeneratedScript<Script, Struct> {
 
   // Whether the script is implicitly wrapped in a function.
   inline bool is_wrapped() const;
+
+  // [compilation_kind]: how the script was compiled (host, direct/indirect
+  // eval, Function constructor, or wrapped). Encoded in the 'flags' field.
+  inline CompilationKind compilation_kind() const;
+  inline void set_compilation_kind(CompilationKind kind);
+
+  // [outer_language_mode]: the lexical language mode of the enclosing scope.
+  // Encoded in the 'flags' field.
+  inline LanguageMode outer_language_mode() const;
+  inline void set_outer_language_mode(LanguageMode mode);
 
   // Whether the eval_from_shared field is set with a shared function info
   // for the eval site.
@@ -123,7 +142,6 @@ class Script : public TorqueGeneratedScript<Script, Struct> {
   // [compilation_type]: how the the script was compiled. Encoded in the
   // 'flags' field.
   inline CompilationType compilation_type() const;
-  inline void set_compilation_type(CompilationType type);
 
   inline bool produce_compile_hints() const;
   inline void set_produce_compile_hints(bool produce_compile_hints);
