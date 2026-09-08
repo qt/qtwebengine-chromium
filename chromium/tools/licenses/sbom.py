@@ -354,14 +354,6 @@ def CleanupLicenseMetadata(dep_metadata):
     dep_metadata[OVERRIDE_LICENSE_FILE_METADATA_KEY] = True
   elif num_licenses == 1:
     dep_metadata['License File'] = dep_metadata['License File'][0]
-  elif num_licenses == 2 and dep_metadata['License'].endswith(", Patent"):
-    # Handle cases like libaom, libwebp: We don't want to include the patent file
-    former_license = dep_metadata['License']
-    updated_license = dep_metadata['License'][:-len(", Patent")]
-    logger.info("Patent file detected for package %s, skipping patent" % (dep_metadata['Name']))
-    dep_metadata['License'] = updated_license
-
-    dep_metadata['License File'] = dep_metadata['License File'][0]
   else:
     dep_metadata['License File'] = None
     raise license_tools.LicenseError("Dependency has %d licenses, expected exactly 1" % num_licenses)

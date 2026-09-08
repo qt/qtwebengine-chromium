@@ -4,8 +4,10 @@ URL: https://chromium.googlesource.com/webm/libwebp
 Version: N/A
 Revision: 4fa21912338357f89e4fd51cf2368325b59e9bd9
 CPEPrefix: cpe:/a:webmproject:libwebp:1.6.0
-License: BSD-3-Clause, Patent
-License File: src/COPYING, src/PATENTS
+License: BSD-3-Clause
+License File: src/COPYING
+Patent: Patent
+Patent File: src/PATENTS
 Security Critical: Yes
 Shipped: yes
 

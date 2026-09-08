@@ -5,9 +5,11 @@ Version: N/A
 Revision: 137bcff61e73fdd2836dc04e8258bfb49cef595e
 Update Mechanism: Manual
 CPEPrefix: cpe:/a:aomedia:aomedia:3.14.1
-License: Alliance-for-Open-Media-Patent, BSD-2-Clause
+License: BSD-2-Clause
 License Android Compatible: yes
-License File: source/libaom/LICENSE, source/libaom/PATENTS
+License File: source/libaom/LICENSE
+Patent: Alliance-for-Open-Media-Patent
+Patent File: source/libaom/PATENTS
 Security Critical: yes
 Shipped: yes
 
