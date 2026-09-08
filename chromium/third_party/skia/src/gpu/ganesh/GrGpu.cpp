@@ -680,12 +680,14 @@ void GrGpu::didWriteToSurface(GrSurface* surface, GrSurfaceOrigin origin, const 
     }
 }
 
-void GrGpu::executeFlushInfo(SkSpan<GrSurfaceProxy*> proxies,
-                             SkSurfaces::BackendSurfaceAccess access,
-                             const GrFlushInfo& info,
-                             std::optional<GrTimerQuery> timerQuery,
-                             const skgpu::MutableTextureState* newState) {
+GrDirectContext::FlushResult GrGpu::executeFlushInfo(SkSpan<GrSurfaceProxy*> proxies,
+                                                     SkSurfaces::BackendSurfaceAccess access,
+                                                     const GrFlushInfo& info,
+                                                     std::optional<GrTimerQuery> timerQuery,
+                                                     const skgpu::MutableTextureState* newState) {
     TRACE_EVENT0("skia.gpu", TRACE_FUNC);
+
+    GrSemaphoresSubmitted submitted = GrSemaphoresSubmitted::kNo;
 
     GrResourceProvider* resourceProvider = fContext->priv().resourceProvider();
 
@@ -711,6 +713,8 @@ void GrGpu::executeFlushInfo(SkSpan<GrSurfaceProxy*> proxies,
                 }
             }
         }
+
+        submitted = GrSemaphoresSubmitted::kYes;
     }
 
     if (timerQuery) {
@@ -737,6 +741,10 @@ void GrGpu::executeFlushInfo(SkSpan<GrSurfaceProxy*> proxies,
     SkASSERT(!newState || proxies.size() == 1);
     SkASSERT(!newState || access == SkSurfaces::BackendSurfaceAccess::kNoAccess);
     this->prepareSurfacesForBackendAccessAndStateUpdates(proxies, access, newState);
+
+    // If there were semaphores to flush but no support for it, we have failed.
+    bool semaphoreFailure = !this->caps()->backendSemaphoreSupport() && info.fNumSemaphores;
+    return { !semaphoreFailure, submitted };
 }
 
 GrOpsRenderPass* GrGpu::getOpsRenderPass(

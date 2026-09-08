@@ -65,7 +65,7 @@ using MaskFormat = skgpu::MaskFormat;
 #define ASSERT_SINGLE_OWNER SKGPU_ASSERT_SINGLE_OWNER(this->context()->singleOwner())
 #define RETURN_VALUE_IF_ABANDONED(value) if (this->context()->abandoned()) { return (value); }
 
-GrSemaphoresSubmitted GrDirectContextPriv::flushSurfaces(
+GrDirectContext::FlushResult GrDirectContextPriv::flushSurfaces(
         SkSpan<GrSurfaceProxy*> proxies,
         SkSurfaces::BackendSurfaceAccess access,
         const GrFlushInfo& info,
@@ -80,7 +80,7 @@ GrSemaphoresSubmitted GrDirectContextPriv::flushSurfaces(
         if (info.fFinishedProc) {
             info.fFinishedProc(info.fFinishedContext);
         }
-        return GrSemaphoresSubmitted::kNo;
+        return {false, GrSemaphoresSubmitted::kNo};
     }
 
 #ifdef SK_DEBUG
