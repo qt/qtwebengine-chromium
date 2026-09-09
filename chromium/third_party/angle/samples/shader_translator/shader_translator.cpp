@@ -114,6 +114,9 @@ int main(int argc, char *argv[])
                 case 'u':
                     printActiveVariables = true;
                     break;
+                case 'g':
+                    compileOptions.outputDebugInfo = true;
+                    break;
                 case 's':
                     if (argv[0][2] == '=')
                     {
@@ -186,6 +189,7 @@ int main(int argc, char *argv[])
                                 break;
                             case 'v':
                                 output = SH_SPIRV_VULKAN_OUTPUT;
+                                compileOptions.emitSPIRV14 = true;
                                 compileOptions.initializeUninitializedLocals = true;
                                 break;
                             case 'h':
@@ -441,6 +445,7 @@ void usage()
         "       -i       : print intermediate tree\n"
         "       -o       : print translated code\n"
         "       -u       : print active attribs, uniforms, varyings and program outputs\n"
+        "       -g       : include debug info in the output\n"
         "       -s=e2    : use GLES2 spec (this is by default)\n"
         "       -s=e3    : use GLES3 spec\n"
         "       -s=e31   : use GLES31 spec (in development)\n"

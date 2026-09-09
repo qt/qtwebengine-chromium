@@ -95,10 +95,6 @@ ImmutableString MakeMatCx2ConversionFunctionName(const TType *type);
 // just the default block. (fails for  matCx2, bool.)
 bool OutputUniformBlocksAndSamplers(TCompiler *compiler, TIntermBlock *root);
 
-// GLSL sampler uniforms are extracted from structs. Given a GLSL sampler's associated name string,
-// this function retrieves its new WGSL name and strips off array indices.
-std::string WGSLGetMappedSamplerName(const std::string &originalName);
-
 }  // namespace sh
 
 #endif  // COMPILER_TRANSLATOR_WGSL_OUTPUT_UNIFORM_BLOCKS_H_
