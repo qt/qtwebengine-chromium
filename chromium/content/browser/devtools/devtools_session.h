@@ -128,7 +128,8 @@ class DevToolsSession : public protocol::FrontendChannel,
   void DetachChildSession(const std::string& session_id);
   bool HasChildSession(const std::string& session_id);
   static bool ValidateSessionId(const std::string& expected_session_id,
-                                base::span<const uint8_t> message);
+                                base::span<const uint8_t> message,
+                                bool expect_cbor);
   DevToolsSession* GetSessionById(const std::string& session_id);
   Mode session_mode() const { return mode_; }
 
