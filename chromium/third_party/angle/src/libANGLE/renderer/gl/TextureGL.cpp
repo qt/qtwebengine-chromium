@@ -39,6 +39,23 @@ namespace rx
 
 namespace
 {
+GLuint GetMaxMipmapLevel(const gl::Caps &caps, gl::TextureType target)
+{
+    switch (target)
+    {
+        case gl::TextureType::_2D:
+        case gl::TextureType::_2DArray:
+            return static_cast<GLuint>(gl::log2(caps.max2DTextureSize));
+        case gl::TextureType::_3D:
+            return static_cast<GLuint>(gl::log2(caps.max3DTextureSize));
+        case gl::TextureType::CubeMap:
+        case gl::TextureType::CubeMapArray:
+            return static_cast<GLuint>(gl::log2(caps.maxCubeMapTextureSize));
+        default:
+            return 0u;
+    }
+}
+
 // For use with the uploadTextureDataInChunks feature.  See http://crbug.com/1181068
 constexpr const size_t kUploadTextureDataInChunksUploadSize = (120 * 1024) - 1;
 
@@ -2141,21 +2158,31 @@ angle::Result TextureGL::syncState(const gl::Context *context,
                                                   &mAppliedSwizzle.swizzleAlpha));
                 break;
             case gl::Texture::DIRTY_BIT_BASE_LEVEL:
-                if (mAppliedBaseLevel != mState.getEffectiveBaseLevel())
                 {
-                    mAppliedBaseLevel = mState.getEffectiveBaseLevel();
-                    ANGLE_GL_TRY(context, functions->texParameteri(
-                                              nativegl::GetTextureBindingTarget(getType()),
-                                              GL_TEXTURE_BASE_LEVEL, mAppliedBaseLevel));
+                    const GLuint maxLevelLimit = GetMaxMipmapLevel(context->getCaps(), getType());
+                    const GLuint clampedBaseLevel =
+                        std::min(mState.getEffectiveBaseLevel(), maxLevelLimit);
+                    if (mAppliedBaseLevel != clampedBaseLevel)
+                    {
+                        mAppliedBaseLevel = clampedBaseLevel;
+                        ANGLE_GL_TRY(context, functions->texParameteri(
+                                                  nativegl::GetTextureBindingTarget(getType()),
+                                                  GL_TEXTURE_BASE_LEVEL, mAppliedBaseLevel));
+                    }
                 }
                 break;
             case gl::Texture::DIRTY_BIT_MAX_LEVEL:
-                if (mAppliedMaxLevel != mState.getEffectiveMaxLevel())
                 {
-                    mAppliedMaxLevel = mState.getEffectiveMaxLevel();
-                    ANGLE_GL_TRY(context, functions->texParameteri(
-                                              nativegl::GetTextureBindingTarget(getType()),
-                                              GL_TEXTURE_MAX_LEVEL, mAppliedMaxLevel));
+                    const GLuint maxLevelLimit = GetMaxMipmapLevel(context->getCaps(), getType());
+                    const GLuint clampedMaxLevel =
+                        std::min(mState.getEffectiveMaxLevel(), maxLevelLimit);
+                    if (mAppliedMaxLevel != clampedMaxLevel)
+                    {
+                        mAppliedMaxLevel = clampedMaxLevel;
+                        ANGLE_GL_TRY(context, functions->texParameteri(
+                                                  nativegl::GetTextureBindingTarget(getType()),
+                                                  GL_TEXTURE_MAX_LEVEL, mAppliedMaxLevel));
+                    }
                 }
                 break;
             case gl::Texture::DIRTY_BIT_DEPTH_STENCIL_TEXTURE_MODE:
@@ -2211,12 +2238,14 @@ bool TextureGL::hasAnyDirtyBit() const
 
 angle::Result TextureGL::setBaseLevel(const gl::Context *context, GLuint baseLevel)
 {
-    if (baseLevel != mAppliedBaseLevel)
+    const GLuint maxLevelLimit    = GetMaxMipmapLevel(context->getCaps(), getType());
+    const GLuint clampedBaseLevel = std::min(baseLevel, maxLevelLimit);
+    if (clampedBaseLevel != mAppliedBaseLevel)
     {
         const FunctionsGL *functions = GetFunctionsGL(context);
         StateManagerGL *stateManager = GetStateManagerGL(context);
 
-        mAppliedBaseLevel = baseLevel;
+        mAppliedBaseLevel = clampedBaseLevel;
         mLocalDirtyBits.set(gl::Texture::DIRTY_BIT_BASE_LEVEL);
 
         // Signal to the GL layer that the Impl has dirty bits.
@@ -2224,27 +2253,29 @@ angle::Result TextureGL::setBaseLevel(const gl::Context *context, GLuint baseLev
 
         stateManager->bindTexture(getType(), mTextureID);
         ANGLE_GL_TRY(context, functions->texParameteri(ToGLenum(getType()), GL_TEXTURE_BASE_LEVEL,
-                                                       baseLevel));
+                                                       clampedBaseLevel));
     }
     return angle::Result::Continue;
 }
 
 angle::Result TextureGL::setMaxLevel(const gl::Context *context, GLuint maxLevel)
 {
-    if (maxLevel != mAppliedMaxLevel)
+    const GLuint maxLevelLimit   = GetMaxMipmapLevel(context->getCaps(), getType());
+    const GLuint clampedMaxLevel = std::min(maxLevel, maxLevelLimit);
+    if (clampedMaxLevel != mAppliedMaxLevel)
     {
         const FunctionsGL *functions = GetFunctionsGL(context);
         StateManagerGL *stateManager = GetStateManagerGL(context);
 
-        mAppliedMaxLevel = maxLevel;
+        mAppliedMaxLevel = clampedMaxLevel;
         mLocalDirtyBits.set(gl::Texture::DIRTY_BIT_MAX_LEVEL);
 
         // Signal to the GL layer that the Impl has dirty bits.
         onStateChange(angle::SubjectMessage::DirtyBitsFlagged);
 
         stateManager->bindTexture(getType(), mTextureID);
-        ANGLE_GL_TRY(context,
-                     functions->texParameteri(ToGLenum(getType()), GL_TEXTURE_MAX_LEVEL, maxLevel));
+        ANGLE_GL_TRY(context, functions->texParameteri(ToGLenum(getType()), GL_TEXTURE_MAX_LEVEL,
+                                                       clampedMaxLevel));
     }
     return angle::Result::Continue;
 }
@@ -2381,7 +2412,7 @@ angle::Result TextureGL::recreateTexture(const gl::Context *context)
     mAppliedSampler = gl::SamplerState::CreateDefaultForTarget(getType());
 
     mAppliedBaseLevel = 0;
-    mAppliedBaseLevel = gl::kInitialMaxLevel;
+    mAppliedMaxLevel  = gl::kInitialMaxLevel;
 
     mLocalDirtyBits = mAllModifiedDirtyBits;
 
