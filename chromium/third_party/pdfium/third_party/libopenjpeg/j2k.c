@@ -9246,8 +9246,10 @@ static OPJ_BOOL opj_j2k_copy_default_tcp_and_create_tcd(opj_j2k_t * p_j2k,
         /* Remove memory not owned by this tile in case of early error return. */
         l_tcp->m_mct_decoding_matrix = 00;
         l_tcp->m_nb_max_mct_records = 0;
+        l_tcp->m_nb_mct_records = 0;
         l_tcp->m_mct_records = 00;
         l_tcp->m_nb_max_mcc_records = 0;
+        l_tcp->m_nb_mcc_records = 0;
         l_tcp->m_mcc_records = 00;
         /* Reconnect the tile-compo coding parameters pointer to the current tile coding parameters*/
         l_tcp->tccps = l_current_tccp;
@@ -9270,6 +9272,7 @@ static OPJ_BOOL opj_j2k_copy_default_tcp_and_create_tcd(opj_j2k_t * p_j2k,
             return OPJ_FALSE;
         }
         memcpy(l_tcp->m_mct_records, l_default_tcp->m_mct_records, l_mct_records_size);
+        l_tcp->m_nb_max_mct_records = l_default_tcp->m_nb_max_mct_records;
 
         /* Copy the mct record data from dflt_tile_cp to the current tile*/
         l_src_mct_rec = l_default_tcp->m_mct_records;
@@ -9290,7 +9293,7 @@ static OPJ_BOOL opj_j2k_copy_default_tcp_and_create_tcd(opj_j2k_t * p_j2k,
             ++l_src_mct_rec;
             ++l_dest_mct_rec;
             /* Update with each pass to free exactly what has been allocated on early return. */
-            l_tcp->m_nb_max_mct_records += 1;
+            l_tcp->m_nb_mct_records += 1;
         }
 
         /* Get the mcc_record of the dflt_tile_cp and copy them into the current tile cp*/
