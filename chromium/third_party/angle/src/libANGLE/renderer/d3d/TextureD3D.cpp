@@ -138,6 +138,11 @@ GLint TextureD3D::getLevelZeroDepth() const
     return 1;
 }
 
+GLint TextureD3D::getBaseLevelStorageDepth() const
+{
+    return getLevelZeroDepth();
+}
+
 GLint TextureD3D::getBaseLevelWidth() const
 {
     const ImageD3D *baseImage = getBaseLevelImage();
@@ -737,7 +742,7 @@ angle::Result TextureD3D::setBaseLevel(const gl::Context *context, GLuint baseLe
 {
     const int oldStorageWidth  = std::max(1, getLevelZeroWidth());
     const int oldStorageHeight = std::max(1, getLevelZeroHeight());
-    const int oldStorageDepth  = std::max(1, getLevelZeroDepth());
+    const int oldStorageDepth  = std::max(1, getBaseLevelStorageDepth());
     const int oldStorageFormat = getBaseLevelInternalFormat();
     mBaseLevel                 = baseLevel;
 
@@ -750,7 +755,7 @@ angle::Result TextureD3D::setBaseLevel(const gl::Context *context, GLuint baseLe
     // dimension mismatch and lead to recreating the storage with wrong dimensions.
     const int newStorageWidth  = std::max(1, getLevelZeroWidth());
     const int newStorageHeight = std::max(1, getLevelZeroHeight());
-    const int newStorageDepth  = std::max(1, getLevelZeroDepth());
+    const int newStorageDepth  = std::max(1, getBaseLevelStorageDepth());
     const int newStorageFormat = getBaseLevelInternalFormat();
     if (mTexStorage && !isImmutable() &&
         (newStorageWidth != oldStorageWidth || newStorageHeight != oldStorageHeight ||
@@ -3703,7 +3708,7 @@ angle::Result TextureD3D_2DArray::createCompleteStorage(const gl::Context *conte
 {
     GLsizei width         = getLevelZeroWidth();
     GLsizei height        = getLevelZeroHeight();
-    GLsizei depth         = getLayerCount(getBaseLevel());
+    GLsizei depth         = getBaseLevelStorageDepth();
     GLenum internalFormat = getBaseLevelInternalFormat();
 
     ASSERT(width > 0 && height > 0 && depth > 0);
@@ -3817,6 +3822,16 @@ angle::Result TextureD3D_2DArray::updateStorageLevel(const gl::Context *context,
     return angle::Result::Continue;
 }
 
+GLint TextureD3D_2DArray::getBaseLevelStorageDepth() const
+{
+    const GLuint baseLevel = getBaseLevel();
+    if (baseLevel < gl::IMPLEMENTATION_MAX_TEXTURE_LEVELS)
+    {
+        return getLayerCount(baseLevel);
+    }
+    return 0;
+}
+
 void TextureD3D_2DArray::deleteImages()
 {
     for (int level = 0; level < gl::IMPLEMENTATION_MAX_TEXTURE_LEVELS; ++level)
@@ -3840,14 +3855,8 @@ angle::Result TextureD3D_2DArray::redefineImage(const gl::Context *context,
     // If there currently is a corresponding storage texture image, it has these parameters
     const int storageWidth     = std::max(1, getLevelZeroWidth() >> level);
     const int storageHeight    = std::max(1, getLevelZeroHeight() >> level);
-    const GLuint baseLevel     = getBaseLevel();
     const GLenum storageFormat = getBaseLevelInternalFormat();
-
-    int storageDepth = 0;
-    if (baseLevel < gl::IMPLEMENTATION_MAX_TEXTURE_LEVELS)
-    {
-        storageDepth = getLayerCount(baseLevel);
-    }
+    const int storageDepth     = getBaseLevelStorageDepth();
 
     // Only reallocate the layers if the size doesn't match
     if (size.depth != mLayerCounts[level])
