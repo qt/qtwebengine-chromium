@@ -2027,7 +2027,7 @@ LoadImageFunctionInfo G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16_ANGLE_to_default
     switch (type)
     {
         case GL_UNSIGNED_BYTE:
-            return LoadImageFunctionInfo(UnimplementedLoadFunction, true);
+            return LoadImageFunctionInfo(LoadYuvToNative, true);
         default:
             UNREACHABLE();
             return LoadImageFunctionInfo(UnreachableLoadFunction, true);
