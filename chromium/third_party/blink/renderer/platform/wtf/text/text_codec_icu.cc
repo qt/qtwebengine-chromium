@@ -166,7 +166,7 @@ void TextCodecIcu::RegisterEncodingNames(EncodingNameRegistrar registrar) {
       continue;
     }
 
-    registrar(standard_name, canonical_name.Ascii().c_str());
+    registrar(standard_name, standard_name);
 
     UErrorCode error = U_ZERO_ERROR;
 
@@ -178,7 +178,7 @@ void TextCodecIcu::RegisterEncodingNames(EncodingNameRegistrar registrar) {
         const char* alias = ucnv_getAlias(name, j, &error);
         DCHECK(U_SUCCESS(error));
         if (U_SUCCESS(error) && alias != standard_name && IncludeAlias(alias)) {
-          registrar(alias, canonical_name.Ascii().c_str());
+          registrar(alias, standard_name);
         }
       }
     }
