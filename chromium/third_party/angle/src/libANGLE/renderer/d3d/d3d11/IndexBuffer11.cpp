@@ -32,6 +32,8 @@ angle::Result IndexBuffer11::initialize(const gl::Context *context,
                                         bool dynamic)
 {
     mBuffer.reset();
+    mBufferSize = 0;
+    mIndexType  = gl::DrawElementsType::InvalidEnum;
 
     updateSerial();
 

@@ -42,6 +42,7 @@ angle::Result VertexBuffer11::initialize(const gl::Context *context,
                                          bool dynamicUsage)
 {
     mBuffer.reset();
+    mBufferSize = 0;
     updateSerial();
 
     if (size > 0)
