@@ -8346,8 +8346,10 @@ ReduceResult MaglevGraphBuilder::BuildEagerInlineCall(
       inner_graph_builder.current_interpreter_frame_.known_node_aspects());
   current_interpreter_frame_.set_virtual_objects(
       inner_graph_builder.current_interpreter_frame_.virtual_objects());
-  current_for_in_state.receiver_needs_map_check =
-      inner_graph_builder.current_for_in_state.receiver_needs_map_check;
+  if (inner_graph_builder.may_have_changed_maps()) {
+    may_have_changed_maps_ = true;
+    current_for_in_state.receiver_needs_map_check = true;
+  }
 
   // Resume execution using the final block of the inner builder.
   inner_graph_builder.reducer_.FlushNodesToBlock();
