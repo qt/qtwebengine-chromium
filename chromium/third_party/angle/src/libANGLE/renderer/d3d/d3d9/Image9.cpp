@@ -952,6 +952,14 @@ angle::Result Image9::copyFromTexStorage(const gl::Context *context,
     RenderTargetD3D *renderTarget = nullptr;
     ANGLE_TRY(source->getRenderTarget(context, imageIndex, 0, &renderTarget));
 
+    // TextureD3D may now request a backup from non-render-target storage. D3D9 storage only
+    // provides render targets for render-target textures, and D3D9 has no setData fast path, so
+    // the image already holds the data in that case.
+    if (!renderTarget)
+    {
+        return angle::Result::Continue;
+    }
+
     gl::Rectangle sourceArea(0, 0, mWidth, mHeight);
     return copyFromRTInternal(GetImplAs<Context9>(context), gl::Offset(), sourceArea, renderTarget);
 }
