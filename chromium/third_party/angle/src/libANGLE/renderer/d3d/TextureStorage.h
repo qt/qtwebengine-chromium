@@ -88,6 +88,9 @@ class TextureStorage : public angle::Subject
     virtual angle::Result resolveTexture(const gl::Context *context);
     virtual GLsizei getRenderToTextureSamples() const;
 
+    virtual void markLevelDirty(int mipLevel) {}
+    virtual void markDirty() {}
+
     // Called by outer object when label has changed via KHR_debug extension
     void setLabel(const std::string &newLabel);
 
