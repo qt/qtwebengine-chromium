@@ -54,6 +54,7 @@
 #include "third_party/blink/renderer/platform/loader/fetch/response_body_loader.h"
 #include "third_party/blink/renderer/platform/loader/fetch/script_cached_metadata_handler.h"
 #include "third_party/blink/renderer/platform/network/mime/mime_type_registry.h"
+#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/scheduler/public/post_cross_thread_task.h"
 #include "third_party/blink/renderer/platform/scheduler/public/thread_scheduler.h"
 #include "third_party/blink/renderer/platform/scheduler/public/worker_pool.h"
@@ -1429,6 +1430,11 @@ bool BackgroundResourceScriptStreamer::BackgroundProcessor::
     if (new_encoding.IsValid()) {
       encoding_ = new_encoding;
     }
+  }
+
+  if (!RuntimeEnabledFeatures::ServiceWorkerCodeCacheEnabled() &&
+      head->was_fetched_via_service_worker) {
+    cached_metadata.reset();
   }
 
   head_ = std::move(head);
