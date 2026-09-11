@@ -2710,7 +2710,7 @@ void GpuImageDecodeCache::UploadImageIfNecessary_TransferCache_HardwareDecode(
   sk_sp<SkData> encoded_data =
       draw_image.paint_image().GetSwSkImage()->refEncodedData();
   DCHECK(encoded_data);
-  const uint32_t transfer_cache_id = ClientImageTransferCacheEntry::GetNextId();
+  const uint32_t transfer_cache_id = ClientImageTransferCacheEntry::GetNextCacheEntryId();
   const gpu::SyncToken decode_sync_token =
       context_->RasterInterface()->ScheduleImageDecode(
           gfx::SkDataToSpan(encoded_data), output_size, transfer_cache_id,
