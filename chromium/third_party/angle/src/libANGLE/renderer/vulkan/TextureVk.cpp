@@ -1158,12 +1158,21 @@ angle::Result TextureVk::ghostOnOverwrite(ContextVk *contextVk,
     }
 
     // Size check: Can only ghost the image if the area being overwritten covers the entire image.
+    // Base level check: If base level has changed, don't attempt to ghost it as
+    //                   getBaseLevelFormat() and initImage() will be wrong below, but also it's
+    //                   possible the texture has to be reallocated anyway later.
     //
     // As a targeted optimization, only limit to non-array 2D color textures.  Other texture types
     // can be very easily added if need, but need additional tests similar to those that have landed
     // in http://anglebug.com/42265356 for 2D textures.
     const gl::LevelIndex overwriteLevel = gl::LevelIndex(index.getLevelIndex());
     const gl::LevelIndex imageLevel     = mImage->getFirstAllocatedLevel();
+
+    const gl::LevelIndex baseLevel = gl::LevelIndex(mState.getBaseLevel());
+    if (baseLevel != imageLevel)
+    {
+        return angle::Result::Continue;
+    }
 
     const bool is2DImage = mImage->getLevelCount() == 1 && mImage->getLayerCount() == 1 &&
                            mImage->getType() == VK_IMAGE_TYPE_2D;
