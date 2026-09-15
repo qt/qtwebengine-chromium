@@ -506,7 +506,7 @@ Called by update_bad_message_reasons.py.-->
   <int value="338" label="RFH_DID_COMMIT_NAVIGATION_WHILE_BFCACHED"/>
   <int value="339" label="RFH_BLOB_URL_STORE_ASSOCIATED_PDF_PROCESS_BLOCKED"/>
   <int value="340" label="RFH_BLOB_URL_STORE_RECEIVER_PDF_PROCESS_BLOCKED"/>
-  <int value="341" label="RFHI_SYNCHONOUS_COMMIT_ORIGIN_MISMATCH"/>
+  <int value="341" label="RFHI_SYNCHRONOUS_COMMIT_ORIGIN_MISMATCH"/>
 </enum>
 
 <enum name="BadMessageReasonExtensions">

@@ -366,7 +366,7 @@ enum BadMessageReason {
   RFH_DID_COMMIT_NAVIGATION_WHILE_BFCACHED = 338,
   RFH_BLOB_URL_STORE_ASSOCIATED_PDF_PROCESS_BLOCKED = 339,
   RFH_BLOB_URL_STORE_RECEIVER_PDF_PROCESS_BLOCKED = 340,
-  RFHI_SYNCHONOUS_COMMIT_ORIGIN_MISMATCH = 341,
+  RFHI_SYNCHRONOUS_COMMIT_ORIGIN_MISMATCH = 341,
   // Please add new elements here. The naming convention is abbreviated class
   // name (e.g. RenderFrameHost becomes RFH) plus a unique description of the
   // reason. After making changes, you MUST update enums.xml by running:
