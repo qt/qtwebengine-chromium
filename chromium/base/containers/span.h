@@ -498,12 +498,13 @@ constexpr auto as_byte_span(
 template <typename T>
 constexpr void copy_span_elements(span<T> dst, span<const T> src) {
   CHECK(dst.size() == src.size());
-  if consteval {
+  if (std::is_constant_evaluated()) {
     // Comparing pointers to different objects at compile time yields
     // unspecified behavior, which would halt compilation. Instead,
     // unconditionally use a separate buffer in the constexpr context. This
     // would be inefficient at runtime, but that's irrelevant.
-    std::ranges::move(std::vector(std::from_range, src), dst.begin());
+    // std::ranges::move(std::vector(std::from_range, src), dst.begin());
+    std::ranges::move(std::vector<T>(src.begin(), src.end()), dst.begin());
   } else {
     // Using `<=` to compare pointers to different allocations is UB;
     // delegating to the STL is the legal workaround:
@@ -717,7 +718,7 @@ class GSL_POINTER span {
     // unspecified behavior, which would halt compilation. Instead implement in
     // terms of the guaranteed-safe behavior; performance is irrelevant in the
     // constexpr context.
-    if consteval {
+    if (std::is_constant_evaluated()) {
       copy_from(other);
       return;
     }
@@ -1250,7 +1251,7 @@ class GSL_POINTER span<ElementType, dynamic_extent, InternalPtrType> {
     // unspecified behavior, which would halt compilation. Instead implement in
     // terms of the guaranteed-safe behavior; performance is irrelevant in the
     // constexpr context.
-    if consteval {
+    if (std::is_constant_evaluated()) {
       copy_from(other);
       return;
     }

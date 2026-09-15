@@ -56,7 +56,7 @@ bool ProtoWrapper::DeserializeToMessage(
   } else {
     // Make an in-process copy here as protobuf is not designed to
     // safely parse data that might be changing underneath it.
-    const std::vector<uint8_t> copy(std::from_range, *bytes_);
+    const std::vector<uint8_t> copy(bytes_->begin(), bytes_->end());
     return message.ParseFromArray(copy.data(), copy.size());
   }
 }

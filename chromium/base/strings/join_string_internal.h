@@ -27,9 +27,10 @@ constexpr std::basic_string<CharT> JoinStringT(list_type parts, T sep) {
   // Pre-allocate the eventual size of the string. Start with the size of all of
   // the separators (note that this *assumes* parts.size() > 0).
   // The counter is initialized with separator sizes.
-  const size_t total_size = std::ranges::fold_left(
-      parts, (std::size(parts) - 1) * sep.size(),
-      [](size_t acc, const auto& part) { return acc + std::size(part); });
+  size_t total_size = (std::size(parts) - 1) * sep.size();
+  for (const auto& part : parts) {
+    total_size += std::size(part);
+  }
   std::basic_string<CharT> result;
   result.reserve(total_size);
 

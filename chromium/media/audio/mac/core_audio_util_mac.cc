@@ -289,9 +289,10 @@ CoreAudioUtilMac::GetAllAudioDeviceIDs() const {
 
 std::vector<AudioObjectID> CoreAudioUtilMac::GetRelatedDeviceIDs(
     AudioObjectID device_id) const {
-  return GetAudioObjectIDs(device_id, kAudioDevicePropertyRelatedDevices,
-                           log_callback_)
-      .value_or({});
+  if (auto val = GetAudioObjectIDs(device_id, kAudioDevicePropertyRelatedDevices,
+                           log_callback_))
+      return *val;
+  return {};
 }
 
 std::optional<std::string> CoreAudioUtilMac::GetDeviceUniqueID(
@@ -419,9 +420,9 @@ bool CoreAudioUtilMac::IsPrivateAggregateDevice(AudioObjectID device_id) const {
 // TODO(crbug.com/392938088): When a VoiceProcessing AudioUnit is active, this
 // function might errously report that output devices are also input devices.
 bool CoreAudioUtilMac::IsInputDevice(AudioObjectID device_id) const {
-  std::vector<AudioObjectID> streams =
-      GetAudioObjectIDs(device_id, kAudioDevicePropertyStreams, log_callback_)
-          .value_or({});
+  std::vector<AudioObjectID> streams = {};
+  if (auto val = GetAudioObjectIDs(device_id, kAudioDevicePropertyStreams, log_callback_))
+     streams = *val;
 
   int num_undefined_input_streams = 0;
   int num_defined_input_streams = 0;

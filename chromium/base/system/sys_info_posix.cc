@@ -177,16 +177,20 @@ ByteSize SysInfo::AmountOfVirtualMemory() {
 
 // static
 std::optional<int64_t> SysInfo::AmountOfFreeDiskSpace(const FilePath& path) {
-  return AmountOfDiskSpace(path).transform([](DiskSpaceInfo info) {
-    return static_cast<int64_t>(info.available.InBytes());
-  });
+  std::optional<DiskSpaceInfo> info = AmountOfDiskSpace(path);
+  if (!info) {
+    return std::nullopt;
+  }
+  return static_cast<int64_t>(info->available.InBytes());
 }
 
 // static
 std::optional<int64_t> SysInfo::AmountOfTotalDiskSpace(const FilePath& path) {
-  return AmountOfDiskSpace(path).transform([](DiskSpaceInfo info) {
-    return static_cast<int64_t>(info.total.InBytes());
-  });
+  std::optional<DiskSpaceInfo> info = AmountOfDiskSpace(path);
+  if (!info) {
+    return std::nullopt;
+  }
+  return static_cast<int64_t>(info->total.InBytes());
 }
 
 // static

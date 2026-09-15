@@ -7,7 +7,6 @@
 #include <inttypes.h>
 
 #include <algorithm>
-#include <utility>
 #include <vector>
 
 #include "base/check_op.h"

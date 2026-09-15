@@ -435,12 +435,12 @@ void SessionStoreImpl::OnGetAllKeysForGarbageCollection(
     for (const auto& [_, session_proto] : site_sessions.sessions()) {
       if (std::string_view wrapped_key = session_proto.wrapped_key();
           !wrapped_key.empty()) {
-        known_wrapped_keys.emplace(std::from_range, wrapped_key);
+        known_wrapped_keys.emplace(wrapped_key.begin(), wrapped_key.end());
       }
       if (std::string_view wrapped_attestation_key =
               session_proto.wrapped_attestation_key();
           !wrapped_attestation_key.empty()) {
-        known_wrapped_keys.emplace(std::from_range, wrapped_attestation_key);
+        known_wrapped_keys.emplace(wrapped_attestation_key.begin(), wrapped_attestation_key.end());
       }
     }
   }

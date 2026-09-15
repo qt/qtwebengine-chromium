@@ -220,9 +220,8 @@ std::optional<DomainRuleTags> LookupSuffixInReversedSet(
   while (pos != host.begin() && lookup.Advance(*--pos)) {
     // Only host itself or a part that follows a dot can match.
     if (pos == host.begin() || *(pos - 1) == '.') {
-      std::optional<DomainRuleTags> value =
-          lookup.GetResultForCurrentSequence().transform(
-              DomainRuleTags::FromEnumBitmask);
+      auto val = lookup.GetResultForCurrentSequence();
+      std::optional<DomainRuleTags> value = val.has_value() ? std::optional<DomainRuleTags>(DomainRuleTags::FromEnumBitmask(*val)) : std::nullopt;
       if (value.has_value()) {
         // Break if private and private rules should be excluded.
         if (value.value().Has(DomainRuleTag::kPrivate) && !include_private) {

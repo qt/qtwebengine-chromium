@@ -16,7 +16,7 @@ namespace base::i18n_internal {
 // in their 'normalized' form as per:
 // https://www.rfc-editor.org/info/rfc5646/#section-3.1.4
 constexpr bool IsKnownLanguageSubtag(std::string_view subtag) {
-  static constexpr auto kKnownLanguages =
+  constexpr auto kKnownLanguages =
       base::MakeFixedFlatSet<std::string_view>({
 #define IMPL_BCP47_LANGUAGE(tag) tag,
 #include "base/i18n/internal/bcp47_languages.inc"
@@ -30,7 +30,7 @@ constexpr bool IsKnownLanguageSubtag(std::string_view subtag) {
 // in their 'normalized' form as per:
 // https://www.rfc-editor.org/info/rfc5646/#section-3.1.4
 constexpr bool IsKnownScriptSubtag(std::string_view subtag) {
-  static constexpr auto kKnownScripts =
+  constexpr auto kKnownScripts =
       base::MakeFixedFlatSet<std::string_view>({
 #define IMPL_BCP47_SCRIPT(tag) tag,
 #include "base/i18n/internal/bcp47_scripts.inc"
@@ -44,7 +44,7 @@ constexpr bool IsKnownScriptSubtag(std::string_view subtag) {
 // in their 'normalized' form as per:
 // https://www.rfc-editor.org/info/rfc5646/#section-3.1.4
 constexpr bool IsKnownRegionSubtag(std::string_view subtag) {
-  static constexpr auto kKnownRegions =
+  constexpr auto kKnownRegions =
       base::MakeFixedFlatSet<std::string_view>({
 #define IMPL_BCP47_REGION(tag) tag,
 #include "base/i18n/internal/bcp47_regions.inc"
@@ -58,7 +58,7 @@ constexpr bool IsKnownRegionSubtag(std::string_view subtag) {
 // in their 'normalized' form as per:
 // https://www.rfc-editor.org/info/rfc5646/#section-3.1.4
 constexpr bool IsKnownVariantSubtag(std::string_view subtag) {
-  static constexpr auto kKnownVariants =
+  constexpr auto kKnownVariants =
       base::MakeFixedFlatSet<std::string_view>({
 #define IMPL_BCP47_VARIANT(tag) tag,
 #include "base/i18n/internal/bcp47_variants.inc"

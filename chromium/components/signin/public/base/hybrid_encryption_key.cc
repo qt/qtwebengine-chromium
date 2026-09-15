@@ -73,7 +73,9 @@ std::vector<uint8_t> HybridEncryptionKey::EncryptForTesting(
       crypto::keypair::PublicKey::FromPrivateKey(private_key_);
   auto result =
       crypto::hpke::Seal(kHpkeParams, pub, plaintext, /*info=*/{}, /*ad=*/{});
-  return result.value_or({});
+  if (result)
+    return *result;
+  return {};
 }
 
 HybridEncryptionKey::HybridEncryptionKey(base::span<const uint8_t> private_key)

@@ -506,7 +506,7 @@ std::unique_ptr<FileNetLogObserver> FileNetLogObserver::CreateInternal(
       file_format);
 
   uint64_t write_queue_memory_max =
-      base::ClampedNumeric<uint64_t>(max_total_size) * 2;
+      base::MakeClampedNum<uint64_t>(max_total_size) * 2;
 
   return base::WrapUnique(new FileNetLogObserver(
       file_task_runner, std::move(file_writer),

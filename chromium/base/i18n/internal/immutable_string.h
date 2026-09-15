@@ -21,9 +21,11 @@
 namespace base::i18n_internal {
 
 constexpr size_t TotalSize(base::span<const std::string_view> parts) {
-  return std::ranges::fold_left(
-      parts, size_t{0},
-      [](size_t total, std::string_view part) { return total + part.size(); });
+  size_t total = 0;
+  for (std::string_view part : parts) {
+    total += part.size();
+  }
+  return total;
 }
 
 constexpr void CopyParts(base::span<const std::string_view> parts,
@@ -80,7 +82,7 @@ class BASE_I18N_EXPORT ImmutableString {
     HeapString& operator=(const HeapString& other);
     constexpr HeapString(HeapString&& other) noexcept;
     HeapString& operator=(HeapString&&);
-    inline constexpr ~HeapString() = default;
+    inline ~HeapString() = default;
 
     std::string_view AsString() const;
 

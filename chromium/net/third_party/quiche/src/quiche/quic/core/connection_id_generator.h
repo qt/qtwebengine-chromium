@@ -8,6 +8,8 @@
 #include "quiche/quic/core/quic_connection_id.h"
 #include "quiche/quic/core/quic_versions.h"
 
+#include <optional>
+
 namespace quic {
 
 class QUICHE_EXPORT ConnectionIdGeneratorInterface {

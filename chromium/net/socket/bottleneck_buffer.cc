@@ -88,7 +88,7 @@ int BottleneckBuffer::Push(base::span<const uint8_t> data, Mode mode) {
       one_way_latency_.is_positive() ? now + one_way_latency_ : now;
 
   auto copied = data.first(to_copy);
-  std::vector<uint8_t> chunk_data(std::from_range, copied);
+  std::vector<uint8_t> chunk_data(copied.begin(), copied.end());
   chunks_.emplace_back(std::move(chunk_data), available_at);
   buffered_bytes_ += to_copy;
 

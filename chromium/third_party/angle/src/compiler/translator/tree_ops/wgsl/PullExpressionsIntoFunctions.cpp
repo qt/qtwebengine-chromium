@@ -28,6 +28,8 @@
 #include "compiler/translator/tree_util/Visit.h"
 #include "compiler/translator/util.h"
 
+#include <variant>
+
 namespace sh
 {
 namespace

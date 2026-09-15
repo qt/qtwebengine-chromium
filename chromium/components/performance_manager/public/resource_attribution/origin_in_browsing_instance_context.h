@@ -44,11 +44,11 @@ class OriginInBrowsingInstanceContext {
   // convenience.
   std::string ToString() const;
 
-  constexpr friend auto operator<=>(const OriginInBrowsingInstanceContext& a,
-                                    const OriginInBrowsingInstanceContext& b) =
+  friend auto operator<=>(const OriginInBrowsingInstanceContext& a,
+                          const OriginInBrowsingInstanceContext& b) =
       default;
-  constexpr friend bool operator==(const OriginInBrowsingInstanceContext& a,
-                                   const OriginInBrowsingInstanceContext& b) =
+  friend bool operator==(const OriginInBrowsingInstanceContext& a,
+                         const OriginInBrowsingInstanceContext& b) =
       default;
 
   // Add OriginInBrowsingInstanceContexts to absl hashes.

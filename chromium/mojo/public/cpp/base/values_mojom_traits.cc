@@ -90,7 +90,11 @@ bool UnionTraits<mojo_base::mojom::ValueDataView, base::Value>::Read(
     case mojo_base::mojom::ValueDataView::Tag::kBinaryValue: {
       mojo::ArrayDataView<uint8_t> binary_data_view;
       data.GetBinaryValueDataView(&binary_data_view);
+#if __cpp_lib_containers_ranges >= 202202L
       base::Value::BlobStorage blob_storage(std::from_range, binary_data_view);
+#else
+      base::Value::BlobStorage blob_storage(binary_data_view.begin(), binary_data_view.end());
+#endif
       *value_out = base::Value(std::move(blob_storage));
       return true;
     }

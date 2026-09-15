@@ -176,15 +176,19 @@ class EnumSet {
   constexpr ~EnumSet() = default;
 
   constexpr EnumSet(std::initializer_list<E> values) {
-    for (E value : values) {
-      Put(value);
+    if (std::is_constant_evaluated()) {
+      enums_ = bitstring(values);
+    } else {
+      for (E value : values) {
+        Put(value);
+      }
     }
   }
 
   // Returns an EnumSet with all values between kMinValue and kMaxValue, which
   // also contains undefined enum values if the enum in question has gaps
   // between kMinValue and kMaxValue.
-  static consteval EnumSet All() {
+  constexpr static EnumSet All() {
     EnumBitSet enums;
     enums.set();
     return EnumSet(enums);
@@ -192,9 +196,15 @@ class EnumSet {
 
   // Returns an EnumSet with all the values from start to end, inclusive.
   static constexpr EnumSet FromRange(E start, E end) {
-    EnumSet result;
-    result.PutRange(start, end);
-    return result;
+    if (std::is_constant_evaluated()) {
+      return EnumSet(EnumBitSet(
+          ((single_val_bitstring(end)) - (single_val_bitstring(start))) |
+          (single_val_bitstring(end))));
+    } else {
+      EnumSet result;
+      result.PutRange(start, end);
+      return result;
+    }
   }
 
   constexpr EnumSet(const EnumSet&) = default;
@@ -323,11 +333,11 @@ class EnumSet {
   constexpr Iterator end() const { return Iterator(); }
 
   // Returns true iff `a` and `b` contain exactly the same values.
-  friend constexpr bool operator==(const EnumSet& a,
+  friend bool operator==(const EnumSet& a,
                                    const EnumSet& b) = default;
 
   // Compares `a` and `b` by their integer representation.
-  friend constexpr auto operator<=>(const EnumSet& a, const EnumSet& b) {
+  friend auto operator<=>(const EnumSet& a, const EnumSet& b) {
     return a.ToEnumBitmask() <=> b.ToEnumBitmask();
   }
 
@@ -350,6 +360,21 @@ class EnumSet {
       EnumSet set2);
 
   explicit constexpr EnumSet(EnumBitSet enums) : enums_(enums) {}
+
+  static constexpr uint64_t bitstring(const std::initializer_list<E>& values) {
+    uint64_t result = 0;
+    for (E value : values) {
+      result |= single_val_bitstring(value);
+    }
+    return result;
+  }
+
+  static constexpr uint64_t single_val_bitstring(E val) {
+    const uint64_t bitstring = 1;
+    const size_t shift_amount = ToIndex(val);
+    CHECK_LT(shift_amount, sizeof(bitstring) * 8);
+    return bitstring << shift_amount;
+  }
 
   // Converts a value to/from an index into |enums_|.
   static constexpr size_t ToIndex(E value) {

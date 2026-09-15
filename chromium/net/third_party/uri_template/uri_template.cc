@@ -196,7 +196,7 @@ bool Expand(const string& path_uri,
     path.remove_prefix(open + 1);
 
     const std::string_view variable_section = path.substr(0, length_of_section);
-    if (variable_section.contains('{')) {
+    if (variable_section.find('{') != std::string_view::npos) {
       // Template was malformed.
       target->clear();
       return false;

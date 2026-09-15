@@ -19,7 +19,8 @@ base::FilePath StringViewToFilePath(const StringView& str) {
     return base::FilePath();
   }
   if (!str.Is8Bit()) {
-    return base::FilePath::FromUTF16Unsafe(std::u16string_view(str.Span16()));
+    auto span16 = str.Span16();
+    return base::FilePath::FromUTF16Unsafe(std::u16string_view(span16.data(), span16.size()));
   }
 #if BUILDFLAG(IS_POSIX) || BUILDFLAG(IS_FUCHSIA)
   StringUtf8Adaptor utf8(str);

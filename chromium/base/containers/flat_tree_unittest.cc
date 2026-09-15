@@ -37,8 +37,6 @@
 #include <string>
 #include <vector>
 
-#include "base/compiler_specific.h"
-#include "base/containers/adapters.h"
 #include "base/containers/span.h"
 #include "base/test/gtest_util.h"
 #include "base/test/move_only_int.h"
@@ -332,7 +330,7 @@ TEST(FlatTree, MoveConstructor) {
 //           InputIterator last,
 //           const Compare& comp = Compare())
 
-TEST(FlatTree, IteratorConstructor) {
+TEST(FlatTree, RangeConstructor) {
   {
     IntPair input_vals[] = {{1, 1}, {1, 2}, {2, 1}, {2, 2}, {1, 3},
                             {2, 3}, {3, 1}, {3, 2}, {3, 3}};
@@ -350,30 +348,6 @@ TEST(FlatTree, IteratorConstructor) {
 
     TreeWithStrangeCompare cont(MakeInputIterator(span.begin()),
                                 MakeInputIterator(span.end()),
-                                NonDefaultConstructibleCompare(0));
-    EXPECT_THAT(cont, ElementsAre(1, 2, 3));
-  }
-}
-
-// flat_tree(const Range& range,
-//           const Compare& comp = Compare())
-
-TEST(FlatTree, RangeConstructor) {
-  {
-    IntPair input_vals[] = {{1, 1}, {1, 2}, {2, 1}, {2, 2}, {1, 3},
-                            {2, 3}, {3, 1}, {3, 2}, {3, 3}};
-    auto span = base::span(input_vals);
-
-    IntPairTree first_of(std::from_range, span);
-    EXPECT_THAT(first_of,
-                ElementsAre(IntPair(1, 1), IntPair(2, 1), IntPair(3, 1)));
-  }
-  {
-    TreeWithStrangeCompare::value_type input_vals[] = {1, 1, 1, 2, 2,
-                                                       2, 3, 3, 3};
-    auto span = base::span(input_vals);
-
-    TreeWithStrangeCompare cont(std::from_range, span,
                                 NonDefaultConstructibleCompare(0));
     EXPECT_THAT(cont, ElementsAre(1, 2, 3));
   }
@@ -445,7 +419,7 @@ TYPED_TEST_P(FlatTreeTest, InitializerListConstructor) {
 //           InputIterator last,
 //           const Compare& comp = Compare())
 
-TEST(FlatTree, SortedUniqueIteratorConstructor) {
+TEST(FlatTree, SortedUniqueRangeConstructor) {
   {
     IntPair input_vals[] = {{1, 1}, {2, 1}, {3, 1}};
     auto span = base::span(input_vals);
@@ -461,30 +435,6 @@ TEST(FlatTree, SortedUniqueIteratorConstructor) {
 
     TreeWithStrangeCompare cont(sorted_unique, MakeInputIterator(span.begin()),
                                 MakeInputIterator(span.end()),
-                                NonDefaultConstructibleCompare(0));
-    EXPECT_THAT(cont, ElementsAre(1, 2, 3));
-  }
-}
-
-// flat_tree(std::from_range_t,
-//           sorted_unique_t,
-//           const Range& range,
-//           const Compare& comp = Compare())
-
-TEST(FlatTree, SortedUniqueRangeConstructor) {
-  {
-    IntPair input_vals[] = {{1, 1}, {2, 1}, {3, 1}};
-    auto span = base::span(input_vals);
-
-    IntPairTree first_of(std::from_range, sorted_unique, span);
-    EXPECT_THAT(first_of,
-                ElementsAre(IntPair(1, 1), IntPair(2, 1), IntPair(3, 1)));
-  }
-  {
-    TreeWithStrangeCompare::value_type input_vals[] = {1, 2, 3};
-    auto span = base::span(input_vals);
-
-    TreeWithStrangeCompare cont(std::from_range, sorted_unique, span,
                                 NonDefaultConstructibleCompare(0));
     EXPECT_THAT(cont, ElementsAre(1, 2, 3));
   }
@@ -963,16 +913,6 @@ TEST(FlatTree, InsertRange) {
     EXPECT_THAT(cont, ElementsAre(IntPair(1, 1), IntPair(2, 1), IntPair(3, 1),
                                   IntPair(4, 1), IntPair(5, 2), IntPair(6, 2),
                                   IntPair(7, 2), IntPair(8, 2)));
-  }
-  {
-    std::list<MoveOnlyInt> list;
-    list.emplace_back(1);
-    list.emplace_back(2);
-
-    MoveOnlyTree tree;
-    tree.insert_range(base::RangeAsRvalues(std::move(list)));
-    EXPECT_EQ(1u, tree.count(MoveOnlyInt(1)));
-    EXPECT_EQ(1u, tree.count(MoveOnlyInt(2)));
   }
 }
 

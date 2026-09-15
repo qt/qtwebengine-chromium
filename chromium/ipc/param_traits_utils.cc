@@ -79,7 +79,7 @@ bool ReadCharVector(const base::Pickle* m,
   if (!iter->ReadStringPiece(&data)) {
     return false;
   }
-  r->assign_range(data);
+  r->assign(data.begin(), data.end());
   return true;
 }
 

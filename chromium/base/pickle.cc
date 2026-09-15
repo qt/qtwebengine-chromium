@@ -287,7 +287,7 @@ bool PickleIterator::ReadString16(std::u16string* result) {
   if (!ReadBytesAndAlign(reader_, num_bytes, bytes)) {
     return false;
   }
-
+#ifdef __cpp_lib_string_resize_and_overwrite
   // This is necessary because it is not safe to reinterpret_cast the data
   // pointer for use with `std::u16string::assign()`, as the pointer may not
   // have the proper alignment to avoid undefined behavior.
@@ -297,6 +297,11 @@ bool PickleIterator::ReadString16(std::u16string* result) {
         .copy_from_nonoverlapping(bytes);
     return n;
   });
+#else
+  result->resize(len);
+  as_writable_bytes(UNSAFE_BUFFERS(span(result->data(), len)))
+        .copy_from_nonoverlapping(bytes);
+#endif
 
   return true;
 }

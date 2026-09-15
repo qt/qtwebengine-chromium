@@ -62,8 +62,9 @@ class CounterDirectives {
   // `nullopt` if the reversed function is specified and the <integer> is
   // omitted(e.g., `counter-reset: reversed(list-item)`).
   std::optional<int> ResetValue() const {
-    return reset_value_.transform(
-        [](int64_t v) { return base::saturated_cast<int>(v); });
+    return reset_value_
+               ? std::optional<int>(base::saturated_cast<int>(*reset_value_))
+               : std::nullopt;
   }
   std::optional<int64_t> ResetValueInt64() const { return reset_value_; }
   void SetResetValue(int64_t value) { reset_value_ = value; }

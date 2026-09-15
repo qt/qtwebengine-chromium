@@ -6,7 +6,6 @@
 
 #include <memory>
 #include <string>
-#include <utility>
 
 #include "base/android/jni_android.h"
 #include "base/android/jni_array.h"

@@ -143,15 +143,21 @@ class SpanReader<T> : public SpanReaderBase<T> {
 #define BASE_SPANREADER_BOOL_FROM_OPTIONAL(name)                              \
   template <typename U>                                                       \
   constexpr bool Read##name(U& v) {                                           \
-    return Read##name().transform([&](auto u) { return v = u; }).has_value(); \
+    const auto val = Read##name();                        \
+    if (val.has_value())  {                               \
+      v = *val;                                           \
+      return true;                                        \
+    }                                                     \
+    return false;                                         \
   }
 
 #define BASE_SPANREADER_READ(signchar, bitsize, endian, typeprefix) \
   constexpr std::optional<typeprefix##int##bitsize##_t>             \
       Read##signchar##bitsize##endian##Endian() {                   \
-    return this->template Read<bitsize / 8>().transform(            \
-        &signchar##bitsize##From##endian##Endian);                  \
-  }                                                                 \
+    auto val = this->template Read<bitsize / 8>();                  \
+    if (val.has_value()) return signchar##bitsize##From##endian##Endian(*val); \
+    return std::nullopt;  \
+  }                       \
   BASE_SPANREADER_BOOL_FROM_OPTIONAL(signchar##bitsize##endian##Endian)
 
 #define BASE_SPANREADER_READ_BOTH_SIGNS(bitsize, endian) \
@@ -182,7 +188,9 @@ class SpanReader<T> : public SpanReaderBase<T> {
 
 #define BASE_SPANREADER_READ_NON_INT(type, name, converter)          \
   constexpr std::optional<type> Read##name() {                       \
-    return this->template Read<sizeof(type)>().transform(converter); \
+    const auto val = this->template Read<sizeof(type)>();            \
+    if (val.has_value()) return (converter)(*val);                   \
+    return std::nullopt;                                             \
   }                                                                  \
   BASE_SPANREADER_BOOL_FROM_OPTIONAL(name)
 
