@@ -640,8 +640,7 @@ class IdleHelperWithQuiescencePeriodTest : public BaseIdleHelperTest {
   };
 
   IdleHelperWithQuiescencePeriodTest()
-      : BaseIdleHelperTest(
-            base::Milliseconds(std::to_underlying(kQuiescenceDelayMs))) {}
+      : BaseIdleHelperTest(base::Milliseconds(kQuiescenceDelayMs)) {}
 
   ~IdleHelperWithQuiescencePeriodTest() override = default;
 

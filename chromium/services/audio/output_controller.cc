@@ -179,8 +179,7 @@ OutputController::OutputController(
       state_(kEmpty),
       sync_reader_(sync_reader),
       power_monitor_(params.sample_rate(),
-                     base::Milliseconds(std::to_underlying(
-                         kPowerMeasurementTimeConstantMillis))),
+                     base::Milliseconds(kPowerMeasurementTimeConstantMillis)),
       request_before_read_(base::FeatureList::IsEnabled(
           kAudioOutputControllerRequestBeforeRead)),
       will_monitor_audio_levels_(ShouldMonitorAudioLevels()) {

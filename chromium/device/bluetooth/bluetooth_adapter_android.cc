@@ -6,7 +6,6 @@
 
 #include <memory>
 #include <string>
-#include <utility>
 
 #include "base/android/jni_android.h"
 #include "base/android/jni_array.h"
@@ -430,13 +429,13 @@ void BluetoothAdapterAndroid::PurgeTimedOutDevices() {
         FROM_HERE,
         base::BindOnce(&BluetoothAdapterAndroid::PurgeTimedOutDevices,
                        weak_ptr_factory_.GetWeakPtr()),
-        base::Milliseconds(std::to_underlying(kActivePollInterval)));
+        base::Milliseconds(kActivePollInterval));
   } else {
     ui_task_runner_->PostDelayedTask(
         FROM_HERE,
         base::BindOnce(&BluetoothAdapterAndroid::RemoveTimedOutDevices,
                        weak_ptr_factory_.GetWeakPtr()),
-        base::Milliseconds(std::to_underlying(kPassivePollInterval)));
+        base::Milliseconds(kPassivePollInterval));
   }
 }
 
@@ -524,7 +523,7 @@ void BluetoothAdapterAndroid::StartScanWithFilter(
           FROM_HERE,
           base::BindOnce(&BluetoothAdapterAndroid::PurgeTimedOutDevices,
                          weak_ptr_factory_.GetWeakPtr()),
-          base::Milliseconds(std::to_underlying(kPurgeDelay)));
+          base::Milliseconds(kPurgeDelay));
     }
   } else {
     DVLOG(1) << "StartScanWithFilter: Fails: !isPowered";

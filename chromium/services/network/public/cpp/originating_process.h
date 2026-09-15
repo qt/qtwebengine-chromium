@@ -6,6 +6,7 @@
 #define SERVICES_NETWORK_PUBLIC_CPP_ORIGINATING_PROCESS_H_
 
 #include <compare>
+#include <optional>
 
 #include "base/component_export.h"
 #include "services/network/public/cpp/renderer_process.h"

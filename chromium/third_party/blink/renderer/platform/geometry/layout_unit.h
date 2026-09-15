@@ -706,7 +706,7 @@ template <unsigned fractional_bits, typename RawValue>
 inline FixedPoint<fractional_bits, RawValue> operator-(
     const FixedPoint<fractional_bits, RawValue>& a) {
   return FixedPoint<fractional_bits, RawValue>::FromRawValue(
-      (-base::ClampedNumeric(a.RawValue())).RawValue());
+      (-base::MakeClampedNum(a.RawValue())).RawValue());
 }
 
 // Returns the remainder after a division with integer results.

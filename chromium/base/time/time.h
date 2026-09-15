@@ -126,8 +126,8 @@ constexpr TimeDelta Microseconds(T n);
 
 namespace {
 
-// TODO: Replace usage of this with std::isnan() once the Windows toolchain
-// supports that being constexpr (other toolchains already do).
+// TODO: Replace usage of this with std::isnan() once Chromium uses C++23,
+// where that is constexpr.
 constexpr bool isnan(double d) {
   return d != d;
 }
@@ -885,42 +885,42 @@ class BASE_EXPORT Time : public time_internal::TimeBase<Time> {
 
 template <typename T>
 constexpr TimeDelta Days(T n) {
-  return TimeDelta::FromInternalValue(ClampedNumeric(n) *
+  return TimeDelta::FromInternalValue(MakeClampedNum(n) *
                                       Time::kMicrosecondsPerDay);
 }
 template <typename T>
 constexpr TimeDelta Hours(T n) {
-  return TimeDelta::FromInternalValue(ClampedNumeric(n) *
+  return TimeDelta::FromInternalValue(MakeClampedNum(n) *
                                       Time::kMicrosecondsPerHour);
 }
 template <typename T>
 constexpr TimeDelta Minutes(T n) {
-  return TimeDelta::FromInternalValue(ClampedNumeric(n) *
+  return TimeDelta::FromInternalValue(MakeClampedNum(n) *
                                       Time::kMicrosecondsPerMinute);
 }
 template <typename T>
 constexpr TimeDelta Seconds(T n) {
-  return TimeDelta::FromInternalValue(ClampedNumeric(n) *
+  return TimeDelta::FromInternalValue(MakeClampedNum(n) *
                                       Time::kMicrosecondsPerSecond);
 }
 template <typename T>
 constexpr TimeDelta Milliseconds(T n) {
-  return TimeDelta::FromInternalValue(ClampedNumeric(n) *
+  return TimeDelta::FromInternalValue(MakeClampedNum(n) *
                                       Time::kMicrosecondsPerMillisecond);
 }
 template <typename T>
 constexpr TimeDelta Microseconds(T n) {
-  return TimeDelta::FromInternalValue(ClampedNumeric(n));
+  return TimeDelta::FromInternalValue(MakeClampedNum(n));
 }
 template <typename T>
 constexpr TimeDelta Nanoseconds(T n) {
-  return TimeDelta::FromInternalValue(ClampedNumeric(n) /
+  return TimeDelta::FromInternalValue(MakeClampedNum(n) /
                                       Time::kNanosecondsPerMicrosecond);
 }
 template <typename T>
 constexpr TimeDelta Hertz(T n) {
   return n ? TimeDelta::FromInternalValue(Time::kMicrosecondsPerSecond /
-                                          ClampedNumeric(n))
+                                          MakeClampedNum(n))
            : TimeDelta::Max();
 }
 

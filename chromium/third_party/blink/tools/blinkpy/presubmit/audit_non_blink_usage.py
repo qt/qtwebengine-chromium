@@ -310,7 +310,7 @@ _CONFIG = [
             'base::ClampMax',
             'base::ClampMin',
             'base::ClampSub',
-            'base::ClampedNumeric',
+            'base::MakeClampedNum',
 
             # //base/strings/strcat.h.
             'base::StrAppend',
@@ -338,6 +338,7 @@ _CONFIG = [
 
             # Byte order
             'base::(numerics::)?((I|U)(8|16|32|64)|(Float|Double))(To|From)(Big|Little|Native)Endian',
+            'base::(numerics::)?ByteSwap',
             'base::BigEndian(Reader|Writer)',
 
             # (Cryptographic) random number generation

@@ -527,8 +527,7 @@ class AudioManagerMac::AudioPowerObserver : public base::PowerSuspendObserver {
     ++num_resume_notifications_;
     is_suspending_ = false;
     earliest_start_time_ =
-        base::TimeTicks::Now() +
-        base::Seconds(std::to_underlying(kStartDelayInSecsForPowerEvents));
+        base::TimeTicks::Now() + base::Seconds(kStartDelayInSecsForPowerEvents);
   }
 
   bool is_suspending_;
@@ -1049,8 +1048,7 @@ bool AudioManagerMac::ShouldDeferStreamStart() const {
 }
 base::TimeDelta AudioManagerMac::GetDeferStreamStartTimeout() const {
   if (ShouldDeferStreamStart()) {
-    return base::Seconds(
-        std::to_underlying(AudioManagerMac::kStartDelayInSecsForPowerEvents));
+    return base::Seconds(AudioManagerMac::kStartDelayInSecsForPowerEvents);
   }
   return base::TimeDelta();
 }

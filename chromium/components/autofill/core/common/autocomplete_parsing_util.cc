@@ -185,12 +185,20 @@ HtmlFieldType FieldTypeFromAutocompleteAttributeValue(std::string value) {
     base::ReplaceFirstSubstringAfterOffset(&value, 0, "phone", "tel");
   }
 
-  return ParseStandardizedAutocompleteAttribute(value)
-      .or_else([&] { return ParseProposedAutocompleteAttribute(value); })
-      .or_else([&] { return ParseNonStandarizedAutocompleteAttribute(value); })
-      // `value` cannot be mapped to any HtmlFieldType. By classifying the field
-      // as HtmlFieldType::kUnrecognized Autofill is effectively disabled.
-      .value_or(HtmlFieldType::kUnrecognized);
+  std::optional<HtmlFieldType> type =
+      ParseStandardizedAutocompleteAttribute(value);
+  if (!type.has_value()) {
+    type = ParseProposedAutocompleteAttribute(value);
+    if (!type.has_value())
+      type = ParseNonStandarizedAutocompleteAttribute(value);
+  }
+
+  if (type.has_value())
+    return *type;
+
+  // `value` cannot be mapped to any HtmlFieldType. By classifying the field
+  // as HtmlFieldType::kUnrecognized Autofill is effectively disabled.
+  return HtmlFieldType::kUnrecognized;
 }
 
 std::optional<AutocompleteParsingResult> ParseAutocompleteAttribute(

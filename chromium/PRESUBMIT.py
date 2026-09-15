@@ -1239,9 +1239,30 @@ _BANNED_CPP_FUNCTIONS: Sequence[BanRule] = (
         ],
     ),
     BanRule(
+        pattern=r'if consteval',
+        explanation=('Use of consteval conditional isn`t allowed. If you need '
+                     'it, contact cxx@chromium.org.', ),
+        treat_as_error=True,
+        excluded_paths=[_THIRD_PARTY_EXCEPT_BLINK],
+    ),
+    BanRule(
         pattern=r'#warning',
         explanation=('Use of #warning isn`t allowed. If you need it, contact '
                      'cxx@chromium.org.', ),
+        treat_as_error=True,
+        excluded_paths=[_THIRD_PARTY_EXCEPT_BLINK],
+    ),
+    BanRule(
+        pattern=r'/static.*operator(\(\)|\[\])',
+        explanation=('Use of static operators () and [] isn`t allowed. If you '
+                     'need it, contact cxx@chromium.org.', ),
+        treat_as_error=True,
+        excluded_paths=[_THIRD_PARTY_EXCEPT_BLINK],
+    ),
+    BanRule(
+        pattern=r'std::from_range',
+        explanation=('Use of std::from_range isn`t allowed. If you need it, '
+                     'contact cxx@chromium.org.', ),
         treat_as_error=True,
         excluded_paths=[_THIRD_PARTY_EXCEPT_BLINK],
     ),
@@ -1284,6 +1305,13 @@ _BANNED_CPP_FUNCTIONS: Sequence[BanRule] = (
         pattern=r'std::move_only_function',
         explanation=('Use of std::move_only_function isn`t allowed. If you '
                      'need it, contact cxx@chromium.org.', ),
+        treat_as_error=True,
+        excluded_paths=[_THIRD_PARTY_EXCEPT_BLINK],
+    ),
+    BanRule(
+        pattern=r'std::byteswap',
+        explanation=('Use of std::byteswap isn`t allowed. If you need it, '
+                     'contact cxx@chromium.org.', ),
         treat_as_error=True,
         excluded_paths=[_THIRD_PARTY_EXCEPT_BLINK],
     ),

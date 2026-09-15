@@ -889,7 +889,8 @@ bool ProtocolIs(const StringView& url, const char* protocol) {
   if (url.Is8Bit()) {
     return url::FindAndCompareScheme(AsURLChar8Subtle(url), protocol, nullptr);
   }
-  return url::FindAndCompareScheme(std::u16string_view(url.Span16()), protocol,
+  auto span16 = url.Span16();
+  return url::FindAndCompareScheme(std::u16string_view(span16.data(), span16.size()), protocol,
                                    nullptr);
 }
 
@@ -919,11 +920,16 @@ void KURL::Init(const KURL& base,
     is_valid_ = url::ResolveRelative(base_utf8.AsStringView(), base.parsed_,
                                      relative_utf8.AsStringView(),
                                      charset_converter, &output, &parsed_);
-  } else {
+  } else if (relative.IsNull()) {
     is_valid_ = url::ResolveRelative(
         base_utf8.AsStringView(), base.parsed_,
-        relative.IsNull() ? std::u16string_view()
-                          : std::u16string_view(relative.Span16()),
+        std::u16string_view(),
+        charset_converter, &output, &parsed_);
+  } else {
+    auto span16 = relative.Span16();
+    is_valid_ = url::ResolveRelative(
+        base_utf8.AsStringView(), base.parsed_,
+        std::u16string_view(span16.data(), span16.size()),
         charset_converter, &output, &parsed_);
   }
 

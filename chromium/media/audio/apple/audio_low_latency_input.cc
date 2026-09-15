@@ -13,7 +13,6 @@
 
 #include <memory>
 #include <string>
-#include <utility>
 
 #include "base/apple/foundation_util.h"
 #include "base/apple/osstatus_logging.h"
@@ -724,8 +723,7 @@ void AUAudioInputStream::Start(AudioInputCallback* callback) {
                                             base::Unretained(this), callback));
     manager_->GetTaskRunner()->PostDelayedTask(
         FROM_HERE, deferred_start_cb_.callback(),
-        base::Seconds(std::to_underlying(
-            AudioManagerMac::kStartDelayInSecsForPowerEvents)));
+        base::Seconds(AudioManagerMac::kStartDelayInSecsForPowerEvents));
     return;
   }
 #endif

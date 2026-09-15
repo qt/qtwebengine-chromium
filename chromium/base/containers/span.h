@@ -590,7 +590,7 @@ class GSL_POINTER span {
   constexpr void copy_from(span<const element_type, extent> other)
     requires(!std::is_const_v<element_type>)
   {
-    if consteval {
+    if (std::is_constant_evaluated()) {
       // Comparing pointers to different objects at compile time yields
       // unspecified behavior, which would halt compilation. Instead,
       // unconditionally use a separate buffer in the constexpr context. This
@@ -605,7 +605,10 @@ class GSL_POINTER span {
           constexpr ~Holder() {}
           element_type value;
         };
-        auto buffer = std::make_unique<Holder[]>(extent);
+        // std::unique_ptr<T[]> isn't constexpr enough prior to C++23; another
+        // alternative is std::vector, but that requires including <vector> just
+        // for this edge case.
+        Holder* buffer = new Holder[extent];
         for (size_t i = 0; i < extent; ++i) {
           // SAFETY: `buffers` is allocated with `extent` elements, and the loop
           // body only executes if `i < extent`.
@@ -617,6 +620,7 @@ class GSL_POINTER span {
           (*this)[i] = UNSAFE_BUFFERS(buffer[i]).value;
           UNSAFE_BUFFERS(buffer[i]).value.~element_type();
         }
+        delete[] buffer;
       }
     } else {
       // Using `<=` to compare pointers to different allocations is UB;
@@ -661,7 +665,7 @@ class GSL_POINTER span {
     // unspecified behavior, which would halt compilation. Instead implement in
     // terms of the guaranteed-safe behavior; performance is irrelevant in the
     // constexpr context.
-    if consteval {
+    if (std::is_constant_evaluated()) {
       copy_from(other);
       return;
     }
@@ -1127,7 +1131,7 @@ class GSL_POINTER span<ElementType, dynamic_extent, InternalPtrType> {
     requires(!std::is_const_v<element_type>)
   {
     CHECK(size() == other.size());
-    if consteval {
+    if (std::is_constant_evaluated()) {
       // Comparing pointers to different objects at compile time yields
       // unspecified behavior, which would halt compilation. Instead,
       // unconditionally use a separate buffer in the constexpr context. This
@@ -1140,7 +1144,10 @@ class GSL_POINTER span<ElementType, dynamic_extent, InternalPtrType> {
         constexpr ~Holder() {}
         element_type value;
       };
-      auto buffer = std::make_unique<Holder[]>(other.size());
+      // std::unique_ptr<T[]> isn't constexpr enough prior to C++23; another
+      // alternative is std::vector, but that requires including <vector> just
+      // for this edge case.
+      Holder* buffer = new Holder[other.size()];
       for (size_t i = 0; i < other.size(); ++i) {
         // SAFETY: `buffers` is allocated with `other.size()` elements, and the
         // loop body only executes if `i < other.size()`.
@@ -1152,6 +1159,7 @@ class GSL_POINTER span<ElementType, dynamic_extent, InternalPtrType> {
         (*this)[i] = UNSAFE_BUFFERS(buffer[i]).value;
         UNSAFE_BUFFERS(buffer[i]).value.~element_type();
       }
+      delete[] buffer;
     } else {
       // Using `<=` to compare pointers to different allocations is UB;
       // reinterpret_cast is the workaround.
@@ -1189,7 +1197,7 @@ class GSL_POINTER span<ElementType, dynamic_extent, InternalPtrType> {
     // unspecified behavior, which would halt compilation. Instead implement in
     // terms of the guaranteed-safe behavior; performance is irrelevant in the
     // constexpr context.
-    if consteval {
+    if (std::is_constant_evaluated()) {
       copy_from(other);
       return;
     }
