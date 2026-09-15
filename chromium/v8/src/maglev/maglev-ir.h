@@ -5474,6 +5474,24 @@ constexpr auto MakeOffsetToSlotMap(const std::array<Field, N>& fields) {
   static_assert(IsAligned(NAME##_desc.offset,               \
                           vobj::detail::kOffsetToSlotMapElementSize));
 
+#if (defined(__GNUC__) || defined(_MSC_VER)) && !defined(__clang__)
+// GCC and MSVC initialize the constexpr ObjectLayout incorrectly as zero.
+// Force dynamic initialization as a workaround.
+#define DEF_OBJECT_LAYOUT                                        \
+  static vobj::ObjectLayout MakeObjectLayout() {                 \
+    return vobj::ObjectLayout{                                   \
+        kHeaderSize, kObjectType, base::VectorOf(kFields),       \
+        base::VectorOf(kOffsetToSlotMap), kBodyFieldType};       \
+  }                                                              \
+  inline static const vobj::ObjectLayout kObjectLayout =         \
+      MakeObjectLayout()
+#else
+#define DEF_OBJECT_LAYOUT                                        \
+  static constexpr vobj::ObjectLayout kObjectLayout{             \
+      kHeaderSize, kObjectType, base::VectorOf(kFields),         \
+      base::VectorOf(kOffsetToSlotMap), kBodyFieldType}
+#endif
+
 // Note this helper picks up a few things which are assumed to have been
 // previously defined, such as kBodyFieldType.
 #define DEF_SHAPE(BASE, FIELD_LIST)                               \
@@ -5491,10 +5509,7 @@ constexpr auto MakeOffsetToSlotMap(const std::array<Field, N>& fields) {
       kFields.back().offset + FieldSizeOf(kFields.back().type);   \
   static constexpr auto kOffsetToSlotMap =                        \
       vobj::detail::MakeOffsetToSlotMap<kHeaderSize>(kFields);    \
-  static constexpr vobj::ObjectLayout kObjectLayout {             \
-    kHeaderSize, kObjectType, base::VectorOf(kFields),            \
-        base::VectorOf(kOffsetToSlotMap), kBodyFieldType          \
-  }
+  DEF_OBJECT_LAYOUT
 
 // This helps DEF_SHAPE handle the initial object hierarchy root.
 struct VirtualHeapObjectShapeBase {
