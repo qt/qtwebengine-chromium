@@ -604,6 +604,10 @@ BASE_FEATURE(kGetCookiesOnSet,
              "GetCookiesOnSet",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
+BASE_FEATURE(kEnforceIsolatedWorldOriginLock,
+             "EnforceIsolatedWorldOriginLock",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
 BASE_FEATURE(kIncreaseCookieAccessCacheSize,
              "IncreaseCookieAccessCacheSize",
              base::FEATURE_ENABLED_BY_DEFAULT);
