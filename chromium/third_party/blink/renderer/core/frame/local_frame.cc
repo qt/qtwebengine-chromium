@@ -4009,6 +4009,10 @@ void LocalFrame::WriteIntoTrace(perfetto::TracedValue ctx) const {
 
 mojo::PendingRemote<mojom::blink::BlobURLStore>
 LocalFrame::GetBlobUrlStorePendingRemote() {
+  if (base::FeatureList::IsEnabled(features::kEnforcePdfBlobRestrictions) &&
+      Client()->IsDomStorageDisabled()) {
+    return mojo::NullRemote();
+  }
   mojo::PendingRemote<mojom::blink::BlobURLStore> pending_remote;
   GetBrowserInterfaceBroker().GetInterface(
       pending_remote.InitWithNewPipeAndPassReceiver());

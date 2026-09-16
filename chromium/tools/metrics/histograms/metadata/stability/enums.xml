@@ -504,6 +504,8 @@ Called by update_bad_message_reasons.py.-->
   <int value="336" label="RFH_INVALID_NAVIGATION_HEADERS"/>
   <int value="337" label="RWH_POINTER_LOCK_FROM_SANDBOXED_FRAME"/>
   <int value="338" label="RFH_DID_COMMIT_NAVIGATION_WHILE_BFCACHED"/>
+  <int value="339" label="RFH_BLOB_URL_STORE_ASSOCIATED_PDF_PROCESS_BLOCKED"/>
+  <int value="340" label="RFH_BLOB_URL_STORE_RECEIVER_PDF_PROCESS_BLOCKED"/>
 </enum>
 
 <enum name="BadMessageReasonExtensions">

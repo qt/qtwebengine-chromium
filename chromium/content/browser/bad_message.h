@@ -364,7 +364,8 @@ enum BadMessageReason {
   RFH_INVALID_NAVIGATION_HEADERS = 336,
   RWH_POINTER_LOCK_FROM_SANDBOXED_FRAME = 337,
   RFH_DID_COMMIT_NAVIGATION_WHILE_BFCACHED = 338,
-
+  RFH_BLOB_URL_STORE_ASSOCIATED_PDF_PROCESS_BLOCKED = 339,
+  RFH_BLOB_URL_STORE_RECEIVER_PDF_PROCESS_BLOCKED = 340,
   // Please add new elements here. The naming convention is abbreviated class
   // name (e.g. RenderFrameHost becomes RFH) plus a unique description of the
   // reason. After making changes, you MUST update enums.xml by running:

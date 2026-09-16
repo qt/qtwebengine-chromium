@@ -762,6 +762,12 @@ BASE_FEATURE(kEnforceNoopenerOnBlobURLNavigation,
              "EnforceNoopenerOnBlobURLNavigation",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
+// Killswitch for restrictions on blob URL creation in PDF processes, in case
+// regressions are encountered in the wild. See https://crbug.com/540051167.
+BASE_FEATURE(kEnforcePdfBlobRestrictions,
+             "EnforcePdfBlobRestrictions",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
 BASE_FEATURE(kEventTimingIgnorePresentationTimeFromUnexpectedFrameSource,
              "EventTimingIgnorePresentationTimeFromUnexpectedFrameSource",
              base::FEATURE_DISABLED_BY_DEFAULT);
