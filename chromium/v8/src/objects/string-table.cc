@@ -399,6 +399,8 @@ DirectHandle<String> StringTable::LookupString(Isolate* isolate,
       bool one_byte_content = false;
       if (!Name::IsHashFieldComputed(raw_hash_field)) {
         raw_hash_field = result->EnsureRawHash(&one_byte_content);
+      } else if (Name::IsIntegerIndex(raw_hash_field)) {
+        one_byte_content = true;
       }
       InternalizedStringKey key(result, raw_hash_field, one_byte_content);
       result = LookupKey(isolate, &key);
