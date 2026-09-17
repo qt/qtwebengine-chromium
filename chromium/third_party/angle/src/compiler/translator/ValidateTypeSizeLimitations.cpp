@@ -134,7 +134,7 @@ class ValidateTypeSizeLimitationsTraverser : public TIntermTraverser
             }
         }
 
-        if (variableSize > kMaxVariableSizeInBytes)
+        if (variableSize >= kMaxVariableSizeInBytes)
         {
             error(location, "Size of declared variable exceeds implementation-defined limit",
                   variable.name());
