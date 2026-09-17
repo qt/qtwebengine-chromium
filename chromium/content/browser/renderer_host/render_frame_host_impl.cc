@@ -19181,47 +19181,6 @@ void RenderFrameHostImpl::GetBoundInterfacesForTesting(
   broker_.GetBinderMapInterfacesForTesting(out);  // IN-TEST
 }
 
-std::optional<base::flat_map<blink::mojom::PermissionName,
-                             blink::mojom::PermissionStatus>>
-RenderFrameHostImpl::GetCachedPermissionStatuses() {
-  using blink::PermissionType;
-  using blink::mojom::PermissionName;
-  static constexpr auto kPermissions =
-      std::to_array<std::pair<PermissionName, PermissionType>>(
-          {{PermissionName::VIDEO_CAPTURE, PermissionType::VIDEO_CAPTURE},
-           {PermissionName::AUDIO_CAPTURE, PermissionType::AUDIO_CAPTURE},
-           {PermissionName::GEOLOCATION, PermissionType::GEOLOCATION},
-           {PermissionName::WINDOW_MANAGEMENT,
-            PermissionType::WINDOW_MANAGEMENT}});
-
-  base::flat_map<PermissionName, PermissionStatus> permission_map;
-  for (const auto& permission : kPermissions) {
-    PermissionStatus status = GetCombinedPermissionStatus(permission.second);
-    // Default value is ASK, we don't need add the permission status in this
-    // case.
-    if (status != PermissionStatus::ASK) {
-      permission_map.emplace(permission.first, status);
-    }
-  }
-
-  return permission_map;
-}
-
-blink::mojom::PermissionStatus RenderFrameHostImpl::GetCombinedPermissionStatus(
-    blink::PermissionType permission_type) {
-  auto descriptor = content::PermissionDescriptorUtil::
-      CreatePermissionDescriptorForPermissionType(permission_type);
-  if (PermissionUtil::IsDevicePermission(descriptor)) {
-    return GetBrowserContext()
-        ->GetPermissionController()
-        ->GetCombinedPermissionAndDeviceStatus(descriptor, this);
-  }
-  return GetBrowserContext()
-      ->GetPermissionController()
-      ->GetPermissionResultForCurrentDocument(descriptor, this)
-      .status;
-}
-
 media::PictureInPictureEventsInfo::AutoPipReasonCallback
 RenderFrameHostImpl::CreateAutoPipReasonCallback() {
   return base::BindRepeating(
