@@ -183,6 +183,9 @@ struct Limitations
     // bytes-per-pixel. 1Gb is chosen as a conservative limit to allow for backends to expand
     // textures formats up to 4x and still stay within 32-bit sizes.
     size_t maxTextureBytes = 1 * 1024 * 1024 * 1024;
+
+    // Workaround for PowerVR Rogue drivers that round up 3D texture dimensions to POT internally.
+    bool roundUp3DTextureSizeToPOTForLimit = false;
 };
 
 struct TypePrecision
