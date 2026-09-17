@@ -46,6 +46,10 @@ class TextureStorage9 : public TextureStorage
     bool isManaged() const override;
     bool supportsNativeMipmapFunction() const override;
     int getLevelCount() const override;
+    int getLevelWidth(int mipLevel) const override;
+    int getLevelHeight(int mipLevel) const override;
+    int getLevelDepth(int mipLevel) const override { return 1; }
+    GLenum getFormat() const override { return mInternalFormat; }
     bool isMultiplanar(const gl::Context *context) override;
 
     angle::Result setData(const gl::Context *context,
@@ -139,6 +143,16 @@ class TextureStorage9_EGLImage final : public TextureStorage9
                                  const gl::ImageIndex &sourceIndex,
                                  const gl::ImageIndex &destIndex) override;
     angle::Result copyToStorage(const gl::Context *context, TextureStorage *destStorage) override;
+
+    // mTextureWidth/mTextureHeight already hold the size of the EGL image's level (mTopLevel).
+    int getLevelWidth(int mipLevel) const override
+    {
+        return std::max(static_cast<int>(mTextureWidth) >> mipLevel, 1);
+    }
+    int getLevelHeight(int mipLevel) const override
+    {
+        return std::max(static_cast<int>(mTextureHeight) >> mipLevel, 1);
+    }
 
   private:
     EGLImageD3D *mImage;

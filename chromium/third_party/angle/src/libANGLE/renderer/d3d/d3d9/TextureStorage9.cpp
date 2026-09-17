@@ -92,6 +92,16 @@ int TextureStorage9::getLevelCount() const
     return static_cast<int>(mMipLevels) - mTopLevel;
 }
 
+int TextureStorage9::getLevelWidth(int mipLevel) const
+{
+    return std::max(static_cast<int>(mTextureWidth) >> (mTopLevel + mipLevel), 1);
+}
+
+int TextureStorage9::getLevelHeight(int mipLevel) const
+{
+    return std::max(static_cast<int>(mTextureHeight) >> (mTopLevel + mipLevel), 1);
+}
+
 bool TextureStorage9::isMultiplanar(const gl::Context *context)
 {
     // D3D9 does not support multiplanar formats yet.
