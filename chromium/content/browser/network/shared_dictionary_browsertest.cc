@@ -6,6 +6,7 @@
 #include <tuple>
 
 #include "base/base_paths.h"
+#include "base/containers/contains.h"
 #include "base/files/file_util.h"
 #include "base/memory/memory_pressure_listener_registry.h"
 #include "base/metrics/statistics_recorder.h"
@@ -1006,7 +1007,7 @@ class SharedDictionaryBrowserTest
       return nullptr;
     }
     auto response = std::make_unique<net::test_server::BasicHttpResponse>();
-    if (request.headers.contains("Authorization")) {
+    if (base::Contains(request.headers, "Authorization")) {
       response->set_code(net::HTTP_OK);
       std::optional<std::string> dict_hash =
           GetAvailableDictionary(request.headers);

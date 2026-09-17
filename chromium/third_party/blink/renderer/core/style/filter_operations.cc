@@ -24,11 +24,11 @@
  */
 
 #include "third_party/blink/renderer/core/style/filter_operations.h"
-#include "base/containers/contains.h"
 
 #include <algorithm>
 #include <numeric>
 
+#include "base/containers/contains.h"
 
 namespace blink {
 

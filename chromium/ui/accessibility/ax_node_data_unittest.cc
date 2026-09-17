@@ -9,6 +9,7 @@
 #include <unordered_set>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/test/gtest_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/accessibility/ax_enum_util.h"
@@ -224,7 +225,8 @@ TEST(AXNodeDataTest, IsClickable) {
                  << ", Actual: isClickable=" << is_clickable
                  << ", Expected: isClickable=" << !is_clickable);
 
-    EXPECT_EQ(roles_expected_is_clickable.contains(data.role), is_clickable);
+    EXPECT_EQ(base::Contains(roles_expected_is_clickable, data.role),
+              is_clickable);
   }
 }
 

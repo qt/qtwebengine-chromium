@@ -4,6 +4,7 @@
 
 #include "components/policy/test_support/request_handler_for_policy.h"
 
+#include "base/containers/contains.h"
 #include "base/containers/flat_set.h"
 #include "base/logging.h"
 #include "base/strings/stringprintf.h"
@@ -153,7 +154,7 @@ std::unique_ptr<HttpResponse> RequestHandlerForPolicy::HandleRequest(
   for (const auto& fetch_request : fetch_requests) {
     const std::string& policy_type = fetch_request.policy_type();
     // TODO(crbug.com/40773420): Add other policy types as needed.
-    if (!kCloudPolicyTypes.contains(policy_type)) {
+    if (!base::Contains(kCloudPolicyTypes, policy_type)) {
       return CreateHttpResponse(
           net::HTTP_BAD_REQUEST,
           base::StringPrintf("Invalid policy_type: %s", policy_type.c_str()));
@@ -161,7 +162,7 @@ std::unique_ptr<HttpResponse> RequestHandlerForPolicy::HandleRequest(
 
     LOG(INFO) << "PolicyFetchRequest: " << FetchRequestToString(fetch_request);
     std::string error_msg;
-    if (kExtensionInstallPolicyTypes.contains(policy_type) &&
+    if (base::Contains(kExtensionInstallPolicyTypes, policy_type) &&
         fetch_request.extension_ids_and_version_size() > 0) {
       if (!ProcessCloudPolicyForExtensionInstall(
               fetch_request, *client_info,
@@ -169,7 +170,7 @@ std::unique_ptr<HttpResponse> RequestHandlerForPolicy::HandleRequest(
               &error_msg)) {
         return CreateHttpResponse(net::HTTP_BAD_REQUEST, error_msg);
       }
-    } else if (kExtensionPolicyTypes.contains(policy_type)) {
+    } else if (base::Contains(kExtensionPolicyTypes, policy_type)) {
       if (!ProcessCloudPolicyForExtensions(
               fetch_request, *client_info,
               device_management_response.mutable_policy_response(),

@@ -8,6 +8,7 @@
 #include <memory>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "components/viz/common/resources/release_callback.h"
 #include "components/viz/common/resources/resource_id.h"
 #include "components/viz/common/resources/transferable_resource.h"
@@ -74,7 +75,7 @@ TransferableResourceTracker::ImportResource(
   }
 
   resource.id = id_tracker_->AllocId(/*initial_ref_count=*/1);
-  DCHECK(!managed_resources_.contains(resource.id));
+  DCHECK(!base::Contains(managed_resources_, resource.id));
   managed_resources_.emplace(
       resource.id,
       TransferableResourceHolder(resource, std::move(release_callback)));
@@ -93,7 +94,7 @@ void TransferableResourceTracker::ReturnFrame(const ResourceFrame& frame) {
 }
 
 void TransferableResourceTracker::RefResource(ResourceId id) {
-  if (!managed_resources_.contains(id)) {
+  if (!base::Contains(managed_resources_, id)) {
     return;
   }
 
@@ -104,7 +105,7 @@ void TransferableResourceTracker::UnrefResource(
     ResourceId id,
     int count,
     const gpu::SyncToken& sync_token) {
-  if (!managed_resources_.contains(id)) {
+  if (!base::Contains(managed_resources_, id)) {
     return;
   }
 

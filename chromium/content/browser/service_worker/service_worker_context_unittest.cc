@@ -8,6 +8,7 @@
 
 #include <memory>
 
+#include "base/containers/contains.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/functional/bind.h"
 #include "base/run_loop.h"
@@ -1256,8 +1257,8 @@ TEST_F(ServiceWorkerContextTest, ContainerHostIterator) {
     results.insert(&*it);
   }
   EXPECT_EQ(2u, results.size());
-  EXPECT_TRUE(results.contains(service_worker_client1.get()));
-  EXPECT_TRUE(results.contains(service_worker_client3.get()));
+  EXPECT_TRUE(base::Contains(results, service_worker_client1.get()));
+  EXPECT_TRUE(base::Contains(results, service_worker_client3.get()));
 
   // Iterate over the container hosts that belong to kOrigin2. This should not
   // include worker_host4->service_worker_client() as it's not for controllee.
@@ -1270,7 +1271,7 @@ TEST_F(ServiceWorkerContextTest, ContainerHostIterator) {
     results.insert(&*it);
   }
   EXPECT_EQ(1u, results.size());
-  EXPECT_TRUE(results.contains(service_worker_client2.get()));
+  EXPECT_TRUE(base::Contains(results, service_worker_client2.get()));
 }
 
 class ServiceWorkerContextRecoveryTest

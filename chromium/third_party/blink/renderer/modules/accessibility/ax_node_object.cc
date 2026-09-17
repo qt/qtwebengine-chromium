@@ -37,6 +37,7 @@
 #include <queue>
 
 #include "base/auto_reset.h"
+#include "base/containers/contains.h"
 #include "base/containers/fixed_flat_set.h"
 #include "base/containers/span.h"
 #include "base/metrics/histogram_functions.h"
@@ -1179,7 +1180,7 @@ AXObjectInclusion AXNodeObject::ShouldIncludeBasedOnSemantics(
           ax::mojom::blink::Role::kVideo,
       });
 
-  if (always_included_computed_roles.contains(RoleValue())) {
+  if (base::Contains(always_included_computed_roles, RoleValue())) {
     return kIncludeObject;
   }
 

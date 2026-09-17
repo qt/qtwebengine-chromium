@@ -16,6 +16,7 @@
 #include "base/auto_reset.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/debug/crash_logging.h"
 #include "base/debug/dump_without_crashing.h"
 #include "base/feature_list.h"
@@ -2818,7 +2819,7 @@ void RenderWidgetHostViewAndroid::SendKeyEvent(
     ui::DomCode dom_code = static_cast<ui::DomCode>(event.dom_code);
     if (dom_code != ui::DomCode::ESCAPE &&
         (!locked_keyboard_keys_ ||
-         locked_keyboard_keys_.value().contains(dom_code))) {
+         base::Contains(locked_keyboard_keys_.value(), dom_code))) {
       event.skip_if_unhandled = true;
     }
   }

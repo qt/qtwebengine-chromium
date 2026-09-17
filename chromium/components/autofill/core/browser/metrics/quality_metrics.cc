@@ -11,6 +11,7 @@
 #include <string>
 
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/i18n/char_iterator.h"
 #include "base/metrics/histogram_functions.h"
@@ -218,8 +219,7 @@ void LogFillingMetrics(
       autofilled_field_types.insert_all(field->Type().GetTypes());
     }
   }
-  if (form.GetFormTypes(ac_unrecognized_behavior)
-          .contains(FormType::kCreditCardForm)) {
+  if (base::Contains(form.GetFormTypes(ac_recognized_behavior), FormType::kCreditCardForm)) {
     AutofillMetrics::LogCreditCardSeamlessnessAtSubmissionTime(
         autofilled_field_types);
   }

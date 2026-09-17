@@ -3,9 +3,10 @@
 // found in the LICENSE file.
 
 #include "services/device/public/cpp/hid/hid_report_utils.h"
-#include "base/containers/contains.h"
 
 #include <algorithm>
+
+#include "base/containers/contains.h"
 
 namespace device {
 

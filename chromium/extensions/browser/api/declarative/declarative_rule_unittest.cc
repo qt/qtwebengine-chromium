@@ -7,6 +7,7 @@
 #include <memory>
 #include <optional>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/raw_ref.h"
@@ -124,7 +125,7 @@ struct FulfillableCondition {
 
   bool IsFulfilled(const MatchData& match_data) const {
     if (condition_set_id != base::MatcherStringPattern::kInvalidId &&
-        !match_data.url_matches->contains(condition_set_id))
+        !base::Contains(*match_data.url_matches, condition_set_id))
       return false;
     return match_data.value <= max_value;
   }

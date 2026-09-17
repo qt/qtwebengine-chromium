@@ -10,6 +10,7 @@
 
 #include "base/check_op.h"
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/containers/fixed_flat_map.h"
 #include "base/containers/span.h"
 #include "base/containers/to_vector.h"
@@ -784,8 +785,8 @@ void SBLocalDatabaseManager::GetArtificialPrefixMatches(
           artificial_store_and_hash_prefix.hash_prefix;
       DCHECK_EQ(crypto::kSHA256Length, artificial_full_hash.size());
       if (artificial_full_hash == full_hash &&
-          check->stores_to_check.contains(
-              artificial_store_and_hash_prefix.list_id)) {
+          base::Contains(check->stores_to_check,
+                         artificial_store_and_hash_prefix.list_id)) {
         // If there are multiple artificial threats, we arbitrarily pick one.
         (check->artificial_full_hash_to_store_and_hash_prefixes)[full_hash] = {
             artificial_store_and_hash_prefix};

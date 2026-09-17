@@ -3,9 +3,10 @@
 // found in the LICENSE file.
 
 #include "ui/ozone/platform/wayland/gpu/wayland_gl_egl_utility.h"
-#include "base/containers/contains.h"
 
 #include <algorithm>
+
+#include "base/containers/contains.h"
 
 // From ANGLE's egl/eglext.h. Follows the same approach as in
 // ui/gl/gl_surface_egl.cc

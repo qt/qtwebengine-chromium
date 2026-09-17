@@ -20,6 +20,7 @@
 #include "base/check.h"
 #include "base/check_deref.h"
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/containers/flat_map.h"
 #include "base/containers/flat_set.h"
 #include "base/containers/span.h"
@@ -726,7 +727,7 @@ void AutofillManager::ParseFormsAsync(
   // finished.
   size_t num_managed_forms = form_structures_.size();
   std::erase_if(forms, [&](const FormData& form) {
-    bool is_new_form = !form_structures_.contains(form.global_id());
+    bool is_new_form = !base::Contains(form_structures_, form.global_id());
     if (num_managed_forms + is_new_form > kAutofillManagerMaxFormCacheSize) {
 #if !BUILDFLAG(IS_QTWEBENGINE)
       LOG_AF(log_manager()) << LoggingScope::kAbortParsing
@@ -758,7 +759,7 @@ void AutofillManager::ParseFormAsync(
     base::OnceCallback<void(AutofillManager&, const FormData&)> callback) {
   SCOPED_UMA_HISTOGRAM_TIMER("Autofill.Timing.ParseFormAsync");
 
-  bool is_new_form = !form_structures_.contains(form.global_id());
+  bool is_new_form = !base::Contains(form_structures_, form.global_id());
   if (form_structures_.size() + is_new_form >
       kAutofillManagerMaxFormCacheSize) {
 #if !BUILDFLAG(IS_QTWEBENGINE)

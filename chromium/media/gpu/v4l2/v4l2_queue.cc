@@ -13,6 +13,7 @@
 #include <sys/mman.h>
 
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/not_fatal_until.h"
@@ -1394,7 +1395,7 @@ std::optional<V4L2WritableBufferRef> V4L2Queue::GetFreeBufferForFrame(
 
   // If |id| has already been used in |buffers_|, then return that buffer.
   // Otherwise use the next buffer from |free_buffers_indexes_|.
-  if (!free_buffers_indexes_.contains(id)) {
+  if (!base::Contains(free_buffers_indexes_, id)) {
     if (free_buffers_indexes_.size() >= buffers_.size()) {
       return std::nullopt;
     }

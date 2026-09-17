@@ -12,6 +12,7 @@
 #include <set>
 #include <string>
 
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/format_macros.h"
 #include "base/functional/bind.h"
@@ -562,10 +563,10 @@ TEST_F(FlagsStateTest, RemoveFlagSwitches) {
   // This shouldn't do anything before ConvertFlagsToSwitches() wasn't called.
   flags_state_->RemoveFlagsSwitches(&switch_list);
   ASSERT_EQ(4u, switch_list.size());
-  EXPECT_TRUE(switch_list.contains(kSwitch1));
-  EXPECT_TRUE(switch_list.contains(switches::kFlagSwitchesBegin));
-  EXPECT_TRUE(switch_list.contains(switches::kFlagSwitchesEnd));
-  EXPECT_TRUE(switch_list.contains("foo"));
+  EXPECT_TRUE(base::Contains(switch_list, kSwitch1));
+  EXPECT_TRUE(base::Contains(switch_list, switches::kFlagSwitchesBegin));
+  EXPECT_TRUE(base::Contains(switch_list, switches::kFlagSwitchesEnd));
+  EXPECT_TRUE(base::Contains(switch_list, "foo"));
 
   // Call ConvertFlagsToSwitches(), then RemoveFlagsSwitches() again.
   base::CommandLine command_line(base::CommandLine::NO_PROGRAM);
@@ -577,7 +578,7 @@ TEST_F(FlagsStateTest, RemoveFlagSwitches) {
 
   // Now the about:flags-related switch should have been removed.
   ASSERT_EQ(1u, switch_list.size());
-  EXPECT_TRUE(switch_list.contains("foo"));
+  EXPECT_TRUE(base::Contains(switch_list, "foo"));
 }
 
 TEST_F(FlagsStateTest, RemoveFlagSwitches_Features) {
@@ -629,14 +630,14 @@ TEST_F(FlagsStateTest, RemoveFlagSwitches_Features) {
                                          kDisableFeatures);
     auto switch_list = command_line.GetSwitches();
     EXPECT_EQ(cases[i].expected_enable_features != nullptr,
-              switch_list.contains(kEnableFeatures));
+              base::Contains(switch_list, kEnableFeatures));
     if (cases[i].expected_enable_features) {
       EXPECT_EQ(CreateSwitch(cases[i].expected_enable_features),
                 switch_list[kEnableFeatures]);
     }
 
     EXPECT_EQ(cases[i].expected_disable_features != nullptr,
-              switch_list.contains(kDisableFeatures));
+              base::Contains(switch_list, kDisableFeatures));
     if (cases[i].expected_disable_features) {
       EXPECT_EQ(CreateSwitch(cases[i].expected_disable_features),
                 switch_list[kDisableFeatures]);
@@ -647,13 +648,13 @@ TEST_F(FlagsStateTest, RemoveFlagSwitches_Features) {
     switch_list = command_line.GetSwitches();
     flags_state_->RemoveFlagsSwitches(&switch_list);
     EXPECT_EQ(cases[i].existing_enable_features != nullptr,
-              switch_list.contains(kEnableFeatures));
+              base::Contains(switch_list, kEnableFeatures));
     if (cases[i].existing_enable_features) {
       EXPECT_EQ(CreateSwitch(cases[i].existing_enable_features),
                 switch_list[kEnableFeatures]);
     }
     EXPECT_EQ(cases[i].existing_disable_features != nullptr,
-              switch_list.contains(kEnableFeatures));
+              base::Contains(switch_list, kEnableFeatures));
     if (cases[i].existing_disable_features) {
       EXPECT_EQ(CreateSwitch(cases[i].existing_disable_features),
                 switch_list[kDisableFeatures]);

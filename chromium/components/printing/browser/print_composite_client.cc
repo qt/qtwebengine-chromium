@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/memory/read_only_shared_memory_region.h"
 #include "base/strings/utf_string_conversions.h"
@@ -197,8 +198,8 @@ void PrintCompositeClient::PrintCrossProcessSubframe(
   }
 
   // If this frame is already printed, no need to print again.
-  if (pending_subframes_.contains(subframe_host) ||
-      printed_subframes_.contains(subframe_host)) {
+  if (base::Contains(pending_subframes_, subframe_host) ||
+      base::Contains(printed_subframes_, subframe_host)) {
     return;
   }
 

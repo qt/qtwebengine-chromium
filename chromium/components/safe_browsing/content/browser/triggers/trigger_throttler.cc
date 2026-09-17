@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "base/metrics/field_trial_params.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
@@ -85,7 +86,7 @@ bool TriggerThrottler::TriggerCanFire(const TriggerType trigger_type) const {
 
   // Other triggers are capped, see how many times this trigger has already
   // fired.
-  if (!trigger_events_.contains(trigger_type)) {
+  if (!base::Contains(trigger_events_, trigger_type)) {
     return true;
   }
 

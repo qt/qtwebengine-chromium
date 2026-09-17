@@ -4,6 +4,8 @@
 
 #include "components/viz/service/input/mock_input_manager.h"
 
+#include "base/containers/contains.h"
+
 namespace viz {
 
 MockInputManager::MockInputManager(FrameSinkManagerImpl* frame_sink_manager)
@@ -13,7 +15,7 @@ MockInputManager::~MockInputManager() = default;
 
 bool MockInputManager::RIRExistsForFrameSinkId(
     const FrameSinkId& frame_sink_id) {
-  return rir_map_.contains(frame_sink_id);
+  return base::Contains(rir_map_, frame_sink_id);
 }
 
 RenderInputRouterSupportBase* MockInputManager::GetSupportForFrameSink(

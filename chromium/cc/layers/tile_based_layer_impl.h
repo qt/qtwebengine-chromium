@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "cc/base/math_util.h"
 #include "cc/cc_export.h"
 #include "cc/debug/debug_colors.h"
@@ -27,7 +28,6 @@
 #include "components/viz/common/resources/resource_id.h"
 #include "ui/gfx/geometry/rect_conversions.h"
 #include "ui/gfx/geometry/size_f.h"
-#include "base/containers/contains.h"
 
 namespace cc {
 

@@ -58,8 +58,8 @@
 #endif
 
 #if BUILDFLAG(IS_ANDROID)
-#include "gpu/command_buffer/client/internal/mappable_buffer_ahb.h"
 #include "base/containers/contains.h"
+#include "gpu/command_buffer/client/internal/mappable_buffer_ahb.h"
 #endif
 
 namespace gpu {

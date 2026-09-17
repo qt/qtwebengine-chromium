@@ -10,6 +10,7 @@
 #include <algorithm>
 
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/strings/string_split_win.h"
 
 namespace sandbox {
@@ -156,7 +157,7 @@ bool PolicyRule::AddStringMatch(RuleType rule_type,
   }
 
   // An empty string or an instance of '**' is an error.
-  if (string.empty() || string.contains(L"**")) {
+  if (string.empty() || base::Contains(string, L"**")) {
     return false;
   }
 

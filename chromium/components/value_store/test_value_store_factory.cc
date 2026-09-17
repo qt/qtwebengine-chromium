@@ -4,6 +4,7 @@
 
 #include "components/value_store/test_value_store_factory.h"
 
+#include "base/containers/contains.h"
 #include "base/memory/ptr_util.h"
 #include "components/value_store/leveldb_value_store.h"
 #include "components/value_store/testing_value_store.h"
@@ -43,7 +44,7 @@ void TestValueStoreFactory::DeleteValueStore(const base::FilePath& directory) {
 }
 
 bool TestValueStoreFactory::HasValueStore(const base::FilePath& directory) {
-  return value_store_map_.contains(directory);
+  return base::Contains(value_store_map_, directory);
 }
 
 ValueStore* TestValueStoreFactory::GetExisting(

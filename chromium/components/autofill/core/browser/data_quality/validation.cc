@@ -10,6 +10,7 @@
 #include <string>
 #include <string_view>
 
+#include "base/containers/contains.h"
 #include "base/containers/fixed_flat_map.h"
 #include "base/containers/fixed_flat_set.h"
 #include "base/strings/string_number_conversions.h"
@@ -123,7 +124,7 @@ bool IsValidZip(std::u16string_view text,
     if (country_code == AddressCountryCode("BR")) {
       return MatchesRegex<kBrZipCharacters>(text);
     }
-    if (kNumericZipCodeCountriesSet.contains(country_code.value())) {
+    if (base::Contains(kNumericZipCodeCountriesSet, country_code.value())) {
       return MatchesRegex<kNumericZipPattern>(text);
     }
     return true;

@@ -7,6 +7,7 @@
 #include <memory>
 
 #include "base/base64url.h"
+#include "base/containers/contains.h"
 #include "base/strings/escape.h"
 #include "base/strings/stringprintf.h"
 #include "base/test/bind.h"
@@ -494,7 +495,7 @@ class HashRealTimeServiceTest : public PlatformTest {
     // Intercept search hashes request URL.
     auto request = std::make_unique<V5::SearchHashesRequest>();
     for (const auto& hash_prefix : UrlToHashPrefixesAsSet(url)) {
-      if (!cached_hash_prefixes.contains(hash_prefix)) {
+      if (!base::Contains(cached_hash_prefixes, hash_prefix)) {
         request->add_hash_prefixes(hash_prefix);
       }
     }

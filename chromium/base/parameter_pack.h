@@ -11,8 +11,8 @@
 #include <initializer_list>
 #include <tuple>
 #include <type_traits>
-#include "base/containers/contains.h"
 
+#include "base/containers/contains.h"
 
 namespace base {
 

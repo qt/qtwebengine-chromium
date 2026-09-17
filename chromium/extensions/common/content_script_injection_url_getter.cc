@@ -165,9 +165,10 @@ GURL ContentScriptInjectionUrlGetter::Get(
       return document_url;
     }
 
-    // Avoid an infinite loop - see https://crbug.com/41228062 and
-    // https://crbug.com/40593463.
-    if (already_visited_frame_ids.contains(parent_context_data->GetId())) {
+    // Avoid an infinite loop - see https://crbug.com/568432 and
+    // https://crbug.com/883526.
+    if (base::Contains(already_visited_frame_ids,
+                       parent_context_data->GetId())) {
       TRACE_EVENT_INSTANT("extensions",
                           "ContentScriptInjectionUrlGetter::Get/infinite-loop");
       return document_url;

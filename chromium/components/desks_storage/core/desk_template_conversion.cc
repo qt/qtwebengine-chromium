@@ -7,6 +7,7 @@
 #include <optional>
 #include <string_view>
 
+#include "base/containers/contains.h"
 #include "base/containers/fixed_flat_set.h"
 #include "base/json/json_reader.h"
 #include "base/json/values_util.h"
@@ -274,7 +275,7 @@ base::DictValue ConvertCoralTabAppEntitiesToDict(
 }
 
 bool IsValidGroupColor(const std::string& group_color) {
-  return kValidTabGroupColors.contains(group_color);
+  return base::Contains(kValidTabGroupColors, group_color);
 }
 
 GroupColor ConvertGroupColorStringToGroupColor(const std::string& group_color) {
@@ -361,7 +362,7 @@ std::optional<tab_groups::TabGroupInfo> MakeTabGroupInfoFromDict(
 
 // Returns true if launch container string value is valid.
 bool IsValidLaunchContainer(const std::string& launch_container) {
-  return kValidLaunchContainers.contains(launch_container);
+  return base::Contains(kValidLaunchContainers, launch_container);
 }
 
 // Returns a casted apps::LaunchContainer to be set as an app restore data's
@@ -387,7 +388,7 @@ int32_t StringToLaunchContainer(const std::string& launch_container) {
 
 // Returns true if the disposition is a valid value.
 bool IsValidWindowOpenDisposition(const std::string& disposition) {
-  return kValidWindowOpenDispositions.contains(disposition);
+  return base::Contains(kValidWindowOpenDispositions, disposition);
 }
 
 // Returns a casted WindowOpenDisposition to be set in the app restore data.
@@ -542,7 +543,7 @@ std::vector<coral::mojom::EntityPtr> ConvertDictToCoralTabAppEntities(
 }
 
 bool IsValidWindowState(const std::string& window_state) {
-  return kValidWindowStates.contains(window_state);
+  return base::Contains(kValidWindowStates, window_state);
 }
 
 // Convert JSON string WindowState `state` to ui::mojom::WindowShowState used by
@@ -1043,7 +1044,7 @@ std::string SerializeDeskTypeAsString(ash::DeskTemplateType desk_type) {
 }
 
 bool IsValidDeskTemplateType(const std::string& desk_template_type) {
-  return kValidDeskTypes.contains(desk_template_type);
+  return base::Contains(kValidDeskTypes, desk_template_type);
 }
 
 // TODO(b/258692868): Currently parse any invalid value for this field as

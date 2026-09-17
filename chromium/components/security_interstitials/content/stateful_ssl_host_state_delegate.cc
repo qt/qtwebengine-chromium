@@ -13,6 +13,7 @@
 #include <utility>
 
 #include "base/base64.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/functional/callback_helpers.h"
@@ -180,8 +181,8 @@ StatefulSSLHostStateDelegate::QueryPolicy(
     }
     AllowedCert allowed_cert =
         AllowedCert(GetKey(cert, error), storage_partition->GetPath());
-    if (allowed_certs_for_non_default_storage_partitions_[host].contains(
-            allowed_cert)) {
+    if (base::Contains(allowed_certs_for_non_default_storage_partitions_[host],
+                       allowed_cert)) {
       return ALLOWED;
     }
     return DENIED;
@@ -232,9 +233,9 @@ bool StatefulSSLHostStateDelegate::DidHostRunInsecureContent(
     InsecureContentType content_type) {
   switch (content_type) {
     case MIXED_CONTENT:
-      return ran_mixed_content_hosts_.contains(host);
+      return base::Contains(ran_mixed_content_hosts_, host);
     case CERT_ERRORS_CONTENT:
-      return ran_content_with_cert_errors_hosts_.contains(host);
+      return base::Contains(ran_content_with_cert_errors_hosts_, host);
   }
   NOTREACHED();
 }
@@ -399,7 +400,8 @@ bool StatefulSSLHostStateDelegate::HasCertAllowException(
     content::StoragePartition* storage_partition) {
   if (!storage_partition ||
       storage_partition != browser_context_->GetDefaultStoragePartition()) {
-    return allowed_certs_for_non_default_storage_partitions_.contains(host);
+    return base::Contains(allowed_certs_for_non_default_storage_partitions_,
+                          host);
   }
 
   GURL url = GetSecureGURLForHost(host);

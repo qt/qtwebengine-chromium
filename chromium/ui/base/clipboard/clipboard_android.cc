@@ -16,6 +16,7 @@
 #include "base/android/jni_string.h"
 #include "base/android/scoped_java_ref.h"
 #include "base/base64.h"
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
@@ -264,14 +265,14 @@ bool ClipboardMap::HasFormat(const ClipboardFormatType& format) {
     // Images can be read if either bitmap or PNG types are available.
     if (format == ClipboardFormatType::PngType() ||
         format == ClipboardFormatType::BitmapType()) {
-      return map_.contains(ClipboardFormatType::PngType()) ||
-             map_.contains(ClipboardFormatType::BitmapType());
+      return base::Contains(map_, ClipboardFormatType::PngType()) ||
+             base::Contains(map_, ClipboardFormatType::BitmapType());
     }
     // Files are stored outside of `map_` in `filenames_`.
     if (format == ClipboardFormatType::FilenamesType()) {
       return !filenames_.empty();
     }
-    return map_.contains(format);
+    return base::Contains(map_, format);
   }
 
   // If the 'map_' is not up to date, we need to check with the system if the
@@ -296,7 +297,7 @@ bool ClipboardMap::HasFormat(const ClipboardFormatType& format) {
   }
 
   // Android unsupported format types, check local only.
-  return map_.contains(format);
+  return base::Contains(map_, format);
 }
 
 base::flat_set<ClipboardFormatType> ClipboardMap::GetAllAvailableFormats(
@@ -379,13 +380,13 @@ void ClipboardMap::CommitToAndroidClipboard(GURL data_source) {
 
   bool add_data_source = data_source.is_valid();
   if (mark_password_data_ &&
-      map_.contains(ClipboardFormatType::PlainTextType())) {
+      base::Contains(map_, ClipboardFormatType::PlainTextType())) {
     ScopedJavaLocalRef<jstring> str = ConvertUTF8ToJavaString(
         env, map_[ClipboardFormatType::PlainTextType()]);
     DCHECK(str.obj());
     Java_Clipboard_setPassword(env, clipboard_manager_, str);
     mark_password_data_ = false;
-  } else if (map_.contains(ClipboardFormatType::PngType())) {
+  } else if (base::Contains(map_, ClipboardFormatType::PngType())) {
     // Committing the PNG data to the Android clipboard will create an image
     // with a corresponding URI. Once this has been created, update the local
     // clipboard with this URI.

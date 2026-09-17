@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/not_fatal_until.h"
 #include "components/performance_manager/public/execution_context/execution_context_registry.h"
 #include "components/performance_manager/public/graph/graph.h"
@@ -75,7 +76,7 @@ void ClosingPageVoter::OnBeforeFrameNodeAdded(
     const PageNode* pending_page_node,
     const ProcessNode* pending_process_node,
     const FrameNode* pending_parent_or_outer_document_or_embedder) {
-  if (closing_pages_.contains(pending_page_node)) {
+  if (base::Contains(closing_pages_, pending_page_node)) {
     // A frame is added to a closing page. Adjust the vote.
     AdjustVotesForSubtree(frame_node, /*is_closing=*/true);
   }
@@ -83,7 +84,7 @@ void ClosingPageVoter::OnBeforeFrameNodeAdded(
 
 void ClosingPageVoter::OnBeforeFrameNodeRemoved(const FrameNode* frame_node) {
   // Invalidate vote on frame removal.
-  if (closing_pages_.contains(frame_node->GetPageNode())) {
+  if (base::Contains(closing_pages_, frame_node->GetPageNode())) {
     AdjustVotesForSubtree(frame_node, /*is_closing=*/false);
   }
 }

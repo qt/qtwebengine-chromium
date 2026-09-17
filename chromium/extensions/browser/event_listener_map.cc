@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/memory/ptr_util.h"
 #include "base/no_destructor.h"
 #include "content/public/browser/render_process_host.h"
@@ -601,7 +602,7 @@ void EventListenerMap::CleanupListener(EventListener* listener) {
 }
 
 bool EventListenerMap::IsFilteredEvent(const Event& event) const {
-  return filtered_events_.contains(event.event_name);
+  return base::Contains(filtered_events_, event.event_name);
 }
 
 }  // namespace extensions

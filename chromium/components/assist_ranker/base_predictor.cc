@@ -5,6 +5,7 @@
 #include "components/assist_ranker/base_predictor.h"
 
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/logging.h"
 #include "components/assist_ranker/proto/ranker_example.pb.h"
@@ -60,7 +61,7 @@ void BasePredictor::LogFeatureToUkm(const std::string& feature_name,
                                     ukm::UkmEntryBuilder* ukm_builder) {
   DCHECK(ukm_builder);
 
-  if (!config_.feature_allowlist->contains(feature_name)) {
+  if (!base::Contains(*config_.feature_allowlist, feature_name)) {
     DVLOG(1) << "Feature not allowed: " << feature_name;
     return;
   }

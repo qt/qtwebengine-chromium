@@ -4,6 +4,7 @@
 
 #include "components/safe_browsing/content/browser/notification_content_detection/mock_safe_browsing_database_manager.h"
 
+#include "base/containers/contains.h"
 #include "base/functional/callback_helpers.h"
 
 namespace safe_browsing {
@@ -17,8 +18,8 @@ void MockSafeBrowsingDatabaseManager::CheckUrlForHighConfidenceAllowlist(
     const GURL& gurl,
     CheckUrlForHighConfidenceAllowlistCallback callback) {
   std::string url = gurl.spec();
-  DCHECK(urls_allowlist_match_.contains(url));
-  if (delayed_url_callbacks_.contains(url)) {
+  DCHECK(base::Contains(urls_allowlist_match_, url));
+  if (base::Contains(delayed_url_callbacks_, url)) {
     delayed_url_callbacks_[url] = std::move(callback);
   } else {
     std::move(callback).Run(urls_allowlist_match_[url],
@@ -40,8 +41,8 @@ void MockSafeBrowsingDatabaseManager::SetCallbackToDelayed(const GURL& gurl) {
 
 void MockSafeBrowsingDatabaseManager::RestartDelayedCallback(const GURL& gurl) {
   std::string url = gurl.spec();
-  DCHECK(urls_allowlist_match_.contains(url));
-  DCHECK(delayed_url_callbacks_.contains(url));
+  DCHECK(base::Contains(urls_allowlist_match_, url));
+  DCHECK(base::Contains(delayed_url_callbacks_, url));
   DCHECK(delayed_url_callbacks_[url]);
   std::move(delayed_url_callbacks_[url])
       .Run(urls_allowlist_match_[url], /*logging_details=*/std::nullopt);

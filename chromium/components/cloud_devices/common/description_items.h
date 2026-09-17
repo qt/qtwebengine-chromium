@@ -16,8 +16,8 @@
 #include <vector>
 
 #include "base/check_op.h"
-#include "components/cloud_devices/common/cloud_device_description.h"
 #include "base/containers/contains.h"
+#include "components/cloud_devices/common/cloud_device_description.h"
 
 namespace cloud_devices {
 

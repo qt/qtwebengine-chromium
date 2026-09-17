@@ -4,6 +4,7 @@
 
 #include "extensions/common/manifest_handlers/app_urls_handler.h"
 
+#include "base/containers/contains.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 #include "extensions/common/error_utils.h"
@@ -73,7 +74,7 @@ bool AppURLsHandler::Parse(Extension* extension, std::u16string* error) {
 
     // We do not allow authors to put wildcards in their paths. Instead, we
     // imply one at the end.
-    if (pattern.path().contains('*')) {
+    if (base::Contains(pattern.path(), '*')) {
       *error = ErrorUtils::FormatErrorMessageUTF16(errors::kInvalidWebURL,
                                                    base::NumberToString(i),
                                                    errors::kNoWildCardsInPaths);

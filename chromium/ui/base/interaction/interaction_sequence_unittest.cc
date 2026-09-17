@@ -7,6 +7,7 @@
 #include <optional>
 #include <sstream>
 
+#include "base/containers/contains.h"
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/task/single_thread_task_runner.h"
@@ -6218,7 +6219,7 @@ TEST_P(InteractionSequenceSubsequenceTest, NamedElements) {
                         EXPECT_EQ(&element2, el)
                             << "Original named element should be unchanged.";
                         EXPECT_FALSE(
-                            seq->named_elements_.contains(kElementName2))
+                            base::Contains(seq->named_elements_, kElementName2))
                             << "Element named in subsequence should not be "
                                "present here.";
                       })))

@@ -9,6 +9,7 @@
 #include <string>
 #include <unordered_map>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
@@ -176,7 +177,8 @@ void CaptionBubbleControllerViews::SetActiveModel(
             // owns |caption_bubble_model|.
             base::Unretained(this)));
 
-    if (closed_sessions_.contains(caption_bubble_context->GetSessionId())) {
+    if (base::Contains(closed_sessions_,
+                       caption_bubble_context->GetSessionId())) {
       caption_bubble_model->Close();
     }
 
@@ -222,7 +224,7 @@ void CaptionBubbleControllerViews::OnSessionEnded(
 
 void CaptionBubbleControllerViews::OnSessionReset(
     const std::string& session_id) {
-  if (closed_sessions_.contains(session_id)) {
+  if (base::Contains(closed_sessions_, session_id)) {
     closed_sessions_.erase(session_id);
   }
 

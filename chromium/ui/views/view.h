@@ -20,6 +20,7 @@
 #include "base/auto_reset.h"
 #include "base/callback_list.h"
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/functional/callback.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/advanced_memory_safety_checks.h"
@@ -62,7 +63,6 @@
 #include "ui/views/paint_info.h"
 #include "ui/views/view_targeter.h"
 #include "ui/views/views_export.h"
-#include "base/containers/contains.h"
 
 class InfoBarView;
 class OmniboxPopupPresenter;

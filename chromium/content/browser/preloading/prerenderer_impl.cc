@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/strings/stringprintf.h"
 #include "base/trace_event/named_trigger.h"
@@ -332,8 +333,8 @@ void PrerendererImpl::ProcessCandidatesForPrerender(
   // removed from `started_prerenders_` via `OnRetriggerable`.
   CHECK(std::find_if(started_prerenders_.begin(), started_prerenders_.end(),
                      [&](const PrerenderInfo& x) {
-                       return canceled_prerender_rules_set.contains(
-                           x.prerender_host_id);
+                       return base::Contains(canceled_prerender_rules_set,
+                                             x.prerender_host_id);
                      }) == started_prerenders_.end());
 
   // Actually start the candidates in their original order once the diffing is

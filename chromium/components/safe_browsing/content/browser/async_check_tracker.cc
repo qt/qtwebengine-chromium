@@ -4,6 +4,7 @@
 
 #include "components/safe_browsing/content/browser/async_check_tracker.h"
 
+#include "base/containers/contains.h"
 #include "base/metrics/histogram_functions.h"
 #include "build/build_config.h"
 #include "components/safe_browsing/content/browser/base_ui_manager.h"
@@ -126,7 +127,7 @@ void AsyncCheckTracker::PendingCheckerCompleted(
            << " proceed: " << result.proceed
            << " has_post_commit_interstitial_skipped: "
            << result.has_post_commit_interstitial_skipped;
-  if (!pending_checkers_.contains(navigation_id)) {
+  if (!base::Contains(pending_checkers_, navigation_id)) {
     return;
   }
   if (!result.proceed) {
@@ -159,12 +160,12 @@ void AsyncCheckTracker::PendingCheckerCompleted(
 }
 
 bool AsyncCheckTracker::IsNavigationPending(int64_t navigation_id) {
-  return !committed_navigation_timestamps_.contains(navigation_id);
+  return !base::Contains(committed_navigation_timestamps_, navigation_id);
 }
 
 std::optional<base::TimeTicks>
 AsyncCheckTracker::GetNavigationCommittedTimestamp(int64_t navigation_id) {
-  if (!committed_navigation_timestamps_.contains(navigation_id)) {
+  if (!base::Contains(committed_navigation_timestamps_, navigation_id)) {
     return std::nullopt;
   }
   return committed_navigation_timestamps_[navigation_id];
@@ -252,7 +253,7 @@ void AsyncCheckTracker::DisplayBlockingPage(UnsafeResource resource) {
 }
 
 void AsyncCheckTracker::MaybeDeleteChecker(int64_t navigation_id) {
-  if (!pending_checkers_.contains(navigation_id)) {
+  if (!base::Contains(pending_checkers_, navigation_id)) {
     return;
   }
   pending_checkers_[navigation_id].reset();

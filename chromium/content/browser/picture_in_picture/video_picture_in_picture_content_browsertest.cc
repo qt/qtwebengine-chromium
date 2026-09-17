@@ -5,6 +5,7 @@
 #include <optional>
 
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/memory/raw_ptr.h"
 #include "base/strings/strcat.h"
 #include "base/strings/utf_string_conversions.h"
@@ -709,7 +710,7 @@ IN_PROC_BROWSER_TEST_F(VideoPictureInPictureContentBrowserTest,
   // The overlay window should have received the favicon image.
   ASSERT_EQ(overlay_window()->favicon_images().size(), 1u);
   const std::string icon_src = overlay_window()->favicon_images()[0].src.spec();
-  EXPECT_TRUE(icon_src.contains("test.ico"))
+  EXPECT_TRUE(base::Contains(icon_src, "test.ico"))
       << "The icon source: \"" << icon_src << "\" should contain \"test.ico\"";
 
   // The overlay window should be able to retrieve the favicon image.
@@ -729,7 +730,7 @@ IN_PROC_BROWSER_TEST_F(VideoPictureInPictureContentBrowserTest,
       .WillOnce([](const std::vector<media_session::MediaImage>& images) {
         ASSERT_EQ(images.size(), 1u);
         const std::string icon_src = images[0].src.spec();
-        EXPECT_TRUE(icon_src.contains("new.ico"))
+        EXPECT_TRUE(base::Contains(icon_src, "new.ico"))
             << "The icon source: \"" << icon_src
             << "\" should contain \"new.ico\"";
       });

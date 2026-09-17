@@ -13,6 +13,7 @@
 #include "base/check_op.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/files/file.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
@@ -2316,7 +2317,8 @@ bool FileSystemAccessManagerImpl::IsSafePathComponent(
     // Check for both '/' and '\' as path separators, regardless of what OS
     // we're running on.
     return component16 != u"." && component16 != u".." &&
-           !component16.contains('/') && !component16.contains('\\');
+           !base::Contains(component16, '/') &&
+           !base::Contains(component16, '\\');
   }
 
   // base::i18n::IsFilenameLegal blocks names that start with '.', so strip out

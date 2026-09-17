@@ -26,6 +26,7 @@
 #include "base/task/thread_pool.h"
 #include "base/time/time.h"
 #include "base/trace_event/trace_event.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "net/base/features.h"
 #include "net/base/pickle.h"
 #include "net/base/pickle_base_types.h"

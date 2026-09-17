@@ -3,11 +3,11 @@
 // found in the LICENSE file.
 
 #include "content/browser/posix_file_descriptor_info_impl.h"
-#include "base/containers/contains.h"
 
 #include <algorithm>
 #include <utility>
 
+#include "base/containers/contains.h"
 
 namespace content {
 

@@ -8,6 +8,7 @@
 #include <optional>
 
 #include "base/callback_list.h"
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/memory/raw_ptr.h"
@@ -431,7 +432,7 @@ bool FeaturePromoControllerImpl::HasPromoBeenDismissed(
       if (params.key.empty()) {
         return false;
       }
-      return data->shown_for_keys.contains(params.key);
+      return base::Contains(data->shown_for_keys, params.key);
   }
 }
 

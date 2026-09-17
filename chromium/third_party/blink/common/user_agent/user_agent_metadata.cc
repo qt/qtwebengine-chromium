@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/containers/contains.h"
 #include "third_party/blink/public/common/user_agent/user_agent_metadata.h"
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "base/containers/span.h"
 #include "base/pickle.h"
 #include "net/http/structured_headers.h"

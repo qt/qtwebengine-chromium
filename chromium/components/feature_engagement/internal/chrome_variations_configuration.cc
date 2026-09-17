@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/logging.h"
 #include "build/build_config.h"
@@ -117,7 +118,7 @@ void ChromeVariationsConfiguration::LoadFeatureConfig(
     const ConfigurationProviderList& configuration_providers,
     const FeatureVector& all_features,
     const GroupVector& all_groups) {
-  DCHECK(!configs_.contains(feature.name));
+  DCHECK(!base::Contains(configs_, feature.name));
 
   DVLOG(3) << "Loading feature config for " << feature.name;
   bool loaded = false;
@@ -143,7 +144,7 @@ void ChromeVariationsConfiguration::LoadFeatureConfig(
 void ChromeVariationsConfiguration::LoadGroupConfig(
     const base::Feature& group,
     const ConfigurationProviderList& configuration_providers) {
-  DCHECK(!group_configs_.contains(group.name));
+  DCHECK(!base::Contains(group_configs_, group.name));
 
   DVLOG(3) << "Parsing group config for " << group.name;
 

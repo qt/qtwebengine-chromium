@@ -10,6 +10,7 @@
 #include "base/auto_reset.h"
 #include "base/check_is_test.h"
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/location.h"
 #include "base/memory/scoped_refptr.h"
@@ -1422,7 +1423,7 @@ void PrefetchService::MayReleasePrefetch(
     return;
   }
 
-  if (!owned_prefetches().contains(prefetch_container->key())) {
+  if (!base::Contains(owned_prefetches(), prefetch_container->key())) {
     return;
   }
 

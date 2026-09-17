@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/task/sequenced_task_runner.h"
@@ -151,7 +152,7 @@ HashRealTimeService::SBThreatInfo HashRealTimeService::DetermineSBThreatInfo(
 
   std::vector<const V5::FullHash::FullHashDetail*> filtered_details;
   for (const auto& match : result_full_hashes) {
-    if (!url_full_hashes.contains(match.full_hash())) {
+    if (!base::Contains(url_full_hashes, match.full_hash())) {
       // Filter out result full hashes that don't match the full hashes of our
       // URL.
       continue;

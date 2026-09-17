@@ -6,6 +6,7 @@
 
 
 #include "base/check_deref.h"
+#include "base/containers/contains.h"
 #include "components/autofill/core/browser/data_manager/payments/payments_data_manager.h"
 #include "components/autofill/core/browser/data_model/payments/autofill_offer_data.h"
 #include "components/autofill/core/browser/foundations/autofill_client.h"
@@ -30,7 +31,8 @@ void AutofillOfferManager::OnDidNavigateFrame(AutofillClient& client) {
 
 bool AutofillOfferManager::IsUrlEligible(
     const GURL& last_committed_primary_main_frame_url) {
-  return eligible_merchant_domains_.contains(
+  return base::Contains(
+      eligible_merchant_domains_,
       last_committed_primary_main_frame_url.DeprecatedGetOriginAsURL());
 }
 

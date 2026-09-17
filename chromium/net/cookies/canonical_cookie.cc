@@ -52,6 +52,7 @@
 
 #include "base/check_is_test.h"
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/dcheck_is_on.h"
 #include "base/feature_list.h"
 #include "base/format_macros.h"
@@ -354,11 +355,11 @@ std::unique_ptr<CanonicalCookie> CanonicalCookie::Create(
   UMA_HISTOGRAM_BOOLEAN("Cookie.Parse.EmptyName", parsed_cookie.Name().empty());
   if (parsed_cookie.Name().empty()) {
     UMA_HISTOGRAM_BOOLEAN("Cookie.Parse.EmptyNameAmbiguousValue",
-                          parsed_cookie.Value().contains('='));
+                          base::Contains(parsed_cookie.Value(), '='));
 
     if (base::FeatureList::IsEnabled(
             net::features::kCookieParseRejectEmptyNameAmbiguous) &&
-        parsed_cookie.Value().contains('=')) {
+        base::Contains(parsed_cookie.Value(), '=')) {
       status->AddExclusionReason(CookieInclusionStatus::ExclusionReason::
                                      EXCLUDE_AMBIGUOUS_SERIALIZATION);
     }
@@ -706,7 +707,7 @@ std::unique_ptr<CanonicalCookie> CanonicalCookie::CreateSanitizedCookie(
   if (name.empty() &&
       base::FeatureList::IsEnabled(
           features::kCookieParseRejectEmptyNameAmbiguous) &&
-      value.contains('=')) {
+      base::Contains(value, '=')) {
     status->AddExclusionReason(CookieInclusionStatus::ExclusionReason::
                                    EXCLUDE_AMBIGUOUS_SERIALIZATION);
   }
@@ -1087,7 +1088,7 @@ CanonicalCookie::IsCanonicalForFromStorage() const {
   if (Name().empty() &&
       base::FeatureList::IsEnabled(
           features::kCookieParseRejectEmptyNameAmbiguous) &&
-      Value().contains('=')) {
+      base::Contains(Value(), '=')) {
     return Fail(CanonicalizationFailure::kEmptyNameWithAmbiguousValue);
   }
 

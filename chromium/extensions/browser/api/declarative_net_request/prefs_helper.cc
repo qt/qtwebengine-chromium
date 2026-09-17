@@ -7,6 +7,7 @@
 #include <string>
 #include <string_view>
 
+#include "base/containers/contains.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "extensions/browser/api/declarative_net_request/utils.h"
@@ -134,7 +135,7 @@ PrefsHelper::RuleIdsToUpdate::RuleIdsToUpdate(
   if (ids_to_enable) {
     for (int id : *ids_to_enable) {
       // |ids_to_disable| takes priority over |ids_to_enable|.
-      if (this->ids_to_disable.contains(id)) {
+      if (base::Contains(this->ids_to_disable, id)) {
         continue;
       }
       this->ids_to_enable.insert(id);
@@ -219,7 +220,7 @@ PrefsHelper::UpdateDisabledStaticRules(
       GetDisabledStaticRuleIdsFromDict(disabled_rule_ids_dict, ruleset_id));
 
   for (int id : old_disabled_rule_ids) {
-    if (rule_ids_to_update.ids_to_enable.contains(id)) {
+    if (base::Contains(rule_ids_to_update.ids_to_enable, id)) {
       result.changed = true;
       continue;
     }

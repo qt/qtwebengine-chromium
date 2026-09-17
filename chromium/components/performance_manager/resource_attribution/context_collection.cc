@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include "base/containers/contains.h"
 
 namespace resource_attribution {
 
@@ -34,7 +35,7 @@ bool ContextCollection::IsEmpty() const {
 
 bool ContextCollection::ContainsContext(const ResourceContext& context) const {
   return all_context_types_.test(ResourceContextTypeId(context).value()) ||
-         resource_contexts_.contains(context);
+         base::Contains(resource_contexts_, context);
 }
 
 // static

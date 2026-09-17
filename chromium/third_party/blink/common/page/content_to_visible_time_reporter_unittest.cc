@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/containers/contains.h"
 #include "third_party/blink/public/common/page/content_to_visible_time_reporter.h"
 
 #include <algorithm>
@@ -10,6 +9,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/containers/extend.h"
 #include "base/rand_util.h"
 #include "base/strings/strcat.h"

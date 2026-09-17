@@ -10,6 +10,7 @@
 
 #include "base/check.h"
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/logging.h"
 #include "base/strings/sys_string_conversions.h"
@@ -202,7 +203,7 @@ void RawInputDataFetcher::EnumerateDevices() {
         // path handle it.
         // http://msdn.microsoft.com/en-us/library/windows/desktop/ee417014.aspx
         const std::wstring device_name = new_device->GetDeviceName();
-        if (filter_xinput_ && device_name.contains(L"IG_")) {
+        if (filter_xinput_ && base::Contains(device_name, L"IG_")) {
           new_device->Shutdown();
           continue;
         }

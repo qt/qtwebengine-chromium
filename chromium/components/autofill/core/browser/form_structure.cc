@@ -21,6 +21,7 @@
 #include "base/check.h"
 #include "base/check_deref.h"
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/containers/flat_map.h"
 #include "base/containers/map_util.h"
 #include "base/containers/span.h"
@@ -258,7 +259,7 @@ void FormStructure::RationalizeAndAssignSections(
   // The sections are mapped to consecutive natural numbers starting at 1.
   std::map<Section, size_t> section_id_map;
   for (const std::unique_ptr<AutofillField>& field : fields_) {
-    if (!section_id_map.contains(field->section())) {
+    if (!base::Contains(section_id_map, field->section())) {
       size_t next_section_id = section_id_map.size() + 1;
       section_id_map[field->section()] = next_section_id;
     }

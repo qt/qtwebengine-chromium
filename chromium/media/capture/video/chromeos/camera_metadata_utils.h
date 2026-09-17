@@ -8,9 +8,9 @@
 #include <algorithm>
 
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "media/capture/capture_export.h"
 #include "media/capture/video/chromeos/mojom/camera_metadata.mojom.h"
-#include "base/containers/contains.h"
 
 namespace media {
 

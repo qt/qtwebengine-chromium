@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/core/html/client_hints_util.h"
 
+#include "base/containers/contains.h"
 #include "services/network/public/cpp/client_hints.h"
 #include "services/network/public/cpp/permissions_policy/client_hints_permissions_policy_mapping.h"
 #include "services/network/public/cpp/permissions_policy/origin_with_possible_wildcards.h"
@@ -108,7 +109,8 @@ void UpdateIFrameContainerPolicyWithDelegationSupportForClientHints(
            network::ParsedPermissionsPolicyDeclaration>
       feature_to_container_policy;
   for (const auto& candidate_policy : container_policy) {
-    if (!feature_to_container_policy.contains(candidate_policy.feature)) {
+    if (!base::Contains(feature_to_container_policy,
+                        candidate_policy.feature)) {
       feature_to_container_policy[candidate_policy.feature] = candidate_policy;
     }
   }

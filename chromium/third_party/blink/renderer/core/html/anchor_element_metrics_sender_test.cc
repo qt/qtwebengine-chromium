@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/core/html/anchor_element_metrics_sender.h"
 
+#include "base/containers/contains.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/test/bind.h"
@@ -1385,7 +1386,7 @@ TEST_F(AnchorElementMetricsSenderTest, PositionUpdate) {
   EXPECT_FLOAT_EQ(7.5f * unit / kViewportHeight,
                   get_position_ratio((anchor_2_id)));
   // anchor_3 is not in the viewport, so a ratio isn't reported.
-  EXPECT_TRUE(!positions.contains(anchor_3_id));
+  EXPECT_TRUE(!base::Contains(positions, anchor_3_id));
   positions.clear();
 
   // Zoom (visual as opposed to logical), and scroll up by 2 units post-zoom.
@@ -1425,7 +1426,7 @@ TEST_F(AnchorElementMetricsSenderTest, PositionUpdate) {
                   get_distance_ratio(anchor_2_id));
   EXPECT_FLOAT_EQ(13.0f * unit / kViewportHeight,
                   get_position_ratio(anchor_2_id));
-  EXPECT_TRUE(!positions.contains(anchor_3_id));
+  EXPECT_TRUE(!base::Contains(positions, anchor_3_id));
 }
 
 // TODO(crbug.com/347719430): This test can be removed if
@@ -1780,7 +1781,8 @@ TEST_F(AnchorElementMetricsSenderTest, SubframeWithObservedAnchorsDetached) {
 
   EXPECT_EQ(1u, mock_host->positions_.size());
   EXPECT_EQ(1u, mock_host->removed_anchor_ids_.size());
-  EXPECT_TRUE(mock_host->removed_anchor_ids_.contains(subframe_anchor_id));
+  EXPECT_TRUE(
+      base::Contains(mock_host->removed_anchor_ids_, subframe_anchor_id));
 }
 
 TEST_F(AnchorElementMetricsSenderTest,

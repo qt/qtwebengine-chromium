@@ -9,6 +9,7 @@
 #include <string_view>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/location.h"
 #include "base/metrics/histogram.h"
@@ -58,34 +59,34 @@ const char kFisAuthError[] = "FIS_AUTH_ERROR";
 
 // Gets correct status from the error message.
 RegistrationRequest::Status GetStatusFromError(std::string_view error) {
-  if (error.contains(kDeviceRegistrationError)) {
+  if (base::Contains(error, kDeviceRegistrationError)) {
     return RegistrationRequest::DEVICE_REGISTRATION_ERROR;
   }
-  if (error.contains(kAuthenticationFailed)) {
+  if (base::Contains(error, kAuthenticationFailed)) {
     return RegistrationRequest::AUTHENTICATION_FAILED;
   }
-  if (error.contains(kInvalidSender)) {
+  if (base::Contains(error, kInvalidSender)) {
     return RegistrationRequest::INVALID_SENDER;
   }
-  if (error.contains(kInvalidParameters)) {
+  if (base::Contains(error, kInvalidParameters)) {
     return RegistrationRequest::INVALID_PARAMETERS;
   }
-  if (error.contains(kInternalServerError)) {
+  if (base::Contains(error, kInternalServerError)) {
     return RegistrationRequest::INTERNAL_SERVER_ERROR;
   }
-  if (error.contains(kQuotaExceeded)) {
+  if (base::Contains(error, kQuotaExceeded)) {
     return RegistrationRequest::QUOTA_EXCEEDED;
   }
-  if (error.contains(kTooManyRegistrations)) {
+  if (base::Contains(error, kTooManyRegistrations)) {
     return RegistrationRequest::TOO_MANY_REGISTRATIONS;
   }
-  if (error.contains(kTooManySubscribers)) {
+  if (base::Contains(error, kTooManySubscribers)) {
     return RegistrationRequest::TOO_MANY_SUBSCRIBERS;
   }
-  if (error.contains(kInvalidTargetVersion)) {
+  if (base::Contains(error, kInvalidTargetVersion)) {
     return RegistrationRequest::INVALID_TARGET_VERSION;
   }
-  if (error.contains(kFisAuthError)) {
+  if (base::Contains(error, kFisAuthError)) {
     return RegistrationRequest::FIS_AUTH_ERROR;
   }
   // Should not be reached, unless the server adds new error types.

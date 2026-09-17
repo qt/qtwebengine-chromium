@@ -4,6 +4,7 @@
 
 #include "components/global_media_controls/public/views/media_item_ui_list_view.h"
 
+#include "base/containers/contains.h"
 #include "components/global_media_controls/public/views/media_item_ui_updated_view.h"
 #include "components/global_media_controls/public/views/media_item_ui_view.h"
 #include "ui/base/metadata/metadata_impl_macros.h"
@@ -52,7 +53,7 @@ MediaItemUIListView::~MediaItemUIListView() = default;
 
 void MediaItemUIListView::ShowItem(const std::string& id,
                                    std::unique_ptr<MediaItemUIView> item) {
-  DCHECK(!items_.contains(id));
+  DCHECK(!base::Contains(items_, id));
   DCHECK_NE(nullptr, item.get());
 
   item->SetScrollView(this);
@@ -63,7 +64,7 @@ void MediaItemUIListView::ShowItem(const std::string& id,
 }
 
 void MediaItemUIListView::HideItem(const std::string& id) {
-  if (!items_.contains(id))
+  if (!base::Contains(items_, id))
     return;
 
   contents()->RemoveChildViewT(items_[id]);
@@ -80,7 +81,7 @@ MediaItemUIView* MediaItemUIListView::GetItem(const std::string& id) {
 void MediaItemUIListView::ShowUpdatedItem(
     const std::string& id,
     std::unique_ptr<MediaItemUIUpdatedView> item) {
-  CHECK(!updated_items_.contains(id));
+  CHECK(!base::Contains(updated_items_, id));
   CHECK(item.get());
 
   updated_items_[id] = contents()->AddChildView(std::move(item));
@@ -90,7 +91,7 @@ void MediaItemUIListView::ShowUpdatedItem(
 }
 
 void MediaItemUIListView::HideUpdatedItem(const std::string& id) {
-  if (!updated_items_.contains(id)) {
+  if (!base::Contains(updated_items_, id)) {
     return;
   }
 

@@ -14,6 +14,7 @@
 
 #include "base/check.h"
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/metrics/histogram_base.h"
@@ -345,9 +346,9 @@ TEST_F(iCloudKeychainTest, MakeCredential) {
       EXPECT_FALSE(response.enterprise_attestation_returned);
       EXPECT_EQ(response.transports->size(), 2u);
       EXPECT_TRUE(
-          response.transports->contains(FidoTransportProtocol::kHybrid));
-      EXPECT_TRUE(
-          response.transports->contains(FidoTransportProtocol::kInternal));
+          base::Contains(*response.transports, FidoTransportProtocol::kHybrid));
+      EXPECT_TRUE(base::Contains(*response.transports,
+                                 FidoTransportProtocol::kInternal));
       EXPECT_EQ(response.transport_used, FidoTransportProtocol::kInternal);
     }
 

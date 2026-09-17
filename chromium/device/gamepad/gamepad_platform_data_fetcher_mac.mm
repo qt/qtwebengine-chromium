@@ -11,6 +11,7 @@
 
 #include "base/apple/bridging.h"
 #include "base/apple/foundation_util.h"
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/strings/sys_string_conversions.h"
 #import "base/task/sequenced_task_runner.h"
@@ -186,7 +187,7 @@ void GamepadPlatformDataFetcherMac::DeviceAdd(IOHIDDeviceRef device) {
     VLOG(1) << "XInput gamepad claimed by GamepadPlatformDataFetcherMac";
   }
 
-  if (devices_.contains(location_int)) {
+  if (base::Contains(devices_, location_int)) {
     RecordGamepadPlatformMacOutcome(
         GamepadPlatformMacOutcome::kAlreadyConnected);
     return;

@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/containers/queue.h"
 #include "base/functional/bind.h"
 #include "base/memory/raw_ptr.h"
@@ -552,7 +553,7 @@ void FindRequestManager::RemoveFrame(RenderFrameHost* rfh) {
 
   // If no pending find replies are expected for the removed frame, then just
   // report the updated results.
-  if (!pending_initial_replies_.contains(rfh) &&
+  if (!base::Contains(pending_initial_replies_, rfh) &&
       pending_find_next_reply_ != rfh) {
     bool final_update =
         pending_initial_replies_.empty() && !pending_find_next_reply_;
@@ -603,7 +604,7 @@ void FindRequestManager::OnGetNearestFindResultReply(RenderFrameHostImpl* rfh,
                                                      int request_id,
                                                      float distance) {
   if (request_id != activate_.current_request_id ||
-      !activate_.pending_replies.contains(rfh)) {
+      !base::Contains(activate_.pending_replies, rfh)) {
     return;
   }
 
@@ -809,7 +810,7 @@ RenderFrameHost* FindRequestManager::Traverse(RenderFrameHost* from_rfh,
     RenderFrameHost* current_rfh = rfh;
     if (!matches_only ||
         find_in_page_clients_.find(current_rfh)->second->number_of_matches() ||
-        pending_initial_replies_.contains(current_rfh)) {
+        base::Contains(pending_initial_replies_, current_rfh)) {
       // Note that if there is still a pending reply expected for this frame,
       // then it may have unaccounted matches and will not be skipped via
       // |matches_only|.
@@ -847,7 +848,8 @@ bool FindRequestManager::CheckFrame(RenderFrameHost* rfh) const {
   // TODO(crbug.com/40196212): Convert IsFindInPageDisabled to a DCHECK when we
   // replace DidFinishLoad with DidFinishNavigation in FrameObserver.
   if (!rfh || !rfh->IsRenderFrameLive() || !rfh->IsActive() ||
-      !find_in_page_clients_.contains(rfh) || IsFindInPageDisabled(rfh)) {
+      !base::Contains(find_in_page_clients_, rfh) ||
+      IsFindInPageDisabled(rfh)) {
     return false;
   }
 

@@ -7,6 +7,7 @@
 #include <string>
 #include <string_view>
 
+#include "base/containers/contains.h"
 #include "base/containers/flat_set.h"
 #include "base/i18n/case_conversion.h"
 #include "base/i18n/char_iterator.h"
@@ -563,7 +564,7 @@ bool AXImageStopwords::IsImageStopword(std::string_view word_utf8) const {
     return true;
   }
 
-  return stopword_set_.contains(base::UTF16ToUTF8(word_utf16));
+  return base::Contains(stopword_set_, base::UTF16ToUTF8(word_utf16));
 }
 
 }  // namespace content

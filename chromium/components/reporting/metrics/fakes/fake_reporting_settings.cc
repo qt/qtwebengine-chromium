@@ -4,6 +4,7 @@
 
 #include "components/reporting/metrics/fakes/fake_reporting_settings.h"
 
+#include "base/containers/contains.h"
 #include "base/run_loop.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/values.h"
@@ -17,7 +18,7 @@ FakeReportingSettings::~FakeReportingSettings() = default;
 base::CallbackListSubscription FakeReportingSettings::AddSettingsObserver(
     const std::string& path,
     base::RepeatingClosure callback) {
-  if (!settings_callbacks_map_.contains(path)) {
+  if (!base::Contains(settings_callbacks_map_, path)) {
     settings_callbacks_map_[path] =
         std::make_unique<base::RepeatingClosureList>();
   }
@@ -33,17 +34,16 @@ bool FakeReportingSettings::PrepareTrustedValues(base::OnceClosure callback) {
 
 bool FakeReportingSettings::GetBoolean(const std::string& path,
                                        bool* out_value) const {
-  const auto iter = bool_map_.find(path);
-  if (iter == bool_map_.end()) {
+  if (!base::Contains(bool_map_, path)) {
     return false;
   }
-  *out_value = iter->second;
+  *out_value = bool_map_.at(path);
   return true;
 }
 
 bool FakeReportingSettings::GetInteger(const std::string& path,
                                        int* out_value) const {
-  if (!int_map_.contains(path)) {
+  if (!base::Contains(int_map_, path)) {
     return false;
   }
   *out_value = int_map_.at(path);
@@ -52,7 +52,7 @@ bool FakeReportingSettings::GetInteger(const std::string& path,
 
 bool FakeReportingSettings::GetList(const std::string& path,
                                     const base::ListValue** out_value) const {
-  if (!list_map_.contains(path)) {
+  if (!base::Contains(list_map_, path)) {
     return false;
   }
   *out_value = &list_map_.at(path);
@@ -61,7 +61,7 @@ bool FakeReportingSettings::GetList(const std::string& path,
 
 bool FakeReportingSettings::GetReportingEnabled(const std::string& path,
                                                 bool* out_value) const {
-  if (!reporting_enabled_map_.contains(path)) {
+  if (!base::Contains(reporting_enabled_map_, path)) {
     return false;
   }
   *out_value = reporting_enabled_map_.at(path);
@@ -71,14 +71,14 @@ bool FakeReportingSettings::GetReportingEnabled(const std::string& path,
 void FakeReportingSettings::SetBoolean(const std::string& path,
                                        bool bool_value) {
   bool_map_[path] = bool_value;
-  if (settings_callbacks_map_.contains(path)) {
+  if (base::Contains(settings_callbacks_map_, path)) {
     settings_callbacks_map_.at(path)->Notify();
   }
 }
 
 void FakeReportingSettings::SetInteger(const std::string& path, int int_value) {
   int_map_[path] = int_value;
-  if (settings_callbacks_map_.contains(path)) {
+  if (base::Contains(settings_callbacks_map_, path)) {
     settings_callbacks_map_.at(path)->Notify();
   }
 }
@@ -86,7 +86,7 @@ void FakeReportingSettings::SetInteger(const std::string& path, int int_value) {
 void FakeReportingSettings::SetList(const std::string& path,
                                     const base::ListValue& list_value) {
   list_map_.insert_or_assign(path, list_value.Clone());
-  if (settings_callbacks_map_.contains(path)) {
+  if (base::Contains(settings_callbacks_map_, path)) {
     settings_callbacks_map_.at(path)->Notify();
   }
 }
@@ -94,7 +94,7 @@ void FakeReportingSettings::SetList(const std::string& path,
 void FakeReportingSettings::SetReportingEnabled(const std::string& path,
                                                 bool enabled_value) {
   reporting_enabled_map_[path] = enabled_value;
-  if (settings_callbacks_map_.contains(path)) {
+  if (base::Contains(settings_callbacks_map_, path)) {
     settings_callbacks_map_.at(path)->Notify();
   }
 }

@@ -8,6 +8,7 @@
 #include <string>
 #include <tuple>
 
+#include "base/containers/contains.h"
 #include "base/containers/map_util.h"
 #include "base/types/optional_util.h"
 #include "components/guest_view/buildflags/buildflags.h"
@@ -102,7 +103,7 @@ bool ProcessMap::Contains(const ExtensionId& extension_id_in,
 }
 
 bool ProcessMap::Contains(content::ChildProcessId process_id) const {
-  return items_.contains(process_id);
+  return base::Contains(items_, process_id);
 }
 
 bool ProcessMap::Contains(int process_id) const {

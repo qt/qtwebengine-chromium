@@ -11,6 +11,7 @@
 #include <set>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/win/dispatch_stub.h"
 #include "base/win/scoped_bstr.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -31,7 +32,7 @@ template <VARTYPE ElementVartype>
 static bool TestIsConvertibleTo(const std::set<VARTYPE>& allowed_vartypes) {
   for (VARTYPE vartype : kSupportedVartypes) {
     if (VariantConverter<ElementVartype>::IsConvertibleTo(vartype) !=
-        allowed_vartypes.contains(vartype)) {
+        base::Contains(allowed_vartypes, vartype)) {
       return false;
     }
   }
@@ -42,7 +43,7 @@ template <VARTYPE ElementVartype>
 static bool TestIsConvertibleFrom(const std::set<VARTYPE>& allowed_vartypes) {
   for (VARTYPE vartype : kSupportedVartypes) {
     if (VariantConverter<ElementVartype>::IsConvertibleFrom(vartype) !=
-        allowed_vartypes.contains(vartype)) {
+        base::Contains(allowed_vartypes, vartype)) {
       return false;
     }
   }

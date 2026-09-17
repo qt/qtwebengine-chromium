@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/location.h"
 #include "base/task/sequenced_task_runner.h"
@@ -163,8 +164,8 @@ void UsbServiceAndroid::RequestDevicePermission(
 
 void UsbServiceAndroid::AddDevice(scoped_refptr<UsbDeviceAndroid> device) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  DCHECK(!devices_by_id_.contains(device->device_id()));
-  DCHECK(!devices().contains(device->guid()));
+  DCHECK(!base::Contains(devices_by_id_, device->device_id()));
+  DCHECK(!base::Contains(devices(), device->guid()));
   devices_by_id_[device->device_id()] = device;
   devices()[device->guid()] = device;
 

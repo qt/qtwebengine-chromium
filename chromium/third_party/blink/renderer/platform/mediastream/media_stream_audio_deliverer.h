@@ -9,6 +9,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/thread_checker.h"
 #include "base/trace_event/trace_event.h"
@@ -17,7 +18,6 @@
 #include "third_party/blink/public/platform/modules/webrtc/webrtc_logging.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
-#include "base/containers/contains.h"
 
 namespace media {
 struct AudioGlitchInfo;

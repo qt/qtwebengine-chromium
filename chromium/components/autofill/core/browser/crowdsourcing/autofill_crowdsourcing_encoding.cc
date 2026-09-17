@@ -26,6 +26,7 @@
 #include "base/check.h"
 #include "base/check_op.h"
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/containers/flat_map.h"
 #include "base/containers/flat_set.h"
 #include "base/containers/map_util.h"
@@ -1097,7 +1098,7 @@ EncodeAutofillPageQueryRequest(const std::vector<FormData>& forms) {
   // the original form signature.
   std::set<FormSignature> processed_forms;
   for (const FormData& form : forms) {
-    if (processed_forms.contains(CalculateFormSignature(form))) {
+    if (base::Contains(processed_forms, CalculateFormSignature(form))) {
       continue;
     }
     UMA_HISTOGRAM_COUNTS_1000("Autofill.FieldCount", form.fields().size());

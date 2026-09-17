@@ -8,6 +8,7 @@
 #include <variant>
 
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "build/build_config.h"
 #include "third_party/abseil-cpp/absl/functional/overload.h"
 #include "ui/gl/android/scoped_java_surface.h"
@@ -37,12 +38,12 @@ int GpuSurfaceTracker::AddSurfaceForNativeWidget(SurfaceRecord record) {
 bool GpuSurfaceTracker::IsValidSurfaceHandle(
     gpu::SurfaceHandle surface_handle) const {
   base::AutoLock lock(surface_map_lock_);
-  return surface_map_.contains(surface_handle);
+  return base::Contains(surface_map_, surface_handle);
 }
 
 void GpuSurfaceTracker::RemoveSurface(gpu::SurfaceHandle surface_handle) {
   base::AutoLock lock(surface_map_lock_);
-  DCHECK(surface_map_.contains(surface_handle));
+  DCHECK(base::Contains(surface_map_, surface_handle));
   surface_map_.erase(surface_handle);
 }
 

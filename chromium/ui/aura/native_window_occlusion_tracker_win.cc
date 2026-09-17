@@ -10,6 +10,7 @@
 #include <memory>
 #include <string>
 
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
@@ -665,7 +666,7 @@ bool NativeWindowOcclusionTrackerWin::WindowOcclusionCalculator::
     DWORD pid;
     ::GetWindowThreadProcessId(hwnd, &pid);
     current_pids_with_visible_windows->insert(pid);
-    if (!process_event_hooks_.contains(pid))
+    if (!base::Contains(process_event_hooks_, pid))
       RegisterEventHookForProcess(pid);
   }
 

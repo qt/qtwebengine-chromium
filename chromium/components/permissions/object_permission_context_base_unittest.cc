@@ -4,6 +4,7 @@
 
 #include "components/permissions/object_permission_context_base.h"
 
+#include "base/containers/contains.h"
 #include "base/strings/strcat.h"
 #include "base/test/run_until.h"
 #include "base/test/scoped_feature_list.h"
@@ -220,8 +221,8 @@ TEST_F(ObjectPermissionContextBaseTest, GetOriginsWithGrants) {
 
   auto origins_with_grants = context_.GetOriginsWithGrants();
   EXPECT_EQ(2u, origins_with_grants.size());
-  EXPECT_TRUE(origins_with_grants.contains(origin2_));
-  EXPECT_TRUE(origins_with_grants.contains(origin1_));
+  EXPECT_TRUE(base::Contains(origins_with_grants, origin2_));
+  EXPECT_TRUE(base::Contains(origins_with_grants, origin1_));
 }
 
 TEST_F(ObjectPermissionContextBaseTest, GetAllGrantedObjects) {

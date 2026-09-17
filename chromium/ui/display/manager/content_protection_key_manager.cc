@@ -4,6 +4,7 @@
 
 #include "ui/display/manager/content_protection_key_manager.h"
 
+#include "base/containers/contains.h"
 #include "base/memory/raw_ptr.h"
 #include "ui/display/display_features.h"
 #include "ui/display/manager/util/display_manager_util.h"
@@ -123,7 +124,7 @@ void ContentProtectionKeyManager::OnKeyInjectedToKernel(int64_t display_id,
 
 void ContentProtectionKeyManager::TriggerPendingCallbacks(int64_t display_id,
                                                           bool is_key_set) {
-  CHECK(pending_display_callbacks_.contains(display_id));
+  CHECK(base::Contains(pending_display_callbacks_, display_id));
   KeySetCallback callback = std::move(pending_display_callbacks_[display_id]);
   DCHECK(!callback.is_null());
   std::move(callback).Run(is_key_set);

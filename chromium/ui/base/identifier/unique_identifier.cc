@@ -5,6 +5,7 @@
 #include "ui/base/identifier/unique_identifier.h"
 
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/dcheck_is_on.h"
 #include "base/no_destructor.h"
 
@@ -33,7 +34,7 @@ UniqueIdentifier UniqueIdentifier::FromRawValue(intptr_t value) {
   }
   const auto* impl =
       reinterpret_cast<const internal::UniqueIdentifierProvider*>(value);
-  CHECK(GetKnownIdentifiers().contains(impl));
+  CHECK(base::Contains(GetKnownIdentifiers(), impl));
   return UniqueIdentifier(impl);
 }
 

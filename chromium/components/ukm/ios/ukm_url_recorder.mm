@@ -7,6 +7,7 @@
 #include <set>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/containers/flat_map.h"
 #include "ios/web/public/navigation/navigation_context.h"
 #include "ios/web/public/web_state.h"
@@ -112,7 +113,7 @@ void SourceUrlRecorderWebStateObserver::MaybeRecordUrl(
   // with the logic onother platforms. As a workaround here, we skip recording
   // the last visit to #foo to UKM. Cases such as these are observed to be very
   // rare.
-  if (navigation_ids_seen_.contains(navigation_id)) {
+  if (base::Contains(navigation_ids_seen_, navigation_id)) {
     return;
   }
 

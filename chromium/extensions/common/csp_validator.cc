@@ -196,7 +196,7 @@ bool isNonWildcardTLD(const std::string& url,
 
   std::string host(url, start_of_host, end_of_host - start_of_host);
   // Global wildcards are not allowed.
-  if (host.empty() || host.contains("*")) {
+  if (host.empty() || base::Contains(host, "*")) {
     return false;
   }
 

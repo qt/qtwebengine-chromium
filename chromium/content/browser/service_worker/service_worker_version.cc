@@ -13,6 +13,7 @@
 
 #include "base/check.h"
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/debug/crash_logging.h"
 #include "base/debug/dump_without_crashing.h"
 #include "base/functional/bind.h"
@@ -808,7 +809,7 @@ ServiceWorkerExternalRequestResult ServiceWorkerVersion::StartExternalRequest(
     return ServiceWorkerExternalRequestResult::kWorkerNotRunning;
   }
 
-  if (external_request_uuid_to_request_id_.contains(request_uuid)) {
+  if (base::Contains(external_request_uuid_to_request_id_, request_uuid)) {
     return ServiceWorkerExternalRequestResult::kBadRequestId;
   }
 
@@ -1016,7 +1017,7 @@ void ServiceWorkerVersion::AddControllee(
   CHECK(!service_worker_client->client_uuid().empty());
   // TODO(crbug.com/40657227): Change to DCHECK once we figure out the cause of
   // crash.
-  CHECK(!controllee_map_.contains(uuid));
+  CHECK(!base::Contains(controllee_map_, uuid));
 
   controllee_map_[uuid] = service_worker_client->AsWeakPtr();
   // Even if `context_` is invalid, `controllee_map_` should have `uuid`.
@@ -1104,15 +1105,15 @@ void ServiceWorkerVersion::MoveControlleeToBackForwardCacheMap(
 void ServiceWorkerVersion::RestoreControlleeFromBackForwardCacheMap(
     const std::string& client_uuid) {
   CHECK(IsBackForwardCacheEnabled());
-  CHECK(!controllee_map_.contains(client_uuid));
-  if (!bfcached_controllee_map_.contains(client_uuid)) {
+  CHECK(!base::Contains(controllee_map_, client_uuid));
+  if (!base::Contains(bfcached_controllee_map_, client_uuid)) {
     // We are navigating to the page using BackForwardCache, which is being
     // evicted due to activation, postMessage or claim. In this case, we reload
     // the page without using BackForwardCache, so we can assume that
     // ContainerHost will be deleted soon.
     // TODO(https://crbug.com/526541415): CHECK-exclusion: Convert to CHECK once
     // we are sure this isn't hit.
-    DCHECK(controllees_to_be_evicted_.contains(client_uuid));
+    DCHECK(base::Contains(controllees_to_be_evicted_, client_uuid));
     // TODO(crbug.com/40657227): Remove DumpWithoutCrashing once we confirm the
     // cause of the crash.
     BackForwardCacheCanStoreDocumentResult can_store;
@@ -1136,7 +1137,7 @@ void ServiceWorkerVersion::RemoveControlleeFromBackForwardCacheMap(
   // TODO(crbug.com/341322515): Investigate why sometimes
   // `bfcache_controllee_map_` does not contain the client.
   SCOPED_CRASH_KEY_BOOL("ServiceWorkerBfcache", "in_controllee_map",
-                        controllee_map_.contains(client_uuid));
+                        base::Contains(controllee_map_, client_uuid));
   size_t count = bfcached_controllee_map_.erase(client_uuid);
   CHECK_GT(count, 0u);
 }
@@ -1145,9 +1146,9 @@ void ServiceWorkerVersion::Uncontrol(const std::string& client_uuid) {
   if (!IsBackForwardCacheEnabled()) {
     RemoveControllee(client_uuid);
   } else {
-    if (controllee_map_.contains(client_uuid)) {
+    if (base::Contains(controllee_map_, client_uuid)) {
       RemoveControllee(client_uuid);
-    } else if (bfcached_controllee_map_.contains(client_uuid)) {
+    } else if (base::Contains(bfcached_controllee_map_, client_uuid)) {
       RemoveControlleeFromBackForwardCacheMap(client_uuid);
     } else {
       // It is possible that the controllee belongs to neither |controllee_map_|
@@ -3582,7 +3583,7 @@ void ServiceWorkerVersion::GetAssociatedInterface(
 
 bool ServiceWorkerVersion::BFCacheContainsControllee(
     const std::string& uuid) const {
-  return bfcached_controllee_map_.contains(uuid);
+  return base::Contains(bfcached_controllee_map_, uuid);
 }
 
 base::WeakPtr<ServiceWorkerVersion> ServiceWorkerVersion::GetWeakPtr() {

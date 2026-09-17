@@ -48,7 +48,7 @@ bool CheckStudyGroup(const RepeatedFieldType& include_groups,
   if (!include_groups.empty()) {
     if (std::ranges::none_of(include_groups,
                              [&client_groups](const FilterGroupType& group) {
-                               return client_groups.contains(group);
+                               return base::Contains(client_groups, group);
                              })) {
       // An include group filter was specified, and the client is not a member
       // of any of the groups.
@@ -59,7 +59,7 @@ bool CheckStudyGroup(const RepeatedFieldType& include_groups,
   if (!exclude_groups.empty()) {
     if (std::ranges::any_of(exclude_groups,
                             [&client_groups](const FilterGroupType& group) {
-                              return client_groups.contains(group);
+                              return base::Contains(client_groups, group);
                             })) {
       // An exclude group filter was specified, and the client is a member of
       // at least one of the groups.

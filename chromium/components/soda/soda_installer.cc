@@ -170,7 +170,7 @@ const std::set<LanguageCode> SodaInstaller::InstalledLanguages() const {
 }
 
 bool SodaInstaller::IsLanguageInstalled(LanguageCode language_code) const {
-  return installed_languages_.contains(language_code);
+  return base::Contains(installed_languages_, language_code);
 }
 
 void SodaInstaller::AddObserver(Observer* observer) {
@@ -282,7 +282,7 @@ void SodaInstaller::RegisterLanguage(std::string_view language,
                                      PrefService* global_prefs) {
   ScopedListPrefUpdate update(global_prefs,
                               prefs::kSodaRegisteredLanguagePacks);
-  if (!update->contains(language)) {
+  if (!base::Contains(*update, base::Value(language))) {
     update->Append(language);
   }
 
@@ -301,7 +301,7 @@ void SodaInstaller::UnregisterLanguage(std::string_view language,
                                        PrefService* global_prefs) {
   ScopedListPrefUpdate update(global_prefs,
                               prefs::kSodaRegisteredLanguagePacks);
-  if (update->contains(language)) {
+  if (base::Contains(*update, base::Value(language))) {
     update->EraseValue(base::Value(language));
   }
 }
@@ -319,12 +319,12 @@ bool SodaInstaller::IsLanguageEnabled(std::string_view language) {
 bool SodaInstaller::IsSodaLanguageDownloading(
     LanguageCode language_code) const {
   return (is_soda_downloading_ && IsLanguageInstalled(language_code)) ||
-         language_pack_progress_.contains(language_code);
+         base::Contains(language_pack_progress_, language_code);
 }
 
 bool SodaInstaller::IsSodaDownloading(LanguageCode language_code) const {
   return is_soda_downloading_ ||
-         language_pack_progress_.contains(language_code);
+         base::Contains(language_pack_progress_, language_code);
 }
 
 std::optional<SodaInstaller::ErrorCode> SodaInstaller::GetSodaInstallErrorCode(

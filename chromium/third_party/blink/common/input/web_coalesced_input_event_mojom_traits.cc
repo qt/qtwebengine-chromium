@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/containers/contains.h"
 #include "third_party/blink/public/common/input/web_coalesced_input_event_mojom_traits.h"
 
 #include <algorithm>
 #include <memory>
 
+#include "base/containers/contains.h"
 #include "base/strings/string_util.h"
 #include "base/time/time.h"
 #include "mojo/public/cpp/base/time_mojom_traits.h"

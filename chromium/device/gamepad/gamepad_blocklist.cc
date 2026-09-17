@@ -3,12 +3,13 @@
 // found in the LICENSE file.
 
 #include "device/gamepad/gamepad_blocklist.h"
-#include "base/containers/contains.h"
 
 #include <stddef.h>
 
 #include <algorithm>
 #include <iterator>
+
+#include "base/containers/contains.h"
 
 
 namespace device {

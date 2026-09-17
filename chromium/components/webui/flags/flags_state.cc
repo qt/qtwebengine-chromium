@@ -503,7 +503,7 @@ void FlagsState::SetOriginListFlag(const std::string& internal_name,
 
   std::set<std::string> enabled_entries;
   GetSanitizedEnabledFlags(flags_storage, &enabled_entries);
-  const bool enabled = enabled_entries.contains(entry->internal_name);
+  const bool enabled = base::Contains(enabled_entries, entry->internal_name);
   if (enabled) {
     DidModifyOriginListFlag(*flags_storage, *entry);
   }
@@ -521,7 +521,7 @@ void FlagsState::SetStringFlag(const std::string& internal_name,
 
   std::set<std::string> enabled_entries;
   GetSanitizedEnabledFlags(flags_storage, &enabled_entries);
-  const bool enabled = enabled_entries.contains(entry->internal_name);
+  const bool enabled = base::Contains(enabled_entries, entry->internal_name);
   if (enabled) {
     DidModifyStringFlag(*flags_storage, *entry);
   }
@@ -554,7 +554,7 @@ void FlagsState::RemoveFlagsSwitches(
     // For any featrue name in |features| that is not in |switch_added_values| -
     // i.e. it wasn't added by about_flags code, add it to |remaining_features|.
     for (const auto& feature : features) {
-      if (!switch_added_values.contains(std::string(feature))) {
+      if (!base::Contains(switch_added_values, std::string(feature))) {
         remaining_features.push_back(feature);
       }
     }

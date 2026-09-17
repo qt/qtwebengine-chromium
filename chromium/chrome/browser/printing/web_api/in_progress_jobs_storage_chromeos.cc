@@ -5,6 +5,7 @@
 #include "chrome/browser/printing/web_api/in_progress_jobs_storage_chromeos.h"
 
 #include "base/check_deref.h"
+#include "base/containers/contains.h"
 #include "base/containers/fixed_flat_set.h"
 #include "base/containers/map_util.h"
 #include "base/functional/callback_helpers.h"
@@ -132,7 +133,7 @@ void InProgressJobsStorageChromeOS::UpdateJobState(
   }
   observer.OnWebPrintJobUpdate(std::move(out_update));
 
-  if (kTerminalJobStates.contains(state)) {
+  if (base::Contains(kTerminalJobStates, state)) {
     state_observers_.Remove(observer_id);
     controllers_.Remove(controller_id);
     job_id_to_observer_controller_id_pair_.erase(id_pair_itr);

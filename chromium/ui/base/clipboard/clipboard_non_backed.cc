@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/containers/span.h"
 #include "base/functional/bind.h"
 #include "base/memory/ptr_util.h"
@@ -84,7 +85,7 @@ void UnregisterInstance(const ClipboardNonBacked* clipboard) {
 // ClipboardNonBacked*.
 bool IsRegisteredInstance(const Clipboard* clipboard) {
   base::AutoLock lock(GetInstanceRegistryLock());
-  return GetInstanceRegistry()->contains(clipboard);
+  return base::Contains(*GetInstanceRegistry(), clipboard);
 }
 
 }  // namespace

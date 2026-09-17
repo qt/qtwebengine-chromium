@@ -15,6 +15,7 @@
 
 #include "base/base64.h"
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/containers/map_util.h"
 #include "base/files/file_path.h"
 #include "base/i18n/rtl.h"
@@ -80,7 +81,7 @@ bool ContainsReservedCharacters(const base::FilePath& path) {
   // Extensions are cross-platform.
   // Since FilePath uses backslash '\\' as file path separator on Windows, so we
   // need to check manually.
-  if (path.value().contains('\\')) {
+  if (base::Contains(path.value(), '\\')) {
     return true;
   }
   return !net::IsSafePortableRelativePath(path);

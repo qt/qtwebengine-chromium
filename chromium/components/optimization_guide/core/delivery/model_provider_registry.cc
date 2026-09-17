@@ -6,6 +6,7 @@
 
 #include <string_view>
 
+#include "base/containers/contains.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/strings/strcat.h"
 #include "base/task/single_thread_task_runner.h"
@@ -52,7 +53,7 @@ bool IsModelMetadataTypeOnServerAllowlist(const proto::Any& model_metadata) {
       "google.privacy.webpermissionpredictions.aiv3.v1."
       "PermissionsAiv3ModelMetadata"};
 
-  return kAllowList->contains(model_metadata.type_url());
+  return base::Contains(*kAllowList, model_metadata.type_url());
 }
 
 }  // namespace

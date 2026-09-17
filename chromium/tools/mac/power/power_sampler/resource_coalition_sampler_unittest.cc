@@ -10,6 +10,7 @@
 #include <optional>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/process/process_handle.h"
 #include "components/power_metrics/energy_impact_mac.h"
 #include "components/power_metrics/mach_time_mac.h"
@@ -429,7 +430,7 @@ TEST_F(ResourceCoalitionSamplerTest,
       /* multiplier=*/2 * base::Time::kSecondsPerMinute));
   Sampler::Sample sample =
       sampler->GetSample(base::TimeTicks() + base::Minutes(1));
-  EXPECT_FALSE(sample.contains("energy_impact"));
+  EXPECT_FALSE(base::Contains(sample, "energy_impact"));
 }
 
 TEST_F(ResourceCoalitionSamplerTest, GetSample_NotAvailable) {

@@ -12,6 +12,7 @@
 #include "base/check.h"
 #include "base/check_op.h"
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/containers/small_map.h"
 #include "base/containers/span.h"
 #include "base/feature_list.h"
@@ -749,7 +750,7 @@ void BlobMemoryController::NotifyMemoryItemsUsed(
       continue;
     }
     // We don't want to re-add the item if we're currently paging it to disk.
-    if (items_paging_to_file_.contains(item->item_id())) {
+    if (base::Contains(items_paging_to_file_, item->item_id())) {
       return;
     }
     auto iterator = populated_memory_items_.Get(item->item_id());

@@ -7,6 +7,7 @@
 #include <map>
 #include <memory>
 
+#include "base/containers/contains.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/field_trial_params.h"
 #include "base/run_loop.h"
@@ -44,7 +45,7 @@ class TestUrlCheckInterceptor : public safe_browsing::UrlCheckInterceptor {
       SafeBrowsingApiHandlerBridge::ResponseCallback callback,
       const GURL& gurl) override {
     std::string url = gurl.spec();
-    DCHECK(urls_safebrowsing_threat_type_.contains(url));
+    DCHECK(base::Contains(urls_safebrowsing_threat_type_, url));
     std::move(callback).Run(urls_safebrowsing_threat_type_[url],
                             ThreatMetadata());
   }

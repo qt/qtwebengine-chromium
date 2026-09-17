@@ -5,7 +5,6 @@
 #import "components/autofill/ios/browser/autofill_driver_ios.h"
 
 #include <algorithm>
-#include "base/containers/contains.h"
 #import <concepts>
 #import <functional>
 #import <optional>
@@ -14,6 +13,7 @@
 #import <variant>
 
 #import "base/check_deref.h"
+#import "base/containers/contains.h"
 #import "base/containers/to_vector.h"
 #import "base/feature_list.h"
 #import "base/functional/bind.h"

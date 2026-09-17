@@ -12,6 +12,7 @@
 
 #include "base/callback_list.h"
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/dcheck_is_on.h"
 #include "base/functional/bind.h"
 #include "base/memory/raw_ptr.h"
@@ -59,7 +60,7 @@ class ElementTracker::ElementData {
   ElementContext context() const { return context_; }
 
   bool HasElement(const TrackedElement* element) const {
-    return element_lookup_.contains(element);
+    return base::Contains(element_lookup_, element);
   }
 
   bool empty() const {
@@ -112,7 +113,7 @@ class ElementTracker::ElementData {
   void NotifyElementActivated(
       const raw_ptr<TrackedElement, CtnExperimental>& element) {
     // Note: "All contexts" does not require the element to be present here.
-    DCHECK(!context_ || element_lookup_.contains(element));
+    DCHECK(!context_ || base::Contains(element_lookup_, element));
     activated_callbacks_.Notify(element);
   }
 

@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/observer_list.h"
 #include "components/services/app_service/public/cpp/shortcut/shortcut_update.h"
 
@@ -82,7 +83,7 @@ ShortcutView ShortcutRegistryCache::GetShortcut(const ShortcutId& shortcut_id) {
 
 bool ShortcutRegistryCache::HasShortcut(const ShortcutId& shortcut_id) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  return states_.contains(shortcut_id);
+  return base::Contains(states_, shortcut_id);
 }
 
 std::vector<ShortcutView> ShortcutRegistryCache::GetAllShortcuts() {

@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "base/barrier_closure.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/memory/raw_ptr.h"
 #include "base/strings/utf_string_conversions.h"
@@ -171,7 +172,7 @@ IN_PROC_BROWSER_TEST_F(DoNotTrackTest, Worker) {
       shell(), GetURL("/workers/create_worker.html?worker_url=/capture")));
   loop.Run();
 
-  EXPECT_TRUE(header_map.contains("DNT"));
+  EXPECT_TRUE(base::Contains(header_map, "DNT"));
   EXPECT_EQ("1", header_map["DNT"]);
 
   // Wait until the worker script is loaded to stop the test from crashing
@@ -196,7 +197,7 @@ IN_PROC_BROWSER_TEST_F(DoNotTrackTest, SharedWorker) {
       GetURL("/workers/create_shared_worker.html?worker_url=/capture")));
   loop.Run();
 
-  EXPECT_TRUE(header_map.contains("DNT"));
+  EXPECT_TRUE(base::Contains(header_map, "DNT"));
   EXPECT_EQ("1", header_map["DNT"]);
 
   // Wait until the worker script is loaded to stop the test from crashing
@@ -222,7 +223,7 @@ IN_PROC_BROWSER_TEST_F(DoNotTrackTest, ServiceWorker_Register) {
   EXPECT_EQ("DONE", EvalJs(shell(), "register('/capture');"));
   loop.Run();
 
-  EXPECT_TRUE(header_map.contains("DNT"));
+  EXPECT_TRUE(base::Contains(header_map, "DNT"));
   EXPECT_EQ("1", header_map["DNT"]);
 
   // Service worker doesn't have to wait for onmessage event because
@@ -248,7 +249,7 @@ IN_PROC_BROWSER_TEST_F(DoNotTrackTest, ModuleServiceWorker_Register) {
   EXPECT_EQ("DONE", EvalJs(shell(), "register('/capture', '', 'module');"));
   loop.Run();
 
-  EXPECT_TRUE(header_map.contains("DNT"));
+  EXPECT_TRUE(base::Contains(header_map, "DNT"));
   EXPECT_EQ("1", header_map["DNT"]);
 
   // Module Service worker doesn't have to wait for onmessage event because
@@ -282,7 +283,7 @@ IN_PROC_BROWSER_TEST_F(DoNotTrackTest,
             EvalJs(shell(), "register('/captureWorker','', 'module');"));
   loop.Run();
 
-  EXPECT_TRUE(header_map.contains("DNT"));
+  EXPECT_TRUE(base::Contains(header_map, "DNT"));
   EXPECT_EQ("1", header_map["DNT"]);
 
   // Module Service worker doesn't have to wait for onmessage event because
@@ -312,7 +313,7 @@ IN_PROC_BROWSER_TEST_F(DoNotTrackTest, ServiceWorker_Update) {
   EXPECT_EQ("DONE", EvalJs(shell(), "update();"));
   loop.Run();
 
-  EXPECT_TRUE(header_map.contains("DNT"));
+  EXPECT_TRUE(base::Contains(header_map, "DNT"));
   EXPECT_EQ("1", header_map["DNT"]);
 
   // Service worker doesn't have to wait for onmessage event because
@@ -342,7 +343,7 @@ IN_PROC_BROWSER_TEST_F(DoNotTrackTest, ModuleServiceWorker_Update) {
   EXPECT_EQ("DONE", EvalJs(shell(), "update();"));
   loop.Run();
 
-  EXPECT_TRUE(header_map.contains("DNT"));
+  EXPECT_TRUE(base::Contains(header_map, "DNT"));
   EXPECT_EQ("1", header_map["DNT"]);
 
   // Module service worker doesn't have to wait for onmessage event because
@@ -375,7 +376,7 @@ IN_PROC_BROWSER_TEST_F(DoNotTrackTest, StaticImportModuleServiceWorker_Update) {
   EXPECT_EQ("DONE", EvalJs(shell(), "update();"));
   loop.Run();
 
-  EXPECT_TRUE(header_map.contains("DNT"));
+  EXPECT_TRUE(base::Contains(header_map, "DNT"));
   EXPECT_EQ("1", header_map["DNT"]);
 
   // Module service worker doesn't have to wait for onmessage event because

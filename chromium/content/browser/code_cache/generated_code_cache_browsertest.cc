@@ -6,6 +6,7 @@
 
 #include <optional>
 
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/i18n/time_formatting.h"
 #include "base/run_loop.h"
@@ -156,7 +157,7 @@ class CodeCacheBrowserTest
     // GeneratedCodeCache (>1024 characters).
     if (absolute_url.GetPath() == "/cacheable.js") {
       if (trigger_validation_requests_ &&
-          request.headers.contains("If-Modified-Since")) {
+          base::Contains(request.headers, "If-Modified-Since")) {
         auto http_response =
             std::make_unique<net::test_server::BasicHttpResponse>();
         http_response->set_code(net::HTTP_NOT_MODIFIED);

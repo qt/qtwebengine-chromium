@@ -7,6 +7,7 @@
 #include <optional>
 
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/functional/callback_helpers.h"
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
@@ -140,7 +141,7 @@ class MediaSessionBrowserTestBase : public ContentBrowserTest {
 
   bool WasURLVisited(const GURL& url) {
     base::AutoLock lock(visited_urls_lock_);
-    return visited_urls_.contains(url);
+    return base::Contains(visited_urls_, url);
   }
 
   MediaSession* SetupMediaImageTest(bool expect_media_image = true) {

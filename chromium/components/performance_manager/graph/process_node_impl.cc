@@ -11,6 +11,7 @@
 #include "base/byte_size.h"
 #include "base/check_op.h"
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/read_only_shared_memory_region.h"
 #include "base/trace_event/named_trigger.h"
@@ -378,7 +379,7 @@ void ProcessNodeImpl::AddFrame(FrameNodeImpl* frame_node) {
 void ProcessNodeImpl::RemoveFrame(FrameNodeImpl* frame_node) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK_EQ(process_type_, content::PROCESS_TYPE_RENDERER);
-  DCHECK(frame_nodes_.contains(frame_node));
+  DCHECK(base::Contains(frame_nodes_, frame_node));
   frame_nodes_.erase(frame_node);
 }
 
@@ -392,7 +393,7 @@ void ProcessNodeImpl::AddWorker(WorkerNodeImpl* worker_node) {
 void ProcessNodeImpl::RemoveWorker(WorkerNodeImpl* worker_node) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK_EQ(process_type_, content::PROCESS_TYPE_RENDERER);
-  DCHECK(worker_nodes_.contains(worker_node));
+  DCHECK(base::Contains(worker_nodes_, worker_node));
   worker_nodes_.erase(worker_node);
 }
 

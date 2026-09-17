@@ -24,6 +24,7 @@
 
 #include "base/base_switches.h"
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
@@ -83,7 +84,7 @@ class FakeRealm {
   // Saves copies of `child_decl` and `args` for subsequent validation by tests.
   void CreateChild(const fuchsia::component::decl::Child& child_decl,
                    const fuchsia::component::CreateChildArgs& args) {
-    ASSERT_TRUE(!instances_.contains(child_decl.name()));
+    ASSERT_TRUE(!base::Contains(instances_, child_decl.name()));
 
     auto& child = instances_[child_decl.name()];
     child.decl = std::make_unique<fuchsia::component::decl::Child>();
@@ -143,12 +144,12 @@ class FakeRealm {
 
   // Returns true if the realm has a child with the same name as `child`.
   bool HasChild(const fuchsia::component::decl::Child& child) {
-    return instances_.contains(child.name());
+    return base::Contains(instances_, child.name());
   }
 
   // Returns true if the realm has a child with the same name as `child`.
   bool HasChild(const fuchsia::component::decl::ChildRef& child) {
-    return instances_.contains(child.name);
+    return base::Contains(instances_, child.name);
   }
 
   // Returns the component declaration used to create the child named `name`.

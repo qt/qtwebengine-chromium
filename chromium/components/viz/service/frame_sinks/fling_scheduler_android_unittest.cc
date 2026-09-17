@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/containers/contains.h"
 #include "components/viz/service/input/fling_scheduler_android.h"
 
 #include "base/test/scoped_feature_list.h"
@@ -182,8 +183,8 @@ class FlingSchedulerTest : public testing::Test,
 
   // Checks if a [Root]CompositorFrameSinkImpl exists for |frame_sink_id|.
   bool CompositorFrameSinkExists(const FrameSinkId& frame_sink_id) {
-    return frame_sink_manager_->sink_map_.contains(frame_sink_id) ||
-           frame_sink_manager_->root_sink_map_.contains(frame_sink_id);
+    return base::Contains(frame_sink_manager_->sink_map_, frame_sink_id) ||
+           base::Contains(frame_sink_manager_->root_sink_map_, frame_sink_id);
   }
 
   // Creates a CompositorFrameSinkImpl.

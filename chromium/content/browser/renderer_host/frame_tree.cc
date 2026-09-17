@@ -12,6 +12,7 @@
 #include <set>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/debug/crash_logging.h"
 #include "base/debug/dump_without_crashing.h"
 #include "base/functional/bind.h"
@@ -812,8 +813,9 @@ void FrameTree::RegisterRenderViewHost(RenderViewHostMapId id,
   TRACE_EVENT_INSTANT("navigation", "FrameTree::RegisterRenderViewHost",
                       ChromeTrackEvent::kRenderViewHost, *rvh);
   CHECK(!rvh->is_speculative());
-  RenderViewHostImpl* existing_rvh =
-      render_view_host_map_.contains(id) ? render_view_host_map_[id] : nullptr;
+  RenderViewHostImpl* existing_rvh = base::Contains(render_view_host_map_, id)
+                                         ? render_view_host_map_[id]
+                                         : nullptr;
   CheckForRenderViewHostMapCollisionsForDebugging(this, rvh, existing_rvh);
   render_view_host_map_[id] = rvh;
   rvh->set_is_registered_with_frame_tree(true);

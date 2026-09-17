@@ -4,6 +4,7 @@
 
 #include "components/app_restore/full_restore_save_handler.h"
 
+#include "base/containers/contains.h"
 #include "base/files/file_path.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
@@ -86,7 +87,7 @@ void FullRestoreSaveHandler::AllowSave() {
     wait_timer_.Stop();
 
   if (!is_shut_down_ &&
-      pending_save_profile_paths_.contains(active_profile_path_)) {
+      base::Contains(pending_save_profile_paths_, active_profile_path_)) {
     MaybeStartSaveTimer(active_profile_path_);
   }
 }
@@ -165,7 +166,7 @@ void FullRestoreSaveHandler::OnWindowInitialized(aura::Window* window) {
         }
       }
 
-      if (ignore_applications_ids_.contains(app_launch_info->app_id)) {
+      if (base::Contains(ignore_applications_ids_, app_launch_info->app_id)) {
         return;
       }
     }
@@ -563,7 +564,7 @@ void FullRestoreSaveHandler::ClearForTesting() {
 
 void FullRestoreSaveHandler::MaybeStartSaveTimer(
     const base::FilePath& profile_path) {
-  if (!been_read_profile_paths_.contains(profile_path)) {
+  if (!base::Contains(been_read_profile_paths_, profile_path)) {
     // FullRestoreSaveHandler might be called to save the help app before
     // FullRestoreAppLaunchHandler reads the full restore data from the full
     // restore file during the system startup phase, e.g. when a new user login.
@@ -592,7 +593,7 @@ void FullRestoreSaveHandler::MaybeStartSaveTimer(
 
 void FullRestoreSaveHandler::Save() {
   if (is_shut_down_ ||
-      !pending_save_profile_paths_.contains(active_profile_path_)) {
+      !base::Contains(pending_save_profile_paths_, active_profile_path_)) {
     return;
   }
 

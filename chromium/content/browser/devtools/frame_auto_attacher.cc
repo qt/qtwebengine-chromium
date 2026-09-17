@@ -4,6 +4,7 @@
 
 #include "content/browser/devtools/frame_auto_attacher.h"
 
+#include "base/containers/contains.h"
 #include "base/time/time.h"
 #include "content/browser/devtools/devtools_renderer_channel.h"
 #include "content/browser/devtools/render_frame_devtools_agent_host.h"
@@ -28,7 +29,8 @@ void GetMatchingHostsByScopeMap(
   for (const GURL& url : urls)
     host_name_set.insert(url.DeprecatedGetOriginAsURL());
   for (const auto& host : agent_hosts) {
-    if (!host_name_set.contains(host->scope().DeprecatedGetOriginAsURL())) {
+    if (!base::Contains(host_name_set,
+                        host->scope().DeprecatedGetOriginAsURL())) {
       continue;
     }
     const auto& it = scope_agents_map->find(host->scope());
@@ -201,7 +203,7 @@ void FrameAutoAttacher::WorkerCreated(ServiceWorkerDevToolsAgentHost* host,
       render_frame_host_->GetProcess()->GetBrowserContext();
   auto hosts = GetMatchingServiceWorkers(browser_context,
                                          GetFrameUrls(render_frame_host_));
-  if (!hosts.contains(host->GetId())) {
+  if (!base::Contains(hosts, host->GetId())) {
     return;
   }
 

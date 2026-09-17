@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "net/base/ip_address.h"
 #include "net/dns/public/dns_protocol.h"
 
@@ -59,8 +60,8 @@ void ParseAndExercise(FuzzedDataProvider& data_provider) {
     service->trust_anchor_ids();
     service->IsCompatible();
 
-    CHECK(!service->mandatory_keys().contains(
-        dns_protocol::kHttpsServiceParamKeyMandatory));
+    CHECK(!base::Contains(service->mandatory_keys(),
+                          dns_protocol::kHttpsServiceParamKeyMandatory));
 
     std::vector<IPAddress> ipv4_hint = service->ipv4_hint();
     for (const IPAddress& address : ipv4_hint) {

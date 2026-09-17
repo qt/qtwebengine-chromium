@@ -4,6 +4,7 @@
 
 #include "extensions/renderer/bindings/api_bindings_system_unittest.h"
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/strings/stringprintf.h"
@@ -189,7 +190,7 @@ void APIBindingsSystemTest::AddConsoleError(v8::Local<v8::Context> context,
 
 const base::DictValue& APIBindingsSystemTest::GetAPISchema(
     const std::string& api_name) {
-  EXPECT_TRUE(api_schemas_.contains(api_name));
+  EXPECT_TRUE(base::Contains(api_schemas_, api_name));
   return api_schemas_[api_name];
 }
 

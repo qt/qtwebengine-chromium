@@ -7,6 +7,7 @@
 #include <memory>
 
 #include "base/barrier_closure.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/functional/callback_helpers.h"
@@ -522,7 +523,7 @@ void BlobRegistryImpl::Register(
   }
 
   if (uuid.empty() || context_->registry().HasEntry(uuid) ||
-      blobs_under_construction_.contains(uuid)) {
+      base::Contains(blobs_under_construction_, uuid)) {
     receivers_.ReportBadMessage(
         "Invalid UUID passed to BlobRegistry::Register");
     return;

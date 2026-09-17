@@ -12,6 +12,7 @@
 #include <variant>
 
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/debug/crash_logging.h"
 #include "base/debug/dump_without_crashing.h"
 #include "base/functional/bind.h"
@@ -286,7 +287,7 @@ QueryResultMap CPUMeasurementMonitor::UpdateAndGetCPUMeasurements(
     const OriginInBrowsingInstanceContext& origin_context = it->first;
     scoped_refptr<ScopedCPUTimeResult>& result_ptr = it->second;
     CHECK(result_ptr);
-    if (live_origin_contexts.contains(origin_context)) {
+    if (base::Contains(live_origin_contexts, origin_context)) {
       save_result(ResourceContext(origin_context), result_ptr);
       ++it;
     } else {

@@ -14,6 +14,7 @@
 #include "ash/display/screen_orientation_controller_test_api.h"
 #include "ash/shell.h"
 #include "base/bit_cast.h"
+#include "base/containers/contains.h"
 #include "base/logging.h"
 #include "base/memory/raw_ptr.h"
 #include "base/notreached.h"
@@ -75,7 +76,7 @@ base::OnceClosure UpdateStateAndBindEmitProcessed(struct wl_resource* resource,
 
   return base::BindLambdaForTesting([=]() {
     // Ensure |resource| hasn't been destroyed in the meantime.
-    if (state->pending_request_ids_.contains(resource)) {
+    if (base::Contains(state->pending_request_ids_, resource)) {
       zcr_ui_controls_v1_send_request_processed(resource, id);
       state->pending_request_ids_[resource].erase(id);
 

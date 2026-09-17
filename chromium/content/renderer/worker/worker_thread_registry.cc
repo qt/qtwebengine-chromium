@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/location.h"
 #include "base/memory/ptr_util.h"
 #include "base/no_destructor.h"
@@ -129,7 +130,7 @@ void WorkerThreadRegistry::WillStopCurrentWorkerThread() {
 base::SequencedTaskRunner* WorkerThreadRegistry::GetTaskRunnerFor(
     int worker_id) {
   base::AutoLock locker(task_runner_map_lock_);
-  return task_runner_map_.contains(worker_id)
+  return base::Contains(task_runner_map_, worker_id)
              ? task_runner_map_[worker_id]
              : task_runner_for_dead_worker_.get();
 }

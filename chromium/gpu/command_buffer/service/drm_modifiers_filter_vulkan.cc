@@ -5,6 +5,7 @@
 #include "gpu/command_buffer/service/drm_modifiers_filter_vulkan.h"
 
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/containers/flat_set.h"
 #include "components/viz/common/resources/shared_image_format_utils.h"
 #include "gpu/command_buffer/service/shared_image/shared_image_format_service_utils.h"
@@ -84,7 +85,7 @@ std::vector<uint64_t> DrmModifiersFilterVulkan::Filter(
       [&](const auto& props) { return props.drmFormatModifier; });
   std::vector<uint64_t> intersection;
   for (const auto& modifier : modifiers) {
-    if (vulkan_modifiers.contains(modifier)) {
+    if (base::Contains(vulkan_modifiers, modifier)) {
       intersection.push_back(modifier);
     }
   }

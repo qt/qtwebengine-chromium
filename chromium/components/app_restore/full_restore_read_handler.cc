@@ -8,6 +8,7 @@
 #include <memory>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/no_destructor.h"
 #include "base/task/single_thread_task_runner.h"
@@ -227,7 +228,7 @@ bool FullRestoreReadHandler::HasBrowser(const base::FilePath& profile_path) {
 
 bool FullRestoreReadHandler::HasWindowInfo(int32_t restore_window_id) {
   if (!SessionID::IsValidValue(restore_window_id) ||
-      !should_check_restore_data_.contains(active_profile_path_)) {
+      !base::Contains(should_check_restore_data_, active_profile_path_)) {
     return false;
   }
 
@@ -258,7 +259,7 @@ std::unique_ptr<app_restore::WindowInfo> FullRestoreReadHandler::GetWindowInfo(
 std::unique_ptr<app_restore::WindowInfo>
 FullRestoreReadHandler::GetWindowInfoForActiveProfile(
     int32_t restore_window_id) {
-  if (!should_check_restore_data_.contains(active_profile_path_))
+  if (!base::Contains(should_check_restore_data_, active_profile_path_))
     return nullptr;
   return GetWindowInfo(restore_window_id);
 }

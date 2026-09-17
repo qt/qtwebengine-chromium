@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/notreached.h"
@@ -87,7 +88,8 @@ bool MatchesStorageKey(const std::set<url::Origin>& origins,
       registerable_domain = storage_key.origin().host();
     }
 
-    return is_delete_list == registerable_domains.contains(registerable_domain);
+    return is_delete_list ==
+           base::Contains(registerable_domains, registerable_domain);
   };
 
   switch (match_mode) {
@@ -130,7 +132,7 @@ bool MatchesPluginSiteForRegisterableDomainsAndIPs(
     domain_or_ip = site;
 
   return ((mode == BrowsingDataFilterBuilder::Mode::kDelete) ==
-          (domains_and_ips.contains(domain_or_ip)));
+          (base::Contains(domains_and_ips, domain_or_ip)));
 }
 
 template <typename T>

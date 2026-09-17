@@ -11,6 +11,7 @@
 #include "base/base_switches.h"
 #include "base/check.h"
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/logging.h"
 #include "base/metrics/field_trial.h"
@@ -173,12 +174,12 @@ base::Time InstallVerifier::SignatureTimestamp() {
 }
 
 bool InstallVerifier::IsKnownId(const std::string& id) const {
-  return signature_.get() &&
-         (signature_->ids.contains(id) || signature_->invalid_ids.contains(id));
+  return signature_.get() && (base::Contains(signature_->ids, id) ||
+                              base::Contains(signature_->invalid_ids, id));
 }
 
 bool InstallVerifier::IsInvalid(const std::string& id) const {
-  return ((signature_.get() && signature_->invalid_ids.contains(id)));
+  return ((signature_.get() && base::Contains(signature_->invalid_ids, id)));
 }
 
 void InstallVerifier::VerifyExtension(const std::string& extension_id) {
@@ -229,8 +230,8 @@ void InstallVerifier::RemoveMany(const ExtensionIdSet& ids) {
     return;
 
   if (std::ranges::any_of(ids, [this](const std::string& id) {
-        return signature_->ids.contains(id) ||
-               signature_->invalid_ids.contains(id);
+        return base::Contains(signature_->ids, id) ||
+               base::Contains(signature_->invalid_ids, id);
       })) {
     return;
   }
@@ -272,7 +273,8 @@ bool InstallVerifier::MustRemainDisabled(
   }
 
   bool verified = true;
-  if (InstallSigner::GetForcedNotFromWebstore().contains(extension->id())) {
+  if (base::Contains(InstallSigner::GetForcedNotFromWebstore(),
+                     extension->id())) {
     verified = false;
   } else if (!IsFromStore(*extension, context_)) {
     verified = false;
@@ -288,7 +290,8 @@ bool InstallVerifier::MustRemainDisabled(
     // added extension ids. To avoid false positives, consider all extensions to
     // be from the webstore unless the signature explicitly lists the extension
     // as invalid.
-    if (!signature_ || signature_->invalid_ids.contains(extension->id()) ||
+    if (!signature_ ||
+        base::Contains(signature_->invalid_ids, extension->id()) ||
         GetStatus() >= VerifyStatus::ENFORCE_STRICT) {
       verified = false;
     }
@@ -389,8 +392,8 @@ void InstallVerifier::GarbageCollect() {
 }
 
 bool InstallVerifier::IsVerified(const std::string& id) const {
-  return ((signature_.get() && signature_->ids.contains(id)) ||
-          provisional_.contains(id));
+  return ((signature_.get() && base::Contains(signature_->ids, id)) ||
+          base::Contains(provisional_, id));
 }
 
 void InstallVerifier::BeginFetch() {
@@ -408,7 +411,7 @@ void InstallVerifier::BeginFetch() {
   }
   if (operation.type == InstallVerifier::REMOVE) {
     for (const std::string& id : operation.ids) {
-      if (ids_to_sign.contains(id))
+      if (base::Contains(ids_to_sign, id))
         ids_to_sign.erase(id);
     }
   } else {  // All other operation types are some form of "ADD".

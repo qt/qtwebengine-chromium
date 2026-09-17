@@ -7,7 +7,6 @@
 #include <algorithm>
 #include <array>
 
-#include "base/containers/contains.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/flat_tree_traversal.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"

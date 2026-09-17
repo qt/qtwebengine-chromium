@@ -10,6 +10,7 @@
 
 #include "base/callback_list.h"
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/containers/map_util.h"
 #include "base/functional/callback.h"
 #include "base/logging.h"
@@ -409,7 +410,7 @@ void HelpBubbleHandlerBase::HelpBubbleClosed(
 bool HelpBubbleHandlerBase::ToggleHelpBubbleFocusForAccessibility(
     ui::ElementIdentifier anchor_id,
     const std::string& secondary_id) {
-  if (element_data_.contains(anchor_id)) {
+  if (base::Contains(element_data_, anchor_id)) {
     GetClient()->ToggleFocusForAccessibility(MakeId(anchor_id, secondary_id));
     return true;
   }

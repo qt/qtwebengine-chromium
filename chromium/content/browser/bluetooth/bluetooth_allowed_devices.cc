@@ -6,6 +6,7 @@
 
 #include <string>
 
+#include "base/containers/contains.h"
 #include "base/containers/map_util.h"
 #include "base/logging.h"
 #include "base/strings/string_util.h"
@@ -134,7 +135,7 @@ bool BluetoothAllowedDevices::IsAllowedToAccessService(
   auto it = device_id_to_metadata_map_.find(device_id);
   return it == device_id_to_metadata_map_.end()
              ? false
-             : it->second.allowed_services.contains(service_uuid);
+             : base::Contains(it->second.allowed_services, service_uuid);
 }
 
 bool BluetoothAllowedDevices::IsAllowedToGATTConnect(
@@ -150,7 +151,7 @@ bool BluetoothAllowedDevices::IsAllowedToAccessManufacturerData(
   auto it = device_id_to_metadata_map_.find(device_id);
   return it == device_id_to_metadata_map_.end()
              ? false
-             : it->second.allowed_manufacturers.contains(manufacturer_code);
+             : base::Contains(it->second.allowed_manufacturers, manufacturer_code);
 }
 
 }  // namespace content

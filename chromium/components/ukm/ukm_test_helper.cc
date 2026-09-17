@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <string>
 
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/run_loop.h"
 #include "components/metrics/log_decoder.h"
@@ -72,12 +73,13 @@ UkmSource* UkmTestHelper::GetSource(SourceId source_id) {
 }
 
 bool UkmTestHelper::HasSource(SourceId source_id) {
-  return ukm_service_ && ukm_service_->sources().contains(source_id);
+  return ukm_service_ && base::Contains(ukm_service_->sources(), source_id);
 }
 
 bool UkmTestHelper::IsSourceObsolete(SourceId source_id) {
   return ukm_service_ &&
-         ukm_service_->recordings_.obsolete_source_ids.contains(source_id);
+         base::Contains(ukm_service_->recordings_.obsolete_source_ids,
+                        source_id);
 }
 
 void UkmTestHelper::RecordSourceForTesting(SourceId source_id) {

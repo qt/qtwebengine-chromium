@@ -8,6 +8,7 @@
 #include <string_view>
 #include <tuple>
 
+#include "base/containers/contains.h"
 #include "base/files/file_path.h"
 #include "base/functional/callback_helpers.h"
 #include "base/logging.h"
@@ -73,7 +74,7 @@ class ChildProcessSecurityPolicyTestBrowserClient
   ChildProcessSecurityPolicyTestBrowserClient() {}
 
   bool IsHandledURL(const GURL& url) override {
-    return schemes_.contains(url.GetScheme());
+    return base::Contains(schemes_, url.GetScheme());
   }
 
   void ClearSchemes() { schemes_.clear(); }

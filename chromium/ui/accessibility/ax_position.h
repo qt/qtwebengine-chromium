@@ -19,6 +19,7 @@
 #include <vector>
 
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/containers/span.h"
 #include "base/containers/stack.h"
 #include "base/export_template.h"
@@ -42,7 +43,6 @@
 #include "ui/accessibility/ax_tree_id.h"
 #include "ui/accessibility/ax_tree_manager.h"
 #include "ui/gfx/utf16_indexing.h"
-#include "base/containers/contains.h"
 
 namespace ui {
 

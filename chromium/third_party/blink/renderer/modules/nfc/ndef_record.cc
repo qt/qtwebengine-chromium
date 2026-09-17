@@ -7,6 +7,7 @@
 #include <string_view>
 
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/notreached.h"
 #include "services/device/public/mojom/nfc.mojom-blink.h"
 #include "third_party/blink/renderer/bindings/core/v8/idl_types.h"
@@ -121,7 +122,7 @@ bool IsValidExternalType(const String& input) {
   for (wtf_size_t i = 0; i < type.length(); i++) {
     // SAFETY: index checked against length in loop body.
     if (!IsAsciiAlphanumeric(UNSAFE_BUFFERS(type[i])) &&
-        !kOtherCharsForCustomType.contains(UNSAFE_BUFFERS(type[i]))) {
+        !base::Contains(kOtherCharsForCustomType, UNSAFE_BUFFERS(type[i]))) {
       return false;
     }
   }

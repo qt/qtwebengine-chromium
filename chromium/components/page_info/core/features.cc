@@ -6,6 +6,7 @@
 
 #include <string_view>
 
+#include "base/containers/contains.h"
 #include "base/containers/fixed_flat_set.h"
 #include "base/feature_list.h"
 #include "base/metrics/field_trial_params.h"
@@ -22,7 +23,7 @@ constexpr auto kDefaultLangs = base::MakeFixedFlatSet<std::string_view>({
 });
 
 extern bool IsAboutThisSiteFeatureEnabled(const std::string& locale) {
-  if (kDefaultLangs.contains(l10n_util::GetLanguage(locale))) {
+  if (base::Contains(kDefaultLangs, l10n_util::GetLanguage(locale))) {
     return base::FeatureList::IsEnabled(kPageInfoAboutThisSite);
   }
   return base::FeatureList::IsEnabled(kPageInfoAboutThisSiteMoreLangs);

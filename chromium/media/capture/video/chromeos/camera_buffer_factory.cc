@@ -4,6 +4,7 @@
 
 #include "media/capture/video/chromeos/camera_buffer_factory.h"
 
+#include "base/containers/contains.h"
 #include "base/functional/callback_helpers.h"
 #include "components/viz/common/resources/shared_image_format_utils.h"
 #include "gpu/ipc/client/gpu_channel_host.h"
@@ -97,7 +98,7 @@ ChromiumPixelFormat CameraBufferFactory::ResolveStreamBufferFormat(
     cros::mojom::HalPixelFormat hal_format,
     gfx::BufferUsage usage) {
   const auto key = std::make_pair(hal_format, usage);
-  if (resolved_format_usages_.contains(key)) {
+  if (base::Contains(resolved_format_usages_, key)) {
     return resolved_format_usages_[key];
   }
 

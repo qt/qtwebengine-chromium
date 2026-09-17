@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/time/default_tick_clock.h"
 
@@ -35,7 +36,7 @@ void AudibleMetrics::UpdateAudibleWebContentsState(
 
 void AudibleMetrics::WebContentsDestroyed(const WebContents* web_contents,
                                           bool recently_audible) {
-  if (audible_web_contents_.contains(web_contents)) {
+  if (base::Contains(audible_web_contents_, web_contents)) {
     RemoveAudibleWebContents(web_contents);
   }
 }

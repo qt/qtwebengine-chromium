@@ -827,8 +827,7 @@ void PasswordAutofillAgent::NotifyPasswordManagerAboutUserFieldModification(
   if (auto* driver = unsafe_driver()) {
     driver->UserModifiedNonPasswordField(
         GetFieldRendererId(element), element_value,
-        autocomplete_attribute.contains(
-            password_manager::constants::kAutocompleteUsername),
+        base::Contains(autocomplete_attribute, password_manager::constants::kAutocompleteUsername),
         is_likely_otp);
   }
 }
@@ -1216,7 +1215,7 @@ bool PasswordAutofillAgent::FindPasswordInfoForElement(
   if (!element || !unsafe_render_frame()) {
     return false;
   }
-  if (suggestion_banned_fields_.contains(GetFieldRendererId(element))) {
+  if (base::Contains(suggestion_banned_fields_, GetFieldRendererId(element))) {
     // No suggestion for `element` since there is a reliable signal that
     // `element` is a non-credential field.
     return false;
@@ -1583,8 +1582,7 @@ bool PasswordAutofillAgent::IsUsernameInputField(
     const WebInputElement& input_element) const {
   return input_element &&
          input_element.FormControlTypeForAutofill() != kInputPassword &&
-         web_input_to_password_info_.contains(
-             GetFieldRendererId(input_element));
+         base::Contains(web_input_to_password_info_, GetFieldRendererId(input_element));
 }
 
 void PasswordAutofillAgent::ReadyToCommitNavigation(
@@ -1962,7 +1960,7 @@ void PasswordAutofillAgent::InformBrowserAboutUserInput(
   // password-related and provided filling data for it.
   if (IsRendererRecognizedCredentialForm(*form_data) ||
       (element &&
-       web_input_to_password_info_.contains(GetFieldRendererId(element)))) {
+       base::Contains(web_input_to_password_info_, GetFieldRendererId(element)))) {
     if (unsafe_driver()) {
       unsafe_driver()->InformAboutUserInput(*form_data);
     }

@@ -4,6 +4,7 @@
 
 #include "components/security_interstitials/core/https_only_mode_allowlist.h"
 
+#include "base/containers/contains.h"
 #include "base/json/values_util.h"
 #include "base/time/clock.h"
 #include "base/values.h"
@@ -75,8 +76,8 @@ bool HttpsOnlyModeAllowlist::IsHttpAllowedForHost(
     const std::string& host,
     bool is_nondefault_storage) const {
   if (is_nondefault_storage) {
-    return allowed_http_hosts_for_non_default_storage_partitions_.contains(
-        host);
+    return base::Contains(
+        allowed_http_hosts_for_non_default_storage_partitions_, host);
   }
 
   GURL url = GetSecureGURLForHost(host);

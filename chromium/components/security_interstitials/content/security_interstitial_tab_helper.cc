@@ -4,6 +4,7 @@
 
 #include "components/security_interstitials/content/security_interstitial_tab_helper.h"
 
+#include "base/containers/contains.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/strings/string_number_conversions.h"
 #include "components/security_interstitials/content/security_interstitial_page.h"
@@ -143,7 +144,8 @@ void SecurityInterstitialTabHelper::BindInterstitialCommands(
 
 bool SecurityInterstitialTabHelper::IsInterstitialPendingForNavigation(
     int64_t navigation_id) const {
-  return blocking_documents_for_pending_navigations_.contains(navigation_id);
+  return base::Contains(blocking_documents_for_pending_navigations_,
+                        navigation_id);
 }
 
 bool SecurityInterstitialTabHelper::ShouldDisplayURL() const {
@@ -164,8 +166,8 @@ bool SecurityInterstitialTabHelper::HasPendingOrActiveInterstitial() const {
 
 bool SecurityInterstitialTabHelper::IsInterstitialCommittedForFrame(
     content::FrameTreeNodeId frame_tree_node_id) const {
-  return blocking_documents_for_committed_navigations_.contains(
-      frame_tree_node_id);
+  return base::Contains(blocking_documents_for_committed_navigations_,
+                        frame_tree_node_id);
 }
 
 security_interstitials::SecurityInterstitialPage*

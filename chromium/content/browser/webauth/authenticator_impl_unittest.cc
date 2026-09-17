@@ -25,6 +25,7 @@
 #include "base/check.h"
 #include "base/check_op.h"
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/containers/flat_set.h"
 #include "base/containers/span.h"
 #include "base/containers/to_vector.h"
@@ -4630,7 +4631,8 @@ TEST_F(VirtualAuthenticatorSignalTest, SignalUnknownCredentialId) {
     options->relying_party_id = kDifferentTestRelyingPartyId;
     options->unknown_credential_id = credential_id_;
     AuthenticatorReport(std::move(options));
-    EXPECT_TRUE(authenticator_->registrations().contains(credential_id_));
+    EXPECT_TRUE(
+        base::Contains(authenticator_->registrations(), credential_id_));
   }
   {
     // Verify that we do not remove passkeys that don't match the cred id.
@@ -4639,7 +4641,8 @@ TEST_F(VirtualAuthenticatorSignalTest, SignalUnknownCredentialId) {
     options->relying_party_id = kTestRelyingPartyId;
     options->unknown_credential_id = std::vector<uint8_t>{4, 3, 2, 1};
     AuthenticatorReport(std::move(options));
-    EXPECT_TRUE(authenticator_->registrations().contains(credential_id_));
+    EXPECT_TRUE(
+        base::Contains(authenticator_->registrations(), credential_id_));
   }
   {
     // Remove the passkey when the rp id and credential id match.
@@ -4648,7 +4651,8 @@ TEST_F(VirtualAuthenticatorSignalTest, SignalUnknownCredentialId) {
     options->relying_party_id = kTestRelyingPartyId;
     options->unknown_credential_id = credential_id_;
     AuthenticatorReport(std::move(options));
-    EXPECT_FALSE(authenticator_->registrations().contains(credential_id_));
+    EXPECT_FALSE(
+        base::Contains(authenticator_->registrations(), credential_id_));
   }
 }
 
@@ -4662,7 +4666,8 @@ TEST_F(VirtualAuthenticatorSignalTest, SignalAllAcceptableCredentials) {
         blink::mojom::AllAcceptedCredentialsOptions::New(
             kUserId, std::vector<std::vector<uint8_t>>{});
     AuthenticatorReport(std::move(options));
-    EXPECT_TRUE(authenticator_->registrations().contains(credential_id_));
+    EXPECT_TRUE(
+        base::Contains(authenticator_->registrations(), credential_id_));
   }
   {
     // Verify that we do not remove passkeys that don't match the user id.
@@ -4673,7 +4678,8 @@ TEST_F(VirtualAuthenticatorSignalTest, SignalAllAcceptableCredentials) {
         blink::mojom::AllAcceptedCredentialsOptions::New(
             std::vector<uint8_t>{99}, std::vector<std::vector<uint8_t>>{});
     AuthenticatorReport(std::move(options));
-    EXPECT_TRUE(authenticator_->registrations().contains(credential_id_));
+    EXPECT_TRUE(
+        base::Contains(authenticator_->registrations(), credential_id_));
   }
   {
     // Verify that we do not remove passkeys that are present on the list.
@@ -4684,7 +4690,8 @@ TEST_F(VirtualAuthenticatorSignalTest, SignalAllAcceptableCredentials) {
         blink::mojom::AllAcceptedCredentialsOptions::New(
             kUserId, std::vector<std::vector<uint8_t>>{credential_id_});
     AuthenticatorReport(std::move(options));
-    EXPECT_TRUE(authenticator_->registrations().contains(credential_id_));
+    EXPECT_TRUE(
+        base::Contains(authenticator_->registrations(), credential_id_));
   }
   {
     // Verify that we remove passkeys that are not present on the list.
@@ -4695,7 +4702,8 @@ TEST_F(VirtualAuthenticatorSignalTest, SignalAllAcceptableCredentials) {
         blink::mojom::AllAcceptedCredentialsOptions::New(
             kUserId, std::vector<std::vector<uint8_t>>{});
     AuthenticatorReport(std::move(options));
-    EXPECT_FALSE(authenticator_->registrations().contains(credential_id_));
+    EXPECT_FALSE(
+        base::Contains(authenticator_->registrations(), credential_id_));
   }
 }
 

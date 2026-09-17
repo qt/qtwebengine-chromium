@@ -11,6 +11,7 @@
 #include <utility>
 
 #include "base/auto_reset.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/functional/callback_helpers.h"
@@ -355,8 +356,8 @@ OperationID FileSystemOperationRunner::Truncate(const FileSystemURL& url,
 
 void FileSystemOperationRunner::Cancel(OperationID id,
                                        StatusCallback callback) {
-  if (finished_operations_.contains(id)) {
-    DCHECK(!stray_cancel_callbacks_.contains(id));
+  if (base::Contains(finished_operations_, id)) {
+    DCHECK(!base::Contains(stray_cancel_callbacks_, id));
     stray_cancel_callbacks_[id] = std::move(callback);
     return;
   }
@@ -747,7 +748,7 @@ OperationID FileSystemOperationRunner::BeginOperation(
     std::unique_ptr<FileSystemOperation> operation) {
   OperationID id = next_operation_id_++;
 
-  DCHECK(!operations_.contains(id));
+  DCHECK(!base::Contains(operations_, id));
   operations_[id] = std::move(operation);
   return id;
 }

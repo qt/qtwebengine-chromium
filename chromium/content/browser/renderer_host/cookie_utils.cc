@@ -9,6 +9,7 @@
 #include <ostream>
 #include <string>
 
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/logging.h"
 #include "base/strings/strcat.h"
@@ -432,7 +433,7 @@ void EmitCookieWarningsAndMetrics(
         cookie->cookie_or_line->is_cookie() &&
         cookie->cookie_or_line->get_cookie().Name().empty()) {
       cookie_set_has_empty_name = true;
-      if (cookie->cookie_or_line->get_cookie().Value().contains('=')) {
+      if (base::Contains(cookie->cookie_or_line->get_cookie().Value(), '=')) {
         cookie_set_has_empty_name_and_ambiguous_value = true;
       }
     }

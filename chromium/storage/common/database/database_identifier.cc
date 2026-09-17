@@ -10,6 +10,7 @@
 #include <string>
 #include <string_view>
 
+#include "base/containers/contains.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
@@ -107,7 +108,7 @@ DatabaseIdentifier DatabaseIdentifier::CreateFromOrigin(const GURL& origin) {
 DatabaseIdentifier DatabaseIdentifier::Parse(std::string_view identifier) {
   if (!base::IsStringASCII(identifier))
     return DatabaseIdentifier();
-  if (identifier.contains("..")) {
+  if (base::Contains(identifier, "..")) {
     return DatabaseIdentifier();
   }
   static const char kForbidden[] = {'\\', '/', ':', '\0'};

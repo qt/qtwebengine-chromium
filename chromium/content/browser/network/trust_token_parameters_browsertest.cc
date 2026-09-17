@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/containers/contains.h"
 #include "base/strings/escape.h"
 #include "base/strings/strcat.h"
 #include "base/test/bind.h"
@@ -183,7 +184,7 @@ IN_PROC_BROWSER_TEST_F(TrustTokenPermissionsPolicyBrowsertest,
           [&](const network::mojom::URLLoaderFactoryParams* params,
               const url::Origin& origin, bool unused_is_for_isolated_world,
               bool unused_is_for_service_worker) {
-            if (origin.host().contains('b')) {
+            if (base::Contains(origin.host(), 'b')) {
               ASSERT_TRUE(params);
 
               ASSERT_THAT(params->trust_token_redemption_policy,
@@ -221,7 +222,7 @@ IN_PROC_BROWSER_TEST_F(TrustTokenPermissionsPolicyBrowsertest,
           [&](const network::mojom::URLLoaderFactoryParams* params,
               const url::Origin& origin, bool unused_is_for_isolated_world,
               bool unused_is_for_service_worker) {
-            if (origin.host().contains("b")) {
+            if (base::Contains(origin.host(), "b")) {
               ASSERT_TRUE(params);
 
               ASSERT_THAT(
@@ -260,7 +261,7 @@ IN_PROC_BROWSER_TEST_F(TrustTokenPermissionsPolicyBrowsertest,
           [&](const network::mojom::URLLoaderFactoryParams* params,
               const url::Origin& origin, bool unused_is_for_isolated_world,
               bool unused_is_for_service_worker) {
-            if (origin.host().contains("b")) {
+            if (base::Contains(origin.host(), "b")) {
               ASSERT_TRUE(params);
 
               ASSERT_THAT(params->trust_token_redemption_policy,
@@ -304,7 +305,7 @@ IN_PROC_BROWSER_TEST_F(TrustTokenPermissionsPolicyBrowsertest,
           [&](const network::mojom::URLLoaderFactoryParams* params,
               const url::Origin& origin, bool unused_is_for_isolated_world,
               bool unused_is_for_service_worker) {
-            if (origin.host().contains('b')) {
+            if (base::Contains(origin.host(), 'b')) {
               ASSERT_TRUE(params);
 
               ASSERT_THAT(params->trust_token_redemption_policy,
@@ -349,7 +350,7 @@ IN_PROC_BROWSER_TEST_F(TrustTokenPermissionsPolicyBrowsertest,
           [&](const network::mojom::URLLoaderFactoryParams* params,
               const url::Origin& origin, bool unused_is_for_isolated_world,
               bool unused_is_for_service_worker) {
-            if (origin.host().contains("b")) {
+            if (base::Contains(origin.host(), "b")) {
               ASSERT_TRUE(params);
 
               ASSERT_THAT(
@@ -396,7 +397,7 @@ IN_PROC_BROWSER_TEST_F(TrustTokenPermissionsPolicyBrowsertest,
           [&](const network::mojom::URLLoaderFactoryParams* params,
               const url::Origin& origin, bool unused_is_for_isolated_world,
               bool unused_is_for_service_worker) {
-            if (origin.host().contains("b")) {
+            if (base::Contains(origin.host(), "b")) {
               ASSERT_TRUE(params);
 
               ASSERT_THAT(params->trust_token_redemption_policy,

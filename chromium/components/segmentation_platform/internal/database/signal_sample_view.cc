@@ -3,9 +3,10 @@
 // found in the LICENSE file.
 
 #include "components/segmentation_platform/internal/database/signal_sample_view.h"
-#include "base/containers/contains.h"
 
 #include <algorithm>
+
+#include "base/containers/contains.h"
 
 namespace segmentation_platform {
 

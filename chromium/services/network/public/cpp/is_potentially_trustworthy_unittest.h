@@ -8,12 +8,12 @@
 #include <algorithm>
 #include <string_view>
 
+#include "base/containers/contains.h"
 #include "base/test/scoped_command_line.h"
 #include "net/base/url_util.h"
 #include "services/network/public/cpp/is_potentially_trustworthy.h"
 #include "services/network/public/cpp/network_switches.h"
 #include "url/origin_abstract_tests.h"
-#include "base/containers/contains.h"
 
 namespace network {
 namespace test {

@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/format_macros.h"
 #include "base/strings/string_split.h"
 #include "base/strings/stringprintf.h"
@@ -363,7 +364,7 @@ bool ActionsParser::ParsePointerParameters(
     return false;
   }
 
-  if (pointer_name_set_.contains(*pointer_name)) {
+  if (base::Contains(pointer_name_set_, *pointer_name)) {
     error_message_ = std::string("pointer name already exists");
     return false;
   }

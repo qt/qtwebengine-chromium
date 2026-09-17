@@ -12,6 +12,7 @@
 #include <utility>
 
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/containers/fixed_flat_set.h"
 #include "base/containers/flat_map.h"
 #include "base/containers/flat_set.h"
@@ -997,7 +998,7 @@ int32_t CameraHalDelegate::GetMaskedModuleID(const std::string& module_id) {
     int vid = UNSAFE_TODO(strtol(module_id.substr(0, 4).c_str(), nullptr, 16));
     int pid = UNSAFE_TODO(strtol(module_id.substr(5, 8).c_str(), nullptr, 16));
     int decimal_module_id = (vid << 16) + pid;
-    if (module_id_set.contains(decimal_module_id)) {
+    if (base::Contains(module_id_set, decimal_module_id)) {
       return decimal_module_id;
     }
   }

@@ -4,6 +4,7 @@
 
 #include "content/browser/media/cdm_storage_manager.h"
 
+#include "base/containers/contains.h"
 #include "base/functional/callback_helpers.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_functions.h"
@@ -234,7 +235,7 @@ void CdmStorageManager::DidOpenFile(const blink::StorageKey& storage_key,
 
   // Check whether this CDM file is in-use.
   CdmFileId id(file_name, cdm_type, storage_key);
-  if (cdm_files_.contains(id)) {
+  if (base::Contains(cdm_files_, id)) {
     std::move(callback).Run(Status::kInUse, mojo::NullAssociatedRemote());
     return;
   }

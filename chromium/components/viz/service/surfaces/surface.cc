@@ -14,6 +14,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/debug/alias.h"
 #include "base/debug/crash_logging.h"
 #include "base/debug/dump_without_crashing.h"
@@ -823,7 +824,7 @@ void Surface::UpdateActivationDependencies(
        current_frame.metadata.activation_dependencies) {
     SurfaceAllocationGroup* group =
         surface_manager_->GetOrCreateAllocationGroupForSurfaceId(surface_id);
-    if (new_blocking_allocation_groups.contains(group))
+    if (base::Contains(new_blocking_allocation_groups, group))
       continue;
 
     Surface* dependency = surface_manager_->GetSurfaceForId(surface_id);

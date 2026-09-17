@@ -9,6 +9,7 @@
 #include "base/apple/foundation_util.h"
 #include "base/auto_reset.h"
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/mac/mac_util.h"
 #include "components/remote_cocoa/app_shim/features.h"
 #import "components/remote_cocoa/app_shim/immersive_mode_delegate_mac.h"
@@ -465,7 +466,7 @@ void ImmersiveModeControllerCocoa::OnChildWindowAdded(NSWindow* child) {
   // TODO(kerenzhu): the sole purpose of `window_lock_received_` is to
   // verify that we don't lock twice for a single window.
   // We can remove it once this is verified.
-  CHECK(!window_lock_received_.contains(child));
+  CHECK(!base::Contains(window_lock_received_, child));
   window_lock_received_.insert(child);
   RevealLock();
 
@@ -481,7 +482,7 @@ void ImmersiveModeControllerCocoa::OnChildWindowRemoved(NSWindow* child) {
   if (((NativeWidgetMacNSWindow*)child).isShufflingForOrdering) {
     return;
   }
-  CHECK(window_lock_received_.contains(child));
+  CHECK(base::Contains(window_lock_received_, child));
   window_lock_received_.erase(child);
   RevealUnlock();
 }

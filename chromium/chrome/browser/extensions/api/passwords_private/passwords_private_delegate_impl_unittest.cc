@@ -31,6 +31,7 @@
 #include "base/test/mock_callback.h"
 #include "base/test/task_environment.h"
 #include "base/test/test_future.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "chrome/browser/extensions/api/passwords_private/passwords_private_delegate.h"
 #include "chrome/browser/ui/passwords/settings/fake_password_import_controller.h"
 #include "chrome/browser/ui/passwords/settings/mock_password_import_controller.h"
