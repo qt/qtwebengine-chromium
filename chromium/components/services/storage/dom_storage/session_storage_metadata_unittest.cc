@@ -6,6 +6,7 @@
 
 #include <string>
 
+#include "base/containers/contains.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/functional/bind.h"
 #include "base/memory/ptr_util.h"
@@ -225,8 +226,8 @@ TEST_P(SessionStorageMetadataTest, TakeNamespace) {
   DeleteSessionsSync(*database_, {test_namespace1_id_},
                      std::move(maps_to_delete));
 
-  EXPECT_FALSE(
-      metadata.namespace_storage_key_map().contains(test_namespace1_id_));
+  EXPECT_FALSE(base::Contains(metadata.namespace_storage_key_map(),
+                              test_namespace1_id_));
 
   // Verify in-memory metadata is correct.
   auto ns2_entry = metadata.GetOrCreateNamespaceEntry(test_namespace2_id_);
@@ -271,7 +272,7 @@ TEST_P(SessionStorageMetadataTest, DeleteArea) {
   // Verify in-memory metadata is correct.
   auto ns1_entry = metadata.GetOrCreateNamespaceEntry(test_namespace1_id_);
   auto ns2_entry = metadata.GetOrCreateNamespaceEntry(test_namespace2_id_);
-  EXPECT_FALSE(ns1_entry->second.contains(test_storage_key1_));
+  EXPECT_FALSE(base::Contains(ns1_entry->second, test_storage_key1_));
   EXPECT_EQ(1u, ns1_entry->second[test_storage_key2_]->session_ids().size());
   EXPECT_EQ(1u, ns2_entry->second[test_storage_key1_]->session_ids().size());
   EXPECT_EQ(1u, ns2_entry->second[test_storage_key2_]->session_ids().size());
@@ -310,10 +311,10 @@ TEST_P(SessionStorageMetadataTest, DeleteArea) {
                                    std::move(maps_to_delete));
 
   // Verify in-memory metadata is correct.
-  EXPECT_FALSE(ns1_entry->second.contains(test_storage_key1_));
+  EXPECT_FALSE(base::Contains(ns1_entry->second, test_storage_key1_));
   EXPECT_EQ(1u, ns1_entry->second[test_storage_key2_]->session_ids().size());
   EXPECT_EQ(1u, ns2_entry->second[test_storage_key1_]->session_ids().size());
-  EXPECT_FALSE(ns2_entry->second.contains(test_storage_key2_));
+  EXPECT_FALSE(base::Contains(ns2_entry->second, test_storage_key2_));
 
   // Verify only the applicable data was deleted, which must delete map 4 from
   // the database.

@@ -4,6 +4,7 @@
 
 #include "components/security_interstitials/core/https_only_mode_enforcelist.h"
 
+#include "base/containers/contains.h"
 #include "base/json/values_util.h"
 #include "base/time/clock.h"
 #include "base/values.h"
@@ -111,8 +112,8 @@ bool HttpsOnlyModeEnforcelist::IsEnforcedForUrl(
     return false;
   }
   if (is_nondefault_storage) {
-    return enforce_https_hosts_for_non_default_storage_partitions_.contains(
-        url.GetHost());
+    return base::Contains(
+        enforce_https_hosts_for_non_default_storage_partitions_, url.GetHost());
   }
 
   GURL secure_url = GetSecureGURLForHost(url.GetHost());

@@ -8,6 +8,7 @@
 #include <tuple>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/logging.h"
 #include "base/memory/discardable_memory.h"
 #include "base/task/single_thread_task_runner.h"
@@ -157,7 +158,7 @@ PrintCompositorImpl::~PrintCompositorImpl() {
 
 void PrintCompositorImpl::NotifyUnavailableSubframe(uint64_t frame_guid) {
   // Add this frame into the map.
-  DCHECK(!frame_info_map_.contains(frame_guid));
+  DCHECK(!base::Contains(frame_info_map_, frame_guid));
   auto& frame_info =
       frame_info_map_.emplace(frame_guid, std::make_unique<FrameInfo>())
           .first->second;
@@ -181,7 +182,7 @@ void PrintCompositorImpl::AddSubframeContent(
   }
 
   // Add this frame and its serialized content.
-  DCHECK(!frame_info_map_.contains(frame_guid));
+  DCHECK(!base::Contains(frame_info_map_, frame_guid));
   frame_info_map_.emplace(frame_guid, std::make_unique<FrameInfo>(
                                           mapping.GetMemoryAsSpan<uint8_t>(),
                                           subframe_content_map));
@@ -197,7 +198,7 @@ void PrintCompositorImpl::AddSubframeContent(
   std::vector<uint64_t> pending_subframes;
   for (auto& subframe_content : subframe_content_map) {
     auto subframe_guid = subframe_content.second;
-    if (!frame_info_map_.contains(subframe_guid))
+    if (!base::Contains(frame_info_map_, subframe_guid))
       pending_subframes.push_back(subframe_guid);
   }
 

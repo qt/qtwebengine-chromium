@@ -9,6 +9,7 @@
 
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/location.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
@@ -283,7 +284,7 @@ void ResourceMultiBufferDataProvider::DidReceiveResponse(
     // Check to see whether the server supports byte ranges.
     std::string accept_ranges =
         response.HttpHeaderField("Accept-Ranges").Utf8();
-    if (accept_ranges.contains("bytes")) {
+    if (base::Contains(accept_ranges, "bytes")) {
       destination_url_data->set_range_supported();
     }
 

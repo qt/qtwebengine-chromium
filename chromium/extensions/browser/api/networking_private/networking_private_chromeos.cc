@@ -6,6 +6,7 @@
 
 #include <memory>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/logging.h"
@@ -718,7 +719,7 @@ void NetworkingPrivateChromeOS::GetDeviceStateList(
                                     ::onc::network_type::kWiFi,
                                     ::onc::network_type::kCellular};
   for (const char* technology : technology_types) {
-    if (technologies_found.contains(technology)) {
+    if (base::Contains(technologies_found, technology)) {
       continue;
     }
     AppendDeviceState(technology, nullptr /* device */, device_state_list);

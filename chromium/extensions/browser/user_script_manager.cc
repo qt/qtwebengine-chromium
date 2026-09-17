@@ -4,6 +4,7 @@
 
 #include "extensions/browser/user_script_manager.h"
 
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/one_shot_event.h"
 #include "content/public/browser/browser_context.h"
@@ -243,7 +244,7 @@ void UserScriptManager::RemovePendingExtensionLoadAndSignal(
 
 ExtensionUserScriptLoader* UserScriptManager::CreateExtensionUserScriptLoader(
     const Extension* extension) {
-  CHECK(!extension_script_loaders_.contains(extension->id()));
+  CHECK(!base::Contains(extension_script_loaders_, extension->id()));
   // Inserts a new ExtensionUserScriptLoader and returns a ptr to it.
   ExtensionUserScriptLoader* loader =
       extension_script_loaders_
@@ -261,7 +262,7 @@ ExtensionUserScriptLoader* UserScriptManager::CreateExtensionUserScriptLoader(
 
 EmbedderUserScriptLoader* UserScriptManager::CreateEmbedderUserScriptLoader(
     const mojom::HostID& host_id) {
-  CHECK(!embedder_script_loaders_.contains(host_id));
+  CHECK(!base::Contains(embedder_script_loaders_, host_id));
   // Inserts a new EmbedderUserScriptLoader and returns a ptr to it.
   EmbedderUserScriptLoader* loader =
       embedder_script_loaders_

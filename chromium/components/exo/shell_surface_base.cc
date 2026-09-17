@@ -21,6 +21,7 @@
 #include "ash/wm/window_util.h"
 #include "base/check.h"
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/containers/flat_set.h"
 #include "base/logging.h"
 #include "base/memory/raw_ptr.h"
@@ -1024,14 +1025,14 @@ void ShellSurfaceBase::RebindRootSurface(Surface* root_surface,
     // Int properties.
     for (auto* const key :
          {aura::client::kSkipImeProcessing, chromeos::kFrameRestoreLookKey}) {
-      if (window->GetAllPropertyKeys().contains(key)) {
+      if (base::Contains(window->GetAllPropertyKeys(), key)) {
         OnWindowPropertyChanged(window, key,
                                 /*old_value(unused)=*/0);
       }
     }
     // Boolean property.
-    if (window->GetAllPropertyKeys().contains(
-            aura::client::kWindowWorkspaceKey)) {
+    if (base::Contains(window->GetAllPropertyKeys(),
+                       aura::client::kWindowWorkspaceKey)) {
       OnWindowPropertyChanged(window, aura::client::kWindowWorkspaceKey,
                               /*old_value(unused)=*/0);
     }
@@ -1486,7 +1487,7 @@ void ShellSurfaceBase::OnCaptureChanged(aura::Window* lost_capture,
   auto is_close_candidate_with_popup_grab =
       [&gained_capture_ancestors](aura::Window* window) {
         return IsPopupWithGrab(window) &&
-               !gained_capture_ancestors.contains(window);
+               !base::Contains(gained_capture_ancestors, window);
       };
 
   aura::Window* root = wm::GetTransientRoot(lost_capture);

@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/files/file_error_or.h"
 #include "base/files/file_util.h"
 #include "base/functional/bind.h"
@@ -366,7 +367,8 @@ int64_t SandboxFileSystemBackendDelegate::GetBucketUsageOnFileTaskRunner(
     FileSystemType type) {
   DCHECK(file_task_runner_->RunsTasksInCurrentSequence());
 
-  if (sticky_dirty_origins_.contains(
+  if (base::Contains(
+          sticky_dirty_origins_,
           std::make_pair(bucket_locator.storage_key.origin(), type))) {
     return RecalculateBucketUsage(file_system_context, bucket_locator, type);
   }

@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "content/browser/payments/payment_manager.h"
 #include "content/public/browser/browser_thread.h"
@@ -35,7 +36,7 @@ void PaymentAppContextImpl::CreatePaymentManagerForOrigin(
 void PaymentAppContextImpl::PaymentManagerHadConnectionError(
     PaymentManager* payment_manager) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  DCHECK(payment_managers_.contains(payment_manager));
+  DCHECK(base::Contains(payment_managers_, payment_manager));
 
   payment_managers_.erase(payment_manager);
 }

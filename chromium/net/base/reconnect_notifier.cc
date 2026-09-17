@@ -5,6 +5,7 @@
 
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 
 namespace net {

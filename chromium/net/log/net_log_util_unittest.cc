@@ -9,6 +9,7 @@
 #include <string_view>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/files/file_path.h"
 #include "base/memory/raw_ptr.h"
@@ -135,7 +136,8 @@ TEST(NetLogUtil, GetNetInfoIncludesDisabledDohProviders) {
         net_info.GetDict().FindList(kNetInfoDohProvidersDisabledDueToFeature);
     CHECK(disabled_doh_providers_list);
     EXPECT_EQ(!provider_enabled,
-              disabled_doh_providers_list->contains(kArbitraryProvider));
+              base::Contains(*disabled_doh_providers_list,
+                             base::Value(kArbitraryProvider)));
   }
 }
 

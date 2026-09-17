@@ -13,6 +13,7 @@
 #include <utility>
 
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/containers/span.h"
 #include "base/files/file_util.h"
 #include "base/pickle.h"
@@ -150,7 +151,7 @@ bool FileSystemUsageCache::Exists(const base::FilePath& usage_file_path) {
   TRACE_EVENT0("FileSystem", "UsageCache::Exists");
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (is_incognito_)
-    return incognito_usages_.contains(usage_file_path);
+    return base::Contains(incognito_usages_, usage_file_path);
   return base::PathExists(usage_file_path);
 }
 
@@ -281,7 +282,7 @@ bool FileSystemUsageCache::FlushFile(const base::FilePath& file_path) {
   TRACE_EVENT0("FileSystem", "UsageCache::FlushFile");
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (is_incognito_)
-    return incognito_usages_.contains(file_path);
+    return base::Contains(incognito_usages_, file_path);
   base::File* file = GetFile(file_path);
   if (!file)
     return false;
@@ -299,7 +300,7 @@ void FileSystemUsageCache::ScheduleCloseTimer() {
 bool FileSystemUsageCache::HasCacheFileHandle(const base::FilePath& file_path) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK_LE(cache_files_.size(), kMaxHandleCacheSize);
-  return cache_files_.contains(file_path);
+  return base::Contains(cache_files_, file_path);
 }
 
 }  // namespace storage

@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "base/functional/callback.h"
 
 namespace payments {
@@ -67,7 +68,7 @@ std::set<std::string> PaymentApp::GetApplicationIdentifiersThatHideThisApp()
 void PaymentApp::IsValidForPaymentMethodIdentifier(
     const std::string& payment_method_identifier,
     bool* is_valid) const {
-  *is_valid = app_method_names_.contains(payment_method_identifier);
+  *is_valid = base::Contains(app_method_names_, payment_method_identifier);
 }
 
 const std::set<std::string>& PaymentApp::GetAppMethodNames() const {

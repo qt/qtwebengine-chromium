@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "base/check_is_test.h"
+#include "base/containers/contains.h"
 #include "base/memory/ptr_util.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
@@ -687,7 +688,7 @@ void ServiceWorkerRegistry::DeleteRegistration(
                      std::move(callback)),
       registration->id(), registration->key());
 
-  DCHECK(!uninstalling_registrations_.contains(registration->id()));
+  DCHECK(!base::Contains(uninstalling_registrations_, registration->id()));
   uninstalling_registrations_[registration->id()] = registration;
   registration->SetStatus(ServiceWorkerRegistration::Status::kUninstalling);
 }
@@ -1211,7 +1212,7 @@ ServiceWorkerRegistry::GetOrCreateRegistration(
   registration->SetStored();
   registration->set_resources_total_size_bytes(data.resources_total_size_bytes);
   registration->set_last_update_check(data.last_update_check);
-  DCHECK(!uninstalling_registrations_.contains(data.registration_id));
+  DCHECK(!base::Contains(uninstalling_registrations_, data.registration_id));
 
   scoped_refptr<ServiceWorkerVersion> version =
       context_->GetLiveVersion(data.version_id);
@@ -1276,7 +1277,7 @@ ServiceWorkerRegistry::FindFromLiveRegistrationsForId(int64_t registration_id) {
     // The registration is considered as findable when it's stored or in
     // installing state.
     if (registration->IsStored() ||
-        installing_registrations_.contains(registration_id)) {
+        base::Contains(installing_registrations_, registration_id)) {
       return registration;
     }
     // Otherwise, the registration should not be findable even if it's still
@@ -2101,7 +2102,7 @@ void ServiceWorkerRegistry::StartRemoteCall(
 }
 
 void ServiceWorkerRegistry::FinishRemoteCall(const InflightCall* call) {
-  DCHECK(inflight_calls_.contains(call));
+  DCHECK(base::Contains(inflight_calls_, call));
   inflight_calls_.erase(call);
 }
 

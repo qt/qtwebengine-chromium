@@ -374,7 +374,7 @@ base::flat_set<raw_ptr<const PageNode>> FreezingPolicy::GetConnectedPages(
       CHECK(it != browsing_instance_states_.end());
       const BrowsingInstanceState& browsing_instance_state = it->second;
       for (auto* browsing_instance_page : browsing_instance_state.pages) {
-        if (!connected_pages.contains(browsing_instance_page)) {
+        if (!base::Contains(connected_pages, browsing_instance_page)) {
           pages_to_visit.insert(browsing_instance_page);
         }
       }
@@ -1063,7 +1063,8 @@ void FreezingPolicy::DiscardFrozenPagesWithGrowingMemoryOnMemoryMeasurement(
 
     const base::ByteSize current =
         result.memory_summary_result->private_footprint;
-    if (browsing_instance_states_without_initial_measurement.contains(id)) {
+    if (base::Contains(browsing_instance_states_without_initial_measurement,
+                       id)) {
       // Store the first PMF measurement after being frozen.
       state.per_origin_pmf_after_freezing[origin_in_browsing_instance_context
                                               .GetOrigin()] = current;
@@ -1443,7 +1444,7 @@ void FreezingPolicy::UpdateAllPagesFrozenState() {
 
   base::flat_set<raw_ptr<const PageNode>> visited_pages;
   for (auto& [id, state] : browsing_instance_states_) {
-    if (!visited_pages.contains(*state.pages.begin())) {
+    if (!base::Contains(visited_pages, *state.pages.begin())) {
       UpdateFrozenState(*state.pages.begin(), now, &visited_pages);
     }
   }

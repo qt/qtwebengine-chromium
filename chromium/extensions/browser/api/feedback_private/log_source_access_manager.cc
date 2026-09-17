@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/strings/string_split.h"
 #include "base/strings/stringprintf.h"
@@ -236,7 +237,7 @@ LogSourceAccessManager::ResourceId LogSourceAccessManager::CreateResource(
   if (resource_id == kInvalidResourceId)
     return kInvalidResourceId;
 
-  if (open_handles_.contains(resource_id)) {
+  if (base::Contains(open_handles_, resource_id)) {
     return kInvalidResourceId;
   }
 

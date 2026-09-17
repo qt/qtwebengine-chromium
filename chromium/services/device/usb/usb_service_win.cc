@@ -17,6 +17,7 @@
 #include <stdint.h>
 #include <usbiodef.h>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/location.h"
 #include "base/memory/free_deleter.h"
@@ -700,7 +701,7 @@ void UsbServiceWin::CreateDeviceObject(
     uint32_t port_number,
     UsbDeviceWin::DriverType driver_type,
     const std::wstring& driver_name) {
-  if (devices_by_path_.contains(device_path)) {
+  if (base::Contains(devices_by_path_, device_path)) {
     USB_LOG(ERROR) << "Got duplicate add event for path: " << device_path;
     return;
   }
@@ -755,7 +756,7 @@ void UsbServiceWin::DeviceReady(scoped_refptr<UsbDeviceWin> device,
   if (it == devices_by_path_.end()) {
     success = false;
   } else if (success) {
-    DCHECK(!devices().contains(device->guid()));
+    DCHECK(!base::Contains(devices(), device->guid()));
     devices()[device->guid()] = device;
 
     USB_LOG(USER) << "USB device added: path=" << device->device_path()

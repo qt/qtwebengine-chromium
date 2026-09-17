@@ -8,6 +8,7 @@
 #include <string_view>
 #include <variant>
 
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
@@ -498,7 +499,7 @@ void HostResolverDnsTask::OnDnsTransactionComplete(
     int net_error,
     const DnsResponse* response) {
   CHECK(transaction_info_it != transactions_in_progress_.end());
-  DCHECK(transactions_in_progress_.contains(*transaction_info_it));
+  DCHECK(base::Contains(transactions_in_progress_, *transaction_info_it));
 
   // Pull the TransactionInfo out of `transactions_in_progress_` now, so it
   // and its underlying DnsTransaction will be deleted on completion of

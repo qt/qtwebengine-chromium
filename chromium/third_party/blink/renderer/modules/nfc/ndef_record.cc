@@ -6,6 +6,7 @@
 
 #include <string_view>
 
+#include "base/containers/contains.h"
 #include "base/notreached.h"
 #include "services/device/public/mojom/nfc.mojom-blink.h"
 #include "third_party/blink/renderer/bindings/core/v8/idl_types.h"
@@ -117,7 +118,7 @@ bool IsValidExternalType(const String& input) {
   static constexpr std::string_view kOtherCharsForCustomType(":!()+,-=@;$_*'.");
   for (wtf_size_t i = 0; i < type.length(); i++) {
     if (!IsASCIIAlphanumeric(type[i]) &&
-        !kOtherCharsForCustomType.contains(type[i])) {
+        !base::Contains(kOtherCharsForCustomType, type[i])) {
       return false;
     }
   }

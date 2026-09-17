@@ -10,6 +10,7 @@
 #include <string_view>
 
 #include "base/base64url.h"
+#include "base/containers/contains.h"
 #include "base/files/file_util.h"
 #include "base/json/json_reader.h"
 #include "base/logging.h"
@@ -198,7 +199,8 @@ std::unique_ptr<VerifiedContents> VerifiedContents::Create(
 
 bool VerifiedContents::HasTreeHashRoot(
     const base::FilePath& relative_path) const {
-  return root_hashes_.contains(
+  return base::Contains(
+      root_hashes_,
       content_verifier_utils::CanonicalizeRelativePath(relative_path));
 }
 

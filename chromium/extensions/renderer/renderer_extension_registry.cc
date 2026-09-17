@@ -5,6 +5,7 @@
 #include "extensions/renderer/renderer_extension_registry.h"
 
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/lazy_instance.h"
 #include "base/unguessable_token.h"
 #include "build/build_config.h"
@@ -57,7 +58,7 @@ bool RendererExtensionRegistry::Insert(
 
   if (!BackgroundInfo::IsServiceWorkerBased(extension.get())) {
     // Non-SW based extension should never have an activation token.
-    CHECK(!worker_activation_tokens_.contains(extension->id()));
+    CHECK(!base::Contains(worker_activation_tokens_, extension->id()));
     return extensions_.Insert(extension);
   }
 
@@ -73,7 +74,7 @@ bool RendererExtensionRegistry::Insert(
   bool is_incognito_spanning = client->IsIncognitoProcess() &&
                                IncognitoInfo::IsSpanningMode(extension.get());
   if (is_incognito_spanning) {
-    CHECK(!worker_activation_tokens_.contains(extension->id()));
+    CHECK(!base::Contains(worker_activation_tokens_, extension->id()));
   }
 #endif  // !BUILDFLAG(IS_CHROMEOS)
 

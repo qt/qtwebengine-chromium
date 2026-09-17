@@ -6,6 +6,7 @@
 
 #include <optional>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/task/sequenced_task_runner.h"
 #include "content/public/browser/render_process_host.h"
@@ -426,7 +427,7 @@ void EventDispatchHelper::RecordAlreadyQueued(
 
 bool EventDispatchHelper::IsAlreadyQueued(
     const LazyContextId& dispatch_context) const {
-  return dispatched_ids_.contains(dispatch_context);
+  return base::Contains(dispatched_ids_, dispatch_context);
 }
 
 bool EventDispatchHelper::ListenerMeetsRestrictions(

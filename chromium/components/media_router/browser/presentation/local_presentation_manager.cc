@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/web_contents.h"
@@ -83,7 +84,7 @@ void LocalPresentationManager::OnLocalPresentationReceiverTerminated(
 
 bool LocalPresentationManager::IsLocalPresentation(
     const std::string& presentation_id) {
-  return local_presentations_.contains(presentation_id);
+  return base::Contains(local_presentations_, presentation_id);
 }
 
 bool LocalPresentationManager::IsLocalPresentation(

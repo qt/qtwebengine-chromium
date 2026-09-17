@@ -10,6 +10,7 @@
 
 #include "base/auto_reset.h"
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/containers/queue.h"
 #include "base/files/file_util.h"
 #include "base/functional/bind.h"
@@ -586,7 +587,7 @@ void RulesMonitorService::OnExtensionLoaded(
     bool ruleset_failed_to_load = false;
     for (auto& source : sources) {
       bool enabled = prefs_enabled_rulesets
-                         ? prefs_enabled_rulesets->contains(source.id())
+                         ? base::Contains(*prefs_enabled_rulesets, source.id())
                          : source.enabled_by_default();
 
       bool ignored = helper.ShouldIgnoreRuleset(extension->id(), source.id());
@@ -773,7 +774,7 @@ void RulesMonitorService::UpdateSessionRulesInternal(
   std::set<int> ids_to_remove(rule_ids_to_remove.begin(),
                               rule_ids_to_remove.end());
   std::erase_if(new_rules, [&ids_to_remove](const dnr_api::Rule& rule) {
-    return ids_to_remove.contains(rule.id);
+    return base::Contains(ids_to_remove, rule.id);
   });
 
   new_rules.insert(new_rules.end(),
@@ -1095,13 +1096,13 @@ void RulesMonitorService::OnNewStaticRulesetsLoaded(
       }
 
       // Exclude since we'll be removing this |matcher|.
-      if (ids_to_disable.contains(ruleset_matcher->id())) {
+      if (base::Contains(ids_to_disable, ruleset_matcher->id())) {
         continue;
       }
 
       // Exclude to prevent double counting. This will be a part of
       // |new_matchers| below.
-      if (ids_to_enable.contains(ruleset_matcher->id())) {
+      if (base::Contains(ids_to_enable, ruleset_matcher->id())) {
         continue;
       }
 

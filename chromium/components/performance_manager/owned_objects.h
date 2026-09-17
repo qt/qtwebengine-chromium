@@ -55,7 +55,7 @@ class OwnedObjects {
   template <typename... ArgTypes>
   void PassObject(std::unique_ptr<OwnedType> object, ArgTypes... args) {
     auto* raw = object.get();
-    CHECK(!objects_.contains(raw));
+    CHECK(!base::Contains(objects_, raw));
     objects_.insert(std::move(object));
     // We should stop using a flat_set at this point.
     CHECK_GE(100u, objects_.size());

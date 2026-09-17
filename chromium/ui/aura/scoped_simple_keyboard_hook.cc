@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "ui/events/keycodes/dom/dom_code.h"
 
 namespace aura {
@@ -20,7 +21,7 @@ bool ScopedSimpleKeyboardHook::IsKeyLocked(ui::DomCode dom_code) {
   if (dom_code == ui::DomCode::NONE)
     return false;
 
-  return !dom_codes_ || dom_codes_.value().contains(dom_code);
+  return !dom_codes_ || base::Contains(dom_codes_.value(), dom_code);
 }
 
 }  // namespace aura

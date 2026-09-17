@@ -12,6 +12,7 @@
 #include "base/check.h"
 #include "base/check_op.h"
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/memory/ptr_util.h"
@@ -179,7 +180,7 @@ void AggregatableReportScheduler::TimerDelegate::OnRequestsReturnedFromStorage(
   std::erase_if(
       requests_and_ids,
       [this](const AggregationServiceStorage::RequestAndId& request_and_id) {
-        return in_progress_requests_.contains(request_and_id.id);
+        return base::Contains(in_progress_requests_, request_and_id.id);
       });
   for (const AggregationServiceStorage::RequestAndId& request_and_id :
        requests_and_ids) {

@@ -245,7 +245,7 @@ void PageInfoControllerAndroid::SetPermissionInfo(
   }
 
   for (const auto& permission : permissions_to_display) {
-    if (user_specified_settings_to_display.contains(permission)) {
+    if (base::Contains(user_specified_settings_to_display, permission)) {
       std::u16string setting_title =
           PageInfoUI::PermissionTypeToUIString(permission);
       std::u16string setting_title_mid_sentence =

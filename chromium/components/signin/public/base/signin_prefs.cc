@@ -6,6 +6,7 @@
 
 #include <string_view>
 
+#include "base/containers/contains.h"
 #include "base/json/values_util.h"
 #include "base/values.h"
 #include "components/prefs/pref_change_registrar.h"
@@ -193,7 +194,7 @@ size_t SigninPrefs::RemoveAllAccountPrefsExcept(
   for (const std::pair<const std::string&, const base::Value&> account_prefs :
        pref_service_->GetDict(kSigninAccountPrefs)) {
     GaiaId gaia_id(account_prefs.first);
-    if (!gaia_ids_to_keep.contains(gaia_id)) {
+    if (!base::Contains(gaia_ids_to_keep, gaia_id)) {
       accounts_prefs_to_remove.push_back(std::move(gaia_id));
     }
   }

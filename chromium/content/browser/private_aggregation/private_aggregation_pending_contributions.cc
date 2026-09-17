@@ -19,6 +19,7 @@
 
 #include "base/check.h"
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/numerics/safe_conversions.h"
@@ -103,7 +104,7 @@ void PrivateAggregationPendingContributions::AddToFinalUnmergedContributions(
        contributions) {
     ContributionMergeKey merge_key(contribution);
 
-    if (accepted_merge_keys.contains(merge_key)) {
+    if (base::Contains(accepted_merge_keys, merge_key)) {
       // Bound worst-case memory usage.
       constexpr size_t kMaxUnmergedContributions = 10'000;
       if (final_unmerged_contributions_.size() < kMaxUnmergedContributions) {
@@ -199,7 +200,7 @@ PrivateAggregationPendingContributions::CompileFinalUnmergedContributions(
   for (auto i = static_cast<int>(PAErrorEvent::kMinValue);
        i <= static_cast<int>(PAErrorEvent::kMaxValue); i++) {
     auto error_event = static_cast<PAErrorEvent>(i);
-    CHECK(was_error_triggered_.contains(error_event));
+    CHECK(base::Contains(was_error_triggered_, error_event));
     if (was_error_triggered_[error_event]) {
       AddToFinalUnmergedContributions(
           std::move(conditional_contributions_[error_event]),

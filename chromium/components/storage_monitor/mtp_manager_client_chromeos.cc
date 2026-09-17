@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/strings/utf_string_conversions.h"
 #include "components/storage_monitor/storage_info.h"
@@ -83,7 +84,7 @@ void MtpManagerClientChromeOS::StorageAttached(
   if (device_id.empty() || storage_label.empty())
     return;
 
-  DCHECK(!storage_map_.contains(location));
+  DCHECK(!base::Contains(storage_map_, location));
 
   StorageInfo storage_info(device_id, location, storage_label, vendor_name,
                            product_name, 0);

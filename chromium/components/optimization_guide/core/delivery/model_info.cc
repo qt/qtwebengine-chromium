@@ -4,6 +4,7 @@
 
 #include "components/optimization_guide/core/delivery/model_info.h"
 
+#include "base/containers/contains.h"
 #include "base/memory/ptr_util.h"
 #include "base/notreached.h"
 #include "base/strings/utf_string_conversions.h"

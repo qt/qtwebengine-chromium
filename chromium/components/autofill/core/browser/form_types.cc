@@ -4,6 +4,7 @@
 
 #include "components/autofill/core/browser/form_types.h"
 
+#include "base/containers/contains.h"
 #include "base/containers/to_vector.h"
 #include "base/strings/string_util.h"
 #include "components/autofill/core/browser/field_types.h"

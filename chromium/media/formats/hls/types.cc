@@ -9,6 +9,7 @@
 #include <functional>
 #include <limits>
 
+#include "base/containers/contains.h"
 #include "base/no_destructor.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
@@ -113,7 +114,7 @@ DecimalResolution::Parse(ResolvedSourceString str) {
 
 namespace {
 bool IsOneOf(char c, std::string_view set) {
-  return set.contains(c);
+  return base::Contains(set, c);
 }
 
 // Returns the substring matching a valid AttributeName, advancing `source_str`

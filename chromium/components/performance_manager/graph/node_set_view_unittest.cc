@@ -8,6 +8,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/containers/flat_set.h"
 #include "components/performance_manager/graph/frame_node_impl.h"
 #include "components/performance_manager/graph/page_node_impl.h"
@@ -85,7 +86,7 @@ TYPED_TEST_P(NodeSetViewTest, Iterator) {
   // Iteration using range-based for loop works.
   for (NodeViewPtr node : node_set_view) {
     ASSERT_TRUE(node);
-    ASSERT_TRUE(node_set.contains(node));
+    ASSERT_TRUE(base::Contains(node_set, node));
   }
 
   // Compare the contents of the view to the contents of the node set.

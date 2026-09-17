@@ -120,7 +120,7 @@ bool IsValidZip(std::u16string_view text,
     if (country_code == AddressCountryCode("BR")) {
       return MatchesRegex<kBrZipCharacters>(text);
     }
-    if (kNumericZipCodeCountriesSet.contains(country_code.value())) {
+    if (base::Contains(kNumericZipCodeCountriesSet, country_code.value())) {
       return MatchesRegex<kNumericZipPattern>(text);
     }
     return true;

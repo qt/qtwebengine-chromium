@@ -423,7 +423,7 @@ class SeedStoreGroupTestBase : public ::testing::Test {
 
     const std::string_view seed_data_field = seed_fields_prefs.seed;
     std::string histogram_suffix =
-        seed_data_field.contains("Safe") ? "Safe" : "Latest";
+        base::Contains(seed_data_field, "Safe") ? "Safe" : "Latest";
 
     // Initialize |seed_reader_writer_|.
     seed_reader_writer_ = std::make_unique<SeedReaderWriter>(

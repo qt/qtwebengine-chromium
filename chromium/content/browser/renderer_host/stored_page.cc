@@ -4,6 +4,7 @@
 
 #include "content/browser/renderer_host/stored_page.h"
 
+#include "base/containers/contains.h"
 #include "base/trace_event/typed_macros.h"
 #include "content/browser/renderer_host/render_frame_host_impl.h"
 #include "content/browser/renderer_host/render_frame_proxy_host.h"

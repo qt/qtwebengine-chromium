@@ -7,6 +7,7 @@
 #include <memory>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/metrics/histogram_tester.h"
@@ -154,7 +155,7 @@ class MediaSessionItemProducerTest : public testing::Test {
   }
 
   bool IsSessionInactive(const base::UnguessableToken& id) const {
-    return producer_->inactive_session_ids_.contains(id.ToString());
+    return base::Contains(producer_->inactive_session_ids_, id.ToString());
   }
 
   bool HasActiveItems() const {

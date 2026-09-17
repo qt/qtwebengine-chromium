@@ -8,6 +8,7 @@
 #include <memory>
 
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/no_destructor.h"
 #include "base/observer_list.h"
@@ -353,7 +354,7 @@ void PermissionsManager::UpdateUserSiteSetting(const url::Origin& origin,
 }
 
 void PermissionsManager::AddUserRestrictedSite(const url::Origin& origin) {
-  if (user_permissions_.restricted_sites.contains(origin)) {
+  if (base::Contains(user_permissions_.restricted_sites, origin)) {
     return;
   }
 
@@ -375,7 +376,7 @@ void PermissionsManager::AddUserPermittedSite(const url::Origin& origin) {
   DCHECK(base::FeatureList::IsEnabled(
       extensions_features::kExtensionsMenuAccessControlWithPermittedSites));
 
-  if (user_permissions_.permitted_sites.contains(origin)) {
+  if (base::Contains(user_permissions_.permitted_sites, origin)) {
     return;
   }
 
@@ -433,10 +434,10 @@ PermissionsManager::GetUserPermissionsSettings() const {
 
 PermissionsManager::UserSiteSetting PermissionsManager::GetUserSiteSetting(
     const url::Origin& origin) const {
-  if (user_permissions_.permitted_sites.contains(origin)) {
+  if (base::Contains(user_permissions_.permitted_sites, origin)) {
     return UserSiteSetting::kGrantAllExtensions;
   }
-  if (user_permissions_.restricted_sites.contains(origin)) {
+  if (base::Contains(user_permissions_.restricted_sites, origin)) {
     return UserSiteSetting::kBlockAllExtensions;
   }
   return UserSiteSetting::kCustomizeByExtension;

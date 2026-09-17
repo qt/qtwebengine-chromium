@@ -10,6 +10,7 @@
 #include <map>
 #include <string>
 
+#include "base/containers/contains.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/functional/bind.h"
@@ -396,7 +397,7 @@ void UpdateReservation(ReservationKey key, const base::FilePath& new_path) {
 // |key|.
 void RevokeReservation(ReservationKey key) {
   DCHECK(g_reservation_map != nullptr);
-  DCHECK(g_reservation_map->contains(key));
+  DCHECK(base::Contains(*g_reservation_map, key));
   g_reservation_map->erase(key);
   if (g_reservation_map->size() == 0) {
     // No more reservations. Delete map.

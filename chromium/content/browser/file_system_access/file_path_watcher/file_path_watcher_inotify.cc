@@ -24,6 +24,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
@@ -889,7 +890,7 @@ FilePathWatcherImpl::FindChangedPathAndUpdateWatches(
     }
   }
 
-  if (recursive_paths_by_watch_.contains(fired_watch)) {
+  if (Contains(recursive_paths_by_watch_, fired_watch)) {
     base::FilePath child_path =
         recursive_paths_by_watch_[fired_watch].Append(child);
     if (!did_update) {
@@ -1107,7 +1108,7 @@ bool FilePathWatcherImpl::UpdateRecursiveWatches(
 
   // Check to see if this is a forced update or if some component of |target_|
   // has changed. For these cases, redo the watches for |target_| and below.
-  if (!recursive_paths_by_watch_.contains(fired_watch) &&
+  if (!Contains(recursive_paths_by_watch_, fired_watch) &&
       fired_watch != watches_.back().watch) {
     return UpdateRecursiveWatchesForPath(target_);
   }
@@ -1118,7 +1119,7 @@ bool FilePathWatcherImpl::UpdateRecursiveWatches(
   }
 
   const base::FilePath& changed_dir =
-      recursive_paths_by_watch_.contains(fired_watch)
+      Contains(recursive_paths_by_watch_, fired_watch)
           ? recursive_paths_by_watch_[fired_watch]
           : target_;
 
@@ -1181,7 +1182,7 @@ bool FilePathWatcherImpl::UpdateRecursiveWatchesForPath(
 
     // Check `recursive_watches_by_path_` as a heuristic to determine if this
     // needs to be an add or update operation.
-    if (!recursive_watches_by_path_.contains(current)) {
+    if (!Contains(recursive_watches_by_path_, current)) {
       // Try to add new watches.
       InotifyReader::Watch watch = GetInotifyReader().AddWatch(current, this);
       if (watch == InotifyReader::kWatchLimitExceeded) {
@@ -1229,8 +1230,8 @@ void FilePathWatcherImpl::TrackWatchForRecursion(InotifyReader::Watch watch,
     return;
   }
 
-  DUMP_WILL_BE_CHECK(!recursive_paths_by_watch_.contains(watch));
-  DUMP_WILL_BE_CHECK(!recursive_watches_by_path_.contains(path));
+  DUMP_WILL_BE_CHECK(!Contains(recursive_paths_by_watch_, watch));
+  DUMP_WILL_BE_CHECK(!Contains(recursive_watches_by_path_, path));
   recursive_paths_by_watch_[watch] = path;
   recursive_watches_by_path_[path] = watch;
 

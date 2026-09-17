@@ -13,6 +13,7 @@
 #include <utility>
 
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/containers/span.h"
 #include "base/numerics/checked_math.h"
 #include "base/strings/strcat_win.h"
@@ -832,7 +833,7 @@ bool AccessToken::AddSecurityAttribute(std::wstring_view name,
   }
 
   // We don't support attribute values with double quotes.
-  CHECK(!value.contains('"'));
+  CHECK(!base::Contains(value, '"'));
   UNICODE_STRING ustr_value = {};
   if (!ViewToUnicodeString(value, ustr_value)) {
     return false;

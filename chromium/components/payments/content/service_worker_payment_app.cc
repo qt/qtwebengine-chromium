@@ -8,6 +8,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
@@ -188,14 +189,14 @@ ServiceWorkerPaymentApp::CreateCanMakePaymentEventData() {
 
   DCHECK(spec_->details().modifiers);
   for (const auto& modifier : *spec_->details().modifiers) {
-    if (supported_url_methods.contains(
-            modifier->method_data->supported_method)) {
+    if (base::Contains(supported_url_methods,
+                       modifier->method_data->supported_method)) {
       event_data->modifiers.emplace_back(modifier.Clone());
     }
   }
 
   for (const auto& data : spec_->method_data()) {
-    if (supported_url_methods.contains(data->supported_method)) {
+    if (base::Contains(supported_url_methods, data->supported_method)) {
       event_data->method_data.push_back(data.Clone());
     }
   }
@@ -299,13 +300,14 @@ ServiceWorkerPaymentApp::CreatePaymentRequestEventData() {
 
   DCHECK(spec_->details().modifiers);
   for (const auto& modifier : *spec_->details().modifiers) {
-    if (GetAppMethodNames().contains(modifier->method_data->supported_method)) {
+    if (base::Contains(GetAppMethodNames(),
+                       modifier->method_data->supported_method)) {
       event_data->modifiers.emplace_back(modifier.Clone());
     }
   }
 
   for (const auto& data : spec_->method_data()) {
-    if (GetAppMethodNames().contains(data->supported_method)) {
+    if (base::Contains(GetAppMethodNames(), data->supported_method)) {
       event_data->method_data.push_back(data.Clone());
     }
   }

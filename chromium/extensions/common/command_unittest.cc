@@ -367,14 +367,14 @@ TEST(CommandTest, ExtensionCommandParsingInvalidPlatformForCommandOption) {
   key_dict_cmd.Set(platform, "Command+G");
   input.Set("suggested_key", key_dict_cmd.Clone());
   EXPECT_FALSE(command.Parse(input, command_name, 0, &error));
-  EXPECT_TRUE(error.contains(u"Command key is not supported"));
+  EXPECT_TRUE(base::Contains(error, u"Command key is not supported"));
 
   error.clear();
   base::DictValue key_dict_opt;
   key_dict_opt.Set(platform, "Option+H");
   input.Set("suggested_key", key_dict_opt.Clone());
   EXPECT_FALSE(command.Parse(input, command_name, 0, &error));
-  EXPECT_TRUE(error.contains(u"Option key is not supported"));
+  EXPECT_TRUE(base::Contains(error, u"Option key is not supported"));
 }
 
 // Tests that Command and Option keys are rejected on non-Mac platforms when
@@ -393,14 +393,14 @@ TEST(CommandTest, ExtensionCommandParsingDefaultNonMacForCommandOption) {
   key_dict_cmd_default.Set("default", "Command+G");
   input.Set("suggested_key", key_dict_cmd_default.Clone());
   EXPECT_FALSE(command.Parse(input, command_name, 0, &error));
-  EXPECT_TRUE(error.contains(u"Command key is not supported"));
+  EXPECT_TRUE(base::Contains(error, u"Command key is not supported"));
 
   error.clear();
   base::DictValue key_dict_opt_default;
   key_dict_opt_default.Set("default", "Option+H");
   input.Set("suggested_key", key_dict_opt_default.Clone());
   EXPECT_FALSE(command.Parse(input, command_name, 0, &error));
-  EXPECT_TRUE(error.contains(u"Option key is not supported"));
+  EXPECT_TRUE(base::Contains(error, u"Option key is not supported"));
 }
 
 // Tests that Command and Option keys as substrings are not rejected on non-Mac
@@ -421,7 +421,7 @@ TEST(CommandTest, ExtensionCommandParsingSubstringCommandOption) {
   key_dict_cmd_default.Set("default", "Ctrl+NotACommand");
   input.Set("suggested_key", key_dict_cmd_default.Clone());
   EXPECT_FALSE(command.Parse(input, command_name, 0, &error));
-  EXPECT_FALSE(error.contains(u"Command key is not supported"));
+  EXPECT_FALSE(base::Contains(error, u"Command key is not supported"));
 
   // Fails because "NotAnOption" is not a valid key. This is the expected
   // behavior.
@@ -430,7 +430,7 @@ TEST(CommandTest, ExtensionCommandParsingSubstringCommandOption) {
   key_dict_opt_default.Set("default", "Ctrl+NotAnOption");
   input.Set("suggested_key", key_dict_opt_default.Clone());
   EXPECT_FALSE(command.Parse(input, command_name, 0, &error));
-  EXPECT_FALSE(error.contains(u"Option key is not supported"));
+  EXPECT_FALSE(base::Contains(error, u"Option key is not supported"));
 }
 #endif  // !BUILDFLAG(IS_MAC)
 
@@ -460,10 +460,10 @@ TEST(CommandTest, ExtensionCommandParsingNormalizedError) {
   EXPECT_FALSE(command.Parse(input, command_name, 0, &error));
 
   // The error message should contain the original, un-normalized string.
-  EXPECT_TRUE(error.contains(base::ASCIIToUTF16(invalid_shortcut)))
+  EXPECT_TRUE(base::Contains(error, base::ASCIIToUTF16(invalid_shortcut)))
       << " expected error to contain '" << invalid_shortcut << "', but was '"
       << base::UTF16ToASCII(error) << "'";
-  EXPECT_FALSE(error.contains(u"Command+Alt+Z"));
+  EXPECT_FALSE(base::Contains(error, u"Command+Alt+Z"));
 }
 #endif  // BUILDFLAG(IS_MAC)
 

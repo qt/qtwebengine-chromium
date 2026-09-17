@@ -11,6 +11,7 @@
 
 #include "base/base64.h"
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/containers/fixed_flat_map.h"
 #include "base/i18n/char_iterator.h"
 #include "base/metrics/histogram_functions.h"
@@ -538,12 +539,12 @@ bool AXImageAnnotator::HasAnnotationInCache(blink::WebAXObject& image) const {
 
 bool AXImageAnnotator::HasImageInCache(const blink::WebAXObject& image) const {
   DCHECK(!image.IsDetached());
-  return image_annotations_.contains(image.AxID());
+  return base::Contains(image_annotations_, image.AxID());
 }
 
 void AXImageAnnotator::OnImageAdded(blink::WebAXObject& image) {
   DCHECK(!image.IsDetached());
-  DCHECK(!image_annotations_.contains(image.AxID()));
+  DCHECK(!base::Contains(image_annotations_, image.AxID()));
   const std::string image_id = GenerateImageSourceId(image);
   if (image_id.empty())
     return;
@@ -563,7 +564,7 @@ void AXImageAnnotator::OnImageAdded(blink::WebAXObject& image) {
 
 void AXImageAnnotator::OnImageUpdated(blink::WebAXObject& image) {
   DCHECK(!image.IsDetached());
-  DCHECK(image_annotations_.contains(image.AxID()));
+  DCHECK(base::Contains(image_annotations_, image.AxID()));
   const std::string image_id = GenerateImageSourceId(image);
   if (image_id.empty())
     return;
@@ -579,7 +580,7 @@ void AXImageAnnotator::OnImageUpdated(blink::WebAXObject& image) {
 
 void AXImageAnnotator::OnImageRemoved(blink::WebAXObject& image) {
   DCHECK(!image.IsDetached());
-  DCHECK(image_annotations_.contains(image.AxID()));
+  DCHECK(base::Contains(image_annotations_, image.AxID()));
   image_annotations_.erase(image.AxID());
 }
 
@@ -735,7 +736,7 @@ void AXImageAnnotator::OnImageAnnotated(
   DCHECK(render_accessibility_->GetAXContext());
   render_accessibility_->GetAXContext()->UpdateAXForAllDocuments();
 
-  if (!image_annotations_.contains(image.AxID()))
+  if (!base::Contains(image_annotations_, image.AxID()))
     return;
 
   if (image.IsDetached()) {

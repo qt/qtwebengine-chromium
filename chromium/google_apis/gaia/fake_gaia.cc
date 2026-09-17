@@ -11,6 +11,7 @@
 
 #include "base/base64.h"
 #include "base/base_paths.h"
+#include "base/containers/contains.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/functional/bind.h"
@@ -507,7 +508,7 @@ void FakeGaia::SetOAuthCodeCookie(BasicHttpResponse* http_response) const {
 void FakeGaia::AddSyncTrustedKeysHeader(BasicHttpResponse* http_response,
                                         const std::string& email) const {
   DCHECK(http_response);
-  DCHECK(email_to_sync_trusted_vault_keys_map_.contains(email));
+  DCHECK(base::Contains(email_to_sync_trusted_vault_keys_map_, email));
   http_response->AddCustomHeader(
       "fake-sync-trusted-vault-keys",
       FormatSyncTrustedVaultKeysHeader(
@@ -803,7 +804,7 @@ void FakeGaia::HandleEmbeddedLookupAccountLookup(
   std::string email;
   const bool is_saml =
       GetQueryParameter(request.content, "identifier", &email) &&
-      saml_account_idp_map_.contains(email);
+      base::Contains(saml_account_idp_map_, email);
 
   if (!is_saml)
     return;
@@ -844,7 +845,7 @@ void FakeGaia::HandleEmbeddedSigninChallenge(const HttpRequest& request,
   if (issue_oauth_code_cookie_)
     SetOAuthCodeCookie(http_response);
 
-  if (email_to_sync_trusted_vault_keys_map_.contains(email)) {
+  if (base::Contains(email_to_sync_trusted_vault_keys_map_, email)) {
     AddSyncTrustedKeysHeader(http_response, email);
   }
 }

@@ -208,7 +208,7 @@ std::string CombineAndSanitizeOriginLists(const std::string& value1,
   std::vector<std::string> origin_vector;
   for (const std::string& list : {value1, value2}) {
     for (const std::string& origin : TokenizeOriginList(list)) {
-      if (!seen_origins.contains(origin)) {
+      if (!base::Contains(seen_origins, origin)) {
         origin_vector.push_back(origin);
         seen_origins.insert(origin);
       }
@@ -489,7 +489,7 @@ void FlagsState::SetOriginListFlag(const std::string& internal_name,
 
   std::set<std::string> enabled_entries;
   GetSanitizedEnabledFlags(flags_storage, &enabled_entries);
-  const bool enabled = enabled_entries.contains(entry->internal_name);
+  const bool enabled = base::Contains(enabled_entries, entry->internal_name);
   if (enabled) {
     DidModifyOriginListFlag(*flags_storage, *entry);
   }
@@ -507,7 +507,7 @@ void FlagsState::SetStringFlag(const std::string& internal_name,
 
   std::set<std::string> enabled_entries;
   GetSanitizedEnabledFlags(flags_storage, &enabled_entries);
-  const bool enabled = enabled_entries.contains(entry->internal_name);
+  const bool enabled = base::Contains(enabled_entries, entry->internal_name);
   if (enabled) {
     DidModifyStringFlag(*flags_storage, *entry);
   }
@@ -540,7 +540,7 @@ void FlagsState::RemoveFlagsSwitches(
     // For any featrue name in |features| that is not in |switch_added_values| -
     // i.e. it wasn't added by about_flags code, add it to |remaining_features|.
     for (const auto& feature : features) {
-      if (!switch_added_values.contains(std::string(feature))) {
+      if (!base::Contains(switch_added_values, std::string(feature))) {
         remaining_features.push_back(feature);
       }
     }
@@ -793,7 +793,7 @@ void FlagsState::AddSwitchMapping(
     const std::string& switch_name,
     const std::string& switch_value,
     std::map<std::string, SwitchEntry>* name_to_switch_map) const {
-  DCHECK(!name_to_switch_map->contains(key));
+  DCHECK(!base::Contains(*name_to_switch_map, key));
 
   SwitchEntry* entry = &(*name_to_switch_map)[key];
   entry->switch_name = switch_name;
@@ -806,7 +806,7 @@ void FlagsState::AddFeatureMapping(
     bool feature_state,
     const std::string& variation_id,
     std::map<std::string, SwitchEntry>* name_to_switch_map) const {
-  DCHECK(!name_to_switch_map->contains(key));
+  DCHECK(!base::Contains(*name_to_switch_map, key));
 
   SwitchEntry* entry = &(*name_to_switch_map)[key];
   entry->feature_name = feature_name;

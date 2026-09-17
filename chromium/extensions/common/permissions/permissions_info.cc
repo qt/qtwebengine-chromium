@@ -5,6 +5,7 @@
 #include "extensions/common/permissions/permissions_info.h"
 
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/memory/ptr_util.h"
 #include "base/strings/string_util.h"
 #include "extensions/common/alias.h"
@@ -72,15 +73,15 @@ PermissionsInfo::~PermissionsInfo() {
 }
 
 void PermissionsInfo::RegisterAlias(const Alias& alias) {
-  DCHECK(name_map_.contains(alias.real_name));
-  DCHECK(!name_map_.contains(alias.name));
+  DCHECK(base::Contains(name_map_, alias.real_name));
+  DCHECK(!base::Contains(name_map_, alias.name));
   name_map_[alias.name] = name_map_[alias.real_name];
 }
 
 void PermissionsInfo::RegisterPermission(
     std::unique_ptr<APIPermissionInfo> permission) {
-  DCHECK(!id_map_.contains(permission->id()));
-  DCHECK(!name_map_.contains(permission->name()));
+  DCHECK(!base::Contains(id_map_, permission->id()));
+  DCHECK(!base::Contains(name_map_, permission->name()));
 
   name_map_[permission->name()] = permission.get();
   id_map_[permission->id()] = std::move(permission);

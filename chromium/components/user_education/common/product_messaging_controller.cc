@@ -115,7 +115,7 @@ void ProductMessagingController::Init(
 
 bool ProductMessagingController::IsNoticeQueued(
     RequiredNoticeId notice_id) const {
-  return pending_notices_.contains(notice_id);
+  return base::Contains(pending_notices_, notice_id);
 }
 
 void ProductMessagingController::QueueRequiredNotice(

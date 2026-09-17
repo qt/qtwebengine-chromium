@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/memory/raw_ptr.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/test/null_task_runner.h"
@@ -62,7 +63,7 @@ class TestDisplayDamageTracker : public DisplayDamageTracker {
 
   // DisplayDamageTracker overrides
   bool SurfaceHasUnackedFrame(const SurfaceId& surface_id) const override {
-    return undrawn_surfaces_.contains(surface_id);
+    return base::Contains(undrawn_surfaces_, surface_id);
   }
 
   void UpdateRootFrameMissing() override {

@@ -15,6 +15,7 @@
 
 #include "base/big_endian.h"
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/containers/fixed_flat_set.h"
 #include "base/containers/flat_set.h"
 #include "base/containers/to_vector.h"
@@ -294,8 +295,8 @@ ServiceFormHttpsRecordRdata::ServiceFormHttpsRecordRdata(
       ipv6_hint_(std::move(ipv6_hint)),
       trust_anchor_ids_(std::move(trust_anchor_ids)) {
   DCHECK_NE(priority_, 0);
-  DCHECK(
-      !mandatory_keys_.contains(dns_protocol::kHttpsServiceParamKeyMandatory));
+  DCHECK(!base::Contains(mandatory_keys_,
+                         dns_protocol::kHttpsServiceParamKeyMandatory));
 
 #if DCHECK_IS_ON()
   for (const IPAddress& address : ipv4_hint_) {
@@ -490,7 +491,7 @@ std::unique_ptr<ServiceFormHttpsRecordRdata> ServiceFormHttpsRecordRdata::Parse(
 bool ServiceFormHttpsRecordRdata::IsCompatible() const {
   for (uint16_t mandatory_key : mandatory_keys_) {
     DCHECK_NE(mandatory_key, dns_protocol::kHttpsServiceParamKeyMandatory);
-    if (!kSupportedKeys.contains(mandatory_key)) {
+    if (!base::Contains(kSupportedKeys, mandatory_key)) {
       return false;
     }
   }
@@ -500,7 +501,7 @@ bool ServiceFormHttpsRecordRdata::IsCompatible() const {
 // static
 bool ServiceFormHttpsRecordRdata::IsSupportedKey(uint16_t key) {
 #if DCHECK_IS_ON()
-  return kSupportedKeys.contains(key);
+  return base::Contains(kSupportedKeys, key);
 #else
   // Only intended for DCHECKs.
   base::ImmediateCrash();

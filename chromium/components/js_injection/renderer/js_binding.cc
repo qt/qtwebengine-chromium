@@ -12,6 +12,7 @@
 
 #include "base/check_op.h"
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/strings/string_util.h"
 #include "components/js_injection/common/interfaces.mojom.h"
 #include "components/js_injection/renderer/js_communication.h"

@@ -196,7 +196,7 @@ class ExportedCallbackManager {
 
     VLOG(1) << "Exporting callback at " << callback_path.value();
 
-    if (exported_callbacks_.contains(callback_path.value())) {
+    if (base::Contains(exported_callbacks_, callback_path.value())) {
       LOG(ERROR) << "Cannot export existing object path";
       return false;
     }
@@ -231,7 +231,7 @@ class ExportedCallbackManager {
 
   // Removes the D-Bus object from being exported.
   void UnexportCallback(const dbus::ObjectPath& callback_path) {
-    if (!exported_callbacks_.contains(callback_path.value())) {
+    if (!base::Contains(exported_callbacks_, callback_path.value())) {
       LOG(WARNING) << "Not yet exported: " << callback_path.value();
       return;
     }

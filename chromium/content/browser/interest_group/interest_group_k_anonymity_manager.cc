@@ -8,6 +8,7 @@
 #include <tuple>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/time/time.h"

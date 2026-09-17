@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/containers/map_util.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
@@ -331,17 +332,17 @@ PaintPreviewClient::InProgressDocumentCaptureState::
 
 bool PaintPreviewClient::InProgressDocumentCaptureState::IsAllowedToCapture(
     const base::UnguessableToken& frame_token) const {
-  return accepted_tokens.contains(frame_token);
+  return base::Contains(accepted_tokens, frame_token);
 }
 
 bool PaintPreviewClient::InProgressDocumentCaptureState::IsFinishedCapturing(
     const base::UnguessableToken& frame_token) const {
-  return finished_subframes.contains(frame_token);
+  return base::Contains(finished_subframes, frame_token);
 }
 
 bool PaintPreviewClient::InProgressDocumentCaptureState::IsCaptureInProgress(
     const base::UnguessableToken& frame_token) const {
-  return awaiting_subframes.contains(frame_token);
+  return base::Contains(awaiting_subframes, frame_token);
 }
 
 base::FilePath

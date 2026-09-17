@@ -12,6 +12,7 @@
 
 #include "base/check_op.h"
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/containers/flat_map.h"
 #include "base/no_destructor.h"
 #include "base/notreached.h"
@@ -298,7 +299,7 @@ std::optional<ui::CursorData> GetCursorData(
   }
 
   AnimationCache& cursor_animations = GetAnimationCache();
-  if (!cursor_animations.contains(type)) {
+  if (!base::Contains(cursor_animations, type)) {
     // Read lottie content and create a lottie animation.
     std::optional<std::vector<uint8_t>> lottie_bytes =
         ui::ResourceBundle::GetSharedInstance().GetLottieData(resource_id);

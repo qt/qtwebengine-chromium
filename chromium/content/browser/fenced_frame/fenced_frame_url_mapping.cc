@@ -10,6 +10,7 @@
 #include <string>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/functional/callback.h"
 #include "base/memory/ref_counted.h"
@@ -496,11 +497,11 @@ void FencedFrameURLMapping::SubstituteMappedURL(
 }
 
 bool FencedFrameURLMapping::IsMapped(const GURL& urn_uuid) const {
-  return urn_uuid_to_url_map_.contains(urn_uuid);
+  return base::Contains(urn_uuid_to_url_map_, urn_uuid);
 }
 
 bool FencedFrameURLMapping::IsPendingMapped(const GURL& urn_uuid) const {
-  return pending_urn_uuid_to_url_map_.contains(urn_uuid);
+  return base::Contains(pending_urn_uuid_to_url_map_, urn_uuid);
 }
 
 bool FencedFrameURLMapping::IsFull() const {

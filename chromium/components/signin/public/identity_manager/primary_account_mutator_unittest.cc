@@ -4,6 +4,7 @@
 
 #include "components/signin/public/identity_manager/primary_account_mutator.h"
 
+#include "base/containers/contains.h"
 #include "base/containers/flat_set.h"
 #include "base/functional/bind.h"
 #include "base/run_loop.h"
@@ -225,9 +226,9 @@ void RunRevokeConsentTest(
       EXPECT_FALSE(identity_manager->HasAccountWithRefreshToken(
           secondary_account_info.account_id));
       EXPECT_TRUE(
-          observed_removals.contains(former_primary_account.account_id));
+          base::Contains(observed_removals, former_primary_account.account_id));
       EXPECT_TRUE(
-          observed_removals.contains(secondary_account_info.account_id));
+          base::Contains(observed_removals, secondary_account_info.account_id));
       break;
   }
 }

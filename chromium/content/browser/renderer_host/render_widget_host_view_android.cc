@@ -2690,7 +2690,7 @@ void RenderWidgetHostViewAndroid::SendKeyEvent(
     ui::DomCode dom_code = static_cast<ui::DomCode>(event.dom_code);
     if (dom_code != ui::DomCode::ESCAPE &&
         (!locked_keyboard_keys_ ||
-         locked_keyboard_keys_.value().contains(dom_code))) {
+         base::Contains(locked_keyboard_keys_.value(), dom_code))) {
       event.skip_if_unhandled = true;
     }
   }

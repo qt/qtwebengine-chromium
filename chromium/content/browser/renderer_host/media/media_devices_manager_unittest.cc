@@ -7,6 +7,7 @@
 #include <memory>
 #include <string>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/memory/raw_ptr.h"
@@ -142,7 +143,7 @@ class MockAudioManager : public media::FakeAudioManager {
     while (num_devices_to_create > 0) {
       size_t trailer = start_id_trailer++;
       std::string id("fake_device_id_" + base::NumberToString(trailer));
-      if (removed_input_audio_device_ids_.contains(id))
+      if (base::Contains(removed_input_audio_device_ids_, id))
         continue;
 
       device_names->push_back(media::AudioDeviceName(
@@ -1292,9 +1293,9 @@ TEST_F(MediaDevicesManagerTest, EnumerateDevicesUnplugDefaultDevice) {
   RunEnumerateDevices();
 
   EXPECT_EQ(removed_device_ids_.size(), 2u);
-  EXPECT_TRUE(removed_device_ids_.contains(default_device_id));
-  EXPECT_TRUE(removed_device_ids_.contains(
-      media::AudioDeviceDescription::kDefaultDeviceId));
+  EXPECT_TRUE(base::Contains(removed_device_ids_, default_device_id));
+  EXPECT_TRUE(base::Contains(removed_device_ids_,
+                             media::AudioDeviceDescription::kDefaultDeviceId));
 #endif  // !BUILDFLAG(IS_CHROMEOS)
 }
 
@@ -1332,9 +1333,10 @@ TEST_F(MediaDevicesManagerTest, EnumerateDevicesUnplugCommunicationsDevice) {
   RunEnumerateDevices();
 
   EXPECT_EQ(removed_device_ids_.size(), 2u);
-  EXPECT_TRUE(removed_device_ids_.contains(communications_device_id));
-  EXPECT_TRUE(removed_device_ids_.contains(
-      media::AudioDeviceDescription::kCommunicationsDeviceId));
+  EXPECT_TRUE(base::Contains(removed_device_ids_, communications_device_id));
+  EXPECT_TRUE(
+      base::Contains(removed_device_ids_,
+                     media::AudioDeviceDescription::kCommunicationsDeviceId));
 #endif  // BUILDFLAG(IS_WIN)
 }
 
@@ -1378,11 +1380,12 @@ TEST_F(MediaDevicesManagerTest,
   RunEnumerateDevices();
 
   EXPECT_EQ(removed_device_ids_.size(), 3u);
-  EXPECT_TRUE(removed_device_ids_.contains(target_device_id));
-  EXPECT_TRUE(removed_device_ids_.contains(
-      media::AudioDeviceDescription::kDefaultDeviceId));
-  EXPECT_TRUE(removed_device_ids_.contains(
-      media::AudioDeviceDescription::kCommunicationsDeviceId));
+  EXPECT_TRUE(base::Contains(removed_device_ids_, target_device_id));
+  EXPECT_TRUE(base::Contains(removed_device_ids_,
+                             media::AudioDeviceDescription::kDefaultDeviceId));
+  EXPECT_TRUE(
+      base::Contains(removed_device_ids_,
+                     media::AudioDeviceDescription::kCommunicationsDeviceId));
 #endif  // BUILDFLAG(IS_WIN)
 }
 

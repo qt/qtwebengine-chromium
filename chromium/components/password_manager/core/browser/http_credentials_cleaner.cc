@@ -4,6 +4,7 @@
 
 #include "components/password_manager/core/browser/http_credentials_cleaner.h"
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/metrics/histogram_functions.h"
 #include "components/password_manager/core/browser/http_password_store_migrator.h"
@@ -95,7 +96,7 @@ void HttpCredentialCleaner::OnHSTSQueryResult(
     return;
   }
 
-  if (user_it->second.contains(form->password_value)) {
+  if (base::Contains(user_it->second, form->password_value)) {
     // The password store contains the same credentials (signon_realm, scheme,
     // username and password) on HTTPS version of the form.
     base::UmaHistogramEnumeration(

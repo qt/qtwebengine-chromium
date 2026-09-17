@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "base/auto_reset.h"
+#include "base/containers/contains.h"
 #include "base/dcheck_is_on.h"
 #include "base/files/file_util.h"
 #include "base/functional/bind.h"
@@ -656,7 +657,7 @@ QuotaErrorOr<std::set<BucketLocator>> QuotaDatabase::GetBucketsForEviction(
     }
 
     BucketId read_bucket_id = BucketId(statement.ColumnInt64(0));
-    if (bucket_exceptions.contains(read_bucket_id)) {
+    if (base::Contains(bucket_exceptions, read_bucket_id)) {
       continue;
     }
 

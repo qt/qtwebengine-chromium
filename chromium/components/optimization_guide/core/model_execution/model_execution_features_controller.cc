@@ -5,6 +5,7 @@
 #include "components/optimization_guide/core/model_execution/model_execution_features_controller.h"
 
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_functions.h"
@@ -198,7 +199,8 @@ ModelExecutionFeaturesController::GetCurrentUserValidityResult(
     UserVisibleFeatureKey feature,
     bool skip_enterprise_check) const {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
-  bool require_account = !features_allowed_for_unsigned_user_.contains(feature);
+  bool require_account =
+      !base::Contains(features_allowed_for_unsigned_user_, feature);
 
   if (require_account) {
     UserValidityResult signin_checks_result = PerformSigninChecks();

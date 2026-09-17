@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/debug/alias.h"
 #include "base/debug/crash_logging.h"
 #include "base/debug/dump_without_crashing.h"
@@ -484,7 +485,7 @@ void Dispatcher::OnRenderFrameCreated(content::RenderFrame* render_frame) {
 }
 
 bool Dispatcher::IsExtensionActive(const ExtensionId& extension_id) const {
-  const bool is_active = active_extension_ids_.contains(extension_id);
+  const bool is_active = base::Contains(active_extension_ids_, extension_id);
   if (is_active)
     CHECK(RendererExtensionRegistry::Get()->Contains(extension_id));
   return is_active;
@@ -652,7 +653,7 @@ void Dispatcher::WillEvaluateServiceWorkerOnWorkerThread(
       ExtensionRendererLoadStatus::kUnknownExtension;
   if (extension) {
     load_status = ExtensionRendererLoadStatus::kExtensionLoaded;
-  } else if (unloaded_extensions_.contains(script_url.GetHost())) {
+  } else if (base::Contains(unloaded_extensions_, script_url.GetHost())) {
     // script_url.host() is the extension's ID.
     load_status = ExtensionRendererLoadStatus::kExtensionUnloaded;
   }

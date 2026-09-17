@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/memory/raw_ref.h"
 #include "base/no_destructor.h"
 #include "base/strings/strcat.h"

@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/memory/raw_ptr.h"
 #include "base/system/sys_info.h"
 #include "base/time/time.h"

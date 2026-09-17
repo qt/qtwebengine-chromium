@@ -17,6 +17,7 @@
 #include "base/check_op.h"
 #include "base/command_line.h"
 #include "base/containers/adapters.h"
+#include "base/containers/contains.h"
 #include "base/containers/flat_set.h"
 #include "base/containers/map_util.h"
 #include "base/debug/crash_logging.h"
@@ -370,7 +371,7 @@ struct AXTreeUpdateState {
 
   // Returns whether this update creates a node marked by |node_id|.
   bool IsCreatedNode(AXNodeID node_id) const {
-    return new_node_ids.contains(node_id);
+    return base::Contains(new_node_ids, node_id);
   }
 
   // Returns whether this update creates |node|.
@@ -612,7 +613,7 @@ struct AXTreeUpdateState {
   // Returns whether this update must invalidate the unignored cached
   // values for |node_id|.
   bool InvalidatesUnignoredCachedValues(AXNodeID node_id) const {
-    return invalidate_unignored_cached_values_ids.contains(node_id);
+    return base::Contains(invalidate_unignored_cached_values_ids, node_id);
   }
 
   // Adds the parent of |node_id| to the list of nodes to invalidate unignored
@@ -1327,8 +1328,8 @@ bool AXTree::Unserialize(const AXTreeUpdate& update) {
       // the same ignored state.
       bool is_root_of_ignored_change =
           !node->parent() ||
-          !update_state.ignored_state_changed_ids.contains(
-              node->parent()->id()) ||
+          !base::Contains(update_state.ignored_state_changed_ids,
+                          node->parent()->id()) ||
           node->IsIgnored() != node->parent()->IsIgnored();
       observers_.Notify(&AXTreeObserver::OnIgnoredWillChange, this, node,
                         will_be_ignored, is_root_of_ignored_change);
@@ -1962,7 +1963,7 @@ bool AXTree::ComputePendingChangesToNode(const AXNodeData& new_data,
   }
 
   for (AXNodeID child_id : create_or_destroy_ids) {
-    if (new_child_id_set.contains(child_id)) {
+    if (base::Contains(new_child_id_set, child_id)) {
       // This is a serious error - nodes should never be reparented without
       // first being removed from the tree. If a node exists in the tree already
       // then adding it to a new parent would mean stealing the node from its
@@ -2083,7 +2084,8 @@ void AXTree::NotifySubtreeWillBeReparentedOrDeleted(
   // Don't fire redundant remove notification in the case where the parent
   // will become ignored at the same time.
   if (notify_removed && node->parent() &&
-      update_state->ignored_state_changed_ids.contains(node->parent()->id()) &&
+      base::Contains(update_state->ignored_state_changed_ids,
+                     node->parent()->id()) &&
       !node->parent()->IsIgnored()) {
     notify_removed = false;
   }
@@ -2275,7 +2277,7 @@ void AXTree::NotifyNodeAttributesHaveBeenChanged(
   observers_.Notify(&AXTreeObserver::OnNodeDataChanged, this, old_data,
                     new_data);
 
-  if (update_state.ignored_state_changed_ids.contains(new_data.id)) {
+  if (base::Contains(update_state.ignored_state_changed_ids, new_data.id)) {
     observers_.Notify(&AXTreeObserver::OnIgnoredChanged, this, node,
                       node->IsIgnored());
   }
@@ -2575,7 +2577,7 @@ void AXTree::DeleteOldChildren(AXNode* node,
 
   // Delete the old children.
   for (AXNode* child : node->children()) {
-    if (!new_child_id_set.contains(child->id()))
+    if (!base::Contains(new_child_id_set, child->id()))
       DestroySubtree(child, update_state);
   }
 }

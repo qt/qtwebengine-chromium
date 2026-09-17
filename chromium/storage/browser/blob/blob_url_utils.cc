@@ -4,11 +4,12 @@
 
 #include "storage/browser/blob/blob_url_utils.h"
 
+#include "base/containers/contains.h"
 
 namespace storage::BlobUrlUtils {
 
 bool UrlHasFragment(const GURL& url) {
-  return url.spec().contains('#');
+  return base::Contains(url.spec(), '#');
 }
 
 GURL ClearUrlFragment(const GURL& url) {

@@ -15,6 +15,7 @@
 
 #include "base/atomic_sequence_num.h"
 #include "base/check_is_test.h"
+#include "base/containers/contains.h"
 #include "base/debug/crash_logging.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
@@ -177,7 +178,7 @@ void EventRouter::RouteDispatchEvent(
     mojom::DispatchEventParamsPtr params,
     base::ListValue event_args,
     mojom::EventDispatcher::DispatchEventCallback callback) {
-  CHECK(observed_process_set_.contains(rph));
+  CHECK(base::Contains(observed_process_set_, rph));
   int worker_thread_id = params->worker_thread_id;
   mojo::AssociatedRemote<mojom::EventDispatcher>& dispatcher =
       rph_dispatcher_map_[rph][worker_thread_id];
@@ -590,7 +591,7 @@ void EventRouter::AddEventListener(const std::string& event_name,
                                    const ExtensionId& extension_id) {
   listeners_.AddListener(EventListener::ForExtension(event_name, extension_id,
                                                      process, std::nullopt));
-  CHECK(observed_process_set_.contains(process));
+  CHECK(base::Contains(observed_process_set_, process));
 }
 
 void EventRouter::AddServiceWorkerEventListener(
@@ -603,7 +604,7 @@ void EventRouter::AddServiceWorkerEventListener(
       event_listener->listener_owner->get_extension_id(), process,
       process->GetBrowserContext(), service_worker.scope_url,
       service_worker.version_id, service_worker.thread_id, std::nullopt));
-  CHECK(observed_process_set_.contains(process));
+  CHECK(base::Contains(observed_process_set_, process));
 }
 
 void EventRouter::RemoveEventListener(const std::string& event_name,
@@ -633,7 +634,7 @@ void EventRouter::AddEventListenerForURL(const std::string& event_name,
                                          const GURL& listener_url) {
   listeners_.AddListener(
       EventListener::ForURL(event_name, listener_url, process, std::nullopt));
-  CHECK(observed_process_set_.contains(process));
+  CHECK(base::Contains(observed_process_set_, process));
 }
 
 void EventRouter::RemoveEventListenerForURL(const std::string& event_name,
@@ -647,7 +648,7 @@ void EventRouter::RemoveEventListenerForURL(const std::string& event_name,
 void EventRouter::RegisterObserver(Observer* observer,
                                    const std::string& event_name) {
   // Observing sub-event names like "foo.onBar/123" is not allowed.
-  DCHECK(!event_name.contains('/'));
+  DCHECK(!base::Contains(event_name, '/'));
   auto& observers = observer_map_[event_name];
   if (!observers) {
     observers = std::make_unique<Observers>();
@@ -794,7 +795,7 @@ void EventRouter::AddFilteredEventListener(
 
   if (should_add_listener) {
     listeners_.AddListener(std::move(regular_listener));
-    CHECK(observed_process_set_.contains(process));
+    CHECK(base::Contains(observed_process_set_, process));
   }
 
   DCHECK_EQ(add_lazy_listener, !!lazy_listener);

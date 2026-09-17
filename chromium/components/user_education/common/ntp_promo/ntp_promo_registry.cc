@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "components/user_education/common/ntp_promo/ntp_promo_specification.h"
 
 namespace user_education {

@@ -17,6 +17,7 @@
 #include <variant>
 
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/containers/flat_set.h"
 #include "base/debug/dump_without_crashing.h"
 #include "base/metrics/histogram_macros.h"

@@ -16,6 +16,7 @@
 #include "base/check_op.h"
 #include "base/command_line.h"
 #include "base/containers/adapters.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/location.h"
@@ -982,7 +983,7 @@ bool NoStatePrefetchManager::MayReuseProcessHost(
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   // Isolate prefetch processes to make the resource monitoring check more
   // accurate.
-  return !prerender_process_hosts_.contains(process_host);
+  return !base::Contains(prerender_process_hosts_, process_host);
 }
 
 void NoStatePrefetchManager::RenderProcessHostDestroyed(

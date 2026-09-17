@@ -4,6 +4,7 @@
 
 #include "components/safe_browsing/content/browser/triggers/trigger_manager.h"
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_functions.h"
@@ -249,7 +250,7 @@ TriggerManager::FinishCollectingThreatDetails(
   bool should_send_report =
       CanSendReport(data_collection_permissions, trigger_type);
   bool has_threat_details_in_map =
-      data_collectors_map_.contains(web_contents_key);
+      base::Contains(data_collectors_map_, web_contents_key);
 
   if (should_send_report &&
       trigger_type == TriggerType::SECURITY_INTERSTITIAL) {
@@ -313,7 +314,7 @@ TriggerManager::FinishCollectingThreatDetails(
 void TriggerManager::ThreatDetailsDone(WebContentsKey web_contents_key) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
   // Clean up the ThreatDetailsdata collector on the specified tab.
-  if (!data_collectors_map_.contains(web_contents_key)) {
+  if (!base::Contains(data_collectors_map_, web_contents_key)) {
     return;
   }
 
@@ -324,7 +325,7 @@ void TriggerManager::ThreatDetailsDone(WebContentsKey web_contents_key) {
 void TriggerManager::WebContentsDestroyed(content::WebContents* web_contents) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
   WebContentsKey key = GetWebContentsKey(web_contents);
-  if (!data_collectors_map_.contains(key)) {
+  if (!base::Contains(data_collectors_map_, key)) {
     return;
   }
   data_collectors_map_.erase(key);

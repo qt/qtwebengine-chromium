@@ -9,6 +9,7 @@
 #include "base/check.h"
 #include "base/check_deref.h"
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/functional/callback_helpers.h"
@@ -194,7 +195,7 @@ void PrintingAPIHandler::OnPrintJobSubmitted(
       base::BindOnce(std::move(callback), api::printing::SubmitJobStatus::kOk,
                      cups_id, std::nullopt));
 
-  DCHECK(!in_progress_print_jobs_.contains(cups_id));
+  DCHECK(!base::Contains(in_progress_print_jobs_, cups_id));
   constexpr api::printing::JobStatus job_status =
       api::printing::JobStatus::kPending;
   in_progress_print_jobs_[cups_id] =

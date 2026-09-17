@@ -8,6 +8,7 @@
 
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/location.h"
 #include "base/no_destructor.h"
@@ -154,7 +155,7 @@ bool BluetoothAdapterFactoryWrapper::HasAdapter(
     WebBluetoothServiceImpl* service) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
 
-  return adapter_observers_.contains(service);
+  return base::Contains(adapter_observers_, service);
 }
 
 void BluetoothAdapterFactoryWrapper::MaybeAddAdapterObserver(

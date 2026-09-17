@@ -8,6 +8,7 @@
 
 #include "base/check_op.h"
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/location.h"
@@ -166,8 +167,8 @@ void WebSocketTransportClientSocketPool::CancelRequest(
                   handle->group_generation());
   if (DeleteJob(handle)) {
     UpdateStateAfterRelease();
-    CHECK(!pending_callbacks_.contains(
-        reinterpret_cast<ClientSocketHandleID>(handle)));
+    CHECK(!base::Contains(pending_callbacks_,
+                          reinterpret_cast<ClientSocketHandleID>(handle)));
   } else {
     pending_callbacks_.erase(reinterpret_cast<ClientSocketHandleID>(handle));
   }

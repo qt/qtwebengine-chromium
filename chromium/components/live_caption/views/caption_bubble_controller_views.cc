@@ -147,7 +147,8 @@ void CaptionBubbleControllerViews::SetActiveModel(
             // owns |caption_bubble_model|.
             base::Unretained(this)));
 
-    if (closed_sessions_.contains(caption_bubble_context->GetSessionId())) {
+    if (base::Contains(closed_sessions_,
+                       caption_bubble_context->GetSessionId())) {
       caption_bubble_model->Close();
     }
 
@@ -193,7 +194,7 @@ void CaptionBubbleControllerViews::OnSessionEnded(
 
 void CaptionBubbleControllerViews::OnSessionReset(
     const std::string& session_id) {
-  if (closed_sessions_.contains(session_id)) {
+  if (base::Contains(closed_sessions_, session_id)) {
     closed_sessions_.erase(session_id);
   }
 

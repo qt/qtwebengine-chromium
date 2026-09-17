@@ -7,6 +7,7 @@
 #include <string_view>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/files/file_util.h"
 #include "base/functional/bind.h"
 #include "base/logging.h"
@@ -229,7 +230,7 @@ void SaveFileManager::SaveURL(
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   // Insert started saving job to tracking list.
-  DCHECK(!packages_.contains(save_item_id));
+  DCHECK(!base::Contains(packages_, save_item_id));
   packages_[save_item_id] = save_package;
 
   base::OnceClosure quarantine_callback = base::BindOnce(

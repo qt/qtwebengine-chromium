@@ -4,6 +4,7 @@
 
 #include "extensions/browser/renderer_startup_helper.h"
 
+#include "base/containers/contains.h"
 #include "base/memory/raw_ptr.h"
 #include "base/test/scoped_feature_list.h"
 #include "components/crx_file/id_util.h"
@@ -268,23 +269,24 @@ class RendererStartupHelperTest : public ExtensionsTest {
   }
 
   bool IsProcessInitialized(content::RenderProcessHost* rph) {
-    return helper_->process_mojo_map_.contains(rph);
+    return base::Contains(helper_->process_mojo_map_, rph);
   }
 
   bool IsExtensionLoaded(const Extension& extension) {
-    return helper_->extension_process_map_.contains(extension.id());
+    return base::Contains(helper_->extension_process_map_, extension.id());
   }
 
   bool IsExtensionLoadedInProcess(const Extension& extension,
                                   content::RenderProcessHost* rph) {
     return IsExtensionLoaded(extension) &&
-           helper_->extension_process_map_[extension.id()].contains(rph);
+           base::Contains(helper_->extension_process_map_[extension.id()], rph);
   }
 
   bool IsExtensionPendingActivationInProcess(const Extension& extension,
                                              content::RenderProcessHost* rph) {
-    return helper_->pending_active_extensions_.contains(rph) &&
-           helper_->pending_active_extensions_[rph].contains(extension.id());
+    return base::Contains(helper_->pending_active_extensions_, rph) &&
+           base::Contains(helper_->pending_active_extensions_[rph],
+                          extension.id());
   }
 
   std::unique_ptr<RendererStartupHelperInterceptor> helper_;

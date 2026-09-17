@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "base/containers/adapters.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/notreached.h"
 #include "base/run_loop.h"
@@ -269,7 +270,7 @@ void WindowCache::OnEvent(const Event& event) {
   } else if (auto* shape = event.As<Shape::NotifyEvent>()) {
     Window window = shape->affected_window;
     Shape::Sk kind = shape->shape_kind;
-    if (kind != Shape::Sk::Clip && windows_.contains(window)) {
+    if (kind != Shape::Sk::Clip && base::Contains(windows_, window)) {
       AddRequest(connection_->shape().GetRectangles(window, kind),
                  &WindowCache::OnGetRectanglesResponse, window, kind);
     }
@@ -277,7 +278,7 @@ void WindowCache::OnEvent(const Event& event) {
 }
 
 void WindowCache::AddWindow(Window window, Window parent) {
-  if (windows_.contains(window)) {
+  if (base::Contains(windows_, window)) {
     return;
   }
   WindowInfo& info = windows_[window];

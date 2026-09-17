@@ -8,6 +8,7 @@
 
 #include "base/check.h"
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/no_destructor.h"
 
 namespace ui {
@@ -32,7 +33,7 @@ ElementIdentifier ElementIdentifier::FromRawValue(intptr_t value) {
     return ElementIdentifier();
   const auto* impl =
       reinterpret_cast<const internal::ElementIdentifierImpl*>(value);
-  CHECK(GetKnownIdentifiers().contains(impl));
+  CHECK(base::Contains(GetKnownIdentifiers(), impl));
   return ElementIdentifier(impl);
 }
 

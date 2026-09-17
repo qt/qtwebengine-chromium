@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <ostream>
 
+#include "base/containers/contains.h"
 #include "extensions/renderer/bindings/api_binding_util.h"
 #include "extensions/renderer/bindings/api_signature.h"
 #include "extensions/renderer/bindings/api_type_reference_map.h"
@@ -43,7 +44,7 @@ void APIResponseValidator::TestHandler::HandleFailure(
 
 bool APIResponseValidator::TestHandler::ShouldIgnoreSignature(
     const std::string& signature_name) const {
-  return signatures_to_ignore_.contains(signature_name);
+  return base::Contains(signatures_to_ignore_, signature_name);
 }
 
 APIResponseValidator::APIResponseValidator(const APITypeReferenceMap* type_refs)

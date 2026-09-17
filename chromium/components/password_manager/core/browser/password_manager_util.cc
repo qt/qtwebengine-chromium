@@ -430,7 +430,7 @@ bool IsSpecialSymbol(char16_t c) {
   // `kSpecialSymbols` does not become a char. If that happened, the call to
   // `base::Contains` would lead to (silent) overflow.
   static_assert(sizeof(decltype(kSpecialSymbols)::value_type) == sizeof(c));
-  return kSpecialSymbols.contains(c);
+  return base::Contains(kSpecialSymbols, c);
 }
 
 bool IsSingleUsernameType(autofill::FieldType type) {

@@ -8,6 +8,7 @@
 
 #include "base/bits.h"
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/functional/callback_helpers.h"
 #include "base/memory/raw_ptr.h"
 #include "base/metrics/histogram_macros.h"
@@ -392,7 +393,7 @@ error::Error GLES2DecoderPassthroughImpl::DoBindBuffer(GLenum target,
     return error::kNoError;
   }
 
-  DCHECK(bound_buffers_.contains(target));
+  DCHECK(base::Contains(bound_buffers_, target));
   bound_buffers_[target] = buffer;
   if (target == GL_ELEMENT_ARRAY_BUFFER) {
     bound_element_array_buffer_dirty_ = false;
@@ -411,7 +412,7 @@ error::Error GLES2DecoderPassthroughImpl::DoBindBufferBase(GLenum target,
     return error::kNoError;
   }
 
-  DCHECK(bound_buffers_.contains(target));
+  DCHECK(base::Contains(bound_buffers_, target));
   bound_buffers_[target] = buffer;
   if (target == GL_ELEMENT_ARRAY_BUFFER) {
     bound_element_array_buffer_dirty_ = false;
@@ -433,7 +434,7 @@ error::Error GLES2DecoderPassthroughImpl::DoBindBufferRange(GLenum target,
     return error::kNoError;
   }
 
-  DCHECK(bound_buffers_.contains(target));
+  DCHECK(base::Contains(bound_buffers_, target));
   bound_buffers_[target] = buffer;
   if (target == GL_ELEMENT_ARRAY_BUFFER) {
     bound_element_array_buffer_dirty_ = false;
@@ -3734,7 +3735,7 @@ error::Error GLES2DecoderPassthroughImpl::DoBeginQueryEXT(
     linking_program_service_id_ = 0u;
   }
   if (IsEmulatedQueryTarget(target)) {
-    if (active_queries_.contains(target)) {
+    if (base::Contains(active_queries_, target)) {
       InsertError(GL_INVALID_OPERATION, "Query already active on target.");
       return error::kNoError;
     }
@@ -3826,7 +3827,7 @@ error::Error GLES2DecoderPassthroughImpl::DoEndQueryEXT(GLenum target,
     }
   }
 
-  CHECK(active_queries_.contains(target));
+  CHECK(base::Contains(active_queries_, target));
   ActiveQuery active_query = std::move(active_queries_[target]);
   active_queries_.erase(target);
 

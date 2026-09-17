@@ -6,6 +6,7 @@
 
 #include <string_view>
 
+#include "base/containers/contains.h"
 #include "base/logging.h"
 #include "base/no_destructor.h"
 #include "base/strings/string_view_util.h"

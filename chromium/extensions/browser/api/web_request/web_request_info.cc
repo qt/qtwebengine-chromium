@@ -12,6 +12,7 @@
 #include <string_view>
 
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/files/file_path.h"
 #include "base/functional/bind.h"
 #include "base/notimplemented.h"
@@ -307,7 +308,8 @@ void WebRequestInfo::EraseOutprioritizedDNRActions() {
           // Check that the cache contains the action's extension ID
           // to make sure that rule matching was performed for that
           // extension.
-          DCHECK(max_priority_allow_action.contains(action.extension_id));
+          DCHECK(
+              base::Contains(max_priority_allow_action, action.extension_id));
 
           uint64_t allow_rule_priority_for_extension = 0u;
           if (auto& allow_action =

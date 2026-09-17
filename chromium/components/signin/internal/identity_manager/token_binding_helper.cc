@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "base/barrier_callback.h"
+#include "base/containers/contains.h"
 #include "base/containers/flat_map.h"
 #include "base/containers/span.h"
 #include "base/feature_list.h"
@@ -98,7 +99,7 @@ void TokenBindingHelper::SetBindingKey(
 }
 
 bool TokenBindingHelper::HasBindingKey(const CoreAccountId& account_id) const {
-  return binding_keys_.contains(account_id);
+  return base::Contains(binding_keys_, account_id);
 }
 
 void TokenBindingHelper::ClearAllKeys() {

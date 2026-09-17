@@ -7,6 +7,7 @@
 #include <set>
 #include <string>
 
+#include "base/containers/contains.h"
 #include "base/strings/utf_string_conversions.h"
 #include "components/autofill/core/browser/country_type.h"
 #include "components/autofill/core/browser/field_types.h"
@@ -176,7 +177,7 @@ TEST(AutofillCountryTest, AllCountryCodesHaveCountryName) {
   const std::vector<std::string>& country_codes =
       CountryDataMap::GetInstance()->country_codes();
   for (const std::string& country_code : country_codes) {
-    if (expected_failures.contains(country_code)) {
+    if (base::Contains(expected_failures, country_code)) {
       continue;
     }
     SCOPED_TRACE("Country code '" + country_code + "' should have a name.");

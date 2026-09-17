@@ -20,6 +20,7 @@
 
 #include "base/check_op.h"
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/containers/flat_set.h"
 #include "base/json/json_reader.h"
 #include "base/memory/ptr_util.h"
@@ -858,7 +859,7 @@ base::expected<void, std::string> Schema::InternalStorage::Parse(
   const std::string* id = schema.FindString(schema::kId);
   if (id) {
     auto& id_map = references_and_ids->id_map;
-    if (id_map.contains(*id)) {
+    if (base::Contains(id_map, *id)) {
       return base::unexpected("Duplicated id: " + *id);
     }
     id_map[*id] = *index;
@@ -1247,7 +1248,7 @@ bool Schema::Validate(const base::Value& value,
     }
 
     for (const auto& required_property : GetRequiredProperties()) {
-      if (present_properties.contains(required_property)) {
+      if (base::Contains(present_properties, required_property)) {
         continue;
       }
 
@@ -1354,7 +1355,7 @@ bool Schema::Normalize(base::Value* value,
     }
 
     for (const auto& required_property : GetRequiredProperties()) {
-      if (present_properties.contains(required_property)) {
+      if (base::Contains(present_properties, required_property)) {
         continue;
       }
 

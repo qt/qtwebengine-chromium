@@ -8,6 +8,7 @@
 #include <optional>
 #include <ostream>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/notreached.h"
 #include "base/strings/strcat.h"

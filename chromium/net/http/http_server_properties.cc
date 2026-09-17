@@ -6,6 +6,7 @@
 
 #include "base/check_op.h"
 #include "base/containers/adapters.h"
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/location.h"
@@ -1338,7 +1339,7 @@ void HttpServerProperties::OnServerInfoLoaded(
                             kCanonicalPort),
         it.first.network_anonymization_key);
     // If we already have a valid canonical server, we're done.
-    if (canonical_alt_svc_map_.contains(key)) {
+    if (base::Contains(canonical_alt_svc_map_, key)) {
       auto key_it = server_info_map_.Peek(key);
       if (key_it != server_info_map_.end() &&
           key_it->second.alternative_services.has_value()) {

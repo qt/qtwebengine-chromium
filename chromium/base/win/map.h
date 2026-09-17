@@ -12,6 +12,7 @@
 #include <utility>
 
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/notimplemented.h"
 #include "base/win/vector.h"
 #include "base/win/winrt_foundation_helpers.h"
@@ -334,7 +335,7 @@ class Map
   }
 
   IFACEMETHODIMP HasKey(AbiK key, boolean* found) override {
-    *found = map_.contains(key);
+    *found = Contains(map_, key);
     return S_OK;
   }
 

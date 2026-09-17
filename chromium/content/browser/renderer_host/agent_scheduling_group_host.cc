@@ -5,6 +5,7 @@
 
 #include <memory>
 
+#include "base/containers/contains.h"
 #include "base/containers/unique_ptr_adapters.h"
 #include "base/feature_list.h"
 #include "base/memory/raw_ptr.h"
@@ -122,7 +123,7 @@ AgentSchedulingGroupHost* AgentSchedulingGroupHost::GetOrCreate(
   // RenderProcessHosts throughout its lifetime, but it should only ever see a
   // single AgentSchedulingGroupHost for a given RenderProcessHost.
 #if DCHECK_IS_ON()
-  DCHECK(!data->site_instance_groups.contains(&site_instance_group));
+  DCHECK(!base::Contains(data->site_instance_groups, &site_instance_group));
   data->site_instance_groups.insert(&site_instance_group);
 #endif
 

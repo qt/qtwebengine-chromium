@@ -338,7 +338,7 @@ std::optional<IPEndPoint> HttpStreamPool::Attempt::GetIPEndPointToAttempt()
                    : service_endpoint.ipv4_endpoints;
 
       for (const auto& ip_endpoint : ip_endpoints) {
-        if (attempted_endpoints_.contains(ip_endpoint)) {
+        if (base::Contains(attempted_endpoints_, ip_endpoint)) {
           continue;
         }
         return ip_endpoint;

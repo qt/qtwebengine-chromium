@@ -426,7 +426,7 @@ std::u16string FindChildTextInner(const WebNode& node,
   if (node.IsElementNode()) {
     const WebElement element = node.To<WebElement>();
     if (HasTagName<kOption>(element) ||
-        (HasTagName<kDiv>(element) && divs_to_skip.contains(node)) ||
+        (HasTagName<kDiv>(element) && base::Contains(divs_to_skip, node)) ||
         IsAutofillableElement(element.DynamicTo<WebFormControlElement>())) {
       return std::u16string();
     }
@@ -1031,7 +1031,7 @@ std::optional<InferredLabel> InferLabelFromAncestors(
       continue;
 
     std::string tag_name = parent.To<WebElement>().TagName().Utf8();
-    if (seen_tag_names.contains(tag_name))
+    if (base::Contains(seen_tag_names, tag_name))
       continue;
     seen_tag_names.insert(tag_name);
 
@@ -2220,8 +2220,8 @@ std::optional<InferredLabel> InferredLabel::BuildIfValid(std::u16string label,
     // U+2014: "—"  (Em Dash)
     // U+2212: "−"  (Minus Sign)
     // U+FF0D: "－" (Fullwidth Hyphen-Minus)
-    return !kInvalidChars.contains(c) &&
-           !(std::u16string_view(base::kWhitespaceUTF16)).contains(c);
+    return !base::Contains(kInvalidChars, c) &&
+           !base::Contains(std::u16string_view(base::kWhitespaceUTF16), c);
   };
   auto is_from_extended_hyphen_like_list = [](char16_t c) {
     return c == u'\u2014' || c == u'\u2212' || c == u'\uFF0D';

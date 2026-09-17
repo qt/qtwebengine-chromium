@@ -9,6 +9,7 @@
 #include <memory>
 
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/files/file_util.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
@@ -515,7 +516,7 @@ TEST_F(OSExchangeDataWinTest, VirtualFiles) {
         // IStorage uses compound files, so temp files won't be flat text files.
         // Just make sure the original contents appears in the compound files.
         EXPECT_TRUE(
-            read_contents.contains(kTestFilenamesAndContents[i].second));
+            base::Contains(read_contents, kTestFilenamesAndContents[i].second));
       }
     }
   }
@@ -654,7 +655,7 @@ TEST_F(OSExchangeDataWinTest, VirtualFilesDuplicateNames) {
         // IStorage uses compound files, so temp files won't be flat text files.
         // Just make sure the original contents appears in the compound files.
         EXPECT_TRUE(
-            read_contents.contains(kTestFilenamesAndContents[i].second));
+            base::Contains(read_contents, kTestFilenamesAndContents[i].second));
       }
     }
   }
@@ -739,7 +740,7 @@ TEST_F(OSExchangeDataWinTest, VirtualFilesDuplicateNamesCaseInsensitivity) {
         // IStorage uses compound files, so temp files won't be flat text files.
         // Just make sure the original contents appears in the compound files.
         EXPECT_TRUE(
-            read_contents.contains(kTestFilenamesAndContents[i].second));
+            base::Contains(read_contents, kTestFilenamesAndContents[i].second));
       }
     }
   }
@@ -862,7 +863,7 @@ TEST_F(OSExchangeDataWinTest, VirtualFilesInvalidAndDuplicateNames) {
         // IStorage uses compound files, so temp files won't be flat text files.
         // Just make sure the original contents appears in the compound files.
         EXPECT_TRUE(
-            read_contents.contains(kTestFilenamesAndContents[i].second));
+            base::Contains(read_contents, kTestFilenamesAndContents[i].second));
       }
     }
   }

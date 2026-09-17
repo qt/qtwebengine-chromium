@@ -6,6 +6,7 @@
 
 #include <map>
 
+#include "base/containers/contains.h"
 #include "base/functional/callback_helpers.h"
 #include "base/memory/singleton.h"
 #include "base/memory/weak_ptr.h"
@@ -106,7 +107,7 @@ void MessageTracker::StartTrackingMessagingStage(
     const base::UnguessableToken& tracking_id,
     std::string base_metric_name,
     mojom::ChannelType channel_type) {
-  CHECK(!tracked_stages_.contains(tracking_id));
+  CHECK(!base::Contains(tracked_stages_, tracking_id));
   tracked_stages_.emplace(
       tracking_id, TrackedStage(std::move(base_metric_name), channel_type));
 

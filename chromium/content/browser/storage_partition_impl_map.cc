@@ -9,6 +9,7 @@
 
 #include "base/barrier_closure.h"
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/containers/map_util.h"
 #include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
@@ -275,7 +276,7 @@ void BlockingGarbageCollect(
   }
   for (base::FilePath path = enumerator.Next(); !path.empty();
        path = enumerator.Next()) {
-    if (!active_paths.contains(path) && path != trash_directory) {
+    if (!base::Contains(active_paths, path) && path != trash_directory) {
       // Since |trash_directory| is unique for each run of this function there
       // can be no colllisions on the move.
       base::Move(path, trash_directory.Append(path.BaseName()));

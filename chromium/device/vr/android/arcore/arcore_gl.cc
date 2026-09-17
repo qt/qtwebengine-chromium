@@ -11,6 +11,7 @@
 
 #include "base/android/jni_android.h"
 #include "base/barrier_callback.h"
+#include "base/containers/contains.h"
 #include "base/containers/queue.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
@@ -224,11 +225,11 @@ void ArCoreGl::Initialize(
 
   device::DomOverlaySetup dom_setup = device::DomOverlaySetup::kNone;
   if (CanRenderDOMContent()) {
-    if (required_features.contains(
-            device::mojom::XRSessionFeature::DOM_OVERLAY)) {
+    if (base::Contains(required_features,
+                       device::mojom::XRSessionFeature::DOM_OVERLAY)) {
       dom_setup = device::DomOverlaySetup::kRequired;
-    } else if (optional_features.contains(
-                   device::mojom::XRSessionFeature::DOM_OVERLAY)) {
+    } else if (base::Contains(optional_features,
+                              device::mojom::XRSessionFeature::DOM_OVERLAY)) {
       dom_setup = device::DomOverlaySetup::kOptional;
     }
   }
@@ -1484,7 +1485,7 @@ void ArCoreGl::OnScreenTouch(bool is_primary,
            << ", pointer_id=" << pointer_id << ", touching=" << touching
            << ", touch_point=" << touch_point.ToString();
 
-  if (!pointer_id_to_input_source_id_.contains(pointer_id)) {
+  if (!base::Contains(pointer_id_to_input_source_id_, pointer_id)) {
     // assign ID
     DCHECK(next_input_source_id_ != 0) << "ID equal to 0 cannot be used!";
     pointer_id_to_input_source_id_[pointer_id] = next_input_source_id_;
@@ -1665,7 +1666,7 @@ std::vector<mojom::XRInputSourceStatePtr> ArCoreGl::GetInputSourceStates() {
 }
 
 bool ArCoreGl::IsFeatureEnabled(mojom::XRSessionFeature feature) {
-  return enabled_features_.contains(feature);
+  return base::Contains(enabled_features_, feature);
 }
 
 void ArCoreGl::Pause() {

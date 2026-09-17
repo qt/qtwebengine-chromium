@@ -8,6 +8,7 @@
 
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/logging.h"
 #include "base/strings/stringprintf.h"
@@ -374,7 +375,8 @@ void BluetoothGattDiscovererWinrt::OnGetCharacteristics(
     return;
   }
 
-  DCHECK(!service_to_characteristics_map_.contains(service_attribute_handle));
+  DCHECK(!base::Contains(service_to_characteristics_map_,
+                         service_attribute_handle));
   auto& characteristics_list =
       service_to_characteristics_map_[service_attribute_handle];
   if (!GetAsVector(characteristics.Get(), &characteristics_list)) {
@@ -448,8 +450,8 @@ void BluetoothGattDiscovererWinrt::OnGetDescriptors(
     return;
   }
 
-  DCHECK(!characteristic_to_descriptors_map_.contains(
-      characteristic_attribute_handle));
+  DCHECK(!base::Contains(characteristic_to_descriptors_map_,
+                         characteristic_attribute_handle));
   if (!GetAsVector(descriptors.Get(), &characteristic_to_descriptors_map_
                                           [characteristic_attribute_handle])) {
     std::move(callback_).Run(false);

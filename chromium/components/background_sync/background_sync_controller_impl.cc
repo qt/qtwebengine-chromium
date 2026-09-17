@@ -129,8 +129,8 @@ void BackgroundSyncControllerImpl::GetParameterOverrides(
     parameters->skip_permissions_check_for_testing = true;
   }
 
-  if (field_params.contains(
-          kMaxAttemptsWithNotificationPermissionParameterName)) {
+  if (base::Contains(field_params,
+                     kMaxAttemptsWithNotificationPermissionParameterName)) {
     int max_attempts;
     if (base::StringToInt(
             field_params[kMaxAttemptsWithNotificationPermissionParameterName],
@@ -139,7 +139,7 @@ void BackgroundSyncControllerImpl::GetParameterOverrides(
     }
   }
 
-  if (field_params.contains(kMaxAttemptsParameterName)) {
+  if (base::Contains(field_params, kMaxAttemptsParameterName)) {
     int max_attempts;
     if (base::StringToInt(field_params[kMaxAttemptsParameterName],
                           &max_attempts)) {
@@ -147,7 +147,7 @@ void BackgroundSyncControllerImpl::GetParameterOverrides(
     }
   }
 
-  if (field_params.contains(kInitialRetryParameterName)) {
+  if (base::Contains(field_params, kInitialRetryParameterName)) {
     int initial_retry_delay_sec;
     if (base::StringToInt(field_params[kInitialRetryParameterName],
                           &initial_retry_delay_sec)) {
@@ -155,7 +155,7 @@ void BackgroundSyncControllerImpl::GetParameterOverrides(
     }
   }
 
-  if (field_params.contains(kRetryDelayFactorParameterName)) {
+  if (base::Contains(field_params, kRetryDelayFactorParameterName)) {
     int retry_delay_factor;
     if (base::StringToInt(field_params[kRetryDelayFactorParameterName],
                           &retry_delay_factor)) {
@@ -163,7 +163,7 @@ void BackgroundSyncControllerImpl::GetParameterOverrides(
     }
   }
 
-  if (field_params.contains(kMinSyncRecoveryTimeName)) {
+  if (base::Contains(field_params, kMinSyncRecoveryTimeName)) {
     int min_sync_recovery_time_sec;
     if (base::StringToInt(field_params[kMinSyncRecoveryTimeName],
                           &min_sync_recovery_time_sec)) {
@@ -172,7 +172,7 @@ void BackgroundSyncControllerImpl::GetParameterOverrides(
     }
   }
 
-  if (field_params.contains(kMaxSyncEventDurationName)) {
+  if (base::Contains(field_params, kMaxSyncEventDurationName)) {
     int max_sync_event_duration_sec;
     if (base::StringToInt(field_params[kMaxSyncEventDurationName],
                           &max_sync_event_duration_sec)) {
@@ -181,7 +181,7 @@ void BackgroundSyncControllerImpl::GetParameterOverrides(
     }
   }
 
-  if (field_params.contains(kMinPeriodicSyncEventsInterval)) {
+  if (base::Contains(field_params, kMinPeriodicSyncEventsInterval)) {
     int min_periodic_sync_events_interval_sec;
     if (base::StringToInt(field_params[kMinPeriodicSyncEventsInterval],
                           &min_periodic_sync_events_interval_sec)) {
@@ -194,7 +194,7 @@ void BackgroundSyncControllerImpl::GetParameterOverrides(
   // Check if the delegate explicitly disabled this feature.
   if (delegate_->ShouldDisableAndroidNetworkDetection()) {
     parameters->rely_on_android_network_detection = false;
-  } else if (field_params.contains(kRelyOnAndroidNetworkDetection)) {
+  } else if (base::Contains(field_params, kRelyOnAndroidNetworkDetection)) {
     if (base::EqualsCaseInsensitiveASCII(
             field_params[kRelyOnAndroidNetworkDetection], "true")) {
       parameters->rely_on_android_network_detection = true;

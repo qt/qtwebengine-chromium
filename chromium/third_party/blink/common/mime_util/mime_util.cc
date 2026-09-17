@@ -9,6 +9,7 @@
 #include <string_view>
 #include <unordered_set>
 
+#include "base/containers/contains.h"
 #include "base/containers/fixed_flat_set.h"
 #include "base/feature_list.h"
 #include "base/strings/string_util.h"

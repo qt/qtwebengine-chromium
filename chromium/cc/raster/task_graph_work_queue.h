@@ -12,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/memory/raw_ptr.h"
 #include "cc/cc_export.h"
 #include "cc/raster/task_graph_runner.h"
@@ -193,7 +194,8 @@ class CC_EXPORT TaskGraphWorkQueue {
     size_t count = 0;
     for (TaskGraphWorkQueue::TaskNamespace* task_namespace_entry :
          found->second) {
-      DCHECK(task_namespace_entry->ready_to_run_tasks.contains(category));
+      DCHECK(
+          base::Contains(task_namespace_entry->ready_to_run_tasks, category));
       count += task_namespace_entry->ready_to_run_tasks.at(category).size();
     }
     return count;

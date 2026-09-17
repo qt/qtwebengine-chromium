@@ -19,6 +19,7 @@
 
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/containers/flat_map.h"
 #include "base/debug/leak_annotations.h"
 #include "base/environment.h"
@@ -888,13 +889,13 @@ void GtkUi::OnMonitorsChanged(GListModel* list,
   std::unordered_set<GdkMonitor*> monitors;
   for (size_t i = 0; i < n_monitors; ++i) {
     auto* monitor = static_cast<GdkMonitor*>(g_list_model_get_item(list, i));
-    if (!monitor_signals_.contains(monitor)) {
+    if (!base::Contains(monitor_signals_, monitor)) {
       TrackMonitor(monitor);
     }
     monitors.insert(monitor);
   }
   std::erase_if(monitor_signals_, [&](const auto& pair) {
-    return !monitors.contains(pair.first);
+    return !base::Contains(monitors, pair.first);
   });
   UpdateDeviceScaleFactor();
 }

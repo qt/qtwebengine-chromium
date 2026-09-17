@@ -1204,8 +1204,8 @@ std::vector<CreditCard> GetOrderedCardsToSuggest(
     std::ranges::stable_sort(
         available_cards,
         [&card_linked_offers_map](const CreditCard* a, const CreditCard* b) {
-          return card_linked_offers_map.contains(a->guid()) &&
-                 !card_linked_offers_map.contains(b->guid());
+          return base::Contains(card_linked_offers_map, a->guid()) &&
+                 !base::Contains(card_linked_offers_map, b->guid());
         });
   }
   // Suppress disused credit cards when triggered from an empty field.

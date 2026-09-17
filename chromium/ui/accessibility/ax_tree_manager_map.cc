@@ -4,6 +4,8 @@
 
 #include "ui/accessibility/ax_tree_manager_map.h"
 
+#include "base/containers/contains.h"
+
 namespace ui {
 
 AXTreeManagerMap::AXTreeManagerMap() = default;

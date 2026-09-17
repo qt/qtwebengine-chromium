@@ -4,6 +4,7 @@
 
 #include "components/signin/public/identity_manager/account_capabilities.h"
 
+#include "base/containers/contains.h"
 #include "base/test/scoped_feature_list.h"
 #include "build/build_config.h"
 #include "components/signin/internal/identity_manager/account_capabilities_constants.h"

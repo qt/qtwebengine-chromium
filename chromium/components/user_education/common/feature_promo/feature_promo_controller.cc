@@ -9,6 +9,7 @@
 
 #include "base/auto_reset.h"
 #include "base/callback_list.h"
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
@@ -179,7 +180,7 @@ bool FeaturePromoControllerCommon::HasPromoBeenDismissed(
       if (params.key.empty()) {
         return false;
       }
-      return data->shown_for_keys.contains(params.key);
+      return base::Contains(data->shown_for_keys, params.key);
   }
 }
 

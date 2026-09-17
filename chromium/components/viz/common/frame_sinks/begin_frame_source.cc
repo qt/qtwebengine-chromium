@@ -12,6 +12,7 @@
 
 #include "base/atomic_sequence_num.h"
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/location.h"
 #include "base/memory/raw_ptr.h"
@@ -268,7 +269,7 @@ BackToBackBeginFrameSource::~BackToBackBeginFrameSource() = default;
 
 void BackToBackBeginFrameSource::AddObserver(BeginFrameObserver* obs) {
   DCHECK(obs);
-  DCHECK(!observers_.contains(obs));
+  DCHECK(!base::Contains(observers_, obs));
   observers_.insert(obs);
   pending_begin_frame_observers_.insert(obs);
   obs->OnBeginFrameSourcePausedChanged(false);
@@ -277,7 +278,7 @@ void BackToBackBeginFrameSource::AddObserver(BeginFrameObserver* obs) {
 
 void BackToBackBeginFrameSource::RemoveObserver(BeginFrameObserver* obs) {
   DCHECK(obs);
-  DCHECK(observers_.contains(obs));
+  DCHECK(base::Contains(observers_, obs));
   observers_.erase(obs);
   pending_begin_frame_observers_.erase(obs);
   if (pending_begin_frame_observers_.empty()) {
@@ -286,7 +287,7 @@ void BackToBackBeginFrameSource::RemoveObserver(BeginFrameObserver* obs) {
 }
 
 void BackToBackBeginFrameSource::DidFinishFrame(BeginFrameObserver* obs) {
-  if (observers_.contains(obs)) {
+  if (base::Contains(observers_, obs)) {
     pending_begin_frame_observers_.insert(obs);
     time_source_->SetActive(true);
   }
@@ -381,7 +382,7 @@ BeginFrameArgs DelayBasedBeginFrameSource::CreateBeginFrameArgs(
 
 void DelayBasedBeginFrameSource::AddObserver(BeginFrameObserver* obs) {
   DCHECK(obs);
-  DCHECK(!observers_.contains(obs));
+  DCHECK(!base::Contains(observers_, obs));
 
   observers_.insert(obs);
   obs->OnBeginFrameSourcePausedChanged(false);
@@ -414,7 +415,7 @@ void DelayBasedBeginFrameSource::AddObserver(BeginFrameObserver* obs) {
 
 void DelayBasedBeginFrameSource::RemoveObserver(BeginFrameObserver* obs) {
   DCHECK(obs);
-  DCHECK(observers_.contains(obs));
+  DCHECK(base::Contains(observers_, obs));
 
   observers_.erase(obs);
   if (observers_.empty())
@@ -524,7 +525,7 @@ void ExternalBeginFrameSource::AsProtozeroInto(
 
 void ExternalBeginFrameSource::AddObserver(BeginFrameObserver* obs) {
   DCHECK(obs);
-  DCHECK(!observers_.contains(obs));
+  DCHECK(!base::Contains(observers_, obs));
 
   if (observers_.empty()) {
     client_->OnNeedsBeginFrames(true);
@@ -546,7 +547,7 @@ void ExternalBeginFrameSource::AddObserver(BeginFrameObserver* obs) {
 
 void ExternalBeginFrameSource::RemoveObserver(BeginFrameObserver* obs) {
   DCHECK(obs);
-  DCHECK(observers_.contains(obs));
+  DCHECK(base::Contains(observers_, obs));
 
   observers_.erase(obs);
   if (observers_.empty()) {

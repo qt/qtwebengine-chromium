@@ -6,6 +6,7 @@
 
 #include <cmath>
 
+#include "base/containers/contains.h"
 #include "base/logging.h"
 
 namespace media {

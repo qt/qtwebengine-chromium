@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "base/base64.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
@@ -732,7 +733,7 @@ void PaymentAppDatabase::DidReadAllPaymentInstruments(
       continue;
 
     int64_t id = instrument_proto.registration_id();
-    if (!apps.contains(id))
+    if (!base::Contains(apps, id))
       continue;
 
     apps[id]->enabled_methods.emplace_back(instrument_proto.method());

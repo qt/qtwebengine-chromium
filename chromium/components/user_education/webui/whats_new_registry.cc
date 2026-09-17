@@ -4,6 +4,7 @@
 
 #include "components/user_education/webui/whats_new_registry.h"
 
+#include "base/containers/contains.h"
 #include "base/metrics/field_trial_params.h"
 #include "base/values.h"
 #include "ui/webui/resources/js/browser_command/browser_command.mojom.h"

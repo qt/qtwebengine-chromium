@@ -4,6 +4,7 @@
 
 #include "components/browsing_topics/browsing_topics_redirect_observer.h"
 
+#include "base/containers/contains.h"
 #include "components/browsing_topics/browsing_topics_page_load_data_tracker.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_handle.h"
@@ -61,7 +62,8 @@ BrowsingTopicsRedirectObserver::PendingNavigationRedirectState::operator=(
 
 void BrowsingTopicsRedirectObserver::ReadyToCommitNavigation(
     content::NavigationHandle* navigation_handle) {
-  CHECK(!pending_navigations_redirect_state_.contains(navigation_handle));
+  CHECK(
+      !base::Contains(pending_navigations_redirect_state_, navigation_handle));
 
   if (!navigation_handle->IsInPrimaryMainFrame()) {
     return;

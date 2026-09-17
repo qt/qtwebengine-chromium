@@ -10,6 +10,7 @@
 #include <set>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/memory/scoped_refptr.h"
@@ -150,7 +151,7 @@ class RemoteSetImpl {
   }
 
   // Indicates whether a remote with the given ID is present in the set.
-  bool Contains(RemoteSetElementId id) { return storage_.contains(id); }
+  bool Contains(RemoteSetElementId id) { return base::Contains(storage_, id); }
 
   // Returns an `Interface*` for the given ID, that can be used to issue
   // interface calls.

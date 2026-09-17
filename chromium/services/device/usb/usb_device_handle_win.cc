@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/location.h"
 #include "base/memory/ptr_util.h"
@@ -628,7 +629,7 @@ UsbDeviceHandleWin::UsbDeviceHandleWin(scoped_refptr<UsbDeviceWin> device)
     // set up the device with a single function entry no matter how many
     // functions the device appears to have based on its descriptors.
     DCHECK_EQ(1u, device_->functions().size());
-    DCHECK(device_->functions().contains(0));
+    DCHECK(base::Contains(device_->functions(), 0));
     const UsbDeviceWin::FunctionInfo& function_info =
         device_->functions().find(0)->second;
     // This may create a fake interface 0 (for internal bookkeeping purposes) if
@@ -721,7 +722,7 @@ UsbDeviceHandleWin::Interface* UsbDeviceHandleWin::GetFirstInterfaceForFunction(
     case UsbDeviceWin::DriverType::kWinUSB:
       // If WinUSB has been loaded for a composite device then all of its
       // interfaces must be treated as a single function.
-      DCHECK(interfaces_.contains(0));
+      DCHECK(base::Contains(interfaces_, 0));
       return &interfaces_[0];
     case UsbDeviceWin::DriverType::kComposite: {
       if (interface->interface_number == interface->first_interface)

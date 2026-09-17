@@ -11,6 +11,7 @@
 #include <utility>
 
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/hash/hash.h"
 #include "base/memory/raw_ptr.h"
 #include "base/metrics/histogram_macros.h"

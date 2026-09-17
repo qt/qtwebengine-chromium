@@ -10,6 +10,7 @@
 #include <string_view>
 #include <type_traits>
 
+#include "base/containers/contains.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
 #include "url/origin.h"
@@ -77,13 +78,13 @@ class AbstractOriginTest : public testing::Test {
     };
     for (const char* kScheme : kSchemesToRegister) {
       std::string scheme(kScheme);
-      if (scheme.contains("noaccess"))
+      if (base::Contains(scheme, "noaccess"))
         AddNoAccessScheme(kScheme);
-      if (scheme.contains("std-with-host"))
+      if (base::Contains(scheme, "std-with-host"))
         AddStandardScheme(kScheme, SchemeType::SCHEME_WITH_HOST);
-      if (scheme.contains("local"))
+      if (base::Contains(scheme, "local"))
         AddLocalScheme(kScheme);
-      if (scheme.contains("sec"))
+      if (base::Contains(scheme, "sec"))
         AddSecureScheme(kScheme);
     }
   }

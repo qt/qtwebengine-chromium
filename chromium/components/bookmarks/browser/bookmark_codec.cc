@@ -12,6 +12,7 @@
 #include <utility>
 
 #include "base/base64.h"
+#include "base/containers/contains.h"
 #include "base/containers/span.h"
 #include "base/json/json_string_value_serializer.h"
 #include "base/logging.h"
@@ -318,7 +319,7 @@ void BookmarkCodec::DecodeNode(const base::DictValue& value,
 
     // Guard against UUID collisions, which would violate BookmarkModel's
     // invariant that each UUID is unique.
-    if (uuids_.contains(uuid)) {
+    if (base::Contains(uuids_, uuid)) {
       uuid = base::Uuid::GenerateRandomV4();
       uuids_reassigned_ = true;
     }

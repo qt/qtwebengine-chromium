@@ -10,6 +10,7 @@
 #include <string_view>
 
 #include "base/base64.h"
+#include "base/containers/contains.h"
 #include "base/containers/flat_map.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
@@ -902,7 +903,7 @@ bool TargetHandler::AutoAttach(TargetAutoAttacher* source,
   if (!auto_attach_target_filter_->Match(*host)) {
     return false;
   }
-  if (auto_attached_sessions_.contains(host)) {
+  if (base::Contains(auto_attached_sessions_, host)) {
     return false;
   }
   if (!auto_attach_service_workers_ &&
@@ -937,12 +938,12 @@ void TargetHandler::SetAttachedTargetsOfType(
     if (host->GetType() == type &&
         entry.second->auto_attacher_id_ ==
             reinterpret_cast<uintptr_t>(source) &&
-        !new_hosts.contains(host)) {
+        !base::Contains(new_hosts, host)) {
       AutoDetach(source, host.get());
     }
   }
   for (auto& host : new_hosts) {
-    if (!old_sessions.contains(host.get())) {
+    if (!base::Contains(old_sessions, host.get())) {
       AutoAttach(source, host.get(), false);
     }
   }
@@ -950,7 +951,7 @@ void TargetHandler::SetAttachedTargetsOfType(
 
 void TargetHandler::TargetInfoChanged(DevToolsAgentHost* host) {
   // Only send target info for targets we reported in any way.
-  if (!reported_hosts_.contains(host) &&
+  if (!base::Contains(reported_hosts_, host) &&
       auto_attached_sessions_.find(host) == auto_attached_sessions_.end()) {
     return;
   }
@@ -1239,7 +1240,7 @@ Response TargetHandler::CloseTarget(const std::string& target_id,
   if (access_mode_ == AccessMode::kAutoAttachOnly) {
     // Only allow to close the targets that we are attached to.
     if (target_id != owner_target_id_ &&
-        !auto_attached_sessions_.contains(agent_host.get())) {
+        !base::Contains(auto_attached_sessions_, agent_host.get())) {
       return Response::ServerError(kNotAllowedErrorTH);
     }
   }
@@ -1411,7 +1412,7 @@ void TargetHandler::DevToolsAgentHostCreated(DevToolsAgentHost* host) {
   }
   // If we start discovering late, all existing agent hosts will be reported,
   // but we could have already attached to some.
-  if (!reported_hosts_.contains(host)) {
+  if (!base::Contains(reported_hosts_, host)) {
     frontend_->TargetCreated(BuildTargetInfo(host));
     reported_hosts_.insert(host);
   }
@@ -1422,7 +1423,7 @@ void TargetHandler::DevToolsAgentHostNavigated(DevToolsAgentHost* host) {
 }
 
 void TargetHandler::DevToolsAgentHostDestroyed(DevToolsAgentHost* host) {
-  if (!reported_hosts_.contains(host)) {
+  if (!base::Contains(reported_hosts_, host)) {
     return;
   }
   frontend_->TargetDestroyed(host->GetId());
@@ -1439,7 +1440,7 @@ void TargetHandler::DevToolsAgentHostDetached(DevToolsAgentHost* host) {
 
 void TargetHandler::DevToolsAgentHostCrashed(DevToolsAgentHost* host,
                                              base::TerminationStatus status) {
-  if (!reported_hosts_.contains(host)) {
+  if (!base::Contains(reported_hosts_, host)) {
     return;
   }
   frontend_->TargetCrashed(host->GetId(), TerminationStatusToString(status),

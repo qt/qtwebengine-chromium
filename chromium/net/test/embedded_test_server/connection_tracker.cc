@@ -4,6 +4,7 @@
 
 #include "net/test/embedded_test_server/connection_tracker.h"
 
+#include "base/containers/contains.h"
 #include "base/run_loop.h"
 #include "base/task/single_thread_task_runner.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
@@ -46,7 +47,7 @@ void ConnectionTracker::AcceptedSocketWithPort(uint16_t port) {
 }
 
 void ConnectionTracker::ReadFromSocketWithPort(uint16_t port) {
-  EXPECT_TRUE(sockets_.contains(port));
+  EXPECT_TRUE(base::Contains(sockets_, port));
   if (sockets_[port] == SocketStatus::kAccepted)
     num_read_sockets_++;
   sockets_[port] = SocketStatus::kReadFrom;

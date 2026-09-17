@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/functional/callback.h"
 #include "base/location.h"
 #include "base/memory/raw_ptr.h"
@@ -763,7 +764,7 @@ int AuctionV8Helper::AllocContextGroupId() {
     int candidate = ++last_context_group_id_;
     DCHECK_GT(candidate, 0);
 
-    if (!resume_callbacks_.contains(candidate)) {
+    if (!base::Contains(resume_callbacks_, candidate)) {
       resume_callbacks_.emplace(candidate, base::OnceClosure());
       return candidate;
     }

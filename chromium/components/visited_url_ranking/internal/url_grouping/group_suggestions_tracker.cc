@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <unordered_set>
 
+#include "base/containers/contains.h"
 #include "base/containers/fixed_flat_map.h"
 #include "base/containers/flat_set.h"
 #include "base/hash/hash.h"

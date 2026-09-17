@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <string>
 
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/scoped_feature_list.h"

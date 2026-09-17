@@ -349,9 +349,9 @@ void BnplManager::OnAmountExtractionReturnedFromAi(
 
 bool BnplManager::AcceptTosActionRequired() const {
   return ongoing_flow_state_->issuer->payment_instrument().has_value() &&
-         ongoing_flow_state_->issuer->payment_instrument()
-             ->action_required()
-             .contains(PaymentInstrument::ActionRequired::kAcceptTos);
+         base::Contains(ongoing_flow_state_->issuer->payment_instrument()
+                            ->action_required(),
+                        PaymentInstrument::ActionRequired::kAcceptTos);
 }
 
 bool BnplManager::HasSeenAmountExtractionAiTerms() const {

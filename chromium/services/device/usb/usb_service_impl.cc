@@ -379,14 +379,14 @@ void UsbServiceImpl::EnumerateDevice(ScopedLibusbDeviceRef platform_device,
 }
 
 void UsbServiceImpl::AddDevice(scoped_refptr<UsbDeviceImpl> device) {
-  if (!devices_being_enumerated_.contains(device->platform_device())) {
+  if (!base::Contains(devices_being_enumerated_, device->platform_device())) {
     // Device was removed while being enumerated.
     return;
   }
 
-  DCHECK(!platform_devices_.contains(device->platform_device()));
+  DCHECK(!base::Contains(platform_devices_, device->platform_device()));
   platform_devices_[device->platform_device()] = device;
-  DCHECK(!devices().contains(device->guid()));
+  DCHECK(!base::Contains(devices(), device->guid()));
   devices()[device->guid()] = device;
 
   USB_LOG(USER) << "USB device added: vendor=" << device->vendor_id() << " \""
@@ -446,7 +446,7 @@ int LIBUSB_CALL UsbServiceImpl::HotplugCallback(libusb_context* context,
 void UsbServiceImpl::OnPlatformDeviceAdded(
     ScopedLibusbDeviceRef platform_device) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  DCHECK(!platform_devices_.contains(platform_device.get()));
+  DCHECK(!base::Contains(platform_devices_, platform_device.get()));
   EnumerateDevice(std::move(platform_device), base::DoNothing());
 }
 

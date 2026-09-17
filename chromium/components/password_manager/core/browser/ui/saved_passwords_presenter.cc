@@ -14,6 +14,7 @@
 #include "base/barrier_callback.h"
 #include "base/barrier_closure.h"
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/containers/fixed_flat_set.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"

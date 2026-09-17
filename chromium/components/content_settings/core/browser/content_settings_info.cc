@@ -7,6 +7,7 @@
 #include <optional>
 #include <variant>
 
+#include "base/containers/contains.h"
 #include "components/content_settings/core/browser/content_settings_utils.h"
 #include "components/content_settings/core/browser/permission_settings_info.h"
 #include "components/content_settings/core/browser/website_settings_info.h"
@@ -40,7 +41,7 @@ ContentSetting ContentSettingsInfo::GetInitialDefaultSetting() const {
 }
 
 bool ContentSettingsInfo::IsSettingValid(ContentSetting setting) const {
-  return valid_settings_.contains(setting);
+  return base::Contains(valid_settings_, setting);
 }
 
 // TODO(raymes): Find a better way to deal with the special-casing in
@@ -61,7 +62,7 @@ bool ContentSettingsInfo::IsDefaultSettingValid(ContentSetting setting) const {
     return false;
   }
 
-  return valid_settings_.contains(setting);
+  return base::Contains(valid_settings_, setting);
 }
 
 bool ContentSettingsInfo::Delegate::IsValid(

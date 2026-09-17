@@ -409,7 +409,8 @@ ExtensionFunction::ResponseAction UserScriptsGetScriptsFunction::Run() {
     }
 
     std::string id_without_prefix = script->GetIDWithoutPrefix();
-    if (filter && filter->ids && !id_filter.contains(id_without_prefix)) {
+    if (filter && filter->ids &&
+        !base::Contains(id_filter, id_without_prefix)) {
       continue;
     }
 

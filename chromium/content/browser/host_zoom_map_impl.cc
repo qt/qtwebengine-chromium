@@ -9,6 +9,7 @@
 #include <memory>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/default_clock.h"
 #include "base/values.h"
@@ -207,7 +208,7 @@ bool HostZoomMapImpl::HasZoomLevel(const std::string& scheme,
           ? scheme_iterator->second
           : host_zoom_levels_;
 
-  return zoom_levels.contains(host);
+  return base::Contains(zoom_levels, host);
 }
 
 double HostZoomMapImpl::GetZoomLevelForHostAndScheme(const std::string& scheme,
@@ -466,7 +467,7 @@ void HostZoomMapImpl::SetZoomLevelForWebContents(
 bool HostZoomMapImpl::UsesTemporaryZoomLevel(
     const GlobalRenderFrameHostId& rfh_id) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  return temporary_zoom_levels_.contains(rfh_id);
+  return base::Contains(temporary_zoom_levels_, rfh_id);
 }
 
 void HostZoomMapImpl::SetNoLongerUsesTemporaryZoomLevel(

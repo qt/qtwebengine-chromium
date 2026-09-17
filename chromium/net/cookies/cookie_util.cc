@@ -14,6 +14,7 @@
 #include "base/check.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
@@ -450,7 +451,7 @@ std::optional<std::string> GetCookieDomainWithString(
   }
 
   // Disallow domain names with %-escaped characters.
-  if (domain_string.contains('%')) {
+  if (base::Contains(domain_string, '%')) {
     return std::nullopt;
   }
 

@@ -14,6 +14,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/notreached.h"
@@ -121,7 +122,7 @@ void TestInterestGroupPrivateAggregationManager::EnableDebugMode(
     blink::mojom::DebugKeyPtr debug_key) {
   const mojo::ReceiverId receiver_id = receiver_set_.current_receiver();
 
-  EXPECT_FALSE(private_aggregation_debug_details_.contains(receiver_id));
+  EXPECT_FALSE(base::Contains(private_aggregation_debug_details_, receiver_id));
 
   private_aggregation_debug_details_[receiver_id] =
       blink::mojom::DebugModeDetails::New(/*is_enabled=*/true,
@@ -146,8 +147,9 @@ TestInterestGroupPrivateAggregationManager::TakePrivateAggregationRequests() {
       private_aggregation_requests_map;
 
   for (auto& [receiver_id, requests] : private_aggregation_requests_) {
-    EXPECT_TRUE(private_aggregation_worklet_origins_.contains(receiver_id));
-    if (!private_aggregation_debug_details_.contains(receiver_id)) {
+    EXPECT_TRUE(
+        base::Contains(private_aggregation_worklet_origins_, receiver_id));
+    if (!base::Contains(private_aggregation_debug_details_, receiver_id)) {
       private_aggregation_debug_details_[receiver_id] =
           blink::mojom::DebugModeDetails::New();
     }

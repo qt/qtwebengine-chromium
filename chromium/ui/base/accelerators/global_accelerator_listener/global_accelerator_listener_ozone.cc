@@ -4,6 +4,7 @@
 
 #include "ui/base/accelerators/global_accelerator_listener/global_accelerator_listener_ozone.h"
 
+#include "base/containers/contains.h"
 #include "base/memory/ptr_util.h"
 #include "base/no_destructor.h"
 #include "build/config/linux/dbus/buildflags.h"
@@ -119,7 +120,7 @@ void GlobalAcceleratorListenerOzone::StopListening() {
 
 bool GlobalAcceleratorListenerOzone::StartListeningForAccelerator(
     const ui::Accelerator& accelerator) {
-  DCHECK(!registered_hot_keys_.contains(accelerator));
+  DCHECK(!base::Contains(registered_hot_keys_, accelerator));
 
   if (!platform_global_shortcut_listener_) {
     return false;
@@ -137,7 +138,7 @@ bool GlobalAcceleratorListenerOzone::StartListeningForAccelerator(
 
 void GlobalAcceleratorListenerOzone::StopListeningForAccelerator(
     const ui::Accelerator& accelerator) {
-  DCHECK(registered_hot_keys_.contains(accelerator));
+  DCHECK(base::Contains(registered_hot_keys_, accelerator));
   // Otherwise how could the accelerator be registered?
   DCHECK(platform_global_shortcut_listener_);
 

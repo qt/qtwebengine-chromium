@@ -766,7 +766,7 @@ bool BrowserAccessibilityAndroid::IsChildOfLeaf() const {
 }
 
 bool BrowserAccessibilityAndroid::IsLeaf() const {
-  if (GetLeafMap().contains(this)) {
+  if (base::Contains(GetLeafMap(), this)) {
     return GetLeafMap()[this];
   }
 

@@ -12,6 +12,7 @@
 #include <utility>
 #include <variant>
 
+#include "base/containers/contains.h"
 #include "base/containers/span.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
@@ -1054,7 +1055,7 @@ void MessageService::AddChannel(std::unique_ptr<MessageChannel> channel,
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   ChannelId channel_id = receiver_port_id.GetChannelId();
-  CHECK(!channels_.contains(channel_id));
+  CHECK(!base::Contains(channels_, channel_id));
   channels_[channel_id] = std::move(channel);
   pending_lazy_context_channels_.erase(channel_id);
 }
@@ -1179,7 +1180,7 @@ void MessageService::EnqueuePendingMessage(const PortId& source_port_id,
         PendingMessage(source_port_id, message));
     // A channel should only be holding pending messages because it is in one
     // of these states.
-    DCHECK(!pending_lazy_context_channels_.contains(channel_id));
+    DCHECK(!base::Contains(pending_lazy_context_channels_, channel_id));
     return;
   }
   EnqueuePendingMessageForLazyBackgroundLoad(source_port_id, channel_id,

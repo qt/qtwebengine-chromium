@@ -6,6 +6,7 @@
 
 #include <memory>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/token.h"
@@ -151,8 +152,8 @@ void VideoCaptureHost::OnCaptureConfigurationChanged(
     const VideoCaptureControllerID& controller_id) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
-  if (!controllers_.contains(controller_id) ||
-      !device_id_to_observer_map_.contains(controller_id)) {
+  if (!base::Contains(controllers_, controller_id) ||
+      !base::Contains(device_id_to_observer_map_, controller_id)) {
     return;
   }
 
@@ -288,7 +289,7 @@ void VideoCaptureHost::Start(
     return;
   }
 
-  DCHECK(!device_id_to_observer_map_.contains(device_id));
+  DCHECK(!base::Contains(device_id_to_observer_map_, device_id));
   auto& observer_in_map = device_id_to_observer_map_[device_id];
   observer_in_map.Bind(std::move(observer));
 
@@ -444,7 +445,7 @@ void VideoCaptureHost::OnNewCaptureVersion(
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   const VideoCaptureControllerID controller_id(device_id);
-  if (!controllers_.contains(controller_id)) {
+  if (!base::Contains(controllers_, controller_id)) {
     return;
   }
 

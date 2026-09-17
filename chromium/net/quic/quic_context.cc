@@ -4,6 +4,7 @@
 
 #include "net/quic/quic_context.h"
 
+#include "base/containers/contains.h"
 #include "net/base/features.h"
 #include "net/quic/platform/impl/quic_chromium_clock.h"
 #include "net/quic/quic_chromium_connection_helper.h"

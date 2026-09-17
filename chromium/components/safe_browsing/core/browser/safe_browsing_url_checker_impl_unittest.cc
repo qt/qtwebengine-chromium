@@ -6,6 +6,7 @@
 
 #include <memory>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/memory/raw_ptr.h"
@@ -86,8 +87,8 @@ class MockSafeBrowsingDatabaseManager : public TestSafeBrowsingDatabaseManager {
                       Client* client,
                       CheckBrowseUrlType check_type) override {
     std::string url = gurl.spec();
-    DCHECK(urls_threat_type_.contains(url));
-    DCHECK(urls_delayed_callback_.contains(url));
+    DCHECK(base::Contains(urls_threat_type_, url));
+    DCHECK(base::Contains(urls_delayed_callback_, url));
     EXPECT_EQ(check_type, expected_check_type_);
     if (urls_threat_type_[url] == SBThreatType::SB_THREAT_TYPE_SAFE) {
       return true;
@@ -123,8 +124,8 @@ class MockSafeBrowsingDatabaseManager : public TestSafeBrowsingDatabaseManager {
       const GURL& gurl,
       CheckUrlForHighConfidenceAllowlistCallback callback) override {
     std::string url = gurl.spec();
-    DCHECK(urls_allowlist_match_.contains(url));
-    DCHECK(urls_allowlist_logging_details_.contains(url));
+    DCHECK(base::Contains(urls_allowlist_match_, url));
+    DCHECK(base::Contains(urls_allowlist_logging_details_, url));
 
     ui_task_runner()->PostTask(
         FROM_HERE,
@@ -138,7 +139,7 @@ class MockSafeBrowsingDatabaseManager : public TestSafeBrowsingDatabaseManager {
   // previous URL and the new redirect URL arrives.
   void RestartDelayedCallback(const GURL& gurl) {
     std::string url = gurl.spec();
-    DCHECK(urls_delayed_callback_.contains(url));
+    DCHECK(base::Contains(urls_delayed_callback_, url));
     DCHECK_EQ(true, urls_delayed_callback_[url]);
     base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE,
@@ -183,7 +184,7 @@ class MockSafeBrowsingDatabaseManager : public TestSafeBrowsingDatabaseManager {
     }
     CHECK(client);
     std::string url = gurl.spec();
-    DCHECK(urls_threat_type_.contains(url));
+    DCHECK(base::Contains(urls_threat_type_, url));
     ThreatMetadata metadata;
     client->OnCheckBrowseUrlResult(gurl, urls_threat_type_[url], metadata);
   }
@@ -286,7 +287,7 @@ class FakeRealTimeUrlLookupService
     using enum SBThreatType;
 
     std::string url = gurl.spec();
-    DCHECK(url_details_.contains(url));
+    DCHECK(base::Contains(url_details_, url));
     auto response = std::make_unique<RTLookupResponse>();
     RTLookupResponse::ThreatInfo* new_threat_info = response->add_threat_info();
     RTLookupResponse::ThreatInfo threat_info;
@@ -408,7 +409,7 @@ class MockHashRealTimeService : public HashRealTimeService {
       HPRTLookupResponseCallback response_callback,
       scoped_refptr<base::SequencedTaskRunner> callback_task_runner) override {
     std::string url = gurl.spec();
-    ASSERT_TRUE(url_details_.contains(url));
+    ASSERT_TRUE(base::Contains(url_details_, url));
     if (url_details_[gurl.spec()].should_delay_lookup) {
       callback_task_runner->PostDelayedTask(
           FROM_HERE,

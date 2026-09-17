@@ -13,6 +13,7 @@
 
 #include "base/check.h"
 #include "base/check_deref.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/functional/callback_helpers.h"
@@ -252,7 +253,7 @@ bool GenerateTouchPoints(
                                   ? blink::WebTouchPoint::State::kStateCancelled
                                   : blink::WebTouchPoint::State::kStateReleased;
     event->SetType(type);
-  } else if (!points.contains(changing.id)) {
+  } else if (!base::Contains(points, changing.id)) {
     event->touches[0].state = blink::WebTouchPoint::State::kStatePressed;
     event->SetType(blink::WebInputEvent::Type::kTouchStart);
   } else {
@@ -535,7 +536,7 @@ CreateWebTouchEvents(
   std::vector<blink::WebTouchEvent> events;
   bool ok = true;
   for (auto& id_point : points) {
-    if (touched_points.contains(id_point.first) &&
+    if (base::Contains(touched_points, id_point.first) &&
         type == blink::WebInputEvent::Type::kTouchMove &&
         touched_points[id_point.first].PositionInWidget() ==
             id_point.second.PositionInWidget()) {
@@ -1807,7 +1808,7 @@ void InputHandler::DispatchSyntheticPointerActionTouch(
 
     SyntheticPointerActionParams::PointerActionType action_type =
         SyntheticPointerActionParams::PointerActionType::MOVE;
-    if (!pointer_ids_.contains(id)) {
+    if (!base::Contains(pointer_ids_, id)) {
       pointer_ids_.insert(id);
       action_type = SyntheticPointerActionParams::PointerActionType::PRESS;
     }
@@ -1830,7 +1831,7 @@ void InputHandler::DispatchSyntheticPointerActionTouch(
           SyntheticPointerActionParams::PointerActionType::MOVE &&
       current_pointer_ids.size() < pointer_ids_.size()) {
     for (auto it = pointer_ids_.begin(); it != pointer_ids_.end();) {
-      if (current_pointer_ids.contains(*it)) {
+      if (base::Contains(current_pointer_ids, *it)) {
         it++;
         continue;
       }

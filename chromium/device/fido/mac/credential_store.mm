@@ -17,6 +17,7 @@
 #include "base/apple/foundation_util.h"
 #include "base/apple/osstatus_logging.h"
 #include "base/apple/scoped_cftyperef.h"
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/logging.h"
 #include "base/numerics/safe_conversions.h"
@@ -367,7 +368,8 @@ TouchIdCredentialStore::FindCredentialsFromCredentialDescriptorList(
   for (const auto& descriptor : descriptors) {
     if (descriptor.credential_type == CredentialType::kPublicKey &&
         (descriptor.transports.empty() ||
-         descriptor.transports.contains(FidoTransportProtocol::kInternal))) {
+         base::Contains(descriptor.transports,
+                        FidoTransportProtocol::kInternal))) {
       credential_ids.insert(descriptor.id);
     }
   }
@@ -562,7 +564,8 @@ TouchIdCredentialStore::FindCredentialsImpl(
     auto credential_id_span = base::apple::CFDataToSpan(application_label);
     const std::vector<uint8_t> credential_id(credential_id_span.begin(),
                                              credential_id_span.end());
-    if (!credential_ids.empty() && !credential_ids.contains(credential_id)) {
+    if (!credential_ids.empty() &&
+        !base::Contains(credential_ids, credential_id)) {
       continue;
     }
 

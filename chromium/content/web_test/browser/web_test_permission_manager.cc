@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "base/barrier_callback.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/functional/callback_helpers.h"
@@ -195,7 +196,7 @@ void WebTestPermissionManager::ResetPermission(blink::PermissionType permission,
       PermissionDescriptorUtil::CreatePermissionDescriptorForPermissionType(
           permission),
       requesting_origin, embedding_origin);
-  if (!permissions_.contains(key)) {
+  if (!base::Contains(permissions_, key)) {
     return;
   }
   permissions_.erase(key);

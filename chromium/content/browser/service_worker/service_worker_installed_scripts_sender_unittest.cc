@@ -4,6 +4,7 @@
 
 #include "content/browser/service_worker/service_worker_installed_scripts_sender.h"
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/run_loop.h"
@@ -53,7 +54,7 @@ class ExpectedScriptInfo {
     EXPECT_EQ(script_url_, script_info->script_url);
     EXPECT_EQ(encoding_, script_info->encoding);
     for (const auto& header : headers_) {
-      EXPECT_TRUE(script_info->headers.contains(header.first));
+      EXPECT_TRUE(base::Contains(script_info->headers, header.first));
       EXPECT_EQ(header.second, script_info->headers[header.first]);
       script_info->headers.erase(header.first);
     }
@@ -222,7 +223,7 @@ TEST_F(ServiceWorkerInstalledScriptsSenderTest, SendScripts) {
     ASSERT_EQ(kExpectedScriptInfoMap.size(),
               scripts_info->installed_urls.size());
     for (const auto& url : scripts_info->installed_urls)
-      EXPECT_TRUE(kExpectedScriptInfoMap.contains(url));
+      EXPECT_TRUE(base::Contains(kExpectedScriptInfoMap, url));
     EXPECT_TRUE(scripts_info->manager_receiver.is_valid());
     renderer_manager =
         std::make_unique<MockServiceWorkerInstalledScriptsManager>(
@@ -281,7 +282,7 @@ TEST_F(ServiceWorkerInstalledScriptsSenderTest, FailedToSendBody) {
     ASSERT_EQ(kExpectedScriptInfoMap.size(),
               scripts_info->installed_urls.size());
     for (const auto& url : scripts_info->installed_urls)
-      EXPECT_TRUE(kExpectedScriptInfoMap.contains(url));
+      EXPECT_TRUE(base::Contains(kExpectedScriptInfoMap, url));
     EXPECT_TRUE(scripts_info->manager_receiver.is_valid());
     renderer_manager =
         std::make_unique<MockServiceWorkerInstalledScriptsManager>(
@@ -295,7 +296,8 @@ TEST_F(ServiceWorkerInstalledScriptsSenderTest, FailedToSendBody) {
   {
     // Reset a data pipe during sending the body.
     auto script_info = renderer_manager->WaitUntilTransferInstalledScript();
-    EXPECT_TRUE(kExpectedScriptInfoMap.contains(script_info->script_url));
+    EXPECT_TRUE(
+        base::Contains(kExpectedScriptInfoMap, script_info->script_url));
     script_info->body.reset();
     kExpectedScriptInfoMap.erase(script_info->script_url);
     // Wait until the error is triggered on the sender side.
@@ -340,7 +342,7 @@ TEST_F(ServiceWorkerInstalledScriptsSenderTest, FailedToSendMetaData) {
     ASSERT_EQ(kExpectedScriptInfoMap.size(),
               scripts_info->installed_urls.size());
     for (const auto& url : scripts_info->installed_urls)
-      EXPECT_TRUE(kExpectedScriptInfoMap.contains(url));
+      EXPECT_TRUE(base::Contains(kExpectedScriptInfoMap, url));
     EXPECT_TRUE(scripts_info->manager_receiver.is_valid());
     renderer_manager =
         std::make_unique<MockServiceWorkerInstalledScriptsManager>(
@@ -354,7 +356,8 @@ TEST_F(ServiceWorkerInstalledScriptsSenderTest, FailedToSendMetaData) {
   {
     // Reset a data pipe during sending the meta data.
     auto script_info = renderer_manager->WaitUntilTransferInstalledScript();
-    EXPECT_TRUE(kExpectedScriptInfoMap.contains(script_info->script_url));
+    EXPECT_TRUE(
+        base::Contains(kExpectedScriptInfoMap, script_info->script_url));
     script_info->meta_data.reset();
     kExpectedScriptInfoMap.erase(script_info->script_url);
     // Wait until the error is triggered on the sender side.
@@ -411,7 +414,7 @@ TEST_F(ServiceWorkerInstalledScriptsSenderTest, Histograms) {
     ASSERT_EQ(kExpectedScriptInfoMap.size(),
               scripts_info->installed_urls.size());
     for (const auto& url : scripts_info->installed_urls)
-      EXPECT_TRUE(kExpectedScriptInfoMap.contains(url));
+      EXPECT_TRUE(base::Contains(kExpectedScriptInfoMap, url));
     EXPECT_TRUE(scripts_info->manager_receiver.is_valid());
     renderer_manager =
         std::make_unique<MockServiceWorkerInstalledScriptsManager>(
@@ -496,7 +499,7 @@ TEST_F(ServiceWorkerInstalledScriptsSenderTest, RequestScriptBeforeStreaming) {
     ASSERT_EQ(kExpectedScriptInfoMap.size(),
               scripts_info->installed_urls.size());
     for (const auto& url : scripts_info->installed_urls)
-      EXPECT_TRUE(kExpectedScriptInfoMap.contains(url));
+      EXPECT_TRUE(base::Contains(kExpectedScriptInfoMap, url));
     EXPECT_TRUE(scripts_info->manager_receiver.is_valid());
     renderer_manager =
         std::make_unique<MockServiceWorkerInstalledScriptsManager>(
@@ -587,7 +590,7 @@ TEST_F(ServiceWorkerInstalledScriptsSenderTest, RequestScriptAfterStreaming) {
     ASSERT_EQ(kExpectedScriptInfoMap.size(),
               scripts_info->installed_urls.size());
     for (const auto& url : scripts_info->installed_urls)
-      EXPECT_TRUE(kExpectedScriptInfoMap.contains(url));
+      EXPECT_TRUE(base::Contains(kExpectedScriptInfoMap, url));
     EXPECT_TRUE(scripts_info->manager_receiver.is_valid());
     renderer_manager =
         std::make_unique<MockServiceWorkerInstalledScriptsManager>(

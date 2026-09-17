@@ -801,7 +801,7 @@ bool ThreatDetails::ShouldFillReferrerChain() {
       base::MakeFixedFlatSet<ClientSafeBrowsingReportRequest::ReportType>(
           {ClientSafeBrowsingReportRequest::URL_SUSPICIOUS,
            ClientSafeBrowsingReportRequest::APK_DOWNLOAD});
-  return valid_report_types.contains(report_->type());
+  return base::Contains(valid_report_types, report_->type());
 }
 
 void ThreatDetails::FillReferrerChain(
@@ -822,7 +822,7 @@ bool ThreatDetails::ShouldFillInterstitialInteractions() {
       base::MakeFixedFlatSet<ClientSafeBrowsingReportRequest::ReportType>(
           {ClientSafeBrowsingReportRequest::URL_PHISHING,
            ClientSafeBrowsingReportRequest::URL_CLIENT_SIDE_PHISHING});
-  return valid_report_types.contains(report_->type());
+  return base::Contains(valid_report_types, report_->type());
 }
 
 void ThreatDetails::MaybeAttachThreatDetailsAndLaunchSurvey() {

@@ -1189,7 +1189,7 @@ bool HasText(blink::WebLocalFrame* frame, const std::string& text) {
           frame, blink::TestWebFrameContentDumper::kLayoutAsTextNormal)
           .Utf8();
 
-  return layout_tree.contains(text);
+  return base::Contains(layout_tree, text);
 }
 
 // Waits for the navigation to finish.

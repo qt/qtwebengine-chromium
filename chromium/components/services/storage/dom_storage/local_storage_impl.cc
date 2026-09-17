@@ -15,6 +15,7 @@
 
 #include "base/barrier_closure.h"
 #include "base/byte_size.h"
+#include "base/containers/contains.h"
 #include "base/debug/dump_without_crashing.h"
 #include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"

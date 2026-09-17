@@ -11,6 +11,7 @@
 #include "base/atomic_sequence_num.h"
 #include "base/check_op.h"
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/notreached.h"
 #include "base/power_monitor/power_monitor.h"
@@ -85,7 +86,7 @@ spdy::SettingsMap AddDefaultHttp2Settings(spdy::SettingsMap http2_settings) {
 bool OriginToForceQuicOnInternal(const QuicParams& quic_params,
                                  const url::SchemeHostPort& destination) {
   return (quic_params.force_quic_everywhere ||
-          quic_params.origins_to_force_quic_on.contains(destination));
+          base::Contains(quic_params.origins_to_force_quic_on, destination));
 }
 
 }  // unnamed namespace
@@ -248,7 +249,7 @@ HttpNetworkSession::~HttpNetworkSession() {
 
 void HttpNetworkSession::StartResponseDrainer(
     std::unique_ptr<HttpResponseBodyDrainer> drainer) {
-  DCHECK(!response_drainers_.contains(drainer.get()));
+  DCHECK(!base::Contains(response_drainers_, drainer.get()));
   HttpResponseBodyDrainer* drainer_ptr = drainer.get();
   response_drainers_.insert(std::move(drainer));
   drainer_ptr->Start(this);
@@ -256,7 +257,7 @@ void HttpNetworkSession::StartResponseDrainer(
 
 void HttpNetworkSession::RemoveResponseDrainer(
     HttpResponseBodyDrainer* drainer) {
-  DCHECK(response_drainers_.contains(drainer));
+  DCHECK(base::Contains(response_drainers_, drainer));
 
   response_drainers_.erase(response_drainers_.find(drainer));
 }

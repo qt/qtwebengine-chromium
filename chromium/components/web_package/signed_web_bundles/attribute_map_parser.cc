@@ -6,6 +6,7 @@
 
 #include <variant>
 
+#include "base/containers/contains.h"
 #include "base/containers/extend.h"
 #include "base/strings/stringprintf.h"
 #include "base/types/expected_macros.h"
@@ -106,7 +107,7 @@ void AttributeMapParser::ReadAttributeName(
     return;
   }
 
-  if (attributes_map_.contains(*attribute_name)) {
+  if (base::Contains(attributes_map_, *attribute_name)) {
     RunErrorCallback(base::StringPrintf(
         "Found duplicate attribute name <%s> in the attributes map.",
         std::string(*attribute_name).c_str()));

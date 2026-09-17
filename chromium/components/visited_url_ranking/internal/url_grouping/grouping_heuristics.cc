@@ -184,7 +184,7 @@ class SimilarSourceHeuristic : public GroupingHeuristics::Heuristic {
       for (const auto& pair : tab_id_to_parent_id_map) {
         float tab_id = pair.first;
         float parent_id = pair.second;
-        if (tab_id_to_parent_id_map.contains(parent_id) &&
+        if (base::Contains(tab_id_to_parent_id_map, parent_id) &&
             tab_id_to_parent_id_map[parent_id] != parent_id) {
           new_tab_id_to_parent_id_map[tab_id] =
               tab_id_to_parent_id_map[parent_id];
@@ -473,7 +473,7 @@ void GroupingHeuristics::GetSuggestions(
     signals.push_back(AsInputContext(kSuggestionsPredictionSchema, candidate));
   }
   for (const auto type : heuristics_priority) {
-    if (!heuristics_.contains(type)) {
+    if (!base::Contains(heuristics_, type)) {
       continue;
     }
     auto& heuristic = heuristics_[type];

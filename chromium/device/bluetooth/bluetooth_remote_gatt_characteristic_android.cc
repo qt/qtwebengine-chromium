@@ -9,6 +9,7 @@
 #include "base/android/jni_android.h"
 #include "base/android/jni_array.h"
 #include "base/android/jni_string.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/location.h"
 #include "base/logging.h"
@@ -270,7 +271,7 @@ void BluetoothRemoteGattCharacteristicAndroid::CreateGattRemoteDescriptor(
         chrome_bluetooth_device) {
   std::string instanceIdString = ConvertJavaStringToUTF8(env, instanceId);
 
-  DCHECK(!descriptors_.contains(instanceIdString));
+  DCHECK(!base::Contains(descriptors_, instanceIdString));
   AddDescriptor(BluetoothRemoteGattDescriptorAndroid::Create(
       instanceIdString, bluetooth_gatt_descriptor_wrapper,
       chrome_bluetooth_device));

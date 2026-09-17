@@ -15,6 +15,7 @@
 
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/files/file.h"
 #include "base/files/file_util.h"
 #include "base/files/memory_mapped_file.h"
@@ -67,7 +68,7 @@ void MaybePrintResourceId(uint16_t resource_id) {
   // DataPack doesn't require single-threaded access, so use a lock.
   static base::Lock* lock = new base::Lock;
   base::AutoLock auto_lock(*lock);
-  if (!resource_ids_logged->contains(resource_id)) {
+  if (!base::Contains(*resource_ids_logged, resource_id)) {
     printf("Resource=%d\n", resource_id);
     resource_ids_logged->insert(resource_id);
   }

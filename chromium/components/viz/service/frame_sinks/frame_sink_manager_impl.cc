@@ -204,7 +204,7 @@ void FrameSinkManagerImpl::SetInputManagerForTesting(
 void FrameSinkManagerImpl::RegisterFrameSinkId(const FrameSinkId& frame_sink_id,
                                                bool report_activation) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  DCHECK(!frame_sink_data_.contains(frame_sink_id));
+  DCHECK(!base::Contains(frame_sink_data_, frame_sink_id));
 
   frame_sink_data_.emplace(std::make_pair(frame_sink_id, report_activation));
 
@@ -250,7 +250,7 @@ void FrameSinkManagerImpl::SetFrameSinkDebugLabel(
 void FrameSinkManagerImpl::CreateRootCompositorFrameSink(
     mojom::RootCompositorFrameSinkParamsPtr params) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  DCHECK(!root_sink_map_.contains(params->frame_sink_id));
+  DCHECK(!base::Contains(root_sink_map_, params->frame_sink_id));
   DCHECK(output_surface_provider_);
 
   // We are transferring ownership of |params| so remember FrameSinkId here.
@@ -315,7 +315,7 @@ void FrameSinkManagerImpl::CreateFrameSinkBundle(
     mojo::PendingReceiver<mojom::FrameSinkBundle> receiver,
     mojo::PendingRemote<mojom::FrameSinkBundleClient> client) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  if (bundle_map_.contains(bundle_id)) {
+  if (base::Contains(bundle_map_, bundle_id)) {
     uint32_t client_id = bundle_id.client_id();
     uint32_t bundle_id_value = bundle_id.bundle_id();
     std::visit(
@@ -341,7 +341,7 @@ void FrameSinkManagerImpl::CreateCompositorFrameSink(
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   TRACE_EVENT("viz", "FrameSinkManagerImpl::CreateCompositorFrameSink",
               "frame_sink_id", frame_sink_id);
-  if (sink_map_.contains(frame_sink_id)) {
+  if (base::Contains(sink_map_, frame_sink_id)) {
     std::visit(
         [](auto& receiver) {
           receiver.ReportBadMessage("Duplicate FrameSinkId");
@@ -388,7 +388,7 @@ void FrameSinkManagerImpl::RegisterFrameSinkHierarchy(
   CHECK(!ChildContains(child_frame_sink_id, parent_frame_sink_id));
 
   auto& children = frame_sink_source_map_[parent_frame_sink_id].children;
-  DCHECK(!children.contains(child_frame_sink_id));
+  DCHECK(!base::Contains(children, child_frame_sink_id));
   children.insert(child_frame_sink_id);
 
   // Add `parent_frame_sink_id` as parent to the list tracking parents of
@@ -451,7 +451,7 @@ void FrameSinkManagerImpl::UnregisterFrameSinkHierarchy(
 
   // Remove |child_frame_sink_id| from parents list of children.
   auto& mapping = iter_parent->second;
-  DCHECK(mapping.children.contains(child_frame_sink_id));
+  DCHECK(base::Contains(mapping.children, child_frame_sink_id));
   mapping.children.erase(child_frame_sink_id);
 
   for (auto& observer : observer_list_) {
@@ -599,7 +599,7 @@ void FrameSinkManagerImpl::OnFirstSurfaceActivation(
 void FrameSinkManagerImpl::UpdateHitTestRegionData(
     const FrameSinkId& frame_sink_id,
     const std::vector<AggregatedHitTestRegion>& hit_test_data) {
-  if (!display_hit_test_query_.contains(frame_sink_id)) {
+  if (!base::Contains(display_hit_test_query_, frame_sink_id)) {
     // The corresponding HitTestQuery has already been deleted, so drop the
     // in-flight hit-test data.
     return;
@@ -683,7 +683,7 @@ void FrameSinkManagerImpl::RegisterCompositorFrameSinkSupport(
     const FrameSinkId& frame_sink_id,
     CompositorFrameSinkSupport* support) {
   DCHECK(support);
-  DCHECK(!support_map_.contains(frame_sink_id));
+  DCHECK(!base::Contains(support_map_, frame_sink_id));
 
   support_map_[frame_sink_id] = support;
 
@@ -712,7 +712,7 @@ void FrameSinkManagerImpl::UnregisterCompositorFrameSinkSupport(
   TRACE_EVENT("viz",
               "FrameSinkManagerImpl::UnregisterCompositorFrameSinkSupport",
               "frame_sink_id", frame_sink_id);
-  DCHECK(support_map_.contains(frame_sink_id));
+  DCHECK(base::Contains(support_map_, frame_sink_id));
 
   for (auto& observer : observer_list_)
     observer.OnDestroyedCompositorFrameSink(frame_sink_id);
@@ -841,7 +841,7 @@ CapturableFrameSink* FrameSinkManagerImpl::FindCapturableFrameSink(
     for (const auto& id_and_sink : support_map_) {
       const RegionCaptureBounds& bounds =
           id_and_sink.second->current_capture_bounds();
-      if (bounds.bounds().contains(crop_id)) {
+      if (base::Contains(bounds.bounds(), crop_id)) {
         return id_and_sink.second;
       }
     }
@@ -972,7 +972,7 @@ std::vector<FrameSinkId> FrameSinkManagerImpl::GetRegisteredFrameSinkIds()
 
 FrameSinkId FrameSinkManagerImpl::GetOldestParentByChildFrameId(
     const FrameSinkId& child_frame_sink_id) const {
-  CHECK(!root_sink_map_.contains(child_frame_sink_id));
+  CHECK(!base::Contains(root_sink_map_, child_frame_sink_id));
 
   const FrameSinkSourceMapping* mapping =
       base::FindOrNull(frame_sink_source_map_, child_frame_sink_id);
@@ -992,7 +992,7 @@ FrameSinkId FrameSinkManagerImpl::GetOldestRootCompositorFrameSinkId(
     const FrameSinkId& child_frame_sink_id) const {
   auto parent_id = GetOldestParentByChildFrameId(child_frame_sink_id);
 
-  while (parent_id.is_valid() && !root_sink_map_.contains(parent_id)) {
+  while (parent_id.is_valid() && !base::Contains(root_sink_map_, parent_id)) {
     parent_id = GetOldestParentByChildFrameId(parent_id);
   }
   return parent_id;
@@ -1111,7 +1111,7 @@ void FrameSinkManagerImpl::CacheBackBuffer(
     return;
   }
 
-  DCHECK(!cached_back_buffers_.contains(cache_id));
+  DCHECK(!base::Contains(cached_back_buffers_, cache_id));
   cached_back_buffers_[cache_id] = root_frame_sink->GetCacheBackBufferCb();
 }
 
@@ -1319,7 +1319,7 @@ void FrameSinkManagerImpl::OnViewTransitionResourcesCaptured(
 
 bool FrameSinkManagerImpl::IsFrameSinkIdInRootSinkMap(
     const FrameSinkId& frame_sink_id) {
-  return root_sink_map_.contains(frame_sink_id);
+  return base::Contains(root_sink_map_, frame_sink_id);
 }
 
 gpu::SharedImageInterface* FrameSinkManagerImpl::GetSharedImageInterface() {

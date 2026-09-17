@@ -19,6 +19,7 @@
 #include <vector>
 
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/containers/heap_array.h"
 #include "base/containers/span.h"
 #include "base/strings/string_number_conversions.h"
@@ -73,7 +74,7 @@ void NormalizeInitState(gpu::gles2::GLES2DecoderTestBase::InitState* init) {
   };
   bool contains_vao_extension = false;
   for (const char* extension : kVAOExtensions) {
-    if (init->extensions.contains(extension)) {
+    if (base::Contains(init->extensions, extension)) {
       contains_vao_extension = true;
       break;
     }

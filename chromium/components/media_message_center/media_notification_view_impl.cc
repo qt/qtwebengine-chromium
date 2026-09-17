@@ -7,6 +7,7 @@
 #include <string_view>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/memory/raw_ptr.h"
 #include "base/metrics/histogram_macros.h"
 #include "components/media_message_center/media_notification_background_ash_impl.h"
@@ -503,7 +504,7 @@ void MediaNotificationViewImpl::UpdateActionButtonsVisibility() {
   for (views::View* view : GetButtons()) {
     views::Button* action_button = views::Button::AsButton(view);
     bool should_show =
-        visible_actions.contains(GetActionFromButtonTag(*action_button));
+        base::Contains(visible_actions, GetActionFromButtonTag(*action_button));
     bool should_invalidate = should_show != action_button->GetVisible();
 
     action_button->SetVisible(should_show);

@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <functional>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/location.h"
 #include "base/task/single_thread_task_runner.h"
@@ -71,7 +72,7 @@ void QuotaTaskObserver::RegisterTask(QuotaTask* task) {
 }
 
 void QuotaTaskObserver::UnregisterTask(QuotaTask* task) {
-  DCHECK(running_quota_tasks_.contains(task));
+  DCHECK(base::Contains(running_quota_tasks_, task));
   running_quota_tasks_.erase(task);
 }
 

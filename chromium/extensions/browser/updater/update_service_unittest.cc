@@ -12,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/functional/bind.h"
@@ -331,7 +332,7 @@ class FakeExtensionSystem : public MockExtensionSystem {
   }
 
   AllowlistState GetExtensionAllowlistState(const ExtensionId& extension_id) {
-    if (!extension_allowlist_states_.contains(extension_id))
+    if (!base::Contains(extension_allowlist_states_, extension_id))
       return ALLOWLIST_UNDEFINED;
 
     return extension_allowlist_states_[extension_id];

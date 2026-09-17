@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "base/barrier_callback.h"
+#include "base/containers/contains.h"
 #include "base/containers/flat_set.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
@@ -235,7 +236,7 @@ void GetLoginsHelper::HandleAffiliationsAndGroupsReceived(
     // The PSL forms are requested in the main request, ignore affiliated
     // matches too.
     if (!IsPublicSuffixDomainMatch(realm, requested_digest_.signon_realm) &&
-        !affiliations_.contains(realm)) {
+        !base::Contains(affiliations_, realm)) {
       digests_to_request.emplace_back(requested_digest_.scheme, realm,
                                       GURL(realm));
     }
@@ -274,10 +275,10 @@ LoginsResultOrError GetLoginsHelper::MergeResults(
             !affiliations::IsValidAndroidFacetURI(form.signon_realm)) {
           signon_realm = url::Origin::Create(form.url).GetURL().spec();
         }
-        if (affiliations_.contains(signon_realm)) {
+        if (base::Contains(affiliations_, signon_realm)) {
           form.match_type |= PasswordForm::MatchType::kAffiliated;
         }
-        if (group_.contains(signon_realm)) {
+        if (base::Contains(group_, signon_realm)) {
           form.match_type |= PasswordForm::MatchType::kGrouped;
         }
         break;

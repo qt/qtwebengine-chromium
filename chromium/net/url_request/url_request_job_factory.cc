@@ -4,6 +4,7 @@
 
 #include "net/url_request/url_request_job_factory.h"
 
+#include "base/containers/contains.h"
 #include "net/base/net_errors.h"
 #include "net/net_buildflags.h"
 #include "net/url_request/url_request.h"
@@ -85,7 +86,7 @@ bool URLRequestJobFactory::SetProtocolHandler(
     return true;
   }
 
-  if (protocol_handler_map_.contains(scheme))
+  if (base::Contains(protocol_handler_map_, scheme))
     return false;
   protocol_handler_map_[scheme] = std::move(protocol_handler);
   return true;

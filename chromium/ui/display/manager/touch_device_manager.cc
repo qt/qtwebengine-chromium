@@ -9,6 +9,7 @@
 #include <string>
 #include <tuple>
 
+#include "base/containers/contains.h"
 #include "base/hash/hash.h"
 #include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
@@ -130,7 +131,7 @@ ManagedDisplayInfo* GetBestMatchForDevice(
 
   // If we have no historical information for the touch device identified by
   // |identifier|, do an early return.
-  if (!touch_associations.contains(identifier))
+  if (!base::Contains(touch_associations, identifier))
     return display_info;
 
   const TouchDeviceManager::AssociationInfoMap& info_map =
@@ -141,7 +142,7 @@ ManagedDisplayInfo* GetBestMatchForDevice(
     // We do not want to match anything to the internal display.
     if (IsInternalDisplayId(display->id()))
       continue;
-    if (!info_map.contains(display->id()))
+    if (!base::Contains(info_map, display->id()))
       continue;
     const TouchDeviceManager::TouchAssociationInfo& info =
         info_map.at(display->id());
@@ -392,8 +393,8 @@ void TouchDeviceManager::AssociateDevicesWithCollision(
     // If this device is not the one that has a collision or if this device is
     // the one that has collision but we have no past port mapping information
     // associated with it, then we skip.
-    if (!collision_set.contains(identifier) ||
-        !port_associations_.contains(identifier)) {
+    if (!base::Contains(collision_set, identifier) ||
+        !base::Contains(port_associations_, identifier)) {
       device_it++;
       continue;
     }
@@ -634,7 +635,7 @@ void TouchDeviceManager::ClearTouchCalibrationData(
     int64_t display_id) {
   const TouchDeviceIdentifier identifier =
       TouchDeviceIdentifier::FromDevice(device);
-  if (touch_associations_.contains(identifier)) {
+  if (base::Contains(touch_associations_, identifier)) {
     ClearCalibrationDataInMap(touch_associations_.at(identifier), display_id);
   }
 }
@@ -655,7 +656,7 @@ TouchCalibrationData TouchDeviceManager::GetCalibrationData(
   if (display_id == kInvalidDisplayId) {
     // If the touch device is currently not associated with any display and the
     // |display_id| was not provided, then this is an invalid query.
-    if (!active_touch_associations_.contains(identifier))
+    if (!base::Contains(active_touch_associations_, identifier))
       return TouchCalibrationData();
 
     // If the display id is not provided, we return the calibration information
@@ -664,7 +665,7 @@ TouchCalibrationData TouchDeviceManager::GetCalibrationData(
     display_id = active_touch_associations_.at(identifier);
   }
 
-  if (touch_associations_.contains(identifier)) {
+  if (base::Contains(touch_associations_, identifier)) {
     const AssociationInfoMap& info_map = touch_associations_.at(identifier);
     if (info_map.find(display_id) != info_map.end())
       return info_map.at(display_id).calibration_data;
@@ -673,7 +674,7 @@ TouchCalibrationData TouchDeviceManager::GetCalibrationData(
   // Check for legacy calibration data.
   TouchDeviceIdentifier fallback_identifier(
       TouchDeviceIdentifier::GetFallbackTouchDeviceIdentifier());
-  if (touch_associations_.contains(fallback_identifier)) {
+  if (base::Contains(touch_associations_, fallback_identifier)) {
     const AssociationInfoMap& info_map =
         touch_associations_.at(fallback_identifier);
     if (info_map.find(display_id) != info_map.end())
@@ -689,7 +690,7 @@ bool TouchDeviceManager::DisplayHasTouchDevice(
     const ui::TouchscreenDevice& device) const {
   const TouchDeviceIdentifier identifier =
       TouchDeviceIdentifier::FromDevice(device);
-  return active_touch_associations_.contains(identifier) &&
+  return base::Contains(active_touch_associations_, identifier) &&
          active_touch_associations_.at(identifier) == display_id;
 }
 
@@ -697,7 +698,7 @@ int64_t TouchDeviceManager::GetAssociatedDisplay(
     const ui::TouchscreenDevice& device) const {
   const TouchDeviceIdentifier identifier =
       TouchDeviceIdentifier::FromDevice(device);
-  if (active_touch_associations_.contains(identifier))
+  if (base::Contains(active_touch_associations_, identifier))
     return active_touch_associations_.at(identifier);
   return kInvalidDisplayId;
 }

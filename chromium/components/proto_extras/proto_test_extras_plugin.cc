@@ -6,6 +6,7 @@
 #include <string>
 
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/memory/raw_ptr.h"

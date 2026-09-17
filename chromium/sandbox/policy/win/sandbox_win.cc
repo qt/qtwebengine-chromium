@@ -19,6 +19,7 @@
 
 #include "base/byte_count.h"
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
@@ -116,7 +117,7 @@ std::map<std::wstring, std::wstring> GetShortNameModules() {
     base::FilePath module_path(path);
     base::FilePath name = module_path.BaseName();
     if (name.RemoveExtension().value().size() > 8 ||
-        name.Extension().size() > 4 || !name.value().contains(L"~")) {
+        name.Extension().size() > 4 || !base::Contains(name.value(), L"~")) {
       continue;
     }
     base::FilePath fname = base::MakeLongFilePath(module_path);

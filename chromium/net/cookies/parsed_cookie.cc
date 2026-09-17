@@ -49,6 +49,7 @@
 #include <string_view>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/containers/fixed_flat_set.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/numerics/checked_math.h"
@@ -163,11 +164,11 @@ GetNamelessParseTypeForInitialPair(std::string_view cookie_name,
     return std::nullopt;
   }
   if (had_token_value_separator) {
-    return cookie_value.contains('=')
+    return base::Contains(cookie_value, '=')
                ? net::NamelessCookieLineParseType::kNamelessWithAmbiguousValue
                : net::NamelessCookieLineParseType::kEqualsPrecedingToken;
   }
-  if (kCookieAttributeNames.contains(base::ToLowerASCII(cookie_value))) {
+  if (base::Contains(kCookieAttributeNames, base::ToLowerASCII(cookie_value))) {
     return net::NamelessCookieLineParseType::kBareTokenMatchingAttributeName;
   }
   return net::NamelessCookieLineParseType::kBareToken;

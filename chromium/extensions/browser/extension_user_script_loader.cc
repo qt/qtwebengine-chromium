@@ -15,6 +15,7 @@
 #include <string>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/containers/span.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
@@ -624,7 +625,7 @@ void ExtensionUserScriptLoader::AddDynamicScripts(
   // are quickly unregistered.
   std::erase_if(scripts, [&pending_ids = pending_dynamic_script_ids_](
                              const std::unique_ptr<UserScript>& script) {
-    return !pending_ids.contains(script->id());
+    return !base::Contains(pending_ids, script->id());
   });
 
   if (scripts.empty()) {
@@ -636,7 +637,7 @@ void ExtensionUserScriptLoader::AddDynamicScripts(
   for (const auto& script : scripts) {
     // Additionally, only add scripts to the set of active scripts in renderers
     // (through `AddScripts()`) if the `source` for that script is enabled.
-    if (!disabled_sources_.contains(script->GetSource())) {
+    if (!base::Contains(disabled_sources_, script->GetSource())) {
       // TODO(crbug.com/40938420): This results in an additional copy being
       // stored in the browser for each of these scripts. Optimize the usage of
       // inline code.
@@ -833,7 +834,7 @@ void ExtensionUserScriptLoader::DynamicScriptsStorageHelper::SetDynamicScripts(
   base::ListValue scripts_value;
   URLPatternSet persistent_patterns;
   for (const std::unique_ptr<UserScript>& script : scripts) {
-    if (!persistent_dynamic_script_ids.contains(script->id())) {
+    if (!base::Contains(persistent_dynamic_script_ids, script->id())) {
       continue;
     }
 
@@ -886,7 +887,7 @@ void ExtensionUserScriptLoader::LoadScripts(
 
   ScriptResourceIds script_resource_ids;
   for (const std::unique_ptr<UserScript>& script : user_scripts) {
-    if (!added_script_ids.contains(script->id())) {
+    if (!base::Contains(added_script_ids, script->id())) {
       continue;
     }
     FillScriptFileResourceIds(script->js_scripts(), script_resource_ids);
@@ -912,7 +913,7 @@ void ExtensionUserScriptLoader::OnInitialDynamicScriptsReadFromStateStore(
   for (const std::unique_ptr<UserScript>& script : initial_dynamic_scripts) {
     // Only add the script to the `UserScriptLoader`'s set (thus sending it to
     // renderers) if the script source type is enabled.
-    if (!disabled_sources_.contains(script->GetSource())) {
+    if (!base::Contains(disabled_sources_, script->GetSource())) {
       scripts_to_add.push_back(CopyDynamicScriptInfo(*script));
       pending_dynamic_script_ids_.insert(script->id());
     }
@@ -990,12 +991,12 @@ void ExtensionUserScriptLoader::OnDynamicScriptsRemoved(
     std::erase_if(
         loaded_dynamic_scripts_,
         [&removed_script_ids](const std::unique_ptr<UserScript>& script) {
-          return removed_script_ids.contains(script->id());
+          return base::Contains(removed_script_ids, script->id());
         });
 
     std::erase_if(persistent_dynamic_script_ids_,
                   [&removed_script_ids](const auto& id) {
-                    return removed_script_ids.contains(id);
+                    return base::Contains(removed_script_ids, id);
                   });
 
     helper_.SetDynamicScripts(loaded_dynamic_scripts_,

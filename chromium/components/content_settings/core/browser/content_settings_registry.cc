@@ -7,6 +7,7 @@
 #include <memory>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/values.h"
 #include "build/blink_buildflags.h"
@@ -857,7 +858,7 @@ void ContentSettingsRegistry::Register(
   // Ensure that nothing has been registered yet for the given type.
   DCHECK(!permission_settings_registry_->Get(type)) << type;
   DCHECK(!website_settings_registry_->Get(type)) << type;
-  DCHECK(!content_settings_info_.contains(type)) << type;
+  DCHECK(!base::Contains(content_settings_info_, type)) << type;
 
   auto delegate = std::make_unique<ContentSettingsInfo::Delegate>();
   auto* delegate_ptr = delegate.get();

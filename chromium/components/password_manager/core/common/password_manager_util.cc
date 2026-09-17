@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "base/strings/string_util.h"
 #include "components/autofill/core/common/autofill_regexes.h"
 #include "components/autofill/core/common/form_data.h"
@@ -80,7 +81,8 @@ bool CanValueBeConsideredAsSingleUsername(const std::u16string& value) {
 bool IsLikelyOtp(std::u16string_view name,
                  std::u16string_view id,
                  std::string_view autocomplete) {
-  return autocomplete.contains(
+  return base::Contains(
+             autocomplete,
              password_manager::constants::kAutocompleteOneTimePassword) ||
          autofill::MatchesRegex<password_manager::constants::kOneTimePwdRe>(
              name) ||

@@ -617,7 +617,7 @@ void ThumbnailCapturerMac::GetWindowSourceList(SourceList* sources) const {
   std::unordered_map<pid_t, size_t> application_to_window_count;
   for (SCWindow* window in shareable_windows_) {
     const pid_t pid = window.owningApplication.processID;
-    if (!application_to_window_count.contains(pid)) {
+    if (!base::Contains(application_to_window_count, pid)) {
       application_to_window_count[pid] = 1;
     } else {
       ++application_to_window_count[pid];

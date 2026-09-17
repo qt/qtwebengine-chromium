@@ -9,6 +9,7 @@
 #include <string>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/memory/raw_ptr.h"
@@ -119,7 +120,7 @@ class NativeRendererMessagingService::MessagePortScope
           port_host) {
     auto receiver_id =
         message_port_dispatchers_.Add(this, std::move(port), target_port_id);
-    CHECK(!message_port_hosts_.contains(target_port_id));
+    CHECK(!base::Contains(message_port_hosts_, target_port_id));
     auto& bound_port_host = message_port_hosts_[target_port_id] =
         mojo::AssociatedRemote(std::move(port_host));
     bound_port_host.set_disconnect_handler(
@@ -142,7 +143,7 @@ class NativeRendererMessagingService::MessagePortScope
         message_port_host_remote.InitWithNewEndpointAndPassReceiver();
     message_port_dispatchers_.Add(this, std::move(message_port_receiver),
                                   port_id);
-    CHECK(!message_port_hosts_.contains(port_id));
+    CHECK(!base::Contains(message_port_hosts_, port_id));
     auto& bound_port_host = message_port_hosts_[port_id] =
         mojo::AssociatedRemote(std::move(message_port_host_remote));
     bound_port_host.set_disconnect_handler(base::BindOnce(
@@ -183,7 +184,7 @@ class NativeRendererMessagingService::MessagePortScope
   }
 
   bool HasPort(const PortId& port_id) {
-    return message_port_hosts_.contains(port_id);
+    return base::Contains(message_port_hosts_, port_id);
   }
 
   mojom::MessagePortHost* GetMessagePortHost(const PortId& port_id) {
@@ -603,7 +604,7 @@ bool NativeRendererMessagingService::ContextHasMessagePort(
   v8::HandleScope handle_scope(script_context->isolate());
   MessagingPerContextData* data = GetPerContextData<MessagingPerContextData>(
       script_context->v8_context(), CreatePerContextData::kDontCreateIfMissing);
-  return data && data->ports.contains(port_id);
+  return data && base::Contains(data->ports, port_id);
 }
 
 void NativeRendererMessagingService::DispatchOnConnectToListeners(
@@ -796,7 +797,7 @@ GinPort* NativeRendererMessagingService::CreatePort(
   MessagingPerContextData* data = GetPerContextData<MessagingPerContextData>(
       context, CreatePerContextData::kCreateIfMissing);
   DCHECK(data);
-  DCHECK(!data->ports.contains(port_id));
+  DCHECK(!base::Contains(data->ports, port_id));
 
   GinPort* port = cppgc::MakeGarbageCollected<GinPort>(
       isolate->GetCppHeap()->GetAllocationHandle(), context, port_id,
@@ -817,7 +818,7 @@ GinPort* NativeRendererMessagingService::GetPort(
   MessagingPerContextData* data = GetPerContextData<MessagingPerContextData>(
       script_context->v8_context(), CreatePerContextData::kDontCreateIfMissing);
   DCHECK(data);
-  DCHECK(data->ports.contains(port_id));
+  DCHECK(base::Contains(data->ports, port_id));
 
   GinPort* port = nullptr;
   gin::Converter<GinPort*>::FromV8(isolate, data->ports[port_id].Get(isolate),

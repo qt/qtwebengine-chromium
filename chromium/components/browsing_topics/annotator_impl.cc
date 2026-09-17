@@ -9,7 +9,11 @@
 
 #include "base/barrier_closure.h"
 #include "base/compiler_specific.h"
+<<<<<<< HEAD:chromium/components/browsing_topics/annotator_impl.cc
 #include "base/containers/fixed_flat_set.h"
+=======
+#include "base/containers/contains.h"
+>>>>>>> parent of bfd3aa923efe (Migrate various base::Contains() to contains() in components):components/browsing_topics/annotator_impl.cc
 #include "base/dcheck_is_on.h"
 #include "base/files/file_util.h"
 #include "base/strings/string_number_conversions.h"

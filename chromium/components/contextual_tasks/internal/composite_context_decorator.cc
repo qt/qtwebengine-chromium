@@ -77,7 +77,7 @@ void CompositeContextDecorator::DecorateContext(
   for (const auto& source : kEarlyDecorators) {
     // Check if we should run this decorator (either all are requested, or this
     // specific one is).
-    if (sources.empty() || sources.contains(source)) {
+    if (sources.empty() || base::Contains(sources, source)) {
       auto it = decorators_.find(source);
       if (it != decorators_.end()) {
         decorators_to_run.push_back(it->second.get());
@@ -94,7 +94,7 @@ void CompositeContextDecorator::DecorateContext(
       continue;
     }
 
-    if (sources.empty() || sources.contains(source)) {
+    if (sources.empty() || base::Contains(sources, source)) {
       decorators_to_run.push_back(pair.second.get());
     }
   }

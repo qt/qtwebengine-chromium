@@ -9,6 +9,7 @@
 #include <string>
 
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/strings/stringprintf.h"
 #include "base/test/bind.h"
@@ -391,7 +392,7 @@ void PerformanceManagerTestHarness::ServiceWorkerFactory::
   CHECK(it != service_worker_infos_.end());
   ServiceWorkerInfo& info = it->second;
 
-  DCHECK(info.clients.contains(client_uuid));
+  DCHECK(base::Contains(info.clients, client_uuid));
 
   observer_->OnControlleeNavigationCommitted(version_id, client_uuid,
                                              render_frame_host_id);

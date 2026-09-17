@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/containers/contains.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/task/sequenced_task_runner.h"
@@ -162,7 +163,7 @@ void BucketManagerHost::DeleteBucket(const std::string& name,
 }
 
 void BucketManagerHost::RemoveBucketHost(storage::BucketId id) {
-  DCHECK(bucket_map_.contains(id));
+  DCHECK(base::Contains(bucket_map_, id));
   bucket_map_.erase(id);
 }
 

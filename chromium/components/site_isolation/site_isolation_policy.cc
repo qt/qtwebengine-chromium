@@ -4,6 +4,7 @@
 
 #include "components/site_isolation/site_isolation_policy.h"
 
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/json/values_util.h"
 #include "base/metrics/field_trial_params.h"
@@ -273,7 +274,7 @@ void SiteIsolationPolicy::PersistUserTriggeredIsolatedOrigin(
       site_isolation::prefs::kUserTriggeredIsolatedOrigins);
   base::ListValue& list = update.Get();
   std::string value(origin.Serialize());
-  if (!list.contains(value)) {
+  if (!base::Contains(list, value)) {
     list.Append(value);
   }
 }

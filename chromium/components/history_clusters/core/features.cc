@@ -4,6 +4,7 @@
 
 #include "components/history_clusters/core/features.h"
 
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/metrics/field_trial_params.h"
 #include "base/strings/string_split.h"

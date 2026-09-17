@@ -10,6 +10,7 @@
 #include <ostream>
 #include <string_view>
 
+#include "base/containers/contains.h"
 #include "base/strings/pattern.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
@@ -327,7 +328,7 @@ URLPattern::ParseResult URLPattern::Parse(std::string_view pattern) {
   // No other '*' can occur in the host, though. This isn't necessary, but is
   // done as a convenience to developers who might otherwise be confused and
   // think '*' works as a glob in the host.
-  if (host_.contains('*')) {
+  if (base::Contains(host_, '*')) {
     return ParseResult::kInvalidHostWildcard;
   }
 
@@ -343,7 +344,7 @@ URLPattern::ParseResult URLPattern::Parse(std::string_view pattern) {
   }
 
   // Null characters are not allowed in hosts.
-  if (host_.contains('\0')) {
+  if (base::Contains(host_, '\0')) {
     return ParseResult::kInvalidHost;
   }
 

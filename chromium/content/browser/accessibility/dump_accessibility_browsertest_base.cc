@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/files/file_util.h"
 #include "base/path_service.h"
 #include "base/scoped_observation.h"
@@ -58,7 +59,7 @@ namespace {
 bool SkipUrlMatch(const std::vector<std::string>& skip_urls,
                   const std::string& url) {
   for (const auto& skip_url : skip_urls) {
-    if (url.contains(skip_url)) {
+    if (base::Contains(url, skip_url)) {
       return true;
     }
   }
@@ -429,7 +430,7 @@ void DumpAccessibilityTestBase::WaitForExpectedText() {
     bool all_wait_for_strings_found = true;
     std::string tree_dump = DumpTreeAsString();
     for (const auto& str : scenario_.wait_for) {
-      if (!tree_dump.contains(str)) {
+      if (!base::Contains(tree_dump, str)) {
         VLOG(1) << "Still waiting on this text to be found: " << str;
         all_wait_for_strings_found = false;
         break;
@@ -556,7 +557,7 @@ void DumpAccessibilityTestBase::RunTestForPlatform(
     while (wait_for_string) {
       // Loop until specified string is found.
       std::string tree_dump = DumpUnfilteredAccessibilityTreeAsString();
-      if (tree_dump.contains(str)) {
+      if (base::Contains(tree_dump, str)) {
         wait_for_string = false;
         // Append an additional dump if the specified string was found.
         std::vector<std::string> additional_dump = Dump();

@@ -1106,7 +1106,7 @@ void ShoppingService::HandleOptGuideProductInfoResponse(
     if (attempt_on_demand && commerce_info_cache_.IsUrlReferenced(url) &&
         entry) {
       if (entry->run_product_info_on_demand) {
-        DCHECK(!on_demand_product_info_callbacks_.contains(url));
+        DCHECK(!base::Contains(on_demand_product_info_callbacks_, url));
         entry->run_product_info_on_demand = false;
         on_demand_product_info_callbacks_[url].push_back(std::move(callback));
 
@@ -1133,7 +1133,7 @@ void ShoppingService::HandleOptGuideProductInfoResponse(
                 AsWeakPtr(),
                 base::BindRepeating(&ShoppingService::OnGetOnDemandProductInfo,
                                     AsWeakPtr())));
-      } else if (on_demand_product_info_callbacks_.contains(url)) {
+      } else if (base::Contains(on_demand_product_info_callbacks_, url)) {
         // If there is a on demand call running, add callback to the queue.
         on_demand_product_info_callbacks_[url].push_back(std::move(callback));
       } else {

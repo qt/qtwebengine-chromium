@@ -10,6 +10,7 @@
 #include <string_view>
 #include <unordered_map>
 
+#include "base/containers/contains.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/values.h"
@@ -66,7 +67,7 @@ bool IsValidDohTemplate(const std::string& server_template, bool* use_post) {
     return false;
   }
   // If the template contains a dns variable, use GET, otherwise use POST.
-  *use_post = !vars_found.contains("dns");
+  *use_post = !base::Contains(vars_found, "dns");
   return true;
 }
 
