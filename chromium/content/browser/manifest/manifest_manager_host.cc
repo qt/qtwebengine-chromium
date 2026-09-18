@@ -138,6 +138,7 @@ void ManifestManagerHost::OnRequestManifestResponse(
                         valid_to_string(start_url_valid), "), id(",
                         valid_to_string(id_valid), "), and scope (",
                         valid_to_string(scope_valid), ")."}));
+    } else {
       auto bad_message = [this, &manifest = *manifest]() -> const char* {
         auto document_origin = page().GetMainDocument().GetLastCommittedOrigin();
         if (!document_origin.IsSameOriginWith(manifest.start_url)) {
