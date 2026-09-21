@@ -72,6 +72,8 @@ constexpr uint32_t FeedbackVector::FlagMaskForNeedsProcessingCheckFrom(
 }
 #endif  // !V8_ENABLE_LEAPTIERING
 
+int FeedbackVector::AllocatedSize() const { return SizeFor(length()); }
+
 bool FeedbackMetadata::is_empty() const {
   DCHECK_IMPLIES(slot_count() == 0, create_closure_slot_count() == 0);
   return slot_count() == 0;

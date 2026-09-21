@@ -534,6 +534,18 @@ class FeedbackVector
     return kRawFeedbackSlotsOffset + index * kTaggedSize;
   }
 
+  static constexpr int kMaxLength = (kMaxInt - kHeaderSize) / kTaggedSize;
+
+  // Hides the Torque-generated SizeFor()
+  static constexpr int SizeFor(int length) {
+    CHECK_GE(length, 0);
+    CHECK_LE(length, kMaxLength);
+    return kHeaderSize + length * kTaggedSize;
+  }
+
+  // Hiddes Torque-generated AllocatedSize()
+  inline int AllocatedSize() const;
+
   TQ_OBJECT_CONSTRUCTORS(FeedbackVector)
 
  private:
