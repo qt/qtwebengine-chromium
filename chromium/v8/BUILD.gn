@@ -303,7 +303,7 @@ declare_args() {
 
   # Disable write barriers when GCs are non-incremental and
   # heap has single generation.
-  v8_disable_write_barriers = is_win && !is_clang
+  v8_disable_write_barriers = false
 
   # Ensure that write barriers are always used.
   # Useful for debugging purposes.
