@@ -846,8 +846,6 @@ HRESULT InitializeSampleFromTexture(const VideoFrame* frame,
 HRESULT GenerateSampleFromVideoFrame(
     const VideoFrame* frame,
     DXGIDeviceManager* dxgi_device_manager,
-    bool use_dxgi_buffer,
-    Microsoft::WRL::ComPtr<ID3D11Texture2D>* staging_texture,
     DWORD buffer_alignment,
     IMFSample** sample_out) {
   // A shared image sample cannot be created synchronously.  Use
@@ -891,37 +889,8 @@ HRESULT GenerateSampleFromVideoFrame(
         IID_PPV_ARGS(&input_texture));
     RETURN_ON_HR_FAILURE(hr, "Failed to open shared GMB D3D texture", hr);
 
-    if (use_dxgi_buffer) {
-      hr =
-          InitializeSampleFromTexture(frame, input_texture.Get(), sample.Get());
-      RETURN_ON_HR_FAILURE(hr, "Failed to initialize sample from texture", hr);
-    } else {
-      Microsoft::WRL::ComPtr<IMFMediaBuffer> input_buffer;
-      size_t allocation_size =
-          VideoFrame::AllocationSize(frame->format(), frame->coded_size());
-      hr = MFCreateAlignedMemoryBuffer(
-          allocation_size,
-          buffer_alignment == 0 ? buffer_alignment : buffer_alignment - 1,
-          &input_buffer);
-      RETURN_ON_HR_FAILURE(
-          hr, "Failed to create memory buffer for input sample", hr);
-
-      MediaBufferScopedPointer scoped_buffer(input_buffer.Get());
-      bool copy_succeeded =
-          gpu::CopyD3D11TexToMem(input_texture.Get(), scoped_buffer.as_span(),
-                                 d3d_device.Get(), staging_texture);
-      if (!copy_succeeded) {
-        LOG(ERROR) << "Failed to copy sample to memory.";
-        return E_FAIL;
-      }
-
-      size_t copied_bytes = frame->visible_rect().width() *
-                            frame->visible_rect().height() * 3 / 2;
-      hr = input_buffer->SetCurrentLength(copied_bytes);
-      RETURN_ON_HR_FAILURE(hr, "Failed to set current buffer length", hr);
-      hr = sample->AddBuffer(input_buffer.Get());
-      RETURN_ON_HR_FAILURE(hr, "Failed to add buffer to sample", hr);
-    }
+    hr = InitializeSampleFromTexture(frame, input_texture.Get(), sample.Get());
+    RETURN_ON_HR_FAILURE(hr, "Failed to initialize sample from texture", hr);
   } else {
     size_t allocation_size = VideoFrame::AllocationSize(
         frame->format(), frame->visible_rect().size());
