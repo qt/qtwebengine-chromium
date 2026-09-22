@@ -7,7 +7,8 @@
 
 #include <cstdint>
 #include <string>
-#include <utility>
+
+#include "base/types/cxx23_to_underlying.h"
 
 namespace cast_channel {
 
@@ -15,7 +16,7 @@ namespace cast_channel {
 // with ostreams.
 template <typename Enumeration>
 auto AsInteger(Enumeration const value) {
-  return std::to_underlying(value);
+  return base::to_underlying(value);
 }
 
 enum class ReadyState {

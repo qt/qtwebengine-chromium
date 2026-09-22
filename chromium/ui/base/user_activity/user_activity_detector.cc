@@ -4,12 +4,11 @@
 
 #include "ui/base/user_activity/user_activity_detector.h"
 
-#include <utility>
-
 #include "base/format_macros.h"
 #include "base/logging.h"
 #include "base/observer_list.h"
 #include "base/strings/stringprintf.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "build/build_config.h"
 #include "ui/base/user_activity/user_activity_observer.h"
 #include "ui/events/event_utils.h"
@@ -23,7 +22,7 @@ namespace {
 std::string GetEventDebugString(const ui::Event* event) {
   std::string details = base::StringPrintf(
       "type=%d name=%s flags=%d time=%" PRId64,
-      std::to_underlying(event->type()), event->GetName(), event->flags(),
+      base::to_underlying(event->type()), event->GetName(), event->flags(),
       (event->time_stamp() - base::TimeTicks()).InMilliseconds());
 
   if (event->IsKeyEvent()) {

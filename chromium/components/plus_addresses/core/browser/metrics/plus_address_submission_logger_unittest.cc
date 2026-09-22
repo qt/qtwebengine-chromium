@@ -14,6 +14,7 @@
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "components/autofill/core/browser/field_types.h"
 #include "components/autofill/core/browser/foundations/test_autofill_client.h"
 #include "components/autofill/core/browser/foundations/test_autofill_driver.h"
@@ -78,8 +79,8 @@ ukm::TestUkmRecorder::HumanReadableUkmMetrics CreateUkmMetrics(
   metrics["CheckoutOrCartPage"] = is_checkout_or_cart_page;
   metrics["ManagedProfile"] = is_managed;
   metrics["SubmittedPlusAddress"] = submitted_plus_address;
-  metrics["PasswordFormType"] = std::to_underlying(password_form_type);
-  metrics["SuggestionContext"] = std::to_underlying(suggestion_context);
+  metrics["PasswordFormType"] = base::to_underlying(password_form_type);
+  metrics["SuggestionContext"] = base::to_underlying(suggestion_context);
   return metrics;
 }
 

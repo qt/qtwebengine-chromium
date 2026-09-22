@@ -13,6 +13,7 @@
 #include "base/check_op.h"
 #include "base/notreached.h"
 #include "base/strings/strcat.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "build/build_config.h"
 #include "components/content_settings/core/common/content_settings_metadata.h"
 #include "components/content_settings/core/common/content_settings_types.h"
@@ -152,8 +153,8 @@ content_settings::SettingInfo content_settings::SettingInfo::Clone() const {
 
 std::ostream& operator<<(std::ostream& os, const GeolocationSetting& it) {
   return os << "GeolocationSetting{approximate: "
-            << std::to_underlying(it.approximate)
-            << ", precise: " << std::to_underlying(it.precise) << "}";
+            << base::to_underlying(it.approximate)
+            << ", precise: " << base::to_underlying(it.precise) << "}";
 }
 
 std::ostream& operator<<(std::ostream& os, const PermissionSetting& it) {

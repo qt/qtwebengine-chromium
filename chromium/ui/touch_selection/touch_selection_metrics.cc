@@ -5,6 +5,7 @@
 #include "ui/touch_selection/touch_selection_metrics.h"
 
 #include "base/metrics/histogram_functions.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "ui/touch_selection/touch_editing_controller.h"
 
 namespace ui {
@@ -13,15 +14,15 @@ namespace {
 
 TouchSelectionMenuAction MapCommandIdToMenuAction(int command_id) {
   switch (command_id) {
-    case std::to_underlying(TouchEditable::MenuCommands::kCut):
+    case base::to_underlying(TouchEditable::MenuCommands::kCut):
       return TouchSelectionMenuAction::kCut;
-    case std::to_underlying(TouchEditable::MenuCommands::kCopy):
+    case base::to_underlying(TouchEditable::MenuCommands::kCopy):
       return TouchSelectionMenuAction::kCopy;
-    case std::to_underlying(TouchEditable::MenuCommands::kPaste):
+    case base::to_underlying(TouchEditable::MenuCommands::kPaste):
       return TouchSelectionMenuAction::kPaste;
-    case std::to_underlying(TouchEditable::MenuCommands::kSelectAll):
+    case base::to_underlying(TouchEditable::MenuCommands::kSelectAll):
       return TouchSelectionMenuAction::kSelectAll;
-    case std::to_underlying(TouchEditable::MenuCommands::kSelectWord):
+    case base::to_underlying(TouchEditable::MenuCommands::kSelectWord):
       return TouchSelectionMenuAction::kSelectWord;
     default:
       NOTREACHED() << "Invalid command id: " << command_id;

@@ -7,6 +7,7 @@
 #include <cmath>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/metrics/histogram.h"
@@ -81,7 +82,7 @@ std::string GenerateNetworkID(
       is_cellular
           // Don't care about cell connection type.
           ? "cell"
-          : base::NumberToString(std::to_underlying(connection_type));
+          : base::NumberToString(base::to_underlying(connection_type));
 
 // Further identify WiFi and cell connections. These calls are only supported
 // for Android devices.

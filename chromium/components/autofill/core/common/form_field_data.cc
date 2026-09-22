@@ -7,7 +7,6 @@
 #include <algorithm>
 #include <optional>
 #include <tuple>
-#include <utility>
 #include <variant>
 
 #include "base/i18n/rtl.h"
@@ -17,6 +16,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "base/types/zip.h"
 #include "build/build_config.h"
 #include "components/autofill/core/common/autocomplete_parsing_util.h"
@@ -452,8 +452,8 @@ std::string_view FormControlTypeToString(FormControlType type) {
 
 std::optional<FormControlType> StringToFormControlTypeDiscouraged(
     std::string_view type_string) {
-  for (auto i = std::to_underlying(FormControlType::kMinValue);
-       i <= std::to_underlying(FormControlType::kMaxValue); ++i) {
+  for (auto i = base::to_underlying(FormControlType::kMinValue);
+       i <= base::to_underlying(FormControlType::kMaxValue); ++i) {
     FormControlType type = static_cast<FormControlType>(i);
     if (mojom::IsKnownEnumValue(type) &&
         type_string == FormControlTypeToString(type) &&

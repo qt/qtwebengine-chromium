@@ -6,11 +6,11 @@
 
 #include <algorithm>
 #include <ostream>
-#include <utility>
 
 #include "base/check_op.h"
 #include "base/containers/span.h"
 #include "base/notreached.h"
+#include "base/types/cxx23_to_underlying.h"
 
 // Since ui::GestureEventDetails::Details is a union structure that corresponds
 // to only one EventType, allow conversion to a byte span to avoid using memset
@@ -77,7 +77,7 @@ GestureEventDetails::GestureEventDetails(ui::EventType type,
 
     default:
       NOTREACHED() << "Invalid event type for constructor: "
-                   << std::to_underlying(type);
+                   << base::to_underlying(type);
   }
 }
 
@@ -114,8 +114,8 @@ GestureEventDetails::GestureEventDetails(ui::EventType type,
     case ui::EventType::kGestureSwipe:
     case ui::EventType::kGesturePinchUpdate:
       DCHECK_EQ(type, other.type()) << " - Invalid gesture conversion from "
-                                    << std::to_underlying(other.type())
-                                    << " to " << std::to_underlying(type);
+                                    << base::to_underlying(other.type())
+                                    << " to " << base::to_underlying(type);
       break;
     default:
       break;

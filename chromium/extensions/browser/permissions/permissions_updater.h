@@ -11,6 +11,7 @@
 #include "base/functional/callback_forward.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "extensions/browser/extension_event_histogram_value.h"
 #include "extensions/buildflags/buildflags.h"
 
@@ -44,13 +45,13 @@ class PermissionsUpdater {
 
   // Enable enum class bitmasking.
   friend constexpr int operator|(InitFlag lhs, InitFlag rhs) {
-    return std::to_underlying(lhs) | std::to_underlying(rhs);
+    return base::to_underlying(lhs) | base::to_underlying(rhs);
   }
   friend constexpr int operator|(int lhs, InitFlag rhs) {
-    return lhs | std::to_underlying(rhs);
+    return lhs | base::to_underlying(rhs);
   }
   friend constexpr bool operator&(InitFlag lhs, InitFlag rhs) {
-    return std::to_underlying(lhs) & std::to_underlying(rhs);
+    return base::to_underlying(lhs) & base::to_underlying(rhs);
   }
 
   enum class RemoveType {
@@ -186,13 +187,13 @@ class PermissionsUpdater {
 
   // Enable enum class bitmasking.
   friend constexpr int operator|(PermissionsStore lhs, PermissionsStore rhs) {
-    return std::to_underlying(lhs) | std::to_underlying(rhs);
+    return base::to_underlying(lhs) | base::to_underlying(rhs);
   }
   friend constexpr int operator|(int lhs, PermissionsStore rhs) {
-    return lhs | std::to_underlying(rhs);
+    return lhs | base::to_underlying(rhs);
   }
   friend constexpr bool operator&(int lhs, PermissionsStore rhs) {
-    return lhs & std::to_underlying(rhs);
+    return lhs & base::to_underlying(rhs);
   }
 
   // Issues the relevant events, messages and notifications when the

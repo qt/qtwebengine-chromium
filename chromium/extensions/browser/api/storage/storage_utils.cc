@@ -4,8 +4,7 @@
 
 #include "extensions/browser/api/storage/storage_utils.h"
 
-#include <utility>
-
+#include "base/types/cxx23_to_underlying.h"
 #include "base/values.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_util.h"
@@ -63,7 +62,7 @@ api::storage::AccessLevel GetAccessLevelForArea(
     // Return access level iff it's a valid value.
     if (stored_access_level_int > 0 &&
         stored_access_level_int <=
-            std::to_underlying(api::storage::AccessLevel::kMaxValue)) {
+            base::to_underlying(api::storage::AccessLevel::kMaxValue)) {
       return static_cast<api::storage::AccessLevel>(stored_access_level_int);
     }
   }
@@ -88,7 +87,7 @@ void SetAccessLevelForArea(const ExtensionId& extension_id,
   ExtensionPrefs* prefs = ExtensionPrefs::Get(&browser_context);
   const PrefMap* pref_map = GetPrefMapForStorageArea(storage_area);
   prefs->SetIntegerPref(extension_id, *pref_map,
-                        std::to_underlying(access_level));
+                        base::to_underlying(access_level));
 }
 
 base::Value ValueChangeToValue(

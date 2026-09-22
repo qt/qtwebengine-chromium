@@ -9,6 +9,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "base/values.h"
 #include "build/build_config.h"
 #include "components/autofill/core/browser/data_model/form_group.h"
@@ -90,7 +91,7 @@ base::DictValue PaymentsRequest::BuildChromeUserContext(
   if (!client_behavior_signals.empty()) {
     base::ListValue active_client_signals;
     for (ClientBehaviorConstants signal : client_behavior_signals) {
-      active_client_signals.Append(std::to_underlying(signal));
+      active_client_signals.Append(base::to_underlying(signal));
     }
     std::ranges::sort(active_client_signals);
     chrome_user_context.Set("client_behavior_signals",

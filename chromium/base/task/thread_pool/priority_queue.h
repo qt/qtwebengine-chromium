@@ -10,6 +10,7 @@
 #include "base/task/common/checked_lock.h"
 #include "base/task/thread_pool/task_source.h"
 #include "base/task/thread_pool/task_source_sort_key.h"
+#include "base/types/cxx23_to_underlying.h"
 
 namespace base {
 namespace internal {

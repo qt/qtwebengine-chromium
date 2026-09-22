@@ -4,7 +4,6 @@
 
 #include "components/autofill/core/browser/metrics/form_interactions_ukm_logger.h"
 
-#include <utility>
 #include <variant>
 
 #include "base/check_deref.h"
@@ -111,7 +110,7 @@ void FormInteractionsUkmLogger::LogDidFillSuggestion(
 
   auto metric = ukm::builders::Autofill_SuggestionFilled(ukm_source_id);
   if (record_type) {
-    metric.SetRecordType(std::to_underlying(*record_type));
+    metric.SetRecordType(base::to_underlying(*record_type));
   }
   metric.SetIsForCreditCard(record_type.has_value())
       .SetMillisecondsSinceFormParsed(MillisecondsSinceFormParsed(
@@ -441,8 +440,8 @@ void FormInteractionsUkmLogger::LogAutofillFieldInfoAtFormRemove(
   builder.SetFormSessionIdentifier(FormGlobalIdToHash64Bit(form.global_id()))
       .SetFieldSessionIdentifier(FieldGlobalIdToHash64Bit(field.global_id()))
       .SetFieldSignature(HashFieldSignature(field.GetFieldSignature()))
-      .SetFormControlType2(std::to_underlying(field.form_control_type()))
-      .SetAutocompleteState(std::to_underlying(autocomplete_state))
+      .SetFormControlType2(base::to_underlying(field.form_control_type()))
+      .SetAutocompleteState(base::to_underlying(autocomplete_state))
       .SetFieldLogEventCount(field_log_events.size());
 
   SetStatusVector(AutofillStatus::kIsFocusable, field.is_focusable());
@@ -512,8 +511,8 @@ void FormInteractionsUkmLogger::LogAutofillFieldInfoAtFormRemove(
   }
 
   if (had_html_type) {
-    builder.SetHtmlFieldType(std::to_underlying(html_type))
-        .SetHtmlFieldMode(std::to_underlying(html_mode));
+    builder.SetHtmlFieldType(base::to_underlying(html_type))
+        .SetHtmlFieldMode(base::to_underlying(html_mode));
   }
 
   if (had_server_type) {

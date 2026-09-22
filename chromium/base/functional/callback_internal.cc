@@ -4,10 +4,9 @@
 
 #include "base/functional/callback_internal.h"
 
-#include <utility>
-
 #include "base/check.h"
 #include "base/notreached.h"
+#include "base/types/cxx23_to_underlying.h"
 
 namespace base::internal {
 
@@ -18,7 +17,7 @@ bool QueryCancellationTraitsForNonCancellables(
     BindStateBase::CancellationQueryMode mode) {
   // Non-cancellables are never cancelled and always valid, which means the
   // response for each mode is the same as its underlying value.
-  return std::to_underlying(mode);
+  return to_underlying(mode);
 }
 
 }  // namespace

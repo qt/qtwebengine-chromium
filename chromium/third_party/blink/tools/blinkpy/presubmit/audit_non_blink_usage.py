@@ -174,6 +174,7 @@ _CONFIG = [
             'base::TimeDelta',
             'base::TimeTicks',
             'base::to_address',
+            'base::to_underlying',
             'base::Token',
             'base::ToVector',
             'base::ToString',

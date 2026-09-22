@@ -6,8 +6,8 @@
 #define COMPONENTS_AUTOFILL_CORE_BROWSER_FIELD_TYPES_H_
 
 #include <type_traits>
-#include <utility>
 
+#include "base/types/cxx23_to_underlying.h"
 #include "components/autofill/core/common/dense_set.h"
 #include "components/autofill/core/common/html_field_types.h"
 
@@ -602,7 +602,7 @@ struct DenseSetTraits<FieldType>
     : EnumDenseSetTraits<FieldType, NO_SERVER_DATA, MAX_VALID_FIELD_TYPE> {
   static constexpr bool is_valid(FieldType x) {
     return x == NO_SERVER_DATA ||
-           ToSafeFieldType(std::to_underlying(x), NO_SERVER_DATA) !=
+           ToSafeFieldType(base::to_underlying(x), NO_SERVER_DATA) !=
                NO_SERVER_DATA;
   }
 };
@@ -614,7 +614,7 @@ struct DenseSetTraits<HtmlFieldType>
                          HtmlFieldType::kMaxValue> {
   static constexpr bool is_valid(HtmlFieldType x) {
     return x == HtmlFieldType::kUnrecognized ||
-           ToSafeHtmlFieldType(std::to_underlying(x),
+           ToSafeHtmlFieldType(base::to_underlying(x),
                                HtmlFieldType::kUnrecognized) !=
                HtmlFieldType::kUnrecognized;
   }
@@ -713,8 +713,8 @@ constexpr HtmlFieldType ToSafeHtmlFieldType(
     std::underlying_type_t<HtmlFieldType> raw_value,
     HtmlFieldType fallback_value) {
   auto is_invalid = [](std::underlying_type_t<HtmlFieldType> t) {
-    return t < std::to_underlying(HtmlFieldType::kMinValue) ||
-           t > std::to_underlying(HtmlFieldType::kMaxValue) ||
+    return t < base::to_underlying(HtmlFieldType::kMinValue) ||
+           t > base::to_underlying(HtmlFieldType::kMaxValue) ||
            // Full address is deprecated.
            t == 17 ||
            // UPI is deprecated.
@@ -898,12 +898,12 @@ constexpr FieldTypeGroup GroupTypeOfFieldType(FieldType field_type) {
 
 namespace internal {
 consteval std::array<FieldTypeSet,
-                     std::to_underlying(FieldTypeGroup::kMaxValue) + 1>
+                     base::to_underlying(FieldTypeGroup::kMaxValue) + 1>
 FieldTypesByGroupHelper() {
-  constexpr auto kMaxValue = std::to_underlying(FieldTypeGroup::kMaxValue);
+  constexpr auto kMaxValue = base::to_underlying(FieldTypeGroup::kMaxValue);
   std::array<FieldTypeSet, kMaxValue + 1> map{};
   for (FieldType field_type : FieldTypeSet::all()) {
-    auto index = std::to_underlying(GroupTypeOfFieldType(field_type));
+    auto index = base::to_underlying(GroupTypeOfFieldType(field_type));
     map[index].insert(field_type);
   }
   return map;
@@ -912,7 +912,7 @@ FieldTypesByGroupHelper() {
 
 #if !BUILDFLAG(IS_QTWEBENGINE)
 constexpr FieldTypeSet FieldTypesOfGroup(FieldTypeGroup group) {
-  return internal::FieldTypesByGroupHelper()[std::to_underlying(group)];
+  return internal::FieldTypesByGroupHelper()[base::to_underlying(group)];
 }
 #endif
 

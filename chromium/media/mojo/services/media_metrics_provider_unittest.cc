@@ -3,15 +3,14 @@
 // found in the LICENSE file.
 
 #include <stddef.h>
-
 #include <memory>
-#include <utility>
 
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/run_loop.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/test_message_loop.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "build/build_config.h"
 #include "components/ukm/test_ukm_recorder.h"
 #include "media/cdm/clear_key_cdm_common.h"
@@ -167,7 +166,7 @@ TEST_F(MediaMetricsProviderTest, TestUkm) {
       EXPECT_UKM(UkmEntry::kTimeToPlayReadyName,
                  kPlayReadyTime.InMilliseconds());
       EXPECT_UKM(UkmEntry::kContainerNameName,
-                 std::to_underlying(
+                 base::to_underlying(
                      container_names::MediaContainerName::kContainerMOV));
     }
   }
