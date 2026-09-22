@@ -23,6 +23,7 @@
 #include "base/strings/to_string.h"
 #include "base/threading/platform_thread.h"
 #include "base/trace_event/trace_event.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "build/build_config.h"
 #include "media/audio/audio_device_description.h"
 #include "media/base/audio_timestamp_helper.h"
@@ -193,7 +194,7 @@ OutputController::OutputController(
       state_(kEmpty),
       sync_reader_(sync_reader),
       power_monitor_(params.sample_rate(),
-                     base::Milliseconds(std::to_underlying(
+                     base::Milliseconds(base::to_underlying(
                          kPowerMeasurementTimeConstantMillis))),
       request_before_read_(base::FeatureList::IsEnabled(
           kAudioOutputControllerRequestBeforeRead)),

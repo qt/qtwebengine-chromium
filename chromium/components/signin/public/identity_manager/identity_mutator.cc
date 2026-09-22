@@ -4,6 +4,7 @@
 
 #include "components/signin/public/identity_manager/identity_mutator.h"
 
+#include "base/types/cxx23_to_underlying.h"
 #include "build/build_config.h"
 #include "components/signin/public/base/consent_level.h"
 #include "components/signin/public/identity_manager/accounts_cookie_mutator.h"
@@ -32,7 +33,7 @@ int32_t JniIdentityMutator::SetPrimaryAccount(
     const CoreAccountId& primary_account_id,
     int32_t j_access_point,
     base::OnceClosure&& prefs_committed_callback) {
-  return std::to_underlying(SetPrimaryAccountImpl(
+  return base::to_underlying(SetPrimaryAccountImpl(
       primary_account_id, signin::ConsentLevel::kSignin,
       static_cast<signin_metrics::AccessPoint>(j_access_point),
       std::move(prefs_committed_callback)));
@@ -43,7 +44,7 @@ int32_t JniIdentityMutator::SetPrimaryAccountWithSyncConsentForTesting(
     const CoreAccountId& primary_account_id,
     int32_t j_access_point,
     base::OnceClosure&& prefs_committed_callback) {
-  return std::to_underlying(SetPrimaryAccountImpl(
+  return base::to_underlying(SetPrimaryAccountImpl(
       primary_account_id, signin::ConsentLevel::kSync,
       static_cast<signin_metrics::AccessPoint>(j_access_point),
       std::move(prefs_committed_callback)));

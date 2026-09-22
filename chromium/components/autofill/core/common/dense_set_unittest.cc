@@ -9,6 +9,7 @@
 
 #include "base/logging.h"
 #include "base/rand_util.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -476,7 +477,7 @@ template <>
 struct DenseSetTraits<MyEnum4>
     : public EnumDenseSetTraits<MyEnum4, MyEnum4(0), MyEnum4::kMaxValue> {
   static constexpr bool is_valid(MyEnum4 x) {
-    return std::to_underlying(x) != 1;
+    return base::to_underlying(x) != 1;
   }
 };
 

@@ -19,6 +19,7 @@
 #include "base/metrics/histogram_functions.h"
 #include "base/notreached.h"
 #include "base/strings/strcat.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "components/autofill/core/browser/data_manager/addresses/address_data_cleaner.h"
 #include "components/autofill/core/browser/data_model/addresses/autofill_profile.h"
 #include "components/autofill/core/browser/data_model/addresses/autofill_profile_comparator.h"
@@ -160,14 +161,14 @@ int CalculateSilentUpdateMergeCategoryBitmask(
   int silent_update_merge_category_bitmask = 0;
   if (has_empty_to_non_empty_diff) {
     silent_update_merge_category_bitmask |=
-        std::to_underlying(FieldMergeCategory::kEmptyToNonEmpty);
+        base::to_underlying(FieldMergeCategory::kEmptyToNonEmpty);
   }
   if (has_capitalization_only_diff) {
     silent_update_merge_category_bitmask |=
-        std::to_underlying(FieldMergeCategory::kCapitalizationUpdate);
+        base::to_underlying(FieldMergeCategory::kCapitalizationUpdate);
   }
   if (has_diacritic_and_capitalization_only_diff) {
-    silent_update_merge_category_bitmask |= std::to_underlying(
+    silent_update_merge_category_bitmask |= base::to_underlying(
         FieldMergeCategory::kDiacriticAndCapitalizationUpdate);
   }
   return silent_update_merge_category_bitmask;
@@ -532,8 +533,8 @@ void LogNewProfileUserDecisionPerSubmissionSourceMetric(
     kMaxValue = kFormSubmissionIgnored,
   };
   DecisionPerSource decision_per_source =
-      static_cast<DecisionPerSource>(std::to_underlying(*supported_source) * 3 +
-                                     std::to_underlying(*supported_decision));
+      static_cast<DecisionPerSource>(base::to_underlying(*supported_source) * 3 +
+                                     base::to_underlying(*supported_decision));
   base::UmaHistogramEnumeration(
       "Autofill.ProfileImport.NewProfileUserDecisionPerSubmissionSource",
       decision_per_source);

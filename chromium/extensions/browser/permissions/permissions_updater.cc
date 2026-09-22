@@ -13,6 +13,7 @@
 #include "base/functional/callback_helpers.h"
 #include "base/memory/ref_counted.h"
 #include "base/no_destructor.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "base/values.h"
 #include "components/keyed_service/content/browser_context_keyed_service_shutdown_notifier_factory.h"
 #include "components/keyed_service/core/keyed_service_shutdown_notifier.h"
@@ -293,7 +294,7 @@ void PermissionsUpdater::GrantRuntimePermissions(
   // runtime host permissions feature is confined to when the experiment is
   // enabled.
   constexpr int permissions_store_mask =
-      std::to_underlying(PermissionsStore::kRuntimeGrantedPermissions);
+      base::to_underlying(PermissionsStore::kRuntimeGrantedPermissions);
   AddPermissionsImpl(extension, *active_permissions_to_add,
                      permissions_store_mask, permissions,
                      std::move(completion_callback));
@@ -315,7 +316,7 @@ void PermissionsUpdater::RevokeOptionalPermissions(
   // without prompting the user. They are always removed from the active set,
   // which is the set of permissions the extension currently requests.
   int permissions_store_mask =
-      std::to_underlying(PermissionsStore::kActivePermissions);
+      base::to_underlying(PermissionsStore::kActivePermissions);
   if (remove_type == RemoveType::kHard) {
     permissions_store_mask |= PermissionsStore::kGrantedPermissions |
                               PermissionsStore::kRuntimeGrantedPermissions;
@@ -438,7 +439,7 @@ void PermissionsUpdater::RevokeRuntimePermissions(
   // that when a user changes a site from permitted to non-permitted or vice
   // versa, and extension's specific stored permissions are unaffected.
   constexpr int permissions_store_mask =
-      std::to_underlying(PermissionsStore::kRuntimeGrantedPermissions);
+      base::to_underlying(PermissionsStore::kRuntimeGrantedPermissions);
   RemovePermissionsImpl(extension, std::move(new_active_permissions),
                         permissions, permissions_store_mask,
                         /*withhold_optional_permissions=*/true,
@@ -605,7 +606,7 @@ void PermissionsUpdater::AddPermissionsForTesting(
     const Extension& extension,
     const PermissionSet& permissions) {
   AddPermissionsImpl(extension, permissions,
-                     std::to_underlying(PermissionsStore::kNone), permissions,
+                     base::to_underlying(PermissionsStore::kNone), permissions,
                      base::DoNothing());
 }
 

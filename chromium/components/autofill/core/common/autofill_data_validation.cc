@@ -5,7 +5,6 @@
 #include "components/autofill/core/common/autofill_data_validation.h"
 
 #include <algorithm>
-#include <utility>
 
 #include "base/containers/flat_set.h"
 #include "base/metrics/histogram_functions.h"

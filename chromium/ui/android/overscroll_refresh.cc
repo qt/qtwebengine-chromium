@@ -5,7 +5,6 @@
 #include "ui/android/overscroll_refresh.h"
 
 #include <ostream>
-#include <utility>
 
 #include "base/check.h"
 #include "base/check_op.h"

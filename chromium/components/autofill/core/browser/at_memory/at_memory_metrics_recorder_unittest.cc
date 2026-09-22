@@ -8,6 +8,7 @@
 
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/task_environment.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "components/autofill/core/browser/integrators/at_memory/memory_data_type.h"
 #include "components/autofill/core/browser/integrators/at_memory/memory_search_result.h"
 #include "components/autofill/core/browser/metrics/autofill_metrics.h"
@@ -149,8 +150,8 @@ TEST_F(AtMemoryMetricsRecorderTest, Destructor_SuggestionAccepted_True) {
     SendResponse(metrics);
     metrics.OnSuggestionAccepted(
         MemoryDataType::kAddressFull,
-        std::to_underlying(MemoryEntrySourceType::kAutofill) |
-            std::to_underlying(MemoryEntrySourceType::kGmail));
+        base::to_underlying(MemoryEntrySourceType::kAutofill) |
+            base::to_underlying(MemoryEntrySourceType::kGmail));
   }
 
   histogram_tester_.ExpectUniqueSample("Autofill.AtMemory.SuggestionAccepted",
@@ -160,8 +161,8 @@ TEST_F(AtMemoryMetricsRecorderTest, Destructor_SuggestionAccepted_True) {
       MemoryDataType::kAddressFull, 1);
   histogram_tester_.ExpectUniqueSample(
       "Autofill.AtMemory.AcceptedSuggestionDataSources",
-      std::to_underlying(MemoryEntrySourceType::kAutofill) |
-          std::to_underlying(MemoryEntrySourceType::kGmail),
+      base::to_underlying(MemoryEntrySourceType::kAutofill) |
+          base::to_underlying(MemoryEntrySourceType::kGmail),
       1);
   histogram_tester_.ExpectUniqueSample(
       "Autofill.AtMemory.SuggestionAcceptedInSession", true, 1);
@@ -838,7 +839,7 @@ TEST_F(AtMemoryMetricsRecorderTest, LogsSearchQueryUkm_NoAcceptance) {
       100);
   test_ukm_recorder_.ExpectEntryMetric(
       entries[0], ukm::builders::AtMemory_SearchQuery::kQueryCompletedName,
-      std::to_underlying(AtMemoryQueryCompletedStatus::kQueryReturnedData));
+      base::to_underlying(AtMemoryQueryCompletedStatus::kQueryReturnedData));
   test_ukm_recorder_.ExpectEntryMetric(
       entries[0], ukm::builders::AtMemory_SearchQuery::kSuggestionAcceptedName,
       0);
@@ -862,8 +863,8 @@ TEST_F(AtMemoryMetricsRecorderTest, LogsSearchQueryUkm_WithAcceptanceAndFill) {
                                                 u"Address", u"123 Main St")}));
     metrics.OnSuggestionAccepted(
         MemoryDataType::kAddressFull,
-        std::to_underlying(MemoryEntrySourceType::kAutofill) |
-            std::to_underlying(MemoryEntrySourceType::kGmail),
+        base::to_underlying(MemoryEntrySourceType::kAutofill) |
+            base::to_underlying(MemoryEntrySourceType::kGmail),
         AutofillSuggestionDelegate::SuggestionMetadata{.multi_index = {2}});
     metrics.MarkFilled();
   }
@@ -888,12 +889,12 @@ TEST_F(AtMemoryMetricsRecorderTest, LogsSearchQueryUkm_WithAcceptanceAndFill) {
   test_ukm_recorder_.ExpectEntryMetric(
       entries[0],
       ukm::builders::AtMemory_SearchQuery::kAcceptedSuggestionDataTypeName,
-      std::to_underlying(MemoryDataType::kAddressFull));
+      base::to_underlying(MemoryDataType::kAddressFull));
   test_ukm_recorder_.ExpectEntryMetric(
       entries[0],
       ukm::builders::AtMemory_SearchQuery::kAcceptedSuggestionDataSourcesName,
-      std::to_underlying(MemoryEntrySourceType::kAutofill) |
-          std::to_underlying(MemoryEntrySourceType::kGmail));
+      base::to_underlying(MemoryEntrySourceType::kAutofill) |
+          base::to_underlying(MemoryEntrySourceType::kGmail));
 }
 
 // Tests that AtMemory.SearchQuery UKM is logged for each query when multiple

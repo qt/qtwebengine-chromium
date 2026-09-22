@@ -14,6 +14,7 @@
 #include "base/containers/span.h"
 #include "base/containers/span_rust.h"
 #include "base/containers/to_vector.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "base/types/expected.h"
 #include "base/types/expected_macros.h"
 #include "crypto/ecdsa_utils.h"
@@ -173,8 +174,8 @@ SignatureErrorOr<SignatureAlgorithms> GetSignatureAlgorithms(
   RETURN_IF_ERROR(MapSignatureParseResult(raw_sig.status));
 
   return SignatureAlgorithms{
-      .sig_alg = std::to_underlying(raw_sig.sig_alg),
-      .hash_alg = std::to_underlying(raw_sig.hash_alg),
+      .sig_alg = base::to_underlying(raw_sig.sig_alg),
+      .hash_alg = base::to_underlying(raw_sig.hash_alg),
   };
 }
 

@@ -20,6 +20,7 @@
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/timer/timer.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "build/build_config.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/base/clipboard/clipboard_buffer.h"
@@ -86,7 +87,7 @@ class VIEWS_EXPORT Textfield : public View,
 
  public:
   enum MenuCommands {
-    kUndo = std::to_underlying(
+    kUndo = base::to_underlying(
                 ui::TouchEditable::MenuCommands::kLastTouchEditableCommandId) +
             1,
     kDelete,

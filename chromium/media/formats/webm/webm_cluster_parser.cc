@@ -15,6 +15,7 @@
 #include "base/numerics/byte_conversions.h"
 #include "base/numerics/checked_math.h"
 #include "base/numerics/safe_conversions.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "base/types/optional_util.h"
 #include "media/base/agtm.h"
 #include "media/base/decrypt_config.h"
@@ -742,11 +743,11 @@ base::TimeDelta WebMClusterParser::Track::GetDurationEstimate() {
     DVLOG(3) << __func__ << " : using hardcoded default duration";
     if (track_type_ == TrackType::AUDIO) {
       duration = base::Milliseconds(
-          std::to_underlying(kDefaultAudioBufferDurationInMs));
+          base::to_underlying(kDefaultAudioBufferDurationInMs));
     } else {
       // Video tracks use the larger video default duration.
       duration = base::Milliseconds(
-          std::to_underlying(kDefaultVideoBufferDurationInMs));
+          base::to_underlying(kDefaultVideoBufferDurationInMs));
     }
   } else {
     // Use max duration to minimize the risk of introducing gaps in the buffered

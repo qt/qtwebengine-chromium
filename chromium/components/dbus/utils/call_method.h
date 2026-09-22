@@ -16,6 +16,7 @@
 #include "base/functional/callback.h"
 #include "base/numerics/clamped_math.h"
 #include "base/time/time.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "base/types/expected.h"
 #include "components/dbus/utils/read_message.h"
 #include "components/dbus/utils/read_value.h"
@@ -36,9 +37,9 @@ enum class CallMethodErrorStatus {
 };
 
 constexpr base::TimeDelta kTimeoutDefault = base::Milliseconds(
-    std::to_underlying(dbus::ObjectProxy::TIMEOUT_USE_DEFAULT));
+    base::to_underlying(dbus::ObjectProxy::TIMEOUT_USE_DEFAULT));
 constexpr base::TimeDelta kTimeoutMax =
-    base::Milliseconds(std::to_underlying(dbus::ObjectProxy::TIMEOUT_MAX));
+    base::Milliseconds(base::to_underlying(dbus::ObjectProxy::TIMEOUT_MAX));
 
 class COMPONENT_EXPORT(COMPONENTS_DBUS) CallMethodError {
  public:

@@ -7,6 +7,7 @@
 #include <variant>
 
 #include "base/check_op.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "build/build_config.h"
 #include "components/signin/public/base/signin_metrics.h"
 #include "components/signin/public/identity_manager/identity_utils.h"
@@ -204,7 +205,7 @@ ConvertToJavaPrimaryAccountChangeEvent(
     return {};
   }
   return Java_PrimaryAccountChangeEvent_Constructor(
-      env, std::to_underlying(event_type));
+      env, base::to_underlying(event_type));
 }
 
 #endif  // BUILDFLAG(IS_ANDROID)

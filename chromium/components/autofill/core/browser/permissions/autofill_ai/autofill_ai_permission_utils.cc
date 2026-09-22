@@ -8,7 +8,6 @@
 #include <optional>
 #include <string>
 #include <string_view>
-#include <utility>
 
 #include "base/check.h"
 #include "base/containers/contains.h"
@@ -22,6 +21,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/system/sys_info.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "base/values.h"
 #include "build/build_config.h"
 #include "build/buildflag.h"
@@ -896,11 +896,11 @@ bool IsAutofillAiEntityTypeBlockedByPolicy(const AutofillClient& client,
     const PrefService* prefs) {
   // State of the AutofillAI-specific enterprise policy pref.
   constexpr int kAutofillPredictionSettingsAllowWithoutLogging =
-      std::to_underlying(
+      base::to_underlying(
           optimization_guide::model_execution::prefs::
               ModelExecutionEnterprisePolicyValue::kAllowWithoutLogging);
   constexpr int kAutofillPredictionSettingsDisabled =
-      std::to_underlying(optimization_guide::model_execution::prefs::
+      base::to_underlying(optimization_guide::model_execution::prefs::
                              ModelExecutionEnterprisePolicyValue::kDisable);
   static_assert(kAutofillPredictionSettingsAllowWithoutLogging == 1);
   static_assert(kAutofillPredictionSettingsDisabled == 2);
@@ -915,7 +915,7 @@ bool IsAutofillAiEntityTypeBlockedByPolicy(const AutofillClient& client,
     const PrefService* prefs) {
   // State of the AutofillAI-specific enterprise policy pref.
   constexpr int kAutofillPredictionSettingsAllow =
-      std::to_underlying(optimization_guide::model_execution::prefs::
+      base::to_underlying(optimization_guide::model_execution::prefs::
                              ModelExecutionEnterprisePolicyValue::kAllow);
   static_assert(kAutofillPredictionSettingsAllow == 0);
 

@@ -47,6 +47,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/time/time.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "build/build_config.h"
 #include "components/autofill/core/browser/at_memory/at_memory_enablement_utils.h"
 #if !BUILDFLAG(IS_QTWEBENGINE)
@@ -2397,7 +2398,7 @@ void BrowserAutofillManager::DidShowSuggestions(
         base::JoinString(base::ToVector(shown_suggestion_types,
                                         [](SuggestionType type) {
                                           return base::NumberToString(
-                                              std::to_underlying(type));
+                                              base::to_underlying(type));
                                         }),
                          ","));
 

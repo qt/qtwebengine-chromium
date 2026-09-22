@@ -24,6 +24,7 @@
 #include "base/feature_list.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "base/types/optional_util.h"
 #include "components/autofill/core/browser/autofill_field.h"
 #include "components/autofill/core/browser/country_type.h"
@@ -592,7 +593,7 @@ AddressFormDataImporter::ExtractAddressProfileFromSection(
   SCOPED_CRASH_KEY_STRING32("Autofill", "app_locale",
                             address_data_manager().app_locale());
   SCOPED_CRASH_KEY_NUMBER("Autofill", "country_source",
-                          std::to_underlying(import_metadata.country_source));
+                          base::to_underlying(import_metadata.country_source));
 
   // Profiles with valid information qualify for multi-step imports.
   // This requires the profile to be finalized to apply the merging logic.

@@ -14,6 +14,7 @@
 #include "base/notreached.h"
 #include "base/strings/strcat.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "components/autofill/core/browser/integrators/at_memory/memory_search_result.h"
 #include "components/autofill/core/browser/metrics/autofill_metrics.h"
 #include "components/autofill/core/browser/metrics/autofill_metrics_utils.h"
@@ -248,7 +249,7 @@ AtMemoryMetricsRecorder::~AtMemoryMetricsRecorder() {
         .SetFieldSignature(HashFieldSignature(field_signature_))
         .SetFormSignature(HashFormSignature(form_signature_))
         .SetQuerySubmitted(query_count_ > 0)
-        .SetSearchBarDisplayed(std::to_underlying(*source_))
+        .SetSearchBarDisplayed(base::to_underlying(*source_))
         .SetSuggestionAccepted(suggestion_accepted_in_session_)
         .SetSuggestionFilled(suggestion_filled_in_session_)
         .SetUiSessionId(session_id_token_.low())
@@ -362,7 +363,7 @@ void AtMemoryMetricsRecorder::OnSuggestionAccepted(
   if (ukm_search_query_builder_) {
     ukm_search_query_builder_->SetSuggestionAccepted(true);
     ukm_search_query_builder_->SetAcceptedSuggestionDataType(
-        std::to_underlying(memory_data_type));
+        base::to_underlying(memory_data_type));
     ukm_search_query_builder_->SetAcceptedSuggestionDataSources(
         sources_bitmask);
   }
@@ -410,7 +411,7 @@ void AtMemoryMetricsRecorder::OnQueryResponseReceived(
           GetQueryCompletedStatus(result)) {
     base::UmaHistogramEnumeration("Autofill.AtMemory.QueryCompleted", *status);
     if (ukm_search_query_builder_) {
-      ukm_search_query_builder_->SetQueryCompleted(std::to_underlying(*status));
+      ukm_search_query_builder_->SetQueryCompleted(base::to_underlying(*status));
     }
   }
 

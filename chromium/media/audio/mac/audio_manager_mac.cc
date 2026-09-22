@@ -33,6 +33,7 @@
 #include "base/task/bind_post_task.h"
 #include "base/threading/thread_checker.h"
 #include "base/time/time.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "media/audio/apple/audio_auhal.h"
 #include "media/audio/apple/audio_low_latency_input.h"
 #include "media/audio/apple/scoped_audio_unit.h"
@@ -582,7 +583,7 @@ class AudioManagerMac::AudioPowerObserver : public base::PowerSuspendObserver {
     is_suspending_ = false;
     earliest_start_time_ =
         base::TimeTicks::Now() +
-        base::Seconds(std::to_underlying(kStartDelayInSecsForPowerEvents));
+        base::Seconds(base::to_underlying(kStartDelayInSecsForPowerEvents));
   }
 
   bool is_suspending_;
@@ -1114,7 +1115,7 @@ bool AudioManagerMac::ShouldDeferStreamStart() const {
 base::TimeDelta AudioManagerMac::GetDeferStreamStartTimeout() const {
   if (ShouldDeferStreamStart()) {
     return base::Seconds(
-        std::to_underlying(AudioManagerMac::kStartDelayInSecsForPowerEvents));
+        base::to_underlying(AudioManagerMac::kStartDelayInSecsForPowerEvents));
   }
   return base::TimeDelta();
 }

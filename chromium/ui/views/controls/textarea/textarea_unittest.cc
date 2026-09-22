@@ -13,6 +13,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/scoped_feature_list.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "build/build_config.h"
 #include "ui/base/ui_base_features.h"
 #include "ui/events/event.h"
@@ -113,10 +114,10 @@ TEST_F(TextareaTest, PasteNewlineTest) {
   textarea_->SetText(kText);
   textarea_->SelectAll(false);
   textarea_->ExecuteCommand(
-      std::to_underlying(ui::TouchEditable::MenuCommands::kCopy), 0);
+      base::to_underlying(ui::TouchEditable::MenuCommands::kCopy), 0);
   textarea_->SetText(std::u16string());
   textarea_->ExecuteCommand(
-      std::to_underlying(ui::TouchEditable::MenuCommands::kPaste), 0);
+      base::to_underlying(ui::TouchEditable::MenuCommands::kPaste), 0);
   EXPECT_EQ(kText, textarea_->GetText());
 }
 

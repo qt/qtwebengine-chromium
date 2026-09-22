@@ -112,7 +112,7 @@ CreateJournal(FileOperations* operations) {
 template <>
 struct PickleTraits<JournalEntryType> {
   static void Serialize(base::Pickle& pickle, const JournalEntryType& value) {
-    WriteToPickle(pickle, std::to_underlying(value));
+    WriteToPickle(pickle, base::to_underlying(value));
   }
 
   static std::optional<JournalEntryType> Deserialize(
@@ -131,7 +131,7 @@ struct PickleTraits<JournalEntryType> {
   }
 
   static size_t PickleSize(const JournalEntryType& value) {
-    return EstimatePickleSize(std::to_underlying(value));
+    return EstimatePickleSize(base::to_underlying(value));
   }
 };
 

@@ -329,7 +329,7 @@ bool EntityTable::AddEntityInstance(const EntityInstance& entity) {
   s.BindString(0, *entity.guid());
   s.BindString(1, entity.type().name_as_string());
   s.BindString(2, entity.nickname());
-  s.BindInt(3, std::to_underlying(entity.record_type()));
+  s.BindInt(3, base::to_underlying(entity.record_type()));
   s.BindBool(4, entity.are_attributes_read_only().value());
   s.BindString(5, entity.frecency_override(/*pass_key=*/{}));
 
@@ -576,7 +576,7 @@ std::vector<EntityInstance> EntityTable::GetEntityInstances(
          entities::kRecordType, entities::kAttributesReadOnly,
          entities::kFrecencyOverride},
         where);
-    s.BindInt(0, std::to_underlying(*record_type));
+    s.BindInt(0, base::to_underlying(*record_type));
   } else {
     sql::CachedSelectBuilder(
         SQL_FROM_HERE, *db(), s, entities::kTableName,

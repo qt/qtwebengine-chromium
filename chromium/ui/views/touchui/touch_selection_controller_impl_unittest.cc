@@ -19,6 +19,7 @@
 #include "base/test/scoped_feature_list.h"
 #include "base/test/simple_test_tick_clock.h"
 #include "base/time/time.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "ui/aura/client/screen_position_client.h"
 #include "ui/aura/test/test_cursor_client.h"
 #include "ui/aura/window.h"
@@ -985,40 +986,40 @@ TEST_F(TouchSelectionControllerImplTest, SelectCommands) {
   ui::TouchSelectionMenuClient* menu_client = GetSelectionController();
   ASSERT_TRUE(menu_client);
   EXPECT_TRUE(menu_client->IsCommandIdEnabled(
-      std::to_underlying(ui::TouchEditable::MenuCommands::kSelectAll),
+      base::to_underlying(ui::TouchEditable::MenuCommands::kSelectAll),
       /*can_paste=*/true));
   EXPECT_TRUE(menu_client->IsCommandIdEnabled(
-      std::to_underlying(ui::TouchEditable::MenuCommands::kSelectWord),
+      base::to_underlying(ui::TouchEditable::MenuCommands::kSelectWord),
       /*can_paste=*/true));
 
   // Select word at current position. Select word command should now be disabled
   // since there is already a selection.
   menu_client->ExecuteCommand(
-      std::to_underlying(ui::TouchEditable::MenuCommands::kSelectWord),
+      base::to_underlying(ui::TouchEditable::MenuCommands::kSelectWord),
       ui::EF_FROM_TOUCH);
   EXPECT_EQ("some", UTF16ToUTF8(textfield_->GetSelectedText()));
   menu_client = GetSelectionController();
   ASSERT_TRUE(menu_client);
   EXPECT_TRUE(menu_client->IsCommandIdEnabled(
-      std::to_underlying(ui::TouchEditable::MenuCommands::kSelectAll),
+      base::to_underlying(ui::TouchEditable::MenuCommands::kSelectAll),
       /*can_paste=*/true));
   EXPECT_FALSE(menu_client->IsCommandIdEnabled(
-      std::to_underlying(ui::TouchEditable::MenuCommands::kSelectWord),
+      base::to_underlying(ui::TouchEditable::MenuCommands::kSelectWord),
       /*can_paste=*/true));
 
   // Select all text. Select all and select word commands should now be
   // disabled.
   menu_client->ExecuteCommand(
-      std::to_underlying(ui::TouchEditable::MenuCommands::kSelectAll),
+      base::to_underlying(ui::TouchEditable::MenuCommands::kSelectAll),
       ui::EF_FROM_TOUCH);
   EXPECT_EQ("some text", UTF16ToUTF8(textfield_->GetSelectedText()));
   menu_client = GetSelectionController();
   ASSERT_TRUE(menu_client);
   EXPECT_FALSE(menu_client->IsCommandIdEnabled(
-      std::to_underlying(ui::TouchEditable::MenuCommands::kSelectAll),
+      base::to_underlying(ui::TouchEditable::MenuCommands::kSelectAll),
       /*can_paste=*/true));
   EXPECT_FALSE(menu_client->IsCommandIdEnabled(
-      std::to_underlying(ui::TouchEditable::MenuCommands::kSelectWord),
+      base::to_underlying(ui::TouchEditable::MenuCommands::kSelectWord),
       /*can_paste=*/true));
 }
 

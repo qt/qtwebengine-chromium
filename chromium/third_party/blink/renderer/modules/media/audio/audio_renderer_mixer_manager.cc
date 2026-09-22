@@ -15,6 +15,7 @@
 #include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "build/build_config.h"
 #include "media/audio/audio_device_description.h"
 #include "media/base/audio_renderer_sink.h"
@@ -190,7 +191,7 @@ AudioRendererMixer* AudioRendererMixerManager::GetMixer(
   auto* mixer_ref = mixer.get();
   mixers_[key] = {std::move(mixer), 1};
   DVLOG(1) << __func__ << " mixer: " << mixer
-           << " latency: " << std::to_underlying(latency)
+           << " latency: " << base::to_underlying(latency)
            << "\n input: " << input_params.AsHumanReadableString()
            << "\noutput: " << mixer_output_params.AsHumanReadableString();
   return mixer_ref;

@@ -23,6 +23,7 @@
 #include "base/trace_event/memory_allocator_dump.h"
 #include "base/trace_event/memory_dump_manager.h"
 #include "base/trace_event/process_memory_dump.h"
+#include "base/types/cxx23_to_underlying.h"
 
 namespace media {
 
@@ -257,7 +258,7 @@ void FrameBufferPool::OnVideoFrameDestroyed(FrameBuffer* frame_buffer) {
   std::erase_if(frame_buffers_, [now](const std::unique_ptr<FrameBuffer>& buf) {
     return !IsUsedLocked(buf.get()) &&
            now - buf->last_use_time >
-               base::Seconds(std::to_underlying(kStaleFrameLimitSecs));
+               base::Seconds(base::to_underlying(kStaleFrameLimitSecs));
   });
 }
 

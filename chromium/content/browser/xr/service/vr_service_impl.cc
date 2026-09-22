@@ -18,6 +18,7 @@
 #include "base/task/sequenced_task_runner.h"
 #include "base/time/time.h"
 #include "base/trace_event/common/trace_event_common.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "build/build_config.h"
 #include "components/viz/common/surfaces/frame_sink_id.h"
 #include "content/browser/permissions/permission_util.h"
@@ -815,7 +816,7 @@ void VRServiceImpl::EnsureRuntimeInstalled(SessionRequestData request,
 
 void VRServiceImpl::OnInstallResult(SessionRequestData request,
                                     XrInstallResult result) {
-  DVLOG(2) << __func__ << ": result=" << std::to_underlying(result);
+  DVLOG(2) << __func__ << ": result=" << base::to_underlying(result);
 
   if (result == XrInstallResult::kFailed) {
     RejectSession(std::move(request.callback), request.options->trace_id,

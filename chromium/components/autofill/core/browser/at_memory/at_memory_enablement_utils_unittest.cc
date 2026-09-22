@@ -12,6 +12,7 @@
 #include "base/system/sys_info.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "components/autofill/core/browser/foundations/test_autofill_client.h"
 #include "components/autofill/core/common/autofill_debug_features.h"
 #include "components/autofill/core/common/autofill_features.h"
@@ -90,7 +91,7 @@ class AtMemoryEnablementUtilsTest : public testing::Test {
         features::kAutofillAtMemory, {{"at_memory_eligible_tiers", ""}});
     autofill_client().GetPrefs()->registry()->RegisterIntegerPref(
         optimization_guide::prefs::kFindAndFillWithGeminiSettings,
-        std::to_underlying(optimization_guide::model_execution::prefs::
+        base::to_underlying(optimization_guide::model_execution::prefs::
                                ModelExecutionEnterprisePolicyValue::kAllow));
     // Enable the toggle by default in tests since it represents the default
     // active state.
@@ -460,7 +461,7 @@ class AtMemoryEnablementUtilsFeatureCheckedLastTest : public testing::Test {
         true);
     registry_->RegisterIntegerPref(
         optimization_guide::prefs::kFindAndFillWithGeminiSettings,
-        std::to_underlying(optimization_guide::model_execution::prefs::
+        base::to_underlying(optimization_guide::model_execution::prefs::
                                ModelExecutionEnterprisePolicyValue::kAllow));
     pref_service_ = std::make_unique<TestPrefService>(pref_store_, registry_);
 

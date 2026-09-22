@@ -32,6 +32,7 @@
 #include "base/numerics/safe_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/string_view_util.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "components/cbor/cbor_buildflags.h"
 #include "components/cbor/constants.h"
 #include "components/cbor/float_conversions.h"
@@ -44,8 +45,8 @@ namespace cbor {
 
 #if BUILDFLAG(USE_CBOR_RUST)
 #define ASSERT_DECODER_ERROR_EQ(cpp_err, rust_err)                   \
-  static_assert(std::to_underlying(Reader::DecoderError::cpp_err) == \
-                std::to_underlying(cbor::rust::ErrorCode::Tag::rust_err))
+  static_assert(base::to_underlying(Reader::DecoderError::cpp_err) == \
+                base::to_underlying(cbor::rust::ErrorCode::Tag::rust_err))
 // LINT.IfChange(DecoderErrorAsserts)
 ASSERT_DECODER_ERROR_EQ(CBOR_NO_ERROR, Ok);
 ASSERT_DECODER_ERROR_EQ(UNSUPPORTED_MAJOR_TYPE, UnsupportedMajorType);

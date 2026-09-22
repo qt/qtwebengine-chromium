@@ -13,6 +13,7 @@
 #include "base/containers/span_writer.h"
 #include "base/containers/to_vector.h"
 #include "base/test/gmock_expected_support.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "base/types/expected.h"
 #include "crypto/ecdsa_utils.h"
 #include "crypto/hash.h"
@@ -30,10 +31,10 @@ using ::base::test::ValueIs;
 
 namespace {
 
-constexpr uint16_t kTpmAlgRsaSsa = std::to_underlying(TpmAlg::TPM_ALG_RSASSA);
-constexpr uint16_t kTpmAlgEcdsa = std::to_underlying(TpmAlg::TPM_ALG_ECDSA);
-constexpr uint16_t kTpmAlgSha1 = std::to_underlying(TpmAlg::TPM_ALG_SHA1);
-constexpr uint16_t kTpmAlgSha256 = std::to_underlying(TpmAlg::TPM_ALG_SHA256);
+constexpr uint16_t kTpmAlgRsaSsa = base::to_underlying(TpmAlg::TPM_ALG_RSASSA);
+constexpr uint16_t kTpmAlgEcdsa = base::to_underlying(TpmAlg::TPM_ALG_ECDSA);
+constexpr uint16_t kTpmAlgSha1 = base::to_underlying(TpmAlg::TPM_ALG_SHA1);
+constexpr uint16_t kTpmAlgSha256 = base::to_underlying(TpmAlg::TPM_ALG_SHA256);
 
 constexpr std::array<uint8_t, 4> kChallenge = {1, 2, 3, 4};
 

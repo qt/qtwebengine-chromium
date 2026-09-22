@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/types/cxx23_to_underlying.h"
 #include "components/translate/content/renderer/translate_agent.h"
 
 #include <memory>
@@ -234,7 +235,7 @@ TEST_F(TranslateAgentBrowserTest, TranslateLibNeverReady) {
   EXPECT_CALL(*translate_agent_, GetErrorCode())
       .Times(AtLeast(5))
       .WillRepeatedly(
-          Return(std::to_underlying(translate::TranslateErrors::NONE)));
+          Return(base::to_underlying(translate::TranslateErrors::NONE)));
 
   translate_agent_->TranslatePage("en", "fr", std::string());
   base::RunLoop().RunUntilIdle();
@@ -259,7 +260,7 @@ TEST_F(TranslateAgentBrowserTest, TranslateSuccess) {
       .WillOnce(Return(true));
 
   EXPECT_CALL(*translate_agent_, GetErrorCode())
-      .WillOnce(Return(std::to_underlying(translate::TranslateErrors::NONE)));
+      .WillOnce(Return(base::to_underlying(translate::TranslateErrors::NONE)));
 
   EXPECT_CALL(*translate_agent_, StartTranslation()).WillOnce(Return(true));
 
@@ -315,7 +316,7 @@ TEST_F(TranslateAgentBrowserTest, TranslateFailure) {
 
   EXPECT_CALL(*translate_agent_, GetErrorCode())
       .WillOnce(Return(
-          std::to_underlying(translate::TranslateErrors::TRANSLATION_ERROR)));
+          base::to_underlying(translate::TranslateErrors::TRANSLATION_ERROR)));
 
   // V8 call for performance monitoring should be ignored.
   EXPECT_CALL(*translate_agent_, ExecuteScriptAndGetDoubleResult(_)).Times(2);

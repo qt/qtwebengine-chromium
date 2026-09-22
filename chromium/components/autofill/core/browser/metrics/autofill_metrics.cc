@@ -30,6 +30,7 @@
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/time/time.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "components/autofill/core/browser/autofill_field.h"
 #include "components/autofill/core/browser/autofill_type.h"
 #include "components/autofill/core/browser/data_model/addresses/autofill_profile.h"
@@ -127,7 +128,7 @@ const std::string_view GetImageTypeString(
       return "ValuableImage";
   }
   NOTREACHED() << "Unhandled AutofillImageFetcherBase::ImageType "
-               << std::to_underlying(image_type);
+               << base::to_underlying(image_type);
 }
 
 }  // namespace
@@ -139,17 +140,17 @@ const std::string_view GetImageTypeString(
 int GetFieldTypeUserEditStatusMetric(
     FieldType field_type,
     AutofillMetrics::AutofilledFieldUserEditingStatusMetric metric) {
-  static_assert(std::to_underlying(FieldType::MAX_VALID_FIELD_TYPE) < (1 << 12),
+  static_assert(base::to_underlying(FieldType::MAX_VALID_FIELD_TYPE) < (1 << 12),
                 "autofill::FieldType value needs more than 12 bits.");
 
   static_assert(
-      std::to_underlying(
+      base::to_underlying(
           AutofillMetrics::AutofilledFieldUserEditingStatusMetric::kMaxValue) <
           (1 << 4),
       "AutofillMetrics::AutofilledFieldUserEditingStatusMetric value needs "
       "more than 4 bits.");
 
-  return (std::to_underlying(field_type) << 4) | std::to_underlying(metric);
+  return (base::to_underlying(field_type) << 4) | base::to_underlying(metric);
 }
 
 const int kMaxBucketsCount = 50;

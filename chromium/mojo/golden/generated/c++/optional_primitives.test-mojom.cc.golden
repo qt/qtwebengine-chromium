@@ -12,6 +12,7 @@
 #include "optional_primitives.test-mojom.h"
 #include <stdint.h>
 #include <utility>
+#include "base/types/cxx23_to_underlying.h"
 #include "mojo/public/cpp/bindings/lib/default_construct_tag_internal.h"
 #include "mojo/public/cpp/bindings/lib/serialization.h"
 #include "mojo/public/cpp/bindings/lib/validate_params.h"

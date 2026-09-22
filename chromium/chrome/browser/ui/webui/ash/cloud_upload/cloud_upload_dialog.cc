@@ -29,6 +29,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "base/timer/elapsed_timer.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "chrome/browser/apps/app_service/app_service_proxy.h"
 #include "chrome/browser/apps/app_service/app_service_proxy_factory.h"
 #include "chrome/browser/ash/arc/fileapi/arc_documents_provider_util.h"
@@ -1484,7 +1485,7 @@ void CloudOpenTask::LocalTaskExecuted(
     LOG(ERROR) << "Execution of local file task with app id " << task.app_id
                << " to open office files. Led to error message: "
                << error_message
-               << " and result: " << std::to_underlying(result);
+               << " and result: " << base::to_underlying(result);
     return;
   }
 

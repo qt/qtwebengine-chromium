@@ -28,6 +28,7 @@
 #include "base/test/icu_test_util.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/time/time.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "build/build_config.h"
 #include "cc/paint/display_item_list.h"
 #include "components/viz/common/surfaces/parent_local_surface_id_allocator.h"
@@ -3332,7 +3333,7 @@ TEST_F(ViewTest, TextfieldCutCopyPaste) {
 
   normal->SelectAll(false);
   normal->ExecuteCommand(
-      std::to_underlying(ui::TouchEditable::MenuCommands::kCut), 0);
+      base::to_underlying(ui::TouchEditable::MenuCommands::kCut), 0);
   std::u16string result = ui::clipboard_test_util::ReadText(
       clipboard, ui::ClipboardBuffer::kCopyPaste, /* data_dst = */ nullptr);
   EXPECT_EQ(kNormalText, result);
@@ -3340,7 +3341,7 @@ TEST_F(ViewTest, TextfieldCutCopyPaste) {
 
   read_only->SelectAll(false);
   read_only->ExecuteCommand(
-      std::to_underlying(ui::TouchEditable::MenuCommands::kCut), 0);
+      base::to_underlying(ui::TouchEditable::MenuCommands::kCut), 0);
   result = ui::clipboard_test_util::ReadText(
       clipboard, ui::ClipboardBuffer::kCopyPaste, /* data_dst = */ nullptr);
   // Cut should have failed, so the clipboard content should not have changed.
@@ -3348,7 +3349,7 @@ TEST_F(ViewTest, TextfieldCutCopyPaste) {
 
   password->SelectAll(false);
   password->ExecuteCommand(
-      std::to_underlying(ui::TouchEditable::MenuCommands::kCut), 0);
+      base::to_underlying(ui::TouchEditable::MenuCommands::kCut), 0);
   result = ui::clipboard_test_util::ReadText(
       clipboard, ui::ClipboardBuffer::kCopyPaste, /* data_dst = */ nullptr);
   // Cut should have failed, so the clipboard content should not have changed.
@@ -3361,21 +3362,21 @@ TEST_F(ViewTest, TextfieldCutCopyPaste) {
   // Start with |read_only| to observe a change in clipboard text.
   read_only->SelectAll(false);
   read_only->ExecuteCommand(
-      std::to_underlying(ui::TouchEditable::MenuCommands::kCopy), 0);
+      base::to_underlying(ui::TouchEditable::MenuCommands::kCopy), 0);
   result = ui::clipboard_test_util::ReadText(
       clipboard, ui::ClipboardBuffer::kCopyPaste, /* data_dst = */ nullptr);
   EXPECT_EQ(kReadOnlyText, result);
 
   normal->SelectAll(false);
   normal->ExecuteCommand(
-      std::to_underlying(ui::TouchEditable::MenuCommands::kCopy), 0);
+      base::to_underlying(ui::TouchEditable::MenuCommands::kCopy), 0);
   result = ui::clipboard_test_util::ReadText(
       clipboard, ui::ClipboardBuffer::kCopyPaste, /* data_dst = */ nullptr);
   EXPECT_EQ(kNormalText, result);
 
   password->SelectAll(false);
   password->ExecuteCommand(
-      std::to_underlying(ui::TouchEditable::MenuCommands::kCopy), 0);
+      base::to_underlying(ui::TouchEditable::MenuCommands::kCopy), 0);
   result = ui::clipboard_test_util::ReadText(
       clipboard, ui::ClipboardBuffer::kCopyPaste, /* data_dst = */ nullptr);
   // Text cannot be copied from an obscured field; the clipboard won't change.
@@ -3388,21 +3389,21 @@ TEST_F(ViewTest, TextfieldCutCopyPaste) {
   // Attempting to paste kNormalText in a read-only text-field should fail.
   read_only->SelectAll(false);
   read_only->ExecuteCommand(
-      std::to_underlying(ui::TouchEditable::MenuCommands::kPaste), 0);
+      base::to_underlying(ui::TouchEditable::MenuCommands::kPaste), 0);
   EXPECT_EQ(kReadOnlyText, read_only->GetText());
 
   password->SelectAll(false);
   password->ExecuteCommand(
-      std::to_underlying(ui::TouchEditable::MenuCommands::kPaste), 0);
+      base::to_underlying(ui::TouchEditable::MenuCommands::kPaste), 0);
   EXPECT_EQ(kNormalText, password->GetText());
 
   // Copy from |read_only| to observe a change in the normal textfield text.
   read_only->SelectAll(false);
   read_only->ExecuteCommand(
-      std::to_underlying(ui::TouchEditable::MenuCommands::kCopy), 0);
+      base::to_underlying(ui::TouchEditable::MenuCommands::kCopy), 0);
   normal->SelectAll(false);
   normal->ExecuteCommand(
-      std::to_underlying(ui::TouchEditable::MenuCommands::kPaste), 0);
+      base::to_underlying(ui::TouchEditable::MenuCommands::kPaste), 0);
   EXPECT_EQ(kReadOnlyText, normal->GetText());
   widget->CloseNow();
 }

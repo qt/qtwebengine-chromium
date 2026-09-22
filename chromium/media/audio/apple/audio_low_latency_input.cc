@@ -28,6 +28,7 @@
 #include "base/strings/sys_string_conversions.h"
 #include "base/time/time.h"
 #include "base/trace_event/trace_event.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "media/audio/apple/audio_manager_apple.h"
 #include "media/audio/apple/scoped_audio_unit.h"
 #include "media/base/audio_bus.h"
@@ -749,7 +750,7 @@ void AUAudioInputStream::Start(AudioInputCallback* callback) {
                                             base::Unretained(this), callback));
     manager_->GetTaskRunner()->PostDelayedTask(
         FROM_HERE, deferred_start_cb_.callback(),
-        base::Seconds(std::to_underlying(
+        base::Seconds(base::to_underlying(
             AudioManagerMac::kStartDelayInSecsForPowerEvents)));
     return;
   }

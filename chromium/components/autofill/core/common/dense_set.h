@@ -13,13 +13,13 @@
 #include <iterator>
 #include <ranges>
 #include <type_traits>
-#include <utility>
 
 #include "base/check.h"
 #include "base/check_op.h"
 #include "base/containers/span.h"
 #include "base/memory/raw_ptr.h"
 #include "base/numerics/safe_conversions.h"
+#include "base/types/cxx23_to_underlying.h"
 
 namespace autofill {
 
@@ -283,7 +283,7 @@ struct EnumDenseSetTraits {
     return static_cast<T>(x);
   }
   static constexpr UnderlyingType to_underlying(T x) {
-    return std::to_underlying(x);
+    return base::to_underlying(x);
   }
   static constexpr bool is_valid(T x) { return true; }
 
@@ -369,7 +369,7 @@ struct DenseSetTraits<T>
 //   struct DenseSetTraits<MyEnum>
 //       : public EnumDenseSetTraits<MyEnum, MyEnum(0), MyEnum::kMaxValue> {
 //     static constexpr bool is_valid(MyEnum x) {
-//       return std::to_underlying(x) != 1;
+//       return base::to_underlying(x) != 1;
 //     }
 //   };
 //

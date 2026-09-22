@@ -11,6 +11,7 @@
 #include "base/check.h"
 #include "base/feature_list.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "ui/aura/window.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/metadata/metadata_impl_macros.h"
@@ -39,16 +40,16 @@ struct MenuCommand {
 };
 
 MenuCommand kMenuCommands[] = {
-    {std::to_underlying(ui::TouchEditable::MenuCommands::kCut), IDS_APP_CUT},
-    {std::to_underlying(ui::TouchEditable::MenuCommands::kCopy), IDS_APP_COPY},
-    {std::to_underlying(ui::TouchEditable::MenuCommands::kPaste),
+    {base::to_underlying(ui::TouchEditable::MenuCommands::kCut), IDS_APP_CUT},
+    {base::to_underlying(ui::TouchEditable::MenuCommands::kCopy), IDS_APP_COPY},
+    {base::to_underlying(ui::TouchEditable::MenuCommands::kPaste),
      IDS_APP_PASTE},
 };
 
 MenuCommand kMenuSelectCommands[] = {
-    {std::to_underlying(ui::TouchEditable::MenuCommands::kSelectWord),
+    {base::to_underlying(ui::TouchEditable::MenuCommands::kSelectWord),
      IDS_APP_SELECT},
-    {std::to_underlying(ui::TouchEditable::MenuCommands::kSelectAll),
+    {base::to_underlying(ui::TouchEditable::MenuCommands::kSelectAll),
      IDS_APP_SELECT_ALL},
 };
 

@@ -26,6 +26,7 @@
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/time/time.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "base/types/optional_ref.h"
 #include "base/uuid.h"
 #include "build/buildflag.h"
@@ -1695,7 +1696,7 @@ bool PaymentsAutofillTable::SetCreditCardBenefits(
                              *benefit_base.linked_card_instrument_id());
     insert_benefit.BindInt(index++, benefit_type);
     insert_benefit.BindInt(
-        index++, std::to_underlying(std::visit(
+        index++, base::to_underlying(std::visit(
                      absl::Overload{
                          [](const CreditCardCategoryBenefit& a) {
                            return a.benefit_category();

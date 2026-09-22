@@ -9,6 +9,7 @@
 #import "base/no_destructor.h"
 #import "base/strings/strcat.h"
 #import "base/strings/sys_string_conversions.h"
+#import "base/types/cxx23_to_underlying.h"
 #import "base/values.h"
 #import "components/webauthn/ios/features.h"
 #import "components/webauthn/ios/passkey_request_parser.h"
@@ -230,7 +231,7 @@ void PasskeyJavaScriptFeature::DeferToRenderer(
   CallJavaScriptFunction(web_frame, "passkey.deferToRenderer",
                          base::ListValue()
                              .Append(request_id)
-                             .Append(std::to_underlying(request_type)));
+                             .Append(base::to_underlying(request_type)));
 }
 
 void PasskeyJavaScriptFeature::ResolveAttestationRequest(

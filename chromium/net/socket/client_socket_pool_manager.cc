@@ -12,6 +12,7 @@
 #include "base/check_op.h"
 #include "base/metrics/field_trial_params.h"
 #include "base/numerics/safe_conversions.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "build/build_config.h"
 #include "net/base/load_flags.h"
 #include "net/base/proxy_chain.h"
@@ -32,7 +33,7 @@ namespace net {
 namespace {
 
 static constexpr size_t kSocketPoolTypesSize =
-    std::to_underlying(HttpNetworkSession::SocketPoolType::kMaxValue) + 1;
+    base::to_underlying(HttpNetworkSession::SocketPoolType::kMaxValue) + 1;
 
 // The soft limit for active sockets per pool for this network process. This may
 // be modified by set_socket_soft_cap_per_pool in tests, but should otherwise be
@@ -140,7 +141,7 @@ ClientSocketPoolManager::~ClientSocketPoolManager() = default;
 // static
 size_t ClientSocketPoolManager::socket_soft_cap_per_pool(
     HttpNetworkSession::SocketPoolType pool_type) {
-  return g_socket_soft_cap_per_pool[std::to_underlying(pool_type)];
+  return g_socket_soft_cap_per_pool[base::to_underlying(pool_type)];
 }
 
 // static
@@ -149,15 +150,15 @@ void ClientSocketPoolManager::set_socket_soft_cap_per_pool_for_test(
     size_t socket_count) {
   DCHECK_LT(0u, socket_count);     // At least one socket must be allowed.
   DCHECK_GE(2048u, socket_count);  // For now, we pick a ceiling of 2^11.
-  g_socket_soft_cap_per_pool[std::to_underlying(pool_type)] = socket_count;
-  DCHECK_GE(g_socket_soft_cap_per_pool[std::to_underlying(pool_type)],
-            g_max_sockets_per_group[std::to_underlying(pool_type)]);
+  g_socket_soft_cap_per_pool[base::to_underlying(pool_type)] = socket_count;
+  DCHECK_GE(g_socket_soft_cap_per_pool[base::to_underlying(pool_type)],
+            g_max_sockets_per_group[base::to_underlying(pool_type)]);
 }
 
 // static
 size_t ClientSocketPoolManager::max_sockets_per_group(
     HttpNetworkSession::SocketPoolType pool_type) {
-  return g_max_sockets_per_group[std::to_underlying(pool_type)];
+  return g_max_sockets_per_group[base::to_underlying(pool_type)];
 }
 
 // static
@@ -166,18 +167,18 @@ void ClientSocketPoolManager::set_max_sockets_per_group_for_test(
     size_t socket_count) {
   DCHECK_LT(0u, socket_count);    // At least one socket must be allowed.
   DCHECK_GE(512u, socket_count);  // For now, we pick a ceiling of 2^9.
-  g_max_sockets_per_group[std::to_underlying(pool_type)] = socket_count;
+  g_max_sockets_per_group[base::to_underlying(pool_type)] = socket_count;
 
-  DCHECK_GE(g_socket_soft_cap_per_pool[std::to_underlying(pool_type)],
-            g_max_sockets_per_group[std::to_underlying(pool_type)]);
-  DCHECK_GE(g_max_sockets_per_proxy_chain[std::to_underlying(pool_type)],
-            g_max_sockets_per_group[std::to_underlying(pool_type)]);
+  DCHECK_GE(g_socket_soft_cap_per_pool[base::to_underlying(pool_type)],
+            g_max_sockets_per_group[base::to_underlying(pool_type)]);
+  DCHECK_GE(g_max_sockets_per_proxy_chain[base::to_underlying(pool_type)],
+            g_max_sockets_per_group[base::to_underlying(pool_type)]);
 }
 
 // static
 size_t ClientSocketPoolManager::max_sockets_per_proxy_chain(
     HttpNetworkSession::SocketPoolType pool_type) {
-  return g_max_sockets_per_proxy_chain[std::to_underlying(pool_type)];
+  return g_max_sockets_per_proxy_chain[base::to_underlying(pool_type)];
 }
 
 // static
@@ -195,7 +196,7 @@ void ClientSocketPoolManager::set_max_sockets_per_proxy_chain(
   CHECK_GE(socket_count, 6u);
   CHECK_LE(socket_count, 256u);
   // LINT.ThenChange(/net/socket/client_socket_pool_manager.cc:SetMaxConnectionsPerProxyChain)
-  g_max_sockets_per_proxy_chain[std::to_underlying(pool_type)] = socket_count;
+  g_max_sockets_per_proxy_chain[base::to_underlying(pool_type)] = socket_count;
 }
 
 // static

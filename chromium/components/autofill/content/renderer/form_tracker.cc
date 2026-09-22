@@ -5,7 +5,6 @@
 #include "components/autofill/content/renderer/form_tracker.h"
 
 #include <optional>
-#include <utility>
 #include <variant>
 
 #include "base/check.h"
@@ -14,6 +13,7 @@
 #include "base/metrics/histogram_functions.h"
 #include "base/notreached.h"
 #include "base/observer_list.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "components/autofill/content/renderer/autofill_agent.h"
 #include "components/autofill/content/renderer/form_autofill_util.h"
 #include "components/autofill/content/renderer/password_autofill_agent.h"
@@ -91,16 +91,16 @@ void LogSubmittedFormMetric(mojom::SubmissionSource source,
     kMaxValue = kTotal_Cached
   };
   static_assert(
-      std::to_underlying(SubmittedFormTypeBySource::kMaxValue) + 1 ==
-          3 * (std::to_underlying(mojom::SubmissionSource::kMaxValue) + 2),
+      base::to_underlying(SubmittedFormTypeBySource::kMaxValue) + 1 ==
+          3 * (base::to_underlying(mojom::SubmissionSource::kMaxValue) + 2),
       "SubmittedFormTypeBySource should have three values for each value of "
       "SubmissionSource in addition to three `Total` values");
 
   using underlying_type = std::underlying_type_t<SubmittedFormTypeBySource>;
-  underlying_type source_bucket = std::to_underlying(source) * 3;
+  underlying_type source_bucket = base::to_underlying(source) * 3;
   underlying_type total_bucket =
-      std::to_underlying(SubmittedFormTypeBySource::kTotal_Null);
-  underlying_type offset = std::to_underlying(type);
+      base::to_underlying(SubmittedFormTypeBySource::kTotal_Null);
+  underlying_type offset = base::to_underlying(type);
   base::UmaHistogramEnumeration(
       "Autofill.SubmissionDetection.SubmittedFormType",
       static_cast<SubmittedFormTypeBySource>(source_bucket + offset));

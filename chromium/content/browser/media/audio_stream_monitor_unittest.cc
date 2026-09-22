@@ -12,6 +12,7 @@
 #include "base/functional/callback_helpers.h"
 #include "base/memory/raw_ptr.h"
 #include "base/time/time.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/browser/invalidate_type.h"
 #include "content/public/browser/web_contents_delegate.h"
@@ -129,7 +130,7 @@ class AudioStreamMonitorTest : public RenderViewHostTestHarness {
 
   static base::TimeDelta holding_period() {
     return base::Milliseconds(
-        std::to_underlying(AudioStreamMonitor::kHoldOnMilliseconds));
+        base::to_underlying(AudioStreamMonitor::kHoldOnMilliseconds));
   }
 
   void StartMonitoring(GlobalRenderFrameHostId render_frame_host_id,

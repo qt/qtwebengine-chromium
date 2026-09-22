@@ -7,6 +7,7 @@
 #include <cmath>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/metrics/histogram.h"
@@ -15,6 +16,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/task/thread_pool.h"
 #include "base/trace_event/trace_event.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "build/build_config.h"
 #include "content/browser/preloading/prefetch/prefetch_dns_prober.h"
 #include "content/public/browser/browser_context.h"
@@ -81,7 +83,7 @@ std::string GenerateNetworkID(
       is_cellular
           // Don't care about cell connection type.
           ? "cell"
-          : base::NumberToString(std::to_underlying(connection_type));
+          : base::NumberToString(base::to_underlying(connection_type));
 
 // Further identify WiFi and cell connections. These calls are only supported
 // for Android devices.

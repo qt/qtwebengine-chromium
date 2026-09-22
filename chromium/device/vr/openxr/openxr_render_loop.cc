@@ -15,6 +15,7 @@
 #include "base/task/bind_post_task.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/trace_event/trace_event.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "build/build_config.h"
 #include "components/viz/common/gpu/context_provider.h"
 #include "device/vr/openxr/exit_xr_present_reason.h"
@@ -82,9 +83,9 @@ OpenXrRenderLoop::~OpenXrRenderLoop() {
 }
 
 void OpenXrRenderLoop::ExitPresent(ExitXrPresentReason reason) {
-  DVLOG(1) << __func__ << " reason=" << std::to_underlying(reason);
+  DVLOG(1) << __func__ << " reason=" << base::to_underlying(reason);
   TRACE_EVENT_INSTANT("xr", "OpenXrRenderLoop::ExitPresent", "reason",
-                      std::to_underlying(reason));
+                      base::to_underlying(reason));
   if (!is_presenting_) {
     return;
   }

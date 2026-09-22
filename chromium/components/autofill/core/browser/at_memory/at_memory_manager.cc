@@ -22,6 +22,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/notreached.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "build/build_config.h"
 #include "components/autofill/core/browser/at_memory/at_memory_data_type.h"
 #include "components/autofill/core/browser/at_memory/at_memory_enablement_utils.h"
@@ -556,7 +557,7 @@ Suggestion TransformResultIntoSuggestion(const MemorySearchResult& entry) {
 
   std::underlying_type_t<MemoryEntrySourceType> sources_bitmask = 0;
   for (const auto& source : entry.sources) {
-    sources_bitmask |= std::to_underlying(source.type);
+    sources_bitmask |= base::to_underlying(source.type);
   }
   at_memory_payload.sources_bitmask = sources_bitmask;
 

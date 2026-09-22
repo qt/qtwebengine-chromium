@@ -10,6 +10,7 @@
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/task_environment.h"
 #include "base/threading/thread.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "content/common/android/cpu_time_metrics_internal.h"
 #include "content/common/process_priority_tracker.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -75,7 +76,7 @@ TEST_F(CpuTimeMetricsTest, RecordsMetricsForeground) {
   // The test process is recognized as the browser process. The thread created
   // above is named like a sampling profiler thread.
   static constexpr int kBrowserProcessBucket =
-      std::to_underlying(base::ShortProcessType::kBrowser);
+      base::to_underlying(base::ShortProcessType::kBrowser);
   static constexpr int kSamplingProfilerThreadBucket = 24;
 
   // Expect that the CPU second spent by the thread above is represented in the
@@ -139,7 +140,7 @@ TEST_F(CpuTimeMetricsTest, RecordsMetricsBackground) {
   // The test process is recognized as the browser process. The thread created
   // above is named like a sampling profiler thread.
   static constexpr int kBrowserProcessBucket =
-      std::to_underlying(base::ShortProcessType::kBrowser);
+      base::to_underlying(base::ShortProcessType::kBrowser);
   static constexpr int kSamplingProfilerThreadBucket = 24;
 
   // Expect that the CPU second spent by the thread above is represented in the

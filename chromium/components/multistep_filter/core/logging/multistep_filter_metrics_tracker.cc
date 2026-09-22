@@ -13,6 +13,7 @@
 #include "base/rand_util.h"
 #include "base/strings/strcat.h"
 #include "base/time/time.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "components/multistep_filter/core/data_models/filter_navigation_metadata.h"
 #include "components/multistep_filter/core/data_models/suggestion_user_decision.h"
 #include "components/multistep_filter/core/features.h"
@@ -44,7 +45,7 @@ uint64_t GetAppliedFacetTypesBitmask(const UrlFilterSuggestion& suggestion) {
   for (const FilterAttributeUiLabel& label : suggestion.attribute_ui_labels) {
     MultistepFilterFacetType facet_type = MapStringToFacetType(label.key);
     if (facet_type != MultistepFilterFacetType::kUnknown) {
-      bitmask |= 1ULL << std::to_underlying(facet_type);
+      bitmask |= 1ULL << base::to_underlying(facet_type);
     }
   }
   return bitmask;
@@ -322,11 +323,11 @@ void LogSuggestionUiSessionUkm(
       kMultistepFilterSessionDuration.Get().InMinutes();
 
   builder.SetSessionId(ui_session.session_id)
-      .SetTaskType(std::to_underlying(
+      .SetTaskType(base::to_underlying(
           MapStringToTaskType(ui_session.suggestion.task_type)))
-      .SetUserDecision(std::to_underlying(final_decision))
+      .SetUserDecision(base::to_underlying(final_decision))
       .SetRetentionState(
-          std::to_underlying(GetRetentionState(ui_session.retention_snapshot)))
+          base::to_underlying(GetRetentionState(ui_session.retention_snapshot)))
       .SetShownAgeInMinutes(std::min<int64_t>(
           ui_session.extraction_to_suggestion_shown_time_delta.InMinutes(),
           max_session_duration_minutes))
@@ -374,10 +375,10 @@ void LogSuggestionApplicationSessionUkm(
 
   builder.SetSessionId(session.session_id)
       .SetTaskType(
-          std::to_underlying(MapStringToTaskType(session.suggestion.task_type)))
+          base::to_underlying(MapStringToTaskType(session.suggestion.task_type)))
       .SetRetentionState(
-          std::to_underlying(GetRetentionState(session.retention_snapshot)))
-      .SetApplicationOutcome(std::to_underlying(session.outcome));
+          base::to_underlying(GetRetentionState(session.retention_snapshot)))
+      .SetApplicationOutcome(base::to_underlying(session.outcome));
 
   if (session.outcome == SuggestionApplicationResult::kAllFiltersApplied) {
     builder.SetNumOfFilterFacetsAppliedSuccessfully(std::min<int64_t>(
@@ -393,7 +394,7 @@ void LogSuggestionApplicationSessionUkm(
   }
 
   if (trigger != kApplicationFailure) {
-    builder.SetPostApplicationUserEngagement(std::to_underlying(
+    builder.SetPostApplicationUserEngagement(base::to_underlying(
         GetPostApplicationUserEngagement(session, trigger, event_time)));
   }
 

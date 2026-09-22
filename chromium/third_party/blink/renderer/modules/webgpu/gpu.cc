@@ -10,6 +10,7 @@
 #include "base/metrics/histogram_macros.h"
 #include "base/notreached.h"
 #include "base/synchronization/waitable_event.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "gpu/command_buffer/client/webgpu_interface.h"
 #include "gpu/config/gpu_finch_features.h"
 #include "mojo/public/cpp/bindings/remote.h"
@@ -196,9 +197,8 @@ void GPU::OnRequestAdapterCallback(
 
   // wgpu::RequestAdapterStatus is part of the stable API, so is safe to log to histograms.
   // The macro + `to_underlying` converts the enum to an int to calculate the max range.
-  UMA_HISTOGRAM_ENUMERATION(
-      "GPU.RequestAdapterStatus.WebGPU", status,
-      std::to_underlying(wgpu::RequestAdapterStatus::Error) + 1);
+  UMA_HISTOGRAM_ENUMERATION("GPU.RequestAdapterStatus.WebGPU", status,
+                            base::to_underlying(wgpu::RequestAdapterStatus::Error) + 1);
 
   switch (status) {
     case wgpu::RequestAdapterStatus::Success:

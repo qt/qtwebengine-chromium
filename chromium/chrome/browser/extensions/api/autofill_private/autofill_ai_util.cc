@@ -19,6 +19,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "base/values.h"
 #include "chrome/common/extensions/api/autofill_private.h"
 #include "components/autofill/core/browser/autofill_field.h"
@@ -145,7 +146,7 @@ std::optional<EntityInstance> PrivateApiEntityInstanceToEntityInstance(
        private_api_entity_instance.attribute_instances) {
     if (private_api_attribute_instance.type.type_name < 0 ||
         private_api_attribute_instance.type.type_name >
-            std::to_underlying(AttributeTypeName::kMaxValue)) {
+            base::to_underlying(AttributeTypeName::kMaxValue)) {
       return std::nullopt;
     }
 
@@ -232,7 +233,7 @@ autofill_private::EntityInstance EntityInstanceToPrivateApiEntityInstance(
        entity_instance.attributes()) {
     private_api_attribute_instances.emplace_back();
     private_api_attribute_instances.back().type.type_name =
-        std::to_underlying(attribute_instance.type().name());
+        base::to_underlying(attribute_instance.type().name());
     private_api_attribute_instances.back().type.type_name_as_string =
         base::UTF16ToUTF8(attribute_instance.type().GetNameForI18n());
 
@@ -317,7 +318,7 @@ api::autofill_private::EntityType EntityTypeToPrivateApiEntityType(
     EntityType entity_type,
     bool supports_wallet_storage) {
   autofill_private::EntityType api_type;
-  api_type.type_name = std::to_underlying(entity_type.name());
+  api_type.type_name = base::to_underlying(entity_type.name());
   api_type.type_name_as_string =
       base::UTF16ToUTF8(entity_type.GetNameForI18n());
   api_type.add_entity_type_string = autofill::GetAddEntityTypeStringForI18n(
@@ -353,7 +354,7 @@ api::autofill_private::EntityType EntityTypeToPrivateApiEntityType(
 api::autofill_private::AttributeType AttributeTypeToPrivateApiAttributeType(
     autofill::AttributeType attribute_type) {
   api::autofill_private::AttributeType api_attr;
-  api_attr.type_name = std::to_underlying(attribute_type.name());
+  api_attr.type_name = base::to_underlying(attribute_type.name());
   api_attr.type_name_as_string =
       base::UTF16ToUTF8(attribute_type.GetNameForI18n());
   api_attr.data_type = AttributeTypeDataTypeToPrivateApiAttributeTypeDataType(

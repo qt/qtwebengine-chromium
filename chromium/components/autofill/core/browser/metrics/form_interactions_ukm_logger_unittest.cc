@@ -4,7 +4,6 @@
 
 #include "components/autofill/core/browser/metrics/form_interactions_ukm_logger.h"
 
-#include <utility>
 #include <vector>
 
 #include "base/auto_reset.h"
@@ -14,6 +13,7 @@
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/metrics/user_action_tester.h"
 #include "base/test/scoped_feature_list.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "components/autofill/core/browser/crowdsourcing/autofill_crowdsourcing_encoding.h"
 #include "components/autofill/core/browser/field_types.h"
 #include "components/autofill/core/browser/form_parsing/determine_regex_types.h"
@@ -1067,15 +1067,15 @@ class LogFocusedComplexFormAtFormRemoveTest
 };
 
 // These are just constants to make the code below easier to understand.
-constexpr int kFormType_Address = 1
-                                  << std::to_underlying(FormType::kAddressForm);
+constexpr int kFormType_Address =
+    1 << base::to_underlying(FormType::kAddressForm);
 constexpr int kFormType_CreditCard =
-    1 << std::to_underlying(FormType::kCreditCardForm);
+    1 << base::to_underlying(FormType::kCreditCardForm);
 constexpr int kFormTypeNameForLogging_AddressForm_or_PostalAddressForm =
-    (1 << std::to_underlying(FormTypeNameForLogging::kAddressForm)) |
-    (1 << std::to_underlying(FormTypeNameForLogging::kPostalAddressForm));
+    (1 << base::to_underlying(FormTypeNameForLogging::kAddressForm)) |
+    (1 << base::to_underlying(FormTypeNameForLogging::kPostalAddressForm));
 constexpr int kFormTypeNameForLogging_CreditCardForm =
-    1 << std::to_underlying(FormTypeNameForLogging::kCreditCardForm);
+    1 << base::to_underlying(FormTypeNameForLogging::kCreditCardForm);
 
 INSTANTIATE_TEST_SUITE_P(
     FieldLogUkmMetricTest,

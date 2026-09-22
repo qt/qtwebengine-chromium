@@ -18,6 +18,7 @@
 #include "base/notreached.h"
 #include "base/strings/strcat.h"
 #include "base/strings/stringprintf.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "components/autofill/core/browser/autofill_field.h"
 #include "components/autofill/core/browser/data_quality/validation.h"
 #include "components/autofill/core/browser/field_types.h"
@@ -194,11 +195,11 @@ int GetFieldTypePredictionSourceBucket(
     FieldType field_type,
     AutofillPredictionSource prediction_source) {
   static_assert(
-      std::to_underlying(AutofillPredictionSource::kMaxValue) < (1 << 4),
+      base::to_underlying(AutofillPredictionSource::kMaxValue) < (1 << 4),
       "autofill::AutofillPredictionSource value needs more than 4 bits.");
 
-  return (std::to_underlying(field_type) << 4) |
-         std::to_underlying(prediction_source);
+  return (base::to_underlying(field_type) << 4) |
+         base::to_underlying(prediction_source);
 }
 
 }  // namespace

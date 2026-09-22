@@ -22,6 +22,7 @@
 #include "base/no_destructor.h"
 #include "base/notreached.h"
 #include "base/scoped_observation.h"
+#include "base/types/cxx23_to_underlying.h"
 #if !BUILDFLAG(IS_FUCHSIA)
 #include "components/variations/service/google_groups_manager.h"  // nogncheck
 #endif  // !BUILDFLAG(IS_FUCHSIA)
@@ -654,12 +655,12 @@ class TestAutofillClientTemplate : public T {
     GetPrefs()->registry()->RegisterIntegerPref(
         optimization_guide::prefs::
             kAutofillPredictionImprovementsEnterprisePolicyAllowed,
-        std::to_underlying(optimization_guide::model_execution::prefs::
-                               ModelExecutionEnterprisePolicyValue::kAllow),
+        base::to_underlying(optimization_guide::model_execution::prefs::
+                                ModelExecutionEnterprisePolicyValue::kAllow),
         PrefRegistry::LOSSY_PREF);
     GetPrefs()->registry()->RegisterIntegerPref(
         optimization_guide::prefs::kGeminiSettings,
-        std::to_underlying(
+        base::to_underlying(
             optimization_guide::prefs::GeminiSettingsPolicyState::kEnabled),
         PrefRegistry::LOSSY_PREF);
 

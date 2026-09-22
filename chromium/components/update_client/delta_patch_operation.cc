@@ -18,6 +18,7 @@
 #include "base/task/bind_post_task.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/thread_pool.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "base/types/expected.h"
 #include "base/values.h"
 #include "components/update_client/crx_cache.h"
@@ -86,7 +87,7 @@ void DeltaPatchOperation::CacheLookupDone(
         base::BindOnce(&DeltaPatchOperation::PatchDone, this,
                        base::unexpected<CategorizedError>(
                            {.category = ErrorCategory::kUnpack,
-                            .code = std::to_underlying(result.error())})));
+                            .code = base::to_underlying(result.error())})));
     return;
   }
 
@@ -118,14 +119,14 @@ void DeltaPatchOperation::VerifyAndCleanUp(const base::FilePath& new_file,
     if (result != expected_success_result_) {
       return base::unexpected<CategorizedError>(
           {.category = ErrorCategory::kUnpack,
-           .code = std::to_underlying(UnpackerError::kDeltaOperationFailure),
+           .code = base::to_underlying(UnpackerError::kDeltaOperationFailure),
            .extra = result});
     }
 
     if (!VerifyFileHash256(new_file, output_hash_)) {
       return base::unexpected<CategorizedError>(
           {.category = ErrorCategory::kUnpack,
-           .code = std::to_underlying(UnpackerError::kPatchOutHashMismatch)});
+           .code = base::to_underlying(UnpackerError::kPatchOutHashMismatch)});
     }
 
     return new_file;

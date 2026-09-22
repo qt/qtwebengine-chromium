@@ -10,6 +10,7 @@
 #include <type_traits>
 #include <utility>
 
+#include "base/types/cxx23_to_underlying.h"
 #include "components/autofill/core/browser/field_types.h"
 #include "components/autofill/core/browser/suggestions/suggestion_generator.h"
 #include "components/autofill/core/browser/suggestions/suggestion_type.h"
@@ -54,7 +55,7 @@ struct DenseSetTraits<FillingProduct>
                          FillingProduct::kNone,
                          FillingProduct::kMaxValue> {
   static constexpr bool is_valid(FillingProduct x) {
-    return ToSafeFillingProduct(std::to_underlying(x)).has_value();
+    return ToSafeFillingProduct(base::to_underlying(x)).has_value();
   }
 };
 
@@ -76,8 +77,8 @@ std::string_view FillingProductToString(FillingProduct filling_product);
 constexpr std::optional<FillingProduct> ToSafeFillingProduct(
     std::underlying_type_t<FillingProduct> raw_value) {
   auto is_invalid = [](std::underlying_type_t<FillingProduct> t) {
-    return t < std::to_underlying(FillingProduct::kNone) ||
-           t > std::to_underlying(FillingProduct::kMaxValue) ||
+    return t < base::to_underlying(FillingProduct::kNone) ||
+           t > base::to_underlying(FillingProduct::kMaxValue) ||
            // 8 was deprecated.
            t == 8;
   };

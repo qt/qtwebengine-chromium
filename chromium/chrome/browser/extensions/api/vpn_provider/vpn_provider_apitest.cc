@@ -18,6 +18,7 @@
 #include "base/functional/callback_helpers.h"
 #include "base/memory/raw_ptr.h"
 #include "base/test/test_future.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "chrome/browser/ash/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/extensions/vpn_provider/vpn_provider_api.h"
 #include "chrome/browser/chromeos/extensions/vpn_provider/vpn_service.h"
@@ -184,7 +185,7 @@ class VpnProviderApiTest : public VpnProviderApiTestBase {
                          api_vpn::PlatformMessage message) override {
     test_client_->OnPlatformMessage(
         shill::kObjectPathBase + GetKey(configuration_name),
-        std::to_underlying(message));
+        base::to_underlying(message));
   }
   void OnPacketReceived(const std::string& configuration_name,
                         const std::vector<char>& data) override {
@@ -248,7 +249,7 @@ class VpnProviderApiTest : public VpnProviderApiTestBase {
                          const std::string& configuration_name) {
     service()->SendOnPlatformMessageToExtension(
         extension_id, configuration_name,
-        std::to_underlying(api_vpn::PlatformMessage::kError));
+        base::to_underlying(api_vpn::PlatformMessage::kError));
   }
 
   void ClearNetworkProfiles() {
@@ -418,7 +419,7 @@ IN_PROC_BROWSER_TEST_F(VpnProviderApiTest, VpnSuccess) {
   EXPECT_EQ(1, test_client_->set_parameters_counter_);
   EXPECT_EQ(1, test_client_->update_connection_state_counter_);
   EXPECT_EQ(1, test_client_->send_packet_counter_);
-  EXPECT_EQ(std::to_underlying(api_vpn::VpnConnectionState::kConnected),
+  EXPECT_EQ(base::to_underlying(api_vpn::VpnConnectionState::kConnected),
             test_client_->update_connection_state_counter_);
   for (size_t i = 0; i < std::size(kParameterValues); ++i) {
     const std::string* value =

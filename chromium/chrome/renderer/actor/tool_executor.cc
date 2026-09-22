@@ -14,6 +14,7 @@
 #include "base/metrics/histogram_functions.h"
 #include "base/notreached.h"
 #include "base/time/time.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "chrome/common/actor.mojom.h"
 #include "chrome/common/actor/action_result.h"
 #include "chrome/common/chrome_features.h"
@@ -206,7 +207,7 @@ void ToolExecutor::ExecuteTool(const actor::TaskId& task_id,
     tool_->MarkAsRevalidation();
     ValidationResult revalidation = tool_->Validate();
     base::UmaHistogramSparse("Actor.Tools.RevalidationResult",
-                             std::to_underlying(revalidation.result->code));
+                             base::to_underlying(revalidation.result->code));
     if (!IsOk(*revalidation.result)) {
       ToolFinished(std::move(revalidation.result));
       return;

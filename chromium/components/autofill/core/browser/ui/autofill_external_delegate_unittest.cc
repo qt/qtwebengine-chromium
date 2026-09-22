@@ -24,6 +24,7 @@
 #include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
 #include "base/time/time.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "base/uuid.h"
 #include "build/branding_buildflags.h"
 #include "build/build_config.h"
@@ -414,14 +415,14 @@ class AutofillExternalDelegateTest : public testing::Test,
         mock_personal_context_service_.get());
     autofill_client().GetPrefs()->registry()->RegisterIntegerPref(
         optimization_guide::prefs::kGeminiSettings,
-        std::to_underlying(
+        base::to_underlying(
             optimization_guide::prefs::GeminiSettingsPolicyState::kEnabled));
     autofill_client().GetPrefs()->SetBoolean(
         personal_context::prefs::kPersonalContextInAutofillSettingsToggleStatus,
         true);
     autofill_client().GetPrefs()->SetInteger(
         optimization_guide::prefs::kGeminiSettings,
-        std::to_underlying(
+        base::to_underlying(
             optimization_guide::prefs::GeminiSettingsPolicyState::kEnabled));
     autofill_client().set_entity_data_manager(
         std::make_unique<EntityDataManager>(
@@ -4077,8 +4078,8 @@ TEST_F(AutofillExternalDelegateTest, UpdateSuggestions_ProductChanged) {
       {Suggestion(u"Autofill AI suggestion", SuggestionType::kFillAutofillAi)},
       AutofillSuggestionTriggerSource::kUnspecified, std::nullopt);
 
-  int expected_sample = (std::to_underlying(FillingProduct::kAddress) << 8) |
-                        std::to_underlying(FillingProduct::kAutofillAi);
+  int expected_sample = (base::to_underlying(FillingProduct::kAddress) << 8) |
+                        base::to_underlying(FillingProduct::kAutofillAi);
   histogram_tester.ExpectUniqueSample(
       "Autofill.PopupUpdateIgnored.ProductMismatch", expected_sample, 1);
 }

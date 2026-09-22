@@ -14,6 +14,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/test/scoped_command_line.h"
 #include "base/test/scoped_feature_list.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "extensions/common/error_utils.h"
 #include "extensions/common/extension_features.h"
 #include "extensions/common/manifest_constants.h"
@@ -49,7 +50,7 @@ testing::AssertionResult RunManifestVersionSuccess(
 
   if (extension->GetType() != expected_type) {
     return testing::AssertionFailure()
-           << "Wrong type: " << std::to_underlying(extension->GetType());
+           << "Wrong type: " << base::to_underlying(extension->GetType());
   }
 
   if (extension->manifest_version() != expected_manifest_version) {
@@ -102,7 +103,7 @@ testing::AssertionResult RunCreationWithFlags(
 
   if (extension->GetType() != expected_type) {
     return testing::AssertionFailure()
-           << "Wrong type: " << std::to_underlying(extension->GetType());
+           << "Wrong type: " << base::to_underlying(extension->GetType());
   }
   return testing::AssertionSuccess();
 }

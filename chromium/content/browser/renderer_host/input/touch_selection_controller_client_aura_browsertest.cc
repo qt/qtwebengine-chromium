@@ -17,6 +17,7 @@
 #include "base/test/run_until.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/test_timeouts.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "content/browser/renderer_host/render_widget_host_view_aura.h"
 #include "content/browser/renderer_host/render_widget_host_view_child_frame.h"
 #include "content/browser/renderer_host/render_widget_host_view_event_handler.h"
@@ -1556,13 +1557,13 @@ IN_PROC_BROWSER_TEST_F(TouchSelectionControllerClientAuraTest,
   // Select all command should be enabled.
   EXPECT_TRUE(
       selection_controller_client()->GetActiveMenuClient()->IsCommandIdEnabled(
-          std::to_underlying(ui::TouchEditable::MenuCommands::kSelectAll),
+          base::to_underlying(ui::TouchEditable::MenuCommands::kSelectAll),
           /*can_paste=*/true));
 
   // Execute select all command.
   selection_controller_client()->InitWaitForSelectionUpdate();
   selection_controller_client()->GetActiveMenuClient()->ExecuteCommand(
-      std::to_underlying(ui::TouchEditable::MenuCommands::kSelectAll), 0);
+      base::to_underlying(ui::TouchEditable::MenuCommands::kSelectAll), 0);
   selection_controller_client()->Wait();
 
   // All text in the textfield should be selected. Touch handles and quick menu
@@ -1576,7 +1577,7 @@ IN_PROC_BROWSER_TEST_F(TouchSelectionControllerClientAuraTest,
       u"Some editable text");
   EXPECT_FALSE(
       selection_controller_client()->GetActiveMenuClient()->IsCommandIdEnabled(
-          std::to_underlying(ui::TouchEditable::MenuCommands::kSelectAll),
+          base::to_underlying(ui::TouchEditable::MenuCommands::kSelectAll),
           /*can_paste=*/true));
 }
 
@@ -1598,13 +1599,13 @@ IN_PROC_BROWSER_TEST_F(TouchSelectionControllerClientAuraTest,
   // Select word command should be enabled.
   EXPECT_TRUE(
       selection_controller_client()->GetActiveMenuClient()->IsCommandIdEnabled(
-          std::to_underlying(ui::TouchEditable::MenuCommands::kSelectWord),
+          base::to_underlying(ui::TouchEditable::MenuCommands::kSelectWord),
           /*can_paste=*/true));
 
   // Execute select word command.
   selection_controller_client()->InitWaitForSelectionUpdate();
   selection_controller_client()->GetActiveMenuClient()->ExecuteCommand(
-      std::to_underlying(ui::TouchEditable::MenuCommands::kSelectWord), 0);
+      base::to_underlying(ui::TouchEditable::MenuCommands::kSelectWord), 0);
   selection_controller_client()->Wait();
 
   // The closest word should be selected. Touch handles and quick menu should be
@@ -1618,7 +1619,7 @@ IN_PROC_BROWSER_TEST_F(TouchSelectionControllerClientAuraTest,
       u"Some");
   EXPECT_FALSE(
       selection_controller_client()->GetActiveMenuClient()->IsCommandIdEnabled(
-          std::to_underlying(ui::TouchEditable::MenuCommands::kSelectWord),
+          base::to_underlying(ui::TouchEditable::MenuCommands::kSelectWord),
           /*can_paste=*/true));
 }
 
@@ -1647,11 +1648,11 @@ IN_PROC_BROWSER_TEST_F(TouchSelectionControllerClientAuraTest,
   // Select all and select word commands should be disabled.
   EXPECT_FALSE(
       selection_controller_client()->GetActiveMenuClient()->IsCommandIdEnabled(
-          std::to_underlying(ui::TouchEditable::MenuCommands::kSelectAll),
+          base::to_underlying(ui::TouchEditable::MenuCommands::kSelectAll),
           /*can_paste=*/true));
   EXPECT_FALSE(
       selection_controller_client()->GetActiveMenuClient()->IsCommandIdEnabled(
-          std::to_underlying(ui::TouchEditable::MenuCommands::kSelectWord),
+          base::to_underlying(ui::TouchEditable::MenuCommands::kSelectWord),
           /*can_paste=*/true));
 
   // Close the menu.

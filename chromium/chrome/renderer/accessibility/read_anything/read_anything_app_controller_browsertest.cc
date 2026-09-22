@@ -20,6 +20,7 @@
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/test_future.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "build/build_config.h"
 #include "chrome/common/read_anything/read_anything.mojom-shared.h"
 #include "chrome/common/read_anything/read_anything_util.h"
@@ -871,41 +872,41 @@ TEST_F(ReadAnythingAppControllerTest,
 TEST_F(ReadAnythingAppControllerTest, OnLetterSpacingChange_ValidChange) {
   static constexpr auto kLetterSpacing =
       read_anything::mojom::LetterSpacing::kWide;
-  controller().OnLetterSpacingChange(std::to_underlying(kLetterSpacing));
+  controller().OnLetterSpacingChange(base::to_underlying(kLetterSpacing));
   EXPECT_CALL(page_handler_, OnLetterSpaceChange(kLetterSpacing)).Times(1);
-  ASSERT_EQ(controller().LetterSpacing(), std::to_underlying(kLetterSpacing));
+  ASSERT_EQ(controller().LetterSpacing(), base::to_underlying(kLetterSpacing));
 }
 
 TEST_F(ReadAnythingAppControllerTest, OnLetterSpacingChange_InvalidChange) {
   controller().OnLetterSpacingChange(
-      std::to_underlying(read_anything::mojom::LetterSpacing::kMaxValue) + 1);
+      base::to_underlying(read_anything::mojom::LetterSpacing::kMaxValue) + 1);
   EXPECT_CALL(page_handler_, OnLetterSpaceChange).Times(0);
 }
 
 TEST_F(ReadAnythingAppControllerTest, OnLineSpacingChange_ValidChange) {
   static constexpr auto kLineSpacing =
       read_anything::mojom::LineSpacing::kVeryLoose;
-  controller().OnLineSpacingChange(std::to_underlying(kLineSpacing));
+  controller().OnLineSpacingChange(base::to_underlying(kLineSpacing));
   EXPECT_CALL(page_handler_, OnLineSpaceChange(kLineSpacing)).Times(1);
-  ASSERT_EQ(controller().LineSpacing(), std::to_underlying(kLineSpacing));
+  ASSERT_EQ(controller().LineSpacing(), base::to_underlying(kLineSpacing));
 }
 
 TEST_F(ReadAnythingAppControllerTest, OnLineSpacingChange_InvalidChange) {
   controller().OnLineSpacingChange(
-      std::to_underlying(read_anything::mojom::LineSpacing::kMaxValue) + 1);
+      base::to_underlying(read_anything::mojom::LineSpacing::kMaxValue) + 1);
   EXPECT_CALL(page_handler_, OnLineSpaceChange).Times(0);
 }
 
 TEST_F(ReadAnythingAppControllerTest, OnThemeChange_ValidChange) {
   static constexpr auto kColor = read_anything::mojom::Colors::kYellow;
-  controller().OnThemeChange(std::to_underlying(kColor));
+  controller().OnThemeChange(base::to_underlying(kColor));
   EXPECT_CALL(page_handler_, OnColorChange(kColor)).Times(1);
-  ASSERT_EQ(controller().ColorTheme(), std::to_underlying(kColor));
+  ASSERT_EQ(controller().ColorTheme(), base::to_underlying(kColor));
 }
 
 TEST_F(ReadAnythingAppControllerTest, OnThemeChange_InvalidChange) {
   controller().OnThemeChange(
-      std::to_underlying(read_anything::mojom::Colors::kMaxValue) + 1);
+      base::to_underlying(read_anything::mojom::Colors::kMaxValue) + 1);
   EXPECT_CALL(page_handler_, OnColorChange).Times(0);
 }
 
@@ -1321,8 +1322,8 @@ TEST_F(ReadAnythingAppControllerTest, OnSettingsRestoredFromPrefs) {
       std::move(languages_enabled_in_pref), highlight_granularity,
       line_focus_enabled_mode, true);
 
-  EXPECT_EQ(std::to_underlying(line_spacing), controller().LineSpacing());
-  EXPECT_EQ(std::to_underlying(letter_spacing), controller().LetterSpacing());
+  EXPECT_EQ(base::to_underlying(line_spacing), controller().LineSpacing());
+  EXPECT_EQ(base::to_underlying(letter_spacing), controller().LetterSpacing());
   EXPECT_EQ(font_name, controller().FontName());
   EXPECT_EQ(font_size, controller().FontSize());
   EXPECT_EQ(links_enabled, controller().LinksEnabled());
@@ -2675,7 +2676,7 @@ TEST_F(ReadAnythingAppControllerTest, TurnedHighlightOn_SavesHighlightState) {
       .Times(0);
 
   controller().OnHighlightGranularityChanged(
-      std::to_underlying(read_anything::mojom::HighlightGranularity::kOn));
+      base::to_underlying(read_anything::mojom::HighlightGranularity::kOn));
 
   EXPECT_TRUE(controller().IsHighlightOn());
 }
@@ -2691,7 +2692,7 @@ TEST_F(ReadAnythingAppControllerTest, TurnedHighlightOff_SavesHighlightState) {
       .Times(1);
 
   controller().OnHighlightGranularityChanged(
-      std::to_underlying(read_anything::mojom::HighlightGranularity::kOff));
+      base::to_underlying(read_anything::mojom::HighlightGranularity::kOff));
 
   EXPECT_FALSE(controller().IsHighlightOn());
 }

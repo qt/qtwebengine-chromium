@@ -15,6 +15,7 @@
 
 #include "base/test/scoped_feature_list.h"
 #include "base/time/time.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/ui_base_features.h"
 #include "ui/events/gesture_detection/gesture_event_data.h"
@@ -78,9 +79,9 @@ class TouchDispositionGestureFilterTest
     for (size_t i = 0; i < expected.size(); ++i) {
       if (expected[i] != actual[i]) {
         return ::testing::AssertionFailure()
-               << "actual[" << i << "] (" << std::to_underlying(actual[i])
+               << "actual[" << i << "] (" << base::to_underlying(actual[i])
                << ") != expected[" << i << "] ("
-               << std::to_underlying(expected[i]) << ")";
+               << base::to_underlying(expected[i]) << ")";
       }
     }
 

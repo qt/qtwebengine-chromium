@@ -9,6 +9,7 @@
 #include "base/callback_list.h"
 #include "base/check.h"
 #include "base/notreached.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "components/pdf/browser/pdf_document_helper_client.h"
 #include "components/pdf/browser/pdf_frame_util.h"
 #include "content/public/browser/document_user_data.h"
@@ -398,7 +399,7 @@ bool PDFDocumentHelper::IsCommandIdEnabled(int command_id,
   bool readable = true;
 
   switch (command_id) {
-    case std::to_underlying(ui::TouchEditable::MenuCommands::kCopy):
+    case base::to_underlying(ui::TouchEditable::MenuCommands::kCopy):
       return readable && has_selection_;
       // TODO(wjmaclean): add logic for cut/paste as the information required
       // from PDFium becomes available.
@@ -410,7 +411,7 @@ void PDFDocumentHelper::ExecuteCommand(int command_id, int event_flags) {
   // TODO(wjmaclean, dsinclair): Need to communicate to PDFium to accept
   // cut/paste commands.
   switch (command_id) {
-    case std::to_underlying(ui::TouchEditable::MenuCommands::kCopy):
+    case base::to_underlying(ui::TouchEditable::MenuCommands::kCopy):
       GetWebContents().Copy();
       break;
   }

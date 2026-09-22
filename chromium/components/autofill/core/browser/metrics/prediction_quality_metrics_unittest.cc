@@ -6,6 +6,7 @@
 
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "base/types/zip.h"
 #include "components/autofill/core/browser/autofill_field.h"
 #include "components/autofill/core/browser/field_types.h"
@@ -523,7 +524,7 @@ TEST_F(PredictionQualityMetricsTest, FieldTypeAtSubmission) {
                  Bucket(AutofillPredictionSource::kHeuristics, 1)));
 
   auto get_bucket = [](FieldType type, AutofillPredictionSource source) {
-    return type << 4 | std::to_underlying(source);
+    return type << 4 | base::to_underlying(source);
   };
 
   EXPECT_THAT(

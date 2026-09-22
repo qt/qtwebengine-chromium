@@ -33,6 +33,7 @@
 #include "base/test/test_future.h"
 #include "base/types/cxx23_to_underlying.h"
 #include "chrome/browser/extensions/api/passwords_private/passwords_private_delegate.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "chrome/browser/ui/passwords/settings/fake_password_import_controller.h"
 #include "chrome/browser/ui/passwords/settings/mock_password_import_controller.h"
 #include "chrome/browser/ui/passwords/settings/password_import_controller_interface.h"
@@ -1010,83 +1011,83 @@ TEST_F(PasswordsPrivateDelegateImplTest, TestMovePasswordsToAccountStore) {
 
 TEST_F(PasswordsPrivateDelegateImplTest, VerifyCastingOfImportEntryStatus) {
   static_assert(
-      std::to_underlying(api::passwords_private::ImportEntryStatus::kNone) ==
+      base::to_underlying(api::passwords_private::ImportEntryStatus::kNone) ==
       int{password_manager::ImportEntry::Status::NONE});
-  static_assert(std::to_underlying(
+  static_assert(base::to_underlying(
                     api::passwords_private::ImportEntryStatus::kUnknownError) ==
                 int{password_manager::ImportEntry::Status::UNKNOWN_ERROR});
   static_assert(
-      std::to_underlying(
+      base::to_underlying(
           api::passwords_private::ImportEntryStatus::kMissingPassword) ==
       int{password_manager::ImportEntry::Status::MISSING_PASSWORD});
-  static_assert(std::to_underlying(
+  static_assert(base::to_underlying(
                     api::passwords_private::ImportEntryStatus::kMissingUrl) ==
                 int{password_manager::ImportEntry::Status::MISSING_URL});
-  static_assert(std::to_underlying(
+  static_assert(base::to_underlying(
                     api::passwords_private::ImportEntryStatus::kInvalidUrl) ==
                 int{password_manager::ImportEntry::Status::INVALID_URL});
   static_assert(
-      std::to_underlying(api::passwords_private::ImportEntryStatus::kLongUrl) ==
+      base::to_underlying(api::passwords_private::ImportEntryStatus::kLongUrl) ==
       int{password_manager::ImportEntry::Status::LONG_URL});
-  static_assert(std::to_underlying(
+  static_assert(base::to_underlying(
                     api::passwords_private::ImportEntryStatus::kLongPassword) ==
                 int{password_manager::ImportEntry::Status::LONG_PASSWORD});
-  static_assert(std::to_underlying(
+  static_assert(base::to_underlying(
                     api::passwords_private::ImportEntryStatus::kLongUsername) ==
                 int{password_manager::ImportEntry::Status::LONG_USERNAME});
   static_assert(
-      std::to_underlying(
+      base::to_underlying(
           api::passwords_private::ImportEntryStatus::kConflictProfile) ==
       int{password_manager::ImportEntry::Status::CONFLICT_PROFILE});
   static_assert(
-      std::to_underlying(
+      base::to_underlying(
           api::passwords_private::ImportEntryStatus::kConflictAccount) ==
       int{password_manager::ImportEntry::Status::CONFLICT_ACCOUNT});
-  static_assert(std::to_underlying(
+  static_assert(base::to_underlying(
                     api::passwords_private::ImportEntryStatus::kLongNote) ==
                 int{password_manager::ImportEntry::Status::LONG_NOTE});
   static_assert(
-      std::to_underlying(
+      base::to_underlying(
           api::passwords_private::ImportEntryStatus::kLongConcatenatedNote) ==
       int{password_manager::ImportEntry::Status::LONG_CONCATENATED_NOTE});
   static_assert(
-      std::to_underlying(api::passwords_private::ImportEntryStatus::kValid) ==
+      base::to_underlying(api::passwords_private::ImportEntryStatus::kValid) ==
       int{password_manager::ImportEntry::Status::VALID});
 }
 
 TEST_F(PasswordsPrivateDelegateImplTest, VerifyCastingOfImportResultsStatus) {
   static_assert(
-      std::to_underlying(api::passwords_private::ImportResultsStatus::kNone) ==
+      base::to_underlying(api::passwords_private::ImportResultsStatus::kNone) ==
       int{password_manager::ImportResults::Status::NONE});
   static_assert(
-      std::to_underlying(
+      base::to_underlying(
           api::passwords_private::ImportResultsStatus::kUnknownError) ==
       int{password_manager::ImportResults::Status::UNKNOWN_ERROR});
-  static_assert(std::to_underlying(
+  static_assert(base::to_underlying(
                     api::passwords_private::ImportResultsStatus::kSuccess) ==
                 int{password_manager::ImportResults::Status::SUCCESS});
-  static_assert(std::to_underlying(
+  static_assert(base::to_underlying(
                     api::passwords_private::ImportResultsStatus::kIoError) ==
                 int{password_manager::ImportResults::Status::IO_ERROR});
-  static_assert(std::to_underlying(
+  static_assert(base::to_underlying(
                     api::passwords_private::ImportResultsStatus::kBadFormat) ==
                 int{password_manager::ImportResults::Status::BAD_FORMAT});
-  static_assert(std::to_underlying(
+  static_assert(base::to_underlying(
                     api::passwords_private::ImportResultsStatus::kDismissed) ==
                 int{password_manager::ImportResults::Status::DISMISSED});
   static_assert(
-      std::to_underlying(
+      base::to_underlying(
           api::passwords_private::ImportResultsStatus::kMaxFileSize) ==
       int{password_manager::ImportResults::Status::MAX_FILE_SIZE});
   static_assert(
-      std::to_underlying(
+      base::to_underlying(
           api::passwords_private::ImportResultsStatus::kImportAlreadyActive) ==
       int{password_manager::ImportResults::Status::IMPORT_ALREADY_ACTIVE});
   static_assert(
-      std::to_underlying(
+      base::to_underlying(
           api::passwords_private::ImportResultsStatus::kNumPasswordsExceeded) ==
       int{password_manager::ImportResults::Status::NUM_PASSWORDS_EXCEEDED});
-  static_assert(std::to_underlying(
+  static_assert(base::to_underlying(
                     api::passwords_private::ImportResultsStatus::kConflicts) ==
                 int{password_manager::ImportResults::Status::CONFLICTS});
 }

@@ -13,6 +13,7 @@
 #include "base/notreached.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "build/build_config.h"
 #include "chrome/grit/branded_strings.h"
 #include "chrome/grit/generated_resources.h"
@@ -23,7 +24,7 @@
 namespace {
 
 std::u16string ErrorTypeToString(SigninUIError::Type error_type) {
-  return u"Error " + base::NumberToString16(std::to_underlying(error_type));
+  return u"Error " + base::NumberToString16(base::to_underlying(error_type));
 }
 }  // namespace
 

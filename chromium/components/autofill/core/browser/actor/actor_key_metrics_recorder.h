@@ -11,6 +11,7 @@
 #include "base/containers/flat_set.h"
 #include "base/containers/span.h"
 #include "base/memory/raw_ref.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "components/autofill/core/browser/filling/filling_product.h"
 #include "components/autofill/core/browser/foundations/autofill_manager.h"
 #include "components/autofill/core/browser/foundations/scoped_autofill_managers_observation.h"
@@ -107,7 +108,7 @@ class ActorKeyMetricsRecorder : public AutofillManager::Observer {
       FieldGlobalId field_id,
       std::optional<FillingProduct> product = std::nullopt) const;
 
-  std::array<ProductState, std::to_underlying(FillingProduct::kMaxValue) + 1>
+  std::array<ProductState, base::to_underlying(FillingProduct::kMaxValue) + 1>
       states_;
 
   ScopedAutofillManagersObservation managers_observation_{this};

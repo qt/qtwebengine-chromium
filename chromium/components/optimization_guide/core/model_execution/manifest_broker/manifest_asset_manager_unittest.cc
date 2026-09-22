@@ -15,6 +15,7 @@
 #include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
 #include "base/test/test_future.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "base/version.h"
 #include "components/crx_file/id_util.h"
 #include "components/optimization_guide/core/model_execution/manifest_broker/manifest.h"
@@ -346,7 +347,7 @@ TEST_F(ManifestAssetManagerTest, DynamicEnterprisePolicyChange) {
   local_state_.local_state().SetInteger(
       model_execution::prefs::localstate::
           kGenAILocalFoundationalModelEnterprisePolicySettings,
-      std::to_underlying(
+      base::to_underlying(
           model_execution::prefs::
               GenAILocalFoundationalModelEnterprisePolicySettings::
                   kDisallowed));
@@ -356,7 +357,7 @@ TEST_F(ManifestAssetManagerTest, DynamicEnterprisePolicyChange) {
   local_state_.local_state().SetInteger(
       model_execution::prefs::localstate::
           kGenAILocalFoundationalModelEnterprisePolicySettings,
-      std::to_underlying(
+      base::to_underlying(
           model_execution::prefs::
               GenAILocalFoundationalModelEnterprisePolicySettings::kAllowed));
   EXPECT_TRUE(component_state_.WaitForRegistration(asset.ToInstallTarget()));
@@ -723,7 +724,7 @@ TEST_F(ManifestAssetManagerTest, DoesNotInstallWhenDisabledByEnterprisePolicy) {
   local_state_.local_state().SetInteger(
       model_execution::prefs::localstate::
           kGenAILocalFoundationalModelEnterprisePolicySettings,
-      std::to_underlying(
+      base::to_underlying(
           model_execution::prefs::
               GenAILocalFoundationalModelEnterprisePolicySettings::
                   kDisallowed));

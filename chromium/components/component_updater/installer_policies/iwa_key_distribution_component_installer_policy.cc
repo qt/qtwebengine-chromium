@@ -18,6 +18,7 @@
 #include "base/functional/callback.h"
 #include "base/functional/callback_helpers.h"
 #include "base/logging.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "base/types/pass_key.h"
 #include "base/values.h"
 #include "base/version.h"
@@ -67,7 +68,7 @@ void IwaKeyDistributionComponentInstallerPolicy::QueueOnDemandUpdate(
       GetOnDemandUpdatePriority(), base::BindOnce([](update_client::Error err) {
         VLOG(1) << "On-demand update for the Iwa Key Distribution Component "
                    "finished with result "
-                << std::to_underlying(err);
+                << base::to_underlying(err);
       }));
 }
 

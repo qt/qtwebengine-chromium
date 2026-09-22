@@ -18,6 +18,7 @@
 #include "base/test/gmock_expected_support.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/time/time.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "build/build_config.h"
 #include "crypto/ecdsa_utils.h"
 #include "crypto/hash.h"
@@ -375,7 +376,7 @@ TEST_P(UnexportableKeyTest, CertifySlowlyUsesSha256) {
       crypto::tpm::SignatureAlgorithms signature_algs,
       crypto::tpm::GetSignatureAlgorithms(statement.signature));
   EXPECT_EQ(signature_algs.hash_alg,
-            std::to_underlying(crypto::tpm::TpmAlg::TPM_ALG_SHA256));
+            base::to_underlying(crypto::tpm::TpmAlg::TPM_ALG_SHA256));
 }
 
 TEST_P(UnexportableKeyTest, CertifyFailsForSoftwareSigningKey) {

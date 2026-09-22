@@ -17,6 +17,7 @@
 #include "base/logging.h"
 #include "base/notimplemented.h"
 #include "base/task/single_thread_task_runner.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "device/bluetooth/android/wrappers.h"
 #include "device/bluetooth/bluetooth_advertisement.h"
 #include "device/bluetooth/bluetooth_common.h"
@@ -430,13 +431,13 @@ void BluetoothAdapterAndroid::PurgeTimedOutDevices() {
         FROM_HERE,
         base::BindOnce(&BluetoothAdapterAndroid::PurgeTimedOutDevices,
                        weak_ptr_factory_.GetWeakPtr()),
-        base::Milliseconds(std::to_underlying(kActivePollInterval)));
+        base::Milliseconds(base::to_underlying(kActivePollInterval)));
   } else {
     ui_task_runner_->PostDelayedTask(
         FROM_HERE,
         base::BindOnce(&BluetoothAdapterAndroid::RemoveTimedOutDevices,
                        weak_ptr_factory_.GetWeakPtr()),
-        base::Milliseconds(std::to_underlying(kPassivePollInterval)));
+        base::Milliseconds(base::to_underlying(kPassivePollInterval)));
   }
 }
 
@@ -524,7 +525,7 @@ void BluetoothAdapterAndroid::StartScanWithFilter(
           FROM_HERE,
           base::BindOnce(&BluetoothAdapterAndroid::PurgeTimedOutDevices,
                          weak_ptr_factory_.GetWeakPtr()),
-          base::Milliseconds(std::to_underlying(kPurgeDelay)));
+          base::Milliseconds(base::to_underlying(kPurgeDelay)));
     }
   } else {
     DVLOG(1) << "StartScanWithFilter: Fails: !isPowered";

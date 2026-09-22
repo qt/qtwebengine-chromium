@@ -11,6 +11,7 @@
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "components/account_settings/account_settings.h"
 #include "components/account_settings/account_settings_features.h"
 #include "components/account_settings/mock_account_setting_service.h"
@@ -86,10 +87,10 @@ class PersonalContextEligibilityServiceImplTest : public testing::Test {
     personal_context::prefs::RegisterProfilePrefs(pref_service_.registry());
     pref_service_.registry()->RegisterIntegerPref(
         ::glic::prefs::kGlicCompletedFre,
-        std::to_underlying(::glic::prefs::FreStatus::kCompleted));
+        base::to_underlying(::glic::prefs::FreStatus::kCompleted));
     pref_service_.registry()->RegisterIntegerPref(
         optimization_guide::prefs::kFindAndFillWithGeminiSettings,
-        std::to_underlying(optimization_guide::model_execution::prefs::
+        base::to_underlying(optimization_guide::model_execution::prefs::
                                ModelExecutionEnterprisePolicyValue::kAllow));
     pref_service_.SetBoolean(
         personal_context::prefs::
@@ -424,7 +425,7 @@ TEST_F(PersonalContextEligibilityServiceImplTest,
        DisabledWhenGlicFreNotCompleted) {
   pref_service_.SetInteger(
       ::glic::prefs::kGlicCompletedFre,
-      std::to_underlying(::glic::prefs::FreStatus::kNotStarted));
+      base::to_underlying(::glic::prefs::FreStatus::kNotStarted));
 
   EXPECT_EQ(service().GetEligibilityState(),
             PersonalContextEligibilityState::kDisabledNotEligible);
@@ -445,7 +446,7 @@ TEST_F(PersonalContextEligibilityServiceImplTest,
 
   pref_service_.SetInteger(
       ::glic::prefs::kGlicCompletedFre,
-      std::to_underlying(::glic::prefs::FreStatus::kNotStarted));
+      base::to_underlying(::glic::prefs::FreStatus::kNotStarted));
 
   service().RemoveObserver(&observer);
 }
@@ -455,7 +456,7 @@ TEST_F(PersonalContextEligibilityServiceImplTest,
 TEST_F(PersonalContextEligibilityServiceImplTest, EnterprisePolicyDisabled) {
   pref_service_.SetInteger(
       optimization_guide::prefs::kFindAndFillWithGeminiSettings,
-      std::to_underlying(optimization_guide::model_execution::prefs::
+      base::to_underlying(optimization_guide::model_execution::prefs::
                              ModelExecutionEnterprisePolicyValue::kDisable));
 
   EXPECT_EQ(service().GetEligibilityState(),
@@ -481,7 +482,7 @@ TEST_F(PersonalContextEligibilityServiceImplTest,
 
   pref_service_.SetInteger(
       optimization_guide::prefs::kFindAndFillWithGeminiSettings,
-      std::to_underlying(optimization_guide::model_execution::prefs::
+      base::to_underlying(optimization_guide::model_execution::prefs::
                              ModelExecutionEnterprisePolicyValue::kDisable));
 
   EXPECT_EQ(service().GetEligibilityState(),

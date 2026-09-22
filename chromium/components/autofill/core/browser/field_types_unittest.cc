@@ -4,6 +4,7 @@
 
 #include "components/autofill/core/browser/field_types.h"
 
+#include "base/types/cxx23_to_underlying.h"
 #include "components/autofill/core/browser/field_type_utils.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -193,8 +194,8 @@ TEST(FieldTypesTest, TestWith4DigitExpirationYear) {
 // Tests that ToSafeHtmlFieldType() (which is constexpr) is equivalent to
 // mojom::IsKnownEnumValue().
 TEST(FieldTypesTest, ToSafeHtmlFieldType) {
-  for (auto raw = std::to_underlying(HtmlFieldType::kMinValue) - 1;
-       raw <= std::to_underlying(HtmlFieldType::kMaxValue) + 1; ++raw) {
+  for (auto raw = base::to_underlying(HtmlFieldType::kMinValue) - 1;
+       raw <= base::to_underlying(HtmlFieldType::kMaxValue) + 1; ++raw) {
     EXPECT_EQ(
         ToSafeHtmlFieldType(raw).has_value(),
         mojom::IsKnownEnumValue(static_cast<HtmlFieldType>(raw)));  // nocheck

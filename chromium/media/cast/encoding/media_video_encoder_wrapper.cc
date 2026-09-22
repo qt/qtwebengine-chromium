@@ -15,6 +15,7 @@
 #include "base/functional/callback_helpers.h"
 #include "base/task/bind_post_task.h"
 #include "base/task/thread_pool.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "build/build_config.h"
 #include "media/base/async_destroy_video_encoder.h"
 #include "media/base/encoder_status.h"
@@ -72,7 +73,7 @@ std::unique_ptr<media::VideoEncoder> CreateSoftwareEncoder(VideoCodec codec) {
       return std::make_unique<media::Av1VideoEncoder>();
 #endif  // BUILDFLAG(ENABLE_LIBAOM)
     default:
-      NOTREACHED() << "Unhandled codec. value=" << std::to_underlying(codec);
+      NOTREACHED() << "Unhandled codec. value=" << base::to_underlying(codec);
   }
 }
 

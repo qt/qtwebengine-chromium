@@ -8,7 +8,6 @@
 #include <iterator>
 #include <memory>
 #include <string_view>
-#include <utility>
 #include <vector>
 
 #include "base/containers/contains.h"
@@ -23,6 +22,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/trace_event/trace_event.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "components/guest_view/buildflags/buildflags.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
@@ -826,11 +826,11 @@ bool WebRequestEventRouter::SignaledRequestIDTracker::GetAndSet(
     EventTypes event_type) {
   auto iter = signaled_requests_.find(request_id);
   if (iter == signaled_requests_.end()) {
-    signaled_requests_[request_id] = std::to_underlying(event_type);
+    signaled_requests_[request_id] = base::to_underlying(event_type);
     return false;
   }
-  bool was_signaled_before = iter->second & std::to_underlying(event_type);
-  iter->second |= std::to_underlying(event_type);
+  bool was_signaled_before = iter->second & base::to_underlying(event_type);
+  iter->second |= base::to_underlying(event_type);
   return was_signaled_before;
 }
 
@@ -839,7 +839,7 @@ void WebRequestEventRouter::SignaledRequestIDTracker::ClearEventType(
     EventTypes event_type) {
   auto iter = signaled_requests_.find(request_id);
   if (iter != signaled_requests_.end()) {
-    iter->second &= ~std::to_underlying(event_type);
+    iter->second &= ~base::to_underlying(event_type);
   }
 }
 

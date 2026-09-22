@@ -10,10 +10,10 @@
 #include <string>
 #include <string_view>
 #include <type_traits>
-#include <utility>
 
 #include "base/containers/span.h"
 #include "base/notreached.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "base/types/optional_ref.h"
 #include "components/autofill/core/browser/country_type.h"
 #include "components/autofill/core/browser/data_model/autofill_ai/entity_type_names.h"
@@ -344,7 +344,7 @@ struct DenseSetTraits<AttributeType> {
     return T(static_cast<N>(x));
   }
   static constexpr UnderlyingType to_underlying(T x) {
-    return std::to_underlying(x.name());
+    return base::to_underlying(x.name());
   }
   static constexpr bool is_valid(T x) { return true; }
 
@@ -519,7 +519,7 @@ struct DenseSetTraits<EntityType> {
     return T(static_cast<N>(x));
   }
   static constexpr UnderlyingType to_underlying(T x) {
-    return std::to_underlying(x.name());
+    return base::to_underlying(x.name());
   }
   static constexpr bool is_valid(T x) { return true; }
 

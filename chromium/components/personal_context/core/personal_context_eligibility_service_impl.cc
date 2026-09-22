@@ -15,6 +15,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "components/account_settings/account_setting_service.h"
 #include "components/glic/glic_pref_names.h"
 #include "components/optimization_guide/core/feature_registry/feature_registration.h"
@@ -158,7 +159,7 @@ SatisfiesPrefsRequirements(const PrefService* pref_service,
   const int policy_value = pref_service->GetInteger(
       optimization_guide::prefs::kFindAndFillWithGeminiSettings);
   if (policy_value ==
-      std::to_underlying(optimization_guide::model_execution::prefs::
+      base::to_underlying(optimization_guide::model_execution::prefs::
                              ModelExecutionEnterprisePolicyValue::kDisable)) {
     MaybeOutputReason(
         debug_message,

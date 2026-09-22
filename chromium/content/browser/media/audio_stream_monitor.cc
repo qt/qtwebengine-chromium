@@ -6,6 +6,7 @@
 
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "content/browser/renderer_host/render_frame_host_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/browser/browser_task_traits.h"
@@ -258,7 +259,7 @@ void AudioStreamMonitor::UpdateStreams() {
 void AudioStreamMonitor::MaybeToggle() {
   const base::TimeTicks off_time =
       last_became_silent_time_ +
-      base::Milliseconds(std::to_underlying(kHoldOnMilliseconds));
+      base::Milliseconds(base::to_underlying(kHoldOnMilliseconds));
   const base::TimeTicks now = base::TimeTicks::Now();
   const bool should_stop_timer = is_audible_ || now >= off_time;
   const bool should_indicator_be_on = is_audible_ || !should_stop_timer;

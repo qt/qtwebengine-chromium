@@ -24,6 +24,7 @@
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/time/time.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "build/build_config.h"
 #include "content/browser/devtools/devtools_instrumentation.h"
 #include "content/browser/devtools/render_frame_devtools_agent_host.h"
@@ -825,7 +826,7 @@ PrerenderHostId PrerenderHostRegistry::CreateAndStartHost(
         const PrerenderLimitGroup reuse_group = GetPrerenderLimitGroup(
             reuse_host->trigger_type(), reuse_host->eagerness());
         prerender_host_by_id_[reuse_id] = std::move(reuse_host);
-        arrival_order_queue_by_limit_group_[std::to_underlying(reuse_group)]
+        arrival_order_queue_by_limit_group_[base::to_underlying(reuse_group)]
             .push_front(reuse_id);
       }
       return PrerenderHostId();
@@ -850,7 +851,7 @@ PrerenderHostId PrerenderHostRegistry::CreateAndStartHost(
 
     const PrerenderLimitGroup limit_group =
         GetPrerenderLimitGroup(attributes.trigger_type, eagerness);
-    arrival_order_queue_by_limit_group_[std::to_underlying(limit_group)]
+    arrival_order_queue_by_limit_group_[base::to_underlying(limit_group)]
         .push_back(prerender_host_id);
   }
 
@@ -930,7 +931,7 @@ PrerenderHostId PrerenderHostRegistry::CreateAndStartHostForNewTab(
 
   const PrerenderLimitGroup limit_group = GetPrerenderLimitGroup(
       attributes.trigger_type, attributes.GetEagerness());
-  arrival_order_queue_by_limit_group_[std::to_underlying(limit_group)]
+  arrival_order_queue_by_limit_group_[base::to_underlying(limit_group)]
       .push_back(prerender_host_id);
   return prerender_host_id;
 }
@@ -1958,7 +1959,7 @@ PrerenderHostRegistry::GetPrerenderLimitGroup(
 
 int PrerenderHostRegistry::GetHostCountByLimitGroup(
     PrerenderLimitGroup limit_group) {
-  return arrival_order_queue_by_limit_group_[std::to_underlying(limit_group)]
+  return arrival_order_queue_by_limit_group_[base::to_underlying(limit_group)]
       .size();
 }
 
@@ -2017,7 +2018,7 @@ bool PrerenderHostRegistry::IsAllowedToStartPrerenderingForTrigger(
       // When the limit on non-immediate speculation rules is reached, cancel
       // the oldest host to allow a newly incoming trigger to start.
       if (GetHostCountByLimitGroup(limit_group) >= host_limit) {
-        auto& queue = arrival_order_queue_by_limit_group_[std::to_underlying(
+        auto& queue = arrival_order_queue_by_limit_group_[base::to_underlying(
             PrerenderLimitGroup::kSpeculationRulesNonImmediate)];
         CHECK(!queue.empty());
         PrerenderHostId oldest_prerender_host_id = queue.front();
@@ -2063,7 +2064,7 @@ void PrerenderHostRegistry::EvictExcessHostsForLimitGroup(
 
   while (GetHostCountByLimitGroup(limit_group) > target_limit) {
     auto& queue =
-        arrival_order_queue_by_limit_group_[std::to_underlying(limit_group)];
+        arrival_order_queue_by_limit_group_[base::to_underlying(limit_group)];
     if (queue.empty()) {
       break;
     }

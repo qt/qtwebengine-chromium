@@ -4,10 +4,9 @@
 
 #include "components/feed/core/v2/scheduling.h"
 
-#include <utility>
-
 #include "base/json/values_util.h"
 #include "base/time/time.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "base/values.h"
 #include "components/feed/core/v2/config.h"
 #include "components/feed/core/v2/feedstore_util.h"
@@ -48,7 +47,7 @@ RequestSchedule::Type GetScheduleType(const base::Value* value) {
   if (value && value->is_int()) {
     int int_value = value->GetInt();
     if (int_value >= 0 &&
-        int_value <= std::to_underlying(RequestSchedule::Type::kMaxValue)) {
+        int_value <= base::to_underlying(RequestSchedule::Type::kMaxValue)) {
       return static_cast<RequestSchedule::Type>(int_value);
     }
   }
@@ -68,7 +67,7 @@ base::DictValue RequestScheduleToDict(const RequestSchedule& schedule) {
   base::DictValue result;
   result.Set("anchor", base::TimeToValue(schedule.anchor_time));
   result.Set("offsets", VectorToList(schedule.refresh_offsets));
-  result.Set("type", std::to_underlying(schedule.type));
+  result.Set("type", base::to_underlying(schedule.type));
   return result;
 }
 

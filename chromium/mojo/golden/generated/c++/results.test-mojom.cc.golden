@@ -20,6 +20,7 @@
 #include "base/task/thread_pool/thread_pool_instance.h"
 #include "base/trace_event/trace_event.h"
 #include "base/trace_event/typed_macros.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "mojo/public/cpp/bindings/lib/default_construct_tag_internal.h"
 #include "mojo/public/cpp/bindings/lib/generated_code_util.h"
 #include "mojo/public/cpp/bindings/lib/message_internal.h"
@@ -410,7 +411,7 @@ void ResultInterfaceProxy::Method(
   const size_t estimated_payload_size =
     0;
   mojo::Message message(
-      std::to_underlying(messages::ResultInterface::kMethod), kFlags, estimated_payload_size);
+      base::to_underlying(messages::ResultInterface::kMethod), kFlags, estimated_payload_size);
   mojo::internal::MessageFragment<
       ::golden::internal::ResultInterface_Method_Params_Data> params(
           message);
@@ -460,7 +461,7 @@ base::expected<
   const size_t estimated_payload_size =
     0;
   mojo::Message message(
-      std::to_underlying(messages::ResultInterface::kSyncMethod), kFlags, estimated_payload_size);
+      base::to_underlying(messages::ResultInterface::kSyncMethod), kFlags, estimated_payload_size);
   mojo::internal::MessageFragment<
       ::golden::internal::ResultInterface_SyncMethod_Params_Data> params(
           message);
@@ -518,7 +519,7 @@ void ResultInterfaceProxy::SyncMethod(
   const size_t estimated_payload_size =
     0;
   mojo::Message message(
-      std::to_underlying(messages::ResultInterface::kSyncMethod), kFlags, estimated_payload_size);
+      base::to_underlying(messages::ResultInterface::kSyncMethod), kFlags, estimated_payload_size);
   mojo::internal::MessageFragment<
       ::golden::internal::ResultInterface_SyncMethod_Params_Data> params(
           message);
@@ -648,7 +649,7 @@ void ResultInterface_Method_ProxyToResponder::Run(
   const size_t estimated_payload_size =
     0;
   mojo::Message message(
-      std::to_underlying(messages::ResultInterface::kMethod), kFlags, estimated_payload_size);
+      base::to_underlying(messages::ResultInterface::kMethod), kFlags, estimated_payload_size);
   mojo::internal::MessageFragment<
       ::golden::internal::ResultInterface_Method_ResponseParams_Data> params(
           message);
@@ -798,7 +799,7 @@ void ResultInterface_SyncMethod_ProxyToResponder::Run(
   const size_t estimated_payload_size =
     0;
   mojo::Message message(
-      std::to_underlying(messages::ResultInterface::kSyncMethod), kFlags, estimated_payload_size);
+      base::to_underlying(messages::ResultInterface::kSyncMethod), kFlags, estimated_payload_size);
   mojo::internal::MessageFragment<
       ::golden::internal::ResultInterface_SyncMethod_ResponseParams_Data> params(
           message);

@@ -7,6 +7,7 @@
 #include "base/test/metrics/user_action_tester.h"
 #include "base/test/test_future.h"
 #include "base/test/with_feature_override.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "build/build_config.h"
 #include "components/pdf/browser/pdf_document_helper_client.h"
 #include "content/public/browser/render_widget_host_view.h"
@@ -240,10 +241,10 @@ IN_PROC_BROWSER_TEST_P(PDFDocumentHelperTest, SelectionChanged) {
 // When selecting something, only the copy command id should be enabled.
 IN_PROC_BROWSER_TEST_P(PDFDocumentHelperTest, IsCommandIdEnabledCopyEnabled) {
   EXPECT_FALSE(pdf_document_helper()->IsCommandIdEnabled(
-      std::to_underlying(ui::TouchEditable::MenuCommands::kCut),
+      base::to_underlying(ui::TouchEditable::MenuCommands::kCut),
       /*can_paste=*/true));
   EXPECT_FALSE(pdf_document_helper()->IsCommandIdEnabled(
-      std::to_underlying(ui::TouchEditable::MenuCommands::kCopy),
+      base::to_underlying(ui::TouchEditable::MenuCommands::kCopy),
       /*can_paste=*/true));
 
   constexpr gfx::PointF kLeft(1.0f, 1.0f);
@@ -253,18 +254,18 @@ IN_PROC_BROWSER_TEST_P(PDFDocumentHelperTest, IsCommandIdEnabledCopyEnabled) {
   SelectionChanged(kLeft, kLeftHeight, kRight, kRightHeight);
 
   EXPECT_FALSE(pdf_document_helper()->IsCommandIdEnabled(
-      std::to_underlying(ui::TouchEditable::MenuCommands::kCut),
+      base::to_underlying(ui::TouchEditable::MenuCommands::kCut),
       /*can_paste=*/true));
 
 #if BUILDFLAG(IS_MAC)
   // Since macOS does not support Touch Selection Editing, the copy command is
   // not enabled.
   EXPECT_FALSE(pdf_document_helper()->IsCommandIdEnabled(
-      std::to_underlying(ui::TouchEditable::MenuCommands::kCopy),
+      base::to_underlying(ui::TouchEditable::MenuCommands::kCopy),
       /*can_paste=*/true));
 #else
   EXPECT_TRUE(pdf_document_helper()->IsCommandIdEnabled(
-      std::to_underlying(ui::TouchEditable::MenuCommands::kCopy),
+      base::to_underlying(ui::TouchEditable::MenuCommands::kCopy),
       /*can_paste=*/true));
 #endif  // BUILDFLAG(IS_MAC)
 }
@@ -275,7 +276,7 @@ IN_PROC_BROWSER_TEST_P(PDFDocumentHelperTest, ExecuteCommandCopy) {
   EXPECT_EQ(0, action_tester.GetActionCount("Copy"));
 
   pdf_document_helper()->ExecuteCommand(
-      std::to_underlying(ui::TouchEditable::MenuCommands::kCopy), 0);
+      base::to_underlying(ui::TouchEditable::MenuCommands::kCopy), 0);
 
   EXPECT_EQ(1, action_tester.GetActionCount("Copy"));
 }

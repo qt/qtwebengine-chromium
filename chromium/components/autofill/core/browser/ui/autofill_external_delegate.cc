@@ -29,6 +29,7 @@
 #include "base/metrics/histogram_functions.h"
 #include "base/notimplemented.h"
 #include "base/notreached.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "base/types/expected.h"
 #include "base/types/optional_ref.h"
 #include "base/types/zip.h"
@@ -515,8 +516,8 @@ void AutofillExternalDelegate::AttemptToDisplayAutofillSuggestions(
       manager_->client().UpdateAutofillSuggestions(
           suggestions, new_product, trigger_source_, ignore_focus_loss);
     } else {
-      int sample = (std::to_underlying(old_product) << 8) |
-                   std::to_underlying(new_product);
+      int sample = (base::to_underlying(old_product) << 8) |
+                   base::to_underlying(new_product);
       base::UmaHistogramSparse("Autofill.PopupUpdateIgnored.ProductMismatch",
                                sample);
     }

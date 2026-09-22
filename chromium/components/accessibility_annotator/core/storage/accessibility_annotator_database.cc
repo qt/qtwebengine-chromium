@@ -13,6 +13,7 @@
 #include "base/memory/scoped_refptr.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "components/accessibility_annotator/core/accessibility_annotator_features.h"
 #include "components/accessibility_annotator/core/storage/intent_table.h"
 #include "components/os_crypt/async/common/encryptor.h"
@@ -70,7 +71,7 @@ bool AccessibilityAnnotatorDatabase::Init(
     // If the error is kNotADatabase, attempt to delete the file and re-open
     // the database.
     if (captured_error ==
-        std::to_underlying(sql::SqliteResultCode::kNotADatabase)) {
+        base::to_underlying(sql::SqliteResultCode::kNotADatabase)) {
       if (!db_->CloseAndDelete()) {
         return false;
       }

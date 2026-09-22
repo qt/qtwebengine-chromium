@@ -14,6 +14,7 @@
 #include "base/scoped_multi_source_observation.h"
 #include "base/strings/strcat.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "components/autofill/core/browser/autofill_field.h"
 #include "components/autofill/core/browser/data_model/transliterator.h"
 #include "components/autofill/core/browser/form_structure.h"
@@ -138,9 +139,9 @@ void PlusAddressSubmissionLogger::OnPlusAddressSuggestionShown(
       .SetFieldCountRendererForm(ukm::GetExponentialBucketMinForCounts1000(
           field_count_in_renderer_form))
       .SetManagedProfile(account_info.IsManaged() == signin::Tribool::kTrue)
-      .SetPasswordFormType(std::to_underlying(form_type))
+      .SetPasswordFormType(base::to_underlying(form_type))
       .SetPlusAddressCount(
-          std::to_underlying(ToPlusAddressCountBucket(plus_address_count)));
+          base::to_underlying(ToPlusAddressCountBucket(plus_address_count)));
   records_[&manager].insert_or_assign(field, std::move(record));
 }
 

@@ -13,6 +13,7 @@
 #include "base/notreached.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/time/time.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "components/autofill/core/browser/data_manager/payments/payments_data_manager.h"
 #include "components/autofill/core/browser/payments/payments_util.h"
 #include "components/facilitated_payments/core/browser/device_delegate.h"
@@ -265,7 +266,8 @@ void PixAccountLinkingManager::OnUiScreenEvent(UiEvent ui_event_type) {
       break;
     }
     default:
-      NOTREACHED() << "Unhandled UiEvent " << std::to_underlying(ui_event_type);
+      NOTREACHED() << "Unhandled UiEvent "
+                   << base::to_underlying(ui_event_type);
   }
 }
 

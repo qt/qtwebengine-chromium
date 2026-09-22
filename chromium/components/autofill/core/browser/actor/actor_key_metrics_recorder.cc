@@ -12,6 +12,7 @@
 #include "base/containers/span.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/strings/strcat.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "components/autofill/core/browser/data_manager/personal_data_manager.h"
 #include "components/autofill/core/browser/form_structure.h"
 #include "components/autofill/core/browser/foundations/autofill_client.h"
@@ -56,7 +57,7 @@ void ActorKeyMetricsRecorder::OnSuggestionsGenerated(
     FormGlobalId form_id,
     const base::flat_set<FillingProduct>& products) {
   for (FillingProduct product : products) {
-    states_[std::to_underlying(product)].with_actor_suggestions.insert(form_id);
+    states_[base::to_underlying(product)].with_actor_suggestions.insert(form_id);
   }
 }
 
@@ -98,7 +99,7 @@ void ActorKeyMetricsRecorder::OnFillOrPreviewForm(
       std::holds_alternative<const CreditCard*>(filling_payload)
           ? FillingProduct::kCreditCard
           : FillingProduct::kAddress;
-  states_[std::to_underlying(product)].actor_filled_fields[form_id].insert(
+  states_[base::to_underlying(product)].actor_filled_fields[form_id].insert(
       filled_field_ids.begin(), filled_field_ids.end());
 }
 
@@ -112,7 +113,7 @@ void ActorKeyMetricsRecorder::RecordKeyMetrics(AutofillManager& manager,
         product != FillingProduct::kCreditCard) {
       return;
     }
-    ProductState& state = states_[std::to_underlying(product)];
+    ProductState& state = states_[base::to_underlying(product)];
     if (state.recorded_forms.contains(form.global_id())) {
       return;
     }
@@ -258,7 +259,7 @@ bool ActorKeyMetricsRecorder::WasFieldFilledByActor(
   };
 
   if (product) {
-    return check_state(states_[std::to_underlying(*product)]);
+    return check_state(states_[base::to_underlying(*product)]);
   }
 
   return std::ranges::any_of(states_, check_state);

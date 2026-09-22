@@ -13,6 +13,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/task_environment.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "components/multistep_filter/core/data_models/filter_annotation.h"
 #include "components/multistep_filter/core/data_models/filter_navigation_metadata.h"
 #include "components/multistep_filter/core/data_models/filter_suggestion_candidate.h"
@@ -328,13 +329,13 @@ TEST_F(MultistepFilterMetricsTrackerTest,
   EXPECT_NE(0, *session_id_metric);
   ukm_recorder.ExpectEntryMetric(
       entry, ukm::builders::MultistepFilter_UiSession::kTaskTypeName,
-      std::to_underlying(MultistepFilterTaskType::kSearchFlights));
+      base::to_underlying(MultistepFilterTaskType::kSearchFlights));
   ukm_recorder.ExpectEntryMetric(
       entry, ukm::builders::MultistepFilter_UiSession::kUserDecisionName,
-      std::to_underlying(SuggestionUserDecision::kAccepted));
+      base::to_underlying(SuggestionUserDecision::kAccepted));
   ukm_recorder.ExpectEntryMetric(
       entry, ukm::builders::MultistepFilter_UiSession::kRetentionStateName,
-      std::to_underlying(MultistepFilterRetentionState::kFirstImpression));
+      base::to_underlying(MultistepFilterRetentionState::kFirstImpression));
   ukm_recorder.ExpectEntryMetric(
       entry, ukm::builders::MultistepFilter_UiSession::kShownAgeInMinutesName,
       10);
@@ -558,7 +559,7 @@ TEST_F(MultistepFilterMetricsTrackerTest,
       entry,
       ukm::builders::MultistepFilter_ApplicationSession::
           kApplicationOutcomeName,
-      std::to_underlying(SuggestionApplicationResult::kFailedErrorPage));
+      base::to_underlying(SuggestionApplicationResult::kFailedErrorPage));
 }
 
 // Tests that calling annotation extraction finished without a session records
@@ -715,13 +716,13 @@ TEST_F(MultistepFilterMetricsTrackerTest, FacetsShownLogged) {
   EXPECT_NE(0, *session_id_metric);
   ukm_recorder.ExpectEntryMetric(
       entry, ukm::builders::MultistepFilter_UiSession::kTaskTypeName,
-      std::to_underlying(MultistepFilterTaskType::kSearchAccommodations));
+      base::to_underlying(MultistepFilterTaskType::kSearchAccommodations));
   ukm_recorder.ExpectEntryMetric(
       entry, ukm::builders::MultistepFilter_UiSession::kUserDecisionName,
-      std::to_underlying(SuggestionUserDecision::kIgnored));
+      base::to_underlying(SuggestionUserDecision::kIgnored));
   ukm_recorder.ExpectEntryMetric(
       entry, ukm::builders::MultistepFilter_UiSession::kRetentionStateName,
-      std::to_underlying(MultistepFilterRetentionState::kFirstImpression));
+      base::to_underlying(MultistepFilterRetentionState::kFirstImpression));
   ukm_recorder.ExpectEntryMetric(
       entry, ukm::builders::MultistepFilter_UiSession::kShownAgeInMinutesName,
       0);
@@ -805,16 +806,16 @@ TEST_F(MultistepFilterMetricsTrackerTest,
           ukm::builders::MultistepFilter_ApplicationSession::kSessionIdName));
   ukm_recorder.ExpectEntryMetric(
       entry, ukm::builders::MultistepFilter_ApplicationSession::kTaskTypeName,
-      std::to_underlying(MultistepFilterTaskType::kSearchAccommodations));
+      base::to_underlying(MultistepFilterTaskType::kSearchAccommodations));
   ukm_recorder.ExpectEntryMetric(
       entry,
       ukm::builders::MultistepFilter_ApplicationSession::kRetentionStateName,
-      std::to_underlying(MultistepFilterRetentionState::kFirstImpression));
+      base::to_underlying(MultistepFilterRetentionState::kFirstImpression));
   ukm_recorder.ExpectEntryMetric(
       entry,
       ukm::builders::MultistepFilter_ApplicationSession::
           kApplicationOutcomeName,
-      std::to_underlying(SuggestionApplicationResult::kAllFiltersApplied));
+      base::to_underlying(SuggestionApplicationResult::kAllFiltersApplied));
   ukm_recorder.ExpectEntryMetric(
       entry,
       ukm::builders::MultistepFilter_ApplicationSession::
@@ -834,7 +835,7 @@ TEST_F(MultistepFilterMetricsTrackerTest,
       entry,
       ukm::builders::MultistepFilter_ApplicationSession::
           kPostApplicationUserEngagementName,
-      std::to_underlying(
+      base::to_underlying(
           MultistepFilterPostSuggestionApplicationUserEngagement::
               kAbandonedWithinSessionWindowTabClosed));
 }
@@ -885,16 +886,16 @@ TEST_F(MultistepFilterMetricsTrackerTest,
           ukm::builders::MultistepFilter_ApplicationSession::kSessionIdName));
   ukm_recorder.ExpectEntryMetric(
       entry, ukm::builders::MultistepFilter_ApplicationSession::kTaskTypeName,
-      std::to_underlying(MultistepFilterTaskType::kSearchAccommodations));
+      base::to_underlying(MultistepFilterTaskType::kSearchAccommodations));
   ukm_recorder.ExpectEntryMetric(
       entry,
       ukm::builders::MultistepFilter_ApplicationSession::kRetentionStateName,
-      std::to_underlying(MultistepFilterRetentionState::kFirstImpression));
+      base::to_underlying(MultistepFilterRetentionState::kFirstImpression));
   ukm_recorder.ExpectEntryMetric(
       entry,
       ukm::builders::MultistepFilter_ApplicationSession::
           kApplicationOutcomeName,
-      std::to_underlying(
+      base::to_underlying(
           SuggestionApplicationResult::kFailedNoExtractedAnnotations));
   EXPECT_EQ(nullptr,
             ukm_recorder.GetEntryMetric(

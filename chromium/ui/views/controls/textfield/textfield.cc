@@ -22,6 +22,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "base/trace_event/trace_event.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "build/build_config.h"
 #include "ui/accessibility/ax_action_data.h"
 #include "ui/accessibility/ax_node_data.h"
@@ -141,11 +142,11 @@ ui::TextEditCommand GetTextEditCommandFromMenuCommand(int command_id,
   switch (command_id) {
     case Textfield::kUndo:
       return ui::TextEditCommand::UNDO;
-    case std::to_underlying(ui::TouchEditable::MenuCommands::kCut):
+    case base::to_underlying(ui::TouchEditable::MenuCommands::kCut):
       return ui::TextEditCommand::CUT;
-    case std::to_underlying(ui::TouchEditable::MenuCommands::kCopy):
+    case base::to_underlying(ui::TouchEditable::MenuCommands::kCopy):
       return ui::TextEditCommand::COPY;
-    case std::to_underlying(ui::TouchEditable::MenuCommands::kPaste):
+    case base::to_underlying(ui::TouchEditable::MenuCommands::kPaste):
       return ui::TextEditCommand::PASTE;
     case Textfield::kDelete:
       // The DELETE menu action only works in case of an active selection.
@@ -153,9 +154,9 @@ ui::TextEditCommand GetTextEditCommandFromMenuCommand(int command_id,
         return ui::TextEditCommand::DELETE_FORWARD;
       }
       break;
-    case std::to_underlying(ui::TouchEditable::MenuCommands::kSelectAll):
+    case base::to_underlying(ui::TouchEditable::MenuCommands::kSelectAll):
       return ui::TextEditCommand::SELECT_ALL;
-    case std::to_underlying(ui::TouchEditable::MenuCommands::kSelectWord):
+    case base::to_underlying(ui::TouchEditable::MenuCommands::kSelectWord):
       return ui::TextEditCommand::SELECT_WORD;
   }
   return ui::TextEditCommand::INVALID_COMMAND;
@@ -1614,7 +1615,7 @@ void Textfield::DestroyTouchSelection() {
 
 bool Textfield::IsCommandIdEnabled(int command_id, bool can_paste) const {
   if (command_id ==
-      std::to_underlying(ui::TouchEditable::MenuCommands::kPaste)) {
+      base::to_underlying(ui::TouchEditable::MenuCommands::kPaste)) {
     return !GetReadOnly() && can_paste;
   }
   return IsCommandIdEnabled(command_id);
@@ -1641,7 +1642,7 @@ bool Textfield::IsCommandIdEnabled(int command_id) const {
   // This method is called for menus. For shortcuts, IsTextEditCommandEnabled()
   // is called instead.
   if (command_id ==
-      std::to_underlying(ui::TouchEditable::MenuCommands::kPaste)) {
+      base::to_underlying(ui::TouchEditable::MenuCommands::kPaste)) {
     return !GetReadOnly() && clipboard_contains_text_for_menu_;
   }
 
@@ -1658,19 +1659,19 @@ bool Textfield::GetStandardAcceleratorForCommandId(
       *accelerator = ui::Accelerator(ui::VKEY_Z, ui::EF_PLATFORM_ACCELERATOR);
       return true;
 
-    case std::to_underlying(ui::TouchEditable::MenuCommands::kCut):
+    case base::to_underlying(ui::TouchEditable::MenuCommands::kCut):
       *accelerator = ui::Accelerator(ui::VKEY_X, ui::EF_PLATFORM_ACCELERATOR);
       return true;
 
-    case std::to_underlying(ui::TouchEditable::MenuCommands::kCopy):
+    case base::to_underlying(ui::TouchEditable::MenuCommands::kCopy):
       *accelerator = ui::Accelerator(ui::VKEY_C, ui::EF_PLATFORM_ACCELERATOR);
       return true;
 
-    case std::to_underlying(ui::TouchEditable::MenuCommands::kPaste):
+    case base::to_underlying(ui::TouchEditable::MenuCommands::kPaste):
       *accelerator = ui::Accelerator(ui::VKEY_V, ui::EF_PLATFORM_ACCELERATOR);
       return true;
 
-    case std::to_underlying(ui::TouchEditable::MenuCommands::kSelectAll):
+    case base::to_underlying(ui::TouchEditable::MenuCommands::kSelectAll):
       *accelerator = ui::Accelerator(ui::VKEY_A, ui::EF_PLATFORM_ACCELERATOR);
       return true;
 
@@ -1701,9 +1702,9 @@ void Textfield::ExecuteCommand(int command_id, int event_flags) {
   if (::features::IsTouchTextEditingRedesignEnabled() &&
       (event_flags & ui::EF_FROM_TOUCH) &&
       (command_id ==
-           std::to_underlying(ui::TouchEditable::MenuCommands::kSelectAll) ||
+           base::to_underlying(ui::TouchEditable::MenuCommands::kSelectAll) ||
        command_id ==
-           std::to_underlying(ui::TouchEditable::MenuCommands::kSelectWord))) {
+           base::to_underlying(ui::TouchEditable::MenuCommands::kSelectWord))) {
     CreateTouchSelectionControllerAndNotifyIt();
   }
 }
@@ -3171,16 +3172,16 @@ Textfield::UpdateContextMenuContents(Textfield* textfield,
   menu_contents->AddItemWithStringId(kUndo, IDS_APP_UNDO);
   menu_contents->AddSeparator(ui::NORMAL_SEPARATOR);
   menu_contents->AddItemWithStringId(
-      std::to_underlying(ui::TouchEditable::MenuCommands::kCut), IDS_APP_CUT);
+      base::to_underlying(ui::TouchEditable::MenuCommands::kCut), IDS_APP_CUT);
   menu_contents->AddItemWithStringId(
-      std::to_underlying(ui::TouchEditable::MenuCommands::kCopy), IDS_APP_COPY);
+      base::to_underlying(ui::TouchEditable::MenuCommands::kCopy), IDS_APP_COPY);
   menu_contents->AddItemWithStringId(
-      std::to_underlying(ui::TouchEditable::MenuCommands::kPaste),
+      base::to_underlying(ui::TouchEditable::MenuCommands::kPaste),
       IDS_APP_PASTE);
   menu_contents->AddItemWithStringId(kDelete, IDS_APP_DELETE);
   menu_contents->AddSeparator(ui::NORMAL_SEPARATOR);
   menu_contents->AddItemWithStringId(
-      std::to_underlying(ui::TouchEditable::MenuCommands::kSelectAll),
+      base::to_underlying(ui::TouchEditable::MenuCommands::kSelectAll),
       IDS_APP_SELECT_ALL);
 
   // If the controller adds menu commands, also override ExecuteCommand() and

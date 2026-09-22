@@ -20,6 +20,7 @@
 #include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
 #include "base/time/time.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "base/version_info/version_info.h"
 #include "build/build_config.h"
 #include "components/autofill/core/browser/form_structure_test_api.h"
@@ -1225,7 +1226,7 @@ class AutocompleteHistoryManagerAtMemoryTest
     // Enable personal context toggle.
     autofill_client_.GetPrefs()->registry()->RegisterIntegerPref(
         optimization_guide::prefs::kFindAndFillWithGeminiSettings,
-        std::to_underlying(optimization_guide::model_execution::prefs::
+        base::to_underlying(optimization_guide::model_execution::prefs::
                                ModelExecutionEnterprisePolicyValue::kAllow));
     autofill_client_.GetPrefs()->SetBoolean(
         personal_context::prefs::kPersonalContextInAutofillSettingsToggleStatus,

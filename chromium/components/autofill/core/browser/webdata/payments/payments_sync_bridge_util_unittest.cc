@@ -4,7 +4,6 @@
 
 #include "components/autofill/core/browser/webdata/payments/payments_sync_bridge_util.h"
 
-#include <utility>
 #include <variant>
 #include <vector>
 
@@ -15,6 +14,7 @@
 #include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
 #include "base/time/time.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "build/build_config.h"
 #include "components/autofill/core/browser/data_model/addresses/autofill_profile.h"
 #include "components/autofill/core/browser/data_model/payments/autofill_offer_data.h"
@@ -1006,9 +1006,9 @@ TEST_F(PaymentsSyncBridgeUtilTest, SetAutofillWalletSpecificsFromCardBenefit) {
     } else if (benefit_specifics.has_category_benefit()) {
       // Check category benefit specific field is set correctly.
       EXPECT_EQ(
-          std::to_underlying(
+          base::to_underlying(
               benefit_specifics.category_benefit().category_benefit_type()),
-          std::to_underlying(category_benefit.benefit_category()));
+          base::to_underlying(category_benefit.benefit_category()));
 
       target_benefit = category_benefit;
     } else {
