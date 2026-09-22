@@ -302,10 +302,17 @@ bool LookupIterator::ExtendingNonExtensible(DirectHandle<JSReceiver> receiver) {
 
 bool LookupIterator::IsCacheableTransition() {
   DCHECK_EQ(TRANSITION, state_);
-  return IsPropertyCell(*transition_, isolate_) ||
-         (transition_map()->is_dictionary_map() &&
-          !GetStoreTarget<JSReceiver>()->HasFastProperties(isolate_)) ||
-         IsMap(transition_map()->GetBackPointer(isolate_), isolate_);
+  if (IsPropertyCell(*transition_, isolate_) ||
+      (transition_map()->is_dictionary_map() &&
+       !GetStoreTarget<JSReceiver>()->HasFastProperties(isolate_))) {
+    return true;
+  }
+  Tagged<Object> back_pointer = transition_map()->GetBackPointer(isolate_);
+  if (IsMap(back_pointer, isolate_)) {
+    CHECK_EQ(back_pointer, GetStoreTarget<JSReceiver>()->map(isolate_));
+    return true;
+  }
+  return false;
 }
 
 // static
