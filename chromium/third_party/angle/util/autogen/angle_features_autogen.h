@@ -79,6 +79,7 @@ enum class Feature
     CopyTextureToBufferForReadOptimization,
     CorruptProgramBinaryForTesting,
     DecodeEncodeSRGBForGenerateMipmap,
+    DeferGlDeleteBuffers,
     DepthStencilBlitExtraCopy,
     DescriptorSetCache,
     DestroyOldSwapchainInSharedPresentMode,

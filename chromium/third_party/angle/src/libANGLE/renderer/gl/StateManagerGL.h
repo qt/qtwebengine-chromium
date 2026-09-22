@@ -10,6 +10,7 @@
 #define LIBANGLE_RENDERER_GL_STATEMANAGERGL_H_
 
 #include "common/debug.h"
+#include "common/hash_containers.h"
 #include "libANGLE/Error.h"
 #include "libANGLE/State.h"
 #include "libANGLE/angletypes.h"
@@ -18,7 +19,9 @@
 #include "platform/autogen/FeaturesGL_autogen.h"
 
 #include <array>
+#include <deque>
 #include <map>
+#include <vector>
 
 namespace gl
 {
@@ -176,21 +179,28 @@ class StateManagerGL final : angle::NonCopyable
                    const angle::FeaturesGL &features);
     ~StateManagerGL();
 
+    using ExecutionSerial = uint64_t;
+
     void deleteProgram(GLuint program);
     void deleteVertexArray(GLuint vao);
     void deleteTexture(GLuint texture);
     void deleteSampler(GLuint sampler);
-    void deleteBuffer(GLuint buffer);
+    // clientSpecifiedSize may be 0 for internally-allocated scratch buffers.
+    void deleteBuffer(GLuint buffer, size_t clientSpecifiedSize, bool isHardenedContext);
     void deleteFramebuffer(GLuint fbo);
     void deleteRenderbuffer(GLuint rbo);
     void deleteTransformFeedback(GLuint transformFeedback);
 
     void onSyncedFlushOrFinish();
+    void onFinish();
+    ExecutionSerial onFenceSync();
+    ExecutionSerial onBeginQuery();
+    void onSerialCompleted(ExecutionSerial serial);
 
     void useProgram(GLuint program);
     void forceUseProgram(GLuint program);
     void bindVertexArray(GLuint vao, VertexArrayStateGL *vaoState);
-    void bindBuffer(gl::BufferBinding target, GLuint buffer);
+    void bindBuffer(gl::BufferBinding target, GLuint buffer, bool isHardenedContext);
     void bindBufferBase(gl::BufferBinding target, size_t index, GLuint buffer);
     void bindBufferRange(gl::BufferBinding target,
                          size_t index,
@@ -421,6 +431,8 @@ class StateManagerGL final : angle::NonCopyable
     void restoreVertexArraysNativeContext(const gl::Extensions &extensions,
                                           const ExternalContextState *state);
 
+    void maybeDrainDeferredBuffers();
+
     const FunctionsGL *mFunctions;
     const angle::FeaturesGL &mFeatures;
 
@@ -590,6 +602,19 @@ class StateManagerGL final : angle::NonCopyable
     gl::state::DirtyBits mLocalDirtyBits;
     gl::state::ExtendedDirtyBits mLocalExtendedDirtyBits;
     gl::AttributesMask mLocalDirtyCurrentValues;
+
+    struct DeferredBufferDeletions
+    {
+        ExecutionSerial serial = 0;
+        std::vector<GLuint> buffers;
+        size_t size = 0;
+    };
+    ExecutionSerial mCurrentSerial = 0;
+    std::deque<DeferredBufferDeletions> mDeferredBufferDeletions;
+    size_t mDeferredBufferDeletionsCount     = 0;
+    size_t mDeferredBufferDeletionsTotalSize = 0;
+    bool mDeferredBufferDeletionsNeedFinish  = false;
+    angle::HashSet<GLuint> mElementArrayBuffers;
 };
 
 }  // namespace rx

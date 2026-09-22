@@ -2729,6 +2729,9 @@ void InitializeFeatures(const FunctionsGL *functions, angle::FeaturesGL *feature
     // http://crbug.com/546252753
     ANGLE_FEATURE_CONDITION(features, finishBeforeBlitFramebufferMultiAttachment, isMali);
 
+    // http://crbug.com/558870371
+    ANGLE_FEATURE_CONDITION(features, deferGlDeleteBuffers, isMali);
+
     // https://crbug.com/40264674
     ANGLE_FEATURE_CONDITION(features, disableClipControl, IsMaliG72OrG76OrG51(functions));
 
