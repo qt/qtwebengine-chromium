@@ -42,8 +42,8 @@ class MEDIA_EXPORT AudioTimestampHelper {
 
   // Returns the number of frames in the given duration of audio with the given
   // sample rate (in samples per second).
-  static constexpr int64_t TimeToFrames(base::TimeDelta time,
-                                        int samples_per_second) {
+  static int64_t TimeToFrames(base::TimeDelta time,
+                              int samples_per_second) {
     return std::round(time.InSecondsF() * samples_per_second);
   }
 
