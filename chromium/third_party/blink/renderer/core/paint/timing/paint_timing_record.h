@@ -158,12 +158,15 @@ class CORE_EXPORT ImageRecord final : public PaintTimingRecord {
   MediaRecordIdHash Hash() const { return hash_; }
   const MediaTiming* GetMediaTiming() const { return media_timing_; }
 
+  bool IsCorsSameOrigin() const { return is_cors_same_origin_; }
+
  private:
   const WeakMember<const MediaTiming> media_timing_;
   const MediaRecordIdHash hash_;
   base::TimeTicks load_time_;
   base::TimeTicks first_animated_frame_time_;
   bool is_first_animated_frame_paint_timing_queued_ = false;
+  const bool is_cors_same_origin_;
   bool is_loaded_ = false;
   // A non-style image, or a style image that comes from an origin-clean style.
   // Images that come from origin-dirty styles should have some limitations on

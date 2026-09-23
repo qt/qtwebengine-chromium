@@ -78,6 +78,8 @@ ImageRecord::ImageRecord(Node* node,
                         root_visual_rect,
                         soft_navigation_context),
       media_timing_(new_media_timing),
+      is_cors_same_origin_(new_media_timing &&
+                           new_media_timing->IsCorsSameOrigin()),
       hash_(hash) {
   CHECK_GT(RecordedSize(), 0u);
 }
