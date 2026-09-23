@@ -67,13 +67,12 @@ class PageContext {
   std::string ToString() const;
 
   // Compare PageContexts by PageNode token.
-  constexpr friend auto operator<=>(const PageContext& a,
-                                    const PageContext& b) {
+  friend auto operator<=>(const PageContext& a, const PageContext& b) {
     return a.token_ <=> b.token_;
   }
 
   // Test PageContexts for equality by PageNode token.
-  constexpr friend bool operator==(const PageContext& a, const PageContext& b) {
+  friend bool operator==(const PageContext& a, const PageContext& b) {
     return a.token_ == b.token_;
   }
 

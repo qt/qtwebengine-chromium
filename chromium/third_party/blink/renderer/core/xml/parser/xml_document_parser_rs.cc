@@ -393,10 +393,14 @@ void XMLDocumentParserRs::StartElementNs(
 
   v8::Isolate* isolate = document_->GetAgent().isolate();
   v8::TryCatch try_catch(isolate);
-  if (!CollectElementAttributes(prefixed_attributes, attributes,
-                                parsing_fragment_
-                                    ? PassThroughException(isolate)
-                                    : IGNORE_EXCEPTION)) {
+
+  bool collected = false;
+  if (parsing_fragment_)
+    collected = CollectElementAttributes(prefixed_attributes, attributes, PassThroughException(isolate));
+  else
+    collected = CollectElementAttributes(prefixed_attributes, attributes, IGNORE_EXCEPTION);
+
+  if (!collected) {
     StopParsing();
     if (parsing_fragment_) {
       DCHECK(try_catch.HasCaught());
