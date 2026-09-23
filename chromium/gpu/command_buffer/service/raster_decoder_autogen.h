@@ -207,12 +207,12 @@ error::Error RasterDecoderImpl::HandleDeletePaintCachePathsINTERNALImmediate(
           cmd_data);
   GLsizei n = static_cast<GLsizei>(c.n);
   uint32_t ids_size;
-  if (!base::CheckMul(n, sizeof(GLuint)).AssignIfValid(&ids_size)) {
+  if (!base::CheckMul(n, sizeof(GLuint64)).AssignIfValid(&ids_size)) {
     return error::kOutOfBounds;
   }
-  volatile const GLuint* ids =
-      gles2::GetImmediateDataAs<volatile const GLuint*>(c, ids_size,
-                                                        immediate_data_size);
+  volatile const GLuint64* ids =
+      gles2::GetImmediateDataAs<volatile const GLuint64*>(c, ids_size,
+                                                          immediate_data_size);
   if (ids == nullptr) {
     return error::kOutOfBounds;
   }
@@ -228,10 +228,10 @@ error::Error RasterDecoderImpl::HandleDeletePaintCachePathsINTERNAL(
           cmd_data);
   GLsizei n = static_cast<GLsizei>(c.n);
   uint32_t ids_size;
-  if (!base::CheckMul(n, sizeof(GLuint)).AssignIfValid(&ids_size)) {
+  if (!base::CheckMul(n, sizeof(GLuint64)).AssignIfValid(&ids_size)) {
     return error::kOutOfBounds;
   }
-  const GLuint* ids = GetSharedMemoryAs<const GLuint*>(
+  const GLuint64* ids = GetSharedMemoryAs<const GLuint64*>(
       c.ids_shm_id, c.ids_shm_offset, ids_size);
   if (ids == nullptr) {
     return error::kOutOfBounds;
@@ -248,12 +248,12 @@ error::Error RasterDecoderImpl::HandleDeletePaintCacheEffectsINTERNALImmediate(
                        DeletePaintCacheEffectsINTERNALImmediate*>(cmd_data);
   GLsizei n = static_cast<GLsizei>(c.n);
   uint32_t ids_size;
-  if (!base::CheckMul(n, sizeof(GLuint)).AssignIfValid(&ids_size)) {
+  if (!base::CheckMul(n, sizeof(GLuint64)).AssignIfValid(&ids_size)) {
     return error::kOutOfBounds;
   }
-  volatile const GLuint* ids =
-      gles2::GetImmediateDataAs<volatile const GLuint*>(c, ids_size,
-                                                        immediate_data_size);
+  volatile const GLuint64* ids =
+      gles2::GetImmediateDataAs<volatile const GLuint64*>(c, ids_size,
+                                                          immediate_data_size);
   if (ids == nullptr) {
     return error::kOutOfBounds;
   }
@@ -270,10 +270,10 @@ error::Error RasterDecoderImpl::HandleDeletePaintCacheEffectsINTERNAL(
           cmd_data);
   GLsizei n = static_cast<GLsizei>(c.n);
   uint32_t ids_size;
-  if (!base::CheckMul(n, sizeof(GLuint)).AssignIfValid(&ids_size)) {
+  if (!base::CheckMul(n, sizeof(GLuint64)).AssignIfValid(&ids_size)) {
     return error::kOutOfBounds;
   }
-  const GLuint* ids = GetSharedMemoryAs<const GLuint*>(
+  const GLuint64* ids = GetSharedMemoryAs<const GLuint64*>(
       c.ids_shm_id, c.ids_shm_offset, ids_size);
   if (ids == nullptr) {
     return error::kOutOfBounds;

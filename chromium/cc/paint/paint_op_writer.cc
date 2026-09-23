@@ -295,7 +295,7 @@ void PaintOpWriter::Write(uint64_t data) {
 }
 
 void PaintOpWriter::Write(const SkPath& path, UsePaintCache use_paint_cache) {
-  auto id = path.getGenerationID();
+  PaintCacheId id = path.getGenerationID();
   if (!options_.for_identifiability_study) {
     Write(id);
   }

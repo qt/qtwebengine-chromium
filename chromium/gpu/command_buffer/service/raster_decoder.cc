@@ -809,10 +809,10 @@ class RasterDecoderImpl final : public RasterDecoder,
   void RestoreStateForAttrib(GLuint attrib, bool restore_array_binding);
   void DeletePaintCachePathsINTERNALHelper(
       GLsizei n,
-      const volatile GLuint* paint_cache_ids);
+      const volatile GLuint64* paint_cache_ids);
   void DeletePaintCacheEffectsINTERNALHelper(
       GLsizei n,
-      const volatile GLuint* paint_cache_ids);
+      const volatile GLuint64* paint_cache_ids);
   void DoClearPaintCacheINTERNAL();
 
 #if defined(NDEBUG)
@@ -2851,7 +2851,7 @@ class TransferCacheDeserializeHelperImpl final
 
 void RasterDecoderImpl::DeletePaintCachePathsINTERNALHelper(
     GLsizei n,
-    const volatile GLuint* paint_cache_ids) {
+    const volatile GLuint64* paint_cache_ids) {
   if (!use_gpu_raster_) {
     LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION,
                        "glDeletePaintCacheEntriesINTERNAL",
@@ -2864,7 +2864,7 @@ void RasterDecoderImpl::DeletePaintCachePathsINTERNALHelper(
 
 void RasterDecoderImpl::DeletePaintCacheEffectsINTERNALHelper(
     GLsizei n,
-    const volatile GLuint* paint_cache_ids) {
+    const volatile GLuint64* paint_cache_ids) {
   if (!use_gpu_raster_) {
     LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION,
                        "glDeletePaintCacheEntriesINTERNAL",
