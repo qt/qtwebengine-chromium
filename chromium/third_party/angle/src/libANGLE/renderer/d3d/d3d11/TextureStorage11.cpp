@@ -1184,11 +1184,13 @@ TextureStorage11_2D::TextureStorage11_2D(Renderer11 *renderer,
         mRenderTarget[i]     = nullptr;
     }
 
-    d3d11::MakeValidSize(false, mFormatInfo.texFormat, &width, &height, &mTopLevel);
+    GLsizei depth = 1;
+    d3d11::MakeValidSize(false, mFormatInfo.texFormat, gl::TextureType::_2D, width, height, depth,
+                         mTopLevel);
     mMipLevels     = mTopLevel + levels;
     mTextureWidth  = width;
     mTextureHeight = height;
-    mTextureDepth  = 1;
+    mTextureDepth  = depth;
 
     // The LevelZeroOnly hint should only be true if the zero max LOD workaround is active.
     ASSERT(!mUseLevelZeroTexture || mRenderer->getFeatures().zeroMaxLodWorkaround.enabled);
@@ -2355,13 +2357,15 @@ TextureStorage11_Cube::TextureStorage11_Cube(Renderer11 *renderer,
     }
 
     // adjust size if needed for compressed textures
-    int height = size;
-    d3d11::MakeValidSize(false, mFormatInfo.texFormat, &size, &height, &mTopLevel);
+    int height    = size;
+    GLsizei depth = 1;
+    d3d11::MakeValidSize(false, mFormatInfo.texFormat, gl::TextureType::CubeMap, size, height,
+                         depth, mTopLevel);
 
     mMipLevels     = mTopLevel + levels;
     mTextureWidth  = size;
     mTextureHeight = size;
-    mTextureDepth  = 1;
+    mTextureDepth  = depth;
 
     // The LevelZeroOnly hint should only be true if the zero max LOD workaround is active.
     ASSERT(!mUseLevelZeroTexture || mRenderer->getFeatures().zeroMaxLodWorkaround.enabled);
@@ -3074,7 +3078,8 @@ TextureStorage11_3D::TextureStorage11_3D(Renderer11 *renderer,
     }
 
     // adjust size if needed for compressed textures
-    d3d11::MakeValidSize(false, mFormatInfo.texFormat, &width, &height, &mTopLevel);
+    d3d11::MakeValidSize(false, mFormatInfo.texFormat, gl::TextureType::_3D, width, height, depth,
+                         mTopLevel);
 
     mMipLevels     = mTopLevel + levels;
     mTextureWidth  = width;
@@ -3452,7 +3457,8 @@ TextureStorage11_2DArray::TextureStorage11_2DArray(Renderer11 *renderer,
           label)
 {
     // adjust size if needed for compressed textures
-    d3d11::MakeValidSize(false, mFormatInfo.texFormat, &width, &height, &mTopLevel);
+    d3d11::MakeValidSize(false, mFormatInfo.texFormat, gl::TextureType::_2DArray, width, height,
+                         depth, mTopLevel);
 
     mMipLevels     = mTopLevel + levels;
     mTextureWidth  = width;
