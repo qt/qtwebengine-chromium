@@ -9,6 +9,7 @@
 
 #include "base/functional/callback.h"
 #include "base/synchronization/lock.h"
+#include "gpu/command_buffer/common/constants.h"
 #include "gpu/gpu_gles2_export.h"
 #include "third_party/skia/include/core/SkImage.h"
 #include "third_party/skia/include/core/SkSurface.h"
@@ -37,17 +38,23 @@ class GpuProcessShmCount;
 // are equivalent to no-op.
 class GPU_GLES2_EXPORT GraphiteSharedContext {
  public:
+  class GPU_GLES2_EXPORT Delegate {
+   public:
+    virtual ~Delegate() = default;
+    virtual void FlushBackend() = 0;
+    virtual void MarkContextLost(error::ContextLostReason reason) = 0;
+    virtual bool IsContextLost() const = 0;
+  };
+
   using SkImageReadPixelsCallback = base::OnceCallback<
       void(void* ctx, std::unique_ptr<const SkSurface::AsyncReadResult>)>;
-
-  using FlushCallback = base::RepeatingCallback<void()>;
 
   GraphiteSharedContext(
       std::unique_ptr<skgpu::graphite::Context> graphite_context,
       GpuProcessShmCount* use_shader_cache_shm_count,
       bool is_thread_safe,
       size_t max_pending_recordings,
-      FlushCallback backend_flush_callback = FlushCallback());
+      Delegate* delegate = nullptr);
 
   GraphiteSharedContext(const GraphiteSharedContext&) = delete;
   GraphiteSharedContext(GraphiteSharedContext&&) = delete;
@@ -57,6 +64,8 @@ class GPU_GLES2_EXPORT GraphiteSharedContext {
   ~GraphiteSharedContext();
 
   bool IsThreadSafe() const { return !!lock_; }
+
+  bool IsContextLost() const;
 
   // Wrapper function implementations for skgpu::graphite:Context
   skgpu::BackendApi backend() const;
@@ -204,7 +213,7 @@ class GPU_GLES2_EXPORT GraphiteSharedContext {
   const size_t max_pending_recordings_;
   size_t num_pending_recordings_ = 0;
 
-  FlushCallback backend_flush_callback_;
+  raw_ptr<Delegate> delegate_ = nullptr;
 
   skgpu::graphite::InsertStatus simulated_insert_status_ =
       skgpu::graphite::InsertStatus::kSuccess;

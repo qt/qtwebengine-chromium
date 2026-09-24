@@ -428,7 +428,8 @@ bool DawnContextProvider::DefaultValidateAdapterFn(wgpu::BackendType,
 // Owns the dawn instance/adapter/device so that it's lifetime is not linked to
 // a specific DawnContextProvider.
 class DawnSharedContext : public base::RefCountedThreadSafe<DawnSharedContext>,
-                          public base::trace_event::MemoryDumpProvider {
+                          public base::trace_event::MemoryDumpProvider,
+                          public GraphiteSharedContext::Delegate {
  public:
   explicit DawnSharedContext(bool thread_safe_graphite_context);
 
@@ -480,6 +481,11 @@ class DawnSharedContext : public base::RefCountedThreadSafe<DawnSharedContext>,
   }
 #endif
 
+  // GraphiteSharedContext::Delegate implementation:
+  void MarkContextLost(error::ContextLostReason reason) override;
+  bool IsContextLost() const override;
+  void FlushBackend() override;
+
   std::optional<error::ContextLostReason> GetResetStatus() const;
 
   std::unique_ptr<GraphiteSharedContext> CreateGraphiteSharedContext(
@@ -504,7 +510,7 @@ class DawnSharedContext : public base::RefCountedThreadSafe<DawnSharedContext>,
     return std::make_unique<GraphiteSharedContext>(
         std::move(graphite_context), use_shader_cache_shm_count, is_thread_safe,
         features::kSkiaGraphiteMaxPendingRecordings.Get(),
-        GetBackendFlushCallback());
+        this);
   }
 
   bool use_thread_safe_graphite_context() const {
@@ -615,15 +621,6 @@ class DawnSharedContext : public base::RefCountedThreadSafe<DawnSharedContext>,
   }
 
   ~DawnSharedContext() override;
-
-  GraphiteSharedContext::FlushCallback GetBackendFlushCallback() {
-#if BUILDFLAG(IS_WIN)
-    return base::BindRepeating(&DawnSharedContext::FlushD3D11CommandsIfDelayed,
-                               base::RetainedRef(this));
-#else
-    return {};
-#endif
-  }
 
   void OnError(wgpu::ErrorType error_type, wgpu::StringView message);
 
@@ -976,6 +973,16 @@ std::optional<error::ContextLostReason> DawnSharedContext::GetResetStatus()
     const {
   base::AutoLock auto_lock(context_lost_lock_);
   return context_lost_reason_;
+}
+
+bool DawnSharedContext::IsContextLost() const {
+  return GetResetStatus().has_value();
+}
+
+void DawnSharedContext::FlushBackend() {
+#if BUILDFLAG(IS_WIN)
+  FlushD3D11CommandsIfDelayed();
+#endif
 }
 
 void DawnSharedContext::OnError(wgpu::ErrorType error_type,
