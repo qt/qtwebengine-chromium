@@ -31,6 +31,10 @@ class SourceTextModule
   DECL_VERIFIER(SourceTextModule)
   DECL_PRINTER(SourceTextModule)
 
+#if defined(DEBUG) || defined(VERIFY_HEAP)
+  void VerifyRequestedModules() const;
+#endif
+
   // The shared function info in case {status} is not kEvaluating, kEvaluated or
   // kErrored.
   Tagged<SharedFunctionInfo> GetSharedFunctionInfo() const;
