@@ -3863,6 +3863,11 @@ FullObjectSlot WasmLiftoffSetupFrame::wasm_instance_data_slot() const {
       sp() + WasmLiftoffSetupFrameConstants::kWasmInstanceDataOffset));
 }
 
+Address WasmLiftoffSetupFrame::CallingPC() const {
+  return Memory<Address>(fp() +
+                         WasmLiftoffSetupFrameConstants::kCallingPCOffset);
+}
+
 void WasmLiftoffSetupFrame::Iterate(RootVisitor* v) const {
   FullObjectSlot spilled_instance_slot(&Memory<Address>(
       fp() + WasmLiftoffSetupFrameConstants::kInstanceSpillOffset));
@@ -3915,7 +3920,8 @@ void WasmLiftoffSetupFrame::Iterate(RootVisitor* v) const {
   }
 
   // Next we scan the slots of stack parameters.
-  wasm::WasmCode* wasm_code = native_module->GetCode(func_index);
+  wasm::WasmCode* wasm_code =
+      wasm::GetWasmCodeManager()->LookupCode(isolate(), CallingPC());
   uint32_t first_tagged_stack_slot = wasm_code->first_tagged_parameter_slot();
   uint32_t num_tagged_stack_slots = wasm_code->num_tagged_parameter_slots();
 
