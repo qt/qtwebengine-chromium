@@ -1246,7 +1246,7 @@ Jeśli się nie zgodzisz, zostaną one zablokowane ze względu na Twoje ustawien
 <translation id="3086579638707268289">Twoja aktywność w internecie jest monitorowana</translation>
 <translation id="3087734570205094154">Na dół</translation>
 <translation id="3090667236485488075">Szkło</translation>
-<translation id="3094051226187213523">Otwórz tryb AI z tą sugestią.</translation>
+<translation id="3094051226187213523">Otwórz Tryb AI z tą sugestią.</translation>
 <translation id="3095940652251934233">Statement</translation>
 <translation id="3098513225387949945">Ignorowana, bo lista wyłączonych zawiera wzorzec równoważny z „*”, co oznacza wyłączenie zasady.</translation>
 <translation id="3098944373717628099">Za godzinę Twoje pliki lokalne zostaną usunięte</translation>
@@ -1670,7 +1670,7 @@ Uruchamianie aplikacji może potrwać dłużej niż zwykle.</translation>
 <translation id="3740447166056383374">Wymagane jest sprawdzenie plików przed skopiowaniem</translation>
 <translation id="374325029554577103">Akcesoria elektroniczne do uprawiania fitnessu</translation>
 <translation id="3744111561329211289">Synchronizacja w tle</translation>
-<translation id="3744212718085287312">Czy następnym razem zwiększyć jej bezpieczeństwo za pomocą karty wirtualnej?</translation>
+<translation id="3744212718085287312">Czy chcesz następnym razem użyć karty wirtualnej, aby zwiększyć bezpieczeństwo transakcji?</translation>
 <translation id="3744899669254331632">Nie możesz teraz odwiedzić strony <ph name="SITE" />, ponieważ wysłała ona zaszyfrowane dane logowania, których Chromium nie może przetworzyć. Błędy sieciowe i ataki są zazwyczaj tymczasowe, więc prawdopodobnie strona będzie dostępna później.</translation>
 <translation id="3745599309295009257">Twój tekst oraz zawartość i adres URL strony, na której piszesz, zostaną przesłane do Google, sprawdzone przez weryfikatorów i wykorzystane do ulepszenia tej funkcji. Unikaj podawania danych osobowych (takich jak dane medyczne lub finansowe) i nie korzystaj z tego narzędzia na stronach, które zawierają informacje prywatne lub poufne.</translation>
 <translation id="3748009735914587286">Metal (wysoki połysk)</translation>
@@ -2474,7 +2474,7 @@ Uruchamianie aplikacji może potrwać dłużej niż zwykle.</translation>
 <translation id="5089810972385038852">Stan</translation>
 <translation id="5090647584136241764">Dodaj karty z podobnymi produktami, żeby łatwo porównać ważne szczegóły</translation>
 <translation id="5093232627742069661">Składanie typu Z</translation>
-<translation id="5093417502834168387">Problem z logowaniem? Wypróbuj inny sposób</translation>
+<translation id="5093417502834168387">Problem z logowaniem? Inne sposoby</translation>
 <translation id="5094747076828555589">Ten serwer nie mógł udowodnić, że należy do <ph name="DOMAIN" />. Jego certyfikat bezpieczeństwa nie jest zaufany w Chromium. Może to być spowodowane błędną konfiguracją lub przechwyceniem połączenia przez atakującego.</translation>
 <translation id="5097099694988056070">Statystyki na temat sprzętu, np. użycie procesora czy pamięci RAM</translation>
 <translation id="5097468150760963273">27 x 39 cali</translation>
@@ -4430,7 +4430,7 @@ Dodatkowe informacje:
 <translation id="831997045666694187">Wieczorem</translation>
 <translation id="8321448084834652864">W każdej chwili możesz zmienić wyszukiwarkę w Chromium.</translation>
 <translation id="8321476692217554900">powiadomienia</translation>
-<translation id="8322230666450346681"><ph name="STARTER_PACK_AI_MODE_FOCUSED_FRIENDLY_MATCH_TEXT" />; naciśnij Enter, aby zapytać w trybie AI od Google</translation>
+<translation id="8322230666450346681"><ph name="STARTER_PACK_AI_MODE_FOCUSED_FRIENDLY_MATCH_TEXT" />; naciśnij Enter, aby zapytać w Trybie AI od Google</translation>
 <translation id="8322402665880479974">Łóżka i wezgłowia</translation>
 <translation id="8323505966575306467">Dodaj więcej zabezpieczeń do haseł</translation>
 <translation id="832547548543012337">Usuń paszport</translation>
@@ -4976,7 +4976,7 @@ Dodatkowe informacje:
 <translation id="950926967802086924">Klucz dostępu • Menedżer haseł Google</translation>
 <translation id="955429569736351433">Przyznano dostęp do rzeczywistości wirtualnej</translation>
 <translation id="955627189349169688">Możesz zrezygnować z tej zasady w <ph name="BEGIN_LINK" />ustawieniach Synchronizacji Chrome<ph name="END_LINK" />.</translation>
-<translation id="95676157383774931">Przycisk trybu AI; aktywuj, aby zapytać w trybie AI od Google</translation>
+<translation id="95676157383774931">Przycisk trybu AI; aktywuj, aby zapytać w Trybie AI od Google</translation>
 <translation id="95721182352849470">Żółty 2</translation>
 <translation id="961663415146723894">Wiązanie na dole</translation>
 <translation id="961856697154696964">Usuń dane przeglądania</translation>

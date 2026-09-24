@@ -1372,7 +1372,7 @@ Rechten die je al hebt gegeven aan apps, kunnen van toepassing zijn op dit accou
 <translation id="1932098463447129402">Niet vóór</translation>
 <translation id="1933070475689690969">Gemini Apps-activiteit</translation>
 <translation id="1933489278505808700">Lezen en wijzigen toegestaan</translation>
-<translation id="1935303383381416800">Toestemming om je locatie te bekijken</translation>
+<translation id="1935303383381416800">Toestemming om je locatie te zien</translation>
 <translation id="193565226207940518">Supporttool</translation>
 <translation id="1935995810530254458">Toch kopiëren</translation>
 <translation id="1936157145127842922">Weergeven in map</translation>
@@ -2498,7 +2498,7 @@ Je kunt instellingen beheren via het kaartmenu of meer opties bekijken in het ge
 <translation id="270921614578699633">Gemiddelde van</translation>
 <translation id="2709516037105925701">Automatisch invullen</translation>
 <translation id="2710101514844343743">Gebruiks- en diagnostische gegevens</translation>
-<translation id="271033894570825754">Nieuw</translation>
+<translation id="271033894570825754">Nieuwe collectie</translation>
 <translation id="2710507903599773521">Je <ph name="DEVICE_TYPE" /> is nu ontgrendeld</translation>
 <translation id="2710676967944965821">Alle rechten voor smartcardlezers resetten?</translation>
 <translation id="2713106313042589954">Camera uitzetten</translation>
@@ -3113,7 +3113,7 @@ Je kunt instellingen beheren via het kaartmenu of meer opties bekijken in het ge
 <translation id="3134393957315651797">Selecteer de experimentstatus voor het experiment <ph name="EXPERIMENT_NAME" />. Beschrijving experiment: <ph name="EXPERIMENT_DESCRIPTION" /></translation>
 <translation id="3139925690611372679">Standaard gele avatar</translation>
 <translation id="3141093262818886744">Toch openen</translation>
-<translation id="3141318088920353606">Luisteren...</translation>
+<translation id="3141318088920353606">Luisteren…</translation>
 <translation id="3142562627629111859">Nieuwe groep</translation>
 <translation id="3143515551205905069">Synchronisatie annuleren</translation>
 <translation id="3143754809889689516">Afspelen vanaf het begin</translation>
@@ -6316,7 +6316,7 @@ Je kunt meerdere schakelaars toewijzen aan deze actie.</translation>
 <translation id="5407167491482639988">Niet te begrijpen</translation>
 <translation id="5408750356094797285">Zoom: <ph name="PERCENT" /></translation>
 <translation id="5409044712155737325">Uit je Google-account.</translation>
-<translation id="5410300144953132176"><ph name="OWNER_FULL_NAME" /> (<ph name="OWNER_EMAIL" />) vraagt je om lid te worden van een tabbladgroep. Iedereen met de link kan alle tabbladen bewerken. Overweeg dus goed of je lid wilt worden. De link verloopt over 48 uur.</translation>
+<translation id="5410300144953132176"><ph name="OWNER_FULL_NAME" /> (<ph name="OWNER_EMAIL" />) vraagt je om lid te worden van een tabbladgroep. Iedereen met de link kan alle tabbladen bewerken. Denk dus goed na voordat je lid wordt. De link verloopt over 48 uur.</translation>
 <translation id="5410889048775606433">Fuchsia</translation>
 <translation id="5411022484772257615">Kan schoolinschrijving niet afronden</translation>
 <translation id="54118879136097217">App installeren op je <ph name="DEVICE_TYPE" /></translation>
@@ -10554,7 +10554,7 @@ Bewaar je sleutelbestand op een veilige plaats. Je hebt het bestand nodig om nie
 <ph name="BEGIN_PARAGRAPH2" />Ga naar g.co/flex/InstallErrors voor meer hulp.<ph name="END_PARAGRAPH2" /></translation>
 <translation id="8383614331548401927">Welkomstsamenvatting</translation>
 <translation id="8386091599636877289">Beleid niet gevonden.</translation>
-<translation id="8387361103813440603">Geen toestemming om je locatie te bekijken</translation>
+<translation id="8387361103813440603">Geen toestemming om je locatie te zien</translation>
 <translation id="8387617938027387193">Verifiëren dat jij het bent</translation>
 <translation id="8388770971141403598">Secundaire profielen worden niet ondersteund</translation>
 <translation id="8389492867173948260">Hiermee kan deze extensie al je gegevens lezen en wijzigen op de websites die je bezoekt:</translation>
@@ -11253,7 +11253,7 @@ Dit kan informatie zijn over de geïnstalleerde software, bestanden, je browser,
 <translation id="8871043459130124414">Wordt pas uitgevoerd nadat je op de extensie hebt geklikt</translation>
 <translation id="8871126140396172266"><ph name="WINDOW_TITLE" /> - Je deelt deze pagina met Gemini</translation>
 <translation id="8871551568777368300">Vastgezet door beheerder</translation>
-<translation id="8871696467337989339">Je gebruikt een niet-ondersteunde opdrachtregelmarkering: <ph name="BAD_FLAG" />. De stabiliteit en beveiliging zullen hieronder lijden.</translation>
+<translation id="8871696467337989339">Je gebruikt een niet-ondersteunde opdrachtregelflag: <ph name="BAD_FLAG" />. De stabiliteit en beveiliging zullen hieronder lijden.</translation>
 <translation id="8871974300055371298">Instellingen voor content</translation>
 <translation id="8872155268274985541">Ongeldig manifestbestand voor de externe update van Kiosk gevonden. Het updaten van de Kiosk-app is mislukt. Verwijder de USB-stick.</translation>
 <translation id="8872506776304248286">Openen in app</translation>

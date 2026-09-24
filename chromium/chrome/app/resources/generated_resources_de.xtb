@@ -169,7 +169,7 @@ Du kannst deine Passwörter jederzeit im <ph name="GOOGLE_PASSWORD_MANAGER" /> p
 <translation id="1110155001042129815">Warten</translation>
 <translation id="1110965959145884739">Wähle aus, welche Sprachen auf diesem Gerät installiert werden sollen. Sprachendateien werden von Nutzern gemeinsam verwendet, um Speicherplatz zu sparen. <ph name="BEGIN_LINK_LEARN_MORE" />Weitere Informationen<ph name="END_LINK_LEARN_MORE" /></translation>
 <translation id="1111932478203988717">Dein Kind kann sich mit dieser PIN auf seinem Gerät anmelden</translation>
-<translation id="1112227834592480032">Wähle die Google Lens-Schaltfläche aus, klicke und ziehe den Mauszeiger über ein Problem</translation>
+<translation id="1112227834592480032">Wähle den Google Lens-Button aus, klicke und ziehe den Mauszeiger über ein Problem</translation>
 <translation id="1112420131909513020">Tab im Hintergrund verwendet Bluetooth</translation>
 <translation id="1112998165730922436">Streamen pausiert</translation>
 <translation id="1114102982691049955"><ph name="PRINTER_MANUFACTURER" /> <ph name="PRINTER_MODEL" /> (USB)</translation>
@@ -1189,7 +1189,7 @@ Berechtigungen, die du Apps bereits gewährt hast, gelten möglicherweise für d
 <translation id="1812027881030482584"><ph name="SITE_ETLD_PLUS_ONE" /> kann <ph name="IDENTITY_PROVIDER_ETLD_PLUS_ONE" /> nicht mehr verwenden</translation>
 <translation id="1812284620455788548">„<ph name="TAB_NAME" />“ wird gestreamt</translation>
 <translation id="1813278315230285598">Dienste</translation>
-<translation id="1813828404076816564">Wähle die Feedback-Schaltfläche aus, um Feedback zur Funktion „Geteilte Tabgruppen“ zu senden</translation>
+<translation id="1813828404076816564">Wähle den Feedback-Button aus, um Feedback zur Funktion „Geteilte Tabgruppen“ zu senden</translation>
 <translation id="18139523105317219">Name der EDI-Partei</translation>
 <translation id="1815083418640426271">Als unformatierten Text einfügen</translation>
 <translation id="1815097521077272760">Du wurdest eingeladen, die Tastatursteuerung für dieses Spiel auszuprobieren.</translation>
@@ -1318,7 +1318,7 @@ Berechtigungen, die du Apps bereits gewährt hast, gelten möglicherweise für d
 <translation id="1901760057081700494">Die Zeitzone ist derzeit auf <ph name="TIME_ZONE_ENTRY" /> eingestellt. Wenn die Zeitzone automatisch aktualisiert werden soll, <ph name="BEGIN_LINK" />aktiviere den Standortzugriff für das System<ph name="END_LINK" />.</translation>
 <translation id="1904580727789512086">Die von dir besuchten URLs werden in deinem Google-Konto gespeichert</translation>
 <translation id="1906181697255754968">Websites greifen normalerweise auf Dateien und Ordner auf deinem Gerät zu, um Funktionen wie die automatische Speicherung deiner Arbeit umsetzen zu können</translation>
-<translation id="1906488504371069394">Weitere Erweiterungen und Designs entdecken im <ph name="BEGIN_LINK" />Chrome Web Store<ph name="END_LINK" /></translation>
+<translation id="1906488504371069394">Entdecke mehr Erweiterungen und Designs im <ph name="BEGIN_LINK" />Chrome Web Store<ph name="END_LINK" /></translation>
 <translation id="1907044622262489040">Du kannst Text diktieren. Verwende dazu die Suchtaste + D und beginne dann mit der Spracheingabe.</translation>
 <translation id="1907659324308286326">Manche Thunderbolt- oder USB4‑Zubehörteile benötigen Zugriff auf den Arbeitsspeicher, um richtig zu funktionieren.</translation>
 <translation id="1908591798274282246">Geschlossene Gruppe wieder öffnen</translation>
@@ -2495,7 +2495,7 @@ Diese Aktion wirkt sich nicht auf Lesezeichen, Passwörter und den Verlauf aus.<
 <translation id="270921614578699633">Durchschnitt bilden</translation>
 <translation id="2709516037105925701">Autofill</translation>
 <translation id="2710101514844343743">Nutzungsdaten &amp; Fehlerberichte</translation>
-<translation id="271033894570825754">Neu</translation>
+<translation id="271033894570825754">Neue Sammlung</translation>
 <translation id="2710507903599773521">Dein <ph name="DEVICE_TYPE" /> ist jetzt entsperrt</translation>
 <translation id="2710676967944965821">Alle Berechtigungen für Smart-Kartenlesegeräte zurücksetzen?</translation>
 <translation id="2713106313042589954">Kamera ausschalten</translation>
@@ -4562,7 +4562,7 @@ Möchtest du <ph name="CONTROL_PANEL_APPLET_NAME" /> starten?</translation>
 <translation id="4133076602192971179">Du kannst dein Passwort in der App ändern</translation>
 <translation id="4134838386867070505">Schritt 1 von 4: Problem beschreiben</translation>
 <translation id="413534985210133938">„<ph name="LOCAL_FOLDER" />“ ist nur auf diesem Gerät gespeichert. Wenn du dieses Lesezeichen in den Ordner „<ph name="LOCAL_FOLDER" />“ verschiebst, ist es auf deinen anderen Geräten nicht mehr verfügbar.</translation>
-<translation id="4135746311382563554">Zusätzliche Nutzungsbedingungen für Google Chrome und Chrome OS</translation>
+<translation id="4135746311382563554">Zusatzbedingungen für Google Chrome und Chrome OS</translation>
 <translation id="4136203100490971508">Das Nachtlicht wird automatisch bei Sonnenaufgang deaktiviert</translation>
 <translation id="41365691917097717">Wenn du fortfährst, erlaubst du der ADB-Fehlerbehebung, Android-Apps zu erstellen und zu testen. Durch diese Aktion können Android-Apps installiert werden, die nicht von Google geprüft wurden. Zum Deaktivieren ist das Zurücksetzen auf die Werkseinstellungen erforderlich.</translation>
 <translation id="4137923333452716643">Markiere den Text, der im Lesemodus aufgerufen werden soll</translation>
@@ -7701,7 +7701,7 @@ Du kannst dieser Aktion mehrere Schalter zuweisen.</translation>
 <translation id="6415816101512323589">Soll die lokale Datenwiederherstellung zum Schutz deiner Daten aktiviert werden?</translation>
 <translation id="6415900369006735853">Internetverbindung über dein Smartphone herstellen</translation>
 <translation id="6416743254476733475">Wechsle auf den Computer, um sie zuzulassen oder zu blockieren.</translation>
-<translation id="6416856063840710198">Um deinen Besuch zu optimieren, speichern Websites oft deine Aktivitäten und oft auch auf deinem Gerät. <ph name="SETTINGS" /></translation>
+<translation id="6416856063840710198">Um dein Besuchserlebnis zu optimieren, speichern Websites oft deine Aktivitäten und oft auch auf deinem Gerät. <ph name="SETTINGS" /></translation>
 <translation id="6417265370957905582">Google Assistant</translation>
 <translation id="6417468503703810114">Standardeinstellung</translation>
 <translation id="6418160186546245112">Zuvor installierte Version von <ph name="IDS_SHORT_PRODUCT_NAME" /> wird wiederhergestellt...</translation>
@@ -9080,7 +9080,7 @@ Du hast # weitere kompromittierte Passwörter. Der Google Passwortmanager empfi
 <translation id="7396017167185131589">Freigegebene Ordner erscheinen hier</translation>
 <translation id="7396845648024431313"><ph name="APP_NAME" /> wird beim Systemstart gestartet und auch dann weiter im Hintergrund ausgeführt, wenn du alle anderen <ph name="PRODUCT_NAME" />-Fenster geschlossen hast.</translation>
 <translation id="7399045143794278225">Synchronisierung anpassen</translation>
-<translation id="7399616692258236448">Standortanfragen werden automatisch für alle Websites blockiert, außer bei Websites, bei denen du es zulässt</translation>
+<translation id="7399616692258236448">Standortanfragen werden automatisch für alle Websites blockiert, außer für diejenigen, die du zulässt</translation>
 <translation id="7399802613464275309">Sicherheitscheck</translation>
 <translation id="7400059772197434086">wird daran gehindert, deine Informationen zu nutzen auf</translation>
 <translation id="7400418766976504921">URL</translation>
@@ -9981,7 +9981,7 @@ Schlüsseldatei: <ph name="KEY_FILE" />
 Speichere deine Schlüsseldatei an einem sicheren Ort. Du benötigst die Datei, um neue Versionen deiner Erweiterung zu erstellen.</translation>
 <translation id="8000020256436988724">Symbolleiste</translation>
 <translation id="800117767980299235">Sprachnotiz</translation>
-<translation id="8001561107130904792">Freigabe von Seiteninhalten</translation>
+<translation id="8001561107130904792">Teilen von Seiteninhalten</translation>
 <translation id="8002274832045662704">Erweiterte Druckerkonfiguration</translation>
 <translation id="8002597610026749658">Chrome kann Untertitel für die hier angezeigten Sprachen erstellen</translation>
 <translation id="8002670234429879764"><ph name="PRINTER_NAME" /> ist nicht mehr verfügbar</translation>

@@ -1187,7 +1187,7 @@ Các quyền bạn từng cấp cho ứng dụng có thể áp dụng cho cả t
 <translation id="1803545009660609783">Đào tạo lại</translation>
 <translation id="180441032496361123">Nhấp để kích hoạt <ph name="SEARCH_ENGINE_NAME" /></translation>
 <translation id="1805738995123446102">Thẻ nền đang sử dụng micrô</translation>
-<translation id="1805822111539868586">Kiểm tra chế độ xem</translation>
+<translation id="1805822111539868586">Kiểm tra giao diện</translation>
 <translation id="1805888043020974594">Máy chủ máy in</translation>
 <translation id="1805967612549112634">Xác nhận mã PIN</translation>
 <translation id="1806335016774576568">Chuyển sang một ứng dụng khác đang mở</translation>
@@ -2511,7 +2511,7 @@ Bạn có thể quản lý các tùy chọn cài đặt của tài khoản này 
 <translation id="270921614578699633">Trên trung bình</translation>
 <translation id="2709516037105925701">Tự động điền</translation>
 <translation id="2710101514844343743">Dữ liệu chẩn đoán và dữ liệu về mức sử dụng</translation>
-<translation id="271033894570825754">Mới</translation>
+<translation id="271033894570825754">Bộ sưu tập mới</translation>
 <translation id="2710507903599773521"><ph name="DEVICE_TYPE" /> của bạn hiện đã được mở khoá</translation>
 <translation id="2710676967944965821">Đặt lại tất cả các quyền của máy đọc thẻ thông minh?</translation>
 <translation id="2713106313042589954">Tắt máy ảnh</translation>
@@ -4342,7 +4342,7 @@ Bạn có thể quản lý các tùy chọn cài đặt của tài khoản này 
 <translation id="3966094581547899417">Thông tin chi tiết về điểm phát sóng</translation>
 <translation id="3967822245660637423">Đã tải xuống xong</translation>
 <translation id="3968739731834770921">Kana</translation>
-<translation id="3970114302595058915">ID</translation>
+<translation id="3970114302595058915">Mã nhận dạng</translation>
 <translation id="397105322502079400">Đang tính...</translation>
 <translation id="3971764089670057203">Vân tay số trên khóa bảo mật này</translation>
 <translation id="3973005893595042880">Người dùng không được phép</translation>
@@ -5067,7 +5067,7 @@ Bạn có thể quản lý các tùy chọn cài đặt của tài khoản này 
 <translation id="4500647907053779331">&amp;Dịch văn bản đã chọn sang <ph name="LANGUAGE" /></translation>
 <translation id="450099669180426158">Biểu tượng dấu chấm than</translation>
 <translation id="4501530680793980440">Xác nhận xóa</translation>
-<translation id="4502423230170890588">Xóa khỏi thiết bị này</translation>
+<translation id="4502423230170890588">Xoá khỏi thiết bị này</translation>
 <translation id="4502477450742595012">Nhấp chuột phải vào một thẻ rồi chọn "Thêm thẻ vào nhóm mới"</translation>
 <translation id="4503748371388753124">Máy tính của bạn chứa một thiết bị bảo mật Mô-đun nền tảng đáng tin cậy (TPM) dùng để triển khai nhiều tính năng bảo mật thiết yếu trong ChromeOS Flex. Hãy truy cập Trung tâm trợ giúp Chromebook để tìm hiểu thêm: https://support.google.com/chromebook/?p=tpm</translation>
 <translation id="4504374760782163539">{COUNT,plural, =0{Đã cho phép các cookie}=1{Đã cho phép các cookie nhưng có 1 trường hợp ngoại lệ}other{Đã cho phép các cookie nhưng có {COUNT} trường hợp ngoại lệ}}</translation>
@@ -5459,7 +5459,7 @@ Nhấn tổ hợp phím Ctrl + Alt + Giảm độ sáng để thu nhỏ.</transl
 <translation id="4779766576531456629">Đổi tên mạng di động của eSIM</translation>
 <translation id="4779855924282373274"><ph name="URL" /> • 1 bản sao</translation>
 <translation id="4780321648949301421">Lưu trang dưới dạng...</translation>
-<translation id="4780558987886269159">Để làm việc</translation>
+<translation id="4780558987886269159">Dành cho công việc</translation>
 <translation id="4781633367688946589">Tiếp tục với phiên mới</translation>
 <translation id="4784349455504343791"><ph name="WEBSITE_ORIGIN" /> muốn sử dụng thông tin cá nhân trong ví điện tử của bạn.</translation>
 <translation id="4785719467058219317">Bạn đang sử dụng một khóa bảo mật chưa đăng ký với trang web này</translation>
@@ -11287,7 +11287,7 @@ Thông tin này có thể bao gồm thông tin về phần mềm đã cài đặ
 <translation id="8874341931345877644">Truyền tới thiết bị:</translation>
 <translation id="8874448314264883207">"<ph name="EXTENSION_NAME" />" đã bị tắt</translation>
 <translation id="8874647982044395866">Tự nhiên</translation>
-<translation id="8874790741333031443">Hãy thử tạm thời cho phép cookie của bên thứ ba. Chế độ cài đặt này sẽ làm giảm khả năng bảo vệ khi duyệt web nhưng sẽ tăng khả năng các tính năng của trang web hoạt động như dự kiến.</translation>
+<translation id="8874790741333031443">Hãy thử tạm thời cho phép cookie của bên thứ ba. Chế độ cài đặt này sẽ làm giảm khả năng bảo vệ khi duyệt web nhưng các tính năng của trang có thể sẽ hoạt động đúng như mong đợi.</translation>
 <translation id="8875221558267407626">Tóm tắt nội dung, đơn giản hoá ngôn ngữ phức tạp hoặc đặt câu hỏi</translation>
 <translation id="8875520811099717934">Nâng cấp Linux</translation>
 <translation id="8875736897340638404">Chọn tùy chọn hiển thị</translation>

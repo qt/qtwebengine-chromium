@@ -269,7 +269,7 @@ vars = {
   'screen_ai_windows_386': 'version:140.02',
 
   # siso CIPD package version.
-  'siso_version': 'git_revision:887a10bc8a038d8e330d06d1ad5ae6ec646f3040',
+  'siso_version': 'git_revision:acfc39d4c923834851300e8676daf8fc47e53a2d',
 
   # download libaom test data
   'download_libaom_testdata': False,
@@ -1197,7 +1197,7 @@ deps = {
       'packages': [
           {
               'package': 'chromium/chrome/android/orderfiles/arm64',
-              'version': '-AfXnPhSs9xCHOAOKUtv2HSdV6tjOyiqIDlLvIrQg2cC',
+              'version': '3-WmWh9Fs6I5GYcVueObsrmm7ky9BL6Zs_FjN1xIl7EC',
           },
       ],
       'condition': 'checkout_android',
@@ -1600,7 +1600,7 @@ deps = {
 
   'src/clank': {
     'url': Var('chrome_git') + '/clank/internal/apps.git' + '@' +
-    'ab3e11152d9793d8be49bb957857f600896bc2e5',
+    '99eadbdb8b75d74eea28b634a8edc4197dda9fe9',
     'condition': 'checkout_android and checkout_src_internal',
   },
 
@@ -2584,7 +2584,7 @@ deps = {
   'src/third_party/siso/cipd': {
     'packages': [
       {
-        'package': 'infra/build/siso/${{platform}}',
+        'package': 'build/siso/${{platform}}',
         'version': Var('siso_version'),
       }
     ],
@@ -3762,7 +3762,7 @@ deps = {
 
   'src/ios_internal':  {
       'url': Var('chrome_git') + '/chrome/ios_internal.git' + '@' +
-        '14755d06e41cbaa91f3726f587bd91cb8413ce80',
+        '020947f678d77d93979609c23798d6a1be814e4c',
       'condition': 'checkout_ios and checkout_src_internal',
   },
 

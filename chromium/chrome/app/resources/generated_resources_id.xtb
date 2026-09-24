@@ -2132,7 +2132,7 @@ Anda dapat mengelola setelan akun ini dengan menginstal aplikasi Family Link di 
 <translation id="2445081178310039857">Diperlukan direktori akar ekstensi.</translation>
 <translation id="2445484935443597917">Buat Profil Baru</translation>
 <translation id="2445726032315793326">Kaca pembesar sebagian</translation>
-<translation id="244641233057214044">Terkait dengan penelusuran Anda</translation>
+<translation id="244641233057214044">Terkait penelusuran Anda</translation>
 <translation id="2447587550790814052">Anda kini dapat menggunakan Steam untuk Chromebook (Beta)</translation>
 <translation id="2448312741937722512">Jenis</translation>
 <translation id="2448810255793562605">Pemindaian otomatis tombol akses</translation>
@@ -2511,7 +2511,7 @@ Anda dapat mengelola setelan akun ini dengan menginstal aplikasi Family Link di 
 <translation id="270921614578699633">Rata-rata Pemindahan</translation>
 <translation id="2709516037105925701">Isi otomatis</translation>
 <translation id="2710101514844343743">Data penggunaan dan diagnostik</translation>
-<translation id="271033894570825754">Baru</translation>
+<translation id="271033894570825754">Koleksi baru</translation>
 <translation id="2710507903599773521"><ph name="DEVICE_TYPE" /> dibuka kuncinya</translation>
 <translation id="2710676967944965821">Reset semua izin pembaca kartu smart?</translation>
 <translation id="2713106313042589954">Nonaktifkan kamera</translation>
@@ -8518,7 +8518,7 @@ Anda memiliki # sandi lainnya yang telah dibobol. Pengelola Sandi Google merekom
 <translation id="6970480684834282392">Tipe rintisan</translation>
 <translation id="6970543303783413625">Tidak dapat mengimpor sandi. Anda hanya dapat mengimpor maksimal <ph name="COUNT" /> sandi dalam satu waktu.</translation>
 <translation id="6970856801391541997">Cetak Halaman Khusus</translation>
-<translation id="6970861306198150268">Pastikan Anda menyimpan sandi saat ini untuk situs ini</translation>
+<translation id="6970861306198150268">Pastikan Anda menyimpan sandi yang terbaru untuk situs ini</translation>
 <translation id="6971184043765343932">Gambar yang Anda upload</translation>
 <translation id="6971570759801670426">Edit <ph name="CREDENTIAL_TYPE" /> untuk nama pengguna: <ph name="USER_EMAIL" /></translation>
 <translation id="6972754398087986839">Mulai</translation>

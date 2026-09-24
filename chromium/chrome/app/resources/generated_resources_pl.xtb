@@ -2484,7 +2484,7 @@ Możesz zarządzać ustawieniami konta, korzystając z aplikacji Family Link na
 <translation id="270921614578699633">Średnia z</translation>
 <translation id="2709516037105925701">Autouzupełnianie</translation>
 <translation id="2710101514844343743">Dane diagnostyczne i informacje o użytkowaniu</translation>
-<translation id="271033894570825754">Nowy</translation>
+<translation id="271033894570825754">Nowa kolekcja</translation>
 <translation id="2710507903599773521">Urządzenie <ph name="DEVICE_TYPE" /> jest teraz odblokowane</translation>
 <translation id="2710676967944965821">Zresetować wszystkie uprawnienia czytnika kart inteligentnych?</translation>
 <translation id="2713106313042589954">Wyłącz kamerę</translation>
@@ -4141,7 +4141,7 @@ Domena <ph name="DOMAIN" /> wymaga, by karta inteligentna pozostała w gnieźdz
 <translation id="3854348409770521214">Malarstwo olejne</translation>
 <translation id="3854967233147778866">Proponuj tłumaczenie stron w innych językach</translation>
 <translation id="3854976556788175030">Zasobnik wyjściowy jest pełny</translation>
-<translation id="3855441664322950881">Umieść rozszerzenie w pakiecie</translation>
+<translation id="3855441664322950881">Spakuj rozszerzenie</translation>
 <translation id="3855676282923585394">Importuj zakładki i ustawienia...</translation>
 <translation id="3856096718352044181">Sprawdź, czy jest to prawidłowy dostawca, lub spróbuj ponownie później</translation>
 <translation id="3856470183388031602">Używaj konta Google na urządzeniu <ph name="DEVICE_TYPE" /></translation>
@@ -4764,7 +4764,7 @@ Domena <ph name="DOMAIN" /> wymaga, by karta inteligentna pozostała w gnieźdz
 <translation id="4295072614469448764">Aplikacja jest teraz dostępna na terminalu. Może mieć też ikonę w Menu z aplikacjami.</translation>
 <translation id="4295979599050707005">Zaloguj się ponownie, by potwierdzić, że na koncie <ph name="USER_EMAIL" /> chcesz używać stron, aplikacji i rozszerzeń w Chrome i Google Play. Możesz też usunąć to konto. <ph name="LINK_BEGIN" />Więcej informacji<ph name="LINK_END" /></translation>
 <translation id="4296424230850377304">Zainstalowane i przesyłane strumieniowo aplikacje z usługi <ph name="APP_NAME" /></translation>
-<translation id="4296632172536745000">Twoje pierwotne hasło do tej witryny zostało ujawnione w wyniku naruszenia bezpieczeństwa danych. <ph name="DATE" /> poprosiłeś(-aś) <ph name="BRAND" /> o automatyczną zmianę hasła.</translation>
+<translation id="4296632172536745000">Twoje pierwotne hasło do tej witryny zostało ujawnione w wyniku naruszenia bezpieczeństwa danych. <ph name="DATE" /> na Twoją prośbę narzędzie <ph name="BRAND" /> automatycznie zmieniło hasło.</translation>
 <translation id="4297219207642690536">Uruchom ponownie i zresetuj</translation>
 <translation id="4297813521149011456">Obrót wyświetlacza</translation>
 <translation id="4298660926525614540">Nazwy wymiennych urządzeń pamięci</translation>
@@ -6344,7 +6344,7 @@ Aby pomniejszyć, naciśnij Ctrl + Alt + zmniejsz jasność.</translation>
 <translation id="5434065355175441495">PKCS #1, szyfrowanie RSA</translation>
 <translation id="5435274640623994081">Włącz rejestrowanie ikony audio</translation>
 <translation id="5435779377906857208">Zawsze zezwalaj stronie <ph name="HOST" /> na dostęp do lokalizacji</translation>
-<translation id="5436211819997237281">Rozszerzenie zarządzające teraz Twoją stroną nowej karty</translation>
+<translation id="5436211819997237281">Rozszerzenie zarządzające teraz stroną nowej karty</translation>
 <translation id="5436492226391861498">Czekam na tunel serwera proxy...</translation>
 <translation id="5436510242972373446">Wyszukiwanie w <ph name="SITE_NAME" />:</translation>
 <translation id="5438014818441491616">Okno <ph name="WINDOW_SIDE" /> ma teraz szerokość <ph name="WINDOW_SIZE_PERCENT" />, a panel <ph name="PANE_SIDE" /> – <ph name="PANE_SIZE_PERCENT" />.</translation>
@@ -8950,7 +8950,7 @@ Masz jeszcze # przejętego hasła. Menedżer haseł Google zaleca, aby jak najs
 <translation id="7314989823816739632">Romantyczny</translation>
 <translation id="7317342082064136423">Potwierdź, że to Twoje konto</translation>
 <translation id="7317831949569936035">Rejestracja w szkole</translation>
-<translation id="731827437403763009">Innowacje w zakresie AI</translation>
+<translation id="731827437403763009">Innowacje AI</translation>
 <translation id="7319320447721994672">Jeśli odwiedzasz witrynę, która używa plików cookie, może być konieczne tymczasowe ich włączenie, aby wszystkie funkcje strony działały.</translation>
 <translation id="7319983568955948908">Zatrzymaj udostępnianie</translation>
 <translation id="7320213904474460808">Łącz domyślnie z siecią</translation>

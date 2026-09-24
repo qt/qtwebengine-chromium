@@ -558,7 +558,7 @@
 <translation id="1375938286942050085">设置完毕！准备好您的设备，畅享接下来的精彩游戏</translation>
 <translation id="137651782282853227">已保存的地址将显示在这里</translation>
 <translation id="1376771218494401509">为窗口命名(&amp;W)…</translation>
-<translation id="1377438103060664754">如果您的某个密码遭遇了数据泄露，Google 密码管理工具会询问您是否要将其更改为安全系数高的密码</translation>
+<translation id="1377438103060664754">如果您的密码在某次公开数据泄露事件中外泄，Google 密码管理工具会询问您是否要将其更改为安全系数高的密码</translation>
 <translation id="1377600615067678409">暂时跳过</translation>
 <translation id="1378613616312864539">此设置由“<ph name="NAME" />”控制</translation>
 <translation id="1378848228640136848">{NUM_COMPROMISED,plural, =0{没有任何已泄露的密码}=1{有 1 个已泄露的密码}other{有 {NUM_COMPROMISED} 个已泄露的密码}}</translation>
@@ -1378,7 +1378,7 @@
 <translation id="1941410638996203291">开始时间：<ph name="TIME" /></translation>
 <translation id="1941553344801134989">版本：<ph name="APP_VERSION" /></translation>
 <translation id="1941685451584875710">管理员已将您的账号配置为自动连接到 Microsoft OneDrive，但出了点问题。</translation>
-<translation id="194174710521904357">您暂时允许了此网站使用第三方 Cookie，这意味着您选择采用较低级别的浏览保护措施，但网站功能更有可能会按预期运行。</translation>
+<translation id="194174710521904357">您已暂时允许此网站使用第三方 Cookie，这样浏览保护会降低，但网站功能更可能正常运行。</translation>
 <translation id="1941995177877935582">显示按键映射</translation>
 <translation id="1942128823046546853">读取和更改您在所有网站上的所有数据</translation>
 <translation id="1944528062465413897">蓝牙配对码：</translation>
@@ -2179,7 +2179,7 @@
 <translation id="2483698983806594329">下载的文件未经验证</translation>
 <translation id="2484574361686148760">刷新 Wi-Fi 直接客户端信息</translation>
 <translation id="2484743711056182585">撤消授权</translation>
-<translation id="2484909293434545162">如果网站使用 Cookie，它就会显示在此处</translation>
+<translation id="2484909293434545162">网站若使用 Cookie，将会显示在此处</translation>
 <translation id="2485394160472549611">为您推荐的首选内容</translation>
 <translation id="2485422356828889247">卸载</translation>
 <translation id="2485681265915754872">Google Play 服务条款</translation>
@@ -2363,7 +2363,7 @@
 <translation id="2613535083491958306"><ph name="ORIGIN" /> 将能够修改“<ph name="FILENAME" />”</translation>
 <translation id="2613747923081026172">创建分组</translation>
 <translation id="2615159404909536465">{FILE_COUNT,plural, =1{在此扩展程序中打开并修改 <ph name="FILE1" />}other{在此应用中打开并修改 <ph name="FILE1" />…}}</translation>
-<translation id="2616366145935564096">读取和更改您在<ph name="WEBSITE_1" />上的数据</translation>
+<translation id="2616366145935564096">读取和更改您在 <ph name="WEBSITE_1" /> 上的数据</translation>
 <translation id="2618797463720777311">设置“附近分享”功能</translation>
 <translation id="2619305858360733464"><ph name="SHARED_STATE" /> 未命名分组 - <ph name="OPENED_STATE" /></translation>
 <translation id="2619340799655338321">播放/暂停</translation>
@@ -3393,7 +3393,7 @@
 <translation id="3360306038446926262">窗口</translation>
 <translation id="3361421571228286637">{COUNT,plural, =1{“<ph name="DEVICE_NAME" />”与您分享了 <ph name="ATTACHMENTS" />。}other{“<ph name="DEVICE_NAME" />”与您分享了 <ph name="ATTACHMENTS" />。}}</translation>
 <translation id="3361954577771524115">来自该应用</translation>
-<translation id="3362651095484543782">若要退出或返回到 Gemini，请使用键盘快捷键。</translation>
+<translation id="3362651095484543782">使用键盘快捷键退出或返回 Gemini。</translation>
 <translation id="3362915550009543917">这幅油画以宁静为主题，描绘了一片沐浴在黄色调中的草地，画面洋溢着宁静与沉思的氛围。</translation>
 <translation id="3363202073972776113">这份新个人资料将由贵组织管理。<ph name="BEGIN_LINK" />了解详情<ph name="END_LINK" /></translation>
 <translation id="3364159059299045452">Alt+悬停</translation>
@@ -4342,7 +4342,7 @@
 <translation id="3983400541576569538">某些应用中的数据可能会丢失</translation>
 <translation id="3983586614702900908">来自未知供应商的设备</translation>
 <translation id="3983764759749072418">Play 商店中的应用有权访问此设备。</translation>
-<translation id="3983769721878416534">点击前延迟</translation>
+<translation id="3983769721878416534">点击前停留</translation>
 <translation id="3984135167056005094">不附带电子邮件地址</translation>
 <translation id="3984159763196946143">无法启动演示模式</translation>
 <translation id="3984536049089846927">下一页</translation>
@@ -4549,7 +4549,7 @@
 <translation id="4131283654370308898">允许在此网站上使用“<ph name="EXTENSION_NAME" />”</translation>
 <translation id="4131410914670010031">黑白色</translation>
 <translation id="413193092008917129">网络诊断例程</translation>
-<translation id="4132137475637520539">允许知道链接的任何人加入</translation>
+<translation id="4132137475637520539">允许任何知道链接的人加入</translation>
 <translation id="4132183752438206707">在 Google Play 商店中查找所需应用</translation>
 <translation id="4132364317545104286">重命名 eSIM 卡配置文件</translation>
 <translation id="4132969033912447558">继续下载 <ph name="FILE_NAME" /></translation>
@@ -4771,7 +4771,7 @@
 <translation id="4295072614469448764">应用已可在您的终端上使用，且可能在启动器中显示图标。</translation>
 <translation id="4295979599050707005">请重新登录，以确认您的账号 (<ph name="USER_EMAIL" />) 可用于 Chrome 和 Google Play 中的网站、应用和扩展程序。您还可以移除此账号。<ph name="LINK_BEGIN" />了解详情<ph name="LINK_END" /></translation>
 <translation id="4296424230850377304">通过“<ph name="APP_NAME" />”安装和流式传输的应用</translation>
-<translation id="4296632172536745000">我们发现，您在此网站上使用的原密码在某次公开数据泄露事件中发生了外泄。您在 <ph name="DATE" />要求<ph name="BRAND" />自动为您更改密码。</translation>
+<translation id="4296632172536745000">我们发现，您在此网站上使用的原密码在某次公开数据泄露事件中外泄。您曾在 <ph name="DATE" />要求 <ph name="BRAND" />自动为您更改密码。</translation>
 <translation id="4297219207642690536">重启并重置</translation>
 <translation id="4297813521149011456">显示屏旋转</translation>
 <translation id="4298660926525614540">可移动存储设备名称</translation>
@@ -4881,7 +4881,7 @@
 <translation id="4378551569595875038">正在连接…</translation>
 <translation id="4378556263712303865">设备申请</translation>
 <translation id="4378589147979399051">使用主键盘控制鼠标光标</translation>
-<translation id="4379097572583973456">网站还可嵌入来自其他网站的内容，例如图片、广告和文字。这些其他网站也可保存数据。</translation>
+<translation id="4379097572583973456">网站还可嵌入其他网站的内容（如图片、广告和文字），这些网站也会保存数据。</translation>
 <translation id="4379281552162875326">卸载“<ph name="APP_NAME" />”？</translation>
 <translation id="4380055775103003110">如果此问题仍然存在，您可以尝试在 <ph name="SITE_ETLD_PLUS_ONE" /> 上通过其他方法继续操作。</translation>
 <translation id="4380648069038809855">已进入全屏模式</translation>
@@ -5238,7 +5238,7 @@
 <translation id="4637083375689622795">更多操作，<ph name="EMAIL" /></translation>
 <translation id="4637189644956543313">再次使用摄像头</translation>
 <translation id="4637252186848840278">{COUNT,plural, =1{文字}other{# 段文字}}</translation>
-<translation id="4638568775382459156">分享的标签页分组活动记录</translation>
+<translation id="4638568775382459156">共享的标签页分组活动记录</translation>
 <translation id="4638930039313743000">启用 ADB 调试</translation>
 <translation id="4639390152280993480">若要查看此页面的简化视图，请前往“更多工具”&gt;“朗读模式”</translation>
 <translation id="4641539339823703554">Chrome无法设置系统时间。请检查下面的时间，并在必要时进行更正。</translation>
@@ -5386,7 +5386,7 @@
 <translation id="4744268813103118742">前往网站</translation>
 <translation id="4744571849207727284">Excel</translation>
 <translation id="4744981231093950366">{NUM_TABS,plural, =1{将这个网站取消静音}other{将这些网站取消静音}}</translation>
-<translation id="4745096442457817087">您的密码遭遇了公开数据泄露</translation>
+<translation id="4745096442457817087">您的密码在某次公开数据泄露事件中外泄</translation>
 <translation id="4745500401920035244">您的管理员做了一项系统级更改，致使一些旧个人资料遭到停用。您无法再访问此个人资料，但仍然可以将其移除</translation>
 <translation id="474609389162964566">说“Hey Google”即可启动 Google 助理</translation>
 <translation id="4746757725581505837">您即将删除保存在此设备上的 <ph name="BRAND" />数据</translation>
@@ -5683,7 +5683,7 @@
 <translation id="4944310289250773232">此项身份验证服务由 <ph name="SAML_DOMAIN" /> 托管</translation>
 <translation id="4945439665401275950">若要设置指纹，请让您的孩子轻触电源按钮。您孩子的指纹数据会安全地存储在此 <ph name="DEVICE_TYPE" /> 上，绝不会外泄。</translation>
 <translation id="4946998421534856407">启动器键 + 向上键</translation>
-<translation id="4947376546135294974">来自您正在访问的网站的数据</translation>
+<translation id="4947376546135294974">来自您当前访问网站的数据</translation>
 <translation id="4950100687509657457">创建个人资料</translation>
 <translation id="495164417696120157">{COUNT,plural, =1{1 个文件}other{# 个文件}}</translation>
 <translation id="495170559598752135">操作</translation>
@@ -6343,7 +6343,7 @@
 <translation id="542948651837270806">需为“可信平台模块”固件安装更新。请访问 <ph name="TPM_FIRMWARE_UPDATE_LINK" /></translation>
 <translation id="5429818411180678468">全角</translation>
 <translation id="5430931332414098647">即时网络共享</translation>
-<translation id="5431318178759467895">颜色</translation>
+<translation id="5431318178759467895">彩色</translation>
 <translation id="5432145523462851548">在文件夹中显示 <ph name="FILE_NAME" /></translation>
 <translation id="5432223177001837288">若要分享音频，请改为分享标签页</translation>
 <translation id="5432872710261597882">选择“我喜欢”，会提交您喜欢此功能的反馈。</translation>
@@ -6530,7 +6530,7 @@
 <translation id="5561162485081632007">检测危险事件并在此类事件发生时向您发出警告</translation>
 <translation id="5562588178647493983">请与您的管理员联系了解更多信息</translation>
 <translation id="556321030400250233">本地文件或分享的文件</translation>
-<translation id="5563234215388768762">在 Google 中搜索，或输入网址</translation>
+<translation id="5563234215388768762">在 Google 中搜索或输入网址</translation>
 <translation id="5563824734298958390">退出标签页分组？</translation>
 <translation id="5565579144504951367">您的硬件可以设置了</translation>
 <translation id="5565735124758917034">主动</translation>
@@ -6633,7 +6633,7 @@
 <translation id="563371367637259496">移动网络</translation>
 <translation id="5635312199252507107">在特定网站上允许</translation>
 <translation id="5636012309446422">从 <ph name="PRIMARY_EMAIL" /> 中移除“<ph name="DEVICE" />”？</translation>
-<translation id="56360247219959198">“<ph name="DICTIONARY" />”将被永久删除。此操作无法撤消。</translation>
+<translation id="56360247219959198">“<ph name="DICTIONARY" />”将被永久删除。此操作无法撤销。</translation>
 <translation id="5636140764387862062">可对 PIN 码执行的更多操作</translation>
 <translation id="5636996382092289526">要使用“<ph name="NETWORK_ID" />”，您可能需要先<ph name="LINK_START" />访问该网络的登录页面<ph name="LINK_END" />，该页面会在几秒钟后自动打开。如果未打开，就表示该网络无法使用。</translation>
 <translation id="5637476008227280525">移动数据开关</translation>
@@ -6881,7 +6881,7 @@
 <translation id="5828545842856466741">添加个人资料…</translation>
 <translation id="5828633471261496623">正在打印...</translation>
 <translation id="5830205393314753525">无法打开<ph name="APP_NAME" /></translation>
-<translation id="5830512293931520102">您的密码已加密，不会向任何人显示</translation>
+<translation id="5830512293931520102">您的密码会经过加密处理，且不会向任何人显示</translation>
 <translation id="5830720307094128296">将页面存储为(&amp;A)...</translation>
 <translation id="583179300286794292">目前登录的账号是 <ph name="SPAN_START" /><ph name="DRIVE_ACCOUNT_EMAIL" /><ph name="SPAN_END" /></translation>
 <translation id="5831950941058843834">为 <ph name="SITE_NAME" />、其下属所有网站及其已安装的应用删除网站数据和权限？</translation>
@@ -6932,7 +6932,7 @@
 <translation id="5860033963881614850">关闭</translation>
 <translation id="5860254591544742609">显示标题栏</translation>
 <translation id="5860335608673904825">搜索键 + Ctrl + Shift + <ph name="TOP_ROW_KEY" /></translation>
-<translation id="5860491529813859533">启用</translation>
+<translation id="5860491529813859533">开启</translation>
 <translation id="5860494867054883682">正在将您的设备更新至<ph name="CHANNEL_NAME" />版本 (<ph name="PROGRESS_PERCENT" />)</translation>
 <translation id="5862109781435984885">在任务栏中显示触控笔工具</translation>
 <translation id="5862319196656206789">设置已连接的设备</translation>
@@ -7695,7 +7695,7 @@
 <translation id="6415816101512323589">开启本地数据恢复功能以保护您的数据？</translation>
 <translation id="6415900369006735853">通过手机连接到互联网</translation>
 <translation id="6416743254476733475">在您的计算机上允许或禁止。</translation>
-<translation id="6416856063840710198">网站通常会将您的活动记录保存到设备上，以用于改善您的访问体验。<ph name="SETTINGS" /></translation>
+<translation id="6416856063840710198">网站通常会将您的活动记录保存到设备上，以改善您的访问体验。<ph name="SETTINGS" /></translation>
 <translation id="6417265370957905582">Google 助理</translation>
 <translation id="6417468503703810114">默认行为</translation>
 <translation id="6418160186546245112">正在还原到之前安装的 <ph name="IDS_SHORT_PRODUCT_NAME" /> 版本</translation>
@@ -8046,7 +8046,7 @@
 <translation id="6667092961374478614">“<ph name="FEATURE_NAME" />”功能的设备可检测性</translation>
 <translation id="6667187897999649121">目前，您只能向家庭成员分享密码。不妨<ph name="BEGIN_LINK" />创建一个家人群组<ph name="END_LINK" />并添加最多 6 名成员，与他们一起充分利用 Google 产品和订阅。</translation>
 <translation id="666731172850799929">在 <ph name="APP_NAME" />中打开</translation>
-<translation id="6669195257625975787">在数据处理方面，与您正在查看的网站相同</translation>
+<translation id="6669195257625975787">数据处理方式与您正在查看的网站相同</translation>
 <translation id="6670142487971298264">现在可以使用“<ph name="APP_NAME" />”了</translation>
 <translation id="6670767097276846646">某些扩展程序可以向 Chrome 添加搜索引擎</translation>
 <translation id="6670983860904543332">自动更新可为您提供最新功能。探索近期更新中的亮点。</translation>
@@ -8121,7 +8121,7 @@
 <translation id="6716798148881908873">网络连接中断了。请检查您的网络连接状况，或尝试改用其他 Wi-Fi 网络。</translation>
 <translation id="6718849325281682232">Chrome 主题颜色已焕然一新，可更好地满足每个用户的需求，无论是处于深色模式还是浅色模式</translation>
 <translation id="671928215901716392">锁定屏幕</translation>
-<translation id="6721744718589119342">我们可能会向您发送电子邮件，获取更多信息或为您提供最新进展</translation>
+<translation id="6721744718589119342">我们可能会向您发送电子邮件，让您提供更多信息或向您告知最新进展</translation>
 <translation id="6721972322305477112">文件(&amp;F)</translation>
 <translation id="672208878794563299">此网站下次仍会请求您授权。</translation>
 <translation id="6722744767592605627">您可以恢复 <ph name="EMAIL" />，但本地数据将被删除。</translation>
@@ -8599,7 +8599,7 @@
 <translation id="7039912931802252762">Microsoft 智能卡登录</translation>
 <translation id="7039951224110875196">为孩子创建 Google 账号</translation>
 <translation id="7039968672732182060">您的 Chromebook 将不会再收到安全更新。如要收到最新的安全更新和软件更新，请尽快升级。须遵守相关优惠条款。</translation>
-<translation id="7042116641003232070">可以将数据保存到您的设备上</translation>
+<translation id="7042116641003232070">已获授权可将数据保存到您的设备</translation>
 <translation id="7043108582968290193">大功告成！已无任何不兼容的应用。</translation>
 <translation id="7044124535091449260">详细了解网站访问权限</translation>
 <translation id="7044207729381622209">您将会自动退出这些网站（包括已打开的标签页中的网站）</translation>
@@ -8953,9 +8953,9 @@
 <translation id="7314989823816739632">浪漫</translation>
 <translation id="7317342082064136423">验证您的账号</translation>
 <translation id="7317831949569936035">学校注册</translation>
-<translation id="731827437403763009">AI 创新</translation>
+<translation id="731827437403763009">AI 创新功能</translation>
 <translation id="7319320447721994672">如果您访问的网站使用 Cookie，您可能需要暂时启用 Cookie，才能确保所有的网站功能均正常运行。</translation>
-<translation id="7319983568955948908">停止分享</translation>
+<translation id="7319983568955948908">停止共享</translation>
 <translation id="7320213904474460808">设置默认网络</translation>
 <translation id="7321545336522791733">无法连接到服务器</translation>
 <translation id="7322515217754205362">网站权限</translation>
@@ -9149,7 +9149,7 @@
 <translation id="744341768939279100">创建新的个人资料</translation>
 <translation id="744366959743242014">正在加载数据，这最多可能需要几秒钟的时间。</translation>
 <translation id="7443806024147773267">只要您登录自己的 Google 账号，即可获取您的密码</translation>
-<translation id="7444176988908839653">{COUNT,plural, =0{Cookie 将于今天被再次屏蔽}=1{Cookie 将于明天被再次屏蔽}other{Cookie 将于 # 天后被再次屏蔽}}</translation>
+<translation id="7444176988908839653">{COUNT,plural, =0{Cookie 将于今天再次屏蔽}=1{Cookie 将于明天再次屏蔽}other{Cookie 将于 # 天后再次屏蔽}}</translation>
 <translation id="7444983668544353857">停用<ph name="NETWORKDEVICE" /></translation>
 <translation id="7446716846072322308">此操作会删除由 <ph name="SITE_NAME" /> 和相关网站存储的 <ph name="TOTAL_USAGE" /> 数据</translation>
 <translation id="7448430327655618736">自动安装应用</translation>
@@ -9898,7 +9898,7 @@
 <translation id="7952708427581814389">网站可以请求查看您剪贴板中的文字和图片</translation>
 <translation id="795282463722894016">恢复完成</translation>
 <translation id="7952904276017482715">预期 ID 是“<ph name="EXPECTED_ID" />”，但实际 ID 是“<ph name="NEW_ID" />”</translation>
-<translation id="7953236668995583915">请重新加载此页面，以便在该网站上应用更新后的设置</translation>
+<translation id="7953236668995583915">重新加载此页面，即可在该网站上应用更新后的设置</translation>
 <translation id="7953669802889559161">输入法</translation>
 <translation id="7953955868932471628">管理快捷方式</translation>
 <translation id="7955105108888461311">当面请求</translation>
@@ -11065,7 +11065,7 @@
 <translation id="8742998548129056176">这是关于您的设备及其使用情况（例如电池电量、系统与应用活动以及错误）的一般信息。我们会使用这些数据来改善 Android，部分汇总信息还会有助于改善 Google 应用，并会协助我们的合作伙伴（例如 Android 开发者）改善其应用和产品。</translation>
 <translation id="8743357966416354615">代管式开发环境 (<ph name="GENERAL_NAME" />)</translation>
 <translation id="8744641000906923997">罗马字</translation>
-<translation id="8745034592125932220">不得将数据保存到您的设备上</translation>
+<translation id="8745034592125932220">此网站无权将数据保存到您设备上</translation>
 <translation id="8746654918629346731">您已请求安装“<ph name="EXTENSION_NAME" />”</translation>
 <translation id="874689135111202667">{0,plural, =1{将 1 个文件上传到此网站？}other{将 # 个文件上传到此网站？}}</translation>
 <translation id="8748916845823567967"><ph name="SITE" /> 存储的所有数据和 Cookie 都会被删除。</translation>
@@ -11256,7 +11256,7 @@
 <translation id="8874341931345877644">投放到设备：</translation>
 <translation id="8874448314264883207">“<ph name="EXTENSION_NAME" />”已停用</translation>
 <translation id="8874647982044395866">有机</translation>
-<translation id="8874790741333031443">尝试暂时允许使用第三方 Cookie，这意味着您将采用较低级别的浏览保护措施，但网站功能更有可能会按预期运行。</translation>
+<translation id="8874790741333031443">尝试暂时允许使用第三方 Cookie，这样浏览保护会降低，但网站功能更可能正常运行。</translation>
 <translation id="8875221558267407626">总结内容、简化复杂语言或提问</translation>
 <translation id="8875520811099717934">Linux 升级</translation>
 <translation id="8875736897340638404">选择您的公开范围</translation>
@@ -11569,7 +11569,7 @@
 <translation id="9082750838489080452">应用：<ph name="APP_NAME" /></translation>
 <translation id="9084064520949870008">在窗口中打开</translation>
 <translation id="9085256200913095638">复制所选标签页</translation>
-<translation id="9085446486797400519">摄像头使用权限</translation>
+<translation id="9085446486797400519">相机权限</translation>
 <translation id="9085776959277692427">未选择“<ph name="LANGUAGE" />”。按搜索键 + 空格键即可选择。</translation>
 <translation id="9087949559523851360">添加受限用户</translation>
 <translation id="9088234649737575428">系统已根据企业政策屏蔽 <ph name="PLUGIN_NAME" /></translation>

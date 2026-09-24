@@ -2514,7 +2514,7 @@
 <translation id="270921614578699633">Середнє значення за</translation>
 <translation id="2709516037105925701">Автозаповнення</translation>
 <translation id="2710101514844343743">Дані про використання й діагностику</translation>
-<translation id="271033894570825754">Новий</translation>
+<translation id="271033894570825754">Нова колекція</translation>
 <translation id="2710507903599773521">Ваш пристрій <ph name="DEVICE_TYPE" /> розблоковано</translation>
 <translation id="2710676967944965821">Скинути всі дозволи для сканера розумних карток?</translation>
 <translation id="2713106313042589954">Вимкнути камеру</translation>
@@ -6375,7 +6375,7 @@
 <translation id="5432223177001837288">Щоб надати доступ до аудіо, поділіться вкладкою</translation>
 <translation id="5432872710261597882">За допомогою позначки "Подобається" можна надіслати схвальний відгук про цю функцію.</translation>
 <translation id="543338862236136125">Змінити пароль</translation>
-<translation id="5433865420958136693">Використовувати прискорення графічного процесора, якщо доступно</translation>
+<translation id="5433865420958136693">Використовувати апаратне прискорення графіки, якщо доступно</translation>
 <translation id="5434065355175441495">PKCS #1 шифрування RSA</translation>
 <translation id="5435274640623994081">Увімкнути реєстрацію звукових ефектів</translation>
 <translation id="5435779377906857208">Завжди надавати сайту <ph name="HOST" /> доступ до ваших геоданих</translation>
