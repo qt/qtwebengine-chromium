@@ -36,6 +36,7 @@
 #include "compiler/translator/tree_ops/DeferGlobalInitializers.h"
 #include "compiler/translator/tree_ops/EmulateGLFragColorBroadcast.h"
 #include "compiler/translator/tree_ops/EmulateMultiDrawShaderBuiltins.h"
+#include "compiler/translator/tree_ops/FoldConstantSwitch.h"
 #include "compiler/translator/tree_ops/FoldExpressions.h"
 #include "compiler/translator/tree_ops/ForcePrecisionQualifier.h"
 #include "compiler/translator/tree_ops/InitializeVariables.h"
@@ -927,6 +928,13 @@ bool TCompiler::checkAndSimplifyAST(TIntermBlock *root,
         }
     }
 
+    // Fold switch statements with constant expression.  Run after FoldExpressions because the
+    // switch selector may need folding.
+    if (!FoldConstantSwitch(this, root, &mSymbolTable))
+    {
+        return false;
+    }
+
     if (shouldRunLoopAndIndexingValidation(compileOptions) &&
         !ValidateLimitations(root, mShaderType, &mSymbolTable, &mDiagnostics))
     {
@@ -938,8 +946,8 @@ bool TCompiler::checkAndSimplifyAST(TIntermBlock *root,
         return false;
     }
 
-    // Fold expressions that could not be folded before validation that was done as a part of
-    // parsing.
+    // Fold expressions that could not be folded before validation or otherwise that was done as a
+    // part of parsing.
     if (!FoldExpressions(this, root, &mDiagnostics))
     {
         return false;
