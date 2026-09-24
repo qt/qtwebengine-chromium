@@ -85,6 +85,8 @@ class CPDFSDK_FormFillEnvironment final
   bool HasPermissions(uint32_t flags) const override;
   void OnChange() override;
 
+  bool InPassiveFFICallback() const { return in_passive_ffi_callback_; }
+
   CPDFSDK_PageView* GetPageViewAtIndex(int nIndex);
   void RemovePageView(IPDF_Page* pUnderlyingPage);
   void UpdateAllViews(CPDFSDK_Annot* pAnnot);
@@ -286,6 +288,7 @@ class CPDFSDK_FormFillEnvironment final
   std::unique_ptr<CFFL_InteractiveFormFiller> interactive_form_filler_;
   bool change_mask_ = false;
   bool being_destroyed_ = false;
+  bool in_passive_ffi_callback_ = false;
 
   // Holds the list of focusable annot types.
   // Annotations of type WIDGET are by default focusable.

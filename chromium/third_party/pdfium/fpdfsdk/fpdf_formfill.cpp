@@ -829,6 +829,12 @@ FPDF_RemoveFormFieldHighlight(FPDF_FORMHANDLE hHandle) {
 
 FPDF_EXPORT void FPDF_CALLCONV FORM_OnAfterLoadPage(FPDF_PAGE page,
                                                     FPDF_FORMHANDLE hHandle) {
+  CPDFSDK_FormFillEnvironment* pFormFillEnv =
+      CPDFSDKFormFillEnvironmentFromFPDFFormHandle(hHandle);
+  if (!pFormFillEnv || pFormFillEnv->InPassiveFFICallback()) {
+    return;
+  }
+
   if (CPDFSDK_PageView* pPageView = FormHandleToPageView(hHandle, page)) {
     pPageView->SetValid(true);
   }
@@ -838,7 +844,7 @@ FPDF_EXPORT void FPDF_CALLCONV FORM_OnBeforeClosePage(FPDF_PAGE page,
                                                       FPDF_FORMHANDLE hHandle) {
   CPDFSDK_FormFillEnvironment* pFormFillEnv =
       CPDFSDKFormFillEnvironmentFromFPDFFormHandle(hHandle);
-  if (!pFormFillEnv) {
+  if (!pFormFillEnv || pFormFillEnv->InPassiveFFICallback()) {
     return;
   }
 
@@ -859,7 +865,11 @@ FPDF_EXPORT void FPDF_CALLCONV
 FORM_DoDocumentJSAction(FPDF_FORMHANDLE hHandle) {
   CPDFSDK_FormFillEnvironment* pFormFillEnv =
       CPDFSDKFormFillEnvironmentFromFPDFFormHandle(hHandle);
-  if (pFormFillEnv && pFormFillEnv->IsJSPlatformPresent()) {
+  if (!pFormFillEnv || pFormFillEnv->InPassiveFFICallback()) {
+    return;
+  }
+
+  if (pFormFillEnv->IsJSPlatformPresent()) {
     pFormFillEnv->ProcJavascriptAction();
   }
 }
@@ -868,16 +878,18 @@ FPDF_EXPORT void FPDF_CALLCONV
 FORM_DoDocumentOpenAction(FPDF_FORMHANDLE hHandle) {
   CPDFSDK_FormFillEnvironment* pFormFillEnv =
       CPDFSDKFormFillEnvironmentFromFPDFFormHandle(hHandle);
-  if (pFormFillEnv) {
-    pFormFillEnv->ProcOpenAction();
+  if (!pFormFillEnv || pFormFillEnv->InPassiveFFICallback()) {
+    return;
   }
+
+  pFormFillEnv->ProcOpenAction();
 }
 
 FPDF_EXPORT void FPDF_CALLCONV FORM_DoDocumentAAction(FPDF_FORMHANDLE hHandle,
                                                       int aaType) {
   CPDFSDK_FormFillEnvironment* pFormFillEnv =
       CPDFSDKFormFillEnvironmentFromFPDFFormHandle(hHandle);
-  if (!pFormFillEnv) {
+  if (!pFormFillEnv || pFormFillEnv->InPassiveFFICallback()) {
     return;
   }
 
@@ -899,7 +911,7 @@ FPDF_EXPORT void FPDF_CALLCONV FORM_DoPageAAction(FPDF_PAGE page,
                                                   int aaType) {
   CPDFSDK_FormFillEnvironment* pFormFillEnv =
       CPDFSDKFormFillEnvironmentFromFPDFFormHandle(hHandle);
-  if (!pFormFillEnv) {
+  if (!pFormFillEnv || pFormFillEnv->InPassiveFFICallback()) {
     return;
   }
 
