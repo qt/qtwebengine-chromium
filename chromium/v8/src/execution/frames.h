@@ -1482,6 +1482,8 @@ class WasmLiftoffSetupFrame : public TypedFrame {
  protected:
   inline explicit WasmLiftoffSetupFrame(StackFrameIteratorBase* iterator);
 
+  void ComputeCallerState(State* state) const override;
+
  private:
   friend class StackFrameIteratorBase;
 };
