@@ -382,12 +382,15 @@ def CleanupCpeMetadata(dep_metadata):
 
 
 def IsChromiumSubmoduleGitHistoryAvailable():
-  baseline_cmd_result = subprocess.run(
-      FIND_BASELINE_COMMIT_GIT_COMMAND,
-      cwd=ROOT,
-      capture_output=True,
-      encoding='utf-8')
-  return baseline_cmd_result.returncode == 0 and baseline_cmd_result.stdout.strip()
+  try:
+    baseline_cmd_result = subprocess.run(
+        FIND_BASELINE_COMMIT_GIT_COMMAND,
+        cwd=ROOT,
+        capture_output=True,
+        encoding='utf-8')
+    return baseline_cmd_result.returncode == 0 and baseline_cmd_result.stdout.strip()
+  except:
+    return False
 
 
 def GetTargetMetadatas(gn_binary: str, gn_out_dir: str, gn_target: str):
