@@ -116,6 +116,7 @@ enum class Feature
     DoesSRGBClearsOnLinearFramebufferAttachments,
     DontInitializeUninitializedLocals,
     DontUseLoopsToInitializeVariables,
+    DoubleClearForRobustInit,
     DoubleDepthBiasConstantFactor,
     DumpShaderSource,
     DumpTranslatedShaders,

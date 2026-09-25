@@ -982,6 +982,14 @@
                 "Defer glDeleteBuffers calls until previous GPU work has completed."
             ],
             "issue": "http://crbug.com/558870371"
+        },
+        {
+            "name": "double_clear_for_robust_init",
+            "category": "Workarounds",
+            "description": [
+                "Issue a two-step clear with distinct values during robust resource init to prevent value-collision driver clear-dedup elision on invalidate."
+            ],
+            "issue": "http://crbug.com/550489336"
         }
     ]
 }

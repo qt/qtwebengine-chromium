@@ -746,6 +746,12 @@ struct FeaturesGL : FeatureSetBase
         &members,
     };
 
+    FeatureInfo doubleClearForRobustInit = {
+        "doubleClearForRobustInit",
+        FeatureCategory::OpenGLWorkarounds,
+        &members,
+    };
+
 };
 
 inline FeaturesGL::FeaturesGL()  = default;

@@ -116,6 +116,7 @@ constexpr PackedEnumMap<Feature, const char *> kFeatureNames = {{
     {Feature::DoesSRGBClearsOnLinearFramebufferAttachments, "doesSRGBClearsOnLinearFramebufferAttachments"},
     {Feature::DontInitializeUninitializedLocals, "dontInitializeUninitializedLocals"},
     {Feature::DontUseLoopsToInitializeVariables, "dontUseLoopsToInitializeVariables"},
+    {Feature::DoubleClearForRobustInit, "doubleClearForRobustInit"},
     {Feature::DoubleDepthBiasConstantFactor, "doubleDepthBiasConstantFactor"},
     {Feature::DumpShaderSource, "dumpShaderSource"},
     {Feature::DumpTranslatedShaders, "dumpTranslatedShaders"},
