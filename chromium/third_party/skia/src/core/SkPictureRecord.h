@@ -272,8 +272,10 @@ protected:
 private:
     skia_private::TArray<SkPaint>  fPaints;
 
+    // Narrowing the 64-bit generation ID to uint32_t via SkGoodHash is safe for hash table
+    // bucket distribution; THashMap resolves any collisions using SkPath::operator==.
     struct PathHash {
-        uint32_t operator()(const SkPath& p) { return p.getGenerationID(); }
+        uint32_t operator()(const SkPath& p) { return SkGoodHash()(p.getGenerationID()); }
     };
     skia_private::THashMap<SkPath, int, PathHash> fPaths;
 

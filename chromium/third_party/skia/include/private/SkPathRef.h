@@ -318,7 +318,7 @@ public:
      * contents but different genIDs.
      * skbug.com/40032862 for background on why fillType is necessary (for now).
      */
-    uint32_t genID(uint8_t fillType) const;
+    uint64_t genID(uint8_t fillType) const;
 
     void addGenIDChangeListener(sk_sp<SkIDChangeListener>);   // Threadsafe.
     int genIDChangeListenerCount();                           // Threadsafe
@@ -518,10 +518,10 @@ private:
     mutable SkRect   fBounds;
     SkRect           fArcOval;
 
-    enum {
+    enum : uint64_t {
         kEmptyGenID = 1, // GenID reserved for path ref with zero points and zero verbs.
     };
-    mutable uint32_t    fGenerationID;
+    mutable uint64_t    fGenerationID;
     SkIDChangeListener::List fGenIDChangeListeners;
 
     SkDEBUGCODE(std::atomic<int> fEditorsAttached;) // assert only one editor in use at any time.

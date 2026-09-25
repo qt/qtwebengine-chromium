@@ -369,7 +369,7 @@ bool SkPath::conservativelyContainsRect(const SkRect& rect) const {
     return false;
 }
 
-uint32_t SkPath::getGenerationID() const {
+uint64_t SkPath::getGenerationID() const {
     return fPathRef->genID(fFillType);
 }
 

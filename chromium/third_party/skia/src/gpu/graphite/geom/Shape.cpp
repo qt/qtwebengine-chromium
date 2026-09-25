@@ -210,7 +210,7 @@ uint16_t Shape::keySize() const {
                 if (dataKeySize >= 0) {
                     count += SkTo<uint16_t>(dataKeySize);
                 } else {
-                    count++; // Just adds the gen ID.
+                    count += sizeof(uint64_t) / sizeof(uint32_t); // Just adds the gen ID.
                 }
             }
             break;
@@ -244,7 +244,9 @@ void Shape::writeKey(uint32_t* key, bool includeInverted) const {
                     write_path_key_from_data(this->path(), key);
                     return;
                 } else {
-                    *key++ = this->path().getGenerationID();
+                    uint64_t genID = this->path().getGenerationID();
+                    memcpy(key, &genID, sizeof(uint64_t));
+                    key += sizeof(uint64_t) / sizeof(uint32_t);
                 }
             }
             break;

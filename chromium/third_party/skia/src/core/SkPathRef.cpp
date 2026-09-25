@@ -24,6 +24,17 @@
     static constexpr int kPathRefGenIDBitCnt = 32;
 #endif
 
+//helper for generating unique ids
+static uint64_t next_pathdata_unique_id() {
+    constexpr int kHighBitsToMakeRoomForFillType = 2;
+    constexpr uint64_t kMaxID =
+            std::numeric_limits<uint64_t>::max() >> kHighBitsToMakeRoomForFillType;
+    static std::atomic<uint64_t> nextID{1};
+    uint64_t id = nextID.fetch_add(1, std::memory_order_relaxed);
+    SkASSERT_RELEASE(id <= kMaxID);
+    return id;
+}
+
 //////////////////////////////////////////////////////////////////////////////
 SkPathRef::Editor::Editor(sk_sp<SkPathRef>* pathRef,
                           int incReserveVerbs,
@@ -69,7 +80,7 @@ size_t SkPathRef::approximateBytesUsed() const {
 SkPathRef::~SkPathRef() {
     // Deliberately don't validate() this path ref, otherwise there's no way
     // to read one that's not valid and then free its memory without asserting.
-    SkDEBUGCODE(fGenerationID = 0xEEEEEEEE;)
+    SkDEBUGCODE(fGenerationID = 0xEEEEEEEEEEEEEEEEULL;)
     SkDEBUGCODE(fEditorsAttached.store(0x7777777);)
 }
 
@@ -423,17 +434,16 @@ SkPoint* SkPathRef::growForVerb(SkPathVerb verb, SkScalar weight) {
     return pts;
 }
 
-uint32_t SkPathRef::genID(uint8_t fillType) const {
+uint64_t SkPathRef::genID(uint8_t fillType) const {
     SkASSERT(fEditorsAttached.load() == 0);
-    static const uint32_t kMask = (static_cast<int64_t>(1) << kPathRefGenIDBitCnt) - 1;
+    static const uint64_t kMask = (static_cast<int64_t>(1) << kPathRefGenIDBitCnt) - 1;
 
     if (fGenerationID == 0) {
         if (fPoints.empty() && fVerbs.empty()) {
             fGenerationID = kEmptyGenID;
         } else {
-            static std::atomic<uint32_t> nextID{kEmptyGenID + 1};
             do {
-                fGenerationID = nextID.fetch_add(1, std::memory_order_relaxed) & kMask;
+                fGenerationID = next_pathdata_unique_id();
             } while (fGenerationID == 0 || fGenerationID == kEmptyGenID);
         }
     }
