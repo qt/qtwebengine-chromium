@@ -550,6 +550,7 @@ bool FillVADRMPRIMESurfaceDescriptor(const gfx::NativePixmap& pixmap,
       return false;
     }
 
+    descriptor.objects[i].fd = dma_buf_fd;
     descriptor.objects[i].size = dmabuf_size;
     descriptor.objects[i].drm_format_modifier =
         pixmap.GetBufferFormatModifier();
