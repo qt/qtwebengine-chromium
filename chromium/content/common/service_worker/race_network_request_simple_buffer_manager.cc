@@ -62,7 +62,10 @@ void RaceNetworkRequestSimpleBufferManager::Finish() {
   write_position_ = 0;
   producer_handle_.reset();
   producer_handle_watcher_.reset();
-  std::move(clone_complete_callback_).Run();
+  if (clone_complete_callback_) {
+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+        FROM_HERE, std::move(clone_complete_callback_));
+  }
 }
 
 void RaceNetworkRequestSimpleBufferManager::MaybeWriteData() {
