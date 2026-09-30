@@ -686,12 +686,6 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
       "Collapse redundant subgroup min and max operations (e.g., subgroupMin(subgroupMin(x))) into "
       "a single operation. This works around a driver crash on some AMD GPUs.",
       "https://crbug.com/508265321", ToggleStage::Device}},
-    {Toggle::NoWorkaroundSampleMaskBecomesZeroForAllButLastColorTarget,
-     {"no_workaround_sample_mask_becomes_zero_for_all_but_last_color_target",
-      "MacOS 12.0+ Intel has a bug where the sample mask is only applied for the last color "
-      "target. If there are multiple color targets, all but the last one will use a sample mask "
-      "of zero.",
-      "https://crbug.com/dawn/1462", ToggleStage::Device}},
     {Toggle::MetalFixU32DivMod,
      {"metal_fix_u32_div_mod",
       "Workaround a driver bug on Apple Silicon with u32 div and mod operations.",
@@ -701,6 +695,12 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
       "Reject NPOT depth/stencil textures with mipLevelCount > 1. Workaround for mip level "
       "miscomputation in PowerVR proprietary driver.",
       "https://crbug.com/540087398", ToggleStage::Device}},
+    {Toggle::NoWorkaroundSampleMaskBecomesZeroForAllButLastColorTarget,
+     {"no_workaround_sample_mask_becomes_zero_for_all_but_last_color_target",
+      "MacOS 12.0+ Intel has a bug where the sample mask is only applied for the last color "
+      "target. If there are multiple color targets, all but the last one will use a sample mask "
+      "of zero.",
+      "https://crbug.com/dawn/1462", ToggleStage::Device}},
     {Toggle::NoWorkaroundIndirectBaseVertexNotApplied,
      {"no_workaround_indirect_base_vertex_not_applied",
       "MacOS Intel < Gen9 has a bug where indirect base vertex is not applied for "
