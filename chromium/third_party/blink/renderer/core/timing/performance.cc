@@ -1288,8 +1288,10 @@ DOMHighResTimeStamp Performance::now() const {
 
 // static
 bool Performance::CanExposeNode(Node* node) {
-  if (!node || !node->isConnected() || node->IsInShadowTree())
+  if (!node || !node->isConnected() || node->IsInShadowTree() ||
+      node->IsPseudoElement()) {
     return false;
+  }
 
   // Do not expose |node| when the document is not 'fully active'.
   const Document& document = node->GetDocument();

@@ -258,8 +258,10 @@ void DisplayLockDocumentState::NotifyViewTransitionPseudoTreeChanged() {
   // Reset the view transition element flag.
   // TODO(vmpstr): This should be optimized to keep track of elements that
   // actually have this flag set.
-  for (auto context : display_lock_contexts_)
+  HeapVector<Member<DisplayLockContext>> contexts(display_lock_contexts_);
+  for (auto& context : contexts) {
     context->ResetDescendantIsViewTransitionElement();
+  }
 
   // Process the view transition elements to check if their ancestors are
   // locks that need to be made relevant.
@@ -284,8 +286,10 @@ void DisplayLockDocumentState::UpdateViewTransitionElementAncestorLocks() {
 }
 
 void DisplayLockDocumentState::NotifySelectionRemoved() {
-  for (auto context : display_lock_contexts_)
+  HeapVector<Member<DisplayLockContext>> contexts(display_lock_contexts_);
+  for (auto& context : contexts) {
     context->NotifySubtreeLostSelection();
+  }
 }
 
 void DisplayLockDocumentState::BeginNodeForcedScope(
@@ -365,7 +369,9 @@ DisplayLockDocumentState::ScopedForceActivatableDisplayLocks::
     ScopedForceActivatableDisplayLocks(DisplayLockDocumentState* state)
     : state_(state) {
   if (++state_->activatable_display_locks_forced_ == 1) {
-    for (auto context : state_->display_lock_contexts_) {
+    HeapVector<Member<DisplayLockContext>> contexts(
+        state_->display_lock_contexts_);
+    for (auto& context : contexts) {
       if (context->HasElement()) {
         context->DidForceActivatableDisplayLocks();
       } else {
@@ -410,8 +416,10 @@ void DisplayLockDocumentState::NotifyPrintingOrPreviewChanged() {
   if (printing_ == was_printing)
     return;
 
-  for (auto& context : display_lock_contexts_)
+  HeapVector<Member<DisplayLockContext>> contexts(display_lock_contexts_);
+  for (auto& context : contexts) {
     context->SetShouldUnlockAutoForPrint(printing_);
+  }
 }
 
 void DisplayLockDocumentState::IssueForcedRenderWarning(Element* element) {
