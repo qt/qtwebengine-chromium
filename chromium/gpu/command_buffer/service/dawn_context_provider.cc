@@ -975,6 +975,13 @@ std::optional<error::ContextLostReason> DawnSharedContext::GetResetStatus()
   return context_lost_reason_;
 }
 
+void DawnSharedContext::MarkContextLost(error::ContextLostReason reason) {
+  base::AutoLock auto_lock(context_lost_lock_);
+  if (!context_lost_reason_.has_value()) {
+    context_lost_reason_ = reason;
+  }
+}
+
 bool DawnSharedContext::IsContextLost() const {
   return GetResetStatus().has_value();
 }
