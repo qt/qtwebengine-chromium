@@ -8,6 +8,7 @@
 
 #include "core/fpdfapi/page/cpdf_page.h"
 #include "core/fpdfdoc/cpdf_bafontmap.h"
+#include "core/fxcrt/observed_ptr.h"
 #include "fpdfsdk/cpdfsdk_widget.h"
 
 CFFL_TextObject::CFFL_TextObject(CFFL_InteractiveFormFiller* pFormFiller,
@@ -22,18 +23,28 @@ CFFL_TextObject::~CFFL_TextObject() {
 
 CPWL_Wnd* CFFL_TextObject::ResetPWLWindow(const CPDFSDK_PageView* pPageView) {
   DestroyPWLWindow(pPageView);
-  ObservedPtr<CPWL_Wnd> pRet(CreateOrUpdatePWLWindow(pPageView));
-  widget_->UpdateField();  // May invoke JS, invalidating |pRet|.
-  return pRet.Get();
+  ObservedPtr<CFFL_FormField> observed_this(this);
+  ObservedPtr<CPWL_Wnd> observed_wnd(CreateOrUpdatePWLWindow(pPageView));
+  if (!observed_this) {
+    return nullptr;
+  }
+  // May invoke JS, invalidating `observed_wnd` and `this`.
+  widget_->UpdateField();
+  return observed_this ? observed_wnd.Get() : nullptr;
 }
 
 CPWL_Wnd* CFFL_TextObject::RestorePWLWindow(const CPDFSDK_PageView* pPageView) {
   SavePWLWindowState(pPageView);
   DestroyPWLWindow(pPageView);
   RecreatePWLWindowFromSavedState(pPageView);
-  ObservedPtr<CPWL_Wnd> pRet(GetPWLWindow(pPageView));
-  widget_->UpdateField();  // May invoke JS, invalidating |pRet|.
-  return pRet.Get();
+  ObservedPtr<CFFL_FormField> observed_this(this);
+  ObservedPtr<CPWL_Wnd> observed_wnd(GetPWLWindow(pPageView));
+  if (!observed_this) {
+    return nullptr;
+  }
+  // May invoke JS, invalidating `observed_wnd` and `this`.
+  widget_->UpdateField();
+  return observed_this ? observed_wnd.Get() : nullptr;
 }
 
 CPDF_BAFontMap* CFFL_TextObject::GetOrCreateFontMap() {

@@ -11,6 +11,7 @@
 #include "constants/form_flags.h"
 #include "core/fpdfapi/page/cpdf_page.h"
 #include "core/fxcrt/check.h"
+#include "core/fxcrt/observed_ptr.h"
 #include "core/fxge/cfx_renderdevice.h"
 #include "fpdfsdk/cpdfsdk_pageview.h"
 #include "fpdfsdk/cpdfsdk_widget.h"
@@ -290,7 +291,12 @@ void CFFL_FormField::SetFocusForAnnot(CPDFSDK_Widget* pWidget,
                                       Mask<FWL_EVENTFLAG> nFlag) {
   CPDFSDK_PageView* pPageView =
       form_filler_->GetOrCreatePageView(pWidget->GetPage());
+
+  ObservedPtr<CFFL_FormField> observed_this(this);
   CPWL_Wnd* pWnd = CreateOrUpdatePWLWindow(pPageView);
+  if (!observed_this) {
+    return;
+  }
   if (pWnd) {
     pWnd->SetFocus();
   }
@@ -305,7 +311,15 @@ void CFFL_FormField::KillFocusForAnnot(Mask<FWL_EVENTFLAG> nFlag) {
   }
 
   CPDFSDK_PageView* pPageView = form_filler_->GetPageView(widget_->GetPage());
-  if (!pPageView || !CommitData(pPageView, nFlag)) {
+  if (!pPageView) {
+    return;
+  }
+
+  ObservedPtr<CFFL_FormField> observed_this(this);
+  if (!CommitData(pPageView, nFlag)) {
+    return;
+  }
+  if (!observed_this) {
     return;
   }
   if (CPWL_Wnd* pWnd = GetPWLWindow(pPageView)) {
@@ -512,41 +526,40 @@ bool CFFL_FormField::CommitData(const CPDFSDK_PageView* pPageView,
     return true;
   }
 
-  ObservedPtr<CPDFSDK_Widget> pObserved(widget_);
-  if (!form_filler_->OnKeyStrokeCommit(pObserved, pPageView, nFlag)) {
-    if (!pObserved) {
-      return false;
-    }
+  ObservedPtr<CFFL_FormField> observed_this(this);
+  ObservedPtr<CPDFSDK_Widget> observed_widget(widget_);
+  const bool keystroke_committed =
+      form_filler_->OnKeyStrokeCommit(observed_widget, pPageView, nFlag);
+  if (!observed_widget || !observed_this) {
+    return false;
+  }
+  if (!keystroke_committed) {
     ResetPWLWindow(pPageView);
-    return true;
-  }
-  if (!pObserved) {
-    return false;
+    return observed_this.HasObservable();
   }
 
-  if (!form_filler_->OnValidate(pObserved, pPageView, nFlag)) {
-    if (!pObserved) {
-      return false;
-    }
+  const bool validated =
+      form_filler_->OnValidate(observed_widget, pPageView, nFlag);
+  if (!observed_widget || !observed_this) {
+    return false;
+  }
+  if (!validated) {
     ResetPWLWindow(pPageView);
-    return true;
+    return observed_this.HasObservable();
   }
-  if (!pObserved) {
+
+  SaveData(pPageView);  // May invoke JS to delete this widget.
+  if (!observed_widget || !observed_this) {
     return false;
   }
 
-  SaveData(pPageView);  // may invoking JS to delete this widget.
-  if (!pObserved) {
+  form_filler_->OnCalculate(observed_widget);
+  if (!observed_widget || !observed_this) {
     return false;
   }
 
-  form_filler_->OnCalculate(pObserved);
-  if (!pObserved) {
-    return false;
-  }
-
-  form_filler_->OnFormat(pObserved);
-  if (!pObserved) {
+  form_filler_->OnFormat(observed_widget);
+  if (!observed_widget || !observed_this) {
     return false;
   }
 
