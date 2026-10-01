@@ -432,7 +432,10 @@ Maybe<bool> JSReceiver::SetOrCopyDataProperties(
                               ALL_PROPERTIES, GetKeysConversion::kKeepNumbers));
 
   if (!from->HasFastProperties() && target->HasFastProperties() &&
-      IsJSObject(*target) && !IsJSGlobalProxy(*target)) {
+      IsJSObject(*target) && !IsJSGlobalProxy(*target) &&
+      // Exclude remote objects (they don't have local properties anyway).
+      !(IsJSSpecialApiObject(*target) &&
+        !target->GetCreationContext().has_value())) {
     // Convert to slow properties if we're guaranteed to overflow the number of
     // descriptors.
     int source_length;
