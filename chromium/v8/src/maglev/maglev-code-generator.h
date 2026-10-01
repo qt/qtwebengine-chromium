@@ -38,6 +38,7 @@ class MaglevCodeGenerator final {
   void EmitDeferredCode();
   V8_NODISCARD bool EmitDeopts();
   void EmitExceptionHandlerTrampolines();
+  void EmitRetainedObjects();
   void EmitMetadata();
   void RecordInlinedFunctions();
 
