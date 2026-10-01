@@ -1370,11 +1370,6 @@ void PDFiumPage::PopulateAnnotationLinks() {
   // Make sure `page` stays valid for the duration of the loop.
   ScopedUnloadPreventer scoped_unload_preventer(this);
   while (FPDFLink_Enumerate(page, &start_pos, &link_annot)) {
-    Link link;
-    Area area = GetLinkTarget(link_annot, &link.target);
-    if (area == NONSELECTABLE_AREA)
-      continue;
-
     FS_RECTF link_rect;
     if (!FPDFLink_GetAnnotRect(link_annot, &link_rect))
       continue;
@@ -1386,6 +1381,7 @@ void PDFiumPage::PopulateAnnotationLinks() {
     if (link_rect.bottom > link_rect.top)
       std::swap(link_rect.bottom, link_rect.top);
 
+    Link link;
     int quad_point_count = FPDFLink_CountQuadPoints(link_annot);
     // Calculate the bounds of link using the quad points data.
     // If quad points for link is not present then use
@@ -1405,6 +1401,15 @@ void PDFiumPage::PopulateAnnotationLinks() {
       link.bounding_rects.push_back(PageToScreen(
           gfx::Point(), 1.0, link_rect.left, link_rect.top, link_rect.right,
           link_rect.bottom, PageOrientation::kOriginal));
+    }
+
+    // WARNING: Do not use `link_annot` after this call. It may have been
+    // invalidated.
+    Area area = GetLinkTarget(link_annot, &link.target);
+    if (area == NONSELECTABLE_AREA) {
+      // It is unfortunate that all the work above may get thrown away due to
+      // how `link_annot` access have to be arranged to be safe.
+      continue;
     }
 
     // Calculate underlying text range of link.
