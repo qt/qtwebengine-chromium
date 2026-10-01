@@ -1829,8 +1829,8 @@ bool ValidateES2TexImageParametersBase(const Context *context,
     }
 
     GLenum sizeCheckFormat = isSubImage ? format : internalformat;
-    return ValidImageDataSize(context, entryPoint, texType, width, height, 1, sizeCheckFormat, type,
-                              pixels, imageSize);
+    return ValidImageDataSize(context, entryPoint, texType, width, height, 1, isSubImage,
+                              sizeCheckFormat, type, pixels, imageSize);
 }
 
 bool ValidateES2TexStorageParametersBase(const Context *context,
