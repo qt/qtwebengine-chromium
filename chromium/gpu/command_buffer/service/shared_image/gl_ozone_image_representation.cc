@@ -52,7 +52,6 @@ GLTexturePassthroughOzoneImageRepresentation::GetTexturePassthrough(
 
 bool GLTexturePassthroughOzoneImageRepresentation::BeginAccess(GLenum mode) {
   DCHECK(!current_access_mode_);
-  current_access_mode_ = mode;
 
   auto* ozone_backing = GetOzoneBacking();
   bool readonly = mode != GL_SHARED_IMAGE_ACCESS_MODE_READWRITE_CHROMIUM;
@@ -70,9 +69,15 @@ bool GLTexturePassthroughOzoneImageRepresentation::BeginAccess(GLenum mode) {
       gfx::GpuFence gpu_fence = gfx::GpuFence(std::move(fence));
       std::unique_ptr<gl::GLFence> gl_fence =
           gl::GLFence::CreateFromGpuFence(gpu_fence);
+
+      // Adding a CHECK instead of returning false since we can not gracefully
+      // recover in these cases.
+      CHECK(gl_fence);
       gl_fence->ServerWait();
     }
   }
+
+  current_access_mode_ = mode;
   return true;
 }
 
