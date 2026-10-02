@@ -1042,6 +1042,10 @@ void BaselineCompiler::VisitDefineNamedOwnProperty() {
       IndexAsTagged(2));                // slot
 }
 
+void BaselineCompiler::VisitDefineNamedOwnPropertyInLiteral() {
+  VisitDefineNamedOwnProperty();
+}
+
 void BaselineCompiler::VisitSetKeyedProperty() {
   // KeyedStoreIC is currently a base class for multiple keyed property store
   // operations and contains mixed logic for set and define operations,

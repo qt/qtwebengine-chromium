@@ -1317,6 +1317,7 @@ class MaglevGraphBuilder {
   MaybeReduceResult TryBuildGetKeyedPropertyWithEnumeratedKey(
       ValueNode* object, const compiler::FeedbackSource& feedback_source,
       const compiler::ProcessedFeedback& processed_feedback);
+  ReduceResult VisitDefineNamedOwnPropertyHelper(bool in_literal);
   ReduceResult BuildGetKeyedProperty(
       ValueNode* object, const compiler::FeedbackSource& feedback_source,
       const compiler::ProcessedFeedback& processed_feedback);

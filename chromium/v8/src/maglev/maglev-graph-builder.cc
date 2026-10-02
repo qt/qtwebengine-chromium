@@ -5338,7 +5338,7 @@ MaybeReduceResult MaglevGraphBuilder::TryBuildStoreField(
       broker()->dependencies()->DependOnNoSlackTrackingChange(*original_map);
     }
   } else if (access_info.IsFastDataConstant() &&
-             access_mode == compiler::AccessMode::kStore) {
+             access_mode == compiler::AccessMode::kStoreInLiteral) {
     return EmitUnconditionalDeopt(DeoptimizeReason::kStoreToConstant);
   }
 
@@ -5614,9 +5614,9 @@ MaybeReduceResult MaglevGraphBuilder::TryBuildNamedAccess(
                GetTaggedValue(GetAccumulator())},
               feedback_source);
         case compiler::AccessMode::kDefine:
+        case compiler::AccessMode::kStoreInLiteral:
           return {};
         case compiler::AccessMode::kHas:
-        case compiler::AccessMode::kStoreInLiteral:
           UNREACHABLE();
       }
     }
@@ -7500,6 +7500,16 @@ ReduceResult MaglevGraphBuilder::VisitSetNamedProperty() {
 
 ReduceResult MaglevGraphBuilder::VisitDefineNamedOwnProperty() {
   // DefineNamedOwnProperty <object> <name_index> <slot>
+  return VisitDefineNamedOwnPropertyHelper(false);
+}
+
+ReduceResult MaglevGraphBuilder::VisitDefineNamedOwnPropertyInLiteral() {
+  // DefineNamedOwnPropertyInLiteral <object> <name_index> <slot>
+  return VisitDefineNamedOwnPropertyHelper(true);
+}
+
+ReduceResult MaglevGraphBuilder::VisitDefineNamedOwnPropertyHelper(
+    bool in_literal) {
   ValueNode* object = LoadRegister(0);
   compiler::NameRef name = GetRefOperand<Name>(1);
   FeedbackSlot slot = GetSlotOperand(2);
@@ -7524,7 +7534,9 @@ ReduceResult MaglevGraphBuilder::VisitDefineNamedOwnProperty() {
     case compiler::ProcessedFeedback::kNamedAccess:
       RETURN_IF_DONE(TryBuildNamedAccess(
           object, object, processed_feedback.AsNamedAccess(), feedback_source,
-          compiler::AccessMode::kDefine, build_generic_access));
+          in_literal ? compiler::AccessMode::kStoreInLiteral
+                     : compiler::AccessMode::kDefine,
+          build_generic_access));
       break;
 
     default:
