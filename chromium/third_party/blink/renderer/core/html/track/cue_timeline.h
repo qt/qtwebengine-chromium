@@ -10,6 +10,7 @@
 #include "base/types/pass_key.h"
 #include "third_party/blink/renderer/core/html/track/text_track_cue.h"
 #include "third_party/blink/renderer/core/html/track/vtt/vtt_cue.h"
+#include "third_party/blink/renderer/platform/heap/collection_support/heap_vector.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/timer.h"
 #include "third_party/blink/renderer/platform/wtf/pod_interval_tree.h"
@@ -28,7 +29,7 @@ class TextTrackCueList;
 // become stale pointers.
 using CueIntervalTree = PodIntervalTree<double, TextTrackCue*>;
 typedef CueIntervalTree::IntervalType CueInterval;
-typedef Vector<CueInterval> CueList;
+using CueList = HeapVector<Member<TextTrackCue>>;
 
 // This class manages the timeline and rendering updates of cues associated
 // with TextTracks. Owned by a HTMLMediaElement.
