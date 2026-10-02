@@ -40,15 +40,21 @@ constexpr base::TimeDelta kLongScriptDuration = base::Milliseconds(5);
 
 AnimationFrameTimingMonitor::AnimationFrameTimingMonitor(Client& client,
                                                          CoreProbeSink* sink)
-    : client_(client) {
+    : client_(client), probe_sink_(sink) {
   Thread::Current()->AddTaskTimeObserver(this);
-  sink->AddAnimationFrameTimingMonitor(this);
+  if (probe_sink_) {
+    probe_sink_->AddAnimationFrameTimingMonitor(this);
+  }
   enabled_ = true;
 }
 
 void AnimationFrameTimingMonitor::Shutdown() {
   enabled_ = false;
   frame_handling_input_ = nullptr;
+  if (probe_sink_) {
+    probe_sink_->RemoveAnimationFrameTimingMonitor(this);
+    probe_sink_ = nullptr;
+  }
   Thread::Current()->RemoveTaskTimeObserver(this);
 }
 
@@ -184,6 +190,9 @@ void AnimationFrameTimingMonitor::OnTaskCompleted(
     base::TimeTicks start_time,
     base::TimeTicks end_time,
     LocalFrame* frame) {
+  if (!enabled_) {
+    return;
+  }
   HeapVector<Member<ScriptTimingInfo>> scripts;
 
   bool did_pause = false;
@@ -517,6 +526,7 @@ void AnimationFrameTimingMonitor::Trace(Visitor* visitor) const {
   visitor->Trace(current_frame_timing_info_);
   visitor->Trace(current_scripts_);
   visitor->Trace(frame_handling_input_);
+  visitor->Trace(probe_sink_);
 }
 
 namespace {
