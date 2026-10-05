@@ -426,7 +426,7 @@ int ff_h264_update_thread_context(AVCodecContext *dst,
     memcpy(h->delayed_pic, h1->delayed_pic, sizeof(h->delayed_pic));
     memcpy(h->last_pocs,   h1->last_pocs,   sizeof(h->last_pocs));
 
-    h->next_output_pic   = h1->next_output_pic;
+    h->next_output_pic   = NULL;
     h->next_outputed_poc = h1->next_outputed_poc;
     h->poc_offset        = h1->poc_offset;
 
@@ -1383,6 +1383,7 @@ static int h264_select_output_frame(H264Context *h)
             }
         }
     } else {
+        h->next_output_pic = NULL;
         av_log(h->avctx, AV_LOG_DEBUG, "no picture %s\n", out_of_order ? "ooo" : "");
     }
 
@@ -1619,6 +1620,7 @@ static int h264_field_start(H264Context *h, const H264SliceContext *sl,
         int field = h->picture_structure == PICT_BOTTOM_FIELD;
         release_unused_pictures(h, 0);
         h->cur_pic_ptr->tf.owner[field] = h->avctx;
+        h->next_output_pic = NULL;
     }
     /* Some macroblocks can be accessed before they're available in case
     * of lost slices, MBAFF or threading. */
