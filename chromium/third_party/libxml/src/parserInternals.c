@@ -690,8 +690,18 @@ xmlParserCheckEOF(xmlParserCtxt *ctxt, xmlParserErrors code) {
         }
 
         /* Shouldn't happen */
-        if (in->cur < in->end)
-            xmlFatalErr(ctxt, XML_ERR_INTERNAL_ERROR, "expected EOF");
+        if (in->cur < in->end) {
+            /* Trailing whitespace is allowed, but non-whitespace is an error */
+            const xmlChar *cur = in->cur;
+            while (cur < in->end) {
+                if ((*cur != 0x20) && (*cur != 0x9) && (*cur != 0xa) && (*cur != 0xd)) {
+                    xmlFatalErr(ctxt, code, NULL);
+                    return;
+                }
+                cur++;
+            }
+            in->cur = in->end;
+        }
     }
 }
 
@@ -3189,17 +3199,10 @@ xmlCtxtGetSaxHandler(xmlParserCtxt *ctxt) {
  */
 int
 xmlCtxtSetSaxHandler(xmlParserCtxt *ctxt, const xmlSAXHandler *sax) {
-    xmlSAXHandler *copy;
-
-    if ((ctxt == NULL) || (sax == NULL))
+    if ((ctxt == NULL) || (ctxt->sax == NULL) || (sax == NULL))
         return(-1);
 
-    copy = xmlMalloc(sizeof(*copy));
-    if (copy == NULL)
-        return(-1);
-
-    memcpy(copy, sax, sizeof(*copy));
-    ctxt->sax = copy;
+    *ctxt->sax = *sax;
 
     return(0);
 }

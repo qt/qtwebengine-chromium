@@ -1,9 +1,9 @@
 Name: libxml
 URL: http://xmlsoft.org
-Version: 2.14.6
-Revision: 22f9d730898d2dfcc03a484e65e1f8fc3675225f
+Version: 2.16.0
+Revision: 81c05bafd4d7df6da91ccf8eab8f539cc78421d8
 Update Mechanism: Manual
-CPEPrefix: cpe:/a:xmlsoft:libxml2:2.14.6
+CPEPrefix: cpe:/a:xmlsoft:libxml2:2.16.0
 License: MIT
 License File: src/Copyright
 Security Critical: yes
@@ -20,6 +20,14 @@ Modifications:
 - xml-attr-extra.patch: add an `extra` member to struct _xmlAttr.
 - widen-extra-field-in-_xmlNode-to-an-int.patch widen
   the `extra` member in _xmlNode.
+- fix-xmlEscapeText-integer-overflow.patch: Fixes a 32-bit signed integer
+  truncation in xmlEscapeText that can lead to an undersized allocation and
+  heap-buffer-overflow.
+- parser-check-eof-trailing-whitespace.patch: Allow trailing whitespace in
+  xmlParserCheckEOF and use the caller's error code for other trailing content.
+- parser-grow-capacity-check.patch: Fixes a heap-buffer-overflow in case the new
+  buffer length gets clamped to the maximum value without leaving enough
+  headroom.
 - Add helper classes in the chromium/ subdirectory.
 - Delete various unused files, see chromium/roll.py
 - Disable various unused libxml features:
