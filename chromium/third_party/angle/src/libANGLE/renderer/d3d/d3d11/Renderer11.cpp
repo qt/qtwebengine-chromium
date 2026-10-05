@@ -415,6 +415,7 @@ Renderer11::Renderer11(egl::Display *display)
       mLastHistogramUpdateTime(
           ANGLEPlatformCurrent()->monotonicallyIncreasingTime(ANGLEPlatformCurrent())),
       mDebug(nullptr),
+      mResourceManager11(this),
       mScratchMemoryBuffer(ScratchMemoryBufferLifetime)
 {
     mLineLoopIB    = nullptr;

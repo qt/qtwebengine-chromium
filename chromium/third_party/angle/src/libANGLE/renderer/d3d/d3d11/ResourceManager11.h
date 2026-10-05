@@ -330,7 +330,7 @@ class SharedResource11 : public Resource11Base<T, std::shared_ptr, TypedData<T>>
 class ResourceManager11 final : angle::NonCopyable
 {
   public:
-    ResourceManager11();
+    ResourceManager11(Renderer11 *renderer);
     ~ResourceManager11();
 
     template <typename T>
@@ -370,6 +370,7 @@ class ResourceManager11 final : angle::NonCopyable
     template <typename T>
     GetInitDataFromD3D11<T> *createInitDataIfNeeded(const GetDescFromD3D11<T> *desc);
 
+    Renderer11 *mRenderer;
     bool mInitializeAllocations;
 
     std::array<std::atomic_size_t, NumResourceTypes> mAllocatedResourceCounts;

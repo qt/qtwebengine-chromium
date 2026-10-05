@@ -242,6 +242,7 @@ class StateManager11 final : angle::NonCopyable
 
     void onBeginQuery(Query11 *query);
     void onDeleteQueryObject(Query11 *query);
+    void onReleaseBuffer(ID3D11Buffer *buffer);
     angle::Result onMakeCurrent(const gl::Context *context);
 
     void setInputLayout(const d3d11::InputLayout *inputLayout);
@@ -394,10 +395,6 @@ class StateManager11 final : angle::NonCopyable
                                    const gl::ImageUnit &imageUnit,
                                    UAVList *uavList);
 
-    angle::Result syncCurrentValueAttribs(
-        const gl::Context *context,
-        const std::vector<gl::VertexAttribCurrentValueData> &currentValues);
-
     angle::Result generateSwizzle(const gl::Context *context, gl::Texture *texture);
     angle::Result generateSwizzlesForShader(const gl::Context *context, gl::ShaderType type);
     angle::Result generateSwizzles(const gl::Context *context);
@@ -495,6 +492,11 @@ class StateManager11 final : angle::NonCopyable
     };
 
     using DirtyBits = angle::BitSet<DIRTY_BIT_MAX>;
+
+    angle::Result syncCurrentValueAttribs(
+        const gl::Context *context,
+        const std::vector<gl::VertexAttribCurrentValueData> &currentValues,
+        DirtyBits::Iterator &iter);
 
     Renderer11 *mRenderer;
 
