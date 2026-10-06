@@ -80,6 +80,7 @@ struct VulkanDeviceKnobs {
 
 struct VulkanDeviceInfo : VulkanDeviceKnobs {
     VkPhysicalDeviceProperties properties;
+    VkPhysicalDeviceIDProperties idProperties;
     VkPhysicalDeviceMaintenance3Properties propertiesMaintenance3;
     VkPhysicalDeviceDriverProperties driverProperties;
     VkPhysicalDeviceSubgroupSizeControlPropertiesEXT subgroupSizeControlProperties;

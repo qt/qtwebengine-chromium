@@ -253,6 +253,7 @@ ResultOrError<VulkanDeviceInfo> GatherDeviceInfo(const PhysicalDevice& device) {
 
         PNextChainBuilder propertiesChain(&properties2);
 
+        propertiesChain.Add(&info.idProperties, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES);
         propertiesChain.Add(&info.propertiesMaintenance3,
                             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_3_PROPERTIES);
 

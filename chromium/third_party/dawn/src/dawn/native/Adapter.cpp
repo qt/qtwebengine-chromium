@@ -144,6 +144,11 @@ wgpu::Status AdapterBase::APIGetInfo(AdapterInfo* info) const {
         hadError |= mInstance->ConsumedError(
             DAWN_VALIDATION_ERROR("Feature AdapterPropertiesVk is not available."));
     }
+    if (unpacked.Get<vulkan::AdapterPropertiesVulkanUUIDs>() != nullptr &&
+        !mSupportedFeatures.IsEnabled(wgpu::FeatureName::AdapterPropertiesVk)) {
+        hadError |= mInstance->ConsumedError(
+            DAWN_VALIDATION_ERROR("Feature AdapterPropertiesVk is not available."));
+    }
     if (unpacked.Get<AdapterPropertiesSubgroupMatrixConfigs>() != nullptr &&
         !mSupportedFeatures.IsEnabled(wgpu::FeatureName::ChromiumExperimentalSubgroupMatrix)) {
         hadError |= mInstance->ConsumedError(

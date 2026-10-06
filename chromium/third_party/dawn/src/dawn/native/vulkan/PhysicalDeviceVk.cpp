@@ -1396,6 +1396,19 @@ void PhysicalDevice::PopulateBackendProperties(UnpackedPtr<AdapterInfo>& info) c
     if (auto* vkProperties = info.Get<AdapterPropertiesVk>()) {
         vkProperties->driverVersion = mDeviceInfo.properties.driverVersion;
     }
+    if (auto* uuidProperties = info.Get<AdapterPropertiesVulkanUUIDs>()) {
+
+        static_assert(sizeof(uuidProperties->deviceUUID) ==
+                      sizeof(mDeviceInfo.idProperties.deviceUUID));
+        memcpy(uuidProperties->deviceUUID.data(), mDeviceInfo.idProperties.deviceUUID,
+               sizeof(mDeviceInfo.idProperties.deviceUUID));
+
+        static_assert(sizeof(uuidProperties->driverUUID) ==
+                      sizeof(mDeviceInfo.idProperties.driverUUID));
+        memcpy(uuidProperties->driverUUID.data(), mDeviceInfo.idProperties.driverUUID,
+               sizeof(mDeviceInfo.idProperties.driverUUID));
+
+    }
     if (auto* subgroupMatrixConfigs = info.Get<AdapterPropertiesSubgroupMatrixConfigs>()) {
         size_t count = mSubgroupMatrixConfigs.size();
         SubgroupMatrixConfig* configs = new SubgroupMatrixConfig[count];

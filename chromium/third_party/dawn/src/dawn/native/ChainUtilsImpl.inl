@@ -50,10 +50,21 @@ struct RequestAdapterOptionsGetGLProc;
 }
 
 namespace vulkan {
+struct AdapterPropertiesVulkanUUIDs;
+struct RequestAdapterOptionsVulkanUUIDs;
 struct YCbCrVulkanDescriptor;
 }
 
 namespace detail {
+
+template <>
+constexpr inline wgpu::SType STypeForImpl<vulkan::AdapterPropertiesVulkanUUIDs> =
+    wgpu::SType(WGPUSType_AdapterPropertiesVulkanUUIDs);
+
+template <>
+struct AdditionalExtensions<AdapterInfo> {
+    using List = AdditionalExtensionsList<vulkan::AdapterPropertiesVulkanUUIDs*>;
+};
 
 template <>
 constexpr inline wgpu::SType STypeForImpl<DawnInstanceDescriptor> =
@@ -77,10 +88,15 @@ constexpr inline wgpu::SType STypeForImpl<opengl::RequestAdapterOptionsGetGLProc
     wgpu::SType(WGPUSType_RequestAdapterOptionsGetGLProc);
 
 template <>
+constexpr inline wgpu::SType STypeForImpl<vulkan::RequestAdapterOptionsVulkanUUIDs> =
+    wgpu::SType(WGPUSType_RequestAdapterOptionsVulkanUUIDs);
+
+template <>
 struct AdditionalExtensions<RequestAdapterOptions> {
     using List = AdditionalExtensionsList<const d3d::RequestAdapterOptionsLUID*,
                                           const d3d11::RequestAdapterOptionsD3D11Device*,
-                                          const opengl::RequestAdapterOptionsGetGLProc*>;
+                                          const opengl::RequestAdapterOptionsGetGLProc*,
+                                          const vulkan::RequestAdapterOptionsVulkanUUIDs*>;
 };
 
 template <>

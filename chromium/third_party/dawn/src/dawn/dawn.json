@@ -3900,7 +3900,9 @@
             {"value": 70, "name": "dawn fake device initialize error for testing", "tags": ["dawn"]},
             {"value": 71, "name": "texture component swizzle descriptor", "tags": ["dawn"]},
             {"value": 72, "name": "shared texture memory D3D11 begin state", "tags": ["dawn", "native"]},
-            {"value": 73, "name": "dawn consume adapter descriptor", "tags": ["dawn"]}
+            {"value": 73, "name": "dawn consume adapter descriptor", "tags": ["dawn"]},
+            {"value": 74, "name": "request adapter options vulkan UUIDs", "tags": ["dawn", "native"]},
+            {"value": 75, "name": "adapter properties vulkan UUIDs", "tags": ["dawn", "native"]}
         ]
     },
     "texture": {

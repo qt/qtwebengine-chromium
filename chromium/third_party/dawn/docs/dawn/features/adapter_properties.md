@@ -54,3 +54,12 @@ struct AdapterPropertiesVk {
     uint32_t driverVersion;  // The Vulkan driver version
 };
 ```
+
+Likewise `dawn::native::vulkan::AdapterPropertiesVulkanUUIDs` may be chained on `wgpu::AdapterInfo` to query the following:
+
+```
+struct AdapterPropertiesVulkanUUIDs {
+    std::array<uint8_t, VK_UUID_SIZE> deviceUUID;
+    std::array<uint8_t, VK_UUID_SIZE> driverUUID;
+};
+```
