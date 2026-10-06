@@ -777,12 +777,12 @@ class SharedFunctionInfo
   void SetFunctionTokenPosition(int function_token_position,
                                 int start_position);
 
-  static void EnsureBytecodeArrayAvailable(
+  V8_EXPORT_PRIVATE static void EnsureBytecodeArrayAvailable(
       Isolate* isolate, Handle<SharedFunctionInfo> shared_info,
       IsCompiledScope* is_compiled_scope,
       CreateSourcePositions flag = CreateSourcePositions::kNo);
 
-  inline bool CanCollectSourcePosition(Isolate* isolate);
+  V8_EXPORT_PRIVATE inline bool CanCollectSourcePosition(Isolate* isolate);
   static void EnsureSourcePositionsAvailable(
       Isolate* isolate, DirectHandle<SharedFunctionInfo> shared_info);
 
