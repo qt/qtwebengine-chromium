@@ -7,6 +7,8 @@
 #include "base/check.h"
 #include "base/feature_list.h"
 #include "base/files/file_util.h"
+#include "build/build_config.h"
+#include "extensions/common/file_util.h"
 
 namespace extensions {
 
@@ -115,22 +117,8 @@ base::FilePath ExtensionResource::GetFilePath(
   // We must resolve the absolute path of the combined path when
   // the relative path contains references to a parent folder (i.e., '..').
   // NormalizeFilePath will fail if the path doesn't exist.
-  if (base::FilePath full_path_normalized;
-      !extension_root_normalization_skipped &&
-      base::NormalizeFilePath(full_path, &full_path_normalized)) {
-    full_path = std::move(full_path_normalized);
-  } else {
-#if BUILDFLAG(IS_WIN)
-    // On Windows, if `NormalizeFilePath` fails, fall back to
-    // `MakeAbsoluteFilePath` and proceed if the file exists. This can happen
-    // if, for example, the file isn't accessible due to permissions.
-    full_path = base::MakeAbsoluteFilePath(full_path);
-    if (full_path.empty() || !base::PathExists(full_path)) {
-      return base::FilePath();
-    }
-#else
+  if (!file_util::NormalizeFilePath(full_path, &full_path)) {
     return base::FilePath();
-#endif
   }
 
   if (symlink_policy != FOLLOW_SYMLINKS_ANYWHERE &&
