@@ -944,14 +944,14 @@ def FindThirdPartyDeps(gn_binary : str,
         pass
     else:
        tmp_dir = gn_out_dir
-    cmd = gn_binary + [
+    cmd = [
+        gn_binary,
         "desc",
         "--ignore-asserts=enable_extensions_core,enable_extensions",
         "--script-executable=%s" % sys.executable,
         "--root=%s" % scan_root, tmp_dir, gn_target, "deps", "--as=buildfile",
         "--all"
     ]
-                                      stderr=sys.stderr)
     proc = subprocess.run(cmd, stdout=subprocess.PIPE, encoding='utf-8')
     if proc.returncode:
       sys.stderr.write('Failed: ' + shlex.join(cmd) + '\n')
