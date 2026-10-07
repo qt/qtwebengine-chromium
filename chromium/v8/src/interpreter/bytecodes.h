@@ -181,7 +181,7 @@ namespace interpreter {
     OperandType::kReg, OperandType::kIdx, OperandType::kIdx)                   \
   V(DefineNamedOwnPropertyInLiteral,                                           \
     ImplicitRegisterUse::kReadAndClobberAccumulator, OperandType::kReg,        \
-    OperandType::kConstantPoolIndex, OperandType::kFeedbackSlot)               \
+    OperandType::kIdx, OperandType::kIdx)                                      \
   V(SetKeyedProperty, ImplicitRegisterUse::kReadAndClobberAccumulator,         \
     OperandType::kReg, OperandType::kReg, OperandType::kIdx)                   \
   V(DefineKeyedOwnProperty, ImplicitRegisterUse::kReadAndClobberAccumulator,   \
