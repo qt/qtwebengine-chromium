@@ -64,7 +64,8 @@ DownloadResponseHandler::DownloadResponseHandler(
     DownloadSource download_source,
     bool require_safety_checks,
     std::vector<GURL> url_chain,
-    bool is_background_mode)
+    bool is_background_mode,
+    ::network::mojom::RequestMode fetch_request_mode)
     : delegate_(delegate),
       started_(false),
       save_info_(std::move(save_info)),
@@ -81,6 +82,7 @@ DownloadResponseHandler::DownloadResponseHandler(
       download_source_(download_source),
       has_strong_validators_(false),
       credentials_mode_(resource_request->credentials_mode),
+      fetch_request_mode_(fetch_request_mode),
       is_partial_request_(save_info_->offset > 0),
       completed_(false),
       require_safety_checks_(require_safety_checks),
@@ -172,6 +174,7 @@ DownloadResponseHandler::CreateDownloadCreateInfo(
   create_info->download_source = download_source_;
   create_info->request_initiator = request_initiator_;
   create_info->credentials_mode = credentials_mode_;
+  create_info->fetch_request_mode = fetch_request_mode_;
   create_info->isolation_info = isolation_info_;
   create_info->require_safety_checks = require_safety_checks_;
 

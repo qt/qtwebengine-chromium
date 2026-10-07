@@ -21,6 +21,10 @@ BASE_DECLARE_FEATURE(kDownloadServiceFeature);
 COMPONENT_EXPORT(COMPONENTS_DOWNLOAD_PUBLIC_BACKGROUND_SERVICE)
 BASE_DECLARE_FEATURE(kDownloadServiceForegroundSessionIOSFeature);
 
+// Used as a kill switch for CORS enforcement in Background Fetch jobs.
+COMPONENT_EXPORT(COMPONENTS_DOWNLOAD_PUBLIC_BACKGROUND_SERVICE)
+BASE_DECLARE_FEATURE(kBackgroundFetchCorsEnforcement);
+
 }  // namespace download
 
 #endif  // COMPONENTS_DOWNLOAD_PUBLIC_BACKGROUND_SERVICE_FEATURES_H_
