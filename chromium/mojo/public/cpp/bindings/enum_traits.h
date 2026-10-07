@@ -23,7 +23,7 @@ namespace mojo {
 //
 template <typename MojomType, typename T>
 struct EnumTraits {
-  static_assert(false,
+  static_assert(internal::AlwaysFalse<T>::value,
                 "Cannot find the mojo::EnumTraits specialization. Did you "
                 "forget to include the corresponding header file?");
 };

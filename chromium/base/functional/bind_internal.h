@@ -21,6 +21,7 @@
 #include "base/memory/raw_ptr.h"
 #include "base/memory/raw_ref.h"
 #include "base/memory/weak_ptr.h"
+#include "base/types/always_false.h"
 #include "base/types/is_complete.h"
 #include "base/types/is_instantiation.h"
 #include "base/types/to_address.h"
@@ -1363,7 +1364,7 @@ struct ValidateReceiverType {
  private:
   // Pointer-like receivers use a different specialization, so this never
   // succeeds.
-  template <bool v = false>
+  template <bool v = AlwaysFalse<T>>
   struct ReceiverMustBePointerLike {
     static constexpr bool value = [] {
       static_assert(v,

@@ -11,6 +11,7 @@
 #include "base/apple/scoped_cftyperef.h"
 #include "base/base_export.h"
 #include "base/check.h"
+#include "base/types/always_false.h"
 #include "build/build_config.h"
 
 #if BUILDFLAG(IS_IOS)
@@ -145,8 +146,9 @@ namespace base::apple {
 template <typename CFT>
 id _Nullable CFToNSOwnershipCast(ScopedCFTypeRef<CFT>) {
   static_assert(
-      false, "Error: Do not pass a ScopedCFTypeRef to CFToNSOwnershipCast. "
-             "Call .release() on the ScopedCFTypeRef and pass the result in.");
+      AlwaysFalse<CFT>,
+      "Error: Do not pass a ScopedCFTypeRef to CFToNSOwnershipCast. "
+      "Call .release() on the ScopedCFTypeRef and pass the result in.");
   return nil;
 }
 

@@ -54,7 +54,7 @@ namespace mojo {
 //
 template <typename T>
 struct MapTraits {
-  static_assert(false,
+  static_assert(internal::AlwaysFalse<T>::value,
                 "Cannot find the mojo::MapTraits specialization. Did you "
                 "forget to include the corresponding header file?");
 };

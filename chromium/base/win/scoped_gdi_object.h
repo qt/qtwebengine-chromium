@@ -7,6 +7,7 @@
 
 #include "base/base_export.h"
 #include "base/scoped_generic.h"
+#include "base/types/always_false.h"
 #include "base/win/win_handle_types.h"
 
 // Defines `ScopedGDIObject`, an RAII helper for GDI objects. Use like
@@ -36,7 +37,7 @@ template <typename T>
 struct BASE_EXPORT ScopedGDIObjectTraits {
   static T InvalidValue() { return nullptr; }
   static void Free(T object) {
-    static_assert(false, "Explicitly forward-declare this T");
+    static_assert(base::AlwaysFalse<T>, "Explicitly forward-declare this T");
   }
 };
 

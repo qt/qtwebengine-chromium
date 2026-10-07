@@ -7,6 +7,7 @@
 
 #include <optional>
 
+#include "base/types/always_false.h"
 #include "base/types/expected.h"
 #include "components/reporting/util/status.h"
 #include "components/reporting/util/statusor.h"
@@ -24,7 +25,7 @@ std::optional<base::unexpected<Status>> ShouldReturnStatus(
 
 template <typename T>
 void ShouldReturnStatus(T) {
-  static_assert(false,
+  static_assert(base::AlwaysFalse<T>,
                 "RETURN_IF_ERROR_STATUS only accepts either Status or "
                 "base::unexpected<Status>.");
 }
@@ -59,7 +60,7 @@ namespace reporting::internal {
 template <typename T>
 struct StatusOKHelper {
   static bool IsOK(const T&) {
-    static_assert(false,
+    static_assert(base::AlwaysFalse<T>,
                   "{CHECK,DCHECK,ASSERT,EXPECT}_OK do not accept a type other "
                   "than Status or StatusOr.");
   }
