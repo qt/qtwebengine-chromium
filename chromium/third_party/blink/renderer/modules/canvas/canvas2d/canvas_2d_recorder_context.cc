@@ -2284,7 +2284,8 @@ void Canvas2DRecorderContext::DrawImageInternal(
     const gfx::RectF& src_rect,
     const gfx::RectF& dst_rect,
     const SkSamplingOptions& sampling,
-    const cc::PaintFlags* flags) {
+    const cc::PaintFlags* flags,
+    RespectImageOrientationEnum respect_orientation) {
   cc::RecordPaintCanvas::DisableFlushCheckScope disable_flush_check_scope(
       static_cast<cc::RecordPaintCanvas*>(c));
   int initial_save_count = c->getSaveCount();
@@ -2337,8 +2338,7 @@ void Canvas2DRecorderContext::DrawImageInternal(
     VideoFrame* frame = static_cast<VideoFrame*>(image_source);
     auto media_frame = frame->frame();
     bool ignore_transformation =
-        RespectImageOrientationInternal(image_source) ==
-        kDoNotRespectImageOrientation;
+        respect_orientation == kDoNotRespectImageOrientation;
     gfx::RectF corrected_src_rect = src_rect;
 
     if (!ignore_transformation) {
@@ -2359,11 +2359,6 @@ void Canvas2DRecorderContext::DrawImageInternal(
     DrawVideoFrameIntoCanvas(std::move(media_frame), c, image_flags,
                              ignore_transformation);
   } else {
-    // We always use the image-orientation property on the canvas element
-    // because the alternative would result in complex rules depending on
-    // the source of the image.
-    RespectImageOrientationEnum respect_orientation =
-        RespectImageOrientationInternal(image_source);
     gfx::RectF corrected_src_rect = src_rect;
     if (respect_orientation == kRespectImageOrientation &&
         !image->HasDefaultOrientation()) {
@@ -2455,8 +2450,14 @@ void Canvas2DRecorderContext::drawImage(CanvasImageSource* image_source,
 
   gfx::RectF src_rect(fsx, fsy, fsw, fsh);
   gfx::RectF dst_rect(fdx, fdy, fdw, fdh);
-  gfx::SizeF image_size = image_source->ElementSize(
-      default_object_size, RespectImageOrientationInternal(image_source));
+
+  // We always use the image-orientation property on the canvas element because
+  // the alternative would result in complex rules depending on the source of
+  // the image.
+  const RespectImageOrientationEnum respect_orientation =
+      RespectImageOrientationInternal(image_source);
+  gfx::SizeF image_size =
+      image_source->ElementSize(default_object_size, respect_orientation);
 
   ClipRectsToImageRect(gfx::RectF(image_size), &src_rect, &dst_rect);
 
@@ -2480,14 +2481,14 @@ void Canvas2DRecorderContext::drawImage(CanvasImageSource* image_source,
 
   Draw<OverdrawOp::kDrawImage>(
       /*draw_func=*/
-      [this, image_source, image, src_rect, dst_rect](
+      [this, image_source, image, src_rect, dst_rect, respect_orientation](
           MemoryManagedPaintCanvas* c, const cc::PaintFlags* flags) {
         SkSamplingOptions sampling =
             cc::PaintFlags::FilterQualityToSkSamplingOptions(
                 flags ? flags->getFilterQuality()
                       : cc::PaintFlags::FilterQuality::kNone);
         DrawImageInternal(c, image_source, image.get(), src_rect, dst_rect,
-                          sampling, flags);
+                          sampling, flags, respect_orientation);
       },
       /*draw_covers_clip_bounds=*/
       [this, dst_rect](const SkIRect& clip_bounds) {
