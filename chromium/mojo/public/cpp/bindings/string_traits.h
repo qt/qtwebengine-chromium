@@ -30,7 +30,7 @@ namespace mojo {
 //   };
 template <typename T>
 struct StringTraits {
-  static_assert(false,
+  static_assert(internal::AlwaysFalse<T>::value,
                 "Cannot find the mojo::StringTraits specialization. Did you "
                 "forget to include the corresponding header file?");
 };

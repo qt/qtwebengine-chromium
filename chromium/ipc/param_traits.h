@@ -9,10 +9,17 @@
 // a data type is read and written in the IPC system.
 
 namespace IPC {
+namespace internal {
 
-template <class P>
-struct ParamTraits {
-  static_assert(false,
+template <typename T>
+struct AlwaysFalse {
+  static const bool value = false;
+};
+
+}  // namespace internal
+
+template <class P> struct ParamTraits {
+  static_assert(internal::AlwaysFalse<P>::value,
                 "Cannot find the IPC::ParamTraits specialization. Did you "
                 "forget to include the corresponding header file?");
 };

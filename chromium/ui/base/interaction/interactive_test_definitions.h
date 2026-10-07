@@ -62,7 +62,7 @@ auto MaybeBind(F&& function) {
     // base::DoNothing() is compatible with callbacks, so return it as-is.
     return function;
   } else {
-    static_assert(false, "Can only bind callable objects.");
+    static_assert(base::AlwaysFalse<F>, "Can only bind callable objects.");
   }
 }
 

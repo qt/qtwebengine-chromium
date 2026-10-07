@@ -144,7 +144,7 @@ namespace mojo {
 template <typename DataViewType, typename T>
 struct StructTraits {
   static_assert(
-      false,
+      internal::AlwaysFalse<T>::value,
       "Cannot find the mojo::StructTraits specialization. Did you confirm "
       "that:"
       "  * the corresponding header file is included in your build file"

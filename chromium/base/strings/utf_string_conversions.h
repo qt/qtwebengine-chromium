@@ -11,6 +11,7 @@
 #include <string_view>
 
 #include "base/base_export.h"
+#include "base/types/always_false.h"
 #include "build/build_config.h"
 
 namespace base {
@@ -72,19 +73,19 @@ BASE_EXPORT bool UTF16ToUTF8(const char16_t* src,
 // time.
 template <size_t N>
 [[noreturn]] std::u16string WideToUTF16(const wchar_t (&str)[N]) {
-  static_assert(false,
+  static_assert(AlwaysFalse<decltype(N)>,
                 "Error: Use u\"...\" to create a std::u16string literal.");
 }
 
 template <size_t N>
 [[noreturn]] std::u16string UTF8ToUTF16(const char (&str)[N]) {
-  static_assert(false,
+  static_assert(AlwaysFalse<decltype(N)>,
                 "Error: Use u\"...\" to create a std::u16string literal.");
 }
 
 template <size_t N>
 [[noreturn]] std::u16string ASCIIToUTF16(const char (&str)[N]) {
-  static_assert(false,
+  static_assert(AlwaysFalse<decltype(N)>,
                 "Error: Use u\"...\" to create a std::u16string literal.");
 }
 

@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "base/containers/flat_map.h"
+#include "base/types/always_false.h"
 #include "mojo/public/cpp/bindings/lib/template_util.h"
 
 namespace mojo {
@@ -31,7 +32,7 @@ struct CloneTraits {
       return input;
     } else {
       static_assert(
-          false,
+          base::AlwaysFalse<T>,
           "T is not copyable and has no Clone() method, so the default "
           "mojo::CloneTraits cannot be used; please make sure to include the "
           "header that defines the mojo::CloneTraits<T> specialization");
