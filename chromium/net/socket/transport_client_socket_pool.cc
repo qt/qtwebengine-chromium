@@ -439,8 +439,7 @@ int TransportClientSocketPool::RequestSocketInternal(
       // still one in this group, but we got here due to preconnecting
       // bypassing idle sockets, or because there's an idle socket in another
       // group.
-      bool closed = CloseOneIdleSocketExceptInGroup(group);
-      if (preconnecting && !closed)
+      if (preconnecting && !CloseOneIdleSocketExceptInGroup(group))
         return ERR_PRECONNECT_MAX_SOCKET_LIMIT;
     } else {
       // We could check if we really have a stalled group here, but it
@@ -521,6 +520,7 @@ bool TransportClientSocketPool::AssignIdleSocketToRequest(
       it->socket->NetLog().AddEventWithStringParams(
           NetLogEventType::SOCKET_POOL_CLOSING_SOCKET, "reason",
           net_log_reason_utf8);
+      QueueDestroySocket(std::move(it->socket));
       DecrementIdleCount();
       it = idle_sockets->erase(it);
       continue;
@@ -649,6 +649,7 @@ void TransportClientSocketPool::CancelRequest(const GroupId& group_id,
 void TransportClientSocketPool::CloseIdleSockets(
     const char* net_log_reason_utf8) {
   CleanupIdleSockets(true, net_log_reason_utf8);
+  DestroyQueuedSockets();
   DCHECK_EQ(0, idle_socket_count_);
 }
 
@@ -963,6 +964,7 @@ void TransportClientSocketPool::CleanupIdleSocketsInGroup(
       idle_socket_it->socket->NetLog().AddEventWithStringParams(
           NetLogEventType::SOCKET_POOL_CLOSING_SOCKET, "reason",
           reason_for_closing_socket);
+      QueueDestroySocket(std::move(idle_socket_it->socket));
       idle_socket_it = group->mutable_idle_sockets()->erase(idle_socket_it);
       DecrementIdleCount();
     } else {
@@ -1067,7 +1069,7 @@ void TransportClientSocketPool::ReleaseSocket(
         not_reusable_reason);
     if (group->IsEmpty())
       RemoveGroup(i);
-    socket.reset();
+    QueueDestroySocket(std::move(socket));
   }
 
   CheckForStalledSocketGroups();
@@ -1306,6 +1308,7 @@ bool TransportClientSocketPool::CloseOneIdleSocketExceptInGroup(
     std::list<IdleSocket>* idle_sockets = group->mutable_idle_sockets();
 
     if (!idle_sockets->empty()) {
+      QueueDestroySocket(std::move(idle_sockets->front().socket));
       idle_sockets->pop_front();
       DecrementIdleCount();
       if (group->IsEmpty())
@@ -1494,6 +1497,27 @@ TransportClientSocketPool::RefreshGroup(GroupMap::iterator it,
     return RemoveGroup(it);
   }
   return ++it;
+}
+
+void TransportClientSocketPool::QueueDestroySocket(
+    std::unique_ptr<StreamSocket> socket) {
+  if (GetProxyChain().is_direct()) {
+    return;
+  }
+  if (sockets_queued_for_destruction_.empty()) {
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
+        FROM_HERE,
+        base::BindOnce(&TransportClientSocketPool::DestroyQueuedSockets,
+                       weak_factory_.GetWeakPtr()));
+  }
+  sockets_queued_for_destruction_.emplace_back(std::move(socket));
+}
+
+void TransportClientSocketPool::DestroyQueuedSockets() {
+  // Move into a local vector before destroying elements in case a socket's
+  // destructor reentrantly calls QueueDestroySocket().
+  std::vector<std::unique_ptr<StreamSocket>> sockets =
+      std::move(sockets_queued_for_destruction_);
 }
 
 TransportClientSocketPool::Group::Group(
