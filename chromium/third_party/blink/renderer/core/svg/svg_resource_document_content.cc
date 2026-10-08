@@ -298,6 +298,9 @@ SVGResourceDocumentContent* SVGResourceDocumentContent::Fetch(
 
   Page* page = document.GetPage();
   auto& cache = page->GetSVGResourceDocumentCache();
+  if (cache.IsDisposed()) {
+    return nullptr;
+  }
 
   const SVGResourceDocumentCache::CacheKey key =
       SVGResourceDocumentCache::MakeCacheKey(params);

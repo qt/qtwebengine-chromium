@@ -51,6 +51,7 @@ class CORE_EXPORT SVGResourceDocumentCache final
   void Put(const CacheKey& key, SVGResourceDocumentContent* content);
 
   void WillBeDestroyed();
+  bool IsDisposed() const { return is_disposed_; }
 
   void Trace(Visitor*) const;
 
@@ -61,6 +62,7 @@ class CORE_EXPORT SVGResourceDocumentCache final
   HeapHashMap<CacheKey, Member<SVGResourceDocumentContent>> entries_;
   scoped_refptr<base::SingleThreadTaskRunner> dispose_task_runner_;
   bool dispose_task_pending_ = false;
+  bool is_disposed_ = false;
 };
 
 }  // namespace blink

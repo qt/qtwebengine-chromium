@@ -25,6 +25,7 @@
 #include <algorithm>
 
 #include "third_party/blink/renderer/core/svg/svg_resource_document_content.h"
+#include "third_party/blink/renderer/platform/heap/collection_support/heap_vector.h"
 #include "third_party/blink/renderer/platform/loader/fetch/fetch_parameters.h"
 #include "third_party/blink/renderer/platform/loader/fetch/memory_cache.h"
 
@@ -49,6 +50,7 @@ SVGResourceDocumentContent* SVGResourceDocumentCache::Get(const CacheKey& key) {
 
 void SVGResourceDocumentCache::Put(const CacheKey& key,
                                    SVGResourceDocumentContent* content) {
+  CHECK(!is_disposed_);
   auto result = entries_.insert(key, content);
   // No existing entry, we're done.
   if (result.is_new_entry) {
@@ -63,7 +65,11 @@ void SVGResourceDocumentCache::Put(const CacheKey& key,
 }
 
 void SVGResourceDocumentCache::WillBeDestroyed() {
-  for (SVGResourceDocumentContent* content : entries_.Values()) {
+  is_disposed_ = true;
+
+  HeapHashMap<CacheKey, Member<SVGResourceDocumentContent>> to_dispose;
+  to_dispose.swap(entries_);
+  for (SVGResourceDocumentContent* content : to_dispose.Values()) {
     content->Dispose();
   }
 }
@@ -72,15 +78,22 @@ void SVGResourceDocumentCache::DisposeUnobserved() {
   dispose_task_pending_ = false;
 
   Vector<CacheKey> to_remove;
+  HeapVector<Member<SVGResourceDocumentContent>> to_dispose;
   for (auto& entry : entries_) {
     SVGResourceDocumentContent* content = entry.value;
     if (content->HasObservers()) {
       continue;
     }
-    content->Dispose();
     to_remove.push_back(entry.key);
+    to_dispose.push_back(content);
   }
   entries_.RemoveAll(to_remove);
+
+  // Perform disposal from `to_dispose` since Dispose() may cause additional
+  // resources to be added (i.e mutate `entries_`).
+  for (const auto& content : to_dispose) {
+    content->Dispose();
+  }
 }
 
 void SVGResourceDocumentCache::ProcessCustomWeakness(
