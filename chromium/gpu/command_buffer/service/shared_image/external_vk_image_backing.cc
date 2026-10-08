@@ -12,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/auto_reset.h"
 #include "base/bits.h"
 #include "base/memory/raw_ptr.h"
 #include "base/notimplemented.h"
@@ -165,6 +166,8 @@ std::unique_ptr<ExternalVkImageBacking> ExternalVkImageBacking::Create(
     std::string debug_label,
     const base::flat_map<VkFormat, VkImageUsageFlags>& image_usage_cache,
     base::span<const uint8_t> pixel_data) {
+  bool use_separate_gl_texture =
+        ExternalVkImageBacking::UseSeparateGLTexture(context_state.get(), format);
   bool is_external = context_state->support_vulkan_external_object();
 
   auto* device_queue = context_state->vk_context_provider()->GetDeviceQueue();
@@ -229,6 +232,11 @@ std::unique_ptr<ExternalVkImageBacking> ExternalVkImageBacking::Create(
                                   VK_IMAGE_TILING_OPTIMAL);
     }
     if (!image) {
+      // VulkanImages must be explicitly destroyed, so release the images
+      // already allocated for earlier planes.
+      for (auto& texture : textures) {
+        texture.vulkan_image->Destroy();
+      }
       return nullptr;
     }
 
@@ -236,8 +244,6 @@ std::unique_ptr<ExternalVkImageBacking> ExternalVkImageBacking::Create(
     textures.emplace_back(std::move(image), format, color_space);
   }
 
-  bool use_separate_gl_texture =
-      UseSeparateGLTexture(context_state.get(), format);
   auto backing = std::make_unique<ExternalVkImageBacking>(
       base::PassKey<ExternalVkImageBacking>(), mailbox, format, size,
       color_space, surface_origin, alpha_type, usage, std::move(debug_label),
@@ -280,6 +286,9 @@ std::unique_ptr<ExternalVkImageBacking> ExternalVkImageBacking::CreateFromGMB(
     DLOG(ERROR) << "Invalid image size for format.";
     return nullptr;
   }
+
+  bool use_separate_gl_texture =
+      ExternalVkImageBacking::UseSeparateGLTexture(context_state.get(), format);
 
   auto* vulkan_implementation =
       context_state->vk_context_provider()->GetVulkanImplementation();
@@ -470,11 +479,21 @@ bool ExternalVkImageBacking::BeginAccess(
     return true;
   }
 
+  if (is_write_in_progress_ || (!readonly && reads_in_progress_)) {
+    DLOG(ERROR) << "Unable to begin read or write access because another "
+                   "conflicting access is in progress";
+    return false;
+  }
+
   if (readonly && !reads_in_progress_) {
-    UpdateContent(kInVkImage);
-    if (!gl_textures_.empty()) {
+    if (!is_updating_content_) {
+      UpdateContent(kInVkImage);
+    }
+    if (!gl_textures_.empty() && !is_updating_content_) {
       UpdateContent(kInGLTexture);
     }
+  } else if (!readonly && !is_updating_content_) {
+    UpdateContent(is_gl ? kInGLTexture : kInVkImage);
   }
 
   if (gl_reads_in_progress_ && need_synchronization()) {
@@ -945,6 +964,12 @@ ExternalVkImageBacking::ProduceOverlay(SharedImageManager* manager,
 }
 
 void ExternalVkImageBacking::UpdateContent(uint32_t content_flags) {
+  // This flag is used in order to avoid infinite recursion for cases when
+  // ::BeginAccess() will call UpdateContent(kInGLTexture) which would call
+  // ::CopyPixelsFromVkImageToGLTexture, which now will call ReadbackToMemory,
+  // which will call ::BeginAccess() again.
+  base::AutoReset<bool> auto_reset(&is_updating_content_, true);
+
   // Only support one backing for now.
   DCHECK(content_flags == kInVkImage || content_flags == kInGLTexture);
 

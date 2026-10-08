@@ -240,6 +240,7 @@ class ExternalVkImageBacking final : public ClearTrackingSharedImageBacking {
 
   bool is_write_in_progress_ = false;
   uint32_t reads_in_progress_ = 0;
+  bool is_updating_content_ = false;
   uint32_t gl_reads_in_progress_ = 0;
 
   std::vector<GLTextureHolder> gl_textures_;
