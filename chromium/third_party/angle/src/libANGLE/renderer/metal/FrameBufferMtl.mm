@@ -1633,6 +1633,9 @@ angle::Result FramebufferMtl::readPixelsImpl(const gl::Context *context,
 
         buffer->syncContent(contextMtl, contextMtl->getBlitCommandEncoder());
         const uint8_t *bufferData = buffer->mapReadOnly(contextMtl);
+        // Verify that the command buffer (including any pending clears/draws and the readback
+        // blit) executed without GPU faults before reading back the buffer contents.
+        ANGLE_TRY(contextMtl->checkCommandBufferError());
 
         angle::Result result = readPixelsCopyImpl(
             context, area, packPixelsParams, renderTarget,
@@ -1652,6 +1655,8 @@ angle::Result FramebufferMtl::readPixelsImpl(const gl::Context *context,
     {
         contextMtl->flushCommandBuffer(mtl::WaitUntilFinished);
     }
+    // Verify that prior command buffers affecting this texture completed without GPU faults.
+    ANGLE_TRY(contextMtl->checkCommandBufferError());
 
     angle::MemoryBuffer readPixelRowBuffer;
     int bufferRowPitch = area.width * readAngleFormat.pixelBytes;

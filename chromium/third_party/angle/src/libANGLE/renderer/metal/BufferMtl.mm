@@ -210,16 +210,19 @@ angle::Result BufferMtl::mapRange(const gl::Context *context,
     if (mapPtr)
     {
         ContextMtl *contextMtl = mtl::GetImpl(context);
+        uint8_t *ptr           = nullptr;
         if (mShadowCopy.size() == 0)
         {
-            *mapPtr = mBuffer->mapWithOpt(contextMtl, (access & GL_MAP_WRITE_BIT) == 0,
+            ptr = mBuffer->mapWithOpt(contextMtl, (access & GL_MAP_WRITE_BIT) == 0,
                                           access & GL_MAP_UNSYNCHRONIZED_BIT) +
                       offset;
         }
         else
         {
-            *mapPtr = syncAndObtainShadowCopy(contextMtl) + offset;
+            ptr = syncAndObtainShadowCopy(contextMtl) + offset;
         }
+        ANGLE_TRY(contextMtl->checkCommandBufferError());
+        *mapPtr = ptr;
     }
 
     return angle::Result::Continue;
