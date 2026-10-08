@@ -655,6 +655,8 @@ void PipelineImpl::RendererWrapper::CreateRendererInternal(
   if (!default_renderer_ ||
       (renderer_type &&
        default_renderer_->GetRendererType() != renderer_type.value())) {
+    default_renderer_.reset();
+
     // Create the Renderer asynchronously on the main task runner. Use
     // base::BindPostTaskToCurrentDefault to call OnRendererCreated() on the
     // media task runner.
@@ -1177,6 +1179,8 @@ void PipelineImpl::RendererWrapper::InitializeRenderer(
 
 void PipelineImpl::RendererWrapper::DestroyRenderer() {
   DCHECK(media_task_runner_->RunsTasksInCurrentSequence());
+
+  default_renderer_.reset();
 
   // Destroy the renderer outside the lock scope to avoid holding the lock
   // while renderer is being destroyed (in case Renderer destructor is costly).
