@@ -874,8 +874,8 @@ void BaseRenderingContext2D::setFont(const String& new_font) {
         CanvasOps::kSetFont, IdentifiabilityBenignStringToken(new_font));
   }
 
-  CanvasRenderingContext2DState& state = GetState();
-  if (new_font == state.UnparsedFont() && CurrentFontResolvedAndUpToDate()) {
+  if (new_font == GetState().UnparsedFont() &&
+      CurrentFontResolvedAndUpToDate()) {
     return;
   }
 
@@ -883,8 +883,9 @@ void BaseRenderingContext2D::setFont(const String& new_font) {
     return;
   }
 
-  // The parse succeeded.
-  state.SetUnparsedFont(new_font);
+  // The parse succeeded. Re-fetch `GetState()` as `ResolveFont()` can execute
+  // script and reset the state stack.
+  GetState().SetUnparsedFont(new_font);
 }
 
 static inline TextDirection ToTextDirection(
@@ -1050,6 +1051,13 @@ void BaseRenderingContext2D::DrawTextInternal(
     unsigned run_end,
     double* max_width,
     const Font* cluster_font) {
+  if (!std::isfinite(x) || !std::isfinite(y)) {
+    return;
+  }
+  if (max_width && (!std::isfinite(*max_width) || *max_width <= 0)) {
+    return;
+  }
+
   HTMLCanvasElement* canvas = HostAsHTMLCanvasElement();
   if (canvas) {
     // The style resolution required for fonts is not available in frame-less
@@ -1063,19 +1071,6 @@ void BaseRenderingContext2D::DrawTextInternal(
     // size to 0, for example), so update style before grabbing the PaintCanvas.
     canvas->GetDocument().UpdateStyleAndLayoutTreeForElement(
         canvas, DocumentUpdateReason::kCanvas);
-  }
-
-  // Abort if we don't have a paint canvas (e.g. the context was lost).
-  cc::PaintCanvas* paint_canvas = GetOrCreatePaintCanvas();
-  if (!paint_canvas) {
-    return;
-  }
-
-  if (!std::isfinite(x) || !std::isfinite(y)) {
-    return;
-  }
-  if (max_width && (!std::isfinite(*max_width) || *max_width <= 0)) {
-    return;
   }
 
   // TODO(crbug.com/40191831): Remove once identifiability study is removed.
@@ -1099,15 +1094,24 @@ void BaseRenderingContext2D::DrawTextInternal(
 
   // FIXME: Need to turn off font smoothing.
 
-  const CanvasRenderingContext2DState& state = GetState();
   const ComputedStyle* computed_style =
       canvas ? canvas->EnsureComputedStyle() : nullptr;
   CanvasRenderingContextHost* host = GetCanvasRenderingContextHost();
   TextDirection direction =
-      ToTextDirection(state.GetDirection(), host, computed_style);
+      ToTextDirection(GetState().GetDirection(), host, computed_style);
   bool is_rtl = direction == TextDirection::kRtl;
   bool bidi_override =
       computed_style ? IsOverride(computed_style->GetUnicodeBidi()) : false;
+
+  // Obtain `paint_canvas` and `state` after `AccessFont`,
+  // `EnsureComputedStyle`, and `ToTextDirection`, which can synchronously
+  // execute script and reset the canvas recorder or state stack.
+  // Abort if we don't have a paint canvas (e.g. the context was lost).
+  cc::PaintCanvas* paint_canvas = GetOrCreatePaintCanvas();
+  if (!paint_canvas) {
+    return;
+  }
+  const CanvasRenderingContext2DState& state = GetState();
 
   PlainTextPainter* text_painter = RuntimeEnabledFeatures::CanvasTextNgEnabled(
                                        host->GetTopExecutionContext())
