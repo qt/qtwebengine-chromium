@@ -10,6 +10,7 @@
 #include "third_party/blink/renderer/core/css/css_keyframe_rule.h"
 #include "third_party/blink/renderer/core/css/parser/css_parser_fast_paths.h"
 #include "third_party/blink/renderer/core/css/parser/css_parser_impl.h"
+#include "third_party/blink/renderer/core/css/parser/css_parser_local_context.h"
 #include "third_party/blink/renderer/core/css/parser/css_parser_token_stream.h"
 #include "third_party/blink/renderer/core/css/parser/css_property_parser.h"
 #include "third_party/blink/renderer/core/css/parser/css_selector_parser.h"
@@ -17,6 +18,7 @@
 #include "third_party/blink/renderer/core/css/parser/css_tokenizer.h"
 #include "third_party/blink/renderer/core/css/parser/css_variable_parser.h"
 #include "third_party/blink/renderer/core/css/properties/css_parsing_utils.h"
+#include "third_party/blink/renderer/core/css/properties/shorthands.h"
 #include "third_party/blink/renderer/core/css/style_color.h"
 #include "third_party/blink/renderer/core/css/style_rule.h"
 #include "third_party/blink/renderer/core/css/style_sheet_contents.h"
@@ -473,22 +475,28 @@ MutableCSSPropertyValueSet* CSSParser::ParseFont(
     const String& string,
     const ExecutionContext* execution_context) {
   DCHECK(ThreadState::Current()->IsAllocationAllowed());
-  auto* set =
-      MakeGarbageCollected<MutableCSSPropertyValueSet>(kHTMLStandardMode);
-  ParseValue(set, CSSPropertyID::kFont, string, true /* important */,
-             execution_context);
-  if (set->IsEmpty()) {
-    return nullptr;
+
+  LocalCSSParserContext context(execution_context
+                                    ? execution_context->GetSecureContextMode()
+                                    : SecureContextMode::kInsecureContext,
+                                static_cast<StyleSheetContents*>(nullptr),
+                                execution_context, kHTMLStandardMode);
+  const auto local_context =
+       CSSParserLocalContext().WithCurrentShorthand(CSSPropertyID::kFont);
+
+  CSSParserTokenStream stream(string);
+  HeapVector<CSSPropertyValue, 64> parsed_properties;
+
+  if (GetCSSPropertyFont().ParseShorthand(/*important=*/true, stream,
+                                          *context.GetParserContext(),
+                                          local_context, parsed_properties) &&
+      stream.AtEnd()) {
+    auto* set =
+        MakeGarbageCollected<MutableCSSPropertyValueSet>(kHTMLStandardMode);
+    set->AddParsedProperties(parsed_properties);
+    return set;
   }
-  const CSSValue* font_size =
-      set->GetPropertyCSSValue(CSSPropertyID::kFontSize);
-  if (!font_size || font_size->IsCSSWideKeyword()) {
-    return nullptr;
-  }
-  if (font_size->IsPendingSubstitutionValue()) {
-    return nullptr;
-  }
-  return set;
+  return nullptr;
 }
 
 }  // namespace blink
