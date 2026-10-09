@@ -280,7 +280,7 @@ class V8_NODISCARD BytecodeGenerator::ControlScope::DeferredCommands final {
   // Applies all recorded control-flow commands after the finally-block again.
   // This generates a dynamic dispatch on the token from the entry point.
   void ApplyDeferredCommands() {
-    if (deferred_.empty()) return;
+    if (deferred_.empty() || builder()->RemainderOfBlockIsDead()) return;
 
     BytecodeLabel fall_through_from_try_block;
 
@@ -2563,9 +2563,15 @@ bool IsSwitchOptimizable(SwitchStatement* stmt, SwitchInfo* info) {
 //   <out = 19, break>
 
 void BytecodeGenerator::VisitSwitchStatement(SwitchStatement* stmt) {
+  if (builder()->RemainderOfBlockIsDead()) return;
+
   // We need this scope because we visit for register values. We have to
   // maintain an execution result scope where registers can be allocated.
   ZonePtrList<CaseClause>* clauses = stmt->cases();
+
+  builder()->SetStatementPosition(stmt);
+  VisitForAccumulatorValue(stmt->tag());
+  if (builder()->RemainderOfBlockIsDead()) return;
 
   SwitchInfo info;
   BytecodeJumpTable* jump_table = nullptr;
@@ -2590,9 +2596,6 @@ void BytecodeGenerator::VisitSwitchStatement(SwitchStatement* stmt) {
   SwitchBuilder switch_builder(builder(), block_coverage_builder_, stmt,
                                n_comp_cases, jump_table);
   ControlScopeForBreakable scope(this, stmt, &switch_builder);
-  builder()->SetStatementPosition(stmt);
-
-  VisitForAccumulatorValue(stmt->tag());
 
   if (use_jump_table) {
     // Release temps so that they can be reused in clauses.
@@ -5807,6 +5810,7 @@ void BytecodeGenerator::BuildSuspendPoint(int position) {
 void BytecodeGenerator::VisitYield(Yield* expr) {
   builder()->SetExpressionPosition(expr);
   VisitForAccumulatorValue(expr->expression());
+  if (builder()->RemainderOfBlockIsDead()) return;
 
   bool is_async = IsAsyncGeneratorFunction(function_kind());
   // If this is not the first yield
@@ -5975,6 +5979,7 @@ void BytecodeGenerator::VisitYieldStar(YieldStar* expr) {
     RegisterAllocationScope register_scope(this);
     RegisterList iterator_and_input = register_allocator()->NewRegisterList(2);
     VisitForAccumulatorValue(expr->expression());
+    if (builder()->RemainderOfBlockIsDead()) return;
     IteratorRecord iterator = BuildGetIteratorRecord(
         register_allocator()->NewRegister() /* next method */,
         iterator_and_input[0], iterator_type);
