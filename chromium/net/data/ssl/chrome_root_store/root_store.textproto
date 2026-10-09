@@ -8,7 +8,7 @@
 
 # Version # should always be incremented up whenever this (or any pem file that
 # it references) is changed.
-version_major: 41
+version_major: 42
 
 # CN=Actalis Authentication Root CA, O=Actalis S.p.A./03358520967, L=Milan, C=IT
 # https://ssltest-a.actalis.it:8443
@@ -67,12 +67,13 @@ trust_anchors {
 
 # CN=Autoridad de Certificacion Firmaprofesional CIF A62634068, C=ES
 # https://publifirma.firmaprofesional.com/
-# Constraint date: Thurs, Aug 6, 2026 at 07:00:59 GMT+0000
+# Constraint date: Thurs, Aug 6, 2026 at 07:01:04 GMT+0000
 trust_anchors {
   sha256_hex: "57de0583efd2b26e0361da99da9df4648def7ee8441c3b728afa9bcde0f9b26a"
   ev_policy_oids: "2.23.140.1.1"
    constraints: {
-    sct_not_after_sec: 1785999659
+    sct_not_after_sec: 1785999664
+
   }
 }
 
