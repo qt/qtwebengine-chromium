@@ -380,7 +380,8 @@ class MODULES_EXPORT ServiceWorkerGlobalScope final
       const KURL& script_url,
       KURL* out_response_url,
       String* out_source_code,
-      std::unique_ptr<Vector<uint8_t>>* out_cached_meta_data) override;
+      std::unique_ptr<Vector<uint8_t>>* out_cached_meta_data,
+      TextEncoding* out_response_encoding) override;
 
   ResourceLoadScheduler::ThrottleOptionOverride GetThrottleOptionOverride()
       const override;
@@ -391,7 +392,8 @@ class MODULES_EXPORT ServiceWorkerGlobalScope final
       ExceptionState&) override;
   CachedMetadataHandler* CreateWorkerScriptCachedMetadataHandler(
       const KURL& script_url,
-      std::unique_ptr<Vector<uint8_t>> meta_data) override;
+      std::unique_ptr<Vector<uint8_t>> meta_data,
+      TextEncoding encoding) override;
   void ExceptionThrown(ErrorEvent*) override;
 
   void DidReceiveResponseForClassicScript(
@@ -412,7 +414,8 @@ class MODULES_EXPORT ServiceWorkerGlobalScope final
       const Vector<String>* response_origin_trial_tokens,
       const String& source_code,
       std::unique_ptr<Vector<uint8_t>> cached_meta_data,
-      const v8_inspector::V8StackTraceId&);
+      const v8_inspector::V8StackTraceId&,
+      TextEncoding encoding);
 
   // Counts the |script_size| and |cached_metadata_size| for UMA to measure the
   // number of scripts and the total bytes of scripts.

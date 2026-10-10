@@ -258,7 +258,8 @@ void SharedWorkerGlobalScope::DidFetchClassicScript(
   // response."
   EvaluateClassicScript(
       classic_script_loader->ResponseURL(), classic_script_loader->SourceText(),
-      classic_script_loader->ReleaseCachedMetadata(), stack_id);
+      classic_script_loader->ReleaseCachedMetadata(), stack_id,
+      classic_script_loader->GetScriptEncoding());
 }
 
 void SharedWorkerGlobalScope::ExceptionThrown(ErrorEvent* event) {

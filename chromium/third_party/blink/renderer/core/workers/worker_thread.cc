@@ -753,7 +753,8 @@ void WorkerThread::EvaluateClassicScriptOnWorkerThread(
   WorkerGlobalScope* global_scope = To<WorkerGlobalScope>(GlobalScope());
   CHECK(global_scope);
   global_scope->EvaluateClassicScript(script_url, std::move(source_code),
-                                      std::move(cached_meta_data), stack_id);
+                                      std::move(cached_meta_data), stack_id,
+                                      Utf8Encoding());
 }
 
 void WorkerThread::FetchAndRunClassicScriptOnWorkerThread(

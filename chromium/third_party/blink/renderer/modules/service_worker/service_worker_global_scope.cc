@@ -478,7 +478,8 @@ void ServiceWorkerGlobalScope::DidFetchClassicScript(
           : Vector<network::mojom::blink::ContentSecurityPolicyPtr>(),
       classic_script_loader->OriginTrialTokens(),
       classic_script_loader->SourceText(),
-      classic_script_loader->ReleaseCachedMetadata(), stack_id);
+      classic_script_loader->ReleaseCachedMetadata(), stack_id,
+      classic_script_loader->GetScriptEncoding());
 }
 
 // https://w3c.github.io/ServiceWorker/#run-service-worker-algorithm
@@ -555,7 +556,7 @@ void ServiceWorkerGlobalScope::LoadAndRunInstalledClassicScript(
                        script_data->GetContentSecurityPolicyResponseHeaders()),
                    script_data->CreateOriginTrialTokens().get(),
                    script_data->TakeSourceText(), script_data->TakeMetaData(),
-                   stack_id);
+                   stack_id, script_data->GetScriptEncoding());
 }
 
 // https://w3c.github.io/ServiceWorker/#run-service-worker-algorithm
@@ -566,7 +567,8 @@ void ServiceWorkerGlobalScope::RunClassicScript(
     const Vector<String>* response_origin_trial_tokens,
     const String& source_code,
     std::unique_ptr<Vector<uint8_t>> cached_meta_data,
-    const v8_inspector::V8StackTraceId& stack_id) {
+    const v8_inspector::V8StackTraceId& stack_id,
+    TextEncoding encoding) {
   // Step 4.5-4.11 are implemented in Initialize().
   Initialize(response_url, response_referrer_policy, std::move(response_csp),
              response_origin_trial_tokens);
@@ -575,7 +577,7 @@ void ServiceWorkerGlobalScope::RunClassicScript(
   // script script if script is a classic script, otherwise, the result of
   // running the module script script if script is a module script."
   EvaluateClassicScript(response_url, source_code, std::move(cached_meta_data),
-                        stack_id);
+                        stack_id, std::move(encoding));
 }
 
 ServiceWorkerClients* ServiceWorkerGlobalScope::clients() {
@@ -728,7 +730,8 @@ bool ServiceWorkerGlobalScope::FetchClassicImportedScript(
     const KURL& script_url,
     KURL* out_response_url,
     String* out_source_code,
-    std::unique_ptr<Vector<uint8_t>>* out_cached_meta_data) {
+    std::unique_ptr<Vector<uint8_t>>* out_cached_meta_data,
+    TextEncoding* out_response_encoding) {
   // InstalledScriptsManager is used only for starting installed service
   // workers.
   if (installed_scripts_manager_) {
@@ -742,13 +745,15 @@ bool ServiceWorkerGlobalScope::FetchClassicImportedScript(
     *out_response_url = script_url;
     *out_source_code = script_data->TakeSourceText();
     *out_cached_meta_data = script_data->TakeMetaData();
+    *out_response_encoding = script_data->GetScriptEncoding();
     // TODO(shimazu): Add appropriate probes for inspector.
     return true;
   }
   // This is a new service worker. Proceed with importing scripts and installing
   // them.
   return WorkerGlobalScope::FetchClassicImportedScript(
-      script_url, out_response_url, out_source_code, out_cached_meta_data);
+      script_url, out_response_url, out_source_code, out_cached_meta_data,
+      out_response_encoding);
 }
 
 ResourceLoadScheduler::ThrottleOptionOverride
@@ -872,9 +877,10 @@ void ServiceWorkerGlobalScope::importScripts(
 CachedMetadataHandler*
 ServiceWorkerGlobalScope::CreateWorkerScriptCachedMetadataHandler(
     const KURL& script_url,
-    std::unique_ptr<Vector<uint8_t>> meta_data) {
+    std::unique_ptr<Vector<uint8_t>> meta_data,
+    TextEncoding encoding) {
   return MakeGarbageCollected<ServiceWorkerScriptCachedMetadataHandler>(
-      this, script_url, std::move(meta_data));
+      this, script_url, std::move(meta_data), std::move(encoding));
 }
 
 void ServiceWorkerGlobalScope::ExceptionThrown(ErrorEvent* event) {

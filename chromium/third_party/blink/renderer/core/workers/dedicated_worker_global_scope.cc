@@ -500,7 +500,8 @@ void DedicatedWorkerGlobalScope::DidFetchClassicScript(
   // response."
   EvaluateClassicScript(
       classic_script_loader->ResponseURL(), classic_script_loader->SourceText(),
-      classic_script_loader->ReleaseCachedMetadata(), stack_id);
+      classic_script_loader->ReleaseCachedMetadata(), stack_id,
+      classic_script_loader->GetScriptEncoding());
 }
 
 int DedicatedWorkerGlobalScope::requestAnimationFrame(
