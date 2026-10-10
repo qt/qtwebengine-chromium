@@ -140,14 +140,14 @@ size_t ResizeObserver::GatherObservations(size_t deeper_than) {
   DCHECK(active_observations_.empty());
 
   size_t min_observed_depth = ResizeObserverController::kDepthBottom;
-  for (auto& observation : observations_) {
+  for (ResizeObservation* observation : observations_) {
     if (!observation->ObservationSizeOutOfSync() &&
         (deeper_than != 0 || !observation->FireOnEveryPaint())) {
       continue;
     }
     auto depth = observation->TargetDepth();
     if (depth > deeper_than) {
-      active_observations_.push_back(*observation);
+      active_observations_.push_back(observation);
       min_observed_depth = std::min(min_observed_depth, depth);
     } else {
       skipped_observations_ = true;
