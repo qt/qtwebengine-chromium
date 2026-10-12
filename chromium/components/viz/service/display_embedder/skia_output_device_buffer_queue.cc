@@ -59,81 +59,19 @@ NOINLINE void CheckForLoopFailuresBufferQueue() {
 
 namespace viz {
 
-class SkiaOutputDeviceBufferQueue::OverlayData {
- public:
-  OverlayData() = delete;
-  OverlayData(OverlayData&& other) = delete;
-
-  OverlayData(std::unique_ptr<gpu::OverlayImageRepresentation> representation,
-              std::unique_ptr<gpu::OverlayImageRepresentation::ScopedReadAccess>
-                  scoped_read_access,
-              bool is_root_render_pass)
-      : representation_(std::move(representation)),
-        scoped_read_access_(std::move(scoped_read_access)),
-        is_root_render_pass_(is_root_render_pass) {
-    DCHECK(representation_);
-    DCHECK(scoped_read_access_);
+void SkiaOutputDeviceBufferQueue::OverlayData::OnReuse() const
+{
+  // This is a proxy check for single-buffered overlay.
+  if (representation_->usage().Has(
+          gpu::SHARED_IMAGE_USAGE_CONCURRENT_READ_WRITE) &&
+      base::FeatureList::IsEnabled(
+          kRestartReadAccessForConcurrentReadWrite)) {
+    // If this is a single-buffered overlay, want to restart read access to
+    // pick up any new write fences for this frame.
+    scoped_read_access_.reset();
+    scoped_read_access_ = representation_->BeginScopedReadAccess();
   }
-
-  ~OverlayData() = default;
-
-  OverlayData& operator=(OverlayData&& other) = delete;
-
-  bool IsInUseByWindowServer() const {
-#if BUILDFLAG(IS_APPLE)
-    if (!scoped_read_access_) {
-      return false;
-    }
-    // The root render pass buffers are managed by SkiaRenderer so we don't care
-    // if they're in use by the window server.
-    if (is_root_render_pass_) {
-      return false;
-    }
-    return scoped_read_access_->IsInUseByWindowServer();
-#else
-    return false;
-#endif
-  }
-
-  void Ref() const { ++ref_; }
-
-  void Unref() const {
-    // Unref should only be called when there is more than one reference.
-    DCHECK_GT(ref_, 1);
-    --ref_;
-  }
-
-  void OnReuse() const {
-    // This is a proxy check for single-buffered overlay.
-    if (representation_->usage().Has(
-            gpu::SHARED_IMAGE_USAGE_CONCURRENT_READ_WRITE) &&
-        base::FeatureList::IsEnabled(
-            kRestartReadAccessForConcurrentReadWrite)) {
-      // If this is a single-buffered overlay, want to restart read access to
-      // pick up any new write fences for this frame.
-      scoped_read_access_.reset();
-      scoped_read_access_ = representation_->BeginScopedReadAccess();
-    }
-  }
-
-  void OnContextLost() const { representation_->OnContextLost(); }
-
-  bool unique() const { return ref_ == 1; }
-  const gpu::Mailbox& mailbox() const { return representation_->mailbox(); }
-  gpu::OverlayImageRepresentation::ScopedReadAccess* scoped_read_access()
-      const {
-    return scoped_read_access_.get();
-  }
-
-  bool IsRootRenderPass() const { return is_root_render_pass_; }
-
- private:
-  const std::unique_ptr<gpu::OverlayImageRepresentation> representation_;
-  mutable std::unique_ptr<gpu::OverlayImageRepresentation::ScopedReadAccess>
-      scoped_read_access_;
-  mutable int ref_ = 1;
-  const bool is_root_render_pass_ = false;
-};
+}
 
 SkiaOutputDeviceBufferQueue::SkiaOutputDeviceBufferQueue(
     std::unique_ptr<OutputPresenter> presenter,

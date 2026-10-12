@@ -767,7 +767,7 @@ ElementRareDataVector::EnsureOverscrollAreaTracker(Element* element) {
   return EnsureField<class OverscrollAreaTracker>(
       FieldId::kOverscrollAreaTracker, element);
 }
-OverscrollAreaTracker* ElementRareDataVector::OverscrollAreaTracker() const {
+OverscrollAreaTracker* ElementRareDataVector::GetOverscrollAreaTracker() const {
   return static_cast<class OverscrollAreaTracker*>(
       GetField(FieldId::kOverscrollAreaTracker));
 }

@@ -146,7 +146,7 @@ std::optional<T> ReadValue(dbus::MessageReader& reader) {
     }
     return std::move(variant);
   } else {
-    static_assert(false, "Unsupported type for D-Bus reading");
+    static_assert(std::is_same<T, T*>::value, "Unsupported type for D-Bus reading");
   }
 }
 

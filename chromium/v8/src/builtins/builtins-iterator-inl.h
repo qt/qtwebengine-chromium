@@ -272,10 +272,6 @@ MaybeDirectHandle<Object> IterableForEach(Isolate* isolate,
             return MaybeDirectHandle<Object>();                             \
           }                                                                 \
         } else {                                                            \
-          static_assert(std::numeric_limits<ctype>::max() <=                \
-                        std::numeric_limits<int>::max());                   \
-          static_assert(std::numeric_limits<ctype>::min() >=                \
-                        std::numeric_limits<int>::min());                   \
           if (!int_visitor(static_cast<int>(val))) {                        \
             return MaybeDirectHandle<Object>();                             \
           }                                                                 \

@@ -9,6 +9,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "base/debug/stack_trace.h"
 #include "base/functional/callback.h"
 #include "base/memory/weak_ptr.h"
 #include "base/task/sequenced_task_runner.h"
@@ -143,7 +144,64 @@ class VIZ_CLIENT_EXPORT ClientResourceProvider {
   size_t num_resources_for_testing() const;
 
  private:
-  struct ImportedResource;
+  //struct ImportedResource;
+  struct ImportedResource {
+    TransferableResource resource;
+    ReleaseCallback impl_release_callback;
+    ReleaseCallback main_thread_release_callback;
+    int exported_count = 0;
+    bool marked_for_deletion = false;
+
+    gpu::SyncToken returned_sync_token;
+    bool returned_lost = false;
+
+    ResourceEvictedCallback evicted_callback;
+
+  #if DCHECK_IS_ON()
+    base::debug::StackTrace stack_trace;
+  #endif
+
+    ImportedResource(ResourceId id,
+                     const TransferableResource& resource,
+                     ReleaseCallback impl_release_callback,
+                     ReleaseCallback main_thread_release_callback,
+                     ResourceEvictedCallback evicted_callback)
+        : resource(resource),
+          impl_release_callback(std::move(impl_release_callback)),
+          main_thread_release_callback(std::move(main_thread_release_callback)),
+          // If the resource is immediately deleted, it returns the same SyncToken
+          // it came with. The client may need to wait on that before deleting the
+          // backing or reusing it.
+          returned_sync_token(resource.sync_token()),
+          evicted_callback(std::move(evicted_callback)) {
+      // We should never have no ReleaseCallback.
+      CHECK(this->impl_release_callback || this->main_thread_release_callback);
+      // Replace the |resource| id with the local id from this
+      // ClientResourceProvider.
+      this->resource.id = id;
+    }
+    ~ImportedResource() = default;
+
+    ImportedResource(ImportedResource&&) = default;
+    ImportedResource& operator=(ImportedResource&&) = default;
+
+    void RunReleaseCallbacks() {
+      if (impl_release_callback) {
+        std::move(impl_release_callback).Run(returned_sync_token, returned_lost);
+      }
+      // We intend for `main_thread_release_callback` to be run on
+      // `main_tast_runner_`. This is done in
+      // `ClientResourceProvider::BatchMainReleaseCallbacks`, in response to
+      // resources being returned. However the client can also remove resources
+      // independently. Since we currently do not know when these removals would
+      // start/stop, we cannot batch them. Instead maintain previous behaviour
+      // of just calling these directly.
+      if (main_thread_release_callback) {
+        std::move(main_thread_release_callback)
+            .Run(returned_sync_token, returned_lost);
+      }
+    }
+  };
 
   // Validates the memory impact of resources that are locked once we are both
   // evicted and no longer visible. This will also notify clients of eviction

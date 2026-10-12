@@ -62,7 +62,8 @@ class BASE_EXPORT MemoryDumpProvider {
    public:
     // Purposely not explicit to avoid requiring callers to wrap their string.
     // Since this is consteval the value of `name` is validated at compile time.
-    consteval Name(const char* name) : static_name_(name) {
+    //consteval Name(const char* name) : static_name_(name) {
+    Name(const char* name) : static_name_(name) {
       if (!trace_event_metrics::IsValidMemoryDumpProviderName(
               histogram_name())) {
         // This will never actually invoke what's under NOTREACHED(), but
@@ -78,7 +79,7 @@ class BASE_EXPORT MemoryDumpProvider {
     constexpr std::string_view static_name() const { return static_name_; }
 
     // Return a variant of the name to use in histograms.
-    constexpr std::string histogram_name() const {
+    const std::string histogram_name() const {
       std::string name(static_name_);
       size_t pos = 0;
       while ((pos = name.find(':', pos)) != std::string::npos) {

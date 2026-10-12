@@ -13504,7 +13504,7 @@ OverscrollAreaTracker& Element::EnsureOverscrollAreaTracker() {
 
 OverscrollAreaTracker* Element::GetOverscrollAreaTracker() const {
   if (const ElementRareDataVector* data = RareData()) {
-    return data->OverscrollAreaTracker();
+    return data->GetOverscrollAreaTracker();
   }
   return nullptr;
 }

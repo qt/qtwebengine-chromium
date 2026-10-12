@@ -52,8 +52,10 @@ class CORE_EXPORT SVGPathStringSource {
 
   bool is_8bit_source_;
 
-  union {
-    base::span<const LChar> span8_{};
+  union Remaining {
+    Remaining() : span8_() {};
+
+    base::span<const LChar> span8_;
     base::span<const UChar> span16_;
   } remaining_;
 

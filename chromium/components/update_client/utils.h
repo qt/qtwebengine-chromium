@@ -117,10 +117,10 @@ bool CreateScopedTempDirectory(base::ScopedTempDir& dir);
 base::FilePath::StringType UTF8ToStringType(const std::string& utf8);
 std::string StringTypeToUTF8(const base::FilePath::StringType& stringtype);
 #else   // BUILDFLAG(IS_WIN)
-constexpr base::FilePath::StringType UTF8ToStringType(const std::string& utf8) {
+static inline base::FilePath::StringType UTF8ToStringType(const std::string& utf8) {
   return utf8;
 }
-constexpr std::string StringTypeToUTF8(
+static inline std::string StringTypeToUTF8(
     const base::FilePath::StringType& stringtype) {
   return stringtype;
 }

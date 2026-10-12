@@ -91,7 +91,7 @@ struct PipelineStatusTraits {
   static constexpr StatusGroupType Group() { return "PipelineStatus"; }
   static constexpr Codes OkEnumValue() { return PIPELINE_OK; }
 
-  static constexpr std::string ReadableCodeName(Codes code) {
+  static std::string ReadableCodeName(Codes code) {
 #define STRINGIFY_STATUS_CASE(status) \
   case status:                        \
     return #status

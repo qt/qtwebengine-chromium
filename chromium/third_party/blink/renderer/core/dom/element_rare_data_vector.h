@@ -566,7 +566,7 @@ class CORE_EXPORT ElementRareDataVector final
   std::pair<std::reference_wrapper<OverscrollAreaTracker>,
             ElementRareDataVector*>
   EnsureOverscrollAreaTracker(Element*);
-  OverscrollAreaTracker* OverscrollAreaTracker() const;
+  OverscrollAreaTracker* GetOverscrollAreaTracker() const;
 
   void Trace(Visitor*) const;
 

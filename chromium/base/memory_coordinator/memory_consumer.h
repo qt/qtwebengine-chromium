@@ -153,7 +153,7 @@ class BASE_EXPORT MemoryConsumerRegistration
   void OnBeforeMemoryConsumerRegistryDestroyed() override;
 
  private:
-  using PassKey = PassKey<MemoryConsumerRegistration>;
+  using PassKey = base::PassKey<MemoryConsumerRegistration>;
 
   std::string consumer_id_;
   raw_ptr<MemoryConsumer> consumer_;

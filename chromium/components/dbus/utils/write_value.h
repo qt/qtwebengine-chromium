@@ -103,7 +103,7 @@ void WriteValue(dbus::MessageWriter& writer, const T& value) {
   } else if constexpr (std::is_same_v<T, Variant>) {
     value.Write(writer);
   } else {
-    static_assert(false, "Unsupported type for D-Bus writing");
+    static_assert(std::is_same<T, T*>::value, "Unsupported type for D-Bus writing");
   }
 }
 

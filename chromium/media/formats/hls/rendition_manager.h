@@ -106,11 +106,11 @@ class MEDIA_EXPORT RenditionManager {
     return supported_streams_;
   }
 
-  sequence::Sequence<MediaTrack> auto GetSelectableVideoRenditions() const {
+  /*sequence::Sequence<MediaTrack>*/ auto GetSelectableVideoRenditions() const {
     return sequence::Reference(selectable_video_tracks_);
   }
 
-  sequence::Sequence<MediaTrack> auto GetSelectableAudioRenditions() const {
+  /*sequence::Sequence<MediaTrack>*/ auto GetSelectableAudioRenditions() const {
     if (supported_streams_ == CodecSupportType::kSupportedAudioOnly) {
       return sequence::Concat(sequence::EmptySinglet<const MediaTrack&>(),
                               selectable_audio_tracks_);
