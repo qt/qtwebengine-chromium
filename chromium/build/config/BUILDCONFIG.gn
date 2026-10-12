@@ -584,7 +584,7 @@ foreach(_target_type,
         public_deps = []
       }
 
-      if (is_clang) {
+      if (is_clang && !is_mingw) {
         # When clang is used, some target may use clang module. This dependency
         # is required for things to work, regardless of whether the libc++
         # module is used in this target or not.
@@ -595,7 +595,7 @@ foreach(_target_type,
       }
 
       if (!defined(use_libcxx_modules)) {
-        use_libcxx_modules = is_clang
+        use_libcxx_modules = is_clang && !is_mingw
       }
 
       if (filter_include(
@@ -705,7 +705,7 @@ foreach(_target_type,
         public_deps = []
       }
 
-      if (is_clang) {
+      if (is_clang && !is_mingw) {
         # When clang is used, some target may use clang module. This dependency
         # is required for things to work, regardless of whether the libc++
         # module is used in this target or not.
@@ -716,7 +716,7 @@ foreach(_target_type,
       }
 
       if (!defined(use_libcxx_modules)) {
-        use_libcxx_modules = is_clang
+        use_libcxx_modules = is_clang && !is_mingw
       }
 
       if (filter_include(
