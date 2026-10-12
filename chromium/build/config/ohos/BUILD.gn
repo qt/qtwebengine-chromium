@@ -42,8 +42,10 @@ config("compiler") {
   # Compiler target triple.
   if (current_cpu == "arm64") {
     abi_target = "aarch64-linux-ohos"
+  } else if (current_cpu == "x64") {
+    abi_target = "x86_64-linux-ohos"
   } else {
-    assert(false, "Only arm64 is wired up; add this current_cpu.")
+    assert(false, "Unknown CPU arch; add this current_cpu.")
   }
 
   cflags += [ "--target=$abi_target" ]
@@ -68,28 +70,34 @@ config("runtime_library") {
   llvm_version = "15.0.4"
 
   if (current_cpu == "arm64") {
-    dynamic_linker = "/lib/ld-musl-aarch64.so.1"
-
-    ldflags += [
-      "-Wl,-z,max-page-size=4096",
-      "-Wl,--hash-style=gnu",
-    ]
-
-    # musl sysroot libs + toolchain libs (libc++_static.a, libc++abi.a) +
-    # per-triple compiler-rt dir.
-    ldflags += [ "-L" + rebase_path("$ohos_sysroot/usr/lib/aarch64-linux-ohos",
-                                    root_build_dir) ]
-    ldflags +=
-        [ "-L" + rebase_path("$ohos_toolchain_root/lib/aarch64-linux-ohos",
-                             root_build_dir) ]
-    ldflags += [ "-L" + rebase_path(
-                     "$ohos_toolchain_root/lib/clang/$llvm_version/lib/aarch64-linux-ohos",
-                     root_build_dir) ]
-
-    libclang_rt_file = "$ohos_toolchain_root/lib/clang/$llvm_version/lib/aarch64-linux-ohos/libclang_rt.builtins.a"
+    _arch = "aarch64"
+  } else if (current_cpu == "x64") {
+    _arch = "x86_64"
   } else {
-    assert(false, "Only arm64 is wired up; add this current_cpu.")
+    assert(false, "Unknown CPU arch; add this current_cpu.")
   }
+
+  dynamic_linker = "/lib/ld-musl-${_arch}.so.1"
+
+  ldflags += [
+    "-Wl,-z,max-page-size=4096",
+    "-Wl,--hash-style=gnu",
+  ]
+
+  _triple = "${_arch}-linux-ohos"
+
+  # musl sysroot libs + toolchain libs (libc++_static.a, libc++abi.a) +
+  # per-triple compiler-rt dir.
+  ldflags += [ "-L" + rebase_path("$ohos_sysroot/usr/lib/$_triple",
+                                  root_build_dir) ]
+  ldflags +=
+      [ "-L" + rebase_path("$ohos_toolchain_root/lib/$_triple",
+                           root_build_dir) ]
+  ldflags += [ "-L" + rebase_path(
+                   "$ohos_toolchain_root/lib/clang/$llvm_version/lib/$_triple",
+                   root_build_dir) ]
+
+  libclang_rt_file = "$ohos_toolchain_root/lib/clang/$llvm_version/lib/$_triple/libclang_rt.builtins.a"
 
   ldflags += [ "-Wl,--dynamic-linker,$dynamic_linker" ]
 
