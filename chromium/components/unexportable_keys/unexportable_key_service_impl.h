@@ -110,10 +110,18 @@ class COMPONENT_EXPORT(UNEXPORTABLE_KEYS) UnexportableKeyServiceImpl
     using is_transparent = void;
   };
 
+  struct WrappedKeyAndTagViewEqual {
+    using is_transparent = void;
+    bool operator()(const WrappedKeyAndTag& lsh,
+                    const WrappedKeyAndTagView& rsh) const {
+      return std::ranges::equal(lsh.first, rsh.first) && lsh.second == rsh.second;
+    }
+  };
+
   using WrappedKeyAndTagMap = absl::flat_hash_map<WrappedKeyAndTag,
                                                   MaybePendingUnexportableKeyId,
                                                   WrappedKeyAndTagViewHash,
-                                                  std::ranges::equal_to>;
+                                                  WrappedKeyAndTagViewEqual>;
   using KeyIdMap =
       absl::flat_hash_map<UnexportableKeyId,
                           scoped_refptr<RefCountedUnexportableSigningKey>>;

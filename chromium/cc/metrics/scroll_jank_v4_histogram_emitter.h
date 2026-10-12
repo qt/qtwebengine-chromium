@@ -102,6 +102,8 @@ class CC_EXPORT ScrollJankV4HistogramEmitter {
   };
 
   struct JankDataFixedWindow {
+    JankDataFixedWindow() {}
+
     // Total number of frames that Chrome presented.
     int presented_frames = 0;
 
@@ -129,6 +131,8 @@ class CC_EXPORT ScrollJankV4HistogramEmitter {
   };
 
   struct JankDataPerScroll {
+    JankDataPerScroll() {}
+
     // Total number of frames that Chrome presented.
     int presented_frames = 0;
 

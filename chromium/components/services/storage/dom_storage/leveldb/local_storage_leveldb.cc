@@ -71,7 +71,7 @@ std::optional<DomStorageDatabase::MapMetadata> TryParseWriteMetadata(
       },
       .last_modified{
           base::Time::FromInternalValue(write_metadata.last_modified())},
-      .total_size{write_metadata.size_bytes()},
+      .total_size = base::ByteSize(write_metadata.size_bytes()),
   };
 }
 

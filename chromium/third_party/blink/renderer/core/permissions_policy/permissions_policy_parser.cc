@@ -651,14 +651,13 @@ PermissionsPolicyParser::ParseIsolatedAppPermissionsPolicy(
 
   Node node = {
       .type = network::OriginWithPossibleWildcards::NodeType::kHeader,
-      .declarations{
+      .declarations = blink::Vector<Declaration>(
           isolated_app_policy, [](const auto& entry) -> Declaration {
             return {
                 .feature_name = entry.feature,
-                // can't use = here because the constructor we need is explicit
-                .allowlist{entry.allowed_origins},
+                .allowlist = blink::Vector<blink::String>(entry.allowed_origins),
             };
-          }}};
+          })};
 
   return CombinePermissionsPolicies(
       ParsePolicyFromNode(node, origin, permissions_policy_logger,
