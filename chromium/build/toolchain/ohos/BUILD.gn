@@ -47,3 +47,9 @@ ohos_clang_toolchain("ohos_clang_arm64") {
     current_cpu = "arm64"
   }
 }
+
+ohos_clang_toolchain("ohos_clang_x64") {
+  toolchain_args = {
+    current_cpu = "x64"
+  }
+}
