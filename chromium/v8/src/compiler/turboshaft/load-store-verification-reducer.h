@@ -92,9 +92,13 @@ class StoreLoadVerificationReducer : public Next {
         // are any restrictions on allowed registers.
 
         if (v8_flags.turboshaft_enable_debug_features) {
+#if __has_include(<format>)
           __ DebugPrint(std::format("{}{}{}{}", "Wrong representation in ",
                                     load_or_store,
                                     " for value with id=", value.id()));
+#else
+          __ DebugPrint("StoreLoadVerificationReducer failed: wrong representation");
+#endif
         }
         // This phase runs after MachineLoweringReducer, so we can't use
         // `__ RunitmeAbort`, but instead we do a manual runtime call to Abort.

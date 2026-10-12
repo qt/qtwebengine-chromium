@@ -25,7 +25,7 @@ template <typename T>
 struct ValueConverter {
   static base::expected<T, ProtoStatus> TryConvertFromString(
       std::string_view string) {
-    static_assert(false, "No specialization is defined for type T");
+    static_assert(std::is_void_v<T> && !std::is_void_v<T>, "No specialization is defined for type T");
   }
 };
 

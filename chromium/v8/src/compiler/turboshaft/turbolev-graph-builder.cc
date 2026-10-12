@@ -5940,10 +5940,14 @@ class GraphBuildingNodeProcessor {
 #ifdef DEBUG
     if (v8_flags.turboshaft_enable_debug_features) {
       __ DebugPrint(
+#if __has_include(<format>)
           std::format(
               "n{}: AssertRangeInt32: expected range [{}, {}], got value ",
               maglev::GetCurrentGraphLabeller()->NodeId(node),
               *node->range().min(), *node->range().max()),
+#else
+          "AssertRangeInt32 failed: range check violation ",
+#endif
           value);
     }
 #endif  // DEBUG
@@ -5974,11 +5978,15 @@ class GraphBuildingNodeProcessor {
 #ifdef DEBUG
     if (v8_flags.turboshaft_enable_debug_features) {
       __ DebugPrint(
+#if __has_include(<format>)
           std::format(
               "n{}: AssertRangeFloat64: expected range [{}, {}], got value ",
               maglev::GetCurrentGraphLabeller()->NodeId(node),
               node->range().min() ? *node->range().min() : -INFINITY,
               node->range().max() ? *node->range().max() : +INFINITY),
+#else
+          "AssertRangeFloat64 failed: range check violation ",
+#endif
           value);
     }
 #endif  // DEBUG

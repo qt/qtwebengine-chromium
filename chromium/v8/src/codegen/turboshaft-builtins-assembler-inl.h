@@ -1182,7 +1182,7 @@ class BuiltinsReducer : public Next {
         compiler::CallDescriptor::kNoFlags, compiler::Operator::kNoProperties,
         call_mode);
 
-    return __ AssemblerOpInterface::Call(
+    return typename Next::AssemblerOpInterface::Call(
         target, OptionalV<compiler::turboshaft::LazyFrameState>::Nullopt(),
         base::VectorOf(inputs),
         compiler::turboshaft::TSCallDescriptor::Create(

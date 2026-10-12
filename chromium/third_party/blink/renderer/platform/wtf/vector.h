@@ -184,7 +184,7 @@ template <typename T, typename Allocator>
 struct VectorTypeOperations {
   STATIC_ONLY(VectorTypeOperations);
 
-  using ConstructTraits = ConstructTraits<T, VectorTraits<T>, Allocator>;
+  using ConstructTraits1 = ConstructTraits<T, VectorTraits<T>, Allocator>;
 
   ALWAYS_INLINE static void Destruct(T* begin, T* end) {
     if constexpr (!VectorTraits<T>::kNeedsDestruction) {
@@ -222,7 +222,7 @@ struct VectorTypeOperations {
       }
     } else {
       UNSAFE_TODO(for (T* cur = begin; cur != end;
-                       ++cur) { ConstructTraits::Construct(cur); });
+                       ++cur) { ConstructTraits1::Construct(cur); });
       // We assume that default construction using T() doesn't set interesting
       // pointers. Otherwise, we'd need `NotifyNewElements` if `origin` is
       // `kRegularModification`.
@@ -248,7 +248,7 @@ struct VectorTypeOperations {
       }
     } else {
       UNSAFE_TODO(for (T* s = src, *d = dst; s != src_end; ++s, ++d) {
-        ConstructTraits::Construct(d, std::move(*s));
+        ConstructTraits1::Construct(d, std::move(*s));
         s->~T();
       });
     }
@@ -260,7 +260,7 @@ struct VectorTypeOperations {
         base::span<T> UNSAFE_BUFFERS(
             elements(base::unchecked, dst,
                      static_cast<wtf_size_t>(std::distance(src, src_end))));
-        ConstructTraits::NotifyNewElements(elements);
+        ConstructTraits1::NotifyNewElements(elements);
       }
     }
   }
@@ -305,7 +305,7 @@ struct VectorTypeOperations {
         T* s = src_end - 1;
         T* d = dst + (s - src);
         for (; s >= src; --s, --d) {
-          ConstructTraits::Construct(d, std::move(*s));
+          ConstructTraits1::Construct(d, std::move(*s));
           s->~T();
         }
       });
@@ -318,7 +318,7 @@ struct VectorTypeOperations {
         base::span<T> UNSAFE_BUFFERS(
             elements(base::unchecked, dst,
                      static_cast<wtf_size_t>(std::distance(src, src_end))));
-        ConstructTraits::NotifyNewElements(elements);
+        ConstructTraits1::NotifyNewElements(elements);
       }
     }
   }
@@ -343,11 +343,11 @@ struct VectorTypeOperations {
           // SAFETY: TODO(359904345): VectorTypeOperations should operate on
           // spans.
           base::span<T> UNSAFE_BUFFERS(elements(base::unchecked, src, len));
-          ConstructTraits::NotifyNewElements(elements);
+          ConstructTraits1::NotifyNewElements(elements);
         }
         // SAFETY: TODO(359904345): VectorTypeOperations should operate on spans.
         base::span<T> UNSAFE_BUFFERS(elements(base::unchecked, dst, len));
-        ConstructTraits::NotifyNewElements(elements);
+        ConstructTraits1::NotifyNewElements(elements);
       } else {
         std::swap_ranges(reinterpret_cast<char*>(src),
                          reinterpret_cast<char*>(src_end),
@@ -373,7 +373,7 @@ struct VectorTypeOperations {
           // spans.
           base::span<T> UNSAFE_BUFFERS(elements(
               dst, static_cast<wtf_size_t>(std::distance(src, src_end))));
-          ConstructTraits::NotifyNewElements(elements);
+          ConstructTraits1::NotifyNewElements(elements);
         }
       } else {
         // NOLINTNEXTLINE(bugprone-undefined-memory-manipulation)
@@ -412,7 +412,7 @@ struct VectorTypeOperations {
     size_t size = 0;
     T* dst_begin = dst;
     UNSAFE_TODO(while (src != src_end) {
-      ConstructTraits::Construct(
+      ConstructTraits1::Construct(
           dst, std::invoke(proj, std::forward<decltype(*src)>(*src)));
       ++dst;
       ++src;
@@ -425,7 +425,7 @@ struct VectorTypeOperations {
         // spans.
         base::span<T> UNSAFE_BUFFERS(
             elements(base::unchecked, dst_begin, size));
-        ConstructTraits::NotifyNewElements(elements);
+        ConstructTraits1::NotifyNewElements(elements);
       }
     }
   }
@@ -444,7 +444,7 @@ struct VectorTypeOperations {
       UNSAFE_TODO(memset(dst, static_cast<unsigned char>(val), dst_end - dst));
     } else {
       UNSAFE_TODO(for (T* current = dst; current != dst_end; ++current) {
-        ConstructTraits::Construct(current, T(val));
+        ConstructTraits1::Construct(current, T(val));
       });
       if constexpr (IsTraceable<T>::value) {
         static_assert(Allocator::kIsGarbageCollected);
@@ -454,7 +454,7 @@ struct VectorTypeOperations {
           base::span<T> UNSAFE_BUFFERS(
               elements(base::unchecked, dst,
                        static_cast<wtf_size_t>(std::distance(dst, dst_end))));
-          ConstructTraits::NotifyNewElements(elements);
+          ConstructTraits1::NotifyNewElements(elements);
         }
       }
     }

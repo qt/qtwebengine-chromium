@@ -58,7 +58,7 @@ class MEDIA_EXPORT RenditionGroup : public base::RefCounted<RenditionGroup> {
     const std::optional<RenditionTrack> GetRenditionById(
         const MediaTrack::Id&) const;
 
-    sequence::Sequence<MediaTrack> auto GetTracks() const {
+    /*sequence::Sequence<MediaTrack>*/ auto GetTracks() const {
       if (group_->default_rendition_.has_value()) {
         return sequence::Concat(sequence::EmptySinglet<const MediaTrack&>(),
                                 std::as_const(group_->tracks_));

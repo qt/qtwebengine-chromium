@@ -800,7 +800,7 @@ NodeRareData::EnsureOverscrollAreaTracker(Element* element) {
   return EnsureField<class OverscrollAreaTracker>(
       FieldId::kOverscrollAreaTracker, element);
 }
-OverscrollAreaTracker* NodeRareData::OverscrollAreaTracker() const {
+OverscrollAreaTracker* NodeRareData::GetOverscrollAreaTracker() const {
   return static_cast<class OverscrollAreaTracker*>(
       GetField(FieldId::kOverscrollAreaTracker));
 }

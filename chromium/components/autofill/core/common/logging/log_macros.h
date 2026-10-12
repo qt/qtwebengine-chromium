@@ -50,7 +50,7 @@ struct LoggerTraits {
   // Returns true iff logging to should be enabled.
   static bool active(const T& logger) {
     static_assert(
-        false,
+        std::is_void_v<T> && !std::is_void_v<T>,
         "Traits for this logger aren't visible. Are you missing an include of "
         "log_manager.h and/or log_buffer.h?");
     return false;
@@ -60,7 +60,7 @@ struct LoggerTraits {
   // operator<<().
   static Null get_stream(const T& logger) {
     static_assert(
-        false,
+        std::is_void_v<T> && !std::is_void_v<T>,
         "Traits for this logger aren't visible. Are you missing an include of "
         "log_manager.h and/or log_buffer.h?");
     return {};

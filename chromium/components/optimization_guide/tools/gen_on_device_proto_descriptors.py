@@ -348,7 +348,7 @@ def GenerateEnumDescriptors(out: IO[str],
 
     out.write('template <typename T>\n')
     out.write('struct EnumTraits {\n')
-    out.write('  static_assert(false, "EnumTraits not defined for type T");\n')
+    out.write('  static_assert(std::is_void_v<T> && !std::is_void_v<T>, "EnumTraits not defined for type T");\n')
     out.write('};\n')
     out.write('\n')
 

@@ -538,7 +538,7 @@ class CORE_EXPORT NodeRareData final : public GarbageCollected<NodeRareData> {
 
   std::pair<std::reference_wrapper<OverscrollAreaTracker>, NodeRareData*>
   EnsureOverscrollAreaTracker(Element*);
-  OverscrollAreaTracker* OverscrollAreaTracker() const;
+  OverscrollAreaTracker* GetOverscrollAreaTracker() const;
 
   void Trace(Visitor*) const;
 
