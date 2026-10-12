@@ -59,17 +59,13 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) CopyOrMoveHookDelegateComposite
 
   void OnEndRemoveSource(const FileSystemURL& source_url) override;
 
+  explicit CopyOrMoveHookDelegateComposite(
+    std::unique_ptr<CopyOrMoveHookDelegate> delegate);
+
  private:
   friend class CopyOrMoveHookDelegateCompositeTest;
 
-  explicit CopyOrMoveHookDelegateComposite(
-      std::unique_ptr<CopyOrMoveHookDelegate> delegate);
-
   void Add(std::unique_ptr<CopyOrMoveHookDelegate> delegate);
-
-  friend std::unique_ptr<CopyOrMoveHookDelegateComposite>
-  std::make_unique<CopyOrMoveHookDelegateComposite>(
-      std::unique_ptr<CopyOrMoveHookDelegate>&&);
 
   std::vector<std::unique_ptr<CopyOrMoveHookDelegate>> delegates_;
 };
