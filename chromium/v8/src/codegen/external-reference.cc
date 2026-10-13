@@ -1267,16 +1267,14 @@ FUNCTION_REFERENCE(libc_memset_function, libc_memset)
 
 void relaxed_memcpy(volatile base::Atomic8* dest,
                     volatile const base::Atomic8* src, size_t n) {
-  base::Relaxed_Memcpy(const_cast<base::Atomic8*>(dest),
-                       const_cast<const base::Atomic8*>(src), n);
+  base::Relaxed_Memcpy(dest, src, n);
 }
 
 FUNCTION_REFERENCE(relaxed_memcpy_function, relaxed_memcpy)
 
 void relaxed_memmove(volatile base::Atomic8* dest,
                      volatile const base::Atomic8* src, size_t n) {
-  base::Relaxed_Memmove(const_cast<base::Atomic8*>(dest),
-                        const_cast<const base::Atomic8*>(src), n);
+  base::Relaxed_Memmove(dest, src, n);
 }
 
 FUNCTION_REFERENCE(relaxed_memmove_function, relaxed_memmove)
