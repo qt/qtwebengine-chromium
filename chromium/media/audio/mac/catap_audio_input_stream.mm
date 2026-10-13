@@ -872,7 +872,7 @@ void CatapAudioInputStreamSource::OnCatapSample(
     // directly into the audio bus.
     audio_bus_->FromInterleaved<Float32SampleTypeTraits>(data, frames);
   }
-  sink_->OnData(audio_bus_.get(), capture_time, kMaxVolume,
+  sink_->OnData(audio_bus_.get(), capture_time, kMaxVolumeCAIS,
                 glitch_helper_.ConsumeGlitchInfo());
 
   // Stores the time of the next expected audio callback. This is used as a
