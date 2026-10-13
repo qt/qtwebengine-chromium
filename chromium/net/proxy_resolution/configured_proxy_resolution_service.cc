@@ -1243,6 +1243,7 @@ int ConfiguredProxyResolutionService::DidFinishResolvingProxy(
           NetLogEventType::PROXY_RESOLUTION_SERVICE_DEPRIORITIZED_BAD_PROXIES,
           [&] { return NetLogFinishedResolvingProxyParams(result); });
     }
+    net_log.EndEvent(NetLogEventType::PROXY_RESOLUTION_SERVICE);
   } else {
     net_log.AddEventWithNetErrorCode(
         NetLogEventType::PROXY_RESOLUTION_SERVICE_RESOLVED_PROXY_LIST,
@@ -1268,6 +1269,10 @@ int ConfiguredProxyResolutionService::DidFinishResolvingProxy(
     } else {
       result_code = ERR_MANDATORY_PROXY_CONFIGURATION_FAILED;
     }
+    // End the NetLog event before resetting the config, as synchronous
+    // re-initialization can destroy the completing request (and `net_log`).
+    net_log.EndEvent(NetLogEventType::PROXY_RESOLUTION_SERVICE);
+
     if (reset_config) {
       ResetProxyConfig(false);
       // If the ProxyResolver crashed, force it to be re-initialized for the
@@ -1279,7 +1284,6 @@ int ConfiguredProxyResolutionService::DidFinishResolvingProxy(
     }
   }
 
-  net_log.EndEvent(NetLogEventType::PROXY_RESOLUTION_SERVICE);
   return result_code;
 }
 

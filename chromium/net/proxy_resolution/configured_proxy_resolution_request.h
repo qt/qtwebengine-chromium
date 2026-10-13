@@ -9,6 +9,7 @@
 #include <string>
 
 #include "base/memory/raw_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
 #include "net/base/completion_once_callback.h"
 #include "net/base/network_anonymization_key.h"
@@ -93,6 +94,8 @@ class ConfiguredProxyResolutionRequest final : public ProxyResolutionRequest {
   // Time when the request was created.  Stored here rather than in |results_|
   // because the time in |results_| will be cleared.
   base::TimeTicks creation_time_;
+
+  base::WeakPtrFactory<ConfiguredProxyResolutionRequest> weak_factory_{this}; 
 };
 
 }  // namespace net
