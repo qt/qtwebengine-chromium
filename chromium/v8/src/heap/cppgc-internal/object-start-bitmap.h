@@ -174,8 +174,8 @@ void ObjectStartBitmap::store(size_t cell_index, uint8_t value) {
   // reordered before the setting of the mark bit, which may lead to the
   // concurrent marker missing the right object (because the bit is not yet
   // propagated).
-  std::atomic_ref<uint8_t>(object_start_bit_map_[cell_index])
-      .exchange(value, std::memory_order_acq_rel);
+  v8::base::AsAtomicPtr(&object_start_bit_map_[cell_index])
+      ->exchange(value, std::memory_order_acq_rel);
 }
 
 template <AccessMode mode>
@@ -183,9 +183,8 @@ uint8_t ObjectStartBitmap::load(size_t cell_index) const {
   if (mode == AccessMode::kNonAtomic) {
     return object_start_bit_map_[cell_index];
   }
-  return std::atomic_ref<uint8_t>(
-             const_cast<uint8_t&>(object_start_bit_map_[cell_index]))
-      .load(std::memory_order_acquire);
+  return v8::base::AsAtomicPtr(&object_start_bit_map_[cell_index])
+      ->load(std::memory_order_acquire);
 }
 
 void ObjectStartBitmap::ObjectStartIndexAndBit(ConstAddress header_address,

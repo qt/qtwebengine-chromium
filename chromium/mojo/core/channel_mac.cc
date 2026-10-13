@@ -6,7 +6,6 @@
 
 #include <mach/mach.h>
 #include <string.h>
-#include <sys/fileport.h>
 #include <unistd.h>
 
 #include <algorithm>
@@ -34,7 +33,13 @@
 #include "base/trace_event/typed_macros.h"
 #include "mojo/core/ipcz_driver/envelope.h"
 
-namespace mojo::core {
+extern "C" {
+kern_return_t fileport_makeport(int fd, mach_port_t*);
+int fileport_makefd(mach_port_t);
+}  // extern "C"
+
+namespace mojo {
+namespace core {
 
 namespace {
 
@@ -800,4 +805,5 @@ scoped_refptr<Channel> Channel::Create(
                         io_task_runner);
 }
 
-}  // namespace mojo::core
+}  // namespace core
+}  // namespace mojo
