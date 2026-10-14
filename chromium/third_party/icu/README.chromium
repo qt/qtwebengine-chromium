@@ -304,3 +304,9 @@ D. Local Modifications
     patches/unnecessary_virtual_specifier.patch
   - https://issues.chromium.org/issues/403236787
   - https://patch-diff.githubusercontent.com/raw/unicode-org/icu/pull/3489.diff
+
+19. Fix signed int32_t overflow in CharString.
+  - patches/charstr.patch
+  - https://unicode-org.atlassian.net/browse/ICU-23537
+  - https://github.com/unicode-org/icu/pull/4243
+  - https://crbug.com/565133743
