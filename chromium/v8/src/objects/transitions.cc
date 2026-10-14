@@ -414,8 +414,8 @@ bool TransitionsAccessor::PutPrototypeTransition(Isolate* isolate,
 
   const int header = TransitionArray::kProtoTransitionHeaderSize;
 
-  DirectHandle<WeakFixedArray> cache(GetPrototypeTransitions(isolate, *map),
-                                     isolate);
+  DirectHandle<WeakFixedArray> cache(
+      TransitionsAccessor(isolate, *map).GetPrototypeTransitions(), isolate);
   int capacity = cache->length() - header;
   int transitions = TransitionArray::NumberOfPrototypeTransitions(*cache) + 1;
 
@@ -455,11 +455,13 @@ bool TransitionsAccessor::PutPrototypeTransition(Isolate* isolate,
   return true;
 }
 
-// static
 std::optional<Tagged<Map>> TransitionsAccessor::GetPrototypeTransition(
-    Isolate* isolate, Tagged<Map> map, Tagged<Object> prototype) {
+    Tagged<Object> prototype) {
   DisallowGarbageCollection no_gc;
-  Tagged<WeakFixedArray> cache = GetPrototypeTransitions(isolate, map);
+  if (encoding() != kFullTransitionArray) return {};
+  base::MutexGuardIf guard(isolate_->full_transition_array_access(),
+                           concurrent_access_);
+  Tagged<WeakFixedArray> cache = GetPrototypeTransitions();
   int length = TransitionArray::NumberOfPrototypeTransitions(cache);
   for (int i = 0; i < length; i++) {
     Tagged<MaybeObject> target =
@@ -476,20 +478,11 @@ std::optional<Tagged<Map>> TransitionsAccessor::GetPrototypeTransition(
   return {};
 }
 
-// static
-Tagged<WeakFixedArray> TransitionsAccessor::GetPrototypeTransitions(
-    Isolate* isolate, Tagged<Map> map) {
-  Tagged<MaybeObject> raw_transitions =
-      map->raw_transitions(isolate, kAcquireLoad);
-  if (GetEncoding(isolate, raw_transitions) != kFullTransitionArray) {
-    return ReadOnlyRoots(isolate).empty_weak_fixed_array();
+Tagged<WeakFixedArray> TransitionsAccessor::GetPrototypeTransitions() {
+  if (!HasPrototypeTransitions()) {
+    return ReadOnlyRoots(isolate_).empty_weak_fixed_array();
   }
-  Tagged<TransitionArray> transition_array =
-      GetTransitionArray(isolate, raw_transitions);
-  if (!transition_array->HasPrototypeTransitions()) {
-    return ReadOnlyRoots(isolate).empty_weak_fixed_array();
-  }
-  return transition_array->GetPrototypeTransitions();
+  return transitions()->GetPrototypeTransitions();
 }
 
 // static
