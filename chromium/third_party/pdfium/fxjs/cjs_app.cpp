@@ -288,7 +288,10 @@ CJS_Result CJS_App::beep(CJS_Runtime* pRuntime,
     type = pRuntime->ToInt32(params[0]);
   }
 
+  pRuntime->BeginBlock();
   pRuntime->GetFormFillEnv()->JS_appBeep(type);
+  pRuntime->EndBlock();
+
   return CJS_Result::Success();
 }
 
@@ -585,8 +588,11 @@ CJS_Result CJS_App::response(CJS_Runtime* pRuntime,
   static constexpr int kMaxWideChars = 1024;
   static constexpr int kMaxBytes = kMaxWideChars * sizeof(uint16_t);
   auto buffer = FixedSizeDataVector<uint8_t>::Zeroed(kMaxBytes);
+
+  pRuntime->BeginBlock();
   int byte_length = pRuntime->GetFormFillEnv()->JS_appResponse(
       swQuestion, swTitle, swDefault, swLabel, bPassword, buffer.span());
+  pRuntime->EndBlock();
 
   if (byte_length < 0 || byte_length > kMaxBytes) {
     return CJS_Result::Failure(JSMessage::kParamTooLongError);
