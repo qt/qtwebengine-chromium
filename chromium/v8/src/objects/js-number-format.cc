@@ -1488,6 +1488,13 @@ MaybeDirectHandle<JSNumberFormat> JSNumberFormat::New(
 
 namespace {
 
+// TODO(567827593): Remove once fixed in ICU.
+constexpr uint32_t kMaxIcuFormattedDigits = 999'000;
+
+bool ExceedsMaxIcuFormattedDigits(DirectHandle<String> string) {
+  return string->length() > kMaxIcuFormattedDigits;
+}
+
 template <typename StringHandle>
 int32_t SignedStringLength(StringHandle string) {
   uint32_t unsigned_length = string->length();
@@ -1501,6 +1508,10 @@ icu::number::FormattedNumber FormatDecimalString(
     const icu::number::LocalizedNumberFormatter& number_format,
     Handle<String> string, UErrorCode& status) {
   string = String::Flatten(isolate, string);
+  if (ExceedsMaxIcuFormattedDigits(string)) {
+    status = U_ILLEGAL_ARGUMENT_ERROR;
+    return {};
+  }
   DisallowGarbageCollection no_gc;
   const String::FlatContent& flat = string->GetFlatContent(no_gc);
   int32_t length = SignedStringLength(string);
@@ -1542,6 +1553,9 @@ Maybe<icu::number::FormattedNumber> IcuFormatNumber(
     Handle<String> big_int_string;
     ASSIGN_RETURN_ON_EXCEPTION(isolate, big_int_string,
                                BigInt::ToString(isolate, big_int));
+    if (ExceedsMaxIcuFormattedDigits(big_int_string)) {
+      THROW_NEW_ERROR(isolate, NewTypeError(MessageTemplate::kIcuError));
+    }
     big_int_string = String::Flatten(isolate, big_int_string);
     DisallowGarbageCollection no_gc;
     const String::FlatContent& flat = big_int_string->GetFlatContent(no_gc);
@@ -1556,6 +1570,9 @@ Maybe<icu::number::FormattedNumber> IcuFormatNumber(
       // https://github.com/tc39/proposal-intl-numberformat-v3/pull/82
       DirectHandle<String> string =
           String::Flatten(isolate, Cast<String>(numeric_obj));
+      if (ExceedsMaxIcuFormattedDigits(string)) {
+        THROW_NEW_ERROR(isolate, NewTypeError(MessageTemplate::kIcuError));
+      }
       DisallowGarbageCollection no_gc;
       const String::FlatContent& flat = string->GetFlatContent(no_gc);
       int32_t length = SignedStringLength(string);
@@ -1777,6 +1794,9 @@ Maybe<icu::Formattable> IntlMathematicalValue::ToFormattable(
   }
   DirectHandle<String> string;
   ASSIGN_RETURN_ON_EXCEPTION(isolate, string, ToString(isolate));
+  if (ExceedsMaxIcuFormattedDigits(string)) {
+    THROW_NEW_ERROR(isolate, NewTypeError(MessageTemplate::kIcuError));
+  }
   UErrorCode status = U_ZERO_ERROR;
   {
     DisallowGarbageCollection no_gc;
