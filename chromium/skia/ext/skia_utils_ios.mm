@@ -51,8 +51,7 @@ SkBitmap CGImageToSkBitmap(CGImageRef image, CGSize size, bool is_opaque) {
       CGColorSpaceCreateDeviceRGB());
   base::apple::ScopedCFTypeRef<CGContextRef> context(CGBitmapContextCreate(
       data, size.width, size.height, 8, size.width * 4, color_space.get(),
-      static_cast<CGBitmapInfo>(kCGImageAlphaPremultipliedFirst) |
-          kCGImageByteOrder32Host));
+      uint32_t{kCGImageAlphaPremultipliedFirst} | kCGBitmapByteOrder32Host));
 #else
 #error We require that Skia's and CoreGraphics's recommended \
        image memory layout match.
