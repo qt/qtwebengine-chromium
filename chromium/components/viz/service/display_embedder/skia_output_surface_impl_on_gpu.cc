@@ -277,6 +277,14 @@ std::unique_ptr<SkiaOutputSurfaceImplOnGpu> SkiaOutputSurfaceImplOnGpu::Create(
     return nullptr;
   }
 
+  // |shared_gpu_deps| keeps the SharedContextState it got when the display
+  // compositor was created, which may have failed even if getting it above
+  // succeeded. The constructor dereferences it via memory_tracker().
+  if (!shared_gpu_deps || !shared_gpu_deps->shared_context_state()) {
+    LOG(ERROR) << "No shared context state for the display compositor.";
+    return nullptr;
+  }
+
   // Even with Vulkan/Dawn compositing, the SharedImageFactory constructor
   // always initializes a GL-backed SharedImage factory to fall back on.
   // Creating the GLTextureImageBackingFactory invokes GL API calls, so
