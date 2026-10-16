@@ -76,16 +76,6 @@ class V8StringResource {
   // NOLINTNEXTLINE(google-explicit-constructor)
   operator AtomicString() const { return ToString<AtomicString>(); }
 
-  // NOLINTNEXTLINE(google-explicit-constructor)
-  operator StringView() const {
-    if (!v8_object_.IsEmpty()) [[likely]] {
-      return ToBlinkStringView(isolate_, v8_object_.As<v8::String>(),
-                               backing_store_, mode_);
-    }
-
-    return string_;
-  }
-
  private:
   bool PrepareFast() {
     if (v8_object_.IsEmpty())
@@ -137,8 +127,6 @@ class V8StringResource {
   v8::Local<v8::Value> v8_object_;
   ExternalMode mode_;
   String string_;
-
-  mutable StringView::StackBackingStore backing_store_;
 };
 
 template <>
