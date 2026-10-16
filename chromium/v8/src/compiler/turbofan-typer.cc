@@ -1289,6 +1289,9 @@ Type Typer::Visitor::TypeUnreachable(Node* node) { return Type::None(); }
 
 Type Typer::Visitor::TypePlug(Node* node) { UNREACHABLE(); }
 Type Typer::Visitor::TypeStaticAssert(Node* node) { UNREACHABLE(); }
+#if V8_ENABLE_SANDBOX
+Type Typer::Visitor::TypeLoadTrustedPointer(Node* node) { UNREACHABLE(); }
+#endif
 Type Typer::Visitor::TypeSLVerifierHint(Node* node) { UNREACHABLE(); }
 
 // JS comparison operators.

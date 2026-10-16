@@ -1307,6 +1307,14 @@ OpIndex GraphBuilder::Process(
       return __ Load(Map(node->InputAt(0)), Map(node->InputAt(1)),
                      LoadOp::Kind::Protected(), loaded_rep);
     }
+#if V8_ENABLE_SANDBOX
+    case IrOpcode::kLoadTrustedPointer: {
+      auto params = OpParameter<LoadTrustedPointerParameters>(op);
+      return __ LoadTrustedPointerField(Map<HeapObject>(node->InputAt(0)),
+                                        LoadOp::Kind::TaggedBase(), params.tag,
+                                        params.offset + kHeapObjectTag);
+    }
+#endif
 
     case IrOpcode::kStore:
     case IrOpcode::kUnalignedStore: {

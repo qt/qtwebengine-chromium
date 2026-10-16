@@ -2828,8 +2828,12 @@ class TurboshaftAssemblerOpInterface
              MemoryRepresentation::UintPtr(),
              IsolateData::trusted_pointer_table_offset() +
                  Internals::kTrustedPointerTableBasePointerOffset);
+    // QtWebEngine: The raw table entry is an untagged pointer into trusted
+    // space and goes stale when the GC moves the object, so it must not be
+    // reused across allocations by load elimination (crbug.com/573378812).
     V<WordPtr> decoded_ptr =
-        Load(table, table_offset, LoadOp::Kind::RawAligned(),
+        Load(table, table_offset,
+             LoadOp::Kind::RawAligned().NotLoadEliminable(),
              MemoryRepresentation::UintPtr());
 
     // Untag the pointer and remove the marking bit in one operation.
