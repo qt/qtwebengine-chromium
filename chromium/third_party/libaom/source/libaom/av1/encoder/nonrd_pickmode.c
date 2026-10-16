@@ -2744,6 +2744,24 @@ static AOM_FORCE_INLINE bool handle_inter_mode_nonrd(
     }
   }
 
+  if (this_mode == NEWMV &&
+      (force_mv_inter_layer || (x->sb_me_block && ref_frame == LAST_FRAME))) {
+    // When NEWMV reuses the superblock ME vector (x->sb_me_mv, searched
+    // relative to (0, 0)) or an inter-layer SVC motion vector, search_new_mv()
+    // is bypassed. Clamp the motion vector to the valid subpel search range
+    // relative to the block's reference MV predictor (ref_mv) so that the MV
+    // delta stays within [MV_LOW, MV_UPP], skip NEWMV if the clamped vector
+    // equals ref_mv, and compute its MV bit cost.
+    const int_mv ref_mv = av1_get_ref_mv(x, 0);
+    SubpelMvLimits mv_limits;
+    av1_set_subpel_mv_search_range(&mv_limits, &x->mv_limits, &ref_mv.as_mv);
+    clamp_mv(&this_mv->as_mv, &mv_limits);
+    if (this_mv->as_int == ref_mv.as_int) return true;
+    rate_mv = av1_mv_bit_cost(&this_mv->as_mv, &ref_mv.as_mv,
+                              x->mv_costs->nmv_joint_cost,
+                              x->mv_costs->mv_cost_stack, MV_COST_WEIGHT);
+  }
+
   // Check the current motion vector is same as that of previously evaluated
   // motion vectors.
   for (PREDICTION_MODE inter_mv_mode = NEARESTMV; inter_mv_mode <= NEWMV;
