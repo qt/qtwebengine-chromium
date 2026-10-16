@@ -1248,6 +1248,13 @@ void HttpCache::DoomEntryValidationNoMatch(scoped_refptr<ActiveEntry> entry) {
   // for the transaction to not be found in this entry.
   for (HttpCache::Transaction* transaction : entry->add_to_entry_queue()) {
     transaction->ResetCachePendingState();
+
+    // Cancel the timeout timer. Under extreme load that can end up firing
+    // before the task we post below, and our tasks expects us to be removed
+    // from the entry queue, which we might no longer be the case with the
+    // reversal.
+    transaction->CancelEntryLockTimeout();
+
     base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE,
         base::BindOnce(transaction->cache_io_callback(), ERR_CACHE_RACE));
