@@ -34,3 +34,4 @@ Local Modifications:
 0046-func-ptr-mixup.patch: Prevent mixing up function pointer types.
 0051-opj_j2k_copy_default_double_free.patch: Fix a double free.
 0052-opj_j2k_copy_default_mcc_records.patch: Fix MCC records count.
+0053-opj_copy_image_header.patch: Propagate image header copy failures and validate component counts.

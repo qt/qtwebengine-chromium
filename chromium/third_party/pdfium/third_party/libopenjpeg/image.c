@@ -160,15 +160,20 @@ void opj_image_comp_header_update(opj_image_t * p_image_header,
  * @param   p_image_src     the src image
  * @param   p_image_dest    the dest image
  *
+ * @return OPJ_TRUE if successful, OPJ_FALSE otherwise.
  */
-void opj_copy_image_header(const opj_image_t* p_image_src,
-                           opj_image_t* p_image_dest)
+OPJ_BOOL opj_copy_image_header(const opj_image_t* p_image_src,
+                               opj_image_t* p_image_dest)
 {
     OPJ_UINT32 compno;
 
     /* preconditions */
     assert(p_image_src != 00);
     assert(p_image_dest != 00);
+
+    if (p_image_src->numcomps == 0 || !p_image_src->comps) {
+        return OPJ_FALSE;
+    }
 
     p_image_dest->x0 = p_image_src->x0;
     p_image_dest->y0 = p_image_src->y0;
@@ -193,7 +198,7 @@ void opj_copy_image_header(const opj_image_t* p_image_src,
     if (!p_image_dest->comps) {
         p_image_dest->comps = NULL;
         p_image_dest->numcomps = 0;
-        return;
+        return OPJ_FALSE;
     }
 
     for (compno = 0; compno < p_image_dest->numcomps; compno++) {
@@ -212,7 +217,7 @@ void opj_copy_image_header(const opj_image_t* p_image_src,
         if (!p_image_dest->icc_profile_buf) {
             p_image_dest->icc_profile_buf = NULL;
             p_image_dest->icc_profile_len = 0;
-            return;
+            return OPJ_FALSE;
         }
         memcpy(p_image_dest->icc_profile_buf,
                p_image_src->icc_profile_buf,
@@ -221,7 +226,7 @@ void opj_copy_image_header(const opj_image_t* p_image_src,
         p_image_dest->icc_profile_buf = NULL;
     }
 
-    return;
+    return OPJ_TRUE;
 }
 
 opj_image_t* OPJ_CALLCONV opj_image_tile_create(OPJ_UINT32 numcmpts,
