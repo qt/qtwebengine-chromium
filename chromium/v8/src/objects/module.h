@@ -75,6 +75,16 @@ class Module : public TorqueGeneratedModule<Module, HeapObject> {
   static DirectHandle<JSModuleNamespace> GetModuleNamespace(
       Isolate* isolate, Handle<Module> module);
 
+  // Hides the Torque-generated setter to check that {exports} is not mutated
+  // once finalized.
+  inline void set_exports(Tagged<ObjectHashTable> value,
+                          WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
+
+  // Once a module namespace has been created in GetModuleNamespace, all star
+  // exports have been fetched and {exports} is finalized (must not be mutated
+  // or rehashed as ICs index into it).
+  inline bool ExportsFinalized() const;
+
   using BodyDescriptor =
       FixedBodyDescriptor<kExportsOffset, kHeaderSize, kHeaderSize>;
 

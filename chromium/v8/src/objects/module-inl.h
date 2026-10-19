@@ -23,6 +23,17 @@ namespace internal {
 #include "torque-generated/src/objects/module-tq-inl.inc"
 
 TQ_OBJECT_CONSTRUCTORS_IMPL(Module)
+
+void Module::set_exports(Tagged<ObjectHashTable> value, WriteBarrierMode mode) {
+  CHECK(!ExportsFinalized());
+  TorqueGeneratedModule<Module, HeapObject>::set_exports(value, mode);
+}
+
+bool Module::ExportsFinalized() const {
+  bool res = IsJSModuleNamespace(module_namespace());
+  DCHECK_IMPLIES(res, status() >= kLinking);
+  return res;
+}
 TQ_OBJECT_CONSTRUCTORS_IMPL(JSModuleNamespace)
 TQ_OBJECT_CONSTRUCTORS_IMPL(ScriptOrModule)
 
