@@ -507,7 +507,7 @@ void AudioInputDevice::AudioThreadCallback::Process(uint32_t pending_data) {
   std::atomic_ref<uint32_t> has_unread_data(buffer->params.has_unread_data);
   has_unread_data.store(0, std::memory_order_release);
 #else
-  buffer->params.has_unread_data = 0;
+  __atomic_store_n(&buffer->params.has_unread_data, 0u, __ATOMIC_RELEASE);
 #endif
 
   if (++current_segment_id_ >= total_segments_)

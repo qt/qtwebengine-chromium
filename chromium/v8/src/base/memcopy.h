@@ -252,7 +252,11 @@ inline void Relaxed_Memset(T* destination, T value, size_t count)
   requires std::is_integral_v<T>
 {
   for (size_t i = 0; i < count; i++) {
+#if __cpp_lib_atomic_ref >= 201806L
     std::atomic_ref<T>(destination[i]).store(value, std::memory_order_relaxed);
+#else
+    __atomic_store_n(&destination[i], value, __ATOMIC_RELAXED);
+#endif
   }
 }
 

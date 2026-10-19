@@ -41,12 +41,19 @@ AudioOutputBufferParametersHelper::~AudioOutputBufferParametersHelper() =
 AudioGlitchInfo
 AudioOutputBufferParametersHelper::GetGlitchIncrementSinceLastCall(
     AudioOutputBufferParameters& params) {
+#if __cpp_lib_atomic_ref >= 201806L
   base::TimeDelta current_glitch_duration = base::Microseconds(
       std::atomic_ref<int64_t>(params.cumulative_glitch_duration_us)
           .load(std::memory_order_relaxed));
   uint64_t current_glitch_count =
       std::atomic_ref<uint64_t>(params.cumulative_glitch_count)
           .load(std::memory_order_relaxed);
+#else
+  base::TimeDelta current_glitch_duration = base::Microseconds(
+      __atomic_load_n(&params.cumulative_glitch_duration_us, __ATOMIC_RELAXED));
+  uint64_t current_glitch_count =
+      __atomic_load_n(&params.cumulative_glitch_count, __ATOMIC_RELAXED);
+#endif
 
   DCHECK_GE(current_glitch_duration, previous_glitch_duration_);
   DCHECK_GE(current_glitch_count, previous_glitch_count_);
@@ -64,11 +71,18 @@ AudioOutputBufferParametersHelper::GetGlitchIncrementSinceLastCall(
 void AudioOutputBufferParametersHelper::AddGlitchIncrementToBuffer(
     AudioOutputBufferParameters& params,
     AudioGlitchInfo glitch_info) {
+#if __cpp_lib_atomic_ref >= 201806L
   std::atomic_ref<int64_t>(params.cumulative_glitch_duration_us)
       .fetch_add(glitch_info.duration.InMicroseconds(),
                  std::memory_order_relaxed);
   std::atomic_ref<uint64_t>(params.cumulative_glitch_count)
       .fetch_add(glitch_info.count, std::memory_order_relaxed);
+#else
+  __atomic_fetch_add(&params.cumulative_glitch_duration_us,
+                     glitch_info.duration.InMicroseconds(), __ATOMIC_RELAXED);
+  __atomic_fetch_add(&params.cumulative_glitch_count, glitch_info.count,
+                     __ATOMIC_RELAXED);
+#endif
 }
 
 static_assert(AudioBus::kChannelAlignment == kParametersAlignment,
