@@ -10,6 +10,9 @@
 #include "media/filters/ffmpeg_glue.h"
 
 #include "base/check_op.h"
+#if BUILDFLAG(IS_QTWEBENGINE) && BUILDFLAG(USE_SYSTEM_FFMPEG)
+#include "base/logging.h"
+#endif
 #include "base/metrics/histogram_functions.h"
 #include "base/no_destructor.h"
 #include "base/notreached.h"
