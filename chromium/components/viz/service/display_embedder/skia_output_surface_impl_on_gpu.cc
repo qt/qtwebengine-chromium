@@ -267,16 +267,17 @@ std::unique_ptr<SkiaOutputSurfaceImplOnGpu> SkiaOutputSurfaceImplOnGpu::Create(
     SkiaOutputDevice::ReleaseOverlaysCallback release_overlays_callback) {
   TRACE_EVENT0("viz", "SkiaOutputSurfaceImplOnGpu::Create");
 
-  auto context_state = deps->GetSharedContextState();
-  if (!context_state) {
+  // |shared_gpu_deps| keeps the SharedContextState it got when the display
+  // compositor was created, which may have failed. The constructor
+  // dereferences it via memory_tracker(), so bail out before getting a
+  // context state below.
+  if (!shared_gpu_deps || !shared_gpu_deps->shared_context_state()) {
+    LOG(ERROR) << "No shared context state for the display compositor.";
     return nullptr;
   }
 
-  // |shared_gpu_deps| keeps the SharedContextState it got when the display
-  // compositor was created, which may have failed even if getting it above
-  // succeeded. The constructor dereferences it via memory_tracker().
-  if (!shared_gpu_deps || !shared_gpu_deps->shared_context_state()) {
-    LOG(ERROR) << "No shared context state for the display compositor.";
+  auto context_state = deps->GetSharedContextState();
+  if (!context_state) {
     return nullptr;
   }
 
