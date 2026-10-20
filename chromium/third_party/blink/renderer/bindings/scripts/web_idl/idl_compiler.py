@@ -325,7 +325,9 @@ class IdlCompiler(object):
         partials = self._ir_map.irs_of_kinds(
             IRMap.IR.Kind.PARTIAL_INTERFACE,
             IRMap.IR.Kind.PARTIAL_INTERFACE_MIXIN)
-        interfaces_or_mixins = interfaces | mixins
+        #interfaces_or_mixins = interfaces | mixins
+        interfaces_or_mixins = interfaces.copy()
+        interfaces_or_mixins.update(mixins)
 
         self._ir_map.move_to_new_phase()
 

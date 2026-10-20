@@ -3,6 +3,8 @@
 # found in the LICENSE file.
 """Helpers to parse content of xml files."""
 
+from __future__ import annotations
+
 import typing
 
 from collections.abc import Iterator

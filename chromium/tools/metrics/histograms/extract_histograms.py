@@ -8,6 +8,8 @@ see histograms.xml; example path:
 tools/metrics/histograms/metadata/uma/histograms.xml
 """
 
+from __future__ import annotations
+
 import bisect
 import copy
 import datetime

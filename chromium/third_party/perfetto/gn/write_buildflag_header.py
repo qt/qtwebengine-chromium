@@ -24,6 +24,8 @@
 #
 # See the gen_buildflags target in /gn/BUILD.gn for usage.
 
+from __future__ import annotations
+
 import argparse
 import os
 import shlex

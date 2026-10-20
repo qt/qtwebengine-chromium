@@ -319,7 +319,9 @@ def main():
   rustenv = dict([item.split("=", 1) for item in rustenv])  # list to dict
   _SaveRustEnvAndFlags(args.dump_rustc_env_and_flags, rustenv, rustc_args)
   ConvertPathsToAbsolute(rustenv)
-  env = os.environ.copy() | rustenv
+  #env = os.environ.copy() | rustenv
+  env = os.environ.copy()
+  env.update(rustenv)
 
   # Add `--emit` and `-o` flags into the `rustc` invocation
   # (but do this _after_ the `_SaveRustEnvAndFlags` call above).
