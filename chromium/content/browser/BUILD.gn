@@ -3833,6 +3833,7 @@ jumbo_source_set("browser") {
     deps -= [
       "//components/payments/content/icon",
       "//components/payments/mojom",
+      "//components/webauthn/core/browser",
       "//content/browser/payments:payment_app_proto",
     ]
 
