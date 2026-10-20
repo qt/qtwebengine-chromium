@@ -39,6 +39,7 @@ CANONICAL_HOMEPAGE_STRING = "This is the canonical"
 # Packages that have bad homepages that don't start with CANONICAL_HOMEPAGE_STRING
 PACKAGES_TO_CLEAN_BAD_URL = [
     'psm (private set membership) client side',
+    'mini_chromium',
 ]
 
 # Some packages don't have a license file, but their license is a known SPDX
@@ -403,7 +404,7 @@ def GetTargetMetadatas(gn_binary: str, gn_out_dir: str, gn_target: str):
 
   prev_cwd = os.getcwd()
   os.chdir(gn_out_dir)
-  third_party_dirs = license_tools.FindThirdPartyDeps(gn_binary, gn_out_dir, gn_target, True, 'all')
+  third_party_dirs = license_tools.FindThirdPartyDeps(gn_binary, gn_out_dir, gn_target, True, ROOT)
   os.chdir(prev_cwd)
 
   # If src/3rdparty is not a git repo, skip adding revision info since it would fail on trying
@@ -481,6 +482,9 @@ def CreateSbomText(targets_and_metadatas, writer_type, package_id: str, doc_name
         # errored-out dependency.
         if license_file is None:
           continue
+
+        if OVERRIDE_LICENSE_FILE_METADATA_KEY not in dep_metadata:
+          license_file = os.path.normpath(os.path.join(ROOT, license_file))
 
         child_pkg_name = make_pkg_name(dep_metadata.pop('Name'))
         child_pkg_key = directory + ':' + child_pkg_name
