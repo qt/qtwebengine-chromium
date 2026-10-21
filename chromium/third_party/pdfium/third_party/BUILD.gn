@@ -34,6 +34,7 @@ if (pdf_enable_xfa) {
       "bigint/BigUnsignedInABase.hh",
       "bigint/NumberlikeArray.hh",
     ]
+    deps = [ "bigint:dummy_dependency_trigger" ]
   }
 }
 
@@ -254,6 +255,7 @@ if (pdf_use_agg) {
       "agg23/agg_vertex_sequence.h",
     ]
     deps = [ "../core/fxcrt" ]
+    deps += [ "agg23:dummy_dependency_trigger" ]
   }
 }
 
@@ -309,6 +311,7 @@ source_set("fx_lcms2") {
     "lcms/src/cmsxform.c",
   ]
   deps = [ "../core/fxcrt" ]
+  deps += [ "lcms:dummy_dependency_trigger" ]
 }
 
 if (!build_with_chromium) {
@@ -435,6 +438,7 @@ source_set("fx_libopenjpeg") {
     "libopenjpeg/thread.c",
   ]
   deps = [ "../core/fxcrt" ]
+  deps += [ "libopenjpeg:dummy_dependency_trigger" ]
 }
 
 if (!pdf_enable_rust_png) {
@@ -476,6 +480,7 @@ if (pdf_enable_xfa_tiff) {
         "../core/fxcrt",
         "//third_party:jpeg",
       ]
+      deps += [ "libtiff:dummy_dependency_trigger" ]
       sources = [
         "libtiff/tif_aux.c",
         "libtiff/tif_close.c",
