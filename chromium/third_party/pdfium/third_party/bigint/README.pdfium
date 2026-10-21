@@ -1,0 +1,9 @@
+Name: C++ Big Interger Library
+URL: https://mattmccutchen.net/bigint/
+Version: 2010.04.30
+Date: 2010-04-30
+License: Public Domain
+License File: LICENSE
+Update Mechanism: Static (https://crbug.com/537940787)
+Security Critical: yes
+Shipped: yes
