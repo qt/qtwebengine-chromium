@@ -1266,9 +1266,11 @@ void HTMLInputElement::SetSuggestedValue(const String& value) {
 void HTMLInputElement::DidChangeIsCanvasOrInCanvasSubtree() {
   TextControlElement::DidChangeIsCanvasOrInCanvasSubtree();
   if (RuntimeEnabledFeatures::CanvasDrawElementEnabled() &&
-      IsInCanvasSubtree()) {
+      IsInCanvasSubtree() && !SuggestedValue().IsNull()) {
     // Hide suggested values when under canvas, to prevent leaking this
-    // information to javascript.
+    // information to javascript. Skip when there is nothing to hide:
+    // SetSuggestedValue() always rebuilds the view, which can move focus and run
+    // script during slot assignment recalc (crbug.com/574469802).
     SetSuggestedValue(String());
   }
 }
