@@ -5,7 +5,7 @@
 #                      \___/_/\_\ .__/ \__,_|\__|
 #                               |_| XML parser
 #
-# Copyright (c) 2024-2025 Sebastian Pipping <sebastian@pipping.org>
+# Copyright (c) 2024-2026 Sebastian Pipping <sebastian@pipping.org>
 # Licensed under the MIT license:
 #
 # Permission is  hereby granted,  free of charge,  to any  person obtaining
@@ -43,13 +43,15 @@ permissions:
 jobs:
   coverity_scan_upload:
     name: Upload build to Coverity Scan
+    timeout-minutes: 15
     # NOTE: The idea is not to bother fork repositories with a job
     #       that is doomed to fail
     if: ${{ github.repository == 'libexpat/libexpat' }}
     runs-on: ubuntu-24.04
     steps:
-    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       with:
+        persist-credentials: false
         # The next two lines ensure clean and public-only submissions
         repository: libexpat/libexpat
         ref: master
@@ -63,23 +65,23 @@ jobs:
         tee    "${GITHUB_OUTPUT}" <<< "version=$(git describe --tags | sed -e 's,^R_,,' -e 's,_,.,g')"
         tee -a "${GITHUB_OUTPUT}" <<< "git_commit=$(git rev-parse HEAD)"
 
-    - name: Install Clang 21
+    - name: Install Clang 23
       run: |-
         set -x
         source /etc/os-release
         wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
-        sudo add-apt-repository "deb https://apt.llvm.org/${UBUNTU_CODENAME}/ llvm-toolchain-${UBUNTU_CODENAME}-21 main"
+        sudo add-apt-repository "deb https://apt.llvm.org/${UBUNTU_CODENAME}/ llvm-toolchain-${UBUNTU_CODENAME}-23 main"
         sudo apt-get update  # due to new repository
-        sudo apt-get install --yes --no-install-recommends -V \
-            clang-21 \
-            libclang-rt-21-dev \
-            llvm-21
-        echo /usr/lib/llvm-21/bin >>"${GITHUB_PATH}"
+        sudo timeout 10m apt-get install --yes --no-install-recommends -V \
+            clang-23 \
+            libclang-rt-23-dev \
+            llvm-23
+        echo /usr/lib/llvm-23/bin >>"${GITHUB_PATH}"
 
     - name: Install build dependencies
       run: |-
         set -x
-        sudo apt-get install --yes --no-install-recommends -V \
+        sudo timeout 10m apt-get install --yes --no-install-recommends -V \
             libprotobuf-dev \
             protobuf-compiler
 
@@ -107,7 +109,7 @@ jobs:
         )
         cmake "${args[@]}" -S . -B .
 
-    - uses: vapier/coverity-scan-action@2068473c7bdf8c2fb984a6a40ae76ee7facd7a85  # v1.8.0
+    - uses: vapier/coverity-scan-action@1b6fd4eaba6651aa354c9ea7f48caa1710b4e12e  # v1.9.0
       with:
         email: ${{ secrets.COVERITY_SCAN_EMAIL }}
         token: ${{ secrets.COVERITY_SCAN_TOKEN }}

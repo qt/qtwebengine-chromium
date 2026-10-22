@@ -42,11 +42,14 @@ permissions:
 jobs:
   solaris:
     name: Build in a Solaris VM
+    timeout-minutes: 30
     runs-on: ubuntu-24.04
     steps:
-    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      with:
+        persist-credentials: false
 
-    - uses: vmactions/solaris-vm@c20562b2c69737b06be9e828915761703e487373  # v1.3.3
+    - uses: vmactions/solaris-vm@a11f407d3720a3717673d4194f19ee63b284977e  # v1.4.0
       with:
         release: "11.4-gcc"  # with GCC 14 as of 2026-01-11
         usesh: true
@@ -58,7 +61,7 @@ jobs:
           #       Exit code 3 means "all now installed and some not before".
           #       Exit code 4 means "all now installed and all already before".
           #       Command "pkg list -a" can show a list of packages available.
-          pkg install \
+          timeout 10m pkg install \
             autoconf \
             automake \
             bash \

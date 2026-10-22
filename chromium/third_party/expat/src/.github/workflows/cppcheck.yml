@@ -5,7 +5,7 @@
 #                      \___/_/\_\ .__/ \__,_|\__|
 #                               |_| XML parser
 #
-# Copyright (c) 2021-2025 Sebastian Pipping <sebastian@pipping.org>
+# Copyright (c) 2021-2026 Sebastian Pipping <sebastian@pipping.org>
 # Copyright (c) 2023      Joyce Brum <joycebrum@google.com>
 # Copyright (c) 2024      Dag-Erling Smørgrav <des@des.dev>
 # Licensed under the MIT license:
@@ -29,7 +29,7 @@
 # OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
 # USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-name: Run Cppcheck (from macOS Homebrew)
+name: Run Cppcheck
 
 on:
   pull_request:
@@ -44,14 +44,42 @@ permissions:
 jobs:
   checks:
     name: Run Cppcheck
-    runs-on: macos-14
+    timeout-minutes: 30
+    runs-on: ubuntu-24.04
     steps:
-    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-    - name: Install runtime dependencies
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      with:
+        persist-credentials: false
+
+    - name: Build and install Cppcheck (less than 2 minutes)
       run: |
+        commit=a436ca35ed1887bee789765122b65ed2d7a7e045  # 2.22.0
+
+        cmake_args=(
+            -G Ninja  # for faster builds
+            -DCMAKE_BUILD_TYPE=Release  # for runtime performance
+        )
         set -x
-        brew update
-        exec brew install cppcheck
-    - name: Run Cppcheck
+
+        git init -b main cppcheck/
+
+        pushd cppcheck/
+          git fetch --depth 1 https://github.com/cppcheck-opensource/cppcheck "${commit}"
+          git -c advice.detachedHead=false checkout FETCH_HEAD
+        popd
+
+        cmake "${cmake_args[@]}" -S cppcheck/ -B build/
+
+        cmake --build build/ --parallel "$(nproc)"
+
+        sudo cmake --install build/
+
+        rm -Rf cppcheck/ build/
+
+        # Smoke-test installed version
+        [[ $(type -P cppcheck) == /usr/local/bin/cppcheck ]]
+        cppcheck --version
+
+    - name: Run Cppcheck (less than 11 minutes)
       run: |
         exec .github/workflows/scripts/mass-cppcheck.sh

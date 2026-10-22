@@ -43,18 +43,21 @@ permissions:
 jobs:
   freebsd:
     name: Build in a FreeBSD VM
+    timeout-minutes: 30
     runs-on: ubuntu-24.04
     steps:
-    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      with:
+        persist-credentials: false
 
-    - uses: vmactions/freebsd-vm@d1e65811565151536c0c894fff74f06351ed26e6  # v1.4.5
+    - uses: vmactions/freebsd-vm@f0552d3b69211736abd97f02ff3d4674c56b73b1  # v1.5.5
       with:
         release: "15.0"
         usesh: true
 
         prepare: |
           set -e -u -x
-          pkg install -y \
+          timeout 10m pkg install -y \
               autoconf \
               automake \
               bash \

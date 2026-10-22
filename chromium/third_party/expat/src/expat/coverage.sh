@@ -6,7 +6,7 @@
 #                      \___/_/\_\ .__/ \__,_|\__|
 #                               |_| XML parser
 #
-# Copyright (c) 2017-2025 Sebastian Pipping <sebastian@pipping.org>
+# Copyright (c) 2017-2026 Sebastian Pipping <sebastian@pipping.org>
 # Copyright (c) 2018      Marco Maggi <marco.maggi-ipsu@poste.it>
 # Copyright (c) 2019      Mohammed Khajapasha <mohammed.khajapasha@intel.com>
 # Copyright (c) 2026      Rosen Penev <rosenp@gmail.com>
@@ -98,7 +98,7 @@ _call_cmake() {
         cmake_args+=( -DEXPAT_CONTEXT_BYTES=${xml_context} )
     fi
 
-    ${with_mingw} && cmake_args+=( -DCMAKE_TOOLCHAIN_FILE="${abs_source_dir}"/cmake/mingw-toolchain.cmake )
+    ${with_mingw} && cmake_args+=( -DCMAKE_TOOLCHAIN_FILE="${abs_source_dir}"/cmake/mingw-toolchain-win32.cmake )
     ${with_m32} && cmake_args+=( -D_EXPAT_M32=ON )
     ${with_ge} || cmake_args+=( -DEXPAT_GE=OFF )
     ${with_dtd} || cmake_args+=( -DEXPAT_DTD=OFF )

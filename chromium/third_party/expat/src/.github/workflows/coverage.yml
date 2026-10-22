@@ -5,7 +5,7 @@
 #                      \___/_/\_\ .__/ \__,_|\__|
 #                               |_| XML parser
 #
-# Copyright (c) 2021-2025 Sebastian Pipping <sebastian@pipping.org>
+# Copyright (c) 2021-2026 Sebastian Pipping <sebastian@pipping.org>
 # Copyright (c) 2023      Joyce Brum <joycebrum@google.com>
 # Copyright (c) 2024      Dag-Erling Smørgrav <des@des.dev>
 # Copyright (c) 2026      Rosen Penev <rosenp@gmail.com>
@@ -45,11 +45,15 @@ permissions:
 jobs:
   checks:
     name: Collect test coverage
+    timeout-minutes: 60
     runs-on: ubuntu-22.04
     env:
       CFLAGS: -g3 -pipe
     steps:
-    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      with:
+        persist-credentials: false
+
     - name: Install build dependencies
       run: |-
         set -x -u
@@ -59,7 +63,7 @@ jobs:
         sudo dpkg --add-architecture i386  # for wine32
         sudo apt-get update  # due to new architecture
 
-        sudo apt-get install --yes --no-install-recommends -V \
+        sudo timeout 10m apt-get install --yes --no-install-recommends -V \
             cmake \
             docbook-xml \
             docbook2x \
@@ -71,13 +75,15 @@ jobs:
             retry
 
         # Install 32bit Wine
-        sudo apt-get install --yes --no-install-recommends -V \
+        sudo timeout 10m apt-get install --yes --no-install-recommends -V \
             mingw-w64 \
             wine-stable \
             wine32:i386
+
     - name: Unshallow Git clone
       run: |
         git fetch --force --tags --unshallow origin  # for "git describe" in coverage.sh
+
     - name: Collect test coverage
       env:
         MODE: coverage-sh

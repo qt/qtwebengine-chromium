@@ -44,6 +44,7 @@ permissions:
 jobs:
   checks:
     name: Ensure that GNU Autotools and CMake build systems agree
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -56,7 +57,7 @@ jobs:
             cmake_args:
           - os: ubuntu-22.04
             configure_args: --host=i686-w64-mingw32
-            cmake_args: -DCMAKE_TOOLCHAIN_FILE=cmake/mingw-toolchain.cmake
+            cmake_args: -DCMAKE_TOOLCHAIN_FILE=cmake/mingw-toolchain-win32.cmake
           - os: ubuntu-24.04
             configure_args: >-
               --enable-symbol-versioning
@@ -82,14 +83,16 @@ jobs:
         shell: bash
     runs-on: "${{ matrix.os }}"
     steps:
-    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      with:
+        persist-credentials: false
 
     - name: (Linux) Install build dependencies
       if: "${{ runner.os == 'Linux' }}"
       run: |-
         set -x
         sudo apt-get update
-        sudo apt-get install --yes --no-install-recommends -V \
+        sudo timeout 10m apt-get install --yes --no-install-recommends -V \
             cmake \
             docbook2x \
             lzip \
@@ -99,9 +102,11 @@ jobs:
       if: "${{ runner.os == 'macOS' }}"
       run: |
         brew uninstall cmake
+        brew update --auto-update
         brew install \
             autoconf \
             automake \
+            bzip3 \
             cmake \
             docbook2x \
             libtool \

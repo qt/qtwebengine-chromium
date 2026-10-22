@@ -5,7 +5,7 @@
 #                      \___/_/\_\ .__/ \__,_|\__|
 #                               |_| XML parser
 #
-# Copyright (c) 2025 Sebastian Pipping <sebastian@pipping.org>
+# Copyright (c) 2025-2026 Sebastian Pipping <sebastian@pipping.org>
 # Licensed under the MIT license:
 #
 # Permission is  hereby granted,  free of charge,  to any  person obtaining
@@ -42,15 +42,18 @@ permissions:
 jobs:
   musl:
     name: Build with musl
+    timeout-minutes: 15
     runs-on: ubuntu-22.04
     steps:
-    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      with:
+        persist-credentials: false
 
     - name: Install build dependencies
       run: |-
         set -x
         sudo apt-get update
-        sudo apt-get install --yes --no-install-recommends -V \
+        sudo timeout 10m apt-get install --yes --no-install-recommends -V \
             cmake \
             musl-tools
 
@@ -58,7 +61,7 @@ jobs:
       run: |
         cmake_args=(
           -DCMAKE_C_COMPILER=musl-gcc
-          -DCMAKE_CXX_COMPILER=g++  # musl-tools does not support C++
+          -DCMAKE_CXX_COMPILER=false  # musl-tools does not support C++
           -DCMAKE_C_FLAGS='-O1 -pipe -Wall -Wextra -pedantic -Wno-overlength-strings'
           -DCMAKE_CXX_FLAGS='-O0 -pipe'
           -DEXPAT_BUILD_DOCS=OFF
@@ -67,3 +70,7 @@ jobs:
         set -x
         cmake "${cmake_args[@]}" -S expat/ -B build/
         make -C build -j$(nproc) VERBOSE=1 all
+
+    - name: Run the test suite
+      run: |
+        make -C build/ test run-xmltest

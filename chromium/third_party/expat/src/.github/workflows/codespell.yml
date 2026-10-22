@@ -5,7 +5,7 @@
 #                      \___/_/\_\ .__/ \__,_|\__|
 #                               |_| XML parser
 #
-# Copyright (c) 2021-2024 Sebastian Pipping <sebastian@pipping.org>
+# Copyright (c) 2021-2026 Sebastian Pipping <sebastian@pipping.org>
 # Copyright (c) 2023      Joyce Brum <joycebrum@google.com>
 # Licensed under the MIT license:
 #
@@ -43,9 +43,13 @@ permissions:
 jobs:
   checks:
     name: Enforce codespell-clean spelling
+    timeout-minutes: 15
     runs-on: ubuntu-22.04
     steps:
-    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      with:
+        persist-credentials: false
+
     - uses: codespell-project/actions-codespell@8f01853be192eb0f849a5c7d721450e7a467c579  # v2.2
       with:
         path: expat/

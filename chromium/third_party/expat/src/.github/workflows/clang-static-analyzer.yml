@@ -42,21 +42,24 @@ permissions:
 jobs:
   clang_static_analyzer:
     name: Enforce Clang Static Analyzer (scan-build) clean code
+    timeout-minutes: 30
     runs-on: ubuntu-24.04
     steps:
-    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      with:
+        persist-credentials: false
 
-    - name: Install Clang 21 (including scan-build)
+    - name: Install Clang 23 (including scan-build)
       run: |-
         set -x
         source /etc/os-release
         wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
-        sudo add-apt-repository "deb https://apt.llvm.org/${UBUNTU_CODENAME}/ llvm-toolchain-${UBUNTU_CODENAME}-21 main"
+        sudo add-apt-repository "deb https://apt.llvm.org/${UBUNTU_CODENAME}/ llvm-toolchain-${UBUNTU_CODENAME}-23 main"
         sudo apt-get update  # due to new repository
-        sudo apt-get install --yes --no-install-recommends -V \
-            clang-21 \
-            clang-tools-21
-        echo /usr/lib/llvm-21/bin >>"${GITHUB_PATH}"
+        sudo timeout 10m apt-get install --yes --no-install-recommends -V \
+            clang-23 \
+            clang-tools-23
+        echo /usr/lib/llvm-23/bin >>"${GITHUB_PATH}"
 
     - name: Build using scan-build
       run: |
@@ -76,10 +79,12 @@ jobs:
 
         scan-build \
             -o html/ \
+            --exclude "${PWD}"/build/CMakeFiles/ \
+            --exclude /usr/ \
             $(sed 's,^,-enable-checker ,' <<<"${enabled_checkers}") \
             sh -c 'cmake -S expat/ -B build/ && make -C build -j$(nproc) VERBOSE=1'
 
-        rmdir html || false 'The report directory is non-empty, i.e. Clang Static Analyzer found an issue! Please download and inspect the zip file artifact attached to this CI run. Thanks!'
+        ! ls -l html/*/report-*.html 2>/dev/null || false 'Clang Static Analyzer found an issue! Please download and inspect the zip file artifact attached to this CI run. Thanks!'
 
     - name: Store scan-build report
       if: always()

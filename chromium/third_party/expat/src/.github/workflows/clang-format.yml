@@ -43,21 +43,24 @@ permissions:
 jobs:
   clang_format:
     name: Enforce clang-format clean code
+    timeout-minutes: 30
     runs-on: ubuntu-24.04
     steps:
-    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      with:
+        persist-credentials: false
 
-    - name: Install clang-format 21
+    - name: Install clang-format 23
       run: |-
         set -x
         source /etc/os-release
         wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
-        sudo add-apt-repository "deb https://apt.llvm.org/${UBUNTU_CODENAME}/ llvm-toolchain-${UBUNTU_CODENAME}-21 main"
+        sudo add-apt-repository "deb https://apt.llvm.org/${UBUNTU_CODENAME}/ llvm-toolchain-${UBUNTU_CODENAME}-23 main"
         sudo apt-get update  # due to new repository
-        sudo apt-get install --yes --no-install-recommends -V \
-            clang-format-21 \
+        sudo timeout 10m apt-get install --yes --no-install-recommends -V \
+            clang-format-23 \
             moreutils
-        echo /usr/lib/llvm-21/bin >>"${GITHUB_PATH}"
+        echo /usr/lib/llvm-23/bin >>"${GITHUB_PATH}"
 
     - name: Run clang-format
       run: |

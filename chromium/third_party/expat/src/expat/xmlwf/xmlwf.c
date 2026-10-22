@@ -11,7 +11,7 @@
    Copyright (c) 2001-2003 Fred L. Drake, Jr. <fdrake@users.sourceforge.net>
    Copyright (c) 2004-2009 Karl Waclawek <karl@waclawek.net>
    Copyright (c) 2005-2007 Steven Solie <steven@solie.ca>
-   Copyright (c) 2016-2025 Sebastian Pipping <sebastian@pipping.org>
+   Copyright (c) 2016-2026 Sebastian Pipping <sebastian@pipping.org>
    Copyright (c) 2017      Rhodri James <rhodri@wildebeest.org.uk>
    Copyright (c) 2019      David Loffredo <loffredo@steptools.com>
    Copyright (c) 2020      Joe Orton <jorton@redhat.com>
@@ -20,6 +20,9 @@
    Copyright (c) 2022      Martin Ettl <ettl.martin78@googlemail.com>
    Copyright (c) 2022      Sean McBride <sean@rogue-research.com>
    Copyright (c) 2025      Alfonso Gregory <gfunni234@gmail.com>
+   Copyright (c) 2026      Matthew Fernandez <matthew.fernandez@gmail.com>
+   Copyright (c) 2026      Nick Begg <nick@stunttruck.net>
+   Copyright (c) 2026      Kartik Kenchi <netliomax25@gmail.com>
    Licensed under the MIT license:
 
    Permission is  hereby granted,  free of charge,  to any  person obtaining
@@ -40,6 +43,8 @@
    DAMAGES OR  OTHER LIABILITY, WHETHER  IN AN  ACTION OF CONTRACT,  TORT OR
    OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
    USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+   SPDX-License-Identifier: MIT
 */
 
 #include "expat_config.h"
@@ -55,6 +60,7 @@
 #include "expat.h"
 #include "codepage.h"
 #include "internal.h" /* for UNUSED_P only */
+#include "fallthrough.h"
 #include "xmlfile.h"
 #include "xmltchar.h"
 
@@ -65,6 +71,8 @@
 #ifdef XML_UNICODE
 #  include <wchar.h>
 #endif
+
+#include "../lib/xcsinc.c"
 
 enum ExitCode {
   XMLWF_EXIT_SUCCESS = 0,
@@ -304,16 +312,14 @@ processingInstruction(void *userData, const XML_Char *target,
 
 static XML_Char *
 xcsdup(const XML_Char *s) {
-  XML_Char *result;
-  int count = 0;
-  size_t numBytes;
+  const size_t count = xcslen(s) + /* null terminator */ 1;
 
-  /* Get the length of the string, including terminator */
-  while (s[count++] != 0) {
-    /* Do nothing */
-  }
-  numBytes = count * sizeof(XML_Char);
-  result = malloc(numBytes);
+  // Detect and prevent integer overflow
+  if (count > SIZE_MAX / sizeof(XML_Char))
+    return NULL;
+
+  const size_t numBytes = count * sizeof(XML_Char);
+  XML_Char *const result = malloc(numBytes);
   if (result == NULL)
     return NULL;
   memcpy(result, s, numBytes);
@@ -378,19 +384,38 @@ notationCmp(const void *a, const void *b) {
   return xcscmp(n1->notationName, n2->notationName);
 }
 
+/* Write a SystemLiteral/PubidLiteral, choosing a delimiter that does not
+   occur in the value.  The grammar forbids a literal from containing its
+   own delimiter, so a value reported by Expat never holds both quote
+   characters and a safe delimiter always exists. */
+static void
+writeLiteral(FILE *fp, const XML_Char *value) {
+  const XML_Char quote = (tcschr(value, T('\'')) != NULL) ? T('"') : T('\'');
+  puttc(quote, fp);
+  fputts(value, fp);
+  puttc(quote, fp);
+}
+
 static void XMLCALL
 endDoctypeDecl(void *userData) {
   XmlwfUserData *data = userData;
   NotationList **notations;
-  int notationCount = 0;
+  size_t notationCount = 0;
   NotationList *p;
-  int i;
+  size_t i;
 
   /* How many notations do we have? */
   for (p = data->notationListHead; p != NULL; p = p->next)
     notationCount++;
   if (notationCount == 0) {
     /* Nothing to report */
+    goto cleanUp;
+  }
+
+  /* Detect and prevent integer overflow in the multiplication, mirroring
+     the guards in xcsdup() and resolveSystemId() */
+  if (notationCount > SIZE_MAX / sizeof(NotationList *)) {
+    fprintf(stderr, "Unable to sort notations");
     goto cleanUp;
   }
 
@@ -415,19 +440,15 @@ endDoctypeDecl(void *userData) {
     fputts(T("<!NOTATION "), data->fp);
     fputts(notations[i]->notationName, data->fp);
     if (notations[i]->publicId != NULL) {
-      fputts(T(" PUBLIC '"), data->fp);
-      fputts(notations[i]->publicId, data->fp);
-      puttc(T('\''), data->fp);
+      fputts(T(" PUBLIC "), data->fp);
+      writeLiteral(data->fp, notations[i]->publicId);
       if (notations[i]->systemId != NULL) {
         puttc(T(' '), data->fp);
-        puttc(T('\''), data->fp);
-        fputts(notations[i]->systemId, data->fp);
-        puttc(T('\''), data->fp);
+        writeLiteral(data->fp, notations[i]->systemId);
       }
     } else if (notations[i]->systemId != NULL) {
-      fputts(T(" SYSTEM '"), data->fp);
-      fputts(notations[i]->systemId, data->fp);
-      puttc(T('\''), data->fp);
+      fputts(T(" SYSTEM "), data->fp);
+      writeLiteral(data->fp, notations[i]->systemId);
     }
     puttc(T('>'), data->fp);
     puttc(T('\n'), data->fp);
@@ -560,8 +581,11 @@ static void
 metaLocation(XML_Parser parser) {
   const XML_Char *uri = XML_GetBase(parser);
   FILE *fp = ((XmlwfUserData *)XML_GetUserData(parser))->fp;
-  if (uri)
-    ftprintf(fp, T(" uri=\"%s\""), uri);
+  if (uri) {
+    fputts(T(" uri=\""), fp);
+    characterData(XML_GetUserData(parser), uri, (int)tcslen(uri));
+    puttc(T('"'), fp);
+  }
   ftprintf(fp,
            T(" byte=\"%") T(XML_FMT_INT_MOD) T("d\"") T(" nbytes=\"%d\"")
                T(" line=\"%") T(XML_FMT_INT_MOD) T("u\"") T(" col=\"%")
@@ -595,12 +619,16 @@ metaStartElement(void *userData, const XML_Char *name, const XML_Char **atts) {
   else
     idAttPtr = atts + idAttIndex;
 
-  ftprintf(fp, T("<starttag name=\"%s\""), name);
+  fputts(T("<starttag name=\""), fp);
+  characterData(data, name, (int)tcslen(name));
+  puttc(T('"'), fp);
   metaLocation(parser);
   if (*atts) {
     fputts(T(">\n"), fp);
     do {
-      ftprintf(fp, T("<attribute name=\"%s\" value=\""), atts[0]);
+      fputts(T("<attribute name=\""), fp);
+      characterData(data, atts[0], (int)tcslen(atts[0]));
+      fputts(T("\" value=\""), fp);
       characterData(data, atts[1], (int)tcslen(atts[1]));
       if (atts >= specifiedAttsEnd)
         fputts(T("\" defaulted=\"yes\"/>\n"), fp);
@@ -619,7 +647,9 @@ metaEndElement(void *userData, const XML_Char *name) {
   XML_Parser parser = userData;
   XmlwfUserData *data = XML_GetUserData(parser);
   FILE *fp = data->fp;
-  ftprintf(fp, T("<endtag name=\"%s\""), name);
+  fputts(T("<endtag name=\""), fp);
+  characterData(data, name, (int)tcslen(name));
+  puttc(T('"'), fp);
   metaLocation(parser);
   fputts(T("/>\n"), fp);
 }
@@ -903,7 +933,7 @@ usage(const XML_Char *prog, int rc) {
       T("  -w             enable support for [W]indows code pages\n")
       T("  -r             disable memory-mapping and use [r]ead calls instead\n")
       T("  -g BYTES       buffer size to request per call pair to XML_[G]etBuffer and read (default: 8 KiB)\n")
-      T("  -k             when processing multiple files, [k]eep processing after first file with error\n")
+      T("  -k             when processing multiple files, [k]eep processing after first file with error, and make the last error determine the exit code.\n")
       T("\n")
       T("output control arguments:\n")
       T("  -d DIRECTORY   output [d]estination directory\n")
@@ -928,7 +958,7 @@ usage(const XML_Char *prog, int rc) {
       T("environment variables:\n")
       T("  EXPAT_ACCOUNTING_DEBUG=(0|1|2|3)\n")
       T("                 Control verbosity of accounting debugging (default: 0)\n")
-      T("  EXPAT_ENTITY_DEBUG=(0|1)\n")
+      T("  EXPAT_ENTITY_DEBUG=(0|1|2)\n")
       T("                 Control verbosity of entity debugging (default: 0)\n")
       T("  EXPAT_ENTROPY_DEBUG=(0|1)\n")
       T("                 Control verbosity of entropy debugging (default: 0)\n")
@@ -939,7 +969,7 @@ usage(const XML_Char *prog, int rc) {
       T("  0              the input files are well-formed and the output (if requested) was written successfully\n")
       T("  1              could not allocate data structures, signals a serious problem with execution environment\n")
       T("  2              one or more input files were not well-formed\n")
-      T("  3              could not create an output file\n")
+      T("  3              one or more output files could not be written\n")
       T("  4              command-line argument error\n")
       T("\n")
       T("xmlwf of libexpat is software libre, licensed under the MIT license.\n")
@@ -1033,7 +1063,7 @@ tmain(int argc, XML_Char **argv) {
       break;
     case T('p'):
       paramEntityParsing = XML_PARAM_ENTITY_PARSING_ALWAYS;
-      /* fall through */
+      EXPAT_FALLTHROUGH;
     case T('x'):
       processFlags |= XML_EXTERNAL_ENTITIES;
       j++;
@@ -1151,7 +1181,7 @@ tmain(int argc, XML_Char **argv) {
         j = 0;
         break;
       }
-      /* fall through */
+      EXPAT_FALLTHROUGH;
     default:
       usage(argv[0], XMLWF_EXIT_USAGE_ERROR);
       // usage called exit(..), never gets here
@@ -1164,7 +1194,6 @@ tmain(int argc, XML_Char **argv) {
   }
   for (; i < argc; i++) {
     XML_Char *outName = 0;
-    int result;
     XML_Parser parser;
     if (useNamespaces)
       parser = XML_ParserCreateNS(encoding, NSSEP);
@@ -1233,8 +1262,26 @@ tmain(int argc, XML_Char **argv) {
         }
 #endif
       }
-      outName
-          = malloc((tcslen(outputDir) + tcslen(file) + 2) * sizeof(XML_Char));
+      const size_t outputDirLen = tcslen(outputDir);
+      const size_t fileLen = tcslen(file);
+
+      /* Detect and prevent integer overflow in the addition (without
+         risking underflow) and the multiplication, mirroring the guards
+         in xcsdup() and resolveSystemId() */
+      if (outputDirLen > SIZE_MAX - fileLen
+          || outputDirLen > SIZE_MAX - fileLen - 2) {
+        tperror(T("Could not allocate memory"));
+        exit(XMLWF_EXIT_INTERNAL_ERROR);
+      }
+
+      const size_t charsRequired = outputDirLen + fileLen + 2;
+
+      if (charsRequired > SIZE_MAX / sizeof(XML_Char)) {
+        tperror(T("Could not allocate memory"));
+        exit(XMLWF_EXIT_INTERNAL_ERROR);
+      }
+
+      outName = malloc(charsRequired * sizeof(XML_Char));
       if (! outName) {
         tperror(T("Could not allocate memory"));
         exit(XMLWF_EXIT_INTERNAL_ERROR);
@@ -1302,19 +1349,29 @@ tmain(int argc, XML_Char **argv) {
     }
     if (windowsCodePages)
       XML_SetUnknownEncodingHandler(parser, unknownEncoding, 0);
-    result = XML_ProcessFile(parser, useStdin ? NULL : argv[i], processFlags);
+    const bool processingSuccess
+        = XML_ProcessFile(parser, useStdin ? NULL : argv[i], processFlags);
+    bool closingSuccess = true;
     if (outputDir) {
       if (outputType == 'm')
         metaEndDocument(parser);
-      fclose(userData.fp);
-      if (! result) {
+      closingSuccess = (fclose(userData.fp) == 0);
+      if (! closingSuccess)
+        tperror(outName);
+      if (! processingSuccess || ! closingSuccess) {
         tremove(outName);
       }
       free(outName);
     }
     XML_ParserFree(parser);
-    if (! result) {
-      exitCode = XMLWF_EXIT_NOT_WELLFORMED;
+    if (! processingSuccess || ! closingSuccess) {
+      // NOTE: If both failed, the last error should determine the exit code.
+      //       Failure to close happened after failure to process.
+      if (! closingSuccess)
+        exitCode = XMLWF_EXIT_OUTPUT_ERROR;
+      else if (! processingSuccess)
+        exitCode = XMLWF_EXIT_NOT_WELLFORMED;
+
       cleanupUserData(&userData);
       if (! continueOnError) {
         break;

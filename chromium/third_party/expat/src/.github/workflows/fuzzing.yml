@@ -42,6 +42,7 @@ permissions:
 jobs:
   run_fuzzers:
     name: Run fuzzing regression tests
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -53,25 +54,27 @@ jobs:
     env:
       fuzzer: ${{ matrix.fuzzer }}
     steps:
-    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      with:
+        persist-credentials: false
 
-    - name: Install Clang 21
+    - name: Install Clang 23
       run: |-
         set -x
         source /etc/os-release
         wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
-        sudo add-apt-repository "deb https://apt.llvm.org/${UBUNTU_CODENAME}/ llvm-toolchain-${UBUNTU_CODENAME}-21 main"
+        sudo add-apt-repository "deb https://apt.llvm.org/${UBUNTU_CODENAME}/ llvm-toolchain-${UBUNTU_CODENAME}-23 main"
         sudo apt-get update  # due to new repository
-        sudo apt-get install --yes --no-install-recommends -V \
-            clang-21 \
-            libclang-rt-21-dev \
-            llvm-21
-        echo /usr/lib/llvm-21/bin >>"${GITHUB_PATH}"
+        sudo timeout 10m apt-get install --yes --no-install-recommends -V \
+            clang-23 \
+            libclang-rt-23-dev \
+            llvm-23
+        echo /usr/lib/llvm-23/bin >>"${GITHUB_PATH}"
 
     - name: Install build dependencies
       run: |-
         set -x
-        sudo apt-get install --yes --no-install-recommends -V \
+        sudo timeout 10m apt-get install --yes --no-install-recommends -V \
             autoconf \
             automake \
             docbook2x \
